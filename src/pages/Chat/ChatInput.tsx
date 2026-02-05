@@ -47,7 +47,7 @@ export function ChatInput({ onSend, disabled = false, sending = false }: ChatInp
   );
 
   return (
-    <div className="border-t bg-background p-4">
+    <div className="bg-background p-4">
       <div className="flex items-end gap-2 max-w-4xl mx-auto">
         <div className="flex-1 relative">
           <Textarea

@@ -17,7 +17,7 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useSettingsStore } from '@/stores/settings';
-import { useGatewayStore } from '@/stores/gateway';
+
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 
@@ -64,8 +64,6 @@ export function Sidebar() {
   const sidebarCollapsed = useSettingsStore((state) => state.sidebarCollapsed);
   const setSidebarCollapsed = useSettingsStore((state) => state.setSidebarCollapsed);
   const devModeUnlocked = useSettingsStore((state) => state.devModeUnlocked);
-  const gatewayStatus = useGatewayStore((state) => state.status);
-  
   // Open developer console
   const openDevConsole = () => {
     window.electron.openExternal('http://localhost:18789');
@@ -108,30 +106,7 @@ export function Sidebar() {
       </nav>
       
       {/* Footer */}
-      <div className="border-t p-2 space-y-2">
-        {/* Gateway Status */}
-        <div
-          className={cn(
-            'flex items-center gap-2 rounded-lg px-3 py-2',
-            sidebarCollapsed && 'justify-center px-2'
-          )}
-        >
-          <div
-            className={cn(
-              'h-2 w-2 rounded-full',
-              gatewayStatus.state === 'running' && 'bg-green-500',
-              gatewayStatus.state === 'starting' && 'bg-yellow-500 animate-pulse',
-              gatewayStatus.state === 'stopped' && 'bg-gray-400',
-              gatewayStatus.state === 'error' && 'bg-red-500'
-            )}
-          />
-          {!sidebarCollapsed && (
-            <span className="text-xs text-muted-foreground">
-              Gateway: {gatewayStatus.state}
-            </span>
-          )}
-        </div>
-        
+      <div className="p-2 space-y-2">
         {/* Developer Mode Button */}
         {devModeUnlocked && !sidebarCollapsed && (
           <Button
