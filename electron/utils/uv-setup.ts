@@ -54,7 +54,7 @@ export async function installUv(): Promise<void> {
 }
 
 /**
- * Use uv to install a managed Python version (default 3.12)
+ * Use bundled uv to install a managed Python version (default 3.12)
  * Automatically picks the best available uv binary
  */
 export async function setupManagedPython(): Promise<void> {
@@ -67,32 +67,48 @@ export async function setupManagedPython(): Promise<void> {
   });
 
   const uvBin = inPath ? 'uv' : getBundledUvPath();
-  let errorOutput = '';
-
+  
   console.log(`Setting up python with: ${uvBin}`);
 
-  return new Promise((resolve, reject) => {
+  await new Promise<void>((resolve, reject) => {
     const child = spawn(uvBin, ['python', 'install', '3.12'], {
       shell: process.platform === 'win32'
     });
 
     child.stdout?.on('data', (data) => {
-      console.log(`python setup: ${data}`);
+      console.log(`python setup stdout: ${data}`);
     });
 
     child.stderr?.on('data', (data) => {
-      errorOutput += data.toString();
-      console.error(`python setup error: ${data}`);
+      // uv prints progress to stderr, so we log it as info
+      console.log(`python setup info: ${data.toString().trim()}`);
     });
 
     child.on('close', (code) => {
       if (code === 0) resolve();
-      else {
-        const msg = errorOutput.trim() || `Python setup failed with code ${code}`;
-        reject(new Error(msg));
-      }
+      else reject(new Error(`Python installation failed with code ${code}`));
     });
 
     child.on('error', (err) => reject(err));
   });
+
+  // After installation, find and print where the Python executable is
+  try {
+    const findPath = await new Promise<string>((resolve) => {
+      const child = spawn(uvBin, ['python', 'find', '3.12'], {
+        shell: process.platform === 'win32'
+      });
+      let output = '';
+      child.stdout?.on('data', (data) => { output += data; });
+      child.on('close', () => resolve(output.trim()));
+    });
+    
+    if (findPath) {
+      console.log(`✅ Managed Python 3.12 path: ${findPath}`);
+      // Note: uv stores environments in a central cache, 
+      // Individual skills will create their own venvs in ~/.cache/uv or similar.
+    }
+  } catch (err) {
+    console.warn('Could not determine Python path:', err);
+  }
 }
