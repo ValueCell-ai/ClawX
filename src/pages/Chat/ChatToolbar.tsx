@@ -35,20 +35,17 @@ export function ChatToolbar() {
             'focus:outline-none focus:ring-2 focus:ring-ring',
           )}
         >
-          {/* Always show current session */}
-          <option value={currentSessionKey}>
-            {sessions.find((s) => s.key === currentSessionKey)?.displayName
-              || sessions.find((s) => s.key === currentSessionKey)?.label
-              || currentSessionKey}
-          </option>
-          {/* Other sessions */}
-          {sessions
-            .filter((s) => s.key !== currentSessionKey)
-            .map((s) => (
-              <option key={s.key} value={s.key}>
-                {s.displayName || s.label || s.key}
-              </option>
-            ))}
+          {/* Render all sessions; if currentSessionKey is not in the list, add it */}
+          {!sessions.some((s) => s.key === currentSessionKey) && (
+            <option value={currentSessionKey}>
+              {currentSessionKey === 'main' ? 'main' : currentSessionKey}
+            </option>
+          )}
+          {sessions.map((s) => (
+            <option key={s.key} value={s.key}>
+              {s.displayName || s.label || s.key}
+            </option>
+          ))}
         </select>
         <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
       </div>

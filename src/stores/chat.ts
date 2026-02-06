@@ -108,7 +108,35 @@ export const useChatStore = create<ChatState>((set, get) => ({
           model: s.model ? String(s.model) : undefined,
         })).filter((s: ChatSession) => s.key);
 
-        set({ sessions });
+        // Normalize: the Gateway returns the main session with canonical key
+        // like "agent:main:main", but the frontend uses "main" for all RPC calls.
+        // Map the canonical main session key to "main" so the selector stays consistent.
+        const mainCanonicalPattern = /^agent:[^:]+:main$/;
+        const normalizedSessions = sessions.map((s) => {
+          if (mainCanonicalPattern.test(s.key)) {
+            return { ...s, key: 'main', displayName: s.displayName || 'main' };
+          }
+          return s;
+        });
+
+        // Deduplicate: if both "main" and "agent:X:main" existed, keep only one
+        const seen = new Set<string>();
+        const dedupedSessions = normalizedSessions.filter((s) => {
+          if (seen.has(s.key)) return false;
+          seen.add(s.key);
+          return true;
+        });
+
+        set({ sessions: dedupedSessions });
+
+        // If currentSessionKey is 'main' and we now have sessions,
+        // ensure we stay on 'main' (no-op, but load history if needed)
+        const { currentSessionKey } = get();
+        if (currentSessionKey === 'main' && !dedupedSessions.find((s) => s.key === 'main') && dedupedSessions.length > 0) {
+          // Main session not found at all — switch to the first available session
+          set({ currentSessionKey: dedupedSessions[0].key });
+          get().loadHistory();
+        }
       }
     } catch (err) {
       console.warn('Failed to load sessions:', err);
