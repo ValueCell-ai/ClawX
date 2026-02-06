@@ -3,13 +3,13 @@
  * Browse and manage AI skills
  */
 import { useEffect, useState, useCallback } from 'react';
-import { 
-  Search, 
-  Puzzle, 
-  RefreshCw, 
-  Lock, 
+import { motion, AnimatePresence } from 'framer-motion';
+import {
+  Search,
+  Puzzle,
+  RefreshCw,
+  Lock,
   Package,
-  Info,
   X,
   Settings,
   CheckCircle2,
@@ -17,6 +17,9 @@ import {
   AlertCircle,
   ChevronRight,
   Sparkles,
+  Download,
+  Trash2,
+  Globe,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -29,31 +32,9 @@ import { useGatewayStore } from '@/stores/gateway';
 import { LoadingSpinner } from '@/components/common/LoadingSpinner';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
-import type { Skill, SkillCategory, SkillBundle } from '@/types/skill';
+import type { Skill, SkillBundle, MarketplaceSkill } from '@/types/skill';
 
-const categoryLabels: Record<SkillCategory, string> = {
-  productivity: 'Productivity',
-  developer: 'Developer',
-  'smart-home': 'Smart Home',
-  media: 'Media',
-  communication: 'Communication',
-  security: 'Security',
-  information: 'Information',
-  utility: 'Utility',
-  custom: 'Custom',
-};
 
-const categoryIcons: Record<SkillCategory, string> = {
-  productivity: '📋',
-  developer: '💻',
-  'smart-home': '🏠',
-  media: '🎬',
-  communication: '💬',
-  security: '🔒',
-  information: '📰',
-  utility: '🔧',
-  custom: '⚡',
-};
 
 // Predefined skill bundles
 const skillBundles: SkillBundle[] = [
@@ -116,7 +97,6 @@ function SkillDetailDialog({ skill, onClose, onToggle }: SkillDetailDialogProps)
                 {skill.name}
                 {skill.isCore && <Lock className="h-4 w-4 text-muted-foreground" />}
               </CardTitle>
-              <CardDescription>{categoryLabels[skill.category]}</CardDescription>
             </div>
           </div>
           <Button variant="ghost" size="icon" onClick={onClose}>
@@ -125,7 +105,7 @@ function SkillDetailDialog({ skill, onClose, onToggle }: SkillDetailDialogProps)
         </CardHeader>
         <CardContent className="space-y-4">
           <p className="text-muted-foreground">{skill.description}</p>
-          
+
           <div className="flex flex-wrap gap-2">
             {skill.version && (
               <Badge variant="outline">v{skill.version}</Badge>
@@ -133,14 +113,24 @@ function SkillDetailDialog({ skill, onClose, onToggle }: SkillDetailDialogProps)
             {skill.author && (
               <Badge variant="secondary">by {skill.author}</Badge>
             )}
-            {skill.isCore && (
+            {skill.isCore ? (
               <Badge variant="secondary">
                 <Lock className="h-3 w-3 mr-1" />
                 Core Skill
               </Badge>
+            ) : skill.isBundled ? (
+              <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-900/20 dark:text-blue-400 dark:border-blue-800">
+                <Puzzle className="h-3 w-3 mr-1" />
+                Built-in
+              </Badge>
+            ) : (
+              <Badge variant="outline" className="bg-purple-50 text-purple-700 border-purple-200 dark:bg-purple-900/20 dark:text-purple-400 dark:border-purple-800">
+                <Globe className="h-3 w-3 mr-1" />
+                Marketplace
+              </Badge>
             )}
           </div>
-          
+
           {skill.dependencies && skill.dependencies.length > 0 && (
             <div>
               <p className="text-sm font-medium mb-2">Dependencies:</p>
@@ -151,7 +141,7 @@ function SkillDetailDialog({ skill, onClose, onToggle }: SkillDetailDialogProps)
               </div>
             </div>
           )}
-          
+
           <div className="flex items-center justify-between pt-4 border-t">
             <div className="flex items-center gap-2">
               {skill.enabled ? (
@@ -197,7 +187,7 @@ function BundleCard({ bundle, skills, onApply }: BundleCardProps) {
   const bundleSkills = skills.filter((s) => bundle.skills.includes(s.id));
   const enabledCount = bundleSkills.filter((s) => s.enabled).length;
   const isFullyEnabled = bundleSkills.length > 0 && enabledCount === bundleSkills.length;
-  
+
   return (
     <Card className={cn(
       'hover:border-primary/50 transition-colors cursor-pointer',
@@ -230,9 +220,9 @@ function BundleCard({ bundle, skills, onApply }: BundleCardProps) {
         </p>
         <div className="flex flex-wrap gap-1">
           {bundleSkills.slice(0, 4).map((skill) => (
-            <Badge 
-              key={skill.id} 
-              variant={skill.enabled ? 'default' : 'outline'} 
+            <Badge
+              key={skill.id}
+              variant={skill.enabled ? 'default' : 'outline'}
               className="text-xs"
             >
               {skill.icon} {skill.name}
@@ -244,9 +234,9 @@ function BundleCard({ bundle, skills, onApply }: BundleCardProps) {
             </Badge>
           )}
         </div>
-        <Button 
-          variant={isFullyEnabled ? 'secondary' : 'default'} 
-          size="sm" 
+        <Button
+          variant={isFullyEnabled ? 'secondary' : 'default'}
+          size="sm"
           className="w-full"
           onClick={onApply}
         >
@@ -258,37 +248,227 @@ function BundleCard({ bundle, skills, onApply }: BundleCardProps) {
   );
 }
 
+// Marketplace skill card component
+interface MarketplaceSkillCardProps {
+  skill: MarketplaceSkill;
+  isInstalling: boolean;
+  isInstalled: boolean;
+  onInstall: () => void;
+  onUninstall: () => void;
+}
+
+function MarketplaceSkillCard({
+  skill,
+  isInstalling,
+  isInstalled,
+  onInstall,
+  onUninstall
+}: MarketplaceSkillCardProps) {
+  return (
+    <Card className="hover:border-primary/50 transition-colors">
+      <CardHeader className="pb-3">
+        <div className="flex items-start justify-between">
+          <div className="flex items-center gap-3">
+            <div className="h-10 w-10 rounded-full bg-primary/10 flex items-center justify-center text-xl">
+              📦
+            </div>
+            <div>
+              <CardTitle className="text-base">{skill.name}</CardTitle>
+              <CardDescription className="text-xs flex items-center gap-2">
+                <span>v{skill.version}</span>
+                {skill.author && (
+                  <>
+                    <span>•</span>
+                    <span>{skill.author}</span>
+                  </>
+                )}
+              </CardDescription>
+            </div>
+          </div>
+          <AnimatePresence mode="wait">
+            {isInstalled ? (
+              <motion.div
+                key="uninstall"
+                initial={{ opacity: 0, scale: 0.8 }}
+                animate={{ opacity: 1, scale: 1 }}
+                exit={{ opacity: 0, scale: 0.8 }}
+              >
+                <Button
+                  variant="destructive"
+                  size="icon"
+                  className="h-8 w-8"
+                  onClick={onUninstall}
+                  disabled={isInstalling}
+                  asChild
+                >
+                  <motion.button whileTap={{ scale: 0.9 }}>
+                    {isInstalling ? (
+                      <div className="flex items-center justify-center gap-0.5">
+                        {[0, 1, 2].map((i) => (
+                          <motion.span
+                            key={i}
+                            className="w-1 h-1 bg-current rounded-full"
+                            animate={{
+                              opacity: [0.3, 1, 0.3],
+                              scale: [0.8, 1, 0.8],
+                            }}
+                            transition={{
+                              duration: 0.8,
+                              repeat: Infinity,
+                              delay: i * 0.15,
+                            }}
+                          />
+                        ))}
+                      </div>
+                    ) : (
+                      <Trash2 className="h-4 w-4" />
+                    )}
+                  </motion.button>
+                </Button>
+              </motion.div>
+            ) : (
+              <motion.div
+                key="install"
+                initial={{ opacity: 0, scale: 0.8 }}
+                animate={{ opacity: 1, scale: 1 }}
+                exit={{ opacity: 0, scale: 0.8 }}
+              >
+                <Button
+                  variant="default"
+                  size="icon"
+                  className="h-8 w-8"
+                  onClick={onInstall}
+                  disabled={isInstalling}
+                  asChild
+                >
+                  <motion.button whileTap={{ scale: 0.9 }}>
+                    {isInstalling ? (
+                      <div className="flex items-center justify-center gap-0.5">
+                        {[0, 1, 2].map((i) => (
+                          <motion.span
+                            key={i}
+                            className="w-1 h-1 bg-current rounded-full"
+                            animate={{
+                              opacity: [0.3, 1, 0.3],
+                              scale: [0.8, 1, 0.8],
+                            }}
+                            transition={{
+                              duration: 0.8,
+                              repeat: Infinity,
+                              delay: i * 0.15,
+                            }}
+                          />
+                        ))}
+                      </div>
+                    ) : (
+                      <Download className="h-4 w-4" />
+                    )}
+                  </motion.button>
+                </Button>
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
+      </CardHeader>
+      <CardContent>
+        <p className="text-sm text-muted-foreground line-clamp-2 mb-3">
+          {skill.description}
+        </p>
+        <div className="flex items-center gap-4 text-xs text-muted-foreground">
+          {skill.downloads !== undefined && (
+            <div className="flex items-center gap-1">
+              <Download className="h-3 w-3" />
+              {skill.downloads.toLocaleString()}
+            </div>
+          )}
+          {skill.stars !== undefined && (
+            <div className="flex items-center gap-1">
+              <Sparkles className="h-3 w-3" />
+              {skill.stars.toLocaleString()}
+            </div>
+          )}
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
 export function Skills() {
-  const { skills, loading, error, fetchSkills, enableSkill, disableSkill } = useSkillsStore();
+  const {
+    skills,
+    loading,
+    error,
+    fetchSkills,
+    enableSkill,
+    disableSkill,
+    searchResults,
+    searchSkills,
+    installSkill,
+    uninstallSkill,
+    searching,
+    installing
+  } = useSkillsStore();
   const gatewayStatus = useGatewayStore((state) => state.status);
   const [searchQuery, setSearchQuery] = useState('');
-  const [selectedCategory, setSelectedCategory] = useState<SkillCategory | 'all'>('all');
+  const [marketplaceQuery, setMarketplaceQuery] = useState('');
   const [selectedSkill, setSelectedSkill] = useState<Skill | null>(null);
   const [activeTab, setActiveTab] = useState('all');
-  
+  const [selectedSource, setSelectedSource] = useState<'all' | 'built-in' | 'marketplace'>('all');
+
   const isGatewayRunning = gatewayStatus.state === 'running';
-  
+  const [showGatewayWarning, setShowGatewayWarning] = useState(false);
+
+  // Debounce the gateway warning to avoid flickering during brief restarts (like skill toggles)
+  useEffect(() => {
+    let timer: NodeJS.Timeout;
+    if (!isGatewayRunning) {
+      // Wait 1.5s before showing the warning
+      timer = setTimeout(() => {
+        setShowGatewayWarning(true);
+      }, 1500);
+    } else {
+      setShowGatewayWarning(false);
+    }
+    return () => clearTimeout(timer);
+  }, [isGatewayRunning]);
+
   // Fetch skills on mount
   useEffect(() => {
     if (isGatewayRunning) {
       fetchSkills();
     }
   }, [fetchSkills, isGatewayRunning]);
-  
+
   // Filter skills
   const filteredSkills = skills.filter((skill) => {
     const matchesSearch = skill.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
       skill.description.toLowerCase().includes(searchQuery.toLowerCase());
-    const matchesCategory = selectedCategory === 'all' || skill.category === selectedCategory;
-    return matchesSearch && matchesCategory;
+
+    let matchesSource = true;
+    if (selectedSource === 'built-in') {
+      matchesSource = !!skill.isBundled;
+    } else if (selectedSource === 'marketplace') {
+      matchesSource = !skill.isBundled;
+    }
+
+    return matchesSearch && matchesSource;
+  }).sort((a, b) => {
+    // Enabled skills first
+    if (a.enabled && !b.enabled) return -1;
+    if (!a.enabled && b.enabled) return 1;
+    // Then core/bundled
+    if (a.isCore && !b.isCore) return -1;
+    if (!a.isCore && b.isCore) return 1;
+    // Finally alphabetical
+    return a.name.localeCompare(b.name);
   });
-  
-  // Get unique categories with counts
-  const categoryStats = skills.reduce((acc, skill) => {
-    acc[skill.category] = (acc[skill.category] || 0) + 1;
-    return acc;
-  }, {} as Record<string, number>);
-  
+
+  const sourceStats = {
+    all: skills.length,
+    builtIn: skills.filter(s => s.isBundled).length,
+    marketplace: skills.filter(s => !s.isBundled).length,
+  };
+
   // Handle toggle
   const handleToggle = useCallback(async (skillId: string, enable: boolean) => {
     try {
@@ -303,12 +483,12 @@ export function Skills() {
       toast.error(String(err));
     }
   }, [enableSkill, disableSkill]);
-  
+
   // Handle bundle apply
   const handleBundleApply = useCallback(async (bundle: SkillBundle) => {
     const bundleSkills = skills.filter((s) => bundle.skills.includes(s.id));
     const allEnabled = bundleSkills.every((s) => s.enabled);
-    
+
     try {
       for (const skill of bundleSkills) {
         if (allEnabled) {
@@ -326,7 +506,45 @@ export function Skills() {
       toast.error('Failed to apply bundle');
     }
   }, [skills, enableSkill, disableSkill]);
-  
+
+  // Handle marketplace search
+  const handleMarketplaceSearch = useCallback((e: React.FormEvent) => {
+    e.preventDefault();
+    if (marketplaceQuery.trim()) {
+      searchSkills(marketplaceQuery);
+    }
+  }, [marketplaceQuery, searchSkills]);
+
+  // Handle install
+  const handleInstall = useCallback(async (slug: string) => {
+    try {
+      await installSkill(slug);
+      // Automatically enable after install
+      // We need to find the skill id which is usually the slug
+      await enableSkill(slug);
+      toast.success('Skill installed and enabled');
+    } catch (err) {
+      toast.error(`Failed to install: ${String(err)}`);
+    }
+  }, [installSkill, enableSkill]);
+
+  // Initial marketplace load (Discovery)
+  useEffect(() => {
+    if (activeTab === 'marketplace' && searchResults.length === 0 && !searching) {
+      searchSkills('');
+    }
+  }, [activeTab, searchResults.length, searching, searchSkills]);
+
+  // Handle uninstall
+  const handleUninstall = useCallback(async (slug: string) => {
+    try {
+      await uninstallSkill(slug);
+      toast.success('Skill uninstalled successfully');
+    } catch (err) {
+      toast.error(`Failed to uninstall: ${String(err)}`);
+    }
+  }, [uninstallSkill]);
+
   if (loading) {
     return (
       <div className="flex h-96 items-center justify-center">
@@ -334,7 +552,7 @@ export function Skills() {
       </div>
     );
   }
-  
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -350,9 +568,9 @@ export function Skills() {
           Refresh
         </Button>
       </div>
-      
+
       {/* Gateway Warning */}
-      {!isGatewayRunning && (
+      {showGatewayWarning && (
         <Card className="border-yellow-500 bg-yellow-50 dark:bg-yellow-900/10">
           <CardContent className="py-4 flex items-center gap-3">
             <AlertCircle className="h-5 w-5 text-yellow-600" />
@@ -362,20 +580,24 @@ export function Skills() {
           </CardContent>
         </Card>
       )}
-      
+
       {/* Tabs */}
       <Tabs value={activeTab} onValueChange={setActiveTab}>
         <TabsList>
           <TabsTrigger value="all" className="gap-2">
             <Puzzle className="h-4 w-4" />
-            All Skills
+            Installed
+          </TabsTrigger>
+          <TabsTrigger value="marketplace" className="gap-2">
+            <Globe className="h-4 w-4" />
+            Marketplace
           </TabsTrigger>
           <TabsTrigger value="bundles" className="gap-2">
             <Package className="h-4 w-4" />
             Bundles
           </TabsTrigger>
         </TabsList>
-        
+
         <TabsContent value="all" className="space-y-6 mt-6">
           {/* Search and Filter */}
           <div className="flex gap-4 flex-wrap">
@@ -388,29 +610,36 @@ export function Skills() {
                 className="pl-9"
               />
             </div>
-            <div className="flex gap-2 flex-wrap">
+
+            <div className="flex gap-2">
               <Button
-                variant={selectedCategory === 'all' ? 'default' : 'outline'}
+                variant={selectedSource === 'all' ? 'default' : 'outline'}
                 size="sm"
-                onClick={() => setSelectedCategory('all')}
+                onClick={() => setSelectedSource('all')}
               >
-                All ({skills.length})
+                All ({sourceStats.all})
               </Button>
-              {Object.entries(categoryStats).map(([category, count]) => (
-                <Button
-                  key={category}
-                  variant={selectedCategory === category ? 'default' : 'outline'}
-                  size="sm"
-                  onClick={() => setSelectedCategory(category as SkillCategory)}
-                  className="gap-1"
-                >
-                  <span>{categoryIcons[category as SkillCategory]}</span>
-                  {categoryLabels[category as SkillCategory]} ({count})
-                </Button>
-              ))}
+              <Button
+                variant={selectedSource === 'built-in' ? 'default' : 'outline'}
+                size="sm"
+                onClick={() => setSelectedSource('built-in')}
+                className="gap-2"
+              >
+                <Puzzle className="h-3 w-3" />
+                Built-in ({sourceStats.builtIn})
+              </Button>
+              <Button
+                variant={selectedSource === 'marketplace' ? 'default' : 'outline'}
+                size="sm"
+                onClick={() => setSelectedSource('marketplace')}
+                className="gap-2"
+              >
+                <Globe className="h-3 w-3" />
+                Marketplace ({sourceStats.marketplace})
+              </Button>
             </div>
           </div>
-          
+
           {/* Error Display */}
           {error && (
             <Card className="border-destructive">
@@ -420,7 +649,7 @@ export function Skills() {
               </CardContent>
             </Card>
           )}
-          
+
           {/* Skills Grid */}
           {filteredSkills.length === 0 ? (
             <Card>
@@ -435,8 +664,8 @@ export function Skills() {
           ) : (
             <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
               {filteredSkills.map((skill) => (
-                <Card 
-                  key={skill.id} 
+                <Card
+                  key={skill.id}
                   className={cn(
                     'cursor-pointer hover:border-primary/50 transition-colors',
                     skill.enabled && 'border-primary/50 bg-primary/5'
@@ -446,27 +675,46 @@ export function Skills() {
                   <CardHeader className="pb-3">
                     <div className="flex items-start justify-between">
                       <div className="flex items-center gap-3">
-                        <span className="text-2xl">{skill.icon || categoryIcons[skill.category]}</span>
+                        <span className="text-2xl">{skill.icon || '🧩'}</span>
                         <div>
                           <CardTitle className="text-base flex items-center gap-2">
                             {skill.name}
-                            {skill.isCore && (
+                            {skill.isCore ? (
                               <Lock className="h-3 w-3 text-muted-foreground" />
+                            ) : skill.isBundled ? (
+                              <Puzzle className="h-3 w-3 text-blue-500/70" />
+                            ) : (
+                              <Globe className="h-3 w-3 text-purple-500/70" />
                             )}
                           </CardTitle>
-                          <CardDescription className="text-xs">
-                            {categoryLabels[skill.category]}
-                          </CardDescription>
                         </div>
                       </div>
-                      <Switch
-                        checked={skill.enabled}
-                        onCheckedChange={(checked) => {
-                          handleToggle(skill.id, checked);
-                        }}
-                        disabled={skill.isCore}
-                        onClick={(e) => e.stopPropagation()}
-                      />
+                      <div className="flex items-center gap-2">
+                        {!skill.isBundled && !skill.isCore && (
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8 text-destructive hover:text-destructive hover:bg-destructive/10"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleUninstall(skill.id);
+                            }}
+                            asChild
+                          >
+                            <motion.button whileTap={{ scale: 0.9 }}>
+                              <Trash2 className="h-4 w-4" />
+                            </motion.button>
+                          </Button>
+                        )}
+                        <Switch
+                          checked={skill.enabled}
+                          onCheckedChange={(checked) => {
+                            handleToggle(skill.id, checked);
+                          }}
+                          disabled={skill.isCore}
+                          onClick={(e) => e.stopPropagation()}
+                        />
+                      </div>
                     </div>
                   </CardHeader>
                   <CardContent>
@@ -492,13 +740,103 @@ export function Skills() {
             </div>
           )}
         </TabsContent>
-        
+
+        <TabsContent value="marketplace" className="space-y-6 mt-6">
+          <div className="flex flex-col gap-4">
+            <div className="flex gap-4">
+              <form onSubmit={handleMarketplaceSearch} className="flex-1 flex gap-2">
+                <div className="relative flex-1">
+                  <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
+                  <Input
+                    placeholder="Search marketplace..."
+                    value={marketplaceQuery}
+                    onChange={(e) => setMarketplaceQuery(e.target.value)}
+                    className="pl-9"
+                  />
+                </div>
+                <Button type="submit" disabled={searching || !marketplaceQuery.trim()} className="min-w-[100px]" asChild>
+                  <motion.button whileTap={{ scale: 0.98 }}>
+                    <AnimatePresence mode="wait" initial={false}>
+                      {searching ? (
+                        <motion.div
+                          key="searching"
+                          initial={{ opacity: 0 }}
+                          animate={{ opacity: 1 }}
+                          exit={{ opacity: 0 }}
+                          className="flex items-center justify-center gap-1"
+                        >
+                          {[0, 1, 2].map((i) => (
+                            <motion.span
+                              key={i}
+                              className="w-1.5 h-1.5 bg-current rounded-full"
+                              animate={{
+                                opacity: [0.3, 1, 0.3],
+                                scale: [0.8, 1, 0.8],
+                              }}
+                              transition={{
+                                duration: 0.8,
+                                repeat: Infinity,
+                                delay: i * 0.15,
+                              }}
+                            />
+                          ))}
+                        </motion.div>
+                      ) : (
+                        <motion.div
+                          key="search"
+                          initial={{ opacity: 0 }}
+                          animate={{ opacity: 1 }}
+                          exit={{ opacity: 0 }}
+                        >
+                          Search
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
+                  </motion.button>
+                </Button>
+              </form>
+            </div>
+
+            {searchResults.length > 0 ? (
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
+                {searchResults.map((skill) => {
+                  const isInstalled = skills.some(s => s.id === skill.slug || s.name === skill.name); // Simple check, ideally check by ID/slug
+                  return (
+                    <MarketplaceSkillCard
+                      key={skill.slug}
+                      skill={skill}
+                      isInstalling={!!installing[skill.slug]}
+                      isInstalled={isInstalled}
+                      onInstall={() => handleInstall(skill.slug)}
+                      onUninstall={() => handleUninstall(skill.slug)}
+                    />
+                  );
+                })}
+              </div>
+            ) : (
+              <Card>
+                <CardContent className="flex flex-col items-center justify-center py-12">
+                  <Package className="h-12 w-12 text-muted-foreground mb-4" />
+                  <h3 className="text-lg font-medium mb-2">Marketplace</h3>
+                  <p className="text-muted-foreground text-center max-w-sm">
+                    {searching
+                      ? 'Searching ClawHub...'
+                      : marketplaceQuery
+                        ? 'No skills found matching your search.'
+                        : 'Search for new skills to expand your capabilities.'}
+                  </p>
+                </CardContent>
+              </Card>
+            )}
+          </div>
+        </TabsContent>
+
         <TabsContent value="bundles" className="space-y-6 mt-6">
           <p className="text-muted-foreground">
-            Skill bundles are pre-configured collections of skills for common use cases. 
+            Skill bundles are pre-configured collections of skills for common use cases.
             Enable a bundle to quickly set up multiple related skills at once.
           </p>
-          
+
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
             {skillBundles.map((bundle) => (
               <BundleCard
@@ -511,33 +849,9 @@ export function Skills() {
           </div>
         </TabsContent>
       </Tabs>
-      
-      {/* Statistics */}
-      <Card>
-        <CardContent className="py-4">
-          <div className="flex items-center justify-between text-sm">
-            <div className="flex items-center gap-4">
-              <span className="text-muted-foreground">
-                <span className="font-medium text-foreground">
-                  {skills.filter((s) => s.enabled).length}
-                </span>
-                {' '}of {skills.length} skills enabled
-              </span>
-              <span className="text-muted-foreground">
-                <span className="font-medium text-foreground">
-                  {skills.filter((s) => s.isCore).length}
-                </span>
-                {' '}core skills
-              </span>
-            </div>
-            <Button variant="ghost" size="sm" className="text-muted-foreground">
-              <Info className="h-4 w-4 mr-1" />
-              Learn about skills
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
-      
+
+
+
       {/* Skill Detail Dialog */}
       {selectedSkill && (
         <SkillDetailDialog

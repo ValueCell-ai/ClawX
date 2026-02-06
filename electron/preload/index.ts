@@ -87,6 +87,11 @@ const electronAPI = {
         'channel:setEnabled',
         'channel:validate',
         'channel:validateCredentials',
+        // ClawHub
+        'clawhub:search',
+        'clawhub:install',
+        'clawhub:uninstall',
+        'clawhub:list',
       ];
 
       if (validChannels.includes(channel)) {

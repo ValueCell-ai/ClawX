@@ -78,6 +78,7 @@
     "@vitejs/plugin-react": "^4.3.4",
     "autoprefixer": "^10.4.20",
     "class-variance-authority": "^0.7.1",
+    "clawhub": "^0.5.0",
     "clsx": "^2.1.1",
     "electron": "^33.3.0",
     "electron-builder": "^25.1.8",
