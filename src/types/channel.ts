@@ -446,7 +446,7 @@ export const CHANNEL_META: Record<ChannelType, ChannelMeta> = {
  * Get primary supported channels (non-plugin, commonly used)
  */
 export function getPrimaryChannels(): ChannelType[] {
-  return ['telegram', 'discord', 'slack', 'whatsapp'];
+  return ['telegram', 'discord', 'slack', 'whatsapp', 'feishu'];
 }
 
 /**
