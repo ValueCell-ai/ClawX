@@ -51,6 +51,8 @@ coverage/
 *.deb
 *.rpm
 
+resources/bin
+
 # Secrets
 *.p12
 *.pem
