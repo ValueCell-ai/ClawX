@@ -4,6 +4,7 @@
  */
 import { ipcMain, BrowserWindow, shell, dialog, app } from 'electron';
 import { GatewayManager } from '../gateway/manager';
+import { ClawHubService, ClawHubSearchParams, ClawHubInstallParams, ClawHubUninstallParams } from '../gateway/clawhub';
 import {
   storeApiKey,
   getApiKey,
@@ -35,10 +36,14 @@ import {
  */
 export function registerIpcHandlers(
   gatewayManager: GatewayManager,
+  clawHubService: ClawHubService,
   mainWindow: BrowserWindow
 ): void {
   // Gateway handlers
   registerGatewayHandlers(gatewayManager, mainWindow);
+
+  // ClawHub handlers
+  registerClawHubHandlers(clawHubService);
 
   // OpenClaw handlers
   registerOpenClawHandlers();
@@ -710,6 +715,51 @@ function registerShellHandlers(): void {
   // Open path
   ipcMain.handle('shell:openPath', async (_, path: string) => {
     return await shell.openPath(path);
+  });
+}
+
+/**
+ * ClawHub-related IPC handlers
+ */
+function registerClawHubHandlers(clawHubService: ClawHubService): void {
+  // Search skills
+  ipcMain.handle('clawhub:search', async (_, params: ClawHubSearchParams) => {
+    try {
+      const results = await clawHubService.search(params);
+      return { success: true, results };
+    } catch (error) {
+      return { success: false, error: String(error) };
+    }
+  });
+
+  // Install skill
+  ipcMain.handle('clawhub:install', async (_, params: ClawHubInstallParams) => {
+    try {
+      await clawHubService.install(params);
+      return { success: true };
+    } catch (error) {
+      return { success: false, error: String(error) };
+    }
+  });
+
+  // Uninstall skill
+  ipcMain.handle('clawhub:uninstall', async (_, params: ClawHubUninstallParams) => {
+    try {
+      await clawHubService.uninstall(params);
+      return { success: true };
+    } catch (error) {
+      return { success: false, error: String(error) };
+    }
+  });
+
+  // List installed skills
+  ipcMain.handle('clawhub:list', async () => {
+    try {
+      const results = await clawHubService.listInstalled();
+      return { success: true, results };
+    } catch (error) {
+      return { success: false, error: String(error) };
+    }
   });
 }
 
