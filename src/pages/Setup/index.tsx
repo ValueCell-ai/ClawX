@@ -255,6 +255,7 @@ export function Setup() {
               <InstallingContent
                 skills={defaultSkills}
                 onComplete={handleInstallationComplete}
+                onSkip={() => setCurrentStep((i) => i + 1)}
               />
             )}
             {currentStep === STEP.COMPLETE && (
@@ -563,6 +564,37 @@ function ProviderContent({
   const [showKey, setShowKey] = useState(false);
   const [validating, setValidating] = useState(false);
   const [keyValid, setKeyValid] = useState<boolean | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const list = await window.electron.ipcRenderer.invoke('provider:list') as Array<{ id: string; hasKey: boolean }>;
+        const defaultId = await window.electron.ipcRenderer.invoke('provider:getDefault') as string | null;
+        const preferred = (defaultId && list.find((p) => p.id === defaultId && p.hasKey)) || list.find((p) => p.hasKey);
+        if (preferred && !cancelled) {
+          onSelectProvider(preferred.id);
+          const storedKey = await window.electron.ipcRenderer.invoke('provider:getApiKey', preferred.id) as string | null;
+          if (storedKey) {
+            onApiKeyChange(storedKey);
+          }
+        }
+      } catch {}
+    })();
+    return () => { cancelled = true; };
+  }, [onApiKeyChange, onSelectProvider]);
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      if (!selectedProvider) return;
+      try {
+        const storedKey = await window.electron.ipcRenderer.invoke('provider:getApiKey', selectedProvider) as string | null;
+        if (!cancelled && storedKey) {
+          onApiKeyChange(storedKey);
+        }
+      } catch {}
+    })();
+    return () => { cancelled = true; };
+  }, [onApiKeyChange, selectedProvider]);
   
   const selectedProviderData = providers.find((p) => p.id === selectedProvider);
   
@@ -660,6 +692,7 @@ function ProviderContent({
                     onApiKeyChange(e.target.value);
                     setKeyValid(null);
                   }}
+                  autoComplete="off"
                   className="pr-10 bg-white/5 border-white/10"
                 />
                 <button
@@ -710,6 +743,30 @@ function SetupChannelContent() {
 
   const meta: ChannelMeta | null = selectedChannel ? CHANNEL_META[selectedChannel] : null;
   const primaryChannels = getPrimaryChannels();
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      if (!selectedChannel) return;
+      try {
+        const result = await window.electron.ipcRenderer.invoke(
+          'channel:getFormValues',
+          selectedChannel
+        ) as { success: boolean; values?: Record<string, string> };
+        if (cancelled) return;
+        if (result.success && result.values) {
+          setConfigValues(result.values);
+        } else {
+          setConfigValues({});
+        }
+      } catch {
+        if (!cancelled) {
+          setConfigValues({});
+        }
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [selectedChannel]);
 
   const isFormValid = () => {
     if (!meta) return false;
@@ -873,6 +930,7 @@ function SetupChannelContent() {
                 placeholder={field.placeholder}
                 value={configValues[field.key] || ''}
                 onChange={(e) => setConfigValues((prev) => ({ ...prev, [field.key]: e.target.value }))}
+                autoComplete="off"
                 className="font-mono text-sm bg-white/5 border-white/10"
               />
               {isPassword && (
@@ -939,9 +997,10 @@ interface SkillInstallState {
 interface InstallingContentProps {
   skills: DefaultSkill[];
   onComplete: (installedSkills: string[]) => void;
+  onSkip: () => void;
 }
 
-function InstallingContent({ skills, onComplete }: InstallingContentProps) {
+function InstallingContent({ skills, onComplete, onSkip }: InstallingContentProps) {
   const [skillStates, setSkillStates] = useState<SkillInstallState[]>(
     skills.map((s) => ({ ...s, status: 'pending' as InstallStatus }))
   );
@@ -1094,6 +1153,15 @@ function InstallingContent({ skills, onComplete }: InstallingContentProps) {
           This may take a few moments...
         </p>
       )}
+      <div className="flex justify-end">
+        <Button
+          variant="ghost"
+          className="text-slate-400"
+          onClick={onSkip}
+        >
+          Skip this step
+        </Button>
+      </div>
     </div>
   );
 }
