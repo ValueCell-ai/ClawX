@@ -1,7 +1,7 @@
 appId: app.clawx.desktop
 productName: ClawX
 copyright: Copyright © 2026 ClawX
-compression: maximum
+compression: normal
 artifactName: ${productName}-${version}-${os}-${arch}.${ext}
 
 directories:
@@ -20,6 +20,7 @@ extraResources:
       - "**/*"
       - "!icons/*.md"
       - "!icons/*.svg"
+      - "!bin/**"
   # OpenClaw submodule - include only necessary files for runtime
   - from: openclaw/
     to: openclaw/
@@ -30,6 +31,7 @@ extraResources:
       - "skills/**/*"
       - "extensions/**/*"
       - "scripts/run-node.mjs"
+      - "!**/node_modules/**"
       - "!**/*.test.ts"
       - "!**/*.test.js"
       - "!**/test/**"
@@ -50,6 +52,9 @@ publish:
 
 # macOS Configuration
 mac:
+  extraResources:
+    - from: resources/bin/darwin-${arch}
+      to: bin
   category: public.app-category.productivity
   icon: resources/icons/icon.icns
   target:
@@ -84,6 +89,9 @@ dmg:
 
 # Windows Configuration
 win:
+  extraResources:
+    - from: resources/bin/win32-${arch}
+      to: bin
   icon: resources/icons/icon.ico
   target:
     - target: nsis
