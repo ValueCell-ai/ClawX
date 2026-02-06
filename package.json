@@ -15,7 +15,7 @@
   "scripts": {
     "dev": "vite",
     "dev:electron": "electron .",
-    "build": "pnpm run build:vite && pnpm run package",
+    "build": "pnpm run uv:download && pnpm run build:vite && pnpm run package",
     "build:vite": "vite build",
     "build:electron": "tsc -p tsconfig.node.json",
     "preview": "vite preview",
@@ -26,6 +26,8 @@
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
     "test:e2e": "playwright test",
+    "uv:download": "node scripts/download-bundled-uv.mjs",
+    "uv:download:all": "node scripts/download-bundled-uv.mjs --all",
     "icons": "bash scripts/generate-icons.sh",
     "clean": "rm -rf dist dist-electron release",
     "package": "electron-builder",
