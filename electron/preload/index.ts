@@ -93,6 +93,9 @@ const electronAPI = {
         'clawhub:uninstall',
         'clawhub:list',
         'clawhub:openSkillReadme',
+        // UV
+        'uv:check',
+        'uv:install-all',
         // Skill config (direct file access)
         'skill:updateConfig',
         'skill:getConfig',
