@@ -22,6 +22,13 @@ import {
 import { getOpenClawStatus } from '../utils/paths';
 import { getSetting } from '../utils/store';
 import { saveProviderKeyToOpenClaw, setOpenClawDefaultModel } from '../utils/openclaw-auth';
+import {
+  saveChannelConfig,
+  getChannelConfig,
+  deleteChannelConfig,
+  listConfiguredChannels,
+  setChannelEnabled,
+} from '../utils/channel-config';
 
 /**
  * Register all IPC handlers
@@ -32,19 +39,19 @@ export function registerIpcHandlers(
 ): void {
   // Gateway handlers
   registerGatewayHandlers(gatewayManager, mainWindow);
-  
+
   // OpenClaw handlers
   registerOpenClawHandlers();
-  
+
   // Provider handlers
   registerProviderHandlers();
-  
+
   // Shell handlers
   registerShellHandlers();
-  
+
   // Dialog handlers
   registerDialogHandlers();
-  
+
   // App handlers
   registerAppHandlers();
 }
@@ -60,12 +67,12 @@ function registerGatewayHandlers(
   ipcMain.handle('gateway:status', () => {
     return gatewayManager.getStatus();
   });
-  
+
   // Check if Gateway is connected
   ipcMain.handle('gateway:isConnected', () => {
     return gatewayManager.isConnected();
   });
-  
+
   // Start Gateway
   ipcMain.handle('gateway:start', async () => {
     try {
@@ -75,7 +82,7 @@ function registerGatewayHandlers(
       return { success: false, error: String(error) };
     }
   });
-  
+
   // Stop Gateway
   ipcMain.handle('gateway:stop', async () => {
     try {
@@ -85,7 +92,7 @@ function registerGatewayHandlers(
       return { success: false, error: String(error) };
     }
   });
-  
+
   // Restart Gateway
   ipcMain.handle('gateway:restart', async () => {
     try {
@@ -95,7 +102,7 @@ function registerGatewayHandlers(
       return { success: false, error: String(error) };
     }
   });
-  
+
   // Gateway RPC call
   ipcMain.handle('gateway:rpc', async (_, method: string, params?: unknown, timeoutMs?: number) => {
     try {
@@ -105,7 +112,7 @@ function registerGatewayHandlers(
       return { success: false, error: String(error) };
     }
   });
-  
+
   // Get the Control UI URL with token for embedding
   ipcMain.handle('gateway:getControlUiUrl', async () => {
     try {
@@ -119,7 +126,7 @@ function registerGatewayHandlers(
       return { success: false, error: String(error) };
     }
   });
-  
+
   // Health check
   ipcMain.handle('gateway:health', async () => {
     try {
@@ -129,44 +136,44 @@ function registerGatewayHandlers(
       return { success: false, ok: false, error: String(error) };
     }
   });
-  
+
   // Forward Gateway events to renderer
   gatewayManager.on('status', (status) => {
     if (!mainWindow.isDestroyed()) {
       mainWindow.webContents.send('gateway:status-changed', status);
     }
   });
-  
+
   gatewayManager.on('message', (message) => {
     if (!mainWindow.isDestroyed()) {
       mainWindow.webContents.send('gateway:message', message);
     }
   });
-  
+
   gatewayManager.on('notification', (notification) => {
     if (!mainWindow.isDestroyed()) {
       mainWindow.webContents.send('gateway:notification', notification);
     }
   });
-  
+
   gatewayManager.on('channel:status', (data) => {
     if (!mainWindow.isDestroyed()) {
       mainWindow.webContents.send('gateway:channel-status', data);
     }
   });
-  
+
   gatewayManager.on('chat:message', (data) => {
     if (!mainWindow.isDestroyed()) {
       mainWindow.webContents.send('gateway:chat-message', data);
     }
   });
-  
+
   gatewayManager.on('exit', (code) => {
     if (!mainWindow.isDestroyed()) {
       mainWindow.webContents.send('gateway:exit', code);
     }
   });
-  
+
   gatewayManager.on('error', (error) => {
     if (!mainWindow.isDestroyed()) {
       mainWindow.webContents.send('gateway:error', error.message);
@@ -176,20 +183,79 @@ function registerGatewayHandlers(
 
 /**
  * OpenClaw-related IPC handlers
- * For checking submodule status
+ * For checking submodule status and channel configuration
  */
 function registerOpenClawHandlers(): void {
+
   // Get OpenClaw submodule status
   ipcMain.handle('openclaw:status', () => {
     return getOpenClawStatus();
   });
-  
+
   // Check if OpenClaw is ready (submodule present and dependencies installed)
   ipcMain.handle('openclaw:isReady', () => {
     const status = getOpenClawStatus();
     return status.submoduleExists && status.isInstalled;
   });
+
+  // ==================== Channel Configuration Handlers ====================
+
+  // Save channel configuration
+  ipcMain.handle('channel:saveConfig', async (_, channelType: string, config: Record<string, unknown>) => {
+    try {
+      saveChannelConfig(channelType, config);
+      return { success: true };
+    } catch (error) {
+      console.error('Failed to save channel config:', error);
+      return { success: false, error: String(error) };
+    }
+  });
+
+  // Get channel configuration
+  ipcMain.handle('channel:getConfig', async (_, channelType: string) => {
+    try {
+      const config = getChannelConfig(channelType);
+      return { success: true, config };
+    } catch (error) {
+      console.error('Failed to get channel config:', error);
+      return { success: false, error: String(error) };
+    }
+  });
+
+  // Delete channel configuration
+  ipcMain.handle('channel:deleteConfig', async (_, channelType: string) => {
+    try {
+      deleteChannelConfig(channelType);
+      return { success: true };
+    } catch (error) {
+      console.error('Failed to delete channel config:', error);
+      return { success: false, error: String(error) };
+    }
+  });
+
+  // List configured channels
+  ipcMain.handle('channel:listConfigured', async () => {
+    try {
+      const channels = listConfiguredChannels();
+      return { success: true, channels };
+    } catch (error) {
+      console.error('Failed to list channels:', error);
+      return { success: false, error: String(error) };
+    }
+  });
+
+  // Enable or disable a channel
+  ipcMain.handle('channel:setEnabled', async (_, channelType: string, enabled: boolean) => {
+    try {
+      setChannelEnabled(channelType, enabled);
+      return { success: true };
+    } catch (error) {
+      console.error('Failed to set channel enabled:', error);
+      return { success: false, error: String(error) };
+    }
+  });
 }
+
 
 /**
  * Provider-related IPC handlers
@@ -199,27 +265,27 @@ function registerProviderHandlers(): void {
   ipcMain.handle('provider:encryptionAvailable', () => {
     return isEncryptionAvailable();
   });
-  
+
   // Get all providers with key info
   ipcMain.handle('provider:list', async () => {
     return await getAllProvidersWithKeyInfo();
   });
-  
+
   // Get a specific provider
   ipcMain.handle('provider:get', async (_, providerId: string) => {
     return await getProvider(providerId);
   });
-  
+
   // Save a provider configuration
   ipcMain.handle('provider:save', async (_, config: ProviderConfig, apiKey?: string) => {
     try {
       // Save the provider config
       await saveProvider(config);
-      
+
       // Store the API key if provided
       if (apiKey) {
         await storeApiKey(config.id, apiKey);
-        
+
         // Also write to OpenClaw auth-profiles.json so the gateway can use it
         try {
           saveProviderKeyToOpenClaw(config.type, apiKey);
@@ -227,20 +293,20 @@ function registerProviderHandlers(): void {
           console.warn('Failed to save key to OpenClaw auth-profiles:', err);
         }
       }
-      
+
       // Set the default model in OpenClaw config based on provider type
       try {
         setOpenClawDefaultModel(config.type);
       } catch (err) {
         console.warn('Failed to set OpenClaw default model:', err);
       }
-      
+
       return { success: true };
     } catch (error) {
       return { success: false, error: String(error) };
     }
   });
-  
+
   // Delete a provider
   ipcMain.handle('provider:delete', async (_, providerId: string) => {
     try {
@@ -250,12 +316,12 @@ function registerProviderHandlers(): void {
       return { success: false, error: String(error) };
     }
   });
-  
+
   // Update API key for a provider
   ipcMain.handle('provider:setApiKey', async (_, providerId: string, apiKey: string) => {
     try {
       await storeApiKey(providerId, apiKey);
-      
+
       // Also write to OpenClaw auth-profiles.json
       // Resolve provider type from stored config, or use providerId as type
       const provider = await getProvider(providerId);
@@ -265,13 +331,13 @@ function registerProviderHandlers(): void {
       } catch (err) {
         console.warn('Failed to save key to OpenClaw auth-profiles:', err);
       }
-      
+
       return { success: true };
     } catch (error) {
       return { success: false, error: String(error) };
     }
   });
-  
+
   // Delete API key for a provider
   ipcMain.handle('provider:deleteApiKey', async (_, providerId: string) => {
     try {
@@ -281,17 +347,17 @@ function registerProviderHandlers(): void {
       return { success: false, error: String(error) };
     }
   });
-  
+
   // Check if a provider has an API key
   ipcMain.handle('provider:hasApiKey', async (_, providerId: string) => {
     return await hasApiKey(providerId);
   });
-  
+
   // Get the actual API key (for internal use only - be careful!)
   ipcMain.handle('provider:getApiKey', async (_, providerId: string) => {
     return await getApiKey(providerId);
   });
-  
+
   // Set default provider
   ipcMain.handle('provider:setDefault', async (_, providerId: string) => {
     try {
@@ -301,23 +367,23 @@ function registerProviderHandlers(): void {
       return { success: false, error: String(error) };
     }
   });
-  
+
   // Get default provider
   ipcMain.handle('provider:getDefault', async () => {
     return await getDefaultProvider();
   });
-  
+
   // Validate API key by making a real test request to the provider
   // providerId can be either a stored provider ID or a provider type (e.g., 'openrouter', 'anthropic')
   ipcMain.handle('provider:validateKey', async (_, providerId: string, apiKey: string) => {
     try {
       // First try to get existing provider
       const provider = await getProvider(providerId);
-      
+
       // Use provider.type if provider exists, otherwise use providerId as the type
       // This allows validation during setup when provider hasn't been saved yet
       const providerType = provider?.type || providerId;
-      
+
       console.log(`Validating API key for provider type: ${providerType}`);
       return await validateApiKeyWithProvider(providerType, apiKey);
     } catch (error) {
@@ -368,15 +434,15 @@ async function validateApiKeyWithProvider(
  */
 function parseApiError(data: unknown): string {
   if (!data || typeof data !== 'object') return 'Unknown error';
-  
+
   // Anthropic format: { error: { message: "..." } }
   // OpenAI format: { error: { message: "..." } }
   // Google format: { error: { message: "..." } }
   const obj = data as { error?: { message?: string; type?: string }; message?: string };
-  
+
   if (obj.error?.message) return obj.error.message;
   if (obj.message) return obj.message;
-  
+
   return 'Unknown error';
 }
 
@@ -564,17 +630,17 @@ async function validateOpenRouterKey(apiKey: string): Promise<{ valid: boolean; 
     const isAuthError = (d: unknown): boolean => {
       const errorObj = (d as { error?: { message?: string; code?: number | string; type?: string } })?.error;
       if (!errorObj) return false;
-      
+
       const message = (errorObj.message || '').toLowerCase();
       const code = errorObj.code;
       const type = (errorObj.type || '').toLowerCase();
-      
+
       // Check for explicit auth-related errors
       if (code === 401 || code === '401' || code === 403 || code === '403') return true;
       if (type.includes('auth') || type.includes('invalid')) return true;
-      if (message.includes('invalid api key') || message.includes('invalid key') || 
-          message.includes('unauthorized') || message.includes('authentication') ||
-          message.includes('invalid credentials') || message.includes('api key is not valid')) {
+      if (message.includes('invalid api key') || message.includes('invalid key') ||
+        message.includes('unauthorized') || message.includes('authentication') ||
+        message.includes('invalid credentials') || message.includes('api key is not valid')) {
         return true;
       }
       return false;
@@ -611,12 +677,12 @@ async function validateOpenRouterKey(apiKey: string): Promise<{ valid: boolean; 
       // But be conservative - require explicit success indication
       const errorObj = (data as { error?: { message?: string; code?: number } })?.error;
       const message = (errorObj?.message || '').toLowerCase();
-      
+
       // Only consider valid if the error is clearly about the model, not the key
       if (message.includes('model') && !message.includes('key') && !message.includes('auth')) {
         return { valid: true };
       }
-      
+
       // Default to invalid for ambiguous 400/404 errors
       return { valid: false, error: parseApiError(data) || 'Invalid API key or request' };
     }
@@ -635,12 +701,12 @@ function registerShellHandlers(): void {
   ipcMain.handle('shell:openExternal', async (_, url: string) => {
     await shell.openExternal(url);
   });
-  
+
   // Open path in file explorer
   ipcMain.handle('shell:showItemInFolder', async (_, path: string) => {
     shell.showItemInFolder(path);
   });
-  
+
   // Open path
   ipcMain.handle('shell:openPath', async (_, path: string) => {
     return await shell.openPath(path);
@@ -656,13 +722,13 @@ function registerDialogHandlers(): void {
     const result = await dialog.showOpenDialog(options);
     return result;
   });
-  
+
   // Show save dialog
   ipcMain.handle('dialog:save', async (_, options: Electron.SaveDialogOptions) => {
     const result = await dialog.showSaveDialog(options);
     return result;
   });
-  
+
   // Show message box
   ipcMain.handle('dialog:message', async (_, options: Electron.MessageBoxOptions) => {
     const result = await dialog.showMessageBox(options);
@@ -678,27 +744,27 @@ function registerAppHandlers(): void {
   ipcMain.handle('app:version', () => {
     return app.getVersion();
   });
-  
+
   // Get app name
   ipcMain.handle('app:name', () => {
     return app.getName();
   });
-  
+
   // Get app path
   ipcMain.handle('app:getPath', (_, name: Parameters<typeof app.getPath>[0]) => {
     return app.getPath(name);
   });
-  
+
   // Get platform
   ipcMain.handle('app:platform', () => {
     return process.platform;
   });
-  
+
   // Quit app
   ipcMain.handle('app:quit', () => {
     app.quit();
   });
-  
+
   // Relaunch app
   ipcMain.handle('app:relaunch', () => {
     app.relaunch();

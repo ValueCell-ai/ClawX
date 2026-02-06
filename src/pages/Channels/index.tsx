@@ -1,120 +1,67 @@
 /**
  * Channels Page
- * Manage messaging channel connections
+ * Manage messaging channel connections with configuration UI
  */
 import { useState, useEffect } from 'react';
-import { 
-  Plus, 
-  Radio, 
-  RefreshCw, 
-  Settings, 
-  Trash2, 
-  Power, 
+import {
+  Plus,
+  Radio,
+  RefreshCw,
+  Trash2,
+  Power,
   PowerOff,
   QrCode,
   Loader2,
   X,
   ExternalLink,
-  Copy,
+  BookOpen,
+  Eye,
+  EyeOff,
   Check,
+  AlertCircle,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Separator } from '@/components/ui/separator';
+import { Badge } from '@/components/ui/badge';
 import { useChannelsStore } from '@/stores/channels';
 import { useGatewayStore } from '@/stores/gateway';
 import { StatusBadge, type Status } from '@/components/common/StatusBadge';
 import { LoadingSpinner } from '@/components/common/LoadingSpinner';
-import { CHANNEL_ICONS, CHANNEL_NAMES, type ChannelType, type Channel } from '@/types/channel';
+import {
+  CHANNEL_ICONS,
+  CHANNEL_NAMES,
+  CHANNEL_META,
+  getPrimaryChannels,
+  getAllChannels,
+  type ChannelType,
+  type Channel,
+  type ChannelMeta,
+  type ChannelConfigField,
+} from '@/types/channel';
 import { toast } from 'sonner';
 
-// Channel type info with connection instructions
-const channelInfo: Record<ChannelType, { 
-  description: string; 
-  connectionType: 'qr' | 'token' | 'oauth';
-  instructions: string[];
-  tokenLabel?: string;
-  docsUrl?: string;
-}> = {
-  whatsapp: {
-    description: 'Connect WhatsApp by scanning a QR code',
-    connectionType: 'qr',
-    instructions: [
-      'Open WhatsApp on your phone',
-      'Go to Settings > Linked Devices',
-      'Tap "Link a Device"',
-      'Scan the QR code below',
-    ],
-    docsUrl: 'https://faq.whatsapp.com/1317564962315842',
-  },
-  telegram: {
-    description: 'Connect Telegram using a bot token',
-    connectionType: 'token',
-    instructions: [
-      'Open Telegram and search for @BotFather',
-      'Send /newbot and follow the instructions',
-      'Copy the bot token provided',
-      'Paste it below',
-    ],
-    tokenLabel: 'Bot Token',
-    docsUrl: 'https://core.telegram.org/bots#how-do-i-create-a-bot',
-  },
-  discord: {
-    description: 'Connect Discord using a bot token',
-    connectionType: 'token',
-    instructions: [
-      'Go to Discord Developer Portal',
-      'Create a new Application',
-      'Go to Bot section and create a bot',
-      'Copy the bot token',
-    ],
-    tokenLabel: 'Bot Token',
-    docsUrl: 'https://discord.com/developers/applications',
-  },
-  slack: {
-    description: 'Connect Slack via OAuth',
-    connectionType: 'token',
-    instructions: [
-      'Go to Slack API apps page',
-      'Create a new app',
-      'Configure OAuth scopes',
-      'Install to workspace and copy the token',
-    ],
-    tokenLabel: 'Bot Token (xoxb-...)',
-    docsUrl: 'https://api.slack.com/apps',
-  },
-  wechat: {
-    description: 'Connect WeChat by scanning a QR code',
-    connectionType: 'qr',
-    instructions: [
-      'Open WeChat on your phone',
-      'Scan the QR code below',
-      'Confirm login on your phone',
-    ],
-  },
-};
-
 export function Channels() {
-  const { channels, loading, error, fetchChannels, connectChannel, disconnectChannel, deleteChannel } = useChannelsStore();
+  const { channels, loading, error, fetchChannels, deleteChannel } = useChannelsStore();
   const gatewayStatus = useGatewayStore((state) => state.status);
-  
+
   const [showAddDialog, setShowAddDialog] = useState(false);
   const [selectedChannelType, setSelectedChannelType] = useState<ChannelType | null>(null);
-  const [connectingChannelId, setConnectingChannelId] = useState<string | null>(null);
-  
+  const [showAllChannels, setShowAllChannels] = useState(false);
+
   // Fetch channels on mount
   useEffect(() => {
     fetchChannels();
   }, [fetchChannels]);
-  
-  // Supported channel types for adding
-  const supportedTypes: ChannelType[] = ['whatsapp', 'telegram', 'discord', 'slack'];
-  
+
+  // Get channel types to display
+  const displayedChannelTypes = showAllChannels ? getAllChannels() : getPrimaryChannels();
+
   // Connected/disconnected channel counts
   const connectedCount = channels.filter((c) => c.status === 'connected').length;
-  
+
   if (loading) {
     return (
       <div className="flex h-96 items-center justify-center">
@@ -122,7 +69,7 @@ export function Channels() {
       </div>
     );
   }
-  
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -144,7 +91,7 @@ export function Channels() {
           </Button>
         </div>
       </div>
-      
+
       {/* Stats */}
       <div className="grid grid-cols-3 gap-4">
         <Card>
@@ -187,19 +134,19 @@ export function Channels() {
           </CardContent>
         </Card>
       </div>
-      
+
       {/* Gateway Warning */}
       {gatewayStatus.state !== 'running' && (
         <Card className="border-yellow-500 bg-yellow-50 dark:bg-yellow-900/10">
           <CardContent className="py-4 flex items-center gap-3">
-            <div className="h-2 w-2 rounded-full bg-yellow-500 animate-pulse" />
+            <AlertCircle className="h-5 w-5 text-yellow-500" />
             <span className="text-yellow-700 dark:text-yellow-400">
               Gateway is not running. Channels cannot connect without an active Gateway.
             </span>
           </CardContent>
         </Card>
       )}
-      
+
       {/* Error Display */}
       {error && (
         <Card className="border-destructive">
@@ -208,72 +155,81 @@ export function Channels() {
           </CardContent>
         </Card>
       )}
-      
-      {/* Channels Grid */}
-      {channels.length === 0 ? (
+
+      {/* Configured Channels */}
+      {channels.length > 0 && (
         <Card>
-          <CardContent className="flex flex-col items-center justify-center py-12">
-            <Radio className="h-12 w-12 text-muted-foreground mb-4" />
-            <h3 className="text-lg font-medium mb-2">No channels configured</h3>
-            <p className="text-muted-foreground text-center mb-4">
-              Connect a messaging channel to start using ClawX
-            </p>
-            <Button onClick={() => setShowAddDialog(true)}>
-              <Plus className="h-4 w-4 mr-2" />
-              Add Your First Channel
-            </Button>
+          <CardHeader>
+            <CardTitle>Configured Channels</CardTitle>
+            <CardDescription>Channels you have set up</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
+              {channels.map((channel) => (
+                <ChannelCard
+                  key={channel.id}
+                  channel={channel}
+                  onDelete={() => {
+                    if (confirm('Are you sure you want to delete this channel?')) {
+                      deleteChannel(channel.id);
+                    }
+                  }}
+                />
+              ))}
+            </div>
           </CardContent>
         </Card>
-      ) : (
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
-          {channels.map((channel) => (
-            <ChannelCard
-              key={channel.id}
-              channel={channel}
-              onConnect={() => {
-                setConnectingChannelId(channel.id);
-                connectChannel(channel.id);
-              }}
-              onDisconnect={() => disconnectChannel(channel.id)}
-              onDelete={() => {
-                if (confirm('Are you sure you want to delete this channel?')) {
-                  deleteChannel(channel.id);
-                }
-              }}
-              isConnecting={connectingChannelId === channel.id}
-            />
-          ))}
-        </div>
       )}
-      
-      {/* Add Channel Section */}
+
+      {/* Available Channels */}
       <Card>
         <CardHeader>
-          <CardTitle>Supported Channels</CardTitle>
-          <CardDescription>
-            Click on a channel type to add it
-          </CardDescription>
+          <div className="flex items-center justify-between">
+            <div>
+              <CardTitle>Available Channels</CardTitle>
+              <CardDescription>
+                Click on a channel type to configure it
+              </CardDescription>
+            </div>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setShowAllChannels(!showAllChannels)}
+            >
+              {showAllChannels ? 'Show Less' : 'Show All'}
+            </Button>
+          </div>
         </CardHeader>
         <CardContent>
           <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
-            {supportedTypes.map((type) => (
-              <Button
-                key={type}
-                variant="outline"
-                className="h-auto flex-col gap-2 py-4"
-                onClick={() => {
-                  setSelectedChannelType(type);
-                  setShowAddDialog(true);
-                }}
-              >
-                <span className="text-3xl">{CHANNEL_ICONS[type]}</span>
-                <span>{CHANNEL_NAMES[type]}</span>
-              </Button>
-            ))}
+            {displayedChannelTypes.map((type) => {
+              const meta = CHANNEL_META[type];
+              return (
+                <button
+                  key={type}
+                  className="p-4 rounded-lg border hover:bg-accent transition-colors text-left relative"
+                  onClick={() => {
+                    setSelectedChannelType(type);
+                    setShowAddDialog(true);
+                  }}
+                >
+                  <span className="text-3xl">{meta.icon}</span>
+                  <p className="font-medium mt-2">{meta.name}</p>
+                  <p className="text-xs text-muted-foreground mt-1 line-clamp-2">
+                    {meta.description}
+                  </p>
+                  {meta.isPlugin && (
+                    <Badge variant="secondary" className="absolute top-2 right-2 text-xs">
+                      Plugin
+                    </Badge>
+                  )}
+                </button>
+              );
+            })}
           </div>
         </CardContent>
       </Card>
-      
+
       {/* Add Channel Dialog */}
       {showAddDialog && (
         <AddChannelDialog
@@ -283,7 +239,11 @@ export function Channels() {
             setShowAddDialog(false);
             setSelectedChannelType(null);
           }}
-          supportedTypes={supportedTypes}
+          onChannelAdded={() => {
+            fetchChannels();
+            setShowAddDialog(false);
+            setSelectedChannelType(null);
+          }}
         />
       )}
     </div>
@@ -294,24 +254,21 @@ export function Channels() {
 
 interface ChannelCardProps {
   channel: Channel;
-  onConnect: () => void;
-  onDisconnect: () => void;
   onDelete: () => void;
-  isConnecting: boolean;
 }
 
-function ChannelCard({ channel, onConnect, onDisconnect, onDelete, isConnecting }: ChannelCardProps) {
+function ChannelCard({ channel, onDelete }: ChannelCardProps) {
   return (
     <Card>
-      <CardHeader>
+      <CardHeader className="pb-3">
         <div className="flex items-start justify-between">
           <div className="flex items-center gap-3">
-            <span className="text-3xl">
+            <span className="text-2xl">
               {CHANNEL_ICONS[channel.type]}
             </span>
             <div>
-              <CardTitle className="text-lg">{channel.name}</CardTitle>
-              <CardDescription>
+              <CardTitle className="text-base">{channel.name}</CardTitle>
+              <CardDescription className="text-xs">
                 {CHANNEL_NAMES[channel.type]}
               </CardDescription>
             </div>
@@ -319,50 +276,18 @@ function ChannelCard({ channel, onConnect, onDisconnect, onDelete, isConnecting 
           <StatusBadge status={channel.status as Status} />
         </div>
       </CardHeader>
-      <CardContent>
-        {channel.lastActivity && (
-          <p className="text-sm text-muted-foreground mb-4">
-            Last activity: {new Date(channel.lastActivity).toLocaleString()}
-          </p>
-        )}
+      <CardContent className="pt-0">
         {channel.error && (
-          <p className="text-sm text-destructive mb-4">{channel.error}</p>
+          <p className="text-xs text-destructive mb-3">{channel.error}</p>
         )}
         <div className="flex gap-2">
-          {channel.status === 'connected' ? (
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={onDisconnect}
-            >
-              <PowerOff className="h-4 w-4 mr-2" />
-              Disconnect
-            </Button>
-          ) : (
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={onConnect}
-              disabled={channel.status === 'connecting' || isConnecting}
-            >
-              {channel.status === 'connecting' || isConnecting ? (
-                <>
-                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                  Connecting...
-                </>
-              ) : (
-                <>
-                  <Power className="h-4 w-4 mr-2" />
-                  Connect
-                </>
-              )}
-            </Button>
-          )}
-          <Button variant="ghost" size="sm">
-            <Settings className="h-4 w-4" />
-          </Button>
-          <Button variant="ghost" size="sm" onClick={onDelete}>
-            <Trash2 className="h-4 w-4 text-destructive" />
+          <Button
+            variant="ghost"
+            size="sm"
+            className="text-destructive hover:text-destructive"
+            onClick={onDelete}
+          >
+            <Trash2 className="h-4 w-4" />
           </Button>
         </div>
       </CardContent>
@@ -376,64 +301,98 @@ interface AddChannelDialogProps {
   selectedType: ChannelType | null;
   onSelectType: (type: ChannelType | null) => void;
   onClose: () => void;
-  supportedTypes: ChannelType[];
+  onChannelAdded: () => void;
 }
 
-function AddChannelDialog({ selectedType, onSelectType, onClose, supportedTypes }: AddChannelDialogProps) {
+function AddChannelDialog({ selectedType, onSelectType, onClose, onChannelAdded }: AddChannelDialogProps) {
   const { addChannel } = useChannelsStore();
+  const [configValues, setConfigValues] = useState<Record<string, string>>({});
   const [channelName, setChannelName] = useState('');
-  const [token, setToken] = useState('');
   const [connecting, setConnecting] = useState(false);
+  const [showSecrets, setShowSecrets] = useState<Record<string, boolean>>({});
   const [qrCode, setQrCode] = useState<string | null>(null);
-  const [copied, setCopied] = useState(false);
-  
-  const info = selectedType ? channelInfo[selectedType] : null;
-  
+
+  const meta: ChannelMeta | null = selectedType ? CHANNEL_META[selectedType] : null;
+
   const handleConnect = async () => {
-    if (!selectedType) return;
-    
+    if (!selectedType || !meta) return;
+
     setConnecting(true);
-    
+
     try {
-      // For QR-based channels, we'd request a QR code from the gateway
-      if (info?.connectionType === 'qr') {
-        // Simulate QR code generation
+      // For QR-based channels, request QR code
+      if (meta.connectionType === 'qr') {
+        // Simulate QR code generation (in real implementation, call Gateway)
         await new Promise((resolve) => setTimeout(resolve, 1500));
         setQrCode('placeholder-qr');
-      } else {
-        // For token-based, add the channel with the token
-        await addChannel({
-          type: selectedType,
-          name: channelName || CHANNEL_NAMES[selectedType],
-          token: token || undefined,
-        });
-        
-        toast.success(`${CHANNEL_NAMES[selectedType]} channel added`);
-        onClose();
+        setConnecting(false);
+        return;
       }
+
+      // Save channel configuration via IPC
+      const config: Record<string, unknown> = { ...configValues };
+      await window.electron.ipcRenderer.invoke('channel:saveConfig', selectedType, config);
+
+      // Add channel to store
+      await addChannel({
+        type: selectedType,
+        name: channelName || CHANNEL_NAMES[selectedType],
+        token: configValues[meta.configFields[0]?.key] || undefined,
+      });
+
+      toast.success(`${meta.name} channel configured`);
+      onChannelAdded();
     } catch (error) {
-      toast.error(`Failed to add channel: ${error}`);
-    } finally {
+      toast.error(`Failed to configure channel: ${error}`);
       setConnecting(false);
     }
   };
-  
-  const copyToken = () => {
-    navigator.clipboard.writeText(token);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+
+  const openDocs = () => {
+    if (meta?.docsUrl) {
+      try {
+        if (window.electron?.openExternal) {
+          window.electron.openExternal(meta.docsUrl);
+        } else {
+          // Fallback: open in new window
+          window.open(meta.docsUrl, '_blank');
+        }
+      } catch (error) {
+        console.error('Failed to open docs:', error);
+        // Fallback: open in new window
+        window.open(meta.docsUrl, '_blank');
+      }
+    }
   };
-  
+
+
+  const isFormValid = () => {
+    if (!meta) return false;
+
+    // Check all required fields are filled
+    return meta.configFields
+      .filter((field) => field.required)
+      .every((field) => configValues[field.key]?.trim());
+  };
+
+  const updateConfigValue = (key: string, value: string) => {
+    setConfigValues((prev) => ({ ...prev, [key]: value }));
+  };
+
+  const toggleSecretVisibility = (key: string) => {
+    setShowSecrets((prev) => ({ ...prev, [key]: !prev[key] }));
+  };
+
   return (
     <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
-      <Card className="w-full max-w-lg">
+      <Card className="w-full max-w-lg max-h-[90vh] overflow-y-auto">
         <CardHeader className="flex flex-row items-start justify-between">
           <div>
             <CardTitle>
-              {selectedType ? `Connect ${CHANNEL_NAMES[selectedType]}` : 'Add Channel'}
+              {selectedType ? `Configure ${CHANNEL_NAMES[selectedType]}` : 'Add Channel'}
             </CardTitle>
             <CardDescription>
-              {info?.description || 'Select a messaging channel to connect'}
+              {meta?.description || 'Select a messaging channel to connect'}
             </CardDescription>
           </div>
           <Button variant="ghost" size="icon" onClick={onClose}>
@@ -444,19 +403,22 @@ function AddChannelDialog({ selectedType, onSelectType, onClose, supportedTypes 
           {!selectedType ? (
             // Channel type selection
             <div className="grid grid-cols-2 gap-4">
-              {supportedTypes.map((type) => (
-                <button
-                  key={type}
-                  onClick={() => onSelectType(type)}
-                  className="p-4 rounded-lg border hover:bg-accent transition-colors text-center"
-                >
-                  <span className="text-3xl">{CHANNEL_ICONS[type]}</span>
-                  <p className="font-medium mt-2">{CHANNEL_NAMES[type]}</p>
-                  <p className="text-xs text-muted-foreground mt-1">
-                    {channelInfo[type].connectionType === 'qr' ? 'QR Code' : 'Token'}
-                  </p>
-                </button>
-              ))}
+              {getPrimaryChannels().map((type) => {
+                const channelMeta = CHANNEL_META[type];
+                return (
+                  <button
+                    key={type}
+                    onClick={() => onSelectType(type)}
+                    className="p-4 rounded-lg border hover:bg-accent transition-colors text-left"
+                  >
+                    <span className="text-3xl">{channelMeta.icon}</span>
+                    <p className="font-medium mt-2">{channelMeta.name}</p>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      {channelMeta.connectionType === 'qr' ? 'QR Code' : 'Token'}
+                    </p>
+                  </button>
+                );
+              })}
             </div>
           ) : qrCode ? (
             // QR Code display
@@ -467,7 +429,7 @@ function AddChannelDialog({ selectedType, onSelectType, onClose, supportedTypes 
                 </div>
               </div>
               <p className="text-sm text-muted-foreground">
-                Scan this QR code with {CHANNEL_NAMES[selectedType]} to connect
+                Scan this QR code with {meta?.name} to connect
               </p>
               <div className="flex justify-center gap-2">
                 <Button variant="outline" onClick={() => setQrCode(null)}>
@@ -475,7 +437,7 @@ function AddChannelDialog({ selectedType, onSelectType, onClose, supportedTypes 
                 </Button>
                 <Button onClick={() => {
                   toast.success('Channel connected successfully');
-                  onClose();
+                  onChannelAdded();
                 }}>
                   I've Scanned It
                 </Button>
@@ -485,76 +447,71 @@ function AddChannelDialog({ selectedType, onSelectType, onClose, supportedTypes 
             // Connection form
             <div className="space-y-4">
               {/* Instructions */}
-              <div className="bg-muted p-4 rounded-lg space-y-2">
-                <p className="font-medium text-sm">How to connect:</p>
-                <ol className="list-decimal list-inside text-sm text-muted-foreground space-y-1">
-                  {info?.instructions.map((instruction, i) => (
-                    <li key={i}>{instruction}</li>
-                  ))}
-                </ol>
-                {info?.docsUrl && (
+              <div className="bg-muted p-4 rounded-lg space-y-3">
+                <div className="flex items-center justify-between">
+                  <p className="font-medium text-sm">How to connect:</p>
                   <Button
                     variant="link"
                     className="p-0 h-auto text-sm"
-                    onClick={() => window.electron.openExternal(info.docsUrl!)}
+                    onClick={openDocs}
                   >
-                    View documentation
+                    <BookOpen className="h-3 w-3 mr-1" />
+                    View docs
                     <ExternalLink className="h-3 w-3 ml-1" />
                   </Button>
-                )}
+                </div>
+                <ol className="list-decimal list-inside text-sm text-muted-foreground space-y-1">
+                  {meta?.instructions.map((instruction, i) => (
+                    <li key={i}>{instruction}</li>
+                  ))}
+                </ol>
               </div>
-              
+
               {/* Channel name */}
               <div className="space-y-2">
                 <Label htmlFor="name">Channel Name (optional)</Label>
                 <Input
                   id="name"
-                  placeholder={`My ${CHANNEL_NAMES[selectedType]}`}
+                  placeholder={`My ${meta?.name}`}
                   value={channelName}
                   onChange={(e) => setChannelName(e.target.value)}
                 />
               </div>
-              
-              {/* Token input for token-based channels */}
-              {info?.connectionType === 'token' && (
-                <div className="space-y-2">
-                  <Label htmlFor="token">{info.tokenLabel || 'Token'}</Label>
-                  <div className="flex gap-2">
-                    <Input
-                      id="token"
-                      type="password"
-                      placeholder="Paste your token here"
-                      value={token}
-                      onChange={(e) => setToken(e.target.value)}
-                    />
-                    {token && (
-                      <Button variant="outline" size="icon" onClick={copyToken}>
-                        {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
-                      </Button>
-                    )}
-                  </div>
-                </div>
-              )}
-              
+
+              {/* Configuration fields */}
+              {meta?.configFields.map((field) => (
+                <ConfigField
+                  key={field.key}
+                  field={field}
+                  value={configValues[field.key] || ''}
+                  onChange={(value) => updateConfigValue(field.key, value)}
+                  showSecret={showSecrets[field.key] || false}
+                  onToggleSecret={() => toggleSecretVisibility(field.key)}
+                />
+              ))}
+
               <Separator />
-              
+
               <div className="flex justify-between">
                 <Button variant="outline" onClick={() => onSelectType(null)}>
                   Back
                 </Button>
-                <Button 
+                <Button
                   onClick={handleConnect}
-                  disabled={connecting || (info?.connectionType === 'token' && !token)}
+                  disabled={connecting || !isFormValid()}
                 >
                   {connecting ? (
                     <>
                       <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                      {info?.connectionType === 'qr' ? 'Generating QR...' : 'Connecting...'}
+                      {meta?.connectionType === 'qr' ? 'Generating QR...' : 'Connecting...'}
                     </>
-                  ) : info?.connectionType === 'qr' ? (
+                  ) : meta?.connectionType === 'qr' ? (
                     'Generate QR Code'
                   ) : (
-                    'Connect'
+                    <>
+                      <Check className="h-4 w-4 mr-2" />
+                      Save & Connect
+                    </>
                   )}
                 </Button>
               </div>
@@ -562,6 +519,54 @@ function AddChannelDialog({ selectedType, onSelectType, onClose, supportedTypes 
           )}
         </CardContent>
       </Card>
+    </div>
+  );
+}
+
+// ==================== Config Field Component ====================
+
+interface ConfigFieldProps {
+  field: ChannelConfigField;
+  value: string;
+  onChange: (value: string) => void;
+  showSecret: boolean;
+  onToggleSecret: () => void;
+}
+
+function ConfigField({ field, value, onChange, showSecret, onToggleSecret }: ConfigFieldProps) {
+  const isPassword = field.type === 'password';
+
+  return (
+    <div className="space-y-2">
+      <Label htmlFor={field.key}>
+        {field.label}
+        {field.required && <span className="text-destructive ml-1">*</span>}
+      </Label>
+      <div className="flex gap-2">
+        <Input
+          id={field.key}
+          type={isPassword && !showSecret ? 'password' : 'text'}
+          placeholder={field.placeholder}
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          className="font-mono text-sm"
+        />
+        {isPassword && (
+          <Button
+            type="button"
+            variant="outline"
+            size="icon"
+            onClick={onToggleSecret}
+          >
+            {showSecret ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+          </Button>
+        )}
+      </div>
+      {field.envVar && (
+        <p className="text-xs text-muted-foreground">
+          Or set via environment variable: <code className="bg-muted px-1 rounded">{field.envVar}</code>
+        </p>
+      )}
     </div>
   );
 }
