@@ -25,13 +25,22 @@ export interface CronJobLastRun {
 }
 
 /**
+ * Gateway CronSchedule object format
+ */
+export type CronSchedule =
+  | { kind: 'at'; at: string }
+  | { kind: 'every'; everyMs: number; anchorMs?: number }
+  | { kind: 'cron'; expr: string; tz?: string };
+
+/**
  * Cron job data structure
+ * schedule can be a plain cron string or a Gateway CronSchedule object
  */
 export interface CronJob {
   id: string;
   name: string;
   message: string;
-  schedule: string;
+  schedule: string | CronSchedule;
   target: CronJobTarget;
   enabled: boolean;
   createdAt: string;

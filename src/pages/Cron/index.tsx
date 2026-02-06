@@ -49,8 +49,45 @@ const schedulePresets: { label: string; value: string; type: ScheduleType }[] = 
   { label: 'Monthly (1st at 9am)', value: '0 9 1 * *', type: 'monthly' },
 ];
 
-// Parse cron expression to human-readable format
-function parseCronSchedule(cron: string): string {
+// Parse cron schedule to human-readable format
+// Handles both plain cron strings and Gateway CronSchedule objects:
+//   { kind: "cron", expr: "...", tz?: "..." }
+//   { kind: "every", everyMs: number }
+//   { kind: "at", at: "..." }
+function parseCronSchedule(schedule: unknown): string {
+  // Handle Gateway CronSchedule object format
+  if (schedule && typeof schedule === 'object') {
+    const s = schedule as { kind?: string; expr?: string; tz?: string; everyMs?: number; at?: string };
+    if (s.kind === 'cron' && typeof s.expr === 'string') {
+      return parseCronExpr(s.expr);
+    }
+    if (s.kind === 'every' && typeof s.everyMs === 'number') {
+      const ms = s.everyMs;
+      if (ms < 60_000) return `Every ${Math.round(ms / 1000)}s`;
+      if (ms < 3_600_000) return `Every ${Math.round(ms / 60_000)} minutes`;
+      if (ms < 86_400_000) return `Every ${Math.round(ms / 3_600_000)} hours`;
+      return `Every ${Math.round(ms / 86_400_000)} days`;
+    }
+    if (s.kind === 'at' && typeof s.at === 'string') {
+      try {
+        return `Once at ${new Date(s.at).toLocaleString()}`;
+      } catch {
+        return `Once at ${s.at}`;
+      }
+    }
+    return String(schedule);
+  }
+
+  // Handle plain cron string
+  if (typeof schedule === 'string') {
+    return parseCronExpr(schedule);
+  }
+
+  return String(schedule ?? 'Unknown');
+}
+
+// Parse a plain cron expression string to human-readable text
+function parseCronExpr(cron: string): string {
   const preset = schedulePresets.find((p) => p.value === cron);
   if (preset) return preset.label;
   
@@ -89,7 +126,17 @@ function TaskDialog({ job, onClose, onSave }: TaskDialogProps) {
   
   const [name, setName] = useState(job?.name || '');
   const [message, setMessage] = useState(job?.message || '');
-  const [schedule, setSchedule] = useState(job?.schedule || '0 9 * * *');
+  // Extract cron expression string from CronSchedule object or use as-is if string
+  const initialSchedule = (() => {
+    const s = job?.schedule;
+    if (!s) return '0 9 * * *';
+    if (typeof s === 'string') return s;
+    if (typeof s === 'object' && 'expr' in s && typeof (s as { expr: string }).expr === 'string') {
+      return (s as { expr: string }).expr;
+    }
+    return '0 9 * * *';
+  })();
+  const [schedule, setSchedule] = useState(initialSchedule);
   const [customSchedule, setCustomSchedule] = useState('');
   const [useCustom, setUseCustom] = useState(false);
   const [channelId, setChannelId] = useState(job?.target.channelId || '');
@@ -280,7 +327,7 @@ interface CronJobCardProps {
   onToggle: (enabled: boolean) => void;
   onEdit: () => void;
   onDelete: () => void;
-  onTrigger: () => void;
+  onTrigger: () => Promise<void>;
 }
 
 function CronJobCard({ job, onToggle, onEdit, onDelete, onTrigger }: CronJobCardProps) {
@@ -290,7 +337,10 @@ function CronJobCard({ job, onToggle, onEdit, onDelete, onTrigger }: CronJobCard
     setTriggering(true);
     try {
       await onTrigger();
-      toast.success('Task triggered');
+      toast.success('Task triggered successfully');
+    } catch (error) {
+      console.error('Failed to trigger cron job:', error);
+      toast.error(`Failed to trigger task: ${error instanceof Error ? error.message : String(error)}`);
     } finally {
       setTriggering(false);
     }

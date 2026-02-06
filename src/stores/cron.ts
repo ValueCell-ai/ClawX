@@ -89,7 +89,15 @@ export const useCronStore = create<CronState>((set) => ({
   
   triggerJob: async (id) => {
     try {
-      await window.electron.ipcRenderer.invoke('cron:trigger', id);
+      const result = await window.electron.ipcRenderer.invoke('cron:trigger', id);
+      console.log('Cron trigger result:', result);
+      // Refresh jobs after trigger to update lastRun/nextRun state
+      try {
+        const jobs = await window.electron.ipcRenderer.invoke('cron:list') as CronJob[];
+        set({ jobs });
+      } catch {
+        // Ignore refresh error
+      }
     } catch (error) {
       console.error('Failed to trigger cron job:', error);
       throw error;

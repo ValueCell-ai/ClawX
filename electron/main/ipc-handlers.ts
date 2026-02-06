@@ -70,6 +70,9 @@ export function registerIpcHandlers(
 
   // Skill config handlers (direct file access, no Gateway RPC)
   registerSkillConfigHandlers();
+
+  // Cron task handlers (proxy to Gateway RPC)
+  registerCronHandlers(gatewayManager);
 }
 
 /**
@@ -97,6 +100,183 @@ function registerSkillConfigHandlers(): void {
   // Get all skill configs
   ipcMain.handle('skill:getAllConfigs', async () => {
     return getAllSkillConfigs();
+  });
+}
+
+/**
+ * Gateway CronJob type (as returned by cron.list RPC)
+ */
+interface GatewayCronJob {
+  id: string;
+  name: string;
+  description?: string;
+  enabled: boolean;
+  createdAtMs: number;
+  updatedAtMs: number;
+  schedule: { kind: string; expr?: string; everyMs?: number; at?: string; tz?: string };
+  payload: { kind: string; message?: string; text?: string };
+  delivery?: { mode: string; channel?: string; to?: string };
+  state: {
+    nextRunAtMs?: number;
+    lastRunAtMs?: number;
+    lastStatus?: string;
+    lastError?: string;
+    lastDurationMs?: number;
+  };
+}
+
+/**
+ * Transform a Gateway CronJob to the frontend CronJob format
+ */
+function transformCronJob(job: GatewayCronJob) {
+  // Extract message from payload
+  const message = job.payload?.message || job.payload?.text || '';
+
+  // Build target from delivery info
+  const channelType = job.delivery?.channel || 'unknown';
+  const target = {
+    channelType,
+    channelId: channelType,
+    channelName: channelType,
+  };
+
+  // Build lastRun from state
+  const lastRun = job.state?.lastRunAtMs
+    ? {
+        time: new Date(job.state.lastRunAtMs).toISOString(),
+        success: job.state.lastStatus === 'ok',
+        error: job.state.lastError,
+        duration: job.state.lastDurationMs,
+      }
+    : undefined;
+
+  // Build nextRun from state
+  const nextRun = job.state?.nextRunAtMs
+    ? new Date(job.state.nextRunAtMs).toISOString()
+    : undefined;
+
+  return {
+    id: job.id,
+    name: job.name,
+    message,
+    schedule: job.schedule, // Pass the object through; frontend parseCronSchedule handles it
+    target,
+    enabled: job.enabled,
+    createdAt: new Date(job.createdAtMs).toISOString(),
+    updatedAt: new Date(job.updatedAtMs).toISOString(),
+    lastRun,
+    nextRun,
+  };
+}
+
+/**
+ * Cron task IPC handlers
+ * Proxies cron operations to the Gateway RPC service.
+ * The frontend works with plain cron expression strings, but the Gateway
+ * expects CronSchedule objects ({ kind: "cron", expr: "..." }).
+ * These handlers bridge the two formats.
+ */
+function registerCronHandlers(gatewayManager: GatewayManager): void {
+  // List all cron jobs — transforms Gateway CronJob format to frontend CronJob format
+  ipcMain.handle('cron:list', async () => {
+    try {
+      const result = await gatewayManager.rpc('cron.list', { includeDisabled: true });
+      const data = result as { jobs?: GatewayCronJob[] };
+      const jobs = data?.jobs ?? [];
+      // Transform Gateway format to frontend format
+      return jobs.map(transformCronJob);
+    } catch (error) {
+      console.error('Failed to list cron jobs:', error);
+      throw error;
+    }
+  });
+
+  // Create a new cron job
+  ipcMain.handle('cron:create', async (_, input: {
+    name: string;
+    message: string;
+    schedule: string;
+    target: { channelType: string; channelId: string; channelName: string };
+    enabled?: boolean;
+  }) => {
+    try {
+      // Transform frontend input to Gateway cron.add format
+      const gatewayInput = {
+        name: input.name,
+        schedule: { kind: 'cron', expr: input.schedule },
+        payload: { kind: 'agentTurn', message: input.message },
+        enabled: input.enabled ?? true,
+        wakeMode: 'next-heartbeat',
+        sessionTarget: 'isolated',
+        delivery: {
+          mode: 'announce',
+          channel: input.target.channelType,
+        },
+      };
+      const result = await gatewayManager.rpc('cron.add', gatewayInput);
+      // Transform the returned job to frontend format
+      if (result && typeof result === 'object') {
+        return transformCronJob(result as GatewayCronJob);
+      }
+      return result;
+    } catch (error) {
+      console.error('Failed to create cron job:', error);
+      throw error;
+    }
+  });
+
+  // Update an existing cron job
+  ipcMain.handle('cron:update', async (_, id: string, input: Record<string, unknown>) => {
+    try {
+      // Transform schedule string to CronSchedule object if present
+      const patch = { ...input };
+      if (typeof patch.schedule === 'string') {
+        patch.schedule = { kind: 'cron', expr: patch.schedule };
+      }
+      // Transform message to payload format if present
+      if (typeof patch.message === 'string') {
+        patch.payload = { kind: 'agentTurn', message: patch.message };
+        delete patch.message;
+      }
+      const result = await gatewayManager.rpc('cron.update', { id, patch });
+      return result;
+    } catch (error) {
+      console.error('Failed to update cron job:', error);
+      throw error;
+    }
+  });
+
+  // Delete a cron job
+  ipcMain.handle('cron:delete', async (_, id: string) => {
+    try {
+      const result = await gatewayManager.rpc('cron.remove', { id });
+      return result;
+    } catch (error) {
+      console.error('Failed to delete cron job:', error);
+      throw error;
+    }
+  });
+
+  // Toggle a cron job enabled/disabled
+  ipcMain.handle('cron:toggle', async (_, id: string, enabled: boolean) => {
+    try {
+      const result = await gatewayManager.rpc('cron.update', { id, patch: { enabled } });
+      return result;
+    } catch (error) {
+      console.error('Failed to toggle cron job:', error);
+      throw error;
+    }
+  });
+
+  // Trigger a cron job manually
+  ipcMain.handle('cron:trigger', async (_, id: string) => {
+    try {
+      const result = await gatewayManager.rpc('cron.run', { id, mode: 'force' });
+      return result;
+    } catch (error) {
+      console.error('Failed to trigger cron job:', error);
+      throw error;
+    }
   });
 }
 
