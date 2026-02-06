@@ -826,10 +826,10 @@ export function Skills() {
             <Globe className="h-4 w-4" />
             Marketplace
           </TabsTrigger>
-          <TabsTrigger value="bundles" className="gap-2">
+          {/* <TabsTrigger value="bundles" className="gap-2">
             <Package className="h-4 w-4" />
             Bundles
-          </TabsTrigger>
+          </TabsTrigger> */}
         </TabsList>
 
         <TabsContent value="all" className="space-y-6 mt-6">
@@ -1065,7 +1065,7 @@ export function Skills() {
           </div>
         </TabsContent>
 
-        <TabsContent value="bundles" className="space-y-6 mt-6">
+        {/* <TabsContent value="bundles" className="space-y-6 mt-6">
           <p className="text-muted-foreground">
             Skill bundles are pre-configured collections of skills for common use cases.
             Enable a bundle to quickly set up multiple related skills at once.
@@ -1081,7 +1081,7 @@ export function Skills() {
               />
             ))}
           </div>
-        </TabsContent>
+        </TabsContent> */}
       </Tabs>
 
 
