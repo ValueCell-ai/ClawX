@@ -133,7 +133,7 @@ export function Dashboard() {
               </Link>
             </Button>
             <Button variant="outline" className="h-auto flex-col gap-2 py-4" asChild>
-              <Link to="/chat">
+              <Link to="/">
                 <MessageSquare className="h-5 w-5" />
                 <span>Open Chat</span>
               </Link>

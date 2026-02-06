@@ -141,8 +141,8 @@ function App() {
         
         {/* Main application routes */}
         <Route element={<MainLayout />}>
-          <Route path="/" element={<Dashboard />} />
-          <Route path="/chat" element={<Chat />} />
+          <Route path="/" element={<Chat />} />
+          <Route path="/dashboard" element={<Dashboard />} />
           <Route path="/channels" element={<Channels />} />
           <Route path="/skills" element={<Skills />} />
           <Route path="/cron" element={<Cron />} />

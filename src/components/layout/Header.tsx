@@ -8,8 +8,8 @@ import { ChatToolbar } from '@/pages/Chat/ChatToolbar';
 
 // Page titles mapping
 const pageTitles: Record<string, string> = {
-  '/': 'Dashboard',
-  '/chat': 'Chat',
+  '/': 'Chat',
+  '/dashboard': 'Dashboard',
   '/channels': 'Channels',
   '/skills': 'Skills',
   '/cron': 'Cron Tasks',
@@ -19,7 +19,7 @@ const pageTitles: Record<string, string> = {
 export function Header() {
   const location = useLocation();
   const currentTitle = pageTitles[location.pathname] || 'ClawX';
-  const isChatPage = location.pathname === '/chat';
+  const isChatPage = location.pathname === '/';
 
   return (
     <header className="flex h-14 items-center justify-between border-b bg-background px-6">
