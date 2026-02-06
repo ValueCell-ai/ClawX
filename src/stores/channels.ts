@@ -39,7 +39,7 @@ export const useChannelsStore = create<ChannelsState>((set, get) => ({
       const result = await window.electron.ipcRenderer.invoke(
         'gateway:rpc',
         'channels.status',
-        { probe: false }
+        { probe: true }
       ) as {
         success: boolean;
         result?: {
@@ -82,7 +82,7 @@ export const useChannelsStore = create<ChannelsState>((set, get) => ({
           const defaultAccountId = data.channelDefaultAccountId?.[channelId];
           const primaryAccount =
             (defaultAccountId ? accounts.find((a) => a.accountId === defaultAccountId) : undefined) ||
-            accounts.find((a) => a.connected === true) ||
+            accounts.find((a) => a.connected === true || a.linked === true) ||
             accounts[0];
 
           // Map gateway status to our status format

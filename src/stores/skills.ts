@@ -5,6 +5,35 @@
 import { create } from 'zustand';
 import type { Skill, MarketplaceSkill } from '../types/skill';
 
+type GatewaySkillStatus = {
+  skillKey: string;
+  slug?: string;
+  name?: string;
+  description?: string;
+  disabled?: boolean;
+  emoji?: string;
+  version?: string;
+  author?: string;
+  config?: Record<string, unknown>;
+  bundled?: boolean;
+  always?: boolean;
+};
+
+type GatewaySkillsStatusResult = {
+  skills?: GatewaySkillStatus[];
+};
+
+type GatewayRpcResponse<T> = {
+  success: boolean;
+  result?: T;
+  error?: string;
+};
+
+type ClawHubListResult = {
+  slug: string;
+  version?: string;
+};
+
 interface SkillsState {
   skills: Skill[];
   searchResults: MarketplaceSkill[];
@@ -42,12 +71,12 @@ export const useSkillsStore = create<SkillsState>((set, get) => ({
       const gatewayResult = await window.electron.ipcRenderer.invoke(
         'gateway:rpc',
         'skills.status'
-      ) as { success: boolean; result?: any; error?: string };
+      ) as GatewayRpcResponse<GatewaySkillsStatusResult>;
 
       // 2. Fetch from ClawHub (installed on disk)
       const clawhubResult = await window.electron.ipcRenderer.invoke(
         'clawhub:list'
-      ) as { success: boolean; results?: any[]; error?: string };
+      ) as { success: boolean; results?: ClawHubListResult[]; error?: string };
 
       // 3. Fetch configurations directly from Electron (since Gateway doesn't return them)
       const configResult = await window.electron.ipcRenderer.invoke(
@@ -59,15 +88,15 @@ export const useSkillsStore = create<SkillsState>((set, get) => ({
 
       // Map gateway skills info
       if (gatewayResult.success && gatewayResult.result?.skills) {
-        combinedSkills = gatewayResult.result.skills.map((s: any) => {
+        combinedSkills = gatewayResult.result.skills.map((s: GatewaySkillStatus) => {
           // Merge with direct config if available
           const directConfig = configResult[s.skillKey] || {};
 
           return {
             id: s.skillKey,
             slug: s.slug || s.skillKey,
-            name: s.name,
-            description: s.description,
+            name: s.name || s.skillKey,
+            description: s.description || '',
             enabled: !s.disabled,
             icon: s.emoji || '📦',
             version: s.version || '1.0.0',
@@ -87,7 +116,7 @@ export const useSkillsStore = create<SkillsState>((set, get) => ({
 
       // Merge with ClawHub results
       if (clawhubResult.success && clawhubResult.results) {
-        clawhubResult.results.forEach((cs: any) => {
+        clawhubResult.results.forEach((cs: ClawHubListResult) => {
           const existing = combinedSkills.find(s => s.id === cs.slug);
           if (!existing) {
             const directConfig = configResult[cs.slug] || {};
@@ -181,7 +210,7 @@ export const useSkillsStore = create<SkillsState>((set, get) => ({
         'gateway:rpc',
         'skills.update',
         { skillKey: skillId, enabled: true }
-      ) as { success: boolean; result?: any; error?: string };
+      ) as GatewayRpcResponse<unknown>;
 
       if (result.success) {
         updateSkill(skillId, { enabled: true });
@@ -207,7 +236,7 @@ export const useSkillsStore = create<SkillsState>((set, get) => ({
         'gateway:rpc',
         'skills.update',
         { skillKey: skillId, enabled: false }
-      ) as { success: boolean; result?: any; error?: string };
+      ) as GatewayRpcResponse<unknown>;
 
       if (result.success) {
         updateSkill(skillId, { enabled: false });

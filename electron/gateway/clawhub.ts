@@ -3,8 +3,9 @@
  * Manages interactions with the ClawHub CLI for skills management
  */
 import { spawn } from 'child_process';
+import fs from 'fs';
 import path from 'path';
-import { app } from 'electron';
+import { app, shell } from 'electron';
 import { getOpenClawConfigDir, ensureDir } from '../utils/paths';
 
 export interface ClawHubSearchParams {
@@ -35,6 +36,7 @@ export interface ClawHubSkillResult {
 export class ClawHubService {
     private workDir: string;
     private cliPath: string;
+    private ansiRegex: RegExp;
 
     constructor() {
         // Use the user's OpenClaw config directory (~/.openclaw) for skill management
@@ -47,6 +49,14 @@ export class ClawHubService {
         const binName = isWin ? 'clawhub.cmd' : 'clawhub';
         const localCli = path.resolve(app.getAppPath(), 'node_modules', '.bin', binName);
         this.cliPath = localCli;
+        const esc = String.fromCharCode(27);
+        const csi = String.fromCharCode(155);
+        const pattern = `(?:${esc}|${csi})[[()#;?]*(?:[0-9]{1,4}(?:;[0-9]{0,4})*)?[0-9A-ORZcf-nqry=><]`;
+        this.ansiRegex = new RegExp(pattern, 'g');
+    }
+
+    private stripAnsi(line: string): string {
+        return line.replace(this.ansiRegex, '').trim();
     }
 
     /**
@@ -117,8 +127,7 @@ export class ClawHubService {
 
             const lines = output.split('\n').filter(l => l.trim());
             return lines.map(line => {
-                // Remove potential ANSI escape codes just in case
-                const cleanLine = line.replace(/[\u001b\u009b][[()#;?]*(?:[0-9]{1,4}(?:;[0-9]{0,4})*)?[0-9A-ORZcf-nqry=><]/g, '').trim();
+                const cleanLine = this.stripAnsi(line);
 
                 // Format could be: slug vversion description (score)
                 // Or sometimes: slug  vversion  description
@@ -161,7 +170,7 @@ export class ClawHubService {
 
             const lines = output.split('\n').filter(l => l.trim());
             return lines.map(line => {
-                const cleanLine = line.replace(/[\u001b\u009b][[()#;?]*(?:[0-9]{1,4}(?:;[0-9]{0,4})*)?[0-9A-ORZcf-nqry=><]/g, '').trim();
+                const cleanLine = this.stripAnsi(line);
 
                 // Format: slug vversion time description
                 // Example: my-skill v1.0.0 2 hours ago A great skill
@@ -203,7 +212,6 @@ export class ClawHubService {
      * Uninstall a skill
      */
     async uninstall(params: ClawHubUninstallParams): Promise<void> {
-        const fs = require('fs');
         const fsPromises = fs.promises;
 
         // 1. Delete the skill directory
@@ -232,7 +240,7 @@ export class ClawHubService {
     /**
      * List installed skills
      */
-    async listInstalled(): Promise<any[]> {
+    async listInstalled(): Promise<Array<{ slug: string; version: string }>> {
         try {
             const output = await this.runCommand(['list']);
             if (!output || output.includes('No installed skills')) {
@@ -241,7 +249,7 @@ export class ClawHubService {
 
             const lines = output.split('\n').filter(l => l.trim());
             return lines.map(line => {
-                const cleanLine = line.replace(/[\u001b\u009b][[()#;?]*(?:[0-9]{1,4}(?:;[0-9]{0,4})*)?[0-9A-ORZcf-nqry=><]/g, '').trim();
+                const cleanLine = this.stripAnsi(line);
                 const match = cleanLine.match(/^(\S+)\s+v?(\d+\.\S+)/);
                 if (match) {
                     return {
@@ -250,7 +258,7 @@ export class ClawHubService {
                     };
                 }
                 return null;
-            }).filter(s => s !== null);
+            }).filter((s): s is { slug: string; version: string } => s !== null);
         } catch (error) {
             console.error('ClawHub list error:', error);
             return [];
@@ -261,7 +269,6 @@ export class ClawHubService {
      * Open skill README/manual in default editor
      */
     async openSkillReadme(slug: string): Promise<boolean> {
-        const fs = require('fs');
         const skillDir = path.join(this.workDir, 'skills', slug);
 
         // Try to find documentation file
@@ -287,7 +294,6 @@ export class ClawHubService {
 
         try {
             // Open file with default application
-            const { shell } = require('electron');
             await shell.openPath(targetFile);
             return true;
         } catch (error) {

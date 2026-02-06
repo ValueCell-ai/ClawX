@@ -37,51 +37,10 @@ import { useGatewayStore } from '@/stores/gateway';
 import { LoadingSpinner } from '@/components/common/LoadingSpinner';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
-import type { Skill, SkillBundle, MarketplaceSkill } from '@/types/skill';
+import type { Skill, MarketplaceSkill } from '@/types/skill';
 
 
 
-// Predefined skill bundles
-const skillBundles: SkillBundle[] = [
-  {
-    id: 'productivity',
-    name: 'Productivity Pack',
-    nameZh: '效率工具包',
-    description: 'Essential tools for daily productivity including calendar, reminders, and notes',
-    descriptionZh: '日常效率必备工具，包含日历、提醒和笔记',
-    icon: '📋',
-    skills: ['calendar', 'reminders', 'notes', 'tasks', 'timer'],
-    recommended: true,
-  },
-  {
-    id: 'developer',
-    name: 'Developer Tools',
-    nameZh: '开发者工具',
-    description: 'Code assistance, git operations, and technical documentation lookup',
-    descriptionZh: '代码辅助、Git 操作和技术文档查询',
-    icon: '💻',
-    skills: ['code-assist', 'git-ops', 'docs-lookup', 'snippet-manager'],
-    recommended: true,
-  },
-  {
-    id: 'information',
-    name: 'Information Hub',
-    nameZh: '信息中心',
-    description: 'Stay informed with web search, news, weather, and knowledge base',
-    descriptionZh: '通过网页搜索、新闻、天气和知识库保持信息畅通',
-    icon: '📰',
-    skills: ['web-search', 'news', 'weather', 'wikipedia', 'translate'],
-  },
-  {
-    id: 'smart-home',
-    name: 'Smart Home',
-    nameZh: '智能家居',
-    description: 'Control your smart home devices and automation routines',
-    descriptionZh: '控制智能家居设备和自动化场景',
-    icon: '🏠',
-    skills: ['lights', 'thermostat', 'security-cam', 'routines'],
-  },
-];
 
 // Skill detail dialog component
 interface SkillDetailDialogProps {
@@ -401,78 +360,6 @@ function SkillDetailDialog({ skill, onClose, onToggle }: SkillDetailDialogProps)
   );
 }
 
-// Bundle card component
-interface BundleCardProps {
-  bundle: SkillBundle;
-  skills: Skill[];
-  onApply: () => void;
-}
-
-function BundleCard({ bundle, skills, onApply }: BundleCardProps) {
-  const bundleSkills = skills.filter((s) => bundle.skills.includes(s.id));
-  const enabledCount = bundleSkills.filter((s) => s.enabled).length;
-  const isFullyEnabled = bundleSkills.length > 0 && enabledCount === bundleSkills.length;
-
-  return (
-    <Card className={cn(
-      'hover:border-primary/50 transition-colors cursor-pointer',
-      isFullyEnabled && 'border-primary/50 bg-primary/5'
-    )}>
-      <CardHeader className="pb-2">
-        <div className="flex items-start justify-between">
-          <div className="flex items-center gap-3">
-            <span className="text-3xl">{bundle.icon}</span>
-            <div>
-              <CardTitle className="text-base flex items-center gap-2">
-                {bundle.name}
-                {bundle.recommended && (
-                  <Badge className="bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400">
-                    <Sparkles className="h-3 w-3 mr-1" />
-                    Recommended
-                  </Badge>
-                )}
-              </CardTitle>
-              <CardDescription className="text-xs">
-                {enabledCount}/{bundleSkills.length} skills enabled
-              </CardDescription>
-            </div>
-          </div>
-        </div>
-      </CardHeader>
-      <CardContent className="space-y-3">
-        <p className="text-sm text-muted-foreground line-clamp-2">
-          {bundle.description}
-        </p>
-        <div className="flex flex-wrap gap-1">
-          {bundleSkills.slice(0, 4).map((skill) => (
-            <Badge
-              key={skill.id}
-              variant={skill.enabled ? 'default' : 'outline'}
-              className="text-xs"
-            >
-              {skill.icon} {skill.name}
-            </Badge>
-          ))}
-          {bundleSkills.length > 4 && (
-            <Badge variant="outline" className="text-xs">
-              +{bundleSkills.length - 4} more
-            </Badge>
-          )}
-        </div>
-        <Button
-          variant={isFullyEnabled ? 'secondary' : 'default'}
-          size="sm"
-          className="w-full"
-          onClick={onApply}
-        >
-          {isFullyEnabled ? 'Disable Bundle' : 'Enable Bundle'}
-          <ChevronRight className="h-4 w-4 ml-1" />
-        </Button>
-      </CardContent>
-    </Card>
-  );
-}
-
 // Marketplace skill card component
 interface MarketplaceSkillCardProps {
   skill: MarketplaceSkill;
@@ -717,29 +604,6 @@ export function Skills() {
       toast.error(String(err));
     }
   }, [enableSkill, disableSkill]);
-
-  // Handle bundle apply
-  const handleBundleApply = useCallback(async (bundle: SkillBundle) => {
-    const bundleSkills = skills.filter((s) => bundle.skills.includes(s.id));
-    const allEnabled = bundleSkills.every((s) => s.enabled);
-
-    try {
-      for (const skill of bundleSkills) {
-        if (allEnabled) {
-          if (!skill.isCore) {
-            await disableSkill(skill.id);
-          }
-        } else {
-          if (!skill.enabled) {
-            await enableSkill(skill.id);
-          }
-        }
-      }
-      toast.success(allEnabled ? 'Bundle disabled' : 'Bundle enabled');
-    } catch {
-      toast.error('Failed to apply bundle');
-    }
-  }, [skills, enableSkill, disableSkill]);
 
   // Handle marketplace search
   const handleMarketplaceSearch = useCallback((e: React.FormEvent) => {

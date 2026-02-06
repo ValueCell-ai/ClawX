@@ -578,7 +578,11 @@ function ProviderContent({
             onApiKeyChange(storedKey);
           }
         }
-      } catch {}
+      } catch (error) {
+        if (!cancelled) {
+          console.error('Failed to load provider list:', error);
+        }
+      }
     })();
     return () => { cancelled = true; };
   }, [onApiKeyChange, onSelectProvider]);
@@ -591,7 +595,11 @@ function ProviderContent({
         if (!cancelled && storedKey) {
           onApiKeyChange(storedKey);
         }
-      } catch {}
+      } catch (error) {
+        if (!cancelled) {
+          console.error('Failed to load provider key:', error);
+        }
+      }
     })();
     return () => { cancelled = true; };
   }, [onApiKeyChange, selectedProvider]);

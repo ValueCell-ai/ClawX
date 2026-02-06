@@ -16,7 +16,7 @@ export interface Skill {
   version?: string;
   author?: string;
   configurable?: boolean;
-  config?: Record<string, any>;
+  config?: Record<string, unknown>;
   isCore?: boolean;
   isBundled?: boolean;
   dependencies?: string[];
