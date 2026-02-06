@@ -34,10 +34,71 @@ export const useChannelsStore = create<ChannelsState>((set, get) => ({
   error: null,
   
   fetchChannels: async () => {
-    // channels.status returns a complex nested object, not a simple array.
-    // Channel management is deferred to Settings > Channels page.
-    // For now, just use empty list - channels will be added later.
-    set({ channels: [], loading: false });
+    set({ loading: true, error: null });
+    try {
+      const result = await window.electron.ipcRenderer.invoke(
+        'gateway:rpc',
+        'channels.status',
+        { probe: false }
+      ) as {
+        success: boolean;
+        result?: {
+          channelOrder?: string[];
+          channels?: Record<string, { configured?: boolean; connected?: boolean; status?: string; error?: string }>;
+          channelAccounts?: Record<string, Array<{
+            accountId?: string;
+            configured?: boolean;
+            connected?: boolean;
+            status?: string;
+            error?: string;
+            label?: string;
+          }>>;
+        };
+        error?: string;
+      };
+
+      if (result.success && result.result) {
+        const data = result.result;
+        const channels: Channel[] = [];
+
+        // Parse the complex channels.status response into simple Channel objects
+        const channelOrder = data.channelOrder || Object.keys(data.channels || {});
+        for (const channelId of channelOrder) {
+          const summary = data.channels?.[channelId];
+          if (!summary?.configured) continue; // Skip unconfigured channels
+
+          const accounts = data.channelAccounts?.[channelId] || [];
+          const primaryAccount = accounts[0];
+
+          // Map gateway status to our status format
+          let status: Channel['status'] = 'disconnected';
+          if (primaryAccount?.connected) {
+            status = 'connected';
+          } else if (primaryAccount?.status === 'connecting' || primaryAccount?.status === 'starting') {
+            status = 'connecting';
+          } else if (primaryAccount?.error || summary.error) {
+            status = 'error';
+          }
+
+          channels.push({
+            id: `${channelId}-${primaryAccount?.accountId || 'default'}`,
+            type: channelId as ChannelType,
+            name: primaryAccount?.label || channelId,
+            status,
+            accountId: primaryAccount?.accountId,
+            error: primaryAccount?.error || summary.error,
+          });
+        }
+
+        set({ channels, loading: false });
+      } else {
+        // Gateway not available - try to show channels from local config
+        set({ channels: [], loading: false });
+      }
+    } catch {
+      // Gateway not connected, show empty
+      set({ channels: [], loading: false });
+    }
   },
   
   addChannel: async (params) => {

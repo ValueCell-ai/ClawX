@@ -25,9 +25,12 @@ import { saveProviderKeyToOpenClaw, setOpenClawDefaultModel } from '../utils/ope
 import {
   saveChannelConfig,
   getChannelConfig,
+  getChannelFormValues,
   deleteChannelConfig,
   listConfiguredChannels,
   setChannelEnabled,
+  validateChannelConfig,
+  validateChannelCredentials,
 } from '../utils/channel-config';
 
 /**
@@ -222,6 +225,17 @@ function registerOpenClawHandlers(): void {
     }
   });
 
+  // Get channel form values (reverse-transformed for UI pre-fill)
+  ipcMain.handle('channel:getFormValues', async (_, channelType: string) => {
+    try {
+      const values = getChannelFormValues(channelType);
+      return { success: true, values };
+    } catch (error) {
+      console.error('Failed to get channel form values:', error);
+      return { success: false, error: String(error) };
+    }
+  });
+
   // Delete channel configuration
   ipcMain.handle('channel:deleteConfig', async (_, channelType: string) => {
     try {
@@ -252,6 +266,28 @@ function registerOpenClawHandlers(): void {
     } catch (error) {
       console.error('Failed to set channel enabled:', error);
       return { success: false, error: String(error) };
+    }
+  });
+
+  // Validate channel configuration
+  ipcMain.handle('channel:validate', async (_, channelType: string) => {
+    try {
+      const result = await validateChannelConfig(channelType);
+      return { success: true, ...result };
+    } catch (error) {
+      console.error('Failed to validate channel:', error);
+      return { success: false, valid: false, errors: [String(error)], warnings: [] };
+    }
+  });
+
+  // Validate channel credentials by calling actual service APIs (before saving)
+  ipcMain.handle('channel:validateCredentials', async (_, channelType: string, config: Record<string, string>) => {
+    try {
+      const result = await validateChannelCredentials(channelType, config);
+      return { success: true, ...result };
+    } catch (error) {
+      console.error('Failed to validate channel credentials:', error);
+      return { success: false, valid: false, errors: [String(error)], warnings: [] };
     }
   });
 }

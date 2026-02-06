@@ -19,6 +19,8 @@ import {
   EyeOff,
   Check,
   AlertCircle,
+  CheckCircle,
+  ShieldCheck,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -50,11 +52,31 @@ export function Channels() {
   const [showAddDialog, setShowAddDialog] = useState(false);
   const [selectedChannelType, setSelectedChannelType] = useState<ChannelType | null>(null);
   const [showAllChannels, setShowAllChannels] = useState(false);
+  const [configuredTypes, setConfiguredTypes] = useState<string[]>([]);
 
   // Fetch channels on mount
   useEffect(() => {
     fetchChannels();
   }, [fetchChannels]);
+
+  // Fetch configured channel types from config file
+  const fetchConfiguredTypes = async () => {
+    try {
+      const result = await window.electron.ipcRenderer.invoke('channel:listConfigured') as {
+        success: boolean;
+        channels?: string[];
+      };
+      if (result.success && result.channels) {
+        setConfiguredTypes(result.channels);
+      }
+    } catch {
+      // ignore
+    }
+  };
+
+  useEffect(() => {
+    fetchConfiguredTypes();
+  }, []);
 
   // Get channel types to display
   const displayedChannelTypes = showAllChannels ? getAllChannels() : getPrimaryChannels();
@@ -204,10 +226,11 @@ export function Channels() {
           <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
             {displayedChannelTypes.map((type) => {
               const meta = CHANNEL_META[type];
+              const isConfigured = configuredTypes.includes(type);
               return (
                 <button
                   key={type}
-                  className="p-4 rounded-lg border hover:bg-accent transition-colors text-left relative"
+                  className={`p-4 rounded-lg border hover:bg-accent transition-colors text-left relative ${isConfigured ? 'border-green-500/50 bg-green-500/5' : ''}`}
                   onClick={() => {
                     setSelectedChannelType(type);
                     setShowAddDialog(true);
@@ -218,7 +241,12 @@ export function Channels() {
                   <p className="text-xs text-muted-foreground mt-1 line-clamp-2">
                     {meta.description}
                   </p>
-                  {meta.isPlugin && (
+                  {isConfigured && (
+                    <Badge className="absolute top-2 right-2 text-xs bg-green-600 hover:bg-green-600">
+                      Configured
+                    </Badge>
+                  )}
+                  {!isConfigured && meta.isPlugin && (
                     <Badge variant="secondary" className="absolute top-2 right-2 text-xs">
                       Plugin
                     </Badge>
@@ -241,6 +269,7 @@ export function Channels() {
           }}
           onChannelAdded={() => {
             fetchChannels();
+            fetchConfiguredTypes();
             setShowAddDialog(false);
             setSelectedChannelType(null);
           }}
@@ -311,13 +340,107 @@ function AddChannelDialog({ selectedType, onSelectType, onClose, onChannelAdded 
   const [connecting, setConnecting] = useState(false);
   const [showSecrets, setShowSecrets] = useState<Record<string, boolean>>({});
   const [qrCode, setQrCode] = useState<string | null>(null);
+  const [validating, setValidating] = useState(false);
+  const [loadingConfig, setLoadingConfig] = useState(false);
+  const [isExistingConfig, setIsExistingConfig] = useState(false);
+  const [validationResult, setValidationResult] = useState<{
+    valid: boolean;
+    errors: string[];
+    warnings: string[];
+  } | null>(null);
 
   const meta: ChannelMeta | null = selectedType ? CHANNEL_META[selectedType] : null;
+
+  // Load existing config when a channel type is selected
+  useEffect(() => {
+    if (!selectedType) {
+      setConfigValues({});
+      setChannelName('');
+      setIsExistingConfig(false);
+      return;
+    }
+
+    let cancelled = false;
+    setLoadingConfig(true);
+
+    (async () => {
+      try {
+        const result = await window.electron.ipcRenderer.invoke(
+          'channel:getFormValues',
+          selectedType
+        ) as { success: boolean; values?: Record<string, string> };
+
+        if (cancelled) return;
+
+        if (result.success && result.values && Object.keys(result.values).length > 0) {
+          setConfigValues(result.values);
+          setIsExistingConfig(true);
+        } else {
+          setConfigValues({});
+          setIsExistingConfig(false);
+        }
+      } catch {
+        if (!cancelled) {
+          setConfigValues({});
+          setIsExistingConfig(false);
+        }
+      } finally {
+        if (!cancelled) setLoadingConfig(false);
+      }
+    })();
+
+    return () => { cancelled = true; };
+  }, [selectedType]);
+
+  const handleValidate = async () => {
+    if (!selectedType) return;
+
+    setValidating(true);
+    setValidationResult(null);
+
+    try {
+      const result = await window.electron.ipcRenderer.invoke(
+        'channel:validateCredentials',
+        selectedType,
+        configValues
+      ) as {
+        success: boolean;
+        valid?: boolean;
+        errors?: string[];
+        warnings?: string[];
+        details?: Record<string, string>;
+      };
+
+      const warnings = result.warnings || [];
+      if (result.valid && result.details) {
+        const details = result.details;
+        if (details.botUsername) warnings.push(`Bot: @${details.botUsername}`);
+        if (details.guildName) warnings.push(`Server: ${details.guildName}`);
+        if (details.channelName) warnings.push(`Channel: #${details.channelName}`);
+      }
+
+      setValidationResult({
+        valid: result.valid || false,
+        errors: result.errors || [],
+        warnings,
+      });
+    } catch (error) {
+      setValidationResult({
+        valid: false,
+        errors: [String(error)],
+        warnings: [],
+      });
+    } finally {
+      setValidating(false);
+    }
+  };
+
 
   const handleConnect = async () => {
     if (!selectedType || !meta) return;
 
     setConnecting(true);
+    setValidationResult(null);
 
     try {
       // For QR-based channels, request QR code
@@ -329,18 +452,79 @@ function AddChannelDialog({ selectedType, onSelectType, onClose, onChannelAdded 
         return;
       }
 
-      // Save channel configuration via IPC
+      // Step 1: Validate credentials against the actual service API
+      if (meta.connectionType === 'token') {
+        const validationResponse = await window.electron.ipcRenderer.invoke(
+          'channel:validateCredentials',
+          selectedType,
+          configValues
+        ) as {
+          success: boolean;
+          valid?: boolean;
+          errors?: string[];
+          warnings?: string[];
+          details?: Record<string, string>;
+        };
+
+        if (!validationResponse.valid) {
+          setValidationResult({
+            valid: false,
+            errors: validationResponse.errors || ['Validation failed'],
+            warnings: validationResponse.warnings || [],
+          });
+          setConnecting(false);
+          return;
+        }
+
+        // Show success details (bot name, guild name, etc.) as warnings/info
+        const warnings = validationResponse.warnings || [];
+        if (validationResponse.details) {
+          const details = validationResponse.details;
+          if (details.botUsername) {
+            warnings.push(`Bot: @${details.botUsername}`);
+          }
+          if (details.guildName) {
+            warnings.push(`Server: ${details.guildName}`);
+          }
+          if (details.channelName) {
+            warnings.push(`Channel: #${details.channelName}`);
+          }
+        }
+
+        // Show validation success with details
+        setValidationResult({
+          valid: true,
+          errors: [],
+          warnings,
+        });
+      }
+
+      // Step 2: Save channel configuration via IPC
       const config: Record<string, unknown> = { ...configValues };
       await window.electron.ipcRenderer.invoke('channel:saveConfig', selectedType, config);
 
-      // Add channel to store
+      // Step 3: Add a local channel entry for the UI
       await addChannel({
         type: selectedType,
         name: channelName || CHANNEL_NAMES[selectedType],
         token: configValues[meta.configFields[0]?.key] || undefined,
       });
 
-      toast.success(`${meta.name} channel configured`);
+      toast.success(`${meta.name} channel saved. Restarting Gateway to connect...`);
+
+      // Step 4: Restart the Gateway so it picks up the new channel config
+      // The Gateway watches the config file, but a restart ensures a clean start
+      // especially when adding a channel for the first time.
+      try {
+        await window.electron.ipcRenderer.invoke('gateway:restart');
+        toast.success(`${meta.name} channel is now connecting via Gateway`);
+      } catch (restartError) {
+        console.warn('Gateway restart after channel config:', restartError);
+        toast.info('Config saved. Please restart the Gateway manually for the channel to connect.');
+      }
+
+      // Brief delay so user can see the success state before dialog closes
+      await new Promise((resolve) => setTimeout(resolve, 800));
       onChannelAdded();
     } catch (error) {
       toast.error(`Failed to configure channel: ${error}`);
@@ -389,10 +573,16 @@ function AddChannelDialog({ selectedType, onSelectType, onClose, onChannelAdded 
         <CardHeader className="flex flex-row items-start justify-between">
           <div>
             <CardTitle>
-              {selectedType ? `Configure ${CHANNEL_NAMES[selectedType]}` : 'Add Channel'}
+              {selectedType
+                ? isExistingConfig
+                  ? `Update ${CHANNEL_NAMES[selectedType]}`
+                  : `Configure ${CHANNEL_NAMES[selectedType]}`
+                : 'Add Channel'}
             </CardTitle>
             <CardDescription>
-              {meta?.description || 'Select a messaging channel to connect'}
+              {selectedType && isExistingConfig
+                ? 'Existing configuration loaded. You can update and re-save.'
+                : meta?.description || 'Select a messaging channel to connect'}
             </CardDescription>
           </div>
           <Button variant="ghost" size="icon" onClick={onClose}>
@@ -443,9 +633,23 @@ function AddChannelDialog({ selectedType, onSelectType, onClose, onChannelAdded 
                 </Button>
               </div>
             </div>
+          ) : loadingConfig ? (
+            // Loading saved config
+            <div className="flex items-center justify-center py-8">
+              <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+              <span className="ml-2 text-sm text-muted-foreground">Loading configuration...</span>
+            </div>
           ) : (
             // Connection form
             <div className="space-y-4">
+              {/* Existing config hint */}
+              {isExistingConfig && (
+                <div className="bg-blue-500/10 text-blue-600 dark:text-blue-400 p-3 rounded-lg text-sm flex items-center gap-2">
+                  <CheckCircle className="h-4 w-4 shrink-0" />
+                  <span>Previously saved configuration has been loaded. Modify if needed and save.</span>
+                </div>
+              )}
+
               {/* Instructions */}
               <div className="bg-muted p-4 rounded-lg space-y-3">
                 <div className="flex items-center justify-between">
@@ -490,30 +694,95 @@ function AddChannelDialog({ selectedType, onSelectType, onClose, onChannelAdded 
                 />
               ))}
 
+              {/* Validation Results */}
+              {validationResult && (
+                <div className={`p-4 rounded-lg text-sm ${validationResult.valid ? 'bg-green-500/10 text-green-600 dark:text-green-400' : 'bg-destructive/10 text-destructive'
+                  }`}>
+                  <div className="flex items-start gap-2">
+                    {validationResult.valid ? (
+                      <CheckCircle className="h-4 w-4 mt-0.5 shrink-0" />
+                    ) : (
+                      <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" />
+                    )}
+                    <div className="min-w-0">
+                      <h4 className="font-medium mb-1">
+                        {validationResult.valid ? 'Credentials Verified' : 'Validation Failed'}
+                      </h4>
+                      {validationResult.errors.length > 0 && (
+                        <ul className="list-disc list-inside space-y-0.5">
+                          {validationResult.errors.map((err, i) => (
+                            <li key={i}>{err}</li>
+                          ))}
+                        </ul>
+                      )}
+                      {validationResult.valid && validationResult.warnings.length > 0 && (
+                        <div className="mt-1 text-green-600 dark:text-green-400 space-y-0.5">
+                          {validationResult.warnings.map((info, i) => (
+                            <p key={i} className="text-xs">{info}</p>
+                          ))}
+                        </div>
+                      )}
+                      {!validationResult.valid && validationResult.warnings.length > 0 && (
+                        <div className="mt-2 text-yellow-600 dark:text-yellow-500">
+                          <p className="font-medium text-xs uppercase mb-1">Warnings:</p>
+                          <ul className="list-disc list-inside space-y-0.5">
+                            {validationResult.warnings.map((warn, i) => (
+                              <li key={i}>{warn}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
+
               <Separator />
 
               <div className="flex justify-between">
                 <Button variant="outline" onClick={() => onSelectType(null)}>
                   Back
                 </Button>
-                <Button
-                  onClick={handleConnect}
-                  disabled={connecting || !isFormValid()}
-                >
-                  {connecting ? (
-                    <>
-                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                      {meta?.connectionType === 'qr' ? 'Generating QR...' : 'Connecting...'}
-                    </>
-                  ) : meta?.connectionType === 'qr' ? (
-                    'Generate QR Code'
-                  ) : (
-                    <>
-                      <Check className="h-4 w-4 mr-2" />
-                      Save & Connect
-                    </>
+                <div className="flex gap-2">
+                  {/* Validation Button - Only for token-based channels for now */}
+                  {meta?.connectionType === 'token' && (
+                    <Button
+                      variant="secondary"
+                      onClick={handleValidate}
+                      disabled={validating}
+                    >
+                      {validating ? (
+                        <>
+                          <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                          Validating...
+                        </>
+                      ) : (
+                        <>
+                          <ShieldCheck className="h-4 w-4 mr-2" />
+                          Validate Config
+                        </>
+                      )}
+                    </Button>
                   )}
-                </Button>
+                  <Button
+                    onClick={handleConnect}
+                    disabled={connecting || !isFormValid()}
+                  >
+                    {connecting ? (
+                      <>
+                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                        {meta?.connectionType === 'qr' ? 'Generating QR...' : 'Validating & Saving...'}
+                      </>
+                    ) : meta?.connectionType === 'qr' ? (
+                      'Generate QR Code'
+                    ) : (
+                      <>
+                        <Check className="h-4 w-4 mr-2" />
+                        {isExistingConfig ? 'Update & Reconnect' : 'Save & Connect'}
+                      </>
+                    )}
+                  </Button>
+                </div>
               </div>
             </div>
           )}

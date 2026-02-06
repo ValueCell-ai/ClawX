@@ -400,11 +400,12 @@ export class GatewayManager extends EventEmitter {
           ...process.env,
           // Provider API keys
           ...providerEnv,
-          // Skip channel auto-connect during startup for faster boot
-          OPENCLAW_SKIP_CHANNELS: '1',
-          CLAWDBOT_SKIP_CHANNELS: '1',
           // Also set token via environment variable as fallback
           OPENCLAW_GATEWAY_TOKEN: gatewayToken,
+          // Ensure OPENCLAW_SKIP_CHANNELS is NOT set so channels auto-start
+          // and config hot-reload can restart channels when config changes
+          OPENCLAW_SKIP_CHANNELS: '',
+          CLAWDBOT_SKIP_CHANNELS: '',
         },
       });
       
