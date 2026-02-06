@@ -30,6 +30,7 @@ import {
   listConfiguredChannels,
   setChannelEnabled,
 } from '../utils/channel-config';
+import { checkUvInstalled, installUv, setupManagedPython } from '../utils/uv-setup';
 
 /**
  * Register all IPC handlers
@@ -59,6 +60,35 @@ export function registerIpcHandlers(
 
   // App handlers
   registerAppHandlers();
+
+  // UV handlers
+  registerUvHandlers();
+}
+
+/**
+ * UV-related IPC handlers
+ */
+function registerUvHandlers(): void {
+  // Check if uv is installed
+  ipcMain.handle('uv:check', async () => {
+    return await checkUvInstalled();
+  });
+
+  // Install uv and setup managed Python
+  ipcMain.handle('uv:install-all', async () => {
+    try {
+      const isInstalled = await checkUvInstalled();
+      if (!isInstalled) {
+        await installUv();
+      }
+      // Always run python setup to ensure it exists in uv's cache
+      await setupManagedPython();
+      return { success: true };
+    } catch (error) {
+      console.error('Failed to setup uv/python:', error);
+      return { success: false, error: String(error) };
+    }
+  });
 }
 
 /**

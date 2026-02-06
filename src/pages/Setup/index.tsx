@@ -689,48 +689,47 @@ function InstallingContent({ skills, onComplete }: InstallingContentProps) {
     skills.map((s) => ({ ...s, status: 'pending' as InstallStatus }))
   );
   const [overallProgress, setOverallProgress] = useState(0);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const installStarted = useRef(false);
   
-  // Simulate installation process
+  // Real installation process
   useEffect(() => {
     if (installStarted.current) return;
     installStarted.current = true;
     
-    const installSkills = async () => {
-      const installedIds: string[] = [];
-      
-      for (let i = 0; i < skills.length; i++) {
-        // Set current skill to installing
-        setSkillStates((prev) => 
-          prev.map((s, idx) => 
-            idx === i ? { ...s, status: 'installing' } : s
-          )
-        );
-        
-        // Simulate installation time (1-2 seconds per skill)
-        const installTime = 1000 + Math.random() * 1000;
-        await new Promise((resolve) => setTimeout(resolve, installTime));
-        
-        // Mark as completed
-        setSkillStates((prev) => 
-          prev.map((s, idx) => 
-            idx === i ? { ...s, status: 'completed' } : s
-          )
-        );
-        installedIds.push(skills[i].id);
-        
-        // Update overall progress
-        setOverallProgress(Math.round(((i + 1) / skills.length) * 100));
+    const runRealInstall = async () => {
+      try {
+        // Step 1: Initialize all skills to 'installing' state for UI
+        setSkillStates(prev => prev.map(s => ({ ...s, status: 'installing' })));
+        setOverallProgress(10);
+
+        // Step 2: Call the backend to install uv and setup Python
+        const result = await window.electron.ipcRenderer.invoke('uv:install-all') as { 
+          success: boolean; 
+          error?: string 
+        };
+
+        if (result.success) {
+          setSkillStates(prev => prev.map(s => ({ ...s, status: 'completed' })));
+          setOverallProgress(100);
+          
+          await new Promise((resolve) => setTimeout(resolve, 800));
+          onComplete(skills.map(s => s.id));
+        } else {
+          setSkillStates(prev => prev.map(s => ({ ...s, status: 'failed' })));
+          setErrorMessage(result.error || 'Unknown error during installation');
+          toast.error('Environment setup failed');
+        }
+      } catch (err) {
+        setSkillStates(prev => prev.map(s => ({ ...s, status: 'failed' })));
+        setErrorMessage(String(err));
+        toast.error('Installation error');
       }
-      
-      // Small delay before completing
-      await new Promise((resolve) => setTimeout(resolve, 500));
-      onComplete(installedIds);
     };
     
-    installSkills();
+    runRealInstall();
   }, [skills, onComplete]);
-  
+
   const getStatusIcon = (status: InstallStatus) => {
     switch (status) {
       case 'pending':
@@ -784,7 +783,7 @@ function InstallingContent({ skills, onComplete }: InstallingContentProps) {
       </div>
       
       {/* Skill list */}
-      <div className="space-y-2 max-h-64 overflow-y-auto">
+      <div className="space-y-2 max-h-48 overflow-y-auto">
         {skillStates.map((skill) => (
           <motion.div
             key={skill.id}
@@ -806,14 +805,41 @@ function InstallingContent({ skills, onComplete }: InstallingContentProps) {
           </motion.div>
         ))}
       </div>
+
+      {/* Error Message Display */}
+      {errorMessage && (
+        <motion.div 
+          initial={{ opacity: 0, scale: 0.95 }}
+          animate={{ opacity: 1, scale: 1 }}
+          className="p-4 rounded-lg bg-red-900/30 border border-red-500/50 text-red-200 text-sm"
+        >
+          <div className="flex items-start gap-2">
+            <AlertCircle className="h-5 w-5 text-red-400 shrink-0 mt-0.5" />
+            <div className="space-y-1">
+              <p className="font-semibold">Setup Error:</p>
+              <pre className="text-xs bg-black/30 p-2 rounded overflow-x-auto whitespace-pre-wrap font-monospace">
+                {errorMessage}
+              </pre>
+              <Button 
+                variant="link" 
+                className="text-red-400 p-0 h-auto text-xs underline"
+                onClick={() => window.location.reload()}
+              >
+                Try restarting the app
+              </Button>
+            </div>
+          </div>
+        </motion.div>
+      )}
       
-      <p className="text-sm text-slate-400 text-center">
-        This may take a few moments...
-      </p>
+      {!errorMessage && (
+        <p className="text-sm text-slate-400 text-center">
+          This may take a few moments...
+        </p>
+      )}
     </div>
   );
 }
-
 interface CompleteContentProps {
   selectedProvider: string | null;
   installedSkills: string[];
