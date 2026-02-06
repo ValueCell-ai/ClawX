@@ -44,15 +44,20 @@ export const useChannelsStore = create<ChannelsState>((set, get) => ({
         success: boolean;
         result?: {
           channelOrder?: string[];
-          channels?: Record<string, { configured?: boolean; connected?: boolean; status?: string; error?: string }>;
+          channels?: Record<string, unknown>;
           channelAccounts?: Record<string, Array<{
             accountId?: string;
             configured?: boolean;
             connected?: boolean;
-            status?: string;
-            error?: string;
-            label?: string;
+            running?: boolean;
+            lastError?: string;
+            name?: string;
+            linked?: boolean;
+            lastConnectedAt?: number | null;
+            lastInboundAt?: number | null;
+            lastOutboundAt?: number | null;
           }>>;
+          channelDefaultAccountId?: Record<string, string>;
         };
         error?: string;
       };
@@ -64,29 +69,60 @@ export const useChannelsStore = create<ChannelsState>((set, get) => ({
         // Parse the complex channels.status response into simple Channel objects
         const channelOrder = data.channelOrder || Object.keys(data.channels || {});
         for (const channelId of channelOrder) {
-          const summary = data.channels?.[channelId];
-          if (!summary?.configured) continue; // Skip unconfigured channels
+          const summary = (data.channels as Record<string, unknown> | undefined)?.[channelId] as Record<string, unknown> | undefined;
+          const configured =
+            typeof summary?.configured === 'boolean'
+              ? summary.configured
+              : typeof (summary as { running?: boolean })?.running === 'boolean'
+                ? true
+                : false;
+          if (!configured) continue;
 
           const accounts = data.channelAccounts?.[channelId] || [];
-          const primaryAccount = accounts[0];
+          const defaultAccountId = data.channelDefaultAccountId?.[channelId];
+          const primaryAccount =
+            (defaultAccountId ? accounts.find((a) => a.accountId === defaultAccountId) : undefined) ||
+            accounts.find((a) => a.connected === true) ||
+            accounts[0];
 
           // Map gateway status to our status format
           let status: Channel['status'] = 'disconnected';
-          if (primaryAccount?.connected) {
+          const now = Date.now();
+          const RECENT_MS = 10 * 60 * 1000;
+          const hasRecentActivity = (a: { lastInboundAt?: number | null; lastOutboundAt?: number | null; lastConnectedAt?: number | null }) =>
+            (typeof a.lastInboundAt === 'number' && now - a.lastInboundAt < RECENT_MS) ||
+            (typeof a.lastOutboundAt === 'number' && now - a.lastOutboundAt < RECENT_MS) ||
+            (typeof a.lastConnectedAt === 'number' && now - a.lastConnectedAt < RECENT_MS);
+          const anyConnected = accounts.some((a) => a.connected === true || a.linked === true || hasRecentActivity(a));
+          const anyRunning = accounts.some((a) => a.running === true);
+          const summaryError =
+            typeof (summary as { error?: string })?.error === 'string'
+              ? (summary as { error?: string }).error
+              : typeof (summary as { lastError?: string })?.lastError === 'string'
+                ? (summary as { lastError?: string }).lastError
+                : undefined;
+          const anyError =
+            accounts.some((a) => typeof a.lastError === 'string' && a.lastError) || Boolean(summaryError);
+
+          if (anyConnected) {
             status = 'connected';
-          } else if (primaryAccount?.status === 'connecting' || primaryAccount?.status === 'starting') {
-            status = 'connecting';
-          } else if (primaryAccount?.error || summary.error) {
+          } else if (anyRunning && !anyError) {
+            status = 'connected';
+          } else if (anyError) {
             status = 'error';
+          } else if (anyRunning) {
+            status = 'connecting';
           }
 
           channels.push({
             id: `${channelId}-${primaryAccount?.accountId || 'default'}`,
             type: channelId as ChannelType,
-            name: primaryAccount?.label || channelId,
+            name: primaryAccount?.name || channelId,
             status,
             accountId: primaryAccount?.accountId,
-            error: primaryAccount?.error || summary.error,
+            error:
+              (typeof primaryAccount?.lastError === 'string' ? primaryAccount.lastError : undefined) ||
+              (typeof summaryError === 'string' ? summaryError : undefined),
           });
         }
 

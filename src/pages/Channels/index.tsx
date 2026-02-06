@@ -59,6 +59,17 @@ export function Channels() {
     fetchChannels();
   }, [fetchChannels]);
 
+  useEffect(() => {
+    const unsubscribe = window.electron.ipcRenderer.on('gateway:channel-status', () => {
+      fetchChannels();
+    });
+    return () => {
+      if (typeof unsubscribe === 'function') {
+        unsubscribe();
+      }
+    };
+  }, [fetchChannels]);
+
   // Fetch configured channel types from config file
   const fetchConfiguredTypes = async () => {
     try {
