@@ -49,40 +49,58 @@ export const useSkillsStore = create<SkillsState>((set, get) => ({
         'clawhub:list'
       ) as { success: boolean; results?: any[]; error?: string };
 
+      // 3. Fetch configurations directly from Electron (since Gateway doesn't return them)
+      const configResult = await window.electron.ipcRenderer.invoke(
+        'skill:getAllConfigs'
+      ) as Record<string, { apiKey?: string; env?: Record<string, string> }>;
+
       let combinedSkills: Skill[] = [];
       const currentSkills = get().skills;
 
-      // Map gateway skills first as they have more rich info
+      // Map gateway skills info
       if (gatewayResult.success && gatewayResult.result?.skills) {
-        combinedSkills = gatewayResult.result.skills.map((s: any) => ({
-          id: s.skillKey,
-          name: s.name,
-          description: s.description,
-          enabled: !s.disabled,
-          icon: s.emoji || '📦',
-          version: s.version || '1.0.0',
-          author: s.author,
-          isCore: s.bundled && s.always,
-          isBundled: s.bundled,
-        }));
+        combinedSkills = gatewayResult.result.skills.map((s: any) => {
+          // Merge with direct config if available
+          const directConfig = configResult[s.skillKey] || {};
+
+          return {
+            id: s.skillKey,
+            slug: s.slug || s.skillKey,
+            name: s.name,
+            description: s.description,
+            enabled: !s.disabled,
+            icon: s.emoji || '📦',
+            version: s.version || '1.0.0',
+            author: s.author,
+            config: {
+              ...(s.config || {}),
+              ...directConfig,
+            },
+            isCore: s.bundled && s.always,
+            isBundled: s.bundled,
+          };
+        });
       } else if (currentSkills.length > 0) {
-        // If gateway is briefly down, keep the existing gateway skills info
+        // ... if gateway down ...
         combinedSkills = [...currentSkills];
       }
 
-      // Merge with ClawHub results to find skills not yet loaded by Gateway
+      // Merge with ClawHub results
       if (clawhubResult.success && clawhubResult.results) {
         clawhubResult.results.forEach((cs: any) => {
           const existing = combinedSkills.find(s => s.id === cs.slug);
           if (!existing) {
+            const directConfig = configResult[cs.slug] || {};
             combinedSkills.push({
               id: cs.slug,
+              slug: cs.slug,
               name: cs.slug,
               description: 'Recently installed, initializing...',
               enabled: false,
               icon: '⌛',
               version: cs.version || 'unknown',
               author: undefined,
+              config: directConfig,
               isCore: false,
               isBundled: false,
             });

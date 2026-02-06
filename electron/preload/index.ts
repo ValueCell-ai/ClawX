@@ -92,6 +92,11 @@ const electronAPI = {
         'clawhub:install',
         'clawhub:uninstall',
         'clawhub:list',
+        'clawhub:openSkillReadme',
+        // Skill config (direct file access)
+        'skill:updateConfig',
+        'skill:getConfig',
+        'skill:getAllConfigs',
       ];
 
       if (validChannels.includes(channel)) {

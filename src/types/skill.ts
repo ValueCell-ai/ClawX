@@ -8,6 +8,7 @@
  */
 export interface Skill {
   id: string;
+  slug?: string;
   name: string;
   description: string;
   enabled: boolean;
@@ -15,6 +16,7 @@ export interface Skill {
   version?: string;
   author?: string;
   configurable?: boolean;
+  config?: Record<string, any>;
   isCore?: boolean;
   isBundled?: boolean;
   dependencies?: string[];

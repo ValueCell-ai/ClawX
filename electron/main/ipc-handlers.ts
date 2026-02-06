@@ -34,6 +34,7 @@ import {
   validateChannelCredentials,
 } from '../utils/channel-config';
 import { checkUvInstalled, installUv, setupManagedPython } from '../utils/uv-setup';
+import { updateSkillConfig, getSkillConfig, getAllSkillConfigs } from '../utils/skill-config';
 
 /**
  * Register all IPC handlers
@@ -66,6 +67,37 @@ export function registerIpcHandlers(
 
   // UV handlers
   registerUvHandlers();
+
+  // Skill config handlers (direct file access, no Gateway RPC)
+  registerSkillConfigHandlers();
+}
+
+/**
+ * Skill config IPC handlers
+ * Direct read/write to ~/.openclaw/openclaw.json (bypasses Gateway RPC)
+ */
+function registerSkillConfigHandlers(): void {
+  // Update skill config (apiKey and env)
+  ipcMain.handle('skill:updateConfig', async (_, params: {
+    skillKey: string;
+    apiKey?: string;
+    env?: Record<string, string>;
+  }) => {
+    return updateSkillConfig(params.skillKey, {
+      apiKey: params.apiKey,
+      env: params.env,
+    });
+  });
+
+  // Get skill config
+  ipcMain.handle('skill:getConfig', async (_, skillKey: string) => {
+    return getSkillConfig(skillKey);
+  });
+
+  // Get all skill configs
+  ipcMain.handle('skill:getAllConfigs', async () => {
+    return getAllSkillConfigs();
+  });
 }
 
 /**
@@ -823,6 +855,16 @@ function registerClawHubHandlers(clawHubService: ClawHubService): void {
     try {
       const results = await clawHubService.listInstalled();
       return { success: true, results };
+    } catch (error) {
+      return { success: false, error: String(error) };
+    }
+  });
+
+  // Open skill readme
+  ipcMain.handle('clawhub:openSkillReadme', async (_, slug: string) => {
+    try {
+      await clawHubService.openSkillReadme(slug);
+      return { success: true };
     } catch (error) {
       return { success: false, error: String(error) };
     }

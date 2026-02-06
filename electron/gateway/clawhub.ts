@@ -256,4 +256,43 @@ export class ClawHubService {
             return [];
         }
     }
+
+    /**
+     * Open skill README/manual in default editor
+     */
+    async openSkillReadme(slug: string): Promise<boolean> {
+        const fs = require('fs');
+        const skillDir = path.join(this.workDir, 'skills', slug);
+
+        // Try to find documentation file
+        const possibleFiles = ['SKILL.md', 'README.md', 'skill.md', 'readme.md'];
+        let targetFile = '';
+
+        for (const file of possibleFiles) {
+            const filePath = path.join(skillDir, file);
+            if (fs.existsSync(filePath)) {
+                targetFile = filePath;
+                break;
+            }
+        }
+
+        if (!targetFile) {
+            // If no md file, just open the directory
+            if (fs.existsSync(skillDir)) {
+                targetFile = skillDir;
+            } else {
+                throw new Error('Skill directory not found');
+            }
+        }
+
+        try {
+            // Open file with default application
+            const { shell } = require('electron');
+            await shell.openPath(targetFile);
+            return true;
+        } catch (error) {
+            console.error('Failed to open skill readme:', error);
+            throw error;
+        }
+    }
 }

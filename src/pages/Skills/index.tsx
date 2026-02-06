@@ -20,6 +20,11 @@ import {
   Download,
   Trash2,
   Globe,
+  FileCode,
+  Plus,
+  Save,
+  Key,
+  ChevronDown,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -86,10 +91,114 @@ interface SkillDetailDialogProps {
 }
 
 function SkillDetailDialog({ skill, onClose, onToggle }: SkillDetailDialogProps) {
+  const { fetchSkills } = useSkillsStore();
+  const [activeTab, setActiveTab] = useState('info');
+  const [envVars, setEnvVars] = useState<Array<{ key: string; value: string }>>([]);
+  const [apiKey, setApiKey] = useState('');
+  const [isEnvExpanded, setIsEnvExpanded] = useState(true);
+  const [isSaving, setIsSaving] = useState(false);
+
+  // Initialize config from skill
+  useEffect(() => {
+    // API Key
+    if (skill.config?.apiKey) {
+      setApiKey(String(skill.config.apiKey));
+    } else {
+      setApiKey('');
+    }
+
+    // Env Vars
+    if (skill.config?.env) {
+      const vars = Object.entries(skill.config.env).map(([key, value]) => ({
+        key,
+        value: String(value),
+      }));
+      setEnvVars(vars);
+    } else {
+      setEnvVars([]);
+    }
+  }, [skill.config]);
+
+  const handleOpenClawhub = async () => {
+    if (skill.slug) {
+      await window.electron.ipcRenderer.invoke('shell:openExternal', `https://clawhub.ai/s/${skill.slug}`);
+    }
+  };
+
+  const handleOpenEditor = async () => {
+    if (skill.slug) {
+      try {
+        const result = await window.electron.ipcRenderer.invoke('clawhub:openSkillReadme', skill.slug) as { success: boolean; error?: string };
+        if (result.success) {
+          toast.success('Opened in editor');
+        } else {
+          toast.error(result.error || 'Failed to open editor');
+        }
+      } catch (err) {
+        toast.error('Failed to open editor: ' + String(err));
+      }
+    }
+  };
+
+  const handleAddEnv = () => {
+    setEnvVars([...envVars, { key: '', value: '' }]);
+  };
+
+  const handleUpdateEnv = (index: number, field: 'key' | 'value', value: string) => {
+    const newVars = [...envVars];
+    newVars[index] = { ...newVars[index], [field]: value };
+    setEnvVars(newVars);
+  };
+
+  const handleRemoveEnv = (index: number) => {
+    const newVars = [...envVars];
+    newVars.splice(index, 1);
+    setEnvVars(newVars);
+  };
+
+  const handleSaveConfig = async () => {
+    if (isSaving) return;
+    setIsSaving(true);
+    try {
+      // Build env object, filtering out empty keys
+      const envObj = envVars.reduce((acc, curr) => {
+        const key = curr.key.trim();
+        const value = curr.value.trim();
+        if (key) {
+          acc[key] = value;
+        }
+        return acc;
+      }, {} as Record<string, string>);
+
+      // Use direct file access instead of Gateway RPC for reliability
+      const result = await window.electron.ipcRenderer.invoke(
+        'skill:updateConfig',
+        {
+          skillKey: skill.id,
+          apiKey: apiKey || '', // Empty string will delete the key
+          env: envObj // Empty object will clear all env vars
+        }
+      ) as { success: boolean; error?: string };
+
+      if (!result.success) {
+        throw new Error(result.error || 'Unknown error');
+      }
+
+      // Refresh skills from gateway to get updated config
+      await fetchSkills();
+
+      toast.success('Configuration saved');
+    } catch (err) {
+      toast.error('Failed to save configuration: ' + String(err));
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
   return (
     <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4" onClick={onClose}>
-      <Card className="w-full max-w-lg" onClick={(e) => e.stopPropagation()}>
-        <CardHeader className="flex flex-row items-start justify-between">
+      <Card className="w-full max-w-2xl max-h-[90vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
+        <CardHeader className="flex flex-row items-start justify-between pb-2">
           <div className="flex items-center gap-4">
             <span className="text-4xl">{skill.icon || '🔧'}</span>
             <div>
@@ -97,52 +206,174 @@ function SkillDetailDialog({ skill, onClose, onToggle }: SkillDetailDialogProps)
                 {skill.name}
                 {skill.isCore && <Lock className="h-4 w-4 text-muted-foreground" />}
               </CardTitle>
+              <div className="flex gap-2 mt-2">
+                {skill.slug && !skill.isBundled && !skill.isCore && (
+                  <>
+                    <Button variant="outline" size="sm" className="h-7 text-xs gap-1" onClick={handleOpenClawhub}>
+                      <Globe className="h-3 w-3" />
+                      ClawHub
+                    </Button>
+                    <Button variant="outline" size="sm" className="h-7 text-xs gap-1" onClick={handleOpenEditor}>
+                      <FileCode className="h-3 w-3" />
+                      Open Manual
+                    </Button>
+                  </>
+                )}
+              </div>
             </div>
           </div>
           <Button variant="ghost" size="icon" onClick={onClose}>
             <X className="h-4 w-4" />
           </Button>
         </CardHeader>
-        <CardContent className="space-y-4">
-          <p className="text-muted-foreground">{skill.description}</p>
 
-          <div className="flex flex-wrap gap-2">
-            {skill.version && (
-              <Badge variant="outline">v{skill.version}</Badge>
-            )}
-            {skill.author && (
-              <Badge variant="secondary">by {skill.author}</Badge>
-            )}
-            {skill.isCore ? (
-              <Badge variant="secondary">
-                <Lock className="h-3 w-3 mr-1" />
-                Core Skill
-              </Badge>
-            ) : skill.isBundled ? (
-              <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-900/20 dark:text-blue-400 dark:border-blue-800">
-                <Puzzle className="h-3 w-3 mr-1" />
-                Built-in
-              </Badge>
-            ) : (
-              <Badge variant="outline" className="bg-purple-50 text-purple-700 border-purple-200 dark:bg-purple-900/20 dark:text-purple-400 dark:border-purple-800">
-                <Globe className="h-3 w-3 mr-1" />
-                Marketplace
-              </Badge>
-            )}
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 flex flex-col min-h-0">
+          <div className="px-6">
+            <TabsList className="grid w-full grid-cols-2">
+              <TabsTrigger value="info">Information</TabsTrigger>
+              <TabsTrigger value="config" disabled={skill.isCore || skill.isBundled}>Configuration</TabsTrigger>
+            </TabsList>
           </div>
 
-          {skill.dependencies && skill.dependencies.length > 0 && (
-            <div>
-              <p className="text-sm font-medium mb-2">Dependencies:</p>
-              <div className="flex flex-wrap gap-2">
-                {skill.dependencies.map((dep) => (
-                  <Badge key={dep} variant="outline">{dep}</Badge>
-                ))}
-              </div>
-            </div>
-          )}
+          <div className="flex-1 overflow-y-auto">
+            <div className="p-6">
+              <TabsContent value="info" className="mt-0 space-y-4">
+                <div className="space-y-4">
+                  <div>
+                    <h3 className="text-sm font-medium text-muted-foreground">Description</h3>
+                    <p className="text-sm mt-1">{skill.description}</p>
+                  </div>
 
-          <div className="flex items-center justify-between pt-4 border-t">
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <h3 className="text-sm font-medium text-muted-foreground">Version</h3>
+                      <p className="font-mono text-sm">{skill.version}</p>
+                    </div>
+                    {skill.author && (
+                      <div>
+                        <h3 className="text-sm font-medium text-muted-foreground">Author</h3>
+                        <p className="text-sm">{skill.author}</p>
+                      </div>
+                    )}
+                  </div>
+
+                  <div>
+                    <h3 className="text-sm font-medium text-muted-foreground">Source</h3>
+                    <Badge variant="secondary" className="mt-1 font-normal">
+                      {skill.isCore ? 'Core System' : skill.isBundled ? 'Bundled' : 'User Installed'}
+                    </Badge>
+                  </div>
+                </div>
+              </TabsContent>
+
+              <TabsContent value="config" className="mt-0 space-y-6">
+                <div className="space-y-6">
+                  {/* API Key Section */}
+                  <div className="space-y-2">
+                    <h3 className="text-sm font-medium flex items-center gap-2">
+                      <Key className="h-4 w-4 text-primary" />
+                      API Key
+                    </h3>
+                    <Input
+                      placeholder="Enter API Key (optional)"
+                      value={apiKey}
+                      onChange={(e) => setApiKey(e.target.value)}
+                      type="password"
+                      className="font-mono text-sm"
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      The primary API key for this skill. Leave blank if not required or configured elsewhere.
+                    </p>
+                  </div>
+
+                  {/* Environment Variables Section */}
+                  <div className="space-y-2 border rounded-md p-3">
+                    <div className="flex items-center justify-between w-full">
+                      <button
+                        className="flex items-center gap-2 text-sm font-medium hover:text-primary transition-colors"
+                        onClick={() => setIsEnvExpanded(!isEnvExpanded)}
+                      >
+                        {isEnvExpanded ? (
+                          <ChevronDown className="h-4 w-4" />
+                        ) : (
+                          <ChevronRight className="h-4 w-4" />
+                        )}
+                        Environment Variables
+                        <Badge variant="secondary" className="px-1.5 py-0 text-[10px] h-5">
+                          {envVars.length}
+                        </Badge>
+                      </button>
+
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-7 text-[10px] gap-1 px-2"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setIsEnvExpanded(true);
+                          handleAddEnv();
+                        }}
+                      >
+                        <Plus className="h-3 w-3" />
+                        Add Variable
+                      </Button>
+                    </div>
+
+                    {isEnvExpanded && (
+                      <div className="pt-4 space-y-3 animate-in fade-in slide-in-from-top-2 duration-200">
+                        {envVars.length === 0 && (
+                          <p className="text-xs text-muted-foreground italic h-8 flex items-center">
+                            No environment variables configured.
+                          </p>
+                        )}
+
+                        {envVars.map((env, index) => (
+                          <div key={index} className="flex items-center gap-2">
+                            <Input
+                              value={env.key}
+                              onChange={(e) => handleUpdateEnv(index, 'key', e.target.value)}
+                              className="flex-1 font-mono text-xs bg-muted/20"
+                              placeholder="KEY (e.g. BASE_URL)"
+                            />
+                            <span className="text-muted-foreground ml-1 mr-1">=</span>
+                            <Input
+                              value={env.value}
+                              onChange={(e) => handleUpdateEnv(index, 'value', e.target.value)}
+                              className="flex-1 font-mono text-xs bg-muted/20"
+                              placeholder="VALUE"
+                            />
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-8 w-8 text-destructive hover:bg-destructive/10"
+                              onClick={() => handleRemoveEnv(index)}
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </div>
+                        ))}
+
+                        {envVars.length > 0 && (
+                          <p className="text-[10px] text-muted-foreground italic px-1 pt-1">
+                            Note: Rows with empty keys will be automatically removed during save.
+                          </p>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                <div className="pt-4 flex justify-end">
+                  <Button onClick={handleSaveConfig} className="gap-2" disabled={isSaving}>
+                    <Save className="h-4 w-4" />
+                    {isSaving ? 'Saving...' : 'Save Configuration'}
+                  </Button>
+                </div>
+              </TabsContent>
+            </div>
+          </div>
+
+          <div className="flex items-center justify-between p-4 border-t bg-muted/10">
             <div className="flex items-center gap-2">
               {skill.enabled ? (
                 <>
@@ -157,12 +388,6 @@ function SkillDetailDialog({ skill, onClose, onToggle }: SkillDetailDialogProps)
               )}
             </div>
             <div className="flex items-center gap-2">
-              {skill.configurable && (
-                <Button variant="outline" size="sm">
-                  <Settings className="h-4 w-4 mr-2" />
-                  Configure
-                </Button>
-              )}
               <Switch
                 checked={skill.enabled}
                 onCheckedChange={() => onToggle(!skill.enabled)}
@@ -170,7 +395,7 @@ function SkillDetailDialog({ skill, onClose, onToggle }: SkillDetailDialogProps)
               />
             </div>
           </div>
-        </CardContent>
+        </Tabs>
       </Card>
     </div>
   );
