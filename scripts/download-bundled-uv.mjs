@@ -1,6 +1,7 @@
 #!/usr/bin/env zx
 
 import 'zx/globals';
+import AdmZip from 'adm-zip';
 
 const ROOT_DIR = path.resolve(__dirname, '..');
 const UV_VERSION = '0.10.0';
@@ -19,6 +20,10 @@ const TARGETS = {
   },
   'win32-x64': {
     filename: 'uv-x86_64-pc-windows-msvc.zip',
+    binName: 'uv.exe',
+  },
+  'win32-arm64': {
+    filename: 'uv-aarch64-pc-windows-msvc.zip',
     binName: 'uv.exe',
   }
 };
@@ -49,18 +54,18 @@ async function setupTarget(id) {
     const response = await fetch(downloadUrl);
     if (!response.ok) throw new Error(`Failed to download: ${response.statusText}`);
     const buffer = await response.arrayBuffer();
-    await fs.writeFile(archivePath, Buffer.from(buffer));
-
+    const fileBuffer = Buffer.from(buffer);
+    await fs.writeFile(archivePath, fileBuffer);
+    
     // Extract
     echo`📂 Extracting...`;
+    
     if (target.filename.endsWith('.zip')) {
-      if (os.platform() === 'win32') {
-        await $`powershell -Command Expand-Archive -Path ${archivePath} -DestinationPath ${tempDir} -Force`;
-      } else {
-        await $`unzip -q -o ${archivePath} -d ${tempDir}`;
-      }
+      const zip = new AdmZip(fileBuffer);
+      zip.extractAllTo(tempDir, true);
     } else {
-      await $`tar -xzf ${archivePath} -C ${tempDir}`;
+      // For tar.gz (macOS/Linux), tar command works reliably
+      await $`tar -xf ${archivePath} -C ${tempDir}`;
     }
 
     // Move binary

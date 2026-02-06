@@ -1,19 +1,13 @@
 {
   "name": "clawx",
   "version": "0.1.0",
-  "pnpm": {
-    "onlyBuiltDependencies": [
-      "electron",
-      "esbuild"
-    ]
-  },
   "description": "ClawX - Graphical AI Assistant based on OpenClaw",
   "main": "dist-electron/main/index.js",
   "author": "ClawX Team",
   "license": "MIT",
   "private": true,
   "scripts": {
-    "init": "git submodule update --init && pnpm install && pnpm run uv:download && cd openclaw && pnpm install && pnpm build",
+    "init": "git submodule update --init && pnpm install && pnpm run uv:download && cd openclaw && pnpm build",
     "dev": "vite",
     "build": "pnpm run uv:download && vite build && electron-builder",
     "preview": "vite preview",
@@ -26,7 +20,8 @@
     "icons": "zx scripts/generate-icons.mjs",
     "package": "electron-builder",
     "release": "pnpm run uv:download && vite build && electron-builder --publish always",
-    "openclaw:update": "git submodule update --remote openclaw && cd openclaw && pnpm install"
+    "openclaw:update": "git submodule update --remote openclaw && cd openclaw && pnpm install",
+    "postinstall": "electron-builder install-app-deps"
   },
   "dependencies": {
     "@radix-ui/react-dialog": "^1.1.4",
@@ -71,6 +66,7 @@
     "@typescript-eslint/eslint-plugin": "^8.54.0",
     "@typescript-eslint/parser": "^8.54.0",
     "@vitejs/plugin-react": "^5.1.3",
+    "adm-zip": "^0.5.16",
     "autoprefixer": "^10.4.20",
     "electron": "^40.2.1",
     "electron-builder": "^26.7.0",
@@ -89,5 +85,23 @@
     "vite-plugin-electron-renderer": "^0.14.6",
     "vitest": "^4.0.18",
     "zx": "^8.8.5"
-  }
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "@lydell/node-pty",
+      "@matrix-org/matrix-sdk-crypto-nodejs",
+      "@napi-rs/canvas",
+      "@whiskeysockets/baileys",
+      "authenticate-pam",
+      "esbuild",
+      "node-llama-cpp",
+      "protobufjs",
+      "sharp",
+      "electron"
+    ]
+  },
+  "overrides": {
+    "tar": "7.5.7"
+  },
+  "packageManager": "pnpm@10.28.2+sha512.41872f037ad22f7348e3b1debbaf7e867cfd448f2726d9cf74c08f19507c31d2c8e7a11525b983febc2df640b5438dee6023ebb1f84ed43cc2d654d2bc326264"
 }

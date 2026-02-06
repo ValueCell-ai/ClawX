@@ -362,8 +362,18 @@ export class GatewayManager extends EventEmitter {
     if (isOpenClawBuilt() && existsSync(entryScript)) {
       // Production mode: use openclaw.mjs directly
       console.log('Starting Gateway in production mode (using dist)');
-      command = 'node';
-      args = [entryScript, 'gateway', '--port', String(this.status.port), '--token', gatewayToken, '--dev', '--allow-unconfigured'];
+
+      if (app.isPackaged) {
+        // In packaged app, we don't have global 'node'.
+        // Use Electron itself as the Node executable.
+        command = process.execPath;
+        // When running as node, the first argument is the script path
+        args = [entryScript, 'gateway', '--port', String(this.status.port), '--token', gatewayToken, '--dev', '--allow-unconfigured'];
+      } else {
+        // In development, assume 'node' is in PATH
+        command = 'node';
+        args = [entryScript, 'gateway', '--port', String(this.status.port), '--token', gatewayToken, '--dev', '--allow-unconfigured'];
+      }
     } else {
       // Development mode: use pnpm gateway:dev which handles tsx compilation
       console.log('Starting Gateway in development mode (using pnpm)');
@@ -424,6 +434,8 @@ export class GatewayManager extends EventEmitter {
         shell: process.platform === 'win32', // Use shell on Windows for pnpm
         env: {
           ...process.env,
+          // CRITICAL: Tell Electron to run as a Node process, ignoring the GUI
+          ELECTRON_RUN_AS_NODE: '1',
           PATH: finalPath, // Inject bundled bin path if it exists
           // Provider API keys
           ...providerEnv,

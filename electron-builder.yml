@@ -31,7 +31,7 @@ extraResources:
       - "skills/**/*"
       - "extensions/**/*"
       - "scripts/run-node.mjs"
-      - "!**/node_modules/**"
+      - "!**/node_modules/**" # Exclude openclaw/node_modules as we are hosting deps in root
       - "!**/*.test.ts"
       - "!**/*.test.js"
       - "!**/test/**"
@@ -89,6 +89,9 @@ dmg:
 
 # Windows Configuration
 win:
+  forceCodeSigning: false
+  verifyUpdateCodeSignature: false
+  signAndEditExecutable: false
   extraResources:
     - from: resources/bin/win32-${arch}
       to: bin
@@ -97,11 +100,7 @@ win:
     - target: nsis
       arch:
         - x64
-        - arm64
-  publisherName: ClawX Inc.
-  # For code signing, uncomment and configure:
-  # certificateFile: path/to/certificate.pfx
-  # certificatePassword: ${env.WIN_CSC_KEY_PASSWORD}
+        # - arm64
 
 nsis:
   oneClick: false
@@ -140,11 +139,7 @@ linux:
     ClawX is a graphical AI assistant application that integrates with
     OpenClaw Gateway to provide intelligent automation and assistance
     across multiple messaging platforms.
-  desktop:
-    Name: ClawX
-    Comment: AI Assistant powered by OpenClaw
-    Categories: Utility;Network;
-    Keywords: ai;assistant;automation;chat;
+  # desktop section removed as it contained invalid keys (Name, Comment etc are auto-generated)
 
 appImage:
   license: LICENSE
