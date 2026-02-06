@@ -361,12 +361,12 @@ export class GatewayManager extends EventEmitter {
       // Production mode: use openclaw.mjs directly
       console.log('Starting Gateway in production mode (using dist)');
       command = 'node';
-      args = [entryScript, 'gateway', 'run', '--port', String(this.status.port), '--token', gatewayToken, '--dev', '--allow-unconfigured'];
+      args = [entryScript, 'gateway', '--port', String(this.status.port), '--token', gatewayToken, '--dev', '--allow-unconfigured'];
     } else {
       // Development mode: use pnpm gateway:dev which handles tsx compilation
       console.log('Starting Gateway in development mode (using pnpm)');
       command = 'pnpm';
-      args = ['run', 'dev', 'gateway', 'run', '--port', String(this.status.port), '--token', gatewayToken, '--dev', '--allow-unconfigured'];
+      args = ['run', 'dev', 'gateway', '--port', String(this.status.port), '--token', gatewayToken, '--dev', '--allow-unconfigured'];
     }
     
     console.log(`Spawning Gateway: ${command} ${args.join(' ')}`);
