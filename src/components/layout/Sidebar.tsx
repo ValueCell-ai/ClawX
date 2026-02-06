@@ -70,11 +70,11 @@ export function Sidebar() {
   };
   
   const navItems = [
-    { to: '/', icon: <Home className="h-5 w-5" />, label: 'Dashboard' },
     { to: '/chat', icon: <MessageSquare className="h-5 w-5" />, label: 'Chat' },
-    { to: '/channels', icon: <Radio className="h-5 w-5" />, label: 'Channels' },
-    { to: '/skills', icon: <Puzzle className="h-5 w-5" />, label: 'Skills' },
     { to: '/cron', icon: <Clock className="h-5 w-5" />, label: 'Cron Tasks' },
+    { to: '/skills', icon: <Puzzle className="h-5 w-5" />, label: 'Skills' },
+    { to: '/channels', icon: <Radio className="h-5 w-5" />, label: 'Channels' },
+    { to: '/', icon: <Home className="h-5 w-5" />, label: 'Dashboard' },
     { to: '/settings', icon: <Settings className="h-5 w-5" />, label: 'Settings' },
   ];
   
