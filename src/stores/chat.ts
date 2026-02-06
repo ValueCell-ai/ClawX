@@ -242,17 +242,31 @@ export const useChatStore = create<ChatState>((set, get) => ({
         // Message complete - add to history and clear streaming
         const finalMsg = event.message as RawMessage | undefined;
         if (finalMsg) {
-          set((s) => ({
-            messages: [...s.messages, {
-              ...finalMsg,
-              role: finalMsg.role || 'assistant',
-              id: finalMsg.id || `run-${runId}`,
-            }],
-            streamingText: '',
-            streamingMessage: null,
-            sending: false,
-            activeRunId: null,
-          }));
+          const msgId = finalMsg.id || `run-${runId}`;
+          set((s) => {
+            // Check if message already exists (prevent duplicates)
+            const alreadyExists = s.messages.some(m => m.id === msgId);
+            if (alreadyExists) {
+              // Just clear streaming state, don't add duplicate
+              return {
+                streamingText: '',
+                streamingMessage: null,
+                sending: false,
+                activeRunId: null,
+              };
+            }
+            return {
+              messages: [...s.messages, {
+                ...finalMsg,
+                role: finalMsg.role || 'assistant',
+                id: msgId,
+              }],
+              streamingText: '',
+              streamingMessage: null,
+              sending: false,
+              activeRunId: null,
+            };
+          });
         } else {
           // No message in final event - reload history to get complete data
           set({ streamingText: '', streamingMessage: null, sending: false, activeRunId: null });
