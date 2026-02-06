@@ -562,6 +562,11 @@ function ConfigField({ field, value, onChange, showSecret, onToggleSecret }: Con
           </Button>
         )}
       </div>
+      {field.description && (
+        <p className="text-xs text-muted-foreground">
+          {field.description}
+        </p>
+      )}
       {field.envVar && (
         <p className="text-xs text-muted-foreground">
           Or set via environment variable: <code className="bg-muted px-1 rounded">{field.envVar}</code>

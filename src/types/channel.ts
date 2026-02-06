@@ -55,6 +55,7 @@ export interface ChannelConfigField {
   placeholder?: string;
   required?: boolean;
   envVar?: string;
+  description?: string;
   options?: { value: string; label: string }[];
 }
 
@@ -153,12 +154,30 @@ export const CHANNEL_META: Record<ChannelType, ChannelMeta> = {
         required: true,
         envVar: 'DISCORD_BOT_TOKEN',
       },
+      {
+        key: 'guildId',
+        label: 'Guild/Server ID (optional)',
+        type: 'text',
+        placeholder: 'e.g., 123456789012345678',
+        required: false,
+        description: 'Limit bot to a specific server. Right-click server → Copy Server ID.',
+      },
+      {
+        key: 'channelId',
+        label: 'Channel ID (optional)',
+        type: 'text',
+        placeholder: 'e.g., 123456789012345678',
+        required: false,
+        description: 'Limit bot to a specific channel. Right-click channel → Copy Channel ID.',
+      },
     ],
     instructions: [
-      'Go to Discord Developer Portal',
-      'Create a new Application',
-      'Go to Bot section and create a bot',
-      'Copy the bot token and paste below',
+      'Go to Discord Developer Portal → Applications → New Application',
+      'In Bot section: Add Bot, then copy the Bot Token',
+      'Enable Message Content Intent + Server Members Intent in Bot → Privileged Gateway Intents',
+      'In OAuth2 → URL Generator: select "bot" + "applications.commands", add message permissions',
+      'Invite the bot to your server using the generated URL',
+      'Paste the bot token below',
     ],
   },
   slack: {
