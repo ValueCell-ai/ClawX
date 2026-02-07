@@ -470,7 +470,22 @@ function RuntimeContent({ onStatusChange }: RuntimeContentProps) {
       ...prev,
       gateway: { status: 'checking', message: 'Starting...' },
     }));
-    await startGateway();
+    try {
+      await startGateway();
+    } catch (error) {
+      setChecks((prev) => ({
+        ...prev,
+        gateway: { status: 'error', message: String(error) },
+      }));
+    }
+  };
+
+  const handleOpenLogs = async () => {
+    try {
+      await window.electron.ipcRenderer.invoke('shell:openLogs');
+    } catch (e) {
+      toast.error('Failed to open logs folder');
+    }
   };
   
   const renderStatus = (status: 'checking' | 'success' | 'error', message: string) => {
@@ -520,9 +535,14 @@ function RuntimeContent({ onStatusChange }: RuntimeContentProps) {
           <div className="flex items-center gap-2">
             <span>Gateway Service</span>
             {checks.gateway.status === 'error' && (
-              <Button variant="outline" size="sm" onClick={handleStartGateway}>
-                Start Gateway
-              </Button>
+              <div className="flex gap-2">
+                <Button variant="outline" size="sm" onClick={handleOpenLogs}>
+                  Open Logs
+                </Button>
+                <Button variant="outline" size="sm" onClick={handleStartGateway}>
+                  Retry
+                </Button>
+              </div>
             )}
           </div>
           {renderStatus(checks.gateway.status, checks.gateway.message)}

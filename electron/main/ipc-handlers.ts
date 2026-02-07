@@ -20,7 +20,7 @@ import {
   isEncryptionAvailable,
   type ProviderConfig,
 } from '../utils/secure-storage';
-import { getOpenClawStatus } from '../utils/paths';
+import { getOpenClawStatus, getLogsDir } from '../utils/paths';
 import { getSetting } from '../utils/store';
 import { saveProviderKeyToOpenClaw, setOpenClawDefaultModel } from '../utils/openclaw-auth';
 import {
@@ -993,6 +993,12 @@ function registerShellHandlers(): void {
   // Open path
   ipcMain.handle('shell:openPath', async (_, path: string) => {
     return await shell.openPath(path);
+  });
+
+  // Open logs directory
+  ipcMain.handle('shell:openLogs', async () => {
+    const logsDir = getLogsDir();
+    return await shell.openPath(logsDir);
   });
 }
 

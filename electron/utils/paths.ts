@@ -106,6 +106,9 @@ export function isOpenClawBuilt(): boolean {
  * Check if OpenClaw has node_modules installed
  */
 export function isOpenClawInstalled(): boolean {
+  if (app.isPackaged) {
+    return true;
+  }
   return existsSync(join(getOpenClawDir(), 'node_modules'));
 }
 

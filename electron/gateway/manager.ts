@@ -6,7 +6,7 @@ import { app } from 'electron';
 import path from 'path';
 import { spawn, ChildProcess } from 'child_process';
 import { EventEmitter } from 'events';
-import { existsSync } from 'fs';
+import { existsSync, symlinkSync, rmSync, lstatSync } from 'fs';
 import WebSocket from 'ws';
 import { PORTS } from '../utils/config';
 import { 
@@ -19,6 +19,7 @@ import {
 import { getSetting } from '../utils/store';
 import { getApiKey } from '../utils/secure-storage';
 import { getProviderEnvVar } from '../utils/openclaw-auth';
+import { logger } from '../utils/logger';
 import { GatewayEventType, JsonRpcNotification, isNotification, isResponse } from './protocol';
 
 /**
@@ -137,6 +138,7 @@ export class GatewayManager extends EventEmitter {
       this.startHealthCheck();
       
     } catch (error) {
+      logger.error('Failed to start Gateway', error);
       this.setStatus({ state: 'error', error: String(error) });
       throw error;
     }
@@ -353,7 +355,7 @@ export class GatewayManager extends EventEmitter {
     
     // Get or generate gateway token
     const gatewayToken = await getSetting('gatewayToken');
-    console.log('Using gateway token:', gatewayToken.substring(0, 10) + '...');
+    logger.info('Using gateway token: ' + gatewayToken.substring(0, 10) + '...');
     
     let command: string;
     let args: string[];
@@ -361,9 +363,41 @@ export class GatewayManager extends EventEmitter {
     // Check if OpenClaw is built (production mode) or use pnpm dev mode
     if (isOpenClawBuilt() && existsSync(entryScript)) {
       // Production mode: use openclaw.mjs directly
-      console.log('Starting Gateway in production mode (using dist)');
+      logger.info('Starting Gateway in production mode (using dist)');
 
       if (app.isPackaged) {
+        // In packaged app, we ensure resources/openclaw/node_modules symlinks to resources/app.asar.unpacked/node_modules
+        // This is CRITICAL because ESM doesn't respect NODE_PATH, so we need a "local" node_modules folder
+        const targetNodeModules = path.join(process.resourcesPath, 'app.asar.unpacked', 'node_modules');
+        const linkPath = path.join(openclawDir, 'node_modules');
+
+        try {
+          if (existsSync(targetNodeModules)) {
+            // Remove existing link/folder if present to ensure clean state
+            if (existsSync(linkPath)) {
+              try {
+                // Check if it's a symlink or junction
+                const stats = lstatSync(linkPath);
+                if (stats.isSymbolicLink() || stats.isDirectory()) {
+                  // On Windows/Node, rmSync handles directory symlinks correctly
+                  rmSync(linkPath, { recursive: true, force: true });
+                }
+              } catch (e) {
+                logger.warn('Failed to remove existing node_modules link:', e);
+              }
+            }
+
+            // Create symlink (use 'junction' on Windows for admin-free linking)
+            symlinkSync(targetNodeModules, linkPath, 'junction');
+            logger.info(`Created symlink: ${linkPath} -> ${targetNodeModules}`);
+          } else {
+            logger.error(`Critical: Unpacked node_modules not found at ${targetNodeModules}`);
+          }
+        } catch (error) {
+          logger.error('Failed to setup node_modules symlink:', error);
+          // Don't throw, try to proceed anyway (process might fail later)
+        }
+
         // In packaged app, we don't have global 'node'.
         // Use Electron itself as the Node executable.
         command = process.execPath;
@@ -381,8 +415,8 @@ export class GatewayManager extends EventEmitter {
       args = ['run', 'dev', 'gateway', '--port', String(this.status.port), '--token', gatewayToken, '--dev', '--allow-unconfigured'];
     }
     
-    console.log(`Spawning Gateway: ${command} ${args.join(' ')}`);
-    console.log(`Working directory: ${openclawDir}`);
+    logger.info(`Spawning Gateway: ${command} ${args.join(' ')}`);
+    logger.info(`Working directory: ${openclawDir}`);
 
     // Resolve bundled bin path for uv
     let binPath = '';
@@ -405,7 +439,7 @@ export class GatewayManager extends EventEmitter {
       : process.env.PATH || '';
     
     if (existsSync(binPath)) {
-      console.log('Injecting bundled bin path:', binPath);
+      logger.info('Injecting bundled bin path: ' + binPath);
     }
     
     // Load provider API keys from secure storage to pass as environment variables
@@ -436,6 +470,7 @@ export class GatewayManager extends EventEmitter {
           ...process.env,
           // CRITICAL: Tell Electron to run as a Node process, ignoring the GUI
           ELECTRON_RUN_AS_NODE: '1',
+          
           PATH: finalPath, // Inject bundled bin path if it exists
           // Provider API keys
           ...providerEnv,
@@ -449,12 +484,12 @@ export class GatewayManager extends EventEmitter {
       });
       
       this.process.on('error', (error) => {
-        console.error('Gateway process error:', error);
+        logger.error('Gateway process error:', error);
         reject(error);
       });
       
       this.process.on('exit', (code) => {
-        console.log('Gateway process exited with code:', code);
+        logger.info('Gateway process exited with code: ' + code);
         this.emit('exit', code);
         
         if (this.status.state === 'running') {
@@ -466,7 +501,7 @@ export class GatewayManager extends EventEmitter {
       
       // Log stdout
       this.process.stdout?.on('data', (data) => {
-        console.log('Gateway:', data.toString());
+        logger.info('Gateway stdout: ' + data.toString().trim());
       });
       
       // Log stderr (filter out noisy control-ui token_mismatch messages)
@@ -480,7 +515,7 @@ export class GatewayManager extends EventEmitter {
         if (msg.includes('closed before connect') && msg.includes('token mismatch')) {
           return;
         }
-        console.error('Gateway error:', msg);
+        logger.error('Gateway stderr: ' + msg.trim());
       });
       
       // Store PID

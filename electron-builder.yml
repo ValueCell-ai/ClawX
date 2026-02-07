@@ -42,6 +42,9 @@ extraResources:
 asar: true
 asarUnpack:
   - "**/*.node"
+  - "node_modules/**"
+  - "node_modules/libsignal/**"
+  - "node_modules/@whiskeysockets/baileys/**"
 
 # Auto-update configuration
 publish:

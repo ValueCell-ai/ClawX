@@ -14,6 +14,8 @@ import { appUpdater, registerUpdateHandlers } from './updater';
 // Disable GPU acceleration for better compatibility
 app.disableHardwareAcceleration();
 
+import { logger } from '../utils/logger';
+
 import { ClawHubService } from '../gateway/clawhub';
 
 // Global references
@@ -69,6 +71,9 @@ function createWindow(): BrowserWindow {
  * Initialize the application
  */
 async function initialize(): Promise<void> {
+  // Initialize logger
+  logger.init();
+
   // Set application menu
   createMenu();
 
