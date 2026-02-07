@@ -297,5 +297,5 @@ ClawX is released under the [MIT License](LICENSE). You're free to use, modify, 
 ---
 
 <p align="center">
-  <sub>Built with ❤️ by the ClawX Team</sub>
+  <sub>Built with ❤️ by the ValueCell Team</sub>
 </p>
