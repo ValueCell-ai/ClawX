@@ -1,6 +1,3 @@
-<p align="center">
-  <img src="resources/icon.svg" width="120" alt="ClawX Logo" />
-</p>
 
 <h1 align="center">ClawX</h1>
 
