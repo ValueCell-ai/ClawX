@@ -13,20 +13,19 @@
   "license": "MIT",
   "private": true,
   "scripts": {
-    "init": "git submodule update --init && pnpm install && pnpm run uv:download && cd openclaw && pnpm install && pnpm build",
+    "init": "pnpm install && pnpm run uv:download",
     "dev": "vite",
-    "build": "pnpm run uv:download && vite build && electron-builder",
+    "build": "vite build && electron-builder",
     "preview": "vite preview",
     "lint": "eslint . --fix",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:e2e": "playwright test",
-    "clean": "rm -rf dist dist-electron release",
+    "clean": "node -e \"['dist','dist-electron','release'].forEach(d=>require('fs').rmSync(d,{recursive:true,force:true}))\"",
     "uv:download": "zx scripts/download-bundled-uv.mjs",
     "icons": "zx scripts/generate-icons.mjs",
     "package": "electron-builder",
-    "release": "pnpm run uv:download && vite build && electron-builder --publish always",
-    "openclaw:update": "git submodule update --remote openclaw && cd openclaw && pnpm install"
+    "release": "pnpm run uv:download && vite build && electron-builder --publish always"
   },
   "dependencies": {
     "@radix-ui/react-dialog": "^1.1.4",
@@ -57,7 +56,8 @@
     "tailwind-merge": "^3.4.0",
     "tailwindcss-animate": "^1.0.7",
     "ws": "^8.19.0",
-    "zustand": "^5.0.11"
+    "zustand": "^5.0.11",
+    "openclaw": "2026.2.6-3"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.2",

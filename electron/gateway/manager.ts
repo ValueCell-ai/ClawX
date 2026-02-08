@@ -13,8 +13,7 @@ import {
   getOpenClawDir, 
   getOpenClawEntryPath, 
   isOpenClawBuilt, 
-  isOpenClawSubmodulePresent,
-  isOpenClawInstalled 
+  isOpenClawPresent 
 } from '../utils/paths';
 import { getSetting } from '../utils/store';
 import { getApiKey } from '../utils/secure-storage';
@@ -331,23 +330,16 @@ export class GatewayManager extends EventEmitter {
   
   /**
    * Start Gateway process
-   * Uses OpenClaw submodule - supports both production (dist) and development modes
+   * Uses OpenClaw npm package - supports both production (dist) and development modes
    */
   private async startProcess(): Promise<void> {
     const openclawDir = getOpenClawDir();
     const entryScript = getOpenClawEntryPath();
     
-    // Verify OpenClaw submodule exists
-    if (!isOpenClawSubmodulePresent()) {
+    // Verify OpenClaw package exists
+    if (!isOpenClawPresent()) {
       throw new Error(
-        'OpenClaw submodule not found. Please run: git submodule update --init'
-      );
-    }
-    
-    // Verify dependencies are installed
-    if (!isOpenClawInstalled()) {
-      throw new Error(
-        'OpenClaw dependencies not installed. Please run: cd openclaw && pnpm install'
+        'OpenClaw package not found. Please run: pnpm install'
       );
     }
     

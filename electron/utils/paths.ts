@@ -72,13 +72,16 @@ export function getPreloadPath(): string {
 }
 
 /**
- * Get OpenClaw submodule directory
+ * Get OpenClaw package directory
+ * - Development: from node_modules/openclaw
+ * - Production: from resources/openclaw (copied by electron-builder)
  */
 export function getOpenClawDir(): string {
   if (app.isPackaged) {
     return join(process.resourcesPath, 'openclaw');
   }
-  return join(__dirname, '../../openclaw');
+  // Development: use node_modules/openclaw
+  return join(__dirname, '../../node_modules/openclaw');
 }
 
 /**
@@ -89,44 +92,51 @@ export function getOpenClawEntryPath(): string {
 }
 
 /**
- * Check if OpenClaw submodule exists
+ * Check if OpenClaw package exists
  */
-export function isOpenClawSubmodulePresent(): boolean {
+export function isOpenClawPresent(): boolean {
   return existsSync(getOpenClawDir()) && existsSync(join(getOpenClawDir(), 'package.json'));
 }
 
 /**
  * Check if OpenClaw is built (has dist folder with entry.js)
+ * For npm package, this should always be true as npm publishes built dist
  */
 export function isOpenClawBuilt(): boolean {
   return existsSync(join(getOpenClawDir(), 'dist', 'entry.js'));
 }
 
 /**
- * Check if OpenClaw has node_modules installed
- */
-export function isOpenClawInstalled(): boolean {
-  return existsSync(join(getOpenClawDir(), 'node_modules'));
-}
-
-/**
  * Get OpenClaw status for environment check
  */
 export interface OpenClawStatus {
-  submoduleExists: boolean;
-  isInstalled: boolean;
+  packageExists: boolean;
   isBuilt: boolean;
   entryPath: string;
   dir: string;
+  version?: string;
 }
 
 export function getOpenClawStatus(): OpenClawStatus {
   const dir = getOpenClawDir();
+  let version: string | undefined;
+  
+  // Try to read version from package.json
+  try {
+    const pkgPath = join(dir, 'package.json');
+    if (existsSync(pkgPath)) {
+      const pkg = JSON.parse(require('fs').readFileSync(pkgPath, 'utf-8'));
+      version = pkg.version;
+    }
+  } catch {
+    // Ignore version read errors
+  }
+  
   return {
-    submoduleExists: isOpenClawSubmodulePresent(),
-    isInstalled: isOpenClawInstalled(),
+    packageExists: isOpenClawPresent(),
     isBuilt: isOpenClawBuilt(),
     entryPath: getOpenClawEntryPath(),
     dir,
+    version,
   };
 }

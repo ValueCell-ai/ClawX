@@ -376,38 +376,38 @@ function RuntimeContent({ onStatusChange }: RuntimeContentProps) {
       }));
     }
     
-    // Check OpenClaw submodule status
+    // Check OpenClaw package status
     try {
       const openclawStatus = await window.electron.ipcRenderer.invoke('openclaw:status') as {
-        submoduleExists: boolean;
-        isInstalled: boolean;
+        packageExists: boolean;
         isBuilt: boolean;
         dir: string;
+        version?: string;
       };
       
-      if (!openclawStatus.submoduleExists) {
+      if (!openclawStatus.packageExists) {
         setChecks((prev) => ({
           ...prev,
           openclaw: { 
             status: 'error', 
-            message: 'OpenClaw submodule not found. Run: git submodule update --init' 
+            message: 'OpenClaw package not found. Run: pnpm install' 
           },
         }));
-      } else if (!openclawStatus.isInstalled) {
+      } else if (!openclawStatus.isBuilt) {
         setChecks((prev) => ({
           ...prev,
           openclaw: { 
             status: 'error', 
-            message: 'Dependencies not installed. Run: cd openclaw && pnpm install' 
+            message: 'OpenClaw package corrupted. Reinstall: pnpm install' 
           },
         }));
       } else {
-        const modeLabel = openclawStatus.isBuilt ? 'production' : 'development';
+        const versionLabel = openclawStatus.version ? ` v${openclawStatus.version}` : '';
         setChecks((prev) => ({
           ...prev,
           openclaw: { 
             status: 'success', 
-            message: `OpenClaw package ready (${modeLabel} mode)` 
+            message: `OpenClaw package ready${versionLabel}` 
           },
         }));
       }

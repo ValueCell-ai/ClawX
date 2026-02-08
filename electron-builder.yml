@@ -21,23 +21,9 @@ extraResources:
       - "!icons/*.md"
       - "!icons/*.svg"
       - "!bin/**"
-  # OpenClaw submodule - include only necessary files for runtime
-  - from: openclaw/
+  # OpenClaw npm package - copy entire package from node_modules
+  - from: node_modules/openclaw/
     to: openclaw/
-    filter:
-      - "openclaw.mjs"
-      - "package.json"
-      - "dist/**/*"
-      - "skills/**/*"
-      - "extensions/**/*"
-      - "scripts/run-node.mjs"
-      - "!**/node_modules/**"
-      - "!**/*.test.ts"
-      - "!**/*.test.js"
-      - "!**/test/**"
-      - "!**/.git"
-      - "!**/.github"
-      - "!**/docs/**"
 
 asar: true
 asarUnpack:
@@ -89,6 +75,9 @@ dmg:
 
 # Windows Configuration
 win:
+  forceCodeSigning: false
+  verifyUpdateCodeSignature: false
+  signAndEditExecutable: false
   extraResources:
     - from: resources/bin/win32-${arch}
       to: bin
@@ -97,8 +86,9 @@ win:
     - target: nsis
       arch:
         - x64
-        - arm64
-  publisherName: ClawX Inc.
+  # publisherName is deprecated, use signtoolOptions instead if needed
+  # signtoolOptions:
+  #   publisherName: ClawX Inc.
   # For code signing, uncomment and configure:
   # certificateFile: path/to/certificate.pfx
   # certificatePassword: ${env.WIN_CSC_KEY_PASSWORD}
@@ -140,11 +130,6 @@ linux:
     ClawX is a graphical AI assistant application that integrates with
     OpenClaw Gateway to provide intelligent automation and assistance
     across multiple messaging platforms.
-  desktop:
-    Name: ClawX
-    Comment: AI Assistant powered by OpenClaw
-    Categories: Utility;Network;
-    Keywords: ai;assistant;automation;chat;
 
 appImage:
   license: LICENSE

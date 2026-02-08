@@ -442,10 +442,10 @@ function registerOpenClawHandlers(): void {
     return getOpenClawStatus();
   });
 
-  // Check if OpenClaw is ready (submodule present and dependencies installed)
+  // Check if OpenClaw is ready (package present and built)
   ipcMain.handle('openclaw:isReady', () => {
     const status = getOpenClawStatus();
-    return status.submoduleExists && status.isInstalled;
+    return status.packageExists && status.isBuilt;
   });
 
   // ==================== Channel Configuration Handlers ====================
