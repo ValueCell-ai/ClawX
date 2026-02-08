@@ -20,9 +20,10 @@ import {
   isEncryptionAvailable,
   type ProviderConfig,
 } from '../utils/secure-storage';
-import { getOpenClawStatus } from '../utils/paths';
+import { getOpenClawStatus, getOpenClawDir } from '../utils/paths';
 import { getSetting } from '../utils/store';
 import { saveProviderKeyToOpenClaw, setOpenClawDefaultModel } from '../utils/openclaw-auth';
+import { logger } from '../utils/logger';
 import {
   saveChannelConfig,
   getChannelConfig,
@@ -67,6 +68,9 @@ export function registerIpcHandlers(
 
   // UV handlers
   registerUvHandlers();
+
+  // Log handlers (for UI to read gateway/app logs)
+  registerLogHandlers();
 
   // Skill config handlers (direct file access, no Gateway RPC)
   registerSkillConfigHandlers();
@@ -307,6 +311,37 @@ function registerUvHandlers(): void {
 }
 
 /**
+ * Log-related IPC handlers
+ * Allows the renderer to read application logs for diagnostics
+ */
+function registerLogHandlers(): void {
+  // Get recent logs from memory ring buffer
+  ipcMain.handle('log:getRecent', async (_, count?: number) => {
+    return logger.getRecentLogs(count);
+  });
+
+  // Read log file content (last N lines)
+  ipcMain.handle('log:readFile', async (_, tailLines?: number) => {
+    return logger.readLogFile(tailLines);
+  });
+
+  // Get log file path (so user can open in file explorer)
+  ipcMain.handle('log:getFilePath', async () => {
+    return logger.getLogFilePath();
+  });
+
+  // Get log directory path
+  ipcMain.handle('log:getDir', async () => {
+    return logger.getLogDir();
+  });
+
+  // List all log files
+  ipcMain.handle('log:listFiles', async () => {
+    return logger.listLogFiles();
+  });
+}
+
+/**
  * Gateway-related IPC handlers
  */
 function registerGatewayHandlers(
@@ -433,19 +468,26 @@ function registerGatewayHandlers(
 
 /**
  * OpenClaw-related IPC handlers
- * For checking submodule status and channel configuration
+ * For checking package status and channel configuration
  */
 function registerOpenClawHandlers(): void {
 
-  // Get OpenClaw submodule status
+  // Get OpenClaw package status
   ipcMain.handle('openclaw:status', () => {
-    return getOpenClawStatus();
+    const status = getOpenClawStatus();
+    logger.info('openclaw:status IPC called', status);
+    return status;
   });
 
-  // Check if OpenClaw is ready (package present and built)
+  // Check if OpenClaw is ready (package present)
   ipcMain.handle('openclaw:isReady', () => {
     const status = getOpenClawStatus();
-    return status.packageExists && status.isBuilt;
+    return status.packageExists;
+  });
+
+  // Get the resolved OpenClaw directory path (for diagnostics)
+  ipcMain.handle('openclaw:getDir', () => {
+    return getOpenClawDir();
   });
 
   // ==================== Channel Configuration Handlers ====================

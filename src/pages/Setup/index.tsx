@@ -353,6 +353,9 @@ function RuntimeContent({ onStatusChange }: RuntimeContentProps) {
     openclaw: { status: 'checking' as 'checking' | 'success' | 'error', message: '' },
     gateway: { status: 'checking' as 'checking' | 'success' | 'error', message: '' },
   });
+  const [showLogs, setShowLogs] = useState(false);
+  const [logContent, setLogContent] = useState('');
+  const [openclawDir, setOpenclawDir] = useState('');
   
   const runChecks = useCallback(async () => {
     // Reset checks
@@ -362,19 +365,11 @@ function RuntimeContent({ onStatusChange }: RuntimeContentProps) {
       gateway: { status: 'checking', message: '' },
     });
     
-    // Check Node.js
-    try {
-      // In Electron, we can assume Node.js is available
-      setChecks((prev) => ({
-        ...prev,
-        nodejs: { status: 'success', message: 'Node.js is available' },
-      }));
-    } catch {
-      setChecks((prev) => ({
-        ...prev,
-        nodejs: { status: 'error', message: 'Node.js not found' },
-      }));
-    }
+    // Check Node.js — always available in Electron
+    setChecks((prev) => ({
+      ...prev,
+      nodejs: { status: 'success', message: 'Node.js is available (Electron built-in)' },
+    }));
     
     // Check OpenClaw package status
     try {
@@ -385,12 +380,14 @@ function RuntimeContent({ onStatusChange }: RuntimeContentProps) {
         version?: string;
       };
       
+      setOpenclawDir(openclawStatus.dir);
+      
       if (!openclawStatus.packageExists) {
         setChecks((prev) => ({
           ...prev,
           openclaw: { 
             status: 'error', 
-            message: 'OpenClaw package not found. Run: pnpm install' 
+            message: `OpenClaw package not found at: ${openclawStatus.dir}` 
           },
         }));
       } else if (!openclawStatus.isBuilt) {
@@ -398,7 +395,7 @@ function RuntimeContent({ onStatusChange }: RuntimeContentProps) {
           ...prev,
           openclaw: { 
             status: 'error', 
-            message: 'OpenClaw package corrupted. Reinstall: pnpm install' 
+            message: 'OpenClaw package found but dist is missing' 
           },
         }));
       } else {
@@ -414,7 +411,7 @@ function RuntimeContent({ onStatusChange }: RuntimeContentProps) {
     } catch (error) {
       setChecks((prev) => ({
         ...prev,
-        openclaw: { status: 'error', message: `Failed to check: ${error}` },
+        openclaw: { status: 'error', message: `Check failed: ${error}` },
       }));
     }
     
@@ -433,7 +430,10 @@ function RuntimeContent({ onStatusChange }: RuntimeContentProps) {
     } else {
       setChecks((prev) => ({
         ...prev,
-        gateway: { status: 'error', message: 'Not running' },
+        gateway: { 
+          status: 'error', 
+          message: gatewayStatus.error || 'Not running' 
+        },
       }));
     }
   }, [gatewayStatus]);
@@ -473,6 +473,28 @@ function RuntimeContent({ onStatusChange }: RuntimeContentProps) {
     await startGateway();
   };
   
+  const handleShowLogs = async () => {
+    try {
+      const logs = await window.electron.ipcRenderer.invoke('log:readFile', 100) as string;
+      setLogContent(logs);
+      setShowLogs(true);
+    } catch {
+      setLogContent('(Failed to load logs)');
+      setShowLogs(true);
+    }
+  };
+
+  const handleOpenLogDir = async () => {
+    try {
+      const logDir = await window.electron.ipcRenderer.invoke('log:getDir') as string;
+      if (logDir) {
+        await window.electron.ipcRenderer.invoke('shell:showItemInFolder', logDir);
+      }
+    } catch {
+      // ignore
+    }
+  };
+  
   const renderStatus = (status: 'checking' | 'success' | 'error', message: string) => {
     if (status === 'checking') {
       return (
@@ -502,10 +524,15 @@ function RuntimeContent({ onStatusChange }: RuntimeContentProps) {
     <div className="space-y-4">
       <div className="flex items-center justify-between mb-4">
         <h2 className="text-xl font-semibold">Checking Environment</h2>
-        <Button variant="ghost" size="sm" onClick={runChecks}>
-          <RefreshCw className="h-4 w-4 mr-2" />
-          Re-check
-        </Button>
+        <div className="flex gap-2">
+          <Button variant="ghost" size="sm" onClick={handleShowLogs}>
+            View Logs
+          </Button>
+          <Button variant="ghost" size="sm" onClick={runChecks}>
+            <RefreshCw className="h-4 w-4 mr-2" />
+            Re-check
+          </Button>
+        </div>
       </div>
       <div className="space-y-3">
         <div className="flex items-center justify-between p-3 rounded-lg bg-white/5">
@@ -513,7 +540,14 @@ function RuntimeContent({ onStatusChange }: RuntimeContentProps) {
           {renderStatus(checks.nodejs.status, checks.nodejs.message)}
         </div>
         <div className="flex items-center justify-between p-3 rounded-lg bg-white/5">
-          <span>OpenClaw Package</span>
+          <div>
+            <span>OpenClaw Package</span>
+            {openclawDir && (
+              <p className="text-xs text-slate-500 mt-0.5 font-mono truncate max-w-[300px]">
+                {openclawDir}
+              </p>
+            )}
+          </div>
           {renderStatus(checks.openclaw.status, checks.openclaw.message)}
         </div>
         <div className="flex items-center justify-between p-3 rounded-lg bg-white/5">
@@ -536,10 +570,31 @@ function RuntimeContent({ onStatusChange }: RuntimeContentProps) {
             <div>
               <p className="font-medium text-red-400">Environment issue detected</p>
               <p className="text-sm text-slate-300 mt-1">
-                Please ensure Node.js is installed and OpenClaw is properly set up.
+                Please ensure OpenClaw is properly installed. Check the logs for details.
               </p>
             </div>
           </div>
+        </div>
+      )}
+      
+      {/* Log viewer panel */}
+      {showLogs && (
+        <div className="mt-4 p-4 rounded-lg bg-black/40 border border-slate-600">
+          <div className="flex items-center justify-between mb-2">
+            <p className="font-medium text-slate-200 text-sm">Application Logs</p>
+            <div className="flex gap-2">
+              <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={handleOpenLogDir}>
+                <ExternalLink className="h-3 w-3 mr-1" />
+                Open Log Folder
+              </Button>
+              <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={() => setShowLogs(false)}>
+                Close
+              </Button>
+            </div>
+          </div>
+          <pre className="text-xs text-slate-300 bg-black/50 p-3 rounded max-h-60 overflow-auto whitespace-pre-wrap font-mono">
+            {logContent || '(No logs available yet)'}
+          </pre>
         </div>
       )}
     </div>

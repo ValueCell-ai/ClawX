@@ -100,6 +100,14 @@ const electronAPI = {
         'skill:updateConfig',
         'skill:getConfig',
         'skill:getAllConfigs',
+        // Logs
+        'log:getRecent',
+        'log:readFile',
+        'log:getFilePath',
+        'log:getDir',
+        'log:listFiles',
+        // OpenClaw extras
+        'openclaw:getDir',
       ];
 
       if (validChannels.includes(channel)) {

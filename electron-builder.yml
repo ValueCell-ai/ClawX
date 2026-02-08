@@ -21,9 +21,12 @@ extraResources:
       - "!icons/*.md"
       - "!icons/*.svg"
       - "!bin/**"
-  # OpenClaw npm package - copy entire package from node_modules
-  - from: node_modules/openclaw/
+  # OpenClaw package (node_modules copied separately by afterPack hook
+  # because electron-builder respects .gitignore which excludes node_modules/)
+  - from: build/openclaw/
     to: openclaw/
+
+afterPack: ./scripts/after-pack.cjs
 
 asar: true
 asarUnpack:
@@ -86,12 +89,6 @@ win:
     - target: nsis
       arch:
         - x64
-  # publisherName is deprecated, use signtoolOptions instead if needed
-  # signtoolOptions:
-  #   publisherName: ClawX Inc.
-  # For code signing, uncomment and configure:
-  # certificateFile: path/to/certificate.pfx
-  # certificatePassword: ${env.WIN_CSC_KEY_PASSWORD}
 
 nsis:
   oneClick: false
@@ -130,6 +127,12 @@ linux:
     ClawX is a graphical AI assistant application that integrates with
     OpenClaw Gateway to provide intelligent automation and assistance
     across multiple messaging platforms.
+  desktop:
+    entry:
+      Name: ClawX
+      Comment: AI Assistant powered by OpenClaw
+      Categories: Utility;Network;
+      Keywords: ai;assistant;automation;chat;
 
 appImage:
   license: LICENSE

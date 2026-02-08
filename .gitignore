@@ -57,3 +57,7 @@ resources/bin
 *.p12
 *.pem
 *.key
+
+build/
+
+.cursor/

@@ -10,6 +10,7 @@ import { createTray } from './tray';
 import { createMenu } from './menu';
 
 import { appUpdater, registerUpdateHandlers } from './updater';
+import { logger } from '../utils/logger';
 
 // Disable GPU acceleration for better compatibility
 app.disableHardwareAcceleration();
@@ -69,6 +70,17 @@ function createWindow(): BrowserWindow {
  * Initialize the application
  */
 async function initialize(): Promise<void> {
+  // Initialize logger first
+  logger.init();
+  logger.info('=== ClawX Application Starting ===');
+  logger.info(`Platform: ${process.platform}, Arch: ${process.arch}`);
+  logger.info(`Electron: ${process.versions.electron}, Node: ${process.versions.node}`);
+  logger.info(`App path: ${app.getAppPath()}`);
+  logger.info(`User data: ${app.getPath('userData')}`);
+  logger.info(`Is packaged: ${app.isPackaged}`);
+  logger.info(`Resources path: ${process.resourcesPath}`);
+  logger.info(`Exec path: ${process.execPath}`);
+
   // Set application menu
   createMenu();
 
@@ -129,10 +141,11 @@ async function initialize(): Promise<void> {
 
   // Start Gateway automatically (optional based on settings)
   try {
+    logger.info('Auto-starting Gateway...');
     await gatewayManager.start();
-    console.log('Gateway started successfully');
+    logger.info('Gateway auto-start succeeded');
   } catch (error) {
-    console.error('Failed to start Gateway:', error);
+    logger.error('Gateway auto-start failed:', error);
     // Notify renderer about the error
     mainWindow?.webContents.send('gateway:error', String(error));
   }

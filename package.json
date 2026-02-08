@@ -3,8 +3,12 @@
   "version": "0.1.0",
   "pnpm": {
     "onlyBuiltDependencies": [
+      "@whiskeysockets/baileys",
       "electron",
-      "esbuild"
+      "esbuild",
+      "node-llama-cpp",
+      "protobufjs",
+      "sharp"
     ]
   },
   "description": "ClawX - Graphical AI Assistant based on OpenClaw",
@@ -15,7 +19,8 @@
   "scripts": {
     "init": "pnpm install && pnpm run uv:download",
     "dev": "vite",
-    "build": "vite build && electron-builder",
+    "bundle:openclaw": "zx scripts/bundle-openclaw.mjs",
+    "build": "vite build && zx scripts/bundle-openclaw.mjs && electron-builder",
     "preview": "vite preview",
     "lint": "eslint . --fix",
     "typecheck": "tsc --noEmit",
@@ -60,7 +65,7 @@
     "openclaw": "2026.2.6-3"
   },
   "devDependencies": {
-    "@eslint/js": "^9.39.2",
+    "@eslint/js": "^10.0.1",
     "@playwright/test": "^1.49.1",
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.1.0",
@@ -74,7 +79,7 @@
     "autoprefixer": "^10.4.20",
     "electron": "^40.2.1",
     "electron-builder": "^26.7.0",
-    "eslint": "^9.17.0",
+    "eslint": "^10.0.0",
     "eslint-plugin-react-hooks": "^7.0.1",
     "eslint-plugin-react-refresh": "^0.5.0",
     "globals": "^17.3.0",
@@ -89,5 +94,6 @@
     "vite-plugin-electron-renderer": "^0.14.6",
     "vitest": "^4.0.18",
     "zx": "^8.8.5"
-  }
+  },
+  "packageManager": "pnpm@10.29.1+sha512.48dae233635a645768a3028d19545cacc1688639eeb1f3734e42d6d6b971afbf22aa1ac9af52a173d9c3a20c15857cfa400f19994d79a2f626fcc73fccda9bbc"
 }

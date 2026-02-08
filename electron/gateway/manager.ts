@@ -19,6 +19,7 @@ import { getSetting } from '../utils/store';
 import { getApiKey } from '../utils/secure-storage';
 import { getProviderEnvVar } from '../utils/openclaw-auth';
 import { GatewayEventType, JsonRpcNotification, isNotification, isResponse } from './protocol';
+import { logger } from '../utils/logger';
 
 /**
  * Gateway connection status
@@ -106,6 +107,7 @@ export class GatewayManager extends EventEmitter {
    */
   async start(): Promise<void> {
     if (this.status.state === 'running') {
+      logger.info('Gateway already running, skipping start');
       return;
     }
     
@@ -115,27 +117,34 @@ export class GatewayManager extends EventEmitter {
     
     try {
       // Check if Gateway is already running
+      logger.info('Checking for existing Gateway...');
       const existing = await this.findExistingGateway();
       if (existing) {
-        console.log('Found existing Gateway on port', existing.port);
+        logger.info(`Found existing Gateway on port ${existing.port}`);
         await this.connect(existing.port);
         this.startHealthCheck();
         return;
       }
       
+      logger.info('No existing Gateway found, starting new process...');
+      
       // Start new Gateway process
       await this.startProcess();
       
       // Wait for Gateway to be ready
+      logger.info('Waiting for Gateway to be ready...');
       await this.waitForReady();
       
       // Connect WebSocket
+      logger.info('Connecting WebSocket...');
       await this.connect(this.status.port);
       
       // Start health monitoring
       this.startHealthCheck();
+      logger.info('Gateway started successfully');
       
     } catch (error) {
+      logger.error('Gateway start failed:', error);
       this.setStatus({ state: 'error', error: String(error) });
       throw error;
     }
@@ -330,65 +339,87 @@ export class GatewayManager extends EventEmitter {
   
   /**
    * Start Gateway process
-   * Uses OpenClaw npm package - supports both production (dist) and development modes
+   * Uses OpenClaw npm package from node_modules (dev) or resources (production)
    */
   private async startProcess(): Promise<void> {
     const openclawDir = getOpenClawDir();
     const entryScript = getOpenClawEntryPath();
     
+    logger.info('=== Gateway startProcess begin ===');
+    logger.info(`app.isPackaged: ${app.isPackaged}`);
+    logger.info(`openclawDir: ${openclawDir}`);
+    logger.info(`entryScript: ${entryScript}`);
+    logger.info(`openclawDir exists: ${existsSync(openclawDir)}`);
+    logger.info(`entryScript exists: ${existsSync(entryScript)}`);
+    logger.info(`process.execPath: ${process.execPath}`);
+    logger.info(`process.resourcesPath: ${process.resourcesPath}`);
+    logger.info(`process.cwd(): ${process.cwd()}`);
+    logger.info(`process.platform: ${process.platform}, process.arch: ${process.arch}`);
+    
     // Verify OpenClaw package exists
     if (!isOpenClawPresent()) {
-      throw new Error(
-        'OpenClaw package not found. Please run: pnpm install'
-      );
+      const errMsg = `OpenClaw package not found at: ${openclawDir}`;
+      logger.error(errMsg);
+      throw new Error(errMsg);
     }
     
     // Get or generate gateway token
     const gatewayToken = await getSetting('gatewayToken');
-    console.log('Using gateway token:', gatewayToken.substring(0, 10) + '...');
+    logger.info(`Using gateway token: ${gatewayToken.substring(0, 10)}...`);
     
     let command: string;
     let args: string[];
     
-    // Check if OpenClaw is built (production mode) or use pnpm dev mode
-    if (isOpenClawBuilt() && existsSync(entryScript)) {
-      // Production mode: use openclaw.mjs directly
-      console.log('Starting Gateway in production mode (using dist)');
+    // Determine the Node.js executable
+    // In packaged Electron app, use process.execPath with ELECTRON_RUN_AS_NODE=1
+    // which makes the Electron binary behave as plain Node.js.
+    // In development, use system 'node'.
+    const gatewayArgs = ['gateway', '--port', String(this.status.port), '--token', gatewayToken, '--dev', '--allow-unconfigured'];
+    
+    if (app.isPackaged) {
+      // Production: always use Electron binary as Node.js via ELECTRON_RUN_AS_NODE
+      if (existsSync(entryScript)) {
+        command = process.execPath;
+        args = [entryScript, ...gatewayArgs];
+        logger.info('Starting Gateway in PACKAGED mode (ELECTRON_RUN_AS_NODE)');
+      } else {
+        const errMsg = `OpenClaw entry script not found at: ${entryScript}`;
+        logger.error(errMsg);
+        throw new Error(errMsg);
+      }
+    } else if (isOpenClawBuilt() && existsSync(entryScript)) {
+      // Development with built package: use system node
       command = 'node';
-      args = [entryScript, 'gateway', '--port', String(this.status.port), '--token', gatewayToken, '--dev', '--allow-unconfigured'];
+      args = [entryScript, ...gatewayArgs];
+      logger.info('Starting Gateway in DEV mode (node + built dist)');
     } else {
-      // Development mode: use pnpm gateway:dev which handles tsx compilation
-      console.log('Starting Gateway in development mode (using pnpm)');
+      // Development without build: use pnpm dev
       command = 'pnpm';
-      args = ['run', 'dev', 'gateway', '--port', String(this.status.port), '--token', gatewayToken, '--dev', '--allow-unconfigured'];
+      args = ['run', 'dev', ...gatewayArgs];
+      logger.info('Starting Gateway in DEV mode (pnpm dev)');
     }
     
-    console.log(`Spawning Gateway: ${command} ${args.join(' ')}`);
-    console.log(`Working directory: ${openclawDir}`);
+    logger.info(`Spawning: ${command} ${args.join(' ')}`);
+    logger.info(`Working directory: ${openclawDir}`);
 
     // Resolve bundled bin path for uv
     let binPath = '';
     const platform = process.platform;
     const arch = process.arch;
-    // Map arch if necessary (e.g. x64 is standard, but ensure consistency with script)
     const target = `${platform}-${arch}`;
 
     if (app.isPackaged) {
-      // In production, we flattened the structure to 'bin/' using electron-builder macros
       binPath = path.join(process.resourcesPath, 'bin');
     } else {
-      // In dev, resources are at project root/resources/bin/<platform>-<arch>
       binPath = path.join(process.cwd(), 'resources', 'bin', target);
     }
 
-    // Only inject if the bundled directory exists
-    const finalPath = existsSync(binPath) 
+    const binPathExists = existsSync(binPath);
+    const finalPath = binPathExists
       ? `${binPath}${path.delimiter}${process.env.PATH || ''}`
       : process.env.PATH || '';
     
-    if (existsSync(binPath)) {
-      console.log('Injecting bundled bin path:', binPath);
-    }
+    logger.info(`Bundled bin path: ${binPath}, exists: ${binPathExists}`);
     
     // Load provider API keys from secure storage to pass as environment variables
     const providerEnv: Record<string, string> = {};
@@ -400,72 +431,73 @@ export class GatewayManager extends EventEmitter {
           const envVar = getProviderEnvVar(providerType);
           if (envVar) {
             providerEnv[envVar] = key;
-            console.log(`Loaded API key for ${providerType} -> ${envVar}`);
+            logger.info(`Loaded API key for ${providerType} -> ${envVar}`);
           }
         }
       } catch (err) {
-        console.warn(`Failed to load API key for ${providerType}:`, err);
+        logger.warn(`Failed to load API key for ${providerType}:`, err);
       }
     }
     
     return new Promise((resolve, reject) => {
+      const spawnEnv: Record<string, string | undefined> = {
+        ...process.env,
+        PATH: finalPath,
+        ...providerEnv,
+        OPENCLAW_GATEWAY_TOKEN: gatewayToken,
+        OPENCLAW_SKIP_CHANNELS: '',
+        CLAWDBOT_SKIP_CHANNELS: '',
+      };
+
+      // Critical: In packaged mode, make Electron binary act as Node.js
+      if (app.isPackaged) {
+        spawnEnv['ELECTRON_RUN_AS_NODE'] = '1';
+      }
+
       this.process = spawn(command, args, {
         cwd: openclawDir,
         stdio: ['ignore', 'pipe', 'pipe'],
         detached: false,
-        shell: process.platform === 'win32', // Use shell on Windows for pnpm
-        env: {
-          ...process.env,
-          PATH: finalPath, // Inject bundled bin path if it exists
-          // Provider API keys
-          ...providerEnv,
-          // Also set token via environment variable as fallback
-          OPENCLAW_GATEWAY_TOKEN: gatewayToken,
-          // Ensure OPENCLAW_SKIP_CHANNELS is NOT set so channels auto-start
-          // and config hot-reload can restart channels when config changes
-          OPENCLAW_SKIP_CHANNELS: '',
-          CLAWDBOT_SKIP_CHANNELS: '',
-        },
+        shell: !app.isPackaged && process.platform === 'win32', // shell only in dev on Windows
+        env: spawnEnv,
       });
       
       this.process.on('error', (error) => {
-        console.error('Gateway process error:', error);
+        logger.error('Gateway process spawn error:', error);
         reject(error);
       });
       
       this.process.on('exit', (code) => {
-        console.log('Gateway process exited with code:', code);
+        logger.info(`Gateway process exited with code: ${code}`);
         this.emit('exit', code);
         
         if (this.status.state === 'running') {
           this.setStatus({ state: 'stopped' });
-          // Attempt to reconnect
           this.scheduleReconnect();
         }
       });
       
       // Log stdout
       this.process.stdout?.on('data', (data) => {
-        console.log('Gateway:', data.toString());
+        const msg = data.toString().trimEnd();
+        logger.debug(`[Gateway stdout] ${msg}`);
       });
       
-      // Log stderr (filter out noisy control-ui token_mismatch messages)
+      // Log stderr
       this.process.stderr?.on('data', (data) => {
-        const msg = data.toString();
-        // Suppress the constant Control UI token_mismatch noise
-        // These come from the browser-based Control UI auto-polling with no token
-        if (msg.includes('openclaw-control-ui') && msg.includes('token_mismatch')) {
-          return;
-        }
-        if (msg.includes('closed before connect') && msg.includes('token mismatch')) {
-          return;
-        }
-        console.error('Gateway error:', msg);
+        const msg = data.toString().trimEnd();
+        // Suppress noisy control-ui token_mismatch messages
+        if (msg.includes('openclaw-control-ui') && msg.includes('token_mismatch')) return;
+        if (msg.includes('closed before connect') && msg.includes('token mismatch')) return;
+        logger.warn(`[Gateway stderr] ${msg}`);
       });
       
       // Store PID
       if (this.process.pid) {
+        logger.info(`Gateway process PID: ${this.process.pid}`);
         this.setStatus({ pid: this.process.pid });
+      } else {
+        logger.warn('Gateway process spawned but PID is undefined');
       }
       
       resolve();
@@ -478,7 +510,6 @@ export class GatewayManager extends EventEmitter {
   private async waitForReady(retries = 30, interval = 1000): Promise<void> {
     for (let i = 0; i < retries; i++) {
       try {
-        // Try a quick WebSocket connection to see if the gateway is listening
         const ready = await new Promise<boolean>((resolve) => {
           const testWs = new WebSocket(`ws://localhost:${this.status.port}/ws`);
           const timeout = setTimeout(() => {
@@ -499,16 +530,22 @@ export class GatewayManager extends EventEmitter {
         });
         
         if (ready) {
+          logger.info(`Gateway ready after ${i + 1} attempt(s)`);
           return;
         }
       } catch {
         // Gateway not ready yet
       }
       
+      if (i > 0 && i % 5 === 0) {
+        logger.info(`Still waiting for Gateway... (attempt ${i + 1}/${retries})`);
+      }
+      
       await new Promise((resolve) => setTimeout(resolve, interval));
     }
     
-    throw new Error('Gateway failed to start');
+    logger.error(`Gateway failed to become ready after ${retries} attempts on port ${this.status.port}`);
+    throw new Error(`Gateway failed to start after ${retries} retries (port ${this.status.port})`);
   }
   
   /**
