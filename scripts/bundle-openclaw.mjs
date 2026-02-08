@@ -158,11 +158,26 @@ while (queue.length > 0) {
 echo`   Found ${collected.size} total packages (direct + transitive)`;
 
 // 5. Copy all collected packages into OUTPUT/node_modules/ (flat structure)
+//
+// IMPORTANT: BFS guarantees direct deps are encountered before transitive deps.
+// When the same package name appears at different versions (e.g. chalk@5 from
+// openclaw directly, chalk@4 from a transitive dep), we keep the FIRST one
+// (direct dep version) and skip later duplicates. This prevents version
+// conflicts like CJS chalk@4 overwriting ESM chalk@5.
 const outputNodeModules = path.join(OUTPUT, 'node_modules');
 fs.mkdirSync(outputNodeModules, { recursive: true });
 
+const copiedNames = new Set(); // Track package names already copied
 let copiedCount = 0;
+let skippedDupes = 0;
+
 for (const [realPath, pkgName] of collected) {
+  if (copiedNames.has(pkgName)) {
+    skippedDupes++;
+    continue; // Keep the first version (closer to openclaw in dep tree)
+  }
+  copiedNames.add(pkgName);
+
   const dest = path.join(outputNodeModules, pkgName);
 
   try {
@@ -181,7 +196,9 @@ const distExists = fs.existsSync(path.join(OUTPUT, 'dist', 'entry.js'));
 
 echo``;
 echo`✅ Bundle complete: ${OUTPUT}`;
-echo`   Packages copied: ${copiedCount} dependencies`;
+echo`   Unique packages copied: ${copiedCount}`;
+echo`   Duplicate versions skipped: ${skippedDupes}`;
+echo`   Total discovered: ${collected.size}`;
 echo`   openclaw.mjs: ${entryExists ? '✓' : '✗'}`;
 echo`   dist/entry.js: ${distExists ? '✓' : '✗'}`;
 
