@@ -403,16 +403,13 @@ export class GatewayManager extends EventEmitter {
     logger.info(`Working directory: ${openclawDir}`);
 
     // Resolve bundled bin path for uv
-    let binPath = '';
     const platform = process.platform;
     const arch = process.arch;
     const target = `${platform}-${arch}`;
 
-    if (app.isPackaged) {
-      binPath = path.join(process.resourcesPath, 'bin');
-    } else {
-      binPath = path.join(process.cwd(), 'resources', 'bin', target);
-    }
+    const binPath = app.isPackaged
+      ? path.join(process.resourcesPath, 'bin')
+      : path.join(process.cwd(), 'resources', 'bin', target);
 
     const binPathExists = existsSync(binPath);
     const finalPath = binPathExists

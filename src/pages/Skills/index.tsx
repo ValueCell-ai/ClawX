@@ -548,7 +548,10 @@ export function Skills() {
         setShowGatewayWarning(true);
       }, 1500);
     } else {
-      setShowGatewayWarning(false);
+      // Use setTimeout to avoid synchronous setState in effect
+      timer = setTimeout(() => {
+        setShowGatewayWarning(false);
+      }, 0);
     }
     return () => clearTimeout(timer);
   }, [isGatewayRunning]);

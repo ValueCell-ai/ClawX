@@ -71,21 +71,21 @@ export function Channels() {
   }, [fetchChannels]);
 
   // Fetch configured channel types from config file
-  const fetchConfiguredTypes = async () => {
-    try {
-      const result = await window.electron.ipcRenderer.invoke('channel:listConfigured') as {
-        success: boolean;
-        channels?: string[];
-      };
-      if (result.success && result.channels) {
-        setConfiguredTypes(result.channels);
-      }
-    } catch {
-      // ignore
-    }
-  };
-
   useEffect(() => {
+    const fetchConfiguredTypes = async () => {
+      try {
+        const result = await window.electron.ipcRenderer.invoke('channel:listConfigured') as {
+          success: boolean;
+          channels?: string[];
+        };
+        if (result.success && result.channels) {
+          setConfiguredTypes(result.channels);
+        }
+      } catch {
+        // ignore
+      }
+    };
+    
     fetchConfiguredTypes();
   }, []);
 

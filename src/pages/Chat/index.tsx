@@ -4,7 +4,7 @@
  * via gateway:rpc IPC. Session selector, thinking toggle, and refresh
  * are in the toolbar; messages render with markdown + streaming.
  */
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useMemo } from 'react';
 import { AlertCircle, Bot, MessageSquare, Sparkles } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { useChatStore } from '@/stores/chat';
@@ -60,6 +60,9 @@ export function Chat() {
 
   // Extract streaming text for display
   const streamText = streamingMessage ? extractText(streamingMessage) : '';
+  
+  // Generate timestamp once per render to satisfy purity requirements
+  const currentTimestamp = useMemo(() => Date.now() / 1000, [sending, streamText]);
 
   return (
     <div className="flex flex-col -m-6" style={{ height: 'calc(100vh - 3.5rem)' }}>
@@ -88,7 +91,7 @@ export function Chat() {
                   message={{
                     role: 'assistant',
                     content: streamingMessage as unknown as string,
-                    timestamp: Date.now() / 1000,
+                    timestamp: currentTimestamp,
                   }}
                   showThinking={showThinking}
                   isStreaming

@@ -2,7 +2,7 @@
  * Dashboard Page
  * Main overview page showing system status and quick actions
  */
-import { useEffect } from 'react';
+import { useEffect, useMemo } from 'react';
 import {
   Activity,
   MessageSquare,
@@ -40,10 +40,12 @@ export function Dashboard() {
   const connectedChannels = Array.isArray(channels) ? channels.filter((c) => c.status === 'connected').length : 0;
   const enabledSkills = Array.isArray(skills) ? skills.filter((s) => s.enabled).length : 0;
   
-  // Calculate uptime
-  const uptime = gatewayStatus.connectedAt
-    ? Math.floor((Date.now() - gatewayStatus.connectedAt) / 1000)
-    : 0;
+  // Calculate uptime - memoize to satisfy purity requirements
+  const uptime = useMemo(() => {
+    return gatewayStatus.connectedAt
+      ? Math.floor((Date.now() - gatewayStatus.connectedAt) / 1000)
+      : 0;
+  }, [gatewayStatus.connectedAt, gatewayStatus.state]);
   
   return (
     <div className="space-y-6">

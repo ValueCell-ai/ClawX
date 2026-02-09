@@ -2,7 +2,7 @@
  * Setup Wizard Page
  * First-time setup experience for new users
  */
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
@@ -119,7 +119,6 @@ const providers: Provider[] = [
 export function Setup() {
   const navigate = useNavigate();
   const [currentStep, setCurrentStep] = useState(0);
-  const [canProceed, setCanProceed] = useState(true);
   
   // Setup state
   const [selectedProvider, setSelectedProvider] = useState<string | null>(null);
@@ -132,6 +131,26 @@ export function Setup() {
   const isLastStep = currentStep === steps.length - 1;
   
   const markSetupComplete = useSettingsStore((state) => state.markSetupComplete);
+  
+  // Derive canProceed based on current step - computed directly to avoid useEffect
+  const canProceed = useMemo(() => {
+    switch (currentStep) {
+      case STEP.WELCOME:
+        return true;
+      case STEP.RUNTIME:
+        return true; // Will be managed by RuntimeContent
+      case STEP.PROVIDER:
+        return selectedProvider !== null && apiKey.length > 0;
+      case STEP.CHANNEL:
+        return true; // Always allow proceeding — channel step is optional
+      case STEP.INSTALLING:
+        return false; // Cannot manually proceed, auto-proceeds when done
+      case STEP.COMPLETE:
+        return true;
+      default:
+        return true;
+    }
+  }, [currentStep, selectedProvider, apiKey]);
   
   const handleNext = async () => {
     if (isLastStep) {
@@ -161,31 +180,6 @@ export function Setup() {
       setCurrentStep((i) => i + 1);
     }, 1000);
   }, []);
-  
-  // Update canProceed based on current step
-  useEffect(() => {
-    switch (currentStep) {
-      case STEP.WELCOME:
-        setCanProceed(true);
-        break;
-      case STEP.RUNTIME:
-        // Will be managed by RuntimeContent
-        break;
-      case STEP.PROVIDER:
-        setCanProceed(selectedProvider !== null && apiKey.length > 0);
-        break;
-      case STEP.CHANNEL:
-        // Always allow proceeding — channel step is optional
-        setCanProceed(true);
-        break;
-      case STEP.INSTALLING:
-        setCanProceed(false); // Cannot manually proceed, auto-proceeds when done
-        break;
-      case STEP.COMPLETE:
-        setCanProceed(true);
-        break;
-    }
-  }, [currentStep, selectedProvider, apiKey]);
   
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 to-slate-800 text-white">
