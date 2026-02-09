@@ -109,8 +109,8 @@ jobs:
           echo "=== Build artifacts in release/ folder ==="
           ls -lh release/ || echo "No release folder found"
           echo ""
-          echo "=== File types generated ==="
-          find release/ -type f -exec file {} \; || true
+          echo "=== Installable packages generated ==="
+          find release/ -maxdepth 1 -type f \( -name "*.exe" -o -name "*.dmg" -o -name "*.zip" -o -name "*.AppImage" -o -name "*.deb" -o -name "*.rpm" -o -name "*.yml" -o -name "*.yaml" -o -name "*blockmap" \) -exec file {} + || true
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
