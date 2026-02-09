@@ -48,7 +48,13 @@ mac:
   icon: resources/icons/icon.icns
   target:
     - target: dmg
+      arch:
+        - x64
+        - arm64
     - target: zip
+      arch:
+        - x64
+        - arm64
   darkModeSupport: true
   hardenedRuntime: true
   gatekeeperAssess: false
