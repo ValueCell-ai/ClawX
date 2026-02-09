@@ -504,15 +504,22 @@ export class GatewayManager extends EventEmitter {
   /**
    * Wait for Gateway to be ready by checking if the port is accepting connections
    */
-  private async waitForReady(retries = 30, interval = 1000): Promise<void> {
+  private async waitForReady(retries = 120, interval = 1000): Promise<void> {
     for (let i = 0; i < retries; i++) {
+      // Early exit if the gateway process has already exited
+      if (this.process && this.process.exitCode !== null) {
+        const code = this.process.exitCode;
+        logger.error(`Gateway process exited with code ${code} before becoming ready`);
+        throw new Error(`Gateway process exited with code ${code} before becoming ready`);
+      }
+      
       try {
         const ready = await new Promise<boolean>((resolve) => {
           const testWs = new WebSocket(`ws://localhost:${this.status.port}/ws`);
           const timeout = setTimeout(() => {
             testWs.close();
             resolve(false);
-          }, 1000);
+          }, 2000);
           
           testWs.on('open', () => {
             clearTimeout(timeout);
@@ -534,7 +541,7 @@ export class GatewayManager extends EventEmitter {
         // Gateway not ready yet
       }
       
-      if (i > 0 && i % 5 === 0) {
+      if (i > 0 && i % 10 === 0) {
         logger.info(`Still waiting for Gateway... (attempt ${i + 1}/${retries})`);
       }
       

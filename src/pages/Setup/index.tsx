@@ -352,6 +352,7 @@ function RuntimeContent({ onStatusChange }: RuntimeContentProps) {
   const [showLogs, setShowLogs] = useState(false);
   const [logContent, setLogContent] = useState('');
   const [openclawDir, setOpenclawDir] = useState('');
+  const gatewayTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   
   const runChecks = useCallback(async () => {
     // Reset checks
@@ -411,28 +412,31 @@ function RuntimeContent({ onStatusChange }: RuntimeContentProps) {
       }));
     }
     
-    // Check Gateway
-    await new Promise((resolve) => setTimeout(resolve, 500));
-    if (gatewayStatus.state === 'running') {
+    // Check Gateway — read directly from store to avoid stale closure
+    // Don't immediately report error; gateway may still be initializing
+    const currentGateway = useGatewayStore.getState().status;
+    if (currentGateway.state === 'running') {
       setChecks((prev) => ({
         ...prev,
-        gateway: { status: 'success', message: `Running on port ${gatewayStatus.port}` },
+        gateway: { status: 'success', message: `Running on port ${currentGateway.port}` },
       }));
-    } else if (gatewayStatus.state === 'starting') {
+    } else if (currentGateway.state === 'error') {
       setChecks((prev) => ({
         ...prev,
-        gateway: { status: 'checking', message: 'Starting...' },
+        gateway: { status: 'error', message: currentGateway.error || 'Failed to start' },
       }));
     } else {
+      // Gateway is 'stopped', 'starting', or 'reconnecting'
+      // Keep as 'checking' — the dedicated useEffect will update when status changes
       setChecks((prev) => ({
         ...prev,
         gateway: { 
-          status: 'error', 
-          message: gatewayStatus.error || 'Not running' 
+          status: 'checking', 
+          message: currentGateway.state === 'starting' ? 'Starting...' : 'Waiting for gateway...'
         },
       }));
     }
-  }, [gatewayStatus]);
+  }, []);
   
   useEffect(() => {
     runChecks();
@@ -458,8 +462,47 @@ function RuntimeContent({ onStatusChange }: RuntimeContentProps) {
         ...prev,
         gateway: { status: 'error', message: gatewayStatus.error || 'Failed to start' },
       }));
+    } else if (gatewayStatus.state === 'starting' || gatewayStatus.state === 'reconnecting') {
+      setChecks((prev) => ({
+        ...prev,
+        gateway: { status: 'checking', message: 'Starting...' },
+      }));
     }
+    // 'stopped' state: keep current check status (likely 'checking') to allow startup time
   }, [gatewayStatus]);
+  
+  // Gateway startup timeout — show error only after giving enough time to initialize
+  useEffect(() => {
+    if (gatewayTimeoutRef.current) {
+      clearTimeout(gatewayTimeoutRef.current);
+      gatewayTimeoutRef.current = null;
+    }
+    
+    // If gateway is already in a terminal state, no timeout needed
+    if (gatewayStatus.state === 'running' || gatewayStatus.state === 'error') {
+      return;
+    }
+    
+    // Set timeout for non-terminal states (stopped, starting, reconnecting)
+    gatewayTimeoutRef.current = setTimeout(() => {
+      setChecks((prev) => {
+        if (prev.gateway.status === 'checking') {
+          return {
+            ...prev,
+            gateway: { status: 'error', message: 'Gateway startup timed out' },
+          };
+        }
+        return prev;
+      });
+    }, 120 * 1000); // 120 seconds — enough for gateway to fully initialize
+    
+    return () => {
+      if (gatewayTimeoutRef.current) {
+        clearTimeout(gatewayTimeoutRef.current);
+        gatewayTimeoutRef.current = null;
+      }
+    };
+  }, [gatewayStatus.state]);
   
   const handleStartGateway = async () => {
     setChecks((prev) => ({
