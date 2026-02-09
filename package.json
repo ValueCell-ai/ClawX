@@ -21,6 +21,7 @@
     "dev": "vite",
     "bundle:openclaw": "zx scripts/bundle-openclaw.mjs",
     "build": "vite build && zx scripts/bundle-openclaw.mjs && electron-builder",
+    "build:arm": "vite build && zx scripts/bundle-openclaw.mjs && electron-builder --mac --arm64",
     "preview": "vite preview",
     "lint": "eslint . --fix",
     "typecheck": "tsc --noEmit",
