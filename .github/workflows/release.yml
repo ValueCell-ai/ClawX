@@ -97,6 +97,15 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: pnpm run package:linux
 
+      - name: List build artifacts
+        shell: bash
+        run: |
+          echo "=== Build artifacts in release/ folder ==="
+          ls -lh release/ || echo "No release folder found"
+          echo ""
+          echo "=== File types generated ==="
+          find release/ -type f -exec file {} \; || true
+
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
@@ -107,6 +116,7 @@ jobs:
             release/*.exe
             release/*.AppImage
             release/*.deb
+            release/*.rpm
             release/*.yml
             release/*.yaml
           retention-days: 7
@@ -124,11 +134,16 @@ jobs:
         with:
           path: release-artifacts
 
-      - name: List artifacts
-        run: ls -la release-artifacts/
+      - name: List all downloaded artifacts
+        run: |
+          echo "=== All artifacts downloaded ==="
+          find release-artifacts/ -type f -exec ls -lh {} \;
+          echo ""
+          echo "=== File tree ==="
+          tree release-artifacts/ || find release-artifacts/ -print
 
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@v2
         if: startsWith(github.ref, 'refs/tags/')
         with:
           files: |
@@ -137,10 +152,49 @@ jobs:
             release-artifacts/**/*.exe
             release-artifacts/**/*.AppImage
             release-artifacts/**/*.deb
+            release-artifacts/**/*.rpm
             release-artifacts/**/*.yml
             release-artifacts/**/*.yaml
+            release-artifacts/**/*-blockmap
           draft: false
           prerelease: ${{ contains(github.ref, 'alpha') || contains(github.ref, 'beta') }}
           generate_release_notes: true
+          body: |
+            ## 🚀 ClawX ${{ github.ref_name }}
+            
+            ClawX - Graphical AI Assistant based on OpenClaw
+            
+            ### 📦 Downloads
+            
+            Please select the appropriate installer for your operating system and architecture:
+            
+            #### macOS
+            - **Apple Silicon (M1/M2/M3/M4)**: `ClawX-*-darwin-arm64.dmg`
+            - **Intel (x64)**: `ClawX-*-darwin-x64.dmg`
+            
+            #### Windows
+            - **Installer (x64)**: `ClawX-*-win-x64.exe`
+            - **Installer (ARM64)**: `ClawX-*-win-arm64.exe`
+            
+            #### Linux
+            - **AppImage (x64)**: `ClawX-*-linux-x64.AppImage` (Universal format, recommended)
+            - **AppImage (ARM64)**: `ClawX-*-linux-arm64.AppImage`
+            - **Debian/Ubuntu (x64)**: `ClawX-*-linux-x64.deb`
+            - **Debian/Ubuntu (ARM64)**: `ClawX-*-linux-arm64.deb`
+            - **RPM (x64)**: `ClawX-*-linux-x64.rpm`
+            
+            ### 📝 Release Notes
+            
+            See the auto-generated release notes below for detailed changes.
+            
+            ### ⚠️ Installation Notes
+            
+            - **macOS**: On first launch, you may see "cannot verify developer". Go to System Preferences → Security & Privacy to allow the app to run
+            - **Windows**: SmartScreen may block the app. Click "More info" → "Run anyway" to proceed
+            - **Linux**: AppImage requires executable permission: `chmod +x ClawX-*.AppImage`
+            
+            ---
+            
+            💬 Found an issue? Please submit an [Issue](https://github.com/${{ github.repository }}/issues)
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

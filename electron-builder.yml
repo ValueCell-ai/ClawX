@@ -51,10 +51,6 @@ mac:
       arch:
         - x64
         - arm64
-    - target: zip
-      arch:
-        - x64
-        - arm64
   darkModeSupport: true
   hardenedRuntime: true
   gatekeeperAssess: false
@@ -91,6 +87,7 @@ win:
     - target: nsis
       arch:
         - x64
+        - arm64
 
 nsis:
   oneClick: false
