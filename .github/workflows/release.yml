@@ -58,10 +58,19 @@ jobs:
             ${{ runner.os }}-pnpm-store-
 
       - name: Install dependencies
-        run: pnpm install --frozen-lockfile
+        run: pnpm install
 
-      - name: Build Vite
-        run: pnpm run build:vite
+      - name: Download uv binaries for macOS
+        if: matrix.platform == 'mac'
+        run: pnpm run uv:download:mac
+
+      - name: Download uv binaries for Windows
+        if: matrix.platform == 'win'
+        run: pnpm run uv:download:win
+
+      - name: Download uv binaries for Linux
+        if: matrix.platform == 'linux'
+        run: pnpm run uv:download:linux
 
       # macOS specific steps
       - name: Build macOS
@@ -79,10 +88,6 @@ jobs:
           # Increase file descriptor limit to handle large number of files during code signing
           ulimit -n 65536
           echo "File descriptor limit: $(ulimit -n)"
-          
-          # Create missing bin directories to avoid warnings
-          mkdir -p resources/bin/darwin-x64
-          mkdir -p resources/bin/darwin-arm64
           
           pnpm run package:mac
 
@@ -102,15 +107,6 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: pnpm run package:linux
-
-      - name: List build artifacts
-        shell: bash
-        run: |
-          echo "=== Build artifacts in release/ folder ==="
-          ls -lh release/ || echo "No release folder found"
-          echo ""
-          echo "=== Installable packages generated ==="
-          find release/ -maxdepth 1 -type f \( -name "*.exe" -o -name "*.dmg" -o -name "*.zip" -o -name "*.AppImage" -o -name "*.deb" -o -name "*.rpm" -o -name "*.yml" -o -name "*.yaml" -o -name "*blockmap" \) -exec file {} + || true
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4

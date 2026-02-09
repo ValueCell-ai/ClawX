@@ -17,10 +17,29 @@ const TARGETS = {
     filename: 'uv-x86_64-apple-darwin.tar.gz',
     binName: 'uv',
   },
+  'win32-arm64': {
+    filename: 'uv-aarch64-pc-windows-msvc.zip',
+    binName: 'uv.exe',
+  },
   'win32-x64': {
     filename: 'uv-x86_64-pc-windows-msvc.zip',
     binName: 'uv.exe',
+  },
+  'linux-arm64': {
+    filename: 'uv-aarch64-unknown-linux-gnu.tar.gz',
+    binName: 'uv',
+  },
+  'linux-x64': {
+    filename: 'uv-x86_64-unknown-linux-gnu.tar.gz',
+    binName: 'uv',
   }
+};
+
+// Platform groups for building multi-arch packages
+const PLATFORM_GROUPS = {
+  'mac': ['darwin-x64', 'darwin-arm64'],
+  'win': ['win32-x64', 'win32-arm64'],
+  'linux': ['linux-x64', 'linux-arm64']
 };
 
 async function setupTarget(id) {
@@ -98,17 +117,31 @@ async function setupTarget(id) {
 }
 
 // Main logic
-const args = process.argv.slice(3); // zx scripts/file.mjs --all -> argv is [node, zx, file, --all] ? or similar. 
-// zx execution: process.argv is [node, script, users_args...]
-// Let's use minimist which zx includes globally as `argv`
 const downloadAll = argv.all;
+const platform = argv.platform;
 
 if (downloadAll) {
+  // Download for all platforms
   echo(chalk.cyan`🌐 Downloading uv binaries for ALL supported platforms...`);
   for (const id of Object.keys(TARGETS)) {
     await setupTarget(id);
   }
+} else if (platform) {
+  // Download for a specific platform (e.g., --platform=mac)
+  const targets = PLATFORM_GROUPS[platform];
+  if (!targets) {
+    echo(chalk.red`❌ Unknown platform: ${platform}`);
+    echo(`Available platforms: ${Object.keys(PLATFORM_GROUPS).join(', ')}`);
+    process.exit(1);
+  }
+  
+  echo(chalk.cyan`🎯 Downloading uv binaries for platform: ${platform}`);
+  echo(`   Architectures: ${targets.join(', ')}`);
+  for (const id of targets) {
+    await setupTarget(id);
+  }
 } else {
+  // Download for current system only (default for local dev)
   const currentId = `${os.platform()}-${os.arch()}`;
   echo(chalk.cyan`💻 Detected system: ${currentId}`);
   
@@ -117,6 +150,8 @@ if (downloadAll) {
   } else {
     echo(chalk.red`❌ Current system ${currentId} is not in the supported download list.`);
     echo(`Supported targets: ${Object.keys(TARGETS).join(', ')}`);
+    echo(`\nTip: Use --platform=<platform> to download for a specific platform`);
+    echo(`     Use --all to download for all platforms`);
     process.exit(1);
   }
 }
