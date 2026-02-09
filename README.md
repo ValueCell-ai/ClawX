@@ -1,4 +1,8 @@
 
+<p align="center">
+  <img src="src/assets/logo.svg" width="128" height="128" alt="ClawX Logo" />
+</p>
+
 <h1 align="center">ClawX</h1>
 
 <p align="center">
@@ -16,9 +20,11 @@
 
 <p align="center">
   <img src="https://img.shields.io/badge/platform-macOS%20%7C%20Windows%20%7C%20Linux-blue" alt="Platform" />
-  <img src="https://img.shields.io/badge/electron-33+-47848F?logo=electron" alt="Electron" />
+  <img src="https://img.shields.io/badge/electron-40+-47848F?logo=electron" alt="Electron" />
   <img src="https://img.shields.io/badge/react-19-61DAFB?logo=react" alt="React" />
-  <img src="https://img.shields.io/badge/typescript-5.7+-3178C6?logo=typescript" alt="TypeScript" />
+  <a href="https://discord.com/invite/84Kex3GGAh" target="_blank">
+  <img src="https://img.shields.io/discord/1399603591471435907?logo=discord&labelColor=%20%235462eb&logoColor=%20%23f5f5f5&color=%20%235462eb" alt="chat on Discord" />
+  </a>
   <img src="https://img.shields.io/badge/license-MIT-green" alt="License" />
 </p>
 
@@ -43,6 +49,12 @@ Building AI agents shouldn't require mastering the command line. ClawX was desig
 | Process management | Automatic gateway lifecycle management |
 | Multiple AI providers | Unified provider configuration panel |
 | Skill/plugin installation | Built-in skill marketplace and management |
+
+### OpenClaw Inside
+
+ClawX is built directly upon the official **OpenClaw** core. Instead of requiring a separate installation, we embed the runtime within the application to provide a seamless "battery-included" experience.
+
+We are committed to maintaining strict alignment with the upstream OpenClaw project, ensuring that you always have access to the latest capabilities, stability improvements, and ecosystem compatibility provided by the official releases.
 
 ---
 
@@ -77,7 +89,7 @@ Light mode, dark mode, or system-synchronized themes. ClawX adapts to your prefe
 
 - **Operating System**: macOS 11+, Windows 10+, or Linux (Ubuntu 20.04+)
 - **Memory**: 4GB RAM minimum (8GB recommended)
-- **Storage**: 500MB available disk space
+- **Storage**: 1GB available disk space
 
 ### Installation
 
@@ -92,11 +104,8 @@ Download the latest release for your platform from the [Releases](https://github
 git clone https://github.com/ValueCell-ai/ClawX.git
 cd ClawX
 
-# Install dependencies (pnpm recommended)
-pnpm install
-
-# Initialize OpenClaw submodule
-pnpm openclaw:init
+# Initialize the project
+pnpm run init
 
 # Start in development mode
 pnpm dev
@@ -183,23 +192,23 @@ Chain multiple skills together to create sophisticated automation pipelines. Pro
 
 - **Node.js**: 22+ (LTS recommended)
 - **Package Manager**: pnpm 9+ (recommended) or npm
-- **Git**: For submodule management
 
 ### Project Structure
 
 ```
 ClawX/
-├── electron/              # Electron main process
+├── electron/              # Electron Main Process
 │   ├── main/             # Application entry, window management
 │   ├── gateway/          # OpenClaw Gateway process manager
 │   ├── preload/          # Secure IPC bridge scripts
 │   └── utils/            # Utilities (storage, auth, paths)
-├── src/                   # React renderer process
+├── src/                   # React Renderer Process
 │   ├── components/       # Reusable UI components
-│   │   ├── ui/          # Base components (buttons, inputs)
+│   │   ├── ui/          # Base components (shadcn/ui)
 │   │   ├── layout/      # Layout components (sidebar, header)
 │   │   └── common/      # Shared components
 │   ├── pages/           # Application pages
+│   │   ├── Setup/       # Initial setup wizard
 │   │   ├── Dashboard/   # Home dashboard
 │   │   ├── Chat/        # AI chat interface
 │   │   ├── Channels/    # Channel management
@@ -207,9 +216,10 @@ ClawX/
 │   │   ├── Cron/        # Scheduled tasks
 │   │   └── Settings/    # Configuration panels
 │   ├── stores/          # Zustand state stores
+│   ├── lib/             # Frontend utilities
 │   └── types/           # TypeScript type definitions
-├── openclaw/             # OpenClaw submodule
 ├── resources/            # Static assets (icons, images)
+├── scripts/              # Build & utility scripts
 └── tests/               # Test suites
 ```
 
@@ -243,7 +253,7 @@ pnpm package:linux        # Package for Linux
 
 | Layer | Technology |
 |-------|------------|
-| Runtime | Electron 33+ |
+| Runtime | Electron 40+ |
 | UI Framework | React 19 + TypeScript |
 | Styling | Tailwind CSS + shadcn/ui |
 | State | Zustand |
