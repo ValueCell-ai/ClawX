@@ -156,10 +156,10 @@ export const CHANNEL_META: Record<ChannelType, ChannelMeta> = {
       },
       {
         key: 'guildId',
-        label: 'Guild/Server ID (optional)',
+        label: 'Guild/Server ID',
         type: 'text',
         placeholder: 'e.g., 123456789012345678',
-        required: false,
+        required: true,
         description: 'Limit bot to a specific server. Right-click server → Copy Server ID.',
       },
       {
