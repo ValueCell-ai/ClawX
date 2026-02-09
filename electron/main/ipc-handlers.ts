@@ -77,6 +77,9 @@ export function registerIpcHandlers(
 
   // Cron task handlers (proxy to Gateway RPC)
   registerCronHandlers(gatewayManager);
+
+  // Window control handlers (for custom title bar on Windows/Linux)
+  registerWindowHandlers(mainWindow);
 }
 
 /**
@@ -1149,5 +1152,30 @@ function registerAppHandlers(): void {
   ipcMain.handle('app:relaunch', () => {
     app.relaunch();
     app.quit();
+  });
+}
+
+/**
+ * Window control handlers (for custom title bar on Windows/Linux)
+ */
+function registerWindowHandlers(mainWindow: BrowserWindow): void {
+  ipcMain.handle('window:minimize', () => {
+    mainWindow.minimize();
+  });
+
+  ipcMain.handle('window:maximize', () => {
+    if (mainWindow.isMaximized()) {
+      mainWindow.unmaximize();
+    } else {
+      mainWindow.maximize();
+    }
+  });
+
+  ipcMain.handle('window:close', () => {
+    mainWindow.close();
+  });
+
+  ipcMain.handle('window:isMaximized', () => {
+    return mainWindow.isMaximized();
   });
 }
