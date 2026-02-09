@@ -64,6 +64,39 @@ const DEFAULT_RECONNECT_CONFIG: ReconnectConfig = {
 };
 
 /**
+ * Get the Node.js-compatible executable path for spawning child processes.
+ *
+ * On macOS in packaged mode, using `process.execPath` directly causes the
+ * child process to appear as a separate dock icon (named "exec") because the
+ * binary lives inside a `.app` bundle that macOS treats as a GUI application.
+ *
+ * To avoid this, we resolve the Electron Helper binary which has
+ * `LSUIElement` set in its Info.plist, preventing dock icon creation.
+ * Falls back to `process.execPath` if the Helper binary is not found.
+ */
+function getNodeExecutablePath(): string {
+  if (process.platform === 'darwin' && app.isPackaged) {
+    // Electron Helper binary lives at:
+    // <App>.app/Contents/Frameworks/<ProductName> Helper.app/Contents/MacOS/<ProductName> Helper
+    const appName = app.getName();
+    const helperName = `${appName} Helper`;
+    const helperPath = path.join(
+      path.dirname(process.execPath), // .../Contents/MacOS
+      '../Frameworks',
+      `${helperName}.app`,
+      'Contents/MacOS',
+      helperName,
+    );
+    if (existsSync(helperPath)) {
+      logger.info(`Using Electron Helper binary to avoid dock icon: ${helperPath}`);
+      return helperPath;
+    }
+    logger.warn(`Electron Helper binary not found at ${helperPath}, falling back to process.execPath`);
+  }
+  return process.execPath;
+}
+
+/**
  * Gateway Manager
  * Handles starting, stopping, and communicating with the OpenClaw Gateway
  */
@@ -377,11 +410,13 @@ export class GatewayManager extends EventEmitter {
     const gatewayArgs = ['gateway', '--port', String(this.status.port), '--token', gatewayToken, '--dev', '--allow-unconfigured'];
     
     if (app.isPackaged) {
-      // Production: always use Electron binary as Node.js via ELECTRON_RUN_AS_NODE
+      // Production: use Electron binary as Node.js via ELECTRON_RUN_AS_NODE
+      // On macOS, use the Electron Helper binary to avoid extra dock icons
       if (existsSync(entryScript)) {
-        command = process.execPath;
+        command = getNodeExecutablePath();
         args = [entryScript, ...gatewayArgs];
         logger.info('Starting Gateway in PACKAGED mode (ELECTRON_RUN_AS_NODE)');
+        logger.info(`Using executable: ${command}`);
       } else {
         const errMsg = `OpenClaw entry script not found at: ${entryScript}`;
         logger.error(errMsg);
@@ -449,6 +484,15 @@ export class GatewayManager extends EventEmitter {
       // Critical: In packaged mode, make Electron binary act as Node.js
       if (app.isPackaged) {
         spawnEnv['ELECTRON_RUN_AS_NODE'] = '1';
+        // Prevent OpenClaw entry.ts from respawning itself (which would create
+        // another child process and a second "exec" dock icon on macOS)
+        spawnEnv['OPENCLAW_NO_RESPAWN'] = '1';
+        // Pre-set the NODE_OPTIONS that entry.ts would have added via respawn
+        const existingNodeOpts = spawnEnv['NODE_OPTIONS'] ?? '';
+        if (!existingNodeOpts.includes('--disable-warning=ExperimentalWarning') &&
+            !existingNodeOpts.includes('--no-warnings')) {
+          spawnEnv['NODE_OPTIONS'] = `${existingNodeOpts} --disable-warning=ExperimentalWarning`.trim();
+        }
       }
 
       this.process = spawn(command, args, {
