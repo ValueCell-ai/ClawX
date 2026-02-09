@@ -62,9 +62,12 @@ mac:
     NSCameraUsageDescription: ClawX requires camera access for video features
 
 dmg:
-  # background: resources/dmg-background.png
+  background: resources/dmg-background.png
   icon: resources/icons/icon.icns
   iconSize: 100
+  window:
+    width: 540
+    height: 380
   contents:
     - type: file
       x: 130
