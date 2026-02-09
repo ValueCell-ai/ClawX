@@ -11,6 +11,7 @@ import { createMenu } from './menu';
 
 import { appUpdater, registerUpdateHandlers } from './updater';
 import { logger } from '../utils/logger';
+import { warmupNetworkOptimization } from '../utils/uv-env';
 
 import { ClawHubService } from '../gateway/clawhub';
 
@@ -82,6 +83,9 @@ async function initialize(): Promise<void> {
   logger.info(`Is packaged: ${app.isPackaged}`);
   logger.info(`Resources path: ${process.resourcesPath}`);
   logger.info(`Exec path: ${process.execPath}`);
+
+  // Warm up network optimization (non-blocking)
+  void warmupNetworkOptimization();
 
   // Set application menu
   createMenu();

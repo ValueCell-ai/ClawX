@@ -2,6 +2,7 @@ import { app } from 'electron';
 import { spawn } from 'child_process';
 import { existsSync } from 'fs';
 import { join } from 'path';
+import { getUvMirrorEnv } from './uv-env';
 
 /**
  * Get the path to the bundled uv binary
@@ -54,6 +55,33 @@ export async function installUv(): Promise<void> {
 }
 
 /**
+ * Check if a managed Python 3.12 is ready and accessible
+ */
+export async function isPythonReady(): Promise<boolean> {
+  // Use 'uv' if in PATH, otherwise use full bundled path
+  const inPath = await new Promise<boolean>((resolve) => {
+    const cmd = process.platform === 'win32' ? 'where.exe' : 'which';
+    const child = spawn(cmd, ['uv']);
+    child.on('close', (code) => resolve(code === 0));
+    child.on('error', () => resolve(false));
+  });
+
+  const uvBin = inPath ? 'uv' : getBundledUvPath();
+
+  return new Promise<boolean>((resolve) => {
+    try {
+      const child = spawn(uvBin, ['python', 'find', '3.12'], {
+        shell: process.platform === 'win32',
+      });
+      child.on('close', (code) => resolve(code === 0));
+      child.on('error', () => resolve(false));
+    } catch {
+      resolve(false);
+    }
+  });
+}
+
+/**
  * Use bundled uv to install a managed Python version (default 3.12)
  * Automatically picks the best available uv binary
  */
@@ -69,10 +97,15 @@ export async function setupManagedPython(): Promise<void> {
   const uvBin = inPath ? 'uv' : getBundledUvPath();
   
   console.log(`Setting up python with: ${uvBin}`);
+  const uvEnv = await getUvMirrorEnv();
 
   await new Promise<void>((resolve, reject) => {
     const child = spawn(uvBin, ['python', 'install', '3.12'], {
-      shell: process.platform === 'win32'
+      shell: process.platform === 'win32',
+      env: {
+        ...process.env,
+        ...uvEnv,
+      },
     });
 
     child.stdout?.on('data', (data) => {
@@ -96,7 +129,11 @@ export async function setupManagedPython(): Promise<void> {
   try {
     const findPath = await new Promise<string>((resolve) => {
       const child = spawn(uvBin, ['python', 'find', '3.12'], {
-        shell: process.platform === 'win32'
+        shell: process.platform === 'win32',
+        env: {
+          ...process.env,
+          ...uvEnv,
+        },
       });
       let output = '';
       child.stdout?.on('data', (data) => { output += data; });
