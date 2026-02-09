@@ -15,7 +15,7 @@ interface ChannelsState {
   channels: Channel[];
   loading: boolean;
   error: string | null;
-  
+
   // Actions
   fetchChannels: () => Promise<void>;
   addChannel: (params: AddChannelParams) => Promise<Channel>;
@@ -32,7 +32,7 @@ export const useChannelsStore = create<ChannelsState>((set, get) => ({
   channels: [],
   loading: false,
   error: null,
-  
+
   fetchChannels: async () => {
     set({ loading: true, error: null });
     try {
@@ -136,7 +136,7 @@ export const useChannelsStore = create<ChannelsState>((set, get) => ({
       set({ channels: [], loading: false });
     }
   },
-  
+
   addChannel: async (params) => {
     try {
       const result = await window.electron.ipcRenderer.invoke(
@@ -144,7 +144,7 @@ export const useChannelsStore = create<ChannelsState>((set, get) => ({
         'channels.add',
         params
       ) as { success: boolean; result?: Channel; error?: string };
-      
+
       if (result.success && result.result) {
         set((state) => ({
           channels: [...state.channels, result.result!],
@@ -177,36 +177,46 @@ export const useChannelsStore = create<ChannelsState>((set, get) => ({
       return newChannel;
     }
   },
-  
+
   deleteChannel: async (channelId) => {
+    // Extract channel type from the channelId (format: "channelType-accountId")
+    const channelType = channelId.split('-')[0];
+
+    try {
+      // Delete the channel configuration from openclaw.json
+      await window.electron.ipcRenderer.invoke('channel:deleteConfig', channelType);
+    } catch (error) {
+      console.error('Failed to delete channel config:', error);
+    }
+
     try {
       await window.electron.ipcRenderer.invoke(
         'gateway:rpc',
         'channels.delete',
-        { channelId }
+        { channelId: channelType }
       );
     } catch (error) {
       // Continue with local deletion even if gateway fails
       console.error('Failed to delete channel from gateway:', error);
     }
-    
+
     // Remove from local state
     set((state) => ({
       channels: state.channels.filter((c) => c.id !== channelId),
     }));
   },
-  
+
   connectChannel: async (channelId) => {
     const { updateChannel } = get();
     updateChannel(channelId, { status: 'connecting', error: undefined });
-    
+
     try {
       const result = await window.electron.ipcRenderer.invoke(
         'gateway:rpc',
         'channels.connect',
         { channelId }
       ) as { success: boolean; error?: string };
-      
+
       if (result.success) {
         updateChannel(channelId, { status: 'connected' });
       } else {
@@ -216,10 +226,10 @@ export const useChannelsStore = create<ChannelsState>((set, get) => ({
       updateChannel(channelId, { status: 'error', error: String(error) });
     }
   },
-  
+
   disconnectChannel: async (channelId) => {
     const { updateChannel } = get();
-    
+
     try {
       await window.electron.ipcRenderer.invoke(
         'gateway:rpc',
@@ -229,26 +239,26 @@ export const useChannelsStore = create<ChannelsState>((set, get) => ({
     } catch (error) {
       console.error('Failed to disconnect channel:', error);
     }
-    
+
     updateChannel(channelId, { status: 'disconnected', error: undefined });
   },
-  
+
   requestQrCode: async (channelType) => {
     const result = await window.electron.ipcRenderer.invoke(
       'gateway:rpc',
       'channels.requestQr',
       { type: channelType }
     ) as { success: boolean; result?: { qrCode: string; sessionId: string }; error?: string };
-    
+
     if (result.success && result.result) {
       return result.result;
     }
-    
+
     throw new Error(result.error || 'Failed to request QR code');
   },
-  
+
   setChannels: (channels) => set({ channels }),
-  
+
   updateChannel: (channelId, updates) => {
     set((state) => ({
       channels: state.channels.map((channel) =>
@@ -256,6 +266,6 @@ export const useChannelsStore = create<ChannelsState>((set, get) => ({
       ),
     }));
   },
-  
+
   clearError: () => set({ error: null }),
 }));
