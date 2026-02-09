@@ -21,6 +21,7 @@
     "dev": "vite",
     "bundle:openclaw": "zx scripts/bundle-openclaw.mjs",
     "build": "vite build && zx scripts/bundle-openclaw.mjs && electron-builder",
+    "build:vite": "vite build && zx scripts/bundle-openclaw.mjs",
     "build:arm": "vite build && zx scripts/bundle-openclaw.mjs && electron-builder --mac --arm64",
     "preview": "vite preview",
     "lint": "eslint . --fix",
@@ -31,6 +32,9 @@
     "uv:download": "zx scripts/download-bundled-uv.mjs",
     "icons": "zx scripts/generate-icons.mjs",
     "package": "electron-builder",
+    "package:mac": "vite build && zx scripts/bundle-openclaw.mjs && electron-builder --mac",
+    "package:win": "vite build && zx scripts/bundle-openclaw.mjs && electron-builder --win",
+    "package:linux": "vite build && zx scripts/bundle-openclaw.mjs && electron-builder --linux",
     "release": "pnpm run uv:download && vite build && electron-builder --publish always"
   },
   "dependencies": {
