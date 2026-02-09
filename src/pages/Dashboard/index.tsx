@@ -11,6 +11,7 @@ import {
   Clock,
   Settings,
   Plus,
+  Terminal,
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -19,12 +20,14 @@ import { Badge } from '@/components/ui/badge';
 import { useGatewayStore } from '@/stores/gateway';
 import { useChannelsStore } from '@/stores/channels';
 import { useSkillsStore } from '@/stores/skills';
+import { useSettingsStore } from '@/stores/settings';
 import { StatusBadge } from '@/components/common/StatusBadge';
 
 export function Dashboard() {
   const gatewayStatus = useGatewayStore((state) => state.status);
   const { channels, fetchChannels } = useChannelsStore();
   const { skills, fetchSkills } = useSkillsStore();
+  const devModeUnlocked = useSettingsStore((state) => state.devModeUnlocked);
   
   const isGatewayRunning = gatewayStatus.state === 'running';
   const [uptime, setUptime] = useState(0);
@@ -59,6 +62,23 @@ export function Dashboard() {
     
     return () => clearInterval(interval);
   }, [gatewayStatus.connectedAt]);
+
+  const openDevConsole = async () => {
+    try {
+      const result = await window.electron.ipcRenderer.invoke('gateway:getControlUiUrl') as {
+        success: boolean;
+        url?: string;
+        error?: string;
+      };
+      if (result.success && result.url) {
+        window.electron.openExternal(result.url);
+      } else {
+        console.error('Failed to get Dev Console URL:', result.error);
+      }
+    } catch (err) {
+      console.error('Error opening Dev Console:', err);
+    }
+  };
   
   return (
     <div className="space-y-6">
@@ -159,6 +179,16 @@ export function Dashboard() {
                 <span>Settings</span>
               </Link>
             </Button>
+            {devModeUnlocked && (
+              <Button
+                variant="outline"
+                className="h-auto flex-col gap-2 py-4"
+                onClick={openDevConsole}
+              >
+                <Terminal className="h-5 w-5" />
+                <span>Dev Console</span>
+              </Button>
+            )}
           </div>
         </CardContent>
       </Card>

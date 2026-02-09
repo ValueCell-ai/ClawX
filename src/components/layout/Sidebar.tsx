@@ -64,8 +64,21 @@ export function Sidebar() {
   const setSidebarCollapsed = useSettingsStore((state) => state.setSidebarCollapsed);
   const devModeUnlocked = useSettingsStore((state) => state.devModeUnlocked);
 
-  const openDevConsole = () => {
-    window.electron.openExternal('http://localhost:18789');
+  const openDevConsole = async () => {
+    try {
+      const result = await window.electron.ipcRenderer.invoke('gateway:getControlUiUrl') as {
+        success: boolean;
+        url?: string;
+        error?: string;
+      };
+      if (result.success && result.url) {
+        window.electron.openExternal(result.url);
+      } else {
+        console.error('Failed to get Dev Console URL:', result.error);
+      }
+    } catch (err) {
+      console.error('Error opening Dev Console:', err);
+    }
   };
 
   const navItems = [

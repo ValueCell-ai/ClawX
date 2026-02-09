@@ -2,6 +2,7 @@
  * Settings Page
  * Application configuration
  */
+import { useState } from 'react';
 import {
   Sun,
   Moon,
@@ -11,6 +12,7 @@ import {
   ExternalLink,
   Key,
   Download,
+  Copy,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -18,11 +20,18 @@ import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { Separator } from '@/components/ui/separator';
 import { Badge } from '@/components/ui/badge';
+import { Input } from '@/components/ui/input';
+import { toast } from 'sonner';
 import { useSettingsStore } from '@/stores/settings';
 import { useGatewayStore } from '@/stores/gateway';
 import { useUpdateStore } from '@/stores/update';
 import { ProvidersSettings } from '@/components/settings/ProvidersSettings';
 import { UpdateSettings } from '@/components/settings/UpdateSettings';
+type ControlUiInfo = {
+  url: string;
+  token: string;
+  port: number;
+};
 
 export function Settings() {
   const {
@@ -35,16 +44,60 @@ export function Settings() {
     autoDownloadUpdate,
     setAutoDownloadUpdate,
     devModeUnlocked,
+    setDevModeUnlocked,
   } = useSettingsStore();
   
   const { status: gatewayStatus, restart: restartGateway } = useGatewayStore();
   const currentVersion = useUpdateStore((state) => state.currentVersion);
+  const [controlUiInfo, setControlUiInfo] = useState<ControlUiInfo | null>(null);
   
   // Open developer console
-  const openDevConsole = () => {
-    window.electron.openExternal('http://localhost:18789');
+  const openDevConsole = async () => {
+    try {
+      const result = await window.electron.ipcRenderer.invoke('gateway:getControlUiUrl') as {
+        success: boolean;
+        url?: string;
+        token?: string;
+        port?: number;
+        error?: string;
+      };
+      if (result.success && result.url && result.token && typeof result.port === 'number') {
+        setControlUiInfo({ url: result.url, token: result.token, port: result.port });
+        window.electron.openExternal(result.url);
+      } else {
+        console.error('Failed to get Dev Console URL:', result.error);
+      }
+    } catch (err) {
+      console.error('Error opening Dev Console:', err);
+    }
   };
-  
+
+  const refreshControlUiInfo = async () => {
+    try {
+      const result = await window.electron.ipcRenderer.invoke('gateway:getControlUiUrl') as {
+        success: boolean;
+        url?: string;
+        token?: string;
+        port?: number;
+      };
+      if (result.success && result.url && result.token && typeof result.port === 'number') {
+        setControlUiInfo({ url: result.url, token: result.token, port: result.port });
+      }
+    } catch {
+      // Ignore refresh errors
+    }
+  };
+
+  const handleCopyGatewayToken = async () => {
+    if (!controlUiInfo?.token) return;
+    try {
+      await navigator.clipboard.writeText(controlUiInfo.token);
+      toast.success('Gateway token copied');
+    } catch (error) {
+      toast.error(`Failed to copy token: ${String(error)}`);
+    }
+  };
+
   return (
     <div className="space-y-6 p-6">
       <div>
@@ -198,31 +251,85 @@ export function Settings() {
           </div>
         </CardContent>
       </Card>
+
+      {/* Advanced */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Advanced</CardTitle>
+          <CardDescription>Power-user options</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <Label>Developer Mode</Label>
+              <p className="text-sm text-muted-foreground">
+                Show developer tools and shortcuts
+              </p>
+            </div>
+            <Switch
+              checked={devModeUnlocked}
+              onCheckedChange={setDevModeUnlocked}
+            />
+          </div>
+        </CardContent>
+      </Card>
       
       {/* Developer */}
       {devModeUnlocked && (
         <Card>
           <CardHeader>
             <CardTitle>Developer</CardTitle>
-            <CardDescription>Advanced options for developers</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="space-y-2">
-              <Label>OpenClaw Console</Label>
+          <CardDescription>Advanced options for developers</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="space-y-2">
+            <Label>OpenClaw Console</Label>
+            <p className="text-sm text-muted-foreground">
+              Access the native OpenClaw management interface
+            </p>
+            <Button variant="outline" onClick={openDevConsole}>
+              <Terminal className="h-4 w-4 mr-2" />
+              Open Developer Console
+              <ExternalLink className="h-3 w-3 ml-2" />
+            </Button>
+            <p className="text-xs text-muted-foreground">
+              Opens the Control UI with gateway token injected
+            </p>
+            <div className="space-y-2 pt-2">
+              <Label>Gateway Token</Label>
               <p className="text-sm text-muted-foreground">
-                Access the native OpenClaw management interface
+                Paste this into Control UI settings if prompted
               </p>
-              <Button variant="outline" onClick={openDevConsole}>
-                <Terminal className="h-4 w-4 mr-2" />
-                Open Developer Console
-                <ExternalLink className="h-3 w-3 ml-2" />
-              </Button>
-              <p className="text-xs text-muted-foreground">
-                Opens http://localhost:18789 in your browser
-              </p>
+              <div className="flex gap-2">
+                <Input
+                  readOnly
+                  value={controlUiInfo?.token || ''}
+                  placeholder="Token unavailable"
+                  className="font-mono"
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={refreshControlUiInfo}
+                  disabled={!devModeUnlocked}
+                >
+                  <RefreshCw className="h-4 w-4 mr-2" />
+                  Load
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={handleCopyGatewayToken}
+                  disabled={!controlUiInfo?.token}
+                >
+                  <Copy className="h-4 w-4 mr-2" />
+                  Copy
+                </Button>
+              </div>
             </div>
-          </CardContent>
-        </Card>
+          </div>
+        </CardContent>
+      </Card>
       )}
       
       {/* About */}
