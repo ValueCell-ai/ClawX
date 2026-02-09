@@ -347,7 +347,7 @@ export function Settings() {
             <Button
               variant="link"
               className="h-auto p-0"
-              onClick={() => window.electron.openExternal('https://docs.clawx.app')}
+              onClick={() => window.electron.openExternal('https://clawx.dev')}
             >
               Documentation
             </Button>

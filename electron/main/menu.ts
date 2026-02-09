@@ -176,7 +176,7 @@ export function createMenu(): void {
         {
           label: 'Documentation',
           click: async () => {
-            await shell.openExternal('https://docs.clawx.app');
+            await shell.openExternal('https://clawx.dev');
           },
         },
         {
