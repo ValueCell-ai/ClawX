@@ -61,3 +61,4 @@ resources/bin
 build/
 
 .cursor/
+.pnpm-store/

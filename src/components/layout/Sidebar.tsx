@@ -1,6 +1,7 @@
 /**
  * Sidebar Component
- * Navigation sidebar with menu items
+ * Navigation sidebar with menu items.
+ * No longer fixed - sits inside the flex layout below the title bar.
  */
 import { NavLink } from 'react-router-dom';
 import {
@@ -17,10 +18,8 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useSettingsStore } from '@/stores/settings';
-
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-
 
 interface NavItemProps {
   to: string;
@@ -64,11 +63,11 @@ export function Sidebar() {
   const sidebarCollapsed = useSettingsStore((state) => state.sidebarCollapsed);
   const setSidebarCollapsed = useSettingsStore((state) => state.setSidebarCollapsed);
   const devModeUnlocked = useSettingsStore((state) => state.devModeUnlocked);
-  // Open developer console
+
   const openDevConsole = () => {
     window.electron.openExternal('http://localhost:18789');
   };
-  
+
   const navItems = [
     { to: '/', icon: <MessageSquare className="h-5 w-5" />, label: 'Chat' },
     { to: '/cron', icon: <Clock className="h-5 w-5" />, label: 'Cron Tasks' },
@@ -77,25 +76,16 @@ export function Sidebar() {
     { to: '/dashboard', icon: <Home className="h-5 w-5" />, label: 'Dashboard' },
     { to: '/settings', icon: <Settings className="h-5 w-5" />, label: 'Settings' },
   ];
-  
+
   return (
     <aside
       className={cn(
-        'fixed left-0 top-0 z-40 flex h-screen flex-col border-r bg-background transition-all duration-300',
+        'flex shrink-0 flex-col border-r bg-background transition-all duration-300',
         sidebarCollapsed ? 'w-16' : 'w-64'
       )}
     >
-      {/* Header with drag region for macOS */}
-      <div className="drag-region flex h-14 items-center border-b px-4">
-        {/* macOS traffic light spacing */}
-        <div className="w-16" />
-        {!sidebarCollapsed && (
-          <h1 className="no-drag text-xl font-bold">ClawX</h1>
-        )}
-      </div>
-      
       {/* Navigation */}
-      <nav className="flex-1 space-y-1 p-2">
+      <nav className="flex-1 space-y-1 overflow-auto p-2">
         {navItems.map((item) => (
           <NavItem
             key={item.to}
@@ -104,10 +94,9 @@ export function Sidebar() {
           />
         ))}
       </nav>
-      
+
       {/* Footer */}
       <div className="p-2 space-y-2">
-        {/* Developer Mode Button */}
         {devModeUnlocked && !sidebarCollapsed && (
           <Button
             variant="ghost"
@@ -121,8 +110,6 @@ export function Sidebar() {
           </Button>
         )}
 
-        
-        {/* Collapse Toggle */}
         <Button
           variant="ghost"
           size="icon"

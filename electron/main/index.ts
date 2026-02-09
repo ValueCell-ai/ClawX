@@ -12,10 +12,10 @@ import { createMenu } from './menu';
 import { appUpdater, registerUpdateHandlers } from './updater';
 import { logger } from '../utils/logger';
 
+import { ClawHubService } from '../gateway/clawhub';
+
 // Disable GPU acceleration for better compatibility
 app.disableHardwareAcceleration();
-
-import { ClawHubService } from '../gateway/clawhub';
 
 // Global references
 let mainWindow: BrowserWindow | null = null;
@@ -26,6 +26,8 @@ const clawHubService = new ClawHubService();
  * Create the main application window
  */
 function createWindow(): BrowserWindow {
+  const isMac = process.platform === 'darwin';
+
   const win = new BrowserWindow({
     width: 1280,
     height: 800,
@@ -38,8 +40,9 @@ function createWindow(): BrowserWindow {
       sandbox: false,
       webviewTag: true, // Enable <webview> for embedding OpenClaw Control UI
     },
-    titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : 'default',
-    trafficLightPosition: { x: 16, y: 16 },
+    titleBarStyle: isMac ? 'hiddenInset' : 'hidden',
+    trafficLightPosition: isMac ? { x: 16, y: 16 } : undefined,
+    frame: isMac,
     show: false,
   });
 
@@ -57,7 +60,6 @@ function createWindow(): BrowserWindow {
   // Load the app
   if (process.env.VITE_DEV_SERVER_URL) {
     win.loadURL(process.env.VITE_DEV_SERVER_URL);
-    // Open DevTools in development
     win.webContents.openDevTools();
   } else {
     win.loadFile(join(__dirname, '../../dist/index.html'));
@@ -91,8 +93,6 @@ async function initialize(): Promise<void> {
   createTray(mainWindow);
 
   // Override security headers ONLY for the OpenClaw Gateway Control UI
-  // The Control UI sets X-Frame-Options: DENY and CSP frame-ancestors 'none'
-  // which prevents embedding in an iframe. Only apply to gateway URLs.
   session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
     const isGatewayUrl = details.url.includes('127.0.0.1:18789') || details.url.includes('localhost:18789');
 
@@ -102,10 +102,8 @@ async function initialize(): Promise<void> {
     }
 
     const headers = { ...details.responseHeaders };
-    // Remove X-Frame-Options to allow embedding in iframe
     delete headers['X-Frame-Options'];
     delete headers['x-frame-options'];
-    // Remove restrictive CSP frame-ancestors
     if (headers['Content-Security-Policy']) {
       headers['Content-Security-Policy'] = headers['Content-Security-Policy'].map(
         (csp) => csp.replace(/frame-ancestors\s+'none'/g, "frame-ancestors 'self' *")
@@ -131,7 +129,7 @@ async function initialize(): Promise<void> {
       appUpdater.checkForUpdates().catch((err) => {
         console.error('Failed to check for updates:', err);
       });
-    }, 10000); // Check after 10 seconds
+    }, 10000);
   }
 
   // Handle window close
@@ -139,14 +137,13 @@ async function initialize(): Promise<void> {
     mainWindow = null;
   });
 
-  // Start Gateway automatically (optional based on settings)
+  // Start Gateway automatically
   try {
     logger.info('Auto-starting Gateway...');
     await gatewayManager.start();
     logger.info('Gateway auto-start succeeded');
   } catch (error) {
     logger.error('Gateway auto-start failed:', error);
-    // Notify renderer about the error
     mainWindow?.webContents.send('gateway:error', String(error));
   }
 }
@@ -155,21 +152,18 @@ async function initialize(): Promise<void> {
 app.whenReady().then(initialize);
 
 app.on('window-all-closed', () => {
-  // On macOS, keep the app running in the menu bar
   if (process.platform !== 'darwin') {
     app.quit();
   }
 });
 
 app.on('activate', () => {
-  // On macOS, re-create window when dock icon is clicked
   if (BrowserWindow.getAllWindows().length === 0) {
     mainWindow = createWindow();
   }
 });
 
 app.on('before-quit', async () => {
-  // Clean up Gateway process
   await gatewayManager.stop();
 });
 

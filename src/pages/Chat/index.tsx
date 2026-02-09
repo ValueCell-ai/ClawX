@@ -12,6 +12,7 @@ import { useGatewayStore } from '@/stores/gateway';
 import { LoadingSpinner } from '@/components/common/LoadingSpinner';
 import { ChatMessage } from './ChatMessage';
 import { ChatInput } from './ChatInput';
+import { ChatToolbar } from './ChatToolbar';
 import { extractText } from './message-utils';
 
 export function Chat() {
@@ -73,7 +74,12 @@ export function Chat() {
   const streamText = streamingMessage ? extractText(streamingMessage) : '';
 
   return (
-    <div className="flex flex-col -m-6" style={{ height: 'calc(100vh - 3.5rem)' }}>
+    <div className="flex flex-col -m-6" style={{ height: 'calc(100vh - 2.5rem)' }}>
+      {/* Toolbar */}
+      <div className="flex shrink-0 items-center justify-end px-4 py-2">
+        <ChatToolbar />
+      </div>
+
       {/* Messages Area */}
       <div className="flex-1 overflow-y-auto px-4 py-4">
         <div className="max-w-4xl mx-auto space-y-4">
