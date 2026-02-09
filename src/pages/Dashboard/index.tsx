@@ -2,7 +2,7 @@
  * Dashboard Page
  * Main overview page showing system status and quick actions
  */
-import { useEffect, useMemo } from 'react';
+import { useEffect, useState } from 'react';
 import {
   Activity,
   MessageSquare,
@@ -27,6 +27,7 @@ export function Dashboard() {
   const { skills, fetchSkills } = useSkillsStore();
   
   const isGatewayRunning = gatewayStatus.state === 'running';
+  const [uptime, setUptime] = useState(0);
   
   // Fetch data only when gateway is running
   useEffect(() => {
@@ -40,12 +41,24 @@ export function Dashboard() {
   const connectedChannels = Array.isArray(channels) ? channels.filter((c) => c.status === 'connected').length : 0;
   const enabledSkills = Array.isArray(skills) ? skills.filter((s) => s.enabled).length : 0;
   
-  // Calculate uptime - memoize to satisfy purity requirements
-  const uptime = useMemo(() => {
-    return gatewayStatus.connectedAt
-      ? Math.floor((Date.now() - gatewayStatus.connectedAt) / 1000)
-      : 0;
-  }, [gatewayStatus.connectedAt, gatewayStatus.state]);
+  // Update uptime periodically
+  useEffect(() => {
+    const updateUptime = () => {
+      if (gatewayStatus.connectedAt) {
+        setUptime(Math.floor((Date.now() - gatewayStatus.connectedAt) / 1000));
+      } else {
+        setUptime(0);
+      }
+    };
+    
+    // Update immediately
+    updateUptime();
+    
+    // Update every second
+    const interval = setInterval(updateUptime, 1000);
+    
+    return () => clearInterval(interval);
+  }, [gatewayStatus.connectedAt]);
   
   return (
     <div className="space-y-6">

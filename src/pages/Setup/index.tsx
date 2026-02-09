@@ -125,6 +125,8 @@ export function Setup() {
   const [apiKey, setApiKey] = useState('');
   // Installation state for the Installing step
   const [installedSkills, setInstalledSkills] = useState<string[]>([]);
+  // Runtime check status
+  const [runtimeChecksPassed, setRuntimeChecksPassed] = useState(false);
   
   const step = steps[currentStep];
   const isFirstStep = currentStep === 0;
@@ -138,7 +140,7 @@ export function Setup() {
       case STEP.WELCOME:
         return true;
       case STEP.RUNTIME:
-        return true; // Will be managed by RuntimeContent
+        return runtimeChecksPassed;
       case STEP.PROVIDER:
         return selectedProvider !== null && apiKey.length > 0;
       case STEP.CHANNEL:
@@ -150,7 +152,7 @@ export function Setup() {
       default:
         return true;
     }
-  }, [currentStep, selectedProvider, apiKey]);
+  }, [currentStep, selectedProvider, apiKey, runtimeChecksPassed]);
   
   const handleNext = async () => {
     if (isLastStep) {
@@ -234,7 +236,7 @@ export function Setup() {
           {/* Step-specific content */}
           <div className="rounded-xl bg-white/10 backdrop-blur p-8 mb-8">
             {currentStep === STEP.WELCOME && <WelcomeContent />}
-            {currentStep === STEP.RUNTIME && <RuntimeContent onStatusChange={setCanProceed} />}
+            {currentStep === STEP.RUNTIME && <RuntimeContent onStatusChange={setRuntimeChecksPassed} />}
             {currentStep === STEP.PROVIDER && (
               <ProviderContent
                 providers={providers}

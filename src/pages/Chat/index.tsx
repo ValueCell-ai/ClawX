@@ -4,7 +4,7 @@
  * via gateway:rpc IPC. Session selector, thinking toggle, and refresh
  * are in the toolbar; messages render with markdown + streaming.
  */
-import { useEffect, useRef, useMemo } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { AlertCircle, Bot, MessageSquare, Sparkles } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { useChatStore } from '@/stores/chat';
@@ -30,6 +30,7 @@ export function Chat() {
   const clearError = useChatStore((s) => s.clearError);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const [streamingTimestamp, setStreamingTimestamp] = useState<number>(0);
 
   // Load data when gateway is running
   useEffect(() => {
@@ -43,6 +44,16 @@ export function Chat() {
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, streamingMessage, sending]);
+
+  // Update timestamp when sending starts
+  useEffect(() => {
+    if (sending && streamingTimestamp === 0) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setStreamingTimestamp(Date.now() / 1000);
+    } else if (!sending && streamingTimestamp !== 0) {
+      setStreamingTimestamp(0);
+    }
+  }, [sending, streamingTimestamp]);
 
   // Gateway not running
   if (!isGatewayRunning) {
@@ -60,9 +71,6 @@ export function Chat() {
 
   // Extract streaming text for display
   const streamText = streamingMessage ? extractText(streamingMessage) : '';
-  
-  // Generate timestamp once per render to satisfy purity requirements
-  const currentTimestamp = useMemo(() => Date.now() / 1000, [sending, streamText]);
 
   return (
     <div className="flex flex-col -m-6" style={{ height: 'calc(100vh - 3.5rem)' }}>
@@ -91,7 +99,7 @@ export function Chat() {
                   message={{
                     role: 'assistant',
                     content: streamingMessage as unknown as string,
-                    timestamp: currentTimestamp,
+                    timestamp: streamingTimestamp,
                   }}
                   showThinking={showThinking}
                   isStreaming
