@@ -150,11 +150,11 @@ function transformCronJob(job: GatewayCronJob) {
   // Build lastRun from state
   const lastRun = job.state?.lastRunAtMs
     ? {
-        time: new Date(job.state.lastRunAtMs).toISOString(),
-        success: job.state.lastStatus === 'ok',
-        error: job.state.lastError,
-        duration: job.state.lastDurationMs,
-      }
+      time: new Date(job.state.lastRunAtMs).toISOString(),
+      success: job.state.lastStatus === 'ok',
+      error: job.state.lastError,
+      duration: job.state.lastDurationMs,
+    }
     : undefined;
 
   // Build nextRun from state
@@ -208,6 +208,12 @@ function registerCronHandlers(gatewayManager: GatewayManager): void {
   }) => {
     try {
       // Transform frontend input to Gateway cron.add format
+      // For Discord, the recipient must be prefixed with "channel:" or "user:"
+      const recipientId = input.target.channelId;
+      const deliveryTo = input.target.channelType === 'discord' && recipientId
+        ? `channel:${recipientId}`
+        : recipientId;
+
       const gatewayInput = {
         name: input.name,
         schedule: { kind: 'cron', expr: input.schedule },
@@ -218,6 +224,7 @@ function registerCronHandlers(gatewayManager: GatewayManager): void {
         delivery: {
           mode: 'announce',
           channel: input.target.channelType,
+          to: deliveryTo,
         },
       };
       const result = await gatewayManager.rpc('cron.add', gatewayInput);

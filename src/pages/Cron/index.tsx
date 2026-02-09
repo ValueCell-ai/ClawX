@@ -3,13 +3,13 @@
  * Manage scheduled tasks
  */
 import { useEffect, useState, useCallback } from 'react';
-import { 
-  Plus, 
-  Clock, 
-  Play, 
-  Pause, 
-  Trash2, 
-  Edit, 
+import {
+  Plus,
+  Clock,
+  Play,
+  Pause,
+  Trash2,
+  Edit,
   RefreshCw,
   X,
   Calendar,
@@ -90,12 +90,12 @@ function parseCronSchedule(schedule: unknown): string {
 function parseCronExpr(cron: string): string {
   const preset = schedulePresets.find((p) => p.value === cron);
   if (preset) return preset.label;
-  
+
   const parts = cron.split(' ');
   if (parts.length !== 5) return cron;
-  
+
   const [minute, hour, dayOfMonth, , dayOfWeek] = parts;
-  
+
   if (minute === '*' && hour === '*') return 'Every minute';
   if (minute.startsWith('*/')) return `Every ${minute.slice(2)} minutes`;
   if (hour === '*' && minute === '0') return 'Every hour';
@@ -109,7 +109,7 @@ function parseCronExpr(cron: string): string {
   if (hour !== '*') {
     return `Daily at ${hour}:${minute.padStart(2, '0')}`;
   }
-  
+
   return cron;
 }
 
@@ -123,7 +123,7 @@ interface TaskDialogProps {
 function TaskDialog({ job, onClose, onSave }: TaskDialogProps) {
   const { channels } = useChannelsStore();
   const [saving, setSaving] = useState(false);
-  
+
   const [name, setName] = useState(job?.name || '');
   const [message, setMessage] = useState(job?.message || '');
   // Extract cron expression string from CronSchedule object or use as-is if string
@@ -140,10 +140,12 @@ function TaskDialog({ job, onClose, onSave }: TaskDialogProps) {
   const [customSchedule, setCustomSchedule] = useState('');
   const [useCustom, setUseCustom] = useState(false);
   const [channelId, setChannelId] = useState(job?.target.channelId || '');
+  const [discordChannelId, setDiscordChannelId] = useState('');
   const [enabled, setEnabled] = useState(job?.enabled ?? true);
-  
+
   const selectedChannel = channels.find((c) => c.id === channelId);
-  
+  const isDiscord = selectedChannel?.type === 'discord';
+
   const handleSubmit = async () => {
     if (!name.trim()) {
       toast.error('Please enter a task name');
@@ -157,22 +159,32 @@ function TaskDialog({ job, onClose, onSave }: TaskDialogProps) {
       toast.error('Please select a channel');
       return;
     }
-    
+    // Validate Discord channel ID when Discord is selected
+    if (selectedChannel?.type === 'discord' && !discordChannelId.trim()) {
+      toast.error('Please enter a Discord Channel ID');
+      return;
+    }
+
     const finalSchedule = useCustom ? customSchedule : schedule;
     if (!finalSchedule.trim()) {
       toast.error('Please select or enter a schedule');
       return;
     }
-    
+
     setSaving(true);
     try {
+      // For Discord, use the manually entered channel ID; for others, use empty
+      const actualChannelId = selectedChannel!.type === 'discord'
+        ? discordChannelId.trim()
+        : '';
+
       await onSave({
         name: name.trim(),
         message: message.trim(),
         schedule: finalSchedule,
         target: {
           channelType: selectedChannel!.type,
-          channelId: selectedChannel!.id,
+          channelId: actualChannelId,
           channelName: selectedChannel!.name,
         },
         enabled,
@@ -185,7 +197,7 @@ function TaskDialog({ job, onClose, onSave }: TaskDialogProps) {
       setSaving(false);
     }
   };
-  
+
   return (
     <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4" onClick={onClose}>
       <Card className="w-full max-w-lg max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
@@ -209,7 +221,7 @@ function TaskDialog({ job, onClose, onSave }: TaskDialogProps) {
               onChange={(e) => setName(e.target.value)}
             />
           </div>
-          
+
           {/* Message */}
           <div className="space-y-2">
             <Label htmlFor="message">Message / Prompt</Label>
@@ -221,7 +233,7 @@ function TaskDialog({ job, onClose, onSave }: TaskDialogProps) {
               rows={3}
             />
           </div>
-          
+
           {/* Schedule */}
           <div className="space-y-2">
             <Label>Schedule</Label>
@@ -258,7 +270,7 @@ function TaskDialog({ job, onClose, onSave }: TaskDialogProps) {
               {useCustom ? 'Use presets' : 'Use custom cron'}
             </Button>
           </div>
-          
+
           {/* Target Channel */}
           <div className="space-y-2">
             <Label>Target Channel</Label>
@@ -284,7 +296,21 @@ function TaskDialog({ job, onClose, onSave }: TaskDialogProps) {
               </div>
             )}
           </div>
-          
+
+          {/* Discord Channel ID - only shown when Discord is selected */}
+          {isDiscord && (
+            <div className="space-y-2">
+              <Label>Discord Channel ID</Label>
+              <Input
+                value={discordChannelId}
+                onChange={(e) => setDiscordChannelId(e.target.value)}
+                placeholder="e.g., 1438452657525100686"
+              />
+              <p className="text-xs text-muted-foreground">
+                Right-click the Discord channel → Copy Channel ID
+              </p>
+            </div>
+          )}
           {/* Enabled */}
           <div className="flex items-center justify-between">
             <div>
@@ -295,7 +321,7 @@ function TaskDialog({ job, onClose, onSave }: TaskDialogProps) {
             </div>
             <Switch checked={enabled} onCheckedChange={setEnabled} />
           </div>
-          
+
           {/* Actions */}
           <div className="flex justify-end gap-2 pt-4 border-t">
             <Button variant="outline" onClick={onClose}>
@@ -332,7 +358,7 @@ interface CronJobCardProps {
 
 function CronJobCard({ job, onToggle, onEdit, onDelete, onTrigger }: CronJobCardProps) {
   const [triggering, setTriggering] = useState(false);
-  
+
   const handleTrigger = async () => {
     setTriggering(true);
     try {
@@ -345,13 +371,13 @@ function CronJobCard({ job, onToggle, onEdit, onDelete, onTrigger }: CronJobCard
       setTriggering(false);
     }
   };
-  
+
   const handleDelete = () => {
     if (confirm('Are you sure you want to delete this task?')) {
       onDelete();
     }
   };
-  
+
   return (
     <Card className={cn(
       'transition-colors',
@@ -362,8 +388,8 @@ function CronJobCard({ job, onToggle, onEdit, onDelete, onTrigger }: CronJobCard
           <div className="flex items-center gap-3">
             <div className={cn(
               'rounded-full p-2',
-              job.enabled 
-                ? 'bg-green-100 dark:bg-green-900/30' 
+              job.enabled
+                ? 'bg-green-100 dark:bg-green-900/30'
                 : 'bg-muted'
             )}>
               <Clock className={cn(
@@ -398,14 +424,14 @@ function CronJobCard({ job, onToggle, onEdit, onDelete, onTrigger }: CronJobCard
             {job.message}
           </p>
         </div>
-        
+
         {/* Metadata */}
         <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-sm text-muted-foreground">
           <span className="flex items-center gap-1">
             {CHANNEL_ICONS[job.target.channelType]}
             {job.target.channelName}
           </span>
-          
+
           {job.lastRun && (
             <span className="flex items-center gap-1">
               <History className="h-4 w-4" />
@@ -417,7 +443,7 @@ function CronJobCard({ job, onToggle, onEdit, onDelete, onTrigger }: CronJobCard
               )}
             </span>
           )}
-          
+
           {job.nextRun && job.enabled && (
             <span className="flex items-center gap-1">
               <Calendar className="h-4 w-4" />
@@ -425,7 +451,7 @@ function CronJobCard({ job, onToggle, onEdit, onDelete, onTrigger }: CronJobCard
             </span>
           )}
         </div>
-        
+
         {/* Last Run Error */}
         {job.lastRun && !job.lastRun.success && job.lastRun.error && (
           <div className="flex items-start gap-2 p-2 rounded-lg bg-red-50 dark:bg-red-900/20 text-sm text-red-600 dark:text-red-400">
@@ -433,12 +459,12 @@ function CronJobCard({ job, onToggle, onEdit, onDelete, onTrigger }: CronJobCard
             <span>{job.lastRun.error}</span>
           </div>
         )}
-        
+
         {/* Actions */}
         <div className="flex justify-end gap-1 pt-2 border-t">
-          <Button 
-            variant="ghost" 
-            size="sm" 
+          <Button
+            variant="ghost"
+            size="sm"
             onClick={handleTrigger}
             disabled={triggering}
           >
@@ -469,9 +495,9 @@ export function Cron() {
   const gatewayStatus = useGatewayStore((state) => state.status);
   const [showDialog, setShowDialog] = useState(false);
   const [editingJob, setEditingJob] = useState<CronJob | undefined>();
-  
+
   const isGatewayRunning = gatewayStatus.state === 'running';
-  
+
   // Fetch jobs and channels on mount
   useEffect(() => {
     if (isGatewayRunning) {
@@ -479,12 +505,12 @@ export function Cron() {
       fetchChannels();
     }
   }, [fetchJobs, fetchChannels, isGatewayRunning]);
-  
+
   // Statistics
   const activeJobs = jobs.filter((j) => j.enabled);
   const pausedJobs = jobs.filter((j) => !j.enabled);
   const failedJobs = jobs.filter((j) => j.lastRun && !j.lastRun.success);
-  
+
   const handleSave = useCallback(async (input: CronJobCreateInput) => {
     if (editingJob) {
       await updateJob(editingJob.id, input);
@@ -492,7 +518,7 @@ export function Cron() {
       await createJob(input);
     }
   }, [editingJob, createJob, updateJob]);
-  
+
   const handleToggle = useCallback(async (id: string, enabled: boolean) => {
     try {
       await toggleJob(id, enabled);
@@ -501,7 +527,7 @@ export function Cron() {
       toast.error('Failed to update task');
     }
   }, [toggleJob]);
-  
+
   const handleDelete = useCallback(async (id: string) => {
     try {
       await deleteJob(id);
@@ -510,7 +536,7 @@ export function Cron() {
       toast.error('Failed to delete task');
     }
   }, [deleteJob]);
-  
+
   if (loading) {
     return (
       <div className="flex h-96 items-center justify-center">
@@ -518,7 +544,7 @@ export function Cron() {
       </div>
     );
   }
-  
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -534,7 +560,7 @@ export function Cron() {
             <RefreshCw className="h-4 w-4 mr-2" />
             Refresh
           </Button>
-          <Button 
+          <Button
             onClick={() => {
               setEditingJob(undefined);
               setShowDialog(true);
@@ -546,7 +572,7 @@ export function Cron() {
           </Button>
         </div>
       </div>
-      
+
       {/* Gateway Warning */}
       {!isGatewayRunning && (
         <Card className="border-yellow-500 bg-yellow-50 dark:bg-yellow-900/10">
@@ -558,7 +584,7 @@ export function Cron() {
           </CardContent>
         </Card>
       )}
-      
+
       {/* Statistics */}
       <div className="grid grid-cols-4 gap-4">
         <Card>
@@ -614,7 +640,7 @@ export function Cron() {
           </CardContent>
         </Card>
       </div>
-      
+
       {/* Error Display */}
       {error && (
         <Card className="border-destructive">
@@ -624,7 +650,7 @@ export function Cron() {
           </CardContent>
         </Card>
       )}
-      
+
       {/* Jobs List */}
       {jobs.length === 0 ? (
         <Card>
@@ -632,10 +658,10 @@ export function Cron() {
             <Clock className="h-12 w-12 text-muted-foreground mb-4" />
             <h3 className="text-lg font-medium mb-2">No scheduled tasks</h3>
             <p className="text-muted-foreground text-center mb-4 max-w-md">
-              Create scheduled tasks to automate AI workflows. 
+              Create scheduled tasks to automate AI workflows.
               Tasks can send messages, run queries, or perform actions at specified times.
             </p>
-            <Button 
+            <Button
               onClick={() => {
                 setEditingJob(undefined);
                 setShowDialog(true);
@@ -664,7 +690,7 @@ export function Cron() {
           ))}
         </div>
       )}
-      
+
       {/* Create/Edit Dialog */}
       {showDialog && (
         <TaskDialog
