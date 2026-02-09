@@ -8,11 +8,21 @@ import { join } from 'path';
 let tray: Tray | null = null;
 
 /**
+ * Resolve the icons directory path (works in both dev and packaged mode)
+ */
+function getIconsDir(): string {
+  if (app.isPackaged) {
+    return join(process.resourcesPath, 'resources', 'icons');
+  }
+  return join(__dirname, '../../resources/icons');
+}
+
+/**
  * Create system tray icon and menu
  */
 export function createTray(mainWindow: BrowserWindow): Tray {
   // Use platform-appropriate icon for system tray
-  const iconsDir = join(__dirname, '../../resources/icons');
+  const iconsDir = getIconsDir();
   let iconPath: string;
 
   if (process.platform === 'win32') {

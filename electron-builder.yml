@@ -78,7 +78,7 @@ dmg:
 win:
   forceCodeSigning: false
   verifyUpdateCodeSignature: false
-  signAndEditExecutable: false
+  signAndEditExecutable: true
   extraResources:
     - from: resources/bin/win32-${arch}
       to: bin
