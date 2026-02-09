@@ -144,7 +144,7 @@ export const CHANNEL_META: Record<ChannelType, ChannelMeta> = {
     icon: '🎮',
     description: 'Connect Discord using a bot token from Developer Portal',
     connectionType: 'token',
-    docsUrl: 'https://docs.openclaw.ai/channels/discord',
+    docsUrl: 'https://docs.openclaw.ai/channels/discord#how-to-create-your-own-bot',
     configFields: [
       {
         key: 'token',
@@ -255,7 +255,7 @@ export const CHANNEL_META: Record<ChannelType, ChannelMeta> = {
     icon: '🐦',
     description: 'Connect Feishu/Lark bot via WebSocket',
     connectionType: 'token',
-    docsUrl: 'https://docs.openclaw.ai/channels/feishu',
+    docsUrl: 'https://docs.openclaw.ai/channels/feishu#step-1-create-a-feishu-app',
     configFields: [
       {
         key: 'appId',
