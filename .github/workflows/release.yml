@@ -114,13 +114,11 @@ jobs:
           name: release-${{ matrix.platform }}
           path: |
             release/*.dmg
-            release/*.zip
             release/*.exe
             release/*.AppImage
             release/*.deb
             release/*.rpm
-            release/*.yml
-            release/*.yaml
+            release/latest*.yml
           retention-days: 7
 
   publish:
@@ -150,14 +148,11 @@ jobs:
         with:
           files: |
             release-artifacts/**/*.dmg
-            release-artifacts/**/*.zip
             release-artifacts/**/*.exe
             release-artifacts/**/*.AppImage
             release-artifacts/**/*.deb
             release-artifacts/**/*.rpm
-            release-artifacts/**/*.yml
-            release-artifacts/**/*.yaml
-            release-artifacts/**/*-blockmap
+            release-artifacts/**/latest*.yml
           draft: false
           prerelease: ${{ contains(github.ref, 'alpha') || contains(github.ref, 'beta') }}
           generate_release_notes: true
@@ -171,19 +166,19 @@ jobs:
             Please select the appropriate installer for your operating system and architecture:
             
             #### macOS
-            - **Apple Silicon (M1/M2/M3/M4)**: `ClawX-*-darwin-arm64.dmg`
-            - **Intel (x64)**: `ClawX-*-darwin-x64.dmg`
+            - **Apple Silicon (M1/M2/M3/M4)**: `ClawX-*-mac-arm64.dmg`
+            - **Intel (x64)**: `ClawX-*-mac-x64.dmg`
             
             #### Windows
             - **Installer (x64)**: `ClawX-*-win-x64.exe`
             - **Installer (ARM64)**: `ClawX-*-win-arm64.exe`
             
             #### Linux
-            - **AppImage (x64)**: `ClawX-*-linux-x64.AppImage` (Universal format, recommended)
+            - **AppImage (x64)**: `ClawX-*-linux-x86_64.AppImage` (Universal format, recommended)
             - **AppImage (ARM64)**: `ClawX-*-linux-arm64.AppImage`
-            - **Debian/Ubuntu (x64)**: `ClawX-*-linux-x64.deb`
+            - **Debian/Ubuntu (x64)**: `ClawX-*-linux-amd64.deb`
             - **Debian/Ubuntu (ARM64)**: `ClawX-*-linux-arm64.deb`
-            - **RPM (x64)**: `ClawX-*-linux-x64.rpm`
+            - **RPM (x64)**: `ClawX-*-linux-x86_64.rpm`
             
             ### 📝 Release Notes
             
