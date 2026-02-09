@@ -11,18 +11,28 @@ let tray: Tray | null = null;
  * Create system tray icon and menu
  */
 export function createTray(mainWindow: BrowserWindow): Tray {
-  // Create tray icon
-  const iconPath = join(__dirname, '../../resources/icons/tray-icon.png');
-  
-  // Create a template image for macOS (adds @2x support automatically)
-  let icon = nativeImage.createFromPath(iconPath);
-  
-  // If icon doesn't exist, create a simple placeholder
-  if (icon.isEmpty()) {
-    // Create a simple 16x16 icon as placeholder
-    icon = nativeImage.createEmpty();
+  // Use platform-appropriate icon for system tray
+  const iconsDir = join(__dirname, '../../resources/icons');
+  let iconPath: string;
+
+  if (process.platform === 'win32') {
+    // Windows: use .ico for best quality in system tray
+    iconPath = join(iconsDir, 'icon.ico');
+  } else if (process.platform === 'darwin') {
+    // macOS: use 16x16 PNG as template image
+    iconPath = join(iconsDir, '16x16.png');
+  } else {
+    // Linux: use 32x32 PNG
+    iconPath = join(iconsDir, '32x32.png');
   }
-  
+
+  let icon = nativeImage.createFromPath(iconPath);
+
+  // Fallback to icon.png if platform-specific icon not found
+  if (icon.isEmpty()) {
+    icon = nativeImage.createFromPath(join(iconsDir, 'icon.png'));
+  }
+
   // On macOS, set as template image for proper dark/light mode support
   if (process.platform === 'darwin') {
     icon.setTemplateImage(true);
