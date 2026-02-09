@@ -35,8 +35,8 @@ asarUnpack:
 # Auto-update configuration
 publish:
   - provider: github
-    owner: clawx
-    repo: clawx
+    owner: ValueCell-ai
+    repo: ClawX
     releaseType: release
 
 # macOS Configuration
