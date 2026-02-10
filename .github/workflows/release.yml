@@ -319,9 +319,9 @@ jobs:
 
           # Upload all files with no-cache so clients always get the freshest version
           ossutil cp -r -f \
+            --meta="Cache-Control:no-cache,no-store,must-revalidate" \
             staging/latest/ \
-            oss://valuecell-clawx/latest/ \
-            --meta "Cache-Control:no-cache,no-store,must-revalidate"
+            oss://valuecell-clawx/latest/
 
           echo "Uploaded to latest/"
 
@@ -350,4 +350,8 @@ jobs:
 
           echo ""
           echo "=== Verify release-info.json ==="
-          curl -sL "https://valuecell-clawx.oss-cn-hangzhou.aliyuncs.com/latest/release-info.json" | jq .
+          echo "Reading release-info.json directly from OSS..."
+          ossutil cat oss://valuecell-clawx/latest/release-info.json | jq .
+          
+          echo ""
+          echo "✅ All files uploaded and verified successfully!"
