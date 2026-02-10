@@ -28,10 +28,10 @@ export function Dashboard() {
   const { channels, fetchChannels } = useChannelsStore();
   const { skills, fetchSkills } = useSkillsStore();
   const devModeUnlocked = useSettingsStore((state) => state.devModeUnlocked);
-  
+
   const isGatewayRunning = gatewayStatus.state === 'running';
   const [uptime, setUptime] = useState(0);
-  
+
   // Fetch data only when gateway is running
   useEffect(() => {
     if (isGatewayRunning) {
@@ -39,11 +39,11 @@ export function Dashboard() {
       fetchSkills();
     }
   }, [fetchChannels, fetchSkills, isGatewayRunning]);
-  
+
   // Calculate statistics safely
   const connectedChannels = Array.isArray(channels) ? channels.filter((c) => c.status === 'connected').length : 0;
   const enabledSkills = Array.isArray(skills) ? skills.filter((s) => s.enabled).length : 0;
-  
+
   // Update uptime periodically
   useEffect(() => {
     const updateUptime = () => {
@@ -53,13 +53,13 @@ export function Dashboard() {
         setUptime(0);
       }
     };
-    
+
     // Update immediately
     updateUptime();
-    
+
     // Update every second
     const interval = setInterval(updateUptime, 1000);
-    
+
     return () => clearInterval(interval);
   }, [gatewayStatus.connectedAt]);
 
@@ -79,7 +79,7 @@ export function Dashboard() {
       console.error('Error opening Dev Console:', err);
     }
   };
-  
+
   return (
     <div className="space-y-6">
       {/* Status Cards */}
@@ -101,7 +101,7 @@ export function Dashboard() {
             )}
           </CardContent>
         </Card>
-        
+
         {/* Channels */}
         <Card>
           <CardHeader className="flex flex-row items-center justify-between pb-2">
@@ -115,7 +115,7 @@ export function Dashboard() {
             </p>
           </CardContent>
         </Card>
-        
+
         {/* Skills */}
         <Card>
           <CardHeader className="flex flex-row items-center justify-between pb-2">
@@ -129,7 +129,7 @@ export function Dashboard() {
             </p>
           </CardContent>
         </Card>
-        
+
         {/* Uptime */}
         <Card>
           <CardHeader className="flex flex-row items-center justify-between pb-2">
@@ -146,7 +146,7 @@ export function Dashboard() {
           </CardContent>
         </Card>
       </div>
-      
+
       {/* Quick Actions */}
       <Card>
         <CardHeader>
@@ -192,7 +192,7 @@ export function Dashboard() {
           </div>
         </CardContent>
       </Card>
-      
+
       {/* Recent Activity */}
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         {/* Connected Channels */}
@@ -221,7 +221,6 @@ export function Dashboard() {
                         {channel.type === 'whatsapp' && '📱'}
                         {channel.type === 'telegram' && '✈️'}
                         {channel.type === 'discord' && '🎮'}
-                        {channel.type === 'slack' && '💼'}
                       </span>
                       <div>
                         <p className="font-medium">{channel.name}</p>
@@ -237,7 +236,7 @@ export function Dashboard() {
             )}
           </CardContent>
         </Card>
-        
+
         {/* Enabled Skills */}
         <Card>
           <CardHeader>
@@ -284,7 +283,7 @@ function formatUptime(seconds: number): string {
   const days = Math.floor(seconds / 86400);
   const hours = Math.floor((seconds % 86400) / 3600);
   const minutes = Math.floor((seconds % 3600) / 60);
-  
+
   if (days > 0) {
     return `${days}d ${hours}h`;
   } else if (hours > 0) {

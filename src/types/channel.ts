@@ -10,7 +10,6 @@ export type ChannelType =
   | 'whatsapp'
   | 'telegram'
   | 'discord'
-  | 'slack'
   | 'signal'
   | 'feishu'
   | 'imessage'
@@ -81,7 +80,6 @@ export const CHANNEL_ICONS: Record<ChannelType, string> = {
   whatsapp: '📱',
   telegram: '✈️',
   discord: '🎮',
-  slack: '💼',
   signal: '🔒',
   feishu: '🐦',
   imessage: '💬',
@@ -99,7 +97,6 @@ export const CHANNEL_NAMES: Record<ChannelType, string> = {
   whatsapp: 'WhatsApp',
   telegram: 'Telegram',
   discord: 'Discord',
-  slack: 'Slack',
   signal: 'Signal',
   feishu: 'Feishu / Lark',
   imessage: 'iMessage',
@@ -180,38 +177,7 @@ export const CHANNEL_META: Record<ChannelType, ChannelMeta> = {
       'Paste the bot token below',
     ],
   },
-  slack: {
-    id: 'slack',
-    name: 'Slack',
-    icon: '💼',
-    description: 'Connect Slack using bot and app tokens',
-    connectionType: 'token',
-    docsUrl: 'https://docs.openclaw.ai/channels/slack',
-    configFields: [
-      {
-        key: 'botToken',
-        label: 'Bot Token (xoxb-...)',
-        type: 'password',
-        placeholder: 'xoxb-...',
-        required: true,
-        envVar: 'SLACK_BOT_TOKEN',
-      },
-      {
-        key: 'appToken',
-        label: 'App Token (xapp-...)',
-        type: 'password',
-        placeholder: 'xapp-...',
-        required: false,
-        envVar: 'SLACK_APP_TOKEN',
-      },
-    ],
-    instructions: [
-      'Go to api.slack.com/apps',
-      'Create a new app from scratch',
-      'Add required OAuth scopes',
-      'Install to workspace and copy tokens',
-    ],
-  },
+
   whatsapp: {
     id: 'whatsapp',
     name: 'WhatsApp',
@@ -465,7 +431,7 @@ export const CHANNEL_META: Record<ChannelType, ChannelMeta> = {
  * Get primary supported channels (non-plugin, commonly used)
  */
 export function getPrimaryChannels(): ChannelType[] {
-  return ['telegram', 'discord', 'slack', 'whatsapp', 'feishu'];
+  return ['telegram', 'discord', 'whatsapp', 'feishu'];
 }
 
 /**

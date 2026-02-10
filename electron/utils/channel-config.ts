@@ -266,8 +266,6 @@ export async function validateChannelCredentials(
             return validateDiscordCredentials(config);
         case 'telegram':
             return validateTelegramCredentials(config);
-        case 'slack':
-            return validateSlackCredentials(config);
         default:
             // For channels without specific validation, just check required fields are present
             return { valid: true, errors: [], warnings: ['No online validation available for this channel type.'] };
@@ -424,58 +422,7 @@ async function validateTelegramCredentials(
     }
 }
 
-/**
- * Validate Slack bot token
- */
-async function validateSlackCredentials(
-    config: Record<string, string>
-): Promise<CredentialValidationResult> {
-    const botToken = config.botToken?.trim();
 
-    if (!botToken) {
-        return { valid: false, errors: ['Bot token is required'], warnings: [] };
-    }
-
-    try {
-        const response = await fetch('https://slack.com/api/auth.test', {
-            method: 'POST',
-            headers: {
-                Authorization: `Bearer ${botToken}`,
-                'Content-Type': 'application/x-www-form-urlencoded',
-            },
-        });
-
-        const data = (await response.json()) as { ok?: boolean; error?: string; team?: string; user?: string };
-
-        if (data.ok) {
-            return {
-                valid: true,
-                errors: [],
-                warnings: [],
-                details: { team: data.team || 'Unknown', user: data.user || 'Unknown' },
-            };
-        }
-
-        const errorMap: Record<string, string> = {
-            invalid_auth: 'Invalid bot token',
-            account_inactive: 'Account is inactive',
-            token_revoked: 'Token has been revoked',
-            not_authed: 'No authentication token provided',
-        };
-
-        return {
-            valid: false,
-            errors: [errorMap[data.error || ''] || `Slack error: ${data.error}`],
-            warnings: [],
-        };
-    } catch (error) {
-        return {
-            valid: false,
-            errors: [`Connection error: ${error instanceof Error ? error.message : String(error)}`],
-            warnings: [],
-        };
-    }
-}
 
 /**
  * Validate channel configuration using OpenClaw doctor
