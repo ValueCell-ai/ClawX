@@ -121,6 +121,9 @@ jobs:
             release/latest*.yml
           retention-days: 7
 
+  # ──────────────────────────────────────────────────────────────
+  # Job: Publish to GitHub Releases
+  # ──────────────────────────────────────────────────────────────
   publish:
     needs: release
     runs-on: ubuntu-latest
@@ -195,3 +198,153 @@ jobs:
             💬 Found an issue? Please submit an [Issue](https://github.com/${{ github.repository }}/issues)
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # ──────────────────────────────────────────────────────────────
+  # Job: Upload to Alibaba Cloud OSS
+  # Uploads all release artifacts to OSS for:
+  #   - Official website downloads (via release-info.json)
+  #   - electron-updater auto-update (via latest-*.yml)
+  #
+  # Directory structure on OSS:
+  #   latest/          → always overwritten with the newest version
+  #   releases/vX.Y.Z/ → permanent archive, never deleted
+  # ──────────────────────────────────────────────────────────────
+  upload-oss:
+    needs: release
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: release-artifacts
+
+      - name: Extract version
+        id: version
+        run: |
+          if [[ "${{ github.ref }}" == refs/tags/v* ]]; then
+            VERSION="${GITHUB_REF#refs/tags/v}"
+          else
+            VERSION="${{ github.event.inputs.version }}"
+          fi
+          echo "version=${VERSION}" >> $GITHUB_OUTPUT
+          echo "tag=v${VERSION}" >> $GITHUB_OUTPUT
+          echo "Detected version: ${VERSION}"
+
+      - name: Prepare upload directories
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          TAG="${{ steps.version.outputs.tag }}"
+
+          mkdir -p staging/latest
+          mkdir -p staging/releases/${TAG}
+
+          # Flatten all platform artifacts into staging directories
+          find release-artifacts/ -type f | while read file; do
+            filename=$(basename "$file")
+            cp "$file" "staging/latest/${filename}"
+            cp "$file" "staging/releases/${TAG}/${filename}"
+          done
+
+          echo "=== staging/latest/ ==="
+          ls -lh staging/latest/
+          echo ""
+          echo "=== staging/releases/${TAG}/ ==="
+          ls -lh staging/releases/${TAG}/
+
+      - name: Generate release-info.json
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          BASE_URL="https://valuecell-clawx.oss-cn-hangzhou.aliyuncs.com/latest"
+
+          jq -n \
+            --arg version "$VERSION" \
+            --arg date "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            --arg base "$BASE_URL" \
+            --arg changelog "https://github.com/${{ github.repository }}/releases/tag/v${VERSION}" \
+            '{
+              version: $version,
+              releaseDate: $date,
+              downloads: {
+                mac: {
+                  x64: ($base + "/ClawX-" + $version + "-mac-x64.dmg"),
+                  arm64: ($base + "/ClawX-" + $version + "-mac-arm64.dmg")
+                },
+                win: {
+                  x64: ($base + "/ClawX-" + $version + "-win-x64.exe"),
+                  arm64: ($base + "/ClawX-" + $version + "-win-arm64.exe")
+                },
+                linux: {
+                  deb_amd64: ($base + "/ClawX-" + $version + "-linux-amd64.deb"),
+                  deb_arm64: ($base + "/ClawX-" + $version + "-linux-arm64.deb"),
+                  appimage_x64: ($base + "/ClawX-" + $version + "-linux-x86_64.AppImage"),
+                  appimage_arm64: ($base + "/ClawX-" + $version + "-linux-arm64.AppImage"),
+                  rpm_x64: ($base + "/ClawX-" + $version + "-linux-x86_64.rpm")
+                }
+              },
+              changelog: $changelog
+            }' > staging/latest/release-info.json
+
+          echo "=== release-info.json ==="
+          cat staging/latest/release-info.json
+
+      - name: Install and configure ossutil
+        env:
+          OSS_ACCESS_KEY_ID: ${{ secrets.OSS_ACCESS_KEY_ID }}
+          OSS_ACCESS_KEY_SECRET: ${{ secrets.OSS_ACCESS_KEY_SECRET }}
+        run: |
+          curl -sL https://gosspublic.alicdn.com/ossutil/install.sh | sudo bash
+
+          # Write config file for non-interactive use
+          cat > $HOME/.ossutilconfig << EOF
+          [Credentials]
+          language=EN
+          endpoint=oss-cn-hangzhou.aliyuncs.com
+          accessKeyID=${OSS_ACCESS_KEY_ID}
+          accessKeySecret=${OSS_ACCESS_KEY_SECRET}
+          EOF
+
+          ossutil --version
+
+      - name: "Upload to OSS: latest/ (overwrite)"
+        run: |
+          # Clean old latest/ to remove stale version files
+          ossutil rm -r -f oss://valuecell-clawx/latest/ || true
+
+          # Upload all files with no-cache so clients always get the freshest version
+          ossutil cp -r -f \
+            staging/latest/ \
+            oss://valuecell-clawx/latest/ \
+            --meta "Cache-Control:no-cache,no-store,must-revalidate"
+
+          echo "Uploaded to latest/"
+
+      - name: "Upload to OSS: releases/vX.Y.Z/ (archive)"
+        run: |
+          TAG="${{ steps.version.outputs.tag }}"
+
+          # Upload to permanent archive (long cache, immutable)
+          ossutil cp -r \
+            staging/releases/${TAG}/ \
+            oss://valuecell-clawx/releases/${TAG}/ \
+            --meta "Cache-Control:public,max-age=31536000,immutable"
+
+          echo "Uploaded to releases/${TAG}/"
+
+      - name: Verify OSS upload
+        run: |
+          TAG="${{ steps.version.outputs.tag }}"
+
+          echo "=== latest/ ==="
+          ossutil ls oss://valuecell-clawx/latest/ --short
+
+          echo ""
+          echo "=== releases/${TAG}/ ==="
+          ossutil ls oss://valuecell-clawx/releases/${TAG}/ --short
+
+          echo ""
+          echo "=== Verify release-info.json ==="
+          curl -sL "https://valuecell-clawx.oss-cn-hangzhou.aliyuncs.com/latest/release-info.json" | jq .

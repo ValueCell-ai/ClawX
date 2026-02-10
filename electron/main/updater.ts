@@ -1,6 +1,9 @@
 /**
  * Auto-Updater Module
  * Handles automatic application updates using electron-updater
+ *
+ * Update providers are configured in electron-builder.yml (OSS primary, GitHub fallback).
+ * electron-updater handles provider resolution automatically.
  */
 import { autoUpdater, UpdateInfo, ProgressInfo, UpdateDownloadedEvent } from 'electron-updater';
 import { BrowserWindow, app, ipcMain } from 'electron';
@@ -113,6 +116,7 @@ export class AppUpdater extends EventEmitter {
 
   /**
    * Check for updates
+   * electron-updater automatically tries providers defined in electron-builder.yml in order
    */
   async checkForUpdates(): Promise<UpdateInfo | null> {
     try {
@@ -121,7 +125,7 @@ export class AppUpdater extends EventEmitter {
     } catch (error) {
       console.error('[Updater] Check for updates failed:', error);
       this.updateStatus({ status: 'error', error: (error as Error).message || String(error) });
-      throw error; // Re-throw instead of swallowing
+      throw error;
     }
   }
 
