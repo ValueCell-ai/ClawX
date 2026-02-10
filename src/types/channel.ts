@@ -127,6 +127,14 @@ export const CHANNEL_META: Record<ChannelType, ChannelMeta> = {
         required: true,
         envVar: 'TELEGRAM_BOT_TOKEN',
       },
+      {
+        key: 'allowedUsers',
+        label: 'Allowed User IDs (optional)',
+        type: 'text',
+        placeholder: 'e.g. 123456789, 987654321',
+        description: 'Comma separated list of User IDs allowed to use the bot. Leave empty to allow everyone (if public) or require pairing.',
+        required: false,
+      },
     ],
     instructions: [
       'Open Telegram and search for @BotFather',

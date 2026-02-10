@@ -309,6 +309,10 @@ export class WhatsAppLoginManager extends EventEmitter {
                         // Close socket gracefully to avoid conflict with Gateway
                         await this.stop();
 
+                        // Add a small delay to ensure socket is fully closed and released
+                        // This prevents "401 Conflict" when Gateway tries to connect immediately
+                        await new Promise(resolve => setTimeout(resolve, 2000));
+
                         this.emit('success', { accountId });
                     }
                 } catch (innerErr) {

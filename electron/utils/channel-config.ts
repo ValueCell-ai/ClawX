@@ -120,6 +120,23 @@ export function saveChannelConfig(
         }
     }
 
+    // Special handling for Telegram: convert allowedUsers string to allowlist array
+    if (channelType === 'telegram') {
+        const { allowedUsers, ...restConfig } = config;
+        transformedConfig = { ...restConfig };
+
+        if (allowedUsers && typeof allowedUsers === 'string') {
+            const users = allowedUsers.split(',')
+                .map(u => u.trim())
+                .filter(u => u.length > 0);
+
+            if (users.length > 0) {
+                transformedConfig.allowFrom = users; // Use 'allowFrom' (correct key)
+                // transformedConfig.groupPolicy = 'allowlist'; // Default is allowlist
+            }
+        }
+    }
+
     // Merge with existing config
     currentConfig.channels[channelType] = {
         ...currentConfig.channels[channelType],
@@ -175,6 +192,18 @@ export function getChannelFormValues(channelType: string): Record<string, string
                         values.channelId = channelIds[0];
                     }
                 }
+            }
+        }
+    } else if (channelType === 'telegram') {
+        // Special handling for Telegram: convert allowFrom array to allowedUsers string
+        if (Array.isArray(saved.allowFrom)) {
+            values.allowedUsers = saved.allowFrom.join(', ');
+        }
+
+        // Also extract other string values
+        for (const [key, value] of Object.entries(saved)) {
+            if (typeof value === 'string' && key !== 'enabled') {
+                values[key] = value;
             }
         }
     } else {
