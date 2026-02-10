@@ -63,10 +63,39 @@ interface ChatState {
   newSession: () => void;
   loadHistory: () => Promise<void>;
   sendMessage: (text: string, attachments?: { type: string; mimeType: string; fileName: string; content: string }[]) => Promise<void>;
+  abortRun: () => Promise<void>;
   handleChatEvent: (event: Record<string, unknown>) => void;
   toggleThinking: () => void;
   refresh: () => Promise<void>;
   clearError: () => void;
+}
+
+function isToolOnlyMessage(message: RawMessage | undefined): boolean {
+  if (!message) return false;
+  if (message.role === 'toolresult') return true;
+
+  const content = message.content;
+  if (!Array.isArray(content)) return false;
+
+  let hasTool = false;
+  let hasText = false;
+  let hasNonToolContent = false;
+
+  for (const block of content as ContentBlock[]) {
+    if (block.type === 'tool_use' || block.type === 'tool_result') {
+      hasTool = true;
+      continue;
+    }
+    if (block.type === 'text' && block.text && block.text.trim()) {
+      hasText = true;
+      continue;
+    }
+    if (block.type === 'image' || block.type === 'thinking') {
+      hasNonToolContent = true;
+    }
+  }
+
+  return hasTool && !hasText && !hasNonToolContent;
 }
 
 // ── Store ────────────────────────────────────────────────────────
@@ -260,6 +289,23 @@ export const useChatStore = create<ChatState>((set, get) => ({
     }
   },
 
+  // ── Abort active run ──
+
+  abortRun: async () => {
+    const { currentSessionKey } = get();
+    set({ sending: false, streamingText: '', streamingMessage: null });
+
+    try {
+      await window.electron.ipcRenderer.invoke(
+        'gateway:rpc',
+        'chat.abort',
+        { sessionKey: currentSessionKey },
+      );
+    } catch (err) {
+      set({ error: String(err) });
+    }
+  },
+
   // ── Handle incoming chat events from Gateway ──
 
   handleChatEvent: (event: Record<string, unknown>) => {
@@ -282,20 +328,32 @@ export const useChatStore = create<ChatState>((set, get) => ({
         // Message complete - add to history and clear streaming
         const finalMsg = event.message as RawMessage | undefined;
         if (finalMsg) {
-          const msgId = finalMsg.id || `run-${runId}`;
+          const toolOnly = isToolOnlyMessage(finalMsg);
+          const msgId = finalMsg.id || (toolOnly ? `run-${runId}-tool-${Date.now()}` : `run-${runId}`);
           set((s) => {
             // Check if message already exists (prevent duplicates)
             const alreadyExists = s.messages.some(m => m.id === msgId);
             if (alreadyExists) {
               // Just clear streaming state, don't add duplicate
-              return {
+              return toolOnly ? {
+                streamingText: '',
+                streamingMessage: null,
+              } : {
                 streamingText: '',
                 streamingMessage: null,
                 sending: false,
                 activeRunId: null,
               };
             }
-            return {
+            return toolOnly ? {
+              messages: [...s.messages, {
+                ...finalMsg,
+                role: finalMsg.role || 'assistant',
+                id: msgId,
+              }],
+              streamingText: '',
+              streamingMessage: null,
+            } : {
               messages: [...s.messages, {
                 ...finalMsg,
                 role: finalMsg.role || 'assistant',

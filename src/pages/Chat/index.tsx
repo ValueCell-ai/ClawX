@@ -28,6 +28,7 @@ export function Chat() {
   const loadHistory = useChatStore((s) => s.loadHistory);
   const loadSessions = useChatStore((s) => s.loadSessions);
   const sendMessage = useChatStore((s) => s.sendMessage);
+  const abortRun = useChatStore((s) => s.abortRun);
   const clearError = useChatStore((s) => s.clearError);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -145,6 +146,7 @@ export function Chat() {
       {/* Input Area */}
       <ChatInput
         onSend={sendMessage}
+        onStop={abortRun}
         disabled={!isGatewayRunning}
         sending={sending}
       />
