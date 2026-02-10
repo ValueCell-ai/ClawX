@@ -59,6 +59,7 @@ export function ChatInput({ onSend, disabled = false, sending = false }: ChatInp
   const [attachments, setAttachments] = useState<ChatAttachment[]>([]);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const isComposingRef = useRef(false);
 
   // Auto-resize textarea
   useEffect(() => {
@@ -99,6 +100,10 @@ export function ChatInput({ onSend, disabled = false, sending = false }: ChatInp
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
       if (e.key === 'Enter' && !e.shiftKey) {
+        const nativeEvent = e.nativeEvent as KeyboardEvent;
+        if (isComposingRef.current || nativeEvent.isComposing || nativeEvent.keyCode === 229) {
+          return;
+        }
         e.preventDefault();
         handleSend();
       }
@@ -221,6 +226,12 @@ export function ChatInput({ onSend, disabled = false, sending = false }: ChatInp
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={handleKeyDown}
+              onCompositionStart={() => {
+                isComposingRef.current = true;
+              }}
+              onCompositionEnd={() => {
+                isComposingRef.current = false;
+              }}
               onPaste={handlePaste}
               placeholder={disabled ? 'Gateway not connected...' : 'Message (Enter to send, Shift+Enter for new line)'}
               disabled={disabled}
