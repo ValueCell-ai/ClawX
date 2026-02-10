@@ -19,8 +19,14 @@ export interface ChannelConfigData {
     [key: string]: unknown;
 }
 
+export interface PluginsConfig {
+    entries?: Record<string, ChannelConfigData>;
+    [key: string]: unknown;
+}
+
 export interface OpenClawConfig {
     channels?: Record<string, ChannelConfigData>;
+    plugins?: PluginsConfig;
     [key: string]: unknown;
 }
 
@@ -82,13 +88,13 @@ export function saveChannelConfig(
     // Plugin-based channels (e.g. WhatsApp) go under plugins.entries, not channels
     if (PLUGIN_CHANNELS.includes(channelType)) {
         if (!currentConfig.plugins) {
-            (currentConfig as any).plugins = {};
+            currentConfig.plugins = {};
         }
-        if (!(currentConfig as any).plugins.entries) {
-            (currentConfig as any).plugins.entries = {};
+        if (!currentConfig.plugins.entries) {
+            currentConfig.plugins.entries = {};
         }
-        (currentConfig as any).plugins.entries[channelType] = {
-            ...(currentConfig as any).plugins.entries[channelType],
+        currentConfig.plugins.entries[channelType] = {
+            ...currentConfig.plugins.entries[channelType],
             enabled: config.enabled ?? true,
         };
         writeOpenClawConfig(currentConfig);
@@ -327,15 +333,15 @@ export function setChannelEnabled(channelType: string, enabled: boolean): void {
     // Plugin-based channels go under plugins.entries
     if (PLUGIN_CHANNELS.includes(channelType)) {
         if (!currentConfig.plugins) {
-            (currentConfig as any).plugins = {};
+            currentConfig.plugins = {};
         }
-        if (!(currentConfig as any).plugins.entries) {
-            (currentConfig as any).plugins.entries = {};
+        if (!currentConfig.plugins.entries) {
+            currentConfig.plugins.entries = {};
         }
-        if (!(currentConfig as any).plugins.entries[channelType]) {
-            (currentConfig as any).plugins.entries[channelType] = {};
+        if (!currentConfig.plugins.entries[channelType]) {
+            currentConfig.plugins.entries[channelType] = {};
         }
-        (currentConfig as any).plugins.entries[channelType].enabled = enabled;
+        currentConfig.plugins.entries[channelType].enabled = enabled;
         writeOpenClawConfig(currentConfig);
         console.log(`Set plugin channel ${channelType} enabled: ${enabled}`);
         return;

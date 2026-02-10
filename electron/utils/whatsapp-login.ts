@@ -43,7 +43,10 @@ const QRCodeModule = require(join(qrcodeTerminalPath, 'vendor', 'QRCode', 'index
 const QRErrorCorrectLevelModule = require(join(qrcodeTerminalPath, 'vendor', 'QRCode', 'QRErrorCorrectLevel.js'));
 
 // Types from Baileys (approximate since we don't have types for dynamic require)
-type BaileysSocket = any;
+interface BaileysError extends Error {
+    output?: { statusCode?: number };
+}
+type BaileysSocket = ReturnType<typeof makeWASocket>;
 type ConnectionState = {
     connection: 'close' | 'open' | 'connecting';
     lastDisconnect?: {
@@ -238,7 +241,8 @@ export class WhatsAppLoginManager extends EventEmitter {
 
             console.log(`[WhatsAppLogin] Connecting for ${accountId} at ${authDir} (Attempt ${this.retryCount + 1})`);
 
-            let pino: any;
+             
+            let pino: (...args: unknown[]) => Record<string, unknown>;
             try {
                 // Try to resolve pino from baileys context since it's a dependency of baileys
                 const baileysRequire = createRequire(join(baileysPath, 'package.json'));
@@ -308,7 +312,7 @@ export class WhatsAppLoginManager extends EventEmitter {
                     }
 
                     if (connection === 'close') {
-                        const error = (lastDisconnect?.error as any);
+                        const error = lastDisconnect?.error as BaileysError | undefined;
                         const shouldReconnect = error?.output?.statusCode !== DisconnectReason.loggedOut;
                         console.log('[WhatsAppLogin] Connection closed.',
                             'Reconnect:', shouldReconnect,

@@ -412,11 +412,13 @@ function AddChannelDialog({ selectedType, onSelectType, onClose, onChannelAdded 
   useEffect(() => {
     if (selectedType !== 'whatsapp') return;
 
-    const onQr = (data: { qr: string; raw: string }) => {
+    const onQr = (...args: unknown[]) => {
+      const data = args[0] as { qr: string; raw: string };
       setQrCode(`data:image/png;base64,${data.qr}`);
     };
 
-    const onSuccess = async (data: { accountId?: string }) => {
+    const onSuccess = async (...args: unknown[]) => {
+      const data = args[0] as { accountId?: string } | undefined;
       toast.success('WhatsApp connected successfully!');
       const accountId = data?.accountId || channelName.trim() || 'default';
       try {
@@ -444,16 +446,17 @@ function AddChannelDialog({ selectedType, onSelectType, onClose, onChannelAdded 
       });
     };
 
-    const onError = (err: string) => {
+    const onError = (...args: unknown[]) => {
+      const err = args[0] as string;
       console.error('WhatsApp Login Error:', err);
       toast.error(`WhatsApp Login Failed: ${err}`);
       setQrCode(null);
       setConnecting(false);
     };
 
-    const removeQrListener = (window.electron.ipcRenderer.on as any)('channel:whatsapp-qr', onQr);
-    const removeSuccessListener = (window.electron.ipcRenderer.on as any)('channel:whatsapp-success', onSuccess);
-    const removeErrorListener = (window.electron.ipcRenderer.on as any)('channel:whatsapp-error', onError);
+    const removeQrListener = window.electron.ipcRenderer.on('channel:whatsapp-qr', onQr);
+    const removeSuccessListener = window.electron.ipcRenderer.on('channel:whatsapp-success', onSuccess);
+    const removeErrorListener = window.electron.ipcRenderer.on('channel:whatsapp-error', onError);
 
     return () => {
       if (typeof removeQrListener === 'function') removeQrListener();
