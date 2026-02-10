@@ -23,18 +23,12 @@ import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
 import { Switch } from '@/components/ui/switch';
 import { useProviderStore, type ProviderWithKeyInfo } from '@/stores/providers';
+import {
+  PROVIDER_TYPE_INFO,
+  type ProviderType,
+} from '@/lib/providers';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
-
-// Provider type definitions
-const providerTypes = [
-  { id: 'anthropic', name: 'Anthropic', icon: '🤖', placeholder: 'sk-ant-api03-...' },
-  { id: 'openai', name: 'OpenAI', icon: '💚', placeholder: 'sk-proj-...' },
-  { id: 'google', name: 'Google', icon: '🔷', placeholder: 'AIza...' },
-  { id: 'openrouter', name: 'OpenRouter', icon: '🌐', placeholder: 'sk-or-v1-...' },
-  { id: 'ollama', name: 'Ollama', icon: '🦙', placeholder: 'Not required' },
-  { id: 'custom', name: 'Custom', icon: '⚙️', placeholder: 'API key...' },
-];
 
 export function ProvidersSettings() {
   const { 
@@ -58,15 +52,17 @@ export function ProvidersSettings() {
     fetchProviders();
   }, [fetchProviders]);
   
-  const handleAddProvider = async (type: string, name: string, apiKey: string) => {
+  const handleAddProvider = async (type: ProviderType, name: string, apiKey: string) => {
+    // For built-in types use type as id (one per type); for custom allow multiples
+    const id = type === 'custom' ? `custom-${Date.now()}` : type;
     try {
-      await addProvider({
-        id: `${type}-${Date.now()}`,
-        type: type as 'anthropic' | 'openai' | 'google' | 'ollama' | 'custom',
-        name,
-        enabled: true,
-      }, apiKey || undefined);
-      
+      await addProvider({ id, type, name, enabled: true }, apiKey || undefined);
+
+      // Auto-set as default if this is the first provider
+      if (providers.length === 0) {
+        await setDefaultProvider(id);
+      }
+
       setShowAddDialog(false);
       toast.success('Provider added successfully');
     } catch (error) {
@@ -153,8 +149,10 @@ export function ProvidersSettings() {
       {/* Add Provider Dialog */}
       {showAddDialog && (
         <AddProviderDialog
+          existingTypes={new Set(providers.map((p) => p.type))}
           onClose={() => setShowAddDialog(false)}
           onAdd={handleAddProvider}
+          onValidateKey={(type, key) => validateApiKey(type, key)}
         />
       )}
     </div>
@@ -206,7 +204,7 @@ function ProviderCard({
   const [validating, setValidating] = useState(false);
   const [saving, setSaving] = useState(false);
   
-  const typeInfo = providerTypes.find((t) => t.id === provider.type);
+  const typeInfo = PROVIDER_TYPE_INFO.find((t) => t.id === provider.type);
   
   const handleSaveKey = async () => {
     if (!newKey) return;
@@ -324,25 +322,48 @@ function ProviderCard({
 }
 
 interface AddProviderDialogProps {
+  existingTypes: Set<string>;
   onClose: () => void;
-  onAdd: (type: string, name: string, apiKey: string) => Promise<void>;
+  onAdd: (type: ProviderType, name: string, apiKey: string) => Promise<void>;
+  onValidateKey: (type: string, apiKey: string) => Promise<{ valid: boolean; error?: string }>;
 }
 
-function AddProviderDialog({ onClose, onAdd }: AddProviderDialogProps) {
-  const [selectedType, setSelectedType] = useState<string | null>(null);
+function AddProviderDialog({ existingTypes, onClose, onAdd, onValidateKey }: AddProviderDialogProps) {
+  const [selectedType, setSelectedType] = useState<ProviderType | null>(null);
   const [name, setName] = useState('');
   const [apiKey, setApiKey] = useState('');
   const [showKey, setShowKey] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [validationError, setValidationError] = useState<string | null>(null);
   
-  const typeInfo = providerTypes.find((t) => t.id === selectedType);
+  const typeInfo = PROVIDER_TYPE_INFO.find((t) => t.id === selectedType);
+
+  // Filter out built-in types that already exist (custom always allowed)
+  const availableTypes = PROVIDER_TYPE_INFO.filter(
+    (t) => t.id === 'custom' || !existingTypes.has(t.id),
+  );
   
   const handleAdd = async () => {
     if (!selectedType) return;
-    
+
     setSaving(true);
+    setValidationError(null);
+
     try {
+      // Validate key first if the provider requires one and a key was entered
+      const requiresKey = typeInfo?.requiresApiKey ?? false;
+      if (requiresKey && apiKey) {
+        const result = await onValidateKey(selectedType, apiKey);
+        if (!result.valid) {
+          setValidationError(result.error || 'Invalid API key');
+          setSaving(false);
+          return;
+        }
+      }
+
       await onAdd(selectedType, name || typeInfo?.name || selectedType, apiKey);
+    } catch {
+      // error already handled via toast in parent
     } finally {
       setSaving(false);
     }
@@ -360,7 +381,7 @@ function AddProviderDialog({ onClose, onAdd }: AddProviderDialogProps) {
         <CardContent className="space-y-4">
           {!selectedType ? (
             <div className="grid grid-cols-2 gap-3">
-              {providerTypes.map((type) => (
+              {availableTypes.map((type) => (
                 <button
                   key={type.id}
                   onClick={() => {
@@ -381,7 +402,10 @@ function AddProviderDialog({ onClose, onAdd }: AddProviderDialogProps) {
                 <div>
                   <p className="font-medium">{typeInfo?.name}</p>
                   <button 
-                    onClick={() => setSelectedType(null)}
+                    onClick={() => {
+                      setSelectedType(null);
+                      setValidationError(null);
+                    }}
                     className="text-sm text-muted-foreground hover:text-foreground"
                   >
                     Change provider
@@ -407,7 +431,10 @@ function AddProviderDialog({ onClose, onAdd }: AddProviderDialogProps) {
                     type={showKey ? 'text' : 'password'}
                     placeholder={typeInfo?.placeholder}
                     value={apiKey}
-                    onChange={(e) => setApiKey(e.target.value)}
+                    onChange={(e) => {
+                      setApiKey(e.target.value);
+                      setValidationError(null);
+                    }}
                     className="pr-10"
                   />
                   <button
@@ -418,8 +445,11 @@ function AddProviderDialog({ onClose, onAdd }: AddProviderDialogProps) {
                     {showKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                   </button>
                 </div>
+                {validationError && (
+                  <p className="text-xs text-destructive">{validationError}</p>
+                )}
                 <p className="text-xs text-muted-foreground">
-                  Your API key will be securely encrypted and stored locally.
+                  Your API key is stored locally on your machine.
                 </p>
               </div>
             </div>

@@ -3,28 +3,10 @@
  * Manages AI provider configurations
  */
 import { create } from 'zustand';
+import type { ProviderConfig, ProviderWithKeyInfo } from '@/lib/providers';
 
-/**
- * Provider configuration
- */
-export interface ProviderConfig {
-  id: string;
-  name: string;
-  type: 'anthropic' | 'openai' | 'google' | 'openrouter' | 'ollama' | 'custom';
-  baseUrl?: string;
-  model?: string;
-  enabled: boolean;
-  createdAt: string;
-  updatedAt: string;
-}
-
-/**
- * Provider with key info (for display)
- */
-export interface ProviderWithKeyInfo extends ProviderConfig {
-  hasKey: boolean;
-  keyMasked: string | null;
-}
+// Re-export types for consumers that imported from here
+export type { ProviderConfig, ProviderWithKeyInfo } from '@/lib/providers';
 
 interface ProviderState {
   providers: ProviderWithKeyInfo[];

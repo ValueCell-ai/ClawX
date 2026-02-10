@@ -1,27 +1,12 @@
 /**
- * Secure Storage Utility
- * Uses Electron's safeStorage for encrypting sensitive data like API keys
+ * Provider Storage
+ * Manages provider configurations and API keys.
+ * Keys are stored in plain text alongside provider configs in a single electron-store.
  */
-import { safeStorage } from 'electron';
 
 // Lazy-load electron-store (ESM module)
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-let store: any = null;
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 let providerStore: any = null;
-
-async function getStore() {
-  if (!store) {
-    const Store = (await import('electron-store')).default;
-    store = new Store({
-      name: 'clawx-secure',
-      defaults: {
-        encryptedKeys: {},
-      },
-    });
-  }
-  return store;
-}
 
 async function getProviderStore() {
   if (!providerStore) {
@@ -29,7 +14,9 @@ async function getProviderStore() {
     providerStore = new Store({
       name: 'clawx-providers',
       defaults: {
-        providers: {},
+        providers: {} as Record<string, ProviderConfig>,
+        apiKeys: {} as Record<string, string>,
+        defaultProvider: null as string | null,
       },
     });
   }
@@ -42,7 +29,7 @@ async function getProviderStore() {
 export interface ProviderConfig {
   id: string;
   name: string;
-  type: 'anthropic' | 'openai' | 'google' | 'openrouter' | 'ollama' | 'custom';
+  type: 'anthropic' | 'openai' | 'google' | 'openrouter' | 'minimax' | 'ollama' | 'custom';
   baseUrl?: string;
   model?: string;
   enabled: boolean;
@@ -50,35 +37,17 @@ export interface ProviderConfig {
   updatedAt: string;
 }
 
-/**
- * Check if encryption is available
- */
-export function isEncryptionAvailable(): boolean {
-  return safeStorage.isEncryptionAvailable();
-}
+// ==================== API Key Storage ====================
 
 /**
- * Store an API key securely
+ * Store an API key
  */
 export async function storeApiKey(providerId: string, apiKey: string): Promise<boolean> {
   try {
-    const s = await getStore();
-    
-    if (!safeStorage.isEncryptionAvailable()) {
-      console.warn('Encryption not available, storing key in plain text');
-      // Fallback to plain storage (not recommended for production)
-      const keys = s.get('encryptedKeys') as Record<string, string>;
-      keys[providerId] = Buffer.from(apiKey).toString('base64');
-      s.set('encryptedKeys', keys);
-      return true;
-    }
-    
-    // Encrypt the API key
-    const encrypted = safeStorage.encryptString(apiKey);
-    const keys = s.get('encryptedKeys') as Record<string, string>;
-    keys[providerId] = encrypted.toString('base64');
-    s.set('encryptedKeys', keys);
-    
+    const s = await getProviderStore();
+    const keys = (s.get('apiKeys') || {}) as Record<string, string>;
+    keys[providerId] = apiKey;
+    s.set('apiKeys', keys);
     return true;
   } catch (error) {
     console.error('Failed to store API key:', error);
@@ -91,22 +60,9 @@ export async function storeApiKey(providerId: string, apiKey: string): Promise<b
  */
 export async function getApiKey(providerId: string): Promise<string | null> {
   try {
-    const s = await getStore();
-    const keys = s.get('encryptedKeys') as Record<string, string>;
-    const encryptedBase64 = keys[providerId];
-    
-    if (!encryptedBase64) {
-      return null;
-    }
-    
-    if (!safeStorage.isEncryptionAvailable()) {
-      // Fallback for plain storage
-      return Buffer.from(encryptedBase64, 'base64').toString('utf-8');
-    }
-    
-    // Decrypt the API key
-    const encrypted = Buffer.from(encryptedBase64, 'base64');
-    return safeStorage.decryptString(encrypted);
+    const s = await getProviderStore();
+    const keys = (s.get('apiKeys') || {}) as Record<string, string>;
+    return keys[providerId] || null;
   } catch (error) {
     console.error('Failed to retrieve API key:', error);
     return null;
@@ -118,10 +74,10 @@ export async function getApiKey(providerId: string): Promise<string | null> {
  */
 export async function deleteApiKey(providerId: string): Promise<boolean> {
   try {
-    const s = await getStore();
-    const keys = s.get('encryptedKeys') as Record<string, string>;
+    const s = await getProviderStore();
+    const keys = (s.get('apiKeys') || {}) as Record<string, string>;
     delete keys[providerId];
-    s.set('encryptedKeys', keys);
+    s.set('apiKeys', keys);
     return true;
   } catch (error) {
     console.error('Failed to delete API key:', error);
@@ -133,8 +89,8 @@ export async function deleteApiKey(providerId: string): Promise<boolean> {
  * Check if an API key exists for a provider
  */
 export async function hasApiKey(providerId: string): Promise<boolean> {
-  const s = await getStore();
-  const keys = s.get('encryptedKeys') as Record<string, string>;
+  const s = await getProviderStore();
+  const keys = (s.get('apiKeys') || {}) as Record<string, string>;
   return providerId in keys;
 }
 
@@ -142,8 +98,8 @@ export async function hasApiKey(providerId: string): Promise<boolean> {
  * List all provider IDs that have stored keys
  */
 export async function listStoredKeyIds(): Promise<string[]> {
-  const s = await getStore();
-  const keys = s.get('encryptedKeys') as Record<string, string>;
+  const s = await getProviderStore();
+  const keys = (s.get('apiKeys') || {}) as Record<string, string>;
   return Object.keys(keys);
 }
 
@@ -178,24 +134,24 @@ export async function getAllProviders(): Promise<ProviderConfig[]> {
 }
 
 /**
- * Delete a provider configuration
+ * Delete a provider configuration and its API key
  */
 export async function deleteProvider(providerId: string): Promise<boolean> {
   try {
-    // Delete the API key first
+    // Delete the API key
     await deleteApiKey(providerId);
-    
+
     // Delete the provider config
     const s = await getProviderStore();
     const providers = s.get('providers') as Record<string, ProviderConfig>;
     delete providers[providerId];
     s.set('providers', providers);
-    
+
     // Clear default if this was the default
     if (s.get('defaultProvider') === providerId) {
       s.delete('defaultProvider');
     }
-    
+
     return true;
   } catch (error) {
     console.error('Failed to delete provider:', error);
@@ -222,22 +178,23 @@ export async function getDefaultProvider(): Promise<string | undefined> {
 /**
  * Get provider with masked key info (for UI display)
  */
-export async function getProviderWithKeyInfo(providerId: string): Promise<(ProviderConfig & { hasKey: boolean; keyMasked: string | null }) | null> {
+export async function getProviderWithKeyInfo(
+  providerId: string
+): Promise<(ProviderConfig & { hasKey: boolean; keyMasked: string | null }) | null> {
   const provider = await getProvider(providerId);
   if (!provider) return null;
-  
+
   const apiKey = await getApiKey(providerId);
   let keyMasked: string | null = null;
-  
+
   if (apiKey) {
-    // Show first 4 and last 4 characters
     if (apiKey.length > 12) {
       keyMasked = `${apiKey.substring(0, 4)}${'*'.repeat(apiKey.length - 8)}${apiKey.substring(apiKey.length - 4)}`;
     } else {
       keyMasked = '*'.repeat(apiKey.length);
     }
   }
-  
+
   return {
     ...provider,
     hasKey: !!apiKey,
@@ -248,14 +205,16 @@ export async function getProviderWithKeyInfo(providerId: string): Promise<(Provi
 /**
  * Get all providers with key info (for UI display)
  */
-export async function getAllProvidersWithKeyInfo(): Promise<Array<ProviderConfig & { hasKey: boolean; keyMasked: string | null }>> {
+export async function getAllProvidersWithKeyInfo(): Promise<
+  Array<ProviderConfig & { hasKey: boolean; keyMasked: string | null }>
+> {
   const providers = await getAllProviders();
   const results: Array<ProviderConfig & { hasKey: boolean; keyMasked: string | null }> = [];
-  
+
   for (const provider of providers) {
     const apiKey = await getApiKey(provider.id);
     let keyMasked: string | null = null;
-    
+
     if (apiKey) {
       if (apiKey.length > 12) {
         keyMasked = `${apiKey.substring(0, 4)}${'*'.repeat(apiKey.length - 8)}${apiKey.substring(apiKey.length - 4)}`;
@@ -263,13 +222,13 @@ export async function getAllProvidersWithKeyInfo(): Promise<Array<ProviderConfig
         keyMasked = '*'.repeat(apiKey.length);
       }
     }
-    
+
     results.push({
       ...provider,
       hasKey: !!apiKey,
       keyMasked,
     });
   }
-  
+
   return results;
 }

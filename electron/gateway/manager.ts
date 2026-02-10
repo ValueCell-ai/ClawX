@@ -17,7 +17,7 @@ import {
 } from '../utils/paths';
 import { getSetting } from '../utils/store';
 import { getApiKey } from '../utils/secure-storage';
-import { getProviderEnvVar } from '../utils/openclaw-auth';
+import { getProviderEnvVar, getKeyableProviderTypes } from '../utils/provider-registry';
 import { GatewayEventType, JsonRpcNotification, isNotification, isResponse } from './protocol';
 import { logger } from '../utils/logger';
 import { getUvMirrorEnv } from '../utils/uv-env';
@@ -521,9 +521,9 @@ export class GatewayManager extends EventEmitter {
       ? `${binPath}${path.delimiter}${process.env.PATH || ''}`
       : process.env.PATH || '';
     
-    // Load provider API keys from secure storage to pass as environment variables
+    // Load provider API keys from storage to pass as environment variables
     const providerEnv: Record<string, string> = {};
-    const providerTypes = ['anthropic', 'openai', 'google', 'openrouter'];
+    const providerTypes = getKeyableProviderTypes();
     let loadedProviderKeyCount = 0;
     for (const providerType of providerTypes) {
       try {

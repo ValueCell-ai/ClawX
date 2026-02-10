@@ -97,21 +97,10 @@ const defaultSkills: DefaultSkill[] = [
   { id: 'terminal', name: 'Terminal', description: 'Shell command execution' },
 ];
 
-// Provider types
-interface Provider {
-  id: string;
-  name: string;
-  model: string;
-  icon: string;
-  placeholder: string;
-}
+import { SETUP_PROVIDERS, type ProviderTypeInfo } from '@/lib/providers';
 
-const providers: Provider[] = [
-  { id: 'anthropic', name: 'Anthropic', model: 'Claude', icon: '🤖', placeholder: 'sk-ant-...' },
-  { id: 'openai', name: 'OpenAI', model: 'GPT-4', icon: '💚', placeholder: 'sk-...' },
-  { id: 'google', name: 'Google', model: 'Gemini', icon: '🔷', placeholder: 'AI...' },
-  { id: 'openrouter', name: 'OpenRouter', model: 'Multi-Model', icon: '🌐', placeholder: 'sk-or-...' },
-];
+// Use the shared provider registry for setup providers
+const providers = SETUP_PROVIDERS;
 
 // NOTE: Channel types moved to Settings > Channels page
 // NOTE: Skill bundles moved to Settings > Skills page - auto-install essential skills during setup
@@ -641,7 +630,7 @@ function RuntimeContent({ onStatusChange }: RuntimeContentProps) {
 }
 
 interface ProviderContentProps {
-  providers: Provider[];
+  providers: ProviderTypeInfo[];
   selectedProvider: string | null;
   onSelectProvider: (id: string | null) => void;
   apiKey: string;
@@ -717,7 +706,7 @@ function ProviderContent({
       setKeyValid(result.valid);
       
       if (result.valid) {
-        // Save the API key to both ClawX secure storage and OpenClaw auth-profiles
+        // Save provider config + API key, then set as default
         try {
           await window.electron.ipcRenderer.invoke(
             'provider:save',
@@ -731,6 +720,7 @@ function ProviderContent({
             },
             apiKey
           );
+          await window.electron.ipcRenderer.invoke('provider:setDefault', selectedProvider);
         } catch (saveErr) {
           console.warn('Failed to persist API key:', saveErr);
         }
