@@ -129,11 +129,11 @@ export const CHANNEL_META: Record<ChannelType, ChannelMeta> = {
       },
       {
         key: 'allowedUsers',
-        label: 'Allowed User IDs (optional)',
+        label: 'Allowed User IDs',
         type: 'text',
         placeholder: 'e.g. 123456789, 987654321',
-        description: 'Comma separated list of User IDs allowed to use the bot. Leave empty to allow everyone (if public) or require pairing.',
-        required: false,
+        description: 'Comma separated list of User IDs allowed to use the bot. Required for security.',
+        required: true,
       },
     ],
     instructions: [
@@ -141,6 +141,7 @@ export const CHANNEL_META: Record<ChannelType, ChannelMeta> = {
       'Send /newbot and follow the instructions',
       'Copy the bot token provided',
       'Paste the token below',
+      'Get your User ID from @userinfobot and paste it below',
     ],
   },
   discord: {

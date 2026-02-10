@@ -515,8 +515,14 @@ async function validateTelegramCredentials(
 ): Promise<CredentialValidationResult> {
     const botToken = config.botToken?.trim();
 
+    const allowedUsers = config.allowedUsers?.trim();
+
     if (!botToken) {
         return { valid: false, errors: ['Bot token is required'], warnings: [] };
+    }
+
+    if (!allowedUsers) {
+        return { valid: false, errors: ['At least one allowed user ID is required'], warnings: [] };
     }
 
     try {
@@ -609,6 +615,12 @@ export async function validateChannelConfig(channelType: string): Promise<Valida
             const telegramConfig = config.channels?.telegram;
             if (!telegramConfig?.botToken) {
                 result.errors.push('Telegram: Bot token is required');
+                result.valid = false;
+            }
+            // Check allowed users (stored as allowFrom array)
+            const allowedUsers = telegramConfig?.allowFrom as string[] | undefined;
+            if (!allowedUsers || allowedUsers.length === 0) {
+                result.errors.push('Telegram: Allowed User IDs are required');
                 result.valid = false;
             }
         }
