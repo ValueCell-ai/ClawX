@@ -56,8 +56,9 @@ export function Settings() {
 
   const isMac = window.electron.platform === 'darwin';
   const isWindows = window.electron.platform === 'win32';
+  const isLinux = window.electron.platform === 'linux';
   const isDev = window.electron.isDev;
-  const showCliTools = isMac || isWindows;
+  const showCliTools = isMac || isWindows || isLinux;
   
   // Open developer console
   const openDevConsole = async () => {
