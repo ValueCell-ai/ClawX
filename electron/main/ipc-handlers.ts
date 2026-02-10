@@ -768,7 +768,12 @@ function registerProviderHandlers(): void {
       const provider = await getProvider(providerId);
       if (provider) {
         try {
-          setOpenClawDefaultModel(provider.type);
+          // If the provider has a user-specified model (e.g. siliconflow),
+          // build the full model string: "providerType/modelId"
+          const modelOverride = provider.model
+            ? `${provider.type}/${provider.model}`
+            : undefined;
+          setOpenClawDefaultModel(provider.type, modelOverride);
         } catch (err) {
           console.warn('Failed to set OpenClaw default model:', err);
         }
@@ -796,7 +801,7 @@ function registerProviderHandlers(): void {
       // This allows validation during setup when provider hasn't been saved yet
       const providerType = provider?.type || providerId;
 
-      console.log(`Validating API key for provider type: ${providerType}`);
+      console.log(`[clawx-validate] validating provider type: ${providerType}`);
       return await validateApiKeyWithProvider(providerType, apiKey);
     } catch (error) {
       console.error('Validation error:', error);
@@ -828,17 +833,66 @@ async function validateApiKeyWithProvider(
         return await validateGoogleKey(trimmedKey);
       case 'openrouter':
         return await validateOpenRouterKey(trimmedKey);
+      case 'moonshot':
+        return await validateMoonshotKey(trimmedKey);
+      case 'siliconflow':
+        return await validateSiliconFlowKey(trimmedKey);
       case 'ollama':
         // Ollama doesn't require API key validation
         return { valid: true };
       default:
         // For custom providers, just check the key is not empty
+        console.log(`[clawx-validate] ${providerType} uses local non-empty validation only`);
         return { valid: true };
     }
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
     return { valid: false, error: errorMessage };
   }
+}
+
+function logValidationStatus(provider: string, status: number): void {
+  console.log(`[clawx-validate] ${provider} HTTP ${status}`);
+}
+
+function maskSecret(secret: string): string {
+  if (!secret) return '';
+  if (secret.length <= 8) return `${secret.slice(0, 2)}***`;
+  return `${secret.slice(0, 4)}***${secret.slice(-4)}`;
+}
+
+function sanitizeValidationUrl(rawUrl: string): string {
+  try {
+    const url = new URL(rawUrl);
+    const key = url.searchParams.get('key');
+    if (key) url.searchParams.set('key', maskSecret(key));
+    return url.toString();
+  } catch {
+    return rawUrl;
+  }
+}
+
+function sanitizeHeaders(headers: Record<string, string>): Record<string, string> {
+  const next = { ...headers };
+  if (next.Authorization?.startsWith('Bearer ')) {
+    const token = next.Authorization.slice('Bearer '.length);
+    next.Authorization = `Bearer ${maskSecret(token)}`;
+  }
+  if (next['x-api-key']) {
+    next['x-api-key'] = maskSecret(next['x-api-key']);
+  }
+  return next;
+}
+
+function logValidationRequest(
+  provider: string,
+  method: string,
+  url: string,
+  headers: Record<string, string>
+): void {
+  console.log(
+    `[clawx-validate] ${provider} request ${method} ${sanitizeValidationUrl(url)} headers=${JSON.stringify(sanitizeHeaders(headers))}`
+  );
 }
 
 /**
@@ -866,12 +920,14 @@ function classifyAuthResponse(
  */
 async function validateAnthropicKey(apiKey: string): Promise<{ valid: boolean; error?: string }> {
   try {
-    const response = await fetch('https://api.anthropic.com/v1/models?limit=1', {
-      headers: {
-        'x-api-key': apiKey,
-        'anthropic-version': '2023-06-01',
-      },
-    });
+    const url = 'https://api.anthropic.com/v1/models?limit=1';
+    const headers = {
+      'x-api-key': apiKey,
+      'anthropic-version': '2023-06-01',
+    };
+    logValidationRequest('anthropic', 'GET', url, headers);
+    const response = await fetch(url, { headers });
+    logValidationStatus('anthropic', response.status);
     const data = await response.json().catch(() => ({}));
     return classifyAuthResponse(response.status, data);
   } catch (error) {
@@ -884,9 +940,11 @@ async function validateAnthropicKey(apiKey: string): Promise<{ valid: boolean; e
  */
 async function validateOpenAIKey(apiKey: string): Promise<{ valid: boolean; error?: string }> {
   try {
-    const response = await fetch('https://api.openai.com/v1/models?limit=1', {
-      headers: { Authorization: `Bearer ${apiKey}` },
-    });
+    const url = 'https://api.openai.com/v1/models?limit=1';
+    const headers = { Authorization: `Bearer ${apiKey}` };
+    logValidationRequest('openai', 'GET', url, headers);
+    const response = await fetch(url, { headers });
+    logValidationStatus('openai', response.status);
     const data = await response.json().catch(() => ({}));
     return classifyAuthResponse(response.status, data);
   } catch (error) {
@@ -899,9 +957,10 @@ async function validateOpenAIKey(apiKey: string): Promise<{ valid: boolean; erro
  */
 async function validateGoogleKey(apiKey: string): Promise<{ valid: boolean; error?: string }> {
   try {
-    const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models?pageSize=1&key=${apiKey}`,
-    );
+    const url = `https://generativelanguage.googleapis.com/v1beta/models?pageSize=1&key=${apiKey}`;
+    logValidationRequest('google', 'GET', url, {});
+    const response = await fetch(url);
+    logValidationStatus('google', response.status);
     const data = await response.json().catch(() => ({}));
     return classifyAuthResponse(response.status, data);
   } catch (error) {
@@ -914,9 +973,45 @@ async function validateGoogleKey(apiKey: string): Promise<{ valid: boolean; erro
  */
 async function validateOpenRouterKey(apiKey: string): Promise<{ valid: boolean; error?: string }> {
   try {
-    const response = await fetch('https://openrouter.ai/api/v1/models', {
-      headers: { Authorization: `Bearer ${apiKey}` },
-    });
+    const url = 'https://openrouter.ai/api/v1/models';
+    const headers = { Authorization: `Bearer ${apiKey}` };
+    logValidationRequest('openrouter', 'GET', url, headers);
+    const response = await fetch(url, { headers });
+    logValidationStatus('openrouter', response.status);
+    const data = await response.json().catch(() => ({}));
+    return classifyAuthResponse(response.status, data);
+  } catch (error) {
+    return { valid: false, error: `Connection error: ${error instanceof Error ? error.message : String(error)}` };
+  }
+}
+
+/**
+ * Validate Moonshot API key via GET /v1/models (zero cost)
+ */
+async function validateMoonshotKey(apiKey: string): Promise<{ valid: boolean; error?: string }> {
+  try {
+    const url = 'https://api.moonshot.cn/v1/models';
+    const headers = { Authorization: `Bearer ${apiKey}` };
+    logValidationRequest('moonshot', 'GET', url, headers);
+    const response = await fetch(url, { headers });
+    logValidationStatus('moonshot', response.status);
+    const data = await response.json().catch(() => ({}));
+    return classifyAuthResponse(response.status, data);
+  } catch (error) {
+    return { valid: false, error: `Connection error: ${error instanceof Error ? error.message : String(error)}` };
+  }
+}
+
+/**
+ * Validate SiliconFlow API key via GET /v1/models (zero cost)
+ */
+async function validateSiliconFlowKey(apiKey: string): Promise<{ valid: boolean; error?: string }> {
+  try {
+    const url = 'https://api.siliconflow.com/v1/models';
+    const headers = { Authorization: `Bearer ${apiKey}` };
+    logValidationRequest('siliconflow', 'GET', url, headers);
+    const response = await fetch(url, { headers });
+    logValidationStatus('siliconflow', response.status);
     const data = await response.json().catch(() => ({}));
     return classifyAuthResponse(response.status, data);
   } catch (error) {

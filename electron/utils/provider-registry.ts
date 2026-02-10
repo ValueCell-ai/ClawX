@@ -10,7 +10,8 @@ export const BUILTIN_PROVIDER_TYPES = [
   'openai',
   'google',
   'openrouter',
-  'minimax',
+  'moonshot',
+  'siliconflow',
   'ollama',
 ] as const;
 export type BuiltinProviderType = (typeof BUILTIN_PROVIDER_TYPES)[number];
@@ -67,19 +68,33 @@ const REGISTRY: Record<string, ProviderBackendMeta> = {
       apiKeyEnv: 'OPENROUTER_API_KEY',
     },
   },
-  minimax: {
-    envVar: 'MINIMAX_API_KEY',
-    defaultModel: 'minimax/MiniMax-M2.1',
+  moonshot: {
+    envVar: 'MOONSHOT_API_KEY',
+    defaultModel: 'moonshot/kimi-k2.5',
     providerConfig: {
-      baseUrl: 'https://api.minimax.io/anthropic',
-      api: 'anthropic-messages',
-      apiKeyEnv: 'MINIMAX_API_KEY',
+      baseUrl: 'https://api.moonshot.cn/v1',
+      api: 'openai-completions',
+      apiKeyEnv: 'MOONSHOT_API_KEY',
       models: [
         {
-          id: 'MiniMax-M2.1',
-          name: 'MiniMax-M2.1',
+          id: 'kimi-k2.5',
+          name: 'Kimi K2.5',
+          reasoning: false,
+          input: ['text'],
+          cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+          contextWindow: 256000,
+          maxTokens: 8192,
         },
       ],
+    },
+  },
+  siliconflow: {
+    envVar: 'SILICONFLOW_API_KEY',
+    defaultModel: 'siliconflow/deepseek-ai/DeepSeek-V3',
+    providerConfig: {
+      baseUrl: 'https://api.siliconflow.com/v1',
+      api: 'openai-completions',
+      apiKeyEnv: 'SILICONFLOW_API_KEY',
     },
   },
   // Additional providers with env var mappings but no default model

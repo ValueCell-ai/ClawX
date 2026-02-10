@@ -10,7 +10,8 @@ export const PROVIDER_TYPES = [
   'openai',
   'google',
   'openrouter',
-  'minimax',
+  'moonshot',
+  'siliconflow',
   'ollama',
   'custom',
 ] as const;
@@ -40,6 +41,16 @@ export interface ProviderTypeInfo {
   /** Model brand name for display (e.g. "Claude", "GPT") */
   model?: string;
   requiresApiKey: boolean;
+  /** Pre-filled base URL (for proxy/compatible providers like SiliconFlow) */
+  defaultBaseUrl?: string;
+  /** Whether the user can edit the base URL in setup */
+  showBaseUrl?: boolean;
+  /** Whether to show a Model ID input field (for providers where user picks the model) */
+  showModelId?: boolean;
+  /** Default / example model ID placeholder */
+  modelIdPlaceholder?: string;
+  /** Default model ID to pre-fill */
+  defaultModelId?: string;
 }
 
 /** All supported provider types with UI metadata */
@@ -48,15 +59,14 @@ export const PROVIDER_TYPE_INFO: ProviderTypeInfo[] = [
   { id: 'openai', name: 'OpenAI', icon: '💚', placeholder: 'sk-proj-...', model: 'GPT', requiresApiKey: true },
   { id: 'google', name: 'Google', icon: '🔷', placeholder: 'AIza...', model: 'Gemini', requiresApiKey: true },
   { id: 'openrouter', name: 'OpenRouter', icon: '🌐', placeholder: 'sk-or-v1-...', model: 'Multi-Model', requiresApiKey: true },
-  { id: 'minimax', name: 'MiniMax', icon: '🔮', placeholder: 'sk-...', model: 'MiniMax M2.1', requiresApiKey: true },
-  { id: 'ollama', name: 'Ollama', icon: '🦙', placeholder: 'Not required', requiresApiKey: false },
-  { id: 'custom', name: 'Custom', icon: '⚙️', placeholder: 'API key...', requiresApiKey: false },
+  { id: 'moonshot', name: 'Moonshot', icon: '🌙', placeholder: 'sk-...', model: 'Kimi K2.5', requiresApiKey: true, defaultBaseUrl: 'https://api.moonshot.cn/v1', showModelId: true, modelIdPlaceholder: 'kimi-k2.5', defaultModelId: 'kimi-k2.5' },
+  { id: 'siliconflow', name: 'SiliconFlow', icon: '🌊', placeholder: 'sk-...', model: 'DeepSeek / Qwen', requiresApiKey: true, defaultBaseUrl: 'https://api.siliconflow.com/v1', showModelId: true, modelIdPlaceholder: 'deepseek-ai/DeepSeek-V3', defaultModelId: 'deepseek-ai/DeepSeek-V3' },
+  { id: 'ollama', name: 'Ollama', icon: '🦙', placeholder: 'Not required', requiresApiKey: false, defaultBaseUrl: 'http://localhost:11434', showBaseUrl: true },
+  { id: 'custom', name: 'Custom', icon: '⚙️', placeholder: 'API key...', requiresApiKey: false, showBaseUrl: true },
 ];
 
-/** Subset shown in the Setup wizard (major cloud providers only) */
-export const SETUP_PROVIDERS = PROVIDER_TYPE_INFO.filter((p) =>
-  (['anthropic', 'openai', 'google', 'openrouter', 'minimax'] as ProviderType[]).includes(p.id),
-);
+/** Subset shown in the Setup wizard */
+export const SETUP_PROVIDERS = PROVIDER_TYPE_INFO.filter((p) => p.id !== 'custom');
 
 /** Get type info by provider type id */
 export function getProviderTypeInfo(type: ProviderType): ProviderTypeInfo | undefined {

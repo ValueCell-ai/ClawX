@@ -283,6 +283,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
         set({ error: result.error || 'Failed to send message', sending: false });
       } else if (result.result?.runId) {
         set({ activeRunId: result.result.runId });
+      } else {
+        // No runId from gateway; keep sending state and wait for events.
       }
     } catch (err) {
       set({ error: String(err), sending: false });

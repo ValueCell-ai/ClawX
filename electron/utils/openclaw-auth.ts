@@ -148,8 +148,12 @@ export function buildProviderEnvVars(providers: Array<{ type: string; apiKey: st
 /**
  * Update the OpenClaw config to use the given provider and model
  * Writes to ~/.openclaw/openclaw.json
+ *
+ * @param provider - Provider type (e.g. 'anthropic', 'siliconflow')
+ * @param modelOverride - Optional model string to use instead of the registry default.
+ *   For siliconflow this is the user-supplied model ID prefixed with "siliconflow/".
  */
-export function setOpenClawDefaultModel(provider: string): void {
+export function setOpenClawDefaultModel(provider: string, modelOverride?: string): void {
   const configPath = join(homedir(), '.openclaw', 'openclaw.json');
   
   let config: Record<string, unknown> = {};
@@ -162,11 +166,15 @@ export function setOpenClawDefaultModel(provider: string): void {
     console.warn('Failed to read openclaw.json, creating fresh config:', err);
   }
   
-  const model = getProviderDefaultModel(provider);
+  const model = modelOverride || getProviderDefaultModel(provider);
   if (!model) {
     console.warn(`No default model mapping for provider "${provider}"`);
     return;
   }
+
+  const modelId = model.startsWith(`${provider}/`)
+    ? model.slice(provider.length + 1)
+    : model;
   
   // Set the default model for the agents
   // model must be an object: { primary: "provider/model", fallbacks?: [] }
@@ -183,17 +191,37 @@ export function setOpenClawDefaultModel(provider: string): void {
   if (providerCfg) {
     const models = (config.models || {}) as Record<string, unknown>;
     const providers = (models.providers || {}) as Record<string, unknown>;
-    
-    // Only set if not already configured
-    if (!providers[provider]) {
-      providers[provider] = {
-        baseUrl: providerCfg.baseUrl,
-        api: providerCfg.api,
-        apiKey: providerCfg.apiKeyEnv,
-        models: providerCfg.models ?? [],
-      };
-      console.log(`Configured models.providers.${provider} with baseUrl=${providerCfg.baseUrl}`);
+
+    const existingProvider =
+      providers[provider] && typeof providers[provider] === 'object'
+        ? (providers[provider] as Record<string, unknown>)
+        : {};
+
+    const existingModels = Array.isArray(existingProvider.models)
+      ? (existingProvider.models as Array<Record<string, unknown>>)
+      : [];
+    const registryModels = (providerCfg.models ?? []).map((m) => ({ ...m })) as Array<Record<string, unknown>>;
+
+    // Merge model entries by id and ensure the selected/default model id exists.
+    const mergedModels = [...registryModels];
+    for (const item of existingModels) {
+      const id = typeof item?.id === 'string' ? item.id : '';
+      if (id && !mergedModels.some((m) => m.id === id)) {
+        mergedModels.push(item);
+      }
     }
+    if (modelId && !mergedModels.some((m) => m.id === modelId)) {
+      mergedModels.push({ id: modelId, name: modelId });
+    }
+
+    providers[provider] = {
+      ...existingProvider,
+      baseUrl: providerCfg.baseUrl,
+      api: providerCfg.api,
+      apiKey: providerCfg.apiKeyEnv,
+      models: mergedModels,
+    };
+    console.log(`Configured models.providers.${provider} with baseUrl=${providerCfg.baseUrl}, model=${modelId}`);
     
     models.providers = providers;
     config.models = models;

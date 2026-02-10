@@ -5,6 +5,8 @@
 import { create } from 'zustand';
 import type { GatewayStatus } from '../types/gateway';
 
+let gatewayInitPromise: Promise<void> | null = null;
+
 interface GatewayHealth {
   ok: boolean;
   error?: string;
@@ -39,47 +41,79 @@ export const useGatewayStore = create<GatewayState>((set, get) => ({
 
   init: async () => {
     if (get().isInitialized) return;
-
-    try {
-      // Get initial status
-      const status = await window.electron.ipcRenderer.invoke('gateway:status') as GatewayStatus;
-      set({ status, isInitialized: true });
-
-      // Listen for status changes
-      window.electron.ipcRenderer.on('gateway:status-changed', (newStatus) => {
-        set({ status: newStatus as GatewayStatus });
-      });
-
-      // Listen for errors
-      window.electron.ipcRenderer.on('gateway:error', (error) => {
-        set({ lastError: String(error) });
-      });
-
-      // Listen for notifications
-      window.electron.ipcRenderer.on('gateway:notification', (notification) => {
-        console.log('Gateway notification:', notification);
-      });
-
-      // Listen for chat events from the gateway and forward to chat store
-      window.electron.ipcRenderer.on('gateway:chat-message', (data) => {
-        try {
-          // Dynamic import to avoid circular dependency
-          import('./chat').then(({ useChatStore }) => {
-            const chatData = data as { message?: Record<string, unknown> } | Record<string, unknown>;
-            const event = ('message' in chatData && typeof chatData.message === 'object')
-              ? chatData.message as Record<string, unknown>
-              : chatData as Record<string, unknown>;
-            useChatStore.getState().handleChatEvent(event);
-          });
-        } catch (err) {
-          console.warn('Failed to forward chat event:', err);
-        }
-      });
-
-    } catch (error) {
-      console.error('Failed to initialize Gateway:', error);
-      set({ lastError: String(error) });
+    if (gatewayInitPromise) {
+      await gatewayInitPromise;
+      return;
     }
+
+    gatewayInitPromise = (async () => {
+      try {
+        // Get initial status first
+        const status = await window.electron.ipcRenderer.invoke('gateway:status') as GatewayStatus;
+        set({ status, isInitialized: true });
+
+        // Listen for status changes
+        window.electron.ipcRenderer.on('gateway:status-changed', (newStatus) => {
+          set({ status: newStatus as GatewayStatus });
+        });
+
+        // Listen for errors
+        window.electron.ipcRenderer.on('gateway:error', (error) => {
+          set({ lastError: String(error) });
+        });
+
+        // Some Gateway builds stream chat events via generic "agent" notifications.
+        // Normalize and forward them to the chat store.
+        window.electron.ipcRenderer.on('gateway:notification', (notification) => {
+          const payload = notification as { method?: string; params?: Record<string, unknown> } | undefined;
+          if (!payload || payload.method !== 'agent' || !payload.params || typeof payload.params !== 'object') {
+            return;
+          }
+
+          const p = payload.params;
+          const data = (p.data && typeof p.data === 'object') ? (p.data as Record<string, unknown>) : {};
+          const normalizedEvent: Record<string, unknown> = {
+            ...data,
+            runId: p.runId ?? data.runId,
+            sessionKey: p.sessionKey ?? data.sessionKey,
+            stream: p.stream ?? data.stream,
+            seq: p.seq ?? data.seq,
+          };
+
+          import('./chat')
+            .then(({ useChatStore }) => {
+              useChatStore.getState().handleChatEvent(normalizedEvent);
+            })
+            .catch((err) => {
+              console.warn('Failed to forward gateway notification event:', err);
+            });
+        });
+
+        // Listen for chat events from the gateway and forward to chat store
+        window.electron.ipcRenderer.on('gateway:chat-message', (data) => {
+          try {
+            // Dynamic import to avoid circular dependency
+            import('./chat').then(({ useChatStore }) => {
+              const chatData = data as { message?: Record<string, unknown> } | Record<string, unknown>;
+              const event = ('message' in chatData && typeof chatData.message === 'object')
+                ? chatData.message as Record<string, unknown>
+                : chatData as Record<string, unknown>;
+              useChatStore.getState().handleChatEvent(event);
+            });
+          } catch (err) {
+            console.warn('Failed to forward chat event:', err);
+          }
+        });
+
+      } catch (error) {
+        console.error('Failed to initialize Gateway:', error);
+        set({ lastError: String(error) });
+      } finally {
+        gatewayInitPromise = null;
+      }
+    })();
+
+    await gatewayInitPromise;
   },
 
   start: async () => {
