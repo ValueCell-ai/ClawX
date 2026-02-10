@@ -129,7 +129,10 @@ export const useUpdateStore = create<UpdateState>((set, get) => ({
     set({ status: 'checking', error: null });
     
     try {
-      const result = await window.electron.ipcRenderer.invoke('update:check') as {
+      const result = await Promise.race([
+        window.electron.ipcRenderer.invoke('update:check'),
+        new Promise((_, reject) => setTimeout(() => reject(new Error('Update check timed out')), 30000))
+      ]) as {
         success: boolean;
         info?: UpdateInfo;
         error?: string;

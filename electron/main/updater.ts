@@ -120,7 +120,8 @@ export class AppUpdater extends EventEmitter {
       return result?.updateInfo || null;
     } catch (error) {
       console.error('[Updater] Check for updates failed:', error);
-      return null;
+      this.updateStatus({ status: 'error', error: (error as Error).message || String(error) });
+      throw error; // Re-throw instead of swallowing
     }
   }
 
