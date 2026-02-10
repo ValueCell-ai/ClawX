@@ -160,6 +160,7 @@ jobs:
             release-artifacts/**/latest*.yml
           draft: false
           prerelease: ${{ contains(github.ref, 'alpha') || contains(github.ref, 'beta') }}
+          make_latest: ${{ !(contains(github.ref, 'alpha') || contains(github.ref, 'beta')) }}
           generate_release_notes: true
           body: |
             ## 🚀 ClawX ${{ github.ref_name }}
