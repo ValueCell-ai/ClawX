@@ -2,7 +2,7 @@
  * Channel Configuration Utilities
  * Manages channel configuration in OpenClaw config files
  */
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync, readdirSync, statSync, rmSync } from 'fs';
 import { join } from 'path';
 import { homedir } from 'os';
 
@@ -201,6 +201,20 @@ export function deleteChannelConfig(channelType: string): void {
         writeOpenClawConfig(currentConfig);
         console.log(`Deleted channel config for ${channelType}`);
     }
+
+    // Special handling for WhatsApp credentials
+    if (channelType === 'whatsapp') {
+        try {
+
+            const whatsappDir = join(homedir(), '.openclaw', 'credentials', 'whatsapp');
+            if (existsSync(whatsappDir)) {
+                rmSync(whatsappDir, { recursive: true, force: true });
+                console.log('Deleted WhatsApp credentials directory');
+            }
+        } catch (error) {
+            console.error('Failed to delete WhatsApp credentials:', error);
+        }
+    }
 }
 
 /**
@@ -208,13 +222,35 @@ export function deleteChannelConfig(channelType: string): void {
  */
 export function listConfiguredChannels(): string[] {
     const config = readOpenClawConfig();
-    if (!config.channels) {
-        return [];
+    const channels: string[] = [];
+
+    if (config.channels) {
+        channels.push(...Object.keys(config.channels).filter(
+            (channelType) => config.channels![channelType]?.enabled !== false
+        ));
     }
 
-    return Object.keys(config.channels).filter(
-        (channelType) => config.channels![channelType]?.enabled !== false
-    );
+    // Check for WhatsApp credentials directory
+    try {
+        const whatsappDir = join(homedir(), '.openclaw', 'credentials', 'whatsapp');
+        if (existsSync(whatsappDir)) {
+            const entries = readdirSync(whatsappDir);
+            // Check if there's at least one directory (session)
+            const hasSession = entries.some((entry: string) => {
+                try {
+                    return statSync(join(whatsappDir, entry)).isDirectory();
+                } catch { return false; }
+            });
+
+            if (hasSession && !channels.includes('whatsapp')) {
+                channels.push('whatsapp');
+            }
+        }
+    } catch {
+        // Ignore errors checking whatsapp dir
+    }
+
+    return channels;
 }
 
 /**
@@ -266,8 +302,6 @@ export async function validateChannelCredentials(
             return validateDiscordCredentials(config);
         case 'telegram':
             return validateTelegramCredentials(config);
-        case 'slack':
-            return validateSlackCredentials(config);
         default:
             // For channels without specific validation, just check required fields are present
             return { valid: true, errors: [], warnings: ['No online validation available for this channel type.'] };
@@ -424,58 +458,7 @@ async function validateTelegramCredentials(
     }
 }
 
-/**
- * Validate Slack bot token
- */
-async function validateSlackCredentials(
-    config: Record<string, string>
-): Promise<CredentialValidationResult> {
-    const botToken = config.botToken?.trim();
 
-    if (!botToken) {
-        return { valid: false, errors: ['Bot token is required'], warnings: [] };
-    }
-
-    try {
-        const response = await fetch('https://slack.com/api/auth.test', {
-            method: 'POST',
-            headers: {
-                Authorization: `Bearer ${botToken}`,
-                'Content-Type': 'application/x-www-form-urlencoded',
-            },
-        });
-
-        const data = (await response.json()) as { ok?: boolean; error?: string; team?: string; user?: string };
-
-        if (data.ok) {
-            return {
-                valid: true,
-                errors: [],
-                warnings: [],
-                details: { team: data.team || 'Unknown', user: data.user || 'Unknown' },
-            };
-        }
-
-        const errorMap: Record<string, string> = {
-            invalid_auth: 'Invalid bot token',
-            account_inactive: 'Account is inactive',
-            token_revoked: 'Token has been revoked',
-            not_authed: 'No authentication token provided',
-        };
-
-        return {
-            valid: false,
-            errors: [errorMap[data.error || ''] || `Slack error: ${data.error}`],
-            warnings: [],
-        };
-    } catch (error) {
-        return {
-            valid: false,
-            errors: [`Connection error: ${error instanceof Error ? error.message : String(error)}`],
-            warnings: [],
-        };
-    }
-}
 
 /**
  * Validate channel configuration using OpenClaw doctor

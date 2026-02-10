@@ -38,6 +38,7 @@ import {
 } from '../utils/channel-config';
 import { checkUvInstalled, installUv, setupManagedPython } from '../utils/uv-setup';
 import { updateSkillConfig, getSkillConfig, getAllSkillConfigs } from '../utils/skill-config';
+import { whatsAppLoginManager } from '../utils/whatsapp-login';
 
 /**
  * Register all IPC handlers
@@ -82,6 +83,9 @@ export function registerIpcHandlers(
 
   // Window control handlers (for custom title bar on Windows/Linux)
   registerWindowHandlers(mainWindow);
+
+  // WhatsApp handlers
+  registerWhatsAppHandlers(mainWindow);
 }
 
 /**
@@ -610,6 +614,53 @@ function registerOpenClawHandlers(): void {
     } catch (error) {
       console.error('Failed to validate channel credentials:', error);
       return { success: false, valid: false, errors: [String(error)], warnings: [] };
+    }
+  });
+}
+
+/**
+ * WhatsApp Login Handlers
+ */
+function registerWhatsAppHandlers(mainWindow: BrowserWindow): void {
+  // Request WhatsApp QR code
+  ipcMain.handle('channel:requestWhatsAppQr', async (_, accountId: string) => {
+    try {
+      await whatsAppLoginManager.start(accountId);
+      return { success: true };
+    } catch (error) {
+      return { success: false, error: String(error) };
+    }
+  });
+
+  // Cancel WhatsApp login
+  ipcMain.handle('channel:cancelWhatsAppQr', async () => {
+    try {
+      await whatsAppLoginManager.stop();
+      return { success: true };
+    } catch (error) {
+      return { success: false, error: String(error) };
+    }
+  });
+
+  // Check WhatsApp status (is it active?)
+  // ipcMain.handle('channel:checkWhatsAppStatus', ...)
+
+  // Forward events to renderer
+  whatsAppLoginManager.on('qr', (data) => {
+    if (!mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('channel:whatsapp-qr', data);
+    }
+  });
+
+  whatsAppLoginManager.on('success', (data) => {
+    if (!mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('channel:whatsapp-success', data);
+    }
+  });
+
+  whatsAppLoginManager.on('error', (error) => {
+    if (!mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('channel:whatsapp-error', error);
     }
   });
 }

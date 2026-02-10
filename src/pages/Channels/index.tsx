@@ -369,6 +369,10 @@ function AddChannelDialog({ selectedType, onSelectType, onClose, onChannelAdded 
       setConfigValues({});
       setChannelName('');
       setIsExistingConfig(false);
+      setChannelName('');
+      setIsExistingConfig(false);
+      // Ensure we clean up any pending QR session if switching away
+      window.electron.ipcRenderer.invoke('channel:cancelWhatsAppQr').catch(() => { });
       return;
     }
 
@@ -403,6 +407,47 @@ function AddChannelDialog({ selectedType, onSelectType, onClose, onChannelAdded 
 
     return () => { cancelled = true; };
   }, [selectedType]);
+
+  // Listen for WhatsApp QR events
+  useEffect(() => {
+    if (selectedType !== 'whatsapp') return;
+
+    const onQr = (data: { qr: string; raw: string }) => {
+      setQrCode(`data:image/png;base64,${data.qr}`);
+    };
+
+    const onSuccess = () => {
+      toast.success('WhatsApp connected successfully!');
+      // Register the channel locally so it shows up immediately
+      addChannel({
+        type: 'whatsapp',
+        name: channelName || 'WhatsApp',
+      }).then(() => {
+        // Restart gateway to pick up the new session
+        window.electron.ipcRenderer.invoke('gateway:restart').catch(console.error);
+        onChannelAdded();
+      });
+    };
+
+    const onError = (err: string) => {
+      console.error('WhatsApp Login Error:', err);
+      toast.error(`WhatsApp Login Failed: ${err}`);
+      setQrCode(null);
+      setConnecting(false);
+    };
+
+    const removeQrListener = (window.electron.ipcRenderer.on as any)('channel:whatsapp-qr', onQr);
+    const removeSuccessListener = (window.electron.ipcRenderer.on as any)('channel:whatsapp-success', onSuccess);
+    const removeErrorListener = (window.electron.ipcRenderer.on as any)('channel:whatsapp-error', onError);
+
+    return () => {
+      if (typeof removeQrListener === 'function') removeQrListener();
+      if (typeof removeSuccessListener === 'function') removeSuccessListener();
+      if (typeof removeErrorListener === 'function') removeErrorListener();
+      // Cancel when unmounting or switching types
+      window.electron.ipcRenderer.invoke('channel:cancelWhatsAppQr').catch(() => { });
+    };
+  }, [selectedType, addChannel, channelName, onChannelAdded]);
 
   const handleValidate = async () => {
     if (!selectedType) return;
@@ -457,10 +502,9 @@ function AddChannelDialog({ selectedType, onSelectType, onClose, onChannelAdded 
     try {
       // For QR-based channels, request QR code
       if (meta.connectionType === 'qr') {
-        // Simulate QR code generation (in real implementation, call Gateway)
-        await new Promise((resolve) => setTimeout(resolve, 1500));
-        setQrCode('placeholder-qr');
-        setConnecting(false);
+        const accountId = channelName.trim() || 'default';
+        await window.electron.ipcRenderer.invoke('channel:requestWhatsAppQr', accountId);
+        // The QR code will be set via event listener
         return;
       }
 
@@ -625,23 +669,24 @@ function AddChannelDialog({ selectedType, onSelectType, onClose, onChannelAdded 
           ) : qrCode ? (
             // QR Code display
             <div className="text-center space-y-4">
-              <div className="bg-white p-4 rounded-lg inline-block">
-                <div className="w-48 h-48 bg-gray-100 flex items-center justify-center">
-                  <QrCode className="h-32 w-32 text-gray-400" />
-                </div>
+              <div className="bg-white p-4 rounded-lg inline-block shadow-sm border">
+                {qrCode.startsWith('data:image') ? (
+                  <img src={qrCode} alt="Scan QR Code" className="w-64 h-64 object-contain" />
+                ) : (
+                  <div className="w-64 h-64 bg-gray-100 flex items-center justify-center">
+                    <QrCode className="h-32 w-32 text-gray-400" />
+                  </div>
+                )}
               </div>
               <p className="text-sm text-muted-foreground">
                 Scan this QR code with {meta?.name} to connect
               </p>
               <div className="flex justify-center gap-2">
-                <Button variant="outline" onClick={() => setQrCode(null)}>
-                  Generate New Code
-                </Button>
-                <Button onClick={() => {
-                  toast.success('Channel connected successfully');
-                  onChannelAdded();
+                <Button variant="outline" onClick={() => {
+                  setQrCode(null);
+                  handleConnect(); // Retry
                 }}>
-                  I've Scanned It
+                  Refresh Code
                 </Button>
               </div>
             </div>
