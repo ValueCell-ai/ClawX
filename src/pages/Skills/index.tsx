@@ -15,6 +15,7 @@ import {
   CheckCircle2,
   XCircle,
   AlertCircle,
+  ShieldCheck,
   ChevronRight,
   Sparkles,
   Download,
@@ -844,6 +845,14 @@ export function Skills() {
 
         <TabsContent value="marketplace" className="space-y-6 mt-6">
           <div className="flex flex-col gap-4">
+            <Card className="border-muted/50 bg-muted/20">
+              <CardContent className="py-4 flex items-start gap-3">
+                <ShieldCheck className="h-5 w-5 text-muted-foreground mt-0.5" />
+                <div className="text-muted-foreground">
+                  Click skill card to view its documentation and security information on ClawHub before installation.
+                </div>
+              </CardContent>
+            </Card>
             <div className="flex gap-4">
               <form onSubmit={handleMarketplaceSearch} className="flex-1 flex gap-2">
                 <div className="relative flex-1">
