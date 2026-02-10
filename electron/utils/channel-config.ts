@@ -6,9 +6,13 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync, readdirSync, statSy
 import { join } from 'path';
 import { homedir } from 'os';
 import { getOpenClawResolvedDir } from './paths';
+import * as logger from './logger';
 
 const OPENCLAW_DIR = join(homedir(), '.openclaw');
 const CONFIG_FILE = join(OPENCLAW_DIR, 'openclaw.json');
+
+// Channels that are managed as plugins (config goes under plugins.entries, not channels)
+const PLUGIN_CHANNELS = ['whatsapp'];
 
 export interface ChannelConfigData {
     enabled?: boolean;
@@ -43,6 +47,7 @@ export function readOpenClawConfig(): OpenClawConfig {
         const content = readFileSync(CONFIG_FILE, 'utf-8');
         return JSON.parse(content) as OpenClawConfig;
     } catch (error) {
+        logger.error('Failed to read OpenClaw config', error);
         console.error('Failed to read OpenClaw config:', error);
         return {};
     }
@@ -57,6 +62,7 @@ export function writeOpenClawConfig(config: OpenClawConfig): void {
     try {
         writeFileSync(CONFIG_FILE, JSON.stringify(config, null, 2), 'utf-8');
     } catch (error) {
+        logger.error('Failed to write OpenClaw config', error);
         console.error('Failed to write OpenClaw config:', error);
         throw error;
     }
@@ -72,6 +78,28 @@ export function saveChannelConfig(
     config: ChannelConfigData
 ): void {
     const currentConfig = readOpenClawConfig();
+
+    // Plugin-based channels (e.g. WhatsApp) go under plugins.entries, not channels
+    if (PLUGIN_CHANNELS.includes(channelType)) {
+        if (!currentConfig.plugins) {
+            (currentConfig as any).plugins = {};
+        }
+        if (!(currentConfig as any).plugins.entries) {
+            (currentConfig as any).plugins.entries = {};
+        }
+        (currentConfig as any).plugins.entries[channelType] = {
+            ...(currentConfig as any).plugins.entries[channelType],
+            enabled: config.enabled ?? true,
+        };
+        writeOpenClawConfig(currentConfig);
+        logger.info('Plugin channel config saved', {
+            channelType,
+            configFile: CONFIG_FILE,
+            path: `plugins.entries.${channelType}`,
+        });
+        console.log(`Saved plugin channel config for ${channelType}`);
+        return;
+    }
 
     if (!currentConfig.channels) {
         currentConfig.channels = {};
@@ -146,6 +174,13 @@ export function saveChannelConfig(
     };
 
     writeOpenClawConfig(currentConfig);
+    logger.info('Channel config saved', {
+        channelType,
+        configFile: CONFIG_FILE,
+        rawKeys: Object.keys(config),
+        transformedKeys: Object.keys(transformedConfig),
+        enabled: currentConfig.channels[channelType]?.enabled,
+    });
     console.log(`Saved channel config for ${channelType}`);
 }
 
@@ -288,6 +323,23 @@ export function listConfiguredChannels(): string[] {
  */
 export function setChannelEnabled(channelType: string, enabled: boolean): void {
     const currentConfig = readOpenClawConfig();
+
+    // Plugin-based channels go under plugins.entries
+    if (PLUGIN_CHANNELS.includes(channelType)) {
+        if (!currentConfig.plugins) {
+            (currentConfig as any).plugins = {};
+        }
+        if (!(currentConfig as any).plugins.entries) {
+            (currentConfig as any).plugins.entries = {};
+        }
+        if (!(currentConfig as any).plugins.entries[channelType]) {
+            (currentConfig as any).plugins.entries[channelType] = {};
+        }
+        (currentConfig as any).plugins.entries[channelType].enabled = enabled;
+        writeOpenClawConfig(currentConfig);
+        console.log(`Set plugin channel ${channelType} enabled: ${enabled}`);
+        return;
+    }
 
     if (!currentConfig.channels) {
         currentConfig.channels = {};

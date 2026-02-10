@@ -416,8 +416,23 @@ function AddChannelDialog({ selectedType, onSelectType, onClose, onChannelAdded 
       setQrCode(`data:image/png;base64,${data.qr}`);
     };
 
-    const onSuccess = () => {
+    const onSuccess = async (data: { accountId?: string }) => {
       toast.success('WhatsApp connected successfully!');
+      const accountId = data?.accountId || channelName.trim() || 'default';
+      try {
+        const saveResult = await window.electron.ipcRenderer.invoke(
+          'channel:saveConfig',
+          'whatsapp',
+          { enabled: true }
+        ) as { success?: boolean; error?: string };
+        if (!saveResult?.success) {
+          console.error('Failed to save WhatsApp config:', saveResult?.error);
+        } else {
+          console.info('Saved WhatsApp config for account:', accountId);
+        }
+      } catch (error) {
+        console.error('Failed to save WhatsApp config:', error);
+      }
       // Register the channel locally so it shows up immediately
       addChannel({
         type: 'whatsapp',

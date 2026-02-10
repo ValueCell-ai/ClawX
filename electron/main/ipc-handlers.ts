@@ -532,6 +532,7 @@ function registerOpenClawHandlers(): void {
   // Save channel configuration
   ipcMain.handle('channel:saveConfig', async (_, channelType: string, config: Record<string, unknown>) => {
     try {
+      logger.info('channel:saveConfig', { channelType, keys: Object.keys(config || {}) });
       saveChannelConfig(channelType, config);
       return { success: true };
     } catch (error) {
@@ -625,9 +626,11 @@ function registerWhatsAppHandlers(mainWindow: BrowserWindow): void {
   // Request WhatsApp QR code
   ipcMain.handle('channel:requestWhatsAppQr', async (_, accountId: string) => {
     try {
+      logger.info('channel:requestWhatsAppQr', { accountId });
       await whatsAppLoginManager.start(accountId);
       return { success: true };
     } catch (error) {
+      logger.error('channel:requestWhatsAppQr failed', error);
       return { success: false, error: String(error) };
     }
   });
@@ -638,6 +641,7 @@ function registerWhatsAppHandlers(mainWindow: BrowserWindow): void {
       await whatsAppLoginManager.stop();
       return { success: true };
     } catch (error) {
+      logger.error('channel:cancelWhatsAppQr failed', error);
       return { success: false, error: String(error) };
     }
   });
@@ -654,12 +658,14 @@ function registerWhatsAppHandlers(mainWindow: BrowserWindow): void {
 
   whatsAppLoginManager.on('success', (data) => {
     if (!mainWindow.isDestroyed()) {
+      logger.info('whatsapp:login-success', data);
       mainWindow.webContents.send('channel:whatsapp-success', data);
     }
   });
 
   whatsAppLoginManager.on('error', (error) => {
     if (!mainWindow.isDestroyed()) {
+      logger.error('whatsapp:login-error', error);
       mainWindow.webContents.send('channel:whatsapp-error', error);
     }
   });
