@@ -292,7 +292,9 @@ export class WhatsAppLoginManager extends EventEmitter {
                             if (error?.output?.statusCode === DisconnectReason.loggedOut) {
                                 try {
                                     rmSync(authDir, { recursive: true, force: true });
-                                } catch { }
+                                } catch (err) {
+                                    console.error('[WhatsAppLogin] Failed to clear auth dir:', err);
+                                }
                             }
                             if (this.socket) {
                                 this.socket.end(undefined);

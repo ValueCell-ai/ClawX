@@ -182,15 +182,15 @@ export const CHANNEL_META: Record<ChannelType, ChannelMeta> = {
     id: 'whatsapp',
     name: 'WhatsApp',
     icon: '📱',
-    description: 'Connect WhatsApp by scanning a QR code',
+    description: 'Connect WhatsApp by scanning a QR code (no phone number required)',
     connectionType: 'qr',
     docsUrl: 'https://docs.openclaw.ai/channels/whatsapp',
     configFields: [],
     instructions: [
       'Open WhatsApp on your phone',
-      'Go to Settings > Linked Devices',
-      'Tap "Link a Device"',
+      'Go to Settings > Linked Devices > Link a Device',
       'Scan the QR code shown below',
+      'The system will automatically identify your phone number',
     ],
   },
   signal: {
