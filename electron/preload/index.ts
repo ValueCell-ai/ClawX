@@ -91,7 +91,11 @@ const electronAPI = {
         'channel:listConfigured',
         'channel:setEnabled',
         'channel:validate',
+        'channel:validate',
         'channel:validateCredentials',
+        // WhatsApp
+        'channel:requestWhatsAppQr',
+        'channel:cancelWhatsAppQr',
         // ClawHub
         'clawhub:search',
         'clawhub:install',
@@ -132,6 +136,9 @@ const electronAPI = {
         'gateway:notification',
         'gateway:channel-status',
         'gateway:chat-message',
+        'channel:whatsapp-qr',
+        'channel:whatsapp-success',
+        'channel:whatsapp-error',
         'gateway:exit',
         'gateway:error',
         'navigate',
