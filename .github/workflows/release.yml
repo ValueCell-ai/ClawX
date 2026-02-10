@@ -261,7 +261,7 @@ jobs:
       - name: Generate release-info.json
         run: |
           VERSION="${{ steps.version.outputs.version }}"
-          BASE_URL="https://valuecell-clawx.oss-cn-hangzhou.aliyuncs.com/latest"
+          BASE_URL="https://oss.intelli-spectrum.com/latest"
 
           jq -n \
             --arg version "$VERSION" \

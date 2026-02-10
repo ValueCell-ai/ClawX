@@ -37,7 +37,7 @@ asarUnpack:
 # Fallback: GitHub Releases (backup, used when OSS is unavailable)
 publish:
   - provider: generic
-    url: https://valuecell-clawx.oss-cn-hangzhou.aliyuncs.com/latest
+    url: https://oss.intelli-spectrum.com/latest
     useMultipleRangeRequest: false
   - provider: github
     owner: ValueCell-ai
