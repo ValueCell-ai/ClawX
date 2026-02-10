@@ -113,6 +113,8 @@ const electronAPI = {
         'log:listFiles',
         // OpenClaw extras
         'openclaw:getDir',
+        'openclaw:getCliCommand',
+        'openclaw:installCliMac',
       ];
 
       if (validChannels.includes(channel)) {

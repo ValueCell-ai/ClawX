@@ -3,6 +3,7 @@
  * Registers all IPC handlers for main-renderer communication
  */
 import { ipcMain, BrowserWindow, shell, dialog, app } from 'electron';
+import { existsSync } from 'node:fs';
 import { GatewayManager } from '../gateway/manager';
 import { ClawHubService, ClawHubSearchParams, ClawHubInstallParams, ClawHubUninstallParams } from '../gateway/clawhub';
 import {
@@ -21,6 +22,7 @@ import {
   type ProviderConfig,
 } from '../utils/secure-storage';
 import { getOpenClawStatus, getOpenClawDir } from '../utils/paths';
+import { getOpenClawCliCommand, installOpenClawCliMac } from '../utils/openclaw-cli';
 import { getSetting } from '../utils/store';
 import { saveProviderKeyToOpenClaw, setOpenClawDefaultModel } from '../utils/openclaw-auth';
 import { logger } from '../utils/logger';
@@ -498,6 +500,27 @@ function registerOpenClawHandlers(): void {
   // Get the resolved OpenClaw directory path (for diagnostics)
   ipcMain.handle('openclaw:getDir', () => {
     return getOpenClawDir();
+  });
+
+  // Get a shell command to run OpenClaw CLI without modifying PATH
+  ipcMain.handle('openclaw:getCliCommand', () => {
+    try {
+      const status = getOpenClawStatus();
+      if (!status.packageExists) {
+        return { success: false, error: `OpenClaw package not found at: ${status.dir}` };
+      }
+      if (!existsSync(status.entryPath)) {
+        return { success: false, error: `OpenClaw entry script not found at: ${status.entryPath}` };
+      }
+      return { success: true, command: getOpenClawCliCommand() };
+    } catch (error) {
+      return { success: false, error: String(error) };
+    }
+  });
+
+  // Install a system-wide openclaw command on macOS (requires admin prompt)
+  ipcMain.handle('openclaw:installCliMac', async () => {
+    return installOpenClawCliMac();
   });
 
   // ==================== Channel Configuration Handlers ====================

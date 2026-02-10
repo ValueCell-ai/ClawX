@@ -2,7 +2,7 @@
  * Settings Page
  * Application configuration
  */
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   Sun,
   Moon,
@@ -50,6 +50,14 @@ export function Settings() {
   const { status: gatewayStatus, restart: restartGateway } = useGatewayStore();
   const currentVersion = useUpdateStore((state) => state.currentVersion);
   const [controlUiInfo, setControlUiInfo] = useState<ControlUiInfo | null>(null);
+  const [openclawCliCommand, setOpenclawCliCommand] = useState('');
+  const [openclawCliError, setOpenclawCliError] = useState<string | null>(null);
+  const [installingCli, setInstallingCli] = useState(false);
+
+  const isMac = window.electron.platform === 'darwin';
+  const isWindows = window.electron.platform === 'win32';
+  const isDev = window.electron.isDev;
+  const showCliTools = isMac || isWindows;
   
   // Open developer console
   const openDevConsole = async () => {
@@ -95,6 +103,82 @@ export function Settings() {
       toast.success('Gateway token copied');
     } catch (error) {
       toast.error(`Failed to copy token: ${String(error)}`);
+    }
+  };
+
+  useEffect(() => {
+    if (!showCliTools) return;
+    let cancelled = false;
+
+    const loadCliCommand = async () => {
+      try {
+        const result = await window.electron.ipcRenderer.invoke('openclaw:getCliCommand') as {
+          success: boolean;
+          command?: string;
+          error?: string;
+        };
+        if (cancelled) return;
+        if (result.success && result.command) {
+          setOpenclawCliCommand(result.command);
+          setOpenclawCliError(null);
+        } else {
+          setOpenclawCliCommand('');
+          setOpenclawCliError(result.error || 'OpenClaw CLI unavailable');
+        }
+      } catch (error) {
+        if (cancelled) return;
+        setOpenclawCliCommand('');
+        setOpenclawCliError(String(error));
+      }
+    };
+
+    loadCliCommand();
+    return () => {
+      cancelled = true;
+    };
+  }, [devModeUnlocked, showCliTools]);
+
+  const handleCopyCliCommand = async () => {
+    if (!openclawCliCommand) return;
+    try {
+      await navigator.clipboard.writeText(openclawCliCommand);
+      toast.success('CLI command copied');
+    } catch (error) {
+      toast.error(`Failed to copy command: ${String(error)}`);
+    }
+  };
+
+  const handleInstallCliCommand = async () => {
+    if (!isMac || installingCli) return;
+    try {
+      const confirmation = await window.electron.ipcRenderer.invoke('dialog:message', {
+        type: 'question',
+        title: 'Install OpenClaw Command',
+        message: 'Install the "openclaw" command?',
+        detail: 'This will create ~/.local/bin/openclaw. Ensure ~/.local/bin is on your PATH if you want to run it globally.',
+        buttons: ['Cancel', 'Install'],
+        defaultId: 1,
+        cancelId: 0,
+      }) as { response: number };
+
+      if (confirmation.response !== 1) return;
+
+      setInstallingCli(true);
+      const result = await window.electron.ipcRenderer.invoke('openclaw:installCliMac') as {
+        success: boolean;
+        path?: string;
+        error?: string;
+      };
+
+      if (result.success) {
+        toast.success(`Installed command at ${result.path ?? '/usr/local/bin/openclaw'}`);
+      } else {
+        toast.error(result.error || 'Failed to install command');
+      }
+    } catch (error) {
+      toast.error(`Install failed: ${String(error)}`);
+    } finally {
+      setInstallingCli(false);
     }
   };
 
@@ -328,6 +412,55 @@ export function Settings() {
               </div>
             </div>
           </div>
+          {showCliTools && (
+            <>
+              <Separator />
+              <div className="space-y-2">
+                <Label>OpenClaw CLI</Label>
+                <p className="text-sm text-muted-foreground">
+                  Copy a command to run OpenClaw without modifying PATH.
+                </p>
+                {isWindows && (
+                  <p className="text-xs text-muted-foreground">
+                    PowerShell command.
+                  </p>
+                )}
+                <div className="flex gap-2">
+                  <Input
+                    readOnly
+                    value={openclawCliCommand}
+                    placeholder={openclawCliError || 'Command unavailable'}
+                    className="font-mono"
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={handleCopyCliCommand}
+                    disabled={!openclawCliCommand}
+                  >
+                    <Copy className="h-4 w-4 mr-2" />
+                    Copy
+                  </Button>
+                </div>
+                {isMac && !isDev && (
+                  <div className="space-y-1">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={handleInstallCliCommand}
+                      disabled={installingCli}
+                    >
+                      <Terminal className="h-4 w-4 mr-2" />
+                      Install "openclaw" Command
+                    </Button>
+                    <p className="text-xs text-muted-foreground">
+                      Installs ~/.local/bin/openclaw (no admin required)
+                    </p>
+                  </div>
+                )}
+              </div>
+            </>
+          )}
         </CardContent>
       </Card>
       )}
