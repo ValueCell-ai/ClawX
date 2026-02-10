@@ -13,6 +13,7 @@ import {
   Key,
   Download,
   Copy,
+  FileText,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -59,6 +60,30 @@ export function Settings() {
   const isLinux = window.electron.platform === 'linux';
   const isDev = window.electron.isDev;
   const showCliTools = isMac || isWindows || isLinux;
+  const [showLogs, setShowLogs] = useState(false);
+  const [logContent, setLogContent] = useState('');
+
+  const handleShowLogs = async () => {
+    try {
+      const logs = await window.electron.ipcRenderer.invoke('log:readFile', 100) as string;
+      setLogContent(logs);
+      setShowLogs(true);
+    } catch {
+      setLogContent('(Failed to load logs)');
+      setShowLogs(true);
+    }
+  };
+
+  const handleOpenLogDir = async () => {
+    try {
+      const logDir = await window.electron.ipcRenderer.invoke('log:getDir') as string;
+      if (logDir) {
+        await window.electron.ipcRenderer.invoke('shell:showItemInFolder', logDir);
+      }
+    } catch {
+      // ignore
+    }
+  };
   
   // Open developer console
   const openDevConsole = async () => {
@@ -275,9 +300,33 @@ export function Settings() {
                 <RefreshCw className="h-4 w-4 mr-2" />
                 Restart
               </Button>
+              <Button variant="outline" size="sm" onClick={handleShowLogs}>
+                <FileText className="h-4 w-4 mr-2" />
+                Logs
+              </Button>
             </div>
           </div>
           
+          {showLogs && (
+            <div className="mt-4 p-4 rounded-lg bg-black/10 dark:bg-black/40 border border-border">
+              <div className="flex items-center justify-between mb-2">
+                <p className="font-medium text-sm">Application Logs</p>
+                <div className="flex gap-2">
+                  <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={handleOpenLogDir}>
+                    <ExternalLink className="h-3 w-3 mr-1" />
+                    Open Folder
+                  </Button>
+                  <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={() => setShowLogs(false)}>
+                    Close
+                  </Button>
+                </div>
+              </div>
+              <pre className="text-xs text-muted-foreground bg-background/50 p-3 rounded max-h-60 overflow-auto whitespace-pre-wrap font-mono">
+                {logContent || '(No logs available yet)'}
+              </pre>
+            </div>
+          )}
+
           <Separator />
           
           <div className="flex items-center justify-between">

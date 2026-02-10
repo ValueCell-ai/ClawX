@@ -107,8 +107,6 @@ export function isOpenClawPresent(): boolean {
  */
 export function isOpenClawBuilt(): boolean {
   const dir = getOpenClawDir();
-  // Check for dist/entry.js or just the dist directory with JS files
-  const entryPath = join(dir, 'dist', 'entry.js');
   const distDir = join(dir, 'dist');
   const hasDist = existsSync(distDir);
   return hasDist;
