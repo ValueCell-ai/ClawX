@@ -114,6 +114,7 @@ jobs:
           name: release-${{ matrix.platform }}
           path: |
             release/*.dmg
+            release/*.zip
             release/*.exe
             release/*.AppImage
             release/*.deb
@@ -151,6 +152,7 @@ jobs:
         with:
           files: |
             release-artifacts/**/*.dmg
+            release-artifacts/**/*.zip
             release-artifacts/**/*.exe
             release-artifacts/**/*.AppImage
             release-artifacts/**/*.deb
