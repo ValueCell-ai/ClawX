@@ -104,13 +104,9 @@ async function initialize(): Promise<void> {
   // Initialize logger first
   logger.init();
   logger.info('=== ClawX Application Starting ===');
-  logger.info(`Platform: ${process.platform}, Arch: ${process.arch}`);
-  logger.info(`Electron: ${process.versions.electron}, Node: ${process.versions.node}`);
-  logger.info(`App path: ${app.getAppPath()}`);
-  logger.info(`User data: ${app.getPath('userData')}`);
-  logger.info(`Is packaged: ${app.isPackaged}`);
-  logger.info(`Resources path: ${process.resourcesPath}`);
-  logger.info(`Exec path: ${process.execPath}`);
+  logger.debug(
+    `Runtime: platform=${process.platform}/${process.arch}, electron=${process.versions.electron}, node=${process.versions.node}, packaged=${app.isPackaged}`
+  );
 
   // Warm up network optimization (non-blocking)
   void warmupNetworkOptimization();
@@ -171,7 +167,7 @@ async function initialize(): Promise<void> {
 
   // Start Gateway automatically
   try {
-    logger.info('Auto-starting Gateway...');
+    logger.debug('Auto-starting Gateway...');
     await gatewayManager.start();
     logger.info('Gateway auto-start succeeded');
   } catch (error) {

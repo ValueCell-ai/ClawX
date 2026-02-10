@@ -98,9 +98,7 @@ export function getOpenClawEntryPath(): string {
 export function isOpenClawPresent(): boolean {
   const dir = getOpenClawDir();
   const pkgJsonPath = join(dir, 'package.json');
-  const exists = existsSync(dir) && existsSync(pkgJsonPath);
-  logger.debug(`isOpenClawPresent: dir=${dir}, exists=${exists}`);
-  return exists;
+  return existsSync(dir) && existsSync(pkgJsonPath);
 }
 
 /**
@@ -112,9 +110,7 @@ export function isOpenClawBuilt(): boolean {
   // Check for dist/entry.js or just the dist directory with JS files
   const entryPath = join(dir, 'dist', 'entry.js');
   const distDir = join(dir, 'dist');
-  const hasEntry = existsSync(entryPath);
   const hasDist = existsSync(distDir);
-  logger.debug(`isOpenClawBuilt: distDir=${distDir}, hasDist=${hasDist}, hasEntry=${hasEntry}`);
   return hasDist;
 }
 
