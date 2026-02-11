@@ -29,8 +29,9 @@ export function createTray(mainWindow: BrowserWindow): Tray {
     // Windows: use .ico for best quality in system tray
     iconPath = join(iconsDir, 'icon.ico');
   } else if (process.platform === 'darwin') {
-    // macOS: use 16x16 PNG as template image
-    iconPath = join(iconsDir, '16x16.png');
+    // macOS: use Template.png for proper status bar icon
+    // The "Template" suffix tells macOS to treat it as a template image
+    iconPath = join(iconsDir, 'tray-icon-Template.png');
   } else {
     // Linux: use 32x32 PNG
     iconPath = join(iconsDir, '32x32.png');
@@ -41,9 +42,14 @@ export function createTray(mainWindow: BrowserWindow): Tray {
   // Fallback to icon.png if platform-specific icon not found
   if (icon.isEmpty()) {
     icon = nativeImage.createFromPath(join(iconsDir, 'icon.png'));
+    // Still try to set as template for macOS
+    if (process.platform === 'darwin') {
+      icon.setTemplateImage(true);
+    }
   }
 
-  // On macOS, set as template image for proper dark/light mode support
+  // Note: Using "Template" suffix in filename automatically marks it as template image
+  // But we can also explicitly set it for safety
   if (process.platform === 'darwin') {
     icon.setTemplateImage(true);
   }

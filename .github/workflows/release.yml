@@ -350,8 +350,8 @@ jobs:
 
           echo ""
           echo "=== Verify release-info.json ==="
-          echo "Reading release-info.json directly from OSS..."
-          ossutil cat oss://valuecell-clawx/latest/release-info.json | jq .
+          ossutil cp oss://valuecell-clawx/latest/release-info.json /tmp/release-info.json -f
+          jq . /tmp/release-info.json
           
           echo ""
           echo "✅ All files uploaded and verified successfully!"
