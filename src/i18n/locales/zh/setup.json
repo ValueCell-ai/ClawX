@@ -1,0 +1,119 @@
+{
+    "steps": {
+        "welcome": {
+            "title": "欢迎使用 ClawX",
+            "description": "您的 AI 助手已准备好进行配置"
+        },
+        "runtime": {
+            "title": "环境检查",
+            "description": "验证系统要求"
+        },
+        "provider": {
+            "title": "AI 提供商",
+            "description": "配置您的 AI 服务"
+        },
+        "channel": {
+            "title": "连接渠道",
+            "description": "连接消息平台（可选）"
+        },
+        "installing": {
+            "title": "设置中",
+            "description": "安装必要组件"
+        },
+        "complete": {
+            "title": "准备就绪！",
+            "description": "ClawX 已准备好使用"
+        }
+    },
+    "welcome": {
+        "title": "欢迎使用 ClawX",
+        "description": "ClawX 是 OpenClaw 的图形界面，让您可以在喜爱的消息平台上轻松使用 AI 助手。",
+        "features": {
+            "noCommand": "无需命令行",
+            "modernUI": "现代美观的界面",
+            "bundles": "预装技能包",
+            "crossPlatform": "跨平台支持"
+        }
+    },
+    "runtime": {
+        "title": "检查环境",
+        "viewLogs": "查看日志",
+        "recheck": "重新检查",
+        "nodejs": "Node.js 运行时",
+        "openclaw": "OpenClaw 包",
+        "gateway": "网关服务",
+        "startGateway": "启动网关",
+        "status": {
+            "checking": "检查中...",
+            "success": "Node.js 可用",
+            "error": "失败",
+            "gatewayRunning": "运行在端口 {{port}}",
+            "packageReady": "OpenClaw 包已就绪"
+        },
+        "issue": {
+            "title": "检测到环境问题",
+            "desc": "请确保 OpenClaw 已正确安装。查看日志以获取详情。"
+        },
+        "logs": {
+            "title": "应用程序日志",
+            "openFolder": "打开日志文件夹",
+            "close": "关闭",
+            "noLogs": "（暂无日志）"
+        }
+    },
+    "provider": {
+        "label": "模型提供商",
+        "selectPlaceholder": "选择提供商...",
+        "baseUrl": "基础 URL",
+        "modelId": "模型 ID",
+        "modelIdDesc": "提供商的模型标识符（例如 deepseek-ai/DeepSeek-V3）",
+        "apiKey": "API 密钥",
+        "save": "保存",
+        "validateSave": "验证并保存",
+        "valid": "提供商配置成功",
+        "invalid": "无效的 API 密钥",
+        "storedLocally": "您的 API 密钥存储在本地机器上。"
+    },
+    "channel": {
+        "title": "连接消息渠道",
+        "subtitle": "选择要连接 AI 助手的平台。您可以稍后在设置中添加更多渠道。",
+        "configure": "配置 {{name}}",
+        "howTo": "如何连接：",
+        "viewDocs": "查看文档",
+        "validationError": "验证失败",
+        "connected": "{{name}} 已连接",
+        "connectedDesc": "您的渠道已配置。将在网关启动时连接。",
+        "configureAnother": "配置另一个渠道"
+    },
+    "installing": {
+        "title": "安装必要组件",
+        "subtitle": "正在设置 AI 助手所需的工具",
+        "progress": "进度",
+        "status": {
+            "pending": "等待中",
+            "installing": "安装中...",
+            "installed": "已安装",
+            "failed": "失败"
+        },
+        "error": "设置错误：",
+        "restart": "尝试重启应用",
+        "wait": "这可能需要一点时间...",
+        "skip": "跳过此步骤"
+    },
+    "complete": {
+        "title": "设置完成！",
+        "subtitle": "ClawX 已配置并准备就绪。您现在可以开始与您的 AI 助手聊天了。",
+        "provider": "AI 提供商",
+        "components": "组件",
+        "gateway": "网关",
+        "running": "运行中",
+        "footer": "您可以在设置中自定义技能并连接渠道"
+    },
+    "nav": {
+        "next": "下一步",
+        "back": "返回",
+        "skipStep": "跳过此步骤",
+        "skipSetup": "跳过设置",
+        "getStarted": "开始使用"
+    }
+}

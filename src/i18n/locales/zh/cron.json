@@ -1,0 +1,69 @@
+{
+    "title": "定时任务",
+    "subtitle": "通过定时任务自动化 AI 工作流",
+    "newTask": "新建任务",
+    "gatewayWarning": "网关未运行。没有活跃的网关，无法管理定时任务。",
+    "stats": {
+        "total": "任务总数",
+        "active": "运行中",
+        "paused": "已暂停",
+        "failed": "失败"
+    },
+    "empty": {
+        "title": "暂无定时任务",
+        "description": "创建定时任务以自动化 AI 工作流。任务可以在指定时间发送消息、运行查询或执行操作。",
+        "create": "创建第一个任务"
+    },
+    "card": {
+        "runNow": "立即运行",
+        "deleteConfirm": "确定要删除此任务吗？",
+        "last": "上次运行",
+        "next": "下次运行"
+    },
+    "dialog": {
+        "createTitle": "创建任务",
+        "editTitle": "编辑任务",
+        "description": "安排自动化的 AI 任务",
+        "taskName": "任务名称",
+        "taskNamePlaceholder": "例如：早间简报",
+        "message": "消息/提示词",
+        "messagePlaceholder": "AI 应该做什么？例如：给我一份今天的新闻和天气摘要",
+        "schedule": "调度计划",
+        "cronPlaceholder": "Cron 表达式 (例如：0 9 * * *)",
+        "usePresets": "使用预设",
+        "useCustomCron": "使用自定义 Cron",
+        "targetChannel": "目标频道",
+        "noChannels": "无可用频道。请先添加频道。",
+        "discordChannelId": "Discord 频道 ID",
+        "discordChannelIdPlaceholder": "例如：1438452657525100686",
+        "discordChannelIdDesc": "右键点击 Discord 频道 → 复制频道 ID",
+        "enableImmediately": "立即启用",
+        "enableImmediatelyDesc": "创建后立即开始运行此任务",
+        "saveChanges": "保存更改"
+    },
+    "presets": {
+        "everyMinute": "每分钟",
+        "every5Min": "每 5 分钟",
+        "every15Min": "每 15 分钟",
+        "everyHour": "每小时",
+        "daily9am": "每天上午 9 点",
+        "daily6pm": "每天下午 6 点",
+        "weeklyMon": "每周 (周一上午 9 点)",
+        "monthly1st": "每月 (1号上午 9 点)"
+    },
+    "toast": {
+        "created": "任务已创建",
+        "updated": "任务已更新",
+        "enabled": "任务已启用",
+        "paused": "任务已暂停",
+        "deleted": "任务已删除",
+        "triggered": "任务已成功触发",
+        "failedUpdate": "更新任务失败",
+        "failedDelete": "删除任务失败",
+        "nameRequired": "请输入任务名称",
+        "messageRequired": "请输入消息",
+        "channelRequired": "请选择频道",
+        "discordIdRequired": "请输入 Discord 频道 ID",
+        "scheduleRequired": "请选择或输入调度计划"
+    }
+}

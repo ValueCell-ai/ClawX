@@ -7,6 +7,7 @@ import { Download, RefreshCw, Loader2, Rocket } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import { useUpdateStore } from '@/stores/update';
+import { useTranslation } from 'react-i18next';
 
 function formatBytes(bytes: number): string {
   if (bytes === 0) return '0 B';
@@ -17,6 +18,7 @@ function formatBytes(bytes: number): string {
 }
 
 export function UpdateSettings() {
+  const { t } = useTranslation('settings');
   const {
     status,
     currentVersion,
@@ -41,22 +43,38 @@ export function UpdateSettings() {
     await checkForUpdates();
   }, [checkForUpdates, clearError]);
 
+  const renderStatusIcon = () => {
+    switch (status) {
+      case 'checking':
+      case 'downloading':
+        return <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />;
+      case 'available':
+        return <Download className="h-4 w-4 text-primary" />;
+      case 'downloaded':
+        return <Rocket className="h-4 w-4 text-primary" />;
+      case 'error':
+        return <RefreshCw className="h-4 w-4 text-destructive" />;
+      default:
+        return <RefreshCw className="h-4 w-4 text-muted-foreground" />;
+    }
+  };
+
   const renderStatusText = () => {
     switch (status) {
       case 'checking':
-        return 'Checking for updates...';
+        return t('updates.status.checking');
       case 'downloading':
-        return 'Downloading update...';
+        return t('updates.status.downloading');
       case 'available':
-        return `Update available: v${updateInfo?.version}`;
+        return t('updates.status.available', { version: updateInfo?.version });
       case 'downloaded':
-        return `Ready to install: v${updateInfo?.version}`;
+        return t('updates.status.downloaded', { version: updateInfo?.version });
       case 'error':
-        return 'Update check failed';
+        return error || t('updates.status.failed');
       case 'not-available':
-        return 'You have the latest version';
+        return t('updates.status.latest');
       default:
-        return 'Check for updates to get the latest features';
+        return t('updates.status.check');
     }
   };
 
@@ -66,42 +84,42 @@ export function UpdateSettings() {
         return (
           <Button disabled variant="outline" size="sm">
             <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-            Checking...
+            {t('updates.action.checking')}
           </Button>
         );
       case 'downloading':
         return (
           <Button disabled variant="outline" size="sm">
             <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-            Downloading...
+            {t('updates.action.downloading')}
           </Button>
         );
       case 'available':
         return (
           <Button onClick={downloadUpdate} size="sm">
             <Download className="h-4 w-4 mr-2" />
-            Download Update
+            {t('updates.action.download')}
           </Button>
         );
       case 'downloaded':
         return (
           <Button onClick={installUpdate} size="sm" variant="default">
             <Rocket className="h-4 w-4 mr-2" />
-            Install & Restart
+            {t('updates.action.install')}
           </Button>
         );
       case 'error':
         return (
           <Button onClick={handleCheckForUpdates} variant="outline" size="sm">
             <RefreshCw className="h-4 w-4 mr-2" />
-            Retry
+            {t('updates.action.retry')}
           </Button>
         );
       default:
         return (
           <Button onClick={handleCheckForUpdates} variant="outline" size="sm">
             <RefreshCw className="h-4 w-4 mr-2" />
-            Check for Updates
+            {t('updates.action.check')}
           </Button>
         );
     }
@@ -119,9 +137,12 @@ export function UpdateSettings() {
   return (
     <div className="space-y-4">
       {/* Current Version */}
-      <div className="space-y-1">
-        <p className="text-sm font-medium">Current Version</p>
-        <p className="text-2xl font-bold">v{currentVersion}</p>
+      <div className="flex items-center justify-between">
+        <div className="space-y-1">
+          <p className="text-sm font-medium">{t('updates.currentVersion')}</p>
+          <p className="text-2xl font-bold">v{currentVersion}</p>
+        </div>
+        {renderStatusIcon()}
       </div>
 
       {/* Status */}
@@ -159,7 +180,7 @@ export function UpdateSettings() {
           </div>
           {updateInfo.releaseNotes && (
             <div className="text-sm text-muted-foreground prose prose-sm max-w-none">
-              <p className="font-medium text-foreground mb-1">What's New:</p>
+              <p className="font-medium text-foreground mb-1">{t('updates.whatsNew')}</p>
               <p className="whitespace-pre-wrap">{updateInfo.releaseNotes}</p>
             </div>
           )}
@@ -169,14 +190,14 @@ export function UpdateSettings() {
       {/* Error Details */}
       {status === 'error' && error && (
         <div className="rounded-lg bg-red-50 dark:bg-red-900/10 p-4 text-red-600 dark:text-red-400 text-sm">
-          <p className="font-medium mb-1">Error Details:</p>
+          <p className="font-medium mb-1">{t('updates.errorDetails')}</p>
           <p>{error}</p>
         </div>
       )}
 
       {/* Help Text */}
       <p className="text-xs text-muted-foreground">
-        Updates are downloaded in the background and installed when you restart the app.
+        {t('updates.help')}
       </p>
     </div>
   );

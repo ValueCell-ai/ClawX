@@ -1,0 +1,69 @@
+{
+    "title": "Scheduled Tasks",
+    "subtitle": "Automate AI workflows with scheduled tasks",
+    "newTask": "New Task",
+    "gatewayWarning": "Gateway is not running. Scheduled tasks cannot be managed without an active Gateway.",
+    "stats": {
+        "total": "Total Tasks",
+        "active": "Active",
+        "paused": "Paused",
+        "failed": "Failed"
+    },
+    "empty": {
+        "title": "No scheduled tasks",
+        "description": "Create scheduled tasks to automate AI workflows. Tasks can send messages, run queries, or perform actions at specified times.",
+        "create": "Create Your First Task"
+    },
+    "card": {
+        "runNow": "Run Now",
+        "deleteConfirm": "Are you sure you want to delete this task?",
+        "last": "Last",
+        "next": "Next"
+    },
+    "dialog": {
+        "createTitle": "Create Task",
+        "editTitle": "Edit Task",
+        "description": "Schedule an automated AI task",
+        "taskName": "Task Name",
+        "taskNamePlaceholder": "e.g., Morning briefing",
+        "message": "Message / Prompt",
+        "messagePlaceholder": "What should the AI do? e.g., Give me a summary of today's news and weather",
+        "schedule": "Schedule",
+        "cronPlaceholder": "Cron expression (e.g., 0 9 * * *)",
+        "usePresets": "Use presets",
+        "useCustomCron": "Use custom cron",
+        "targetChannel": "Target Channel",
+        "noChannels": "No channels available. Add a channel first.",
+        "discordChannelId": "Discord Channel ID",
+        "discordChannelIdPlaceholder": "e.g., 1438452657525100686",
+        "discordChannelIdDesc": "Right-click the Discord channel → Copy Channel ID",
+        "enableImmediately": "Enable immediately",
+        "enableImmediatelyDesc": "Start running this task after creation",
+        "saveChanges": "Save Changes"
+    },
+    "presets": {
+        "everyMinute": "Every minute",
+        "every5Min": "Every 5 minutes",
+        "every15Min": "Every 15 minutes",
+        "everyHour": "Every hour",
+        "daily9am": "Daily at 9am",
+        "daily6pm": "Daily at 6pm",
+        "weeklyMon": "Weekly (Mon 9am)",
+        "monthly1st": "Monthly (1st at 9am)"
+    },
+    "toast": {
+        "created": "Task created",
+        "updated": "Task updated",
+        "enabled": "Task enabled",
+        "paused": "Task paused",
+        "deleted": "Task deleted",
+        "triggered": "Task triggered successfully",
+        "failedUpdate": "Failed to update task",
+        "failedDelete": "Failed to delete task",
+        "nameRequired": "Please enter a task name",
+        "messageRequired": "Please enter a message",
+        "channelRequired": "Please select a channel",
+        "discordIdRequired": "Please enter a Discord Channel ID",
+        "scheduleRequired": "Please select or enter a schedule"
+    }
+}

@@ -1,0 +1,13 @@
+{
+    "gatewayNotRunning": "网关未运行",
+    "gatewayRequired": "OpenClaw 网关需要运行才能使用聊天。它将自动启动，或者您可以从设置中启动。",
+    "welcome": {
+        "title": "ClawX 聊天",
+        "subtitle": "您的 AI 助手已就绪。在下方开始对话。",
+        "askQuestions": "提问",
+        "askQuestionsDesc": "获取任何话题的答案",
+        "creativeTasks": "创意任务",
+        "creativeTasksDesc": "写作、头脑风暴、创意"
+    },
+    "noLogs": "（暂无日志）"
+}

@@ -3,14 +3,14 @@
  * Manage AI provider configurations and API keys
  */
 import { useState, useEffect } from 'react';
-import { 
-  Plus, 
-  Trash2, 
-  Edit, 
-  Eye, 
-  EyeOff, 
-  Check, 
-  X, 
+import {
+  Plus,
+  Trash2,
+  Edit,
+  Eye,
+  EyeOff,
+  Check,
+  X,
   Loader2,
   Star,
   Key,
@@ -29,13 +29,15 @@ import {
 } from '@/lib/providers';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
+import { useTranslation } from 'react-i18next';
 
 export function ProvidersSettings() {
-  const { 
-    providers, 
-    defaultProviderId, 
-    loading, 
-    fetchProviders, 
+  const { t } = useTranslation('settings');
+  const {
+    providers,
+    defaultProviderId,
+    loading,
+    fetchProviders,
     addProvider,
     updateProvider,
     deleteProvider,
@@ -43,15 +45,15 @@ export function ProvidersSettings() {
     setDefaultProvider,
     validateApiKey,
   } = useProviderStore();
-  
+
   const [showAddDialog, setShowAddDialog] = useState(false);
   const [editingProvider, setEditingProvider] = useState<string | null>(null);
-  
+
   // Fetch providers on mount
   useEffect(() => {
     fetchProviders();
   }, [fetchProviders]);
-  
+
   const handleAddProvider = async (
     type: ProviderType,
     name: string,
@@ -80,47 +82,47 @@ export function ProvidersSettings() {
       }
 
       setShowAddDialog(false);
-      toast.success('Provider added successfully');
+      toast.success(t('aiProviders.toast.added'));
     } catch (error) {
-      toast.error(`Failed to add provider: ${error}`);
+      toast.error(`${t('aiProviders.toast.failedAdd')}: ${error}`);
     }
   };
-  
+
   const handleDeleteProvider = async (providerId: string) => {
     try {
       await deleteProvider(providerId);
-      toast.success('Provider deleted');
+      toast.success(t('aiProviders.toast.deleted'));
     } catch (error) {
-      toast.error(`Failed to delete provider: ${error}`);
+      toast.error(`${t('aiProviders.toast.failedDelete')}: ${error}`);
     }
   };
-  
+
   const handleSetDefault = async (providerId: string) => {
     try {
       await setDefaultProvider(providerId);
-      toast.success('Default provider updated');
+      toast.success(t('aiProviders.toast.defaultUpdated'));
     } catch (error) {
-      toast.error(`Failed to set default: ${error}`);
+      toast.error(`${t('aiProviders.toast.failedDefault')}: ${error}`);
     }
   };
-  
+
   const handleToggleEnabled = async (provider: ProviderWithKeyInfo) => {
     try {
       await updateProvider(provider.id, { enabled: !provider.enabled });
     } catch (error) {
-      toast.error(`Failed to update provider: ${error}`);
+      toast.error(`${t('aiProviders.toast.failedUpdate')}: ${error}`);
     }
   };
-  
+
   return (
     <div className="space-y-4">
       <div className="flex justify-end">
         <Button size="sm" onClick={() => setShowAddDialog(true)}>
           <Plus className="h-4 w-4 mr-2" />
-          Add Provider
+          {t('aiProviders.add')}
         </Button>
       </div>
-      
+
       {loading ? (
         <div className="flex items-center justify-center py-8">
           <Loader2 className="h-6 w-6 animate-spin" />
@@ -129,13 +131,13 @@ export function ProvidersSettings() {
         <Card>
           <CardContent className="flex flex-col items-center justify-center py-12">
             <Key className="h-12 w-12 text-muted-foreground mb-4" />
-            <h3 className="text-lg font-medium mb-2">No providers configured</h3>
+            <h3 className="text-lg font-medium mb-2">{t('aiProviders.empty.title')}</h3>
             <p className="text-muted-foreground text-center mb-4">
-              Add an AI provider to start using ClawX
+              {t('aiProviders.empty.desc')}
             </p>
             <Button onClick={() => setShowAddDialog(true)}>
               <Plus className="h-4 w-4 mr-2" />
-              Add Your First Provider
+              {t('aiProviders.empty.cta')}
             </Button>
           </CardContent>
         </Card>
@@ -165,7 +167,7 @@ export function ProvidersSettings() {
           ))}
         </div>
       )}
-      
+
       {/* Add Provider Dialog */}
       {showAddDialog && (
         <AddProviderDialog
@@ -195,20 +197,7 @@ interface ProviderCardProps {
   ) => Promise<{ valid: boolean; error?: string }>;
 }
 
-/**
- * Shorten a masked key to a more readable format.
- * e.g. "sk-or-v1-a20a****df67" -> "sk-...df67"
- */
-function shortenKeyDisplay(masked: string | null): string {
-  if (!masked) return 'No key';
-  // Show first 4 chars + last 4 chars
-  if (masked.length > 12) {
-    const prefix = masked.substring(0, 4);
-    const suffix = masked.substring(masked.length - 4);
-    return `${prefix}...${suffix}`;
-  }
-  return masked;
-}
+
 
 function ProviderCard({
   provider,
@@ -222,13 +211,14 @@ function ProviderCard({
   onSaveEdits,
   onValidateKey,
 }: ProviderCardProps) {
+  const { t } = useTranslation('settings');
   const [newKey, setNewKey] = useState('');
   const [baseUrl, setBaseUrl] = useState(provider.baseUrl || '');
   const [modelId, setModelId] = useState(provider.model || '');
   const [showKey, setShowKey] = useState(false);
   const [validating, setValidating] = useState(false);
   const [saving, setSaving] = useState(false);
-  
+
   const typeInfo = PROVIDER_TYPE_INFO.find((t) => t.id === provider.type);
   const canEditConfig = Boolean(typeInfo?.showBaseUrl || typeInfo?.showModelId);
 
@@ -240,7 +230,7 @@ function ProviderCard({
       setModelId(provider.model || '');
     }
   }, [isEditing, provider.baseUrl, provider.model]);
-  
+
   const handleSaveEdits = async () => {
     setSaving(true);
     try {
@@ -253,7 +243,7 @@ function ProviderCard({
         });
         setValidating(false);
         if (!result.valid) {
-          toast.error(result.error || 'Invalid API key');
+          toast.error(result.error || t('aiProviders.toast.invalidKey'));
           setSaving(false);
           return;
         }
@@ -262,7 +252,7 @@ function ProviderCard({
 
       if (canEditConfig) {
         if (typeInfo?.showModelId && !modelId.trim()) {
-          toast.error('Model ID is required');
+          toast.error(t('aiProviders.toast.modelRequired'));
           setSaving(false);
           return;
         }
@@ -287,15 +277,15 @@ function ProviderCard({
 
       await onSaveEdits(payload);
       setNewKey('');
-      toast.success('Provider updated');
+      toast.success(t('aiProviders.toast.updated'));
     } catch (error) {
-      toast.error(`Failed to save provider: ${error}`);
+      toast.error(`${t('aiProviders.toast.failedUpdate')}: ${error}`);
     } finally {
       setSaving(false);
       setValidating(false);
     }
   };
-  
+
   return (
     <Card className={cn(isDefault && 'ring-2 ring-primary')}>
       <CardContent className="p-4">
@@ -307,7 +297,7 @@ function ProviderCard({
               <div className="flex items-center gap-2">
                 <span className="font-semibold">{provider.name}</span>
                 {isDefault && (
-                  <Badge variant="default" className="text-xs">Default</Badge>
+                  <Badge variant="default" className="text-xs">{t('aiProviders.card.default')}</Badge>
                 )}
               </div>
               <span className="text-xs text-muted-foreground capitalize">{provider.type}</span>
@@ -318,7 +308,7 @@ function ProviderCard({
             onCheckedChange={onToggleEnabled}
           />
         </div>
-        
+
         {/* Key row */}
         {isEditing ? (
           <div className="space-y-2">
@@ -326,7 +316,7 @@ function ProviderCard({
               <>
                 {typeInfo?.showBaseUrl && (
                   <div className="space-y-1">
-                    <Label className="text-xs">Base URL</Label>
+                    <Label className="text-xs">{t('aiProviders.dialog.baseUrl')}</Label>
                     <Input
                       value={baseUrl}
                       onChange={(e) => setBaseUrl(e.target.value)}
@@ -337,7 +327,7 @@ function ProviderCard({
                 )}
                 {typeInfo?.showModelId && (
                   <div className="space-y-1">
-                    <Label className="text-xs">Model ID</Label>
+                    <Label className="text-xs">{t('aiProviders.dialog.modelId')}</Label>
                     <Input
                       value={modelId}
                       onChange={(e) => setModelId(e.target.value)}
@@ -352,7 +342,7 @@ function ProviderCard({
               <div className="relative flex-1">
                 <Input
                   type={showKey ? 'text' : 'password'}
-                  placeholder={typeInfo?.requiresApiKey ? typeInfo?.placeholder : 'Optional: update API key'}
+                  placeholder={typeInfo?.requiresApiKey ? typeInfo?.placeholder : t('aiProviders.card.editKey')}
                   value={newKey}
                   onChange={(e) => setNewKey(e.target.value)}
                   className="pr-10 h-9 text-sm"
@@ -365,8 +355,8 @@ function ProviderCard({
                   {showKey ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
                 </button>
               </div>
-              <Button 
-                variant="outline" 
+              <Button
+                variant="outline"
                 size="sm"
                 onClick={handleSaveEdits}
                 disabled={
@@ -396,22 +386,26 @@ function ProviderCard({
             <div className="flex items-center gap-2 min-w-0">
               <Key className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
               <span className="text-sm font-mono text-muted-foreground truncate">
-                {provider.hasKey ? shortenKeyDisplay(provider.keyMasked) : 'No API key set'}
+                {provider.hasKey
+                  ? (provider.keyMasked && provider.keyMasked.length > 12
+                    ? `${provider.keyMasked.substring(0, 4)}...${provider.keyMasked.substring(provider.keyMasked.length - 4)}`
+                    : provider.keyMasked)
+                  : t('aiProviders.card.noKey')}
               </span>
               {provider.hasKey && (
-                <Badge variant="secondary" className="text-xs shrink-0">Configured</Badge>
+                <Badge variant="secondary" className="text-xs shrink-0">{t('aiProviders.card.configured')}</Badge>
               )}
             </div>
             <div className="flex gap-0.5 shrink-0 ml-2">
               {!isDefault && (
-                <Button variant="ghost" size="icon" className="h-7 w-7" onClick={onSetDefault} title="Set as default">
+                <Button variant="ghost" size="icon" className="h-7 w-7" onClick={onSetDefault} title={t('aiProviders.card.setDefault')}>
                   <Star className="h-3.5 w-3.5" />
                 </Button>
               )}
-              <Button variant="ghost" size="icon" className="h-7 w-7" onClick={onEdit} title="Edit API key">
+              <Button variant="ghost" size="icon" className="h-7 w-7" onClick={onEdit} title={t('aiProviders.card.editKey')}>
                 <Edit className="h-3.5 w-3.5" />
               </Button>
-              <Button variant="ghost" size="icon" className="h-7 w-7" onClick={onDelete} title="Delete provider">
+              <Button variant="ghost" size="icon" className="h-7 w-7" onClick={onDelete} title={t('aiProviders.card.delete')}>
                 <Trash2 className="h-3.5 w-3.5 text-destructive" />
               </Button>
             </div>
@@ -439,6 +433,7 @@ interface AddProviderDialogProps {
 }
 
 function AddProviderDialog({ existingTypes, onClose, onAdd, onValidateKey }: AddProviderDialogProps) {
+  const { t } = useTranslation('settings');
   const [selectedType, setSelectedType] = useState<ProviderType | null>(null);
   const [name, setName] = useState('');
   const [apiKey, setApiKey] = useState('');
@@ -447,14 +442,14 @@ function AddProviderDialog({ existingTypes, onClose, onAdd, onValidateKey }: Add
   const [showKey, setShowKey] = useState(false);
   const [saving, setSaving] = useState(false);
   const [validationError, setValidationError] = useState<string | null>(null);
-  
+
   const typeInfo = PROVIDER_TYPE_INFO.find((t) => t.id === selectedType);
 
   // Only custom can be added multiple times.
   const availableTypes = PROVIDER_TYPE_INFO.filter(
     (t) => t.id === 'custom' || !existingTypes.has(t.id),
   );
-  
+
   const handleAdd = async () => {
     if (!selectedType) return;
 
@@ -465,7 +460,7 @@ function AddProviderDialog({ existingTypes, onClose, onAdd, onValidateKey }: Add
       // Validate key first if the provider requires one and a key was entered
       const requiresKey = typeInfo?.requiresApiKey ?? false;
       if (requiresKey && !apiKey.trim()) {
-        setValidationError('API key is required');
+        setValidationError(t('aiProviders.toast.invalidKey')); // reusing invalid key msg or should add 'required' msg? null checks
         setSaving(false);
         return;
       }
@@ -474,7 +469,7 @@ function AddProviderDialog({ existingTypes, onClose, onAdd, onValidateKey }: Add
           baseUrl: baseUrl.trim() || undefined,
         });
         if (!result.valid) {
-          setValidationError(result.error || 'Invalid API key');
+          setValidationError(result.error || t('aiProviders.toast.invalidKey'));
           setSaving(false);
           return;
         }
@@ -482,7 +477,7 @@ function AddProviderDialog({ existingTypes, onClose, onAdd, onValidateKey }: Add
 
       const requiresModel = typeInfo?.showModelId ?? false;
       if (requiresModel && !modelId.trim()) {
-        setValidationError('Model ID is required');
+        setValidationError(t('aiProviders.toast.modelRequired'));
         setSaving(false);
         return;
       }
@@ -502,14 +497,14 @@ function AddProviderDialog({ existingTypes, onClose, onAdd, onValidateKey }: Add
       setSaving(false);
     }
   };
-  
+
   return (
     <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center">
       <Card className="w-full max-w-md">
         <CardHeader>
-          <CardTitle>Add AI Provider</CardTitle>
+          <CardTitle>{t('aiProviders.dialog.title')}</CardTitle>
           <CardDescription>
-            Configure a new AI model provider
+            {t('aiProviders.dialog.desc')}
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -537,7 +532,7 @@ function AddProviderDialog({ existingTypes, onClose, onAdd, onValidateKey }: Add
                 <span className="text-2xl">{typeInfo?.icon}</span>
                 <div>
                   <p className="font-medium">{typeInfo?.name}</p>
-                  <button 
+                  <button
                     onClick={() => {
                       setSelectedType(null);
                       setValidationError(null);
@@ -546,13 +541,13 @@ function AddProviderDialog({ existingTypes, onClose, onAdd, onValidateKey }: Add
                     }}
                     className="text-sm text-muted-foreground hover:text-foreground"
                   >
-                    Change provider
+                    {t('aiProviders.dialog.change')}
                   </button>
                 </div>
               </div>
-              
+
               <div className="space-y-2">
-                <Label htmlFor="name">Display Name</Label>
+                <Label htmlFor="name">{t('aiProviders.dialog.displayName')}</Label>
                 <Input
                   id="name"
                   placeholder={typeInfo?.name}
@@ -560,9 +555,9 @@ function AddProviderDialog({ existingTypes, onClose, onAdd, onValidateKey }: Add
                   onChange={(e) => setName(e.target.value)}
                 />
               </div>
-              
+
               <div className="space-y-2">
-                <Label htmlFor="apiKey">API Key</Label>
+                <Label htmlFor="apiKey">{t('aiProviders.dialog.apiKey')}</Label>
                 <div className="relative">
                   <Input
                     id="apiKey"
@@ -587,13 +582,13 @@ function AddProviderDialog({ existingTypes, onClose, onAdd, onValidateKey }: Add
                   <p className="text-xs text-destructive">{validationError}</p>
                 )}
                 <p className="text-xs text-muted-foreground">
-                  Your API key is stored locally on your machine.
+                  {t('aiProviders.dialog.apiKeyStored')}
                 </p>
               </div>
 
               {typeInfo?.showBaseUrl && (
                 <div className="space-y-2">
-                  <Label htmlFor="baseUrl">Base URL</Label>
+                  <Label htmlFor="baseUrl">{t('aiProviders.dialog.baseUrl')}</Label>
                   <Input
                     id="baseUrl"
                     placeholder="https://api.example.com/v1"
@@ -605,7 +600,7 @@ function AddProviderDialog({ existingTypes, onClose, onAdd, onValidateKey }: Add
 
               {typeInfo?.showModelId && (
                 <div className="space-y-2">
-                  <Label htmlFor="modelId">Model ID</Label>
+                  <Label htmlFor="modelId">{t('aiProviders.dialog.modelId')}</Label>
                   <Input
                     id="modelId"
                     placeholder={typeInfo.modelIdPlaceholder || 'provider/model-id'}
@@ -619,21 +614,21 @@ function AddProviderDialog({ existingTypes, onClose, onAdd, onValidateKey }: Add
               )}
             </div>
           )}
-          
+
           <Separator />
-          
+
           <div className="flex justify-end gap-2">
             <Button variant="outline" onClick={onClose}>
-              Cancel
+              {t('aiProviders.dialog.cancel')}
             </Button>
-            <Button 
-              onClick={handleAdd} 
+            <Button
+              onClick={handleAdd}
               disabled={!selectedType || saving || ((typeInfo?.showModelId ?? false) && modelId.trim().length === 0)}
             >
               {saving ? (
                 <Loader2 className="h-4 w-4 animate-spin mr-2" />
               ) : null}
-              Add Provider
+              {t('aiProviders.dialog.add')}
             </Button>
           </div>
         </CardContent>

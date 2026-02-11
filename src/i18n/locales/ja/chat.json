@@ -1,0 +1,13 @@
+{
+    "gatewayNotRunning": "ゲートウェイが停止中",
+    "gatewayRequired": "チャットを使用するには OpenClaw ゲートウェイが実行されている必要があります。自動的に起動するか、設定から起動できます。",
+    "welcome": {
+        "title": "ClawX チャット",
+        "subtitle": "AI アシスタントの準備ができました。下の入力欄から会話を始めましょう。",
+        "askQuestions": "質問する",
+        "askQuestionsDesc": "あらゆるトピックについて回答を得る",
+        "creativeTasks": "クリエイティブタスク",
+        "creativeTasksDesc": "ライティング、ブレスト、アイデア"
+    },
+    "noLogs": "（ログはまだありません）"
+}

@@ -1,0 +1,119 @@
+{
+    "steps": {
+        "welcome": {
+            "title": "ClawXへようこそ",
+            "description": "AIアシスタントの設定準備が整いました"
+        },
+        "runtime": {
+            "title": "環境チェック",
+            "description": "システム要件を確認中"
+        },
+        "provider": {
+            "title": "AIプロバイダー",
+            "description": "AIサービスを構成"
+        },
+        "channel": {
+            "title": "チャンネル接続",
+            "description": "メッセージングプラットフォームを接続（オプション）"
+        },
+        "installing": {
+            "title": "セットアップ中",
+            "description": "必須コンポーネントをインストール中"
+        },
+        "complete": {
+            "title": "完了！",
+            "description": "ClawXを使用する準備が整いました"
+        }
+    },
+    "welcome": {
+        "title": "ClawXへようこそ",
+        "description": "ClawXはOpenClawのグラフィカルインターフェースで、お気に入りのメッセージングプラットフォームでAIアシスタントを簡単に使用できます。",
+        "features": {
+            "noCommand": "コマンドライン不要",
+            "modernUI": "モダンで美しいインターフェース",
+            "bundles": "プリインストールされたスキルバンドル",
+            "crossPlatform": "クロスプラットフォーム対応"
+        }
+    },
+    "runtime": {
+        "title": "環境をチェック中",
+        "viewLogs": "ログを表示",
+        "recheck": "再チェック",
+        "nodejs": "Node.js ランタイム",
+        "openclaw": "OpenClaw パッケージ",
+        "gateway": "ゲートウェイサービス",
+        "startGateway": "ゲートウェイを起動",
+        "status": {
+            "checking": "確認中...",
+            "success": "Node.js は利用可能です",
+            "error": "失敗",
+            "gatewayRunning": "ポート {{port}} で実行中",
+            "packageReady": "OpenClaw パッケージ準備完了"
+        },
+        "issue": {
+            "title": "環境の問題が検出されました",
+            "desc": "OpenClawが正しくインストールされていることを確認してください。詳細はログを確認してください。"
+        },
+        "logs": {
+            "title": "アプリケーションログ",
+            "openFolder": "ログフォルダを開く",
+            "close": "閉じる",
+            "noLogs": "（ログはまだありません）"
+        }
+    },
+    "provider": {
+        "label": "モデルプロバイダー",
+        "selectPlaceholder": "プロバイダーを選択...",
+        "baseUrl": "ベース URL",
+        "modelId": "モデル ID",
+        "modelIdDesc": "プロバイダーのモデル識別子（例：deepseek-ai/DeepSeek-V3）",
+        "apiKey": "API キー",
+        "save": "保存",
+        "validateSave": "検証して保存",
+        "valid": "プロバイダーが正常に構成されました",
+        "invalid": "無効な API キー",
+        "storedLocally": "API キーはローカルマシンに保存されます。"
+    },
+    "channel": {
+        "title": "メッセージングチャンネルを接続",
+        "subtitle": "AIアシスタントを接続するプラットフォームを選択してください。チャンネルは後で設定で追加できます。",
+        "configure": "{{name}} を構成",
+        "howTo": "接続方法：",
+        "viewDocs": "ドキュメントを表示",
+        "validationError": "検証に失敗しました",
+        "connected": "{{name}} 接続済み",
+        "connectedDesc": "チャンネルが構成されました。ゲートウェイ起動時に接続されます。",
+        "configureAnother": "別のチャンネルを構成"
+    },
+    "installing": {
+        "title": "必須コンポーネントをインストール中",
+        "subtitle": "AIアシスタントに必要なツールをセットアップしています",
+        "progress": "進捗",
+        "status": {
+            "pending": "待機中",
+            "installing": "インストール中...",
+            "installed": "インストール済み",
+            "failed": "失敗"
+        },
+        "error": "セットアップエラー：",
+        "restart": "アプリを再起動してください",
+        "wait": "これには少し時間がかかる場合があります...",
+        "skip": "この手順をスキップ"
+    },
+    "complete": {
+        "title": "セットアップ完了！",
+        "subtitle": "ClawXの構成が完了し、使用準備が整いました。AIアシスタントとのチャットを開始できます。",
+        "provider": "AI プロバイダー",
+        "components": "コンポーネント",
+        "gateway": "ゲートウェイ",
+        "running": "実行中",
+        "footer": "設定でスキルをカスタマイズしたり、チャンネルを接続したりできます"
+    },
+    "nav": {
+        "next": "次へ",
+        "back": "戻る",
+        "skipStep": "この手順をスキップ",
+        "skipSetup": "セットアップをスキップ",
+        "getStarted": "始める"
+    }
+}

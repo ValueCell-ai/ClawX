@@ -40,6 +40,7 @@ import { LoadingSpinner } from '@/components/common/LoadingSpinner';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 import type { Skill, MarketplaceSkill } from '@/types/skill';
+import { useTranslation } from 'react-i18next';
 
 
 
@@ -52,6 +53,7 @@ interface SkillDetailDialogProps {
 }
 
 function SkillDetailDialog({ skill, onClose, onToggle }: SkillDetailDialogProps) {
+  const { t } = useTranslation('skills');
   const { fetchSkills } = useSkillsStore();
   const [activeTab, setActiveTab] = useState('info');
   const [envVars, setEnvVars] = useState<Array<{ key: string; value: string }>>([]);
@@ -91,12 +93,12 @@ function SkillDetailDialog({ skill, onClose, onToggle }: SkillDetailDialogProps)
       try {
         const result = await window.electron.ipcRenderer.invoke('clawhub:openSkillReadme', skill.slug) as { success: boolean; error?: string };
         if (result.success) {
-          toast.success('Opened in editor');
+          toast.success(t('toast.openedEditor'));
         } else {
-          toast.error(result.error || 'Failed to open editor');
+          toast.error(result.error || t('toast.failedEditor'));
         }
       } catch (err) {
-        toast.error('Failed to open editor: ' + String(err));
+        toast.error(t('toast.failedEditor') + ': ' + String(err));
       }
     }
   };
@@ -148,9 +150,9 @@ function SkillDetailDialog({ skill, onClose, onToggle }: SkillDetailDialogProps)
       // Refresh skills from gateway to get updated config
       await fetchSkills();
 
-      toast.success('Configuration saved');
+      toast.success(t('detail.configSaved'));
     } catch (err) {
-      toast.error('Failed to save configuration: ' + String(err));
+      toast.error(t('toast.failedSave') + ': ' + String(err));
     } finally {
       setIsSaving(false);
     }
@@ -176,7 +178,7 @@ function SkillDetailDialog({ skill, onClose, onToggle }: SkillDetailDialogProps)
                     </Button>
                     <Button variant="outline" size="sm" className="h-7 text-xs gap-1" onClick={handleOpenEditor}>
                       <FileCode className="h-3 w-3" />
-                      Open Manual
+                      {t('detail.openManual')}
                     </Button>
                   </>
                 )}
@@ -191,8 +193,8 @@ function SkillDetailDialog({ skill, onClose, onToggle }: SkillDetailDialogProps)
         <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 flex flex-col min-h-0">
           <div className="px-6">
             <TabsList className="grid w-full grid-cols-2">
-              <TabsTrigger value="info">Information</TabsTrigger>
-              <TabsTrigger value="config" disabled={skill.isCore}>Configuration</TabsTrigger>
+              <TabsTrigger value="info">{t('detail.info')}</TabsTrigger>
+              <TabsTrigger value="config" disabled={skill.isCore}>{t('detail.config')}</TabsTrigger>
             </TabsList>
           </div>
 
@@ -201,27 +203,27 @@ function SkillDetailDialog({ skill, onClose, onToggle }: SkillDetailDialogProps)
               <TabsContent value="info" className="mt-0 space-y-4">
                 <div className="space-y-4">
                   <div>
-                    <h3 className="text-sm font-medium text-muted-foreground">Description</h3>
+                    <h3 className="text-sm font-medium text-muted-foreground">{t('detail.description')}</h3>
                     <p className="text-sm mt-1">{skill.description}</p>
                   </div>
 
                   <div className="grid grid-cols-2 gap-4">
                     <div>
-                      <h3 className="text-sm font-medium text-muted-foreground">Version</h3>
+                      <h3 className="text-sm font-medium text-muted-foreground">{t('detail.version')}</h3>
                       <p className="font-mono text-sm">{skill.version}</p>
                     </div>
                     {skill.author && (
                       <div>
-                        <h3 className="text-sm font-medium text-muted-foreground">Author</h3>
+                        <h3 className="text-sm font-medium text-muted-foreground">{t('detail.author')}</h3>
                         <p className="text-sm">{skill.author}</p>
                       </div>
                     )}
                   </div>
 
                   <div>
-                    <h3 className="text-sm font-medium text-muted-foreground">Source</h3>
+                    <h3 className="text-sm font-medium text-muted-foreground">{t('detail.source')}</h3>
                     <Badge variant="secondary" className="mt-1 font-normal">
-                      {skill.isCore ? 'Core System' : skill.isBundled ? 'Bundled' : 'User Installed'}
+                      {skill.isCore ? t('detail.coreSystem') : skill.isBundled ? t('detail.bundled') : t('detail.userInstalled')}
                     </Badge>
                   </div>
                 </div>
@@ -236,14 +238,14 @@ function SkillDetailDialog({ skill, onClose, onToggle }: SkillDetailDialogProps)
                       API Key
                     </h3>
                     <Input
-                      placeholder="Enter API Key (optional)"
+                      placeholder={t('detail.apiKeyPlaceholder')}
                       value={apiKey}
                       onChange={(e) => setApiKey(e.target.value)}
                       type="password"
                       className="font-mono text-sm"
                     />
                     <p className="text-xs text-muted-foreground">
-                      The primary API key for this skill. Leave blank if not required or configured elsewhere.
+                      {t('detail.apiKeyDesc')}
                     </p>
                   </div>
 
@@ -276,7 +278,7 @@ function SkillDetailDialog({ skill, onClose, onToggle }: SkillDetailDialogProps)
                         }}
                       >
                         <Plus className="h-3 w-3" />
-                        Add Variable
+                        {t('detail.addVariable')}
                       </Button>
                     </div>
 
@@ -284,7 +286,7 @@ function SkillDetailDialog({ skill, onClose, onToggle }: SkillDetailDialogProps)
                       <div className="pt-4 space-y-3 animate-in fade-in slide-in-from-top-2 duration-200">
                         {envVars.length === 0 && (
                           <p className="text-xs text-muted-foreground italic h-8 flex items-center">
-                            No environment variables configured.
+                            {t('detail.noEnvVars')}
                           </p>
                         )}
 
@@ -294,14 +296,14 @@ function SkillDetailDialog({ skill, onClose, onToggle }: SkillDetailDialogProps)
                               value={env.key}
                               onChange={(e) => handleUpdateEnv(index, 'key', e.target.value)}
                               className="flex-1 font-mono text-xs bg-muted/20"
-                              placeholder="KEY (e.g. BASE_URL)"
+                              placeholder={t('detail.keyPlaceholder')}
                             />
                             <span className="text-muted-foreground ml-1 mr-1">=</span>
                             <Input
                               value={env.value}
                               onChange={(e) => handleUpdateEnv(index, 'value', e.target.value)}
                               className="flex-1 font-mono text-xs bg-muted/20"
-                              placeholder="VALUE"
+                              placeholder={t('detail.valuePlaceholder')}
                             />
                             <Button
                               variant="ghost"
@@ -316,7 +318,7 @@ function SkillDetailDialog({ skill, onClose, onToggle }: SkillDetailDialogProps)
 
                         {envVars.length > 0 && (
                           <p className="text-[10px] text-muted-foreground italic px-1 pt-1">
-                            Note: Rows with empty keys will be automatically removed during save.
+                            {t('detail.envNote')}
                           </p>
                         )}
                       </div>
@@ -327,7 +329,7 @@ function SkillDetailDialog({ skill, onClose, onToggle }: SkillDetailDialogProps)
                 <div className="pt-4 flex justify-end">
                   <Button onClick={handleSaveConfig} className="gap-2" disabled={isSaving}>
                     <Save className="h-4 w-4" />
-                    {isSaving ? 'Saving...' : 'Save Configuration'}
+                    {isSaving ? t('detail.saving') : t('detail.saveConfig')}
                   </Button>
                 </div>
               </TabsContent>
@@ -339,12 +341,12 @@ function SkillDetailDialog({ skill, onClose, onToggle }: SkillDetailDialogProps)
               {skill.enabled ? (
                 <>
                   <CheckCircle2 className="h-5 w-5 text-green-500" />
-                  <span className="text-green-600 dark:text-green-400">Enabled</span>
+                  <span className="text-green-600 dark:text-green-400">{t('detail.enabled')}</span>
                 </>
               ) : (
                 <>
                   <XCircle className="h-5 w-5 text-muted-foreground" />
-                  <span className="text-muted-foreground">Disabled</span>
+                  <span className="text-muted-foreground">{t('detail.disabled')}</span>
                 </>
               )}
             </div>
@@ -532,6 +534,7 @@ export function Skills() {
     searchError,
     installing
   } = useSkillsStore();
+  const { t } = useTranslation('skills');
   const gatewayStatus = useGatewayStore((state) => state.status);
   const [searchQuery, setSearchQuery] = useState('');
   const [marketplaceQuery, setMarketplaceQuery] = useState('');
@@ -602,15 +605,15 @@ export function Skills() {
     try {
       if (enable) {
         await enableSkill(skillId);
-        toast.success('Skill enabled');
+        toast.success(t('toast.enabled'));
       } else {
         await disableSkill(skillId);
-        toast.success('Skill disabled');
+        toast.success(t('toast.disabled'));
       }
     } catch (err) {
       toast.error(String(err));
     }
-  }, [enableSkill, disableSkill]);
+  }, [enableSkill, disableSkill, t]);
 
   const handleOpenSkillsFolder = useCallback(async () => {
     try {
@@ -623,9 +626,9 @@ export function Skills() {
         throw new Error(result);
       }
     } catch (err) {
-      toast.error('Failed to open skills folder: ' + String(err));
+      toast.error(t('toast.failedOpenFolder') + ': ' + String(err));
     }
-  }, []);
+  }, [t]);
 
   // Handle marketplace search
   const handleMarketplaceSearch = useCallback((e: React.FormEvent) => {
@@ -642,11 +645,11 @@ export function Skills() {
       // Automatically enable after install
       // We need to find the skill id which is usually the slug
       await enableSkill(slug);
-      toast.success('Skill installed and enabled');
+      toast.success(t('toast.installed'));
     } catch (err) {
-      toast.error(`Failed to install: ${String(err)}`);
+      toast.error(t('toast.failedInstall') + ': ' + String(err));
     }
-  }, [installSkill, enableSkill]);
+  }, [installSkill, enableSkill, t]);
 
   // Initial marketplace load (Discovery)
   useEffect(() => {
@@ -670,11 +673,11 @@ export function Skills() {
   const handleUninstall = useCallback(async (slug: string) => {
     try {
       await uninstallSkill(slug);
-      toast.success('Skill uninstalled successfully');
+      toast.success(t('toast.uninstalled'));
     } catch (err) {
-      toast.error(`Failed to uninstall: ${String(err)}`);
+      toast.error(t('toast.failedUninstall') + ': ' + String(err));
     }
-  }, [uninstallSkill]);
+  }, [uninstallSkill, t]);
 
   if (loading) {
     return (
@@ -689,19 +692,19 @@ export function Skills() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold">Skills</h1>
+          <h1 className="text-2xl font-bold">{t('title')}</h1>
           <p className="text-muted-foreground">
-            Browse and manage AI capabilities
+            {t('subtitle')}
           </p>
         </div>
         <div className="flex items-center gap-2">
           <Button variant="outline" onClick={fetchSkills} disabled={!isGatewayRunning}>
             <RefreshCw className="h-4 w-4 mr-2" />
-            Refresh
+            {t('refresh')}
           </Button>
           <Button variant="outline" onClick={handleOpenSkillsFolder}>
             <FolderOpen className="h-4 w-4 mr-2" />
-            Open Skills Folder
+            {t('openFolder')}
           </Button>
         </div>
       </div>
@@ -712,7 +715,7 @@ export function Skills() {
           <CardContent className="py-4 flex items-center gap-3">
             <AlertCircle className="h-5 w-5 text-yellow-600" />
             <span className="text-yellow-700 dark:text-yellow-400">
-              Gateway is not running. Skills cannot be loaded without an active Gateway.
+              {t('gatewayWarning')}
             </span>
           </CardContent>
         </Card>
@@ -723,11 +726,11 @@ export function Skills() {
         <TabsList>
           <TabsTrigger value="all" className="gap-2">
             <Puzzle className="h-4 w-4" />
-            Installed
+            {t('tabs.installed')}
           </TabsTrigger>
           <TabsTrigger value="marketplace" className="gap-2">
             <Globe className="h-4 w-4" />
-            Marketplace
+            {t('tabs.marketplace')}
           </TabsTrigger>
           {/* <TabsTrigger value="bundles" className="gap-2">
             <Package className="h-4 w-4" />
@@ -741,7 +744,7 @@ export function Skills() {
             <div className="relative flex-1 min-w-[200px]">
               <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
               <Input
-                placeholder="Search skills..."
+                placeholder={t('search')}
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 className="pl-9"
@@ -763,7 +766,7 @@ export function Skills() {
                 className="gap-2"
               >
                 <Puzzle className="h-3 w-3" />
-                Built-in ({sourceStats.builtIn})
+                {t('filter.builtIn', { count: sourceStats.builtIn })}
               </Button>
               <Button
                 variant={selectedSource === 'marketplace' ? 'default' : 'outline'}
@@ -772,7 +775,7 @@ export function Skills() {
                 className="gap-2"
               >
                 <Globe className="h-3 w-3" />
-                Marketplace ({sourceStats.marketplace})
+                {t('filter.marketplace', { count: sourceStats.marketplace })}
               </Button>
             </div>
           </div>
@@ -792,9 +795,9 @@ export function Skills() {
             <Card>
               <CardContent className="flex flex-col items-center justify-center py-12">
                 <Puzzle className="h-12 w-12 text-muted-foreground mb-4" />
-                <h3 className="text-lg font-medium mb-2">No skills found</h3>
+                <h3 className="text-lg font-medium mb-2">{t('noSkills')}</h3>
                 <p className="text-muted-foreground">
-                  {searchQuery ? 'Try a different search term' : 'No skills available'}
+                  {searchQuery ? t('noSkillsSearch') : t('noSkillsAvailable')}
                 </p>
               </CardContent>
             </Card>
@@ -867,7 +870,7 @@ export function Skills() {
                       {skill.configurable && (
                         <Badge variant="secondary" className="text-xs">
                           <Settings className="h-3 w-3 mr-1" />
-                          Configurable
+                          {t('detail.configurable')}
                         </Badge>
                       )}
                     </div>
@@ -884,7 +887,7 @@ export function Skills() {
               <CardContent className="py-4 flex items-start gap-3">
                 <ShieldCheck className="h-5 w-5 text-muted-foreground mt-0.5" />
                 <div className="text-muted-foreground">
-                  Click skill card to view its documentation and security information on ClawHub before installation.
+                  {t('marketplace.securityNote')}
                 </div>
               </CardContent>
             </Card>
@@ -893,7 +896,7 @@ export function Skills() {
                 <div className="relative flex-1">
                   <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
                   <Input
-                    placeholder="Search marketplace..."
+                    placeholder={t('searchMarketplace')}
                     value={marketplaceQuery}
                     onChange={(e) => setMarketplaceQuery(e.target.value)}
                     className="pl-9"
@@ -933,7 +936,7 @@ export function Skills() {
                           animate={{ opacity: 1 }}
                           exit={{ opacity: 0 }}
                         >
-                          Search
+                          {t('searchButton')}
                         </motion.div>
                       )}
                     </AnimatePresence>
@@ -946,7 +949,7 @@ export function Skills() {
               <Card className="border-destructive/50 bg-destructive/5">
                 <CardContent className="py-3 text-sm text-destructive flex items-center gap-2">
                   <AlertCircle className="h-4 w-4" />
-                  <span>ClawHub search failed. Check your connection or installation.</span>
+                  <span>{t('marketplace.searchError')}</span>
                 </CardContent>
               </Card>
             )}
@@ -971,13 +974,13 @@ export function Skills() {
               <Card>
                 <CardContent className="flex flex-col items-center justify-center py-12">
                   <Package className="h-12 w-12 text-muted-foreground mb-4" />
-                  <h3 className="text-lg font-medium mb-2">Marketplace</h3>
+                  <h3 className="text-lg font-medium mb-2">{t('marketplace.title')}</h3>
                   <p className="text-muted-foreground text-center max-w-sm">
                     {searching
-                      ? 'Searching ClawHub...'
+                      ? t('marketplace.searching')
                       : marketplaceQuery
-                        ? 'No skills found matching your search.'
-                        : 'Search for new skills to expand your capabilities.'}
+                        ? t('marketplace.noResults')
+                        : t('marketplace.emptyPrompt')}
                   </p>
                 </CardContent>
               </Card>

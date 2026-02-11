@@ -1,0 +1,252 @@
+{
+    "title": "メッセージングチャンネル",
+    "subtitle": "メッセージングチャンネルと接続を管理",
+    "refresh": "更新",
+    "addChannel": "チャンネルを追加",
+    "stats": {
+        "total": "全チャンネル",
+        "connected": "接続済み",
+        "disconnected": "未接続"
+    },
+    "gatewayWarning": "ゲートウェイサービスが実行されていないため、チャンネルに接続できません。",
+    "available": "利用可能なチャンネル",
+    "availableDesc": "新しいチャンネルを接続",
+    "showAll": "すべて表示",
+    "pluginBadge": "プラグイン",
+    "toast": {
+        "whatsappConnected": "WhatsApp が正常に接続されました",
+        "whatsappFailed": "WhatsApp 接続に失敗しました: {{error}}",
+        "channelSaved": "チャンネル {{name}} が保存されました",
+        "channelConnecting": "{{name}} に接続中...",
+        "restartManual": "ゲートウェイを手動で再起動してください",
+        "configFailed": "設定に失敗しました: {{error}}"
+    },
+    "dialog": {
+        "updateTitle": "{{name}} を更新",
+        "configureTitle": "{{name}} を設定",
+        "addTitle": "チャンネルを追加",
+        "existingDesc": "既存の設定を更新します",
+        "selectDesc": "設定するチャンネルタイプを選択してください",
+        "qrCode": "QRコード",
+        "token": "トークン",
+        "scanQR": "{{name}} でこのQRコードをスキャンしてください",
+        "refreshCode": "コードを更新",
+        "loadingConfig": "設定を読み込み中...",
+        "existingHint": "このチャンネルの設定はすでに存在します",
+        "howToConnect": "接続方法",
+        "viewDocs": "ドキュメントを表示",
+        "channelName": "チャンネル名",
+        "channelNamePlaceholder": "マイ {{name}}",
+        "credentialsVerified": "認証情報が確認されました",
+        "validationFailed": "検証に失敗しました",
+        "warnings": "警告",
+        "back": "戻る",
+        "validating": "検証中...",
+        "validateConfig": "設定を検証",
+        "generatingQR": "QRコードを生成中...",
+        "validatingAndSaving": "検証して保存中...",
+        "generateQRCode": "QRコードを生成",
+        "updateAndReconnect": "更新して再接続",
+        "saveAndConnect": "保存して接続",
+        "envVar": "環境変数: {{var}}"
+    },
+    "meta": {
+        "telegram": {
+            "description": "@BotFather からのボットトークンを使用して Telegram に接続します",
+            "fields": {
+                "botToken": {
+                    "label": "ボットトークン",
+                    "placeholder": "123456:ABC-DEF..."
+                },
+                "allowedUsers": {
+                    "label": "許可されたユーザーID",
+                    "placeholder": "例: 123456789, 987654321",
+                    "description": "ボットの使用を許可するユーザーIDのリスト（カンマ区切り）。セキュリティのため必須です。"
+                }
+            },
+            "instructions": [
+                "Telegramを開き、@BotFatherを検索します",
+                "/newbot を送信し、指示に従います",
+                "提供されたボットトークンをコピーします",
+                "トークンを以下に貼り付けます",
+                "@userinfobot からユーザーIDを取得し、以下に貼り付けます"
+            ]
+        },
+        "discord": {
+            "description": "Developer Portal からのボットトークンを使用して Discord に接続します",
+            "fields": {
+                "token": {
+                    "label": "ボットトークン",
+                    "placeholder": "Discord ボットトークン"
+                },
+                "guildId": {
+                    "label": "サーバーID",
+                    "placeholder": "例: 123456789012345678",
+                    "description": "ボットを特定のサーバーに制限します。サーバーを右クリック → サーバーIDをコピー。"
+                },
+                "channelId": {
+                    "label": "チャンネルID (任意)",
+                    "placeholder": "例: 123456789012345678",
+                    "description": "ボットを特定のチャンネルに制限します。チャンネルを右クリック → チャンネルIDをコピー。"
+                }
+            },
+            "instructions": [
+                "Discord Developer Portal → Applications → New Application に移動します",
+                "Bot セクションで: Add Bot をクリックし、Bot Token をコピーします",
+                "Bot → Privileged Gateway Intents で Message Content Intent と Server Members Intent を有効にします",
+                "OAuth2 → URL Generator で: \"bot\" + \"applications.commands\" を選択し、メッセージ権限を追加します",
+                "生成された URL を使用してボットをサーバーに招待します",
+                "以下にボットトークンを貼り付けます"
+            ]
+        },
+        "whatsapp": {
+            "description": "QRコードをスキャンして WhatsApp に接続します（電話番号は不要です）",
+            "instructions": [
+                "携帯電話で WhatsApp を開きます",
+                "設定 > リンクされたデバイス > デバイスをリンク に移動します",
+                "以下に表示されるQRコードをスキャンします",
+                "システムが自動的に電話番号を識別します"
+            ]
+        },
+        "signal": {
+            "description": "signal-cli を使用して Signal に接続します",
+            "fields": {
+                "phoneNumber": {
+                    "label": "電話番号",
+                    "placeholder": "+1234567890"
+                }
+            },
+            "instructions": [
+                "システムに signal-cli をインストールします",
+                "電話番号を登録またはリンクします",
+                "以下に電話番号を入力します"
+            ]
+        },
+        "feishu": {
+            "description": "WebSocket 経由で Feishu/Lark ボットに接続します",
+            "fields": {
+                "appId": {
+                    "label": "App ID",
+                    "placeholder": "cli_xxxxxx"
+                },
+                "appSecret": {
+                    "label": "App Secret",
+                    "placeholder": "アプリのシークレット"
+                }
+            },
+            "instructions": [
+                "Feishu Open Platform に移動します",
+                "新しいアプリケーションを作成します",
+                "App ID と App Secret を取得します",
+                "イベント購読を設定します"
+            ]
+        },
+        "imessage": {
+            "description": "BlueBubbles (macOS) 経由で iMessage に接続します",
+            "fields": {
+                "serverUrl": {
+                    "label": "BlueBubbles サーバーURL",
+                    "placeholder": "http://localhost:1234"
+                },
+                "password": {
+                    "label": "サーバーパスワード",
+                    "placeholder": "サーバーのパスワード"
+                }
+            },
+            "instructions": [
+                "Mac に BlueBubbles サーバーをインストールします",
+                "サーバーURLとパスワードをメモします",
+                "以下に接続詳細を入力します"
+            ]
+        },
+        "matrix": {
+            "description": "Matrix プロトコルに接続します",
+            "fields": {
+                "homeserver": {
+                    "label": "ホームサーバー URL",
+                    "placeholder": "https://matrix.org"
+                },
+                "accessToken": {
+                    "label": "アクセストークン",
+                    "placeholder": "アクセストークン"
+                }
+            },
+            "instructions": [
+                "Matrix アカウントを作成するか、既存のものを使用します",
+                "クライアントからアクセストークンを取得します",
+                "以下にホームサーバーとトークンを入力します"
+            ]
+        },
+        "line": {
+            "description": "LINE Messaging API に接続します",
+            "fields": {
+                "channelAccessToken": {
+                    "label": "チャンネルアクセストークン",
+                    "placeholder": "LINE チャンネルアクセストークン"
+                },
+                "channelSecret": {
+                    "label": "チャンネルシークレット",
+                    "placeholder": "LINE チャンネルシークレット"
+                }
+            },
+            "instructions": [
+                "LINE Developers Console に移動します",
+                "Messaging API チャンネルを作成します",
+                "チャンネルアクセストークンとシークレットを取得します"
+            ]
+        },
+        "msteams": {
+            "description": "Bot Framework 経由で Microsoft Teams に接続します",
+            "fields": {
+                "appId": {
+                    "label": "App ID",
+                    "placeholder": "Microsoft App ID"
+                },
+                "appPassword": {
+                    "label": "App Password",
+                    "placeholder": "Microsoft App Password"
+                }
+            },
+            "instructions": [
+                "Azure Portal に移動します",
+                "新しい Bot アプリケーションを登録します",
+                "App ID を取得し、パスワードを作成します",
+                "Teams チャンネルを設定します"
+            ]
+        },
+        "googlechat": {
+            "description": "Webhook 経由で Google Chat に接続します",
+            "fields": {
+                "serviceAccountKey": {
+                    "label": "サービスアカウント JSON パス",
+                    "placeholder": "/path/to/service-account.json"
+                }
+            },
+            "instructions": [
+                "Google Cloud プロジェクトを作成します",
+                "Google Chat API を有効にします",
+                "サービスアカウントを作成します",
+                "JSON キーファイルをダウンロードします"
+            ]
+        },
+        "mattermost": {
+            "description": "Bot API 経由で Mattermost に接続します",
+            "fields": {
+                "serverUrl": {
+                    "label": "サーバー URL",
+                    "placeholder": "https://your-mattermost.com"
+                },
+                "botToken": {
+                    "label": "ボットアクセストークン",
+                    "placeholder": "ボットアクセストークン"
+                }
+            },
+            "instructions": [
+                "Mattermost Integrations に移動します",
+                "新しい Bot アカウントを作成します",
+                "アクセストークンをコピーします"
+            ]
+        }
+    },
+    "viewDocs": "ドキュメントを表示"
+}

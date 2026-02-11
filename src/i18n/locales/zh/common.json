@@ -1,0 +1,51 @@
+{
+    "sidebar": {
+        "chat": "聊天",
+        "cronTasks": "定时任务",
+        "skills": "技能",
+        "channels": "频道",
+        "dashboard": "仪表盘",
+        "settings": "设置",
+        "devConsole": "开发者控制台"
+    },
+    "actions": {
+        "save": "保存",
+        "cancel": "取消",
+        "delete": "删除",
+        "edit": "编辑",
+        "refresh": "刷新",
+        "close": "关闭",
+        "copy": "复制",
+        "search": "搜索",
+        "confirm": "确认",
+        "dismiss": "忽略",
+        "load": "加载",
+        "install": "安装",
+        "uninstall": "卸载",
+        "enable": "启用",
+        "disable": "禁用",
+        "back": "返回",
+        "next": "下一步",
+        "skip": "跳过",
+        "restart": "重启"
+    },
+    "status": {
+        "running": "运行中",
+        "stopped": "已停止",
+        "error": "错误",
+        "connected": "已连接",
+        "disconnected": "已断开",
+        "enabled": "已启用",
+        "disabled": "已禁用",
+        "active": "活跃",
+        "paused": "已暂停",
+        "configured": "已配置",
+        "loading": "加载中...",
+        "saving": "保存中..."
+    },
+    "gateway": {
+        "notRunning": "网关未运行",
+        "notRunningDesc": "OpenClaw 网关需要运行才能使用此功能。它将自动启动，或者您可以从设置中启动。",
+        "warning": "网关未运行。"
+    }
+}

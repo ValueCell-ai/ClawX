@@ -1,0 +1,69 @@
+{
+    "title": "スキル",
+    "subtitle": "AI機能の閲覧と管理",
+    "refresh": "更新",
+    "openFolder": "スキルフォルダを開く",
+    "gatewayWarning": "ゲートウェイが稼働していません。アクティブなゲートウェイがないとスキルを読み込めません。",
+    "tabs": {
+        "installed": "インストール済み",
+        "marketplace": "マーケットプレイス"
+    },
+    "filter": {
+        "all": "すべて ({{count}})",
+        "builtIn": "内蔵 ({{count}})",
+        "marketplace": "マーケットプレイス ({{count}})"
+    },
+    "search": "スキルを検索...",
+    "searchMarketplace": "マーケットプレイスを検索...",
+    "searchButton": "検索",
+    "noSkills": "スキルが見つかりません",
+    "noSkillsSearch": "別の検索語をお試しください",
+    "noSkillsAvailable": "利用可能なスキルがありません",
+    "detail": {
+        "info": "情報",
+        "config": "設定",
+        "description": "説明",
+        "version": "バージョン",
+        "author": "作者",
+        "source": "ソース",
+        "coreSystem": "コアシステム",
+        "bundled": "内蔵",
+        "userInstalled": "ユーザーインストール",
+        "enabled": "有効",
+        "disabled": "無効",
+        "apiKey": "APIキー",
+        "apiKeyPlaceholder": "APIキーを入力（任意）",
+        "apiKeyDesc": "このスキルの主要なAPIキーです。不要な場合または別の場所で設定している場合は空白のままにしてください。",
+        "envVars": "環境変数",
+        "addVariable": "変数を追加",
+        "noEnvVars": "環境変数が設定されていません。",
+        "keyPlaceholder": "キー（例：BASE_URL）",
+        "valuePlaceholder": "値",
+        "envNote": "注意：キーが空の行は保存時に自動的に削除されます。",
+        "saving": "保存中...",
+        "saveConfig": "設定を保存",
+        "configSaved": "設定を保存しました",
+        "openManual": "マニュアルを開く",
+        "configurable": "設定可能"
+    },
+    "toast": {
+        "enabled": "スキルを有効にしました",
+        "disabled": "スキルを無効にしました",
+        "installed": "スキルをインストールして有効にしました",
+        "uninstalled": "スキルのアンインストールに成功しました",
+        "openedEditor": "エディターで開きました",
+        "failedEditor": "エディターを開けませんでした",
+        "failedSave": "設定の保存に失敗しました",
+        "failedOpenFolder": "スキルフォルダを開けませんでした",
+        "failedInstall": "インストールに失敗しました",
+        "failedUninstall": "アンインストールに失敗しました"
+    },
+    "marketplace": {
+        "title": "マーケットプレイス",
+        "securityNote": "インストール前にスキルカードをクリックして、ClawHubでドキュメントとセキュリティ情報を確認してください。",
+        "searching": "ClawHubを検索中...",
+        "noResults": "検索に一致するスキルが見つかりません。",
+        "emptyPrompt": "新しいスキルを検索して機能を拡張しましょう。",
+        "searchError": "ClawHub検索に失敗しました。接続またはインストールを確認してください。"
+    }
+}

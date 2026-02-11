@@ -1,0 +1,28 @@
+{
+    "gateway": "网关",
+    "channels": "频道",
+    "skills": "技能",
+    "uptime": "运行时间",
+    "port": "端口: {{port}}",
+    "pid": "PID: {{pid}}",
+    "connectedOf": "{{connected}} / {{total}} 已连接",
+    "enabledOf": "{{enabled}} / {{total}} 已启用",
+    "sinceRestart": "自上次重启",
+    "gatewayNotRunning": "网关未运行",
+    "quickActions": {
+        "title": "快捷操作",
+        "description": "常用任务和快捷方式",
+        "addChannel": "添加频道",
+        "browseSkills": "浏览技能",
+        "openChat": "打开聊天",
+        "settings": "设置",
+        "devConsole": "开发者控制台"
+    },
+    "connectedChannels": "已连接频道",
+    "noChannels": "未配置频道",
+    "addFirst": "添加你的第一个频道",
+    "activeSkills": "已启用技能",
+    "noSkills": "未启用技能",
+    "enableSome": "启用一些技能",
+    "more": "+{{count}} 更多"
+}
