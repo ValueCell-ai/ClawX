@@ -20,6 +20,7 @@ import {
   ExternalLink,
   BookOpen,
 } from 'lucide-react';
+import { TitleBar } from '@/components/layout/TitleBar';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -182,122 +183,125 @@ export function Setup() {
 
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-900 to-slate-800 text-white">
-      {/* Progress Indicator */}
-      <div className="flex justify-center pt-8">
-        <div className="flex items-center gap-2">
-          {steps.map((s, i) => (
-            <div key={s.id} className="flex items-center">
-              <div
-                className={cn(
-                  'flex h-8 w-8 items-center justify-center rounded-full border-2 transition-colors',
-                  i < safeStepIndex
-                    ? 'border-primary bg-primary text-primary-foreground'
-                    : i === safeStepIndex
-                      ? 'border-primary text-primary'
-                      : 'border-slate-600 text-slate-600'
-                )}
-              >
-                {i < safeStepIndex ? (
-                  <Check className="h-4 w-4" />
-                ) : (
-                  <span className="text-sm">{i + 1}</span>
-                )}
-              </div>
-              {i < steps.length - 1 && (
+    <div className="flex h-screen flex-col overflow-hidden bg-background text-foreground">
+      <TitleBar />
+      <div className="flex-1 overflow-auto">
+        {/* Progress Indicator */}
+        <div className="flex justify-center pt-8">
+          <div className="flex items-center gap-2">
+            {steps.map((s, i) => (
+              <div key={s.id} className="flex items-center">
                 <div
                   className={cn(
-                    'h-0.5 w-8 transition-colors',
-                    i < safeStepIndex ? 'bg-primary' : 'bg-slate-600'
+                    'flex h-8 w-8 items-center justify-center rounded-full border-2 transition-colors',
+                    i < safeStepIndex
+                      ? 'border-primary bg-primary text-primary-foreground'
+                      : i === safeStepIndex
+                        ? 'border-primary text-primary'
+                        : 'border-slate-600 text-slate-600'
                   )}
+                >
+                  {i < safeStepIndex ? (
+                    <Check className="h-4 w-4" />
+                  ) : (
+                    <span className="text-sm">{i + 1}</span>
+                  )}
+                </div>
+                {i < steps.length - 1 && (
+                  <div
+                    className={cn(
+                      'h-0.5 w-8 transition-colors',
+                      i < safeStepIndex ? 'bg-primary' : 'bg-slate-600'
+                    )}
+                  />
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Step Content */}
+        <AnimatePresence mode="wait">
+          <motion.div
+            key={step.id}
+            initial={{ opacity: 0, x: 20 }}
+            animate={{ opacity: 1, x: 0 }}
+            exit={{ opacity: 0, x: -20 }}
+            className="mx-auto max-w-2xl p-8"
+          >
+            <div className="text-center mb-8">
+              <h1 className="text-3xl font-bold mb-2">{t(`steps.${step.id}.title`)}</h1>
+              <p className="text-slate-400">{t(`steps.${step.id}.description`)}</p>
+            </div>
+
+            {/* Step-specific content */}
+            <div className="rounded-xl bg-card text-card-foreground border shadow-sm p-8 mb-8">
+              {safeStepIndex === STEP.WELCOME && <WelcomeContent />}
+              {safeStepIndex === STEP.RUNTIME && <RuntimeContent onStatusChange={setRuntimeChecksPassed} />}
+              {safeStepIndex === STEP.PROVIDER && (
+                <ProviderContent
+                  providers={providers}
+                  selectedProvider={selectedProvider}
+                  onSelectProvider={setSelectedProvider}
+                  apiKey={apiKey}
+                  onApiKeyChange={setApiKey}
+                  onConfiguredChange={setProviderConfigured}
+                />
+              )}
+              {safeStepIndex === STEP.CHANNEL && <SetupChannelContent />}
+              {safeStepIndex === STEP.INSTALLING && (
+                <InstallingContent
+                  skills={defaultSkills}
+                  onComplete={handleInstallationComplete}
+                  onSkip={() => setCurrentStep((i) => i + 1)}
+                />
+              )}
+              {safeStepIndex === STEP.COMPLETE && (
+                <CompleteContent
+                  selectedProvider={selectedProvider}
+                  installedSkills={installedSkills}
                 />
               )}
             </div>
-          ))}
-        </div>
-      </div>
 
-      {/* Step Content */}
-      <AnimatePresence mode="wait">
-        <motion.div
-          key={step.id}
-          initial={{ opacity: 0, x: 20 }}
-          animate={{ opacity: 1, x: 0 }}
-          exit={{ opacity: 0, x: -20 }}
-          className="mx-auto max-w-2xl p-8"
-        >
-          <div className="text-center mb-8">
-            <h1 className="text-3xl font-bold mb-2">{t(`steps.${step.id}.title`)}</h1>
-            <p className="text-slate-400">{t(`steps.${step.id}.description`)}</p>
-          </div>
-
-          {/* Step-specific content */}
-          <div className="rounded-xl bg-white/10 backdrop-blur p-8 mb-8">
-            {safeStepIndex === STEP.WELCOME && <WelcomeContent />}
-            {safeStepIndex === STEP.RUNTIME && <RuntimeContent onStatusChange={setRuntimeChecksPassed} />}
-            {safeStepIndex === STEP.PROVIDER && (
-              <ProviderContent
-                providers={providers}
-                selectedProvider={selectedProvider}
-                onSelectProvider={setSelectedProvider}
-                apiKey={apiKey}
-                onApiKeyChange={setApiKey}
-                onConfiguredChange={setProviderConfigured}
-              />
-            )}
-            {safeStepIndex === STEP.CHANNEL && <SetupChannelContent />}
-            {safeStepIndex === STEP.INSTALLING && (
-              <InstallingContent
-                skills={defaultSkills}
-                onComplete={handleInstallationComplete}
-                onSkip={() => setCurrentStep((i) => i + 1)}
-              />
-            )}
-            {safeStepIndex === STEP.COMPLETE && (
-              <CompleteContent
-                selectedProvider={selectedProvider}
-                installedSkills={installedSkills}
-              />
-            )}
-          </div>
-
-          {/* Navigation - hidden during installation step */}
-          {safeStepIndex !== STEP.INSTALLING && (
-            <div className="flex justify-between">
-              <div>
-                {!isFirstStep && (
-                  <Button variant="ghost" onClick={handleBack}>
-                    <ChevronLeft className="h-4 w-4 mr-2" />
-                    {t('nav.back')}
-                  </Button>
-                )}
-              </div>
-              <div className="flex gap-2">
-                {safeStepIndex === STEP.CHANNEL && (
-                  <Button variant="ghost" onClick={handleNext}>
-                    {t('nav.skipStep')}
-                  </Button>
-                )}
-                {!isLastStep && safeStepIndex !== STEP.RUNTIME && safeStepIndex !== STEP.CHANNEL && (
-                  <Button variant="ghost" onClick={handleSkip}>
-                    {t('nav.skipSetup')}
-                  </Button>
-                )}
-                <Button onClick={handleNext} disabled={!canProceed}>
-                  {isLastStep ? (
-                    t('nav.getStarted')
-                  ) : (
-                    <>
-                      {t('nav.next')}
-                      <ChevronRight className="h-4 w-4 ml-2" />
-                    </>
+            {/* Navigation - hidden during installation step */}
+            {safeStepIndex !== STEP.INSTALLING && (
+              <div className="flex justify-between">
+                <div>
+                  {!isFirstStep && (
+                    <Button variant="ghost" onClick={handleBack}>
+                      <ChevronLeft className="h-4 w-4 mr-2" />
+                      {t('nav.back')}
+                    </Button>
                   )}
-                </Button>
+                </div>
+                <div className="flex gap-2">
+                  {safeStepIndex === STEP.CHANNEL && (
+                    <Button variant="ghost" onClick={handleNext}>
+                      {t('nav.skipStep')}
+                    </Button>
+                  )}
+                  {!isLastStep && safeStepIndex !== STEP.RUNTIME && safeStepIndex !== STEP.CHANNEL && (
+                    <Button variant="ghost" onClick={handleSkip}>
+                      {t('nav.skipSetup')}
+                    </Button>
+                  )}
+                  <Button onClick={handleNext} disabled={!canProceed}>
+                    {isLastStep ? (
+                      t('nav.getStarted')
+                    ) : (
+                      <>
+                        {t('nav.next')}
+                        <ChevronRight className="h-4 w-4 ml-2" />
+                      </>
+                    )}
+                  </Button>
+                </div>
               </div>
-            </div>
-          )}
-        </motion.div>
-      </AnimatePresence>
+            )}
+          </motion.div>
+        </AnimatePresence>
+      </div>
     </div>
   );
 }
@@ -312,7 +316,7 @@ function WelcomeContent() {
     <div className="text-center space-y-4">
       <div className="text-6xl mb-4">🤖</div>
       <h2 className="text-xl font-semibold">{t('welcome.title')}</h2>
-      <p className="text-slate-300">
+      <p className="text-muted-foreground">
         {t('welcome.description')}
       </p>
 
@@ -331,7 +335,7 @@ function WelcomeContent() {
         ))}
       </div>
 
-      <ul className="text-left space-y-2 text-slate-300 pt-2">
+      <ul className="text-left space-y-2 text-muted-foreground pt-2">
         <li className="flex items-center gap-2">
           <CheckCircle2 className="h-5 w-5 text-green-400" />
           {t('welcome.features.noCommand')}
@@ -596,18 +600,18 @@ function RuntimeContent({ onStatusChange }: RuntimeContentProps) {
           <span>{t('runtime.nodejs')}</span>
           {renderStatus(checks.nodejs.status, checks.nodejs.message)}
         </div>
-        <div className="flex items-center justify-between p-3 rounded-lg bg-white/5">
+        <div className="flex items-center justify-between p-3 rounded-lg bg-muted/50">
           <div>
             <span>{t('runtime.openclaw')}</span>
             {openclawDir && (
-              <p className="text-xs text-slate-500 mt-0.5 font-mono truncate max-w-[300px]">
+              <p className="text-xs text-muted-foreground mt-0.5 font-mono truncate max-w-[300px]">
                 {openclawDir}
               </p>
             )}
           </div>
           {renderStatus(checks.openclaw.status, checks.openclaw.message)}
         </div>
-        <div className="flex items-center justify-between p-3 rounded-lg bg-white/5">
+        <div className="flex items-center justify-between p-3 rounded-lg bg-muted/50">
           <div className="flex items-center gap-2">
             <span>Gateway Service</span>
             {checks.gateway.status === 'error' && (
@@ -626,7 +630,7 @@ function RuntimeContent({ onStatusChange }: RuntimeContentProps) {
             <AlertCircle className="h-5 w-5 text-red-400 mt-0.5" />
             <div>
               <p className="font-medium text-red-400">{t('runtime.issue.title')}</p>
-              <p className="text-sm text-slate-300 mt-1">
+              <p className="text-sm text-muted-foreground mt-1">
                 {t('runtime.issue.desc')}
               </p>
             </div>
@@ -636,9 +640,9 @@ function RuntimeContent({ onStatusChange }: RuntimeContentProps) {
 
       {/* Log viewer panel */}
       {showLogs && (
-        <div className="mt-4 p-4 rounded-lg bg-black/40 border border-slate-600">
+        <div className="mt-4 p-4 rounded-lg bg-black/40 border border-border">
           <div className="flex items-center justify-between mb-2">
-            <p className="font-medium text-slate-200 text-sm">Application Logs</p>
+            <p className="font-medium text-foreground text-sm">Application Logs</p>
             <div className="flex gap-2">
               <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={handleOpenLogDir}>
                 <ExternalLink className="h-3 w-3 mr-1" />
@@ -866,19 +870,19 @@ function ProviderContent({
               setKeyValid(null);
             }}
             className={cn(
-              'appearance-none rounded-md border border-white/10 bg-white/5 px-3 py-2 pr-8',
-              'w-full text-sm text-white cursor-pointer',
+              'appearance-none rounded-md border border-input bg-background px-3 py-2 pr-8',
+              'w-full text-sm text-foreground cursor-pointer',
               'focus:outline-none focus:ring-2 focus:ring-ring',
             )}
           >
-            <option value="" disabled className="bg-slate-800 text-slate-400">{t('provider.selectPlaceholder')}</option>
+            <option value="" disabled className="text-muted-foreground">{t('provider.selectPlaceholder')}</option>
             {providers.map((p) => (
-              <option key={p.id} value={p.id} className="bg-slate-800 text-white">
+              <option key={p.id} value={p.id} className="text-foreground">
                 {p.icon}  {p.name}{p.model ? ` — ${p.model}` : ''}
               </option>
             ))}
           </select>
-          <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400 pointer-events-none" />
+          <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
         </div>
       </div>
 
@@ -904,7 +908,7 @@ function ProviderContent({
                   onConfiguredChange(false);
                 }}
                 autoComplete="off"
-                className="bg-white/5 border-white/10"
+                className="bg-background border-input"
               />
             </div>
           )}
@@ -923,9 +927,9 @@ function ProviderContent({
                   onConfiguredChange(false);
                 }}
                 autoComplete="off"
-                className="bg-white/5 border-white/10"
+                className="bg-background border-input"
               />
-              <p className="text-xs text-slate-500">
+              <p className="text-xs text-muted-foreground">
                 {t('provider.modelIdDesc')}
               </p>
             </div>
@@ -947,12 +951,12 @@ function ProviderContent({
                     setKeyValid(null);
                   }}
                   autoComplete="off"
-                  className="pr-10 bg-white/5 border-white/10"
+                  className="pr-10 bg-background border-input"
                 />
                 <button
                   type="button"
                   onClick={() => setShowKey(!showKey)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white"
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
                 >
                   {showKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                 </button>
@@ -978,7 +982,7 @@ function ProviderContent({
             </p>
           )}
 
-          <p className="text-sm text-slate-400 text-center">
+          <p className="text-sm text-muted-foreground text-center">
             {t('provider.storedLocally')}
           </p>
         </motion.div>
@@ -1073,12 +1077,12 @@ function SetupChannelContent() {
         <h2 className="text-xl font-semibold">
           {t('channel.connected', { name: meta?.name || 'Channel' })}
         </h2>
-        <p className="text-slate-300">
+        <p className="text-muted-foreground">
           {t('channel.connectedDesc')}
         </p>
         <Button
           variant="ghost"
-          className="text-slate-400"
+          className="text-muted-foreground"
           onClick={() => {
             setSaved(false);
             setSelectedChannel(null);
@@ -1098,7 +1102,7 @@ function SetupChannelContent() {
         <div className="text-center mb-2">
           <div className="text-4xl mb-3">📡</div>
           <h2 className="text-xl font-semibold">{t('channel.title')}</h2>
-          <p className="text-slate-300 text-sm mt-1">
+          <p className="text-muted-foreground text-sm mt-1">
             {t('channel.subtitle')}
           </p>
         </div>
@@ -1110,11 +1114,11 @@ function SetupChannelContent() {
               <button
                 key={type}
                 onClick={() => setSelectedChannel(type)}
-                className="p-4 rounded-lg bg-white/5 hover:bg-white/10 transition-all text-left"
+                className="p-4 rounded-lg bg-muted/50 hover:bg-muted transition-all text-left"
               >
                 <span className="text-3xl">{channelMeta.icon}</span>
                 <p className="font-medium mt-2">{channelMeta.name}</p>
-                <p className="text-xs text-slate-400 mt-1 line-clamp-2">
+                <p className="text-xs text-muted-foreground mt-1 line-clamp-2">
                   {t(channelMeta.description)}
                 </p>
               </button>
@@ -1131,7 +1135,7 @@ function SetupChannelContent() {
       <div className="flex items-center gap-3 mb-2">
         <button
           onClick={() => { setSelectedChannel(null); setConfigValues({}); setValidationError(null); }}
-          className="text-slate-400 hover:text-white transition-colors"
+          className="text-muted-foreground hover:text-foreground transition-colors"
         >
           <ChevronLeft className="h-5 w-5" />
         </button>
@@ -1139,14 +1143,14 @@ function SetupChannelContent() {
           <h2 className="text-xl font-semibold flex items-center gap-2">
             <span>{meta?.icon}</span> {t('channel.configure', { name: meta?.name })}
           </h2>
-          <p className="text-slate-400 text-sm mt-1">{t(meta?.description || '')}</p>
+          <p className="text-muted-foreground text-sm mt-1">{t(meta?.description || '')}</p>
         </div>
       </div>
 
       {/* Instructions */}
-      <div className="p-3 rounded-lg bg-white/5 text-sm">
+      <div className="p-3 rounded-lg bg-muted/50 text-sm">
         <div className="flex items-center justify-between mb-2">
-          <p className="font-medium text-slate-200">{t('channel.howTo')}</p>
+          <p className="font-medium text-foreground">{t('channel.howTo')}</p>
           {meta?.docsUrl && (
             <button
               onClick={() => {
@@ -1164,7 +1168,7 @@ function SetupChannelContent() {
             </button>
           )}
         </div>
-        <ol className="list-decimal list-inside text-slate-400 space-y-1">
+        <ol className="list-decimal list-inside text-muted-foreground space-y-1">
           {meta?.instructions.map((inst, i) => (
             <li key={i}>{t(inst)}</li>
           ))}
@@ -1176,7 +1180,7 @@ function SetupChannelContent() {
         const isPassword = field.type === 'password';
         return (
           <div key={field.key} className="space-y-1.5">
-            <Label htmlFor={`setup-${field.key}`} className="text-slate-200">
+            <Label htmlFor={`setup-${field.key}`} className="text-foreground">
               {t(field.label)}
               {field.required && <span className="text-red-400 ml-1">*</span>}
             </Label>
@@ -1188,7 +1192,7 @@ function SetupChannelContent() {
                 value={configValues[field.key] || ''}
                 onChange={(e) => setConfigValues((prev) => ({ ...prev, [field.key]: e.target.value }))}
                 autoComplete="off"
-                className="font-mono text-sm bg-white/5 border-white/10"
+                className="font-mono text-sm bg-background border-input"
               />
               {isPassword && (
                 <Button
@@ -1320,7 +1324,7 @@ function InstallingContent({ skills, onComplete, onSkip }: InstallingContentProp
   const getStatusText = (skill: SkillInstallState) => {
     switch (skill.status) {
       case 'pending':
-        return <span className="text-slate-500">{t('installing.status.pending')}</span>;
+        return <span className="text-muted-foreground">{t('installing.status.pending')}</span>;
       case 'installing':
         return <span className="text-primary">{t('installing.status.installing')}</span>;
       case 'completed':
@@ -1335,7 +1339,7 @@ function InstallingContent({ skills, onComplete, onSkip }: InstallingContentProp
       <div className="text-center">
         <div className="text-4xl mb-4">⚙️</div>
         <h2 className="text-xl font-semibold mb-2">{t('installing.title')}</h2>
-        <p className="text-slate-300">
+        <p className="text-muted-foreground">
           {t('installing.subtitle')}
         </p>
       </div>
@@ -1343,10 +1347,10 @@ function InstallingContent({ skills, onComplete, onSkip }: InstallingContentProp
       {/* Progress bar */}
       <div className="space-y-2">
         <div className="flex justify-between text-sm">
-          <span className="text-slate-400">{t('installing.progress')}</span>
+          <span className="text-muted-foreground">{t('installing.progress')}</span>
           <span className="text-primary">{overallProgress}%</span>
         </div>
-        <div className="h-2 bg-slate-700 rounded-full overflow-hidden">
+        <div className="h-2 bg-secondary rounded-full overflow-hidden">
           <motion.div
             className="h-full bg-primary"
             initial={{ width: 0 }}
@@ -1365,14 +1369,14 @@ function InstallingContent({ skills, onComplete, onSkip }: InstallingContentProp
             animate={{ opacity: 1, y: 0 }}
             className={cn(
               'flex items-center justify-between p-3 rounded-lg',
-              skill.status === 'installing' ? 'bg-white/10' : 'bg-white/5'
+              skill.status === 'installing' ? 'bg-muted' : 'bg-muted/50'
             )}
           >
             <div className="flex items-center gap-3">
               {getStatusIcon(skill.status)}
               <div>
                 <p className="font-medium">{skill.name}</p>
-                <p className="text-xs text-slate-400">{skill.description}</p>
+                <p className="text-xs text-muted-foreground">{skill.description}</p>
               </div>
             </div>
             {getStatusText(skill)}
@@ -1414,7 +1418,7 @@ function InstallingContent({ skills, onComplete, onSkip }: InstallingContentProp
       <div className="flex justify-end">
         <Button
           variant="ghost"
-          className="text-slate-400"
+          className="text-muted-foreground"
           onClick={onSkip}
         >
           {t('installing.skip')}
@@ -1442,24 +1446,24 @@ function CompleteContent({ selectedProvider, installedSkills }: CompleteContentP
     <div className="text-center space-y-6">
       <div className="text-6xl mb-4">🎉</div>
       <h2 className="text-xl font-semibold">{t('complete.title')}</h2>
-      <p className="text-slate-300">
+      <p className="text-muted-foreground">
         {t('complete.subtitle')}
       </p>
 
       <div className="space-y-3 text-left max-w-md mx-auto">
-        <div className="flex items-center justify-between p-3 rounded-lg bg-white/5">
+        <div className="flex items-center justify-between p-3 rounded-lg bg-muted/50">
           <span>{t('complete.provider')}</span>
           <span className="text-green-400">
             {providerData ? `${providerData.icon} ${providerData.name}` : '—'}
           </span>
         </div>
-        <div className="flex items-center justify-between p-3 rounded-lg bg-white/5">
+        <div className="flex items-center justify-between p-3 rounded-lg bg-muted/50">
           <span>{t('complete.components')}</span>
           <span className="text-green-400">
             {installedSkillNames || `${installedSkills.length} ${t('installing.status.installed')}`}
           </span>
         </div>
-        <div className="flex items-center justify-between p-3 rounded-lg bg-white/5">
+        <div className="flex items-center justify-between p-3 rounded-lg bg-muted/50">
           <span>{t('complete.gateway')}</span>
           <span className={gatewayStatus.state === 'running' ? 'text-green-400' : 'text-yellow-400'}>
             {gatewayStatus.state === 'running' ? `✓ ${t('complete.running')}` : gatewayStatus.state}
@@ -1467,7 +1471,7 @@ function CompleteContent({ selectedProvider, installedSkills }: CompleteContentP
         </div>
       </div>
 
-      <p className="text-sm text-slate-400">
+      <p className="text-sm text-muted-foreground">
         {t('complete.footer')}
       </p>
     </div>
