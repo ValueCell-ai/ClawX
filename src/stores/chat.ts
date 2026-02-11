@@ -113,7 +113,7 @@ function hasNonToolAssistantContent(message: RawMessage | undefined): boolean {
     }
   }
 
-  const msg = message as Record<string, unknown>;
+  const msg = message as unknown as Record<string, unknown>;
   if (typeof msg.text === 'string' && msg.text.trim()) return true;
 
   return false;
