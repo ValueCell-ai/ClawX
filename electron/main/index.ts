@@ -151,14 +151,8 @@ async function initialize(): Promise<void> {
   // Register update handlers
   registerUpdateHandlers(appUpdater, mainWindow);
 
-  // Check for updates after a delay (only in production)
-  if (!process.env.VITE_DEV_SERVER_URL) {
-    setTimeout(() => {
-      appUpdater.checkForUpdates().catch((err) => {
-        console.error('Failed to check for updates:', err);
-      });
-    }, 10000);
-  }
+  // Note: Auto-check for updates is driven by the renderer (update store init)
+  // so it respects the user's "Auto-check for updates" setting.
 
   // Handle window close
   mainWindow.on('closed', () => {

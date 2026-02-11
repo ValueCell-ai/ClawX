@@ -50,6 +50,7 @@ export function Settings() {
   
   const { status: gatewayStatus, restart: restartGateway } = useGatewayStore();
   const currentVersion = useUpdateStore((state) => state.currentVersion);
+  const updateSetAutoDownload = useUpdateStore((state) => state.setAutoDownload);
   const [controlUiInfo, setControlUiInfo] = useState<ControlUiInfo | null>(null);
   const [openclawCliCommand, setOpenclawCliCommand] = useState('');
   const [openclawCliError, setOpenclawCliError] = useState<string | null>(null);
@@ -380,7 +381,10 @@ export function Settings() {
             </div>
             <Switch
               checked={autoDownloadUpdate}
-              onCheckedChange={setAutoDownloadUpdate}
+              onCheckedChange={(value) => {
+                setAutoDownloadUpdate(value);
+                updateSetAutoDownload(value);
+              }}
             />
           </div>
         </CardContent>
