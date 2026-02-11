@@ -66,6 +66,10 @@ export class AppUpdater extends EventEmitter {
 
     console.log(`[Updater] Version: ${version}, channel: ${channel}, feedUrl: ${feedUrl}`);
 
+    // Set channel so electron-updater requests the correct yml filename.
+    // e.g. channel "alpha" → requests alpha-mac.yml, channel "latest" → requests latest-mac.yml
+    autoUpdater.channel = channel;
+
     autoUpdater.setFeedURL({
       provider: 'generic',
       url: feedUrl,

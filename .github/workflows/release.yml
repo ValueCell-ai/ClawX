@@ -119,7 +119,7 @@ jobs:
             release/*.AppImage
             release/*.deb
             release/*.rpm
-            release/latest*.yml
+            release/*.yml
           retention-days: 7
 
   # ──────────────────────────────────────────────────────────────
@@ -157,7 +157,7 @@ jobs:
             release-artifacts/**/*.AppImage
             release-artifacts/**/*.deb
             release-artifacts/**/*.rpm
-            release-artifacts/**/latest*.yml
+            release-artifacts/**/*.yml
           draft: false
           prerelease: ${{ contains(github.ref, 'alpha') || contains(github.ref, 'beta') }}
           make_latest: ${{ !(contains(github.ref, 'alpha') || contains(github.ref, 'beta')) }}
@@ -383,8 +383,13 @@ jobs:
 
           echo ""
           echo "=== Verify update yml ==="
-          echo "electron-updater expects latest-mac.yml, latest.yml, etc. in ${CHANNEL}/:"
-          ossutil ls oss://valuecell-clawx/${CHANNEL}/ --short | grep "latest.*\\.yml" || echo "(none found)"
+          if [ "${CHANNEL}" = "latest" ]; then
+            YML_PREFIX="latest"
+          else
+            YML_PREFIX="${CHANNEL}"
+          fi
+          echo "electron-updater expects ${YML_PREFIX}-mac.yml, ${YML_PREFIX}.yml, etc. in ${CHANNEL}/:"
+          ossutil ls oss://valuecell-clawx/${CHANNEL}/ --short | grep "${YML_PREFIX}.*\\.yml" || echo "(none found)"
           
           echo ""
           echo "All files uploaded and verified successfully!"
