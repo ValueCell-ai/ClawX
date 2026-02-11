@@ -22,7 +22,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
 import { Switch } from '@/components/ui/switch';
-import { useProviderStore, type ProviderWithKeyInfo } from '@/stores/providers';
+import { useProviderStore, type ProviderConfig, type ProviderWithKeyInfo } from '@/stores/providers';
 import {
   PROVIDER_TYPE_INFO,
   type ProviderType,
@@ -58,8 +58,9 @@ export function ProvidersSettings() {
     apiKey: string,
     options?: { baseUrl?: string; model?: string }
   ) => {
-    // For built-in types use type as id (one per type); for custom allow multiples
-    const id = type === 'custom' ? `custom-${Date.now()}` : type;
+    // Only custom supports multiple instances.
+    // Built-in providers remain singleton by type.
+    const id = type === 'custom' ? `custom-${crypto.randomUUID()}` : type;
     try {
       await addProvider(
         {
@@ -151,8 +152,13 @@ export function ProvidersSettings() {
               onDelete={() => handleDeleteProvider(provider.id)}
               onSetDefault={() => handleSetDefault(provider.id)}
               onToggleEnabled={() => handleToggleEnabled(provider)}
-              onUpdateKey={async (key) => {
-                await setApiKey(provider.id, key);
+              onSaveEdits={async (payload) => {
+                if (payload.newApiKey) {
+                  await setApiKey(provider.id, payload.newApiKey);
+                }
+                if (payload.updates && Object.keys(payload.updates).length > 0) {
+                  await updateProvider(provider.id, payload.updates);
+                }
                 setEditingProvider(null);
               }}
               onValidateKey={(key) => validateApiKey(provider.id, key)}
@@ -183,7 +189,7 @@ interface ProviderCardProps {
   onDelete: () => void;
   onSetDefault: () => void;
   onToggleEnabled: () => void;
-  onUpdateKey: (key: string) => Promise<void>;
+  onSaveEdits: (payload: { newApiKey?: string; updates?: Partial<ProviderConfig> }) => Promise<void>;
   onValidateKey: (key: string) => Promise<{ valid: boolean; error?: string }>;
 }
 
@@ -211,37 +217,63 @@ function ProviderCard({
   onDelete,
   onSetDefault,
   onToggleEnabled,
-  onUpdateKey,
+  onSaveEdits,
   onValidateKey,
 }: ProviderCardProps) {
   const [newKey, setNewKey] = useState('');
+  const [baseUrl, setBaseUrl] = useState(provider.baseUrl || '');
+  const [modelId, setModelId] = useState(provider.model || '');
   const [showKey, setShowKey] = useState(false);
   const [validating, setValidating] = useState(false);
   const [saving, setSaving] = useState(false);
   
   const typeInfo = PROVIDER_TYPE_INFO.find((t) => t.id === provider.type);
+  const canEditConfig = Boolean(typeInfo?.showBaseUrl || typeInfo?.showModelId);
   
-  const handleSaveKey = async () => {
-    if (!newKey) return;
-    
-    setValidating(true);
-    const result = await onValidateKey(newKey);
-    setValidating(false);
-    
-    if (!result.valid) {
-      toast.error(result.error || 'Invalid API key');
-      return;
-    }
-    
+  const handleSaveEdits = async () => {
     setSaving(true);
     try {
-      await onUpdateKey(newKey);
+      const payload: { newApiKey?: string; updates?: Partial<ProviderConfig> } = {};
+
+      if (newKey.trim()) {
+        setValidating(true);
+        const result = await onValidateKey(newKey);
+        setValidating(false);
+        if (!result.valid) {
+          toast.error(result.error || 'Invalid API key');
+          setSaving(false);
+          return;
+        }
+        payload.newApiKey = newKey.trim();
+      }
+
+      if (canEditConfig) {
+        const updates: Partial<ProviderConfig> = {};
+        if ((baseUrl.trim() || undefined) !== (provider.baseUrl || undefined)) {
+          updates.baseUrl = baseUrl.trim() || undefined;
+        }
+        if ((modelId.trim() || undefined) !== (provider.model || undefined)) {
+          updates.model = modelId.trim() || undefined;
+        }
+        if (Object.keys(updates).length > 0) {
+          payload.updates = updates;
+        }
+      }
+
+      if (!payload.newApiKey && !payload.updates) {
+        onCancelEdit();
+        setSaving(false);
+        return;
+      }
+
+      await onSaveEdits(payload);
       setNewKey('');
-      toast.success('API key updated');
+      toast.success('Provider updated');
     } catch (error) {
-      toast.error(`Failed to save key: ${error}`);
+      toast.error(`Failed to save provider: ${error}`);
     } finally {
       setSaving(false);
+      setValidating(false);
     }
   };
   
@@ -271,11 +303,37 @@ function ProviderCard({
         {/* Key row */}
         {isEditing ? (
           <div className="space-y-2">
+            {canEditConfig && (
+              <>
+                {typeInfo?.showBaseUrl && (
+                  <div className="space-y-1">
+                    <Label className="text-xs">Base URL</Label>
+                    <Input
+                      value={baseUrl}
+                      onChange={(e) => setBaseUrl(e.target.value)}
+                      placeholder="https://api.example.com/v1"
+                      className="h-9 text-sm"
+                    />
+                  </div>
+                )}
+                {typeInfo?.showModelId && (
+                  <div className="space-y-1">
+                    <Label className="text-xs">Model ID</Label>
+                    <Input
+                      value={modelId}
+                      onChange={(e) => setModelId(e.target.value)}
+                      placeholder={typeInfo.modelIdPlaceholder || 'provider/model-id'}
+                      className="h-9 text-sm"
+                    />
+                  </div>
+                )}
+              </>
+            )}
             <div className="flex gap-2">
               <div className="relative flex-1">
                 <Input
                   type={showKey ? 'text' : 'password'}
-                  placeholder={typeInfo?.placeholder}
+                  placeholder={typeInfo?.requiresApiKey ? typeInfo?.placeholder : 'Optional: update API key'}
                   value={newKey}
                   onChange={(e) => setNewKey(e.target.value)}
                   className="pr-10 h-9 text-sm"
@@ -291,8 +349,16 @@ function ProviderCard({
               <Button 
                 variant="outline" 
                 size="sm"
-                onClick={handleSaveKey}
-                disabled={!newKey || validating || saving}
+                onClick={handleSaveEdits}
+                disabled={
+                  validating
+                  || saving
+                  || (
+                    !newKey.trim()
+                    && (baseUrl.trim() || undefined) === (provider.baseUrl || undefined)
+                    && (modelId.trim() || undefined) === (provider.model || undefined)
+                  )
+                }
               >
                 {validating || saving ? (
                   <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -360,7 +426,7 @@ function AddProviderDialog({ existingTypes, onClose, onAdd, onValidateKey }: Add
   
   const typeInfo = PROVIDER_TYPE_INFO.find((t) => t.id === selectedType);
 
-  // Filter out built-in types that already exist (custom always allowed)
+  // Only custom can be added multiple times.
   const availableTypes = PROVIDER_TYPE_INFO.filter(
     (t) => t.id === 'custom' || !existingTypes.has(t.id),
   );
@@ -374,6 +440,11 @@ function AddProviderDialog({ existingTypes, onClose, onAdd, onValidateKey }: Add
     try {
       // Validate key first if the provider requires one and a key was entered
       const requiresKey = typeInfo?.requiresApiKey ?? false;
+      if (requiresKey && !apiKey.trim()) {
+        setValidationError('API key is required');
+        setSaving(false);
+        return;
+      }
       if (requiresKey && apiKey) {
         const result = await onValidateKey(selectedType, apiKey);
         if (!result.valid) {

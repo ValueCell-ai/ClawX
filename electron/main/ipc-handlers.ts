@@ -26,6 +26,7 @@ import {
   saveProviderKeyToOpenClaw,
   removeProviderKeyFromOpenClaw,
   setOpenClawDefaultModel,
+  setOpenClawDefaultModelWithOverride,
 } from '../utils/openclaw-auth';
 import { logger } from '../utils/logger';
 import {
@@ -793,18 +794,28 @@ function registerProviderHandlers(): void {
       const provider = await getProvider(providerId);
       if (provider) {
         try {
-          // custom/ollama are user-defined model ids. We persist provider config,
-          // but do not auto-write agents.defaults.model in openclaw.json.
-          if (provider.type === 'custom' || provider.type === 'ollama') {
-            return { success: true };
-          }
-
           // If the provider has a user-specified model (e.g. siliconflow),
           // build the full model string: "providerType/modelId"
           const modelOverride = provider.model
             ? `${provider.type}/${provider.model}`
             : undefined;
-          setOpenClawDefaultModel(provider.type, modelOverride);
+
+          if (provider.type === 'custom' || provider.type === 'ollama') {
+            // For runtime-configured providers, use user-entered base URL/api.
+            setOpenClawDefaultModelWithOverride(provider.type, modelOverride, {
+              baseUrl: provider.baseUrl,
+              api: 'openai-completions',
+            });
+          } else {
+            setOpenClawDefaultModel(provider.type, modelOverride);
+          }
+
+          // Keep auth-profiles in sync with the default provider instance.
+          // This is especially important when multiple custom providers exist.
+          const providerKey = await getApiKey(providerId);
+          if (providerKey) {
+            saveProviderKeyToOpenClaw(provider.type, providerKey);
+          }
         } catch (err) {
           console.warn('Failed to set OpenClaw default model:', err);
         }

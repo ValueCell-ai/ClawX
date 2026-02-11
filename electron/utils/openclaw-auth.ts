@@ -211,9 +211,9 @@ export function setOpenClawDefaultModel(provider: string, modelOverride?: string
   agents.defaults = defaults;
   config.agents = agents;
   
-  // Configure models.providers for providers that need explicit registration
-  // Without this, OpenClaw returns "Unknown model" because it can't resolve
-  // the provider's baseUrl and API type
+  // Configure models.providers for providers that need explicit registration.
+  // For built-in providers this comes from registry; for custom/ollama-like
+  // providers callers can supply runtime overrides.
   const providerCfg = getProviderConfig(provider);
   if (providerCfg) {
     const models = (config.models || {}) as Record<string, unknown>;
@@ -269,6 +269,98 @@ export function setOpenClawDefaultModel(provider: string, modelOverride?: string
   
   writeFileSync(configPath, JSON.stringify(config, null, 2), 'utf-8');
   console.log(`Set OpenClaw default model to "${model}" for provider "${provider}"`);
+}
+
+interface RuntimeProviderConfigOverride {
+  baseUrl?: string;
+  api?: string;
+  apiKeyEnv?: string;
+}
+
+/**
+ * Update OpenClaw model + provider config using runtime config values.
+ * Useful for user-configurable providers (custom/ollama-like) where
+ * baseUrl/model are not in the static registry.
+ */
+export function setOpenClawDefaultModelWithOverride(
+  provider: string,
+  modelOverride: string | undefined,
+  override: RuntimeProviderConfigOverride
+): void {
+  const configPath = join(homedir(), '.openclaw', 'openclaw.json');
+
+  let config: Record<string, unknown> = {};
+  try {
+    if (existsSync(configPath)) {
+      config = JSON.parse(readFileSync(configPath, 'utf-8'));
+    }
+  } catch (err) {
+    console.warn('Failed to read openclaw.json, creating fresh config:', err);
+  }
+
+  const model = modelOverride || getProviderDefaultModel(provider);
+  if (!model) {
+    console.warn(`No default model mapping for provider "${provider}"`);
+    return;
+  }
+
+  const modelId = model.startsWith(`${provider}/`)
+    ? model.slice(provider.length + 1)
+    : model;
+
+  const agents = (config.agents || {}) as Record<string, unknown>;
+  const defaults = (agents.defaults || {}) as Record<string, unknown>;
+  defaults.model = { primary: model };
+  agents.defaults = defaults;
+  config.agents = agents;
+
+  if (override.baseUrl && override.api) {
+    const models = (config.models || {}) as Record<string, unknown>;
+    const providers = (models.providers || {}) as Record<string, unknown>;
+
+    const existingProvider =
+      providers[provider] && typeof providers[provider] === 'object'
+        ? (providers[provider] as Record<string, unknown>)
+        : {};
+
+    const existingModels = Array.isArray(existingProvider.models)
+      ? (existingProvider.models as Array<Record<string, unknown>>)
+      : [];
+    const mergedModels = [...existingModels];
+    if (modelId && !mergedModels.some((m) => m.id === modelId)) {
+      mergedModels.push({ id: modelId, name: modelId });
+    }
+
+    const nextProvider: Record<string, unknown> = {
+      ...existingProvider,
+      baseUrl: override.baseUrl,
+      api: override.api,
+      models: mergedModels,
+    };
+    if (override.apiKeyEnv) {
+      nextProvider.apiKey = override.apiKeyEnv;
+    }
+
+    providers[provider] = nextProvider;
+    models.providers = providers;
+    config.models = models;
+  }
+
+  const gateway = (config.gateway || {}) as Record<string, unknown>;
+  if (!gateway.mode) {
+    gateway.mode = 'local';
+  }
+  config.gateway = gateway;
+
+  const dir = join(configPath, '..');
+  if (!existsSync(dir)) {
+    mkdirSync(dir, { recursive: true });
+  }
+
+  writeFileSync(configPath, JSON.stringify(config, null, 2), 'utf-8');
+  console.log(
+    `Set OpenClaw default model to "${model}" for provider "${provider}" (runtime override)`
+  );
 }
 
 // Re-export for backwards compatibility

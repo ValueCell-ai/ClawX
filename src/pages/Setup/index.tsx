@@ -665,12 +665,14 @@ function ProviderContent({
       try {
         const list = await window.electron.ipcRenderer.invoke('provider:list') as Array<{ id: string; type: string; hasKey: boolean }>;
         const defaultId = await window.electron.ipcRenderer.invoke('provider:getDefault') as string | null;
+        const setupProviderTypes = new Set<string>(providers.map((p) => p.id));
+        const setupCandidates = list.filter((p) => setupProviderTypes.has(p.type));
         const preferred =
-          (defaultId && list.find((p) => p.id === defaultId))
-          || list.find((p) => p.hasKey)
-          || list[0];
+          (defaultId && setupCandidates.find((p) => p.id === defaultId))
+          || setupCandidates.find((p) => p.hasKey)
+          || setupCandidates[0];
         if (preferred && !cancelled) {
-          onSelectProvider(preferred.id);
+          onSelectProvider(preferred.type);
           const typeInfo = providers.find((p) => p.id === preferred.type);
           const requiresKey = typeInfo?.requiresApiKey ?? false;
           onConfiguredChange(!requiresKey || preferred.hasKey);
@@ -678,6 +680,8 @@ function ProviderContent({
           if (storedKey) {
             onApiKeyChange(storedKey);
           }
+        } else if (!cancelled) {
+          onConfiguredChange(false);
         }
       } catch (error) {
         if (!cancelled) {
@@ -694,11 +698,20 @@ function ProviderContent({
     (async () => {
       if (!selectedProvider) return;
       try {
+        const list = await window.electron.ipcRenderer.invoke('provider:list') as Array<{ id: string; type: string; hasKey: boolean }>;
+        const defaultId = await window.electron.ipcRenderer.invoke('provider:getDefault') as string | null;
+        const sameType = list.filter((p) => p.type === selectedProvider);
+        const preferredInstance =
+          (defaultId && sameType.find((p) => p.id === defaultId))
+          || sameType.find((p) => p.hasKey)
+          || sameType[0];
+        const providerIdForLoad = preferredInstance?.id || selectedProvider;
+
         const savedProvider = await window.electron.ipcRenderer.invoke(
           'provider:get',
-          selectedProvider
+          providerIdForLoad
         ) as { baseUrl?: string; model?: string } | null;
-        const storedKey = await window.electron.ipcRenderer.invoke('provider:getApiKey', selectedProvider) as string | null;
+        const storedKey = await window.electron.ipcRenderer.invoke('provider:getApiKey', providerIdForLoad) as string | null;
         if (!cancelled) {
           if (storedKey) {
             onApiKeyChange(storedKey);
