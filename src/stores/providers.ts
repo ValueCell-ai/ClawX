@@ -20,6 +20,11 @@ interface ProviderState {
   updateProvider: (providerId: string, updates: Partial<ProviderConfig>, apiKey?: string) => Promise<void>;
   deleteProvider: (providerId: string) => Promise<void>;
   setApiKey: (providerId: string, apiKey: string) => Promise<void>;
+  updateProviderWithKey: (
+    providerId: string,
+    updates: Partial<ProviderConfig>,
+    apiKey?: string
+  ) => Promise<void>;
   deleteApiKey: (providerId: string) => Promise<void>;
   setDefaultProvider: (providerId: string) => Promise<void>;
   validateApiKey: (providerId: string, apiKey: string) => Promise<{ valid: boolean; error?: string }>;
@@ -128,6 +133,26 @@ export const useProviderStore = create<ProviderState>((set, get) => ({
       await get().fetchProviders();
     } catch (error) {
       console.error('Failed to set API key:', error);
+      throw error;
+    }
+  },
+
+  updateProviderWithKey: async (providerId, updates, apiKey) => {
+    try {
+      const result = await window.electron.ipcRenderer.invoke(
+        'provider:updateWithKey',
+        providerId,
+        updates,
+        apiKey
+      ) as { success: boolean; error?: string };
+
+      if (!result.success) {
+        throw new Error(result.error || 'Failed to update provider');
+      }
+
+      await get().fetchProviders();
+    } catch (error) {
+      console.error('Failed to update provider with key:', error);
       throw error;
     }
   },

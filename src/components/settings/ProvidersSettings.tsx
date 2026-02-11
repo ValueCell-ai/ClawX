@@ -39,7 +39,7 @@ export function ProvidersSettings() {
     addProvider,
     updateProvider,
     deleteProvider,
-    setApiKey,
+    updateProviderWithKey,
     setDefaultProvider,
     validateApiKey,
   } = useProviderStore();
@@ -71,7 +71,7 @@ export function ProvidersSettings() {
           model: options?.model,
           enabled: true,
         },
-        apiKey || undefined
+        apiKey.trim() || undefined
       );
 
       // Auto-set as default if this is the first provider
@@ -153,12 +153,11 @@ export function ProvidersSettings() {
               onSetDefault={() => handleSetDefault(provider.id)}
               onToggleEnabled={() => handleToggleEnabled(provider)}
               onSaveEdits={async (payload) => {
-                if (payload.newApiKey) {
-                  await setApiKey(provider.id, payload.newApiKey);
-                }
-                if (payload.updates && Object.keys(payload.updates).length > 0) {
-                  await updateProvider(provider.id, payload.updates);
-                }
+                await updateProviderWithKey(
+                  provider.id,
+                  payload.updates || {},
+                  payload.newApiKey
+                );
                 setEditingProvider(null);
               }}
               onValidateKey={(key) => validateApiKey(provider.id, key)}
@@ -229,6 +228,15 @@ function ProviderCard({
   
   const typeInfo = PROVIDER_TYPE_INFO.find((t) => t.id === provider.type);
   const canEditConfig = Boolean(typeInfo?.showBaseUrl || typeInfo?.showModelId);
+
+  useEffect(() => {
+    if (isEditing) {
+      setNewKey('');
+      setShowKey(false);
+      setBaseUrl(provider.baseUrl || '');
+      setModelId(provider.model || '');
+    }
+  }, [isEditing, provider.baseUrl, provider.model]);
   
   const handleSaveEdits = async () => {
     setSaving(true);
@@ -248,6 +256,12 @@ function ProviderCard({
       }
 
       if (canEditConfig) {
+        if (typeInfo?.showModelId && !modelId.trim()) {
+          toast.error('Model ID is required');
+          setSaving(false);
+          return;
+        }
+
         const updates: Partial<ProviderConfig> = {};
         if ((baseUrl.trim() || undefined) !== (provider.baseUrl || undefined)) {
           updates.baseUrl = baseUrl.trim() || undefined;
@@ -358,6 +372,7 @@ function ProviderCard({
                     && (baseUrl.trim() || undefined) === (provider.baseUrl || undefined)
                     && (modelId.trim() || undefined) === (provider.model || undefined)
                   )
+                  || Boolean(typeInfo?.showModelId && !modelId.trim())
                 }
               >
                 {validating || saving ? (
@@ -464,7 +479,7 @@ function AddProviderDialog({ existingTypes, onClose, onAdd, onValidateKey }: Add
       await onAdd(
         selectedType,
         name || typeInfo?.name || selectedType,
-        apiKey,
+        apiKey.trim(),
         {
           baseUrl: baseUrl.trim() || undefined,
           model: (typeInfo?.defaultModelId || modelId.trim()) || undefined,

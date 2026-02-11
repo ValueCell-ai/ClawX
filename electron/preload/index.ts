@@ -69,6 +69,7 @@ const electronAPI = {
         'provider:save',
         'provider:delete',
         'provider:setApiKey',
+        'provider:updateWithKey',
         'provider:deleteApiKey',
         'provider:hasApiKey',
         'provider:getApiKey',

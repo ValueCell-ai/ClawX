@@ -755,6 +755,64 @@ function registerProviderHandlers(): void {
     }
   });
 
+  // Atomically update provider config and API key
+  ipcMain.handle(
+    'provider:updateWithKey',
+    async (
+      _,
+      providerId: string,
+      updates: Partial<ProviderConfig>,
+      apiKey?: string
+    ) => {
+      const existing = await getProvider(providerId);
+      if (!existing) {
+        return { success: false, error: 'Provider not found' };
+      }
+
+      const previousKey = await getApiKey(providerId);
+      const previousProviderType = existing.type;
+
+      try {
+        const nextConfig: ProviderConfig = {
+          ...existing,
+          ...updates,
+          updatedAt: new Date().toISOString(),
+        };
+
+        await saveProvider(nextConfig);
+
+        if (apiKey !== undefined) {
+          const trimmedKey = apiKey.trim();
+          if (trimmedKey) {
+            await storeApiKey(providerId, trimmedKey);
+            saveProviderKeyToOpenClaw(nextConfig.type, trimmedKey);
+          } else {
+            await deleteApiKey(providerId);
+            removeProviderKeyFromOpenClaw(nextConfig.type);
+          }
+        }
+
+        return { success: true };
+      } catch (error) {
+        // Best-effort rollback to keep config/key consistent.
+        try {
+          await saveProvider(existing);
+          if (previousKey) {
+            await storeApiKey(providerId, previousKey);
+            saveProviderKeyToOpenClaw(previousProviderType, previousKey);
+          } else {
+            await deleteApiKey(providerId);
+            removeProviderKeyFromOpenClaw(previousProviderType);
+          }
+        } catch (rollbackError) {
+          console.warn('Failed to rollback provider updateWithKey:', rollbackError);
+        }
+
+        return { success: false, error: String(error) };
+      }
+    }
+  );
+
   // Delete API key for a provider
   ipcMain.handle('provider:deleteApiKey', async (_, providerId: string) => {
     try {
