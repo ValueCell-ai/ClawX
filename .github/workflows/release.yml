@@ -15,6 +15,7 @@ on:
 
 permissions:
   contents: write
+  actions: read
 
 jobs:
   release:
@@ -32,30 +33,18 @@ jobs:
     
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           fetch-depth: 0
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
 
       - name: Setup Node.js
         uses: actions/setup-node@v6
         with:
           node-version: '24'
-
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4
-
-      - name: Get pnpm store directory
-        shell: bash
-        run: |
-          echo "STORE_PATH=$(pnpm store path --silent)" >> $GITHUB_ENV
-
-      - name: Setup pnpm cache
-        uses: actions/cache@v4
-        with:
-          path: ${{ env.STORE_PATH }}
-          key: ${{ runner.os }}-pnpm-store-${{ hashFiles('**/pnpm-lock.yaml') }}
-          restore-keys: |
-            ${{ runner.os }}-pnpm-store-
+          cache: 'pnpm'
 
       - name: Install dependencies
         run: pnpm install
@@ -87,21 +76,52 @@ jobs:
         run: |
           ulimit -n 65536
           echo "File descriptor limit: $(ulimit -n)"
-          pnpm run build:vite && pnpm exec zx scripts/bundle-openclaw.mjs && pnpm exec electron-builder --mac --publish never
+          pnpm run package:mac
 
       # Windows specific steps
       - name: Build Windows
         if: matrix.platform == 'win'
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: pnpm run build:vite && pnpm exec zx scripts/bundle-openclaw.mjs && pnpm exec electron-builder --win --publish never
+        run: pnpm run package:win
+
+      - name: Upload unsigned Windows artifacts for SignPath
+        if: matrix.platform == 'win'
+        id: upload-unsigned-windows-artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: unsigned-win-exe-${{ github.run_id }}-${{ github.run_attempt }}
+          path: release/*.exe
+          retention-days: 1
+
+      - name: Sign Windows artifacts via SignPath
+        if: matrix.platform == 'win'
+        id: signpath-sign-windows
+        uses: signpath/github-action-submit-signing-request@v2
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: "c120e8c0-b9a7-4615-abd7-b131436e366f"
+          project-slug: "valuecell"
+          signing-policy-slug: "test-signing"
+          github-artifact-id: ${{ steps.upload-unsigned-windows-artifact.outputs.artifact-id }}
+          wait-for-completion: true
+          output-artifact-directory: release/signed
+
+      - name: Replace unsigned executables with signed ones
+        if: matrix.platform == 'win'
+        shell: pwsh
+        run: |
+          $signedExeFiles = Get-ChildItem -Path "release/signed" -Filter *.exe -File -Recurse
+          if (-not $signedExeFiles) {
+            throw "No signed .exe files found in release/signed"
+          }
+          foreach ($file in $signedExeFiles) {
+            Copy-Item -Path $file.FullName -Destination "release/$($file.Name)" -Force
+          }
+          Write-Host "Signed executables copied to release/"
 
       # Linux specific steps
       - name: Build Linux
         if: matrix.platform == 'linux'
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: pnpm run build:vite && pnpm exec zx scripts/bundle-openclaw.mjs && pnpm exec electron-builder --linux --publish never
+        run: pnpm run package:linux
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
@@ -127,13 +147,11 @@ jobs:
     runs-on: ubuntu-latest
     
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Download all artifacts
+      - name: Download release artifacts only
         uses: actions/download-artifact@v4
         with:
           path: release-artifacts
+          pattern: release-*
 
       - name: List all downloaded artifacts
         run: |
@@ -222,13 +240,11 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Download all artifacts
+      - name: Download release artifacts only
         uses: actions/download-artifact@v4
         with:
           path: release-artifacts
+          pattern: release-*
 
       - name: Extract version and channel
         id: version
