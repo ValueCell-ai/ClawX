@@ -27,6 +27,7 @@ import { cn } from '@/lib/utils';
 import { useGatewayStore } from '@/stores/gateway';
 import { useSettingsStore } from '@/stores/settings';
 import { useTranslation } from 'react-i18next';
+import { SUPPORTED_LANGUAGES } from '@/i18n';
 import { toast } from 'sonner';
 import {
   CHANNEL_META,
@@ -304,7 +305,9 @@ export function Setup() {
 // ==================== Step Content Components ====================
 
 function WelcomeContent() {
-  const { t } = useTranslation('setup');
+  const { t } = useTranslation(['setup', 'settings']);
+  const { language, setLanguage } = useSettingsStore();
+
   return (
     <div className="text-center space-y-4">
       <div className="text-6xl mb-4">🤖</div>
@@ -312,7 +315,23 @@ function WelcomeContent() {
       <p className="text-slate-300">
         {t('welcome.description')}
       </p>
-      <ul className="text-left space-y-2 text-slate-300">
+
+      {/* Language Selector */}
+      <div className="flex justify-center gap-2 py-2">
+        {SUPPORTED_LANGUAGES.map((lang) => (
+          <Button
+            key={lang.code}
+            variant={language === lang.code ? 'secondary' : 'ghost'}
+            size="sm"
+            onClick={() => setLanguage(lang.code)}
+            className="h-7 text-xs"
+          >
+            {lang.code === 'system' ? t('appearance.system', { ns: 'settings' }) : lang.label}
+          </Button>
+        ))}
+      </div>
+
+      <ul className="text-left space-y-2 text-slate-300 pt-2">
         <li className="flex items-center gap-2">
           <CheckCircle2 className="h-5 w-5 text-green-400" />
           {t('welcome.features.noCommand')}
@@ -778,8 +797,8 @@ function ProviderContent({
       const providerIdForSave =
         selectedProvider === 'custom'
           ? (selectedProviderConfigId?.startsWith('custom-')
-              ? selectedProviderConfigId
-              : `custom-${crypto.randomUUID()}`)
+            ? selectedProviderConfigId
+            : `custom-${crypto.randomUUID()}`)
           : selectedProvider;
 
       // Save provider config + API key, then set as default
