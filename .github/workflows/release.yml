@@ -271,36 +271,14 @@ jobs:
           echo "=== staging/releases/${TAG}/ ==="
           ls -lh staging/releases/${TAG}/
 
-      - name: Rename yml files for channel
+      # Note: Do NOT rename yml files. electron-updater (generic provider) always
+      # requests "latest-mac.yml", "latest.yml", etc. regardless of feed URL.
+      # Channel separation is achieved by directory: /alpha/, /beta/, /latest/.
+      - name: Verify yml files present
         run: |
           CHANNEL="${{ steps.version.outputs.channel }}"
-
-          # electron-builder always generates latest*.yml.
-          # For non-stable channels, rename them so electron-updater can find
-          # e.g. alpha.yml, alpha-mac.yml, alpha-linux.yml
-          if [[ "$CHANNEL" != "latest" ]]; then
-            cd staging/${CHANNEL}
-            for f in latest*.yml; do
-              [ -f "$f" ] || continue
-              newname="${f/latest/$CHANNEL}"
-              echo "Renaming $f → $newname"
-              mv "$f" "$newname"
-            done
-            cd -
-
-            # Also rename in the archive directory
-            cd staging/releases/${{ steps.version.outputs.tag }}
-            for f in latest*.yml; do
-              [ -f "$f" ] || continue
-              newname="${f/latest/$CHANNEL}"
-              echo "Renaming (archive) $f → $newname"
-              mv "$f" "$newname"
-            done
-            cd -
-          fi
-
-          echo "=== Final staging/$CHANNEL/ ==="
-          ls -lh staging/${CHANNEL}/
+          echo "=== staging/${CHANNEL}/ (update metadata) ==="
+          ls -la staging/${CHANNEL}/*.yml 2>/dev/null || echo "No yml files found (check electron-builder outputs)"
 
       - name: Generate release-info.json
         run: |
@@ -405,13 +383,8 @@ jobs:
 
           echo ""
           echo "=== Verify update yml ==="
-          if [[ "$CHANNEL" == "latest" ]]; then
-            YML_PREFIX="latest"
-          else
-            YML_PREFIX="$CHANNEL"
-          fi
-          echo "Looking for ${YML_PREFIX}*.yml files:"
-          ossutil ls oss://valuecell-clawx/${CHANNEL}/ --short | grep "${YML_PREFIX}.*\\.yml" || echo "(none found)"
+          echo "electron-updater expects latest-mac.yml, latest.yml, etc. in ${CHANNEL}/:"
+          ossutil ls oss://valuecell-clawx/${CHANNEL}/ --short | grep "latest.*\\.yml" || echo "(none found)"
           
           echo ""
           echo "All files uploaded and verified successfully!"
