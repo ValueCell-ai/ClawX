@@ -1,0 +1,134 @@
+{
+    "title": "Settings",
+    "subtitle": "Configure your ClawX experience",
+    "appearance": {
+        "title": "Appearance",
+        "description": "Customize the look and feel",
+        "theme": "Theme",
+        "light": "Light",
+        "dark": "Dark",
+        "system": "System",
+        "language": "Language"
+    },
+    "aiProviders": {
+        "title": "AI Providers",
+        "description": "Configure your AI model providers and API keys",
+        "add": "Add Provider",
+        "empty": {
+            "title": "No providers configured",
+            "desc": "Add an AI provider to start using ClawX",
+            "cta": "Add Your First Provider"
+        },
+        "dialog": {
+            "title": "Add AI Provider",
+            "desc": "Configure a new AI model provider",
+            "displayName": "Display Name",
+            "apiKey": "API Key",
+            "apiKeyStored": "Your API key is stored locally on your machine.",
+            "baseUrl": "Base URL",
+            "modelId": "Model ID",
+            "cancel": "Cancel",
+            "change": "Change provider",
+            "add": "Add Provider",
+            "save": "Save",
+            "validate": "Validate"
+        },
+        "card": {
+            "default": "Default",
+            "configured": "Configured",
+            "noKey": "No API key set",
+            "setDefault": "Set as default",
+            "editKey": "Edit API key",
+            "delete": "Delete provider"
+        },
+        "toast": {
+            "added": "Provider added successfully",
+            "failedAdd": "Failed to add provider",
+            "deleted": "Provider deleted",
+            "failedDelete": "Failed to delete provider",
+            "defaultUpdated": "Default provider updated",
+            "failedDefault": "Failed to set default",
+            "updated": "Provider updated",
+            "failedUpdate": "Failed to update provider",
+            "invalidKey": "Invalid API key",
+            "modelRequired": "Model ID is required"
+        }
+    },
+    "gateway": {
+        "title": "Gateway",
+        "description": "OpenClaw Gateway settings",
+        "status": "Status",
+        "port": "Port",
+        "logs": "Logs",
+        "appLogs": "Application Logs",
+        "openFolder": "Open Folder",
+        "autoStart": "Auto-start Gateway",
+        "autoStartDesc": "Start Gateway when ClawX launches"
+    },
+    "updates": {
+        "title": "Updates",
+        "description": "Keep ClawX up to date",
+        "autoCheck": "Auto-check for updates",
+        "autoCheckDesc": "Check for updates on startup",
+        "autoDownload": "Auto-download updates",
+        "autoDownloadDesc": "Download updates in the background",
+        "status": {
+            "checking": "Checking for updates...",
+            "downloading": "Downloading update...",
+            "available": "Update available: v{{version}}",
+            "downloaded": "Ready to install: v{{version}}",
+            "failed": "Update check failed",
+            "latest": "You have the latest version",
+            "check": "Check for updates to get the latest features"
+        },
+        "action": {
+            "checking": "Checking...",
+            "downloading": "Downloading...",
+            "download": "Download Update",
+            "install": "Install & Restart",
+            "retry": "Retry",
+            "check": "Check for Updates"
+        },
+        "currentVersion": "Current Version",
+        "whatsNew": "What's New:",
+        "errorDetails": "Error Details:",
+        "help": "Updates are downloaded in the background and installed when you restart the app."
+    },
+    "advanced": {
+        "title": "Advanced",
+        "description": "Power-user options",
+        "devMode": "Developer Mode",
+        "devModeDesc": "Show developer tools and shortcuts"
+    },
+    "developer": {
+        "title": "Developer",
+        "description": "Advanced options for developers",
+        "console": "OpenClaw Console",
+        "consoleDesc": "Access the native OpenClaw management interface",
+        "openConsole": "Open Developer Console",
+        "consoleNote": "Opens the Control UI with gateway token injected",
+        "gatewayToken": "Gateway Token",
+        "gatewayTokenDesc": "Paste this into Control UI settings if prompted",
+        "tokenUnavailable": "Token unavailable",
+        "tokenCopied": "Gateway token copied",
+        "cli": "OpenClaw CLI",
+        "cliDesc": "Copy a command to run OpenClaw without modifying PATH.",
+        "cliPowershell": "PowerShell command.",
+        "cmdUnavailable": "Command unavailable",
+        "cmdCopied": "CLI command copied",
+        "installCmd": "Install \"openclaw\" Command",
+        "installCmdDesc": "Installs ~/.local/bin/openclaw (no admin required)",
+        "installTitle": "Install OpenClaw Command",
+        "installMessage": "Install the \"openclaw\" command?",
+        "installDetail": "This will create ~/.local/bin/openclaw. Ensure ~/.local/bin is on your PATH if you want to run it globally."
+    },
+    "about": {
+        "title": "About",
+        "appName": "ClawX",
+        "tagline": "Graphical AI Assistant",
+        "basedOn": "Based on OpenClaw",
+        "version": "Version {{version}}",
+        "docs": "Documentation",
+        "github": "GitHub"
+    }
+}

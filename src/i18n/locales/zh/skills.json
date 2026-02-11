@@ -1,0 +1,69 @@
+{
+    "title": "技能",
+    "subtitle": "浏览和管理 AI 能力",
+    "refresh": "刷新",
+    "openFolder": "打开技能文件夹",
+    "gatewayWarning": "网关未运行。没有活跃的网关，无法加载技能。",
+    "tabs": {
+        "installed": "已安装",
+        "marketplace": "市场"
+    },
+    "filter": {
+        "all": "全部 ({{count}})",
+        "builtIn": "内置 ({{count}})",
+        "marketplace": "市场 ({{count}})"
+    },
+    "search": "搜索技能...",
+    "searchMarketplace": "搜索市场...",
+    "searchButton": "搜索",
+    "noSkills": "未找到技能",
+    "noSkillsSearch": "尝试不同的搜索词",
+    "noSkillsAvailable": "暂无可用技能",
+    "detail": {
+        "info": "信息",
+        "config": "配置",
+        "description": "描述",
+        "version": "版本",
+        "author": "作者",
+        "source": "来源",
+        "coreSystem": "核心系统",
+        "bundled": "内置",
+        "userInstalled": "用户安装",
+        "enabled": "已启用",
+        "disabled": "已禁用",
+        "apiKey": "API 密钥",
+        "apiKeyPlaceholder": "输入 API 密钥（可选）",
+        "apiKeyDesc": "此技能的主要 API 密钥。如果不需要或在别处配置，请留空。",
+        "envVars": "环境变量",
+        "addVariable": "添加变量",
+        "noEnvVars": "未配置环境变量。",
+        "keyPlaceholder": "键名 (例如 BASE_URL)",
+        "valuePlaceholder": "值",
+        "envNote": "注意：键名为空的行将在保存时自动移除。",
+        "saving": "保存中...",
+        "saveConfig": "保存配置",
+        "configSaved": "配置已保存",
+        "openManual": "打开手册",
+        "configurable": "可配置"
+    },
+    "toast": {
+        "enabled": "技能已启用",
+        "disabled": "技能已禁用",
+        "installed": "技能已安装并启用",
+        "uninstalled": "技能已成功卸载",
+        "openedEditor": "已在编辑器中打开",
+        "failedEditor": "无法打开编辑器",
+        "failedSave": "保存配置失败",
+        "failedOpenFolder": "无法打开技能文件夹",
+        "failedInstall": "安装失败",
+        "failedUninstall": "卸载失败"
+    },
+    "marketplace": {
+        "title": "市场",
+        "securityNote": "安装前请点击技能卡片，在 ClawHub 上查看其文档和安全信息。",
+        "searching": "正在搜索 ClawHub...",
+        "noResults": "未找到匹配的技能。",
+        "emptyPrompt": "搜索新技能以扩展您的能力。",
+        "searchError": "ClawHub 搜索失败。请检查您的连接或安装。"
+    }
+}

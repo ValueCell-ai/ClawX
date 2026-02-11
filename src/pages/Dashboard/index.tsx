@@ -22,8 +22,10 @@ import { useChannelsStore } from '@/stores/channels';
 import { useSkillsStore } from '@/stores/skills';
 import { useSettingsStore } from '@/stores/settings';
 import { StatusBadge } from '@/components/common/StatusBadge';
+import { useTranslation } from 'react-i18next';
 
 export function Dashboard() {
+  const { t } = useTranslation('dashboard');
   const gatewayStatus = useGatewayStore((state) => state.status);
   const { channels, fetchChannels } = useChannelsStore();
   const { skills, fetchSkills } = useSkillsStore();
@@ -87,7 +89,7 @@ export function Dashboard() {
         {/* Gateway Status */}
         <Card>
           <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium">Gateway</CardTitle>
+            <CardTitle className="text-sm font-medium">{t('gateway')}</CardTitle>
             <Activity className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
@@ -96,7 +98,7 @@ export function Dashboard() {
             </div>
             {gatewayStatus.state === 'running' && (
               <p className="mt-1 text-xs text-muted-foreground">
-                Port: {gatewayStatus.port} | PID: {gatewayStatus.pid || 'N/A'}
+                {t('port', { port: gatewayStatus.port })} | {t('pid', { pid: gatewayStatus.pid || 'N/A' })}
               </p>
             )}
           </CardContent>
@@ -105,13 +107,13 @@ export function Dashboard() {
         {/* Channels */}
         <Card>
           <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium">Channels</CardTitle>
+            <CardTitle className="text-sm font-medium">{t('channels')}</CardTitle>
             <Radio className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">{connectedChannels}</div>
             <p className="text-xs text-muted-foreground">
-              {connectedChannels} of {channels.length} connected
+              {t('connectedOf', { connected: connectedChannels, total: channels.length })}
             </p>
           </CardContent>
         </Card>
@@ -119,13 +121,13 @@ export function Dashboard() {
         {/* Skills */}
         <Card>
           <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium">Skills</CardTitle>
+            <CardTitle className="text-sm font-medium">{t('skills')}</CardTitle>
             <Puzzle className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">{enabledSkills}</div>
             <p className="text-xs text-muted-foreground">
-              {enabledSkills} of {skills.length} enabled
+              {t('enabledOf', { enabled: enabledSkills, total: skills.length })}
             </p>
           </CardContent>
         </Card>
@@ -133,7 +135,7 @@ export function Dashboard() {
         {/* Uptime */}
         <Card>
           <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium">Uptime</CardTitle>
+            <CardTitle className="text-sm font-medium">{t('uptime')}</CardTitle>
             <Clock className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
@@ -141,7 +143,7 @@ export function Dashboard() {
               {uptime > 0 ? formatUptime(uptime) : '—'}
             </div>
             <p className="text-xs text-muted-foreground">
-              {gatewayStatus.state === 'running' ? 'Since last restart' : 'Gateway not running'}
+              {gatewayStatus.state === 'running' ? t('sinceRestart') : t('gatewayNotRunning')}
             </p>
           </CardContent>
         </Card>
@@ -150,33 +152,33 @@ export function Dashboard() {
       {/* Quick Actions */}
       <Card>
         <CardHeader>
-          <CardTitle>Quick Actions</CardTitle>
-          <CardDescription>Common tasks and shortcuts</CardDescription>
+          <CardTitle>{t('quickActions.title')}</CardTitle>
+          <CardDescription>{t('quickActions.description')}</CardDescription>
         </CardHeader>
         <CardContent>
           <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
             <Button variant="outline" className="h-auto flex-col gap-2 py-4" asChild>
               <Link to="/channels">
                 <Plus className="h-5 w-5" />
-                <span>Add Channel</span>
+                <span>{t('quickActions.addChannel')}</span>
               </Link>
             </Button>
             <Button variant="outline" className="h-auto flex-col gap-2 py-4" asChild>
               <Link to="/skills">
                 <Puzzle className="h-5 w-5" />
-                <span>Browse Skills</span>
+                <span>{t('quickActions.browseSkills')}</span>
               </Link>
             </Button>
             <Button variant="outline" className="h-auto flex-col gap-2 py-4" asChild>
               <Link to="/">
                 <MessageSquare className="h-5 w-5" />
-                <span>Open Chat</span>
+                <span>{t('quickActions.openChat')}</span>
               </Link>
             </Button>
             <Button variant="outline" className="h-auto flex-col gap-2 py-4" asChild>
               <Link to="/settings">
                 <Settings className="h-5 w-5" />
-                <span>Settings</span>
+                <span>{t('quickActions.settings')}</span>
               </Link>
             </Button>
             {devModeUnlocked && (
@@ -186,7 +188,7 @@ export function Dashboard() {
                 onClick={openDevConsole}
               >
                 <Terminal className="h-5 w-5" />
-                <span>Dev Console</span>
+                <span>{t('quickActions.devConsole')}</span>
               </Button>
             )}
           </div>
@@ -198,15 +200,15 @@ export function Dashboard() {
         {/* Connected Channels */}
         <Card>
           <CardHeader>
-            <CardTitle className="text-lg">Connected Channels</CardTitle>
+            <CardTitle className="text-lg">{t('connectedChannels')}</CardTitle>
           </CardHeader>
           <CardContent>
             {channels.length === 0 ? (
               <div className="text-center py-8 text-muted-foreground">
                 <Radio className="h-8 w-8 mx-auto mb-2 opacity-50" />
-                <p>No channels configured</p>
+                <p>{t('noChannels')}</p>
                 <Button variant="link" asChild className="mt-2">
-                  <Link to="/channels">Add your first channel</Link>
+                  <Link to="/channels">{t('addFirst')}</Link>
                 </Button>
               </div>
             ) : (
@@ -240,15 +242,15 @@ export function Dashboard() {
         {/* Enabled Skills */}
         <Card>
           <CardHeader>
-            <CardTitle className="text-lg">Active Skills</CardTitle>
+            <CardTitle className="text-lg">{t('activeSkills')}</CardTitle>
           </CardHeader>
           <CardContent>
             {skills.filter((s) => s.enabled).length === 0 ? (
               <div className="text-center py-8 text-muted-foreground">
                 <Puzzle className="h-8 w-8 mx-auto mb-2 opacity-50" />
-                <p>No skills enabled</p>
+                <p>{t('noSkills')}</p>
                 <Button variant="link" asChild className="mt-2">
-                  <Link to="/skills">Enable some skills</Link>
+                  <Link to="/skills">{t('enableSome')}</Link>
                 </Button>
               </div>
             ) : (
@@ -264,7 +266,7 @@ export function Dashboard() {
                   ))}
                 {skills.filter((s) => s.enabled).length > 12 && (
                   <Badge variant="outline">
-                    +{skills.filter((s) => s.enabled).length - 12} more
+                    {t('more', { count: skills.filter((s) => s.enabled).length - 12 })}
                   </Badge>
                 )}
               </div>

@@ -14,8 +14,10 @@ import { ChatMessage } from './ChatMessage';
 import { ChatInput } from './ChatInput';
 import { ChatToolbar } from './ChatToolbar';
 import { extractImages, extractText, extractThinking, extractToolUse } from './message-utils';
+import { useTranslation } from 'react-i18next';
 
 export function Chat() {
+  const { t } = useTranslation('chat');
   const gatewayStatus = useGatewayStore((s) => s.status);
   const isGatewayRunning = gatewayStatus.state === 'running';
 
@@ -68,10 +70,9 @@ export function Chat() {
     return (
       <div className="flex h-[calc(100vh-8rem)] flex-col items-center justify-center text-center p-8">
         <AlertCircle className="h-12 w-12 text-yellow-500 mb-4" />
-        <h2 className="text-xl font-semibold mb-2">Gateway Not Running</h2>
+        <h2 className="text-xl font-semibold mb-2">{t('gatewayNotRunning')}</h2>
         <p className="text-muted-foreground max-w-md">
-          The OpenClaw Gateway needs to be running to use chat.
-          It will start automatically, or you can start it from Settings.
+          {t('gatewayRequired')}
         </p>
       </div>
     );
@@ -161,7 +162,7 @@ export function Chat() {
               onClick={clearError}
               className="text-xs text-destructive/60 hover:text-destructive underline"
             >
-              Dismiss
+              {t('common:actions.dismiss')}
             </button>
           </div>
         </div>
@@ -181,20 +182,21 @@ export function Chat() {
 // ── Welcome Screen ──────────────────────────────────────────────
 
 function WelcomeScreen() {
+  const { t } = useTranslation('chat');
   return (
     <div className="flex flex-col items-center justify-center text-center py-20">
       <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center mb-6">
         <Bot className="h-8 w-8 text-white" />
       </div>
-      <h2 className="text-2xl font-bold mb-2">ClawX Chat</h2>
+      <h2 className="text-2xl font-bold mb-2">{t('welcome.title')}</h2>
       <p className="text-muted-foreground mb-8 max-w-md">
-        Your AI assistant is ready. Start a conversation below.
+        {t('welcome.subtitle')}
       </p>
 
       <div className="grid grid-cols-2 gap-4 max-w-lg w-full">
         {[
-          { icon: MessageSquare, title: 'Ask Questions', desc: 'Get answers on any topic' },
-          { icon: Sparkles, title: 'Creative Tasks', desc: 'Writing, brainstorming, ideas' },
+          { icon: MessageSquare, title: t('welcome.askQuestions'), desc: t('welcome.askQuestionsDesc') },
+          { icon: Sparkles, title: t('welcome.creativeTasks'), desc: t('welcome.creativeTasksDesc') },
         ].map((item, i) => (
           <Card key={i} className="text-left">
             <CardContent className="p-4">

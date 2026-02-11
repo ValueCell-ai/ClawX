@@ -1,0 +1,69 @@
+{
+    "title": "定期タスク",
+    "subtitle": "定期タスクでAIワークフローを自動化",
+    "newTask": "新規タスク",
+    "gatewayWarning": "ゲートウェイが稼働していません。アクティブなゲートウェイがないと定期タスクを管理できません。",
+    "stats": {
+        "total": "タスク合計",
+        "active": "有効",
+        "paused": "停止中",
+        "failed": "失敗"
+    },
+    "empty": {
+        "title": "定期タスクがありません",
+        "description": "定期タスクを作成してAIワークフローを自動化します。指定した時間にメッセージ送信、クエリ実行、アクション実行が可能です。",
+        "create": "最初のタスクを作成"
+    },
+    "card": {
+        "runNow": "今すぐ実行",
+        "deleteConfirm": "このタスクを削除してもよろしいですか？",
+        "last": "前回",
+        "next": "次回"
+    },
+    "dialog": {
+        "createTitle": "タスク作成",
+        "editTitle": "タスク編集",
+        "description": "自動化AIタスクをスケジュール",
+        "taskName": "タスク名",
+        "taskNamePlaceholder": "例：朝のブリーフィング",
+        "message": "メッセージ / プロンプト",
+        "messagePlaceholder": "AIに何をさせますか？ 例：今日のニュースと天気のまとめを作成",
+        "schedule": "スケジュール",
+        "cronPlaceholder": "Cron式（例：0 9 * * *）",
+        "usePresets": "プリセットを使用",
+        "useCustomCron": "カスタムCronを使用",
+        "targetChannel": "ターゲットチャンネル",
+        "noChannels": "利用可能なチャンネルがありません。先にチャンネルを追加してください。",
+        "discordChannelId": "DiscordチャンネルID",
+        "discordChannelIdPlaceholder": "例：1438452657525100686",
+        "discordChannelIdDesc": "Discordチャンネルを右クリック → チャンネルIDをコピー",
+        "enableImmediately": "すぐに有効化",
+        "enableImmediatelyDesc": "作成後すぐにこのタスクを実行開始",
+        "saveChanges": "変更を保存"
+    },
+    "presets": {
+        "everyMinute": "毎分",
+        "every5Min": "5分ごと",
+        "every15Min": "15分ごと",
+        "everyHour": "1時間ごと",
+        "daily9am": "毎日 午前9時",
+        "daily6pm": "毎日 午後6時",
+        "weeklyMon": "毎週 (月曜 午前9時)",
+        "monthly1st": "毎月 (1日 午前9時)"
+    },
+    "toast": {
+        "created": "タスクを作成しました",
+        "updated": "タスクを更新しました",
+        "enabled": "タスクを有効にしました",
+        "paused": "タスクを停止しました",
+        "deleted": "タスクを削除しました",
+        "triggered": "タスクを正常にトリガーしました",
+        "failedUpdate": "タスクの更新に失敗しました",
+        "failedDelete": "タスクの削除に失敗しました",
+        "nameRequired": "タスク名を入力してください",
+        "messageRequired": "メッセージを入力してください",
+        "channelRequired": "チャンネルを選択してください",
+        "discordIdRequired": "DiscordチャンネルIDを入力してください",
+        "scheduleRequired": "スケジュールを選択または入力してください"
+    }
+}

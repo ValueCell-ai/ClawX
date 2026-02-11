@@ -1,0 +1,263 @@
+{
+    "title": "消息频道",
+    "subtitle": "管理您的消息频道和连接",
+    "refresh": "刷新",
+    "addChannel": "添加频道",
+    "stats": {
+        "total": "频道总数",
+        "connected": "已连接",
+        "disconnected": "未连接"
+    },
+    "gatewayWarning": "网关服务未运行，频道无法连接。",
+    "available": "可用频道",
+    "availableDesc": "连接一个新的频道",
+    "showAll": "显示全部",
+    "pluginBadge": "插件",
+    "toast": {
+        "whatsappConnected": "WhatsApp 连接成功",
+        "whatsappFailed": "WhatsApp 连接失败: {{error}}",
+        "channelSaved": "频道 {{name}} 已保存",
+        "channelConnecting": "正在连接 {{name}}...",
+        "restartManual": "请手动重启网关",
+        "configFailed": "配置失败: {{error}}"
+    },
+    "dialog": {
+        "updateTitle": "更新 {{name}}",
+        "configureTitle": "配置 {{name}}",
+        "addTitle": "添加频道",
+        "existingDesc": "更新您现有的配置",
+        "selectDesc": "选择要配置的频道类型",
+        "qrCode": "二维码",
+        "token": "令牌",
+        "scanQR": "使用 {{name}} 扫描此二维码",
+        "refreshCode": "刷新代码",
+        "loadingConfig": "正在加载配置...",
+        "existingHint": "您已配置过此频道",
+        "howToConnect": "如何连接",
+        "viewDocs": "查看文档",
+        "channelName": "频道名称",
+        "channelNamePlaceholder": "我的 {{name}}",
+        "credentialsVerified": "凭证已验证",
+        "validationFailed": "验证失败",
+        "warnings": "警告",
+        "back": "返回",
+        "validating": "正在验证...",
+        "validateConfig": "验证配置",
+        "generatingQR": "正在生成二维码...",
+        "validatingAndSaving": "正在验证并保存...",
+        "generateQRCode": "生成二维码",
+        "updateAndReconnect": "更新并重新连接",
+        "saveAndConnect": "保存并连接",
+        "envVar": "环境变量: {{var}}"
+    },
+    "meta": {
+        "telegram": {
+            "description": "使用 @BotFather 提供的机器人令牌连接 Telegram",
+            "docsUrl": "https://docs.openclaw.ai/zh-CN/channels/telegram",
+            "fields": {
+                "botToken": {
+                    "label": "机器人令牌",
+                    "placeholder": "123456:ABC-DEF..."
+                },
+                "allowedUsers": {
+                    "label": "允许的用户 ID",
+                    "placeholder": "例如 123456789, 987654321",
+                    "description": "允许使用机器人的用户 ID 列表（逗号分隔）。出于安全考虑，此项为必填。"
+                }
+            },
+            "instructions": [
+                "打开 Telegram 并搜索 @BotFather",
+                "发送 /newbot 并按照说明操作",
+                "复制提供的机器人令牌",
+                "在下方粘贴令牌",
+                "从 @userinfobot 获取您的用户 ID 并粘贴在下方"
+            ]
+        },
+        "discord": {
+            "description": "使用开发者门户提供的机器人令牌连接 Discord",
+            "docsUrl": "https://docs.openclaw.ai/zh-CN/channels/discord#%E5%A6%82%E4%BD%95%E5%88%9B%E5%BB%BA%E4%BD%A0%E7%9A%84%E6%9C%BA%E5%99%A8%E4%BA%BA",
+            "fields": {
+                "token": {
+                    "label": "机器人令牌",
+                    "placeholder": "您的 Discord 机器人令牌"
+                },
+                "guildId": {
+                    "label": "服务器 ID",
+                    "placeholder": "例如 123456789012345678",
+                    "description": "限制机器人仅在特定服务器工作。右键点击服务器 → 复制服务器 ID。"
+                },
+                "channelId": {
+                    "label": "频道 ID (可选)",
+                    "placeholder": "例如 123456789012345678",
+                    "description": "限制机器人仅在特定频道工作。右键点击频道 → 复制频道 ID。"
+                }
+            },
+            "instructions": [
+                "前往 Discord 开发者门户 → Applications → New Application",
+                "在 Bot 部分：添加 Bot，然后复制 Bot Token",
+                "在 Bot → Privileged Gateway Intents 中启用 Message Content Intent 和 Server Members Intent",
+                "在 OAuth2 → URL Generator：选择 \"bot\" + \"applications.commands\"，添加消息权限",
+                "使用生成的 URL 邀请机器人加入您的服务器",
+                "在下方粘贴机器人令牌"
+            ]
+        },
+        "whatsapp": {
+            "description": "通过扫描二维码连接 WhatsApp（无需手机号）",
+            "docsUrl": "https://docs.openclaw.ai/zh-CN/channels/whatsapp",
+            "instructions": [
+                "在手机上打开 WhatsApp",
+                "前往 设置 > 已关联设备 >包含连接设备",
+                "扫描下方显示的二维码",
+                "系统将自动识别您的手机号"
+            ]
+        },
+        "signal": {
+            "description": "使用 signal-cli 连接 Signal",
+            "docsUrl": "https://docs.openclaw.ai/zh-CN/channels/signal",
+            "fields": {
+                "phoneNumber": {
+                    "label": "手机号码",
+                    "placeholder": "+1234567890"
+                }
+            },
+            "instructions": [
+                "在您的系统上安装 signal-cli",
+                "注册或链接您的手机号码",
+                "在下方输入您的手机号码"
+            ]
+        },
+        "feishu": {
+            "description": "通过 WebSocket 连接飞书/Lark 机器人",
+            "docsUrl": "https://docs.openclaw.ai/zh-CN/channels/feishu#%E7%AC%AC%E4%B8%80%E6%AD%A5%EF%BC%9A%E5%88%9B%E5%BB%BA%E9%A3%9E%E4%B9%A6%E5%BA%94%E7%94%A8",
+            "fields": {
+                "appId": {
+                    "label": "应用 ID (App ID)",
+                    "placeholder": "cli_xxxxxx"
+                },
+                "appSecret": {
+                    "label": "应用密钥 (App Secret)",
+                    "placeholder": "您的应用密钥"
+                }
+            },
+            "instructions": [
+                "前往飞书开放平台",
+                "创建一个新应用",
+                "获取 App ID 和 App Secret",
+                "配置事件订阅"
+            ]
+        },
+        "imessage": {
+            "description": "通过 BlueBubbles (macOS) 连接 iMessage",
+            "docsUrl": "https://docs.openclaw.ai/zh-CN/channels/bluebubbles",
+            "fields": {
+                "serverUrl": {
+                    "label": "BlueBubbles 服务器地址",
+                    "placeholder": "http://localhost:1234"
+                },
+                "password": {
+                    "label": "服务器密码",
+                    "placeholder": "您的服务器密码"
+                }
+            },
+            "instructions": [
+                "在您的 Mac 上安装 BlueBubbles 服务器",
+                "记下服务器地址和密码",
+                "在下方输入连接详情"
+            ]
+        },
+        "matrix": {
+            "description": "连接到 Matrix 协议",
+            "docsUrl": "https://docs.openclaw.ai/zh-CN/channels/matrix",
+            "fields": {
+                "homeserver": {
+                    "label": "Homeserver 地址",
+                    "placeholder": "https://matrix.org"
+                },
+                "accessToken": {
+                    "label": "访问令牌 (Access Token)",
+                    "placeholder": "您的访问令牌"
+                }
+            },
+            "instructions": [
+                "创建一个 Matrix 账户或使用现有账户",
+                "从您的客户端获取访问令牌",
+                "在下方输入 Homeserver 地址和令牌"
+            ]
+        },
+        "line": {
+            "description": "连接 LINE Messaging API",
+            "docsUrl": "https://docs.openclaw.ai/channels/line",
+            "fields": {
+                "channelAccessToken": {
+                    "label": "频道访问令牌",
+                    "placeholder": "您的 LINE 频道访问令牌"
+                },
+                "channelSecret": {
+                    "label": "频道密钥",
+                    "placeholder": "您的 LINE 频道密钥"
+                }
+            },
+            "instructions": [
+                "前往 LINE 开发者控制台",
+                "创建一个 Messaging API 频道",
+                "获取频道访问令牌和密钥"
+            ]
+        },
+        "msteams": {
+            "description": "通过 Bot Framework 连接 Microsoft Teams",
+            "docsUrl": "https://docs.openclaw.ai/channels/msteams",
+            "fields": {
+                "appId": {
+                    "label": "应用 ID",
+                    "placeholder": "您的 Microsoft 应用 ID"
+                },
+                "appPassword": {
+                    "label": "应用密码",
+                    "placeholder": "您的 Microsoft 应用密码"
+                }
+            },
+            "instructions": [
+                "前往 Azure 门户",
+                "注册一个新的 Bot 应用",
+                "获取应用 ID 并创建密码",
+                "配置 Teams 频道"
+            ]
+        },
+        "googlechat": {
+            "description": "通过 Webhook 连接 Google Chat",
+            "docsUrl": "https://docs.openclaw.ai/channels/googlechat",
+            "fields": {
+                "serviceAccountKey": {
+                    "label": "服务账号 JSON 路径",
+                    "placeholder": "/path/to/service-account.json"
+                }
+            },
+            "instructions": [
+                "创建 Google Cloud 项目",
+                "启用 Google Chat API",
+                "创建服务账号",
+                "下载 JSON 密钥文件"
+            ]
+        },
+        "mattermost": {
+            "description": "通过 Bot API 连接 Mattermost",
+            "docsUrl": "https://docs.openclaw.ai/channels/mattermost",
+            "fields": {
+                "serverUrl": {
+                    "label": "服务器地址",
+                    "placeholder": "https://your-mattermost.com"
+                },
+                "botToken": {
+                    "label": "机器人访问令牌",
+                    "placeholder": "您的机器人访问令牌"
+                }
+            },
+            "instructions": [
+                "前往 Mattermost 集成",
+                "创建一个新的 Bot 账户",
+                "复制访问令牌"
+            ]
+        }
+    },
+    "viewDocs": "查看文档"
+}

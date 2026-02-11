@@ -1,0 +1,119 @@
+{
+    "steps": {
+        "welcome": {
+            "title": "Welcome to ClawX",
+            "description": "Your AI assistant is ready to be configured"
+        },
+        "runtime": {
+            "title": "Environment Check",
+            "description": "Verifying system requirements"
+        },
+        "provider": {
+            "title": "AI Provider",
+            "description": "Configure your AI service"
+        },
+        "channel": {
+            "title": "Connect a Channel",
+            "description": "Connect a messaging platform (optional)"
+        },
+        "installing": {
+            "title": "Setting Up",
+            "description": "Installing essential components"
+        },
+        "complete": {
+            "title": "All Set!",
+            "description": "ClawX is ready to use"
+        }
+    },
+    "welcome": {
+        "title": "Welcome to ClawX",
+        "description": "ClawX is a graphical interface for OpenClaw, making it easy to use AI assistants across your favorite messaging platforms.",
+        "features": {
+            "noCommand": "Zero command-line required",
+            "modernUI": "Modern, beautiful interface",
+            "bundles": "Pre-installed skill bundles",
+            "crossPlatform": "Cross-platform support"
+        }
+    },
+    "runtime": {
+        "title": "Checking Environment",
+        "viewLogs": "View Logs",
+        "recheck": "Re-check",
+        "nodejs": "Node.js Runtime",
+        "openclaw": "OpenClaw Package",
+        "gateway": "Gateway Service",
+        "startGateway": "Start Gateway",
+        "status": {
+            "checking": "Checking...",
+            "success": "Node.js is available",
+            "error": "Failed",
+            "gatewayRunning": "Running on port {{port}}",
+            "packageReady": "OpenClaw package ready"
+        },
+        "issue": {
+            "title": "Environment issue detected",
+            "desc": "Please ensure OpenClaw is properly installed. Check the logs for details."
+        },
+        "logs": {
+            "title": "Application Logs",
+            "openFolder": "Open Log Folder",
+            "close": "Close",
+            "noLogs": "(No logs available yet)"
+        }
+    },
+    "provider": {
+        "label": "Model Provider",
+        "selectPlaceholder": "Select a provider...",
+        "baseUrl": "Base URL",
+        "modelId": "Model ID",
+        "modelIdDesc": "The model identifier from your provider (e.g. deepseek-ai/DeepSeek-V3)",
+        "apiKey": "API Key",
+        "save": "Save",
+        "validateSave": "Validate & Save",
+        "valid": "Provider configured successfully",
+        "invalid": "Invalid API key",
+        "storedLocally": "Your API key is stored locally on your machine."
+    },
+    "channel": {
+        "title": "Connect a Messaging Channel",
+        "subtitle": "Choose a platform to connect your AI assistant to. You can add more channels later in Settings.",
+        "configure": "Configure {{name}}",
+        "howTo": "How to connect:",
+        "viewDocs": "View docs",
+        "validationError": "Validation failed",
+        "connected": "{{name}} Connected",
+        "connectedDesc": "Your channel has been configured. It will connect when the Gateway starts.",
+        "configureAnother": "Configure another channel"
+    },
+    "installing": {
+        "title": "Installing Essential Components",
+        "subtitle": "Setting up the tools needed to power your AI assistant",
+        "progress": "Progress",
+        "status": {
+            "pending": "Pending",
+            "installing": "Installing...",
+            "installed": "Installed",
+            "failed": "Failed"
+        },
+        "error": "Setup Error:",
+        "restart": "Try restarting the app",
+        "wait": "This may take a few moments...",
+        "skip": "Skip this step"
+    },
+    "complete": {
+        "title": "Setup Complete!",
+        "subtitle": "ClawX is configured and ready to use. You can now start chatting with your AI assistant.",
+        "provider": "AI Provider",
+        "components": "Components",
+        "gateway": "Gateway",
+        "running": "Running",
+        "footer": "You can customize skills and connect channels in Settings"
+    },
+    "nav": {
+        "next": "Next",
+        "back": "Back",
+        "skipStep": "Skip this step",
+        "skipSetup": "Skip Setup",
+        "getStarted": "Get Started"
+    }
+}

@@ -1,0 +1,69 @@
+{
+    "title": "Skills",
+    "subtitle": "Browse and manage AI capabilities",
+    "refresh": "Refresh",
+    "openFolder": "Open Skills Folder",
+    "gatewayWarning": "Gateway is not running. Skills cannot be loaded without an active Gateway.",
+    "tabs": {
+        "installed": "Installed",
+        "marketplace": "Marketplace"
+    },
+    "filter": {
+        "all": "All ({{count}})",
+        "builtIn": "Built-in ({{count}})",
+        "marketplace": "Marketplace ({{count}})"
+    },
+    "search": "Search skills...",
+    "searchMarketplace": "Search marketplace...",
+    "searchButton": "Search",
+    "noSkills": "No skills found",
+    "noSkillsSearch": "Try a different search term",
+    "noSkillsAvailable": "No skills available",
+    "detail": {
+        "info": "Information",
+        "config": "Configuration",
+        "description": "Description",
+        "version": "Version",
+        "author": "Author",
+        "source": "Source",
+        "coreSystem": "Core System",
+        "bundled": "Bundled",
+        "userInstalled": "User Installed",
+        "enabled": "Enabled",
+        "disabled": "Disabled",
+        "apiKey": "API Key",
+        "apiKeyPlaceholder": "Enter API Key (optional)",
+        "apiKeyDesc": "The primary API key for this skill. Leave blank if not required or configured elsewhere.",
+        "envVars": "Environment Variables",
+        "addVariable": "Add Variable",
+        "noEnvVars": "No environment variables configured.",
+        "keyPlaceholder": "KEY (e.g. BASE_URL)",
+        "valuePlaceholder": "VALUE",
+        "envNote": "Note: Rows with empty keys will be automatically removed during save.",
+        "saving": "Saving...",
+        "saveConfig": "Save Configuration",
+        "configSaved": "Configuration saved",
+        "openManual": "Open Manual",
+        "configurable": "Configurable"
+    },
+    "toast": {
+        "enabled": "Skill enabled",
+        "disabled": "Skill disabled",
+        "installed": "Skill installed and enabled",
+        "uninstalled": "Skill uninstalled successfully",
+        "openedEditor": "Opened in editor",
+        "failedEditor": "Failed to open editor",
+        "failedSave": "Failed to save configuration",
+        "failedOpenFolder": "Failed to open skills folder",
+        "failedInstall": "Failed to install",
+        "failedUninstall": "Failed to uninstall"
+    },
+    "marketplace": {
+        "title": "Marketplace",
+        "securityNote": "Click skill card to view its documentation and security information on ClawHub before installation.",
+        "searching": "Searching ClawHub...",
+        "noResults": "No skills found matching your search.",
+        "emptyPrompt": "Search for new skills to expand your capabilities.",
+        "searchError": "ClawHub search failed. Check your connection or installation."
+    }
+}

@@ -1,0 +1,51 @@
+{
+    "sidebar": {
+        "chat": "Chat",
+        "cronTasks": "Cron Tasks",
+        "skills": "Skills",
+        "channels": "Channels",
+        "dashboard": "Dashboard",
+        "settings": "Settings",
+        "devConsole": "Developer Console"
+    },
+    "actions": {
+        "save": "Save",
+        "cancel": "Cancel",
+        "delete": "Delete",
+        "edit": "Edit",
+        "refresh": "Refresh",
+        "close": "Close",
+        "copy": "Copy",
+        "search": "Search",
+        "confirm": "Confirm",
+        "dismiss": "Dismiss",
+        "load": "Load",
+        "install": "Install",
+        "uninstall": "Uninstall",
+        "enable": "Enable",
+        "disable": "Disable",
+        "back": "Back",
+        "next": "Next",
+        "skip": "Skip",
+        "restart": "Restart"
+    },
+    "status": {
+        "running": "Running",
+        "stopped": "Stopped",
+        "error": "Error",
+        "connected": "Connected",
+        "disconnected": "Disconnected",
+        "enabled": "Enabled",
+        "disabled": "Disabled",
+        "active": "Active",
+        "paused": "Paused",
+        "configured": "Configured",
+        "loading": "Loading...",
+        "saving": "Saving..."
+    },
+    "gateway": {
+        "notRunning": "Gateway Not Running",
+        "notRunningDesc": "The OpenClaw Gateway needs to be running to use this feature. It will start automatically, or you can start it from Settings.",
+        "warning": "Gateway is not running."
+    }
+}
