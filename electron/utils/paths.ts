@@ -26,6 +26,13 @@ export function getOpenClawConfigDir(): string {
 }
 
 /**
+ * Get OpenClaw skills directory
+ */
+export function getOpenClawSkillsDir(): string {
+  return join(getOpenClawConfigDir(), 'skills');
+}
+
+/**
  * Get ClawX config directory
  */
 export function getClawXConfigDir(): string {
@@ -106,6 +113,21 @@ export function getOpenClawResolvedDir(): string {
  */
 export function getOpenClawEntryPath(): string {
   return join(getOpenClawDir(), 'openclaw.mjs');
+}
+
+/**
+ * Get ClawHub CLI entry script path (clawdhub.js)
+ */
+export function getClawHubCliEntryPath(): string {
+  return join(app.getAppPath(), 'node_modules', 'clawhub', 'bin', 'clawdhub.js');
+}
+
+/**
+ * Get ClawHub CLI binary path (node_modules/.bin)
+ */
+export function getClawHubCliBinPath(): string {
+  const binName = process.platform === 'win32' ? 'clawhub.cmd' : 'clawhub';
+  return join(app.getAppPath(), 'node_modules', '.bin', binName);
 }
 
 /**

@@ -117,6 +117,8 @@ const electronAPI = {
         'log:listFiles',
         // OpenClaw extras
         'openclaw:getDir',
+        'openclaw:getConfigDir',
+        'openclaw:getSkillsDir',
         'openclaw:getCliCommand',
         'openclaw:installCliMac',
       ];

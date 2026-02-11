@@ -6,7 +6,7 @@ import { spawn } from 'child_process';
 import fs from 'fs';
 import path from 'path';
 import { app, shell } from 'electron';
-import { getOpenClawConfigDir, ensureDir } from '../utils/paths';
+import { getOpenClawConfigDir, ensureDir, getClawHubCliBinPath, getClawHubCliEntryPath } from '../utils/paths';
 
 export interface ClawHubSearchParams {
     query: string;
@@ -36,6 +36,8 @@ export interface ClawHubSkillResult {
 export class ClawHubService {
     private workDir: string;
     private cliPath: string;
+    private cliEntryPath: string;
+    private useNodeRunner: boolean;
     private ansiRegex: RegExp;
 
     constructor() {
@@ -44,11 +46,17 @@ export class ClawHubService {
         this.workDir = getOpenClawConfigDir();
         ensureDir(this.workDir);
 
-        // In development, we use the locally installed clawhub CLI from node_modules
-        const isWin = process.platform === 'win32';
-        const binName = isWin ? 'clawhub.cmd' : 'clawhub';
-        const localCli = path.resolve(app.getAppPath(), 'node_modules', '.bin', binName);
-        this.cliPath = localCli;
+        const binPath = getClawHubCliBinPath();
+        const entryPath = getClawHubCliEntryPath();
+
+        this.cliEntryPath = entryPath;
+        if (!app.isPackaged && fs.existsSync(binPath)) {
+            this.cliPath = binPath;
+            this.useNodeRunner = false;
+        } else {
+            this.cliPath = process.execPath;
+            this.useNodeRunner = true;
+        }
         const esc = String.fromCharCode(27);
         const csi = String.fromCharCode(155);
         const pattern = `(?:${esc}|${csi})[[()#;?]*(?:[0-9]{1,4}(?:;[0-9]{0,4})*)?[0-9A-ORZcf-nqry=><]`;
@@ -64,17 +72,33 @@ export class ClawHubService {
      */
     private async runCommand(args: string[]): Promise<string> {
         return new Promise((resolve, reject) => {
-            console.log(`Running ClawHub command: ${this.cliPath} ${args.join(' ')}`);
+            if (this.useNodeRunner && !fs.existsSync(this.cliEntryPath)) {
+                reject(new Error(`ClawHub CLI entry not found at: ${this.cliEntryPath}`));
+                return;
+            }
+
+            if (!this.useNodeRunner && !fs.existsSync(this.cliPath)) {
+                reject(new Error(`ClawHub CLI not found at: ${this.cliPath}`));
+                return;
+            }
+
+            const commandArgs = this.useNodeRunner ? [this.cliEntryPath, ...args] : args;
+            const displayCommand = [this.cliPath, ...commandArgs].join(' ');
+            console.log(`Running ClawHub command: ${displayCommand}`);
 
             const isWin = process.platform === 'win32';
-            const child = spawn(this.cliPath, args, {
+            const env = {
+                ...process.env,
+                CI: 'true',
+                FORCE_COLOR: '0', // Disable colors for easier parsing
+            };
+            if (this.useNodeRunner) {
+                env.ELECTRON_RUN_AS_NODE = '1';
+            }
+            const child = spawn(this.cliPath, commandArgs, {
                 cwd: this.workDir,
-                shell: isWin,
-                env: {
-                    ...process.env,
-                    CI: 'true',
-                    FORCE_COLOR: '0', // Disable colors for easier parsing
-                },
+                shell: isWin && !this.useNodeRunner,
+                env,
             });
 
             let stdout = '';

@@ -39,6 +39,7 @@ interface SkillsState {
   searchResults: MarketplaceSkill[];
   loading: boolean;
   searching: boolean;
+  searchError: string | null;
   installing: Record<string, boolean>; // slug -> boolean
   error: string | null;
 
@@ -58,6 +59,7 @@ export const useSkillsStore = create<SkillsState>((set, get) => ({
   searchResults: [],
   loading: false,
   searching: false,
+  searchError: null,
   installing: {},
   error: null,
 
@@ -145,7 +147,7 @@ export const useSkillsStore = create<SkillsState>((set, get) => ({
   },
 
   searchSkills: async (query: string) => {
-    set({ searching: true, error: null });
+    set({ searching: true, searchError: null });
     try {
       const result = await window.electron.ipcRenderer.invoke('clawhub:search', { query }) as { success: boolean; results?: MarketplaceSkill[]; error?: string };
       if (result.success) {
@@ -154,7 +156,7 @@ export const useSkillsStore = create<SkillsState>((set, get) => ({
         throw new Error(result.error || 'Search failed');
       }
     } catch (error) {
-      set({ error: String(error) });
+      set({ searchError: String(error) });
     } finally {
       set({ searching: false });
     }

@@ -2,7 +2,7 @@
  * Skills Page
  * Browse and manage AI skills
  */
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Search,
@@ -26,6 +26,7 @@ import {
   Save,
   Key,
   ChevronDown,
+  FolderOpen,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -528,6 +529,7 @@ export function Skills() {
     installSkill,
     uninstallSkill,
     searching,
+    searchError,
     installing
   } = useSkillsStore();
   const gatewayStatus = useGatewayStore((state) => state.status);
@@ -536,6 +538,7 @@ export function Skills() {
   const [selectedSkill, setSelectedSkill] = useState<Skill | null>(null);
   const [activeTab, setActiveTab] = useState('all');
   const [selectedSource, setSelectedSource] = useState<'all' | 'built-in' | 'marketplace'>('all');
+  const marketplaceDiscoveryAttemptedRef = useRef(false);
 
   const isGatewayRunning = gatewayStatus.state === 'running';
   const [showGatewayWarning, setShowGatewayWarning] = useState(false);
@@ -609,6 +612,21 @@ export function Skills() {
     }
   }, [enableSkill, disableSkill]);
 
+  const handleOpenSkillsFolder = useCallback(async () => {
+    try {
+      const skillsDir = await window.electron.ipcRenderer.invoke('openclaw:getSkillsDir') as string;
+      if (!skillsDir) {
+        throw new Error('Skills directory not available');
+      }
+      const result = await window.electron.ipcRenderer.invoke('shell:openPath', skillsDir) as string;
+      if (result) {
+        throw new Error(result);
+      }
+    } catch (err) {
+      toast.error('Failed to open skills folder: ' + String(err));
+    }
+  }, []);
+
   // Handle marketplace search
   const handleMarketplaceSearch = useCallback((e: React.FormEvent) => {
     e.preventDefault();
@@ -632,10 +650,21 @@ export function Skills() {
 
   // Initial marketplace load (Discovery)
   useEffect(() => {
-    if (activeTab === 'marketplace' && searchResults.length === 0 && !searching) {
-      searchSkills('');
+    if (activeTab !== 'marketplace') {
+      return;
     }
-  }, [activeTab, searchResults.length, searching, searchSkills]);
+    if (marketplaceQuery.trim()) {
+      return;
+    }
+    if (searching) {
+      return;
+    }
+    if (marketplaceDiscoveryAttemptedRef.current) {
+      return;
+    }
+    marketplaceDiscoveryAttemptedRef.current = true;
+    searchSkills('');
+  }, [activeTab, marketplaceQuery, searching, searchSkills]);
 
   // Handle uninstall
   const handleUninstall = useCallback(async (slug: string) => {
@@ -665,10 +694,16 @@ export function Skills() {
             Browse and manage AI capabilities
           </p>
         </div>
-        <Button variant="outline" onClick={fetchSkills} disabled={!isGatewayRunning}>
-          <RefreshCw className="h-4 w-4 mr-2" />
-          Refresh
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button variant="outline" onClick={fetchSkills} disabled={!isGatewayRunning}>
+            <RefreshCw className="h-4 w-4 mr-2" />
+            Refresh
+          </Button>
+          <Button variant="outline" onClick={handleOpenSkillsFolder}>
+            <FolderOpen className="h-4 w-4 mr-2" />
+            Open Skills Folder
+          </Button>
+        </div>
       </div>
 
       {/* Gateway Warning */}
@@ -906,6 +941,15 @@ export function Skills() {
                 </Button>
               </form>
             </div>
+
+            {searchError && (
+              <Card className="border-destructive/50 bg-destructive/5">
+                <CardContent className="py-3 text-sm text-destructive flex items-center gap-2">
+                  <AlertCircle className="h-4 w-4" />
+                  <span>ClawHub search failed. Check your connection or installation.</span>
+                </CardContent>
+              </Card>
+            )}
 
             {searchResults.length > 0 ? (
               <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">

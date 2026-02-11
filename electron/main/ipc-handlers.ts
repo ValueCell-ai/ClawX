@@ -21,7 +21,7 @@ import {
   isEncryptionAvailable,
   type ProviderConfig,
 } from '../utils/secure-storage';
-import { getOpenClawStatus, getOpenClawDir } from '../utils/paths';
+import { getOpenClawStatus, getOpenClawDir, getOpenClawConfigDir, getOpenClawSkillsDir } from '../utils/paths';
 import { getOpenClawCliCommand, installOpenClawCliMac } from '../utils/openclaw-cli';
 import { getSetting } from '../utils/store';
 import { saveProviderKeyToOpenClaw, setOpenClawDefaultModel } from '../utils/openclaw-auth';
@@ -504,6 +504,16 @@ function registerOpenClawHandlers(): void {
   // Get the resolved OpenClaw directory path (for diagnostics)
   ipcMain.handle('openclaw:getDir', () => {
     return getOpenClawDir();
+  });
+
+  // Get the OpenClaw config directory (~/.openclaw)
+  ipcMain.handle('openclaw:getConfigDir', () => {
+    return getOpenClawConfigDir();
+  });
+
+  // Get the OpenClaw skills directory (~/.openclaw/skills)
+  ipcMain.handle('openclaw:getSkillsDir', () => {
+    return getOpenClawSkillsDir();
   });
 
   // Get a shell command to run OpenClaw CLI without modifying PATH
