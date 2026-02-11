@@ -229,12 +229,9 @@ function extractToolResultUpdate(message: unknown, eventState: string): ToolStat
   const status = normalizeToolStatus(rawStatus, fallback);
   const durationMs = parseDurationMs(details?.durationMs ?? details?.duration ?? (msg as Record<string, unknown>).durationMs);
 
-  let outputText = '';
-  if (details && typeof details.aggregated === 'string') {
-    outputText = details.aggregated;
-  } else {
-    outputText = extractTextFromContent(msg.content);
-  }
+  const outputText = (details && typeof details.aggregated === 'string')
+    ? details.aggregated
+    : extractTextFromContent(msg.content);
   const summary = summarizeToolOutput(outputText) ?? summarizeToolOutput(String(details?.error ?? msg.error ?? ''));
 
   const name = toolName || toolCallId || 'tool';
