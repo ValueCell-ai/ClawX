@@ -124,7 +124,7 @@ export function Chat() {
                   message={(streamMsg
                     ? {
                         ...(streamMsg as Record<string, unknown>),
-                        role: (typeof streamMsg.role === 'string' ? streamMsg.role : 'assistant') as any,
+                        role: (typeof streamMsg.role === 'string' ? streamMsg.role : 'assistant') as RawMessage['role'],
                         content: streamMsg.content ?? streamText,
                         timestamp: streamMsg.timestamp ?? streamingTimestamp,
                       }
