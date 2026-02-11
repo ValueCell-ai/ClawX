@@ -43,6 +43,22 @@ export function UpdateSettings() {
     await checkForUpdates();
   }, [checkForUpdates, clearError]);
 
+  const renderStatusIcon = () => {
+    switch (status) {
+      case 'checking':
+      case 'downloading':
+        return <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />;
+      case 'available':
+        return <Download className="h-4 w-4 text-primary" />;
+      case 'downloaded':
+        return <Rocket className="h-4 w-4 text-primary" />;
+      case 'error':
+        return <RefreshCw className="h-4 w-4 text-destructive" />;
+      default:
+        return <RefreshCw className="h-4 w-4 text-muted-foreground" />;
+    }
+  };
+
   const renderStatusText = () => {
     switch (status) {
       case 'checking':
