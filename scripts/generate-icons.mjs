@@ -77,6 +77,20 @@ try {
   }
   echo`  ✅ Created ${generatedCount} Linux PNG icons`;
 
+  // 5. Generate macOS Tray Icon Template
+  echo`📍 Generating macOS tray icon template...`;
+  const TRAY_SVG_SOURCE = path.join(ICONS_DIR, 'tray-icon-template.svg');
+  
+  if (fs.existsSync(TRAY_SVG_SOURCE)) {
+    await sharp(TRAY_SVG_SOURCE)
+      .resize(22, 22)
+      .png()
+      .toFile(path.join(ICONS_DIR, 'tray-icon-Template.png'));
+    echo`  ✅ Created tray-icon-Template.png (22x22)`;
+  } else {
+    echo`  ⚠️  tray-icon-template.svg not found, skipping tray icon generation`;
+  }
+
   echo`\n✨ Icon generation complete! Files located in: ${ICONS_DIR}`;
 
 } catch (error) {
