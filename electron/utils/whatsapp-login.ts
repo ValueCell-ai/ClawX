@@ -196,8 +196,8 @@ export class WhatsAppLoginManager extends EventEmitter {
         if (!this.active) return;
         console.log('[WhatsAppLogin] Finishing login, closing socket to hand over to Gateway...');
         await this.stop();
-        // Delay to ensure socket is fully released before Gateway connects
-        await new Promise(resolve => setTimeout(resolve, 2000));
+        // Allow enough time for WhatsApp server to fully release the session
+        await new Promise(resolve => setTimeout(resolve, 5000));
         this.emit('success', { accountId });
     }
 
@@ -241,7 +241,7 @@ export class WhatsAppLoginManager extends EventEmitter {
 
             console.log(`[WhatsAppLogin] Connecting for ${accountId} at ${authDir} (Attempt ${this.retryCount + 1})`);
 
-             
+
             let pino: (...args: unknown[]) => Record<string, unknown>;
             try {
                 // Try to resolve pino from baileys context since it's a dependency of baileys
@@ -313,7 +313,11 @@ export class WhatsAppLoginManager extends EventEmitter {
 
                     if (connection === 'close') {
                         const error = lastDisconnect?.error as BaileysError | undefined;
-                        const shouldReconnect = error?.output?.statusCode !== DisconnectReason.loggedOut;
+                        const statusCode = error?.output?.statusCode;
+                        const isLoggedOut = statusCode === DisconnectReason.loggedOut;
+                        // Treat 401 as transient if we haven't exhausted retries (max 2 attempts)
+                        // This handles the case where WhatsApp's session hasn't fully released
+                        const shouldReconnect = !isLoggedOut || this.retryCount < 2;
                         console.log('[WhatsAppLogin] Connection closed.',
                             'Reconnect:', shouldReconnect,
                             'Active:', this.active,
@@ -387,6 +391,14 @@ export class WhatsAppLoginManager extends EventEmitter {
             try {
                 // Remove listeners to prevent handling closure as error
                 this.socket.ev.removeAllListeners('connection.update');
+                // Use ws.close() for proper WebSocket teardown
+                // This ensures WhatsApp server receives a clean close frame
+                // and releases the session, preventing 401 on next connect
+                try {
+                    this.socket.ws?.close();
+                } catch {
+                    // ws may already be closed
+                }
                 this.socket.end(undefined);
             } catch {
                 // Ignore error if socket already closed
