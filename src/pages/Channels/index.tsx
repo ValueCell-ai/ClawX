@@ -660,7 +660,7 @@ function AddChannelDialog({ selectedType, onSelectType, onClose, onChannelAdded 
             <CardDescription>
               {selectedType && isExistingConfig
                 ? t('dialog.existingDesc')
-                : meta?.description || t('dialog.selectDesc')}
+                : meta ? t(meta.description) : t('dialog.selectDesc')}
             </CardDescription>
           </div>
           <Button variant="ghost" size="icon" onClick={onClose}>
@@ -745,7 +745,7 @@ function AddChannelDialog({ selectedType, onSelectType, onClose, onChannelAdded 
                 </div>
                 <ol className="list-decimal list-inside text-sm text-muted-foreground space-y-1">
                   {meta?.instructions.map((instruction, i) => (
-                    <li key={i}>{instruction}</li>
+                    <li key={i}>{t(instruction)}</li>
                   ))}
                 </ol>
               </div>
@@ -888,14 +888,14 @@ function ConfigField({ field, value, onChange, showSecret, onToggleSecret }: Con
   return (
     <div className="space-y-2">
       <Label htmlFor={field.key}>
-        {field.label}
+        {t(field.label)}
         {field.required && <span className="text-destructive ml-1">*</span>}
       </Label>
       <div className="flex gap-2">
         <Input
           id={field.key}
           type={isPassword && !showSecret ? 'password' : 'text'}
-          placeholder={field.placeholder}
+          placeholder={field.placeholder ? t(field.placeholder) : undefined}
           value={value}
           onChange={(e) => onChange(e.target.value)}
           className="font-mono text-sm"
@@ -913,7 +913,7 @@ function ConfigField({ field, value, onChange, showSecret, onToggleSecret }: Con
       </div>
       {field.description && (
         <p className="text-xs text-muted-foreground">
-          {field.description}
+          {t(field.description)}
         </p>
       )}
       {field.envVar && (

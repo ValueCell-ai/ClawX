@@ -108,7 +108,7 @@ const providers = SETUP_PROVIDERS;
 // NOTE: Skill bundles moved to Settings > Skills page - auto-install essential skills during setup
 
 export function Setup() {
-  const { t } = useTranslation('setup');
+  const { t } = useTranslation(['setup', 'channels']);
   const navigate = useNavigate();
   const [currentStep, setCurrentStep] = useState<number>(STEP.WELCOME);
 
@@ -971,7 +971,7 @@ function ProviderContent({
 // ==================== Setup Channel Content ====================
 
 function SetupChannelContent() {
-  const { t } = useTranslation('setup');
+  const { t } = useTranslation(['setup', 'channels']);
   const [selectedChannel, setSelectedChannel] = useState<ChannelType | null>(null);
   const [configValues, setConfigValues] = useState<Record<string, string>>({});
   const [showSecrets, setShowSecrets] = useState<Record<string, boolean>>({});
@@ -1096,7 +1096,7 @@ function SetupChannelContent() {
                 <span className="text-3xl">{channelMeta.icon}</span>
                 <p className="font-medium mt-2">{channelMeta.name}</p>
                 <p className="text-xs text-slate-400 mt-1 line-clamp-2">
-                  {channelMeta.description}
+                  {t(channelMeta.description)}
                 </p>
               </button>
             );
@@ -1120,7 +1120,7 @@ function SetupChannelContent() {
           <h2 className="text-xl font-semibold flex items-center gap-2">
             <span>{meta?.icon}</span> {t('channel.configure', { name: meta?.name })}
           </h2>
-          <p className="text-slate-400 text-sm">{meta?.description}</p>
+          <p className="text-slate-400 text-sm mt-1">{t(meta?.description || '')}</p>
         </div>
       </div>
 
@@ -1147,7 +1147,7 @@ function SetupChannelContent() {
         </div>
         <ol className="list-decimal list-inside text-slate-400 space-y-1">
           {meta?.instructions.map((inst, i) => (
-            <li key={i}>{inst}</li>
+            <li key={i}>{t(inst)}</li>
           ))}
         </ol>
       </div>
@@ -1158,14 +1158,14 @@ function SetupChannelContent() {
         return (
           <div key={field.key} className="space-y-1.5">
             <Label htmlFor={`setup-${field.key}`} className="text-slate-200">
-              {field.label}
+              {t(field.label)}
               {field.required && <span className="text-red-400 ml-1">*</span>}
             </Label>
             <div className="flex gap-2">
               <Input
                 id={`setup-${field.key}`}
                 type={isPassword && !showSecrets[field.key] ? 'password' : 'text'}
-                placeholder={field.placeholder}
+                placeholder={field.placeholder ? t(field.placeholder) : undefined}
                 value={configValues[field.key] || ''}
                 onChange={(e) => setConfigValues((prev) => ({ ...prev, [field.key]: e.target.value }))}
                 autoComplete="off"
@@ -1184,7 +1184,7 @@ function SetupChannelContent() {
               )}
             </div>
             {field.description && (
-              <p className="text-xs text-slate-500">{field.description}</p>
+              <p className="text-xs text-slate-500 mt-1">{t(field.description)}</p>
             )}
           </div>
         );
