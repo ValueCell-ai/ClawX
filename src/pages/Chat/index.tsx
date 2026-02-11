@@ -72,7 +72,11 @@ export function Chat() {
   }
 
   // Extract streaming text for display
-  const streamText = streamingMessage ? extractText(streamingMessage) : '';
+  const streamMsg = streamingMessage && typeof streamingMessage === 'object'
+    ? streamingMessage as unknown as { role?: string; content?: unknown; timestamp?: number }
+    : null;
+  const streamText = streamMsg ? extractText(streamMsg) : (typeof streamingMessage === 'string' ? streamingMessage : '');
+  const hasStreamText = streamText.trim().length > 0;
 
   return (
     <div className="flex flex-col -m-6" style={{ height: 'calc(100vh - 2.5rem)' }}>
@@ -101,12 +105,12 @@ export function Chat() {
               ))}
 
               {/* Streaming message */}
-              {sending && streamText && (
+              {sending && hasStreamText && (
                 <ChatMessage
                   message={{
                     role: 'assistant',
-                    content: streamingMessage as unknown as string,
-                    timestamp: streamingTimestamp,
+                    content: streamMsg?.content ?? streamText,
+                    timestamp: streamMsg?.timestamp ?? streamingTimestamp,
                   }}
                   showThinking={showThinking}
                   isStreaming
@@ -114,7 +118,7 @@ export function Chat() {
               )}
 
               {/* Typing indicator when sending but no stream yet */}
-              {sending && !streamText && (
+              {sending && !hasStreamText && (
                 <TypingIndicator />
               )}
             </>

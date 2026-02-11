@@ -48,6 +48,8 @@ interface ChatState {
   activeRunId: string | null;
   streamingText: string;
   streamingMessage: unknown | null;
+  pendingFinal: boolean;
+  lastUserMessageAt: number | null;
 
   // Sessions
   sessions: ChatSession[];
@@ -98,6 +100,25 @@ function isToolOnlyMessage(message: RawMessage | undefined): boolean {
   return hasTool && !hasText && !hasNonToolContent;
 }
 
+function hasNonToolAssistantContent(message: RawMessage | undefined): boolean {
+  if (!message) return false;
+  if (typeof message.content === 'string' && message.content.trim()) return true;
+
+  const content = message.content;
+  if (Array.isArray(content)) {
+    for (const block of content as ContentBlock[]) {
+      if (block.type === 'text' && block.text && block.text.trim()) return true;
+      if (block.type === 'thinking' && block.thinking && block.thinking.trim()) return true;
+      if (block.type === 'image') return true;
+    }
+  }
+
+  const msg = message as Record<string, unknown>;
+  if (typeof msg.text === 'string' && msg.text.trim()) return true;
+
+  return false;
+}
+
 // ── Store ────────────────────────────────────────────────────────
 
 export const useChatStore = create<ChatState>((set, get) => ({
@@ -109,6 +130,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
   activeRunId: null,
   streamingText: '',
   streamingMessage: null,
+  pendingFinal: false,
+  lastUserMessageAt: null,
 
   sessions: [],
   currentSessionKey: 'main',
@@ -182,6 +205,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
       streamingMessage: null,
       activeRunId: null,
       error: null,
+      pendingFinal: false,
+      lastUserMessageAt: null,
     });
     // Load history for new session
     get().loadHistory();
@@ -199,6 +224,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
       streamingMessage: null,
       activeRunId: null,
       error: null,
+      pendingFinal: false,
+      lastUserMessageAt: null,
     });
     // Reload sessions list to include the new one after first message
     get().loadSessions();
@@ -222,6 +249,18 @@ export const useChatStore = create<ChatState>((set, get) => ({
         const rawMessages = Array.isArray(data.messages) ? data.messages as RawMessage[] : [];
         const thinkingLevel = data.thinkingLevel ? String(data.thinkingLevel) : null;
         set({ messages: rawMessages, thinkingLevel, loading: false });
+        const { pendingFinal, lastUserMessageAt } = get();
+        if (pendingFinal) {
+          const recentAssistant = [...rawMessages].reverse().find((msg) => {
+            if (msg.role !== 'assistant') return false;
+            if (!hasNonToolAssistantContent(msg)) return false;
+            if (lastUserMessageAt && msg.timestamp && msg.timestamp < lastUserMessageAt) return false;
+            return true;
+          });
+          if (recentAssistant) {
+            set({ sending: false, activeRunId: null, pendingFinal: false });
+          }
+        }
       } else {
         set({ messages: [], loading: false });
       }
@@ -252,6 +291,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
       error: null,
       streamingText: '',
       streamingMessage: null,
+      pendingFinal: false,
+      lastUserMessageAt: userMsg.timestamp ?? null,
     }));
 
     try {
@@ -295,7 +336,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
   abortRun: async () => {
     const { currentSessionKey } = get();
-    set({ sending: false, streamingText: '', streamingMessage: null });
+    set({ sending: false, streamingText: '', streamingMessage: null, pendingFinal: false, lastUserMessageAt: null });
 
     try {
       await window.electron.ipcRenderer.invoke(
@@ -331,6 +372,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
         const finalMsg = event.message as RawMessage | undefined;
         if (finalMsg) {
           const toolOnly = isToolOnlyMessage(finalMsg);
+          const hasOutput = hasNonToolAssistantContent(finalMsg);
           const msgId = finalMsg.id || (toolOnly ? `run-${runId}-tool-${Date.now()}` : `run-${runId}`);
           set((s) => {
             // Check if message already exists (prevent duplicates)
@@ -340,11 +382,13 @@ export const useChatStore = create<ChatState>((set, get) => ({
               return toolOnly ? {
                 streamingText: '',
                 streamingMessage: null,
+                pendingFinal: true,
               } : {
                 streamingText: '',
                 streamingMessage: null,
-                sending: false,
-                activeRunId: null,
+                sending: hasOutput ? false : s.sending,
+                activeRunId: hasOutput ? null : s.activeRunId,
+                pendingFinal: hasOutput ? false : true,
               };
             }
             return toolOnly ? {
@@ -355,6 +399,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
               }],
               streamingText: '',
               streamingMessage: null,
+              pendingFinal: true,
             } : {
               messages: [...s.messages, {
                 ...finalMsg,
@@ -363,13 +408,14 @@ export const useChatStore = create<ChatState>((set, get) => ({
               }],
               streamingText: '',
               streamingMessage: null,
-              sending: false,
-              activeRunId: null,
+              sending: hasOutput ? false : s.sending,
+              activeRunId: hasOutput ? null : s.activeRunId,
+              pendingFinal: hasOutput ? false : true,
             };
           });
         } else {
           // No message in final event - reload history to get complete data
-          set({ streamingText: '', streamingMessage: null, sending: false, activeRunId: null });
+          set({ streamingText: '', streamingMessage: null, pendingFinal: true });
           get().loadHistory();
         }
         break;
@@ -382,6 +428,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
           activeRunId: null,
           streamingText: '',
           streamingMessage: null,
+          pendingFinal: false,
+          lastUserMessageAt: null,
         });
         break;
       }
@@ -391,6 +439,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
           activeRunId: null,
           streamingText: '',
           streamingMessage: null,
+          pendingFinal: false,
+          lastUserMessageAt: null,
         });
         break;
       }
