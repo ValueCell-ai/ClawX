@@ -117,7 +117,7 @@ export const CHANNEL_META: Record<ChannelType, ChannelMeta> = {
     icon: '✈️',
     description: 'channels:meta.telegram.description',
     connectionType: 'token',
-    docsUrl: 'https://docs.openclaw.ai/channels/telegram',
+    docsUrl: 'channels:meta.telegram.docsUrl',
     configFields: [
       {
         key: 'botToken',
@@ -150,7 +150,7 @@ export const CHANNEL_META: Record<ChannelType, ChannelMeta> = {
     icon: '🎮',
     description: 'channels:meta.discord.description',
     connectionType: 'token',
-    docsUrl: 'https://docs.openclaw.ai/channels/discord#how-to-create-your-own-bot',
+    docsUrl: 'channels:meta.discord.docsUrl',
     configFields: [
       {
         key: 'token',
@@ -193,7 +193,7 @@ export const CHANNEL_META: Record<ChannelType, ChannelMeta> = {
     icon: '📱',
     description: 'channels:meta.whatsapp.description',
     connectionType: 'qr',
-    docsUrl: 'https://docs.openclaw.ai/channels/whatsapp',
+    docsUrl: 'channels:meta.whatsapp.docsUrl',
     configFields: [],
     instructions: [
       'channels:meta.whatsapp.instructions.0',
@@ -208,7 +208,7 @@ export const CHANNEL_META: Record<ChannelType, ChannelMeta> = {
     icon: '🔒',
     description: 'channels:meta.signal.description',
     connectionType: 'token',
-    docsUrl: 'https://docs.openclaw.ai/channels/signal',
+    docsUrl: 'channels:meta.signal.docsUrl',
     configFields: [
       {
         key: 'phoneNumber',
@@ -230,7 +230,7 @@ export const CHANNEL_META: Record<ChannelType, ChannelMeta> = {
     icon: '🐦',
     description: 'channels:meta.feishu.description',
     connectionType: 'token',
-    docsUrl: 'https://docs.openclaw.ai/channels/feishu#step-1-create-a-feishu-app',
+    docsUrl: 'channels:meta.feishu.docsUrl',
     configFields: [
       {
         key: 'appId',
@@ -263,7 +263,7 @@ export const CHANNEL_META: Record<ChannelType, ChannelMeta> = {
     icon: '💬',
     description: 'channels:meta.imessage.description',
     connectionType: 'token',
-    docsUrl: 'https://docs.openclaw.ai/channels/bluebubbles',
+    docsUrl: 'channels:meta.imessage.docsUrl',
     configFields: [
       {
         key: 'serverUrl',
@@ -292,7 +292,7 @@ export const CHANNEL_META: Record<ChannelType, ChannelMeta> = {
     icon: '🔗',
     description: 'channels:meta.matrix.description',
     connectionType: 'token',
-    docsUrl: 'https://docs.openclaw.ai/channels/matrix',
+    docsUrl: 'channels:meta.matrix.docsUrl',
     configFields: [
       {
         key: 'homeserver',
@@ -322,7 +322,7 @@ export const CHANNEL_META: Record<ChannelType, ChannelMeta> = {
     icon: '🟢',
     description: 'channels:meta.line.description',
     connectionType: 'token',
-    docsUrl: 'https://docs.openclaw.ai/channels/line',
+    docsUrl: 'channels:meta.line.docsUrl',
     configFields: [
       {
         key: 'channelAccessToken',
@@ -354,7 +354,7 @@ export const CHANNEL_META: Record<ChannelType, ChannelMeta> = {
     icon: '👔',
     description: 'channels:meta.msteams.description',
     connectionType: 'token',
-    docsUrl: 'https://docs.openclaw.ai/channels/msteams',
+    docsUrl: 'channels:meta.msteams.docsUrl',
     configFields: [
       {
         key: 'appId',
@@ -387,7 +387,7 @@ export const CHANNEL_META: Record<ChannelType, ChannelMeta> = {
     icon: '💭',
     description: 'channels:meta.googlechat.description',
     connectionType: 'webhook',
-    docsUrl: 'https://docs.openclaw.ai/channels/googlechat',
+    docsUrl: 'channels:meta.googlechat.docsUrl',
     configFields: [
       {
         key: 'serviceAccountKey',
@@ -410,7 +410,7 @@ export const CHANNEL_META: Record<ChannelType, ChannelMeta> = {
     icon: '💠',
     description: 'channels:meta.mattermost.description',
     connectionType: 'token',
-    docsUrl: 'https://docs.openclaw.ai/channels/mattermost',
+    docsUrl: 'channels:meta.mattermost.docsUrl',
     configFields: [
       {
         key: 'serverUrl',

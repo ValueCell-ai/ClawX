@@ -53,6 +53,7 @@
     "meta": {
         "telegram": {
             "description": "Connect Telegram using a bot token from @BotFather",
+            "docsUrl": "https://docs.openclaw.ai/channels/telegram",
             "fields": {
                 "botToken": {
                     "label": "Bot Token",
@@ -74,6 +75,7 @@
         },
         "discord": {
             "description": "Connect Discord using a bot token from Developer Portal",
+            "docsUrl": "https://docs.openclaw.ai/channels/discord#how-to-create-your-own-bot",
             "fields": {
                 "token": {
                     "label": "Bot Token",
@@ -101,6 +103,7 @@
         },
         "whatsapp": {
             "description": "Connect WhatsApp by scanning a QR code (no phone number required)",
+            "docsUrl": "https://docs.openclaw.ai/channels/whatsapp",
             "instructions": [
                 "Open WhatsApp on your phone",
                 "Go to Settings > Linked Devices > Link a Device",
@@ -110,6 +113,7 @@
         },
         "signal": {
             "description": "Connect Signal using signal-cli",
+            "docsUrl": "https://docs.openclaw.ai/channels/signal",
             "fields": {
                 "phoneNumber": {
                     "label": "Phone Number",
@@ -124,6 +128,7 @@
         },
         "feishu": {
             "description": "Connect Feishu/Lark bot via WebSocket",
+            "docsUrl": "https://docs.openclaw.ai/channels/feishu#step-1-create-a-feishu-app",
             "fields": {
                 "appId": {
                     "label": "App ID",
@@ -143,6 +148,7 @@
         },
         "imessage": {
             "description": "Connect iMessage via BlueBubbles (macOS)",
+            "docsUrl": "https://docs.openclaw.ai/channels/bluebubbles",
             "fields": {
                 "serverUrl": {
                     "label": "BlueBubbles Server URL",
@@ -161,6 +167,7 @@
         },
         "matrix": {
             "description": "Connect to Matrix protocol",
+            "docsUrl": "https://docs.openclaw.ai/channels/matrix",
             "fields": {
                 "homeserver": {
                     "label": "Homeserver URL",
@@ -179,6 +186,7 @@
         },
         "line": {
             "description": "Connect LINE Messaging API",
+            "docsUrl": "https://docs.openclaw.ai/channels/line",
             "fields": {
                 "channelAccessToken": {
                     "label": "Channel Access Token",
@@ -197,6 +205,7 @@
         },
         "msteams": {
             "description": "Connect Microsoft Teams via Bot Framework",
+            "docsUrl": "https://docs.openclaw.ai/channels/msteams",
             "fields": {
                 "appId": {
                     "label": "App ID",
@@ -216,6 +225,7 @@
         },
         "googlechat": {
             "description": "Connect Google Chat via webhook",
+            "docsUrl": "https://docs.openclaw.ai/channels/googlechat",
             "fields": {
                 "serviceAccountKey": {
                     "label": "Service Account JSON Path",
@@ -231,6 +241,7 @@
         },
         "mattermost": {
             "description": "Connect Mattermost via Bot API",
+            "docsUrl": "https://docs.openclaw.ai/channels/mattermost",
             "fields": {
                 "serverUrl": {
                     "label": "Server URL",

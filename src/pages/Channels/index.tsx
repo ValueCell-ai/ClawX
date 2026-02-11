@@ -612,17 +612,18 @@ function AddChannelDialog({ selectedType, onSelectType, onClose, onChannelAdded 
 
   const openDocs = () => {
     if (meta?.docsUrl) {
+      const url = t(meta.docsUrl);
       try {
         if (window.electron?.openExternal) {
-          window.electron.openExternal(meta.docsUrl);
+          window.electron.openExternal(url);
         } else {
           // Fallback: open in new window
-          window.open(meta.docsUrl, '_blank');
+          window.open(url, '_blank');
         }
       } catch (error) {
         console.error('Failed to open docs:', error);
         // Fallback: open in new window
-        window.open(meta.docsUrl, '_blank');
+        window.open(url, '_blank');
       }
     }
   };
