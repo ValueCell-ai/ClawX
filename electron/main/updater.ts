@@ -142,13 +142,34 @@ export class AppUpdater extends EventEmitter {
   }
 
   /**
-   * Check for updates
-   * electron-updater automatically tries providers defined in electron-builder.yml in order
+   * Check for updates.
+   * electron-updater automatically tries providers defined in electron-builder.yml in order.
+   *
+   * In dev mode (not packed), autoUpdater.checkForUpdates() silently returns
+   * null without emitting any events, so we must detect this and force a
+   * final status so the UI never gets stuck in 'checking'.
    */
   async checkForUpdates(): Promise<UpdateInfo | null> {
     try {
       const result = await autoUpdater.checkForUpdates();
-      return result?.updateInfo || null;
+
+      // In dev mode (app not packaged), autoUpdater silently returns null
+      // without emitting ANY events (not even checking-for-update).
+      // Detect this and force an error so the UI never stays silent.
+      if (result == null) {
+        this.updateStatus({
+          status: 'error',
+          error: 'Update check skipped (dev mode – app is not packaged)',
+        });
+        return null;
+      }
+
+      // Safety net: if events somehow didn't fire, force a final state.
+      if (this.status.status === 'checking' || this.status.status === 'idle') {
+        this.updateStatus({ status: 'not-available' });
+      }
+
+      return result.updateInfo || null;
     } catch (error) {
       console.error('[Updater] Check for updates failed:', error);
       this.updateStatus({ status: 'error', error: (error as Error).message || String(error) });
@@ -216,13 +237,14 @@ export function registerUpdateHandlers(
     return updater.getCurrentVersion();
   });
 
-  // Check for updates
+  // Check for updates – always return final status so the renderer
+  // never gets stuck in 'checking' waiting for a push event.
   ipcMain.handle('update:check', async () => {
     try {
-      const info = await updater.checkForUpdates();
-      return { success: true, info };
+      await updater.checkForUpdates();
+      return { success: true, status: updater.getStatus() };
     } catch (error) {
-      return { success: false, error: String(error) };
+      return { success: false, error: String(error), status: updater.getStatus() };
     }
   });
 

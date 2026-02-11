@@ -112,15 +112,34 @@ export const useUpdateStore = create<UpdateState>((set, get) => ({
         new Promise((_, reject) => setTimeout(() => reject(new Error('Update check timed out')), 30000))
       ]) as {
         success: boolean;
-        info?: UpdateInfo;
         error?: string;
+        status?: {
+          status: UpdateStatus;
+          info?: UpdateInfo;
+          progress?: ProgressInfo;
+          error?: string;
+        };
       };
       
-      if (!result.success) {
+      if (result.status) {
+        set({
+          status: result.status.status,
+          updateInfo: result.status.info || null,
+          progress: result.status.progress || null,
+          error: result.status.error || null,
+        });
+      } else if (!result.success) {
         set({ status: 'error', error: result.error || 'Failed to check for updates' });
       }
     } catch (error) {
       set({ status: 'error', error: String(error) });
+    } finally {
+      // In dev mode autoUpdater skips without emitting events, so the
+      // status may still be 'checking' or even 'idle'. Catch both.
+      const currentStatus = get().status;
+      if (currentStatus === 'checking' || currentStatus === 'idle') {
+        set({ status: 'error', error: 'Update check completed without a result. This usually means the app is running in dev mode.' });
+      }
     }
   },
 
