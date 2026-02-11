@@ -13,10 +13,6 @@ export function extractText(message: RawMessage | unknown): string {
   if (!message || typeof message !== 'object') return '';
   const msg = message as Record<string, unknown>;
   const content = msg.content;
-  const role = typeof msg.role === 'string' ? msg.role.toLowerCase() : '';
-  if (role === 'toolresult' || role === 'tool_result') {
-    return '';
-  }
 
   if (typeof content === 'string') {
     return content.trim().length > 0 ? content : '';
@@ -26,7 +22,9 @@ export function extractText(message: RawMessage | unknown): string {
     const parts: string[] = [];
     for (const block of content as ContentBlock[]) {
       if (block.type === 'text' && block.text) {
-        parts.push(block.text);
+        if (block.text.trim().length > 0) {
+          parts.push(block.text);
+        }
       }
     }
     const combined = parts.join('\n\n');
@@ -35,7 +33,7 @@ export function extractText(message: RawMessage | unknown): string {
 
   // Fallback: try .text field
   if (typeof msg.text === 'string') {
-    return msg.text;
+    return msg.text.trim().length > 0 ? msg.text : '';
   }
 
   return '';
@@ -48,31 +46,22 @@ export function extractText(message: RawMessage | unknown): string {
 export function extractThinking(message: RawMessage | unknown): string | null {
   if (!message || typeof message !== 'object') return null;
   const msg = message as Record<string, unknown>;
-  if (typeof msg.thinking === 'string' && msg.thinking.trim()) {
-    return msg.thinking;
-  }
   const content = msg.content;
 
   if (!Array.isArray(content)) return null;
 
   const parts: string[] = [];
   for (const block of content as ContentBlock[]) {
-    if (block.type === 'thinking' || block.type === 'analysis' || block.type === 'reasoning') {
-      if (block.thinking && block.thinking.trim()) {
-        parts.push(block.thinking);
-        continue;
-      }
-      if (block.text && block.text.trim()) {
-        parts.push(block.text);
-        continue;
-      }
-      if (typeof block.content === 'string' && block.content.trim()) {
-        parts.push(block.content);
+    if (block.type === 'thinking' && block.thinking) {
+      const cleaned = block.thinking.trim();
+      if (cleaned) {
+        parts.push(cleaned);
       }
     }
   }
 
-  return parts.length > 0 ? parts.join('\n\n') : null;
+  const combined = parts.join('\n\n').trim();
+  return combined.length > 0 ? combined : null;
 }
 
 /**

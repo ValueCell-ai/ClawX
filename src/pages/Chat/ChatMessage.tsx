@@ -31,14 +31,12 @@ export const ChatMessage = memo(function ChatMessage({
   const thinking = extractThinking(message);
   const images = extractImages(message);
   const tools = extractToolUse(message);
-  const visibleThinking = showThinking && !isStreaming ? thinking : null;
-  const visibleTools = showThinking ? tools : [];
 
-  // Don't render tool results (tool outputs shouldn't appear as chat messages)
+  // Never render tool result messages in chat UI
   if (isToolResult) return null;
 
-  // Don't render empty messages (respect thinking visibility)
-  if (!hasText && !visibleThinking && images.length === 0 && visibleTools.length === 0) return null;
+  // Don't render empty messages
+  if (!hasText && !thinking && images.length === 0 && tools.length === 0) return null;
 
   return (
     <div
@@ -62,14 +60,14 @@ export const ChatMessage = memo(function ChatMessage({
       {/* Content */}
       <div className={cn('max-w-[80%] space-y-2', isUser && 'items-end')}>
         {/* Thinking section */}
-        {visibleThinking && (
-          <ThinkingBlock content={visibleThinking} />
+        {showThinking && thinking && (
+          <ThinkingBlock content={thinking} />
         )}
 
         {/* Tool use cards */}
-        {visibleTools.length > 0 && (
+        {showThinking && tools.length > 0 && (
           <div className="space-y-1">
-            {visibleTools.map((tool, i) => (
+            {tools.map((tool, i) => (
               <ToolCard key={tool.id || i} name={tool.name} input={tool.input} />
             ))}
           </div>
@@ -209,7 +207,7 @@ function ThinkingBlock({ content }: { content: string }) {
   const [expanded, setExpanded] = useState(false);
 
   return (
-    <div className="w-full rounded-lg border border-border/50 bg-muted/30 text-sm">
+    <div className="rounded-lg border border-border/50 bg-muted/30 text-sm">
       <button
         className="flex items-center gap-2 w-full px-3 py-2 text-muted-foreground hover:text-foreground transition-colors"
         onClick={() => setExpanded(!expanded)}

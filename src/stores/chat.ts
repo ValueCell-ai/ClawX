@@ -60,7 +60,7 @@ interface ChatState {
   thinkingLevel: string | null;
 
   // Actions
-  loadSessions: (reloadHistory?: boolean) => Promise<void>;
+  loadSessions: () => Promise<void>;
   switchSession: (key: string) => void;
   newSession: () => void;
   loadHistory: () => Promise<void>;
@@ -72,10 +72,15 @@ interface ChatState {
   clearError: () => void;
 }
 
-function isToolResultRole(role: unknown): boolean {
-  if (!role) return false;
-  const normalized = String(role).toLowerCase();
-  return normalized === 'toolresult' || normalized === 'tool_result';
+const DEFAULT_CANONICAL_PREFIX = 'agent:main';
+const DEFAULT_SESSION_KEY = `${DEFAULT_CANONICAL_PREFIX}:main`;
+
+function getCanonicalPrefixFromSessions(sessions: ChatSession[]): string | null {
+  const canonical = sessions.find((s) => s.key.startsWith('agent:'))?.key;
+  if (!canonical) return null;
+  const parts = canonical.split(':');
+  if (parts.length < 2) return null;
+  return `${parts[0]}:${parts[1]}`;
 }
 
 function isToolOnlyMessage(message: RawMessage | undefined): boolean {
@@ -106,6 +111,12 @@ function isToolOnlyMessage(message: RawMessage | undefined): boolean {
   return hasTool && !hasText && !hasNonToolContent;
 }
 
+function isToolResultRole(role: unknown): boolean {
+  if (!role) return false;
+  const normalized = String(role).toLowerCase();
+  return normalized === 'toolresult' || normalized === 'tool_result';
+}
+
 function hasNonToolAssistantContent(message: RawMessage | undefined): boolean {
   if (!message) return false;
   if (typeof message.content === 'string' && message.content.trim()) return true;
@@ -125,17 +136,6 @@ function hasNonToolAssistantContent(message: RawMessage | undefined): boolean {
   return false;
 }
 
-const DEFAULT_CANONICAL_PREFIX = 'agent:main';
-const DEFAULT_SESSION_KEY = `${DEFAULT_CANONICAL_PREFIX}:main`;
-
-function getCanonicalPrefixFromSessions(sessions: ChatSession[]): string | null {
-  const canonical = sessions.find((s) => s.key.startsWith('agent:'))?.key;
-  if (!canonical) return null;
-  const parts = canonical.split(':');
-  if (parts.length < 2) return null;
-  return `${parts[0]}:${parts[1]}`;
-}
-
 // ── Store ────────────────────────────────────────────────────────
 
 export const useChatStore = create<ChatState>((set, get) => ({
@@ -151,14 +151,14 @@ export const useChatStore = create<ChatState>((set, get) => ({
   lastUserMessageAt: null,
 
   sessions: [],
-  currentSessionKey: '',
+  currentSessionKey: DEFAULT_SESSION_KEY,
 
   showThinking: true,
   thinkingLevel: null,
 
   // ── Load sessions via sessions.list ──
 
-  loadSessions: async (reloadHistory = true) => {
+  loadSessions: async () => {
     try {
       const result = await window.electron.ipcRenderer.invoke(
         'gateway:rpc',
@@ -169,14 +169,13 @@ export const useChatStore = create<ChatState>((set, get) => ({
       if (result.success && result.result) {
         const data = result.result;
         const rawSessions = Array.isArray(data.sessions) ? data.sessions : [];
-        const sessions: ChatSession[] = rawSessions.map((s: Record<string, unknown>) => {
-          const key = String(s.key || '');
-          return {
-            key,
-            thinkingLevel: s.thinkingLevel ? String(s.thinkingLevel) : undefined,
-            model: s.model ? String(s.model) : undefined,
-          };
-        }).filter((s: ChatSession) => s.key);
+        const sessions: ChatSession[] = rawSessions.map((s: Record<string, unknown>) => ({
+          key: String(s.key || ''),
+          label: s.label ? String(s.label) : undefined,
+          displayName: s.displayName ? String(s.displayName) : undefined,
+          thinkingLevel: s.thinkingLevel ? String(s.thinkingLevel) : undefined,
+          model: s.model ? String(s.model) : undefined,
+        })).filter((s: ChatSession) => s.key);
 
         const canonicalBySuffix = new Map<string, string>();
         for (const session of sessions) {
@@ -197,29 +196,30 @@ export const useChatStore = create<ChatState>((set, get) => ({
           seen.add(s.key);
           return true;
         });
+
         const { currentSessionKey } = get();
-        let nextSessionKey = currentSessionKey;
-        if (!nextSessionKey && dedupedSessions.length > 0) {
-          // No current session set; default to the first available session.
+        let nextSessionKey = currentSessionKey || DEFAULT_SESSION_KEY;
+        if (!nextSessionKey.startsWith('agent:')) {
+          const canonicalMatch = canonicalBySuffix.get(nextSessionKey);
+          if (canonicalMatch) {
+            nextSessionKey = canonicalMatch;
+          }
+        }
+        if (!dedupedSessions.find((s) => s.key === nextSessionKey) && dedupedSessions.length > 0) {
+          // Current session not found at all — switch to the first available session
           nextSessionKey = dedupedSessions[0].key;
         }
 
         const sessionsWithCurrent = !dedupedSessions.find((s) => s.key === nextSessionKey) && nextSessionKey
           ? [
               ...dedupedSessions,
-              {
-                key: nextSessionKey,
-                displayName: nextSessionKey,
-              },
+              { key: nextSessionKey, displayName: nextSessionKey },
             ]
           : dedupedSessions;
 
-        set({
-          sessions: sessionsWithCurrent,
-          currentSessionKey: nextSessionKey,
-        });
+        set({ sessions: sessionsWithCurrent, currentSessionKey: nextSessionKey });
 
-        if (reloadHistory && currentSessionKey !== nextSessionKey) {
+        if (currentSessionKey !== nextSessionKey) {
           get().loadHistory();
         }
       }
@@ -268,18 +268,14 @@ export const useChatStore = create<ChatState>((set, get) => ({
   // ── Load chat history ──
 
   loadHistory: async () => {
-    const { currentSessionKey, sessions } = get();
-    const resolvedSessionKey = currentSessionKey || sessions[0]?.key || DEFAULT_SESSION_KEY;
-    if (resolvedSessionKey !== currentSessionKey) {
-      set({ currentSessionKey: resolvedSessionKey });
-    }
+    const { currentSessionKey } = get();
     set({ loading: true, error: null });
 
     try {
       const result = await window.electron.ipcRenderer.invoke(
         'gateway:rpc',
         'chat.history',
-        { sessionKey: resolvedSessionKey, limit: 200 }
+        { sessionKey: currentSessionKey, limit: 200 }
       ) as { success: boolean; result?: Record<string, unknown>; error?: string };
 
       if (result.success && result.result) {
@@ -315,11 +311,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
     const trimmed = text.trim();
     if (!trimmed && (!attachments || attachments.length === 0)) return;
 
-    const { currentSessionKey, sessions } = get();
-    const resolvedSessionKey = currentSessionKey || sessions[0]?.key || DEFAULT_SESSION_KEY;
-    if (resolvedSessionKey !== currentSessionKey) {
-      set({ currentSessionKey: resolvedSessionKey });
-    }
+    const { currentSessionKey } = get();
 
     // Add user message optimistically
     const userMsg: RawMessage = {
@@ -341,7 +333,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
     try {
       const idempotencyKey = crypto.randomUUID();
       const rpcParams: Record<string, unknown> = {
-        sessionKey: resolvedSessionKey,
+        sessionKey: currentSessionKey,
         message: trimmed || 'Describe this image.',
         deliver: false,
         idempotencyKey,
@@ -378,18 +370,14 @@ export const useChatStore = create<ChatState>((set, get) => ({
   // ── Abort active run ──
 
   abortRun: async () => {
-    const { currentSessionKey, sessions } = get();
-    const resolvedSessionKey = currentSessionKey || sessions[0]?.key || DEFAULT_SESSION_KEY;
-    if (resolvedSessionKey !== currentSessionKey) {
-      set({ currentSessionKey: resolvedSessionKey });
-    }
+    const { currentSessionKey } = get();
     set({ sending: false, streamingText: '', streamingMessage: null, pendingFinal: false, lastUserMessageAt: null });
 
     try {
       await window.electron.ipcRenderer.invoke(
         'gateway:rpc',
         'chat.abort',
-        { sessionKey: resolvedSessionKey },
+        { sessionKey: currentSessionKey },
       );
     } catch (err) {
       set({ error: String(err) });
@@ -510,8 +498,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
   refresh: async () => {
     const { loadHistory, loadSessions } = get();
-    await loadSessions();
-    await loadHistory();
+    await Promise.all([loadHistory(), loadSessions()]);
   },
 
   clearError: () => set({ error: null }),

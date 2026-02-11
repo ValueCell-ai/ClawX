@@ -7,7 +7,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { AlertCircle, Bot, MessageSquare, Sparkles } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
-import { useChatStore } from '@/stores/chat';
+import { useChatStore, type RawMessage } from '@/stores/chat';
 import { useGatewayStore } from '@/stores/gateway';
 import { LoadingSpinner } from '@/components/common/LoadingSpinner';
 import { ChatMessage } from './ChatMessage';
@@ -120,10 +120,10 @@ export function Chat() {
               {/* Streaming message */}
               {shouldRenderStreaming && (
                 <ChatMessage
-                  message={streamMsg
+                  message={(streamMsg
                     ? {
                         ...(streamMsg as Record<string, unknown>),
-                        role: typeof streamMsg.role === 'string' ? streamMsg.role : 'assistant',
+                        role: (typeof streamMsg.role === 'string' ? streamMsg.role : 'assistant') as any,
                         content: streamMsg.content ?? streamText,
                         timestamp: streamMsg.timestamp ?? streamingTimestamp,
                       }
@@ -131,7 +131,7 @@ export function Chat() {
                         role: 'assistant',
                         content: streamText,
                         timestamp: streamingTimestamp,
-                      }}
+                      }) as RawMessage}
                   showThinking={showThinking}
                   isStreaming
                 />
