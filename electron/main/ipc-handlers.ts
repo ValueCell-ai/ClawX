@@ -42,6 +42,7 @@ import {
 import { checkUvInstalled, installUv, setupManagedPython } from '../utils/uv-setup';
 import { updateSkillConfig, getSkillConfig, getAllSkillConfigs } from '../utils/skill-config';
 import { whatsAppLoginManager } from '../utils/whatsapp-login';
+import { getProviderConfig } from '../utils/provider-registry';
 
 /**
  * Register all IPC handlers
@@ -900,9 +901,16 @@ function registerProviderHandlers(): void {
     return await getDefaultProvider();
   });
 
-  // Validate API key by making a real test request to the provider
-  // providerId can be either a stored provider ID or a provider type (e.g., 'openrouter', 'anthropic')
-  ipcMain.handle('provider:validateKey', async (_, providerId: string, apiKey: string) => {
+  // Validate API key by making a real test request to the provider.
+  // providerId can be either a stored provider ID or a provider type.
+  ipcMain.handle(
+    'provider:validateKey',
+    async (
+      _,
+      providerId: string,
+      apiKey: string,
+      options?: { baseUrl?: string }
+    ) => {
     try {
       // First try to get existing provider
       const provider = await getProvider(providerId);
@@ -910,50 +918,55 @@ function registerProviderHandlers(): void {
       // Use provider.type if provider exists, otherwise use providerId as the type
       // This allows validation during setup when provider hasn't been saved yet
       const providerType = provider?.type || providerId;
+      const registryBaseUrl = getProviderConfig(providerType)?.baseUrl;
+      // Prefer caller-supplied baseUrl (live form value) over persisted config.
+      // This ensures Setup/Settings validation reflects unsaved edits immediately.
+      const resolvedBaseUrl = options?.baseUrl || provider?.baseUrl || registryBaseUrl;
 
       console.log(`[clawx-validate] validating provider type: ${providerType}`);
-      return await validateApiKeyWithProvider(providerType, apiKey);
+      return await validateApiKeyWithProvider(providerType, apiKey, { baseUrl: resolvedBaseUrl });
     } catch (error) {
       console.error('Validation error:', error);
       return { valid: false, error: String(error) };
     }
-  });
+    }
+  );
 }
+
+type ValidationProfile = 'openai-compatible' | 'google-query-key' | 'anthropic-header' | 'none';
 
 /**
  * Validate API key using lightweight model-listing endpoints (zero token cost).
- * Falls back to accepting the key for unknown/custom provider types.
+ * Providers are grouped into 3 auth styles:
+ * - openai-compatible: Bearer auth + /models
+ * - google-query-key: ?key=... + /models
+ * - anthropic-header: x-api-key + anthropic-version + /models
  */
 async function validateApiKeyWithProvider(
   providerType: string,
-  apiKey: string
+  apiKey: string,
+  options?: { baseUrl?: string }
 ): Promise<{ valid: boolean; error?: string }> {
+  const profile = getValidationProfile(providerType);
+  if (profile === 'none') {
+    return { valid: true };
+  }
+
   const trimmedKey = apiKey.trim();
   if (!trimmedKey) {
     return { valid: false, error: 'API key is required' };
   }
 
   try {
-    switch (providerType) {
-      case 'anthropic':
-        return await validateAnthropicKey(trimmedKey);
-      case 'openai':
-        return await validateOpenAIKey(trimmedKey);
-      case 'google':
-        return await validateGoogleKey(trimmedKey);
-      case 'openrouter':
-        return await validateOpenRouterKey(trimmedKey);
-      case 'moonshot':
-        return await validateMoonshotKey(trimmedKey);
-      case 'siliconflow':
-        return await validateSiliconFlowKey(trimmedKey);
-      case 'ollama':
-        // Ollama doesn't require API key validation
-        return { valid: true };
+    switch (profile) {
+      case 'openai-compatible':
+        return await validateOpenAiCompatibleKey(providerType, trimmedKey, options?.baseUrl);
+      case 'google-query-key':
+        return await validateGoogleQueryKey(providerType, trimmedKey, options?.baseUrl);
+      case 'anthropic-header':
+        return await validateAnthropicHeaderKey(providerType, trimmedKey, options?.baseUrl);
       default:
-        // For custom providers, just check the key is not empty
-        console.log(`[clawx-validate] ${providerType} uses local non-empty validation only`);
-        return { valid: true };
+        return { valid: false, error: `Unsupported validation profile for provider: ${providerType}` };
     }
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
@@ -994,6 +1007,14 @@ function sanitizeHeaders(headers: Record<string, string>): Record<string, string
   return next;
 }
 
+function normalizeBaseUrl(baseUrl: string): string {
+  return baseUrl.trim().replace(/\/+$/, '');
+}
+
+function buildOpenAiModelsUrl(baseUrl: string): string {
+  return `${normalizeBaseUrl(baseUrl)}/models?limit=1`;
+}
+
 function logValidationRequest(
   provider: string,
   method: string,
@@ -1003,6 +1024,38 @@ function logValidationRequest(
   console.log(
     `[clawx-validate] ${provider} request ${method} ${sanitizeValidationUrl(url)} headers=${JSON.stringify(sanitizeHeaders(headers))}`
   );
+}
+
+function getValidationProfile(providerType: string): ValidationProfile {
+  switch (providerType) {
+    case 'anthropic':
+      return 'anthropic-header';
+    case 'google':
+      return 'google-query-key';
+    case 'ollama':
+      return 'none';
+    default:
+      return 'openai-compatible';
+  }
+}
+
+async function performProviderValidationRequest(
+  providerLabel: string,
+  url: string,
+  headers: Record<string, string>
+): Promise<{ valid: boolean; error?: string }> {
+  try {
+    logValidationRequest(providerLabel, 'GET', url, headers);
+    const response = await fetch(url, { headers });
+    logValidationStatus(providerLabel, response.status);
+    const data = await response.json().catch(() => ({}));
+    return classifyAuthResponse(response.status, data);
+  } catch (error) {
+    return {
+      valid: false,
+      error: `Connection error: ${error instanceof Error ? error.message : String(error)}`,
+    };
+  }
 }
 
 /**
@@ -1025,108 +1078,48 @@ function classifyAuthResponse(
   return { valid: false, error: msg };
 }
 
-/**
- * Validate Anthropic API key via GET /v1/models (zero cost)
- */
-async function validateAnthropicKey(apiKey: string): Promise<{ valid: boolean; error?: string }> {
-  try {
-    const url = 'https://api.anthropic.com/v1/models?limit=1';
-    const headers = {
-      'x-api-key': apiKey,
-      'anthropic-version': '2023-06-01',
-    };
-    logValidationRequest('anthropic', 'GET', url, headers);
-    const response = await fetch(url, { headers });
-    logValidationStatus('anthropic', response.status);
-    const data = await response.json().catch(() => ({}));
-    return classifyAuthResponse(response.status, data);
-  } catch (error) {
-    return { valid: false, error: `Connection error: ${error instanceof Error ? error.message : String(error)}` };
+async function validateOpenAiCompatibleKey(
+  providerType: string,
+  apiKey: string,
+  baseUrl?: string
+): Promise<{ valid: boolean; error?: string }> {
+  const trimmedBaseUrl = baseUrl?.trim();
+  if (!trimmedBaseUrl) {
+    return { valid: false, error: `Base URL is required for provider "${providerType}" validation` };
   }
+
+  const url = buildOpenAiModelsUrl(trimmedBaseUrl);
+  const headers = { Authorization: `Bearer ${apiKey}` };
+  return await performProviderValidationRequest(providerType, url, headers);
 }
 
-/**
- * Validate OpenAI API key via GET /v1/models (zero cost)
- */
-async function validateOpenAIKey(apiKey: string): Promise<{ valid: boolean; error?: string }> {
-  try {
-    const url = 'https://api.openai.com/v1/models?limit=1';
-    const headers = { Authorization: `Bearer ${apiKey}` };
-    logValidationRequest('openai', 'GET', url, headers);
-    const response = await fetch(url, { headers });
-    logValidationStatus('openai', response.status);
-    const data = await response.json().catch(() => ({}));
-    return classifyAuthResponse(response.status, data);
-  } catch (error) {
-    return { valid: false, error: `Connection error: ${error instanceof Error ? error.message : String(error)}` };
+async function validateGoogleQueryKey(
+  providerType: string,
+  apiKey: string,
+  baseUrl?: string
+): Promise<{ valid: boolean; error?: string }> {
+  const trimmedBaseUrl = baseUrl?.trim();
+  if (!trimmedBaseUrl) {
+    return { valid: false, error: `Base URL is required for provider "${providerType}" validation` };
   }
+
+  const base = normalizeBaseUrl(trimmedBaseUrl);
+  const url = `${base}/models?pageSize=1&key=${encodeURIComponent(apiKey)}`;
+  return await performProviderValidationRequest(providerType, url, {});
 }
 
-/**
- * Validate Google (Gemini) API key via GET /v1beta/models (zero cost)
- */
-async function validateGoogleKey(apiKey: string): Promise<{ valid: boolean; error?: string }> {
-  try {
-    const url = `https://generativelanguage.googleapis.com/v1beta/models?pageSize=1&key=${apiKey}`;
-    logValidationRequest('google', 'GET', url, {});
-    const response = await fetch(url);
-    logValidationStatus('google', response.status);
-    const data = await response.json().catch(() => ({}));
-    return classifyAuthResponse(response.status, data);
-  } catch (error) {
-    return { valid: false, error: `Connection error: ${error instanceof Error ? error.message : String(error)}` };
-  }
-}
-
-/**
- * Validate OpenRouter API key via GET /api/v1/models (zero cost)
- */
-async function validateOpenRouterKey(apiKey: string): Promise<{ valid: boolean; error?: string }> {
-  try {
-    const url = 'https://openrouter.ai/api/v1/models';
-    const headers = { Authorization: `Bearer ${apiKey}` };
-    logValidationRequest('openrouter', 'GET', url, headers);
-    const response = await fetch(url, { headers });
-    logValidationStatus('openrouter', response.status);
-    const data = await response.json().catch(() => ({}));
-    return classifyAuthResponse(response.status, data);
-  } catch (error) {
-    return { valid: false, error: `Connection error: ${error instanceof Error ? error.message : String(error)}` };
-  }
-}
-
-/**
- * Validate Moonshot API key via GET /v1/models (zero cost)
- */
-async function validateMoonshotKey(apiKey: string): Promise<{ valid: boolean; error?: string }> {
-  try {
-    const url = 'https://api.moonshot.cn/v1/models';
-    const headers = { Authorization: `Bearer ${apiKey}` };
-    logValidationRequest('moonshot', 'GET', url, headers);
-    const response = await fetch(url, { headers });
-    logValidationStatus('moonshot', response.status);
-    const data = await response.json().catch(() => ({}));
-    return classifyAuthResponse(response.status, data);
-  } catch (error) {
-    return { valid: false, error: `Connection error: ${error instanceof Error ? error.message : String(error)}` };
-  }
-}
-
-/**
- * Validate SiliconFlow API key via GET /v1/models (zero cost)
- */
-async function validateSiliconFlowKey(apiKey: string): Promise<{ valid: boolean; error?: string }> {
-  try {
-    const url = 'https://api.siliconflow.com/v1/models';
-    const headers = { Authorization: `Bearer ${apiKey}` };
-    logValidationRequest('siliconflow', 'GET', url, headers);
-    const response = await fetch(url, { headers });
-    logValidationStatus('siliconflow', response.status);
-    const data = await response.json().catch(() => ({}));
-    return classifyAuthResponse(response.status, data);
-  } catch (error) {
-    return { valid: false, error: `Connection error: ${error instanceof Error ? error.message : String(error)}` };
-  }
+async function validateAnthropicHeaderKey(
+  providerType: string,
+  apiKey: string,
+  baseUrl?: string
+): Promise<{ valid: boolean; error?: string }> {
+  const base = normalizeBaseUrl(baseUrl || 'https://api.anthropic.com/v1');
+  const url = `${base}/models?limit=1`;
+  const headers = {
+    'x-api-key': apiKey,
+    'anthropic-version': '2023-06-01',
+  };
+  return await performProviderValidationRequest(providerType, url, headers);
 }
 
 /**

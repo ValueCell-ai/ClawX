@@ -160,7 +160,7 @@ export function ProvidersSettings() {
                 );
                 setEditingProvider(null);
               }}
-              onValidateKey={(key) => validateApiKey(provider.id, key)}
+              onValidateKey={(key, options) => validateApiKey(provider.id, key, options)}
             />
           ))}
         </div>
@@ -172,7 +172,7 @@ export function ProvidersSettings() {
           existingTypes={new Set(providers.map((p) => p.type))}
           onClose={() => setShowAddDialog(false)}
           onAdd={handleAddProvider}
-          onValidateKey={(type, key) => validateApiKey(type, key)}
+          onValidateKey={(type, key, options) => validateApiKey(type, key, options)}
         />
       )}
     </div>
@@ -189,7 +189,10 @@ interface ProviderCardProps {
   onSetDefault: () => void;
   onToggleEnabled: () => void;
   onSaveEdits: (payload: { newApiKey?: string; updates?: Partial<ProviderConfig> }) => Promise<void>;
-  onValidateKey: (key: string) => Promise<{ valid: boolean; error?: string }>;
+  onValidateKey: (
+    key: string,
+    options?: { baseUrl?: string }
+  ) => Promise<{ valid: boolean; error?: string }>;
 }
 
 /**
@@ -245,7 +248,9 @@ function ProviderCard({
 
       if (newKey.trim()) {
         setValidating(true);
-        const result = await onValidateKey(newKey);
+        const result = await onValidateKey(newKey, {
+          baseUrl: baseUrl.trim() || undefined,
+        });
         setValidating(false);
         if (!result.valid) {
           toast.error(result.error || 'Invalid API key');
@@ -426,7 +431,11 @@ interface AddProviderDialogProps {
     apiKey: string,
     options?: { baseUrl?: string; model?: string }
   ) => Promise<void>;
-  onValidateKey: (type: string, apiKey: string) => Promise<{ valid: boolean; error?: string }>;
+  onValidateKey: (
+    type: string,
+    apiKey: string,
+    options?: { baseUrl?: string }
+  ) => Promise<{ valid: boolean; error?: string }>;
 }
 
 function AddProviderDialog({ existingTypes, onClose, onAdd, onValidateKey }: AddProviderDialogProps) {
@@ -461,7 +470,9 @@ function AddProviderDialog({ existingTypes, onClose, onAdd, onValidateKey }: Add
         return;
       }
       if (requiresKey && apiKey) {
-        const result = await onValidateKey(selectedType, apiKey);
+        const result = await onValidateKey(selectedType, apiKey, {
+          baseUrl: baseUrl.trim() || undefined,
+        });
         if (!result.valid) {
           setValidationError(result.error || 'Invalid API key');
           setSaving(false);

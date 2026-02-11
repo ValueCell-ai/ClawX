@@ -655,6 +655,7 @@ function ProviderContent({
   const [showKey, setShowKey] = useState(false);
   const [validating, setValidating] = useState(false);
   const [keyValid, setKeyValid] = useState<boolean | null>(null);
+  const [selectedProviderConfigId, setSelectedProviderConfigId] = useState<string | null>(null);
   const [baseUrl, setBaseUrl] = useState('');
   const [modelId, setModelId] = useState('');
 
@@ -673,6 +674,7 @@ function ProviderContent({
           || setupCandidates[0];
         if (preferred && !cancelled) {
           onSelectProvider(preferred.type);
+          setSelectedProviderConfigId(preferred.id);
           const typeInfo = providers.find((p) => p.id === preferred.type);
           const requiresKey = typeInfo?.requiresApiKey ?? false;
           onConfiguredChange(!requiresKey || preferred.hasKey);
@@ -706,6 +708,7 @@ function ProviderContent({
           || sameType.find((p) => p.hasKey)
           || sameType[0];
         const providerIdForLoad = preferredInstance?.id || selectedProvider;
+        setSelectedProviderConfigId(providerIdForLoad);
 
         const savedProvider = await window.electron.ipcRenderer.invoke(
           'provider:get',
@@ -746,8 +749,9 @@ function ProviderContent({
       if (requiresKey && apiKey) {
         const result = await window.electron.ipcRenderer.invoke(
           'provider:validateKey',
-          selectedProvider,
-          apiKey
+          selectedProviderConfigId || selectedProvider,
+          apiKey,
+          { baseUrl: baseUrl.trim() || undefined }
         ) as { valid: boolean; error?: string };
         
         setKeyValid(result.valid);
@@ -766,11 +770,18 @@ function ProviderContent({
         modelId.trim() ||
         undefined;
 
+      const providerIdForSave =
+        selectedProvider === 'custom'
+          ? (selectedProviderConfigId?.startsWith('custom-')
+              ? selectedProviderConfigId
+              : `custom-${crypto.randomUUID()}`)
+          : selectedProvider;
+
       // Save provider config + API key, then set as default
       const saveResult = await window.electron.ipcRenderer.invoke(
         'provider:save',
         {
-          id: selectedProvider,
+          id: providerIdForSave,
           name: selectedProviderData?.name || selectedProvider,
           type: selectedProvider,
           baseUrl: baseUrl.trim() || undefined,
@@ -788,13 +799,14 @@ function ProviderContent({
 
       const defaultResult = await window.electron.ipcRenderer.invoke(
         'provider:setDefault',
-        selectedProvider
+        providerIdForSave
       ) as { success: boolean; error?: string };
 
       if (!defaultResult.success) {
         throw new Error(defaultResult.error || 'Failed to set default provider');
       }
 
+      setSelectedProviderConfigId(providerIdForSave);
       onConfiguredChange(true);
       toast.success('Provider configured');
     } catch (error) {
@@ -824,6 +836,7 @@ function ProviderContent({
             onChange={(e) => {
               const val = e.target.value || null;
               onSelectProvider(val);
+              setSelectedProviderConfigId(null);
               onConfiguredChange(false);
               onApiKeyChange('');
               setKeyValid(null);

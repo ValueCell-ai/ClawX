@@ -92,7 +92,7 @@ const REGISTRY: Record<string, ProviderBackendMeta> = {
     envVar: 'SILICONFLOW_API_KEY',
     defaultModel: 'siliconflow/deepseek-ai/DeepSeek-V3',
     providerConfig: {
-      baseUrl: 'https://api.siliconflow.com/v1',
+      baseUrl: 'https://api.siliconflow.cn/v1',
       api: 'openai-completions',
       apiKeyEnv: 'SILICONFLOW_API_KEY',
     },

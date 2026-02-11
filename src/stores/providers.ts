@@ -27,7 +27,11 @@ interface ProviderState {
   ) => Promise<void>;
   deleteApiKey: (providerId: string) => Promise<void>;
   setDefaultProvider: (providerId: string) => Promise<void>;
-  validateApiKey: (providerId: string, apiKey: string) => Promise<{ valid: boolean; error?: string }>;
+  validateApiKey: (
+    providerId: string,
+    apiKey: string,
+    options?: { baseUrl?: string }
+  ) => Promise<{ valid: boolean; error?: string }>;
   getApiKey: (providerId: string) => Promise<string | null>;
 }
 
@@ -188,9 +192,14 @@ export const useProviderStore = create<ProviderState>((set, get) => ({
     }
   },
   
-  validateApiKey: async (providerId, apiKey) => {
+  validateApiKey: async (providerId, apiKey, options) => {
     try {
-      const result = await window.electron.ipcRenderer.invoke('provider:validateKey', providerId, apiKey) as { valid: boolean; error?: string };
+      const result = await window.electron.ipcRenderer.invoke(
+        'provider:validateKey',
+        providerId,
+        apiKey,
+        options
+      ) as { valid: boolean; error?: string };
       return result;
     } catch (error) {
       return { valid: false, error: String(error) };
