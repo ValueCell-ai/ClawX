@@ -59,17 +59,6 @@ export function Channels() {
     fetchChannels();
   }, [fetchChannels]);
 
-  useEffect(() => {
-    const unsubscribe = window.electron.ipcRenderer.on('gateway:channel-status', () => {
-      fetchChannels();
-    });
-    return () => {
-      if (typeof unsubscribe === 'function') {
-        unsubscribe();
-      }
-    };
-  }, [fetchChannels]);
-
   // Fetch configured channel types from config file
   const fetchConfiguredTypes = useCallback(async () => {
     try {
@@ -89,6 +78,18 @@ export function Channels() {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     void fetchConfiguredTypes();
   }, [fetchConfiguredTypes]);
+
+  useEffect(() => {
+    const unsubscribe = window.electron.ipcRenderer.on('gateway:channel-status', () => {
+      fetchChannels();
+      fetchConfiguredTypes();
+    });
+    return () => {
+      if (typeof unsubscribe === 'function') {
+        unsubscribe();
+      }
+    };
+  }, [fetchChannels, fetchConfiguredTypes]);
 
   // Get channel types to display
   const displayedChannelTypes = showAllChannels ? getAllChannels() : getPrimaryChannels();
@@ -205,7 +206,9 @@ export function Channels() {
                   channel={channel}
                   onDelete={() => {
                     if (confirm('Are you sure you want to delete this channel?')) {
-                      deleteChannel(channel.id);
+                      deleteChannel(channel.id).then(() => {
+                        fetchConfiguredTypes();
+                      });
                     }
                   }}
                 />
