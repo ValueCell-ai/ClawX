@@ -58,7 +58,12 @@ export const ChatMessage = memo(function ChatMessage({
       </div>
 
       {/* Content */}
-      <div className={cn('max-w-[80%] space-y-2', isUser && 'items-end')}>
+      <div
+        className={cn(
+          'flex flex-col w-full max-w-[80%] space-y-2',
+          isUser ? 'items-end' : 'items-start',
+        )}
+      >
         {/* Thinking section */}
         {showThinking && thinking && (
           <ThinkingBlock content={thinking} />
@@ -207,7 +212,7 @@ function ThinkingBlock({ content }: { content: string }) {
   const [expanded, setExpanded] = useState(false);
 
   return (
-    <div className="rounded-lg border border-border/50 bg-muted/30 text-sm">
+    <div className="w-full rounded-lg border border-border/50 bg-muted/30 text-sm">
       <button
         className="flex items-center gap-2 w-full px-3 py-2 text-muted-foreground hover:text-foreground transition-colors"
         onClick={() => setExpanded(!expanded)}
