@@ -16,12 +16,21 @@ interface ChatMessageProps {
   message: RawMessage;
   showThinking: boolean;
   isStreaming?: boolean;
+  streamingTools?: Array<{
+    id?: string;
+    toolCallId?: string;
+    name: string;
+    status: 'running' | 'completed' | 'error';
+    durationMs?: number;
+    summary?: string;
+  }>;
 }
 
 export const ChatMessage = memo(function ChatMessage({
   message,
   showThinking,
   isStreaming = false,
+  streamingTools = [],
 }: ChatMessageProps) {
   const isUser = message.role === 'user';
   const role = typeof message.role === 'string' ? message.role.toLowerCase() : '';
@@ -31,12 +40,14 @@ export const ChatMessage = memo(function ChatMessage({
   const thinking = extractThinking(message);
   const images = extractImages(message);
   const tools = extractToolUse(message);
+  const visibleThinking = showThinking ? thinking : null;
+  const visibleTools = showThinking ? tools : [];
 
   // Never render tool result messages in chat UI
   if (isToolResult) return null;
 
   // Don't render empty messages
-  if (!hasText && !thinking && images.length === 0 && tools.length === 0) return null;
+  if (!hasText && !visibleThinking && images.length === 0 && visibleTools.length === 0) return null;
 
   return (
     <div
@@ -64,15 +75,19 @@ export const ChatMessage = memo(function ChatMessage({
           isUser ? 'items-end' : 'items-start',
         )}
       >
+        {showThinking && isStreaming && !isUser && streamingTools.length > 0 && (
+          <ToolStatusBar tools={streamingTools} />
+        )}
+
         {/* Thinking section */}
-        {showThinking && thinking && (
-          <ThinkingBlock content={thinking} />
+        {visibleThinking && (
+          <ThinkingBlock content={visibleThinking} />
         )}
 
         {/* Tool use cards */}
-        {showThinking && tools.length > 0 && (
+        {visibleTools.length > 0 && (
           <div className="space-y-1">
-            {tools.map((tool, i) => (
+            {visibleTools.map((tool, i) => (
               <ToolCard key={tool.id || i} name={tool.name} input={tool.input} />
             ))}
           </div>
@@ -106,6 +121,51 @@ export const ChatMessage = memo(function ChatMessage({
   );
 });
 
+function formatDuration(durationMs?: number): string | null {
+  if (!durationMs || !Number.isFinite(durationMs)) return null;
+  if (durationMs < 1000) return `${Math.round(durationMs)}ms`;
+  return `${(durationMs / 1000).toFixed(1)}s`;
+}
+
+function ToolStatusBar({
+  tools,
+}: {
+  tools: Array<{
+    id?: string;
+    toolCallId?: string;
+    name: string;
+    status: 'running' | 'completed' | 'error';
+    durationMs?: number;
+    summary?: string;
+  }>;
+}) {
+  return (
+    <div className="w-full rounded-lg border border-border/50 bg-muted/20 px-3 py-2 text-xs text-muted-foreground">
+      <div className="space-y-1">
+        {tools.map((tool) => {
+          const duration = formatDuration(tool.durationMs);
+          const statusLabel = tool.status === 'running' ? 'running' : (tool.status === 'error' ? 'error' : 'done');
+          return (
+            <div key={tool.toolCallId || tool.id || tool.name} className="flex flex-wrap items-center gap-2">
+              <span className={cn(
+                'inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px]',
+                tool.status === 'error' ? 'bg-destructive/10 text-destructive' : 'bg-foreground/5 text-muted-foreground',
+              )}>
+                <span className="font-mono">{tool.name}</span>
+                <span className="opacity-70">{statusLabel}</span>
+              </span>
+              {duration && <span className="text-[11px] opacity-70">{duration}</span>}
+              {tool.summary && (
+                <span className="truncate text-[11px]">{tool.summary}</span>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 // ── Message Bubble ──────────────────────────────────────────────
 
 function MessageBubble({
@@ -131,6 +191,7 @@ function MessageBubble({
     <div
       className={cn(
         'relative rounded-2xl px-4 py-3',
+        !isUser && 'w-full',
         isUser
           ? 'bg-primary text-primary-foreground'
           : 'bg-muted',

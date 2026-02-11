@@ -27,6 +27,7 @@ export function Chat() {
   const error = useChatStore((s) => s.error);
   const showThinking = useChatStore((s) => s.showThinking);
   const streamingMessage = useChatStore((s) => s.streamingMessage);
+  const streamingTools = useChatStore((s) => s.streamingTools);
   const loadHistory = useChatStore((s) => s.loadHistory);
   const loadSessions = useChatStore((s) => s.loadSessions);
   const sendMessage = useChatStore((s) => s.sendMessage);
@@ -90,7 +91,8 @@ export function Chat() {
   const hasStreamTools = showThinking && streamTools.length > 0;
   const streamImages = streamMsg ? extractImages(streamMsg) : [];
   const hasStreamImages = streamImages.length > 0;
-  const shouldRenderStreaming = sending && (hasStreamText || hasStreamThinking || hasStreamTools || hasStreamImages);
+  const hasStreamToolStatus = showThinking && streamingTools.length > 0;
+  const shouldRenderStreaming = sending && (hasStreamText || hasStreamThinking || hasStreamTools || hasStreamImages || hasStreamToolStatus);
 
   return (
     <div className="flex flex-col -m-6" style={{ height: 'calc(100vh - 2.5rem)' }}>
@@ -135,11 +137,12 @@ export function Chat() {
                       }) as RawMessage}
                   showThinking={showThinking}
                   isStreaming
+                  streamingTools={streamingTools}
                 />
               )}
 
               {/* Typing indicator when sending but no stream yet */}
-              {sending && !hasStreamText && (
+              {sending && !hasStreamText && !hasStreamThinking && !hasStreamTools && !hasStreamImages && !hasStreamToolStatus && (
                 <TypingIndicator />
               )}
             </>

@@ -100,11 +100,11 @@ export function extractToolUse(message: RawMessage | unknown): Array<{ id: strin
 
   const tools: Array<{ id: string; name: string; input: unknown }> = [];
   for (const block of content as ContentBlock[]) {
-    if (block.type === 'tool_use' && block.name) {
+    if ((block.type === 'tool_use' || block.type === 'toolCall') && block.name) {
       tools.push({
         id: block.id || '',
         name: block.name,
-        input: block.input,
+        input: block.input ?? block.arguments,
       });
     }
   }
