@@ -36,6 +36,7 @@ import { formatRelativeTime, cn } from '@/lib/utils';
 import { toast } from 'sonner';
 import type { CronJob, CronJobCreateInput, ScheduleType } from '@/types/cron';
 import { CHANNEL_ICONS } from '@/types/channel';
+import { useTranslation } from 'react-i18next';
 
 // Common cron schedule presets
 const schedulePresets: { label: string; value: string; type: ScheduleType }[] = [
@@ -121,6 +122,7 @@ interface TaskDialogProps {
 }
 
 function TaskDialog({ job, onClose, onSave }: TaskDialogProps) {
+  const { t } = useTranslation('cron');
   const { channels } = useChannelsStore();
   const [saving, setSaving] = useState(false);
 
@@ -148,26 +150,26 @@ function TaskDialog({ job, onClose, onSave }: TaskDialogProps) {
 
   const handleSubmit = async () => {
     if (!name.trim()) {
-      toast.error('Please enter a task name');
+      toast.error(t('toast.nameRequired'));
       return;
     }
     if (!message.trim()) {
-      toast.error('Please enter a message');
+      toast.error(t('toast.messageRequired'));
       return;
     }
     if (!channelId) {
-      toast.error('Please select a channel');
+      toast.error(t('toast.channelRequired'));
       return;
     }
     // Validate Discord channel ID when Discord is selected
     if (selectedChannel?.type === 'discord' && !discordChannelId.trim()) {
-      toast.error('Please enter a Discord Channel ID');
+      toast.error(t('toast.discordIdRequired'));
       return;
     }
 
     const finalSchedule = useCustom ? customSchedule : schedule;
     if (!finalSchedule.trim()) {
-      toast.error('Please select or enter a schedule');
+      toast.error(t('toast.scheduleRequired'));
       return;
     }
 
@@ -178,19 +180,23 @@ function TaskDialog({ job, onClose, onSave }: TaskDialogProps) {
         ? discordChannelId.trim()
         : '';
 
-      await onSave({
-        name: name.trim(),
-        message: message.trim(),
-        schedule: finalSchedule,
-        target: {
-          channelType: selectedChannel!.type,
-          channelId: actualChannelId,
-          channelName: selectedChannel!.name,
-        },
-        enabled,
-      });
+      await onSave(
+        // ... (args omitted from replacement content, ensuring they match target if not changed, but here I am replacing the block)
+        // Wait, I should not replace the whole onSave call if I don't need to.
+        // Let's target the toast.
+        {
+          name: name.trim(),
+          message: message.trim(),
+          schedule: finalSchedule,
+          target: {
+            channelType: selectedChannel!.type,
+            channelId: actualChannelId,
+            channelName: selectedChannel!.name,
+          },
+          enabled,
+        });
       onClose();
-      toast.success(job ? 'Task updated' : 'Task created');
+      toast.success(job ? t('toast.updated') : t('toast.created'));
     } catch (err) {
       toast.error(String(err));
     } finally {
@@ -203,8 +209,8 @@ function TaskDialog({ job, onClose, onSave }: TaskDialogProps) {
       <Card className="w-full max-w-lg max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
         <CardHeader className="flex flex-row items-start justify-between">
           <div>
-            <CardTitle>{job ? 'Edit Task' : 'Create Task'}</CardTitle>
-            <CardDescription>Schedule an automated AI task</CardDescription>
+            <CardTitle>{job ? t('dialog.editTitle') : t('dialog.createTitle')}</CardTitle>
+            <CardDescription>{t('dialog.description')}</CardDescription>
           </div>
           <Button variant="ghost" size="icon" onClick={onClose}>
             <X className="h-4 w-4" />
@@ -213,10 +219,10 @@ function TaskDialog({ job, onClose, onSave }: TaskDialogProps) {
         <CardContent className="space-y-4">
           {/* Name */}
           <div className="space-y-2">
-            <Label htmlFor="name">Task Name</Label>
+            <Label htmlFor="name">{t('dialog.taskName')}</Label>
             <Input
               id="name"
-              placeholder="e.g., Morning briefing"
+              placeholder={t('dialog.taskNamePlaceholder')}
               value={name}
               onChange={(e) => setName(e.target.value)}
             />
@@ -224,10 +230,10 @@ function TaskDialog({ job, onClose, onSave }: TaskDialogProps) {
 
           {/* Message */}
           <div className="space-y-2">
-            <Label htmlFor="message">Message / Prompt</Label>
+            <Label htmlFor="message">{t('dialog.message')}</Label>
             <Textarea
               id="message"
-              placeholder="What should the AI do? e.g., Give me a summary of today's news and weather"
+              placeholder={t('dialog.messagePlaceholder')}
               value={message}
               onChange={(e) => setMessage(e.target.value)}
               rows={3}
@@ -236,7 +242,7 @@ function TaskDialog({ job, onClose, onSave }: TaskDialogProps) {
 
           {/* Schedule */}
           <div className="space-y-2">
-            <Label>Schedule</Label>
+            <Label>{t('dialog.schedule')}</Label>
             {!useCustom ? (
               <div className="grid grid-cols-2 gap-2">
                 {schedulePresets.map((preset) => (
@@ -249,13 +255,21 @@ function TaskDialog({ job, onClose, onSave }: TaskDialogProps) {
                     className="justify-start"
                   >
                     <Timer className="h-4 w-4 mr-2" />
-                    {preset.label}
+                    {preset.label === 'Every minute' ? t('presets.everyMinute') :
+                      preset.label === 'Every 5 minutes' ? t('presets.every5Min') :
+                        preset.label === 'Every 15 minutes' ? t('presets.every15Min') :
+                          preset.label === 'Every hour' ? t('presets.everyHour') :
+                            preset.label === 'Daily at 9am' ? t('presets.daily9am') :
+                              preset.label === 'Daily at 6pm' ? t('presets.daily6pm') :
+                                preset.label === 'Weekly (Mon 9am)' ? t('presets.weeklyMon') :
+                                  preset.label === 'Monthly (1st at 9am)' ? t('presets.monthly1st') :
+                                    preset.label}
                   </Button>
                 ))}
               </div>
             ) : (
               <Input
-                placeholder="Cron expression (e.g., 0 9 * * *)"
+                placeholder={t('dialog.cronPlaceholder')}
                 value={customSchedule}
                 onChange={(e) => setCustomSchedule(e.target.value)}
               />
@@ -267,16 +281,16 @@ function TaskDialog({ job, onClose, onSave }: TaskDialogProps) {
               onClick={() => setUseCustom(!useCustom)}
               className="text-xs"
             >
-              {useCustom ? 'Use presets' : 'Use custom cron'}
+              {useCustom ? t('dialog.usePresets') : t('dialog.useCustomCron')}
             </Button>
           </div>
 
           {/* Target Channel */}
           <div className="space-y-2">
-            <Label>Target Channel</Label>
+            <Label>{t('dialog.targetChannel')}</Label>
             {channels.length === 0 ? (
               <p className="text-sm text-muted-foreground">
-                No channels available. Add a channel first.
+                {t('dialog.noChannels')}
               </p>
             ) : (
               <div className="grid grid-cols-2 gap-2">
@@ -300,23 +314,23 @@ function TaskDialog({ job, onClose, onSave }: TaskDialogProps) {
           {/* Discord Channel ID - only shown when Discord is selected */}
           {isDiscord && (
             <div className="space-y-2">
-              <Label>Discord Channel ID</Label>
+              <Label>{t('dialog.discordChannelId')}</Label>
               <Input
                 value={discordChannelId}
                 onChange={(e) => setDiscordChannelId(e.target.value)}
-                placeholder="e.g., 1438452657525100686"
+                placeholder={t('dialog.discordChannelIdPlaceholder')}
               />
               <p className="text-xs text-muted-foreground">
-                Right-click the Discord channel → Copy Channel ID
+                {t('dialog.discordChannelIdDesc')}
               </p>
             </div>
           )}
           {/* Enabled */}
           <div className="flex items-center justify-between">
             <div>
-              <Label>Enable immediately</Label>
+              <Label>{t('dialog.enableImmediately')}</Label>
               <p className="text-sm text-muted-foreground">
-                Start running this task after creation
+                {t('dialog.enableImmediatelyDesc')}
               </p>
             </div>
             <Switch checked={enabled} onCheckedChange={setEnabled} />
@@ -336,7 +350,7 @@ function TaskDialog({ job, onClose, onSave }: TaskDialogProps) {
               ) : (
                 <>
                   <CheckCircle2 className="h-4 w-4 mr-2" />
-                  {job ? 'Save Changes' : 'Create Task'}
+                  {job ? t('dialog.saveChanges') : t('dialog.createTitle')}
                 </>
               )}
             </Button>
@@ -357,13 +371,14 @@ interface CronJobCardProps {
 }
 
 function CronJobCard({ job, onToggle, onEdit, onDelete, onTrigger }: CronJobCardProps) {
+  const { t } = useTranslation('cron');
   const [triggering, setTriggering] = useState(false);
 
   const handleTrigger = async () => {
     setTriggering(true);
     try {
       await onTrigger();
-      toast.success('Task triggered successfully');
+      toast.success(t('toast.triggered'));
     } catch (error) {
       console.error('Failed to trigger cron job:', error);
       toast.error(`Failed to trigger task: ${error instanceof Error ? error.message : String(error)}`);
@@ -373,7 +388,7 @@ function CronJobCard({ job, onToggle, onEdit, onDelete, onTrigger }: CronJobCard
   };
 
   const handleDelete = () => {
-    if (confirm('Are you sure you want to delete this task?')) {
+    if (confirm(t('card.deleteConfirm'))) {
       onDelete();
     }
   };
@@ -407,7 +422,7 @@ function CronJobCard({ job, onToggle, onEdit, onDelete, onTrigger }: CronJobCard
           </div>
           <div className="flex items-center gap-2">
             <Badge variant={job.enabled ? 'success' : 'secondary'}>
-              {job.enabled ? 'Active' : 'Paused'}
+              {job.enabled ? t('stats.active') : t('stats.paused')}
             </Badge>
             <Switch
               checked={job.enabled}
@@ -435,7 +450,7 @@ function CronJobCard({ job, onToggle, onEdit, onDelete, onTrigger }: CronJobCard
           {job.lastRun && (
             <span className="flex items-center gap-1">
               <History className="h-4 w-4" />
-              Last: {formatRelativeTime(job.lastRun.time)}
+              {t('card.last')}: {formatRelativeTime(job.lastRun.time)}
               {job.lastRun.success ? (
                 <CheckCircle2 className="h-4 w-4 text-green-500" />
               ) : (
@@ -447,7 +462,7 @@ function CronJobCard({ job, onToggle, onEdit, onDelete, onTrigger }: CronJobCard
           {job.nextRun && job.enabled && (
             <span className="flex items-center gap-1">
               <Calendar className="h-4 w-4" />
-              Next: {new Date(job.nextRun).toLocaleString()}
+              {t('card.next')}: {new Date(job.nextRun).toLocaleString()}
             </span>
           )}
         </div>
@@ -473,7 +488,7 @@ function CronJobCard({ job, onToggle, onEdit, onDelete, onTrigger }: CronJobCard
             ) : (
               <Play className="h-4 w-4" />
             )}
-            <span className="ml-1">Run Now</span>
+            <span className="ml-1">{t('card.runNow')}</span>
           </Button>
           <Button variant="ghost" size="sm" onClick={onEdit}>
             <Edit className="h-4 w-4" />
@@ -490,6 +505,7 @@ function CronJobCard({ job, onToggle, onEdit, onDelete, onTrigger }: CronJobCard
 }
 
 export function Cron() {
+  const { t } = useTranslation('cron');
   const { jobs, loading, error, fetchJobs, createJob, updateJob, toggleJob, deleteJob, triggerJob } = useCronStore();
   const { fetchChannels } = useChannelsStore();
   const gatewayStatus = useGatewayStore((state) => state.status);
@@ -522,20 +538,20 @@ export function Cron() {
   const handleToggle = useCallback(async (id: string, enabled: boolean) => {
     try {
       await toggleJob(id, enabled);
-      toast.success(enabled ? 'Task enabled' : 'Task paused');
+      toast.success(enabled ? t('toast.enabled') : t('toast.paused'));
     } catch {
-      toast.error('Failed to update task');
+      toast.error(t('toast.failedUpdate'));
     }
-  }, [toggleJob]);
+  }, [toggleJob, t]);
 
   const handleDelete = useCallback(async (id: string) => {
     try {
       await deleteJob(id);
-      toast.success('Task deleted');
+      toast.success(t('toast.deleted'));
     } catch {
-      toast.error('Failed to delete task');
+      toast.error(t('toast.failedDelete'));
     }
-  }, [deleteJob]);
+  }, [deleteJob, t]);
 
   if (loading) {
     return (
@@ -550,15 +566,15 @@ export function Cron() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold">Scheduled Tasks</h1>
+          <h1 className="text-2xl font-bold">{t('title')}</h1>
           <p className="text-muted-foreground">
-            Automate AI workflows with scheduled tasks
+            {t('subtitle')}
           </p>
         </div>
         <div className="flex gap-2">
           <Button variant="outline" onClick={fetchJobs} disabled={!isGatewayRunning}>
             <RefreshCw className="h-4 w-4 mr-2" />
-            Refresh
+            {t('refresh')}
           </Button>
           <Button
             onClick={() => {
@@ -568,7 +584,7 @@ export function Cron() {
             disabled={!isGatewayRunning}
           >
             <Plus className="h-4 w-4 mr-2" />
-            New Task
+            {t('newTask')}
           </Button>
         </div>
       </div>
@@ -579,7 +595,7 @@ export function Cron() {
           <CardContent className="py-4 flex items-center gap-3">
             <AlertCircle className="h-5 w-5 text-yellow-600" />
             <span className="text-yellow-700 dark:text-yellow-400">
-              Gateway is not running. Scheduled tasks cannot be managed without an active Gateway.
+              {t('gatewayWarning')}
             </span>
           </CardContent>
         </Card>
@@ -595,7 +611,7 @@ export function Cron() {
               </div>
               <div>
                 <p className="text-2xl font-bold">{jobs.length}</p>
-                <p className="text-sm text-muted-foreground">Total Tasks</p>
+                <p className="text-sm text-muted-foreground">{t('stats.total')}</p>
               </div>
             </div>
           </CardContent>
@@ -608,7 +624,7 @@ export function Cron() {
               </div>
               <div>
                 <p className="text-2xl font-bold">{activeJobs.length}</p>
-                <p className="text-sm text-muted-foreground">Active</p>
+                <p className="text-sm text-muted-foreground">{t('stats.active')}</p>
               </div>
             </div>
           </CardContent>
@@ -621,7 +637,7 @@ export function Cron() {
               </div>
               <div>
                 <p className="text-2xl font-bold">{pausedJobs.length}</p>
-                <p className="text-sm text-muted-foreground">Paused</p>
+                <p className="text-sm text-muted-foreground">{t('stats.paused')}</p>
               </div>
             </div>
           </CardContent>
@@ -634,7 +650,7 @@ export function Cron() {
               </div>
               <div>
                 <p className="text-2xl font-bold">{failedJobs.length}</p>
-                <p className="text-sm text-muted-foreground">Failed</p>
+                <p className="text-sm text-muted-foreground">{t('stats.failed')}</p>
               </div>
             </div>
           </CardContent>
@@ -656,10 +672,9 @@ export function Cron() {
         <Card>
           <CardContent className="flex flex-col items-center justify-center py-12">
             <Clock className="h-12 w-12 text-muted-foreground mb-4" />
-            <h3 className="text-lg font-medium mb-2">No scheduled tasks</h3>
+            <h3 className="text-lg font-medium mb-2">{t('empty.title')}</h3>
             <p className="text-muted-foreground text-center mb-4 max-w-md">
-              Create scheduled tasks to automate AI workflows.
-              Tasks can send messages, run queries, or perform actions at specified times.
+              {t('empty.description')}
             </p>
             <Button
               onClick={() => {
@@ -669,7 +684,7 @@ export function Cron() {
               disabled={!isGatewayRunning}
             >
               <Plus className="h-4 w-4 mr-2" />
-              Create Your First Task
+              {t('empty.create')}
             </Button>
           </CardContent>
         </Card>

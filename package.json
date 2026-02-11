@@ -60,9 +60,12 @@
         "electron-store": "^11.0.2",
         "electron-updater": "^6.8.2",
         "framer-motion": "^12.33.0",
+        "i18next": "^25.8.4",
         "lucide-react": "^0.563.0",
+        "openclaw": "2026.2.6-3",
         "react": "^19.2.4",
         "react-dom": "^19.2.4",
+        "react-i18next": "^16.5.4",
         "react-markdown": "^10.1.0",
         "react-router-dom": "^7.13.0",
         "remark-gfm": "^4.0.1",
@@ -70,8 +73,7 @@
         "tailwind-merge": "^3.4.0",
         "tailwindcss-animate": "^1.0.7",
         "ws": "^8.19.0",
-        "zustand": "^5.0.11",
-        "openclaw": "2026.2.6-3"
+        "zustand": "^5.0.11"
     },
     "devDependencies": {
         "@eslint/js": "^10.0.1",

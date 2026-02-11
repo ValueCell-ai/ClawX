@@ -1,0 +1,51 @@
+{
+    "sidebar": {
+        "chat": "チャット",
+        "cronTasks": "定期タスク",
+        "skills": "スキル",
+        "channels": "チャンネル",
+        "dashboard": "ダッシュボード",
+        "settings": "設定",
+        "devConsole": "開発者コンソール"
+    },
+    "actions": {
+        "save": "保存",
+        "cancel": "キャンセル",
+        "delete": "削除",
+        "edit": "編集",
+        "refresh": "更新",
+        "close": "閉じる",
+        "copy": "コピー",
+        "search": "検索",
+        "confirm": "確認",
+        "dismiss": "閉じる",
+        "load": "読み込み",
+        "install": "インストール",
+        "uninstall": "アンインストール",
+        "enable": "有効にする",
+        "disable": "無効にする",
+        "back": "戻る",
+        "next": "次へ",
+        "skip": "スキップ",
+        "restart": "再起動"
+    },
+    "status": {
+        "running": "実行中",
+        "stopped": "停止",
+        "error": "エラー",
+        "connected": "接続済み",
+        "disconnected": "切断",
+        "enabled": "有効",
+        "disabled": "無効",
+        "active": "アクティブ",
+        "paused": "一時停止",
+        "configured": "設定済み",
+        "loading": "読み込み中...",
+        "saving": "保存中..."
+    },
+    "gateway": {
+        "notRunning": "ゲートウェイが停止中",
+        "notRunningDesc": "この機能を使用するには OpenClaw ゲートウェイが実行されている必要があります。自動的に起動するか、設定から起動できます。",
+        "warning": "ゲートウェイが停止中です。"
+    }
+}

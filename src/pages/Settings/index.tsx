@@ -28,6 +28,8 @@ import { useGatewayStore } from '@/stores/gateway';
 import { useUpdateStore } from '@/stores/update';
 import { ProvidersSettings } from '@/components/settings/ProvidersSettings';
 import { UpdateSettings } from '@/components/settings/UpdateSettings';
+import { useTranslation } from 'react-i18next';
+import { SUPPORTED_LANGUAGES } from '@/i18n';
 type ControlUiInfo = {
   url: string;
   token: string;
@@ -35,9 +37,12 @@ type ControlUiInfo = {
 };
 
 export function Settings() {
+  const { t } = useTranslation('settings');
   const {
     theme,
     setTheme,
+    language,
+    setLanguage,
     gatewayAutoStart,
     setGatewayAutoStart,
     autoCheckUpdate,
@@ -47,7 +52,7 @@ export function Settings() {
     devModeUnlocked,
     setDevModeUnlocked,
   } = useSettingsStore();
-  
+
   const { status: gatewayStatus, restart: restartGateway } = useGatewayStore();
   const currentVersion = useUpdateStore((state) => state.currentVersion);
   const updateSetAutoDownload = useUpdateStore((state) => state.setAutoDownload);
@@ -85,7 +90,7 @@ export function Settings() {
       // ignore
     }
   };
-  
+
   // Open developer console
   const openDevConsole = async () => {
     try {
@@ -127,7 +132,7 @@ export function Settings() {
     if (!controlUiInfo?.token) return;
     try {
       await navigator.clipboard.writeText(controlUiInfo.token);
-      toast.success('Gateway token copied');
+      toast.success(t('developer.tokenCopied'));
     } catch (error) {
       toast.error(`Failed to copy token: ${String(error)}`);
     }
@@ -169,7 +174,7 @@ export function Settings() {
     if (!openclawCliCommand) return;
     try {
       await navigator.clipboard.writeText(openclawCliCommand);
-      toast.success('CLI command copied');
+      toast.success(t('developer.cmdCopied'));
     } catch (error) {
       toast.error(`Failed to copy command: ${String(error)}`);
     }
@@ -180,9 +185,9 @@ export function Settings() {
     try {
       const confirmation = await window.electron.ipcRenderer.invoke('dialog:message', {
         type: 'question',
-        title: 'Install OpenClaw Command',
-        message: 'Install the "openclaw" command?',
-        detail: 'This will create ~/.local/bin/openclaw. Ensure ~/.local/bin is on your PATH if you want to run it globally.',
+        title: t('developer.installTitle'),
+        message: t('developer.installMessage'),
+        detail: t('developer.installDetail'),
         buttons: ['Cancel', 'Install'],
         defaultId: 1,
         cancelId: 0,
@@ -212,21 +217,21 @@ export function Settings() {
   return (
     <div className="space-y-6 p-6">
       <div>
-        <h1 className="text-2xl font-bold">Settings</h1>
+        <h1 className="text-2xl font-bold">{t('title')}</h1>
         <p className="text-muted-foreground">
-          Configure your ClawX experience
+          {t('subtitle')}
         </p>
       </div>
-      
+
       {/* Appearance */}
       <Card>
         <CardHeader>
-          <CardTitle>Appearance</CardTitle>
-          <CardDescription>Customize the look and feel</CardDescription>
+          <CardTitle>{t('appearance.title')}</CardTitle>
+          <CardDescription>{t('appearance.description')}</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="space-y-2">
-            <Label>Theme</Label>
+            <Label>{t('appearance.theme')}</Label>
             <div className="flex gap-2">
               <Button
                 variant={theme === 'light' ? 'default' : 'outline'}
@@ -234,7 +239,7 @@ export function Settings() {
                 onClick={() => setTheme('light')}
               >
                 <Sun className="h-4 w-4 mr-2" />
-                Light
+                {t('appearance.light')}
               </Button>
               <Button
                 variant={theme === 'dark' ? 'default' : 'outline'}
@@ -242,7 +247,7 @@ export function Settings() {
                 onClick={() => setTheme('dark')}
               >
                 <Moon className="h-4 w-4 mr-2" />
-                Dark
+                {t('appearance.dark')}
               </Button>
               <Button
                 variant={theme === 'system' ? 'default' : 'outline'}
@@ -250,39 +255,54 @@ export function Settings() {
                 onClick={() => setTheme('system')}
               >
                 <Monitor className="h-4 w-4 mr-2" />
-                System
+                {t('appearance.system')}
               </Button>
+            </div>
+          </div>
+          <div className="space-y-2">
+            <Label>{t('appearance.language')}</Label>
+            <div className="flex gap-2">
+              {SUPPORTED_LANGUAGES.map((lang) => (
+                <Button
+                  key={lang.code}
+                  variant={language === lang.code ? 'default' : 'outline'}
+                  size="sm"
+                  onClick={() => setLanguage(lang.code)}
+                >
+                  {lang.label}
+                </Button>
+              ))}
             </div>
           </div>
         </CardContent>
       </Card>
-      
+
       {/* AI Providers */}
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Key className="h-5 w-5" />
-            AI Providers
+            {t('aiProviders.title')}
           </CardTitle>
-          <CardDescription>Configure your AI model providers and API keys</CardDescription>
+          <CardDescription>{t('aiProviders.description')}</CardDescription>
         </CardHeader>
         <CardContent>
           <ProvidersSettings />
         </CardContent>
       </Card>
-      
+
       {/* Gateway */}
       <Card>
         <CardHeader>
-          <CardTitle>Gateway</CardTitle>
-          <CardDescription>OpenClaw Gateway settings</CardDescription>
+          <CardTitle>{t('gateway.title')}</CardTitle>
+          <CardDescription>{t('gateway.description')}</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="flex items-center justify-between">
             <div>
-              <Label>Status</Label>
+              <Label>{t('gateway.status')}</Label>
               <p className="text-sm text-muted-foreground">
-                Port: {gatewayStatus.port}
+                {t('gateway.port')}: {gatewayStatus.port}
               </p>
             </div>
             <div className="flex items-center gap-2">
@@ -291,50 +311,50 @@ export function Settings() {
                   gatewayStatus.state === 'running'
                     ? 'success'
                     : gatewayStatus.state === 'error'
-                    ? 'destructive'
-                    : 'secondary'
+                      ? 'destructive'
+                      : 'secondary'
                 }
               >
                 {gatewayStatus.state}
               </Badge>
               <Button variant="outline" size="sm" onClick={restartGateway}>
                 <RefreshCw className="h-4 w-4 mr-2" />
-                Restart
+                {t('common:actions.restart')}
               </Button>
               <Button variant="outline" size="sm" onClick={handleShowLogs}>
                 <FileText className="h-4 w-4 mr-2" />
-                Logs
+                {t('gateway.logs')}
               </Button>
             </div>
           </div>
-          
+
           {showLogs && (
             <div className="mt-4 p-4 rounded-lg bg-black/10 dark:bg-black/40 border border-border">
               <div className="flex items-center justify-between mb-2">
-                <p className="font-medium text-sm">Application Logs</p>
+                <p className="font-medium text-sm">{t('gateway.appLogs')}</p>
                 <div className="flex gap-2">
                   <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={handleOpenLogDir}>
                     <ExternalLink className="h-3 w-3 mr-1" />
-                    Open Folder
+                    {t('gateway.openFolder')}
                   </Button>
                   <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={() => setShowLogs(false)}>
-                    Close
+                    {t('common:actions.close')}
                   </Button>
                 </div>
               </div>
               <pre className="text-xs text-muted-foreground bg-background/50 p-3 rounded max-h-60 overflow-auto whitespace-pre-wrap font-mono">
-                {logContent || '(No logs available yet)'}
+                {logContent || t('chat:noLogs')}
               </pre>
             </div>
           )}
 
           <Separator />
-          
+
           <div className="flex items-center justify-between">
             <div>
-              <Label>Auto-start Gateway</Label>
+              <Label>{t('gateway.autoStart')}</Label>
               <p className="text-sm text-muted-foreground">
-                Start Gateway when ClawX launches
+                {t('gateway.autoStartDesc')}
               </p>
             </div>
             <Switch
@@ -344,26 +364,26 @@ export function Settings() {
           </div>
         </CardContent>
       </Card>
-      
+
       {/* Updates */}
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Download className="h-5 w-5" />
-            Updates
+            {t('updates.title')}
           </CardTitle>
-          <CardDescription>Keep ClawX up to date</CardDescription>
+          <CardDescription>{t('updates.description')}</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <UpdateSettings />
-          
+
           <Separator />
-          
+
           <div className="flex items-center justify-between">
             <div>
-              <Label>Auto-check for updates</Label>
+              <Label>{t('updates.autoCheck')}</Label>
               <p className="text-sm text-muted-foreground">
-                Check for updates on startup
+                {t('updates.autoCheckDesc')}
               </p>
             </div>
             <Switch
@@ -371,12 +391,12 @@ export function Settings() {
               onCheckedChange={setAutoCheckUpdate}
             />
           </div>
-          
+
           <div className="flex items-center justify-between">
             <div>
-              <Label>Auto-download updates</Label>
+              <Label>{t('updates.autoDownload')}</Label>
               <p className="text-sm text-muted-foreground">
-                Download updates in the background
+                {t('updates.autoDownloadDesc')}
               </p>
             </div>
             <Switch
@@ -393,15 +413,15 @@ export function Settings() {
       {/* Advanced */}
       <Card>
         <CardHeader>
-          <CardTitle>Advanced</CardTitle>
-          <CardDescription>Power-user options</CardDescription>
+          <CardTitle>{t('advanced.title')}</CardTitle>
+          <CardDescription>{t('advanced.description')}</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="flex items-center justify-between">
             <div>
-              <Label>Developer Mode</Label>
+              <Label>{t('advanced.devMode')}</Label>
               <p className="text-sm text-muted-foreground">
-                Show developer tools and shortcuts
+                {t('advanced.devModeDesc')}
               </p>
             </div>
             <Switch
@@ -411,139 +431,139 @@ export function Settings() {
           </div>
         </CardContent>
       </Card>
-      
+
       {/* Developer */}
       {devModeUnlocked && (
         <Card>
           <CardHeader>
-            <CardTitle>Developer</CardTitle>
-          <CardDescription>Advanced options for developers</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="space-y-2">
-            <Label>OpenClaw Console</Label>
-            <p className="text-sm text-muted-foreground">
-              Access the native OpenClaw management interface
-            </p>
-            <Button variant="outline" onClick={openDevConsole}>
-              <Terminal className="h-4 w-4 mr-2" />
-              Open Developer Console
-              <ExternalLink className="h-3 w-3 ml-2" />
-            </Button>
-            <p className="text-xs text-muted-foreground">
-              Opens the Control UI with gateway token injected
-            </p>
-            <div className="space-y-2 pt-2">
-              <Label>Gateway Token</Label>
+            <CardTitle>{t('developer.title')}</CardTitle>
+            <CardDescription>{t('developer.description')}</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="space-y-2">
+              <Label>{t('developer.console')}</Label>
               <p className="text-sm text-muted-foreground">
-                Paste this into Control UI settings if prompted
+                {t('developer.consoleDesc')}
               </p>
-              <div className="flex gap-2">
-                <Input
-                  readOnly
-                  value={controlUiInfo?.token || ''}
-                  placeholder="Token unavailable"
-                  className="font-mono"
-                />
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={refreshControlUiInfo}
-                  disabled={!devModeUnlocked}
-                >
-                  <RefreshCw className="h-4 w-4 mr-2" />
-                  Load
-                </Button>
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={handleCopyGatewayToken}
-                  disabled={!controlUiInfo?.token}
-                >
-                  <Copy className="h-4 w-4 mr-2" />
-                  Copy
-                </Button>
-              </div>
-            </div>
-          </div>
-          {showCliTools && (
-            <>
-              <Separator />
-              <div className="space-y-2">
-                <Label>OpenClaw CLI</Label>
+              <Button variant="outline" onClick={openDevConsole}>
+                <Terminal className="h-4 w-4 mr-2" />
+                {t('developer.openConsole')}
+                <ExternalLink className="h-3 w-3 ml-2" />
+              </Button>
+              <p className="text-xs text-muted-foreground">
+                {t('developer.consoleNote')}
+              </p>
+              <div className="space-y-2 pt-2">
+                <Label>{t('developer.gatewayToken')}</Label>
                 <p className="text-sm text-muted-foreground">
-                  Copy a command to run OpenClaw without modifying PATH.
+                  {t('developer.gatewayTokenDesc')}
                 </p>
-                {isWindows && (
-                  <p className="text-xs text-muted-foreground">
-                    PowerShell command.
-                  </p>
-                )}
                 <div className="flex gap-2">
                   <Input
                     readOnly
-                    value={openclawCliCommand}
-                    placeholder={openclawCliError || 'Command unavailable'}
+                    value={controlUiInfo?.token || ''}
+                    placeholder={t('developer.tokenUnavailable')}
                     className="font-mono"
                   />
                   <Button
                     type="button"
                     variant="outline"
-                    onClick={handleCopyCliCommand}
-                    disabled={!openclawCliCommand}
+                    onClick={refreshControlUiInfo}
+                    disabled={!devModeUnlocked}
+                  >
+                    <RefreshCw className="h-4 w-4 mr-2" />
+                    {t('common:actions.load')}
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={handleCopyGatewayToken}
+                    disabled={!controlUiInfo?.token}
                   >
                     <Copy className="h-4 w-4 mr-2" />
-                    Copy
+                    {t('common:actions.copy')}
                   </Button>
                 </div>
-                {isMac && !isDev && (
-                  <div className="space-y-1">
+              </div>
+            </div>
+            {showCliTools && (
+              <>
+                <Separator />
+                <div className="space-y-2">
+                  <Label>{t('developer.cli')}</Label>
+                  <p className="text-sm text-muted-foreground">
+                    {t('developer.cliDesc')}
+                  </p>
+                  {isWindows && (
+                    <p className="text-xs text-muted-foreground">
+                      {t('developer.cliPowershell')}
+                    </p>
+                  )}
+                  <div className="flex gap-2">
+                    <Input
+                      readOnly
+                      value={openclawCliCommand}
+                      placeholder={openclawCliError || t('developer.cmdUnavailable')}
+                      className="font-mono"
+                    />
                     <Button
                       type="button"
                       variant="outline"
-                      onClick={handleInstallCliCommand}
-                      disabled={installingCli}
+                      onClick={handleCopyCliCommand}
+                      disabled={!openclawCliCommand}
                     >
-                      <Terminal className="h-4 w-4 mr-2" />
-                      Install "openclaw" Command
+                      <Copy className="h-4 w-4 mr-2" />
+                      {t('common:actions.copy')}
                     </Button>
-                    <p className="text-xs text-muted-foreground">
-                      Installs ~/.local/bin/openclaw (no admin required)
-                    </p>
                   </div>
-                )}
-              </div>
-            </>
-          )}
-        </CardContent>
-      </Card>
+                  {isMac && !isDev && (
+                    <div className="space-y-1">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={handleInstallCliCommand}
+                        disabled={installingCli}
+                      >
+                        <Terminal className="h-4 w-4 mr-2" />
+                        {t('developer.installCmd')}
+                      </Button>
+                      <p className="text-xs text-muted-foreground">
+                        {t('developer.installCmdDesc')}
+                      </p>
+                    </div>
+                  )}
+                </div>
+              </>
+            )}
+          </CardContent>
+        </Card>
       )}
-      
+
       {/* About */}
       <Card>
         <CardHeader>
-          <CardTitle>About</CardTitle>
+          <CardTitle>{t('about.title')}</CardTitle>
         </CardHeader>
         <CardContent className="space-y-2 text-sm text-muted-foreground">
           <p>
-            <strong>ClawX</strong> - Graphical AI Assistant
+            <strong>{t('about.appName')}</strong> - {t('about.tagline')}
           </p>
-          <p>Based on OpenClaw</p>
-          <p>Version {currentVersion}</p>
+          <p>{t('about.basedOn')}</p>
+          <p>{t('about.version', { version: currentVersion })}</p>
           <div className="flex gap-4 pt-2">
             <Button
               variant="link"
               className="h-auto p-0"
               onClick={() => window.electron.openExternal('https://clawx.dev')}
             >
-              Documentation
+              {t('about.docs')}
             </Button>
             <Button
               variant="link"
               className="h-auto p-0"
               onClick={() => window.electron.openExternal('https://github.com/ValueCell-ai/ClawX')}
             >
-              GitHub
+              {t('about.github')}
             </Button>
           </div>
         </CardContent>

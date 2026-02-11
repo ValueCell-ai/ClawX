@@ -1,0 +1,13 @@
+{
+    "gatewayNotRunning": "Gateway Not Running",
+    "gatewayRequired": "The OpenClaw Gateway needs to be running to use chat. It will start automatically, or you can start it from Settings.",
+    "welcome": {
+        "title": "ClawX Chat",
+        "subtitle": "Your AI assistant is ready. Start a conversation below.",
+        "askQuestions": "Ask Questions",
+        "askQuestionsDesc": "Get answers on any topic",
+        "creativeTasks": "Creative Tasks",
+        "creativeTasksDesc": "Writing, brainstorming, ideas"
+    },
+    "noLogs": "(No logs available yet)"
+}

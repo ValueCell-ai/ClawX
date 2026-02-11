@@ -1,0 +1,28 @@
+{
+    "gateway": "Gateway",
+    "channels": "Channels",
+    "skills": "Skills",
+    "uptime": "Uptime",
+    "port": "Port: {{port}}",
+    "pid": "PID: {{pid}}",
+    "connectedOf": "{{connected}} of {{total}} connected",
+    "enabledOf": "{{enabled}} of {{total}} enabled",
+    "sinceRestart": "Since last restart",
+    "gatewayNotRunning": "Gateway not running",
+    "quickActions": {
+        "title": "Quick Actions",
+        "description": "Common tasks and shortcuts",
+        "addChannel": "Add Channel",
+        "browseSkills": "Browse Skills",
+        "openChat": "Open Chat",
+        "settings": "Settings",
+        "devConsole": "Dev Console"
+    },
+    "connectedChannels": "Connected Channels",
+    "noChannels": "No channels configured",
+    "addFirst": "Add your first channel",
+    "activeSkills": "Active Skills",
+    "noSkills": "No skills enabled",
+    "enableSome": "Enable some skills",
+    "more": "+{{count}} more"
+}

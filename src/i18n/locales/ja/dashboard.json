@@ -1,0 +1,28 @@
+{
+    "gateway": "ゲートウェイ",
+    "channels": "チャンネル",
+    "skills": "スキル",
+    "uptime": "稼働時間",
+    "port": "ポート: {{port}}",
+    "pid": "PID: {{pid}}",
+    "connectedOf": "{{total}} 中 {{connected}} 接続済み",
+    "enabledOf": "{{total}} 中 {{enabled}} 有効",
+    "sinceRestart": "前回の再起動から",
+    "gatewayNotRunning": "ゲートウェイが停止中",
+    "quickActions": {
+        "title": "クイックアクション",
+        "description": "よく使うタスクとショートカット",
+        "addChannel": "チャンネル追加",
+        "browseSkills": "スキルを探す",
+        "openChat": "チャットを開く",
+        "settings": "設定",
+        "devConsole": "開発者コンソール"
+    },
+    "connectedChannels": "接続済みチャンネル",
+    "noChannels": "チャンネルが設定されていません",
+    "addFirst": "最初のチャンネルを追加",
+    "activeSkills": "アクティブなスキル",
+    "noSkills": "有効なスキルがありません",
+    "enableSome": "スキルを有効にする",
+    "more": "+{{count}} 件"
+}

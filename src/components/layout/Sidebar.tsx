@@ -20,6 +20,7 @@ import { cn } from '@/lib/utils';
 import { useSettingsStore } from '@/stores/settings';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { useTranslation } from 'react-i18next';
 
 interface NavItemProps {
   to: string;
@@ -81,13 +82,15 @@ export function Sidebar() {
     }
   };
 
+  const { t } = useTranslation();
+
   const navItems = [
-    { to: '/', icon: <MessageSquare className="h-5 w-5" />, label: 'Chat' },
-    { to: '/cron', icon: <Clock className="h-5 w-5" />, label: 'Cron Tasks' },
-    { to: '/skills', icon: <Puzzle className="h-5 w-5" />, label: 'Skills' },
-    { to: '/channels', icon: <Radio className="h-5 w-5" />, label: 'Channels' },
-    { to: '/dashboard', icon: <Home className="h-5 w-5" />, label: 'Dashboard' },
-    { to: '/settings', icon: <Settings className="h-5 w-5" />, label: 'Settings' },
+    { to: '/', icon: <MessageSquare className="h-5 w-5" />, label: t('sidebar.chat') },
+    { to: '/cron', icon: <Clock className="h-5 w-5" />, label: t('sidebar.cronTasks') },
+    { to: '/skills', icon: <Puzzle className="h-5 w-5" />, label: t('sidebar.skills') },
+    { to: '/channels', icon: <Radio className="h-5 w-5" />, label: t('sidebar.channels') },
+    { to: '/dashboard', icon: <Home className="h-5 w-5" />, label: t('sidebar.dashboard') },
+    { to: '/settings', icon: <Settings className="h-5 w-5" />, label: t('sidebar.settings') },
   ];
 
   return (
@@ -118,7 +121,7 @@ export function Sidebar() {
             onClick={openDevConsole}
           >
             <Terminal className="h-4 w-4 mr-2" />
-            Developer Console
+            {t('sidebar.devConsole')}
             <ExternalLink className="h-3 w-3 ml-auto" />
           </Button>
         )}
