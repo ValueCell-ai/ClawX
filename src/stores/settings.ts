@@ -50,7 +50,12 @@ interface SettingsState {
 
 const defaultSettings = {
   theme: 'system' as Theme,
-  language: 'en',
+  language: (() => {
+    const lang = navigator.language.toLowerCase();
+    if (lang.startsWith('zh')) return 'zh';
+    if (lang.startsWith('ja')) return 'ja';
+    return 'en';
+  })(),
   startMinimized: false,
   launchAtStartup: false,
   gatewayAutoStart: true,

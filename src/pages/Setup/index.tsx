@@ -326,7 +326,7 @@ function WelcomeContent() {
             onClick={() => setLanguage(lang.code)}
             className="h-7 text-xs"
           >
-            {lang.code === 'system' ? t('appearance.system', { ns: 'settings' }) : lang.label}
+            {lang.label}
           </Button>
         ))}
       </div>
