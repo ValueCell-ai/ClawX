@@ -112,6 +112,7 @@ export function Setup() {
   
   // Setup state
   const [selectedProvider, setSelectedProvider] = useState<string | null>(null);
+  const [providerConfigured, setProviderConfigured] = useState(false);
   const [apiKey, setApiKey] = useState('');
   // Installation state for the Installing step
   const [installedSkills, setInstalledSkills] = useState<string[]>([]);
@@ -135,7 +136,7 @@ export function Setup() {
       case STEP.RUNTIME:
         return runtimeChecksPassed;
       case STEP.PROVIDER:
-        return selectedProvider !== null;
+        return providerConfigured;
       case STEP.CHANNEL:
         return true; // Always allow proceeding — channel step is optional
       case STEP.INSTALLING:
@@ -145,7 +146,7 @@ export function Setup() {
       default:
         return true;
     }
-  }, [safeStepIndex, selectedProvider, runtimeChecksPassed]);
+  }, [safeStepIndex, providerConfigured, runtimeChecksPassed]);
   
   const handleNext = async () => {
     if (isLastStep) {
@@ -237,6 +238,7 @@ export function Setup() {
                 onSelectProvider={setSelectedProvider}
                 apiKey={apiKey}
                 onApiKeyChange={setApiKey}
+                onConfiguredChange={setProviderConfigured}
               />
             )}
                 {safeStepIndex === STEP.CHANNEL && <SetupChannelContent />}
@@ -639,6 +641,7 @@ interface ProviderContentProps {
   onSelectProvider: (id: string | null) => void;
   apiKey: string;
   onApiKeyChange: (key: string) => void;
+  onConfiguredChange: (configured: boolean) => void;
 }
 
 function ProviderContent({ 
@@ -646,7 +649,8 @@ function ProviderContent({
   selectedProvider, 
   onSelectProvider, 
   apiKey, 
-  onApiKeyChange 
+  onApiKeyChange,
+  onConfiguredChange,
 }: ProviderContentProps) {
   const [showKey, setShowKey] = useState(false);
   const [validating, setValidating] = useState(false);
@@ -659,11 +663,17 @@ function ProviderContent({
     let cancelled = false;
     (async () => {
       try {
-        const list = await window.electron.ipcRenderer.invoke('provider:list') as Array<{ id: string; hasKey: boolean }>;
+        const list = await window.electron.ipcRenderer.invoke('provider:list') as Array<{ id: string; type: string; hasKey: boolean }>;
         const defaultId = await window.electron.ipcRenderer.invoke('provider:getDefault') as string | null;
-        const preferred = (defaultId && list.find((p) => p.id === defaultId && p.hasKey)) || list.find((p) => p.hasKey);
+        const preferred =
+          (defaultId && list.find((p) => p.id === defaultId))
+          || list.find((p) => p.hasKey)
+          || list[0];
         if (preferred && !cancelled) {
           onSelectProvider(preferred.id);
+          const typeInfo = providers.find((p) => p.id === preferred.type);
+          const requiresKey = typeInfo?.requiresApiKey ?? false;
+          onConfiguredChange(!requiresKey || preferred.hasKey);
           const storedKey = await window.electron.ipcRenderer.invoke('provider:getApiKey', preferred.id) as string | null;
           if (storedKey) {
             onApiKeyChange(storedKey);
@@ -676,7 +686,7 @@ function ProviderContent({
       }
     })();
     return () => { cancelled = true; };
-  }, [onApiKeyChange, onSelectProvider]);
+  }, [onApiKeyChange, onConfiguredChange, onSelectProvider, providers]);
 
   // When provider changes, load stored key + reset base URL
   useEffect(() => {
@@ -684,9 +694,19 @@ function ProviderContent({
     (async () => {
       if (!selectedProvider) return;
       try {
+        const savedProvider = await window.electron.ipcRenderer.invoke(
+          'provider:get',
+          selectedProvider
+        ) as { baseUrl?: string; model?: string } | null;
         const storedKey = await window.electron.ipcRenderer.invoke('provider:getApiKey', selectedProvider) as string | null;
-        if (!cancelled && storedKey) {
-          onApiKeyChange(storedKey);
+        if (!cancelled) {
+          if (storedKey) {
+            onApiKeyChange(storedKey);
+          }
+
+          const info = providers.find((p) => p.id === selectedProvider);
+          setBaseUrl(savedProvider?.baseUrl || info?.defaultBaseUrl || '');
+          setModelId(savedProvider?.model || info?.defaultModelId || '');
         }
       } catch (error) {
         if (!cancelled) {
@@ -694,10 +714,6 @@ function ProviderContent({
         }
       }
     })();
-    // Set the default base URL and model ID for the selected provider
-    const info = providers.find((p) => p.id === selectedProvider);
-    setBaseUrl(info?.defaultBaseUrl || '');
-    setModelId(info?.defaultModelId || '');
     return () => { cancelled = true; };
   }, [onApiKeyChange, selectedProvider, providers]);
   
@@ -732,29 +748,45 @@ function ProviderContent({
         setKeyValid(true);
       }
 
+      const effectiveModelId =
+        selectedProviderData?.defaultModelId ||
+        modelId.trim() ||
+        undefined;
+
       // Save provider config + API key, then set as default
-      try {
-        await window.electron.ipcRenderer.invoke(
-          'provider:save',
-          {
-            id: selectedProvider,
-            name: selectedProviderData?.name || selectedProvider,
-            type: selectedProvider,
-            baseUrl: baseUrl || undefined,
-            model: modelId || undefined,
-            enabled: true,
-            createdAt: new Date().toISOString(),
-            updatedAt: new Date().toISOString(),
-          },
-          apiKey || undefined
-        );
-        await window.electron.ipcRenderer.invoke('provider:setDefault', selectedProvider);
-      } catch (saveErr) {
-        console.warn('Failed to persist provider config:', saveErr);
+      const saveResult = await window.electron.ipcRenderer.invoke(
+        'provider:save',
+        {
+          id: selectedProvider,
+          name: selectedProviderData?.name || selectedProvider,
+          type: selectedProvider,
+          baseUrl: baseUrl.trim() || undefined,
+          model: effectiveModelId,
+          enabled: true,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        },
+        apiKey || undefined
+      ) as { success: boolean; error?: string };
+
+      if (!saveResult.success) {
+        throw new Error(saveResult.error || 'Failed to save provider config');
       }
+
+      const defaultResult = await window.electron.ipcRenderer.invoke(
+        'provider:setDefault',
+        selectedProvider
+      ) as { success: boolean; error?: string };
+
+      if (!defaultResult.success) {
+        throw new Error(defaultResult.error || 'Failed to set default provider');
+      }
+
+      onConfiguredChange(true);
       toast.success('Provider configured');
     } catch (error) {
       setKeyValid(false);
+      onConfiguredChange(false);
       toast.error('Configuration failed: ' + String(error));
     } finally {
       setValidating(false);
@@ -762,7 +794,10 @@ function ProviderContent({
   };
 
   // Can the user submit?
-  const canSubmit = selectedProvider && (requiresKey ? apiKey.length > 0 : true);
+  const canSubmit =
+    selectedProvider
+    && (requiresKey ? apiKey.length > 0 : true)
+    && (showModelIdField ? modelId.trim().length > 0 : true);
   
   return (
     <div className="space-y-6">
@@ -776,6 +811,7 @@ function ProviderContent({
             onChange={(e) => {
               const val = e.target.value || null;
               onSelectProvider(val);
+              onConfiguredChange(false);
               onApiKeyChange('');
               setKeyValid(null);
             }}
@@ -813,7 +849,10 @@ function ProviderContent({
                 type="text"
                 placeholder="https://api.example.com/v1"
                 value={baseUrl}
-                onChange={(e) => setBaseUrl(e.target.value)}
+                onChange={(e) => {
+                  setBaseUrl(e.target.value);
+                  onConfiguredChange(false);
+                }}
                 autoComplete="off"
                 className="bg-white/5 border-white/10"
               />
@@ -829,7 +868,10 @@ function ProviderContent({
                 type="text"
                 placeholder={selectedProviderData?.modelIdPlaceholder || 'e.g. deepseek-ai/DeepSeek-V3'}
                 value={modelId}
-                onChange={(e) => setModelId(e.target.value)}
+                onChange={(e) => {
+                  setModelId(e.target.value);
+                  onConfiguredChange(false);
+                }}
                 autoComplete="off"
                 className="bg-white/5 border-white/10"
               />
@@ -851,6 +893,7 @@ function ProviderContent({
                   value={apiKey}
                   onChange={(e) => {
                     onApiKeyChange(e.target.value);
+                    onConfiguredChange(false);
                     setKeyValid(null);
                   }}
                   autoComplete="off"

@@ -22,7 +22,11 @@ import {
 import { getOpenClawStatus, getOpenClawDir } from '../utils/paths';
 import { getOpenClawCliCommand, installOpenClawCliMac } from '../utils/openclaw-cli';
 import { getSetting } from '../utils/store';
-import { saveProviderKeyToOpenClaw, setOpenClawDefaultModel } from '../utils/openclaw-auth';
+import {
+  saveProviderKeyToOpenClaw,
+  removeProviderKeyFromOpenClaw,
+  setOpenClawDefaultModel,
+} from '../utils/openclaw-auth';
 import { logger } from '../utils/logger';
 import {
   saveChannelConfig,
@@ -711,7 +715,18 @@ function registerProviderHandlers(): void {
   // Delete a provider
   ipcMain.handle('provider:delete', async (_, providerId: string) => {
     try {
+      const existing = await getProvider(providerId);
       await deleteProvider(providerId);
+
+      // Best-effort cleanup in OpenClaw auth profiles
+      if (existing?.type) {
+        try {
+          removeProviderKeyFromOpenClaw(existing.type);
+        } catch (err) {
+          console.warn('Failed to remove key from OpenClaw auth-profiles:', err);
+        }
+      }
+
       return { success: true };
     } catch (error) {
       return { success: false, error: String(error) };
@@ -743,6 +758,16 @@ function registerProviderHandlers(): void {
   ipcMain.handle('provider:deleteApiKey', async (_, providerId: string) => {
     try {
       await deleteApiKey(providerId);
+
+      // Keep OpenClaw auth-profiles.json in sync with local key storage
+      const provider = await getProvider(providerId);
+      const providerType = provider?.type || providerId;
+      try {
+        removeProviderKeyFromOpenClaw(providerType);
+      } catch (err) {
+        console.warn('Failed to remove key from OpenClaw auth-profiles:', err);
+      }
+
       return { success: true };
     } catch (error) {
       return { success: false, error: String(error) };
@@ -768,6 +793,12 @@ function registerProviderHandlers(): void {
       const provider = await getProvider(providerId);
       if (provider) {
         try {
+          // custom/ollama are user-defined model ids. We persist provider config,
+          // but do not auto-write agents.defaults.model in openclaw.json.
+          if (provider.type === 'custom' || provider.type === 'ollama') {
+            return { success: true };
+          }
+
           // If the provider has a user-specified model (e.g. siliconflow),
           // build the full model string: "providerType/modelId"
           const modelOverride = provider.model

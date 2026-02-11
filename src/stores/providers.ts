@@ -77,9 +77,11 @@ export const useProviderStore = create<ProviderState>((set, get) => ({
       if (!existing) {
         throw new Error('Provider not found');
       }
+
+      const { hasKey: _hasKey, keyMasked: _keyMasked, ...providerConfig } = existing;
       
       const updatedConfig: ProviderConfig = {
-        ...existing,
+        ...providerConfig,
         ...updates,
         updatedAt: new Date().toISOString(),
       };

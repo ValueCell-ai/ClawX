@@ -52,11 +52,26 @@ export function ProvidersSettings() {
     fetchProviders();
   }, [fetchProviders]);
   
-  const handleAddProvider = async (type: ProviderType, name: string, apiKey: string) => {
+  const handleAddProvider = async (
+    type: ProviderType,
+    name: string,
+    apiKey: string,
+    options?: { baseUrl?: string; model?: string }
+  ) => {
     // For built-in types use type as id (one per type); for custom allow multiples
     const id = type === 'custom' ? `custom-${Date.now()}` : type;
     try {
-      await addProvider({ id, type, name, enabled: true }, apiKey || undefined);
+      await addProvider(
+        {
+          id,
+          type,
+          name,
+          baseUrl: options?.baseUrl,
+          model: options?.model,
+          enabled: true,
+        },
+        apiKey || undefined
+      );
 
       // Auto-set as default if this is the first provider
       if (providers.length === 0) {
@@ -324,7 +339,12 @@ function ProviderCard({
 interface AddProviderDialogProps {
   existingTypes: Set<string>;
   onClose: () => void;
-  onAdd: (type: ProviderType, name: string, apiKey: string) => Promise<void>;
+  onAdd: (
+    type: ProviderType,
+    name: string,
+    apiKey: string,
+    options?: { baseUrl?: string; model?: string }
+  ) => Promise<void>;
   onValidateKey: (type: string, apiKey: string) => Promise<{ valid: boolean; error?: string }>;
 }
 
@@ -332,6 +352,8 @@ function AddProviderDialog({ existingTypes, onClose, onAdd, onValidateKey }: Add
   const [selectedType, setSelectedType] = useState<ProviderType | null>(null);
   const [name, setName] = useState('');
   const [apiKey, setApiKey] = useState('');
+  const [baseUrl, setBaseUrl] = useState('');
+  const [modelId, setModelId] = useState('');
   const [showKey, setShowKey] = useState(false);
   const [saving, setSaving] = useState(false);
   const [validationError, setValidationError] = useState<string | null>(null);
@@ -361,7 +383,22 @@ function AddProviderDialog({ existingTypes, onClose, onAdd, onValidateKey }: Add
         }
       }
 
-      await onAdd(selectedType, name || typeInfo?.name || selectedType, apiKey);
+      const requiresModel = typeInfo?.showModelId ?? false;
+      if (requiresModel && !modelId.trim()) {
+        setValidationError('Model ID is required');
+        setSaving(false);
+        return;
+      }
+
+      await onAdd(
+        selectedType,
+        name || typeInfo?.name || selectedType,
+        apiKey,
+        {
+          baseUrl: baseUrl.trim() || undefined,
+          model: (typeInfo?.defaultModelId || modelId.trim()) || undefined,
+        }
+      );
     } catch {
       // error already handled via toast in parent
     } finally {
@@ -387,6 +424,8 @@ function AddProviderDialog({ existingTypes, onClose, onAdd, onValidateKey }: Add
                   onClick={() => {
                     setSelectedType(type.id);
                     setName(type.name);
+                    setBaseUrl(type.defaultBaseUrl || '');
+                    setModelId(type.defaultModelId || '');
                   }}
                   className="p-4 rounded-lg border hover:bg-accent transition-colors text-center"
                 >
@@ -405,6 +444,8 @@ function AddProviderDialog({ existingTypes, onClose, onAdd, onValidateKey }: Add
                     onClick={() => {
                       setSelectedType(null);
                       setValidationError(null);
+                      setBaseUrl('');
+                      setModelId('');
                     }}
                     className="text-sm text-muted-foreground hover:text-foreground"
                   >
@@ -452,6 +493,33 @@ function AddProviderDialog({ existingTypes, onClose, onAdd, onValidateKey }: Add
                   Your API key is stored locally on your machine.
                 </p>
               </div>
+
+              {typeInfo?.showBaseUrl && (
+                <div className="space-y-2">
+                  <Label htmlFor="baseUrl">Base URL</Label>
+                  <Input
+                    id="baseUrl"
+                    placeholder="https://api.example.com/v1"
+                    value={baseUrl}
+                    onChange={(e) => setBaseUrl(e.target.value)}
+                  />
+                </div>
+              )}
+
+              {typeInfo?.showModelId && (
+                <div className="space-y-2">
+                  <Label htmlFor="modelId">Model ID</Label>
+                  <Input
+                    id="modelId"
+                    placeholder={typeInfo.modelIdPlaceholder || 'provider/model-id'}
+                    value={modelId}
+                    onChange={(e) => {
+                      setModelId(e.target.value);
+                      setValidationError(null);
+                    }}
+                  />
+                </div>
+              )}
             </div>
           )}
           
@@ -463,7 +531,7 @@ function AddProviderDialog({ existingTypes, onClose, onAdd, onValidateKey }: Add
             </Button>
             <Button 
               onClick={handleAdd} 
-              disabled={!selectedType || saving}
+              disabled={!selectedType || saving || ((typeInfo?.showModelId ?? false) && modelId.trim().length === 0)}
             >
               {saving ? (
                 <Loader2 className="h-4 w-4 animate-spin mr-2" />

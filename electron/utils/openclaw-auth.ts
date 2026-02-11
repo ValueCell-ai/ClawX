@@ -129,6 +129,33 @@ export function saveProviderKeyToOpenClaw(
 }
 
 /**
+ * Remove a provider API key from OpenClaw auth-profiles.json
+ */
+export function removeProviderKeyFromOpenClaw(
+  provider: string,
+  agentId = 'main'
+): void {
+  const store = readAuthProfiles(agentId);
+  const profileId = `${provider}:default`;
+
+  delete store.profiles[profileId];
+
+  if (store.order?.[provider]) {
+    store.order[provider] = store.order[provider].filter((id) => id !== profileId);
+    if (store.order[provider].length === 0) {
+      delete store.order[provider];
+    }
+  }
+
+  if (store.lastGood?.[provider] === profileId) {
+    delete store.lastGood[provider];
+  }
+
+  writeAuthProfiles(store, agentId);
+  console.log(`Removed API key for provider "${provider}" from OpenClaw auth-profiles (agent: ${agentId})`);
+}
+
+/**
  * Build environment variables object with all stored API keys
  * for passing to the Gateway process
  */
