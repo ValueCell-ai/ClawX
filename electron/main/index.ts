@@ -171,17 +171,21 @@ async function initialize(): Promise<void> {
 }
 
 // Application lifecycle
-app.whenReady().then(initialize);
+app.whenReady().then(() => {
+  initialize();
+
+  // Register activate handler AFTER app is ready to prevent
+  // "Cannot create BrowserWindow before app is ready" on macOS.
+  app.on('activate', () => {
+    if (BrowserWindow.getAllWindows().length === 0) {
+      mainWindow = createWindow();
+    }
+  });
+});
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {
     app.quit();
-  }
-});
-
-app.on('activate', () => {
-  if (BrowserWindow.getAllWindows().length === 0) {
-    mainWindow = createWindow();
   }
 });
 
