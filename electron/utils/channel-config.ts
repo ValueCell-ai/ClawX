@@ -271,6 +271,22 @@ export function deleteChannelConfig(channelType: string): void {
         delete currentConfig.channels[channelType];
         writeOpenClawConfig(currentConfig);
         console.log(`Deleted channel config for ${channelType}`);
+    } else if (PLUGIN_CHANNELS.includes(channelType)) {
+        // Handle plugin channels (like whatsapp)
+        if (currentConfig.plugins?.entries?.[channelType]) {
+            delete currentConfig.plugins.entries[channelType];
+
+            // Cleanup empty objects
+            if (Object.keys(currentConfig.plugins.entries).length === 0) {
+                delete currentConfig.plugins.entries;
+            }
+            if (currentConfig.plugins && Object.keys(currentConfig.plugins).length === 0) {
+                delete currentConfig.plugins;
+            }
+
+            writeOpenClawConfig(currentConfig);
+            console.log(`Deleted plugin channel config for ${channelType}`);
+        }
     }
 
     // Special handling for WhatsApp credentials
