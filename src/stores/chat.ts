@@ -60,7 +60,7 @@ interface ChatState {
   thinkingLevel: string | null;
 
   // Actions
-  loadSessions: () => Promise<void>;
+  loadSessions: (reloadHistory?: boolean) => Promise<void>;
   switchSession: (key: string) => void;
   newSession: () => void;
   loadHistory: () => Promise<void>;
@@ -72,9 +72,15 @@ interface ChatState {
   clearError: () => void;
 }
 
+function isToolResultRole(role: unknown): boolean {
+  if (!role) return false;
+  const normalized = String(role).toLowerCase();
+  return normalized === 'toolresult' || normalized === 'tool_result';
+}
+
 function isToolOnlyMessage(message: RawMessage | undefined): boolean {
   if (!message) return false;
-  if (message.role === 'toolresult') return true;
+  if (isToolResultRole(message.role)) return true;
 
   const content = message.content;
   if (!Array.isArray(content)) return false;
@@ -119,6 +125,17 @@ function hasNonToolAssistantContent(message: RawMessage | undefined): boolean {
   return false;
 }
 
+const DEFAULT_CANONICAL_PREFIX = 'agent:main';
+const DEFAULT_SESSION_KEY = `${DEFAULT_CANONICAL_PREFIX}:main`;
+
+function getCanonicalPrefixFromSessions(sessions: ChatSession[]): string | null {
+  const canonical = sessions.find((s) => s.key.startsWith('agent:'))?.key;
+  if (!canonical) return null;
+  const parts = canonical.split(':');
+  if (parts.length < 2) return null;
+  return `${parts[0]}:${parts[1]}`;
+}
+
 // ── Store ────────────────────────────────────────────────────────
 
 export const useChatStore = create<ChatState>((set, get) => ({
@@ -134,14 +151,14 @@ export const useChatStore = create<ChatState>((set, get) => ({
   lastUserMessageAt: null,
 
   sessions: [],
-  currentSessionKey: 'main',
+  currentSessionKey: '',
 
   showThinking: true,
   thinkingLevel: null,
 
   // ── Load sessions via sessions.list ──
 
-  loadSessions: async () => {
+  loadSessions: async (reloadHistory = true) => {
     try {
       const result = await window.electron.ipcRenderer.invoke(
         'gateway:rpc',
@@ -152,41 +169,57 @@ export const useChatStore = create<ChatState>((set, get) => ({
       if (result.success && result.result) {
         const data = result.result;
         const rawSessions = Array.isArray(data.sessions) ? data.sessions : [];
-        const sessions: ChatSession[] = rawSessions.map((s: Record<string, unknown>) => ({
-          key: String(s.key || ''),
-          label: s.label ? String(s.label) : undefined,
-          displayName: s.displayName ? String(s.displayName) : undefined,
-          thinkingLevel: s.thinkingLevel ? String(s.thinkingLevel) : undefined,
-          model: s.model ? String(s.model) : undefined,
-        })).filter((s: ChatSession) => s.key);
+        const sessions: ChatSession[] = rawSessions.map((s: Record<string, unknown>) => {
+          const key = String(s.key || '');
+          return {
+            key,
+            thinkingLevel: s.thinkingLevel ? String(s.thinkingLevel) : undefined,
+            model: s.model ? String(s.model) : undefined,
+          };
+        }).filter((s: ChatSession) => s.key);
 
-        // Normalize: the Gateway returns the main session with canonical key
-        // like "agent:main:main", but the frontend uses "main" for all RPC calls.
-        // Map the canonical main session key to "main" so the selector stays consistent.
-        const mainCanonicalPattern = /^agent:[^:]+:main$/;
-        const normalizedSessions = sessions.map((s) => {
-          if (mainCanonicalPattern.test(s.key)) {
-            return { ...s, key: 'main', displayName: s.displayName || 'main' };
+        const canonicalBySuffix = new Map<string, string>();
+        for (const session of sessions) {
+          if (!session.key.startsWith('agent:')) continue;
+          const parts = session.key.split(':');
+          if (parts.length < 3) continue;
+          const suffix = parts.slice(2).join(':');
+          if (suffix && !canonicalBySuffix.has(suffix)) {
+            canonicalBySuffix.set(suffix, session.key);
           }
-          return s;
-        });
+        }
 
-        // Deduplicate: if both "main" and "agent:X:main" existed, keep only one
+        // Deduplicate: if both short and canonical existed, keep canonical only
         const seen = new Set<string>();
-        const dedupedSessions = normalizedSessions.filter((s) => {
+        const dedupedSessions = sessions.filter((s) => {
+          if (!s.key.startsWith('agent:') && canonicalBySuffix.has(s.key)) return false;
           if (seen.has(s.key)) return false;
           seen.add(s.key);
           return true;
         });
-
-        set({ sessions: dedupedSessions });
-
-        // If currentSessionKey is 'main' and we now have sessions,
-        // ensure we stay on 'main' (no-op, but load history if needed)
         const { currentSessionKey } = get();
-        if (currentSessionKey === 'main' && !dedupedSessions.find((s) => s.key === 'main') && dedupedSessions.length > 0) {
-          // Main session not found at all — switch to the first available session
-          set({ currentSessionKey: dedupedSessions[0].key });
+        let nextSessionKey = currentSessionKey;
+        if (!nextSessionKey && dedupedSessions.length > 0) {
+          // No current session set; default to the first available session.
+          nextSessionKey = dedupedSessions[0].key;
+        }
+
+        const sessionsWithCurrent = !dedupedSessions.find((s) => s.key === nextSessionKey) && nextSessionKey
+          ? [
+              ...dedupedSessions,
+              {
+                key: nextSessionKey,
+                displayName: nextSessionKey,
+              },
+            ]
+          : dedupedSessions;
+
+        set({
+          sessions: sessionsWithCurrent,
+          currentSessionKey: nextSessionKey,
+        });
+
+        if (reloadHistory && currentSessionKey !== nextSessionKey) {
           get().loadHistory();
         }
       }
@@ -216,7 +249,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
   newSession: () => {
     // Generate a new unique session key and switch to it
-    const newKey = `session-${Date.now()}`;
+    const prefix = getCanonicalPrefixFromSessions(get().sessions) ?? DEFAULT_CANONICAL_PREFIX;
+    const newKey = `${prefix}:session-${Date.now()}`;
     set({
       currentSessionKey: newKey,
       messages: [],
@@ -234,24 +268,29 @@ export const useChatStore = create<ChatState>((set, get) => ({
   // ── Load chat history ──
 
   loadHistory: async () => {
-    const { currentSessionKey } = get();
+    const { currentSessionKey, sessions } = get();
+    const resolvedSessionKey = currentSessionKey || sessions[0]?.key || DEFAULT_SESSION_KEY;
+    if (resolvedSessionKey !== currentSessionKey) {
+      set({ currentSessionKey: resolvedSessionKey });
+    }
     set({ loading: true, error: null });
 
     try {
       const result = await window.electron.ipcRenderer.invoke(
         'gateway:rpc',
         'chat.history',
-        { sessionKey: currentSessionKey, limit: 200 }
+        { sessionKey: resolvedSessionKey, limit: 200 }
       ) as { success: boolean; result?: Record<string, unknown>; error?: string };
 
       if (result.success && result.result) {
         const data = result.result;
         const rawMessages = Array.isArray(data.messages) ? data.messages as RawMessage[] : [];
+        const filteredMessages = rawMessages.filter((msg) => !isToolResultRole(msg.role));
         const thinkingLevel = data.thinkingLevel ? String(data.thinkingLevel) : null;
-        set({ messages: rawMessages, thinkingLevel, loading: false });
+        set({ messages: filteredMessages, thinkingLevel, loading: false });
         const { pendingFinal, lastUserMessageAt } = get();
         if (pendingFinal) {
-          const recentAssistant = [...rawMessages].reverse().find((msg) => {
+          const recentAssistant = [...filteredMessages].reverse().find((msg) => {
             if (msg.role !== 'assistant') return false;
             if (!hasNonToolAssistantContent(msg)) return false;
             if (lastUserMessageAt && msg.timestamp && msg.timestamp < lastUserMessageAt) return false;
@@ -276,7 +315,11 @@ export const useChatStore = create<ChatState>((set, get) => ({
     const trimmed = text.trim();
     if (!trimmed && (!attachments || attachments.length === 0)) return;
 
-    const { currentSessionKey } = get();
+    const { currentSessionKey, sessions } = get();
+    const resolvedSessionKey = currentSessionKey || sessions[0]?.key || DEFAULT_SESSION_KEY;
+    if (resolvedSessionKey !== currentSessionKey) {
+      set({ currentSessionKey: resolvedSessionKey });
+    }
 
     // Add user message optimistically
     const userMsg: RawMessage = {
@@ -298,7 +341,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
     try {
       const idempotencyKey = crypto.randomUUID();
       const rpcParams: Record<string, unknown> = {
-        sessionKey: currentSessionKey,
+        sessionKey: resolvedSessionKey,
         message: trimmed || 'Describe this image.',
         deliver: false,
         idempotencyKey,
@@ -335,14 +378,18 @@ export const useChatStore = create<ChatState>((set, get) => ({
   // ── Abort active run ──
 
   abortRun: async () => {
-    const { currentSessionKey } = get();
+    const { currentSessionKey, sessions } = get();
+    const resolvedSessionKey = currentSessionKey || sessions[0]?.key || DEFAULT_SESSION_KEY;
+    if (resolvedSessionKey !== currentSessionKey) {
+      set({ currentSessionKey: resolvedSessionKey });
+    }
     set({ sending: false, streamingText: '', streamingMessage: null, pendingFinal: false, lastUserMessageAt: null });
 
     try {
       await window.electron.ipcRenderer.invoke(
         'gateway:rpc',
         'chat.abort',
-        { sessionKey: currentSessionKey },
+        { sessionKey: resolvedSessionKey },
       );
     } catch (err) {
       set({ error: String(err) });
@@ -371,6 +418,14 @@ export const useChatStore = create<ChatState>((set, get) => ({
         // Message complete - add to history and clear streaming
         const finalMsg = event.message as RawMessage | undefined;
         if (finalMsg) {
+          if (isToolResultRole(finalMsg.role)) {
+            set({
+              streamingText: '',
+              streamingMessage: null,
+              pendingFinal: true,
+            });
+            break;
+          }
           const toolOnly = isToolOnlyMessage(finalMsg);
           const hasOutput = hasNonToolAssistantContent(finalMsg);
           const msgId = finalMsg.id || (toolOnly ? `run-${runId}-tool-${Date.now()}` : `run-${runId}`);
@@ -455,7 +510,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
   refresh: async () => {
     const { loadHistory, loadSessions } = get();
-    await Promise.all([loadHistory(), loadSessions()]);
+    await loadSessions();
+    await loadHistory();
   },
 
   clearError: () => set({ error: null }),

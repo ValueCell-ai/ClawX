@@ -13,7 +13,7 @@ import { LoadingSpinner } from '@/components/common/LoadingSpinner';
 import { ChatMessage } from './ChatMessage';
 import { ChatInput } from './ChatInput';
 import { ChatToolbar } from './ChatToolbar';
-import { extractText } from './message-utils';
+import { extractImages, extractText, extractThinking, extractToolUse } from './message-utils';
 
 export function Chat() {
   const gatewayStatus = useGatewayStore((s) => s.status);
@@ -36,10 +36,16 @@ export function Chat() {
 
   // Load data when gateway is running
   useEffect(() => {
-    if (isGatewayRunning) {
-      loadHistory();
-      loadSessions();
-    }
+    if (!isGatewayRunning) return;
+    let cancelled = false;
+    (async () => {
+      await loadSessions();
+      if (cancelled) return;
+      await loadHistory();
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, [isGatewayRunning, loadHistory, loadSessions]);
 
   // Auto-scroll on new messages or streaming
@@ -77,6 +83,13 @@ export function Chat() {
     : null;
   const streamText = streamMsg ? extractText(streamMsg) : (typeof streamingMessage === 'string' ? streamingMessage : '');
   const hasStreamText = streamText.trim().length > 0;
+  const streamThinking = streamMsg ? extractThinking(streamMsg) : null;
+  const hasStreamThinking = showThinking && !!streamThinking && streamThinking.trim().length > 0;
+  const streamTools = streamMsg ? extractToolUse(streamMsg) : [];
+  const hasStreamTools = showThinking && streamTools.length > 0;
+  const streamImages = streamMsg ? extractImages(streamMsg) : [];
+  const hasStreamImages = streamImages.length > 0;
+  const shouldRenderStreaming = sending && (hasStreamText || hasStreamThinking || hasStreamTools || hasStreamImages);
 
   return (
     <div className="flex flex-col -m-6" style={{ height: 'calc(100vh - 2.5rem)' }}>
@@ -105,13 +118,20 @@ export function Chat() {
               ))}
 
               {/* Streaming message */}
-              {sending && hasStreamText && (
+              {shouldRenderStreaming && (
                 <ChatMessage
-                  message={{
-                    role: 'assistant',
-                    content: streamMsg?.content ?? streamText,
-                    timestamp: streamMsg?.timestamp ?? streamingTimestamp,
-                  }}
+                  message={streamMsg
+                    ? {
+                        ...(streamMsg as Record<string, unknown>),
+                        role: typeof streamMsg.role === 'string' ? streamMsg.role : 'assistant',
+                        content: streamMsg.content ?? streamText,
+                        timestamp: streamMsg.timestamp ?? streamingTimestamp,
+                      }
+                    : {
+                        role: 'assistant',
+                        content: streamText,
+                        timestamp: streamingTimestamp,
+                      }}
                   showThinking={showThinking}
                   isStreaming
                 />

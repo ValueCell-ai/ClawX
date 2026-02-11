@@ -13,9 +13,13 @@ export function extractText(message: RawMessage | unknown): string {
   if (!message || typeof message !== 'object') return '';
   const msg = message as Record<string, unknown>;
   const content = msg.content;
+  const role = typeof msg.role === 'string' ? msg.role.toLowerCase() : '';
+  if (role === 'toolresult' || role === 'tool_result') {
+    return '';
+  }
 
   if (typeof content === 'string') {
-    return content;
+    return content.trim().length > 0 ? content : '';
   }
 
   if (Array.isArray(content)) {
@@ -24,12 +28,9 @@ export function extractText(message: RawMessage | unknown): string {
       if (block.type === 'text' && block.text) {
         parts.push(block.text);
       }
-      // tool_result blocks may have nested text
-      if (block.type === 'tool_result' && typeof block.content === 'string') {
-        parts.push(block.content);
-      }
     }
-    return parts.join('\n\n');
+    const combined = parts.join('\n\n');
+    return combined.trim().length > 0 ? combined : '';
   }
 
   // Fallback: try .text field
@@ -47,14 +48,27 @@ export function extractText(message: RawMessage | unknown): string {
 export function extractThinking(message: RawMessage | unknown): string | null {
   if (!message || typeof message !== 'object') return null;
   const msg = message as Record<string, unknown>;
+  if (typeof msg.thinking === 'string' && msg.thinking.trim()) {
+    return msg.thinking;
+  }
   const content = msg.content;
 
   if (!Array.isArray(content)) return null;
 
   const parts: string[] = [];
   for (const block of content as ContentBlock[]) {
-    if (block.type === 'thinking' && block.thinking) {
-      parts.push(block.thinking);
+    if (block.type === 'thinking' || block.type === 'analysis' || block.type === 'reasoning') {
+      if (block.thinking && block.thinking.trim()) {
+        parts.push(block.thinking);
+        continue;
+      }
+      if (block.text && block.text.trim()) {
+        parts.push(block.text);
+        continue;
+      }
+      if (typeof block.content === 'string' && block.content.trim()) {
+        parts.push(block.content);
+      }
     }
   }
 

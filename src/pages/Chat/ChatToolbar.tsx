@@ -38,12 +38,12 @@ export function ChatToolbar() {
           {/* Render all sessions; if currentSessionKey is not in the list, add it */}
           {!sessions.some((s) => s.key === currentSessionKey) && (
             <option value={currentSessionKey}>
-              {currentSessionKey === 'main' ? 'main' : currentSessionKey}
+              {currentSessionKey}
             </option>
           )}
           {sessions.map((s) => (
             <option key={s.key} value={s.key}>
-              {s.displayName || s.label || s.key}
+              {s.key}
             </option>
           ))}
         </select>
