@@ -41,7 +41,7 @@ export function UpdateSettings() {
     await checkForUpdates();
   }, [checkForUpdates, clearError]);
 
-  const renderStatusIcon = () => {
+  const _renderStatusIcon = () => {
     switch (status) {
       case 'checking':
         return <Loader2 className="h-5 w-5 animate-spin text-blue-500" />;
