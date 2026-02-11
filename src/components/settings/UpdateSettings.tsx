@@ -71,7 +71,7 @@ export function UpdateSettings() {
       case 'downloaded':
         return `Ready to install: v${updateInfo?.version}`;
       case 'error':
-        return error || 'Update check failed';
+        return 'Update check failed';
       case 'not-available':
         return 'You have the latest version';
       default:
@@ -138,12 +138,9 @@ export function UpdateSettings() {
   return (
     <div className="space-y-4">
       {/* Current Version */}
-      <div className="flex items-center justify-between">
-        <div className="space-y-1">
-          <p className="text-sm font-medium">Current Version</p>
-          <p className="text-2xl font-bold">v{currentVersion}</p>
-        </div>
-        {renderStatusIcon()}
+      <div className="space-y-1">
+        <p className="text-sm font-medium">Current Version</p>
+        <p className="text-2xl font-bold">v{currentVersion}</p>
       </div>
 
       {/* Status */}

@@ -3,11 +3,15 @@
  * Handles automatic application updates using electron-updater
  *
  * Update providers are configured in electron-builder.yml (OSS primary, GitHub fallback).
- * electron-updater handles provider resolution automatically.
+ * For prerelease channels (alpha, beta), the feed URL is overridden at runtime
+ * to point at the channel-specific OSS directory (e.g. /alpha/, /beta/).
  */
 import { autoUpdater, UpdateInfo, ProgressInfo, UpdateDownloadedEvent } from 'electron-updater';
 import { BrowserWindow, app, ipcMain } from 'electron';
 import { EventEmitter } from 'events';
+
+/** Base CDN URL (without trailing channel path) */
+const OSS_BASE_URL = 'https://oss.intelli-spectrum.com';
 
 export interface UpdateStatus {
   status: 'idle' | 'checking' | 'available' | 'not-available' | 'downloading' | 'downloaded' | 'error';
@@ -24,6 +28,15 @@ export interface UpdaterEvents {
   'download-progress': (progress: ProgressInfo) => void;
   'update-downloaded': (event: UpdateDownloadedEvent) => void;
   'error': (error: Error) => void;
+}
+
+/**
+ * Detect the update channel from a semver version string.
+ * e.g. "0.1.8-alpha.0" → "alpha", "1.0.0-beta.1" → "beta", "1.0.0" → "latest"
+ */
+function detectChannel(version: string): string {
+  const match = version.match(/-([a-zA-Z]+)/);
+  return match ? match[1] : 'latest';
 }
 
 export class AppUpdater extends EventEmitter {
@@ -44,6 +57,20 @@ export class AppUpdater extends EventEmitter {
       error: (msg: string) => console.error('[Updater]', msg),
       debug: (msg: string) => console.debug('[Updater]', msg),
     };
+
+    // Override feed URL for prerelease channels so that
+    // alpha -> /alpha/alpha-mac.yml, beta -> /beta/beta-mac.yml, etc.
+    const version = app.getVersion();
+    const channel = detectChannel(version);
+    const feedUrl = `${OSS_BASE_URL}/${channel}`;
+
+    console.log(`[Updater] Version: ${version}, channel: ${channel}, feedUrl: ${feedUrl}`);
+
+    autoUpdater.setFeedURL({
+      provider: 'generic',
+      url: feedUrl,
+      useMultipleRangeRequest: false,
+    });
 
     this.setupListeners();
   }
@@ -227,42 +254,6 @@ export function registerUpdateHandlers(
     return { success: true };
   });
 
-  // Forward update events to renderer
-  updater.on('checking-for-update', () => {
-    if (!mainWindow.isDestroyed()) {
-      mainWindow.webContents.send('update:checking');
-    }
-  });
-
-  updater.on('update-available', (info) => {
-    if (!mainWindow.isDestroyed()) {
-      mainWindow.webContents.send('update:available', info);
-    }
-  });
-
-  updater.on('update-not-available', (info) => {
-    if (!mainWindow.isDestroyed()) {
-      mainWindow.webContents.send('update:not-available', info);
-    }
-  });
-
-  updater.on('download-progress', (progress) => {
-    if (!mainWindow.isDestroyed()) {
-      mainWindow.webContents.send('update:progress', progress);
-    }
-  });
-
-  updater.on('update-downloaded', (event) => {
-    if (!mainWindow.isDestroyed()) {
-      mainWindow.webContents.send('update:downloaded', event);
-    }
-  });
-
-  updater.on('error', (error) => {
-    if (!mainWindow.isDestroyed()) {
-      mainWindow.webContents.send('update:error', error.message);
-    }
-  });
 }
 
 // Export singleton instance

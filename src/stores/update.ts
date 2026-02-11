@@ -83,6 +83,8 @@ export const useUpdateStore = create<UpdateState>((set, get) => ({
     }
 
     // Listen for update events
+    // Single source of truth: listen only to update:status-changed
+    // (sent by AppUpdater.updateStatus() in the main process)
     window.electron.ipcRenderer.on('update:status-changed', (data) => {
       const status = data as {
         status: UpdateStatus;
@@ -96,30 +98,6 @@ export const useUpdateStore = create<UpdateState>((set, get) => ({
         progress: status.progress || null,
         error: status.error || null,
       });
-    });
-
-    window.electron.ipcRenderer.on('update:checking', () => {
-      set({ status: 'checking', error: null });
-    });
-
-    window.electron.ipcRenderer.on('update:available', (info) => {
-      set({ status: 'available', updateInfo: info as UpdateInfo });
-    });
-
-    window.electron.ipcRenderer.on('update:not-available', () => {
-      set({ status: 'not-available' });
-    });
-
-    window.electron.ipcRenderer.on('update:progress', (progress) => {
-      set({ status: 'downloading', progress: progress as ProgressInfo });
-    });
-
-    window.electron.ipcRenderer.on('update:downloaded', (info) => {
-      set({ status: 'downloaded', updateInfo: info as UpdateInfo, progress: null });
-    });
-
-    window.electron.ipcRenderer.on('update:error', (error) => {
-      set({ status: 'error', error: error as string, progress: null });
     });
 
     set({ isInitialized: true });
