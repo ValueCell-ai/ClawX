@@ -19,7 +19,7 @@ import {
   getAllProvidersWithKeyInfo,
   type ProviderConfig,
 } from '../utils/secure-storage';
-import { getOpenClawStatus, getOpenClawDir, getOpenClawConfigDir, getOpenClawSkillsDir } from '../utils/paths';
+import { getOpenClawStatus, getOpenClawDir, getOpenClawConfigDir, getOpenClawSkillsDir, ensureDir } from '../utils/paths';
 import { getOpenClawCliCommand, installOpenClawCliMac } from '../utils/openclaw-cli';
 import { getSetting } from '../utils/store';
 import {
@@ -517,7 +517,9 @@ function registerOpenClawHandlers(): void {
 
   // Get the OpenClaw skills directory (~/.openclaw/skills)
   ipcMain.handle('openclaw:getSkillsDir', () => {
-    return getOpenClawSkillsDir();
+    const dir = getOpenClawSkillsDir();
+    ensureDir(dir);
+    return dir;
   });
 
   // Get a shell command to run OpenClaw CLI without modifying PATH
@@ -911,24 +913,24 @@ function registerProviderHandlers(): void {
       apiKey: string,
       options?: { baseUrl?: string }
     ) => {
-    try {
-      // First try to get existing provider
-      const provider = await getProvider(providerId);
+      try {
+        // First try to get existing provider
+        const provider = await getProvider(providerId);
 
-      // Use provider.type if provider exists, otherwise use providerId as the type
-      // This allows validation during setup when provider hasn't been saved yet
-      const providerType = provider?.type || providerId;
-      const registryBaseUrl = getProviderConfig(providerType)?.baseUrl;
-      // Prefer caller-supplied baseUrl (live form value) over persisted config.
-      // This ensures Setup/Settings validation reflects unsaved edits immediately.
-      const resolvedBaseUrl = options?.baseUrl || provider?.baseUrl || registryBaseUrl;
+        // Use provider.type if provider exists, otherwise use providerId as the type
+        // This allows validation during setup when provider hasn't been saved yet
+        const providerType = provider?.type || providerId;
+        const registryBaseUrl = getProviderConfig(providerType)?.baseUrl;
+        // Prefer caller-supplied baseUrl (live form value) over persisted config.
+        // This ensures Setup/Settings validation reflects unsaved edits immediately.
+        const resolvedBaseUrl = options?.baseUrl || provider?.baseUrl || registryBaseUrl;
 
-      console.log(`[clawx-validate] validating provider type: ${providerType}`);
-      return await validateApiKeyWithProvider(providerType, apiKey, { baseUrl: resolvedBaseUrl });
-    } catch (error) {
-      console.error('Validation error:', error);
-      return { valid: false, error: String(error) };
-    }
+        console.log(`[clawx-validate] validating provider type: ${providerType}`);
+        return await validateApiKeyWithProvider(providerType, apiKey, { baseUrl: resolvedBaseUrl });
+      } catch (error) {
+        console.error('Validation error:', error);
+        return { valid: false, error: String(error) };
+      }
     }
   );
 }

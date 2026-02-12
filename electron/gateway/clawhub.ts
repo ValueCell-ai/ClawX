@@ -98,7 +98,10 @@ export class ClawHubService {
             const child = spawn(this.cliPath, commandArgs, {
                 cwd: this.workDir,
                 shell: isWin && !this.useNodeRunner,
-                env,
+                env: {
+                    ...env,
+                    CLAWHUB_WORKDIR: this.workDir,
+                },
             });
 
             let stdout = '';
