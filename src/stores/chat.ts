@@ -383,9 +383,9 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
         const sessionsWithCurrent = !dedupedSessions.find((s) => s.key === nextSessionKey) && nextSessionKey
           ? [
-              ...dedupedSessions,
-              { key: nextSessionKey, displayName: nextSessionKey },
-            ]
+            ...dedupedSessions,
+            { key: nextSessionKey, displayName: nextSessionKey },
+          ]
           : dedupedSessions;
 
         set({ sessions: sessionsWithCurrent, currentSessionKey: nextSessionKey });
@@ -423,8 +423,10 @@ export const useChatStore = create<ChatState>((set, get) => ({
     // Generate a new unique session key and switch to it
     const prefix = getCanonicalPrefixFromSessions(get().sessions) ?? DEFAULT_CANONICAL_PREFIX;
     const newKey = `${prefix}:session-${Date.now()}`;
-    set({
+    const newSessionEntry: ChatSession = { key: newKey, displayName: newKey };
+    set((s) => ({
       currentSessionKey: newKey,
+      sessions: [...s.sessions, newSessionEntry],
       messages: [],
       streamingText: '',
       streamingMessage: null,
@@ -433,9 +435,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       error: null,
       pendingFinal: false,
       lastUserMessageAt: null,
-    });
-    // Reload sessions list to include the new one after first message
-    get().loadSessions();
+    }));
   },
 
   // ── Load chat history ──
