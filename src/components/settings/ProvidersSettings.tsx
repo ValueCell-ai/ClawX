@@ -21,7 +21,6 @@ import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
-import { Switch } from '@/components/ui/switch';
 import { useProviderStore, type ProviderConfig, type ProviderWithKeyInfo } from '@/stores/providers';
 import {
   PROVIDER_TYPE_INFO,
@@ -41,7 +40,6 @@ export function ProvidersSettings() {
     loading,
     fetchProviders,
     addProvider,
-    updateProvider,
     deleteProvider,
     updateProviderWithKey,
     setDefaultProvider,
@@ -108,14 +106,6 @@ export function ProvidersSettings() {
     }
   };
 
-  const handleToggleEnabled = async (provider: ProviderWithKeyInfo) => {
-    try {
-      await updateProvider(provider.id, { enabled: !provider.enabled });
-    } catch (error) {
-      toast.error(`${t('aiProviders.toast.failedUpdate')}: ${error}`);
-    }
-  };
-
   return (
     <div className="space-y-4">
       <div className="flex justify-end">
@@ -155,7 +145,6 @@ export function ProvidersSettings() {
               onCancelEdit={() => setEditingProvider(null)}
               onDelete={() => handleDeleteProvider(provider.id)}
               onSetDefault={() => handleSetDefault(provider.id)}
-              onToggleEnabled={() => handleToggleEnabled(provider)}
               onSaveEdits={async (payload) => {
                 await updateProviderWithKey(
                   provider.id,
@@ -191,7 +180,6 @@ interface ProviderCardProps {
   onCancelEdit: () => void;
   onDelete: () => void;
   onSetDefault: () => void;
-  onToggleEnabled: () => void;
   onSaveEdits: (payload: { newApiKey?: string; updates?: Partial<ProviderConfig> }) => Promise<void>;
   onValidateKey: (
     key: string,
@@ -209,7 +197,6 @@ function ProviderCard({
   onCancelEdit,
   onDelete,
   onSetDefault,
-  onToggleEnabled,
   onSaveEdits,
   onValidateKey,
 }: ProviderCardProps) {
@@ -291,7 +278,7 @@ function ProviderCard({
   return (
     <Card className={cn(isDefault && 'ring-2 ring-primary')}>
       <CardContent className="p-4">
-        {/* Top row: icon + name + toggle */}
+        {/* Top row: icon + name */}
         <div className="flex items-center justify-between mb-3">
           <div className="flex items-center gap-3">
             {getProviderIconUrl(provider.type) ? (
@@ -302,17 +289,10 @@ function ProviderCard({
             <div>
               <div className="flex items-center gap-2">
                 <span className="font-semibold">{provider.name}</span>
-                {isDefault && (
-                  <Badge variant="default" className="text-xs">{t('aiProviders.card.default')}</Badge>
-                )}
               </div>
               <span className="text-xs text-muted-foreground capitalize">{provider.type}</span>
             </div>
           </div>
-          <Switch
-            checked={provider.enabled}
-            onCheckedChange={onToggleEnabled}
-          />
         </div>
 
         {/* Key row */}
@@ -403,11 +383,23 @@ function ProviderCard({
               )}
             </div>
             <div className="flex gap-0.5 shrink-0 ml-2">
-              {!isDefault && (
-                <Button variant="ghost" size="icon" className="h-7 w-7" onClick={onSetDefault} title={t('aiProviders.card.setDefault')}>
-                  <Star className="h-3.5 w-3.5" />
-                </Button>
-              )}
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-7 w-7"
+                onClick={isDefault ? undefined : onSetDefault}
+                title={isDefault ? t('aiProviders.card.default') : t('aiProviders.card.setDefault')}
+                disabled={isDefault}
+              >
+                <Star
+                  className={cn(
+                    'h-3.5 w-3.5 transition-colors',
+                    isDefault
+                      ? 'fill-yellow-400 text-yellow-400'
+                      : 'text-muted-foreground'
+                  )}
+                />
+              </Button>
               <Button variant="ghost" size="icon" className="h-7 w-7" onClick={onEdit} title={t('aiProviders.card.editKey')}>
                 <Edit className="h-3.5 w-3.5" />
               </Button>
