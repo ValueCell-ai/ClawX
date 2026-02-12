@@ -128,7 +128,7 @@
         "tagline": "Graphical AI Assistant",
         "basedOn": "Based on OpenClaw",
         "version": "Version {{version}}",
-        "docs": "Documentation",
+        "docs": "Website",
         "github": "GitHub"
     }
 }

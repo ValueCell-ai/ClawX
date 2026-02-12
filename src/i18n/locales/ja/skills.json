@@ -56,7 +56,8 @@
         "failedSave": "設定の保存に失敗しました",
         "failedOpenFolder": "スキルフォルダを開けませんでした",
         "failedInstall": "インストールに失敗しました",
-        "failedUninstall": "アンインストールに失敗しました"
+        "failedUninstall": "アンインストールに失敗しました",
+        "failedFolderNotFound": "スキルフォルダがまだ存在しません。先にスキルをインストールしてください。"
     },
     "marketplace": {
         "title": "マーケットプレイス",

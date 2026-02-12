@@ -128,7 +128,7 @@
         "tagline": "图形化 AI 助手",
         "basedOn": "基于 OpenClaw",
         "version": "版本 {{version}}",
-        "docs": "文档",
+        "docs": "官网",
         "github": "GitHub"
     }
 }

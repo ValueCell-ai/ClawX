@@ -56,7 +56,8 @@
         "failedSave": "Failed to save configuration",
         "failedOpenFolder": "Failed to open skills folder",
         "failedInstall": "Failed to install",
-        "failedUninstall": "Failed to uninstall"
+        "failedUninstall": "Failed to uninstall",
+        "failedFolderNotFound": "Skills folder does not exist yet. Install a skill first."
     },
     "marketplace": {
         "title": "Marketplace",

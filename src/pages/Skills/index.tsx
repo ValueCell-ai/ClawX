@@ -615,6 +615,8 @@ export function Skills() {
     }
   }, [enableSkill, disableSkill, t]);
 
+  const hasInstalledSkills = skills.some(s => !s.isBundled);
+
   const handleOpenSkillsFolder = useCallback(async () => {
     try {
       const skillsDir = await window.electron.ipcRenderer.invoke('openclaw:getSkillsDir') as string;
@@ -623,7 +625,12 @@ export function Skills() {
       }
       const result = await window.electron.ipcRenderer.invoke('shell:openPath', skillsDir) as string;
       if (result) {
-        throw new Error(result);
+        // shell.openPath returns an error string if the path doesn't exist
+        if (result.toLowerCase().includes('no such file') || result.toLowerCase().includes('not found') || result.toLowerCase().includes('failed to open')) {
+          toast.error(t('toast.failedFolderNotFound'));
+        } else {
+          throw new Error(result);
+        }
       }
     } catch (err) {
       toast.error(t('toast.failedOpenFolder') + ': ' + String(err));
@@ -702,10 +709,12 @@ export function Skills() {
             <RefreshCw className="h-4 w-4 mr-2" />
             {t('refresh')}
           </Button>
-          <Button variant="outline" onClick={handleOpenSkillsFolder}>
-            <FolderOpen className="h-4 w-4 mr-2" />
-            {t('openFolder')}
-          </Button>
+          {hasInstalledSkills && (
+            <Button variant="outline" onClick={handleOpenSkillsFolder}>
+              <FolderOpen className="h-4 w-4 mr-2" />
+              {t('openFolder')}
+            </Button>
+          )}
         </div>
       </div>
 
