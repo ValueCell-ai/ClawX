@@ -120,6 +120,7 @@ jobs:
             release/*.deb
             release/*.rpm
             release/*.yml
+            !release/builder-debug.yml
           retention-days: 7
 
   # ──────────────────────────────────────────────────────────────
@@ -145,6 +146,11 @@ jobs:
           echo ""
           echo "=== File tree ==="
           tree release-artifacts/ || find release-artifacts/ -print
+
+      - name: Remove duplicate builder-debug files
+        run: |
+          echo "Removing builder-debug.yml files to avoid duplicate asset upload conflicts..."
+          find release-artifacts/ -name "builder-debug.yml" -delete -print || true
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
