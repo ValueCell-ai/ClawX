@@ -38,6 +38,16 @@ Whether you're automating workflows, managing AI-powered channels, or scheduling
 
 ---
 
+## Community
+
+Join our community to connect with other users, get support, and share your experiences.
+
+| Enterprise WeChat | Feishu Group | Discord |
+| :---: | :---: | :---: |
+| <img src="src/assets/community/wecom-qr.png" width="150" alt="WeChat QR Code" /> | <img src="src/assets/community/feishu-qr.png" width="150" alt="Feishu QR Code" /> | <img src="src/assets/community/20260212-185822.png" width="150" alt="Discord QR Code" /> |
+
+---
+
 ## Why ClawX
 
 Building AI agents shouldn't require mastering the command line. ClawX was designed with a simple philosophy: **powerful technology deserves an interface that respects your time.**
@@ -296,6 +306,9 @@ ClawX is built on the shoulders of excellent open-source projects:
 - [Zustand](https://github.com/pmndrs/zustand) – Lightweight state management
 
 ---
+
+
+
 
 ## License
 
