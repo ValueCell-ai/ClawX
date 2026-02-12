@@ -144,7 +144,7 @@
                 "创建一个新应用",
                 "获取 App ID 和 App Secret",
                 "配置事件订阅",
-                "注意：当前OpenClaw文档中未提及，但请务必在权限管理中添加 contact:contact.base:readonly 权限，否则无法正常使用"
+                "注意：当前OpenClaw文档中未提及，但请务必在权限管理中添加 contact:contact.base:readonly **应用权限**，否则无法正常使用"
             ]
         },
         "imessage": {

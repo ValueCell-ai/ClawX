@@ -144,7 +144,7 @@
                 "Create a new application",
                 "Get App ID and App Secret",
                 "Configure event subscription",
-                "Note: Not mentioned in current OpenClaw docs, but you MUST add 'contact:contact.base:readonly' permission in Permission Management"
+                "Note: Not mentioned in current OpenClaw docs, but you MUST add 'contact:contact.base:readonly' **Application Permission** in Permission Management"
             ]
         },
         "imessage": {
