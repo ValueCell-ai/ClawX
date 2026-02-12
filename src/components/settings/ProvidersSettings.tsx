@@ -26,6 +26,8 @@ import { useProviderStore, type ProviderConfig, type ProviderWithKeyInfo } from 
 import {
   PROVIDER_TYPE_INFO,
   type ProviderType,
+  getProviderIconUrl,
+  shouldInvertInDark,
 } from '@/lib/providers';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
@@ -292,7 +294,11 @@ function ProviderCard({
         {/* Top row: icon + name + toggle */}
         <div className="flex items-center justify-between mb-3">
           <div className="flex items-center gap-3">
-            <span className="text-xl">{typeInfo?.icon || '⚙️'}</span>
+            {getProviderIconUrl(provider.type) ? (
+              <img src={getProviderIconUrl(provider.type)} alt={typeInfo?.name || provider.type} className={cn('h-5 w-5', shouldInvertInDark(provider.type) && 'dark:invert')} />
+            ) : (
+              <span className="text-xl">{typeInfo?.icon || '⚙️'}</span>
+            )}
             <div>
               <div className="flex items-center gap-2">
                 <span className="font-semibold">{provider.name}</span>
@@ -521,7 +527,11 @@ function AddProviderDialog({ existingTypes, onClose, onAdd, onValidateKey }: Add
                   }}
                   className="p-4 rounded-lg border hover:bg-accent transition-colors text-center"
                 >
-                  <span className="text-2xl">{type.icon}</span>
+                  {getProviderIconUrl(type.id) ? (
+                    <img src={getProviderIconUrl(type.id)} alt={type.name} className={cn('h-7 w-7 mx-auto', shouldInvertInDark(type.id) && 'dark:invert')} />
+                  ) : (
+                    <span className="text-2xl">{type.icon}</span>
+                  )}
                   <p className="font-medium mt-2">{type.name}</p>
                 </button>
               ))}
@@ -529,7 +539,11 @@ function AddProviderDialog({ existingTypes, onClose, onAdd, onValidateKey }: Add
           ) : (
             <div className="space-y-4">
               <div className="flex items-center gap-3 p-3 rounded-lg bg-muted">
-                <span className="text-2xl">{typeInfo?.icon}</span>
+                {getProviderIconUrl(selectedType!) ? (
+                  <img src={getProviderIconUrl(selectedType!)} alt={typeInfo?.name} className={cn('h-7 w-7', shouldInvertInDark(selectedType!) && 'dark:invert')} />
+                ) : (
+                  <span className="text-2xl">{typeInfo?.icon}</span>
+                )}
                 <div>
                   <p className="font-medium">{typeInfo?.name}</p>
                   <button

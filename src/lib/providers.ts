@@ -53,6 +53,8 @@ export interface ProviderTypeInfo {
   defaultModelId?: string;
 }
 
+import { providerIcons } from '@/assets/providers';
+
 /** All supported provider types with UI metadata */
 export const PROVIDER_TYPE_INFO: ProviderTypeInfo[] = [
   { id: 'anthropic', name: 'Anthropic', icon: '🤖', placeholder: 'sk-ant-api03-...', model: 'Claude', requiresApiKey: true },
@@ -64,6 +66,16 @@ export const PROVIDER_TYPE_INFO: ProviderTypeInfo[] = [
   { id: 'ollama', name: 'Ollama', icon: '🦙', placeholder: 'Not required', requiresApiKey: false, defaultBaseUrl: 'http://localhost:11434', showBaseUrl: true, showModelId: true, modelIdPlaceholder: 'qwen3:latest' },
   { id: 'custom', name: 'Custom', icon: '⚙️', placeholder: 'API key...', requiresApiKey: true, showBaseUrl: true, showModelId: true, modelIdPlaceholder: 'your-provider/model-id' },
 ];
+
+/** Get the SVG logo URL for a provider type, falls back to undefined */
+export function getProviderIconUrl(type: ProviderType | string): string | undefined {
+  return providerIcons[type];
+}
+
+/** Whether a provider's logo needs CSS invert in dark mode (all logos are monochrome) */
+export function shouldInvertInDark(_type: ProviderType | string): boolean {
+  return true;
+}
 
 /** Provider list shown in the Setup wizard */
 export const SETUP_PROVIDERS = PROVIDER_TYPE_INFO;
