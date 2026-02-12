@@ -640,10 +640,15 @@ export function Skills() {
   // Handle marketplace search
   const handleMarketplaceSearch = useCallback((e: React.FormEvent) => {
     e.preventDefault();
-    if (marketplaceQuery.trim()) {
-      searchSkills(marketplaceQuery);
-    }
+    searchSkills(marketplaceQuery);
   }, [marketplaceQuery, searchSkills]);
+
+  // Auto-reset when query is cleared
+  useEffect(() => {
+    if (activeTab === 'marketplace' && marketplaceQuery === '' && marketplaceDiscoveryAttemptedRef.current) {
+      searchSkills('');
+    }
+  }, [marketplaceQuery, activeTab, searchSkills]);
 
   // Handle install
   const handleInstall = useCallback(async (slug: string) => {
@@ -908,10 +913,19 @@ export function Skills() {
                     placeholder={t('searchMarketplace')}
                     value={marketplaceQuery}
                     onChange={(e) => setMarketplaceQuery(e.target.value)}
-                    className="pl-9"
+                    className="pl-9 pr-9"
                   />
+                  {marketplaceQuery && (
+                    <button
+                      type="button"
+                      className="absolute right-3 top-3 text-muted-foreground hover:text-foreground"
+                      onClick={() => setMarketplaceQuery('')}
+                    >
+                      <X className="h-4 w-4" />
+                    </button>
+                  )}
                 </div>
-                <Button type="submit" disabled={searching || !marketplaceQuery.trim()} className="min-w-[100px]" asChild>
+                <Button type="submit" disabled={searching} className="min-w-[100px]" asChild>
                   <motion.button whileTap={{ scale: 0.98 }}>
                     <AnimatePresence mode="wait" initial={false}>
                       {searching ? (
