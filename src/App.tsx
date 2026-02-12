@@ -8,6 +8,7 @@ import type { ErrorInfo, ReactNode } from 'react';
 import { Toaster } from 'sonner';
 import i18n from './i18n';
 import { MainLayout } from './components/layout/MainLayout';
+import { TooltipProvider } from '@/components/ui/tooltip';
 import { Dashboard } from './pages/Dashboard';
 import { Chat } from './pages/Chat';
 import { Channels } from './pages/Channels';
@@ -145,27 +146,29 @@ function App() {
 
   return (
     <ErrorBoundary>
-      <Routes>
-        {/* Setup wizard (shown on first launch) */}
-        <Route path="/setup/*" element={<Setup />} />
+      <TooltipProvider delayDuration={300}>
+        <Routes>
+          {/* Setup wizard (shown on first launch) */}
+          <Route path="/setup/*" element={<Setup />} />
 
-        {/* Main application routes */}
-        <Route element={<MainLayout />}>
-          <Route path="/" element={<Chat />} />
-          <Route path="/dashboard" element={<Dashboard />} />
-          <Route path="/channels" element={<Channels />} />
-          <Route path="/skills" element={<Skills />} />
-          <Route path="/cron" element={<Cron />} />
-          <Route path="/settings/*" element={<Settings />} />
-        </Route>
-      </Routes>
+          {/* Main application routes */}
+          <Route element={<MainLayout />}>
+            <Route path="/" element={<Chat />} />
+            <Route path="/dashboard" element={<Dashboard />} />
+            <Route path="/channels" element={<Channels />} />
+            <Route path="/skills" element={<Skills />} />
+            <Route path="/cron" element={<Cron />} />
+            <Route path="/settings/*" element={<Settings />} />
+          </Route>
+        </Routes>
 
-      {/* Global toast notifications */}
-      <Toaster
-        position="bottom-right"
-        richColors
-        closeButton
-      />
+        {/* Global toast notifications */}
+        <Toaster
+          position="bottom-right"
+          richColors
+          closeButton
+        />
+      </TooltipProvider>
     </ErrorBoundary>
   );
 }

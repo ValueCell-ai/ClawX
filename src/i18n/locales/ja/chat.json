@@ -9,5 +9,11 @@
         "creativeTasks": "クリエイティブタスク",
         "creativeTasksDesc": "ライティング、ブレスト、アイデア"
     },
-    "noLogs": "（ログはまだありません）"
+    "noLogs": "（ログはまだありません）",
+    "toolbar": {
+        "newSession": "新しいセッション",
+        "refresh": "チャットを更新",
+        "showThinking": "思考を表示",
+        "hideThinking": "思考を非表示"
+    }
 }

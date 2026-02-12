@@ -9,5 +9,11 @@
         "creativeTasks": "创意任务",
         "creativeTasksDesc": "写作、头脑风暴、创意"
     },
-    "noLogs": "（暂无日志）"
+    "noLogs": "（暂无日志）",
+    "toolbar": {
+        "newSession": "新会话",
+        "refresh": "刷新聊天",
+        "showThinking": "显示思考过程",
+        "hideThinking": "隐藏思考过程"
+    }
 }

@@ -9,5 +9,11 @@
         "creativeTasks": "Creative Tasks",
         "creativeTasksDesc": "Writing, brainstorming, ideas"
     },
-    "noLogs": "(No logs available yet)"
+    "noLogs": "(No logs available yet)",
+    "toolbar": {
+        "newSession": "New session",
+        "refresh": "Refresh chat",
+        "showThinking": "Show thinking",
+        "hideThinking": "Hide thinking"
+    }
 }

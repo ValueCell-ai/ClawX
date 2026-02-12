@@ -200,18 +200,20 @@ export function ChatInput({ onSend, onStop, disabled = false, sending = false }:
 
         {/* Input Row */}
         <div className={`flex items-end gap-2 ${dragOver ? 'ring-2 ring-primary rounded-lg' : ''}`}>
-          {/* Image Upload Button */}
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon"
-            className="shrink-0 h-[44px] w-[44px] text-muted-foreground hover:text-foreground"
-            onClick={() => fileInputRef.current?.click()}
-            disabled={disabled}
-            title="Attach image"
-          >
-            <ImagePlus className="h-5 w-5" />
-          </Button>
+          {/* Image Upload Button - hidden for now */}
+          {false && (
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className="shrink-0 h-[44px] w-[44px] text-muted-foreground hover:text-foreground"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={disabled}
+              title="Attach image"
+            >
+              <ImagePlus className="h-5 w-5" />
+            </Button>
+          )}
           <input
             ref={fileInputRef}
             type="file"
