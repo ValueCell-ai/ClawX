@@ -14,6 +14,8 @@
         "title": "AI Providers",
         "description": "Configure your AI model providers and API keys",
         "add": "Add Provider",
+        "custom": "Custom",
+        "notRequired": "Not required",
         "empty": {
             "title": "No providers configured",
             "desc": "Add an AI provider to start using ClawX",

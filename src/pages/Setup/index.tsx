@@ -682,7 +682,7 @@ function ProviderContent({
   onApiKeyChange,
   onConfiguredChange,
 }: ProviderContentProps) {
-  const { t } = useTranslation('setup');
+  const { t } = useTranslation(['setup', 'settings']);
   const [showKey, setShowKey] = useState(false);
   const [validating, setValidating] = useState(false);
   const [keyValid, setKeyValid] = useState<boolean | null>(null);
@@ -841,7 +841,7 @@ function ProviderContent({
         'provider:save',
         {
           id: providerIdForSave,
-          name: selectedProviderData?.name || selectedProvider,
+          name: selectedProvider === 'custom' ? t('settings:aiProviders.custom') : (selectedProviderData?.name || selectedProvider),
           type: selectedProvider,
           baseUrl: baseUrl.trim() || undefined,
           model: effectiveModelId,
@@ -925,7 +925,7 @@ function ProviderContent({
               )}
               <span className={cn('truncate text-left', !selectedProvider && 'text-muted-foreground')}>
                 {selectedProviderData
-                  ? `${selectedProviderData.name}${selectedProviderData.model ? ` — ${selectedProviderData.model}` : ''}`
+                  ? `${selectedProviderData.id === 'custom' ? t('settings:aiProviders.custom') : selectedProviderData.name}${selectedProviderData.model ? ` — ${selectedProviderData.model}` : ''}`
                   : t('provider.selectPlaceholder')}
               </span>
             </div>
@@ -964,7 +964,7 @@ function ProviderContent({
                       ) : (
                         <span className="text-sm leading-none shrink-0">{p.icon}</span>
                       )}
-                      <span className="truncate">{p.name}{p.model ? ` — ${p.model}` : ''}</span>
+                      <span className="truncate">{p.id === 'custom' ? t('settings:aiProviders.custom') : p.name}{p.model ? ` — ${p.model}` : ''}</span>
                     </div>
                     {isSelected && <Check className="h-4 w-4 text-primary shrink-0" />}
                   </button>
@@ -1527,7 +1527,7 @@ interface CompleteContentProps {
 }
 
 function CompleteContent({ selectedProvider, installedSkills }: CompleteContentProps) {
-  const { t } = useTranslation('setup');
+  const { t } = useTranslation(['setup', 'settings']);
   const gatewayStatus = useGatewayStore((state) => state.status);
 
   const providerData = providers.find((p) => p.id === selectedProvider);
@@ -1548,7 +1548,7 @@ function CompleteContent({ selectedProvider, installedSkills }: CompleteContentP
         <div className="flex items-center justify-between p-3 rounded-lg bg-muted/50">
           <span>{t('complete.provider')}</span>
           <span className="text-green-400">
-            {providerData ? <span className="flex items-center gap-1.5">{getProviderIconUrl(providerData.id) ? <img src={getProviderIconUrl(providerData.id)} alt={providerData.name} className={`h-4 w-4 inline-block ${shouldInvertInDark(providerData.id) ? 'dark:invert' : ''}`} /> : providerData.icon} {providerData.name}</span> : '—'}
+            {providerData ? <span className="flex items-center gap-1.5">{getProviderIconUrl(providerData.id) ? <img src={getProviderIconUrl(providerData.id)} alt={providerData.name} className={`h-4 w-4 inline-block ${shouldInvertInDark(providerData.id) ? 'dark:invert' : ''}`} /> : providerData.icon} {providerData.id === 'custom' ? t('settings:aiProviders.custom') : providerData.name}</span> : '—'}
           </span>
         </div>
         <div className="flex items-center justify-between p-3 rounded-lg bg-muted/50">

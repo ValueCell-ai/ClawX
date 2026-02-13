@@ -328,7 +328,7 @@ function ProviderCard({
               <div className="relative flex-1">
                 <Input
                   type={showKey ? 'text' : 'password'}
-                  placeholder={typeInfo?.requiresApiKey ? typeInfo?.placeholder : t('aiProviders.card.editKey')}
+                  placeholder={typeInfo?.requiresApiKey ? typeInfo?.placeholder : (typeInfo?.id === 'ollama' ? t('aiProviders.notRequired') : t('aiProviders.card.editKey'))}
                   value={newKey}
                   onChange={(e) => setNewKey(e.target.value)}
                   className="pr-10 h-9 text-sm"
@@ -482,7 +482,7 @@ function AddProviderDialog({ existingTypes, onClose, onAdd, onValidateKey }: Add
 
       await onAdd(
         selectedType,
-        name || typeInfo?.name || selectedType,
+        name || (typeInfo?.id === 'custom' ? t('aiProviders.custom') : typeInfo?.name) || selectedType,
         apiKey.trim(),
         {
           baseUrl: baseUrl.trim() || undefined,
@@ -513,7 +513,7 @@ function AddProviderDialog({ existingTypes, onClose, onAdd, onValidateKey }: Add
                   key={type.id}
                   onClick={() => {
                     setSelectedType(type.id);
-                    setName(type.name);
+                    setName(type.id === 'custom' ? t('aiProviders.custom') : type.name);
                     setBaseUrl(type.defaultBaseUrl || '');
                     setModelId(type.defaultModelId || '');
                   }}
@@ -524,7 +524,7 @@ function AddProviderDialog({ existingTypes, onClose, onAdd, onValidateKey }: Add
                   ) : (
                     <span className="text-2xl">{type.icon}</span>
                   )}
-                  <p className="font-medium mt-2">{type.name}</p>
+                  <p className="font-medium mt-2">{type.id === 'custom' ? t('aiProviders.custom') : type.name}</p>
                 </button>
               ))}
             </div>
@@ -537,7 +537,7 @@ function AddProviderDialog({ existingTypes, onClose, onAdd, onValidateKey }: Add
                   <span className="text-2xl">{typeInfo?.icon}</span>
                 )}
                 <div>
-                  <p className="font-medium">{typeInfo?.name}</p>
+                  <p className="font-medium">{typeInfo?.id === 'custom' ? t('aiProviders.custom') : typeInfo?.name}</p>
                   <button
                     onClick={() => {
                       setSelectedType(null);
@@ -556,7 +556,7 @@ function AddProviderDialog({ existingTypes, onClose, onAdd, onValidateKey }: Add
                 <Label htmlFor="name">{t('aiProviders.dialog.displayName')}</Label>
                 <Input
                   id="name"
-                  placeholder={typeInfo?.name}
+                  placeholder={typeInfo?.id === 'custom' ? t('aiProviders.custom') : typeInfo?.name}
                   value={name}
                   onChange={(e) => setName(e.target.value)}
                 />
@@ -568,7 +568,7 @@ function AddProviderDialog({ existingTypes, onClose, onAdd, onValidateKey }: Add
                   <Input
                     id="apiKey"
                     type={showKey ? 'text' : 'password'}
-                    placeholder={typeInfo?.placeholder}
+                    placeholder={typeInfo?.id === 'ollama' ? t('aiProviders.notRequired') : typeInfo?.placeholder}
                     value={apiKey}
                     onChange={(e) => {
                       setApiKey(e.target.value);

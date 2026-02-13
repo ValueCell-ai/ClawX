@@ -14,6 +14,8 @@
         "title": "AI 模型提供商",
         "description": "配置 AI 模型提供商和 API 密钥",
         "add": "添加提供商",
+        "custom": "自定义",
+        "notRequired": "非必填",
         "empty": {
             "title": "未配置提供商",
             "desc": "添加 AI 提供商以开始使用 ClawX",

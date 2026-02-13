@@ -14,6 +14,8 @@
         "title": "AI プロバイダー",
         "description": "AI モデルプロバイダーと API キーを設定",
         "add": "プロバイダーを追加",
+        "custom": "カスタム",
+        "notRequired": "不要",
         "empty": {
             "title": "プロバイダーが構成されていません",
             "desc": "ClawX の使用を開始するには AI プロバイダーを追加してください",
