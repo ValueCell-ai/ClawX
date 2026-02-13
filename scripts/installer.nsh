@@ -13,17 +13,15 @@
   ; --- English message (default) ---
   MessageBox MB_YESNO|MB_ICONQUESTION \
     "Do you want to completely remove all ClawX user data?$\r$\n$\r$\nThis will delete:$\r$\n  • .openclaw folder (configuration & skills)$\r$\n  • AppData\Local\clawx (local app data)$\r$\n  • AppData\Roaming\clawx (roaming app data)$\r$\n$\r$\nSelect 'No' to keep your data for future reinstallation." \
-    /SD IDNO IDYES _cu_removeData IDNO _cu_skipRemove
-  Goto _cu_afterPrompt
+    /SD IDNO IDNO _cu_skipRemove
+  Goto _cu_removeData
 
   ; --- Chinese message ---
   _cu_useChinese:
   MessageBox MB_YESNO|MB_ICONQUESTION \
     "是否完全移除所有 ClawX 用户数据？$\r$\n$\r$\n将删除以下内容：$\r$\n  • .openclaw 文件夹（配置和技能）$\r$\n  • AppData\Local\clawx（本地应用数据）$\r$\n  • AppData\Roaming\clawx（漫游应用数据）$\r$\n$\r$\n选择"否"可保留数据以便将来重新安装。" \
-    /SD IDNO IDYES _cu_removeData IDNO _cu_skipRemove
-
-  _cu_afterPrompt:
-  Goto _cu_skipRemove
+    /SD IDNO IDNO _cu_skipRemove
+  Goto _cu_removeData
 
   _cu_removeData:
     ; --- Always remove current user's data first ---
