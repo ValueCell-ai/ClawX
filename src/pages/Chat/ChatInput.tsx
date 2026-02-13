@@ -57,10 +57,18 @@ function readFileAsBase64(file: globalThis.File): Promise<string> {
     const reader = new FileReader();
     reader.onload = () => {
       const dataUrl = reader.result as string;
+      if (!dataUrl || !dataUrl.includes(',')) {
+        reject(new Error(`Invalid data URL from FileReader for ${file.name}`));
+        return;
+      }
       const base64 = dataUrl.split(',')[1];
+      if (!base64) {
+        reject(new Error(`Empty base64 data for ${file.name}`));
+        return;
+      }
       resolve(base64);
     };
-    reader.onerror = () => reject(new Error('Failed to read file'));
+    reader.onerror = () => reject(new Error(`Failed to read file: ${file.name}`));
     reader.readAsDataURL(file);
   });
 }
@@ -95,7 +103,8 @@ export function ChatInput({ onSend, onStop, disabled = false, sending = false }:
       for (const filePath of result.filePaths) {
         const tempId = crypto.randomUUID();
         tempIds.push(tempId);
-        const fileName = filePath.split('/').pop() || filePath.split('\\').pop() || 'file';
+        // Handle both Unix (/) and Windows (\) path separators
+        const fileName = filePath.split(/[\\/]/).pop() || 'file';
         setAttachments(prev => [...prev, {
           id: tempId,
           fileName,
@@ -108,6 +117,7 @@ export function ChatInput({ onSend, onStop, disabled = false, sending = false }:
       }
 
       // Stage all files via IPC
+      console.log('[pickFiles] Staging files:', result.filePaths);
       const staged = await window.electron.ipcRenderer.invoke(
         'file:stage',
         result.filePaths,
@@ -119,6 +129,7 @@ export function ChatInput({ onSend, onStop, disabled = false, sending = false }:
         stagedPath: string;
         preview: string | null;
       }>;
+      console.log('[pickFiles] Stage result:', staged?.map(s => ({ id: s?.id, fileName: s?.fileName, mimeType: s?.mimeType, fileSize: s?.fileSize, stagedPath: s?.stagedPath, hasPreview: !!s?.preview })));
 
       // Update each placeholder with real data
       setAttachments(prev => {
@@ -133,6 +144,7 @@ export function ChatInput({ onSend, onStop, disabled = false, sending = false }:
                 : a,
             );
           } else {
+            console.warn(`[pickFiles] No staged data for tempId=${tempId} at index ${i}`);
             updated = updated.map(a =>
               a.id === tempId
                 ? { ...a, status: 'error' as const, error: 'Staging failed' }
@@ -143,7 +155,14 @@ export function ChatInput({ onSend, onStop, disabled = false, sending = false }:
         return updated;
       });
     } catch (err) {
-      console.error('Failed to pick files:', err);
+      console.error('[pickFiles] Failed to stage files:', err);
+      // Mark any stuck 'staging' attachments as 'error' so the user can remove them
+      // and the send button isn't permanently blocked
+      setAttachments(prev => prev.map(a =>
+        a.status === 'staging'
+          ? { ...a, status: 'error' as const, error: String(err) }
+          : a,
+      ));
     }
   }, []);
 
@@ -163,7 +182,9 @@ export function ChatInput({ onSend, onStop, disabled = false, sending = false }:
       }]);
 
       try {
+        console.log(`[stageBuffer] Reading file: ${file.name} (${file.type}, ${file.size} bytes)`);
         const base64 = await readFileAsBase64(file);
+        console.log(`[stageBuffer] Base64 length: ${base64?.length ?? 'null'}`);
         const staged = await window.electron.ipcRenderer.invoke('file:stageBuffer', {
           base64,
           fileName: file.name,
@@ -176,10 +197,12 @@ export function ChatInput({ onSend, onStop, disabled = false, sending = false }:
           stagedPath: string;
           preview: string | null;
         };
+        console.log(`[stageBuffer] Staged: id=${staged?.id}, path=${staged?.stagedPath}, size=${staged?.fileSize}`);
         setAttachments(prev => prev.map(a =>
           a.id === tempId ? { ...staged, status: 'ready' as const } : a,
         ));
       } catch (err) {
+        console.error(`[stageBuffer] Error staging ${file.name}:`, err);
         setAttachments(prev => prev.map(a =>
           a.id === tempId
             ? { ...a, status: 'error' as const, error: String(err) }
@@ -202,12 +225,23 @@ export function ChatInput({ onSend, onStop, disabled = false, sending = false }:
   const handleSend = useCallback(() => {
     if (!canSend) return;
     const readyAttachments = attachments.filter(a => a.status === 'ready');
-    onSend(input.trim(), readyAttachments.length > 0 ? readyAttachments : undefined);
+    // Capture values before clearing — clear input immediately for snappy UX,
+    // but keep attachments available for the async send
+    const textToSend = input.trim();
+    const attachmentsToSend = readyAttachments.length > 0 ? readyAttachments : undefined;
+    console.log(`[handleSend] text="${textToSend.substring(0, 50)}", attachments=${attachments.length}, ready=${readyAttachments.length}, sending=${!!attachmentsToSend}`);
+    if (attachmentsToSend) {
+      console.log('[handleSend] Attachment details:', attachmentsToSend.map(a => ({
+        id: a.id, fileName: a.fileName, mimeType: a.mimeType, fileSize: a.fileSize,
+        stagedPath: a.stagedPath, status: a.status, hasPreview: !!a.preview,
+      })));
+    }
     setInput('');
     setAttachments([]);
     if (textareaRef.current) {
       textareaRef.current.style.height = 'auto';
     }
+    onSend(textToSend, attachmentsToSend);
   }, [input, attachments, canSend, onSend]);
 
   const handleStop = useCallback(() => {

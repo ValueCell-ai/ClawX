@@ -523,6 +523,10 @@ export const useChatStore = create<ChatState>((set, get) => ({
     try {
       const idempotencyKey = crypto.randomUUID();
       const hasMedia = attachments && attachments.length > 0;
+      console.log(`[sendMessage] hasMedia=${hasMedia}, attachmentCount=${attachments?.length ?? 0}`);
+      if (hasMedia) {
+        console.log('[sendMessage] Media paths:', attachments!.map(a => a.stagedPath));
+      }
 
       let result: { success: boolean; result?: { runId?: string }; error?: string };
 
@@ -556,6 +560,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
           },
         ) as { success: boolean; result?: { runId?: string }; error?: string };
       }
+
+      console.log(`[sendMessage] RPC result: success=${result.success}, error=${result.error || 'none'}, runId=${result.result?.runId || 'none'}`);
 
       if (!result.success) {
         set({ error: result.error || 'Failed to send message', sending: false });
