@@ -689,6 +689,8 @@ function ProviderContent({
   const [selectedProviderConfigId, setSelectedProviderConfigId] = useState<string | null>(null);
   const [baseUrl, setBaseUrl] = useState('');
   const [modelId, setModelId] = useState('');
+  const [providerMenuOpen, setProviderMenuOpen] = useState(false);
+  const providerMenuRef = useRef<HTMLDivElement | null>(null);
 
   // On mount, try to restore previously configured provider
   useEffect(() => {
@@ -764,7 +766,33 @@ function ProviderContent({
     return () => { cancelled = true; };
   }, [onApiKeyChange, selectedProvider, providers]);
 
+  useEffect(() => {
+    if (!providerMenuOpen) return;
+
+    const handlePointerDown = (event: MouseEvent) => {
+      if (providerMenuRef.current && !providerMenuRef.current.contains(event.target as Node)) {
+        setProviderMenuOpen(false);
+      }
+    };
+
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setProviderMenuOpen(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handlePointerDown);
+    document.addEventListener('keydown', handleEscape);
+    return () => {
+      document.removeEventListener('mousedown', handlePointerDown);
+      document.removeEventListener('keydown', handleEscape);
+    };
+  }, [providerMenuOpen]);
+
   const selectedProviderData = providers.find((p) => p.id === selectedProvider);
+  const selectedProviderIconUrl = selectedProviderData
+    ? getProviderIconUrl(selectedProviderData.id)
+    : undefined;
   const showBaseUrlField = selectedProviderData?.showBaseUrl ?? false;
   const showModelIdField = selectedProviderData?.showModelId ?? false;
   const requiresKey = selectedProviderData?.requiresApiKey ?? false;
@@ -855,37 +883,95 @@ function ProviderContent({
     && (requiresKey ? apiKey.length > 0 : true)
     && (showModelIdField ? modelId.trim().length > 0 : true);
 
+  const handleSelectProvider = (providerId: string) => {
+    onSelectProvider(providerId);
+    setSelectedProviderConfigId(null);
+    onConfiguredChange(false);
+    onApiKeyChange('');
+    setKeyValid(null);
+    setProviderMenuOpen(false);
+  };
+
   return (
     <div className="space-y-6">
       {/* Provider selector — dropdown */}
       <div className="space-y-2">
-        <Label htmlFor="provider">{t('provider.label')}</Label>
-        <div className="relative">
-          <select
-            id="provider"
-            value={selectedProvider || ''}
-            onChange={(e) => {
-              const val = e.target.value || null;
-              onSelectProvider(val);
-              setSelectedProviderConfigId(null);
-              onConfiguredChange(false);
-              onApiKeyChange('');
-              setKeyValid(null);
-            }}
+        <Label>{t('provider.label')}</Label>
+        <div className="relative" ref={providerMenuRef}>
+          <button
+            type="button"
+            aria-haspopup="listbox"
+            aria-expanded={providerMenuOpen}
+            onClick={() => setProviderMenuOpen((open) => !open)}
             className={cn(
-              'appearance-none rounded-md border border-input bg-background px-3 py-2 pr-8',
-              'w-full text-sm text-foreground cursor-pointer',
-              'focus:outline-none focus:ring-2 focus:ring-ring',
+              'w-full rounded-md border border-input bg-background px-3 py-2 text-sm',
+              'flex items-center justify-between gap-2',
+              'focus:outline-none focus:ring-2 focus:ring-ring'
             )}
           >
-            <option value="" disabled className="text-muted-foreground">{t('provider.selectPlaceholder')}</option>
-            {providers.map((p) => (
-              <option key={p.id} value={p.id} className="text-foreground">
-                {p.icon}  {p.name}{p.model ? ` — ${p.model}` : ''}
-              </option>
-            ))}
-          </select>
-          <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
+            <div className="flex items-center gap-2 min-w-0">
+              {selectedProvider && selectedProviderData ? (
+                selectedProviderIconUrl ? (
+                  <img
+                    src={selectedProviderIconUrl}
+                    alt={selectedProviderData.name}
+                    className={cn('h-4 w-4 shrink-0', shouldInvertInDark(selectedProviderData.id) && 'dark:invert')}
+                  />
+                ) : (
+                  <span className="text-sm leading-none shrink-0">{selectedProviderData.icon}</span>
+                )
+              ) : (
+                <span className="text-xs text-muted-foreground shrink-0">—</span>
+              )}
+              <span className={cn('truncate text-left', !selectedProvider && 'text-muted-foreground')}>
+                {selectedProviderData
+                  ? `${selectedProviderData.name}${selectedProviderData.model ? ` — ${selectedProviderData.model}` : ''}`
+                  : t('provider.selectPlaceholder')}
+              </span>
+            </div>
+            <ChevronDown className={cn('h-3.5 w-3.5 text-muted-foreground shrink-0 transition-transform', providerMenuOpen && 'rotate-180')} />
+          </button>
+
+          {providerMenuOpen && (
+            <div
+              role="listbox"
+              className="absolute z-20 mt-1 w-full rounded-md border border-border bg-popover shadow-md max-h-64 overflow-auto"
+            >
+              {providers.map((p) => {
+                const iconUrl = getProviderIconUrl(p.id);
+                const isSelected = selectedProvider === p.id;
+
+                return (
+                  <button
+                    key={p.id}
+                    type="button"
+                    role="option"
+                    aria-selected={isSelected}
+                    onClick={() => handleSelectProvider(p.id)}
+                    className={cn(
+                      'w-full px-3 py-2 text-left text-sm flex items-center justify-between gap-2',
+                      'hover:bg-accent transition-colors',
+                      isSelected && 'bg-accent/60'
+                    )}
+                  >
+                    <div className="flex items-center gap-2 min-w-0">
+                      {iconUrl ? (
+                        <img
+                          src={iconUrl}
+                          alt={p.name}
+                          className={cn('h-4 w-4 shrink-0', shouldInvertInDark(p.id) && 'dark:invert')}
+                        />
+                      ) : (
+                        <span className="text-sm leading-none shrink-0">{p.icon}</span>
+                      )}
+                      <span className="truncate">{p.name}{p.model ? ` — ${p.model}` : ''}</span>
+                    </div>
+                    {isSelected && <Check className="h-4 w-4 text-primary shrink-0" />}
+                  </button>
+                );
+              })}
+            </div>
+          )}
         </div>
       </div>
 
