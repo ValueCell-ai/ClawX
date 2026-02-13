@@ -2,26 +2,12 @@
 ; Provides a "Complete Removal" option during uninstallation
 ; to delete .openclaw config and AppData resources.
 ; Handles both per-user and per-machine (all users) installations.
-; Supports Chinese (Simplified/Traditional) and English UI.
 
 !macro customUnInstall
-  ; Detect language: Chinese Simplified (2052), Chinese Traditional (1028)
-  ; $LANGUAGE is set by the NSIS installer/uninstaller language selection.
-  StrCmp $LANGUAGE "2052" _cu_useChinese
-  StrCmp $LANGUAGE "1028" _cu_useChinese
-
-  ; --- English message (default) ---
+  ; Ask user if they want to completely remove all user data
   MessageBox MB_YESNO|MB_ICONQUESTION \
     "Do you want to completely remove all ClawX user data?$\r$\n$\r$\nThis will delete:$\r$\n  • .openclaw folder (configuration & skills)$\r$\n  • AppData\Local\clawx (local app data)$\r$\n  • AppData\Roaming\clawx (roaming app data)$\r$\n$\r$\nSelect 'No' to keep your data for future reinstallation." \
-    /SD IDNO IDNO _cu_skipRemove
-  Goto _cu_removeData
-
-  ; --- Chinese message ---
-  _cu_useChinese:
-  MessageBox MB_YESNO|MB_ICONQUESTION \
-    "是否完全移除所有 ClawX 用户数据？$\r$\n$\r$\n将删除以下内容：$\r$\n  • .openclaw 文件夹（配置和技能）$\r$\n  • AppData\Local\clawx（本地应用数据）$\r$\n  • AppData\Roaming\clawx（漫游应用数据）$\r$\n$\r$\n选择"否"可保留数据以便将来重新安装。" \
-    /SD IDNO IDNO _cu_skipRemove
-  Goto _cu_removeData
+    /SD IDNO IDYES _cu_removeData IDNO _cu_skipRemove
 
   _cu_removeData:
     ; --- Always remove current user's data first ---
