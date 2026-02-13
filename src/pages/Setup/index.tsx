@@ -1158,9 +1158,14 @@ function SetupChannelContent() {
             <button
               onClick={() => {
                 try {
-                  window.electron?.openExternal?.(meta.docsUrl!);
+                  const url = t(meta.docsUrl!);
+                  if (window.electron?.openExternal) {
+                    window.electron.openExternal(url);
+                  } else {
+                    window.open(url, '_blank');
+                  }
                 } catch {
-                  window.open(meta.docsUrl, '_blank');
+                  // ignore
                 }
               }}
               className="flex items-center gap-1 text-xs text-blue-400 hover:text-blue-300 transition-colors"
