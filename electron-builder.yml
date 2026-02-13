@@ -112,6 +112,7 @@ nsis:
   shortcutName: ClawX
   uninstallDisplayName: ClawX
   license: LICENSE
+  include: scripts/installer.nsh
   installerIcon: resources/icons/icon.ico
   uninstallerIcon: resources/icons/icon.ico
 
