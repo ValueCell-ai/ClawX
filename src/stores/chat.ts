@@ -7,6 +7,14 @@ import { create } from 'zustand';
 
 // ── Types ────────────────────────────────────────────────────────
 
+/** Metadata for locally-attached files (not from Gateway) */
+export interface AttachedFileMeta {
+  fileName: string;
+  mimeType: string;
+  fileSize: number;
+  preview: string | null;
+}
+
 /** Raw message from OpenClaw chat.history */
 export interface RawMessage {
   role: 'user' | 'assistant' | 'system' | 'toolresult';
@@ -17,6 +25,8 @@ export interface RawMessage {
   toolName?: string;
   details?: unknown;
   isError?: boolean;
+  /** Local-only: file metadata for user-uploaded attachments (not sent to/from Gateway) */
+  _attachedFiles?: AttachedFileMeta[];
 }
 
 /** Content block inside a message */
@@ -79,7 +89,7 @@ interface ChatState {
   switchSession: (key: string) => void;
   newSession: () => void;
   loadHistory: () => Promise<void>;
-  sendMessage: (text: string, attachments?: { type: string; mimeType: string; fileName: string; content: string }[]) => Promise<void>;
+  sendMessage: (text: string, attachments?: Array<{ fileName: string; mimeType: string; fileSize: number; stagedPath: string; preview: string | null }>) => Promise<void>;
   abortRun: () => Promise<void>;
   handleChatEvent: (event: Record<string, unknown>) => void;
   toggleThinking: () => void;
@@ -480,18 +490,24 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
   // ── Send message ──
 
-  sendMessage: async (text: string, attachments?: { type: string; mimeType: string; fileName: string; content: string }[]) => {
+  sendMessage: async (text: string, attachments?: Array<{ fileName: string; mimeType: string; fileSize: number; stagedPath: string; preview: string | null }>) => {
     const trimmed = text.trim();
     if (!trimmed && (!attachments || attachments.length === 0)) return;
 
     const { currentSessionKey } = get();
 
-    // Add user message optimistically
+    // Add user message optimistically (with local file metadata for UI display)
     const userMsg: RawMessage = {
       role: 'user',
-      content: trimmed || '(image)',
+      content: trimmed || (attachments?.length ? '(file attached)' : ''),
       timestamp: Date.now() / 1000,
       id: crypto.randomUUID(),
+      _attachedFiles: attachments?.map(a => ({
+        fileName: a.fileName,
+        mimeType: a.mimeType,
+        fileSize: a.fileSize,
+        preview: a.preview,
+      })),
     };
     set((s) => ({
       messages: [...s.messages, userMsg],
@@ -506,28 +522,40 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
     try {
       const idempotencyKey = crypto.randomUUID();
-      const rpcParams: Record<string, unknown> = {
-        sessionKey: currentSessionKey,
-        message: trimmed || 'Describe this image.',
-        deliver: false,
-        idempotencyKey,
-      };
+      const hasMedia = attachments && attachments.length > 0;
 
-      // Include image attachments if any
-      if (attachments && attachments.length > 0) {
-        rpcParams.attachments = attachments.map((a) => ({
-          type: a.type,
-          mimeType: a.mimeType,
-          fileName: a.fileName,
-          content: a.content,
-        }));
+      let result: { success: boolean; result?: { runId?: string }; error?: string };
+
+      if (hasMedia) {
+        // Use dedicated chat:sendWithMedia handler — main process reads staged files
+        // from disk and builds base64 attachments, avoiding large IPC transfers
+        result = await window.electron.ipcRenderer.invoke(
+          'chat:sendWithMedia',
+          {
+            sessionKey: currentSessionKey,
+            message: trimmed || 'Process the attached file(s).',
+            deliver: false,
+            idempotencyKey,
+            media: attachments.map((a) => ({
+              filePath: a.stagedPath,
+              mimeType: a.mimeType,
+              fileName: a.fileName,
+            })),
+          },
+        ) as { success: boolean; result?: { runId?: string }; error?: string };
+      } else {
+        // No media — use standard lightweight RPC
+        result = await window.electron.ipcRenderer.invoke(
+          'gateway:rpc',
+          'chat.send',
+          {
+            sessionKey: currentSessionKey,
+            message: trimmed,
+            deliver: false,
+            idempotencyKey,
+          },
+        ) as { success: boolean; result?: { runId?: string }; error?: string };
       }
-
-      const result = await window.electron.ipcRenderer.invoke(
-        'gateway:rpc',
-        'chat.send',
-        rpcParams,
-      ) as { success: boolean; result?: { runId?: string }; error?: string };
 
       if (!result.success) {
         set({ error: result.error || 'Failed to send message', sending: false });

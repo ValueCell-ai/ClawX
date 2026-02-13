@@ -4,12 +4,12 @@
  * with markdown, thinking sections, images, and tool cards.
  */
 import { useState, useCallback, memo } from 'react';
-import { User, Sparkles, Copy, Check, ChevronDown, ChevronRight, Wrench } from 'lucide-react';
+import { User, Sparkles, Copy, Check, ChevronDown, ChevronRight, Wrench, FileText, Film, Music, FileArchive, File } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
-import type { RawMessage } from '@/stores/chat';
+import type { RawMessage, AttachedFileMeta } from '@/stores/chat';
 import { extractText, extractThinking, extractImages, extractToolUse, formatTimestamp } from './message-utils';
 
 interface ChatMessageProps {
@@ -43,11 +43,13 @@ export const ChatMessage = memo(function ChatMessage({
   const visibleThinking = showThinking ? thinking : null;
   const visibleTools = showThinking ? tools : [];
 
+  const attachedFiles = message._attachedFiles || [];
+
   // Never render tool result messages in chat UI
   if (isToolResult) return null;
 
   // Don't render empty messages
-  if (!hasText && !visibleThinking && images.length === 0 && visibleTools.length === 0) return null;
+  if (!hasText && !visibleThinking && images.length === 0 && visibleTools.length === 0 && attachedFiles.length === 0) return null;
 
   return (
     <div
@@ -103,7 +105,7 @@ export const ChatMessage = memo(function ChatMessage({
           />
         )}
 
-        {/* Images */}
+        {/* Images (from assistant/channel content blocks) */}
         {images.length > 0 && (
           <div className="flex flex-wrap gap-2">
             {images.map((img, i) => (
@@ -113,6 +115,24 @@ export const ChatMessage = memo(function ChatMessage({
                 alt="attachment"
                 className="max-w-xs rounded-lg border"
               />
+            ))}
+          </div>
+        )}
+
+        {/* File attachments (user-uploaded files) */}
+        {attachedFiles.length > 0 && (
+          <div className="flex flex-wrap gap-2">
+            {attachedFiles.map((file, i) => (
+              file.mimeType.startsWith('image/') && file.preview ? (
+                <img
+                  key={i}
+                  src={file.preview}
+                  alt={file.fileName}
+                  className="max-w-xs max-h-48 rounded-lg border"
+                />
+              ) : (
+                <FileCard key={i} file={file} />
+              )
             ))}
           </div>
         )}
@@ -288,6 +308,38 @@ function ThinkingBlock({ content }: { content: string }) {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+// ── File Card (for user-uploaded non-image files) ───────────────
+
+function formatFileSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
+  return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
+}
+
+function FileIcon({ mimeType, className }: { mimeType: string; className?: string }) {
+  if (mimeType.startsWith('video/')) return <Film className={className} />;
+  if (mimeType.startsWith('audio/')) return <Music className={className} />;
+  if (mimeType.startsWith('text/') || mimeType === 'application/json' || mimeType === 'application/xml') return <FileText className={className} />;
+  if (mimeType.includes('zip') || mimeType.includes('compressed') || mimeType.includes('archive') || mimeType.includes('tar') || mimeType.includes('rar') || mimeType.includes('7z')) return <FileArchive className={className} />;
+  if (mimeType === 'application/pdf') return <FileText className={className} />;
+  return <File className={className} />;
+}
+
+function FileCard({ file }: { file: AttachedFileMeta }) {
+  return (
+    <div className="flex items-center gap-2 rounded-lg border border-border px-3 py-2 bg-muted/30 max-w-[220px]">
+      <FileIcon mimeType={file.mimeType} className="h-5 w-5 shrink-0 text-muted-foreground" />
+      <div className="min-w-0 overflow-hidden">
+        <p className="text-xs font-medium truncate">{file.fileName}</p>
+        <p className="text-[10px] text-muted-foreground">
+          {file.fileSize > 0 ? formatFileSize(file.fileSize) : 'File'}
+        </p>
+      </div>
     </div>
   );
 }

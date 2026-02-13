@@ -115,6 +115,11 @@ const electronAPI = {
         'log:getFilePath',
         'log:getDir',
         'log:listFiles',
+        // File staging
+        'file:stage',
+        'file:stageBuffer',
+        // Chat send with media (reads staged files in main process)
+        'chat:sendWithMedia',
         // OpenClaw extras
         'openclaw:getDir',
         'openclaw:getConfigDir',

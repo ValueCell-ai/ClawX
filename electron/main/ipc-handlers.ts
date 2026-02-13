@@ -2,8 +2,11 @@
  * IPC Handlers
  * Registers all IPC handlers for main-renderer communication
  */
-import { ipcMain, BrowserWindow, shell, dialog, app } from 'electron';
-import { existsSync } from 'node:fs';
+import { ipcMain, BrowserWindow, shell, dialog, app, nativeImage } from 'electron';
+import { existsSync, copyFileSync, statSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs';
+import { homedir } from 'node:os';
+import { join, extname, basename } from 'node:path';
+import crypto from 'node:crypto';
 import { GatewayManager } from '../gateway/manager';
 import { ClawHubService, ClawHubSearchParams, ClawHubInstallParams, ClawHubUninstallParams } from '../gateway/clawhub';
 import {
@@ -90,6 +93,9 @@ export function registerIpcHandlers(
 
   // WhatsApp handlers
   registerWhatsAppHandlers(mainWindow);
+
+  // File staging handlers (upload/send separation)
+  registerFileHandlers();
 }
 
 /**
@@ -414,6 +420,78 @@ function registerGatewayHandlers(
       const result = await gatewayManager.rpc(method, params, timeoutMs);
       return { success: true, result };
     } catch (error) {
+      return { success: false, error: String(error) };
+    }
+  });
+
+  // Chat send with media — reads staged files from disk and builds attachments.
+  // Raster images (png/jpg/gif/webp) are inlined as base64 vision attachments.
+  // All other files are referenced by path in the message text so the model
+  // can access them via tools (the same format channels use).
+  const VISION_MIME_TYPES = new Set([
+    'image/png', 'image/jpeg', 'image/bmp', 'image/webp',
+  ]);
+
+  ipcMain.handle('chat:sendWithMedia', async (_, params: {
+    sessionKey: string;
+    message: string;
+    deliver?: boolean;
+    idempotencyKey: string;
+    media?: Array<{ filePath: string; mimeType: string; fileName: string }>;
+  }) => {
+    try {
+      let message = params.message;
+      const imageAttachments: Array<{ type: string; mimeType: string; fileName: string; content: string }> = [];
+      const fileReferences: string[] = [];
+
+      if (params.media && params.media.length > 0) {
+        for (const m of params.media) {
+          logger.info(`[chat:sendWithMedia] Processing file: ${m.fileName} (${m.mimeType}), path: ${m.filePath}, exists: ${existsSync(m.filePath)}, isVision: ${VISION_MIME_TYPES.has(m.mimeType)}`);
+          if (VISION_MIME_TYPES.has(m.mimeType)) {
+            // Raster image — inline as base64 vision attachment
+            const fileBuffer = readFileSync(m.filePath);
+            logger.info(`[chat:sendWithMedia] Read ${fileBuffer.length} bytes, base64 length: ${fileBuffer.toString('base64').length}`);
+            imageAttachments.push({
+              type: 'image',
+              mimeType: m.mimeType,
+              fileName: m.fileName,
+              content: fileBuffer.toString('base64'),
+            });
+          } else {
+            // Non-vision file — reference by path (same format as channel inbound media)
+            fileReferences.push(
+              `[media attached: ${m.filePath} (${m.mimeType}) | ${m.filePath}]`,
+            );
+          }
+        }
+      }
+
+      // Append file references to message text so the model knows about them
+      if (fileReferences.length > 0) {
+        const refs = fileReferences.join('\n');
+        message = message ? `${message}\n\n${refs}` : refs;
+      }
+
+      const rpcParams: Record<string, unknown> = {
+        sessionKey: params.sessionKey,
+        message,
+        deliver: params.deliver ?? false,
+        idempotencyKey: params.idempotencyKey,
+      };
+
+      if (imageAttachments.length > 0) {
+        rpcParams.attachments = imageAttachments;
+      }
+
+      logger.info(`[chat:sendWithMedia] Sending: message="${message.substring(0, 100)}", imageAttachments=${imageAttachments.length}, fileRefs=${fileReferences.length}`);
+
+      // Use a longer timeout when attachments are present (120s vs default 30s)
+      const timeoutMs = imageAttachments.length > 0 ? 120000 : 30000;
+      const result = await gatewayManager.rpc('chat.send', rpcParams, timeoutMs);
+      logger.info(`[chat:sendWithMedia] RPC result: ${JSON.stringify(result)}`);
+      return { success: true, result };
+    } catch (error) {
+      logger.error(`[chat:sendWithMedia] Error: ${String(error)}`);
       return { success: false, error: String(error) };
     }
   });
@@ -1341,5 +1419,142 @@ function registerWindowHandlers(mainWindow: BrowserWindow): void {
 
   ipcMain.handle('window:isMaximized', () => {
     return mainWindow.isMaximized();
+  });
+}
+
+// ── Mime type helpers ────────────────────────────────────────────
+
+const EXT_MIME_MAP: Record<string, string> = {
+  '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.gif': 'image/gif',
+  '.webp': 'image/webp',
+  '.svg': 'image/svg+xml',
+  '.bmp': 'image/bmp',
+  '.ico': 'image/x-icon',
+  '.mp4': 'video/mp4',
+  '.webm': 'video/webm',
+  '.mov': 'video/quicktime',
+  '.avi': 'video/x-msvideo',
+  '.mkv': 'video/x-matroska',
+  '.mp3': 'audio/mpeg',
+  '.wav': 'audio/wav',
+  '.ogg': 'audio/ogg',
+  '.flac': 'audio/flac',
+  '.pdf': 'application/pdf',
+  '.zip': 'application/zip',
+  '.gz': 'application/gzip',
+  '.tar': 'application/x-tar',
+  '.7z': 'application/x-7z-compressed',
+  '.rar': 'application/vnd.rar',
+  '.json': 'application/json',
+  '.xml': 'application/xml',
+  '.csv': 'text/csv',
+  '.txt': 'text/plain',
+  '.md': 'text/markdown',
+  '.html': 'text/html',
+  '.css': 'text/css',
+  '.js': 'text/javascript',
+  '.ts': 'text/typescript',
+  '.py': 'text/x-python',
+  '.doc': 'application/msword',
+  '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  '.xls': 'application/vnd.ms-excel',
+  '.xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  '.ppt': 'application/vnd.ms-powerpoint',
+  '.pptx': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+};
+
+function getMimeType(ext: string): string {
+  return EXT_MIME_MAP[ext.toLowerCase()] || 'application/octet-stream';
+}
+
+function mimeToExt(mimeType: string): string {
+  for (const [ext, mime] of Object.entries(EXT_MIME_MAP)) {
+    if (mime === mimeType) return ext;
+  }
+  return '';
+}
+
+const OUTBOUND_DIR = join(homedir(), '.openclaw', 'media', 'outbound');
+
+/**
+ * Generate a small preview data URL for image files.
+ * Uses Electron nativeImage to resize large images for thumbnails.
+ */
+function generateImagePreview(filePath: string, mimeType: string): string | null {
+  try {
+    const img = nativeImage.createFromPath(filePath);
+    if (img.isEmpty()) return null;
+    const size = img.getSize();
+    // If image is large, resize for thumbnail
+    if (size.width > 256 || size.height > 256) {
+      const resized = img.resize({ width: 256, height: 256 });
+      return `data:image/png;base64,${resized.toPNG().toString('base64')}`;
+    }
+    // Small image — use original
+    const buf = readFileSync(filePath);
+    return `data:${mimeType};base64,${buf.toString('base64')}`;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * File staging IPC handlers
+ * Stage files to ~/.openclaw/media/outbound/ for gateway access
+ */
+function registerFileHandlers(): void {
+  // Stage files from real disk paths (used with dialog:open)
+  ipcMain.handle('file:stage', async (_, filePaths: string[]) => {
+    mkdirSync(OUTBOUND_DIR, { recursive: true });
+
+    const results = [];
+    for (const filePath of filePaths) {
+      const id = crypto.randomUUID();
+      const ext = extname(filePath);
+      const stagedPath = join(OUTBOUND_DIR, `${id}${ext}`);
+      copyFileSync(filePath, stagedPath);
+
+      const stat = statSync(stagedPath);
+      const mimeType = getMimeType(ext);
+      const fileName = basename(filePath);
+
+      // Generate preview for images
+      let preview: string | null = null;
+      if (mimeType.startsWith('image/')) {
+        preview = generateImagePreview(stagedPath, mimeType);
+      }
+
+      results.push({ id, fileName, mimeType, fileSize: stat.size, stagedPath, preview });
+    }
+    return results;
+  });
+
+  // Stage file from buffer (used for clipboard paste / drag-drop)
+  ipcMain.handle('file:stageBuffer', async (_, payload: {
+    base64: string;
+    fileName: string;
+    mimeType: string;
+  }) => {
+    mkdirSync(OUTBOUND_DIR, { recursive: true });
+
+    const id = crypto.randomUUID();
+    const ext = extname(payload.fileName) || mimeToExt(payload.mimeType);
+    const stagedPath = join(OUTBOUND_DIR, `${id}${ext}`);
+    const buffer = Buffer.from(payload.base64, 'base64');
+    writeFileSync(stagedPath, buffer);
+
+    const mimeType = payload.mimeType || getMimeType(ext);
+    const fileSize = buffer.length;
+
+    // Generate preview for images
+    let preview: string | null = null;
+    if (mimeType.startsWith('image/')) {
+      preview = generateImagePreview(stagedPath, mimeType);
+    }
+
+    return { id, fileName: payload.fileName, mimeType, fileSize, stagedPath, preview };
   });
 }
