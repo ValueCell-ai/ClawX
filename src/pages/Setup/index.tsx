@@ -519,7 +519,7 @@ function RuntimeContent({ onStatusChange }: RuntimeContentProps) {
         }
         return prev;
       });
-    }, 120 * 1000); // 120 seconds — enough for gateway to fully initialize
+    }, 600 * 1000); // 600 seconds — enough for gateway to fully initialize
 
     return () => {
       if (gatewayTimeoutRef.current) {

@@ -441,27 +441,38 @@ function registerGatewayHandlers(
   }) => {
     try {
       let message = params.message;
-      const imageAttachments: Array<{ type: string; mimeType: string; fileName: string; content: string }> = [];
+      // The Gateway processes image attachments through TWO parallel paths:
+      // Path A: `attachments` param → parsed via `parseMessageWithAttachments` →
+      //   injected as inline vision content when the model supports images.
+      //   Format: { content: base64, mimeType: string, fileName?: string }
+      // Path B: `[media attached: ...]` in message text → Gateway's native image
+      //   detection (`detectAndLoadPromptImages`) reads the file from disk and
+      //   injects it as inline vision content. Also works for history messages.
+      // We use BOTH paths for maximum reliability.
+      const imageAttachments: Array<Record<string, unknown>> = [];
       const fileReferences: string[] = [];
 
       if (params.media && params.media.length > 0) {
         for (const m of params.media) {
           logger.info(`[chat:sendWithMedia] Processing file: ${m.fileName} (${m.mimeType}), path: ${m.filePath}, exists: ${existsSync(m.filePath)}, isVision: ${VISION_MIME_TYPES.has(m.mimeType)}`);
+
+          // Always add file path reference so the model can access it via tools
+          fileReferences.push(
+            `[media attached: ${m.filePath} (${m.mimeType}) | ${m.filePath}]`,
+          );
+
           if (VISION_MIME_TYPES.has(m.mimeType)) {
-            // Raster image — inline as base64 vision attachment
+            // Send as base64 attachment in the format the Gateway expects:
+            // { content: base64String, mimeType: string, fileName?: string }
+            // The Gateway normalizer looks for `a.content` (NOT `a.source.data`).
             const fileBuffer = readFileSync(m.filePath);
-            logger.info(`[chat:sendWithMedia] Read ${fileBuffer.length} bytes, base64 length: ${fileBuffer.toString('base64').length}`);
+            const base64Data = fileBuffer.toString('base64');
+            logger.info(`[chat:sendWithMedia] Read ${fileBuffer.length} bytes, base64 length: ${base64Data.length}`);
             imageAttachments.push({
-              type: 'image',
+              content: base64Data,
               mimeType: m.mimeType,
               fileName: m.fileName,
-              content: fileBuffer.toString('base64'),
             });
-          } else {
-            // Non-vision file — reference by path (same format as channel inbound media)
-            fileReferences.push(
-              `[media attached: ${m.filePath} (${m.mimeType}) | ${m.filePath}]`,
-            );
           }
         }
       }
@@ -483,9 +494,9 @@ function registerGatewayHandlers(
         rpcParams.attachments = imageAttachments;
       }
 
-      logger.info(`[chat:sendWithMedia] Sending: message="${message.substring(0, 100)}", imageAttachments=${imageAttachments.length}, fileRefs=${fileReferences.length}`);
+      logger.info(`[chat:sendWithMedia] Sending: message="${message.substring(0, 100)}", attachments=${imageAttachments.length}, fileRefs=${fileReferences.length}`);
 
-      // Use a longer timeout when attachments are present (120s vs default 30s)
+      // Use a longer timeout when images are present (120s vs default 30s)
       const timeoutMs = imageAttachments.length > 0 ? 120000 : 30000;
       const result = await gatewayManager.rpc('chat.send', rpcParams, timeoutMs);
       logger.info(`[chat:sendWithMedia] RPC result: ${JSON.stringify(result)}`);
@@ -1556,5 +1567,27 @@ function registerFileHandlers(): void {
     }
 
     return { id, fileName: payload.fileName, mimeType, fileSize, stagedPath, preview };
+  });
+
+  // Load thumbnails for file paths on disk (used to restore previews in history)
+  ipcMain.handle('media:getThumbnails', async (_, paths: Array<{ filePath: string; mimeType: string }>) => {
+    const results: Record<string, { preview: string | null; fileSize: number }> = {};
+    for (const { filePath, mimeType } of paths) {
+      try {
+        if (!existsSync(filePath)) {
+          results[filePath] = { preview: null, fileSize: 0 };
+          continue;
+        }
+        const stat = statSync(filePath);
+        let preview: string | null = null;
+        if (mimeType.startsWith('image/')) {
+          preview = generateImagePreview(filePath, mimeType);
+        }
+        results[filePath] = { preview, fileSize: stat.size };
+      } catch {
+        results[filePath] = { preview: null, fileSize: 0 };
+      }
+    }
+    return results;
   });
 }

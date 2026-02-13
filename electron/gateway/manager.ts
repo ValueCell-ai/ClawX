@@ -656,7 +656,7 @@ export class GatewayManager extends EventEmitter {
   /**
    * Wait for Gateway to be ready by checking if the port is accepting connections
    */
-  private async waitForReady(retries = 120, interval = 1000): Promise<void> {
+  private async waitForReady(retries = 600, interval = 1000): Promise<void> {
     for (let i = 0; i < retries; i++) {
       // Early exit if the gateway process has already exited
       if (this.process && (this.process.exitCode !== null || this.process.signalCode !== null)) {

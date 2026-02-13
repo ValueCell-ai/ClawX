@@ -105,35 +105,41 @@ export const ChatMessage = memo(function ChatMessage({
           />
         )}
 
-        {/* Images (from assistant/channel content blocks) */}
+        {/* Images from content blocks (Gateway session data — persists across history reloads) */}
         {images.length > 0 && (
           <div className="flex flex-wrap gap-2">
             {images.map((img, i) => (
               <img
-                key={i}
+                key={`content-${i}`}
                 src={`data:${img.mimeType};base64,${img.data}`}
                 alt="attachment"
-                className="max-w-xs rounded-lg border"
+                className={cn(
+                  'rounded-lg border',
+                  isUser ? 'max-w-[200px] max-h-48' : 'max-w-xs',
+                )}
               />
             ))}
           </div>
         )}
 
-        {/* File attachments (user-uploaded files) */}
+        {/* File attachments (local preview — shown before history reload) */}
+        {/* Only show _attachedFiles images if no content-block images (avoid duplicates) */}
         {attachedFiles.length > 0 && (
           <div className="flex flex-wrap gap-2">
-            {attachedFiles.map((file, i) => (
-              file.mimeType.startsWith('image/') && file.preview ? (
+            {attachedFiles.map((file, i) => {
+              // Skip image attachments if we already have images from content blocks
+              if (file.mimeType.startsWith('image/') && file.preview && images.length > 0) return null;
+              return file.mimeType.startsWith('image/') && file.preview ? (
                 <img
-                  key={i}
+                  key={`local-${i}`}
                   src={file.preview}
                   alt={file.fileName}
-                  className="max-w-xs max-h-48 rounded-lg border"
+                  className="max-w-[200px] max-h-48 rounded-lg border"
                 />
               ) : (
-                <FileCard key={i} file={file} />
-              )
-            ))}
+                <FileCard key={`local-${i}`} file={file} />
+              );
+            })}
           </div>
         )}
       </div>

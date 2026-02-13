@@ -100,6 +100,135 @@ interface ChatState {
 const DEFAULT_CANONICAL_PREFIX = 'agent:main';
 const DEFAULT_SESSION_KEY = `${DEFAULT_CANONICAL_PREFIX}:main`;
 
+// ── Local image cache ─────────────────────────────────────────
+// The Gateway doesn't store image attachments in session content blocks,
+// so we cache them locally keyed by staged file path (which appears in the
+// [media attached: <path> ...] reference in the Gateway's user message text).
+// Keying by path avoids the race condition of keying by runId (which is only
+// available after the RPC returns, but history may load before that).
+const IMAGE_CACHE_KEY = 'clawx:image-cache';
+const IMAGE_CACHE_MAX = 100; // max entries to prevent unbounded growth
+
+function loadImageCache(): Map<string, AttachedFileMeta> {
+  try {
+    const raw = localStorage.getItem(IMAGE_CACHE_KEY);
+    if (raw) {
+      const entries = JSON.parse(raw) as Array<[string, AttachedFileMeta]>;
+      return new Map(entries);
+    }
+  } catch { /* ignore parse errors */ }
+  return new Map();
+}
+
+function saveImageCache(cache: Map<string, AttachedFileMeta>): void {
+  try {
+    // Evict oldest entries if over limit
+    const entries = Array.from(cache.entries());
+    const trimmed = entries.length > IMAGE_CACHE_MAX
+      ? entries.slice(entries.length - IMAGE_CACHE_MAX)
+      : entries;
+    localStorage.setItem(IMAGE_CACHE_KEY, JSON.stringify(trimmed));
+  } catch { /* ignore quota errors */ }
+}
+
+const _imageCache = loadImageCache();
+
+/** Extract plain text from message content (string or content blocks) */
+function getMessageText(content: unknown): string {
+  if (typeof content === 'string') return content;
+  if (Array.isArray(content)) {
+    return (content as Array<{ type?: string; text?: string }>)
+      .filter(b => b.type === 'text' && b.text)
+      .map(b => b.text!)
+      .join('\n');
+  }
+  return '';
+}
+
+/** Extract media file refs from [media attached: <path> (<mime>) | ...] patterns */
+function extractMediaRefs(text: string): Array<{ filePath: string; mimeType: string }> {
+  const refs: Array<{ filePath: string; mimeType: string }> = [];
+  const regex = /\[media attached:\s*([^\s(]+)\s*\(([^)]+)\)\s*\|[^\]]*\]/g;
+  let match;
+  while ((match = regex.exec(text)) !== null) {
+    refs.push({ filePath: match[1], mimeType: match[2] });
+  }
+  return refs;
+}
+
+/**
+ * Restore _attachedFiles for user messages loaded from history.
+ * Uses local cache for previews when available, but ALWAYS creates entries
+ * from [media attached: ...] text patterns so file cards show even without cache.
+ */
+function enrichWithCachedImages(messages: RawMessage[]): RawMessage[] {
+  return messages.map(msg => {
+    if (msg.role !== 'user' || msg._attachedFiles) return msg;
+    const text = getMessageText(msg.content);
+    const refs = extractMediaRefs(text);
+    if (refs.length === 0) return msg;
+    const files: AttachedFileMeta[] = refs.map(ref => {
+      const cached = _imageCache.get(ref.filePath);
+      if (cached) return cached;
+      // Fallback: create entry from text pattern (preview loaded later via IPC)
+      const fileName = ref.filePath.split(/[\\/]/).pop() || 'file';
+      return { fileName, mimeType: ref.mimeType, fileSize: 0, preview: null };
+    });
+    return { ...msg, _attachedFiles: files };
+  });
+}
+
+/**
+ * Async: load missing previews from disk via IPC for messages that have
+ * _attachedFiles with null previews. Updates messages in-place and triggers re-render.
+ */
+async function loadMissingPreviews(messages: RawMessage[]): Promise<boolean> {
+  // Collect all image paths that need previews
+  const needPreview: Array<{ filePath: string; mimeType: string }> = [];
+  for (const msg of messages) {
+    if (msg.role !== 'user' || !msg._attachedFiles) continue;
+    const text = getMessageText(msg.content);
+    const refs = extractMediaRefs(text);
+    for (let i = 0; i < refs.length; i++) {
+      const file = msg._attachedFiles[i];
+      if (file && file.mimeType.startsWith('image/') && !file.preview) {
+        needPreview.push(refs[i]);
+      }
+    }
+  }
+  if (needPreview.length === 0) return false;
+
+  try {
+    const thumbnails = await window.electron.ipcRenderer.invoke(
+      'media:getThumbnails',
+      needPreview,
+    ) as Record<string, { preview: string | null; fileSize: number }>;
+
+    let updated = false;
+    for (const msg of messages) {
+      if (msg.role !== 'user' || !msg._attachedFiles) continue;
+      const text = getMessageText(msg.content);
+      const refs = extractMediaRefs(text);
+      for (let i = 0; i < refs.length; i++) {
+        const file = msg._attachedFiles[i];
+        const thumb = thumbnails[refs[i]?.filePath];
+        if (file && thumb && (thumb.preview || thumb.fileSize)) {
+          if (thumb.preview) file.preview = thumb.preview;
+          if (thumb.fileSize) file.fileSize = thumb.fileSize;
+          // Update cache for future loads
+          _imageCache.set(refs[i].filePath, { ...file });
+          updated = true;
+        }
+      }
+    }
+    if (updated) saveImageCache(_imageCache);
+    return updated;
+  } catch (err) {
+    console.warn('[loadMissingPreviews] Failed:', err);
+    return false;
+  }
+}
+
 function getCanonicalPrefixFromSessions(sessions: ChatSession[]): string | null {
   const canonical = sessions.find((s) => s.key.startsWith('agent:'))?.key;
   if (!canonical) return null;
@@ -465,8 +594,18 @@ export const useChatStore = create<ChatState>((set, get) => ({
         const data = result.result;
         const rawMessages = Array.isArray(data.messages) ? data.messages as RawMessage[] : [];
         const filteredMessages = rawMessages.filter((msg) => !isToolResultRole(msg.role));
+        // Restore file attachments for user messages (from cache + text patterns)
+        const enrichedMessages = enrichWithCachedImages(filteredMessages);
         const thinkingLevel = data.thinkingLevel ? String(data.thinkingLevel) : null;
-        set({ messages: filteredMessages, thinkingLevel, loading: false });
+        set({ messages: enrichedMessages, thinkingLevel, loading: false });
+
+        // Async: load missing image previews from disk (updates in background)
+        loadMissingPreviews(enrichedMessages).then((updated) => {
+          if (updated) {
+            // Trigger re-render with updated previews
+            set({ messages: [...enrichedMessages] });
+          }
+        });
         const { pendingFinal, lastUserMessageAt } = get();
         if (pendingFinal) {
           const recentAssistant = [...filteredMessages].reverse().find((msg) => {
@@ -526,6 +665,21 @@ export const useChatStore = create<ChatState>((set, get) => ({
       console.log(`[sendMessage] hasMedia=${hasMedia}, attachmentCount=${attachments?.length ?? 0}`);
       if (hasMedia) {
         console.log('[sendMessage] Media paths:', attachments!.map(a => a.stagedPath));
+      }
+
+      // Cache image attachments BEFORE the IPC call to avoid race condition:
+      // history may reload (via Gateway event) before the RPC returns.
+      // Keyed by staged file path which appears in [media attached: <path> ...].
+      if (hasMedia && attachments) {
+        for (const a of attachments) {
+          _imageCache.set(a.stagedPath, {
+            fileName: a.fileName,
+            mimeType: a.mimeType,
+            fileSize: a.fileSize,
+            preview: a.preview,
+          });
+        }
+        saveImageCache(_imageCache);
       }
 
       let result: { success: boolean; result?: { runId?: string }; error?: string };
