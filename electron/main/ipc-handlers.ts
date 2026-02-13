@@ -1090,9 +1090,70 @@ async function validateOpenAiCompatibleKey(
     return { valid: false, error: `Base URL is required for provider "${providerType}" validation` };
   }
 
-  const url = buildOpenAiModelsUrl(trimmedBaseUrl);
   const headers = { Authorization: `Bearer ${apiKey}` };
-  return await performProviderValidationRequest(providerType, url, headers);
+
+  // Try /models first (standard OpenAI-compatible endpoint)
+  const modelsUrl = buildOpenAiModelsUrl(trimmedBaseUrl);
+  const modelsResult = await performProviderValidationRequest(providerType, modelsUrl, headers);
+
+  // If /models returned 404, the provider likely doesn't implement it (e.g. MiniMax).
+  // Fall back to a minimal /chat/completions POST which almost all providers support.
+  if (modelsResult.error?.includes('API error: 404')) {
+    console.log(
+      `[clawx-validate] ${providerType} /models returned 404, falling back to /chat/completions probe`
+    );
+    const base = normalizeBaseUrl(trimmedBaseUrl);
+    const chatUrl = `${base}/chat/completions`;
+    return await performChatCompletionsProbe(providerType, chatUrl, headers);
+  }
+
+  return modelsResult;
+}
+
+/**
+ * Fallback validation: send a minimal /chat/completions request.
+ * We intentionally use max_tokens=1 to minimise cost. The goal is only to
+ * distinguish auth errors (401/403) from a working key (200/400/429).
+ * A 400 "invalid model" still proves the key itself is accepted.
+ */
+async function performChatCompletionsProbe(
+  providerLabel: string,
+  url: string,
+  headers: Record<string, string>
+): Promise<{ valid: boolean; error?: string }> {
+  try {
+    logValidationRequest(providerLabel, 'POST', url, headers);
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: { ...headers, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: 'validation-probe',
+        messages: [{ role: 'user', content: 'hi' }],
+        max_tokens: 1,
+      }),
+    });
+    logValidationStatus(providerLabel, response.status);
+    const data = await response.json().catch(() => ({}));
+
+    // 401/403 → invalid key
+    if (response.status === 401 || response.status === 403) {
+      return { valid: false, error: 'Invalid API key' };
+    }
+    // 200, 400 (bad model but key accepted), 429 → key is valid
+    if (
+      (response.status >= 200 && response.status < 300) ||
+      response.status === 400 ||
+      response.status === 429
+    ) {
+      return { valid: true };
+    }
+    return classifyAuthResponse(response.status, data);
+  } catch (error) {
+    return {
+      valid: false,
+      error: `Connection error: ${error instanceof Error ? error.message : String(error)}`,
+    };
+  }
 }
 
 async function validateGoogleQueryKey(
