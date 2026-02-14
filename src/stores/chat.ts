@@ -639,8 +639,16 @@ export const useChatStore = create<ChatState>((set, get) => ({
         // Async: load missing image previews from disk (updates in background)
         loadMissingPreviews(enrichedMessages).then((updated) => {
           if (updated) {
-            // Trigger re-render with updated previews
-            set({ messages: [...enrichedMessages] });
+            // Create new object references so React.memo detects changes.
+            // loadMissingPreviews mutates AttachedFileMeta in place, so we
+            // must produce fresh message + file references for each affected msg.
+            set({
+              messages: enrichedMessages.map(msg =>
+                msg._attachedFiles
+                  ? { ...msg, _attachedFiles: msg._attachedFiles.map(f => ({ ...f })) }
+                  : msg
+              ),
+            });
           }
         });
         const { pendingFinal, lastUserMessageAt } = get();

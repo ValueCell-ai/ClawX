@@ -96,6 +96,59 @@ export const ChatMessage = memo(function ChatMessage({
           </div>
         )}
 
+        {/* Images — rendered ABOVE text bubble for user messages */}
+        {/* Images from content blocks (Gateway session data) */}
+        {isUser && images.length > 0 && (
+          <div className="flex flex-wrap gap-2">
+            {images.map((img, i) => (
+              <div
+                key={`content-${i}`}
+                className="w-36 h-36 rounded-xl border overflow-hidden"
+              >
+                <img
+                  src={`data:${img.mimeType};base64,${img.data}`}
+                  alt="attachment"
+                  className="w-full h-full object-cover"
+                />
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* File attachments — images above text for user, file cards below */}
+        {isUser && attachedFiles.length > 0 && (
+          <div className="flex flex-wrap gap-2">
+            {attachedFiles.map((file, i) => {
+              const isImage = file.mimeType.startsWith('image/');
+              // Skip image attachments if we already have images from content blocks
+              if (isImage && images.length > 0) return null;
+              // Image files → always render as square crop (with preview or placeholder)
+              if (isImage) {
+                return (
+                  <div
+                    key={`local-${i}`}
+                    className="w-36 h-36 rounded-xl border overflow-hidden bg-muted"
+                  >
+                    {file.preview ? (
+                      <img
+                        src={file.preview}
+                        alt={file.fileName}
+                        className="w-full h-full object-cover"
+                      />
+                    ) : (
+                      <div className="w-full h-full flex items-center justify-center text-muted-foreground">
+                        <File className="h-8 w-8" />
+                      </div>
+                    )}
+                  </div>
+                );
+              }
+              // Non-image files → file card
+              return <FileCard key={`local-${i}`} file={file} />;
+            })}
+          </div>
+        )}
+
         {/* Main text bubble */}
         {hasText && (
           <MessageBubble
@@ -106,42 +159,53 @@ export const ChatMessage = memo(function ChatMessage({
           />
         )}
 
-        {/* Images from content blocks (Gateway session data — persists across history reloads) */}
-        {images.length > 0 && (
+        {/* Images from content blocks — assistant messages (below text) */}
+        {!isUser && images.length > 0 && (
           <div className="flex flex-wrap gap-2">
             {images.map((img, i) => (
               <img
                 key={`content-${i}`}
                 src={`data:${img.mimeType};base64,${img.data}`}
                 alt="attachment"
-                className={cn(
-                  'rounded-lg border',
-                  isUser ? 'max-w-[200px] max-h-48' : 'max-w-xs',
-                )}
+                className="max-w-xs rounded-lg border"
               />
             ))}
           </div>
         )}
 
-        {/* File attachments (local preview — shown before history reload) */}
-        {/* Only show _attachedFiles images if no content-block images (avoid duplicates) */}
-        {attachedFiles.length > 0 && (
+        {/* File attachments — assistant messages (below text) */}
+        {!isUser && attachedFiles.length > 0 && (
           <div className="flex flex-wrap gap-2">
             {attachedFiles.map((file, i) => {
-              // Skip image attachments if we already have images from content blocks
-              if (file.mimeType.startsWith('image/') && file.preview && images.length > 0) return null;
-              return file.mimeType.startsWith('image/') && file.preview ? (
-                <img
-                  key={`local-${i}`}
-                  src={file.preview}
-                  alt={file.fileName}
-                  className="max-w-[200px] max-h-48 rounded-lg border"
-                />
-              ) : (
-                <FileCard key={`local-${i}`} file={file} />
-              );
+              const isImage = file.mimeType.startsWith('image/');
+              if (isImage && images.length > 0) return null;
+              if (isImage && file.preview) {
+                return (
+                  <img
+                    key={`local-${i}`}
+                    src={file.preview}
+                    alt={file.fileName}
+                    className="max-w-xs rounded-lg border"
+                  />
+                );
+              }
+              if (isImage && !file.preview) {
+                return (
+                  <div key={`local-${i}`} className="w-36 h-36 rounded-xl border overflow-hidden bg-muted flex items-center justify-center text-muted-foreground">
+                    <File className="h-8 w-8" />
+                  </div>
+                );
+              }
+              return <FileCard key={`local-${i}`} file={file} />;
             })}
           </div>
+        )}
+
+        {/* Hover timestamp for user messages (shown below content on hover) */}
+        {isUser && message.timestamp && (
+          <span className="text-xs text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity duration-200 select-none">
+            {formatTimestamp(message.timestamp)}
+          </span>
         )}
       </div>
     </div>
@@ -266,20 +330,14 @@ function MessageBubble({
         </div>
       )}
 
-      {/* Footer: timestamp + copy */}
-      <div className={cn(
-        'flex items-center gap-2 mt-2',
-        isUser ? 'justify-end' : 'justify-between',
-      )}>
-        {timestamp && (
-          <span className={cn(
-            'text-xs',
-            isUser ? 'text-primary-foreground/60' : 'text-muted-foreground',
-          )}>
-            {formatTimestamp(timestamp)}
-          </span>
-        )}
-        {!isUser && (
+      {/* Footer: copy button (assistant only; user timestamp is rendered outside the bubble) */}
+      {!isUser && (
+        <div className="flex items-center justify-between mt-2">
+          {timestamp ? (
+            <span className="text-xs text-muted-foreground">
+              {formatTimestamp(timestamp)}
+            </span>
+          ) : <span />}
           <Button
             variant="ghost"
             size="icon"
@@ -288,8 +346,8 @@ function MessageBubble({
           >
             {copied ? <Check className="h-3 w-3 text-green-500" /> : <Copy className="h-3 w-3" />}
           </Button>
-        )}
-      </div>
+        </div>
+      )}
     </div>
   );
 }
