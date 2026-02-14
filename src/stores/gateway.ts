@@ -64,6 +64,8 @@ export const useGatewayStore = create<GatewayState>((set, get) => ({
 
         // Some Gateway builds stream chat events via generic "agent" notifications.
         // Normalize and forward them to the chat store.
+        // The Gateway may put event fields (state, message, etc.) either inside
+        // params.data or directly on params — we must handle both layouts.
         window.electron.ipcRenderer.on('gateway:notification', (notification) => {
           const payload = notification as { method?: string; params?: Record<string, unknown> } | undefined;
           if (!payload || payload.method !== 'agent' || !payload.params || typeof payload.params !== 'object') {
@@ -73,11 +75,16 @@ export const useGatewayStore = create<GatewayState>((set, get) => ({
           const p = payload.params;
           const data = (p.data && typeof p.data === 'object') ? (p.data as Record<string, unknown>) : {};
           const normalizedEvent: Record<string, unknown> = {
+            // Spread data sub-object first (nested layout)
             ...data,
+            // Then override with top-level params fields (flat layout takes precedence)
             runId: p.runId ?? data.runId,
             sessionKey: p.sessionKey ?? data.sessionKey,
             stream: p.stream ?? data.stream,
             seq: p.seq ?? data.seq,
+            // Critical: also pick up state and message from params (flat layout)
+            state: p.state ?? data.state,
+            message: p.message ?? data.message,
           };
 
           import('./chat')
@@ -89,16 +96,35 @@ export const useGatewayStore = create<GatewayState>((set, get) => ({
             });
         });
 
-        // Listen for chat events from the gateway and forward to chat store
+        // Listen for chat events from the gateway and forward to chat store.
+        // The data arrives as { message: payload } from handleProtocolEvent.
+        // The payload may be a full event wrapper ({ state, runId, message })
+        // or the raw chat message itself. We need to handle both.
         window.electron.ipcRenderer.on('gateway:chat-message', (data) => {
           try {
             // Dynamic import to avoid circular dependency
             import('./chat').then(({ useChatStore }) => {
-              const chatData = data as { message?: Record<string, unknown> } | Record<string, unknown>;
-              const event = ('message' in chatData && typeof chatData.message === 'object')
+              const chatData = data as Record<string, unknown>;
+              // Unwrap the { message: payload } wrapper from handleProtocolEvent
+              const payload = ('message' in chatData && typeof chatData.message === 'object')
                 ? chatData.message as Record<string, unknown>
-                : chatData as Record<string, unknown>;
-              useChatStore.getState().handleChatEvent(event);
+                : chatData;
+
+              // If payload has a 'state' field, it's already a proper event wrapper
+              if (payload.state) {
+                useChatStore.getState().handleChatEvent(payload);
+                return;
+              }
+
+              // Otherwise, payload is the raw message — wrap it as a 'final' event
+              // so handleChatEvent can process it (this happens when the Gateway
+              // sends protocol events with the message directly as payload).
+              const syntheticEvent: Record<string, unknown> = {
+                state: 'final',
+                message: payload,
+                runId: chatData.runId ?? payload.runId,
+              };
+              useChatStore.getState().handleChatEvent(syntheticEvent);
             });
           } catch (err) {
             console.warn('Failed to forward chat event:', err);

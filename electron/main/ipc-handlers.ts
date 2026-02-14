@@ -1505,17 +1505,22 @@ function mimeToExt(mimeType: string): string {
 const OUTBOUND_DIR = join(homedir(), '.openclaw', 'media', 'outbound');
 
 /**
- * Generate a small preview data URL for image files.
- * Uses Electron nativeImage to resize large images for thumbnails.
+ * Generate a preview data URL for image files.
+ * Resizes large images while preserving aspect ratio (only constrain the
+ * longer side so the image is never squished). The frontend handles
+ * square cropping via CSS object-fit: cover.
  */
 function generateImagePreview(filePath: string, mimeType: string): string | null {
   try {
     const img = nativeImage.createFromPath(filePath);
     if (img.isEmpty()) return null;
     const size = img.getSize();
-    // If image is large, resize for thumbnail
-    if (size.width > 256 || size.height > 256) {
-      const resized = img.resize({ width: 256, height: 256 });
+    const maxDim = 512; // keep enough resolution for crisp display on Retina
+    // Only resize if larger than threshold — specify ONE dimension to keep ratio
+    if (size.width > maxDim || size.height > maxDim) {
+      const resized = size.width >= size.height
+        ? img.resize({ width: maxDim })   // landscape / square → constrain width
+        : img.resize({ height: maxDim }); // portrait → constrain height
       return `data:image/png;base64,${resized.toPNG().toString('base64')}`;
     }
     // Small image — use original

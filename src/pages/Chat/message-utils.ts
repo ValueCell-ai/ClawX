@@ -140,22 +140,50 @@ export function extractImages(message: RawMessage | unknown): Array<{ mimeType: 
 
 /**
  * Extract tool use blocks from a message.
+ * Handles both Anthropic format (tool_use in content array) and
+ * OpenAI format (tool_calls array on the message object).
  */
 export function extractToolUse(message: RawMessage | unknown): Array<{ id: string; name: string; input: unknown }> {
   if (!message || typeof message !== 'object') return [];
   const msg = message as Record<string, unknown>;
-  const content = msg.content;
-
-  if (!Array.isArray(content)) return [];
-
   const tools: Array<{ id: string; name: string; input: unknown }> = [];
-  for (const block of content as ContentBlock[]) {
-    if ((block.type === 'tool_use' || block.type === 'toolCall') && block.name) {
-      tools.push({
-        id: block.id || '',
-        name: block.name,
-        input: block.input ?? block.arguments,
-      });
+
+  // Path 1: Anthropic/normalized format — tool_use / toolCall blocks inside content array
+  const content = msg.content;
+  if (Array.isArray(content)) {
+    for (const block of content as ContentBlock[]) {
+      if ((block.type === 'tool_use' || block.type === 'toolCall') && block.name) {
+        tools.push({
+          id: block.id || '',
+          name: block.name,
+          input: block.input ?? block.arguments,
+        });
+      }
+    }
+  }
+
+  // Path 2: OpenAI format — tool_calls array on the message itself
+  // Real-time streaming events from OpenAI-compatible models (DeepSeek, etc.)
+  // use this format; the Gateway normalizes to Path 1 when storing history.
+  if (tools.length === 0) {
+    const toolCalls = msg.tool_calls ?? msg.toolCalls;
+    if (Array.isArray(toolCalls)) {
+      for (const tc of toolCalls as Array<Record<string, unknown>>) {
+        const fn = (tc.function ?? tc) as Record<string, unknown>;
+        const name = typeof fn.name === 'string' ? fn.name : '';
+        if (!name) continue;
+        let input: unknown;
+        try {
+          input = typeof fn.arguments === 'string' ? JSON.parse(fn.arguments) : fn.arguments ?? fn.input;
+        } catch {
+          input = fn.arguments;
+        }
+        tools.push({
+          id: typeof tc.id === 'string' ? tc.id : '',
+          name,
+          input,
+        });
+      }
     }
   }
 

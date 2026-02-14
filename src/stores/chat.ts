@@ -241,10 +241,25 @@ function isToolOnlyMessage(message: RawMessage | undefined): boolean {
   if (!message) return false;
   if (isToolResultRole(message.role)) return true;
 
+  const msg = message as unknown as Record<string, unknown>;
   const content = message.content;
-  if (!Array.isArray(content)) return false;
 
-  let hasTool = false;
+  // Check OpenAI-format tool_calls field (real-time streaming from OpenAI-compatible models)
+  const toolCalls = msg.tool_calls ?? msg.toolCalls;
+  const hasOpenAITools = Array.isArray(toolCalls) && toolCalls.length > 0;
+
+  if (!Array.isArray(content)) {
+    // Content is not an array — check if there's OpenAI-format tool_calls
+    if (hasOpenAITools) {
+      // Has tool calls but content might be empty/string — treat as tool-only
+      // if there's no meaningful text content
+      const textContent = typeof content === 'string' ? content.trim() : '';
+      return textContent.length === 0;
+    }
+    return false;
+  }
+
+  let hasTool = hasOpenAITools;
   let hasText = false;
   let hasNonToolContent = false;
 
@@ -312,19 +327,41 @@ function parseDurationMs(value: unknown): number | undefined {
 function extractToolUseUpdates(message: unknown): ToolStatus[] {
   if (!message || typeof message !== 'object') return [];
   const msg = message as Record<string, unknown>;
-  const content = msg.content;
-  if (!Array.isArray(content)) return [];
-
   const updates: ToolStatus[] = [];
-  for (const block of content as ContentBlock[]) {
-    if ((block.type !== 'tool_use' && block.type !== 'toolCall') || !block.name) continue;
-    updates.push({
-      id: block.id || block.name,
-      toolCallId: block.id,
-      name: block.name,
-      status: 'running',
-      updatedAt: Date.now(),
-    });
+
+  // Path 1: Anthropic/normalized format — tool blocks inside content array
+  const content = msg.content;
+  if (Array.isArray(content)) {
+    for (const block of content as ContentBlock[]) {
+      if ((block.type !== 'tool_use' && block.type !== 'toolCall') || !block.name) continue;
+      updates.push({
+        id: block.id || block.name,
+        toolCallId: block.id,
+        name: block.name,
+        status: 'running',
+        updatedAt: Date.now(),
+      });
+    }
+  }
+
+  // Path 2: OpenAI format — tool_calls array on the message itself
+  if (updates.length === 0) {
+    const toolCalls = msg.tool_calls ?? msg.toolCalls;
+    if (Array.isArray(toolCalls)) {
+      for (const tc of toolCalls as Array<Record<string, unknown>>) {
+        const fn = (tc.function ?? tc) as Record<string, unknown>;
+        const name = typeof fn.name === 'string' ? fn.name : '';
+        if (!name) continue;
+        const id = typeof tc.id === 'string' ? tc.id : name;
+        updates.push({
+          id,
+          toolCallId: typeof tc.id === 'string' ? tc.id : undefined,
+          name,
+          status: 'running',
+          updatedAt: Date.now(),
+        });
+      }
+    }
   }
 
   return updates;
@@ -602,8 +639,16 @@ export const useChatStore = create<ChatState>((set, get) => ({
         // Async: load missing image previews from disk (updates in background)
         loadMissingPreviews(enrichedMessages).then((updated) => {
           if (updated) {
-            // Trigger re-render with updated previews
-            set({ messages: [...enrichedMessages] });
+            // Create new object references so React.memo detects changes.
+            // loadMissingPreviews mutates AttachedFileMeta in place, so we
+            // must produce fresh message + file references for each affected msg.
+            set({
+              messages: enrichedMessages.map(msg =>
+                msg._attachedFiles
+                  ? { ...msg, _attachedFiles: msg._attachedFiles.map(f => ({ ...f })) }
+                  : msg
+              ),
+            });
           }
         });
         const { pendingFinal, lastUserMessageAt } = get();
@@ -757,10 +802,26 @@ export const useChatStore = create<ChatState>((set, get) => ({
     // Only process events for the active run (or if no active run set)
     if (activeRunId && runId && runId !== activeRunId) return;
 
-    switch (eventState) {
+    // Defensive: if state is missing but we have a message, try to infer state.
+    // This handles the case where the Gateway sends events without a state wrapper
+    // (e.g., protocol events where payload is the raw message).
+    let resolvedState = eventState;
+    if (!resolvedState && event.message && typeof event.message === 'object') {
+      const msg = event.message as Record<string, unknown>;
+      const stopReason = msg.stopReason ?? msg.stop_reason;
+      if (stopReason) {
+        // Message has a stopReason → it's a final message
+        resolvedState = 'final';
+      } else if (msg.role || msg.content) {
+        // Message has role/content but no stopReason → treat as delta (streaming)
+        resolvedState = 'delta';
+      }
+    }
+
+    switch (resolvedState) {
       case 'delta': {
         // Streaming update - store the cumulative message
-        const updates = collectToolUpdates(event.message, eventState);
+        const updates = collectToolUpdates(event.message, resolvedState);
         set((s) => ({
           streamingMessage: (() => {
             if (event.message && typeof event.message === 'object') {
@@ -777,7 +838,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
         // Message complete - add to history and clear streaming
         const finalMsg = event.message as RawMessage | undefined;
         if (finalMsg) {
-          const updates = collectToolUpdates(finalMsg, eventState);
+          const updates = collectToolUpdates(finalMsg, resolvedState);
           if (isToolResultRole(finalMsg.role)) {
             set((s) => ({
               streamingText: '',
@@ -865,6 +926,21 @@ export const useChatStore = create<ChatState>((set, get) => ({
           pendingFinal: false,
           lastUserMessageAt: null,
         });
+        break;
+      }
+      default: {
+        // Unknown or empty state — if we're currently sending and receive an event
+        // with a message, attempt to process it as streaming data. This handles
+        // edge cases where the Gateway sends events without a state field.
+        const { sending } = get();
+        if (sending && event.message && typeof event.message === 'object') {
+          console.warn(`[handleChatEvent] Unknown event state "${resolvedState}", treating message as streaming delta. Event keys:`, Object.keys(event));
+          const updates = collectToolUpdates(event.message, 'delta');
+          set((s) => ({
+            streamingMessage: event.message ?? s.streamingMessage,
+            streamingTools: updates.length > 0 ? upsertToolStatuses(s.streamingTools, updates) : s.streamingTools,
+          }));
+        }
         break;
       }
     }
