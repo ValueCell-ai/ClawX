@@ -241,10 +241,25 @@ function isToolOnlyMessage(message: RawMessage | undefined): boolean {
   if (!message) return false;
   if (isToolResultRole(message.role)) return true;
 
+  const msg = message as unknown as Record<string, unknown>;
   const content = message.content;
-  if (!Array.isArray(content)) return false;
 
-  let hasTool = false;
+  // Check OpenAI-format tool_calls field (real-time streaming from OpenAI-compatible models)
+  const toolCalls = msg.tool_calls ?? msg.toolCalls;
+  const hasOpenAITools = Array.isArray(toolCalls) && toolCalls.length > 0;
+
+  if (!Array.isArray(content)) {
+    // Content is not an array — check if there's OpenAI-format tool_calls
+    if (hasOpenAITools) {
+      // Has tool calls but content might be empty/string — treat as tool-only
+      // if there's no meaningful text content
+      const textContent = typeof content === 'string' ? content.trim() : '';
+      return textContent.length === 0;
+    }
+    return false;
+  }
+
+  let hasTool = hasOpenAITools;
   let hasText = false;
   let hasNonToolContent = false;
 
@@ -312,19 +327,41 @@ function parseDurationMs(value: unknown): number | undefined {
 function extractToolUseUpdates(message: unknown): ToolStatus[] {
   if (!message || typeof message !== 'object') return [];
   const msg = message as Record<string, unknown>;
-  const content = msg.content;
-  if (!Array.isArray(content)) return [];
-
   const updates: ToolStatus[] = [];
-  for (const block of content as ContentBlock[]) {
-    if ((block.type !== 'tool_use' && block.type !== 'toolCall') || !block.name) continue;
-    updates.push({
-      id: block.id || block.name,
-      toolCallId: block.id,
-      name: block.name,
-      status: 'running',
-      updatedAt: Date.now(),
-    });
+
+  // Path 1: Anthropic/normalized format — tool blocks inside content array
+  const content = msg.content;
+  if (Array.isArray(content)) {
+    for (const block of content as ContentBlock[]) {
+      if ((block.type !== 'tool_use' && block.type !== 'toolCall') || !block.name) continue;
+      updates.push({
+        id: block.id || block.name,
+        toolCallId: block.id,
+        name: block.name,
+        status: 'running',
+        updatedAt: Date.now(),
+      });
+    }
+  }
+
+  // Path 2: OpenAI format — tool_calls array on the message itself
+  if (updates.length === 0) {
+    const toolCalls = msg.tool_calls ?? msg.toolCalls;
+    if (Array.isArray(toolCalls)) {
+      for (const tc of toolCalls as Array<Record<string, unknown>>) {
+        const fn = (tc.function ?? tc) as Record<string, unknown>;
+        const name = typeof fn.name === 'string' ? fn.name : '';
+        if (!name) continue;
+        const id = typeof tc.id === 'string' ? tc.id : name;
+        updates.push({
+          id,
+          toolCallId: typeof tc.id === 'string' ? tc.id : undefined,
+          name,
+          status: 'running',
+          updatedAt: Date.now(),
+        });
+      }
+    }
   }
 
   return updates;

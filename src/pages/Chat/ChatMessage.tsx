@@ -48,8 +48,9 @@ export const ChatMessage = memo(function ChatMessage({
   // Never render tool result messages in chat UI
   if (isToolResult) return null;
 
-  // Don't render empty messages
-  if (!hasText && !visibleThinking && images.length === 0 && visibleTools.length === 0 && attachedFiles.length === 0) return null;
+  // Don't render empty messages (also keep messages with streaming tool status)
+  const hasStreamingToolStatus = showThinking && isStreaming && streamingTools.length > 0;
+  if (!hasText && !visibleThinking && images.length === 0 && visibleTools.length === 0 && attachedFiles.length === 0 && !hasStreamingToolStatus) return null;
 
   return (
     <div
