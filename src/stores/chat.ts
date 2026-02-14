@@ -757,10 +757,26 @@ export const useChatStore = create<ChatState>((set, get) => ({
     // Only process events for the active run (or if no active run set)
     if (activeRunId && runId && runId !== activeRunId) return;
 
-    switch (eventState) {
+    // Defensive: if state is missing but we have a message, try to infer state.
+    // This handles the case where the Gateway sends events without a state wrapper
+    // (e.g., protocol events where payload is the raw message).
+    let resolvedState = eventState;
+    if (!resolvedState && event.message && typeof event.message === 'object') {
+      const msg = event.message as Record<string, unknown>;
+      const stopReason = msg.stopReason ?? msg.stop_reason;
+      if (stopReason) {
+        // Message has a stopReason → it's a final message
+        resolvedState = 'final';
+      } else if (msg.role || msg.content) {
+        // Message has role/content but no stopReason → treat as delta (streaming)
+        resolvedState = 'delta';
+      }
+    }
+
+    switch (resolvedState) {
       case 'delta': {
         // Streaming update - store the cumulative message
-        const updates = collectToolUpdates(event.message, eventState);
+        const updates = collectToolUpdates(event.message, resolvedState);
         set((s) => ({
           streamingMessage: (() => {
             if (event.message && typeof event.message === 'object') {
@@ -777,7 +793,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
         // Message complete - add to history and clear streaming
         const finalMsg = event.message as RawMessage | undefined;
         if (finalMsg) {
-          const updates = collectToolUpdates(finalMsg, eventState);
+          const updates = collectToolUpdates(finalMsg, resolvedState);
           if (isToolResultRole(finalMsg.role)) {
             set((s) => ({
               streamingText: '',
@@ -865,6 +881,21 @@ export const useChatStore = create<ChatState>((set, get) => ({
           pendingFinal: false,
           lastUserMessageAt: null,
         });
+        break;
+      }
+      default: {
+        // Unknown or empty state — if we're currently sending and receive an event
+        // with a message, attempt to process it as streaming data. This handles
+        // edge cases where the Gateway sends events without a state field.
+        const { sending } = get();
+        if (sending && event.message && typeof event.message === 'object') {
+          console.warn(`[handleChatEvent] Unknown event state "${resolvedState}", treating message as streaming delta. Event keys:`, Object.keys(event));
+          const updates = collectToolUpdates(event.message, 'delta');
+          set((s) => ({
+            streamingMessage: event.message ?? s.streamingMessage,
+            streamingTools: updates.length > 0 ? upsertToolStatuses(s.streamingTools, updates) : s.streamingTools,
+          }));
+        }
         break;
       }
     }
