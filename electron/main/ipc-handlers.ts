@@ -1024,7 +1024,7 @@ function registerProviderHandlers(): void {
   );
 }
 
-type ValidationProfile = 'openai-compatible' | 'google-query-key' | 'anthropic-header' | 'none';
+type ValidationProfile = 'openai-compatible' | 'google-query-key' | 'anthropic-header' | 'openrouter' | 'none';
 
 /**
  * Validate API key using lightweight model-listing endpoints (zero token cost).
@@ -1056,6 +1056,8 @@ async function validateApiKeyWithProvider(
         return await validateGoogleQueryKey(providerType, trimmedKey, options?.baseUrl);
       case 'anthropic-header':
         return await validateAnthropicHeaderKey(providerType, trimmedKey, options?.baseUrl);
+      case 'openrouter':
+        return await validateOpenRouterKey(providerType, trimmedKey);
       default:
         return { valid: false, error: `Unsupported validation profile for provider: ${providerType}` };
     }
@@ -1123,6 +1125,8 @@ function getValidationProfile(providerType: string): ValidationProfile {
       return 'anthropic-header';
     case 'google':
       return 'google-query-key';
+    case 'openrouter':
+      return 'openrouter';
     case 'ollama':
       return 'none';
     default:
@@ -1271,6 +1275,16 @@ async function validateAnthropicHeaderKey(
     'x-api-key': apiKey,
     'anthropic-version': '2023-06-01',
   };
+  return await performProviderValidationRequest(providerType, url, headers);
+}
+
+async function validateOpenRouterKey(
+  providerType: string,
+  apiKey: string
+): Promise<{ valid: boolean; error?: string }> {
+  // Use OpenRouter's auth check endpoint instead of public /models
+  const url = 'https://openrouter.ai/api/v1/auth/key';
+  const headers = { Authorization: `Bearer ${apiKey}` };
   return await performProviderValidationRequest(providerType, url, headers);
 }
 
