@@ -22,6 +22,13 @@ import { GatewayEventType, JsonRpcNotification, isNotification, isResponse } fro
 import { logger } from '../utils/logger';
 import { getUvMirrorEnv } from '../utils/uv-env';
 import { isPythonReady, setupManagedPython } from '../utils/uv-setup';
+import {
+  loadOrCreateDeviceIdentity,
+  signDevicePayload,
+  publicKeyRawBase64UrlFromPem,
+  buildDeviceAuthPayload,
+  type DeviceIdentity,
+} from '../utils/device-identity';
 
 /**
  * Gateway connection status
@@ -120,10 +127,22 @@ export class GatewayManager extends EventEmitter {
     reject: (error: Error) => void;
     timeout: NodeJS.Timeout;
   }> = new Map();
+  private deviceIdentity: DeviceIdentity | null = null;
   
   constructor(config?: Partial<ReconnectConfig>) {
     super();
     this.reconnectConfig = { ...DEFAULT_RECONNECT_CONFIG, ...config };
+    this.initDeviceIdentity();
+  }
+
+  private initDeviceIdentity(): void {
+    try {
+      const identityPath = path.join(app.getPath('userData'), 'clawx-device-identity.json');
+      this.deviceIdentity = loadOrCreateDeviceIdentity(identityPath);
+      logger.debug(`Device identity loaded (deviceId=${this.deviceIdentity.deviceId})`);
+    } catch (err) {
+      logger.warn('Failed to load device identity, scopes will be limited:', err);
+    }
   }
 
   private sanitizeSpawnArgs(args: string[]): string[] {
@@ -757,7 +776,34 @@ export class GatewayManager extends EventEmitter {
         
         // Send proper connect handshake as required by OpenClaw Gateway protocol
         // The Gateway expects: { type: "req", id: "...", method: "connect", params: ConnectParams }
+        // Since 2026.2.15, scopes are only granted when a signed device identity is included.
         connectId = `connect-${Date.now()}`;
+        const role = 'operator';
+        const scopes = ['operator.admin'];
+        const signedAtMs = Date.now();
+        const clientId = 'gateway-client';
+        const clientMode = 'ui';
+
+        const device = (() => {
+          if (!this.deviceIdentity) return undefined;
+          const payload = buildDeviceAuthPayload({
+            deviceId: this.deviceIdentity.deviceId,
+            clientId,
+            clientMode,
+            role,
+            scopes,
+            signedAtMs,
+            token: gatewayToken ?? null,
+          });
+          const signature = signDevicePayload(this.deviceIdentity.privateKeyPem, payload);
+          return {
+            id: this.deviceIdentity.deviceId,
+            publicKey: publicKeyRawBase64UrlFromPem(this.deviceIdentity.publicKeyPem),
+            signature,
+            signedAt: signedAtMs,
+          };
+        })();
+
         const connectFrame = {
           type: 'req',
           id: connectId,
@@ -766,18 +812,19 @@ export class GatewayManager extends EventEmitter {
             minProtocol: 3,
             maxProtocol: 3,
             client: {
-              id: 'gateway-client',
+              id: clientId,
               displayName: 'ClawX',
               version: '0.1.0',
               platform: process.platform,
-              mode: 'ui',
+              mode: clientMode,
             },
             auth: {
               token: gatewayToken,
             },
             caps: [],
-            role: 'operator',
-            scopes: [],
+            role,
+            scopes,
+            device,
           },
         };
         
