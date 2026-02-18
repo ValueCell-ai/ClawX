@@ -166,7 +166,6 @@ export const ChatMessage = memo(function ChatMessage({
             text={text}
             isUser={isUser}
             isStreaming={isStreaming}
-            timestamp={message.timestamp}
           />
         )}
 
@@ -220,11 +219,16 @@ export const ChatMessage = memo(function ChatMessage({
           </div>
         )}
 
-        {/* Hover timestamp for user messages (shown below content on hover) */}
+        {/* Hover row for user messages — timestamp only */}
         {isUser && message.timestamp && (
           <span className="text-xs text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity duration-200 select-none">
             {formatTimestamp(message.timestamp)}
           </span>
+        )}
+
+        {/* Hover row for assistant messages — only when there is real text content */}
+        {!isUser && hasText && (
+          <AssistantHoverBar text={text} timestamp={message.timestamp} />
         )}
       </div>
 
@@ -288,19 +292,9 @@ function ToolStatusBar({
   );
 }
 
-// ── Message Bubble ──────────────────────────────────────────────
+// ── Assistant hover bar (timestamp + copy, shown on group hover) ─
 
-function MessageBubble({
-  text,
-  isUser,
-  isStreaming,
-  timestamp,
-}: {
-  text: string;
-  isUser: boolean;
-  isStreaming: boolean;
-  timestamp?: number;
-}) {
+function AssistantHoverBar({ text, timestamp }: { text: string; timestamp?: number }) {
   const [copied, setCopied] = useState(false);
 
   const copyContent = useCallback(() => {
@@ -309,6 +303,34 @@ function MessageBubble({
     setTimeout(() => setCopied(false), 2000);
   }, [text]);
 
+  return (
+    <div className="flex items-center justify-between w-full opacity-0 group-hover:opacity-100 transition-opacity duration-200 select-none px-1">
+      <span className="text-xs text-muted-foreground">
+        {timestamp ? formatTimestamp(timestamp) : ''}
+      </span>
+      <Button
+        variant="ghost"
+        size="icon"
+        className="h-6 w-6"
+        onClick={copyContent}
+      >
+        {copied ? <Check className="h-3 w-3 text-green-500" /> : <Copy className="h-3 w-3" />}
+      </Button>
+    </div>
+  );
+}
+
+// ── Message Bubble ──────────────────────────────────────────────
+
+function MessageBubble({
+  text,
+  isUser,
+  isStreaming,
+}: {
+  text: string;
+  isUser: boolean;
+  isStreaming: boolean;
+}) {
   return (
     <div
       className={cn(
@@ -361,24 +383,6 @@ function MessageBubble({
         </div>
       )}
 
-      {/* Footer: copy button (assistant only; user timestamp is rendered outside the bubble) */}
-      {!isUser && (
-        <div className="flex items-center justify-between mt-2">
-          {timestamp ? (
-            <span className="text-xs text-muted-foreground">
-              {formatTimestamp(timestamp)}
-            </span>
-          ) : <span />}
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity"
-            onClick={copyContent}
-          >
-            {copied ? <Check className="h-3 w-3 text-green-500" /> : <Copy className="h-3 w-3" />}
-          </Button>
-        </div>
-      )}
     </div>
   );
 }
