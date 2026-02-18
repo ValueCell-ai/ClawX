@@ -20,6 +20,7 @@ app.disableHardwareAcceleration();
 
 // Global references
 let mainWindow: BrowserWindow | null = null;
+let isQuitting = false;
 const gatewayManager = new GatewayManager();
 const clawHubService = new ClawHubService();
 
@@ -164,7 +165,14 @@ async function initialize(): Promise<void> {
   // Note: Auto-check for updates is driven by the renderer (update store init)
   // so it respects the user's "Auto-check for updates" setting.
 
-  // Handle window close
+  // Windows: minimize to tray on close instead of quitting
+  mainWindow.on('close', (event) => {
+    if (process.platform === 'win32' && !isQuitting) {
+      event.preventDefault();
+      mainWindow?.hide();
+    }
+  });
+
   mainWindow.on('closed', () => {
     mainWindow = null;
   });
@@ -200,6 +208,7 @@ app.on('window-all-closed', () => {
 });
 
 app.on('before-quit', async () => {
+  isQuitting = true;
   await gatewayManager.stop();
 });
 
