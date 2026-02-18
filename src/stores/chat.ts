@@ -339,7 +339,7 @@ function enrichWithToolResultFiles(messages: RawMessage[]): RawMessage[] {
  * Uses local cache for previews when available; missing previews are loaded async.
  */
 function enrichWithCachedImages(messages: RawMessage[]): RawMessage[] {
-  return messages.map(msg => {
+  return messages.map((msg, idx) => {
     // Only process user and assistant messages; skip if already enriched
     if ((msg.role !== 'user' && msg.role !== 'assistant') || msg._attachedFiles) return msg;
     const text = getMessageText(msg.content);
@@ -348,8 +348,34 @@ function enrichWithCachedImages(messages: RawMessage[]): RawMessage[] {
     const mediaRefs = extractMediaRefs(text);
     const mediaRefPaths = new Set(mediaRefs.map(r => r.filePath));
 
-    // Path 2: Raw file paths in message text (user typed or AI mentioned)
-    const rawRefs = extractRawFilePaths(text).filter(r => !mediaRefPaths.has(r.filePath));
+    // Path 2: Raw file paths.
+    // For assistant messages: scan own text AND the nearest preceding user message text,
+    // but only for non-tool-only assistant messages (i.e. the final answer turn).
+    // Tool-only messages (thinking + tool calls) should not show file previews — those
+    // belong to the final answer message that comes after the tool results.
+    // User messages never get raw-path previews so the image is not shown twice.
+    let rawRefs: Array<{ filePath: string; mimeType: string }> = [];
+    if (msg.role === 'assistant' && !isToolOnlyMessage(msg)) {
+      // Own text
+      rawRefs = extractRawFilePaths(text).filter(r => !mediaRefPaths.has(r.filePath));
+
+      // Nearest preceding user message text (look back up to 5 messages)
+      const seenPaths = new Set(rawRefs.map(r => r.filePath));
+      for (let i = idx - 1; i >= Math.max(0, idx - 5); i--) {
+        const prev = messages[i];
+        if (!prev) break;
+        if (prev.role === 'user') {
+          const prevText = getMessageText(prev.content);
+          for (const ref of extractRawFilePaths(prevText)) {
+            if (!mediaRefPaths.has(ref.filePath) && !seenPaths.has(ref.filePath)) {
+              seenPaths.add(ref.filePath);
+              rawRefs.push(ref);
+            }
+          }
+          break; // only use the nearest user message
+        }
+      }
+    }
 
     const allRefs = [...mediaRefs, ...rawRefs];
     if (allRefs.length === 0) return msg;

@@ -119,6 +119,7 @@ const electronAPI = {
         'file:stage',
         'file:stageBuffer',
         'media:getThumbnails',
+        'media:saveImage',
         // Chat send with media (reads staged files in main process)
         'chat:sendWithMedia',
         // OpenClaw extras

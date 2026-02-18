@@ -3,10 +3,11 @@
  * Renders user / assistant / system / toolresult messages
  * with markdown, thinking sections, images, and tool cards.
  */
-import { useState, useCallback, memo } from 'react';
-import { User, Sparkles, Copy, Check, ChevronDown, ChevronRight, Wrench, FileText, Film, Music, FileArchive, File } from 'lucide-react';
+import { useState, useCallback, useEffect, memo } from 'react';
+import { User, Sparkles, Copy, Check, ChevronDown, ChevronRight, Wrench, FileText, Film, Music, FileArchive, File, X, FolderOpen, ZoomIn } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import { createPortal } from 'react-dom';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import type { RawMessage, AttachedFileMeta } from '@/stores/chat';
@@ -25,6 +26,8 @@ interface ChatMessageProps {
     summary?: string;
   }>;
 }
+
+interface ExtractedImage { url?: string; data?: string; mimeType: string; }
 
 /** Resolve an ExtractedImage to a displayable src string, or null if not possible. */
 function imageSrc(img: ExtractedImage): string | null {
@@ -51,6 +54,7 @@ export const ChatMessage = memo(function ChatMessage({
   const visibleTools = showThinking ? tools : [];
 
   const attachedFiles = message._attachedFiles || [];
+  const [lightboxImg, setLightboxImg] = useState<{ src: string; fileName: string; filePath?: string; base64?: string; mimeType?: string } | null>(null);
 
   // Never render tool result messages in chat UI
   if (isToolResult) return null;
@@ -111,16 +115,14 @@ export const ChatMessage = memo(function ChatMessage({
               const src = imageSrc(img);
               if (!src) return null;
               return (
-                <div
+                <ImageThumbnail
                   key={`content-${i}`}
-                  className="w-36 h-36 rounded-xl border overflow-hidden"
-                >
-                  <img
-                    src={src}
-                    alt="attachment"
-                    className="w-full h-full object-cover"
-                  />
-                </div>
+                  src={src}
+                  fileName="image"
+                  base64={img.data}
+                  mimeType={img.mimeType}
+                  onPreview={() => setLightboxImg({ src, fileName: 'image', base64: img.data, mimeType: img.mimeType })}
+                />
               );
             })}
           </div>
@@ -133,24 +135,22 @@ export const ChatMessage = memo(function ChatMessage({
               const isImage = file.mimeType.startsWith('image/');
               // Skip image attachments if we already have images from content blocks
               if (isImage && images.length > 0) return null;
-              // Image files → always render as square crop (with preview or placeholder)
               if (isImage) {
-                return (
+                return file.preview ? (
+                  <ImageThumbnail
+                    key={`local-${i}`}
+                    src={file.preview}
+                    fileName={file.fileName}
+                    filePath={file.filePath}
+                    mimeType={file.mimeType}
+                    onPreview={() => setLightboxImg({ src: file.preview!, fileName: file.fileName, filePath: file.filePath, mimeType: file.mimeType })}
+                  />
+                ) : (
                   <div
                     key={`local-${i}`}
-                    className="w-36 h-36 rounded-xl border overflow-hidden bg-muted"
+                    className="w-36 h-36 rounded-xl border overflow-hidden bg-muted flex items-center justify-center text-muted-foreground"
                   >
-                    {file.preview ? (
-                      <img
-                        src={file.preview}
-                        alt={file.fileName}
-                        className="w-full h-full object-cover"
-                      />
-                    ) : (
-                      <div className="w-full h-full flex items-center justify-center text-muted-foreground">
-                        <File className="h-8 w-8" />
-                      </div>
-                    )}
+                    <File className="h-8 w-8" />
                   </div>
                 );
               }
@@ -177,11 +177,13 @@ export const ChatMessage = memo(function ChatMessage({
               const src = imageSrc(img);
               if (!src) return null;
               return (
-                <img
+                <ImagePreviewCard
                   key={`content-${i}`}
                   src={src}
-                  alt="attachment"
-                  className="max-w-xs rounded-lg border"
+                  fileName="image"
+                  base64={img.data}
+                  mimeType={img.mimeType}
+                  onPreview={() => setLightboxImg({ src, fileName: 'image', base64: img.data, mimeType: img.mimeType })}
                 />
               );
             })}
@@ -196,11 +198,13 @@ export const ChatMessage = memo(function ChatMessage({
               if (isImage && images.length > 0) return null;
               if (isImage && file.preview) {
                 return (
-                  <img
+                  <ImagePreviewCard
                     key={`local-${i}`}
                     src={file.preview}
-                    alt={file.fileName}
-                    className="max-w-xs rounded-lg border"
+                    fileName={file.fileName}
+                    filePath={file.filePath}
+                    mimeType={file.mimeType}
+                    onPreview={() => setLightboxImg({ src: file.preview!, fileName: file.fileName, filePath: file.filePath, mimeType: file.mimeType })}
                   />
                 );
               }
@@ -223,6 +227,18 @@ export const ChatMessage = memo(function ChatMessage({
           </span>
         )}
       </div>
+
+      {/* Image lightbox portal */}
+      {lightboxImg && (
+        <ImageLightbox
+          src={lightboxImg.src}
+          fileName={lightboxImg.fileName}
+          filePath={lightboxImg.filePath}
+          base64={lightboxImg.base64}
+          mimeType={lightboxImg.mimeType}
+          onClose={() => setLightboxImg(null)}
+        />
+      )}
     </div>
   );
 });
@@ -421,6 +437,146 @@ function FileCard({ file }: { file: AttachedFileMeta }) {
         </p>
       </div>
     </div>
+  );
+}
+
+// ── Image Thumbnail (user bubble — square crop with zoom hint) ──
+
+function ImageThumbnail({
+  src,
+  fileName,
+  filePath,
+  base64,
+  mimeType,
+  onPreview,
+}: {
+  src: string;
+  fileName: string;
+  filePath?: string;
+  base64?: string;
+  mimeType?: string;
+  onPreview: () => void;
+}) {
+  void filePath; void base64; void mimeType;
+  return (
+    <div
+      className="relative w-36 h-36 rounded-xl border overflow-hidden bg-muted group/img cursor-zoom-in"
+      onClick={onPreview}
+    >
+      <img src={src} alt={fileName} className="w-full h-full object-cover" />
+      <div className="absolute inset-0 bg-black/0 group-hover/img:bg-black/25 transition-colors flex items-center justify-center">
+        <ZoomIn className="h-6 w-6 text-white opacity-0 group-hover/img:opacity-100 transition-opacity drop-shadow" />
+      </div>
+    </div>
+  );
+}
+
+// ── Image Preview Card (assistant bubble — natural size with overlay actions) ──
+
+function ImagePreviewCard({
+  src,
+  fileName,
+  filePath,
+  base64,
+  mimeType,
+  onPreview,
+}: {
+  src: string;
+  fileName: string;
+  filePath?: string;
+  base64?: string;
+  mimeType?: string;
+  onPreview: () => void;
+}) {
+  void filePath; void base64; void mimeType;
+  return (
+    <div
+      className="relative max-w-xs rounded-lg border overflow-hidden group/img cursor-zoom-in"
+      onClick={onPreview}
+    >
+      <img src={src} alt={fileName} className="block w-full" />
+      <div className="absolute inset-0 bg-black/0 group-hover/img:bg-black/20 transition-colors flex items-center justify-center">
+        <ZoomIn className="h-6 w-6 text-white opacity-0 group-hover/img:opacity-100 transition-opacity drop-shadow" />
+      </div>
+    </div>
+  );
+}
+
+// ── Image Lightbox ───────────────────────────────────────────────
+
+function ImageLightbox({
+  src,
+  fileName,
+  filePath,
+  base64,
+  mimeType,
+  onClose,
+}: {
+  src: string;
+  fileName: string;
+  filePath?: string;
+  base64?: string;
+  mimeType?: string;
+  onClose: () => void;
+}) {
+  void src; void base64; void mimeType; void fileName;
+
+  useEffect(() => {
+    const handleKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', handleKey);
+    return () => window.removeEventListener('keydown', handleKey);
+  }, [onClose]);
+
+  const handleShowInFolder = useCallback(() => {
+    if (filePath) {
+      window.electron.ipcRenderer.invoke('shell:showItemInFolder', filePath);
+    }
+  }, [filePath]);
+
+  return createPortal(
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm"
+      onClick={onClose}
+    >
+      {/* Image + buttons stacked */}
+      <div
+        className="flex flex-col items-center gap-3"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <img
+          src={src}
+          alt={fileName}
+          className="max-w-[90vw] max-h-[85vh] rounded-lg shadow-2xl object-contain"
+        />
+
+        {/* Action buttons below image */}
+        <div className="flex items-center gap-2">
+          {filePath && (
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-8 w-8 bg-white/10 hover:bg-white/20 text-white"
+              onClick={handleShowInFolder}
+              title="在文件夹中显示"
+            >
+              <FolderOpen className="h-4 w-4" />
+            </Button>
+          )}
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-8 w-8 bg-white/10 hover:bg-white/20 text-white"
+            onClick={onClose}
+            title="关闭"
+          >
+            <X className="h-4 w-4" />
+          </Button>
+        </div>
+      </div>
+    </div>,
+    document.body,
   );
 }
 

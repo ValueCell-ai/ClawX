@@ -1589,6 +1589,40 @@ function registerFileHandlers(): void {
   });
 
   // Load thumbnails for file paths on disk (used to restore previews in history)
+  // Save an image to a user-chosen location (base64 data URI or existing file path)
+  ipcMain.handle('media:saveImage', async (_, params: {
+    base64?: string;
+    mimeType?: string;
+    filePath?: string;
+    defaultFileName: string;
+  }) => {
+    try {
+      const ext = params.defaultFileName.includes('.')
+        ? params.defaultFileName.split('.').pop()!
+        : (params.mimeType?.split('/')[1] || 'png');
+      const result = await dialog.showSaveDialog({
+        defaultPath: join(homedir(), 'Downloads', params.defaultFileName),
+        filters: [
+          { name: 'Images', extensions: [ext, 'png', 'jpg', 'jpeg', 'webp', 'gif'] },
+          { name: 'All Files', extensions: ['*'] },
+        ],
+      });
+      if (result.canceled || !result.filePath) return { success: false };
+
+      if (params.filePath && existsSync(params.filePath)) {
+        copyFileSync(params.filePath, result.filePath);
+      } else if (params.base64) {
+        const buffer = Buffer.from(params.base64, 'base64');
+        writeFileSync(result.filePath, buffer);
+      } else {
+        return { success: false, error: 'No image data provided' };
+      }
+      return { success: true, savedPath: result.filePath };
+    } catch (err) {
+      return { success: false, error: String(err) };
+    }
+  });
+
   ipcMain.handle('media:getThumbnails', async (_, paths: Array<{ filePath: string; mimeType: string }>) => {
     const results: Record<string, { preview: string | null; fileSize: number }> = {};
     for (const { filePath, mimeType } of paths) {
