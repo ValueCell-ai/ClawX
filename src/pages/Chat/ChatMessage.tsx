@@ -26,6 +26,13 @@ interface ChatMessageProps {
   }>;
 }
 
+/** Resolve an ExtractedImage to a displayable src string, or null if not possible. */
+function imageSrc(img: ExtractedImage): string | null {
+  if (img.url) return img.url;
+  if (img.data) return `data:${img.mimeType};base64,${img.data}`;
+  return null;
+}
+
 export const ChatMessage = memo(function ChatMessage({
   message,
   showThinking,
@@ -97,21 +104,25 @@ export const ChatMessage = memo(function ChatMessage({
         )}
 
         {/* Images — rendered ABOVE text bubble for user messages */}
-        {/* Images from content blocks (Gateway session data) */}
+        {/* Images from content blocks (Gateway session data / channel push photos) */}
         {isUser && images.length > 0 && (
           <div className="flex flex-wrap gap-2">
-            {images.map((img, i) => (
-              <div
-                key={`content-${i}`}
-                className="w-36 h-36 rounded-xl border overflow-hidden"
-              >
-                <img
-                  src={`data:${img.mimeType};base64,${img.data}`}
-                  alt="attachment"
-                  className="w-full h-full object-cover"
-                />
-              </div>
-            ))}
+            {images.map((img, i) => {
+              const src = imageSrc(img);
+              if (!src) return null;
+              return (
+                <div
+                  key={`content-${i}`}
+                  className="w-36 h-36 rounded-xl border overflow-hidden"
+                >
+                  <img
+                    src={src}
+                    alt="attachment"
+                    className="w-full h-full object-cover"
+                  />
+                </div>
+              );
+            })}
           </div>
         )}
 
@@ -162,14 +173,18 @@ export const ChatMessage = memo(function ChatMessage({
         {/* Images from content blocks — assistant messages (below text) */}
         {!isUser && images.length > 0 && (
           <div className="flex flex-wrap gap-2">
-            {images.map((img, i) => (
-              <img
-                key={`content-${i}`}
-                src={`data:${img.mimeType};base64,${img.data}`}
-                alt="attachment"
-                className="max-w-xs rounded-lg border"
-              />
-            ))}
+            {images.map((img, i) => {
+              const src = imageSrc(img);
+              if (!src) return null;
+              return (
+                <img
+                  key={`content-${i}`}
+                  src={src}
+                  alt="attachment"
+                  className="max-w-xs rounded-lg border"
+                />
+              );
+            })}
           </div>
         )}
 
