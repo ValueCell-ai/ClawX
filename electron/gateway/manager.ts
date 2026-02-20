@@ -470,12 +470,8 @@ export class GatewayManager extends EventEmitter {
     try {
       const port = PORTS.OPENCLAW_GATEWAY;
       
-      // Look up external processes using the port
-      let externalToken: string | undefined;
-      const gatewayToken = await getSetting('gatewayToken');
-      
       try {
-        const { stdout } = await new Promise<{ stdout: string }>((resolve, reject) => {
+        const { stdout } = await new Promise<{ stdout: string }>((resolve) => {
           import('child_process').then(cp => {
             cp.exec(`lsof -i :${port} | grep LISTEN`, (err, stdout) => {
               if (err) resolve({ stdout: '' });
@@ -496,7 +492,7 @@ export class GatewayManager extends EventEmitter {
             if (!this.process || !pids.includes(String(this.process.pid))) {
                logger.info(`Found orphaned process listening on port ${port} (PID: ${pids[0]}), attempting to kill...`);
                for (const pid of pids) {
-                 try { process.kill(parseInt(pid), 'SIGKILL'); } catch (e) { /* ignore */ }
+                 try { process.kill(parseInt(pid), 'SIGKILL'); } catch { /* ignore */ }
                }
                // Wait a moment for port to be released
                await new Promise(r => setTimeout(r, 500));
@@ -788,9 +784,7 @@ export class GatewayManager extends EventEmitter {
   /**
    * Connect WebSocket to Gateway
    */
-  private async connect(port: number, externalToken?: string): Promise<void> {
-    // Get token for WebSocket authentication
-    const gatewayToken = externalToken || await getSetting('gatewayToken');
+  private async connect(port: number, _externalToken?: string): Promise<void> {
     logger.debug(`Connecting Gateway WebSocket (ws://localhost:${port}/ws)`);
     
     return new Promise((resolve, reject) => {
