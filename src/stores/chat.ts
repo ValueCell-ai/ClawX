@@ -36,6 +36,9 @@ export interface ContentBlock {
   text?: string;
   thinking?: string;
   source?: { type: string; media_type?: string; data?: string; url?: string };
+  /** Flat image format from Gateway tool results (no source wrapper) */
+  data?: string;
+  mimeType?: string;
   id?: string;
   name?: string;
   input?: unknown;
@@ -211,20 +214,25 @@ function mimeFromExtension(filePath: string): string {
 
 /**
  * Extract raw file paths from message text.
- * Detects absolute Unix paths (/ or ~/) ending with common file extensions.
+ * Detects absolute paths (Unix: / or ~/, Windows: C:\ etc.) ending with common file extensions.
  * Handles both image and non-image files, consistent with channel push message behavior.
  */
 function extractRawFilePaths(text: string): Array<{ filePath: string; mimeType: string }> {
   const refs: Array<{ filePath: string; mimeType: string }> = [];
   const seen = new Set<string>();
-  // Match absolute Unix paths with common file extensions (including Unicode filenames)
-  const regex = /((?:\/|~\/)[^\s\n"'()[\],<>]*?\.(?:png|jpe?g|gif|webp|bmp|avif|svg|pdf|docx?|xlsx?|pptx?|txt|csv|md|rtf|epub|zip|tar|gz|rar|7z|mp3|wav|ogg|aac|flac|m4a|mp4|mov|avi|mkv|webm|m4v))/gi;
-  let match;
-  while ((match = regex.exec(text)) !== null) {
-    const p = match[1];
-    if (p && !seen.has(p)) {
-      seen.add(p);
-      refs.push({ filePath: p, mimeType: mimeFromExtension(p) });
+  const exts = 'png|jpe?g|gif|webp|bmp|avif|svg|pdf|docx?|xlsx?|pptx?|txt|csv|md|rtf|epub|zip|tar|gz|rar|7z|mp3|wav|ogg|aac|flac|m4a|mp4|mov|avi|mkv|webm|m4v';
+  // Unix absolute paths (/... or ~/...)
+  const unixRegex = new RegExp(`((?:\\/|~\\/)[^\\s\\n"'()\\[\\],<>]*?\\.(?:${exts}))`, 'gi');
+  // Windows absolute paths (C:\... D:\...)
+  const winRegex = new RegExp(`([A-Za-z]:\\\\[^\\s\\n"'()\\[\\],<>]*?\\.(?:${exts}))`, 'gi');
+  for (const regex of [unixRegex, winRegex]) {
+    let match;
+    while ((match = regex.exec(text)) !== null) {
+      const p = match[1];
+      if (p && !seen.has(p)) {
+        seen.add(p);
+        refs.push({ filePath: p, mimeType: mimeFromExtension(p) });
+      }
     }
   }
   return refs;
@@ -239,23 +247,36 @@ function extractImagesAsAttachedFiles(content: unknown): AttachedFileMeta[] {
   const files: AttachedFileMeta[] = [];
 
   for (const block of content as ContentBlock[]) {
-    if (block.type === 'image' && block.source) {
-      const src = block.source;
-      const mimeType = src.media_type || 'image/jpeg';
+    if (block.type === 'image') {
+      // Path 1: Anthropic source-wrapped format {source: {type, media_type, data}}
+      if (block.source) {
+        const src = block.source;
+        const mimeType = src.media_type || 'image/jpeg';
 
-      if (src.type === 'base64' && src.data) {
+        if (src.type === 'base64' && src.data) {
+          files.push({
+            fileName: 'image',
+            mimeType,
+            fileSize: 0,
+            preview: `data:${mimeType};base64,${src.data}`,
+          });
+        } else if (src.type === 'url' && src.url) {
+          files.push({
+            fileName: 'image',
+            mimeType,
+            fileSize: 0,
+            preview: src.url,
+          });
+        }
+      }
+      // Path 2: Flat format from Gateway tool results {data, mimeType}
+      else if (block.data) {
+        const mimeType = block.mimeType || 'image/jpeg';
         files.push({
           fileName: 'image',
           mimeType,
           fileSize: 0,
-          preview: `data:${mimeType};base64,${src.data}`,
-        });
-      } else if (src.type === 'url' && src.url) {
-        files.push({
-          fileName: 'image',
-          mimeType,
-          fileSize: 0,
-          preview: src.url,
+          preview: `data:${mimeType};base64,${block.data}`,
         });
       }
     }
@@ -278,6 +299,83 @@ function makeAttachedFile(ref: { filePath: string; mimeType: string }): Attached
 }
 
 /**
+ * Extract file path from a tool call's arguments by toolCallId.
+ * Searches common argument names: file_path, filePath, path, file.
+ */
+function getToolCallFilePath(msg: RawMessage, toolCallId: string): string | undefined {
+  if (!toolCallId) return undefined;
+
+  // Anthropic/normalized format — toolCall blocks in content array
+  const content = msg.content;
+  if (Array.isArray(content)) {
+    for (const block of content as ContentBlock[]) {
+      if ((block.type === 'tool_use' || block.type === 'toolCall') && block.id === toolCallId) {
+        const args = (block.input ?? block.arguments) as Record<string, unknown> | undefined;
+        if (args) {
+          const fp = args.file_path ?? args.filePath ?? args.path ?? args.file;
+          if (typeof fp === 'string') return fp;
+        }
+      }
+    }
+  }
+
+  // OpenAI format — tool_calls array on the message itself
+  const msgAny = msg as unknown as Record<string, unknown>;
+  const toolCalls = msgAny.tool_calls ?? msgAny.toolCalls;
+  if (Array.isArray(toolCalls)) {
+    for (const tc of toolCalls as Array<Record<string, unknown>>) {
+      if (tc.id !== toolCallId) continue;
+      const fn = (tc.function ?? tc) as Record<string, unknown>;
+      let args: Record<string, unknown> | undefined;
+      try {
+        args = typeof fn.arguments === 'string' ? JSON.parse(fn.arguments) : (fn.arguments ?? fn.input) as Record<string, unknown>;
+      } catch { /* ignore */ }
+      if (args) {
+        const fp = args.file_path ?? args.filePath ?? args.path ?? args.file;
+        if (typeof fp === 'string') return fp;
+      }
+    }
+  }
+
+  return undefined;
+}
+
+/**
+ * Collect all tool call file paths from a message into a Map<toolCallId, filePath>.
+ */
+function collectToolCallPaths(msg: RawMessage, paths: Map<string, string>): void {
+  const content = msg.content;
+  if (Array.isArray(content)) {
+    for (const block of content as ContentBlock[]) {
+      if ((block.type === 'tool_use' || block.type === 'toolCall') && block.id) {
+        const args = (block.input ?? block.arguments) as Record<string, unknown> | undefined;
+        if (args) {
+          const fp = args.file_path ?? args.filePath ?? args.path ?? args.file;
+          if (typeof fp === 'string') paths.set(block.id, fp);
+        }
+      }
+    }
+  }
+  const msgAny = msg as unknown as Record<string, unknown>;
+  const toolCalls = msgAny.tool_calls ?? msgAny.toolCalls;
+  if (Array.isArray(toolCalls)) {
+    for (const tc of toolCalls as Array<Record<string, unknown>>) {
+      const id = typeof tc.id === 'string' ? tc.id : '';
+      if (!id) continue;
+      const fn = (tc.function ?? tc) as Record<string, unknown>;
+      let args: Record<string, unknown> | undefined;
+      try {
+        args = typeof fn.arguments === 'string' ? JSON.parse(fn.arguments) : (fn.arguments ?? fn.input) as Record<string, unknown>;
+      } catch { /* ignore */ }
+      if (args) {
+        const fp = args.file_path ?? args.filePath ?? args.path ?? args.file;
+        if (typeof fp === 'string') paths.set(id, fp);
+      }
+    }
+  }
+}
+
+/**
  * Before filtering tool_result messages from history, scan them for any file/image
  * content and attach those to the immediately following assistant message.
  * This mirrors channel push message behavior where tool outputs surface files to the UI.
@@ -288,11 +386,29 @@ function makeAttachedFile(ref: { filePath: string; mimeType: string }): Attached
  */
 function enrichWithToolResultFiles(messages: RawMessage[]): RawMessage[] {
   const pending: AttachedFileMeta[] = [];
+  const toolCallPaths = new Map<string, string>();
 
   return messages.map((msg) => {
+    // Track file paths from assistant tool call arguments for later matching
+    if (msg.role === 'assistant') {
+      collectToolCallPaths(msg, toolCallPaths);
+    }
+
     if (isToolResultRole(msg.role)) {
+      // Resolve file path from the matching tool call
+      const matchedPath = msg.toolCallId ? toolCallPaths.get(msg.toolCallId) : undefined;
+
       // 1. Image/file content blocks in the structured content array
-      pending.push(...extractImagesAsAttachedFiles(msg.content));
+      const imageFiles = extractImagesAsAttachedFiles(msg.content);
+      if (matchedPath) {
+        for (const f of imageFiles) {
+          if (!f.filePath) {
+            f.filePath = matchedPath;
+            f.fileName = matchedPath.split(/[\\/]/).pop() || 'image';
+          }
+        }
+      }
+      pending.push(...imageFiles);
 
       // 2. [media attached: ...] patterns in tool result text output
       const text = getMessageText(msg.content);
@@ -1105,10 +1221,24 @@ export const useChatStore = create<ChatState>((set, get) => ({
         if (finalMsg) {
           const updates = collectToolUpdates(finalMsg, resolvedState);
           if (isToolResultRole(finalMsg.role)) {
+            // Resolve file path from the streaming assistant message's matching tool call
+            const currentStreamForPath = get().streamingMessage as RawMessage | null;
+            const matchedPath = (currentStreamForPath && finalMsg.toolCallId)
+              ? getToolCallFilePath(currentStreamForPath, finalMsg.toolCallId)
+              : undefined;
+
             // Mirror enrichWithToolResultFiles: collect images + file refs for next assistant msg
             const toolFiles: AttachedFileMeta[] = [
               ...extractImagesAsAttachedFiles(finalMsg.content),
             ];
+            if (matchedPath) {
+              for (const f of toolFiles) {
+                if (!f.filePath) {
+                  f.filePath = matchedPath;
+                  f.fileName = matchedPath.split(/[\\/]/).pop() || 'image';
+                }
+              }
+            }
             const text = getMessageText(finalMsg.content);
             if (text) {
               const mediaRefs = extractMediaRefs(text);

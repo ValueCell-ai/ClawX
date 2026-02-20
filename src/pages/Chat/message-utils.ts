@@ -127,10 +127,17 @@ export function extractImages(message: RawMessage | unknown): Array<{ mimeType: 
 
   const images: Array<{ mimeType: string; data: string }> = [];
   for (const block of content as ContentBlock[]) {
-    if (block.type === 'image' && block.source) {
-      const src = block.source;
-      if (src.type === 'base64' && src.media_type && src.data) {
-        images.push({ mimeType: src.media_type, data: src.data });
+    if (block.type === 'image') {
+      // Path 1: Anthropic source-wrapped format
+      if (block.source) {
+        const src = block.source;
+        if (src.type === 'base64' && src.media_type && src.data) {
+          images.push({ mimeType: src.media_type, data: src.data });
+        }
+      }
+      // Path 2: Flat format from Gateway tool results {data, mimeType}
+      else if (block.data) {
+        images.push({ mimeType: block.mimeType || 'image/jpeg', data: block.data });
       }
     }
   }
