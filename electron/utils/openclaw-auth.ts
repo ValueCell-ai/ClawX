@@ -212,8 +212,8 @@ export function setOpenClawDefaultModel(provider: string, modelOverride?: string
   config.agents = agents;
   
   // Configure models.providers for providers that need explicit registration.
-  // For built-in providers this comes from registry; for custom/ollama-like
-  // providers callers can supply runtime overrides.
+  // Built-in providers (anthropic, google) are part of OpenClaw's pi-ai catalog
+  // and must NOT have a models.providers entry — it would override the built-in.
   const providerCfg = getProviderConfig(provider);
   if (providerCfg) {
     const models = (config.models || {}) as Record<string, unknown>;
@@ -229,7 +229,6 @@ export function setOpenClawDefaultModel(provider: string, modelOverride?: string
       : [];
     const registryModels = (providerCfg.models ?? []).map((m) => ({ ...m })) as Array<Record<string, unknown>>;
 
-    // Merge model entries by id and ensure the selected/default model id exists.
     const mergedModels = [...registryModels];
     for (const item of existingModels) {
       const id = typeof item?.id === 'string' ? item.id : '';
@@ -245,13 +244,25 @@ export function setOpenClawDefaultModel(provider: string, modelOverride?: string
       ...existingProvider,
       baseUrl: providerCfg.baseUrl,
       api: providerCfg.api,
-      apiKey: providerCfg.apiKeyEnv,
+      apiKey: `\${${providerCfg.apiKeyEnv}}`,
       models: mergedModels,
     };
     console.log(`Configured models.providers.${provider} with baseUrl=${providerCfg.baseUrl}, model=${modelId}`);
     
     models.providers = providers;
     config.models = models;
+  } else {
+    // Built-in provider: remove any stale models.providers entry that may
+    // have been written by an earlier version. Leaving it in place would
+    // override the native pi-ai catalog and can break streaming/auth.
+    const models = (config.models || {}) as Record<string, unknown>;
+    const providers = (models.providers || {}) as Record<string, unknown>;
+    if (providers[provider]) {
+      delete providers[provider];
+      console.log(`Removed stale models.providers.${provider} (built-in provider)`);
+      models.providers = providers;
+      config.models = models;
+    }
   }
   
   // Ensure gateway mode is set
@@ -338,7 +349,7 @@ export function setOpenClawDefaultModelWithOverride(
       models: mergedModels,
     };
     if (override.apiKeyEnv) {
-      nextProvider.apiKey = override.apiKeyEnv;
+      nextProvider.apiKey = `\${${override.apiKeyEnv}}`;
     }
 
     providers[provider] = nextProvider;

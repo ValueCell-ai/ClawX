@@ -1150,6 +1150,31 @@ export const useChatStore = create<ChatState>((set, get) => ({
       } else {
         // No runId from gateway; keep sending state and wait for events.
       }
+
+      // Safety timeout: if we're still in "sending" state after 90s without
+      // receiving any streaming event, the run likely failed silently (e.g.
+      // provider error not surfaced as a chat event). Surface the error to the
+      // user instead of leaving an infinite spinner.
+      if (result.success) {
+        const sentAt = Date.now();
+        const SAFETY_TIMEOUT_MS = 90_000;
+        const checkStuck = () => {
+          const state = get();
+          if (!state.sending) return;
+          if (state.streamingMessage || state.streamingText) return;
+          if (Date.now() - sentAt < SAFETY_TIMEOUT_MS) {
+            setTimeout(checkStuck, 10_000);
+            return;
+          }
+          set({
+            error: 'No response received from the model. The provider may be unavailable or the API key may have insufficient quota. Please check your provider settings.',
+            sending: false,
+            activeRunId: null,
+            lastUserMessageAt: null,
+          });
+        };
+        setTimeout(checkStuck, 30_000);
+      }
     } catch (err) {
       set({ error: String(err), sending: false });
     }

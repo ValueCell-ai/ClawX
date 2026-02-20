@@ -65,7 +65,7 @@ export function registerIpcHandlers(
   registerOpenClawHandlers();
 
   // Provider handlers
-  registerProviderHandlers();
+  registerProviderHandlers(gatewayManager);
 
   // Shell handlers
   registerShellHandlers();
@@ -780,7 +780,7 @@ function registerWhatsAppHandlers(mainWindow: BrowserWindow): void {
 /**
  * Provider-related IPC handlers
  */
-function registerProviderHandlers(): void {
+function registerProviderHandlers(gatewayManager: GatewayManager): void {
   // Get all providers with key info
   ipcMain.handle('provider:list', async () => {
     return await getAllProvidersWithKeyInfo();
@@ -975,6 +975,16 @@ function registerProviderHandlers(): void {
           const providerKey = await getApiKey(providerId);
           if (providerKey) {
             saveProviderKeyToOpenClaw(provider.type, providerKey);
+          }
+
+          // Restart Gateway so it picks up the new config and env vars.
+          // OpenClaw reads openclaw.json per-request, but env vars (API keys)
+          // are only available if they were injected at process startup.
+          if (gatewayManager.isConnected()) {
+            logger.info(`Restarting Gateway after provider switch to "${provider.type}"`);
+            void gatewayManager.restart().catch((err) => {
+              logger.warn('Gateway restart after provider switch failed:', err);
+            });
           }
         } catch (err) {
           console.warn('Failed to set OpenClaw default model:', err);
@@ -1254,12 +1264,8 @@ async function validateGoogleQueryKey(
   apiKey: string,
   baseUrl?: string
 ): Promise<{ valid: boolean; error?: string }> {
-  const trimmedBaseUrl = baseUrl?.trim();
-  if (!trimmedBaseUrl) {
-    return { valid: false, error: `Base URL is required for provider "${providerType}" validation` };
-  }
-
-  const base = normalizeBaseUrl(trimmedBaseUrl);
+  // Default to the official Google Gemini API base URL if none is provided
+  const base = normalizeBaseUrl(baseUrl || 'https://generativelanguage.googleapis.com/v1beta');
   const url = `${base}/models?pageSize=1&key=${encodeURIComponent(apiKey)}`;
   return await performProviderValidationRequest(providerType, url, {});
 }

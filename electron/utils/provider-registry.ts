@@ -53,11 +53,8 @@ const REGISTRY: Record<string, ProviderBackendMeta> = {
   google: {
     envVar: 'GEMINI_API_KEY',
     defaultModel: 'google/gemini-3-pro-preview',
-    providerConfig: {
-      baseUrl: 'https://generativelanguage.googleapis.com/v1beta',
-      api: 'google',
-      apiKeyEnv: 'GEMINI_API_KEY',
-    },
+    // google is built-in to OpenClaw's pi-ai catalog, no providerConfig needed.
+    // Adding models.providers.google overrides the built-in and can break Gemini.
   },
   openrouter: {
     envVar: 'OPENROUTER_API_KEY',
