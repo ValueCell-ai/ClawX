@@ -172,6 +172,24 @@ export function saveChannelConfig(
         }
     }
 
+    // Special handling for Feishu: default to open DM policy with wildcard allowlist
+    if (channelType === 'feishu') {
+        const existingConfig = currentConfig.channels[channelType] || {};
+        transformedConfig.dmPolicy = transformedConfig.dmPolicy ?? existingConfig.dmPolicy ?? 'open';
+        
+        let allowFrom = transformedConfig.allowFrom ?? existingConfig.allowFrom ?? ['*'];
+        if (!Array.isArray(allowFrom)) {
+            allowFrom = [allowFrom];
+        }
+        
+        // If dmPolicy is open, OpenClaw schema requires '*' in allowFrom
+        if (transformedConfig.dmPolicy === 'open' && !allowFrom.includes('*')) {
+            allowFrom = [...allowFrom, '*'];
+        }
+        
+        transformedConfig.allowFrom = allowFrom;
+    }
+
     // Merge with existing config
     currentConfig.channels[channelType] = {
         ...currentConfig.channels[channelType],
