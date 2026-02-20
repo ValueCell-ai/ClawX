@@ -1,0 +1,83 @@
+name: Windows Build Test
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version for SignPath parameter (e.g., 1.0.0-test.1)"
+        required: false
+        default: "dev"
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  windows-build-sign:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+          cache: "pnpm"
+
+      - name: Install dependencies
+        run: pnpm install
+
+      - name: Download uv binaries for Windows
+        run: pnpm run uv:download:win
+
+      - name: Build Windows
+        run: pnpm run package:win
+
+      # Required by SignPath Trusted Build: artifact must exist on GitHub first.
+      - name: Upload unsigned Windows artifacts for SignPath
+        id: upload-unsigned-windows-artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: unsigned-win-exe-${{ github.run_id }}-${{ github.run_attempt }}
+          path: release/*.exe
+          retention-days: 1
+
+      - name: Sign Windows artifacts via SignPath
+        id: signpath-sign-windows
+        uses: signpath/github-action-submit-signing-request@v2
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: "c120e8c0-b9a7-4615-abd7-b131436e366f"
+          project-slug: "valuecell"
+          signing-policy-slug: "test-signing"
+          github-artifact-id: ${{ steps.upload-unsigned-windows-artifact.outputs.artifact-id }}
+          wait-for-completion: true
+          output-artifact-directory: release/signed
+
+      - name: Replace unsigned executables with signed ones
+        shell: pwsh
+        run: |
+          $signedExeFiles = Get-ChildItem -Path "release/signed" -Filter *.exe -File -Recurse
+          if (-not $signedExeFiles) {
+            throw "No signed .exe files found in release/signed"
+          }
+          foreach ($file in $signedExeFiles) {
+            Copy-Item -Path $file.FullName -Destination "release/$($file.Name)" -Force
+          }
+          Write-Host "Signed executables copied to release/"
+
+      - name: Upload signed Windows artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: signed-win-exe-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            release/*.exe
+            release/latest*.yml
+          retention-days: 7
