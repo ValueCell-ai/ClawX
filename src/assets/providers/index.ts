@@ -10,6 +10,7 @@ import custom from './custom.svg';
 export const providerIcons: Record<string, string> = {
     anthropic,
     openai,
+    'openai-codex': openai,
     google,
     openrouter,
     moonshot,

@@ -8,6 +8,7 @@
 export const PROVIDER_TYPES = [
   'anthropic',
   'openai',
+  'openai-codex',
   'google',
   'openrouter',
   'moonshot',
@@ -63,6 +64,7 @@ import { providerIcons } from '@/assets/providers';
 export const PROVIDER_TYPE_INFO: ProviderTypeInfo[] = [
   { id: 'anthropic', name: 'Anthropic', icon: '🤖', placeholder: 'sk-ant-api03-...', model: 'Claude', requiresApiKey: true, supportsOAuth: true, oauthType: 'setup-token' },
   { id: 'openai', name: 'OpenAI', icon: '💚', placeholder: 'sk-proj-...', model: 'GPT', requiresApiKey: true },
+  { id: 'openai-codex', name: 'OpenAI Codex', icon: '💚', placeholder: '', model: 'Codex', requiresApiKey: false, supportsOAuth: true, oauthType: 'oauth2' },
   { id: 'google', name: 'Google', icon: '🔷', placeholder: 'AIza...', model: 'Gemini', requiresApiKey: true, supportsOAuth: true, oauthType: 'oauth2' },
   { id: 'openrouter', name: 'OpenRouter', icon: '🌐', placeholder: 'sk-or-v1-...', model: 'Multi-Model', requiresApiKey: true },
   { id: 'moonshot', name: 'Moonshot (CN)', icon: '🌙', placeholder: 'sk-...', model: 'Kimi', requiresApiKey: true, defaultBaseUrl: 'https://api.moonshot.cn/v1', defaultModelId: 'kimi-k2.5' },

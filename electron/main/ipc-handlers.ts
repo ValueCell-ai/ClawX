@@ -1129,17 +1129,27 @@ function registerProviderHandlers(gatewayManager: GatewayManager): void {
   ipcMain.handle(
     'provider:oauthLogin',
     async (_, providerType: string) => {
-      if (providerType !== 'google') {
-        return { success: false, error: `OAuth login not supported for provider type: ${providerType}` };
+      if (providerType === 'google') {
+        try {
+          const { runGoogleOAuthFlow } = await import('../utils/google-oauth');
+          return await runGoogleOAuthFlow();
+        } catch (error) {
+          logger.error('Google OAuth login failed:', error);
+          return { success: false, error: error instanceof Error ? error.message : String(error) };
+        }
       }
 
-      try {
-        const { runGoogleOAuthFlow } = await import('../utils/google-oauth');
-        return await runGoogleOAuthFlow();
-      } catch (error) {
-        logger.error('Google OAuth login failed:', error);
-        return { success: false, error: error instanceof Error ? error.message : String(error) };
+      if (providerType === 'openai-codex') {
+        try {
+          const { runOpenAICodexOAuthFlow } = await import('../utils/openai-codex-oauth');
+          return await runOpenAICodexOAuthFlow();
+        } catch (error) {
+          logger.error('OpenAI Codex OAuth login failed:', error);
+          return { success: false, error: error instanceof Error ? error.message : String(error) };
+        }
       }
+
+      return { success: false, error: `OAuth login not supported for provider type: ${providerType}` };
     }
   );
 }

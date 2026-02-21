@@ -722,6 +722,11 @@ function ProviderContent({
 
   const { triggerOAuthLogin, pasteSetupToken } = useProviderStore();
 
+  // OAuth-only providers (supportsOAuth but no API key) skip the toggle
+  const selectedProviderDataEarly = providers.find((p) => p.id === selectedProvider);
+  const isOAuthOnly = selectedProviderDataEarly?.supportsOAuth && !selectedProviderDataEarly?.requiresApiKey;
+  const effectiveAuthMethod = isOAuthOnly ? 'oauth' : authMethod;
+
   // On mount, try to restore previously configured provider
   useEffect(() => {
     let cancelled = false;
@@ -835,7 +840,7 @@ function ProviderContent({
 
     try {
       // OAuth: setup-token flow (Anthropic)
-      if (authMethod === 'oauth' && selectedProviderData?.oauthType === 'setup-token') {
+      if (effectiveAuthMethod === 'oauth' && selectedProviderData?.oauthType === 'setup-token') {
         if (!setupToken.trim()) {
           toast.error(t('provider.invalid'));
           setValidating(false);
@@ -875,8 +880,8 @@ function ProviderContent({
         return;
       }
 
-      // OAuth: Google Sign-In flow
-      if (authMethod === 'oauth' && selectedProviderData?.oauthType === 'oauth2') {
+      // OAuth: oauth2 flow (Google, OpenAI Codex)
+      if (effectiveAuthMethod === 'oauth' && selectedProviderData?.oauthType === 'oauth2') {
         const result = await triggerOAuthLogin(selectedProvider);
         if (!result.success) {
           setKeyValid(false);
@@ -987,7 +992,7 @@ function ProviderContent({
   // Can the user submit?
   const canSubmit =
     selectedProvider
-    && (authMethod === 'oauth'
+    && (effectiveAuthMethod === 'oauth'
       ? (selectedProviderData?.oauthType === 'setup-token' ? setupToken.trim().length > 0 : true)
       : (requiresKey ? apiKey.length > 0 : true)
         && (showModelIdField ? modelId.trim().length > 0 : true));
@@ -1094,8 +1099,8 @@ function ProviderContent({
           animate={{ opacity: 1, y: 0 }}
           className="space-y-4"
         >
-          {/* Auth method toggle for OAuth-capable providers */}
-          {selectedProviderData?.supportsOAuth && (
+          {/* Auth method toggle for OAuth-capable providers (hidden for OAuth-only) */}
+          {selectedProviderData?.supportsOAuth && selectedProviderData?.requiresApiKey && (
             <div className="space-y-2">
               <Label>{t('provider.authMethod')}</Label>
               <div className="grid grid-cols-2 gap-2">
@@ -1108,7 +1113,7 @@ function ProviderContent({
                   }}
                   className={cn(
                     'flex items-center gap-2 p-3 rounded-lg border text-sm transition-colors',
-                    authMethod === 'apikey'
+                    effectiveAuthMethod === 'apikey'
                       ? 'border-primary bg-primary/10 text-foreground'
                       : 'border-border hover:bg-accent text-muted-foreground'
                   )}
@@ -1125,7 +1130,7 @@ function ProviderContent({
                   }}
                   className={cn(
                     'flex items-center gap-2 p-3 rounded-lg border text-sm transition-colors',
-                    authMethod === 'oauth'
+                    effectiveAuthMethod === 'oauth'
                       ? 'border-primary bg-primary/10 text-foreground'
                       : 'border-border hover:bg-accent text-muted-foreground'
                   )}
@@ -1140,7 +1145,7 @@ function ProviderContent({
           )}
 
           {/* OAuth: Setup Token flow (Anthropic) */}
-          {authMethod === 'oauth' && selectedProviderData?.oauthType === 'setup-token' && (
+          {effectiveAuthMethod === 'oauth' && selectedProviderData?.oauthType === 'setup-token' && (
             <div className="space-y-3">
               <div className="p-3 rounded-lg bg-muted/50 text-sm">
                 <p className="text-muted-foreground mb-2">
@@ -1174,8 +1179,8 @@ function ProviderContent({
             </div>
           )}
 
-          {/* OAuth: Google Sign-In flow */}
-          {authMethod === 'oauth' && selectedProviderData?.oauthType === 'oauth2' && (
+          {/* OAuth: OAuth2 PKCE flow (Google, OpenAI Codex) */}
+          {effectiveAuthMethod === 'oauth' && selectedProviderData?.oauthType === 'oauth2' && (
             <div className="space-y-3">
               {validating ? (
                 <div className="flex items-center gap-3 p-4 rounded-lg bg-muted/50">
@@ -1189,7 +1194,7 @@ function ProviderContent({
           )}
 
           {/* API key flow fields (existing) */}
-          {authMethod === 'apikey' && (
+          {effectiveAuthMethod === 'apikey' && (
             <>
               {/* Base URL field (for siliconflow, ollama, custom) */}
               {showBaseUrlField && (
@@ -1272,10 +1277,12 @@ function ProviderContent({
             {validating ? (
               <Loader2 className="h-4 w-4 animate-spin mr-2" />
             ) : null}
-            {authMethod === 'oauth' && selectedProviderData?.oauthType === 'setup-token'
+            {effectiveAuthMethod === 'oauth' && selectedProviderData?.oauthType === 'setup-token'
               ? t('provider.pasteTokenSave')
-              : authMethod === 'oauth' && selectedProviderData?.oauthType === 'oauth2'
-                ? t('provider.signInWithGoogle')
+              : effectiveAuthMethod === 'oauth' && selectedProviderData?.oauthType === 'oauth2'
+                ? (selectedProvider === 'openai-codex'
+                  ? t('provider.signInWithChatGPT')
+                  : t('provider.signInWithGoogle'))
                 : requiresKey ? t('provider.validateSave') : t('provider.save')}
           </Button>
 

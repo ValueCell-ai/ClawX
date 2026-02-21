@@ -69,6 +69,8 @@
             "setupTokenPlaceholder": "在此粘贴设置令牌...",
             "pasteVerify": "粘贴并验证",
             "signInWithGoogle": "使用 Google 登录",
+            "signInWithChatGPT": "使用 ChatGPT 登录",
+            "chatGPTSignIn": "ChatGPT 登录",
             "waitingAuth": "等待浏览器授权...",
             "oauthActive": "OAuth 已激活",
             "reAuth": "重新认证"

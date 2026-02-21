@@ -464,6 +464,10 @@ function AddProviderDialog({ existingTypes, onClose, onAdd, onValidateKey }: Add
 
   const typeInfo = PROVIDER_TYPE_INFO.find((t) => t.id === selectedType);
 
+  // OAuth-only providers (supportsOAuth but no API key) skip the toggle
+  const isOAuthOnly = typeInfo?.supportsOAuth && !typeInfo?.requiresApiKey;
+  const effectiveAuthMethod = isOAuthOnly ? 'oauth' : authMethod;
+
   // Only custom can be added multiple times.
   const availableTypes = PROVIDER_TYPE_INFO.filter(
     (t) => t.id === 'custom' || !existingTypes.has(t.id),
@@ -477,7 +481,7 @@ function AddProviderDialog({ existingTypes, onClose, onAdd, onValidateKey }: Add
 
     try {
       // OAuth flow: setup-token
-      if (authMethod === 'oauth' && typeInfo?.oauthType === 'setup-token') {
+      if (effectiveAuthMethod === 'oauth' && typeInfo?.oauthType === 'setup-token') {
         if (!setupToken.trim()) {
           setValidationError(t('aiProviders.toast.invalidKey'));
           setSaving(false);
@@ -501,7 +505,7 @@ function AddProviderDialog({ existingTypes, onClose, onAdd, onValidateKey }: Add
       }
 
       // OAuth flow: oauth2 (Google, OpenAI Codex)
-      if (authMethod === 'oauth' && typeInfo?.oauthType === 'oauth2') {
+      if (effectiveAuthMethod === 'oauth' && typeInfo?.oauthType === 'oauth2') {
         const result = await triggerOAuthLogin(selectedType);
         if (!result.success) {
           setValidationError(result.error || t('aiProviders.toast.oauthFailed'));
@@ -521,7 +525,7 @@ function AddProviderDialog({ existingTypes, onClose, onAdd, onValidateKey }: Add
 
       // API key flow (existing logic)
       const requiresKey = typeInfo?.requiresApiKey ?? false;
-      if (authMethod === 'apikey' && requiresKey && !apiKey.trim()) {
+      if (effectiveAuthMethod === 'apikey' && requiresKey && !apiKey.trim()) {
         setValidationError(t('aiProviders.toast.invalidKey'));
         setSaving(false);
         return;
@@ -628,8 +632,8 @@ function AddProviderDialog({ existingTypes, onClose, onAdd, onValidateKey }: Add
                 />
               </div>
 
-              {/* Auth method toggle for OAuth-capable providers */}
-              {typeInfo?.supportsOAuth && (
+              {/* Auth method toggle for OAuth-capable providers (hidden for OAuth-only providers) */}
+              {typeInfo?.supportsOAuth && typeInfo?.requiresApiKey && (
                 <div className="space-y-2">
                   <Label>{t('aiProviders.oauth.authMethod')}</Label>
                   <div className="grid grid-cols-2 gap-2">
@@ -638,7 +642,7 @@ function AddProviderDialog({ existingTypes, onClose, onAdd, onValidateKey }: Add
                       onClick={() => { setAuthMethod('apikey'); setValidationError(null); }}
                       className={cn(
                         'flex items-center gap-2 p-3 rounded-lg border text-sm transition-colors',
-                        authMethod === 'apikey'
+                        effectiveAuthMethod === 'apikey'
                           ? 'border-primary bg-primary/10 text-foreground'
                           : 'border-border hover:bg-accent text-muted-foreground'
                       )}
@@ -651,7 +655,7 @@ function AddProviderDialog({ existingTypes, onClose, onAdd, onValidateKey }: Add
                       onClick={() => { setAuthMethod('oauth'); setValidationError(null); }}
                       className={cn(
                         'flex items-center gap-2 p-3 rounded-lg border text-sm transition-colors',
-                        authMethod === 'oauth'
+                        effectiveAuthMethod === 'oauth'
                           ? 'border-primary bg-primary/10 text-foreground'
                           : 'border-border hover:bg-accent text-muted-foreground'
                       )}
@@ -666,7 +670,7 @@ function AddProviderDialog({ existingTypes, onClose, onAdd, onValidateKey }: Add
               )}
 
               {/* OAuth: Setup Token flow (Anthropic) */}
-              {authMethod === 'oauth' && typeInfo?.oauthType === 'setup-token' && (
+              {effectiveAuthMethod === 'oauth' && typeInfo?.oauthType === 'setup-token' && (
                 <div className="space-y-3">
                   <div className="p-3 rounded-lg bg-muted/50 text-sm">
                     <p className="text-muted-foreground mb-2">
@@ -703,8 +707,8 @@ function AddProviderDialog({ existingTypes, onClose, onAdd, onValidateKey }: Add
                 </div>
               )}
 
-              {/* OAuth: Google Sign-In flow */}
-              {authMethod === 'oauth' && typeInfo?.oauthType === 'oauth2' && (
+              {/* OAuth: OAuth2 PKCE flow (Google, OpenAI Codex) */}
+              {effectiveAuthMethod === 'oauth' && typeInfo?.oauthType === 'oauth2' && (
                 <div className="space-y-3">
                   {saving ? (
                     <div className="flex items-center gap-3 p-4 rounded-lg bg-muted/50">
@@ -720,7 +724,9 @@ function AddProviderDialog({ existingTypes, onClose, onAdd, onValidateKey }: Add
                       onClick={handleAdd}
                     >
                       <LogIn className="h-4 w-4 mr-2" />
-                      {t('aiProviders.oauth.signInWithGoogle')}
+                      {selectedType === 'openai-codex'
+                        ? t('aiProviders.oauth.signInWithChatGPT')
+                        : t('aiProviders.oauth.signInWithGoogle')}
                     </Button>
                   )}
                   {validationError && (
@@ -730,7 +736,7 @@ function AddProviderDialog({ existingTypes, onClose, onAdd, onValidateKey }: Add
               )}
 
               {/* API Key flow (existing) */}
-              {authMethod === 'apikey' && (
+              {effectiveAuthMethod === 'apikey' && (
                 <>
                   <div className="space-y-2">
                     <Label htmlFor="apiKey">{t('aiProviders.dialog.apiKey')}</Label>
@@ -800,20 +806,20 @@ function AddProviderDialog({ existingTypes, onClose, onAdd, onValidateKey }: Add
               {t('aiProviders.dialog.cancel')}
             </Button>
             {/* Hide the Add button for oauth2 since the sign-in button is inline */}
-            {!(authMethod === 'oauth' && typeInfo?.oauthType === 'oauth2') && (
+            {!(effectiveAuthMethod === 'oauth' && typeInfo?.oauthType === 'oauth2') && (
               <Button
                 onClick={handleAdd}
                 disabled={
                   !selectedType
                   || saving
-                  || (authMethod === 'apikey' && (typeInfo?.showModelId ?? false) && modelId.trim().length === 0)
-                  || (authMethod === 'oauth' && typeInfo?.oauthType === 'setup-token' && !setupToken.trim())
+                  || (effectiveAuthMethod === 'apikey' && (typeInfo?.showModelId ?? false) && modelId.trim().length === 0)
+                  || (effectiveAuthMethod === 'oauth' && typeInfo?.oauthType === 'setup-token' && !setupToken.trim())
                 }
               >
                 {saving ? (
                   <Loader2 className="h-4 w-4 animate-spin mr-2" />
                 ) : null}
-                {authMethod === 'oauth' && typeInfo?.oauthType === 'setup-token'
+                {effectiveAuthMethod === 'oauth' && typeInfo?.oauthType === 'setup-token'
                   ? t('aiProviders.oauth.pasteVerify')
                   : t('aiProviders.dialog.add')}
               </Button>

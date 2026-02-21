@@ -82,6 +82,8 @@
         "setupTokenPlaceholder": "在此粘贴设置令牌...",
         "pasteTokenSave": "粘贴令牌并保存",
         "signInWithGoogle": "使用 Google 登录",
+        "signInWithChatGPT": "使用 ChatGPT 登录",
+        "chatGPTSignIn": "ChatGPT 登录",
         "waitingAuth": "等待浏览器授权...",
         "oauthConfigured": "OAuth 配置成功"
     },

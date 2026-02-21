@@ -8,6 +8,7 @@
 export const BUILTIN_PROVIDER_TYPES = [
   'anthropic',
   'openai',
+  'openai-codex',
   'google',
   'openrouter',
   'moonshot',
@@ -49,6 +50,10 @@ const REGISTRY: Record<string, ProviderBackendMeta> = {
       api: 'openai-responses',
       apiKeyEnv: 'OPENAI_API_KEY',
     },
+  },
+  'openai-codex': {
+    defaultModel: 'openai-codex/gpt-5.3-codex',
+    // openai-codex is built-in to OpenClaw's pi-ai catalog (OAuth only, no env var)
   },
   google: {
     envVar: 'GEMINI_API_KEY',

@@ -69,6 +69,8 @@
             "setupTokenPlaceholder": "セットアップトークンを貼り付けてください...",
             "pasteVerify": "貼り付けて検証",
             "signInWithGoogle": "Google でサインイン",
+            "signInWithChatGPT": "ChatGPT でサインイン",
+            "chatGPTSignIn": "ChatGPT サインイン",
             "waitingAuth": "ブラウザの認証を待っています...",
             "oauthActive": "OAuth 有効",
             "reAuth": "再認証"

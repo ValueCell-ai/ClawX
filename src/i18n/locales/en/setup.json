@@ -82,6 +82,8 @@
         "setupTokenPlaceholder": "Paste your setup token here...",
         "pasteTokenSave": "Paste Token & Save",
         "signInWithGoogle": "Sign in with Google",
+        "signInWithChatGPT": "Sign in with ChatGPT",
+        "chatGPTSignIn": "ChatGPT Sign-In",
         "waitingAuth": "Waiting for browser authorization...",
         "oauthConfigured": "OAuth configured successfully"
     },
