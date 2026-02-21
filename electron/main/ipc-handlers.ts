@@ -632,6 +632,26 @@ function registerOpenClawHandlers(): void {
     return installOpenClawCliMac();
   });
 
+  // Parse slash commands from the openclaw package docs
+  ipcMain.handle('openclaw:getSlashCommands', () => {
+    try {
+      const status = getOpenClawStatus();
+      if (!status.packageExists) {
+        return { success: false, error: 'OpenClaw package not found' };
+      }
+      const mdPath = join(status.dir, 'docs', 'tools', 'slash-commands.md');
+      if (!existsSync(mdPath)) {
+        return { success: false, error: 'slash-commands.md not found' };
+      }
+      const content = readFileSync(mdPath, 'utf-8');
+      const commands = parseSlashCommandsMd(content);
+      return { success: true, commands };
+    } catch (error) {
+      logger.warn('Failed to parse slash commands:', error);
+      return { success: false, error: String(error) };
+    }
+  });
+
   // ==================== Channel Configuration Handlers ====================
 
   // Save channel configuration
@@ -1769,4 +1789,65 @@ function registerFileHandlers(): void {
     }
     return results;
   });
+}
+
+// ── Slash command parser ─────────────────────────────────────────
+
+interface ParsedSlashCommand {
+  name: string;
+  description: string;
+  acceptsArgs: boolean;
+}
+
+/**
+ * Parse the "## Command list" section from slash-commands.md.
+ * Extracts `/command` entries with their descriptions.
+ */
+function parseSlashCommandsMd(content: string): ParsedSlashCommand[] {
+  const commands: ParsedSlashCommand[] = [];
+  const seen = new Set<string>();
+
+  // Match lines like: - `/help`  or  - `/model <name>` (alias: ...)  or  - `/think <off|minimal|...>`
+  const cmdRegex = /^- `\/(\w+)(?:\s+([^`]*))?`\s*(.*)/;
+
+  for (const line of content.split('\n')) {
+    const m = line.match(cmdRegex);
+    if (!m) continue;
+
+    const name = m[1];
+    if (seen.has(name)) continue;
+    seen.add(name);
+
+    const argHint = m[2]?.trim() || '';
+    const rest = m[3]?.trim() || '';
+
+    // Extract description: strip parenthesized metadata, markdown links, backticks
+    let description = rest
+      .replace(/\(alias[es]*:[^)]*\)/gi, '')
+      .replace(/\(requires[^)]*\)/gi, '')
+      .replace(/\[([^\]]*)\]\([^)]*\)/g, '$1') // [text](url) → text
+      .replace(/`([^`]*)`/g, '$1')              // `code` → code
+      .trim();
+    // Strip wrapping parentheses, "or ..." prefixes, and leading/trailing punctuation
+    description = description
+      .replace(/^\(/, '').replace(/\)$/, '')
+      .replace(/^or\s+`?\/\w+[^`]*`?\s*/i, '')
+      .replace(/^[;,\s]+|[;,\s]+$/g, '');
+    // Capitalize first letter
+    if (description) {
+      description = description.charAt(0).toUpperCase() + description.slice(1);
+    }
+    // If no description extracted from rest, use the arg hint
+    if (!description && argHint) {
+      description = argHint;
+    }
+
+    commands.push({
+      name,
+      description: description || name,
+      acceptsArgs: !!argHint,
+    });
+  }
+
+  return commands;
 }

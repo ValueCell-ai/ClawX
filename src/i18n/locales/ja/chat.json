@@ -15,5 +15,30 @@
         "refresh": "チャットを更新",
         "showThinking": "思考を表示",
         "hideThinking": "思考を非表示"
+    },
+    "slashCommands": {
+        "commands": "コマンド",
+        "local": "ローカル",
+        "skills": "スキル",
+        "keyHints": "↑↓ 移動  Tab 選択  Esc 閉じる",
+        "help": {
+            "name": "help",
+            "description": "利用可能なコマンドを表示"
+        },
+        "clear": {
+            "name": "clear",
+            "description": "チャットをクリアして新しいセッションを開始"
+        },
+        "new": {
+            "name": "new",
+            "description": "新しいセッションを作成"
+        },
+        "skillsList": {
+            "name": "skills",
+            "description": "有効なスキルを一覧表示"
+        },
+        "helpMessage": "**利用可能なコマンド**\n- `/help` — このヘルプメッセージを表示\n- `/clear` — チャットをクリアして新しいセッションを開始\n- `/new` — 新しいセッションを作成\n- `/skills` — 有効なスキルを一覧表示\n\n`/スキル名` と入力して、有効なスキルを呼び出すこともできます。",
+        "skillsListTitle": "**有効なスキル**",
+        "noSkills": "現在有効なスキルはありません。"
     }
 }

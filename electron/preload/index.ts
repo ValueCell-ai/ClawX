@@ -130,6 +130,7 @@ const electronAPI = {
         'openclaw:getSkillsDir',
         'openclaw:getCliCommand',
         'openclaw:installCliMac',
+        'openclaw:getSlashCommands',
       ];
 
       if (validChannels.includes(channel)) {

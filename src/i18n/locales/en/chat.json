@@ -15,5 +15,30 @@
         "refresh": "Refresh chat",
         "showThinking": "Show thinking",
         "hideThinking": "Hide thinking"
+    },
+    "slashCommands": {
+        "commands": "Commands",
+        "local": "Local",
+        "skills": "Skills",
+        "keyHints": "↑↓ Navigate  Tab Select  Esc Close",
+        "help": {
+            "name": "help",
+            "description": "Show available commands"
+        },
+        "clear": {
+            "name": "clear",
+            "description": "Clear chat and start new session"
+        },
+        "new": {
+            "name": "new",
+            "description": "Create new session"
+        },
+        "skillsList": {
+            "name": "skills",
+            "description": "List enabled skills"
+        },
+        "helpMessage": "**Available Commands**\n- `/help` — Show this help message\n- `/clear` — Clear chat and start new session\n- `/new` — Create new session\n- `/skills` — List enabled skills\n\nYou can also type `/skill-name` to invoke any enabled skill.",
+        "skillsListTitle": "**Enabled Skills**",
+        "noSkills": "No skills are currently enabled."
     }
 }

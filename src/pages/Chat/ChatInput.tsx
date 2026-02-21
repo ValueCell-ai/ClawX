@@ -10,6 +10,8 @@ import { useState, useRef, useEffect, useCallback } from 'react';
 import { Send, Square, X, Paperclip, FileText, Film, Music, FileArchive, File, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
+import { useSlashCommands } from './useSlashCommands';
+import { SlashCommandMenu } from './SlashCommandMenu';
 
 // ── Types ────────────────────────────────────────────────────────
 
@@ -80,6 +82,8 @@ export function ChatInput({ onSend, onStop, disabled = false, sending = false }:
   const [attachments, setAttachments] = useState<FileAttachment[]>([]);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const isComposingRef = useRef(false);
+  const sendText = useCallback((text: string) => onSend(text), [onSend]);
+  const slashCommands = useSlashCommands(setInput, sendText);
 
   // Auto-resize textarea
   useEffect(() => {
@@ -251,16 +255,20 @@ export function ChatInput({ onSend, onStop, disabled = false, sending = false }:
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
+      const nativeEvent = e.nativeEvent as KeyboardEvent;
+      if (isComposingRef.current || nativeEvent.isComposing || nativeEvent.keyCode === 229) {
+        return;
+      }
+      // Let slash command menu handle keys first when open
+      if (slashCommands.handleKeyDown(e)) {
+        return;
+      }
       if (e.key === 'Enter' && !e.shiftKey) {
-        const nativeEvent = e.nativeEvent as KeyboardEvent;
-        if (isComposingRef.current || nativeEvent.isComposing || nativeEvent.keyCode === 229) {
-          return;
-        }
         e.preventDefault();
         handleSend();
       }
     },
-    [handleSend],
+    [handleSend, slashCommands],
   );
 
   // Handle paste (Ctrl/Cmd+V with files)
@@ -349,10 +357,20 @@ export function ChatInput({ onSend, onStop, disabled = false, sending = false }:
 
           {/* Textarea */}
           <div className="flex-1 relative">
+            {slashCommands.isOpen && (
+              <SlashCommandMenu
+                commands={slashCommands.filteredCommands}
+                selectedIndex={slashCommands.selectedIndex}
+                onSelect={slashCommands.selectCommand}
+              />
+            )}
             <Textarea
               ref={textareaRef}
               value={input}
-              onChange={(e) => setInput(e.target.value)}
+              onChange={(e) => {
+                setInput(e.target.value);
+                slashCommands.handleInputChange(e.target.value);
+              }}
               onKeyDown={handleKeyDown}
               onCompositionStart={() => {
                 isComposingRef.current = true;

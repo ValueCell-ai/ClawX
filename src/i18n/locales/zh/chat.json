@@ -15,5 +15,30 @@
         "refresh": "刷新聊天",
         "showThinking": "显示思考过程",
         "hideThinking": "隐藏思考过程"
+    },
+    "slashCommands": {
+        "commands": "命令",
+        "local": "本地",
+        "skills": "技能",
+        "keyHints": "↑↓ 导航  Tab 选择  Esc 关闭",
+        "help": {
+            "name": "help",
+            "description": "显示可用命令"
+        },
+        "clear": {
+            "name": "clear",
+            "description": "清除聊天并开始新会话"
+        },
+        "new": {
+            "name": "new",
+            "description": "创建新会话"
+        },
+        "skillsList": {
+            "name": "skills",
+            "description": "列出已启用的技能"
+        },
+        "helpMessage": "**可用命令**\n- `/help` — 显示此帮助消息\n- `/clear` — 清除聊天并开始新会话\n- `/new` — 创建新会话\n- `/skills` — 列出已启用的技能\n\n您也可以输入 `/技能名称` 来调用任何已启用的技能。",
+        "skillsListTitle": "**已启用的技能**",
+        "noSkills": "当前没有启用任何技能。"
     }
 }
