@@ -61,6 +61,12 @@ export function extractText(message: RawMessage | unknown): string {
     result = cleanUserText(result);
   }
 
+  // Strip channel threading directives from assistant messages
+  // e.g. [[reply_to_current]], [[reply_to: <id>]]
+  if (!isUser && result) {
+    result = result.replace(/\[\[\s*(?:reply_to_current|reply_to\s*:\s*[^\]\n]+)\s*\]\]/gi, '').trim();
+  }
+
   return result;
 }
 
