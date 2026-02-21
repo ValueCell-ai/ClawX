@@ -53,7 +53,25 @@
             "updated": "プロバイダーが更新されました",
             "failedUpdate": "プロバイダーの更新に失敗しました",
             "invalidKey": "無効な API キー",
-            "modelRequired": "モデル ID が必要です"
+            "modelRequired": "モデル ID が必要です",
+            "oauthSuccess": "OAuth 認証に成功しました",
+            "oauthFailed": "OAuth 認証に失敗しました",
+            "tokenPasted": "セットアップトークンの検証に成功しました",
+            "tokenFailed": "セットアップトークンの検証に失敗しました"
+        },
+        "oauth": {
+            "authMethod": "認証方法",
+            "apiKey": "API キー",
+            "setupToken": "セットアップトークン",
+            "googleSignIn": "Google サインイン",
+            "setupTokenInstructions": "ターミナルで以下のコマンドを実行してセットアップトークンを取得してください：",
+            "setupTokenCommand": "claude setup-token",
+            "setupTokenPlaceholder": "セットアップトークンを貼り付けてください...",
+            "pasteVerify": "貼り付けて検証",
+            "signInWithGoogle": "Google でサインイン",
+            "waitingAuth": "ブラウザの認証を待っています...",
+            "oauthActive": "OAuth 有効",
+            "reAuth": "再認証"
         }
     },
     "gateway": {

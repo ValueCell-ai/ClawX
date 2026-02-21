@@ -956,9 +956,16 @@ function registerProviderHandlers(gatewayManager: GatewayManager): void {
         try {
           // If the provider has a user-specified model (e.g. siliconflow),
           // build the full model string: "providerType/modelId"
-          const modelOverride = provider.model
+          let modelOverride = provider.model
             ? `${provider.type}/${provider.model}`
             : undefined;
+
+          // For Google OAuth (no API key), use google-gemini-cli model prefix
+          // so the gateway matches the auth profile provider name.
+          const providerHasKey = await hasApiKey(providerId);
+          if (provider.type === 'google' && !providerHasKey) {
+            modelOverride = 'google-gemini-cli/gemini-3-pro-preview';
+          }
 
           if (provider.type === 'custom' || provider.type === 'ollama') {
             // For runtime-configured providers, use user-entered base URL/api.
@@ -1029,6 +1036,109 @@ function registerProviderHandlers(gatewayManager: GatewayManager): void {
       } catch (error) {
         console.error('Validation error:', error);
         return { valid: false, error: String(error) };
+      }
+    }
+  );
+
+  // Paste setup token (Anthropic OAuth setup-token flow)
+  ipcMain.handle(
+    'provider:pasteSetupToken',
+    async (_, providerType: string, token: string) => {
+      try {
+        const trimmed = token.trim();
+        if (!trimmed) {
+          return { success: false, error: 'Token is required' };
+        }
+
+        // Validate Anthropic setup-token format
+        if (providerType === 'anthropic') {
+          const prefix = 'sk-ant-oat01-';
+          if (!trimmed.startsWith(prefix)) {
+            return { success: false, error: `Expected token starting with ${prefix}` };
+          }
+          if (trimmed.length < 80) {
+            return { success: false, error: 'Token looks too short; paste the full setup-token' };
+          }
+        }
+
+        // Write token to auth-profiles.json (same format as OpenClaw CLI)
+        const profileId = `${providerType}:default`;
+        const authProfilesPath = join(
+          homedir(),
+          '.openclaw',
+          'agents',
+          'main',
+          'agent',
+          'auth-profiles.json'
+        );
+        const dir = join(authProfilesPath, '..');
+        if (!existsSync(dir)) {
+          mkdirSync(dir, { recursive: true });
+        }
+
+        // Read existing store or create new
+        let store: {
+          version: number;
+          profiles: Record<string, unknown>;
+          order?: Record<string, string[]>;
+          lastGood?: Record<string, string>;
+        } = { version: 1, profiles: {} };
+
+        try {
+          if (existsSync(authProfilesPath)) {
+            const raw = readFileSync(authProfilesPath, 'utf-8');
+            const parsed = JSON.parse(raw);
+            if (parsed.version && parsed.profiles) {
+              store = parsed;
+            }
+          }
+        } catch {
+          // Start fresh if parse fails
+        }
+
+        // Upsert the token credential
+        store.profiles[profileId] = {
+          type: 'token',
+          provider: providerType,
+          token: trimmed,
+        };
+
+        // Update order
+        if (!store.order) store.order = {};
+        if (!store.order[providerType]) store.order[providerType] = [];
+        if (!store.order[providerType].includes(profileId)) {
+          store.order[providerType].push(profileId);
+        }
+
+        // Set as last good
+        if (!store.lastGood) store.lastGood = {};
+        store.lastGood[providerType] = profileId;
+
+        writeFileSync(authProfilesPath, JSON.stringify(store, null, 2), 'utf-8');
+        logger.info(`Setup token saved for provider "${providerType}" (profile: ${profileId})`);
+
+        return { success: true };
+      } catch (error) {
+        logger.error('Failed to paste setup token:', error);
+        return { success: false, error: String(error) };
+      }
+    }
+  );
+
+  // OAuth login (native PKCE flow — no CLI/TTY dependency)
+  ipcMain.handle(
+    'provider:oauthLogin',
+    async (_, providerType: string) => {
+      if (providerType !== 'google') {
+        return { success: false, error: `OAuth login not supported for provider type: ${providerType}` };
+      }
+
+      try {
+        const { runGoogleOAuthFlow } = await import('../utils/google-oauth');
+        return await runGoogleOAuthFlow();
+      } catch (error) {
+        logger.error('Google OAuth login failed:', error);
+        return { success: false, error: error instanceof Error ? error.message : String(error) };
       }
     }
   );

@@ -19,6 +19,8 @@ import {
   XCircle,
   ExternalLink,
   BookOpen,
+  Key,
+  LogIn,
 } from 'lucide-react';
 import { TitleBar } from '@/components/layout/TitleBar';
 import { Button } from '@/components/ui/button';
@@ -27,6 +29,7 @@ import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip
 import { Label } from '@/components/ui/label';
 import { cn } from '@/lib/utils';
 import { useGatewayStore } from '@/stores/gateway';
+import { useProviderStore } from '@/stores/providers';
 import { useSettingsStore } from '@/stores/settings';
 import { useTranslation } from 'react-i18next';
 import { SUPPORTED_LANGUAGES } from '@/i18n';
@@ -714,6 +717,10 @@ function ProviderContent({
   const [modelId, setModelId] = useState('');
   const [providerMenuOpen, setProviderMenuOpen] = useState(false);
   const providerMenuRef = useRef<HTMLDivElement | null>(null);
+  const [authMethod, setAuthMethod] = useState<'apikey' | 'oauth'>('apikey');
+  const [setupToken, setSetupToken] = useState('');
+
+  const { triggerOAuthLogin, pasteSetupToken } = useProviderStore();
 
   // On mount, try to restore previously configured provider
   useEffect(() => {
@@ -827,7 +834,84 @@ function ProviderContent({
     setKeyValid(null);
 
     try {
-      // Validate key if the provider requires one and a key was entered
+      // OAuth: setup-token flow (Anthropic)
+      if (authMethod === 'oauth' && selectedProviderData?.oauthType === 'setup-token') {
+        if (!setupToken.trim()) {
+          toast.error(t('provider.invalid'));
+          setValidating(false);
+          return;
+        }
+        const result = await pasteSetupToken(selectedProvider, setupToken.trim());
+        if (!result.success) {
+          setKeyValid(false);
+          toast.error(result.error || t('provider.invalid'));
+          setValidating(false);
+          return;
+        }
+        // Save provider config without API key, set as default
+        const providerIdForSave = selectedProvider;
+        const saveResult = await window.electron.ipcRenderer.invoke(
+          'provider:save',
+          {
+            id: providerIdForSave,
+            name: selectedProviderData?.name || selectedProvider,
+            type: selectedProvider,
+            enabled: true,
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+          }
+        ) as { success: boolean; error?: string };
+
+        if (!saveResult.success) {
+          throw new Error(saveResult.error || 'Failed to save provider config');
+        }
+
+        await window.electron.ipcRenderer.invoke('provider:setDefault', providerIdForSave);
+        setSelectedProviderConfigId(providerIdForSave);
+        setKeyValid(true);
+        onConfiguredChange(true);
+        toast.success(t('provider.oauthConfigured'));
+        setValidating(false);
+        return;
+      }
+
+      // OAuth: Google Sign-In flow
+      if (authMethod === 'oauth' && selectedProviderData?.oauthType === 'oauth2') {
+        const result = await triggerOAuthLogin(selectedProvider);
+        if (!result.success) {
+          setKeyValid(false);
+          toast.error(result.error || t('provider.invalid'));
+          setValidating(false);
+          return;
+        }
+        // Save provider config without API key, set as default
+        const providerIdForSave = selectedProvider;
+        const saveResult = await window.electron.ipcRenderer.invoke(
+          'provider:save',
+          {
+            id: providerIdForSave,
+            name: selectedProviderData?.name || selectedProvider,
+            type: selectedProvider,
+            enabled: true,
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+          }
+        ) as { success: boolean; error?: string };
+
+        if (!saveResult.success) {
+          throw new Error(saveResult.error || 'Failed to save provider config');
+        }
+
+        await window.electron.ipcRenderer.invoke('provider:setDefault', providerIdForSave);
+        setSelectedProviderConfigId(providerIdForSave);
+        setKeyValid(true);
+        onConfiguredChange(true);
+        toast.success(t('provider.oauthConfigured'));
+        setValidating(false);
+        return;
+      }
+
+      // API key flow (existing logic)
       if (requiresKey && apiKey) {
         const result = await window.electron.ipcRenderer.invoke(
           'provider:validateKey',
@@ -903,8 +987,10 @@ function ProviderContent({
   // Can the user submit?
   const canSubmit =
     selectedProvider
-    && (requiresKey ? apiKey.length > 0 : true)
-    && (showModelIdField ? modelId.trim().length > 0 : true);
+    && (authMethod === 'oauth'
+      ? (selectedProviderData?.oauthType === 'setup-token' ? setupToken.trim().length > 0 : true)
+      : (requiresKey ? apiKey.length > 0 : true)
+        && (showModelIdField ? modelId.trim().length > 0 : true));
 
   const handleSelectProvider = (providerId: string) => {
     onSelectProvider(providerId);
@@ -913,6 +999,8 @@ function ProviderContent({
     onApiKeyChange('');
     setKeyValid(null);
     setProviderMenuOpen(false);
+    setAuthMethod('apikey');
+    setSetupToken('');
   };
 
   return (
@@ -1006,59 +1094,69 @@ function ProviderContent({
           animate={{ opacity: 1, y: 0 }}
           className="space-y-4"
         >
-          {/* Base URL field (for siliconflow, ollama, custom) */}
-          {showBaseUrlField && (
+          {/* Auth method toggle for OAuth-capable providers */}
+          {selectedProviderData?.supportsOAuth && (
             <div className="space-y-2">
-              <Label htmlFor="baseUrl">{t('provider.baseUrl')}</Label>
-              <Input
-                id="baseUrl"
-                type="text"
-                placeholder="https://api.example.com/v1"
-                value={baseUrl}
-                onChange={(e) => {
-                  setBaseUrl(e.target.value);
-                  onConfiguredChange(false);
-                }}
-                autoComplete="off"
-                className="bg-background border-input"
-              />
+              <Label>{t('provider.authMethod')}</Label>
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setAuthMethod('apikey');
+                    setKeyValid(null);
+                    onConfiguredChange(false);
+                  }}
+                  className={cn(
+                    'flex items-center gap-2 p-3 rounded-lg border text-sm transition-colors',
+                    authMethod === 'apikey'
+                      ? 'border-primary bg-primary/10 text-foreground'
+                      : 'border-border hover:bg-accent text-muted-foreground'
+                  )}
+                >
+                  <Key className="h-4 w-4" />
+                  {t('provider.authApiKey')}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setAuthMethod('oauth');
+                    setKeyValid(null);
+                    onConfiguredChange(false);
+                  }}
+                  className={cn(
+                    'flex items-center gap-2 p-3 rounded-lg border text-sm transition-colors',
+                    authMethod === 'oauth'
+                      ? 'border-primary bg-primary/10 text-foreground'
+                      : 'border-border hover:bg-accent text-muted-foreground'
+                  )}
+                >
+                  <LogIn className="h-4 w-4" />
+                  {selectedProviderData?.oauthType === 'setup-token'
+                    ? t('provider.authSetupToken')
+                    : t('provider.authGoogleSignIn')}
+                </button>
+              </div>
             </div>
           )}
 
-          {/* Model ID field (for siliconflow etc.) */}
-          {showModelIdField && (
-            <div className="space-y-2">
-              <Label htmlFor="modelId">{t('provider.modelId')}</Label>
-              <Input
-                id="modelId"
-                type="text"
-                placeholder={selectedProviderData?.modelIdPlaceholder || 'e.g. deepseek-ai/DeepSeek-V3'}
-                value={modelId}
-                onChange={(e) => {
-                  setModelId(e.target.value);
-                  onConfiguredChange(false);
-                }}
-                autoComplete="off"
-                className="bg-background border-input"
-              />
-              <p className="text-xs text-muted-foreground">
-                {t('provider.modelIdDesc')}
-              </p>
-            </div>
-          )}
-
-          {/* API Key field (hidden for ollama) */}
-          {requiresKey && (
-            <div className="space-y-2">
-              <Label htmlFor="apiKey">{t('provider.apiKey')}</Label>
+          {/* OAuth: Setup Token flow (Anthropic) */}
+          {authMethod === 'oauth' && selectedProviderData?.oauthType === 'setup-token' && (
+            <div className="space-y-3">
+              <div className="p-3 rounded-lg bg-muted/50 text-sm">
+                <p className="text-muted-foreground mb-2">
+                  {t('provider.setupTokenInstructions')}
+                </p>
+                <code className="block bg-black/20 dark:bg-white/10 rounded px-3 py-2 font-mono text-xs">
+                  {t('provider.setupTokenCommand')}
+                </code>
+              </div>
               <div className="relative">
                 <Input
-                  id="apiKey"
                   type={showKey ? 'text' : 'password'}
-                  placeholder={selectedProviderData?.placeholder}
-                  value={apiKey}
+                  placeholder={t('provider.setupTokenPlaceholder')}
+                  value={setupToken}
                   onChange={(e) => {
-                    onApiKeyChange(e.target.value);
+                    setSetupToken(e.target.value);
                     onConfiguredChange(false);
                     setKeyValid(null);
                   }}
@@ -1076,6 +1174,95 @@ function ProviderContent({
             </div>
           )}
 
+          {/* OAuth: Google Sign-In flow */}
+          {authMethod === 'oauth' && selectedProviderData?.oauthType === 'oauth2' && (
+            <div className="space-y-3">
+              {validating ? (
+                <div className="flex items-center gap-3 p-4 rounded-lg bg-muted/50">
+                  <Loader2 className="h-5 w-5 animate-spin text-primary" />
+                  <span className="text-sm text-muted-foreground">
+                    {t('provider.waitingAuth')}
+                  </span>
+                </div>
+              ) : null}
+            </div>
+          )}
+
+          {/* API key flow fields (existing) */}
+          {authMethod === 'apikey' && (
+            <>
+              {/* Base URL field (for siliconflow, ollama, custom) */}
+              {showBaseUrlField && (
+                <div className="space-y-2">
+                  <Label htmlFor="baseUrl">{t('provider.baseUrl')}</Label>
+                  <Input
+                    id="baseUrl"
+                    type="text"
+                    placeholder="https://api.example.com/v1"
+                    value={baseUrl}
+                    onChange={(e) => {
+                      setBaseUrl(e.target.value);
+                      onConfiguredChange(false);
+                    }}
+                    autoComplete="off"
+                    className="bg-background border-input"
+                  />
+                </div>
+              )}
+
+              {/* Model ID field (for siliconflow etc.) */}
+              {showModelIdField && (
+                <div className="space-y-2">
+                  <Label htmlFor="modelId">{t('provider.modelId')}</Label>
+                  <Input
+                    id="modelId"
+                    type="text"
+                    placeholder={selectedProviderData?.modelIdPlaceholder || 'e.g. deepseek-ai/DeepSeek-V3'}
+                    value={modelId}
+                    onChange={(e) => {
+                      setModelId(e.target.value);
+                      onConfiguredChange(false);
+                    }}
+                    autoComplete="off"
+                    className="bg-background border-input"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    {t('provider.modelIdDesc')}
+                  </p>
+                </div>
+              )}
+
+              {/* API Key field (hidden for ollama) */}
+              {requiresKey && (
+                <div className="space-y-2">
+                  <Label htmlFor="apiKey">{t('provider.apiKey')}</Label>
+                  <div className="relative">
+                    <Input
+                      id="apiKey"
+                      type={showKey ? 'text' : 'password'}
+                      placeholder={selectedProviderData?.placeholder}
+                      value={apiKey}
+                      onChange={(e) => {
+                        onApiKeyChange(e.target.value);
+                        onConfiguredChange(false);
+                        setKeyValid(null);
+                      }}
+                      autoComplete="off"
+                      className="pr-10 bg-background border-input"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowKey(!showKey)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                    >
+                      {showKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                    </button>
+                  </div>
+                </div>
+              )}
+            </>
+          )}
+
           {/* Validate & Save */}
           <Button
             onClick={handleValidateAndSave}
@@ -1085,7 +1272,11 @@ function ProviderContent({
             {validating ? (
               <Loader2 className="h-4 w-4 animate-spin mr-2" />
             ) : null}
-            {requiresKey ? t('provider.validateSave') : t('provider.save')}
+            {authMethod === 'oauth' && selectedProviderData?.oauthType === 'setup-token'
+              ? t('provider.pasteTokenSave')
+              : authMethod === 'oauth' && selectedProviderData?.oauthType === 'oauth2'
+                ? t('provider.signInWithGoogle')
+                : requiresKey ? t('provider.validateSave') : t('provider.save')}
           </Button>
 
           {keyValid !== null && (

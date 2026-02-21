@@ -14,6 +14,8 @@ import {
   Loader2,
   Star,
   Key,
+  Shield,
+  LogIn,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -58,7 +60,7 @@ export function ProvidersSettings() {
     type: ProviderType,
     name: string,
     apiKey: string,
-    options?: { baseUrl?: string; model?: string }
+    options?: { baseUrl?: string; model?: string; authMethod?: 'apikey' | 'oauth' }
   ) => {
     // Only custom supports multiple instances.
     // Built-in providers remain singleton by type.
@@ -209,6 +211,15 @@ function ProviderCard({
   const [saving, setSaving] = useState(false);
 
   const typeInfo = PROVIDER_TYPE_INFO.find((t) => t.id === provider.type);
+  const { oauthStatus, checkOAuthStatus } = useProviderStore();
+  const providerOAuth = oauthStatus[provider.type];
+
+  // Check OAuth status on mount for OAuth-capable providers without API keys
+  useEffect(() => {
+    if (typeInfo?.supportsOAuth && !provider.hasKey) {
+      checkOAuthStatus(provider.type);
+    }
+  }, [typeInfo?.supportsOAuth, provider.hasKey, provider.type, checkOAuthStatus]);
   const canEditConfig = Boolean(typeInfo?.showBaseUrl || typeInfo?.showModelId);
 
   useEffect(() => {
@@ -381,6 +392,12 @@ function ProviderCard({
               {provider.hasKey && (
                 <Badge variant="secondary" className="text-xs shrink-0">{t('aiProviders.card.configured')}</Badge>
               )}
+              {!provider.hasKey && providerOAuth?.authenticated && (
+                <Badge variant="secondary" className="text-xs shrink-0 bg-green-500/20 text-green-600 dark:text-green-400">
+                  <Shield className="h-3 w-3 mr-1" />
+                  {t('aiProviders.oauth.oauthActive')}
+                </Badge>
+              )}
             </div>
             <div className="flex gap-0.5 shrink-0 ml-2">
               <Button
@@ -421,7 +438,7 @@ interface AddProviderDialogProps {
     type: ProviderType,
     name: string,
     apiKey: string,
-    options?: { baseUrl?: string; model?: string }
+    options?: { baseUrl?: string; model?: string; authMethod?: 'apikey' | 'oauth' }
   ) => Promise<void>;
   onValidateKey: (
     type: string,
@@ -440,6 +457,10 @@ function AddProviderDialog({ existingTypes, onClose, onAdd, onValidateKey }: Add
   const [showKey, setShowKey] = useState(false);
   const [saving, setSaving] = useState(false);
   const [validationError, setValidationError] = useState<string | null>(null);
+  const [authMethod, setAuthMethod] = useState<'apikey' | 'oauth'>('apikey');
+  const [setupToken, setSetupToken] = useState('');
+
+  const { triggerOAuthLogin, pasteSetupToken } = useProviderStore();
 
   const typeInfo = PROVIDER_TYPE_INFO.find((t) => t.id === selectedType);
 
@@ -455,10 +476,53 @@ function AddProviderDialog({ existingTypes, onClose, onAdd, onValidateKey }: Add
     setValidationError(null);
 
     try {
-      // Validate key first if the provider requires one and a key was entered
+      // OAuth flow: setup-token
+      if (authMethod === 'oauth' && typeInfo?.oauthType === 'setup-token') {
+        if (!setupToken.trim()) {
+          setValidationError(t('aiProviders.toast.invalidKey'));
+          setSaving(false);
+          return;
+        }
+        const result = await pasteSetupToken(selectedType, setupToken.trim());
+        if (!result.success) {
+          setValidationError(result.error || t('aiProviders.toast.tokenFailed'));
+          setSaving(false);
+          return;
+        }
+        toast.success(t('aiProviders.toast.tokenPasted'));
+        // Save provider config without API key
+        await onAdd(
+          selectedType,
+          name || typeInfo?.name || selectedType,
+          '',
+          { authMethod: 'oauth' }
+        );
+        return;
+      }
+
+      // OAuth flow: oauth2 (Google, OpenAI Codex)
+      if (authMethod === 'oauth' && typeInfo?.oauthType === 'oauth2') {
+        const result = await triggerOAuthLogin(selectedType);
+        if (!result.success) {
+          setValidationError(result.error || t('aiProviders.toast.oauthFailed'));
+          setSaving(false);
+          return;
+        }
+        toast.success(t('aiProviders.toast.oauthSuccess'));
+        // Save provider config without API key
+        await onAdd(
+          selectedType,
+          name || typeInfo?.name || selectedType,
+          '',
+          { authMethod: 'oauth' }
+        );
+        return;
+      }
+
+      // API key flow (existing logic)
       const requiresKey = typeInfo?.requiresApiKey ?? false;
-      if (requiresKey && !apiKey.trim()) {
-        setValidationError(t('aiProviders.toast.invalidKey')); // reusing invalid key msg or should add 'required' msg? null checks
+      if (authMethod === 'apikey' && requiresKey && !apiKey.trim()) {
+        setValidationError(t('aiProviders.toast.invalidKey'));
         setSaving(false);
         return;
       }
@@ -544,6 +608,8 @@ function AddProviderDialog({ existingTypes, onClose, onAdd, onValidateKey }: Add
                       setValidationError(null);
                       setBaseUrl('');
                       setModelId('');
+                      setAuthMethod('apikey');
+                      setSetupToken('');
                     }}
                     className="text-sm text-muted-foreground hover:text-foreground"
                   >
@@ -562,61 +628,167 @@ function AddProviderDialog({ existingTypes, onClose, onAdd, onValidateKey }: Add
                 />
               </div>
 
-              <div className="space-y-2">
-                <Label htmlFor="apiKey">{t('aiProviders.dialog.apiKey')}</Label>
-                <div className="relative">
-                  <Input
-                    id="apiKey"
-                    type={showKey ? 'text' : 'password'}
-                    placeholder={typeInfo?.id === 'ollama' ? t('aiProviders.notRequired') : typeInfo?.placeholder}
-                    value={apiKey}
-                    onChange={(e) => {
-                      setApiKey(e.target.value);
-                      setValidationError(null);
-                    }}
-                    className="pr-10"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowKey(!showKey)}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-                  >
-                    {showKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                  </button>
-                </div>
-                {validationError && (
-                  <p className="text-xs text-destructive">{validationError}</p>
-                )}
-                <p className="text-xs text-muted-foreground">
-                  {t('aiProviders.dialog.apiKeyStored')}
-                </p>
-              </div>
-
-              {typeInfo?.showBaseUrl && (
+              {/* Auth method toggle for OAuth-capable providers */}
+              {typeInfo?.supportsOAuth && (
                 <div className="space-y-2">
-                  <Label htmlFor="baseUrl">{t('aiProviders.dialog.baseUrl')}</Label>
-                  <Input
-                    id="baseUrl"
-                    placeholder="https://api.example.com/v1"
-                    value={baseUrl}
-                    onChange={(e) => setBaseUrl(e.target.value)}
-                  />
+                  <Label>{t('aiProviders.oauth.authMethod')}</Label>
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => { setAuthMethod('apikey'); setValidationError(null); }}
+                      className={cn(
+                        'flex items-center gap-2 p-3 rounded-lg border text-sm transition-colors',
+                        authMethod === 'apikey'
+                          ? 'border-primary bg-primary/10 text-foreground'
+                          : 'border-border hover:bg-accent text-muted-foreground'
+                      )}
+                    >
+                      <Key className="h-4 w-4" />
+                      {t('aiProviders.oauth.apiKey')}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => { setAuthMethod('oauth'); setValidationError(null); }}
+                      className={cn(
+                        'flex items-center gap-2 p-3 rounded-lg border text-sm transition-colors',
+                        authMethod === 'oauth'
+                          ? 'border-primary bg-primary/10 text-foreground'
+                          : 'border-border hover:bg-accent text-muted-foreground'
+                      )}
+                    >
+                      <LogIn className="h-4 w-4" />
+                      {typeInfo?.oauthType === 'setup-token'
+                        ? t('aiProviders.oauth.setupToken')
+                        : t('aiProviders.oauth.googleSignIn')}
+                    </button>
+                  </div>
                 </div>
               )}
 
-              {typeInfo?.showModelId && (
-                <div className="space-y-2">
-                  <Label htmlFor="modelId">{t('aiProviders.dialog.modelId')}</Label>
-                  <Input
-                    id="modelId"
-                    placeholder={typeInfo.modelIdPlaceholder || 'provider/model-id'}
-                    value={modelId}
-                    onChange={(e) => {
-                      setModelId(e.target.value);
-                      setValidationError(null);
-                    }}
-                  />
+              {/* OAuth: Setup Token flow (Anthropic) */}
+              {authMethod === 'oauth' && typeInfo?.oauthType === 'setup-token' && (
+                <div className="space-y-3">
+                  <div className="p-3 rounded-lg bg-muted/50 text-sm">
+                    <p className="text-muted-foreground mb-2">
+                      {t('aiProviders.oauth.setupTokenInstructions')}
+                    </p>
+                    <code className="block bg-black/20 dark:bg-white/10 rounded px-3 py-2 font-mono text-xs">
+                      {t('aiProviders.oauth.setupTokenCommand')}
+                    </code>
+                  </div>
+                  <div className="space-y-2">
+                    <div className="relative">
+                      <Input
+                        type={showKey ? 'text' : 'password'}
+                        placeholder={t('aiProviders.oauth.setupTokenPlaceholder')}
+                        value={setupToken}
+                        onChange={(e) => {
+                          setSetupToken(e.target.value);
+                          setValidationError(null);
+                        }}
+                        className="pr-10"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowKey(!showKey)}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                      >
+                        {showKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                      </button>
+                    </div>
+                  </div>
+                  {validationError && (
+                    <p className="text-xs text-destructive">{validationError}</p>
+                  )}
                 </div>
+              )}
+
+              {/* OAuth: Google Sign-In flow */}
+              {authMethod === 'oauth' && typeInfo?.oauthType === 'oauth2' && (
+                <div className="space-y-3">
+                  {saving ? (
+                    <div className="flex items-center gap-3 p-4 rounded-lg bg-muted/50">
+                      <Loader2 className="h-5 w-5 animate-spin text-primary" />
+                      <span className="text-sm text-muted-foreground">
+                        {t('aiProviders.oauth.waitingAuth')}
+                      </span>
+                    </div>
+                  ) : (
+                    <Button
+                      variant="outline"
+                      className="w-full"
+                      onClick={handleAdd}
+                    >
+                      <LogIn className="h-4 w-4 mr-2" />
+                      {t('aiProviders.oauth.signInWithGoogle')}
+                    </Button>
+                  )}
+                  {validationError && (
+                    <p className="text-xs text-destructive">{validationError}</p>
+                  )}
+                </div>
+              )}
+
+              {/* API Key flow (existing) */}
+              {authMethod === 'apikey' && (
+                <>
+                  <div className="space-y-2">
+                    <Label htmlFor="apiKey">{t('aiProviders.dialog.apiKey')}</Label>
+                    <div className="relative">
+                      <Input
+                        id="apiKey"
+                        type={showKey ? 'text' : 'password'}
+                        placeholder={typeInfo?.id === 'ollama' ? t('aiProviders.notRequired') : typeInfo?.placeholder}
+                        value={apiKey}
+                        onChange={(e) => {
+                          setApiKey(e.target.value);
+                          setValidationError(null);
+                        }}
+                        className="pr-10"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowKey(!showKey)}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                      >
+                        {showKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                      </button>
+                    </div>
+                    {validationError && (
+                      <p className="text-xs text-destructive">{validationError}</p>
+                    )}
+                    <p className="text-xs text-muted-foreground">
+                      {t('aiProviders.dialog.apiKeyStored')}
+                    </p>
+                  </div>
+
+                  {typeInfo?.showBaseUrl && (
+                    <div className="space-y-2">
+                      <Label htmlFor="baseUrl">{t('aiProviders.dialog.baseUrl')}</Label>
+                      <Input
+                        id="baseUrl"
+                        placeholder="https://api.example.com/v1"
+                        value={baseUrl}
+                        onChange={(e) => setBaseUrl(e.target.value)}
+                      />
+                    </div>
+                  )}
+
+                  {typeInfo?.showModelId && (
+                    <div className="space-y-2">
+                      <Label htmlFor="modelId">{t('aiProviders.dialog.modelId')}</Label>
+                      <Input
+                        id="modelId"
+                        placeholder={typeInfo.modelIdPlaceholder || 'provider/model-id'}
+                        value={modelId}
+                        onChange={(e) => {
+                          setModelId(e.target.value);
+                          setValidationError(null);
+                        }}
+                      />
+                    </div>
+                  )}
+                </>
               )}
             </div>
           )}
@@ -627,15 +799,25 @@ function AddProviderDialog({ existingTypes, onClose, onAdd, onValidateKey }: Add
             <Button variant="outline" onClick={onClose}>
               {t('aiProviders.dialog.cancel')}
             </Button>
-            <Button
-              onClick={handleAdd}
-              disabled={!selectedType || saving || ((typeInfo?.showModelId ?? false) && modelId.trim().length === 0)}
-            >
-              {saving ? (
-                <Loader2 className="h-4 w-4 animate-spin mr-2" />
-              ) : null}
-              {t('aiProviders.dialog.add')}
-            </Button>
+            {/* Hide the Add button for oauth2 since the sign-in button is inline */}
+            {!(authMethod === 'oauth' && typeInfo?.oauthType === 'oauth2') && (
+              <Button
+                onClick={handleAdd}
+                disabled={
+                  !selectedType
+                  || saving
+                  || (authMethod === 'apikey' && (typeInfo?.showModelId ?? false) && modelId.trim().length === 0)
+                  || (authMethod === 'oauth' && typeInfo?.oauthType === 'setup-token' && !setupToken.trim())
+                }
+              >
+                {saving ? (
+                  <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                ) : null}
+                {authMethod === 'oauth' && typeInfo?.oauthType === 'setup-token'
+                  ? t('aiProviders.oauth.pasteVerify')
+                  : t('aiProviders.dialog.add')}
+              </Button>
+            )}
           </div>
         </CardContent>
       </Card>

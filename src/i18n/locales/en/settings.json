@@ -53,7 +53,25 @@
             "updated": "Provider updated",
             "failedUpdate": "Failed to update provider",
             "invalidKey": "Invalid API key",
-            "modelRequired": "Model ID is required"
+            "modelRequired": "Model ID is required",
+            "oauthSuccess": "OAuth authentication successful",
+            "oauthFailed": "OAuth authentication failed",
+            "tokenPasted": "Setup token verified successfully",
+            "tokenFailed": "Setup token verification failed"
+        },
+        "oauth": {
+            "authMethod": "Authentication Method",
+            "apiKey": "API Key",
+            "setupToken": "Setup Token",
+            "googleSignIn": "Google Sign-In",
+            "setupTokenInstructions": "Run the following command in your terminal to get a setup token:",
+            "setupTokenCommand": "claude setup-token",
+            "setupTokenPlaceholder": "Paste your setup token here...",
+            "pasteVerify": "Paste & Verify",
+            "signInWithGoogle": "Sign in with Google",
+            "waitingAuth": "Waiting for browser authorization...",
+            "oauthActive": "OAuth Active",
+            "reAuth": "Re-authenticate"
         }
     },
     "gateway": {

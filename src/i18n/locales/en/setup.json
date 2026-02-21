@@ -72,7 +72,18 @@
         "validateSave": "Validate & Save",
         "valid": "Provider configured successfully",
         "invalid": "Invalid API key",
-        "storedLocally": "Your API key is stored locally on your machine."
+        "storedLocally": "Your API key is stored locally on your machine.",
+        "authMethod": "Authentication Method",
+        "authApiKey": "API Key",
+        "authSetupToken": "Setup Token",
+        "authGoogleSignIn": "Google Sign-In",
+        "setupTokenInstructions": "Run the following command in your terminal to get a setup token:",
+        "setupTokenCommand": "claude setup-token",
+        "setupTokenPlaceholder": "Paste your setup token here...",
+        "pasteTokenSave": "Paste Token & Save",
+        "signInWithGoogle": "Sign in with Google",
+        "waitingAuth": "Waiting for browser authorization...",
+        "oauthConfigured": "OAuth configured successfully"
     },
     "channel": {
         "title": "Connect a Messaging Channel",

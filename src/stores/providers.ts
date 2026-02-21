@@ -8,12 +8,19 @@ import type { ProviderConfig, ProviderWithKeyInfo } from '@/lib/providers';
 // Re-export types for consumers that imported from here
 export type { ProviderConfig, ProviderWithKeyInfo } from '@/lib/providers';
 
+interface OAuthStatus {
+  authenticated: boolean;
+  checking: boolean;
+  error?: string;
+}
+
 interface ProviderState {
   providers: ProviderWithKeyInfo[];
   defaultProviderId: string | null;
   loading: boolean;
   error: string | null;
-  
+  oauthStatus: Record<string, OAuthStatus>;
+
   // Actions
   fetchProviders: () => Promise<void>;
   addProvider: (config: Omit<ProviderConfig, 'createdAt' | 'updatedAt'>, apiKey?: string) => Promise<void>;
@@ -33,6 +40,9 @@ interface ProviderState {
     options?: { baseUrl?: string }
   ) => Promise<{ valid: boolean; error?: string }>;
   getApiKey: (providerId: string) => Promise<string | null>;
+  checkOAuthStatus: (providerType: string) => Promise<void>;
+  triggerOAuthLogin: (providerType: string) => Promise<{ success: boolean; error?: string }>;
+  pasteSetupToken: (providerType: string, token: string) => Promise<{ success: boolean; error?: string }>;
 }
 
 export const useProviderStore = create<ProviderState>((set, get) => ({
@@ -40,6 +50,7 @@ export const useProviderStore = create<ProviderState>((set, get) => ({
   defaultProviderId: null,
   loading: false,
   error: null,
+  oauthStatus: {},
   
   fetchProviders: async () => {
     set({ loading: true, error: null });
@@ -211,6 +222,143 @@ export const useProviderStore = create<ProviderState>((set, get) => ({
       return await window.electron.ipcRenderer.invoke('provider:getApiKey', providerId) as string | null;
     } catch {
       return null;
+    }
+  },
+
+  checkOAuthStatus: async (providerType) => {
+    // Check if auth-profiles.json has a token credential for this provider
+    // by checking if the provider was saved without an API key (OAuth flow)
+    set((state) => ({
+      oauthStatus: {
+        ...state.oauthStatus,
+        [providerType]: { authenticated: false, checking: true },
+      },
+    }));
+
+    try {
+      // If provider exists without API key, check if we have a token in auth-profiles
+      const providers = await window.electron.ipcRenderer.invoke('provider:list') as Array<{ type: string; hasKey: boolean }>;
+      const provider = providers.find((p) => p.type === providerType);
+      const hasToken = provider && !provider.hasKey;
+
+      set((state) => ({
+        oauthStatus: {
+          ...state.oauthStatus,
+          [providerType]: { authenticated: !!hasToken, checking: false },
+        },
+      }));
+    } catch (error) {
+      set((state) => ({
+        oauthStatus: {
+          ...state.oauthStatus,
+          [providerType]: {
+            authenticated: false,
+            checking: false,
+            error: String(error),
+          },
+        },
+      }));
+    }
+  },
+
+  triggerOAuthLogin: async (providerType) => {
+    set((state) => ({
+      oauthStatus: {
+        ...state.oauthStatus,
+        [providerType]: { authenticated: false, checking: true },
+      },
+    }));
+
+    try {
+      const result = await window.electron.ipcRenderer.invoke(
+        'provider:oauthLogin',
+        providerType
+      ) as { success: boolean; error?: string };
+
+      if (result.success) {
+        set((state) => ({
+          oauthStatus: {
+            ...state.oauthStatus,
+            [providerType]: { authenticated: true, checking: false },
+          },
+        }));
+        return { success: true };
+      } else {
+        set((state) => ({
+          oauthStatus: {
+            ...state.oauthStatus,
+            [providerType]: {
+              authenticated: false,
+              checking: false,
+              error: result.error,
+            },
+          },
+        }));
+        return { success: false, error: result.error };
+      }
+    } catch (error) {
+      set((state) => ({
+        oauthStatus: {
+          ...state.oauthStatus,
+          [providerType]: {
+            authenticated: false,
+            checking: false,
+            error: String(error),
+          },
+        },
+      }));
+      return { success: false, error: String(error) };
+    }
+  },
+
+  pasteSetupToken: async (providerType, token) => {
+    set((state) => ({
+      oauthStatus: {
+        ...state.oauthStatus,
+        [providerType]: { authenticated: false, checking: true },
+      },
+    }));
+
+    try {
+      const result = await window.electron.ipcRenderer.invoke(
+        'provider:pasteSetupToken',
+        providerType,
+        token
+      ) as { success: boolean; error?: string };
+
+      if (result.success) {
+        set((state) => ({
+          oauthStatus: {
+            ...state.oauthStatus,
+            [providerType]: { authenticated: true, checking: false },
+          },
+        }));
+        return { success: true };
+      } else {
+        set((state) => ({
+          oauthStatus: {
+            ...state.oauthStatus,
+            [providerType]: {
+              authenticated: false,
+              checking: false,
+              error: result.error,
+            },
+          },
+        }));
+        return { success: false, error: result.error };
+      }
+    } catch (error) {
+      set((state) => ({
+        oauthStatus: {
+          ...state.oauthStatus,
+          [providerType]: {
+            authenticated: false,
+            checking: false,
+            error: String(error),
+          },
+        },
+      }));
+      return { success: false, error: String(error) };
     }
   },
 }));

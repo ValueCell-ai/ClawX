@@ -53,7 +53,25 @@
             "updated": "提供商已更新",
             "failedUpdate": "更新提供商失败",
             "invalidKey": "无效的 API 密钥",
-            "modelRequired": "需要模型 ID"
+            "modelRequired": "需要模型 ID",
+            "oauthSuccess": "OAuth 认证成功",
+            "oauthFailed": "OAuth 认证失败",
+            "tokenPasted": "设置令牌验证成功",
+            "tokenFailed": "设置令牌验证失败"
+        },
+        "oauth": {
+            "authMethod": "认证方式",
+            "apiKey": "API 密钥",
+            "setupToken": "设置令牌",
+            "googleSignIn": "Google 登录",
+            "setupTokenInstructions": "在终端中运行以下命令获取设置令牌：",
+            "setupTokenCommand": "claude setup-token",
+            "setupTokenPlaceholder": "在此粘贴设置令牌...",
+            "pasteVerify": "粘贴并验证",
+            "signInWithGoogle": "使用 Google 登录",
+            "waitingAuth": "等待浏览器授权...",
+            "oauthActive": "OAuth 已激活",
+            "reAuth": "重新认证"
         }
     },
     "gateway": {

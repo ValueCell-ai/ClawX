@@ -76,6 +76,8 @@ const electronAPI = {
         'provider:setDefault',
         'provider:getDefault',
         'provider:validateKey',
+        'provider:pasteSetupToken',
+        'provider:oauthLogin',
         // Cron
         'cron:list',
         'cron:create',

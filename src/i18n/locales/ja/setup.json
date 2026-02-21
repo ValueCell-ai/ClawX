@@ -72,7 +72,18 @@
         "validateSave": "検証して保存",
         "valid": "プロバイダーが正常に構成されました",
         "invalid": "無効な API キー",
-        "storedLocally": "API キーはローカルマシンに保存されます。"
+        "storedLocally": "API キーはローカルマシンに保存されます。",
+        "authMethod": "認証方法",
+        "authApiKey": "API キー",
+        "authSetupToken": "セットアップトークン",
+        "authGoogleSignIn": "Google サインイン",
+        "setupTokenInstructions": "ターミナルで以下のコマンドを実行してセットアップトークンを取得してください：",
+        "setupTokenCommand": "claude setup-token",
+        "setupTokenPlaceholder": "セットアップトークンを貼り付けてください...",
+        "pasteTokenSave": "トークンを貼り付けて保存",
+        "signInWithGoogle": "Google でサインイン",
+        "waitingAuth": "ブラウザの認証を待っています...",
+        "oauthConfigured": "OAuth が正常に構成されました"
     },
     "channel": {
         "title": "メッセージングチャンネルを接続",
