@@ -1074,7 +1074,7 @@ export class GatewayManager extends EventEmitter {
       if (this.ws?.readyState === WebSocket.OPEN) {
         this.ws.ping();
       }
-    }, 30000);
+    }, 15000);
   }
   
   /**
