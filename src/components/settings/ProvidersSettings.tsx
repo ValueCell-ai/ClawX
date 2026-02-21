@@ -674,6 +674,12 @@ function AddProviderDialog({ existingTypes, onClose, onAdd, onValidateKey }: Add
                 <div className="space-y-3">
                   <div className="p-3 rounded-lg bg-muted/50 text-sm">
                     <p className="text-muted-foreground mb-2">
+                      {t('aiProviders.oauth.setupTokenInstallHint')}
+                    </p>
+                    <code className="block bg-black/20 dark:bg-white/10 rounded px-3 py-2 font-mono text-xs">
+                      {t('aiProviders.oauth.setupTokenInstallCommand')}
+                    </code>
+                    <p className="text-muted-foreground mt-3 mb-2">
                       {t('aiProviders.oauth.setupTokenInstructions')}
                     </p>
                     <code className="block bg-black/20 dark:bg-white/10 rounded px-3 py-2 font-mono text-xs">
