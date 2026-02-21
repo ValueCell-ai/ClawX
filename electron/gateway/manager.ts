@@ -961,7 +961,17 @@ export class GatewayManager extends EventEmitter {
     }
     
     const msg = message as Record<string, unknown>;
-    
+
+    // Handle Gateway ping — respond with pong to keep connection alive
+    if (msg.method === 'ping') {
+      try {
+        this.ws?.send(JSON.stringify({ method: 'pong' }));
+      } catch {
+        // ignore send errors on pong
+      }
+      return;
+    }
+
     // Handle OpenClaw protocol response format: { type: "res", id: "...", ok: true/false, ... }
     if (msg.type === 'res' && typeof msg.id === 'string') {
       if (this.pendingRequests.has(msg.id)) {
@@ -1063,18 +1073,15 @@ export class GatewayManager extends EventEmitter {
   }
   
   /**
-   * Start ping interval to keep connection alive
+   * Start keepalive — the Gateway sends periodic "tick" events and may send
+   * { method: "ping" } that we answer with { method: "pong" } (handled in
+   * handleMessage).  We do NOT send WebSocket-level ping frames because the
+   * Gateway closes the connection on receipt of unsolicited PING frames.
    */
   private startPing(): void {
-    if (this.pingInterval) {
-      clearInterval(this.pingInterval);
-    }
-    
-    this.pingInterval = setInterval(() => {
-      if (this.ws?.readyState === WebSocket.OPEN) {
-        this.ws.ping();
-      }
-    }, 15000);
+    // Intentionally empty — keepalive is handled by responding to Gateway
+    // pings in handleMessage().  The previous ws.ping() call caused 1006
+    // disconnects every 30 s.
   }
   
   /**
