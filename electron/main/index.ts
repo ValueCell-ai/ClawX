@@ -188,6 +188,10 @@ async function initialize(): Promise<void> {
   }
 }
 
+// Force consistent app name so dev and prod use the same userData path
+// (package.json name="clawx" vs electron-builder productName="ClawX")
+app.setName('ClawX');
+
 // Application lifecycle
 app.whenReady().then(() => {
   initialize();
