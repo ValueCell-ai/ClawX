@@ -232,7 +232,7 @@ export function Setup() {
             initial={{ opacity: 0, x: 20 }}
             animate={{ opacity: 1, x: 0 }}
             exit={{ opacity: 0, x: -20 }}
-            className="mx-auto max-w-2xl p-8"
+            className="mx-auto max-w-2xl p-4 sm:p-8"
           >
             <div className="text-center mb-8">
               <h1 className="text-3xl font-bold mb-2">{t(`steps.${step.id}.title`)}</h1>
@@ -240,7 +240,7 @@ export function Setup() {
             </div>
 
             {/* Step-specific content */}
-            <div className="rounded-xl bg-card text-card-foreground border shadow-sm p-8 mb-8">
+            <div className="rounded-xl bg-card text-card-foreground border shadow-sm p-4 sm:p-8 mb-4 sm:mb-8">
               {safeStepIndex === STEP.WELCOME && <WelcomeContent />}
               {safeStepIndex === STEP.RUNTIME && <RuntimeContent onStatusChange={setRuntimeChecksPassed} />}
               {safeStepIndex === STEP.PROVIDER && (
@@ -1103,7 +1103,7 @@ function ProviderContent({
           {selectedProviderData?.supportsOAuth && selectedProviderData?.requiresApiKey && (
             <div className="space-y-2">
               <Label>{t('provider.authMethod')}</Label>
-              <div className="grid grid-cols-2 gap-2">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                 <button
                   type="button"
                   onClick={() => {
@@ -1422,7 +1422,7 @@ function SetupChannelContent() {
             {t('channel.subtitle')}
           </p>
         </div>
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           {primaryChannels.map((type) => {
             const channelMeta = CHANNEL_META[type];
             if (channelMeta.connectionType !== 'token') return null;

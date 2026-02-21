@@ -3,6 +3,7 @@
  * Navigation sidebar with menu items.
  * No longer fixed - sits inside the flex layout below the title bar.
  */
+import { useEffect, useRef } from 'react';
 import { NavLink } from 'react-router-dom';
 import {
   Home,
@@ -60,10 +61,37 @@ function NavItem({ to, icon, label, badge, collapsed }: NavItemProps) {
   );
 }
 
+const NARROW_BREAKPOINT = 768;
+
 export function Sidebar() {
   const sidebarCollapsed = useSettingsStore((state) => state.sidebarCollapsed);
   const setSidebarCollapsed = useSettingsStore((state) => state.setSidebarCollapsed);
   const devModeUnlocked = useSettingsStore((state) => state.devModeUnlocked);
+  const userPref = useRef(sidebarCollapsed);
+
+  // Auto-collapse sidebar on narrow windows
+  useEffect(() => {
+    const handleResize = () => {
+      if (window.innerWidth < NARROW_BREAKPOINT) {
+        setSidebarCollapsed(true);
+      } else {
+        setSidebarCollapsed(userPref.current);
+      }
+    };
+
+    handleResize();
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, [setSidebarCollapsed]);
+
+  // Track user's manual preference (only when not auto-collapsed by narrow width)
+  const handleToggle = () => {
+    const next = !sidebarCollapsed;
+    if (window.innerWidth >= NARROW_BREAKPOINT) {
+      userPref.current = next;
+    }
+    setSidebarCollapsed(next);
+  };
 
   const openDevConsole = async () => {
     try {
@@ -130,7 +158,7 @@ export function Sidebar() {
           variant="ghost"
           size="icon"
           className="w-full"
-          onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
+          onClick={handleToggle}
         >
           {sidebarCollapsed ? (
             <ChevronRight className="h-4 w-4" />

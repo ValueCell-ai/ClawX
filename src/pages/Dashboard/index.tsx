@@ -156,7 +156,7 @@ export function Dashboard() {
           <CardDescription>{t('quickActions.description')}</CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 md:grid-cols-4">
             <Button variant="outline" className="h-auto flex-col gap-2 py-4" asChild>
               <Link to="/channels">
                 <Plus className="h-5 w-5" />
