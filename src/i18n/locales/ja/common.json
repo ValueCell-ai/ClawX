@@ -6,6 +6,7 @@
         "channels": "チャンネル",
         "dashboard": "ダッシュボード",
         "settings": "設定",
+        "agents": "エージェント",
         "devConsole": "開発者コンソール"
     },
     "actions": {

@@ -44,6 +44,7 @@ import {
 } from '../utils/channel-config';
 import { checkUvInstalled, installUv, setupManagedPython } from '../utils/uv-setup';
 import { updateSkillConfig, getSkillConfig, getAllSkillConfigs } from '../utils/skill-config';
+import { listAgents, getAgentConfig, saveAgentConfig, deleteAgentConfig } from '../utils/agent-config';
 import { whatsAppLoginManager } from '../utils/whatsapp-login';
 import { getProviderConfig } from '../utils/provider-registry';
 
@@ -94,6 +95,9 @@ export function registerIpcHandlers(
   // WhatsApp handlers
   registerWhatsAppHandlers(mainWindow);
 
+  // Agent config handlers (direct file access, no Gateway RPC)
+  registerAgentConfigHandlers(gatewayManager);
+
   // File staging handlers (upload/send separation)
   registerFileHandlers();
 }
@@ -123,6 +127,94 @@ function registerSkillConfigHandlers(): void {
   // Get all skill configs
   ipcMain.handle('skill:getAllConfigs', async () => {
     return getAllSkillConfigs();
+  });
+}
+
+/**
+ * Agent config IPC handlers
+ * Direct read/write to ~/.openclaw/openclaw.json and ~/.openclaw/agents/
+ */
+function registerAgentConfigHandlers(gatewayManager: GatewayManager): void {
+  // List all agents
+  ipcMain.handle('agent:list', async () => {
+    try {
+      return { success: true, agents: listAgents() };
+    } catch (error) {
+      return { success: false, error: String(error) };
+    }
+  });
+
+  // Get single agent
+  ipcMain.handle('agent:get', async (_, agentId: string) => {
+    try {
+      const agent = getAgentConfig(agentId);
+      return { success: true, agent };
+    } catch (error) {
+      return { success: false, error: String(error) };
+    }
+  });
+
+  // Create or update agent
+  ipcMain.handle('agent:save', async (_, agentId: string, updates: {
+    name?: string;
+    description?: string;
+    instructions?: string;
+    model?: string;
+    skills?: string[];
+    enabled?: boolean;
+  }) => {
+    try {
+      const result = saveAgentConfig(agentId, updates);
+      if (result.success) {
+        // Restart gateway to pick up new agent config
+        logger.info(`Agent "${agentId}" saved, restarting gateway...`);
+        gatewayManager.restart().catch((err) => {
+          logger.error('Failed to restart gateway after agent save:', err);
+        });
+      }
+      return result;
+    } catch (error) {
+      return { success: false, error: String(error) };
+    }
+  });
+
+  // Delete agent
+  ipcMain.handle('agent:delete', async (_, agentId: string) => {
+    try {
+      const result = deleteAgentConfig(agentId);
+      if (result.success) {
+        // Clean up agent sessions via Gateway RPC
+        try {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const sessionsResult = await gatewayManager.rpc('sessions.list', { limit: 100 }) as any;
+          if (sessionsResult?.sessions && Array.isArray(sessionsResult.sessions)) {
+            const agentPrefix = `agent:${agentId}:`;
+            const orphanSessions = (sessionsResult.sessions as { key?: string }[]).filter(
+              (s) => s.key && s.key.startsWith(agentPrefix)
+            );
+            for (const session of orphanSessions) {
+              try {
+                await gatewayManager.rpc('sessions.delete', { key: session.key });
+                logger.info(`Deleted orphan session: ${session.key}`);
+              } catch (err) {
+                logger.warn(`Failed to delete session ${session.key}:`, err);
+              }
+            }
+          }
+        } catch (err) {
+          logger.warn('Failed to clean up agent sessions (gateway may be unavailable):', err);
+        }
+
+        // Restart gateway to remove agent
+        logger.info(`Agent "${agentId}" deleted, restarting gateway...`);
+        gatewayManager.restart().catch((err) => {
+          logger.error('Failed to restart gateway after agent delete:', err);
+        });
+      }
+      return result;
+    } catch (error) {
+      return { success: false, error: String(error) };
+    }
   });
 }
 

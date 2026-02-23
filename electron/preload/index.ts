@@ -128,6 +128,11 @@ const electronAPI = {
         'openclaw:getSkillsDir',
         'openclaw:getCliCommand',
         'openclaw:installCliMac',
+        // Agent config (direct file access)
+        'agent:list',
+        'agent:get',
+        'agent:save',
+        'agent:delete',
       ];
 
       if (validChannels.includes(channel)) {

@@ -40,6 +40,8 @@
         "discordChannelIdDesc": "Right-click the Discord channel → Copy Channel ID",
         "enableImmediately": "Enable immediately",
         "enableImmediatelyDesc": "Start running this task after creation",
+        "agent": "Agent",
+        "agentHint": "Select which agent should handle this task",
         "saveChanges": "Save Changes"
     },
     "presets": {

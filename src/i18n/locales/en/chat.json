@@ -12,6 +12,11 @@
     "noLogs": "(No logs available yet)",
     "toolbar": {
         "newSession": "New session",
+        "newSessionFor": "New session for",
+        "deleteSession": "Delete session (clear history)",
+        "clickAgainToDelete": "Click again to delete",
+        "deleteSessionConfirm": "Delete this session? This will clear all chat history for this session. The agent itself will not be affected.",
+        "sessionDeleted": "Session deleted",
         "refresh": "Refresh chat",
         "showThinking": "Show thinking",
         "hideThinking": "Hide thinking"

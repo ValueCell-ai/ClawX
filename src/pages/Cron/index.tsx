@@ -20,6 +20,7 @@ import {
   Loader2,
   Timer,
   History,
+  Bot,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -31,6 +32,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { useCronStore } from '@/stores/cron';
 import { useChannelsStore } from '@/stores/channels';
 import { useGatewayStore } from '@/stores/gateway';
+import { useAgentsStore } from '@/stores/agents';
 import { LoadingSpinner } from '@/components/common/LoadingSpinner';
 import { formatRelativeTime, cn } from '@/lib/utils';
 import { toast } from 'sonner';
@@ -124,6 +126,7 @@ interface TaskDialogProps {
 function TaskDialog({ job, onClose, onSave }: TaskDialogProps) {
   const { t } = useTranslation('cron');
   const { channels } = useChannelsStore();
+  const { agents, fetchAgents } = useAgentsStore();
   const [saving, setSaving] = useState(false);
 
   const [name, setName] = useState(job?.name || '');
@@ -143,7 +146,15 @@ function TaskDialog({ job, onClose, onSave }: TaskDialogProps) {
   const [useCustom, setUseCustom] = useState(false);
   const [channelId, setChannelId] = useState(job?.target.channelId || '');
   const [discordChannelId, setDiscordChannelId] = useState('');
+  const [agentId, setAgentId] = useState('main');
   const [enabled, setEnabled] = useState(job?.enabled ?? true);
+
+  // Fetch agents on mount
+  useEffect(() => {
+    fetchAgents();
+  }, [fetchAgents]);
+
+  const enabledAgents = agents.filter(a => a.enabled);
 
   const selectedChannel = channels.find((c) => c.id === channelId);
   const isDiscord = selectedChannel?.type === 'discord';
@@ -325,6 +336,31 @@ function TaskDialog({ job, onClose, onSave }: TaskDialogProps) {
               </p>
             </div>
           )}
+
+          {/* Agent */}
+          <div className="space-y-2">
+            <Label>{t('dialog.agent')}</Label>
+            <div className="grid grid-cols-2 gap-2">
+              {enabledAgents.map((agent) => (
+                <Button
+                  key={agent.id}
+                  type="button"
+                  variant={agentId === agent.id ? 'default' : 'outline'}
+                  size="sm"
+                  onClick={() => setAgentId(agent.id)}
+                  className="justify-start"
+                >
+                  <Bot className="h-4 w-4 mr-2" />
+                  {agent.name}
+                  {agent.isDefault && (
+                    <span className="text-[10px] ml-1 opacity-60">(default)</span>
+                  )}
+                </Button>
+              ))}
+            </div>
+            <p className="text-xs text-muted-foreground">{t('dialog.agentHint')}</p>
+          </div>
+
           {/* Enabled */}
           <div className="flex items-center justify-between">
             <div>

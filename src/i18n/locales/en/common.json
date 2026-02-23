@@ -6,6 +6,7 @@
         "channels": "Channels",
         "dashboard": "Dashboard",
         "settings": "Settings",
+        "agents": "Agents",
         "devConsole": "Developer Console"
     },
     "actions": {
