@@ -73,40 +73,35 @@ jobs:
         run: pnpm run uv:download:linux
 
       # macOS specific steps
+      # --publish never: prevent electron-builder from auto-publishing to GitHub.
+      # All artifacts are collected and published atomically in the publish job.
       - name: Build macOS
         if: matrix.platform == 'mac'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # Code signing
           CSC_LINK: ${{ secrets.MAC_CERTS }}
           CSC_KEY_PASSWORD: ${{ secrets.MAC_CERTS_PASSWORD }}
-          # Notarization
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: |
-          # Increase file descriptor limit to handle large number of files during code signing
           ulimit -n 65536
           echo "File descriptor limit: $(ulimit -n)"
-          
-          pnpm run package:mac
+          pnpm run build:vite && zx scripts/bundle-openclaw.mjs && electron-builder --mac --publish never
 
       # Windows specific steps
       - name: Build Windows
         if: matrix.platform == 'win'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # For code signing (optional)
-          # CSC_LINK: ${{ secrets.WIN_CERTS }}
-          # CSC_KEY_PASSWORD: ${{ secrets.WIN_CERTS_PASSWORD }}
-        run: pnpm run package:win
+        run: pnpm run build:vite && zx scripts/bundle-openclaw.mjs && electron-builder --win --publish never
 
       # Linux specific steps
       - name: Build Linux
         if: matrix.platform == 'linux'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: pnpm run package:linux
+        run: pnpm run build:vite && zx scripts/bundle-openclaw.mjs && electron-builder --linux --publish never
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
@@ -152,7 +147,7 @@ jobs:
           echo "Removing builder-debug.yml files to avoid duplicate asset upload conflicts..."
           find release-artifacts/ -name "builder-debug.yml" -delete -print || true
 
-      - name: Create GitHub Release
+      - name: Create GitHub Release (as pre-release)
         uses: softprops/action-gh-release@v2
         if: startsWith(github.ref, 'refs/tags/')
         with:
@@ -165,8 +160,8 @@ jobs:
             release-artifacts/**/*.rpm
             release-artifacts/**/*.yml
           draft: false
-          prerelease: ${{ contains(github.ref, 'alpha') || contains(github.ref, 'beta') }}
-          make_latest: ${{ !(contains(github.ref, 'alpha') || contains(github.ref, 'beta')) }}
+          prerelease: true
+          make_latest: false
           generate_release_notes: true
           body: |
             ## 🚀 ClawX ${{ github.ref_name }}
@@ -399,3 +394,39 @@ jobs:
           
           echo ""
           echo "All files uploaded and verified successfully!"
+
+  # ──────────────────────────────────────────────────────────────
+  # Job: Finalize Release
+  # Promotes the GitHub Release from pre-release to latest AFTER
+  # both GitHub Release assets and OSS uploads are fully complete.
+  # This ensures /releases/latest API never returns an incomplete
+  # release — the website and electron-updater only see it when
+  # all platform artifacts are ready.
+  # ──────────────────────────────────────────────────────────────
+  finalize:
+    needs: [publish, upload-oss]
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/')
+
+    steps:
+      - name: Promote release from pre-release to latest
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="${GITHUB_REF#refs/tags/}"
+          IS_PRERELEASE_CHANNEL=false
+
+          if [[ "$TAG" == *"alpha"* ]] || [[ "$TAG" == *"beta"* ]]; then
+            IS_PRERELEASE_CHANNEL=true
+          fi
+
+          if [ "$IS_PRERELEASE_CHANNEL" = "true" ]; then
+            echo "Tag $TAG is an alpha/beta release — keeping as pre-release."
+          else
+            echo "Promoting $TAG from pre-release to latest release..."
+            gh release edit "$TAG" \
+              --prerelease=false \
+              --latest \
+              --repo "${{ github.repository }}"
+            echo "Release $TAG is now the latest release."
+          fi
