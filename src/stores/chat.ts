@@ -103,6 +103,12 @@ interface ChatState {
   clearError: () => void;
 }
 
+// Module-level timestamp tracking the last chat event received.
+// Used by the safety timeout to avoid false-positive "no response" errors
+// during tool-use conversations where streamingMessage is temporarily cleared
+// between tool-result finals and the next delta.
+let _lastChatEventAt = 0;
+
 const DEFAULT_CANONICAL_PREFIX = 'agent:main';
 const DEFAULT_SESSION_KEY = `${DEFAULT_CANONICAL_PREFIX}:main`;
 
@@ -1151,18 +1157,27 @@ export const useChatStore = create<ChatState>((set, get) => ({
         // No runId from gateway; keep sending state and wait for events.
       }
 
-      // Safety timeout: if we're still in "sending" state after 90s without
-      // receiving any streaming event, the run likely failed silently (e.g.
-      // provider error not surfaced as a chat event). Surface the error to the
-      // user instead of leaving an infinite spinner.
+      // Safety timeout: if we're still in "sending" state without receiving
+      // any chat event for SAFETY_TIMEOUT_MS, the run likely failed silently
+      // (e.g. provider error not surfaced as a chat event). Surface the error
+      // to the user instead of leaving an infinite spinner.
+      //
+      // The timeout is based on the last received event (not the original send
+      // time) so that long-running tool-use conversations don't trigger false
+      // positives — each received event resets the clock.
       if (result.success) {
-        const sentAt = Date.now();
+        _lastChatEventAt = Date.now();
         const SAFETY_TIMEOUT_MS = 90_000;
         const checkStuck = () => {
           const state = get();
           if (!state.sending) return;
           if (state.streamingMessage || state.streamingText) return;
-          if (Date.now() - sentAt < SAFETY_TIMEOUT_MS) {
+          // Still between tool cycles (pendingFinal) — the model is working
+          if (state.pendingFinal) {
+            setTimeout(checkStuck, 10_000);
+            return;
+          }
+          if (Date.now() - _lastChatEventAt < SAFETY_TIMEOUT_MS) {
             setTimeout(checkStuck, 10_000);
             return;
           }
@@ -1207,6 +1222,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
     // Only process events for the active run (or if no active run set)
     if (activeRunId && runId && runId !== activeRunId) return;
+
+    _lastChatEventAt = Date.now();
 
     // Defensive: if state is missing but we have a message, try to infer state.
     // This handles the case where the Gateway sends events without a state wrapper

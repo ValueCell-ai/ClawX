@@ -165,9 +165,9 @@ async function initialize(): Promise<void> {
   // Note: Auto-check for updates is driven by the renderer (update store init)
   // so it respects the user's "Auto-check for updates" setting.
 
-  // Windows: minimize to tray on close instead of quitting
+  // Minimize to tray on close instead of quitting (macOS & Windows)
   mainWindow.on('close', (event) => {
-    if (process.platform === 'win32' && !isQuitting) {
+    if (!isQuitting) {
       event.preventDefault();
       mainWindow?.hide();
     }

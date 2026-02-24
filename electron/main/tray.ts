@@ -59,14 +59,17 @@ export function createTray(mainWindow: BrowserWindow): Tray {
   // Set tooltip
   tray.setToolTip('ClawX - AI Assistant');
   
+  const showWindow = () => {
+    if (mainWindow.isDestroyed()) return;
+    mainWindow.show();
+    mainWindow.focus();
+  };
+
   // Create context menu
   const contextMenu = Menu.buildFromTemplate([
     {
       label: 'Show ClawX',
-      click: () => {
-        mainWindow.show();
-        mainWindow.focus();
-      },
+      click: showWindow,
     },
     {
       type: 'separator',
@@ -90,6 +93,7 @@ export function createTray(mainWindow: BrowserWindow): Tray {
         {
           label: 'Open Dashboard',
           click: () => {
+            if (mainWindow.isDestroyed()) return;
             mainWindow.show();
             mainWindow.webContents.send('navigate', '/');
           },
@@ -97,6 +101,7 @@ export function createTray(mainWindow: BrowserWindow): Tray {
         {
           label: 'Open Chat',
           click: () => {
+            if (mainWindow.isDestroyed()) return;
             mainWindow.show();
             mainWindow.webContents.send('navigate', '/chat');
           },
@@ -104,6 +109,7 @@ export function createTray(mainWindow: BrowserWindow): Tray {
         {
           label: 'Open Settings',
           click: () => {
+            if (mainWindow.isDestroyed()) return;
             mainWindow.show();
             mainWindow.webContents.send('navigate', '/settings');
           },
@@ -116,6 +122,7 @@ export function createTray(mainWindow: BrowserWindow): Tray {
     {
       label: 'Check for Updates...',
       click: () => {
+        if (mainWindow.isDestroyed()) return;
         mainWindow.webContents.send('update:check');
       },
     },
@@ -134,6 +141,7 @@ export function createTray(mainWindow: BrowserWindow): Tray {
   
   // Click to show window (Windows/Linux)
   tray.on('click', () => {
+    if (mainWindow.isDestroyed()) return;
     if (mainWindow.isVisible()) {
       mainWindow.hide();
     } else {
@@ -144,6 +152,7 @@ export function createTray(mainWindow: BrowserWindow): Tray {
   
   // Double-click to show window (Windows)
   tray.on('double-click', () => {
+    if (mainWindow.isDestroyed()) return;
     mainWindow.show();
     mainWindow.focus();
   });
