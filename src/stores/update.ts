@@ -35,12 +35,15 @@ interface UpdateState {
   progress: ProgressInfo | null;
   error: string | null;
   isInitialized: boolean;
+  /** Seconds remaining before auto-install, or null if inactive. */
+  autoInstallCountdown: number | null;
 
   // Actions
   init: () => Promise<void>;
   checkForUpdates: () => Promise<void>;
   downloadUpdate: () => Promise<void>;
   installUpdate: () => void;
+  cancelAutoInstall: () => Promise<void>;
   setChannel: (channel: 'stable' | 'beta' | 'dev') => Promise<void>;
   setAutoDownload: (enable: boolean) => Promise<void>;
   clearError: () => void;
@@ -53,6 +56,7 @@ export const useUpdateStore = create<UpdateState>((set, get) => ({
   progress: null,
   error: null,
   isInitialized: false,
+  autoInstallCountdown: null,
 
   init: async () => {
     if (get().isInitialized) return;
@@ -99,6 +103,11 @@ export const useUpdateStore = create<UpdateState>((set, get) => ({
         progress: status.progress || null,
         error: status.error || null,
       });
+    });
+
+    window.electron.ipcRenderer.on('update:auto-install-countdown', (data) => {
+      const { seconds, cancelled } = data as { seconds: number; cancelled?: boolean };
+      set({ autoInstallCountdown: cancelled ? null : seconds });
     });
 
     set({ isInitialized: true });
@@ -178,6 +187,14 @@ export const useUpdateStore = create<UpdateState>((set, get) => ({
 
   installUpdate: () => {
     window.electron.ipcRenderer.invoke('update:install');
+  },
+
+  cancelAutoInstall: async () => {
+    try {
+      await window.electron.ipcRenderer.invoke('update:cancelAutoInstall');
+    } catch (error) {
+      console.error('Failed to cancel auto-install:', error);
+    }
   },
 
   setChannel: async (channel) => {

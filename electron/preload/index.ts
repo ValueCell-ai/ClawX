@@ -59,6 +59,7 @@ const electronAPI = {
         'update:install',
         'update:setChannel',
         'update:setAutoDownload',
+        'update:cancelAutoInstall',
         // Env
         'env:getConfig',
         'env:setApiKey',
@@ -160,6 +161,7 @@ const electronAPI = {
         'update:progress',
         'update:downloaded',
         'update:error',
+        'update:auto-install-countdown',
         'cron:updated',
       ];
 
@@ -199,6 +201,7 @@ const electronAPI = {
         'update:progress',
         'update:downloaded',
         'update:error',
+        'update:auto-install-countdown',
       ];
 
       if (validChannels.includes(channel)) {

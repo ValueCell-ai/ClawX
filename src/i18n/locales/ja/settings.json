@@ -72,8 +72,31 @@
         "description": "ClawX を最新に保つ",
         "autoCheck": "自動更新チェック",
         "autoCheckDesc": "起動時に更新を確認",
-        "autoDownload": "自動ダウンロード",
-        "autoDownloadDesc": "バックグラウンドで更新をダウンロード"
+        "autoDownload": "自動アップデート",
+        "autoDownloadDesc": "更新を自動的にダウンロードしてインストール",
+        "status": {
+            "checking": "更新を確認中...",
+            "downloading": "更新をダウンロード中...",
+            "available": "更新あり: v{{version}}",
+            "downloaded": "インストール準備完了: v{{version}}",
+            "autoInstalling": "{{seconds}} 秒後に再起動して更新をインストールします...",
+            "failed": "更新の確認に失敗しました",
+            "latest": "最新バージョンです",
+            "check": "更新を確認して最新の機能を入手"
+        },
+        "action": {
+            "checking": "確認中...",
+            "downloading": "ダウンロード中...",
+            "download": "更新をダウンロード",
+            "install": "インストールして再起動",
+            "cancelAutoInstall": "キャンセル",
+            "retry": "再試行",
+            "check": "更新を確認"
+        },
+        "currentVersion": "現在のバージョン",
+        "whatsNew": "更新内容：",
+        "errorDetails": "エラー詳細：",
+        "help": "自動アップデートが有効な場合、更新は自動的にダウンロードされインストールされます。"
     },
     "advanced": {
         "title": "詳細設定",

@@ -72,13 +72,14 @@
         "description": "Keep ClawX up to date",
         "autoCheck": "Auto-check for updates",
         "autoCheckDesc": "Check for updates on startup",
-        "autoDownload": "Auto-download updates",
-        "autoDownloadDesc": "Download updates in the background",
+        "autoDownload": "Auto-update",
+        "autoDownloadDesc": "Automatically download and install updates",
         "status": {
             "checking": "Checking for updates...",
             "downloading": "Downloading update...",
             "available": "Update available: v{{version}}",
             "downloaded": "Ready to install: v{{version}}",
+            "autoInstalling": "Restarting to install update in {{seconds}}s...",
             "failed": "Update check failed",
             "latest": "You have the latest version",
             "check": "Check for updates to get the latest features"
@@ -88,13 +89,14 @@
             "downloading": "Downloading...",
             "download": "Download Update",
             "install": "Install & Restart",
+            "cancelAutoInstall": "Cancel",
             "retry": "Retry",
             "check": "Check for Updates"
         },
         "currentVersion": "Current Version",
         "whatsNew": "What's New:",
         "errorDetails": "Error Details:",
-        "help": "Updates are downloaded in the background and installed when you restart the app."
+        "help": "When auto-update is enabled, updates are downloaded and installed automatically."
     },
     "advanced": {
         "title": "Advanced",

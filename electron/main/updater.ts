@@ -42,6 +42,11 @@ function detectChannel(version: string): string {
 export class AppUpdater extends EventEmitter {
   private mainWindow: BrowserWindow | null = null;
   private status: UpdateStatus = { status: 'idle' };
+  private autoInstallTimer: NodeJS.Timeout | null = null;
+  private autoInstallCountdown = 0;
+
+  /** Delay (in seconds) before auto-installing a downloaded update. */
+  private static readonly AUTO_INSTALL_DELAY_SECONDS = 5;
 
   constructor() {
     super();
@@ -120,6 +125,10 @@ export class AppUpdater extends EventEmitter {
     autoUpdater.on('update-downloaded', (event: UpdateDownloadedEvent) => {
       this.updateStatus({ status: 'downloaded', info: event });
       this.emit('update-downloaded', event);
+
+      if (autoUpdater.autoDownload) {
+        this.startAutoInstallCountdown();
+      }
     });
 
     autoUpdater.on('error', (error: Error) => {
@@ -201,6 +210,41 @@ export class AppUpdater extends EventEmitter {
   }
 
   /**
+   * Start a countdown that auto-installs the downloaded update.
+   * Sends `update:auto-install-countdown` events to the renderer each second.
+   */
+  private startAutoInstallCountdown(): void {
+    this.clearAutoInstallTimer();
+    this.autoInstallCountdown = AppUpdater.AUTO_INSTALL_DELAY_SECONDS;
+    this.sendToRenderer('update:auto-install-countdown', { seconds: this.autoInstallCountdown });
+
+    this.autoInstallTimer = setInterval(() => {
+      this.autoInstallCountdown--;
+      this.sendToRenderer('update:auto-install-countdown', { seconds: this.autoInstallCountdown });
+
+      if (this.autoInstallCountdown <= 0) {
+        this.clearAutoInstallTimer();
+        this.quitAndInstall();
+      }
+    }, 1000);
+  }
+
+  /**
+   * Cancel a running auto-install countdown.
+   */
+  cancelAutoInstall(): void {
+    this.clearAutoInstallTimer();
+    this.sendToRenderer('update:auto-install-countdown', { seconds: -1, cancelled: true });
+  }
+
+  private clearAutoInstallTimer(): void {
+    if (this.autoInstallTimer) {
+      clearInterval(this.autoInstallTimer);
+      this.autoInstallTimer = null;
+    }
+  }
+
+  /**
    * Set update channel (stable, beta, dev)
    */
   setChannel(channel: 'stable' | 'beta' | 'dev'): void {
@@ -277,6 +321,12 @@ export function registerUpdateHandlers(
   // Set auto-download preference
   ipcMain.handle('update:setAutoDownload', (_, enable: boolean) => {
     updater.setAutoDownload(enable);
+    return { success: true };
+  });
+
+  // Cancel pending auto-install countdown
+  ipcMain.handle('update:cancelAutoInstall', () => {
+    updater.cancelAutoInstall();
     return { success: true };
   });
 

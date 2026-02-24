@@ -3,7 +3,7 @@
  * Displays update status and allows manual update checking/installation
  */
 import { useEffect, useCallback } from 'react';
-import { Download, RefreshCw, Loader2, Rocket } from 'lucide-react';
+import { Download, RefreshCw, Loader2, Rocket, XCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import { useUpdateStore } from '@/stores/update';
@@ -26,10 +26,12 @@ export function UpdateSettings() {
     progress,
     error,
     isInitialized,
+    autoInstallCountdown,
     init,
     checkForUpdates,
     downloadUpdate,
     installUpdate,
+    cancelAutoInstall,
     clearError,
   } = useUpdateStore();
 
@@ -60,6 +62,9 @@ export function UpdateSettings() {
   };
 
   const renderStatusText = () => {
+    if (status === 'downloaded' && autoInstallCountdown != null && autoInstallCountdown >= 0) {
+      return t('updates.status.autoInstalling', { seconds: autoInstallCountdown });
+    }
     switch (status) {
       case 'checking':
         return t('updates.status.checking');
@@ -102,6 +107,14 @@ export function UpdateSettings() {
           </Button>
         );
       case 'downloaded':
+        if (autoInstallCountdown != null && autoInstallCountdown >= 0) {
+          return (
+            <Button onClick={cancelAutoInstall} size="sm" variant="outline">
+              <XCircle className="h-4 w-4 mr-2" />
+              {t('updates.action.cancelAutoInstall')}
+            </Button>
+          );
+        }
         return (
           <Button onClick={installUpdate} size="sm" variant="default">
             <Rocket className="h-4 w-4 mr-2" />
