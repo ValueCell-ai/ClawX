@@ -310,13 +310,23 @@ export class GatewayManager extends EventEmitter {
           return resolve();
         }
         
-        logger.info(`Sending SIGTERM to Gateway (pid=${child.pid ?? 'unknown'})`);
+        // Kill the entire process group so respawned children are also terminated.
+        // The gateway entry script may respawn itself; killing only the parent PID
+        // leaves the child orphaned (PPID=1) and still holding the port.
+        const pid = child.pid;
+        logger.info(`Sending SIGTERM to Gateway process group (pid=${pid ?? 'unknown'})`);
+        if (pid) {
+          try { process.kill(-pid, 'SIGTERM'); } catch { /* group kill failed, fall back */ }
+        }
         child.kill('SIGTERM');
         
         // Force kill after timeout
         const timeout = setTimeout(() => {
           if (child.exitCode === null && child.signalCode === null) {
-            logger.warn(`Gateway did not exit in time, sending SIGKILL (pid=${child.pid ?? 'unknown'})`);
+            logger.warn(`Gateway did not exit in time, sending SIGKILL (pid=${pid ?? 'unknown'})`);
+            if (pid) {
+              try { process.kill(-pid, 'SIGKILL'); } catch { /* ignore */ }
+            }
             child.kill('SIGKILL');
           }
           resolve();
@@ -471,37 +481,33 @@ export class GatewayManager extends EventEmitter {
       const port = PORTS.OPENCLAW_GATEWAY;
       
       try {
-        const { stdout } = await new Promise<{ stdout: string }>((resolve) => {
+        const { stdout } = await new Promise<{ stdout: string }>((resolve, reject) => {
           import('child_process').then(cp => {
-            cp.exec(`lsof -i :${port} | grep LISTEN`, (err, stdout) => {
+            cp.exec(`lsof -i :${port} -sTCP:LISTEN -t`, { timeout: 5000 }, (err, stdout) => {
               if (err) resolve({ stdout: '' });
               else resolve({ stdout });
             });
-          });
+          }).catch(reject);
         });
         
         if (stdout.trim()) {
-          // A process is listening on the port
-          const pids = stdout.split('\n')
-            .map(line => line.trim().split(/\s+/)[1])
-            .filter(pid => pid && pid !== 'PID');
+          const pids = stdout.trim().split('\n')
+            .map(s => s.trim())
+            .filter(Boolean);
             
           if (pids.length > 0) {
-            // Try to kill it if it's not us to avoid connection issues
-            // This happens frequently on HMR / dev reloads
             if (!this.process || !pids.includes(String(this.process.pid))) {
-               logger.info(`Found orphaned process listening on port ${port} (PID: ${pids[0]}), attempting to kill...`);
+               logger.info(`Found orphaned process listening on port ${port} (PIDs: ${pids.join(', ')}), attempting to kill...`);
                for (const pid of pids) {
                  try { process.kill(parseInt(pid), 'SIGKILL'); } catch { /* ignore */ }
                }
-               // Wait a moment for port to be released
-               await new Promise(r => setTimeout(r, 500));
-               return null; // Return null so we start a fresh instance
+               await new Promise(r => setTimeout(r, 1000));
+               return null;
             }
           }
         }
       } catch (err) {
-        logger.debug('Error checking for existing process on port:', err);
+        logger.warn('Error checking for existing process on port:', err);
       }
 
       // Try a quick WebSocket connection to check if gateway is listening
@@ -797,7 +803,13 @@ export class GatewayManager extends EventEmitter {
       let handshakeTimeout: NodeJS.Timeout | null = null;
       let settled = false;
 
+      let challengeTimer: NodeJS.Timeout | null = null;
+
       const cleanupHandshakeRequest = () => {
+        if (challengeTimer) {
+          clearTimeout(challengeTimer);
+          challengeTimer = null;
+        }
         if (handshakeTimeout) {
           clearTimeout(handshakeTimeout);
           handshakeTimeout = null;
@@ -917,6 +929,17 @@ export class GatewayManager extends EventEmitter {
         });
       };
 
+      // Timeout for receiving the initial connect.challenge from the server.
+      // Without this, if the server never sends the challenge (e.g. orphaned
+      // process from a different version), the connect() promise hangs forever.
+      challengeTimer = setTimeout(() => {
+        if (!challengeReceived && !settled) {
+          logger.error('Gateway connect.challenge not received within timeout');
+          this.ws?.close();
+          rejectOnce(new Error('Timed out waiting for connect.challenge from Gateway'));
+        }
+      }, 10000);
+
       this.ws.on('open', () => {
         logger.debug('Gateway WebSocket opened, waiting for connect.challenge...');
       });
@@ -934,6 +957,10 @@ export class GatewayManager extends EventEmitter {
             message.type === 'event' && message.event === 'connect.challenge'
           ) {
             challengeReceived = true;
+            if (challengeTimer) {
+              clearTimeout(challengeTimer);
+              challengeTimer = null;
+            }
             const nonce = message.payload?.nonce as string | undefined;
             if (!nonce) {
               rejectOnce(new Error('Gateway connect.challenge missing nonce'));
