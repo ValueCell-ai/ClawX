@@ -87,21 +87,21 @@ jobs:
         run: |
           ulimit -n 65536
           echo "File descriptor limit: $(ulimit -n)"
-          pnpm run build:vite && zx scripts/bundle-openclaw.mjs && electron-builder --mac --publish never
+          pnpm run build:vite && pnpm exec zx scripts/bundle-openclaw.mjs && pnpm exec electron-builder --mac --publish never
 
       # Windows specific steps
       - name: Build Windows
         if: matrix.platform == 'win'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: pnpm run build:vite && zx scripts/bundle-openclaw.mjs && electron-builder --win --publish never
+        run: pnpm run build:vite && pnpm exec zx scripts/bundle-openclaw.mjs && pnpm exec electron-builder --win --publish never
 
       # Linux specific steps
       - name: Build Linux
         if: matrix.platform == 'linux'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: pnpm run build:vite && zx scripts/bundle-openclaw.mjs && electron-builder --linux --publish never
+        run: pnpm run build:vite && pnpm exec zx scripts/bundle-openclaw.mjs && pnpm exec electron-builder --linux --publish never
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
