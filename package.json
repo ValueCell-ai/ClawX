@@ -1,6 +1,6 @@
 {
     "name": "clawx",
-    "version": "0.1.16-alpha.3",
+    "version": "0.1.16-alpha.4",
     "pnpm": {
         "onlyBuiltDependencies": [
             "@whiskeysockets/baileys",
