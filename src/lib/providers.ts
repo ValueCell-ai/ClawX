@@ -12,6 +12,8 @@ export const PROVIDER_TYPES = [
   'openrouter',
   'moonshot',
   'siliconflow',
+  'minimax-portal',
+  'qwen-portal',
   'ollama',
   'custom',
 ] as const;
@@ -51,6 +53,8 @@ export interface ProviderTypeInfo {
   modelIdPlaceholder?: string;
   /** Default model ID to pre-fill */
   defaultModelId?: string;
+  /** Whether this provider uses OAuth device flow instead of an API key */
+  isOAuth?: boolean;
 }
 
 import { providerIcons } from '@/assets/providers';
@@ -63,6 +67,8 @@ export const PROVIDER_TYPE_INFO: ProviderTypeInfo[] = [
   { id: 'openrouter', name: 'OpenRouter', icon: '🌐', placeholder: 'sk-or-v1-...', model: 'Multi-Model', requiresApiKey: true },
   { id: 'moonshot', name: 'Moonshot (CN)', icon: '🌙', placeholder: 'sk-...', model: 'Kimi', requiresApiKey: true, defaultBaseUrl: 'https://api.moonshot.cn/v1', defaultModelId: 'kimi-k2.5' },
   { id: 'siliconflow', name: 'SiliconFlow (CN)', icon: '🌊', placeholder: 'sk-...', model: 'Multi-Model', requiresApiKey: true, defaultBaseUrl: 'https://api.siliconflow.cn/v1', defaultModelId: 'Pro/moonshotai/Kimi-K2.5' },
+  { id: 'minimax-portal', name: 'MiniMax (CN)', icon: '☁️', placeholder: 'OAuth', model: 'MiniMax', requiresApiKey: false, isOAuth: true, defaultModelId: 'MiniMax-M2.1' },
+  { id: 'qwen-portal', name: 'Qwen (CN)', icon: '☁️', placeholder: 'OAuth', model: 'Qwen', requiresApiKey: false, isOAuth: true, defaultModelId: 'qwen-plus' },
   { id: 'ollama', name: 'Ollama', icon: '🦙', placeholder: 'Not required', requiresApiKey: false, defaultBaseUrl: 'http://localhost:11434', showBaseUrl: true, showModelId: true, modelIdPlaceholder: 'qwen3:latest' },
   { id: 'custom', name: 'Custom', icon: '⚙️', placeholder: 'API key...', requiresApiKey: true, showBaseUrl: true, showModelId: true, modelIdPlaceholder: 'your-provider/model-id' },
 ];

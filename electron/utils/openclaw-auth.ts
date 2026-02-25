@@ -46,7 +46,7 @@ function getAuthProfilesPath(agentId = 'main'): string {
  */
 function readAuthProfiles(agentId = 'main'): AuthProfilesStore {
   const filePath = getAuthProfilesPath(agentId);
-  
+
   try {
     if (existsSync(filePath)) {
       const raw = readFileSync(filePath, 'utf-8');
@@ -59,7 +59,7 @@ function readAuthProfiles(agentId = 'main'): AuthProfilesStore {
   } catch (error) {
     console.warn('Failed to read auth-profiles.json, creating fresh store:', error);
   }
-  
+
   return {
     version: AUTH_STORE_VERSION,
     profiles: {},
@@ -72,12 +72,12 @@ function readAuthProfiles(agentId = 'main'): AuthProfilesStore {
 function writeAuthProfiles(store: AuthProfilesStore, agentId = 'main'): void {
   const filePath = getAuthProfilesPath(agentId);
   const dir = join(filePath, '..');
-  
+
   // Ensure directory exists
   if (!existsSync(dir)) {
     mkdirSync(dir, { recursive: true });
   }
-  
+
   writeFileSync(filePath, JSON.stringify(store, null, 2), 'utf-8');
 }
 
@@ -113,6 +113,14 @@ export function saveProviderKeyToOpenClaw(
   apiKey: string,
   agentId?: string
 ): void {
+  // OAuth providers (qwen-portal, minimax-portal) have their credentials
+  // managed by OpenClaw plugins via `openclaw models auth login`.
+  // Do NOT overwrite their auth-profiles entries with a plain api_key.
+  const OAUTH_PROVIDERS = ['qwen-portal', 'minimax-portal'];
+  if (OAUTH_PROVIDERS.includes(provider)) {
+    console.log(`Skipping auth-profiles write for OAuth provider "${provider}" (managed by OpenClaw plugin)`);
+    return;
+  }
   const agentIds = agentId ? [agentId] : discoverAgentIds();
   if (agentIds.length === 0) agentIds.push('main');
 
@@ -158,6 +166,13 @@ export function removeProviderKeyFromOpenClaw(
   provider: string,
   agentId?: string
 ): void {
+  // OAuth providers have their credentials managed by OpenClaw plugins.
+  // Do NOT delete their auth-profiles entries.
+  const OAUTH_PROVIDERS = ['qwen-portal', 'minimax-portal'];
+  if (OAUTH_PROVIDERS.includes(provider)) {
+    console.log(`Skipping auth-profiles removal for OAuth provider "${provider}" (managed by OpenClaw plugin)`);
+    return;
+  }
   const agentIds = agentId ? [agentId] : discoverAgentIds();
   if (agentIds.length === 0) agentIds.push('main');
 
@@ -189,14 +204,14 @@ export function removeProviderKeyFromOpenClaw(
  */
 export function buildProviderEnvVars(providers: Array<{ type: string; apiKey: string }>): Record<string, string> {
   const env: Record<string, string> = {};
-  
+
   for (const { type, apiKey } of providers) {
     const envVar = getProviderEnvVar(type);
     if (envVar && apiKey) {
       env[envVar] = apiKey;
     }
   }
-  
+
   return env;
 }
 
@@ -210,9 +225,9 @@ export function buildProviderEnvVars(providers: Array<{ type: string; apiKey: st
  */
 export function setOpenClawDefaultModel(provider: string, modelOverride?: string): void {
   const configPath = join(homedir(), '.openclaw', 'openclaw.json');
-  
+
   let config: Record<string, unknown> = {};
-  
+
   try {
     if (existsSync(configPath)) {
       config = JSON.parse(readFileSync(configPath, 'utf-8'));
@@ -220,7 +235,7 @@ export function setOpenClawDefaultModel(provider: string, modelOverride?: string
   } catch (err) {
     console.warn('Failed to read openclaw.json, creating fresh config:', err);
   }
-  
+
   const model = modelOverride || getProviderDefaultModel(provider);
   if (!model) {
     console.warn(`No default model mapping for provider "${provider}"`);
@@ -230,7 +245,7 @@ export function setOpenClawDefaultModel(provider: string, modelOverride?: string
   const modelId = model.startsWith(`${provider}/`)
     ? model.slice(provider.length + 1)
     : model;
-  
+
   // Set the default model for the agents
   // model must be an object: { primary: "provider/model", fallbacks?: [] }
   const agents = (config.agents || {}) as Record<string, unknown>;
@@ -238,7 +253,7 @@ export function setOpenClawDefaultModel(provider: string, modelOverride?: string
   defaults.model = { primary: model };
   agents.defaults = defaults;
   config.agents = agents;
-  
+
   // Configure models.providers for providers that need explicit registration.
   // Built-in providers (anthropic, google) are part of OpenClaw's pi-ai catalog
   // and must NOT have a models.providers entry — it would override the built-in.
@@ -276,7 +291,7 @@ export function setOpenClawDefaultModel(provider: string, modelOverride?: string
       models: mergedModels,
     };
     console.log(`Configured models.providers.${provider} with baseUrl=${providerCfg.baseUrl}, model=${modelId}`);
-    
+
     models.providers = providers;
     config.models = models;
   } else {
@@ -292,20 +307,20 @@ export function setOpenClawDefaultModel(provider: string, modelOverride?: string
       config.models = models;
     }
   }
-  
+
   // Ensure gateway mode is set
   const gateway = (config.gateway || {}) as Record<string, unknown>;
   if (!gateway.mode) {
     gateway.mode = 'local';
   }
   config.gateway = gateway;
-  
+
   // Ensure directory exists
   const dir = join(configPath, '..');
   if (!existsSync(dir)) {
     mkdirSync(dir, { recursive: true });
   }
-  
+
   writeFileSync(configPath, JSON.stringify(config, null, 2), 'utf-8');
   console.log(`Set OpenClaw default model to "${model}" for provider "${provider}"`);
 }

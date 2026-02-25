@@ -19,6 +19,7 @@ import {
   XCircle,
   ExternalLink,
   BookOpen,
+  Copy,
 } from 'lucide-react';
 import { TitleBar } from '@/components/layout/TitleBar';
 import { Button } from '@/components/ui/button';
@@ -715,6 +716,73 @@ function ProviderContent({
   const [providerMenuOpen, setProviderMenuOpen] = useState(false);
   const providerMenuRef = useRef<HTMLDivElement | null>(null);
 
+  // OAuth Flow State
+  const [oauthFlowing, setOauthFlowing] = useState(false);
+  const [oauthData, setOauthData] = useState<{
+    verificationUri: string;
+    userCode: string;
+    expiresIn: number;
+  } | null>(null);
+  const [oauthError, setOauthError] = useState<string | null>(null);
+
+  // Manage OAuth events
+  useEffect(() => {
+    const handleCode = (data: any) => {
+      setOauthData(data);
+      setOauthError(null);
+    };
+
+    const handleSuccess = () => {
+      setOauthFlowing(false);
+      setOauthData(null);
+      setKeyValid(true);
+      onConfiguredChange(true);
+      toast.success(t('provider.valid'));
+    };
+
+    const handleError = (data: any) => {
+      setOauthError(data.message);
+      setOauthData(null);
+    };
+
+    window.electron.ipcRenderer.on('oauth:code', handleCode);
+    window.electron.ipcRenderer.on('oauth:success', handleSuccess);
+    window.electron.ipcRenderer.on('oauth:error', handleError);
+
+    return () => {
+      // Clean up manually if the API provides removeListener, though `on` in preloads might not return an unsub.
+      // Easiest is to just let it be, or if they have `off`:
+      if (typeof window.electron.ipcRenderer.off === 'function') {
+        window.electron.ipcRenderer.off('oauth:code', handleCode);
+        window.electron.ipcRenderer.off('oauth:success', handleSuccess);
+        window.electron.ipcRenderer.off('oauth:error', handleError);
+      }
+    };
+  }, [onConfiguredChange, t]);
+
+  const handleStartOAuth = async () => {
+    if (!selectedProvider) return;
+    setOauthFlowing(true);
+    setOauthData(null);
+    setOauthError(null);
+
+    // Default to global region for MiniMax in setup
+    const region = 'global';
+    try {
+      await window.electron.ipcRenderer.invoke('provider:requestOAuth', selectedProvider, region);
+    } catch (e) {
+      setOauthError(String(e));
+      setOauthFlowing(false);
+    }
+  };
+
+  const handleCancelOAuth = async () => {
+    setOauthFlowing(false);
+    setOauthData(null);
+    setOauthError(null);
+    await window.electron.ipcRenderer.invoke('provider:cancelOAuth');
+  };
+
   // On mount, try to restore previously configured provider
   useEffect(() => {
     let cancelled = false;
@@ -819,6 +887,7 @@ function ProviderContent({
   const showBaseUrlField = selectedProviderData?.showBaseUrl ?? false;
   const showModelIdField = selectedProviderData?.showModelId ?? false;
   const requiresKey = selectedProviderData?.requiresApiKey ?? false;
+  const isOAuth = selectedProviderData?.isOAuth ?? false;
 
   const handleValidateAndSave = async () => {
     if (!selectedProvider) return;
@@ -904,7 +973,8 @@ function ProviderContent({
   const canSubmit =
     selectedProvider
     && (requiresKey ? apiKey.length > 0 : true)
-    && (showModelIdField ? modelId.trim().length > 0 : true);
+    && (showModelIdField ? modelId.trim().length > 0 : true)
+    && !isOAuth;
 
   const handleSelectProvider = (providerId: string) => {
     onSelectProvider(providerId);
@@ -1076,11 +1146,104 @@ function ProviderContent({
             </div>
           )}
 
+          {/* Device OAuth Trigger */}
+          {isOAuth && (
+            <div className="space-y-4 pt-2">
+              <div className="rounded-lg bg-blue-500/10 border border-blue-500/20 p-4 text-center">
+                <p className="text-sm text-blue-200 mb-3 block">
+                  This provider requires signing in via your browser.
+                </p>
+                <Button
+                  onClick={handleStartOAuth}
+                  disabled={oauthFlowing}
+                  className="w-full bg-blue-600 hover:bg-blue-700 text-white"
+                >
+                  {oauthFlowing ? (
+                    <><Loader2 className="h-4 w-4 mr-2 animate-spin" /> Waiting...</>
+                  ) : (
+                    'Login with Browser'
+                  )}
+                </Button>
+              </div>
+
+              {/* OAuth Active State Modal / Inline View */}
+              {oauthFlowing && (
+                <div className="mt-4 p-4 border rounded-xl bg-card relative overflow-hidden">
+                  {/* Background pulse effect */}
+                  <div className="absolute inset-0 bg-primary/5 animate-pulse" />
+
+                  <div className="relative z-10 flex flex-col items-center justify-center text-center space-y-4">
+                    {oauthError ? (
+                      <div className="text-red-400 space-y-2">
+                        <XCircle className="h-8 w-8 mx-auto" />
+                        <p className="font-medium">Authentication Failed</p>
+                        <p className="text-sm opacity-80">{oauthError}</p>
+                        <Button variant="outline" size="sm" onClick={handleCancelOAuth} className="mt-2">
+                          Try Again
+                        </Button>
+                      </div>
+                    ) : !oauthData ? (
+                      <div className="space-y-3 py-4">
+                        <Loader2 className="h-8 w-8 animate-spin text-primary mx-auto" />
+                        <p className="text-sm text-muted-foreground animate-pulse">Requesting secure login code...</p>
+                      </div>
+                    ) : (
+                      <div className="space-y-4 w-full">
+                        <div className="space-y-1">
+                          <h3 className="font-medium text-lg">Approve Login</h3>
+                          <div className="text-sm text-muted-foreground text-left mt-2 space-y-1">
+                            <p>1. Copy the authorization code below.</p>
+                            <p>2. Open the login page in your browser.</p>
+                            <p>3. Paste the code to approve access.</p>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center justify-center gap-2 p-3 bg-background border rounded-lg">
+                          <code className="text-2xl font-mono tracking-widest font-bold text-primary">
+                            {oauthData.userCode}
+                          </code>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => {
+                              navigator.clipboard.writeText(oauthData.userCode);
+                              toast.success('Code copied to clipboard');
+                            }}
+                          >
+                            <Copy className="h-4 w-4" />
+                          </Button>
+                        </div>
+
+                        <Button
+                          variant="secondary"
+                          className="w-full"
+                          onClick={() => window.electron.ipcRenderer.invoke('shell:openExternal', oauthData.verificationUri)}
+                        >
+                          <ExternalLink className="h-4 w-4 mr-2" />
+                          Open Login Page
+                        </Button>
+
+                        <div className="flex items-center justify-center gap-2 text-xs text-muted-foreground pt-2">
+                          <Loader2 className="h-3 w-3 animate-spin" />
+                          <span>Waiting for approval in browser...</span>
+                        </div>
+
+                        <Button variant="ghost" size="sm" className="w-full mt-2" onClick={handleCancelOAuth}>
+                          Cancel
+                        </Button>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
           {/* Validate & Save */}
           <Button
             onClick={handleValidateAndSave}
             disabled={!canSubmit || validating}
-            className="w-full"
+            className={cn("w-full", isOAuth && "hidden")}
           >
             {validating ? (
               <Loader2 className="h-4 w-4 animate-spin mr-2" />

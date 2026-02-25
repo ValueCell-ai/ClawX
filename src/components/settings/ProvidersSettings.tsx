@@ -14,6 +14,9 @@ import {
   Loader2,
   Star,
   Key,
+  ExternalLink,
+  Copy,
+  XCircle,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -441,7 +444,71 @@ function AddProviderDialog({ existingTypes, onClose, onAdd, onValidateKey }: Add
   const [saving, setSaving] = useState(false);
   const [validationError, setValidationError] = useState<string | null>(null);
 
+  // OAuth Flow State
+  const [oauthFlowing, setOauthFlowing] = useState(false);
+  const [oauthData, setOauthData] = useState<{
+    verificationUri: string;
+    userCode: string;
+    expiresIn: number;
+  } | null>(null);
+  const [oauthError, setOauthError] = useState<string | null>(null);
+
   const typeInfo = PROVIDER_TYPE_INFO.find((t) => t.id === selectedType);
+  const isOAuth = typeInfo?.isOAuth ?? false;
+
+  // Manage OAuth events
+  useEffect(() => {
+    const handleCode = (data: any) => {
+      setOauthData(data);
+      setOauthError(null);
+    };
+
+    const handleSuccess = () => {
+      setOauthFlowing(false);
+      setOauthData(null);
+      setValidationError(null);
+      onClose();
+      toast.success(t('aiProviders.toast.added'));
+    };
+
+    const handleError = (data: any) => {
+      setOauthError(data.message);
+      setOauthData(null);
+    };
+
+    window.electron.ipcRenderer.on('oauth:code', handleCode);
+    window.electron.ipcRenderer.on('oauth:success', handleSuccess);
+    window.electron.ipcRenderer.on('oauth:error', handleError);
+
+    return () => {
+      if (typeof window.electron.ipcRenderer.off === 'function') {
+        window.electron.ipcRenderer.off('oauth:code', handleCode);
+        window.electron.ipcRenderer.off('oauth:success', handleSuccess);
+        window.electron.ipcRenderer.off('oauth:error', handleError);
+      }
+    };
+  }, [onClose, t]);
+
+  const handleStartOAuth = async () => {
+    if (!selectedType) return;
+    setOauthFlowing(true);
+    setOauthData(null);
+    setOauthError(null);
+
+    try {
+      await window.electron.ipcRenderer.invoke('provider:requestOAuth', selectedType, 'global');
+    } catch (e) {
+      setOauthError(String(e));
+      setOauthFlowing(false);
+    }
+  };
+
+  const handleCancelOAuth = async () => {
+    setOauthFlowing(false);
+    setOauthData(null);
+    setOauthError(null);
+    await window.electron.ipcRenderer.invoke('provider:cancelOAuth');
+  };
 
   // Only custom can be added multiple times.
   const availableTypes = PROVIDER_TYPE_INFO.filter(
@@ -575,6 +642,7 @@ function AddProviderDialog({ existingTypes, onClose, onAdd, onValidateKey }: Add
                       setValidationError(null);
                     }}
                     className="pr-10"
+                    disabled={isOAuth}
                   />
                   <button
                     type="button"
@@ -618,6 +686,98 @@ function AddProviderDialog({ existingTypes, onClose, onAdd, onValidateKey }: Add
                   />
                 </div>
               )}
+              {/* Device OAuth Trigger */}
+              {isOAuth && (
+                <div className="space-y-4 pt-2">
+                  <div className="rounded-lg bg-blue-500/10 border border-blue-500/20 p-4 text-center">
+                    <p className="text-sm text-blue-200 mb-3 block">
+                      This provider requires signing in via your browser.
+                    </p>
+                    <Button
+                      onClick={handleStartOAuth}
+                      disabled={oauthFlowing}
+                      className="w-full bg-blue-600 hover:bg-blue-700 text-white"
+                    >
+                      {oauthFlowing ? (
+                        <><Loader2 className="h-4 w-4 mr-2 animate-spin" /> Waiting...</>
+                      ) : (
+                        'Login with Browser'
+                      )}
+                    </Button>
+                  </div>
+
+                  {/* OAuth Active State Modal / Inline View */}
+                  {oauthFlowing && (
+                    <div className="mt-4 p-4 border rounded-xl bg-card relative overflow-hidden">
+                      {/* Background pulse effect */}
+                      <div className="absolute inset-0 bg-primary/5 animate-pulse" />
+
+                      <div className="relative z-10 flex flex-col items-center justify-center text-center space-y-4">
+                        {oauthError ? (
+                          <div className="text-red-400 space-y-2">
+                            <XCircle className="h-8 w-8 mx-auto" />
+                            <p className="font-medium">Authentication Failed</p>
+                            <p className="text-sm opacity-80">{oauthError}</p>
+                            <Button variant="outline" size="sm" onClick={handleCancelOAuth} className="mt-2 text-foreground">
+                              Try Again
+                            </Button>
+                          </div>
+                        ) : !oauthData ? (
+                          <div className="space-y-3 py-4">
+                            <Loader2 className="h-8 w-8 animate-spin text-primary mx-auto" />
+                            <p className="text-sm text-muted-foreground animate-pulse">Requesting secure login code...</p>
+                          </div>
+                        ) : (
+                          <div className="space-y-4 w-full">
+                            <div className="space-y-1">
+                              <h3 className="font-medium text-lg text-foreground">Approve Login</h3>
+                              <div className="text-sm text-muted-foreground text-left mt-2 space-y-1">
+                                <p>1. Copy the authorization code below.</p>
+                                <p>2. Open the login page in your browser.</p>
+                                <p>3. Paste the code to approve access.</p>
+                              </div>
+                            </div>
+
+                            <div className="flex items-center justify-center gap-2 p-3 bg-background border rounded-lg">
+                              <code className="text-2xl font-mono tracking-widest font-bold text-primary">
+                                {oauthData.userCode}
+                              </code>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                onClick={() => {
+                                  navigator.clipboard.writeText(oauthData.userCode);
+                                  toast.success('Code copied to clipboard');
+                                }}
+                              >
+                                <Copy className="h-4 w-4" />
+                              </Button>
+                            </div>
+
+                            <Button
+                              variant="secondary"
+                              className="w-full"
+                              onClick={() => window.electron.ipcRenderer.invoke('shell:openExternal', oauthData.verificationUri)}
+                            >
+                              <ExternalLink className="h-4 w-4 mr-2" />
+                              Open Login Page
+                            </Button>
+
+                            <div className="flex items-center justify-center gap-2 text-xs text-muted-foreground pt-2">
+                              <Loader2 className="h-3 w-3 animate-spin" />
+                              <span>Waiting for approval in browser...</span>
+                            </div>
+
+                            <Button variant="ghost" size="sm" className="w-full mt-2" onClick={handleCancelOAuth}>
+                              Cancel
+                            </Button>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           )}
 
@@ -629,6 +789,7 @@ function AddProviderDialog({ existingTypes, onClose, onAdd, onValidateKey }: Add
             </Button>
             <Button
               onClick={handleAdd}
+              className={cn(isOAuth && "hidden")}
               disabled={!selectedType || saving || ((typeInfo?.showModelId ?? false) && modelId.trim().length === 0)}
             >
               {saving ? (

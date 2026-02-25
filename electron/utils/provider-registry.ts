@@ -12,6 +12,8 @@ export const BUILTIN_PROVIDER_TYPES = [
   'openrouter',
   'moonshot',
   'siliconflow',
+  'minimax-portal',
+  'qwen-portal',
   'ollama',
 ] as const;
 export type BuiltinProviderType = (typeof BUILTIN_PROVIDER_TYPES)[number];
@@ -93,6 +95,12 @@ const REGISTRY: Record<string, ProviderBackendMeta> = {
       api: 'openai-completions',
       apiKeyEnv: 'SILICONFLOW_API_KEY',
     },
+  },
+  'minimax-portal': {
+    defaultModel: 'minimax-portal/MiniMax-M2.1',
+  },
+  'qwen-portal': {
+    defaultModel: 'qwen-portal/coder-model',
   },
   custom: {
     envVar: 'CUSTOM_API_KEY',
