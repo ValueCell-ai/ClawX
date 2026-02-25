@@ -126,6 +126,9 @@ nsis:
 
 # Linux Configuration
 linux:
+  extraResources:
+    - from: resources/bin/linux-${arch}
+      to: bin
   icon: resources/icons
   target:
     - target: AppImage
