@@ -205,6 +205,10 @@ app.whenReady().then(() => {
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {
       mainWindow = createWindow();
+    } else if (mainWindow && !mainWindow.isDestroyed()) {
+      // On macOS, clicking the dock icon should show the window if it's hidden
+      mainWindow.show();
+      mainWindow.focus();
     }
   });
 });
