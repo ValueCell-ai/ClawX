@@ -1,7 +1,7 @@
 appId: app.clawx.desktop
 productName: ClawX
 copyright: Copyright © 2026 ClawX
-compression: normal
+compression: maximum
 artifactName: ${productName}-${version}-${os}-${arch}.${ext}
 
 directories:
@@ -21,6 +21,7 @@ extraResources:
       - "!icons/*.md"
       - "!icons/*.svg"
       - "!bin/**"
+      - "!screenshot/**"
   # OpenClaw package (node_modules copied separately by afterPack hook
   # because electron-builder respects .gitignore which excludes node_modules/)
   - from: build/openclaw/

@@ -8,6 +8,22 @@ importers:
 
   .:
     dependencies:
+      electron-store:
+        specifier: ^11.0.2
+        version: 11.0.2
+      electron-updater:
+        specifier: ^6.8.3
+        version: 6.8.3
+      ws:
+        specifier: ^8.19.0
+        version: 8.19.0
+    devDependencies:
+      '@eslint/js':
+        specifier: ^10.0.1
+        version: 10.0.1(eslint@10.0.0(jiti@1.21.7))
+      '@playwright/test':
+        specifier: ^1.58.2
+        version: 1.58.2
       '@radix-ui/react-dialog':
         specifier: ^1.1.15
         version: 1.1.15(@types/react-dom@19.2.3(@types/react@19.2.14))(@types/react@19.2.14)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)
@@ -44,73 +60,6 @@ importers:
       '@radix-ui/react-tooltip':
         specifier: ^1.2.8
         version: 1.2.8(@types/react-dom@19.2.3(@types/react@19.2.14))(@types/react@19.2.14)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)
-      class-variance-authority:
-        specifier: ^0.7.1
-        version: 0.7.1
-      clawhub:
-        specifier: ^0.5.0
-        version: 0.5.0
-      clsx:
-        specifier: ^2.1.1
-        version: 2.1.1
-      electron-store:
-        specifier: ^11.0.2
-        version: 11.0.2
-      electron-updater:
-        specifier: ^6.8.3
-        version: 6.8.3
-      framer-motion:
-        specifier: ^12.34.2
-        version: 12.34.2(react-dom@19.2.4(react@19.2.4))(react@19.2.4)
-      i18next:
-        specifier: ^25.8.11
-        version: 25.8.11(typescript@5.9.3)
-      lucide-react:
-        specifier: ^0.563.0
-        version: 0.563.0(react@19.2.4)
-      openclaw:
-        specifier: 2026.2.23
-        version: 2026.2.23(@napi-rs/canvas@0.1.93)(@types/express@5.0.6)(encoding@0.1.13)(hono@4.11.8)(node-llama-cpp@3.15.1(typescript@5.9.3))
-      react:
-        specifier: ^19.2.4
-        version: 19.2.4
-      react-dom:
-        specifier: ^19.2.4
-        version: 19.2.4(react@19.2.4)
-      react-i18next:
-        specifier: ^16.5.4
-        version: 16.5.4(i18next@25.8.11(typescript@5.9.3))(react-dom@19.2.4(react@19.2.4))(react@19.2.4)(typescript@5.9.3)
-      react-markdown:
-        specifier: ^10.1.0
-        version: 10.1.0(@types/react@19.2.14)(react@19.2.4)
-      react-router-dom:
-        specifier: ^7.13.0
-        version: 7.13.0(react-dom@19.2.4(react@19.2.4))(react@19.2.4)
-      remark-gfm:
-        specifier: ^4.0.1
-        version: 4.0.1
-      sonner:
-        specifier: ^2.0.7
-        version: 2.0.7(react-dom@19.2.4(react@19.2.4))(react@19.2.4)
-      tailwind-merge:
-        specifier: ^3.5.0
-        version: 3.5.0
-      tailwindcss-animate:
-        specifier: ^1.0.7
-        version: 1.0.7(tailwindcss@3.4.19(yaml@2.8.2))
-      ws:
-        specifier: ^8.19.0
-        version: 8.19.0
-      zustand:
-        specifier: ^5.0.11
-        version: 5.0.11(@types/react@19.2.14)(react@19.2.4)(use-sync-external-store@1.6.0(react@19.2.4))
-    devDependencies:
-      '@eslint/js':
-        specifier: ^10.0.1
-        version: 10.0.1(eslint@10.0.0(jiti@1.21.7))
-      '@playwright/test':
-        specifier: ^1.58.2
-        version: 1.58.2
       '@testing-library/jest-dom':
         specifier: ^6.9.1
         version: 6.9.1
@@ -141,6 +90,15 @@ importers:
       autoprefixer:
         specifier: ^10.4.24
         version: 10.4.24(postcss@8.5.6)
+      class-variance-authority:
+        specifier: ^0.7.1
+        version: 0.7.1
+      clawhub:
+        specifier: ^0.5.0
+        version: 0.5.0
+      clsx:
+        specifier: ^2.1.1
+        version: 2.1.1
       electron:
         specifier: ^40.6.0
         version: 40.6.0
@@ -156,24 +114,63 @@ importers:
       eslint-plugin-react-refresh:
         specifier: ^0.5.0
         version: 0.5.0(eslint@10.0.0(jiti@1.21.7))
+      framer-motion:
+        specifier: ^12.34.2
+        version: 12.34.2(react-dom@19.2.4(react@19.2.4))(react@19.2.4)
       globals:
         specifier: ^17.3.0
         version: 17.3.0
+      i18next:
+        specifier: ^25.8.11
+        version: 25.8.11(typescript@5.9.3)
       jsdom:
         specifier: ^28.1.0
         version: 28.1.0
+      lucide-react:
+        specifier: ^0.563.0
+        version: 0.563.0(react@19.2.4)
+      openclaw:
+        specifier: 2026.2.23
+        version: 2026.2.23(@napi-rs/canvas@0.1.93)(@types/express@5.0.6)(encoding@0.1.13)(hono@4.11.8)(node-llama-cpp@3.15.1(typescript@5.9.3))
       png2icons:
         specifier: ^2.0.1
         version: 2.0.1
       postcss:
         specifier: ^8.5.6
         version: 8.5.6
+      react:
+        specifier: ^19.2.4
+        version: 19.2.4
+      react-dom:
+        specifier: ^19.2.4
+        version: 19.2.4(react@19.2.4)
+      react-i18next:
+        specifier: ^16.5.4
+        version: 16.5.4(i18next@25.8.11(typescript@5.9.3))(react-dom@19.2.4(react@19.2.4))(react@19.2.4)(typescript@5.9.3)
+      react-markdown:
+        specifier: ^10.1.0
+        version: 10.1.0(@types/react@19.2.14)(react@19.2.4)
+      react-router-dom:
+        specifier: ^7.13.0
+        version: 7.13.0(react-dom@19.2.4(react@19.2.4))(react@19.2.4)
+      remark-gfm:
+        specifier: ^4.0.1
+        version: 4.0.1
       sharp:
         specifier: ^0.34.5
         version: 0.34.5
+      sonner:
+        specifier: ^2.0.7
+        version: 2.0.7(react-dom@19.2.4(react@19.2.4))(react@19.2.4)
+      tailwind-merge:
+        specifier: ^3.5.0
+        version: 3.5.0
       tailwindcss:
         specifier: ^3.4.19
         version: 3.4.19(yaml@2.8.2)
+      tailwindcss-animate:
+        specifier: ^1.0.7
+        version: 1.0.7(tailwindcss@3.4.19(yaml@2.8.2))
       typescript:
         specifier: ^5.9.3
         version: 5.9.3
@@ -189,6 +186,9 @@ importers:
       vitest:
         specifier: ^4.0.18
         version: 4.0.18(@types/node@25.3.0)(jiti@1.21.7)(jsdom@28.1.0)(yaml@2.8.2)
+      zustand:
+        specifier: ^5.0.11
+        version: 5.0.11(@types/react@19.2.14)(react@19.2.4)(use-sync-external-store@1.6.0(react@19.2.4))
       zx:
         specifier: ^8.8.5
         version: 8.8.5
