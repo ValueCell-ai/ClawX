@@ -4,6 +4,7 @@ import { existsSync } from 'fs';
 import { join } from 'path';
 import { getUvMirrorEnv } from './uv-env';
 import { logger } from './logger';
+import { quoteForCmd, needsWinShell } from './paths';
 
 /**
  * Get the path to the bundled uv binary
@@ -88,11 +89,12 @@ export async function installUv(): Promise<void> {
  */
 export async function isPythonReady(): Promise<boolean> {
   const { bin: uvBin } = resolveUvBin();
+  const useShell = needsWinShell(uvBin);
 
   return new Promise<boolean>((resolve) => {
     try {
-      const child = spawn(uvBin, ['python', 'find', '3.12'], {
-        shell: process.platform === 'win32',
+      const child = spawn(useShell ? quoteForCmd(uvBin) : uvBin, ['python', 'find', '3.12'], {
+        shell: useShell,
       });
       child.on('close', (code) => resolve(code === 0));
       child.on('error', () => resolve(false));
@@ -111,12 +113,13 @@ async function runPythonInstall(
   env: Record<string, string | undefined>,
   label: string,
 ): Promise<void> {
+  const useShell = needsWinShell(uvBin);
   return new Promise<void>((resolve, reject) => {
     const stderrChunks: string[] = [];
     const stdoutChunks: string[] = [];
 
-    const child = spawn(uvBin, ['python', 'install', '3.12'], {
-      shell: process.platform === 'win32',
+    const child = spawn(useShell ? quoteForCmd(uvBin) : uvBin, ['python', 'install', '3.12'], {
+      shell: useShell,
       env,
     });
 
@@ -201,10 +204,11 @@ export async function setupManagedPython(): Promise<void> {
   }
 
   // After installation, verify and log the Python path
+  const verifyShell = needsWinShell(uvBin);
   try {
     const findPath = await new Promise<string>((resolve) => {
-      const child = spawn(uvBin, ['python', 'find', '3.12'], {
-        shell: process.platform === 'win32',
+      const child = spawn(verifyShell ? quoteForCmd(uvBin) : uvBin, ['python', 'find', '3.12'], {
+        shell: verifyShell,
         env: { ...process.env, ...uvEnv },
       });
       let output = '';

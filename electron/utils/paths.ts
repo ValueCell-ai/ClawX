@@ -8,6 +8,8 @@ import { homedir } from 'os';
 import { existsSync, mkdirSync, readFileSync, realpathSync } from 'fs';
 import { logger } from './logger';
 
+export { quoteForCmd, needsWinShell, prepareWinSpawn } from './win-shell';
+
 /**
  * Expand ~ to home directory
  */

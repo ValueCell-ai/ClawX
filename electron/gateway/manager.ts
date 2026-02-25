@@ -13,7 +13,8 @@ import {
   getOpenClawDir, 
   getOpenClawEntryPath, 
   isOpenClawBuilt, 
-  isOpenClawPresent 
+  isOpenClawPresent,
+  quoteForCmd,
 } from '../utils/paths';
 import { getSetting } from '../utils/store';
 import { getApiKey, getDefaultProvider, getProvider } from '../utils/secure-storage';
@@ -755,11 +756,15 @@ export class GatewayManager extends EventEmitter {
         }
       }
 
-      this.process = spawn(command, args, {
+      const useShell = !app.isPackaged && process.platform === 'win32';
+      const spawnCmd = useShell ? quoteForCmd(command) : command;
+      const spawnArgs = useShell ? args.map(a => quoteForCmd(a)) : args;
+
+      this.process = spawn(spawnCmd, spawnArgs, {
         cwd: openclawDir,
         stdio: ['ignore', 'pipe', 'pipe'],
         detached: false,
-        shell: !app.isPackaged && process.platform === 'win32', // shell only in dev on Windows
+        shell: useShell,
         env: spawnEnv,
       });
       const child = this.process;

@@ -74,10 +74,9 @@ async function setupTarget(id) {
     echo`📂 Extracting...`;
     if (target.filename.endsWith('.zip')) {
       if (os.platform() === 'win32') {
-        // Use .NET Framework for ZIP extraction (more reliable than Expand-Archive)
-        const { execSync } = await import('child_process');
+        const { execFileSync } = await import('child_process');
         const psCommand = `Add-Type -AssemblyName System.IO.Compression.FileSystem; [System.IO.Compression.ZipFile]::ExtractToDirectory('${archivePath.replace(/'/g, "''")}', '${tempDir.replace(/'/g, "''")}')`;
-        execSync(`powershell.exe -NoProfile -Command "${psCommand}"`, { stdio: 'inherit' });
+        execFileSync('powershell.exe', ['-NoProfile', '-Command', psCommand], { stdio: 'inherit' });
       } else {
         await $`unzip -q -o ${archivePath} -d ${tempDir}`;
       }
