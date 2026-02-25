@@ -568,7 +568,7 @@ export class GatewayManager extends EventEmitter {
     // In packaged Electron app, use process.execPath with ELECTRON_RUN_AS_NODE=1
     // which makes the Electron binary behave as plain Node.js.
     // In development, use system 'node'.
-    const gatewayArgs = ['gateway', '--port', String(this.status.port), '--token', gatewayToken, '--dev', '--allow-unconfigured'];
+    const gatewayArgs = ['gateway', '--port', String(this.status.port), '--token', gatewayToken, '--allow-unconfigured'];
     
     if (app.isPackaged) {
       // Production: use Electron binary as Node.js via ELECTRON_RUN_AS_NODE
