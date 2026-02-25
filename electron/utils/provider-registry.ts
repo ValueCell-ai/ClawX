@@ -94,6 +94,9 @@ const REGISTRY: Record<string, ProviderBackendMeta> = {
       apiKeyEnv: 'SILICONFLOW_API_KEY',
     },
   },
+  custom: {
+    envVar: 'CUSTOM_API_KEY',
+  },
   // Additional providers with env var mappings but no default model
   groq: { envVar: 'GROQ_API_KEY' },
   deepgram: { envVar: 'DEEPGRAM_API_KEY' },

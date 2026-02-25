@@ -498,8 +498,14 @@ export class GatewayManager extends EventEmitter {
           if (pids.length > 0) {
             if (!this.process || !pids.includes(String(this.process.pid))) {
                logger.info(`Found orphaned process listening on port ${port} (PIDs: ${pids.join(', ')}), attempting to kill...`);
+               // SIGTERM first so the gateway can clean up its lock file.
                for (const pid of pids) {
-                 try { process.kill(parseInt(pid), 'SIGKILL'); } catch { /* ignore */ }
+                 try { process.kill(parseInt(pid), 'SIGTERM'); } catch { /* ignore */ }
+               }
+               await new Promise(r => setTimeout(r, 3000));
+               // SIGKILL any survivors.
+               for (const pid of pids) {
+                 try { process.kill(parseInt(pid), 0); process.kill(parseInt(pid), 'SIGKILL'); } catch { /* already exited */ }
                }
                await new Promise(r => setTimeout(r, 1000));
                return null;
