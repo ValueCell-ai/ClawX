@@ -14,6 +14,7 @@ import { logger } from '../utils/logger';
 import { warmupNetworkOptimization } from '../utils/uv-env';
 
 import { ClawHubService } from '../gateway/clawhub';
+import { ensureClawXContext } from '../utils/openclaw-workspace';
 
 // Disable GPU acceleration for better compatibility
 app.disableHardwareAcceleration();
@@ -176,6 +177,13 @@ async function initialize(): Promise<void> {
   mainWindow.on('closed', () => {
     mainWindow = null;
   });
+
+  // Merge ClawX context snippets into the openclaw workspace bootstrap files
+  try {
+    ensureClawXContext();
+  } catch (error) {
+    logger.warn('Failed to merge ClawX context into workspace:', error);
+  }
 
   // Start Gateway automatically
   try {
