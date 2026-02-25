@@ -54,11 +54,13 @@ export class AppUpdater extends EventEmitter {
     
     // Configure auto-updater
     autoUpdater.autoDownload = false;
-    // Set to false so quitAndInstall() always goes through the explicit
-    // nativeUpdater.checkForUpdates() → nativeUpdater.quitAndInstall() path,
-    // avoiding a race condition where squirrelDownloadedUpdate is false at
-    // click time and the else-branch silently does nothing.
-    autoUpdater.autoInstallOnAppQuit = false;
+    // Must be true on macOS so that MacUpdater.updateDownloaded() triggers
+    // nativeUpdater.checkForUpdates() during the download phase, which lets
+    // Squirrel.Mac pre-stage the update.  When false, the Squirrel download
+    // is deferred entirely to quitAndInstall() time, where it races against
+    // any safety timeout and often loses — resulting in the app quitting
+    // without installing the update.
+    autoUpdater.autoInstallOnAppQuit = true;
     
     // Use logger
     autoUpdater.logger = {
@@ -212,18 +214,13 @@ export class AppUpdater extends EventEmitter {
    */
   quitAndInstall(): void {
     logger.info('[Updater] quitAndInstall called – invoking autoUpdater.quitAndInstall()');
+    // On macOS, MacUpdater.quitAndInstall() either:
+    //   (a) calls nativeUpdater.quitAndInstall() immediately (Squirrel already staged), or
+    //   (b) waits for Squirrel to finish staging, then calls nativeUpdater.quitAndInstall().
+    // In both cases electron-updater handles app.quit() internally.
+    // Do NOT add a safety timer that calls app.quit() — it kills the local
+    // proxy server that Squirrel.Mac is downloading from, aborting the update.
     autoUpdater.quitAndInstall();
-
-    // Safety fallback: if Squirrel.Mac's relaunchToInstallUpdate doesn't trigger
-    // app.quit() within 5 seconds (race condition or staging delay), force-quit
-    // so ShipIt can proceed with the installation.  The update will be installed
-    // but the app won't auto-relaunch; the user will need to open it manually.
-    const safetyTimer = setTimeout(() => {
-      logger.warn('[Updater] quitAndInstall safety timer fired – forcing app.quit()');
-      app.quit();
-    }, 5000);
-    // Clear the timer if the normal before-quit path fires first
-    app.once('before-quit', () => clearTimeout(safetyTimer));
   }
 
   /**
