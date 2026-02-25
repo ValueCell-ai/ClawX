@@ -96,6 +96,7 @@ const PLATFORM_NATIVE_SCOPES = {
   '@napi-rs': /^canvas-(darwin|linux|win32)-(x64|arm64)/,
   '@img': /^sharp(?:-libvips)?-(darwin|linux|win32)-(x64|arm64)/,
   '@mariozechner': /^clipboard-(darwin|linux|win32)-(x64|arm64|universal)/,
+  '@lydell': /^node-pty-(darwin|linux|win32)-(x64|arm64)/,
 };
 
 function cleanupNativePlatformPackages(nodeModulesDir, platform, arch) {
@@ -122,6 +123,42 @@ function cleanupNativePlatformPackages(nodeModulesDir, platform, arch) {
           removed++;
         } catch { /* */ }
       }
+    }
+  }
+
+  return removed;
+}
+
+// ── Platform-specific: @node-llama-cpp ────────────────────────────────────────
+// node-llama-cpp ships platform-specific packages like @node-llama-cpp/linux-x64,
+// @node-llama-cpp/linux-x64-cuda, @node-llama-cpp/mac-arm64-metal, etc.
+// Package naming: {platform}-{arch}[-variant] where platform is mac|linux|win
+// (different from electron's darwin|linux|win32).
+// CUDA/Vulkan variants for the target platform+arch are kept (GPU support).
+// Only non-matching platform/arch variants are removed.
+
+const LLAMA_PLATFORM_MAP = { darwin: 'mac', linux: 'linux', win32: 'win' };
+const LLAMA_PKG_PATTERN = /^(mac|linux|win)-(x64|arm64|armv7l)(?:-.+)?$/;
+
+function cleanupNodeLlamaCpp(nodeModulesDir, platform, arch) {
+  const scopeDir = join(nodeModulesDir, '@node-llama-cpp');
+  if (!existsSync(scopeDir)) return 0;
+
+  const llamaPlatform = LLAMA_PLATFORM_MAP[platform] || platform;
+  let removed = 0;
+
+  for (const entry of readdirSync(scopeDir)) {
+    const match = entry.match(LLAMA_PKG_PATTERN);
+    if (!match) continue;
+
+    const pkgPlatform = match[1];
+    const pkgArch = match[2];
+
+    if (pkgPlatform !== llamaPlatform || pkgArch !== arch) {
+      try {
+        rmSync(join(scopeDir, entry), { recursive: true, force: true });
+        removed++;
+      } catch { /* */ }
     }
   }
 
@@ -179,5 +216,11 @@ exports.default = async function afterPack(context) {
   const nativeRemoved = cleanupNativePlatformPackages(dest, platform, arch);
   if (nativeRemoved > 0) {
     console.log(`[after-pack] ✅ Removed ${nativeRemoved} non-target native platform packages.`);
+  }
+
+  // 5. Platform-specific: strip wrong-platform/arch @node-llama-cpp packages
+  const llamaRemoved = cleanupNodeLlamaCpp(dest, platform, arch);
+  if (llamaRemoved > 0) {
+    console.log(`[after-pack] ✅ @node-llama-cpp: removed ${llamaRemoved} non-target packages (kept ${LLAMA_PLATFORM_MAP[platform] || platform}-${arch}*).`);
   }
 };
