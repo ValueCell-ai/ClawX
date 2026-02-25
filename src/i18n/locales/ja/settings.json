@@ -1,138 +1,156 @@
 {
-    "title": "設定",
-    "subtitle": "ClawX の体験をカスタマイズ",
-    "appearance": {
-        "title": "外観",
-        "description": "外観とスタイルをカスタマイズ",
-        "theme": "テーマ",
-        "light": "ライト",
-        "dark": "ダーク",
-        "system": "システム",
-        "language": "言語"
+  "title": "設定",
+  "subtitle": "ClawX の体験をカスタマイズ",
+  "appearance": {
+    "title": "外観",
+    "description": "外観とスタイルをカスタマイズ",
+    "theme": "テーマ",
+    "light": "ライト",
+    "dark": "ダーク",
+    "system": "システム",
+    "language": "言語"
+  },
+  "aiProviders": {
+    "title": "AI プロバイダー",
+    "description": "AI モデルプロバイダーと API キーを設定",
+    "add": "プロバイダーを追加",
+    "custom": "カスタム",
+    "notRequired": "不要",
+    "empty": {
+      "title": "プロバイダーが構成されていません",
+      "desc": "ClawX の使用を開始するには AI プロバイダーを追加してください",
+      "cta": "最初のプロバイダーを追加"
     },
-    "aiProviders": {
-        "title": "AI プロバイダー",
-        "description": "AI モデルプロバイダーと API キーを設定",
-        "add": "プロバイダーを追加",
-        "custom": "カスタム",
-        "notRequired": "不要",
-        "empty": {
-            "title": "プロバイダーが構成されていません",
-            "desc": "ClawX の使用を開始するには AI プロバイダーを追加してください",
-            "cta": "最初のプロバイダーを追加"
-        },
-        "dialog": {
-            "title": "AI プロバイダーを追加",
-            "desc": "新しい AI モデルプロバイダーを構成",
-            "displayName": "表示名",
-            "apiKey": "API キー",
-            "apiKeyStored": "API キーはローカルマシンに保存されます。",
-            "baseUrl": "ベース URL",
-            "modelId": "モデル ID",
-            "cancel": "キャンセル",
-            "change": "プロバイダーを変更",
-            "add": "プロバイダーを追加",
-            "save": "保存",
-            "validate": "検証"
-        },
-        "card": {
-            "default": "デフォルト",
-            "configured": "構成済み",
-            "noKey": "API キー未設定",
-            "setDefault": "デフォルトに設定",
-            "editKey": "API キーを編集",
-            "delete": "プロバイダーを削除"
-        },
-        "toast": {
-            "added": "プロバイダーが正常に追加されました",
-            "failedAdd": "プロバイダーの追加に失敗しました",
-            "deleted": "プロバイダーが削除されました",
-            "failedDelete": "プロバイダーの削除に失敗しました",
-            "defaultUpdated": "デフォルトプロバイダーが更新されました",
-            "failedDefault": "デフォルトの設定に失敗しました",
-            "updated": "プロバイダーが更新されました",
-            "failedUpdate": "プロバイダーの更新に失敗しました",
-            "invalidKey": "無効な API キー",
-            "modelRequired": "モデル ID が必要です"
-        }
+    "dialog": {
+      "title": "AI プロバイダーを追加",
+      "desc": "新しい AI モデルプロバイダーを構成",
+      "displayName": "表示名",
+      "apiKey": "API キー",
+      "apiKeyStored": "API キーはローカルマシンに保存されます。",
+      "baseUrl": "ベース URL",
+      "modelId": "モデル ID",
+      "cancel": "キャンセル",
+      "change": "プロバイダーを変更",
+      "add": "プロバイダーを追加",
+      "save": "保存",
+      "validate": "検証"
     },
-    "gateway": {
-        "title": "ゲートウェイ",
-        "description": "OpenClaw ゲートウェイ設定",
-        "status": "ステータス",
-        "port": "ポート",
-        "logs": "ログ",
-        "appLogs": "アプリケーションログ",
-        "openFolder": "フォルダーを開く",
-        "autoStart": "ゲートウェイ自動起動",
-        "autoStartDesc": "ClawX 起動時にゲートウェイを自動起動"
+    "card": {
+      "default": "デフォルト",
+      "configured": "構成済み",
+      "noKey": "API キー未設定",
+      "setDefault": "デフォルトに設定",
+      "editKey": "API キーを編集",
+      "delete": "プロバイダーを削除"
     },
-    "updates": {
-        "title": "アップデート",
-        "description": "ClawX を最新に保つ",
-        "autoCheck": "自動更新チェック",
-        "autoCheckDesc": "起動時に更新を確認",
-        "autoDownload": "自動アップデート",
-        "autoDownloadDesc": "更新を自動的にダウンロードしてインストール",
-        "status": {
-            "checking": "更新を確認中...",
-            "downloading": "更新をダウンロード中...",
-            "available": "更新あり: v{{version}}",
-            "downloaded": "インストール準備完了: v{{version}}",
-            "autoInstalling": "{{seconds}} 秒後に再起動して更新をインストールします...",
-            "failed": "更新の確認に失敗しました",
-            "latest": "最新バージョンです",
-            "check": "更新を確認して最新の機能を入手"
-        },
-        "action": {
-            "checking": "確認中...",
-            "downloading": "ダウンロード中...",
-            "download": "更新をダウンロード",
-            "install": "インストールして再起動",
-            "cancelAutoInstall": "キャンセル",
-            "retry": "再試行",
-            "check": "更新を確認"
-        },
-        "currentVersion": "現在のバージョン",
-        "whatsNew": "更新内容：",
-        "errorDetails": "エラー詳細：",
-        "help": "自動アップデートが有効な場合、更新は自動的にダウンロードされインストールされます。"
+    "toast": {
+      "added": "プロバイダーが正常に追加されました",
+      "failedAdd": "プロバイダーの追加に失敗しました",
+      "deleted": "プロバイダーが削除されました",
+      "failedDelete": "プロバイダーの削除に失敗しました",
+      "defaultUpdated": "デフォルトプロバイダーが更新されました",
+      "failedDefault": "デフォルトの設定に失敗しました",
+      "updated": "プロバイダーが更新されました",
+      "failedUpdate": "プロバイダーの更新に失敗しました",
+      "invalidKey": "無効な API キー",
+      "modelRequired": "モデル ID が必要です"
     },
-    "advanced": {
-        "title": "詳細設定",
-        "description": "上級ユーザー向けオプション",
-        "devMode": "開発者モード",
-        "devModeDesc": "開発者ツールとショートカットを表示"
-    },
-    "developer": {
-        "title": "開発者",
-        "description": "開発者向け詳細オプション",
-        "console": "OpenClaw コンソール",
-        "consoleDesc": "ネイティブ OpenClaw 管理インターフェースにアクセス",
-        "openConsole": "開発者コンソールを開く",
-        "consoleNote": "ゲートウェイトークンを注入して Control UI を開きます",
-        "gatewayToken": "ゲートウェイトークン",
-        "gatewayTokenDesc": "Control UI の設定に求められた場合、これを貼り付けてください",
-        "tokenUnavailable": "トークンが利用できません",
-        "tokenCopied": "ゲートウェイトークンをコピーしました",
-        "cli": "OpenClaw CLI",
-        "cliDesc": "PATH を変更せずに OpenClaw を実行するコマンドをコピー。",
-        "cliPowershell": "PowerShell コマンド。",
-        "cmdUnavailable": "コマンドが利用できません",
-        "cmdCopied": "CLI コマンドをコピーしました",
-        "installCmd": "\"openclaw\" コマンドをインストール",
-        "installCmdDesc": "~/.local/bin/openclaw をインストール（管理者権限不要）",
-        "installTitle": "OpenClaw コマンドをインストール",
-        "installMessage": "\"openclaw\" コマンドをインストールしますか？",
-        "installDetail": "~/.local/bin/openclaw が作成されます。グローバルに実行するには ~/.local/bin が PATH に含まれていることを確認してください。"
-    },
-    "about": {
-        "title": "バージョン情報",
-        "appName": "ClawX",
-        "tagline": "グラフィカル AI アシスタント",
-        "basedOn": "OpenClaw ベース",
-        "version": "バージョン {{version}}",
-        "docs": "公式サイト",
-        "github": "GitHub"
+    "oauth": {
+      "loginMode": "OAuthログイン",
+      "apikeyMode": "APIキー",
+      "loginPrompt": "このプロバイダーはブラウザからのサインインが必要です。",
+      "loginButton": "ブラウザでログイン",
+      "waiting": "待機中...",
+      "openLoginPage": "ログインページを開く",
+      "waitingApproval": "ブラウザの承認を待っています...",
+      "cancel": "キャンセル",
+      "codeCopied": "コードをクリップボードにコピーしました",
+      "authFailed": "認証に失敗しました",
+      "tryAgain": "再試行",
+      "approveLogin": "ログインを承認",
+      "step1": "以下の認証コードをコピーしてください。",
+      "step2": "ブラウザでログインページを開いてください。",
+      "step3": "コードを貼り付けてアクセスを承認してください。",
+      "requestingCode": "セキュアログインコードを取得中..."
     }
+  },
+  "gateway": {
+    "title": "ゲートウェイ",
+    "description": "OpenClaw ゲートウェイ設定",
+    "status": "ステータス",
+    "port": "ポート",
+    "logs": "ログ",
+    "appLogs": "アプリケーションログ",
+    "openFolder": "フォルダーを開く",
+    "autoStart": "ゲートウェイ自動起動",
+    "autoStartDesc": "ClawX 起動時にゲートウェイを自動起動"
+  },
+  "updates": {
+    "title": "アップデート",
+    "description": "ClawX を最新に保つ",
+    "autoCheck": "自動更新チェック",
+    "autoCheckDesc": "起動時に更新を確認",
+    "autoDownload": "自動アップデート",
+    "autoDownloadDesc": "更新を自動的にダウンロードしてインストール",
+    "status": {
+      "checking": "更新を確認中...",
+      "downloading": "更新をダウンロード中...",
+      "available": "更新あり: v{{version}}",
+      "downloaded": "インストール準備完了: v{{version}}",
+      "autoInstalling": "{{seconds}} 秒後に再起動して更新をインストールします...",
+      "failed": "更新の確認に失敗しました",
+      "latest": "最新バージョンです",
+      "check": "更新を確認して最新の機能を入手"
+    },
+    "action": {
+      "checking": "確認中...",
+      "downloading": "ダウンロード中...",
+      "download": "更新をダウンロード",
+      "install": "インストールして再起動",
+      "cancelAutoInstall": "キャンセル",
+      "retry": "再試行",
+      "check": "更新を確認"
+    },
+    "currentVersion": "現在のバージョン",
+    "whatsNew": "更新内容：",
+    "errorDetails": "エラー詳細：",
+    "help": "自動アップデートが有効な場合、更新は自動的にダウンロードされインストールされます。"
+  },
+  "advanced": {
+    "title": "詳細設定",
+    "description": "上級ユーザー向けオプション",
+    "devMode": "開発者モード",
+    "devModeDesc": "開発者ツールとショートカットを表示"
+  },
+  "developer": {
+    "title": "開発者",
+    "description": "開発者向け詳細オプション",
+    "console": "OpenClaw コンソール",
+    "consoleDesc": "ネイティブ OpenClaw 管理インターフェースにアクセス",
+    "openConsole": "開発者コンソールを開く",
+    "consoleNote": "ゲートウェイトークンを注入して Control UI を開きます",
+    "gatewayToken": "ゲートウェイトークン",
+    "gatewayTokenDesc": "Control UI の設定に求められた場合、これを貼り付けてください",
+    "tokenUnavailable": "トークンが利用できません",
+    "tokenCopied": "ゲートウェイトークンをコピーしました",
+    "cli": "OpenClaw CLI",
+    "cliDesc": "PATH を変更せずに OpenClaw を実行するコマンドをコピー。",
+    "cliPowershell": "PowerShell コマンド。",
+    "cmdUnavailable": "コマンドが利用できません",
+    "cmdCopied": "CLI コマンドをコピーしました",
+    "installCmd": "\"openclaw\" コマンドをインストール",
+    "installCmdDesc": "~/.local/bin/openclaw をインストール（管理者権限不要）",
+    "installTitle": "OpenClaw コマンドをインストール",
+    "installMessage": "\"openclaw\" コマンドをインストールしますか？",
+    "installDetail": "~/.local/bin/openclaw が作成されます。グローバルに実行するには ~/.local/bin が PATH に含まれていることを確認してください。"
+  },
+  "about": {
+    "title": "バージョン情報",
+    "appName": "ClawX",
+    "tagline": "グラフィカル AI アシスタント",
+    "basedOn": "OpenClaw ベース",
+    "version": "バージョン {{version}}",
+    "docs": "公式サイト",
+    "github": "GitHub"
+  }
 }

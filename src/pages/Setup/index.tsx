@@ -727,8 +727,8 @@ function ProviderContent({
 
   // Manage OAuth events
   useEffect(() => {
-    const handleCode = (data: any) => {
-      setOauthData(data);
+    const handleCode = (data: unknown) => {
+      setOauthData(data as { verificationUri: string; userCode: string; expiresIn: number });
       setOauthError(null);
     };
 
@@ -740,8 +740,8 @@ function ProviderContent({
       toast.success(t('provider.valid'));
     };
 
-    const handleError = (data: any) => {
-      setOauthError(data.message);
+    const handleError = (data: unknown) => {
+      setOauthError((data as { message: string }).message);
       setOauthData(null);
     };
 

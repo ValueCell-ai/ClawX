@@ -1,138 +1,156 @@
 {
-    "title": "设置",
-    "subtitle": "配置您的 ClawX 体验",
-    "appearance": {
-        "title": "外观",
-        "description": "自定义外观和风格",
-        "theme": "主题",
-        "light": "浅色",
-        "dark": "深色",
-        "system": "跟随系统",
-        "language": "语言"
+  "title": "设置",
+  "subtitle": "配置您的 ClawX 体验",
+  "appearance": {
+    "title": "外观",
+    "description": "自定义外观和风格",
+    "theme": "主题",
+    "light": "浅色",
+    "dark": "深色",
+    "system": "跟随系统",
+    "language": "语言"
+  },
+  "aiProviders": {
+    "title": "AI 模型提供商",
+    "description": "配置 AI 模型提供商和 API 密钥",
+    "add": "添加提供商",
+    "custom": "自定义",
+    "notRequired": "非必填",
+    "empty": {
+      "title": "未配置提供商",
+      "desc": "添加 AI 提供商以开始使用 ClawX",
+      "cta": "添加您的第一个提供商"
     },
-    "aiProviders": {
-        "title": "AI 模型提供商",
-        "description": "配置 AI 模型提供商和 API 密钥",
-        "add": "添加提供商",
-        "custom": "自定义",
-        "notRequired": "非必填",
-        "empty": {
-            "title": "未配置提供商",
-            "desc": "添加 AI 提供商以开始使用 ClawX",
-            "cta": "添加您的第一个提供商"
-        },
-        "dialog": {
-            "title": "添加 AI 提供商",
-            "desc": "配置新的 AI 模型提供商",
-            "displayName": "显示名称",
-            "apiKey": "API 密钥",
-            "apiKeyStored": "您的 API 密钥存储在本地机器上。",
-            "baseUrl": "基础 URL",
-            "modelId": "模型 ID",
-            "cancel": "取消",
-            "change": "更换提供商",
-            "add": "添加提供商",
-            "save": "保存",
-            "validate": "验证"
-        },
-        "card": {
-            "default": "默认",
-            "configured": "已配置",
-            "noKey": "未设置 API 密钥",
-            "setDefault": "设为默认",
-            "editKey": "编辑 API 密钥",
-            "delete": "删除提供商"
-        },
-        "toast": {
-            "added": "提供商添加成功",
-            "failedAdd": "添加提供商失败",
-            "deleted": "提供商已删除",
-            "failedDelete": "删除提供商失败",
-            "defaultUpdated": "默认提供商已更新",
-            "failedDefault": "设置默认失败",
-            "updated": "提供商已更新",
-            "failedUpdate": "更新提供商失败",
-            "invalidKey": "无效的 API 密钥",
-            "modelRequired": "需要模型 ID"
-        }
+    "dialog": {
+      "title": "添加 AI 提供商",
+      "desc": "配置新的 AI 模型提供商",
+      "displayName": "显示名称",
+      "apiKey": "API 密钥",
+      "apiKeyStored": "您的 API 密钥存储在本地机器上。",
+      "baseUrl": "基础 URL",
+      "modelId": "模型 ID",
+      "cancel": "取消",
+      "change": "更换提供商",
+      "add": "添加提供商",
+      "save": "保存",
+      "validate": "验证"
     },
-    "gateway": {
-        "title": "网关",
-        "description": "OpenClaw 网关设置",
-        "status": "状态",
-        "port": "端口",
-        "logs": "日志",
-        "appLogs": "应用日志",
-        "openFolder": "打开文件夹",
-        "autoStart": "自动启动网关",
-        "autoStartDesc": "ClawX 启动时自动启动网关"
+    "card": {
+      "default": "默认",
+      "configured": "已配置",
+      "noKey": "未设置 API 密钥",
+      "setDefault": "设为默认",
+      "editKey": "编辑 API 密钥",
+      "delete": "删除提供商"
     },
-    "updates": {
-        "title": "更新",
-        "description": "保持 ClawX 最新",
-        "autoCheck": "自动检查更新",
-        "autoCheckDesc": "启动时检查更新",
-        "autoDownload": "自动更新",
-        "autoDownloadDesc": "自动下载并安装更新",
-        "status": {
-            "checking": "正在检查更新...",
-            "downloading": "正在下载更新...",
-            "available": "可用更新：v{{version}}",
-            "downloaded": "准备安装：v{{version}}",
-            "autoInstalling": "将在 {{seconds}} 秒后重启并安装更新...",
-            "failed": "检查更新失败",
-            "latest": "您已拥有最新版本",
-            "check": "检查更新以获取最新功能"
-        },
-        "action": {
-            "checking": "检查中...",
-            "downloading": "下载中...",
-            "download": "下载更新",
-            "install": "安装并重启",
-            "cancelAutoInstall": "取消",
-            "retry": "重试",
-            "check": "检查更新"
-        },
-        "currentVersion": "当前版本",
-        "whatsNew": "更新内容：",
-        "errorDetails": "错误详情：",
-        "help": "开启自动更新后，更新将自动下载并安装。"
+    "toast": {
+      "added": "提供商添加成功",
+      "failedAdd": "添加提供商失败",
+      "deleted": "提供商已删除",
+      "failedDelete": "删除提供商失败",
+      "defaultUpdated": "默认提供商已更新",
+      "failedDefault": "设置默认失败",
+      "updated": "提供商已更新",
+      "failedUpdate": "更新提供商失败",
+      "invalidKey": "无效的 API 密钥",
+      "modelRequired": "需要模型 ID"
     },
-    "advanced": {
-        "title": "高级",
-        "description": "高级选项",
-        "devMode": "开发者模式",
-        "devModeDesc": "显示开发者工具和快捷方式"
-    },
-    "developer": {
-        "title": "开发者",
-        "description": "开发者高级选项",
-        "console": "OpenClaw 控制台",
-        "consoleDesc": "访问原生 OpenClaw 管理界面",
-        "openConsole": "打开开发者控制台",
-        "consoleNote": "使用注入的网关令牌打开控制台",
-        "gatewayToken": "网关令牌",
-        "gatewayTokenDesc": "如果需要，将此粘贴到控制台设置中",
-        "tokenUnavailable": "令牌不可用",
-        "tokenCopied": "网关令牌已复制",
-        "cli": "OpenClaw CLI",
-        "cliDesc": "复制命令以运行 OpenClaw，无需修改 PATH。",
-        "cliPowershell": "PowerShell 命令。",
-        "cmdUnavailable": "命令不可用",
-        "cmdCopied": "CLI 命令已复制",
-        "installCmd": "安装 \"openclaw\" 命令",
-        "installCmdDesc": "安装 ~/.local/bin/openclaw（无需管理员权限）",
-        "installTitle": "安装 OpenClaw 命令",
-        "installMessage": "安装 \"openclaw\" 命令？",
-        "installDetail": "这将创建 ~/.local/bin/openclaw。确保 ~/.local/bin 在您的 PATH 中。"
-    },
-    "about": {
-        "title": "关于",
-        "appName": "ClawX",
-        "tagline": "图形化 AI 助手",
-        "basedOn": "基于 OpenClaw",
-        "version": "版本 {{version}}",
-        "docs": "官网",
-        "github": "GitHub"
+    "oauth": {
+      "loginMode": "OAuth 登录",
+      "apikeyMode": "API 密钥",
+      "loginPrompt": "此提供商需要通过浏览器登录授权。",
+      "loginButton": "浏览器登录",
+      "waiting": "等待中...",
+      "openLoginPage": "打开登录页面",
+      "waitingApproval": "等待浏览器中的授权...",
+      "cancel": "取消",
+      "codeCopied": "代码已复制到剪贴板",
+      "authFailed": "认证失败",
+      "tryAgain": "重试",
+      "approveLogin": "确认登录",
+      "step1": "复制下方的授权码。",
+      "step2": "在浏览器中打开登录页面。",
+      "step3": "粘贴授权码以批准访问。",
+      "requestingCode": "正在获取安全登录码..."
     }
+  },
+  "gateway": {
+    "title": "网关",
+    "description": "OpenClaw 网关设置",
+    "status": "状态",
+    "port": "端口",
+    "logs": "日志",
+    "appLogs": "应用日志",
+    "openFolder": "打开文件夹",
+    "autoStart": "自动启动网关",
+    "autoStartDesc": "ClawX 启动时自动启动网关"
+  },
+  "updates": {
+    "title": "更新",
+    "description": "保持 ClawX 最新",
+    "autoCheck": "自动检查更新",
+    "autoCheckDesc": "启动时检查更新",
+    "autoDownload": "自动更新",
+    "autoDownloadDesc": "自动下载并安装更新",
+    "status": {
+      "checking": "正在检查更新...",
+      "downloading": "正在下载更新...",
+      "available": "可用更新：v{{version}}",
+      "downloaded": "准备安装：v{{version}}",
+      "autoInstalling": "将在 {{seconds}} 秒后重启并安装更新...",
+      "failed": "检查更新失败",
+      "latest": "您已拥有最新版本",
+      "check": "检查更新以获取最新功能"
+    },
+    "action": {
+      "checking": "检查中...",
+      "downloading": "下载中...",
+      "download": "下载更新",
+      "install": "安装并重启",
+      "cancelAutoInstall": "取消",
+      "retry": "重试",
+      "check": "检查更新"
+    },
+    "currentVersion": "当前版本",
+    "whatsNew": "更新内容：",
+    "errorDetails": "错误详情：",
+    "help": "开启自动更新后，更新将自动下载并安装。"
+  },
+  "advanced": {
+    "title": "高级",
+    "description": "高级选项",
+    "devMode": "开发者模式",
+    "devModeDesc": "显示开发者工具和快捷方式"
+  },
+  "developer": {
+    "title": "开发者",
+    "description": "开发者高级选项",
+    "console": "OpenClaw 控制台",
+    "consoleDesc": "访问原生 OpenClaw 管理界面",
+    "openConsole": "打开开发者控制台",
+    "consoleNote": "使用注入的网关令牌打开控制台",
+    "gatewayToken": "网关令牌",
+    "gatewayTokenDesc": "如果需要，将此粘贴到控制台设置中",
+    "tokenUnavailable": "令牌不可用",
+    "tokenCopied": "网关令牌已复制",
+    "cli": "OpenClaw CLI",
+    "cliDesc": "复制命令以运行 OpenClaw，无需修改 PATH。",
+    "cliPowershell": "PowerShell 命令。",
+    "cmdUnavailable": "命令不可用",
+    "cmdCopied": "CLI 命令已复制",
+    "installCmd": "安装 \"openclaw\" 命令",
+    "installCmdDesc": "安装 ~/.local/bin/openclaw（无需管理员权限）",
+    "installTitle": "安装 OpenClaw 命令",
+    "installMessage": "安装 \"openclaw\" 命令？",
+    "installDetail": "这将创建 ~/.local/bin/openclaw。确保 ~/.local/bin 在您的 PATH 中。"
+  },
+  "about": {
+    "title": "关于",
+    "appName": "ClawX",
+    "tagline": "图形化 AI 助手",
+    "basedOn": "基于 OpenClaw",
+    "version": "版本 {{version}}",
+    "docs": "官网",
+    "github": "GitHub"
+  }
 }
