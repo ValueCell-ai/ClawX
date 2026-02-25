@@ -1098,6 +1098,15 @@ export class GatewayManager extends EventEmitter {
     }
     
     const msg = message as Record<string, unknown>;
+
+    // Trace all non-tick WebSocket messages for debugging streaming issues
+    const isTickEvent = msg.type === 'event' && msg.event === 'tick';
+    if (!isTickEvent) {
+      const msgType = msg.type ?? msg.jsonrpc ?? '(unknown)';
+      const msgEvent = msg.event ?? msg.method ?? '';
+      const hasPayload = !!msg.payload || !!msg.params || !!msg.result;
+      logger.debug(`[WS msg] type=${String(msgType)} event/method=${String(msgEvent)} hasPayload=${hasPayload} keys=${Object.keys(msg).join(',')}`);
+    }
     
     // Handle OpenClaw protocol response format: { type: "res", id: "...", ok: true/false, ... }
     if (msg.type === 'res' && typeof msg.id === 'string') {
@@ -1147,6 +1156,7 @@ export class GatewayManager extends EventEmitter {
     }
     
     // Emit generic message for other handlers
+    logger.warn(`[WS msg] UNMATCHED message fell through all handlers. keys=${Object.keys(msg).join(',')}`);
     this.emit('message', message);
   }
   
@@ -1154,19 +1164,43 @@ export class GatewayManager extends EventEmitter {
    * Handle OpenClaw protocol events
    */
   private handleProtocolEvent(event: string, payload: unknown): void {
+    if (event !== 'tick') {
+      const p = payload as Record<string, unknown> | undefined;
+      const dataKeys = p?.data && typeof p.data === 'object' ? Object.keys(p.data as object) : [];
+      logger.debug(`[protocol event] event=${event} payloadKeys=${p ? Object.keys(p).join(',') : 'null'} dataKeys=${dataKeys.join(',')} state=${p?.state ?? 'N/A'} runId=${p?.runId ?? 'N/A'}`);
+    }
     // Map OpenClaw events to our internal event types
     switch (event) {
       case 'tick':
-        // Heartbeat tick, ignore
         break;
       case 'chat':
         this.emit('chat:message', { message: payload });
         break;
+      case 'agent': {
+        // Agent events may carry chat streaming data inside payload.data,
+        // or be lifecycle events (phase=started/completed) with no message.
+        const p = payload as Record<string, unknown>;
+        const data = (p.data && typeof p.data === 'object') ? p.data as Record<string, unknown> : {};
+        const chatEvent: Record<string, unknown> = {
+          ...data,
+          runId: p.runId ?? data.runId,
+          sessionKey: p.sessionKey ?? data.sessionKey,
+          state: p.state ?? data.state,
+          message: p.message ?? data.message,
+        };
+        const hasChatData = chatEvent.state || chatEvent.message;
+        logger.debug(`[agent] phase=${String(data.phase ?? 'N/A')} state=${String(chatEvent.state ?? 'N/A')} hasMessage=${!!chatEvent.message} hasChatData=${!!hasChatData} runId=${String(chatEvent.runId ?? 'N/A')} dataKeys=${Object.keys(data).join(',')}`);
+        if (hasChatData) {
+          this.emit('chat:message', { message: chatEvent });
+        }
+        // Always emit as notification so renderer can handle lifecycle events
+        this.emit('notification', { method: event, params: payload });
+        break;
+      }
       case 'channel.status':
         this.emit('channel:status', payload as { channelId: string; status: string });
         break;
       default:
-        // Forward unknown events as generic notifications
         this.emit('notification', { method: event, params: payload });
     }
   }
@@ -1175,6 +1209,8 @@ export class GatewayManager extends EventEmitter {
    * Handle server-initiated notifications
    */
   private handleNotification(notification: JsonRpcNotification): void {
+    const np = notification.params as Record<string, unknown> | undefined;
+    logger.debug(`[notification] method=${notification.method} paramKeys=${np ? Object.keys(np).join(',') : 'null'}`);
     this.emit('notification', notification);
     
     // Route specific events

@@ -4,7 +4,7 @@
  * with markdown, thinking sections, images, and tool cards.
  */
 import { useState, useCallback, useEffect, memo } from 'react';
-import { User, Sparkles, Copy, Check, ChevronDown, ChevronRight, Wrench, FileText, Film, Music, FileArchive, File, X, FolderOpen, ZoomIn } from 'lucide-react';
+import { User, Sparkles, Copy, Check, ChevronDown, ChevronRight, Wrench, FileText, Film, Music, FileArchive, File, X, FolderOpen, ZoomIn, Loader2, CheckCircle2, AlertCircle } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { createPortal } from 'react-dom';
@@ -51,7 +51,7 @@ export const ChatMessage = memo(function ChatMessage({
   const images = extractImages(message);
   const tools = extractToolUse(message);
   const visibleThinking = showThinking ? thinking : null;
-  const visibleTools = showThinking ? tools : [];
+  const visibleTools = tools;
 
   const attachedFiles = message._attachedFiles || [];
   const [lightboxImg, setLightboxImg] = useState<{ src: string; fileName: string; filePath?: string; base64?: string; mimeType?: string } | null>(null);
@@ -59,8 +59,7 @@ export const ChatMessage = memo(function ChatMessage({
   // Never render tool result messages in chat UI
   if (isToolResult) return null;
 
-  // Don't render empty messages (also keep messages with streaming tool status)
-  const hasStreamingToolStatus = showThinking && isStreaming && streamingTools.length > 0;
+  const hasStreamingToolStatus = isStreaming && streamingTools.length > 0;
   if (!hasText && !visibleThinking && images.length === 0 && visibleTools.length === 0 && attachedFiles.length === 0 && !hasStreamingToolStatus) return null;
 
   return (
@@ -89,7 +88,7 @@ export const ChatMessage = memo(function ChatMessage({
           isUser ? 'items-end' : 'items-start',
         )}
       >
-        {showThinking && isStreaming && !isUser && streamingTools.length > 0 && (
+        {isStreaming && !isUser && streamingTools.length > 0 && (
           <ToolStatusBar tools={streamingTools} />
         )}
 
@@ -266,28 +265,33 @@ function ToolStatusBar({
   }>;
 }) {
   return (
-    <div className="w-full rounded-lg border border-border/50 bg-muted/20 px-3 py-2 text-xs text-muted-foreground">
-      <div className="space-y-1">
-        {tools.map((tool) => {
-          const duration = formatDuration(tool.durationMs);
-          const statusLabel = tool.status === 'running' ? 'running' : (tool.status === 'error' ? 'error' : 'done');
-          return (
-            <div key={tool.toolCallId || tool.id || tool.name} className="flex flex-wrap items-center gap-2">
-              <span className={cn(
-                'inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px]',
-                tool.status === 'error' ? 'bg-destructive/10 text-destructive' : 'bg-foreground/5 text-muted-foreground',
-              )}>
-                <span className="font-mono">{tool.name}</span>
-                <span className="opacity-70">{statusLabel}</span>
-              </span>
-              {duration && <span className="text-[11px] opacity-70">{duration}</span>}
-              {tool.summary && (
-                <span className="truncate text-[11px]">{tool.summary}</span>
-              )}
-            </div>
-          );
-        })}
-      </div>
+    <div className="w-full space-y-1">
+      {tools.map((tool) => {
+        const duration = formatDuration(tool.durationMs);
+        const isRunning = tool.status === 'running';
+        const isError = tool.status === 'error';
+        return (
+          <div
+            key={tool.toolCallId || tool.id || tool.name}
+            className={cn(
+              'flex items-center gap-2 rounded-lg border px-3 py-2 text-xs transition-colors',
+              isRunning && 'border-primary/30 bg-primary/5 text-foreground',
+              !isRunning && !isError && 'border-border/50 bg-muted/20 text-muted-foreground',
+              isError && 'border-destructive/30 bg-destructive/5 text-destructive',
+            )}
+          >
+            {isRunning && <Loader2 className="h-3.5 w-3.5 animate-spin text-primary shrink-0" />}
+            {!isRunning && !isError && <CheckCircle2 className="h-3.5 w-3.5 text-green-500 shrink-0" />}
+            {isError && <AlertCircle className="h-3.5 w-3.5 text-destructive shrink-0" />}
+            <Wrench className="h-3 w-3 shrink-0 opacity-60" />
+            <span className="font-mono text-[12px] font-medium">{tool.name}</span>
+            {duration && <span className="text-[11px] opacity-60">{duration}</span>}
+            {tool.summary && (
+              <span className="truncate text-[11px] opacity-70">{tool.summary}</span>
+            )}
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -595,7 +599,8 @@ function ToolCard({ name, input }: { name: string; input: unknown }) {
         className="flex items-center gap-2 w-full px-3 py-1.5 text-muted-foreground hover:text-foreground transition-colors"
         onClick={() => setExpanded(!expanded)}
       >
-        <Wrench className="h-3.5 w-3.5" />
+        <CheckCircle2 className="h-3.5 w-3.5 text-green-500 shrink-0" />
+        <Wrench className="h-3 w-3 shrink-0 opacity-60" />
         <span className="font-mono text-xs">{name}</span>
         {expanded ? <ChevronDown className="h-3 w-3 ml-auto" /> : <ChevronRight className="h-3 w-3 ml-auto" />}
       </button>
