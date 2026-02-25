@@ -475,6 +475,63 @@ export class GatewayManager extends EventEmitter {
   }
   
   /**
+   * Unload the system-managed openclaw gateway launchctl service if it is
+   * loaded.  Without this, killing the process only causes launchctl to
+   * respawn it, leading to an infinite reconnect loop.
+   */
+  private async unloadLaunchctlService(): Promise<void> {
+    if (process.platform !== 'darwin') return;
+
+    try {
+      const uid = process.getuid?.();
+      if (uid === undefined) return;
+
+      const LAUNCHD_LABEL = 'ai.openclaw.gateway';
+      const serviceTarget = `gui/${uid}/${LAUNCHD_LABEL}`;
+
+      const loaded = await new Promise<boolean>((resolve) => {
+        import('child_process').then(cp => {
+          cp.exec(`launchctl print ${serviceTarget}`, { timeout: 5000 }, (err) => {
+            resolve(!err);
+          });
+        }).catch(() => resolve(false));
+      });
+
+      if (!loaded) return;
+
+      logger.info(`Unloading launchctl service ${serviceTarget} to prevent auto-respawn`);
+      await new Promise<void>((resolve) => {
+        import('child_process').then(cp => {
+          cp.exec(`launchctl bootout ${serviceTarget}`, { timeout: 10000 }, (err) => {
+            if (err) {
+              logger.warn(`Failed to bootout launchctl service: ${err.message}`);
+            } else {
+              logger.info('Successfully unloaded launchctl gateway service');
+            }
+            resolve();
+          });
+        }).catch(() => resolve());
+      });
+
+      await new Promise(r => setTimeout(r, 2000));
+
+      // Remove the plist so the service won't reload on next login.
+      try {
+        const { homedir } = await import('os');
+        const plistPath = path.join(homedir(), 'Library', 'LaunchAgents', `${LAUNCHD_LABEL}.plist`);
+        const { access, unlink } = await import('fs/promises');
+        await access(plistPath);
+        await unlink(plistPath);
+        logger.info(`Removed legacy launchd plist to prevent reload on next login: ${plistPath}`);
+      } catch {
+        // File doesn't exist or can't be removed -- not fatal
+      }
+    } catch (err) {
+      logger.warn('Error while unloading launchctl gateway service:', err);
+    }
+  }
+
+  /**
    * Find existing Gateway process by attempting a WebSocket connection
    */
   private async findExistingGateway(): Promise<{ port: number, externalToken?: string } | null> {
@@ -499,6 +556,11 @@ export class GatewayManager extends EventEmitter {
           if (pids.length > 0) {
             if (!this.process || !pids.includes(String(this.process.pid))) {
                logger.info(`Found orphaned process listening on port ${port} (PIDs: ${pids.join(', ')}), attempting to kill...`);
+
+               // Unload the launchctl service first so macOS doesn't auto-
+               // respawn the process we're about to kill.
+               await this.unloadLaunchctlService();
+
                // SIGTERM first so the gateway can clean up its lock file.
                for (const pid of pids) {
                  try { process.kill(parseInt(pid), 'SIGTERM'); } catch { /* ignore */ }
@@ -548,6 +610,9 @@ export class GatewayManager extends EventEmitter {
    * Uses OpenClaw npm package from node_modules (dev) or resources (production)
    */
   private async startProcess(): Promise<void> {
+    // Ensure no system-managed gateway service will compete with our process.
+    await this.unloadLaunchctlService();
+
     const openclawDir = getOpenClawDir();
     const entryScript = getOpenClawEntryPath();
     
