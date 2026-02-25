@@ -1033,18 +1033,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
         const data = result.result;
         const rawMessages = Array.isArray(data.messages) ? data.messages as RawMessage[] : [];
 
-        const { sending: isSending } = get();
-        if (isSending && quiet) {
-          const recentRoles = rawMessages.slice(-5).map(m => `${m.role}(${
-            Array.isArray(m.content) ? (m.content as ContentBlock[]).map(b => b.type).join('+') : 'str'
-          })`);
-          console.log('[loadHistory] poll result', {
-            rawCount: rawMessages.length,
-            recentRoles,
-            quiet,
-          });
-        }
-
         // Before filtering: attach images/files from tool_result messages to the next assistant message
         const messagesWithToolImages = enrichWithToolResultFiles(rawMessages);
         const filteredMessages = messagesWithToolImages.filter((msg) => !isToolResultRole(msg.role));
@@ -1083,15 +1071,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
           const hasRecentAssistantActivity = [...filteredMessages].reverse().some((msg) => {
             if (msg.role !== 'assistant') return false;
             return isAfterUserMsg(msg);
-          });
-          console.log('[loadHistory] pendingFinal check', {
-            isSending: isSendingNow,
-            pendingFinal,
-            hasRecentAssistantActivity,
-            lastUserMessageAt,
-            userMsTs,
-            filteredCount: filteredMessages.length,
-            lastMsgTs: filteredMessages.length > 0 ? filteredMessages[filteredMessages.length - 1].timestamp : null,
           });
           if (hasRecentAssistantActivity) {
             set({ pendingFinal: true });
@@ -1163,20 +1142,11 @@ export const useChatStore = create<ChatState>((set, get) => ({
     const POLL_INTERVAL = 4_000;
     const pollHistory = () => {
       const state = get();
-      console.log('[chat] history-poll tick', {
-        sending: state.sending,
-        hasStreamingMsg: !!state.streamingMessage,
-        pendingFinal: state.pendingFinal,
-        streamingToolsCount: state.streamingTools.length,
-        messagesCount: state.messages.length,
-        sessionKey: state.currentSessionKey,
-      });
       if (!state.sending) { clearHistoryPoll(); return; }
       if (state.streamingMessage) {
         _historyPollTimer = setTimeout(pollHistory, POLL_INTERVAL);
         return;
       }
-      console.log('[chat] history-poll: polling chat.history now');
       state.loadHistory(true);
       _historyPollTimer = setTimeout(pollHistory, POLL_INTERVAL);
     };
@@ -1208,7 +1178,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
     try {
       const idempotencyKey = crypto.randomUUID();
       const hasMedia = attachments && attachments.length > 0;
-      console.log(`[sendMessage] sessionKey=${currentSessionKey}, lastUserMessageAt=${nowMs}, hasMedia=${hasMedia}`);
       if (hasMedia) {
         console.log('[sendMessage] Media paths:', attachments!.map(a => a.stagedPath));
       }
@@ -1258,7 +1227,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
         ) as { success: boolean; result?: { runId?: string }; error?: string };
       }
 
-      console.log(`[sendMessage] RPC returned: success=${result.success}, error=${result.error || 'none'}, runId=${result.result?.runId || 'none'}`);
+      console.log(`[sendMessage] RPC result: success=${result.success}, runId=${result.result?.runId || 'none'}`);
 
       if (!result.success) {
         clearHistoryPoll();
@@ -1296,25 +1265,10 @@ export const useChatStore = create<ChatState>((set, get) => ({
   handleChatEvent: (event: Record<string, unknown>) => {
     const runId = String(event.runId || '');
     const eventState = String(event.state || '');
-    const { activeRunId, sending } = get();
-
-    console.debug('[handleChatEvent]', {
-      state: eventState,
-      runId: runId || '(none)',
-      activeRunId: activeRunId || '(none)',
-      sending,
-      hasMessage: !!event.message,
-      messageRole: event.message && typeof event.message === 'object'
-        ? (event.message as Record<string, unknown>).role
-        : undefined,
-      eventKeys: Object.keys(event),
-    });
+    const { activeRunId } = get();
 
     // Only process events for the active run (or if no active run set)
-    if (activeRunId && runId && runId !== activeRunId) {
-      console.debug('[handleChatEvent] Dropping event: runId mismatch', { activeRunId, eventRunId: runId });
-      return;
-    }
+    if (activeRunId && runId && runId !== activeRunId) return;
 
     _lastChatEventAt = Date.now();
 
