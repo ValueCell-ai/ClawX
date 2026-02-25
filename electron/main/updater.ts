@@ -8,6 +8,7 @@
  */
 import { autoUpdater, UpdateInfo, ProgressInfo, UpdateDownloadedEvent } from 'electron-updater';
 import { BrowserWindow, app, ipcMain } from 'electron';
+import { logger } from '../utils/logger';
 import { EventEmitter } from 'events';
 
 /** Base CDN URL (without trailing channel path) */
@@ -53,7 +54,11 @@ export class AppUpdater extends EventEmitter {
     
     // Configure auto-updater
     autoUpdater.autoDownload = false;
-    autoUpdater.autoInstallOnAppQuit = true;
+    // Set to false so quitAndInstall() always goes through the explicit
+    // nativeUpdater.checkForUpdates() → nativeUpdater.quitAndInstall() path,
+    // avoiding a race condition where squirrelDownloadedUpdate is false at
+    // click time and the else-branch silently does nothing.
+    autoUpdater.autoInstallOnAppQuit = false;
     
     // Use logger
     autoUpdater.logger = {
@@ -206,7 +211,19 @@ export class AppUpdater extends EventEmitter {
    * Install update and restart app
    */
   quitAndInstall(): void {
+    logger.info('[Updater] quitAndInstall called – invoking autoUpdater.quitAndInstall()');
     autoUpdater.quitAndInstall();
+
+    // Safety fallback: if Squirrel.Mac's relaunchToInstallUpdate doesn't trigger
+    // app.quit() within 5 seconds (race condition or staging delay), force-quit
+    // so ShipIt can proceed with the installation.  The update will be installed
+    // but the app won't auto-relaunch; the user will need to open it manually.
+    const safetyTimer = setTimeout(() => {
+      logger.warn('[Updater] quitAndInstall safety timer fired – forcing app.quit()');
+      app.quit();
+    }, 5000);
+    // Clear the timer if the normal before-quit path fires first
+    app.once('before-quit', () => clearTimeout(safetyTimer));
   }
 
   /**

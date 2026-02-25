@@ -205,6 +205,10 @@ app.whenReady().then(() => {
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {
       mainWindow = createWindow();
+    } else if (mainWindow && !mainWindow.isDestroyed()) {
+      // On macOS, clicking the dock icon should show the window if it's hidden
+      mainWindow.show();
+      mainWindow.focus();
     }
   });
 });
@@ -215,9 +219,15 @@ app.on('window-all-closed', () => {
   }
 });
 
-app.on('before-quit', async () => {
+app.on('before-quit', () => {
   isQuitting = true;
-  await gatewayManager.stop();
+  // Fire-and-forget: do not await gatewayManager.stop() here.
+  // Awaiting inside a before-quit handler can stall Electron's
+  // replyToApplicationShouldTerminate: call when the quit is initiated
+  // by Squirrel.Mac (quitAndInstall), preventing the app from ever exiting.
+  void gatewayManager.stop().catch((err) => {
+    logger.warn('gatewayManager.stop() error during quit:', err);
+  });
 });
 
 // Export for testing
