@@ -398,4 +398,120 @@ export function setOpenClawDefaultModelWithOverride(
 }
 
 // Re-export for backwards compatibility
+/**
+ * Write the ClawX gateway token into ~/.openclaw/openclaw.json so the
+ * gateway process reads the same token we use for the WebSocket handshake.
+ *
+ * Without this, openclaw.json may contain a stale token written by the
+ * system-managed gateway service (launchctl), causing a "token mismatch"
+ * auth failure when ClawX connects to the process it just spawned.
+ */
+export function syncGatewayTokenToConfig(token: string): void {
+  const configPath = join(homedir(), '.openclaw', 'openclaw.json');
+  let config: Record<string, unknown> = {};
+  try {
+    if (existsSync(configPath)) {
+      config = JSON.parse(readFileSync(configPath, 'utf-8')) as Record<string, unknown>;
+    }
+  } catch {
+    // start from a blank config if the file is corrupt
+  }
+
+  const gateway = (
+    config.gateway && typeof config.gateway === 'object'
+      ? { ...(config.gateway as Record<string, unknown>) }
+      : {}
+  ) as Record<string, unknown>;
+
+  const auth = (
+    gateway.auth && typeof gateway.auth === 'object'
+      ? { ...(gateway.auth as Record<string, unknown>) }
+      : {}
+  ) as Record<string, unknown>;
+
+  auth.mode = 'token';
+  auth.token = token;
+  gateway.auth = auth;
+  if (!gateway.mode) gateway.mode = 'local';
+  config.gateway = gateway;
+
+  const dir = join(configPath, '..');
+  if (!existsSync(dir)) {
+    mkdirSync(dir, { recursive: true });
+  }
+  writeFileSync(configPath, JSON.stringify(config, null, 2), 'utf-8');
+  console.log('Synced gateway token to openclaw.json');
+}
+
+/**
+ * Update a provider entry in every discovered agent's models.json.
+ *
+ * The gateway caches resolved provider configs in
+ * ~/.openclaw/agents/<id>/agent/models.json and serves requests from
+ * that file (not from openclaw.json directly). We must update it
+ * whenever the active provider changes so the gateway immediately picks
+ * up the new baseUrl / apiKey without requiring a full restart.
+ *
+ * Existing model-level metadata (contextWindow, cost, etc.) is preserved
+ * when the model ID matches; only the top-level provider fields and the
+ * models list are updated.
+ */
+export function updateAgentModelProvider(
+  providerType: string,
+  entry: {
+    baseUrl?: string;
+    api?: string;
+    models?: Array<{ id: string; name: string }>;
+    apiKey?: string;
+  }
+): void {
+  const agentIds = discoverAgentIds();
+  for (const agentId of agentIds) {
+    const modelsPath = join(homedir(), '.openclaw', 'agents', agentId, 'agent', 'models.json');
+    let data: Record<string, unknown> = {};
+    try {
+      if (existsSync(modelsPath)) {
+        data = JSON.parse(readFileSync(modelsPath, 'utf-8')) as Record<string, unknown>;
+      }
+    } catch {
+      // corrupt / missing – start with an empty object
+    }
+
+    const providers = (
+      data.providers && typeof data.providers === 'object' ? data.providers : {}
+    ) as Record<string, Record<string, unknown>>;
+
+    const existing: Record<string, unknown> =
+      providers[providerType] && typeof providers[providerType] === 'object'
+        ? { ...providers[providerType] }
+        : {};
+
+    // Preserve per-model metadata (reasoning, cost, contextWindow…) for
+    // models that already exist; use a minimal stub for new models.
+    const existingModels = Array.isArray(existing.models)
+      ? (existing.models as Array<Record<string, unknown>>)
+      : [];
+
+    const mergedModels = (entry.models ?? []).map((m) => {
+      const prev = existingModels.find((e) => e.id === m.id);
+      return prev ? { ...prev, id: m.id, name: m.name } : { ...m };
+    });
+
+    if (entry.baseUrl !== undefined) existing.baseUrl = entry.baseUrl;
+    if (entry.api !== undefined) existing.api = entry.api;
+    if (mergedModels.length > 0) existing.models = mergedModels;
+    if (entry.apiKey !== undefined) existing.apiKey = entry.apiKey;
+
+    providers[providerType] = existing;
+    data.providers = providers;
+
+    try {
+      writeFileSync(modelsPath, JSON.stringify(data, null, 2), 'utf-8');
+      console.log(`Updated models.json for agent "${agentId}" provider "${providerType}"`);
+    } catch (err) {
+      console.warn(`Failed to update models.json for agent "${agentId}":`, err);
+    }
+  }
+}
+
 export { getProviderEnvVar } from './provider-registry';

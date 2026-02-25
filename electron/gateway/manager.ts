@@ -29,6 +29,7 @@ import {
   buildDeviceAuthPayload,
   type DeviceIdentity,
 } from '../utils/device-identity';
+import { syncGatewayTokenToConfig } from '../utils/openclaw-auth';
 
 /**
  * Gateway connection status
@@ -559,6 +560,17 @@ export class GatewayManager extends EventEmitter {
     
     // Get or generate gateway token
     const gatewayToken = await getSetting('gatewayToken');
+
+    // Write our token into openclaw.json before starting the process.
+    // Without --dev the gateway authenticates using the token in
+    // openclaw.json; if that file has a stale token (e.g. left by the
+    // system-managed launchctl service) the WebSocket handshake will fail
+    // with "token mismatch" even though we pass --token on the CLI.
+    try {
+      syncGatewayTokenToConfig(gatewayToken);
+    } catch (err) {
+      logger.warn('Failed to sync gateway token to openclaw.json:', err);
+    }
     
     let command: string;
     let args: string[];

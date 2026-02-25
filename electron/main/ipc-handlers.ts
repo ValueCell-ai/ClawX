@@ -30,6 +30,7 @@ import {
   removeProviderKeyFromOpenClaw,
   setOpenClawDefaultModel,
   setOpenClawDefaultModelWithOverride,
+  updateAgentModelProvider,
 } from '../utils/openclaw-auth';
 import { logger } from '../utils/logger';
 import {
@@ -894,6 +895,43 @@ function registerProviderHandlers(gatewayManager: GatewayManager): void {
           }
         }
 
+        // If this provider is the current default, propagate model/baseUrl
+        // changes to openclaw.json and models.json immediately so the gateway
+        // picks them up without requiring the user to re-activate the provider.
+        const defaultProviderId = await getDefaultProvider();
+        if (defaultProviderId === providerId) {
+          try {
+            const modelOverride = nextConfig.model
+              ? `${nextConfig.type}/${nextConfig.model}`
+              : undefined;
+            if (nextConfig.type === 'custom' || nextConfig.type === 'ollama') {
+              setOpenClawDefaultModelWithOverride(nextConfig.type, modelOverride, {
+                baseUrl: nextConfig.baseUrl,
+                api: 'openai-completions',
+              });
+              // Also update per-agent models.json so the gateway sees the
+              // change immediately (baseUrl or model ID may have changed).
+              const resolvedKey =
+                apiKey !== undefined
+                  ? apiKey.trim() || null
+                  : await getApiKey(providerId);
+              if (resolvedKey && nextConfig.baseUrl) {
+                const modelId = nextConfig.model;
+                updateAgentModelProvider(nextConfig.type, {
+                  baseUrl: nextConfig.baseUrl,
+                  api: 'openai-completions',
+                  models: modelId ? [{ id: modelId, name: modelId }] : [],
+                  apiKey: resolvedKey,
+                });
+              }
+            } else {
+              setOpenClawDefaultModel(nextConfig.type, modelOverride);
+            }
+          } catch (err) {
+            console.warn('Failed to sync openclaw config after provider update:', err);
+          }
+        }
+
         return { success: true };
       } catch (error) {
         // Best-effort rollback to keep config/key consistent.
@@ -977,6 +1015,25 @@ function registerProviderHandlers(gatewayManager: GatewayManager): void {
           const providerKey = await getApiKey(providerId);
           if (providerKey) {
             saveProviderKeyToOpenClaw(provider.type, providerKey);
+          }
+
+          // For custom/ollama providers, also update the per-agent models.json
+          // so the gateway picks up the new baseUrl + key immediately.
+          // The gateway caches provider configs in models.json and reads from
+          // there at request time; updating openclaw.json alone is not enough
+          // when switching between multiple custom provider instances.
+          if (
+            (provider.type === 'custom' || provider.type === 'ollama') &&
+            providerKey &&
+            provider.baseUrl
+          ) {
+            const modelId = provider.model;
+            updateAgentModelProvider(provider.type, {
+              baseUrl: provider.baseUrl,
+              api: 'openai-completions',
+              models: modelId ? [{ id: modelId, name: modelId }] : [],
+              apiKey: providerKey,
+            });
           }
 
           // Restart Gateway so it picks up the new config and env vars.
