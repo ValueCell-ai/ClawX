@@ -130,12 +130,10 @@ function cleanupNativePlatformPackages(nodeModulesDir, platform, arch) {
 }
 
 // ── Platform-specific: @node-llama-cpp ────────────────────────────────────────
-// node-llama-cpp ships platform-specific packages like @node-llama-cpp/linux-x64,
-// @node-llama-cpp/linux-x64-cuda, @node-llama-cpp/mac-arm64-metal, etc.
+// node-llama-cpp is excluded from the bundle by bundle-openclaw.mjs, but this
+// cleanup acts as a safety net in case it ever gets included.
 // Package naming: {platform}-{arch}[-variant] where platform is mac|linux|win
 // (different from electron's darwin|linux|win32).
-// CUDA/Vulkan variants for the target platform+arch are kept (GPU support).
-// Only non-matching platform/arch variants are removed.
 
 const LLAMA_PLATFORM_MAP = { darwin: 'mac', linux: 'linux', win32: 'win' };
 const LLAMA_PKG_PATTERN = /^(mac|linux|win)-(x64|arm64|armv7l)(?:-.+)?$/;

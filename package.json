@@ -6,7 +6,6 @@
             "@whiskeysockets/baileys",
             "electron",
             "esbuild",
-            "node-llama-cpp",
             "protobufjs",
             "sharp"
         ]

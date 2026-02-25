@@ -131,8 +131,13 @@ const SKIP_PACKAGES = new Set([
   'typescript',
   'playwright-core',
   '@playwright/test',
+  // node-llama-cpp is an optional peer dep of openclaw used only for local
+  // embedding generation. It adds ~700 MB of CUDA/Vulkan/Metal binaries.
+  // ClawX users rely on remote embedding providers (OpenAI, Gemini, etc.)
+  // and openclaw gracefully handles the missing dependency at runtime.
+  'node-llama-cpp',
 ]);
-const SKIP_SCOPES = ['@cloudflare/', '@types/'];
+const SKIP_SCOPES = ['@cloudflare/', '@types/', '@node-llama-cpp/'];
 let skippedDevCount = 0;
 
 while (queue.length > 0) {
@@ -330,7 +335,6 @@ function cleanupBundle(outputDir) {
   const LARGE_REMOVALS = [
     'node_modules/pdfjs-dist/legacy',
     'node_modules/pdfjs-dist/types',
-    'node_modules/node-llama-cpp/llama',
     'node_modules/koffi/src',
     'node_modules/koffi/vendor',
     'node_modules/koffi/doc',
