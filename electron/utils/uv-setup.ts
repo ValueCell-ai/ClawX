@@ -1,5 +1,5 @@
 import { app } from 'electron';
-import { spawn } from 'child_process';
+import { execSync, spawn } from 'child_process';
 import { existsSync } from 'fs';
 import { join } from 'path';
 import { getUvMirrorEnv } from './uv-env';
@@ -50,7 +50,6 @@ function resolveUvBin(): { bin: string; source: 'bundled' | 'path' | 'bundled-fa
 }
 
 function findUvInPathSync(): boolean {
-  const { execSync } = require('child_process') as typeof import('child_process');
   try {
     const cmd = process.platform === 'win32' ? 'where.exe uv' : 'which uv';
     execSync(cmd, { stdio: 'ignore', timeout: 5000 });
