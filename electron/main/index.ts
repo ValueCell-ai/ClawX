@@ -122,16 +122,6 @@ async function initialize(): Promise<void> {
   // Create system tray
   createTray(mainWindow);
 
-  // Inject OpenRouter site headers (HTTP-Referer & X-Title) for rankings on openrouter.ai
-  session.defaultSession.webRequest.onBeforeSendHeaders(
-    { urls: ['https://openrouter.ai/*'] },
-    (details, callback) => {
-      details.requestHeaders['HTTP-Referer'] = 'https://claw-x.com';
-      details.requestHeaders['X-Title'] = 'ClawX';
-      callback({ requestHeaders: details.requestHeaders });
-    },
-  );
-
   // Override security headers ONLY for the OpenClaw Gateway Control UI
   session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
     const isGatewayUrl = details.url.includes('127.0.0.1:18789') || details.url.includes('localhost:18789');
