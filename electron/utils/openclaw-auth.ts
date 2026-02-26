@@ -444,6 +444,54 @@ export function syncGatewayTokenToConfig(token: string): void {
 }
 
 /**
+ * Ensure browser automation is enabled in ~/.openclaw/openclaw.json with the
+ * "openclaw" managed profile as the default.
+ *
+ * Only sets values that are not already present so existing user
+ * customisation (e.g. switching to a remote CDP profile) is preserved.
+ */
+export function syncBrowserConfigToOpenClaw(): void {
+  const configPath = join(homedir(), '.openclaw', 'openclaw.json');
+  let config: Record<string, unknown> = {};
+  try {
+    if (existsSync(configPath)) {
+      config = JSON.parse(readFileSync(configPath, 'utf-8')) as Record<string, unknown>;
+    }
+  } catch {
+    // start from a blank config if the file is corrupt
+  }
+
+  const browser = (
+    config.browser && typeof config.browser === 'object'
+      ? { ...(config.browser as Record<string, unknown>) }
+      : {}
+  ) as Record<string, unknown>;
+
+  let changed = false;
+
+  if (browser.enabled === undefined) {
+    browser.enabled = true;
+    changed = true;
+  }
+
+  if (browser.defaultProfile === undefined) {
+    browser.defaultProfile = 'openclaw';
+    changed = true;
+  }
+
+  if (!changed) return;
+
+  config.browser = browser;
+
+  const dir = join(configPath, '..');
+  if (!existsSync(dir)) {
+    mkdirSync(dir, { recursive: true });
+  }
+  writeFileSync(configPath, JSON.stringify(config, null, 2), 'utf-8');
+  console.log('Synced browser config to openclaw.json');
+}
+
+/**
  * Update a provider entry in every discovered agent's models.json.
  *
  * The gateway caches resolved provider configs in

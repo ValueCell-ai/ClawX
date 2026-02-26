@@ -30,7 +30,7 @@ import {
   buildDeviceAuthPayload,
   type DeviceIdentity,
 } from '../utils/device-identity';
-import { syncGatewayTokenToConfig } from '../utils/openclaw-auth';
+import { syncGatewayTokenToConfig, syncBrowserConfigToOpenClaw } from '../utils/openclaw-auth';
 
 /**
  * Gateway connection status
@@ -636,6 +636,12 @@ export class GatewayManager extends EventEmitter {
       syncGatewayTokenToConfig(gatewayToken);
     } catch (err) {
       logger.warn('Failed to sync gateway token to openclaw.json:', err);
+    }
+
+    try {
+      syncBrowserConfigToOpenClaw();
+    } catch (err) {
+      logger.warn('Failed to sync browser config to openclaw.json:', err);
     }
     
     let command: string;

@@ -9,5 +9,9 @@
 
 ### Browser
 
-- Use the `browser` tool to open URLs in the user's default browser.
-- When the user asks to "open" a link, default to opening it in the browser.
+- The `browser` tool provides full browser automation via OpenClaw's browser control server.
+- Default profile is "openclaw" (isolated managed browser using system Chrome/Brave/Edge).
+- Use `action="start"` to launch the browser, then `action="snapshot"` to see the page, `action="act"` to interact.
+- Use `action="open"` with `targetUrl` to open new tabs.
+- Refs from snapshots (e.g. `e12`) are used in `act` actions to click/type on specific elements.
+- For simple "open a URL for the user to see", use `shell:openExternal` instead.

@@ -129,7 +129,6 @@ queue.push({ nodeModulesDir: openclawVirtualNM, skipPkg: 'openclaw' });
 
 const SKIP_PACKAGES = new Set([
   'typescript',
-  'playwright-core',
   '@playwright/test',
 ]);
 const SKIP_SCOPES = ['@cloudflare/', '@types/'];
