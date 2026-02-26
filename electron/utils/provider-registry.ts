@@ -97,10 +97,22 @@ const REGISTRY: Record<string, ProviderBackendMeta> = {
     },
   },
   'minimax-portal': {
+    envVar: 'MINIMAX_API_KEY',
     defaultModel: 'minimax-portal/MiniMax-M2.1',
+    providerConfig: {
+      baseUrl: 'https://api.minimax.io/anthropic',
+      api: 'anthropic-messages',
+      apiKeyEnv: 'MINIMAX_API_KEY',
+    },
   },
   'qwen-portal': {
+    envVar: 'QWEN_API_KEY',
     defaultModel: 'qwen-portal/coder-model',
+    providerConfig: {
+      baseUrl: 'https://portal.qwen.ai/v1',
+      api: 'openai-completions',
+      apiKeyEnv: 'QWEN_API_KEY',
+    },
   },
   custom: {
     envVar: 'CUSTOM_API_KEY',

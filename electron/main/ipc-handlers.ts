@@ -30,6 +30,7 @@ import {
   removeProviderFromOpenClaw,
   setOpenClawDefaultModel,
   setOpenClawDefaultModelWithOverride,
+  syncProviderConfigToOpenClaw,
   updateAgentModelProvider,
 } from '../utils/openclaw-auth';
 import { logger } from '../utils/logger';
@@ -832,15 +833,55 @@ function registerProviderHandlers(gatewayManager: GatewayManager): void {
       await saveProvider(config);
 
       // Store the API key if provided
-      if (apiKey) {
-        await storeApiKey(config.id, apiKey);
+      if (apiKey !== undefined) {
+        const trimmedKey = apiKey.trim();
+        if (trimmedKey) {
+          await storeApiKey(config.id, trimmedKey);
 
-        // Also write to OpenClaw auth-profiles.json so the gateway can use it
-        try {
-          saveProviderKeyToOpenClaw(config.type, apiKey);
-        } catch (err) {
-          console.warn('Failed to save key to OpenClaw auth-profiles:', err);
+          // Also write to OpenClaw auth-profiles.json so the gateway can use it
+          try {
+            saveProviderKeyToOpenClaw(config.type, trimmedKey);
+          } catch (err) {
+            console.warn('Failed to save key to OpenClaw auth-profiles:', err);
+          }
         }
+      }
+
+      // Sync the provider configuration to openclaw.json so Gateway knows about it
+      try {
+        const meta = getProviderConfig(config.type);
+        const api = config.type === 'custom' || config.type === 'ollama' ? 'openai-completions' : meta?.api;
+
+        if (api) {
+          syncProviderConfigToOpenClaw(config.type, config.model, {
+            baseUrl: config.baseUrl || meta?.baseUrl,
+            api,
+            apiKeyEnv: meta?.apiKeyEnv,
+          });
+
+          if (config.type === 'custom' || config.type === 'ollama') {
+            const resolvedKey = apiKey !== undefined
+              ? (apiKey.trim() || null)
+              : await getApiKey(config.id);
+            if (resolvedKey && config.baseUrl) {
+              const modelId = config.model;
+              updateAgentModelProvider(config.type, {
+                baseUrl: config.baseUrl,
+                api: 'openai-completions',
+                models: modelId ? [{ id: modelId, name: modelId }] : [],
+                apiKey: resolvedKey,
+              });
+            }
+          }
+
+          // Restart Gateway so it picks up the new config and env vars
+          logger.info(`Restarting Gateway after saving provider "${config.type}" config`);
+          void gatewayManager.restart().catch((err) => {
+            logger.warn('Gateway restart after provider save failed:', err);
+          });
+        }
+      } catch (err) {
+        console.warn('Failed to sync openclaw provider config:', err);
       }
 
       return { success: true };
@@ -928,26 +969,22 @@ function registerProviderHandlers(gatewayManager: GatewayManager): void {
           }
         }
 
-        // If this provider is the current default, propagate model/baseUrl
-        // changes to openclaw.json and models.json immediately so the gateway
-        // picks them up without requiring the user to re-activate the provider.
-        const defaultProviderId = await getDefaultProvider();
-        if (defaultProviderId === providerId) {
-          try {
-            const modelOverride = nextConfig.model
-              ? `${nextConfig.type}/${nextConfig.model}`
-              : undefined;
+        // Sync the provider configuration to openclaw.json so Gateway knows about it
+        try {
+          const meta = getProviderConfig(nextConfig.type);
+          const api = nextConfig.type === 'custom' || nextConfig.type === 'ollama' ? 'openai-completions' : meta?.api;
+
+          if (api) {
+            syncProviderConfigToOpenClaw(nextConfig.type, nextConfig.model, {
+              baseUrl: nextConfig.baseUrl || meta?.baseUrl,
+              api,
+              apiKeyEnv: meta?.apiKeyEnv,
+            });
+
             if (nextConfig.type === 'custom' || nextConfig.type === 'ollama') {
-              setOpenClawDefaultModelWithOverride(nextConfig.type, modelOverride, {
-                baseUrl: nextConfig.baseUrl,
-                api: 'openai-completions',
-              });
-              // Also update per-agent models.json so the gateway sees the
-              // change immediately (baseUrl or model ID may have changed).
-              const resolvedKey =
-                apiKey !== undefined
-                  ? apiKey.trim() || null
-                  : await getApiKey(providerId);
+              const resolvedKey = apiKey !== undefined
+                ? (apiKey.trim() || null)
+                : await getApiKey(providerId);
               if (resolvedKey && nextConfig.baseUrl) {
                 const modelId = nextConfig.model;
                 updateAgentModelProvider(nextConfig.type, {
@@ -957,12 +994,32 @@ function registerProviderHandlers(gatewayManager: GatewayManager): void {
                   apiKey: resolvedKey,
                 });
               }
-            } else {
-              setOpenClawDefaultModel(nextConfig.type, modelOverride);
             }
-          } catch (err) {
-            console.warn('Failed to sync openclaw config after provider update:', err);
           }
+
+          // If this provider is the current default, update the primary model
+          const defaultProviderId = await getDefaultProvider();
+          if (defaultProviderId === providerId) {
+            const modelOverride = nextConfig.model
+              ? `${nextConfig.type}/${nextConfig.model}`
+              : undefined;
+            if (nextConfig.type !== 'custom' && nextConfig.type !== 'ollama') {
+              setOpenClawDefaultModel(nextConfig.type, modelOverride);
+            } else {
+              setOpenClawDefaultModelWithOverride(nextConfig.type, modelOverride, {
+                baseUrl: nextConfig.baseUrl,
+                api: 'openai-completions',
+              });
+            }
+          }
+
+          // Restart Gateway so it picks up the new config and env vars
+          logger.info(`Restarting Gateway after updating provider "${nextConfig.type}" config`);
+          void gatewayManager.restart().catch((err) => {
+            logger.warn('Gateway restart after provider update failed:', err);
+          });
+        } catch (err) {
+          console.warn('Failed to sync openclaw config after provider update:', err);
         }
 
         return { success: true };
@@ -1027,11 +1084,12 @@ function registerProviderHandlers(gatewayManager: GatewayManager): void {
       const provider = await getProvider(providerId);
       if (provider) {
         try {
-          // OAuth providers (qwen-portal, minimax-portal) have their openclaw.json
-          // model config already written by `openclaw models auth login --set-default`.
-          // Non-OAuth providers need us to write it here.
+          const providerKey = await getApiKey(providerId);
+
+          // OAuth providers (qwen-portal, minimax-portal) might use OAuth OR a direct API key.
+          // Treat them as OAuth only if they don't have a local API key configured.
           const OAUTH_PROVIDER_TYPES = ['qwen-portal', 'minimax-portal'];
-          const isOAuthProvider = OAUTH_PROVIDER_TYPES.includes(provider.type);
+          const isOAuthProvider = OAUTH_PROVIDER_TYPES.includes(provider.type) && !providerKey;
 
           if (!isOAuthProvider) {
             // If the provider has a user-specified model (e.g. siliconflow),
