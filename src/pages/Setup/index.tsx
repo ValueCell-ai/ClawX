@@ -732,10 +732,19 @@ function ProviderContent({
       setOauthError(null);
     };
 
-    const handleSuccess = () => {
+    const handleSuccess = async () => {
       setOauthFlowing(false);
       setOauthData(null);
       setKeyValid(true);
+
+      if (selectedProvider) {
+        try {
+          await window.electron.ipcRenderer.invoke('provider:setDefault', selectedProvider);
+        } catch (error) {
+          console.error('Failed to set default provider:', error);
+        }
+      }
+
       onConfiguredChange(true);
       toast.success(t('provider.valid'));
     };
@@ -758,7 +767,7 @@ function ProviderContent({
         window.electron.ipcRenderer.off('oauth:error', handleError);
       }
     };
-  }, [onConfiguredChange, t]);
+  }, [onConfiguredChange, t, selectedProvider]);
 
   const handleStartOAuth = async () => {
     if (!selectedProvider) return;
