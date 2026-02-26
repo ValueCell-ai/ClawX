@@ -197,12 +197,22 @@ async function initialize(): Promise<void> {
     mainWindow?.webContents.send('gateway:error', String(error));
   }
 
-  // Merge ClawX context snippets into the (now fully-seeded) bootstrap files
-  try {
-    ensureClawXContext();
-  } catch (error) {
+  // Merge ClawX context snippets into the workspace bootstrap files.
+  // The gateway seeds workspace files asynchronously after its HTTP server
+  // is ready, so ensureClawXContext will retry until the target files appear.
+  void ensureClawXContext().catch((error) => {
     logger.warn('Failed to merge ClawX context into workspace:', error);
-  }
+  });
+
+  // Re-apply ClawX context after every gateway restart because the gateway
+  // may re-seed workspace files with clean templates (losing ClawX markers).
+  gatewayManager.on('status', (status: { state: string }) => {
+    if (status.state === 'running') {
+      void ensureClawXContext().catch((error) => {
+        logger.warn('Failed to re-merge ClawX context after gateway reconnect:', error);
+      });
+    }
+  });
 }
 
 // Application lifecycle

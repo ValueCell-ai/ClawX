@@ -116,29 +116,26 @@ function resolveAllWorkspaceDirs(): string[] {
 }
 
 /**
- * Ensure ClawX context snippets are merged into the openclaw workspace
- * bootstrap files. Reads `*.clawx.md` templates from resources/context/
- * and injects them as marker-delimited sections into the corresponding
- * workspace `.md` files (e.g. AGENTS.clawx.md -> AGENTS.md).
- *
- * Iterates over every discovered agent workspace so all agents receive
- * the ClawX context regardless of which one is active.
+ * Synchronously merge ClawX context snippets into workspace bootstrap
+ * files that already exist on disk. Returns the number of target files
+ * that were skipped because they don't exist yet.
  */
-export function ensureClawXContext(): void {
+function mergeClawXContextOnce(): number {
   const contextDir = join(getResourcesDir(), 'context');
   if (!existsSync(contextDir)) {
     logger.debug('ClawX context directory not found, skipping context merge');
-    return;
+    return 0;
   }
 
   let files: string[];
   try {
     files = readdirSync(contextDir).filter((f) => f.endsWith('.clawx.md'));
   } catch {
-    return;
+    return 0;
   }
 
   const workspaceDirs = resolveAllWorkspaceDirs();
+  let skipped = 0;
 
   for (const workspaceDir of workspaceDirs) {
     if (!existsSync(workspaceDir)) {
@@ -151,6 +148,7 @@ export function ensureClawXContext(): void {
 
       if (!existsSync(targetPath)) {
         logger.debug(`Skipping ${targetName} in ${workspaceDir} (file does not exist yet, will be seeded by gateway)`);
+        skipped++;
         continue;
       }
 
@@ -164,4 +162,37 @@ export function ensureClawXContext(): void {
       }
     }
   }
+
+  return skipped;
+}
+
+const RETRY_INTERVAL_MS = 2000;
+const MAX_RETRIES = 15;
+
+/**
+ * Ensure ClawX context snippets are merged into the openclaw workspace
+ * bootstrap files. Reads `*.clawx.md` templates from resources/context/
+ * and injects them as marker-delimited sections into the corresponding
+ * workspace `.md` files (e.g. AGENTS.clawx.md -> AGENTS.md).
+ *
+ * The gateway seeds workspace files asynchronously after its HTTP server
+ * starts, so the target files may not exist yet when this is first called.
+ * When files are missing, retries with a delay until all targets are merged
+ * or the retry budget is exhausted.
+ */
+export async function ensureClawXContext(): Promise<void> {
+  let skipped = mergeClawXContextOnce();
+  if (skipped === 0) return;
+
+  for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+    await new Promise((r) => setTimeout(r, RETRY_INTERVAL_MS));
+    skipped = mergeClawXContextOnce();
+    if (skipped === 0) {
+      logger.info(`ClawX context merge completed after ${attempt} retry(ies)`);
+      return;
+    }
+    logger.debug(`ClawX context merge: ${skipped} file(s) still missing (retry ${attempt}/${MAX_RETRIES})`);
+  }
+
+  logger.warn(`ClawX context merge: ${skipped} file(s) still missing after ${MAX_RETRIES} retries`);
 }
