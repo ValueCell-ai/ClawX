@@ -50,7 +50,6 @@ publish:
   - provider: github
     owner: ValueCell-ai
     repo: ClawX
-    releaseType: release
 
 # macOS Configuration
 mac:
