@@ -716,6 +716,8 @@ function ProviderContent({
   const [providerMenuOpen, setProviderMenuOpen] = useState(false);
   const providerMenuRef = useRef<HTMLDivElement | null>(null);
 
+  const [authMode, setAuthMode] = useState<'oauth' | 'apikey'>('oauth');
+
   // OAuth Flow State
   const [oauthFlowing, setOauthFlowing] = useState(false);
   const [oauthData, setOauthData] = useState<{
@@ -897,6 +899,8 @@ function ProviderContent({
   const showModelIdField = selectedProviderData?.showModelId ?? false;
   const requiresKey = selectedProviderData?.requiresApiKey ?? false;
   const isOAuth = selectedProviderData?.isOAuth ?? false;
+  const supportsApiKey = selectedProviderData?.supportsApiKey ?? false;
+  const useOAuthFlow = isOAuth && (!supportsApiKey || authMode === 'oauth');
 
   const handleValidateAndSave = async () => {
     if (!selectedProvider) return;
@@ -983,7 +987,7 @@ function ProviderContent({
     selectedProvider
     && (requiresKey ? apiKey.length > 0 : true)
     && (showModelIdField ? modelId.trim().length > 0 : true)
-    && !isOAuth;
+    && !useOAuthFlow;
 
   const handleSelectProvider = (providerId: string) => {
     onSelectProvider(providerId);
@@ -992,6 +996,7 @@ function ProviderContent({
     onApiKeyChange('');
     setKeyValid(null);
     setProviderMenuOpen(false);
+    setAuthMode('oauth');
   };
 
   return (
@@ -1126,8 +1131,32 @@ function ProviderContent({
             </div>
           )}
 
+          {/* Auth mode toggle for providers supporting both */}
+          {isOAuth && supportsApiKey && (
+            <div className="flex rounded-lg border overflow-hidden text-sm">
+              <button
+                onClick={() => setAuthMode('oauth')}
+                className={cn(
+                  'flex-1 py-2 px-3 transition-colors',
+                  authMode === 'oauth' ? 'bg-primary text-primary-foreground' : 'hover:bg-muted text-muted-foreground'
+                )}
+              >
+                {t('settings:aiProviders.oauth.loginMode')}
+              </button>
+              <button
+                onClick={() => setAuthMode('apikey')}
+                className={cn(
+                  'flex-1 py-2 px-3 transition-colors',
+                  authMode === 'apikey' ? 'bg-primary text-primary-foreground' : 'hover:bg-muted text-muted-foreground'
+                )}
+              >
+                {t('settings:aiProviders.oauth.apikeyMode')}
+              </button>
+            </div>
+          )}
+
           {/* API Key field (hidden for ollama) */}
-          {requiresKey && (
+          {(!isOAuth || (supportsApiKey && authMode === 'apikey')) && requiresKey && (
             <div className="space-y-2">
               <Label htmlFor="apiKey">{t('provider.apiKey')}</Label>
               <div className="relative">
@@ -1156,7 +1185,7 @@ function ProviderContent({
           )}
 
           {/* Device OAuth Trigger */}
-          {isOAuth && (
+          {useOAuthFlow && (
             <div className="space-y-4 pt-2">
               <div className="rounded-lg bg-blue-500/10 border border-blue-500/20 p-4 text-center">
                 <p className="text-sm text-blue-200 mb-3 block">
@@ -1252,7 +1281,7 @@ function ProviderContent({
           <Button
             onClick={handleValidateAndSave}
             disabled={!canSubmit || validating}
-            className={cn("w-full", isOAuth && "hidden")}
+            className={cn("w-full", useOAuthFlow && "hidden")}
           >
             {validating ? (
               <Loader2 className="h-4 w-4 animate-spin mr-2" />
