@@ -1009,6 +1009,18 @@ export const useChatStore = create<ChatState>((set, get) => ({
   // ── New session ──
 
   newSession: () => {
+    const { currentSessionKey } = get();
+
+    // Notify the gateway that the old session is ending so the session-memory
+    // hook can persist conversation memories to memory/YYYY-MM-DD-<slug>.md.
+    if (currentSessionKey) {
+      void window.electron.ipcRenderer.invoke(
+        'gateway:rpc',
+        'sessions.reset',
+        { key: currentSessionKey, reason: 'new' },
+      ).catch(() => { /* fire-and-forget */ });
+    }
+
     // Generate a new unique session key and switch to it
     const prefix = getCanonicalPrefixFromSessions(get().sessions) ?? DEFAULT_CANONICAL_PREFIX;
     const newKey = `${prefix}:session-${Date.now()}`;

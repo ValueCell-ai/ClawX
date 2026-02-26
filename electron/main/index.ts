@@ -14,7 +14,7 @@ import { logger } from '../utils/logger';
 import { warmupNetworkOptimization } from '../utils/uv-env';
 
 import { ClawHubService } from '../gateway/clawhub';
-import { ensureClawXContext } from '../utils/openclaw-workspace';
+import { ensureClawXContext, repairClawXOnlyBootstrapFiles } from '../utils/openclaw-workspace';
 
 // Disable GPU acceleration for better compatibility
 app.disableHardwareAcceleration();
@@ -178,14 +178,16 @@ async function initialize(): Promise<void> {
     mainWindow = null;
   });
 
-  // Merge ClawX context snippets into the openclaw workspace bootstrap files
+  // Repair any bootstrap files that only contain ClawX markers (no OpenClaw
+  // template content). This fixes a race condition where ensureClawXContext()
+  // previously created the file before the gateway could seed the full template.
   try {
-    ensureClawXContext();
+    repairClawXOnlyBootstrapFiles();
   } catch (error) {
-    logger.warn('Failed to merge ClawX context into workspace:', error);
+    logger.warn('Failed to repair bootstrap files:', error);
   }
 
-  // Start Gateway automatically
+  // Start Gateway automatically (this seeds missing bootstrap files with full templates)
   try {
     logger.debug('Auto-starting Gateway...');
     await gatewayManager.start();
@@ -193,6 +195,13 @@ async function initialize(): Promise<void> {
   } catch (error) {
     logger.error('Gateway auto-start failed:', error);
     mainWindow?.webContents.send('gateway:error', String(error));
+  }
+
+  // Merge ClawX context snippets into the (now fully-seeded) bootstrap files
+  try {
+    ensureClawXContext();
+  } catch (error) {
+    logger.warn('Failed to merge ClawX context into workspace:', error);
   }
 }
 
