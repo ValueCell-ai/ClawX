@@ -257,10 +257,11 @@ function extractRawFilePaths(text: string): Array<{ filePath: string; mimeType: 
   const refs: Array<{ filePath: string; mimeType: string }> = [];
   const seen = new Set<string>();
   const exts = 'png|jpe?g|gif|webp|bmp|avif|svg|pdf|docx?|xlsx?|pptx?|txt|csv|md|rtf|epub|zip|tar|gz|rar|7z|mp3|wav|ogg|aac|flac|m4a|mp4|mov|avi|mkv|webm|m4v';
-  // Unix absolute paths (/... or ~/...)
-  const unixRegex = new RegExp(`((?:\\/|~\\/)[^\\s\\n"'()\\[\\],<>]*?\\.(?:${exts}))`, 'gi');
-  // Windows absolute paths (C:\... D:\...)
-  const winRegex = new RegExp(`([A-Za-z]:\\\\[^\\s\\n"'()\\[\\],<>]*?\\.(?:${exts}))`, 'gi');
+  // Unix absolute paths (/... or ~/...) — lookbehind rejects mid-token slashes
+  // (e.g. "path/to/file.mp4", "https://example.com/file.mp4")
+  const unixRegex = new RegExp(`(?<![\\w./:])((?:\\/|~\\/)[^\\s\\n"'()\\[\\],<>]*?\\.(?:${exts}))`, 'gi');
+  // Windows absolute paths (C:\... D:\...) — lookbehind rejects drive letter glued to a word
+  const winRegex = new RegExp(`(?<![\\w])([A-Za-z]:\\\\[^\\s\\n"'()\\[\\],<>]*?\\.(?:${exts}))`, 'gi');
   for (const regex of [unixRegex, winRegex]) {
     let match;
     while ((match = regex.exec(text)) !== null) {
@@ -1063,16 +1064,38 @@ export const useChatStore = create<ChatState>((set, get) => ({
         // Restore file attachments for user/assistant messages (from cache + text patterns)
         const enrichedMessages = enrichWithCachedImages(filteredMessages);
         const thinkingLevel = data.thinkingLevel ? String(data.thinkingLevel) : null;
-        set({ messages: enrichedMessages, thinkingLevel, loading: false });
+
+        // Preserve the optimistic user message during an active send.
+        // The Gateway may not include the user's message in chat.history
+        // until the run completes, causing it to flash out of the UI.
+        let finalMessages = enrichedMessages;
+        const userMsgAt = get().lastUserMessageAt;
+        if (get().sending && userMsgAt) {
+          const userMsMs = toMs(userMsgAt);
+          const hasRecentUser = enrichedMessages.some(
+            (m) => m.role === 'user' && m.timestamp && Math.abs(toMs(m.timestamp) - userMsMs) < 5000,
+          );
+          if (!hasRecentUser) {
+            const currentMsgs = get().messages;
+            const optimistic = [...currentMsgs].reverse().find(
+              (m) => m.role === 'user' && m.timestamp && Math.abs(toMs(m.timestamp) - userMsMs) < 5000,
+            );
+            if (optimistic) {
+              finalMessages = [...enrichedMessages, optimistic];
+            }
+          }
+        }
+
+        set({ messages: finalMessages, thinkingLevel, loading: false });
 
         // Async: load missing image previews from disk (updates in background)
-        loadMissingPreviews(enrichedMessages).then((updated) => {
+        loadMissingPreviews(finalMessages).then((updated) => {
           if (updated) {
             // Create new object references so React.memo detects changes.
             // loadMissingPreviews mutates AttachedFileMeta in place, so we
             // must produce fresh message + file references for each affected msg.
             set({
-              messages: enrichedMessages.map(msg =>
+              messages: finalMessages.map(msg =>
                 msg._attachedFiles
                   ? { ...msg, _attachedFiles: msg._attachedFiles.map(f => ({ ...f })) }
                   : msg
