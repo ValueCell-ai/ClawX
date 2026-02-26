@@ -55,8 +55,26 @@ export class AppUpdater extends EventEmitter {
    */
   private nativeSquirrelReady = false;
 
+  /** Fallback timer for Squirrel staging; stored so it can be cancelled. */
+  private squirrelFallbackTimer: NodeJS.Timeout | null = null;
+
+  /** Set when the user explicitly cancels auto-install to prevent fallback restart. */
+  private autoInstallCancelled = false;
+
   /** Delay (in seconds) before auto-installing a downloaded update. */
   private static readonly AUTO_INSTALL_DELAY_SECONDS = 5;
+
+  /**
+   * Squirrel.Mac staging (localhost download + zip extraction) can take 3–5 min
+   * for large apps. Allow 6 min before falling back.
+   */
+  private static readonly SQUIRREL_STAGING_TIMEOUT_MS = 6 * 60_000;
+
+  /**
+   * Safety timeout for quitAndInstall() on macOS when Squirrel hasn't finished
+   * staging. Generous enough for a full staging cycle.
+   */
+  private static readonly QUIT_SAFETY_TIMEOUT_MS = 6 * 60_000;
 
   constructor() {
     super();
@@ -155,26 +173,8 @@ export class AppUpdater extends EventEmitter {
       this.emit('update-downloaded', event);
 
       if (autoUpdater.autoDownload) {
-        // On macOS, electron-updater fires update-downloaded before
-        // Squirrel.Mac has finished staging. Wait for Squirrel to be
-        // ready before starting the countdown so quitAndInstall() can
-        // quit immediately instead of deferring.
         if (process.platform === 'darwin' && !this.nativeSquirrelReady) {
-          logger.info('[Updater] Waiting for Squirrel.Mac to finish staging before auto-install...');
-          const onReady = () => {
-            logger.info('[Updater] Squirrel.Mac ready – starting auto-install countdown');
-            this.startAutoInstallCountdown();
-          };
-          nativeSquirrelUpdater.once('update-downloaded', onReady);
-          // Fallback: if Squirrel doesn't signal within 120 s, start
-          // the countdown anyway (quitAndInstall has its own safety net).
-          setTimeout(() => {
-            nativeSquirrelUpdater.removeListener('update-downloaded', onReady);
-            if (this.autoInstallTimer === null) {
-              logger.warn('[Updater] Squirrel.Mac staging timeout – starting auto-install countdown anyway');
-              this.startAutoInstallCountdown();
-            }
-          }, 120_000);
+          this.waitForSquirrelThenAutoInstall();
         } else {
           this.startAutoInstallCountdown();
         }
@@ -260,10 +260,11 @@ export class AppUpdater extends EventEmitter {
    * call silently defers (registers a one-shot listener) and returns
    * immediately — leaving the app running with no visible feedback.
    *
-   * To prevent the app from appearing stuck, we add a safety timeout that
-   * force-quits after giving Squirrel ample time to finish. Because
-   * autoInstallOnAppQuit=true, Squirrel will still apply the staged update
-   * on the next launch even if we force-quit.
+   * When Squirrel is already ready the quit fires synchronously and no safety
+   * net is needed. When it's still pending we add a generous safety timeout
+   * so the app doesn't hang indefinitely; autoInstallOnAppQuit=true ensures
+   * Squirrel applies the staged update on the next launch even if we
+   * force-quit.
    */
   quitAndInstall(): void {
     const squirrelStatus = this.nativeSquirrelReady ? 'ready' : 'pending';
@@ -271,16 +272,11 @@ export class AppUpdater extends EventEmitter {
 
     autoUpdater.quitAndInstall();
 
-    if (process.platform === 'darwin') {
-      // Safety net: if MacUpdater's deferred quit never fires (e.g. Squirrel
-      // staging fails silently or takes abnormally long), force-quit after
-      // a generous timeout. 60 s is more than enough for a localhost transfer
-      // + zip extraction. The timer is unref'd so it doesn't keep the event
-      // loop alive if the normal quit path succeeds first.
+    if (process.platform === 'darwin' && !this.nativeSquirrelReady) {
       const safetyTimer = setTimeout(() => {
         logger.warn('[Updater] macOS safety timeout reached – forcing app.quit()');
         app.quit();
-      }, 60_000);
+      }, AppUpdater.QUIT_SAFETY_TIMEOUT_MS);
       safetyTimer.unref();
     }
   }
@@ -306,9 +302,39 @@ export class AppUpdater extends EventEmitter {
   }
 
   /**
-   * Cancel a running auto-install countdown.
+   * Wait for Squirrel.Mac to finish staging before starting auto-install.
+   * Falls back after SQUIRREL_STAGING_TIMEOUT_MS if Squirrel never signals.
+   */
+  private waitForSquirrelThenAutoInstall(): void {
+    logger.info('[Updater] Waiting for Squirrel.Mac to finish staging before auto-install...');
+    this.autoInstallCancelled = false;
+
+    const onReady = () => {
+      this.clearSquirrelFallbackTimer();
+      if (this.autoInstallCancelled) return;
+      logger.info('[Updater] Squirrel.Mac ready – starting auto-install countdown');
+      this.startAutoInstallCountdown();
+    };
+
+    nativeSquirrelUpdater.once('update-downloaded', onReady);
+
+    this.squirrelFallbackTimer = setTimeout(() => {
+      this.squirrelFallbackTimer = null;
+      nativeSquirrelUpdater.removeListener('update-downloaded', onReady);
+      if (this.autoInstallCancelled) return;
+      if (this.autoInstallTimer === null) {
+        logger.warn('[Updater] Squirrel.Mac staging timeout – starting auto-install countdown anyway');
+        this.startAutoInstallCountdown();
+      }
+    }, AppUpdater.SQUIRREL_STAGING_TIMEOUT_MS);
+  }
+
+  /**
+   * Cancel a running auto-install countdown (and any pending Squirrel wait).
    */
   cancelAutoInstall(): void {
+    this.autoInstallCancelled = true;
+    this.clearSquirrelFallbackTimer();
     this.clearAutoInstallTimer();
     this.sendToRenderer('update:auto-install-countdown', { seconds: -1, cancelled: true });
   }
@@ -317,6 +343,13 @@ export class AppUpdater extends EventEmitter {
     if (this.autoInstallTimer) {
       clearInterval(this.autoInstallTimer);
       this.autoInstallTimer = null;
+    }
+  }
+
+  private clearSquirrelFallbackTimer(): void {
+    if (this.squirrelFallbackTimer) {
+      clearTimeout(this.squirrelFallbackTimer);
+      this.squirrelFallbackTimer = null;
     }
   }
 
