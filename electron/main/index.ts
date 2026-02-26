@@ -231,9 +231,7 @@ app.on('window-all-closed', () => {
 app.on('before-quit', () => {
   isQuitting = true;
   // Fire-and-forget: do not await gatewayManager.stop() here.
-  // Awaiting inside a before-quit handler can stall Electron's
-  // replyToApplicationShouldTerminate: call when the quit is initiated
-  // by Squirrel.Mac (quitAndInstall), preventing the app from ever exiting.
+  // Awaiting inside before-quit can stall Electron's quit sequence.
   void gatewayManager.stop().catch((err) => {
     logger.warn('gatewayManager.stop() error during quit:', err);
   });

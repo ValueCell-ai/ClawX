@@ -7,7 +7,6 @@
  * to point at the channel-specific OSS directory (e.g. /alpha/, /beta/).
  */
 import { autoUpdater, UpdateInfo, ProgressInfo, UpdateDownloadedEvent } from 'electron-updater';
-import { autoUpdater as nativeSquirrelUpdater } from 'electron';
 import { BrowserWindow, app, ipcMain } from 'electron';
 import { logger } from '../utils/logger';
 import { EventEmitter } from 'events';
@@ -47,54 +46,20 @@ export class AppUpdater extends EventEmitter {
   private autoInstallTimer: NodeJS.Timeout | null = null;
   private autoInstallCountdown = 0;
 
-  /**
-   * Tracks whether Squirrel.Mac has finished staging the update.
-   * On macOS, electron-updater fires its own `update-downloaded` event early
-   * (before Squirrel finishes). We listen to Electron's native autoUpdater
-   * `update-downloaded` event to know when Squirrel is truly ready.
-   */
-  private nativeSquirrelReady = false;
-
-  /** Fallback timer for Squirrel staging; stored so it can be cancelled. */
-  private squirrelFallbackTimer: NodeJS.Timeout | null = null;
-
-  /** Set when the user explicitly cancels auto-install to prevent fallback restart. */
-  private autoInstallCancelled = false;
-
   /** Delay (in seconds) before auto-installing a downloaded update. */
   private static readonly AUTO_INSTALL_DELAY_SECONDS = 5;
-
-  /**
-   * Squirrel.Mac staging (localhost download + zip extraction) can take 3–5 min
-   * for large apps. Allow 6 min before falling back.
-   */
-  private static readonly SQUIRREL_STAGING_TIMEOUT_MS = 6 * 60_000;
-
-  /**
-   * Safety timeout for quitAndInstall() on macOS when Squirrel hasn't finished
-   * staging. Generous enough for a full staging cycle.
-   */
-  private static readonly QUIT_SAFETY_TIMEOUT_MS = 6 * 60_000;
 
   constructor() {
     super();
     
-    // Configure auto-updater
     autoUpdater.autoDownload = false;
-    // Must be true on macOS so that MacUpdater.updateDownloaded() triggers
-    // nativeUpdater.checkForUpdates() during the download phase, which lets
-    // Squirrel.Mac pre-stage the update.  When false, the Squirrel download
-    // is deferred entirely to quitAndInstall() time, where it races against
-    // any safety timeout and often loses — resulting in the app quitting
-    // without installing the update.
     autoUpdater.autoInstallOnAppQuit = true;
     
-    // Use logger
     autoUpdater.logger = {
-      info: (msg: string) => console.log('[Updater]', msg),
-      warn: (msg: string) => console.warn('[Updater]', msg),
-      error: (msg: string) => console.error('[Updater]', msg),
-      debug: (msg: string) => console.debug('[Updater]', msg),
+      info: (msg: string) => logger.info('[Updater]', msg),
+      warn: (msg: string) => logger.warn('[Updater]', msg),
+      error: (msg: string) => logger.error('[Updater]', msg),
+      debug: (msg: string) => logger.debug('[Updater]', msg),
     };
 
     // Override feed URL for prerelease channels so that
@@ -103,7 +68,7 @@ export class AppUpdater extends EventEmitter {
     const channel = detectChannel(version);
     const feedUrl = `${OSS_BASE_URL}/${channel}`;
 
-    console.log(`[Updater] Version: ${version}, channel: ${channel}, feedUrl: ${feedUrl}`);
+    logger.info(`[Updater] Version: ${version}, channel: ${channel}, feedUrl: ${feedUrl}`);
 
     // Set channel so electron-updater requests the correct yml filename.
     // e.g. channel "alpha" → requests alpha-mac.yml, channel "latest" → requests latest-mac.yml
@@ -114,18 +79,6 @@ export class AppUpdater extends EventEmitter {
       url: feedUrl,
       useMultipleRangeRequest: false,
     });
-
-    // Track when Squirrel.Mac has finished staging the update.
-    // This is separate from electron-updater's update-downloaded event.
-    if (process.platform === 'darwin') {
-      nativeSquirrelUpdater.on('update-downloaded', () => {
-        this.nativeSquirrelReady = true;
-        logger.info('[Updater] Squirrel.Mac has finished staging the update');
-      });
-      nativeSquirrelUpdater.on('error', (err) => {
-        logger.warn('[Updater] Squirrel.Mac error:', err);
-      });
-    }
 
     this.setupListeners();
   }
@@ -173,11 +126,7 @@ export class AppUpdater extends EventEmitter {
       this.emit('update-downloaded', event);
 
       if (autoUpdater.autoDownload) {
-        if (process.platform === 'darwin' && !this.nativeSquirrelReady) {
-          this.waitForSquirrelThenAutoInstall();
-        } else {
-          this.startAutoInstallCountdown();
-        }
+        this.startAutoInstallCountdown();
       }
     });
 
@@ -191,7 +140,12 @@ export class AppUpdater extends EventEmitter {
    * Update status and notify renderer
    */
   private updateStatus(newStatus: Partial<UpdateStatus>): void {
-    this.status = { ...this.status, ...newStatus };
+    this.status = {
+      status: newStatus.status ?? this.status.status,
+      info: newStatus.info,
+      progress: newStatus.progress,
+      error: newStatus.error,
+    };
     this.sendToRenderer('update:status-changed', this.status);
   }
 
@@ -234,7 +188,7 @@ export class AppUpdater extends EventEmitter {
 
       return result.updateInfo || null;
     } catch (error) {
-      console.error('[Updater] Check for updates failed:', error);
+      logger.error('[Updater] Check for updates failed:', error);
       this.updateStatus({ status: 'error', error: (error as Error).message || String(error) });
       throw error;
     }
@@ -247,38 +201,14 @@ export class AppUpdater extends EventEmitter {
     try {
       await autoUpdater.downloadUpdate();
     } catch (error) {
-      console.error('[Updater] Download update failed:', error);
+      logger.error('[Updater] Download update failed:', error);
       throw error;
     }
   }
 
-  /**
-   * Install update and restart app.
-   *
-   * On macOS, electron-updater's MacUpdater.quitAndInstall() delegates to
-   * Squirrel.Mac. If Squirrel hasn't finished staging the update yet, the
-   * call silently defers (registers a one-shot listener) and returns
-   * immediately — leaving the app running with no visible feedback.
-   *
-   * When Squirrel is already ready the quit fires synchronously and no safety
-   * net is needed. When it's still pending we add a generous safety timeout
-   * so the app doesn't hang indefinitely; autoInstallOnAppQuit=true ensures
-   * Squirrel applies the staged update on the next launch even if we
-   * force-quit.
-   */
   quitAndInstall(): void {
-    const squirrelStatus = this.nativeSquirrelReady ? 'ready' : 'pending';
-    logger.info(`[Updater] quitAndInstall called (squirrel=${squirrelStatus})`);
-
+    logger.info('[Updater] quitAndInstall called');
     autoUpdater.quitAndInstall();
-
-    if (process.platform === 'darwin' && !this.nativeSquirrelReady) {
-      const safetyTimer = setTimeout(() => {
-        logger.warn('[Updater] macOS safety timeout reached – forcing app.quit()');
-        app.quit();
-      }, AppUpdater.QUIT_SAFETY_TIMEOUT_MS);
-      safetyTimer.unref();
-    }
   }
 
   /**
@@ -301,40 +231,7 @@ export class AppUpdater extends EventEmitter {
     }, 1000);
   }
 
-  /**
-   * Wait for Squirrel.Mac to finish staging before starting auto-install.
-   * Falls back after SQUIRREL_STAGING_TIMEOUT_MS if Squirrel never signals.
-   */
-  private waitForSquirrelThenAutoInstall(): void {
-    logger.info('[Updater] Waiting for Squirrel.Mac to finish staging before auto-install...');
-    this.autoInstallCancelled = false;
-
-    const onReady = () => {
-      this.clearSquirrelFallbackTimer();
-      if (this.autoInstallCancelled) return;
-      logger.info('[Updater] Squirrel.Mac ready – starting auto-install countdown');
-      this.startAutoInstallCountdown();
-    };
-
-    nativeSquirrelUpdater.once('update-downloaded', onReady);
-
-    this.squirrelFallbackTimer = setTimeout(() => {
-      this.squirrelFallbackTimer = null;
-      nativeSquirrelUpdater.removeListener('update-downloaded', onReady);
-      if (this.autoInstallCancelled) return;
-      if (this.autoInstallTimer === null) {
-        logger.warn('[Updater] Squirrel.Mac staging timeout – starting auto-install countdown anyway');
-        this.startAutoInstallCountdown();
-      }
-    }, AppUpdater.SQUIRREL_STAGING_TIMEOUT_MS);
-  }
-
-  /**
-   * Cancel a running auto-install countdown (and any pending Squirrel wait).
-   */
   cancelAutoInstall(): void {
-    this.autoInstallCancelled = true;
-    this.clearSquirrelFallbackTimer();
     this.clearAutoInstallTimer();
     this.sendToRenderer('update:auto-install-countdown', { seconds: -1, cancelled: true });
   }
@@ -343,13 +240,6 @@ export class AppUpdater extends EventEmitter {
     if (this.autoInstallTimer) {
       clearInterval(this.autoInstallTimer);
       this.autoInstallTimer = null;
-    }
-  }
-
-  private clearSquirrelFallbackTimer(): void {
-    if (this.squirrelFallbackTimer) {
-      clearTimeout(this.squirrelFallbackTimer);
-      this.squirrelFallbackTimer = null;
     }
   }
 
