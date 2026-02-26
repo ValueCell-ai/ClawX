@@ -445,6 +445,66 @@ interface RuntimeProviderConfigOverride {
 }
 
 /**
+ * Register or update a provider's configuration in openclaw.json
+ * without changing the current default model.
+ */
+export function syncProviderConfigToOpenClaw(
+  provider: string,
+  modelId: string | undefined,
+  override: RuntimeProviderConfigOverride
+): void {
+  const configPath = join(homedir(), '.openclaw', 'openclaw.json');
+
+  let config: Record<string, unknown> = {};
+  try {
+    if (existsSync(configPath)) {
+      config = JSON.parse(readFileSync(configPath, 'utf-8'));
+    }
+  } catch (err) {
+    console.warn('Failed to read openclaw.json, creating fresh config:', err);
+  }
+
+  if (override.baseUrl && override.api) {
+    const models = (config.models || {}) as Record<string, unknown>;
+    const providers = (models.providers || {}) as Record<string, unknown>;
+
+    const nextModels: Array<Record<string, unknown>> = [];
+    if (modelId) {
+      nextModels.push({ id: modelId, name: modelId });
+    }
+
+    const nextProvider: Record<string, unknown> = {
+      baseUrl: override.baseUrl,
+      api: override.api,
+      models: nextModels,
+    };
+    if (override.apiKeyEnv) {
+      nextProvider.apiKey = override.apiKeyEnv;
+    }
+
+    providers[provider] = nextProvider;
+    models.providers = providers;
+    config.models = models;
+  }
+
+  // Ensure extension is enabled for oauth providers to prevent gateway wiping config
+  if (provider === 'minimax-portal' || provider === 'qwen-portal') {
+    const plugins = (config.plugins || {}) as Record<string, unknown>;
+    const entries = (plugins.entries || {}) as Record<string, unknown>;
+    entries[`${provider}-auth`] = { enabled: true };
+    plugins.entries = entries;
+    config.plugins = plugins;
+  }
+
+  const dir = join(configPath, '..');
+  if (!existsSync(dir)) {
+    mkdirSync(dir, { recursive: true });
+  }
+
+  writeFileSync(configPath, JSON.stringify(config, null, 2), 'utf-8');
+}
+
+/**
  * Update OpenClaw model + provider config using runtime config values.
  * Useful for user-configurable providers (custom/ollama-like) where
  * baseUrl/model are not in the static registry.
