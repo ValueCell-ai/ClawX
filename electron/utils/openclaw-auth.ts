@@ -396,13 +396,17 @@ export function setOpenClawDefaultModel(provider: string, modelOverride?: string
       mergedModels.push({ id: modelId, name: modelId });
     }
 
-    providers[provider] = {
+    const providerEntry: Record<string, unknown> = {
       ...existingProvider,
       baseUrl: providerCfg.baseUrl,
       api: providerCfg.api,
       apiKey: providerCfg.apiKeyEnv,
       models: mergedModels,
     };
+    if (providerCfg.headers && Object.keys(providerCfg.headers).length > 0) {
+      providerEntry.headers = providerCfg.headers;
+    }
+    providers[provider] = providerEntry;
     console.log(`Configured models.providers.${provider} with baseUrl=${providerCfg.baseUrl}, model=${modelId}`);
 
     models.providers = providers;
@@ -442,6 +446,7 @@ interface RuntimeProviderConfigOverride {
   baseUrl?: string;
   api?: string;
   apiKeyEnv?: string;
+  headers?: Record<string, string>;
 }
 
 /**
@@ -480,6 +485,9 @@ export function syncProviderConfigToOpenClaw(
     };
     if (override.apiKeyEnv) {
       nextProvider.apiKey = override.apiKeyEnv;
+    }
+    if (override.headers && Object.keys(override.headers).length > 0) {
+      nextProvider.headers = override.headers;
     }
 
     providers[provider] = nextProvider;
@@ -561,6 +569,9 @@ export function setOpenClawDefaultModelWithOverride(
     };
     if (override.apiKeyEnv) {
       nextProvider.apiKey = override.apiKeyEnv;
+    }
+    if (override.headers && Object.keys(override.headers).length > 0) {
+      nextProvider.headers = override.headers;
     }
 
     providers[provider] = nextProvider;

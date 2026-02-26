@@ -34,6 +34,7 @@ interface ProviderBackendMeta {
     api: string;
     apiKeyEnv: string;
     models?: ProviderModelEntry[];
+    headers?: Record<string, string>;
   };
 }
 
@@ -65,6 +66,10 @@ const REGISTRY: Record<string, ProviderBackendMeta> = {
       baseUrl: 'https://openrouter.ai/api/v1',
       api: 'openai-completions',
       apiKeyEnv: 'OPENROUTER_API_KEY',
+      headers: {
+        'HTTP-Referer': 'https://claw-x.com',
+        'X-Title': 'ClawX',
+      },
     },
   },
   moonshot: {
@@ -135,10 +140,10 @@ export function getProviderDefaultModel(type: string): string | undefined {
   return REGISTRY[type]?.defaultModel;
 }
 
-/** Get the OpenClaw provider config (baseUrl, api, apiKeyEnv, models) */
+/** Get the OpenClaw provider config (baseUrl, api, apiKeyEnv, models, headers) */
 export function getProviderConfig(
   type: string
-): { baseUrl: string; api: string; apiKeyEnv: string; models?: ProviderModelEntry[] } | undefined {
+): { baseUrl: string; api: string; apiKeyEnv: string; models?: ProviderModelEntry[]; headers?: Record<string, string> } | undefined {
   return REGISTRY[type]?.providerConfig;
 }
 

@@ -878,6 +878,7 @@ function registerProviderHandlers(gatewayManager: GatewayManager): void {
             baseUrl: config.baseUrl || meta?.baseUrl,
             api,
             apiKeyEnv: meta?.apiKeyEnv,
+            headers: meta?.headers,
           });
 
           if (config.type === 'custom' || config.type === 'ollama') {
@@ -1003,6 +1004,7 @@ function registerProviderHandlers(gatewayManager: GatewayManager): void {
               baseUrl: nextConfig.baseUrl || meta?.baseUrl,
               api,
               apiKeyEnv: meta?.apiKeyEnv,
+              headers: meta?.headers,
             });
 
             if (nextConfig.type === 'custom' || nextConfig.type === 'ollama') {
