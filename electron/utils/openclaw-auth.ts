@@ -258,6 +258,60 @@ export function removeProviderKeyFromOpenClaw(
 }
 
 /**
+ * Remove a provider completely from OpenClaw (delete config, disable plugins, delete keys)
+ */
+export function removeProviderFromOpenClaw(provider: string): void {
+  // 1. Remove from auth-profiles.json
+  const agentIds = discoverAgentIds();
+  if (agentIds.length === 0) agentIds.push('main');
+  for (const id of agentIds) {
+    const store = readAuthProfiles(id);
+    const profileId = `${provider}:default`;
+    if (store.profiles[profileId]) {
+      delete store.profiles[profileId];
+      if (store.order?.[provider]) {
+        store.order[provider] = store.order[provider].filter((aid) => aid !== profileId);
+        if (store.order[provider].length === 0) delete store.order[provider];
+      }
+      if (store.lastGood?.[provider] === profileId) delete store.lastGood[provider];
+      writeAuthProfiles(store, id);
+    }
+  }
+
+  // 2. Remove from openclaw.json
+  const configPath = join(homedir(), '.openclaw', 'openclaw.json');
+  try {
+    if (existsSync(configPath)) {
+      const config = JSON.parse(readFileSync(configPath, 'utf-8'));
+      let modified = false;
+
+      // Disable plugin (for OAuth like qwen-portal-auth)
+      if (config.plugins?.entries) {
+        const pluginName = `${provider}-auth`;
+        if (config.plugins.entries[pluginName]) {
+          config.plugins.entries[pluginName].enabled = false;
+          modified = true;
+          console.log(`Disabled OpenClaw plugin: ${pluginName}`);
+        }
+      }
+
+      // Remove from models.providers
+      if (config.models?.providers?.[provider]) {
+        delete config.models.providers[provider];
+        modified = true;
+        console.log(`Removed OpenClaw provider config: ${provider}`);
+      }
+
+      if (modified) {
+        writeFileSync(configPath, JSON.stringify(config, null, 2), 'utf-8');
+      }
+    }
+  } catch (err) {
+    console.warn(`Failed to remove provider ${provider} from openclaw.json:`, err);
+  }
+}
+
+/**
  * Build environment variables object with all stored API keys
  * for passing to the Gateway process
  */
@@ -460,6 +514,16 @@ export function setOpenClawDefaultModelWithOverride(
   }
   config.gateway = gateway;
 
+  // Ensure the extension plugin is marked as enabled in openclaw.json
+  // Without this, the OpenClaw Gateway will silently wipe the provider config on startup
+  if (provider === 'minimax-portal' || provider === 'qwen-portal') {
+    const plugins = (config.plugins || {}) as Record<string, unknown>;
+    const entries = (plugins.entries || {}) as Record<string, unknown>;
+    entries[`${provider}-auth`] = { enabled: true };
+    plugins.entries = entries;
+    config.plugins = plugins;
+  }
+
   const dir = join(configPath, '..');
   if (!existsSync(dir)) {
     mkdirSync(dir, { recursive: true });
@@ -469,6 +533,52 @@ export function setOpenClawDefaultModelWithOverride(
   console.log(
     `Set OpenClaw default model to "${model}" for provider "${provider}" (runtime override)`
   );
+}
+
+/**
+ * Get a set of all active provider IDs configured in openclaw.json and auth-profiles.json.
+ * This is used to sync ClawX's local provider list with the actual OpenClaw engine state.
+ */
+export function getActiveOpenClawProviders(): Set<string> {
+  const activeProviders = new Set<string>();
+  const configPath = join(homedir(), '.openclaw', 'openclaw.json');
+
+  // 1. Read openclaw.json models.providers
+  try {
+    if (existsSync(configPath)) {
+      const config = JSON.parse(readFileSync(configPath, 'utf-8'));
+      const providers = config.models?.providers;
+      if (providers && typeof providers === 'object') {
+        for (const key of Object.keys(providers)) {
+          activeProviders.add(key);
+        }
+      }
+    }
+  } catch (err) {
+    console.warn('Failed to read openclaw.json for active providers:', err);
+  }
+
+  // 2. Read openclaw.json plugins.entries for OAuth providers
+  try {
+    if (existsSync(configPath)) {
+      const config = JSON.parse(readFileSync(configPath, 'utf-8'));
+      const plugins = config.plugins?.entries;
+      if (plugins && typeof plugins === 'object') {
+        for (const [pluginId, meta] of Object.entries(plugins)) {
+          // If the plugin ends with -auth and is enabled, it's an OAuth provider
+          // e.g. 'qwen-portal-auth' implies provider 'qwen-portal'
+          if (pluginId.endsWith('-auth') && (meta as Record<string, unknown>).enabled) {
+            const providerId = pluginId.replace(/-auth$/, '');
+            activeProviders.add(providerId);
+          }
+        }
+      }
+    }
+  } catch (err) {
+    console.warn('Failed to read openclaw.json for active plugins:', err);
+  }
+
+  return activeProviders;
 }
 
 // Re-export for backwards compatibility

@@ -27,7 +27,7 @@ import { getOpenClawCliCommand, installOpenClawCliMac } from '../utils/openclaw-
 import { getSetting } from '../utils/store';
 import {
   saveProviderKeyToOpenClaw,
-  removeProviderKeyFromOpenClaw,
+  removeProviderFromOpenClaw,
   setOpenClawDefaultModel,
   setOpenClawDefaultModelWithOverride,
 } from '../utils/openclaw-auth';
@@ -854,12 +854,12 @@ function registerProviderHandlers(gatewayManager: GatewayManager): void {
       const existing = await getProvider(providerId);
       await deleteProvider(providerId);
 
-      // Best-effort cleanup in OpenClaw auth profiles
+      // Best-effort cleanup in OpenClaw auth profiles & openclaw.json config
       if (existing?.type) {
         try {
-          removeProviderKeyFromOpenClaw(existing.type);
+          removeProviderFromOpenClaw(existing.type);
         } catch (err) {
-          console.warn('Failed to remove key from OpenClaw auth-profiles:', err);
+          console.warn('Failed to completely remove provider from OpenClaw:', err);
         }
       }
 
@@ -923,7 +923,7 @@ function registerProviderHandlers(gatewayManager: GatewayManager): void {
             saveProviderKeyToOpenClaw(nextConfig.type, trimmedKey);
           } else {
             await deleteApiKey(providerId);
-            removeProviderKeyFromOpenClaw(nextConfig.type);
+            removeProviderFromOpenClaw(nextConfig.type);
           }
         }
 
@@ -937,7 +937,7 @@ function registerProviderHandlers(gatewayManager: GatewayManager): void {
             saveProviderKeyToOpenClaw(previousProviderType, previousKey);
           } else {
             await deleteApiKey(providerId);
-            removeProviderKeyFromOpenClaw(previousProviderType);
+            removeProviderFromOpenClaw(previousProviderType);
           }
         } catch (rollbackError) {
           console.warn('Failed to rollback provider updateWithKey:', rollbackError);
@@ -957,9 +957,11 @@ function registerProviderHandlers(gatewayManager: GatewayManager): void {
       const provider = await getProvider(providerId);
       const providerType = provider?.type || providerId;
       try {
-        removeProviderKeyFromOpenClaw(providerType);
+        if (providerType) {
+          removeProviderFromOpenClaw(providerType);
+        }
       } catch (err) {
-        console.warn('Failed to remove key from OpenClaw auth-profiles:', err);
+        console.warn('Failed to completely remove provider from OpenClaw:', err);
       }
 
       return { success: true };
