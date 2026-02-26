@@ -99,8 +99,18 @@ export const useGatewayStore = create<GatewayState>((set, get) => ({
             import('./chat')
               .then(({ useChatStore }) => {
                 const state = useChatStore.getState();
+                // Always reload history on agent completion, regardless of
+                // the `sending` flag. After a transient error the flag may
+                // already be false, but the Gateway may have retried and
+                // completed successfully in the background.
+                state.loadHistory(true);
                 if (state.sending) {
-                  state.loadHistory(true);
+                  useChatStore.setState({
+                    sending: false,
+                    activeRunId: null,
+                    pendingFinal: false,
+                    lastUserMessageAt: null,
+                  });
                 }
               })
               .catch(() => {});
