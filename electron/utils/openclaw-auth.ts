@@ -25,11 +25,22 @@ interface AuthProfileEntry {
 }
 
 /**
+ * Auth profile entry for an OAuth token (matches OpenClaw plugin format)
+ */
+interface OAuthProfileEntry {
+  type: 'oauth';
+  provider: string;
+  access: string;
+  refresh: string;
+  expires: number;
+}
+
+/**
  * Auth profiles store format
  */
 interface AuthProfilesStore {
   version: number;
-  profiles: Record<string, AuthProfileEntry>;
+  profiles: Record<string, AuthProfileEntry | OAuthProfileEntry>;
   order?: Record<string, string[]>;
   lastGood?: Record<string, string>;
 }
@@ -97,6 +108,52 @@ function discoverAgentIds(): string[] {
 }
 
 /**
+ * Save an OAuth token to OpenClaw's auth-profiles.json.
+ * Writes in OpenClaw's native OAuth credential format (type: 'oauth'),
+ * matching exactly what `openclaw models auth login` (upsertAuthProfile) writes.
+ *
+ * @param provider - Provider type (e.g. 'minimax-portal', 'qwen-portal')
+ * @param token    - OAuth token from the provider's login function
+ * @param agentId  - Optional single agent ID. When omitted, writes to every agent.
+ */
+export function saveOAuthTokenToOpenClaw(
+  provider: string,
+  token: { access: string; refresh: string; expires: number },
+  agentId?: string
+): void {
+  const agentIds = agentId ? [agentId] : discoverAgentIds();
+  if (agentIds.length === 0) agentIds.push('main');
+
+  for (const id of agentIds) {
+    const store = readAuthProfiles(id);
+    const profileId = `${provider}:default`;
+
+    const entry: OAuthProfileEntry = {
+      type: 'oauth',
+      provider,
+      access: token.access,
+      refresh: token.refresh,
+      expires: token.expires,
+    };
+
+    store.profiles[profileId] = entry;
+
+    if (!store.order) store.order = {};
+    if (!store.order[provider]) store.order[provider] = [];
+    if (!store.order[provider].includes(profileId)) {
+      store.order[provider].push(profileId);
+    }
+
+    if (!store.lastGood) store.lastGood = {};
+    store.lastGood[provider] = profileId;
+
+    writeAuthProfiles(store, id);
+  }
+
+  console.log(`Saved OAuth token for provider "${provider}" to OpenClaw auth-profiles (agents: ${agentIds.join(', ')})`);
+}
+
+/**
  * Save a provider API key to OpenClaw's auth-profiles.json
  * This writes the key in the format OpenClaw expects so the gateway
  * can use it for AI provider calls.
@@ -109,6 +166,7 @@ function discoverAgentIds(): string[] {
  * @param agentId - Optional single agent ID. When omitted, writes to every agent.
  */
 export function saveProviderKeyToOpenClaw(
+
   provider: string,
   apiKey: string,
   agentId?: string

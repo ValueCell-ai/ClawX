@@ -23,13 +23,15 @@ async function getProviderStore() {
   return providerStore;
 }
 
+import type { ProviderType } from './provider-registry';
+
 /**
  * Provider configuration
  */
 export interface ProviderConfig {
   id: string;
   name: string;
-  type: 'anthropic' | 'openai' | 'google' | 'openrouter' | 'moonshot' | 'siliconflow' | 'ollama' | 'custom';
+  type: ProviderType;
   baseUrl?: string;
   model?: string;
   enabled: boolean;

@@ -987,11 +987,9 @@ function registerProviderHandlers(gatewayManager: GatewayManager): void {
       const provider = await getProvider(providerId);
       if (provider) {
         try {
-          // OAuth providers (qwen-portal, minimax-portal) have their models
-          // registered by OpenClaw plugins at runtime. Do NOT overwrite
-          // openclaw.json for them — the `openclaw models auth login` CLI
-          // command already set the correct model + provider config.
-          // We only need to restart the Gateway so the plugin loads.
+          // OAuth providers (qwen-portal, minimax-portal) have their openclaw.json
+          // model config already written by `openclaw models auth login --set-default`.
+          // Non-OAuth providers need us to write it here.
           const OAUTH_PROVIDER_TYPES = ['qwen-portal', 'minimax-portal'];
           const isOAuthProvider = OAUTH_PROVIDER_TYPES.includes(provider.type);
 
@@ -1025,7 +1023,30 @@ function registerProviderHandlers(gatewayManager: GatewayManager): void {
               saveProviderKeyToOpenClaw(provider.type, providerKey);
             }
           } else {
-            logger.info(`Skipping openclaw.json model write for OAuth provider "${provider.type}" (managed by OpenClaw plugin)`);
+            // OAuth providers (minimax-portal, qwen-portal): write the provider config
+            // using the model and baseUrl stored by device-oauth.ts at login time.
+            // These providers use their own API format (not standard OpenAI completions).
+            const defaultBaseUrl = provider.type === 'minimax-portal'
+              ? 'https://api.minimax.io/anthropic'
+              : 'https://portal.qwen.ai/v1';
+            const api: 'anthropic-messages' | 'openai-completions' = provider.type === 'minimax-portal'
+              ? 'anthropic-messages'
+              : 'openai-completions';
+
+            let baseUrl = provider.baseUrl || defaultBaseUrl;
+            if (provider.type === 'minimax-portal' && baseUrl && !baseUrl.endsWith('/anthropic')) {
+              baseUrl = baseUrl.replace(/\/$/, '') + '/anthropic';
+            }
+
+            setOpenClawDefaultModelWithOverride(provider.type, undefined, {
+              baseUrl,
+              api,
+              // OAuth placeholder — Gateway uses this to look up OAuth credentials
+              // from auth-profiles.json instead of a static API key.
+              apiKeyEnv: provider.type === 'minimax-portal' ? 'minimax-oauth' : 'qwen-oauth',
+            });
+
+            logger.info(`Configured openclaw.json for OAuth provider "${provider.type}"`);
           }
 
           // Restart Gateway so it picks up the new config and env vars.
@@ -1047,6 +1068,8 @@ function registerProviderHandlers(gatewayManager: GatewayManager): void {
       return { success: false, error: String(error) };
     }
   });
+
+
 
   // Get default provider
   ipcMain.handle('provider:getDefault', async () => {
