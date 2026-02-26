@@ -10,6 +10,7 @@ import { autoUpdater, UpdateInfo, ProgressInfo, UpdateDownloadedEvent } from 'el
 import { BrowserWindow, app, ipcMain } from 'electron';
 import { logger } from '../utils/logger';
 import { EventEmitter } from 'events';
+import { setQuitting } from './app-state';
 
 /** Base CDN URL (without trailing channel path) */
 const OSS_BASE_URL = 'https://oss.intelli-spectrum.com';
@@ -209,22 +210,18 @@ export class AppUpdater extends EventEmitter {
   /**
    * Install update and restart.
    *
-   * On macOS, electron-updater's MacUpdater still delegates to Squirrel.Mac
-   * internally. Squirrel's quitAndInstall() is unreliable — it sometimes
-   * fails to trigger `before-quit`, leaving the tray close handler to
-   * intercept and hide the window instead of quitting. We force `app.quit()`
-   * after a short grace period as a safety net.
+   * On macOS, electron-updater delegates to Squirrel.Mac (ShipIt). The
+   * native quitAndInstall() spawns ShipIt then internally calls app.quit().
+   * However, the tray close handler in index.ts intercepts window close
+   * and hides to tray unless isQuitting is true. Squirrel's internal quit
+   * sometimes fails to trigger before-quit in time, so we set isQuitting
+   * BEFORE calling quitAndInstall(). This lets the native quit flow close
+   * the window cleanly while ShipIt runs independently to replace the app.
    */
   quitAndInstall(): void {
     logger.info('[Updater] quitAndInstall called');
+    setQuitting();
     autoUpdater.quitAndInstall();
-
-    if (process.platform === 'darwin') {
-      setTimeout(() => {
-        logger.warn('[Updater] macOS: forcing app.quit() (Squirrel fallback)');
-        app.quit();
-      }, 3_000).unref();
-    }
   }
 
   /**
