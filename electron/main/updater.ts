@@ -206,9 +206,25 @@ export class AppUpdater extends EventEmitter {
     }
   }
 
+  /**
+   * Install update and restart.
+   *
+   * On macOS, electron-updater's MacUpdater still delegates to Squirrel.Mac
+   * internally. Squirrel's quitAndInstall() is unreliable — it sometimes
+   * fails to trigger `before-quit`, leaving the tray close handler to
+   * intercept and hide the window instead of quitting. We force `app.quit()`
+   * after a short grace period as a safety net.
+   */
   quitAndInstall(): void {
     logger.info('[Updater] quitAndInstall called');
     autoUpdater.quitAndInstall();
+
+    if (process.platform === 'darwin') {
+      setTimeout(() => {
+        logger.warn('[Updater] macOS: forcing app.quit() (Squirrel fallback)');
+        app.quit();
+      }, 3_000).unref();
+    }
   }
 
   /**
