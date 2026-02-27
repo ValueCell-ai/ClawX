@@ -1192,7 +1192,7 @@ function registerProviderHandlers(gatewayManager: GatewayManager): void {
             // authHeader immediately, without waiting for Gateway to sync openclaw.json.
             try {
               const defaultModelId = provider.model?.split('/').pop();
-              updateAgentModelProvider(targetProviderKey, {
+              await updateAgentModelProvider(targetProviderKey, {
                 baseUrl,
                 api,
                 authHeader: targetProviderKey === 'minimax-portal' ? true : undefined,

@@ -214,7 +214,7 @@ export async function getAllProvidersWithKeyInfo(): Promise<
 > {
   const providers = await getAllProviders();
   const results: Array<ProviderConfig & { hasKey: boolean; keyMasked: string | null }> = [];
-  const activeOpenClawProviders = getActiveOpenClawProviders();
+  const activeOpenClawProviders = await getActiveOpenClawProviders();
 
   // We need to avoid deleting native ones like 'anthropic' or 'google'
   // that don't need to exist in openclaw.json models.providers

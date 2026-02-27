@@ -181,12 +181,12 @@ export async function saveOAuthTokenToOpenClaw(
  * @param agentId - Optional single agent ID to read from, defaults to 'main'
  * @returns The OAuth token access string or null if not found
  */
-export function getOAuthTokenFromOpenClaw(
+export async function getOAuthTokenFromOpenClaw(
   provider: string,
   agentId = 'main'
-): string | null {
+): Promise<string | null> {
   try {
-    const store = readAuthProfiles(agentId);
+    const store = await readAuthProfiles(agentId);
     const profileId = `${provider}:default`;
     const profile = store.profiles[profileId];
 
