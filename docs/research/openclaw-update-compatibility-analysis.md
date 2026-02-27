@@ -668,38 +668,99 @@ spawnSync(process.execPath, [binPath, "completion", "--write-state"], { ... })
 
 这是一个 **bug**：doctor 的 `generateCompletionCache()` 在嵌入模式下会失败。
 
-### 9.4 补全相关的最小改动方案
+### 9.4 补全的两步骤详解
 
-**需要做的（ClawX 侧）**：
+补全要生效需要**两个独立操作**，不可混淆：
 
-1. **CLI 安装时自动生成补全缓存**：在首次安装 CLI wrapper 后，主动运行一次 `openclaw completion --write-state` 生成缓存文件
+#### 步骤 1：生成缓存文件（`--write-state`）
 
-2. **CLI 安装时自动安装补全**：运行 `openclaw completion --install -y` 将 source 行写入 shell profile
+```bash
+openclaw completion --write-state
+```
 
-两步可合并为：在 CLI wrapper 首次安装后，ClawX main process 中执行：
+遍历 Commander.js 命令树，为每种 shell 生成补全脚本，写入磁盘：
+
+```
+~/.openclaw/completions/openclaw.zsh   # Zsh _arguments + compdef
+~/.openclaw/completions/openclaw.bash  # Bash complete + compgen
+~/.openclaw/completions/openclaw.fish  # Fish complete 命令
+~/.openclaw/completions/openclaw.ps1   # PowerShell Register-ArgumentCompleter
+```
+
+**此时文件已存在，但 shell 不知道它们的存在。** 打开新终端输入 `openclaw <TAB>` 无任何反应。
+
+#### 步骤 2：挂载到 shell profile（`--install`）
+
+```bash
+openclaw completion --install -y
+```
+
+读取用户的 shell 配置文件，追加一个 `source` 块，让 shell 启动时自动加载缓存的补全脚本：
+
+```bash
+# 写入 ~/.zshrc（或 ~/.bashrc / ~/.config/fish/config.fish）：
+# OpenClaw Completion
+source "/Users/xxx/.openclaw/completions/openclaw.zsh"
+```
+
+**这才是"安装补全"的含义** —— 不是安装文件本身，而是在 shell 启动流程中**注册**这些文件。
+
+`installCompletion()` 的核心逻辑：
+```javascript
+// 1. 检查缓存文件是否存在 → 不存在则拒绝（先跑 --write-state）
+if (!await pathExists(cachePath)) {
+  console.error(`Cache not found. Run completion --write-state first.`);
+  return;
+}
+// 2. 读取 shell profile，清除旧的补全条目
+// 3. 追加新的 "# OpenClaw Completion\nsource ..." 块
+// 4. 写回 profile
+```
+
+#### 两步之间的关系
+
+| 操作 | 做了什么 | 效果 |
+|------|---------|------|
+| `--write-state` | 在 `~/.openclaw/completions/` 下生成 `.zsh` / `.bash` / `.fish` / `.ps1` 文件 | 文件存在，但 shell 不知道 |
+| `--install` | 在 `~/.zshrc` 等 profile 中追加 `source "~/.openclaw/completions/openclaw.zsh"` | 下次打开终端时补全生效 |
+
+#### ClawX 需要做的
+
+**首次安装 CLI 时：两步都做**
+
 ```typescript
-import { spawn } from 'child_process';
-
 function installCompletions(): void {
   const entryPath = getOpenClawEntryPath();
   const execPath = getNodeExecutablePath();
-  
-  // 生成补全缓存
+  const env = { ...process.env, ELECTRON_RUN_AS_NODE: '1', OPENCLAW_NO_RESPAWN: '1' };
+
+  // 步骤 1: 生成缓存文件
   spawn(execPath, [entryPath, 'completion', '--write-state'], {
-    env: { ...process.env, ELECTRON_RUN_AS_NODE: '1', OPENCLAW_NO_RESPAWN: '1' },
-    stdio: 'ignore',
+    env, stdio: 'ignore',
   }).on('close', (code) => {
     if (code !== 0) return;
-    // 安装到 shell profile
+    // 步骤 2: 挂载到 shell profile
     spawn(execPath, [entryPath, 'completion', '--install', '-y'], {
-      env: { ...process.env, ELECTRON_RUN_AS_NODE: '1', OPENCLAW_NO_RESPAWN: '1' },
-      stdio: 'ignore',
+      env, stdio: 'ignore',
     });
   });
 }
 ```
 
-3. **ClawX 更新后重新生成补全缓存**：因为新版本可能添加了新命令
+**ClawX 更新后：只重新做步骤 1**
+
+```typescript
+function refreshCompletionCache(): void {
+  const entryPath = getOpenClawEntryPath();
+  const execPath = getNodeExecutablePath();
+  // 只重新生成缓存（因为新版可能有新命令）
+  // profile 中的 source 行不需要改，它指向同一个文件路径
+  spawn(execPath, [entryPath, 'completion', '--write-state'], {
+    env: { ...process.env, ELECTRON_RUN_AS_NODE: '1', OPENCLAW_NO_RESPAWN: '1' },
+    stdio: 'ignore',
+  });
+}
+```
 
 **不需要做的**：
 - 不需要修改 openclaw 上游补全代码
