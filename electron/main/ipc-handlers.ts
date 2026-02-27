@@ -23,7 +23,7 @@ import {
   type ProviderConfig,
 } from '../utils/secure-storage';
 import { getOpenClawStatus, getOpenClawDir, getOpenClawConfigDir, getOpenClawSkillsDir, ensureDir } from '../utils/paths';
-import { getOpenClawCliCommand, installOpenClawCliMac, installOpenClawCli } from '../utils/openclaw-cli';
+import { getOpenClawCliCommand, installOpenClawCli } from '../utils/openclaw-cli';
 import { getSetting } from '../utils/store';
 import {
   saveProviderKeyToOpenClaw,

@@ -10,7 +10,6 @@ import {
   readFileSync,
   symlinkSync,
   unlinkSync,
-  writeFileSync,
 } from 'node:fs';
 import { spawn } from 'node:child_process';
 import { homedir } from 'node:os';

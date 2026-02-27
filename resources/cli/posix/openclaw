@@ -12,13 +12,15 @@ done
 SCRIPT_DIR="$(cd -P "$(dirname "$SCRIPT")" && pwd)"
 
 if [ "$(uname)" = "Darwin" ]; then
-  # macOS: <App>.app/Contents/Resources/cli/posix/openclaw
-  CONTENTS_DIR="$(dirname "$(dirname "$(dirname "$SCRIPT_DIR")")")"
+  # macOS: <App>.app/Contents/Resources/cli/openclaw
+  # SCRIPT_DIR = .../Contents/Resources/cli
+  CONTENTS_DIR="$(dirname "$(dirname "$SCRIPT_DIR")")"
   ELECTRON="$CONTENTS_DIR/MacOS/ClawX"
   CLI="$CONTENTS_DIR/Resources/openclaw/openclaw.mjs"
 else
-  # Linux: /opt/ClawX/resources/cli/posix/openclaw
-  INSTALL_DIR="$(dirname "$(dirname "$(dirname "$SCRIPT_DIR")")")"
+  # Linux: /opt/ClawX/resources/cli/openclaw
+  # SCRIPT_DIR = .../resources/cli
+  INSTALL_DIR="$(dirname "$(dirname "$SCRIPT_DIR")")"
   ELECTRON="$INSTALL_DIR/clawx"
   CLI="$INSTALL_DIR/resources/openclaw/openclaw.mjs"
 fi
