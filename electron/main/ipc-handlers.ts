@@ -85,7 +85,7 @@ export function registerIpcHandlers(
   registerClawHubHandlers(clawHubService);
 
   // OpenClaw handlers
-  registerOpenClawHandlers();
+  registerOpenClawHandlers(gatewayManager);
 
   // Provider handlers
   registerProviderHandlers(gatewayManager);
@@ -605,7 +605,7 @@ function registerGatewayHandlers(
  * OpenClaw-related IPC handlers
  * For checking package status and channel configuration
  */
-function registerOpenClawHandlers(): void {
+function registerOpenClawHandlers(gatewayManager: GatewayManager): void {
 
   // Get OpenClaw package status
   ipcMain.handle('openclaw:status', () => {
@@ -665,6 +665,12 @@ function registerOpenClawHandlers(): void {
     try {
       logger.info('channel:saveConfig', { channelType, keys: Object.keys(config || {}) });
       saveChannelConfig(channelType, config);
+      // Debounced restart so the gateway picks up the new channel config.
+      // The gateway watches openclaw.json, but a restart ensures a clean
+      // start for newly-added channels.  Using debouncedRestart() here
+      // instead of an explicit restart on the frontend side means that
+      // rapid config changes (e.g. setup wizard) coalesce into one restart.
+      gatewayManager.debouncedRestart();
       return { success: true };
     } catch (error) {
       console.error('Failed to save channel config:', error);
@@ -838,10 +844,8 @@ function registerDeviceOAuthHandlers(mainWindow: BrowserWindow): void {
 function registerProviderHandlers(gatewayManager: GatewayManager): void {
   // Listen for OAuth success to automatically restart the Gateway with new tokens/configs
   deviceOAuthManager.on('oauth:success', (providerType) => {
-    logger.info(`[IPC] Restarting Gateway after ${providerType} OAuth success...`);
-    void gatewayManager.restart().catch(err => {
-      logger.error('Failed to restart Gateway after OAuth success:', err);
-    });
+    logger.info(`[IPC] Scheduling Gateway restart after ${providerType} OAuth success...`);
+    gatewayManager.debouncedRestart();
   });
 
   // Get all providers with key info
@@ -906,11 +910,10 @@ function registerProviderHandlers(gatewayManager: GatewayManager): void {
             }
           }
 
-          // Restart Gateway so it picks up the new config and env vars
-          logger.info(`Restarting Gateway after saving provider "${ock}" config`);
-          void gatewayManager.restart().catch((err) => {
-            logger.warn('Gateway restart after provider save failed:', err);
-          });
+          // Debounced restart so the gateway picks up new config/env vars.
+          // Multiple rapid provider saves (e.g. during setup) are coalesced.
+          logger.info(`Scheduling Gateway restart after saving provider "${ock}" config`);
+          gatewayManager.debouncedRestart();
         }
       } catch (err) {
         console.warn('Failed to sync openclaw provider config:', err);
@@ -934,11 +937,9 @@ function registerProviderHandlers(gatewayManager: GatewayManager): void {
           const ock = getOpenClawProviderKey(existing.type, providerId);
           removeProviderFromOpenClaw(ock);
 
-          // Restart Gateway so it no longer loads the deleted provider's plugin/config
-          logger.info(`Restarting Gateway after deleting provider "${ock}"`);
-          void gatewayManager.restart().catch((err) => {
-            logger.warn('Gateway restart after provider delete failed:', err);
-          });
+          // Debounced restart so the gateway stops loading the deleted provider.
+          logger.info(`Scheduling Gateway restart after deleting provider "${ock}"`);
+          gatewayManager.debouncedRestart();
         } catch (err) {
           console.warn('Failed to completely remove provider from OpenClaw:', err);
         }
@@ -1055,11 +1056,9 @@ function registerProviderHandlers(gatewayManager: GatewayManager): void {
             }
           }
 
-          // Restart Gateway so it picks up the new config and env vars
-          logger.info(`Restarting Gateway after updating provider "${ock}" config`);
-          void gatewayManager.restart().catch((err) => {
-            logger.warn('Gateway restart after provider update failed:', err);
-          });
+          // Debounced restart so the gateway picks up updated config/env vars.
+          logger.info(`Scheduling Gateway restart after updating provider "${ock}" config`);
+          gatewayManager.debouncedRestart();
         } catch (err) {
           console.warn('Failed to sync openclaw config after provider update:', err);
         }
@@ -1201,12 +1200,10 @@ function registerProviderHandlers(gatewayManager: GatewayManager): void {
             });
           }
 
-          // Restart Gateway so it picks up the new config and env vars.
+          // Debounced restart so the gateway picks up the new default provider.
           if (gatewayManager.isConnected()) {
-            logger.info(`Restarting Gateway after provider switch to "${ock}"`);
-            void gatewayManager.restart().catch((err) => {
-              logger.warn('Gateway restart after provider switch failed:', err);
-            });
+            logger.info(`Scheduling Gateway restart after provider switch to "${ock}"`);
+            gatewayManager.debouncedRestart();
           }
         } catch (err) {
           console.warn('Failed to set OpenClaw default model:', err);

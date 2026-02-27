@@ -130,6 +130,7 @@ export class GatewayManager extends EventEmitter {
     timeout: NodeJS.Timeout;
   }> = new Map();
   private deviceIdentity: DeviceIdentity | null = null;
+  private restartDebounceTimer: NodeJS.Timeout | null = null;
   
   constructor(config?: Partial<ReconnectConfig>) {
     super();
@@ -369,6 +370,26 @@ export class GatewayManager extends EventEmitter {
     await this.stop();
     await this.start();
   }
+
+  /**
+   * Debounced restart — coalesces multiple rapid restart requests into a
+   * single restart after `delayMs` of inactivity.  This prevents the
+   * cascading stop/start cycles that occur when provider:save,
+   * provider:setDefault and channel:saveConfig all fire within seconds
+   * of each other during setup.
+   */
+  debouncedRestart(delayMs = 2000): void {
+    if (this.restartDebounceTimer) {
+      clearTimeout(this.restartDebounceTimer);
+    }
+    logger.debug(`Gateway restart debounced (will fire in ${delayMs}ms)`);
+    this.restartDebounceTimer = setTimeout(() => {
+      this.restartDebounceTimer = null;
+      void this.restart().catch((err) => {
+        logger.warn('Debounced Gateway restart failed:', err);
+      });
+    }, delayMs);
+  }
   
   /**
    * Clear all active timers
@@ -385,6 +406,10 @@ export class GatewayManager extends EventEmitter {
     if (this.healthCheckInterval) {
       clearInterval(this.healthCheckInterval);
       this.healthCheckInterval = null;
+    }
+    if (this.restartDebounceTimer) {
+      clearTimeout(this.restartDebounceTimer);
+      this.restartDebounceTimer = null;
     }
   }
   
