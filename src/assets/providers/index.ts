@@ -17,6 +17,7 @@ export const providerIcons: Record<string, string> = {
     moonshot,
     siliconflow,
     'minimax-portal': minimaxPortal,
+    'minimax-portal-cn': minimaxPortal,
     'qwen-portal': qwenPortal,
     ollama,
     custom,
