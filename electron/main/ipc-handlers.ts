@@ -374,7 +374,7 @@ function registerLogHandlers(): void {
 
   // Read log file content (last N lines)
   ipcMain.handle('log:readFile', async (_, tailLines?: number) => {
-    return logger.readLogFile(tailLines);
+    return await logger.readLogFile(tailLines);
   });
 
   // Get log file path (so user can open in file explorer)
@@ -389,7 +389,7 @@ function registerLogHandlers(): void {
 
   // List all log files
   ipcMain.handle('log:listFiles', async () => {
-    return logger.listLogFiles();
+    return await logger.listLogFiles();
   });
 }
 
