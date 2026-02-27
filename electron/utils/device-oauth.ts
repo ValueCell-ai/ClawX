@@ -204,7 +204,7 @@ class DeviceOAuthManager extends EventEmitter {
         //    so OpenClaw's gateway auto-refresher knows how to find it.
         try {
             const tokenProviderId = providerType.startsWith('minimax-portal') ? 'minimax-portal' : providerType;
-            saveOAuthTokenToOpenClaw(tokenProviderId, {
+            await saveOAuthTokenToOpenClaw(tokenProviderId, {
                 access: token.access,
                 refresh: token.refresh,
                 expires: token.expires,
@@ -232,7 +232,7 @@ class DeviceOAuthManager extends EventEmitter {
 
         try {
             const tokenProviderId = providerType.startsWith('minimax-portal') ? 'minimax-portal' : providerType;
-            setOpenClawDefaultModelWithOverride(tokenProviderId, undefined, {
+            await setOpenClawDefaultModelWithOverride(tokenProviderId, undefined, {
                 baseUrl,
                 api: token.api,
                 // OAuth placeholder — tells Gateway to resolve credentials

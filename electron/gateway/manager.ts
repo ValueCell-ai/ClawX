@@ -658,13 +658,13 @@ export class GatewayManager extends EventEmitter {
     // system-managed launchctl service) the WebSocket handshake will fail
     // with "token mismatch" even though we pass --token on the CLI.
     try {
-      syncGatewayTokenToConfig(gatewayToken);
+      await syncGatewayTokenToConfig(gatewayToken);
     } catch (err) {
       logger.warn('Failed to sync gateway token to openclaw.json:', err);
     }
 
     try {
-      syncBrowserConfigToOpenClaw();
+      await syncBrowserConfigToOpenClaw();
     } catch (err) {
       logger.warn('Failed to sync browser config to openclaw.json:', err);
     }
