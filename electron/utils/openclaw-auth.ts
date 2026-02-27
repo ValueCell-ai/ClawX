@@ -154,6 +154,32 @@ export function saveOAuthTokenToOpenClaw(
 }
 
 /**
+ * Retrieve an OAuth token from OpenClaw's auth-profiles.json.
+ * Useful when the Gateway does not natively inject the Authorization header.
+ * 
+ * @param provider - Provider type (e.g., 'minimax-portal')
+ * @param agentId - Optional single agent ID to read from, defaults to 'main'
+ * @returns The OAuth token access string or null if not found
+ */
+export function getOAuthTokenFromOpenClaw(
+  provider: string,
+  agentId = 'main'
+): string | null {
+  try {
+    const store = readAuthProfiles(agentId);
+    const profileId = `${provider}:default`;
+    const profile = store.profiles[profileId];
+
+    if (profile && profile.type === 'oauth' && 'access' in profile) {
+      return (profile as OAuthProfileEntry).access;
+    }
+  } catch (err) {
+    console.warn(`[getOAuthToken] Failed to read token for ${provider}:`, err);
+  }
+  return null;
+}
+
+/**
  * Save a provider API key to OpenClaw's auth-profiles.json
  * This writes the key in the format OpenClaw expects so the gateway
  * can use it for AI provider calls.
@@ -278,7 +304,25 @@ export function removeProviderFromOpenClaw(provider: string): void {
     }
   }
 
-  // 2. Remove from openclaw.json
+  // 2. Remove from models.json (per-agent model registry used by pi-ai directly)
+  for (const agentId of agentIds) {
+    const modelsPath = join(homedir(), '.openclaw', 'agents', agentId, 'agent', 'models.json');
+    try {
+      if (existsSync(modelsPath)) {
+        const data = JSON.parse(readFileSync(modelsPath, 'utf-8')) as Record<string, unknown>;
+        const providers = data.providers as Record<string, unknown> | undefined;
+        if (providers && providers[provider]) {
+          delete providers[provider];
+          writeFileSync(modelsPath, JSON.stringify(data, null, 2), 'utf-8');
+          console.log(`Removed models.json entry for provider "${provider}" (agent "${agentId}")`);
+        }
+      }
+    } catch (err) {
+      console.warn(`Failed to remove provider ${provider} from models.json (agent "${agentId}"):`, err);
+    }
+  }
+
+  // 3. Remove from openclaw.json
   const configPath = join(homedir(), '.openclaw', 'openclaw.json');
   try {
     if (existsSync(configPath)) {
@@ -447,6 +491,7 @@ interface RuntimeProviderConfigOverride {
   api?: string;
   apiKeyEnv?: string;
   headers?: Record<string, string>;
+  authHeader?: boolean;
 }
 
 /**
@@ -572,6 +617,9 @@ export function setOpenClawDefaultModelWithOverride(
     }
     if (override.headers && Object.keys(override.headers).length > 0) {
       nextProvider.headers = override.headers;
+    }
+    if (override.authHeader !== undefined) {
+      nextProvider.authHeader = override.authHeader;
     }
 
     providers[provider] = nextProvider;
@@ -766,6 +814,8 @@ export function updateAgentModelProvider(
     api?: string;
     models?: Array<{ id: string; name: string }>;
     apiKey?: string;
+    /** When true, pi-ai sends Authorization: Bearer instead of x-api-key */
+    authHeader?: boolean;
   }
 ): void {
   const agentIds = discoverAgentIds();
@@ -804,6 +854,7 @@ export function updateAgentModelProvider(
     if (entry.api !== undefined) existing.api = entry.api;
     if (mergedModels.length > 0) existing.models = mergedModels;
     if (entry.apiKey !== undefined) existing.apiKey = entry.apiKey;
+    if (entry.authHeader !== undefined) existing.authHeader = entry.authHeader;
 
     providers[providerType] = existing;
     data.providers = providers;

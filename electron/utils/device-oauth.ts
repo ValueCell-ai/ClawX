@@ -131,7 +131,7 @@ class DeviceOAuthManager extends EventEmitter {
             expires: token.expires,
             // MiniMax returns a per-account resourceUrl as the API base URL
             resourceUrl: token.resourceUrl,
-            // MiniMax uses Anthropic Messages API format
+            // Revert back to anthropic-messages
             api: 'anthropic-messages',
             region,
         });
@@ -217,17 +217,15 @@ class DeviceOAuthManager extends EventEmitter {
         //    This mirrors what the OpenClaw plugin's configPatch does after CLI login.
         //    The baseUrl comes from token.resourceUrl (per-account URL from the OAuth server)
         //    or falls back to the provider's default public endpoint.
-        // Note: MiniMax Anthropic-compatible API requires the /anthropic suffix.
         const defaultBaseUrl = providerType === 'minimax-portal'
             ? 'https://api.minimax.io/anthropic'
             : (providerType === 'minimax-portal-cn' ? 'https://api.minimaxi.com/anthropic' : 'https://portal.qwen.ai/v1');
 
         let baseUrl = token.resourceUrl || defaultBaseUrl;
 
-        // If MiniMax returned a resourceUrl (e.g. https://api.minimax.io) but no /anthropic suffix,
-        // we must append it because we use the 'anthropic-messages' API mode
-        if (providerType.startsWith('minimax-portal') && baseUrl && !baseUrl.endsWith('/anthropic')) {
-            baseUrl = baseUrl.replace(/\/$/, '') + '/anthropic';
+        // Ensure the base URL ends with /anthropic
+        if (providerType.startsWith('minimax-portal') && baseUrl) {
+            baseUrl = baseUrl.replace(/\/v1$/, '').replace(/\/anthropic$/, '').replace(/\/$/, '') + '/anthropic';
         }
 
         try {
@@ -235,11 +233,10 @@ class DeviceOAuthManager extends EventEmitter {
             setOpenClawDefaultModelWithOverride(tokenProviderId, undefined, {
                 baseUrl,
                 api: token.api,
+                // Tells OpenClaw's anthropic adapter to use `Authorization: Bearer` instead of `x-api-key`
+                authHeader: providerType.startsWith('minimax-portal') ? true : undefined,
                 // OAuth placeholder — tells Gateway to resolve credentials
                 // from auth-profiles.json (type: 'oauth') instead of a static API key.
-                // This matches what the OpenClaw plugin's configPatch writes:
-                //   minimax-portal → apiKey: 'minimax-oauth'
-                //   qwen-portal    → apiKey: 'qwen-oauth'
                 apiKeyEnv: tokenProviderId === 'minimax-portal' ? 'minimax-oauth' : 'qwen-oauth',
             });
         } catch (err) {

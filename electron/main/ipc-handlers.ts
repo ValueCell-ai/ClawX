@@ -1167,8 +1167,8 @@ function registerProviderHandlers(gatewayManager: GatewayManager): void {
                 : 'openai-completions';
 
             let baseUrl = provider.baseUrl || defaultBaseUrl;
-            if ((provider.type === 'minimax-portal' || provider.type === 'minimax-portal-cn') && baseUrl && !baseUrl.endsWith('/anthropic')) {
-              baseUrl = baseUrl.replace(/\/$/, '') + '/anthropic';
+            if ((provider.type === 'minimax-portal' || provider.type === 'minimax-portal-cn') && baseUrl) {
+              baseUrl = baseUrl.replace(/\/v1$/, '').replace(/\/anthropic$/, '').replace(/\/$/, '') + '/anthropic';
             }
 
             // To ensure the OpenClaw Gateway's internal token refresher works,
@@ -1180,10 +1180,27 @@ function registerProviderHandlers(gatewayManager: GatewayManager): void {
             setOpenClawDefaultModelWithOverride(targetProviderKey, undefined, {
               baseUrl,
               api,
+              authHeader: targetProviderKey === 'minimax-portal' ? true : undefined,
+              // Relies on OpenClaw Gateway native auth-profiles syncing
               apiKeyEnv: targetProviderKey === 'minimax-portal' ? 'minimax-oauth' : 'qwen-oauth',
             });
 
             logger.info(`Configured openclaw.json for OAuth provider "${provider.type}"`);
+
+            // Also write models.json directly so pi-ai picks up the correct baseUrl and
+            // authHeader immediately, without waiting for Gateway to sync openclaw.json.
+            try {
+              const defaultModelId = provider.model?.split('/').pop();
+              updateAgentModelProvider(targetProviderKey, {
+                baseUrl,
+                api,
+                authHeader: targetProviderKey === 'minimax-portal' ? true : undefined,
+                apiKey: targetProviderKey === 'minimax-portal' ? 'minimax-oauth' : 'qwen-oauth',
+                models: defaultModelId ? [{ id: defaultModelId, name: defaultModelId }] : [],
+              });
+            } catch (err) {
+              logger.warn(`Failed to update models.json for OAuth provider "${targetProviderKey}":`, err);
+            }
           }
 
           // For custom/ollama providers, also update the per-agent models.json
