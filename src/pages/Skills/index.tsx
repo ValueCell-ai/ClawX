@@ -666,11 +666,12 @@ export function Skills() {
       // We need to find the skill id which is usually the slug
       await enableSkill(slug);
       toast.success(t('toast.installed'));
-    } catch (err: any) {
-      if (err.message === 'timeoutError' || err.message === 'rateLimitError') {
-        toast.error(t(`toast.${err.message}`, { path: skillsDirPath }), { duration: 10000 });
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : String(err);
+      if (errorMessage === 'timeoutError' || errorMessage === 'rateLimitError') {
+        toast.error(t(`toast.${errorMessage}`, { path: skillsDirPath }), { duration: 10000 });
       } else {
-        toast.error(t('toast.failedInstall') + ': ' + String(err));
+        toast.error(t('toast.failedInstall') + ': ' + errorMessage);
       }
     }
   }, [installSkill, enableSkill, t, skillsDirPath]);
@@ -810,8 +811,12 @@ export function Skills() {
           {error && (
             <Card className="border-destructive">
               <CardContent className="py-4 text-destructive flex items-center gap-2">
-                <AlertCircle className="h-5 w-5" />
-                {error}
+                <AlertCircle className="h-5 w-5 shrink-0" />
+                <span>
+                  {error === 'timeoutError' || error.includes('timeoutError') || error === 'rateLimitError' || error.includes('rateLimitError')
+                    ? t(`toast.${error.replace('Error: ', '')}`, { path: skillsDirPath })
+                    : error}
+                </span>
               </CardContent>
             </Card>
           )}

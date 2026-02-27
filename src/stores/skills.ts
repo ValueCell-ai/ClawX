@@ -142,7 +142,13 @@ export const useSkillsStore = create<SkillsState>((set, get) => ({
       set({ skills: combinedSkills, loading: false });
     } catch (error) {
       console.error('Failed to fetch skills:', error);
-      set({ loading: false });
+      let errorMsg = error instanceof Error ? error.message : String(error);
+      if (errorMsg.includes('Timeout')) {
+        errorMsg = 'timeoutError';
+      } else if (errorMsg.toLowerCase().includes('rate limit')) {
+        errorMsg = 'rateLimitError';
+      }
+      set({ loading: false, error: errorMsg });
     }
   },
 
