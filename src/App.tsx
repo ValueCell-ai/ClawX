@@ -167,6 +167,7 @@ function App() {
           position="bottom-right"
           richColors
           closeButton
+          style={{ zIndex: 99999 }}
         />
       </TooltipProvider>
     </ErrorBoundary>

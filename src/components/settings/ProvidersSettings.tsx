@@ -487,20 +487,19 @@ function AddProviderDialog({ existingTypes, onClose, onAdd, onValidateKey }: Add
       setOauthFlowing(false);
       setOauthData(null);
       setValidationError(null);
-      const { selectedType: type, typeInfo: info, onAdd: add, onClose: close, t: translate } = latestRef.current;
-      // Save the provider to the store so the list refreshes automatically
-      if (type && add) {
-        try {
-          await add(
-            type,
-            info?.name || type,
-            '', // OAuth providers don't use a plain API key
-            { model: info?.defaultModelId }
-          );
-        } catch {
-          // provider may already exist; ignore duplicate errors
-        }
+
+      const { onClose: close, t: translate } = latestRef.current;
+
+      // device-oauth.ts already saved the provider config to the backend,
+      // including the dynamically resolved baseUrl for the region (e.g. CN vs Global).
+      // If we call add() here with undefined baseUrl, it will overwrite and erase it!
+      // So we just fetch the latest list from the backend to update the UI.
+      try {
+        await useProviderStore.getState().fetchProviders();
+      } catch (err) {
+        console.error('Failed to refresh providers after OAuth:', err);
       }
+
       close();
       toast.success(translate('aiProviders.toast.added'));
     };
@@ -525,12 +524,22 @@ function AddProviderDialog({ existingTypes, onClose, onAdd, onValidateKey }: Add
 
   const handleStartOAuth = async () => {
     if (!selectedType) return;
+
+    if (selectedType === 'minimax-portal' && existingTypes.has('minimax-portal-cn')) {
+      toast.error(t('aiProviders.toast.minimaxConflict'));
+      return;
+    }
+    if (selectedType === 'minimax-portal-cn' && existingTypes.has('minimax-portal')) {
+      toast.error(t('aiProviders.toast.minimaxConflict'));
+      return;
+    }
+
     setOauthFlowing(true);
     setOauthData(null);
     setOauthError(null);
 
     try {
-      await window.electron.ipcRenderer.invoke('provider:requestOAuth', selectedType, 'global');
+      await window.electron.ipcRenderer.invoke('provider:requestOAuth', selectedType);
     } catch (e) {
       setOauthError(String(e));
       setOauthFlowing(false);
@@ -551,6 +560,15 @@ function AddProviderDialog({ existingTypes, onClose, onAdd, onValidateKey }: Add
 
   const handleAdd = async () => {
     if (!selectedType) return;
+
+    if (selectedType === 'minimax-portal' && existingTypes.has('minimax-portal-cn')) {
+      toast.error(t('aiProviders.toast.minimaxConflict'));
+      return;
+    }
+    if (selectedType === 'minimax-portal-cn' && existingTypes.has('minimax-portal')) {
+      toast.error(t('aiProviders.toast.minimaxConflict'));
+      return;
+    }
 
     setSaving(true);
     setValidationError(null);

@@ -53,7 +53,8 @@
       "updated": "提供商已更新",
       "failedUpdate": "更新提供商失败",
       "invalidKey": "无效的 API 密钥",
-      "modelRequired": "需要模型 ID"
+      "modelRequired": "需要模型 ID",
+      "minimaxConflict": "不能同时添加 MiniMax 国际站和国内站的服务商。"
     },
     "oauth": {
       "loginMode": "OAuth 登录",

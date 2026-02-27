@@ -59,11 +59,13 @@ import { deviceOAuthManager, OAuthProviderType } from '../utils/device-oauth';
  * @param providerId - Unique provider ID from secure-storage (UUID-like)
  * @returns A string like 'custom-a1b2c3d4' or 'openrouter'
  */
-function getOpenClawProviderKey(type: string, providerId: string): string {
+export function getOpenClawProviderKey(type: string, providerId: string): string {
   if (type === 'custom' || type === 'ollama') {
-    // Use the first 8 chars of the providerId as a stable short suffix
     const suffix = providerId.replace(/-/g, '').slice(0, 8);
     return `${type}-${suffix}`;
+  }
+  if (type === 'minimax-portal-cn') {
+    return 'minimax-portal';
   }
   return type;
 }
@@ -834,6 +836,14 @@ function registerDeviceOAuthHandlers(mainWindow: BrowserWindow): void {
  * Provider-related IPC handlers
  */
 function registerProviderHandlers(gatewayManager: GatewayManager): void {
+  // Listen for OAuth success to automatically restart the Gateway with new tokens/configs
+  deviceOAuthManager.on('oauth:success', (providerType) => {
+    logger.info(`[IPC] Restarting Gateway after ${providerType} OAuth success...`);
+    void gatewayManager.restart().catch(err => {
+      logger.error('Failed to restart Gateway after OAuth success:', err);
+    });
+  });
+
   // Get all providers with key info
   ipcMain.handle('provider:list', async () => {
     return await getAllProvidersWithKeyInfo();
@@ -923,6 +933,12 @@ function registerProviderHandlers(gatewayManager: GatewayManager): void {
         try {
           const ock = getOpenClawProviderKey(existing.type, providerId);
           removeProviderFromOpenClaw(ock);
+
+          // Restart Gateway so it no longer loads the deleted provider's plugin/config
+          logger.info(`Restarting Gateway after deleting provider "${ock}"`);
+          void gatewayManager.restart().catch((err) => {
+            logger.warn('Gateway restart after provider delete failed:', err);
+          });
         } catch (err) {
           console.warn('Failed to completely remove provider from OpenClaw:', err);
         }
@@ -1114,9 +1130,9 @@ function registerProviderHandlers(gatewayManager: GatewayManager): void {
           const ock = getOpenClawProviderKey(provider.type, providerId);
           const providerKey = await getApiKey(providerId);
 
-          // OAuth providers (qwen-portal, minimax-portal) might use OAuth OR a direct API key.
+          // OAuth providers (qwen-portal, minimax-portal, minimax-portal-cn) might use OAuth OR a direct API key.
           // Treat them as OAuth only if they don't have a local API key configured.
-          const OAUTH_PROVIDER_TYPES = ['qwen-portal', 'minimax-portal'];
+          const OAUTH_PROVIDER_TYPES = ['qwen-portal', 'minimax-portal', 'minimax-portal-cn'];
           const isOAuthProvider = OAUTH_PROVIDER_TYPES.includes(provider.type) && !providerKey;
 
           if (!isOAuthProvider) {
@@ -1141,23 +1157,30 @@ function registerProviderHandlers(gatewayManager: GatewayManager): void {
               saveProviderKeyToOpenClaw(ock, providerKey);
             }
           } else {
-            // OAuth providers (minimax-portal, qwen-portal)
+            // OAuth providers (minimax-portal, minimax-portal-cn, qwen-portal)
             const defaultBaseUrl = provider.type === 'minimax-portal'
               ? 'https://api.minimax.io/anthropic'
-              : 'https://portal.qwen.ai/v1';
-            const api: 'anthropic-messages' | 'openai-completions' = provider.type === 'minimax-portal'
-              ? 'anthropic-messages'
-              : 'openai-completions';
+              : (provider.type === 'minimax-portal-cn' ? 'https://api.minimaxi.com/anthropic' : 'https://portal.qwen.ai/v1');
+            const api: 'anthropic-messages' | 'openai-completions' =
+              (provider.type === 'minimax-portal' || provider.type === 'minimax-portal-cn')
+                ? 'anthropic-messages'
+                : 'openai-completions';
 
             let baseUrl = provider.baseUrl || defaultBaseUrl;
-            if (provider.type === 'minimax-portal' && baseUrl && !baseUrl.endsWith('/anthropic')) {
+            if ((provider.type === 'minimax-portal' || provider.type === 'minimax-portal-cn') && baseUrl && !baseUrl.endsWith('/anthropic')) {
               baseUrl = baseUrl.replace(/\/$/, '') + '/anthropic';
             }
 
-            setOpenClawDefaultModelWithOverride(provider.type, undefined, {
+            // To ensure the OpenClaw Gateway's internal token refresher works,
+            // we must save the CN provider under the "minimax-portal" key in openclaw.json
+            const targetProviderKey = (provider.type === 'minimax-portal' || provider.type === 'minimax-portal-cn')
+              ? 'minimax-portal'
+              : provider.type;
+
+            setOpenClawDefaultModelWithOverride(targetProviderKey, undefined, {
               baseUrl,
               api,
-              apiKeyEnv: provider.type === 'minimax-portal' ? 'minimax-oauth' : 'qwen-oauth',
+              apiKeyEnv: targetProviderKey === 'minimax-portal' ? 'minimax-oauth' : 'qwen-oauth',
             });
 
             logger.info(`Configured openclaw.json for OAuth provider "${provider.type}"`);

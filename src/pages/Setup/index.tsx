@@ -773,14 +773,28 @@ function ProviderContent({
 
   const handleStartOAuth = async () => {
     if (!selectedProvider) return;
+
+    try {
+      const list = await window.electron.ipcRenderer.invoke('provider:list') as Array<{ type: string }>;
+      const existingTypes = new Set(list.map(l => l.type));
+      if (selectedProvider === 'minimax-portal' && existingTypes.has('minimax-portal-cn')) {
+        toast.error(t('settings:aiProviders.toast.minimaxConflict'));
+        return;
+      }
+      if (selectedProvider === 'minimax-portal-cn' && existingTypes.has('minimax-portal')) {
+        toast.error(t('settings:aiProviders.toast.minimaxConflict'));
+        return;
+      }
+    } catch {
+      // ignore check failure
+    }
+
     setOauthFlowing(true);
     setOauthData(null);
     setOauthError(null);
 
-    // Default to global region for MiniMax in setup
-    const region = 'global';
     try {
-      await window.electron.ipcRenderer.invoke('provider:requestOAuth', selectedProvider, region);
+      await window.electron.ipcRenderer.invoke('provider:requestOAuth', selectedProvider);
     } catch (e) {
       setOauthError(String(e));
       setOauthFlowing(false);
@@ -904,6 +918,21 @@ function ProviderContent({
 
   const handleValidateAndSave = async () => {
     if (!selectedProvider) return;
+
+    try {
+      const list = await window.electron.ipcRenderer.invoke('provider:list') as Array<{ type: string }>;
+      const existingTypes = new Set(list.map(l => l.type));
+      if (selectedProvider === 'minimax-portal' && existingTypes.has('minimax-portal-cn')) {
+        toast.error(t('settings:aiProviders.toast.minimaxConflict'));
+        return;
+      }
+      if (selectedProvider === 'minimax-portal-cn' && existingTypes.has('minimax-portal')) {
+        toast.error(t('settings:aiProviders.toast.minimaxConflict'));
+        return;
+      }
+    } catch {
+      // ignore check failure
+    }
 
     setValidating(true);
     setKeyValid(null);
