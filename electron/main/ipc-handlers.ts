@@ -834,6 +834,14 @@ function registerDeviceOAuthHandlers(mainWindow: BrowserWindow): void {
  * Provider-related IPC handlers
  */
 function registerProviderHandlers(gatewayManager: GatewayManager): void {
+  // Listen for OAuth success to automatically restart the Gateway with new tokens/configs
+  deviceOAuthManager.on('oauth:success', (providerType) => {
+    logger.info(`[IPC] Restarting Gateway after ${providerType} OAuth success...`);
+    void gatewayManager.restart().catch(err => {
+      logger.error('Failed to restart Gateway after OAuth success:', err);
+    });
+  });
+
   // Get all providers with key info
   ipcMain.handle('provider:list', async () => {
     return await getAllProvidersWithKeyInfo();
@@ -923,6 +931,12 @@ function registerProviderHandlers(gatewayManager: GatewayManager): void {
         try {
           const ock = getOpenClawProviderKey(existing.type, providerId);
           removeProviderFromOpenClaw(ock);
+
+          // Restart Gateway so it no longer loads the deleted provider's plugin/config
+          logger.info(`Restarting Gateway after deleting provider "${ock}"`);
+          void gatewayManager.restart().catch((err) => {
+            logger.warn('Gateway restart after provider delete failed:', err);
+          });
         } catch (err) {
           console.warn('Failed to completely remove provider from OpenClaw:', err);
         }

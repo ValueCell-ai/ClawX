@@ -131,6 +131,7 @@ class DeviceOAuthManager extends EventEmitter {
             resourceUrl: token.resourceUrl,
             // MiniMax uses Anthropic Messages API format
             api: 'anthropic-messages',
+            region,
         });
     }
 
@@ -189,6 +190,7 @@ class DeviceOAuthManager extends EventEmitter {
         expires: number;
         resourceUrl?: string;
         api: 'anthropic-messages' | 'openai-completions';
+        region?: MiniMaxRegion;
     }) {
         this.active = false;
         this.activeProvider = null;
@@ -212,7 +214,7 @@ class DeviceOAuthManager extends EventEmitter {
         //    or falls back to the provider's default public endpoint.
         // Note: MiniMax Anthropic-compatible API requires the /anthropic suffix.
         const defaultBaseUrl = providerType === 'minimax-portal'
-            ? 'https://api.minimax.io/anthropic'
+            ? (token.region === 'cn' ? 'https://api.minimaxi.com/anthropic' : 'https://api.minimax.io/anthropic')
             : 'https://portal.qwen.ai/v1';
 
         let baseUrl = token.resourceUrl || defaultBaseUrl;
@@ -245,14 +247,18 @@ class DeviceOAuthManager extends EventEmitter {
             name: providerType === 'minimax-portal' ? 'MiniMax' : 'Qwen',
             type: providerType,
             enabled: existing?.enabled ?? true,
-            baseUrl: existing?.baseUrl,
+            baseUrl, // Save the dynamically resolved URL (Global vs CN)
+
             model: existing?.model || getProviderDefaultModel(providerType),
             createdAt: existing?.createdAt || new Date().toISOString(),
             updatedAt: new Date().toISOString(),
         };
         await saveProvider(providerConfig);
 
-        // 4. Emit success to frontend
+        // 4. Emit success internally so the main process can restart the Gateway
+        this.emit('oauth:success', providerType);
+
+        // 5. Emit success to frontend
         if (this.mainWindow && !this.mainWindow.isDestroyed()) {
             this.mainWindow.webContents.send('oauth:success', { provider: providerType, success: true });
         }

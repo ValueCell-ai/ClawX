@@ -706,7 +706,7 @@ function ProviderContent({
   onApiKeyChange,
   onConfiguredChange,
 }: ProviderContentProps) {
-  const { t } = useTranslation(['setup', 'settings']);
+  const { t, i18n } = useTranslation(['setup', 'settings']);
   const [showKey, setShowKey] = useState(false);
   const [validating, setValidating] = useState(false);
   const [keyValid, setKeyValid] = useState<boolean | null>(null);
@@ -777,8 +777,8 @@ function ProviderContent({
     setOauthData(null);
     setOauthError(null);
 
-    // Default to global region for MiniMax in setup
-    const region = 'global';
+    // Dynamic region for MiniMax based on language
+    const region = i18n.language.startsWith('zh') ? 'cn' : 'global';
     try {
       await window.electron.ipcRenderer.invoke('provider:requestOAuth', selectedProvider, region);
     } catch (e) {
