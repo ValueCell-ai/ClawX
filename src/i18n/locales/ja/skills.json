@@ -57,7 +57,8 @@
         "failedOpenFolder": "スキルフォルダを開けませんでした",
         "failedInstall": "インストールに失敗しました",
         "failedUninstall": "アンインストールに失敗しました",
-        "failedFolderNotFound": "スキルフォルダがまだ存在しません。先にスキルをインストールしてください。"
+        "failedFolderNotFound": "スキルフォルダがまだ存在しません。先にスキルをインストールしてください。",
+        "timeoutError": "ダウンロードがタイムアウトしました。ネットワークかプロキシを確認してください。ClawHub.aiからZIPをダウンロードして {{path}} に配置することも可能です"
     },
     "marketplace": {
         "title": "マーケットプレイス",

@@ -637,6 +637,14 @@ export function Skills() {
     }
   }, [t]);
 
+  const [skillsDirPath, setSkillsDirPath] = useState('~/.openclaw/skills');
+
+  useEffect(() => {
+    window.electron.ipcRenderer.invoke('openclaw:getSkillsDir')
+      .then((dir) => setSkillsDirPath(dir as string))
+      .catch(console.error);
+  }, []);
+
   // Handle marketplace search
   const handleMarketplaceSearch = useCallback((e: React.FormEvent) => {
     e.preventDefault();
@@ -658,10 +666,14 @@ export function Skills() {
       // We need to find the skill id which is usually the slug
       await enableSkill(slug);
       toast.success(t('toast.installed'));
-    } catch (err) {
-      toast.error(t('toast.failedInstall') + ': ' + String(err));
+    } catch (err: any) {
+      if (err.message === 'timeoutError') {
+        toast.error(t('toast.timeoutError', { path: skillsDirPath }), { duration: 10000 });
+      } else {
+        toast.error(t('toast.failedInstall') + ': ' + String(err));
+      }
     }
-  }, [installSkill, enableSkill, t]);
+  }, [installSkill, enableSkill, t, skillsDirPath]);
 
   // Initial marketplace load (Discovery)
   useEffect(() => {
@@ -970,9 +982,13 @@ export function Skills() {
 
             {searchError && (
               <Card className="border-destructive/50 bg-destructive/5">
-                <CardContent className="py-3 text-sm text-destructive flex items-center gap-2">
-                  <AlertCircle className="h-4 w-4" />
-                  <span>{t('marketplace.searchError')}</span>
+                <CardContent className="py-3 text-sm text-destructive flex items-start gap-2">
+                  <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" />
+                  <span>
+                    {searchError === 'timeoutError' || searchError.includes('timeoutError')
+                      ? t('toast.timeoutError', { path: skillsDirPath })
+                      : t('marketplace.searchError')}
+                  </span>
                 </CardContent>
               </Card>
             )}

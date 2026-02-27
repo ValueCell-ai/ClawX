@@ -57,7 +57,8 @@
         "failedOpenFolder": "Failed to open skills folder",
         "failedInstall": "Failed to install",
         "failedUninstall": "Failed to uninstall",
-        "failedFolderNotFound": "Skills folder does not exist yet. Install a skill first."
+        "failedFolderNotFound": "Skills folder does not exist yet. Install a skill first.",
+        "timeoutError": "Download timed out, check your network or proxy. You can also download the ZIP archive from ClawHub.ai and place it in {{path}}"
     },
     "marketplace": {
         "title": "Marketplace",

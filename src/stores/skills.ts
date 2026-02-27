@@ -153,6 +153,9 @@ export const useSkillsStore = create<SkillsState>((set, get) => ({
       if (result.success) {
         set({ searchResults: result.results || [] });
       } else {
+        if (result.error?.includes('Timeout')) {
+          throw new Error('timeoutError');
+        }
         throw new Error(result.error || 'Search failed');
       }
     } catch (error) {
@@ -167,6 +170,9 @@ export const useSkillsStore = create<SkillsState>((set, get) => ({
     try {
       const result = await window.electron.ipcRenderer.invoke('clawhub:install', { slug, version }) as { success: boolean; error?: string };
       if (!result.success) {
+        if (result.error?.includes('Timeout')) {
+          throw new Error('timeoutError');
+        }
         throw new Error(result.error || 'Install failed');
       }
       // Refresh skills after install

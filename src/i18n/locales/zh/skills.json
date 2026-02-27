@@ -57,7 +57,8 @@
         "failedOpenFolder": "无法打开技能文件夹",
         "failedInstall": "安装失败",
         "failedUninstall": "卸载失败",
-        "failedFolderNotFound": "技能文件夹尚不存在，请先安装一个技能。"
+        "failedFolderNotFound": "技能文件夹尚不存在，请先安装一个技能。",
+        "timeoutError": "下载超时，请检查网络或配置代理。您也可以访问 ClawHub.ai 直接下载压缩包解压后手动放到 {{path}} 目录下使用"
     },
     "marketplace": {
         "title": "市场",
