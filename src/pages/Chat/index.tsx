@@ -42,8 +42,7 @@ export function Chat() {
   // When the store already holds messages for this session (i.e. the user
   // is navigating *back* to Chat), use quiet mode so the existing messages
   // stay visible while fresh data loads in the background.  This avoids
-  // an unnecessary messages → spinner → messages flicker that is especially
-  // noticeable on macOS with GPU compositing.
+  // an unnecessary messages → spinner → messages flicker.
   useEffect(() => {
     if (!isGatewayRunning) return;
     let cancelled = false;

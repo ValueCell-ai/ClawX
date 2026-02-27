@@ -17,13 +17,21 @@ import { ClawHubService } from '../gateway/clawhub';
 import { ensureClawXContext, repairClawXOnlyBootstrapFiles } from '../utils/openclaw-workspace';
 import { isQuitting, setQuitting } from './app-state';
 
-// Disable GPU acceleration only on Linux where GPU driver issues are common.
-// On Windows and macOS, hardware acceleration is essential for responsive UI;
-// forcing CPU rendering makes the main thread compete with sync I/O and
-// contributes to "Not Responding" hangs.
-if (process.platform === 'linux') {
-  app.disableHardwareAcceleration();
-}
+// Disable GPU hardware acceleration globally for maximum stability across
+// all GPU configurations (no GPU, integrated, discrete).
+//
+// Rationale (following VS Code's philosophy):
+// - Page/file loading is async data fetching — zero GPU dependency.
+// - The original per-platform GPU branching was added to avoid CPU rendering
+//   competing with sync I/O on Windows, but all file I/O is now async
+//   (fs/promises), so that concern no longer applies.
+// - Software rendering is deterministic across all hardware; GPU compositing
+//   behaviour varies between vendors (Intel, AMD, NVIDIA, Apple Silicon) and
+//   driver versions, making it the #1 source of rendering bugs in Electron.
+//
+// Users who want GPU acceleration can pass `--enable-gpu` on the CLI or
+// set `"disable-hardware-acceleration": false` in the app config (future).
+app.disableHardwareAcceleration();
 
 // Global references
 let mainWindow: BrowserWindow | null = null;
