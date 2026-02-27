@@ -1,0 +1,17 @@
+#!/bin/sh
+# OpenClaw CLI wrapper for Git Bash / MSYS2 on Windows
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+INSTALL_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
+
+case "$1" in
+  update)
+    echo "openclaw is managed by ClawX (bundled version)."
+    echo ""
+    echo "To update openclaw, update ClawX:"
+    echo "  Open ClawX > Settings > Check for Updates"
+    exit 0
+    ;;
+esac
+
+export OPENCLAW_EMBEDDED_IN="ClawX"
+ELECTRON_RUN_AS_NODE=1 exec "$INSTALL_DIR/ClawX.exe" "$INSTALL_DIR/resources/openclaw/openclaw.mjs" "$@"

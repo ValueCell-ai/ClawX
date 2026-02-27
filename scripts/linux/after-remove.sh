@@ -4,8 +4,9 @@
 
 set -e
 
-# Remove symbolic link
+# Remove symbolic links
 rm -f /usr/local/bin/clawx 2>/dev/null || true
+rm -f /usr/local/bin/openclaw 2>/dev/null || true
 
 # Update desktop database
 if command -v update-desktop-database &> /dev/null; then

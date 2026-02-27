@@ -181,7 +181,7 @@ export function Settings() {
   };
 
   const handleInstallCliCommand = async () => {
-    if (!isMac || installingCli) return;
+    if (isWindows || installingCli) return;
     try {
       const confirmation = await window.electron.ipcRenderer.invoke('dialog:message', {
         type: 'question',
@@ -516,7 +516,7 @@ export function Settings() {
                       {t('common:actions.copy')}
                     </Button>
                   </div>
-                  {isMac && !isDev && (
+                  {(isMac || isLinux) && !isDev && (
                     <div className="space-y-1">
                       <Button
                         type="button"

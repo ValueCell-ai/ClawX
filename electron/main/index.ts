@@ -15,6 +15,7 @@ import { warmupNetworkOptimization } from '../utils/uv-env';
 
 import { ClawHubService } from '../gateway/clawhub';
 import { ensureClawXContext, repairClawXOnlyBootstrapFiles } from '../utils/openclaw-workspace';
+import { autoInstallCliIfNeeded, generateCompletionCache, installCompletionToProfile } from '../utils/openclaw-cli';
 import { isQuitting, setQuitting } from './app-state';
 
 // Disable GPU hardware acceleration globally for maximum stability across
@@ -201,6 +202,14 @@ async function initialize(): Promise<void> {
   // is ready, so ensureClawXContext will retry until the target files appear.
   void ensureClawXContext().catch((error) => {
     logger.warn('Failed to merge ClawX context into workspace:', error);
+  });
+
+  // Auto-install openclaw CLI and shell completions (non-blocking).
+  void autoInstallCliIfNeeded().then(() => {
+    generateCompletionCache();
+    installCompletionToProfile();
+  }).catch((error) => {
+    logger.warn('CLI auto-install failed:', error);
   });
 
   // Re-apply ClawX context after every gateway restart because the gateway
