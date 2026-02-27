@@ -592,7 +592,7 @@ async function validateTelegramCredentials(
  * Validate channel configuration using OpenClaw doctor
  */
 export async function validateChannelConfig(channelType: string): Promise<ValidationResult> {
-    const { execSync } = await import('child_process');
+    const { exec } = await import('child_process');
 
     const result: ValidationResult = {
         valid: true,
@@ -604,15 +604,23 @@ export async function validateChannelConfig(channelType: string): Promise<Valida
         // Get OpenClaw path
         const openclawPath = getOpenClawResolvedDir();
 
-        // Run openclaw doctor command to validate config
-        const output = execSync(
-            `node openclaw.mjs doctor --json 2>&1`,
-            {
-                cwd: openclawPath,
-                encoding: 'utf-8',
-                timeout: 30000,
-            }
-        );
+        // Run openclaw doctor command to validate config (async to avoid
+        // blocking the main thread — the old execSync could freeze the UI
+        // for up to 30 seconds).
+        const output = await new Promise<string>((resolve, reject) => {
+            exec(
+                `node openclaw.mjs doctor --json 2>&1`,
+                {
+                    cwd: openclawPath,
+                    encoding: 'utf-8',
+                    timeout: 30000,
+                },
+                (err, stdout) => {
+                    if (err) reject(err);
+                    else resolve(stdout);
+                },
+            );
+        });
 
         // Parse output for errors related to the channel
         const lines = output.split('\n');
