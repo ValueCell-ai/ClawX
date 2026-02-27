@@ -160,10 +160,10 @@ export const useSkillsStore = create<SkillsState>((set, get) => ({
         set({ searchResults: result.results || [] });
       } else {
         if (result.error?.includes('Timeout')) {
-          throw new Error('timeoutError');
+          throw new Error('searchTimeoutError');
         }
         if (result.error?.toLowerCase().includes('rate limit')) {
-          throw new Error('rateLimitError');
+          throw new Error('searchRateLimitError');
         }
         throw new Error(result.error || 'Search failed');
       }
@@ -180,10 +180,10 @@ export const useSkillsStore = create<SkillsState>((set, get) => ({
       const result = await window.electron.ipcRenderer.invoke('clawhub:install', { slug, version }) as { success: boolean; error?: string };
       if (!result.success) {
         if (result.error?.includes('Timeout')) {
-          throw new Error('timeoutError');
+          throw new Error('installTimeoutError');
         }
         if (result.error?.toLowerCase().includes('rate limit')) {
-          throw new Error('rateLimitError');
+          throw new Error('installRateLimitError');
         }
         throw new Error(result.error || 'Install failed');
       }

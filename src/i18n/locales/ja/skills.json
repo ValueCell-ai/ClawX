@@ -58,12 +58,17 @@
         "failedInstall": "インストールに失敗しました",
         "failedUninstall": "アンインストールに失敗しました",
         "failedFolderNotFound": "スキルフォルダがまだ存在しません。先にスキルをインストールしてください。",
-        "timeoutError": "ダウンロードがタイムアウトしました。ネットワークかプロキシを確認してください。ClawHub.aiからZIPをダウンロードして {{path}} に配置することも可能です",
-        "rateLimitError": "リクエストの制限を超過しました。後でもう一度お試しください。ClawHub.aiからZIPをダウンロードして {{path}} に配置することも可能です"
+        "searchTimeoutError": "検索がタイムアウトしました。ClawHub.aiで検索してZIPをダウンロードし、{{path}} に展開することも可能です",
+        "installTimeoutError": "インストールがタイムアウトしました。ClawHub.aiでZIPをダウンロードし、{{path}} に展開することも可能です",
+        "searchRateLimitError": "検索リクエストの制限を超過しました。ClawHub.aiで検索してZIPをダウンロードし、{{path}} に展開することも可能です",
+        "installRateLimitError": "インストールリクエストの制限を超過しました。ClawHub.aiからZIPをダウンロードし、{{path}} に展開することも可能です",
+        "fetchTimeoutError": "スキルリストの取得がタイムアウトしました。ネットワークを確認してください。",
+        "fetchRateLimitError": "スキルリスト取得のリクエスト制限を超過しました。後でお試しください。"
     },
     "marketplace": {
         "title": "マーケットプレイス",
         "securityNote": "インストール前にスキルカードをクリックして、ClawHubでドキュメントとセキュリティ情報を確認してください。",
+        "manualInstallHint": "ネットワークに問題がありますか？いつでもClawHub.aiからスキルのZIPをダウンロードし、手動で {{path}} に展開してインストールできます。",
         "searching": "ClawHubを検索中...",
         "noResults": "検索に一致するスキルが見つかりません。",
         "emptyPrompt": "新しいスキルを検索して機能を拡張しましょう。",
