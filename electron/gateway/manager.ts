@@ -130,17 +130,20 @@ export class GatewayManager extends EventEmitter {
     timeout: NodeJS.Timeout;
   }> = new Map();
   private deviceIdentity: DeviceIdentity | null = null;
+  private restartDebounceTimer: NodeJS.Timeout | null = null;
   
   constructor(config?: Partial<ReconnectConfig>) {
     super();
     this.reconnectConfig = { ...DEFAULT_RECONNECT_CONFIG, ...config };
-    this.initDeviceIdentity();
+    // Device identity is loaded lazily in start() — not in the constructor —
+    // so that async file I/O and key generation don't block module loading.
   }
 
-  private initDeviceIdentity(): void {
+  private async initDeviceIdentity(): Promise<void> {
+    if (this.deviceIdentity) return; // already loaded
     try {
       const identityPath = path.join(app.getPath('userData'), 'clawx-device-identity.json');
-      this.deviceIdentity = loadOrCreateDeviceIdentity(identityPath);
+      this.deviceIdentity = await loadOrCreateDeviceIdentity(identityPath);
       logger.debug(`Device identity loaded (deviceId=${this.deviceIdentity.deviceId})`);
     } catch (err) {
       logger.warn('Failed to load device identity, scopes will be limited:', err);
@@ -210,6 +213,10 @@ export class GatewayManager extends EventEmitter {
     logger.info(`Gateway start requested (port=${this.status.port})`);
     this.lastSpawnSummary = null;
     this.shouldReconnect = true;
+
+    // Lazily load device identity (async file I/O + key generation).
+    // Must happen before connect() which uses the identity for the handshake.
+    await this.initDeviceIdentity();
 
     // Manual start should override and cancel any pending reconnect timer.
     if (this.reconnectTimer) {
@@ -369,6 +376,26 @@ export class GatewayManager extends EventEmitter {
     await this.stop();
     await this.start();
   }
+
+  /**
+   * Debounced restart — coalesces multiple rapid restart requests into a
+   * single restart after `delayMs` of inactivity.  This prevents the
+   * cascading stop/start cycles that occur when provider:save,
+   * provider:setDefault and channel:saveConfig all fire within seconds
+   * of each other during setup.
+   */
+  debouncedRestart(delayMs = 2000): void {
+    if (this.restartDebounceTimer) {
+      clearTimeout(this.restartDebounceTimer);
+    }
+    logger.debug(`Gateway restart debounced (will fire in ${delayMs}ms)`);
+    this.restartDebounceTimer = setTimeout(() => {
+      this.restartDebounceTimer = null;
+      void this.restart().catch((err) => {
+        logger.warn('Debounced Gateway restart failed:', err);
+      });
+    }, delayMs);
+  }
   
   /**
    * Clear all active timers
@@ -385,6 +412,10 @@ export class GatewayManager extends EventEmitter {
     if (this.healthCheckInterval) {
       clearInterval(this.healthCheckInterval);
       this.healthCheckInterval = null;
+    }
+    if (this.restartDebounceTimer) {
+      clearTimeout(this.restartDebounceTimer);
+      this.restartDebounceTimer = null;
     }
   }
   
@@ -540,9 +571,15 @@ export class GatewayManager extends EventEmitter {
       const port = PORTS.OPENCLAW_GATEWAY;
       
       try {
+        // Platform-specific command to find processes listening on the gateway port.
+        // On Windows, lsof doesn't exist; use PowerShell's Get-NetTCPConnection instead.
+        const cmd = process.platform === 'win32'
+          ? `powershell -NoProfile -Command "(Get-NetTCPConnection -LocalPort ${port} -State Listen -ErrorAction SilentlyContinue).OwningProcess"`
+          : `lsof -i :${port} -sTCP:LISTEN -t`;
+
         const { stdout } = await new Promise<{ stdout: string }>((resolve, reject) => {
           import('child_process').then(cp => {
-            cp.exec(`lsof -i :${port} -sTCP:LISTEN -t`, { timeout: 5000 }, (err, stdout) => {
+            cp.exec(cmd, { timeout: 5000 }, (err, stdout) => {
               if (err) resolve({ stdout: '' });
               else resolve({ stdout });
             });
@@ -550,7 +587,7 @@ export class GatewayManager extends EventEmitter {
         });
         
         if (stdout.trim()) {
-          const pids = stdout.trim().split('\n')
+          const pids = stdout.trim().split(/\r?\n/)
             .map(s => s.trim())
             .filter(Boolean);
             
@@ -560,18 +597,33 @@ export class GatewayManager extends EventEmitter {
 
                // Unload the launchctl service first so macOS doesn't auto-
                // respawn the process we're about to kill.
-               await this.unloadLaunchctlService();
+               if (process.platform === 'darwin') {
+                 await this.unloadLaunchctlService();
+               }
 
-               // SIGTERM first so the gateway can clean up its lock file.
+               // Terminate orphaned processes
                for (const pid of pids) {
-                 try { process.kill(parseInt(pid), 'SIGTERM'); } catch { /* ignore */ }
+                 try {
+                   if (process.platform === 'win32') {
+                     // On Windows, use taskkill for reliable process group termination
+                     import('child_process').then(cp => {
+                       cp.exec(`taskkill /PID ${pid} /T /F`, { timeout: 5000 }, () => {});
+                     }).catch(() => {});
+                   } else {
+                     // SIGTERM first so the gateway can clean up its lock file.
+                     process.kill(parseInt(pid), 'SIGTERM');
+                   }
+                 } catch { /* ignore */ }
                }
-               await new Promise(r => setTimeout(r, 3000));
-               // SIGKILL any survivors.
-               for (const pid of pids) {
-                 try { process.kill(parseInt(pid), 0); process.kill(parseInt(pid), 'SIGKILL'); } catch { /* already exited */ }
+               await new Promise(r => setTimeout(r, process.platform === 'win32' ? 2000 : 3000));
+
+               // SIGKILL any survivors (Unix only — Windows taskkill /F is already forceful)
+               if (process.platform !== 'win32') {
+                 for (const pid of pids) {
+                   try { process.kill(parseInt(pid), 0); process.kill(parseInt(pid), 'SIGKILL'); } catch { /* already exited */ }
+                 }
+                 await new Promise(r => setTimeout(r, 1000));
                }
-               await new Promise(r => setTimeout(r, 1000));
                return null;
             }
           }
@@ -633,13 +685,13 @@ export class GatewayManager extends EventEmitter {
     // system-managed launchctl service) the WebSocket handshake will fail
     // with "token mismatch" even though we pass --token on the CLI.
     try {
-      syncGatewayTokenToConfig(gatewayToken);
+      await syncGatewayTokenToConfig(gatewayToken);
     } catch (err) {
       logger.warn('Failed to sync gateway token to openclaw.json:', err);
     }
 
     try {
-      syncBrowserConfigToOpenClaw();
+      await syncBrowserConfigToOpenClaw();
     } catch (err) {
       logger.warn('Failed to sync browser config to openclaw.json:', err);
     }

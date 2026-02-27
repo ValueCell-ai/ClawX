@@ -4,9 +4,13 @@
  * OpenClaw Gateway 2026.2.15+ requires a signed device identity in the
  * connect handshake to grant scopes (operator.read, operator.write, etc.).
  * Without a device, the gateway strips all requested scopes.
+ *
+ * All file I/O uses async fs/promises to avoid blocking the main thread.
+ * Key generation (Ed25519) uses the async crypto.generateKeyPair API.
  */
 import crypto from 'crypto';
-import fs from 'fs';
+import { access, readFile, writeFile, mkdir, chmod } from 'fs/promises';
+import { constants } from 'fs';
 import path from 'path';
 
 export interface DeviceIdentity {
@@ -49,8 +53,21 @@ function fingerprintPublicKey(publicKeyPem: string): string {
   return crypto.createHash('sha256').update(raw).digest('hex');
 }
 
-function generateIdentity(): DeviceIdentity {
-  const { publicKey, privateKey } = crypto.generateKeyPairSync('ed25519');
+/** Non-throwing async existence check. */
+async function fileExists(p: string): Promise<boolean> {
+  try { await access(p, constants.F_OK); return true; } catch { return false; }
+}
+
+/** Generate a new Ed25519 identity (async key generation). */
+async function generateIdentity(): Promise<DeviceIdentity> {
+  const { publicKey, privateKey } = await new Promise<crypto.KeyPairKeyObjectResult>(
+    (resolve, reject) => {
+      crypto.generateKeyPair('ed25519', (err, publicKey, privateKey) => {
+        if (err) reject(err);
+        else resolve({ publicKey, privateKey });
+      });
+    },
+  );
   const publicKeyPem = (publicKey.export({ type: 'spki', format: 'pem' }) as Buffer).toString();
   const privateKeyPem = (privateKey.export({ type: 'pkcs8', format: 'pem' }) as Buffer).toString();
   return {
@@ -63,11 +80,13 @@ function generateIdentity(): DeviceIdentity {
 /**
  * Load device identity from disk, or create and persist a new one.
  * The identity file is stored at `filePath` with mode 0o600.
+ *
+ * Fully async — no synchronous file I/O or crypto.
  */
-export function loadOrCreateDeviceIdentity(filePath: string): DeviceIdentity {
+export async function loadOrCreateDeviceIdentity(filePath: string): Promise<DeviceIdentity> {
   try {
-    if (fs.existsSync(filePath)) {
-      const raw = fs.readFileSync(filePath, 'utf8');
+    if (await fileExists(filePath)) {
+      const raw = await readFile(filePath, 'utf8');
       const parsed = JSON.parse(raw);
       if (
         parsed?.version === 1 &&
@@ -78,7 +97,7 @@ export function loadOrCreateDeviceIdentity(filePath: string): DeviceIdentity {
         const derivedId = fingerprintPublicKey(parsed.publicKeyPem);
         if (derivedId && derivedId !== parsed.deviceId) {
           const updated = { ...parsed, deviceId: derivedId };
-          fs.writeFileSync(filePath, `${JSON.stringify(updated, null, 2)}\n`, { mode: 0o600 });
+          await writeFile(filePath, `${JSON.stringify(updated, null, 2)}\n`, { mode: 0o600 });
           return { deviceId: derivedId, publicKeyPem: parsed.publicKeyPem, privateKeyPem: parsed.privateKeyPem };
         }
         return { deviceId: parsed.deviceId, publicKeyPem: parsed.publicKeyPem, privateKeyPem: parsed.privateKeyPem };
@@ -88,12 +107,12 @@ export function loadOrCreateDeviceIdentity(filePath: string): DeviceIdentity {
     // fall through to create a new identity
   }
 
-  const identity = generateIdentity();
+  const identity = await generateIdentity();
   const dir = path.dirname(filePath);
-  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+  if (!(await fileExists(dir))) await mkdir(dir, { recursive: true });
   const stored = { version: 1, ...identity, createdAtMs: Date.now() };
-  fs.writeFileSync(filePath, `${JSON.stringify(stored, null, 2)}\n`, { mode: 0o600 });
-  try { fs.chmodSync(filePath, 0o600); } catch { /* ignore */ }
+  await writeFile(filePath, `${JSON.stringify(stored, null, 2)}\n`, { mode: 0o600 });
+  try { await chmod(filePath, 0o600); } catch { /* ignore */ }
   return identity;
 }
 

@@ -17,8 +17,13 @@ import { ClawHubService } from '../gateway/clawhub';
 import { ensureClawXContext, repairClawXOnlyBootstrapFiles } from '../utils/openclaw-workspace';
 import { isQuitting, setQuitting } from './app-state';
 
-// Disable GPU acceleration for better compatibility
-app.disableHardwareAcceleration();
+// Disable GPU acceleration only on Linux where GPU driver issues are common.
+// On Windows and macOS, hardware acceleration is essential for responsive UI;
+// forcing CPU rendering makes the main thread compete with sync I/O and
+// contributes to "Not Responding" hangs.
+if (process.platform === 'linux') {
+  app.disableHardwareAcceleration();
+}
 
 // Global references
 let mainWindow: BrowserWindow | null = null;
@@ -122,30 +127,28 @@ async function initialize(): Promise<void> {
   // Create system tray
   createTray(mainWindow);
 
-  // Override security headers ONLY for the OpenClaw Gateway Control UI
-  session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
-    const isGatewayUrl = details.url.includes('127.0.0.1:18789') || details.url.includes('localhost:18789');
-
-    if (!isGatewayUrl) {
-      callback({ responseHeaders: details.responseHeaders });
-      return;
-    }
-
-    const headers = { ...details.responseHeaders };
-    delete headers['X-Frame-Options'];
-    delete headers['x-frame-options'];
-    if (headers['Content-Security-Policy']) {
-      headers['Content-Security-Policy'] = headers['Content-Security-Policy'].map(
-        (csp) => csp.replace(/frame-ancestors\s+'none'/g, "frame-ancestors 'self' *")
-      );
-    }
-    if (headers['content-security-policy']) {
-      headers['content-security-policy'] = headers['content-security-policy'].map(
-        (csp) => csp.replace(/frame-ancestors\s+'none'/g, "frame-ancestors 'self' *")
-      );
-    }
-    callback({ responseHeaders: headers });
-  });
+  // Override security headers ONLY for the OpenClaw Gateway Control UI.
+  // The URL filter ensures this callback only fires for gateway requests,
+  // avoiding unnecessary overhead on every other HTTP response.
+  session.defaultSession.webRequest.onHeadersReceived(
+    { urls: ['http://127.0.0.1:18789/*', 'http://localhost:18789/*'] },
+    (details, callback) => {
+      const headers = { ...details.responseHeaders };
+      delete headers['X-Frame-Options'];
+      delete headers['x-frame-options'];
+      if (headers['Content-Security-Policy']) {
+        headers['Content-Security-Policy'] = headers['Content-Security-Policy'].map(
+          (csp) => csp.replace(/frame-ancestors\s+'none'/g, "frame-ancestors 'self' *")
+        );
+      }
+      if (headers['content-security-policy']) {
+        headers['content-security-policy'] = headers['content-security-policy'].map(
+          (csp) => csp.replace(/frame-ancestors\s+'none'/g, "frame-ancestors 'self' *")
+        );
+      }
+      callback({ responseHeaders: headers });
+    },
+  );
 
   // Register IPC handlers
   registerIpcHandlers(gatewayManager, clawHubService, mainWindow);
@@ -158,7 +161,7 @@ async function initialize(): Promise<void> {
 
   // Minimize to tray on close instead of quitting (macOS & Windows)
   mainWindow.on('close', (event) => {
-    if (!isQuitting) {
+    if (!isQuitting()) {
       event.preventDefault();
       mainWindow?.hide();
     }
@@ -171,11 +174,9 @@ async function initialize(): Promise<void> {
   // Repair any bootstrap files that only contain ClawX markers (no OpenClaw
   // template content). This fixes a race condition where ensureClawXContext()
   // previously created the file before the gateway could seed the full template.
-  try {
-    repairClawXOnlyBootstrapFiles();
-  } catch (error) {
+  void repairClawXOnlyBootstrapFiles().catch((error) => {
     logger.warn('Failed to repair bootstrap files:', error);
-  }
+  });
 
   // Start Gateway automatically (this seeds missing bootstrap files with full templates)
   try {

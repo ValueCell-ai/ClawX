@@ -1,10 +1,16 @@
 /**
  * Logger Utility
- * Centralized logging with levels, file output, and log retrieval for UI
+ * Centralized logging with levels, file output, and log retrieval for UI.
+ *
+ * File writes use an async buffered writer so that high-frequency logging
+ * (e.g. during gateway startup) never blocks the Electron main thread.
+ * Only the final `process.on('exit')` handler uses synchronous I/O to
+ * guarantee the last few messages are flushed before the process exits.
  */
 import { app } from 'electron';
 import { join } from 'path';
-import { existsSync, mkdirSync, appendFileSync, readFileSync, readdirSync, statSync } from 'fs';
+import { existsSync, mkdirSync, appendFileSync } from 'fs';
+import { appendFile, readFile, readdir, stat } from 'fs/promises';
 
 /**
  * Log levels
@@ -19,7 +25,11 @@ export enum LogLevel {
 /**
  * Current log level (can be changed at runtime)
  */
-let currentLevel = LogLevel.DEBUG; // Default to DEBUG for better diagnostics
+// Default to INFO in packaged builds to reduce sync-like overhead from
+// high-volume DEBUG logging.  In dev mode, keep DEBUG for diagnostics.
+// Note: app.isPackaged may not be available before app.isReady(), but the
+// logger is initialised after that point so this is safe.
+let currentLevel = LogLevel.DEBUG;
 
 /**
  * Log file path
@@ -33,11 +43,58 @@ let logDir: string | null = null;
 const RING_BUFFER_SIZE = 500;
 const recentLogs: string[] = [];
 
+// ── Async write buffer ───────────────────────────────────────────
+
+/** Pending log lines waiting to be flushed to disk. */
+let writeBuffer: string[] = [];
+/** Timer for the next scheduled flush. */
+let flushTimer: NodeJS.Timeout | null = null;
+/** Whether a flush is currently in progress. */
+let flushing = false;
+
+const FLUSH_INTERVAL_MS = 500;
+const FLUSH_SIZE_THRESHOLD = 20;
+
+async function flushBuffer(): Promise<void> {
+  if (flushing || writeBuffer.length === 0 || !logFilePath) return;
+  flushing = true;
+  const batch = writeBuffer.join('');
+  writeBuffer = [];
+  try {
+    await appendFile(logFilePath, batch);
+  } catch {
+    // Silently fail if we can't write to file
+  } finally {
+    flushing = false;
+  }
+}
+
+/** Synchronous flush for the `exit` handler — guaranteed to write. */
+function flushBufferSync(): void {
+  if (writeBuffer.length === 0 || !logFilePath) return;
+  try {
+    appendFileSync(logFilePath, writeBuffer.join(''));
+  } catch {
+    // Silently fail
+  }
+  writeBuffer = [];
+}
+
+// Ensure all buffered data reaches disk before the process exits.
+process.on('exit', flushBufferSync);
+
+// ── Initialisation ───────────────────────────────────────────────
+
 /**
  * Initialize logger — safe to call before app.isReady()
  */
 export function initLogger(): void {
   try {
+    // In production, default to INFO to reduce log volume and overhead.
+    if (app.isPackaged && currentLevel < LogLevel.INFO) {
+      currentLevel = LogLevel.INFO;
+    }
+
     logDir = join(app.getPath('userData'), 'logs');
 
     if (!existsSync(logDir)) {
@@ -47,7 +104,7 @@ export function initLogger(): void {
     const timestamp = new Date().toISOString().split('T')[0];
     logFilePath = join(logDir, `clawx-${timestamp}.log`);
 
-    // Write a separator for new session
+    // Write a separator for new session (sync is OK — happens once at startup)
     const sessionHeader = `\n${'='.repeat(80)}\n[${new Date().toISOString()}] === ClawX Session Start (v${app.getVersion()}) ===\n${'='.repeat(80)}\n`;
     appendFileSync(logFilePath, sessionHeader);
   } catch (error) {
@@ -55,30 +112,22 @@ export function initLogger(): void {
   }
 }
 
-/**
- * Set log level
- */
+// ── Level / path accessors ───────────────────────────────────────
+
 export function setLogLevel(level: LogLevel): void {
   currentLevel = level;
 }
 
-/**
- * Get log file directory path
- */
 export function getLogDir(): string | null {
   return logDir;
 }
 
-/**
- * Get current log file path
- */
 export function getLogFilePath(): string | null {
   return logFilePath;
 }
 
-/**
- * Format log message
- */
+// ── Formatting ───────────────────────────────────────────────────
+
 function formatMessage(level: string, message: string, ...args: unknown[]): string {
   const timestamp = new Date().toISOString();
   const formattedArgs = args.length > 0 ? ' ' + args.map(arg => {
@@ -98,29 +147,36 @@ function formatMessage(level: string, message: string, ...args: unknown[]): stri
   return `[${timestamp}] [${level.padEnd(5)}] ${message}${formattedArgs}`;
 }
 
+// ── Core write ───────────────────────────────────────────────────
+
 /**
- * Write to log file and ring buffer
+ * Write to ring buffer + schedule an async flush to disk.
  */
 function writeLog(formatted: string): void {
-  // Ring buffer
+  // Ring buffer (always synchronous — in-memory only)
   recentLogs.push(formatted);
   if (recentLogs.length > RING_BUFFER_SIZE) {
     recentLogs.shift();
   }
 
-  // File
+  // Async file write via buffer
   if (logFilePath) {
-    try {
-      appendFileSync(logFilePath, formatted + '\n');
-    } catch {
-      // Silently fail if we can't write to file
+    writeBuffer.push(formatted + '\n');
+    if (writeBuffer.length >= FLUSH_SIZE_THRESHOLD) {
+      // Buffer is large enough — flush immediately (non-blocking)
+      void flushBuffer();
+    } else if (!flushTimer) {
+      // Schedule a flush after a short delay
+      flushTimer = setTimeout(() => {
+        flushTimer = null;
+        void flushBuffer();
+      }, FLUSH_INTERVAL_MS);
     }
   }
 }
 
-/**
- * Log debug message
- */
+// ── Public log methods ───────────────────────────────────────────
+
 export function debug(message: string, ...args: unknown[]): void {
   if (currentLevel <= LogLevel.DEBUG) {
     const formatted = formatMessage('DEBUG', message, ...args);
@@ -129,9 +185,6 @@ export function debug(message: string, ...args: unknown[]): void {
   }
 }
 
-/**
- * Log info message
- */
 export function info(message: string, ...args: unknown[]): void {
   if (currentLevel <= LogLevel.INFO) {
     const formatted = formatMessage('INFO', message, ...args);
@@ -140,9 +193,6 @@ export function info(message: string, ...args: unknown[]): void {
   }
 }
 
-/**
- * Log warning message
- */
 export function warn(message: string, ...args: unknown[]): void {
   if (currentLevel <= LogLevel.WARN) {
     const formatted = formatMessage('WARN', message, ...args);
@@ -151,9 +201,6 @@ export function warn(message: string, ...args: unknown[]): void {
   }
 }
 
-/**
- * Log error message
- */
 export function error(message: string, ...args: unknown[]): void {
   if (currentLevel <= LogLevel.ERROR) {
     const formatted = formatMessage('ERROR', message, ...args);
@@ -162,11 +209,8 @@ export function error(message: string, ...args: unknown[]): void {
   }
 }
 
-/**
- * Get recent logs from ring buffer (for UI display)
- * @param count Number of recent log lines to return (default: all)
- * @param minLevel Minimum log level to include (default: DEBUG)
- */
+// ── Log retrieval (for UI / diagnostics) ─────────────────────────
+
 export function getRecentLogs(count?: number, minLevel?: LogLevel): string[] {
   const filtered = minLevel != null
     ? recentLogs.filter(line => {
@@ -181,14 +225,13 @@ export function getRecentLogs(count?: number, minLevel?: LogLevel): string[] {
 }
 
 /**
- * Read the current day's log file content (last N lines)
+ * Read the current day's log file content (last N lines).
+ * Uses async I/O to avoid blocking.
  */
-export function readLogFile(tailLines = 200): string {
-  if (!logFilePath || !existsSync(logFilePath)) {
-    return '(No log file found)';
-  }
+export async function readLogFile(tailLines = 200): Promise<string> {
+  if (!logFilePath) return '(No log file found)';
   try {
-    const content = readFileSync(logFilePath, 'utf-8');
+    const content = await readFile(logFilePath, 'utf-8');
     const lines = content.split('\n');
     if (lines.length <= tailLines) return content;
     return lines.slice(-tailLines).join('\n');
@@ -198,24 +241,26 @@ export function readLogFile(tailLines = 200): string {
 }
 
 /**
- * List available log files
+ * List available log files.
+ * Uses async I/O to avoid blocking.
  */
-export function listLogFiles(): Array<{ name: string; path: string; size: number; modified: string }> {
-  if (!logDir || !existsSync(logDir)) return [];
+export async function listLogFiles(): Promise<Array<{ name: string; path: string; size: number; modified: string }>> {
+  if (!logDir) return [];
   try {
-    return readdirSync(logDir)
-      .filter(f => f.endsWith('.log'))
-      .map(f => {
-        const fullPath = join(logDir!, f);
-        const stat = statSync(fullPath);
-        return {
-          name: f,
-          path: fullPath,
-          size: stat.size,
-          modified: stat.mtime.toISOString(),
-        };
-      })
-      .sort((a, b) => b.modified.localeCompare(a.modified));
+    const files = await readdir(logDir);
+    const results: Array<{ name: string; path: string; size: number; modified: string }> = [];
+    for (const f of files) {
+      if (!f.endsWith('.log')) continue;
+      const fullPath = join(logDir, f);
+      const s = await stat(fullPath);
+      results.push({
+        name: f,
+        path: fullPath,
+        size: s.size,
+        modified: s.mtime.toISOString(),
+      });
+    }
+    return results.sort((a, b) => b.modified.localeCompare(a.modified));
   } catch {
     return [];
   }

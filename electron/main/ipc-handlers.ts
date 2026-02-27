@@ -3,7 +3,7 @@
  * Registers all IPC handlers for main-renderer communication
  */
 import { ipcMain, BrowserWindow, shell, dialog, app, nativeImage } from 'electron';
-import { existsSync, copyFileSync, statSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs';
+import { existsSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join, extname, basename } from 'node:path';
 import crypto from 'node:crypto';
@@ -85,7 +85,7 @@ export function registerIpcHandlers(
   registerClawHubHandlers(clawHubService);
 
   // OpenClaw handlers
-  registerOpenClawHandlers();
+  registerOpenClawHandlers(gatewayManager);
 
   // Provider handlers
   registerProviderHandlers(gatewayManager);
@@ -135,7 +135,7 @@ function registerSkillConfigHandlers(): void {
     apiKey?: string;
     env?: Record<string, string>;
   }) => {
-    return updateSkillConfig(params.skillKey, {
+    return await updateSkillConfig(params.skillKey, {
       apiKey: params.apiKey,
       env: params.env,
     });
@@ -143,12 +143,12 @@ function registerSkillConfigHandlers(): void {
 
   // Get skill config
   ipcMain.handle('skill:getConfig', async (_, skillKey: string) => {
-    return getSkillConfig(skillKey);
+    return await getSkillConfig(skillKey);
   });
 
   // Get all skill configs
   ipcMain.handle('skill:getAllConfigs', async () => {
-    return getAllSkillConfigs();
+    return await getAllSkillConfigs();
   });
 }
 
@@ -374,7 +374,7 @@ function registerLogHandlers(): void {
 
   // Read log file content (last N lines)
   ipcMain.handle('log:readFile', async (_, tailLines?: number) => {
-    return logger.readLogFile(tailLines);
+    return await logger.readLogFile(tailLines);
   });
 
   // Get log file path (so user can open in file explorer)
@@ -389,7 +389,7 @@ function registerLogHandlers(): void {
 
   // List all log files
   ipcMain.handle('log:listFiles', async () => {
-    return logger.listLogFiles();
+    return await logger.listLogFiles();
   });
 }
 
@@ -479,8 +479,10 @@ function registerGatewayHandlers(
       const fileReferences: string[] = [];
 
       if (params.media && params.media.length > 0) {
+        const fsP = await import('fs/promises');
         for (const m of params.media) {
-          logger.info(`[chat:sendWithMedia] Processing file: ${m.fileName} (${m.mimeType}), path: ${m.filePath}, exists: ${existsSync(m.filePath)}, isVision: ${VISION_MIME_TYPES.has(m.mimeType)}`);
+          const exists = await fsP.access(m.filePath).then(() => true, () => false);
+          logger.info(`[chat:sendWithMedia] Processing file: ${m.fileName} (${m.mimeType}), path: ${m.filePath}, exists: ${exists}, isVision: ${VISION_MIME_TYPES.has(m.mimeType)}`);
 
           // Always add file path reference so the model can access it via tools
           fileReferences.push(
@@ -491,7 +493,7 @@ function registerGatewayHandlers(
             // Send as base64 attachment in the format the Gateway expects:
             // { content: base64String, mimeType: string, fileName?: string }
             // The Gateway normalizer looks for `a.content` (NOT `a.source.data`).
-            const fileBuffer = readFileSync(m.filePath);
+            const fileBuffer = await fsP.readFile(m.filePath);
             const base64Data = fileBuffer.toString('base64');
             logger.info(`[chat:sendWithMedia] Read ${fileBuffer.length} bytes, base64 length: ${base64Data.length}`);
             imageAttachments.push({
@@ -605,7 +607,7 @@ function registerGatewayHandlers(
  * OpenClaw-related IPC handlers
  * For checking package status and channel configuration
  */
-function registerOpenClawHandlers(): void {
+function registerOpenClawHandlers(gatewayManager: GatewayManager): void {
 
   // Get OpenClaw package status
   ipcMain.handle('openclaw:status', () => {
@@ -664,7 +666,13 @@ function registerOpenClawHandlers(): void {
   ipcMain.handle('channel:saveConfig', async (_, channelType: string, config: Record<string, unknown>) => {
     try {
       logger.info('channel:saveConfig', { channelType, keys: Object.keys(config || {}) });
-      saveChannelConfig(channelType, config);
+      await saveChannelConfig(channelType, config);
+      // Debounced restart so the gateway picks up the new channel config.
+      // The gateway watches openclaw.json, but a restart ensures a clean
+      // start for newly-added channels.  Using debouncedRestart() here
+      // instead of an explicit restart on the frontend side means that
+      // rapid config changes (e.g. setup wizard) coalesce into one restart.
+      gatewayManager.debouncedRestart();
       return { success: true };
     } catch (error) {
       console.error('Failed to save channel config:', error);
@@ -675,7 +683,7 @@ function registerOpenClawHandlers(): void {
   // Get channel configuration
   ipcMain.handle('channel:getConfig', async (_, channelType: string) => {
     try {
-      const config = getChannelConfig(channelType);
+      const config = await getChannelConfig(channelType);
       return { success: true, config };
     } catch (error) {
       console.error('Failed to get channel config:', error);
@@ -686,7 +694,7 @@ function registerOpenClawHandlers(): void {
   // Get channel form values (reverse-transformed for UI pre-fill)
   ipcMain.handle('channel:getFormValues', async (_, channelType: string) => {
     try {
-      const values = getChannelFormValues(channelType);
+      const values = await getChannelFormValues(channelType);
       return { success: true, values };
     } catch (error) {
       console.error('Failed to get channel form values:', error);
@@ -697,7 +705,7 @@ function registerOpenClawHandlers(): void {
   // Delete channel configuration
   ipcMain.handle('channel:deleteConfig', async (_, channelType: string) => {
     try {
-      deleteChannelConfig(channelType);
+      await deleteChannelConfig(channelType);
       return { success: true };
     } catch (error) {
       console.error('Failed to delete channel config:', error);
@@ -708,7 +716,7 @@ function registerOpenClawHandlers(): void {
   // List configured channels
   ipcMain.handle('channel:listConfigured', async () => {
     try {
-      const channels = listConfiguredChannels();
+      const channels = await listConfiguredChannels();
       return { success: true, channels };
     } catch (error) {
       console.error('Failed to list channels:', error);
@@ -719,7 +727,7 @@ function registerOpenClawHandlers(): void {
   // Enable or disable a channel
   ipcMain.handle('channel:setEnabled', async (_, channelType: string, enabled: boolean) => {
     try {
-      setChannelEnabled(channelType, enabled);
+      await setChannelEnabled(channelType, enabled);
       return { success: true };
     } catch (error) {
       console.error('Failed to set channel enabled:', error);
@@ -838,10 +846,8 @@ function registerDeviceOAuthHandlers(mainWindow: BrowserWindow): void {
 function registerProviderHandlers(gatewayManager: GatewayManager): void {
   // Listen for OAuth success to automatically restart the Gateway with new tokens/configs
   deviceOAuthManager.on('oauth:success', (providerType) => {
-    logger.info(`[IPC] Restarting Gateway after ${providerType} OAuth success...`);
-    void gatewayManager.restart().catch(err => {
-      logger.error('Failed to restart Gateway after OAuth success:', err);
-    });
+    logger.info(`[IPC] Scheduling Gateway restart after ${providerType} OAuth success...`);
+    gatewayManager.debouncedRestart();
   });
 
   // Get all providers with key info
@@ -871,7 +877,7 @@ function registerProviderHandlers(gatewayManager: GatewayManager): void {
 
           // Also write to OpenClaw auth-profiles.json so the gateway can use it
           try {
-            saveProviderKeyToOpenClaw(ock, trimmedKey);
+            await saveProviderKeyToOpenClaw(ock, trimmedKey);
           } catch (err) {
             console.warn('Failed to save key to OpenClaw auth-profiles:', err);
           }
@@ -884,7 +890,7 @@ function registerProviderHandlers(gatewayManager: GatewayManager): void {
         const api = config.type === 'custom' || config.type === 'ollama' ? 'openai-completions' : meta?.api;
 
         if (api) {
-          syncProviderConfigToOpenClaw(ock, config.model, {
+          await syncProviderConfigToOpenClaw(ock, config.model, {
             baseUrl: config.baseUrl || meta?.baseUrl,
             api,
             apiKeyEnv: meta?.apiKeyEnv,
@@ -897,7 +903,7 @@ function registerProviderHandlers(gatewayManager: GatewayManager): void {
               : await getApiKey(config.id);
             if (resolvedKey && config.baseUrl) {
               const modelId = config.model;
-              updateAgentModelProvider(ock, {
+              await updateAgentModelProvider(ock, {
                 baseUrl: config.baseUrl,
                 api: 'openai-completions',
                 models: modelId ? [{ id: modelId, name: modelId }] : [],
@@ -906,11 +912,10 @@ function registerProviderHandlers(gatewayManager: GatewayManager): void {
             }
           }
 
-          // Restart Gateway so it picks up the new config and env vars
-          logger.info(`Restarting Gateway after saving provider "${ock}" config`);
-          void gatewayManager.restart().catch((err) => {
-            logger.warn('Gateway restart after provider save failed:', err);
-          });
+          // Debounced restart so the gateway picks up new config/env vars.
+          // Multiple rapid provider saves (e.g. during setup) are coalesced.
+          logger.info(`Scheduling Gateway restart after saving provider "${ock}" config`);
+          gatewayManager.debouncedRestart();
         }
       } catch (err) {
         console.warn('Failed to sync openclaw provider config:', err);
@@ -932,13 +937,11 @@ function registerProviderHandlers(gatewayManager: GatewayManager): void {
       if (existing?.type) {
         try {
           const ock = getOpenClawProviderKey(existing.type, providerId);
-          removeProviderFromOpenClaw(ock);
+          await removeProviderFromOpenClaw(ock);
 
-          // Restart Gateway so it no longer loads the deleted provider's plugin/config
-          logger.info(`Restarting Gateway after deleting provider "${ock}"`);
-          void gatewayManager.restart().catch((err) => {
-            logger.warn('Gateway restart after provider delete failed:', err);
-          });
+          // Debounced restart so the gateway stops loading the deleted provider.
+          logger.info(`Scheduling Gateway restart after deleting provider "${ock}"`);
+          gatewayManager.debouncedRestart();
         } catch (err) {
           console.warn('Failed to completely remove provider from OpenClaw:', err);
         }
@@ -960,7 +963,7 @@ function registerProviderHandlers(gatewayManager: GatewayManager): void {
       const providerType = provider?.type || providerId;
       const ock = getOpenClawProviderKey(providerType, providerId);
       try {
-        saveProviderKeyToOpenClaw(ock, apiKey);
+        await saveProviderKeyToOpenClaw(ock, apiKey);
       } catch (err) {
         console.warn('Failed to save key to OpenClaw auth-profiles:', err);
       }
@@ -1003,10 +1006,10 @@ function registerProviderHandlers(gatewayManager: GatewayManager): void {
           const trimmedKey = apiKey.trim();
           if (trimmedKey) {
             await storeApiKey(providerId, trimmedKey);
-            saveProviderKeyToOpenClaw(ock, trimmedKey);
+            await saveProviderKeyToOpenClaw(ock, trimmedKey);
           } else {
             await deleteApiKey(providerId);
-            removeProviderFromOpenClaw(ock);
+            await removeProviderFromOpenClaw(ock);
           }
         }
 
@@ -1016,7 +1019,7 @@ function registerProviderHandlers(gatewayManager: GatewayManager): void {
           const api = nextConfig.type === 'custom' || nextConfig.type === 'ollama' ? 'openai-completions' : meta?.api;
 
           if (api) {
-            syncProviderConfigToOpenClaw(ock, nextConfig.model, {
+            await syncProviderConfigToOpenClaw(ock, nextConfig.model, {
               baseUrl: nextConfig.baseUrl || meta?.baseUrl,
               api,
               apiKeyEnv: meta?.apiKeyEnv,
@@ -1029,7 +1032,7 @@ function registerProviderHandlers(gatewayManager: GatewayManager): void {
                 : await getApiKey(providerId);
               if (resolvedKey && nextConfig.baseUrl) {
                 const modelId = nextConfig.model;
-                updateAgentModelProvider(ock, {
+                await updateAgentModelProvider(ock, {
                   baseUrl: nextConfig.baseUrl,
                   api: 'openai-completions',
                   models: modelId ? [{ id: modelId, name: modelId }] : [],
@@ -1046,20 +1049,18 @@ function registerProviderHandlers(gatewayManager: GatewayManager): void {
               ? `${ock}/${nextConfig.model}`
               : undefined;
             if (nextConfig.type !== 'custom' && nextConfig.type !== 'ollama') {
-              setOpenClawDefaultModel(nextConfig.type, modelOverride);
+              await setOpenClawDefaultModel(nextConfig.type, modelOverride);
             } else {
-              setOpenClawDefaultModelWithOverride(ock, modelOverride, {
+              await setOpenClawDefaultModelWithOverride(ock, modelOverride, {
                 baseUrl: nextConfig.baseUrl,
                 api: 'openai-completions',
               });
             }
           }
 
-          // Restart Gateway so it picks up the new config and env vars
-          logger.info(`Restarting Gateway after updating provider "${ock}" config`);
-          void gatewayManager.restart().catch((err) => {
-            logger.warn('Gateway restart after provider update failed:', err);
-          });
+          // Debounced restart so the gateway picks up updated config/env vars.
+          logger.info(`Scheduling Gateway restart after updating provider "${ock}" config`);
+          gatewayManager.debouncedRestart();
         } catch (err) {
           console.warn('Failed to sync openclaw config after provider update:', err);
         }
@@ -1071,10 +1072,10 @@ function registerProviderHandlers(gatewayManager: GatewayManager): void {
           await saveProvider(existing);
           if (previousKey) {
             await storeApiKey(providerId, previousKey);
-            saveProviderKeyToOpenClaw(previousOck, previousKey);
+            await saveProviderKeyToOpenClaw(previousOck, previousKey);
           } else {
             await deleteApiKey(providerId);
-            removeProviderFromOpenClaw(previousOck);
+            await removeProviderFromOpenClaw(previousOck);
           }
         } catch (rollbackError) {
           console.warn('Failed to rollback provider updateWithKey:', rollbackError);
@@ -1096,7 +1097,7 @@ function registerProviderHandlers(gatewayManager: GatewayManager): void {
       const ock = getOpenClawProviderKey(providerType, providerId);
       try {
         if (ock) {
-          removeProviderFromOpenClaw(ock);
+          await removeProviderFromOpenClaw(ock);
         }
       } catch (err) {
         console.warn('Failed to completely remove provider from OpenClaw:', err);
@@ -1144,17 +1145,17 @@ function registerProviderHandlers(gatewayManager: GatewayManager): void {
               : undefined;
 
             if (provider.type === 'custom' || provider.type === 'ollama') {
-              setOpenClawDefaultModelWithOverride(ock, modelOverride, {
+              await setOpenClawDefaultModelWithOverride(ock, modelOverride, {
                 baseUrl: provider.baseUrl,
                 api: 'openai-completions',
               });
             } else {
-              setOpenClawDefaultModel(provider.type, modelOverride);
+              await setOpenClawDefaultModel(provider.type, modelOverride);
             }
 
             // Keep auth-profiles in sync with the default provider instance.
             if (providerKey) {
-              saveProviderKeyToOpenClaw(ock, providerKey);
+              await saveProviderKeyToOpenClaw(ock, providerKey);
             }
           } else {
             // OAuth providers (minimax-portal, minimax-portal-cn, qwen-portal)
@@ -1177,7 +1178,7 @@ function registerProviderHandlers(gatewayManager: GatewayManager): void {
               ? 'minimax-portal'
               : provider.type;
 
-            setOpenClawDefaultModelWithOverride(targetProviderKey, undefined, {
+            await setOpenClawDefaultModelWithOverride(targetProviderKey, undefined, {
               baseUrl,
               api,
               authHeader: targetProviderKey === 'minimax-portal' ? true : undefined,
@@ -1210,7 +1211,7 @@ function registerProviderHandlers(gatewayManager: GatewayManager): void {
             provider.baseUrl
           ) {
             const modelId = provider.model;
-            updateAgentModelProvider(ock, {
+            await updateAgentModelProvider(ock, {
               baseUrl: provider.baseUrl,
               api: 'openai-completions',
               models: modelId ? [{ id: modelId, name: modelId }] : [],
@@ -1218,12 +1219,10 @@ function registerProviderHandlers(gatewayManager: GatewayManager): void {
             });
           }
 
-          // Restart Gateway so it picks up the new config and env vars.
+          // Debounced restart so the gateway picks up the new default provider.
           if (gatewayManager.isConnected()) {
-            logger.info(`Restarting Gateway after provider switch to "${ock}"`);
-            void gatewayManager.restart().catch((err) => {
-              logger.warn('Gateway restart after provider switch failed:', err);
-            });
+            logger.info(`Scheduling Gateway restart after provider switch to "${ock}"`);
+            gatewayManager.debouncedRestart();
           }
         } catch (err) {
           console.warn('Failed to set OpenClaw default model:', err);
@@ -1757,7 +1756,7 @@ const OUTBOUND_DIR = join(homedir(), '.openclaw', 'media', 'outbound');
  * longer side so the image is never squished). The frontend handles
  * square cropping via CSS object-fit: cover.
  */
-function generateImagePreview(filePath: string, mimeType: string): string | null {
+async function generateImagePreview(filePath: string, mimeType: string): Promise<string | null> {
   try {
     const img = nativeImage.createFromPath(filePath);
     if (img.isEmpty()) return null;
@@ -1770,8 +1769,9 @@ function generateImagePreview(filePath: string, mimeType: string): string | null
         : img.resize({ height: maxDim }); // portrait → constrain height
       return `data:image/png;base64,${resized.toPNG().toString('base64')}`;
     }
-    // Small image — use original
-    const buf = readFileSync(filePath);
+    // Small image — use original (async read to avoid blocking)
+    const { readFile: readFileAsync } = await import('fs/promises');
+    const buf = await readFileAsync(filePath);
     return `data:${mimeType};base64,${buf.toString('base64')}`;
   } catch {
     return null;
@@ -1785,26 +1785,27 @@ function generateImagePreview(filePath: string, mimeType: string): string | null
 function registerFileHandlers(): void {
   // Stage files from real disk paths (used with dialog:open)
   ipcMain.handle('file:stage', async (_, filePaths: string[]) => {
-    mkdirSync(OUTBOUND_DIR, { recursive: true });
+    const fsP = await import('fs/promises');
+    await fsP.mkdir(OUTBOUND_DIR, { recursive: true });
 
     const results = [];
     for (const filePath of filePaths) {
       const id = crypto.randomUUID();
       const ext = extname(filePath);
       const stagedPath = join(OUTBOUND_DIR, `${id}${ext}`);
-      copyFileSync(filePath, stagedPath);
+      await fsP.copyFile(filePath, stagedPath);
 
-      const stat = statSync(stagedPath);
+      const s = await fsP.stat(stagedPath);
       const mimeType = getMimeType(ext);
       const fileName = basename(filePath);
 
       // Generate preview for images
       let preview: string | null = null;
       if (mimeType.startsWith('image/')) {
-        preview = generateImagePreview(stagedPath, mimeType);
+        preview = await generateImagePreview(stagedPath, mimeType);
       }
 
-      results.push({ id, fileName, mimeType, fileSize: stat.size, stagedPath, preview });
+      results.push({ id, fileName, mimeType, fileSize: s.size, stagedPath, preview });
     }
     return results;
   });
@@ -1815,13 +1816,14 @@ function registerFileHandlers(): void {
     fileName: string;
     mimeType: string;
   }) => {
-    mkdirSync(OUTBOUND_DIR, { recursive: true });
+    const fsP = await import('fs/promises');
+    await fsP.mkdir(OUTBOUND_DIR, { recursive: true });
 
     const id = crypto.randomUUID();
     const ext = extname(payload.fileName) || mimeToExt(payload.mimeType);
     const stagedPath = join(OUTBOUND_DIR, `${id}${ext}`);
     const buffer = Buffer.from(payload.base64, 'base64');
-    writeFileSync(stagedPath, buffer);
+    await fsP.writeFile(stagedPath, buffer);
 
     const mimeType = payload.mimeType || getMimeType(ext);
     const fileSize = buffer.length;
@@ -1829,7 +1831,7 @@ function registerFileHandlers(): void {
     // Generate preview for images
     let preview: string | null = null;
     if (mimeType.startsWith('image/')) {
-      preview = generateImagePreview(stagedPath, mimeType);
+      preview = await generateImagePreview(stagedPath, mimeType);
     }
 
     return { id, fileName: payload.fileName, mimeType, fileSize, stagedPath, preview };
@@ -1856,11 +1858,17 @@ function registerFileHandlers(): void {
       });
       if (result.canceled || !result.filePath) return { success: false };
 
-      if (params.filePath && existsSync(params.filePath)) {
-        copyFileSync(params.filePath, result.filePath);
+      const fsP = await import('fs/promises');
+      if (params.filePath) {
+        try {
+          await fsP.access(params.filePath);
+          await fsP.copyFile(params.filePath, result.filePath);
+        } catch {
+          return { success: false, error: 'Source file not found' };
+        }
       } else if (params.base64) {
         const buffer = Buffer.from(params.base64, 'base64');
-        writeFileSync(result.filePath, buffer);
+        await fsP.writeFile(result.filePath, buffer);
       } else {
         return { success: false, error: 'No image data provided' };
       }
@@ -1871,19 +1879,16 @@ function registerFileHandlers(): void {
   });
 
   ipcMain.handle('media:getThumbnails', async (_, paths: Array<{ filePath: string; mimeType: string }>) => {
+    const fsP = await import('fs/promises');
     const results: Record<string, { preview: string | null; fileSize: number }> = {};
     for (const { filePath, mimeType } of paths) {
       try {
-        if (!existsSync(filePath)) {
-          results[filePath] = { preview: null, fileSize: 0 };
-          continue;
-        }
-        const stat = statSync(filePath);
+        const s = await fsP.stat(filePath);
         let preview: string | null = null;
         if (mimeType.startsWith('image/')) {
-          preview = generateImagePreview(filePath, mimeType);
+          preview = await generateImagePreview(filePath, mimeType);
         }
-        results[filePath] = { preview, fileSize: stat.size };
+        results[filePath] = { preview, fileSize: s.size };
       } catch {
         results[filePath] = { preview: null, fileSize: 0 };
       }
