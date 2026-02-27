@@ -53,7 +53,8 @@
       "updated": "Provider updated",
       "failedUpdate": "Failed to update provider",
       "invalidKey": "Invalid API key",
-      "modelRequired": "Model ID is required"
+      "modelRequired": "Model ID is required",
+      "minimaxConflict": "Cannot add both MiniMax (Global) and MiniMax (CN) providers."
     },
     "oauth": {
       "loginMode": "OAuth Login",

@@ -234,7 +234,7 @@ export async function getAllProvidersWithKeyInfo(): Promise<
     // This must match getOpenClawProviderKey() in ipc-handlers.ts exactly.
     const openClawKey = (provider.type === 'custom' || provider.type === 'ollama')
       ? `${provider.type}-${provider.id.replace(/-/g, '').slice(0, 8)}`
-      : provider.type;
+      : provider.type === 'minimax-portal-cn' ? 'minimax-portal' : provider.type;
     if (!isBuiltin && !activeOpenClawProviders.has(provider.type) && !activeOpenClawProviders.has(provider.id) && !activeOpenClawProviders.has(openClawKey)) {
       console.log(`[Sync] Provider ${provider.id} (${provider.type}) missing from OpenClaw, dropping from ClawX UI`);
       await deleteProvider(provider.id);

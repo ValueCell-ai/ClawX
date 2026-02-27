@@ -706,7 +706,7 @@ function ProviderContent({
   onApiKeyChange,
   onConfiguredChange,
 }: ProviderContentProps) {
-  const { t, i18n } = useTranslation(['setup', 'settings']);
+  const { t } = useTranslation(['setup', 'settings']);
   const [showKey, setShowKey] = useState(false);
   const [validating, setValidating] = useState(false);
   const [keyValid, setKeyValid] = useState<boolean | null>(null);
@@ -773,14 +773,28 @@ function ProviderContent({
 
   const handleStartOAuth = async () => {
     if (!selectedProvider) return;
+
+    try {
+      const list = await window.electron.ipcRenderer.invoke('provider:list') as Array<{ type: string }>;
+      const existingTypes = new Set(list.map(l => l.type));
+      if (selectedProvider === 'minimax-portal' && existingTypes.has('minimax-portal-cn')) {
+        toast.error(t('settings:aiProviders.toast.minimaxConflict'));
+        return;
+      }
+      if (selectedProvider === 'minimax-portal-cn' && existingTypes.has('minimax-portal')) {
+        toast.error(t('settings:aiProviders.toast.minimaxConflict'));
+        return;
+      }
+    } catch {
+      // ignore check failure
+    }
+
     setOauthFlowing(true);
     setOauthData(null);
     setOauthError(null);
 
-    // Dynamic region for MiniMax based on language
-    const region = i18n.language.startsWith('zh') ? 'cn' : 'global';
     try {
-      await window.electron.ipcRenderer.invoke('provider:requestOAuth', selectedProvider, region);
+      await window.electron.ipcRenderer.invoke('provider:requestOAuth', selectedProvider);
     } catch (e) {
       setOauthError(String(e));
       setOauthFlowing(false);
@@ -904,6 +918,21 @@ function ProviderContent({
 
   const handleValidateAndSave = async () => {
     if (!selectedProvider) return;
+
+    try {
+      const list = await window.electron.ipcRenderer.invoke('provider:list') as Array<{ type: string }>;
+      const existingTypes = new Set(list.map(l => l.type));
+      if (selectedProvider === 'minimax-portal' && existingTypes.has('minimax-portal-cn')) {
+        toast.error(t('settings:aiProviders.toast.minimaxConflict'));
+        return;
+      }
+      if (selectedProvider === 'minimax-portal-cn' && existingTypes.has('minimax-portal')) {
+        toast.error(t('settings:aiProviders.toast.minimaxConflict'));
+        return;
+      }
+    } catch {
+      // ignore check failure
+    }
 
     setValidating(true);
     setKeyValid(null);

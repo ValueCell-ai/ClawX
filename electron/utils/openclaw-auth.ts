@@ -175,7 +175,7 @@ export function saveProviderKeyToOpenClaw(
   // managed by OpenClaw plugins via `openclaw models auth login`.
   // Skip only if there's no explicit API key — meaning the user is using OAuth.
   // If the user provided an actual API key, write it normally.
-  const OAUTH_PROVIDERS = ['qwen-portal', 'minimax-portal'];
+  const OAUTH_PROVIDERS = ['qwen-portal', 'minimax-portal', 'minimax-portal-cn'];
   if (OAUTH_PROVIDERS.includes(provider) && !apiKey) {
     console.log(`Skipping auth-profiles write for OAuth provider "${provider}" (no API key provided, using OAuth)`);
     return;
@@ -227,7 +227,7 @@ export function removeProviderKeyFromOpenClaw(
 ): void {
   // OAuth providers have their credentials managed by OpenClaw plugins.
   // Do NOT delete their auth-profiles entries.
-  const OAUTH_PROVIDERS = ['qwen-portal', 'minimax-portal'];
+  const OAUTH_PROVIDERS = ['qwen-portal', 'minimax-portal', 'minimax-portal-cn'];
   if (OAUTH_PROVIDERS.includes(provider)) {
     console.log(`Skipping auth-profiles removal for OAuth provider "${provider}" (managed by OpenClaw plugin)`);
     return;

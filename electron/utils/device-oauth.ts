@@ -33,7 +33,7 @@ import {
 } from '../../node_modules/openclaw/extensions/qwen-portal-auth/oauth';
 import { saveOAuthTokenToOpenClaw, setOpenClawDefaultModelWithOverride } from './openclaw-auth';
 
-export type OAuthProviderType = 'minimax-portal' | 'qwen-portal';
+export type OAuthProviderType = 'minimax-portal' | 'minimax-portal-cn' | 'qwen-portal';
 export type { MiniMaxRegion };
 
 // ─────────────────────────────────────────────────────────────
@@ -55,15 +55,17 @@ class DeviceOAuthManager extends EventEmitter {
         }
 
         this.active = true;
+        this.emit('oauth:start', { provider: provider });
         this.activeProvider = provider;
 
         try {
-            if (provider === 'minimax-portal') {
-                await this.runMiniMaxFlow(region);
+            if (provider === 'minimax-portal' || provider === 'minimax-portal-cn') {
+                const actualRegion = provider === 'minimax-portal-cn' ? 'cn' : (region || 'global');
+                await this.runMiniMaxFlow(actualRegion, provider);
             } else if (provider === 'qwen-portal') {
                 await this.runQwenFlow();
             } else {
-                throw new Error(`Unsupported OAuth provider: ${provider}`);
+                throw new Error(`Unsupported OAuth provider type: ${provider}`);
             }
             return true;
         } catch (error) {
@@ -89,7 +91,7 @@ class DeviceOAuthManager extends EventEmitter {
     // MiniMax flow
     // ─────────────────────────────────────────────────────────
 
-    private async runMiniMaxFlow(region: MiniMaxRegion): Promise<void> {
+    private async runMiniMaxFlow(region?: MiniMaxRegion, providerType: OAuthProviderType = 'minimax-portal'): Promise<void> {
         if (!isOpenClawPresent()) {
             throw new Error('OpenClaw package not found');
         }
@@ -123,7 +125,7 @@ class DeviceOAuthManager extends EventEmitter {
 
         if (!this.active) return;
 
-        await this.onSuccess('minimax-portal', {
+        await this.onSuccess(providerType, {
             access: token.access,
             refresh: token.refresh,
             expires: token.expires,
@@ -196,10 +198,13 @@ class DeviceOAuthManager extends EventEmitter {
         this.activeProvider = null;
         logger.info(`[DeviceOAuth] Successfully completed OAuth for ${providerType}`);
 
-        // 1. Write OAuth token to OpenClaw's auth-profiles.json in native OAuth format
-        //    (matches what `openclaw models auth login` → upsertAuthProfile writes)
+        // 1. Write OAuth token to OpenClaw's auth-profiles.json in native OAuth format.
+        //    (matches what `openclaw models auth login` → upsertAuthProfile writes).
+        //    We save both MiniMax providers to the generic "minimax-portal" profile
+        //    so OpenClaw's gateway auto-refresher knows how to find it.
         try {
-            saveOAuthTokenToOpenClaw(providerType, {
+            const tokenProviderId = providerType.startsWith('minimax-portal') ? 'minimax-portal' : providerType;
+            saveOAuthTokenToOpenClaw(tokenProviderId, {
                 access: token.access,
                 refresh: token.refresh,
                 expires: token.expires,
@@ -214,19 +219,20 @@ class DeviceOAuthManager extends EventEmitter {
         //    or falls back to the provider's default public endpoint.
         // Note: MiniMax Anthropic-compatible API requires the /anthropic suffix.
         const defaultBaseUrl = providerType === 'minimax-portal'
-            ? (token.region === 'cn' ? 'https://api.minimaxi.com/anthropic' : 'https://api.minimax.io/anthropic')
-            : 'https://portal.qwen.ai/v1';
+            ? 'https://api.minimax.io/anthropic'
+            : (providerType === 'minimax-portal-cn' ? 'https://api.minimaxi.com/anthropic' : 'https://portal.qwen.ai/v1');
 
         let baseUrl = token.resourceUrl || defaultBaseUrl;
 
         // If MiniMax returned a resourceUrl (e.g. https://api.minimax.io) but no /anthropic suffix,
         // we must append it because we use the 'anthropic-messages' API mode
-        if (providerType === 'minimax-portal' && baseUrl && !baseUrl.endsWith('/anthropic')) {
+        if (providerType.startsWith('minimax-portal') && baseUrl && !baseUrl.endsWith('/anthropic')) {
             baseUrl = baseUrl.replace(/\/$/, '') + '/anthropic';
         }
 
         try {
-            setOpenClawDefaultModelWithOverride(providerType, undefined, {
+            const tokenProviderId = providerType.startsWith('minimax-portal') ? 'minimax-portal' : providerType;
+            setOpenClawDefaultModelWithOverride(tokenProviderId, undefined, {
                 baseUrl,
                 api: token.api,
                 // OAuth placeholder — tells Gateway to resolve credentials
@@ -234,7 +240,7 @@ class DeviceOAuthManager extends EventEmitter {
                 // This matches what the OpenClaw plugin's configPatch writes:
                 //   minimax-portal → apiKey: 'minimax-oauth'
                 //   qwen-portal    → apiKey: 'qwen-oauth'
-                apiKeyEnv: providerType === 'minimax-portal' ? 'minimax-oauth' : 'qwen-oauth',
+                apiKeyEnv: tokenProviderId === 'minimax-portal' ? 'minimax-oauth' : 'qwen-oauth',
             });
         } catch (err) {
             logger.warn(`[DeviceOAuth] Failed to configure openclaw models:`, err);
@@ -242,9 +248,14 @@ class DeviceOAuthManager extends EventEmitter {
 
         // 3. Save provider record in ClawX's own store so UI shows it as configured
         const existing = await getProvider(providerType);
+        const nameMap: Record<OAuthProviderType, string> = {
+            'minimax-portal': 'MiniMax (Global)',
+            'minimax-portal-cn': 'MiniMax (CN)',
+            'qwen-portal': 'Qwen',
+        };
         const providerConfig: ProviderConfig = {
             id: providerType,
-            name: providerType === 'minimax-portal' ? 'MiniMax' : 'Qwen',
+            name: nameMap[providerType as OAuthProviderType] || providerType,
             type: providerType,
             enabled: existing?.enabled ?? true,
             baseUrl, // Save the dynamically resolved URL (Global vs CN)

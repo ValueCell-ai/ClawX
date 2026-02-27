@@ -443,7 +443,7 @@ interface AddProviderDialogProps {
 }
 
 function AddProviderDialog({ existingTypes, onClose, onAdd, onValidateKey }: AddProviderDialogProps) {
-  const { t, i18n } = useTranslation('settings');
+  const { t } = useTranslation('settings');
   const [selectedType, setSelectedType] = useState<ProviderType | null>(null);
   const [name, setName] = useState('');
   const [apiKey, setApiKey] = useState('');
@@ -524,13 +524,22 @@ function AddProviderDialog({ existingTypes, onClose, onAdd, onValidateKey }: Add
 
   const handleStartOAuth = async () => {
     if (!selectedType) return;
+
+    if (selectedType === 'minimax-portal' && existingTypes.has('minimax-portal-cn')) {
+      toast.error(t('aiProviders.toast.minimaxConflict'));
+      return;
+    }
+    if (selectedType === 'minimax-portal-cn' && existingTypes.has('minimax-portal')) {
+      toast.error(t('aiProviders.toast.minimaxConflict'));
+      return;
+    }
+
     setOauthFlowing(true);
     setOauthData(null);
     setOauthError(null);
 
-    const region = i18n.language.startsWith('zh') ? 'cn' : 'global';
     try {
-      await window.electron.ipcRenderer.invoke('provider:requestOAuth', selectedType, region);
+      await window.electron.ipcRenderer.invoke('provider:requestOAuth', selectedType);
     } catch (e) {
       setOauthError(String(e));
       setOauthFlowing(false);
@@ -551,6 +560,15 @@ function AddProviderDialog({ existingTypes, onClose, onAdd, onValidateKey }: Add
 
   const handleAdd = async () => {
     if (!selectedType) return;
+
+    if (selectedType === 'minimax-portal' && existingTypes.has('minimax-portal-cn')) {
+      toast.error(t('aiProviders.toast.minimaxConflict'));
+      return;
+    }
+    if (selectedType === 'minimax-portal-cn' && existingTypes.has('minimax-portal')) {
+      toast.error(t('aiProviders.toast.minimaxConflict'));
+      return;
+    }
 
     setSaving(true);
     setValidationError(null);

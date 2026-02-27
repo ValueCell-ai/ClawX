@@ -13,6 +13,7 @@ export const BUILTIN_PROVIDER_TYPES = [
   'moonshot',
   'siliconflow',
   'minimax-portal',
+  'minimax-portal-cn',
   'qwen-portal',
   'ollama',
 ] as const;
@@ -108,6 +109,15 @@ const REGISTRY: Record<string, ProviderBackendMeta> = {
       baseUrl: 'https://api.minimax.io/anthropic',
       api: 'anthropic-messages',
       apiKeyEnv: 'MINIMAX_API_KEY',
+    },
+  },
+  'minimax-portal-cn': {
+    envVar: 'MINIMAX_CN_API_KEY',
+    defaultModel: 'minimax-portal/MiniMax-M2.1',
+    providerConfig: {
+      baseUrl: 'https://api.minimaxi.com/anthropic',
+      api: 'anthropic-messages',
+      apiKeyEnv: 'MINIMAX_CN_API_KEY',
     },
   },
   'qwen-portal': {
