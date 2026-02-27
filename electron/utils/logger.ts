@@ -25,7 +25,11 @@ export enum LogLevel {
 /**
  * Current log level (can be changed at runtime)
  */
-let currentLevel = LogLevel.DEBUG; // Default to DEBUG for better diagnostics
+// Default to INFO in packaged builds to reduce sync-like overhead from
+// high-volume DEBUG logging.  In dev mode, keep DEBUG for diagnostics.
+// Note: app.isPackaged may not be available before app.isReady(), but the
+// logger is initialised after that point so this is safe.
+let currentLevel = LogLevel.DEBUG;
 
 /**
  * Log file path
@@ -86,6 +90,11 @@ process.on('exit', flushBufferSync);
  */
 export function initLogger(): void {
   try {
+    // In production, default to INFO to reduce log volume and overhead.
+    if (app.isPackaged && currentLevel < LogLevel.INFO) {
+      currentLevel = LogLevel.INFO;
+    }
+
     logDir = join(app.getPath('userData'), 'logs');
 
     if (!existsSync(logDir)) {

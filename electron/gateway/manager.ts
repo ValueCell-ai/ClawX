@@ -135,13 +135,15 @@ export class GatewayManager extends EventEmitter {
   constructor(config?: Partial<ReconnectConfig>) {
     super();
     this.reconnectConfig = { ...DEFAULT_RECONNECT_CONFIG, ...config };
-    this.initDeviceIdentity();
+    // Device identity is loaded lazily in start() — not in the constructor —
+    // so that async file I/O and key generation don't block module loading.
   }
 
-  private initDeviceIdentity(): void {
+  private async initDeviceIdentity(): Promise<void> {
+    if (this.deviceIdentity) return; // already loaded
     try {
       const identityPath = path.join(app.getPath('userData'), 'clawx-device-identity.json');
-      this.deviceIdentity = loadOrCreateDeviceIdentity(identityPath);
+      this.deviceIdentity = await loadOrCreateDeviceIdentity(identityPath);
       logger.debug(`Device identity loaded (deviceId=${this.deviceIdentity.deviceId})`);
     } catch (err) {
       logger.warn('Failed to load device identity, scopes will be limited:', err);
@@ -211,6 +213,10 @@ export class GatewayManager extends EventEmitter {
     logger.info(`Gateway start requested (port=${this.status.port})`);
     this.lastSpawnSummary = null;
     this.shouldReconnect = true;
+
+    // Lazily load device identity (async file I/O + key generation).
+    // Must happen before connect() which uses the identity for the handshake.
+    await this.initDeviceIdentity();
 
     // Manual start should override and cancel any pending reconnect timer.
     if (this.reconnectTimer) {

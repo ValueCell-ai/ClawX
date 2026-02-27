@@ -3,7 +3,7 @@
  * Registers all IPC handlers for main-renderer communication
  */
 import { ipcMain, BrowserWindow, shell, dialog, app, nativeImage } from 'electron';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join, extname, basename } from 'node:path';
 import crypto from 'node:crypto';
@@ -135,7 +135,7 @@ function registerSkillConfigHandlers(): void {
     apiKey?: string;
     env?: Record<string, string>;
   }) => {
-    return updateSkillConfig(params.skillKey, {
+    return await updateSkillConfig(params.skillKey, {
       apiKey: params.apiKey,
       env: params.env,
     });
@@ -143,12 +143,12 @@ function registerSkillConfigHandlers(): void {
 
   // Get skill config
   ipcMain.handle('skill:getConfig', async (_, skillKey: string) => {
-    return getSkillConfig(skillKey);
+    return await getSkillConfig(skillKey);
   });
 
   // Get all skill configs
   ipcMain.handle('skill:getAllConfigs', async () => {
-    return getAllSkillConfigs();
+    return await getAllSkillConfigs();
   });
 }
 
@@ -479,8 +479,10 @@ function registerGatewayHandlers(
       const fileReferences: string[] = [];
 
       if (params.media && params.media.length > 0) {
+        const fsP = await import('fs/promises');
         for (const m of params.media) {
-          logger.info(`[chat:sendWithMedia] Processing file: ${m.fileName} (${m.mimeType}), path: ${m.filePath}, exists: ${existsSync(m.filePath)}, isVision: ${VISION_MIME_TYPES.has(m.mimeType)}`);
+          const exists = await fsP.access(m.filePath).then(() => true, () => false);
+          logger.info(`[chat:sendWithMedia] Processing file: ${m.fileName} (${m.mimeType}), path: ${m.filePath}, exists: ${exists}, isVision: ${VISION_MIME_TYPES.has(m.mimeType)}`);
 
           // Always add file path reference so the model can access it via tools
           fileReferences.push(
@@ -491,7 +493,7 @@ function registerGatewayHandlers(
             // Send as base64 attachment in the format the Gateway expects:
             // { content: base64String, mimeType: string, fileName?: string }
             // The Gateway normalizer looks for `a.content` (NOT `a.source.data`).
-            const fileBuffer = readFileSync(m.filePath);
+            const fileBuffer = await fsP.readFile(m.filePath);
             const base64Data = fileBuffer.toString('base64');
             logger.info(`[chat:sendWithMedia] Read ${fileBuffer.length} bytes, base64 length: ${base64Data.length}`);
             imageAttachments.push({

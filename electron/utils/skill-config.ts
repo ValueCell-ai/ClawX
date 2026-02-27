@@ -1,9 +1,12 @@
 /**
  * Skill Config Utilities
  * Direct read/write access to skill configuration in ~/.openclaw/openclaw.json
- * This bypasses the Gateway RPC for faster and more reliable config updates
+ * This bypasses the Gateway RPC for faster and more reliable config updates.
+ *
+ * All file I/O uses async fs/promises to avoid blocking the main thread.
  */
-import { readFileSync, writeFileSync, existsSync } from 'fs';
+import { readFile, writeFile, access } from 'fs/promises';
+import { constants } from 'fs';
 import { join } from 'path';
 import { homedir } from 'os';
 
@@ -23,15 +26,19 @@ interface OpenClawConfig {
     [key: string]: unknown;
 }
 
+async function fileExists(p: string): Promise<boolean> {
+    try { await access(p, constants.F_OK); return true; } catch { return false; }
+}
+
 /**
  * Read the current OpenClaw config
  */
-function readConfig(): OpenClawConfig {
-    if (!existsSync(OPENCLAW_CONFIG_PATH)) {
+async function readConfig(): Promise<OpenClawConfig> {
+    if (!(await fileExists(OPENCLAW_CONFIG_PATH))) {
         return {};
     }
     try {
-        const raw = readFileSync(OPENCLAW_CONFIG_PATH, 'utf-8');
+        const raw = await readFile(OPENCLAW_CONFIG_PATH, 'utf-8');
         return JSON.parse(raw);
     } catch (err) {
         console.error('Failed to read openclaw config:', err);
@@ -42,28 +49,28 @@ function readConfig(): OpenClawConfig {
 /**
  * Write the OpenClaw config
  */
-function writeConfig(config: OpenClawConfig): void {
+async function writeConfig(config: OpenClawConfig): Promise<void> {
     const json = JSON.stringify(config, null, 2);
-    writeFileSync(OPENCLAW_CONFIG_PATH, json, 'utf-8');
+    await writeFile(OPENCLAW_CONFIG_PATH, json, 'utf-8');
 }
 
 /**
  * Get skill config
  */
-export function getSkillConfig(skillKey: string): SkillEntry | undefined {
-    const config = readConfig();
+export async function getSkillConfig(skillKey: string): Promise<SkillEntry | undefined> {
+    const config = await readConfig();
     return config.skills?.entries?.[skillKey];
 }
 
 /**
  * Update skill config (apiKey and env)
  */
-export function updateSkillConfig(
+export async function updateSkillConfig(
     skillKey: string,
     updates: { apiKey?: string; env?: Record<string, string> }
-): { success: boolean; error?: string } {
+): Promise<{ success: boolean; error?: string }> {
     try {
-        const config = readConfig();
+        const config = await readConfig();
 
         // Ensure skills.entries exists
         if (!config.skills) {
@@ -90,7 +97,6 @@ export function updateSkillConfig(
         if (updates.env !== undefined) {
             const newEnv: Record<string, string> = {};
 
-            // Process all keys from the update
             for (const [key, value] of Object.entries(updates.env)) {
                 const trimmedKey = key.trim();
                 if (!trimmedKey) continue;
@@ -99,10 +105,8 @@ export function updateSkillConfig(
                 if (trimmedVal) {
                     newEnv[trimmedKey] = trimmedVal;
                 }
-                // Empty value = don't include (delete)
             }
 
-            // Only set env if there are values, otherwise delete
             if (Object.keys(newEnv).length > 0) {
                 entry.env = newEnv;
             } else {
@@ -113,7 +117,7 @@ export function updateSkillConfig(
         // Save entry back
         config.skills.entries[skillKey] = entry;
 
-        writeConfig(config);
+        await writeConfig(config);
         return { success: true };
     } catch (err) {
         console.error('Failed to update skill config:', err);
@@ -124,7 +128,7 @@ export function updateSkillConfig(
 /**
  * Get all skill configs (for syncing to frontend)
  */
-export function getAllSkillConfigs(): Record<string, SkillEntry> {
-    const config = readConfig();
+export async function getAllSkillConfigs(): Promise<Record<string, SkillEntry>> {
+    const config = await readConfig();
     return config.skills?.entries || {};
 }
