@@ -58,7 +58,8 @@
         "failedInstall": "インストールに失敗しました",
         "failedUninstall": "アンインストールに失敗しました",
         "failedFolderNotFound": "スキルフォルダがまだ存在しません。先にスキルをインストールしてください。",
-        "timeoutError": "ダウンロードがタイムアウトしました。ネットワークかプロキシを確認してください。ClawHub.aiからZIPをダウンロードして {{path}} に配置することも可能です"
+        "timeoutError": "ダウンロードがタイムアウトしました。ネットワークかプロキシを確認してください。ClawHub.aiからZIPをダウンロードして {{path}} に配置することも可能です",
+        "rateLimitError": "リクエストの制限を超過しました。後でもう一度お試しください。ClawHub.aiからZIPをダウンロードして {{path}} に配置することも可能です"
     },
     "marketplace": {
         "title": "マーケットプレイス",

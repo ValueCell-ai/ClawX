@@ -156,6 +156,9 @@ export const useSkillsStore = create<SkillsState>((set, get) => ({
         if (result.error?.includes('Timeout')) {
           throw new Error('timeoutError');
         }
+        if (result.error?.toLowerCase().includes('rate limit')) {
+          throw new Error('rateLimitError');
+        }
         throw new Error(result.error || 'Search failed');
       }
     } catch (error) {
@@ -172,6 +175,9 @@ export const useSkillsStore = create<SkillsState>((set, get) => ({
       if (!result.success) {
         if (result.error?.includes('Timeout')) {
           throw new Error('timeoutError');
+        }
+        if (result.error?.toLowerCase().includes('rate limit')) {
+          throw new Error('rateLimitError');
         }
         throw new Error(result.error || 'Install failed');
       }

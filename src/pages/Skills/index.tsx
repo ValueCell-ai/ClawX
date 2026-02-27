@@ -667,8 +667,8 @@ export function Skills() {
       await enableSkill(slug);
       toast.success(t('toast.installed'));
     } catch (err: any) {
-      if (err.message === 'timeoutError') {
-        toast.error(t('toast.timeoutError', { path: skillsDirPath }), { duration: 10000 });
+      if (err.message === 'timeoutError' || err.message === 'rateLimitError') {
+        toast.error(t(`toast.${err.message}`, { path: skillsDirPath }), { duration: 10000 });
       } else {
         toast.error(t('toast.failedInstall') + ': ' + String(err));
       }
@@ -985,8 +985,8 @@ export function Skills() {
                 <CardContent className="py-3 text-sm text-destructive flex items-start gap-2">
                   <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" />
                   <span>
-                    {searchError === 'timeoutError' || searchError.includes('timeoutError')
-                      ? t('toast.timeoutError', { path: skillsDirPath })
+                    {(searchError === 'timeoutError' || searchError.includes('timeoutError') || searchError === 'rateLimitError' || searchError.includes('rateLimitError'))
+                      ? t(`toast.${searchError.replace('Error: ', '')}`, { path: skillsDirPath })
                       : t('marketplace.searchError')}
                   </span>
                 </CardContent>
