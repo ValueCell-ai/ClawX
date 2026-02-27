@@ -552,18 +552,376 @@ Linux deb: apt remove clawx
 
 ---
 
-## 9. 总结：推荐实施优先级
+---
+
+## 9. Shell Completions 兼容性分析
+
+### 9.1 openclaw 补全机制概述
+
+openclaw 使用**自定义补全生成器**（非 tabtab/omelette 等第三方库），基于 Commander.js 程序结构递归生成。
+
+**补全文件存储位置**：`$OPENCLAW_STATE_DIR/completions/`（默认 `~/.openclaw/completions/`）
+
+```
+~/.openclaw/completions/
+  ├── openclaw.zsh        # Zsh 补全脚本
+  ├── openclaw.bash       # Bash 补全脚本
+  ├── openclaw.fish       # Fish 补全脚本
+  └── openclaw.ps1        # PowerShell 补全脚本
+```
+
+**支持的 shell**：zsh、bash、fish、PowerShell
+
+### 9.2 补全生命周期
+
+```
+生成 → 缓存 → 安装到 shell profile → 用户使用
+```
+
+**1. 生成 (`openclaw completion --write-state`)**
+
+eagerly 加载所有命令树（core CLI + sub-CLIs），遍历 Commander.js program 结构，为每个 shell 生成对应格式的补全脚本。
+
+关键代码：
+```javascript
+async function writeCompletionCache(params) {
+  const cacheDir = resolveCompletionCacheDir(); // ~/.openclaw/completions/
+  await fs.mkdir(cacheDir, { recursive: true });
+  for (const shell of params.shells) {
+    const script = getCompletionScript(shell, params.program);
+    const targetPath = resolveCompletionCachePath(shell, params.binName);
+    await fs.writeFile(targetPath, script, "utf-8");
+  }
+}
+```
+
+**文件名**由 `binName` 决定，而 `binName` 来自 `resolveCliName()`：
+
+```javascript
+function resolveCliName(argv = process.argv) {
+  const argv1 = argv[1];
+  if (!argv1) return "openclaw";  // 默认
+  const base = path.basename(argv1).trim();
+  if (KNOWN_CLI_NAMES.has(base)) return base; // 只认 "openclaw"
+  return "openclaw";
+}
+```
+
+**嵌入模式下**：`process.argv[1]` = `resources/openclaw/openclaw.mjs`，`basename` = `openclaw.mjs`，不在 `KNOWN_CLI_NAMES` 中 → **回退到 `"openclaw"`**。所以文件名不会变，仍然是 `openclaw.zsh` 等。
+
+**2. 安装 (`openclaw completion --install`)**
+
+在用户的 shell profile 中插入一个 source 块：
+
+```
+# OpenClaw Completion
+source "/Users/xxx/.openclaw/completions/openclaw.zsh"
+```
+
+支持的 profile 文件：
+- zsh: `~/.zshrc`
+- bash: `~/.bashrc`（fallback `~/.bash_profile`）
+- fish: `~/.config/fish/config.fish`
+- PowerShell: `~/.config/powershell/Microsoft.PowerShell_profile.ps1`
+
+**3. Doctor 集成**
+
+`openclaw doctor` 会：
+- 检测慢速动态补全模式 `source <(openclaw completion ...)` 并升级为缓存版
+- 如果 profile 中有补全配置但缓存文件缺失，自动重新生成
+- 首次安装时（onboarding），提示是否启用补全
+
+缓存重新生成的关键代码：
+```javascript
+async function generateCompletionCache() {
+  const root = await resolveOpenClawPackageRoot({ ... });
+  const binPath = path.join(root, "openclaw.mjs");
+  return spawnSync(process.execPath, [binPath, "completion", "--write-state"], {
+    cwd: root, env: process.env
+  }).status === 0;
+}
+```
+
+### 9.3 嵌入模式下的补全兼容性分析
+
+| 环节 | 兼容性 | 说明 |
+|------|--------|------|
+| 文件名 | ✅ 兼容 | `resolveCliName()` 回退到 `"openclaw"`，文件名不变 |
+| 缓存位置 | ✅ 兼容 | 使用 `resolveStateDir()` → `~/.openclaw/completions/`，与独立版相同 |
+| 生成内容 | ⚠️ 需注意 | 补全脚本中硬编码 `compdef _openclaw_root_completion openclaw`，命令名为 `openclaw` ✅ |
+| shell profile | ✅ 兼容 | source 行指向 `~/.openclaw/completions/openclaw.zsh`，不依赖安装路径 |
+| doctor 重新生成 | ⚠️ 需注意 | `generateCompletionCache()` 使用 `process.execPath`（Electron 二进制）来 spawn，在嵌入模式下这个路径正确（因为设置了 `ELECTRON_RUN_AS_NODE=1`） |
+| `openclaw completion --install` | ✅ 兼容 | 直接运行即可安装到 profile |
+
+**关键发现：补全机制在嵌入模式下基本可直接工作！**
+
+唯一需要注意的是 `generateCompletionCache()` 的 spawn 行为：
+
+```javascript
+spawnSync(process.execPath, [binPath, "completion", "--write-state"], { ... })
+```
+
+在嵌入模式下：
+- `process.execPath` = Electron 二进制（如 `/Applications/ClawX.app/Contents/MacOS/ClawX`）
+- **但**：spawn 时**没有设置 `ELECTRON_RUN_AS_NODE=1`**！
+- **结果**：这个 spawn 会启动一个 GUI Electron 窗口而非 Node.js CLI
+
+这是一个 **bug**：doctor 的 `generateCompletionCache()` 在嵌入模式下会失败。
+
+### 9.4 补全相关的最小改动方案
+
+**需要做的（ClawX 侧）**：
+
+1. **CLI 安装时自动生成补全缓存**：在首次安装 CLI wrapper 后，主动运行一次 `openclaw completion --write-state` 生成缓存文件
+
+2. **CLI 安装时自动安装补全**：运行 `openclaw completion --install -y` 将 source 行写入 shell profile
+
+两步可合并为：在 CLI wrapper 首次安装后，ClawX main process 中执行：
+```typescript
+import { spawn } from 'child_process';
+
+function installCompletions(): void {
+  const entryPath = getOpenClawEntryPath();
+  const execPath = getNodeExecutablePath();
+  
+  // 生成补全缓存
+  spawn(execPath, [entryPath, 'completion', '--write-state'], {
+    env: { ...process.env, ELECTRON_RUN_AS_NODE: '1', OPENCLAW_NO_RESPAWN: '1' },
+    stdio: 'ignore',
+  }).on('close', (code) => {
+    if (code !== 0) return;
+    // 安装到 shell profile
+    spawn(execPath, [entryPath, 'completion', '--install', '-y'], {
+      env: { ...process.env, ELECTRON_RUN_AS_NODE: '1', OPENCLAW_NO_RESPAWN: '1' },
+      stdio: 'ignore',
+    });
+  });
+}
+```
+
+3. **ClawX 更新后重新生成补全缓存**：因为新版本可能添加了新命令
+
+**不需要做的**：
+- 不需要修改 openclaw 上游补全代码
+- 不需要修改缓存位置
+- 不需要修改 profile 写入逻辑
+
+---
+
+## 10. 内置插件/扩展路径兼容性分析
+
+### 10.1 openclaw 插件发现机制
+
+插件按以下优先顺序被发现（`discoverOpenClawPlugins()`）：
+
+```
+1. 用户配置路径:  plugins.load.paths (openclaw.json)
+2. 工作区扩展:    <workspaceDir>/.openclaw/extensions/
+3. 全局扩展:      ~/.openclaw/extensions/
+4. 内置插件:      resolveBundledPluginsDir()
+```
+
+### 10.2 `resolveBundledPluginsDir()` 路径解析
+
+```javascript
+function resolveBundledPluginsDir() {
+  // 1. 环境变量覆盖
+  const override = process.env.OPENCLAW_BUNDLED_PLUGINS_DIR?.trim();
+  if (override) return override;
+  
+  // 2. process.execPath 同级目录的 extensions/
+  const execDir = path.dirname(process.execPath);
+  const sibling = path.join(execDir, "extensions");
+  if (fs.existsSync(sibling)) return sibling;
+  
+  // 3. 从 import.meta.url 向上遍历 6 层找 extensions/
+  let cursor = path.dirname(fileURLToPath(import.meta.url));
+  for (let i = 0; i < 6; i++) {
+    const candidate = path.join(cursor, "extensions");
+    if (fs.existsSync(candidate)) return candidate;
+    cursor = path.dirname(cursor);
+  }
+}
+```
+
+**独立安装（npm -g）**：
+- `process.execPath` = `/usr/local/bin/node`（或 Node.js 的位置）
+  - `path.join(dirname(node), "extensions")` → 通常不存在
+- `import.meta.url` = `file:///usr/local/lib/node_modules/openclaw/dist/manifest-registry-xxx.js`
+  - 向上遍历：`dist/` → `openclaw/` → 找到 `openclaw/extensions/` ✅
+
+**嵌入模式（ClawX）**：
+- `process.execPath` = Electron 二进制路径
+  - macOS: `/Applications/ClawX.app/Contents/MacOS/ClawX`
+    - `path.join(dirname(...), "extensions")` → `.../MacOS/extensions` → 不存在
+  - Windows: `C:\...\ClawX.exe`
+    - `path.join(dirname(...), "extensions")` → 不存在
+- `import.meta.url` = `file:///Applications/ClawX.app/Contents/Resources/openclaw/dist/manifest-registry-xxx.js`
+  - 向上遍历：`dist/` → `openclaw/` → 找到 `openclaw/extensions/` ✅
+
+**结论**：**内置插件路径在嵌入模式下可以正确解析**，因为 `import.meta.url` 指向 `resources/openclaw/dist/` 内的文件，向上遍历能找到 `resources/openclaw/extensions/`。
+
+### 10.3 `resolveBundledSkillsDir()` 路径解析
+
+```javascript
+function resolveBundledSkillsDir(opts = {}) {
+  // 1. 环境变量覆盖
+  const override = process.env.OPENCLAW_BUNDLED_SKILLS_DIR?.trim();
+  if (override) return override;
+  
+  // 2. process.execPath 同级 skills/
+  const sibling = path.join(path.dirname(process.execPath), "skills");
+  if (fs.existsSync(sibling)) return sibling;
+  
+  // 3. resolveOpenClawPackageRootSync() → 找到 package root → skills/
+  const packageRoot = resolveOpenClawPackageRootSync({ argv1: process.argv[1], ... });
+  if (packageRoot) {
+    const candidate = path.join(packageRoot, "skills");
+    if (looksLikeSkillsDir(candidate)) return candidate;
+  }
+  
+  // 4. 从 import.meta.url 向上遍历 6 层
+  ...
+}
+```
+
+**嵌入模式分析**：
+- 策略 2（`process.execPath` 同级）→ 不存在
+- 策略 3（package root）→ `resolveOpenClawPackageRootSync` 通过 `process.argv[1]`（`openclaw.mjs`）找到 `resources/openclaw/`，然后 `resources/openclaw/skills/` ✅
+- 策略 4（fallback）→ 从 `dist/` 向上也能找到
+
+**结论**：**内置 skills 路径在嵌入模式下也可以正确解析。**
+
+### 10.4 嵌入模式 vs 独立安装的路径差异
+
+| 路径类型 | 独立安装 (npm -g) | 嵌入模式 (ClawX) | 兼容？ |
+|---------|-------------------|------------------|--------|
+| 内置插件 | `node_modules/openclaw/extensions/` | `resources/openclaw/extensions/` | ✅ |
+| 内置 skills | `node_modules/openclaw/skills/` | `resources/openclaw/skills/` | ✅ |
+| 用户插件 | `~/.openclaw/extensions/` | `~/.openclaw/extensions/` | ✅ 共享 |
+| 工作区插件 | `<workspace>/.openclaw/extensions/` | `<workspace>/.openclaw/extensions/` | ✅ 共享 |
+| 插件配置 | `~/.openclaw/openclaw.json` | `~/.openclaw/openclaw.json` | ✅ 共享 |
+| npm 安装的插件 | `~/.openclaw/extensions/<id>/` | `~/.openclaw/extensions/<id>/` | ✅ 共享 |
+
+**关键发现**：插件系统在嵌入模式下**完全兼容**，不需要任何额外改动。原因：
+1. 所有路径解析都使用 `import.meta.url` 或 `process.argv[1]` 作为锚点，不依赖 `process.execPath` 必须是 Node.js
+2. 用户安装的插件存储在 `~/.openclaw/`，两种安装模式共享
+
+### 10.5 `openclaw plugins install` 在嵌入模式下的行为
+
+当用户从 ClawX CLI 运行 `openclaw plugins install <plugin>` 时：
+- 插件被安装到 `~/.openclaw/extensions/<plugin-id>/`（用户目录）
+- 配置写入 `~/.openclaw/openclaw.json` 的 `plugins.installs`
+- **与安装模式无关，完全兼容** ✅
+
+但需注意：
+- 如果插件需要 `npm install` 自身依赖，会使用 `process.execPath` 来运行 npm
+- 嵌入模式下 `process.execPath` 是 Electron 二进制，不是 `node`
+- 但 openclaw 的插件安装使用 `runCommandWithTimeout()` 直接调用 `npm`/`pnpm` 命令，不依赖 `process.execPath`
+- **所以也是兼容的** ✅
+
+### 10.6 版本升级时内置插件的更新
+
+| 升级场景 | 内置插件行为 | 用户安装插件行为 |
+|---------|------------|---------------|
+| ClawX 更新（内嵌 openclaw 新版） | 内置插件**自动随 app 更新** ✅ | 不受影响 |
+| 用户 `openclaw plugins update` | 只更新 `~/.openclaw/extensions/` 中的 npm 安装插件 | ✅ 正常工作 |
+| openclaw 新版添加了新内置插件 | 需 ClawX 更新才能获得 | N/A |
+| openclaw 新版修改了内置插件 | 需 ClawX 更新才能获得 | N/A |
+
+**结论**：内置插件的更新完全与 ClawX 更新绑定，这是**预期行为**。用户安装的第三方插件可独立更新。
+
+---
+
+## 11. `OPENCLAW_BUNDLED_*` 环境变量（可选优化）
+
+openclaw 提供了三个环境变量覆盖内置资源路径：
+
+| 环境变量 | 作用 | ClawX 是否需要设置 |
+|---------|------|-------------------|
+| `OPENCLAW_BUNDLED_PLUGINS_DIR` | 覆盖内置插件目录 | ❌ 不需要（`import.meta.url` 已能正确解析） |
+| `OPENCLAW_BUNDLED_SKILLS_DIR` | 覆盖内置 skills 目录 | ❌ 不需要（同上） |
+| `OPENCLAW_BUNDLED_HOOKS_DIR` | 覆盖内置 hooks 目录 | ❌ 不需要（同上） |
+| `OPENCLAW_BUNDLED_VERSION` | 覆盖版本号 | ⚠️ 可选（但 package.json 中已有 version） |
+
+**建议**：暂时不设置这些环境变量。如果将来遇到路径解析问题，再作为 escape hatch 使用。在 CLI wrapper 中预留位置即可：
+
+```bash
+# 如需覆盖，取消注释以下行
+# export OPENCLAW_BUNDLED_PLUGINS_DIR="$RESOURCES_DIR/openclaw/extensions"
+# export OPENCLAW_BUNDLED_SKILLS_DIR="$RESOURCES_DIR/openclaw/skills"
+```
+
+---
+
+## 12. 最小改动兼容方案总结
+
+基于以上所有分析，实现 ClawX CLI 自动安装的**最小改动集**如下：
+
+### 改动清单
+
+| # | 文件 | 改动 | 目的 |
+|---|------|------|------|
+| 1 | `resources/cli/posix/openclaw` (新增) | POSIX shell wrapper | macOS + Linux CLI 入口 |
+| 2 | `resources/cli/win32/openclaw.cmd` (新增) | Windows CMD wrapper | Windows CLI 入口 |
+| 3 | `electron-builder.yml` | 添加 cli/ 到 extraResources | 打包 CLI wrapper |
+| 4 | `scripts/linux/after-install.sh` | 添加 openclaw symlink | Linux deb 自动安装 |
+| 5 | `scripts/linux/after-remove.sh` | 添加 openclaw symlink 清理 | Linux deb 卸载清理 |
+| 6 | `scripts/installer.nsh` | 添加 `customInstall` 宏写入 PATH | Windows NSIS 自动安装 |
+| 7 | `electron/utils/openclaw-cli.ts` | 添加 `autoInstallCliIfNeeded()` + `installCompletions()` | macOS/AppImage 首次启动安装 + 补全 |
+| 8 | `electron/main/index.ts` (或 app ready) | 调用 `autoInstallCliIfNeeded()` | 触发自动安装 |
+
+### 不需要改动的（因为已兼容）
+
+| 组件 | 原因 |
+|------|------|
+| 内置插件路径解析 | `import.meta.url` + 向上遍历已能正确找到 `resources/openclaw/extensions/` |
+| 内置 skills 路径解析 | 同上，找到 `resources/openclaw/skills/` |
+| 用户安装的插件 | 存储在 `~/.openclaw/extensions/`，与安装方式无关 |
+| 补全文件名 | `resolveCliName()` 回退到 `"openclaw"`，不受入口文件名影响 |
+| 补全缓存位置 | `~/.openclaw/completions/`，与安装方式无关 |
+| 补全 shell profile 写入 | source 行指向用户目录下的缓存文件，不含安装路径 |
+| `openclaw.json` 配置 | 存储在 `~/.openclaw/`，两种模式共享 |
+| `openclaw plugins install` | 安装到 `~/.openclaw/extensions/`，不依赖 `process.execPath` |
+
+### CLI Wrapper 应该拦截的命令
+
+| 命令 | 处理方式 |
+|------|---------|
+| `openclaw update` | 拦截，显示"请更新 ClawX" |
+| 其他所有命令 | 透传，包括 `completion`、`doctor`、`plugins`、`gateway` 等 |
+
+**`openclaw uninstall` 不需要拦截**——它本身有交互确认，且不会删除 CLI 本身。
+
+### ClawX 首次启动后自动执行
+
+```
+1. 安装 CLI wrapper (symlink / PATH)
+2. 生成补全缓存: openclaw completion --write-state
+3. 安装补全到 profile: openclaw completion --install -y
+```
+
+### ClawX 更新后自动执行
+
+```
+1. 重新生成补全缓存: openclaw completion --write-state
+   （因为新版可能有新命令）
+```
+
+---
+
+## 13. 修订后的实施优先级
 
 | 优先级 | 任务 | 解决的问题 |
 |-------|------|----------|
-| **P0** | CLI wrapper 拦截 `update` 命令 | 避免用户困惑 |
-| **P0** | Windows NSIS 安装 + .cmd shim | 当前 Windows 体验最差 |
-| **P0** | Linux deb after-install 添加 openclaw symlink | 一行代码修复 |
-| **P1** | macOS 首次启动自动安装 CLI | 提升体验 |
-| **P1** | 设置 `OPENCLAW_EMBEDDED_IN` 环境变量 | 嵌入模式标识 |
-| **P1** | ClawX 禁用 openclaw auto-update 配置 | 防止无效更新尝试 |
-| **P1** | 安装时检测已有 openclaw 并警告 | 避免双重安装混乱 |
-| **P2** | macOS 卸载时清理 symlink | 避免遗留 |
+| **P0** | 新增 CLI wrapper 脚本（POSIX + CMD），含 `update` 命令拦截 | CLI 入口 + 防止用户困惑 |
+| **P0** | Windows NSIS `customInstall` 宏写入 PATH | 当前 Windows 体验最差 |
+| **P0** | Linux deb `after-install.sh` 添加 openclaw symlink | 一行代码修复 |
+| **P1** | macOS 首次启动自动安装 CLI + 补全 | 无感安装 |
+| **P1** | ClawX 更新后重新生成补全缓存 | 新命令补全 |
+| **P1** | 设置 `OPENCLAW_EMBEDDED_IN` 环境变量 | 嵌入模式标识（为上游协作预留） |
+| **P2** | 安装时检测已有 openclaw 并警告 | 避免双重安装混乱 |
 | **P2** | 版本输出添加 "(ClawX embedded)" | 辅助调试 |
-| **P2** | 向 openclaw 上游提 feature request | 长期最佳体验 |
+| **P2** | macOS 卸载时清理 symlink | 避免遗留 |
+| **P3** | 向 openclaw 上游提 embedded mode feature request | 长期最佳体验 |
 | **P3** | `openclaw.json` 备份/恢复机制 | 防止 uninstall 数据丢失 |
