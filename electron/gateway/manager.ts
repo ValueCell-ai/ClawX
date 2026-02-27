@@ -565,9 +565,15 @@ export class GatewayManager extends EventEmitter {
       const port = PORTS.OPENCLAW_GATEWAY;
       
       try {
+        // Platform-specific command to find processes listening on the gateway port.
+        // On Windows, lsof doesn't exist; use PowerShell's Get-NetTCPConnection instead.
+        const cmd = process.platform === 'win32'
+          ? `powershell -NoProfile -Command "(Get-NetTCPConnection -LocalPort ${port} -State Listen -ErrorAction SilentlyContinue).OwningProcess"`
+          : `lsof -i :${port} -sTCP:LISTEN -t`;
+
         const { stdout } = await new Promise<{ stdout: string }>((resolve, reject) => {
           import('child_process').then(cp => {
-            cp.exec(`lsof -i :${port} -sTCP:LISTEN -t`, { timeout: 5000 }, (err, stdout) => {
+            cp.exec(cmd, { timeout: 5000 }, (err, stdout) => {
               if (err) resolve({ stdout: '' });
               else resolve({ stdout });
             });
@@ -575,7 +581,7 @@ export class GatewayManager extends EventEmitter {
         });
         
         if (stdout.trim()) {
-          const pids = stdout.trim().split('\n')
+          const pids = stdout.trim().split(/\r?\n/)
             .map(s => s.trim())
             .filter(Boolean);
             
@@ -585,18 +591,33 @@ export class GatewayManager extends EventEmitter {
 
                // Unload the launchctl service first so macOS doesn't auto-
                // respawn the process we're about to kill.
-               await this.unloadLaunchctlService();
+               if (process.platform === 'darwin') {
+                 await this.unloadLaunchctlService();
+               }
 
-               // SIGTERM first so the gateway can clean up its lock file.
+               // Terminate orphaned processes
                for (const pid of pids) {
-                 try { process.kill(parseInt(pid), 'SIGTERM'); } catch { /* ignore */ }
+                 try {
+                   if (process.platform === 'win32') {
+                     // On Windows, use taskkill for reliable process group termination
+                     import('child_process').then(cp => {
+                       cp.exec(`taskkill /PID ${pid} /T /F`, { timeout: 5000 }, () => {});
+                     }).catch(() => {});
+                   } else {
+                     // SIGTERM first so the gateway can clean up its lock file.
+                     process.kill(parseInt(pid), 'SIGTERM');
+                   }
+                 } catch { /* ignore */ }
                }
-               await new Promise(r => setTimeout(r, 3000));
-               // SIGKILL any survivors.
-               for (const pid of pids) {
-                 try { process.kill(parseInt(pid), 0); process.kill(parseInt(pid), 'SIGKILL'); } catch { /* already exited */ }
+               await new Promise(r => setTimeout(r, process.platform === 'win32' ? 2000 : 3000));
+
+               // SIGKILL any survivors (Unix only — Windows taskkill /F is already forceful)
+               if (process.platform !== 'win32') {
+                 for (const pid of pids) {
+                   try { process.kill(parseInt(pid), 0); process.kill(parseInt(pid), 'SIGKILL'); } catch { /* already exited */ }
+                 }
+                 await new Promise(r => setTimeout(r, 1000));
                }
-               await new Promise(r => setTimeout(r, 1000));
                return null;
             }
           }

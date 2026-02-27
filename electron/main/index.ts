@@ -174,11 +174,9 @@ async function initialize(): Promise<void> {
   // Repair any bootstrap files that only contain ClawX markers (no OpenClaw
   // template content). This fixes a race condition where ensureClawXContext()
   // previously created the file before the gateway could seed the full template.
-  try {
-    repairClawXOnlyBootstrapFiles();
-  } catch (error) {
+  void repairClawXOnlyBootstrapFiles().catch((error) => {
     logger.warn('Failed to repair bootstrap files:', error);
-  }
+  });
 
   // Start Gateway automatically (this seeds missing bootstrap files with full templates)
   try {

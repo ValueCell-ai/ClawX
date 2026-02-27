@@ -3,7 +3,7 @@
  * Registers all IPC handlers for main-renderer communication
  */
 import { ipcMain, BrowserWindow, shell, dialog, app, nativeImage } from 'electron';
-import { existsSync, copyFileSync, statSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join, extname, basename } from 'node:path';
 import crypto from 'node:crypto';
@@ -664,7 +664,7 @@ function registerOpenClawHandlers(gatewayManager: GatewayManager): void {
   ipcMain.handle('channel:saveConfig', async (_, channelType: string, config: Record<string, unknown>) => {
     try {
       logger.info('channel:saveConfig', { channelType, keys: Object.keys(config || {}) });
-      saveChannelConfig(channelType, config);
+      await saveChannelConfig(channelType, config);
       // Debounced restart so the gateway picks up the new channel config.
       // The gateway watches openclaw.json, but a restart ensures a clean
       // start for newly-added channels.  Using debouncedRestart() here
@@ -681,7 +681,7 @@ function registerOpenClawHandlers(gatewayManager: GatewayManager): void {
   // Get channel configuration
   ipcMain.handle('channel:getConfig', async (_, channelType: string) => {
     try {
-      const config = getChannelConfig(channelType);
+      const config = await getChannelConfig(channelType);
       return { success: true, config };
     } catch (error) {
       console.error('Failed to get channel config:', error);
@@ -692,7 +692,7 @@ function registerOpenClawHandlers(gatewayManager: GatewayManager): void {
   // Get channel form values (reverse-transformed for UI pre-fill)
   ipcMain.handle('channel:getFormValues', async (_, channelType: string) => {
     try {
-      const values = getChannelFormValues(channelType);
+      const values = await getChannelFormValues(channelType);
       return { success: true, values };
     } catch (error) {
       console.error('Failed to get channel form values:', error);
@@ -703,7 +703,7 @@ function registerOpenClawHandlers(gatewayManager: GatewayManager): void {
   // Delete channel configuration
   ipcMain.handle('channel:deleteConfig', async (_, channelType: string) => {
     try {
-      deleteChannelConfig(channelType);
+      await deleteChannelConfig(channelType);
       return { success: true };
     } catch (error) {
       console.error('Failed to delete channel config:', error);
@@ -714,7 +714,7 @@ function registerOpenClawHandlers(gatewayManager: GatewayManager): void {
   // List configured channels
   ipcMain.handle('channel:listConfigured', async () => {
     try {
-      const channels = listConfiguredChannels();
+      const channels = await listConfiguredChannels();
       return { success: true, channels };
     } catch (error) {
       console.error('Failed to list channels:', error);
@@ -725,7 +725,7 @@ function registerOpenClawHandlers(gatewayManager: GatewayManager): void {
   // Enable or disable a channel
   ipcMain.handle('channel:setEnabled', async (_, channelType: string, enabled: boolean) => {
     try {
-      setChannelEnabled(channelType, enabled);
+      await setChannelEnabled(channelType, enabled);
       return { success: true };
     } catch (error) {
       console.error('Failed to set channel enabled:', error);
@@ -1737,7 +1737,7 @@ const OUTBOUND_DIR = join(homedir(), '.openclaw', 'media', 'outbound');
  * longer side so the image is never squished). The frontend handles
  * square cropping via CSS object-fit: cover.
  */
-function generateImagePreview(filePath: string, mimeType: string): string | null {
+async function generateImagePreview(filePath: string, mimeType: string): Promise<string | null> {
   try {
     const img = nativeImage.createFromPath(filePath);
     if (img.isEmpty()) return null;
@@ -1750,8 +1750,9 @@ function generateImagePreview(filePath: string, mimeType: string): string | null
         : img.resize({ height: maxDim }); // portrait → constrain height
       return `data:image/png;base64,${resized.toPNG().toString('base64')}`;
     }
-    // Small image — use original
-    const buf = readFileSync(filePath);
+    // Small image — use original (async read to avoid blocking)
+    const { readFile: readFileAsync } = await import('fs/promises');
+    const buf = await readFileAsync(filePath);
     return `data:${mimeType};base64,${buf.toString('base64')}`;
   } catch {
     return null;
@@ -1765,26 +1766,27 @@ function generateImagePreview(filePath: string, mimeType: string): string | null
 function registerFileHandlers(): void {
   // Stage files from real disk paths (used with dialog:open)
   ipcMain.handle('file:stage', async (_, filePaths: string[]) => {
-    mkdirSync(OUTBOUND_DIR, { recursive: true });
+    const fsP = await import('fs/promises');
+    await fsP.mkdir(OUTBOUND_DIR, { recursive: true });
 
     const results = [];
     for (const filePath of filePaths) {
       const id = crypto.randomUUID();
       const ext = extname(filePath);
       const stagedPath = join(OUTBOUND_DIR, `${id}${ext}`);
-      copyFileSync(filePath, stagedPath);
+      await fsP.copyFile(filePath, stagedPath);
 
-      const stat = statSync(stagedPath);
+      const s = await fsP.stat(stagedPath);
       const mimeType = getMimeType(ext);
       const fileName = basename(filePath);
 
       // Generate preview for images
       let preview: string | null = null;
       if (mimeType.startsWith('image/')) {
-        preview = generateImagePreview(stagedPath, mimeType);
+        preview = await generateImagePreview(stagedPath, mimeType);
       }
 
-      results.push({ id, fileName, mimeType, fileSize: stat.size, stagedPath, preview });
+      results.push({ id, fileName, mimeType, fileSize: s.size, stagedPath, preview });
     }
     return results;
   });
@@ -1795,13 +1797,14 @@ function registerFileHandlers(): void {
     fileName: string;
     mimeType: string;
   }) => {
-    mkdirSync(OUTBOUND_DIR, { recursive: true });
+    const fsP = await import('fs/promises');
+    await fsP.mkdir(OUTBOUND_DIR, { recursive: true });
 
     const id = crypto.randomUUID();
     const ext = extname(payload.fileName) || mimeToExt(payload.mimeType);
     const stagedPath = join(OUTBOUND_DIR, `${id}${ext}`);
     const buffer = Buffer.from(payload.base64, 'base64');
-    writeFileSync(stagedPath, buffer);
+    await fsP.writeFile(stagedPath, buffer);
 
     const mimeType = payload.mimeType || getMimeType(ext);
     const fileSize = buffer.length;
@@ -1809,7 +1812,7 @@ function registerFileHandlers(): void {
     // Generate preview for images
     let preview: string | null = null;
     if (mimeType.startsWith('image/')) {
-      preview = generateImagePreview(stagedPath, mimeType);
+      preview = await generateImagePreview(stagedPath, mimeType);
     }
 
     return { id, fileName: payload.fileName, mimeType, fileSize, stagedPath, preview };
@@ -1836,11 +1839,17 @@ function registerFileHandlers(): void {
       });
       if (result.canceled || !result.filePath) return { success: false };
 
-      if (params.filePath && existsSync(params.filePath)) {
-        copyFileSync(params.filePath, result.filePath);
+      const fsP = await import('fs/promises');
+      if (params.filePath) {
+        try {
+          await fsP.access(params.filePath);
+          await fsP.copyFile(params.filePath, result.filePath);
+        } catch {
+          return { success: false, error: 'Source file not found' };
+        }
       } else if (params.base64) {
         const buffer = Buffer.from(params.base64, 'base64');
-        writeFileSync(result.filePath, buffer);
+        await fsP.writeFile(result.filePath, buffer);
       } else {
         return { success: false, error: 'No image data provided' };
       }
@@ -1851,19 +1860,16 @@ function registerFileHandlers(): void {
   });
 
   ipcMain.handle('media:getThumbnails', async (_, paths: Array<{ filePath: string; mimeType: string }>) => {
+    const fsP = await import('fs/promises');
     const results: Record<string, { preview: string | null; fileSize: number }> = {};
     for (const { filePath, mimeType } of paths) {
       try {
-        if (!existsSync(filePath)) {
-          results[filePath] = { preview: null, fileSize: 0 };
-          continue;
-        }
-        const stat = statSync(filePath);
+        const s = await fsP.stat(filePath);
         let preview: string | null = null;
         if (mimeType.startsWith('image/')) {
-          preview = generateImagePreview(filePath, mimeType);
+          preview = await generateImagePreview(filePath, mimeType);
         }
-        results[filePath] = { preview, fileSize: stat.size };
+        results[filePath] = { preview, fileSize: s.size };
       } catch {
         results[filePath] = { preview: null, fileSize: 0 };
       }
