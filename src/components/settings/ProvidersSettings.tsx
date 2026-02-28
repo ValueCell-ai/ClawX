@@ -327,6 +327,19 @@ function ProviderCard({
                 )}
               </>
             )}
+            {typeInfo?.apiKeyUrl && (
+              <div className="flex justify-start mb-1">
+                <a
+                  href={typeInfo.apiKeyUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-xs text-primary hover:underline flex items-center gap-1"
+                  tabIndex={-1}
+                >
+                  {t('aiProviders.oauth.getApiKey')} <ExternalLink className="h-3 w-3" />
+                </a>
+              </div>
+            )}
             <div className="flex gap-2">
               <div className="relative flex-1">
                 <Input
@@ -708,7 +721,20 @@ function AddProviderDialog({ existingTypes, onClose, onAdd, onValidateKey }: Add
               {/* API Key input — shown for non-OAuth providers or when apikey mode is selected */}
               {(!isOAuth || (supportsApiKey && authMode === 'apikey')) && (
                 <div className="space-y-2">
-                  <Label htmlFor="apiKey">{t('aiProviders.dialog.apiKey')}</Label>
+                  <div className="flex items-center justify-between">
+                    <Label htmlFor="apiKey">{t('aiProviders.dialog.apiKey')}</Label>
+                    {typeInfo?.apiKeyUrl && (
+                      <a
+                        href={typeInfo.apiKeyUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-xs text-primary hover:underline flex items-center gap-1"
+                        tabIndex={-1}
+                      >
+                        {t('aiProviders.oauth.getApiKey')} <ExternalLink className="h-3 w-3" />
+                      </a>
+                    )}
+                  </div>
                   <div className="relative">
                     <Input
                       id="apiKey"

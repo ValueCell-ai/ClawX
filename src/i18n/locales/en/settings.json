@@ -61,6 +61,7 @@
       "apikeyMode": "API Key",
       "loginPrompt": "This provider requires signing in via your browser.",
       "loginButton": "Login with Browser",
+      "getApiKey": "Get API Key",
       "waiting": "Waiting...",
       "openLoginPage": "Open Login Page",
       "waitingApproval": "Waiting for approval in browser...",

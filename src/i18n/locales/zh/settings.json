@@ -61,6 +61,7 @@
       "apikeyMode": "API 密钥",
       "loginPrompt": "此提供商需要通过浏览器登录授权。",
       "loginButton": "浏览器登录",
+      "getApiKey": "获取 API 密钥",
       "waiting": "等待中...",
       "openLoginPage": "打开登录页面",
       "waitingApproval": "等待浏览器中的授权...",
