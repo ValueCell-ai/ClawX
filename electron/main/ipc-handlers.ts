@@ -239,16 +239,17 @@ function registerCronHandlers(gatewayManager: GatewayManager): void {
   });
 
   // Create a new cron job
+  // UI-created tasks have no delivery target — results go to the ClawX chat page.
+  // Tasks created via external channels (Feishu, Discord, etc.) are handled
+  // directly by the OpenClaw Gateway and do not pass through this IPC handler.
   ipcMain.handle('cron:create', async (_, input: {
     name: string;
     message: string;
     schedule: string;
-    target?: { channelType: string; channelId: string; channelName: string };
     enabled?: boolean;
   }) => {
     try {
-      // Transform frontend input to Gateway cron.add format
-      const gatewayInput: Record<string, unknown> = {
+      const gatewayInput = {
         name: input.name,
         schedule: { kind: 'cron', expr: input.schedule },
         payload: { kind: 'agentTurn', message: input.message },
@@ -256,21 +257,6 @@ function registerCronHandlers(gatewayManager: GatewayManager): void {
         wakeMode: 'next-heartbeat',
         sessionTarget: 'isolated',
       };
-
-      // Only include delivery when a target channel is specified (external channel tasks).
-      // UI-created tasks omit delivery so the result goes to the ClawX chat page.
-      if (input.target?.channelType) {
-        // For Discord, the recipient must be prefixed with "channel:" or "user:"
-        const recipientId = input.target.channelId;
-        const deliveryTo = input.target.channelType === 'discord' && recipientId
-          ? `channel:${recipientId}`
-          : recipientId;
-        gatewayInput.delivery = {
-          mode: 'announce',
-          channel: input.target.channelType,
-          to: deliveryTo,
-        };
-      }
       const result = await gatewayManager.rpc('cron.add', gatewayInput);
       // Transform the returned job to frontend format
       if (result && typeof result === 'object') {
