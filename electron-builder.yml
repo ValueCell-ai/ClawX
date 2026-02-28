@@ -154,7 +154,7 @@ linux:
       arch:
         - x64
   category: Utility
-  maintainer: ClawX Team <team@clawx.app>
+  maintainer: ClawX Team <public@valuecell.ai>
   vendor: ClawX
   synopsis: AI Assistant powered by OpenClaw
   description: |
