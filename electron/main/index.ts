@@ -4,18 +4,6 @@
  */
 import { app, BrowserWindow, nativeImage, session, shell } from 'electron';
 import { join } from 'path';
-
-// Initialize global proxy agent early (before any network calls)
-// This ensures fetch() and other HTTP clients respect HTTP_PROXY/HTTPS_PROXY
-import { bootstrap as globalAgentBootstrap } from 'global-agent';
-if (process.env.HTTP_PROXY || process.env.HTTPS_PROXY || process.env.http_proxy || process.env.https_proxy) {
-  try {
-    globalAgentBootstrap();
-    console.log('[global-agent] Initialized with proxy:' , process.env.HTTP_PROXY || process.env.https_proxy);
-  } catch (error) {
-    console.error('[global-agent] Failed to initialize:' , error);
-  }
-}
 import { GatewayManager } from '../gateway/manager';
 import { registerIpcHandlers } from './ipc-handlers';
 import { createTray } from './tray';
