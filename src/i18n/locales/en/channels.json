@@ -111,6 +111,38 @@
                 "The system will automatically identify your phone number"
             ]
         },
+        "dingtalk": {
+            "description": "Connect DingTalk via OpenClaw channel plugin (Stream mode)",
+            "docsUrl": "https://github.com/soimy/openclaw-channel-dingtalk",
+            "fields": {
+                "clientId": {
+                    "label": "Client ID (AppKey)",
+                    "placeholder": "dingxxxxxx"
+                },
+                "clientSecret": {
+                    "label": "Client Secret (AppSecret)",
+                    "placeholder": "Your app secret"
+                },
+                "robotCode": {
+                    "label": "Robot Code (optional)",
+                    "placeholder": "Usually same as Client ID"
+                },
+                "corpId": {
+                    "label": "Corp ID (optional)",
+                    "placeholder": "dingxxxxxx"
+                },
+                "agentId": {
+                    "label": "Agent ID (optional)",
+                    "placeholder": "123456789"
+                }
+            },
+            "instructions": [
+                "Install and enable the dingtalk plugin in OpenClaw",
+                "Create a DingTalk internal app and enable Stream mode",
+                "Fill in Client ID and Client Secret (required)",
+                "Fill in Robot Code / Corp ID / Agent ID if your setup requires them"
+            ]
+        },
         "signal": {
             "description": "Connect Signal using signal-cli",
             "docsUrl": "https://docs.openclaw.ai/channels/signal",
