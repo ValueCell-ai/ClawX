@@ -12,5 +12,5 @@ if /i "%1"=="update" (
 
 set ELECTRON_RUN_AS_NODE=1
 set OPENCLAW_EMBEDDED_IN=ClawX
-"%~dp0..\..\ClawX.exe" "%~dp0..\..\openclaw\openclaw.mjs" %*
+"%~dp0..\..\ClawX.exe" "%~dp0..\openclaw\openclaw.mjs" %*
 endlocal
