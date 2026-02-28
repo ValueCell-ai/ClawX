@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { parseUsageEntriesFromJsonl } from '@electron/utils/token-usage';
+import { parseUsageEntriesFromJsonl } from '@electron/utils/token-usage-core';
 
 describe('parseUsageEntriesFromJsonl', () => {
   it('extracts assistant usage entries in reverse chronological order', () => {
