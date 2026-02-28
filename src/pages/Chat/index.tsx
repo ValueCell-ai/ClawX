@@ -186,6 +186,7 @@ export function Chat() {
       <ChatInput
         onSend={sendMessage}
         onStop={abortRun}
+        onNewSession={() => sendMessage('/new')}
         disabled={!isGatewayRunning}
         sending={sending}
       />
