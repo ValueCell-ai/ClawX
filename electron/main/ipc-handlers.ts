@@ -165,6 +165,7 @@ interface GatewayCronJob {
   schedule: { kind: string; expr?: string; everyMs?: number; at?: string; tz?: string };
   payload: { kind: string; message?: string; text?: string };
   delivery?: { mode: string; channel?: string; to?: string };
+  sessionTarget?: string;
   state: {
     nextRunAtMs?: number;
     lastRunAtMs?: number;
@@ -230,6 +231,38 @@ function registerCronHandlers(gatewayManager: GatewayManager): void {
       const result = await gatewayManager.rpc('cron.list', { includeDisabled: true });
       const data = result as { jobs?: GatewayCronJob[] };
       const jobs = data?.jobs ?? [];
+
+      // Auto-repair legacy UI-created jobs that were saved without
+      // delivery: { mode: 'none' }.  The Gateway auto-normalizes them
+      // to delivery: { mode: 'announce' } which then fails with
+      // "Channel is required" when no external channels are configured.
+      for (const job of jobs) {
+        const isIsolatedAgent =
+          (job.sessionTarget === 'isolated' || !job.sessionTarget) &&
+          job.payload?.kind === 'agentTurn';
+        const needsRepair =
+          isIsolatedAgent &&
+          job.delivery?.mode === 'announce' &&
+          !job.delivery?.channel;
+
+        if (needsRepair) {
+          try {
+            await gatewayManager.rpc('cron.update', {
+              id: job.id,
+              patch: { delivery: { mode: 'none' } },
+            });
+            job.delivery = { mode: 'none' };
+            // Clear stale channel-resolution error from the last run
+            if (job.state?.lastError?.includes('Channel is required')) {
+              job.state.lastError = undefined;
+              job.state.lastStatus = 'ok';
+            }
+          } catch (e) {
+            console.warn(`Failed to auto-repair cron job ${job.id}:`, e);
+          }
+        }
+      }
+
       // Transform Gateway format to frontend format
       return jobs.map(transformCronJob);
     } catch (error) {
@@ -256,6 +289,11 @@ function registerCronHandlers(gatewayManager: GatewayManager): void {
         enabled: input.enabled ?? true,
         wakeMode: 'next-heartbeat',
         sessionTarget: 'isolated',
+        // UI-created jobs deliver results via ClawX WebSocket chat events,
+        // not external messaging channels.  Setting mode='none' prevents
+        // the Gateway from attempting channel delivery (which would fail
+        // with "Channel is required" when no channels are configured).
+        delivery: { mode: 'none' },
       };
       const result = await gatewayManager.rpc('cron.add', gatewayInput);
       // Transform the returned job to frontend format
