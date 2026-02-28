@@ -618,12 +618,16 @@ function registerOpenClawHandlers(gatewayManager: GatewayManager): void {
     }
 
     const candidateSources = app.isPackaged
-      ? [join(process.resourcesPath, 'openclaw-plugins', 'dingtalk')]
+      ? [
+        join(process.resourcesPath, 'openclaw-plugins', 'dingtalk'),
+        join(process.resourcesPath, 'app.asar.unpacked', 'build', 'openclaw-plugins', 'dingtalk'),
+        join(process.resourcesPath, 'app.asar.unpacked', 'openclaw-plugins', 'dingtalk')
+      ]
       : [
-          join(app.getAppPath(), 'build', 'openclaw-plugins', 'dingtalk'),
-          join(process.cwd(), 'build', 'openclaw-plugins', 'dingtalk'),
-          join(__dirname, '../../build/openclaw-plugins/dingtalk'),
-        ];
+        join(app.getAppPath(), 'build', 'openclaw-plugins', 'dingtalk'),
+        join(process.cwd(), 'build', 'openclaw-plugins', 'dingtalk'),
+        join(__dirname, '../../build/openclaw-plugins/dingtalk'),
+      ];
 
     const sourceDir = candidateSources.find((dir) => existsSync(join(dir, 'openclaw.plugin.json')));
     if (!sourceDir) {

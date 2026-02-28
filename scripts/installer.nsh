@@ -1,13 +1,11 @@
 ; ClawX Custom NSIS Installer/Uninstaller Script
 
 !macro customInstall
-  ; Enable Windows long path support for all-user (admin) installs.
-  ; pnpm virtual store and node_modules paths can exceed the default 260-char
-  ; MAX_PATH limit on Windows.  This registry key enables the modern NTFS
-  ; long-path behavior on Windows 10 1607+ / Windows 11.
-  ${If} $MultiUser.InstallMode == "AllUsers"
-    WriteRegDWORD HKLM "SYSTEM\CurrentControlSet\Control\FileSystem" "LongPathsEnabled" 1
-  ${EndIf}
+  ; Enable Windows long path support (Windows 10 1607+ / Windows 11).
+  ; pnpm virtual store paths can exceed the default MAX_PATH limit of 260 chars.
+  ; Writing to HKLM requires admin privileges; on per-user installs without
+  ; elevation this call silently fails — no crash, just no key written.
+  WriteRegDWORD HKLM "SYSTEM\CurrentControlSet\Control\FileSystem" "LongPathsEnabled" 1
 !macroend
 
 !macro customUnInstall
