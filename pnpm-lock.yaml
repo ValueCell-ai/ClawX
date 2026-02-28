@@ -4,11 +4,6 @@ settings:
   autoInstallPeers: true
   excludeLinksFromLockfile: false
 
-patchedDependencies:
-  openclaw:
-    hash: 93b8e86196e99008e6d3f2448aeae7346ea530c756c4927471412755638005bb
-    path: patches/openclaw.patch
-
 importers:
 
   .:
@@ -139,7 +134,7 @@ importers:
         version: 0.563.0(react@19.2.4)
       openclaw:
         specifier: 2026.2.26
-        version: 2026.2.26(patch_hash=93b8e86196e99008e6d3f2448aeae7346ea530c756c4927471412755638005bb)(@napi-rs/canvas@0.1.93)(@types/express@5.0.6)(encoding@0.1.13)(hono@4.11.8)(node-llama-cpp@3.15.1(typescript@5.9.3))
+        version: 2026.2.26(@napi-rs/canvas@0.1.93)(@types/express@5.0.6)(encoding@0.1.13)(hono@4.11.8)(node-llama-cpp@3.15.1(typescript@5.9.3))
       png2icons:
         specifier: ^2.0.1
         version: 2.0.1
@@ -13118,7 +13113,7 @@ snapshots:
       ws: 8.19.0
       zod: 4.3.6
 
-  openclaw@2026.2.26(patch_hash=93b8e86196e99008e6d3f2448aeae7346ea530c756c4927471412755638005bb)(@napi-rs/canvas@0.1.93)(@types/express@5.0.6)(encoding@0.1.13)(hono@4.11.8)(node-llama-cpp@3.15.1(typescript@5.9.3)):
+  openclaw@2026.2.26(@napi-rs/canvas@0.1.93)(@types/express@5.0.6)(encoding@0.1.13)(hono@4.11.8)(node-llama-cpp@3.15.1(typescript@5.9.3)):
     dependencies:
       '@agentclientprotocol/sdk': 0.14.1(zod@4.3.6)
       '@aws-sdk/client-bedrock': 3.999.0

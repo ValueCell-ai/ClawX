@@ -9,10 +9,7 @@
             "node-llama-cpp",
             "protobufjs",
             "sharp"
-        ],
-        "patchedDependencies": {
-            "openclaw": "patches/openclaw.patch"
-        }
+        ]
     },
     "description": "ClawX - Graphical AI Assistant based on OpenClaw",
     "main": "dist-electron/main/index.js",

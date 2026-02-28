@@ -6,7 +6,7 @@ import { app } from 'electron';
 import path from 'path';
 import { spawn, ChildProcess } from 'child_process';
 import { EventEmitter } from 'events';
-import { existsSync } from 'fs';
+import { existsSync, writeFileSync } from 'fs';
 import WebSocket from 'ws';
 import { PORTS } from '../utils/config';
 import { 
@@ -105,6 +105,57 @@ function getNodeExecutablePath(): string {
     logger.debug(`Electron Helper binary not found at ${helperPath}, falling back to process.execPath`);
   }
   return process.execPath;
+}
+
+/**
+ * Ensure the gateway fetch-preload script exists in userData and return
+ * its absolute path.  The script patches globalThis.fetch to inject
+ * ClawX app-attribution headers (HTTP-Referer, X-Title) for OpenRouter
+ * API requests, overriding the OpenClaw runner's hardcoded defaults.
+ *
+ * Inlined here so it works in dev, packaged, and asar modes without
+ * extra build config.  Loaded by the Gateway child process via
+ * NODE_OPTIONS --require.
+ */
+const GATEWAY_FETCH_PRELOAD_SOURCE = `'use strict';
+(function () {
+  var _f = globalThis.fetch;
+  if (typeof _f !== 'function') return;
+  if (globalThis.__clawxFetchPatched) return;
+  globalThis.__clawxFetchPatched = true;
+
+  globalThis.fetch = function clawxFetch(input, init) {
+    var url =
+      typeof input === 'string' ? input
+        : input && typeof input === 'object' && typeof input.url === 'string'
+          ? input.url : '';
+
+    if (url.indexOf('openrouter.ai') !== -1) {
+      init = init ? Object.assign({}, init) : {};
+      var prev = init.headers;
+      var flat = {};
+      if (prev && typeof prev.forEach === 'function') {
+        prev.forEach(function (v, k) { flat[k] = v; });
+      } else if (prev && typeof prev === 'object') {
+        Object.assign(flat, prev);
+      }
+      delete flat['http-referer'];
+      delete flat['HTTP-Referer'];
+      delete flat['x-title'];
+      delete flat['X-Title'];
+      flat['HTTP-Referer'] = 'https://claw-x.com';
+      flat['X-Title'] = 'ClawX';
+      init.headers = flat;
+    }
+    return _f.call(globalThis, input, init);
+  };
+})();
+`;
+
+function ensureGatewayFetchPreload(): string {
+  const dest = path.join(app.getPath('userData'), 'gateway-fetch-preload.cjs');
+  try { writeFileSync(dest, GATEWAY_FETCH_PRELOAD_SOURCE, 'utf-8'); } catch { /* best-effort */ }
+  return dest;
 }
 
 /**
@@ -812,6 +863,19 @@ export class GatewayManager extends EventEmitter {
             !existingNodeOpts.includes('--no-warnings')) {
           spawnEnv['NODE_OPTIONS'] = `${existingNodeOpts} --disable-warning=ExperimentalWarning`.trim();
         }
+      }
+
+      // Inject fetch preload so OpenRouter requests carry ClawX headers.
+      // The preload patches globalThis.fetch before any module loads.
+      try {
+        const preloadPath = ensureGatewayFetchPreload();
+        if (existsSync(preloadPath)) {
+          const quoted = `"${preloadPath}"`;
+          const opts = spawnEnv['NODE_OPTIONS'] ?? '';
+          spawnEnv['NODE_OPTIONS'] = `${opts} --require ${quoted}`.trim();
+        }
+      } catch (err) {
+        logger.warn('Failed to set up OpenRouter headers preload:', err);
       }
 
       const useShell = !app.isPackaged && process.platform === 'win32';
