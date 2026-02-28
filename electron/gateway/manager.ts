@@ -9,10 +9,11 @@ import { EventEmitter } from 'events';
 import { existsSync } from 'fs';
 import WebSocket from 'ws';
 import { PORTS } from '../utils/config';
-import { 
-  getOpenClawDir, 
-  getOpenClawEntryPath, 
-  isOpenClawBuilt, 
+import {
+  getOpenClawDir,
+  getOpenClawEntryPath,
+  getOpenClawResolvedDir,
+  isOpenClawBuilt,
   isOpenClawPresent,
   quoteForCmd,
 } from '../utils/paths';
@@ -667,8 +668,12 @@ export class GatewayManager extends EventEmitter {
     await this.unloadLaunchctlService();
 
     const openclawDir = getOpenClawDir();
+    const openclawResolvedDir = getOpenClawResolvedDir();
     const entryScript = getOpenClawEntryPath();
-    
+    // Run from resolved (real) path so openclaw 2026.2.26+ path validation passes with pnpm symlinks (openclaw#28122)
+    const entryScriptResolved = path.join(openclawResolvedDir, 'openclaw.mjs');
+    const scriptToRun = existsSync(entryScriptResolved) ? entryScriptResolved : entryScript;
+
     // Verify OpenClaw package exists
     if (!isOpenClawPresent()) {
       const errMsg = `OpenClaw package not found at: ${openclawDir}`;
@@ -709,19 +714,19 @@ export class GatewayManager extends EventEmitter {
     if (app.isPackaged) {
       // Production: use Electron binary as Node.js via ELECTRON_RUN_AS_NODE
       // On macOS, use the Electron Helper binary to avoid extra dock icons
-      if (existsSync(entryScript)) {
+      if (existsSync(scriptToRun)) {
         command = getNodeExecutablePath();
-        args = [entryScript, ...gatewayArgs];
+        args = [scriptToRun, ...gatewayArgs];
         mode = 'packaged';
       } else {
         const errMsg = `OpenClaw entry script not found at: ${entryScript}`;
         logger.error(errMsg);
         throw new Error(errMsg);
       }
-    } else if (isOpenClawBuilt() && existsSync(entryScript)) {
-      // Development with built package: use system node
+    } else if (isOpenClawBuilt() && existsSync(scriptToRun)) {
+      // Development with built package: use system node (resolved path avoids openclaw#28122)
       command = 'node';
-      args = [entryScript, ...gatewayArgs];
+      args = [scriptToRun, ...gatewayArgs];
       mode = 'dev-built';
     } else {
       // Development without build: use pnpm dev
@@ -785,10 +790,12 @@ export class GatewayManager extends EventEmitter {
 
     const uvEnv = await getUvMirrorEnv();
     logger.info(
-      `Starting Gateway process (mode=${mode}, port=${this.status.port}, command="${command}", args="${this.sanitizeSpawnArgs(args).join(' ')}", cwd="${openclawDir}", bundledBin=${binPathExists ? 'yes' : 'no'}, providerKeys=${loadedProviderKeyCount})`
+      `Starting Gateway process (mode=${mode}, port=${this.status.port}, command="${command}", args="${this.sanitizeSpawnArgs(args).join(' ')}", cwd="${openclawResolvedDir}", bundledBin=${binPathExists ? 'yes' : 'no'}, providerKeys=${loadedProviderKeyCount})`
     );
-    this.lastSpawnSummary = `mode=${mode}, command="${command}", args="${this.sanitizeSpawnArgs(args).join(' ')}", cwd="${openclawDir}"`;
-    
+    this.lastSpawnSummary = `mode=${mode}, command="${command}", args="${this.sanitizeSpawnArgs(args).join(' ')}", cwd="${openclawResolvedDir}"`;
+
+    const openclawExtensionsDir = path.join(openclawResolvedDir, 'extensions');
+
     return new Promise((resolve, reject) => {
       const spawnEnv: Record<string, string | undefined> = {
         ...process.env,
@@ -798,6 +805,7 @@ export class GatewayManager extends EventEmitter {
         OPENCLAW_GATEWAY_TOKEN: gatewayToken,
         OPENCLAW_SKIP_CHANNELS: '',
         CLAWDBOT_SKIP_CHANNELS: '',
+        OPENCLAW_BUNDLED_PLUGINS_DIR: openclawExtensionsDir,
       };
 
       // Critical: In packaged mode, make Electron binary act as Node.js
@@ -819,7 +827,7 @@ export class GatewayManager extends EventEmitter {
       const spawnArgs = useShell ? args.map(a => quoteForCmd(a)) : args;
 
       this.process = spawn(spawnCmd, spawnArgs, {
-        cwd: openclawDir,
+        cwd: openclawResolvedDir,
         stdio: ['ignore', 'pipe', 'pipe'],
         detached: false,
         shell: useShell,
