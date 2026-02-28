@@ -10,6 +10,7 @@ export const BUILTIN_PROVIDER_TYPES = [
   'openai',
   'google',
   'openrouter',
+  'ark',
   'moonshot',
   'siliconflow',
   'minimax-portal',
@@ -71,6 +72,14 @@ const REGISTRY: Record<string, ProviderBackendMeta> = {
         'HTTP-Referer': 'https://claw-x.com',
         'X-Title': 'ClawX',
       },
+    },
+  },
+  ark: {
+    envVar: 'ARK_API_KEY',
+    providerConfig: {
+      baseUrl: 'https://ark.cn-beijing.volces.com/api/v3',
+      api: 'openai-completions',
+      apiKeyEnv: 'ARK_API_KEY',
     },
   },
   moonshot: {
