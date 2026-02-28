@@ -6,7 +6,7 @@ import { app } from 'electron';
 import path from 'path';
 import { spawn, ChildProcess } from 'child_process';
 import { EventEmitter } from 'events';
-import { existsSync, writeFileSync } from 'fs';
+import { existsSync, readFileSync, writeFileSync } from 'fs';
 import WebSocket from 'ws';
 import { PORTS } from '../utils/config';
 import { 
@@ -31,7 +31,7 @@ import {
   buildDeviceAuthPayload,
   type DeviceIdentity,
 } from '../utils/device-identity';
-import { syncGatewayTokenToConfig, syncBrowserConfigToOpenClaw } from '../utils/openclaw-auth';
+import { syncGatewayTokenToConfig, syncBrowserConfigToOpenClaw, migrateConfigVersionIfNeeded } from '../utils/openclaw-auth';
 
 /**
  * Gateway connection status
@@ -229,6 +229,21 @@ export class GatewayManager extends EventEmitter {
     if (msg.includes('ExperimentalWarning')) return { level: 'debug', normalized: msg };
     if (msg.includes('DeprecationWarning')) return { level: 'debug', normalized: msg };
     if (msg.includes('Debugger attached')) return { level: 'debug', normalized: msg };
+
+    // Electron Helper binary on macOS logs this when ELECTRON_RUN_AS_NODE=1 is set.
+    // The Chromium layer prints an ERROR but it is purely cosmetic — Node.js mode works fine.
+    if (msg.includes('Node.js environment variables are disabled')) return { level: 'debug', normalized: msg };
+
+    // After a dependency downgrade (e.g. openclaw 2026.2.26 → 2026.2.25) the config file
+    // retains the newer version stamp.  The gateway warns on every config reload (~60 s).
+    // This is harmless — the config format is backward-compatible — and will self-heal
+    // the next time the gateway writes the config.  Downgrade to debug to avoid log spam.
+    if (msg.includes('Config was last written by a newer')) return { level: 'debug', normalized: msg };
+
+    // waitForReady() probes the gateway with throwaway WebSocket connections that close
+    // immediately without completing the connect handshake.  The gateway logs these as
+    // "closed before connect" which is expected startup noise (not a token mismatch).
+    if (msg.includes('closed before connect') && !msg.includes('token mismatch')) return { level: 'debug', normalized: msg };
 
     return { level: 'warn', normalized: msg };
   }
@@ -746,6 +761,21 @@ export class GatewayManager extends EventEmitter {
       await syncBrowserConfigToOpenClaw();
     } catch (err) {
       logger.warn('Failed to sync browser config to openclaw.json:', err);
+    }
+
+    // Migrate the config version stamp if it was written by a newer openclaw
+    // (e.g. after a dependency downgrade).  This prevents the gateway from
+    // emitting "Config was last written by a newer OpenClaw (...)" every ~60 s.
+    try {
+      const pkgJsonPath = path.join(openclawDir, 'package.json');
+      if (existsSync(pkgJsonPath)) {
+        const pkg = JSON.parse(readFileSync(pkgJsonPath, 'utf-8'));
+        if (typeof pkg.version === 'string') {
+          await migrateConfigVersionIfNeeded(pkg.version);
+        }
+      }
+    } catch (err) {
+      logger.warn('Failed to migrate openclaw config version:', err);
     }
     
     let command: string;

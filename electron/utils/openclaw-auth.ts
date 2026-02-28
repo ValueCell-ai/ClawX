@@ -658,6 +658,68 @@ export async function syncBrowserConfigToOpenClaw(): Promise<void> {
 }
 
 /**
+ * Parse an OpenClaw date-based version string (e.g. "2026.2.25") into
+ * comparable numeric parts.  Returns null for unrecognised formats.
+ */
+function parseOpenClawVersion(v: string): { major: number; minor: number; patch: number } | null {
+  const m = /^(\d{4})\.(\d{1,2})\.(\d{1,2})/.exec(v);
+  if (!m) return null;
+  return { major: Number(m[1]), minor: Number(m[2]), patch: Number(m[3]) };
+}
+
+/**
+ * Compare two OpenClaw version strings.
+ * Returns -1 if a < b, 0 if equal, 1 if a > b, or null if either is unparseable.
+ */
+function compareOpenClawVersions(a: string, b: string): -1 | 0 | 1 | null {
+  const pa = parseOpenClawVersion(a);
+  const pb = parseOpenClawVersion(b);
+  if (!pa || !pb) return null;
+  if (pa.major !== pb.major) return pa.major < pb.major ? -1 : 1;
+  if (pa.minor !== pb.minor) return pa.minor < pb.minor ? -1 : 1;
+  if (pa.patch !== pb.patch) return pa.patch < pb.patch ? -1 : 1;
+  return 0;
+}
+
+/**
+ * Migrate `meta.lastTouchedVersion` in ~/.openclaw/openclaw.json when the
+ * config was written by a *newer* OpenClaw than the currently bundled version.
+ *
+ * This can happen after a ClawX upgrade that ships a downgraded openclaw
+ * dependency (e.g. 2026.2.26 → 2026.2.25).  Without migration, the gateway
+ * emits "Config was last written by a newer OpenClaw (...)" every ~60 s.
+ *
+ * The migration is safe because openclaw config format is backward-compatible
+ * between adjacent minor/patch versions; only the version stamp is stale.
+ */
+export async function migrateConfigVersionIfNeeded(bundledVersion: string): Promise<void> {
+  const config = await readOpenClawJson();
+
+  const meta = (
+    config.meta && typeof config.meta === 'object'
+      ? (config.meta as Record<string, unknown>)
+      : null
+  );
+  if (!meta) return; // no meta section — nothing to migrate
+
+  const touched = meta.lastTouchedVersion;
+  if (typeof touched !== 'string' || !touched) return;
+
+  const cmp = compareOpenClawVersions(bundledVersion, touched);
+  if (cmp === null || cmp >= 0) return; // bundled >= config, no action needed
+
+  // Config was written by a newer version — update the stamp to match bundled.
+  meta.lastTouchedVersion = bundledVersion;
+  meta.lastTouchedAt = new Date().toISOString();
+  config.meta = meta;
+
+  await writeOpenClawJson(config);
+  console.log(
+    `Migrated openclaw.json meta.lastTouchedVersion: ${touched} → ${bundledVersion}`
+  );
+}
+
+/**
  * Update a provider entry in every discovered agent's models.json.
  */
 export async function updateAgentModelProvider(
