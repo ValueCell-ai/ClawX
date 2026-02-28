@@ -160,3 +160,63 @@ describe('prepareWinSpawn', () => {
     expect(relResult.shell).toBe(true);
   });
 });
+
+describe('normalizeNodeRequirePathForNodeOptions', () => {
+  let normalizeNodeRequirePathForNodeOptions: (modulePath: string) => string;
+
+  beforeEach(async () => {
+    const mod = await import('@electron/utils/win-shell');
+    normalizeNodeRequirePathForNodeOptions = mod.normalizeNodeRequirePathForNodeOptions;
+  });
+
+  it('returns path unchanged on non-Windows', () => {
+    setPlatform('linux');
+    expect(normalizeNodeRequirePathForNodeOptions('/home/user/.config/app/preload.cjs'))
+      .toBe('/home/user/.config/app/preload.cjs');
+  });
+
+  it('converts backslashes to forward slashes on Windows', () => {
+    setPlatform('win32');
+    expect(normalizeNodeRequirePathForNodeOptions('C:\\Users\\70954\\AppData\\Roaming\\clawx\\gateway-fetch-preload.cjs'))
+      .toBe('C:/Users/70954/AppData/Roaming/clawx/gateway-fetch-preload.cjs');
+  });
+
+  it('leaves forward slashes intact on Windows', () => {
+    setPlatform('win32');
+    expect(normalizeNodeRequirePathForNodeOptions('C:/already/forward/slashes.cjs'))
+      .toBe('C:/already/forward/slashes.cjs');
+  });
+});
+
+describe('appendNodeRequireToNodeOptions', () => {
+  let appendNodeRequireToNodeOptions: (nodeOptions: string | undefined, modulePath: string) => string;
+
+  beforeEach(async () => {
+    const mod = await import('@electron/utils/win-shell');
+    appendNodeRequireToNodeOptions = mod.appendNodeRequireToNodeOptions;
+  });
+
+  it('creates NODE_OPTIONS from undefined', () => {
+    setPlatform('linux');
+    expect(appendNodeRequireToNodeOptions(undefined, '/tmp/preload.cjs'))
+      .toBe('--require "/tmp/preload.cjs"');
+  });
+
+  it('appends to existing NODE_OPTIONS', () => {
+    setPlatform('linux');
+    expect(appendNodeRequireToNodeOptions('--disable-warning=ExperimentalWarning', '/tmp/preload.cjs'))
+      .toBe('--disable-warning=ExperimentalWarning --require "/tmp/preload.cjs"');
+  });
+
+  it('normalizes Windows backslashes in the module path', () => {
+    setPlatform('win32');
+    expect(appendNodeRequireToNodeOptions(undefined, 'C:\\Users\\test\\preload.cjs'))
+      .toBe('--require "C:/Users/test/preload.cjs"');
+  });
+
+  it('appends to existing NODE_OPTIONS on Windows with normalized path', () => {
+    setPlatform('win32');
+    expect(appendNodeRequireToNodeOptions('--max-old-space-size=4096', 'D:\\app\\data\\preload.cjs'))
+      .toBe('--max-old-space-size=4096 --require "D:/app/data/preload.cjs"');
+  });
+});

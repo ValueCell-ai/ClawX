@@ -14,6 +14,7 @@ import {
   getOpenClawEntryPath, 
   isOpenClawBuilt, 
   isOpenClawPresent,
+  appendNodeRequireToNodeOptions,
   quoteForCmd,
 } from '../utils/paths';
 import { getSetting } from '../utils/store';
@@ -870,13 +871,10 @@ export class GatewayManager extends EventEmitter {
       try {
         const preloadPath = ensureGatewayFetchPreload();
         if (existsSync(preloadPath)) {
-          // Use forward slashes on Windows: backslashes inside the double-quoted
-          // NODE_OPTIONS value are interpreted as escape characters by Node's
-          // option parser, stripping them and producing an invalid path.
-          const safePath = preloadPath.replace(/\\/g, '/');
-          const quoted = `"${safePath}"`;
-          const opts = spawnEnv['NODE_OPTIONS'] ?? '';
-          spawnEnv['NODE_OPTIONS'] = `${opts} --require ${quoted}`.trim();
+          spawnEnv['NODE_OPTIONS'] = appendNodeRequireToNodeOptions(
+            spawnEnv['NODE_OPTIONS'],
+            preloadPath,
+          );
         }
       } catch (err) {
         logger.warn('Failed to set up OpenRouter headers preload:', err);
