@@ -727,9 +727,6 @@ function registerOpenClawHandlers(gatewayManager: GatewayManager): void {
       }
       await saveChannelConfig(channelType, config);
       // Debounced restart so the gateway picks up the new channel config.
-      // The gateway watches openclaw.json, but a restart ensures a clean
-      // start for newly-added channels. Using debouncedRestart() here
-      // coalesces rapid config updates into one restart.
       gatewayManager.debouncedRestart();
       return { success: true };
     } catch (error) {
