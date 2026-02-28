@@ -22,6 +22,16 @@
 const { cpSync, existsSync, readdirSync, rmSync, statSync, mkdirSync, realpathSync } = require('fs');
 const { join, dirname, basename } = require('path');
 
+// On Windows, paths in pnpm's virtual store can exceed the default MAX_PATH
+// limit (260 chars). Node.js 18.17+ respects the system LongPathsEnabled
+// registry key, but as a safety net we normalize paths to use the \\?\ prefix
+// on Windows, which bypasses the limit unconditionally.
+function normWin(p) {
+  if (process.platform !== 'win32') return p;
+  if (p.startsWith('\\\\?\\')) return p;
+  return '\\\\?\\' + p.replace(/\//g, '\\');
+}
+
 // ── Arch helpers ─────────────────────────────────────────────────────────────
 // electron-builder Arch enum: 0=ia32, 1=x64, 2=armv7l, 3=arm64, 4=universal
 const ARCH_MAP = { 0: 'ia32', 1: 'x64', 2: 'armv7l', 3: 'arm64', 4: 'universal' };
@@ -145,15 +155,16 @@ function getVirtualStoreNodeModules(realPkgPath) {
 
 function listPkgs(nodeModulesDir) {
   const result = [];
-  if (!existsSync(nodeModulesDir)) return result;
-  for (const entry of readdirSync(nodeModulesDir)) {
+  const nDir = normWin(nodeModulesDir);
+  if (!existsSync(nDir)) return result;
+  for (const entry of readdirSync(nDir)) {
     if (entry === '.bin') continue;
+    // Use original (non-normWin) join for the logical path stored in result.fullPath,
+    // so callers can still call getVirtualStoreNodeModules() on it correctly.
     const fullPath = join(nodeModulesDir, entry);
-    let st;
-    try { st = statSync(fullPath); } catch { continue; }
     if (entry.startsWith('@')) {
       let subs;
-      try { subs = readdirSync(fullPath); } catch { continue; }
+      try { subs = readdirSync(normWin(fullPath)); } catch { continue; }
       for (const sub of subs) {
         result.push({ name: `${entry}/${sub}`, fullPath: join(fullPath, sub) });
       }
@@ -172,12 +183,12 @@ function bundlePlugin(nodeModulesRoot, npmName, destDir) {
   }
 
   let realPluginPath;
-  try { realPluginPath = realpathSync(pkgPath); } catch { realPluginPath = pkgPath; }
+  try { realPluginPath = realpathSync(normWin(pkgPath)); } catch { realPluginPath = pkgPath; }
 
   // Copy plugin package itself
-  if (existsSync(destDir)) rmSync(destDir, { recursive: true, force: true });
-  mkdirSync(destDir, { recursive: true });
-  cpSync(realPluginPath, destDir, { recursive: true, dereference: true });
+  if (existsSync(normWin(destDir))) rmSync(normWin(destDir), { recursive: true, force: true });
+  mkdirSync(normWin(destDir), { recursive: true });
+  cpSync(normWin(realPluginPath), normWin(destDir), { recursive: true, dereference: true });
 
   // Collect transitive deps via pnpm virtual store BFS
   const collected = new Map();
@@ -209,7 +220,7 @@ function bundlePlugin(nodeModulesRoot, npmName, destDir) {
       if (name === skipPkg) continue;
       if (SKIP_PACKAGES.has(name) || SKIP_SCOPES.some(s => name.startsWith(s))) continue;
       let rp;
-      try { rp = realpathSync(fullPath); } catch { continue; }
+      try { rp = realpathSync(normWin(fullPath)); } catch { continue; }
       if (collected.has(rp)) continue;
       collected.set(rp, name);
       const depVirtualNM = getVirtualStoreNodeModules(rp);
@@ -229,8 +240,8 @@ function bundlePlugin(nodeModulesRoot, npmName, destDir) {
     copiedNames.add(pkgName);
     const d = join(destNM, pkgName);
     try {
-      mkdirSync(dirname(d), { recursive: true });
-      cpSync(rp, d, { recursive: true, dereference: true });
+      mkdirSync(normWin(dirname(d)), { recursive: true });
+      cpSync(normWin(rp), normWin(d), { recursive: true, dereference: true });
       count++;
     } catch (e) {
       console.warn(`[after-pack]   Skipped dep ${pkgName}: ${e.message}`);
