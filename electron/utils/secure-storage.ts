@@ -4,7 +4,7 @@
  * Keys are stored in plain text alongside provider configs in a single electron-store.
  */
 
-import type { ProviderType } from './provider-registry';
+import { BUILTIN_PROVIDER_TYPES, type ProviderType } from './provider-registry';
 import { getActiveOpenClawProviders } from './openclaw-auth';
 
 // Lazy-load electron-store (ESM module)
@@ -216,17 +216,11 @@ export async function getAllProvidersWithKeyInfo(): Promise<
   const results: Array<ProviderConfig & { hasKey: boolean; keyMasked: string | null }> = [];
   const activeOpenClawProviders = await getActiveOpenClawProviders();
 
-  // We need to avoid deleting native ones like 'anthropic' or 'google'
-  // that don't need to exist in openclaw.json models.providers
-  const OpenClawBuiltinList = [
-    'anthropic', 'openai', 'google', 'moonshot', 'siliconflow', 'ollama'
-  ];
-
   for (const provider of providers) {
     // Sync check: If it's a custom/OAuth provider and it no longer exists in OpenClaw config
     // (e.g. wiped by Gateway due to missing plugin, or manually deleted by user)
     // we should remove it from ClawX UI to stay consistent.
-    const isBuiltin = OpenClawBuiltinList.includes(provider.type);
+    const isBuiltin = BUILTIN_PROVIDER_TYPES.includes(provider.type);
     // For custom/ollama providers, the OpenClaw config key is derived as
     // "<type>-<suffix>" where suffix = first 8 chars of providerId with hyphens stripped.
     // e.g. provider.id "custom-a1b2c3d4-..." → strip hyphens → "customa1b2c3d4..." → slice(0,8) → "customa1"
@@ -261,4 +255,3 @@ export async function getAllProvidersWithKeyInfo(): Promise<
 
   return results;
 }
-
