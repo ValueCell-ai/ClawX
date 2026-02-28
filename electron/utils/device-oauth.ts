@@ -223,9 +223,19 @@ class DeviceOAuthManager extends EventEmitter {
 
         let baseUrl = token.resourceUrl || defaultBaseUrl;
 
+        // Ensure baseUrl has a protocol prefix
+        if (baseUrl && !baseUrl.startsWith('http://') && !baseUrl.startsWith('https://')) {
+            baseUrl = 'https://' + baseUrl;
+        }
+
         // Ensure the base URL ends with /anthropic
         if (providerType.startsWith('minimax-portal') && baseUrl) {
             baseUrl = baseUrl.replace(/\/v1$/, '').replace(/\/anthropic$/, '').replace(/\/$/, '') + '/anthropic';
+        } else if (providerType === 'qwen-portal' && baseUrl) {
+            // Ensure Qwen API gets /v1 at the end
+            if (!baseUrl.endsWith('/v1')) {
+                baseUrl = baseUrl.replace(/\/$/, '') + '/v1';
+            }
         }
 
         try {

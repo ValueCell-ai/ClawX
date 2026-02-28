@@ -111,6 +111,38 @@
                 "系统将自动识别您的手机号"
             ]
         },
+        "dingtalk": {
+            "description": "通过 OpenClaw 渠道插件连接钉钉（Stream 模式）",
+            "docsUrl": "https://github.com/soimy/openclaw-channel-dingtalk",
+            "fields": {
+                "clientId": {
+                    "label": "Client ID (AppKey)",
+                    "placeholder": "dingxxxxxx"
+                },
+                "clientSecret": {
+                    "label": "Client Secret (AppSecret)",
+                    "placeholder": "您的应用密钥"
+                },
+                "robotCode": {
+                    "label": "Robot Code（可选）",
+                    "placeholder": "通常与 Client ID 相同"
+                },
+                "corpId": {
+                    "label": "Corp ID（可选）",
+                    "placeholder": "dingxxxxxx"
+                },
+                "agentId": {
+                    "label": "Agent ID（可选）",
+                    "placeholder": "123456789"
+                }
+            },
+            "instructions": [
+                "先在 OpenClaw 安装并启用 dingtalk 插件",
+                "在钉钉开发者后台创建企业内部应用并开启 Stream 模式",
+                "填写 Client ID 和 Client Secret（必填）",
+                "根据你的应用配置按需填写 Robot Code / Corp ID / Agent ID"
+            ]
+        },
         "signal": {
             "description": "使用 signal-cli 连接 Signal",
             "docsUrl": "https://docs.openclaw.ai/zh-CN/channels/signal",

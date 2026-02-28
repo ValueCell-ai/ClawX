@@ -3,7 +3,7 @@
  * Registers all IPC handlers for main-renderer communication
  */
 import { ipcMain, BrowserWindow, shell, dialog, app, nativeImage } from 'electron';
-import { existsSync } from 'node:fs';
+import { existsSync, cpSync, mkdirSync, rmSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join, extname, basename } from 'node:path';
 import crypto from 'node:crypto';
@@ -608,6 +608,51 @@ function registerGatewayHandlers(
  * For checking package status and channel configuration
  */
 function registerOpenClawHandlers(gatewayManager: GatewayManager): void {
+  async function ensureDingTalkPluginInstalled(): Promise<{ installed: boolean; warning?: string }> {
+    const targetDir = join(homedir(), '.openclaw', 'extensions', 'dingtalk');
+    const targetManifest = join(targetDir, 'openclaw.plugin.json');
+
+    if (existsSync(targetManifest)) {
+      logger.info('DingTalk plugin already installed from local mirror');
+      return { installed: true };
+    }
+
+    const candidateSources = app.isPackaged
+      ? [join(process.resourcesPath, 'openclaw-plugins', 'dingtalk')]
+      : [
+          join(app.getAppPath(), 'build', 'openclaw-plugins', 'dingtalk'),
+          join(process.cwd(), 'build', 'openclaw-plugins', 'dingtalk'),
+          join(__dirname, '../../build/openclaw-plugins/dingtalk'),
+        ];
+
+    const sourceDir = candidateSources.find((dir) => existsSync(join(dir, 'openclaw.plugin.json')));
+    if (!sourceDir) {
+      logger.warn('Bundled DingTalk plugin mirror not found in candidate paths', { candidateSources });
+      return {
+        installed: false,
+        warning: `Bundled DingTalk plugin mirror not found. Checked: ${candidateSources.join(' | ')}`,
+      };
+    }
+
+    try {
+      mkdirSync(join(homedir(), '.openclaw', 'extensions'), { recursive: true });
+      rmSync(targetDir, { recursive: true, force: true });
+      cpSync(sourceDir, targetDir, { recursive: true, dereference: true });
+
+      if (!existsSync(targetManifest)) {
+        return { installed: false, warning: 'Failed to install DingTalk plugin mirror (manifest missing).' };
+      }
+
+      logger.info(`Installed DingTalk plugin from bundled mirror: ${sourceDir}`);
+      return { installed: true };
+    } catch (error) {
+      logger.warn('Failed to install DingTalk plugin from bundled mirror:', error);
+      return {
+        installed: false,
+        warning: 'Failed to install bundled DingTalk plugin mirror',
+      };
+    }
+  }
 
   // Get OpenClaw package status
   ipcMain.handle('openclaw:status', () => {
@@ -666,12 +711,24 @@ function registerOpenClawHandlers(gatewayManager: GatewayManager): void {
   ipcMain.handle('channel:saveConfig', async (_, channelType: string, config: Record<string, unknown>) => {
     try {
       logger.info('channel:saveConfig', { channelType, keys: Object.keys(config || {}) });
+      if (channelType === 'dingtalk') {
+        const installResult = await ensureDingTalkPluginInstalled();
+        if (!installResult.installed) {
+          return {
+            success: false,
+            error: installResult.warning || 'DingTalk plugin install failed',
+          };
+        }
+        await saveChannelConfig(channelType, config);
+        gatewayManager.debouncedRestart();
+        return {
+          success: true,
+          pluginInstalled: installResult.installed,
+          warning: installResult.warning,
+        };
+      }
       await saveChannelConfig(channelType, config);
       // Debounced restart so the gateway picks up the new channel config.
-      // The gateway watches openclaw.json, but a restart ensures a clean
-      // start for newly-added channels.  Using debouncedRestart() here
-      // instead of an explicit restart on the frontend side means that
-      // rapid config changes (e.g. setup wizard) coalesce into one restart.
       gatewayManager.debouncedRestart();
       return { success: true };
     } catch (error) {

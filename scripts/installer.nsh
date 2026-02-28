@@ -1,7 +1,14 @@
-; ClawX Custom NSIS Uninstaller Script
-; Provides a "Complete Removal" option during uninstallation
-; to delete .openclaw config and AppData resources.
-; Handles both per-user and per-machine (all users) installations.
+; ClawX Custom NSIS Installer/Uninstaller Script
+
+!macro customInstall
+  ; Enable Windows long path support for all-user (admin) installs.
+  ; pnpm virtual store and node_modules paths can exceed the default 260-char
+  ; MAX_PATH limit on Windows.  This registry key enables the modern NTFS
+  ; long-path behavior on Windows 10 1607+ / Windows 11.
+  ${If} $MultiUser.InstallMode == "AllUsers"
+    WriteRegDWORD HKLM "SYSTEM\CurrentControlSet\Control\FileSystem" "LongPathsEnabled" 1
+  ${EndIf}
+!macroend
 
 !macro customUnInstall
   ; Ask user if they want to completely remove all user data

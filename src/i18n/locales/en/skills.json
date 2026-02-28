@@ -57,11 +57,18 @@
         "failedOpenFolder": "Failed to open skills folder",
         "failedInstall": "Failed to install",
         "failedUninstall": "Failed to uninstall",
-        "failedFolderNotFound": "Skills folder does not exist yet. Install a skill first."
+        "failedFolderNotFound": "Skills folder does not exist yet. Install a skill first.",
+        "searchTimeoutError": "Search timed out, check network. You can also search on ClawHub.ai, download the ZIP, and extract it to \"{{path}}\"",
+        "installTimeoutError": "Installation timed out, check network. You can also download the ZIP from ClawHub.ai and extract it to \"{{path}}\"",
+        "searchRateLimitError": "Search rate limit exceeded. You can also search on ClawHub.ai, download the ZIP, and extract it to \"{{path}}\"",
+        "installRateLimitError": "Installation rate limit exceeded. You can also download the ZIP from ClawHub.ai and extract it to \"{{path}}\"",
+        "fetchTimeoutError": "Fetching skills timed out, please check your network connection.",
+        "fetchRateLimitError": "Fetching skills rate limit exceeded, please try again later."
     },
     "marketplace": {
         "title": "Marketplace",
         "securityNote": "Click skill card to view its documentation and security information on ClawHub before installation.",
+        "manualInstallHint": "Network issues? You can always download skill ZIP archives from ClawHub.ai and extract them manually into \"{{path}}\".",
         "searching": "Searching ClawHub...",
         "noResults": "No skills found matching your search.",
         "emptyPrompt": "Search for new skills to expand your capabilities.",

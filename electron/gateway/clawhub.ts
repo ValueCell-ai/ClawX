@@ -181,7 +181,7 @@ export class ClawHubService {
             }).filter((s): s is ClawHubSkillResult => s !== null);
         } catch (error) {
             console.error('ClawHub search error:', error);
-            return [];
+            throw error;
         }
     }
 
@@ -217,7 +217,7 @@ export class ClawHubService {
             }).filter((s): s is ClawHubSkillResult => s !== null);
         } catch (error) {
             console.error('ClawHub explore error:', error);
-            return [];
+            throw error;
         }
     }
 

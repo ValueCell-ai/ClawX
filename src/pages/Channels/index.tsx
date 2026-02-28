@@ -570,7 +570,18 @@ function AddChannelDialog({ selectedType, onSelectType, onClose, onChannelAdded 
 
       // Step 2: Save channel configuration via IPC
       const config: Record<string, unknown> = { ...configValues };
-      await window.electron.ipcRenderer.invoke('channel:saveConfig', selectedType, config);
+      const saveResult = await window.electron.ipcRenderer.invoke('channel:saveConfig', selectedType, config) as {
+        success?: boolean;
+        error?: string;
+        warning?: string;
+        pluginInstalled?: boolean;
+      };
+      if (!saveResult?.success) {
+        throw new Error(saveResult?.error || 'Failed to save channel config');
+      }
+      if (typeof saveResult.warning === 'string' && saveResult.warning) {
+        toast.warning(saveResult.warning);
+      }
 
       // Step 3: Add a local channel entry for the UI
       await addChannel({

@@ -38,14 +38,19 @@ export function Chat() {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const [streamingTimestamp, setStreamingTimestamp] = useState<number>(0);
 
-  // Load data when gateway is running
+  // Load data when gateway is running.
+  // When the store already holds messages for this session (i.e. the user
+  // is navigating *back* to Chat), use quiet mode so the existing messages
+  // stay visible while fresh data loads in the background.  This avoids
+  // an unnecessary messages → spinner → messages flicker.
   useEffect(() => {
     if (!isGatewayRunning) return;
     let cancelled = false;
+    const hasExistingMessages = useChatStore.getState().messages.length > 0;
     (async () => {
       await loadSessions();
       if (cancelled) return;
-      await loadHistory();
+      await loadHistory(hasExistingMessages);
     })();
     return () => {
       cancelled = true;
