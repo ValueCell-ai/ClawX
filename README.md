@@ -58,9 +58,9 @@ ClawX comes pre-configured with best-practice model providers and natively suppo
   <img src="resources/screenshot/skills.png" style="width: 100%; height: auto;">
 </p>
 
-<p align="center">
+<!-- <p align="center">
   <img src="resources/screenshot/channels.png" style="width: 100%; height: auto;">
-</p>
+</p> -->
 
 <p align="center">
   <img src="resources/screenshot/dashboard.png" style="width: 100%; height: auto;">
@@ -338,6 +338,14 @@ Join our community to connect with other users, get support, and share your expe
 | Enterprise WeChat | Feishu Group | Discord |
 | :---: | :---: | :---: |
 | <img src="src/assets/community/wecom-qr.png" width="150" alt="WeChat QR Code" /> | <img src="src/assets/community/feishu-qr.png" width="150" alt="Feishu QR Code" /> | <img src="src/assets/community/20260212-185822.png" width="150" alt="Discord QR Code" /> |
+
+---
+
+## Star History
+
+<p align="center">
+  <img src="https://api.star-history.com/svg?repos=ValueCell-ai/ClawX&type=Date" alt="Star History Chart" />
+</p>
 
 ---
 
