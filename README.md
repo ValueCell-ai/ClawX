@@ -154,6 +154,33 @@ When you launch ClawX for the first time, the **Setup Wizard** will guide you th
 3. **Skill Bundles** – Select pre-configured skills for common use cases
 4. **Verification** – Test your configuration before entering the main interface
 
+### Proxy Settings
+
+ClawX includes built-in proxy settings for environments where Electron, the OpenClaw Gateway, or channels such as Telegram need to reach the internet through a local proxy client.
+
+Open **Settings → Gateway → Proxy** and configure:
+
+- **Proxy Server**: supports `http://`, `https://`, `socks4://`, and `socks5://`
+- **Bypass Rules**: hosts that should connect directly, separated by semicolons, commas, or new lines
+
+Recommended local examples:
+
+```text
+http://127.0.0.1:7890
+```
+
+or
+
+```text
+socks5://127.0.0.1:7891
+```
+
+Notes:
+
+- A bare `host:port` value is treated as HTTP.
+- Saving proxy settings reapplies Electron networking immediately and restarts the Gateway automatically.
+- ClawX also syncs the proxy to OpenClaw's Telegram channel config when Telegram is enabled.
+
 ---
 
 ## Architecture

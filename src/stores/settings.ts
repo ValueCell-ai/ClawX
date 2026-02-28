@@ -19,6 +19,9 @@ interface SettingsState {
   // Gateway
   gatewayAutoStart: boolean;
   gatewayPort: number;
+  proxyEnabled: boolean;
+  proxyServer: string;
+  proxyBypassRules: string;
 
   // Update
   updateChannel: UpdateChannel;
@@ -33,12 +36,16 @@ interface SettingsState {
   setupComplete: boolean;
 
   // Actions
+  init: () => Promise<void>;
   setTheme: (theme: Theme) => void;
   setLanguage: (language: string) => void;
   setStartMinimized: (value: boolean) => void;
   setLaunchAtStartup: (value: boolean) => void;
   setGatewayAutoStart: (value: boolean) => void;
   setGatewayPort: (port: number) => void;
+  setProxyEnabled: (value: boolean) => void;
+  setProxyServer: (value: string) => void;
+  setProxyBypassRules: (value: string) => void;
   setUpdateChannel: (channel: UpdateChannel) => void;
   setAutoCheckUpdate: (value: boolean) => void;
   setAutoDownloadUpdate: (value: boolean) => void;
@@ -60,6 +67,9 @@ const defaultSettings = {
   launchAtStartup: false,
   gatewayAutoStart: true,
   gatewayPort: 18789,
+  proxyEnabled: false,
+  proxyServer: '',
+  proxyBypassRules: '<local>;localhost;127.0.0.1;::1',
   updateChannel: 'stable' as UpdateChannel,
   autoCheckUpdate: true,
   autoDownloadUpdate: false,
@@ -73,12 +83,28 @@ export const useSettingsStore = create<SettingsState>()(
     (set) => ({
       ...defaultSettings,
 
+      init: async () => {
+        try {
+          const settings = await window.electron.ipcRenderer.invoke('settings:getAll') as Partial<typeof defaultSettings>;
+          set((state) => ({ ...state, ...settings }));
+          if (settings.language) {
+            i18n.changeLanguage(settings.language);
+          }
+        } catch {
+          // Keep renderer-persisted settings as a fallback when the main
+          // process store is not reachable.
+        }
+      },
+
       setTheme: (theme) => set({ theme }),
-      setLanguage: (language) => { i18n.changeLanguage(language); set({ language }); },
+      setLanguage: (language) => { i18n.changeLanguage(language); set({ language }); void window.electron.ipcRenderer.invoke('settings:set', 'language', language).catch(() => {}); },
       setStartMinimized: (startMinimized) => set({ startMinimized }),
       setLaunchAtStartup: (launchAtStartup) => set({ launchAtStartup }),
-      setGatewayAutoStart: (gatewayAutoStart) => set({ gatewayAutoStart }),
-      setGatewayPort: (gatewayPort) => set({ gatewayPort }),
+      setGatewayAutoStart: (gatewayAutoStart) => { set({ gatewayAutoStart }); void window.electron.ipcRenderer.invoke('settings:set', 'gatewayAutoStart', gatewayAutoStart).catch(() => {}); },
+      setGatewayPort: (gatewayPort) => { set({ gatewayPort }); void window.electron.ipcRenderer.invoke('settings:set', 'gatewayPort', gatewayPort).catch(() => {}); },
+      setProxyEnabled: (proxyEnabled) => set({ proxyEnabled }),
+      setProxyServer: (proxyServer) => set({ proxyServer }),
+      setProxyBypassRules: (proxyBypassRules) => set({ proxyBypassRules }),
       setUpdateChannel: (updateChannel) => set({ updateChannel }),
       setAutoCheckUpdate: (autoCheckUpdate) => set({ autoCheckUpdate }),
       setAutoDownloadUpdate: (autoDownloadUpdate) => set({ autoDownloadUpdate }),

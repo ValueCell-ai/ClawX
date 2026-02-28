@@ -17,7 +17,7 @@ import {
   appendNodeRequireToNodeOptions,
   quoteForCmd,
 } from '../utils/paths';
-import { getSetting } from '../utils/store';
+import { getAllSettings, getSetting } from '../utils/store';
 import { getApiKey, getDefaultProvider, getProvider } from '../utils/secure-storage';
 import { getProviderEnvVar, getKeyableProviderTypes } from '../utils/provider-registry';
 import { GatewayEventType, JsonRpcNotification, isNotification, isResponse } from './protocol';
@@ -32,6 +32,8 @@ import {
   type DeviceIdentity,
 } from '../utils/device-identity';
 import { syncGatewayTokenToConfig, syncBrowserConfigToOpenClaw } from '../utils/openclaw-auth';
+import { buildProxyEnv } from '../utils/proxy';
+import { syncProxyConfigToOpenClaw } from '../utils/openclaw-proxy';
 
 /**
  * Gateway connection status
@@ -729,7 +731,9 @@ export class GatewayManager extends EventEmitter {
     }
     
     // Get or generate gateway token
-    const gatewayToken = await getSetting('gatewayToken');
+    const appSettings = await getAllSettings();
+    const gatewayToken = appSettings.gatewayToken;
+    await syncProxyConfigToOpenClaw(appSettings);
 
     // Write our token into openclaw.json before starting the process.
     // Without --dev the gateway authenticates using the token in
@@ -836,17 +840,20 @@ export class GatewayManager extends EventEmitter {
     }
 
     const uvEnv = await getUvMirrorEnv();
+    const proxyEnv = buildProxyEnv(appSettings);
     logger.info(
-      `Starting Gateway process (mode=${mode}, port=${this.status.port}, command="${command}", args="${this.sanitizeSpawnArgs(args).join(' ')}", cwd="${openclawDir}", bundledBin=${binPathExists ? 'yes' : 'no'}, providerKeys=${loadedProviderKeyCount})`
+      `Starting Gateway process (mode=${mode}, port=${this.status.port}, command="${command}", args="${this.sanitizeSpawnArgs(args).join(' ')}", cwd="${openclawDir}", bundledBin=${binPathExists ? 'yes' : 'no'}, providerKeys=${loadedProviderKeyCount}, proxy=${appSettings.proxyEnabled && appSettings.proxyServer ? appSettings.proxyServer : 'disabled'})`
     );
     this.lastSpawnSummary = `mode=${mode}, command="${command}", args="${this.sanitizeSpawnArgs(args).join(' ')}", cwd="${openclawDir}"`;
     
     return new Promise((resolve, reject) => {
+      const { NODE_OPTIONS: _nodeOptions, ...baseEnv } = process.env;
       const spawnEnv: Record<string, string | undefined> = {
-        ...process.env,
+        ...baseEnv,
         PATH: finalPath,
         ...providerEnv,
         ...uvEnv,
+        ...proxyEnv,
         OPENCLAW_GATEWAY_TOKEN: gatewayToken,
         OPENCLAW_SKIP_CHANNELS: '',
         CLAWDBOT_SKIP_CHANNELS: '',

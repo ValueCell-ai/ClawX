@@ -87,10 +87,15 @@ class ErrorBoundary extends Component<
 function App() {
   const navigate = useNavigate();
   const location = useLocation();
+  const initSettings = useSettingsStore((state) => state.init);
   const theme = useSettingsStore((state) => state.theme);
   const language = useSettingsStore((state) => state.language);
   const setupComplete = useSettingsStore((state) => state.setupComplete);
   const initGateway = useGatewayStore((state) => state.init);
+
+  useEffect(() => {
+    initSettings();
+  }, [initSettings]);
 
   // Sync i18n language with persisted settings on mount
   useEffect(() => {

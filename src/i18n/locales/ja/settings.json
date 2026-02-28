@@ -83,7 +83,16 @@
     "appLogs": "アプリケーションログ",
     "openFolder": "フォルダーを開く",
     "autoStart": "ゲートウェイ自動起動",
-    "autoStartDesc": "ClawX 起動時にゲートウェイを自動起動"
+    "autoStartDesc": "ClawX 起動時にゲートウェイを自動起動",
+    "proxyTitle": "プロキシ",
+    "proxyDesc": "Electron と Gateway の通信をローカルプロキシ経由にします。",
+    "proxyServer": "プロキシサーバー",
+    "proxyServerHelp": "HTTP、HTTPS、SOCKS4、SOCKS5 をサポートします。host:port のみの場合は HTTP 扱いです。",
+    "proxyBypass": "バイパスルール",
+    "proxyBypassHelp": "直接接続するホストをセミコロン、カンマ、または改行で区切って指定します。",
+    "proxyRestartNote": "保存すると Electron のネットワーク設定を再適用し、Gateway をすぐ再起動します。",
+    "proxySaved": "プロキシ設定を保存しました",
+    "proxySaveFailed": "プロキシ設定の保存に失敗しました"
   },
   "updates": {
     "title": "アップデート",

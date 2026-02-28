@@ -85,7 +85,16 @@
     "appLogs": "Application Logs",
     "openFolder": "Open Folder",
     "autoStart": "Auto-start Gateway",
-    "autoStartDesc": "Start Gateway when ClawX launches"
+    "autoStartDesc": "Start Gateway when ClawX launches",
+    "proxyTitle": "Proxy",
+    "proxyDesc": "Route Electron and Gateway traffic through your local proxy client.",
+    "proxyServer": "Proxy Server",
+    "proxyServerHelp": "Supports HTTP, HTTPS, SOCKS4, and SOCKS5. Bare host:port values default to HTTP.",
+    "proxyBypass": "Bypass Rules",
+    "proxyBypassHelp": "Semicolon, comma, or newline separated hosts that should connect directly.",
+    "proxyRestartNote": "Saving reapplies Electron networking and restarts the Gateway immediately.",
+    "proxySaved": "Proxy settings saved",
+    "proxySaveFailed": "Failed to save proxy settings"
   },
   "updates": {
     "title": "Updates",

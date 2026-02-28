@@ -24,7 +24,7 @@ import {
 } from '../utils/secure-storage';
 import { getOpenClawStatus, getOpenClawDir, getOpenClawConfigDir, getOpenClawSkillsDir, ensureDir } from '../utils/paths';
 import { getOpenClawCliCommand } from '../utils/openclaw-cli';
-import { getSetting } from '../utils/store';
+import { getAllSettings, getSetting, resetSettings, setSetting, type AppSettings } from '../utils/store';
 import {
   saveProviderKeyToOpenClaw,
   removeProviderFromOpenClaw,
@@ -49,6 +49,8 @@ import { updateSkillConfig, getSkillConfig, getAllSkillConfigs } from '../utils/
 import { whatsAppLoginManager } from '../utils/whatsapp-login';
 import { getProviderConfig } from '../utils/provider-registry';
 import { deviceOAuthManager, OAuthProviderType } from '../utils/device-oauth';
+import { applyProxySettings } from './proxy';
+import { proxyAwareFetch } from '../utils/proxy-fetch';
 
 /**
  * For custom/ollama providers, derive a unique key for OpenClaw config files
@@ -98,6 +100,9 @@ export function registerIpcHandlers(
 
   // App handlers
   registerAppHandlers();
+
+  // Settings handlers
+  registerSettingsHandlers(gatewayManager);
 
   // UV handlers
   registerUvHandlers();
@@ -1474,7 +1479,7 @@ async function performProviderValidationRequest(
 ): Promise<{ valid: boolean; error?: string }> {
   try {
     logValidationRequest(providerLabel, 'GET', url, headers);
-    const response = await fetch(url, { headers });
+    const response = await proxyAwareFetch(url, { headers });
     logValidationStatus(providerLabel, response.status);
     const data = await response.json().catch(() => ({}));
     return classifyAuthResponse(response.status, data);
@@ -1549,7 +1554,7 @@ async function performChatCompletionsProbe(
 ): Promise<{ valid: boolean; error?: string }> {
   try {
     logValidationRequest(providerLabel, 'POST', url, headers);
-    const response = await fetch(url, {
+    const response = await proxyAwareFetch(url, {
       method: 'POST',
       headers: { ...headers, 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -1748,6 +1753,54 @@ function registerAppHandlers(): void {
   ipcMain.handle('app:relaunch', () => {
     app.relaunch();
     app.quit();
+  });
+}
+
+function registerSettingsHandlers(gatewayManager: GatewayManager): void {
+  const handleProxySettingsChange = async () => {
+    const settings = await getAllSettings();
+    await applyProxySettings(settings);
+    if (gatewayManager.getStatus().state === 'running') {
+      await gatewayManager.restart();
+    }
+  };
+
+  ipcMain.handle('settings:get', async (_, key: keyof AppSettings) => {
+    return await getSetting(key);
+  });
+
+  ipcMain.handle('settings:getAll', async () => {
+    return await getAllSettings();
+  });
+
+  ipcMain.handle('settings:set', async (_, key: keyof AppSettings, value: AppSettings[keyof AppSettings]) => {
+    await setSetting(key, value as never);
+
+    if (key === 'proxyEnabled' || key === 'proxyServer' || key === 'proxyBypassRules') {
+      await handleProxySettingsChange();
+    }
+
+    return { success: true };
+  });
+
+  ipcMain.handle('settings:setMany', async (_, patch: Partial<AppSettings>) => {
+    const entries = Object.entries(patch) as Array<[keyof AppSettings, AppSettings[keyof AppSettings]]>;
+    for (const [key, value] of entries) {
+      await setSetting(key, value as never);
+    }
+
+    if (entries.some(([key]) => key === 'proxyEnabled' || key === 'proxyServer' || key === 'proxyBypassRules')) {
+      await handleProxySettingsChange();
+    }
+
+    return { success: true };
+  });
+
+  ipcMain.handle('settings:reset', async () => {
+    await resetSettings();
+    const settings = await getAllSettings();
+    await handleProxySettingsChange();
+    return { success: true, settings };
   });
 }
 

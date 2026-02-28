@@ -4,6 +4,18 @@
  */
 import { app, BrowserWindow, nativeImage, session, shell } from 'electron';
 import { join } from 'path';
+
+// Initialize global proxy agent early (before any network calls)
+// This ensures fetch() and other HTTP clients respect HTTP_PROXY/HTTPS_PROXY
+import { bootstrap as globalAgentBootstrap } from 'global-agent';
+if (process.env.HTTP_PROXY || process.env.HTTPS_PROXY || process.env.http_proxy || process.env.https_proxy) {
+  try {
+    globalAgentBootstrap();
+    console.log('[global-agent] Initialized with proxy:' , process.env.HTTP_PROXY || process.env.https_proxy);
+  } catch (error) {
+    console.error('[global-agent] Failed to initialize:' , error);
+  }
+}
 import { GatewayManager } from '../gateway/manager';
 import { registerIpcHandlers } from './ipc-handlers';
 import { createTray } from './tray';
@@ -17,6 +29,8 @@ import { ClawHubService } from '../gateway/clawhub';
 import { ensureClawXContext, repairClawXOnlyBootstrapFiles } from '../utils/openclaw-workspace';
 import { autoInstallCliIfNeeded, generateCompletionCache, installCompletionToProfile } from '../utils/openclaw-cli';
 import { isQuitting, setQuitting } from './app-state';
+import { applyProxySettings } from './proxy';
+import { getSetting } from '../utils/store';
 
 // Disable GPU hardware acceleration globally for maximum stability across
 // all GPU configurations (no GPU, integrated, discrete).
@@ -127,6 +141,9 @@ async function initialize(): Promise<void> {
   // Warm up network optimization (non-blocking)
   void warmupNetworkOptimization();
 
+  // Apply persisted proxy settings before creating windows or network requests.
+  await applyProxySettings();
+
   // Set application menu
   createMenu();
 
@@ -188,13 +205,18 @@ async function initialize(): Promise<void> {
   });
 
   // Start Gateway automatically (this seeds missing bootstrap files with full templates)
-  try {
-    logger.debug('Auto-starting Gateway...');
-    await gatewayManager.start();
-    logger.info('Gateway auto-start succeeded');
-  } catch (error) {
-    logger.error('Gateway auto-start failed:', error);
-    mainWindow?.webContents.send('gateway:error', String(error));
+  const gatewayAutoStart = await getSetting('gatewayAutoStart');
+  if (gatewayAutoStart) {
+    try {
+      logger.debug('Auto-starting Gateway...');
+      await gatewayManager.start();
+      logger.info('Gateway auto-start succeeded');
+    } catch (error) {
+      logger.error('Gateway auto-start failed:', error);
+      mainWindow?.webContents.send('gateway:error', String(error));
+    }
+  } else {
+    logger.info('Gateway auto-start disabled in settings');
   }
 
   // Merge ClawX context snippets into the workspace bootstrap files.
