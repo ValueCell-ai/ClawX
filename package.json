@@ -86,7 +86,7 @@
         "i18next": "^25.8.11",
         "jsdom": "^28.1.0",
         "lucide-react": "^0.563.0",
-        "openclaw": "2026.2.26",
+        "openclaw": "2026.2.25",
         "png2icons": "^2.0.1",
         "postcss": "^8.5.6",
         "react": "^19.2.4",
