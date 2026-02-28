@@ -627,9 +627,10 @@ function registerOpenClawHandlers(gatewayManager: GatewayManager): void {
 
     const sourceDir = candidateSources.find((dir) => existsSync(join(dir, 'openclaw.plugin.json')));
     if (!sourceDir) {
+      logger.warn('Bundled DingTalk plugin mirror not found in candidate paths', { candidateSources });
       return {
         installed: false,
-        warning: 'Bundled DingTalk plugin mirror not found. Run: pnpm run bundle:openclaw-plugins',
+        warning: `Bundled DingTalk plugin mirror not found. Checked: ${candidateSources.join(' | ')}`,
       };
     }
 
@@ -718,7 +719,8 @@ function registerOpenClawHandlers(gatewayManager: GatewayManager): void {
             error: installResult.warning || 'DingTalk plugin install failed',
           };
         }
-        saveChannelConfig(channelType, config);
+        await saveChannelConfig(channelType, config);
+        gatewayManager.debouncedRestart();
         return {
           success: true,
           pluginInstalled: installResult.installed,
