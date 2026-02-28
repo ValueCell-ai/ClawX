@@ -194,7 +194,7 @@ export class WhatsAppLoginManager extends EventEmitter {
      */
     private async finishLogin(accountId: string): Promise<void> {
         if (!this.active) return;
-        console.log('[WhatsAppLogin] Finishing login, closing socket to hand over to Gateway...');
+        // console.log('[WhatsAppLogin] Finishing login, closing socket to hand over to Gateway...');
         await this.stop();
         // Allow enough time for WhatsApp server to fully release the session
         await new Promise(resolve => setTimeout(resolve, 5000));
@@ -239,7 +239,7 @@ export class WhatsAppLoginManager extends EventEmitter {
                 mkdirSync(authDir, { recursive: true });
             }
 
-            console.log(`[WhatsAppLogin] Connecting for ${accountId} at ${authDir} (Attempt ${this.retryCount + 1})`);
+            // console.log(`[WhatsAppLogin] Connecting for ${accountId} at ${authDir} (Attempt ${this.retryCount + 1})`);
 
 
             let pino: (...args: unknown[]) => Record<string, unknown>;
@@ -266,13 +266,13 @@ export class WhatsAppLoginManager extends EventEmitter {
                 }
             }
 
-            console.log('[WhatsAppLogin] Loading auth state...');
+            // console.log('[WhatsAppLogin] Loading auth state...');
             const { state, saveCreds } = await initAuth(authDir);
 
-            console.log('[WhatsAppLogin] Fetching latest version...');
+            // console.log('[WhatsAppLogin] Fetching latest version...');
             const { version } = await fetchLatestBaileysVersion();
 
-            console.log(`[WhatsAppLogin] Starting login for ${accountId}, version: ${version}`);
+            // console.log(`[WhatsAppLogin] Starting login for ${accountId}, version: ${version}`);
 
             this.socket = makeWASocket({
                 version,
@@ -293,7 +293,7 @@ export class WhatsAppLoginManager extends EventEmitter {
                 if (connectionOpened && !credsReceived) {
                     credsReceived = true;
                     if (credsTimeout) clearTimeout(credsTimeout);
-                    console.log('[WhatsAppLogin] Credentials saved after connection open, finishing login...');
+                    // console.log('[WhatsAppLogin] Credentials saved after connection open, finishing login...');
                     // Small delay to ensure file writes are fully flushed
                     await new Promise(resolve => setTimeout(resolve, 3000));
                     await this.finishLogin(accountId);
@@ -306,7 +306,7 @@ export class WhatsAppLoginManager extends EventEmitter {
 
                     if (qr) {
                         this.qr = qr;
-                        console.log('[WhatsAppLogin] QR received');
+                        // console.log('[WhatsAppLogin] QR received');
                         const base64 = await renderQrPngBase64(qr);
                         if (this.active) this.emit('qr', { qr: base64, raw: qr });
                     }
@@ -318,7 +318,7 @@ export class WhatsAppLoginManager extends EventEmitter {
                         // Treat 401 as transient if we haven't exhausted retries (max 2 attempts)
                         // This handles the case where WhatsApp's session hasn't fully released
                         const shouldReconnect = !isLoggedOut || this.retryCount < 2;
-                        console.log('[WhatsAppLogin] Connection closed.',
+                        // console.log('[WhatsAppLogin] Connection closed.',
                             'Reconnect:', shouldReconnect,
                             'Active:', this.active,
                             'Error:', error?.message
@@ -327,10 +327,10 @@ export class WhatsAppLoginManager extends EventEmitter {
                         if (shouldReconnect && this.active) {
                             if (this.retryCount < this.maxRetries) {
                                 this.retryCount++;
-                                console.log(`[WhatsAppLogin] Reconnecting in 1s... (Attempt ${this.retryCount}/${this.maxRetries})`);
+                                // console.log(`[WhatsAppLogin] Reconnecting in 1s... (Attempt ${this.retryCount}/${this.maxRetries})`);
                                 setTimeout(() => this.connectToWhatsApp(accountId), 1000);
                             } else {
-                                console.log('[WhatsAppLogin] Max retries reached, stopping.');
+                                // console.log('[WhatsAppLogin] Max retries reached, stopping.');
                                 this.active = false;
                                 this.emit('error', 'Connection failed after multiple retries');
                             }
@@ -351,7 +351,7 @@ export class WhatsAppLoginManager extends EventEmitter {
                             this.emit('error', 'Logged out');
                         }
                     } else if (connection === 'open') {
-                        console.log('[WhatsAppLogin] Connection opened! Waiting for credentials to be saved...');
+                        // console.log('[WhatsAppLogin] Connection opened! Waiting for credentials to be saved...');
                         this.retryCount = 0;
                         connectionOpened = true;
 
