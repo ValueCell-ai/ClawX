@@ -342,6 +342,14 @@ ClawX 构建于以下优秀的开源项目之上：
 
 ---
 
+## Stars 历史
+
+<p align="center">
+  <img src="https://api.star-history.com/svg?repos=ValueCell-ai/ClawX&type=Date" alt="Stars 历史图表" />
+</p>
+
+---
+
 ## 许可证
 
 ClawX 基于 [MIT 许可证](LICENSE) 发布。你可以自由地使用、修改和分发本软件。
