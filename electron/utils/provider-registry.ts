@@ -104,7 +104,7 @@ const REGISTRY: Record<string, ProviderBackendMeta> = {
   },
   'minimax-portal': {
     envVar: 'MINIMAX_API_KEY',
-    defaultModel: 'minimax-portal/MiniMax-M2.1',
+    defaultModel: 'minimax-portal/MiniMax-M2.5',
     providerConfig: {
       baseUrl: 'https://api.minimax.io/anthropic',
       api: 'anthropic-messages',
@@ -113,7 +113,7 @@ const REGISTRY: Record<string, ProviderBackendMeta> = {
   },
   'minimax-portal-cn': {
     envVar: 'MINIMAX_CN_API_KEY',
-    defaultModel: 'minimax-portal/MiniMax-M2.1',
+    defaultModel: 'minimax-portal/MiniMax-M2.5',
     providerConfig: {
       baseUrl: 'https://api.minimaxi.com/anthropic',
       api: 'anthropic-messages',
