@@ -181,13 +181,11 @@ function transformCronJob(job: GatewayCronJob) {
   // Extract message from payload
   const message = job.payload?.message || job.payload?.text || '';
 
-  // Build target from delivery info
-  const channelType = job.delivery?.channel || 'unknown';
-  const target = {
-    channelType,
-    channelId: channelType,
-    channelName: channelType,
-  };
+  // Build target from delivery info — only if a delivery channel is specified
+  const channelType = job.delivery?.channel;
+  const target = channelType
+    ? { channelType, channelId: channelType, channelName: channelType }
+    : undefined;
 
   // Build lastRun from state
   const lastRun = job.state?.lastRunAtMs
@@ -245,30 +243,34 @@ function registerCronHandlers(gatewayManager: GatewayManager): void {
     name: string;
     message: string;
     schedule: string;
-    target: { channelType: string; channelId: string; channelName: string };
+    target?: { channelType: string; channelId: string; channelName: string };
     enabled?: boolean;
   }) => {
     try {
       // Transform frontend input to Gateway cron.add format
-      // For Discord, the recipient must be prefixed with "channel:" or "user:"
-      const recipientId = input.target.channelId;
-      const deliveryTo = input.target.channelType === 'discord' && recipientId
-        ? `channel:${recipientId}`
-        : recipientId;
-
-      const gatewayInput = {
+      const gatewayInput: Record<string, unknown> = {
         name: input.name,
         schedule: { kind: 'cron', expr: input.schedule },
         payload: { kind: 'agentTurn', message: input.message },
         enabled: input.enabled ?? true,
         wakeMode: 'next-heartbeat',
         sessionTarget: 'isolated',
-        delivery: {
+      };
+
+      // Only include delivery when a target channel is specified (external channel tasks).
+      // UI-created tasks omit delivery so the result goes to the ClawX chat page.
+      if (input.target?.channelType) {
+        // For Discord, the recipient must be prefixed with "channel:" or "user:"
+        const recipientId = input.target.channelId;
+        const deliveryTo = input.target.channelType === 'discord' && recipientId
+          ? `channel:${recipientId}`
+          : recipientId;
+        gatewayInput.delivery = {
           mode: 'announce',
           channel: input.target.channelType,
           to: deliveryTo,
-        },
-      };
+        };
+      }
       const result = await gatewayManager.rpc('cron.add', gatewayInput);
       // Transform the returned job to frontend format
       if (result && typeof result === 'object') {

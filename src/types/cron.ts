@@ -41,7 +41,7 @@ export interface CronJob {
   name: string;
   message: string;
   schedule: string | CronSchedule;
-  target: CronJobTarget;
+  target?: CronJobTarget;
   enabled: boolean;
   createdAt: string;
   updatedAt: string;
@@ -56,7 +56,7 @@ export interface CronJobCreateInput {
   name: string;
   message: string;
   schedule: string;
-  target: CronJobTarget;
+  target?: CronJobTarget;
   enabled?: boolean;
 }
 

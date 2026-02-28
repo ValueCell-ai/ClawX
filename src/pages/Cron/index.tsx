@@ -29,13 +29,12 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { useCronStore } from '@/stores/cron';
-import { useChannelsStore } from '@/stores/channels';
 import { useGatewayStore } from '@/stores/gateway';
 import { LoadingSpinner } from '@/components/common/LoadingSpinner';
 import { formatRelativeTime, cn } from '@/lib/utils';
 import { toast } from 'sonner';
 import type { CronJob, CronJobCreateInput, ScheduleType } from '@/types/cron';
-import { CHANNEL_ICONS } from '@/types/channel';
+import { CHANNEL_ICONS, type ChannelType } from '@/types/channel';
 import { useTranslation } from 'react-i18next';
 
 // Common cron schedule presets
@@ -123,7 +122,6 @@ interface TaskDialogProps {
 
 function TaskDialog({ job, onClose, onSave }: TaskDialogProps) {
   const { t } = useTranslation('cron');
-  const { channels } = useChannelsStore();
   const [saving, setSaving] = useState(false);
 
   const [name, setName] = useState(job?.name || '');
@@ -141,12 +139,7 @@ function TaskDialog({ job, onClose, onSave }: TaskDialogProps) {
   const [schedule, setSchedule] = useState(initialSchedule);
   const [customSchedule, setCustomSchedule] = useState('');
   const [useCustom, setUseCustom] = useState(false);
-  const [channelId, setChannelId] = useState(job?.target.channelId || '');
-  const [discordChannelId, setDiscordChannelId] = useState('');
   const [enabled, setEnabled] = useState(job?.enabled ?? true);
-
-  const selectedChannel = channels.find((c) => c.id === channelId);
-  const isDiscord = selectedChannel?.type === 'discord';
 
   const handleSubmit = async () => {
     if (!name.trim()) {
@@ -155,15 +148,6 @@ function TaskDialog({ job, onClose, onSave }: TaskDialogProps) {
     }
     if (!message.trim()) {
       toast.error(t('toast.messageRequired'));
-      return;
-    }
-    if (!channelId) {
-      toast.error(t('toast.channelRequired'));
-      return;
-    }
-    // Validate Discord channel ID when Discord is selected
-    if (selectedChannel?.type === 'discord' && !discordChannelId.trim()) {
-      toast.error(t('toast.discordIdRequired'));
       return;
     }
 
@@ -175,26 +159,12 @@ function TaskDialog({ job, onClose, onSave }: TaskDialogProps) {
 
     setSaving(true);
     try {
-      // For Discord, use the manually entered channel ID; for others, use empty
-      const actualChannelId = selectedChannel!.type === 'discord'
-        ? discordChannelId.trim()
-        : '';
-
-      await onSave(
-        // ... (args omitted from replacement content, ensuring they match target if not changed, but here I am replacing the block)
-        // Wait, I should not replace the whole onSave call if I don't need to.
-        // Let's target the toast.
-        {
-          name: name.trim(),
-          message: message.trim(),
-          schedule: finalSchedule,
-          target: {
-            channelType: selectedChannel!.type,
-            channelId: actualChannelId,
-            channelName: selectedChannel!.name,
-          },
-          enabled,
-        });
+      await onSave({
+        name: name.trim(),
+        message: message.trim(),
+        schedule: finalSchedule,
+        enabled,
+      });
       onClose();
       toast.success(job ? t('toast.updated') : t('toast.created'));
     } catch (err) {
@@ -285,46 +255,6 @@ function TaskDialog({ job, onClose, onSave }: TaskDialogProps) {
             </Button>
           </div>
 
-          {/* Target Channel */}
-          <div className="space-y-2">
-            <Label>{t('dialog.targetChannel')}</Label>
-            {channels.length === 0 ? (
-              <p className="text-sm text-muted-foreground">
-                {t('dialog.noChannels')}
-              </p>
-            ) : (
-              <div className="grid grid-cols-2 gap-2">
-                {channels.map((channel) => (
-                  <Button
-                    key={channel.id}
-                    type="button"
-                    variant={channelId === channel.id ? 'default' : 'outline'}
-                    size="sm"
-                    onClick={() => setChannelId(channel.id)}
-                    className="justify-start"
-                  >
-                    <span className="mr-2">{CHANNEL_ICONS[channel.type]}</span>
-                    {channel.name}
-                  </Button>
-                ))}
-              </div>
-            )}
-          </div>
-
-          {/* Discord Channel ID - only shown when Discord is selected */}
-          {isDiscord && (
-            <div className="space-y-2">
-              <Label>{t('dialog.discordChannelId')}</Label>
-              <Input
-                value={discordChannelId}
-                onChange={(e) => setDiscordChannelId(e.target.value)}
-                placeholder={t('dialog.discordChannelIdPlaceholder')}
-              />
-              <p className="text-xs text-muted-foreground">
-                {t('dialog.discordChannelIdDesc')}
-              </p>
-            </div>
-          )}
           {/* Enabled */}
           <div className="flex items-center justify-between">
             <div>
@@ -442,10 +372,12 @@ function CronJobCard({ job, onToggle, onEdit, onDelete, onTrigger }: CronJobCard
 
         {/* Metadata */}
         <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-sm text-muted-foreground">
-          <span className="flex items-center gap-1">
-            {CHANNEL_ICONS[job.target.channelType]}
-            {job.target.channelName}
-          </span>
+          {job.target && (
+            <span className="flex items-center gap-1">
+              {CHANNEL_ICONS[job.target.channelType as ChannelType]}
+              {job.target.channelName}
+            </span>
+          )}
 
           {job.lastRun && (
             <span className="flex items-center gap-1">
@@ -507,20 +439,18 @@ function CronJobCard({ job, onToggle, onEdit, onDelete, onTrigger }: CronJobCard
 export function Cron() {
   const { t } = useTranslation('cron');
   const { jobs, loading, error, fetchJobs, createJob, updateJob, toggleJob, deleteJob, triggerJob } = useCronStore();
-  const { fetchChannels } = useChannelsStore();
   const gatewayStatus = useGatewayStore((state) => state.status);
   const [showDialog, setShowDialog] = useState(false);
   const [editingJob, setEditingJob] = useState<CronJob | undefined>();
 
   const isGatewayRunning = gatewayStatus.state === 'running';
 
-  // Fetch jobs and channels on mount
+  // Fetch jobs on mount
   useEffect(() => {
     if (isGatewayRunning) {
       fetchJobs();
-      fetchChannels();
     }
-  }, [fetchJobs, fetchChannels, isGatewayRunning]);
+  }, [fetchJobs, isGatewayRunning]);
 
   // Statistics
   const activeJobs = jobs.filter((j) => j.enabled);
