@@ -870,7 +870,11 @@ export class GatewayManager extends EventEmitter {
       try {
         const preloadPath = ensureGatewayFetchPreload();
         if (existsSync(preloadPath)) {
-          const quoted = `"${preloadPath}"`;
+          // Use forward slashes on Windows: backslashes inside the double-quoted
+          // NODE_OPTIONS value are interpreted as escape characters by Node's
+          // option parser, stripping them and producing an invalid path.
+          const safePath = preloadPath.replace(/\\/g, '/');
+          const quoted = `"${safePath}"`;
           const opts = spawnEnv['NODE_OPTIONS'] ?? '';
           spawnEnv['NODE_OPTIONS'] = `${opts} --require ${quoted}`.trim();
         }
