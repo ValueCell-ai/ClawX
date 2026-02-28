@@ -130,7 +130,6 @@ const electronAPI = {
         'openclaw:getConfigDir',
         'openclaw:getSkillsDir',
         'openclaw:getCliCommand',
-        'openclaw:installCliMac',
       ];
 
       if (validChannels.includes(channel)) {
@@ -168,6 +167,7 @@ const electronAPI = {
         'oauth:code',
         'oauth:success',
         'oauth:error',
+        'openclaw:cli-installed',
       ];
 
       if (validChannels.includes(channel)) {

@@ -59,13 +59,9 @@ export function Settings() {
   const [controlUiInfo, setControlUiInfo] = useState<ControlUiInfo | null>(null);
   const [openclawCliCommand, setOpenclawCliCommand] = useState('');
   const [openclawCliError, setOpenclawCliError] = useState<string | null>(null);
-  const [installingCli, setInstallingCli] = useState(false);
 
-  const isMac = window.electron.platform === 'darwin';
   const isWindows = window.electron.platform === 'win32';
-  const isLinux = window.electron.platform === 'linux';
-  const isDev = window.electron.isDev;
-  const showCliTools = isMac || isWindows || isLinux;
+  const showCliTools = true;
   const [showLogs, setShowLogs] = useState(false);
   const [logContent, setLogContent] = useState('');
 
@@ -142,7 +138,7 @@ export function Settings() {
     if (!showCliTools) return;
     let cancelled = false;
 
-    const loadCliCommand = async () => {
+    (async () => {
       try {
         const result = await window.electron.ipcRenderer.invoke('openclaw:getCliCommand') as {
           success: boolean;
@@ -162,12 +158,9 @@ export function Settings() {
         setOpenclawCliCommand('');
         setOpenclawCliError(String(error));
       }
-    };
+    })();
 
-    loadCliCommand();
-    return () => {
-      cancelled = true;
-    };
+    return () => { cancelled = true; };
   }, [devModeUnlocked, showCliTools]);
 
   const handleCopyCliCommand = async () => {
@@ -180,39 +173,16 @@ export function Settings() {
     }
   };
 
-  const handleInstallCliCommand = async () => {
-    if (isWindows || installingCli) return;
-    try {
-      const confirmation = await window.electron.ipcRenderer.invoke('dialog:message', {
-        type: 'question',
-        title: t('developer.installTitle'),
-        message: t('developer.installMessage'),
-        detail: t('developer.installDetail'),
-        buttons: ['Cancel', 'Install'],
-        defaultId: 1,
-        cancelId: 0,
-      }) as { response: number };
-
-      if (confirmation.response !== 1) return;
-
-      setInstallingCli(true);
-      const result = await window.electron.ipcRenderer.invoke('openclaw:installCliMac') as {
-        success: boolean;
-        path?: string;
-        error?: string;
-      };
-
-      if (result.success) {
-        toast.success(`Installed command at ${result.path ?? '/usr/local/bin/openclaw'}`);
-      } else {
-        toast.error(result.error || 'Failed to install command');
-      }
-    } catch (error) {
-      toast.error(`Install failed: ${String(error)}`);
-    } finally {
-      setInstallingCli(false);
-    }
-  };
+  useEffect(() => {
+    const unsubscribe = window.electron.ipcRenderer.on(
+      'openclaw:cli-installed',
+      (...args: unknown[]) => {
+        const installedPath = typeof args[0] === 'string' ? args[0] : '';
+        toast.success(`openclaw CLI installed at ${installedPath}`);
+      },
+    );
+    return () => { unsubscribe?.(); };
+  }, []);
 
   return (
     <div className="space-y-6 p-6">
@@ -516,22 +486,6 @@ export function Settings() {
                       {t('common:actions.copy')}
                     </Button>
                   </div>
-                  {(isMac || isLinux) && !isDev && (
-                    <div className="space-y-1">
-                      <Button
-                        type="button"
-                        variant="outline"
-                        onClick={handleInstallCliCommand}
-                        disabled={installingCli}
-                      >
-                        <Terminal className="h-4 w-4 mr-2" />
-                        {t('developer.installCmd')}
-                      </Button>
-                      <p className="text-xs text-muted-foreground">
-                        {t('developer.installCmdDesc')}
-                      </p>
-                    </div>
-                  )}
                 </div>
               </>
             )}

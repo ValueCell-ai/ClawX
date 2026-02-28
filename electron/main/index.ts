@@ -205,7 +205,9 @@ async function initialize(): Promise<void> {
   });
 
   // Auto-install openclaw CLI and shell completions (non-blocking).
-  void autoInstallCliIfNeeded().then(() => {
+  void autoInstallCliIfNeeded((installedPath) => {
+    mainWindow?.webContents.send('openclaw:cli-installed', installedPath);
+  }).then(() => {
     generateCompletionCache();
     installCompletionToProfile();
   }).catch((error) => {

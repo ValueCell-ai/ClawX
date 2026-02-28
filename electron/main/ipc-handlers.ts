@@ -23,7 +23,7 @@ import {
   type ProviderConfig,
 } from '../utils/secure-storage';
 import { getOpenClawStatus, getOpenClawDir, getOpenClawConfigDir, getOpenClawSkillsDir, ensureDir } from '../utils/paths';
-import { getOpenClawCliCommand, installOpenClawCli } from '../utils/openclaw-cli';
+import { getOpenClawCliCommand } from '../utils/openclaw-cli';
 import { getSetting } from '../utils/store';
 import {
   saveProviderKeyToOpenClaw,
@@ -692,9 +692,6 @@ function registerOpenClawHandlers(gatewayManager: GatewayManager): void {
     }
   });
 
-  ipcMain.handle('openclaw:installCliMac', async () => {
-    return installOpenClawCli();
-  });
 
   // ==================== Channel Configuration Handlers ====================
 

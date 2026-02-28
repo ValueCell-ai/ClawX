@@ -149,15 +149,6 @@ export async function installOpenClawCli(): Promise<{
   }
 }
 
-/**
- * @deprecated Use installOpenClawCli() instead. Kept for IPC backward compat.
- */
-export async function installOpenClawCliMac(): Promise<{
-  success: boolean; path?: string; error?: string;
-}> {
-  return installOpenClawCli();
-}
-
 // ── Auto-install on first launch ─────────────────────────────────────────────
 
 function isCliInstalled(): boolean {
@@ -210,14 +201,16 @@ function ensureLocalBinInPath(): void {
   }
 }
 
-export async function autoInstallCliIfNeeded(): Promise<void> {
+export async function autoInstallCliIfNeeded(
+  notify?: (path: string) => void,
+): Promise<void> {
   if (!app.isPackaged) return;
   if (process.platform === 'win32') return; // NSIS handles it
 
+  const target = getCliTargetPath();
+  const wrapperSrc = getPackagedCliWrapperPath();
+
   if (isCliInstalled()) {
-    // Even if installed, re-point symlink on updates (wrapper path may change)
-    const target = getCliTargetPath();
-    const wrapperSrc = getPackagedCliWrapperPath();
     if (target && wrapperSrc && existsSync(target)) {
       try {
         unlinkSync(target);
@@ -235,6 +228,7 @@ export async function autoInstallCliIfNeeded(): Promise<void> {
   if (result.success) {
     logger.info(`CLI auto-installed at ${result.path}`);
     ensureLocalBinInPath();
+    if (result.path) notify?.(result.path);
   } else {
     logger.warn(`CLI auto-install failed: ${result.error}`);
   }
