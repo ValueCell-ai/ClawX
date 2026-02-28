@@ -24,5 +24,31 @@
     "activeSkills": "已启用技能",
     "noSkills": "未启用技能",
     "enableSome": "启用一些技能",
-    "more": "+{{count}} 更多"
+    "more": "+{{count}} 更多",
+    "recentTokenHistory": {
+        "title": "最近 Token 消耗",
+        "description": "展示最近带有 token 用量记录的助手回复。",
+        "loading": "正在加载 token 消耗历史...",
+        "empty": "还没有 token 消耗历史",
+        "groupByModel": "按模型",
+        "groupByTime": "按时间",
+        "last7Days": "7 天",
+        "last30Days": "30 天",
+        "allTime": "全部",
+        "showingLast": "显示最近 {{count}} 条记录",
+        "totalTokens": "总 token",
+        "inputShort": "输入",
+        "outputShort": "输出",
+        "cacheShort": "缓存",
+        "page": "第 {{current}} / {{total}} 页",
+        "prev": "上一页",
+        "next": "下一页",
+        "unknownModel": "未知模型",
+        "emptyForWindow": "当前时间范围内没有 token 消耗历史",
+        "input": "输入 {{value}}",
+        "output": "输出 {{value}}",
+        "cacheRead": "缓存读取 {{value}}",
+        "cacheWrite": "缓存写入 {{value}}",
+        "cost": "费用 ${{amount}}"
+    }
 }

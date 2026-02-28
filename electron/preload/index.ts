@@ -51,6 +51,7 @@ const electronAPI = {
         'settings:set',
         'settings:getAll',
         'settings:reset',
+        'usage:recentTokenHistory',
         // Update
         'update:status',
         'update:version',
