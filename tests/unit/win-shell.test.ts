@@ -67,6 +67,56 @@ describe('quoteForCmd', () => {
   });
 });
 
+describe('normalizeNodeRequirePathForNodeOptions', () => {
+  let normalizeNodeRequirePathForNodeOptions: (modulePath: string) => string;
+
+  beforeEach(async () => {
+    const mod = await import('@electron/utils/win-shell');
+    normalizeNodeRequirePathForNodeOptions = mod.normalizeNodeRequirePathForNodeOptions;
+  });
+
+  it('returns unchanged path on non-Windows', () => {
+    setPlatform('linux');
+    expect(normalizeNodeRequirePathForNodeOptions('C:\\Users\\70954\\AppData\\Roaming\\clawx\\gateway-fetch-preload.cjs'))
+      .toBe('C:\\Users\\70954\\AppData\\Roaming\\clawx\\gateway-fetch-preload.cjs');
+  });
+
+  it('converts Windows backslashes to forward slashes', () => {
+    setPlatform('win32');
+    expect(normalizeNodeRequirePathForNodeOptions('C:\\Users\\70954\\AppData\\Roaming\\clawx\\gateway-fetch-preload.cjs'))
+      .toBe('C:/Users/70954/AppData/Roaming/clawx/gateway-fetch-preload.cjs');
+  });
+});
+
+describe('appendNodeRequireToNodeOptions', () => {
+  let appendNodeRequireToNodeOptions: (nodeOptions: string | undefined, modulePath: string) => string;
+
+  beforeEach(async () => {
+    const mod = await import('@electron/utils/win-shell');
+    appendNodeRequireToNodeOptions = mod.appendNodeRequireToNodeOptions;
+  });
+
+  it('appends normalized quoted preload on Windows', () => {
+    setPlatform('win32');
+    expect(
+      appendNodeRequireToNodeOptions(
+        undefined,
+        'C:\\Users\\70954\\AppData\\Roaming\\clawx\\gateway-fetch-preload.cjs',
+      ),
+    ).toBe('--require "C:/Users/70954/AppData/Roaming/clawx/gateway-fetch-preload.cjs"');
+  });
+
+  it('preserves existing NODE_OPTIONS when appending preload', () => {
+    setPlatform('win32');
+    expect(
+      appendNodeRequireToNodeOptions(
+        '--disable-warning=ExperimentalWarning',
+        'C:\\Users\\John Doe\\AppData\\Roaming\\clawx\\gateway-fetch-preload.cjs',
+      ),
+    ).toBe('--disable-warning=ExperimentalWarning --require "C:/Users/John Doe/AppData/Roaming/clawx/gateway-fetch-preload.cjs"');
+  });
+});
+
 describe('needsWinShell', () => {
   let needsWinShell: (bin: string) => boolean;
 

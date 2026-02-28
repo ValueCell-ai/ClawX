@@ -63,3 +63,27 @@ export function prepareWinSpawn(
     args: args.map(a => quoteForCmd(a)),
   };
 }
+
+/**
+ * Normalize a module path for NODE_OPTIONS `--require` usage.
+ *
+ * Node parses NODE_OPTIONS using shell-like escaping rules. On Windows,
+ * a quoted path with backslashes (e.g. "C:\Users\...") loses separators
+ * because backslashes are interpreted as escapes. Using forward slashes
+ * keeps the absolute path intact while still being valid on Windows.
+ */
+export function normalizeNodeRequirePathForNodeOptions(modulePath: string): string {
+  if (process.platform !== 'win32') return modulePath;
+  return modulePath.replace(/\\/g, '/');
+}
+
+/**
+ * Append a `--require` preload module path to NODE_OPTIONS safely.
+ */
+export function appendNodeRequireToNodeOptions(
+  nodeOptions: string | undefined,
+  modulePath: string,
+): string {
+  const normalized = normalizeNodeRequirePathForNodeOptions(modulePath);
+  return `${nodeOptions ?? ''} --require "${normalized}"`.trim();
+}
