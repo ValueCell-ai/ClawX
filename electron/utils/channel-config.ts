@@ -85,6 +85,21 @@ export function saveChannelConfig(
 ): void {
     const currentConfig = readOpenClawConfig();
 
+    // DingTalk is a channel plugin; make sure it's explicitly allowed.
+    // Newer OpenClaw versions may not load non-bundled plugins when allowlist is empty.
+    if (channelType === 'dingtalk') {
+        if (!currentConfig.plugins) {
+            currentConfig.plugins = {};
+        }
+        currentConfig.plugins.enabled = true;
+        const allow = Array.isArray(currentConfig.plugins.allow)
+            ? currentConfig.plugins.allow as string[]
+            : [];
+        if (!allow.includes('dingtalk')) {
+            currentConfig.plugins.allow = [...allow, 'dingtalk'];
+        }
+    }
+
     // Plugin-based channels (e.g. WhatsApp) go under plugins.entries, not channels
     if (PLUGIN_CHANNELS.includes(channelType)) {
         if (!currentConfig.plugins) {

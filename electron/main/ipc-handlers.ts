@@ -6,6 +6,8 @@ import { ipcMain, BrowserWindow, shell, dialog, app, nativeImage } from 'electro
 import { existsSync, copyFileSync, statSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join, extname, basename } from 'node:path';
+import { exec as execCallback } from 'node:child_process';
+import { promisify } from 'node:util';
 import crypto from 'node:crypto';
 import { GatewayManager } from '../gateway/manager';
 import { ClawHubService, ClawHubSearchParams, ClawHubInstallParams, ClawHubUninstallParams } from '../gateway/clawhub';
@@ -49,6 +51,8 @@ import { updateSkillConfig, getSkillConfig, getAllSkillConfigs } from '../utils/
 import { whatsAppLoginManager } from '../utils/whatsapp-login';
 import { getProviderConfig } from '../utils/provider-registry';
 import { deviceOAuthManager, OAuthProviderType } from '../utils/device-oauth';
+
+const execAsync = promisify(execCallback);
 
 /**
  * For custom/ollama providers, derive a unique key for OpenClaw config files
@@ -606,6 +610,72 @@ function registerGatewayHandlers(
  * For checking package status and channel configuration
  */
 function registerOpenClawHandlers(): void {
+  function sanitizeDingTalkConfigForCliValidation(): void {
+    const configPath = join(homedir(), '.openclaw', 'openclaw.json');
+    if (!existsSync(configPath)) return;
+
+    try {
+      const config = JSON.parse(readFileSync(configPath, 'utf-8')) as Record<string, unknown>;
+      let modified = false;
+
+      const channels = (config.channels ?? {}) as Record<string, unknown>;
+      if (channels.dingtalk) {
+        delete channels.dingtalk;
+        config.channels = channels;
+        modified = true;
+      }
+
+      const plugins = (config.plugins ?? {}) as Record<string, unknown>;
+      const allow = Array.isArray(plugins.allow) ? (plugins.allow as string[]) : [];
+      const nextAllow = allow.filter((id) => id !== 'dingtalk');
+      if (nextAllow.length !== allow.length) {
+        plugins.allow = nextAllow;
+        config.plugins = plugins;
+        modified = true;
+      }
+
+      if (modified) {
+        writeFileSync(configPath, JSON.stringify(config, null, 2), 'utf-8');
+        logger.info('Temporarily removed dingtalk config/allow for OpenClaw CLI validation');
+      }
+    } catch (error) {
+      logger.warn('Failed to sanitize openclaw.json for DingTalk plugin install:', error);
+    }
+  }
+
+  async function ensureDingTalkPluginInstalled(): Promise<{ installed: boolean; warning?: string }> {
+    const cli = getOpenClawCliCommand();
+    sanitizeDingTalkConfigForCliValidation();
+
+    try {
+      const { stdout } = await execAsync(`${cli} plugins list`, {
+        timeout: 30000,
+        maxBuffer: 1024 * 1024,
+      });
+      if (/\bdingtalk\b/i.test(stdout)) {
+        logger.info('DingTalk plugin already installed');
+        return { installed: true };
+      }
+    } catch (error) {
+      logger.warn('Failed to check DingTalk plugin via "plugins list"; trying install directly.', error);
+    }
+
+    try {
+      logger.info('Installing OpenClaw DingTalk plugin: @soimy/dingtalk');
+      await execAsync(`${cli} plugins install @soimy/dingtalk`, {
+        timeout: 120000,
+        maxBuffer: 1024 * 1024 * 4,
+      });
+      logger.info('DingTalk plugin installed successfully');
+      return { installed: true };
+    } catch (error) {
+      logger.warn('Failed to auto-install DingTalk plugin:', error);
+      return {
+        installed: false,
+        warning: 'DingTalk plugin is not installed. Run: openclaw plugins install @soimy/dingtalk',
+      };
+    }
+  }
 
   // Get OpenClaw package status
   ipcMain.handle('openclaw:status', () => {
@@ -664,6 +734,21 @@ function registerOpenClawHandlers(): void {
   ipcMain.handle('channel:saveConfig', async (_, channelType: string, config: Record<string, unknown>) => {
     try {
       logger.info('channel:saveConfig', { channelType, keys: Object.keys(config || {}) });
+      if (channelType === 'dingtalk') {
+        const installResult = await ensureDingTalkPluginInstalled();
+        if (!installResult.installed) {
+          return {
+            success: false,
+            error: installResult.warning || 'DingTalk plugin install failed',
+          };
+        }
+        saveChannelConfig(channelType, config);
+        return {
+          success: true,
+          pluginInstalled: installResult.installed,
+          warning: installResult.warning,
+        };
+      }
       saveChannelConfig(channelType, config);
       return { success: true };
     } catch (error) {
