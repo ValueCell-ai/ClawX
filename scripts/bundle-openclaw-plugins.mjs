@@ -20,6 +20,17 @@ const ROOT = path.resolve(__dirname, '..');
 const OUTPUT_ROOT = path.join(ROOT, 'build', 'openclaw-plugins');
 const NODE_MODULES = path.join(ROOT, 'node_modules');
 
+// On Windows, pnpm virtual store paths can exceed MAX_PATH (260 chars).
+// Adding \\?\ prefix bypasses the limit for Win32 fs calls.
+// Node.js 18.17+ also handles this transparently when LongPathsEnabled=1,
+// but this is an extra safety net for build machines where the registry key
+// may not be set yet.
+function normWin(p) {
+  if (process.platform !== 'win32') return p;
+  if (p.startsWith('\\\\?\\')) return p;
+  return '\\\\?\\' + p.replace(/\//g, '\\');
+}
+
 const PLUGINS = [
   { npmName: '@soimy/dingtalk', pluginId: 'dingtalk' },
 ];
@@ -35,18 +46,19 @@ function getVirtualStoreNodeModules(realPkgPath) {
 
 function listPackages(nodeModulesDir) {
   const result = [];
-  if (!fs.existsSync(nodeModulesDir)) return result;
+  const nDir = normWin(nodeModulesDir);
+  if (!fs.existsSync(nDir)) return result;
 
-  for (const entry of fs.readdirSync(nodeModulesDir)) {
+  for (const entry of fs.readdirSync(nDir)) {
     if (entry === '.bin') continue;
+    // Use original (non-normWin) path so callers can call
+    // getVirtualStoreNodeModules() on fullPath correctly.
     const entryPath = path.join(nodeModulesDir, entry);
-    const stat = fs.lstatSync(entryPath);
 
     if (entry.startsWith('@')) {
-      if (!(stat.isDirectory() || stat.isSymbolicLink())) continue;
       let scopeEntries = [];
       try {
-        scopeEntries = fs.readdirSync(entryPath);
+        scopeEntries = fs.readdirSync(normWin(entryPath));
       } catch {
         continue;
       }
@@ -69,7 +81,7 @@ function bundleOnePlugin({ npmName, pluginId }) {
     throw new Error(`Missing dependency "${npmName}". Run pnpm install first.`);
   }
 
-  const realPluginPath = fs.realpathSync(pkgPath);
+  const realPluginPath = fs.realpathSync(normWin(pkgPath));
   const outputDir = path.join(OUTPUT_ROOT, pluginId);
 
   echo`📦 Bundling plugin ${npmName} -> ${outputDir}`;
@@ -109,7 +121,7 @@ function bundleOnePlugin({ npmName, pluginId }) {
 
       let realPath;
       try {
-        realPath = fs.realpathSync(fullPath);
+        realPath = fs.realpathSync(normWin(fullPath));
       } catch {
         continue;
       }
@@ -140,8 +152,8 @@ function bundleOnePlugin({ npmName, pluginId }) {
 
     const dest = path.join(outputNodeModules, pkgName);
     try {
-      fs.mkdirSync(path.dirname(dest), { recursive: true });
-      fs.cpSync(realPath, dest, { recursive: true, dereference: true });
+      fs.mkdirSync(normWin(path.dirname(dest)), { recursive: true });
+      fs.cpSync(normWin(realPath), normWin(dest), { recursive: true, dereference: true });
       copiedCount++;
     } catch (err) {
       echo`   ⚠️  Skipped ${pkgName}: ${err.message}`;

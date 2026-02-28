@@ -22,6 +22,13 @@ const ROOT = path.resolve(__dirname, '..');
 const OUTPUT = path.join(ROOT, 'build', 'openclaw');
 const NODE_MODULES = path.join(ROOT, 'node_modules');
 
+// On Windows, pnpm virtual store paths can exceed MAX_PATH (260 chars).
+function normWin(p) {
+  if (process.platform !== 'win32') return p;
+  if (p.startsWith('\\\\?\\')) return p;
+  return '\\\\?\\' + p.replace(/\//g, '\\');
+}
+
 echo`📦 Bundling openclaw for electron-builder...`;
 
 // 1. Resolve the real path of node_modules/openclaw (follows pnpm symlink)
@@ -31,7 +38,7 @@ if (!fs.existsSync(openclawLink)) {
   process.exit(1);
 }
 
-const openclawReal = fs.realpathSync(openclawLink);
+const openclawReal = fs.realpathSync(normWin(openclawLink));
 echo`   openclaw resolved: ${openclawReal}`;
 
 // 2. Clean and create output directory
@@ -85,30 +92,26 @@ function getVirtualStoreNodeModules(realPkgPath) {
  */
 function listPackages(nodeModulesDir) {
   const result = [];
-  if (!fs.existsSync(nodeModulesDir)) return result;
+  const nDir = normWin(nodeModulesDir);
+  if (!fs.existsSync(nDir)) return result;
 
-  for (const entry of fs.readdirSync(nodeModulesDir)) {
+  for (const entry of fs.readdirSync(nDir)) {
     if (entry === '.bin') continue;
-
+    // Use original (non-normWin) path so callers can call
+    // getVirtualStoreNodeModules() on fullPath correctly.
     const entryPath = path.join(nodeModulesDir, entry);
-    const stat = fs.lstatSync(entryPath);
 
     if (entry.startsWith('@')) {
-      // Scoped package: read sub-entries
-      if (stat.isDirectory() || stat.isSymbolicLink()) {
-        const resolvedScope = stat.isSymbolicLink() ? fs.realpathSync(entryPath) : entryPath;
-        // Check if this is actually a scoped directory or a package
-        try {
-          const scopeEntries = fs.readdirSync(entryPath);
-          for (const sub of scopeEntries) {
-            result.push({
-              name: `${entry}/${sub}`,
-              fullPath: path.join(entryPath, sub),
-            });
-          }
-        } catch {
-          // Not a directory, skip
+      try {
+        const scopeEntries = fs.readdirSync(normWin(entryPath));
+        for (const sub of scopeEntries) {
+          result.push({
+            name: `${entry}/${sub}`,
+            fullPath: path.join(entryPath, sub),
+          });
         }
+      } catch {
+        // Not a directory, skip
       }
     } else {
       result.push({ name: entry, fullPath: entryPath });
@@ -149,7 +152,7 @@ while (queue.length > 0) {
 
     let realPath;
     try {
-      realPath = fs.realpathSync(fullPath);
+      realPath = fs.realpathSync(normWin(fullPath));
     } catch {
       continue; // broken symlink, skip
     }
@@ -194,9 +197,8 @@ for (const [realPath, pkgName] of collected) {
   const dest = path.join(outputNodeModules, pkgName);
 
   try {
-    // Ensure parent directory exists (for scoped packages like @clack/core)
-    fs.mkdirSync(path.dirname(dest), { recursive: true });
-    fs.cpSync(realPath, dest, { recursive: true, dereference: true });
+    fs.mkdirSync(normWin(path.dirname(dest)), { recursive: true });
+    fs.cpSync(normWin(realPath), normWin(dest), { recursive: true, dereference: true });
     copiedCount++;
   } catch (err) {
     echo`   ⚠️  Skipped ${pkgName}: ${err.message}`;
