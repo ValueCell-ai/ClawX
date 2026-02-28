@@ -149,6 +149,8 @@ exports.default = async function afterPack(context) {
 
   const openclawRoot = join(resourcesDir, 'openclaw');
   const dest = join(openclawRoot, 'node_modules');
+  const pluginsSrcRoot = join(__dirname, '..', 'build', 'openclaw-plugins');
+  const pluginsDestRoot = join(resourcesDir, 'openclaw-plugins');
 
   if (!existsSync(src)) {
     console.warn('[after-pack] ⚠️  build/openclaw/node_modules not found. Run bundle-openclaw first.');
@@ -163,6 +165,29 @@ exports.default = async function afterPack(context) {
   console.log(`[after-pack] Copying ${depCount} openclaw dependencies to ${dest} ...`);
   cpSync(src, dest, { recursive: true });
   console.log('[after-pack] ✅ openclaw node_modules copied.');
+
+  // 1.1 Copy plugin node_modules (also skipped due to .gitignore)
+  if (existsSync(pluginsSrcRoot) && existsSync(pluginsDestRoot)) {
+    const pluginDirs = readdirSync(pluginsSrcRoot, { withFileTypes: true })
+      .filter((d) => d.isDirectory())
+      .map((d) => d.name);
+
+    for (const pluginId of pluginDirs) {
+      const pluginSrcNM = join(pluginsSrcRoot, pluginId, 'node_modules');
+      const pluginDestRoot = join(pluginsDestRoot, pluginId);
+      const pluginDestNM = join(pluginDestRoot, 'node_modules');
+      if (!existsSync(pluginSrcNM) || !existsSync(pluginDestRoot)) continue;
+
+      console.log(`[after-pack] Copying plugin deps for ${pluginId} -> ${pluginDestNM}`);
+      cpSync(pluginSrcNM, pluginDestNM, { recursive: true });
+
+      // Apply the same cleanup strategy for plugin bundles.
+      cleanupUnnecessaryFiles(pluginDestRoot);
+      cleanupKoffi(pluginDestNM, platform, arch);
+      cleanupNativePlatformPackages(pluginDestNM, platform, arch);
+    }
+    console.log('[after-pack] ✅ openclaw plugin node_modules copied.');
+  }
 
   // 2. General cleanup on the full openclaw directory (not just node_modules)
   console.log('[after-pack] 🧹 Cleaning up unnecessary files ...');

@@ -3,11 +3,9 @@
  * Registers all IPC handlers for main-renderer communication
  */
 import { ipcMain, BrowserWindow, shell, dialog, app, nativeImage } from 'electron';
-import { existsSync, copyFileSync, statSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs';
+import { existsSync, copyFileSync, statSync, readFileSync, writeFileSync, mkdirSync, cpSync, rmSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join, extname, basename } from 'node:path';
-import { exec as execCallback } from 'node:child_process';
-import { promisify } from 'node:util';
 import crypto from 'node:crypto';
 import { GatewayManager } from '../gateway/manager';
 import { ClawHubService, ClawHubSearchParams, ClawHubInstallParams, ClawHubUninstallParams } from '../gateway/clawhub';
@@ -51,8 +49,6 @@ import { updateSkillConfig, getSkillConfig, getAllSkillConfigs } from '../utils/
 import { whatsAppLoginManager } from '../utils/whatsapp-login';
 import { getProviderConfig } from '../utils/provider-registry';
 import { deviceOAuthManager, OAuthProviderType } from '../utils/device-oauth';
-
-const execAsync = promisify(execCallback);
 
 /**
  * For custom/ollama providers, derive a unique key for OpenClaw config files
@@ -610,69 +606,47 @@ function registerGatewayHandlers(
  * For checking package status and channel configuration
  */
 function registerOpenClawHandlers(): void {
-  function sanitizeDingTalkConfigForCliValidation(): void {
-    const configPath = join(homedir(), '.openclaw', 'openclaw.json');
-    if (!existsSync(configPath)) return;
-
-    try {
-      const config = JSON.parse(readFileSync(configPath, 'utf-8')) as Record<string, unknown>;
-      let modified = false;
-
-      const channels = (config.channels ?? {}) as Record<string, unknown>;
-      if (channels.dingtalk) {
-        delete channels.dingtalk;
-        config.channels = channels;
-        modified = true;
-      }
-
-      const plugins = (config.plugins ?? {}) as Record<string, unknown>;
-      const allow = Array.isArray(plugins.allow) ? (plugins.allow as string[]) : [];
-      const nextAllow = allow.filter((id) => id !== 'dingtalk');
-      if (nextAllow.length !== allow.length) {
-        plugins.allow = nextAllow;
-        config.plugins = plugins;
-        modified = true;
-      }
-
-      if (modified) {
-        writeFileSync(configPath, JSON.stringify(config, null, 2), 'utf-8');
-        logger.info('Temporarily removed dingtalk config/allow for OpenClaw CLI validation');
-      }
-    } catch (error) {
-      logger.warn('Failed to sanitize openclaw.json for DingTalk plugin install:', error);
-    }
-  }
-
   async function ensureDingTalkPluginInstalled(): Promise<{ installed: boolean; warning?: string }> {
-    const cli = getOpenClawCliCommand();
-    sanitizeDingTalkConfigForCliValidation();
+    const targetDir = join(homedir(), '.openclaw', 'extensions', 'dingtalk');
+    const targetManifest = join(targetDir, 'openclaw.plugin.json');
 
-    try {
-      const { stdout } = await execAsync(`${cli} plugins list`, {
-        timeout: 30000,
-        maxBuffer: 1024 * 1024,
-      });
-      if (/\bdingtalk\b/i.test(stdout)) {
-        logger.info('DingTalk plugin already installed');
-        return { installed: true };
-      }
-    } catch (error) {
-      logger.warn('Failed to check DingTalk plugin via "plugins list"; trying install directly.', error);
+    if (existsSync(targetManifest)) {
+      logger.info('DingTalk plugin already installed from local mirror');
+      return { installed: true };
     }
 
-    try {
-      logger.info('Installing OpenClaw DingTalk plugin: @soimy/dingtalk');
-      await execAsync(`${cli} plugins install @soimy/dingtalk`, {
-        timeout: 120000,
-        maxBuffer: 1024 * 1024 * 4,
-      });
-      logger.info('DingTalk plugin installed successfully');
-      return { installed: true };
-    } catch (error) {
-      logger.warn('Failed to auto-install DingTalk plugin:', error);
+    const candidateSources = app.isPackaged
+      ? [join(process.resourcesPath, 'openclaw-plugins', 'dingtalk')]
+      : [
+          join(app.getAppPath(), 'build', 'openclaw-plugins', 'dingtalk'),
+          join(process.cwd(), 'build', 'openclaw-plugins', 'dingtalk'),
+          join(__dirname, '../../build/openclaw-plugins/dingtalk'),
+        ];
+
+    const sourceDir = candidateSources.find((dir) => existsSync(join(dir, 'openclaw.plugin.json')));
+    if (!sourceDir) {
       return {
         installed: false,
-        warning: 'DingTalk plugin is not installed. Run: openclaw plugins install @soimy/dingtalk',
+        warning: 'Bundled DingTalk plugin mirror not found. Run: pnpm run bundle:openclaw-plugins',
+      };
+    }
+
+    try {
+      mkdirSync(join(homedir(), '.openclaw', 'extensions'), { recursive: true });
+      rmSync(targetDir, { recursive: true, force: true });
+      cpSync(sourceDir, targetDir, { recursive: true, dereference: true });
+
+      if (!existsSync(targetManifest)) {
+        return { installed: false, warning: 'Failed to install DingTalk plugin mirror (manifest missing).' };
+      }
+
+      logger.info(`Installed DingTalk plugin from bundled mirror: ${sourceDir}`);
+      return { installed: true };
+    } catch (error) {
+      logger.warn('Failed to install DingTalk plugin from bundled mirror:', error);
+      return {
+        installed: false,
+        warning: 'Failed to install bundled DingTalk plugin mirror',
       };
     }
   }
