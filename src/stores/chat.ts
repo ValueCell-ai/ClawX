@@ -1305,7 +1305,11 @@ export const useChatStore = create<ChatState>((set, get) => ({
   handleChatEvent: (event: Record<string, unknown>) => {
     const runId = String(event.runId || '');
     const eventState = String(event.state || '');
-    const { activeRunId } = get();
+    const eventSessionKey = event.sessionKey != null ? String(event.sessionKey) : null;
+    const { activeRunId, currentSessionKey } = get();
+
+    // Only process events for the current session (when sessionKey is present)
+    if (eventSessionKey != null && eventSessionKey !== currentSessionKey) return;
 
     // Only process events for the active run (or if no active run set)
     if (activeRunId && runId && runId !== activeRunId) return;
@@ -1332,9 +1336,23 @@ export const useChatStore = create<ChatState>((set, get) => ({
       || resolvedState === 'error' || resolvedState === 'aborted';
     if (hasUsefulData) {
       clearHistoryPoll();
+      // Adopt run started from another client (e.g. console at 127.0.0.1:18789):
+      // show loading/streaming in the app when this session has an active run.
+      const { sending } = get();
+      if (!sending && runId) {
+        set({ sending: true, activeRunId: runId, error: null });
+      }
     }
 
     switch (resolvedState) {
+      case 'started': {
+        // Run just started (e.g. from console); show loading immediately.
+        const { sending: currentSending } = get();
+        if (!currentSending && runId) {
+          set({ sending: true, activeRunId: runId, error: null });
+        }
+        break;
+      }
       case 'delta': {
         // If we're receiving new deltas, the Gateway has recovered from any
         // prior error — cancel the error finalization timer and clear the

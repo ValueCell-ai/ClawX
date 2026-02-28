@@ -110,7 +110,7 @@ export function Chat() {
       {/* Messages Area */}
       <div className="flex-1 overflow-y-auto px-4 py-4">
         <div className="max-w-4xl mx-auto space-y-4">
-          {loading ? (
+          {loading && !sending ? (
             <div className="flex h-full items-center justify-center py-20">
               <LoadingSpinner size="lg" />
             </div>

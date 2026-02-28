@@ -94,6 +94,21 @@ export const useGatewayStore = create<GatewayState>((set, get) => ({
               .catch(() => {});
           }
 
+          // When a run starts (e.g. user clicked Send on console), show loading in the app immediately.
+          const runId = p.runId ?? data.runId;
+          const sessionKey = p.sessionKey ?? data.sessionKey;
+          if (phase === 'started' && runId != null && sessionKey != null) {
+            import('./chat')
+              .then(({ useChatStore }) => {
+                useChatStore.getState().handleChatEvent({
+                  state: 'started',
+                  runId,
+                  sessionKey,
+                });
+              })
+              .catch(() => {});
+          }
+
           // When the agent run completes, reload history to get the final response.
           if (phase === 'completed' || phase === 'done' || phase === 'finished' || phase === 'end') {
             import('./chat')
