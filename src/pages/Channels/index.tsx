@@ -572,11 +572,12 @@ function AddChannelDialog({ selectedType, onSelectType, onClose, onChannelAdded 
       const config: Record<string, unknown> = { ...configValues };
       const saveResult = await window.electron.ipcRenderer.invoke('channel:saveConfig', selectedType, config) as {
         success?: boolean;
+        error?: string;
         warning?: string;
         pluginInstalled?: boolean;
       };
       if (!saveResult?.success) {
-        throw new Error('Failed to save channel config');
+        throw new Error(saveResult?.error || 'Failed to save channel config');
       }
       if (typeof saveResult.warning === 'string' && saveResult.warning) {
         toast.warning(saveResult.warning);

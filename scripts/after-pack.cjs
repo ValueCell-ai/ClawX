@@ -19,8 +19,8 @@
  *      @mariozechner/clipboard).
  */
 
-const { cpSync, existsSync, readdirSync, rmSync, statSync } = require('fs');
-const { join } = require('path');
+const { cpSync, existsSync, readdirSync, rmSync, statSync, mkdirSync, realpathSync } = require('fs');
+const { join, dirname, basename } = require('path');
 
 // ── Arch helpers ─────────────────────────────────────────────────────────────
 // electron-builder Arch enum: 0=ia32, 1=x64, 2=armv7l, 3=arm64, 4=universal
@@ -128,6 +128,118 @@ function cleanupNativePlatformPackages(nodeModulesDir, platform, arch) {
   return removed;
 }
 
+// ── Plugin bundler ───────────────────────────────────────────────────────────
+// Bundles a single OpenClaw plugin (and its transitive deps) from node_modules
+// directly into the packaged resources directory.  Mirrors the logic in
+// bundle-openclaw-plugins.mjs so the packaged app is self-contained even when
+// build/openclaw-plugins/ was not pre-generated.
+
+function getVirtualStoreNodeModules(realPkgPath) {
+  let dir = realPkgPath;
+  while (dir !== dirname(dir)) {
+    if (basename(dir) === 'node_modules') return dir;
+    dir = dirname(dir);
+  }
+  return null;
+}
+
+function listPkgs(nodeModulesDir) {
+  const result = [];
+  if (!existsSync(nodeModulesDir)) return result;
+  for (const entry of readdirSync(nodeModulesDir)) {
+    if (entry === '.bin') continue;
+    const fullPath = join(nodeModulesDir, entry);
+    let st;
+    try { st = statSync(fullPath); } catch { continue; }
+    if (entry.startsWith('@')) {
+      let subs;
+      try { subs = readdirSync(fullPath); } catch { continue; }
+      for (const sub of subs) {
+        result.push({ name: `${entry}/${sub}`, fullPath: join(fullPath, sub) });
+      }
+    } else {
+      result.push({ name: entry, fullPath });
+    }
+  }
+  return result;
+}
+
+function bundlePlugin(nodeModulesRoot, npmName, destDir) {
+  const pkgPath = join(nodeModulesRoot, ...npmName.split('/'));
+  if (!existsSync(pkgPath)) {
+    console.warn(`[after-pack] ⚠️  Plugin package not found: ${pkgPath}. Run pnpm install.`);
+    return false;
+  }
+
+  let realPluginPath;
+  try { realPluginPath = realpathSync(pkgPath); } catch { realPluginPath = pkgPath; }
+
+  // Copy plugin package itself
+  if (existsSync(destDir)) rmSync(destDir, { recursive: true, force: true });
+  mkdirSync(destDir, { recursive: true });
+  cpSync(realPluginPath, destDir, { recursive: true, dereference: true });
+
+  // Collect transitive deps via pnpm virtual store BFS
+  const collected = new Map();
+  const queue = [];
+
+  const rootVirtualNM = getVirtualStoreNodeModules(realPluginPath);
+  if (!rootVirtualNM) {
+    console.warn(`[after-pack] ⚠️  Could not find virtual store for ${npmName}, skipping deps.`);
+    return true;
+  }
+  queue.push({ nodeModulesDir: rootVirtualNM, skipPkg: npmName });
+
+  // Read peerDependencies from the plugin's package.json so we don't bundle
+  // packages that are provided by the host environment (e.g. openclaw itself).
+  const SKIP_PACKAGES = new Set(['typescript', '@playwright/test']);
+  const SKIP_SCOPES = ['@types/'];
+  try {
+    const pluginPkg = JSON.parse(
+      require('fs').readFileSync(join(destDir, 'package.json'), 'utf8')
+    );
+    for (const peer of Object.keys(pluginPkg.peerDependencies || {})) {
+      SKIP_PACKAGES.add(peer);
+    }
+  } catch { /* ignore */ }
+
+  while (queue.length > 0) {
+    const { nodeModulesDir, skipPkg } = queue.shift();
+    for (const { name, fullPath } of listPkgs(nodeModulesDir)) {
+      if (name === skipPkg) continue;
+      if (SKIP_PACKAGES.has(name) || SKIP_SCOPES.some(s => name.startsWith(s))) continue;
+      let rp;
+      try { rp = realpathSync(fullPath); } catch { continue; }
+      if (collected.has(rp)) continue;
+      collected.set(rp, name);
+      const depVirtualNM = getVirtualStoreNodeModules(rp);
+      if (depVirtualNM && depVirtualNM !== nodeModulesDir) {
+        queue.push({ nodeModulesDir: depVirtualNM, skipPkg: name });
+      }
+    }
+  }
+
+  // Copy flattened deps into destDir/node_modules
+  const destNM = join(destDir, 'node_modules');
+  mkdirSync(destNM, { recursive: true });
+  const copiedNames = new Set();
+  let count = 0;
+  for (const [rp, pkgName] of collected) {
+    if (copiedNames.has(pkgName)) continue;
+    copiedNames.add(pkgName);
+    const d = join(destNM, pkgName);
+    try {
+      mkdirSync(dirname(d), { recursive: true });
+      cpSync(rp, d, { recursive: true, dereference: true });
+      count++;
+    } catch (e) {
+      console.warn(`[after-pack]   Skipped dep ${pkgName}: ${e.message}`);
+    }
+  }
+  console.log(`[after-pack] ✅ Plugin ${npmName}: copied ${count} deps to ${destDir}`);
+  return true;
+}
+
 // ── Main hook ────────────────────────────────────────────────────────────────
 
 exports.default = async function afterPack(context) {
@@ -149,7 +261,7 @@ exports.default = async function afterPack(context) {
 
   const openclawRoot = join(resourcesDir, 'openclaw');
   const dest = join(openclawRoot, 'node_modules');
-  const pluginsSrcRoot = join(__dirname, '..', 'build', 'openclaw-plugins');
+  const nodeModulesRoot = join(__dirname, '..', 'node_modules');
   const pluginsDestRoot = join(resourcesDir, 'openclaw-plugins');
 
   if (!existsSync(src)) {
@@ -166,27 +278,28 @@ exports.default = async function afterPack(context) {
   cpSync(src, dest, { recursive: true });
   console.log('[after-pack] ✅ openclaw node_modules copied.');
 
-  // 1.1 Copy plugin node_modules (also skipped due to .gitignore)
-  if (existsSync(pluginsSrcRoot) && existsSync(pluginsDestRoot)) {
-    const pluginDirs = readdirSync(pluginsSrcRoot, { withFileTypes: true })
-      .filter((d) => d.isDirectory())
-      .map((d) => d.name);
+  // 1.1 Bundle OpenClaw plugins directly from node_modules into packaged resources.
+  //     This is intentionally done in afterPack (not extraResources) because:
+  //     - electron-builder silently skips extraResources entries whose source
+  //       directory doesn't exist (build/openclaw-plugins/ may not be pre-generated)
+  //     - node_modules/ is excluded by .gitignore so the deps copy must be manual
+  const BUNDLED_PLUGINS = [
+    { npmName: '@soimy/dingtalk', pluginId: 'dingtalk' },
+  ];
 
-    for (const pluginId of pluginDirs) {
-      const pluginSrcNM = join(pluginsSrcRoot, pluginId, 'node_modules');
-      const pluginDestRoot = join(pluginsDestRoot, pluginId);
-      const pluginDestNM = join(pluginDestRoot, 'node_modules');
-      if (!existsSync(pluginSrcNM) || !existsSync(pluginDestRoot)) continue;
-
-      console.log(`[after-pack] Copying plugin deps for ${pluginId} -> ${pluginDestNM}`);
-      cpSync(pluginSrcNM, pluginDestNM, { recursive: true });
-
-      // Apply the same cleanup strategy for plugin bundles.
-      cleanupUnnecessaryFiles(pluginDestRoot);
-      cleanupKoffi(pluginDestNM, platform, arch);
-      cleanupNativePlatformPackages(pluginDestNM, platform, arch);
+  mkdirSync(pluginsDestRoot, { recursive: true });
+  for (const { npmName, pluginId } of BUNDLED_PLUGINS) {
+    const pluginDestDir = join(pluginsDestRoot, pluginId);
+    console.log(`[after-pack] Bundling plugin ${npmName} -> ${pluginDestDir}`);
+    const ok = bundlePlugin(nodeModulesRoot, npmName, pluginDestDir);
+    if (ok) {
+      const pluginNM = join(pluginDestDir, 'node_modules');
+      cleanupUnnecessaryFiles(pluginDestDir);
+      if (existsSync(pluginNM)) {
+        cleanupKoffi(pluginNM, platform, arch);
+        cleanupNativePlatformPackages(pluginNM, platform, arch);
+      }
     }
-    console.log('[after-pack] ✅ openclaw plugin node_modules copied.');
   }
 
   // 2. General cleanup on the full openclaw directory (not just node_modules)

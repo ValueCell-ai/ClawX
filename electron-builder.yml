@@ -26,9 +26,9 @@ extraResources:
   # because electron-builder respects .gitignore which excludes node_modules/)
   - from: build/openclaw/
     to: openclaw/
-  # Bundled OpenClaw plugin mirrors (dingtalk, etc.)
-  - from: build/openclaw-plugins/
-    to: openclaw-plugins/
+  # NOTE: OpenClaw plugin mirrors (dingtalk, etc.) are bundled by the
+  # afterPack hook (after-pack.cjs) directly from node_modules, so they
+  # don't need an extraResources entry here.
 
 afterPack: ./scripts/after-pack.cjs
 
