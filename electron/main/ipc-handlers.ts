@@ -621,7 +621,7 @@ function registerOpenClawHandlers(gatewayManager: GatewayManager): void {
       ? [join(process.resourcesPath, 'openclaw-plugins', 'dingtalk')]
       : [
           join(app.getAppPath(), 'build', 'openclaw-plugins', 'dingtalk'),
-          join(process.cwd(), 'build/openclaw-plugins', 'dingtalk'),
+          join(process.cwd(), 'build', 'openclaw-plugins', 'dingtalk'),
           join(__dirname, '../../build/openclaw-plugins/dingtalk'),
         ];
 
