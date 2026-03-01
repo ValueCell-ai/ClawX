@@ -31,7 +31,8 @@ import {
   buildDeviceAuthPayload,
   type DeviceIdentity,
 } from '../utils/device-identity';
-import { syncGatewayTokenToConfig, syncBrowserConfigToOpenClaw } from '../utils/openclaw-auth';
+import { syncGatewayTokenToConfig, syncBrowserConfigToOpenClaw, sanitizeOpenClawConfig } from '../utils/openclaw-auth';
+import { shouldAttemptConfigAutoRepair } from './startup-recovery';
 
 /**
  * Gateway connection status
@@ -176,6 +177,7 @@ export class GatewayManager extends EventEmitter {
   private shouldReconnect = true;
   private startLock = false;
   private lastSpawnSummary: string | null = null;
+  private recentStartupStderrLines: string[] = [];
   private pendingRequests: Map<string, {
     resolve: (value: unknown) => void;
     reject: (error: Error) => void;
@@ -232,6 +234,16 @@ export class GatewayManager extends EventEmitter {
 
     return { level: 'warn', normalized: msg };
   }
+
+  private recordStartupStderrLine(line: string): void {
+    const normalized = line.trim();
+    if (!normalized) return;
+    this.recentStartupStderrLines.push(normalized);
+    const MAX_STDERR_LINES = 120;
+    if (this.recentStartupStderrLines.length > MAX_STDERR_LINES) {
+      this.recentStartupStderrLines.splice(0, this.recentStartupStderrLines.length - MAX_STDERR_LINES);
+    }
+  }
   
   /**
    * Get current Gateway status
@@ -279,48 +291,69 @@ export class GatewayManager extends EventEmitter {
 
     this.reconnectAttempts = 0;
     this.setStatus({ state: 'starting', reconnectAttempts: 0 });
+    let configRepairAttempted = false;
+
+    // Check if Python environment is ready (self-healing) asynchronously.
+    // Fire-and-forget: only needs to run once, not on every retry.
+    void isPythonReady().then(pythonReady => {
+      if (!pythonReady) {
+        logger.info('Python environment missing or incomplete, attempting background repair...');
+        void setupManagedPython().catch(err => {
+          logger.error('Background Python repair failed:', err);
+        });
+      }
+    }).catch(err => {
+      logger.error('Failed to check Python environment:', err);
+    });
     
     try {
-      // Check if Python environment is ready (self-healing) asynchronously
-      void isPythonReady().then(pythonReady => {
-        if (!pythonReady) {
-          logger.info('Python environment missing or incomplete, attempting background repair...');
-          // We don't await this to avoid blocking Gateway startup, 
-          // as uv run will handle it if needed, but this pre-warms it.
-          void setupManagedPython().catch(err => {
-            logger.error('Background Python repair failed:', err);
-          });
+      while (true) {
+        this.recentStartupStderrLines = [];
+        try {
+          // Check if Gateway is already running
+          logger.debug('Checking for existing Gateway...');
+          const existing = await this.findExistingGateway();
+          if (existing) {
+            logger.debug(`Found existing Gateway on port ${existing.port}`);
+            await this.connect(existing.port, existing.externalToken);
+            this.ownsProcess = false;
+            this.setStatus({ pid: undefined });
+            this.startHealthCheck();
+            return;
+          }
+          
+          logger.debug('No existing Gateway found, starting new process...');
+          
+          // Start new Gateway process
+          await this.startProcess();
+          
+          // Wait for Gateway to be ready
+          await this.waitForReady();
+          
+          // Connect WebSocket
+          await this.connect(this.status.port);
+          
+          // Start health monitoring
+          this.startHealthCheck();
+          logger.debug('Gateway started successfully');
+          return;
+        } catch (error) {
+          if (shouldAttemptConfigAutoRepair(error, this.recentStartupStderrLines, configRepairAttempted)) {
+            configRepairAttempted = true;
+            logger.warn(
+              'Detected invalid OpenClaw config during Gateway startup; running doctor repair before retry'
+            );
+            const repaired = await this.runOpenClawDoctorRepair();
+            if (repaired) {
+              logger.info('OpenClaw doctor repair completed; retrying Gateway startup');
+              this.setStatus({ state: 'starting', error: undefined, reconnectAttempts: 0 });
+              continue;
+            }
+            logger.error('OpenClaw doctor repair failed; not retrying Gateway startup');
+          }
+          throw error;
         }
-      }).catch(err => {
-        logger.error('Failed to check Python environment:', err);
-      });
-
-      // Check if Gateway is already running
-      logger.debug('Checking for existing Gateway...');
-      const existing = await this.findExistingGateway();
-      if (existing) {
-        logger.debug(`Found existing Gateway on port ${existing.port}`);
-        await this.connect(existing.port, existing.externalToken);
-        this.ownsProcess = false;
-        this.setStatus({ pid: undefined });
-        this.startHealthCheck();
-        return;
       }
-      
-      logger.debug('No existing Gateway found, starting new process...');
-      
-      // Start new Gateway process
-      await this.startProcess();
-      
-      // Wait for Gateway to be ready
-      await this.waitForReady();
-      
-      // Connect WebSocket
-      await this.connect(this.status.port);
-      
-      // Start health monitoring
-      this.startHealthCheck();
-      logger.debug('Gateway started successfully');
       
     } catch (error) {
       logger.error(
@@ -709,6 +742,115 @@ export class GatewayManager extends EventEmitter {
     
     return null;
   }
+
+  /**
+   * Attempt to repair invalid OpenClaw config using the built-in doctor command.
+   * Returns true when doctor exits successfully.
+   */
+  private async runOpenClawDoctorRepair(): Promise<boolean> {
+    const openclawDir = getOpenClawDir();
+    const entryScript = getOpenClawEntryPath();
+    if (!existsSync(entryScript)) {
+      logger.error(`Cannot run OpenClaw doctor repair: entry script not found at ${entryScript}`);
+      return false;
+    }
+
+    const platform = process.platform;
+    const arch = process.arch;
+    const target = `${platform}-${arch}`;
+    const binPath = app.isPackaged
+      ? path.join(process.resourcesPath, 'bin')
+      : path.join(process.cwd(), 'resources', 'bin', target);
+    const binPathExists = existsSync(binPath);
+    const finalPath = binPathExists
+      ? `${binPath}${path.delimiter}${process.env.PATH || ''}`
+      : process.env.PATH || '';
+
+    const uvEnv = await getUvMirrorEnv();
+    const command = app.isPackaged ? getNodeExecutablePath() : 'node';
+    const args = [entryScript, 'doctor', '--fix', '--yes', '--non-interactive'];
+    logger.info(
+      `Running OpenClaw doctor repair (command="${command}", args="${args.join(' ')}", cwd="${openclawDir}", bundledBin=${binPathExists ? 'yes' : 'no'})`
+    );
+
+    return new Promise<boolean>((resolve) => {
+      const spawnEnv: Record<string, string | undefined> = {
+        ...process.env,
+        PATH: finalPath,
+        ...uvEnv,
+      };
+
+      if (app.isPackaged) {
+        spawnEnv['ELECTRON_RUN_AS_NODE'] = '1';
+        spawnEnv['OPENCLAW_NO_RESPAWN'] = '1';
+        const existingNodeOpts = spawnEnv['NODE_OPTIONS'] ?? '';
+        if (!existingNodeOpts.includes('--disable-warning=ExperimentalWarning') &&
+            !existingNodeOpts.includes('--no-warnings')) {
+          spawnEnv['NODE_OPTIONS'] = `${existingNodeOpts} --disable-warning=ExperimentalWarning`.trim();
+        }
+      }
+
+      const child = spawn(command, args, {
+        cwd: openclawDir,
+        stdio: ['ignore', 'pipe', 'pipe'],
+        detached: false,
+        shell: false,
+        env: spawnEnv,
+      });
+
+      let settled = false;
+      const finish = (ok: boolean) => {
+        if (settled) return;
+        settled = true;
+        resolve(ok);
+      };
+
+      const timeout = setTimeout(() => {
+        logger.error('OpenClaw doctor repair timed out after 120000ms');
+        try {
+          child.kill('SIGTERM');
+        } catch {
+          // ignore
+        }
+        finish(false);
+      }, 120000);
+
+      child.on('error', (err) => {
+        clearTimeout(timeout);
+        logger.error('Failed to spawn OpenClaw doctor repair process:', err);
+        finish(false);
+      });
+
+      child.stdout?.on('data', (data) => {
+        const raw = data.toString();
+        for (const line of raw.split(/\r?\n/)) {
+          const normalized = line.trim();
+          if (!normalized) continue;
+          logger.debug(`[Gateway doctor stdout] ${normalized}`);
+        }
+      });
+
+      child.stderr?.on('data', (data) => {
+        const raw = data.toString();
+        for (const line of raw.split(/\r?\n/)) {
+          const normalized = line.trim();
+          if (!normalized) continue;
+          logger.warn(`[Gateway doctor stderr] ${normalized}`);
+        }
+      });
+
+      child.on('exit', (code, signal) => {
+        clearTimeout(timeout);
+        if (code === 0) {
+          logger.info('OpenClaw doctor repair completed successfully');
+          finish(true);
+          return;
+        }
+        logger.warn(`OpenClaw doctor repair exited (${this.formatExit(code, signal)})`);
+        finish(false);
+      });
+    });
+  }
   
   /**
    * Start Gateway process
@@ -730,6 +872,17 @@ export class GatewayManager extends EventEmitter {
     
     // Get or generate gateway token
     const gatewayToken = await getSetting('gatewayToken');
+
+    // Strip stale/invalid keys from openclaw.json that would cause the
+    // Gateway's strict config validation to reject the file on startup
+    // (e.g. `skills.enabled` left by an older version).
+    // This is a fast file-based pre-check; the reactive auto-repair
+    // mechanism (runOpenClawDoctorRepair) handles any remaining issues.
+    try {
+      await sanitizeOpenClawConfig();
+    } catch (err) {
+      logger.warn('Failed to sanitize openclaw.json:', err);
+    }
 
     // Write our token into openclaw.json before starting the process.
     // Without --dev the gateway authenticates using the token in
@@ -924,6 +1077,7 @@ export class GatewayManager extends EventEmitter {
       child.stderr?.on('data', (data) => {
         const raw = data.toString();
         for (const line of raw.split(/\r?\n/)) {
+          this.recordStartupStderrLine(line);
           const classified = this.classifyStderrMessage(line);
           if (classified.level === 'drop') continue;
           if (classified.level === 'debug') {

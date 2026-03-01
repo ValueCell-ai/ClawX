@@ -717,4 +717,51 @@ export async function updateAgentModelProvider(
   }
 }
 
+/**
+ * Sanitize ~/.openclaw/openclaw.json before Gateway start.
+ *
+ * Removes known-invalid keys that cause OpenClaw's strict Zod validation
+ * to reject the entire config on startup.  Uses a conservative **blocklist**
+ * approach: only strips keys that are KNOWN to be misplaced by older
+ * OpenClaw/ClawX versions or external tools.
+ *
+ * Why blocklist instead of allowlist?
+ *   • Allowlist (e.g. `VALID_SKILLS_KEYS`) would strip any NEW valid keys
+ *     added by future OpenClaw releases — a forward-compatibility hazard.
+ *   • Blocklist only removes keys we positively know are wrong, so new
+ *     valid keys are never touched.
+ *
+ * This is a fast, file-based pre-check.  For comprehensive repair of
+ * unknown or future config issues, the reactive auto-repair mechanism
+ * (`runOpenClawDoctorRepair`) runs `openclaw doctor --fix` as a fallback.
+ */
+export async function sanitizeOpenClawConfig(): Promise<void> {
+  const config = await readOpenClawJson();
+  let modified = false;
+
+  // ── skills section ──────────────────────────────────────────────
+  // OpenClaw's Zod schema uses .strict() on the skills object, accepting
+  // only: allowBundled, load, install, limits, entries.
+  // The key "enabled" belongs inside skills.entries[key].enabled, NOT at
+  // the skills root level.  Older versions may have placed it there.
+  const skills = config.skills;
+  if (skills && typeof skills === 'object' && !Array.isArray(skills)) {
+    const skillsObj = skills as Record<string, unknown>;
+    // Keys that are known to be invalid at the skills root level.
+    const KNOWN_INVALID_SKILLS_ROOT_KEYS = ['enabled', 'disabled'];
+    for (const key of KNOWN_INVALID_SKILLS_ROOT_KEYS) {
+      if (key in skillsObj) {
+        console.log(`[sanitize] Removing misplaced key "skills.${key}" from openclaw.json`);
+        delete skillsObj[key];
+        modified = true;
+      }
+    }
+  }
+
+  if (modified) {
+    await writeOpenClawJson(config);
+    console.log('[sanitize] openclaw.json sanitized successfully');
+  }
+}
+
 export { getProviderEnvVar } from './provider-registry';
