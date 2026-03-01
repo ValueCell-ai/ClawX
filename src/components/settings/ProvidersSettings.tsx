@@ -29,6 +29,7 @@ import {
   PROVIDER_TYPE_INFO,
   type ProviderType,
   getProviderIconUrl,
+  resolveProviderApiKeyForSave,
   shouldInvertInDark,
 } from '@/lib/providers';
 import { cn } from '@/lib/utils';
@@ -66,6 +67,7 @@ export function ProvidersSettings() {
     // Only custom supports multiple instances.
     // Built-in providers remain singleton by type.
     const id = type === 'custom' ? `custom-${crypto.randomUUID()}` : type;
+    const effectiveApiKey = resolveProviderApiKeyForSave(type, apiKey);
     try {
       await addProvider(
         {
@@ -76,7 +78,7 @@ export function ProvidersSettings() {
           model: options?.model,
           enabled: true,
         },
-        apiKey.trim() || undefined
+        effectiveApiKey
       );
 
       // Auto-set as default if no default is currently configured
@@ -259,6 +261,12 @@ function ProviderCard({
         if (Object.keys(updates).length > 0) {
           payload.updates = updates;
         }
+      }
+
+      // Keep Ollama key optional in UI, but persist a placeholder when
+      // editing legacy configs that have no stored key.
+      if (provider.type === 'ollama' && !provider.hasKey && !payload.newApiKey) {
+        payload.newApiKey = resolveProviderApiKeyForSave(provider.type, '') as string;
       }
 
       if (!payload.newApiKey && !payload.updates) {

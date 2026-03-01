@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { PROVIDER_TYPES, PROVIDER_TYPE_INFO } from '@/lib/providers';
+import { PROVIDER_TYPES, PROVIDER_TYPE_INFO, resolveProviderApiKeyForSave } from '@/lib/providers';
 import {
   BUILTIN_PROVIDER_TYPES,
   getProviderConfig,
@@ -52,5 +52,13 @@ describe('provider metadata', () => {
         }),
       ])
     );
+  });
+
+  it('normalizes provider API keys for save flow', () => {
+    expect(resolveProviderApiKeyForSave('ollama', '')).toBe('ollama-local');
+    expect(resolveProviderApiKeyForSave('ollama', '   ')).toBe('ollama-local');
+    expect(resolveProviderApiKeyForSave('ollama', 'real-key')).toBe('real-key');
+    expect(resolveProviderApiKeyForSave('openai', '')).toBeUndefined();
+    expect(resolveProviderApiKeyForSave('openai', ' sk-test ')).toBe('sk-test');
   });
 });

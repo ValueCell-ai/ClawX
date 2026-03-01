@@ -21,6 +21,8 @@ export const PROVIDER_TYPES = [
 ] as const;
 export type ProviderType = (typeof PROVIDER_TYPES)[number];
 
+export const OLLAMA_PLACEHOLDER_API_KEY = 'ollama-local';
+
 export interface ProviderConfig {
   id: string;
   name: string;
@@ -97,4 +99,13 @@ export const SETUP_PROVIDERS = PROVIDER_TYPE_INFO;
 /** Get type info by provider type id */
 export function getProviderTypeInfo(type: ProviderType): ProviderTypeInfo | undefined {
   return PROVIDER_TYPE_INFO.find((t) => t.id === type);
+}
+
+/** Normalize provider API key before saving; Ollama uses a local placeholder when blank. */
+export function resolveProviderApiKeyForSave(type: ProviderType | string, apiKey: string): string | undefined {
+  const trimmed = apiKey.trim();
+  if (type === 'ollama') {
+    return trimmed || OLLAMA_PLACEHOLDER_API_KEY;
+  }
+  return trimmed || undefined;
 }
