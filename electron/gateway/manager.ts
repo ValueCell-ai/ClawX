@@ -31,7 +31,7 @@ import {
   buildDeviceAuthPayload,
   type DeviceIdentity,
 } from '../utils/device-identity';
-import { syncGatewayTokenToConfig, syncBrowserConfigToOpenClaw } from '../utils/openclaw-auth';
+import { syncGatewayTokenToConfig, syncBrowserConfigToOpenClaw, sanitizeOpenClawConfig } from '../utils/openclaw-auth';
 
 /**
  * Gateway connection status
@@ -730,6 +730,15 @@ export class GatewayManager extends EventEmitter {
     
     // Get or generate gateway token
     const gatewayToken = await getSetting('gatewayToken');
+
+    // Strip stale/invalid keys from openclaw.json that would cause the
+    // Gateway's strict config validation to reject the file on startup
+    // (e.g. `skills.enabled` left by an older version).
+    try {
+      await sanitizeOpenClawConfig();
+    } catch (err) {
+      logger.warn('Failed to sanitize openclaw.json:', err);
+    }
 
     // Write our token into openclaw.json before starting the process.
     // Without --dev the gateway authenticates using the token in

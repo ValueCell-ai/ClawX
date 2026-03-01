@@ -717,4 +717,41 @@ export async function updateAgentModelProvider(
   }
 }
 
+/**
+ * Sanitize ~/.openclaw/openclaw.json before Gateway start.
+ *
+ * The OpenClaw config schema uses Zod `.strict()` validation on several
+ * sections, rejecting any keys not explicitly listed.  Stale or misplaced
+ * keys (e.g. `skills.enabled` at the top level instead of inside
+ * `skills.entries[key].enabled`) cause the Gateway to exit immediately
+ * with "Config invalid … Unrecognized key".
+ *
+ * This function strips known-invalid keys so the Gateway can start even
+ * when the config file was touched by an older version or a third-party
+ * tool.
+ */
+export async function sanitizeOpenClawConfig(): Promise<void> {
+  const config = await readOpenClawJson();
+  let modified = false;
+
+  // skills: only allowBundled, load, install, limits, entries are valid
+  const skills = config.skills;
+  if (skills && typeof skills === 'object' && !Array.isArray(skills)) {
+    const skillsObj = skills as Record<string, unknown>;
+    const VALID_SKILLS_KEYS = new Set(['allowBundled', 'load', 'install', 'limits', 'entries']);
+    for (const key of Object.keys(skillsObj)) {
+      if (!VALID_SKILLS_KEYS.has(key)) {
+        console.log(`[sanitize] Removing invalid key "skills.${key}" from openclaw.json`);
+        delete skillsObj[key];
+        modified = true;
+      }
+    }
+  }
+
+  if (modified) {
+    await writeOpenClawJson(config);
+    console.log('[sanitize] openclaw.json sanitized successfully');
+  }
+}
+
 export { getProviderEnvVar } from './provider-registry';
