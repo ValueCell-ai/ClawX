@@ -31,7 +31,7 @@ import {
   buildDeviceAuthPayload,
   type DeviceIdentity,
 } from '../utils/device-identity';
-import { syncGatewayTokenToConfig, syncBrowserConfigToOpenClaw } from '../utils/openclaw-auth';
+import { syncGatewayTokenToConfig, syncBrowserConfigToOpenClaw, sanitizeOpenClawConfig } from '../utils/openclaw-auth';
 import { shouldAttemptConfigAutoRepair } from './startup-recovery';
 
 /**
@@ -292,25 +292,24 @@ export class GatewayManager extends EventEmitter {
     this.reconnectAttempts = 0;
     this.setStatus({ state: 'starting', reconnectAttempts: 0 });
     let configRepairAttempted = false;
+
+    // Check if Python environment is ready (self-healing) asynchronously.
+    // Fire-and-forget: only needs to run once, not on every retry.
+    void isPythonReady().then(pythonReady => {
+      if (!pythonReady) {
+        logger.info('Python environment missing or incomplete, attempting background repair...');
+        void setupManagedPython().catch(err => {
+          logger.error('Background Python repair failed:', err);
+        });
+      }
+    }).catch(err => {
+      logger.error('Failed to check Python environment:', err);
+    });
     
     try {
       while (true) {
         this.recentStartupStderrLines = [];
         try {
-          // Check if Python environment is ready (self-healing) asynchronously
-          void isPythonReady().then(pythonReady => {
-            if (!pythonReady) {
-              logger.info('Python environment missing or incomplete, attempting background repair...');
-              // We don't await this to avoid blocking Gateway startup,
-              // as uv run will handle it if needed, but this pre-warms it.
-              void setupManagedPython().catch(err => {
-                logger.error('Background Python repair failed:', err);
-              });
-            }
-          }).catch(err => {
-            logger.error('Failed to check Python environment:', err);
-          });
-
           // Check if Gateway is already running
           logger.debug('Checking for existing Gateway...');
           const existing = await this.findExistingGateway();
@@ -873,6 +872,17 @@ export class GatewayManager extends EventEmitter {
     
     // Get or generate gateway token
     const gatewayToken = await getSetting('gatewayToken');
+
+    // Strip stale/invalid keys from openclaw.json that would cause the
+    // Gateway's strict config validation to reject the file on startup
+    // (e.g. `skills.enabled` left by an older version).
+    // This is a fast file-based pre-check; the reactive auto-repair
+    // mechanism (runOpenClawDoctorRepair) handles any remaining issues.
+    try {
+      await sanitizeOpenClawConfig();
+    } catch (err) {
+      logger.warn('Failed to sanitize openclaw.json:', err);
+    }
 
     // Write our token into openclaw.json before starting the process.
     // Without --dev the gateway authenticates using the token in
