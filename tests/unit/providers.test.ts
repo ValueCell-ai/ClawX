@@ -39,4 +39,18 @@ describe('provider metadata', () => {
       expect.arrayContaining(['anthropic', 'openai', 'google', 'openrouter', 'ark', 'moonshot', 'siliconflow', 'minimax-portal', 'minimax-portal-cn', 'qwen-portal', 'ollama'])
     );
   });
+
+  it('uses OpenAI-compatible Ollama default base URL', () => {
+    expect(PROVIDER_TYPE_INFO).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: 'ollama',
+          defaultBaseUrl: 'http://localhost:11434/v1',
+          requiresApiKey: false,
+          showBaseUrl: true,
+          showModelId: true,
+        }),
+      ])
+    );
+  });
 });

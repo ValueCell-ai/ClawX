@@ -49,6 +49,11 @@ import { updateSkillConfig, getSkillConfig, getAllSkillConfigs } from '../utils/
 import { whatsAppLoginManager } from '../utils/whatsapp-login';
 import { getProviderConfig } from '../utils/provider-registry';
 import { deviceOAuthManager, OAuthProviderType } from '../utils/device-oauth';
+import {
+  isOllamaProvider,
+  normalizeOllamaBaseUrlForOpenAI,
+  resolveEffectiveProviderApiKey,
+} from '../utils/ollama-provider';
 
 /**
  * For custom/ollama providers, derive a unique key for OpenClaw config files
@@ -68,6 +73,25 @@ export function getOpenClawProviderKey(type: string, providerId: string): string
     return 'minimax-portal';
   }
   return type;
+}
+
+function normalizeProviderConfigForSave(config: ProviderConfig): ProviderConfig {
+  if (!isOllamaProvider(config.type)) return config;
+  return {
+    ...config,
+    baseUrl: normalizeOllamaBaseUrlForOpenAI(config.baseUrl, { fallbackToDefault: true }),
+  };
+}
+
+function resolveProviderBaseUrlForSync(
+  providerType: string,
+  baseUrl: string | undefined,
+  fallbackBaseUrl: string | undefined
+): string | undefined {
+  if (isOllamaProvider(providerType)) {
+    return normalizeOllamaBaseUrlForOpenAI(baseUrl, { fallbackToDefault: true });
+  }
+  return baseUrl || fallbackBaseUrl;
 }
 
 /**
@@ -946,48 +970,54 @@ function registerProviderHandlers(gatewayManager: GatewayManager): void {
   // Save a provider configuration
   ipcMain.handle('provider:save', async (_, config: ProviderConfig, apiKey?: string) => {
     try {
+      const normalizedConfig = normalizeProviderConfigForSave(config);
+
       // Save the provider config
-      await saveProvider(config);
+      await saveProvider(normalizedConfig);
 
       // Derive the unique OpenClaw key for this provider instance
-      const ock = getOpenClawProviderKey(config.type, config.id);
+      const ock = getOpenClawProviderKey(normalizedConfig.type, normalizedConfig.id);
 
-      // Store the API key if provided
-      if (apiKey !== undefined) {
-        const trimmedKey = apiKey.trim();
-        if (trimmedKey) {
-          await storeApiKey(config.id, trimmedKey);
+      const effectiveApiKey = resolveEffectiveProviderApiKey(
+        normalizedConfig.type,
+        apiKey
+      );
 
-          // Also write to OpenClaw auth-profiles.json so the gateway can use it
-          try {
-            await saveProviderKeyToOpenClaw(ock, trimmedKey);
-          } catch (err) {
-            console.warn('Failed to save key to OpenClaw auth-profiles:', err);
-          }
+      // Store the API key if provided or if provider requires placeholder fallback (ollama)
+      if (effectiveApiKey) {
+        await storeApiKey(normalizedConfig.id, effectiveApiKey);
+
+        // Also write to OpenClaw auth-profiles.json so the gateway can use it
+        try {
+          await saveProviderKeyToOpenClaw(ock, effectiveApiKey);
+        } catch (err) {
+          console.warn('Failed to save key to OpenClaw auth-profiles:', err);
         }
       }
 
       // Sync the provider configuration to openclaw.json so Gateway knows about it
       try {
-        const meta = getProviderConfig(config.type);
-        const api = config.type === 'custom' || config.type === 'ollama' ? 'openai-completions' : meta?.api;
+        const meta = getProviderConfig(normalizedConfig.type);
+        const api = normalizedConfig.type === 'custom' || normalizedConfig.type === 'ollama' ? 'openai-completions' : meta?.api;
 
         if (api) {
-          await syncProviderConfigToOpenClaw(ock, config.model, {
-            baseUrl: config.baseUrl || meta?.baseUrl,
+          await syncProviderConfigToOpenClaw(ock, normalizedConfig.model, {
+            baseUrl: resolveProviderBaseUrlForSync(normalizedConfig.type, normalizedConfig.baseUrl, meta?.baseUrl),
             api,
             apiKeyEnv: meta?.apiKeyEnv,
             headers: meta?.headers,
           });
 
-          if (config.type === 'custom' || config.type === 'ollama') {
-            const resolvedKey = apiKey !== undefined
-              ? (apiKey.trim() || null)
-              : await getApiKey(config.id);
-            if (resolvedKey && config.baseUrl) {
-              const modelId = config.model;
+          if (normalizedConfig.type === 'custom' || normalizedConfig.type === 'ollama') {
+            const resolvedKey = resolveEffectiveProviderApiKey(
+              normalizedConfig.type,
+              apiKey,
+              await getApiKey(normalizedConfig.id)
+            );
+            if (resolvedKey && normalizedConfig.baseUrl) {
+              const modelId = normalizedConfig.model;
               await updateAgentModelProvider(ock, {
-                baseUrl: config.baseUrl,
+                baseUrl: normalizedConfig.baseUrl,
                 api: 'openai-completions',
                 models: modelId ? [{ id: modelId, name: modelId }] : [],
                 apiKey: resolvedKey,
@@ -1075,24 +1105,31 @@ function registerProviderHandlers(gatewayManager: GatewayManager): void {
       const previousOck = getOpenClawProviderKey(existing.type, providerId);
 
       try {
-        const nextConfig: ProviderConfig = {
+        const nextConfig: ProviderConfig = normalizeProviderConfigForSave({
           ...existing,
           ...updates,
           updatedAt: new Date().toISOString(),
-        };
+        });
 
         const ock = getOpenClawProviderKey(nextConfig.type, providerId);
 
         await saveProvider(nextConfig);
 
         if (apiKey !== undefined) {
-          const trimmedKey = apiKey.trim();
-          if (trimmedKey) {
-            await storeApiKey(providerId, trimmedKey);
-            await saveProviderKeyToOpenClaw(ock, trimmedKey);
+          const resolvedIncomingKey = resolveEffectiveProviderApiKey(nextConfig.type, apiKey);
+          if (resolvedIncomingKey) {
+            await storeApiKey(providerId, resolvedIncomingKey);
+            await saveProviderKeyToOpenClaw(ock, resolvedIncomingKey);
           } else {
             await deleteApiKey(providerId);
             await removeProviderFromOpenClaw(ock);
+          }
+        } else if (isOllamaProvider(nextConfig.type)) {
+          const currentStoredKey = await getApiKey(providerId);
+          const resolvedOllamaKey = resolveEffectiveProviderApiKey(nextConfig.type, undefined, currentStoredKey);
+          if (resolvedOllamaKey && resolvedOllamaKey !== currentStoredKey) {
+            await storeApiKey(providerId, resolvedOllamaKey);
+            await saveProviderKeyToOpenClaw(ock, resolvedOllamaKey);
           }
         }
 
@@ -1103,16 +1140,18 @@ function registerProviderHandlers(gatewayManager: GatewayManager): void {
 
           if (api) {
             await syncProviderConfigToOpenClaw(ock, nextConfig.model, {
-              baseUrl: nextConfig.baseUrl || meta?.baseUrl,
+              baseUrl: resolveProviderBaseUrlForSync(nextConfig.type, nextConfig.baseUrl, meta?.baseUrl),
               api,
               apiKeyEnv: meta?.apiKeyEnv,
               headers: meta?.headers,
             });
 
             if (nextConfig.type === 'custom' || nextConfig.type === 'ollama') {
-              const resolvedKey = apiKey !== undefined
-                ? (apiKey.trim() || null)
-                : await getApiKey(providerId);
+              const resolvedKey = resolveEffectiveProviderApiKey(
+                nextConfig.type,
+                apiKey,
+                await getApiKey(providerId)
+              );
               if (resolvedKey && nextConfig.baseUrl) {
                 const modelId = nextConfig.model;
                 await updateAgentModelProvider(ock, {
@@ -1208,11 +1247,36 @@ function registerProviderHandlers(gatewayManager: GatewayManager): void {
       await setDefaultProvider(providerId);
 
       // Update OpenClaw config to use this provider's default model
-      const provider = await getProvider(providerId);
+      let provider = await getProvider(providerId);
       if (provider) {
         try {
           const ock = getOpenClawProviderKey(provider.type, providerId);
-          const providerKey = await getApiKey(providerId);
+          const storedProviderKey = await getApiKey(providerId);
+          const providerKey = resolveEffectiveProviderApiKey(
+            provider.type,
+            undefined,
+            storedProviderKey
+          );
+
+          // Auto-heal legacy ollama configs that were saved without a key and/or /v1 base URL.
+          if (isOllamaProvider(provider.type)) {
+            const normalizedBaseUrl = normalizeOllamaBaseUrlForOpenAI(provider.baseUrl, { fallbackToDefault: true });
+            const needsConfigHealing = normalizedBaseUrl !== provider.baseUrl;
+            const needsKeyHealing = Boolean(providerKey && providerKey !== storedProviderKey);
+            if (needsConfigHealing || needsKeyHealing) {
+              const healedProvider: ProviderConfig = {
+                ...provider,
+                ...(needsConfigHealing ? { baseUrl: normalizedBaseUrl } : {}),
+                updatedAt: new Date().toISOString(),
+              };
+              await saveProvider(healedProvider);
+              provider = healedProvider;
+            }
+            if (providerKey && providerKey !== storedProviderKey) {
+              await storeApiKey(providerId, providerKey);
+              await saveProviderKeyToOpenClaw(ock, providerKey);
+            }
+          }
 
           // OAuth providers (qwen-portal, minimax-portal, minimax-portal-cn) might use OAuth OR a direct API key.
           // Treat them as OAuth only if they don't have a local API key configured.
@@ -1229,7 +1293,7 @@ function registerProviderHandlers(gatewayManager: GatewayManager): void {
 
             if (provider.type === 'custom' || provider.type === 'ollama') {
               await setOpenClawDefaultModelWithOverride(ock, modelOverride, {
-                baseUrl: provider.baseUrl,
+                baseUrl: resolveProviderBaseUrlForSync(provider.type, provider.baseUrl, undefined),
                 api: 'openai-completions',
               });
             } else {
@@ -1291,11 +1355,12 @@ function registerProviderHandlers(gatewayManager: GatewayManager): void {
           if (
             (provider.type === 'custom' || provider.type === 'ollama') &&
             providerKey &&
-            provider.baseUrl
+            resolveProviderBaseUrlForSync(provider.type, provider.baseUrl, undefined)
           ) {
             const modelId = provider.model;
+            const syncedBaseUrl = resolveProviderBaseUrlForSync(provider.type, provider.baseUrl, undefined);
             await updateAgentModelProvider(ock, {
-              baseUrl: provider.baseUrl,
+              baseUrl: syncedBaseUrl,
               api: 'openai-completions',
               models: modelId ? [{ id: modelId, name: modelId }] : [],
               apiKey: providerKey,
