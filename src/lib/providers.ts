@@ -21,6 +21,8 @@ export const PROVIDER_TYPES = [
 ] as const;
 export type ProviderType = (typeof PROVIDER_TYPES)[number];
 
+export const OLLAMA_PLACEHOLDER_API_KEY = 'ollama-local';
+
 export interface ProviderConfig {
   id: string;
   name: string;
@@ -77,7 +79,7 @@ export const PROVIDER_TYPE_INFO: ProviderTypeInfo[] = [
   { id: 'minimax-portal', name: 'MiniMax (Global)', icon: '☁️', placeholder: 'sk-...', model: 'MiniMax', requiresApiKey: false, isOAuth: true, supportsApiKey: true, defaultModelId: 'MiniMax-M2.5', apiKeyUrl: 'https://intl.minimaxi.com/' },
   { id: 'minimax-portal-cn', name: 'MiniMax (CN)', icon: '☁️', placeholder: 'sk-...', model: 'MiniMax', requiresApiKey: false, isOAuth: true, supportsApiKey: true, defaultModelId: 'MiniMax-M2.5', apiKeyUrl: 'https://platform.minimaxi.com/' },
   { id: 'qwen-portal', name: 'Qwen', icon: '☁️', placeholder: 'sk-...', model: 'Qwen', requiresApiKey: false, isOAuth: true, defaultModelId: 'coder-model' },
-  { id: 'ollama', name: 'Ollama', icon: '🦙', placeholder: 'Not required', requiresApiKey: false, defaultBaseUrl: 'http://localhost:11434', showBaseUrl: true, showModelId: true, modelIdPlaceholder: 'qwen3:latest' },
+  { id: 'ollama', name: 'Ollama', icon: '🦙', placeholder: 'Not required', requiresApiKey: false, defaultBaseUrl: 'http://localhost:11434/v1', showBaseUrl: true, showModelId: true, modelIdPlaceholder: 'qwen3:latest' },
   { id: 'custom', name: 'Custom', icon: '⚙️', placeholder: 'API key...', requiresApiKey: true, showBaseUrl: true, showModelId: true, modelIdPlaceholder: 'your-provider/model-id' },
 ];
 
@@ -97,4 +99,13 @@ export const SETUP_PROVIDERS = PROVIDER_TYPE_INFO;
 /** Get type info by provider type id */
 export function getProviderTypeInfo(type: ProviderType): ProviderTypeInfo | undefined {
   return PROVIDER_TYPE_INFO.find((t) => t.id === type);
+}
+
+/** Normalize provider API key before saving; Ollama uses a local placeholder when blank. */
+export function resolveProviderApiKeyForSave(type: ProviderType | string, apiKey: string): string | undefined {
+  const trimmed = apiKey.trim();
+  if (type === 'ollama') {
+    return trimmed || OLLAMA_PLACEHOLDER_API_KEY;
+  }
+  return trimmed || undefined;
 }

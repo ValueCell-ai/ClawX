@@ -103,7 +103,7 @@ const defaultSkills: DefaultSkill[] = [
   { id: 'terminal', name: 'Terminal', description: 'Shell command execution' },
 ];
 
-import { SETUP_PROVIDERS, type ProviderTypeInfo, getProviderIconUrl, shouldInvertInDark } from '@/lib/providers';
+import { SETUP_PROVIDERS, type ProviderTypeInfo, getProviderIconUrl, resolveProviderApiKeyForSave, shouldInvertInDark } from '@/lib/providers';
 import clawxIcon from '@/assets/logo.svg';
 
 // Use the shared provider registry for setup providers
@@ -970,6 +970,8 @@ function ProviderContent({
             : `custom-${crypto.randomUUID()}`)
           : selectedProvider;
 
+      const effectiveApiKey = resolveProviderApiKeyForSave(selectedProvider, apiKey);
+
       // Save provider config + API key, then set as default
       const saveResult = await window.electron.ipcRenderer.invoke(
         'provider:save',
@@ -983,7 +985,7 @@ function ProviderContent({
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString(),
         },
-        apiKey || undefined
+        effectiveApiKey
       ) as { success: boolean; error?: string };
 
       if (!saveResult.success) {
