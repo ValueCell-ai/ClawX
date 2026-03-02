@@ -516,7 +516,14 @@ function AddProviderDialog({ existingTypes, onClose, onAdd, onValidateKey }: Add
       // If we call add() here with undefined baseUrl, it will overwrite and erase it!
       // So we just fetch the latest list from the backend to update the UI.
       try {
-        await useProviderStore.getState().fetchProviders();
+        const store = useProviderStore.getState();
+        await store.fetchProviders();
+
+        // Auto-set as default if no default is currently configured
+        if (!store.defaultProviderId && latestRef.current.selectedType) {
+          // Provider type is expected to match provider ID for built-in OAuth providers
+          await store.setDefaultProvider(latestRef.current.selectedType);
+        }
       } catch (err) {
         console.error('Failed to refresh providers after OAuth:', err);
       }
