@@ -17,6 +17,7 @@ import { ClawHubService } from '../gateway/clawhub';
 import { ensureClawXContext, repairClawXOnlyBootstrapFiles } from '../utils/openclaw-workspace';
 import { autoInstallCliIfNeeded, generateCompletionCache, installCompletionToProfile } from '../utils/openclaw-cli';
 import { isQuitting, setQuitting } from './app-state';
+import { ensureBuiltinSkillsInstalled } from '../utils/skill-config';
 
 // Disable GPU hardware acceleration globally for maximum stability across
 // all GPU configurations (no GPU, integrated, discrete).
@@ -185,6 +186,12 @@ async function initialize(): Promise<void> {
   // previously created the file before the gateway could seed the full template.
   void repairClawXOnlyBootstrapFiles().catch((error) => {
     logger.warn('Failed to repair bootstrap files:', error);
+  });
+
+  // Pre-deploy built-in skills (feishu-doc, feishu-drive, feishu-perm, feishu-wiki)
+  // to ~/.openclaw/skills/ so they are immediately available without manual install.
+  void ensureBuiltinSkillsInstalled().catch((error) => {
+    logger.warn('Failed to install built-in skills:', error);
   });
 
   // Start Gateway automatically (this seeds missing bootstrap files with full templates)
