@@ -21,12 +21,14 @@ import {
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Switch } from '@/components/ui/switch';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
 import { useProviderStore, type ProviderConfig, type ProviderWithKeyInfo } from '@/stores/providers';
 import {
   PROVIDER_TYPE_INFO,
+  type ProviderModelCostConfig,
   type ProviderType,
   getProviderIconUrl,
   resolveProviderApiKeyForSave,
@@ -35,6 +37,45 @@ import {
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 import { useTranslation } from 'react-i18next';
+
+const DEFAULT_MODEL_COST: ProviderModelCostConfig = {
+  input: 0,
+  output: 0,
+  cacheRead: 0,
+  cacheWrite: 0,
+};
+
+function parseModelInput(value: string): string[] {
+  return value
+    .split(',')
+    .map((part) => part.trim())
+    .filter(Boolean);
+}
+
+function formatModelInput(value?: string[]): string {
+  if (!Array.isArray(value) || value.length === 0) return '';
+  return value.join(', ');
+}
+
+function formatOptionalNumber(value?: number): string {
+  return value === undefined ? '' : String(value);
+}
+
+function parseCostField(value: string): number | null {
+  if (!value.trim()) return 0;
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed < 0) return null;
+  return parsed;
+}
+
+function parsePositiveIntegerField(value: string): number | undefined | null {
+  if (!value.trim()) return undefined;
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed <= 0 || !Number.isInteger(parsed)) {
+    return null;
+  }
+  return parsed;
+}
 
 export function ProvidersSettings() {
   const { t } = useTranslation('settings');
@@ -62,7 +103,15 @@ export function ProvidersSettings() {
     type: ProviderType,
     name: string,
     apiKey: string,
-    options?: { baseUrl?: string; model?: string }
+    options?: {
+      baseUrl?: string;
+      model?: string;
+      reasoning?: boolean;
+      input?: string[];
+      cost?: ProviderModelCostConfig;
+      contextWindow?: number;
+      maxTokens?: number;
+    }
   ) => {
     // Only custom supports multiple instances.
     // Built-in providers remain singleton by type.
@@ -76,6 +125,11 @@ export function ProvidersSettings() {
           name,
           baseUrl: options?.baseUrl,
           model: options?.model,
+          reasoning: options?.reasoning,
+          input: options?.input,
+          cost: options?.cost,
+          contextWindow: options?.contextWindow,
+          maxTokens: options?.maxTokens,
           enabled: true,
         },
         effectiveApiKey
@@ -209,12 +263,26 @@ function ProviderCard({
   const [newKey, setNewKey] = useState('');
   const [baseUrl, setBaseUrl] = useState(provider.baseUrl || '');
   const [modelId, setModelId] = useState(provider.model || '');
+  const [reasoning, setReasoning] = useState(provider.reasoning ?? false);
+  const [inputTypes, setInputTypes] = useState(formatModelInput(provider.input));
+  const [costInput, setCostInput] = useState(formatOptionalNumber(provider.cost?.input));
+  const [costOutput, setCostOutput] = useState(formatOptionalNumber(provider.cost?.output));
+  const [costCacheRead, setCostCacheRead] = useState(formatOptionalNumber(provider.cost?.cacheRead));
+  const [costCacheWrite, setCostCacheWrite] = useState(formatOptionalNumber(provider.cost?.cacheWrite));
+  const [contextWindow, setContextWindow] = useState(
+    provider.contextWindow !== undefined ? String(provider.contextWindow) : ''
+  );
+  const [maxTokens, setMaxTokens] = useState(
+    provider.maxTokens !== undefined ? String(provider.maxTokens) : ''
+  );
+  const [showEditMoreSettings, setShowEditMoreSettings] = useState(false);
   const [showKey, setShowKey] = useState(false);
   const [validating, setValidating] = useState(false);
   const [saving, setSaving] = useState(false);
 
   const typeInfo = PROVIDER_TYPE_INFO.find((t) => t.id === provider.type);
   const canEditConfig = Boolean(typeInfo?.showBaseUrl || typeInfo?.showModelId);
+  const isCustomProvider = provider.type === 'custom';
 
   useEffect(() => {
     if (isEditing) {
@@ -222,8 +290,17 @@ function ProviderCard({
       setShowKey(false);
       setBaseUrl(provider.baseUrl || '');
       setModelId(provider.model || '');
+      setReasoning(provider.reasoning ?? false);
+      setInputTypes(formatModelInput(provider.input));
+      setCostInput(formatOptionalNumber(provider.cost?.input));
+      setCostOutput(formatOptionalNumber(provider.cost?.output));
+      setCostCacheRead(formatOptionalNumber(provider.cost?.cacheRead));
+      setCostCacheWrite(formatOptionalNumber(provider.cost?.cacheWrite));
+      setContextWindow(provider.contextWindow !== undefined ? String(provider.contextWindow) : '');
+      setMaxTokens(provider.maxTokens !== undefined ? String(provider.maxTokens) : '');
+      setShowEditMoreSettings(false);
     }
-  }, [isEditing, provider.baseUrl, provider.model]);
+  }, [isEditing, provider.baseUrl, provider.model, provider.reasoning, provider.input, provider.cost, provider.contextWindow, provider.maxTokens]);
 
   const handleSaveEdits = async () => {
     setSaving(true);
@@ -258,6 +335,61 @@ function ProviderCard({
         if ((modelId.trim() || undefined) !== (provider.model || undefined)) {
           updates.model = modelId.trim() || undefined;
         }
+        if (isCustomProvider) {
+          const useAdvancedSettings = showEditMoreSettings;
+          const hasAnyCostField = useAdvancedSettings && [costInput, costOutput, costCacheRead, costCacheWrite]
+            .some((value) => value.trim().length > 0);
+          let nextCost: ProviderModelCostConfig | undefined;
+          if (hasAnyCostField) {
+            const nextCostInput = parseCostField(costInput);
+            const nextCostOutput = parseCostField(costOutput);
+            const nextCostCacheRead = parseCostField(costCacheRead);
+            const nextCostCacheWrite = parseCostField(costCacheWrite);
+            if (
+              nextCostInput === null
+              || nextCostOutput === null
+              || nextCostCacheRead === null
+              || nextCostCacheWrite === null
+            ) {
+              toast.error(t('aiProviders.toast.invalidCost'));
+              setSaving(false);
+              return;
+            }
+            nextCost = {
+              input: nextCostInput ?? DEFAULT_MODEL_COST.input,
+              output: nextCostOutput ?? DEFAULT_MODEL_COST.output,
+              cacheRead: nextCostCacheRead ?? DEFAULT_MODEL_COST.cacheRead,
+              cacheWrite: nextCostCacheWrite ?? DEFAULT_MODEL_COST.cacheWrite,
+            };
+          }
+
+          const parsedContextWindow = useAdvancedSettings ? parsePositiveIntegerField(contextWindow) : undefined;
+          const parsedMaxTokens = useAdvancedSettings ? parsePositiveIntegerField(maxTokens) : undefined;
+          if (useAdvancedSettings && (parsedContextWindow === null || parsedMaxTokens === null)) {
+            toast.error(t('aiProviders.toast.invalidTokenLimits'));
+            setSaving(false);
+            return;
+          }
+
+          if (useAdvancedSettings) {
+            const parsedInput = inputTypes.trim() ? parseModelInput(inputTypes) : undefined;
+            if ((provider.reasoning ?? false) !== reasoning) {
+              updates.reasoning = reasoning;
+            }
+            if (JSON.stringify(parsedInput) !== JSON.stringify(provider.input ?? undefined)) {
+              updates.input = parsedInput;
+            }
+            if (JSON.stringify(nextCost) !== JSON.stringify(provider.cost ?? undefined)) {
+              updates.cost = nextCost;
+            }
+            if ((provider.contextWindow ?? undefined) !== parsedContextWindow) {
+              updates.contextWindow = parsedContextWindow;
+            }
+            if ((provider.maxTokens ?? undefined) !== parsedMaxTokens) {
+              updates.maxTokens = parsedMaxTokens;
+            }
+          }
+        }
         if (Object.keys(updates).length > 0) {
           payload.updates = updates;
         }
@@ -285,6 +417,18 @@ function ProviderCard({
       setValidating(false);
     }
   };
+
+  const hasCustomAdvancedChanges =
+    isCustomProvider && (
+      reasoning !== (provider.reasoning ?? false)
+      || inputTypes !== formatModelInput(provider.input)
+      || costInput !== formatOptionalNumber(provider.cost?.input)
+      || costOutput !== formatOptionalNumber(provider.cost?.output)
+      || costCacheRead !== formatOptionalNumber(provider.cost?.cacheRead)
+      || costCacheWrite !== formatOptionalNumber(provider.cost?.cacheWrite)
+      || contextWindow !== (provider.contextWindow !== undefined ? String(provider.contextWindow) : '')
+      || maxTokens !== (provider.maxTokens !== undefined ? String(provider.maxTokens) : '')
+    );
 
   return (
     <Card className={cn(isDefault && 'ring-2 ring-primary')}>
@@ -348,23 +492,76 @@ function ProviderCard({
                 </a>
               </div>
             )}
-            <div className="flex gap-2">
-              <div className="relative flex-1">
-                <Input
-                  type={showKey ? 'text' : 'password'}
-                  placeholder={typeInfo?.requiresApiKey ? typeInfo?.placeholder : (typeInfo?.id === 'ollama' ? t('aiProviders.notRequired') : t('aiProviders.card.editKey'))}
-                  value={newKey}
-                  onChange={(e) => setNewKey(e.target.value)}
-                  className="pr-10 h-9 text-sm"
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowKey(!showKey)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-                >
-                  {showKey ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
-                </button>
+            <div className="relative">
+              <Input
+                type={showKey ? 'text' : 'password'}
+                placeholder={typeInfo?.requiresApiKey ? typeInfo?.placeholder : (typeInfo?.id === 'ollama' ? t('aiProviders.notRequired') : t('aiProviders.card.editKey'))}
+                value={newKey}
+                onChange={(e) => setNewKey(e.target.value)}
+                className="pr-10 h-9 text-sm"
+              />
+              <button
+                type="button"
+                onClick={() => setShowKey(!showKey)}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+              >
+                {showKey ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+              </button>
+            </div>
+            {isCustomProvider && (
+              <div className="space-y-3 rounded-md border border-border/70 p-3 mt-2">
+                <div className="flex items-center justify-between">
+                  <Label className="text-xs">{t('aiProviders.dialog.moreSettings')}</Label>
+                  <Switch checked={showEditMoreSettings} onCheckedChange={setShowEditMoreSettings} />
+                </div>
+                {showEditMoreSettings && (
+                  <div className="ml-2 pl-3 border-l border-border/60 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <Label className="text-sm text-muted-foreground">{t('aiProviders.dialog.reasoning')}</Label>
+                      <Switch checked={reasoning} onCheckedChange={setReasoning} />
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-sm text-muted-foreground">{t('aiProviders.dialog.inputTypes')}</Label>
+                      <Input
+                        value={inputTypes}
+                        onChange={(e) => setInputTypes(e.target.value)}
+                        placeholder="text,image"
+                        className="h-9 text-sm"
+                      />
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                      <div className="space-y-1">
+                        <Label className="text-sm text-muted-foreground">{t('aiProviders.dialog.costInput')}</Label>
+                        <Input value={costInput} onChange={(e) => setCostInput(e.target.value)} className="h-9 text-sm" inputMode="decimal" />
+                      </div>
+                      <div className="space-y-1">
+                        <Label className="text-sm text-muted-foreground">{t('aiProviders.dialog.costOutput')}</Label>
+                        <Input value={costOutput} onChange={(e) => setCostOutput(e.target.value)} className="h-9 text-sm" inputMode="decimal" />
+                      </div>
+                      <div className="space-y-1">
+                        <Label className="text-sm text-muted-foreground">{t('aiProviders.dialog.costCacheRead')}</Label>
+                        <Input value={costCacheRead} onChange={(e) => setCostCacheRead(e.target.value)} className="h-9 text-sm" inputMode="decimal" />
+                      </div>
+                      <div className="space-y-1">
+                        <Label className="text-sm text-muted-foreground">{t('aiProviders.dialog.costCacheWrite')}</Label>
+                        <Input value={costCacheWrite} onChange={(e) => setCostCacheWrite(e.target.value)} className="h-9 text-sm" inputMode="decimal" />
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                      <div className="space-y-1">
+                        <Label className="text-sm text-muted-foreground">{t('aiProviders.dialog.contextWindow')}</Label>
+                        <Input value={contextWindow} onChange={(e) => setContextWindow(e.target.value)} className="h-9 text-sm" inputMode="numeric" placeholder="200000" />
+                      </div>
+                      <div className="space-y-1">
+                        <Label className="text-sm text-muted-foreground">{t('aiProviders.dialog.maxTokens')}</Label>
+                        <Input value={maxTokens} onChange={(e) => setMaxTokens(e.target.value)} className="h-9 text-sm" inputMode="numeric" placeholder="8192" />
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
+            )}
+            <div className="flex gap-2 justify-end">
               <Button
                 variant="outline"
                 size="sm"
@@ -376,6 +573,7 @@ function ProviderCard({
                     !newKey.trim()
                     && (baseUrl.trim() || undefined) === (provider.baseUrl || undefined)
                     && (modelId.trim() || undefined) === (provider.model || undefined)
+                    && !hasCustomAdvancedChanges
                   )
                   || Boolean(typeInfo?.showModelId && !modelId.trim())
                 }
@@ -454,7 +652,15 @@ interface AddProviderDialogProps {
     type: ProviderType,
     name: string,
     apiKey: string,
-    options?: { baseUrl?: string; model?: string }
+    options?: {
+      baseUrl?: string;
+      model?: string;
+      reasoning?: boolean;
+      input?: string[];
+      cost?: ProviderModelCostConfig;
+      contextWindow?: number;
+      maxTokens?: number;
+    }
   ) => Promise<void>;
   onValidateKey: (
     type: string,
@@ -470,6 +676,15 @@ function AddProviderDialog({ existingTypes, onClose, onAdd, onValidateKey }: Add
   const [apiKey, setApiKey] = useState('');
   const [baseUrl, setBaseUrl] = useState('');
   const [modelId, setModelId] = useState('');
+  const [reasoning, setReasoning] = useState(false);
+  const [inputTypes, setInputTypes] = useState('');
+  const [costInput, setCostInput] = useState('');
+  const [costOutput, setCostOutput] = useState('');
+  const [costCacheRead, setCostCacheRead] = useState('');
+  const [costCacheWrite, setCostCacheWrite] = useState('');
+  const [contextWindow, setContextWindow] = useState('');
+  const [maxTokens, setMaxTokens] = useState('');
+  const [showMoreSettings, setShowMoreSettings] = useState(false);
   const [showKey, setShowKey] = useState(false);
   const [saving, setSaving] = useState(false);
   const [validationError, setValidationError] = useState<string | null>(null);
@@ -488,6 +703,7 @@ function AddProviderDialog({ existingTypes, onClose, onAdd, onValidateKey }: Add
   const typeInfo = PROVIDER_TYPE_INFO.find((t) => t.id === selectedType);
   const isOAuth = typeInfo?.isOAuth ?? false;
   const supportsApiKey = typeInfo?.supportsApiKey ?? false;
+  const isCustomProvider = selectedType === 'custom';
   // Effective OAuth mode: pure OAuth providers, or dual-mode with oauth selected
   const useOAuthFlow = isOAuth && (!supportsApiKey || authMode === 'oauth');
 
@@ -627,6 +843,38 @@ function AddProviderDialog({ existingTypes, onClose, onAdd, onValidateKey }: Add
         return;
       }
 
+      const useAdvancedSettings = isCustomProvider && showMoreSettings;
+      const parsedInput = useAdvancedSettings && inputTypes.trim()
+        ? parseModelInput(inputTypes)
+        : undefined;
+      const hasAnyCostField = useAdvancedSettings
+        && [costInput, costOutput, costCacheRead, costCacheWrite].some((value) => value.trim().length > 0);
+      const parsedCostInput = hasAnyCostField ? parseCostField(costInput) : undefined;
+      const parsedCostOutput = hasAnyCostField ? parseCostField(costOutput) : undefined;
+      const parsedCostCacheRead = hasAnyCostField ? parseCostField(costCacheRead) : undefined;
+      const parsedCostCacheWrite = hasAnyCostField ? parseCostField(costCacheWrite) : undefined;
+      if (
+        hasAnyCostField
+        && (
+          parsedCostInput === null
+          || parsedCostOutput === null
+          || parsedCostCacheRead === null
+          || parsedCostCacheWrite === null
+        )
+      ) {
+        setValidationError(t('aiProviders.toast.invalidCost'));
+        setSaving(false);
+        return;
+      }
+
+      const parsedContextWindow = useAdvancedSettings ? parsePositiveIntegerField(contextWindow) : undefined;
+      const parsedMaxTokens = useAdvancedSettings ? parsePositiveIntegerField(maxTokens) : undefined;
+      if (useAdvancedSettings && (parsedContextWindow === null || parsedMaxTokens === null)) {
+        setValidationError(t('aiProviders.toast.invalidTokenLimits'));
+        setSaving(false);
+        return;
+      }
+
       await onAdd(
         selectedType,
         name || (typeInfo?.id === 'custom' ? t('aiProviders.custom') : typeInfo?.name) || selectedType,
@@ -634,6 +882,18 @@ function AddProviderDialog({ existingTypes, onClose, onAdd, onValidateKey }: Add
         {
           baseUrl: baseUrl.trim() || undefined,
           model: (typeInfo?.defaultModelId || modelId.trim()) || undefined,
+          reasoning: useAdvancedSettings && reasoning ? reasoning : undefined,
+          input: parsedInput,
+          cost: hasAnyCostField
+            ? {
+              input: parsedCostInput ?? DEFAULT_MODEL_COST.input,
+              output: parsedCostOutput ?? DEFAULT_MODEL_COST.output,
+              cacheRead: parsedCostCacheRead ?? DEFAULT_MODEL_COST.cacheRead,
+              cacheWrite: parsedCostCacheWrite ?? DEFAULT_MODEL_COST.cacheWrite,
+            }
+            : undefined,
+          contextWindow: parsedContextWindow,
+          maxTokens: parsedMaxTokens,
         }
       );
     } catch {
@@ -645,14 +905,14 @@ function AddProviderDialog({ existingTypes, onClose, onAdd, onValidateKey }: Add
 
   return (
     <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center">
-      <Card className="w-full max-w-md">
+      <Card className="w-full max-w-md max-h-[85vh] flex flex-col">
         <CardHeader>
           <CardTitle>{t('aiProviders.dialog.title')}</CardTitle>
           <CardDescription>
             {t('aiProviders.dialog.desc')}
           </CardDescription>
         </CardHeader>
-        <CardContent className="space-y-4">
+        <CardContent className="space-y-4 overflow-y-auto">
           {!selectedType ? (
             <div className="grid grid-cols-2 gap-3">
               {availableTypes.map((type) => (
@@ -663,6 +923,15 @@ function AddProviderDialog({ existingTypes, onClose, onAdd, onValidateKey }: Add
                     setName(type.id === 'custom' ? t('aiProviders.custom') : type.name);
                     setBaseUrl(type.defaultBaseUrl || '');
                     setModelId(type.defaultModelId || '');
+                    setReasoning(false);
+                    setInputTypes('');
+                    setCostInput('');
+                    setCostOutput('');
+                    setCostCacheRead('');
+                    setCostCacheWrite('');
+                    setContextWindow('');
+                    setMaxTokens('');
+                    setShowMoreSettings(false);
                   }}
                   className="p-4 rounded-lg border hover:bg-accent transition-colors text-center"
                 >
@@ -691,6 +960,15 @@ function AddProviderDialog({ existingTypes, onClose, onAdd, onValidateKey }: Add
                       setValidationError(null);
                       setBaseUrl('');
                       setModelId('');
+                      setReasoning(false);
+                      setInputTypes('');
+                      setCostInput('');
+                      setCostOutput('');
+                      setCostCacheRead('');
+                      setCostCacheWrite('');
+                      setContextWindow('');
+                      setMaxTokens('');
+                      setShowMoreSettings(false);
                     }}
                     className="text-sm text-muted-foreground hover:text-foreground"
                   >
@@ -803,6 +1081,59 @@ function AddProviderDialog({ existingTypes, onClose, onAdd, onValidateKey }: Add
                       setValidationError(null);
                     }}
                   />
+                </div>
+              )}
+              {isCustomProvider && (
+                <div className="space-y-3 rounded-md border border-border/70 p-3">
+                  <div className="flex items-center justify-between">
+                    <Label htmlFor="moreSettings">{t('aiProviders.dialog.moreSettings')}</Label>
+                    <Switch id="moreSettings" checked={showMoreSettings} onCheckedChange={setShowMoreSettings} />
+                  </div>
+                  {showMoreSettings && (
+                    <div className="ml-2 pl-3 border-l border-border/60 space-y-3">
+                      <div className="flex items-center justify-between">
+                        <Label htmlFor="reasoning" className="text-sm text-muted-foreground">{t('aiProviders.dialog.reasoning')}</Label>
+                        <Switch id="reasoning" checked={reasoning} onCheckedChange={setReasoning} />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="inputTypes" className="text-sm text-muted-foreground">{t('aiProviders.dialog.inputTypes')}</Label>
+                        <Input
+                          id="inputTypes"
+                          placeholder="text,image"
+                          value={inputTypes}
+                          onChange={(e) => setInputTypes(e.target.value)}
+                        />
+                      </div>
+                      <div className="grid grid-cols-2 gap-2">
+                        <div className="space-y-2">
+                          <Label htmlFor="costInput" className="text-sm text-muted-foreground">{t('aiProviders.dialog.costInput')}</Label>
+                          <Input id="costInput" inputMode="decimal" value={costInput} onChange={(e) => setCostInput(e.target.value)} />
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="costOutput" className="text-sm text-muted-foreground">{t('aiProviders.dialog.costOutput')}</Label>
+                          <Input id="costOutput" inputMode="decimal" value={costOutput} onChange={(e) => setCostOutput(e.target.value)} />
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="costCacheRead" className="text-sm text-muted-foreground">{t('aiProviders.dialog.costCacheRead')}</Label>
+                          <Input id="costCacheRead" inputMode="decimal" value={costCacheRead} onChange={(e) => setCostCacheRead(e.target.value)} />
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="costCacheWrite" className="text-sm text-muted-foreground">{t('aiProviders.dialog.costCacheWrite')}</Label>
+                          <Input id="costCacheWrite" inputMode="decimal" value={costCacheWrite} onChange={(e) => setCostCacheWrite(e.target.value)} />
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-2 gap-2">
+                        <div className="space-y-2">
+                          <Label htmlFor="contextWindow" className="text-sm text-muted-foreground">{t('aiProviders.dialog.contextWindow')}</Label>
+                          <Input id="contextWindow" inputMode="numeric" value={contextWindow} onChange={(e) => setContextWindow(e.target.value)} placeholder="200000" />
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="maxTokens" className="text-sm text-muted-foreground">{t('aiProviders.dialog.maxTokens')}</Label>
+                          <Input id="maxTokens" inputMode="numeric" value={maxTokens} onChange={(e) => setMaxTokens(e.target.value)} placeholder="8192" />
+                        </div>
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
               {/* Device OAuth Trigger — only shown when in OAuth mode */}

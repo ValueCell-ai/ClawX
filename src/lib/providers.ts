@@ -23,12 +23,24 @@ export type ProviderType = (typeof PROVIDER_TYPES)[number];
 
 export const OLLAMA_PLACEHOLDER_API_KEY = 'ollama-local';
 
+export interface ProviderModelCostConfig {
+  input: number;
+  output: number;
+  cacheRead: number;
+  cacheWrite: number;
+}
+
 export interface ProviderConfig {
   id: string;
   name: string;
   type: ProviderType;
   baseUrl?: string;
   model?: string;
+  reasoning?: boolean;
+  input?: string[];
+  cost?: ProviderModelCostConfig;
+  contextWindow?: number;
+  maxTokens?: number;
   enabled: boolean;
   createdAt: string;
   updatedAt: string;

@@ -71,6 +71,49 @@ export function getOpenClawProviderKey(type: string, providerId: string): string
   return type;
 }
 
+function normalizeProviderModelEntry(
+  config: Pick<ProviderConfig, 'model' | 'reasoning' | 'input' | 'cost' | 'contextWindow' | 'maxTokens'>
+): (Record<string, unknown> & { id: string; name: string }) | undefined {
+  const modelId = config.model?.trim();
+  if (!modelId) return undefined;
+
+  const entry: Record<string, unknown> & { id: string; name: string } = {
+    id: modelId,
+    name: modelId,
+  };
+
+  if (typeof config.reasoning === 'boolean') {
+    entry.reasoning = config.reasoning;
+  }
+
+  if (Array.isArray(config.input)) {
+    const input = config.input
+      .map((item) => item.trim())
+      .filter((item) => item.length > 0);
+    if (input.length > 0) {
+      entry.input = input;
+    }
+  }
+
+  if (config.cost) {
+    entry.cost = {
+      input: Number(config.cost.input ?? 0),
+      output: Number(config.cost.output ?? 0),
+      cacheRead: Number(config.cost.cacheRead ?? 0),
+      cacheWrite: Number(config.cost.cacheWrite ?? 0),
+    };
+  }
+
+  if (typeof config.contextWindow === 'number' && Number.isFinite(config.contextWindow)) {
+    entry.contextWindow = config.contextWindow;
+  }
+  if (typeof config.maxTokens === 'number' && Number.isFinite(config.maxTokens)) {
+    entry.maxTokens = config.maxTokens;
+  }
+
+  return entry;
+}
+
 /**
  * Register all IPC handlers
  */
@@ -975,6 +1018,8 @@ function registerProviderHandlers(gatewayManager: GatewayManager): void {
       try {
         const meta = getProviderConfig(config.type);
         const api = config.type === 'custom' || config.type === 'ollama' ? 'openai-completions' : meta?.api;
+        const modelEntry = normalizeProviderModelEntry(config);
+        const modelEntries = modelEntry ? [modelEntry] : undefined;
 
         if (api) {
           await syncProviderConfigToOpenClaw(ock, config.model, {
@@ -982,6 +1027,7 @@ function registerProviderHandlers(gatewayManager: GatewayManager): void {
             api,
             apiKeyEnv: meta?.apiKeyEnv,
             headers: meta?.headers,
+            models: modelEntries,
           });
 
           if (config.type === 'custom' || config.type === 'ollama') {
@@ -989,11 +1035,10 @@ function registerProviderHandlers(gatewayManager: GatewayManager): void {
               ? (apiKey.trim() || null)
               : await getApiKey(config.id);
             if (resolvedKey && config.baseUrl) {
-              const modelId = config.model;
               await updateAgentModelProvider(ock, {
                 baseUrl: config.baseUrl,
                 api: 'openai-completions',
-                models: modelId ? [{ id: modelId, name: modelId }] : [],
+                models: modelEntries ?? [],
                 apiKey: resolvedKey,
               });
             }
@@ -1104,6 +1149,8 @@ function registerProviderHandlers(gatewayManager: GatewayManager): void {
         try {
           const meta = getProviderConfig(nextConfig.type);
           const api = nextConfig.type === 'custom' || nextConfig.type === 'ollama' ? 'openai-completions' : meta?.api;
+          const modelEntry = normalizeProviderModelEntry(nextConfig);
+          const modelEntries = modelEntry ? [modelEntry] : undefined;
 
           if (api) {
             await syncProviderConfigToOpenClaw(ock, nextConfig.model, {
@@ -1111,6 +1158,7 @@ function registerProviderHandlers(gatewayManager: GatewayManager): void {
               api,
               apiKeyEnv: meta?.apiKeyEnv,
               headers: meta?.headers,
+              models: modelEntries,
             });
 
             if (nextConfig.type === 'custom' || nextConfig.type === 'ollama') {
@@ -1118,11 +1166,10 @@ function registerProviderHandlers(gatewayManager: GatewayManager): void {
                 ? (apiKey.trim() || null)
                 : await getApiKey(providerId);
               if (resolvedKey && nextConfig.baseUrl) {
-                const modelId = nextConfig.model;
                 await updateAgentModelProvider(ock, {
                   baseUrl: nextConfig.baseUrl,
                   api: 'openai-completions',
-                  models: modelId ? [{ id: modelId, name: modelId }] : [],
+                  models: modelEntries ?? [],
                   apiKey: resolvedKey,
                 });
               }
@@ -1138,9 +1185,11 @@ function registerProviderHandlers(gatewayManager: GatewayManager): void {
             if (nextConfig.type !== 'custom' && nextConfig.type !== 'ollama') {
               await setOpenClawDefaultModel(nextConfig.type, modelOverride);
             } else {
+              const modelEntryForDefault = normalizeProviderModelEntry(nextConfig);
               await setOpenClawDefaultModelWithOverride(ock, modelOverride, {
                 baseUrl: nextConfig.baseUrl,
                 api: 'openai-completions',
+                models: modelEntryForDefault ? [modelEntryForDefault] : undefined,
               });
             }
           }
@@ -1232,9 +1281,11 @@ function registerProviderHandlers(gatewayManager: GatewayManager): void {
               : undefined;
 
             if (provider.type === 'custom' || provider.type === 'ollama') {
+              const modelEntryForDefault = normalizeProviderModelEntry(provider);
               await setOpenClawDefaultModelWithOverride(ock, modelOverride, {
                 baseUrl: provider.baseUrl,
                 api: 'openai-completions',
+                models: modelEntryForDefault ? [modelEntryForDefault] : undefined,
               });
             } else {
               await setOpenClawDefaultModel(provider.type, modelOverride);
@@ -1297,11 +1348,11 @@ function registerProviderHandlers(gatewayManager: GatewayManager): void {
             providerKey &&
             provider.baseUrl
           ) {
-            const modelId = provider.model;
+            const modelEntry = normalizeProviderModelEntry(provider);
             await updateAgentModelProvider(ock, {
               baseUrl: provider.baseUrl,
               api: 'openai-completions',
-              models: modelId ? [{ id: modelId, name: modelId }] : [],
+              models: modelEntry ? [modelEntry] : [],
               apiKey: providerKey,
             });
           }

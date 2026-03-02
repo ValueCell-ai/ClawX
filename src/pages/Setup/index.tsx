@@ -24,6 +24,7 @@ import {
 import { TitleBar } from '@/components/layout/TitleBar';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Switch } from '@/components/ui/switch';
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip';
 import { Label } from '@/components/ui/label';
 import { cn } from '@/lib/utils';
@@ -713,6 +714,15 @@ function ProviderContent({
   const [selectedProviderConfigId, setSelectedProviderConfigId] = useState<string | null>(null);
   const [baseUrl, setBaseUrl] = useState('');
   const [modelId, setModelId] = useState('');
+  const [reasoning, setReasoning] = useState(false);
+  const [inputTypes, setInputTypes] = useState('text');
+  const [costInput, setCostInput] = useState('0');
+  const [costOutput, setCostOutput] = useState('0');
+  const [costCacheRead, setCostCacheRead] = useState('0');
+  const [costCacheWrite, setCostCacheWrite] = useState('0');
+  const [contextWindow, setContextWindow] = useState('200000');
+  const [maxTokens, setMaxTokens] = useState('8192');
+  const [showMoreSettings, setShowMoreSettings] = useState(false);
   const [providerMenuOpen, setProviderMenuOpen] = useState(false);
   const providerMenuRef = useRef<HTMLDivElement | null>(null);
 
@@ -862,7 +872,15 @@ function ProviderContent({
         const savedProvider = await window.electron.ipcRenderer.invoke(
           'provider:get',
           providerIdForLoad
-        ) as { baseUrl?: string; model?: string } | null;
+        ) as {
+          baseUrl?: string;
+          model?: string;
+          reasoning?: boolean;
+          input?: string[];
+          cost?: { input?: number; output?: number; cacheRead?: number; cacheWrite?: number };
+          contextWindow?: number;
+          maxTokens?: number;
+        } | null;
         const storedKey = await window.electron.ipcRenderer.invoke('provider:getApiKey', providerIdForLoad) as string | null;
         if (!cancelled) {
           if (storedKey) {
@@ -872,6 +890,17 @@ function ProviderContent({
           const info = providers.find((p) => p.id === selectedProvider);
           setBaseUrl(savedProvider?.baseUrl || info?.defaultBaseUrl || '');
           setModelId(savedProvider?.model || info?.defaultModelId || '');
+          if (selectedProvider === 'custom') {
+            setReasoning(savedProvider?.reasoning ?? false);
+            setInputTypes((savedProvider?.input && savedProvider.input.length > 0) ? savedProvider.input.join(',') : 'text');
+            setCostInput(String(savedProvider?.cost?.input ?? 0));
+            setCostOutput(String(savedProvider?.cost?.output ?? 0));
+            setCostCacheRead(String(savedProvider?.cost?.cacheRead ?? 0));
+            setCostCacheWrite(String(savedProvider?.cost?.cacheWrite ?? 0));
+            setContextWindow(String(savedProvider?.contextWindow ?? 200000));
+            setMaxTokens(String(savedProvider?.maxTokens ?? 8192));
+            setShowMoreSettings(false);
+          }
         }
       } catch (error) {
         if (!cancelled) {
@@ -914,6 +943,7 @@ function ProviderContent({
   const requiresKey = selectedProviderData?.requiresApiKey ?? false;
   const isOAuth = selectedProviderData?.isOAuth ?? false;
   const supportsApiKey = selectedProviderData?.supportsApiKey ?? false;
+  const isCustomProvider = selectedProvider === 'custom';
   const useOAuthFlow = isOAuth && (!supportsApiKey || authMode === 'oauth');
 
   const handleValidateAndSave = async () => {
@@ -971,6 +1001,67 @@ function ProviderContent({
           : selectedProvider;
 
       const effectiveApiKey = resolveProviderApiKeyForSave(selectedProvider, apiKey);
+      const parsedInput = inputTypes
+        .split(',')
+        .map((item) => item.trim())
+        .filter(Boolean);
+      const rawCostInput = costInput.trim();
+      const rawCostOutput = costOutput.trim();
+      const rawCostCacheRead = costCacheRead.trim();
+      const rawCostCacheWrite = costCacheWrite.trim();
+      const rawContextWindow = contextWindow.trim();
+      const rawMaxTokens = maxTokens.trim();
+      const parsedCostInput = rawCostInput ? Number(rawCostInput) : 0;
+      const parsedCostOutput = rawCostOutput ? Number(rawCostOutput) : 0;
+      const parsedCostCacheRead = rawCostCacheRead ? Number(rawCostCacheRead) : 0;
+      const parsedCostCacheWrite = rawCostCacheWrite ? Number(rawCostCacheWrite) : 0;
+      const parsedContextWindow = rawContextWindow ? Number(rawContextWindow) : undefined;
+      const parsedMaxTokens = rawMaxTokens ? Number(rawMaxTokens) : undefined;
+
+      if (isCustomProvider) {
+        const costIsInvalid = [
+          parsedCostInput,
+          parsedCostOutput,
+          parsedCostCacheRead,
+          parsedCostCacheWrite,
+        ].some((value) => !Number.isFinite(value) || value < 0);
+        const tokenIsInvalid =
+          (parsedContextWindow !== undefined && (!Number.isInteger(parsedContextWindow) || parsedContextWindow <= 0))
+          || (parsedMaxTokens !== undefined && (!Number.isInteger(parsedMaxTokens) || parsedMaxTokens <= 0));
+        if (costIsInvalid) {
+          toast.error(t('settings:aiProviders.toast.invalidCost'));
+          setValidating(false);
+          return;
+        }
+        if (tokenIsInvalid) {
+          toast.error(t('settings:aiProviders.toast.invalidTokenLimits'));
+          setValidating(false);
+          return;
+        }
+      }
+
+      const customReasoning = isCustomProvider && reasoning ? reasoning : undefined;
+      const customInput = isCustomProvider
+        ? (parsedInput.length > 0 && !(parsedInput.length === 1 && parsedInput[0] === 'text')
+          ? parsedInput
+          : undefined)
+        : undefined;
+      const customCost = isCustomProvider
+        ? ((parsedCostInput === 0 && parsedCostOutput === 0 && parsedCostCacheRead === 0 && parsedCostCacheWrite === 0)
+          ? undefined
+          : {
+            input: parsedCostInput,
+            output: parsedCostOutput,
+            cacheRead: parsedCostCacheRead,
+            cacheWrite: parsedCostCacheWrite,
+          })
+        : undefined;
+      const customContextWindow = isCustomProvider
+        ? (parsedContextWindow === 200000 ? undefined : parsedContextWindow)
+        : undefined;
+      const customMaxTokens = isCustomProvider
+        ? (parsedMaxTokens === 8192 ? undefined : parsedMaxTokens)
+        : undefined;
 
       // Save provider config + API key, then set as default
       const saveResult = await window.electron.ipcRenderer.invoke(
@@ -981,6 +1072,11 @@ function ProviderContent({
           type: selectedProvider,
           baseUrl: baseUrl.trim() || undefined,
           model: effectiveModelId,
+          reasoning: customReasoning,
+          input: customInput,
+          cost: customCost,
+          contextWindow: customContextWindow,
+          maxTokens: customMaxTokens,
           enabled: true,
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString(),
@@ -1028,6 +1124,7 @@ function ProviderContent({
     setKeyValid(null);
     setProviderMenuOpen(false);
     setAuthMode('oauth');
+    setShowMoreSettings(false);
   };
 
   return (
@@ -1212,6 +1309,80 @@ function ProviderContent({
                   {showKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                 </button>
               </div>
+            </div>
+          )}
+
+          {isCustomProvider && (
+            <div className="space-y-4 rounded-md border border-border/70 p-3">
+              <div className="flex items-center justify-between">
+                <Label htmlFor="custom-more-settings">{t('settings:aiProviders.dialog.moreSettings')}</Label>
+                <Switch
+                  id="custom-more-settings"
+                  checked={showMoreSettings}
+                  onCheckedChange={(checked) => {
+                    setShowMoreSettings(checked);
+                    onConfiguredChange(false);
+                  }}
+                />
+              </div>
+              {showMoreSettings && (
+                <div className="ml-2 pl-3 border-l border-border/60 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <Label htmlFor="custom-reasoning" className="text-sm text-muted-foreground">{t('settings:aiProviders.dialog.reasoning')}</Label>
+                    <Switch
+                      id="custom-reasoning"
+                      checked={reasoning}
+                      onCheckedChange={(checked) => {
+                        setReasoning(checked);
+                        onConfiguredChange(false);
+                      }}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="custom-input-types" className="text-sm text-muted-foreground">{t('settings:aiProviders.dialog.inputTypes')}</Label>
+                    <Input
+                      id="custom-input-types"
+                      type="text"
+                      placeholder="text,image"
+                      value={inputTypes}
+                      onChange={(e) => {
+                        setInputTypes(e.target.value);
+                        onConfiguredChange(false);
+                      }}
+                      autoComplete="off"
+                      className="bg-background border-input"
+                    />
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="space-y-2">
+                      <Label htmlFor="custom-cost-input" className="text-sm text-muted-foreground">{t('settings:aiProviders.dialog.costInput')}</Label>
+                      <Input id="custom-cost-input" inputMode="decimal" value={costInput} onChange={(e) => { setCostInput(e.target.value); onConfiguredChange(false); }} className="bg-background border-input" />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="custom-cost-output" className="text-sm text-muted-foreground">{t('settings:aiProviders.dialog.costOutput')}</Label>
+                      <Input id="custom-cost-output" inputMode="decimal" value={costOutput} onChange={(e) => { setCostOutput(e.target.value); onConfiguredChange(false); }} className="bg-background border-input" />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="custom-cost-cache-read" className="text-sm text-muted-foreground">{t('settings:aiProviders.dialog.costCacheRead')}</Label>
+                      <Input id="custom-cost-cache-read" inputMode="decimal" value={costCacheRead} onChange={(e) => { setCostCacheRead(e.target.value); onConfiguredChange(false); }} className="bg-background border-input" />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="custom-cost-cache-write" className="text-sm text-muted-foreground">{t('settings:aiProviders.dialog.costCacheWrite')}</Label>
+                      <Input id="custom-cost-cache-write" inputMode="decimal" value={costCacheWrite} onChange={(e) => { setCostCacheWrite(e.target.value); onConfiguredChange(false); }} className="bg-background border-input" />
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="space-y-2">
+                      <Label htmlFor="custom-context-window" className="text-sm text-muted-foreground">{t('settings:aiProviders.dialog.contextWindow')}</Label>
+                      <Input id="custom-context-window" inputMode="numeric" value={contextWindow} onChange={(e) => { setContextWindow(e.target.value); onConfiguredChange(false); }} className="bg-background border-input" />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="custom-max-tokens" className="text-sm text-muted-foreground">{t('settings:aiProviders.dialog.maxTokens')}</Label>
+                      <Input id="custom-max-tokens" inputMode="numeric" value={maxTokens} onChange={(e) => { setMaxTokens(e.target.value); onConfiguredChange(false); }} className="bg-background border-input" />
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
