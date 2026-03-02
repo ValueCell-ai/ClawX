@@ -16,6 +16,7 @@ import {
   hasApiKey,
   saveProvider,
   getProvider,
+  getAllProviders,
   deleteProvider,
   setDefaultProvider,
   getDefaultProvider,
@@ -48,6 +49,7 @@ import { checkUvInstalled, installUv, setupManagedPython } from '../utils/uv-set
 import { updateSkillConfig, getSkillConfig, getAllSkillConfigs } from '../utils/skill-config';
 import { whatsAppLoginManager } from '../utils/whatsapp-login';
 import { getProviderConfig } from '../utils/provider-registry';
+import { getProviderDefaultModel } from '../utils/provider-registry';
 import { deviceOAuthManager, OAuthProviderType } from '../utils/device-oauth';
 import { applyProxySettings } from './proxy';
 import { proxyAwareFetch } from '../utils/proxy-fetch';
@@ -71,6 +73,54 @@ export function getOpenClawProviderKey(type: string, providerId: string): string
     return 'minimax-portal';
   }
   return type;
+}
+
+function getProviderModelRef(config: ProviderConfig): string | undefined {
+  const providerKey = getOpenClawProviderKey(config.type, config.id);
+
+  if (config.model) {
+    return config.model.startsWith(`${providerKey}/`)
+      ? config.model
+      : `${providerKey}/${config.model}`;
+  }
+
+  return getProviderDefaultModel(config.type);
+}
+
+async function getProviderFallbackModelRefs(config: ProviderConfig): Promise<string[]> {
+  const allProviders = await getAllProviders();
+  const providerMap = new Map(allProviders.map((provider) => [provider.id, provider]));
+  const seen = new Set<string>();
+  const results: string[] = [];
+  const providerKey = getOpenClawProviderKey(config.type, config.id);
+
+  for (const fallbackModel of config.fallbackModels ?? []) {
+    const normalizedModel = fallbackModel.trim();
+    if (!normalizedModel) continue;
+
+    const modelRef = normalizedModel.startsWith(`${providerKey}/`)
+      ? normalizedModel
+      : `${providerKey}/${normalizedModel}`;
+
+    if (seen.has(modelRef)) continue;
+    seen.add(modelRef);
+    results.push(modelRef);
+  }
+
+  for (const fallbackId of config.fallbackProviderIds ?? []) {
+    if (!fallbackId || fallbackId === config.id) continue;
+
+    const fallbackProvider = providerMap.get(fallbackId);
+    if (!fallbackProvider) continue;
+
+    const modelRef = getProviderModelRef(fallbackProvider);
+    if (!modelRef || seen.has(modelRef)) continue;
+
+    seen.add(modelRef);
+    results.push(modelRef);
+  }
+
+  return results;
 }
 
 /**
@@ -1107,6 +1157,7 @@ function registerProviderHandlers(gatewayManager: GatewayManager): void {
 
         // Sync the provider configuration to openclaw.json so Gateway knows about it
         try {
+          const fallbackModels = await getProviderFallbackModelRefs(nextConfig);
           const meta = getProviderConfig(nextConfig.type);
           const api = nextConfig.type === 'custom' || nextConfig.type === 'ollama' ? 'openai-completions' : meta?.api;
 
@@ -1141,12 +1192,12 @@ function registerProviderHandlers(gatewayManager: GatewayManager): void {
               ? `${ock}/${nextConfig.model}`
               : undefined;
             if (nextConfig.type !== 'custom' && nextConfig.type !== 'ollama') {
-              await setOpenClawDefaultModel(nextConfig.type, modelOverride);
+              await setOpenClawDefaultModel(ock, modelOverride, fallbackModels);
             } else {
               await setOpenClawDefaultModelWithOverride(ock, modelOverride, {
                 baseUrl: nextConfig.baseUrl,
                 api: 'openai-completions',
-              });
+              }, fallbackModels);
             }
           }
 
@@ -1222,6 +1273,7 @@ function registerProviderHandlers(gatewayManager: GatewayManager): void {
         try {
           const ock = getOpenClawProviderKey(provider.type, providerId);
           const providerKey = await getApiKey(providerId);
+          const fallbackModels = await getProviderFallbackModelRefs(provider);
 
           // OAuth providers (qwen-portal, minimax-portal, minimax-portal-cn) might use OAuth OR a direct API key.
           // Treat them as OAuth only if they don't have a local API key configured.
@@ -1240,9 +1292,9 @@ function registerProviderHandlers(gatewayManager: GatewayManager): void {
               await setOpenClawDefaultModelWithOverride(ock, modelOverride, {
                 baseUrl: provider.baseUrl,
                 api: 'openai-completions',
-              });
+              }, fallbackModels);
             } else {
-              await setOpenClawDefaultModel(provider.type, modelOverride);
+              await setOpenClawDefaultModel(ock, modelOverride, fallbackModels);
             }
 
             // Keep auth-profiles in sync with the default provider instance.
@@ -1270,13 +1322,13 @@ function registerProviderHandlers(gatewayManager: GatewayManager): void {
               ? 'minimax-portal'
               : provider.type;
 
-            await setOpenClawDefaultModelWithOverride(targetProviderKey, undefined, {
+            await setOpenClawDefaultModelWithOverride(targetProviderKey, getProviderModelRef(provider), {
               baseUrl,
               api,
               authHeader: targetProviderKey === 'minimax-portal' ? true : undefined,
               // Relies on OpenClaw Gateway native auth-profiles syncing
               apiKeyEnv: targetProviderKey === 'minimax-portal' ? 'minimax-oauth' : 'qwen-oauth',
-            });
+            }, fallbackModels);
 
             logger.info(`Configured openclaw.json for OAuth provider "${provider.type}"`);
 

@@ -29,6 +29,11 @@
       "apiKeyStored": "API キーはローカルマシンに保存されます。",
       "baseUrl": "ベース URL",
       "modelId": "モデル ID",
+      "fallbackModels": "フォールバックモデル",
+      "fallbackModelIds": "同一プロバイダーのフォールバックモデル ID",
+      "fallbackModelIdsPlaceholder": "gpt-4.1-mini\nanother-model-id",
+      "fallbackModelIdsHelp": "1 行につき 1 つのモデル ID を指定します。まず現在のプロバイダー内でこれらを試し、その後ほかのプロバイダーへフォールバックします。",
+      "noFallbackOptions": "フォールバック先にするには、先に別のプロバイダーを追加してください。",
       "cancel": "キャンセル",
       "change": "プロバイダーを変更",
       "add": "プロバイダーを追加",
@@ -39,6 +44,9 @@
       "default": "デフォルト",
       "configured": "構成済み",
       "noKey": "API キー未設定",
+      "none": "なし",
+      "fallbacks_one": "フォールバック: {{names}}",
+      "fallbacks_other": "フォールバック ({{count}}): {{names}}",
       "setDefault": "デフォルトに設定",
       "editKey": "API キーを編集",
       "delete": "プロバイダーを削除"
@@ -53,7 +61,8 @@
       "updated": "プロバイダーが更新されました",
       "failedUpdate": "プロバイダーの更新に失敗しました",
       "invalidKey": "無効な API キー",
-      "modelRequired": "モデル ID が必要です"
+      "modelRequired": "モデル ID が必要です",
+      "minimaxConflict": "MiniMax (Global) と MiniMax (CN) は同時に追加できません。"
     },
     "oauth": {
       "loginMode": "OAuthログイン",

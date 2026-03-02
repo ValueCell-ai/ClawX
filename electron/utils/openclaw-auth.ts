@@ -358,7 +358,11 @@ export function buildProviderEnvVars(providers: Array<{ type: string; apiKey: st
  * Update the OpenClaw config to use the given provider and model
  * Writes to ~/.openclaw/openclaw.json
  */
-export async function setOpenClawDefaultModel(provider: string, modelOverride?: string): Promise<void> {
+export async function setOpenClawDefaultModel(
+  provider: string,
+  modelOverride?: string,
+  fallbackModels: string[] = []
+): Promise<void> {
   const config = await readOpenClawJson();
 
   const model = modelOverride || getProviderDefaultModel(provider);
@@ -370,11 +374,17 @@ export async function setOpenClawDefaultModel(provider: string, modelOverride?: 
   const modelId = model.startsWith(`${provider}/`)
     ? model.slice(provider.length + 1)
     : model;
+  const fallbackModelIds = fallbackModels
+    .filter((fallback) => fallback.startsWith(`${provider}/`))
+    .map((fallback) => fallback.slice(provider.length + 1));
 
   // Set the default model for the agents
   const agents = (config.agents || {}) as Record<string, unknown>;
   const defaults = (agents.defaults || {}) as Record<string, unknown>;
-  defaults.model = { primary: model };
+  defaults.model = {
+    primary: model,
+    fallbacks: fallbackModels,
+  };
   agents.defaults = defaults;
   config.agents = agents;
 
@@ -401,8 +411,10 @@ export async function setOpenClawDefaultModel(provider: string, modelOverride?: 
         mergedModels.push(item);
       }
     }
-    if (modelId && !mergedModels.some((m) => m.id === modelId)) {
-      mergedModels.push({ id: modelId, name: modelId });
+    for (const candidateModelId of [modelId, ...fallbackModelIds]) {
+      if (candidateModelId && !mergedModels.some((m) => m.id === candidateModelId)) {
+        mergedModels.push({ id: candidateModelId, name: candidateModelId });
+      }
     }
 
     const providerEntry: Record<string, unknown> = {
@@ -500,7 +512,8 @@ export async function syncProviderConfigToOpenClaw(
 export async function setOpenClawDefaultModelWithOverride(
   provider: string,
   modelOverride: string | undefined,
-  override: RuntimeProviderConfigOverride
+  override: RuntimeProviderConfigOverride,
+  fallbackModels: string[] = []
 ): Promise<void> {
   const config = await readOpenClawJson();
 
@@ -513,10 +526,16 @@ export async function setOpenClawDefaultModelWithOverride(
   const modelId = model.startsWith(`${provider}/`)
     ? model.slice(provider.length + 1)
     : model;
+  const fallbackModelIds = fallbackModels
+    .filter((fallback) => fallback.startsWith(`${provider}/`))
+    .map((fallback) => fallback.slice(provider.length + 1));
 
   const agents = (config.agents || {}) as Record<string, unknown>;
   const defaults = (agents.defaults || {}) as Record<string, unknown>;
-  defaults.model = { primary: model };
+  defaults.model = {
+    primary: model,
+    fallbacks: fallbackModels,
+  };
   agents.defaults = defaults;
   config.agents = agents;
 
@@ -525,7 +544,11 @@ export async function setOpenClawDefaultModelWithOverride(
     const providers = (models.providers || {}) as Record<string, unknown>;
 
     const nextModels: Array<Record<string, unknown>> = [];
-    if (modelId) nextModels.push({ id: modelId, name: modelId });
+    for (const candidateModelId of [modelId, ...fallbackModelIds]) {
+      if (candidateModelId && !nextModels.some((entry) => entry.id === candidateModelId)) {
+        nextModels.push({ id: candidateModelId, name: candidateModelId });
+      }
+    }
 
     const nextProvider: Record<string, unknown> = {
       baseUrl: override.baseUrl,
