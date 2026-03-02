@@ -49,6 +49,7 @@ const electronAPI = {
         // Settings
         'settings:get',
         'settings:set',
+        'settings:setMany',
         'settings:getAll',
         'settings:reset',
         'usage:recentTokenHistory',

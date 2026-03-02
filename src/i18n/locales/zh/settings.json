@@ -85,7 +85,22 @@
     "appLogs": "应用日志",
     "openFolder": "打开文件夹",
     "autoStart": "自动启动网关",
-    "autoStartDesc": "ClawX 启动时自动启动网关"
+    "autoStartDesc": "ClawX 启动时自动启动网关",
+    "proxyTitle": "代理",
+    "proxyDesc": "让 Electron 和 Gateway 的网络请求都走本地代理客户端。",
+    "proxyServer": "代理服务器",
+    "proxyServerHelp": "所有请求默认使用的代理。只填 host:port 时默认按 HTTP 处理。",
+    "proxyHttpServer": "HTTP 代理",
+    "proxyHttpServerHelp": "HTTP 请求的高级覆盖项。留空时使用“代理服务器”。",
+    "proxyHttpsServer": "HTTPS 代理",
+    "proxyHttpsServerHelp": "HTTPS 请求的高级覆盖项。留空时使用“代理服务器”。",
+    "proxyAllServer": "ALL_PROXY / SOCKS",
+    "proxyAllServerHelp": "支持 SOCKS 的客户端和 Telegram 等协议的高级兜底代理。留空时使用“代理服务器”。",
+    "proxyBypass": "绕过规则",
+    "proxyBypassHelp": "使用分号、逗号或换行分隔需要直连的主机。",
+    "proxyRestartNote": "保存后会立即重新应用 Electron 网络代理，并自动重启 Gateway。",
+    "proxySaved": "代理设置已保存",
+    "proxySaveFailed": "保存代理设置失败"
   },
   "updates": {
     "title": "更新",

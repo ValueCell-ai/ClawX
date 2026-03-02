@@ -10,6 +10,7 @@ import { join } from 'path';
 import { homedir } from 'os';
 import { getOpenClawResolvedDir } from './paths';
 import * as logger from './logger';
+import { proxyAwareFetch } from './proxy-fetch';
 
 const OPENCLAW_DIR = join(homedir(), '.openclaw');
 const CONFIG_FILE = join(OPENCLAW_DIR, 'openclaw.json');
@@ -497,7 +498,7 @@ async function validateTelegramCredentials(
     if (!allowedUsers) return { valid: false, errors: ['At least one allowed user ID is required'], warnings: [] };
 
     try {
-        const response = await fetch(`https://api.telegram.org/bot${botToken}/getMe`);
+        const response = await proxyAwareFetch(`https://api.telegram.org/bot${botToken}/getMe`);
         const data = (await response.json()) as { ok?: boolean; description?: string; result?: { username?: string } };
         if (data.ok) {
             return { valid: true, errors: [], warnings: [], details: { botUsername: data.result?.username || 'Unknown' } };

@@ -17,7 +17,7 @@ import {
   appendNodeRequireToNodeOptions,
   quoteForCmd,
 } from '../utils/paths';
-import { getSetting } from '../utils/store';
+import { getAllSettings, getSetting } from '../utils/store';
 import { getApiKey, getDefaultProvider, getProvider } from '../utils/secure-storage';
 import { getProviderEnvVar, getKeyableProviderTypes } from '../utils/provider-registry';
 import { GatewayEventType, JsonRpcNotification, isNotification, isResponse } from './protocol';
@@ -32,6 +32,8 @@ import {
   type DeviceIdentity,
 } from '../utils/device-identity';
 import { syncGatewayTokenToConfig, syncBrowserConfigToOpenClaw, sanitizeOpenClawConfig } from '../utils/openclaw-auth';
+import { buildProxyEnv, resolveProxySettings } from '../utils/proxy';
+import { syncProxyConfigToOpenClaw } from '../utils/openclaw-proxy';
 import { shouldAttemptConfigAutoRepair } from './startup-recovery';
 
 /**
@@ -321,18 +323,18 @@ export class GatewayManager extends EventEmitter {
             this.startHealthCheck();
             return;
           }
-          
+
           logger.debug('No existing Gateway found, starting new process...');
-          
+
           // Start new Gateway process
           await this.startProcess();
-          
+
           // Wait for Gateway to be ready
           await this.waitForReady();
-          
+
           // Connect WebSocket
           await this.connect(this.status.port);
-          
+
           // Start health monitoring
           this.startHealthCheck();
           logger.debug('Gateway started successfully');
@@ -871,7 +873,9 @@ export class GatewayManager extends EventEmitter {
     }
     
     // Get or generate gateway token
-    const gatewayToken = await getSetting('gatewayToken');
+    const appSettings = await getAllSettings();
+    const gatewayToken = appSettings.gatewayToken;
+    await syncProxyConfigToOpenClaw(appSettings);
 
     // Strip stale/invalid keys from openclaw.json that would cause the
     // Gateway's strict config validation to reject the file on startup
@@ -989,17 +993,21 @@ export class GatewayManager extends EventEmitter {
     }
 
     const uvEnv = await getUvMirrorEnv();
+    const proxyEnv = buildProxyEnv(appSettings);
+    const resolvedProxy = resolveProxySettings(appSettings);
     logger.info(
-      `Starting Gateway process (mode=${mode}, port=${this.status.port}, command="${command}", args="${this.sanitizeSpawnArgs(args).join(' ')}", cwd="${openclawDir}", bundledBin=${binPathExists ? 'yes' : 'no'}, providerKeys=${loadedProviderKeyCount})`
+      `Starting Gateway process (mode=${mode}, port=${this.status.port}, command="${command}", args="${this.sanitizeSpawnArgs(args).join(' ')}", cwd="${openclawDir}", bundledBin=${binPathExists ? 'yes' : 'no'}, providerKeys=${loadedProviderKeyCount}, proxy=${appSettings.proxyEnabled ? `http=${resolvedProxy.httpProxy || '-'}, https=${resolvedProxy.httpsProxy || '-'}, all=${resolvedProxy.allProxy || '-'}` : 'disabled'})`
     );
     this.lastSpawnSummary = `mode=${mode}, command="${command}", args="${this.sanitizeSpawnArgs(args).join(' ')}", cwd="${openclawDir}"`;
     
     return new Promise((resolve, reject) => {
+      const { NODE_OPTIONS: _nodeOptions, ...baseEnv } = process.env;
       const spawnEnv: Record<string, string | undefined> = {
-        ...process.env,
+        ...baseEnv,
         PATH: finalPath,
         ...providerEnv,
         ...uvEnv,
+        ...proxyEnv,
         OPENCLAW_GATEWAY_TOKEN: gatewayToken,
         OPENCLAW_SKIP_CHANNELS: '',
         CLAWDBOT_SKIP_CHANNELS: '',
