@@ -106,6 +106,7 @@ export class ClawHubService {
                     ...env,
                     CLAWHUB_WORKDIR: this.workDir,
                 },
+                windowsHide: true,
             });
 
             let stdout = '';

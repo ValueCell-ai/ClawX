@@ -526,6 +526,7 @@ export async function validateChannelConfig(channelType: string): Promise<Valida
                     cwd: openclawPath,
                     encoding: 'utf-8',
                     timeout: 30000,
+                    windowsHide: true,
                 },
                 (err, stdout) => {
                     if (err) reject(err);
