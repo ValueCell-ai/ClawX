@@ -51,6 +51,7 @@ import { getProviderConfig } from '../utils/provider-registry';
 import { deviceOAuthManager, OAuthProviderType } from '../utils/device-oauth';
 import { applyProxySettings } from './proxy';
 import { proxyAwareFetch } from '../utils/proxy-fetch';
+import { getRecentTokenUsageHistory } from '../utils/token-usage';
 
 /**
  * For custom/ollama providers, derive a unique key for OpenClaw config files
@@ -109,6 +110,9 @@ export function registerIpcHandlers(
 
   // Log handlers (for UI to read gateway/app logs)
   registerLogHandlers();
+
+  // Usage handlers
+  registerUsageHandlers();
 
   // Skill config handlers (direct file access, no Gateway RPC)
   registerSkillConfigHandlers();
@@ -1817,7 +1821,14 @@ function registerSettingsHandlers(gatewayManager: GatewayManager): void {
     return { success: true, settings };
   });
 }
-
+function registerUsageHandlers(): void {
+  ipcMain.handle('usage:recentTokenHistory', async (_, limit?: number) => {
+    const safeLimit = typeof limit === 'number' && Number.isFinite(limit)
+      ? Math.min(Math.max(Math.floor(limit), 1), 100)
+      : 20;
+    return await getRecentTokenUsageHistory(safeLimit);
+  });
+}
 /**
  * Window control handlers (for custom title bar on Windows/Linux)
  */

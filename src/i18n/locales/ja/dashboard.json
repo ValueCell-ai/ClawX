@@ -24,5 +24,31 @@
     "activeSkills": "アクティブなスキル",
     "noSkills": "有効なスキルがありません",
     "enableSome": "スキルを有効にする",
-    "more": "+{{count}} 件"
+    "more": "+{{count}} 件",
+    "recentTokenHistory": {
+        "title": "最近のトークン使用量",
+        "description": "トークン使用量が記録された最新のアシスタント応答を表示します。",
+        "loading": "トークン使用履歴を読み込み中...",
+        "empty": "トークン使用履歴はまだありません",
+        "groupByModel": "モデル別",
+        "groupByTime": "時間別",
+        "last7Days": "7日",
+        "last30Days": "30日",
+        "allTime": "すべて",
+        "showingLast": "最新 {{count}} 件を表示",
+        "totalTokens": "合計トークン",
+        "inputShort": "入力",
+        "outputShort": "出力",
+        "cacheShort": "キャッシュ",
+        "page": "{{current}} / {{total}} ページ",
+        "prev": "前へ",
+        "next": "次へ",
+        "unknownModel": "不明なモデル",
+        "emptyForWindow": "この期間のトークン使用履歴はありません",
+        "input": "入力 {{value}}",
+        "output": "出力 {{value}}",
+        "cacheRead": "キャッシュ読取 {{value}}",
+        "cacheWrite": "キャッシュ書込 {{value}}",
+        "cost": "コスト ${{amount}}"
+    }
 }
