@@ -447,6 +447,7 @@ interface RuntimeProviderConfigOverride {
   apiKeyEnv?: string;
   headers?: Record<string, string>;
   authHeader?: boolean;
+  models?: Array<Record<string, unknown> & { id: string; name: string }>;
 }
 
 /**
@@ -464,8 +465,9 @@ export async function syncProviderConfigToOpenClaw(
     const models = (config.models || {}) as Record<string, unknown>;
     const providers = (models.providers || {}) as Record<string, unknown>;
 
-    const nextModels: Array<Record<string, unknown>> = [];
-    if (modelId) nextModels.push({ id: modelId, name: modelId });
+    const nextModels: Array<Record<string, unknown>> = override.models
+      ? override.models.map((model) => ({ ...model }))
+      : (modelId ? [{ id: modelId, name: modelId }] : []);
 
     const nextProvider: Record<string, unknown> = {
       baseUrl: override.baseUrl,
@@ -524,8 +526,9 @@ export async function setOpenClawDefaultModelWithOverride(
     const models = (config.models || {}) as Record<string, unknown>;
     const providers = (models.providers || {}) as Record<string, unknown>;
 
-    const nextModels: Array<Record<string, unknown>> = [];
-    if (modelId) nextModels.push({ id: modelId, name: modelId });
+    const nextModels: Array<Record<string, unknown>> = override.models
+      ? override.models.map((model) => ({ ...model }))
+      : (modelId ? [{ id: modelId, name: modelId }] : []);
 
     const nextProvider: Record<string, unknown> = {
       baseUrl: override.baseUrl,
@@ -665,7 +668,7 @@ export async function updateAgentModelProvider(
   entry: {
     baseUrl?: string;
     api?: string;
-    models?: Array<{ id: string; name: string }>;
+    models?: Array<Record<string, unknown> & { id: string; name: string }>;
     apiKey?: string;
     /** When true, pi-ai sends Authorization: Bearer instead of x-api-key */
     authHeader?: boolean;
@@ -696,7 +699,7 @@ export async function updateAgentModelProvider(
 
     const mergedModels = (entry.models ?? []).map((m) => {
       const prev = existingModels.find((e) => e.id === m.id);
-      return prev ? { ...prev, id: m.id, name: m.name } : { ...m };
+      return prev ? { ...prev, ...m, id: m.id, name: m.name } : { ...m };
     });
 
     if (entry.baseUrl !== undefined) existing.baseUrl = entry.baseUrl;

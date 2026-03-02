@@ -35,6 +35,16 @@ export interface ProviderConfig {
   type: ProviderType;
   baseUrl?: string;
   model?: string;
+  reasoning?: boolean;
+  input?: string[];
+  cost?: {
+    input: number;
+    output: number;
+    cacheRead: number;
+    cacheWrite: number;
+  };
+  contextWindow?: number;
+  maxTokens?: number;
   enabled: boolean;
   createdAt: string;
   updatedAt: string;
