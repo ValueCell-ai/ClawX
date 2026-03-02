@@ -138,6 +138,44 @@ function cleanupNativePlatformPackages(nodeModulesDir, platform, arch) {
   return removed;
 }
 
+// ── Broken module patcher ─────────────────────────────────────────────────────
+// Some bundled packages have transpiled CJS that sets `module.exports = exports.default`
+// without ever assigning `exports.default`, leaving module.exports === undefined.
+// This causes `TypeError: Cannot convert undefined or null to object` in Node.js 22+
+// ESM interop (translators.js hasOwnProperty call).  We patch these after copying.
+
+const MODULE_PATCHES = {
+  // node-domexception@1.0.0: index.js sets module.exports = undefined.
+  // Node.js 18+ ships DOMException as a built-in; this shim re-exports it.
+  'node-domexception/index.js': [
+    "'use strict';",
+    '// Shim: original transpiled file sets module.exports = exports.default (undefined).',
+    '// Node.js 18+ has DOMException as a built-in global.',
+    'const dom = globalThis.DOMException ||',
+    '  class DOMException extends Error {',
+    "    constructor(msg, name) { super(msg); this.name = name || 'Error'; }",
+    '  };',
+    'module.exports = dom;',
+    'module.exports.DOMException = dom;',
+    'module.exports.default = dom;',
+  ].join('\n') + '\n',
+};
+
+function patchBrokenModules(nodeModulesDir) {
+  const { writeFileSync } = require('fs');
+  let count = 0;
+  for (const [rel, content] of Object.entries(MODULE_PATCHES)) {
+    const target = join(nodeModulesDir, rel);
+    if (existsSync(target)) {
+      writeFileSync(target, content, 'utf8');
+      count++;
+    }
+  }
+  if (count > 0) {
+    console.log(`[after-pack] 🩹 Patched ${count} broken module(s) in ${nodeModulesDir}`);
+  }
+}
+
 // ── Plugin bundler ───────────────────────────────────────────────────────────
 // Bundles a single OpenClaw plugin (and its transitive deps) from node_modules
 // directly into the packaged resources directory.  Mirrors the logic in
@@ -288,6 +326,10 @@ exports.default = async function afterPack(context) {
   console.log(`[after-pack] Copying ${depCount} openclaw dependencies to ${dest} ...`);
   cpSync(src, dest, { recursive: true });
   console.log('[after-pack] ✅ openclaw node_modules copied.');
+
+  // Patch broken modules whose CJS transpiled output sets module.exports = undefined,
+  // causing TypeError in Node.js 22+ ESM interop.
+  patchBrokenModules(dest);
 
   // 1.1 Bundle OpenClaw plugins directly from node_modules into packaged resources.
   //     This is intentionally done in afterPack (not extraResources) because:

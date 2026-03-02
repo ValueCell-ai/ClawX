@@ -366,7 +366,50 @@ const sizeAfter = getDirSize(OUTPUT);
 echo`   Removed ${cleanedCount} files/directories`;
 echo`   Size: ${formatSize(sizeBefore)} → ${formatSize(sizeAfter)} (saved ${formatSize(sizeBefore - sizeAfter)})`;
 
-// 7. Verify the bundle
+// 7. Patch known broken packages
+//
+// Some packages in the ecosystem have transpiled CJS output that sets
+// `module.exports = exports.default` without ever assigning `exports.default`,
+// resulting in `module.exports = undefined`.  This causes a TypeError in
+// Node.js 22+ ESM interop when the translators try to call hasOwnProperty on
+// the undefined exports object.
+//
+// We patch these files in-place after the copy so the bundle is safe to run.
+function patchBrokenModules(nodeModulesDir) {
+  const patches = {
+    // node-domexception@1.0.0: transpiled index.js leaves module.exports = undefined.
+    // Node.js 18+ ships DOMException as a built-in global, so a simple shim works.
+    'node-domexception/index.js': [
+      `'use strict';`,
+      `// Shim: the original transpiled file sets module.exports = exports.default`,
+      `// (which is undefined), causing TypeError in Node.js 22+ ESM interop.`,
+      `// Node.js 18+ has DOMException as a built-in global.`,
+      `const dom = globalThis.DOMException ||`,
+      `  class DOMException extends Error {`,
+      `    constructor(msg, name) { super(msg); this.name = name || 'Error'; }`,
+      `  };`,
+      `module.exports = dom;`,
+      `module.exports.DOMException = dom;`,
+      `module.exports.default = dom;`,
+    ].join('\n'),
+  };
+
+  let count = 0;
+  for (const [rel, content] of Object.entries(patches)) {
+    const target = path.join(nodeModulesDir, rel);
+    if (fs.existsSync(target)) {
+      fs.writeFileSync(target, content + '\n', 'utf8');
+      count++;
+    }
+  }
+  if (count > 0) {
+    echo`   🩹 Patched ${count} broken module(s) in node_modules`;
+  }
+}
+
+patchBrokenModules(outputNodeModules);
+
+// 8. Verify the bundle
 const entryExists = fs.existsSync(path.join(OUTPUT, 'openclaw.mjs'));
 const distExists = fs.existsSync(path.join(OUTPUT, 'dist', 'entry.js'));
 
