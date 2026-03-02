@@ -266,7 +266,13 @@ function cleanupBundle(outputDir) {
       'tsconfig.json', '.npmignore', '.eslintrc', '.prettierrc', '.editorconfig',
     ]);
 
-    function walkExt(dir, insideNodeModules) {
+    // .md files inside skills/ directories are runtime content (SKILL.md,
+    // block-types.md, etc.) and must NOT be removed.
+    const JUNK_MD_NAMES = new Set([
+      'README.md', 'CHANGELOG.md', 'LICENSE.md', 'CONTRIBUTING.md',
+    ]);
+
+    function walkExt(dir, insideNodeModules, insideSkills) {
       let entries;
       try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch { return; }
       for (const entry of entries) {
@@ -275,7 +281,11 @@ function cleanupBundle(outputDir) {
           if (insideNodeModules && NM_REMOVE_DIRS.has(entry.name)) {
             if (rmSafe(full)) removedCount++;
           } else {
-            walkExt(full, insideNodeModules || entry.name === 'node_modules');
+            walkExt(
+              full,
+              insideNodeModules || entry.name === 'node_modules',
+              insideSkills || entry.name === 'skills',
+            );
           }
         } else if (entry.isFile()) {
           if (insideNodeModules) {
@@ -284,14 +294,19 @@ function cleanupBundle(outputDir) {
               if (rmSafe(full)) removedCount++;
             }
           } else {
-            if (JUNK_EXTS.has(path.extname(entry.name)) || entry.name.endsWith('.md')) {
+            // Inside skills/ directories, .md files are skill content — keep them.
+            // Outside skills/, remove known junk .md files only.
+            const isMd = entry.name.endsWith('.md');
+            const isJunkMd = isMd && JUNK_MD_NAMES.has(entry.name);
+            const isJunkExt = JUNK_EXTS.has(path.extname(entry.name));
+            if (isJunkExt || (isMd && !insideSkills && isJunkMd)) {
               if (rmSafe(full)) removedCount++;
             }
           }
         }
       }
     }
-    walkExt(ext, false);
+    walkExt(ext, false, false);
   }
 
   // --- node_modules: remove unnecessary file types and directories ---
