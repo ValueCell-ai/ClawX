@@ -1312,7 +1312,10 @@ function registerProviderHandlers(gatewayManager: GatewayManager): void {
           }
 
           // Debounced restart so the gateway picks up the new default provider.
-          if (gatewayManager.isConnected()) {
+          // Because OAuth success triggers a debounced restart, the gateway might not be
+          // currently connected ('starting' or 'reconnecting'). Checking if it is simply
+          // not 'stopped' ensures the restart request is correctly queued or coalesced.
+          if (gatewayManager.getStatus().state !== 'stopped') {
             logger.info(`Scheduling Gateway restart after provider switch to "${ock}"`);
             gatewayManager.debouncedRestart();
           }

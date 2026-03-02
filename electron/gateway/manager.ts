@@ -309,7 +309,11 @@ export class GatewayManager extends EventEmitter {
     });
 
     try {
+      let startAttempts = 0;
+      const MAX_START_ATTEMPTS = 3;
+
       while (true) {
+        startAttempts++;
         this.recentStartupStderrLines = [];
         try {
           // Check if Gateway is already running
@@ -353,6 +357,22 @@ export class GatewayManager extends EventEmitter {
             }
             logger.error('OpenClaw doctor repair failed; not retrying Gateway startup');
           }
+
+          // Retry on transient connect errors
+          const errMsg = String(error);
+          const isTransientError =
+            errMsg.includes('WebSocket closed before handshake') ||
+            errMsg.includes('ECONNREFUSED') ||
+            errMsg.includes('Gateway process exited before becoming ready') ||
+            errMsg.includes('Timed out waiting for connect.challenge') ||
+            errMsg.includes('Connect handshake timeout');
+
+          if (startAttempts < MAX_START_ATTEMPTS && isTransientError) {
+            logger.warn(`Transient start error: ${errMsg}. Retrying... (${startAttempts}/${MAX_START_ATTEMPTS})`);
+            await new Promise((r) => setTimeout(r, 1000));
+            continue;
+          }
+
           throw error;
         }
       }
