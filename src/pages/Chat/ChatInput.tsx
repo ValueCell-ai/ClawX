@@ -7,9 +7,10 @@
  * are sent with the message (no base64 over WebSocket).
  */
 import { useState, useRef, useEffect, useCallback } from 'react';
-import { Send, Square, X, Paperclip, FileText, Film, Music, FileArchive, File, Loader2 } from 'lucide-react';
+import { Send, Square, X, Paperclip, FileText, Film, Music, FileArchive, File, Loader2, PlusSquare } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
+import { useTranslation } from 'react-i18next';
 
 // ── Types ────────────────────────────────────────────────────────
 
@@ -27,6 +28,8 @@ export interface FileAttachment {
 interface ChatInputProps {
   onSend: (text: string, attachments?: FileAttachment[]) => void;
   onStop?: () => void;
+  /** When provided, shows a "New session" button that sends /new. */
+  onNewSession?: () => void;
   disabled?: boolean;
   sending?: boolean;
 }
@@ -75,7 +78,8 @@ function readFileAsBase64(file: globalThis.File): Promise<string> {
 
 // ── Component ────────────────────────────────────────────────────
 
-export function ChatInput({ onSend, onStop, disabled = false, sending = false }: ChatInputProps) {
+export function ChatInput({ onSend, onStop, onNewSession, disabled = false, sending = false }: ChatInputProps) {
+  const { t } = useTranslation('chat');
   const [input, setInput] = useState('');
   const [attachments, setAttachments] = useState<FileAttachment[]>([]);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -367,6 +371,21 @@ export function ChatInput({ onSend, onStop, disabled = false, sending = false }:
               rows={1}
             />
           </div>
+
+          {/* New session: send /new */}
+          {onNewSession && (
+            <Button
+              variant="outline"
+              size="sm"
+              className="shrink-0 h-[44px] gap-1.5 px-3"
+              onClick={onNewSession}
+              disabled={disabled || sending}
+              title={t('toolbar.newSession')}
+            >
+              <PlusSquare className="h-4 w-4" />
+              <span>{t('toolbar.newSession')}</span>
+            </Button>
+          )}
 
           {/* Send Button */}
           <Button
