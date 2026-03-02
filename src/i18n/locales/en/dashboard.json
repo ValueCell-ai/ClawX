@@ -24,5 +24,31 @@
     "activeSkills": "Active Skills",
     "noSkills": "No skills enabled",
     "enableSome": "Enable some skills",
-    "more": "+{{count}} more"
+    "more": "+{{count}} more",
+    "recentTokenHistory": {
+        "title": "Recent Token Usage",
+        "description": "The latest assistant responses with recorded token usage.",
+        "loading": "Loading token usage history...",
+        "empty": "No token usage history yet",
+        "groupByModel": "By model",
+        "groupByTime": "By time",
+        "last7Days": "7 days",
+        "last30Days": "30 days",
+        "allTime": "All",
+        "showingLast": "Showing the latest {{count}} records",
+        "totalTokens": "total tokens",
+        "inputShort": "Input",
+        "outputShort": "Output",
+        "cacheShort": "Cache",
+        "page": "Page {{current}} / {{total}}",
+        "prev": "Previous",
+        "next": "Next",
+        "unknownModel": "Unknown model",
+        "emptyForWindow": "No token usage history in this time range",
+        "input": "Input {{value}}",
+        "output": "Output {{value}}",
+        "cacheRead": "Cache read {{value}}",
+        "cacheWrite": "Cache write {{value}}",
+        "cost": "Cost ${{amount}}"
+    }
 }
