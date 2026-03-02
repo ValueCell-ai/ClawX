@@ -5,10 +5,13 @@
  *
  * All file I/O uses async fs/promises to avoid blocking the main thread.
  */
-import { readFile, writeFile, access } from 'fs/promises';
+import { readFile, writeFile, access, cp, mkdir } from 'fs/promises';
+import { existsSync } from 'fs';
 import { constants } from 'fs';
 import { join } from 'path';
 import { homedir } from 'os';
+import { getOpenClawDir } from './paths';
+import { logger } from './logger';
 
 const OPENCLAW_CONFIG_PATH = join(homedir(), '.openclaw', 'openclaw.json');
 
@@ -131,4 +134,51 @@ export async function updateSkillConfig(
 export async function getAllSkillConfigs(): Promise<Record<string, SkillEntry>> {
     const config = await readConfig();
     return config.skills?.entries || {};
+}
+
+/**
+ * Built-in skills bundled with ClawX that should be pre-deployed to
+ * ~/.openclaw/skills/ on first launch.  These come from the openclaw package's
+ * extensions directory and are available in both dev and packaged builds.
+ */
+const BUILTIN_SKILLS = [
+    { slug: 'feishu-doc',   sourceExtension: 'feishu' },
+    { slug: 'feishu-drive', sourceExtension: 'feishu' },
+    { slug: 'feishu-perm',  sourceExtension: 'feishu' },
+    { slug: 'feishu-wiki',  sourceExtension: 'feishu' },
+] as const;
+
+/**
+ * Ensure built-in skills are deployed to ~/.openclaw/skills/<slug>/.
+ * Skips any skill that already has a SKILL.md present (idempotent).
+ * Runs at app startup; all errors are logged and swallowed so they never
+ * block the normal startup flow.
+ */
+export async function ensureBuiltinSkillsInstalled(): Promise<void> {
+    const skillsRoot = join(homedir(), '.openclaw', 'skills');
+
+    for (const { slug, sourceExtension } of BUILTIN_SKILLS) {
+        const targetDir = join(skillsRoot, slug);
+        const targetManifest = join(targetDir, 'SKILL.md');
+
+        if (existsSync(targetManifest)) {
+            continue; // already installed
+        }
+
+        const openclawDir = getOpenClawDir();
+        const sourceDir = join(openclawDir, 'extensions', sourceExtension, 'skills', slug);
+
+        if (!existsSync(join(sourceDir, 'SKILL.md'))) {
+            logger.warn(`Built-in skill source not found, skipping: ${sourceDir}`);
+            continue;
+        }
+
+        try {
+            await mkdir(targetDir, { recursive: true });
+            await cp(sourceDir, targetDir, { recursive: true });
+            logger.info(`Installed built-in skill: ${slug} -> ${targetDir}`);
+        } catch (error) {
+            logger.warn(`Failed to install built-in skill ${slug}:`, error);
+        }
+    }
 }
