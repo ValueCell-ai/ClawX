@@ -1,6 +1,7 @@
 {
     "sidebar": {
         "chat": "Chat",
+        "newChat": "New Chat",
         "cronTasks": "Cron Tasks",
         "skills": "Skills",
         "channels": "Channels",

@@ -1,6 +1,7 @@
 {
     "sidebar": {
         "chat": "チャット",
+        "newChat": "新しいチャット",
         "cronTasks": "定期タスク",
         "skills": "スキル",
         "channels": "チャンネル",

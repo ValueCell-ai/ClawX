@@ -85,6 +85,10 @@ interface ChatState {
   // Sessions
   sessions: ChatSession[];
   currentSessionKey: string;
+  /** First user message text per session key, used as display label */
+  sessionLabels: Record<string, string>;
+  /** Last message timestamp (ms) per session key, used for sorting */
+  sessionLastActivity: Record<string, number>;
 
   // Thinking
   showThinking: boolean;
@@ -912,6 +916,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
   sessions: [],
   currentSessionKey: DEFAULT_SESSION_KEY,
+  sessionLabels: {},
+  sessionLastActivity: {},
 
   showThinking: true,
   thinkingLevel: null,
@@ -982,6 +988,41 @@ export const useChatStore = create<ChatState>((set, get) => ({
         if (currentSessionKey !== nextSessionKey) {
           get().loadHistory();
         }
+
+        // Background: fetch first user message for every non-main session to populate labels upfront.
+        // Uses a small limit so it's cheap; runs in parallel and doesn't block anything.
+        const sessionsToLabel = sessionsWithCurrent.filter((s) => !s.key.endsWith(':main'));
+        if (sessionsToLabel.length > 0) {
+          void Promise.all(
+            sessionsToLabel.map(async (session) => {
+              try {
+                const r = await window.electron.ipcRenderer.invoke(
+                  'gateway:rpc',
+                  'chat.history',
+                  { sessionKey: session.key, limit: 200 },
+                ) as { success: boolean; result?: Record<string, unknown> };
+                if (!r.success || !r.result) return;
+                const msgs = Array.isArray(r.result.messages) ? r.result.messages as RawMessage[] : [];
+                const firstUser = msgs.find((m) => m.role === 'user');
+                const lastMsg = msgs[msgs.length - 1];
+                set((s) => {
+                  const next: Partial<typeof s> = {};
+                  if (firstUser) {
+                    const labelText = getMessageText(firstUser.content).trim();
+                    if (labelText) {
+                      const truncated = labelText.length > 50 ? `${labelText.slice(0, 50)}…` : labelText;
+                      next.sessionLabels = { ...s.sessionLabels, [session.key]: truncated };
+                    }
+                  }
+                  if (lastMsg?.timestamp) {
+                    next.sessionLastActivity = { ...s.sessionLastActivity, [session.key]: toMs(lastMsg.timestamp) };
+                  }
+                  return next;
+                });
+              } catch { /* ignore per-session errors */ }
+            }),
+          );
+        }
       }
     } catch (err) {
       console.warn('Failed to load sessions:', err);
@@ -991,7 +1032,9 @@ export const useChatStore = create<ChatState>((set, get) => ({
   // ── Switch session ──
 
   switchSession: (key: string) => {
-    set({
+    const { currentSessionKey, messages } = get();
+    const leavingEmpty = !currentSessionKey.endsWith(':main') && messages.length === 0;
+    set((s) => ({
       currentSessionKey: key,
       messages: [],
       streamingText: '',
@@ -1002,8 +1045,16 @@ export const useChatStore = create<ChatState>((set, get) => ({
       pendingFinal: false,
       lastUserMessageAt: null,
       pendingToolImages: [],
-    });
-    // Load history for new session
+      ...(leavingEmpty ? {
+        sessions: s.sessions.filter((s) => s.key !== currentSessionKey),
+        sessionLabels: Object.fromEntries(
+          Object.entries(s.sessionLabels).filter(([k]) => k !== currentSessionKey),
+        ),
+        sessionLastActivity: Object.fromEntries(
+          Object.entries(s.sessionLastActivity).filter(([k]) => k !== currentSessionKey),
+        ),
+      } : {}),
+    }));
     get().loadHistory();
   },
 
@@ -1014,12 +1065,23 @@ export const useChatStore = create<ChatState>((set, get) => ({
     // NOTE: We intentionally do NOT call sessions.reset on the old session.
     // sessions.reset archives (renames) the session JSONL file, making old
     // conversation history inaccessible when the user switches back to it.
+    const { currentSessionKey, messages } = get();
+    const leavingEmpty = !currentSessionKey.endsWith(':main') && messages.length === 0;
     const prefix = getCanonicalPrefixFromSessions(get().sessions) ?? DEFAULT_CANONICAL_PREFIX;
     const newKey = `${prefix}:session-${Date.now()}`;
     const newSessionEntry: ChatSession = { key: newKey, displayName: newKey };
     set((s) => ({
       currentSessionKey: newKey,
-      sessions: [...s.sessions, newSessionEntry],
+      sessions: [
+        ...(leavingEmpty ? s.sessions.filter((sess) => sess.key !== currentSessionKey) : s.sessions),
+        newSessionEntry,
+      ],
+      sessionLabels: leavingEmpty
+        ? Object.fromEntries(Object.entries(s.sessionLabels).filter(([k]) => k !== currentSessionKey))
+        : s.sessionLabels,
+      sessionLastActivity: leavingEmpty
+        ? Object.fromEntries(Object.entries(s.sessionLastActivity).filter(([k]) => k !== currentSessionKey))
+        : s.sessionLastActivity,
       messages: [],
       streamingText: '',
       streamingMessage: null,
@@ -1078,6 +1140,32 @@ export const useChatStore = create<ChatState>((set, get) => ({
         }
 
         set({ messages: finalMessages, thinkingLevel, loading: false });
+
+        // Extract first user message text as a session label for display in the toolbar.
+        // Skip main sessions (key ends with ":main") — they rely on the Gateway-provided
+        // displayName (e.g. the configured agent name "ClawX") instead.
+        const isMainSession = currentSessionKey.endsWith(':main');
+        if (!isMainSession) {
+          const firstUserMsg = finalMessages.find((m) => m.role === 'user');
+          if (firstUserMsg) {
+            const labelText = getMessageText(firstUserMsg.content).trim();
+            if (labelText) {
+              const truncated = labelText.length > 50 ? `${labelText.slice(0, 50)}…` : labelText;
+              set((s) => ({
+                sessionLabels: { ...s.sessionLabels, [currentSessionKey]: truncated },
+              }));
+            }
+          }
+        }
+
+        // Record last activity time from the last message in history
+        const lastMsg = finalMessages[finalMessages.length - 1];
+        if (lastMsg?.timestamp) {
+          const lastAt = toMs(lastMsg.timestamp);
+          set((s) => ({
+            sessionLastActivity: { ...s.sessionLastActivity, [currentSessionKey]: lastAt },
+          }));
+        }
 
         // Async: load missing image previews from disk (updates in background)
         loadMissingPreviews(finalMessages).then((updated) => {
@@ -1169,6 +1257,17 @@ export const useChatStore = create<ChatState>((set, get) => ({
       pendingFinal: false,
       lastUserMessageAt: nowMs,
     }));
+
+    // Update session label with first user message text as soon as it's sent
+    const { sessionLabels, messages } = get();
+    const isFirstMessage = !messages.slice(0, -1).some((m) => m.role === 'user');
+    if (!currentSessionKey.endsWith(':main') && isFirstMessage && !sessionLabels[currentSessionKey] && trimmed) {
+      const truncated = trimmed.length > 50 ? `${trimmed.slice(0, 50)}…` : trimmed;
+      set((s) => ({ sessionLabels: { ...s.sessionLabels, [currentSessionKey]: truncated } }));
+    }
+
+    // Mark this session as most recently active
+    set((s) => ({ sessionLastActivity: { ...s.sessionLastActivity, [currentSessionKey]: nowMs } }));
 
     // Start the history poll and safety timeout IMMEDIATELY (before the
     // RPC await) because the gateway's chat.send RPC may block until the

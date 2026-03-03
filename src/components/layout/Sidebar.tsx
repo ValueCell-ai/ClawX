@@ -3,7 +3,7 @@
  * Navigation sidebar with menu items.
  * No longer fixed - sits inside the flex layout below the title bar.
  */
-import { NavLink } from 'react-router-dom';
+import { NavLink, useLocation, useNavigate } from 'react-router-dom';
 import {
   Home,
   MessageSquare,
@@ -18,6 +18,7 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useSettingsStore } from '@/stores/settings';
+import { useChatStore } from '@/stores/chat';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { useTranslation } from 'react-i18next';
@@ -28,12 +29,14 @@ interface NavItemProps {
   label: string;
   badge?: string;
   collapsed?: boolean;
+  onClick?: () => void;
 }
 
-function NavItem({ to, icon, label, badge, collapsed }: NavItemProps) {
+function NavItem({ to, icon, label, badge, collapsed, onClick }: NavItemProps) {
   return (
     <NavLink
       to={to}
+      onClick={onClick}
       className={({ isActive }) =>
         cn(
           'flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors',
@@ -65,6 +68,22 @@ export function Sidebar() {
   const setSidebarCollapsed = useSettingsStore((state) => state.setSidebarCollapsed);
   const devModeUnlocked = useSettingsStore((state) => state.devModeUnlocked);
 
+  const sessions = useChatStore((s) => s.sessions);
+  const currentSessionKey = useChatStore((s) => s.currentSessionKey);
+  const sessionLabels = useChatStore((s) => s.sessionLabels);
+  const sessionLastActivity = useChatStore((s) => s.sessionLastActivity);
+  const switchSession = useChatStore((s) => s.switchSession);
+  const newSession = useChatStore((s) => s.newSession);
+
+  const navigate = useNavigate();
+  const isOnChat = useLocation().pathname === '/';
+
+  const mainSessions = sessions.filter((s) => s.key.endsWith(':main'));
+  const otherSessions = sessions.filter((s) => !s.key.endsWith(':main'));
+
+  const getSessionLabel = (key: string, displayName?: string, label?: string) =>
+    sessionLabels[key] ?? label ?? displayName ?? key;
+
   const openDevConsole = async () => {
     try {
       const result = await window.electron.ipcRenderer.invoke('gateway:getControlUiUrl') as {
@@ -85,7 +104,6 @@ export function Sidebar() {
   const { t } = useTranslation();
 
   const navItems = [
-    { to: '/', icon: <MessageSquare className="h-5 w-5" />, label: t('sidebar.chat') },
     { to: '/cron', icon: <Clock className="h-5 w-5" />, label: t('sidebar.cronTasks') },
     { to: '/skills', icon: <Puzzle className="h-5 w-5" />, label: t('sidebar.skills') },
     { to: '/channels', icon: <Radio className="h-5 w-5" />, label: t('sidebar.channels') },
@@ -101,7 +119,24 @@ export function Sidebar() {
       )}
     >
       {/* Navigation */}
-      <nav className="flex-1 space-y-1 overflow-auto p-2">
+      <nav className="flex-1 overflow-hidden flex flex-col p-2 gap-1">
+        {/* Chat nav item: acts as "New Chat" button, never highlighted as active */}
+        <button
+          onClick={() => {
+            const { messages } = useChatStore.getState();
+            if (messages.length > 0) newSession();
+            navigate('/');
+          }}
+          className={cn(
+            'flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors',
+            'hover:bg-accent hover:text-accent-foreground text-muted-foreground',
+            sidebarCollapsed && 'justify-center px-2',
+          )}
+        >
+          <MessageSquare className="h-5 w-5 shrink-0" />
+          {!sidebarCollapsed && <span className="flex-1 text-left">{t('sidebar.newChat')}</span>}
+        </button>
+
         {navItems.map((item) => (
           <NavItem
             key={item.to}
@@ -109,6 +144,29 @@ export function Sidebar() {
             collapsed={sidebarCollapsed}
           />
         ))}
+
+        {/* Session list — below Settings, only when expanded */}
+        {!sidebarCollapsed && sessions.length > 0 && (
+          <div className="mt-1 overflow-y-auto max-h-72 space-y-0.5">
+            {[...mainSessions, ...[...otherSessions].sort((a, b) =>
+              (sessionLastActivity[b.key] ?? 0) - (sessionLastActivity[a.key] ?? 0)
+            )].map((s) => (
+              <button
+                key={s.key}
+                onClick={() => { switchSession(s.key); navigate('/'); }}
+                className={cn(
+                  'w-full text-left rounded-md px-3 py-1.5 text-sm truncate transition-colors',
+                  'hover:bg-accent hover:text-accent-foreground',
+                  isOnChat && currentSessionKey === s.key
+                    ? 'bg-accent/60 text-accent-foreground font-medium'
+                    : 'text-muted-foreground',
+                )}
+              >
+                {getSessionLabel(s.key, s.displayName, s.label)}
+              </button>
+            ))}
+          </div>
+        )}
       </nav>
 
       {/* Footer */}
