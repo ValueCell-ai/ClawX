@@ -15,6 +15,7 @@ import {
   ChevronRight,
   Terminal,
   ExternalLink,
+  Trash2,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useSettingsStore } from '@/stores/settings';
@@ -74,6 +75,7 @@ export function Sidebar() {
   const sessionLastActivity = useChatStore((s) => s.sessionLastActivity);
   const switchSession = useChatStore((s) => s.switchSession);
   const newSession = useChatStore((s) => s.newSession);
+  const deleteSession = useChatStore((s) => s.deleteSession);
 
   const navigate = useNavigate();
   const isOnChat = useLocation().pathname === '/';
@@ -151,19 +153,40 @@ export function Sidebar() {
             {[...mainSessions, ...[...otherSessions].sort((a, b) =>
               (sessionLastActivity[b.key] ?? 0) - (sessionLastActivity[a.key] ?? 0)
             )].map((s) => (
-              <button
-                key={s.key}
-                onClick={() => { switchSession(s.key); navigate('/'); }}
-                className={cn(
-                  'w-full text-left rounded-md px-3 py-1.5 text-sm truncate transition-colors',
-                  'hover:bg-accent hover:text-accent-foreground',
-                  isOnChat && currentSessionKey === s.key
-                    ? 'bg-accent/60 text-accent-foreground font-medium'
-                    : 'text-muted-foreground',
+              <div key={s.key} className="group relative flex items-center">
+                <button
+                  onClick={() => { switchSession(s.key); navigate('/'); }}
+                  className={cn(
+                    'w-full text-left rounded-md px-3 py-1.5 text-sm truncate transition-colors',
+                    !s.key.endsWith(':main') && 'pr-7',
+                    'hover:bg-accent hover:text-accent-foreground',
+                    isOnChat && currentSessionKey === s.key
+                      ? 'bg-accent/60 text-accent-foreground font-medium'
+                      : 'text-muted-foreground',
+                  )}
+                >
+                  {getSessionLabel(s.key, s.displayName, s.label)}
+                </button>
+                {!s.key.endsWith(':main') && (
+                  <button
+                    aria-label="Delete session"
+                    onClick={async (e) => {
+                      e.stopPropagation();
+                      const label = getSessionLabel(s.key, s.displayName, s.label);
+                      if (!window.confirm(`Delete "${label}"?`)) return;
+                      await deleteSession(s.key);
+                      if (currentSessionKey === s.key) navigate('/');
+                    }}
+                    className={cn(
+                      'absolute right-1 flex items-center justify-center rounded p-0.5 transition-opacity',
+                      'opacity-0 group-hover:opacity-100',
+                      'text-muted-foreground hover:text-destructive hover:bg-destructive/10',
+                    )}
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </button>
                 )}
-              >
-                {getSessionLabel(s.key, s.displayName, s.label)}
-              </button>
+              </div>
             ))}
           </div>
         )}

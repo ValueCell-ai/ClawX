@@ -98,6 +98,7 @@ interface ChatState {
   loadSessions: () => Promise<void>;
   switchSession: (key: string) => void;
   newSession: () => void;
+  deleteSession: (key: string) => Promise<void>;
   loadHistory: (quiet?: boolean) => Promise<void>;
   sendMessage: (text: string, attachments?: Array<{ fileName: string; mimeType: string; fileSize: number; stagedPath: string; preview: string | null }>) => Promise<void>;
   abortRun: () => Promise<void>;
@@ -1056,6 +1057,64 @@ export const useChatStore = create<ChatState>((set, get) => ({
       } : {}),
     }));
     get().loadHistory();
+  },
+
+  // ── Delete session ──
+  //
+  // NOTE: The OpenClaw Gateway does NOT expose a sessions.delete (or equivalent)
+  // RPC — confirmed by inspecting client.ts, protocol.ts and the full codebase.
+  // Deletion is therefore a local-only UI operation: the session is removed from
+  // the sidebar list and its labels/activity maps are cleared.  The underlying
+  // JSONL history file on disk is intentionally left intact, consistent with the
+  // newSession() design that avoids sessions.reset to preserve history.
+
+  deleteSession: async (key: string) => {
+    // Soft-delete the session's JSONL transcript on disk.
+    // The main process renames <suffix>.jsonl → <suffix>.deleted.jsonl so that
+    // sessions.list and token-usage queries both skip it automatically.
+    try {
+      const result = await window.electron.ipcRenderer.invoke('session:delete', key) as {
+        success: boolean;
+        error?: string;
+      };
+      if (!result.success) {
+        console.warn(`[deleteSession] IPC reported failure for ${key}:`, result.error);
+      }
+    } catch (err) {
+      console.warn(`[deleteSession] IPC call failed for ${key}:`, err);
+    }
+
+    const { currentSessionKey, sessions } = get();
+    const remaining = sessions.filter((s) => s.key !== key);
+
+    if (currentSessionKey === key) {
+      // Switched away from deleted session — pick the first remaining or create new
+      const next = remaining[0];
+      set((s) => ({
+        sessions: remaining,
+        sessionLabels: Object.fromEntries(Object.entries(s.sessionLabels).filter(([k]) => k !== key)),
+        sessionLastActivity: Object.fromEntries(Object.entries(s.sessionLastActivity).filter(([k]) => k !== key)),
+        messages: [],
+        streamingText: '',
+        streamingMessage: null,
+        streamingTools: [],
+        activeRunId: null,
+        error: null,
+        pendingFinal: false,
+        lastUserMessageAt: null,
+        pendingToolImages: [],
+        currentSessionKey: next?.key ?? DEFAULT_SESSION_KEY,
+      }));
+      if (next) {
+        get().loadHistory();
+      }
+    } else {
+      set((s) => ({
+        sessions: remaining,
+        sessionLabels: Object.fromEntries(Object.entries(s.sessionLabels).filter(([k]) => k !== key)),
+        sessionLastActivity: Object.fromEntries(Object.entries(s.sessionLastActivity).filter(([k]) => k !== key)),
+      }));
+    }
   },
 
   // ── New session ──

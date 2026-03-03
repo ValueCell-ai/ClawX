@@ -127,6 +127,8 @@ const electronAPI = {
         'media:saveImage',
         // Chat send with media (reads staged files in main process)
         'chat:sendWithMedia',
+        // Session management
+        'session:delete',
         // OpenClaw extras
         'openclaw:getDir',
         'openclaw:getConfigDir',

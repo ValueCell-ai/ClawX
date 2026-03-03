@@ -149,6 +149,9 @@ export function registerIpcHandlers(
   // Dialog handlers
   registerDialogHandlers();
 
+  // Session handlers
+  registerSessionHandlers();
+
   // App handlers
   registerAppHandlers();
 
@@ -2112,3 +2115,143 @@ function registerFileHandlers(): void {
     return results;
   });
 }
+
+/**
+ * Session IPC handlers
+ *
+ * Performs a soft-delete of a session's JSONL transcript on disk.
+ * sessionKey format: "agent:<agentId>:<suffix>" — e.g. "agent:main:session-1234567890".
+ * The JSONL file lives at: ~/.openclaw/agents/<agentId>/sessions/<suffix>.jsonl
+ * Renaming to <suffix>.deleted.jsonl hides it from sessions.list and token-usage
+ * (both already filter out filenames containing ".deleted.").
+ */
+function registerSessionHandlers(): void {
+  ipcMain.handle('session:delete', async (_, sessionKey: string) => {
+    try {
+      if (!sessionKey || !sessionKey.startsWith('agent:')) {
+        return { success: false, error: `Invalid sessionKey: ${sessionKey}` };
+      }
+
+      const parts = sessionKey.split(':');
+      if (parts.length < 3) {
+        return { success: false, error: `sessionKey has too few parts: ${sessionKey}` };
+      }
+
+      const agentId = parts[1];
+      const openclawConfigDir = getOpenClawConfigDir();
+      const sessionsDir = join(openclawConfigDir, 'agents', agentId, 'sessions');
+      const sessionsJsonPath = join(sessionsDir, 'sessions.json');
+
+      logger.info(`[session:delete] key=${sessionKey} agentId=${agentId}`);
+      logger.info(`[session:delete] sessionsJson=${sessionsJsonPath}`);
+
+      const fsP = await import('fs/promises');
+
+      // ── Step 1: read sessions.json to find the UUID file for this sessionKey ──
+      let sessionsJson: Record<string, unknown> = {};
+      try {
+        const raw = await fsP.readFile(sessionsJsonPath, 'utf8');
+        sessionsJson = JSON.parse(raw) as Record<string, unknown>;
+      } catch (e) {
+        logger.warn(`[session:delete] Could not read sessions.json: ${String(e)}`);
+        return { success: false, error: `Could not read sessions.json: ${String(e)}` };
+      }
+
+      // sessions.json structure: try common shapes used by OpenClaw Gateway:
+      //   Shape A (array):  { sessions: [{ key, file, ... }] }
+      //   Shape B (object): { [sessionKey]: { file, ... } }
+      //   Shape C (array):  { sessions: [{ key, id, ... }] }  — id is the UUID
+      let uuidFileName: string | undefined;
+
+      // Shape A / C — array under "sessions" key
+      if (Array.isArray(sessionsJson.sessions)) {
+        const entry = (sessionsJson.sessions as Array<Record<string, unknown>>)
+          .find((s) => s.key === sessionKey || s.sessionKey === sessionKey);
+        if (entry) {
+          // Could be "file", "fileName", "id" + ".jsonl", or "path"
+          uuidFileName = (entry.file ?? entry.fileName ?? entry.path) as string | undefined;
+          if (!uuidFileName && typeof entry.id === 'string') {
+            uuidFileName = `${entry.id}.jsonl`;
+          }
+        }
+      }
+
+      // Shape B — flat object keyed by sessionKey; value may be a string or an object.
+      // Actual Gateway format: { sessionFile: "/abs/path/uuid.jsonl", sessionId: "uuid", ... }
+      let resolvedSrcPath: string | undefined;
+
+      if (!uuidFileName && sessionsJson[sessionKey] != null) {
+        const val = sessionsJson[sessionKey];
+        if (typeof val === 'string') {
+          uuidFileName = val;
+        } else if (typeof val === 'object' && val !== null) {
+          const entry = val as Record<string, unknown>;
+          // Priority: absolute sessionFile path > relative file/fileName/path > id/sessionId as UUID
+          const absFile = (entry.sessionFile ?? entry.file ?? entry.fileName ?? entry.path) as string | undefined;
+          if (absFile) {
+            if (absFile.startsWith('/') || absFile.match(/^[A-Za-z]:\\/)) {
+              // Absolute path — use directly
+              resolvedSrcPath = absFile;
+            } else {
+              uuidFileName = absFile;
+            }
+          } else {
+            // Fall back to UUID fields
+            const uuidVal = (entry.id ?? entry.sessionId) as string | undefined;
+            if (uuidVal) uuidFileName = uuidVal.endsWith('.jsonl') ? uuidVal : `${uuidVal}.jsonl`;
+          }
+        }
+      }
+
+      if (!uuidFileName && !resolvedSrcPath) {
+        const rawVal = sessionsJson[sessionKey];
+        logger.warn(`[session:delete] Cannot resolve file for "${sessionKey}". Raw value: ${JSON.stringify(rawVal)}`);
+        return { success: false, error: `Cannot resolve file for session: ${sessionKey}` };
+      }
+
+      // Normalise: if we got a relative filename, resolve it against sessionsDir
+      if (!resolvedSrcPath) {
+        if (!uuidFileName!.endsWith('.jsonl')) uuidFileName = `${uuidFileName}.jsonl`;
+        resolvedSrcPath = join(sessionsDir, uuidFileName!);
+      }
+
+      const dstPath = resolvedSrcPath.replace(/\.jsonl$/, '.deleted.jsonl');
+      logger.info(`[session:delete] file: ${resolvedSrcPath}`);
+
+      // ── Step 2: rename the JSONL file ──
+      try {
+        await fsP.access(resolvedSrcPath);
+        await fsP.rename(resolvedSrcPath, dstPath);
+        logger.info(`[session:delete] Renamed ${resolvedSrcPath} → ${dstPath}`);
+      } catch (e) {
+        logger.warn(`[session:delete] Could not rename file: ${String(e)}`);
+      }
+
+      // ── Step 3: remove the entry from sessions.json ──
+      try {
+        // Re-read to avoid race conditions
+        const raw2 = await fsP.readFile(sessionsJsonPath, 'utf8');
+        const json2 = JSON.parse(raw2) as Record<string, unknown>;
+
+        if (Array.isArray(json2.sessions)) {
+          json2.sessions = (json2.sessions as Array<Record<string, unknown>>)
+            .filter((s) => s.key !== sessionKey && s.sessionKey !== sessionKey);
+        } else if (json2[sessionKey]) {
+          delete json2[sessionKey];
+        }
+
+        await fsP.writeFile(sessionsJsonPath, JSON.stringify(json2, null, 2), 'utf8');
+        logger.info(`[session:delete] Removed "${sessionKey}" from sessions.json`);
+      } catch (e) {
+        logger.warn(`[session:delete] Could not update sessions.json: ${String(e)}`);
+        // Non-fatal — JSONL rename already done
+      }
+
+      return { success: true };
+    } catch (err) {
+      logger.error(`[session:delete] Unexpected error for ${sessionKey}:`, err);
+      return { success: false, error: String(err) };
+    }
+  });
+}
+
