@@ -28,6 +28,7 @@ import { Switch } from '@/components/ui/switch';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
+import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { useCronStore } from '@/stores/cron';
 import { useGatewayStore } from '@/stores/gateway';
 import { LoadingSpinner } from '@/components/common/LoadingSpinner';
@@ -318,9 +319,7 @@ function CronJobCard({ job, onToggle, onEdit, onDelete, onTrigger }: CronJobCard
   };
 
   const handleDelete = () => {
-    if (confirm(t('card.deleteConfirm'))) {
-      onDelete();
-    }
+    onDelete();
   };
 
   return (
@@ -442,6 +441,7 @@ export function Cron() {
   const gatewayStatus = useGatewayStore((state) => state.status);
   const [showDialog, setShowDialog] = useState(false);
   const [editingJob, setEditingJob] = useState<CronJob | undefined>();
+  const [jobToDelete, setJobToDelete] = useState<{ id: string } | null>(null);
 
   const isGatewayRunning = gatewayStatus.state === 'running';
 
@@ -474,14 +474,7 @@ export function Cron() {
     }
   }, [toggleJob, t]);
 
-  const handleDelete = useCallback(async (id: string) => {
-    try {
-      await deleteJob(id);
-      toast.success(t('toast.deleted'));
-    } catch {
-      toast.error(t('toast.failedDelete'));
-    }
-  }, [deleteJob, t]);
+
 
   if (loading) {
     return (
@@ -629,7 +622,7 @@ export function Cron() {
                 setEditingJob(job);
                 setShowDialog(true);
               }}
-              onDelete={() => handleDelete(job.id)}
+              onDelete={() => setJobToDelete({ id: job.id })}
               onTrigger={() => triggerJob(job.id)}
             />
           ))}
@@ -647,6 +640,23 @@ export function Cron() {
           onSave={handleSave}
         />
       )}
+
+      <ConfirmDialog
+        open={!!jobToDelete}
+        title={t('common.confirm', 'Confirm')}
+        message={t('card.deleteConfirm')}
+        confirmLabel={t('common.delete', 'Delete')}
+        cancelLabel={t('common.cancel', 'Cancel')}
+        variant="destructive"
+        onConfirm={async () => {
+          if (jobToDelete) {
+            await deleteJob(jobToDelete.id);
+            setJobToDelete(null);
+            toast.success(t('toast.deleted'));
+          }
+        }}
+        onCancel={() => setJobToDelete(null)}
+      />
     </div>
   );
 }

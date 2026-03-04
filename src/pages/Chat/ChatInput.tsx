@@ -89,6 +89,13 @@ export function ChatInput({ onSend, onStop, disabled = false, sending = false }:
     }
   }, [input]);
 
+  // Focus textarea on mount (avoids Windows focus loss after session delete + native dialog)
+  useEffect(() => {
+    if (!disabled && textareaRef.current) {
+      textareaRef.current.focus();
+    }
+  }, []);
+
   // ── File staging via native dialog ─────────────────────────────
 
   const pickFiles = useCallback(async () => {
