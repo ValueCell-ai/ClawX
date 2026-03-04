@@ -33,6 +33,7 @@ import { buildProxyEnv, resolveProxySettings } from '../utils/proxy';
 import { syncProxyConfigToOpenClaw } from '../utils/openclaw-proxy';
 import { shouldAttemptConfigAutoRepair } from './startup-recovery';
 import {
+  type GatewayLifecycleState,
   getDeferredRestartAction,
   getReconnectSkipReason,
   isLifecycleSuperseded,
@@ -44,7 +45,7 @@ import {
  * Gateway connection status
  */
 export interface GatewayStatus {
-  state: 'stopped' | 'starting' | 'running' | 'error' | 'reconnecting';
+  state: GatewayLifecycleState;
   port: number;
   pid?: number;
   uptime?: number;
@@ -555,6 +556,7 @@ export class GatewayManager extends EventEmitter {
     }
     this.pendingRequests.clear();
 
+    this.deferredRestartPending = false;
     this.setStatus({ state: 'stopped', error: undefined, pid: undefined, connectedAt: undefined, uptime: undefined });
   }
 
