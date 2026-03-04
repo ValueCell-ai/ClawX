@@ -71,6 +71,8 @@
       "failedUpdate": "更新提供商失败",
       "invalidKey": "无效的 API 密钥",
       "modelRequired": "需要模型 ID",
+      "testPassed": "连接测试通过",
+      "testBeforeSave": "请先测试连接并通过，再保存",
       "minimaxConflict": "不能同时添加 MiniMax 国际站和国内站的服务商。"
     },
     "oauth": {

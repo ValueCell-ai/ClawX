@@ -70,6 +70,9 @@
         "apiKey": "API Key",
         "save": "Save",
         "validateSave": "Validate & Save",
+        "testConnection": "Test Connection",
+        "testBeforeSave": "Please pass connection test before saving",
+        "testPassed": "Connection test passed",
         "valid": "Provider configured successfully",
         "invalid": "Invalid API key",
         "storedLocally": "Your API key is stored locally on your machine."

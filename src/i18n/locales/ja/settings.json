@@ -71,6 +71,8 @@
       "failedUpdate": "プロバイダーの更新に失敗しました",
       "invalidKey": "無効な API キー",
       "modelRequired": "モデル ID が必要です",
+      "testPassed": "接続テストに成功しました",
+      "testBeforeSave": "保存前に接続テストを通過してください",
       "minimaxConflict": "MiniMax (Global) と MiniMax (CN) は同時に追加できません。"
     },
     "oauth": {

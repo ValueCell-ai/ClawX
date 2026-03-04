@@ -70,6 +70,9 @@
         "apiKey": "API キー",
         "save": "保存",
         "validateSave": "検証して保存",
+        "testConnection": "接続テスト",
+        "testBeforeSave": "保存前に接続テストを通過してください",
+        "testPassed": "接続テストに成功しました",
         "valid": "プロバイダーが正常に構成されました",
         "invalid": "無効な API キー",
         "storedLocally": "API キーはローカルマシンに保存されます。"

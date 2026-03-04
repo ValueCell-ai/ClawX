@@ -71,6 +71,8 @@
       "failedUpdate": "Failed to update provider",
       "invalidKey": "Invalid API key",
       "modelRequired": "Model ID is required",
+      "testPassed": "Connection test passed",
+      "testBeforeSave": "Please pass connection test before saving",
       "minimaxConflict": "Cannot add both MiniMax (Global) and MiniMax (CN) providers."
     },
     "oauth": {
