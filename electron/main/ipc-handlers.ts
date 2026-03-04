@@ -138,7 +138,7 @@ export function registerIpcHandlers(
   registerClawHubHandlers(clawHubService);
 
   // OpenClaw handlers
-  registerOpenClawHandlers(gatewayManager);
+  registerOpenClawHandlers();
 
   // Provider handlers
   registerProviderHandlers(gatewayManager);
@@ -695,7 +695,7 @@ function registerGatewayHandlers(
  * OpenClaw-related IPC handlers
  * For checking package status and channel configuration
  */
-function registerOpenClawHandlers(gatewayManager: GatewayManager): void {
+function registerOpenClawHandlers(): void {
   async function ensureDingTalkPluginInstalled(): Promise<{ installed: boolean; warning?: string }> {
     const targetDir = join(homedir(), '.openclaw', 'extensions', 'dingtalk');
     const targetManifest = join(targetDir, 'openclaw.plugin.json');

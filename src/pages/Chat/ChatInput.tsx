@@ -94,7 +94,7 @@ export function ChatInput({ onSend, onStop, disabled = false, sending = false }:
     if (!disabled && textareaRef.current) {
       textareaRef.current.focus();
     }
-  }, []);
+  }, [disabled]);
 
   // ── File staging via native dialog ─────────────────────────────
 
