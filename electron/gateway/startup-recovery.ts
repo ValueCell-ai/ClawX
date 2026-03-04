@@ -58,3 +58,26 @@ export function shouldAttemptConfigAutoRepair(
   return hasInvalidConfigFailureSignal(startupError, startupStderrLines);
 }
 
+function toErrorText(startupError: unknown): string {
+  return startupError instanceof Error
+    ? `${startupError.name}: ${startupError.message}`
+    : String(startupError ?? '');
+}
+
+export function buildInvalidConfigRepairGuidance(
+  startupError: unknown,
+  startupStderrLines: string[],
+): string {
+  const combined = `${startupStderrLines.join('\n')}\n${toErrorText(startupError)}`.toLowerCase();
+  const base =
+    'Gateway startup blocked by invalid OpenClaw config. Automatic doctor repair failed. ' +
+    'Please run: openclaw doctor --fix';
+
+  if (combined.includes('dingtalk')) {
+    return `${base}. If the error mentions dingtalk, remove stale "channels.dingtalk" and ` +
+      `"plugins.allow" entries from ~/.openclaw/openclaw.json, then restart ClawX.`;
+  }
+
+  return base;
+}
+

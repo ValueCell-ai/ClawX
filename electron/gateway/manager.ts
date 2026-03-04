@@ -34,7 +34,7 @@ import {
 import { syncGatewayTokenToConfig, syncBrowserConfigToOpenClaw, sanitizeOpenClawConfig } from '../utils/openclaw-auth';
 import { buildProxyEnv, resolveProxySettings } from '../utils/proxy';
 import { syncProxyConfigToOpenClaw } from '../utils/openclaw-proxy';
-import { shouldAttemptConfigAutoRepair } from './startup-recovery';
+import { buildInvalidConfigRepairGuidance, shouldAttemptConfigAutoRepair } from './startup-recovery';
 import {
   getReconnectSkipReason,
   isLifecycleSuperseded,
@@ -393,6 +393,7 @@ export class GatewayManager extends EventEmitter {
               continue;
             }
             logger.error('OpenClaw doctor repair failed; not retrying Gateway startup');
+            throw new Error(buildInvalidConfigRepairGuidance(error, this.recentStartupStderrLines));
           }
 
           // Retry on transient connect errors

@@ -17,6 +17,7 @@ import {
   getProviderDefaultModel,
   getProviderConfig,
 } from './provider-registry';
+import { logger } from './logger';
 
 const AUTH_STORE_VERSION = 1;
 const AUTH_PROFILE_FILENAME = 'auth-profiles.json';
@@ -785,7 +786,7 @@ export async function sanitizeOpenClawConfig(): Promise<void> {
     const KNOWN_INVALID_SKILLS_ROOT_KEYS = ['enabled', 'disabled'];
     for (const key of KNOWN_INVALID_SKILLS_ROOT_KEYS) {
       if (key in skillsObj) {
-        console.log(`[sanitize] Removing misplaced key "skills.${key}" from openclaw.json`);
+        logger.info(`[sanitize] Removing misplaced key "skills.${key}" from openclaw.json`);
         delete skillsObj[key];
         modified = true;
       }
@@ -804,7 +805,7 @@ export async function sanitizeOpenClawConfig(): Promise<void> {
     if (channels && typeof channels === 'object' && !Array.isArray(channels)) {
       const channelsObj = channels as Record<string, unknown>;
       if (channelsObj.dingtalk !== undefined) {
-        console.log('[sanitize] Removing stale key "channels.dingtalk" (plugin not installed)');
+        logger.info('[sanitize] Removing stale key "channels.dingtalk" (plugin not installed)');
         delete channelsObj.dingtalk;
         modified = true;
       }
@@ -817,7 +818,7 @@ export async function sanitizeOpenClawConfig(): Promise<void> {
       if (Array.isArray(allowRaw)) {
         const nextAllow = allowRaw.filter((entry) => entry !== 'dingtalk');
         if (nextAllow.length !== allowRaw.length) {
-          console.log('[sanitize] Removing stale value "dingtalk" from "plugins.allow" (plugin not installed)');
+          logger.info('[sanitize] Removing stale value "dingtalk" from "plugins.allow" (plugin not installed)');
           pluginsObj.allow = nextAllow;
           modified = true;
         }
@@ -827,7 +828,7 @@ export async function sanitizeOpenClawConfig(): Promise<void> {
 
   if (modified) {
     await writeOpenClawJson(config);
-    console.log('[sanitize] openclaw.json sanitized successfully');
+    logger.info('[sanitize] openclaw.json sanitized successfully');
   }
 }
 

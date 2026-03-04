@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  buildInvalidConfigRepairGuidance,
   hasInvalidConfigFailureSignal,
   isInvalidConfigSignal,
   shouldAttemptConfigAutoRepair,
@@ -47,6 +48,27 @@ describe('gateway startup recovery heuristics', () => {
     expect(isInvalidConfigSignal('skills: Unrecognized key: "enabled"')).toBe(true);
     expect(isInvalidConfigSignal('Run: openclaw doctor --fix')).toBe(true);
     expect(isInvalidConfigSignal('Gateway ready after 3 attempts')).toBe(false);
+  });
+
+  it('builds actionable repair guidance for generic invalid config', () => {
+    const msg = buildInvalidConfigRepairGuidance(
+      new Error('Config invalid. Run: openclaw doctor --fix'),
+      ['Config invalid'],
+    );
+    expect(msg).toContain('Automatic doctor repair failed');
+    expect(msg).toContain('openclaw doctor --fix');
+  });
+
+  it('includes dingtalk-specific guidance when dingtalk appears in logs', () => {
+    const msg = buildInvalidConfigRepairGuidance(
+      new Error('Gateway process exited before becoming ready (code=1)'),
+      [
+        'channels.dingtalk: unknown channel id: dingtalk',
+        'plugins.allow: plugin not found: dingtalk',
+      ],
+    );
+    expect(msg).toContain('channels.dingtalk');
+    expect(msg).toContain('plugins.allow');
   });
 });
 
