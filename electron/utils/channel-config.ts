@@ -18,10 +18,148 @@ const CONFIG_FILE = join(OPENCLAW_DIR, 'openclaw.json');
 // Channels that are managed as plugins (config goes under plugins.entries, not channels)
 const PLUGIN_CHANNELS = ['whatsapp'];
 
+const FEISHU_DEFAULT_HISTORY_LIMIT = 20;
+const MODEL_AWARE_RESERVE_RATIO = 0.05;
+const MODEL_AWARE_SOFT_FLUSH_RATIO = 0.025;
+
 // ── Helpers ──────────────────────────────────────────────────────
 
 async function fileExists(p: string): Promise<boolean> {
     try { await access(p, constants.F_OK); return true; } catch { return false; }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+    return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function ensureRecord(root: Record<string, unknown>, key: string): Record<string, unknown> {
+    const existing = root[key];
+    if (isRecord(existing)) {
+        return existing;
+    }
+    const next: Record<string, unknown> = {};
+    root[key] = next;
+    return next;
+}
+
+function normalizeNonNegativeInt(value: unknown): number | undefined {
+    if (typeof value === 'number' && Number.isFinite(value) && value >= 0) {
+        return Math.floor(value);
+    }
+    if (typeof value === 'string') {
+        const parsed = Number.parseInt(value.trim(), 10);
+        if (Number.isFinite(parsed) && parsed >= 0) {
+            return parsed;
+        }
+    }
+    return undefined;
+}
+
+function clampInt(value: number, min: number, max: number): number {
+    return Math.max(min, Math.min(max, Math.floor(value)));
+}
+
+function resolveConfiguredDefaultModelContextWindow(config: OpenClawConfig): number | undefined {
+    const root = config as Record<string, unknown>;
+    const agents = root.agents;
+    if (!isRecord(agents)) return undefined;
+
+    const defaults = agents.defaults;
+    if (!isRecord(defaults)) return undefined;
+
+    const modelRef = defaults.model;
+    if (typeof modelRef !== 'string') return undefined;
+
+    const slashIndex = modelRef.indexOf('/');
+    if (slashIndex <= 0 || slashIndex >= modelRef.length - 1) return undefined;
+
+    const provider = modelRef.slice(0, slashIndex);
+    const modelId = modelRef.slice(slashIndex + 1);
+
+    const models = root.models;
+    if (!isRecord(models)) return undefined;
+
+    const providers = models.providers;
+    if (!isRecord(providers)) return undefined;
+
+    const providerConfig = providers[provider];
+    if (!isRecord(providerConfig)) return undefined;
+
+    const configuredModels = providerConfig.models;
+    if (!Array.isArray(configuredModels)) return undefined;
+
+    for (const model of configuredModels) {
+        if (!isRecord(model)) continue;
+        if (model.id !== modelId) continue;
+
+        const contextWindow = model.contextWindow;
+        if (typeof contextWindow === 'number' && Number.isFinite(contextWindow) && contextWindow > 0) {
+            return Math.floor(contextWindow);
+        }
+    }
+
+    return undefined;
+}
+
+function applyFeishuAutoContextStrategy(config: OpenClawConfig): void {
+    const root = config as Record<string, unknown>;
+    const agents = ensureRecord(root, 'agents');
+    const defaults = ensureRecord(agents, 'defaults');
+
+    const contextWindow = resolveConfiguredDefaultModelContextWindow(config);
+
+    const compaction = ensureRecord(defaults, 'compaction');
+    if (compaction.mode === undefined) {
+        compaction.mode = 'safeguard';
+    }
+    if (compaction.reserveTokensFloor === undefined) {
+        compaction.reserveTokensFloor = contextWindow != null
+            ? clampInt(contextWindow * MODEL_AWARE_RESERVE_RATIO, 2000, 24000)
+            : 10000;
+    }
+
+    const memoryFlush = ensureRecord(compaction, 'memoryFlush');
+    if (memoryFlush.enabled === undefined) {
+        memoryFlush.enabled = true;
+    }
+    if (memoryFlush.softThresholdTokens === undefined) {
+        memoryFlush.softThresholdTokens = contextWindow != null
+            ? clampInt(contextWindow * MODEL_AWARE_SOFT_FLUSH_RATIO, 1000, 8000)
+            : 4000;
+    }
+
+    const contextPruning = ensureRecord(defaults, 'contextPruning');
+    if (contextPruning.mode === undefined) {
+        contextPruning.mode = 'cache-ttl';
+    }
+    if (contextPruning.ttl === undefined) {
+        contextPruning.ttl = '20m';
+    }
+    if (contextPruning.keepLastAssistants === undefined) {
+        contextPruning.keepLastAssistants = 3;
+    }
+    if (contextPruning.minPrunableToolChars === undefined) {
+        contextPruning.minPrunableToolChars = 12000;
+    }
+
+    const softTrim = ensureRecord(contextPruning, 'softTrim');
+    if (softTrim.maxChars === undefined) {
+        softTrim.maxChars = 3000;
+    }
+    if (softTrim.headChars === undefined) {
+        softTrim.headChars = 1200;
+    }
+    if (softTrim.tailChars === undefined) {
+        softTrim.tailChars = 1200;
+    }
+
+    const hardClear = ensureRecord(contextPruning, 'hardClear');
+    if (hardClear.enabled === undefined) {
+        hardClear.enabled = true;
+    }
+    if (hardClear.placeholder === undefined) {
+        hardClear.placeholder = '[Old tool result content cleared]';
+    }
 }
 
 // ── Types ────────────────────────────────────────────────────────
@@ -198,7 +336,8 @@ export async function saveChannelConfig(
         }
     }
 
-    // Special handling for Feishu: default to open DM policy with wildcard allowlist
+    // Special handling for Feishu: default to open DM policy with wildcard allowlist,
+    // normalize optional history limit, and auto-enable lightweight context protection.
     if (channelType === 'feishu') {
         const existingConfig = currentConfig.channels[channelType] || {};
         transformedConfig.dmPolicy = transformedConfig.dmPolicy ?? existingConfig.dmPolicy ?? 'open';
@@ -213,6 +352,13 @@ export async function saveChannelConfig(
         }
 
         transformedConfig.allowFrom = allowFrom;
+
+        const normalizedHistoryLimit = normalizeNonNegativeInt(
+            transformedConfig.historyLimit ?? existingConfig.historyLimit
+        );
+        transformedConfig.historyLimit = normalizedHistoryLimit ?? FEISHU_DEFAULT_HISTORY_LIMIT;
+
+        applyFeishuAutoContextStrategy(currentConfig);
     }
 
     // Merge with existing config
@@ -270,6 +416,16 @@ export async function getChannelFormValues(channelType: string): Promise<Record<
         for (const [key, value] of Object.entries(saved)) {
             if (typeof value === 'string' && key !== 'enabled') {
                 values[key] = value;
+            }
+        }
+    } else if (channelType === 'feishu') {
+        for (const [key, value] of Object.entries(saved)) {
+            if (key === 'enabled') continue;
+            if (typeof value === 'string') {
+                values[key] = value;
+            }
+            if (key === 'historyLimit' && typeof value === 'number') {
+                values[key] = String(value);
             }
         }
     } else {
