@@ -30,7 +30,7 @@ interface ProviderState {
   validateApiKey: (
     providerId: string,
     apiKey: string,
-    options?: { baseUrl?: string }
+    options?: { baseUrl?: string; model?: string }
   ) => Promise<{ valid: boolean; error?: string }>;
   getApiKey: (providerId: string) => Promise<string | null>;
 }

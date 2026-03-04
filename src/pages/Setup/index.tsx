@@ -938,13 +938,21 @@ function ProviderContent({
     setKeyValid(null);
 
     try {
-      // Validate key if the provider requires one and a key was entered
+      const effectiveModelId =
+        selectedProviderData?.defaultModelId ||
+        modelId.trim() ||
+        undefined;
+
+      // Validate key + model connectivity before save when a key is provided.
       if (requiresKey && apiKey) {
         const result = await window.electron.ipcRenderer.invoke(
           'provider:validateKey',
           selectedProviderConfigId || selectedProvider,
           apiKey,
-          { baseUrl: baseUrl.trim() || undefined }
+          {
+            baseUrl: baseUrl.trim() || undefined,
+            model: effectiveModelId,
+          }
         ) as { valid: boolean; error?: string };
 
         setKeyValid(result.valid);
@@ -957,11 +965,6 @@ function ProviderContent({
       } else {
         setKeyValid(true);
       }
-
-      const effectiveModelId =
-        selectedProviderData?.defaultModelId ||
-        modelId.trim() ||
-        undefined;
 
       const providerIdForSave =
         selectedProvider === 'custom'

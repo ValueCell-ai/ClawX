@@ -1400,7 +1400,7 @@ function registerProviderHandlers(gatewayManager: GatewayManager): void {
       _,
       providerId: string,
       apiKey: string,
-      options?: { baseUrl?: string }
+      options?: { baseUrl?: string; model?: string }
     ) => {
       try {
         // First try to get existing provider
@@ -1413,9 +1413,18 @@ function registerProviderHandlers(gatewayManager: GatewayManager): void {
         // Prefer caller-supplied baseUrl (live form value) over persisted config.
         // This ensures Setup/Settings validation reflects unsaved edits immediately.
         const resolvedBaseUrl = options?.baseUrl || provider?.baseUrl || registryBaseUrl;
+        const resolvedModel = options?.model || provider?.model;
+
+        let resolvedApiKey = apiKey?.trim() || '';
+        if (!resolvedApiKey && provider?.id) {
+          resolvedApiKey = (await getApiKey(provider.id)) || '';
+        }
 
         console.log(`[clawx-validate] validating provider type: ${providerType}`);
-        return await validateApiKeyWithProvider(providerType, apiKey, { baseUrl: resolvedBaseUrl });
+        return await validateApiKeyWithProvider(providerType, resolvedApiKey, {
+          baseUrl: resolvedBaseUrl,
+          model: resolvedModel,
+        });
       } catch (error) {
         console.error('Validation error:', error);
         return { valid: false, error: String(error) };
@@ -1436,7 +1445,7 @@ type ValidationProfile = 'openai-compatible' | 'google-query-key' | 'anthropic-h
 async function validateApiKeyWithProvider(
   providerType: string,
   apiKey: string,
-  options?: { baseUrl?: string }
+  options?: { baseUrl?: string; model?: string }
 ): Promise<{ valid: boolean; error?: string }> {
   const profile = getValidationProfile(providerType);
   if (profile === 'none') {
@@ -1451,13 +1460,13 @@ async function validateApiKeyWithProvider(
   try {
     switch (profile) {
       case 'openai-compatible':
-        return await validateOpenAiCompatibleKey(providerType, trimmedKey, options?.baseUrl);
+        return await validateOpenAiCompatibleKey(providerType, trimmedKey, options?.baseUrl, options?.model);
       case 'google-query-key':
         return await validateGoogleQueryKey(providerType, trimmedKey, options?.baseUrl);
       case 'anthropic-header':
         return await validateAnthropicHeaderKey(providerType, trimmedKey, options?.baseUrl);
       case 'openrouter':
-        return await validateOpenRouterKey(providerType, trimmedKey);
+        return await validateOpenRouterKey(providerType, trimmedKey, options?.model);
       default:
         return { valid: false, error: `Unsupported validation profile for provider: ${providerType}` };
     }
@@ -1576,7 +1585,8 @@ function classifyAuthResponse(
 async function validateOpenAiCompatibleKey(
   providerType: string,
   apiKey: string,
-  baseUrl?: string
+  baseUrl?: string,
+  model?: string
 ): Promise<{ valid: boolean; error?: string }> {
   const trimmedBaseUrl = baseUrl?.trim();
   if (!trimmedBaseUrl) {
@@ -1584,6 +1594,7 @@ async function validateOpenAiCompatibleKey(
   }
 
   const headers = { Authorization: `Bearer ${apiKey}` };
+  const base = normalizeBaseUrl(trimmedBaseUrl);
 
   // Try /models first (standard OpenAI-compatible endpoint)
   const modelsUrl = buildOpenAiModelsUrl(trimmedBaseUrl);
@@ -1595,12 +1606,29 @@ async function validateOpenAiCompatibleKey(
     console.log(
       `[clawx-validate] ${providerType} /models returned 404, falling back to /chat/completions probe`
     );
-    const base = normalizeBaseUrl(trimmedBaseUrl);
     const chatUrl = `${base}/chat/completions`;
-    return await performChatCompletionsProbe(providerType, chatUrl, headers);
+    const authResult = await performChatCompletionsProbe(providerType, chatUrl, headers);
+    if (!authResult.valid) {
+      return authResult;
+    }
+
+    if (model?.trim()) {
+      return await validateOpenAiCompatibleModel(providerType, chatUrl, headers, model.trim());
+    }
+
+    return authResult;
   }
 
-  return modelsResult;
+  if (!modelsResult.valid) {
+    return modelsResult;
+  }
+
+  if (!model?.trim()) {
+    return modelsResult;
+  }
+
+  const chatUrl = `${base}/chat/completions`;
+  return await validateOpenAiCompatibleModel(providerType, chatUrl, headers, model.trim());
 }
 
 /**
@@ -1649,6 +1677,48 @@ async function performChatCompletionsProbe(
   }
 }
 
+async function validateOpenAiCompatibleModel(
+  providerLabel: string,
+  chatUrl: string,
+  headers: Record<string, string>,
+  model: string
+): Promise<{ valid: boolean; error?: string }> {
+  try {
+    logValidationRequest(providerLabel, 'POST', chatUrl, headers);
+    const response = await proxyAwareFetch(chatUrl, {
+      method: 'POST',
+      headers: { ...headers, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model,
+        messages: [{ role: 'user', content: 'ping' }],
+        max_tokens: 1,
+      }),
+    });
+    logValidationStatus(providerLabel, response.status);
+    const data = await response.json().catch(() => ({}));
+
+    if (response.status === 401 || response.status === 403) {
+      return { valid: false, error: 'Invalid API key' };
+    }
+
+    if ((response.status >= 200 && response.status < 300) || response.status === 429) {
+      return { valid: true };
+    }
+
+    const obj = data as { error?: { message?: string }; message?: string } | null;
+    const apiMessage = obj?.error?.message || obj?.message || `API error: ${response.status}`;
+    return {
+      valid: false,
+      error: `Model connectivity test failed for "${model}": ${apiMessage}`,
+    };
+  } catch (error) {
+    return {
+      valid: false,
+      error: `Connection error: ${error instanceof Error ? error.message : String(error)}`,
+    };
+  }
+}
+
 async function validateGoogleQueryKey(
   providerType: string,
   apiKey: string,
@@ -1676,12 +1746,28 @@ async function validateAnthropicHeaderKey(
 
 async function validateOpenRouterKey(
   providerType: string,
-  apiKey: string
+  apiKey: string,
+  model?: string
 ): Promise<{ valid: boolean; error?: string }> {
-  // Use OpenRouter's auth check endpoint instead of public /models
+  // Use OpenRouter's auth check endpoint first.
   const url = 'https://openrouter.ai/api/v1/auth/key';
   const headers = { Authorization: `Bearer ${apiKey}` };
-  return await performProviderValidationRequest(providerType, url, headers);
+  const authResult = await performProviderValidationRequest(providerType, url, headers);
+
+  if (!authResult.valid) {
+    return authResult;
+  }
+
+  if (!model?.trim()) {
+    return authResult;
+  }
+
+  return await validateOpenAiCompatibleModel(
+    providerType,
+    'https://openrouter.ai/api/v1/chat/completions',
+    headers,
+    model.trim()
+  );
 }
 
 /**

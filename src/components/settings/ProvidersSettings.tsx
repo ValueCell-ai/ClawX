@@ -210,7 +210,7 @@ interface ProviderCardProps {
   onSaveEdits: (payload: { newApiKey?: string; updates?: Partial<ProviderConfig> }) => Promise<void>;
   onValidateKey: (
     key: string,
-    options?: { baseUrl?: string }
+    options?: { baseUrl?: string; model?: string }
   ) => Promise<{ valid: boolean; error?: string }>;
 }
 
@@ -276,6 +276,7 @@ function ProviderCard({
         setValidating(true);
         const result = await onValidateKey(newKey, {
           baseUrl: baseUrl.trim() || undefined,
+          model: typeInfo?.showModelId ? (modelId.trim() || undefined) : undefined,
         });
         setValidating(false);
         if (!result.valid) {
@@ -308,6 +309,28 @@ function ProviderCard({
         }
         if (Object.keys(updates).length > 0) {
           payload.updates = updates;
+        }
+      }
+
+      const needsConnectivityRecheck =
+        !newKey.trim() &&
+        provider.hasKey &&
+        Boolean(payload.updates?.baseUrl !== undefined || payload.updates?.model !== undefined);
+
+      if (needsConnectivityRecheck) {
+        setValidating(true);
+        const result = await onValidateKey('', {
+          baseUrl: (payload.updates?.baseUrl as string | undefined) ?? (baseUrl.trim() || undefined),
+          model: typeInfo?.showModelId
+            ? ((payload.updates?.model as string | undefined) ?? (modelId.trim() || undefined))
+            : undefined,
+        });
+        setValidating(false);
+
+        if (!result.valid) {
+          toast.error(result.error || t('aiProviders.toast.invalidKey'));
+          setSaving(false);
+          return;
         }
       }
 
@@ -579,7 +602,7 @@ interface AddProviderDialogProps {
   onValidateKey: (
     type: string,
     apiKey: string,
-    options?: { baseUrl?: string }
+    options?: { baseUrl?: string; model?: string }
   ) => Promise<{ valid: boolean; error?: string }>;
 }
 
@@ -732,6 +755,9 @@ function AddProviderDialog({ existingTypes, onClose, onAdd, onValidateKey }: Add
       if (requiresKey && apiKey) {
         const result = await onValidateKey(selectedType, apiKey, {
           baseUrl: baseUrl.trim() || undefined,
+          model: typeInfo?.showModelId
+            ? ((typeInfo?.defaultModelId || modelId.trim()) || undefined)
+            : undefined,
         });
         if (!result.valid) {
           setValidationError(result.error || t('aiProviders.toast.invalidKey'));
