@@ -973,8 +973,11 @@ export const useChatStore = create<ChatState>((set, get) => ({
           }
         }
         if (!dedupedSessions.find((s) => s.key === nextSessionKey) && dedupedSessions.length > 0) {
-          // Current session not found at all — switch to the first available session
-          nextSessionKey = dedupedSessions[0].key;
+          // Current session not found in the backend list
+          const isNewEmptySession = get().messages.length === 0;
+          if (!isNewEmptySession) {
+            nextSessionKey = dedupedSessions[0].key;
+          }
         }
 
         const sessionsWithCurrent = !dedupedSessions.find((s) => s.key === nextSessionKey) && nextSessionKey
