@@ -808,7 +808,9 @@ function registerOpenClawHandlers(gatewayManager: GatewayManager): void {
           };
         }
         await saveChannelConfig(channelType, config);
-        gatewayManager.debouncedRestart();
+        logger.info(
+          `Skipping app-forced Gateway restart after channel:saveConfig (${channelType}); Gateway handles channel config reload/restart internally`
+        );
         return {
           success: true,
           pluginInstalled: installResult.installed,
@@ -816,8 +818,12 @@ function registerOpenClawHandlers(gatewayManager: GatewayManager): void {
         };
       }
       await saveChannelConfig(channelType, config);
-      // Debounced restart so the gateway picks up the new channel config.
-      gatewayManager.debouncedRestart();
+      // Do not force stop/start here. Recent Gateway builds detect channel config
+      // changes and perform an internal service restart; forcing another restart
+      // from Electron can race with reconnect and kill the newly spawned process.
+      logger.info(
+        `Skipping app-forced Gateway restart after channel:saveConfig (${channelType}); waiting for Gateway internal channel reload`
+      );
       return { success: true };
     } catch (error) {
       console.error('Failed to save channel config:', error);
