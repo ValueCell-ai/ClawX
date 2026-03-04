@@ -756,10 +756,12 @@ export class GatewayManager extends EventEmitter {
               for (const pid of pids) {
                 try {
                   if (process.platform === 'win32') {
-                    // On Windows, use taskkill for reliable process group termination
+                    // Use PowerShell with -WindowStyle Hidden to kill the process without
+                    // flashing a black console window. taskkill.exe is a console app and
+                    // can flash a window even when windowsHide: true is set.
                     import('child_process').then(cp => {
                       cp.exec(
-                        `taskkill /PID ${pid} /T /F`,
+                        `powershell -WindowStyle Hidden -NoProfile -Command "Stop-Process -Id ${pid} -Force -ErrorAction SilentlyContinue"`,
                         { timeout: 5000, windowsHide: true },
                         () => { }
                       );
