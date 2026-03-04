@@ -99,6 +99,7 @@ interface ChatState {
   switchSession: (key: string) => void;
   newSession: () => void;
   deleteSession: (key: string) => Promise<void>;
+  cleanupEmptySession: () => void;
   loadHistory: (quiet?: boolean) => Promise<void>;
   sendMessage: (text: string, attachments?: Array<{ fileName: string; mimeType: string; fileSize: number; stagedPath: string; preview: string | null }>) => Promise<void>;
   abortRun: () => Promise<void>;
@@ -1153,6 +1154,27 @@ export const useChatStore = create<ChatState>((set, get) => ({
       pendingFinal: false,
       lastUserMessageAt: null,
       pendingToolImages: [],
+    }));
+  },
+
+  // ── Cleanup empty session on navigate away ──
+
+  cleanupEmptySession: () => {
+    const { currentSessionKey, messages } = get();
+    // Only remove non-main sessions that were never used (no messages sent).
+    // This mirrors the "leavingEmpty" logic in switchSession so that creating
+    // a new session and immediately navigating away doesn't leave a ghost entry
+    // in the sidebar.
+    const isEmptyNonMain = !currentSessionKey.endsWith(':main') && messages.length === 0;
+    if (!isEmptyNonMain) return;
+    set((s) => ({
+      sessions: s.sessions.filter((sess) => sess.key !== currentSessionKey),
+      sessionLabels: Object.fromEntries(
+        Object.entries(s.sessionLabels).filter(([k]) => k !== currentSessionKey),
+      ),
+      sessionLastActivity: Object.fromEntries(
+        Object.entries(s.sessionLastActivity).filter(([k]) => k !== currentSessionKey),
+      ),
     }));
   },
 
