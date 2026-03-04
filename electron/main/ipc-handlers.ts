@@ -697,7 +697,7 @@ function registerGatewayHandlers(
  */
 function registerOpenClawHandlers(gatewayManager: GatewayManager): void {
   async function ensureDingTalkPluginInstalled(): Promise<{ installed: boolean; warning?: string }> {
-    const targetDir = join(homedir(), '.openclaw', 'extensions', 'dingtalk');
+    const targetDir = join(getOpenClawConfigDir(), 'extensions', 'dingtalk');
     const targetManifest = join(targetDir, 'openclaw.plugin.json');
 
     if (existsSync(targetManifest)) {
@@ -727,7 +727,7 @@ function registerOpenClawHandlers(gatewayManager: GatewayManager): void {
     }
 
     try {
-      mkdirSync(join(homedir(), '.openclaw', 'extensions'), { recursive: true });
+      mkdirSync(join(getOpenClawConfigDir(), 'extensions'), { recursive: true });
       rmSync(targetDir, { recursive: true, force: true });
       cpSync(sourceDir, targetDir, { recursive: true, dereference: true });
 
@@ -1967,7 +1967,7 @@ function mimeToExt(mimeType: string): string {
   return '';
 }
 
-const OUTBOUND_DIR = join(homedir(), '.openclaw', 'media', 'outbound');
+const OUTBOUND_DIR = join(getOpenClawConfigDir(), 'media', 'outbound');
 
 /**
  * Generate a preview data URL for image files.

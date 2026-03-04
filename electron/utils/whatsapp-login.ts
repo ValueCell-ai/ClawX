@@ -1,10 +1,9 @@
 import { dirname, join } from 'path';
-import { homedir } from 'os';
 import { createRequire } from 'module';
 import { EventEmitter } from 'events';
 import { existsSync, mkdirSync, rmSync } from 'fs';
 import { deflateSync } from 'zlib';
-import { getOpenClawDir, getOpenClawResolvedDir } from './paths';
+import { getOpenClawDir, getOpenClawResolvedDir, getOpenClawConfigDir } from './paths';
 
 const require = createRequire(import.meta.url);
 
@@ -232,7 +231,7 @@ export class WhatsAppLoginManager extends EventEmitter {
 
         try {
             // Path where OpenClaw expects WhatsApp credentials
-            const authDir = join(homedir(), '.openclaw', 'credentials', 'whatsapp', accountId);
+            const authDir = join(getOpenClawConfigDir(), 'credentials', 'whatsapp', accountId);
 
             // Ensure directory exists
             if (!existsSync(authDir)) {
