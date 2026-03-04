@@ -346,9 +346,9 @@ function MessageBubble({
       )}
     >
       {isUser ? (
-        <p className="whitespace-pre-wrap break-words text-sm">{text}</p>
+        <p className="whitespace-pre-wrap break-words break-all text-sm">{text}</p>
       ) : (
-        <div className="prose prose-sm dark:prose-invert max-w-none">
+        <div className="prose prose-sm dark:prose-invert max-w-none break-words break-all">
           <ReactMarkdown
             remarkPlugins={[remarkGfm]}
             components={{
@@ -357,7 +357,7 @@ function MessageBubble({
                 const isInline = !match && !className;
                 if (isInline) {
                   return (
-                    <code className="bg-background/50 px-1.5 py-0.5 rounded text-sm font-mono" {...props}>
+                    <code className="bg-background/50 px-1.5 py-0.5 rounded text-sm font-mono break-words break-all" {...props}>
                       {children}
                     </code>
                   );
@@ -372,7 +372,7 @@ function MessageBubble({
               },
               a({ href, children }) {
                 return (
-                  <a href={href} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">
+                  <a href={href} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline break-words break-all">
                     {children}
                   </a>
                 );

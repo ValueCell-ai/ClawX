@@ -35,6 +35,8 @@ export function Chat() {
   const abortRun = useChatStore((s) => s.abortRun);
   const clearError = useChatStore((s) => s.clearError);
 
+  const cleanupEmptySession = useChatStore((s) => s.cleanupEmptySession);
+
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const [streamingTimestamp, setStreamingTimestamp] = useState<number>(0);
 
@@ -54,8 +56,11 @@ export function Chat() {
     })();
     return () => {
       cancelled = true;
+      // If the user navigates away without sending any messages, remove the
+      // empty session so it doesn't linger as a ghost entry in the sidebar.
+      cleanupEmptySession();
     };
-  }, [isGatewayRunning, loadHistory, loadSessions]);
+  }, [isGatewayRunning, loadHistory, loadSessions, cleanupEmptySession]);
 
   // Auto-scroll on new messages, streaming, or activity changes
   useEffect(() => {
