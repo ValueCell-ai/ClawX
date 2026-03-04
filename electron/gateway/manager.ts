@@ -722,8 +722,10 @@ export class GatewayManager extends EventEmitter {
       try {
         // Platform-specific command to find processes listening on the gateway port.
         // On Windows, lsof doesn't exist; use PowerShell's Get-NetTCPConnection instead.
+        // -WindowStyle Hidden is used to prevent PowerShell from popping up a brief console window
+        // even when windowsHide: true is passed to cp.exec.
         const cmd = process.platform === 'win32'
-          ? `powershell -NoProfile -Command "(Get-NetTCPConnection -LocalPort ${port} -State Listen -ErrorAction SilentlyContinue).OwningProcess"`
+          ? `powershell -WindowStyle Hidden -NoProfile -Command "(Get-NetTCPConnection -LocalPort ${port} -State Listen -ErrorAction SilentlyContinue).OwningProcess"`
           : `lsof -i :${port} -sTCP:LISTEN -t`;
 
         const { stdout } = await new Promise<{ stdout: string }>((resolve, reject) => {
