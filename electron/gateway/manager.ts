@@ -126,28 +126,49 @@ const GATEWAY_FETCH_PRELOAD_SOURCE = `'use strict';
     return _f.call(globalThis, input, init);
   };
 
-  // Global monkey-patch for child_process to enforce windowsHide: true on Windows
+  // Global monkey-patch for child_process to enforce windowsHide: true on Windows.
   // This prevents OpenClaw's tools (e.g. Terminal, Python) from flashing black
   // command boxes during AI conversations, without triggering AVs.
+  //
+  // Node child_process signatures vary:
+  //   spawn(cmd[, args][, options])
+  //   exec(cmd[, options][, callback])
+  //   execFile(file[, args][, options][, callback])
+  //   *Sync variants omit the callback
+  //
+  // Strategy: scan arguments for the first plain-object (the options param).
+  // If found, set windowsHide on it. If absent, insert a new options object
+  // before any trailing callback so the signature stays valid.
   if (process.platform === 'win32') {
     try {
       var cp = require('child_process');
       if (!cp.__clawxPatched) {
         cp.__clawxPatched = true;
-        ['spawn', 'exec', 'execFile', 'spawnSync', 'execSync', 'execFileSync'].forEach(function(method) {
+        ['spawn', 'exec', 'execFile', 'fork', 'spawnSync', 'execSync', 'execFileSync'].forEach(function(method) {
           var original = cp[method];
-          if (typeof original === 'function') {
-            cp[method] = function() {
-              var args = Array.prototype.slice.call(arguments);
-              var lastArg = args[args.length - 1];
-              if (lastArg && typeof lastArg === 'object' && !Array.isArray(lastArg)) {
-                lastArg.windowsHide = true;
-              } else {
-                args.push({ windowsHide: true });
+          if (typeof original !== 'function') return;
+          cp[method] = function() {
+            var args = Array.prototype.slice.call(arguments);
+            var optIdx = -1;
+            for (var i = 1; i < args.length; i++) {
+              var a = args[i];
+              if (a && typeof a === 'object' && !Array.isArray(a)) {
+                optIdx = i;
+                break;
               }
-              return original.apply(this, args);
-            };
-          }
+            }
+            if (optIdx >= 0) {
+              args[optIdx].windowsHide = true;
+            } else {
+              var opts = { windowsHide: true };
+              if (typeof args[args.length - 1] === 'function') {
+                args.splice(args.length - 1, 0, opts);
+              } else {
+                args.push(opts);
+              }
+            }
+            return original.apply(this, args);
+          };
         });
       }
     } catch (e) {
