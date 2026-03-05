@@ -2,8 +2,9 @@
  * Settings Page
  * Application configuration
  */
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import {
+  Brain,
   Sun,
   Moon,
   Monitor,
@@ -36,6 +37,26 @@ type ControlUiInfo = {
   port: number;
 };
 
+type OpenClawConfigLite = {
+  memory?: {
+    backend?: 'builtin' | 'qmd' | string;
+  };
+};
+
+type GatewayConfigSnapshot = {
+  hash?: string;
+  config?: OpenClawConfigLite;
+};
+
+type MemoryProbeStatus = {
+  agentId?: string;
+  provider?: string;
+  embedding?: {
+    ok?: boolean;
+    error?: string;
+  };
+};
+
 export function Settings() {
   const { t } = useTranslation('settings');
   const {
@@ -65,7 +86,11 @@ export function Settings() {
     setDevModeUnlocked,
   } = useSettingsStore();
 
-  const { status: gatewayStatus, restart: restartGateway } = useGatewayStore();
+  const {
+    status: gatewayStatus,
+    restart: restartGateway,
+    rpc: gatewayRpc,
+  } = useGatewayStore();
   const currentVersion = useUpdateStore((state) => state.currentVersion);
   const updateSetAutoDownload = useUpdateStore((state) => state.setAutoDownload);
   const [controlUiInfo, setControlUiInfo] = useState<ControlUiInfo | null>(null);
@@ -78,8 +103,15 @@ export function Settings() {
   const [proxyBypassRulesDraft, setProxyBypassRulesDraft] = useState('');
   const [proxyEnabledDraft, setProxyEnabledDraft] = useState(false);
   const [savingProxy, setSavingProxy] = useState(false);
+  const [memoryLoading, setMemoryLoading] = useState(false);
+  const [memorySaving, setMemorySaving] = useState(false);
+  const [memoryProbing, setMemoryProbing] = useState(false);
+  const [memorySnapshotHash, setMemorySnapshotHash] = useState<string | null>(null);
+  const [memoryBackend, setMemoryBackend] = useState<'builtin' | 'qmd' | 'unknown'>('unknown');
+  const [memoryProbeStatus, setMemoryProbeStatus] = useState<MemoryProbeStatus | null>(null);
 
   const isWindows = window.electron.platform === 'win32';
+  const isGatewayRunning = gatewayStatus.state === 'running';
   const showCliTools = true;
   const [showLogs, setShowLogs] = useState(false);
   const [logContent, setLogContent] = useState('');
@@ -258,6 +290,169 @@ export function Settings() {
       setSavingProxy(false);
     }
   };
+
+  const loadMemoryConfig = useCallback(async () => {
+    if (gatewayStatus.state !== 'running') {
+      setMemorySnapshotHash(null);
+      setMemoryBackend('unknown');
+      setMemoryProbeStatus(null);
+      return;
+    }
+
+    setMemoryLoading(true);
+    try {
+      const snapshot = await gatewayRpc<GatewayConfigSnapshot>('config.get', {});
+      setMemorySnapshotHash(typeof snapshot.hash === 'string' ? snapshot.hash : null);
+
+      const backend = snapshot.config?.memory?.backend;
+      if (backend === 'qmd' || backend === 'builtin') {
+        setMemoryBackend(backend);
+      } else {
+        setMemoryBackend('unknown');
+      }
+    } catch (error) {
+      toast.error(`${t('memory.toast.loadFailed')}: ${String(error)}`);
+    } finally {
+      setMemoryLoading(false);
+    }
+  }, [gatewayStatus.state, gatewayRpc, t]);
+
+  useEffect(() => {
+    void loadMemoryConfig();
+  }, [loadMemoryConfig]);
+
+  const probeMemoryStatus = useCallback(async (showToast = true) => {
+    if (gatewayStatus.state !== 'running') return;
+
+    setMemoryProbing(true);
+    try {
+      const status = await gatewayRpc<MemoryProbeStatus>('doctor.memory.status', {});
+      setMemoryProbeStatus(status);
+
+      if (!showToast) return;
+      if (status.embedding?.ok) {
+        toast.success(t('memory.toast.probeOk'));
+      } else {
+        toast.warning(
+          t('memory.toast.probeFailed', {
+            reason: status.embedding?.error || t('memory.status.unavailable'),
+          })
+        );
+      }
+    } catch (error) {
+      if (showToast) {
+        toast.error(`${t('memory.toast.probeFailedGeneric')}: ${String(error)}`);
+      }
+    } finally {
+      setMemoryProbing(false);
+    }
+  }, [gatewayStatus.state, gatewayRpc, t]);
+
+  const applyQmdPreset = useCallback(async () => {
+    if (gatewayStatus.state !== 'running') return;
+
+    setMemorySaving(true);
+    try {
+      const snapshot = await gatewayRpc<GatewayConfigSnapshot>('config.get', {});
+      const baseHash = typeof snapshot.hash === 'string' ? snapshot.hash : '';
+      if (!baseHash) {
+        throw new Error(t('memory.toast.hashMissing'));
+      }
+
+      const patch = {
+        memory: {
+          backend: 'qmd',
+          qmd: {
+            includeDefaultMemory: true,
+            searchMode: 'query',
+            sessions: {
+              enabled: true,
+              retentionDays: 14,
+            },
+            update: {
+              onBoot: true,
+              waitForBootSync: false,
+              interval: '30m',
+              debounceMs: 5000,
+              embedInterval: '8h',
+            },
+            limits: {
+              maxResults: 6,
+              maxSnippetChars: 240,
+              maxInjectedChars: 1800,
+              timeoutMs: 10000,
+            },
+          },
+        },
+        agents: {
+          defaults: {
+            contextPruning: {
+              mode: 'cache-ttl',
+              ttl: '1h',
+              keepLastAssistants: 2,
+              softTrimRatio: 0.35,
+              hardClearRatio: 0.7,
+            },
+            compaction: {
+              mode: 'safeguard',
+              reserveTokensFloor: 1024,
+              memoryFlush: {
+                enabled: true,
+                softThresholdTokens: 24000,
+              },
+            },
+          },
+        },
+      };
+
+      await gatewayRpc('config.patch', {
+        baseHash,
+        raw: JSON.stringify(patch),
+        note: 'clawx: enable qmd memory preset',
+        restartDelayMs: 800,
+      });
+
+      toast.success(t('memory.toast.enabled'));
+      await loadMemoryConfig();
+      await probeMemoryStatus(false);
+    } catch (error) {
+      toast.error(`${t('memory.toast.enableFailed')}: ${String(error)}`);
+    } finally {
+      setMemorySaving(false);
+    }
+  }, [gatewayStatus.state, gatewayRpc, loadMemoryConfig, probeMemoryStatus, t]);
+
+  const disableQmdPreset = useCallback(async () => {
+    if (gatewayStatus.state !== 'running') return;
+
+    setMemorySaving(true);
+    try {
+      const snapshot = await gatewayRpc<GatewayConfigSnapshot>('config.get', {});
+      const baseHash = typeof snapshot.hash === 'string' ? snapshot.hash : '';
+      if (!baseHash) {
+        throw new Error(t('memory.toast.hashMissing'));
+      }
+
+      await gatewayRpc('config.patch', {
+        baseHash,
+        raw: JSON.stringify({
+          memory: {
+            backend: 'builtin',
+          },
+        }),
+        note: 'clawx: disable qmd memory preset',
+        restartDelayMs: 800,
+      });
+
+      toast.success(t('memory.toast.disabled'));
+      await loadMemoryConfig();
+      await probeMemoryStatus(false);
+    } catch (error) {
+      toast.error(`${t('memory.toast.disableFailed')}: ${String(error)}`);
+    } finally {
+      setMemorySaving(false);
+    }
+  }, [gatewayStatus.state, gatewayRpc, loadMemoryConfig, probeMemoryStatus, t]);
 
   return (
     <div className="space-y-6 p-6">
@@ -507,6 +702,103 @@ export function Settings() {
               </Button>
             </div>
           </div>
+        </CardContent>
+      </Card>
+
+      {/* Memory */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Brain className="h-5 w-5" />
+            {t('memory.title')}
+          </CardTitle>
+          <CardDescription>{t('memory.description')}</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <Label>{t('memory.currentBackend')}</Label>
+              <p className="text-sm text-muted-foreground">
+                {memorySnapshotHash
+                  ? t('memory.hashReady')
+                  : t('memory.hashMissing')}
+              </p>
+            </div>
+            <Badge variant={memoryBackend === 'qmd' ? 'success' : 'secondary'}>
+              {memoryBackend === 'qmd'
+                ? t('memory.backendQmd')
+                : memoryBackend === 'builtin'
+                  ? t('memory.backendBuiltin')
+                  : t('memory.backendUnknown')}
+            </Badge>
+          </div>
+
+          <div className="rounded-lg border border-border/60 bg-background/40 p-3">
+            <p className="text-sm text-muted-foreground">
+              {t('memory.presetDescription')}
+            </p>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              variant="outline"
+              onClick={() => void loadMemoryConfig()}
+              disabled={!isGatewayRunning || memoryLoading}
+            >
+              <RefreshCw className={`h-4 w-4 mr-2${memoryLoading ? ' animate-spin' : ''}`} />
+              {memoryLoading ? t('memory.actions.loading') : t('memory.actions.reload')}
+            </Button>
+
+            <Button
+              variant="outline"
+              onClick={() => void probeMemoryStatus()}
+              disabled={!isGatewayRunning || memoryProbing}
+            >
+              <RefreshCw className={`h-4 w-4 mr-2${memoryProbing ? ' animate-spin' : ''}`} />
+              {memoryProbing ? t('memory.actions.probing') : t('memory.actions.probe')}
+            </Button>
+
+            <Button
+              onClick={() => void applyQmdPreset()}
+              disabled={!isGatewayRunning || memorySaving}
+            >
+              <Brain className="h-4 w-4 mr-2" />
+              {memorySaving ? t('memory.actions.saving') : t('memory.actions.enablePreset')}
+            </Button>
+
+            <Button
+              variant="outline"
+              onClick={() => void disableQmdPreset()}
+              disabled={!isGatewayRunning || memorySaving}
+            >
+              {t('memory.actions.useBuiltin')}
+            </Button>
+          </div>
+
+          {memoryProbeStatus && (
+            <div className="rounded-lg border border-border/60 bg-background/40 p-3 space-y-1">
+              <p className="text-sm font-medium">{t('memory.status.title')}</p>
+              <p className="text-xs text-muted-foreground">
+                {t('memory.status.agent', { id: memoryProbeStatus.agentId || '-' })}
+              </p>
+              <p className="text-xs text-muted-foreground">
+                {t('memory.status.provider', { provider: memoryProbeStatus.provider || '-' })}
+              </p>
+              <p className="text-xs text-muted-foreground">
+                {memoryProbeStatus.embedding?.ok
+                  ? t('memory.status.embeddingOk')
+                  : t('memory.status.embeddingFail', {
+                    reason: memoryProbeStatus.embedding?.error || t('memory.status.unavailable'),
+                  })}
+              </p>
+            </div>
+          )}
+
+          {!isGatewayRunning && (
+            <p className="text-xs text-amber-600 dark:text-amber-400">
+              {t('memory.gatewayRequired')}
+            </p>
+          )}
         </CardContent>
       </Card>
 
