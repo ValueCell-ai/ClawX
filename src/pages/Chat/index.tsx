@@ -29,6 +29,7 @@ export function Chat() {
   const streamingMessage = useChatStore((s) => s.streamingMessage);
   const streamingTools = useChatStore((s) => s.streamingTools);
   const pendingFinal = useChatStore((s) => s.pendingFinal);
+  const currentSessionKey = useChatStore((s) => s.currentSessionKey);
   const loadHistory = useChatStore((s) => s.loadHistory);
   const loadSessions = useChatStore((s) => s.loadSessions);
   const sendMessage = useChatStore((s) => s.sendMessage);
@@ -38,6 +39,8 @@ export function Chat() {
   const cleanupEmptySession = useChatStore((s) => s.cleanupEmptySession);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const previousSessionKeyRef = useRef<string | null>(null);
+  const previousMessageCountRef = useRef<number>(0);
   const [streamingTimestamp, setStreamingTimestamp] = useState<number>(0);
 
   // Load data when gateway is running.
@@ -62,10 +65,24 @@ export function Chat() {
     };
   }, [isGatewayRunning, loadHistory, loadSessions, cleanupEmptySession]);
 
-  // Auto-scroll on new messages, streaming, or activity changes
+  // Auto-scroll while actively chatting, but avoid forced scrolling when
+  // switching sessions (it causes disorienting jumps in historical threads).
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages, streamingMessage, sending, pendingFinal]);
+    const previousSessionKey = previousSessionKeyRef.current;
+    const previousMessageCount = previousMessageCountRef.current;
+
+    const sessionChanged = previousSessionKey != null && previousSessionKey !== currentSessionKey;
+    const messageCountIncreased = messages.length > previousMessageCount;
+    const shouldFollowLive = sending || pendingFinal || Boolean(streamingMessage);
+    const shouldAutoScroll = !sessionChanged && (shouldFollowLive || messageCountIncreased);
+
+    if (shouldAutoScroll) {
+      messagesEndRef.current?.scrollIntoView({ behavior: shouldFollowLive ? 'smooth' : 'auto' });
+    }
+
+    previousSessionKeyRef.current = currentSessionKey;
+    previousMessageCountRef.current = messages.length;
+  }, [currentSessionKey, messages.length, streamingMessage, sending, pendingFinal]);
 
   // Update timestamp when sending starts
   useEffect(() => {

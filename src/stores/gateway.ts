@@ -10,6 +10,7 @@ import type { GatewayStatus } from '../types/gateway';
 
 let gatewayInitPromise: Promise<void> | null = null;
 let gatewayEventUnsubscribers: Array<() => void> | null = null;
+let gatewayMessageListenerBound = false;
 
 interface GatewayHealth {
   ok: boolean;
@@ -78,15 +79,11 @@ function handleGatewayNotification(notification: { method?: string; params?: Rec
     import('./chat')
       .then(({ useChatStore }) => {
         const state = useChatStore.getState();
-        state.loadHistory(true);
-        if (state.sending) {
-          useChatStore.setState({
-            sending: false,
-            activeRunId: null,
-            pendingFinal: false,
-            lastUserMessageAt: null,
-          });
-        }
+        const normalizedSessionKey = sessionKey != null ? String(sessionKey) : '';
+        if (normalizedSessionKey && normalizedSessionKey !== state.currentSessionKey) return;
+        setTimeout(() => {
+          void useChatStore.getState().loadHistory(true);
+        }, 800);
       })
       .catch(() => {});
   }
@@ -104,12 +101,41 @@ function handleGatewayChatMessage(data: unknown): void {
       return;
     }
 
+    const state = useChatStore.getState();
+    const stopReason = payload.stopReason ?? payload.stop_reason;
+    const inferredState = stopReason ? 'final' : (state.sending ? 'delta' : 'final');
+
     useChatStore.getState().handleChatEvent({
-      state: 'final',
+      state: inferredState,
       message: payload,
       runId: chatData.runId ?? payload.runId,
+      sessionKey: chatData.sessionKey ?? payload.sessionKey,
     });
   }).catch(() => {});
+}
+
+function handleGatewayCatchAllMessage(data: unknown): void {
+  if (!data || typeof data !== 'object') return;
+  const msg = data as Record<string, unknown>;
+
+  if (msg.state && msg.message) {
+    import('./chat').then(({ useChatStore }) => {
+      useChatStore.getState().handleChatEvent(msg);
+    }).catch(() => {});
+    return;
+  }
+
+  if (msg.role && msg.content) {
+    import('./chat').then(({ useChatStore }) => {
+      const state = useChatStore.getState();
+      const stopReason = msg.stopReason ?? msg.stop_reason;
+      const inferredState = stopReason ? 'final' : (state.sending ? 'delta' : 'final');
+      useChatStore.getState().handleChatEvent({
+        state: inferredState,
+        message: msg,
+      });
+    }).catch(() => {});
+  }
 }
 
 function mapChannelStatus(status: string): 'connected' | 'connecting' | 'disconnected' | 'error' {
@@ -182,6 +208,13 @@ export const useGatewayStore = create<GatewayState>((set, get) => ({
             },
           ));
           gatewayEventUnsubscribers = unsubscribers;
+        }
+
+        if (!gatewayMessageListenerBound) {
+          gatewayMessageListenerBound = true;
+          window.electron.ipcRenderer.on('gateway:message', (payload) => {
+            handleGatewayCatchAllMessage(payload);
+          });
         }
       } catch (error) {
         console.error('Failed to initialize Gateway:', error);
