@@ -7,7 +7,16 @@
         "channels": "频道",
         "dashboard": "仪表盘",
         "settings": "设置",
-        "devConsole": "开发者控制台"
+        "devConsole": "开发者控制台",
+        "renameSession": "重命名会话",
+        "deleteSession": "删除会话",
+        "deleteSessionConfirm": "删除“{{label}}”？",
+        "renameSessionPlaceholder": "会话标题",
+        "saveSessionRename": "保存会话标题",
+        "cancelSessionRename": "取消重命名",
+        "renameSessionSuccess": "会话标题已更新",
+        "renameSessionFailed": "重命名会话失败",
+        "renameSessionEmpty": "会话标题不能为空"
     },
     "actions": {
         "save": "保存",

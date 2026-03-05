@@ -16,6 +16,9 @@ import {
   ChevronRight,
   Terminal,
   ExternalLink,
+  Pencil,
+  Check,
+  X,
   Trash2,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -23,8 +26,10 @@ import { useSettingsStore } from '@/stores/settings';
 import { useChatStore } from '@/stores/chat';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { Input } from '@/components/ui/input';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { useTranslation } from 'react-i18next';
+import { toast } from 'sonner';
 
 interface NavItemProps {
   to: string;
@@ -77,6 +82,7 @@ export function Sidebar() {
   const sessionLastActivity = useChatStore((s) => s.sessionLastActivity);
   const switchSession = useChatStore((s) => s.switchSession);
   const newSession = useChatStore((s) => s.newSession);
+  const renameSession = useChatStore((s) => s.renameSession);
   const deleteSession = useChatStore((s) => s.deleteSession);
 
   const navigate = useNavigate();
@@ -86,7 +92,7 @@ export function Sidebar() {
   const otherSessions = sessions.filter((s) => !s.key.endsWith(':main'));
 
   const getSessionLabel = (key: string, displayName?: string, label?: string) =>
-    sessionLabels[key] ?? label ?? displayName ?? key;
+    label ?? sessionLabels[key] ?? displayName ?? key;
 
   const openDevConsole = async () => {
     try {
@@ -107,6 +113,33 @@ export function Sidebar() {
 
   const { t } = useTranslation();
   const [sessionToDelete, setSessionToDelete] = useState<{ key: string; label: string } | null>(null);
+  const [sessionToRename, setSessionToRename] = useState<{ key: string; value: string } | null>(null);
+  const [renamingSessionKey, setRenamingSessionKey] = useState<string | null>(null);
+
+  const handleStartRename = (key: string, label: string) => {
+    setSessionToRename({ key, value: label });
+  };
+
+  const handleRenameSubmit = async () => {
+    if (!sessionToRename) return;
+
+    const nextLabel = sessionToRename.value.trim();
+    if (!nextLabel) {
+      toast.error(t('sidebar.renameSessionEmpty', 'Session title cannot be empty'));
+      return;
+    }
+
+    setRenamingSessionKey(sessionToRename.key);
+    try {
+      await renameSession(sessionToRename.key, nextLabel);
+      toast.success(t('sidebar.renameSessionSuccess', 'Session renamed'));
+      setSessionToRename(null);
+    } catch (error) {
+      toast.error(`${t('sidebar.renameSessionFailed', 'Failed to rename session')}: ${String(error)}`);
+    } finally {
+      setRenamingSessionKey(null);
+    }
+  };
 
   const navItems = [
     { to: '/cron', icon: <Clock className="h-5 w-5" />, label: t('sidebar.cronTasks') },
@@ -157,37 +190,100 @@ export function Sidebar() {
               (sessionLastActivity[b.key] ?? 0) - (sessionLastActivity[a.key] ?? 0)
             )].map((s) => (
               <div key={s.key} className="group relative flex items-center">
-                <button
-                  onClick={() => { switchSession(s.key); navigate('/'); }}
-                  className={cn(
-                    'w-full text-left rounded-md px-3 py-1.5 text-sm truncate transition-colors',
-                    !s.key.endsWith(':main') && 'pr-7',
-                    'hover:bg-accent hover:text-accent-foreground',
-                    isOnChat && currentSessionKey === s.key
-                      ? 'bg-accent/60 text-accent-foreground font-medium'
-                      : 'text-muted-foreground',
-                  )}
-                >
-                  {getSessionLabel(s.key, s.displayName, s.label)}
-                </button>
-                {!s.key.endsWith(':main') && (
-                  <button
-                    aria-label="Delete session"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setSessionToDelete({
-                        key: s.key,
-                        label: getSessionLabel(s.key, s.displayName, s.label),
-                      });
-                    }}
-                    className={cn(
-                      'absolute right-1 flex items-center justify-center rounded p-0.5 transition-opacity',
-                      'opacity-0 group-hover:opacity-100',
-                      'text-muted-foreground hover:text-destructive hover:bg-destructive/10',
+                {sessionToRename?.key === s.key ? (
+                  <div className="flex w-full items-center gap-1 px-2 py-1">
+                    <Input
+                      value={sessionToRename.value}
+                      onChange={(event) => setSessionToRename((prev) => (
+                        prev ? { ...prev, value: event.target.value } : prev
+                      ))}
+                      placeholder={t('sidebar.renameSessionPlaceholder', 'Session title')}
+                      className="h-8 text-sm"
+                      disabled={renamingSessionKey === s.key}
+                      autoFocus
+                      onKeyDown={(event) => {
+                        if (event.key === 'Enter') {
+                          event.preventDefault();
+                          void handleRenameSubmit();
+                        }
+                        if (event.key === 'Escape') {
+                          event.preventDefault();
+                          setSessionToRename(null);
+                        }
+                      }}
+                    />
+                    <button
+                      aria-label={t('sidebar.saveSessionRename', 'Save session title')}
+                      onClick={() => void handleRenameSubmit()}
+                      className={cn(
+                        'flex h-7 w-7 items-center justify-center rounded transition-colors',
+                        'text-muted-foreground hover:text-primary hover:bg-accent',
+                        renamingSessionKey === s.key && 'opacity-60'
+                      )}
+                      disabled={renamingSessionKey === s.key}
+                    >
+                      <Check className="h-3.5 w-3.5" />
+                    </button>
+                    <button
+                      aria-label={t('sidebar.cancelSessionRename', 'Cancel renaming session')}
+                      onClick={() => setSessionToRename(null)}
+                      className="flex h-7 w-7 items-center justify-center rounded text-muted-foreground transition-colors hover:text-foreground hover:bg-accent"
+                      disabled={renamingSessionKey === s.key}
+                    >
+                      <X className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                ) : (
+                  <>
+                    <button
+                      onClick={() => { switchSession(s.key); navigate('/'); }}
+                      className={cn(
+                        'w-full text-left rounded-md px-3 py-1.5 text-sm truncate transition-colors',
+                        !s.key.endsWith(':main') && 'pr-12',
+                        'hover:bg-accent hover:text-accent-foreground',
+                        isOnChat && currentSessionKey === s.key
+                          ? 'bg-accent/60 text-accent-foreground font-medium'
+                          : 'text-muted-foreground',
+                      )}
+                    >
+                      {getSessionLabel(s.key, s.displayName, s.label)}
+                    </button>
+                    {!s.key.endsWith(':main') && (
+                      <>
+                        <button
+                          aria-label={t('sidebar.renameSession', 'Rename session')}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleStartRename(s.key, getSessionLabel(s.key, s.displayName, s.label));
+                          }}
+                          className={cn(
+                            'absolute right-6 flex items-center justify-center rounded p-0.5 transition-opacity',
+                            'opacity-0 group-hover:opacity-100',
+                            'text-muted-foreground hover:text-primary hover:bg-accent',
+                          )}
+                        >
+                          <Pencil className="h-3.5 w-3.5" />
+                        </button>
+                        <button
+                          aria-label={t('sidebar.deleteSession', 'Delete session')}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setSessionToDelete({
+                              key: s.key,
+                              label: getSessionLabel(s.key, s.displayName, s.label),
+                            });
+                          }}
+                          className={cn(
+                            'absolute right-1 flex items-center justify-center rounded p-0.5 transition-opacity',
+                            'opacity-0 group-hover:opacity-100',
+                            'text-muted-foreground hover:text-destructive hover:bg-destructive/10',
+                          )}
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </button>
+                      </>
                     )}
-                  >
-                    <Trash2 className="h-3.5 w-3.5" />
-                  </button>
+                  </>
                 )}
               </div>
             ))}
@@ -226,10 +322,10 @@ export function Sidebar() {
 
       <ConfirmDialog
         open={!!sessionToDelete}
-        title={t('common.confirm', 'Confirm')}
-        message={sessionToDelete ? t('sidebar.deleteSessionConfirm', `Delete "${sessionToDelete.label}"?`) : ''}
-        confirmLabel={t('common.delete', 'Delete')}
-        cancelLabel={t('common.cancel', 'Cancel')}
+        title={t('actions.confirm', 'Confirm')}
+        message={sessionToDelete ? t('sidebar.deleteSessionConfirm', { label: sessionToDelete.label }) : ''}
+        confirmLabel={t('actions.delete', 'Delete')}
+        cancelLabel={t('actions.cancel', 'Cancel')}
         variant="destructive"
         onConfirm={async () => {
           if (!sessionToDelete) return;
