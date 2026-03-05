@@ -7,7 +7,16 @@
         "channels": "Channels",
         "dashboard": "Dashboard",
         "settings": "Settings",
-        "devConsole": "Developer Console"
+        "devConsole": "Developer Console",
+        "renameSession": "Rename Session",
+        "deleteSession": "Delete Session",
+        "deleteSessionConfirm": "Delete \"{{label}}\"?",
+        "renameSessionPlaceholder": "Session title",
+        "saveSessionRename": "Save session title",
+        "cancelSessionRename": "Cancel renaming",
+        "renameSessionSuccess": "Session title updated",
+        "renameSessionFailed": "Failed to rename session",
+        "renameSessionEmpty": "Session title cannot be empty"
     },
     "actions": {
         "save": "Save",
