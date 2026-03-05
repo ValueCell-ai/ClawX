@@ -931,7 +931,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       const result = await window.electron.ipcRenderer.invoke(
         'gateway:rpc',
         'sessions.list',
-        { limit: 50 }
+        {}
       ) as { success: boolean; result?: Record<string, unknown>; error?: string };
 
       if (result.success && result.result) {
@@ -1004,7 +1004,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
                 const r = await window.electron.ipcRenderer.invoke(
                   'gateway:rpc',
                   'chat.history',
-                  { sessionKey: session.key, limit: 200 },
+                  { sessionKey: session.key, limit: 1000 },
                 ) as { success: boolean; result?: Record<string, unknown> };
                 if (!r.success || !r.result) return;
                 const msgs = Array.isArray(r.result.messages) ? r.result.messages as RawMessage[] : [];
