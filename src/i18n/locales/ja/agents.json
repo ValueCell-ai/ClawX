@@ -1,27 +1,77 @@
 {
   "title": "エージェント管理",
-  "subtitle": "CLI を使わずに OpenClaw エージェントを作成・確認できます。",
+  "subtitle": "UI 上でエージェントの作成・編集・削除とファイル設定を完結できます。",
   "refresh": "更新",
   "gatewayWarning": "ゲートウェイが停止中です。先にゲートウェイを起動してください。",
-  "create": {
-    "title": "新しいエージェントを作成",
-    "description": "ここでは基本項目のみ設定します。バインディングや詳細なモデル設定は OpenClaw 設定で続けてください。",
+  "form": {
+    "createTitle": "エージェントを作成",
+    "createDescription": "名前、ワークスペース、モデル、ID 情報を入力して新規作成します。",
+    "editTitle": "エージェントを編集",
+    "editDescription": "選択したエージェントの基本情報とモデル設定を更新します。",
     "nameLabel": "エージェント名",
     "namePlaceholder": "例: support",
     "workspaceLabel": "ワークスペースディレクトリ",
     "workspacePlaceholder": "例: ~/.openclaw/workspace-support",
-    "submit": "エージェントを作成",
-    "creating": "作成中..."
+    "workspaceLoadError": "このエージェントのワークスペースパスを読み込めません。再読み込み後に保存してください。",
+    "modelLabel": "モデル ID（任意）",
+    "modelPlaceholder": "例: openai/gpt-4.1",
+    "emojiLabel": "絵文字（任意）",
+    "emojiPlaceholder": "例: 🤖",
+    "avatarLabel": "アバター（任意）",
+    "avatarPlaceholder": "例: robot",
+    "submitting": "送信中...",
+    "createButton": "エージェントを作成",
+    "saveButton": "変更を保存",
+    "cancelEdit": "キャンセル",
+    "editingHint": "編集中: {{id}}"
   },
   "list": {
-    "title": "既存エージェント",
+    "title": "エージェント一覧",
     "description": "{{count}} 件 · セッションスコープ: {{scope}}",
     "empty": "エージェントはまだありません。",
     "defaultBadge": "デフォルト",
-    "mainBadge": "メインキー"
+    "mainBadge": "メインキー",
+    "edit": "編集",
+    "configureFiles": "ファイル設定",
+    "delete": "削除",
+    "deleting": "削除中..."
+  },
+  "files": {
+    "title": "エージェントファイル",
+    "description": "AGENTS.md、SOUL.md、IDENTITY.md などのワークスペースファイルを直接編集できます。",
+    "noAgent": "設定可能なエージェントがありません。",
+    "agentLabel": "エージェント選択",
+    "workspaceLabel": "ワークスペースパス",
+    "openWorkspace": "フォルダを開く",
+    "reload": "再読み込み",
+    "loading": "読み込み中...",
+    "missingBadge": "未作成",
+    "editorLabel": "編集中: {{file}}",
+    "saving": "保存中...",
+    "save": "ファイルを保存",
+    "unsavedHint": "未保存の変更があります",
+    "savedHint": "保存済み"
+  },
+  "confirmDelete": {
+    "title": "エージェント削除",
+    "message": "エージェント「{{id}}」とワークスペースファイルを削除しますか？この操作は取り消せません。",
+    "confirm": "削除する",
+    "cancel": "キャンセル"
   },
   "toast": {
     "created": "エージェント「{{id}}」を作成しました",
-    "createFailed": "エージェントの作成に失敗しました"
+    "createdWithWarnings": "エージェント「{{id}}」は作成されましたが、一部の後続設定の同期に失敗しました",
+    "createFailed": "エージェントの作成に失敗しました",
+    "modelUpdateFailed": "モデル設定の更新に失敗しました",
+    "identitySyncFailed": "ID 情報の同期に失敗しました",
+    "updated": "エージェント「{{id}}」を更新しました",
+    "updateFailed": "エージェントの更新に失敗しました",
+    "deleted": "エージェント「{{id}}」を削除しました",
+    "deleteFailed": "エージェントの削除に失敗しました",
+    "fileSaved": "「{{file}}」を保存しました",
+    "fileSaveFailed": "ファイルの保存に失敗しました",
+    "fileLoadFailed": "ファイルの読み込みに失敗しました",
+    "workspaceLoadFailed": "ワークスペースパスの読み込みに失敗しました",
+    "workspaceOpenFailed": "ワークスペースを開けませんでした"
   }
 }

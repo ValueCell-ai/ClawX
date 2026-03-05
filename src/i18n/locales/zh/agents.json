@@ -1,27 +1,77 @@
 {
   "title": "智能体管理",
-  "subtitle": "无需命令行，直接创建并查看 OpenClaw 智能体。",
+  "subtitle": "在图形界面中完成智能体创建、编辑、删除和文件配置。",
   "refresh": "刷新",
   "gatewayWarning": "网关未运行。请先启动网关后再管理智能体。",
-  "create": {
-    "title": "创建新智能体",
-    "description": "当前仅提供基础字段。路由绑定、身份信息、模型策略等高级配置请继续在 OpenClaw 配置中完成。",
+  "form": {
+    "createTitle": "创建智能体",
+    "createDescription": "填写名称、工作区、模型与身份信息后即可创建。",
+    "editTitle": "编辑智能体",
+    "editDescription": "修改智能体的基础信息与模型设置。",
     "nameLabel": "智能体名称",
     "namePlaceholder": "例如：support",
     "workspaceLabel": "工作区目录",
     "workspacePlaceholder": "例如：~/.openclaw/workspace-support",
-    "submit": "创建智能体",
-    "creating": "创建中..."
+    "workspaceLoadError": "无法读取该智能体的工作区路径，请先重试读取后再保存。",
+    "modelLabel": "模型 ID（可选）",
+    "modelPlaceholder": "例如：openai/gpt-4.1",
+    "emojiLabel": "Emoji（可选）",
+    "emojiPlaceholder": "例如：🤖",
+    "avatarLabel": "头像（可选）",
+    "avatarPlaceholder": "例如：robot",
+    "submitting": "提交中...",
+    "createButton": "创建智能体",
+    "saveButton": "保存修改",
+    "cancelEdit": "取消编辑",
+    "editingHint": "当前正在编辑：{{id}}"
   },
   "list": {
-    "title": "已有智能体",
+    "title": "智能体列表",
     "description": "{{count}} 个智能体 · 会话作用域：{{scope}}",
     "empty": "暂未发现智能体。",
     "defaultBadge": "默认",
-    "mainBadge": "主会话键"
+    "mainBadge": "主会话键",
+    "edit": "编辑",
+    "configureFiles": "配置文件",
+    "delete": "删除",
+    "deleting": "删除中..."
+  },
+  "files": {
+    "title": "Agent 文件管理",
+    "description": "直接查看和编辑工作区中的 AGENTS.md、SOUL.md、IDENTITY.md 等文件。",
+    "noAgent": "暂无可配置的智能体。",
+    "agentLabel": "选择智能体",
+    "workspaceLabel": "工作区路径",
+    "openWorkspace": "打开目录",
+    "reload": "重新加载",
+    "loading": "加载中...",
+    "missingBadge": "缺失",
+    "editorLabel": "编辑文件：{{file}}",
+    "saving": "保存中...",
+    "save": "保存文件",
+    "unsavedHint": "有未保存改动",
+    "savedHint": "已保存"
+  },
+  "confirmDelete": {
+    "title": "删除智能体",
+    "message": "确认删除智能体「{{id}}」及其工作区文件吗？该操作不可撤销。",
+    "confirm": "确认删除",
+    "cancel": "取消"
   },
   "toast": {
     "created": "已创建智能体「{{id}}」",
-    "createFailed": "创建智能体失败"
+    "createdWithWarnings": "智能体「{{id}}」已创建，但部分后续配置未同步成功",
+    "createFailed": "创建智能体失败",
+    "modelUpdateFailed": "模型配置更新失败",
+    "identitySyncFailed": "身份信息同步失败",
+    "updated": "已更新智能体「{{id}}」",
+    "updateFailed": "更新智能体失败",
+    "deleted": "已删除智能体「{{id}}」",
+    "deleteFailed": "删除智能体失败",
+    "fileSaved": "已保存文件「{{file}}」",
+    "fileSaveFailed": "文件保存失败",
+    "fileLoadFailed": "文件加载失败",
+    "workspaceLoadFailed": "读取工作区路径失败",
+    "workspaceOpenFailed": "打开工作区失败"
   }
 }
