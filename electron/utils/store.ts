@@ -28,8 +28,10 @@ export interface AppSettings {
   
   // Gateway
   gatewayAutoStart: boolean;
+  gatewayHost: string;
   gatewayPort: number;
   gatewayToken: string;
+  gatewayRemoteToken: string;
   proxyEnabled: boolean;
   proxyServer: string;
   proxyHttpServer: string;
@@ -65,8 +67,10 @@ const defaults: AppSettings = {
   
   // Gateway
   gatewayAutoStart: true,
+  gatewayHost: 'localhost',
   gatewayPort: 18789,
   gatewayToken: generateToken(),
+  gatewayRemoteToken: '',
   proxyEnabled: false,
   proxyServer: '',
   proxyHttpServer: '',

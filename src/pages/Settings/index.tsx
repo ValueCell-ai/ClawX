@@ -45,6 +45,10 @@ export function Settings() {
     setLanguage,
     gatewayAutoStart,
     setGatewayAutoStart,
+    gatewayHost,
+    setGatewayHost,
+    gatewayRemoteToken,
+    setGatewayRemoteToken,
     proxyEnabled,
     proxyServer,
     proxyHttpServer,
@@ -71,6 +75,10 @@ export function Settings() {
   const [controlUiInfo, setControlUiInfo] = useState<ControlUiInfo | null>(null);
   const [openclawCliCommand, setOpenclawCliCommand] = useState('');
   const [openclawCliError, setOpenclawCliError] = useState<string | null>(null);
+  const [gatewayHostDraft, setGatewayHostDraft] = useState('localhost');
+  const [savingHost, setSavingHost] = useState(false);
+  const [remoteTokenDraft, setRemoteTokenDraft] = useState('');
+  const [savingRemoteToken, setSavingRemoteToken] = useState(false);
   const [proxyServerDraft, setProxyServerDraft] = useState('');
   const [proxyHttpServerDraft, setProxyHttpServerDraft] = useState('');
   const [proxyHttpsServerDraft, setProxyHttpsServerDraft] = useState('');
@@ -204,6 +212,14 @@ export function Settings() {
   }, []);
 
   useEffect(() => {
+    setGatewayHostDraft(gatewayHost || 'localhost');
+  }, [gatewayHost]);
+
+  useEffect(() => {
+    setRemoteTokenDraft(gatewayRemoteToken || '');
+  }, [gatewayRemoteToken]);
+
+  useEffect(() => {
     setProxyEnabledDraft(proxyEnabled);
   }, [proxyEnabled]);
 
@@ -226,6 +242,38 @@ export function Settings() {
   useEffect(() => {
     setProxyBypassRulesDraft(proxyBypassRules);
   }, [proxyBypassRules]);
+
+  const handleSaveGatewayHost = async () => {
+    setSavingHost(true);
+    try {
+      const normalized = gatewayHostDraft.trim() || 'localhost';
+      await window.electron.ipcRenderer.invoke('settings:set', 'gatewayHost', normalized);
+      setGatewayHost(normalized);
+      toast.success(t('gateway.hostSaved'));
+      // Restart gateway so it reconnects to the new host
+      await restartGateway();
+    } catch (error) {
+      toast.error(`${t('gateway.hostSaveFailed')}: ${String(error)}`);
+    } finally {
+      setSavingHost(false);
+    }
+  };
+
+  const handleSaveRemoteToken = async () => {
+    setSavingRemoteToken(true);
+    try {
+      const normalized = remoteTokenDraft.trim();
+      await window.electron.ipcRenderer.invoke('settings:set', 'gatewayRemoteToken', normalized);
+      setGatewayRemoteToken(normalized);
+      toast.success(t('gateway.remoteTokenSaved'));
+      // Restart gateway so it reconnects with the new token
+      await restartGateway();
+    } catch (error) {
+      toast.error(`${t('gateway.remoteTokenSaveFailed')}: ${String(error)}`);
+    } finally {
+      setSavingRemoteToken(false);
+    }
+  };
 
   const handleSaveProxySettings = async () => {
     setSavingProxy(true);
@@ -390,6 +438,63 @@ export function Settings() {
               <pre className="text-xs text-muted-foreground bg-background/50 p-3 rounded max-h-60 overflow-auto whitespace-pre-wrap font-mono">
                 {logContent || t('chat:noLogs')}
               </pre>
+            </div>
+          )}
+
+          <Separator />
+
+          <div className="space-y-2">
+            <Label htmlFor="gateway-host">{t('gateway.host')}</Label>
+            <div className="flex gap-2">
+              <Input
+                id="gateway-host"
+                value={gatewayHostDraft}
+                onChange={(event) => setGatewayHostDraft(event.target.value)}
+                placeholder="localhost"
+              />
+              <Button
+                variant="outline"
+                onClick={handleSaveGatewayHost}
+                disabled={savingHost}
+              >
+                <RefreshCw className={`h-4 w-4 mr-2${savingHost ? ' animate-spin' : ''}`} />
+                {savingHost ? t('common:status.saving') : t('common:actions.save')}
+              </Button>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              {t('gateway.hostDesc')}
+            </p>
+            {gatewayHostDraft !== 'localhost' && gatewayHostDraft !== '127.0.0.1' && gatewayHostDraft !== '::1' && (
+              <p className="text-xs text-amber-500">
+                {t('gateway.hostRestartNote')}
+              </p>
+            )}
+          </div>
+
+          {gatewayHostDraft !== 'localhost' && gatewayHostDraft !== '127.0.0.1' && gatewayHostDraft !== '::1' && (
+            <div className="space-y-2">
+              <Label htmlFor="gateway-remote-token">{t('gateway.remoteToken')}</Label>
+              <div className="flex gap-2">
+                <Input
+                  id="gateway-remote-token"
+                  type="password"
+                  value={remoteTokenDraft}
+                  onChange={(event) => setRemoteTokenDraft(event.target.value)}
+                  placeholder="clawx-... or openclaw-..."
+                  className="font-mono"
+                />
+                <Button
+                  variant="outline"
+                  onClick={handleSaveRemoteToken}
+                  disabled={savingRemoteToken}
+                >
+                  <RefreshCw className={`h-4 w-4 mr-2${savingRemoteToken ? ' animate-spin' : ''}`} />
+                  {savingRemoteToken ? t('common:status.saving') : t('common:actions.save')}
+                </Button>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                {t('gateway.remoteTokenDesc')}
+              </p>
             </div>
           )}
 

@@ -33,6 +33,7 @@ interface GatewayState {
 export const useGatewayStore = create<GatewayState>((set, get) => ({
   status: {
     state: 'stopped',
+    host: 'localhost',
     port: 18789,
   },
   health: null,

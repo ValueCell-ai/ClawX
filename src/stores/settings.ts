@@ -18,7 +18,9 @@ interface SettingsState {
 
   // Gateway
   gatewayAutoStart: boolean;
+  gatewayHost: string;
   gatewayPort: number;
+  gatewayRemoteToken: string;
   proxyEnabled: boolean;
   proxyServer: string;
   proxyHttpServer: string;
@@ -45,7 +47,9 @@ interface SettingsState {
   setStartMinimized: (value: boolean) => void;
   setLaunchAtStartup: (value: boolean) => void;
   setGatewayAutoStart: (value: boolean) => void;
+  setGatewayHost: (host: string) => void;
   setGatewayPort: (port: number) => void;
+  setGatewayRemoteToken: (token: string) => void;
   setProxyEnabled: (value: boolean) => void;
   setProxyServer: (value: string) => void;
   setProxyHttpServer: (value: string) => void;
@@ -72,7 +76,9 @@ const defaultSettings = {
   startMinimized: false,
   launchAtStartup: false,
   gatewayAutoStart: true,
+  gatewayHost: 'localhost',
   gatewayPort: 18789,
+  gatewayRemoteToken: '',
   proxyEnabled: false,
   proxyServer: '',
   proxyHttpServer: '',
@@ -110,7 +116,9 @@ export const useSettingsStore = create<SettingsState>()(
       setStartMinimized: (startMinimized) => set({ startMinimized }),
       setLaunchAtStartup: (launchAtStartup) => set({ launchAtStartup }),
       setGatewayAutoStart: (gatewayAutoStart) => { set({ gatewayAutoStart }); void window.electron.ipcRenderer.invoke('settings:set', 'gatewayAutoStart', gatewayAutoStart).catch(() => {}); },
+      setGatewayHost: (gatewayHost) => { set({ gatewayHost }); void window.electron.ipcRenderer.invoke('settings:set', 'gatewayHost', gatewayHost).catch(() => {}); },
       setGatewayPort: (gatewayPort) => { set({ gatewayPort }); void window.electron.ipcRenderer.invoke('settings:set', 'gatewayPort', gatewayPort).catch(() => {}); },
+      setGatewayRemoteToken: (gatewayRemoteToken) => { set({ gatewayRemoteToken }); void window.electron.ipcRenderer.invoke('settings:set', 'gatewayRemoteToken', gatewayRemoteToken).catch(() => {}); },
       setProxyEnabled: (proxyEnabled) => set({ proxyEnabled }),
       setProxyServer: (proxyServer) => set({ proxyServer }),
       setProxyHttpServer: (proxyHttpServer) => set({ proxyHttpServer }),

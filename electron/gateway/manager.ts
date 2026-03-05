@@ -23,11 +23,9 @@ import { getUvMirrorEnv } from '../utils/uv-env';
 import { isPythonReady, setupManagedPython } from '../utils/uv-setup';
 import {
   loadOrCreateDeviceIdentity,
-  signDevicePayload,
-  publicKeyRawBase64UrlFromPem,
-  buildDeviceAuthPayload,
   type DeviceIdentity,
 } from '../utils/device-identity';
+import { buildConnectFrame } from './connect-frame';
 import { syncGatewayTokenToConfig, syncBrowserConfigToOpenClaw, sanitizeOpenClawConfig } from '../utils/openclaw-auth';
 import { buildProxyEnv, resolveProxySettings } from '../utils/proxy';
 import { syncProxyConfigToOpenClaw } from '../utils/openclaw-proxy';
@@ -46,6 +44,7 @@ import {
  */
 export interface GatewayStatus {
   state: GatewayLifecycleState;
+  host: string;
   port: number;
   pid?: number;
   uptime?: number;
@@ -203,7 +202,7 @@ export class GatewayManager extends EventEmitter {
   private processExitCode: number | null = null; // set by exit event, replaces exitCode/signalCode
   private ownsProcess = false;
   private ws: WebSocket | null = null;
-  private status: GatewayStatus = { state: 'stopped', port: PORTS.OPENCLAW_GATEWAY };
+  private status: GatewayStatus = { state: 'stopped', host: 'localhost', port: PORTS.OPENCLAW_GATEWAY };
   private reconnectTimer: NodeJS.Timeout | null = null;
   private pingInterval: NodeJS.Timeout | null = null;
   private healthCheckInterval: NodeJS.Timeout | null = null;
@@ -348,6 +347,14 @@ export class GatewayManager extends EventEmitter {
   }
 
   /**
+   * Check if the configured host is remote (not localhost)
+   */
+  private isRemoteHost(): boolean {
+    const h = this.status.host;
+    return h !== 'localhost' && h !== '127.0.0.1' && h !== '::1';
+  }
+
+  /**
    * Get current Gateway status
    */
   getStatus(): GatewayStatus {
@@ -377,7 +384,16 @@ export class GatewayManager extends EventEmitter {
 
     this.startLock = true;
     const startEpoch = this.bumpLifecycleEpoch('start');
-    logger.info(`Gateway start requested (port=${this.status.port})`);
+
+    // Read host from persisted settings before each start attempt.
+    try {
+      const configuredHost = await getSetting('gatewayHost');
+      if (configuredHost) {
+        this.status.host = configuredHost;
+      }
+    } catch { /* keep current host */ }
+
+    logger.info(`Gateway start requested (host=${this.status.host}, port=${this.status.port})`);
     this.lastSpawnSummary = null;
     this.shouldReconnect = true;
 
@@ -396,18 +412,21 @@ export class GatewayManager extends EventEmitter {
     this.setStatus({ state: 'starting', reconnectAttempts: 0 });
     let configRepairAttempted = false;
 
-    // Check if Python environment is ready (self-healing) asynchronously.
-    // Fire-and-forget: only needs to run once, not on every retry.
-    void isPythonReady().then(pythonReady => {
-      if (!pythonReady) {
-        logger.info('Python environment missing or incomplete, attempting background repair...');
-        void setupManagedPython().catch(err => {
-          logger.error('Background Python repair failed:', err);
-        });
-      }
-    }).catch(err => {
-      logger.error('Failed to check Python environment:', err);
-    });
+    // Only check/repair local Python environment for local gateways.
+    if (!this.isRemoteHost()) {
+      // Check if Python environment is ready (self-healing) asynchronously.
+      // Fire-and-forget: only needs to run once, not on every retry.
+      void isPythonReady().then(pythonReady => {
+        if (!pythonReady) {
+          logger.info('Python environment missing or incomplete, attempting background repair...');
+          void setupManagedPython().catch(err => {
+            logger.error('Background Python repair failed:', err);
+          });
+        }
+      }).catch(err => {
+        logger.error('Failed to check Python environment:', err);
+      });
+    }
 
     try {
       let startAttempts = 0;
@@ -418,7 +437,19 @@ export class GatewayManager extends EventEmitter {
         this.assertLifecycleEpoch(startEpoch, 'start');
         this.recentStartupStderrLines = [];
         try {
-          // Check if Gateway is already running
+          // Remote host: skip local process management, just connect.
+          if (this.isRemoteHost()) {
+            logger.info(`Connecting to remote Gateway at ${this.status.host}:${this.status.port}`);
+            await this.connect(this.status.port);
+            this.assertLifecycleEpoch(startEpoch, 'start/connect-remote');
+            this.ownsProcess = false;
+            this.setStatus({ pid: undefined });
+            this.startHealthCheck();
+            logger.debug('Remote Gateway connected successfully');
+            return;
+          }
+
+          // Local host: check if Gateway is already running
           logger.debug('Checking for existing Gateway...');
           const existing = await this.findExistingGateway();
           this.assertLifecycleEpoch(startEpoch, 'start/find-existing');
@@ -454,7 +485,7 @@ export class GatewayManager extends EventEmitter {
           if (error instanceof LifecycleSupersededError) {
             throw error;
           }
-          if (shouldAttemptConfigAutoRepair(error, this.recentStartupStderrLines, configRepairAttempted)) {
+          if (!this.isRemoteHost() && shouldAttemptConfigAutoRepair(error, this.recentStartupStderrLines, configRepairAttempted)) {
             configRepairAttempted = true;
             logger.warn(
               'Detected invalid OpenClaw config during Gateway startup; running doctor repair before retry'
@@ -888,7 +919,7 @@ export class GatewayManager extends EventEmitter {
 
       // Try a quick WebSocket connection to check if gateway is listening
       return await new Promise<{ port: number, externalToken?: string } | null>((resolve) => {
-        const testWs = new WebSocket(`ws://localhost:${port}/ws`);
+        const testWs = new WebSocket(`ws://${this.status.host}:${port}/ws`);
         const timeout = setTimeout(() => {
           testWs.close();
           resolve(null);
@@ -1241,7 +1272,7 @@ export class GatewayManager extends EventEmitter {
 
       try {
         const ready = await new Promise<boolean>((resolve) => {
-          const testWs = new WebSocket(`ws://localhost:${this.status.port}/ws`);
+          const testWs = new WebSocket(`ws://${this.status.host}:${this.status.port}/ws`);
           const timeout = setTimeout(() => {
             testWs.close();
             resolve(false);
@@ -1282,11 +1313,11 @@ export class GatewayManager extends EventEmitter {
    * Connect WebSocket to Gateway
    */
   private async connect(port: number, _externalToken?: string): Promise<void> {
-    logger.debug(`Connecting Gateway WebSocket (ws://localhost:${port}/ws)`);
+    logger.debug(`Connecting Gateway WebSocket (ws://${this.status.host}:${port}/ws)`);
 
     return new Promise((resolve, reject) => {
       // WebSocket URL (token will be sent in connect handshake, not URL)
-      const wsUrl = `ws://localhost:${port}/ws`;
+      const wsUrl = `ws://${this.status.host}:${port}/ws`;
 
       this.ws = new WebSocket(wsUrl);
       let handshakeComplete = false;
@@ -1333,61 +1364,20 @@ export class GatewayManager extends EventEmitter {
       const sendConnectHandshake = async (challengeNonce: string) => {
         logger.debug('Sending connect handshake with challenge nonce');
 
-        const currentToken = await getSetting('gatewayToken');
+        // Use remote token when connecting to a non-local gateway.
+        const currentToken = this.isRemoteHost()
+          ? (await getSetting('gatewayRemoteToken') || await getSetting('gatewayToken'))
+          : await getSetting('gatewayToken');
 
         connectId = `connect-${Date.now()}`;
-        const role = 'operator';
-        const scopes = ['operator.admin'];
-        const signedAtMs = Date.now();
-        const clientId = 'gateway-client';
-        const clientMode = 'ui';
 
-        const device = (() => {
-          if (!this.deviceIdentity) return undefined;
-
-          const payload = buildDeviceAuthPayload({
-            deviceId: this.deviceIdentity.deviceId,
-            clientId,
-            clientMode,
-            role,
-            scopes,
-            signedAtMs,
-            token: currentToken ?? null,
-            nonce: challengeNonce,
-          });
-          const signature = signDevicePayload(this.deviceIdentity.privateKeyPem, payload);
-          return {
-            id: this.deviceIdentity.deviceId,
-            publicKey: publicKeyRawBase64UrlFromPem(this.deviceIdentity.publicKeyPem),
-            signature,
-            signedAt: signedAtMs,
-            nonce: challengeNonce,
-          };
-        })();
-
-        const connectFrame = {
-          type: 'req',
-          id: connectId,
-          method: 'connect',
-          params: {
-            minProtocol: 3,
-            maxProtocol: 3,
-            client: {
-              id: clientId,
-              displayName: 'ClawX',
-              version: '0.1.0',
-              platform: process.platform,
-              mode: clientMode,
-            },
-            auth: {
-              token: currentToken,
-            },
-            caps: [],
-            role,
-            scopes,
-            device,
-          },
-        };
+        const connectFrame = buildConnectFrame({
+          challengeNonce,
+          token: currentToken,
+          connectId,
+          deviceIdentity: this.deviceIdentity,
+          isRemote: this.isRemoteHost(),
+        });
 
         this.ws?.send(JSON.stringify(connectFrame));
 

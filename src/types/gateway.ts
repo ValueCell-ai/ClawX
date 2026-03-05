@@ -8,6 +8,7 @@
  */
 export interface GatewayStatus {
   state: 'stopped' | 'starting' | 'running' | 'error' | 'reconnecting';
+  host: string;
   port: number;
   pid?: number;
   uptime?: number;
