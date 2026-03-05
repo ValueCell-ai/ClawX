@@ -1,0 +1,27 @@
+{
+  "title": "Agent Management",
+  "subtitle": "Create and view OpenClaw agents without using the CLI.",
+  "refresh": "Refresh",
+  "gatewayWarning": "Gateway is not running. Start Gateway first to manage agents.",
+  "create": {
+    "title": "Create New Agent",
+    "description": "Basic fields only. For advanced settings (bindings, identity, model strategy), continue in OpenClaw config.",
+    "nameLabel": "Agent Name",
+    "namePlaceholder": "e.g. support",
+    "workspaceLabel": "Workspace Directory",
+    "workspacePlaceholder": "e.g. ~/.openclaw/workspace-support",
+    "submit": "Create Agent",
+    "creating": "Creating..."
+  },
+  "list": {
+    "title": "Existing Agents",
+    "description": "{{count}} agents · session scope: {{scope}}",
+    "empty": "No agents found yet.",
+    "defaultBadge": "Default",
+    "mainBadge": "Main Key"
+  },
+  "toast": {
+    "created": "Agent \"{{id}}\" created",
+    "createFailed": "Failed to create agent"
+  }
+}

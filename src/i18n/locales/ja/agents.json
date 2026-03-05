@@ -1,0 +1,27 @@
+{
+  "title": "エージェント管理",
+  "subtitle": "CLI を使わずに OpenClaw エージェントを作成・確認できます。",
+  "refresh": "更新",
+  "gatewayWarning": "ゲートウェイが停止中です。先にゲートウェイを起動してください。",
+  "create": {
+    "title": "新しいエージェントを作成",
+    "description": "ここでは基本項目のみ設定します。バインディングや詳細なモデル設定は OpenClaw 設定で続けてください。",
+    "nameLabel": "エージェント名",
+    "namePlaceholder": "例: support",
+    "workspaceLabel": "ワークスペースディレクトリ",
+    "workspacePlaceholder": "例: ~/.openclaw/workspace-support",
+    "submit": "エージェントを作成",
+    "creating": "作成中..."
+  },
+  "list": {
+    "title": "既存エージェント",
+    "description": "{{count}} 件 · セッションスコープ: {{scope}}",
+    "empty": "エージェントはまだありません。",
+    "defaultBadge": "デフォルト",
+    "mainBadge": "メインキー"
+  },
+  "toast": {
+    "created": "エージェント「{{id}}」を作成しました",
+    "createFailed": "エージェントの作成に失敗しました"
+  }
+}

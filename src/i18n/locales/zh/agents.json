@@ -1,0 +1,27 @@
+{
+  "title": "智能体管理",
+  "subtitle": "无需命令行，直接创建并查看 OpenClaw 智能体。",
+  "refresh": "刷新",
+  "gatewayWarning": "网关未运行。请先启动网关后再管理智能体。",
+  "create": {
+    "title": "创建新智能体",
+    "description": "当前仅提供基础字段。路由绑定、身份信息、模型策略等高级配置请继续在 OpenClaw 配置中完成。",
+    "nameLabel": "智能体名称",
+    "namePlaceholder": "例如：support",
+    "workspaceLabel": "工作区目录",
+    "workspacePlaceholder": "例如：~/.openclaw/workspace-support",
+    "submit": "创建智能体",
+    "creating": "创建中..."
+  },
+  "list": {
+    "title": "已有智能体",
+    "description": "{{count}} 个智能体 · 会话作用域：{{scope}}",
+    "empty": "暂未发现智能体。",
+    "defaultBadge": "默认",
+    "mainBadge": "主会话键"
+  },
+  "toast": {
+    "created": "已创建智能体「{{id}}」",
+    "createFailed": "创建智能体失败"
+  }
+}
