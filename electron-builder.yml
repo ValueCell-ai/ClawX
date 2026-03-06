@@ -157,10 +157,7 @@ linux:
   maintainer: ClawX Team <public@valuecell.ai>
   vendor: ClawX
   synopsis: AI Assistant powered by OpenClaw
-  description: |
-    ClawX is a graphical AI assistant application that integrates with
-    OpenClaw Gateway to provide intelligent automation and assistance
-    across multiple messaging platforms.
+  description: ClawX is a graphical AI assistant application that integrates with OpenClaw Gateway to provide intelligent automation and assistance across multiple messaging platforms.
   desktop:
     entry:
       Name: ClawX
