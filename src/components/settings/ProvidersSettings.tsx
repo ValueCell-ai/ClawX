@@ -216,7 +216,7 @@ interface ProviderCardProps {
   onSaveEdits: (payload: { newApiKey?: string; updates?: Partial<ProviderConfig> }) => Promise<void>;
   onValidateKey: (
     key: string,
-    options?: { baseUrl?: string }
+    options?: { baseUrl?: string; model?: string }
   ) => Promise<{ valid: boolean; error?: string }>;
   devModeUnlocked: boolean;
 }
@@ -249,15 +249,25 @@ function ProviderCard({
   const [showKey, setShowKey] = useState(false);
   const [validating, setValidating] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [connectivityValidated, setConnectivityValidated] = useState(false);
 
   const typeInfo = PROVIDER_TYPE_INFO.find((t) => t.id === provider.type);
   const showModelIdField = shouldShowProviderModelId(typeInfo, devModeUnlocked);
   const canEditModelConfig = Boolean(typeInfo?.showBaseUrl || showModelIdField);
+  const normalizedFallbackModelsPreview = normalizeFallbackModels(fallbackModelsText.split('\n'));
+  const baseUrlChanged = (baseUrl.trim() || undefined) !== (provider.baseUrl || undefined);
+  const modelChanged = (modelId.trim() || undefined) !== (provider.model || undefined);
+  const fallbackModelsChanged = !fallbackModelsEqual(normalizedFallbackModelsPreview, provider.fallbackModels);
+  const fallbackProviderIdsChanged = !fallbackProviderIdsEqual(fallbackProviderIds, provider.fallbackProviderIds);
+  const hasConnectivityChange = Boolean(newKey.trim()) || baseUrlChanged || modelChanged;
+  const hasAnyChange = hasConnectivityChange || fallbackModelsChanged || fallbackProviderIdsChanged;
+  const requiresConnectivityCheck = typeInfo?.requiresApiKey ?? false;
 
   useEffect(() => {
     if (isEditing) {
       setNewKey('');
       setShowKey(false);
+      setConnectivityValidated(false);
       setBaseUrl(provider.baseUrl || '');
       setModelId(provider.model || '');
       setFallbackModelsText(normalizeFallbackModels(provider.fallbackModels).join('\n'));
@@ -267,12 +277,51 @@ function ProviderCard({
 
   const fallbackOptions = allProviders.filter((candidate) => candidate.id !== provider.id);
 
+  useEffect(() => {
+    if (!isEditing) return;
+    setConnectivityValidated(false);
+  }, [isEditing, newKey, baseUrl, modelId]);
+
   const toggleFallbackProvider = (providerId: string) => {
     setFallbackProviderIds((current) => (
       current.includes(providerId)
         ? current.filter((id) => id !== providerId)
         : [...current, providerId]
     ));
+  };
+
+  const handleTestConnection = async () => {
+    if (typeInfo?.showModelId && !modelId.trim()) {
+      toast.error(t('aiProviders.toast.modelRequired'));
+      return;
+    }
+
+    const shouldCheckConnectivity = typeInfo?.requiresApiKey ?? false;
+    if (shouldCheckConnectivity && !newKey.trim() && !provider.hasKey) {
+      toast.error(t('aiProviders.toast.invalidKey'));
+      return;
+    }
+
+    setValidating(true);
+    try {
+      if (shouldCheckConnectivity) {
+        const result = await onValidateKey(newKey, {
+          baseUrl: baseUrl.trim() || undefined,
+          model: typeInfo?.showModelId ? (modelId.trim() || undefined) : undefined,
+        });
+
+        if (!result.valid) {
+          setConnectivityValidated(false);
+          toast.error(result.error || t('aiProviders.toast.invalidKey'));
+          return;
+        }
+      }
+
+      setConnectivityValidated(true);
+      toast.success(t('aiProviders.toast.testPassed'));
+    } finally {
+      setValidating(false);
+    }
   };
 
   const handleSaveEdits = async () => {
@@ -282,16 +331,6 @@ function ProviderCard({
       const normalizedFallbackModels = normalizeFallbackModels(fallbackModelsText.split('\n'));
 
       if (newKey.trim()) {
-        setValidating(true);
-        const result = await onValidateKey(newKey, {
-          baseUrl: baseUrl.trim() || undefined,
-        });
-        setValidating(false);
-        if (!result.valid) {
-          toast.error(result.error || t('aiProviders.toast.invalidKey'));
-          setSaving(false);
-          return;
-        }
         payload.newApiKey = newKey.trim();
       }
 
@@ -318,6 +357,17 @@ function ProviderCard({
         if (Object.keys(updates).length > 0) {
           payload.updates = updates;
         }
+      }
+
+      const needsConnectivityValidation = typeInfo?.requiresApiKey ?? false;
+      const hasConnectivityPayloadChange =
+        Boolean(payload.newApiKey) ||
+        Boolean(payload.updates?.baseUrl !== undefined || payload.updates?.model !== undefined);
+
+      if (needsConnectivityValidation && hasConnectivityPayloadChange && !connectivityValidated) {
+        toast.error(t('aiProviders.toast.testBeforeSave'));
+        setSaving(false);
+        return;
       }
 
       // Keep Ollama key optional in UI, but persist a placeholder when
@@ -477,21 +527,33 @@ function ProviderCard({
                   <Button
                     variant="outline"
                     size="sm"
+                    onClick={handleTestConnection}
+                    disabled={
+                      validating
+                      || saving
+                      || !hasConnectivityChange
+                      || Boolean(typeInfo?.showModelId && !modelId.trim())
+                    }
+                  >
+                    {validating ? (
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    ) : (
+                      t('aiProviders.dialog.validate')
+                    )}
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
                     onClick={handleSaveEdits}
                     disabled={
                       validating
                       || saving
-                      || (
-                        !newKey.trim()
-                        && (baseUrl.trim() || undefined) === (provider.baseUrl || undefined)
-                        && (modelId.trim() || undefined) === (provider.model || undefined)
-                        && fallbackModelsEqual(normalizeFallbackModels(fallbackModelsText.split('\n')), provider.fallbackModels)
-                        && fallbackProviderIdsEqual(fallbackProviderIds, provider.fallbackProviderIds)
-                      )
+                      || !hasAnyChange
                       || Boolean(showModelIdField && !modelId.trim())
+                      || (requiresConnectivityCheck && hasConnectivityChange && !connectivityValidated)
                     }
                   >
-                    {validating || saving ? (
+                    {saving ? (
                       <Loader2 className="h-3.5 w-3.5 animate-spin" />
                     ) : (
                       <Check className="h-3.5 w-3.5" />
@@ -504,6 +566,9 @@ function ProviderCard({
                 <p className="text-xs text-muted-foreground">
                   {t('aiProviders.dialog.replaceApiKeyHelp')}
                 </p>
+                {requiresConnectivityCheck && hasConnectivityChange && !connectivityValidated ? (
+                  <p className="text-xs text-amber-500">{t('aiProviders.toast.testBeforeSave')}</p>
+                ) : null}
               </div>
             </div>
           </div>
@@ -588,7 +653,7 @@ interface AddProviderDialogProps {
   onValidateKey: (
     type: string,
     apiKey: string,
-    options?: { baseUrl?: string }
+    options?: { baseUrl?: string; model?: string }
   ) => Promise<{ valid: boolean; error?: string }>;
   devModeUnlocked: boolean;
 }
@@ -608,6 +673,8 @@ function AddProviderDialog({
   const [modelId, setModelId] = useState('');
   const [showKey, setShowKey] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [validatingConnectivity, setValidatingConnectivity] = useState(false);
+  const [connectivityValidated, setConnectivityValidated] = useState(false);
   const [validationError, setValidationError] = useState<string | null>(null);
 
   // OAuth Flow State
@@ -625,6 +692,7 @@ function AddProviderDialog({
   const showModelIdField = shouldShowProviderModelId(typeInfo, devModeUnlocked);
   const isOAuth = typeInfo?.isOAuth ?? false;
   const supportsApiKey = typeInfo?.supportsApiKey ?? false;
+  const isApiKeyRequired = (typeInfo?.requiresApiKey ?? false) || (supportsApiKey && authMode === 'apikey');
   // Effective OAuth mode: pure OAuth providers, or dual-mode with oauth selected
   const useOAuthFlow = isOAuth && (!supportsApiKey || authMode === 'oauth');
 
@@ -633,6 +701,11 @@ function AddProviderDialog({
   useEffect(() => {
     latestRef.current = { selectedType, typeInfo, onAdd, onClose, t };
   });
+
+  useEffect(() => {
+    setConnectivityValidated(false);
+    setValidationError(null);
+  }, [selectedType, apiKey, baseUrl, modelId, authMode]);
 
   // Manage OAuth events
   useEffect(() => {
@@ -723,6 +796,52 @@ function AddProviderDialog({
     (t) => t.id === 'custom' || !existingTypes.has(t.id),
   );
 
+  const handleTestConnection = async () => {
+    if (!selectedType) return;
+
+    if (selectedType === 'minimax-portal' && existingTypes.has('minimax-portal-cn')) {
+      setValidationError(t('aiProviders.toast.minimaxConflict'));
+      return;
+    }
+    if (selectedType === 'minimax-portal-cn' && existingTypes.has('minimax-portal')) {
+      setValidationError(t('aiProviders.toast.minimaxConflict'));
+      return;
+    }
+
+    if ((typeInfo?.showModelId ?? false) && !modelId.trim()) {
+      setValidationError(t('aiProviders.toast.modelRequired'));
+      return;
+    }
+
+    if (isApiKeyRequired && !apiKey.trim()) {
+      setValidationError(t('aiProviders.toast.invalidKey'));
+      return;
+    }
+
+    setValidationError(null);
+    setValidatingConnectivity(true);
+
+    try {
+      if (isApiKeyRequired) {
+        const result = await onValidateKey(selectedType, apiKey, {
+          baseUrl: baseUrl.trim() || undefined,
+          model: resolveProviderModelForSave(typeInfo, modelId, devModeUnlocked),
+        });
+
+        if (!result.valid) {
+          setConnectivityValidated(false);
+          setValidationError(result.error || t('aiProviders.toast.invalidKey'));
+          return;
+        }
+      }
+
+      setConnectivityValidated(true);
+      toast.success(t('aiProviders.toast.testPassed'));
+    } finally {
+      setValidatingConnectivity(false);
+    }
+  };
+
   const handleAdd = async () => {
     if (!selectedType) return;
 
@@ -739,27 +858,21 @@ function AddProviderDialog({
     setValidationError(null);
 
     try {
-      // Validate key first if the provider requires one and a key was entered
-      const requiresKey = typeInfo?.requiresApiKey ?? false;
-      if (requiresKey && !apiKey.trim()) {
-        setValidationError(t('aiProviders.toast.invalidKey')); // reusing invalid key msg or should add 'required' msg? null checks
+      if (isApiKeyRequired && !apiKey.trim()) {
+        setValidationError(t('aiProviders.toast.invalidKey'));
         setSaving(false);
         return;
-      }
-      if (requiresKey && apiKey) {
-        const result = await onValidateKey(selectedType, apiKey, {
-          baseUrl: baseUrl.trim() || undefined,
-        });
-        if (!result.valid) {
-          setValidationError(result.error || t('aiProviders.toast.invalidKey'));
-          setSaving(false);
-          return;
-        }
       }
 
       const requiresModel = showModelIdField;
       if (requiresModel && !modelId.trim()) {
         setValidationError(t('aiProviders.toast.modelRequired'));
+        setSaving(false);
+        return;
+      }
+
+      if (isApiKeyRequired && !connectivityValidated) {
+        setValidationError(t('aiProviders.toast.testBeforeSave'));
         setSaving(false);
         return;
       }
@@ -1044,9 +1157,26 @@ function AddProviderDialog({
               {t('aiProviders.dialog.cancel')}
             </Button>
             <Button
+              variant="outline"
+              onClick={handleTestConnection}
+              className={cn(useOAuthFlow && 'hidden')}
+              disabled={!selectedType || saving || validatingConnectivity || ((typeInfo?.showModelId ?? false) && modelId.trim().length === 0)}
+            >
+              {validatingConnectivity ? (
+                <Loader2 className="h-4 w-4 animate-spin mr-2" />
+              ) : null}
+              {t('aiProviders.dialog.validate')}
+            </Button>
+            <Button
               onClick={handleAdd}
-              className={cn(useOAuthFlow && "hidden")}
-              disabled={!selectedType || saving || (showModelIdField && modelId.trim().length === 0)}
+              className={cn(useOAuthFlow && 'hidden')}
+              disabled={
+                !selectedType
+                || saving
+                || validatingConnectivity
+                || (showModelIdField && modelId.trim().length === 0)
+                || Boolean(((typeInfo?.requiresApiKey ?? false) || (supportsApiKey && authMode === 'apikey')) && !connectivityValidated)
+              }
             >
               {saving ? (
                 <Loader2 className="h-4 w-4 animate-spin mr-2" />

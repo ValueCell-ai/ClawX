@@ -695,6 +695,7 @@ function ProviderContent({
   const devModeUnlocked = useSettingsStore((state) => state.devModeUnlocked);
   const [showKey, setShowKey] = useState(false);
   const [validating, setValidating] = useState(false);
+  const [savingProvider, setSavingProvider] = useState(false);
   const [keyValid, setKeyValid] = useState<boolean | null>(null);
   const [selectedProviderConfigId, setSelectedProviderConfigId] = useState<string | null>(null);
   const [baseUrl, setBaseUrl] = useState('');
@@ -902,49 +903,95 @@ function ProviderContent({
   const supportsApiKey = selectedProviderData?.supportsApiKey ?? false;
   const useOAuthFlow = isOAuth && (!supportsApiKey || authMode === 'oauth');
 
-  const handleValidateAndSave = async () => {
-    if (!selectedProvider) return;
+  useEffect(() => {
+    setKeyValid(null);
+  }, [selectedProvider, apiKey, baseUrl, modelId, authMode]);
+
+  const ensureProviderConflictFree = async (): Promise<boolean> => {
+    if (!selectedProvider) return false;
 
     try {
       const list = await window.electron.ipcRenderer.invoke('provider:list') as Array<{ type: string }>;
-      const existingTypes = new Set(list.map(l => l.type));
+      const existingTypes = new Set(list.map((item) => item.type));
       if (selectedProvider === 'minimax-portal' && existingTypes.has('minimax-portal-cn')) {
         toast.error(t('settings:aiProviders.toast.minimaxConflict'));
-        return;
+        return false;
       }
       if (selectedProvider === 'minimax-portal-cn' && existingTypes.has('minimax-portal')) {
         toast.error(t('settings:aiProviders.toast.minimaxConflict'));
-        return;
+        return false;
       }
     } catch {
-      // ignore check failure
+      // ignore conflict check failure
+    }
+
+    return true;
+  };
+
+  const handleTestConnection = async () => {
+    if (!selectedProvider) return;
+    if (!(await ensureProviderConflictFree())) return;
+
+    const isApiKeyRequired = requiresKey || (supportsApiKey && authMode === 'apikey');
+
+    if (isApiKeyRequired && !apiKey.trim()) {
+      setKeyValid(false);
+      toast.error(t('provider.invalid'));
+      return;
     }
 
     setValidating(true);
     setKeyValid(null);
 
     try {
-      // Validate key if the provider requires one and a key was entered
-      const isApiKeyRequired = requiresKey || (supportsApiKey && authMode === 'apikey');
+      const effectiveModelId = resolveProviderModelForSave(
+        selectedProviderData,
+        modelId,
+        devModeUnlocked
+      );
+
       if (isApiKeyRequired && apiKey) {
         const result = await window.electron.ipcRenderer.invoke(
           'provider:validateKey',
           selectedProviderConfigId || selectedProvider,
           apiKey,
-          { baseUrl: baseUrl.trim() || undefined }
+          {
+            baseUrl: baseUrl.trim() || undefined,
+            model: effectiveModelId,
+          }
         ) as { valid: boolean; error?: string };
 
         setKeyValid(result.valid);
-
         if (!result.valid) {
           toast.error(result.error || t('provider.invalid'));
-          setValidating(false);
           return;
         }
       } else {
         setKeyValid(true);
       }
 
+      toast.success(t('provider.testPassed'));
+    } catch (error) {
+      setKeyValid(false);
+      toast.error('Connection test failed: ' + String(error));
+    } finally {
+      setValidating(false);
+    }
+  };
+
+  const handleSaveProvider = async () => {
+    if (!selectedProvider) return;
+    if (!(await ensureProviderConflictFree())) return;
+
+    const isApiKeyRequired = requiresKey || (supportsApiKey && authMode === 'apikey');
+    if (isApiKeyRequired && keyValid !== true) {
+      toast.error(t('provider.testBeforeSave'));
+      return;
+    }
+
+    setSavingProvider(true);
+
+    try {
       const effectiveModelId = resolveProviderModelForSave(
         selectedProviderData,
         modelId,
@@ -960,7 +1007,6 @@ function ProviderContent({
 
       const effectiveApiKey = resolveProviderApiKeyForSave(selectedProvider, apiKey);
 
-      // Save provider config + API key, then set as default
       const saveResult = await window.electron.ipcRenderer.invoke(
         'provider:save',
         {
@@ -993,11 +1039,10 @@ function ProviderContent({
       onConfiguredChange(true);
       toast.success(t('provider.valid'));
     } catch (error) {
-      setKeyValid(false);
       onConfiguredChange(false);
       toast.error('Configuration failed: ' + String(error));
     } finally {
-      setValidating(false);
+      setSavingProvider(false);
     }
   };
 
@@ -1008,6 +1053,8 @@ function ProviderContent({
     && (isApiKeyRequired ? apiKey.length > 0 : true)
     && (showModelIdField ? modelId.trim().length > 0 : true)
     && !useOAuthFlow;
+
+  const canSave = canSubmit && (!isApiKeyRequired || keyValid === true);
 
   const handleSelectProvider = (providerId: string) => {
     onSelectProvider(providerId);
@@ -1297,17 +1344,28 @@ function ProviderContent({
             </div>
           )}
 
-          {/* Validate & Save */}
-          <Button
-            onClick={handleValidateAndSave}
-            disabled={!canSubmit || validating}
-            className={cn("w-full", useOAuthFlow && "hidden")}
-          >
-            {validating ? (
-              <Loader2 className="h-4 w-4 animate-spin mr-2" />
-            ) : null}
-            {requiresKey ? t('provider.validateSave') : t('provider.save')}
-          </Button>
+          <div className={cn('grid grid-cols-2 gap-2', useOAuthFlow && 'hidden')}>
+            <Button
+              variant="outline"
+              onClick={handleTestConnection}
+              disabled={!canSubmit || validating || savingProvider}
+            >
+              {validating ? (
+                <Loader2 className="h-4 w-4 animate-spin mr-2" />
+              ) : null}
+              {t('provider.testConnection')}
+            </Button>
+
+            <Button
+              onClick={handleSaveProvider}
+              disabled={!canSave || validating || savingProvider}
+            >
+              {savingProvider ? (
+                <Loader2 className="h-4 w-4 animate-spin mr-2" />
+              ) : null}
+              {t('provider.save')}
+            </Button>
+          </div>
 
           {keyValid !== null && (
             <p className={cn('text-sm text-center', keyValid ? 'text-green-400' : 'text-red-400')}>

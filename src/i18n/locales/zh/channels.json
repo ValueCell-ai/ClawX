@@ -169,6 +169,11 @@
                 "appSecret": {
                     "label": "应用密钥 (App Secret)",
                     "placeholder": "您的应用密钥"
+                },
+                "historyLimit": {
+                    "label": "上下文历史条数上限（可选）",
+                    "placeholder": "例如 20（填 0 表示禁用）",
+                    "description": "限制每次回复注入的历史消息数量，值越小越省 token。"
                 }
             },
             "instructions": [

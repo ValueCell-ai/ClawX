@@ -70,6 +70,9 @@
         "apiKey": "API 密钥",
         "save": "保存",
         "validateSave": "验证并保存",
+        "testConnection": "测试连接",
+        "testBeforeSave": "请先测试连接并通过，再保存",
+        "testPassed": "连接测试通过",
         "valid": "提供商配置成功",
         "invalid": "无效的 API 密钥",
         "storedLocally": "您的 API 密钥存储在本地机器上。"
