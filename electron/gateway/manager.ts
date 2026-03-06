@@ -269,6 +269,8 @@ export class GatewayManager extends EventEmitter {
     if (msg.includes('ExperimentalWarning')) return { level: 'debug', normalized: msg };
     if (msg.includes('DeprecationWarning')) return { level: 'debug', normalized: msg };
     if (msg.includes('Debugger attached')) return { level: 'debug', normalized: msg };
+    // Electron restricts NODE_OPTIONS in packaged apps; this is expected and harmless.
+    if (msg.includes('NODE_OPTIONs are not supported in packaged apps')) return { level: 'debug', normalized: msg };
 
     return { level: 'warn', normalized: msg };
   }
@@ -1150,16 +1152,21 @@ export class GatewayManager extends EventEmitter {
 
       // Inject fetch preload so OpenRouter requests carry ClawX headers.
       // The preload patches globalThis.fetch before any module loads.
-      try {
-        const preloadPath = ensureGatewayFetchPreload();
-        if (existsSync(preloadPath)) {
-          forkEnv['NODE_OPTIONS'] = appendNodeRequireToNodeOptions(
-            forkEnv['NODE_OPTIONS'],
-            preloadPath,
-          );
+      // NODE_OPTIONS --require is blocked by Electron in packaged apps, so skip
+      // this injection when packaged to avoid the "NODE_OPTIONs not supported"
+      // errors being printed to the gateway's stderr on every startup.
+      if (!app.isPackaged) {
+        try {
+          const preloadPath = ensureGatewayFetchPreload();
+          if (existsSync(preloadPath)) {
+            forkEnv['NODE_OPTIONS'] = appendNodeRequireToNodeOptions(
+              forkEnv['NODE_OPTIONS'],
+              preloadPath,
+            );
+          }
+        } catch (err) {
+          logger.warn('Failed to set up OpenRouter headers preload:', err);
         }
-      } catch (err) {
-        logger.warn('Failed to set up OpenRouter headers preload:', err);
       }
 
       // utilityProcess.fork() runs the .mjs entry directly without spawning a
@@ -1213,13 +1220,13 @@ export class GatewayManager extends EventEmitter {
         }
       });
 
-      // Store PID
-      if (child.pid) {
+      // PID is only available after the child process has fully spawned.
+      // utilityProcess.fork() is asynchronous — child.pid is undefined if read
+      // synchronously right after fork(). Use the 'spawned' event instead.
+      child.on('spawn', () => {
         logger.info(`Gateway process started (pid=${child.pid})`);
         this.setStatus({ pid: child.pid });
-      } else {
-        logger.warn('Gateway process spawned but PID is undefined');
-      }
+      });
 
       resolve();
     });
