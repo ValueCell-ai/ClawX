@@ -80,4 +80,52 @@ describe('parseUsageEntriesFromJsonl', () => {
 
     expect(parseUsageEntriesFromJsonl(jsonl, { sessionId: 'abc', agentId: 'default' })).toEqual([]);
   });
+
+  it('returns all matching entries when no limit is provided', () => {
+    const jsonl = [
+      JSON.stringify({
+        type: 'message',
+        timestamp: '2026-02-28T10:00:00.000Z',
+        message: { role: 'assistant', model: 'm1', usage: { total: 10 } },
+      }),
+      JSON.stringify({
+        type: 'message',
+        timestamp: '2026-02-28T10:01:00.000Z',
+        message: { role: 'assistant', model: 'm2', usage: { total: 20 } },
+      }),
+      JSON.stringify({
+        type: 'message',
+        timestamp: '2026-02-28T10:02:00.000Z',
+        message: { role: 'assistant', model: 'm3', usage: { total: 30 } },
+      }),
+    ].join('\n');
+
+    const entries = parseUsageEntriesFromJsonl(jsonl, { sessionId: 'abc', agentId: 'default' });
+    expect(entries).toHaveLength(3);
+    expect(entries.map((entry) => entry.model)).toEqual(['m3', 'm2', 'm1']);
+  });
+
+  it('still supports explicit limits when provided', () => {
+    const jsonl = [
+      JSON.stringify({
+        type: 'message',
+        timestamp: '2026-02-28T10:00:00.000Z',
+        message: { role: 'assistant', model: 'm1', usage: { total: 10 } },
+      }),
+      JSON.stringify({
+        type: 'message',
+        timestamp: '2026-02-28T10:01:00.000Z',
+        message: { role: 'assistant', model: 'm2', usage: { total: 20 } },
+      }),
+      JSON.stringify({
+        type: 'message',
+        timestamp: '2026-02-28T10:02:00.000Z',
+        message: { role: 'assistant', model: 'm3', usage: { total: 30 } },
+      }),
+    ].join('\n');
+
+    const entries = parseUsageEntriesFromJsonl(jsonl, { sessionId: 'abc', agentId: 'default' }, 2);
+    expect(entries).toHaveLength(2);
+    expect(entries.map((entry) => entry.model)).toEqual(['m3', 'm2']);
+  });
 });

@@ -3,6 +3,67 @@
 ; Install: enables long paths, adds resources\cli to user PATH for openclaw CLI.
 ; Uninstall: removes the PATH entry and optionally deletes user data.
 
+!ifndef nsProcess::FindProcess
+  !include "nsProcess.nsh"
+!endif
+
+!macro customCheckAppRunning
+  ${nsProcess::FindProcess} "${APP_EXECUTABLE_FILENAME}" $R0
+
+  ${if} $R0 == 0
+    ${if} ${isUpdated}
+      # allow app to exit without explicit kill
+      Sleep 1000
+      Goto doStopProcess
+    ${endIf}
+    MessageBox MB_OKCANCEL|MB_ICONEXCLAMATION "$(appRunning)" /SD IDOK IDOK doStopProcess
+    Quit
+
+    doStopProcess:
+    DetailPrint `Closing running "${PRODUCT_NAME}"...`
+
+    # Silently kill the process using nsProcess instead of taskkill / cmd.exe
+    ${nsProcess::KillProcess} "${APP_EXECUTABLE_FILENAME}" $R0
+    
+    # to ensure that files are not "in-use"
+    Sleep 300
+
+    # Retry counter
+    StrCpy $R1 0
+
+    loop:
+      IntOp $R1 $R1 + 1
+
+      ${nsProcess::FindProcess} "${APP_EXECUTABLE_FILENAME}" $R0
+      ${if} $R0 == 0
+        # wait to give a chance to exit gracefully
+        Sleep 1000
+        ${nsProcess::KillProcess} "${APP_EXECUTABLE_FILENAME}" $R0
+        
+        ${nsProcess::FindProcess} "${APP_EXECUTABLE_FILENAME}" $R0
+        ${If} $R0 == 0
+          DetailPrint `Waiting for "${PRODUCT_NAME}" to close.`
+          Sleep 2000
+        ${else}
+          Goto not_running
+        ${endIf}
+      ${else}
+        Goto not_running
+      ${endIf}
+
+      # App likely running with elevated permissions.
+      # Ask user to close it manually
+      ${if} $R1 > 1
+        MessageBox MB_RETRYCANCEL|MB_ICONEXCLAMATION "$(appCannotBeClosed)" /SD IDCANCEL IDRETRY loop
+        Quit
+      ${else}
+        Goto loop
+      ${endIf}
+    not_running:
+      ${nsProcess::Unload}
+  ${endIf}
+!macroend
+
 !macro customInstall
   ; Enable Windows long path support (Windows 10 1607+ / Windows 11).
   ; pnpm virtual store paths can exceed the default MAX_PATH limit of 260 chars.

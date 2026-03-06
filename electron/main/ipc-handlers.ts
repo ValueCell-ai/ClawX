@@ -138,7 +138,7 @@ export function registerIpcHandlers(
   registerClawHubHandlers(clawHubService);
 
   // OpenClaw handlers
-  registerOpenClawHandlers(gatewayManager);
+  registerOpenClawHandlers();
 
   // Provider handlers
   registerProviderHandlers(gatewayManager);
@@ -695,7 +695,7 @@ function registerGatewayHandlers(
  * OpenClaw-related IPC handlers
  * For checking package status and channel configuration
  */
-function registerOpenClawHandlers(gatewayManager: GatewayManager): void {
+function registerOpenClawHandlers(): void {
   async function ensureDingTalkPluginInstalled(): Promise<{ installed: boolean; warning?: string }> {
     const targetDir = join(homedir(), '.openclaw', 'extensions', 'dingtalk');
     const targetManifest = join(targetDir, 'openclaw.plugin.json');
@@ -808,7 +808,9 @@ function registerOpenClawHandlers(gatewayManager: GatewayManager): void {
           };
         }
         await saveChannelConfig(channelType, config);
-        gatewayManager.debouncedRestart();
+        logger.info(
+          `Skipping app-forced Gateway restart after channel:saveConfig (${channelType}); Gateway handles channel config reload/restart internally`
+        );
         return {
           success: true,
           pluginInstalled: installResult.installed,
@@ -816,8 +818,12 @@ function registerOpenClawHandlers(gatewayManager: GatewayManager): void {
         };
       }
       await saveChannelConfig(channelType, config);
-      // Debounced restart so the gateway picks up the new channel config.
-      gatewayManager.debouncedRestart();
+      // Do not force stop/start here. Recent Gateway builds detect channel config
+      // changes and perform an internal service restart; forcing another restart
+      // from Electron can race with reconnect and kill the newly spawned process.
+      logger.info(
+        `Skipping app-forced Gateway restart after channel:saveConfig (${channelType}); waiting for Gateway internal channel reload`
+      );
       return { success: true };
     } catch (error) {
       console.error('Failed to save channel config:', error);
@@ -1968,8 +1974,8 @@ function registerSettingsHandlers(gatewayManager: GatewayManager): void {
 function registerUsageHandlers(): void {
   ipcMain.handle('usage:recentTokenHistory', async (_, limit?: number) => {
     const safeLimit = typeof limit === 'number' && Number.isFinite(limit)
-      ? Math.min(Math.max(Math.floor(limit), 1), 100)
-      : 20;
+      ? Math.max(Math.floor(limit), 1)
+      : undefined;
     return await getRecentTokenUsageHistory(safeLimit);
   });
 }

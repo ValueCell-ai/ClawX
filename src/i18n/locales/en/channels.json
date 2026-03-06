@@ -53,7 +53,7 @@
     "meta": {
         "telegram": {
             "description": "Connect Telegram using a bot token from @BotFather",
-            "docsUrl": "https://docs.openclaw.ai/channels/telegram",
+            "docsUrl": "https://icnnp7d0dymg.feishu.cn/wiki/TjiGwxsMWi7hpDkDAQBc0ydMnEf#MEkKdqXP1orZU2x4SrFcdUHgnl1",
             "fields": {
                 "botToken": {
                     "label": "Bot Token",
@@ -75,7 +75,7 @@
         },
         "discord": {
             "description": "Connect Discord using a bot token from Developer Portal",
-            "docsUrl": "https://docs.openclaw.ai/channels/discord#how-to-create-your-own-bot",
+            "docsUrl": "https://icnnp7d0dymg.feishu.cn/wiki/BkOywJYCAiYRN9k4KTTceKPMnxg#QS6LdxnA2oNtfcxtFc8cgabnnNd",
             "fields": {
                 "token": {
                     "label": "Bot Token",
@@ -103,7 +103,7 @@
         },
         "whatsapp": {
             "description": "Connect WhatsApp by scanning a QR code (no phone number required)",
-            "docsUrl": "https://docs.openclaw.ai/channels/whatsapp",
+            "docsUrl": "https://icnnp7d0dymg.feishu.cn/wiki/ES7fwUfH8iGl8FkHYfFcyWB3n4d#doxcnUElomBZLi0NnKLUzn6zLbd",
             "instructions": [
                 "Open WhatsApp on your phone",
                 "Go to Settings > Linked Devices > Link a Device",
@@ -113,7 +113,7 @@
         },
         "dingtalk": {
             "description": "Connect DingTalk via OpenClaw channel plugin (Stream mode)",
-            "docsUrl": "https://github.com/soimy/openclaw-channel-dingtalk",
+            "docsUrl": "https://icnnp7d0dymg.feishu.cn/wiki/Y5eNwiSiZidkLskrwtJc1rUln0b#doxcnDgA78n43DbkiQjI1OqUA7b",
             "fields": {
                 "clientId": {
                     "label": "Client ID (AppKey)",
@@ -160,7 +160,7 @@
         },
         "feishu": {
             "description": "Connect Feishu/Lark bot via WebSocket",
-            "docsUrl": "https://docs.openclaw.ai/channels/feishu#step-1-create-a-feishu-app",
+            "docsUrl": "https://icnnp7d0dymg.feishu.cn/wiki/GKn8wOvHnibpPNkNkPzcAvGlnzK#GdHUdp9t9oqyegxwV8ScLvVGn1c",
             "fields": {
                 "appId": {
                     "label": "App ID",

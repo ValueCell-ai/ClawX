@@ -30,11 +30,14 @@ import {
   type ProviderType,
   getProviderIconUrl,
   resolveProviderApiKeyForSave,
+  resolveProviderModelForSave,
+  shouldShowProviderModelId,
   shouldInvertInDark,
 } from '@/lib/providers';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 import { useTranslation } from 'react-i18next';
+import { useSettingsStore } from '@/stores/settings';
 
 function normalizeFallbackProviderIds(ids?: string[]): string[] {
   return Array.from(new Set((ids ?? []).filter(Boolean)));
@@ -58,6 +61,7 @@ function fallbackModelsEqual(a?: string[], b?: string[]): boolean {
 
 export function ProvidersSettings() {
   const { t } = useTranslation('settings');
+  const devModeUnlocked = useSettingsStore((state) => state.devModeUnlocked);
   const {
     providers,
     defaultProviderId,
@@ -180,6 +184,7 @@ export function ProvidersSettings() {
                 setEditingProvider(null);
               }}
               onValidateKey={(key, options) => validateApiKey(provider.id, key, options)}
+              devModeUnlocked={devModeUnlocked}
             />
           ))}
         </div>
@@ -192,6 +197,7 @@ export function ProvidersSettings() {
           onClose={() => setShowAddDialog(false)}
           onAdd={handleAddProvider}
           onValidateKey={(type, key, options) => validateApiKey(type, key, options)}
+          devModeUnlocked={devModeUnlocked}
         />
       )}
     </div>
@@ -212,6 +218,7 @@ interface ProviderCardProps {
     key: string,
     options?: { baseUrl?: string; model?: string }
   ) => Promise<{ valid: boolean; error?: string }>;
+  devModeUnlocked: boolean;
 }
 
 
@@ -227,6 +234,7 @@ function ProviderCard({
   onSetDefault,
   onSaveEdits,
   onValidateKey,
+  devModeUnlocked,
 }: ProviderCardProps) {
   const { t } = useTranslation('settings');
   const [newKey, setNewKey] = useState('');
@@ -244,7 +252,8 @@ function ProviderCard({
   const [connectivityValidated, setConnectivityValidated] = useState(false);
 
   const typeInfo = PROVIDER_TYPE_INFO.find((t) => t.id === provider.type);
-  const canEditModelConfig = Boolean(typeInfo?.showBaseUrl || typeInfo?.showModelId);
+  const showModelIdField = shouldShowProviderModelId(typeInfo, devModeUnlocked);
+  const canEditModelConfig = Boolean(typeInfo?.showBaseUrl || showModelIdField);
   const normalizedFallbackModelsPreview = normalizeFallbackModels(fallbackModelsText.split('\n'));
   const baseUrlChanged = (baseUrl.trim() || undefined) !== (provider.baseUrl || undefined);
   const modelChanged = (modelId.trim() || undefined) !== (provider.model || undefined);
@@ -326,7 +335,7 @@ function ProviderCard({
       }
 
       {
-        if (typeInfo?.showModelId && !modelId.trim()) {
+        if (showModelIdField && !modelId.trim()) {
           toast.error(t('aiProviders.toast.modelRequired'));
           setSaving(false);
           return;
@@ -336,7 +345,7 @@ function ProviderCard({
         if (typeInfo?.showBaseUrl && (baseUrl.trim() || undefined) !== (provider.baseUrl || undefined)) {
           updates.baseUrl = baseUrl.trim() || undefined;
         }
-        if (typeInfo?.showModelId && (modelId.trim() || undefined) !== (provider.model || undefined)) {
+        if (showModelIdField && (modelId.trim() || undefined) !== (provider.model || undefined)) {
           updates.model = modelId.trim() || undefined;
         }
         if (!fallbackModelsEqual(normalizedFallbackModels, provider.fallbackModels)) {
@@ -421,13 +430,13 @@ function ProviderCard({
                     />
                   </div>
                 )}
-                {typeInfo?.showModelId && (
+                {showModelIdField && (
                   <div className="space-y-1">
                     <Label className="text-xs">{t('aiProviders.dialog.modelId')}</Label>
                     <Input
                       value={modelId}
                       onChange={(e) => setModelId(e.target.value)}
-                      placeholder={typeInfo.modelIdPlaceholder || 'provider/model-id'}
+                      placeholder={typeInfo?.modelIdPlaceholder || 'provider/model-id'}
                       className="h-9 text-sm"
                     />
                   </div>
@@ -540,7 +549,7 @@ function ProviderCard({
                       validating
                       || saving
                       || !hasAnyChange
-                      || Boolean(typeInfo?.showModelId && !modelId.trim())
+                      || Boolean(showModelIdField && !modelId.trim())
                       || (requiresConnectivityCheck && hasConnectivityChange && !connectivityValidated)
                     }
                   >
@@ -646,9 +655,16 @@ interface AddProviderDialogProps {
     apiKey: string,
     options?: { baseUrl?: string; model?: string }
   ) => Promise<{ valid: boolean; error?: string }>;
+  devModeUnlocked: boolean;
 }
 
-function AddProviderDialog({ existingTypes, onClose, onAdd, onValidateKey }: AddProviderDialogProps) {
+function AddProviderDialog({
+  existingTypes,
+  onClose,
+  onAdd,
+  onValidateKey,
+  devModeUnlocked,
+}: AddProviderDialogProps) {
   const { t } = useTranslation('settings');
   const [selectedType, setSelectedType] = useState<ProviderType | null>(null);
   const [name, setName] = useState('');
@@ -673,8 +689,10 @@ function AddProviderDialog({ existingTypes, onClose, onAdd, onValidateKey }: Add
   const [authMode, setAuthMode] = useState<'oauth' | 'apikey'>('oauth');
 
   const typeInfo = PROVIDER_TYPE_INFO.find((t) => t.id === selectedType);
+  const showModelIdField = shouldShowProviderModelId(typeInfo, devModeUnlocked);
   const isOAuth = typeInfo?.isOAuth ?? false;
   const supportsApiKey = typeInfo?.supportsApiKey ?? false;
+  const isApiKeyRequired = (typeInfo?.requiresApiKey ?? false) || (supportsApiKey && authMode === 'apikey');
   // Effective OAuth mode: pure OAuth providers, or dual-mode with oauth selected
   const useOAuthFlow = isOAuth && (!supportsApiKey || authMode === 'oauth');
 
@@ -795,8 +813,7 @@ function AddProviderDialog({ existingTypes, onClose, onAdd, onValidateKey }: Add
       return;
     }
 
-    const requiresKey = typeInfo?.requiresApiKey ?? false;
-    if (requiresKey && !apiKey.trim()) {
+    if (isApiKeyRequired && !apiKey.trim()) {
       setValidationError(t('aiProviders.toast.invalidKey'));
       return;
     }
@@ -805,12 +822,10 @@ function AddProviderDialog({ existingTypes, onClose, onAdd, onValidateKey }: Add
     setValidatingConnectivity(true);
 
     try {
-      if (requiresKey) {
+      if (isApiKeyRequired) {
         const result = await onValidateKey(selectedType, apiKey, {
           baseUrl: baseUrl.trim() || undefined,
-          model: typeInfo?.showModelId
-            ? ((typeInfo?.defaultModelId || modelId.trim()) || undefined)
-            : undefined,
+          model: resolveProviderModelForSave(typeInfo, modelId, devModeUnlocked),
         });
 
         if (!result.valid) {
@@ -843,21 +858,20 @@ function AddProviderDialog({ existingTypes, onClose, onAdd, onValidateKey }: Add
     setValidationError(null);
 
     try {
-      const requiresKey = typeInfo?.requiresApiKey ?? false;
-      if (requiresKey && !apiKey.trim()) {
+      if (isApiKeyRequired && !apiKey.trim()) {
         setValidationError(t('aiProviders.toast.invalidKey'));
         setSaving(false);
         return;
       }
 
-      const requiresModel = typeInfo?.showModelId ?? false;
+      const requiresModel = showModelIdField;
       if (requiresModel && !modelId.trim()) {
         setValidationError(t('aiProviders.toast.modelRequired'));
         setSaving(false);
         return;
       }
 
-      if (requiresKey && !connectivityValidated) {
+      if (isApiKeyRequired && !connectivityValidated) {
         setValidationError(t('aiProviders.toast.testBeforeSave'));
         setSaving(false);
         return;
@@ -869,7 +883,7 @@ function AddProviderDialog({ existingTypes, onClose, onAdd, onValidateKey }: Add
         apiKey.trim(),
         {
           baseUrl: baseUrl.trim() || undefined,
-          model: (typeInfo?.defaultModelId || modelId.trim()) || undefined,
+          model: resolveProviderModelForSave(typeInfo, modelId, devModeUnlocked),
         }
       );
     } catch {
@@ -1027,12 +1041,12 @@ function AddProviderDialog({ existingTypes, onClose, onAdd, onValidateKey }: Add
                 </div>
               )}
 
-              {typeInfo?.showModelId && (
+              {showModelIdField && (
                 <div className="space-y-2">
                   <Label htmlFor="modelId">{t('aiProviders.dialog.modelId')}</Label>
                   <Input
                     id="modelId"
-                    placeholder={typeInfo.modelIdPlaceholder || 'provider/model-id'}
+                    placeholder={typeInfo?.modelIdPlaceholder || 'provider/model-id'}
                     value={modelId}
                     onChange={(e) => {
                       setModelId(e.target.value);
@@ -1160,8 +1174,8 @@ function AddProviderDialog({ existingTypes, onClose, onAdd, onValidateKey }: Add
                 !selectedType
                 || saving
                 || validatingConnectivity
-                || ((typeInfo?.showModelId ?? false) && modelId.trim().length === 0)
-                || Boolean((typeInfo?.requiresApiKey ?? false) && !connectivityValidated)
+                || (showModelIdField && modelId.trim().length === 0)
+                || Boolean(((typeInfo?.requiresApiKey ?? false) || (supportsApiKey && authMode === 'apikey')) && !connectivityValidated)
               }
             >
               {saving ? (

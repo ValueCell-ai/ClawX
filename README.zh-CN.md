@@ -288,22 +288,19 @@ ClawX/
 
 ```bash
 # 开发
+pnpm run init             # 安装依赖并下载 uv
 pnpm dev                  # 以热重载模式启动
-pnpm dev:electron         # 直接启动 Electron
 
 # 代码质量
 pnpm lint                 # 运行 ESLint 检查
-pnpm lint:fix             # 自动修复问题
 pnpm typecheck            # TypeScript 类型检查
 
 # 测试
 pnpm test                 # 运行单元测试
-pnpm test:watch           # 监听模式
-pnpm test:coverage        # 生成覆盖率报告
-pnpm test:e2e             # 运行 Playwright E2E 测试
 
 # 构建与打包
-pnpm build                # 完整生产构建
+pnpm run build:vite       # 仅构建前端
+pnpm build                # 完整生产构建（含打包资源）
 pnpm package              # 为当前平台打包
 pnpm package:mac          # 为 macOS 打包
 pnpm package:win          # 为 Windows 打包

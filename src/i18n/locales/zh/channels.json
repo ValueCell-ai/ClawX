@@ -53,7 +53,7 @@
     "meta": {
         "telegram": {
             "description": "使用 @BotFather 提供的机器人令牌连接 Telegram",
-            "docsUrl": "https://docs.openclaw.ai/zh-CN/channels/telegram",
+            "docsUrl": "https://icnnp7d0dymg.feishu.cn/wiki/TjiGwxsMWi7hpDkDAQBc0ydMnEf#PL8ndvsEwoYVWIx1T4mcB1EvnSb",
             "fields": {
                 "botToken": {
                     "label": "机器人令牌",
@@ -75,7 +75,7 @@
         },
         "discord": {
             "description": "使用开发者门户提供的机器人令牌连接 Discord",
-            "docsUrl": "https://docs.openclaw.ai/zh-CN/channels/discord#%E5%A6%82%E4%BD%95%E5%88%9B%E5%BB%BA%E4%BD%A0%E7%9A%84%E6%9C%BA%E5%99%A8%E4%BA%BA",
+            "docsUrl": "https://icnnp7d0dymg.feishu.cn/wiki/BkOywJYCAiYRN9k4KTTceKPMnxg#C9zjdBRT1oqZ4VxF8q7ceRxQnLk",
             "fields": {
                 "token": {
                     "label": "机器人令牌",
@@ -103,7 +103,7 @@
         },
         "whatsapp": {
             "description": "通过扫描二维码连接 WhatsApp（无需手机号）",
-            "docsUrl": "https://docs.openclaw.ai/zh-CN/channels/whatsapp",
+            "docsUrl": "https://icnnp7d0dymg.feishu.cn/wiki/ES7fwUfH8iGl8FkHYfFcyWB3n4d#doxcnsDDFbeEzqgjN6HSlyonLvc",
             "instructions": [
                 "在手机上打开 WhatsApp",
                 "前往 设置 > 已关联设备 >包含连接设备",
@@ -113,7 +113,7 @@
         },
         "dingtalk": {
             "description": "通过 OpenClaw 渠道插件连接钉钉（Stream 模式）",
-            "docsUrl": "https://github.com/soimy/openclaw-channel-dingtalk",
+            "docsUrl": "https://icnnp7d0dymg.feishu.cn/wiki/Y5eNwiSiZidkLskrwtJc1rUln0b#doxcnr8KfaA2mNPeQUeHO83eDPh",
             "fields": {
                 "clientId": {
                     "label": "Client ID (AppKey)",
@@ -160,7 +160,7 @@
         },
         "feishu": {
             "description": "通过 WebSocket 连接飞书/Lark 机器人",
-            "docsUrl": "https://docs.openclaw.ai/zh-CN/channels/feishu#%E7%AC%AC%E4%B8%80%E6%AD%A5%EF%BC%9A%E5%88%9B%E5%BB%BA%E9%A3%9E%E4%B9%A6%E5%BA%94%E7%94%A8",
+            "docsUrl": "https://icnnp7d0dymg.feishu.cn/wiki/GKn8wOvHnibpPNkNkPzcAvGlnzK#Py88dTltfoJc1jxAhIBcW3Pkn7b",
             "fields": {
                 "appId": {
                     "label": "应用 ID (App ID)",

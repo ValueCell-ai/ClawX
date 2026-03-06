@@ -2,7 +2,7 @@
  * Channels Page
  * Manage messaging channel connections with configuration UI
  */
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import {
   Plus,
   Radio,
@@ -28,6 +28,7 @@ import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Separator } from '@/components/ui/separator';
 import { Badge } from '@/components/ui/badge';
+import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { useChannelsStore } from '@/stores/channels';
 import { useGatewayStore } from '@/stores/gateway';
 import { StatusBadge, type Status } from '@/components/common/StatusBadge';
@@ -53,6 +54,7 @@ export function Channels() {
   const [showAddDialog, setShowAddDialog] = useState(false);
   const [selectedChannelType, setSelectedChannelType] = useState<ChannelType | null>(null);
   const [configuredTypes, setConfiguredTypes] = useState<string[]>([]);
+  const [channelToDelete, setChannelToDelete] = useState<{ id: string } | null>(null);
 
   // Fetch channels on mount
   useEffect(() => {
@@ -204,11 +206,7 @@ export function Channels() {
                 <ChannelCard
                   key={channel.id}
                   channel={channel}
-                  onDelete={() => {
-                    if (confirm(t('deleteConfirm'))) {
-                      deleteChannel(channel.id);
-                    }
-                  }}
+                  onDelete={() => setChannelToDelete({ id: channel.id })}
                 />
               ))}
             </div>
@@ -281,6 +279,22 @@ export function Channels() {
           }}
         />
       )}
+
+      <ConfirmDialog
+        open={!!channelToDelete}
+        title={t('common.confirm', 'Confirm')}
+        message={t('deleteConfirm')}
+        confirmLabel={t('common.delete', 'Delete')}
+        cancelLabel={t('common.cancel', 'Cancel')}
+        variant="destructive"
+        onConfirm={async () => {
+          if (channelToDelete) {
+            await deleteChannel(channelToDelete.id);
+            setChannelToDelete(null);
+          }
+        }}
+        onCancel={() => setChannelToDelete(null)}
+      />
     </div>
   );
 }
@@ -350,6 +364,7 @@ function AddChannelDialog({ selectedType, onSelectType, onClose, onChannelAdded 
   const [validating, setValidating] = useState(false);
   const [loadingConfig, setLoadingConfig] = useState(false);
   const [isExistingConfig, setIsExistingConfig] = useState(false);
+  const firstInputRef = useRef<HTMLInputElement>(null);
   const [validationResult, setValidationResult] = useState<{
     valid: boolean;
     errors: string[];
@@ -402,6 +417,13 @@ function AddChannelDialog({ selectedType, onSelectType, onClose, onChannelAdded 
 
     return () => { cancelled = true; };
   }, [selectedType]);
+
+  // Focus first input when form is ready (avoids Windows focus loss after native dialogs)
+  useEffect(() => {
+    if (selectedType && !loadingConfig && firstInputRef.current) {
+      firstInputRef.current.focus();
+    }
+  }, [selectedType, loadingConfig]);
 
   // Listen for WhatsApp QR events
   useEffect(() => {
@@ -753,6 +775,7 @@ function AddChannelDialog({ selectedType, onSelectType, onClose, onChannelAdded 
               <div className="space-y-2">
                 <Label htmlFor="name">{t('dialog.channelName')}</Label>
                 <Input
+                  ref={firstInputRef}
                   id="name"
                   placeholder={t('dialog.channelNamePlaceholder', { name: meta?.name })}
                   value={channelName}

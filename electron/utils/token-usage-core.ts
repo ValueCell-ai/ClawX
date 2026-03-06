@@ -41,12 +41,15 @@ interface TranscriptLineShape {
 export function parseUsageEntriesFromJsonl(
   content: string,
   context: { sessionId: string; agentId: string },
-  limit = 20,
+  limit?: number,
 ): TokenUsageHistoryEntry[] {
   const entries: TokenUsageHistoryEntry[] = [];
   const lines = content.split(/\r?\n/).filter(Boolean);
+  const maxEntries = typeof limit === 'number' && Number.isFinite(limit)
+    ? Math.max(Math.floor(limit), 0)
+    : Number.POSITIVE_INFINITY;
 
-  for (let i = lines.length - 1; i >= 0 && entries.length < limit; i -= 1) {
+  for (let i = lines.length - 1; i >= 0 && entries.length < maxEntries; i -= 1) {
     let parsed: TranscriptLineShape;
     try {
       parsed = JSON.parse(lines[i]) as TranscriptLineShape;

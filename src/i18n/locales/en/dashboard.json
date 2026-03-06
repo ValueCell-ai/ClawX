@@ -35,7 +35,7 @@
         "last7Days": "7 days",
         "last30Days": "30 days",
         "allTime": "All",
-        "showingLast": "Showing the latest {{count}} records",
+        "showingLast": "{{count}} records",
         "totalTokens": "total tokens",
         "inputShort": "Input",
         "outputShort": "Output",

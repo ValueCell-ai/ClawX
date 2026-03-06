@@ -46,18 +46,21 @@ async function listRecentSessionFiles(): Promise<Array<{ filePath: string; sessi
   }
 }
 
-export async function getRecentTokenUsageHistory(limit = 20): Promise<TokenUsageHistoryEntry[]> {
+export async function getRecentTokenUsageHistory(limit?: number): Promise<TokenUsageHistoryEntry[]> {
   const files = await listRecentSessionFiles();
   const results: TokenUsageHistoryEntry[] = [];
+  const maxEntries = typeof limit === 'number' && Number.isFinite(limit)
+    ? Math.max(Math.floor(limit), 0)
+    : Number.POSITIVE_INFINITY;
 
   for (const file of files) {
-    if (results.length >= limit) break;
+    if (results.length >= maxEntries) break;
     try {
       const content = await readFile(file.filePath, 'utf8');
       const entries = parseUsageEntriesFromJsonl(content, {
         sessionId: file.sessionId,
         agentId: file.agentId,
-      }, limit - results.length);
+      }, Number.isFinite(maxEntries) ? maxEntries - results.length : undefined);
       results.push(...entries);
     } catch (error) {
       logger.debug(`Failed to read token usage transcript ${file.filePath}:`, error);
@@ -65,5 +68,5 @@ export async function getRecentTokenUsageHistory(limit = 20): Promise<TokenUsage
   }
 
   results.sort((a, b) => Date.parse(b.timestamp) - Date.parse(a.timestamp));
-  return results.slice(0, limit);
+  return Number.isFinite(maxEntries) ? results.slice(0, maxEntries) : results;
 }

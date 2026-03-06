@@ -35,7 +35,7 @@
         "last7Days": "7日",
         "last30Days": "30日",
         "allTime": "すべて",
-        "showingLast": "最新 {{count}} 件を表示",
+        "showingLast": "{{count}} 件",
         "totalTokens": "合計トークン",
         "inputShort": "入力",
         "outputShort": "出力",

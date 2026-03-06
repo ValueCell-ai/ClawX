@@ -63,7 +63,7 @@ export function Dashboard() {
     if (isGatewayRunning) {
       fetchChannels();
       fetchSkills();
-      window.electron.ipcRenderer.invoke('usage:recentTokenHistory', 60)
+      window.electron.ipcRenderer.invoke('usage:recentTokenHistory')
         .then((entries) => {
           setUsageHistory(Array.isArray(entries) ? entries as typeof usageHistory : []);
           setUsagePage(1);

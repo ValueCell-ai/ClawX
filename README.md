@@ -287,22 +287,19 @@ ClawX/
 
 ```bash
 # Development
+pnpm run init             # Install dependencies + download uv
 pnpm dev                  # Start with hot reload
-pnpm dev:electron         # Launch Electron directly
 
 # Quality
 pnpm lint                 # Run ESLint
-pnpm lint:fix             # Auto-fix issues
 pnpm typecheck            # TypeScript validation
 
 # Testing
 pnpm test                 # Run unit tests
-pnpm test:watch           # Watch mode
-pnpm test:coverage        # Generate coverage report
-pnpm test:e2e             # Run Playwright E2E tests
 
 # Build & Package
-pnpm build                # Full production build
+pnpm run build:vite       # Build frontend only
+pnpm build                # Full production build (with packaging assets)
 pnpm package              # Package for current platform
 pnpm package:mac          # Package for macOS
 pnpm package:win          # Package for Windows

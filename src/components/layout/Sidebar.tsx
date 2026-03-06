@@ -3,6 +3,7 @@
  * Navigation sidebar with menu items.
  * No longer fixed - sits inside the flex layout below the title bar.
  */
+import { useState } from 'react';
 import { NavLink, useLocation, useNavigate } from 'react-router-dom';
 import {
   Home,
@@ -22,6 +23,7 @@ import { useSettingsStore } from '@/stores/settings';
 import { useChatStore } from '@/stores/chat';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { useTranslation } from 'react-i18next';
 
 interface NavItemProps {
@@ -104,6 +106,7 @@ export function Sidebar() {
   };
 
   const { t } = useTranslation();
+  const [sessionToDelete, setSessionToDelete] = useState<{ key: string; label: string } | null>(null);
 
   const navItems = [
     { to: '/cron', icon: <Clock className="h-5 w-5" />, label: t('sidebar.cronTasks') },
@@ -170,12 +173,12 @@ export function Sidebar() {
                 {!s.key.endsWith(':main') && (
                   <button
                     aria-label="Delete session"
-                    onClick={async (e) => {
+                    onClick={(e) => {
                       e.stopPropagation();
-                      const label = getSessionLabel(s.key, s.displayName, s.label);
-                      if (!window.confirm(`Delete "${label}"?`)) return;
-                      await deleteSession(s.key);
-                      if (currentSessionKey === s.key) navigate('/');
+                      setSessionToDelete({
+                        key: s.key,
+                        label: getSessionLabel(s.key, s.displayName, s.label),
+                      });
                     }}
                     className={cn(
                       'absolute right-1 flex items-center justify-center rounded p-0.5 transition-opacity',
@@ -220,6 +223,22 @@ export function Sidebar() {
           )}
         </Button>
       </div>
+
+      <ConfirmDialog
+        open={!!sessionToDelete}
+        title={t('common.confirm', 'Confirm')}
+        message={sessionToDelete ? t('sidebar.deleteSessionConfirm', `Delete "${sessionToDelete.label}"?`) : ''}
+        confirmLabel={t('common.delete', 'Delete')}
+        cancelLabel={t('common.cancel', 'Cancel')}
+        variant="destructive"
+        onConfirm={async () => {
+          if (!sessionToDelete) return;
+          await deleteSession(sessionToDelete.key);
+          if (currentSessionKey === sessionToDelete.key) navigate('/');
+          setSessionToDelete(null);
+        }}
+        onCancel={() => setSessionToDelete(null)}
+      />
     </aside>
   );
 }
