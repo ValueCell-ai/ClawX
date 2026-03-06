@@ -420,6 +420,36 @@ export class GatewayManager extends EventEmitter {
         this.assertLifecycleEpoch(startEpoch, 'start');
         this.recentStartupStderrLines = [];
         try {
+          // Custom Gateway URL Logic
+          const appSettings = await getAllSettings();
+          const customUrlStr = appSettings.customGatewayUrl?.trim();
+          if (customUrlStr) {
+            logger.info(`Using custom remote Gateway URL: ${customUrlStr}`);
+            let wsUrl = customUrlStr;
+            if (wsUrl.startsWith('http://')) wsUrl = wsUrl.replace('http://', 'ws://');
+            else if (wsUrl.startsWith('https://')) wsUrl = wsUrl.replace('https://', 'wss://');
+            
+            let customToken: string | undefined = undefined;
+            try {
+              const parsed = new URL(wsUrl);
+              customToken = parsed.searchParams.get('token') || undefined;
+              parsed.searchParams.delete('token');
+              if (parsed.pathname === '/' || !parsed.pathname.endsWith('/ws')) {
+                 parsed.pathname = parsed.pathname.replace(/\/?$/, '/ws');
+              }
+              wsUrl = parsed.toString();
+            } catch (e) {
+               // ignore URL parse errors
+            }
+
+            await this.connect(this.status.port, customToken, wsUrl);
+            this.assertLifecycleEpoch(startEpoch, 'start/connect-custom');
+            this.ownsProcess = false;
+            this.setStatus({ pid: undefined });
+            this.startHealthCheck();
+            return;
+          }
+
           // Check if Gateway is already running
           logger.debug('Checking for existing Gateway...');
           const existing = await this.findExistingGateway();
@@ -1335,12 +1365,12 @@ export class GatewayManager extends EventEmitter {
   /**
    * Connect WebSocket to Gateway
    */
-  private async connect(port: number, _externalToken?: string): Promise<void> {
-    logger.debug(`Connecting Gateway WebSocket (ws://localhost:${port}/ws)`);
+  private async connect(port: number, externalToken?: string, wsOverrideUrl?: string): Promise<void> {
+    logger.debug(`Connecting Gateway WebSocket (${wsOverrideUrl || `ws://localhost:${port}/ws`})`);
 
     return new Promise((resolve, reject) => {
       // WebSocket URL (token will be sent in connect handshake, not URL)
-      const wsUrl = `ws://localhost:${port}/ws`;
+      const wsUrl = wsOverrideUrl || `ws://localhost:${port}/ws`;
 
       this.ws = new WebSocket(wsUrl);
       let handshakeComplete = false;
@@ -1387,7 +1417,7 @@ export class GatewayManager extends EventEmitter {
       const sendConnectHandshake = async (challengeNonce: string) => {
         logger.debug('Sending connect handshake with challenge nonce');
 
-        const currentToken = await getSetting('gatewayToken');
+        const currentToken = externalToken || await getSetting('gatewayToken');
 
         connectId = `connect-${Date.now()}`;
         const role = 'operator';
