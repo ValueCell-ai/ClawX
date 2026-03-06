@@ -119,6 +119,46 @@
     "proxySaved": "代理设置已保存",
     "proxySaveFailed": "保存代理设置失败"
   },
+  "memory": {
+    "title": "QMD 记忆系统",
+    "description": "一键启用 QMD 记忆检索和低 token 预设，减少长会话上下文成本。",
+    "currentBackend": "当前记忆后端",
+    "backendQmd": "QMD",
+    "backendBuiltin": "Builtin",
+    "backendUnknown": "未知",
+    "hashReady": "配置快照已加载，可安全写入。",
+    "hashMissing": "尚未加载配置快照，请先刷新。",
+    "presetDescription": "启用预设会写入 memory.qmd 与 agents.defaults 的 compaction/contextPruning 参数，并触发 Gateway 热重载。",
+    "gatewayRequired": "网关未运行，无法读取或写入记忆配置。",
+    "actions": {
+      "reload": "刷新配置",
+      "loading": "加载中...",
+      "probe": "探测状态",
+      "probing": "探测中...",
+      "enablePreset": "启用 QMD 低耗预设",
+      "useBuiltin": "切回 Builtin",
+      "saving": "保存中..."
+    },
+    "status": {
+      "title": "记忆探测结果",
+      "agent": "Agent: {{id}}",
+      "provider": "Provider: {{provider}}",
+      "embeddingOk": "Embedding: 正常",
+      "embeddingFail": "Embedding: 异常（{{reason}}）",
+      "unavailable": "不可用"
+    },
+    "toast": {
+      "loadFailed": "读取记忆配置失败",
+      "hashMissing": "缺少配置 hash，请先刷新后重试",
+      "enabled": "已启用 QMD 低耗预设",
+      "enableFailed": "启用 QMD 预设失败",
+      "disabled": "已切回 Builtin 记忆后端",
+      "disableFailed": "切回 Builtin 失败",
+      "probeOk": "记忆探测通过",
+      "probeFailed": "记忆探测异常：{{reason}}",
+      "probeFailedGeneric": "记忆探测失败"
+    }
+  },
   "updates": {
     "title": "更新",
     "description": "保持 ClawX 最新",

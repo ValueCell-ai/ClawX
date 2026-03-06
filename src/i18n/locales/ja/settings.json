@@ -118,6 +118,46 @@
     "proxySaved": "プロキシ設定を保存しました",
     "proxySaveFailed": "プロキシ設定の保存に失敗しました"
   },
+  "memory": {
+    "title": "QMD メモリ",
+    "description": "QMD メモリ検索と低トークンプリセットを有効化し、長時間セッションのコンテキストコストを抑えます。",
+    "currentBackend": "現在のメモリバックエンド",
+    "backendQmd": "QMD",
+    "backendBuiltin": "Builtin",
+    "backendUnknown": "不明",
+    "hashReady": "設定スナップショットを読み込み済みです。安全に反映できます。",
+    "hashMissing": "設定スナップショットが未読み込みです。先に更新してください。",
+    "presetDescription": "プリセットを有効化すると、memory.qmd と agents.defaults の compaction/contextPruning を更新し、Gateway をホットリロードします。",
+    "gatewayRequired": "メモリ設定の読み書きには Gateway の起動が必要です。",
+    "actions": {
+      "reload": "設定を更新",
+      "loading": "読み込み中...",
+      "probe": "状態を検査",
+      "probing": "検査中...",
+      "enablePreset": "QMD 低トークンプリセットを有効化",
+      "useBuiltin": "Builtin に戻す",
+      "saving": "保存中..."
+    },
+    "status": {
+      "title": "メモリ検査結果",
+      "agent": "Agent: {{id}}",
+      "provider": "Provider: {{provider}}",
+      "embeddingOk": "Embedding: 正常",
+      "embeddingFail": "Embedding: 異常（{{reason}}）",
+      "unavailable": "利用不可"
+    },
+    "toast": {
+      "loadFailed": "メモリ設定の読み込みに失敗しました",
+      "hashMissing": "設定ハッシュがありません。更新して再試行してください",
+      "enabled": "QMD 低トークンプリセットを有効化しました",
+      "enableFailed": "QMD プリセットの有効化に失敗しました",
+      "disabled": "Builtin メモリバックエンドに戻しました",
+      "disableFailed": "Builtin バックエンドへの切り替えに失敗しました",
+      "probeOk": "メモリ検査に成功しました",
+      "probeFailed": "メモリ検査で問題が見つかりました: {{reason}}",
+      "probeFailedGeneric": "メモリ検査に失敗しました"
+    }
+  },
   "updates": {
     "title": "アップデート",
     "description": "ClawX を最新に保つ",

@@ -119,6 +119,46 @@
     "proxySaved": "Proxy settings saved",
     "proxySaveFailed": "Failed to save proxy settings"
   },
+  "memory": {
+    "title": "QMD Memory",
+    "description": "Enable QMD memory retrieval with a low-token preset to reduce long-session context cost.",
+    "currentBackend": "Current Memory Backend",
+    "backendQmd": "QMD",
+    "backendBuiltin": "Builtin",
+    "backendUnknown": "Unknown",
+    "hashReady": "Config snapshot loaded. Safe to patch.",
+    "hashMissing": "No config snapshot loaded yet. Refresh first.",
+    "presetDescription": "Applying the preset updates memory.qmd and agents.defaults compaction/contextPruning values, then triggers a Gateway hot reload.",
+    "gatewayRequired": "Gateway must be running to read or patch memory config.",
+    "actions": {
+      "reload": "Reload Config",
+      "loading": "Loading...",
+      "probe": "Probe Status",
+      "probing": "Probing...",
+      "enablePreset": "Enable QMD Low-Token Preset",
+      "useBuiltin": "Switch to Builtin",
+      "saving": "Saving..."
+    },
+    "status": {
+      "title": "Memory Probe Result",
+      "agent": "Agent: {{id}}",
+      "provider": "Provider: {{provider}}",
+      "embeddingOk": "Embedding: OK",
+      "embeddingFail": "Embedding: Failed ({{reason}})",
+      "unavailable": "Unavailable"
+    },
+    "toast": {
+      "loadFailed": "Failed to load memory config",
+      "hashMissing": "Missing config hash. Reload and retry.",
+      "enabled": "QMD low-token preset enabled",
+      "enableFailed": "Failed to enable QMD preset",
+      "disabled": "Switched back to Builtin memory backend",
+      "disableFailed": "Failed to switch to Builtin backend",
+      "probeOk": "Memory probe succeeded",
+      "probeFailed": "Memory probe reported an issue: {{reason}}",
+      "probeFailedGeneric": "Memory probe failed"
+    }
+  },
   "updates": {
     "title": "Updates",
     "description": "Keep ClawX up to date",
