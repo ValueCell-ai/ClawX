@@ -995,10 +995,14 @@ function registerDeviceOAuthHandlers(mainWindow: BrowserWindow): void {
  * Provider-related IPC handlers
  */
 function registerProviderHandlers(gatewayManager: GatewayManager): void {
-  // Listen for OAuth success to automatically restart the Gateway with new tokens/configs
+  // Listen for OAuth success to automatically restart the Gateway with new tokens/configs.
+  // Use a longer debounce (8s) so that provider:setDefault — which writes the full config
+  // and then calls debouncedRestart(2s) — has time to fire and coalesce into a single
+  // restart.  Without this, the OAuth restart fires first with stale config, and the
+  // subsequent provider:setDefault restart is deferred and dropped.
   deviceOAuthManager.on('oauth:success', (providerType) => {
     logger.info(`[IPC] Scheduling Gateway restart after ${providerType} OAuth success...`);
-    gatewayManager.debouncedRestart();
+    gatewayManager.debouncedRestart(8000);
   });
 
   // Get all providers with key info

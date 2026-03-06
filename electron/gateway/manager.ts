@@ -436,6 +436,14 @@ export class GatewayManager extends EventEmitter {
 
           logger.debug('No existing Gateway found, starting new process...');
 
+          // On Windows, TCP TIME_WAIT can hold the port for up to 2 minutes
+          // after the previous Gateway process exits, preventing the new one
+          // from binding. Wait for the port to be free before proceeding.
+          if (process.platform === 'win32') {
+            await this.waitForPortFree(this.status.port);
+            this.assertLifecycleEpoch(startEpoch, 'start/wait-port');
+          }
+
           // Start new Gateway process
           await this.startProcess();
           this.assertLifecycleEpoch(startEpoch, 'start/start-process');
@@ -1015,6 +1023,45 @@ export class GatewayManager extends EventEmitter {
    * Start Gateway process
    * Uses OpenClaw npm package from node_modules (dev) or resources (production)
    */
+  /**
+   * Wait until the gateway port is no longer held by the OS.
+   * On Windows, TCP TIME_WAIT can keep a port occupied for up to 2 minutes
+   * after the owning process exits, causing the new Gateway to hang on bind.
+   */
+  private async waitForPortFree(port: number, timeoutMs = 30000): Promise<void> {
+    const net = await import('net');
+    const start = Date.now();
+    const pollInterval = 500;
+    let logged = false;
+
+    while (Date.now() - start < timeoutMs) {
+      const available = await new Promise<boolean>((resolve) => {
+        const server = net.createServer();
+        server.once('error', () => resolve(false));
+        server.once('listening', () => {
+          server.close(() => resolve(true));
+        });
+        server.listen(port, '127.0.0.1');
+      });
+
+      if (available) {
+        const elapsed = Date.now() - start;
+        if (elapsed > pollInterval) {
+          logger.info(`Port ${port} became available after ${elapsed}ms`);
+        }
+        return;
+      }
+
+      if (!logged) {
+        logger.info(`Waiting for port ${port} to become available (Windows TCP TIME_WAIT)...`);
+        logged = true;
+      }
+      await new Promise(r => setTimeout(r, pollInterval));
+    }
+
+    logger.warn(`Port ${port} still occupied after ${timeoutMs}ms, proceeding anyway`);
+  }
+
   private async startProcess(): Promise<void> {
     // Ensure no system-managed gateway service will compete with our process.
     await this.unloadLaunchctlService();

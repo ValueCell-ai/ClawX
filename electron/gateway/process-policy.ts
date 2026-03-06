@@ -46,11 +46,16 @@ export type DeferredRestartAction = 'none' | 'wait' | 'drop' | 'execute';
 
 /**
  * Decide what to do with a pending deferred restart once lifecycle changes.
+ *
+ * A deferred restart is an explicit restart() call that was postponed because
+ * the manager was mid-startup/reconnect.  When the in-flight operation settles
+ * we must honour the request — even if the gateway is now running — because
+ * the caller may have changed config (e.g. provider switch) that the current
+ * process hasn't picked up.
  */
 export function getDeferredRestartAction(context: DeferredRestartActionContext): DeferredRestartAction {
   if (!context.hasPendingRestart) return 'none';
   if (shouldDeferRestart(context)) return 'wait';
   if (!context.shouldReconnect) return 'drop';
-  if (context.state === 'running') return 'drop';
   return 'execute';
 }

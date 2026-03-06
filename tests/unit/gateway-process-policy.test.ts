@@ -65,7 +65,7 @@ describe('gateway process policy helpers', () => {
       expect(shouldDeferRestart({ state: 'error', startLock: false })).toBe(false);
     });
 
-    it('drops deferred restart once lifecycle recovers to running', () => {
+    it('executes deferred restart even after lifecycle recovers to running', () => {
       expect(
         getDeferredRestartAction({
           hasPendingRestart: true,
@@ -73,7 +73,7 @@ describe('gateway process policy helpers', () => {
           startLock: false,
           shouldReconnect: true,
         })
-      ).toBe('drop');
+      ).toBe('execute');
     });
 
     it('waits deferred restart while lifecycle is still busy', () => {

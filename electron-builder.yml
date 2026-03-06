@@ -162,12 +162,11 @@ linux:
     OpenClaw Gateway to provide intelligent automation and assistance
     across multiple messaging platforms.
   desktop:
-    entry:
-      Name: ClawX
-      Comment: AI Assistant powered by OpenClaw
-      Categories: Utility;Network;
-      Keywords: ai;assistant;automation;chat;
-      StartupWMClass: clawx
+    Name: ClawX
+    Comment: AI Assistant powered by OpenClaw
+    Categories: Utility;Network;
+    Keywords: ai;assistant;automation;chat;
+    StartupWMClass: clawx
 
 appImage:
   license: LICENSE
