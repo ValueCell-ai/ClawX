@@ -103,6 +103,8 @@
     "openFolder": "Open Folder",
     "autoStart": "Auto-start Gateway",
     "autoStartDesc": "Start Gateway when ClawX launches",
+    "portConfig": "Gateway Port",
+    "portConfigDesc": "Port for OpenClaw Gateway (default: 18789). Restart Gateway to apply changes.",
     "proxyTitle": "Proxy",
     "proxyDesc": "Route Electron and Gateway traffic through your local proxy client.",
     "proxyServer": "Proxy Server",

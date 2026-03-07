@@ -29,7 +29,20 @@ const { join, dirname, basename } = require('path');
 function normWin(p) {
   if (process.platform !== 'win32') return p;
   if (p.startsWith('\\\\?\\')) return p;
-  return '\\\\?\\' + p.replace(/\//g, '\\');
+
+  // Ensure path is absolute and normalize
+  const absPath = require('path').resolve(p);
+
+  // Only add \\?\ prefix for valid absolute paths
+  if (/^[A-Za-z]:$/.test(absPath)) {
+    return absPath + '\\';
+  }
+
+  if (absPath.match(/^[A-Za-z]:\\/)) {
+    return '\\\\?\\' + absPath.replace(/\//g, '\\');
+  }
+
+  return absPath;
 }
 
 // ── Arch helpers ─────────────────────────────────────────────────────────────
@@ -221,7 +234,7 @@ function bundlePlugin(nodeModulesRoot, npmName, destDir) {
   }
 
   let realPluginPath;
-  try { realPluginPath = realpathSync(normWin(pkgPath)); } catch { realPluginPath = pkgPath; }
+  try { realPluginPath = realpathSync(pkgPath); } catch { realPluginPath = pkgPath; }
 
   // Copy plugin package itself
   if (existsSync(normWin(destDir))) rmSync(normWin(destDir), { recursive: true, force: true });
@@ -258,7 +271,7 @@ function bundlePlugin(nodeModulesRoot, npmName, destDir) {
       if (name === skipPkg) continue;
       if (SKIP_PACKAGES.has(name) || SKIP_SCOPES.some(s => name.startsWith(s))) continue;
       let rp;
-      try { rp = realpathSync(normWin(fullPath)); } catch { continue; }
+      try { rp = realpathSync(fullPath); } catch { continue; }
       if (collected.has(rp)) continue;
       collected.set(rp, name);
       const depVirtualNM = getVirtualStoreNodeModules(rp);

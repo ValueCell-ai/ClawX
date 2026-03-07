@@ -28,7 +28,20 @@ const NODE_MODULES = path.join(ROOT, 'node_modules');
 function normWin(p) {
   if (process.platform !== 'win32') return p;
   if (p.startsWith('\\\\?\\')) return p;
-  return '\\\\?\\' + p.replace(/\//g, '\\');
+
+  // Ensure path is absolute and normalize
+  const absPath = path.resolve(p);
+
+  // Only add \\?\ prefix for valid absolute paths
+  if (/^[A-Za-z]:$/.test(absPath)) {
+    return absPath + '\\';
+  }
+
+  if (absPath.match(/^[A-Za-z]:\\/)) {
+    return '\\\\?\\' + absPath.replace(/\//g, '\\');
+  }
+
+  return absPath;
 }
 
 const PLUGINS = [
@@ -81,7 +94,7 @@ function bundleOnePlugin({ npmName, pluginId }) {
     throw new Error(`Missing dependency "${npmName}". Run pnpm install first.`);
   }
 
-  const realPluginPath = fs.realpathSync(normWin(pkgPath));
+  const realPluginPath = fs.realpathSync(pkgPath);
   const outputDir = path.join(OUTPUT_ROOT, pluginId);
 
   echo`📦 Bundling plugin ${npmName} -> ${outputDir}`;
@@ -121,7 +134,7 @@ function bundleOnePlugin({ npmName, pluginId }) {
 
       let realPath;
       try {
-        realPath = fs.realpathSync(normWin(fullPath));
+        realPath = fs.realpathSync(fullPath);
       } catch {
         continue;
       }
