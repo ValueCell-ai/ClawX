@@ -29,7 +29,6 @@ interface ProviderModelEntry extends Record<string, unknown> {
 
 interface ProviderBackendMeta {
   envVar?: string;
-  envVarAliases?: string[];
   defaultModel?: string;
   /** OpenClaw models.providers config (omit for built-in providers like anthropic) */
   providerConfig?: {
@@ -85,7 +84,6 @@ const REGISTRY: Record<string, ProviderBackendMeta> = {
   },
   moonshot: {
     envVar: 'MOONSHOT_API_KEY',
-    envVarAliases: ['MOONSHOT_CN_API_KEY'],
     defaultModel: 'moonshot/kimi-k2.5',
     providerConfig: {
       baseUrl: 'https://api.moonshot.cn/v1',
@@ -160,12 +158,7 @@ export function getProviderEnvVar(type: string): string | undefined {
 export function getProviderEnvVars(type: string): string[] {
   const meta = REGISTRY[type];
   if (!meta?.envVar) return [];
-  return [meta.envVar, ...(meta.envVarAliases ?? [])];
-}
-
-/** Get legacy/alias environment variable names for a provider type. */
-export function getProviderEnvVarAliases(type: string): string[] {
-  return REGISTRY[type]?.envVarAliases ?? [];
+  return [meta.envVar];
 }
 
 /** Get the default model string for a provider type */
