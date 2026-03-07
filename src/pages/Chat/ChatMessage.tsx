@@ -10,6 +10,7 @@ import remarkGfm from 'remark-gfm';
 import { createPortal } from 'react-dom';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
+import { invokeIpc } from '@/lib/api-client';
 import type { RawMessage, AttachedFileMeta } from '@/stores/chat';
 import { extractText, extractThinking, extractImages, extractToolUse, formatTimestamp } from './message-utils';
 
@@ -539,7 +540,7 @@ function ImageLightbox({
 
   const handleShowInFolder = useCallback(() => {
     if (filePath) {
-      window.electron.ipcRenderer.invoke('shell:showItemInFolder', filePath);
+      invokeIpc('shell:showItemInFolder', filePath);
     }
   }, [filePath]);
 

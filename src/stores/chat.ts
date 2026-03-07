@@ -4,6 +4,7 @@
  * Communicates with OpenClaw Gateway via gateway:rpc IPC.
  */
 import { create } from 'zustand';
+import { invokeIpc } from '@/lib/api-client';
 
 // ── Types ────────────────────────────────────────────────────────
 
@@ -596,7 +597,7 @@ async function loadMissingPreviews(messages: RawMessage[]): Promise<boolean> {
   if (needPreview.length === 0) return false;
 
   try {
-    const thumbnails = await window.electron.ipcRenderer.invoke(
+    const thumbnails = await invokeIpc(
       'media:getThumbnails',
       needPreview,
     ) as Record<string, { preview: string | null; fileSize: number }>;
@@ -928,7 +929,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
   loadSessions: async () => {
     try {
-      const result = await window.electron.ipcRenderer.invoke(
+      const result = await invokeIpc(
         'gateway:rpc',
         'sessions.list',
         {}
@@ -1001,7 +1002,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
           void Promise.all(
             sessionsToLabel.map(async (session) => {
               try {
-                const r = await window.electron.ipcRenderer.invoke(
+                const r = await invokeIpc(
                   'gateway:rpc',
                   'chat.history',
                   { sessionKey: session.key, limit: 1000 },
@@ -1077,7 +1078,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
     // The main process renames <suffix>.jsonl → <suffix>.deleted.jsonl so that
     // sessions.list and token-usage queries both skip it automatically.
     try {
-      const result = await window.electron.ipcRenderer.invoke('session:delete', key) as {
+      const result = await invokeIpc('session:delete', key) as {
         success: boolean;
         error?: string;
       };
@@ -1185,7 +1186,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
     if (!quiet) set({ loading: true, error: null });
 
     try {
-      const result = await window.electron.ipcRenderer.invoke(
+      const result = await invokeIpc(
         'gateway:rpc',
         'chat.history',
         { sessionKey: currentSessionKey, limit: 200 }
@@ -1425,7 +1426,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       const CHAT_SEND_TIMEOUT_MS = 120_000;
 
       if (hasMedia) {
-        result = await window.electron.ipcRenderer.invoke(
+        result = await invokeIpc(
           'chat:sendWithMedia',
           {
             sessionKey: currentSessionKey,
@@ -1440,7 +1441,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
           },
         ) as { success: boolean; result?: { runId?: string }; error?: string };
       } else {
-        result = await window.electron.ipcRenderer.invoke(
+        result = await invokeIpc(
           'gateway:rpc',
           'chat.send',
           {
@@ -1477,7 +1478,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
     set({ streamingTools: [] });
 
     try {
-      await window.electron.ipcRenderer.invoke(
+      await invokeIpc(
         'gateway:rpc',
         'chat.abort',
         { sessionKey: currentSessionKey },

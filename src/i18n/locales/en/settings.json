@@ -113,6 +113,8 @@
     "proxyHttpsServerHelp": "Advanced override for HTTPS requests. Leave blank to use Proxy Server.",
     "proxyAllServer": "ALL_PROXY / SOCKS",
     "proxyAllServerHelp": "Advanced fallback for SOCKS-capable clients and protocols such as Telegram. Leave blank to use Proxy Server.",
+    "showAdvancedProxy": "Show advanced proxy fields",
+    "hideAdvancedProxy": "Hide advanced proxy fields",
     "proxyBypass": "Bypass Rules",
     "proxyBypassHelp": "Semicolon, comma, or newline separated hosts that should connect directly.",
     "proxyRestartNote": "Saving reapplies Electron networking and restarts the Gateway immediately.",
@@ -153,6 +155,25 @@
   "advanced": {
     "title": "Advanced",
     "description": "Power-user options",
+    "transport": {
+      "label": "Gateway Transport Preference",
+      "desc": "Choose how renderer requests gateway RPC: WebSocket, HTTP proxy, or IPC fallback.",
+      "saved": "Gateway transport preference saved",
+      "options": {
+        "wsFirst": "WS First",
+        "httpFirst": "HTTP First",
+        "wsOnly": "WS Only",
+        "httpOnly": "HTTP Only",
+        "ipcOnly": "IPC Only"
+      },
+      "descriptions": {
+        "wsFirst": "WS -> HTTP -> IPC",
+        "httpFirst": "HTTP -> WS -> IPC",
+        "wsOnly": "WS -> IPC",
+        "httpOnly": "HTTP -> IPC",
+        "ipcOnly": "IPC only"
+      }
+    },
     "devMode": "Developer Mode",
     "devModeDesc": "Show developer tools and shortcuts"
   },

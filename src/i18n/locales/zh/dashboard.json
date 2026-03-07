@@ -12,8 +12,10 @@
     "quickActions": {
         "title": "快捷操作",
         "description": "常用任务和快捷方式",
+        "addProvider": "添加模型供应商",
         "addChannel": "添加频道",
-        "browseSkills": "浏览技能",
+        "createCron": "创建定时任务",
+        "installSkill": "安装技能",
         "openChat": "打开聊天",
         "settings": "设置",
         "devConsole": "开发者控制台"

@@ -136,6 +136,15 @@ async function readOpenClawJson(): Promise<Record<string, unknown>> {
 }
 
 async function writeOpenClawJson(config: Record<string, unknown>): Promise<void> {
+  // Ensure SIGUSR1 graceful reload is authorized by OpenClaw config.
+  const commands = (
+    config.commands && typeof config.commands === 'object'
+      ? { ...(config.commands as Record<string, unknown>) }
+      : {}
+  ) as Record<string, unknown>;
+  commands.restart = true;
+  config.commands = commands;
+
   await writeJsonFile(OPENCLAW_CONFIG_PATH, config);
 }
 
@@ -817,6 +826,20 @@ export async function sanitizeOpenClawConfig(): Promise<void> {
         modified = true;
       }
     }
+  }
+
+  // ── commands section ───────────────────────────────────────────
+  // Required for SIGUSR1 in-process reload authorization.
+  const commands = (
+    config.commands && typeof config.commands === 'object'
+      ? { ...(config.commands as Record<string, unknown>) }
+      : {}
+  ) as Record<string, unknown>;
+  if (commands.restart !== true) {
+    commands.restart = true;
+    config.commands = commands;
+    modified = true;
+    console.log('[sanitize] Enabling commands.restart for graceful reload support');
   }
 
   // ── tools.web.search.kimi ─────────────────────────────────────

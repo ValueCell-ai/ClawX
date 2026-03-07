@@ -14,5 +14,13 @@
         "refresh": "刷新聊天",
         "showThinking": "显示思考过程",
         "hideThinking": "隐藏思考过程"
+    },
+    "historyBuckets": {
+        "today": "今天",
+        "yesterday": "昨天",
+        "withinWeek": "一周内",
+        "withinTwoWeeks": "两周内",
+        "withinMonth": "一个月内",
+        "older": "一个月之前"
     }
 }

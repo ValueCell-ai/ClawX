@@ -35,6 +35,7 @@ import {
   shouldInvertInDark,
 } from '@/lib/providers';
 import { cn } from '@/lib/utils';
+import { invokeIpc } from '@/lib/api-client';
 import { toast } from 'sonner';
 import { useTranslation } from 'react-i18next';
 import { useSettingsStore } from '@/stores/settings';
@@ -704,7 +705,7 @@ function AddProviderDialog({
     setOauthError(null);
 
     try {
-      await window.electron.ipcRenderer.invoke('provider:requestOAuth', selectedType);
+      await invokeIpc('provider:requestOAuth', selectedType);
     } catch (e) {
       setOauthError(String(e));
       setOauthFlowing(false);
@@ -715,7 +716,7 @@ function AddProviderDialog({
     setOauthFlowing(false);
     setOauthData(null);
     setOauthError(null);
-    await window.electron.ipcRenderer.invoke('provider:cancelOAuth');
+    await invokeIpc('provider:cancelOAuth');
   };
 
   // Only custom can be added multiple times.
@@ -1013,7 +1014,7 @@ function AddProviderDialog({
                             <Button
                               variant="secondary"
                               className="w-full"
-                              onClick={() => window.electron.ipcRenderer.invoke('shell:openExternal', oauthData.verificationUri)}
+                              onClick={() => invokeIpc('shell:openExternal', oauthData.verificationUri)}
                             >
                               <ExternalLink className="h-4 w-4 mr-2" />
                               {t('aiProviders.oauth.openLoginPage')}

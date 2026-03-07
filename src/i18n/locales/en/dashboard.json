@@ -12,8 +12,10 @@
     "quickActions": {
         "title": "Quick Actions",
         "description": "Common tasks and shortcuts",
+        "addProvider": "Add Provider",
         "addChannel": "Add Channel",
-        "browseSkills": "Browse Skills",
+        "createCron": "Create Cron",
+        "installSkill": "Install Skill",
         "openChat": "Open Chat",
         "settings": "Settings",
         "devConsole": "Dev Console"

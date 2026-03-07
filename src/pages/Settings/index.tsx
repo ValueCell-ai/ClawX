@@ -8,6 +8,8 @@ import {
   Moon,
   Monitor,
   RefreshCw,
+  ChevronDown,
+  ChevronRight,
   Terminal,
   ExternalLink,
   Key,
@@ -28,6 +30,8 @@ import { useGatewayStore } from '@/stores/gateway';
 import { useUpdateStore } from '@/stores/update';
 import { ProvidersSettings } from '@/components/settings/ProvidersSettings';
 import { UpdateSettings } from '@/components/settings/UpdateSettings';
+import { invokeIpc, toUserMessage } from '@/lib/api-client';
+import { trackUiEvent } from '@/lib/telemetry';
 import { useTranslation } from 'react-i18next';
 import { SUPPORTED_LANGUAGES } from '@/i18n';
 type ControlUiInfo = {
@@ -35,6 +39,8 @@ type ControlUiInfo = {
   token: string;
   port: number;
 };
+
+type GatewayTransportPreference = 'ws-first' | 'http-first' | 'ws-only' | 'http-only' | 'ipc-only';
 
 export function Settings() {
   const { t } = useTranslation('settings');
@@ -51,12 +57,14 @@ export function Settings() {
     proxyHttpsServer,
     proxyAllServer,
     proxyBypassRules,
+    gatewayTransportPreference,
     setProxyEnabled,
     setProxyServer,
     setProxyHttpServer,
     setProxyHttpsServer,
     setProxyAllServer,
     setProxyBypassRules,
+    setGatewayTransportPreference,
     autoCheckUpdate,
     setAutoCheckUpdate,
     autoDownloadUpdate,
@@ -77,7 +85,16 @@ export function Settings() {
   const [proxyAllServerDraft, setProxyAllServerDraft] = useState('');
   const [proxyBypassRulesDraft, setProxyBypassRulesDraft] = useState('');
   const [proxyEnabledDraft, setProxyEnabledDraft] = useState(false);
+  const [showAdvancedProxy, setShowAdvancedProxy] = useState(false);
   const [savingProxy, setSavingProxy] = useState(false);
+
+  const transportOptions: Array<{ value: GatewayTransportPreference; labelKey: string; descKey: string }> = [
+    { value: 'ws-first', labelKey: 'advanced.transport.options.wsFirst', descKey: 'advanced.transport.descriptions.wsFirst' },
+    { value: 'http-first', labelKey: 'advanced.transport.options.httpFirst', descKey: 'advanced.transport.descriptions.httpFirst' },
+    { value: 'ws-only', labelKey: 'advanced.transport.options.wsOnly', descKey: 'advanced.transport.descriptions.wsOnly' },
+    { value: 'http-only', labelKey: 'advanced.transport.options.httpOnly', descKey: 'advanced.transport.descriptions.httpOnly' },
+    { value: 'ipc-only', labelKey: 'advanced.transport.options.ipcOnly', descKey: 'advanced.transport.descriptions.ipcOnly' },
+  ];
 
   const isWindows = window.electron.platform === 'win32';
   const showCliTools = true;
@@ -86,7 +103,7 @@ export function Settings() {
 
   const handleShowLogs = async () => {
     try {
-      const logs = await window.electron.ipcRenderer.invoke('log:readFile', 100) as string;
+      const logs = await invokeIpc<string>('log:readFile', 100);
       setLogContent(logs);
       setShowLogs(true);
     } catch {
@@ -97,9 +114,9 @@ export function Settings() {
 
   const handleOpenLogDir = async () => {
     try {
-      const logDir = await window.electron.ipcRenderer.invoke('log:getDir') as string;
+      const logDir = await invokeIpc<string>('log:getDir');
       if (logDir) {
-        await window.electron.ipcRenderer.invoke('shell:showItemInFolder', logDir);
+        await invokeIpc('shell:showItemInFolder', logDir);
       }
     } catch {
       // ignore
@@ -109,15 +126,16 @@ export function Settings() {
   // Open developer console
   const openDevConsole = async () => {
     try {
-      const result = await window.electron.ipcRenderer.invoke('gateway:getControlUiUrl') as {
+      const result = await invokeIpc<{
         success: boolean;
         url?: string;
         token?: string;
         port?: number;
         error?: string;
-      };
+      }>('gateway:getControlUiUrl');
       if (result.success && result.url && result.token && typeof result.port === 'number') {
         setControlUiInfo({ url: result.url, token: result.token, port: result.port });
+        trackUiEvent('settings.open_dev_console');
         window.electron.openExternal(result.url);
       } else {
         console.error('Failed to get Dev Console URL:', result.error);
@@ -129,12 +147,12 @@ export function Settings() {
 
   const refreshControlUiInfo = async () => {
     try {
-      const result = await window.electron.ipcRenderer.invoke('gateway:getControlUiUrl') as {
+      const result = await invokeIpc<{
         success: boolean;
         url?: string;
         token?: string;
         port?: number;
-      };
+      }>('gateway:getControlUiUrl');
       if (result.success && result.url && result.token && typeof result.port === 'number') {
         setControlUiInfo({ url: result.url, token: result.token, port: result.port });
       }
@@ -159,11 +177,11 @@ export function Settings() {
 
     (async () => {
       try {
-        const result = await window.electron.ipcRenderer.invoke('openclaw:getCliCommand') as {
+        const result = await invokeIpc<{
           success: boolean;
           command?: string;
           error?: string;
-        };
+        }>('openclaw:getCliCommand');
         if (cancelled) return;
         if (result.success && result.command) {
           setOpenclawCliCommand(result.command);
@@ -235,7 +253,7 @@ export function Settings() {
       const normalizedHttpsServer = proxyHttpsServerDraft.trim();
       const normalizedAllServer = proxyAllServerDraft.trim();
       const normalizedBypassRules = proxyBypassRulesDraft.trim();
-      await window.electron.ipcRenderer.invoke('settings:setMany', {
+      await invokeIpc('settings:setMany', {
         proxyEnabled: proxyEnabledDraft,
         proxyServer: normalizedProxyServer,
         proxyHttpServer: normalizedHttpServer,
@@ -252,8 +270,9 @@ export function Settings() {
       setProxyEnabled(proxyEnabledDraft);
 
       toast.success(t('gateway.proxySaved'));
+      trackUiEvent('settings.proxy_saved', { enabled: proxyEnabledDraft });
     } catch (error) {
-      toast.error(`${t('gateway.proxySaveFailed')}: ${String(error)}`);
+      toast.error(`${t('gateway.proxySaveFailed')}: ${toUserMessage(error)}`);
     } finally {
       setSavingProxy(false);
     }
@@ -438,7 +457,22 @@ export function Settings() {
             </div>
 
             {devModeUnlocked && (
-              <>
+              <div className="rounded-md border border-border/60 p-3">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="w-full justify-start"
+                  onClick={() => setShowAdvancedProxy((prev) => !prev)}
+                >
+                  {showAdvancedProxy ? (
+                    <ChevronDown className="h-4 w-4 mr-2" />
+                  ) : (
+                    <ChevronRight className="h-4 w-4 mr-2" />
+                  )}
+                  {showAdvancedProxy ? t('gateway.hideAdvancedProxy') : t('gateway.showAdvancedProxy')}
+                </Button>
+                {showAdvancedProxy && (
+                  <div className="mt-3 space-y-4">
                 <div className="space-y-2">
                   <Label htmlFor="proxy-http-server">{t('gateway.proxyHttpServer')}</Label>
                   <Input
@@ -477,7 +511,9 @@ export function Settings() {
                     {t('gateway.proxyAllServerHelp')}
                   </p>
                 </div>
-              </>
+                  </div>
+                )}
+              </div>
             )}
 
             <div className="space-y-2">
@@ -585,6 +621,34 @@ export function Settings() {
             <CardDescription>{t('developer.description')}</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
+            <div className="space-y-3">
+              <div>
+                <Label>{t('advanced.transport.label')}</Label>
+                <p className="text-sm text-muted-foreground">
+                  {t('advanced.transport.desc')}
+                </p>
+              </div>
+              <div className="grid gap-2">
+                {transportOptions.map((option) => (
+                  <Button
+                    key={option.value}
+                    type="button"
+                    variant={gatewayTransportPreference === option.value ? 'default' : 'outline'}
+                    className="justify-between"
+                    onClick={() => {
+                      setGatewayTransportPreference(option.value);
+                      toast.success(t('advanced.transport.saved'));
+                    }}
+                  >
+                    <span>{t(option.labelKey)}</span>
+                    <span className="text-xs opacity-80">{t(option.descKey)}</span>
+                  </Button>
+                ))}
+              </div>
+            </div>
+
+            <Separator />
+
             <div className="space-y-2">
               <Label>{t('developer.console')}</Label>
               <p className="text-sm text-muted-foreground">

@@ -54,6 +54,25 @@ import { deviceOAuthManager, OAuthProviderType } from '../utils/device-oauth';
 import { applyProxySettings } from './proxy';
 import { proxyAwareFetch } from '../utils/proxy-fetch';
 import { getRecentTokenUsageHistory } from '../utils/token-usage';
+import { appUpdater } from './updater';
+
+type AppRequest = {
+  id?: string;
+  module: string;
+  action: string;
+  payload?: unknown;
+};
+
+type AppResponse = {
+  id?: string;
+  ok: boolean;
+  data?: unknown;
+  error?: {
+    code: 'VALIDATION' | 'PERMISSION' | 'TIMEOUT' | 'GATEWAY' | 'INTERNAL' | 'UNSUPPORTED';
+    message: string;
+    details?: unknown;
+  };
+};
 import {
   getOpenClawProviderKeyForType,
   getOAuthApiKeyEnv,
@@ -136,6 +155,9 @@ export function registerIpcHandlers(
   clawHubService: ClawHubService,
   mainWindow: BrowserWindow
 ): void {
+  // Unified request protocol (non-breaking: legacy channels remain available)
+  registerUnifiedRequestHandlers(gatewayManager);
+
   // Gateway handlers
   registerGatewayHandlers(gatewayManager, mainWindow);
 
@@ -143,7 +165,7 @@ export function registerIpcHandlers(
   registerClawHubHandlers(clawHubService);
 
   // OpenClaw handlers
-  registerOpenClawHandlers();
+  registerOpenClawHandlers(gatewayManager);
 
   // Provider handlers
   registerProviderHandlers(gatewayManager);
@@ -189,6 +211,701 @@ export function registerIpcHandlers(
 
   // File staging handlers (upload/send separation)
   registerFileHandlers();
+}
+
+function mapAppErrorCode(error: unknown): AppResponse['error']['code'] {
+  const msg = error instanceof Error ? error.message.toLowerCase() : String(error).toLowerCase();
+  if (msg.includes('timeout')) return 'TIMEOUT';
+  if (msg.includes('permission') || msg.includes('denied') || msg.includes('forbidden')) return 'PERMISSION';
+  if (msg.includes('gateway')) return 'GATEWAY';
+  if (msg.includes('invalid') || msg.includes('required')) return 'VALIDATION';
+  return 'INTERNAL';
+}
+
+function isProxyKey(key: keyof AppSettings): boolean {
+  return (
+    key === 'proxyEnabled' ||
+    key === 'proxyServer' ||
+    key === 'proxyHttpServer' ||
+    key === 'proxyHttpsServer' ||
+    key === 'proxyAllServer' ||
+    key === 'proxyBypassRules'
+  );
+}
+
+function registerUnifiedRequestHandlers(gatewayManager: GatewayManager): void {
+  const handleProxySettingsChange = async () => {
+    const settings = await getAllSettings();
+    await applyProxySettings(settings);
+    if (gatewayManager.getStatus().state === 'running') {
+      await gatewayManager.restart();
+    }
+  };
+
+  ipcMain.handle('app:request', async (_, request: AppRequest): Promise<AppResponse> => {
+    if (!request || typeof request.module !== 'string' || typeof request.action !== 'string') {
+      return {
+        id: request?.id,
+        ok: false,
+        error: { code: 'VALIDATION', message: 'Invalid app request format' },
+      };
+    }
+
+    try {
+      let data: unknown;
+      switch (request.module) {
+        case 'app': {
+          if (request.action === 'version') data = app.getVersion();
+          else if (request.action === 'name') data = app.getName();
+          else if (request.action === 'platform') data = process.platform;
+          else {
+            return {
+              id: request.id,
+              ok: false,
+              error: {
+                code: 'UNSUPPORTED',
+                message: `APP_REQUEST_UNSUPPORTED:${request.module}.${request.action}`,
+              },
+            };
+          }
+          break;
+        }
+        case 'provider': {
+          if (request.action === 'list') {
+            data = await getAllProvidersWithKeyInfo();
+            break;
+          }
+          if (request.action === 'get') {
+            const payload = request.payload as { providerId?: string } | string | undefined;
+            const providerId = typeof payload === 'string' ? payload : payload?.providerId;
+            if (!providerId) throw new Error('Invalid provider.get payload');
+            data = await getProvider(providerId);
+            break;
+          }
+          if (request.action === 'getDefault') {
+            data = await getDefaultProvider();
+            break;
+          }
+          if (request.action === 'hasApiKey') {
+            const payload = request.payload as { providerId?: string } | string | undefined;
+            const providerId = typeof payload === 'string' ? payload : payload?.providerId;
+            if (!providerId) throw new Error('Invalid provider.hasApiKey payload');
+            data = await hasApiKey(providerId);
+            break;
+          }
+          if (request.action === 'getApiKey') {
+            const payload = request.payload as { providerId?: string } | string | undefined;
+            const providerId = typeof payload === 'string' ? payload : payload?.providerId;
+            if (!providerId) throw new Error('Invalid provider.getApiKey payload');
+            data = await getApiKey(providerId);
+            break;
+          }
+          if (request.action === 'validateKey') {
+            const payload = request.payload as
+              | { providerId?: string; apiKey?: string; options?: { baseUrl?: string } }
+              | [string, string, { baseUrl?: string }?]
+              | undefined;
+            const providerId = Array.isArray(payload) ? payload[0] : payload?.providerId;
+            const apiKey = Array.isArray(payload) ? payload[1] : payload?.apiKey;
+            const options = Array.isArray(payload) ? payload[2] : payload?.options;
+            if (!providerId || typeof apiKey !== 'string') {
+              throw new Error('Invalid provider.validateKey payload');
+            }
+
+            const provider = await getProvider(providerId);
+            const providerType = provider?.type || providerId;
+            const registryBaseUrl = getProviderConfig(providerType)?.baseUrl;
+            const resolvedBaseUrl = options?.baseUrl || provider?.baseUrl || registryBaseUrl;
+            data = await validateApiKeyWithProvider(providerType, apiKey, { baseUrl: resolvedBaseUrl });
+            break;
+          }
+          if (request.action === 'save') {
+            const payload = request.payload as
+              | { config?: ProviderConfig; apiKey?: string }
+              | [ProviderConfig, string?]
+              | undefined;
+            const config = Array.isArray(payload) ? payload[0] : payload?.config;
+            const apiKey = Array.isArray(payload) ? payload[1] : payload?.apiKey;
+            if (!config) throw new Error('Invalid provider.save payload');
+
+            try {
+              await saveProvider(config);
+              const ock = getOpenClawProviderKey(config.type, config.id);
+
+              if (apiKey !== undefined) {
+                const trimmedKey = apiKey.trim();
+                if (trimmedKey) {
+                  await storeApiKey(config.id, trimmedKey);
+                  try {
+                    await saveProviderKeyToOpenClaw(ock, trimmedKey);
+                  } catch (err) {
+                    console.warn('Failed to save key to OpenClaw auth-profiles:', err);
+                  }
+                }
+              }
+
+              try {
+                const meta = getProviderConfig(config.type);
+                const api = config.type === 'custom' || config.type === 'ollama' ? 'openai-completions' : meta?.api;
+
+                if (api) {
+                  await syncProviderConfigToOpenClaw(ock, config.model, {
+                    baseUrl: config.baseUrl || meta?.baseUrl,
+                    api,
+                    apiKeyEnv: meta?.apiKeyEnv,
+                    headers: meta?.headers,
+                  });
+
+                  if (config.type === 'custom' || config.type === 'ollama') {
+                    const resolvedKey = apiKey !== undefined
+                      ? (apiKey.trim() || null)
+                      : await getApiKey(config.id);
+                    if (resolvedKey && config.baseUrl) {
+                      const modelId = config.model;
+                      await updateAgentModelProvider(ock, {
+                        baseUrl: config.baseUrl,
+                        api: 'openai-completions',
+                        models: modelId ? [{ id: modelId, name: modelId }] : [],
+                        apiKey: resolvedKey,
+                      });
+                    }
+                  }
+
+                  logger.info(`Scheduling Gateway restart after saving provider "${ock}" config`);
+                  gatewayManager.debouncedRestart();
+                }
+              } catch (err) {
+                console.warn('Failed to sync openclaw provider config:', err);
+              }
+
+              data = { success: true };
+            } catch (error) {
+              data = { success: false, error: String(error) };
+            }
+            break;
+          }
+          if (request.action === 'delete') {
+            const payload = request.payload as { providerId?: string } | string | undefined;
+            const providerId = typeof payload === 'string' ? payload : payload?.providerId;
+            if (!providerId) throw new Error('Invalid provider.delete payload');
+
+            try {
+              const existing = await getProvider(providerId);
+              await deleteProvider(providerId);
+              if (existing?.type) {
+                try {
+                  const ock = getOpenClawProviderKey(existing.type, providerId);
+                  await removeProviderFromOpenClaw(ock);
+                  logger.info(`Scheduling Gateway restart after deleting provider "${ock}"`);
+                  gatewayManager.debouncedRestart();
+                } catch (err) {
+                  console.warn('Failed to completely remove provider from OpenClaw:', err);
+                }
+              }
+              data = { success: true };
+            } catch (error) {
+              data = { success: false, error: String(error) };
+            }
+            break;
+          }
+          if (request.action === 'setApiKey') {
+            const payload = request.payload as
+              | { providerId?: string; apiKey?: string }
+              | [string, string]
+              | undefined;
+            const providerId = Array.isArray(payload) ? payload[0] : payload?.providerId;
+            const apiKey = Array.isArray(payload) ? payload[1] : payload?.apiKey;
+            if (!providerId || typeof apiKey !== 'string') throw new Error('Invalid provider.setApiKey payload');
+
+            try {
+              await storeApiKey(providerId, apiKey);
+              const provider = await getProvider(providerId);
+              const providerType = provider?.type || providerId;
+              const ock = getOpenClawProviderKey(providerType, providerId);
+              try {
+                await saveProviderKeyToOpenClaw(ock, apiKey);
+              } catch (err) {
+                console.warn('Failed to save key to OpenClaw auth-profiles:', err);
+              }
+              data = { success: true };
+            } catch (error) {
+              data = { success: false, error: String(error) };
+            }
+            break;
+          }
+          if (request.action === 'updateWithKey') {
+            const payload = request.payload as
+              | { providerId?: string; updates?: Partial<ProviderConfig>; apiKey?: string }
+              | [string, Partial<ProviderConfig>, string?]
+              | undefined;
+            const providerId = Array.isArray(payload) ? payload[0] : payload?.providerId;
+            const updates = Array.isArray(payload) ? payload[1] : payload?.updates;
+            const apiKey = Array.isArray(payload) ? payload[2] : payload?.apiKey;
+            if (!providerId || !updates) throw new Error('Invalid provider.updateWithKey payload');
+
+            const existing = await getProvider(providerId);
+            if (!existing) {
+              data = { success: false, error: 'Provider not found' };
+              break;
+            }
+
+            const previousKey = await getApiKey(providerId);
+            const previousOck = getOpenClawProviderKey(existing.type, providerId);
+
+            try {
+              const nextConfig: ProviderConfig = {
+                ...existing,
+                ...updates,
+                updatedAt: new Date().toISOString(),
+              };
+              const ock = getOpenClawProviderKey(nextConfig.type, providerId);
+              await saveProvider(nextConfig);
+
+              if (apiKey !== undefined) {
+                const trimmedKey = apiKey.trim();
+                if (trimmedKey) {
+                  await storeApiKey(providerId, trimmedKey);
+                  await saveProviderKeyToOpenClaw(ock, trimmedKey);
+                } else {
+                  await deleteApiKey(providerId);
+                  await removeProviderFromOpenClaw(ock);
+                }
+              }
+
+              try {
+                const fallbackModels = await getProviderFallbackModelRefs(nextConfig);
+                const meta = getProviderConfig(nextConfig.type);
+                const api = nextConfig.type === 'custom' || nextConfig.type === 'ollama' ? 'openai-completions' : meta?.api;
+
+                if (api) {
+                  await syncProviderConfigToOpenClaw(ock, nextConfig.model, {
+                    baseUrl: nextConfig.baseUrl || meta?.baseUrl,
+                    api,
+                    apiKeyEnv: meta?.apiKeyEnv,
+                    headers: meta?.headers,
+                  });
+
+                  if (nextConfig.type === 'custom' || nextConfig.type === 'ollama') {
+                    const resolvedKey = apiKey !== undefined
+                      ? (apiKey.trim() || null)
+                      : await getApiKey(providerId);
+                    if (resolvedKey && nextConfig.baseUrl) {
+                      const modelId = nextConfig.model;
+                      await updateAgentModelProvider(ock, {
+                        baseUrl: nextConfig.baseUrl,
+                        api: 'openai-completions',
+                        models: modelId ? [{ id: modelId, name: modelId }] : [],
+                        apiKey: resolvedKey,
+                      });
+                    }
+                  }
+                }
+
+                const defaultProviderId = await getDefaultProvider();
+                if (defaultProviderId === providerId) {
+                  const modelOverride = nextConfig.model ? `${ock}/${nextConfig.model}` : undefined;
+                  if (nextConfig.type !== 'custom' && nextConfig.type !== 'ollama') {
+                    await setOpenClawDefaultModel(ock, modelOverride, fallbackModels);
+                  } else {
+                    await setOpenClawDefaultModelWithOverride(ock, modelOverride, {
+                      baseUrl: nextConfig.baseUrl,
+                      api: 'openai-completions',
+                    }, fallbackModels);
+                  }
+                }
+
+                logger.info(`Scheduling Gateway restart after updating provider "${ock}" config`);
+                gatewayManager.debouncedRestart();
+              } catch (err) {
+                console.warn('Failed to sync openclaw config after provider update:', err);
+              }
+
+              data = { success: true };
+            } catch (error) {
+              try {
+                await saveProvider(existing);
+                if (previousKey) {
+                  await storeApiKey(providerId, previousKey);
+                  await saveProviderKeyToOpenClaw(previousOck, previousKey);
+                } else {
+                  await deleteApiKey(providerId);
+                  await removeProviderFromOpenClaw(previousOck);
+                }
+              } catch (rollbackError) {
+                console.warn('Failed to rollback provider updateWithKey:', rollbackError);
+              }
+
+              data = { success: false, error: String(error) };
+            }
+            break;
+          }
+          if (request.action === 'deleteApiKey') {
+            const payload = request.payload as { providerId?: string } | string | undefined;
+            const providerId = typeof payload === 'string' ? payload : payload?.providerId;
+            if (!providerId) throw new Error('Invalid provider.deleteApiKey payload');
+            try {
+              await deleteApiKey(providerId);
+              const provider = await getProvider(providerId);
+              const providerType = provider?.type || providerId;
+              const ock = getOpenClawProviderKey(providerType, providerId);
+              try {
+                if (ock) {
+                  await removeProviderFromOpenClaw(ock);
+                }
+              } catch (err) {
+                console.warn('Failed to completely remove provider from OpenClaw:', err);
+              }
+              data = { success: true };
+            } catch (error) {
+              data = { success: false, error: String(error) };
+            }
+            break;
+          }
+          if (request.action === 'setDefault') {
+            const payload = request.payload as { providerId?: string } | string | undefined;
+            const providerId = typeof payload === 'string' ? payload : payload?.providerId;
+            if (!providerId) throw new Error('Invalid provider.setDefault payload');
+
+            try {
+              await setDefaultProvider(providerId);
+              const provider = await getProvider(providerId);
+              if (provider) {
+                try {
+                  const ock = getOpenClawProviderKey(provider.type, providerId);
+                  const providerKey = await getApiKey(providerId);
+                  const fallbackModels = await getProviderFallbackModelRefs(provider);
+                  const OAUTH_PROVIDER_TYPES = ['qwen-portal', 'minimax-portal', 'minimax-portal-cn'];
+                  const isOAuthProvider = OAUTH_PROVIDER_TYPES.includes(provider.type) && !providerKey;
+
+                  if (!isOAuthProvider) {
+                    const modelOverride = provider.model
+                      ? (provider.model.startsWith(`${ock}/`) ? provider.model : `${ock}/${provider.model}`)
+                      : undefined;
+                    if (provider.type === 'custom' || provider.type === 'ollama') {
+                      await setOpenClawDefaultModelWithOverride(ock, modelOverride, {
+                        baseUrl: provider.baseUrl,
+                        api: 'openai-completions',
+                      }, fallbackModels);
+                    } else {
+                      await setOpenClawDefaultModel(ock, modelOverride, fallbackModels);
+                    }
+                    if (providerKey) {
+                      await saveProviderKeyToOpenClaw(ock, providerKey);
+                    }
+                  } else {
+                    const defaultBaseUrl = provider.type === 'minimax-portal'
+                      ? 'https://api.minimax.io/anthropic'
+                      : (provider.type === 'minimax-portal-cn' ? 'https://api.minimaxi.com/anthropic' : 'https://portal.qwen.ai/v1');
+                    const api: 'anthropic-messages' | 'openai-completions' =
+                      (provider.type === 'minimax-portal' || provider.type === 'minimax-portal-cn')
+                        ? 'anthropic-messages'
+                        : 'openai-completions';
+
+                    let baseUrl = provider.baseUrl || defaultBaseUrl;
+                    if ((provider.type === 'minimax-portal' || provider.type === 'minimax-portal-cn') && baseUrl) {
+                      baseUrl = baseUrl.replace(/\/v1$/, '').replace(/\/anthropic$/, '').replace(/\/$/, '') + '/anthropic';
+                    }
+
+                    const targetProviderKey = (provider.type === 'minimax-portal' || provider.type === 'minimax-portal-cn')
+                      ? 'minimax-portal'
+                      : provider.type;
+
+                    await setOpenClawDefaultModelWithOverride(targetProviderKey, getProviderModelRef(provider), {
+                      baseUrl,
+                      api,
+                      authHeader: targetProviderKey === 'minimax-portal' ? true : undefined,
+                      apiKeyEnv: targetProviderKey === 'minimax-portal' ? 'minimax-oauth' : 'qwen-oauth',
+                    }, fallbackModels);
+
+                    try {
+                      const defaultModelId = provider.model?.split('/').pop();
+                      await updateAgentModelProvider(targetProviderKey, {
+                        baseUrl,
+                        api,
+                        authHeader: targetProviderKey === 'minimax-portal' ? true : undefined,
+                        apiKey: targetProviderKey === 'minimax-portal' ? 'minimax-oauth' : 'qwen-oauth',
+                        models: defaultModelId ? [{ id: defaultModelId, name: defaultModelId }] : [],
+                      });
+                    } catch (err) {
+                      logger.warn(`Failed to update models.json for OAuth provider "${targetProviderKey}":`, err);
+                    }
+                  }
+
+                  if (
+                    (provider.type === 'custom' || provider.type === 'ollama') &&
+                    providerKey &&
+                    provider.baseUrl
+                  ) {
+                    const modelId = provider.model;
+                    await updateAgentModelProvider(ock, {
+                      baseUrl: provider.baseUrl,
+                      api: 'openai-completions',
+                      models: modelId ? [{ id: modelId, name: modelId }] : [],
+                      apiKey: providerKey,
+                    });
+                  }
+
+                  if (gatewayManager.getStatus().state !== 'stopped') {
+                    logger.info(`Scheduling Gateway restart after provider switch to "${ock}"`);
+                    gatewayManager.debouncedRestart();
+                  }
+                } catch (err) {
+                  console.warn('Failed to set OpenClaw default model:', err);
+                }
+              }
+
+              data = { success: true };
+            } catch (error) {
+              data = { success: false, error: String(error) };
+            }
+            break;
+          }
+          return {
+            id: request.id,
+            ok: false,
+            error: {
+              code: 'UNSUPPORTED',
+              message: `APP_REQUEST_UNSUPPORTED:${request.module}.${request.action}`,
+            },
+          };
+        }
+        case 'update': {
+          if (request.action === 'status') {
+            data = appUpdater.getStatus();
+            break;
+          }
+          if (request.action === 'version') {
+            data = appUpdater.getCurrentVersion();
+            break;
+          }
+          if (request.action === 'check') {
+            try {
+              await appUpdater.checkForUpdates();
+              data = { success: true, status: appUpdater.getStatus() };
+            } catch (error) {
+              data = { success: false, error: String(error), status: appUpdater.getStatus() };
+            }
+            break;
+          }
+          if (request.action === 'download') {
+            try {
+              await appUpdater.downloadUpdate();
+              data = { success: true };
+            } catch (error) {
+              data = { success: false, error: String(error) };
+            }
+            break;
+          }
+          if (request.action === 'install') {
+            appUpdater.quitAndInstall();
+            data = { success: true };
+            break;
+          }
+          if (request.action === 'setChannel') {
+            const payload = request.payload as { channel?: 'stable' | 'beta' | 'dev' } | 'stable' | 'beta' | 'dev' | undefined;
+            const channel = typeof payload === 'string' ? payload : payload?.channel;
+            if (!channel) throw new Error('Invalid update.setChannel payload');
+            appUpdater.setChannel(channel);
+            data = { success: true };
+            break;
+          }
+          if (request.action === 'setAutoDownload') {
+            const payload = request.payload as { enable?: boolean } | boolean | undefined;
+            const enable = typeof payload === 'boolean' ? payload : payload?.enable;
+            if (typeof enable !== 'boolean') throw new Error('Invalid update.setAutoDownload payload');
+            appUpdater.setAutoDownload(enable);
+            data = { success: true };
+            break;
+          }
+          if (request.action === 'cancelAutoInstall') {
+            appUpdater.cancelAutoInstall();
+            data = { success: true };
+            break;
+          }
+          return {
+            id: request.id,
+            ok: false,
+            error: {
+              code: 'UNSUPPORTED',
+              message: `APP_REQUEST_UNSUPPORTED:${request.module}.${request.action}`,
+            },
+          };
+        }
+        case 'cron': {
+          if (request.action === 'list') {
+            const result = await gatewayManager.rpc('cron.list', { includeDisabled: true });
+            const jobs = (result as { jobs?: GatewayCronJob[] })?.jobs ?? [];
+            data = jobs.map(transformCronJob);
+            break;
+          }
+          if (request.action === 'create') {
+            const payload = request.payload as
+              | { input?: { name: string; message: string; schedule: string; enabled?: boolean } }
+              | [{ name: string; message: string; schedule: string; enabled?: boolean }]
+              | { name: string; message: string; schedule: string; enabled?: boolean }
+              | undefined;
+            const input = Array.isArray(payload)
+              ? payload[0]
+              : ('input' in (payload ?? {}) ? (payload as { input: { name: string; message: string; schedule: string; enabled?: boolean } }).input : payload);
+            if (!input) throw new Error('Invalid cron.create payload');
+            const gatewayInput = {
+              name: input.name,
+              schedule: { kind: 'cron', expr: input.schedule },
+              payload: { kind: 'agentTurn', message: input.message },
+              enabled: input.enabled ?? true,
+              wakeMode: 'next-heartbeat',
+              sessionTarget: 'isolated',
+              delivery: { mode: 'none' },
+            };
+            const created = await gatewayManager.rpc('cron.add', gatewayInput);
+            data = created && typeof created === 'object' ? transformCronJob(created as GatewayCronJob) : created;
+            break;
+          }
+          if (request.action === 'update') {
+            const payload = request.payload as
+              | { id?: string; input?: Record<string, unknown> }
+              | [string, Record<string, unknown>]
+              | undefined;
+            const id = Array.isArray(payload) ? payload[0] : payload?.id;
+            const input = Array.isArray(payload) ? payload[1] : payload?.input;
+            if (!id || !input) throw new Error('Invalid cron.update payload');
+            const patch = { ...input };
+            if (typeof patch.schedule === 'string') patch.schedule = { kind: 'cron', expr: patch.schedule };
+            if (typeof patch.message === 'string') {
+              patch.payload = { kind: 'agentTurn', message: patch.message };
+              delete patch.message;
+            }
+            data = await gatewayManager.rpc('cron.update', { id, patch });
+            break;
+          }
+          if (request.action === 'delete') {
+            const payload = request.payload as { id?: string } | string | undefined;
+            const id = typeof payload === 'string' ? payload : payload?.id;
+            if (!id) throw new Error('Invalid cron.delete payload');
+            data = await gatewayManager.rpc('cron.remove', { id });
+            break;
+          }
+          if (request.action === 'toggle') {
+            const payload = request.payload as { id?: string; enabled?: boolean } | [string, boolean] | undefined;
+            const id = Array.isArray(payload) ? payload[0] : payload?.id;
+            const enabled = Array.isArray(payload) ? payload[1] : payload?.enabled;
+            if (!id || typeof enabled !== 'boolean') throw new Error('Invalid cron.toggle payload');
+            data = await gatewayManager.rpc('cron.update', { id, patch: { enabled } });
+            break;
+          }
+          if (request.action === 'trigger') {
+            const payload = request.payload as { id?: string } | string | undefined;
+            const id = typeof payload === 'string' ? payload : payload?.id;
+            if (!id) throw new Error('Invalid cron.trigger payload');
+            data = await gatewayManager.rpc('cron.run', { id, mode: 'force' });
+            break;
+          }
+          return {
+            id: request.id,
+            ok: false,
+            error: {
+              code: 'UNSUPPORTED',
+              message: `APP_REQUEST_UNSUPPORTED:${request.module}.${request.action}`,
+            },
+          };
+        }
+        case 'usage': {
+          if (request.action === 'recentTokenHistory') {
+            const payload = request.payload as { limit?: number } | number | undefined;
+            const limit = typeof payload === 'number' ? payload : payload?.limit;
+            const safeLimit = typeof limit === 'number' && Number.isFinite(limit)
+              ? Math.max(Math.floor(limit), 1)
+              : undefined;
+            data = await getRecentTokenUsageHistory(safeLimit);
+            break;
+          }
+          return {
+            id: request.id,
+            ok: false,
+            error: {
+              code: 'UNSUPPORTED',
+              message: `APP_REQUEST_UNSUPPORTED:${request.module}.${request.action}`,
+            },
+          };
+        }
+        case 'settings': {
+          if (request.action === 'getAll') {
+            data = await getAllSettings();
+            break;
+          }
+          if (request.action === 'get') {
+            const payload = request.payload as { key?: keyof AppSettings } | [keyof AppSettings] | undefined;
+            const key = Array.isArray(payload) ? payload[0] : payload?.key;
+            if (!key) throw new Error('Invalid settings.get payload');
+            data = await getSetting(key);
+            break;
+          }
+          if (request.action === 'set') {
+            const payload = request.payload as
+              | { key?: keyof AppSettings; value?: AppSettings[keyof AppSettings] }
+              | [keyof AppSettings, AppSettings[keyof AppSettings]]
+              | undefined;
+            const key = Array.isArray(payload) ? payload[0] : payload?.key;
+            const value = Array.isArray(payload) ? payload[1] : payload?.value;
+            if (!key) throw new Error('Invalid settings.set payload');
+            await setSetting(key, value as never);
+            if (isProxyKey(key)) {
+              await handleProxySettingsChange();
+            }
+            data = { success: true };
+            break;
+          }
+          if (request.action === 'setMany') {
+            const patch = (request.payload ?? {}) as Partial<AppSettings>;
+            const entries = Object.entries(patch) as Array<[keyof AppSettings, AppSettings[keyof AppSettings]]>;
+            for (const [key, value] of entries) {
+              await setSetting(key, value as never);
+            }
+            if (entries.some(([key]) => isProxyKey(key))) {
+              await handleProxySettingsChange();
+            }
+            data = { success: true };
+            break;
+          }
+          if (request.action === 'reset') {
+            await resetSettings();
+            const settings = await getAllSettings();
+            await handleProxySettingsChange();
+            data = { success: true, settings };
+            break;
+          }
+          return {
+            id: request.id,
+            ok: false,
+            error: {
+              code: 'UNSUPPORTED',
+              message: `APP_REQUEST_UNSUPPORTED:${request.module}.${request.action}`,
+            },
+          };
+        }
+        default:
+          return {
+            id: request.id,
+            ok: false,
+            error: {
+              code: 'UNSUPPORTED',
+              message: `APP_REQUEST_UNSUPPORTED:${request.module}.${request.action}`,
+            },
+          };
+      }
+
+      return { id: request.id, ok: true, data };
+    } catch (error) {
+      return {
+        id: request.id,
+        ok: false,
+        error: {
+          code: mapAppErrorCode(error),
+          message: error instanceof Error ? error.message : String(error),
+        },
+      };
+    }
+  });
 }
 
 /**
@@ -493,6 +1210,14 @@ function registerGatewayHandlers(
   gatewayManager: GatewayManager,
   mainWindow: BrowserWindow
 ): void {
+  type GatewayHttpProxyRequest = {
+    path?: string;
+    method?: string;
+    headers?: Record<string, string>;
+    body?: unknown;
+    timeoutMs?: number;
+  };
+
   // Get Gateway status
   ipcMain.handle('gateway:status', () => {
     return gatewayManager.getStatus();
@@ -540,6 +1265,72 @@ function registerGatewayHandlers(
       return { success: true, result };
     } catch (error) {
       return { success: false, error: String(error) };
+    }
+  });
+
+  // Gateway HTTP proxy
+  // Renderer must not call gateway HTTP directly (CORS); all HTTP traffic
+  // should go through this main-process proxy.
+  ipcMain.handle('gateway:httpProxy', async (_, request: GatewayHttpProxyRequest) => {
+    try {
+      const status = gatewayManager.getStatus();
+      const port = status.port || 18789;
+      const path = request?.path && request.path.startsWith('/') ? request.path : '/';
+      const method = (request?.method || 'GET').toUpperCase();
+      const timeoutMs =
+        typeof request?.timeoutMs === 'number' && request.timeoutMs > 0
+          ? request.timeoutMs
+          : 15000;
+
+      const token = await getSetting('gatewayToken');
+      const headers: Record<string, string> = {
+        ...(request?.headers ?? {}),
+      };
+      if (!headers.Authorization && !headers.authorization && token) {
+        headers.Authorization = `Bearer ${token}`;
+      }
+
+      let body: string | undefined;
+      if (request?.body !== undefined && request?.body !== null) {
+        body = typeof request.body === 'string' ? request.body : JSON.stringify(request.body);
+        if (!headers['Content-Type'] && !headers['content-type']) {
+          headers['Content-Type'] = 'application/json';
+        }
+      }
+
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), timeoutMs);
+      const response = await proxyAwareFetch(`http://127.0.0.1:${port}${path}`, {
+        method,
+        headers,
+        body,
+        signal: controller.signal,
+      });
+      clearTimeout(timer);
+
+      const contentType = (response.headers.get('content-type') || '').toLowerCase();
+      if (contentType.includes('application/json')) {
+        const json = await response.json();
+        return {
+          success: true,
+          status: response.status,
+          ok: response.ok,
+          json,
+        };
+      }
+
+      const text = await response.text();
+      return {
+        success: true,
+        status: response.status,
+        ok: response.ok,
+        text,
+      };
+    } catch (error) {
+      return {
+        success: false,
+        error: String(error),
+      };
     }
   });
 
@@ -700,7 +1491,7 @@ function registerGatewayHandlers(
  * OpenClaw-related IPC handlers
  * For checking package status and channel configuration
  */
-function registerOpenClawHandlers(): void {
+function registerOpenClawHandlers(gatewayManager: GatewayManager): void {
   async function ensureDingTalkPluginInstalled(): Promise<{ installed: boolean; warning?: string }> {
     const targetDir = join(homedir(), '.openclaw', 'extensions', 'dingtalk');
     const targetManifest = join(targetDir, 'openclaw.plugin.json');
@@ -813,9 +1604,12 @@ function registerOpenClawHandlers(): void {
           };
         }
         await saveChannelConfig(channelType, config);
-        logger.info(
-          `Skipping app-forced Gateway restart after channel:saveConfig (${channelType}); Gateway handles channel config reload/restart internally`
-        );
+        if (gatewayManager.getStatus().state !== 'stopped') {
+          logger.info(`Scheduling Gateway reload after channel:saveConfig (${channelType})`);
+          gatewayManager.debouncedReload();
+        } else {
+          logger.info(`Gateway is stopped; skip immediate reload after channel:saveConfig (${channelType})`);
+        }
         return {
           success: true,
           pluginInstalled: installResult.installed,
@@ -823,12 +1617,12 @@ function registerOpenClawHandlers(): void {
         };
       }
       await saveChannelConfig(channelType, config);
-      // Do not force stop/start here. Recent Gateway builds detect channel config
-      // changes and perform an internal service restart; forcing another restart
-      // from Electron can race with reconnect and kill the newly spawned process.
-      logger.info(
-        `Skipping app-forced Gateway restart after channel:saveConfig (${channelType}); waiting for Gateway internal channel reload`
-      );
+      if (gatewayManager.getStatus().state !== 'stopped') {
+        logger.info(`Scheduling Gateway reload after channel:saveConfig (${channelType})`);
+        gatewayManager.debouncedReload();
+      } else {
+        logger.info(`Gateway is stopped; skip immediate reload after channel:saveConfig (${channelType})`);
+      }
       return { success: true };
     } catch (error) {
       console.error('Failed to save channel config:', error);
@@ -862,6 +1656,12 @@ function registerOpenClawHandlers(): void {
   ipcMain.handle('channel:deleteConfig', async (_, channelType: string) => {
     try {
       await deleteChannelConfig(channelType);
+      if (gatewayManager.getStatus().state !== 'stopped') {
+        logger.info(`Scheduling Gateway reload after channel:deleteConfig (${channelType})`);
+        gatewayManager.debouncedReload();
+      } else {
+        logger.info(`Gateway is stopped; skip immediate reload after channel:deleteConfig (${channelType})`);
+      }
       return { success: true };
     } catch (error) {
       console.error('Failed to delete channel config:', error);
@@ -884,6 +1684,12 @@ function registerOpenClawHandlers(): void {
   ipcMain.handle('channel:setEnabled', async (_, channelType: string, enabled: boolean) => {
     try {
       await setChannelEnabled(channelType, enabled);
+      if (gatewayManager.getStatus().state !== 'stopped') {
+        logger.info(`Scheduling Gateway reload after channel:setEnabled (${channelType}, enabled=${enabled})`);
+        gatewayManager.debouncedReload();
+      } else {
+        logger.info(`Gateway is stopped; skip immediate reload after channel:setEnabled (${channelType})`);
+      }
       return { success: true };
     } catch (error) {
       console.error('Failed to set channel enabled:', error);

@@ -31,6 +31,7 @@ import { useSettingsStore } from '@/stores/settings';
 import { useTranslation } from 'react-i18next';
 import { SUPPORTED_LANGUAGES } from '@/i18n';
 import { toast } from 'sonner';
+import { invokeIpc } from '@/lib/api-client';
 interface SetupStep {
   id: string;
   title: string;
@@ -145,6 +146,18 @@ export function Setup() {
         return true;
     }
   }, [safeStepIndex, providerConfigured, runtimeChecksPassed]);
+
+  // Keep setup flow linear: advance to provider step automatically
+  // once runtime checks become healthy.
+  useEffect(() => {
+    if (safeStepIndex !== STEP.RUNTIME || !runtimeChecksPassed) {
+      return;
+    }
+    const timer = setTimeout(() => {
+      setCurrentStep(STEP.PROVIDER);
+    }, 600);
+    return () => clearTimeout(timer);
+  }, [runtimeChecksPassed, safeStepIndex]);
 
   const handleNext = async () => {
     if (isLastStep) {
@@ -382,7 +395,7 @@ function RuntimeContent({ onStatusChange }: RuntimeContentProps) {
 
     // Check OpenClaw package status
     try {
-      const openclawStatus = await window.electron.ipcRenderer.invoke('openclaw:status') as {
+      const openclawStatus = await invokeIpc('openclaw:status') as {
         packageExists: boolean;
         isBuilt: boolean;
         dir: string;
@@ -526,7 +539,7 @@ function RuntimeContent({ onStatusChange }: RuntimeContentProps) {
 
   const handleShowLogs = async () => {
     try {
-      const logs = await window.electron.ipcRenderer.invoke('log:readFile', 100) as string;
+      const logs = await invokeIpc('log:readFile', 100) as string;
       setLogContent(logs);
       setShowLogs(true);
     } catch {
@@ -537,9 +550,9 @@ function RuntimeContent({ onStatusChange }: RuntimeContentProps) {
 
   const handleOpenLogDir = async () => {
     try {
-      const logDir = await window.electron.ipcRenderer.invoke('log:getDir') as string;
+      const logDir = await invokeIpc('log:getDir') as string;
       if (logDir) {
-        await window.electron.ipcRenderer.invoke('shell:showItemInFolder', logDir);
+        await invokeIpc('shell:showItemInFolder', logDir);
       }
     } catch {
       // ignore
@@ -727,7 +740,7 @@ function ProviderContent({
 
       if (selectedProvider) {
         try {
-          await window.electron.ipcRenderer.invoke('provider:setDefault', selectedProvider);
+          await invokeIpc('provider:setDefault', selectedProvider);
         } catch (error) {
           console.error('Failed to set default provider:', error);
         }
@@ -761,7 +774,7 @@ function ProviderContent({
     if (!selectedProvider) return;
 
     try {
-      const list = await window.electron.ipcRenderer.invoke('provider:list') as Array<{ type: string }>;
+      const list = await invokeIpc('provider:list') as Array<{ type: string }>;
       const existingTypes = new Set(list.map(l => l.type));
       if (selectedProvider === 'minimax-portal' && existingTypes.has('minimax-portal-cn')) {
         toast.error(t('settings:aiProviders.toast.minimaxConflict'));
@@ -780,7 +793,7 @@ function ProviderContent({
     setOauthError(null);
 
     try {
-      await window.electron.ipcRenderer.invoke('provider:requestOAuth', selectedProvider);
+      await invokeIpc('provider:requestOAuth', selectedProvider);
     } catch (e) {
       setOauthError(String(e));
       setOauthFlowing(false);
@@ -791,7 +804,7 @@ function ProviderContent({
     setOauthFlowing(false);
     setOauthData(null);
     setOauthError(null);
-    await window.electron.ipcRenderer.invoke('provider:cancelOAuth');
+    await invokeIpc('provider:cancelOAuth');
   };
 
   // On mount, try to restore previously configured provider
@@ -799,8 +812,8 @@ function ProviderContent({
     let cancelled = false;
     (async () => {
       try {
-        const list = await window.electron.ipcRenderer.invoke('provider:list') as Array<{ id: string; type: string; hasKey: boolean }>;
-        const defaultId = await window.electron.ipcRenderer.invoke('provider:getDefault') as string | null;
+        const list = await invokeIpc('provider:list') as Array<{ id: string; type: string; hasKey: boolean }>;
+        const defaultId = await invokeIpc('provider:getDefault') as string | null;
         const setupProviderTypes = new Set<string>(providers.map((p) => p.id));
         const setupCandidates = list.filter((p) => setupProviderTypes.has(p.type));
         const preferred =
@@ -813,7 +826,7 @@ function ProviderContent({
           const typeInfo = providers.find((p) => p.id === preferred.type);
           const requiresKey = typeInfo?.requiresApiKey ?? false;
           onConfiguredChange(!requiresKey || preferred.hasKey);
-          const storedKey = await window.electron.ipcRenderer.invoke('provider:getApiKey', preferred.id) as string | null;
+          const storedKey = await invokeIpc('provider:getApiKey', preferred.id) as string | null;
           if (storedKey) {
             onApiKeyChange(storedKey);
           }
@@ -835,8 +848,8 @@ function ProviderContent({
     (async () => {
       if (!selectedProvider) return;
       try {
-        const list = await window.electron.ipcRenderer.invoke('provider:list') as Array<{ id: string; type: string; hasKey: boolean }>;
-        const defaultId = await window.electron.ipcRenderer.invoke('provider:getDefault') as string | null;
+        const list = await invokeIpc('provider:list') as Array<{ id: string; type: string; hasKey: boolean }>;
+        const defaultId = await invokeIpc('provider:getDefault') as string | null;
         const sameType = list.filter((p) => p.type === selectedProvider);
         const preferredInstance =
           (defaultId && sameType.find((p) => p.id === defaultId))
@@ -845,11 +858,11 @@ function ProviderContent({
         const providerIdForLoad = preferredInstance?.id || selectedProvider;
         setSelectedProviderConfigId(providerIdForLoad);
 
-        const savedProvider = await window.electron.ipcRenderer.invoke(
+        const savedProvider = await invokeIpc(
           'provider:get',
           providerIdForLoad
         ) as { baseUrl?: string; model?: string } | null;
-        const storedKey = await window.electron.ipcRenderer.invoke('provider:getApiKey', providerIdForLoad) as string | null;
+        const storedKey = await invokeIpc('provider:getApiKey', providerIdForLoad) as string | null;
         if (!cancelled) {
           if (storedKey) {
             onApiKeyChange(storedKey);
@@ -906,7 +919,7 @@ function ProviderContent({
     if (!selectedProvider) return;
 
     try {
-      const list = await window.electron.ipcRenderer.invoke('provider:list') as Array<{ type: string }>;
+      const list = await invokeIpc('provider:list') as Array<{ type: string }>;
       const existingTypes = new Set(list.map(l => l.type));
       if (selectedProvider === 'minimax-portal' && existingTypes.has('minimax-portal-cn')) {
         toast.error(t('settings:aiProviders.toast.minimaxConflict'));
@@ -927,7 +940,7 @@ function ProviderContent({
       // Validate key if the provider requires one and a key was entered
       const isApiKeyRequired = requiresKey || (supportsApiKey && authMode === 'apikey');
       if (isApiKeyRequired && apiKey) {
-        const result = await window.electron.ipcRenderer.invoke(
+        const result = await invokeIpc(
           'provider:validateKey',
           selectedProviderConfigId || selectedProvider,
           apiKey,
@@ -961,7 +974,7 @@ function ProviderContent({
       const effectiveApiKey = resolveProviderApiKeyForSave(selectedProvider, apiKey);
 
       // Save provider config + API key, then set as default
-      const saveResult = await window.electron.ipcRenderer.invoke(
+      const saveResult = await invokeIpc(
         'provider:save',
         {
           id: providerIdForSave,
@@ -980,7 +993,7 @@ function ProviderContent({
         throw new Error(saveResult.error || 'Failed to save provider config');
       }
 
-      const defaultResult = await window.electron.ipcRenderer.invoke(
+      const defaultResult = await invokeIpc(
         'provider:setDefault',
         providerIdForSave
       ) as { success: boolean; error?: string };
@@ -1275,7 +1288,7 @@ function ProviderContent({
                         <Button
                           variant="secondary"
                           className="w-full"
-                          onClick={() => window.electron.ipcRenderer.invoke('shell:openExternal', oauthData.verificationUri)}
+                          onClick={() => invokeIpc('shell:openExternal', oauthData.verificationUri)}
                         >
                           <ExternalLink className="h-4 w-4 mr-2" />
                           Open Login Page
@@ -1363,7 +1376,7 @@ function InstallingContent({ skills, onComplete, onSkip }: InstallingContentProp
         setOverallProgress(10);
 
         // Step 2: Call the backend to install uv and setup Python
-        const result = await window.electron.ipcRenderer.invoke('uv:install-all') as {
+        const result = await invokeIpc('uv:install-all') as {
           success: boolean;
           error?: string
         };

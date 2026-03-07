@@ -4,6 +4,7 @@
  */
 import { create } from 'zustand';
 import type { GatewayStatus } from '../types/gateway';
+import { invokeIpc } from '@/lib/api-client';
 
 let gatewayInitPromise: Promise<void> | null = null;
 
@@ -49,7 +50,7 @@ export const useGatewayStore = create<GatewayState>((set, get) => ({
     gatewayInitPromise = (async () => {
       try {
         // Get initial status first
-        const status = await window.electron.ipcRenderer.invoke('gateway:status') as GatewayStatus;
+        const status = await invokeIpc('gateway:status') as GatewayStatus;
         set({ status, isInitialized: true });
 
         // Listen for status changes
@@ -197,7 +198,7 @@ export const useGatewayStore = create<GatewayState>((set, get) => ({
   start: async () => {
     try {
       set({ status: { ...get().status, state: 'starting' }, lastError: null });
-      const result = await window.electron.ipcRenderer.invoke('gateway:start') as { success: boolean; error?: string };
+      const result = await invokeIpc('gateway:start') as { success: boolean; error?: string };
 
       if (!result.success) {
         set({
@@ -215,7 +216,7 @@ export const useGatewayStore = create<GatewayState>((set, get) => ({
 
   stop: async () => {
     try {
-      await window.electron.ipcRenderer.invoke('gateway:stop');
+      await invokeIpc('gateway:stop');
       set({ status: { ...get().status, state: 'stopped' }, lastError: null });
     } catch (error) {
       console.error('Failed to stop Gateway:', error);
@@ -226,7 +227,7 @@ export const useGatewayStore = create<GatewayState>((set, get) => ({
   restart: async () => {
     try {
       set({ status: { ...get().status, state: 'starting' }, lastError: null });
-      const result = await window.electron.ipcRenderer.invoke('gateway:restart') as { success: boolean; error?: string };
+      const result = await invokeIpc('gateway:restart') as { success: boolean; error?: string };
 
       if (!result.success) {
         set({
@@ -244,7 +245,7 @@ export const useGatewayStore = create<GatewayState>((set, get) => ({
 
   checkHealth: async () => {
     try {
-      const result = await window.electron.ipcRenderer.invoke('gateway:health') as {
+      const result = await invokeIpc('gateway:health') as {
         success: boolean;
         ok: boolean;
         error?: string;
@@ -267,7 +268,7 @@ export const useGatewayStore = create<GatewayState>((set, get) => ({
   },
 
   rpc: async <T>(method: string, params?: unknown, timeoutMs?: number): Promise<T> => {
-    const result = await window.electron.ipcRenderer.invoke('gateway:rpc', method, params, timeoutMs) as {
+    const result = await invokeIpc('gateway:rpc', method, params, timeoutMs) as {
       success: boolean;
       result?: T;
       error?: string;

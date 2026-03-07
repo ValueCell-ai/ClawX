@@ -4,6 +4,7 @@
  */
 import { create } from 'zustand';
 import type { CronJob, CronJobCreateInput, CronJobUpdateInput } from '../types/cron';
+import { invokeIpc } from '@/lib/api-client';
 
 interface CronState {
   jobs: CronJob[];
@@ -29,7 +30,7 @@ export const useCronStore = create<CronState>((set) => ({
     set({ loading: true, error: null });
     
     try {
-      const result = await window.electron.ipcRenderer.invoke('cron:list') as CronJob[];
+      const result = await invokeIpc<CronJob[]>('cron:list');
       set({ jobs: result, loading: false });
     } catch (error) {
       set({ error: String(error), loading: false });
@@ -38,7 +39,7 @@ export const useCronStore = create<CronState>((set) => ({
   
   createJob: async (input) => {
     try {
-      const job = await window.electron.ipcRenderer.invoke('cron:create', input) as CronJob;
+      const job = await invokeIpc<CronJob>('cron:create', input);
       set((state) => ({ jobs: [...state.jobs, job] }));
       return job;
     } catch (error) {
@@ -49,7 +50,7 @@ export const useCronStore = create<CronState>((set) => ({
   
   updateJob: async (id, input) => {
     try {
-      await window.electron.ipcRenderer.invoke('cron:update', id, input);
+      await invokeIpc('cron:update', id, input);
       set((state) => ({
         jobs: state.jobs.map((job) =>
           job.id === id ? { ...job, ...input, updatedAt: new Date().toISOString() } : job
@@ -63,7 +64,7 @@ export const useCronStore = create<CronState>((set) => ({
   
   deleteJob: async (id) => {
     try {
-      await window.electron.ipcRenderer.invoke('cron:delete', id);
+      await invokeIpc('cron:delete', id);
       set((state) => ({
         jobs: state.jobs.filter((job) => job.id !== id),
       }));
@@ -75,7 +76,7 @@ export const useCronStore = create<CronState>((set) => ({
   
   toggleJob: async (id, enabled) => {
     try {
-      await window.electron.ipcRenderer.invoke('cron:toggle', id, enabled);
+      await invokeIpc('cron:toggle', id, enabled);
       set((state) => ({
         jobs: state.jobs.map((job) =>
           job.id === id ? { ...job, enabled } : job
@@ -89,11 +90,11 @@ export const useCronStore = create<CronState>((set) => ({
   
   triggerJob: async (id) => {
     try {
-      const result = await window.electron.ipcRenderer.invoke('cron:trigger', id);
+      const result = await invokeIpc<unknown>('cron:trigger', id);
       console.log('Cron trigger result:', result);
       // Refresh jobs after trigger to update lastRun/nextRun state
       try {
-        const jobs = await window.electron.ipcRenderer.invoke('cron:list') as CronJob[];
+        const jobs = await invokeIpc<CronJob[]>('cron:list');
         set({ jobs });
       } catch {
         // Ignore refresh error
