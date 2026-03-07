@@ -11,6 +11,7 @@ import {
   Radio,
   Puzzle,
   Clock,
+  Users,
   Settings,
   ChevronLeft,
   ChevronRight,
@@ -109,6 +110,7 @@ export function Sidebar() {
   const [sessionToDelete, setSessionToDelete] = useState<{ key: string; label: string } | null>(null);
 
   const navItems = [
+    { to: '/agents', icon: <Users className="h-5 w-5" />, label: t('sidebar.agents') },
     { to: '/cron', icon: <Clock className="h-5 w-5" />, label: t('sidebar.cronTasks') },
     { to: '/skills', icon: <Puzzle className="h-5 w-5" />, label: t('sidebar.skills') },
     { to: '/channels', icon: <Radio className="h-5 w-5" />, label: t('sidebar.channels') },
