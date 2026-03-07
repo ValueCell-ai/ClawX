@@ -377,6 +377,13 @@ export class GatewayManager extends EventEmitter {
       return;
     }
 
+    // Read port from user settings
+    const configuredPort = await getSetting('gatewayPort');
+    if (configuredPort && configuredPort !== this.status.port) {
+      logger.info(`Using configured gateway port: ${configuredPort}`);
+      this.status.port = configuredPort;
+    }
+
     this.startLock = true;
     const startEpoch = this.bumpLifecycleEpoch('start');
     logger.info(`Gateway start requested (port=${this.status.port})`);

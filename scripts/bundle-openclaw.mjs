@@ -26,19 +26,42 @@ const NODE_MODULES = path.join(ROOT, 'node_modules');
 function normWin(p) {
   if (process.platform !== 'win32') return p;
   if (p.startsWith('\\\\?\\')) return p;
-  return '\\\\?\\' + p.replace(/\//g, '\\');
+
+  // Ensure path is absolute and normalize
+  const absPath = path.resolve(p);
+
+  // Only add \\?\ prefix for valid absolute paths
+  // Don't add it if path is just a drive letter (e.g., "G:")
+  if (/^[A-Za-z]:$/.test(absPath)) {
+    // It's just a drive letter, resolve to root
+    return absPath + '\\';
+  }
+
+  // For network paths or regular absolute paths, add the prefix
+  if (absPath.match(/^[A-Za-z]:\\/)) {
+    return '\\\\?\\' + absPath.replace(/\//g, '\\');
+  }
+
+  return absPath;
 }
 
 echo`📦 Bundling openclaw for electron-builder...`;
+echo`   ROOT: ${ROOT}`;
+echo`   NODE_MODULES: ${NODE_MODULES}`;
 
 // 1. Resolve the real path of node_modules/openclaw (follows pnpm symlink)
 const openclawLink = path.join(NODE_MODULES, 'openclaw');
+echo`   openclawLink: ${openclawLink}`;
+
 if (!fs.existsSync(openclawLink)) {
   echo`❌ node_modules/openclaw not found. Run pnpm install first.`;
   process.exit(1);
 }
 
-const openclawReal = fs.realpathSync(normWin(openclawLink));
+const normalizedLink = normWin(openclawLink);
+echo`   normalizedLink: ${normalizedLink}`;
+
+const openclawReal = fs.realpathSync(openclawLink);
 echo`   openclaw resolved: ${openclawReal}`;
 
 // 2. Clean and create output directory
@@ -152,7 +175,7 @@ while (queue.length > 0) {
 
     let realPath;
     try {
-      realPath = fs.realpathSync(normWin(fullPath));
+      realPath = fs.realpathSync(fullPath);
     } catch {
       continue; // broken symlink, skip
     }

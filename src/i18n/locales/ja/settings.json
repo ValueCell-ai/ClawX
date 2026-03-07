@@ -102,6 +102,8 @@
     "openFolder": "フォルダーを開く",
     "autoStart": "ゲートウェイ自動起動",
     "autoStartDesc": "ClawX 起動時にゲートウェイを自動起動",
+    "portConfig": "Gateway ポート",
+    "portConfigDesc": "OpenClaw Gateway のポート（デフォルト：18789）。変更には Gateway の再起動が必要です。",
     "proxyTitle": "プロキシ",
     "proxyDesc": "Electron と Gateway の通信をローカルプロキシ経由にします。",
     "proxyServer": "プロキシサーバー",
