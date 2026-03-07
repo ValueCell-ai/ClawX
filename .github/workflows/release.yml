@@ -111,7 +111,8 @@ jobs:
             release/*.dmg
             release/*.zip
             release/*.blockmap
-            release/*.exe
+            release/*-win-x64.exe
+            release/*-win-arm64.exe
             release/*.AppImage
             release/*.deb
             release/*.rpm
@@ -155,7 +156,8 @@ jobs:
           files: |
             release-artifacts/**/*.dmg
             release-artifacts/**/*.zip
-            release-artifacts/**/*.exe
+            release-artifacts/**/*-win-x64.exe
+            release-artifacts/**/*-win-arm64.exe
             release-artifacts/**/*.AppImage
             release-artifacts/**/*.deb
             release-artifacts/**/*.rpm

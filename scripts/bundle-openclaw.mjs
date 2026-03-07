@@ -231,6 +231,45 @@ function formatSize(bytes) {
   return `${bytes}B`;
 }
 
+function summarizeTopLevelNodeModules(nodeModulesDir, { top = 8 } = {}) {
+  if (!fs.existsSync(nodeModulesDir)) return;
+
+  const pkgSizes = [];
+  for (const entry of fs.readdirSync(nodeModulesDir, { withFileTypes: true })) {
+    if (!entry.isDirectory() || entry.name === '.bin') continue;
+    const entryPath = path.join(nodeModulesDir, entry.name);
+
+    if (entry.name.startsWith('@')) {
+      let scoped = [];
+      try { scoped = fs.readdirSync(entryPath, { withFileTypes: true }); } catch { continue; }
+      for (const sub of scoped) {
+        if (!sub.isDirectory()) continue;
+        const pkgPath = path.join(entryPath, sub.name);
+        pkgSizes.push({ name: `${entry.name}/${sub.name}`, size: getDirSize(pkgPath) });
+      }
+    } else {
+      pkgSizes.push({ name: entry.name, size: getDirSize(entryPath) });
+    }
+  }
+
+  pkgSizes.sort((a, b) => b.size - a.size);
+  const total = pkgSizes.reduce((sum, p) => sum + p.size, 0);
+
+  echo`   📊 node_modules summary: ${pkgSizes.length} packages, total=${formatSize(total)}`;
+  for (const pkg of pkgSizes.slice(0, top)) {
+    echo`     - ${pkg.name}: ${formatSize(pkg.size)}`;
+  }
+
+  const llamaPkgs = pkgSizes.filter((p) => p.name.startsWith('@node-llama-cpp/'));
+  if (llamaPkgs.length > 0) {
+    const llamaTotal = llamaPkgs.reduce((sum, p) => sum + p.size, 0);
+    echo`     @node-llama-cpp total=${formatSize(llamaTotal)} (${llamaPkgs.length} packages)`;
+    for (const pkg of llamaPkgs.sort((a, b) => b.size - a.size)) {
+      echo`       • ${pkg.name}: ${formatSize(pkg.size)}`;
+    }
+  }
+}
+
 function rmSafe(target) {
   try {
     const stat = fs.lstatSync(target);
@@ -361,10 +400,12 @@ function cleanupBundle(outputDir) {
 echo``;
 echo`🧹 Cleaning up bundle (removing dev artifacts, docs, source maps, type defs)...`;
 const sizeBefore = getDirSize(OUTPUT);
+summarizeTopLevelNodeModules(outputNodeModules);
 const cleanedCount = cleanupBundle(OUTPUT);
 const sizeAfter = getDirSize(OUTPUT);
 echo`   Removed ${cleanedCount} files/directories`;
 echo`   Size: ${formatSize(sizeBefore)} → ${formatSize(sizeAfter)} (saved ${formatSize(sizeBefore - sizeAfter)})`;
+summarizeTopLevelNodeModules(outputNodeModules);
 
 // 7. Patch known broken packages
 //

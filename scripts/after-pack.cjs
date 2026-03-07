@@ -40,6 +40,74 @@ function resolveArch(archEnum) {
   return ARCH_MAP[archEnum] || 'x64';
 }
 
+function formatSize(bytes) {
+  if (bytes >= 1024 * 1024 * 1024) return `${(bytes / 1024 / 1024 / 1024).toFixed(1)}G`;
+  if (bytes >= 1024 * 1024) return `${(bytes / 1024 / 1024).toFixed(1)}M`;
+  if (bytes >= 1024) return `${(bytes / 1024).toFixed(1)}K`;
+  return `${bytes}B`;
+}
+
+function getDirSize(dir) {
+  let total = 0;
+  let entries = [];
+  try { entries = readdirSync(dir, { withFileTypes: true }); } catch { return 0; }
+
+  for (const entry of entries) {
+    const full = join(dir, entry.name);
+    try {
+      if (entry.isDirectory()) total += getDirSize(full);
+      else if (entry.isFile()) total += statSync(full).size;
+    } catch { /* ignore */ }
+  }
+  return total;
+}
+
+function summarizeTopLevelNodeModules(nodeModulesDir, { top = 8 } = {}) {
+  if (!existsSync(nodeModulesDir)) return;
+
+  const pkgSizes = [];
+  let entries = [];
+  try { entries = readdirSync(nodeModulesDir, { withFileTypes: true }); } catch { return; }
+
+  for (const entry of entries) {
+    if (!entry.isDirectory() || entry.name === '.bin') continue;
+    const entryPath = join(nodeModulesDir, entry.name);
+
+    if (entry.name.startsWith('@')) {
+      let scopedEntries = [];
+      try { scopedEntries = readdirSync(entryPath, { withFileTypes: true }); } catch { continue; }
+      for (const sub of scopedEntries) {
+        if (!sub.isDirectory()) continue;
+        const pkgPath = join(entryPath, sub.name);
+        pkgSizes.push({
+          name: `${entry.name}/${sub.name}`,
+          size: getDirSize(pkgPath),
+        });
+      }
+    } else {
+      pkgSizes.push({ name: entry.name, size: getDirSize(entryPath) });
+    }
+  }
+
+  pkgSizes.sort((a, b) => b.size - a.size);
+  const topPkgs = pkgSizes.slice(0, top);
+  const total = pkgSizes.reduce((sum, p) => sum + p.size, 0);
+
+  console.log(`[after-pack] 📊 node_modules summary: ${pkgSizes.length} packages, total=${formatSize(total)}`);
+  for (const pkg of topPkgs) {
+    console.log(`[after-pack]   - ${pkg.name}: ${formatSize(pkg.size)}`);
+  }
+
+  const llamaPkgs = pkgSizes.filter(p => p.name.startsWith('@node-llama-cpp/'));
+  if (llamaPkgs.length > 0) {
+    const llamaTotal = llamaPkgs.reduce((sum, p) => sum + p.size, 0);
+    console.log(`[after-pack]   @node-llama-cpp total=${formatSize(llamaTotal)} (${llamaPkgs.length} packages)`);
+    for (const pkg of llamaPkgs.sort((a, b) => b.size - a.size)) {
+      console.log(`[after-pack]     • ${pkg.name}: ${formatSize(pkg.size)}`);
+    }
+  }
+}
+
 // ── General cleanup ──────────────────────────────────────────────────────────
 
 function cleanupUnnecessaryFiles(dir) {
@@ -136,6 +204,123 @@ function cleanupNativePlatformPackages(nodeModulesDir, platform, arch) {
   }
 
   return removed;
+}
+
+const LLAMA_CPU_VARIANTS = {
+  'darwin:x64': 'mac-x64',
+  'darwin:arm64': 'mac-arm64-metal',
+  'linux:x64': 'linux-x64',
+  'linux:arm64': 'linux-arm64',
+  'win32:x64': 'win-x64',
+  'win32:arm64': 'win-arm64',
+};
+
+function parseNodeLlamaVariant(name) {
+  if (name.startsWith('win-')) {
+    const rest = name.slice('win-'.length);
+    if (rest.startsWith('x64')) {
+      return { platform: 'win32', arch: 'x64', kind: rest === 'x64' ? 'cpu' : 'accel' };
+    }
+    if (rest.startsWith('arm64')) {
+      return { platform: 'win32', arch: 'arm64', kind: rest === 'arm64' ? 'cpu' : 'accel' };
+    }
+    return null;
+  }
+
+  if (name.startsWith('linux-')) {
+    const rest = name.slice('linux-'.length);
+    if (rest.startsWith('x64')) {
+      return { platform: 'linux', arch: 'x64', kind: rest === 'x64' ? 'cpu' : 'accel' };
+    }
+    if (rest.startsWith('arm64')) {
+      return { platform: 'linux', arch: 'arm64', kind: rest === 'arm64' ? 'cpu' : 'accel' };
+    }
+    if (rest.startsWith('armv7l')) {
+      return { platform: 'linux', arch: 'armv7l', kind: 'cpu' };
+    }
+    return null;
+  }
+
+  if (name.startsWith('mac-')) {
+    const rest = name.slice('mac-'.length);
+    if (rest.startsWith('x64')) {
+      return { platform: 'darwin', arch: 'x64', kind: rest === 'x64' ? 'cpu' : 'accel' };
+    }
+    if (rest.startsWith('arm64')) {
+      return { platform: 'darwin', arch: 'arm64', kind: 'cpu' };
+    }
+    return null;
+  }
+
+  return null;
+}
+
+function cleanupNodeLlamaPackages(nodeModulesDir, platform, arch) {
+  const scopeDir = join(nodeModulesDir, '@node-llama-cpp');
+  if (!existsSync(scopeDir)) return { removed: 0, kept: 0, mode: 'skip', targetCpu: null };
+
+  const mode = process.env.CLAWX_KEEP_LLAMA_GPU === '1' ? 'same-arch-with-gpu' : 'cpu-only';
+  const targetCpu = LLAMA_CPU_VARIANTS[`${platform}:${arch}`] || null;
+
+  const variants = [];
+  for (const entry of readdirSync(scopeDir)) {
+    const meta = parseNodeLlamaVariant(entry);
+    if (meta) variants.push({ name: entry, meta });
+  }
+
+  const hasTargetPlatformArchVariant = variants.some(
+    v => v.meta.platform === platform && v.meta.arch === arch,
+  );
+  const hasTargetCpuVariant = targetCpu ? variants.some(v => v.name === targetCpu) : false;
+
+  // Guard rail: if no target platform/arch variant exists, this is likely a
+  // cross-platform build host mismatch (e.g. building --win on Linux with host-only
+  // optional deps installed). In that case, skip pruning to avoid deleting all
+  // node-llama-cpp binaries.
+  if (!hasTargetPlatformArchVariant) {
+    console.log(
+      `[after-pack] ⚠️  node-llama-cpp: no target variant found for ${platform}/${arch}; skipping prune to avoid over-removal.`,
+    );
+    return { removed: 0, kept: variants.length, mode: 'skip-no-target', targetCpu };
+  }
+
+  let removed = 0;
+  let kept = 0;
+  const keptPkgs = [];
+  const removedPkgs = [];
+
+  for (const { name: entry, meta } of variants) {
+
+    const isTargetPlatform = meta.platform === platform;
+    const isTargetArch = meta.arch === arch;
+    let shouldKeep = isTargetPlatform && isTargetArch;
+
+    // In cpu-only mode, keep only baseline CPU variant when it exists.
+    // If it does not exist for this version naming, gracefully fall back to
+    // same-platform+arch variants instead of deleting everything.
+    if (shouldKeep && mode === 'cpu-only' && targetCpu && hasTargetCpuVariant) {
+      shouldKeep = entry === targetCpu;
+    }
+
+    if (shouldKeep) {
+      kept++;
+      keptPkgs.push(entry);
+      continue;
+    }
+
+    try {
+      rmSync(join(scopeDir, entry), { recursive: true, force: true });
+      removed++;
+      removedPkgs.push(entry);
+    } catch { /* ignore */ }
+  }
+
+  console.log(`[after-pack] 🧠 node-llama-cpp pruning mode=${mode}, target=${platform}/${arch}, targetCpu=${targetCpu || 'n/a'}`);
+  console.log(`[after-pack] ✅ node-llama-cpp: kept ${kept}, removed ${removed}`);
+  if (keptPkgs.length > 0) console.log(`[after-pack]    kept: ${keptPkgs.sort().join(', ')}`);
+  if (removedPkgs.length > 0) console.log(`[after-pack]    removed: ${removedPkgs.sort().join(', ')}`);
+
+  return { removed, kept, mode, targetCpu };
 }
 
 // ── Broken module patcher ─────────────────────────────────────────────────────
@@ -326,6 +511,7 @@ exports.default = async function afterPack(context) {
   console.log(`[after-pack] Copying ${depCount} openclaw dependencies to ${dest} ...`);
   cpSync(src, dest, { recursive: true });
   console.log('[after-pack] ✅ openclaw node_modules copied.');
+  summarizeTopLevelNodeModules(src);
 
   // Patch broken modules whose CJS transpiled output sets module.exports = undefined,
   // causing TypeError in Node.js 22+ ESM interop.
@@ -351,6 +537,7 @@ exports.default = async function afterPack(context) {
       if (existsSync(pluginNM)) {
         cleanupKoffi(pluginNM, platform, arch);
         cleanupNativePlatformPackages(pluginNM, platform, arch);
+        cleanupNodeLlamaPackages(pluginNM, platform, arch);
       }
     }
   }
@@ -371,4 +558,17 @@ exports.default = async function afterPack(context) {
   if (nativeRemoved > 0) {
     console.log(`[after-pack] ✅ Removed ${nativeRemoved} non-target native platform packages.`);
   }
+
+  const llamaRemoved = cleanupNodeLlamaPackages(dest, platform, arch);
+  if (llamaRemoved.removed > 0) {
+    console.log(`[after-pack] ✅ Removed ${llamaRemoved.removed} node-llama-cpp package variants.`);
+  }
+
+  summarizeTopLevelNodeModules(dest);
+};
+
+// Test-only exports for unit validation of pruning logic.
+exports.__test__ = {
+  cleanupNodeLlamaPackages,
+  parseNodeLlamaVariant,
 };
