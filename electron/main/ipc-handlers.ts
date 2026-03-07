@@ -54,25 +54,27 @@ import { deviceOAuthManager, OAuthProviderType } from '../utils/device-oauth';
 import { applyProxySettings } from './proxy';
 import { proxyAwareFetch } from '../utils/proxy-fetch';
 import { getRecentTokenUsageHistory } from '../utils/token-usage';
+import {
+  getOpenClawProviderKeyForType,
+  getOAuthApiKeyEnv,
+  getOAuthProviderApi,
+  getOAuthProviderDefaultBaseUrl,
+  getOAuthProviderTargetKey,
+  isOAuthProviderType,
+  normalizeOAuthBaseUrl,
+  usesOAuthAuthHeader,
+} from '../utils/provider-keys';
 
 /**
- * For custom/ollama providers, derive a unique key for OpenClaw config files
- * so that multiple instances of the same type don't overwrite each other.
- * For all other providers the key is simply the provider type.
+ * Derive OpenClaw provider key used in openclaw.json / models.json.
+ * Some types need remapping to avoid collisions or enforce CN endpoints.
  *
  * @param type - Provider type (e.g. 'custom', 'ollama', 'openrouter')
  * @param providerId - Unique provider ID from secure-storage (UUID-like)
- * @returns A string like 'custom-a1b2c3d4' or 'openrouter'
+ * @returns A key like 'custom-a1b2c3d4', 'moonshot', or 'openrouter'
  */
 export function getOpenClawProviderKey(type: string, providerId: string): string {
-  if (type === 'custom' || type === 'ollama') {
-    const suffix = providerId.replace(/-/g, '').slice(0, 8);
-    return `${type}-${suffix}`;
-  }
-  if (type === 'minimax-portal-cn') {
-    return 'minimax-portal';
-  }
-  return type;
+  return getOpenClawProviderKeyForType(type, providerId);
 }
 
 function getProviderModelRef(config: ProviderConfig): string | undefined {
@@ -84,7 +86,10 @@ function getProviderModelRef(config: ProviderConfig): string | undefined {
       : `${providerKey}/${config.model}`;
   }
 
-  return getProviderDefaultModel(config.type);
+  const defaultModel = getProviderDefaultModel(config.type);
+  if (!defaultModel) return undefined;
+  const modelId = defaultModel.includes('/') ? defaultModel.split('/').slice(1).join('/') : defaultModel;
+  return `${providerKey}/${modelId}`;
 }
 
 async function getProviderFallbackModelRefs(config: ProviderConfig): Promise<string[]> {
@@ -1201,16 +1206,20 @@ function registerProviderHandlers(gatewayManager: GatewayManager): void {
           // If this provider is the current default, update the primary model
           const defaultProviderId = await getDefaultProvider();
           if (defaultProviderId === providerId) {
-            const modelOverride = nextConfig.model
-              ? `${ock}/${nextConfig.model}`
-              : undefined;
-            if (nextConfig.type !== 'custom' && nextConfig.type !== 'ollama') {
-              await setOpenClawDefaultModel(ock, modelOverride, fallbackModels);
-            } else {
+            const modelOverride = getProviderModelRef(nextConfig);
+            const providerKeyIsAliased = ock !== nextConfig.type;
+            if (nextConfig.type === 'custom' || nextConfig.type === 'ollama' || providerKeyIsAliased) {
+              const baseMeta = getProviderConfig(nextConfig.type);
               await setOpenClawDefaultModelWithOverride(ock, modelOverride, {
-                baseUrl: nextConfig.baseUrl,
-                api: 'openai-completions',
+                baseUrl: nextConfig.baseUrl || baseMeta?.baseUrl,
+                api: nextConfig.type === 'custom' || nextConfig.type === 'ollama'
+                  ? 'openai-completions'
+                  : baseMeta?.api,
+                apiKeyEnv: baseMeta?.apiKeyEnv,
+                headers: baseMeta?.headers,
               }, fallbackModels);
+            } else {
+              await setOpenClawDefaultModel(ock, modelOverride, fallbackModels);
             }
           }
 
@@ -1288,23 +1297,23 @@ function registerProviderHandlers(gatewayManager: GatewayManager): void {
           const providerKey = await getApiKey(providerId);
           const fallbackModels = await getProviderFallbackModelRefs(provider);
 
-          // OAuth providers (qwen-portal, minimax-portal, minimax-portal-cn) might use OAuth OR a direct API key.
-          // Treat them as OAuth only if they don't have a local API key configured.
-          const OAUTH_PROVIDER_TYPES = ['qwen-portal', 'minimax-portal', 'minimax-portal-cn'];
-          const isOAuthProvider = OAUTH_PROVIDER_TYPES.includes(provider.type) && !providerKey;
+          // OAuth providers might use OAuth OR a direct API key.
+          // Treat them as OAuth-only if they don't have a local API key configured.
+          const isOAuthProvider = isOAuthProviderType(provider.type) && !providerKey;
 
           if (!isOAuthProvider) {
-            // Build the full model string: "openclawKey/modelId"
-            const modelOverride = provider.model
-              ? (provider.model.startsWith(`${ock}/`)
-                ? provider.model
-                : `${ock}/${provider.model}`)
-              : undefined;
-
-            if (provider.type === 'custom' || provider.type === 'ollama') {
+            // Build the model reference from provider settings/default mapping.
+            const modelOverride = getProviderModelRef(provider);
+            const providerKeyIsAliased = ock !== provider.type;
+            if (provider.type === 'custom' || provider.type === 'ollama' || providerKeyIsAliased) {
+              const baseMeta = getProviderConfig(provider.type);
               await setOpenClawDefaultModelWithOverride(ock, modelOverride, {
-                baseUrl: provider.baseUrl,
-                api: 'openai-completions',
+                baseUrl: provider.baseUrl || baseMeta?.baseUrl,
+                api: provider.type === 'custom' || provider.type === 'ollama'
+                  ? 'openai-completions'
+                  : baseMeta?.api,
+                apiKeyEnv: baseMeta?.apiKeyEnv,
+                headers: baseMeta?.headers,
               }, fallbackModels);
             } else {
               await setOpenClawDefaultModel(ock, modelOverride, fallbackModels);
@@ -1315,32 +1324,22 @@ function registerProviderHandlers(gatewayManager: GatewayManager): void {
               await saveProviderKeyToOpenClaw(ock, providerKey);
             }
           } else {
-            // OAuth providers (minimax-portal, minimax-portal-cn, qwen-portal)
-            const defaultBaseUrl = provider.type === 'minimax-portal'
-              ? 'https://api.minimax.io/anthropic'
-              : (provider.type === 'minimax-portal-cn' ? 'https://api.minimaxi.com/anthropic' : 'https://portal.qwen.ai/v1');
-            const api: 'anthropic-messages' | 'openai-completions' =
-              (provider.type === 'minimax-portal' || provider.type === 'minimax-portal-cn')
-                ? 'anthropic-messages'
-                : 'openai-completions';
-
-            let baseUrl = provider.baseUrl || defaultBaseUrl;
-            if ((provider.type === 'minimax-portal' || provider.type === 'minimax-portal-cn') && baseUrl) {
-              baseUrl = baseUrl.replace(/\/v1$/, '').replace(/\/anthropic$/, '').replace(/\/$/, '') + '/anthropic';
+            const defaultBaseUrl = getOAuthProviderDefaultBaseUrl(provider.type);
+            const api = getOAuthProviderApi(provider.type);
+            const targetProviderKey = getOAuthProviderTargetKey(provider.type);
+            const baseUrl = normalizeOAuthBaseUrl(provider.type, provider.baseUrl || defaultBaseUrl);
+            const oauthApiKeyEnv = targetProviderKey ? getOAuthApiKeyEnv(targetProviderKey) : undefined;
+            const oauthUsesAuthHeader = targetProviderKey ? usesOAuthAuthHeader(targetProviderKey) : false;
+            if (!baseUrl || !api || !targetProviderKey || !oauthApiKeyEnv) {
+              throw new Error(`Invalid OAuth provider config for "${provider.type}"`);
             }
-
-            // To ensure the OpenClaw Gateway's internal token refresher works,
-            // we must save the CN provider under the "minimax-portal" key in openclaw.json
-            const targetProviderKey = (provider.type === 'minimax-portal' || provider.type === 'minimax-portal-cn')
-              ? 'minimax-portal'
-              : provider.type;
 
             await setOpenClawDefaultModelWithOverride(targetProviderKey, getProviderModelRef(provider), {
               baseUrl,
               api,
-              authHeader: targetProviderKey === 'minimax-portal' ? true : undefined,
+              authHeader: oauthUsesAuthHeader ? true : undefined,
               // Relies on OpenClaw Gateway native auth-profiles syncing
-              apiKeyEnv: targetProviderKey === 'minimax-portal' ? 'minimax-oauth' : 'qwen-oauth',
+              apiKeyEnv: oauthApiKeyEnv,
             }, fallbackModels);
 
             logger.info(`Configured openclaw.json for OAuth provider "${provider.type}"`);
@@ -1352,8 +1351,8 @@ function registerProviderHandlers(gatewayManager: GatewayManager): void {
               await updateAgentModelProvider(targetProviderKey, {
                 baseUrl,
                 api,
-                authHeader: targetProviderKey === 'minimax-portal' ? true : undefined,
-                apiKey: targetProviderKey === 'minimax-portal' ? 'minimax-oauth' : 'qwen-oauth',
+                authHeader: oauthUsesAuthHeader ? true : undefined,
+                apiKey: oauthApiKeyEnv,
                 models: defaultModelId ? [{ id: defaultModelId, name: defaultModelId }] : [],
               });
             } catch (err) {
@@ -2264,4 +2263,3 @@ function registerSessionHandlers(): void {
     }
   });
 }
-

@@ -16,7 +16,7 @@ import {
 } from '../utils/paths';
 import { getAllSettings, getSetting } from '../utils/store';
 import { getApiKey, getDefaultProvider, getProvider } from '../utils/secure-storage';
-import { getProviderEnvVar, getKeyableProviderTypes } from '../utils/provider-registry';
+import { getProviderEnvVars, getKeyableProviderTypes } from '../utils/provider-registry';
 import { GatewayEventType, JsonRpcNotification, isNotification, isResponse } from './protocol';
 import { logger } from '../utils/logger';
 import { getUvMirrorEnv } from '../utils/uv-env';
@@ -180,6 +180,14 @@ const GATEWAY_FETCH_PRELOAD_SOURCE = `'use strict';
   }
 })();
 `;
+
+function injectMoonshotWebSearchEnv(
+  env: Record<string, string>,
+  apiKey: string
+): void {
+  // OpenClaw web_search(kimi) reads KIMI_API_KEY before provider-specific config.
+  env.KIMI_API_KEY = apiKey;
+}
 
 function ensureGatewayFetchPreload(): string {
   const dest = path.join(app.getPath('userData'), 'gateway-fetch-preload.cjs');
@@ -1146,9 +1154,14 @@ export class GatewayManager extends EventEmitter {
         const defaultProviderType = defaultProvider?.type;
         const defaultProviderKey = await getApiKey(defaultProviderId);
         if (defaultProviderType && defaultProviderKey) {
-          const envVar = getProviderEnvVar(defaultProviderType);
-          if (envVar) {
-            providerEnv[envVar] = defaultProviderKey;
+          const envVars = getProviderEnvVars(defaultProviderType);
+          if (envVars.length > 0) {
+            for (const envVar of envVars) {
+              providerEnv[envVar] = defaultProviderKey;
+            }
+            if (defaultProviderType === 'moonshot') {
+              injectMoonshotWebSearchEnv(providerEnv, defaultProviderKey);
+            }
             loadedProviderKeyCount++;
           }
         }
@@ -1161,9 +1174,14 @@ export class GatewayManager extends EventEmitter {
       try {
         const key = await getApiKey(providerType);
         if (key) {
-          const envVar = getProviderEnvVar(providerType);
-          if (envVar) {
-            providerEnv[envVar] = key;
+          const envVars = getProviderEnvVars(providerType);
+          if (envVars.length > 0) {
+            for (const envVar of envVars) {
+              providerEnv[envVar] = key;
+            }
+            if (providerType === 'moonshot') {
+              injectMoonshotWebSearchEnv(providerEnv, key);
+            }
             loadedProviderKeyCount++;
           }
         }
