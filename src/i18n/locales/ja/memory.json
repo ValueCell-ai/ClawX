@@ -1,0 +1,22 @@
+{
+    "title": "メモリ",
+    "overview": "メモリ概要",
+    "overviewDescription": "AIアシスタントのメモリファイルを表示・管理",
+    "searchPlaceholder": "メモリファイルを検索...",
+    "files": "ファイル",
+    "longTermMemory": "長期メモリ",
+    "dailyLogs": "日次ログ",
+    "noMemoryFiles": "メモリファイルがありません",
+    "refresh": "更新",
+    "emptyFile": "ファイルは空です",
+    "totalFiles": "総ファイル数",
+    "totalSize": "合計サイズ",
+    "longTermSize": "長期メモリサイズ",
+    "dailyLogCount": "日次ログ数",
+    "aboutMemory": "メモリシステムについて",
+    "aboutMemoryDesc1": "メモリシステムはAIアシスタントがセッションをまたいで重要な情報を記憶するのに役立ちます。",
+    "aboutMemoryDesc2": "メモリには2種類あります：",
+    "longTermInfo": "重要なイベントと決定を保存する、洗練された永続的なメモリ。",
+    "dailyLogsInfo": "レビューと抽出のための生の日次作業ログ。",
+    "longTermDescription": "重要なイベントと決定を含む洗練された長期メモリ。"
+}

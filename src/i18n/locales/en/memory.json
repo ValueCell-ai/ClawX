@@ -1,0 +1,22 @@
+{
+    "title": "Memory",
+    "overview": "Memory Overview",
+    "overviewDescription": "View and manage AI assistant memory files",
+    "searchPlaceholder": "Search memory files...",
+    "files": "files",
+    "longTermMemory": "Long-term Memory",
+    "dailyLogs": "Daily Logs",
+    "noMemoryFiles": "No memory files",
+    "refresh": "Refresh",
+    "emptyFile": "File is empty",
+    "totalFiles": "Total Files",
+    "totalSize": "Total Size",
+    "longTermSize": "Long-term Memory Size",
+    "dailyLogCount": "Daily Log Count",
+    "aboutMemory": "About Memory System",
+    "aboutMemoryDesc1": "The memory system helps the AI assistant remember important information across sessions.",
+    "aboutMemoryDesc2": "There are two types of memory:",
+    "longTermInfo": "Refined, persistent memory storing important events and decisions.",
+    "dailyLogsInfo": "Raw daily work logs for review and distillation.",
+    "longTermDescription": "Refined long-term memory containing important events and decisions."
+}

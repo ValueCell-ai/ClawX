@@ -184,6 +184,9 @@ export function registerIpcHandlers(
 
   // File staging handlers (upload/send separation)
   registerFileHandlers();
+
+  // Memory handlers
+  registerMemoryHandlers();
 }
 
 /**
@@ -2265,3 +2268,117 @@ function registerSessionHandlers(): void {
   });
 }
 
+/**
+ * Memory IPC handlers
+ * Read memory files from ~/.openclaw/workspace/
+ */
+function registerMemoryHandlers(): void {
+  const MEMORY_DIR = join(homedir(), '.openclaw', 'workspace');
+  const MEMORY_FILE = join(MEMORY_DIR, 'MEMORY.md');
+  const DAILY_LOGS_DIR = join(MEMORY_DIR, 'memory');
+
+  // List all memory files with stats
+  ipcMain.handle('memory:list', async () => {
+    try {
+      const fsP = await import('fs/promises');
+      const files: Array<{
+        path: string;
+        name: string;
+        size: number;
+        lastModified: string;
+        type: 'long-term' | 'daily';
+      }> = [];
+
+      let longTermSize = 0;
+      let dailyLogCount = 0;
+      let totalSize = 0;
+
+      // Check MEMORY.md (long-term memory)
+      try {
+        const stat = await fsP.stat(MEMORY_FILE);
+        if (stat.isFile()) {
+          files.push({
+            path: MEMORY_FILE,
+            name: 'MEMORY.md',
+            size: stat.size,
+            lastModified: stat.mtime.toISOString(),
+            type: 'long-term',
+          });
+          longTermSize = stat.size;
+          totalSize += stat.size;
+        }
+      } catch {
+        // MEMORY.md doesn't exist, that's fine
+      }
+
+      // Check daily logs directory
+      try {
+        const entries = await fsP.readdir(DAILY_LOGS_DIR, { withFileTypes: true });
+        for (const entry of entries) {
+          if (entry.isFile() && entry.name.endsWith('.md')) {
+            const filePath = join(DAILY_LOGS_DIR, entry.name);
+            const stat = await fsP.stat(filePath);
+            files.push({
+              path: filePath,
+              name: entry.name,
+              size: stat.size,
+              lastModified: stat.mtime.toISOString(),
+              type: 'daily',
+            });
+            totalSize += stat.size;
+            dailyLogCount++;
+          }
+        }
+      } catch {
+        // memory/ directory doesn't exist, that's fine
+      }
+
+      // Sort daily logs by name (date) descending
+      files.sort((a, b) => {
+        if (a.type === 'long-term') return -1;
+        if (b.type === 'long-term') return 1;
+        return b.name.localeCompare(a.name);
+      });
+
+      // Get stats
+      const stats = {
+        totalFiles: files.length,
+        totalSize,
+        longTermSize,
+        dailyLogCount,
+      };
+
+      // Read MEMORY.md content for preview
+      let longTermMemory = '';
+      try {
+        longTermMemory = await fsP.readFile(MEMORY_FILE, 'utf-8');
+      } catch {
+        // File doesn't exist
+      }
+
+      return { success: true, files, stats, longTermMemory };
+    } catch (error) {
+      return { success: false, error: String(error), files: [], stats: null };
+    }
+  });
+
+  // Get specific memory file content
+  ipcMain.handle('memory:get', async (_, filePath: string) => {
+    try {
+      const fsP = await import('fs/promises');
+      // Security: only allow reading from memory directory
+      const normalizedPath = filePath.replace(/\.\./g, '');
+      const allowedDirs = [MEMORY_DIR, DAILY_LOGS_DIR];
+      const isAllowed = allowedDirs.some(dir => normalizedPath.startsWith(dir));
+
+      if (!isAllowed) {
+        return { success: false, error: 'Access denied' };
+      }
+
+      const content = await fsP.readFile(normalizedPath, 'utf-8');
+      return { success: true, content };
+    } catch (error) {
+      return { success: false, error: String(error) };
+    }
+  });
+}

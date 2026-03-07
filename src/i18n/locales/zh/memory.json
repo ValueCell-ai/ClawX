@@ -1,0 +1,22 @@
+{
+    "title": "记忆",
+    "overview": "记忆概览",
+    "overviewDescription": "查看和管理 AI 助手的记忆文件",
+    "searchPlaceholder": "搜索记忆文件...",
+    "files": "个文件",
+    "longTermMemory": "长期记忆",
+    "dailyLogs": "每日日志",
+    "noMemoryFiles": "暂无记忆文件",
+    "refresh": "刷新",
+    "emptyFile": "文件内容为空",
+    "totalFiles": "总文件数",
+    "totalSize": "总大小",
+    "longTermSize": "长期记忆大小",
+    "dailyLogCount": "每日日志数",
+    "aboutMemory": "关于记忆系统",
+    "aboutMemoryDesc1": "记忆系统帮助 AI 助手记住重要信息，实现跨会话的连续性。",
+    "aboutMemoryDesc2": "记忆分为两种类型：",
+    "longTermInfo": "经过提炼的、持久的记忆，存储重要事件和决策。",
+    "dailyLogsInfo": "每日工作的原始记录，用于回顾和提炼。",
+    "longTermDescription": "经过提炼的长期记忆，包含重要事件和决策。"
+}

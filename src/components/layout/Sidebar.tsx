@@ -17,6 +17,7 @@ import {
   Terminal,
   ExternalLink,
   Trash2,
+  Brain,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useSettingsStore } from '@/stores/settings';
@@ -109,6 +110,7 @@ export function Sidebar() {
   const [sessionToDelete, setSessionToDelete] = useState<{ key: string; label: string } | null>(null);
 
   const navItems = [
+    { to: '/memory', icon: <Brain className="h-5 w-5" />, label: t('sidebar.memory') },
     { to: '/cron', icon: <Clock className="h-5 w-5" />, label: t('sidebar.cronTasks') },
     { to: '/skills', icon: <Puzzle className="h-5 w-5" />, label: t('sidebar.skills') },
     { to: '/channels', icon: <Radio className="h-5 w-5" />, label: t('sidebar.channels') },

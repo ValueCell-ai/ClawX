@@ -2,6 +2,7 @@
     "sidebar": {
         "chat": "Chat",
         "newChat": "New Chat",
+        "memory": "Memory",
         "cronTasks": "Cron Tasks",
         "skills": "Skills",
         "channels": "Channels",
