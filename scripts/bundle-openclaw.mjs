@@ -175,7 +175,7 @@ while (queue.length > 0) {
 
     let realPath;
     try {
-      realPath = fs.realpathSync(normWin(fullPath));
+      realPath = fs.realpathSync(fullPath);
     } catch {
       continue; // broken symlink, skip
     }
