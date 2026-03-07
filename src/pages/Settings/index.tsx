@@ -45,6 +45,8 @@ export function Settings() {
     setLanguage,
     gatewayAutoStart,
     setGatewayAutoStart,
+    customGatewayUrl,
+    setCustomGatewayUrl,
     proxyEnabled,
     proxyServer,
     proxyHttpServer,
@@ -406,6 +408,21 @@ export function Settings() {
               checked={gatewayAutoStart}
               onCheckedChange={setGatewayAutoStart}
             />
+          </div>
+
+          <Separator />
+
+          <div className="space-y-2">
+            <Label htmlFor="custom-gateway-url">Custom Gateway URL (Optional)</Label>
+            <Input
+              id="custom-gateway-url"
+              value={customGatewayUrl}
+              onChange={(event) => setCustomGatewayUrl(event.target.value)}
+              placeholder="e.g. http://192.168.1.100:18789/?token=mytoken"
+            />
+            <p className="text-xs text-muted-foreground">
+              If provided, ClawX resolves to this remote host bypassing the local gateway. Include ?token= param if auth is required.
+            </p>
           </div>
 
           <Separator />

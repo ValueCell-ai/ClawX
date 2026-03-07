@@ -633,9 +633,21 @@ function registerGatewayHandlers(
     try {
       const status = gatewayManager.getStatus();
       const token = await getSetting('gatewayToken');
+      const customGatewayUrl = await getSetting('customGatewayUrl') as string | undefined;
       const port = status.port || 18789;
       // Pass token as query param - Control UI will store it in localStorage
-      const url = `http://127.0.0.1:${port}/?token=${encodeURIComponent(token)}`;
+      let url = `http://127.0.0.1:${port}/?token=${encodeURIComponent(token)}`;
+      if (customGatewayUrl && customGatewayUrl.trim() !== '') {
+        try {
+          const parsed = new URL(customGatewayUrl.trim());
+          if (!parsed.searchParams.has('token')) {
+            parsed.searchParams.append('token', token);
+          }
+          url = parsed.toString();
+        } catch (e) {
+          // ignore parsing error
+        }
+      }
       return { success: true, url, port, token };
     } catch (error) {
       return { success: false, error: String(error) };

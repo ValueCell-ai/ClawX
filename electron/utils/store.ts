@@ -29,6 +29,7 @@ export interface AppSettings {
   // Gateway
   gatewayAutoStart: boolean;
   gatewayPort: number;
+  customGatewayUrl: string;
   gatewayToken: string;
   proxyEnabled: boolean;
   proxyServer: string;
@@ -66,6 +67,7 @@ const defaults: AppSettings = {
   // Gateway
   gatewayAutoStart: true,
   gatewayPort: 18789,
+  customGatewayUrl: '',
   gatewayToken: generateToken(),
   proxyEnabled: false,
   proxyServer: '',
