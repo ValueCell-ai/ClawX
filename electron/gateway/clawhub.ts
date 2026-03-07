@@ -319,26 +319,52 @@ export class ClawHubService {
      * Open skill README/manual in default editor
      */
     async openSkillReadme(slug: string): Promise<boolean> {
-        const skillDir = path.join(this.workDir, 'skills', slug);
+        const homeDir = app.getPath('home');
 
-        // Try to find documentation file
-        const possibleFiles = ['SKILL.md', 'README.md', 'skill.md', 'readme.md'];
+        // Base directories where skills might be located
+        const baseDirs = [
+            path.join(this.workDir, 'skills'),
+            path.join(this.workDir, 'workspace', 'skills'),
+            path.join(homeDir, '.agents', 'skills'),
+            path.join(homeDir, '.agent', 'skills'),
+        ];
+
+        let foundDir = '';
         let targetFile = '';
+        const possibleFiles = ['SKILL.md', 'README.md', 'skill.md', 'readme.md'];
 
-        for (const file of possibleFiles) {
-            const filePath = path.join(skillDir, file);
-            if (fs.existsSync(filePath)) {
-                targetFile = filePath;
+        // Helper function to check for docs in a directory
+        const checkDirForDocs = (dir: string): boolean => {
+            if (fs.existsSync(dir)) {
+                foundDir = dir;
+                for (const file of possibleFiles) {
+                    const filePath = path.join(dir, file);
+                    if (fs.existsSync(filePath)) {
+                        targetFile = filePath;
+                        return true;
+                    }
+                }
+                // If it exists but has no recognized readme, still return it as foundDir
+                return true;
+            }
+            return false;
+        };
+
+        // 1. First try: Exact match of the slug as directory name
+        for (const baseDir of baseDirs) {
+            const exactDir = path.join(baseDir, slug);
+            if (checkDirForDocs(exactDir)) {
                 break;
             }
         }
 
+
         if (!targetFile) {
             // If no md file, just open the directory
-            if (fs.existsSync(skillDir)) {
-                targetFile = skillDir;
+            if (foundDir) {
+                targetFile = foundDir;
             } else {
-                throw new Error('Skill directory not found');
+                throw new Error(`Skill directory not found for slug: ${slug}`);
             }
         }
 
