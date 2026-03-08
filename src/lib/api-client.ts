@@ -1,3 +1,5 @@
+import { trackUiEvent } from './telemetry';
+
 export type AppErrorCode =
   | 'TIMEOUT'
   | 'RATE_LIMIT'
@@ -133,6 +135,7 @@ type GatewayWsTransportOptions = {
 
 let cachedGatewayPort: { port: number; expiresAt: number } | null = null;
 const transportBackoffUntil: Partial<Record<Exclude<TransportKind, 'ipc'>, number>> = {};
+const SLOW_REQUEST_THRESHOLD_MS = 800;
 
 async function resolveGatewayPort(): Promise<number> {
   const now = Date.now();
@@ -908,14 +911,25 @@ export async function invokeApi<T>(channel: string, ...args: unknown[]): Promise
     const startedAt = Date.now();
     try {
       const value = await invokeViaTransport<T>(kind, channel, args);
+      const durationMs = Date.now() - startedAt;
       logApiAttempt({
         requestId,
         channel,
         transport: kind,
         attempt,
-        durationMs: Date.now() - startedAt,
+        durationMs,
         ok: true,
       });
+      if (durationMs >= SLOW_REQUEST_THRESHOLD_MS || attempt > 1) {
+        trackUiEvent('api.request', {
+          requestId,
+          channel,
+          transport: kind,
+          attempt,
+          durationMs,
+          fallbackUsed: attempt > 1,
+        });
+      }
       return value;
     } catch (err) {
       const durationMs = Date.now() - startedAt;
@@ -928,9 +942,24 @@ export async function invokeApi<T>(channel: string, ...args: unknown[]): Promise
         ok: false,
         error: err,
       });
+      trackUiEvent('api.request_error', {
+        requestId,
+        channel,
+        transport: kind,
+        attempt,
+        durationMs,
+        message: err instanceof Error ? err.message : String(err),
+      });
 
       if (err instanceof TransportUnsupportedError) {
         markTransportFailure(kind);
+        trackUiEvent('api.transport_fallback', {
+          requestId,
+          channel,
+          from: kind,
+          reason: 'unsupported',
+          nextAttempt: attempt + 1,
+        });
         lastError = err;
         continue;
       }
@@ -938,6 +967,13 @@ export async function invokeApi<T>(channel: string, ...args: unknown[]): Promise
       // For non-IPC transports, fail open to the next transport.
       if (kind !== 'ipc') {
         markTransportFailure(kind);
+        trackUiEvent('api.transport_fallback', {
+          requestId,
+          channel,
+          from: kind,
+          reason: 'error',
+          nextAttempt: attempt + 1,
+        });
         continue;
       }
       throw normalizeError(err, {
@@ -949,6 +985,13 @@ export async function invokeApi<T>(channel: string, ...args: unknown[]): Promise
       });
     }
   }
+
+  trackUiEvent('api.request_failed', {
+    requestId,
+    channel,
+    attempts: order.length,
+    message: lastError instanceof Error ? lastError.message : String(lastError),
+  });
 
   throw normalizeError(lastError, {
     requestId,

@@ -28,7 +28,10 @@
         "back": "戻る",
         "next": "次へ",
         "skip": "スキップ",
-        "restart": "再起動"
+        "restart": "再起動",
+        "show": "表示",
+        "hide": "非表示",
+        "clear": "クリア"
     },
     "status": {
         "running": "実行中",

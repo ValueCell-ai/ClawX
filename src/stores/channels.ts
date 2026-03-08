@@ -5,6 +5,7 @@
 import { create } from 'zustand';
 import type { Channel, ChannelType } from '../types/channel';
 import { invokeIpc } from '@/lib/api-client';
+import { trackUiEvent, trackUiTiming } from '@/lib/telemetry';
 
 interface AddChannelParams {
   type: ChannelType;
@@ -14,11 +15,19 @@ interface AddChannelParams {
 
 interface ChannelsState {
   channels: Channel[];
+  configuredTypes: string[];
+  channelSnapshot: Channel[];
+  configuredTypesSnapshot: string[];
+  lastGatewayState: string | null;
+  showGatewayWarning: boolean;
   loading: boolean;
   error: string | null;
 
   // Actions
+  initRealtimeSync: () => () => void;
   fetchChannels: (options?: { probe?: boolean; silent?: boolean }) => Promise<void>;
+  fetchConfiguredTypes: () => Promise<void>;
+  syncGatewayViewState: (gatewayState: string) => void;
   addChannel: (params: AddChannelParams) => Promise<Channel>;
   deleteChannel: (channelId: string) => Promise<void>;
   connectChannel: (channelId: string) => Promise<void>;
@@ -29,12 +38,55 @@ interface ChannelsState {
   clearError: () => void;
 }
 
+let gatewayChannelStatusUnsubscribe: (() => void) | null = null;
+let gatewayChannelStatusListenerRefs = 0;
+let refreshDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+let warningTimer: ReturnType<typeof setTimeout> | null = null;
+
 export const useChannelsStore = create<ChannelsState>((set, get) => ({
   channels: [],
+  configuredTypes: [],
+  channelSnapshot: [],
+  configuredTypesSnapshot: [],
+  lastGatewayState: null,
+  showGatewayWarning: false,
   loading: false,
   error: null,
 
+  initRealtimeSync: () => {
+    gatewayChannelStatusListenerRefs += 1;
+    if (!gatewayChannelStatusUnsubscribe) {
+      const unsubscribe = window.electron.ipcRenderer.on('gateway:channel-status', () => {
+        trackUiEvent('channels.realtime_status_event');
+        if (refreshDebounceTimer) {
+          clearTimeout(refreshDebounceTimer);
+        }
+        refreshDebounceTimer = setTimeout(() => {
+          const state = get();
+          const refreshStartedAt = Date.now();
+          void state.fetchChannels({ probe: false, silent: true });
+          void state.fetchConfiguredTypes();
+          trackUiTiming('channels.realtime_refresh_enqueued', Date.now() - refreshStartedAt);
+        }, 300);
+      });
+      gatewayChannelStatusUnsubscribe = typeof unsubscribe === 'function' ? unsubscribe : null;
+    }
+
+    return () => {
+      gatewayChannelStatusListenerRefs = Math.max(0, gatewayChannelStatusListenerRefs - 1);
+      if (gatewayChannelStatusListenerRefs === 0) {
+        if (refreshDebounceTimer) {
+          clearTimeout(refreshDebounceTimer);
+          refreshDebounceTimer = null;
+        }
+        gatewayChannelStatusUnsubscribe?.();
+        gatewayChannelStatusUnsubscribe = null;
+      }
+    };
+  },
+
   fetchChannels: async (options) => {
+    const startedAt = Date.now();
     const probe = options?.probe ?? false;
     const silent = options?.silent ?? false;
     if (!silent) {
@@ -132,17 +184,94 @@ export const useChannelsStore = create<ChannelsState>((set, get) => ({
         }
 
         set((state) => ({ channels, loading: silent ? state.loading : false }));
+        trackUiTiming('channels.fetch', Date.now() - startedAt, {
+          source: 'gateway',
+          probe,
+          silent,
+          count: channels.length,
+        });
       } else {
         // Gateway not available - try to show channels from local config
         set((state) => ({ channels: [], loading: silent ? state.loading : false }));
+        trackUiTiming('channels.fetch', Date.now() - startedAt, {
+          source: 'gateway-unavailable',
+          probe,
+          silent,
+          count: 0,
+        });
       }
-    } catch {
+    } catch (error) {
       // Gateway not connected, show empty
       set((state) => ({ channels: [], loading: silent ? state.loading : false }));
+      trackUiTiming('channels.fetch_error', Date.now() - startedAt, {
+        probe,
+        silent,
+        message: error instanceof Error ? error.message : String(error),
+      });
+    }
+  },
+
+  fetchConfiguredTypes: async () => {
+    const startedAt = Date.now();
+    try {
+      const result = await invokeIpc('channel:listConfigured') as {
+        success: boolean;
+        channels?: string[];
+      };
+
+      if (result.success && Array.isArray(result.channels)) {
+        set({ configuredTypes: result.channels });
+        trackUiTiming('channels.fetch_configured_types', Date.now() - startedAt, {
+          count: result.channels.length,
+          source: 'ipc',
+        });
+      } else {
+        set({ configuredTypes: [] });
+        trackUiTiming('channels.fetch_configured_types', Date.now() - startedAt, {
+          count: 0,
+          source: 'ipc-empty',
+        });
+      }
+    } catch (error) {
+      set({ configuredTypes: [] });
+      trackUiTiming('channels.fetch_configured_types_error', Date.now() - startedAt, {
+        message: error instanceof Error ? error.message : String(error),
+      });
+    }
+  },
+
+  syncGatewayViewState: (gatewayState) => {
+    const previousState = get().lastGatewayState;
+    const justReconnected = gatewayState === 'running' && previousState !== 'running';
+
+    if (gatewayState === 'running') {
+      const { channels, configuredTypes } = get();
+      set({
+        channelSnapshot: channels,
+        configuredTypesSnapshot: configuredTypes,
+        lastGatewayState: gatewayState,
+      });
+    } else {
+      set({ lastGatewayState: gatewayState });
+    }
+
+    if (warningTimer) {
+      clearTimeout(warningTimer);
+      warningTimer = null;
+    }
+    const shouldWarn = gatewayState === 'stopped' || gatewayState === 'error';
+    warningTimer = setTimeout(() => {
+      set({ showGatewayWarning: shouldWarn });
+    }, shouldWarn ? 1800 : 0);
+
+    if (justReconnected) {
+      void get().fetchChannels({ probe: false, silent: true });
+      void get().fetchConfiguredTypes();
     }
   },
 
   addChannel: async (params) => {
+    const startedAt = Date.now();
     try {
       const result = await invokeIpc(
         'gateway:rpc',
@@ -154,6 +283,11 @@ export const useChannelsStore = create<ChannelsState>((set, get) => ({
         set((state) => ({
           channels: [...state.channels, result.result!],
         }));
+        trackUiTiming('channels.add', Date.now() - startedAt, {
+          type: params.type,
+          source: 'gateway',
+          success: true,
+        });
         return result.result;
       } else {
         // If gateway is not available, create a local channel for now
@@ -166,9 +300,14 @@ export const useChannelsStore = create<ChannelsState>((set, get) => ({
         set((state) => ({
           channels: [...state.channels, newChannel],
         }));
+        trackUiTiming('channels.add', Date.now() - startedAt, {
+          type: params.type,
+          source: 'local-fallback',
+          success: false,
+        });
         return newChannel;
       }
-    } catch {
+    } catch (error) {
       // Create local channel if gateway unavailable
       const newChannel: Channel = {
         id: `local-${Date.now()}`,
@@ -179,11 +318,17 @@ export const useChannelsStore = create<ChannelsState>((set, get) => ({
       set((state) => ({
         channels: [...state.channels, newChannel],
       }));
+      trackUiTiming('channels.add_error', Date.now() - startedAt, {
+        type: params.type,
+        source: 'local-fallback',
+        message: error instanceof Error ? error.message : String(error),
+      });
       return newChannel;
     }
   },
 
   deleteChannel: async (channelId) => {
+    const startedAt = Date.now();
     // Extract channel type from the channelId (format: "channelType-accountId")
     const channelType = channelId.split('-')[0];
 
@@ -209,9 +354,13 @@ export const useChannelsStore = create<ChannelsState>((set, get) => ({
     set((state) => ({
       channels: state.channels.filter((c) => c.id !== channelId),
     }));
+    trackUiTiming('channels.delete', Date.now() - startedAt, {
+      channelType,
+    });
   },
 
   connectChannel: async (channelId) => {
+    const startedAt = Date.now();
     const { updateChannel } = get();
     updateChannel(channelId, { status: 'connecting', error: undefined });
 
@@ -224,15 +373,29 @@ export const useChannelsStore = create<ChannelsState>((set, get) => ({
 
       if (result.success) {
         updateChannel(channelId, { status: 'connected' });
+        trackUiTiming('channels.connect', Date.now() - startedAt, {
+          channelId,
+          success: true,
+        });
       } else {
         updateChannel(channelId, { status: 'error', error: result.error });
+        trackUiTiming('channels.connect', Date.now() - startedAt, {
+          channelId,
+          success: false,
+          message: result.error || 'unknown',
+        });
       }
     } catch (error) {
       updateChannel(channelId, { status: 'error', error: String(error) });
+      trackUiTiming('channels.connect_error', Date.now() - startedAt, {
+        channelId,
+        message: error instanceof Error ? error.message : String(error),
+      });
     }
   },
 
   disconnectChannel: async (channelId) => {
+    const startedAt = Date.now();
     const { updateChannel } = get();
 
     try {
@@ -246,9 +409,13 @@ export const useChannelsStore = create<ChannelsState>((set, get) => ({
     }
 
     updateChannel(channelId, { status: 'disconnected', error: undefined });
+    trackUiTiming('channels.disconnect', Date.now() - startedAt, {
+      channelId,
+    });
   },
 
   requestQrCode: async (channelType) => {
+    const startedAt = Date.now();
     const result = await invokeIpc(
       'gateway:rpc',
       'channels.requestQr',
@@ -256,9 +423,18 @@ export const useChannelsStore = create<ChannelsState>((set, get) => ({
     ) as { success: boolean; result?: { qrCode: string; sessionId: string }; error?: string };
 
     if (result.success && result.result) {
+      trackUiTiming('channels.request_qr', Date.now() - startedAt, {
+        channelType,
+        success: true,
+      });
       return result.result;
     }
 
+    trackUiTiming('channels.request_qr', Date.now() - startedAt, {
+      channelType,
+      success: false,
+      message: result.error || 'unknown',
+    });
     throw new Error(result.error || 'Failed to request QR code');
   },
 

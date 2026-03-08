@@ -1,4 +1,5 @@
 import { invokeIpc } from '@/lib/api-client';
+import { trackUiEvent } from './telemetry';
 
 const HOST_API_PORT = 3210;
 const HOST_API_BASE = `http://127.0.0.1:${HOST_API_PORT}`;
@@ -48,6 +49,7 @@ async function parseResponse<T>(response: Response): Promise<T> {
 }
 
 export async function hostApiFetch<T>(path: string, init?: RequestInit): Promise<T> {
+  const startedAt = Date.now();
   // In Electron renderer, always proxy through main process to avoid CORS.
   try {
     const response = await invokeIpc<HostApiProxyResponse>('hostapi:fetch', {
@@ -67,6 +69,13 @@ export async function hostApiFetch<T>(path: string, init?: RequestInit): Promise
         );
       }
       const data = response.data ?? {};
+      trackUiEvent('hostapi.fetch', {
+        path,
+        method: init?.method || 'GET',
+        source: 'ipc-proxy',
+        durationMs: Date.now() - startedAt,
+        status: data.status ?? 200,
+      });
       if (data.status === 204) return undefined as T;
       if (data.json !== undefined) return data.json as T;
       return data.text as T;
@@ -88,6 +97,13 @@ export async function hostApiFetch<T>(path: string, init?: RequestInit): Promise
           : `HTTP ${response.status ?? 'unknown'}`);
       throw new Error(message);
     }
+    trackUiEvent('hostapi.fetch', {
+      path,
+      method: init?.method || 'GET',
+      source: 'ipc-proxy-legacy',
+      durationMs: Date.now() - startedAt,
+      status: response.status ?? 200,
+    });
 
     if (response.status === 204) {
       return undefined as T;
@@ -100,6 +116,13 @@ export async function hostApiFetch<T>(path: string, init?: RequestInit): Promise
     return response.text as T;
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
+    trackUiEvent('hostapi.fetch_error', {
+      path,
+      method: init?.method || 'GET',
+      source: 'ipc-proxy',
+      durationMs: Date.now() - startedAt,
+      message,
+    });
     if (
       !message.includes('Invalid IPC channel: hostapi:fetch')
       && !message.includes('window is not defined')
@@ -115,6 +138,13 @@ export async function hostApiFetch<T>(path: string, init?: RequestInit): Promise
       'Content-Type': 'application/json',
       ...(init?.headers || {}),
     },
+  });
+  trackUiEvent('hostapi.fetch', {
+    path,
+    method: init?.method || 'GET',
+    source: 'browser-fallback',
+    durationMs: Date.now() - startedAt,
+    status: response.status,
   });
   return parseResponse<T>(response);
 }

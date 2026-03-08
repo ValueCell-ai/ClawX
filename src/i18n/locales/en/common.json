@@ -28,7 +28,10 @@
         "back": "Back",
         "next": "Next",
         "skip": "Skip",
-        "restart": "Restart"
+        "restart": "Restart",
+        "show": "Show",
+        "hide": "Hide",
+        "clear": "Clear"
     },
     "status": {
         "running": "Running",

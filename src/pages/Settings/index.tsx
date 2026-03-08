@@ -2,7 +2,7 @@
  * Settings Page
  * Application configuration
  */
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   Sun,
   Moon,
@@ -31,7 +31,13 @@ import { useUpdateStore } from '@/stores/update';
 import { ProvidersSettings } from '@/components/settings/ProvidersSettings';
 import { UpdateSettings } from '@/components/settings/UpdateSettings';
 import { invokeIpc, toUserMessage } from '@/lib/api-client';
-import { trackUiEvent } from '@/lib/telemetry';
+import {
+  clearUiTelemetry,
+  getUiTelemetrySnapshot,
+  subscribeUiTelemetry,
+  trackUiEvent,
+  type UiTelemetryEntry,
+} from '@/lib/telemetry';
 import { useTranslation } from 'react-i18next';
 import { SUPPORTED_LANGUAGES } from '@/i18n';
 type ControlUiInfo = {
@@ -83,6 +89,8 @@ export function Settings() {
   const [proxyEnabledDraft, setProxyEnabledDraft] = useState(false);
   const [showAdvancedProxy, setShowAdvancedProxy] = useState(false);
   const [savingProxy, setSavingProxy] = useState(false);
+  const [showTelemetryViewer, setShowTelemetryViewer] = useState(false);
+  const [telemetryEntries, setTelemetryEntries] = useState<UiTelemetryEntry[]>([]);
 
   const isWindows = window.electron.platform === 'win32';
   const showCliTools = true;
@@ -210,6 +218,21 @@ export function Settings() {
   }, []);
 
   useEffect(() => {
+    if (!devModeUnlocked) return;
+    setTelemetryEntries(getUiTelemetrySnapshot(200));
+    const unsubscribe = subscribeUiTelemetry((entry) => {
+      setTelemetryEntries((prev) => {
+        const next = [...prev, entry];
+        if (next.length > 200) {
+          next.splice(0, next.length - 200);
+        }
+        return next;
+      });
+    });
+    return unsubscribe;
+  }, [devModeUnlocked]);
+
+  useEffect(() => {
     setProxyEnabledDraft(proxyEnabled);
   }, [proxyEnabled]);
 
@@ -264,6 +287,87 @@ export function Settings() {
     } finally {
       setSavingProxy(false);
     }
+  };
+
+  const telemetryStats = useMemo(() => {
+    let errorCount = 0;
+    let slowCount = 0;
+    for (const entry of telemetryEntries) {
+      if (entry.event.endsWith('_error') || entry.event.includes('request_error')) {
+        errorCount += 1;
+      }
+      const durationMs = typeof entry.payload.durationMs === 'number'
+        ? entry.payload.durationMs
+        : Number.NaN;
+      if (Number.isFinite(durationMs) && durationMs >= 800) {
+        slowCount += 1;
+      }
+    }
+    return { total: telemetryEntries.length, errorCount, slowCount };
+  }, [telemetryEntries]);
+
+  const telemetryByEvent = useMemo(() => {
+    const map = new Map<string, {
+      event: string;
+      count: number;
+      errorCount: number;
+      slowCount: number;
+      totalDuration: number;
+      timedCount: number;
+      lastTs: string;
+    }>();
+
+    for (const entry of telemetryEntries) {
+      const current = map.get(entry.event) ?? {
+        event: entry.event,
+        count: 0,
+        errorCount: 0,
+        slowCount: 0,
+        totalDuration: 0,
+        timedCount: 0,
+        lastTs: entry.ts,
+      };
+
+      current.count += 1;
+      current.lastTs = entry.ts;
+
+      if (entry.event.endsWith('_error') || entry.event.includes('request_error')) {
+        current.errorCount += 1;
+      }
+
+      const durationMs = typeof entry.payload.durationMs === 'number'
+        ? entry.payload.durationMs
+        : Number.NaN;
+      if (Number.isFinite(durationMs)) {
+        current.totalDuration += durationMs;
+        current.timedCount += 1;
+        if (durationMs >= 800) {
+          current.slowCount += 1;
+        }
+      }
+
+      map.set(entry.event, current);
+    }
+
+    return [...map.values()]
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 12);
+  }, [telemetryEntries]);
+
+  const handleCopyTelemetry = async () => {
+    try {
+      const serialized = telemetryEntries.map((entry) => JSON.stringify(entry)).join('\n');
+      await navigator.clipboard.writeText(serialized);
+      toast.success(t('developer.telemetryCopied'));
+    } catch (error) {
+      toast.error(`${t('common:status.error')}: ${String(error)}`);
+    }
+  };
+
+  const handleClearTelemetry = () => {
+    clearUiTelemetry();
+    setTelemetryEntries([]);
+    toast.success(t('developer.telemetryCleared'));
   };
 
   return (
@@ -532,7 +636,7 @@ export function Settings() {
             </div>
           ) : (
             <div className="rounded-md border border-border/60 bg-muted/30 p-4 text-sm text-muted-foreground">
-              {t('advanced.devModeDesc', 'Enable Developer Mode to manage advanced proxy settings.')}
+              {t('advanced.devModeDesc')}
             </div>
           )}
         </CardContent>
@@ -692,6 +796,97 @@ export function Settings() {
                 </div>
               </>
             )}
+
+            <Separator />
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <div>
+                  <Label>{t('developer.telemetryViewer')}</Label>
+                  <p className="text-sm text-muted-foreground">
+                    {t('developer.telemetryViewerDesc')}
+                  </p>
+                </div>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setShowTelemetryViewer((prev) => !prev)}
+                >
+                  {showTelemetryViewer
+                    ? t('common:actions.hide')
+                    : t('common:actions.show')}
+                </Button>
+              </div>
+
+              {showTelemetryViewer && (
+                <div className="space-y-3 rounded-lg border border-border/60 p-3">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Badge variant="secondary">{t('developer.telemetryTotal')}: {telemetryStats.total}</Badge>
+                    <Badge variant={telemetryStats.errorCount > 0 ? 'destructive' : 'secondary'}>
+                      {t('developer.telemetryErrors')}: {telemetryStats.errorCount}
+                    </Badge>
+                    <Badge variant={telemetryStats.slowCount > 0 ? 'secondary' : 'outline'}>
+                      {t('developer.telemetrySlow')}: {telemetryStats.slowCount}
+                    </Badge>
+                    <div className="ml-auto flex gap-2">
+                      <Button type="button" variant="outline" size="sm" onClick={handleCopyTelemetry}>
+                        <Copy className="h-4 w-4 mr-2" />
+                        {t('common:actions.copy')}
+                      </Button>
+                      <Button type="button" variant="outline" size="sm" onClick={handleClearTelemetry}>
+                        {t('common:actions.clear')}
+                      </Button>
+                    </div>
+                  </div>
+
+                  <div className="max-h-72 overflow-auto rounded-md border border-border/50 bg-muted/20">
+                    {telemetryByEvent.length > 0 && (
+                      <div className="border-b border-border/50 bg-background/70 p-2">
+                        <p className="mb-2 text-[11px] font-semibold text-muted-foreground">
+                          {t('developer.telemetryAggregated')}
+                        </p>
+                        <div className="space-y-1 text-[11px]">
+                          {telemetryByEvent.map((item) => (
+                            <div
+                              key={item.event}
+                              className="grid grid-cols-[minmax(0,1.6fr)_0.7fr_0.9fr_0.8fr_1fr] gap-2 rounded border border-border/40 px-2 py-1"
+                            >
+                              <span className="truncate font-medium" title={item.event}>{item.event}</span>
+                              <span className="text-muted-foreground">n={item.count}</span>
+                              <span className="text-muted-foreground">
+                                avg={item.timedCount > 0 ? Math.round(item.totalDuration / item.timedCount) : 0}ms
+                              </span>
+                              <span className="text-muted-foreground">slow={item.slowCount}</span>
+                              <span className="text-muted-foreground">err={item.errorCount}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                    <div className="space-y-1 p-2 font-mono text-xs">
+                      {telemetryEntries.length === 0 ? (
+                        <div className="text-muted-foreground">{t('developer.telemetryEmpty')}</div>
+                      ) : (
+                        telemetryEntries
+                          .slice()
+                          .reverse()
+                          .map((entry) => (
+                            <div key={entry.id} className="rounded border border-border/40 bg-background/60 p-2">
+                              <div className="flex items-center justify-between gap-3">
+                                <span className="font-semibold">{entry.event}</span>
+                                <span className="text-muted-foreground">{entry.ts}</span>
+                              </div>
+                              <pre className="mt-1 whitespace-pre-wrap text-[11px] text-muted-foreground">
+                                {JSON.stringify({ count: entry.count, ...entry.payload }, null, 2)}
+                              </pre>
+                            </div>
+                          ))
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
           </CardContent>
         </Card>
       )}
