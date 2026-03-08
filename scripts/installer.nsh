@@ -82,10 +82,9 @@
   ; Add resources\cli to the current user's PATH for openclaw CLI.
   ; Read current PATH, skip if already present, append otherwise.
   ;
-  ; ReadRegStr silently returns "" when the value exceeds the NSIS string
-  ; buffer (8192 chars for the electron-builder large-strings build).
-  ; Without an error-flag check we would overwrite the entire user PATH with
-  ; only our CLI directory, destroying every other PATH entry.
+  ; IMPORTANT: ReadRegStr returns "" if the registry value is empty (not an error).
+  ; If user PATH was cleared by a previous uninstall, we must preserve system PATH
+  ; by reading HKLM\System PATH and merging it. Otherwise we destroy the user's PATH.
   ClearErrors
   ReadRegStr $0 HKCU "Environment" "Path"
   IfErrors _ci_readFailed
@@ -104,6 +103,16 @@
   Goto _ci_write
 
   _ci_setNew:
+    ; User PATH is empty (possibly cleared by previous uninstall).
+    ; Preserve system PATH to avoid breaking the user's environment.
+    ; Read system PATH from HKLM and merge with our CLI directory.
+    ReadRegStr $1 HKLM "SYSTEM\CurrentControlSet\Control\Session Manager\Environment" "Path"
+    IfErrors _ci_noSystemPath
+    StrCpy $0 "$1;$INSTDIR\resources\cli"
+    Goto _ci_write
+
+  _ci_noSystemPath:
+    ; No system PATH found (unlikely), just set our CLI directory
     StrCpy $0 "$INSTDIR\resources\cli"
 
   _ci_write:
@@ -170,13 +179,10 @@ FunctionEnd
   Call un._cu_RemoveFromPath
   Pop $0
 
-  ; If PATH is now empty, delete the registry value instead of writing ""
-  StrCmp $0 "" _cu_deletePath
+  ; Write the modified PATH back (even if empty)
+  ; We preserve the user PATH registry entry to avoid breaking system environment
+  ; Windows will merge this with system PATH when processes start
   WriteRegExpandStr HKCU "Environment" "Path" $0
-  Goto _cu_pathBroadcast
-
-  _cu_deletePath:
-    DeleteRegValue HKCU "Environment" "Path"
 
   _cu_pathBroadcast:
     SendMessage ${HWND_BROADCAST} ${WM_SETTINGCHANGE} 0 "STR:Environment" /TIMEOUT=500

@@ -6,6 +6,7 @@ import { app, utilityProcess } from 'electron';
 import path from 'path';
 import { EventEmitter } from 'events';
 import { existsSync, writeFileSync } from 'fs';
+import { promises as fs } from 'fs';
 import WebSocket from 'ws';
 import { PORTS } from '../utils/config';
 import {
@@ -239,6 +240,122 @@ export class GatewayManager extends EventEmitter {
       logger.debug(`Device identity loaded (deviceId=${this.deviceIdentity.deviceId})`);
     } catch (err) {
       logger.warn('Failed to load device identity, scopes will be limited:', err);
+    }
+  }
+
+  /**
+   * Get the PID file path for the current user's Gateway process.
+   * Each user has their own PID file in their config directory.
+   */
+  private getPIdFilePath(): string {
+    return path.join(app.getPath('userData'), 'gateway.pid');
+  }
+
+  /**
+   * Get the process title for the current user's Gateway process.
+   * Used for Windows task manager identification.
+   */
+  private getProcessTitle(): string {
+    const userId = process.env.USERNAME || process.env.USER || 'default';
+    return `ClawX-Gateway-${userId}`;
+  }
+
+  /**
+   * Write the Gateway process PID to the PID file.
+   * This is called immediately after the Gateway process spawns successfully.
+   */
+  private async writePidFile(pid: number): Promise<void> {
+    try {
+      const pidFile = this.getPIdFilePath();
+      await fs.writeFile(pidFile, String(pid), 'utf-8');
+      logger.debug(`Gateway PID ${pid} written to ${pidFile}`);
+    } catch (err) {
+      logger.warn('Failed to write PID file:', err);
+    }
+  }
+
+  /**
+   * Read the current user's PID file to get the last known Gateway PID.
+   * Returns null if the file doesn't exist or contains invalid data.
+   */
+  private async readPidFile(): Promise<number | null> {
+    try {
+      const pidFile = this.getPIdFilePath();
+      const content = await fs.readFile(pidFile, 'utf-8');
+      const pid = parseInt(content.trim(), 10);
+      if (isNaN(pid)) {
+        logger.warn(`PID file contains invalid data: ${content}`);
+        return null;
+      }
+      return pid;
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code !== 'ENOENT') {
+        logger.warn('Failed to read PID file:', err);
+      }
+      return null;
+    }
+  }
+
+  /**
+   * Clear the PID file (remove it).
+   * Called when Gateway stops or before starting a new Gateway.
+   */
+  private async clearPidFile(): Promise<void> {
+    try {
+      const pidFile = this.getPIdFilePath();
+      await fs.unlink(pidFile);
+      logger.debug(`PID file cleared: ${pidFile}`);
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code !== 'ENOENT') {
+        logger.warn('Failed to clear PID file:', err);
+      }
+      // Ignore if file doesn't exist (idempotent operation)
+    }
+  }
+
+  /**
+   * Check if a process with the given PID is still alive.
+   * Uses process.kill(pid, 0) which doesn't actually send a signal,
+   * just checks if the process exists.
+   */
+  private isProcessAlive(pid: number): boolean {
+    try {
+      process.kill(pid, 0);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * Check if a process listening on the given port is likely an orphaned process
+   * (i.e., the process is no longer responding to WebSocket connections).
+   * This is used when we don't have a PID file and need to determine if it's safe
+   * to kill the process on the port.
+   */
+  private async isLikelyOrphanedProcess(port: number): Promise<boolean> {
+    try {
+      const connected = await new Promise<boolean>((resolve) => {
+        const testWs = new WebSocket(`ws://localhost:${port}/ws`);
+        const timeout = setTimeout(() => {
+          testWs.close();
+          resolve(false); // Timeout means likely orphaned
+        }, 500); // Short timeout - if it doesn't respond quickly, it's probably dead
+
+        testWs.on('open', () => {
+          clearTimeout(timeout);
+          testWs.close();
+          resolve(true); // Connected successfully - process is alive and responding
+        });
+
+        testWs.on('error', () => {
+          clearTimeout(timeout);
+          resolve(false); // Connection error - likely orphaned
+        });
+      });
+      return !connected; // Invert: if connected, it's NOT orphaned
+    } catch {
+      return true; // Error checking - assume it's orphaned
     }
   }
 
@@ -558,6 +675,8 @@ export class GatewayManager extends EventEmitter {
       await new Promise<void>((resolve) => {
         child.once('exit', () => {
           exited = true;
+          // Clear PID file when Gateway exits
+          this.clearPidFile().catch(err => logger.warn('Failed to clear PID file:', err));
           resolve();
         });
 
@@ -815,10 +934,13 @@ export class GatewayManager extends EventEmitter {
 
   /**
    * Find existing Gateway process by attempting a WebSocket connection
+   * Enhanced with user-level PID file tracking to support multi-user isolation.
    */
   private async findExistingGateway(): Promise<{ port: number, externalToken?: string } | null> {
     try {
-      const port = PORTS.OPENCLAW_GATEWAY;
+      // Use the configured port (this.status.port) instead of the default port.
+      // This allows users to run multiple Gateway instances on different ports.
+      const port = this.status.port;
 
       try {
         // Platform-specific command to find processes listening on the gateway port.
@@ -858,48 +980,116 @@ export class GatewayManager extends EventEmitter {
           pids = [...new Set(pids)];
 
           if (pids.length > 0) {
+            // Read the current user's PID file to check process ownership
+            const myPid = await this.readPidFile();
+
+            // Check if any of the PIDs belong to the current user (via PID file)
+            const isMyProcess = myPid !== null && pids.includes(String(myPid));
+
+            if (isMyProcess && this.isProcessAlive(myPid)) {
+              // The process on the port belongs to the current user
+              logger.info(`Found current user's Gateway process (PID=${myPid}) on port ${port}`);
+              return { port };
+            }
+
+            // Process exists on port but doesn't belong to current user
             if (!this.process || !pids.includes(String(this.process.pid))) {
-              logger.info(`Found orphaned process listening on port ${port} (PIDs: ${pids.join(', ')}), attempting to kill...`);
+              // If we don't have a PID file, we cannot safely determine ownership
+              // DO NOT kill the process - it might belong to the current user from a previous session
+              if (myPid === null) {
+                // No PID file exists. This could be:
+                // 1. First-time start (port occupied by another user) → should error
+                // 2. Restart after crash (port in TIME_WAIT state) → should kill and continue
+                // 3. Another user's Gateway → should error
+                //
+                // We check if the process on the port is likely our own orphaned process
+                // by testing if it responds to WebSocket connections. If not, it's safe to kill.
+                const isLikelyOrphan = await this.isLikelyOrphanedProcess(port);
 
-              // Unload the launchctl service first so macOS doesn't auto-
-              // respawn the process we're about to kill.
-              if (process.platform === 'darwin') {
-                await this.unloadLaunchctlService();
-              }
-
-              // Terminate orphaned processes
-              for (const pid of pids) {
-                try {
-                  if (process.platform === 'win32') {
-                    // Use taskkill with windowsHide: true. This natively hides the console
-                    // flash without needing PowerShell, avoiding AV alerts.
-                    import('child_process').then(cp => {
-                      cp.exec(
-                        `taskkill /F /PID ${pid} /T`,
-                        { timeout: 5000, windowsHide: true },
-                        () => { }
-                      );
-                    }).catch(() => { });
-                  } else {
-                    // SIGTERM first so the gateway can clean up its lock file.
-                    process.kill(parseInt(pid), 'SIGTERM');
+                if (isLikelyOrphan) {
+                  logger.info(`Port ${port} has no PID file but the process appears to be orphaned (not responding). Cleaning up...`);
+                  // Kill the orphaned process and continue with start
+                  for (const pid of pids) {
+                    try {
+                      if (process.platform === 'win32') {
+                        import('child_process').then(cp => {
+                          cp.exec(
+                            `taskkill /F /PID ${pid} /T`,
+                            { timeout: 5000, windowsHide: true },
+                            () => { }
+                          );
+                        }).catch(() => { });
+                      } else {
+                        process.kill(parseInt(pid), 'SIGTERM');
+                      }
+                    } catch { /* ignore */ }
                   }
-                } catch { /* ignore */ }
-              }
-              await new Promise(r => setTimeout(r, process.platform === 'win32' ? 2000 : 3000));
-
-              // SIGKILL any survivors (Unix only — Windows taskkill /F is already forceful)
-              if (process.platform !== 'win32') {
-                for (const pid of pids) {
-                  try { process.kill(parseInt(pid), 0); process.kill(parseInt(pid), 'SIGKILL'); } catch { /* already exited */ }
+                  await new Promise(r => setTimeout(r, process.platform === 'win32' ? 2000 : 3000));
+                  return null;
+                } else {
+                  // Process is responding and we don't have a PID file.
+                  // This is likely another user's Gateway - should error.
+                  logger.warn(`Port ${port} is in use by an active Gateway but no PID file found. This may be another user's Gateway. Please stop the existing Gateway first or use a different port.`);
+                  throw new Error(`端口 ${port} 已被占用，无法确认进程归属。请先停止现有 Gateway 或修改端口设置。`);
                 }
-                await new Promise(r => setTimeout(r, 1000));
               }
-              return null;
+
+              // We have a PID file but the process on the port doesn't match
+              // This could be an orphaned process from another user or a stale PID
+              if (!this.isProcessAlive(myPid)) {
+                // Our recorded PID is dead, the process on the port is likely orphaned
+                logger.info(`Found orphaned process listening on port ${port} (PIDs: ${pids.join(', ')}), attempting to kill...`);
+
+                // Unload the launchctl service first so macOS doesn't auto-
+                // respawn the process we're about to kill.
+                if (process.platform === 'darwin') {
+                  await this.unloadLaunchctlService();
+                }
+
+                // Terminate orphaned processes
+                for (const pid of pids) {
+                  try {
+                    if (process.platform === 'win32') {
+                      // Use taskkill with windowsHide: true. This natively hides the console
+                      // flash without needing PowerShell, avoiding AV alerts.
+                      import('child_process').then(cp => {
+                        cp.exec(
+                          `taskkill /F /PID ${pid} /T`,
+                          { timeout: 5000, windowsHide: true },
+                          () => { }
+                        );
+                      }).catch(() => { });
+                    } else {
+                      // SIGTERM first so the gateway can clean up its lock file.
+                      process.kill(parseInt(pid), 'SIGTERM');
+                    }
+                  } catch { /* ignore */ }
+                }
+                await new Promise(r => setTimeout(r, process.platform === 'win32' ? 2000 : 3000));
+
+                // SIGKILL any survivors (Unix only — Windows taskkill /F is already forceful)
+                if (process.platform !== 'win32') {
+                  for (const pid of pids) {
+                    try { process.kill(parseInt(pid), 0); process.kill(parseInt(pid), 'SIGKILL'); } catch { /* already exited */ }
+                  }
+                  await new Promise(r => setTimeout(r, 1000));
+                }
+                return null;
+              } else {
+                // Port is occupied by another user's Gateway process
+                const errorMsg = `端口 ${port} 已被其他用户的Gateway占用，请修改端口设置`;
+                logger.warn(errorMsg);
+                throw new Error(errorMsg);
+              }
             }
           }
         }
       } catch (err) {
+        const errorMessage = (err as Error).message;
+        // If it's our custom error about port being in use by another user, re-throw it
+        if (errorMessage.includes('已被其他用户的Gateway占用')) {
+          throw err;
+        }
         logger.warn('Error checking for existing process on port:', err);
       }
 
@@ -1070,6 +1260,10 @@ export class GatewayManager extends EventEmitter {
   }
 
   private async startProcess(): Promise<void> {
+    // DO NOT clear PID file here - it should only be cleared when the process actually exits.
+    // The PID file is used by findExistingGateway() to determine process ownership
+    // and prevent one user from killing another user's Gateway process.
+
     // Ensure no system-managed gateway service will compete with our process.
     await this.unloadLaunchctlService();
 
@@ -1202,6 +1396,8 @@ export class GatewayManager extends EventEmitter {
         CLAWDBOT_SKIP_CHANNELS: '',
         // Prevent OpenClaw from respawning itself inside the utility process
         OPENCLAW_NO_RESPAWN: '1',
+        // Pass process title for Windows task manager identification
+        CLAWX_PROCESS_TITLE: this.getProcessTitle(),
       };
 
       // Inject fetch preload so OpenRouter requests carry ClawX headers.
@@ -1280,6 +1476,10 @@ export class GatewayManager extends EventEmitter {
       child.on('spawn', () => {
         logger.info(`Gateway process started (pid=${child.pid})`);
         this.setStatus({ pid: child.pid });
+        // Write PID file after spawn event ensures child.pid is available
+        if (child.pid) {
+          this.writePidFile(child.pid).catch(err => logger.warn('Failed to write PID file:', err));
+        }
       });
 
       resolve();
