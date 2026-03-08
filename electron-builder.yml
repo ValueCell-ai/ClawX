@@ -157,29 +157,29 @@ linux:
   maintainer: ClawX Team <public@valuecell.ai>
   vendor: ClawX
   synopsis: AI Assistant powered by OpenClaw
-  description: |
-    ClawX is a graphical AI assistant application that integrates with
-    OpenClaw Gateway to provide intelligent automation and assistance
-    across multiple messaging platforms.
+  description: ClawX is a graphical AI assistant application that integrates with OpenClaw Gateway to provide intelligent automation and assistance across multiple messaging platforms.
   desktop:
     entry:
       Name: ClawX
       Comment: AI Assistant powered by OpenClaw
       Categories: Utility;Network;
       Keywords: ai;assistant;automation;chat;
+      StartupWMClass: clawx
 
 appImage:
   license: LICENSE
 
 deb:
   depends:
-    - libgtk-3-0
-    - libnotify4
+    # Use OR syntax to support both Ubuntu 22.04 and Ubuntu 24.04 (t64 transition).
+    # Ubuntu 24.04 renamed many libraries with a t64 suffix (64-bit time_t ABI transition).
+    - libgtk-3-0 | libgtk-3-0t64
+    - libnotify4 | libnotify4t64
     - libnss3
-    - libxss1
-    - libxtst6
+    - libxss1 | libxss1t64
+    - libxtst6 | libxtst6t64
     - xdg-utils
-    - libatspi2.0-0
+    - libatspi2.0-0 | libatspi2.0-0t64
     - libuuid1
   afterInstall: scripts/linux/after-install.sh
   afterRemove: scripts/linux/after-remove.sh

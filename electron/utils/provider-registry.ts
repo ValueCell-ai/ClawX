@@ -154,6 +154,13 @@ export function getProviderEnvVar(type: string): string | undefined {
   return REGISTRY[type]?.envVar;
 }
 
+/** Get all environment variable names for a provider type (primary first). */
+export function getProviderEnvVars(type: string): string[] {
+  const meta = REGISTRY[type];
+  if (!meta?.envVar) return [];
+  return [meta.envVar];
+}
+
 /** Get the default model string for a provider type */
 export function getProviderDefaultModel(type: string): string | undefined {
   return REGISTRY[type]?.defaultModel;

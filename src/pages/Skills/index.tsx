@@ -38,6 +38,8 @@ import { useSkillsStore } from '@/stores/skills';
 import { useGatewayStore } from '@/stores/gateway';
 import { LoadingSpinner } from '@/components/common/LoadingSpinner';
 import { cn } from '@/lib/utils';
+import { invokeIpc } from '@/lib/api-client';
+import { trackUiEvent } from '@/lib/telemetry';
 import { toast } from 'sonner';
 import type { Skill, MarketplaceSkill } from '@/types/skill';
 import { useTranslation } from 'react-i18next';
@@ -84,14 +86,14 @@ function SkillDetailDialog({ skill, onClose, onToggle }: SkillDetailDialogProps)
 
   const handleOpenClawhub = async () => {
     if (skill.slug) {
-      await window.electron.ipcRenderer.invoke('shell:openExternal', `https://clawhub.ai/s/${skill.slug}`);
+      await invokeIpc('shell:openExternal', `https://clawhub.ai/s/${skill.slug}`);
     }
   };
 
   const handleOpenEditor = async () => {
     if (skill.slug) {
       try {
-        const result = await window.electron.ipcRenderer.invoke('clawhub:openSkillReadme', skill.slug) as { success: boolean; error?: string };
+        const result = await invokeIpc<{ success: boolean; error?: string }>('clawhub:openSkillReadme', skill.slug);
         if (result.success) {
           toast.success(t('toast.openedEditor'));
         } else {
@@ -134,7 +136,7 @@ function SkillDetailDialog({ skill, onClose, onToggle }: SkillDetailDialogProps)
       }, {} as Record<string, string>);
 
       // Use direct file access instead of Gateway RPC for reliability
-      const result = await window.electron.ipcRenderer.invoke(
+      const result = await invokeIpc<{ success: boolean; error?: string }>(
         'skill:updateConfig',
         {
           skillKey: skill.id,
@@ -381,7 +383,7 @@ function MarketplaceSkillCard({
   onUninstall
 }: MarketplaceSkillCardProps) {
   const handleCardClick = () => {
-    window.electron.ipcRenderer.invoke('shell:openExternal', `https://clawhub.ai/s/${skill.slug}`);
+    void invokeIpc('shell:openExternal', `https://clawhub.ai/s/${skill.slug}`);
   };
 
   return (
@@ -600,6 +602,35 @@ export function Skills() {
     marketplace: skills.filter(s => !s.isBundled).length,
   };
 
+  const bulkToggleVisible = useCallback(async (enable: boolean) => {
+    const candidates = filteredSkills.filter((skill) => !skill.isCore && skill.enabled !== enable);
+    if (candidates.length === 0) {
+      toast.info(enable ? t('toast.noBatchEnableTargets') : t('toast.noBatchDisableTargets'));
+      return;
+    }
+
+    let succeeded = 0;
+    for (const skill of candidates) {
+      try {
+        if (enable) {
+          await enableSkill(skill.id);
+        } else {
+          await disableSkill(skill.id);
+        }
+        succeeded += 1;
+      } catch {
+        // Continue to next skill and report final summary.
+      }
+    }
+
+    trackUiEvent('skills.batch_toggle', { enable, total: candidates.length, succeeded });
+    if (succeeded === candidates.length) {
+      toast.success(enable ? t('toast.batchEnabled', { count: succeeded }) : t('toast.batchDisabled', { count: succeeded }));
+      return;
+    }
+    toast.warning(t('toast.batchPartial', { success: succeeded, total: candidates.length }));
+  }, [disableSkill, enableSkill, filteredSkills, t]);
+
   // Handle toggle
   const handleToggle = useCallback(async (skillId: string, enable: boolean) => {
     try {
@@ -619,11 +650,11 @@ export function Skills() {
 
   const handleOpenSkillsFolder = useCallback(async () => {
     try {
-      const skillsDir = await window.electron.ipcRenderer.invoke('openclaw:getSkillsDir') as string;
+      const skillsDir = await invokeIpc<string>('openclaw:getSkillsDir');
       if (!skillsDir) {
         throw new Error('Skills directory not available');
       }
-      const result = await window.electron.ipcRenderer.invoke('shell:openPath', skillsDir) as string;
+      const result = await invokeIpc<string>('shell:openPath', skillsDir);
       if (result) {
         // shell.openPath returns an error string if the path doesn't exist
         if (result.toLowerCase().includes('no such file') || result.toLowerCase().includes('not found') || result.toLowerCase().includes('failed to open')) {
@@ -640,7 +671,7 @@ export function Skills() {
   const [skillsDirPath, setSkillsDirPath] = useState('~/.openclaw/skills');
 
   useEffect(() => {
-    window.electron.ipcRenderer.invoke('openclaw:getSkillsDir')
+    invokeIpc<string>('openclaw:getSkillsDir')
       .then((dir) => setSkillsDirPath(dir as string))
       .catch(console.error);
   }, []);
@@ -803,6 +834,20 @@ export function Skills() {
               >
                 <Globe className="h-3 w-3" />
                 {t('filter.marketplace', { count: sourceStats.marketplace })}
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => { void bulkToggleVisible(true); }}
+              >
+                {t('actions.enableVisible')}
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => { void bulkToggleVisible(false); }}
+              >
+                {t('actions.disableVisible')}
               </Button>
             </div>
           </div>

@@ -16,6 +16,10 @@
     "search": "Search skills...",
     "searchMarketplace": "Search marketplace...",
     "searchButton": "Search",
+    "actions": {
+        "enableVisible": "Enable Visible",
+        "disableVisible": "Disable Visible"
+    },
     "noSkills": "No skills found",
     "noSkillsSearch": "Try a different search term",
     "noSkillsAvailable": "No skills available",
@@ -63,7 +67,12 @@
         "searchRateLimitError": "Search rate limit exceeded. You can also search on ClawHub.ai, download the ZIP, and extract it to \"{{path}}\"",
         "installRateLimitError": "Installation rate limit exceeded. You can also download the ZIP from ClawHub.ai and extract it to \"{{path}}\"",
         "fetchTimeoutError": "Fetching skills timed out, please check your network connection.",
-        "fetchRateLimitError": "Fetching skills rate limit exceeded, please try again later."
+        "fetchRateLimitError": "Fetching skills rate limit exceeded, please try again later.",
+        "noBatchEnableTargets": "All visible skills are already enabled.",
+        "noBatchDisableTargets": "All visible skills are already disabled.",
+        "batchEnabled": "{{count}} skills enabled.",
+        "batchDisabled": "{{count}} skills disabled.",
+        "batchPartial": "Updated {{success}} / {{total}} skills. Some items failed."
     },
     "marketplace": {
         "title": "Marketplace",

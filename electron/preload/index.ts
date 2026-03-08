@@ -21,6 +21,7 @@ const electronAPI = {
         'gateway:stop',
         'gateway:restart',
         'gateway:rpc',
+        'gateway:httpProxy',
         'gateway:health',
         'gateway:getControlUiUrl',
         // OpenClaw
@@ -41,6 +42,7 @@ const electronAPI = {
         'app:platform',
         'app:quit',
         'app:relaunch',
+        'app:request',
         // Window controls
         'window:minimize',
         'window:maximize',

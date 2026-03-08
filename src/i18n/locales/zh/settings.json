@@ -113,6 +113,8 @@
     "proxyHttpsServerHelp": "HTTPS 请求的高级覆盖项。留空时使用“代理服务器”。",
     "proxyAllServer": "ALL_PROXY / SOCKS",
     "proxyAllServerHelp": "支持 SOCKS 的客户端和 Telegram 等协议的高级兜底代理。留空时使用“代理服务器”。",
+    "showAdvancedProxy": "显示高级代理字段",
+    "hideAdvancedProxy": "隐藏高级代理字段",
     "proxyBypass": "绕过规则",
     "proxyBypassHelp": "使用分号、逗号或换行分隔需要直连的主机。",
     "proxyRestartNote": "保存后会立即重新应用 Electron 网络代理，并自动重启 Gateway。",
@@ -153,6 +155,25 @@
   "advanced": {
     "title": "高级",
     "description": "高级选项",
+    "transport": {
+      "label": "网关传输策略",
+      "desc": "选择渲染进程访问网关 RPC 的优先协议：WebSocket、HTTP 代理或 IPC 回退。",
+      "saved": "网关传输策略已保存",
+      "options": {
+        "wsFirst": "WS 优先",
+        "httpFirst": "HTTP 优先",
+        "wsOnly": "仅 WS",
+        "httpOnly": "仅 HTTP",
+        "ipcOnly": "仅 IPC"
+      },
+      "descriptions": {
+        "wsFirst": "WS -> HTTP -> IPC",
+        "httpFirst": "HTTP -> WS -> IPC",
+        "wsOnly": "WS -> IPC",
+        "httpOnly": "HTTP -> IPC",
+        "ipcOnly": "仅 IPC"
+      }
+    },
     "devMode": "开发者模式",
     "devModeDesc": "显示开发者工具和快捷方式"
   },

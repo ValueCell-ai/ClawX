@@ -30,7 +30,7 @@
 </p>
 
 <p align="center">
-  English | <a href="README.zh-CN.md">简体中文</a>
+  English | <a href="README.zh-CN.md">简体中文</a> | <a href="README.ja-JP.md">日本語</a>
 </p>
 
 ---
@@ -153,6 +153,9 @@ When you launch ClawX for the first time, the **Setup Wizard** will guide you th
 2. **AI Provider** – Enter your API keys for supported providers
 3. **Skill Bundles** – Select pre-configured skills for common use cases
 4. **Verification** – Test your configuration before entering the main interface
+
+> Note for Moonshot (Kimi): ClawX keeps Kimi web search enabled by default.  
+> When Moonshot is configured, ClawX also syncs Kimi web search to the China endpoint (`https://api.moonshot.cn/v1`) in OpenClaw config.
 
 ### Proxy Settings
 
@@ -287,22 +290,19 @@ ClawX/
 
 ```bash
 # Development
+pnpm run init             # Install dependencies + download uv
 pnpm dev                  # Start with hot reload
-pnpm dev:electron         # Launch Electron directly
 
 # Quality
 pnpm lint                 # Run ESLint
-pnpm lint:fix             # Auto-fix issues
 pnpm typecheck            # TypeScript validation
 
 # Testing
 pnpm test                 # Run unit tests
-pnpm test:watch           # Watch mode
-pnpm test:coverage        # Generate coverage report
-pnpm test:e2e             # Run Playwright E2E tests
 
 # Build & Package
-pnpm build                # Full production build
+pnpm run build:vite       # Build frontend only
+pnpm build                # Full production build (with packaging assets)
 pnpm package              # Package for current platform
 pnpm package:mac          # Package for macOS
 pnpm package:win          # Package for Windows

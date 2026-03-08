@@ -4,6 +4,7 @@
  */
 import { create } from 'zustand';
 import { useSettingsStore } from './settings';
+import { invokeIpc } from '@/lib/api-client';
 
 export interface UpdateInfo {
   version: string;
@@ -63,7 +64,7 @@ export const useUpdateStore = create<UpdateState>((set, get) => ({
 
     // Get current version
     try {
-      const version = await window.electron.ipcRenderer.invoke('update:version');
+      const version = await invokeIpc<string>('update:version');
       set({ currentVersion: version as string });
     } catch (error) {
       console.error('Failed to get version:', error);
@@ -71,12 +72,12 @@ export const useUpdateStore = create<UpdateState>((set, get) => ({
 
     // Get current status
     try {
-      const status = await window.electron.ipcRenderer.invoke('update:status') as {
+      const status = await invokeIpc<{
         status: UpdateStatus;
         info?: UpdateInfo;
         progress?: ProgressInfo;
         error?: string;
-      };
+      }>('update:status');
       set({
         status: status.status,
         updateInfo: status.info || null,
@@ -117,7 +118,7 @@ export const useUpdateStore = create<UpdateState>((set, get) => ({
 
     // Sync auto-download preference to the main process
     if (autoDownloadUpdate) {
-      window.electron.ipcRenderer.invoke('update:setAutoDownload', true).catch(() => {});
+      invokeIpc('update:setAutoDownload', true).catch(() => {});
     }
 
     // Auto-check for updates on startup (respects user toggle)
@@ -133,7 +134,7 @@ export const useUpdateStore = create<UpdateState>((set, get) => ({
     
     try {
       const result = await Promise.race([
-        window.electron.ipcRenderer.invoke('update:check'),
+        invokeIpc('update:check'),
         new Promise((_, reject) => setTimeout(() => reject(new Error('Update check timed out')), 30000))
       ]) as {
         success: boolean;
@@ -172,10 +173,10 @@ export const useUpdateStore = create<UpdateState>((set, get) => ({
     set({ status: 'downloading', error: null });
     
     try {
-      const result = await window.electron.ipcRenderer.invoke('update:download') as {
+      const result = await invokeIpc<{
         success: boolean;
         error?: string;
-      };
+      }>('update:download');
       
       if (!result.success) {
         set({ status: 'error', error: result.error || 'Failed to download update' });
@@ -186,12 +187,12 @@ export const useUpdateStore = create<UpdateState>((set, get) => ({
   },
 
   installUpdate: () => {
-    window.electron.ipcRenderer.invoke('update:install');
+    void invokeIpc('update:install');
   },
 
   cancelAutoInstall: async () => {
     try {
-      await window.electron.ipcRenderer.invoke('update:cancelAutoInstall');
+      await invokeIpc('update:cancelAutoInstall');
     } catch (error) {
       console.error('Failed to cancel auto-install:', error);
     }
@@ -199,7 +200,7 @@ export const useUpdateStore = create<UpdateState>((set, get) => ({
 
   setChannel: async (channel) => {
     try {
-      await window.electron.ipcRenderer.invoke('update:setChannel', channel);
+      await invokeIpc('update:setChannel', channel);
     } catch (error) {
       console.error('Failed to set update channel:', error);
     }
@@ -207,7 +208,7 @@ export const useUpdateStore = create<UpdateState>((set, get) => ({
 
   setAutoDownload: async (enable) => {
     try {
-      await window.electron.ipcRenderer.invoke('update:setAutoDownload', enable);
+      await invokeIpc('update:setAutoDownload', enable);
     } catch (error) {
       console.error('Failed to set auto-download:', error);
     }

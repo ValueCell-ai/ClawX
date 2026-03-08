@@ -196,7 +196,8 @@ jobs:
             
             - **macOS**: On first launch, you may see "cannot verify developer". Go to System Preferences → Security & Privacy to allow the app to run
             - **Windows**: SmartScreen may block the app. Click "More info" → "Run anyway" to proceed
-            - **Linux**: AppImage requires executable permission: `chmod +x ClawX-*.AppImage`
+            - **Linux AppImage**: First run `chmod +x ClawX-*.AppImage` to add execute permission. On Ubuntu 22.04 you may also need `sudo apt install libfuse2`; on Ubuntu 24.04 use `sudo apt install libfuse2t64`
+            - **Linux .deb (Ubuntu 24.04)**: If installation fails due to missing dependencies, use `sudo apt install libgtk-3-0t64 libnotify4t64 libxss1t64` before installing
             
             ---
             

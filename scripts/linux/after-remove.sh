@@ -18,4 +18,10 @@ if command -v gtk-update-icon-cache &> /dev/null; then
     gtk-update-icon-cache -q /usr/share/icons/hicolor || true
 fi
 
+# Remove AppArmor profile
+APPARMOR_PROFILE_TARGET='/etc/apparmor.d/clawx'
+if [ -f "$APPARMOR_PROFILE_TARGET" ]; then
+    rm -f "$APPARMOR_PROFILE_TARGET"
+fi
+
 echo "ClawX has been removed."

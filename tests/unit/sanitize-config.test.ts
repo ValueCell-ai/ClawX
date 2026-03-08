@@ -53,6 +53,23 @@ async function sanitizeConfig(filePath: string): Promise<boolean> {
     }
   }
 
+  // Mirror: remove stale tools.web.search.kimi.apiKey when moonshot provider exists.
+  const providers = ((config.models as Record<string, unknown> | undefined)?.providers as Record<string, unknown> | undefined) || {};
+  if (providers.moonshot) {
+    const tools = (config.tools as Record<string, unknown> | undefined) || {};
+    const web = (tools.web as Record<string, unknown> | undefined) || {};
+    const search = (web.search as Record<string, unknown> | undefined) || {};
+    const kimi = (search.kimi as Record<string, unknown> | undefined) || {};
+    if ('apiKey' in kimi) {
+      delete kimi.apiKey;
+      search.kimi = kimi;
+      web.search = search;
+      tools.web = web;
+      config.tools = tools;
+      modified = true;
+    }
+  }
+
   if (modified) {
     await writeFile(filePath, JSON.stringify(config, null, 2), 'utf-8');
   }
@@ -222,5 +239,59 @@ describe('sanitizeOpenClawConfig (blocklist approach)', () => {
     expect(result.plugins).toEqual({ entries: { whatsapp: { enabled: true } } });
     expect(result.gateway).toEqual({ mode: 'local', auth: { token: 'xyz' } });
     expect(result.agents).toEqual({ defaults: { model: { primary: 'gpt-4' } } });
+  });
+
+  it('removes tools.web.search.kimi.apiKey when moonshot provider exists', async () => {
+    await writeConfig({
+      models: {
+        providers: {
+          moonshot: { baseUrl: 'https://api.moonshot.cn/v1', api: 'openai-completions' },
+        },
+      },
+      tools: {
+        web: {
+          search: {
+            kimi: {
+              apiKey: 'stale-inline-key',
+              baseUrl: 'https://api.moonshot.cn/v1',
+            },
+          },
+        },
+      },
+    });
+
+    const modified = await sanitizeConfig(configPath);
+    expect(modified).toBe(true);
+
+    const result = await readConfig();
+    const kimi = ((((result.tools as Record<string, unknown>).web as Record<string, unknown>).search as Record<string, unknown>).kimi as Record<string, unknown>);
+    expect(kimi).not.toHaveProperty('apiKey');
+    expect(kimi.baseUrl).toBe('https://api.moonshot.cn/v1');
+  });
+
+  it('keeps tools.web.search.kimi.apiKey when moonshot provider is absent', async () => {
+    const original = {
+      models: {
+        providers: {
+          openrouter: { baseUrl: 'https://openrouter.ai/api/v1', api: 'openai-completions' },
+        },
+      },
+      tools: {
+        web: {
+          search: {
+            kimi: {
+              apiKey: 'should-stay',
+            },
+          },
+        },
+      },
+    };
+    await writeConfig(original);
+
+    const modified = await sanitizeConfig(configPath);
+    expect(modified).toBe(false);
+
+    const result = await readConfig();
+    expect(result).toEqual(original);
   });
 });

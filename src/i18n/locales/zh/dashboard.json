@@ -12,8 +12,10 @@
     "quickActions": {
         "title": "快捷操作",
         "description": "常用任务和快捷方式",
+        "addProvider": "添加模型供应商",
         "addChannel": "添加频道",
-        "browseSkills": "浏览技能",
+        "createCron": "创建定时任务",
+        "installSkill": "安装技能",
         "openChat": "打开聊天",
         "settings": "设置",
         "devConsole": "开发者控制台"
@@ -35,7 +37,7 @@
         "last7Days": "7 天",
         "last30Days": "30 天",
         "allTime": "全部",
-        "showingLast": "显示最近 {{count}} 条记录",
+        "showingLast": "共 {{count}} 条记录",
         "totalTokens": "总 token",
         "inputShort": "输入",
         "outputShort": "输出",

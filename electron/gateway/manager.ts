@@ -2,9 +2,8 @@
  * Gateway Process Manager
  * Manages the OpenClaw Gateway process lifecycle
  */
-import { app } from 'electron';
+import { app, utilityProcess } from 'electron';
 import path from 'path';
-import { spawn, ChildProcess } from 'child_process';
 import { EventEmitter } from 'events';
 import { existsSync, writeFileSync } from 'fs';
 import WebSocket from 'ws';
@@ -16,11 +15,10 @@ import {
   isOpenClawBuilt,
   isOpenClawPresent,
   appendNodeRequireToNodeOptions,
-  quoteForCmd,
 } from '../utils/paths';
 import { getAllSettings, getSetting } from '../utils/store';
 import { getApiKey, getDefaultProvider, getProvider } from '../utils/secure-storage';
-import { getProviderEnvVar, getKeyableProviderTypes } from '../utils/provider-registry';
+import { getProviderEnvVars, getKeyableProviderTypes } from '../utils/provider-registry';
 import { GatewayEventType, JsonRpcNotification, isNotification, isResponse } from './protocol';
 import { logger } from '../utils/logger';
 import { getUvMirrorEnv } from '../utils/uv-env';
@@ -37,16 +35,19 @@ import { buildProxyEnv, resolveProxySettings } from '../utils/proxy';
 import { syncProxyConfigToOpenClaw } from '../utils/openclaw-proxy';
 import { shouldAttemptConfigAutoRepair } from './startup-recovery';
 import {
+  type GatewayLifecycleState,
+  getDeferredRestartAction,
   getReconnectSkipReason,
   isLifecycleSuperseded,
   nextLifecycleEpoch,
+  shouldDeferRestart,
 } from './process-policy';
 
 /**
  * Gateway connection status
  */
 export interface GatewayStatus {
-  state: 'stopped' | 'starting' | 'running' | 'error' | 'reconnecting';
+  state: GatewayLifecycleState;
   port: number;
   pid?: number;
   uptime?: number;
@@ -84,38 +85,8 @@ const DEFAULT_RECONNECT_CONFIG: ReconnectConfig = {
   maxDelay: 30000,
 };
 
-/**
- * Get the Node.js-compatible executable path for spawning child processes.
- *
- * On macOS in packaged mode, using `process.execPath` directly causes the
- * child process to appear as a separate dock icon (named "exec") because the
- * binary lives inside a `.app` bundle that macOS treats as a GUI application.
- *
- * To avoid this, we resolve the Electron Helper binary which has
- * `LSUIElement` set in its Info.plist, preventing dock icon creation.
- * Falls back to `process.execPath` if the Helper binary is not found.
- */
-function getNodeExecutablePath(): string {
-  if (process.platform === 'darwin' && app.isPackaged) {
-    // Electron Helper binary lives at:
-    // <App>.app/Contents/Frameworks/<ProductName> Helper.app/Contents/MacOS/<ProductName> Helper
-    const appName = app.getName();
-    const helperName = `${appName} Helper`;
-    const helperPath = path.join(
-      path.dirname(process.execPath), // .../Contents/MacOS
-      '../Frameworks',
-      `${helperName}.app`,
-      'Contents/MacOS',
-      helperName,
-    );
-    if (existsSync(helperPath)) {
-      logger.debug(`Using Electron Helper binary to avoid dock icon: ${helperPath}`);
-      return helperPath;
-    }
-    logger.debug(`Electron Helper binary not found at ${helperPath}, falling back to process.execPath`);
-  }
-  return process.execPath;
-}
+// getNodeExecutablePath() removed: utilityProcess.fork() handles process isolation
+// natively on all platforms (no dock icon on macOS, no console on Windows).
 
 /**
  * Ensure the gateway fetch-preload script exists in userData and return
@@ -159,8 +130,66 @@ const GATEWAY_FETCH_PRELOAD_SOURCE = `'use strict';
     }
     return _f.call(globalThis, input, init);
   };
+
+  // Global monkey-patch for child_process to enforce windowsHide: true on Windows.
+  // This prevents OpenClaw's tools (e.g. Terminal, Python) from flashing black
+  // command boxes during AI conversations, without triggering AVs.
+  //
+  // Node child_process signatures vary:
+  //   spawn(cmd[, args][, options])
+  //   exec(cmd[, options][, callback])
+  //   execFile(file[, args][, options][, callback])
+  //   *Sync variants omit the callback
+  //
+  // Strategy: scan arguments for the first plain-object (the options param).
+  // If found, set windowsHide on it. If absent, insert a new options object
+  // before any trailing callback so the signature stays valid.
+  if (process.platform === 'win32') {
+    try {
+      var cp = require('child_process');
+      if (!cp.__clawxPatched) {
+        cp.__clawxPatched = true;
+        ['spawn', 'exec', 'execFile', 'fork', 'spawnSync', 'execSync', 'execFileSync'].forEach(function(method) {
+          var original = cp[method];
+          if (typeof original !== 'function') return;
+          cp[method] = function() {
+            var args = Array.prototype.slice.call(arguments);
+            var optIdx = -1;
+            for (var i = 1; i < args.length; i++) {
+              var a = args[i];
+              if (a && typeof a === 'object' && !Array.isArray(a)) {
+                optIdx = i;
+                break;
+              }
+            }
+            if (optIdx >= 0) {
+              args[optIdx].windowsHide = true;
+            } else {
+              var opts = { windowsHide: true };
+              if (typeof args[args.length - 1] === 'function') {
+                args.splice(args.length - 1, 0, opts);
+              } else {
+                args.push(opts);
+              }
+            }
+            return original.apply(this, args);
+          };
+        });
+      }
+    } catch (e) {
+      // ignore
+    }
+  }
 })();
 `;
+
+function injectMoonshotWebSearchEnv(
+  env: Record<string, string>,
+  apiKey: string
+): void {
+  // OpenClaw web_search(kimi) reads KIMI_API_KEY before provider-specific config.
+  env.KIMI_API_KEY = apiKey;
+}
 
 function ensureGatewayFetchPreload(): string {
   const dest = path.join(app.getPath('userData'), 'gateway-fetch-preload.cjs');
@@ -180,7 +209,8 @@ class LifecycleSupersededError extends Error {
  * Handles starting, stopping, and communicating with the OpenClaw Gateway
  */
 export class GatewayManager extends EventEmitter {
-  private process: ChildProcess | null = null;
+  private process: Electron.UtilityProcess | null = null;
+  private processExitCode: number | null = null; // set by exit event, replaces exitCode/signalCode
   private ownsProcess = false;
   private ws: WebSocket | null = null;
   private status: GatewayStatus = { state: 'stopped', port: PORTS.OPENCLAW_GATEWAY };
@@ -200,7 +230,11 @@ export class GatewayManager extends EventEmitter {
   }> = new Map();
   private deviceIdentity: DeviceIdentity | null = null;
   private restartDebounceTimer: NodeJS.Timeout | null = null;
+  private reloadDebounceTimer: NodeJS.Timeout | null = null;
   private lifecycleEpoch = 0;
+  private deferredRestartPending = false;
+  private restartInFlight: Promise<void> | null = null;
+  private externalShutdownSupported: boolean | null = null;
 
   constructor(config?: Partial<ReconnectConfig>) {
     super();
@@ -229,6 +263,11 @@ export class GatewayManager extends EventEmitter {
     return sanitized;
   }
 
+  private isUnsupportedShutdownError(error: unknown): boolean {
+    const message = error instanceof Error ? error.message : String(error);
+    return /unknown method:\s*shutdown/i.test(message);
+  }
+
   private formatExit(code: number | null, signal: NodeJS.Signals | null): string {
     if (code !== null) return `code=${code}`;
     if (signal) return `signal=${signal}`;
@@ -242,11 +281,21 @@ export class GatewayManager extends EventEmitter {
     // Known noisy lines that are not actionable for Gateway lifecycle debugging.
     if (msg.includes('openclaw-control-ui') && msg.includes('token_mismatch')) return { level: 'drop', normalized: msg };
     if (msg.includes('closed before connect') && msg.includes('token mismatch')) return { level: 'drop', normalized: msg };
+    // During renderer refresh / transport switching, loopback websocket probes can time out
+    // while the gateway is reloading. This is expected and not actionable.
+    if (msg.includes('[ws] handshake timeout') && msg.includes('remote=127.0.0.1')) {
+      return { level: 'debug', normalized: msg };
+    }
+    if (msg.includes('[ws] closed before connect') && msg.includes('remote=127.0.0.1')) {
+      return { level: 'debug', normalized: msg };
+    }
 
     // Downgrade frequent non-fatal noise.
     if (msg.includes('ExperimentalWarning')) return { level: 'debug', normalized: msg };
     if (msg.includes('DeprecationWarning')) return { level: 'debug', normalized: msg };
     if (msg.includes('Debugger attached')) return { level: 'debug', normalized: msg };
+    // Electron restricts NODE_OPTIONS in packaged apps; this is expected and harmless.
+    if (msg.includes('NODE_OPTIONs are not supported in packaged apps')) return { level: 'debug', normalized: msg };
 
     return { level: 'warn', normalized: msg };
   }
@@ -273,6 +322,56 @@ export class GatewayManager extends EventEmitter {
         `Gateway ${phase} superseded (expectedEpoch=${expectedEpoch}, currentEpoch=${this.lifecycleEpoch})`
       );
     }
+  }
+
+  private isRestartDeferred(): boolean {
+    return shouldDeferRestart({
+      state: this.status.state,
+      startLock: this.startLock,
+    });
+  }
+
+  private markDeferredRestart(reason: string): void {
+    if (!this.deferredRestartPending) {
+      logger.info(
+        `Deferring Gateway restart (${reason}) until startup/reconnect settles (state=${this.status.state}, startLock=${this.startLock})`
+      );
+    } else {
+      logger.debug(
+        `Gateway restart already deferred; keeping pending request (${reason}, state=${this.status.state}, startLock=${this.startLock})`
+      );
+    }
+    this.deferredRestartPending = true;
+  }
+
+  private flushDeferredRestart(trigger: string): void {
+    const action = getDeferredRestartAction({
+      hasPendingRestart: this.deferredRestartPending,
+      state: this.status.state,
+      startLock: this.startLock,
+      shouldReconnect: this.shouldReconnect,
+    });
+
+    if (action === 'none') return;
+    if (action === 'wait') {
+      logger.debug(
+        `Deferred Gateway restart still waiting (${trigger}, state=${this.status.state}, startLock=${this.startLock})`
+      );
+      return;
+    }
+
+    this.deferredRestartPending = false;
+    if (action === 'drop') {
+      logger.info(
+        `Dropping deferred Gateway restart (${trigger}) because lifecycle already recovered (state=${this.status.state}, shouldReconnect=${this.shouldReconnect})`
+      );
+      return;
+    }
+
+    logger.info(`Executing deferred Gateway restart now (${trigger})`);
+    void this.restart().catch((error) => {
+      logger.warn('Deferred Gateway restart failed:', error);
+    });
   }
 
   /**
@@ -362,6 +461,14 @@ export class GatewayManager extends EventEmitter {
 
           logger.debug('No existing Gateway found, starting new process...');
 
+          // On Windows, TCP TIME_WAIT can hold the port for up to 2 minutes
+          // after the previous Gateway process exits, preventing the new one
+          // from binding. Wait for the port to be free before proceeding.
+          if (process.platform === 'win32') {
+            await this.waitForPortFree(this.status.port);
+            this.assertLifecycleEpoch(startEpoch, 'start/wait-port');
+          }
+
           // Start new Gateway process
           await this.startProcess();
           this.assertLifecycleEpoch(startEpoch, 'start/start-process');
@@ -428,6 +535,7 @@ export class GatewayManager extends EventEmitter {
       throw error;
     } finally {
       this.startLock = false;
+      this.flushDeferredRestart('start:finally');
     }
   }
 
@@ -445,11 +553,17 @@ export class GatewayManager extends EventEmitter {
 
     // If this manager is attached to an external gateway process, ask it to shut down
     // over protocol before closing the socket.
-    if (!this.ownsProcess && this.ws?.readyState === WebSocket.OPEN) {
+    if (!this.ownsProcess && this.ws?.readyState === WebSocket.OPEN && this.externalShutdownSupported !== false) {
       try {
         await this.rpc('shutdown', undefined, 5000);
+        this.externalShutdownSupported = true;
       } catch (error) {
-        logger.warn('Failed to request shutdown for externally managed Gateway:', error);
+        if (this.isUnsupportedShutdownError(error)) {
+          this.externalShutdownSupported = false;
+          logger.info('External Gateway does not support "shutdown"; skipping shutdown RPC for future stops');
+        } else {
+          logger.warn('Failed to request shutdown for externally managed Gateway:', error);
+        }
       }
     }
 
@@ -462,43 +576,32 @@ export class GatewayManager extends EventEmitter {
     // Kill process
     if (this.process && this.ownsProcess) {
       const child = this.process;
+      // UtilityProcess doesn't expose exitCode/signalCode — track exit via event.
+      let exited = false;
 
       await new Promise<void>((resolve) => {
-        // If process already exited, resolve immediately
-        if (child.exitCode !== null || child.signalCode !== null) {
-          return resolve();
-        }
+        child.once('exit', () => {
+          exited = true;
+          resolve();
+        });
 
-        // Kill the entire process group so respawned children are also terminated.
-        // The gateway entry script may respawn itself; killing only the parent PID
-        // leaves the child orphaned (PPID=1) and still holding the port.
         const pid = child.pid;
-        logger.info(`Sending SIGTERM to Gateway process group (pid=${pid ?? 'unknown'})`);
-        if (pid) {
-          try { process.kill(-pid, 'SIGTERM'); } catch { /* group kill failed, fall back */ }
-        }
-        child.kill('SIGTERM');
+        logger.info(`Sending kill to Gateway process (pid=${pid ?? 'unknown'})`);
+        try { child.kill(); } catch { /* ignore if already exited */ }
 
-        // Force kill after timeout
+        // Force kill after timeout via OS-level kill on the PID
         const timeout = setTimeout(() => {
-          if (child.exitCode === null && child.signalCode === null) {
-            logger.warn(`Gateway did not exit in time, sending SIGKILL (pid=${pid ?? 'unknown'})`);
+          if (!exited) {
+            logger.warn(`Gateway did not exit in time, force-killing (pid=${pid ?? 'unknown'})`);
             if (pid) {
-              try { process.kill(-pid, 'SIGKILL'); } catch { /* ignore */ }
+              try { process.kill(pid, 'SIGKILL'); } catch { /* ignore */ }
             }
-            child.kill('SIGKILL');
           }
           resolve();
         }, 5000);
 
         child.once('exit', () => {
           clearTimeout(timeout);
-          resolve();
-        });
-
-        child.once('error', () => {
-          clearTimeout(timeout);
-          resolve();
         });
       });
 
@@ -515,6 +618,7 @@ export class GatewayManager extends EventEmitter {
     }
     this.pendingRequests.clear();
 
+    this.deferredRestartPending = false;
     this.setStatus({ state: 'stopped', error: undefined, pid: undefined, connectedAt: undefined, uptime: undefined });
   }
 
@@ -522,9 +626,29 @@ export class GatewayManager extends EventEmitter {
    * Restart Gateway process
    */
   async restart(): Promise<void> {
+    if (this.isRestartDeferred()) {
+      this.markDeferredRestart('restart');
+      return;
+    }
+
+    if (this.restartInFlight) {
+      logger.debug('Gateway restart already in progress, joining existing request');
+      await this.restartInFlight;
+      return;
+    }
+
     logger.debug('Gateway restart requested');
-    await this.stop();
-    await this.start();
+    this.restartInFlight = (async () => {
+      await this.stop();
+      await this.start();
+    })();
+
+    try {
+      await this.restartInFlight;
+    } finally {
+      this.restartInFlight = null;
+      this.flushDeferredRestart('restart:finally');
+    }
   }
 
   /**
@@ -548,6 +672,71 @@ export class GatewayManager extends EventEmitter {
   }
 
   /**
+   * Ask the Gateway process to reload config in-place when possible.
+   * Falls back to restart on unsupported platforms or signaling failures.
+   */
+  async reload(): Promise<void> {
+    if (this.isRestartDeferred()) {
+      this.markDeferredRestart('reload');
+      return;
+    }
+
+    if (!this.process?.pid || this.status.state !== 'running') {
+      logger.warn('Gateway reload requested while not running; falling back to restart');
+      await this.restart();
+      return;
+    }
+
+    if (process.platform === 'win32') {
+      logger.debug('Windows detected, falling back to Gateway restart for reload');
+      await this.restart();
+      return;
+    }
+
+    const connectedForMs = this.status.connectedAt
+      ? Date.now() - this.status.connectedAt
+      : Number.POSITIVE_INFINITY;
+
+    // Avoid signaling a process that just came up; it will already read latest config.
+    if (connectedForMs < 8000) {
+      logger.info(`Gateway connected ${connectedForMs}ms ago, skipping reload signal`);
+      return;
+    }
+
+    try {
+      process.kill(this.process.pid, 'SIGUSR1');
+      logger.info(`Sent SIGUSR1 to Gateway for config reload (pid=${this.process.pid})`);
+      // Some gateway builds do not handle SIGUSR1 as an in-process reload.
+      // If process state doesn't recover quickly, fall back to restart.
+      await new Promise((resolve) => setTimeout(resolve, 1500));
+      if (this.status.state !== 'running' || !this.process?.pid) {
+        logger.warn('Gateway did not stay running after reload signal, falling back to restart');
+        await this.restart();
+      }
+    } catch (error) {
+      logger.warn('Gateway reload signal failed, falling back to restart:', error);
+      await this.restart();
+    }
+  }
+
+  /**
+   * Debounced reload — coalesces multiple rapid config-change events into one
+   * in-process reload when possible.
+   */
+  debouncedReload(delayMs = 1200): void {
+    if (this.reloadDebounceTimer) {
+      clearTimeout(this.reloadDebounceTimer);
+    }
+    logger.debug(`Gateway reload debounced (will fire in ${delayMs}ms)`);
+    this.reloadDebounceTimer = setTimeout(() => {
+      this.reloadDebounceTimer = null;
+      void this.reload().catch((err) => {
+        logger.warn('Debounced Gateway reload failed:', err);
+      });
+    }, delayMs);
+  }
+
+  /**
    * Clear all active timers
    */
   private clearAllTimers(): void {
@@ -566,6 +755,10 @@ export class GatewayManager extends EventEmitter {
     if (this.restartDebounceTimer) {
       clearTimeout(this.restartDebounceTimer);
       this.restartDebounceTimer = null;
+    }
+    if (this.reloadDebounceTimer) {
+      clearTimeout(this.reloadDebounceTimer);
+      this.reloadDebounceTimer = null;
     }
   }
 
@@ -722,9 +915,11 @@ export class GatewayManager extends EventEmitter {
 
       try {
         // Platform-specific command to find processes listening on the gateway port.
-        // On Windows, lsof doesn't exist; use PowerShell's Get-NetTCPConnection instead.
+        // We use native commands (netstat on Windows) to avoid triggering AV blocks
+        // that flag "powershell -WindowStyle Hidden" as malware behavior.
+        // windowsHide: true in cp.exec natively prevents the black command window.
         const cmd = process.platform === 'win32'
-          ? `powershell -NoProfile -Command "(Get-NetTCPConnection -LocalPort ${port} -State Listen -ErrorAction SilentlyContinue).OwningProcess"`
+          ? `netstat -ano | findstr :${port}`
           : `lsof -i :${port} -sTCP:LISTEN -t`;
 
         const { stdout } = await new Promise<{ stdout: string }>((resolve, reject) => {
@@ -737,9 +932,23 @@ export class GatewayManager extends EventEmitter {
         });
 
         if (stdout.trim()) {
-          const pids = stdout.trim().split(/\r?\n/)
-            .map(s => s.trim())
-            .filter(Boolean);
+          // Parse netstat or lsof output to extract PIDs
+          let pids: string[] = [];
+          if (process.platform === 'win32') {
+            // netstat -ano output format:
+            //   TCP    127.0.0.1:3000     0.0.0.0:0              LISTENING       12345
+            const lines = stdout.trim().split(/\r?\n/);
+            for (const line of lines) {
+              const parts = line.trim().split(/\s+/);
+              if (parts.length >= 5 && parts[3] === 'LISTENING') {
+                pids.push(parts[4]);
+              }
+            }
+          } else {
+            pids = stdout.trim().split(/\r?\n/).map(s => s.trim()).filter(Boolean);
+          }
+          // Remove duplicate PIDs
+          pids = [...new Set(pids)];
 
           if (pids.length > 0) {
             if (!this.process || !pids.includes(String(this.process.pid))) {
@@ -755,10 +964,11 @@ export class GatewayManager extends EventEmitter {
               for (const pid of pids) {
                 try {
                   if (process.platform === 'win32') {
-                    // On Windows, use taskkill for reliable process group termination
+                    // Use taskkill with windowsHide: true. This natively hides the console
+                    // flash without needing PowerShell, avoiding AV alerts.
                     import('child_process').then(cp => {
                       cp.exec(
-                        `taskkill /PID ${pid} /T /F`,
+                        `taskkill /F /PID ${pid} /T`,
                         { timeout: 5000, windowsHide: true },
                         () => { }
                       );
@@ -836,37 +1046,24 @@ export class GatewayManager extends EventEmitter {
       : process.env.PATH || '';
 
     const uvEnv = await getUvMirrorEnv();
-    const command = app.isPackaged ? getNodeExecutablePath() : 'node';
-    const args = [entryScript, 'doctor', '--fix', '--yes', '--non-interactive'];
+    const doctorArgs = ['doctor', '--fix', '--yes', '--non-interactive'];
     logger.info(
-      `Running OpenClaw doctor repair (command="${command}", args="${args.join(' ')}", cwd="${openclawDir}", bundledBin=${binPathExists ? 'yes' : 'no'})`
+      `Running OpenClaw doctor repair (entry="${entryScript}", args="${doctorArgs.join(' ')}", cwd="${openclawDir}", bundledBin=${binPathExists ? 'yes' : 'no'})`
     );
 
     return new Promise<boolean>((resolve) => {
-      const spawnEnv: Record<string, string | undefined> = {
+      const forkEnv: Record<string, string | undefined> = {
         ...process.env,
         PATH: finalPath,
         ...uvEnv,
         OPENCLAW_STATE_DIR: getOpenClawConfigDir(),
+        OPENCLAW_NO_RESPAWN: '1',
       };
 
-      if (app.isPackaged) {
-        spawnEnv['ELECTRON_RUN_AS_NODE'] = '1';
-        spawnEnv['OPENCLAW_NO_RESPAWN'] = '1';
-        const existingNodeOpts = spawnEnv['NODE_OPTIONS'] ?? '';
-        if (!existingNodeOpts.includes('--disable-warning=ExperimentalWarning') &&
-          !existingNodeOpts.includes('--no-warnings')) {
-          spawnEnv['NODE_OPTIONS'] = `${existingNodeOpts} --disable-warning=ExperimentalWarning`.trim();
-        }
-      }
-
-      const child = spawn(command, args, {
+      const child = utilityProcess.fork(entryScript, doctorArgs, {
         cwd: openclawDir,
-        stdio: ['ignore', 'pipe', 'pipe'],
-        detached: false,
-        shell: false,
-        windowsHide: true,
-        env: spawnEnv,
+        stdio: 'pipe',
+        env: forkEnv as NodeJS.ProcessEnv,
       });
 
       let settled = false;
@@ -879,7 +1076,7 @@ export class GatewayManager extends EventEmitter {
       const timeout = setTimeout(() => {
         logger.error('OpenClaw doctor repair timed out after 120000ms');
         try {
-          child.kill('SIGTERM');
+          child.kill();
         } catch {
           // ignore
         }
@@ -910,14 +1107,14 @@ export class GatewayManager extends EventEmitter {
         }
       });
 
-      child.on('exit', (code, signal) => {
+      child.on('exit', (code: number) => {
         clearTimeout(timeout);
         if (code === 0) {
           logger.info('OpenClaw doctor repair completed successfully');
           finish(true);
           return;
         }
-        logger.warn(`OpenClaw doctor repair exited (${this.formatExit(code, signal)})`);
+        logger.warn(`OpenClaw doctor repair exited (code=${code})`);
         finish(false);
       });
     });
@@ -927,6 +1124,45 @@ export class GatewayManager extends EventEmitter {
    * Start Gateway process
    * Uses OpenClaw npm package from node_modules (dev) or resources (production)
    */
+  /**
+   * Wait until the gateway port is no longer held by the OS.
+   * On Windows, TCP TIME_WAIT can keep a port occupied for up to 2 minutes
+   * after the owning process exits, causing the new Gateway to hang on bind.
+   */
+  private async waitForPortFree(port: number, timeoutMs = 30000): Promise<void> {
+    const net = await import('net');
+    const start = Date.now();
+    const pollInterval = 500;
+    let logged = false;
+
+    while (Date.now() - start < timeoutMs) {
+      const available = await new Promise<boolean>((resolve) => {
+        const server = net.createServer();
+        server.once('error', () => resolve(false));
+        server.once('listening', () => {
+          server.close(() => resolve(true));
+        });
+        server.listen(port, '127.0.0.1');
+      });
+
+      if (available) {
+        const elapsed = Date.now() - start;
+        if (elapsed > pollInterval) {
+          logger.info(`Port ${port} became available after ${elapsed}ms`);
+        }
+        return;
+      }
+
+      if (!logged) {
+        logger.info(`Waiting for port ${port} to become available (Windows TCP TIME_WAIT)...`);
+        logged = true;
+      }
+      await new Promise(r => setTimeout(r, pollInterval));
+    }
+
+    logger.warn(`Port ${port} still occupied after ${timeoutMs}ms, proceeding anyway`);
+  }
+
   private async startProcess(): Promise<void> {
     // Ensure no system-managed gateway service will compete with our process.
     await this.unloadLaunchctlService();
@@ -974,39 +1210,15 @@ export class GatewayManager extends EventEmitter {
       logger.warn('Failed to sync browser config to openclaw.json:', err);
     }
 
-    let command: string;
-    let args: string[];
-    let mode: 'packaged' | 'dev-built' | 'dev-pnpm';
-
-    // Determine the Node.js executable
-    // In packaged Electron app, use process.execPath with ELECTRON_RUN_AS_NODE=1
-    // which makes the Electron binary behave as plain Node.js.
-    // In development, use system 'node'.
-    const gatewayArgs = ['gateway', '--port', String(this.status.port), '--token', gatewayToken, '--allow-unconfigured'];
-
-    if (app.isPackaged) {
-      // Production: use Electron binary as Node.js via ELECTRON_RUN_AS_NODE
-      // On macOS, use the Electron Helper binary to avoid extra dock icons
-      if (existsSync(entryScript)) {
-        command = getNodeExecutablePath();
-        args = [entryScript, ...gatewayArgs];
-        mode = 'packaged';
-      } else {
-        const errMsg = `OpenClaw entry script not found at: ${entryScript}`;
-        logger.error(errMsg);
-        throw new Error(errMsg);
-      }
-    } else if (isOpenClawBuilt() && existsSync(entryScript)) {
-      // Development with built package: use system node
-      command = 'node';
-      args = [entryScript, ...gatewayArgs];
-      mode = 'dev-built';
-    } else {
-      // Development without build: use pnpm dev
-      command = 'pnpm';
-      args = ['run', 'dev', ...gatewayArgs];
-      mode = 'dev-pnpm';
+    // utilityProcess.fork() works for both dev and packaged — no ELECTRON_RUN_AS_NODE needed.
+    if (!existsSync(entryScript)) {
+      const errMsg = `OpenClaw entry script not found at: ${entryScript}`;
+      logger.error(errMsg);
+      throw new Error(errMsg);
     }
+
+    const gatewayArgs = ['gateway', '--port', String(this.status.port), '--token', gatewayToken, '--allow-unconfigured'];
+    const mode = app.isPackaged ? 'packaged' : 'dev';
 
     // Resolve bundled bin path for uv
     const platform = process.platform;
@@ -1035,9 +1247,14 @@ export class GatewayManager extends EventEmitter {
         const defaultProviderType = defaultProvider?.type;
         const defaultProviderKey = await getApiKey(defaultProviderId);
         if (defaultProviderType && defaultProviderKey) {
-          const envVar = getProviderEnvVar(defaultProviderType);
-          if (envVar) {
-            providerEnv[envVar] = defaultProviderKey;
+          const envVars = getProviderEnvVars(defaultProviderType);
+          if (envVars.length > 0) {
+            for (const envVar of envVars) {
+              providerEnv[envVar] = defaultProviderKey;
+            }
+            if (defaultProviderType === 'moonshot') {
+              injectMoonshotWebSearchEnv(providerEnv, defaultProviderKey);
+            }
             loadedProviderKeyCount++;
           }
         }
@@ -1050,9 +1267,14 @@ export class GatewayManager extends EventEmitter {
       try {
         const key = await getApiKey(providerType);
         if (key) {
-          const envVar = getProviderEnvVar(providerType);
-          if (envVar) {
-            providerEnv[envVar] = key;
+          const envVars = getProviderEnvVars(providerType);
+          if (envVars.length > 0) {
+            for (const envVar of envVars) {
+              providerEnv[envVar] = key;
+            }
+            if (providerType === 'moonshot') {
+              injectMoonshotWebSearchEnv(providerEnv, key);
+            }
             loadedProviderKeyCount++;
           }
         }
@@ -1065,13 +1287,15 @@ export class GatewayManager extends EventEmitter {
     const proxyEnv = buildProxyEnv(appSettings);
     const resolvedProxy = resolveProxySettings(appSettings);
     logger.info(
-      `Starting Gateway process (mode=${mode}, port=${this.status.port}, command="${command}", args="${this.sanitizeSpawnArgs(args).join(' ')}", cwd="${openclawDir}", bundledBin=${binPathExists ? 'yes' : 'no'}, providerKeys=${loadedProviderKeyCount}, proxy=${appSettings.proxyEnabled ? `http=${resolvedProxy.httpProxy || '-'}, https=${resolvedProxy.httpsProxy || '-'}, all=${resolvedProxy.allProxy || '-'}` : 'disabled'})`
+      `Starting Gateway process (mode=${mode}, port=${this.status.port}, entry="${entryScript}", args="${this.sanitizeSpawnArgs(gatewayArgs).join(' ')}", cwd="${openclawDir}", bundledBin=${binPathExists ? 'yes' : 'no'}, providerKeys=${loadedProviderKeyCount}, proxy=${appSettings.proxyEnabled ? `http=${resolvedProxy.httpProxy || '-'}, https=${resolvedProxy.httpsProxy || '-'}, all=${resolvedProxy.allProxy || '-'}` : 'disabled'})`
     );
-    this.lastSpawnSummary = `mode=${mode}, command="${command}", args="${this.sanitizeSpawnArgs(args).join(' ')}", cwd="${openclawDir}"`;
+    this.lastSpawnSummary = `mode=${mode}, entry="${entryScript}", args="${this.sanitizeSpawnArgs(gatewayArgs).join(' ')}", cwd="${openclawDir}"`;
 
     return new Promise((resolve, reject) => {
+      // Reset exit tracking for this new process instance.
+      this.processExitCode = null;
       const { NODE_OPTIONS: _nodeOptions, ...baseEnv } = process.env;
-      const spawnEnv: Record<string, string | undefined> = {
+      const forkEnv: Record<string, string | undefined> = {
         ...baseEnv,
         PATH: finalPath,
         ...providerEnv,
@@ -1081,47 +1305,36 @@ export class GatewayManager extends EventEmitter {
         OPENCLAW_STATE_DIR: getOpenClawConfigDir(),
         OPENCLAW_SKIP_CHANNELS: '',
         CLAWDBOT_SKIP_CHANNELS: '',
+        // Prevent OpenClaw from respawning itself inside the utility process
+        OPENCLAW_NO_RESPAWN: '1',
       };
-
-      // Critical: In packaged mode, make Electron binary act as Node.js
-      if (app.isPackaged) {
-        spawnEnv['ELECTRON_RUN_AS_NODE'] = '1';
-        // Prevent OpenClaw entry.ts from respawning itself (which would create
-        // another child process and a second "exec" dock icon on macOS)
-        spawnEnv['OPENCLAW_NO_RESPAWN'] = '1';
-        // Pre-set the NODE_OPTIONS that entry.ts would have added via respawn
-        const existingNodeOpts = spawnEnv['NODE_OPTIONS'] ?? '';
-        if (!existingNodeOpts.includes('--disable-warning=ExperimentalWarning') &&
-          !existingNodeOpts.includes('--no-warnings')) {
-          spawnEnv['NODE_OPTIONS'] = `${existingNodeOpts} --disable-warning=ExperimentalWarning`.trim();
-        }
-      }
 
       // Inject fetch preload so OpenRouter requests carry ClawX headers.
       // The preload patches globalThis.fetch before any module loads.
-      try {
-        const preloadPath = ensureGatewayFetchPreload();
-        if (existsSync(preloadPath)) {
-          spawnEnv['NODE_OPTIONS'] = appendNodeRequireToNodeOptions(
-            spawnEnv['NODE_OPTIONS'],
-            preloadPath,
-          );
+      // NODE_OPTIONS --require is blocked by Electron in packaged apps, so skip
+      // this injection when packaged to avoid the "NODE_OPTIONs not supported"
+      // errors being printed to the gateway's stderr on every startup.
+      if (!app.isPackaged) {
+        try {
+          const preloadPath = ensureGatewayFetchPreload();
+          if (existsSync(preloadPath)) {
+            forkEnv['NODE_OPTIONS'] = appendNodeRequireToNodeOptions(
+              forkEnv['NODE_OPTIONS'],
+              preloadPath,
+            );
+          }
+        } catch (err) {
+          logger.warn('Failed to set up OpenRouter headers preload:', err);
         }
-      } catch (err) {
-        logger.warn('Failed to set up OpenRouter headers preload:', err);
       }
 
-      const useShell = !app.isPackaged && process.platform === 'win32';
-      const spawnCmd = useShell ? quoteForCmd(command) : command;
-      const spawnArgs = useShell ? args.map(a => quoteForCmd(a)) : args;
-
-      this.process = spawn(spawnCmd, spawnArgs, {
+      // utilityProcess.fork() runs the .mjs entry directly without spawning a
+      // shell or visible console window. Works identically in dev and packaged.
+      this.process = utilityProcess.fork(entryScript, gatewayArgs, {
         cwd: openclawDir,
-        stdio: ['ignore', 'pipe', 'pipe'],
-        detached: false,
-        shell: useShell,
-        windowsHide: true,
-        env: spawnEnv,
+        stdio: 'pipe',
+        env: forkEnv as NodeJS.ProcessEnv,
+        serviceName: 'OpenClaw Gateway',
       });
       const child = this.process;
       this.ownsProcess = true;
@@ -1132,10 +1345,11 @@ export class GatewayManager extends EventEmitter {
         reject(error);
       });
 
-      child.on('exit', (code, signal) => {
+      child.on('exit', (code: number) => {
+        this.processExitCode = code;
         const expectedExit = !this.shouldReconnect || this.status.state === 'stopped';
         const level = expectedExit ? logger.info : logger.warn;
-        level(`Gateway process exited (${this.formatExit(code, signal)}, expected=${expectedExit ? 'yes' : 'no'})`);
+        level(`Gateway process exited (code=${code}, expected=${expectedExit ? 'yes' : 'no'})`);
         this.ownsProcess = false;
         if (this.process === child) {
           this.process = null;
@@ -1148,9 +1362,7 @@ export class GatewayManager extends EventEmitter {
         }
       });
 
-      child.on('close', (code, signal) => {
-        logger.debug(`Gateway process stdio closed (${this.formatExit(code, signal)})`);
-      });
+      // UtilityProcess doesn't emit 'close'; stdout/stderr end naturally on exit.
 
       // Log stderr
       child.stderr?.on('data', (data) => {
@@ -1167,13 +1379,13 @@ export class GatewayManager extends EventEmitter {
         }
       });
 
-      // Store PID
-      if (child.pid) {
+      // PID is only available after the child process has fully spawned.
+      // utilityProcess.fork() is asynchronous — child.pid is undefined if read
+      // synchronously right after fork(). Use the 'spawned' event instead.
+      child.on('spawn', () => {
         logger.info(`Gateway process started (pid=${child.pid})`);
         this.setStatus({ pid: child.pid });
-      } else {
-        logger.warn('Gateway process spawned but PID is undefined');
-      }
+      });
 
       resolve();
     });
@@ -1185,12 +1397,12 @@ export class GatewayManager extends EventEmitter {
   private async waitForReady(retries = 2400, interval = 250): Promise<void> {
     const child = this.process;
     for (let i = 0; i < retries; i++) {
-      // Early exit if the gateway process has already exited
-      if (child && (child.exitCode !== null || child.signalCode !== null)) {
-        const code = child.exitCode;
-        const signal = child.signalCode;
-        logger.error(`Gateway process exited before ready (${this.formatExit(code, signal)})`);
-        throw new Error(`Gateway process exited before becoming ready (${this.formatExit(code, signal)})`);
+      // Early exit if the gateway process has already exited.
+      // UtilityProcess has no synchronous exitCode/signalCode — use our tracked flag.
+      if (child && this.processExitCode !== null) {
+        const code = this.processExitCode;
+        logger.error(`Gateway process exited before ready (code=${code})`);
+        throw new Error(`Gateway process exited before becoming ready (code=${code})`);
       }
 
       try {
@@ -1670,6 +1882,7 @@ export class GatewayManager extends EventEmitter {
     // Log state transitions
     if (previousState !== this.status.state) {
       logger.debug(`Gateway state changed: ${previousState} -> ${this.status.state}`);
+      this.flushDeferredRestart(`status:${previousState}->${this.status.state}`);
     }
   }
 }

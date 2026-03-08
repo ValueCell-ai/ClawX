@@ -11,6 +11,10 @@
     "gatewayWarning": "ゲートウェイサービスが実行されていないため、チャンネルに接続できません。",
     "available": "利用可能なチャンネル",
     "availableDesc": "新しいチャンネルを接続",
+    "configured": "設定済みチャンネル",
+    "configuredDesc": "すでに設定済みのチャンネルを管理",
+    "configuredBadge": "設定済み",
+    "deleteConfirm": "このチャンネルを削除してもよろしいですか？",
     "showAll": "すべて表示",
     "pluginBadge": "プラグイン",
     "toast": {
@@ -37,6 +41,8 @@
         "viewDocs": "ドキュメントを表示",
         "channelName": "チャンネル名",
         "channelNamePlaceholder": "マイ {{name}}",
+        "enableChannel": "チャンネルを有効化",
+        "enableChannelDesc": "オフの場合、設定のみ保存しチャンネルは起動しません",
         "credentialsVerified": "認証情報が確認されました",
         "validationFailed": "検証に失敗しました",
         "warnings": "警告",
@@ -53,6 +59,7 @@
     "meta": {
         "telegram": {
             "description": "@BotFather からのボットトークンを使用して Telegram に接続します",
+            "docsUrl": "https://icnnp7d0dymg.feishu.cn/wiki/TjiGwxsMWi7hpDkDAQBc0ydMnEf#MEkKdqXP1orZU2x4SrFcdUHgnl1",
             "fields": {
                 "botToken": {
                     "label": "ボットトークン",
@@ -74,6 +81,7 @@
         },
         "discord": {
             "description": "Developer Portal からのボットトークンを使用して Discord に接続します",
+            "docsUrl": "https://icnnp7d0dymg.feishu.cn/wiki/BkOywJYCAiYRN9k4KTTceKPMnxg#QS6LdxnA2oNtfcxtFc8cgabnnNd",
             "fields": {
                 "token": {
                     "label": "ボットトークン",
@@ -101,6 +109,7 @@
         },
         "whatsapp": {
             "description": "QRコードをスキャンして WhatsApp に接続します（電話番号は不要です）",
+            "docsUrl": "https://icnnp7d0dymg.feishu.cn/wiki/ES7fwUfH8iGl8FkHYfFcyWB3n4d#doxcnUElomBZLi0NnKLUzn6zLbd",
             "instructions": [
                 "携帯電話で WhatsApp を開きます",
                 "設定 > リンクされたデバイス > デバイスをリンク に移動します",
@@ -110,7 +119,7 @@
         },
         "dingtalk": {
             "description": "OpenClaw のチャンネルプラグイン経由で DingTalk に接続します（Stream モード）",
-            "docsUrl": "https://github.com/soimy/openclaw-channel-dingtalk",
+            "docsUrl": "https://icnnp7d0dymg.feishu.cn/wiki/Y5eNwiSiZidkLskrwtJc1rUln0b#doxcnDgA78n43DbkiQjI1OqUA7b",
             "fields": {
                 "clientId": {
                     "label": "Client ID (AppKey)",
@@ -152,10 +161,12 @@
                 "システムに signal-cli をインストールします",
                 "電話番号を登録またはリンクします",
                 "以下に電話番号を入力します"
-            ]
+            ],
+            "docsUrl": "https://docs.openclaw.ai/channels/signal"
         },
         "feishu": {
             "description": "WebSocket 経由で Feishu/Lark ボットに接続します",
+            "docsUrl": "https://icnnp7d0dymg.feishu.cn/wiki/GKn8wOvHnibpPNkNkPzcAvGlnzK#GdHUdp9t9oqyegxwV8ScLvVGn1c",
             "fields": {
                 "appId": {
                     "label": "App ID",
@@ -190,7 +201,8 @@
                 "Mac に BlueBubbles サーバーをインストールします",
                 "サーバーURLとパスワードをメモします",
                 "以下に接続詳細を入力します"
-            ]
+            ],
+            "docsUrl": "https://docs.openclaw.ai/channels/bluebubbles"
         },
         "matrix": {
             "description": "Matrix プロトコルに接続します",
@@ -208,7 +220,8 @@
                 "Matrix アカウントを作成するか、既存のものを使用します",
                 "クライアントからアクセストークンを取得します",
                 "以下にホームサーバーとトークンを入力します"
-            ]
+            ],
+            "docsUrl": "https://docs.openclaw.ai/channels/matrix"
         },
         "line": {
             "description": "LINE Messaging API に接続します",
@@ -226,7 +239,8 @@
                 "LINE Developers Console に移動します",
                 "Messaging API チャンネルを作成します",
                 "チャンネルアクセストークンとシークレットを取得します"
-            ]
+            ],
+            "docsUrl": "https://docs.openclaw.ai/channels/line"
         },
         "msteams": {
             "description": "Bot Framework 経由で Microsoft Teams に接続します",
@@ -245,7 +259,8 @@
                 "新しい Bot アプリケーションを登録します",
                 "App ID を取得し、パスワードを作成します",
                 "Teams チャンネルを設定します"
-            ]
+            ],
+            "docsUrl": "https://docs.openclaw.ai/channels/msteams"
         },
         "googlechat": {
             "description": "Webhook 経由で Google Chat に接続します",
@@ -260,7 +275,8 @@
                 "Google Chat API を有効にします",
                 "サービスアカウントを作成します",
                 "JSON キーファイルをダウンロードします"
-            ]
+            ],
+            "docsUrl": "https://docs.openclaw.ai/channels/googlechat"
         },
         "mattermost": {
             "description": "Bot API 経由で Mattermost に接続します",
@@ -278,7 +294,8 @@
                 "Mattermost Integrations に移動します",
                 "新しい Bot アカウントを作成します",
                 "アクセストークンをコピーします"
-            ]
+            ],
+            "docsUrl": "https://docs.openclaw.ai/channels/mattermost"
         }
     },
     "viewDocs": "ドキュメントを表示"

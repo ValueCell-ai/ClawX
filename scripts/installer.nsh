@@ -3,6 +3,75 @@
 ; Install: enables long paths, adds resources\cli to user PATH for openclaw CLI.
 ; Uninstall: removes the PATH entry and optionally deletes user data.
 
+!ifndef nsProcess::FindProcess
+  !include "nsProcess.nsh"
+!endif
+
+!macro customCheckAppRunning
+  ; Pre-emptively remove old shortcuts to prevent the Windows "Missing Shortcut"
+  ; dialog during upgrades.  The built-in NSIS uninstaller deletes ClawX.exe
+  ; *before* removing shortcuts; Windows Shell link tracking can detect the
+  ; broken target in that brief window and pop a resolver dialog.
+  ; Delete is a silent no-op when the file doesn't exist (safe for fresh installs).
+  Delete "$DESKTOP\${PRODUCT_NAME}.lnk"
+  Delete "$SMPROGRAMS\${PRODUCT_NAME}.lnk"
+
+  ${nsProcess::FindProcess} "${APP_EXECUTABLE_FILENAME}" $R0
+
+  ${if} $R0 == 0
+    ${if} ${isUpdated}
+      # allow app to exit without explicit kill
+      Sleep 1000
+      Goto doStopProcess
+    ${endIf}
+    MessageBox MB_OKCANCEL|MB_ICONEXCLAMATION "$(appRunning)" /SD IDOK IDOK doStopProcess
+    Quit
+
+    doStopProcess:
+    DetailPrint `Closing running "${PRODUCT_NAME}"...`
+
+    # Silently kill the process using nsProcess instead of taskkill / cmd.exe
+    ${nsProcess::KillProcess} "${APP_EXECUTABLE_FILENAME}" $R0
+    
+    # to ensure that files are not "in-use"
+    Sleep 300
+
+    # Retry counter
+    StrCpy $R1 0
+
+    loop:
+      IntOp $R1 $R1 + 1
+
+      ${nsProcess::FindProcess} "${APP_EXECUTABLE_FILENAME}" $R0
+      ${if} $R0 == 0
+        # wait to give a chance to exit gracefully
+        Sleep 1000
+        ${nsProcess::KillProcess} "${APP_EXECUTABLE_FILENAME}" $R0
+        
+        ${nsProcess::FindProcess} "${APP_EXECUTABLE_FILENAME}" $R0
+        ${If} $R0 == 0
+          DetailPrint `Waiting for "${PRODUCT_NAME}" to close.`
+          Sleep 2000
+        ${else}
+          Goto not_running
+        ${endIf}
+      ${else}
+        Goto not_running
+      ${endIf}
+
+      # App likely running with elevated permissions.
+      # Ask user to close it manually
+      ${if} $R1 > 1
+        MessageBox MB_RETRYCANCEL|MB_ICONEXCLAMATION "$(appCannotBeClosed)" /SD IDCANCEL IDRETRY loop
+        Quit
+      ${else}
+        Goto loop
+      ${endIf}
+    not_running:
+      ${nsProcess::Unload}
+  ${endIf}
+!macroend
+
 !macro customInstall
   ; Enable Windows long path support (Windows 10 1607+ / Windows 11).
   ; pnpm virtual store paths can exceed the default MAX_PATH limit of 260 chars.
@@ -12,7 +81,15 @@
 
   ; Add resources\cli to the current user's PATH for openclaw CLI.
   ; Read current PATH, skip if already present, append otherwise.
+  ;
+  ; ReadRegStr silently returns "" when the value exceeds the NSIS string
+  ; buffer (8192 chars for the electron-builder large-strings build).
+  ; Without an error-flag check we would overwrite the entire user PATH with
+  ; only our CLI directory, destroying every other PATH entry.
+  ClearErrors
   ReadRegStr $0 HKCU "Environment" "Path"
+  IfErrors _ci_readFailed
+
   StrCmp $0 "" _ci_setNew
 
   ; Check if our CLI dir is already in PATH
@@ -33,6 +110,12 @@
     WriteRegExpandStr HKCU "Environment" "Path" $0
     ; Broadcast WM_SETTINGCHANGE so running Explorer/terminals pick up the change
     SendMessage ${HWND_BROADCAST} ${WM_SETTINGCHANGE} 0 "STR:Environment" /TIMEOUT=500
+    Goto _ci_done
+
+  _ci_readFailed:
+    ; PATH value could not be read (likely exceeds NSIS buffer).
+    ; Skip modification to avoid destroying existing entries.
+    DetailPrint "Warning: Could not read user PATH (may exceed 8192 chars). Skipping PATH update."
 
   _ci_done:
 !macroend
@@ -76,7 +159,9 @@ FunctionEnd
 
 !macro customUnInstall
   ; Remove resources\cli from user PATH
+  ClearErrors
   ReadRegStr $0 HKCU "Environment" "Path"
+  IfErrors _cu_pathDone
   StrCmp $0 "" _cu_pathDone
 
   ; Remove our entry (with leading or trailing semicolons)
@@ -84,8 +169,17 @@ FunctionEnd
   Push "$INSTDIR\resources\cli"
   Call un._cu_RemoveFromPath
   Pop $0
+
+  ; If PATH is now empty, delete the registry value instead of writing ""
+  StrCmp $0 "" _cu_deletePath
   WriteRegExpandStr HKCU "Environment" "Path" $0
-  SendMessage ${HWND_BROADCAST} ${WM_SETTINGCHANGE} 0 "STR:Environment" /TIMEOUT=500
+  Goto _cu_pathBroadcast
+
+  _cu_deletePath:
+    DeleteRegValue HKCU "Environment" "Path"
+
+  _cu_pathBroadcast:
+    SendMessage ${HWND_BROADCAST} ${WM_SETTINGCHANGE} 0 "STR:Environment" /TIMEOUT=500
 
   _cu_pathDone:
 
