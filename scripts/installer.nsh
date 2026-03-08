@@ -15,6 +15,8 @@
   ; Delete is a silent no-op when the file doesn't exist (safe for fresh installs).
   Delete "$DESKTOP\${PRODUCT_NAME}.lnk"
   Delete "$SMPROGRAMS\${PRODUCT_NAME}.lnk"
+  Delete "$DESKTOP\OpenClaw.lnk"
+  Delete "$SMPROGRAMS\OpenClaw.lnk"
 
   ${nsProcess::FindProcess} "${APP_EXECUTABLE_FILENAME}" $R0
 
@@ -69,6 +71,22 @@
       ${endIf}
     not_running:
       ${nsProcess::Unload}
+  ${endIf}
+
+  ; Best-effort close of legacy OpenClaw executable names to avoid upgrade stalls
+  ; when users switch from older OpenClaw desktop installers to ClawX.
+  ${nsProcess::FindProcess} "OpenClaw.exe" $R0
+  ${if} $R0 == 0
+    DetailPrint `Closing legacy "OpenClaw.exe"...`
+    ${nsProcess::KillProcess} "OpenClaw.exe" $R0
+    Sleep 500
+  ${endIf}
+
+  ${nsProcess::FindProcess} "openclaw.exe" $R0
+  ${if} $R0 == 0
+    DetailPrint `Closing legacy "openclaw.exe"...`
+    ${nsProcess::KillProcess} "openclaw.exe" $R0
+    Sleep 500
   ${endIf}
 !macroend
 
