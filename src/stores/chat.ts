@@ -900,6 +900,33 @@ function hasNonToolAssistantContent(message: RawMessage | undefined): boolean {
   return false;
 }
 
+function mergeStreamingMessage(previous: unknown, incoming: unknown): unknown {
+  if (!incoming || typeof incoming !== 'object') return incoming ?? previous;
+  if (!previous || typeof previous !== 'object') return incoming;
+
+  const next = incoming as RawMessage;
+  const prev = previous as RawMessage;
+  const nextRole = typeof next.role === 'string' ? next.role : 'assistant';
+  const prevRole = typeof prev.role === 'string' ? prev.role : 'assistant';
+
+  if (nextRole !== 'assistant' || prevRole !== 'assistant') return incoming;
+
+  const nextText = typeof next.content === 'string' ? next.content : '';
+  const prevText = typeof prev.content === 'string' ? prev.content : '';
+  if (!nextText || !prevText) return incoming;
+
+  // Cumulative stream payload (most common): keep latest payload
+  if (nextText.startsWith(prevText)) return incoming;
+  // Out-of-order shorter payload: keep current longer state
+  if (prevText.startsWith(nextText)) return previous;
+  // Chunk payload: append delta to preserve progressive rendering
+  return {
+    ...prev,
+    ...next,
+    content: `${prevText}${nextText}`,
+  } as RawMessage;
+}
+
 // ── Store ────────────────────────────────────────────────────────
 
 export const useChatStore = create<ChatState>((set, get) => ({
@@ -1515,14 +1542,13 @@ export const useChatStore = create<ChatState>((set, get) => ({
       }
     }
 
-    // Only pause the history poll when we receive actual streaming data.
-    // The gateway sends "agent" events with { phase, startedAt } that carry
-    // no message — these must NOT kill the poll, since the poll is our only
-    // way to track progress when the gateway doesn't stream intermediate turns.
+    // Keep history polling alive during delta streaming as a fallback in case
+    // stream events stop unexpectedly. Only stop polling on terminal states.
     const hasUsefulData = resolvedState === 'delta' || resolvedState === 'final'
       || resolvedState === 'error' || resolvedState === 'aborted';
+    const hasTerminalData = resolvedState === 'final' || resolvedState === 'error' || resolvedState === 'aborted';
     if (hasUsefulData) {
-      clearHistoryPoll();
+      if (hasTerminalData) clearHistoryPoll();
       // Adopt run started from another client (e.g. console at 127.0.0.1:18789):
       // show loading/streaming in the app when this session has an active run.
       const { sending } = get();
@@ -1555,7 +1581,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
               const msgRole = (event.message as RawMessage).role;
               if (isToolResultRole(msgRole)) return s.streamingMessage;
             }
-            return event.message ?? s.streamingMessage;
+            return mergeStreamingMessage(s.streamingMessage, event.message);
           })(),
           streamingTools: updates.length > 0 ? upsertToolStatuses(s.streamingTools, updates) : s.streamingTools,
         }));
@@ -1692,7 +1718,9 @@ export const useChatStore = create<ChatState>((set, get) => ({
           // tool-use turns (thinking + tool blocks) from the Gateway's authoritative record.
           if (hasOutput && !toolOnly) {
             clearHistoryPoll();
-            void get().loadHistory(true);
+            setTimeout(() => {
+              void get().loadHistory(true);
+            }, 800);
           }
         } else {
           // No message in final event - reload history to get complete data
@@ -1782,7 +1810,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
           console.warn(`[handleChatEvent] Unknown event state "${resolvedState}", treating message as streaming delta. Event keys:`, Object.keys(event));
           const updates = collectToolUpdates(event.message, 'delta');
           set((s) => ({
-            streamingMessage: event.message ?? s.streamingMessage,
+            streamingMessage: mergeStreamingMessage(s.streamingMessage, event.message),
             streamingTools: updates.length > 0 ? upsertToolStatuses(s.streamingTools, updates) : s.streamingTools,
           }));
         }

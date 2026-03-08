@@ -114,19 +114,14 @@ export const useGatewayStore = create<GatewayState>((set, get) => ({
             import('./chat')
               .then(({ useChatStore }) => {
                 const state = useChatStore.getState();
-                // Always reload history on agent completion, regardless of
-                // the `sending` flag. After a transient error the flag may
-                // already be false, but the Gateway may have retried and
-                // completed successfully in the background.
-                state.loadHistory(true);
-                if (state.sending) {
-                  useChatStore.setState({
-                    sending: false,
-                    activeRunId: null,
-                    pendingFinal: false,
-                    lastUserMessageAt: null,
-                  });
-                }
+                const normalizedSessionKey = sessionKey != null ? String(sessionKey) : '';
+                // Ignore completion events from other sessions to avoid stale
+                // history overwrites in the currently-open conversation.
+                if (normalizedSessionKey && normalizedSessionKey !== state.currentSessionKey) return;
+                // Delay a bit to avoid racing against Gateway transcript flush.
+                setTimeout(() => {
+                  void useChatStore.getState().loadHistory(true);
+                }, 800);
               })
               .catch(() => {});
           }
@@ -149,11 +144,16 @@ export const useGatewayStore = create<GatewayState>((set, get) => ({
                 return;
               }
 
-              // Raw message without state wrapper — treat as final
+              const state = useChatStore.getState();
+              const stopReason = payload.stopReason ?? payload.stop_reason;
+              const inferredState = stopReason ? 'final' : (state.sending ? 'delta' : 'final');
+
+              // Raw message without state wrapper — infer from runtime state.
               useChatStore.getState().handleChatEvent({
-                state: 'final',
+                state: inferredState,
                 message: payload,
                 runId: chatData.runId ?? payload.runId,
+                sessionKey: chatData.sessionKey ?? payload.sessionKey,
               });
             }).catch(() => {});
           } catch {
@@ -175,8 +175,11 @@ export const useGatewayStore = create<GatewayState>((set, get) => ({
             }).catch(() => {});
           } else if (msg.role && msg.content) {
             import('./chat').then(({ useChatStore }) => {
+              const state = useChatStore.getState();
+              const stopReason = msg.stopReason ?? msg.stop_reason;
+              const inferredState = stopReason ? 'final' : (state.sending ? 'delta' : 'final');
               useChatStore.getState().handleChatEvent({
-                state: 'final',
+                state: inferredState,
                 message: msg,
               });
             }).catch(() => {});

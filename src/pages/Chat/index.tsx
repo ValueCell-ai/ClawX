@@ -29,6 +29,7 @@ export function Chat() {
   const streamingMessage = useChatStore((s) => s.streamingMessage);
   const streamingTools = useChatStore((s) => s.streamingTools);
   const pendingFinal = useChatStore((s) => s.pendingFinal);
+  const currentSessionKey = useChatStore((s) => s.currentSessionKey);
   const loadHistory = useChatStore((s) => s.loadHistory);
   const loadSessions = useChatStore((s) => s.loadSessions);
   const sendMessage = useChatStore((s) => s.sendMessage);
@@ -37,7 +38,12 @@ export function Chat() {
 
   const cleanupEmptySession = useChatStore((s) => s.cleanupEmptySession);
 
+  const messagesViewportRef = useRef<HTMLDivElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const pendingSessionJumpKeyRef = useRef<string | null>(null);
+  const isUserNearBottomRef = useRef<boolean>(true);
+  const previousSessionKeyRef = useRef<string | null>(null);
+  const previousMessageCountRef = useRef<number>(0);
   const [streamingTimestamp, setStreamingTimestamp] = useState<number>(0);
 
   // Load data when gateway is running.
@@ -62,10 +68,54 @@ export function Chat() {
     };
   }, [isGatewayRunning, loadHistory, loadSessions, cleanupEmptySession]);
 
-  // Auto-scroll on new messages, streaming, or activity changes
+  // Track whether user is near bottom so we don't yank scroll position
+  // while they are reading earlier messages.
+  const handleMessagesScroll = () => {
+    const container = messagesViewportRef.current;
+    if (!container) return;
+    const distanceToBottom = container.scrollHeight - container.scrollTop - container.clientHeight;
+    isUserNearBottomRef.current = distanceToBottom <= 72;
+  };
+
+  // Scroll behavior:
+  // 1) session switch -> jump to latest ONCE with no animation
+  // 2) live stream in same session -> smooth follow
+  // 3) if user scrolled up -> don't force-scroll
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages, streamingMessage, sending, pendingFinal]);
+    const previousSessionKey = previousSessionKeyRef.current;
+    const previousMessageCount = previousMessageCountRef.current;
+
+    const sessionChanged = previousSessionKey != null && previousSessionKey !== currentSessionKey;
+    if (sessionChanged) {
+      pendingSessionJumpKeyRef.current = currentSessionKey;
+    }
+
+    const hasPendingSessionJump = pendingSessionJumpKeyRef.current === currentSessionKey;
+    if (hasPendingSessionJump && (messages.length > 0 || !loading)) {
+      if (messages.length > 0) {
+        messagesEndRef.current?.scrollIntoView({ behavior: 'auto' });
+      }
+      pendingSessionJumpKeyRef.current = null;
+      isUserNearBottomRef.current = true;
+      previousSessionKeyRef.current = currentSessionKey;
+      previousMessageCountRef.current = messages.length;
+      return;
+    }
+
+    const messageCountIncreased = messages.length > previousMessageCount;
+    const shouldFollowLive = sending || pendingFinal || Boolean(streamingMessage);
+    const shouldAutoScroll = !sessionChanged
+      && isUserNearBottomRef.current
+      && (shouldFollowLive || messageCountIncreased);
+
+    if (shouldAutoScroll) {
+      messagesEndRef.current?.scrollIntoView({ behavior: shouldFollowLive ? 'smooth' : 'auto' });
+      isUserNearBottomRef.current = true;
+    }
+
+    previousSessionKeyRef.current = currentSessionKey;
+    previousMessageCountRef.current = messages.length;
+  }, [currentSessionKey, messages.length, streamingMessage, sending, pendingFinal, loading]);
 
   // Update timestamp when sending starts
   useEffect(() => {
@@ -113,7 +163,11 @@ export function Chat() {
       </div>
 
       {/* Messages Area */}
-      <div className="flex-1 overflow-y-auto px-4 py-4">
+      <div
+        ref={messagesViewportRef}
+        className="flex-1 overflow-y-auto px-4 py-4"
+        onScroll={handleMessagesScroll}
+      >
         <div className="max-w-4xl mx-auto space-y-4">
           {loading && !sending ? (
             <div className="flex h-full items-center justify-center py-20">
