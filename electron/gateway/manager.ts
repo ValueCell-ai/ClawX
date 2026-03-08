@@ -11,6 +11,8 @@ import { PORTS } from '../utils/config';
 import {
   getOpenClawDir,
   getOpenClawEntryPath,
+  getOpenClawConfigDir,
+  isOpenClawBuilt,
   isOpenClawPresent,
   appendNodeRequireToNodeOptions,
 } from '../utils/paths';
@@ -1054,6 +1056,7 @@ export class GatewayManager extends EventEmitter {
         ...process.env,
         PATH: finalPath,
         ...uvEnv,
+        OPENCLAW_STATE_DIR: getOpenClawConfigDir(),
         OPENCLAW_NO_RESPAWN: '1',
       };
 
@@ -1299,6 +1302,7 @@ export class GatewayManager extends EventEmitter {
         ...uvEnv,
         ...proxyEnv,
         OPENCLAW_GATEWAY_TOKEN: gatewayToken,
+        OPENCLAW_STATE_DIR: getOpenClawConfigDir(),
         OPENCLAW_SKIP_CHANNELS: '',
         CLAWDBOT_SKIP_CHANNELS: '',
         // Prevent OpenClaw from respawning itself inside the utility process

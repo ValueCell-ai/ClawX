@@ -27,10 +27,14 @@ export function expandPath(path: string): string {
 }
 
 /**
- * Get OpenClaw config directory
+ * Get OpenClaw config directory.
+ *
+ * Uses a ClawX-specific directory (~/.clawx/openclaw) so that the
+ * embedded Gateway's config does not collide with a system-wide
+ * OpenClaw CLI installation at ~/.openclaw.
  */
 export function getOpenClawConfigDir(): string {
-  return join(homedir(), '.openclaw');
+  return join(homedir(), '.clawx', 'openclaw');
 }
 
 /**

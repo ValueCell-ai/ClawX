@@ -7,12 +7,11 @@
 import { access, mkdir, readFile, writeFile, readdir, stat, rm } from 'fs/promises';
 import { constants } from 'fs';
 import { join } from 'path';
-import { homedir } from 'os';
-import { getOpenClawResolvedDir } from './paths';
+import { getOpenClawResolvedDir, getOpenClawConfigDir } from './paths';
 import * as logger from './logger';
 import { proxyAwareFetch } from './proxy-fetch';
 
-const OPENCLAW_DIR = join(homedir(), '.openclaw');
+const OPENCLAW_DIR = getOpenClawConfigDir();
 const CONFIG_FILE = join(OPENCLAW_DIR, 'openclaw.json');
 
 // Channels that are managed as plugins (config goes under plugins.entries, not channels)
@@ -316,7 +315,7 @@ export async function deleteChannelConfig(channelType: string): Promise<void> {
     // Special handling for WhatsApp credentials
     if (channelType === 'whatsapp') {
         try {
-            const whatsappDir = join(homedir(), '.openclaw', 'credentials', 'whatsapp');
+            const whatsappDir = join(getOpenClawConfigDir(), 'credentials', 'whatsapp');
             if (await fileExists(whatsappDir)) {
                 await rm(whatsappDir, { recursive: true, force: true });
                 console.log('Deleted WhatsApp credentials directory');
@@ -339,7 +338,7 @@ export async function listConfiguredChannels(): Promise<string[]> {
 
     // Check for WhatsApp credentials directory
     try {
-        const whatsappDir = join(homedir(), '.openclaw', 'credentials', 'whatsapp');
+        const whatsappDir = join(getOpenClawConfigDir(), 'credentials', 'whatsapp');
         if (await fileExists(whatsappDir)) {
             const entries = await readdir(whatsappDir);
             const hasSession = await (async () => {
