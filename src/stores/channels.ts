@@ -6,6 +6,7 @@ import { create } from 'zustand';
 import { hostApiFetch } from '@/lib/host-api';
 import { useGatewayStore } from './gateway';
 import type { Channel, ChannelType } from '../types/channel';
+import { invokeIpc } from '@/lib/api-client';
 
 interface AddChannelParams {
   type: ChannelType;
@@ -19,7 +20,7 @@ interface ChannelsState {
   error: string | null;
 
   // Actions
-  fetchChannels: () => Promise<void>;
+  fetchChannels: (options?: { probe?: boolean; silent?: boolean }) => Promise<void>;
   addChannel: (params: AddChannelParams) => Promise<Channel>;
   deleteChannel: (channelId: string) => Promise<void>;
   connectChannel: (channelId: string) => Promise<void>;
@@ -35,10 +36,20 @@ export const useChannelsStore = create<ChannelsState>((set, get) => ({
   loading: false,
   error: null,
 
-  fetchChannels: async () => {
-    set({ loading: true, error: null });
+  fetchChannels: async (options) => {
+    const probe = options?.probe ?? false;
+    const silent = options?.silent ?? false;
+    if (!silent) {
+      set({ loading: true, error: null });
+    }
     try {
-      const data = await useGatewayStore.getState().rpc<{
+      const result = await invokeIpc(
+        'gateway:rpc',
+        'channels.status',
+        { probe }
+      ) as {
+        success: boolean;
+        result?: {
           channelOrder?: string[];
           channels?: Record<string, unknown>;
           channelAccounts?: Record<string, Array<{
@@ -118,20 +129,24 @@ export const useChannelsStore = create<ChannelsState>((set, get) => ({
           });
         }
 
-        set({ channels, loading: false });
+        set((state) => ({ channels, loading: silent ? state.loading : false }));
       } else {
         // Gateway not available - try to show channels from local config
-        set({ channels: [], loading: false });
+        set((state) => ({ channels: [], loading: silent ? state.loading : false }));
       }
     } catch {
       // Gateway not connected, show empty
-      set({ channels: [], loading: false });
+      set((state) => ({ channels: [], loading: silent ? state.loading : false }));
     }
   },
 
   addChannel: async (params) => {
     try {
-      const result = await useGatewayStore.getState().rpc<Channel>('channels.add', params);
+      const result = await invokeIpc(
+        'gateway:rpc',
+        'channels.add',
+        params
+      ) as { success: boolean; result?: Channel; error?: string };
 
       if (result) {
         set((state) => ({
@@ -172,15 +187,17 @@ export const useChannelsStore = create<ChannelsState>((set, get) => ({
 
     try {
       // Delete the channel configuration from openclaw.json
-      await hostApiFetch(`/api/channels/config/${encodeURIComponent(channelType)}`, {
-        method: 'DELETE',
-      });
+      await invokeIpc('channel:deleteConfig', channelType);
     } catch (error) {
       console.error('Failed to delete channel config:', error);
     }
 
     try {
-      await useGatewayStore.getState().rpc('channels.delete', { channelId: channelType });
+      await invokeIpc(
+        'gateway:rpc',
+        'channels.delete',
+        { channelId: channelType }
+      );
     } catch (error) {
       // Continue with local deletion even if gateway fails
       console.error('Failed to delete channel from gateway:', error);
@@ -197,8 +214,17 @@ export const useChannelsStore = create<ChannelsState>((set, get) => ({
     updateChannel(channelId, { status: 'connecting', error: undefined });
 
     try {
-      await useGatewayStore.getState().rpc('channels.connect', { channelId });
-      updateChannel(channelId, { status: 'connected' });
+      const result = await invokeIpc(
+        'gateway:rpc',
+        'channels.connect',
+        { channelId }
+      ) as { success: boolean; error?: string };
+
+      if (result.success) {
+        updateChannel(channelId, { status: 'connected' });
+      } else {
+        updateChannel(channelId, { status: 'error', error: result.error });
+      }
     } catch (error) {
       updateChannel(channelId, { status: 'error', error: String(error) });
     }
@@ -208,7 +234,11 @@ export const useChannelsStore = create<ChannelsState>((set, get) => ({
     const { updateChannel } = get();
 
     try {
-      await useGatewayStore.getState().rpc('channels.disconnect', { channelId });
+      await invokeIpc(
+        'gateway:rpc',
+        'channels.disconnect',
+        { channelId }
+      );
     } catch (error) {
       console.error('Failed to disconnect channel:', error);
     }
@@ -217,7 +247,8 @@ export const useChannelsStore = create<ChannelsState>((set, get) => ({
   },
 
   requestQrCode: async (channelType) => {
-    return await useGatewayStore.getState().rpc<{ qrCode: string; sessionId: string }>(
+    const result = await invokeIpc(
+      'gateway:rpc',
       'channels.requestQr',
       { type: channelType },
     );

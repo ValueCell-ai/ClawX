@@ -154,6 +154,9 @@ When you launch ClawX for the first time, the **Setup Wizard** will guide you th
 3. **Skill Bundles** – Select pre-configured skills for common use cases
 4. **Verification** – Test your configuration before entering the main interface
 
+> Note for Moonshot (Kimi): ClawX keeps Kimi web search enabled by default.  
+> When Moonshot is configured, ClawX also syncs Kimi web search to the China endpoint (`https://api.moonshot.cn/v1`) in OpenClaw config.
+
 ### Proxy Settings
 
 ClawX includes built-in proxy settings for environments where Electron, the OpenClaw Gateway, or channels such as Telegram need to reach the internet through a local proxy client.

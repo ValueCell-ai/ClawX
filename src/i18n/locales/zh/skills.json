@@ -16,6 +16,10 @@
     "search": "搜索技能...",
     "searchMarketplace": "搜索市场...",
     "searchButton": "搜索",
+    "actions": {
+        "enableVisible": "批量启用可见项",
+        "disableVisible": "批量禁用可见项"
+    },
     "noSkills": "未找到技能",
     "noSkillsSearch": "尝试不同的搜索词",
     "noSkillsAvailable": "暂无可用技能",
@@ -63,7 +67,12 @@
         "searchRateLimitError": "搜索请求过于频繁。您也可访问 ClawHub.ai 搜索并下载压缩包，解压到 \"{{path}}\"",
         "installRateLimitError": "安装请求过于频繁。您也可在 ClawHub.ai 下载该技能压缩包，解压到 \"{{path}}\"",
         "fetchTimeoutError": "获取技能列表超时，请检查网络。",
-        "fetchRateLimitError": "获取技能列表请求过于频繁，请稍后再试。"
+        "fetchRateLimitError": "获取技能列表请求过于频繁，请稍后再试。",
+        "noBatchEnableTargets": "当前可见技能都已启用。",
+        "noBatchDisableTargets": "当前可见技能都已禁用。",
+        "batchEnabled": "已启用 {{count}} 个技能。",
+        "batchDisabled": "已禁用 {{count}} 个技能。",
+        "batchPartial": "已更新 {{success}} / {{total}} 个技能，部分操作失败。"
     },
     "marketplace": {
         "title": "市场",

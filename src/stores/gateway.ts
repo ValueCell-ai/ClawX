@@ -6,6 +6,7 @@ import { create } from 'zustand';
 import { createHostEventSource, hostApiFetch } from '@/lib/host-api';
 import { gatewayClient } from '@/lib/gateway-client';
 import type { GatewayStatus } from '../types/gateway';
+import { invokeIpc } from '@/lib/api-client';
 
 let gatewayInitPromise: Promise<void> | null = null;
 let gatewayEventSource: EventSource | null = null;
@@ -162,7 +163,8 @@ export const useGatewayStore = create<GatewayState>((set, get) => ({
 
     gatewayInitPromise = (async () => {
       try {
-        const status = await hostApiFetch<GatewayStatus>('/api/gateway/status');
+        // Get initial status first
+        const status = await invokeIpc('gateway:status') as GatewayStatus;
         set({ status, isInitialized: true });
 
         if (!gatewayEventSource) {
@@ -206,9 +208,8 @@ export const useGatewayStore = create<GatewayState>((set, get) => ({
   start: async () => {
     try {
       set({ status: { ...get().status, state: 'starting' }, lastError: null });
-      const result = await hostApiFetch<{ success: boolean; error?: string }>('/api/gateway/start', {
-        method: 'POST',
-      });
+      const result = await invokeIpc('gateway:start') as { success: boolean; error?: string };
+
       if (!result.success) {
         set({
           status: { ...get().status, state: 'error', error: result.error },
@@ -225,8 +226,7 @@ export const useGatewayStore = create<GatewayState>((set, get) => ({
 
   stop: async () => {
     try {
-      await hostApiFetch('/api/gateway/stop', { method: 'POST' });
-      gatewayClient.disconnect();
+      await invokeIpc('gateway:stop');
       set({ status: { ...get().status, state: 'stopped' }, lastError: null });
     } catch (error) {
       console.error('Failed to stop Gateway:', error);
@@ -237,10 +237,8 @@ export const useGatewayStore = create<GatewayState>((set, get) => ({
   restart: async () => {
     try {
       set({ status: { ...get().status, state: 'starting' }, lastError: null });
-      gatewayClient.disconnect();
-      const result = await hostApiFetch<{ success: boolean; error?: string }>('/api/gateway/restart', {
-        method: 'POST',
-      });
+      const result = await invokeIpc('gateway:restart') as { success: boolean; error?: string };
+
       if (!result.success) {
         set({
           status: { ...get().status, state: 'error', error: result.error },
@@ -257,9 +255,21 @@ export const useGatewayStore = create<GatewayState>((set, get) => ({
 
   checkHealth: async () => {
     try {
-      const result = await hostApiFetch<GatewayHealth>('/api/gateway/health');
-      set({ health: result });
-      return result;
+      const result = await invokeIpc('gateway:health') as {
+        success: boolean;
+        ok: boolean;
+        error?: string;
+        uptime?: number
+      };
+
+      const health: GatewayHealth = {
+        ok: result.ok,
+        error: result.error,
+        uptime: result.uptime,
+      };
+
+      set({ health });
+      return health;
     } catch (error) {
       const health: GatewayHealth = { ok: false, error: String(error) };
       set({ health });
@@ -268,7 +278,17 @@ export const useGatewayStore = create<GatewayState>((set, get) => ({
   },
 
   rpc: async <T>(method: string, params?: unknown, timeoutMs?: number): Promise<T> => {
-    return await gatewayClient.rpc<T>(method, params, timeoutMs);
+    const result = await invokeIpc('gateway:rpc', method, params, timeoutMs) as {
+      success: boolean;
+      result?: T;
+      error?: string;
+    };
+
+    if (!result.success) {
+      throw new Error(result.error || `RPC call failed: ${method}`);
+    }
+
+    return result.result as T;
   },
 
   setStatus: (status) => set({ status }),

@@ -11,8 +11,10 @@ import { PORTS } from '../utils/config';
 import {
   appendNodeRequireToNodeOptions,
 } from '../utils/paths';
-import { getSetting } from '../utils/store';
-import { JsonRpcNotification, isNotification, isResponse } from './protocol';
+import { getAllSettings, getSetting } from '../utils/store';
+import { getApiKey, getDefaultProvider, getProvider } from '../utils/secure-storage';
+import { getProviderEnvVars, getKeyableProviderTypes } from '../utils/provider-registry';
+import { GatewayEventType, JsonRpcNotification, isNotification, isResponse } from './protocol';
 import { logger } from '../utils/logger';
 import {
   loadOrCreateDeviceIdentity,
@@ -176,6 +178,14 @@ const GATEWAY_FETCH_PRELOAD_SOURCE = `'use strict';
 })();
 `;
 
+function injectMoonshotWebSearchEnv(
+  env: Record<string, string>,
+  apiKey: string
+): void {
+  // OpenClaw web_search(kimi) reads KIMI_API_KEY before provider-specific config.
+  env.KIMI_API_KEY = apiKey;
+}
+
 function ensureGatewayFetchPreload(): string {
   const dest = path.join(app.getPath('userData'), 'gateway-fetch-preload.cjs');
   try { writeFileSync(dest, GATEWAY_FETCH_PRELOAD_SOURCE, 'utf-8'); } catch { /* best-effort */ }
@@ -209,10 +219,11 @@ export class GatewayManager extends EventEmitter {
   private recentStartupStderrLines: string[] = [];
   private pendingRequests: Map<string, PendingGatewayRequest> = new Map();
   private deviceIdentity: DeviceIdentity | null = null;
+  private restartDebounceTimer: NodeJS.Timeout | null = null;
+  private reloadDebounceTimer: NodeJS.Timeout | null = null;
   private lifecycleEpoch = 0;
   private restartInFlight: Promise<void> | null = null;
-  private readonly connectionMonitor = new GatewayConnectionMonitor();
-  private readonly restartController = new GatewayRestartController();
+  private externalShutdownSupported: boolean | null = null;
 
   constructor(config?: Partial<ReconnectConfig>) {
     super();
@@ -260,6 +271,53 @@ export class GatewayManager extends EventEmitter {
       sanitized[tokenIdx + 1] = '[redacted]';
     }
     return sanitized;
+  }
+
+  private isUnsupportedShutdownError(error: unknown): boolean {
+    const message = error instanceof Error ? error.message : String(error);
+    return /unknown method:\s*shutdown/i.test(message);
+  }
+
+  private formatExit(code: number | null, signal: NodeJS.Signals | null): string {
+    if (code !== null) return `code=${code}`;
+    if (signal) return `signal=${signal}`;
+    return 'code=null signal=null';
+  }
+
+  private classifyStderrMessage(message: string): { level: 'drop' | 'debug' | 'warn'; normalized: string } {
+    const msg = message.trim();
+    if (!msg) return { level: 'drop', normalized: msg };
+
+    // Known noisy lines that are not actionable for Gateway lifecycle debugging.
+    if (msg.includes('openclaw-control-ui') && msg.includes('token_mismatch')) return { level: 'drop', normalized: msg };
+    if (msg.includes('closed before connect') && msg.includes('token mismatch')) return { level: 'drop', normalized: msg };
+    // During renderer refresh / transport switching, loopback websocket probes can time out
+    // while the gateway is reloading. This is expected and not actionable.
+    if (msg.includes('[ws] handshake timeout') && msg.includes('remote=127.0.0.1')) {
+      return { level: 'debug', normalized: msg };
+    }
+    if (msg.includes('[ws] closed before connect') && msg.includes('remote=127.0.0.1')) {
+      return { level: 'debug', normalized: msg };
+    }
+
+    // Downgrade frequent non-fatal noise.
+    if (msg.includes('ExperimentalWarning')) return { level: 'debug', normalized: msg };
+    if (msg.includes('DeprecationWarning')) return { level: 'debug', normalized: msg };
+    if (msg.includes('Debugger attached')) return { level: 'debug', normalized: msg };
+    // Electron restricts NODE_OPTIONS in packaged apps; this is expected and harmless.
+    if (msg.includes('NODE_OPTIONs are not supported in packaged apps')) return { level: 'debug', normalized: msg };
+
+    return { level: 'warn', normalized: msg };
+  }
+
+  private recordStartupStderrLine(line: string): void {
+    const normalized = line.trim();
+    if (!normalized) return;
+    this.recentStartupStderrLines.push(normalized);
+    const MAX_STDERR_LINES = 120;
+    if (this.recentStartupStderrLines.length > MAX_STDERR_LINES) {
+      this.recentStartupStderrLines.splice(0, this.recentStartupStderrLines.length - MAX_STDERR_LINES);
+    }
   }
 
   private bumpLifecycleEpoch(reason: string): number {
@@ -456,11 +514,17 @@ export class GatewayManager extends EventEmitter {
 
     // If this manager is attached to an external gateway process, ask it to shut down
     // over protocol before closing the socket.
-    if (!this.ownsProcess && this.ws?.readyState === WebSocket.OPEN) {
+    if (!this.ownsProcess && this.ws?.readyState === WebSocket.OPEN && this.externalShutdownSupported !== false) {
       try {
         await this.rpc('shutdown', undefined, 5000);
+        this.externalShutdownSupported = true;
       } catch (error) {
-        logger.warn('Failed to request shutdown for externally managed Gateway:', error);
+        if (this.isUnsupportedShutdownError(error)) {
+          this.externalShutdownSupported = false;
+          logger.info('External Gateway does not support "shutdown"; skipping shutdown RPC for future stops');
+        } else {
+          logger.warn('Failed to request shutdown for externally managed Gateway:', error);
+        }
       }
     }
 
@@ -550,6 +614,71 @@ export class GatewayManager extends EventEmitter {
   }
 
   /**
+   * Ask the Gateway process to reload config in-place when possible.
+   * Falls back to restart on unsupported platforms or signaling failures.
+   */
+  async reload(): Promise<void> {
+    if (this.isRestartDeferred()) {
+      this.markDeferredRestart('reload');
+      return;
+    }
+
+    if (!this.process?.pid || this.status.state !== 'running') {
+      logger.warn('Gateway reload requested while not running; falling back to restart');
+      await this.restart();
+      return;
+    }
+
+    if (process.platform === 'win32') {
+      logger.debug('Windows detected, falling back to Gateway restart for reload');
+      await this.restart();
+      return;
+    }
+
+    const connectedForMs = this.status.connectedAt
+      ? Date.now() - this.status.connectedAt
+      : Number.POSITIVE_INFINITY;
+
+    // Avoid signaling a process that just came up; it will already read latest config.
+    if (connectedForMs < 8000) {
+      logger.info(`Gateway connected ${connectedForMs}ms ago, skipping reload signal`);
+      return;
+    }
+
+    try {
+      process.kill(this.process.pid, 'SIGUSR1');
+      logger.info(`Sent SIGUSR1 to Gateway for config reload (pid=${this.process.pid})`);
+      // Some gateway builds do not handle SIGUSR1 as an in-process reload.
+      // If process state doesn't recover quickly, fall back to restart.
+      await new Promise((resolve) => setTimeout(resolve, 1500));
+      if (this.status.state !== 'running' || !this.process?.pid) {
+        logger.warn('Gateway did not stay running after reload signal, falling back to restart');
+        await this.restart();
+      }
+    } catch (error) {
+      logger.warn('Gateway reload signal failed, falling back to restart:', error);
+      await this.restart();
+    }
+  }
+
+  /**
+   * Debounced reload — coalesces multiple rapid config-change events into one
+   * in-process reload when possible.
+   */
+  debouncedReload(delayMs = 1200): void {
+    if (this.reloadDebounceTimer) {
+      clearTimeout(this.reloadDebounceTimer);
+    }
+    logger.debug(`Gateway reload debounced (will fire in ${delayMs}ms)`);
+    this.reloadDebounceTimer = setTimeout(() => {
+      this.reloadDebounceTimer = null;
+      void this.reload().catch((err) => {
+        logger.warn('Debounced Gateway reload failed:', err);
+      });
+    }, delayMs);
+  }
+
+  /**
    * Clear all active timers
    */
   private clearAllTimers(): void {
@@ -557,8 +686,22 @@ export class GatewayManager extends EventEmitter {
       clearTimeout(this.reconnectTimer);
       this.reconnectTimer = null;
     }
-    this.connectionMonitor.clear();
-    this.restartController.clearDebounceTimer();
+    if (this.pingInterval) {
+      clearInterval(this.pingInterval);
+      this.pingInterval = null;
+    }
+    if (this.healthCheckInterval) {
+      clearInterval(this.healthCheckInterval);
+      this.healthCheckInterval = null;
+    }
+    if (this.restartDebounceTimer) {
+      clearTimeout(this.restartDebounceTimer);
+      this.restartDebounceTimer = null;
+    }
+    if (this.reloadDebounceTimer) {
+      clearTimeout(this.reloadDebounceTimer);
+      this.reloadDebounceTimer = null;
+    }
   }
 
   /**
@@ -656,6 +799,125 @@ export class GatewayManager extends EventEmitter {
       channelStartupSummary,
     } = launchContext;
 
+    const openclawDir = getOpenClawDir();
+    const entryScript = getOpenClawEntryPath();
+
+    // Verify OpenClaw package exists
+    if (!isOpenClawPresent()) {
+      const errMsg = `OpenClaw package not found at: ${openclawDir}`;
+      logger.error(errMsg);
+      throw new Error(errMsg);
+    }
+
+    // Get or generate gateway token
+    const appSettings = await getAllSettings();
+    const gatewayToken = appSettings.gatewayToken;
+    await syncProxyConfigToOpenClaw(appSettings);
+
+    // Strip stale/invalid keys from openclaw.json that would cause the
+    // Gateway's strict config validation to reject the file on startup
+    // (e.g. `skills.enabled` left by an older version).
+    // This is a fast file-based pre-check; the reactive auto-repair
+    // mechanism (runOpenClawDoctorRepair) handles any remaining issues.
+    try {
+      await sanitizeOpenClawConfig();
+    } catch (err) {
+      logger.warn('Failed to sanitize openclaw.json:', err);
+    }
+
+    // Write our token into openclaw.json before starting the process.
+    // Without --dev the gateway authenticates using the token in
+    // openclaw.json; if that file has a stale token (e.g. left by the
+    // system-managed launchctl service) the WebSocket handshake will fail
+    // with "token mismatch" even though we pass --token on the CLI.
+    try {
+      await syncGatewayTokenToConfig(gatewayToken);
+    } catch (err) {
+      logger.warn('Failed to sync gateway token to openclaw.json:', err);
+    }
+
+    try {
+      await syncBrowserConfigToOpenClaw();
+    } catch (err) {
+      logger.warn('Failed to sync browser config to openclaw.json:', err);
+    }
+
+    // utilityProcess.fork() works for both dev and packaged — no ELECTRON_RUN_AS_NODE needed.
+    if (!existsSync(entryScript)) {
+      const errMsg = `OpenClaw entry script not found at: ${entryScript}`;
+      logger.error(errMsg);
+      throw new Error(errMsg);
+    }
+
+    const gatewayArgs = ['gateway', '--port', String(this.status.port), '--token', gatewayToken, '--allow-unconfigured'];
+    const mode = app.isPackaged ? 'packaged' : 'dev';
+
+    // Resolve bundled bin path for uv
+    const platform = process.platform;
+    const arch = process.arch;
+    const target = `${platform}-${arch}`;
+
+    const binPath = app.isPackaged
+      ? path.join(process.resourcesPath, 'bin')
+      : path.join(process.cwd(), 'resources', 'bin', target);
+
+    const binPathExists = existsSync(binPath);
+    const finalPath = binPathExists
+      ? `${binPath}${path.delimiter}${process.env.PATH || ''}`
+      : process.env.PATH || '';
+
+    // Load provider API keys from storage to pass as environment variables
+    const providerEnv: Record<string, string> = {};
+    const providerTypes = getKeyableProviderTypes();
+    let loadedProviderKeyCount = 0;
+
+    // Prefer the selected default provider key when provider IDs are instance-based.
+    try {
+      const defaultProviderId = await getDefaultProvider();
+      if (defaultProviderId) {
+        const defaultProvider = await getProvider(defaultProviderId);
+        const defaultProviderType = defaultProvider?.type;
+        const defaultProviderKey = await getApiKey(defaultProviderId);
+        if (defaultProviderType && defaultProviderKey) {
+          const envVars = getProviderEnvVars(defaultProviderType);
+          if (envVars.length > 0) {
+            for (const envVar of envVars) {
+              providerEnv[envVar] = defaultProviderKey;
+            }
+            if (defaultProviderType === 'moonshot') {
+              injectMoonshotWebSearchEnv(providerEnv, defaultProviderKey);
+            }
+            loadedProviderKeyCount++;
+          }
+        }
+      }
+    } catch (err) {
+      logger.warn('Failed to load default provider key for environment injection:', err);
+    }
+
+    for (const providerType of providerTypes) {
+      try {
+        const key = await getApiKey(providerType);
+        if (key) {
+          const envVars = getProviderEnvVars(providerType);
+          if (envVars.length > 0) {
+            for (const envVar of envVars) {
+              providerEnv[envVar] = key;
+            }
+            if (providerType === 'moonshot') {
+              injectMoonshotWebSearchEnv(providerEnv, key);
+            }
+            loadedProviderKeyCount++;
+          }
+        }
+      } catch (err) {
+        logger.warn(`Failed to load API key for ${providerType}:`, err);
+      }
+    }
+
+    const uvEnv = await getUvMirrorEnv();
+    const proxyEnv = buildProxyEnv(appSettings);
+    const resolvedProxy = resolveProxySettings(appSettings);
     logger.info(
       `Starting Gateway process (mode=${mode}, port=${this.status.port}, entry="${entryScript}", args="${this.sanitizeSpawnArgs(gatewayArgs).join(' ')}", cwd="${openclawDir}", bundledBin=${binPathExists ? 'yes' : 'no'}, providerKeys=${loadedProviderKeyCount}, channels=${channelStartupSummary}, proxy=${proxySummary})`
     );

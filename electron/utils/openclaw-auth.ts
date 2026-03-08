@@ -17,6 +17,11 @@ import {
   getProviderDefaultModel,
   getProviderConfig,
 } from './provider-registry';
+import {
+  OPENCLAW_PROVIDER_KEY_MOONSHOT,
+  isOAuthProviderType,
+  isOpenClawOAuthPluginProviderKey,
+} from './provider-keys';
 
 const AUTH_STORE_VERSION = 1;
 const AUTH_PROFILE_FILENAME = 'auth-profiles.json';
@@ -131,6 +136,15 @@ async function readOpenClawJson(): Promise<Record<string, unknown>> {
 }
 
 async function writeOpenClawJson(config: Record<string, unknown>): Promise<void> {
+  // Ensure SIGUSR1 graceful reload is authorized by OpenClaw config.
+  const commands = (
+    config.commands && typeof config.commands === 'object'
+      ? { ...(config.commands as Record<string, unknown>) }
+      : {}
+  ) as Record<string, unknown>;
+  commands.restart = true;
+  config.commands = commands;
+
   await writeJsonFile(OPENCLAW_CONFIG_PATH, config);
 }
 
@@ -207,8 +221,7 @@ export async function saveProviderKeyToOpenClaw(
   apiKey: string,
   agentId?: string
 ): Promise<void> {
-  const OAUTH_PROVIDERS = ['qwen-portal', 'minimax-portal', 'minimax-portal-cn'];
-  if (OAUTH_PROVIDERS.includes(provider) && !apiKey) {
+  if (isOAuthProviderType(provider) && !apiKey) {
     console.log(`Skipping auth-profiles write for OAuth provider "${provider}" (no API key provided, using OAuth)`);
     return;
   }
@@ -242,8 +255,7 @@ export async function removeProviderKeyFromOpenClaw(
   provider: string,
   agentId?: string
 ): Promise<void> {
-  const OAUTH_PROVIDERS = ['qwen-portal', 'minimax-portal', 'minimax-portal-cn'];
-  if (OAUTH_PROVIDERS.includes(provider)) {
+  if (isOAuthProviderType(provider)) {
     console.log(`Skipping auth-profiles removal for OAuth provider "${provider}" (managed by OpenClaw plugin)`);
     return;
   }
@@ -364,6 +376,7 @@ export async function setOpenClawDefaultModel(
   fallbackModels: string[] = []
 ): Promise<void> {
   const config = await readOpenClawJson();
+  ensureMoonshotKimiWebSearchCnBaseUrl(config, provider);
 
   const model = modelOverride || getProviderDefaultModel(provider);
   if (!model) {
@@ -393,6 +406,7 @@ export async function setOpenClawDefaultModel(
   if (providerCfg) {
     const models = (config.models || {}) as Record<string, unknown>;
     const providers = (models.providers || {}) as Record<string, unknown>;
+    const removedLegacyMoonshot = removeLegacyMoonshotProviderEntry(provider, providers);
 
     const existingProvider =
       providers[provider] && typeof providers[provider] === 'object'
@@ -429,6 +443,9 @@ export async function setOpenClawDefaultModel(
     }
     providers[provider] = providerEntry;
     console.log(`Configured models.providers.${provider} with baseUrl=${providerCfg.baseUrl}, model=${modelId}`);
+    if (removedLegacyMoonshot) {
+      console.log('Removed legacy models.providers.moonshot alias entry');
+    }
 
     models.providers = providers;
     config.models = models;
@@ -461,6 +478,32 @@ interface RuntimeProviderConfigOverride {
   authHeader?: boolean;
 }
 
+function removeLegacyMoonshotProviderEntry(
+  _provider: string,
+  _providers: Record<string, unknown>
+): boolean {
+  return false;
+}
+
+function ensureMoonshotKimiWebSearchCnBaseUrl(config: Record<string, unknown>, provider: string): void {
+  if (provider !== OPENCLAW_PROVIDER_KEY_MOONSHOT) return;
+
+  const tools = (config.tools || {}) as Record<string, unknown>;
+  const web = (tools.web || {}) as Record<string, unknown>;
+  const search = (web.search || {}) as Record<string, unknown>;
+  const kimi = (search.kimi && typeof search.kimi === 'object' && !Array.isArray(search.kimi))
+    ? (search.kimi as Record<string, unknown>)
+    : {};
+
+  // Prefer env/auth-profiles for key resolution; stale inline kimi.apiKey can cause persistent 401.
+  delete kimi.apiKey;
+  kimi.baseUrl = 'https://api.moonshot.cn/v1';
+  search.kimi = kimi;
+  web.search = search;
+  tools.web = web;
+  config.tools = tools;
+}
+
 /**
  * Register or update a provider's configuration in openclaw.json
  * without changing the current default model.
@@ -471,10 +514,12 @@ export async function syncProviderConfigToOpenClaw(
   override: RuntimeProviderConfigOverride
 ): Promise<void> {
   const config = await readOpenClawJson();
+  ensureMoonshotKimiWebSearchCnBaseUrl(config, provider);
 
   if (override.baseUrl && override.api) {
     const models = (config.models || {}) as Record<string, unknown>;
     const providers = (models.providers || {}) as Record<string, unknown>;
+    removeLegacyMoonshotProviderEntry(provider, providers);
 
     const nextModels: Array<Record<string, unknown>> = [];
     if (modelId) nextModels.push({ id: modelId, name: modelId });
@@ -495,7 +540,7 @@ export async function syncProviderConfigToOpenClaw(
   }
 
   // Ensure extension is enabled for oauth providers to prevent gateway wiping config
-  if (provider === 'minimax-portal' || provider === 'qwen-portal') {
+  if (isOpenClawOAuthPluginProviderKey(provider)) {
     const plugins = (config.plugins || {}) as Record<string, unknown>;
     const pEntries = (plugins.entries || {}) as Record<string, unknown>;
     pEntries[`${provider}-auth`] = { enabled: true };
@@ -516,6 +561,7 @@ export async function setOpenClawDefaultModelWithOverride(
   fallbackModels: string[] = []
 ): Promise<void> {
   const config = await readOpenClawJson();
+  ensureMoonshotKimiWebSearchCnBaseUrl(config, provider);
 
   const model = modelOverride || getProviderDefaultModel(provider);
   if (!model) {
@@ -542,6 +588,7 @@ export async function setOpenClawDefaultModelWithOverride(
   if (override.baseUrl && override.api) {
     const models = (config.models || {}) as Record<string, unknown>;
     const providers = (models.providers || {}) as Record<string, unknown>;
+    removeLegacyMoonshotProviderEntry(provider, providers);
 
     const nextModels: Array<Record<string, unknown>> = [];
     for (const candidateModelId of [modelId, ...fallbackModelIds]) {
@@ -573,7 +620,7 @@ export async function setOpenClawDefaultModelWithOverride(
   config.gateway = gateway;
 
   // Ensure the extension plugin is marked as enabled in openclaw.json
-  if (provider === 'minimax-portal' || provider === 'qwen-portal') {
+  if (isOpenClawOAuthPluginProviderKey(provider)) {
     const plugins = (config.plugins || {}) as Record<string, unknown>;
     const pEntries = (plugins.entries || {}) as Record<string, unknown>;
     pEntries[`${provider}-auth`] = { enabled: true };
@@ -778,6 +825,42 @@ export async function sanitizeOpenClawConfig(): Promise<void> {
         delete skillsObj[key];
         modified = true;
       }
+    }
+  }
+
+  // ── commands section ───────────────────────────────────────────
+  // Required for SIGUSR1 in-process reload authorization.
+  const commands = (
+    config.commands && typeof config.commands === 'object'
+      ? { ...(config.commands as Record<string, unknown>) }
+      : {}
+  ) as Record<string, unknown>;
+  if (commands.restart !== true) {
+    commands.restart = true;
+    config.commands = commands;
+    modified = true;
+    console.log('[sanitize] Enabling commands.restart for graceful reload support');
+  }
+
+  // ── tools.web.search.kimi ─────────────────────────────────────
+  // OpenClaw web_search(kimi) prioritizes tools.web.search.kimi.apiKey over
+  // environment/auth-profiles. A stale inline key can cause persistent 401s.
+  // When ClawX-managed moonshot provider exists, prefer centralized key
+  // resolution and strip the inline key.
+  const providers = ((config.models as Record<string, unknown> | undefined)?.providers as Record<string, unknown> | undefined) || {};
+  if (providers[OPENCLAW_PROVIDER_KEY_MOONSHOT]) {
+    const tools = (config.tools as Record<string, unknown> | undefined) || {};
+    const web = (tools.web as Record<string, unknown> | undefined) || {};
+    const search = (web.search as Record<string, unknown> | undefined) || {};
+    const kimi = (search.kimi as Record<string, unknown> | undefined) || {};
+    if ('apiKey' in kimi) {
+      console.log('[sanitize] Removing stale key "tools.web.search.kimi.apiKey" from openclaw.json');
+      delete kimi.apiKey;
+      search.kimi = kimi;
+      web.search = search;
+      tools.web = web;
+      config.tools = tools;
+      modified = true;
     }
   }
 

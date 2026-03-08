@@ -18,6 +18,7 @@ import { Settings } from './pages/Settings';
 import { Setup } from './pages/Setup';
 import { useSettingsStore } from './stores/settings';
 import { useGatewayStore } from './stores/gateway';
+import { applyGatewayTransportPreference } from './lib/api-client';
 
 
 /**
@@ -90,6 +91,7 @@ function App() {
   const initSettings = useSettingsStore((state) => state.init);
   const theme = useSettingsStore((state) => state.theme);
   const language = useSettingsStore((state) => state.language);
+  const gatewayTransportPreference = useSettingsStore((state) => state.gatewayTransportPreference);
   const setupComplete = useSettingsStore((state) => state.setupComplete);
   const initGateway = useGatewayStore((state) => state.init);
 
@@ -148,6 +150,10 @@ function App() {
       root.classList.add(theme);
     }
   }, [theme]);
+
+  useEffect(() => {
+    applyGatewayTransportPreference(gatewayTransportPreference);
+  }, [gatewayTransportPreference]);
 
   return (
     <ErrorBoundary>

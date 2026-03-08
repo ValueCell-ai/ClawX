@@ -59,6 +59,7 @@
         "paused": "Task paused",
         "deleted": "Task deleted",
         "triggered": "Task triggered successfully",
+        "failedTrigger": "Failed to trigger task: {{error}}",
         "failedUpdate": "Failed to update task",
         "failedDelete": "Failed to delete task",
         "nameRequired": "Please enter a task name",
@@ -66,5 +67,16 @@
         "channelRequired": "Please select a channel",
         "discordIdRequired": "Please enter a Discord Channel ID",
         "scheduleRequired": "Please select or enter a schedule"
+    },
+    "schedule": {
+        "everySeconds": "Every {{count}}s",
+        "everyMinutes": "Every {{count}} minutes",
+        "everyHours": "Every {{count}} hours",
+        "everyDays": "Every {{count}} days",
+        "onceAt": "Once at {{time}}",
+        "weeklyAt": "Weekly on {{day}} at {{time}}",
+        "monthlyAtDay": "Monthly on day {{day}} at {{time}}",
+        "dailyAt": "Daily at {{time}}",
+        "unknown": "Unknown"
     }
 }

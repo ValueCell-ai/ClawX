@@ -112,6 +112,8 @@
     "proxyHttpsServerHelp": "HTTPS リクエスト用の高度な上書き設定です。空欄の場合はプロキシサーバーを使用します。",
     "proxyAllServer": "ALL_PROXY / SOCKS",
     "proxyAllServerHelp": "SOCKS 対応クライアントや Telegram など向けの高度なフォールバックです。空欄の場合はプロキシサーバーを使用します。",
+    "showAdvancedProxy": "高度なプロキシ項目を表示",
+    "hideAdvancedProxy": "高度なプロキシ項目を非表示",
     "proxyBypass": "バイパスルール",
     "proxyBypassHelp": "直接接続するホストをセミコロン、カンマ、または改行で区切って指定します。",
     "proxyRestartNote": "保存すると Electron のネットワーク設定を再適用し、Gateway をすぐ再起動します。",
@@ -152,6 +154,25 @@
   "advanced": {
     "title": "詳細設定",
     "description": "上級ユーザー向けオプション",
+    "transport": {
+      "label": "Gateway 転送優先度",
+      "desc": "レンダラープロセスから Gateway RPC を呼ぶ際の優先プロトコルを選択します。",
+      "saved": "Gateway 転送優先度を保存しました",
+      "options": {
+        "wsFirst": "WS 優先",
+        "httpFirst": "HTTP 優先",
+        "wsOnly": "WS のみ",
+        "httpOnly": "HTTP のみ",
+        "ipcOnly": "IPC のみ"
+      },
+      "descriptions": {
+        "wsFirst": "WS -> HTTP -> IPC",
+        "httpFirst": "HTTP -> WS -> IPC",
+        "wsOnly": "WS -> IPC",
+        "httpOnly": "HTTP -> IPC",
+        "ipcOnly": "IPC のみ"
+      }
+    },
     "devMode": "開発者モード",
     "devModeDesc": "開発者ツールとショートカットを表示"
   },

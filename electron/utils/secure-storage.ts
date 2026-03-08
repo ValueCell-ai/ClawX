@@ -6,6 +6,7 @@
 
 import { BUILTIN_PROVIDER_TYPES, type ProviderType } from './provider-registry';
 import { getActiveOpenClawProviders } from './openclaw-auth';
+import { getOpenClawProviderKeyForType } from './provider-keys';
 
 // Lazy-load electron-store (ESM module)
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -228,9 +229,7 @@ export async function getAllProvidersWithKeyInfo(): Promise<
     // e.g. provider.id "custom-a1b2c3d4-..." → strip hyphens → "customa1b2c3d4..." → slice(0,8) → "customa1"
     // → openClawKey = "custom-customa1"
     // This must match getOpenClawProviderKey() in ipc-handlers.ts exactly.
-    const openClawKey = (provider.type === 'custom' || provider.type === 'ollama')
-      ? `${provider.type}-${provider.id.replace(/-/g, '').slice(0, 8)}`
-      : provider.type === 'minimax-portal-cn' ? 'minimax-portal' : provider.type;
+    const openClawKey = getOpenClawProviderKeyForType(provider.type, provider.id);
     if (!isBuiltin && !activeOpenClawProviders.has(provider.type) && !activeOpenClawProviders.has(provider.id) && !activeOpenClawProviders.has(openClawKey)) {
       console.log(`[Sync] Provider ${provider.id} (${provider.type}) missing from OpenClaw, dropping from ClawX UI`);
       await deleteProvider(provider.id);

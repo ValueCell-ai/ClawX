@@ -6,6 +6,7 @@
 import { useState, useEffect } from 'react';
 import { Minus, Square, X, Copy } from 'lucide-react';
 import logoSvg from '@/assets/logo.svg';
+import { invokeIpc } from '@/lib/api-client';
 
 const isMac = window.electron?.platform === 'darwin';
 
@@ -23,25 +24,25 @@ function WindowsTitleBar() {
 
   useEffect(() => {
     // Check initial state
-    window.electron.ipcRenderer.invoke('window:isMaximized').then((val) => {
+    invokeIpc('window:isMaximized').then((val) => {
       setMaximized(val as boolean);
     });
   }, []);
 
   const handleMinimize = () => {
-    window.electron.ipcRenderer.invoke('window:minimize');
+    invokeIpc('window:minimize');
   };
 
   const handleMaximize = () => {
-    window.electron.ipcRenderer.invoke('window:maximize').then(() => {
-      window.electron.ipcRenderer.invoke('window:isMaximized').then((val) => {
+    invokeIpc('window:maximize').then(() => {
+      invokeIpc('window:isMaximized').then((val) => {
         setMaximized(val as boolean);
       });
     });
   };
 
   const handleClose = () => {
-    window.electron.ipcRenderer.invoke('window:close');
+    invokeIpc('window:close');
   };
 
   return (

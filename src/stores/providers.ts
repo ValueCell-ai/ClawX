@@ -4,7 +4,7 @@
  */
 import { create } from 'zustand';
 import type { ProviderConfig, ProviderWithKeyInfo } from '@/lib/providers';
-import { hostApiFetch } from '@/lib/host-api';
+import { invokeIpc } from '@/lib/api-client';
 
 // Re-export types for consumers that imported from here
 export type { ProviderConfig, ProviderWithKeyInfo } from '@/lib/providers';
@@ -46,8 +46,8 @@ export const useProviderStore = create<ProviderState>((set, get) => ({
     set({ loading: true, error: null });
     
     try {
-      const providers = await hostApiFetch<ProviderWithKeyInfo[]>('/api/providers');
-      const defaultInfo = await hostApiFetch<{ providerId: string | null }>('/api/providers/default');
+      const providers = await invokeIpc<ProviderWithKeyInfo[]>('provider:list');
+      const defaultId = await invokeIpc<string | null>('provider:getDefault');
       
       set({ 
         providers, 
@@ -67,10 +67,7 @@ export const useProviderStore = create<ProviderState>((set, get) => ({
         updatedAt: new Date().toISOString(),
       };
       
-      const result = await hostApiFetch<{ success: boolean; error?: string }>('/api/providers', {
-        method: 'POST',
-        body: JSON.stringify({ config: fullConfig, apiKey }),
-      });
+      const result = await invokeIpc<{ success: boolean; error?: string }>('provider:save', fullConfig, apiKey);
       
       if (!result.success) {
         throw new Error(result.error || 'Failed to save provider');
@@ -99,10 +96,7 @@ export const useProviderStore = create<ProviderState>((set, get) => ({
         updatedAt: new Date().toISOString(),
       };
       
-      const result = await hostApiFetch<{ success: boolean; error?: string }>(`/api/providers/${encodeURIComponent(providerId)}`, {
-        method: 'PUT',
-        body: JSON.stringify({ updates: updatedConfig, apiKey }),
-      });
+      const result = await invokeIpc<{ success: boolean; error?: string }>('provider:save', updatedConfig, apiKey);
       
       if (!result.success) {
         throw new Error(result.error || 'Failed to update provider');
@@ -118,9 +112,7 @@ export const useProviderStore = create<ProviderState>((set, get) => ({
   
   deleteProvider: async (providerId) => {
     try {
-      const result = await hostApiFetch<{ success: boolean; error?: string }>(`/api/providers/${encodeURIComponent(providerId)}`, {
-        method: 'DELETE',
-      });
+      const result = await invokeIpc<{ success: boolean; error?: string }>('provider:delete', providerId);
       
       if (!result.success) {
         throw new Error(result.error || 'Failed to delete provider');
@@ -136,10 +128,7 @@ export const useProviderStore = create<ProviderState>((set, get) => ({
   
   setApiKey: async (providerId, apiKey) => {
     try {
-      const result = await hostApiFetch<{ success: boolean; error?: string }>(`/api/providers/${encodeURIComponent(providerId)}`, {
-        method: 'PUT',
-        body: JSON.stringify({ updates: {}, apiKey }),
-      });
+      const result = await invokeIpc<{ success: boolean; error?: string }>('provider:setApiKey', providerId, apiKey);
       
       if (!result.success) {
         throw new Error(result.error || 'Failed to set API key');
@@ -155,10 +144,12 @@ export const useProviderStore = create<ProviderState>((set, get) => ({
 
   updateProviderWithKey: async (providerId, updates, apiKey) => {
     try {
-      const result = await hostApiFetch<{ success: boolean; error?: string }>(`/api/providers/${encodeURIComponent(providerId)}`, {
-        method: 'PUT',
-        body: JSON.stringify({ updates, apiKey }),
-      });
+      const result = await invokeIpc<{ success: boolean; error?: string }>(
+        'provider:updateWithKey',
+        providerId,
+        updates,
+        apiKey
+      );
 
       if (!result.success) {
         throw new Error(result.error || 'Failed to update provider');
@@ -173,10 +164,7 @@ export const useProviderStore = create<ProviderState>((set, get) => ({
   
   deleteApiKey: async (providerId) => {
     try {
-      const result = await hostApiFetch<{ success: boolean; error?: string }>(
-        `/api/providers/${encodeURIComponent(providerId)}?apiKeyOnly=1`,
-        { method: 'DELETE' },
-      );
+      const result = await invokeIpc<{ success: boolean; error?: string }>('provider:deleteApiKey', providerId);
       
       if (!result.success) {
         throw new Error(result.error || 'Failed to delete API key');
@@ -192,10 +180,7 @@ export const useProviderStore = create<ProviderState>((set, get) => ({
   
   setDefaultProvider: async (providerId) => {
     try {
-      const result = await hostApiFetch<{ success: boolean; error?: string }>('/api/providers/default', {
-        method: 'PUT',
-        body: JSON.stringify({ providerId }),
-      });
+      const result = await invokeIpc<{ success: boolean; error?: string }>('provider:setDefault', providerId);
       
       if (!result.success) {
         throw new Error(result.error || 'Failed to set default provider');
@@ -210,10 +195,12 @@ export const useProviderStore = create<ProviderState>((set, get) => ({
   
   validateApiKey: async (providerId, apiKey, options) => {
     try {
-      const result = await hostApiFetch<{ valid: boolean; error?: string }>('/api/providers/validate', {
-        method: 'POST',
-        body: JSON.stringify({ providerId, apiKey, options }),
-      });
+      const result = await invokeIpc<{ valid: boolean; error?: string }>(
+        'provider:validateKey',
+        providerId,
+        apiKey,
+        options
+      );
       return result;
     } catch (error) {
       return { valid: false, error: String(error) };
@@ -222,8 +209,7 @@ export const useProviderStore = create<ProviderState>((set, get) => ({
   
   getApiKey: async (providerId) => {
     try {
-      const result = await hostApiFetch<{ apiKey: string | null }>(`/api/providers/${encodeURIComponent(providerId)}/api-key`);
-      return result.apiKey;
+      return await invokeIpc<string | null>('provider:getApiKey', providerId);
     } catch {
       return null;
     }

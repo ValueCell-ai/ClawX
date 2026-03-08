@@ -14,6 +14,16 @@ const electronAPI = {
   ipcRenderer: {
     invoke: (channel: string, ...args: unknown[]) => {
       const validChannels = [
+        // Gateway
+        'gateway:status',
+        'gateway:isConnected',
+        'gateway:start',
+        'gateway:stop',
+        'gateway:restart',
+        'gateway:rpc',
+        'gateway:httpProxy',
+        'gateway:health',
+        'gateway:getControlUiUrl',
         // OpenClaw
         'openclaw:status',
         'openclaw:isReady',
@@ -32,6 +42,7 @@ const electronAPI = {
         'app:platform',
         'app:quit',
         'app:relaunch',
+        'app:request',
         // Window controls
         'window:minimize',
         'window:maximize',

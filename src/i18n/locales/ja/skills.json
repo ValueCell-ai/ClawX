@@ -16,6 +16,10 @@
     "search": "スキルを検索...",
     "searchMarketplace": "マーケットプレイスを検索...",
     "searchButton": "検索",
+    "actions": {
+        "enableVisible": "表示中を一括有効化",
+        "disableVisible": "表示中を一括無効化"
+    },
     "noSkills": "スキルが見つかりません",
     "noSkillsSearch": "別の検索語をお試しください",
     "noSkillsAvailable": "利用可能なスキルがありません",
@@ -63,7 +67,12 @@
         "searchRateLimitError": "検索リクエストの制限を超過しました。ClawHub.aiで検索してZIPをダウンロードし、\"{{path}}\" に展開することも可能です",
         "installRateLimitError": "インストールリクエストの制限を超過しました。ClawHub.aiからZIPをダウンロードし、\"{{path}}\" に展開することも可能です",
         "fetchTimeoutError": "スキルリストの取得がタイムアウトしました。ネットワークを確認してください。",
-        "fetchRateLimitError": "スキルリスト取得のリクエスト制限を超過しました。後でお試しください。"
+        "fetchRateLimitError": "スキルリスト取得のリクエスト制限を超過しました。後でお試しください。",
+        "noBatchEnableTargets": "表示中のスキルはすべて有効です。",
+        "noBatchDisableTargets": "表示中のスキルはすべて無効です。",
+        "batchEnabled": "{{count}} 件のスキルを有効化しました。",
+        "batchDisabled": "{{count}} 件のスキルを無効化しました。",
+        "batchPartial": "{{success}} / {{total}} 件を更新しました。一部失敗しています。"
     },
     "marketplace": {
         "title": "マーケットプレイス",

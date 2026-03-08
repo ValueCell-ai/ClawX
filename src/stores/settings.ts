@@ -5,10 +5,11 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import i18n from '@/i18n';
-import { hostApiFetch } from '@/lib/host-api';
+import { invokeIpc } from '@/lib/api-client';
 
 type Theme = 'light' | 'dark' | 'system';
 type UpdateChannel = 'stable' | 'beta' | 'dev';
+type GatewayTransportPreference = 'ws-first' | 'http-first' | 'ws-only' | 'http-only' | 'ipc-only';
 
 interface SettingsState {
   // General
@@ -26,6 +27,7 @@ interface SettingsState {
   proxyHttpsServer: string;
   proxyAllServer: string;
   proxyBypassRules: string;
+  gatewayTransportPreference: GatewayTransportPreference;
 
   // Update
   updateChannel: UpdateChannel;
@@ -53,6 +55,7 @@ interface SettingsState {
   setProxyHttpsServer: (value: string) => void;
   setProxyAllServer: (value: string) => void;
   setProxyBypassRules: (value: string) => void;
+  setGatewayTransportPreference: (value: GatewayTransportPreference) => void;
   setUpdateChannel: (channel: UpdateChannel) => void;
   setAutoCheckUpdate: (value: boolean) => void;
   setAutoDownloadUpdate: (value: boolean) => void;
@@ -80,6 +83,7 @@ const defaultSettings = {
   proxyHttpsServer: '',
   proxyAllServer: '',
   proxyBypassRules: '<local>;localhost;127.0.0.1;::1',
+  gatewayTransportPreference: 'ws-first' as GatewayTransportPreference,
   updateChannel: 'stable' as UpdateChannel,
   autoCheckUpdate: true,
   autoDownloadUpdate: false,
@@ -95,7 +99,7 @@ export const useSettingsStore = create<SettingsState>()(
 
       init: async () => {
         try {
-          const settings = await hostApiFetch<Partial<typeof defaultSettings>>('/api/settings');
+          const settings = await invokeIpc<Partial<typeof defaultSettings>>('settings:getAll');
           set((state) => ({ ...state, ...settings }));
           if (settings.language) {
             i18n.changeLanguage(settings.language);
@@ -107,36 +111,21 @@ export const useSettingsStore = create<SettingsState>()(
       },
 
       setTheme: (theme) => set({ theme }),
-      setLanguage: (language) => {
-        i18n.changeLanguage(language);
-        set({ language });
-        void hostApiFetch('/api/settings/language', {
-          method: 'PUT',
-          body: JSON.stringify({ value: language }),
-        }).catch(() => {});
-      },
+      setLanguage: (language) => { i18n.changeLanguage(language); set({ language }); void invokeIpc('settings:set', 'language', language).catch(() => {}); },
       setStartMinimized: (startMinimized) => set({ startMinimized }),
       setLaunchAtStartup: (launchAtStartup) => set({ launchAtStartup }),
-      setGatewayAutoStart: (gatewayAutoStart) => {
-        set({ gatewayAutoStart });
-        void hostApiFetch('/api/settings/gatewayAutoStart', {
-          method: 'PUT',
-          body: JSON.stringify({ value: gatewayAutoStart }),
-        }).catch(() => {});
-      },
-      setGatewayPort: (gatewayPort) => {
-        set({ gatewayPort });
-        void hostApiFetch('/api/settings/gatewayPort', {
-          method: 'PUT',
-          body: JSON.stringify({ value: gatewayPort }),
-        }).catch(() => {});
-      },
+      setGatewayAutoStart: (gatewayAutoStart) => { set({ gatewayAutoStart }); void invokeIpc('settings:set', 'gatewayAutoStart', gatewayAutoStart).catch(() => {}); },
+      setGatewayPort: (gatewayPort) => { set({ gatewayPort }); void invokeIpc('settings:set', 'gatewayPort', gatewayPort).catch(() => {}); },
       setProxyEnabled: (proxyEnabled) => set({ proxyEnabled }),
       setProxyServer: (proxyServer) => set({ proxyServer }),
       setProxyHttpServer: (proxyHttpServer) => set({ proxyHttpServer }),
       setProxyHttpsServer: (proxyHttpsServer) => set({ proxyHttpsServer }),
       setProxyAllServer: (proxyAllServer) => set({ proxyAllServer }),
       setProxyBypassRules: (proxyBypassRules) => set({ proxyBypassRules }),
+      setGatewayTransportPreference: (gatewayTransportPreference) => {
+        set({ gatewayTransportPreference });
+        void invokeIpc('settings:set', 'gatewayTransportPreference', gatewayTransportPreference).catch(() => {});
+      },
       setUpdateChannel: (updateChannel) => set({ updateChannel }),
       setAutoCheckUpdate: (autoCheckUpdate) => set({ autoCheckUpdate }),
       setAutoDownloadUpdate: (autoDownloadUpdate) => set({ autoDownloadUpdate }),

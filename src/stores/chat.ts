@@ -4,8 +4,7 @@
  * Communicates with OpenClaw Gateway via renderer WebSocket RPC.
  */
 import { create } from 'zustand';
-import { hostApiFetch } from '@/lib/host-api';
-import { useGatewayStore } from './gateway';
+import { invokeIpc } from '@/lib/api-client';
 
 // ── Types ────────────────────────────────────────────────────────
 
@@ -598,13 +597,10 @@ async function loadMissingPreviews(messages: RawMessage[]): Promise<boolean> {
   if (needPreview.length === 0) return false;
 
   try {
-    const thumbnails = await hostApiFetch<Record<string, { preview: string | null; fileSize: number }>>(
-      '/api/files/thumbnails',
-      {
-        method: 'POST',
-        body: JSON.stringify({ paths: needPreview }),
-      },
-    );
+    const thumbnails = await invokeIpc(
+      'media:getThumbnails',
+      needPreview,
+    ) as Record<string, { preview: string | null; fileSize: number }>;
 
     let updated = false;
     for (const msg of messages) {
@@ -933,8 +929,14 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
   loadSessions: async () => {
     try {
-      const data = await useGatewayStore.getState().rpc<Record<string, unknown>>('sessions.list', {});
-      if (data) {
+      const result = await invokeIpc(
+        'gateway:rpc',
+        'sessions.list',
+        {}
+      ) as { success: boolean; result?: Record<string, unknown>; error?: string };
+
+      if (result.success && result.result) {
+        const data = result.result;
         const rawSessions = Array.isArray(data.sessions) ? data.sessions : [];
         const sessions: ChatSession[] = rawSessions.map((s: Record<string, unknown>) => ({
           key: String(s.key || ''),
@@ -1000,7 +1002,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
           void Promise.all(
             sessionsToLabel.map(async (session) => {
               try {
-                const r = await useGatewayStore.getState().rpc<Record<string, unknown>>(
+                const r = await invokeIpc(
+                  'gateway:rpc',
                   'chat.history',
                   { sessionKey: session.key, limit: 1000 },
                 );
@@ -1074,7 +1077,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
     // The main process renames <suffix>.jsonl → <suffix>.deleted.jsonl so that
     // sessions.list and token-usage queries both skip it automatically.
     try {
-      const result = await hostApiFetch<{
+      const result = await invokeIpc('session:delete', key) as {
         success: boolean;
         error?: string;
       }>('/api/sessions/delete', {
@@ -1185,7 +1188,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
     if (!quiet) set({ loading: true, error: null });
 
     try {
-      const data = await useGatewayStore.getState().rpc<Record<string, unknown>>(
+      const result = await invokeIpc(
+        'gateway:rpc',
         'chat.history',
         { sessionKey: currentSessionKey, limit: 200 },
       );
@@ -1422,8 +1426,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
       const CHAT_SEND_TIMEOUT_MS = 120_000;
 
       if (hasMedia) {
-        result = await hostApiFetch<{ success: boolean; result?: { runId?: string }; error?: string }>(
-          '/api/chat/send-with-media',
+        result = await invokeIpc(
+          'chat:sendWithMedia',
           {
             method: 'POST',
             body: JSON.stringify({
@@ -1440,7 +1444,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
           },
         );
       } else {
-        const rpcResult = await useGatewayStore.getState().rpc<{ runId?: string }>(
+        result = await invokeIpc(
+          'gateway:rpc',
           'chat.send',
           {
             sessionKey: currentSessionKey,
@@ -1477,7 +1482,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
     set({ streamingTools: [] });
 
     try {
-      await useGatewayStore.getState().rpc(
+      await invokeIpc(
+        'gateway:rpc',
         'chat.abort',
         { sessionKey: currentSessionKey },
       );
