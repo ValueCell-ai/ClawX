@@ -57,7 +57,7 @@ export async function hostApiFetch<T>(path: string, init?: RequestInit): Promise
       body: init?.body ?? null,
     });
 
-    if (typeof response?.ok === 'boolean') {
+    if (typeof response?.ok === 'boolean' && 'data' in response) {
       if (!response.ok) {
         const errObj = response.error;
         throw new Error(

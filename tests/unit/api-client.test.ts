@@ -8,6 +8,9 @@ import {
   registerTransportInvoker,
   unregisterTransportInvoker,
   clearTransportBackoff,
+  getApiClientConfig,
+  applyGatewayTransportPreference,
+  createGatewayHttpTransportInvoker,
 } from '@/lib/api-client';
 
 describe('api-client', () => {
@@ -149,5 +152,48 @@ describe('api-client', () => {
 
     expect(wsInvoker).toHaveBeenCalledTimes(2);
     expect(invoke).toHaveBeenCalledTimes(2);
+  });
+
+  it('locks transport preference to ws->http->ipc', () => {
+    applyGatewayTransportPreference();
+    const config = getApiClientConfig();
+    expect(config.enabled.ws).toBe(true);
+    expect(config.enabled.http).toBe(true);
+    expect(config.rules[0]).toEqual({ matcher: /^gateway:rpc$/, order: ['ws', 'http', 'ipc'] });
+  });
+
+  it('parses gateway:httpProxy unified envelope response', async () => {
+    const invoke = vi.mocked(window.electron.ipcRenderer.invoke);
+    invoke.mockResolvedValueOnce({
+      ok: true,
+      data: {
+        status: 200,
+        ok: true,
+        json: { type: 'res', ok: true, payload: { rows: [1, 2] } },
+      },
+    });
+
+    const invoker = createGatewayHttpTransportInvoker();
+    const result = await invoker<{ rows: number[] }>('gateway:rpc', ['chat.history', { sessionKey: 's1' }]);
+
+    expect(result.rows).toEqual([1, 2]);
+    expect(invoke).toHaveBeenCalledWith(
+      'gateway:httpProxy',
+      expect.objectContaining({
+        path: '/rpc',
+        method: 'POST',
+      }),
+    );
+  });
+
+  it('throws meaningful error when gateway:httpProxy unified envelope fails', async () => {
+    const invoke = vi.mocked(window.electron.ipcRenderer.invoke);
+    invoke.mockResolvedValueOnce({
+      ok: false,
+      error: { message: 'proxy unavailable' },
+    });
+
+    const invoker = createGatewayHttpTransportInvoker();
+    await expect(invoker('gateway:rpc', ['chat.history', {}])).rejects.toThrow('proxy unavailable');
   });
 });

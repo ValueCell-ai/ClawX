@@ -40,8 +40,6 @@ type ControlUiInfo = {
   port: number;
 };
 
-type GatewayTransportPreference = 'ws-first' | 'http-first' | 'ws-only' | 'http-only' | 'ipc-only';
-
 export function Settings() {
   const { t } = useTranslation('settings');
   const {
@@ -57,14 +55,12 @@ export function Settings() {
     proxyHttpsServer,
     proxyAllServer,
     proxyBypassRules,
-    gatewayTransportPreference,
     setProxyEnabled,
     setProxyServer,
     setProxyHttpServer,
     setProxyHttpsServer,
     setProxyAllServer,
     setProxyBypassRules,
-    setGatewayTransportPreference,
     autoCheckUpdate,
     setAutoCheckUpdate,
     autoDownloadUpdate,
@@ -87,14 +83,6 @@ export function Settings() {
   const [proxyEnabledDraft, setProxyEnabledDraft] = useState(false);
   const [showAdvancedProxy, setShowAdvancedProxy] = useState(false);
   const [savingProxy, setSavingProxy] = useState(false);
-
-  const transportOptions: Array<{ value: GatewayTransportPreference; labelKey: string; descKey: string }> = [
-    { value: 'ws-first', labelKey: 'advanced.transport.options.wsFirst', descKey: 'advanced.transport.descriptions.wsFirst' },
-    { value: 'http-first', labelKey: 'advanced.transport.options.httpFirst', descKey: 'advanced.transport.descriptions.httpFirst' },
-    { value: 'ws-only', labelKey: 'advanced.transport.options.wsOnly', descKey: 'advanced.transport.descriptions.wsOnly' },
-    { value: 'http-only', labelKey: 'advanced.transport.options.httpOnly', descKey: 'advanced.transport.descriptions.httpOnly' },
-    { value: 'ipc-only', labelKey: 'advanced.transport.options.ipcOnly', descKey: 'advanced.transport.descriptions.ipcOnly' },
-  ];
 
   const isWindows = window.electron.platform === 'win32';
   const showCliTools = true;
@@ -279,7 +267,7 @@ export function Settings() {
   };
 
   return (
-    <div className="space-y-6 p-6">
+    <div className="flex flex-col gap-6 p-6">
       <div>
         <h1 className="text-2xl font-bold">{t('title')}</h1>
         <p className="text-muted-foreground">
@@ -288,7 +276,7 @@ export function Settings() {
       </div>
 
       {/* Appearance */}
-      <Card>
+      <Card className="order-2">
         <CardHeader>
           <CardTitle>{t('appearance.title')}</CardTitle>
           <CardDescription>{t('appearance.description')}</CardDescription>
@@ -342,7 +330,7 @@ export function Settings() {
       </Card>
 
       {/* AI Providers */}
-      <Card>
+      <Card className="order-2">
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Key className="h-5 w-5" />
@@ -356,7 +344,7 @@ export function Settings() {
       </Card>
 
       {/* Gateway */}
-      <Card>
+      <Card className="order-1">
         <CardHeader>
           <CardTitle>{t('gateway.title')}</CardTitle>
           <CardDescription>{t('gateway.description')}</CardDescription>
@@ -429,34 +417,8 @@ export function Settings() {
 
           <Separator />
 
-          <div className="space-y-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <Label>{t('gateway.proxyTitle')}</Label>
-                <p className="text-sm text-muted-foreground">
-                  {t('gateway.proxyDesc')}
-                </p>
-              </div>
-              <Switch
-                checked={proxyEnabledDraft}
-                onCheckedChange={setProxyEnabledDraft}
-              />
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="proxy-server">{t('gateway.proxyServer')}</Label>
-              <Input
-                id="proxy-server"
-                value={proxyServerDraft}
-                onChange={(event) => setProxyServerDraft(event.target.value)}
-                placeholder="http://127.0.0.1:7890"
-              />
-              <p className="text-xs text-muted-foreground">
-                {t('gateway.proxyServerHelp')}
-              </p>
-            </div>
-
-            {devModeUnlocked && (
+          {devModeUnlocked ? (
+            <div className="space-y-4">
               <div className="rounded-md border border-border/60 p-3">
                 <Button
                   variant="ghost"
@@ -473,81 +435,111 @@ export function Settings() {
                 </Button>
                 {showAdvancedProxy && (
                   <div className="mt-3 space-y-4">
-                <div className="space-y-2">
-                  <Label htmlFor="proxy-http-server">{t('gateway.proxyHttpServer')}</Label>
-                  <Input
-                    id="proxy-http-server"
-                    value={proxyHttpServerDraft}
-                    onChange={(event) => setProxyHttpServerDraft(event.target.value)}
-                    placeholder={proxyServerDraft || 'http://127.0.0.1:7890'}
-                  />
-                  <p className="text-xs text-muted-foreground">
-                    {t('gateway.proxyHttpServerHelp')}
-                  </p>
-                </div>
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <Label>{t('gateway.proxyTitle')}</Label>
+                        <p className="text-sm text-muted-foreground">
+                          {t('gateway.proxyDesc')}
+                        </p>
+                      </div>
+                      <Switch
+                        checked={proxyEnabledDraft}
+                        onCheckedChange={setProxyEnabledDraft}
+                      />
+                    </div>
 
-                <div className="space-y-2">
-                  <Label htmlFor="proxy-https-server">{t('gateway.proxyHttpsServer')}</Label>
-                  <Input
-                    id="proxy-https-server"
-                    value={proxyHttpsServerDraft}
-                    onChange={(event) => setProxyHttpsServerDraft(event.target.value)}
-                    placeholder={proxyServerDraft || 'http://127.0.0.1:7890'}
-                  />
-                  <p className="text-xs text-muted-foreground">
-                    {t('gateway.proxyHttpsServerHelp')}
-                  </p>
-                </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="proxy-server">{t('gateway.proxyServer')}</Label>
+                      <Input
+                        id="proxy-server"
+                        value={proxyServerDraft}
+                        onChange={(event) => setProxyServerDraft(event.target.value)}
+                        placeholder="http://127.0.0.1:7890"
+                      />
+                      <p className="text-xs text-muted-foreground">
+                        {t('gateway.proxyServerHelp')}
+                      </p>
+                    </div>
 
-                <div className="space-y-2">
-                  <Label htmlFor="proxy-all-server">{t('gateway.proxyAllServer')}</Label>
-                  <Input
-                    id="proxy-all-server"
-                    value={proxyAllServerDraft}
-                    onChange={(event) => setProxyAllServerDraft(event.target.value)}
-                    placeholder={proxyServerDraft || 'socks5://127.0.0.1:7891'}
-                  />
-                  <p className="text-xs text-muted-foreground">
-                    {t('gateway.proxyAllServerHelp')}
-                  </p>
-                </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="proxy-http-server">{t('gateway.proxyHttpServer')}</Label>
+                      <Input
+                        id="proxy-http-server"
+                        value={proxyHttpServerDraft}
+                        onChange={(event) => setProxyHttpServerDraft(event.target.value)}
+                        placeholder={proxyServerDraft || 'http://127.0.0.1:7890'}
+                      />
+                      <p className="text-xs text-muted-foreground">
+                        {t('gateway.proxyHttpServerHelp')}
+                      </p>
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label htmlFor="proxy-https-server">{t('gateway.proxyHttpsServer')}</Label>
+                      <Input
+                        id="proxy-https-server"
+                        value={proxyHttpsServerDraft}
+                        onChange={(event) => setProxyHttpsServerDraft(event.target.value)}
+                        placeholder={proxyServerDraft || 'http://127.0.0.1:7890'}
+                      />
+                      <p className="text-xs text-muted-foreground">
+                        {t('gateway.proxyHttpsServerHelp')}
+                      </p>
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label htmlFor="proxy-all-server">{t('gateway.proxyAllServer')}</Label>
+                      <Input
+                        id="proxy-all-server"
+                        value={proxyAllServerDraft}
+                        onChange={(event) => setProxyAllServerDraft(event.target.value)}
+                        placeholder={proxyServerDraft || 'socks5://127.0.0.1:7891'}
+                      />
+                      <p className="text-xs text-muted-foreground">
+                        {t('gateway.proxyAllServerHelp')}
+                      </p>
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label htmlFor="proxy-bypass">{t('gateway.proxyBypass')}</Label>
+                      <Input
+                        id="proxy-bypass"
+                        value={proxyBypassRulesDraft}
+                        onChange={(event) => setProxyBypassRulesDraft(event.target.value)}
+                        placeholder="<local>;localhost;127.0.0.1;::1"
+                      />
+                      <p className="text-xs text-muted-foreground">
+                        {t('gateway.proxyBypassHelp')}
+                      </p>
+                    </div>
+
+                    <div className="flex items-center justify-between gap-3 rounded-lg border border-border/60 bg-background/40 p-3">
+                      <p className="text-sm text-muted-foreground">
+                        {t('gateway.proxyRestartNote')}
+                      </p>
+                      <Button
+                        variant="outline"
+                        onClick={handleSaveProxySettings}
+                        disabled={savingProxy}
+                      >
+                        <RefreshCw className={`h-4 w-4 mr-2${savingProxy ? ' animate-spin' : ''}`} />
+                        {savingProxy ? t('common:status.saving') : t('common:actions.save')}
+                      </Button>
+                    </div>
                   </div>
                 )}
               </div>
-            )}
-
-            <div className="space-y-2">
-              <Label htmlFor="proxy-bypass">{t('gateway.proxyBypass')}</Label>
-              <Input
-                id="proxy-bypass"
-                value={proxyBypassRulesDraft}
-                onChange={(event) => setProxyBypassRulesDraft(event.target.value)}
-                placeholder="<local>;localhost;127.0.0.1;::1"
-              />
-              <p className="text-xs text-muted-foreground">
-                {t('gateway.proxyBypassHelp')}
-              </p>
             </div>
-
-            <div className="flex items-center justify-between gap-3 rounded-lg border border-border/60 bg-background/40 p-3">
-              <p className="text-sm text-muted-foreground">
-                {t('gateway.proxyRestartNote')}
-              </p>
-              <Button
-                variant="outline"
-                onClick={handleSaveProxySettings}
-                disabled={savingProxy}
-              >
-                <RefreshCw className={`h-4 w-4 mr-2${savingProxy ? ' animate-spin' : ''}`} />
-                {savingProxy ? t('common:status.saving') : t('common:actions.save')}
-              </Button>
+          ) : (
+            <div className="rounded-md border border-border/60 bg-muted/30 p-4 text-sm text-muted-foreground">
+              {t('advanced.devModeDesc', 'Enable Developer Mode to manage advanced proxy settings.')}
             </div>
-          </div>
+          )}
         </CardContent>
       </Card>
 
       {/* Updates */}
-      <Card>
+      <Card className="order-2">
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Download className="h-5 w-5" />
@@ -592,7 +584,7 @@ export function Settings() {
       </Card>
 
       {/* Advanced */}
-      <Card>
+      <Card className="order-2">
         <CardHeader>
           <CardTitle>{t('advanced.title')}</CardTitle>
           <CardDescription>{t('advanced.description')}</CardDescription>
@@ -615,40 +607,12 @@ export function Settings() {
 
       {/* Developer */}
       {devModeUnlocked && (
-        <Card>
+        <Card className="order-2">
           <CardHeader>
             <CardTitle>{t('developer.title')}</CardTitle>
             <CardDescription>{t('developer.description')}</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div className="space-y-3">
-              <div>
-                <Label>{t('advanced.transport.label')}</Label>
-                <p className="text-sm text-muted-foreground">
-                  {t('advanced.transport.desc')}
-                </p>
-              </div>
-              <div className="grid gap-2">
-                {transportOptions.map((option) => (
-                  <Button
-                    key={option.value}
-                    type="button"
-                    variant={gatewayTransportPreference === option.value ? 'default' : 'outline'}
-                    className="justify-between"
-                    onClick={() => {
-                      setGatewayTransportPreference(option.value);
-                      toast.success(t('advanced.transport.saved'));
-                    }}
-                  >
-                    <span>{t(option.labelKey)}</span>
-                    <span className="text-xs opacity-80">{t(option.descKey)}</span>
-                  </Button>
-                ))}
-              </div>
-            </div>
-
-            <Separator />
-
             <div className="space-y-2">
               <Label>{t('developer.console')}</Label>
               <p className="text-sm text-muted-foreground">
@@ -733,7 +697,7 @@ export function Settings() {
       )}
 
       {/* About */}
-      <Card>
+      <Card className="order-2">
         <CardHeader>
           <CardTitle>{t('about.title')}</CardTitle>
         </CardHeader>
