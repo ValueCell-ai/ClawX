@@ -62,3 +62,12 @@ build/
 
 .cursor/
 .pnpm-store/
+.gitnexus
+
+release/
+
+tests/
+
+# AI assistant config (local only, do not commit)
+.claude/
+.serena/
