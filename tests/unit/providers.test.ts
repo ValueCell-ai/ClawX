@@ -10,6 +10,7 @@ import {
   BUILTIN_PROVIDER_TYPES,
   getProviderConfig,
   getProviderEnvVar,
+  getProviderEnvVars,
 } from '@electron/utils/provider-registry';
 
 describe('provider metadata', () => {
@@ -38,6 +39,17 @@ describe('provider metadata', () => {
       api: 'openai-completions',
       apiKeyEnv: 'ARK_API_KEY',
     });
+  });
+
+  it('uses a single canonical env key for moonshot provider', () => {
+    expect(getProviderEnvVar('moonshot')).toBe('MOONSHOT_API_KEY');
+    expect(getProviderEnvVars('moonshot')).toEqual(['MOONSHOT_API_KEY']);
+    expect(getProviderConfig('moonshot')).toEqual(
+      expect.objectContaining({
+        baseUrl: 'https://api.moonshot.cn/v1',
+        apiKeyEnv: 'MOONSHOT_API_KEY',
+      })
+    );
   });
 
   it('keeps builtin provider sources in sync', () => {

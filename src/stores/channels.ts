@@ -4,6 +4,7 @@
  */
 import { create } from 'zustand';
 import type { Channel, ChannelType } from '../types/channel';
+import { invokeIpc } from '@/lib/api-client';
 
 interface AddChannelParams {
   type: ChannelType;
@@ -17,7 +18,7 @@ interface ChannelsState {
   error: string | null;
 
   // Actions
-  fetchChannels: () => Promise<void>;
+  fetchChannels: (options?: { probe?: boolean; silent?: boolean }) => Promise<void>;
   addChannel: (params: AddChannelParams) => Promise<Channel>;
   deleteChannel: (channelId: string) => Promise<void>;
   connectChannel: (channelId: string) => Promise<void>;
@@ -33,13 +34,17 @@ export const useChannelsStore = create<ChannelsState>((set, get) => ({
   loading: false,
   error: null,
 
-  fetchChannels: async () => {
-    set({ loading: true, error: null });
+  fetchChannels: async (options) => {
+    const probe = options?.probe ?? false;
+    const silent = options?.silent ?? false;
+    if (!silent) {
+      set({ loading: true, error: null });
+    }
     try {
-      const result = await window.electron.ipcRenderer.invoke(
+      const result = await invokeIpc(
         'gateway:rpc',
         'channels.status',
-        { probe: true }
+        { probe }
       ) as {
         success: boolean;
         result?: {
@@ -126,20 +131,20 @@ export const useChannelsStore = create<ChannelsState>((set, get) => ({
           });
         }
 
-        set({ channels, loading: false });
+        set((state) => ({ channels, loading: silent ? state.loading : false }));
       } else {
         // Gateway not available - try to show channels from local config
-        set({ channels: [], loading: false });
+        set((state) => ({ channels: [], loading: silent ? state.loading : false }));
       }
     } catch {
       // Gateway not connected, show empty
-      set({ channels: [], loading: false });
+      set((state) => ({ channels: [], loading: silent ? state.loading : false }));
     }
   },
 
   addChannel: async (params) => {
     try {
-      const result = await window.electron.ipcRenderer.invoke(
+      const result = await invokeIpc(
         'gateway:rpc',
         'channels.add',
         params
@@ -184,13 +189,13 @@ export const useChannelsStore = create<ChannelsState>((set, get) => ({
 
     try {
       // Delete the channel configuration from openclaw.json
-      await window.electron.ipcRenderer.invoke('channel:deleteConfig', channelType);
+      await invokeIpc('channel:deleteConfig', channelType);
     } catch (error) {
       console.error('Failed to delete channel config:', error);
     }
 
     try {
-      await window.electron.ipcRenderer.invoke(
+      await invokeIpc(
         'gateway:rpc',
         'channels.delete',
         { channelId: channelType }
@@ -211,7 +216,7 @@ export const useChannelsStore = create<ChannelsState>((set, get) => ({
     updateChannel(channelId, { status: 'connecting', error: undefined });
 
     try {
-      const result = await window.electron.ipcRenderer.invoke(
+      const result = await invokeIpc(
         'gateway:rpc',
         'channels.connect',
         { channelId }
@@ -231,7 +236,7 @@ export const useChannelsStore = create<ChannelsState>((set, get) => ({
     const { updateChannel } = get();
 
     try {
-      await window.electron.ipcRenderer.invoke(
+      await invokeIpc(
         'gateway:rpc',
         'channels.disconnect',
         { channelId }
@@ -244,7 +249,7 @@ export const useChannelsStore = create<ChannelsState>((set, get) => ({
   },
 
   requestQrCode: async (channelType) => {
-    const result = await window.electron.ipcRenderer.invoke(
+    const result = await invokeIpc(
       'gateway:rpc',
       'channels.requestQr',
       { type: channelType }

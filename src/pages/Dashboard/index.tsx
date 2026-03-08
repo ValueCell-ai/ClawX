@@ -12,9 +12,9 @@ import {
   Settings,
   Plus,
   Terminal,
-  Coins,
   ChevronLeft,
   ChevronRight,
+  Wrench,
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -25,6 +25,9 @@ import { useChannelsStore } from '@/stores/channels';
 import { useSkillsStore } from '@/stores/skills';
 import { useSettingsStore } from '@/stores/settings';
 import { StatusBadge } from '@/components/common/StatusBadge';
+import { FeedbackState } from '@/components/common/FeedbackState';
+import { invokeIpc } from '@/lib/api-client';
+import { trackUiEvent } from '@/lib/telemetry';
 import { useTranslation } from 'react-i18next';
 
 type UsageHistoryEntry = {
@@ -60,12 +63,13 @@ export function Dashboard() {
 
   // Fetch data only when gateway is running
   useEffect(() => {
+    trackUiEvent('dashboard.page_viewed');
     if (isGatewayRunning) {
       fetchChannels();
       fetchSkills();
-      window.electron.ipcRenderer.invoke('usage:recentTokenHistory')
+      invokeIpc<UsageHistoryEntry[]>('usage:recentTokenHistory')
         .then((entries) => {
-          setUsageHistory(Array.isArray(entries) ? entries as typeof usageHistory : []);
+          setUsageHistory(Array.isArray(entries) ? entries : []);
           setUsagePage(1);
         })
         .catch(() => {
@@ -107,12 +111,13 @@ export function Dashboard() {
 
   const openDevConsole = async () => {
     try {
-      const result = await window.electron.ipcRenderer.invoke('gateway:getControlUiUrl') as {
+      const result = await invokeIpc<{
         success: boolean;
         url?: string;
         error?: string;
-      };
+      }>('gateway:getControlUiUrl');
       if (result.success && result.url) {
+        trackUiEvent('dashboard.quick_action', { action: 'dev_console' });
         window.electron.openExternal(result.url);
       } else {
         console.error('Failed to get Dev Console URL:', result.error);
@@ -196,27 +201,39 @@ export function Dashboard() {
           <CardDescription>{t('quickActions.description')}</CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
+          <div className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-6">
             <Button variant="outline" className="h-auto flex-col gap-2 py-4" asChild>
-              <Link to="/channels">
+              <Link to="/settings" onClick={() => trackUiEvent('dashboard.quick_action', { action: 'add_provider' })}>
+                <Wrench className="h-5 w-5" />
+                <span>{t('quickActions.addProvider')}</span>
+              </Link>
+            </Button>
+            <Button variant="outline" className="h-auto flex-col gap-2 py-4" asChild>
+              <Link to="/channels" onClick={() => trackUiEvent('dashboard.quick_action', { action: 'add_channel' })}>
                 <Plus className="h-5 w-5" />
                 <span>{t('quickActions.addChannel')}</span>
               </Link>
             </Button>
             <Button variant="outline" className="h-auto flex-col gap-2 py-4" asChild>
-              <Link to="/skills">
-                <Puzzle className="h-5 w-5" />
-                <span>{t('quickActions.browseSkills')}</span>
+              <Link to="/cron" onClick={() => trackUiEvent('dashboard.quick_action', { action: 'create_cron' })}>
+                <Clock className="h-5 w-5" />
+                <span>{t('quickActions.createCron')}</span>
               </Link>
             </Button>
             <Button variant="outline" className="h-auto flex-col gap-2 py-4" asChild>
-              <Link to="/">
+              <Link to="/skills" onClick={() => trackUiEvent('dashboard.quick_action', { action: 'install_skill' })}>
+                <Puzzle className="h-5 w-5" />
+                <span>{t('quickActions.installSkill')}</span>
+              </Link>
+            </Button>
+            <Button variant="outline" className="h-auto flex-col gap-2 py-4" asChild>
+              <Link to="/" onClick={() => trackUiEvent('dashboard.quick_action', { action: 'open_chat' })}>
                 <MessageSquare className="h-5 w-5" />
                 <span>{t('quickActions.openChat')}</span>
               </Link>
             </Button>
             <Button variant="outline" className="h-auto flex-col gap-2 py-4" asChild>
-              <Link to="/settings">
+              <Link to="/settings" onClick={() => trackUiEvent('dashboard.quick_action', { action: 'open_settings' })}>
                 <Settings className="h-5 w-5" />
                 <span>{t('quickActions.settings')}</span>
               </Link>
@@ -244,13 +261,15 @@ export function Dashboard() {
           </CardHeader>
           <CardContent>
             {channels.length === 0 ? (
-              <div className="text-center py-8 text-muted-foreground">
-                <Radio className="h-8 w-8 mx-auto mb-2 opacity-50" />
-                <p>{t('noChannels')}</p>
-                <Button variant="link" asChild className="mt-2">
-                  <Link to="/channels">{t('addFirst')}</Link>
-                </Button>
-              </div>
+              <FeedbackState
+                state="empty"
+                title={t('noChannels')}
+                action={(
+                  <Button variant="link" asChild className="mt-2">
+                    <Link to="/channels">{t('addFirst')}</Link>
+                  </Button>
+                )}
+              />
             ) : (
               <div className="space-y-3">
                 {channels.slice(0, 5).map((channel) => (
@@ -286,13 +305,15 @@ export function Dashboard() {
           </CardHeader>
           <CardContent>
             {skills.filter((s) => s.enabled).length === 0 ? (
-              <div className="text-center py-8 text-muted-foreground">
-                <Puzzle className="h-8 w-8 mx-auto mb-2 opacity-50" />
-                <p>{t('noSkills')}</p>
-                <Button variant="link" asChild className="mt-2">
-                  <Link to="/skills">{t('enableSome')}</Link>
-                </Button>
-              </div>
+              <FeedbackState
+                state="empty"
+                title={t('noSkills')}
+                action={(
+                  <Button variant="link" asChild className="mt-2">
+                    <Link to="/skills">{t('enableSome')}</Link>
+                  </Button>
+                )}
+              />
             ) : (
               <div className="flex flex-wrap gap-2">
                 {skills
@@ -322,17 +343,11 @@ export function Dashboard() {
         </CardHeader>
         <CardContent>
           {usageLoading ? (
-            <div className="text-center py-8 text-muted-foreground">{t('recentTokenHistory.loading')}</div>
+            <FeedbackState state="loading" title={t('recentTokenHistory.loading')} />
           ) : visibleUsageHistory.length === 0 ? (
-            <div className="text-center py-8 text-muted-foreground">
-              <Coins className="h-8 w-8 mx-auto mb-2 opacity-50" />
-              <p>{t('recentTokenHistory.empty')}</p>
-            </div>
+            <FeedbackState state="empty" title={t('recentTokenHistory.empty')} />
           ) : filteredUsageHistory.length === 0 ? (
-            <div className="text-center py-8 text-muted-foreground">
-              <Coins className="h-8 w-8 mx-auto mb-2 opacity-50" />
-              <p>{t('recentTokenHistory.emptyForWindow')}</p>
-            </div>
+            <FeedbackState state="empty" title={t('recentTokenHistory.emptyForWindow')} />
           ) : (
             <div className="space-y-5">
               <div className="flex flex-wrap items-center justify-between gap-3">

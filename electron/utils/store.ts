@@ -36,6 +36,7 @@ export interface AppSettings {
   proxyHttpsServer: string;
   proxyAllServer: string;
   proxyBypassRules: string;
+  gatewayTransportPreference: 'ws-first' | 'http-first' | 'ws-only' | 'http-only' | 'ipc-only';
   
   // Update
   updateChannel: 'stable' | 'beta' | 'dev';
@@ -73,6 +74,7 @@ const defaults: AppSettings = {
   proxyHttpsServer: '',
   proxyAllServer: '',
   proxyBypassRules: '<local>;localhost;127.0.0.1;::1',
+  gatewayTransportPreference: 'ws-first',
   
   // Update
   updateChannel: 'stable',

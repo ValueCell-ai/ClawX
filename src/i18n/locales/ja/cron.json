@@ -59,6 +59,7 @@
         "paused": "タスクを停止しました",
         "deleted": "タスクを削除しました",
         "triggered": "タスクを正常にトリガーしました",
+        "failedTrigger": "タスクの実行に失敗しました: {{error}}",
         "failedUpdate": "タスクの更新に失敗しました",
         "failedDelete": "タスクの削除に失敗しました",
         "nameRequired": "タスク名を入力してください",
@@ -66,5 +67,16 @@
         "channelRequired": "チャンネルを選択してください",
         "discordIdRequired": "DiscordチャンネルIDを入力してください",
         "scheduleRequired": "スケジュールを選択または入力してください"
+    },
+    "schedule": {
+        "everySeconds": "{{count}}秒ごと",
+        "everyMinutes": "{{count}}分ごと",
+        "everyHours": "{{count}}時間ごと",
+        "everyDays": "{{count}}日ごと",
+        "onceAt": "{{time}} に1回実行",
+        "weeklyAt": "毎週 {{day}} {{time}}",
+        "monthlyAtDay": "毎月 {{day}}日 {{time}}",
+        "dailyAt": "毎日 {{time}}",
+        "unknown": "不明"
     }
 }

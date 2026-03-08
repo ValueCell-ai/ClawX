@@ -12,8 +12,10 @@
     "quickActions": {
         "title": "クイックアクション",
         "description": "よく使うタスクとショートカット",
+        "addProvider": "プロバイダー追加",
         "addChannel": "チャンネル追加",
-        "browseSkills": "スキルを探す",
+        "createCron": "定期タスク作成",
+        "installSkill": "スキルをインストール",
         "openChat": "チャットを開く",
         "settings": "設定",
         "devConsole": "開発者コンソール"

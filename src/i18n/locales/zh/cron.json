@@ -59,6 +59,7 @@
         "paused": "任务已暂停",
         "deleted": "任务已删除",
         "triggered": "任务已成功触发",
+        "failedTrigger": "触发任务失败: {{error}}",
         "failedUpdate": "更新任务失败",
         "failedDelete": "删除任务失败",
         "nameRequired": "请输入任务名称",
@@ -66,5 +67,16 @@
         "channelRequired": "请选择频道",
         "discordIdRequired": "请输入 Discord 频道 ID",
         "scheduleRequired": "请选择或输入调度计划"
+    },
+    "schedule": {
+        "everySeconds": "每 {{count}} 秒",
+        "everyMinutes": "每 {{count}} 分钟",
+        "everyHours": "每 {{count}} 小时",
+        "everyDays": "每 {{count}} 天",
+        "onceAt": "执行一次，时间：{{time}}",
+        "weeklyAt": "每周 {{day}} {{time}}",
+        "monthlyAtDay": "每月 {{day}} 日 {{time}}",
+        "dailyAt": "每天 {{time}}",
+        "unknown": "未知"
     }
 }

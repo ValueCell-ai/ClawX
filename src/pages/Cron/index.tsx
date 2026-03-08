@@ -37,17 +37,18 @@ import { toast } from 'sonner';
 import type { CronJob, CronJobCreateInput, ScheduleType } from '@/types/cron';
 import { CHANNEL_ICONS, type ChannelType } from '@/types/channel';
 import { useTranslation } from 'react-i18next';
+import type { TFunction } from 'i18next';
 
 // Common cron schedule presets
-const schedulePresets: { label: string; value: string; type: ScheduleType }[] = [
-  { label: 'Every minute', value: '* * * * *', type: 'interval' },
-  { label: 'Every 5 minutes', value: '*/5 * * * *', type: 'interval' },
-  { label: 'Every 15 minutes', value: '*/15 * * * *', type: 'interval' },
-  { label: 'Every hour', value: '0 * * * *', type: 'interval' },
-  { label: 'Daily at 9am', value: '0 9 * * *', type: 'daily' },
-  { label: 'Daily at 6pm', value: '0 18 * * *', type: 'daily' },
-  { label: 'Weekly (Mon 9am)', value: '0 9 * * 1', type: 'weekly' },
-  { label: 'Monthly (1st at 9am)', value: '0 9 1 * *', type: 'monthly' },
+const schedulePresets: { key: string; value: string; type: ScheduleType }[] = [
+  { key: 'everyMinute', value: '* * * * *', type: 'interval' },
+  { key: 'every5Min', value: '*/5 * * * *', type: 'interval' },
+  { key: 'every15Min', value: '*/15 * * * *', type: 'interval' },
+  { key: 'everyHour', value: '0 * * * *', type: 'interval' },
+  { key: 'daily9am', value: '0 9 * * *', type: 'daily' },
+  { key: 'daily6pm', value: '0 18 * * *', type: 'daily' },
+  { key: 'weeklyMon', value: '0 9 * * 1', type: 'weekly' },
+  { key: 'monthly1st', value: '0 9 1 * *', type: 'monthly' },
 ];
 
 // Parse cron schedule to human-readable format
@@ -55,25 +56,25 @@ const schedulePresets: { label: string; value: string; type: ScheduleType }[] = 
 //   { kind: "cron", expr: "...", tz?: "..." }
 //   { kind: "every", everyMs: number }
 //   { kind: "at", at: "..." }
-function parseCronSchedule(schedule: unknown): string {
+function parseCronSchedule(schedule: unknown, t: TFunction<'cron'>): string {
   // Handle Gateway CronSchedule object format
   if (schedule && typeof schedule === 'object') {
     const s = schedule as { kind?: string; expr?: string; tz?: string; everyMs?: number; at?: string };
     if (s.kind === 'cron' && typeof s.expr === 'string') {
-      return parseCronExpr(s.expr);
+      return parseCronExpr(s.expr, t);
     }
     if (s.kind === 'every' && typeof s.everyMs === 'number') {
       const ms = s.everyMs;
-      if (ms < 60_000) return `Every ${Math.round(ms / 1000)}s`;
-      if (ms < 3_600_000) return `Every ${Math.round(ms / 60_000)} minutes`;
-      if (ms < 86_400_000) return `Every ${Math.round(ms / 3_600_000)} hours`;
-      return `Every ${Math.round(ms / 86_400_000)} days`;
+      if (ms < 60_000) return t('schedule.everySeconds', { count: Math.round(ms / 1000) });
+      if (ms < 3_600_000) return t('schedule.everyMinutes', { count: Math.round(ms / 60_000) });
+      if (ms < 86_400_000) return t('schedule.everyHours', { count: Math.round(ms / 3_600_000) });
+      return t('schedule.everyDays', { count: Math.round(ms / 86_400_000) });
     }
     if (s.kind === 'at' && typeof s.at === 'string') {
       try {
-        return `Once at ${new Date(s.at).toLocaleString()}`;
+        return t('schedule.onceAt', { time: new Date(s.at).toLocaleString() });
       } catch {
-        return `Once at ${s.at}`;
+        return t('schedule.onceAt', { time: s.at });
       }
     }
     return String(schedule);
@@ -81,37 +82,94 @@ function parseCronSchedule(schedule: unknown): string {
 
   // Handle plain cron string
   if (typeof schedule === 'string') {
-    return parseCronExpr(schedule);
+    return parseCronExpr(schedule, t);
   }
 
-  return String(schedule ?? 'Unknown');
+  return String(schedule ?? t('schedule.unknown'));
 }
 
 // Parse a plain cron expression string to human-readable text
-function parseCronExpr(cron: string): string {
+function parseCronExpr(cron: string, t: TFunction<'cron'>): string {
   const preset = schedulePresets.find((p) => p.value === cron);
-  if (preset) return preset.label;
+  if (preset) return t(`presets.${preset.key}` as const);
 
   const parts = cron.split(' ');
   if (parts.length !== 5) return cron;
 
   const [minute, hour, dayOfMonth, , dayOfWeek] = parts;
 
-  if (minute === '*' && hour === '*') return 'Every minute';
-  if (minute.startsWith('*/')) return `Every ${minute.slice(2)} minutes`;
-  if (hour === '*' && minute === '0') return 'Every hour';
+  if (minute === '*' && hour === '*') return t('presets.everyMinute');
+  if (minute.startsWith('*/')) return t('schedule.everyMinutes', { count: Number(minute.slice(2)) });
+  if (hour === '*' && minute === '0') return t('presets.everyHour');
   if (dayOfWeek !== '*' && dayOfMonth === '*') {
-    const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-    return `Weekly on ${days[parseInt(dayOfWeek)]} at ${hour}:${minute.padStart(2, '0')}`;
+    return t('schedule.weeklyAt', { day: dayOfWeek, time: `${hour}:${minute.padStart(2, '0')}` });
   }
   if (dayOfMonth !== '*') {
-    return `Monthly on day ${dayOfMonth} at ${hour}:${minute.padStart(2, '0')}`;
+    return t('schedule.monthlyAtDay', { day: dayOfMonth, time: `${hour}:${minute.padStart(2, '0')}` });
   }
   if (hour !== '*') {
-    return `Daily at ${hour}:${minute.padStart(2, '0')}`;
+    return t('schedule.dailyAt', { time: `${hour}:${minute.padStart(2, '0')}` });
   }
 
   return cron;
+}
+
+function estimateNextRun(scheduleExpr: string): string | null {
+  const now = new Date();
+  const next = new Date(now.getTime());
+
+  if (scheduleExpr === '* * * * *') {
+    next.setSeconds(0, 0);
+    next.setMinutes(next.getMinutes() + 1);
+    return next.toLocaleString();
+  }
+
+  if (scheduleExpr === '*/5 * * * *') {
+    const delta = 5 - (next.getMinutes() % 5 || 5);
+    next.setSeconds(0, 0);
+    next.setMinutes(next.getMinutes() + delta);
+    return next.toLocaleString();
+  }
+
+  if (scheduleExpr === '*/15 * * * *') {
+    const delta = 15 - (next.getMinutes() % 15 || 15);
+    next.setSeconds(0, 0);
+    next.setMinutes(next.getMinutes() + delta);
+    return next.toLocaleString();
+  }
+
+  if (scheduleExpr === '0 * * * *') {
+    next.setMinutes(0, 0, 0);
+    next.setHours(next.getHours() + 1);
+    return next.toLocaleString();
+  }
+
+  if (scheduleExpr === '0 9 * * *' || scheduleExpr === '0 18 * * *') {
+    const targetHour = scheduleExpr === '0 9 * * *' ? 9 : 18;
+    next.setSeconds(0, 0);
+    next.setHours(targetHour, 0, 0, 0);
+    if (next <= now) next.setDate(next.getDate() + 1);
+    return next.toLocaleString();
+  }
+
+  if (scheduleExpr === '0 9 * * 1') {
+    next.setSeconds(0, 0);
+    next.setHours(9, 0, 0, 0);
+    const day = next.getDay();
+    const daysUntilMonday = day === 1 ? 7 : (8 - day) % 7;
+    next.setDate(next.getDate() + daysUntilMonday);
+    return next.toLocaleString();
+  }
+
+  if (scheduleExpr === '0 9 1 * *') {
+    next.setSeconds(0, 0);
+    next.setDate(1);
+    next.setHours(9, 0, 0, 0);
+    if (next <= now) next.setMonth(next.getMonth() + 1);
+    return next.toLocaleString();
+  }
+
+  return null;
 }
 
 // Create/Edit Task Dialog
@@ -141,6 +199,7 @@ function TaskDialog({ job, onClose, onSave }: TaskDialogProps) {
   const [customSchedule, setCustomSchedule] = useState('');
   const [useCustom, setUseCustom] = useState(false);
   const [enabled, setEnabled] = useState(job?.enabled ?? true);
+  const schedulePreview = estimateNextRun(useCustom ? customSchedule : schedule);
 
   const handleSubmit = async () => {
     if (!name.trim()) {
@@ -226,15 +285,7 @@ function TaskDialog({ job, onClose, onSave }: TaskDialogProps) {
                     className="justify-start"
                   >
                     <Timer className="h-4 w-4 mr-2" />
-                    {preset.label === 'Every minute' ? t('presets.everyMinute') :
-                      preset.label === 'Every 5 minutes' ? t('presets.every5Min') :
-                        preset.label === 'Every 15 minutes' ? t('presets.every15Min') :
-                          preset.label === 'Every hour' ? t('presets.everyHour') :
-                            preset.label === 'Daily at 9am' ? t('presets.daily9am') :
-                              preset.label === 'Daily at 6pm' ? t('presets.daily6pm') :
-                                preset.label === 'Weekly (Mon 9am)' ? t('presets.weeklyMon') :
-                                  preset.label === 'Monthly (1st at 9am)' ? t('presets.monthly1st') :
-                                    preset.label}
+                    {t(`presets.${preset.key}` as const)}
                   </Button>
                 ))}
               </div>
@@ -254,6 +305,9 @@ function TaskDialog({ job, onClose, onSave }: TaskDialogProps) {
             >
               {useCustom ? t('dialog.usePresets') : t('dialog.useCustomCron')}
             </Button>
+            <p className="text-xs text-muted-foreground">
+              {schedulePreview ? `${t('card.next')}: ${schedulePreview}` : t('dialog.cronPlaceholder')}
+            </p>
           </div>
 
           {/* Enabled */}
@@ -270,13 +324,13 @@ function TaskDialog({ job, onClose, onSave }: TaskDialogProps) {
           {/* Actions */}
           <div className="flex justify-end gap-2 pt-4 border-t">
             <Button variant="outline" onClick={onClose}>
-              Cancel
+              {t('common:actions.cancel', 'Cancel')}
             </Button>
             <Button onClick={handleSubmit} disabled={saving}>
               {saving ? (
                 <>
                   <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                  Saving...
+                  {t('common:status.saving', 'Saving...')}
                 </>
               ) : (
                 <>
@@ -312,7 +366,7 @@ function CronJobCard({ job, onToggle, onEdit, onDelete, onTrigger }: CronJobCard
       toast.success(t('toast.triggered'));
     } catch (error) {
       console.error('Failed to trigger cron job:', error);
-      toast.error(`Failed to trigger task: ${error instanceof Error ? error.message : String(error)}`);
+      toast.error(t('toast.failedTrigger', { error: error instanceof Error ? error.message : String(error) }));
     } finally {
       setTriggering(false);
     }
@@ -345,7 +399,7 @@ function CronJobCard({ job, onToggle, onEdit, onDelete, onTrigger }: CronJobCard
               <CardTitle className="text-lg">{job.name}</CardTitle>
               <CardDescription className="flex items-center gap-2">
                 <Timer className="h-3 w-3" />
-                {parseCronSchedule(job.schedule)}
+                {parseCronSchedule(job.schedule, t)}
               </CardDescription>
             </div>
           </div>
@@ -423,11 +477,11 @@ function CronJobCard({ job, onToggle, onEdit, onDelete, onTrigger }: CronJobCard
           </Button>
           <Button variant="ghost" size="sm" onClick={onEdit}>
             <Edit className="h-4 w-4" />
-            <span className="ml-1">Edit</span>
+            <span className="ml-1">{t('common:actions.edit', 'Edit')}</span>
           </Button>
           <Button variant="ghost" size="sm" onClick={handleDelete}>
             <Trash2 className="h-4 w-4 text-destructive" />
-            <span className="ml-1 text-destructive">Delete</span>
+            <span className="ml-1 text-destructive">{t('common:actions.delete', 'Delete')}</span>
           </Button>
         </div>
       </CardContent>
@@ -643,10 +697,10 @@ export function Cron() {
 
       <ConfirmDialog
         open={!!jobToDelete}
-        title={t('common.confirm', 'Confirm')}
+        title={t('common:actions.confirm', 'Confirm')}
         message={t('card.deleteConfirm')}
-        confirmLabel={t('common.delete', 'Delete')}
-        cancelLabel={t('common.cancel', 'Cancel')}
+        confirmLabel={t('common:actions.delete', 'Delete')}
+        cancelLabel={t('common:actions.cancel', 'Cancel')}
         variant="destructive"
         onConfirm={async () => {
           if (jobToDelete) {

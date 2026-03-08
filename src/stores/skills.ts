@@ -4,6 +4,7 @@
  */
 import { create } from 'zustand';
 import type { Skill, MarketplaceSkill } from '../types/skill';
+import { invokeIpc } from '@/lib/api-client';
 
 type GatewaySkillStatus = {
   skillKey: string;
@@ -70,20 +71,20 @@ export const useSkillsStore = create<SkillsState>((set, get) => ({
     }
     try {
       // 1. Fetch from Gateway (running skills)
-      const gatewayResult = await window.electron.ipcRenderer.invoke(
+      const gatewayResult = await invokeIpc<GatewayRpcResponse<GatewaySkillsStatusResult>>(
         'gateway:rpc',
         'skills.status'
-      ) as GatewayRpcResponse<GatewaySkillsStatusResult>;
+      );
 
       // 2. Fetch from ClawHub (installed on disk)
-      const clawhubResult = await window.electron.ipcRenderer.invoke(
+      const clawhubResult = await invokeIpc<{ success: boolean; results?: ClawHubListResult[]; error?: string }>(
         'clawhub:list'
-      ) as { success: boolean; results?: ClawHubListResult[]; error?: string };
+      );
 
       // 3. Fetch configurations directly from Electron (since Gateway doesn't return them)
-      const configResult = await window.electron.ipcRenderer.invoke(
+      const configResult = await invokeIpc<Record<string, { apiKey?: string; env?: Record<string, string> }>>(
         'skill:getAllConfigs'
-      ) as Record<string, { apiKey?: string; env?: Record<string, string> }>;
+      );
 
       let combinedSkills: Skill[] = [];
       const currentSkills = get().skills;
@@ -155,7 +156,7 @@ export const useSkillsStore = create<SkillsState>((set, get) => ({
   searchSkills: async (query: string) => {
     set({ searching: true, searchError: null });
     try {
-      const result = await window.electron.ipcRenderer.invoke('clawhub:search', { query }) as { success: boolean; results?: MarketplaceSkill[]; error?: string };
+      const result = await invokeIpc<{ success: boolean; results?: MarketplaceSkill[]; error?: string }>('clawhub:search', { query });
       if (result.success) {
         set({ searchResults: result.results || [] });
       } else {
@@ -177,7 +178,7 @@ export const useSkillsStore = create<SkillsState>((set, get) => ({
   installSkill: async (slug: string, version?: string) => {
     set((state) => ({ installing: { ...state.installing, [slug]: true } }));
     try {
-      const result = await window.electron.ipcRenderer.invoke('clawhub:install', { slug, version }) as { success: boolean; error?: string };
+      const result = await invokeIpc<{ success: boolean; error?: string }>('clawhub:install', { slug, version });
       if (!result.success) {
         if (result.error?.includes('Timeout')) {
           throw new Error('installTimeoutError');
@@ -204,7 +205,7 @@ export const useSkillsStore = create<SkillsState>((set, get) => ({
   uninstallSkill: async (slug: string) => {
     set((state) => ({ installing: { ...state.installing, [slug]: true } }));
     try {
-      const result = await window.electron.ipcRenderer.invoke('clawhub:uninstall', { slug }) as { success: boolean; error?: string };
+      const result = await invokeIpc<{ success: boolean; error?: string }>('clawhub:uninstall', { slug });
       if (!result.success) {
         throw new Error(result.error || 'Uninstall failed');
       }
@@ -226,11 +227,11 @@ export const useSkillsStore = create<SkillsState>((set, get) => ({
     const { updateSkill } = get();
 
     try {
-      const result = await window.electron.ipcRenderer.invoke(
+      const result = await invokeIpc<GatewayRpcResponse<unknown>>(
         'gateway:rpc',
         'skills.update',
         { skillKey: skillId, enabled: true }
-      ) as GatewayRpcResponse<unknown>;
+      );
 
       if (result.success) {
         updateSkill(skillId, { enabled: true });
@@ -252,11 +253,11 @@ export const useSkillsStore = create<SkillsState>((set, get) => ({
     }
 
     try {
-      const result = await window.electron.ipcRenderer.invoke(
+      const result = await invokeIpc<GatewayRpcResponse<unknown>>(
         'gateway:rpc',
         'skills.update',
         { skillKey: skillId, enabled: false }
-      ) as GatewayRpcResponse<unknown>;
+      );
 
       if (result.success) {
         updateSkill(skillId, { enabled: false });
