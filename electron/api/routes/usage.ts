@@ -10,8 +10,14 @@ export async function handleUsageRoutes(
   _ctx: HostApiContext,
 ): Promise<boolean> {
   if (url.pathname === '/api/usage/recent-token-history' && req.method === 'GET') {
-    const parsedLimit = Number(url.searchParams.get('limit') || '');
-    const limit = Number.isFinite(parsedLimit) ? Math.max(Math.floor(parsedLimit), 1) : undefined;
+    const rawLimit = url.searchParams.get('limit');
+    let limit: number | undefined;
+    if (rawLimit != null && rawLimit.trim() !== '') {
+      const parsedLimit = Number(rawLimit);
+      if (Number.isFinite(parsedLimit)) {
+        limit = Math.max(Math.floor(parsedLimit), 1);
+      }
+    }
     sendJson(res, 200, await getRecentTokenUsageHistory(limit));
     return true;
   }

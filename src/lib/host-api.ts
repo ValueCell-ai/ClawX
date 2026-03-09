@@ -121,8 +121,12 @@ function parseLegacyProxyResponse<T>(
 }
 
 function shouldFallbackToBrowser(message: string): boolean {
-  return message.includes('Invalid IPC channel: hostapi:fetch')
-    || message.includes('window is not defined');
+  const normalized = message.toLowerCase();
+  return normalized.includes('invalid ipc channel: hostapi:fetch')
+    || normalized.includes("no handler registered for 'hostapi:fetch'")
+    || normalized.includes('no handler registered for "hostapi:fetch"')
+    || normalized.includes('no handler registered for hostapi:fetch')
+    || normalized.includes('window is not defined');
 }
 
 export async function hostApiFetch<T>(path: string, init?: RequestInit): Promise<T> {

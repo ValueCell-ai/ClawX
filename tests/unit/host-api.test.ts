@@ -44,14 +44,27 @@ describe('host-api', () => {
     expect(result.ok).toBe(1);
   });
 
-  it('throws proxy error from unified envelope', async () => {
+  it('falls back to browser fetch when hostapi handler is not registered', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ fallback: true }),
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
     invokeIpcMock.mockResolvedValueOnce({
       ok: false,
       error: { message: 'No handler registered for hostapi:fetch' },
     });
 
     const { hostApiFetch } = await import('@/lib/host-api');
-    await expect(hostApiFetch('/api/test')).rejects.toThrow('No handler registered for hostapi:fetch');
+    const result = await hostApiFetch<{ fallback: boolean }>('/api/test');
+
+    expect(result.fallback).toBe(true);
+    expect(fetchMock).toHaveBeenCalledWith(
+      'http://127.0.0.1:3210/api/test',
+      expect.objectContaining({ headers: expect.any(Object) }),
+    );
   });
 
   it('throws message from legacy non-ok envelope', async () => {
