@@ -20,6 +20,7 @@ import { isQuitting, setQuitting } from './app-state';
 import { applyProxySettings } from './proxy';
 import { getSetting } from '../utils/store';
 import { ensureBuiltinSkillsInstalled } from '../utils/skill-config';
+import { migrateLegacyOpenClawUserData } from '../utils/install-migration';
 
 // Disable GPU hardware acceleration globally for maximum stability across
 // all GPU configurations (no GPU, integrated, discrete).
@@ -143,6 +144,10 @@ async function initialize(): Promise<void> {
   logger.debug(
     `Runtime: platform=${process.platform}/${process.arch}, electron=${process.versions.electron}, node=${process.versions.node}, packaged=${app.isPackaged}`
   );
+
+  // Best-effort migration for users upgrading from legacy OpenClaw desktop builds.
+  // This is non-destructive (copies missing files only) and falls back to a fresh start.
+  migrateLegacyOpenClawUserData();
 
   // Warm up network optimization (non-blocking)
   void warmupNetworkOptimization();

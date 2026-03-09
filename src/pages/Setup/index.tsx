@@ -712,6 +712,9 @@ function ProviderContent({
   const [selectedProviderConfigId, setSelectedProviderConfigId] = useState<string | null>(null);
   const [baseUrl, setBaseUrl] = useState('');
   const [modelId, setModelId] = useState('');
+  const [modelBrowseTask, setModelBrowseTask] = useState<'general' | 'coding' | 'reasoning' | 'vision' | 'fast'>('general');
+  const [browsingModels, setBrowsingModels] = useState(false);
+  const [autoSelectingModel, setAutoSelectingModel] = useState(false);
   const [providerMenuOpen, setProviderMenuOpen] = useState(false);
   const providerMenuRef = useRef<HTMLDivElement | null>(null);
 
@@ -914,6 +917,62 @@ function ProviderContent({
   const isOAuth = selectedProviderData?.isOAuth ?? false;
   const supportsApiKey = selectedProviderData?.supportsApiKey ?? false;
   const useOAuthFlow = isOAuth && (!supportsApiKey || authMode === 'oauth');
+
+  const handleBrowseModels = async () => {
+    if (!selectedProvider) return;
+    setBrowsingModels(true);
+    try {
+      const result = await invokeIpc(
+        'provider:listModels',
+        selectedProviderConfigId || selectedProvider,
+        apiKey,
+        { baseUrl: baseUrl.trim() || undefined }
+      ) as { success: boolean; models: string[]; error?: string };
+
+      if (!result.success) {
+        throw new Error(result.error || 'Unable to load models');
+      }
+
+      if (result.models.length === 0) {
+        toast.message('No models were returned by this endpoint');
+        return;
+      }
+
+      setModelId(result.models[0]);
+      onConfiguredChange(false);
+      toast.success(`Loaded ${result.models.length} model option${result.models.length === 1 ? '' : 's'}`);
+    } catch (error) {
+      toast.error(`Model browse failed: ${String(error)}`);
+    } finally {
+      setBrowsingModels(false);
+    }
+  };
+
+  const handleAutoSelectModel = async () => {
+    if (!selectedProvider) return;
+    setAutoSelectingModel(true);
+    try {
+      const result = await invokeIpc(
+        'provider:autoSelectModel',
+        selectedProviderConfigId || selectedProvider,
+        modelBrowseTask,
+        apiKey,
+        { baseUrl: baseUrl.trim() || undefined }
+      ) as { success: boolean; model?: string; error?: string };
+
+      if (!result.success || !result.model) {
+        throw new Error(result.error || 'No recommended model found');
+      }
+
+      setModelId(result.model);
+      onConfiguredChange(false);
+      toast.success(`Selected ${result.model}`);
+    } catch (error) {
+      toast.error(`Auto-select failed: ${String(error)}`);
+    } finally {
+      setAutoSelectingModel(false);
+    }
+  };
 
   const handleValidateAndSave = async () => {
     if (!selectedProvider) return;
@@ -1158,6 +1217,37 @@ function ProviderContent({
                 autoComplete="off"
                 className="bg-background border-input"
               />
+              <div className="flex flex-wrap gap-2">
+                <select
+                  value={modelBrowseTask}
+                  onChange={(event) => setModelBrowseTask(event.target.value as typeof modelBrowseTask)}
+                  className="h-9 rounded-md border border-input bg-background px-2 text-sm"
+                >
+                  <option value="general">General</option>
+                  <option value="coding">Coding</option>
+                  <option value="reasoning">Reasoning</option>
+                  <option value="vision">Vision</option>
+                  <option value="fast">Fast</option>
+                </select>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={handleBrowseModels}
+                  disabled={browsingModels || autoSelectingModel}
+                >
+                  {browsingModels ? 'Browsing…' : 'Browse Models'}
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={handleAutoSelectModel}
+                  disabled={browsingModels || autoSelectingModel}
+                >
+                  {autoSelectingModel ? 'Selecting…' : 'Auto-Select'}
+                </Button>
+              </div>
               <p className="text-xs text-muted-foreground">
                 {t('provider.modelIdDesc')}
               </p>

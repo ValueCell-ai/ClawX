@@ -250,6 +250,9 @@ function ProviderCard({
   const [showKey, setShowKey] = useState(false);
   const [validating, setValidating] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [modelBrowseTask, setModelBrowseTask] = useState<'general' | 'coding' | 'reasoning' | 'vision' | 'fast'>('general');
+  const [browsingModels, setBrowsingModels] = useState(false);
+  const [autoSelectingModel, setAutoSelectingModel] = useState(false);
 
   const typeInfo = PROVIDER_TYPE_INFO.find((t) => t.id === provider.type);
   const showModelIdField = shouldShowProviderModelId(typeInfo, devModeUnlocked);
@@ -274,6 +277,55 @@ function ProviderCard({
         ? current.filter((id) => id !== providerId)
         : [...current, providerId]
     ));
+  };
+
+  const handleBrowseModels = async () => {
+    setBrowsingModels(true);
+    try {
+      const result = await invokeIpc(
+        'provider:listModels',
+        provider.id,
+        newKey.trim() || undefined,
+        { baseUrl: baseUrl.trim() || undefined }
+      ) as { success: boolean; models: string[]; error?: string };
+
+      if (!result.success) throw new Error(result.error || 'Unable to load models');
+      if (result.models.length === 0) {
+        toast.message('No models were returned by this endpoint');
+        return;
+      }
+
+      setModelId(result.models[0]);
+      toast.success(`Loaded ${result.models.length} model option${result.models.length === 1 ? '' : 's'}`);
+    } catch (error) {
+      toast.error(`Model browse failed: ${String(error)}`);
+    } finally {
+      setBrowsingModels(false);
+    }
+  };
+
+  const handleAutoSelectModel = async () => {
+    setAutoSelectingModel(true);
+    try {
+      const result = await invokeIpc(
+        'provider:autoSelectModel',
+        provider.id,
+        modelBrowseTask,
+        newKey.trim() || undefined,
+        { baseUrl: baseUrl.trim() || undefined }
+      ) as { success: boolean; model?: string; error?: string };
+
+      if (!result.success || !result.model) {
+        throw new Error(result.error || 'No recommended model found');
+      }
+
+      setModelId(result.model);
+      toast.success(`Selected ${result.model}`);
+    } catch (error) {
+      toast.error(`Auto-select failed: ${String(error)}`);
+    } finally {
+      setAutoSelectingModel(false);
+    }
   };
 
   const handleSaveEdits = async () => {
@@ -390,6 +442,39 @@ function ProviderCard({
                       placeholder={typeInfo?.modelIdPlaceholder || 'provider/model-id'}
                       className="h-9 text-sm"
                     />
+                    <div className="flex flex-wrap gap-2">
+                      <select
+                        value={modelBrowseTask}
+                        onChange={(event) => setModelBrowseTask(event.target.value as typeof modelBrowseTask)}
+                        className="h-8 rounded-md border border-input bg-background px-2 text-xs"
+                      >
+                        <option value="general">General</option>
+                        <option value="coding">Coding</option>
+                        <option value="reasoning">Reasoning</option>
+                        <option value="vision">Vision</option>
+                        <option value="fast">Fast</option>
+                      </select>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="h-8 text-xs"
+                        onClick={handleBrowseModels}
+                        disabled={browsingModels || autoSelectingModel}
+                      >
+                        {browsingModels ? 'Browsing…' : 'Browse Models'}
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="h-8 text-xs"
+                        onClick={handleAutoSelectModel}
+                        disabled={browsingModels || autoSelectingModel}
+                      >
+                        {autoSelectingModel ? 'Selecting…' : 'Auto-Select'}
+                      </Button>
+                    </div>
                   </div>
                 )}
               </div>
@@ -607,6 +692,9 @@ function AddProviderDialog({
   const [apiKey, setApiKey] = useState('');
   const [baseUrl, setBaseUrl] = useState('');
   const [modelId, setModelId] = useState('');
+  const [modelBrowseTask, setModelBrowseTask] = useState<'general' | 'coding' | 'reasoning' | 'vision' | 'fast'>('general');
+  const [browsingModels, setBrowsingModels] = useState(false);
+  const [autoSelectingModel, setAutoSelectingModel] = useState(false);
   const [showKey, setShowKey] = useState(false);
   const [saving, setSaving] = useState(false);
   const [validationError, setValidationError] = useState<string | null>(null);
@@ -723,6 +811,59 @@ function AddProviderDialog({
   const availableTypes = PROVIDER_TYPE_INFO.filter(
     (t) => t.id === 'custom' || !existingTypes.has(t.id),
   );
+
+  const handleBrowseModels = async () => {
+    if (!selectedType) return;
+    setBrowsingModels(true);
+    setValidationError(null);
+    try {
+      const result = await invokeIpc(
+        'provider:listModels',
+        selectedType,
+        apiKey.trim() || undefined,
+        { baseUrl: baseUrl.trim() || undefined }
+      ) as { success: boolean; models: string[]; error?: string };
+
+      if (!result.success) throw new Error(result.error || 'Unable to load models');
+      if (result.models.length === 0) {
+        toast.message('No models were returned by this endpoint');
+        return;
+      }
+
+      setModelId(result.models[0]);
+      toast.success(`Loaded ${result.models.length} model option${result.models.length === 1 ? '' : 's'}`);
+    } catch (error) {
+      setValidationError(String(error));
+    } finally {
+      setBrowsingModels(false);
+    }
+  };
+
+  const handleAutoSelectModel = async () => {
+    if (!selectedType) return;
+    setAutoSelectingModel(true);
+    setValidationError(null);
+    try {
+      const result = await invokeIpc(
+        'provider:autoSelectModel',
+        selectedType,
+        modelBrowseTask,
+        apiKey.trim() || undefined,
+        { baseUrl: baseUrl.trim() || undefined }
+      ) as { success: boolean; model?: string; error?: string };
+
+      if (!result.success || !result.model) {
+        throw new Error(result.error || 'No recommended model found');
+      }
+
+      setModelId(result.model);
+      toast.success(`Selected ${result.model}`);
+    } catch (error) {
+      setValidationError(String(error));
+    } finally {
+      setAutoSelectingModel(false);
+    }
+  };
 
   const handleAdd = async () => {
     if (!selectedType) return;
@@ -941,6 +1082,37 @@ function AddProviderDialog({
                       setValidationError(null);
                     }}
                   />
+                  <div className="flex flex-wrap gap-2">
+                    <select
+                      value={modelBrowseTask}
+                      onChange={(event) => setModelBrowseTask(event.target.value as typeof modelBrowseTask)}
+                      className="h-9 rounded-md border border-input bg-background px-2 text-sm"
+                    >
+                      <option value="general">General</option>
+                      <option value="coding">Coding</option>
+                      <option value="reasoning">Reasoning</option>
+                      <option value="vision">Vision</option>
+                      <option value="fast">Fast</option>
+                    </select>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={handleBrowseModels}
+                      disabled={browsingModels || autoSelectingModel}
+                    >
+                      {browsingModels ? 'Browsing…' : 'Browse Models'}
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={handleAutoSelectModel}
+                      disabled={browsingModels || autoSelectingModel}
+                    >
+                      {autoSelectingModel ? 'Selecting…' : 'Auto-Select'}
+                    </Button>
+                  </div>
                 </div>
               )}
               {/* Device OAuth Trigger — only shown when in OAuth mode */}

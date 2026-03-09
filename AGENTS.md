@@ -1,4 +1,15 @@
 # AGENTS.md
+## Crash Diagnostics First (Required)
+
+- For app bugs/regressions/crashes, agents must pull crash logs and diagnostics first whenever possible (App Store Connect/TestFlight, device logs, system diagnostics, app/server logs).
+- Include crash signature details before fixes: exception type, faulting thread, top frames, app version/build, OS/device, timestamp.
+- If logs are unavailable, state the exact blocker and continue with best-effort repro plus instrumentation.
+
+## Cron UX baseline (Required)
+
+- In ClawX desktop, the `Crons` section should include useful starter templates for new users (for example: daily summary, repo check, inbox digest, backup/status check).
+- Keep templates editable before save and include safe defaults (`disabled` by default unless user opts in).
+- When adding or changing cron templates, document the user-facing purpose and default schedule.
 
 ## Cursor Cloud specific instructions
 

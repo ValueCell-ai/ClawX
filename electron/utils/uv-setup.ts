@@ -1,6 +1,6 @@
 import { app } from 'electron';
 import { execSync, spawn } from 'child_process';
-import { existsSync } from 'fs';
+import { chmodSync, existsSync, mkdirSync } from 'fs';
 import { join } from 'path';
 import { getUvMirrorEnv } from './uv-env';
 import { logger } from './logger';
@@ -22,6 +22,26 @@ function getBundledUvPath(): string {
   }
 }
 
+function getManagedUvDir(): string {
+  return join(app.getPath('userData'), 'bin');
+}
+
+function getManagedUvPath(): string {
+  const binName = process.platform === 'win32' ? 'uv.exe' : 'uv';
+  return join(getManagedUvDir(), binName);
+}
+
+function getLegacyBundledUvPaths(): string[] {
+  const platform = process.platform;
+  const arch = process.arch;
+  const binName = platform === 'win32' ? 'uv.exe' : 'uv';
+  const target = `${platform}-${arch}`;
+  return [
+    join(process.resourcesPath, 'resources', 'bin', binName),
+    join(process.resourcesPath, 'resources', 'bin', target, binName),
+  ];
+}
+
 /**
  * Resolve the best uv binary to use.
  *
@@ -31,10 +51,21 @@ function getBundledUvPath(): string {
  */
 function resolveUvBin(): { bin: string; source: 'bundled' | 'path' | 'bundled-fallback' } {
   const bundled = getBundledUvPath();
+  const managed = getManagedUvPath();
+  const legacyCandidates = getLegacyBundledUvPaths();
 
   if (app.isPackaged) {
     if (existsSync(bundled)) {
       return { bin: bundled, source: 'bundled' };
+    }
+    for (const legacyPath of legacyCandidates) {
+      if (existsSync(legacyPath)) {
+        logger.warn(`Using legacy bundled uv path: ${legacyPath}`);
+        return { bin: legacyPath, source: 'bundled-fallback' };
+      }
+    }
+    if (existsSync(managed)) {
+      return { bin: managed, source: 'bundled-fallback' };
     }
     logger.warn(`Bundled uv binary not found at ${bundled}, falling back to system PATH`);
   }
@@ -45,6 +76,14 @@ function resolveUvBin(): { bin: string; source: 'bundled' | 'path' | 'bundled-fa
 
   if (existsSync(bundled)) {
     return { bin: bundled, source: 'bundled-fallback' };
+  }
+  if (existsSync(managed)) {
+    return { bin: managed, source: 'bundled-fallback' };
+  }
+  for (const legacyPath of legacyCandidates) {
+    if (existsSync(legacyPath)) {
+      return { bin: legacyPath, source: 'bundled-fallback' };
+    }
   }
 
   return { bin: 'uv', source: 'path' };
@@ -77,11 +116,73 @@ export async function checkUvInstalled(): Promise<boolean> {
  */
 export async function installUv(): Promise<void> {
   const isAvailable = await checkUvInstalled();
-  if (!isAvailable) {
-    const bin = getBundledUvPath();
-    throw new Error(`uv not found in system PATH and bundled binary missing at ${bin}`);
+  if (isAvailable) {
+    logger.info('uv is available and ready to use');
+    return;
   }
-  logger.info('uv is available and ready to use');
+
+  const installedPath = await bootstrapUvBinary();
+  if (!existsSync(installedPath)) {
+    const bundled = getBundledUvPath();
+    throw new Error(`uv installation failed. Bundled binary missing at ${bundled} and auto-bootstrap did not produce ${installedPath}`);
+  }
+
+  logger.info(`uv bootstrapped to ${installedPath}`);
+}
+
+async function bootstrapUvBinary(): Promise<string> {
+  const managedDir = getManagedUvDir();
+  const managedPath = getManagedUvPath();
+  mkdirSync(managedDir, { recursive: true });
+
+  if (existsSync(managedPath)) {
+    return managedPath;
+  }
+
+  const env = {
+    ...process.env,
+    UV_INSTALL_DIR: managedDir,
+  };
+
+  if (process.platform === 'win32') {
+    await new Promise<void>((resolve, reject) => {
+      const child = spawn(
+        'powershell',
+        ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', 'irm https://astral.sh/uv/install.ps1 | iex'],
+        { env, windowsHide: true },
+      );
+
+      let stderr = '';
+      child.stderr?.on('data', (data) => { stderr += data.toString(); });
+      child.on('close', (code) => {
+        if (code === 0) resolve();
+        else reject(new Error(`uv bootstrap failed on Windows (code=${code}): ${stderr.trim()}`));
+      });
+      child.on('error', reject);
+    });
+  } else {
+    await new Promise<void>((resolve, reject) => {
+      const child = spawn(
+        '/bin/sh',
+        ['-c', 'curl -LsSf https://astral.sh/uv/install.sh | sh'],
+        { env, windowsHide: true },
+      );
+
+      let stderr = '';
+      child.stderr?.on('data', (data) => { stderr += data.toString(); });
+      child.on('close', (code) => {
+        if (code === 0) resolve();
+        else reject(new Error(`uv bootstrap failed (code=${code}): ${stderr.trim()}`));
+      });
+      child.on('error', reject);
+    });
+  }
+
+  if (existsSync(managedPath) && process.platform !== 'win32') {
+    chmodSync(managedPath, 0o755);
+  }
+
+  return managedPath;
 }
 
 /**

@@ -115,7 +115,7 @@ export function shouldShowProviderModelId(
 }
 
 export function resolveProviderModelForSave(
-  provider: Pick<ProviderTypeInfo, 'defaultModelId' | 'showModelId' | 'showModelIdInDevModeOnly'> | undefined,
+  provider: Pick<ProviderTypeInfo, 'id' | 'defaultModelId' | 'showModelId' | 'showModelIdInDevModeOnly'> | undefined,
   modelId: string,
   devModeUnlocked: boolean
 ): string | undefined {
@@ -124,7 +124,16 @@ export function resolveProviderModelForSave(
   }
 
   const trimmedModelId = modelId.trim();
-  return trimmedModelId || provider?.defaultModelId || undefined;
+  const resolvedModelId = trimmedModelId || provider?.defaultModelId || undefined;
+  if (!resolvedModelId) return undefined;
+
+  // Ollama model IDs are case-sensitive in practice; normalize to avoid
+  // user-entered tags like `:LATEST` causing runtime 404s.
+  if (provider?.id === 'ollama') {
+    return resolvedModelId.toLowerCase();
+  }
+
+  return resolvedModelId;
 }
 
 /** Normalize provider API key before saving; Ollama uses a local placeholder when blank. */

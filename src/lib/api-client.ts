@@ -66,6 +66,8 @@ const UNIFIED_CHANNELS = new Set<string>([
   'provider:hasApiKey',
   'provider:getApiKey',
   'provider:validateKey',
+  'provider:listModels',
+  'provider:autoSelectModel',
   'provider:save',
   'provider:delete',
   'provider:setApiKey',

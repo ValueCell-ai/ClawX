@@ -96,13 +96,33 @@ export function getOpenClawProviderKey(type: string, providerId: string): string
   return getOpenClawProviderKeyForType(type, providerId);
 }
 
+function normalizeProviderModelId(providerType: string, modelId?: string): string | undefined {
+  if (!modelId) return undefined;
+  const trimmed = modelId.trim();
+  if (!trimmed) return undefined;
+  if (providerType === 'ollama') return trimmed.toLowerCase();
+  return trimmed;
+}
+
+function normalizeProviderConfigForRuntime(config: ProviderConfig): ProviderConfig {
+  const next: ProviderConfig = { ...config };
+  next.model = normalizeProviderModelId(config.type, config.model);
+  if (Array.isArray(config.fallbackModels)) {
+    next.fallbackModels = config.fallbackModels
+      .map((model) => normalizeProviderModelId(config.type, model))
+      .filter((model): model is string => Boolean(model));
+  }
+  return next;
+}
+
 function getProviderModelRef(config: ProviderConfig): string | undefined {
   const providerKey = getOpenClawProviderKey(config.type, config.id);
+  const normalizedModel = normalizeProviderModelId(config.type, config.model);
 
-  if (config.model) {
-    return config.model.startsWith(`${providerKey}/`)
-      ? config.model
-      : `${providerKey}/${config.model}`;
+  if (normalizedModel) {
+    return normalizedModel.startsWith(`${providerKey}/`)
+      ? normalizedModel
+      : `${providerKey}/${normalizedModel}`;
   }
 
   const defaultModel = getProviderDefaultModel(config.type);
@@ -119,7 +139,7 @@ async function getProviderFallbackModelRefs(config: ProviderConfig): Promise<str
   const providerKey = getOpenClawProviderKey(config.type, config.id);
 
   for (const fallbackModel of config.fallbackModels ?? []) {
-    const normalizedModel = fallbackModel.trim();
+    const normalizedModel = normalizeProviderModelId(config.type, fallbackModel);
     if (!normalizedModel) continue;
 
     const modelRef = normalizedModel.startsWith(`${providerKey}/`)
@@ -1829,17 +1849,19 @@ function registerProviderHandlers(gatewayManager: GatewayManager): void {
   // Save a provider configuration
   ipcMain.handle('provider:save', async (_, config: ProviderConfig, apiKey?: string) => {
     try {
+      const normalizedConfig = normalizeProviderConfigForRuntime(config);
+
       // Save the provider config
-      await saveProvider(config);
+      await saveProvider(normalizedConfig);
 
       // Derive the unique OpenClaw key for this provider instance
-      const ock = getOpenClawProviderKey(config.type, config.id);
+      const ock = getOpenClawProviderKey(normalizedConfig.type, normalizedConfig.id);
 
       // Store the API key if provided
       if (apiKey !== undefined) {
         const trimmedKey = apiKey.trim();
         if (trimmedKey) {
-          await storeApiKey(config.id, trimmedKey);
+          await storeApiKey(normalizedConfig.id, trimmedKey);
 
           // Also write to OpenClaw auth-profiles.json so the gateway can use it
           try {
@@ -1852,25 +1874,25 @@ function registerProviderHandlers(gatewayManager: GatewayManager): void {
 
       // Sync the provider configuration to openclaw.json so Gateway knows about it
       try {
-        const meta = getProviderConfig(config.type);
-        const api = config.type === 'custom' || config.type === 'ollama' ? 'openai-completions' : meta?.api;
+        const meta = getProviderConfig(normalizedConfig.type);
+        const api = normalizedConfig.type === 'custom' || normalizedConfig.type === 'ollama' ? 'openai-completions' : meta?.api;
 
         if (api) {
-          await syncProviderConfigToOpenClaw(ock, config.model, {
-            baseUrl: config.baseUrl || meta?.baseUrl,
+          await syncProviderConfigToOpenClaw(ock, normalizedConfig.model, {
+            baseUrl: normalizedConfig.baseUrl || meta?.baseUrl,
             api,
             apiKeyEnv: meta?.apiKeyEnv,
             headers: meta?.headers,
           });
 
-          if (config.type === 'custom' || config.type === 'ollama') {
+          if (normalizedConfig.type === 'custom' || normalizedConfig.type === 'ollama') {
             const resolvedKey = apiKey !== undefined
               ? (apiKey.trim() || null)
-              : await getApiKey(config.id);
-            if (resolvedKey && config.baseUrl) {
-              const modelId = config.model;
+              : await getApiKey(normalizedConfig.id);
+            if (resolvedKey && normalizedConfig.baseUrl) {
+              const modelId = normalizedConfig.model;
               await updateAgentModelProvider(ock, {
-                baseUrl: config.baseUrl,
+                baseUrl: normalizedConfig.baseUrl,
                 api: 'openai-completions',
                 models: modelId ? [{ id: modelId, name: modelId }] : [],
                 apiKey: resolvedKey,
@@ -1963,10 +1985,11 @@ function registerProviderHandlers(gatewayManager: GatewayManager): void {
           ...updates,
           updatedAt: new Date().toISOString(),
         };
+        const normalizedNextConfig = normalizeProviderConfigForRuntime(nextConfig);
 
-        const ock = getOpenClawProviderKey(nextConfig.type, providerId);
+        const ock = getOpenClawProviderKey(normalizedNextConfig.type, providerId);
 
-        await saveProvider(nextConfig);
+        await saveProvider(normalizedNextConfig);
 
         if (apiKey !== undefined) {
           const trimmedKey = apiKey.trim();
@@ -1981,26 +2004,26 @@ function registerProviderHandlers(gatewayManager: GatewayManager): void {
 
         // Sync the provider configuration to openclaw.json so Gateway knows about it
         try {
-          const fallbackModels = await getProviderFallbackModelRefs(nextConfig);
-          const meta = getProviderConfig(nextConfig.type);
-          const api = nextConfig.type === 'custom' || nextConfig.type === 'ollama' ? 'openai-completions' : meta?.api;
+          const fallbackModels = await getProviderFallbackModelRefs(normalizedNextConfig);
+          const meta = getProviderConfig(normalizedNextConfig.type);
+          const api = normalizedNextConfig.type === 'custom' || normalizedNextConfig.type === 'ollama' ? 'openai-completions' : meta?.api;
 
           if (api) {
-            await syncProviderConfigToOpenClaw(ock, nextConfig.model, {
-              baseUrl: nextConfig.baseUrl || meta?.baseUrl,
+            await syncProviderConfigToOpenClaw(ock, normalizedNextConfig.model, {
+              baseUrl: normalizedNextConfig.baseUrl || meta?.baseUrl,
               api,
               apiKeyEnv: meta?.apiKeyEnv,
               headers: meta?.headers,
             });
 
-            if (nextConfig.type === 'custom' || nextConfig.type === 'ollama') {
+            if (normalizedNextConfig.type === 'custom' || normalizedNextConfig.type === 'ollama') {
               const resolvedKey = apiKey !== undefined
                 ? (apiKey.trim() || null)
                 : await getApiKey(providerId);
-              if (resolvedKey && nextConfig.baseUrl) {
-                const modelId = nextConfig.model;
+              if (resolvedKey && normalizedNextConfig.baseUrl) {
+                const modelId = normalizedNextConfig.model;
                 await updateAgentModelProvider(ock, {
-                  baseUrl: nextConfig.baseUrl,
+                  baseUrl: normalizedNextConfig.baseUrl,
                   api: 'openai-completions',
                   models: modelId ? [{ id: modelId, name: modelId }] : [],
                   apiKey: resolvedKey,
@@ -2012,13 +2035,13 @@ function registerProviderHandlers(gatewayManager: GatewayManager): void {
           // If this provider is the current default, update the primary model
           const defaultProviderId = await getDefaultProvider();
           if (defaultProviderId === providerId) {
-            const modelOverride = getProviderModelRef(nextConfig);
-            const providerKeyIsAliased = ock !== nextConfig.type;
-            if (nextConfig.type === 'custom' || nextConfig.type === 'ollama' || providerKeyIsAliased) {
-              const baseMeta = getProviderConfig(nextConfig.type);
+            const modelOverride = getProviderModelRef(normalizedNextConfig);
+            const providerKeyIsAliased = ock !== normalizedNextConfig.type;
+            if (normalizedNextConfig.type === 'custom' || normalizedNextConfig.type === 'ollama' || providerKeyIsAliased) {
+              const baseMeta = getProviderConfig(normalizedNextConfig.type);
               await setOpenClawDefaultModelWithOverride(ock, modelOverride, {
-                baseUrl: nextConfig.baseUrl || baseMeta?.baseUrl,
-                api: nextConfig.type === 'custom' || nextConfig.type === 'ollama'
+                baseUrl: normalizedNextConfig.baseUrl || baseMeta?.baseUrl,
+                api: normalizedNextConfig.type === 'custom' || normalizedNextConfig.type === 'ollama'
                   ? 'openai-completions'
                   : baseMeta?.api,
                 apiKeyEnv: baseMeta?.apiKeyEnv,
@@ -2234,6 +2257,54 @@ function registerProviderHandlers(gatewayManager: GatewayManager): void {
       } catch (error) {
         console.error('Validation error:', error);
         return { valid: false, error: String(error) };
+      }
+    }
+  );
+
+  // List available models for a provider using local or remote endpoints.
+  ipcMain.handle(
+    'provider:listModels',
+    async (
+      _,
+      providerId: string,
+      apiKey?: string,
+      options?: { baseUrl?: string }
+    ) => {
+      try {
+        const provider = await getProvider(providerId);
+        const providerType = provider?.type || providerId;
+        const registryBaseUrl = getProviderConfig(providerType)?.baseUrl;
+        const resolvedBaseUrl = options?.baseUrl || provider?.baseUrl || registryBaseUrl;
+        const resolvedApiKey = (apiKey ?? '').trim() || (await getApiKey(provider?.id || providerId)) || '';
+        const models = await discoverProviderModels(providerType, resolvedApiKey, resolvedBaseUrl);
+        return { success: true, models };
+      } catch (error) {
+        return { success: false, error: String(error), models: [] as string[] };
+      }
+    }
+  );
+
+  // Pick a recommended model based on task intent.
+  ipcMain.handle(
+    'provider:autoSelectModel',
+    async (
+      _,
+      providerId: string,
+      taskType: 'general' | 'coding' | 'reasoning' | 'vision' | 'fast' = 'general',
+      apiKey?: string,
+      options?: { baseUrl?: string }
+    ) => {
+      try {
+        const provider = await getProvider(providerId);
+        const providerType = provider?.type || providerId;
+        const registryBaseUrl = getProviderConfig(providerType)?.baseUrl;
+        const resolvedBaseUrl = options?.baseUrl || provider?.baseUrl || registryBaseUrl;
+        const resolvedApiKey = (apiKey ?? '').trim() || (await getApiKey(provider?.id || providerId)) || '';
+        const models = await discoverProviderModels(providerType, resolvedApiKey, resolvedBaseUrl);
+        const model = selectBestModelForTask(providerType, models, taskType);
+        return { success: true, model, models };
+      } catch (error) {
+        return { success: false, error: String(error), model: undefined, models: [] as string[] };
       }
     }
   );
@@ -2497,6 +2568,98 @@ async function validateOpenRouterKey(
   const url = 'https://openrouter.ai/api/v1/auth/key';
   const headers = { Authorization: `Bearer ${apiKey}` };
   return await performProviderValidationRequest(providerType, url, headers);
+}
+
+async function discoverProviderModels(
+  providerType: string,
+  apiKey: string,
+  baseUrl?: string
+): Promise<string[]> {
+  const seen = new Set<string>();
+  const add = (candidate?: string) => {
+    const normalized = normalizeProviderModelId(providerType, candidate);
+    if (normalized) seen.add(normalized);
+  };
+
+  const normalizedBase = baseUrl?.trim() ? normalizeBaseUrl(baseUrl) : undefined;
+  const profile = getValidationProfile(providerType);
+  const headers: Record<string, string> = {};
+
+  if (profile === 'openai-compatible' || profile === 'openrouter') {
+    if (apiKey.trim()) headers.Authorization = `Bearer ${apiKey.trim()}`;
+  } else if (profile === 'anthropic-header') {
+    if (apiKey.trim()) headers['x-api-key'] = apiKey.trim();
+    headers['anthropic-version'] = '2023-06-01';
+  }
+
+  if (normalizedBase) {
+    try {
+      const response = await proxyAwareFetch(buildOpenAiModelsUrl(normalizedBase), { headers });
+      const payload = await response.json().catch(() => ({})) as {
+        data?: Array<{ id?: string }>;
+        models?: Array<{ id?: string; name?: string }>;
+      };
+      payload.data?.forEach((model) => add(model?.id));
+      payload.models?.forEach((model) => add(model?.id || model?.name));
+    } catch {
+      // Best-effort only.
+    }
+  }
+
+  // Native Ollama fallback if instance exposes /api/tags instead of /v1/models.
+  if (providerType === 'ollama' && normalizedBase) {
+    try {
+      const baseWithoutV1 = normalizedBase.replace(/\/v1$/, '');
+      const response = await proxyAwareFetch(`${baseWithoutV1}/api/tags`);
+      const payload = await response.json().catch(() => ({})) as { models?: Array<{ name?: string }> };
+      payload.models?.forEach((model) => add(model?.name));
+    } catch {
+      // ignore fallback failure
+    }
+  }
+
+  if (seen.size === 0 && providerType === 'ollama') {
+    add('qwen3:latest');
+    add('qwen2.5-coder:latest');
+    add('llama3.1:latest');
+  }
+
+  return Array.from(seen);
+}
+
+function selectBestModelForTask(
+  providerType: string,
+  models: string[],
+  taskType: 'general' | 'coding' | 'reasoning' | 'vision' | 'fast'
+): string | undefined {
+  if (models.length === 0) return undefined;
+
+  const scored = models.map((model) => {
+    const id = model.toLowerCase();
+    let score = 0;
+
+    if (taskType === 'coding' && /(coder|code|devstral|deepseek-coder|qwen.*coder|gpt-5|gpt-4\.1)/.test(id)) score += 100;
+    if (taskType === 'reasoning' && /(reason|r1|qwq|thinking|o1|o3)/.test(id)) score += 100;
+    if (taskType === 'vision' && /(vision|vl|omni|gpt-4o|gpt-4\.1|gemini)/.test(id)) score += 100;
+    if (taskType === 'fast' && /(mini|small|flash|haiku|turbo|fast)/.test(id)) score += 100;
+    if (taskType === 'general' && /(latest|instruct|chat|default)/.test(id)) score += 40;
+    if (!/(preview|experimental|beta)/.test(id)) score += 10;
+    if (/latest/.test(id)) score += 8;
+
+    return { model, score };
+  });
+
+  scored.sort((a, b) => b.score - a.score);
+  if (scored[0] && scored[0].score > 0) return scored[0].model;
+
+  if (providerType === 'ollama') {
+    return models.find((m) => /qwen3:latest/i.test(m))
+      || models.find((m) => /qwen/i.test(m))
+      || models.find((m) => /llama/i.test(m))
+      || models[0];
+  }
+
+  return models[0];
 }
 
 /**
