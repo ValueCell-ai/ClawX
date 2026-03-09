@@ -882,6 +882,46 @@ export async function sanitizeOpenClawConfig(): Promise<void> {
     }
   }
 
+  // ── plugins section ──────────────────────────────────────────────
+  // Remove absolute paths in plugins that no longer exist or are bundled (preventing hardlink validation errors)
+  const plugins = config.plugins;
+  if (plugins) {
+    if (Array.isArray(plugins)) {
+      const validPlugins: unknown[] = [];
+      for (const p of plugins) {
+        if (typeof p === 'string' && p.startsWith('/')) {
+          if (p.includes('node_modules/openclaw/extensions') || !(await fileExists(p))) {
+            console.log(`[sanitize] Removing stale/bundled plugin path "${p}" from openclaw.json`);
+            modified = true;
+          } else {
+            validPlugins.push(p);
+          }
+        } else {
+          validPlugins.push(p);
+        }
+      }
+      if (modified) config.plugins = validPlugins;
+    } else if (typeof plugins === 'object') {
+      const pluginsObj = plugins as Record<string, unknown>;
+      if (Array.isArray(pluginsObj.load)) {
+        const validLoad: unknown[] = [];
+        for (const p of pluginsObj.load) {
+          if (typeof p === 'string' && p.startsWith('/')) {
+            if (p.includes('node_modules/openclaw/extensions') || !(await fileExists(p))) {
+              console.log(`[sanitize] Removing stale/bundled plugin path "${p}" from openclaw.json`);
+              modified = true;
+            } else {
+              validLoad.push(p);
+            }
+          } else {
+            validLoad.push(p);
+          }
+        }
+        if (modified) pluginsObj.load = validLoad;
+      }
+    }
+  }
+
   // ── commands section ───────────────────────────────────────────
   // Required for SIGUSR1 in-process reload authorization.
   const commands = (
