@@ -1,0 +1,51 @@
+{
+    "title": "Agents",
+    "subtitle": "Manage your OpenClaw agents and their channel ownership",
+    "refresh": "Refresh",
+    "addAgent": "Add Agent",
+    "gatewayWarning": "Gateway service is not running. Agent/channel changes may take a moment to apply.",
+    "defaultBadge": "default",
+    "inherited": "inherited",
+    "none": "none",
+    "modelLine": "Model: {{model}}{{suffix}}",
+    "channelsLine": "Channels: {{channels}}",
+    "deleteAgent": "Delete Agent",
+    "settings": "Settings",
+    "creating": "Creating...",
+    "createDialog": {
+        "title": "Add Agent",
+        "description": "Create a new agent by name. ClawX will copy the main agent's workspace bootstrap files and runtime auth setup.",
+        "nameLabel": "Agent Name",
+        "namePlaceholder": "Coding Helper"
+    },
+    "deleteDialog": {
+        "title": "Delete Agent",
+        "message": "Delete \"{{name}}\" from ClawX? Existing workspace and session files will be left on disk."
+    },
+    "settingsDialog": {
+        "title": "{{name}} Settings",
+        "description": "Update the agent name and manage which channels belong to this agent.",
+        "nameLabel": "Agent Name",
+        "agentIdLabel": "Agent ID",
+        "modelLabel": "Model",
+        "channelsTitle": "Channels",
+        "channelsDescription": "Each channel type has a single ClawX configuration. Saving a configured channel here moves ownership to this agent.",
+        "addChannel": "Add Channel",
+        "noChannels": "No channels are assigned to this agent yet."
+    },
+    "removeChannelDialog": {
+        "title": "Remove Channel",
+        "message": "Remove {{name}} from ClawX? This deletes the current channel configuration."
+    },
+    "toast": {
+        "agentCreated": "Agent created",
+        "agentCreateFailed": "Failed to create agent: {{error}}",
+        "agentDeleted": "Agent deleted",
+        "agentUpdated": "Agent updated",
+        "agentUpdateFailed": "Failed to update agent: {{error}}",
+        "channelAssigned": "{{channel}} assigned to agent",
+        "channelAssignFailed": "Failed to assign channel: {{error}}",
+        "channelRemoved": "{{channel}} removed",
+        "channelRemoveFailed": "Failed to remove channel: {{error}}"
+    }
+}

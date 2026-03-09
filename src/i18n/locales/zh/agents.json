@@ -1,0 +1,51 @@
+{
+    "title": "Agents",
+    "subtitle": "管理 OpenClaw Agent 以及它们的 Channel 归属",
+    "refresh": "刷新",
+    "addAgent": "添加 Agent",
+    "gatewayWarning": "Gateway 服务未运行。Agent 或 Channel 变更可能需要一点时间生效。",
+    "defaultBadge": "默认",
+    "inherited": "继承",
+    "none": "无",
+    "modelLine": "Model: {{model}}{{suffix}}",
+    "channelsLine": "Channels: {{channels}}",
+    "deleteAgent": "删除 Agent",
+    "settings": "设置",
+    "creating": "创建中...",
+    "createDialog": {
+        "title": "添加 Agent",
+        "description": "只需输入名称即可创建新 Agent。ClawX 会复制主 Agent 的工作区引导文件和运行时认证配置。",
+        "nameLabel": "Agent 名称",
+        "namePlaceholder": "Coding Helper"
+    },
+    "deleteDialog": {
+        "title": "删除 Agent",
+        "message": "确认从 ClawX 删除 “{{name}}”？已有的工作区和会话文件会保留在磁盘上。"
+    },
+    "settingsDialog": {
+        "title": "{{name}} 设置",
+        "description": "更新 Agent 名称，并管理哪些 Channel 归属于这个 Agent。",
+        "nameLabel": "Agent 名称",
+        "agentIdLabel": "Agent ID",
+        "modelLabel": "Model",
+        "channelsTitle": "Channels",
+        "channelsDescription": "每种 Channel 类型在 ClawX 中只保留一份配置。在这里保存已配置的 Channel 会将归属切换到当前 Agent。",
+        "addChannel": "添加 Channel",
+        "noChannels": "这个 Agent 还没有分配任何 Channel。"
+    },
+    "removeChannelDialog": {
+        "title": "移除 Channel",
+        "message": "确认移除 {{name}}？这会删除当前的 Channel 配置。"
+    },
+    "toast": {
+        "agentCreated": "Agent 已创建",
+        "agentCreateFailed": "创建 Agent 失败：{{error}}",
+        "agentDeleted": "Agent 已删除",
+        "agentUpdated": "Agent 已更新",
+        "agentUpdateFailed": "更新 Agent 失败：{{error}}",
+        "channelAssigned": "{{channel}} 已分配给 Agent",
+        "channelAssignFailed": "分配 Channel 失败：{{error}}",
+        "channelRemoved": "{{channel}} 已移除",
+        "channelRemoveFailed": "移除 Channel 失败：{{error}}"
+    }
+}
