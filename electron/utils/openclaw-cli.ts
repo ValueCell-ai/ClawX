@@ -104,6 +104,11 @@ function getPackagedCliWrapperPath(): string | null {
   return null;
 }
 
+function getWindowsPowerShellPath(): string {
+  const systemRoot = process.env.SystemRoot || 'C:\\Windows';
+  return join(systemRoot, 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe');
+}
+
 // ── macOS / Linux install ────────────────────────────────────────────────────
 
 function getCliTargetPath(): string {
@@ -165,6 +170,71 @@ function isCliInstalled(): boolean {
   return true;
 }
 
+function ensureWindowsCliOnPath(): Promise<'updated' | 'already-present'> {
+  return new Promise((resolve, reject) => {
+    const cliWrapper = getPackagedCliWrapperPath();
+    if (!cliWrapper) {
+      reject(new Error('CLI wrapper not found in app resources.'));
+      return;
+    }
+
+    const cliDir = dirname(cliWrapper);
+    const helperPath = join(cliDir, 'update-user-path.ps1');
+    if (!existsSync(helperPath)) {
+      reject(new Error(`PATH helper not found at ${helperPath}`));
+      return;
+    }
+
+    const child = spawn(
+      getWindowsPowerShellPath(),
+      [
+        '-NoProfile',
+        '-NonInteractive',
+        '-ExecutionPolicy',
+        'Bypass',
+        '-File',
+        helperPath,
+        '-Action',
+        'add',
+        '-CliDir',
+        cliDir,
+      ],
+      {
+        env: process.env,
+        stdio: ['ignore', 'pipe', 'pipe'],
+        windowsHide: true,
+      },
+    );
+
+    let stdout = '';
+    let stderr = '';
+
+    child.stdout.on('data', (chunk) => {
+      stdout += chunk.toString();
+    });
+
+    child.stderr.on('data', (chunk) => {
+      stderr += chunk.toString();
+    });
+
+    child.on('error', reject);
+    child.on('close', (code) => {
+      if (code !== 0) {
+        reject(new Error(stderr.trim() || `PowerShell exited with code ${code}`));
+        return;
+      }
+
+      const status = stdout.trim();
+      if (status === 'updated' || status === 'already-present') {
+        resolve(status);
+        return;
+      }
+
+      reject(new Error(`Unexpected PowerShell output: ${status || '(empty)'}`));
+    });
+  });
+}
+
 function ensureLocalBinInPath(): void {
   if (process.platform === 'win32') return;
 
@@ -205,7 +275,17 @@ export async function autoInstallCliIfNeeded(
   notify?: (path: string) => void,
 ): Promise<void> {
   if (!app.isPackaged) return;
-  if (process.platform === 'win32') return; // NSIS handles it
+  if (process.platform === 'win32') {
+    try {
+      const result = await ensureWindowsCliOnPath();
+      if (result === 'updated') {
+        logger.info('Added Windows CLI directory to user PATH.');
+      }
+    } catch (error) {
+      logger.warn('Failed to ensure Windows CLI is on PATH:', error);
+    }
+    return;
+  }
 
   const target = getCliTargetPath();
   const wrapperSrc = getPackagedCliWrapperPath();

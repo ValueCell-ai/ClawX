@@ -79,107 +79,40 @@
   ; elevation this call silently fails — no crash, just no key written.
   WriteRegDWORD HKLM "SYSTEM\CurrentControlSet\Control\FileSystem" "LongPathsEnabled" 1
 
-  ; Add resources\cli to the current user's PATH for openclaw CLI.
-  ; Read current PATH, skip if already present, append otherwise.
-  ;
-  ; ReadRegStr silently returns "" when the value exceeds the NSIS string
-  ; buffer (8192 chars for the electron-builder large-strings build).
-  ; Without an error-flag check we would overwrite the entire user PATH with
-  ; only our CLI directory, destroying every other PATH entry.
+  ; Use PowerShell to update the current user's PATH.
+  ; This avoids NSIS string-buffer limits and preserves long PATH values.
+  InitPluginsDir
   ClearErrors
-  ReadRegStr $0 HKCU "Environment" "Path"
-  IfErrors _ci_readFailed
-
-  StrCmp $0 "" _ci_setNew
-
-  ; Check if our CLI dir is already in PATH
-  Push "$INSTDIR\resources\cli"
-  Push $0
-  Call _ci_StrContains
+  File "/oname=$PLUGINSDIR\update-user-path.ps1" "${PROJECT_DIR}\resources\cli\win32\update-user-path.ps1"
+  nsExec::ExecToStack '"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "$PLUGINSDIR\update-user-path.ps1" -Action add -CliDir "$INSTDIR\resources\cli"'
+  Pop $0
   Pop $1
-  StrCmp $1 "" 0 _ci_done
-
-  ; Append to existing PATH
-  StrCpy $0 "$0;$INSTDIR\resources\cli"
-  Goto _ci_write
-
-  _ci_setNew:
-    StrCpy $0 "$INSTDIR\resources\cli"
-
-  _ci_write:
-    WriteRegExpandStr HKCU "Environment" "Path" $0
-    ; Broadcast WM_SETTINGCHANGE so running Explorer/terminals pick up the change
-    SendMessage ${HWND_BROADCAST} ${WM_SETTINGCHANGE} 0 "STR:Environment" /TIMEOUT=500
+  StrCmp $0 "error" 0 +2
+    DetailPrint "Warning: Failed to launch PowerShell while updating PATH."
+  StrCmp $0 "timeout" 0 +2
+    DetailPrint "Warning: PowerShell PATH update timed out."
+  StrCmp $0 "0" 0 +2
     Goto _ci_done
-
-  _ci_readFailed:
-    ; PATH value could not be read (likely exceeds NSIS buffer).
-    ; Skip modification to avoid destroying existing entries.
-    DetailPrint "Warning: Could not read user PATH (may exceed 8192 chars). Skipping PATH update."
+  DetailPrint "Warning: PowerShell PATH update exited with code $0."
 
   _ci_done:
 !macroend
 
-; Helper: check if $R0 (needle) is found within $R1 (haystack).
-; Pushes needle then haystack before call; pops result (needle if found, "" if not).
-Function _ci_StrContains
-  Exch $R1 ; haystack
-  Exch
-  Exch $R0 ; needle
-  Push $R2
-  Push $R3
-  Push $R4
-
-  StrLen $R3 $R0
-  StrLen $R4 $R1
-  IntOp $R4 $R4 - $R3
-
-  StrCpy $R2 0
-  _ci_loop:
-    IntCmp $R2 $R4 0 0 _ci_notfound
-    StrCpy $1 $R1 $R3 $R2
-    StrCmp $1 $R0 _ci_found
-    IntOp $R2 $R2 + 1
-    Goto _ci_loop
-
-  _ci_found:
-    StrCpy $R0 $R0
-    Goto _ci_end
-
-  _ci_notfound:
-    StrCpy $R0 ""
-
-  _ci_end:
-    Pop $R4
-    Pop $R3
-    Pop $R2
-    Pop $R1
-    Exch $R0
-FunctionEnd
-
 !macro customUnInstall
-  ; Remove resources\cli from user PATH
+  ; Remove resources\cli from user PATH via PowerShell so long PATH values are handled safely
+  InitPluginsDir
   ClearErrors
-  ReadRegStr $0 HKCU "Environment" "Path"
-  IfErrors _cu_pathDone
-  StrCmp $0 "" _cu_pathDone
-
-  ; Remove our entry (with leading or trailing semicolons)
-  Push $0
-  Push "$INSTDIR\resources\cli"
-  Call un._cu_RemoveFromPath
+  File "/oname=$PLUGINSDIR\update-user-path.ps1" "${PROJECT_DIR}\resources\cli\win32\update-user-path.ps1"
+  nsExec::ExecToStack '"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "$PLUGINSDIR\update-user-path.ps1" -Action remove -CliDir "$INSTDIR\resources\cli"'
   Pop $0
-
-  ; If PATH is now empty, delete the registry value instead of writing ""
-  StrCmp $0 "" _cu_deletePath
-  WriteRegExpandStr HKCU "Environment" "Path" $0
-  Goto _cu_pathBroadcast
-
-  _cu_deletePath:
-    DeleteRegValue HKCU "Environment" "Path"
-
-  _cu_pathBroadcast:
-    SendMessage ${HWND_BROADCAST} ${WM_SETTINGCHANGE} 0 "STR:Environment" /TIMEOUT=500
+  Pop $1
+  StrCmp $0 "error" 0 +2
+    DetailPrint "Warning: Failed to launch PowerShell while removing PATH entry."
+  StrCmp $0 "timeout" 0 +2
+    DetailPrint "Warning: PowerShell PATH removal timed out."
+  StrCmp $0 "0" 0 +2
+    Goto _cu_pathDone
+  DetailPrint "Warning: PowerShell PATH removal exited with code $0."
 
   _cu_pathDone:
 
@@ -219,70 +152,3 @@ FunctionEnd
   _cu_skipRemove:
 !macroend
 
-; Uninstaller helper: remove a substring from a semicolon-delimited PATH string.
-; Push haystack, push needle before call; pops cleaned string.
-Function un._cu_RemoveFromPath
-  Exch $R0 ; needle
-  Exch
-  Exch $R1 ; haystack
-
-  ; Try removing ";needle" (entry in the middle or end)
-  Push "$R1"
-  Push ";$R0"
-  Call un._ci_StrReplace
-  Pop $R1
-
-  ; Try removing "needle;" (entry at the start)
-  Push "$R1"
-  Push "$R0;"
-  Call un._ci_StrReplace
-  Pop $R1
-
-  ; Try removing exact match (only entry)
-  StrCmp $R1 $R0 0 +2
-    StrCpy $R1 ""
-
-  Pop $R0
-  Exch $R1
-FunctionEnd
-
-; Uninstaller helper: remove first occurrence of needle from haystack.
-; Push haystack, push needle; pops result.
-Function un._ci_StrReplace
-  Exch $R0 ; needle
-  Exch
-  Exch $R1 ; haystack
-  Push $R2
-  Push $R3
-  Push $R4
-  Push $R5
-
-  StrLen $R3 $R0
-  StrLen $R4 $R1
-  StrCpy $R5 ""
-  StrCpy $R2 0
-
-  _usr_loop:
-    IntCmp $R2 $R4 _usr_done _usr_done
-    StrCpy $1 $R1 $R3 $R2
-    StrCmp $1 $R0 _usr_found
-    StrCpy $1 $R1 1 $R2
-    StrCpy $R5 "$R5$1"
-    IntOp $R2 $R2 + 1
-    Goto _usr_loop
-
-  _usr_found:
-    ; Copy the part after the needle
-    IntOp $R2 $R2 + $R3
-    StrCpy $1 $R1 "" $R2
-    StrCpy $R5 "$R5$1"
-
-  _usr_done:
-    StrCpy $R1 $R5
-    Pop $R5
-    Pop $R4
-    Pop $R3
-    Pop $R2
-    Pop $R0
-    Exch $R1
-FunctionEnd
