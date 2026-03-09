@@ -118,6 +118,9 @@ win:
 nsis:
   oneClick: false
   perMachine: false
+  # Avoid publishing a combined win.exe (x64+arm64) artifact.
+  # Keep per-arch installers only to reduce confusion and release size.
+  buildUniversalInstaller: false
   # Avoid NSIS build failure: warning 6010 (_ci_StrContains "not referenced") is emitted when
   # building the uninstaller, because that function is only used in the install macro.
   warningsAsErrors: false
