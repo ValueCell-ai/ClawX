@@ -134,6 +134,21 @@ export async function saveChannelConfig(
         }
     }
 
+    // QQ Bot is a channel plugin; make sure it's explicitly allowed.
+    // Newer OpenClaw versions may not load non-bundled plugins when allowlist is empty.
+    if (channelType === 'qqbot') {
+        if (!currentConfig.plugins) {
+            currentConfig.plugins = {};
+        }
+        currentConfig.plugins.enabled = true;
+        const allow = Array.isArray(currentConfig.plugins.allow)
+            ? currentConfig.plugins.allow as string[]
+            : [];
+        if (!allow.includes('qqbot')) {
+            currentConfig.plugins.allow = [...allow, 'qqbot'];
+        }
+    }
+
     // Plugin-based channels (e.g. WhatsApp) go under plugins.entries, not channels
     if (PLUGIN_CHANNELS.includes(channelType)) {
         if (!currentConfig.plugins) {
@@ -221,9 +236,9 @@ export async function saveChannelConfig(
         const existingDmPolicy = existingConfig.dmPolicy === 'pairing' ? 'open' : existingConfig.dmPolicy;
         transformedConfig.dmPolicy = transformedConfig.dmPolicy ?? existingDmPolicy ?? 'open';
 
-        let allowFrom = transformedConfig.allowFrom ?? existingConfig.allowFrom ?? ['*'];
+        let allowFrom = (transformedConfig.allowFrom ?? existingConfig.allowFrom ?? ['*']) as string[];
         if (!Array.isArray(allowFrom)) {
-            allowFrom = [allowFrom];
+            allowFrom = [allowFrom] as string[];
         }
 
         if (transformedConfig.dmPolicy === 'open' && !allowFrom.includes('*')) {

@@ -315,6 +315,25 @@
                 "创建一个新的 Bot 账户",
                 "复制访问令牌"
             ]
+        },
+        "qqbot": {
+            "description": "通过 @sliverp/qqbot 插件连接 QQ 机器人",
+            "docsUrl": "https://github.com/sliverp/qqbot/blob/main/README.zh.md",
+            "fields": {
+                "appId": {
+                    "label": "App ID",
+                    "placeholder": "您的 QQ 机器人 App ID"
+                },
+                "clientSecret": {
+                    "label": "Client Secret",
+                    "placeholder": "您的 QQ 机器人 Client Secret"
+                }
+            },
+            "instructions": [
+                "前往 QQ 机器人开放平台注册应用",
+                "获取 App ID 和 Client Secret",
+                "在下方填写凭证信息"
+            ]
         }
     },
     "viewDocs": "查看文档"

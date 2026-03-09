@@ -315,6 +315,25 @@
                 "アクセストークンをコピーします"
             ],
             "docsUrl": "https://docs.openclaw.ai/channels/mattermost"
+        },
+        "qqbot": {
+            "description": "@sliverp/qqbot プラグイン経由で QQ ボットに接続します",
+            "fields": {
+                "appId": {
+                    "label": "App ID",
+                    "placeholder": "QQ ボットの App ID"
+                },
+                "clientSecret": {
+                    "label": "Client Secret",
+                    "placeholder": "QQ ボットの Client Secret"
+                }
+            },
+            "instructions": [
+                "QQ ボットオープンプラットフォームでアプリを登録します",
+                "App ID と Client Secret を取得します",
+                "認証情報を入力します"
+            ],
+            "docsUrl": "https://github.com/sliverp/qqbot/blob/main/README.zh.md"
         }
     },
     "viewDocs": "ドキュメントを表示"

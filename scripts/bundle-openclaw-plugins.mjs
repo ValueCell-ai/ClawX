@@ -36,7 +36,8 @@ function normWin(p) {
 
 const PLUGINS = [
   { npmName: '@soimy/dingtalk', pluginId: 'dingtalk' },
-  { npmName: '@wecom/wecom-openclaw-plugin', pluginId: 'wecom' }
+  { npmName: '@wecom/wecom-openclaw-plugin', pluginId: 'wecom' },
+  { npmName: '@sliverp/qqbot', pluginId: 'qqbot' },
 ];
 
 function getVirtualStoreNodeModules(realPkgPath) {

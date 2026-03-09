@@ -315,6 +315,25 @@
                 "Create a new Bot Account",
                 "Copy the access token"
             ]
+        },
+        "qqbot": {
+            "description": "Connect QQ Bot via @sliverp/qqbot plugin",
+            "docsUrl": "https://github.com/sliverp/qqbot/blob/main/README.zh.md",
+            "fields": {
+                "appId": {
+                    "label": "App ID",
+                    "placeholder": "Your QQ Bot App ID"
+                },
+                "clientSecret": {
+                    "label": "Client Secret",
+                    "placeholder": "Your QQ Bot Client Secret"
+                }
+            },
+            "instructions": [
+                "Register an app at QQ Bot Open Platform",
+                "Get App ID and Client Secret",
+                "Fill in your credentials below"
+            ]
         }
     },
     "viewDocs": "View Documentation"

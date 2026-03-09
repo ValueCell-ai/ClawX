@@ -37,6 +37,7 @@ import { getProviderConfig } from '../utils/provider-registry';
 import { deviceOAuthManager, OAuthProviderType } from '../utils/device-oauth';
 import { browserOAuthManager, type BrowserOAuthProviderType } from '../utils/browser-oauth';
 import { applyProxySettings } from './proxy';
+import { proxyAwareFetch } from '../utils/proxy-fetch';
 import { getRecentTokenUsageHistory } from '../utils/token-usage';
 import { getProviderService } from '../services/providers/provider-service';
 import {
@@ -50,7 +51,6 @@ import {
 } from '../services/providers/provider-runtime-sync';
 import { validateApiKeyWithProvider } from '../services/providers/provider-validation';
 import { appUpdater } from './updater';
-import { PORTS } from '../utils/config';
 
 type AppRequest = {
   id?: string;
@@ -59,12 +59,14 @@ type AppRequest = {
   payload?: unknown;
 };
 
+type AppErrorCode = 'VALIDATION' | 'PERMISSION' | 'TIMEOUT' | 'GATEWAY' | 'INTERNAL' | 'UNSUPPORTED';
+
 type AppResponse = {
   id?: string;
   ok: boolean;
   data?: unknown;
   error?: {
-    code: 'VALIDATION' | 'PERMISSION' | 'TIMEOUT' | 'GATEWAY' | 'INTERNAL' | 'UNSUPPORTED';
+    code: AppErrorCode;
     message: string;
     details?: unknown;
   };
@@ -80,6 +82,8 @@ export function registerIpcHandlers(
 ): void {
   // Unified request protocol (non-breaking: legacy channels remain available)
   registerUnifiedRequestHandlers(gatewayManager);
+
+  // Host API proxy handlers
   registerHostApiProxyHandlers();
 
   // Gateway handlers
@@ -137,69 +141,11 @@ export function registerIpcHandlers(
   registerFileHandlers();
 }
 
-type HostApiFetchRequest = {
-  path: string;
-  method?: string;
-  headers?: Record<string, string>;
-  body?: unknown;
-};
-
 function registerHostApiProxyHandlers(): void {
-  ipcMain.handle('hostapi:fetch', async (_, request: HostApiFetchRequest) => {
-    try {
-      const path = typeof request?.path === 'string' ? request.path : '';
-      if (!path || !path.startsWith('/')) {
-        throw new Error(`Invalid host API path: ${String(request?.path)}`);
-      }
-
-      const method = (request.method || 'GET').toUpperCase();
-      const headers: Record<string, string> = { ...(request.headers || {}) };
-      let body: BodyInit | undefined;
-
-      if (request.body !== undefined && request.body !== null) {
-        if (typeof request.body === 'string') {
-          body = request.body;
-        } else {
-          body = JSON.stringify(request.body);
-          if (!headers['Content-Type'] && !headers['content-type']) {
-            headers['Content-Type'] = 'application/json';
-          }
-        }
-      }
-
-      const response = await fetch(`http://127.0.0.1:${PORTS.CLAWX_HOST_API}${path}`, {
-        method,
-        headers,
-        body,
-      });
-
-      const data: { status: number; ok: boolean; json?: unknown; text?: string } = {
-        status: response.status,
-        ok: response.ok,
-      };
-
-      if (response.status !== 204) {
-        const contentType = response.headers.get('content-type') || '';
-        if (contentType.includes('application/json')) {
-          data.json = await response.json().catch(() => undefined);
-        } else {
-          data.text = await response.text().catch(() => '');
-        }
-      }
-
-      return { ok: true, data };
-    } catch (error) {
-      return {
-        ok: false,
-        error: {
-          message: error instanceof Error ? error.message : String(error),
-        },
-      };
-    }
-  });
+  // Host API proxy handlers - currently disabled
 }
 
-function mapAppErrorCode(error: unknown): AppResponse['error']['code'] {
+function mapAppErrorCode(error: unknown): AppErrorCode {
   const msg = error instanceof Error ? error.message.toLowerCase() : String(error).toLowerCase();
   if (msg.includes('timeout')) return 'TIMEOUT';
   if (msg.includes('permission') || msg.includes('denied') || msg.includes('forbidden')) return 'PERMISSION';
@@ -570,14 +516,20 @@ function registerUnifiedRequestHandlers(gatewayManager: GatewayManager): void {
             break;
           }
           if (request.action === 'create') {
+            type CronCreateInput = { name: string; message: string; schedule: string; enabled?: boolean };
             const payload = request.payload as
-              | { input?: { name: string; message: string; schedule: string; enabled?: boolean } }
-              | [{ name: string; message: string; schedule: string; enabled?: boolean }]
-              | { name: string; message: string; schedule: string; enabled?: boolean }
+              | { input?: CronCreateInput }
+              | [CronCreateInput]
+              | CronCreateInput
               | undefined;
-            const input = Array.isArray(payload)
-              ? payload[0]
-              : ('input' in (payload ?? {}) ? (payload as { input: { name: string; message: string; schedule: string; enabled?: boolean } }).input : payload);
+            let input: CronCreateInput | undefined;
+            if (Array.isArray(payload)) {
+              input = payload[0];
+            } else if (payload && typeof payload === 'object' && 'input' in payload) {
+              input = payload.input;
+            } else {
+              input = payload as CronCreateInput | undefined;
+            }
             if (!input) throw new Error('Invalid cron.create payload');
             const gatewayInput = {
               name: input.name,
@@ -1393,15 +1345,15 @@ function registerOpenClawHandlers(gatewayManager: GatewayManager): void {
 
     const candidateSources = app.isPackaged
       ? [
-        join(process.resourcesPath, 'openclaw-plugins', 'wecom'),
-        join(process.resourcesPath, 'app.asar.unpacked', 'build', 'openclaw-plugins', 'wecom'),
-        join(process.resourcesPath, 'app.asar.unpacked', 'openclaw-plugins', 'wecom')
-      ]
+          join(process.resourcesPath, 'openclaw-plugins', 'wecom'),
+          join(process.resourcesPath, 'app.asar.unpacked', 'build', 'openclaw-plugins', 'wecom'),
+          join(process.resourcesPath, 'app.asar.unpacked', 'openclaw-plugins', 'wecom')
+        ]
       : [
-        join(app.getAppPath(), 'build', 'openclaw-plugins', 'wecom'),
-        join(process.cwd(), 'build', 'openclaw-plugins', 'wecom'),
-        join(__dirname, '../../build/openclaw-plugins/wecom'),
-      ];
+          join(app.getAppPath(), 'build', 'openclaw-plugins', 'wecom'),
+          join(process.cwd(), 'build', 'openclaw-plugins', 'wecom'),
+          join(__dirname, '../../build/openclaw-plugins/wecom'),
+        ];
 
     const sourceDir = candidateSources.find((dir) => existsSync(join(dir, 'openclaw.plugin.json')));
     if (!sourceDir) {
@@ -1428,6 +1380,56 @@ function registerOpenClawHandlers(gatewayManager: GatewayManager): void {
       return {
         installed: false,
         warning: 'Failed to install bundled WeCom plugin mirror',
+      };
+    }
+  }
+
+  async function ensureQQBotPluginInstalled(): Promise<{ installed: boolean; warning?: string }> {
+    const targetDir = join(homedir(), '.openclaw', 'extensions', 'qqbot');
+    const targetManifest = join(targetDir, 'openclaw.plugin.json');
+
+    if (existsSync(targetManifest)) {
+      logger.info('QQ Bot plugin already installed from local mirror');
+      return { installed: true };
+    }
+
+    const candidateSources = app.isPackaged
+      ? [
+          join(process.resourcesPath, 'openclaw-plugins', 'qqbot'),
+          join(process.resourcesPath, 'app.asar.unpacked', 'build', 'openclaw-plugins', 'qqbot'),
+          join(process.resourcesPath, 'app.asar.unpacked', 'openclaw-plugins', 'qqbot')
+        ]
+      : [
+          join(app.getAppPath(), 'build', 'openclaw-plugins', 'qqbot'),
+          join(process.cwd(), 'build', 'openclaw-plugins', 'qqbot'),
+          join(__dirname, '../../build/openclaw-plugins/qqbot'),
+        ];
+
+    const sourceDir = candidateSources.find((dir) => existsSync(join(dir, 'openclaw.plugin.json')));
+    if (!sourceDir) {
+      logger.warn('Bundled QQ Bot plugin mirror not found in candidate paths', { candidateSources });
+      return {
+        installed: false,
+        warning: `Bundled QQ Bot plugin mirror not found. Checked: ${candidateSources.join(' | ')}`,
+      };
+    }
+
+    try {
+      mkdirSync(join(homedir(), '.openclaw', 'extensions'), { recursive: true });
+      rmSync(targetDir, { recursive: true, force: true });
+      cpSync(sourceDir, targetDir, { recursive: true, dereference: true });
+
+      if (!existsSync(targetManifest)) {
+        return { installed: false, warning: 'Failed to install QQ Bot plugin mirror (manifest missing).' };
+      }
+
+      logger.info(`Installed QQ Bot plugin from bundled mirror: ${sourceDir}`);
+      return { installed: true };
+    } catch (error) {
+      logger.warn('Failed to install QQ Bot plugin from bundled mirror:', error);
+      return {
+        installed: false,
+        warning: 'Failed to install bundled QQ Bot plugin mirror',
       };
     }
   }
@@ -1511,6 +1513,27 @@ function registerOpenClawHandlers(gatewayManager: GatewayManager): void {
         }
         await saveChannelConfig(channelType, config);
         scheduleGatewayChannelRestart(`channel:saveConfig (${channelType})`);
+        return {
+          success: true,
+          pluginInstalled: installResult.installed,
+          warning: installResult.warning,
+        };
+      }
+      if (channelType === 'qqbot') {
+        const installResult = await ensureQQBotPluginInstalled();
+        if (!installResult.installed) {
+          return {
+            success: false,
+            error: installResult.warning || 'QQ Bot plugin install failed',
+          };
+        }
+        await saveChannelConfig(channelType, config);
+        if (gatewayManager.getStatus().state !== 'stopped') {
+          logger.info(`Scheduling Gateway reload after channel:saveConfig (${channelType})`);
+          gatewayManager.debouncedReload();
+        } else {
+          logger.info(`Gateway is stopped; skip immediate reload after channel:saveConfig (${channelType})`);
+        }
         return {
           success: true,
           pluginInstalled: installResult.installed,
