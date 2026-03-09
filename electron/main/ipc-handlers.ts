@@ -1373,6 +1373,56 @@ function registerOpenClawHandlers(gatewayManager: GatewayManager): void {
     }
   }
 
+  async function ensureWeComPluginInstalled(): Promise<{ installed: boolean; warning?: string }> {
+    const targetDir = join(homedir(), '.openclaw', 'extensions', 'wecom');
+    const targetManifest = join(targetDir, 'openclaw.plugin.json');
+
+    if (existsSync(targetManifest)) {
+      logger.info('WeCom plugin already installed from local mirror');
+      return { installed: true };
+    }
+
+    const candidateSources = app.isPackaged
+      ? [
+        join(process.resourcesPath, 'openclaw-plugins', 'wecom'),
+        join(process.resourcesPath, 'app.asar.unpacked', 'build', 'openclaw-plugins', 'wecom'),
+        join(process.resourcesPath, 'app.asar.unpacked', 'openclaw-plugins', 'wecom')
+      ]
+      : [
+        join(app.getAppPath(), 'build', 'openclaw-plugins', 'wecom'),
+        join(process.cwd(), 'build', 'openclaw-plugins', 'wecom'),
+        join(__dirname, '../../build/openclaw-plugins/wecom'),
+      ];
+
+    const sourceDir = candidateSources.find((dir) => existsSync(join(dir, 'openclaw.plugin.json')));
+    if (!sourceDir) {
+      logger.warn('Bundled WeCom plugin mirror not found in candidate paths', { candidateSources });
+      return {
+        installed: false,
+        warning: `Bundled WeCom plugin mirror not found. Checked: ${candidateSources.join(' | ')}`,
+      };
+    }
+
+    try {
+      mkdirSync(join(homedir(), '.openclaw', 'extensions'), { recursive: true });
+      rmSync(targetDir, { recursive: true, force: true });
+      cpSync(sourceDir, targetDir, { recursive: true, dereference: true });
+
+      if (!existsSync(targetManifest)) {
+        return { installed: false, warning: 'Failed to install WeCom plugin mirror (manifest missing).' };
+      }
+
+      logger.info(`Installed WeCom plugin from bundled mirror: ${sourceDir}`);
+      return { installed: true };
+    } catch (error) {
+      logger.warn('Failed to install WeCom plugin from bundled mirror:', error);
+      return {
+        installed: false,
+        warning: 'Failed to install bundled WeCom plugin mirror',
+      };
+    }
+  }
+
   // Get OpenClaw package status
   ipcMain.handle('openclaw:status', () => {
     const status = getOpenClawStatus();
@@ -1432,6 +1482,27 @@ function registerOpenClawHandlers(gatewayManager: GatewayManager): void {
           return {
             success: false,
             error: installResult.warning || 'DingTalk plugin install failed',
+          };
+        }
+        await saveChannelConfig(channelType, config);
+        if (gatewayManager.getStatus().state !== 'stopped') {
+          logger.info(`Scheduling Gateway reload after channel:saveConfig (${channelType})`);
+          gatewayManager.debouncedReload();
+        } else {
+          logger.info(`Gateway is stopped; skip immediate reload after channel:saveConfig (${channelType})`);
+        }
+        return {
+          success: true,
+          pluginInstalled: installResult.installed,
+          warning: installResult.warning,
+        };
+      }
+      if (channelType === 'wecom') {
+        const installResult = await ensureWeComPluginInstalled();
+        if (!installResult.installed) {
+          return {
+            success: false,
+            error: installResult.warning || 'WeCom plugin install failed',
           };
         }
         await saveChannelConfig(channelType, config);

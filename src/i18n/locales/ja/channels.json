@@ -185,6 +185,25 @@
                 "注意：現在のドキュメントには記載されていませんが、権限管理で 'contact:contact.base:readonly' **アプリケーション権限** を必ず追加してください"
             ]
         },
+        "wecom": {
+            "description": "プラグイン経由で WeCom Bot (企業微信) に接続します",
+            "docsUrl": "https://developer.work.weixin.qq.com/document/path/90000/90136/91770",
+            "fields": {
+                "botId": {
+                    "label": "ボット ID",
+                    "placeholder": "ww_xxxxxx"
+                },
+                "secret": {
+                    "label": "アプリシークレット",
+                    "placeholder": "WeCom Bot のシークレット"
+                }
+            },
+            "instructions": [
+                "WeCom 管理コンソールでアプリケーションを作成し、設定情報を取得します",
+                "メッセージ受信サーバー設定が有効になっていることを確認します",
+                "ボット ID (または 企業 ID) とシークレットを入力して接続を確立します"
+            ]
+        },
         "imessage": {
             "description": "BlueBubbles (macOS) 経由で iMessage に接続します",
             "fields": {

@@ -14,6 +14,7 @@ import { proxyAwareFetch } from './proxy-fetch';
 
 const OPENCLAW_DIR = join(homedir(), '.openclaw');
 const CONFIG_FILE = join(OPENCLAW_DIR, 'openclaw.json');
+const WECOM_PLUGIN_ID = 'wecom-openclaw-plugin';
 
 // Channels that are managed as plugins (config goes under plugins.entries, not channels)
 const PLUGIN_CHANNELS = ['whatsapp'];
@@ -33,6 +34,8 @@ export interface ChannelConfigData {
 
 export interface PluginsConfig {
     entries?: Record<string, ChannelConfigData>;
+    allow?: string[];
+    enabled?: boolean;
     [key: string]: unknown;
 }
 
@@ -99,15 +102,35 @@ export async function saveChannelConfig(
     // DingTalk is a channel plugin; make sure it's explicitly allowed.
     // Newer OpenClaw versions may not load non-bundled plugins when allowlist is empty.
     if (channelType === 'dingtalk') {
+        const defaultDingtalkAllow = ['dingtalk'];
         if (!currentConfig.plugins) {
-            currentConfig.plugins = {};
+            currentConfig.plugins = { allow: defaultDingtalkAllow, enabled: true };
+        } else {
+            currentConfig.plugins.enabled = true;
+            const allow: string[] = Array.isArray(currentConfig.plugins.allow)
+                ? (currentConfig.plugins.allow as string[])
+                : [];
+            if (!allow.includes('dingtalk')) {
+                currentConfig.plugins.allow = [...allow, 'dingtalk'];
+            }
         }
-        currentConfig.plugins.enabled = true;
-        const allow = Array.isArray(currentConfig.plugins.allow)
-            ? currentConfig.plugins.allow as string[]
-            : [];
-        if (!allow.includes('dingtalk')) {
-            currentConfig.plugins.allow = [...allow, 'dingtalk'];
+    }
+
+    if (channelType === 'wecom') {
+        const defaultWecomAllow = [WECOM_PLUGIN_ID];
+        if (!currentConfig.plugins) {
+            currentConfig.plugins = { allow: defaultWecomAllow, enabled: true };
+        } else {
+            currentConfig.plugins.enabled = true;
+            const allow: string[] = Array.isArray(currentConfig.plugins.allow)
+                ? (currentConfig.plugins.allow as string[])
+                : [];
+            const normalizedAllow = allow.filter((pluginId) => pluginId !== 'wecom');
+            if (!normalizedAllow.includes(WECOM_PLUGIN_ID)) {
+                currentConfig.plugins.allow = [...normalizedAllow, WECOM_PLUGIN_ID];
+            } else if (normalizedAllow.length !== allow.length) {
+                currentConfig.plugins.allow = normalizedAllow;
+            }
         }
     }
 
@@ -192,10 +215,11 @@ export async function saveChannelConfig(
         }
     }
 
-    // Special handling for Feishu: default to open DM policy with wildcard allowlist
-    if (channelType === 'feishu') {
+    // Special handling for Feishu / WeCom: default to open DM policy with wildcard allowlist
+    if (channelType === 'feishu' || channelType === 'wecom') {
         const existingConfig = currentConfig.channels[channelType] || {};
-        transformedConfig.dmPolicy = transformedConfig.dmPolicy ?? existingConfig.dmPolicy ?? 'open';
+        const existingDmPolicy = existingConfig.dmPolicy === 'pairing' ? 'open' : existingConfig.dmPolicy;
+        transformedConfig.dmPolicy = transformedConfig.dmPolicy ?? existingDmPolicy ?? 'open';
 
         let allowFrom = transformedConfig.allowFrom ?? existingConfig.allowFrom ?? ['*'];
         if (!Array.isArray(allowFrom)) {

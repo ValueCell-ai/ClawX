@@ -185,6 +185,25 @@
                 "Note: Not mentioned in current OpenClaw docs, but you MUST add 'contact:contact.base:readonly' **Application Permission** in Permission Management"
             ]
         },
+        "wecom": {
+            "description": "Connect WeCom Bot via plugin",
+            "docsUrl": "https://developer.work.weixin.qq.com/document/path/90000/90136/91770",
+            "fields": {
+                "botId": {
+                    "label": "Bot ID",
+                    "placeholder": "ww_xxxxxx"
+                },
+                "secret": {
+                    "label": "App Secret",
+                    "placeholder": "Your WeCom Bot secret"
+                }
+            },
+            "instructions": [
+                "Create an application in WeCom Admin Console to get configuration info",
+                "Ensure receive message server config is enabled",
+                "Enter your Bot ID (or Corp ID) and Secret to establish connection"
+            ]
+        },
         "imessage": {
             "description": "Connect iMessage via BlueBubbles (macOS)",
             "docsUrl": "https://docs.openclaw.ai/channels/bluebubbles",

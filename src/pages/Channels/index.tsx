@@ -112,7 +112,7 @@ export function Channels() {
   return (
     <div className="flex flex-col -m-6 dark:bg-background h-[calc(100vh-2.5rem)] overflow-hidden">
       <div className="w-full max-w-5xl mx-auto flex flex-col h-full p-10 pt-16">
-        
+
         {/* Header */}
         <div className="flex flex-col md:flex-row md:items-start justify-between mb-12 shrink-0 gap-4">
           <div>
@@ -123,11 +123,14 @@ export function Channels() {
               {t('subtitle', 'Manage your messaging channels and connections')}
             </p>
           </div>
-          
+
           <div className="flex items-center gap-3 md:mt-2">
             <Button
               variant="outline"
-              onClick={fetchChannels}
+              onClick={() => {
+                void fetchChannels();
+                void fetchConfiguredTypes();
+              }}
               className="h-9 text-[13px] font-medium rounded-full px-4 border-black/10 dark:border-white/10 bg-transparent hover:bg-black/5 dark:hover:bg-white/5 shadow-none text-foreground/80 hover:text-foreground transition-colors"
             >
               <RefreshCw className="h-3.5 w-3.5 mr-2" />
@@ -135,10 +138,9 @@ export function Channels() {
             </Button>
           </div>
         </div>
-
         {/* Content Area */}
         <div className="flex-1 overflow-y-auto pr-2 pb-10 min-h-0 -mr-2">
-          
+
           {/* Gateway Warning */}
           {gatewayStatus.state !== 'running' && (
             <div className="mb-8 p-4 rounded-xl border border-yellow-500/50 bg-yellow-500/10 flex items-center gap-3">
@@ -182,15 +184,15 @@ export function Channels() {
             <h2 className="text-3xl font-serif text-foreground mb-6 font-normal tracking-tight" style={{ fontFamily: 'Georgia, Cambria, "Times New Roman", Times, serif' }}>
               Supported Channels
             </h2>
-            
+
             <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-4">
               {displayedChannelTypes.map((type) => {
                 const meta = CHANNEL_META[type];
                 const isConfigured = channels.some(c => c.type === type) || configuredTypes.includes(type);
-                
+
                 // Hide already configured channels from "Supported Channels" section
                 if (isConfigured) return null;
-                
+
                 return (
                   <button
                     key={type}
@@ -223,7 +225,7 @@ export function Channels() {
               })}
             </div>
           </div>
-          
+
         </div>
       </div>
 
@@ -310,18 +312,18 @@ function ChannelCard({ channel, onDelete }: ChannelCardProps) {
                 {t('pluginBadge', 'Plugin')}
               </Badge>
             )}
-            <div 
+            <div
               className={cn(
                 "w-2 h-2 rounded-full shrink-0",
                 channel.status === 'connected' ? "bg-green-500" :
-                channel.status === 'connecting' ? "bg-yellow-500 animate-pulse" :
-                channel.status === 'error' ? "bg-destructive" :
-                "bg-muted-foreground"
-              )} 
+                  channel.status === 'connecting' ? "bg-yellow-500 animate-pulse" :
+                    channel.status === 'error' ? "bg-destructive" :
+                      "bg-muted-foreground"
+              )}
               title={channel.status}
             />
           </div>
-          
+
           <Button
             variant="ghost"
             size="icon"
@@ -334,7 +336,7 @@ function ChannelCard({ channel, onDelete }: ChannelCardProps) {
             <Trash2 className="h-4 w-4" />
           </Button>
         </div>
-        
+
         {channel.error ? (
           <p className="text-[13.5px] text-destructive line-clamp-2 leading-[1.5]">
             {channel.error}

@@ -57,6 +57,47 @@ async function ensureDingTalkPluginInstalled(): Promise<{ installed: boolean; wa
   }
 }
 
+async function ensureWeComPluginInstalled(): Promise<{ installed: boolean; warning?: string }> {
+  const targetDir = join(homedir(), '.openclaw', 'extensions', 'wecom');
+  const targetManifest = join(targetDir, 'openclaw.plugin.json');
+
+  if (existsSync(targetManifest)) {
+    return { installed: true };
+  }
+
+  const candidateSources = app.isPackaged
+    ? [
+      join(process.resourcesPath, 'openclaw-plugins', 'wecom'),
+      join(process.resourcesPath, 'app.asar.unpacked', 'build', 'openclaw-plugins', 'wecom'),
+      join(process.resourcesPath, 'app.asar.unpacked', 'openclaw-plugins', 'wecom'),
+    ]
+    : [
+      join(app.getAppPath(), 'build', 'openclaw-plugins', 'wecom'),
+      join(process.cwd(), 'build', 'openclaw-plugins', 'wecom'),
+      join(__dirname, '../../../build/openclaw-plugins/wecom'),
+    ];
+
+  const sourceDir = candidateSources.find((dir) => existsSync(join(dir, 'openclaw.plugin.json')));
+  if (!sourceDir) {
+    return {
+      installed: false,
+      warning: `Bundled WeCom plugin mirror not found. Checked: ${candidateSources.join(' | ')}`,
+    };
+  }
+
+  try {
+    mkdirSync(join(homedir(), '.openclaw', 'extensions'), { recursive: true });
+    rmSync(targetDir, { recursive: true, force: true });
+    cpSync(sourceDir, targetDir, { recursive: true, dereference: true });
+    if (!existsSync(targetManifest)) {
+      return { installed: false, warning: 'Failed to install WeCom plugin mirror (manifest missing).' };
+    }
+    return { installed: true };
+  } catch {
+    return { installed: false, warning: 'Failed to install bundled WeCom plugin mirror' };
+  }
+}
+
 export async function handleChannelRoutes(
   req: IncomingMessage,
   res: ServerResponse,
@@ -116,6 +157,13 @@ export async function handleChannelRoutes(
         const installResult = await ensureDingTalkPluginInstalled();
         if (!installResult.installed) {
           sendJson(res, 500, { success: false, error: installResult.warning || 'DingTalk plugin install failed' });
+          return true;
+        }
+      }
+      if (body.channelType === 'wecom') {
+        const installResult = await ensureWeComPluginInstalled();
+        if (!installResult.installed) {
+          sendJson(res, 500, { success: false, error: installResult.warning || 'WeCom plugin install failed' });
           return true;
         }
       }

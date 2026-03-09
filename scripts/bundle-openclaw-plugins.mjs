@@ -6,6 +6,7 @@
  * Build a self-contained mirror of OpenClaw third-party plugins for packaging.
  * Current plugins:
  *   - @soimy/dingtalk -> build/openclaw-plugins/dingtalk
+ *   - @wecom/wecom-openclaw-plugin -> build/openclaw-plugins/wecom
  *
  * The output plugin directory contains:
  *   - plugin source files (index.ts, openclaw.plugin.json, package.json, ...)
@@ -15,7 +16,9 @@
 import 'zx/globals';
 import fs from 'node:fs';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '..');
 const OUTPUT_ROOT = path.join(ROOT, 'build', 'openclaw-plugins');
 const NODE_MODULES = path.join(ROOT, 'node_modules');
@@ -33,6 +36,7 @@ function normWin(p) {
 
 const PLUGINS = [
   { npmName: '@soimy/dingtalk', pluginId: 'dingtalk' },
+  { npmName: '@wecom/wecom-openclaw-plugin', pluginId: 'wecom' }
 ];
 
 function getVirtualStoreNodeModules(realPkgPath) {

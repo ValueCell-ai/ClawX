@@ -185,6 +185,25 @@
                 "注意：当前OpenClaw文档中未提及，但请务必在权限管理中添加 contact:contact.base:readonly **应用权限**，否则无法正常使用"
             ]
         },
+        "wecom": {
+            "description": "通过插件连接企业微信机器人",
+            "docsUrl": "https://developer.work.weixin.qq.com/document/path/90000/90136/91770",
+            "fields": {
+                "botId": {
+                    "label": "机器人 Bot ID",
+                    "placeholder": "ww_xxxxxx"
+                },
+                "secret": {
+                    "label": "应用 Secret",
+                    "placeholder": "您的企业微信机器人 Secret"
+                }
+            },
+            "instructions": [
+                "您可以在企业微信管理后台创建应用并获取配置信息",
+                "确保已启用接收消息服务器配置",
+                "填写 Bot ID（可选企业 ID 或者直接使用机器人专属 ID）及 Secret 即可建立连接"
+            ]
+        },
         "imessage": {
             "description": "通过 BlueBubbles (macOS) 连接 iMessage",
             "docsUrl": "https://docs.openclaw.ai/zh-CN/channels/bluebubbles",

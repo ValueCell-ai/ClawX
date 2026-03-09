@@ -338,6 +338,7 @@ exports.default = async function afterPack(context) {
   //     - node_modules/ is excluded by .gitignore so the deps copy must be manual
   const BUNDLED_PLUGINS = [
     { npmName: '@soimy/dingtalk', pluginId: 'dingtalk' },
+    { npmName: '@wecom/wecom-openclaw-plugin', pluginId: 'wecom' }
   ];
 
   mkdirSync(pluginsDestRoot, { recursive: true });
