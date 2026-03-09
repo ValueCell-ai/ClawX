@@ -263,7 +263,8 @@ Function un._ci_StrReplace
   StrCpy $R2 0
 
   _usr_loop:
-    IntCmp $R2 $R4 _usr_done _usr_done
+    ; IntCmp jumps are: equal, less, greater. Keep scanning while $R2 < $R4.
+    IntCmp $R2 $R4 _usr_done 0 _usr_done
     StrCpy $1 $R1 $R3 $R2
     StrCmp $1 $R0 _usr_found
     StrCpy $1 $R1 1 $R2
