@@ -283,9 +283,6 @@ ClawX 采用 **双进程 + Host API 统一接入架构**。渲染进程只调用
 │   └── utils/               # 工具模块（存储、认证、路径）
 ├── src/                      # React 渲染进程
 │   ├── lib/                 # 前端统一 API 与错误模型
-│   │   ├── host-api.ts      # Renderer -> Main 代理入口
-│   │   ├── api-client.ts    # IPC/HTTP 传输客户端
-│   │   └── error-model.ts   # 统一错误码归一化
 │   ├── stores/              # Zustand 状态仓库（settings/chat/gateway）
 │   ├── components/          # 可复用 UI 组件
 │   ├── pages/               # Setup/Dashboard/Chat/Channels/Skills/Cron/Settings

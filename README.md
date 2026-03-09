@@ -282,9 +282,6 @@ Chain multiple skills together to create sophisticated automation pipelines. Pro
 │   └── utils/               # Utilities (storage, auth, paths)
 ├── src/                      # React Renderer Process
 │   ├── lib/                 # Unified frontend API + error model
-│   │   ├── host-api.ts      # Renderer -> main proxy entry
-│   │   ├── api-client.ts    # IPC/HTTP transport client
-│   │   └── error-model.ts   # Canonical error normalization
 │   ├── stores/              # Zustand stores (settings/chat/gateway)
 │   ├── components/          # Reusable UI components
 │   ├── pages/               # Setup/Dashboard/Chat/Channels/Skills/Cron/Settings
