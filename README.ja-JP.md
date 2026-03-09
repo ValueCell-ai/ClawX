@@ -362,6 +362,16 @@ ClawXは優れたオープンソースプロジェクトの上に構築されて
 | :---: | :---: | :---: |
 | <img src="src/assets/community/wecom-qr.png" width="150" alt="WeChat QRコード" /> | <img src="src/assets/community/feishu-qr.png" width="150" alt="Feishu QRコード" /> | <img src="src/assets/community/20260212-185822.png" width="150" alt="Discord QRコード" /> |
 
+### ClawX パートナープログラム 🚀
+
+ClawX パートナープログラムを開始します。特に、カスタム AI エージェントや自動化ニーズを持つより多くの顧客に ClawX を紹介してくださるパートナーを募集しています。
+
+パートナーの皆さまには、見込みユーザーや案件との接点づくりを担っていただき、ClawX チームは技術サポート、カスタマイズ、統合を全面的に提供します。
+
+AI ツールや自動化に関心のある顧客とお仕事をされている方は、ぜひご一緒できればうれしいです。
+
+詳細は DM いただくか、[public@valuecell.ai](mailto:public@valuecell.ai) までメールでご連絡ください。
+
 ---
 
 ## スター履歴

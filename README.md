@@ -365,6 +365,16 @@ Join our community to connect with other users, get support, and share your expe
 | :---: | :---: | :---: |
 | <img src="src/assets/community/wecom-qr.png" width="150" alt="WeChat QR Code" /> | <img src="src/assets/community/feishu-qr.png" width="150" alt="Feishu QR Code" /> | <img src="src/assets/community/20260212-185822.png" width="150" alt="Discord QR Code" /> |
 
+### ClawX Partner Program 🚀
+
+We're launching the ClawX Partner Program and looking for partners who can help introduce ClawX to more clients, especially those with custom AI agent or automation needs.
+
+Partners help connect us with potential users and projects, while the ClawX team provides full technical support, customization, and integration.
+
+If you work with clients interested in AI tools or automation, we'd love to collaborate.
+
+DM us or email [public@valuecell.ai](mailto:public@valuecell.ai) to learn more.
+
 ---
 
 ## Star History

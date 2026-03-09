@@ -366,6 +366,16 @@ ClawX 构建于以下优秀的开源项目之上：
 | :---: | :---: | :---: |
 | <img src="src/assets/community/wecom-qr.png" width="150" alt="企业微信二维码" /> | <img src="src/assets/community/feishu-qr.png" width="150" alt="飞书二维码" /> | <img src="src/assets/community/20260212-185822.png" width="150" alt="Discord 二维码" /> |
 
+### ClawX 合作伙伴计划 🚀
+
+我们正在启动 ClawX 合作伙伴计划，寻找能够帮助我们将 ClawX 介绍给更多客户的合作伙伴，尤其是那些有定制化 AI 智能体或自动化需求的客户。
+
+合作伙伴负责帮助我们连接潜在用户和项目，ClawX 团队则提供完整的技术支持、定制开发与集成服务。
+
+如果你服务的客户对 AI 工具或自动化方案感兴趣，欢迎与我们合作。
+
+欢迎私信我们，或发送邮件至 [public@valuecell.ai](mailto:public@valuecell.ai) 了解更多。
+
 ---
 
 ## Stars 历史
