@@ -1067,17 +1067,12 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
     set({ sessionModelLoading: true });
     try {
-      const result = await invokeIpc(
-        'gateway:rpc',
+      const data = await useGatewayStore.getState().rpc<Record<string, unknown>>(
         'models.list',
         {},
-      ) as { success: boolean; result?: Record<string, unknown>; error?: string };
+      );
 
-      if (!result.success) {
-        throw new Error(result.error || 'Failed to load session models');
-      }
-
-      const rawModels = Array.isArray(result.result?.models) ? result.result.models : [];
+      const rawModels = Array.isArray(data?.models) ? data.models : [];
       const seen = new Set<string>();
       const nextOptions: SessionModelOption[] = rawModels.flatMap((entry) => {
         if (!entry || typeof entry !== 'object') return [];
@@ -1120,34 +1115,25 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
     set({ sessionModelSaving: true });
     try {
-      const result = await invokeIpc(
-        'gateway:rpc',
+      const result = await useGatewayStore.getState().rpc<{
+        key?: string;
+        resolved?: {
+          model?: string;
+          modelProvider?: string;
+        };
+      }>(
         'sessions.patch',
         { key: currentSessionKey, model },
-      ) as {
-        success: boolean;
-        result?: {
-          key?: string;
-          resolved?: {
-            model?: string;
-            modelProvider?: string;
-          };
-        };
-        error?: string;
-      };
+      );
 
-      if (!result.success) {
-        throw new Error(result.error || 'Failed to update session model');
-      }
-
-      const resolvedKey = typeof result.result?.key === 'string' && result.result.key.trim()
-        ? result.result.key.trim()
+      const resolvedKey = typeof result?.key === 'string' && result.key.trim()
+        ? result.key.trim()
         : currentSessionKey;
-      const resolvedModel = typeof result.result?.resolved?.model === 'string' && result.result.resolved.model.trim()
-        ? result.result.resolved.model.trim()
+      const resolvedModel = typeof result?.resolved?.model === 'string' && result.resolved.model.trim()
+        ? result.resolved.model.trim()
         : undefined;
-      const resolvedModelProvider = typeof result.result?.resolved?.modelProvider === 'string' && result.result.resolved.modelProvider.trim()
-        ? result.result.resolved.modelProvider.trim()
+      const resolvedModelProvider = typeof result?.resolved?.modelProvider === 'string' && result.resolved.modelProvider.trim()
+        ? result.resolved.modelProvider.trim()
         : undefined;
 
       set((s) => {

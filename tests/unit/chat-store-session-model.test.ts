@@ -71,7 +71,7 @@ describe('chat store session model actions', () => {
 
     await useChatStore.getState().loadSessionModelOptions();
 
-    expect(invokeIpcMock).toHaveBeenCalledWith('gateway:rpc', 'models.list', {});
+    expect(invokeIpcMock).toHaveBeenCalledWith('gateway:rpc', 'models.list', {}, undefined);
     expect(useChatStore.getState().sessionModelOptions).toEqual([
       {
         value: 'openai-codex/gpt-5.3-codex',
@@ -122,8 +122,8 @@ describe('chat store session model actions', () => {
     expect(invokeIpcMock).toHaveBeenNthCalledWith(1, 'gateway:rpc', 'sessions.patch', {
       key: 'agent:main:session-1',
       model: 'openai-codex/gpt-5.3-codex',
-    });
-    expect(invokeIpcMock).toHaveBeenNthCalledWith(2, 'gateway:rpc', 'sessions.list', {});
+    }, undefined);
+    expect(invokeIpcMock).toHaveBeenNthCalledWith(2, 'gateway:rpc', 'sessions.list', {}, undefined);
     expect(useChatStore.getState().sessions).toEqual([
       {
         key: 'agent:main:session-1',
@@ -173,7 +173,7 @@ describe('chat store session model actions', () => {
     expect(invokeIpcMock).toHaveBeenNthCalledWith(1, 'gateway:rpc', 'sessions.patch', {
       key: 'session-2',
       model: null,
-    });
+    }, undefined);
     expect(useChatStore.getState().currentSessionKey).toBe('agent:main:session-2');
     expect(useChatStore.getState().sessionLabels).toEqual({ 'agent:main:session-2': 'Pinned label' });
     expect(useChatStore.getState().sessionLastActivity).toEqual({ 'agent:main:session-2': 1700000000000 });
