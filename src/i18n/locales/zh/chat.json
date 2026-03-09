@@ -1,26 +1,30 @@
 {
-    "gatewayNotRunning": "网关未运行",
-    "gatewayRequired": "OpenClaw 网关需要运行才能使用聊天。它将自动启动，或者您可以从设置中启动。",
-    "welcome": {
-        "title": "ClawX 聊天",
-        "subtitle": "您的 AI 助手已就绪。在下方开始对话。",
-        "askQuestions": "提问",
-        "askQuestionsDesc": "获取任何话题的答案",
-        "creativeTasks": "创意任务",
-        "creativeTasksDesc": "写作、头脑风暴、创意"
-    },
-    "noLogs": "（暂无日志）",
-    "toolbar": {
-        "refresh": "刷新聊天",
-        "showThinking": "显示思考过程",
-        "hideThinking": "隐藏思考过程"
-    },
-    "historyBuckets": {
-        "today": "今天",
-        "yesterday": "昨天",
-        "withinWeek": "一周内",
-        "withinTwoWeeks": "两周内",
-        "withinMonth": "一个月内",
-        "older": "一个月之前"
-    }
+  "gatewayNotRunning": "网关未运行",
+  "gatewayRequired": "OpenClaw 网关需要运行才能使用聊天。它将自动启动，或者您可以从设置中启动。",
+  "welcome": {
+    "title": "ClawX 聊天",
+    "subtitle": "您的 AI 助手已就绪。在下方开始对话。",
+    "askQuestions": "提问",
+    "askQuestionsDesc": "获取任何话题的答案",
+    "creativeTasks": "创意任务",
+    "creativeTasksDesc": "写作、头脑风暴、创意"
+  },
+  "noLogs": "（暂无日志）",
+  "toolbar": {
+    "refresh": "刷新聊天",
+    "showThinking": "显示思考过程",
+    "hideThinking": "隐藏思考过程",
+    "sessionModel": "会话模型",
+    "sessionModelDefault": "跟随 Agent 默认模型",
+    "sessionModelLoading": "正在加载模型列表...",
+    "sessionModelUpdateFailed": "切换会话模型失败"
+  },
+  "historyBuckets": {
+    "today": "今天",
+    "yesterday": "昨天",
+    "withinWeek": "一周内",
+    "withinTwoWeeks": "两周内",
+    "withinMonth": "一个月内",
+    "older": "一个月之前"
+  }
 }

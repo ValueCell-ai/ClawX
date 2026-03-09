@@ -1,26 +1,30 @@
 {
-    "gatewayNotRunning": "ゲートウェイが停止中",
-    "gatewayRequired": "チャットを使用するには OpenClaw ゲートウェイが実行されている必要があります。自動的に起動するか、設定から起動できます。",
-    "welcome": {
-        "title": "ClawX チャット",
-        "subtitle": "AI アシスタントの準備ができました。下の入力欄から会話を始めましょう。",
-        "askQuestions": "質問する",
-        "askQuestionsDesc": "あらゆるトピックについて回答を得る",
-        "creativeTasks": "クリエイティブタスク",
-        "creativeTasksDesc": "ライティング、ブレスト、アイデア"
-    },
-    "noLogs": "（ログはまだありません）",
-    "toolbar": {
-        "refresh": "チャットを更新",
-        "showThinking": "思考を表示",
-        "hideThinking": "思考を非表示"
-    },
-    "historyBuckets": {
-        "today": "今日",
-        "yesterday": "昨日",
-        "withinWeek": "1週間以内",
-        "withinTwoWeeks": "2週間以内",
-        "withinMonth": "1か月以内",
-        "older": "1か月より前"
-    }
+  "gatewayNotRunning": "ゲートウェイが停止中",
+  "gatewayRequired": "チャットを使用するには OpenClaw ゲートウェイが実行されている必要があります。自動的に起動するか、設定から起動できます。",
+  "welcome": {
+    "title": "ClawX チャット",
+    "subtitle": "AI アシスタントの準備ができました。下の入力欄から会話を始めましょう。",
+    "askQuestions": "質問する",
+    "askQuestionsDesc": "あらゆるトピックについて回答を得る",
+    "creativeTasks": "クリエイティブタスク",
+    "creativeTasksDesc": "ライティング、ブレスト、アイデア"
+  },
+  "noLogs": "（ログはまだありません）",
+  "toolbar": {
+    "refresh": "チャットを更新",
+    "showThinking": "思考を表示",
+    "hideThinking": "思考を非表示",
+    "sessionModel": "セッションモデル",
+    "sessionModelDefault": "エージェントのデフォルトモデルを使用",
+    "sessionModelLoading": "モデルを読み込み中...",
+    "sessionModelUpdateFailed": "セッションモデルの切り替えに失敗しました"
+  },
+  "historyBuckets": {
+    "today": "今日",
+    "yesterday": "昨日",
+    "withinWeek": "1週間以内",
+    "withinTwoWeeks": "2週間以内",
+    "withinMonth": "1か月以内",
+    "older": "1か月より前"
+  }
 }

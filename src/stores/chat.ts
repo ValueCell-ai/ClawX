@@ -55,6 +55,17 @@ export interface ChatSession {
   displayName?: string;
   thinkingLevel?: string;
   model?: string;
+  modelProvider?: string;
+}
+
+export interface SessionModelOption {
+  value: string;
+  id: string;
+  name: string;
+  provider: string;
+  contextWindow?: number;
+  reasoning?: boolean;
+  input?: Array<'text' | 'image'>;
 }
 
 export interface ToolStatus {
@@ -91,6 +102,9 @@ interface ChatState {
   sessionLabels: Record<string, string>;
   /** Last message timestamp (ms) per session key, used for sorting */
   sessionLastActivity: Record<string, number>;
+  sessionModelOptions: SessionModelOption[];
+  sessionModelLoading: boolean;
+  sessionModelSaving: boolean;
 
   // Thinking
   showThinking: boolean;
@@ -98,6 +112,8 @@ interface ChatState {
 
   // Actions
   loadSessions: () => Promise<void>;
+  loadSessionModelOptions: (force?: boolean) => Promise<void>;
+  updateCurrentSessionModel: (model: string | null) => Promise<void>;
   switchSession: (key: string) => void;
   newSession: () => void;
   deleteSession: (key: string) => Promise<void>;
@@ -121,6 +137,15 @@ let _lastChatEventAt = 0;
 function toMs(ts: number): number {
   // Timestamps < 1e12 are in seconds (before ~2033); >= 1e12 are milliseconds
   return ts < 1e12 ? ts * 1000 : ts;
+}
+
+function renameRecordKey<T>(record: Record<string, T>, from: string, to: string): Record<string, T> {
+  if (from === to || !Object.prototype.hasOwnProperty.call(record, from)) return record;
+  const next = { ...record };
+  const value = next[from];
+  delete next[from];
+  next[to] = value;
+  return next;
 }
 
 // Timer for fallback history polling during active sends.
@@ -925,6 +950,9 @@ export const useChatStore = create<ChatState>((set, get) => ({
   currentSessionKey: DEFAULT_SESSION_KEY,
   sessionLabels: {},
   sessionLastActivity: {},
+  sessionModelOptions: [],
+  sessionModelLoading: false,
+  sessionModelSaving: false,
 
   showThinking: true,
   thinkingLevel: null,
@@ -942,6 +970,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
           displayName: s.displayName ? String(s.displayName) : undefined,
           thinkingLevel: s.thinkingLevel ? String(s.thinkingLevel) : undefined,
           model: s.model ? String(s.model) : undefined,
+          modelProvider: s.modelProvider ? String(s.modelProvider) : undefined,
         })).filter((s: ChatSession) => s.key);
 
         const canonicalBySuffix = new Map<string, string>();
@@ -1028,6 +1057,134 @@ export const useChatStore = create<ChatState>((set, get) => ({
       }
     } catch (err) {
       console.warn('Failed to load sessions:', err);
+    }
+  },
+
+  loadSessionModelOptions: async (force = false) => {
+    const { sessionModelOptions, sessionModelLoading } = get();
+    if (sessionModelLoading) return;
+    if (!force && sessionModelOptions.length > 0) return;
+
+    set({ sessionModelLoading: true });
+    try {
+      const result = await invokeIpc(
+        'gateway:rpc',
+        'models.list',
+        {},
+      ) as { success: boolean; result?: Record<string, unknown>; error?: string };
+
+      if (!result.success) {
+        throw new Error(result.error || 'Failed to load session models');
+      }
+
+      const rawModels = Array.isArray(result.result?.models) ? result.result.models : [];
+      const seen = new Set<string>();
+      const nextOptions: SessionModelOption[] = rawModels.flatMap((entry) => {
+        if (!entry || typeof entry !== 'object') return [];
+        const model = entry as Record<string, unknown>;
+        const provider = typeof model.provider === 'string' ? model.provider.trim() : '';
+        const id = typeof model.id === 'string' ? model.id.trim() : '';
+        if (!provider || !id) return [];
+
+        const value = `${provider}/${id}`;
+        if (seen.has(value)) return [];
+        seen.add(value);
+
+        const input = Array.isArray(model.input)
+          ? model.input.filter((item): item is 'text' | 'image' => item === 'text' || item === 'image')
+          : undefined;
+
+        return [{
+          value,
+          provider,
+          id,
+          name: typeof model.name === 'string' && model.name.trim() ? model.name.trim() : id,
+          contextWindow: typeof model.contextWindow === 'number' && Number.isFinite(model.contextWindow)
+            ? model.contextWindow
+            : undefined,
+          reasoning: typeof model.reasoning === 'boolean' ? model.reasoning : undefined,
+          input: input && input.length > 0 ? input : undefined,
+        }];
+      });
+
+      set({ sessionModelOptions: nextOptions, sessionModelLoading: false });
+    } catch (err) {
+      console.warn('Failed to load session models:', err);
+      set({ sessionModelLoading: false });
+    }
+  },
+
+  updateCurrentSessionModel: async (model) => {
+    const { currentSessionKey } = get();
+    if (!currentSessionKey) return;
+
+    set({ sessionModelSaving: true });
+    try {
+      const result = await invokeIpc(
+        'gateway:rpc',
+        'sessions.patch',
+        { key: currentSessionKey, model },
+      ) as {
+        success: boolean;
+        result?: {
+          key?: string;
+          resolved?: {
+            model?: string;
+            modelProvider?: string;
+          };
+        };
+        error?: string;
+      };
+
+      if (!result.success) {
+        throw new Error(result.error || 'Failed to update session model');
+      }
+
+      const resolvedKey = typeof result.result?.key === 'string' && result.result.key.trim()
+        ? result.result.key.trim()
+        : currentSessionKey;
+      const resolvedModel = typeof result.result?.resolved?.model === 'string' && result.result.resolved.model.trim()
+        ? result.result.resolved.model.trim()
+        : undefined;
+      const resolvedModelProvider = typeof result.result?.resolved?.modelProvider === 'string' && result.result.resolved.modelProvider.trim()
+        ? result.result.resolved.modelProvider.trim()
+        : undefined;
+
+      set((s) => {
+        const currentSession = s.sessions.find((session) => session.key === currentSessionKey || session.key === resolvedKey);
+        const nextSession: ChatSession = currentSession
+          ? {
+              ...currentSession,
+              key: resolvedKey,
+              model: resolvedModel,
+              modelProvider: resolvedModelProvider,
+            }
+          : {
+              key: resolvedKey,
+              displayName: resolvedKey,
+              model: resolvedModel,
+              modelProvider: resolvedModelProvider,
+            };
+
+        const nextSessions = s.sessions.some((session) => session.key === currentSessionKey || session.key === resolvedKey)
+          ? s.sessions.map((session) => (
+            session.key === currentSessionKey || session.key === resolvedKey
+              ? nextSession
+              : session
+          ))
+          : [...s.sessions, nextSession];
+
+        return {
+          currentSessionKey: resolvedKey,
+          sessions: nextSessions,
+          sessionLabels: renameRecordKey(s.sessionLabels, currentSessionKey, resolvedKey),
+          sessionLastActivity: renameRecordKey(s.sessionLastActivity, currentSessionKey, resolvedKey),
+        };
+      });
+
+      await get().loadSessions();
+    } finally {
+      set({ sessionModelSaving: false });
     }
   },
 
@@ -1797,8 +1954,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
   // ── Refresh: reload history + sessions ──
 
   refresh: async () => {
-    const { loadHistory, loadSessions } = get();
-    await Promise.all([loadHistory(), loadSessions()]);
+    const { loadHistory, loadSessions, loadSessionModelOptions } = get();
+    await Promise.all([loadHistory(), loadSessions(), loadSessionModelOptions(true)]);
   },
 
   clearError: () => set({ error: null }),
