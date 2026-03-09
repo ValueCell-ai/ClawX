@@ -207,7 +207,6 @@ export function Sidebar() {
 
       {/* Navigation */}
       <nav className="flex flex-col px-2 gap-0.5">
-        {/* Chat nav item: acts as "New Chat" button, never highlighted as active */}
         <button
           onClick={() => {
             const { messages } = useChatStore.getState();

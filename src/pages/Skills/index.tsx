@@ -11,11 +11,8 @@ import {
   X,
   AlertCircle,
   Plus,
-  Save,
   Key,
-  ChevronDown,
   Trash2,
-  ChevronRight,
   RefreshCw,
   FolderOpen,
   FileCode,
@@ -25,8 +22,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Switch } from '@/components/ui/switch';
 import { Badge } from '@/components/ui/badge';
-import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Sheet, SheetContent } from '@/components/ui/sheet';
 import { useSkillsStore } from '@/stores/skills';
 import { useGatewayStore } from '@/stores/gateway';
 import { LoadingSpinner } from '@/components/common/LoadingSpinner';
@@ -47,15 +43,14 @@ interface SkillDetailDialogProps {
   isOpen: boolean;
   onClose: () => void;
   onToggle: (enabled: boolean) => void;
+  onUninstall?: (slug: string) => void;
 }
 
-function SkillDetailDialog({ skill, isOpen, onClose, onToggle }: SkillDetailDialogProps) {
+function SkillDetailDialog({ skill, isOpen, onClose, onToggle, onUninstall }: SkillDetailDialogProps) {
   const { t } = useTranslation('skills');
   const { fetchSkills } = useSkillsStore();
-  const [activeTab, setActiveTab] = useState('info');
   const [envVars, setEnvVars] = useState<Array<{ key: string; value: string }>>([]);
   const [apiKey, setApiKey] = useState('');
-  const [isEnvExpanded, setIsEnvExpanded] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
 
   // Initialize config from skill
@@ -162,199 +157,169 @@ function SkillDetailDialog({ skill, isOpen, onClose, onToggle }: SkillDetailDial
 
   return (
     <Sheet open={isOpen} onOpenChange={(open) => !open && onClose()}>
-      <SheetContent className="w-full sm:max-w-[420px] p-0 flex flex-col border-l border-black/10 dark:border-white/10 bg-background/95 backdrop-blur-xl supports-[backdrop-filter]:bg-background/80 shadow-2xl" side="right">
-        <SheetHeader className="p-6 flex flex-col gap-5 border-b border-black/5 dark:border-white/5 pb-5">
-          <div className="flex items-start gap-4">
-            <div className="w-12 h-12 flex items-center justify-center rounded-[14px] bg-black/5 dark:bg-white/5 border border-black/5 dark:border-white/10 shrink-0 mt-0.5">
-               <span className="text-2xl">{skill.icon || '🔧'}</span>
+      <SheetContent 
+        className="w-full sm:max-w-[450px] p-0 flex flex-col border-l border-black/10 dark:border-white/10 bg-[#f3f1e9] dark:bg-[#1a1a19] shadow-[0_0_40px_rgba(0,0,0,0.2)]" 
+        side="right"
+      >
+        {/* Scrollable Content */}
+        <div className="flex-1 overflow-y-auto px-8 py-10">
+          <div className="flex flex-col items-center mb-8">
+            <div className="w-16 h-16 flex items-center justify-center rounded-full bg-white dark:bg-[#2c2c2a] border border-black/5 dark:border-white/5 shrink-0 mb-4 relative shadow-sm">
+               <span className="text-3xl">{skill.icon || '🔧'}</span>
+               {skill.isCore && (
+                 <div className="absolute -bottom-1 -right-1 bg-[#f3f1e9] dark:bg-[#1a1a19] rounded-full p-1 shadow-sm border border-black/5 dark:border-white/5">
+                   <Lock className="h-3 w-3 text-muted-foreground shrink-0" />
+                 </div>
+               )}
             </div>
-            <div className="flex flex-col gap-1 w-full overflow-hidden min-w-0 pr-6">
-              <SheetTitle className="flex items-center gap-2 text-lg font-semibold truncate leading-none pt-1">
-                <span className="truncate">{skill.name}</span>
-                {skill.isCore && <Lock className="h-3.5 w-3.5 text-muted-foreground shrink-0" />}
-              </SheetTitle>
-              {skill.description && (
-                <p className="text-[13px] text-muted-foreground leading-snug pr-2 mt-1">{skill.description}</p>
-              )}
+            <h2 className="text-[28px] font-serif text-foreground font-normal mb-3 text-center tracking-tight">
+              {skill.name}
+            </h2>
+            <div className="flex items-center justify-center gap-2.5 mb-6 opacity-80">
+              <Badge variant="secondary" className="font-mono text-[11px] font-medium px-3 py-0.5 rounded-full bg-black/[0.04] dark:bg-white/[0.08] hover:bg-black/[0.08] dark:hover:bg-white/[0.12] border-0 shadow-none text-foreground/70 transition-colors">
+                v{skill.version}
+              </Badge>
+              <Badge variant="secondary" className="font-mono text-[11px] font-medium px-3 py-0.5 rounded-full bg-black/[0.04] dark:bg-white/[0.08] hover:bg-black/[0.08] dark:hover:bg-white/[0.12] border-0 shadow-none text-foreground/70 transition-colors">
+                {skill.isCore ? t('detail.coreSystem') : skill.isBundled ? t('detail.bundled') : t('detail.userInstalled')}
+              </Badge>
             </div>
-          </div>
-          
-          <div className="flex items-center justify-between">
-            <div className="flex gap-2">
-              {skill.slug && !skill.isBundled && !skill.isCore && (
-                <>
-                  <Button variant="outline" size="sm" className="h-7 text-[11px] px-2.5 gap-1.5 rounded-full border-black/10 dark:border-white/10 bg-transparent hover:bg-black/5 dark:hover:bg-white/5 shadow-none" onClick={handleOpenClawhub}>
-                    <Globe className="h-3 w-3" />
-                    ClawHub
-                  </Button>
-                  <Button variant="outline" size="sm" className="h-7 text-[11px] px-2.5 gap-1.5 rounded-full border-black/10 dark:border-white/10 bg-transparent hover:bg-black/5 dark:hover:bg-white/5 shadow-none" onClick={handleOpenEditor}>
-                    <FileCode className="h-3 w-3" />
-                    {t('detail.openManual')}
-                  </Button>
-                </>
-              )}
-            </div>
-          </div>
-        </SheetHeader>
 
-        <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 flex flex-col min-h-0 bg-transparent">
-          <div className="px-6 pt-4">
-            <TabsList className="grid w-full grid-cols-2 bg-black/5 dark:bg-white/5 border border-black/5 dark:border-white/10 rounded-lg p-1 h-auto">
-              <TabsTrigger value="info" className="rounded-md py-1.5 text-xs">{t('detail.info')}</TabsTrigger>
-              <TabsTrigger value="config" disabled={skill.isCore} className="rounded-md py-1.5 text-xs">{t('detail.config')}</TabsTrigger>
-            </TabsList>
+            {skill.description && (
+              <p className="text-[14px] text-foreground/70 font-medium leading-[1.6] text-center px-4">
+                {skill.description}
+              </p>
+            )}
           </div>
 
-          <div className="flex-1 overflow-y-auto">
-            <div className="p-6 pt-5">
-              <TabsContent value="info" className="mt-0 space-y-6">
-                <div className="space-y-6 pr-2">
+          <div className="space-y-7 px-1">
+            {/* API Key Section */}
+            {!skill.isCore && (
+              <div className="space-y-2">
+                <h3 className="text-[13px] font-bold flex items-center gap-2 text-foreground/80">
+                  <Key className="h-3.5 w-3.5 text-blue-500" />
+                  API Key
+                </h3>
+                <Input
+                  placeholder={t('detail.apiKeyPlaceholder', 'Enter API Key (optional)')}
+                  value={apiKey}
+                  onChange={(e) => setApiKey(e.target.value)}
+                  type="password"
+                  className="h-[44px] font-mono text-[13px] bg-[#eeece3] dark:bg-[#151514] border-black/10 dark:border-white/10 rounded-xl focus-visible:ring-2 focus-visible:ring-blue-500/50 focus-visible:border-blue-500 shadow-sm transition-all text-foreground placeholder:text-foreground/40"
+                />
+                <p className="text-[12px] text-foreground/50 mt-2 font-medium">
+                  {t('detail.apiKeyDesc', 'The primary API key for this skill. Leave blank if not required or configured elsewhere.')}
+                </p>
+              </div>
+            )}
 
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <h3 className="text-sm font-medium text-muted-foreground">{t('detail.version')}</h3>
-                      <p className="font-mono text-sm">{skill.version}</p>
-                    </div>
-                    {skill.author && (
-                      <div>
-                        <h3 className="text-sm font-medium text-muted-foreground">{t('detail.author')}</h3>
-                        <p className="text-sm">{skill.author}</p>
-                      </div>
-                    )}
-                  </div>
-
-                  <div>
-                    <h3 className="text-sm font-medium text-muted-foreground">{t('detail.source')}</h3>
-                    <Badge variant="secondary" className="mt-1 font-normal">
-                      {skill.isCore ? t('detail.coreSystem') : skill.isBundled ? t('detail.bundled') : t('detail.userInstalled')}
-                    </Badge>
-                  </div>
-                </div>
-              </TabsContent>
-
-              <TabsContent value="config" className="mt-0 space-y-6">
-                <div className="space-y-6">
-                  {/* API Key Section */}
-                  <div className="space-y-2">
-                    <h3 className="text-sm font-medium flex items-center gap-2">
-                      <Key className="h-4 w-4 text-primary" />
-                      API Key
-                    </h3>
-                    <Input
-                      placeholder={t('detail.apiKeyPlaceholder')}
-                      value={apiKey}
-                      onChange={(e) => setApiKey(e.target.value)}
-                      type="password"
-                      className="font-mono text-sm"
-                    />
-                    <p className="text-xs text-muted-foreground">
-                      {t('detail.apiKeyDesc')}
-                    </p>
-                  </div>
-
-                  {/* Environment Variables Section */}
-                  <div className="space-y-2 border rounded-md p-3">
-                    <div className="flex items-center justify-between w-full">
-                      <button
-                        className="flex items-center gap-2 text-sm font-medium hover:text-primary transition-colors"
-                        onClick={() => setIsEnvExpanded(!isEnvExpanded)}
-                      >
-                        {isEnvExpanded ? (
-                          <ChevronDown className="h-4 w-4" />
-                        ) : (
-                          <ChevronRight className="h-4 w-4" />
-                        )}
-                        Environment Variables
-                        <Badge variant="secondary" className="px-1.5 py-0 text-[10px] h-5">
+            {/* Environment Variables Section */}
+            {!skill.isCore && (
+              <div className="space-y-3">
+                <div className="flex items-center justify-between w-full">
+                  <div className="flex items-center gap-2">
+                    <h3 className="text-[13px] font-bold text-foreground/80">
+                      Environment Variables
+                      {envVars.length > 0 && (
+                        <Badge variant="secondary" className="ml-2 px-1.5 py-0 text-[10px] h-5 bg-black/10 dark:bg-white/10 text-foreground">
                           {envVars.length}
                         </Badge>
-                      </button>
-
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="h-7 text-[10px] gap-1 px-2"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setIsEnvExpanded(true);
-                          handleAddEnv();
-                        }}
-                      >
-                        <Plus className="h-3 w-3" />
-                        {t('detail.addVariable')}
-                      </Button>
-                    </div>
-
-                    {isEnvExpanded && (
-                      <div className="pt-4 space-y-3 animate-in fade-in slide-in-from-top-2 duration-200">
-                        {envVars.length === 0 && (
-                          <p className="text-xs text-muted-foreground italic h-8 flex items-center">
-                            {t('detail.noEnvVars')}
-                          </p>
-                        )}
-
-                        {envVars.map((env, index) => (
-                          <div key={index} className="flex items-center gap-2">
-                            <Input
-                              value={env.key}
-                              onChange={(e) => handleUpdateEnv(index, 'key', e.target.value)}
-                              className="flex-1 font-mono text-xs bg-muted/20"
-                              placeholder={t('detail.keyPlaceholder')}
-                            />
-                            <span className="text-muted-foreground ml-1 mr-1">=</span>
-                            <Input
-                              value={env.value}
-                              onChange={(e) => handleUpdateEnv(index, 'value', e.target.value)}
-                              className="flex-1 font-mono text-xs bg-muted/20"
-                              placeholder={t('detail.valuePlaceholder')}
-                            />
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="h-8 w-8 text-destructive hover:bg-destructive/10"
-                              onClick={() => handleRemoveEnv(index)}
-                            >
-                              <Trash2 className="h-4 w-4" />
-                            </Button>
-                          </div>
-                        ))}
-
-                        {envVars.length > 0 && (
-                          <p className="text-[10px] text-muted-foreground italic px-1 pt-1">
-                            {t('detail.envNote')}
-                          </p>
-                        )}
-                      </div>
-                    )}
+                      )}
+                    </h3>
                   </div>
-                </div>
-
-                <div className="pt-4 pb-6 flex justify-end">
-                  <Button onClick={handleSaveConfig} className="gap-2 h-9 text-xs px-4" disabled={isSaving}>
-                    <Save className="h-3.5 w-3.5" />
-                    {isSaving ? t('detail.saving') : t('detail.saveConfig')}
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-7 text-[12px] font-semibold text-foreground/80 gap-1.5 px-2.5 hover:bg-black/5 dark:hover:bg-white/5"
+                    onClick={handleAddEnv}
+                  >
+                    <Plus className="h-3 w-3" strokeWidth={3} />
+                    {t('detail.addVariable', 'Add Variable')}
                   </Button>
                 </div>
-              </TabsContent>
-            </div>
-          </div>
-        </Tabs>
 
-        {/* Footer Area */}
-        <div className="p-6 md:px-8 border-t border-black/5 dark:border-white/5 bg-black/5 dark:bg-white/5 mt-auto flex justify-end shrink-0">
-          <div className="flex items-center gap-2">
-            <label 
-              className="text-[12px] font-medium cursor-pointer text-muted-foreground select-none" 
-              onClick={() => !skill.isCore && onToggle(!skill.enabled)}
-            >
-              {skill.enabled ? t('detail.enabled') : t('detail.disabled')}
-            </label>
-            <Switch
-              checked={skill.enabled}
-              onCheckedChange={() => onToggle(!skill.enabled)}
-              disabled={skill.isCore}
-              className="scale-90 data-[state=checked]:bg-primary m-0"
-            />
+                <div className="space-y-2">
+                  {envVars.length === 0 && (
+                     <div className="text-[13px] text-foreground/50 font-medium italic flex items-center bg-[#eeece3] dark:bg-[#151514] border border-black/5 dark:border-white/5 rounded-xl px-4 py-3 shadow-sm">
+                      {t('detail.noEnvVars', 'No environment variables configured.')}
+                    </div>
+                  )}
+
+                  {envVars.map((env, index) => (
+                    <div className="flex items-center gap-3" key={index}>
+                      <Input
+                        value={env.key}
+                        onChange={(e) => handleUpdateEnv(index, 'key', e.target.value)}
+                        className="flex-1 h-[40px] font-mono text-[13px] bg-[#eeece3] dark:bg-[#151514] border-black/10 dark:border-white/10 rounded-xl focus-visible:ring-2 focus-visible:ring-blue-500/50 shadow-sm text-foreground"
+                        placeholder={t('detail.keyPlaceholder', 'Key')}
+                      />
+                      <Input
+                        value={env.value}
+                        onChange={(e) => handleUpdateEnv(index, 'value', e.target.value)}
+                        className="flex-1 h-[40px] font-mono text-[13px] bg-[#eeece3] dark:bg-[#151514] border-black/10 dark:border-white/10 rounded-xl focus-visible:ring-2 focus-visible:ring-blue-500/50 shadow-sm text-foreground"
+                        placeholder={t('detail.valuePlaceholder', 'Value')}
+                      />
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-10 w-10 text-destructive/70 hover:text-destructive hover:bg-destructive/10 shrink-0 rounded-xl transition-colors"
+                        onClick={() => handleRemoveEnv(index)}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* External Links */}
+            {skill.slug && !skill.isBundled && !skill.isCore && (
+              <div className="flex gap-2 justify-center pt-8">
+                <Button variant="outline" size="sm" className="h-[28px] text-[11px] font-medium px-3 gap-1.5 rounded-full border-black/10 dark:border-white/10 bg-transparent hover:bg-black/5 dark:hover:bg-white/5 shadow-none text-foreground/70" onClick={handleOpenClawhub}>
+                  <Globe className="h-[12px] w-[12px]" />
+                  ClawHub
+                </Button>
+                <Button variant="outline" size="sm" className="h-[28px] text-[11px] font-medium px-3 gap-1.5 rounded-full border-black/10 dark:border-white/10 bg-transparent hover:bg-black/5 dark:hover:bg-white/5 shadow-none text-foreground/70" onClick={handleOpenEditor}>
+                  <FileCode className="h-[12px] w-[12px]" />
+                  {t('detail.openManual')}
+                </Button>
+              </div>
+            )}
+          </div>
+          
+          {/* Centered Footer Buttons */}
+          <div className="pt-8 pb-4 flex items-center justify-center gap-4 w-full px-2 max-w-[340px] mx-auto">
+            {!skill.isCore && (
+              <Button 
+                onClick={handleSaveConfig} 
+                className={cn(
+                  "flex-1 h-[42px] text-[13px] rounded-full font-semibold shadow-sm border border-transparent transition-all", 
+                  "bg-[#0a84ff] hover:bg-[#007aff] text-white"
+                )}
+                disabled={isSaving}
+              >
+                {isSaving ? t('detail.saving', 'Saving...') : 'Save Configuration'}
+              </Button>
+            )}
+            
+            {!skill.isCore && (
+              <Button
+                variant="outline"
+                className="flex-1 h-[42px] text-[13px] rounded-full font-semibold shadow-sm bg-transparent border-black/20 dark:border-white/20 hover:bg-black/5 dark:hover:bg-white/5 transition-colors text-foreground/80 hover:text-foreground"
+                onClick={() => {
+                  if (!skill.isBundled && onUninstall && skill.slug) {
+                    onUninstall(skill.slug);
+                    onClose();
+                  } else {
+                    onToggle(!skill.enabled);
+                  }
+                }}
+              >
+                {!skill.isBundled && onUninstall 
+                  ? 'Uninstall' 
+                  : (skill.enabled ? t('detail.disable', 'Disable') : t('detail.enable', 'Enable'))}
+              </Button>
+            )}
           </div>
         </div>
       </SheetContent>
@@ -863,6 +828,7 @@ export function Skills() {
           handleToggle(selectedSkill.id, enabled);
           setSelectedSkill({ ...selectedSkill, enabled });
         }}
+        onUninstall={handleUninstall}
       />
     </div>
   );
