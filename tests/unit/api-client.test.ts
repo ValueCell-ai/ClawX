@@ -68,6 +68,16 @@ describe('api-client', () => {
     expect(msg).toContain('Permission denied');
   });
 
+  it('returns user-facing message for auth invalid error', () => {
+    const msg = toUserMessage(new AppError('AUTH_INVALID', 'Invalid Authentication'));
+    expect(msg).toContain('Authentication failed');
+  });
+
+  it('returns user-facing message for channel unavailable error', () => {
+    const msg = toUserMessage(new AppError('CHANNEL_UNAVAILABLE', 'Invalid IPC channel'));
+    expect(msg).toContain('Service channel unavailable');
+  });
+
   it('falls back to legacy channel when unified route is unsupported', async () => {
     const invoke = vi.mocked(window.electron.ipcRenderer.invoke);
     invoke

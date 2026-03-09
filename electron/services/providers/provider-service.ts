@@ -27,6 +27,7 @@ import {
   storeApiKey,
 } from '../../utils/secure-storage';
 import type { ProviderWithKeyInfo } from '../../shared/providers/types';
+import { logger } from '../../utils/logger';
 
 function maskApiKey(apiKey: string | null): string | null {
   if (!apiKey) return null;
@@ -34,6 +35,18 @@ function maskApiKey(apiKey: string | null): string | null {
     return `${apiKey.substring(0, 4)}${'*'.repeat(apiKey.length - 8)}${apiKey.substring(apiKey.length - 4)}`;
   }
   return '*'.repeat(apiKey.length);
+}
+
+const legacyProviderApiWarned = new Set<string>();
+
+function logLegacyProviderApiUsage(method: string, replacement: string): void {
+  if (legacyProviderApiWarned.has(method)) {
+    return;
+  }
+  legacyProviderApiWarned.add(method);
+  logger.warn(
+    `[provider-migration] Legacy provider API "${method}" is deprecated. Migrate to "${replacement}".`,
+  );
 }
 
 export class ProviderService {
@@ -103,20 +116,21 @@ export class ProviderService {
     return deleteProvider(accountId);
   }
 
-  async syncLegacyProvider(config: ProviderConfig, options?: { isDefault?: boolean }): Promise<ProviderAccount> {
-    await ensureProviderStoreMigrated();
-    const account = providerConfigToAccount(config, options);
-    await saveProviderAccount(account);
-    return account;
-  }
-
+  /**
+   * @deprecated Use listAccounts() and map account data in callers.
+   */
   async listLegacyProviders(): Promise<ProviderConfig[]> {
+    logLegacyProviderApiUsage('listLegacyProviders', 'listAccounts');
     await ensureProviderStoreMigrated();
     const accounts = await listProviderAccounts();
     return accounts.map(providerAccountToConfig);
   }
 
+  /**
+   * @deprecated Use listAccounts() + secret-store based key summary.
+   */
   async listLegacyProvidersWithKeyInfo(): Promise<ProviderWithKeyInfo[]> {
+    logLegacyProviderApiUsage('listLegacyProvidersWithKeyInfo', 'listAccounts');
     const providers = await this.listLegacyProviders();
     const results: ProviderWithKeyInfo[] = [];
     for (const provider of providers) {
@@ -130,13 +144,21 @@ export class ProviderService {
     return results;
   }
 
+  /**
+   * @deprecated Use getAccount(accountId).
+   */
   async getLegacyProvider(providerId: string): Promise<ProviderConfig | null> {
+    logLegacyProviderApiUsage('getLegacyProvider', 'getAccount');
     await ensureProviderStoreMigrated();
     const account = await getProviderAccount(providerId);
     return account ? providerAccountToConfig(account) : null;
   }
 
+  /**
+   * @deprecated Use createAccount()/updateAccount().
+   */
   async saveLegacyProvider(config: ProviderConfig): Promise<void> {
+    logLegacyProviderApiUsage('saveLegacyProvider', 'createAccount/updateAccount');
     await ensureProviderStoreMigrated();
     const account = providerConfigToAccount(config);
     const existing = await getProviderAccount(config.id);
@@ -147,33 +169,61 @@ export class ProviderService {
     await this.createAccount(account);
   }
 
+  /**
+   * @deprecated Use deleteAccount(accountId).
+   */
   async deleteLegacyProvider(providerId: string): Promise<boolean> {
+    logLegacyProviderApiUsage('deleteLegacyProvider', 'deleteAccount');
     await ensureProviderStoreMigrated();
     await this.deleteAccount(providerId);
     return true;
   }
 
+  /**
+   * @deprecated Use setDefaultAccount(accountId).
+   */
   async setDefaultLegacyProvider(providerId: string): Promise<void> {
+    logLegacyProviderApiUsage('setDefaultLegacyProvider', 'setDefaultAccount');
     await this.setDefaultAccount(providerId);
   }
 
+  /**
+   * @deprecated Use getDefaultAccountId().
+   */
   async getDefaultLegacyProvider(): Promise<string | undefined> {
+    logLegacyProviderApiUsage('getDefaultLegacyProvider', 'getDefaultAccountId');
     return this.getDefaultAccountId();
   }
 
+  /**
+   * @deprecated Use secret-store APIs by accountId.
+   */
   async setLegacyProviderApiKey(providerId: string, apiKey: string): Promise<boolean> {
+    logLegacyProviderApiUsage('setLegacyProviderApiKey', 'setProviderSecret(accountId, api_key)');
     return storeApiKey(providerId, apiKey);
   }
 
+  /**
+   * @deprecated Use secret-store APIs by accountId.
+   */
   async getLegacyProviderApiKey(providerId: string): Promise<string | null> {
+    logLegacyProviderApiUsage('getLegacyProviderApiKey', 'getProviderSecret(accountId)');
     return getApiKey(providerId);
   }
 
+  /**
+   * @deprecated Use secret-store APIs by accountId.
+   */
   async deleteLegacyProviderApiKey(providerId: string): Promise<boolean> {
+    logLegacyProviderApiUsage('deleteLegacyProviderApiKey', 'deleteProviderSecret(accountId)');
     return deleteApiKey(providerId);
   }
 
+  /**
+   * @deprecated Use secret-store APIs by accountId.
+   */
   async hasLegacyProviderApiKey(providerId: string): Promise<boolean> {
+    logLegacyProviderApiUsage('hasLegacyProviderApiKey', 'getProviderSecret(accountId)');
     return hasApiKey(providerId);
   }
 

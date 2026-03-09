@@ -4,6 +4,7 @@
  */
 import { create } from 'zustand';
 import { hostApiFetch } from '@/lib/host-api';
+import { AppError, normalizeAppError } from '@/lib/error-model';
 import { useGatewayStore } from './gateway';
 import type { Skill, MarketplaceSkill } from '../types/skill';
 
@@ -29,6 +30,27 @@ type ClawHubListResult = {
   slug: string;
   version?: string;
 };
+
+function mapErrorCodeToSkillErrorKey(
+  code: AppError['code'],
+  operation: 'fetch' | 'search' | 'install',
+): string {
+  if (code === 'TIMEOUT') {
+    return operation === 'search'
+      ? 'searchTimeoutError'
+      : operation === 'install'
+        ? 'installTimeoutError'
+        : 'fetchTimeoutError';
+  }
+  if (code === 'RATE_LIMIT') {
+    return operation === 'search'
+      ? 'searchRateLimitError'
+      : operation === 'install'
+        ? 'installRateLimitError'
+        : 'fetchRateLimitError';
+  }
+  return 'rateLimitError';
+}
 
 interface SkillsState {
   skills: Skill[];
@@ -131,13 +153,8 @@ export const useSkillsStore = create<SkillsState>((set, get) => ({
       set({ skills: combinedSkills, loading: false });
     } catch (error) {
       console.error('Failed to fetch skills:', error);
-      let errorMsg = error instanceof Error ? error.message : String(error);
-      if (errorMsg.includes('Timeout')) {
-        errorMsg = 'timeoutError';
-      } else if (errorMsg.toLowerCase().includes('rate limit')) {
-        errorMsg = 'rateLimitError';
-      }
-      set({ loading: false, error: errorMsg });
+      const appError = normalizeAppError(error, { module: 'skills', operation: 'fetch' });
+      set({ loading: false, error: mapErrorCodeToSkillErrorKey(appError.code, 'fetch') });
     }
   },
 
@@ -151,16 +168,14 @@ export const useSkillsStore = create<SkillsState>((set, get) => ({
       if (result.success) {
         set({ searchResults: result.results || [] });
       } else {
-        if (result.error?.includes('Timeout')) {
-          throw new Error('searchTimeoutError');
-        }
-        if (result.error?.toLowerCase().includes('rate limit')) {
-          throw new Error('searchRateLimitError');
-        }
-        throw new Error(result.error || 'Search failed');
+        throw normalizeAppError(new Error(result.error || 'Search failed'), {
+          module: 'skills',
+          operation: 'search',
+        });
       }
     } catch (error) {
-      set({ searchError: String(error) });
+      const appError = normalizeAppError(error, { module: 'skills', operation: 'search' });
+      set({ searchError: mapErrorCodeToSkillErrorKey(appError.code, 'search') });
     } finally {
       set({ searching: false });
     }
@@ -174,13 +189,11 @@ export const useSkillsStore = create<SkillsState>((set, get) => ({
         body: JSON.stringify({ slug, version }),
       });
       if (!result.success) {
-        if (result.error?.includes('Timeout')) {
-          throw new Error('installTimeoutError');
-        }
-        if (result.error?.toLowerCase().includes('rate limit')) {
-          throw new Error('installRateLimitError');
-        }
-        throw new Error(result.error || 'Install failed');
+        const appError = normalizeAppError(new Error(result.error || 'Install failed'), {
+          module: 'skills',
+          operation: 'install',
+        });
+        throw new Error(mapErrorCodeToSkillErrorKey(appError.code, 'install'));
       }
       // Refresh skills after install
       await get().fetchSkills();

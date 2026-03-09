@@ -21,6 +21,9 @@ import { validateApiKeyWithProvider } from '../../services/providers/provider-va
 import { getProviderService } from '../../services/providers/provider-service';
 import { providerAccountToConfig } from '../../services/providers/provider-store';
 import type { ProviderAccount } from '../../shared/providers/types';
+import { logger } from '../../utils/logger';
+
+const legacyProviderRoutesWarned = new Set<string>();
 
 export async function handleProviderRoutes(
   req: IncomingMessage,
@@ -29,6 +32,13 @@ export async function handleProviderRoutes(
   ctx: HostApiContext,
 ): Promise<boolean> {
   const providerService = getProviderService();
+  const logLegacyProviderRoute = (route: string): void => {
+    if (legacyProviderRoutesWarned.has(route)) return;
+    legacyProviderRoutesWarned.add(route);
+    logger.warn(
+      `[provider-migration] Legacy HTTP route "${route}" is deprecated. Prefer /api/provider-accounts endpoints.`,
+    );
+  };
 
   if (url.pathname === '/api/provider-vendors' && req.method === 'GET') {
     sendJson(res, 200, await providerService.listVendors());
@@ -125,16 +135,19 @@ export async function handleProviderRoutes(
   }
 
   if (url.pathname === '/api/providers' && req.method === 'GET') {
+    logLegacyProviderRoute('GET /api/providers');
     sendJson(res, 200, await providerService.listLegacyProvidersWithKeyInfo());
     return true;
   }
 
   if (url.pathname === '/api/providers/default' && req.method === 'GET') {
+    logLegacyProviderRoute('GET /api/providers/default');
     sendJson(res, 200, { providerId: await providerService.getDefaultLegacyProvider() ?? null });
     return true;
   }
 
   if (url.pathname === '/api/providers/default' && req.method === 'PUT') {
+    logLegacyProviderRoute('PUT /api/providers/default');
     try {
       const body = await parseJsonBody<{ providerId: string }>(req);
       await providerService.setDefaultLegacyProvider(body.providerId);
@@ -147,6 +160,7 @@ export async function handleProviderRoutes(
   }
 
   if (url.pathname === '/api/providers/validate' && req.method === 'POST') {
+    logLegacyProviderRoute('POST /api/providers/validate');
     try {
       const body = await parseJsonBody<{ providerId: string; apiKey: string; options?: { baseUrl?: string } }>(req);
       const provider = await providerService.getLegacyProvider(body.providerId);
@@ -161,6 +175,7 @@ export async function handleProviderRoutes(
   }
 
   if (url.pathname === '/api/providers/oauth/start' && req.method === 'POST') {
+    logLegacyProviderRoute('POST /api/providers/oauth/start');
     try {
       const body = await parseJsonBody<{
         provider: OAuthProviderType | BrowserOAuthProviderType;
@@ -187,6 +202,7 @@ export async function handleProviderRoutes(
   }
 
   if (url.pathname === '/api/providers/oauth/cancel' && req.method === 'POST') {
+    logLegacyProviderRoute('POST /api/providers/oauth/cancel');
     try {
       await deviceOAuthManager.stopFlow();
       await browserOAuthManager.stopFlow();
@@ -198,6 +214,7 @@ export async function handleProviderRoutes(
   }
 
   if (url.pathname === '/api/providers' && req.method === 'POST') {
+    logLegacyProviderRoute('POST /api/providers');
     try {
       const body = await parseJsonBody<{ config: ProviderConfig; apiKey?: string }>(req);
       const config = body.config;
@@ -218,6 +235,7 @@ export async function handleProviderRoutes(
   }
 
   if (url.pathname.startsWith('/api/providers/') && req.method === 'GET') {
+    logLegacyProviderRoute('GET /api/providers/:id');
     const providerId = decodeURIComponent(url.pathname.slice('/api/providers/'.length));
     if (providerId.endsWith('/api-key')) {
       const actualId = providerId.slice(0, -('/api-key'.length));
@@ -234,6 +252,7 @@ export async function handleProviderRoutes(
   }
 
   if (url.pathname.startsWith('/api/providers/') && req.method === 'PUT') {
+    logLegacyProviderRoute('PUT /api/providers/:id');
     const providerId = decodeURIComponent(url.pathname.slice('/api/providers/'.length));
     try {
       const body = await parseJsonBody<{ updates: Partial<ProviderConfig>; apiKey?: string }>(req);
@@ -263,6 +282,7 @@ export async function handleProviderRoutes(
   }
 
   if (url.pathname.startsWith('/api/providers/') && req.method === 'DELETE') {
+    logLegacyProviderRoute('DELETE /api/providers/:id');
     const providerId = decodeURIComponent(url.pathname.slice('/api/providers/'.length));
     try {
       const existing = await providerService.getLegacyProvider(providerId);

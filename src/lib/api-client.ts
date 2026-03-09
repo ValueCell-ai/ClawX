@@ -1,13 +1,11 @@
 import { trackUiEvent } from './telemetry';
-
-export type AppErrorCode =
-  | 'TIMEOUT'
-  | 'RATE_LIMIT'
-  | 'PERMISSION'
-  | 'NETWORK'
-  | 'CONFIG'
-  | 'GATEWAY'
-  | 'UNKNOWN';
+import {
+  AppError,
+  type AppErrorCode,
+  mapBackendErrorCode,
+  normalizeAppError,
+} from './error-model';
+export { AppError } from './error-model';
 
 export type TransportKind = 'ipc' | 'ws' | 'http';
 export type GatewayTransportPreference = 'ws-first';
@@ -181,64 +179,8 @@ class TransportUnsupportedError extends Error {
   }
 }
 
-export class AppError extends Error {
-  code: AppErrorCode;
-  cause?: unknown;
-  details?: Record<string, unknown>;
-
-  constructor(code: AppErrorCode, message: string, cause?: unknown, details?: Record<string, unknown>) {
-    super(message);
-    this.code = code;
-    this.cause = cause;
-    this.details = details;
-  }
-}
-
 function mapUnifiedErrorCode(code?: string): AppErrorCode {
-  switch (code) {
-    case 'TIMEOUT':
-      return 'TIMEOUT';
-    case 'PERMISSION':
-      return 'PERMISSION';
-    case 'GATEWAY':
-      return 'GATEWAY';
-    case 'VALIDATION':
-      return 'CONFIG';
-    case 'UNSUPPORTED':
-      return 'UNKNOWN';
-    default:
-      return 'UNKNOWN';
-  }
-}
-
-function normalizeError(err: unknown, details?: Record<string, unknown>): AppError {
-  if (err instanceof AppError) {
-    return new AppError(err.code, err.message, err.cause ?? err, { ...(err.details ?? {}), ...(details ?? {}) });
-  }
-
-  const message = err instanceof Error ? err.message : String(err);
-  const lower = message.toLowerCase();
-
-  if (lower.includes('timeout')) {
-    return new AppError('TIMEOUT', message, err, details);
-  }
-  if (lower.includes('rate limit')) {
-    return new AppError('RATE_LIMIT', message, err, details);
-  }
-  if (lower.includes('permission') || lower.includes('forbidden') || lower.includes('denied')) {
-    return new AppError('PERMISSION', message, err, details);
-  }
-  if (lower.includes('network') || lower.includes('fetch')) {
-    return new AppError('NETWORK', message, err, details);
-  }
-  if (lower.includes('gateway')) {
-    return new AppError('GATEWAY', message, err, details);
-  }
-  if (lower.includes('config') || lower.includes('invalid')) {
-    return new AppError('CONFIG', message, err, details);
-  }
-
-  return new AppError('UNKNOWN', message, err, details);
+  return mapBackendErrorCode(code);
 }
 
 function shouldLogApiRequests(): boolean {
@@ -389,7 +331,7 @@ async function invokeViaIpc<T>(channel: string, args: unknown[]): Promise<T> {
       if (message.includes('APP_REQUEST_UNSUPPORTED:') || message.includes('Invalid IPC channel: app:request')) {
         // Fallback to legacy channel handlers.
       } else {
-        throw normalizeError(err, { transport: 'ipc', channel, source: 'app:request' });
+        throw normalizeAppError(err, { transport: 'ipc', channel, source: 'app:request' });
       }
     }
   }
@@ -397,7 +339,7 @@ async function invokeViaIpc<T>(channel: string, args: unknown[]): Promise<T> {
   try {
     return await window.electron.ipcRenderer.invoke(channel, ...args) as T;
   } catch (err) {
-    throw normalizeError(err, { transport: 'ipc', channel, source: 'legacy-ipc' });
+    throw normalizeAppError(err, { transport: 'ipc', channel, source: 'legacy-ipc' });
   }
 }
 
@@ -956,15 +898,19 @@ export function initializeDefaultTransports(): void {
 }
 
 export function toUserMessage(error: unknown): string {
-  const appError = error instanceof AppError ? error : normalizeError(error);
+  const appError = error instanceof AppError ? error : normalizeAppError(error);
 
   switch (appError.code) {
+    case 'AUTH_INVALID':
+      return 'Authentication failed. Check API key or login session and retry.';
     case 'TIMEOUT':
       return 'Request timed out. Please retry.';
     case 'RATE_LIMIT':
       return 'Too many requests. Please wait and try again.';
     case 'PERMISSION':
       return 'Permission denied. Check your configuration and retry.';
+    case 'CHANNEL_UNAVAILABLE':
+      return 'Service channel unavailable. Retry after restarting the app or gateway.';
     case 'NETWORK':
       return 'Network error. Please verify connectivity and retry.';
     case 'CONFIG':
@@ -1052,7 +998,7 @@ export async function invokeApi<T>(channel: string, ...args: unknown[]): Promise
         });
         continue;
       }
-      throw normalizeError(err, {
+      throw normalizeAppError(err, {
         requestId,
         channel,
         transport: kind,
@@ -1069,7 +1015,7 @@ export async function invokeApi<T>(channel: string, ...args: unknown[]): Promise
     message: lastError instanceof Error ? lastError.message : String(lastError),
   });
 
-  throw normalizeError(lastError, {
+  throw normalizeAppError(lastError, {
     requestId,
     channel,
     transport: 'ipc',
@@ -1100,5 +1046,5 @@ export async function invokeIpcWithRetry<T>(
     }
   }
 
-  throw normalizeError(lastError);
+  throw normalizeAppError(lastError);
 }

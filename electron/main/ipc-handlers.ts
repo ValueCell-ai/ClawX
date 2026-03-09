@@ -1652,6 +1652,14 @@ function registerDeviceOAuthHandlers(mainWindow: BrowserWindow): void {
  */
 function registerProviderHandlers(gatewayManager: GatewayManager): void {
   const providerService = getProviderService();
+  const legacyProviderChannelsWarned = new Set<string>();
+  const logLegacyProviderChannel = (channel: string): void => {
+    if (legacyProviderChannelsWarned.has(channel)) return;
+    legacyProviderChannelsWarned.add(channel);
+    logger.warn(
+      `[provider-migration] Legacy IPC channel "${channel}" is deprecated. Prefer app:request provider actions and account APIs.`,
+    );
+  };
 
   // Listen for OAuth success to automatically restart the Gateway with new tokens/configs.
   // Use a longer debounce (8s) so that provider:setDefault — which writes the full config
@@ -1669,6 +1677,7 @@ function registerProviderHandlers(gatewayManager: GatewayManager): void {
 
   // Get all providers with key info
   ipcMain.handle('provider:list', async () => {
+    logLegacyProviderChannel('provider:list');
     return await providerService.listLegacyProvidersWithKeyInfo();
   });
 
@@ -1687,11 +1696,13 @@ function registerProviderHandlers(gatewayManager: GatewayManager): void {
 
   // Get a specific provider
   ipcMain.handle('provider:get', async (_, providerId: string) => {
+    logLegacyProviderChannel('provider:get');
     return await providerService.getLegacyProvider(providerId);
   });
 
   // Save a provider configuration
   ipcMain.handle('provider:save', async (_, config: ProviderConfig, apiKey?: string) => {
+    logLegacyProviderChannel('provider:save');
     try {
       // Save the provider config
       await providerService.saveLegacyProvider(config);
@@ -1726,6 +1737,7 @@ function registerProviderHandlers(gatewayManager: GatewayManager): void {
 
   // Delete a provider
   ipcMain.handle('provider:delete', async (_, providerId: string) => {
+    logLegacyProviderChannel('provider:delete');
     try {
       const existing = await providerService.getLegacyProvider(providerId);
       await providerService.deleteLegacyProvider(providerId);
@@ -1747,6 +1759,7 @@ function registerProviderHandlers(gatewayManager: GatewayManager): void {
 
   // Update API key for a provider
   ipcMain.handle('provider:setApiKey', async (_, providerId: string, apiKey: string) => {
+    logLegacyProviderChannel('provider:setApiKey');
     try {
       await providerService.setLegacyProviderApiKey(providerId, apiKey);
 
@@ -1774,6 +1787,7 @@ function registerProviderHandlers(gatewayManager: GatewayManager): void {
       updates: Partial<ProviderConfig>,
       apiKey?: string
     ) => {
+      logLegacyProviderChannel('provider:updateWithKey');
       const existing = await providerService.getLegacyProvider(providerId);
       if (!existing) {
         return { success: false, error: 'Provider not found' };
@@ -1834,6 +1848,7 @@ function registerProviderHandlers(gatewayManager: GatewayManager): void {
 
   // Delete API key for a provider
   ipcMain.handle('provider:deleteApiKey', async (_, providerId: string) => {
+    logLegacyProviderChannel('provider:deleteApiKey');
     try {
       await providerService.deleteLegacyProviderApiKey(providerId);
 
@@ -1853,16 +1868,19 @@ function registerProviderHandlers(gatewayManager: GatewayManager): void {
 
   // Check if a provider has an API key
   ipcMain.handle('provider:hasApiKey', async (_, providerId: string) => {
+    logLegacyProviderChannel('provider:hasApiKey');
     return await providerService.hasLegacyProviderApiKey(providerId);
   });
 
   // Get the actual API key (for internal use only - be careful!)
   ipcMain.handle('provider:getApiKey', async (_, providerId: string) => {
+    logLegacyProviderChannel('provider:getApiKey');
     return await providerService.getLegacyProviderApiKey(providerId);
   });
 
   // Set default provider and update OpenClaw default model
   ipcMain.handle('provider:setDefault', async (_, providerId: string) => {
+    logLegacyProviderChannel('provider:setDefault');
     try {
       await providerService.setDefaultLegacyProvider(providerId);
 
@@ -1883,6 +1901,7 @@ function registerProviderHandlers(gatewayManager: GatewayManager): void {
 
   // Get default provider
   ipcMain.handle('provider:getDefault', async () => {
+    logLegacyProviderChannel('provider:getDefault');
     return await providerService.getDefaultLegacyProvider();
   });
 
@@ -1896,6 +1915,7 @@ function registerProviderHandlers(gatewayManager: GatewayManager): void {
       apiKey: string,
       options?: { baseUrl?: string }
     ) => {
+      logLegacyProviderChannel('provider:validateKey');
       try {
         // First try to get existing provider
         const provider = await providerService.getLegacyProvider(providerId);
