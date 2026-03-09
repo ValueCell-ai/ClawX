@@ -7,7 +7,16 @@
         "channels": "チャンネル",
         "dashboard": "ダッシュボード",
         "settings": "設定",
-        "devConsole": "開発者コンソール"
+        "devConsole": "開発者コンソール",
+        "renameSession": "セッション名を変更",
+        "deleteSession": "セッションを削除",
+        "deleteSessionConfirm": "「{{label}}」を削除しますか？",
+        "renameSessionPlaceholder": "セッションタイトル",
+        "saveSessionRename": "セッションタイトルを保存",
+        "cancelSessionRename": "名前変更をキャンセル",
+        "renameSessionSuccess": "セッションタイトルを更新しました",
+        "renameSessionFailed": "セッション名の変更に失敗しました",
+        "renameSessionEmpty": "セッションタイトルは空にできません"
     },
     "actions": {
         "save": "保存",

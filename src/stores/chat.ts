@@ -100,6 +100,7 @@ interface ChatState {
   loadSessions: () => Promise<void>;
   switchSession: (key: string) => void;
   newSession: () => void;
+  renameSession: (key: string, label: string) => Promise<void>;
   deleteSession: (key: string) => Promise<void>;
   cleanupEmptySession: () => void;
   loadHistory: (quiet?: boolean) => Promise<void>;
@@ -993,9 +994,9 @@ export const useChatStore = create<ChatState>((set, get) => ({
           get().loadHistory();
         }
 
-        // Background: fetch first user message for every non-main session to populate labels upfront.
+        // Background: fetch first user message for every unlabeled non-main session to populate labels upfront.
         // Uses a small limit so it's cheap; runs in parallel and doesn't block anything.
-        const sessionsToLabel = sessionsWithCurrent.filter((s) => !s.key.endsWith(':main'));
+        const sessionsToLabel = sessionsWithCurrent.filter((s) => !s.key.endsWith(':main') && !s.label);
         if (sessionsToLabel.length > 0) {
           void Promise.all(
             sessionsToLabel.map(async (session) => {
@@ -1010,8 +1011,9 @@ export const useChatStore = create<ChatState>((set, get) => ({
                 set((s) => {
                   const next: Partial<typeof s> = {};
                   if (firstUser) {
+                    const hasExplicitLabel = s.sessions.some((entry) => entry.key === session.key && Boolean(entry.label));
                     const labelText = getMessageText(firstUser.content).trim();
-                    if (labelText) {
+                    if (labelText && !hasExplicitLabel) {
                       const truncated = labelText.length > 50 ? `${labelText.slice(0, 50)}…` : labelText;
                       next.sessionLabels = { ...s.sessionLabels, [session.key]: truncated };
                     }
@@ -1157,6 +1159,25 @@ export const useChatStore = create<ChatState>((set, get) => ({
     }));
   },
 
+  renameSession: async (key: string, label: string) => {
+    const normalized = label.trim();
+    if (!normalized) {
+      throw new Error('session label cannot be empty');
+    }
+
+    await useGatewayStore.getState().rpc(
+      'sessions.patch',
+      { key, label: normalized },
+    );
+
+    set((s) => ({
+      sessions: s.sessions.map((session) => (
+        session.key === key ? { ...session, label: normalized } : session
+      )),
+      sessionLabels: { ...s.sessionLabels, [key]: normalized },
+    }));
+  },
+
   // ── Cleanup empty session on navigate away ──
 
   cleanupEmptySession: () => {
@@ -1226,7 +1247,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
         // Skip main sessions (key ends with ":main") — they rely on the Gateway-provided
         // displayName (e.g. the configured agent name "ClawX") instead.
         const isMainSession = currentSessionKey.endsWith(':main');
-        if (!isMainSession) {
+        const hasExplicitLabel = get().sessions.some((session) => session.key === currentSessionKey && Boolean(session.label));
+        if (!isMainSession && !hasExplicitLabel) {
           const firstUserMsg = finalMessages.find((m) => m.role === 'user');
           if (firstUserMsg) {
             const labelText = getMessageText(firstUserMsg.content).trim();
@@ -1340,9 +1362,10 @@ export const useChatStore = create<ChatState>((set, get) => ({
     }));
 
     // Update session label with first user message text as soon as it's sent
-    const { sessionLabels, messages } = get();
+    const { sessionLabels, messages, sessions } = get();
     const isFirstMessage = !messages.slice(0, -1).some((m) => m.role === 'user');
-    if (!currentSessionKey.endsWith(':main') && isFirstMessage && !sessionLabels[currentSessionKey] && trimmed) {
+    const hasExplicitLabel = sessions.some((session) => session.key === currentSessionKey && Boolean(session.label));
+    if (!currentSessionKey.endsWith(':main') && !hasExplicitLabel && isFirstMessage && !sessionLabels[currentSessionKey] && trimmed) {
       const truncated = trimmed.length > 50 ? `${trimmed.slice(0, 50)}…` : trimmed;
       set((s) => ({ sessionLabels: { ...s.sessionLabels, [currentSessionKey]: truncated } }));
     }
