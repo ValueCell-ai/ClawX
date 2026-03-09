@@ -175,6 +175,11 @@
                 "appSecret": {
                     "label": "App Secret",
                     "placeholder": "Your app secret"
+                },
+                "historyLimit": {
+                    "label": "Context history limit (optional)",
+                    "placeholder": "e.g. 20 (0 disables)",
+                    "description": "Caps how many history messages are injected per reply; lower values reduce token usage."
                 }
             },
             "instructions": [

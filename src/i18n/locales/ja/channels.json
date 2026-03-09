@@ -175,6 +175,11 @@
                 "appSecret": {
                     "label": "App Secret",
                     "placeholder": "アプリのシークレット"
+                },
+                "historyLimit": {
+                    "label": "コンテキスト履歴上限（任意）",
+                    "placeholder": "例: 20（0で無効）",
+                    "description": "1回の返信で注入する履歴メッセージ数の上限。小さいほどトークン消費を抑えます。"
                 }
             },
             "instructions": [

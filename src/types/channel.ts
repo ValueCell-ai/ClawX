@@ -303,6 +303,14 @@ export const CHANNEL_META: Record<ChannelType, ChannelMeta> = {
         required: true,
         envVar: 'FEISHU_APP_SECRET',
       },
+      {
+        key: 'historyLimit',
+        label: 'channels:meta.feishu.fields.historyLimit.label',
+        type: 'text',
+        placeholder: 'channels:meta.feishu.fields.historyLimit.placeholder',
+        description: 'channels:meta.feishu.fields.historyLimit.description',
+        required: false,
+      },
     ],
     instructions: [
       'channels:meta.feishu.instructions.0',
