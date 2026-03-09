@@ -6,14 +6,14 @@
 import { useEffect, useState } from 'react';
 import { NavLink, useLocation, useNavigate } from 'react-router-dom';
 import {
-  Home,
-  MessageSquare,
-  Radio,
-  Puzzle,
+  BarChart,
+  Folder,
+  Layers,
   Clock,
-  Settings,
-  ChevronLeft,
-  ChevronRight,
+  Settings as SettingsIcon,
+  PanelLeftClose,
+  PanelLeft,
+  Plus,
   Terminal,
   ExternalLink,
   Trash2,
@@ -26,6 +26,7 @@ import { Badge } from '@/components/ui/badge';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { hostApiFetch } from '@/lib/host-api';
 import { useTranslation } from 'react-i18next';
+import logoSvg from '@/assets/logo.svg';
 
 type SessionBucketKey =
   | 'today'
@@ -51,23 +52,29 @@ function NavItem({ to, icon, label, badge, collapsed, onClick }: NavItemProps) {
       onClick={onClick}
       className={({ isActive }) =>
         cn(
-          'flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors',
-          'hover:bg-accent hover:text-accent-foreground',
+          'flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-[14px] font-medium transition-colors',
+          'hover:bg-black/5 dark:hover:bg-white/5 text-foreground/80',
           isActive
-            ? 'bg-accent text-accent-foreground'
-            : 'text-muted-foreground',
-          collapsed && 'justify-center px-2'
+            ? 'bg-black/5 dark:bg-white/10 text-foreground'
+            : '',
+          collapsed && 'justify-center px-0'
         )
       }
     >
-      {icon}
-      {!collapsed && (
+      {({ isActive }) => (
         <>
-          <span className="flex-1">{label}</span>
-          {badge && (
-            <Badge variant="secondary" className="ml-auto">
-              {badge}
-            </Badge>
+          <div className={cn("flex shrink-0 items-center justify-center", isActive ? "text-foreground" : "text-muted-foreground")}>
+            {icon}
+          </div>
+          {!collapsed && (
+            <>
+              <span className="flex-1 overflow-hidden text-ellipsis whitespace-nowrap">{label}</span>
+              {badge && (
+                <Badge variant="secondary" className="ml-auto shrink-0">
+                  {badge}
+                </Badge>
+              )}
+            </>
           )}
         </>
       )}
@@ -161,22 +168,45 @@ export function Sidebar() {
   }
 
   const navItems = [
-    { to: '/cron', icon: <Clock className="h-5 w-5" />, label: t('sidebar.cronTasks') },
-    { to: '/skills', icon: <Puzzle className="h-5 w-5" />, label: t('sidebar.skills') },
-    { to: '/channels', icon: <Radio className="h-5 w-5" />, label: t('sidebar.channels') },
-    { to: '/dashboard', icon: <Home className="h-5 w-5" />, label: t('sidebar.dashboard') },
-    { to: '/settings', icon: <Settings className="h-5 w-5" />, label: t('sidebar.settings') },
+    { to: '/cron', icon: <Clock className="h-[18px] w-[18px]" strokeWidth={2} />, label: t('sidebar.cronTasks') },
+    { to: '/skills', icon: <Layers className="h-[18px] w-[18px]" strokeWidth={2} />, label: t('sidebar.skills') },
+    { to: '/channels', icon: <Folder className="h-[18px] w-[18px]" strokeWidth={2} />, label: t('sidebar.channels') },
+    { to: '/dashboard', icon: <BarChart className="h-[18px] w-[18px]" strokeWidth={2} />, label: t('sidebar.dashboard') },
   ];
 
   return (
     <aside
       className={cn(
-        'flex shrink-0 flex-col border-r bg-background transition-all duration-300',
+        'flex shrink-0 flex-col border-r bg-[#eae8e1]/60 dark:bg-background transition-all duration-300',
         sidebarCollapsed ? 'w-16' : 'w-64'
       )}
     >
+      {/* Top Header Toggle */}
+      <div className={cn("flex items-center p-2 h-12", sidebarCollapsed ? "justify-center" : "justify-between")}>
+        {!sidebarCollapsed && (
+          <div className="flex items-center gap-2 px-2 overflow-hidden">
+            <img src={logoSvg} alt="ClawX" className="h-5 w-auto shrink-0" />
+            <span className="text-sm font-semibold truncate whitespace-nowrap text-foreground/90">
+              ClawX
+            </span>
+          </div>
+        )}
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-8 w-8 shrink-0 text-muted-foreground hover:bg-black/5 dark:hover:bg-white/10"
+          onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
+        >
+          {sidebarCollapsed ? (
+            <PanelLeft className="h-[18px] w-[18px]" />
+          ) : (
+            <PanelLeftClose className="h-[18px] w-[18px]" />
+          )}
+        </Button>
+      </div>
+
       {/* Navigation */}
-      <nav className="flex-1 overflow-hidden flex flex-col p-2 gap-1">
+      <nav className="flex-1 overflow-y-auto overflow-x-hidden flex flex-col px-2 gap-0.5 pb-4">
         {/* Chat nav item: acts as "New Chat" button, never highlighted as active */}
         <button
           onClick={() => {
@@ -185,13 +215,15 @@ export function Sidebar() {
             navigate('/');
           }}
           className={cn(
-            'flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors',
-            'hover:bg-accent hover:text-accent-foreground text-muted-foreground',
-            sidebarCollapsed && 'justify-center px-2',
+            'flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-[14px] font-medium transition-colors mb-2',
+            'bg-white dark:bg-accent shadow-sm border border-black/5 dark:border-white/10 text-foreground',
+            sidebarCollapsed && 'justify-center px-0',
           )}
         >
-          <MessageSquare className="h-5 w-5 shrink-0" />
-          {!sidebarCollapsed && <span className="flex-1 text-left">{t('sidebar.newChat')}</span>}
+          <div className="flex shrink-0 items-center justify-center text-foreground/80">
+            <Plus className="h-[18px] w-[18px]" strokeWidth={2} />
+          </div>
+          {!sidebarCollapsed && <span className="flex-1 text-left overflow-hidden text-ellipsis whitespace-nowrap">{t('sidebar.newChat')}</span>}
         </button>
 
         {navItems.map((item) => (
@@ -204,11 +236,11 @@ export function Sidebar() {
 
         {/* Session list — below Settings, only when expanded */}
         {!sidebarCollapsed && sessions.length > 0 && (
-          <div className="mt-1 overflow-y-auto max-h-72 space-y-0.5">
+          <div className="mt-4 space-y-0.5">
             {sessionBuckets.map((bucket) => (
               bucket.sessions.length > 0 ? (
-                <div key={bucket.key} className="pt-1">
-                  <div className="px-3 py-1 text-[11px] font-medium text-muted-foreground/80">
+                <div key={bucket.key} className="pt-2">
+                  <div className="px-2.5 pb-1 text-[11px] font-medium text-muted-foreground/60 tracking-tight">
                     {bucket.label}
                   </div>
                   {bucket.sessions.map((s) => (
@@ -216,11 +248,11 @@ export function Sidebar() {
                       <button
                         onClick={() => { switchSession(s.key); navigate('/'); }}
                         className={cn(
-                          'w-full text-left rounded-md px-3 py-1.5 text-sm truncate transition-colors pr-7',
-                          'hover:bg-accent hover:text-accent-foreground',
+                          'w-full text-left rounded-lg px-2.5 py-1.5 text-[13px] truncate transition-colors pr-7',
+                          'hover:bg-black/5 dark:hover:bg-white/5',
                           isOnChat && currentSessionKey === s.key
-                            ? 'bg-accent/60 text-accent-foreground font-medium'
-                            : 'text-muted-foreground',
+                            ? 'bg-black/5 dark:bg-white/10 text-foreground font-medium'
+                            : 'text-foreground/75',
                         )}
                       >
                         {getSessionLabel(s.key, s.displayName, s.label)}
@@ -252,32 +284,42 @@ export function Sidebar() {
       </nav>
 
       {/* Footer */}
-      <div className="p-2 space-y-2">
+      <div className="p-2 mt-auto">
         {devModeUnlocked && !sidebarCollapsed && (
           <Button
             variant="ghost"
             size="sm"
-            className="w-full justify-start"
+            className="w-full justify-start mb-1 hover:bg-black/5 dark:hover:bg-white/5"
             onClick={openDevConsole}
           >
-            <Terminal className="h-4 w-4 mr-2" />
-            {t('sidebar.devConsole')}
-            <ExternalLink className="h-3 w-3 ml-auto" />
+            <div className="flex shrink-0 items-center justify-center text-muted-foreground">
+              <Terminal className="h-[18px] w-[18px] mr-2.5" strokeWidth={2} />
+            </div>
+            <span className="font-medium text-[14px] flex-1 text-left text-foreground/80 overflow-hidden text-ellipsis whitespace-nowrap">{t('sidebar.devConsole')}</span>
+            <ExternalLink className="h-3 w-3 shrink-0 ml-auto opacity-50 text-muted-foreground" />
           </Button>
         )}
 
-        <Button
-          variant="ghost"
-          size="icon"
-          className="w-full"
-          onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
-        >
-          {sidebarCollapsed ? (
-            <ChevronRight className="h-4 w-4" />
-          ) : (
-            <ChevronLeft className="h-4 w-4" />
+        <NavLink
+            to="/settings"
+            className={({ isActive }) =>
+              cn(
+                'flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-[14px] font-medium transition-colors',
+                'hover:bg-black/5 dark:hover:bg-white/5 text-foreground/80',
+                isActive && 'bg-black/5 dark:bg-white/10 text-foreground',
+                sidebarCollapsed ? 'justify-center px-0' : ''
+              )
+            }
+          >
+          {({ isActive }) => (
+            <>
+              <div className={cn("flex shrink-0 items-center justify-center", isActive ? "text-foreground" : "text-muted-foreground")}>
+                <SettingsIcon className="h-[18px] w-[18px]" strokeWidth={2} />
+              </div>
+              {!sidebarCollapsed && <span className="flex-1 overflow-hidden text-ellipsis whitespace-nowrap">{t('sidebar.settings')}</span>}
+            </>
           )}
-        </Button>
+        </NavLink>
       </div>
 
       <ConfirmDialog

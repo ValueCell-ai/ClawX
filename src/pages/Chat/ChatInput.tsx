@@ -7,11 +7,12 @@
  * are sent with the message (no base64 over WebSocket).
  */
 import { useState, useRef, useEffect, useCallback } from 'react';
-import { Send, Square, X, Paperclip, FileText, Film, Music, FileArchive, File, Loader2 } from 'lucide-react';
+import { SendHorizontal, Square, X, Paperclip, FileText, Film, Music, FileArchive, File, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { hostApiFetch } from '@/lib/host-api';
 import { invokeIpc } from '@/lib/api-client';
+import { cn } from '@/lib/utils';
 
 // ── Types ────────────────────────────────────────────────────────
 
@@ -31,6 +32,7 @@ interface ChatInputProps {
   onStop?: () => void;
   disabled?: boolean;
   sending?: boolean;
+  isEmpty?: boolean;
 }
 
 // ── Helpers ──────────────────────────────────────────────────────
@@ -77,7 +79,7 @@ function readFileAsBase64(file: globalThis.File): Promise<string> {
 
 // ── Component ────────────────────────────────────────────────────
 
-export function ChatInput({ onSend, onStop, disabled = false, sending = false }: ChatInputProps) {
+export function ChatInput({ onSend, onStop, disabled = false, sending = false, isEmpty = false }: ChatInputProps) {
   const [input, setInput] = useState('');
   const [attachments, setAttachments] = useState<FileAttachment[]>([]);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -326,15 +328,18 @@ export function ChatInput({ onSend, onStop, disabled = false, sending = false }:
 
   return (
     <div
-      className="bg-background p-4"
+      className={cn(
+        "p-4 pb-6 w-full mx-auto transition-all duration-300",
+        isEmpty ? "max-w-3xl" : "max-w-4xl"
+      )}
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
     >
-      <div className="max-w-4xl mx-auto">
+      <div className="w-full">
         {/* Attachment Previews */}
         {attachments.length > 0 && (
-          <div className="flex gap-2 mb-2 flex-wrap">
+          <div className="flex gap-2 mb-3 flex-wrap">
             {attachments.map((att) => (
               <AttachmentPreview
                 key={att.id}
@@ -346,13 +351,13 @@ export function ChatInput({ onSend, onStop, disabled = false, sending = false }:
         )}
 
         {/* Input Row */}
-        <div className={`flex items-end gap-2 ${dragOver ? 'ring-2 ring-primary rounded-lg' : ''}`}>
+        <div className={`flex items-end gap-1.5 bg-white dark:bg-accent/50 rounded-[28px] shadow-sm border border-black/5 dark:border-white/10 p-1.5 transition-shadow ${dragOver ? 'ring-2 ring-primary' : 'focus-within:ring-1 focus-within:ring-black/5 dark:focus-within:ring-white/10'}`}>
 
           {/* Attach Button */}
           <Button
             variant="ghost"
             size="icon"
-            className="shrink-0 h-[44px] w-[44px]"
+            className="shrink-0 h-10 w-10 rounded-full text-muted-foreground hover:bg-black/5 dark:hover:bg-white/10 hover:text-foreground transition-colors"
             onClick={pickFiles}
             disabled={disabled || sending}
             title="Attach files"
@@ -374,9 +379,9 @@ export function ChatInput({ onSend, onStop, disabled = false, sending = false }:
                 isComposingRef.current = false;
               }}
               onPaste={handlePaste}
-              placeholder={disabled ? 'Gateway not connected...' : 'Message (Enter to send, Shift+Enter for new line)'}
+              placeholder={disabled ? 'Gateway not connected...' : ''}
               disabled={disabled}
-              className="min-h-[44px] max-h-[200px] resize-none pr-4"
+              className="min-h-[40px] max-h-[200px] resize-none border-0 focus-visible:ring-0 shadow-none bg-transparent py-2.5 px-2 text-[15px] placeholder:text-muted-foreground/60 leading-relaxed"
               rows={1}
             />
           </div>
@@ -386,24 +391,28 @@ export function ChatInput({ onSend, onStop, disabled = false, sending = false }:
             onClick={sending ? handleStop : handleSend}
             disabled={sending ? !canStop : !canSend}
             size="icon"
-            className="shrink-0 h-[44px] w-[44px]"
-            variant={sending ? 'destructive' : 'default'}
+            className={`shrink-0 h-10 w-10 rounded-full transition-colors ${
+              (sending || canSend) 
+                ? 'bg-black/5 dark:bg-white/10 text-foreground hover:bg-black/10 dark:hover:bg-white/20' 
+                : 'text-muted-foreground/50 hover:bg-transparent bg-transparent'
+            }`}
+            variant="ghost"
             title={sending ? 'Stop' : 'Send'}
           >
             {sending ? (
-              <Square className="h-4 w-4" />
+              <Square className="h-4 w-4" fill="currentColor" />
             ) : (
-              <Send className="h-4 w-4" />
+              <SendHorizontal className="h-[18px] w-[18px]" strokeWidth={2} />
             )}
           </Button>
         </div>
-        <div className="mt-1 flex items-center justify-between gap-2 text-xs text-muted-foreground">
+        <div className="mt-2.5 flex items-center justify-between gap-2 text-[11px] text-muted-foreground/60 px-4">
           <span>Tip: switch sessions from the sidebar to keep context clean.</span>
           {hasFailedAttachments && (
             <Button
               variant="link"
               size="sm"
-              className="h-auto p-0 text-xs"
+              className="h-auto p-0 text-[11px]"
               onClick={() => {
                 setAttachments((prev) => prev.filter((att) => att.status !== 'error'));
                 void pickFiles();

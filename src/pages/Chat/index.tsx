@@ -5,8 +5,7 @@
  * are in the toolbar; messages render with markdown + streaming.
  */
 import { useEffect, useRef, useState } from 'react';
-import { AlertCircle, Bot, Loader2, MessageSquare, Sparkles } from 'lucide-react';
-import { Card, CardContent } from '@/components/ui/card';
+import { AlertCircle, Loader2, Sparkles } from 'lucide-react';
 import { useChatStore, type RawMessage } from '@/stores/chat';
 import { useGatewayStore } from '@/stores/gateway';
 import { LoadingSpinner } from '@/components/common/LoadingSpinner';
@@ -15,6 +14,7 @@ import { ChatInput } from './ChatInput';
 import { ChatToolbar } from './ChatToolbar';
 import { extractImages, extractText, extractThinking, extractToolUse } from './message-utils';
 import { useTranslation } from 'react-i18next';
+import { cn } from '@/lib/utils';
 
 export function Chat() {
   const { t } = useTranslation('chat');
@@ -105,8 +105,10 @@ export function Chat() {
   const shouldRenderStreaming = sending && (hasStreamText || hasStreamThinking || hasStreamTools || hasStreamImages || hasStreamToolStatus);
   const hasAnyStreamContent = hasStreamText || hasStreamThinking || hasStreamTools || hasStreamImages || hasStreamToolStatus;
 
+  const isEmpty = messages.length === 0 && !loading && !sending;
+
   return (
-    <div className="flex flex-col -m-6" style={{ height: 'calc(100vh - 2.5rem)' }}>
+    <div className={cn("flex flex-col -m-6 transition-colors duration-500", isEmpty ? "bg-[#F3F1E8] dark:bg-background" : "")} style={{ height: 'calc(100vh - 2.5rem)' }}>
       {/* Toolbar */}
       <div className="flex shrink-0 items-center justify-end px-4 py-2">
         <ChatToolbar />
@@ -116,10 +118,10 @@ export function Chat() {
       <div className="flex-1 overflow-y-auto px-4 py-4">
         <div className="max-w-4xl mx-auto space-y-4">
           {loading && !sending ? (
-            <div className="flex h-full items-center justify-center py-20">
+            <div className="flex h-[60vh] items-center justify-center">
               <LoadingSpinner size="lg" />
             </div>
-          ) : messages.length === 0 && !sending ? (
+          ) : isEmpty ? (
             <WelcomeScreen />
           ) : (
             <>
@@ -193,6 +195,7 @@ export function Chat() {
         onStop={abortRun}
         disabled={!isGatewayRunning}
         sending={sending}
+        isEmpty={isEmpty}
       />
     </div>
   );
@@ -201,29 +204,23 @@ export function Chat() {
 // ── Welcome Screen ──────────────────────────────────────────────
 
 function WelcomeScreen() {
-  const { t } = useTranslation('chat');
   return (
-    <div className="flex flex-col items-center justify-center text-center py-20">
-      <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center mb-6">
-        <Bot className="h-8 w-8 text-white" />
-      </div>
-      <h2 className="text-2xl font-bold mb-2">{t('welcome.title')}</h2>
-      <p className="text-muted-foreground mb-8 max-w-md">
-        {t('welcome.subtitle')}
+    <div className="flex flex-col items-center justify-center text-center h-[60vh]">
+      <h1 className="text-6xl md:text-7xl font-serif text-foreground mb-3 font-normal tracking-tight" style={{ fontFamily: 'Georgia, Cambria, "Times New Roman", Times, serif' }}>
+        Welcome
+      </h1>
+      <p className="text-[17px] text-foreground/80 mb-8 font-medium">
+        Your AI assistant is ready. Start a conversation below.
       </p>
 
-      <div className="grid grid-cols-2 gap-4 max-w-lg w-full">
-        {[
-          { icon: MessageSquare, title: t('welcome.askQuestions'), desc: t('welcome.askQuestionsDesc') },
-          { icon: Sparkles, title: t('welcome.creativeTasks'), desc: t('welcome.creativeTasksDesc') },
-        ].map((item, i) => (
-          <Card key={i} className="text-left">
-            <CardContent className="p-4">
-              <item.icon className="h-6 w-6 text-primary mb-2" />
-              <h3 className="font-medium">{item.title}</h3>
-              <p className="text-sm text-muted-foreground">{item.desc}</p>
-            </CardContent>
-          </Card>
+      <div className="flex flex-wrap items-center justify-center gap-2.5 max-w-lg w-full">
+        {['Ask Questions', 'Creative Tasks', 'Brainstorming'].map((label, i) => (
+          <button 
+            key={i} 
+            className="px-4 py-1.5 rounded-full border border-black/10 dark:border-white/10 text-[13px] font-medium text-foreground/70 hover:bg-black/5 dark:hover:bg-white/5 transition-colors bg-black/[0.02]"
+          >
+            {label}
+          </button>
         ))}
       </div>
     </div>
