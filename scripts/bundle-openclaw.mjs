@@ -374,9 +374,11 @@ echo`   Size: ${formatSize(sizeBefore)} → ${formatSize(sizeAfter)} (saved ${fo
 // Node.js 22+ ESM interop when the translators try to call hasOwnProperty on
 // the undefined exports object.
 //
+// We also patch Windows child_process spawn sites in the bundled agent runtime
+// so shell/tool execution does not flash a console window for each tool call.
 // We patch these files in-place after the copy so the bundle is safe to run.
 function patchBrokenModules(nodeModulesDir) {
-  const patches = {
+  const rewritePatches = {
     // node-domexception@1.0.0: transpiled index.js leaves module.exports = undefined.
     // Node.js 18+ ships DOMException as a built-in global, so a simple shim works.
     'node-domexception/index.js': [
@@ -393,12 +395,58 @@ function patchBrokenModules(nodeModulesDir) {
       `module.exports.default = dom;`,
     ].join('\n'),
   };
+  const replacePatches = [
+    {
+      rel: '@mariozechner/pi-coding-agent/dist/core/bash-executor.js',
+      search: `        const child = spawn(shell, [...args, command], {
+            detached: true,
+            env: getShellEnv(),
+            stdio: ["ignore", "pipe", "pipe"],
+        });`,
+      replace: `        const child = spawn(shell, [...args, command], {
+            detached: true,
+            env: getShellEnv(),
+            stdio: ["ignore", "pipe", "pipe"],
+            windowsHide: true,
+        });`,
+    },
+    {
+      rel: '@mariozechner/pi-coding-agent/dist/core/exec.js',
+      search: `        const proc = spawn(command, args, {
+            cwd,
+            shell: false,
+            stdio: ["ignore", "pipe", "pipe"],
+        });`,
+      replace: `        const proc = spawn(command, args, {
+            cwd,
+            shell: false,
+            stdio: ["ignore", "pipe", "pipe"],
+            windowsHide: true,
+        });`,
+    },
+  ];
 
   let count = 0;
-  for (const [rel, content] of Object.entries(patches)) {
+  for (const [rel, content] of Object.entries(rewritePatches)) {
     const target = path.join(nodeModulesDir, rel);
     if (fs.existsSync(target)) {
       fs.writeFileSync(target, content + '\n', 'utf8');
+      count++;
+    }
+  }
+  for (const { rel, search, replace } of replacePatches) {
+    const target = path.join(nodeModulesDir, rel);
+    if (!fs.existsSync(target)) continue;
+
+    const current = fs.readFileSync(target, 'utf8');
+    if (!current.includes(search)) {
+      echo`   ⚠️  Skipped patch for ${rel}: expected source snippet not found`;
+      continue;
+    }
+
+    const next = current.replace(search, replace);
+    if (next !== current) {
+      fs.writeFileSync(target, next, 'utf8');
       count++;
     }
   }
@@ -407,7 +455,157 @@ function patchBrokenModules(nodeModulesDir) {
   }
 }
 
+function findFirstFileByName(rootDir, matcher) {
+  const stack = [rootDir];
+  while (stack.length > 0) {
+    const current = stack.pop();
+    let entries = [];
+    try {
+      entries = fs.readdirSync(current, { withFileTypes: true });
+    } catch {
+      continue;
+    }
+    for (const entry of entries) {
+      const fullPath = path.join(current, entry.name);
+      if (entry.isDirectory()) {
+        stack.push(fullPath);
+        continue;
+      }
+      if (entry.isFile() && matcher.test(entry.name)) {
+        return fullPath;
+      }
+    }
+  }
+  return null;
+}
+
+function patchBundledRuntime(outputDir) {
+  const replacePatches = [
+    {
+      label: 'workspace command runner',
+      target: () => findFirstFileByName(path.join(outputDir, 'dist'), /^workspace-.*\.js$/),
+      search: `\tconst child = spawn(resolvedCommand, finalArgv.slice(1), {
+\t\tstdio,
+\t\tcwd,
+\t\tenv: resolvedEnv,
+\t\twindowsVerbatimArguments,
+\t\t...shouldSpawnWithShell({
+\t\t\tresolvedCommand,
+\t\t\tplatform: process$1.platform
+\t\t}) ? { shell: true } : {}
+\t});`,
+      replace: `\tconst child = spawn(resolvedCommand, finalArgv.slice(1), {
+\t\tstdio,
+\t\tcwd,
+\t\tenv: resolvedEnv,
+\t\twindowsVerbatimArguments,
+\t\twindowsHide: true,
+\t\t...shouldSpawnWithShell({
+\t\t\tresolvedCommand,
+\t\t\tplatform: process$1.platform
+\t\t}) ? { shell: true } : {}
+\t});`,
+    },
+    {
+      label: 'agent scope command runner',
+      target: () => findFirstFileByName(path.join(outputDir, 'dist', 'plugin-sdk'), /^agent-scope-.*\.js$/),
+      search: `\tconst child = spawn(resolvedCommand, finalArgv.slice(1), {
+\t\tstdio,
+\t\tcwd,
+\t\tenv: resolvedEnv,
+\t\twindowsVerbatimArguments,
+\t\t...shouldSpawnWithShell({
+\t\t\tresolvedCommand,
+\t\t\tplatform: process$1.platform
+\t\t}) ? { shell: true } : {}
+\t});`,
+      replace: `\tconst child = spawn(resolvedCommand, finalArgv.slice(1), {
+\t\tstdio,
+\t\tcwd,
+\t\tenv: resolvedEnv,
+\t\twindowsVerbatimArguments,
+\t\twindowsHide: true,
+\t\t...shouldSpawnWithShell({
+\t\t\tresolvedCommand,
+\t\t\tplatform: process$1.platform
+\t\t}) ? { shell: true } : {}
+\t});`,
+    },
+    {
+      label: 'chrome launcher',
+      target: () => findFirstFileByName(path.join(outputDir, 'dist', 'plugin-sdk'), /^chrome-.*\.js$/),
+      search: `\t\treturn spawn(exe.path, args, {
+\t\t\tstdio: "pipe",
+\t\t\tenv: {
+\t\t\t\t...process.env,
+\t\t\t\tHOME: os.homedir()
+\t\t\t}
+\t\t});`,
+      replace: `\t\treturn spawn(exe.path, args, {
+\t\t\tstdio: "pipe",
+\t\t\twindowsHide: true,
+\t\t\tenv: {
+\t\t\t\t...process.env,
+\t\t\t\tHOME: os.homedir()
+\t\t\t}
+\t\t});`,
+    },
+    {
+      label: 'qmd runner',
+      target: () => findFirstFileByName(path.join(outputDir, 'dist', 'plugin-sdk'), /^qmd-manager-.*\.js$/),
+      search: `\t\t\tconst child = spawn(resolveWindowsCommandShim(this.qmd.command), args, {
+\t\t\t\tenv: this.env,
+\t\t\t\tcwd: this.workspaceDir
+\t\t\t});`,
+      replace: `\t\t\tconst child = spawn(resolveWindowsCommandShim(this.qmd.command), args, {
+\t\t\t\tenv: this.env,
+\t\t\t\tcwd: this.workspaceDir,
+\t\t\t\twindowsHide: true
+\t\t\t});`,
+    },
+    {
+      label: 'mcporter runner',
+      target: () => findFirstFileByName(path.join(outputDir, 'dist', 'plugin-sdk'), /^qmd-manager-.*\.js$/),
+      search: `\t\t\tconst child = spawn(resolveWindowsCommandShim("mcporter"), args, {
+\t\t\t\tenv: this.env,
+\t\t\t\tcwd: this.workspaceDir
+\t\t\t});`,
+      replace: `\t\t\tconst child = spawn(resolveWindowsCommandShim("mcporter"), args, {
+\t\t\t\tenv: this.env,
+\t\t\t\tcwd: this.workspaceDir,
+\t\t\t\twindowsHide: true
+\t\t\t});`,
+    },
+  ];
+
+  let count = 0;
+  for (const patch of replacePatches) {
+    const target = patch.target();
+    if (!target || !fs.existsSync(target)) {
+      echo`   ⚠️  Skipped patch for ${patch.label}: target file not found`;
+      continue;
+    }
+
+    const current = fs.readFileSync(target, 'utf8');
+    if (!current.includes(patch.search)) {
+      echo`   ⚠️  Skipped patch for ${patch.label}: expected source snippet not found`;
+      continue;
+    }
+
+    const next = current.replace(patch.search, patch.replace);
+    if (next !== current) {
+      fs.writeFileSync(target, next, 'utf8');
+      count++;
+    }
+  }
+
+  if (count > 0) {
+    echo`   🩹 Patched ${count} bundled runtime spawn site(s)`;
+  }
+}
+
 patchBrokenModules(outputNodeModules);
+patchBundledRuntime(OUTPUT);
 
 // 8. Verify the bundle
 const entryExists = fs.existsSync(path.join(OUTPUT, 'openclaw.mjs'));
