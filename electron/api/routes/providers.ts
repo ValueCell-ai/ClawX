@@ -1,15 +1,5 @@
 import type { IncomingMessage, ServerResponse } from 'http';
 import {
-  deleteApiKey,
-  deleteProvider,
-  getAllProvidersWithKeyInfo,
-  getApiKey,
-  getDefaultProvider,
-  getProvider,
-  hasApiKey,
-  saveProvider,
-  setDefaultProvider,
-  storeApiKey,
   type ProviderConfig,
 } from '../../utils/secure-storage';
 import {
@@ -135,19 +125,19 @@ export async function handleProviderRoutes(
   }
 
   if (url.pathname === '/api/providers' && req.method === 'GET') {
-    sendJson(res, 200, await getAllProvidersWithKeyInfo());
+    sendJson(res, 200, await providerService.listLegacyProvidersWithKeyInfo());
     return true;
   }
 
   if (url.pathname === '/api/providers/default' && req.method === 'GET') {
-    sendJson(res, 200, { providerId: await getDefaultProvider() ?? null });
+    sendJson(res, 200, { providerId: await providerService.getDefaultLegacyProvider() ?? null });
     return true;
   }
 
   if (url.pathname === '/api/providers/default' && req.method === 'PUT') {
     try {
       const body = await parseJsonBody<{ providerId: string }>(req);
-      await setDefaultProvider(body.providerId);
+      await providerService.setDefaultLegacyProvider(body.providerId);
       await syncDefaultProviderToRuntime(body.providerId, ctx.gatewayManager);
       sendJson(res, 200, { success: true });
     } catch (error) {
@@ -159,7 +149,7 @@ export async function handleProviderRoutes(
   if (url.pathname === '/api/providers/validate' && req.method === 'POST') {
     try {
       const body = await parseJsonBody<{ providerId: string; apiKey: string; options?: { baseUrl?: string } }>(req);
-      const provider = await getProvider(body.providerId);
+      const provider = await providerService.getLegacyProvider(body.providerId);
       const providerType = provider?.type || body.providerId;
       const registryBaseUrl = getProviderConfig(providerType)?.baseUrl;
       const resolvedBaseUrl = body.options?.baseUrl || provider?.baseUrl || registryBaseUrl;
@@ -211,11 +201,11 @@ export async function handleProviderRoutes(
     try {
       const body = await parseJsonBody<{ config: ProviderConfig; apiKey?: string }>(req);
       const config = body.config;
-      await saveProvider(config);
+      await providerService.saveLegacyProvider(config);
       if (body.apiKey !== undefined) {
         const trimmedKey = body.apiKey.trim();
         if (trimmedKey) {
-          await storeApiKey(config.id, trimmedKey);
+          await providerService.setLegacyProviderApiKey(config.id, trimmedKey);
           await syncProviderApiKeyToRuntime(config.type, config.id, trimmedKey);
         }
       }
@@ -231,15 +221,15 @@ export async function handleProviderRoutes(
     const providerId = decodeURIComponent(url.pathname.slice('/api/providers/'.length));
     if (providerId.endsWith('/api-key')) {
       const actualId = providerId.slice(0, -('/api-key'.length));
-      sendJson(res, 200, { apiKey: await getApiKey(actualId) });
+      sendJson(res, 200, { apiKey: await providerService.getLegacyProviderApiKey(actualId) });
       return true;
     }
     if (providerId.endsWith('/has-api-key')) {
       const actualId = providerId.slice(0, -('/has-api-key'.length));
-      sendJson(res, 200, { hasKey: await hasApiKey(actualId) });
+      sendJson(res, 200, { hasKey: await providerService.hasLegacyProviderApiKey(actualId) });
       return true;
     }
-    sendJson(res, 200, await getProvider(providerId));
+    sendJson(res, 200, await providerService.getLegacyProvider(providerId));
     return true;
   }
 
@@ -247,20 +237,20 @@ export async function handleProviderRoutes(
     const providerId = decodeURIComponent(url.pathname.slice('/api/providers/'.length));
     try {
       const body = await parseJsonBody<{ updates: Partial<ProviderConfig>; apiKey?: string }>(req);
-      const existing = await getProvider(providerId);
+      const existing = await providerService.getLegacyProvider(providerId);
       if (!existing) {
         sendJson(res, 404, { success: false, error: 'Provider not found' });
         return true;
       }
       const nextConfig: ProviderConfig = { ...existing, ...body.updates, updatedAt: new Date().toISOString() };
-      await saveProvider(nextConfig);
+      await providerService.saveLegacyProvider(nextConfig);
       if (body.apiKey !== undefined) {
         const trimmedKey = body.apiKey.trim();
         if (trimmedKey) {
-          await storeApiKey(providerId, trimmedKey);
+          await providerService.setLegacyProviderApiKey(providerId, trimmedKey);
           await syncProviderApiKeyToRuntime(nextConfig.type, providerId, trimmedKey);
         } else {
-          await deleteApiKey(providerId);
+          await providerService.deleteLegacyProviderApiKey(providerId);
           await syncDeletedProviderApiKeyToRuntime(existing, providerId);
         }
       }
@@ -275,14 +265,14 @@ export async function handleProviderRoutes(
   if (url.pathname.startsWith('/api/providers/') && req.method === 'DELETE') {
     const providerId = decodeURIComponent(url.pathname.slice('/api/providers/'.length));
     try {
-      const existing = await getProvider(providerId);
+      const existing = await providerService.getLegacyProvider(providerId);
       if (url.searchParams.get('apiKeyOnly') === '1') {
-        await deleteApiKey(providerId);
+        await providerService.deleteLegacyProviderApiKey(providerId);
         await syncDeletedProviderApiKeyToRuntime(existing, providerId);
         sendJson(res, 200, { success: true });
         return true;
       }
-      await deleteProvider(providerId);
+      await providerService.deleteLegacyProvider(providerId);
       await syncDeletedProviderToRuntime(existing, providerId, ctx.gatewayManager);
       sendJson(res, 200, { success: true });
     } catch (error) {

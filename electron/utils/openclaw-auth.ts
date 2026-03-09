@@ -386,21 +386,14 @@ export async function setOpenClawDefaultModel(
   const config = await readOpenClawJson();
   ensureMoonshotKimiWebSearchCnBaseUrl(config, provider);
 
-  const rawModel = modelOverride || getProviderDefaultModel(provider);
-  const model = rawModel
-    ? (rawModel.startsWith(`${provider}/`) ? rawModel : `${provider}/${rawModel}`)
-    : undefined;
+  const model = normalizeModelRef(provider, modelOverride);
   if (!model) {
     console.warn(`No default model mapping for provider "${provider}"`);
     return;
   }
 
-  const modelId = model.startsWith(`${provider}/`)
-    ? model.slice(provider.length + 1)
-    : model;
-  const fallbackModelIds = fallbackModels
-    .filter((fallback) => fallback.startsWith(`${provider}/`))
-    .map((fallback) => fallback.slice(provider.length + 1));
+  const modelId = extractModelId(provider, model);
+  const fallbackModelIds = extractFallbackModelIds(provider, fallbackModels);
 
   // Set the default model for the agents
   const agents = (config.agents || {}) as Record<string, unknown>;
@@ -415,51 +408,16 @@ export async function setOpenClawDefaultModel(
   // Configure models.providers for providers that need explicit registration.
   const providerCfg = getProviderConfig(provider);
   if (providerCfg) {
-    const models = (config.models || {}) as Record<string, unknown>;
-    const providers = (models.providers || {}) as Record<string, unknown>;
-    const removedLegacyMoonshot = removeLegacyMoonshotProviderEntry(provider, providers);
-
-    const existingProvider =
-      providers[provider] && typeof providers[provider] === 'object'
-        ? (providers[provider] as Record<string, unknown>)
-        : {};
-
-    const existingModels = Array.isArray(existingProvider.models)
-      ? (existingProvider.models as Array<Record<string, unknown>>)
-      : [];
-    const registryModels = (providerCfg.models ?? []).map((m) => ({ ...m })) as Array<Record<string, unknown>>;
-
-    const mergedModels = [...registryModels];
-    for (const item of existingModels) {
-      const id = typeof item?.id === 'string' ? item.id : '';
-      if (id && !mergedModels.some((m) => m.id === id)) {
-        mergedModels.push(item);
-      }
-    }
-    for (const candidateModelId of [modelId, ...fallbackModelIds]) {
-      if (candidateModelId && !mergedModels.some((m) => m.id === candidateModelId)) {
-        mergedModels.push({ id: candidateModelId, name: candidateModelId });
-      }
-    }
-
-    const providerEntry: Record<string, unknown> = {
-      ...existingProvider,
+    upsertOpenClawProviderEntry(config, provider, {
       baseUrl: providerCfg.baseUrl,
       api: providerCfg.api,
-      apiKey: providerCfg.apiKeyEnv,
-      models: mergedModels,
-    };
-    if (providerCfg.headers && Object.keys(providerCfg.headers).length > 0) {
-      providerEntry.headers = providerCfg.headers;
-    }
-    providers[provider] = providerEntry;
+      apiKeyEnv: providerCfg.apiKeyEnv,
+      headers: providerCfg.headers,
+      modelIds: [modelId, ...fallbackModelIds],
+      includeRegistryModels: true,
+      mergeExistingModels: true,
+    });
     console.log(`Configured models.providers.${provider} with baseUrl=${providerCfg.baseUrl}, model=${modelId}`);
-    if (removedLegacyMoonshot) {
-      console.log('Removed legacy models.providers.moonshot alias entry');
-    }
-
-    models.providers = providers;
-    config.models = models;
   } else {
     // Built-in provider: remove any stale models.providers entry
     const models = (config.models || {}) as Record<string, unknown>;
@@ -487,6 +445,99 @@ interface RuntimeProviderConfigOverride {
   apiKeyEnv?: string;
   headers?: Record<string, string>;
   authHeader?: boolean;
+}
+
+type ProviderEntryBuildOptions = {
+  baseUrl: string;
+  api: string;
+  apiKeyEnv?: string;
+  headers?: Record<string, string>;
+  authHeader?: boolean;
+  modelIds?: string[];
+  includeRegistryModels?: boolean;
+  mergeExistingModels?: boolean;
+};
+
+function normalizeModelRef(provider: string, modelOverride?: string): string | undefined {
+  const rawModel = modelOverride || getProviderDefaultModel(provider);
+  if (!rawModel) return undefined;
+  return rawModel.startsWith(`${provider}/`) ? rawModel : `${provider}/${rawModel}`;
+}
+
+function extractModelId(provider: string, modelRef: string): string {
+  return modelRef.startsWith(`${provider}/`) ? modelRef.slice(provider.length + 1) : modelRef;
+}
+
+function extractFallbackModelIds(provider: string, fallbackModels: string[]): string[] {
+  return fallbackModels
+    .filter((fallback) => fallback.startsWith(`${provider}/`))
+    .map((fallback) => fallback.slice(provider.length + 1));
+}
+
+function mergeProviderModels(
+  ...groups: Array<Array<Record<string, unknown>>>
+): Array<Record<string, unknown>> {
+  const merged: Array<Record<string, unknown>> = [];
+  const seen = new Set<string>();
+
+  for (const group of groups) {
+    for (const item of group) {
+      const id = typeof item?.id === 'string' ? item.id : '';
+      if (!id || seen.has(id)) continue;
+      seen.add(id);
+      merged.push(item);
+    }
+  }
+  return merged;
+}
+
+function upsertOpenClawProviderEntry(
+  config: Record<string, unknown>,
+  provider: string,
+  options: ProviderEntryBuildOptions,
+): void {
+  const models = (config.models || {}) as Record<string, unknown>;
+  const providers = (models.providers || {}) as Record<string, unknown>;
+  const removedLegacyMoonshot = removeLegacyMoonshotProviderEntry(provider, providers);
+  const existingProvider = (
+    providers[provider] && typeof providers[provider] === 'object'
+      ? (providers[provider] as Record<string, unknown>)
+      : {}
+  );
+
+  const existingModels = options.mergeExistingModels && Array.isArray(existingProvider.models)
+    ? (existingProvider.models as Array<Record<string, unknown>>)
+    : [];
+  const registryModels = options.includeRegistryModels
+    ? ((getProviderConfig(provider)?.models ?? []).map((m) => ({ ...m })) as Array<Record<string, unknown>>)
+    : [];
+  const runtimeModels = (options.modelIds ?? []).map((id) => ({ id, name: id }));
+
+  const nextProvider: Record<string, unknown> = {
+    ...existingProvider,
+    baseUrl: options.baseUrl,
+    api: options.api,
+    models: mergeProviderModels(registryModels, existingModels, runtimeModels),
+  };
+  if (options.apiKeyEnv) nextProvider.apiKey = options.apiKeyEnv;
+  if (options.headers && Object.keys(options.headers).length > 0) {
+    nextProvider.headers = options.headers;
+  } else {
+    delete nextProvider.headers;
+  }
+  if (options.authHeader !== undefined) {
+    nextProvider.authHeader = options.authHeader;
+  } else {
+    delete nextProvider.authHeader;
+  }
+
+  providers[provider] = nextProvider;
+  models.providers = providers;
+  config.models = models;
+
+  if (removedLegacyMoonshot) {
+    console.log('Removed legacy models.providers.moonshot alias entry');
+  }
 }
 
 function removeLegacyMoonshotProviderEntry(
@@ -528,26 +579,13 @@ export async function syncProviderConfigToOpenClaw(
   ensureMoonshotKimiWebSearchCnBaseUrl(config, provider);
 
   if (override.baseUrl && override.api) {
-    const models = (config.models || {}) as Record<string, unknown>;
-    const providers = (models.providers || {}) as Record<string, unknown>;
-    removeLegacyMoonshotProviderEntry(provider, providers);
-
-    const nextModels: Array<Record<string, unknown>> = [];
-    if (modelId) nextModels.push({ id: modelId, name: modelId });
-
-    const nextProvider: Record<string, unknown> = {
+    upsertOpenClawProviderEntry(config, provider, {
       baseUrl: override.baseUrl,
       api: override.api,
-      models: nextModels,
-    };
-    if (override.apiKeyEnv) nextProvider.apiKey = override.apiKeyEnv;
-    if (override.headers && Object.keys(override.headers).length > 0) {
-      nextProvider.headers = override.headers;
-    }
-
-    providers[provider] = nextProvider;
-    models.providers = providers;
-    config.models = models;
+      apiKeyEnv: override.apiKeyEnv,
+      headers: override.headers,
+      modelIds: modelId ? [modelId] : [],
+    });
   }
 
   // Ensure extension is enabled for oauth providers to prevent gateway wiping config
@@ -580,21 +618,14 @@ export async function setOpenClawDefaultModelWithOverride(
   const config = await readOpenClawJson();
   ensureMoonshotKimiWebSearchCnBaseUrl(config, provider);
 
-  const rawModel = modelOverride || getProviderDefaultModel(provider);
-  const model = rawModel
-    ? (rawModel.startsWith(`${provider}/`) ? rawModel : `${provider}/${rawModel}`)
-    : undefined;
+  const model = normalizeModelRef(provider, modelOverride);
   if (!model) {
     console.warn(`No default model mapping for provider "${provider}"`);
     return;
   }
 
-  const modelId = model.startsWith(`${provider}/`)
-    ? model.slice(provider.length + 1)
-    : model;
-  const fallbackModelIds = fallbackModels
-    .filter((fallback) => fallback.startsWith(`${provider}/`))
-    .map((fallback) => fallback.slice(provider.length + 1));
+  const modelId = extractModelId(provider, model);
+  const fallbackModelIds = extractFallbackModelIds(provider, fallbackModels);
 
   const agents = (config.agents || {}) as Record<string, unknown>;
   const defaults = (agents.defaults || {}) as Record<string, unknown>;
@@ -606,33 +637,14 @@ export async function setOpenClawDefaultModelWithOverride(
   config.agents = agents;
 
   if (override.baseUrl && override.api) {
-    const models = (config.models || {}) as Record<string, unknown>;
-    const providers = (models.providers || {}) as Record<string, unknown>;
-    removeLegacyMoonshotProviderEntry(provider, providers);
-
-    const nextModels: Array<Record<string, unknown>> = [];
-    for (const candidateModelId of [modelId, ...fallbackModelIds]) {
-      if (candidateModelId && !nextModels.some((entry) => entry.id === candidateModelId)) {
-        nextModels.push({ id: candidateModelId, name: candidateModelId });
-      }
-    }
-
-    const nextProvider: Record<string, unknown> = {
+    upsertOpenClawProviderEntry(config, provider, {
       baseUrl: override.baseUrl,
       api: override.api,
-      models: nextModels,
-    };
-    if (override.apiKeyEnv) nextProvider.apiKey = override.apiKeyEnv;
-    if (override.headers && Object.keys(override.headers).length > 0) {
-      nextProvider.headers = override.headers;
-    }
-    if (override.authHeader !== undefined) {
-      nextProvider.authHeader = override.authHeader;
-    }
-
-    providers[provider] = nextProvider;
-    models.providers = providers;
-    config.models = models;
+      apiKeyEnv: override.apiKeyEnv,
+      headers: override.headers,
+      authHeader: override.authHeader,
+      modelIds: [modelId, ...fallbackModelIds],
+    });
   }
 
   const gateway = (config.gateway || {}) as Record<string, unknown>;

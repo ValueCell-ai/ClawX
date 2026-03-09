@@ -44,6 +44,28 @@ describe('host-api', () => {
     expect(result.ok).toBe(1);
   });
 
+  it('throws proxy error from unified envelope', async () => {
+    invokeIpcMock.mockResolvedValueOnce({
+      ok: false,
+      error: { message: 'No handler registered for hostapi:fetch' },
+    });
+
+    const { hostApiFetch } = await import('@/lib/host-api');
+    await expect(hostApiFetch('/api/test')).rejects.toThrow('No handler registered for hostapi:fetch');
+  });
+
+  it('throws message from legacy non-ok envelope', async () => {
+    invokeIpcMock.mockResolvedValueOnce({
+      success: true,
+      ok: false,
+      status: 401,
+      json: { error: 'Invalid Authentication' },
+    });
+
+    const { hostApiFetch } = await import('@/lib/host-api');
+    await expect(hostApiFetch('/api/test')).rejects.toThrow('Invalid Authentication');
+  });
+
   it('falls back to browser fetch only when IPC channel is unavailable', async () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
@@ -64,4 +86,3 @@ describe('host-api', () => {
     );
   });
 });
-

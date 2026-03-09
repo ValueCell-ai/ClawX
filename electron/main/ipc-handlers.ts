@@ -50,6 +50,7 @@ import {
 } from '../services/providers/provider-runtime-sync';
 import { validateApiKeyWithProvider } from '../services/providers/provider-validation';
 import { appUpdater } from './updater';
+import { PORTS } from '../utils/config';
 
 type AppRequest = {
   id?: string;
@@ -79,6 +80,7 @@ export function registerIpcHandlers(
 ): void {
   // Unified request protocol (non-breaking: legacy channels remain available)
   registerUnifiedRequestHandlers(gatewayManager);
+  registerHostApiProxyHandlers();
 
   // Gateway handlers
   registerGatewayHandlers(gatewayManager, mainWindow);
@@ -135,6 +137,68 @@ export function registerIpcHandlers(
   registerFileHandlers();
 }
 
+type HostApiFetchRequest = {
+  path: string;
+  method?: string;
+  headers?: Record<string, string>;
+  body?: unknown;
+};
+
+function registerHostApiProxyHandlers(): void {
+  ipcMain.handle('hostapi:fetch', async (_, request: HostApiFetchRequest) => {
+    try {
+      const path = typeof request?.path === 'string' ? request.path : '';
+      if (!path || !path.startsWith('/')) {
+        throw new Error(`Invalid host API path: ${String(request?.path)}`);
+      }
+
+      const method = (request.method || 'GET').toUpperCase();
+      const headers: Record<string, string> = { ...(request.headers || {}) };
+      let body: BodyInit | undefined;
+
+      if (request.body !== undefined && request.body !== null) {
+        if (typeof request.body === 'string') {
+          body = request.body;
+        } else {
+          body = JSON.stringify(request.body);
+          if (!headers['Content-Type'] && !headers['content-type']) {
+            headers['Content-Type'] = 'application/json';
+          }
+        }
+      }
+
+      const response = await fetch(`http://127.0.0.1:${PORTS.CLAWX_HOST_API}${path}`, {
+        method,
+        headers,
+        body,
+      });
+
+      const data: { status: number; ok: boolean; json?: unknown; text?: string } = {
+        status: response.status,
+        ok: response.ok,
+      };
+
+      if (response.status !== 204) {
+        const contentType = response.headers.get('content-type') || '';
+        if (contentType.includes('application/json')) {
+          data.json = await response.json().catch(() => undefined);
+        } else {
+          data.text = await response.text().catch(() => '');
+        }
+      }
+
+      return { ok: true, data };
+    } catch (error) {
+      return {
+        ok: false,
+        error: {
+          message: error instanceof Error ? error.message : String(error),
+        },
+      };
+    }
+  });
+}
+
 function mapAppErrorCode(error: unknown): AppResponse['error']['code'] {
   const msg = error instanceof Error ? error.message.toLowerCase() : String(error).toLowerCase();
   if (msg.includes('timeout')) return 'TIMEOUT';
@@ -156,6 +220,7 @@ function isProxyKey(key: keyof AppSettings): boolean {
 }
 
 function registerUnifiedRequestHandlers(gatewayManager: GatewayManager): void {
+  const providerService = getProviderService();
   const handleProxySettingsChange = async () => {
     const settings = await getAllSettings();
     await applyProxySettings(settings);
@@ -194,32 +259,32 @@ function registerUnifiedRequestHandlers(gatewayManager: GatewayManager): void {
         }
         case 'provider': {
           if (request.action === 'list') {
-            data = await getAllProvidersWithKeyInfo();
+            data = await providerService.listLegacyProvidersWithKeyInfo();
             break;
           }
           if (request.action === 'get') {
             const payload = request.payload as { providerId?: string } | string | undefined;
             const providerId = typeof payload === 'string' ? payload : payload?.providerId;
             if (!providerId) throw new Error('Invalid provider.get payload');
-            data = await getProvider(providerId);
+            data = await providerService.getLegacyProvider(providerId);
             break;
           }
           if (request.action === 'getDefault') {
-            data = await getDefaultProvider();
+            data = await providerService.getDefaultLegacyProvider();
             break;
           }
           if (request.action === 'hasApiKey') {
             const payload = request.payload as { providerId?: string } | string | undefined;
             const providerId = typeof payload === 'string' ? payload : payload?.providerId;
             if (!providerId) throw new Error('Invalid provider.hasApiKey payload');
-            data = await hasApiKey(providerId);
+            data = await providerService.hasLegacyProviderApiKey(providerId);
             break;
           }
           if (request.action === 'getApiKey') {
             const payload = request.payload as { providerId?: string } | string | undefined;
             const providerId = typeof payload === 'string' ? payload : payload?.providerId;
             if (!providerId) throw new Error('Invalid provider.getApiKey payload');
-            data = await getApiKey(providerId);
+            data = await providerService.getLegacyProviderApiKey(providerId);
             break;
           }
           if (request.action === 'validateKey') {
@@ -234,7 +299,7 @@ function registerUnifiedRequestHandlers(gatewayManager: GatewayManager): void {
               throw new Error('Invalid provider.validateKey payload');
             }
 
-            const provider = await getProvider(providerId);
+            const provider = await providerService.getLegacyProvider(providerId);
             const providerType = provider?.type || providerId;
             const registryBaseUrl = getProviderConfig(providerType)?.baseUrl;
             const resolvedBaseUrl = options?.baseUrl || provider?.baseUrl || registryBaseUrl;
@@ -251,12 +316,12 @@ function registerUnifiedRequestHandlers(gatewayManager: GatewayManager): void {
             if (!config) throw new Error('Invalid provider.save payload');
 
             try {
-              await saveProvider(config);
+              await providerService.saveLegacyProvider(config);
 
               if (apiKey !== undefined) {
                 const trimmedKey = apiKey.trim();
                 if (trimmedKey) {
-                  await storeApiKey(config.id, trimmedKey);
+                  await providerService.setLegacyProviderApiKey(config.id, trimmedKey);
                 }
               }
 
@@ -278,8 +343,8 @@ function registerUnifiedRequestHandlers(gatewayManager: GatewayManager): void {
             if (!providerId) throw new Error('Invalid provider.delete payload');
 
             try {
-              const existing = await getProvider(providerId);
-              await deleteProvider(providerId);
+              const existing = await providerService.getLegacyProvider(providerId);
+              await providerService.deleteLegacyProvider(providerId);
               if (existing?.type) {
                 try {
                   await syncDeletedProviderToRuntime(existing, providerId, gatewayManager);
@@ -303,8 +368,8 @@ function registerUnifiedRequestHandlers(gatewayManager: GatewayManager): void {
             if (!providerId || typeof apiKey !== 'string') throw new Error('Invalid provider.setApiKey payload');
 
             try {
-              await storeApiKey(providerId, apiKey);
-              const provider = await getProvider(providerId);
+              await providerService.setLegacyProviderApiKey(providerId, apiKey);
+              const provider = await providerService.getLegacyProvider(providerId);
               const providerType = provider?.type || providerId;
               const ock = getOpenClawProviderKey(providerType, providerId);
               try {
@@ -328,13 +393,13 @@ function registerUnifiedRequestHandlers(gatewayManager: GatewayManager): void {
             const apiKey = Array.isArray(payload) ? payload[2] : payload?.apiKey;
             if (!providerId || !updates) throw new Error('Invalid provider.updateWithKey payload');
 
-            const existing = await getProvider(providerId);
+            const existing = await providerService.getLegacyProvider(providerId);
             if (!existing) {
               data = { success: false, error: 'Provider not found' };
               break;
             }
 
-            const previousKey = await getApiKey(providerId);
+            const previousKey = await providerService.getLegacyProviderApiKey(providerId);
             const previousOck = getOpenClawProviderKey(existing.type, providerId);
 
             try {
@@ -344,15 +409,15 @@ function registerUnifiedRequestHandlers(gatewayManager: GatewayManager): void {
                 updatedAt: new Date().toISOString(),
               };
               const ock = getOpenClawProviderKey(nextConfig.type, providerId);
-              await saveProvider(nextConfig);
+              await providerService.saveLegacyProvider(nextConfig);
 
               if (apiKey !== undefined) {
                 const trimmedKey = apiKey.trim();
                 if (trimmedKey) {
-                  await storeApiKey(providerId, trimmedKey);
+                  await providerService.setLegacyProviderApiKey(providerId, trimmedKey);
                   await saveProviderKeyToOpenClaw(ock, trimmedKey);
                 } else {
-                  await deleteApiKey(providerId);
+                  await providerService.deleteLegacyProviderApiKey(providerId);
                   await removeProviderFromOpenClaw(ock);
                 }
               }
@@ -366,12 +431,12 @@ function registerUnifiedRequestHandlers(gatewayManager: GatewayManager): void {
               data = { success: true };
             } catch (error) {
               try {
-                await saveProvider(existing);
+                await providerService.saveLegacyProvider(existing);
                 if (previousKey) {
-                  await storeApiKey(providerId, previousKey);
+                  await providerService.setLegacyProviderApiKey(providerId, previousKey);
                   await saveProviderKeyToOpenClaw(previousOck, previousKey);
                 } else {
-                  await deleteApiKey(providerId);
+                  await providerService.deleteLegacyProviderApiKey(providerId);
                   await removeProviderFromOpenClaw(previousOck);
                 }
               } catch (rollbackError) {
@@ -387,8 +452,8 @@ function registerUnifiedRequestHandlers(gatewayManager: GatewayManager): void {
             const providerId = typeof payload === 'string' ? payload : payload?.providerId;
             if (!providerId) throw new Error('Invalid provider.deleteApiKey payload');
             try {
-              await deleteApiKey(providerId);
-              const provider = await getProvider(providerId);
+              await providerService.deleteLegacyProviderApiKey(providerId);
+              const provider = await providerService.getLegacyProvider(providerId);
               const providerType = provider?.type || providerId;
               const ock = getOpenClawProviderKey(providerType, providerId);
               try {
@@ -410,8 +475,8 @@ function registerUnifiedRequestHandlers(gatewayManager: GatewayManager): void {
             if (!providerId) throw new Error('Invalid provider.setDefault payload');
 
             try {
-              await setDefaultProvider(providerId);
-              const provider = await getProvider(providerId);
+              await providerService.setDefaultLegacyProvider(providerId);
+              const provider = await providerService.getLegacyProvider(providerId);
               if (provider) {
                 try {
                   await syncDefaultProviderToRuntime(providerId, gatewayManager);

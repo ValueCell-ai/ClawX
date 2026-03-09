@@ -18,6 +18,12 @@ import { logger } from '../../utils/logger';
 const GOOGLE_OAUTH_RUNTIME_PROVIDER = 'google-gemini-cli';
 const GOOGLE_OAUTH_DEFAULT_MODEL_REF = `${GOOGLE_OAUTH_RUNTIME_PROVIDER}/gemini-3-pro-preview`;
 
+type RuntimeProviderSyncContext = {
+  runtimeProviderKey: string;
+  meta: ReturnType<typeof getProviderConfig>;
+  api: string;
+};
+
 export function getOpenClawProviderKey(type: string, providerId: string): string {
   if (type === 'custom' || type === 'ollama') {
     const suffix = providerId.replace(/-/g, '').slice(0, 8);
@@ -172,63 +178,119 @@ export async function syncAllProviderAuthToRuntime(): Promise<void> {
   }
 }
 
-export async function syncSavedProviderToRuntime(
+async function syncProviderSecretToRuntime(
   config: ProviderConfig,
+  runtimeProviderKey: string,
   apiKey: string | undefined,
-  gatewayManager?: GatewayManager,
 ): Promise<void> {
-  const ock = await resolveRuntimeProviderKey(config);
   const secret = await getProviderSecret(config.id);
-
   if (apiKey !== undefined) {
     const trimmedKey = apiKey.trim();
     if (trimmedKey) {
-      await saveProviderKeyToOpenClaw(ock, trimmedKey);
+      await saveProviderKeyToOpenClaw(runtimeProviderKey, trimmedKey);
     }
-  } else if (secret?.type === 'api_key') {
-    await saveProviderKeyToOpenClaw(ock, secret.apiKey);
-  } else if (secret?.type === 'oauth') {
-    await saveOAuthTokenToOpenClaw(ock, {
+    return;
+  }
+
+  if (secret?.type === 'api_key') {
+    await saveProviderKeyToOpenClaw(runtimeProviderKey, secret.apiKey);
+    return;
+  }
+
+  if (secret?.type === 'oauth') {
+    await saveOAuthTokenToOpenClaw(runtimeProviderKey, {
       access: secret.accessToken,
       refresh: secret.refreshToken,
       expires: secret.expiresAt,
       email: secret.email,
       projectId: secret.subject,
     });
-  } else if (secret?.type === 'local' && secret.apiKey) {
-    await saveProviderKeyToOpenClaw(ock, secret.apiKey);
-  }
-
-  const meta = getProviderConfig(config.type);
-  const api = config.type === 'custom' || config.type === 'ollama' ? 'openai-completions' : meta?.api;
-
-  if (!api) {
     return;
   }
 
-  await syncProviderConfigToOpenClaw(ock, config.model, {
-    baseUrl: config.baseUrl || meta?.baseUrl,
-    api,
-    apiKeyEnv: meta?.apiKeyEnv,
-    headers: meta?.headers,
-  });
+  if (secret?.type === 'local' && secret.apiKey) {
+    await saveProviderKeyToOpenClaw(runtimeProviderKey, secret.apiKey);
+  }
+}
 
-  if (config.type === 'custom' || config.type === 'ollama') {
-    const resolvedKey = apiKey !== undefined ? (apiKey.trim() || null) : await getApiKey(config.id);
-    if (resolvedKey && config.baseUrl) {
-      const modelId = config.model;
-      await updateAgentModelProvider(ock, {
-        baseUrl: config.baseUrl,
-        api: 'openai-completions',
-        models: modelId ? [{ id: modelId, name: modelId }] : [],
-        apiKey: resolvedKey,
-      });
-    }
+async function resolveRuntimeSyncContext(config: ProviderConfig): Promise<RuntimeProviderSyncContext | null> {
+  const runtimeProviderKey = await resolveRuntimeProviderKey(config);
+  const meta = getProviderConfig(config.type);
+  const api = config.type === 'custom' || config.type === 'ollama' ? 'openai-completions' : meta?.api;
+  if (!api) {
+    return null;
+  }
+
+  return {
+    runtimeProviderKey,
+    meta,
+    api,
+  };
+}
+
+async function syncRuntimeProviderConfig(
+  config: ProviderConfig,
+  context: RuntimeProviderSyncContext,
+): Promise<void> {
+  await syncProviderConfigToOpenClaw(context.runtimeProviderKey, config.model, {
+    baseUrl: config.baseUrl || context.meta?.baseUrl,
+    api: context.api,
+    apiKeyEnv: context.meta?.apiKeyEnv,
+    headers: context.meta?.headers,
+  });
+}
+
+async function syncCustomProviderAgentModel(
+  config: ProviderConfig,
+  runtimeProviderKey: string,
+  apiKey: string | undefined,
+): Promise<void> {
+  if (config.type !== 'custom' && config.type !== 'ollama') {
+    return;
+  }
+
+  const resolvedKey = apiKey !== undefined ? (apiKey.trim() || null) : await getApiKey(config.id);
+  if (!resolvedKey || !config.baseUrl) {
+    return;
+  }
+
+  const modelId = config.model;
+  await updateAgentModelProvider(runtimeProviderKey, {
+    baseUrl: config.baseUrl,
+    api: 'openai-completions',
+    models: modelId ? [{ id: modelId, name: modelId }] : [],
+    apiKey: resolvedKey,
+  });
+}
+
+async function syncProviderToRuntime(
+  config: ProviderConfig,
+  apiKey: string | undefined,
+): Promise<RuntimeProviderSyncContext | null> {
+  const context = await resolveRuntimeSyncContext(config);
+  if (!context) {
+    return null;
+  }
+
+  await syncProviderSecretToRuntime(config, context.runtimeProviderKey, apiKey);
+  await syncRuntimeProviderConfig(config, context);
+  await syncCustomProviderAgentModel(config, context.runtimeProviderKey, apiKey);
+  return context;
+}
+
+export async function syncSavedProviderToRuntime(
+  config: ProviderConfig,
+  apiKey: string | undefined,
+  gatewayManager?: GatewayManager,
+): Promise<void> {
+  const context = await syncProviderToRuntime(config, apiKey);
+  if (!context) {
+    return;
   }
 
   scheduleGatewayRestart(
     gatewayManager,
-    `Scheduling Gateway restart after saving provider "${ock}" config`,
+    `Scheduling Gateway restart after saving provider "${context.runtimeProviderKey}" config`,
   );
 }
 
@@ -237,54 +299,13 @@ export async function syncUpdatedProviderToRuntime(
   apiKey: string | undefined,
   gatewayManager?: GatewayManager,
 ): Promise<void> {
-  const ock = await resolveRuntimeProviderKey(config);
-  const fallbackModels = await getProviderFallbackModelRefs(config);
-  const meta = getProviderConfig(config.type);
-  const api = config.type === 'custom' || config.type === 'ollama' ? 'openai-completions' : meta?.api;
-  const secret = await getProviderSecret(config.id);
-
-  if (!api) {
+  const context = await syncProviderToRuntime(config, apiKey);
+  if (!context) {
     return;
   }
 
-  if (apiKey !== undefined) {
-    const trimmedKey = apiKey.trim();
-    if (trimmedKey) {
-      await saveProviderKeyToOpenClaw(ock, trimmedKey);
-    }
-  } else if (secret?.type === 'api_key') {
-    await saveProviderKeyToOpenClaw(ock, secret.apiKey);
-  } else if (secret?.type === 'oauth') {
-    await saveOAuthTokenToOpenClaw(ock, {
-      access: secret.accessToken,
-      refresh: secret.refreshToken,
-      expires: secret.expiresAt,
-      email: secret.email,
-      projectId: secret.subject,
-    });
-  } else if (secret?.type === 'local' && secret.apiKey) {
-    await saveProviderKeyToOpenClaw(ock, secret.apiKey);
-  }
-
-  await syncProviderConfigToOpenClaw(ock, config.model, {
-    baseUrl: config.baseUrl || meta?.baseUrl,
-    api,
-    apiKeyEnv: meta?.apiKeyEnv,
-    headers: meta?.headers,
-  });
-
-  if (config.type === 'custom' || config.type === 'ollama') {
-    const resolvedKey = apiKey !== undefined ? (apiKey.trim() || null) : await getApiKey(config.id);
-    if (resolvedKey && config.baseUrl) {
-      const modelId = config.model;
-      await updateAgentModelProvider(ock, {
-        baseUrl: config.baseUrl,
-        api: 'openai-completions',
-        models: modelId ? [{ id: modelId, name: modelId }] : [],
-        apiKey: resolvedKey,
-      });
-    }
-  }
+  const ock = context.runtimeProviderKey;
+  const fallbackModels = await getProviderFallbackModelRefs(config);
 
   const defaultProviderId = await getDefaultProvider();
   if (defaultProviderId === config.id) {

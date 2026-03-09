@@ -20,17 +20,21 @@ import {
 import {
   deleteApiKey,
   deleteProvider,
-  getAllProviders,
-  getAllProvidersWithKeyInfo,
   getApiKey,
-  getDefaultProvider,
-  getProvider,
   hasApiKey,
   saveProvider,
   setDefaultProvider,
   storeApiKey,
 } from '../../utils/secure-storage';
 import type { ProviderWithKeyInfo } from '../../shared/providers/types';
+
+function maskApiKey(apiKey: string | null): string | null {
+  if (!apiKey) return null;
+  if (apiKey.length > 12) {
+    return `${apiKey.substring(0, 4)}${'*'.repeat(apiKey.length - 8)}${apiKey.substring(apiKey.length - 4)}`;
+  }
+  return '*'.repeat(apiKey.length);
+}
 
 export class ProviderService {
   async listVendors(): Promise<ProviderDefinition[]> {
@@ -49,7 +53,7 @@ export class ProviderService {
 
   async getDefaultAccountId(): Promise<string | undefined> {
     await ensureProviderStoreMigrated();
-    return (await getDefaultProvider()) ?? getDefaultProviderAccountId();
+    return getDefaultProviderAccountId();
   }
 
   async createAccount(account: ProviderAccount, apiKey?: string): Promise<ProviderAccount> {
@@ -107,31 +111,54 @@ export class ProviderService {
   }
 
   async listLegacyProviders(): Promise<ProviderConfig[]> {
-    return getAllProviders();
+    await ensureProviderStoreMigrated();
+    const accounts = await listProviderAccounts();
+    return accounts.map(providerAccountToConfig);
   }
 
   async listLegacyProvidersWithKeyInfo(): Promise<ProviderWithKeyInfo[]> {
-    return getAllProvidersWithKeyInfo();
+    const providers = await this.listLegacyProviders();
+    const results: ProviderWithKeyInfo[] = [];
+    for (const provider of providers) {
+      const apiKey = await getApiKey(provider.id);
+      results.push({
+        ...provider,
+        hasKey: !!apiKey,
+        keyMasked: maskApiKey(apiKey),
+      });
+    }
+    return results;
   }
 
   async getLegacyProvider(providerId: string): Promise<ProviderConfig | null> {
-    return getProvider(providerId);
+    await ensureProviderStoreMigrated();
+    const account = await getProviderAccount(providerId);
+    return account ? providerAccountToConfig(account) : null;
   }
 
   async saveLegacyProvider(config: ProviderConfig): Promise<void> {
-    await saveProvider(config);
+    await ensureProviderStoreMigrated();
+    const account = providerConfigToAccount(config);
+    const existing = await getProviderAccount(config.id);
+    if (existing) {
+      await this.updateAccount(config.id, account);
+      return;
+    }
+    await this.createAccount(account);
   }
 
   async deleteLegacyProvider(providerId: string): Promise<boolean> {
-    return deleteProvider(providerId);
+    await ensureProviderStoreMigrated();
+    await this.deleteAccount(providerId);
+    return true;
   }
 
   async setDefaultLegacyProvider(providerId: string): Promise<void> {
-    await setDefaultProvider(providerId);
+    await this.setDefaultAccount(providerId);
   }
 
   async getDefaultLegacyProvider(): Promise<string | undefined> {
-    return getDefaultProvider();
+    return this.getDefaultAccountId();
   }
 
   async setLegacyProviderApiKey(providerId: string, apiKey: string): Promise<boolean> {

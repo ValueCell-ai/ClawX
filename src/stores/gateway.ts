@@ -3,12 +3,13 @@
  * Uses Host API + SSE for lifecycle/status and a direct renderer WebSocket for runtime RPC.
  */
 import { create } from 'zustand';
-import { createHostEventSource, hostApiFetch } from '@/lib/host-api';
+import { hostApiFetch } from '@/lib/host-api';
 import { invokeIpc } from '@/lib/api-client';
+import { subscribeHostEvent } from '@/lib/host-events';
 import type { GatewayStatus } from '../types/gateway';
 
 let gatewayInitPromise: Promise<void> | null = null;
-let gatewayEventSource: EventSource | null = null;
+let gatewayEventUnsubscribers: Array<() => void> | null = null;
 
 interface GatewayHealth {
   ok: boolean;
@@ -148,37 +149,39 @@ export const useGatewayStore = create<GatewayState>((set, get) => ({
         const status = await hostApiFetch<GatewayStatus>('/api/gateway/status');
         set({ status, isInitialized: true });
 
-        if (!gatewayEventSource) {
-          gatewayEventSource = createHostEventSource();
-          gatewayEventSource.addEventListener('gateway:status', (event) => {
-            set({ status: JSON.parse((event as MessageEvent).data) as GatewayStatus });
-          });
-          gatewayEventSource.addEventListener('gateway:error', (event) => {
-            const payload = JSON.parse((event as MessageEvent).data) as { message?: string };
+        if (!gatewayEventUnsubscribers) {
+          const unsubscribers: Array<() => void> = [];
+          unsubscribers.push(subscribeHostEvent<GatewayStatus>('gateway:status', (payload) => {
+            set({ status: payload });
+          }));
+          unsubscribers.push(subscribeHostEvent<{ message?: string }>('gateway:error', (payload) => {
             set({ lastError: payload.message || 'Gateway error' });
-          });
-          gatewayEventSource.addEventListener('gateway:notification', (event) => {
-            handleGatewayNotification(JSON.parse((event as MessageEvent).data) as {
-              method?: string;
-              params?: Record<string, unknown>;
-            });
-          });
-          gatewayEventSource.addEventListener('gateway:chat-message', (event) => {
-            handleGatewayChatMessage(JSON.parse((event as MessageEvent).data));
-          });
-          gatewayEventSource.addEventListener('gateway:channel-status', (event) => {
-            import('./channels')
-              .then(({ useChannelsStore }) => {
-                const update = JSON.parse((event as MessageEvent).data) as { channelId?: string; status?: string };
-                if (!update.channelId || !update.status) return;
-                const state = useChannelsStore.getState();
-                const channel = state.channels.find((item) => item.type === update.channelId);
-                if (channel) {
-                  state.updateChannel(channel.id, { status: mapChannelStatus(update.status) });
-                }
-              })
-              .catch(() => {});
-          });
+          }));
+          unsubscribers.push(subscribeHostEvent<{ method?: string; params?: Record<string, unknown> }>(
+            'gateway:notification',
+            (payload) => {
+              handleGatewayNotification(payload);
+            },
+          ));
+          unsubscribers.push(subscribeHostEvent('gateway:chat-message', (payload) => {
+            handleGatewayChatMessage(payload);
+          }));
+          unsubscribers.push(subscribeHostEvent<{ channelId?: string; status?: string }>(
+            'gateway:channel-status',
+            (update) => {
+              import('./channels')
+                .then(({ useChannelsStore }) => {
+                  if (!update.channelId || !update.status) return;
+                  const state = useChannelsStore.getState();
+                  const channel = state.channels.find((item) => item.type === update.channelId);
+                  if (channel) {
+                    state.updateChannel(channel.id, { status: mapChannelStatus(update.status) });
+                  }
+                })
+                .catch(() => {});
+            },
+          ));
+          gatewayEventUnsubscribers = unsubscribers;
         }
       } catch (error) {
         console.error('Failed to initialize Gateway:', error);
