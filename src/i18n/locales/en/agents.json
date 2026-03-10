@@ -1,6 +1,6 @@
 {
     "title": "Agents",
-    "subtitle": "Manage your OpenClaw agents and their channel ownership",
+    "subtitle": "When adding a new Agent, ClawX will copy the main Agent's workspace files and runtime auth setup. The configuration can be modified through a dialog.",
     "refresh": "Refresh",
     "addAgent": "Add Agent",
     "gatewayWarning": "Gateway service is not running. Agent/channel changes may take a moment to apply.",

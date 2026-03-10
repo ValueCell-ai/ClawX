@@ -1,6 +1,6 @@
 {
     "title": "Agents",
-    "subtitle": "OpenClaw エージェントとチャンネルの所属を管理します",
+    "subtitle": "新しい Agent を追加すると、ClawX はメイン Agent のワークスペース初期ファイルと実行時認証設定をコピーします。これらの設定は対話形式で編集できます。",
     "refresh": "更新",
     "addAgent": "Agent を追加",
     "gatewayWarning": "Gateway サービスが停止しています。Agent または Channel の変更が反映されるまで少し時間がかかる場合があります。",

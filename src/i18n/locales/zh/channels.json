@@ -1,6 +1,6 @@
 {
     "title": "消息频道",
-    "subtitle": "连接到消息平台。",
+    "subtitle": "连接到消息平台，配置仅对主 Agent 生效。",
     "refresh": "刷新",
     "addChannel": "添加频道",
     "stats": {

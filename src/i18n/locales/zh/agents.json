@@ -1,6 +1,6 @@
 {
     "title": "Agents",
-    "subtitle": "管理 OpenClaw Agent 以及它们的 Channel 归属",
+    "subtitle": "添加新的 Agent 时，ClawX 会复制主 Agent 的工作区引导文件和运行时认证配置， 配置可以通过以对话的形式进行修改。",
     "refresh": "刷新",
     "addAgent": "添加 Agent",
     "gatewayWarning": "Gateway 服务未运行。Agent 或 Channel 变更可能需要一点时间生效。",

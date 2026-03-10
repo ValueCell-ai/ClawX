@@ -1,6 +1,6 @@
 {
     "title": "Messaging Channels",
-    "subtitle": "Manage your messaging channels and connections",
+    "subtitle": "Manage your messaging channels and connections. The configuration is only effective for the main Agent.",
     "refresh": "Refresh",
     "addChannel": "Add Channel",
     "stats": {
