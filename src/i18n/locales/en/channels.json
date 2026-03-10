@@ -187,7 +187,7 @@
         },
         "wecom": {
             "description": "Connect WeCom Bot via plugin",
-            "docsUrl": "https://developer.work.weixin.qq.com/document/path/90000/90136/91770",
+            "docsUrl": "https://open.work.weixin.qq.com/help2/pc/cat?doc_id=21657",
             "fields": {
                 "botId": {
                     "label": "Bot ID",
