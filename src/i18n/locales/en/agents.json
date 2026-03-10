@@ -20,7 +20,7 @@
     },
     "deleteDialog": {
         "title": "Delete Agent",
-        "message": "Delete \"{{name}}\" from ClawX? Existing workspace and session files will be left on disk."
+        "message": "Delete \"{{name}}\" from ClawX? This permanently deletes the agent and its ClawX-managed workspace, runtime, and session files from disk."
     },
     "settingsDialog": {
         "title": "{{name}} Settings",

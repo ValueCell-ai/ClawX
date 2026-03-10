@@ -1,6 +1,6 @@
 /**
  * OpenClaw Auth Profiles Utility
- * Writes API keys to ~/.openclaw/agents/main/agent/auth-profiles.json
+ * Writes API keys to configured OpenClaw agent auth-profiles.json files
  * so the OpenClaw Gateway can load them for AI provider calls.
  *
  * All file I/O is asynchronous (fs/promises) to avoid blocking the
@@ -8,10 +8,11 @@
  * equivalents could stall for 500 ms – 2 s+ per call, causing "Not
  * Responding" hangs.
  */
-import { access, mkdir, readFile, writeFile, readdir } from 'fs/promises';
-import { constants, Dirent } from 'fs';
+import { access, mkdir, readFile, writeFile } from 'fs/promises';
+import { constants } from 'fs';
 import { join } from 'path';
 import { homedir } from 'os';
+import { listConfiguredAgentIds } from './agent-config';
 import {
   getProviderEnvVar,
   getProviderDefaultModel,
@@ -120,14 +121,7 @@ async function discoverAgentIds(): Promise<string[]> {
   const agentsDir = join(homedir(), '.openclaw', 'agents');
   try {
     if (!(await fileExists(agentsDir))) return ['main'];
-    const entries: Dirent[] = await readdir(agentsDir, { withFileTypes: true });
-    const ids: string[] = [];
-    for (const d of entries) {
-      if (d.isDirectory() && await fileExists(join(agentsDir, d.name, 'agent'))) {
-        ids.push(d.name);
-      }
-    }
-    return ids.length > 0 ? ids : ['main'];
+    return await listConfiguredAgentIds();
   } catch {
     return ['main'];
   }

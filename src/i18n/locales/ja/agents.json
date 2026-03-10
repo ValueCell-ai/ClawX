@@ -20,7 +20,7 @@
     },
     "deleteDialog": {
         "title": "Agent を削除",
-        "message": "ClawX から「{{name}}」を削除しますか？既存のワークスペースとセッションファイルはディスク上に残ります。"
+        "message": "ClawX から「{{name}}」を削除しますか？この操作により Agent と、その ClawX 管理下のワークスペース、実行時ファイル、セッションファイルがディスクから完全に削除されます。"
     },
     "settingsDialog": {
         "title": "{{name}} Settings",

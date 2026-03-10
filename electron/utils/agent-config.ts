@@ -1,6 +1,6 @@
-import { access, copyFile, mkdir, readdir } from 'fs/promises';
+import { access, copyFile, mkdir, readdir, rm } from 'fs/promises';
 import { constants } from 'fs';
-import { join } from 'path';
+import { join, normalize } from 'path';
 import { listConfiguredChannels, readOpenClawConfig, writeOpenClawConfig } from './channel-config';
 import { expandPath, getOpenClawConfigDir } from './paths';
 import * as logger from './logger';
@@ -208,7 +208,8 @@ function getSimpleChannelBindingMap(bindings: unknown): Map<string, string> {
   for (const binding of bindings) {
     if (!isSimpleChannelBinding(binding)) continue;
     const agentId = normalizeAgentIdForBinding(binding.agentId!);
-    if (agentId) owners.set(binding.match.channel!, agentId);
+    const channel = binding.match?.channel;
+    if (agentId && channel) owners.set(channel, agentId);
   }
 
   return owners;
@@ -221,7 +222,7 @@ function upsertBindingsForChannel(
 ): BindingConfig[] | undefined {
   const nextBindings = Array.isArray(bindings)
     ? [...bindings as BindingConfig[]].filter((binding) => !(
-      isSimpleChannelBinding(binding) && binding.match.channel === channelType
+      isSimpleChannelBinding(binding) && binding.match?.channel === channelType
     ))
     : [];
 
@@ -250,6 +251,55 @@ async function listExistingAgentIdsOnDisk(): Promise<Set<string>> {
   }
 
   return ids;
+}
+
+async function removeAgentRuntimeDirectory(agentId: string): Promise<void> {
+  const runtimeDir = join(getOpenClawConfigDir(), 'agents', agentId);
+  try {
+    await rm(runtimeDir, { recursive: true, force: true });
+  } catch (error) {
+    logger.warn('Failed to remove agent runtime directory', {
+      agentId,
+      runtimeDir,
+      error: String(error),
+    });
+  }
+}
+
+function trimTrailingSeparators(path: string): string {
+  return path.replace(/[\\/]+$/, '');
+}
+
+function getManagedWorkspaceDirectory(agent: AgentListEntry): string | null {
+  if (agent.id === MAIN_AGENT_ID) return null;
+
+  const configuredWorkspace = expandPath(agent.workspace || `~/.openclaw/workspace-${agent.id}`);
+  const managedWorkspace = join(getOpenClawConfigDir(), `workspace-${agent.id}`);
+  const normalizedConfigured = trimTrailingSeparators(normalize(configuredWorkspace));
+  const normalizedManaged = trimTrailingSeparators(normalize(managedWorkspace));
+
+  return normalizedConfigured === normalizedManaged ? configuredWorkspace : null;
+}
+
+async function removeAgentWorkspaceDirectory(agent: AgentListEntry): Promise<void> {
+  const workspaceDir = getManagedWorkspaceDirectory(agent);
+  if (!workspaceDir) {
+    logger.warn('Skipping agent workspace deletion for unmanaged path', {
+      agentId: agent.id,
+      workspace: agent.workspace,
+    });
+    return;
+  }
+
+  try {
+    await rm(workspaceDir, { recursive: true, force: true });
+  } catch (error) {
+    logger.warn('Failed to remove agent workspace directory', {
+      agentId: agent.id,
+      workspaceDir,
+      error: String(error),
+    });
+  }
 }
 
 async function copyBootstrapFiles(sourceWorkspace: string, targetWorkspace: string): Promise<void> {
@@ -336,6 +386,13 @@ export async function listAgentsSnapshot(): Promise<AgentsSnapshot> {
   return buildSnapshotFromConfig(config);
 }
 
+export async function listConfiguredAgentIds(): Promise<string[]> {
+  const config = await readOpenClawConfig() as AgentConfigDocument;
+  const { entries } = normalizeAgentsConfig(config);
+  const ids = [...new Set(entries.map((entry) => entry.id.trim()).filter(Boolean))];
+  return ids.length > 0 ? ids : [MAIN_AGENT_ID];
+}
+
 export async function createAgent(name: string): Promise<AgentsSnapshot> {
   const config = await readOpenClawConfig() as AgentConfigDocument;
   const { agentsConfig, entries, syntheticMain } = normalizeAgentsConfig(config);
@@ -350,7 +407,7 @@ export async function createAgent(name: string): Promise<AgentsSnapshot> {
     suffix += 1;
   }
 
-  const nextEntries = syntheticMain ? [createImplicitMainEntry(config), ...entries.filter((entry, index) => index > 0)] : [...entries];
+  const nextEntries = syntheticMain ? [createImplicitMainEntry(config), ...entries.filter((_, index) => index > 0)] : [...entries];
   const newAgent: AgentListEntry = {
     id: nextId,
     name: normalizedName,
@@ -405,8 +462,9 @@ export async function deleteAgentConfig(agentId: string): Promise<AgentsSnapshot
 
   const config = await readOpenClawConfig() as AgentConfigDocument;
   const { agentsConfig, entries, defaultAgentId } = normalizeAgentsConfig(config);
+  const removedEntry = entries.find((entry) => entry.id === agentId);
   const nextEntries = entries.filter((entry) => entry.id !== agentId);
-  if (nextEntries.length === entries.length) {
+  if (!removedEntry || nextEntries.length === entries.length) {
     throw new Error(`Agent "${agentId}" not found`);
   }
 
@@ -426,6 +484,8 @@ export async function deleteAgentConfig(agentId: string): Promise<AgentsSnapshot
   }
 
   await writeOpenClawConfig(config);
+  await removeAgentRuntimeDirectory(agentId);
+  await removeAgentWorkspaceDirectory(removedEntry);
   logger.info('Deleted agent config entry', { agentId });
   return buildSnapshotFromConfig(config);
 }

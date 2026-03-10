@@ -20,7 +20,7 @@
     },
     "deleteDialog": {
         "title": "删除 Agent",
-        "message": "确认从 ClawX 删除 “{{name}}”？已有的工作区和会话文件会保留在磁盘上。"
+        "message": "确认从 ClawX 删除 “{{name}}”？这会永久删除该 Agent 及其由 ClawX 管理的工作区、运行时和会话文件。"
     },
     "settingsDialog": {
         "title": "{{name}} 设置",

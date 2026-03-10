@@ -2,6 +2,7 @@ import { readdir, readFile, stat } from 'fs/promises';
 import { join } from 'path';
 import { getOpenClawConfigDir } from './paths';
 import { logger } from './logger';
+import { listConfiguredAgentIds } from './agent-config';
 import { parseUsageEntriesFromJsonl, type TokenUsageHistoryEntry } from './token-usage-core';
 
 export { parseUsageEntriesFromJsonl, type TokenUsageHistoryEntry } from './token-usage-core';
@@ -11,7 +12,7 @@ async function listRecentSessionFiles(): Promise<Array<{ filePath: string; sessi
   const agentsDir = join(openclawDir, 'agents');
 
   try {
-    const agentEntries = await readdir(agentsDir);
+    const agentEntries = await listConfiguredAgentIds();
     const files: Array<{ filePath: string; sessionId: string; agentId: string; mtimeMs: number }> = [];
 
     for (const agentId of agentEntries) {
