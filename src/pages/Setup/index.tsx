@@ -720,23 +720,44 @@ function ProviderContent({
   // OAuth Flow State
   const [oauthFlowing, setOauthFlowing] = useState(false);
   const [oauthData, setOauthData] = useState<{
+    mode: 'device';
     verificationUri: string;
     userCode: string;
     expiresIn: number;
+  } | {
+    mode: 'manual';
+    authorizationUrl: string;
+    message?: string;
   } | null>(null);
+  const [manualCodeInput, setManualCodeInput] = useState('');
   const [oauthError, setOauthError] = useState<string | null>(null);
   const pendingOAuthRef = useRef<{ accountId: string; label: string } | null>(null);
 
   // Manage OAuth events
   useEffect(() => {
     const handleCode = (data: unknown) => {
-      setOauthData(data as { verificationUri: string; userCode: string; expiresIn: number });
+      const payload = data as Record<string, unknown>;
+      if (payload?.mode === 'manual') {
+        setOauthData({
+          mode: 'manual',
+          authorizationUrl: String(payload.authorizationUrl || ''),
+          message: typeof payload.message === 'string' ? payload.message : undefined,
+        });
+      } else {
+        setOauthData({
+          mode: 'device',
+          verificationUri: String(payload.verificationUri || ''),
+          userCode: String(payload.userCode || ''),
+          expiresIn: Number(payload.expiresIn || 300),
+        });
+      }
       setOauthError(null);
     };
 
     const handleSuccess = async (data: unknown) => {
       setOauthFlowing(false);
       setOauthData(null);
+      setManualCodeInput('');
       setKeyValid(true);
 
       const payload = (data as { accountId?: string } | undefined) || undefined;
@@ -796,6 +817,7 @@ function ProviderContent({
 
     setOauthFlowing(true);
     setOauthData(null);
+    setManualCodeInput('');
     setOauthError(null);
 
     try {
@@ -821,9 +843,24 @@ function ProviderContent({
   const handleCancelOAuth = async () => {
     setOauthFlowing(false);
     setOauthData(null);
+    setManualCodeInput('');
     setOauthError(null);
     pendingOAuthRef.current = null;
     await hostApiFetch('/api/providers/oauth/cancel', { method: 'POST' });
+  };
+
+  const handleSubmitManualOAuthCode = async () => {
+    const value = manualCodeInput.trim();
+    if (!value) return;
+    try {
+      await hostApiFetch('/api/providers/oauth/submit', {
+        method: 'POST',
+        body: JSON.stringify({ code: value }),
+      });
+      setOauthError(null);
+    } catch (error) {
+      setOauthError(String(error));
+    }
   };
 
   // On mount, try to restore previously configured provider
@@ -1302,6 +1339,42 @@ function ProviderContent({
                       <div className="space-y-3 py-4">
                         <Loader2 className="h-8 w-8 animate-spin text-primary mx-auto" />
                         <p className="text-sm text-muted-foreground animate-pulse">Requesting secure login code...</p>
+                      </div>
+                    ) : oauthData.mode === 'manual' ? (
+                      <div className="space-y-4 w-full">
+                        <div className="space-y-1">
+                          <h3 className="font-medium text-lg">Complete OpenAI Login</h3>
+                          <p className="text-sm text-muted-foreground text-left mt-2">
+                            {oauthData.message || 'Open the authorization page, complete login, then paste the callback URL or code below.'}
+                          </p>
+                        </div>
+
+                        <Button
+                          variant="secondary"
+                          className="w-full"
+                          onClick={() => invokeIpc('shell:openExternal', oauthData.authorizationUrl)}
+                        >
+                          <ExternalLink className="h-4 w-4 mr-2" />
+                          Open Authorization Page
+                        </Button>
+
+                        <Input
+                          placeholder="Paste callback URL or code"
+                          value={manualCodeInput}
+                          onChange={(e) => setManualCodeInput(e.target.value)}
+                        />
+
+                        <Button
+                          className="w-full bg-blue-600 hover:bg-blue-700 text-white"
+                          onClick={handleSubmitManualOAuthCode}
+                          disabled={!manualCodeInput.trim()}
+                        >
+                          Submit Code
+                        </Button>
+
+                        <Button variant="ghost" size="sm" className="w-full mt-2" onClick={handleCancelOAuth}>
+                          Cancel
+                        </Button>
                       </div>
                     ) : (
                       <div className="space-y-4 w-full">

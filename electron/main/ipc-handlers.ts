@@ -1758,7 +1758,7 @@ function registerDeviceOAuthHandlers(mainWindow: BrowserWindow): void {
     ) => {
       try {
         logger.info(`provider:requestOAuth for ${provider}`);
-        if (provider === 'google') {
+        if (provider === 'google' || provider === 'openai') {
           await browserOAuthManager.startFlow(provider, options);
         } else {
           await deviceOAuthManager.startFlow(provider, region, options);

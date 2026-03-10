@@ -752,10 +752,16 @@ function AddProviderDialog({
   // OAuth Flow State
   const [oauthFlowing, setOauthFlowing] = useState(false);
   const [oauthData, setOauthData] = useState<{
+    mode: 'device';
     verificationUri: string;
     userCode: string;
     expiresIn: number;
+  } | {
+    mode: 'manual';
+    authorizationUrl: string;
+    message?: string;
   } | null>(null);
+  const [manualCodeInput, setManualCodeInput] = useState('');
   const [oauthError, setOauthError] = useState<string | null>(null);
   // For providers that support both OAuth and API key, let the user choose.
   // Default to the vendor's declared auth mode instead of hard-coding OAuth.
@@ -792,13 +798,28 @@ function AddProviderDialog({
   // Manage OAuth events
   useEffect(() => {
     const handleCode = (data: unknown) => {
-      setOauthData(data as { verificationUri: string; userCode: string; expiresIn: number });
+      const payload = data as Record<string, unknown>;
+      if (payload?.mode === 'manual') {
+        setOauthData({
+          mode: 'manual',
+          authorizationUrl: String(payload.authorizationUrl || ''),
+          message: typeof payload.message === 'string' ? payload.message : undefined,
+        });
+      } else {
+        setOauthData({
+          mode: 'device',
+          verificationUri: String(payload.verificationUri || ''),
+          userCode: String(payload.userCode || ''),
+          expiresIn: Number(payload.expiresIn || 300),
+        });
+      }
       setOauthError(null);
     };
 
     const handleSuccess = async (data: unknown) => {
       setOauthFlowing(false);
       setOauthData(null);
+      setManualCodeInput('');
       setValidationError(null);
 
       const { onClose: close, t: translate } = latestRef.current;
@@ -813,8 +834,9 @@ function AddProviderDialog({
         const store = useProviderStore.getState();
         await store.refreshProviderSnapshot();
 
-        // Auto-set as default if no default is currently configured
-        if (!store.defaultAccountId && accountId) {
+        // OAuth sign-in should immediately become active default to avoid
+        // leaving runtime on an API-key-only provider/model.
+        if (accountId) {
           await store.setDefaultAccount(accountId);
         }
       } catch (err) {
@@ -857,6 +879,7 @@ function AddProviderDialog({
 
     setOauthFlowing(true);
     setOauthData(null);
+    setManualCodeInput('');
     setOauthError(null);
 
     try {
@@ -879,11 +902,26 @@ function AddProviderDialog({
   const handleCancelOAuth = async () => {
     setOauthFlowing(false);
     setOauthData(null);
+    setManualCodeInput('');
     setOauthError(null);
     pendingOAuthRef.current = null;
     await hostApiFetch('/api/providers/oauth/cancel', {
       method: 'POST',
     });
+  };
+
+  const handleSubmitManualOAuthCode = async () => {
+    const value = manualCodeInput.trim();
+    if (!value) return;
+    try {
+      await hostApiFetch('/api/providers/oauth/submit', {
+        method: 'POST',
+        body: JSON.stringify({ code: value }),
+      });
+      setOauthError(null);
+    } catch (error) {
+      setOauthError(String(error));
+    }
   };
 
   const availableTypes = PROVIDER_TYPE_INFO.filter((type) => {
@@ -1197,6 +1235,43 @@ function AddProviderDialog({
                             <div className="space-y-4 py-6">
                               <Loader2 className="h-10 w-10 animate-spin text-blue-500 mx-auto" />
                               <p className="text-[13px] font-medium text-muted-foreground animate-pulse">{t('aiProviders.oauth.requestingCode')}</p>
+                            </div>
+                          ) : oauthData.mode === 'manual' ? (
+                            <div className="space-y-4 w-full">
+                              <div className="space-y-2">
+                                <h3 className="font-semibold text-[16px] text-foreground">Complete OpenAI Login</h3>
+                                <p className="text-[13px] text-muted-foreground text-left bg-black/5 dark:bg-white/5 p-4 rounded-xl">
+                                  {oauthData.message || 'Open the authorization page, complete login, then paste the callback URL or code below.'}
+                                </p>
+                              </div>
+
+                              <Button
+                                variant="secondary"
+                                className="w-full rounded-full h-[42px] font-semibold"
+                                onClick={() => invokeIpc('shell:openExternal', oauthData.authorizationUrl)}
+                              >
+                                <ExternalLink className="h-4 w-4 mr-2" />
+                                Open Authorization Page
+                              </Button>
+
+                              <Input
+                                placeholder="Paste callback URL or code"
+                                value={manualCodeInput}
+                                onChange={(e) => setManualCodeInput(e.target.value)}
+                                className={inputClasses}
+                              />
+
+                              <Button
+                                className="w-full rounded-full h-[42px] font-semibold bg-[#0a84ff] hover:bg-[#007aff] text-white"
+                                onClick={handleSubmitManualOAuthCode}
+                                disabled={!manualCodeInput.trim()}
+                              >
+                                Submit Code
+                              </Button>
+
+                              <Button variant="ghost" className="w-full rounded-full h-[42px] font-semibold text-muted-foreground" onClick={handleCancelOAuth}>
+                                Cancel
+                              </Button>
                             </div>
                           ) : (
                             <div className="space-y-5 w-full">

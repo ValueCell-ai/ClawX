@@ -283,6 +283,10 @@ async function initialize(): Promise<void> {
     hostEventBus.emit('oauth:start', payload);
   });
 
+  browserOAuthManager.on('oauth:code', (payload) => {
+    hostEventBus.emit('oauth:code', payload);
+  });
+
   browserOAuthManager.on('oauth:success', (payload) => {
     hostEventBus.emit('oauth:success', { ...payload, success: true });
   });

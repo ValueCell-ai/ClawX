@@ -17,6 +17,8 @@ import { logger } from '../../utils/logger';
 
 const GOOGLE_OAUTH_RUNTIME_PROVIDER = 'google-gemini-cli';
 const GOOGLE_OAUTH_DEFAULT_MODEL_REF = `${GOOGLE_OAUTH_RUNTIME_PROVIDER}/gemini-3-pro-preview`;
+const OPENAI_OAUTH_RUNTIME_PROVIDER = 'openai-codex';
+const OPENAI_OAUTH_DEFAULT_MODEL_REF = `${OPENAI_OAUTH_RUNTIME_PROVIDER}/gpt-5.3-codex`;
 
 type RuntimeProviderSyncContext = {
   runtimeProviderKey: string;
@@ -53,20 +55,35 @@ export function getOpenClawProviderKey(type: string, providerId: string): string
 
 async function resolveRuntimeProviderKey(config: ProviderConfig): Promise<string> {
   const account = await getProviderAccount(config.id);
-  if (config.type === 'google' && account?.authMode === 'oauth_browser') {
-    return GOOGLE_OAUTH_RUNTIME_PROVIDER;
+  if (account?.authMode === 'oauth_browser') {
+    if (config.type === 'google') {
+      return GOOGLE_OAUTH_RUNTIME_PROVIDER;
+    }
+    if (config.type === 'openai') {
+      return OPENAI_OAUTH_RUNTIME_PROVIDER;
+    }
   }
   return getOpenClawProviderKey(config.type, config.id);
 }
 
-async function isGoogleBrowserOAuthProvider(config: ProviderConfig): Promise<boolean> {
+async function getBrowserOAuthRuntimeProvider(config: ProviderConfig): Promise<string | null> {
   const account = await getProviderAccount(config.id);
-  if (config.type !== 'google' || account?.authMode !== 'oauth_browser') {
-    return false;
+  if (account?.authMode !== 'oauth_browser') {
+    return null;
   }
 
   const secret = await getProviderSecret(config.id);
-  return secret?.type === 'oauth';
+  if (secret?.type !== 'oauth') {
+    return null;
+  }
+
+  if (config.type === 'google') {
+    return GOOGLE_OAUTH_RUNTIME_PROVIDER;
+  }
+  if (config.type === 'openai') {
+    return OPENAI_OAUTH_RUNTIME_PROVIDER;
+  }
+  return null;
 }
 
 export function getProviderModelRef(config: ProviderConfig): string | undefined {
@@ -396,8 +413,8 @@ export async function syncDefaultProviderToRuntime(
   const providerKey = await getApiKey(providerId);
   const fallbackModels = await getProviderFallbackModelRefs(provider);
   const oauthTypes = ['qwen-portal', 'minimax-portal', 'minimax-portal-cn'];
-  const isGoogleOAuthProvider = await isGoogleBrowserOAuthProvider(provider);
-  const isOAuthProvider = (oauthTypes.includes(provider.type) && !providerKey) || isGoogleOAuthProvider;
+  const browserOAuthRuntimeProvider = await getBrowserOAuthRuntimeProvider(provider);
+  const isOAuthProvider = (oauthTypes.includes(provider.type) && !providerKey) || Boolean(browserOAuthRuntimeProvider);
 
   if (!isOAuthProvider) {
     const modelOverride = provider.model
@@ -424,10 +441,10 @@ export async function syncDefaultProviderToRuntime(
       await saveProviderKeyToOpenClaw(ock, providerKey);
     }
   } else {
-    if (isGoogleOAuthProvider) {
+    if (browserOAuthRuntimeProvider) {
       const secret = await getProviderSecret(provider.id);
       if (secret?.type === 'oauth') {
-        await saveOAuthTokenToOpenClaw(GOOGLE_OAUTH_RUNTIME_PROVIDER, {
+        await saveOAuthTokenToOpenClaw(browserOAuthRuntimeProvider, {
           access: secret.accessToken,
           refresh: secret.refreshToken,
           expires: secret.expiresAt,
@@ -436,17 +453,20 @@ export async function syncDefaultProviderToRuntime(
         });
       }
 
+      const defaultModelRef = browserOAuthRuntimeProvider === GOOGLE_OAUTH_RUNTIME_PROVIDER
+        ? GOOGLE_OAUTH_DEFAULT_MODEL_REF
+        : OPENAI_OAUTH_DEFAULT_MODEL_REF;
       const modelOverride = provider.model
-        ? (provider.model.startsWith(`${GOOGLE_OAUTH_RUNTIME_PROVIDER}/`)
+        ? (provider.model.startsWith(`${browserOAuthRuntimeProvider}/`)
           ? provider.model
-          : `${GOOGLE_OAUTH_RUNTIME_PROVIDER}/${provider.model}`)
-        : GOOGLE_OAUTH_DEFAULT_MODEL_REF;
+          : `${browserOAuthRuntimeProvider}/${provider.model}`)
+        : defaultModelRef;
 
-      await setOpenClawDefaultModel(GOOGLE_OAUTH_RUNTIME_PROVIDER, modelOverride, fallbackModels);
-      logger.info(`Configured openclaw.json for Google browser OAuth provider "${provider.id}"`);
+      await setOpenClawDefaultModel(browserOAuthRuntimeProvider, modelOverride, fallbackModels);
+      logger.info(`Configured openclaw.json for browser OAuth provider "${provider.id}"`);
       scheduleGatewayRestart(
         gatewayManager,
-        `Scheduling Gateway restart after provider switch to "${GOOGLE_OAUTH_RUNTIME_PROVIDER}"`,
+        `Scheduling Gateway restart after provider switch to "${browserOAuthRuntimeProvider}"`,
       );
       return;
     }

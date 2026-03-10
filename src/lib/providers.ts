@@ -122,7 +122,17 @@ import { providerIcons } from '@/assets/providers';
 /** All supported provider types with UI metadata */
 export const PROVIDER_TYPE_INFO: ProviderTypeInfo[] = [
   { id: 'anthropic', name: 'Anthropic', icon: '🤖', placeholder: 'sk-ant-api03-...', model: 'Claude', requiresApiKey: true },
-  { id: 'openai', name: 'OpenAI', icon: '💚', placeholder: 'sk-proj-...', model: 'GPT', requiresApiKey: true },
+  {
+    id: 'openai',
+    name: 'OpenAI',
+    icon: '💚',
+    placeholder: 'sk-proj-...',
+    model: 'GPT',
+    requiresApiKey: true,
+    isOAuth: true,
+    supportsApiKey: true,
+    apiKeyUrl: 'https://platform.openai.com/api-keys',
+  },
   {
     id: 'google',
     name: 'Google',

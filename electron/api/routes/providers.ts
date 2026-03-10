@@ -107,8 +107,10 @@ export async function handleProviderRoutes(
     const accountId = decodeURIComponent(url.pathname.slice('/api/provider-accounts/'.length));
     try {
       const existing = await providerService.getAccount(accountId);
-      const runtimeProviderKey = existing?.vendorId === 'google' && existing.authMode === 'oauth_browser'
-        ? 'google-gemini-cli'
+      const runtimeProviderKey = existing?.authMode === 'oauth_browser'
+        ? (existing.vendorId === 'google'
+          ? 'google-gemini-cli'
+          : (existing.vendorId === 'openai' ? 'openai-codex' : undefined))
         : undefined;
       if (url.searchParams.get('apiKeyOnly') === '1') {
         await providerService.deleteLegacyProviderApiKey(accountId);
@@ -184,7 +186,7 @@ export async function handleProviderRoutes(
         accountId?: string;
         label?: string;
       }>(req);
-      if (body.provider === 'google') {
+      if (body.provider === 'google' || body.provider === 'openai') {
         await browserOAuthManager.startFlow(body.provider, {
           accountId: body.accountId,
           label: body.label,
@@ -207,6 +209,22 @@ export async function handleProviderRoutes(
     try {
       await deviceOAuthManager.stopFlow();
       await browserOAuthManager.stopFlow();
+      sendJson(res, 200, { success: true });
+    } catch (error) {
+      sendJson(res, 500, { success: false, error: String(error) });
+    }
+    return true;
+  }
+
+  if (url.pathname === '/api/providers/oauth/submit' && req.method === 'POST') {
+    logLegacyProviderRoute('POST /api/providers/oauth/submit');
+    try {
+      const body = await parseJsonBody<{ code: string }>(req);
+      const accepted = browserOAuthManager.submitManualCode(body.code || '');
+      if (!accepted) {
+        sendJson(res, 400, { success: false, error: 'No active manual OAuth input pending' });
+        return true;
+      }
       sendJson(res, 200, { success: true });
     } catch (error) {
       sendJson(res, 500, { success: false, error: String(error) });
