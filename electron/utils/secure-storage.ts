@@ -33,6 +33,7 @@ export interface ProviderConfig {
   name: string;
   type: ProviderType;
   baseUrl?: string;
+  apiProtocol?: 'openai-completions' | 'openai-responses' | 'anthropic-messages';
   model?: string;
   fallbackModels?: string[];
   fallbackProviderIds?: string[];

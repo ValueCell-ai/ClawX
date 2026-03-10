@@ -50,6 +50,7 @@
       "replaceApiKeyHelp": "如果想保留当前已保存的 API key，这里留空即可。",
       "baseUrl": "基础 URL",
       "modelId": "模型 ID",
+      "protocol": "协议",
       "fallbackModels": "回退模型",
       "fallbackProviders": "跨 Provider 回退",
       "fallbackModelIds": "同 Provider 回退模型 ID",
@@ -72,6 +73,10 @@
       "setDefault": "设为默认",
       "editKey": "编辑 API 密钥",
       "delete": "删除提供商"
+    },
+    "protocols": {
+      "openai": "OpenAI 兼容",
+      "anthropic": "Anthropic 兼容"
     },
     "toast": {
       "added": "提供商添加成功",

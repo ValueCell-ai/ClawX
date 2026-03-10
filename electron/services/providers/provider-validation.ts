@@ -170,6 +170,44 @@ async function performChatCompletionsProbe(
   }
 }
 
+async function performAnthropicMessagesProbe(
+  providerLabel: string,
+  url: string,
+  headers: Record<string, string>,
+): Promise<{ valid: boolean; error?: string }> {
+  try {
+    logValidationRequest(providerLabel, 'POST', url, headers);
+    const response = await proxyAwareFetch(url, {
+      method: 'POST',
+      headers: { ...headers, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: 'validation-probe',
+        messages: [{ role: 'user', content: 'hi' }],
+        max_tokens: 1,
+      }),
+    });
+    logValidationStatus(providerLabel, response.status);
+    const data = await response.json().catch(() => ({}));
+
+    if (response.status === 401 || response.status === 403) {
+      return { valid: false, error: 'Invalid API key' };
+    }
+    if (
+      (response.status >= 200 && response.status < 300) ||
+      response.status === 400 ||
+      response.status === 429
+    ) {
+      return { valid: true };
+    }
+    return classifyAuthResponse(response.status, data);
+  } catch (error) {
+    return {
+      valid: false,
+      error: `Connection error: ${error instanceof Error ? error.message : String(error)}`,
+    };
+  }
+}
+
 async function validateGoogleQueryKey(
   providerType: string,
   apiKey: string,
@@ -185,13 +223,26 @@ async function validateAnthropicHeaderKey(
   apiKey: string,
   baseUrl?: string,
 ): Promise<{ valid: boolean; error?: string }> {
-  const base = normalizeBaseUrl(baseUrl || 'https://api.anthropic.com/v1');
+  const rawBase = normalizeBaseUrl(baseUrl || 'https://api.anthropic.com/v1');
+  const base = rawBase.endsWith('/v1') ? rawBase : `${rawBase}/v1`;
   const url = `${base}/models?limit=1`;
   const headers = {
     'x-api-key': apiKey,
     'anthropic-version': '2023-06-01',
   };
-  return await performProviderValidationRequest(providerType, url, headers);
+
+  const modelsResult = await performProviderValidationRequest(providerType, url, headers);
+
+  // If the endpoint doesn't implement /models (like Minimax Anthropic compatibility), fallback to a /messages probe.
+  if (modelsResult.error?.includes('API error: 404') || modelsResult.error?.includes('API error: 400')) {
+    console.log(
+      `[clawx-validate] ${providerType} /models returned error, falling back to /messages probe`,
+    );
+    const messagesUrl = `${base}/messages`;
+    return await performAnthropicMessagesProbe(providerType, messagesUrl, headers);
+  }
+
+  return modelsResult;
 }
 
 async function validateOpenRouterKey(
@@ -206,9 +257,18 @@ async function validateOpenRouterKey(
 export async function validateApiKeyWithProvider(
   providerType: string,
   apiKey: string,
-  options?: { baseUrl?: string },
+  options?: { baseUrl?: string; apiProtocol?: string },
 ): Promise<{ valid: boolean; error?: string }> {
-  const profile = getValidationProfile(providerType);
+  let profile = getValidationProfile(providerType);
+
+  if ((providerType === 'custom' || providerType === 'ollama') && options?.apiProtocol) {
+    if (options.apiProtocol === 'anthropic-messages') {
+      profile = 'anthropic-header';
+    } else {
+      profile = 'openai-compatible';
+    }
+  }
+
   if (profile === 'none') {
     return { valid: true };
   }

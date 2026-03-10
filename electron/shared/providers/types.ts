@@ -54,6 +54,7 @@ export interface ProviderConfig {
   name: string;
   type: ProviderType;
   baseUrl?: string;
+  apiProtocol?: ProviderProtocol;
   model?: string;
   fallbackModels?: string[];
   fallbackProviderIds?: string[];
@@ -131,25 +132,25 @@ export interface ProviderAccount {
 
 export type ProviderSecret =
   | {
-      type: 'api_key';
-      accountId: string;
-      apiKey: string;
-    }
+    type: 'api_key';
+    accountId: string;
+    apiKey: string;
+  }
   | {
-      type: 'oauth';
-      accountId: string;
-      accessToken: string;
-      refreshToken: string;
-      expiresAt: number;
-      scopes?: string[];
-      email?: string;
-      subject?: string;
-    }
+    type: 'oauth';
+    accountId: string;
+    accessToken: string;
+    refreshToken: string;
+    expiresAt: number;
+    scopes?: string[];
+    email?: string;
+    subject?: string;
+  }
   | {
-      type: 'local';
-      accountId: string;
-      apiKey?: string;
-    };
+    type: 'local';
+    accountId: string;
+    apiKey?: string;
+  };
 
 export interface ModelSummary {
   id: string;

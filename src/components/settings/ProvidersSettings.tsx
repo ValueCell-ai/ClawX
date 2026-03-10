@@ -125,7 +125,7 @@ export function ProvidersSettings() {
     type: ProviderType,
     name: string,
     apiKey: string,
-    options?: { baseUrl?: string; model?: string; authMode?: ProviderAccount['authMode'] }
+    options?: { baseUrl?: string; model?: string; authMode?: ProviderAccount['authMode']; apiProtocol?: ProviderAccount['apiProtocol'] }
   ) => {
     const vendor = vendorMap.get(type);
     const id = buildProviderAccountId(type, null, vendors);
@@ -137,7 +137,7 @@ export function ProvidersSettings() {
         label: name,
         authMode: options?.authMode || vendor?.defaultAuthMode || (type === 'ollama' ? 'local' : 'api_key'),
         baseUrl: options?.baseUrl,
-        apiProtocol: type === 'custom' || type === 'ollama' ? 'openai-completions' : undefined,
+        apiProtocol: options?.apiProtocol,
         model: options?.model,
         enabled: true,
         isDefault: false,
@@ -220,6 +220,7 @@ export function ProvidersSettings() {
                 const updates: Partial<ProviderAccount> = {};
                 if (payload.updates) {
                   if (payload.updates.baseUrl !== undefined) updates.baseUrl = payload.updates.baseUrl;
+                  if (payload.updates.apiProtocol !== undefined) updates.apiProtocol = payload.updates.apiProtocol;
                   if (payload.updates.model !== undefined) updates.model = payload.updates.model;
                   if (payload.updates.fallbackModels !== undefined) updates.fallbackModels = payload.updates.fallbackModels;
                   if (payload.updates.fallbackProviderIds !== undefined) {
@@ -267,7 +268,7 @@ interface ProviderCardProps {
   onSaveEdits: (payload: { newApiKey?: string; updates?: Partial<ProviderConfig> }) => Promise<void>;
   onValidateKey: (
     key: string,
-    options?: { baseUrl?: string }
+    options?: { baseUrl?: string; apiProtocol?: string }
   ) => Promise<{ valid: boolean; error?: string }>;
   devModeUnlocked: boolean;
 }
@@ -291,6 +292,7 @@ function ProviderCard({
   const { account, vendor, status } = item;
   const [newKey, setNewKey] = useState('');
   const [baseUrl, setBaseUrl] = useState(account.baseUrl || '');
+  const [apiProtocol, setApiProtocol] = useState<ProviderAccount['apiProtocol']>(account.apiProtocol || 'openai-completions');
   const [modelId, setModelId] = useState(account.model || '');
   const [fallbackModelsText, setFallbackModelsText] = useState(
     normalizeFallbackModels(account.fallbackModels).join('\n')
@@ -312,6 +314,7 @@ function ProviderCard({
       setNewKey('');
       setShowKey(false);
       setBaseUrl(account.baseUrl || '');
+      setApiProtocol(account.apiProtocol || 'openai-completions');
       setModelId(account.model || '');
       setFallbackModelsText(normalizeFallbackModels(account.fallbackModels).join('\n'));
       setFallbackProviderIds(normalizeFallbackProviderIds(account.fallbackAccountIds));
@@ -338,6 +341,7 @@ function ProviderCard({
         setValidating(true);
         const result = await onValidateKey(newKey, {
           baseUrl: baseUrl.trim() || undefined,
+          apiProtocol: (account.vendorId === 'custom' || account.vendorId === 'ollama') ? apiProtocol : undefined,
         });
         setValidating(false);
         if (!result.valid) {
@@ -358,6 +362,9 @@ function ProviderCard({
         const updates: Partial<ProviderConfig> = {};
         if (typeInfo?.showBaseUrl && (baseUrl.trim() || undefined) !== (account.baseUrl || undefined)) {
           updates.baseUrl = baseUrl.trim() || undefined;
+        }
+        if ((account.vendorId === 'custom' || account.vendorId === 'ollama') && apiProtocol !== account.apiProtocol) {
+          updates.apiProtocol = apiProtocol;
         }
         if (showModelIdField && (modelId.trim() || undefined) !== (account.model || undefined)) {
           updates.model = modelId.trim() || undefined;
@@ -505,13 +512,13 @@ function ProviderCard({
                   <Input
                     value={baseUrl}
                     onChange={(e) => setBaseUrl(e.target.value)}
-                    placeholder="https://api.example.com/v1"
+                    placeholder={apiProtocol === 'anthropic-messages' ? "https://api.example.com/anthropic" : "https://api.example.com/v1"}
                     className="h-[40px] rounded-xl font-mono text-[13px] bg-white dark:bg-[#1a1a19] border-black/10 dark:border-white/10 focus-visible:ring-2 focus-visible:ring-blue-500/50 shadow-sm"
                   />
                 </div>
               )}
               {showModelIdField && (
-                <div className="space-y-1.5">
+                <div className="space-y-1.5 pt-2">
                   <Label className="text-[13px] text-muted-foreground">{t('aiProviders.dialog.modelId')}</Label>
                   <Input
                     value={modelId}
@@ -519,6 +526,27 @@ function ProviderCard({
                     placeholder={typeInfo?.modelIdPlaceholder || 'provider/model-id'}
                     className="h-[40px] rounded-xl font-mono text-[13px] bg-white dark:bg-[#1a1a19] border-black/10 dark:border-white/10 focus-visible:ring-2 focus-visible:ring-blue-500/50 shadow-sm"
                   />
+                </div>
+              )}
+              {(account.vendorId === 'custom' || account.vendorId === 'ollama') && (
+                <div className="space-y-1.5 pt-2">
+                  <Label className="text-[13px] text-muted-foreground">{t('aiProviders.dialog.protocol', 'Protocol')}</Label>
+                  <div className="flex gap-2 text-[13px]">
+                    <button
+                      type="button"
+                      onClick={() => setApiProtocol('openai-completions')}
+                      className={cn("flex-1 py-1.5 px-3 rounded-lg border transition-colors", apiProtocol === 'openai-completions' ? "bg-white dark:bg-[#1a1a19] border-black/20 dark:border-white/20 shadow-sm font-medium" : "border-transparent bg-black/5 dark:bg-white/5 text-muted-foreground hover:bg-black/10 dark:hover:bg-white/10")}
+                    >
+                      {t('aiProviders.protocols.openai', 'OpenAI')}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setApiProtocol('anthropic-messages')}
+                      className={cn("flex-1 py-1.5 px-3 rounded-lg border transition-colors", apiProtocol === 'anthropic-messages' ? "bg-white dark:bg-[#1a1a19] border-black/20 dark:border-white/20 shadow-sm font-medium" : "border-transparent bg-black/5 dark:bg-white/5 text-muted-foreground hover:bg-black/10 dark:hover:bg-white/10")}
+                    >
+                      {t('aiProviders.protocols.anthropic', 'Anthropic')}
+                    </button>
+                  </div>
                 </div>
               )}
             </div>
@@ -666,12 +694,12 @@ interface AddProviderDialogProps {
     type: ProviderType,
     name: string,
     apiKey: string,
-    options?: { baseUrl?: string; model?: string; authMode?: ProviderAccount['authMode'] }
+    options?: { baseUrl?: string; model?: string; authMode?: ProviderAccount['authMode']; apiProtocol?: ProviderAccount['apiProtocol'] }
   ) => Promise<void>;
   onValidateKey: (
     type: string,
     apiKey: string,
-    options?: { baseUrl?: string }
+    options?: { baseUrl?: string; apiProtocol?: string }
   ) => Promise<{ valid: boolean; error?: string }>;
   devModeUnlocked: boolean;
 }
@@ -690,6 +718,7 @@ function AddProviderDialog({
   const [apiKey, setApiKey] = useState('');
   const [baseUrl, setBaseUrl] = useState('');
   const [modelId, setModelId] = useState('');
+  const [apiProtocol, setApiProtocol] = useState<ProviderAccount['apiProtocol']>('openai-completions');
   const [showKey, setShowKey] = useState(false);
   const [saving, setSaving] = useState(false);
   const [validationError, setValidationError] = useState<string | null>(null);
@@ -865,6 +894,7 @@ function AddProviderDialog({
       if (requiresKey && apiKey) {
         const result = await onValidateKey(selectedType, apiKey, {
           baseUrl: baseUrl.trim() || undefined,
+          apiProtocol: (selectedType === 'custom' || selectedType === 'ollama') ? apiProtocol : undefined,
         });
         if (!result.valid) {
           setValidationError(result.error || t('aiProviders.toast.invalidKey'));
@@ -886,6 +916,7 @@ function AddProviderDialog({
         apiKey.trim(),
         {
           baseUrl: baseUrl.trim() || undefined,
+          apiProtocol: (selectedType === 'custom' || selectedType === 'ollama') ? apiProtocol : undefined,
           model: resolveProviderModelForSave(typeInfo, modelId, devModeUnlocked),
           authMode: useOAuthFlow ? (preferredOAuthMode || 'oauth_device') : selectedType === 'ollama'
             ? 'local'
@@ -1056,7 +1087,7 @@ function AddProviderDialog({
                     <Label htmlFor="baseUrl" className="text-[14px] font-bold text-foreground/80">{t('aiProviders.dialog.baseUrl')}</Label>
                     <Input
                       id="baseUrl"
-                      placeholder="https://api.example.com/v1"
+                      placeholder={apiProtocol === 'anthropic-messages' ? "https://api.example.com/anthropic" : "https://api.example.com/v1"}
                       value={baseUrl}
                       onChange={(e) => setBaseUrl(e.target.value)}
                       className="h-[44px] rounded-xl font-mono text-[13px] bg-white dark:bg-[#1a1a19] border-black/10 dark:border-white/10 focus-visible:ring-2 focus-visible:ring-blue-500/50 shadow-sm"
@@ -1077,6 +1108,27 @@ function AddProviderDialog({
                       }}
                       className="h-[44px] rounded-xl font-mono text-[13px] bg-white dark:bg-[#1a1a19] border-black/10 dark:border-white/10 focus-visible:ring-2 focus-visible:ring-blue-500/50 shadow-sm"
                     />
+                  </div>
+                )}
+                {(selectedType === 'custom' || selectedType === 'ollama') && (
+                  <div className="space-y-2">
+                    <Label className="text-[14px] font-bold text-foreground/80">{t('aiProviders.dialog.protocol', 'Protocol')}</Label>
+                    <div className="flex gap-2 text-[13px]">
+                      <button
+                        type="button"
+                        onClick={() => setApiProtocol('openai-completions')}
+                        className={cn("flex-1 py-1.5 px-3 rounded-lg border transition-colors", apiProtocol === 'openai-completions' ? "bg-white dark:bg-[#1a1a19] border-black/20 dark:border-white/20 shadow-sm font-medium" : "border-transparent bg-black/5 dark:bg-white/5 text-muted-foreground hover:bg-black/10 dark:hover:bg-white/10")}
+                      >
+                        {t('aiProviders.protocols.openai', 'OpenAI')}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setApiProtocol('anthropic-messages')}
+                        className={cn("flex-1 py-1.5 px-3 rounded-lg border transition-colors", apiProtocol === 'anthropic-messages' ? "bg-white dark:bg-[#1a1a19] border-black/20 dark:border-white/20 shadow-sm font-medium" : "border-transparent bg-black/5 dark:bg-white/5 text-muted-foreground hover:bg-black/10 dark:hover:bg-white/10")}
+                      >
+                        {t('aiProviders.protocols.anthropic', 'Anthropic')}
+                      </button>
+                    </div>
                   </div>
                 )}
                 {/* Device OAuth Trigger — only shown when in OAuth mode */}

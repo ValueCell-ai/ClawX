@@ -27,9 +27,9 @@ export function providerConfigToAccount(
     label: config.name,
     authMode: inferAuthMode(config.type),
     baseUrl: config.baseUrl,
-    apiProtocol: config.type === 'custom' || config.type === 'ollama'
+    apiProtocol: config.apiProtocol || (config.type === 'custom' || config.type === 'ollama'
       ? 'openai-completions'
-      : getProviderDefinition(config.type)?.providerConfig?.api,
+      : getProviderDefinition(config.type)?.providerConfig?.api),
     model: config.model,
     fallbackModels: config.fallbackModels,
     fallbackAccountIds: config.fallbackProviderIds,
@@ -46,6 +46,7 @@ export function providerAccountToConfig(account: ProviderAccount): ProviderConfi
     name: account.label,
     type: account.vendorId,
     baseUrl: account.baseUrl,
+    apiProtocol: account.apiProtocol,
     model: account.model,
     fallbackModels: account.fallbackModels,
     fallbackProviderIds: account.fallbackAccountIds,

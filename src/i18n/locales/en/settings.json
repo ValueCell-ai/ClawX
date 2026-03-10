@@ -50,6 +50,7 @@
       "replaceApiKeyHelp": "Leave this field empty if you want to keep the currently stored API key.",
       "baseUrl": "Base URL",
       "modelId": "Model ID",
+      "protocol": "Protocol",
       "fallbackModels": "Fallback Models",
       "fallbackProviders": "Fallback Providers",
       "fallbackModelIds": "Fallback Model IDs",
@@ -72,6 +73,10 @@
       "setDefault": "Set as default",
       "editKey": "Edit API key",
       "delete": "Delete provider"
+    },
+    "protocols": {
+      "openai": "OpenAI Compatible",
+      "anthropic": "Anthropic Compatible"
     },
     "toast": {
       "added": "Provider added successfully",
