@@ -261,7 +261,7 @@ export async function validateApiKeyWithProvider(
 ): Promise<{ valid: boolean; error?: string }> {
   let profile = getValidationProfile(providerType);
 
-  if ((providerType === 'custom' || providerType === 'ollama') && options?.apiProtocol) {
+  if (providerType === 'custom' && options?.apiProtocol) {
     if (options.apiProtocol === 'anthropic-messages') {
       profile = 'anthropic-header';
     } else {

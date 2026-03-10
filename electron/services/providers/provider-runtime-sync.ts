@@ -216,7 +216,7 @@ async function syncProviderSecretToRuntime(
 async function resolveRuntimeSyncContext(config: ProviderConfig): Promise<RuntimeProviderSyncContext | null> {
   const runtimeProviderKey = await resolveRuntimeProviderKey(config);
   const meta = getProviderConfig(config.type);
-  const api = config.apiProtocol || (config.type === 'custom' || config.type === 'ollama' ? 'openai-completions' : meta?.api);
+  const api = config.apiProtocol || (config.type === 'custom' ? 'openai-completions' : meta?.api);
   if (!api) {
     return null;
   }
@@ -245,7 +245,7 @@ async function syncCustomProviderAgentModel(
   runtimeProviderKey: string,
   apiKey: string | undefined,
 ): Promise<void> {
-  if (config.type !== 'custom' && config.type !== 'ollama') {
+  if (config.type !== 'custom') {
     return;
   }
 
@@ -310,7 +310,7 @@ export async function syncUpdatedProviderToRuntime(
   const defaultProviderId = await getDefaultProvider();
   if (defaultProviderId === config.id) {
     const modelOverride = config.model ? `${ock}/${config.model}` : undefined;
-    if (config.type !== 'custom' && config.type !== 'ollama') {
+    if (config.type !== 'custom') {
       await setOpenClawDefaultModel(ock, modelOverride, fallbackModels);
     } else {
       await setOpenClawDefaultModelWithOverride(ock, modelOverride, {
@@ -379,7 +379,7 @@ export async function syncDefaultProviderToRuntime(
       ? (provider.model.startsWith(`${ock}/`) ? provider.model : `${ock}/${provider.model}`)
       : undefined;
 
-    if (provider.type === 'custom' || provider.type === 'ollama') {
+    if (provider.type === 'custom') {
       await setOpenClawDefaultModelWithOverride(ock, modelOverride, {
         baseUrl: provider.baseUrl,
         api: provider.apiProtocol || 'openai-completions',
@@ -460,7 +460,7 @@ export async function syncDefaultProviderToRuntime(
   }
 
   if (
-    (provider.type === 'custom' || provider.type === 'ollama') &&
+    provider.type === 'custom' &&
     providerKey &&
     provider.baseUrl
   ) {

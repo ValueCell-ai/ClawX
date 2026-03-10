@@ -528,7 +528,7 @@ function ProviderCard({
                   />
                 </div>
               )}
-              {(account.vendorId === 'custom' || account.vendorId === 'ollama') && (
+              {account.vendorId === 'custom' && (
                 <div className="space-y-1.5 pt-2">
                   <Label className="text-[13px] text-muted-foreground">{t('aiProviders.dialog.protocol', 'Protocol')}</Label>
                   <div className="flex gap-2 text-[13px]">
@@ -1110,7 +1110,7 @@ function AddProviderDialog({
                     />
                   </div>
                 )}
-                {(selectedType === 'custom' || selectedType === 'ollama') && (
+                {selectedType === 'custom' && (
                   <div className="space-y-2">
                     <Label className="text-[14px] font-bold text-foreground/80">{t('aiProviders.dialog.protocol', 'Protocol')}</Label>
                     <div className="flex gap-2 text-[13px]">
