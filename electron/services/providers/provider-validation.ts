@@ -1,4 +1,5 @@
 import { proxyAwareFetch } from '../../utils/proxy-fetch';
+import { getProviderConfig } from '../../utils/provider-registry';
 
 type ValidationProfile =
   | 'openai-compatible'
@@ -59,7 +60,18 @@ function logValidationRequest(
   );
 }
 
-function getValidationProfile(providerType: string): ValidationProfile {
+function getValidationProfile(
+  providerType: string,
+  options?: { apiProtocol?: string }
+): ValidationProfile {
+  const providerApi = options?.apiProtocol || getProviderConfig(providerType)?.api;
+  if (providerApi === 'anthropic-messages') {
+    return 'anthropic-header';
+  }
+  if (providerApi === 'openai-completions' || providerApi === 'openai-responses') {
+    return 'openai-compatible';
+  }
+
   switch (providerType) {
     case 'anthropic':
       return 'anthropic-header';
@@ -259,15 +271,8 @@ export async function validateApiKeyWithProvider(
   apiKey: string,
   options?: { baseUrl?: string; apiProtocol?: string },
 ): Promise<{ valid: boolean; error?: string }> {
-  let profile = getValidationProfile(providerType);
-
-  if (providerType === 'custom' && options?.apiProtocol) {
-    if (options.apiProtocol === 'anthropic-messages') {
-      profile = 'anthropic-header';
-    } else {
-      profile = 'openai-compatible';
-    }
-  }
+  const profile = getValidationProfile(providerType, options);
+  const resolvedBaseUrl = options?.baseUrl || getProviderConfig(providerType)?.baseUrl;
 
   if (profile === 'none') {
     return { valid: true };
@@ -281,11 +286,11 @@ export async function validateApiKeyWithProvider(
   try {
     switch (profile) {
       case 'openai-compatible':
-        return await validateOpenAiCompatibleKey(providerType, trimmedKey, options?.baseUrl);
+        return await validateOpenAiCompatibleKey(providerType, trimmedKey, resolvedBaseUrl);
       case 'google-query-key':
-        return await validateGoogleQueryKey(providerType, trimmedKey, options?.baseUrl);
+        return await validateGoogleQueryKey(providerType, trimmedKey, resolvedBaseUrl);
       case 'anthropic-header':
-        return await validateAnthropicHeaderKey(providerType, trimmedKey, options?.baseUrl);
+        return await validateAnthropicHeaderKey(providerType, trimmedKey, resolvedBaseUrl);
       case 'openrouter':
         return await validateOpenRouterKey(providerType, trimmedKey);
       default:

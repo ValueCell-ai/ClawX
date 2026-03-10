@@ -24,6 +24,22 @@ type RuntimeProviderSyncContext = {
   api: string;
 };
 
+function normalizeProviderBaseUrl(config: ProviderConfig, baseUrl?: string): string | undefined {
+  if (!baseUrl) {
+    return undefined;
+  }
+
+  if (config.type === 'minimax-portal' || config.type === 'minimax-portal-cn') {
+    return baseUrl.replace(/\/v1$/, '').replace(/\/anthropic$/, '').replace(/\/$/, '') + '/anthropic';
+  }
+
+  return baseUrl;
+}
+
+function shouldUseExplicitDefaultOverride(config: ProviderConfig, runtimeProviderKey: string): boolean {
+  return Boolean(config.baseUrl || config.apiProtocol || runtimeProviderKey !== config.type);
+}
+
 export function getOpenClawProviderKey(type: string, providerId: string): string {
   if (type === 'custom' || type === 'ollama') {
     const suffix = providerId.replace(/-/g, '').slice(0, 8);
@@ -233,7 +249,7 @@ async function syncRuntimeProviderConfig(
   context: RuntimeProviderSyncContext,
 ): Promise<void> {
   await syncProviderConfigToOpenClaw(context.runtimeProviderKey, config.model, {
-    baseUrl: config.baseUrl || context.meta?.baseUrl,
+    baseUrl: normalizeProviderBaseUrl(config, config.baseUrl || context.meta?.baseUrl),
     api: context.api,
     apiKeyEnv: context.meta?.apiKeyEnv,
     headers: context.meta?.headers,
@@ -311,7 +327,16 @@ export async function syncUpdatedProviderToRuntime(
   if (defaultProviderId === config.id) {
     const modelOverride = config.model ? `${ock}/${config.model}` : undefined;
     if (config.type !== 'custom') {
-      await setOpenClawDefaultModel(ock, modelOverride, fallbackModels);
+      if (shouldUseExplicitDefaultOverride(config, ock)) {
+        await setOpenClawDefaultModelWithOverride(ock, modelOverride, {
+          baseUrl: normalizeProviderBaseUrl(config, config.baseUrl || context.meta?.baseUrl),
+          api: context.api,
+          apiKeyEnv: context.meta?.apiKeyEnv,
+          headers: context.meta?.headers,
+        }, fallbackModels);
+      } else {
+        await setOpenClawDefaultModel(ock, modelOverride, fallbackModels);
+      }
     } else {
       await setOpenClawDefaultModelWithOverride(ock, modelOverride, {
         baseUrl: config.baseUrl,
@@ -383,6 +408,13 @@ export async function syncDefaultProviderToRuntime(
       await setOpenClawDefaultModelWithOverride(ock, modelOverride, {
         baseUrl: provider.baseUrl,
         api: provider.apiProtocol || 'openai-completions',
+      }, fallbackModels);
+    } else if (shouldUseExplicitDefaultOverride(provider, ock)) {
+      await setOpenClawDefaultModelWithOverride(ock, modelOverride, {
+        baseUrl: normalizeProviderBaseUrl(provider, provider.baseUrl || getProviderConfig(provider.type)?.baseUrl),
+        api: provider.apiProtocol || getProviderConfig(provider.type)?.api,
+        apiKeyEnv: getProviderConfig(provider.type)?.apiKeyEnv,
+        headers: getProviderConfig(provider.type)?.headers,
       }, fallbackModels);
     } else {
       await setOpenClawDefaultModel(ock, modelOverride, fallbackModels);
