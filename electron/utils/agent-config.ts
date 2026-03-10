@@ -196,13 +196,19 @@ function isSimpleChannelBinding(binding: unknown): binding is BindingConfig {
   return keys.length === 1 && typeof candidate.match.channel === 'string' && Boolean(candidate.match.channel);
 }
 
+/** Normalize agent ID for consistent comparison (bindings vs entries). */
+function normalizeAgentIdForBinding(id: string): string {
+  return (id ?? '').trim().toLowerCase() || '';
+}
+
 function getSimpleChannelBindingMap(bindings: unknown): Map<string, string> {
   const owners = new Map<string, string>();
   if (!Array.isArray(bindings)) return owners;
 
   for (const binding of bindings) {
     if (!isSimpleChannelBinding(binding)) continue;
-    owners.set(binding.match.channel!, binding.agentId!);
+    const agentId = normalizeAgentIdForBinding(binding.agentId!);
+    if (agentId) owners.set(binding.match.channel!, agentId);
   }
 
   return owners;
@@ -293,16 +299,18 @@ async function buildSnapshotFromConfig(config: AgentConfigDocument): Promise<Age
   const { entries, defaultAgentId } = normalizeAgentsConfig(config);
   const configuredChannels = await listConfiguredChannels();
   const explicitOwners = getSimpleChannelBindingMap(config.bindings);
+  const defaultAgentIdNorm = normalizeAgentIdForBinding(defaultAgentId);
   const channelOwners: Record<string, string> = {};
 
   for (const channelType of configuredChannels) {
-    channelOwners[channelType] = explicitOwners.get(channelType) || defaultAgentId;
+    channelOwners[channelType] = explicitOwners.get(channelType) || defaultAgentIdNorm;
   }
 
   const defaultModelLabel = formatModelLabel((config.agents as AgentsConfig | undefined)?.defaults?.model);
   const agents: AgentSummary[] = entries.map((entry) => {
     const modelLabel = formatModelLabel(entry.model) || defaultModelLabel || 'Not configured';
     const inheritedModel = !formatModelLabel(entry.model) && Boolean(defaultModelLabel);
+    const entryIdNorm = normalizeAgentIdForBinding(entry.id);
     return {
       id: entry.id,
       name: entry.name || (entry.id === MAIN_AGENT_ID ? MAIN_AGENT_NAME : entry.id),
@@ -311,7 +319,7 @@ async function buildSnapshotFromConfig(config: AgentConfigDocument): Promise<Age
       inheritedModel,
       workspace: entry.workspace || (entry.id === MAIN_AGENT_ID ? getDefaultWorkspacePath(config) : `~/.openclaw/workspace-${entry.id}`),
       agentDir: entry.agentDir || getDefaultAgentDirPath(entry.id),
-      channelTypes: configuredChannels.filter((channelType) => channelOwners[channelType] === entry.id),
+      channelTypes: configuredChannels.filter((channelType) => channelOwners[channelType] === entryIdNorm),
     };
   });
 
