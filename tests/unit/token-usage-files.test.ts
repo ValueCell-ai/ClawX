@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { extractSessionIdFromTranscriptFileName } from '@electron/utils/token-usage';
+import { extractSessionIdFromTranscriptFileName } from '@electron/utils/token-usage-core';
 
 describe('extractSessionIdFromTranscriptFileName', () => {
   it('parses normal jsonl transcript names', () => {
@@ -19,4 +19,3 @@ describe('extractSessionIdFromTranscriptFileName', () => {
     expect(extractSessionIdFromTranscriptFileName('abc-123.log')).toBeUndefined();
   });
 });
-

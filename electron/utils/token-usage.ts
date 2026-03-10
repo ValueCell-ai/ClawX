@@ -2,17 +2,17 @@ import { readdir, readFile, stat } from 'fs/promises';
 import { join } from 'path';
 import { getOpenClawConfigDir } from './paths';
 import { logger } from './logger';
-import { parseUsageEntriesFromJsonl, type TokenUsageHistoryEntry } from './token-usage-core';
+import {
+  extractSessionIdFromTranscriptFileName,
+  parseUsageEntriesFromJsonl,
+  type TokenUsageHistoryEntry,
+} from './token-usage-core';
 
-export { parseUsageEntriesFromJsonl, type TokenUsageHistoryEntry } from './token-usage-core';
-
-export function extractSessionIdFromTranscriptFileName(fileName: string): string | undefined {
-  if (!fileName.endsWith('.jsonl') && !fileName.includes('.jsonl.reset.')) return undefined;
-  return fileName
-    .replace(/\.jsonl\.reset\..+$/, '')
-    .replace(/\.deleted\.jsonl$/, '')
-    .replace(/\.jsonl$/, '');
-}
+export {
+  extractSessionIdFromTranscriptFileName,
+  parseUsageEntriesFromJsonl,
+  type TokenUsageHistoryEntry,
+} from './token-usage-core';
 
 async function listRecentSessionFiles(): Promise<Array<{ filePath: string; sessionId: string; agentId: string; mtimeMs: number }>> {
   const openclawDir = getOpenClawConfigDir();
