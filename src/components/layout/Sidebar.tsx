@@ -104,7 +104,6 @@ const INITIAL_NOW_MS = Date.now();
 export function Sidebar() {
   const sidebarCollapsed = useSettingsStore((state) => state.sidebarCollapsed);
   const setSidebarCollapsed = useSettingsStore((state) => state.setSidebarCollapsed);
-  const devModeUnlocked = useSettingsStore((state) => state.devModeUnlocked);
 
   const sessions = useChatStore((s) => s.sessions);
   const currentSessionKey = useChatStore((s) => s.currentSessionKey);
@@ -284,21 +283,6 @@ export function Sidebar() {
 
       {/* Footer */}
       <div className="p-2 mt-auto">
-        {devModeUnlocked && !sidebarCollapsed && (
-          <Button
-            variant="ghost"
-            size="sm"
-            className="w-full justify-start mb-1 hover:bg-black/5 dark:hover:bg-white/5"
-            onClick={openDevConsole}
-          >
-            <div className="flex shrink-0 items-center justify-center text-muted-foreground">
-              <Terminal className="h-[18px] w-[18px] mr-2.5" strokeWidth={2} />
-            </div>
-            <span className="font-medium text-[14px] flex-1 text-left text-foreground/80 overflow-hidden text-ellipsis whitespace-nowrap">{t('sidebar.devConsole')}</span>
-            <ExternalLink className="h-3 w-3 shrink-0 ml-auto opacity-50 text-muted-foreground" />
-          </Button>
-        )}
-
         <NavLink
             to="/settings"
             className={({ isActive }) =>
@@ -319,6 +303,26 @@ export function Sidebar() {
             </>
           )}
         </NavLink>
+
+        <Button
+          variant="ghost"
+          className={cn(
+            'flex items-center gap-2.5 rounded-lg px-2.5 py-2 h-auto text-[14px] font-medium transition-colors w-full mt-1',
+            'hover:bg-black/5 dark:hover:bg-white/5 text-foreground/80',
+            sidebarCollapsed ? 'justify-center px-0' : 'justify-start'
+          )}
+          onClick={openDevConsole}
+        >
+          <div className="flex shrink-0 items-center justify-center text-muted-foreground">
+            <Terminal className="h-[18px] w-[18px]" strokeWidth={2} />
+          </div>
+          {!sidebarCollapsed && (
+            <>
+              <span className="flex-1 text-left overflow-hidden text-ellipsis whitespace-nowrap">OpenClaw Page</span>
+              <ExternalLink className="h-3 w-3 shrink-0 ml-auto opacity-50 text-muted-foreground" />
+            </>
+          )}
+        </Button>
       </div>
 
       <ConfirmDialog

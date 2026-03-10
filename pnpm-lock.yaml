@@ -65,7 +65,7 @@ importers:
         version: 1.2.8(@types/react-dom@19.2.3(@types/react@19.2.14))(@types/react@19.2.14)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)
       '@sliverp/qqbot':
         specifier: ^1.5.4
-        version: 1.5.4(clawdbot@2026.1.24-3(@discordjs/opus@0.10.0(encoding@0.1.13))(@types/express@5.0.6)(devtools-protocol@0.0.1595872)(encoding@0.1.13)(opusscript@0.1.1)(typescript@5.9.3))(moltbot@0.1.0)(openclaw@2026.3.1(@napi-rs/canvas@0.1.95)(@types/express@5.0.6)(encoding@0.1.13)(hono@4.11.8)(node-llama-cpp@3.16.2(typescript@5.9.3)))
+        version: 1.5.4(clawdbot@2026.1.24-3(@discordjs/opus@0.10.0(encoding@0.1.13))(@types/express@5.0.6)(devtools-protocol@0.0.1596832)(encoding@0.1.13)(opusscript@0.1.1)(typescript@5.9.3))(moltbot@0.1.0)(openclaw@2026.3.1(@napi-rs/canvas@0.1.95)(@types/express@5.0.6)(encoding@0.1.13)(hono@4.11.8)(node-llama-cpp@3.16.2(typescript@5.9.3)))
       '@soimy/dingtalk':
         specifier: ^3.1.4
         version: 3.1.4(openclaw@2026.3.1(@napi-rs/canvas@0.1.95)(@types/express@5.0.6)(encoding@0.1.13)(hono@4.11.8)(node-llama-cpp@3.16.2(typescript@5.9.3)))
@@ -1384,6 +1384,34 @@ packages:
     os: [linux]
     libc: [glibc]
 
+  '@node-llama-cpp/linux-x64-cuda-ext@3.15.0':
+    resolution: {integrity: sha512-wQwgSl7Qm8vH56oBt7IuWWDNNsDECkVMS000C92wl3PkbzjwZFiWzehwa+kF8Lr2BBMiCJNkI5nEabhYH3RN2Q==}
+    engines: {node: '>=20.0.0'}
+    cpu: [x64]
+    os: [linux]
+    libc: [glibc]
+
+  '@node-llama-cpp/linux-x64-cuda-ext@3.16.2':
+    resolution: {integrity: sha512-47d9myCJauZyzAlN7IK1eIt/4CcBMslF+yHy4q+yJotD/RV/S6qRpK2kGn+ybtdVjkPGNCoPkHKcyla9iIVjbw==}
+    engines: {node: '>=20.0.0'}
+    cpu: [x64]
+    os: [linux]
+    libc: [glibc]
+
+  '@node-llama-cpp/linux-x64-cuda@3.15.0':
+    resolution: {integrity: sha512-mDjyVulCTRYilm9Emm3lDMx7dbI1vzGqk28Pj28shartjERTUu8aUNDYOmVKNMLpUKS1akw7vy0lMF8t4qswxQ==}
+    engines: {node: '>=20.0.0'}
+    cpu: [x64]
+    os: [linux]
+    libc: [glibc]
+
+  '@node-llama-cpp/linux-x64-cuda@3.16.2':
+    resolution: {integrity: sha512-LTBQFqjin7tyrLNJz0XWTB5QAHDsZV71/qiiRRjXdBKSZHVVaPLfdgxypGu7ggPeBNsv+MckRXdlH5C7yMtE4A==}
+    engines: {node: '>=20.0.0'}
+    cpu: [x64]
+    os: [linux]
+    libc: [glibc]
+
   '@node-llama-cpp/linux-x64-vulkan@3.15.0':
     resolution: {integrity: sha512-htVIthQKq/rr8v5e7NiVtcHsstqTBAAC50kUymmDMbrzAu6d/EHacCJpNbU57b1UUa1nKN5cBqr6Jr+QqEalMA==}
     engines: {node: '>=20.0.0'}
@@ -1446,6 +1474,42 @@ packages:
     resolution: {integrity: sha512-XHNFQzUjYODtkZjIn4NbQVrBtGB9RI9TpisiALryqfrIqagQmjBh6dmxZWlt5uduKAfT7M2/2vrABGR490FACA==}
     engines: {node: '>=20.0.0'}
     cpu: [arm64, x64]
+    os: [win32]
+
+  '@node-llama-cpp/win-x64-cuda-ext@3.15.0':
+    resolution: {integrity: sha512-KQoNH9KsVtqGVXaRdPrnHPrg5w3KOM7CfynPmG1m16gmjmDSIspdPg/Dbg6DgHBfkdAzt+duRZEBk8Bg8KbDHw==}
+    engines: {node: '>=20.0.0'}
+    cpu: [x64]
+    os: [win32]
+
+  '@node-llama-cpp/win-x64-cuda-ext@3.16.2':
+    resolution: {integrity: sha512-sdv4Kzn9bOQWNBRvw6B/zcn8dQRfZhjIHv5AfDBIOfRlSCgjebFpBeYUoU4wZPpjr3ISwcqO5MEWsw+AbUdV3Q==}
+    engines: {node: '>=20.0.0'}
+    cpu: [x64]
+    os: [win32]
+
+  '@node-llama-cpp/win-x64-cuda@3.15.0':
+    resolution: {integrity: sha512-2Kyu1roDwXwFLaJgGZQISIXP9lCDZtJCx/DRcmrYRHcSUFCzo5ikOuAECyliSSQmRUAvvlRCuD+GrTcegbhojA==}
+    engines: {node: '>=20.0.0'}
+    cpu: [x64]
+    os: [win32]
+
+  '@node-llama-cpp/win-x64-cuda@3.16.2':
+    resolution: {integrity: sha512-jStDELHrU3rKQMOk5Hs5bWEazyjE2hzHwpNf6SblOpaGkajM/HJtxEZoL0mLHJx5qeXs4oOVkr7AzuLy0WPpNA==}
+    engines: {node: '>=20.0.0'}
+    cpu: [x64]
+    os: [win32]
+
+  '@node-llama-cpp/win-x64-vulkan@3.15.0':
+    resolution: {integrity: sha512-sH+K7lO49WrUvCCC3RPddCBrn2ZQwKCXKL90P/NZicMRgxTPFZEVSU2jXR/bu1K8B+4lNN+z5OEbjSYs7cKEcA==}
+    engines: {node: '>=20.0.0'}
+    cpu: [x64]
+    os: [win32]
+
+  '@node-llama-cpp/win-x64-vulkan@3.16.2':
+    resolution: {integrity: sha512-9xuHFCOhCQjZgQSFrk79EuSKn9nGWt/SAq/3wujQSQLtgp8jGdtZgwcmuDUoemInf10en2dcOmEt7t8dQdC3XA==}
+    engines: {node: '>=20.0.0'}
+    cpu: [x64]
     os: [win32]
 
   '@node-llama-cpp/win-x64@3.15.0':
@@ -3597,8 +3661,8 @@ packages:
   devlop@1.1.0:
     resolution: {integrity: sha512-RWmIqhcFf1lRYBvNmr7qTNuyCt/7/ns2jbpp1+PalgE/rDQcBT0fioSMUpJ93irlUhC5hrg4cYqe6U+0ImW0rA==}
 
-  devtools-protocol@0.0.1595872:
-    resolution: {integrity: sha512-kRfgp8vWVjBu/fbYCiVFiOqsCk3CrMKEo3WbgGT2NXK2dG7vawWPBljixajVgGK9II8rDO9G0oD0zLt3I1daRg==}
+  devtools-protocol@0.0.1596832:
+    resolution: {integrity: sha512-IwRVIiCa4mpaKeLcZ2cmGpG0hP8ls3zj3zg87Z/JwULm2xYmhOcMrwdeHos6xaANQHGEXzSCzji+6kEuZu873A==}
 
   didyoumean@1.2.2:
     resolution: {integrity: sha512-gxtyfqMg7GKyhQmb056K7M3xszy/myH8w+B4RT+QXBQsvAOdc3XymqDDPHx1BgPgsdAA5SIifona89YtRATDzw==}
@@ -4141,6 +4205,7 @@ packages:
   glob@11.1.0:
     resolution: {integrity: sha512-vuNwKSaKiqm7g0THUBu2x7ckSs3XJLXE+2ssL7/MfTGPLLcrJQ/4Uq1CjPTtO5cCIiRxqvN6Twy1qOwhL0Xjcw==}
     engines: {node: 20 || >=22}
+    deprecated: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
     hasBin: true
 
   glob@13.0.6:
@@ -4352,11 +4417,6 @@ packages:
   ipaddr.js@2.3.0:
     resolution: {integrity: sha512-Zv/pA+ciVFbCSBBjGfaKUya/CcGmUHzTydLMaTwrUUEM2DIEO3iZvueGxmacvmN50fGpGVKeTXpb2LcYQxeVdg==}
     engines: {node: '>= 10'}
-
-  ipull@3.9.3:
-    resolution: {integrity: sha512-ZMkxaopfwKHwmEuGDYx7giNBdLxbHbRCWcQVA1D2eqE4crUguupfxej6s7UqbidYEwT69dkyumYkY8DPHIxF9g==}
-    engines: {node: '>=18.0.0'}
-    hasBin: true
 
   ipull@3.9.5:
     resolution: {integrity: sha512-5w/yZB5lXmTfsvNawmvkCjYo4SJNuKQz/av8TC1UiOyfOHyaM+DReqbpU2XpWYfmY+NIUbRRH8PUAWsxaS+IfA==}
@@ -6125,6 +6185,7 @@ packages:
   tar@7.5.4:
     resolution: {integrity: sha512-AN04xbWGrSTDmVwlI4/GTlIIwMFk/XEv7uL8aa57zuvRy6s4hdBed+lVq2fAZ89XDa7Us3ANXcE3Tvqvja1kTA==}
     engines: {node: '>=18'}
+    deprecated: Old versions of tar are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
 
   tar@7.5.9:
     resolution: {integrity: sha512-BTLcK0xsDh2+PUe9F6c2TlRp4zOOBMTkoQHQIWSIzI0R7KG46uEwq4OPk2W7bZcprBMsuaeFsqwYr7pjh6CuHg==}
@@ -8273,6 +8334,18 @@ snapshots:
   '@node-llama-cpp/linux-armv7l@3.16.2':
     optional: true
 
+  '@node-llama-cpp/linux-x64-cuda-ext@3.15.0':
+    optional: true
+
+  '@node-llama-cpp/linux-x64-cuda-ext@3.16.2':
+    optional: true
+
+  '@node-llama-cpp/linux-x64-cuda@3.15.0':
+    optional: true
+
+  '@node-llama-cpp/linux-x64-cuda@3.16.2':
+    optional: true
+
   '@node-llama-cpp/linux-x64-vulkan@3.15.0':
     optional: true
 
@@ -8301,6 +8374,24 @@ snapshots:
     optional: true
 
   '@node-llama-cpp/win-arm64@3.16.2':
+    optional: true
+
+  '@node-llama-cpp/win-x64-cuda-ext@3.15.0':
+    optional: true
+
+  '@node-llama-cpp/win-x64-cuda-ext@3.16.2':
+    optional: true
+
+  '@node-llama-cpp/win-x64-cuda@3.15.0':
+    optional: true
+
+  '@node-llama-cpp/win-x64-cuda@3.16.2':
+    optional: true
+
+  '@node-llama-cpp/win-x64-vulkan@3.15.0':
+    optional: true
+
+  '@node-llama-cpp/win-x64-vulkan@3.16.2':
     optional: true
 
   '@node-llama-cpp/win-x64@3.15.0':
@@ -9145,9 +9236,9 @@ snapshots:
     transitivePeerDependencies:
       - debug
 
-  '@sliverp/qqbot@1.5.4(clawdbot@2026.1.24-3(@discordjs/opus@0.10.0(encoding@0.1.13))(@types/express@5.0.6)(devtools-protocol@0.0.1595872)(encoding@0.1.13)(opusscript@0.1.1)(typescript@5.9.3))(moltbot@0.1.0)(openclaw@2026.3.1(@napi-rs/canvas@0.1.95)(@types/express@5.0.6)(encoding@0.1.13)(hono@4.11.8)(node-llama-cpp@3.16.2(typescript@5.9.3)))':
+  '@sliverp/qqbot@1.5.4(clawdbot@2026.1.24-3(@discordjs/opus@0.10.0(encoding@0.1.13))(@types/express@5.0.6)(devtools-protocol@0.0.1596832)(encoding@0.1.13)(opusscript@0.1.1)(typescript@5.9.3))(moltbot@0.1.0)(openclaw@2026.3.1(@napi-rs/canvas@0.1.95)(@types/express@5.0.6)(encoding@0.1.13)(hono@4.11.8)(node-llama-cpp@3.16.2(typescript@5.9.3)))':
     dependencies:
-      clawdbot: 2026.1.24-3(@discordjs/opus@0.10.0(encoding@0.1.13))(@types/express@5.0.6)(devtools-protocol@0.0.1595872)(encoding@0.1.13)(opusscript@0.1.1)(typescript@5.9.3)
+      clawdbot: 2026.1.24-3(@discordjs/opus@0.10.0(encoding@0.1.13))(@types/express@5.0.6)(devtools-protocol@0.0.1596832)(encoding@0.1.13)(opusscript@0.1.1)(typescript@5.9.3)
       moltbot: 0.1.0
       openclaw: 2026.3.1(@napi-rs/canvas@0.1.95)(@types/express@5.0.6)(encoding@0.1.13)(hono@4.11.8)(node-llama-cpp@3.16.2(typescript@5.9.3))
 
@@ -10373,9 +10464,9 @@ snapshots:
 
   chownr@3.0.0: {}
 
-  chromium-bidi@13.0.1(devtools-protocol@0.0.1595872):
+  chromium-bidi@13.0.1(devtools-protocol@0.0.1596832):
     dependencies:
-      devtools-protocol: 0.0.1595872
+      devtools-protocol: 0.0.1596832
       mitt: 3.0.1
       zod: 3.25.76
 
@@ -10389,7 +10480,7 @@ snapshots:
     dependencies:
       clsx: 2.1.1
 
-  clawdbot@2026.1.24-3(@discordjs/opus@0.10.0(encoding@0.1.13))(@types/express@5.0.6)(devtools-protocol@0.0.1595872)(encoding@0.1.13)(opusscript@0.1.1)(typescript@5.9.3):
+  clawdbot@2026.1.24-3(@discordjs/opus@0.10.0(encoding@0.1.13))(@types/express@5.0.6)(devtools-protocol@0.0.1596832)(encoding@0.1.13)(opusscript@0.1.1)(typescript@5.9.3):
     dependencies:
       '@agentclientprotocol/sdk': 0.13.1(zod@4.3.6)
       '@aws-sdk/client-bedrock': 3.1000.0
@@ -10413,7 +10504,7 @@ snapshots:
       body-parser: 2.2.2
       chalk: 5.6.2
       chokidar: 5.0.0
-      chromium-bidi: 13.0.1(devtools-protocol@0.0.1595872)
+      chromium-bidi: 13.0.1(devtools-protocol@0.0.1596832)
       cli-highlight: 2.1.11
       commander: 14.0.3
       croner: 9.1.0
@@ -10751,7 +10842,7 @@ snapshots:
     dependencies:
       dequal: 2.0.3
 
-  devtools-protocol@0.0.1595872: {}
+  devtools-protocol@0.0.1596832: {}
 
   didyoumean@1.2.2: {}
 
@@ -11710,31 +11801,6 @@ snapshots:
 
   ipaddr.js@2.3.0: {}
 
-  ipull@3.9.3:
-    dependencies:
-      '@tinyhttp/content-disposition': 2.2.4
-      async-retry: 1.3.3
-      chalk: 5.6.2
-      ci-info: 4.4.0
-      cli-spinners: 2.9.2
-      commander: 10.0.1
-      eventemitter3: 5.0.4
-      filenamify: 6.0.0
-      fs-extra: 11.3.3
-      is-unicode-supported: 2.1.0
-      lifecycle-utils: 2.1.0
-      lodash.debounce: 4.0.8
-      lowdb: 7.0.1
-      pretty-bytes: 6.1.1
-      pretty-ms: 8.0.0
-      sleep-promise: 9.1.0
-      slice-ansi: 7.1.2
-      stdout-update: 4.0.1
-      strip-ansi: 7.1.2
-    optionalDependencies:
-      '@reflink/reflink': 0.1.19
-    optional: true
-
   ipull@3.9.5:
     dependencies:
       '@tinyhttp/content-disposition': 2.2.4
@@ -12685,7 +12751,7 @@ snapshots:
       filenamify: 6.0.0
       fs-extra: 11.3.3
       ignore: 7.0.5
-      ipull: 3.9.3
+      ipull: 3.9.5
       is-unicode-supported: 2.1.0
       lifecycle-utils: 3.1.1
       log-symbols: 7.0.1
@@ -12707,11 +12773,16 @@ snapshots:
       '@node-llama-cpp/linux-arm64': 3.15.0
       '@node-llama-cpp/linux-armv7l': 3.15.0
       '@node-llama-cpp/linux-x64': 3.15.0
+      '@node-llama-cpp/linux-x64-cuda': 3.15.0
+      '@node-llama-cpp/linux-x64-cuda-ext': 3.15.0
       '@node-llama-cpp/linux-x64-vulkan': 3.15.0
       '@node-llama-cpp/mac-arm64-metal': 3.15.0
       '@node-llama-cpp/mac-x64': 3.15.0
       '@node-llama-cpp/win-arm64': 3.15.0
       '@node-llama-cpp/win-x64': 3.15.0
+      '@node-llama-cpp/win-x64-cuda': 3.15.0
+      '@node-llama-cpp/win-x64-cuda-ext': 3.15.0
+      '@node-llama-cpp/win-x64-vulkan': 3.15.0
       typescript: 5.9.3
     transitivePeerDependencies:
       - supports-color
@@ -12752,11 +12823,16 @@ snapshots:
       '@node-llama-cpp/linux-arm64': 3.16.2
       '@node-llama-cpp/linux-armv7l': 3.16.2
       '@node-llama-cpp/linux-x64': 3.16.2
+      '@node-llama-cpp/linux-x64-cuda': 3.16.2
+      '@node-llama-cpp/linux-x64-cuda-ext': 3.16.2
       '@node-llama-cpp/linux-x64-vulkan': 3.16.2
       '@node-llama-cpp/mac-arm64-metal': 3.16.2
       '@node-llama-cpp/mac-x64': 3.16.2
       '@node-llama-cpp/win-arm64': 3.16.2
       '@node-llama-cpp/win-x64': 3.16.2
+      '@node-llama-cpp/win-x64-cuda': 3.16.2
+      '@node-llama-cpp/win-x64-cuda-ext': 3.16.2
+      '@node-llama-cpp/win-x64-vulkan': 3.16.2
       typescript: 5.9.3
     transitivePeerDependencies:
       - supports-color
