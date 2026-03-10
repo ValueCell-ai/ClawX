@@ -17,6 +17,12 @@ import type { AgentSummary } from '@/types/agent';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
+import telegramIcon from '@/assets/channels/telegram.svg';
+import discordIcon from '@/assets/channels/discord.svg';
+import whatsappIcon from '@/assets/channels/whatsapp.svg';
+import dingtalkIcon from '@/assets/channels/dingtalk.svg';
+import feishuIcon from '@/assets/channels/feishu.svg';
+import wecomIcon from '@/assets/channels/wecom.svg';
 
 export function Agents() {
   const { t } = useTranslation('agents');
@@ -238,6 +244,25 @@ function AgentCard({
 
 const inputClasses = 'h-[44px] rounded-xl font-mono text-[13px] bg-[#eeece3] dark:bg-[#151514] border-black/10 dark:border-white/10 focus-visible:ring-2 focus-visible:ring-blue-500/50 focus-visible:border-blue-500 shadow-sm transition-all text-foreground placeholder:text-foreground/40';
 const labelClasses = 'text-[14px] text-foreground/80 font-bold';
+
+function ChannelLogo({ type }: { type: ChannelType }) {
+  switch (type) {
+    case 'telegram':
+      return <img src={telegramIcon} alt="Telegram" className="w-[20px] h-[20px] dark:invert" />;
+    case 'discord':
+      return <img src={discordIcon} alt="Discord" className="w-[20px] h-[20px] dark:invert" />;
+    case 'whatsapp':
+      return <img src={whatsappIcon} alt="WhatsApp" className="w-[20px] h-[20px] dark:invert" />;
+    case 'dingtalk':
+      return <img src={dingtalkIcon} alt="DingTalk" className="w-[20px] h-[20px] dark:invert" />;
+    case 'feishu':
+      return <img src={feishuIcon} alt="Feishu" className="w-[20px] h-[20px] dark:invert" />;
+    case 'wecom':
+      return <img src={wecomIcon} alt="WeCom" className="w-[20px] h-[20px] dark:invert" />;
+    default:
+      return <span className="text-[20px] leading-none">{CHANNEL_ICONS[type] || '💬'}</span>;
+  }
+}
 
 function AddAgentDialog({
   onClose,
@@ -469,7 +494,9 @@ function AgentSettingsModal({
                 {assignedChannels.map((channel) => (
                   <div key={channel.channelType} className="flex items-center justify-between rounded-2xl bg-black/5 dark:bg-white/5 border border-transparent p-4">
                     <div className="flex items-center gap-3 min-w-0">
-                      <span className="text-xl">{CHANNEL_ICONS[channel.channelType]}</span>
+                      <div className="h-[40px] w-[40px] shrink-0 flex items-center justify-center text-foreground bg-black/5 dark:bg-white/5 border border-black/5 dark:border-white/10 rounded-full shadow-sm">
+                        <ChannelLogo type={channel.channelType} />
+                      </div>
                       <div className="min-w-0">
                         <p className="text-[15px] font-semibold text-foreground">{channel.name}</p>
                         <p className="text-[13.5px] text-muted-foreground">
