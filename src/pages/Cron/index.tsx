@@ -7,9 +7,7 @@ import {
   Plus,
   Clock,
   Play,
-  Pause,
   Trash2,
-  Edit,
   RefreshCw,
   X,
   Calendar,
@@ -20,10 +18,10 @@ import {
   Loader2,
   Timer,
   History,
+  Pause,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
 import { Switch } from '@/components/ui/switch';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -236,43 +234,45 @@ function TaskDialog({ job, onClose, onSave }: TaskDialogProps) {
 
   return (
     <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4" onClick={onClose}>
-      <Card className="w-full max-w-lg max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
-        <CardHeader className="flex flex-row items-start justify-between">
+      <Card className="w-full max-w-lg max-h-[90vh] flex flex-col rounded-3xl border-0 shadow-2xl bg-[#f3f1e9] dark:bg-[#1a1a19] overflow-hidden" onClick={(e) => e.stopPropagation()}>
+        <CardHeader className="flex flex-row items-start justify-between pb-2 shrink-0">
           <div>
-            <CardTitle>{job ? t('dialog.editTitle') : t('dialog.createTitle')}</CardTitle>
-            <CardDescription>{t('dialog.description')}</CardDescription>
+            <CardTitle className="text-2xl font-serif font-normal">{job ? t('dialog.editTitle') : t('dialog.createTitle')}</CardTitle>
+            <CardDescription className="text-[15px] mt-1 text-foreground/70">{t('dialog.description')}</CardDescription>
           </div>
-          <Button variant="ghost" size="icon" onClick={onClose}>
+          <Button variant="ghost" size="icon" onClick={onClose} className="rounded-full h-8 w-8 -mr-2 -mt-2 text-muted-foreground hover:text-foreground hover:bg-black/5 dark:hover:bg-white/5">
             <X className="h-4 w-4" />
           </Button>
         </CardHeader>
-        <CardContent className="space-y-4">
+        <CardContent className="space-y-6 pt-4 overflow-y-auto flex-1 p-6">
           {/* Name */}
-          <div className="space-y-2">
-            <Label htmlFor="name">{t('dialog.taskName')}</Label>
+          <div className="space-y-2.5">
+            <Label htmlFor="name" className="text-[14px] text-foreground/80 font-bold">{t('dialog.taskName')}</Label>
             <Input
               id="name"
               placeholder={t('dialog.taskNamePlaceholder')}
               value={name}
               onChange={(e) => setName(e.target.value)}
+              className="h-[44px] rounded-xl font-mono text-[13px] bg-[#eeece3] dark:bg-[#151514] border-black/10 dark:border-white/10 focus-visible:ring-2 focus-visible:ring-blue-500/50 focus-visible:border-blue-500 shadow-sm transition-all text-foreground placeholder:text-foreground/40"
             />
           </div>
 
           {/* Message */}
-          <div className="space-y-2">
-            <Label htmlFor="message">{t('dialog.message')}</Label>
+          <div className="space-y-2.5">
+            <Label htmlFor="message" className="text-[14px] text-foreground/80 font-bold">{t('dialog.message')}</Label>
             <Textarea
               id="message"
               placeholder={t('dialog.messagePlaceholder')}
               value={message}
               onChange={(e) => setMessage(e.target.value)}
               rows={3}
+              className="rounded-xl font-mono text-[13px] bg-[#eeece3] dark:bg-[#151514] border-black/10 dark:border-white/10 focus-visible:ring-2 focus-visible:ring-blue-500/50 focus-visible:border-blue-500 shadow-sm transition-all text-foreground placeholder:text-foreground/40 resize-none"
             />
           </div>
 
           {/* Schedule */}
-          <div className="space-y-2">
-            <Label>{t('dialog.schedule')}</Label>
+          <div className="space-y-2.5">
+            <Label className="text-[14px] text-foreground/80 font-bold">{t('dialog.schedule')}</Label>
             {!useCustom ? (
               <div className="grid grid-cols-2 gap-2">
                 {schedulePresets.map((preset) => (
@@ -282,9 +282,14 @@ function TaskDialog({ job, onClose, onSave }: TaskDialogProps) {
                     variant={schedule === preset.value ? 'default' : 'outline'}
                     size="sm"
                     onClick={() => setSchedule(preset.value)}
-                    className="justify-start"
+                    className={cn(
+                      "justify-start h-10 rounded-xl font-medium text-[13px] transition-all",
+                      schedule === preset.value 
+                        ? "bg-[#0a84ff] hover:bg-[#007aff] text-white shadow-sm border-transparent" 
+                        : "bg-[#eeece3] dark:bg-[#151514] border-black/10 dark:border-white/10 hover:bg-black/5 dark:hover:bg-white/5 text-foreground/80 hover:text-foreground"
+                    )}
                   >
-                    <Timer className="h-4 w-4 mr-2" />
+                    <Timer className="h-4 w-4 mr-2 opacity-70" />
                     {t(`presets.${preset.key}` as const)}
                   </Button>
                 ))}
@@ -294,27 +299,30 @@ function TaskDialog({ job, onClose, onSave }: TaskDialogProps) {
                 placeholder={t('dialog.cronPlaceholder')}
                 value={customSchedule}
                 onChange={(e) => setCustomSchedule(e.target.value)}
+                className="h-[44px] rounded-xl font-mono text-[13px] bg-[#eeece3] dark:bg-[#151514] border-black/10 dark:border-white/10 focus-visible:ring-2 focus-visible:ring-blue-500/50 focus-visible:border-blue-500 shadow-sm transition-all text-foreground placeholder:text-foreground/40"
               />
             )}
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              onClick={() => setUseCustom(!useCustom)}
-              className="text-xs"
-            >
-              {useCustom ? t('dialog.usePresets') : t('dialog.useCustomCron')}
-            </Button>
-            <p className="text-xs text-muted-foreground">
-              {schedulePreview ? `${t('card.next')}: ${schedulePreview}` : t('dialog.cronPlaceholder')}
-            </p>
+            <div className="flex items-center justify-between mt-2">
+              <p className="text-[12px] text-muted-foreground/80 font-medium">
+                {schedulePreview ? `${t('card.next')}: ${schedulePreview}` : t('dialog.cronPlaceholder')}
+              </p>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={() => setUseCustom(!useCustom)}
+                className="text-[12px] h-7 px-2 text-foreground/60 hover:text-foreground hover:bg-black/5 dark:hover:bg-white/5 rounded-lg"
+              >
+                {useCustom ? t('dialog.usePresets') : t('dialog.useCustomCron')}
+              </Button>
+            </div>
           </div>
 
           {/* Enabled */}
-          <div className="flex items-center justify-between">
+          <div className="flex items-center justify-between bg-[#eeece3] dark:bg-[#151514] p-4 rounded-2xl shadow-sm border border-black/5 dark:border-white/5">
             <div>
-              <Label>{t('dialog.enableImmediately')}</Label>
-              <p className="text-sm text-muted-foreground">
+              <Label className="text-[14px] text-foreground/80 font-bold">{t('dialog.enableImmediately')}</Label>
+              <p className="text-[13px] text-muted-foreground mt-0.5">
                 {t('dialog.enableImmediatelyDesc')}
               </p>
             </div>
@@ -322,11 +330,11 @@ function TaskDialog({ job, onClose, onSave }: TaskDialogProps) {
           </div>
 
           {/* Actions */}
-          <div className="flex justify-end gap-2 pt-4 border-t">
-            <Button variant="outline" onClick={onClose}>
+          <div className="flex justify-end gap-3 pt-4">
+            <Button variant="outline" onClick={onClose} className="rounded-full px-6 h-[42px] text-[13px] font-semibold border-black/20 dark:border-white/20 bg-transparent hover:bg-black/5 dark:hover:bg-white/5 text-foreground/80 hover:text-foreground shadow-sm">
               {t('common:actions.cancel', 'Cancel')}
             </Button>
-            <Button onClick={handleSubmit} disabled={saving}>
+            <Button onClick={handleSubmit} disabled={saving} className="rounded-full px-6 h-[42px] text-[13px] font-semibold bg-[#0a84ff] hover:bg-[#007aff] text-white shadow-sm border border-transparent transition-all">
               {saving ? (
                 <>
                   <Loader2 className="h-4 w-4 mr-2 animate-spin" />
@@ -359,7 +367,8 @@ function CronJobCard({ job, onToggle, onEdit, onDelete, onTrigger }: CronJobCard
   const { t } = useTranslation('cron');
   const [triggering, setTriggering] = useState(false);
 
-  const handleTrigger = async () => {
+  const handleTrigger = async (e: React.MouseEvent) => {
+    e.stopPropagation();
     setTriggering(true);
     try {
       await onTrigger();
@@ -372,81 +381,79 @@ function CronJobCard({ job, onToggle, onEdit, onDelete, onTrigger }: CronJobCard
     }
   };
 
-  const handleDelete = () => {
+  const handleDelete = (e: React.MouseEvent) => {
+    e.stopPropagation();
     onDelete();
   };
 
   return (
-    <Card className={cn(
-      'transition-colors',
-      job.enabled && 'border-primary/30'
-    )}>
-      <CardHeader className="pb-3">
-        <div className="flex items-start justify-between">
-          <div className="flex items-center gap-3">
-            <div className={cn(
-              'rounded-full p-2',
-              job.enabled
-                ? 'bg-green-100 dark:bg-green-900/30'
-                : 'bg-muted'
-            )}>
-              <Clock className={cn(
-                'h-5 w-5',
-                job.enabled ? 'text-green-600' : 'text-muted-foreground'
-              )} />
-            </div>
-            <div>
-              <CardTitle className="text-lg">{job.name}</CardTitle>
-              <CardDescription className="flex items-center gap-2">
-                <Timer className="h-3 w-3" />
-                {parseCronSchedule(job.schedule, t)}
-              </CardDescription>
-            </div>
+    <div 
+      className="group flex flex-col p-5 rounded-2xl bg-transparent border border-transparent hover:bg-black/5 dark:hover:bg-white/5 transition-all relative overflow-hidden cursor-pointer"
+      onClick={onEdit}
+    >
+      <div className="flex items-start justify-between mb-4">
+        <div className="flex items-center gap-4">
+          <div className="h-[46px] w-[46px] shrink-0 flex items-center justify-center text-foreground bg-black/5 dark:bg-white/5 border border-black/5 dark:border-white/10 rounded-full shadow-sm group-hover:scale-105 transition-transform">
+            <Clock className={cn("h-5 w-5", job.enabled ? "text-foreground" : "text-muted-foreground")} />
           </div>
-          <div className="flex items-center gap-2">
-            <Badge variant={job.enabled ? 'success' : 'secondary'}>
-              {job.enabled ? t('stats.active') : t('stats.paused')}
-            </Badge>
-            <Switch
-              checked={job.enabled}
-              onCheckedChange={onToggle}
-            />
+          <div className="flex flex-col min-w-0">
+            <div className="flex items-center gap-2 mb-1">
+              <h3 className="text-[16px] font-semibold text-foreground truncate">{job.name}</h3>
+              <div 
+                className={cn(
+                  "w-2 h-2 rounded-full shrink-0",
+                  job.enabled ? "bg-green-500" : "bg-muted-foreground"
+                )} 
+                title={job.enabled ? t('stats.active') : t('stats.paused')}
+              />
+            </div>
+            <p className="text-[13px] text-muted-foreground flex items-center gap-1.5">
+              <Timer className="h-3.5 w-3.5" />
+              {parseCronSchedule(job.schedule, t)}
+            </p>
           </div>
         </div>
-      </CardHeader>
-      <CardContent className="space-y-4">
-        {/* Message Preview */}
-        <div className="flex items-start gap-2 p-3 rounded-lg bg-muted/50">
-          <MessageSquare className="h-4 w-4 mt-0.5 text-muted-foreground shrink-0" />
-          <p className="text-sm text-muted-foreground line-clamp-2">
+        
+        <div className="flex items-center gap-2" onClick={e => e.stopPropagation()}>
+          <Switch
+            checked={job.enabled}
+            onCheckedChange={onToggle}
+          />
+        </div>
+      </div>
+      
+      <div className="flex-1 flex flex-col justify-end mt-2 pl-[62px]">
+        <div className="flex items-start gap-2 mb-3">
+          <MessageSquare className="h-3.5 w-3.5 mt-0.5 text-muted-foreground shrink-0" />
+          <p className="text-[13.5px] text-muted-foreground line-clamp-2 leading-[1.5]">
             {job.message}
           </p>
         </div>
 
         {/* Metadata */}
-        <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-sm text-muted-foreground">
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-[12px] text-muted-foreground/80 font-medium mb-3">
           {job.target && (
-            <span className="flex items-center gap-1">
+            <span className="flex items-center gap-1.5">
               {CHANNEL_ICONS[job.target.channelType as ChannelType]}
               {job.target.channelName}
             </span>
           )}
 
           {job.lastRun && (
-            <span className="flex items-center gap-1">
-              <History className="h-4 w-4" />
+            <span className="flex items-center gap-1.5">
+              <History className="h-3.5 w-3.5" />
               {t('card.last')}: {formatRelativeTime(job.lastRun.time)}
               {job.lastRun.success ? (
-                <CheckCircle2 className="h-4 w-4 text-green-500" />
+                <CheckCircle2 className="h-3.5 w-3.5 text-green-500" />
               ) : (
-                <XCircle className="h-4 w-4 text-red-500" />
+                <XCircle className="h-3.5 w-3.5 text-red-500" />
               )}
             </span>
           )}
 
           {job.nextRun && job.enabled && (
-            <span className="flex items-center gap-1">
-              <Calendar className="h-4 w-4" />
+            <span className="flex items-center gap-1.5">
+              <Calendar className="h-3.5 w-3.5" />
               {t('card.next')}: {new Date(job.nextRun).toLocaleString()}
             </span>
           )}
@@ -454,38 +461,40 @@ function CronJobCard({ job, onToggle, onEdit, onDelete, onTrigger }: CronJobCard
 
         {/* Last Run Error */}
         {job.lastRun && !job.lastRun.success && job.lastRun.error && (
-          <div className="flex items-start gap-2 p-2 rounded-lg bg-red-50 dark:bg-red-900/20 text-sm text-red-600 dark:text-red-400">
+          <div className="flex items-start gap-2 p-2.5 mb-3 rounded-xl bg-destructive/10 border border-destructive/20 text-[13px] text-destructive">
             <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" />
-            <span>{job.lastRun.error}</span>
+            <span className="line-clamp-2">{job.lastRun.error}</span>
           </div>
         )}
 
         {/* Actions */}
-        <div className="flex justify-end gap-1 pt-2 border-t">
+        <div className="flex justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity mt-auto">
           <Button
             variant="ghost"
             size="sm"
             onClick={handleTrigger}
             disabled={triggering}
+            className="h-8 px-3 text-foreground/70 hover:text-foreground hover:bg-black/5 dark:hover:bg-white/5 rounded-lg text-[13px] font-medium transition-colors"
           >
             {triggering ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
+              <Loader2 className="h-3.5 w-3.5 animate-spin mr-1.5" />
             ) : (
-              <Play className="h-4 w-4" />
+              <Play className="h-3.5 w-3.5 mr-1.5" />
             )}
-            <span className="ml-1">{t('card.runNow')}</span>
+            {t('card.runNow')}
           </Button>
-          <Button variant="ghost" size="sm" onClick={onEdit}>
-            <Edit className="h-4 w-4" />
-            <span className="ml-1">{t('common:actions.edit', 'Edit')}</span>
-          </Button>
-          <Button variant="ghost" size="sm" onClick={handleDelete}>
-            <Trash2 className="h-4 w-4 text-destructive" />
-            <span className="ml-1 text-destructive">{t('common:actions.delete', 'Delete')}</span>
+          <Button 
+            variant="ghost" 
+            size="sm" 
+            onClick={handleDelete}
+            className="h-8 px-3 text-destructive/70 hover:text-destructive hover:bg-destructive/10 rounded-lg text-[13px] font-medium transition-colors"
+          >
+            <Trash2 className="h-3.5 w-3.5 mr-1.5" />
+            {t('common:actions.delete', 'Delete')}
           </Button>
         </div>
-      </CardContent>
-    </Card>
+      </div>
+    </div>
   );
 }
 
@@ -532,156 +541,162 @@ export function Cron() {
 
   if (loading) {
     return (
-      <div className="flex h-96 items-center justify-center">
+      <div className="flex flex-col -m-6 dark:bg-background min-h-[calc(100vh-2.5rem)] items-center justify-center">
         <LoadingSpinner size="lg" />
       </div>
     );
   }
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold">{t('title')}</h1>
-          <p className="text-muted-foreground">
-            {t('subtitle')}
-          </p>
-        </div>
-        <div className="flex gap-2">
-          <Button variant="outline" onClick={fetchJobs} disabled={!isGatewayRunning}>
-            <RefreshCw className="h-4 w-4 mr-2" />
-            {t('refresh')}
-          </Button>
-          <Button
-            onClick={() => {
-              setEditingJob(undefined);
-              setShowDialog(true);
-            }}
-            disabled={!isGatewayRunning}
-          >
-            <Plus className="h-4 w-4 mr-2" />
-            {t('newTask')}
-          </Button>
-        </div>
-      </div>
-
-      {/* Gateway Warning */}
-      {!isGatewayRunning && (
-        <Card className="border-yellow-500 bg-yellow-50 dark:bg-yellow-900/10">
-          <CardContent className="py-4 flex items-center gap-3">
-            <AlertCircle className="h-5 w-5 text-yellow-600" />
-            <span className="text-yellow-700 dark:text-yellow-400">
-              {t('gatewayWarning')}
-            </span>
-          </CardContent>
-        </Card>
-      )}
-
-      {/* Statistics */}
-      <div className="grid grid-cols-4 gap-4">
-        <Card>
-          <CardContent className="pt-6">
-            <div className="flex items-center gap-4">
-              <div className="rounded-full bg-primary/10 p-3">
-                <Clock className="h-6 w-6 text-primary" />
-              </div>
-              <div>
-                <p className="text-2xl font-bold">{jobs.length}</p>
-                <p className="text-sm text-muted-foreground">{t('stats.total')}</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="pt-6">
-            <div className="flex items-center gap-4">
-              <div className="rounded-full bg-green-100 p-3 dark:bg-green-900/30">
-                <Play className="h-6 w-6 text-green-600" />
-              </div>
-              <div>
-                <p className="text-2xl font-bold">{activeJobs.length}</p>
-                <p className="text-sm text-muted-foreground">{t('stats.active')}</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="pt-6">
-            <div className="flex items-center gap-4">
-              <div className="rounded-full bg-yellow-100 p-3 dark:bg-yellow-900/30">
-                <Pause className="h-6 w-6 text-yellow-600" />
-              </div>
-              <div>
-                <p className="text-2xl font-bold">{pausedJobs.length}</p>
-                <p className="text-sm text-muted-foreground">{t('stats.paused')}</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="pt-6">
-            <div className="flex items-center gap-4">
-              <div className="rounded-full bg-red-100 p-3 dark:bg-red-900/30">
-                <XCircle className="h-6 w-6 text-red-600" />
-              </div>
-              <div>
-                <p className="text-2xl font-bold">{failedJobs.length}</p>
-                <p className="text-sm text-muted-foreground">{t('stats.failed')}</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Error Display */}
-      {error && (
-        <Card className="border-destructive">
-          <CardContent className="py-4 text-destructive flex items-center gap-2">
-            <AlertCircle className="h-5 w-5" />
-            {error}
-          </CardContent>
-        </Card>
-      )}
-
-      {/* Jobs List */}
-      {jobs.length === 0 ? (
-        <Card>
-          <CardContent className="flex flex-col items-center justify-center py-12">
-            <Clock className="h-12 w-12 text-muted-foreground mb-4" />
-            <h3 className="text-lg font-medium mb-2">{t('empty.title')}</h3>
-            <p className="text-muted-foreground text-center mb-4 max-w-md">
-              {t('empty.description')}
+    <div className="flex flex-col -m-6 dark:bg-background h-[calc(100vh-2.5rem)] overflow-hidden">
+      <div className="w-full max-w-5xl mx-auto flex flex-col h-full p-10 pt-16">
+        {/* Header */}
+        <div className="flex flex-col md:flex-row md:items-start justify-between mb-12 shrink-0 gap-4">
+          <div>
+            <h1 className="text-5xl md:text-6xl font-serif text-foreground mb-3 font-normal tracking-tight" style={{ fontFamily: 'Georgia, Cambria, "Times New Roman", Times, serif' }}>
+              {t('title')}
+            </h1>
+            <p className="text-[17px] text-foreground/80 font-medium">
+              {t('subtitle')}
             </p>
+          </div>
+          <div className="flex items-center gap-3 md:mt-2">
+            <Button
+              variant="outline"
+              onClick={fetchJobs}
+              disabled={!isGatewayRunning}
+              className="h-9 text-[13px] font-medium rounded-full px-4 border-black/10 dark:border-white/10 bg-transparent hover:bg-black/5 dark:hover:bg-white/5 shadow-none text-foreground/80 hover:text-foreground transition-colors"
+            >
+              <RefreshCw className="h-3.5 w-3.5 mr-2" />
+              {t('refresh')}
+            </Button>
             <Button
               onClick={() => {
                 setEditingJob(undefined);
                 setShowDialog(true);
               }}
               disabled={!isGatewayRunning}
+              className="h-9 text-[13px] font-medium rounded-full px-4 shadow-none"
             >
-              <Plus className="h-4 w-4 mr-2" />
-              {t('empty.create')}
+              <Plus className="h-3.5 w-3.5 mr-2" />
+              {t('newTask')}
             </Button>
-          </CardContent>
-        </Card>
-      ) : (
-        <div className="space-y-4">
-          {jobs.map((job) => (
-            <CronJobCard
-              key={job.id}
-              job={job}
-              onToggle={(enabled) => handleToggle(job.id, enabled)}
-              onEdit={() => {
-                setEditingJob(job);
-                setShowDialog(true);
-              }}
-              onDelete={() => setJobToDelete({ id: job.id })}
-              onTrigger={() => triggerJob(job.id)}
-            />
-          ))}
+          </div>
         </div>
-      )}
+
+        {/* Content Area */}
+        <div className="flex-1 overflow-y-auto pr-2 pb-10 min-h-0 -mr-2">
+          {/* Gateway Warning */}
+          {!isGatewayRunning && (
+            <div className="mb-8 p-4 rounded-xl border border-yellow-500/50 bg-yellow-500/10 flex items-center gap-3">
+              <AlertCircle className="h-5 w-5 text-yellow-600 dark:text-yellow-400" />
+              <span className="text-yellow-700 dark:text-yellow-400 text-sm font-medium">
+                {t('gatewayWarning')}
+              </span>
+            </div>
+          )}
+
+          {/* Error Display */}
+          {error && (
+            <div className="mb-8 p-4 rounded-xl border border-destructive/50 bg-destructive/10 flex items-center gap-3">
+              <AlertCircle className="h-5 w-5 text-destructive" />
+              <span className="text-destructive text-sm font-medium">
+                {error}
+              </span>
+            </div>
+          )}
+
+          {/* Statistics */}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+            <div className="p-5 rounded-[24px] bg-black/5 dark:bg-white/5 border border-transparent flex flex-col justify-between min-h-[130px] relative overflow-hidden group hover:bg-black/10 dark:hover:bg-white/10 transition-colors">
+              <div className="flex items-center justify-between">
+                <div className="h-11 w-11 rounded-full bg-primary/10 flex items-center justify-center">
+                  <Clock className="h-5 w-5 text-primary" />
+                </div>
+              </div>
+              <div className="mt-4 flex items-baseline gap-3">
+                <p className="text-[40px] leading-none font-serif text-foreground">{jobs.length}</p>
+                <p className="text-[14px] font-medium text-muted-foreground">{t('stats.total')}</p>
+              </div>
+            </div>
+            
+            <div className="p-5 rounded-[24px] bg-black/5 dark:bg-white/5 border border-transparent flex flex-col justify-between min-h-[130px] relative overflow-hidden group hover:bg-black/10 dark:hover:bg-white/10 transition-colors">
+              <div className="flex items-center justify-between">
+                <div className="h-11 w-11 rounded-full bg-green-500/10 flex items-center justify-center">
+                  <Play className="h-5 w-5 text-green-600 dark:text-green-500 ml-0.5" />
+                </div>
+              </div>
+              <div className="mt-4 flex items-baseline gap-3">
+                <p className="text-[40px] leading-none font-serif text-foreground">{activeJobs.length}</p>
+                <p className="text-[14px] font-medium text-muted-foreground">{t('stats.active')}</p>
+              </div>
+            </div>
+
+            <div className="p-5 rounded-[24px] bg-black/5 dark:bg-white/5 border border-transparent flex flex-col justify-between min-h-[130px] relative overflow-hidden group hover:bg-black/10 dark:hover:bg-white/10 transition-colors">
+              <div className="flex items-center justify-between">
+                <div className="h-11 w-11 rounded-full bg-yellow-500/10 flex items-center justify-center">
+                  <Pause className="h-5 w-5 text-yellow-600 dark:text-yellow-500" />
+                </div>
+              </div>
+              <div className="mt-4 flex items-baseline gap-3">
+                <p className="text-[40px] leading-none font-serif text-foreground">{pausedJobs.length}</p>
+                <p className="text-[14px] font-medium text-muted-foreground">{t('stats.paused')}</p>
+              </div>
+            </div>
+
+            <div className="p-5 rounded-[24px] bg-black/5 dark:bg-white/5 border border-transparent flex flex-col justify-between min-h-[130px] relative overflow-hidden group hover:bg-black/10 dark:hover:bg-white/10 transition-colors">
+              <div className="flex items-center justify-between">
+                <div className="h-11 w-11 rounded-full bg-destructive/10 flex items-center justify-center">
+                  <XCircle className="h-5 w-5 text-destructive" />
+                </div>
+              </div>
+              <div className="mt-4 flex items-baseline gap-3">
+                <p className="text-[40px] leading-none font-serif text-foreground">{failedJobs.length}</p>
+                <p className="text-[14px] font-medium text-muted-foreground">{t('stats.failed')}</p>
+              </div>
+            </div>
+          </div>
+
+          {/* Jobs List */}
+          {jobs.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-20 text-muted-foreground bg-black/5 dark:bg-white/5 rounded-3xl border border-transparent border-dashed">
+              <Clock className="h-10 w-10 mb-4 opacity-50" />
+              <h3 className="text-lg font-medium mb-2 text-foreground">{t('empty.title')}</h3>
+              <p className="text-[14px] text-center mb-6 max-w-md">
+                {t('empty.description')}
+              </p>
+              <Button
+                onClick={() => {
+                  setEditingJob(undefined);
+                  setShowDialog(true);
+                }}
+                disabled={!isGatewayRunning}
+                className="rounded-full px-6 h-10"
+              >
+                <Plus className="h-4 w-4 mr-2" />
+                {t('empty.create')}
+              </Button>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-4">
+              {jobs.map((job) => (
+                <CronJobCard
+                  key={job.id}
+                  job={job}
+                  onToggle={(enabled) => handleToggle(job.id, enabled)}
+                  onEdit={() => {
+                    setEditingJob(job);
+                    setShowDialog(true);
+                  }}
+                  onDelete={() => setJobToDelete({ id: job.id })}
+                  onTrigger={() => triggerJob(job.id)}
+                />
+              ))}
+            </div>
+          )}
+
+        </div>
+      </div>
 
       {/* Create/Edit Dialog */}
       {showDialog && (
