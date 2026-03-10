@@ -122,6 +122,8 @@
     "openFolder": "打开文件夹",
     "autoStart": "自动启动网关",
     "autoStartDesc": "ClawX 启动时自动启动网关",
+    "portConfig": "Gateway 端口",
+    "portConfigDesc": "OpenClaw Gateway 端口（默认：18789）。修改后需要重启 Gateway。",
     "proxyTitle": "代理",
     "proxyDesc": "让 Electron 和 Gateway 的网络请求都走本地代理客户端。",
     "proxyServer": "代理服务器",

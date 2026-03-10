@@ -55,6 +55,8 @@ export function Settings() {
     setLanguage,
     gatewayAutoStart,
     setGatewayAutoStart,
+    gatewayPort,
+    setGatewayPort,
     proxyEnabled,
     proxyServer,
     proxyHttpServer,
@@ -508,6 +510,26 @@ export function Settings() {
                 />
               </div>
 
+              <div className="space-y-2">
+                <Label htmlFor="gateway-port" className="text-[15px] font-medium text-foreground/80">{t('gateway.portConfig')}</Label>
+                <Input
+                  id="gateway-port"
+                  type="number"
+                  min={1024}
+                  max={65535}
+                  value={gatewayPort}
+                  onChange={(e) => {
+                    const port = parseInt(e.target.value);
+                    if (port >= 1024 && port <= 65535) {
+                      setGatewayPort(port);
+                    }
+                  }}
+                  className="h-10 rounded-xl bg-black/5 dark:bg-white/5 border-transparent font-mono text-[13px]"
+                />
+                <p className="text-[11px] text-muted-foreground">
+                  {t('gateway.portConfigDesc')}
+                </p>
+              </div>
 
               <div className="flex items-center justify-between">
                 <div>
