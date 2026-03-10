@@ -41,6 +41,7 @@ import {
 import {
   buildProviderAccountId,
   buildProviderListItems,
+  hasConfiguredCredentials,
   type ProviderListItem,
 } from '@/lib/provider-accounts';
 import { cn } from '@/lib/utils';
@@ -435,7 +436,7 @@ function ProviderCard({
               )}
               <span className="w-1 h-1 rounded-full bg-black/20 dark:bg-white/20" />
               <span className="flex items-center gap-1">
-                {status?.hasKey ? (
+                {hasConfiguredCredentials(account, status) ? (
                   <><div className="w-1.5 h-1.5 rounded-full bg-green-500" /> {t('aiProviders.card.configured')}</>
                 ) : (
                   <><div className="w-1.5 h-1.5 rounded-full bg-red-500" /> {t('aiProviders.dialog.apiKeyMissing')}</>
@@ -575,12 +576,12 @@ function ProviderCard({
               <div className="space-y-0.5">
                 <Label className="text-[14px] font-bold text-foreground/80">{t('aiProviders.dialog.apiKey')}</Label>
                 <p className="text-[12px] text-muted-foreground">
-                  {status?.hasKey
+                  {hasConfiguredCredentials(account, status)
                     ? t('aiProviders.dialog.apiKeyConfigured')
                     : t('aiProviders.dialog.apiKeyMissing')}
                 </p>
               </div>
-              {status?.hasKey ? (
+              {hasConfiguredCredentials(account, status) ? (
                 <div className="flex items-center gap-1.5 text-[11px] font-medium text-green-600 dark:text-green-500 bg-green-500/10 px-2 py-1 rounded-md">
                   <div className="w-1.5 h-1.5 rounded-full bg-current" />
                   {t('aiProviders.card.configured')}
