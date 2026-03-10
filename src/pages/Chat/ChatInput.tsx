@@ -353,7 +353,7 @@ export function ChatInput({ onSend, onStop, disabled = false, sending = false, i
         )}
 
         {/* Input Row */}
-        <div className={`flex items-end gap-1.5 bg-white dark:bg-accent/50 rounded-[28px] shadow-sm border border-black/5 dark:border-white/10 p-1.5 transition-shadow ${dragOver ? 'ring-2 ring-primary' : 'focus-within:ring-1 focus-within:ring-black/5 dark:focus-within:ring-white/10'}`}>
+        <div className={`flex items-end gap-1.5 bg-white dark:bg-[#1a1a19] rounded-[28px] shadow-sm border p-1.5 transition-all ${dragOver ? 'border-primary ring-1 ring-primary' : 'border-black/10 dark:border-white/10'}`}>
 
           {/* Attach Button */}
           <Button
@@ -383,7 +383,7 @@ export function ChatInput({ onSend, onStop, disabled = false, sending = false, i
               onPaste={handlePaste}
               placeholder={disabled ? 'Gateway not connected...' : ''}
               disabled={disabled}
-              className="min-h-[40px] max-h-[200px] resize-none border-0 focus-visible:ring-0 shadow-none bg-transparent py-2.5 px-2 text-[15px] placeholder:text-muted-foreground/60 leading-relaxed"
+              className="min-h-[40px] max-h-[200px] resize-none border-0 focus-visible:ring-0 focus-visible:ring-offset-0 shadow-none bg-transparent py-2.5 px-2 text-[15px] placeholder:text-muted-foreground/60 leading-relaxed"
               rows={1}
             />
           </div>
