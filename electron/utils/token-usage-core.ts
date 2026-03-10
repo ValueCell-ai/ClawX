@@ -4,6 +4,7 @@ export interface TokenUsageHistoryEntry {
   agentId: string;
   model?: string;
   provider?: string;
+  content?: string;
   inputTokens: number;
   outputTokens: number;
   cacheReadTokens: number;
@@ -35,7 +36,57 @@ interface TranscriptLineShape {
     modelRef?: string;
     provider?: string;
     usage?: TranscriptUsageShape;
+    details?: {
+      provider?: string;
+      model?: string;
+      usage?: TranscriptUsageShape;
+      content?: unknown;
+      externalContent?: {
+        provider?: string;
+      };
+    };
   };
+}
+
+function normalizeUsageContent(value: unknown): string | undefined {
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    return trimmed.length > 0 ? trimmed : undefined;
+  }
+
+  if (Array.isArray(value)) {
+    const chunks = value
+      .map((item) => normalizeUsageContent(item))
+      .filter((item): item is string => Boolean(item));
+    if (chunks.length === 0) return undefined;
+    return chunks.join('\n\n');
+  }
+
+  if (value && typeof value === 'object') {
+    const record = value as Record<string, unknown>;
+    if (typeof record.text === 'string') {
+      const trimmed = record.text.trim();
+      if (trimmed.length > 0) return trimmed;
+    }
+    if (typeof record.content === 'string') {
+      const trimmed = record.content.trim();
+      if (trimmed.length > 0) return trimmed;
+    }
+    if (Array.isArray(record.content)) {
+      return normalizeUsageContent(record.content);
+    }
+    if (typeof record.thinking === 'string') {
+      const trimmed = record.thinking.trim();
+      if (trimmed.length > 0) return trimmed;
+    }
+    try {
+      return JSON.stringify(record, null, 2);
+    } catch {
+      return undefined;
+    }
+  }
+
+  return undefined;
 }
 
 export function parseUsageEntriesFromJsonl(
@@ -58,18 +109,66 @@ export function parseUsageEntriesFromJsonl(
     }
 
     const message = parsed.message;
-    if (!message || message.role !== 'assistant' || !message.usage || !parsed.timestamp) {
+    if (!message || !parsed.timestamp) {
       continue;
     }
 
-    const usage = message.usage;
-    const inputTokens = usage.input ?? usage.promptTokens ?? 0;
-    const outputTokens = usage.output ?? usage.completionTokens ?? 0;
-    const cacheReadTokens = usage.cacheRead ?? 0;
-    const cacheWriteTokens = usage.cacheWrite ?? 0;
-    const totalTokens = usage.total ?? usage.totalTokens ?? inputTokens + outputTokens + cacheReadTokens + cacheWriteTokens;
+    if (message.role === 'assistant' && message.usage) {
+      const usage = message.usage;
+      const inputTokens = usage.input ?? usage.promptTokens ?? 0;
+      const outputTokens = usage.output ?? usage.completionTokens ?? 0;
+      const cacheReadTokens = usage.cacheRead ?? 0;
+      const cacheWriteTokens = usage.cacheWrite ?? 0;
+      const totalTokens = usage.total ?? usage.totalTokens ?? inputTokens + outputTokens + cacheReadTokens + cacheWriteTokens;
 
-    if (totalTokens <= 0 && !usage.cost?.total) {
+      if (totalTokens <= 0) {
+        continue;
+      }
+
+      const contentText = normalizeUsageContent((message as Record<string, unknown>).content);
+      entries.push({
+        timestamp: parsed.timestamp,
+        sessionId: context.sessionId,
+        agentId: context.agentId,
+        model: message.model ?? message.modelRef,
+        provider: message.provider,
+        ...(contentText ? { content: contentText } : {}),
+        inputTokens,
+        outputTokens,
+        cacheReadTokens,
+        cacheWriteTokens,
+        totalTokens,
+        costUsd: usage.cost?.total,
+      });
+      continue;
+    }
+
+    if (message.role !== 'toolResult') {
+      continue;
+    }
+
+    const details = message.details;
+    if (!details) {
+      continue;
+    }
+
+    const usage = details.usage;
+    const inputTokens = usage?.input ?? usage?.promptTokens ?? 0;
+    const outputTokens = usage?.output ?? usage?.completionTokens ?? 0;
+    const cacheReadTokens = usage?.cacheRead ?? 0;
+    const cacheWriteTokens = usage?.cacheWrite ?? 0;
+    const totalTokens = usage?.total ?? usage?.totalTokens ?? inputTokens + outputTokens + cacheReadTokens + cacheWriteTokens;
+
+    const provider = details.provider ?? details.externalContent?.provider ?? message.provider;
+    const model = details.model ?? message.model ?? message.modelRef;
+    const contentText = normalizeUsageContent(details.content)
+      ?? normalizeUsageContent((message as Record<string, unknown>).content);
+
+    if (!provider && !model) {
+      continue;
+    }
+
+    if (totalTokens <= 0) {
       continue;
     }
 
@@ -77,14 +176,15 @@ export function parseUsageEntriesFromJsonl(
       timestamp: parsed.timestamp,
       sessionId: context.sessionId,
       agentId: context.agentId,
-      model: message.model ?? message.modelRef,
-      provider: message.provider,
+      model,
+      provider,
+      ...(contentText ? { content: contentText } : {}),
       inputTokens,
       outputTokens,
       cacheReadTokens,
       cacheWriteTokens,
       totalTokens,
-      costUsd: usage.cost?.total,
+      costUsd: usage?.cost?.total,
     });
   }
 

@@ -81,6 +81,136 @@ describe('parseUsageEntriesFromJsonl', () => {
     expect(parseUsageEntriesFromJsonl(jsonl, { sessionId: 'abc', agentId: 'default' })).toEqual([]);
   });
 
+  it('skips tool result entries without positive token usage', () => {
+    const jsonl = [
+      JSON.stringify({
+        type: 'message',
+        timestamp: '2026-03-10T02:17:04.057Z',
+        message: {
+          role: 'toolResult',
+          toolName: 'web_search',
+          details: {
+            provider: 'kimi',
+            model: 'moonshot-v1-128k',
+          },
+        },
+      }),
+    ].join('\n');
+
+    expect(parseUsageEntriesFromJsonl(jsonl, { sessionId: 'abc', agentId: 'default' })).toEqual([]);
+  });
+
+  it('uses tool result usage when provided', () => {
+    const jsonl = [
+      JSON.stringify({
+        type: 'message',
+        timestamp: '2026-03-10T02:17:04.057Z',
+        message: {
+          role: 'toolResult',
+          details: {
+            provider: 'kimi',
+            model: 'moonshot-v1-128k',
+            usage: {
+              promptTokens: 120,
+              completionTokens: 30,
+              cacheRead: 10,
+              totalTokens: 160,
+              cost: { total: 0.0009 },
+            },
+          },
+        },
+      }),
+    ].join('\n');
+
+    expect(parseUsageEntriesFromJsonl(jsonl, { sessionId: 'abc', agentId: 'default' })).toEqual([
+      {
+        timestamp: '2026-03-10T02:17:04.057Z',
+        sessionId: 'abc',
+        agentId: 'default',
+        model: 'moonshot-v1-128k',
+        provider: 'kimi',
+        inputTokens: 120,
+        outputTokens: 30,
+        cacheReadTokens: 10,
+        cacheWriteTokens: 0,
+        totalTokens: 160,
+        costUsd: 0.0009,
+      },
+    ]);
+  });
+
+  it('extracts assistant response text into content', () => {
+    const jsonl = [
+      JSON.stringify({
+        type: 'message',
+        timestamp: '2026-03-10T02:20:04.057Z',
+        message: {
+          role: 'assistant',
+          model: 'kimi-k2.5',
+          provider: 'moonshot',
+          content: [{ type: 'text', text: '这是一条测试回复内容。' }],
+          usage: {
+            totalTokens: 100,
+          },
+        },
+      }),
+    ].join('\n');
+
+    expect(parseUsageEntriesFromJsonl(jsonl, { sessionId: 'abc', agentId: 'default' })).toEqual([
+      {
+        timestamp: '2026-03-10T02:20:04.057Z',
+        sessionId: 'abc',
+        agentId: 'default',
+        model: 'kimi-k2.5',
+        provider: 'moonshot',
+        content: '这是一条测试回复内容。',
+        inputTokens: 0,
+        outputTokens: 0,
+        cacheReadTokens: 0,
+        cacheWriteTokens: 0,
+        totalTokens: 100,
+        costUsd: undefined,
+      },
+    ]);
+  });
+
+  it('extracts tool result details content into content', () => {
+    const jsonl = [
+      JSON.stringify({
+        type: 'message',
+        timestamp: '2026-03-10T02:21:04.057Z',
+        message: {
+          role: 'toolResult',
+          details: {
+            provider: 'kimi',
+            model: 'moonshot-v1-128k',
+            content: '外部搜索原文内容',
+            usage: {
+              totalTokens: 50,
+            },
+          },
+        },
+      }),
+    ].join('\n');
+
+    expect(parseUsageEntriesFromJsonl(jsonl, { sessionId: 'abc', agentId: 'default' })).toEqual([
+      {
+        timestamp: '2026-03-10T02:21:04.057Z',
+        sessionId: 'abc',
+        agentId: 'default',
+        model: 'moonshot-v1-128k',
+        provider: 'kimi',
+        content: '外部搜索原文内容',
+        inputTokens: 0,
+        outputTokens: 0,
+        cacheReadTokens: 0,
+        cacheWriteTokens: 0,
+        totalTokens: 50,
+        costUsd: undefined,
+      },
+    ]);
+  });
+
   it('returns all matching entries when no limit is provided', () => {
     const jsonl = [
       JSON.stringify({

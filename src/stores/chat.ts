@@ -1072,7 +1072,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
   deleteSession: async (key: string) => {
     // Soft-delete the session's JSONL transcript on disk.
     // The main process renames <suffix>.jsonl → <suffix>.deleted.jsonl so that
-    // sessions.list and token-usage queries both skip it automatically.
+    // sessions.list skips it automatically.
     try {
       const result = await hostApiFetch<{
         success: boolean;

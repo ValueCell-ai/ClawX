@@ -33,7 +33,7 @@
     "more": "+{{count}} more",
     "recentTokenHistory": {
         "title": "Recent Token Usage",
-        "description": "The latest assistant responses with recorded token usage.",
+        "description": "Recent assistant responses and tool results with model/provider usage data.",
         "loading": "Loading token usage history...",
         "empty": "No token usage history yet",
         "groupByModel": "By model",
@@ -55,6 +55,9 @@
         "output": "Output {{value}}",
         "cacheRead": "Cache read {{value}}",
         "cacheWrite": "Cache write {{value}}",
-        "cost": "Cost ${{amount}}"
+        "cost": "Cost ${{amount}}",
+        "viewContent": "View content",
+        "contentDialogTitle": "Usage detail content",
+        "close": "Close"
     }
 }

@@ -3,9 +3,11 @@ import { useTranslation } from 'react-i18next';
 import {
   ChevronLeft,
   ChevronRight,
+  X,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useGatewayStore } from '@/stores/gateway';
+import { useSettingsStore } from '@/stores/settings';
 import { hostApiFetch } from '@/lib/host-api';
 import { trackUiEvent } from '@/lib/telemetry';
 import { ProvidersSettings } from '@/components/settings/ProvidersSettings';
@@ -17,6 +19,7 @@ type UsageHistoryEntry = {
   agentId: string;
   model?: string;
   provider?: string;
+  content?: string;
   inputTokens: number;
   outputTokens: number;
   cacheReadTokens: number;
@@ -31,12 +34,14 @@ type UsageGroupBy = 'model' | 'day';
 export function Models() {
   const { t } = useTranslation(['dashboard', 'settings']);
   const gatewayStatus = useGatewayStore((state) => state.status);
+  const devModeUnlocked = useSettingsStore((state) => state.devModeUnlocked);
   const isGatewayRunning = gatewayStatus.state === 'running';
 
   const [usageHistory, setUsageHistory] = useState<UsageHistoryEntry[]>([]);
   const [usageGroupBy, setUsageGroupBy] = useState<UsageGroupBy>('model');
   const [usageWindow, setUsageWindow] = useState<UsageWindow>('7d');
   const [usagePage, setUsagePage] = useState(1);
+  const [selectedUsageEntry, setSelectedUsageEntry] = useState<UsageHistoryEntry | null>(null);
 
   useEffect(() => {
     trackUiEvent('models.page_viewed');
@@ -216,6 +221,16 @@ export function Models() {
                           {typeof entry.costUsd === 'number' && Number.isFinite(entry.costUsd) && (
                             <span className="flex items-center gap-1.5 ml-auto text-foreground/80 bg-black/5 dark:bg-white/5 px-2 py-0.5 rounded-md">{t('dashboard:recentTokenHistory.cost', { amount: entry.costUsd.toFixed(4) })}</span>
                           )}
+                          {devModeUnlocked && entry.content && (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="h-6 rounded-full px-2.5 text-[11.5px] border-black/10 dark:border-white/10"
+                              onClick={() => setSelectedUsageEntry(entry)}
+                            >
+                              {t('dashboard:recentTokenHistory.viewContent')}
+                            </Button>
+                          )}
                         </div>
                       </div>
                     ))}
@@ -255,6 +270,15 @@ export function Models() {
 
         </div>
       </div>
+      {devModeUnlocked && selectedUsageEntry && (
+        <UsageContentPopup
+          entry={selectedUsageEntry}
+          onClose={() => setSelectedUsageEntry(null)}
+          title={t('dashboard:recentTokenHistory.contentDialogTitle')}
+          closeLabel={t('dashboard:recentTokenHistory.close')}
+          unknownModelLabel={t('dashboard:recentTokenHistory.unknownModel')}
+        />
+      )}
     </div>
   );
 }
@@ -410,7 +434,11 @@ function UsageBarChart({
           <div className="h-3.5 overflow-hidden rounded-full bg-black/5 dark:bg-white/5">
             <div
               className="flex h-full overflow-hidden rounded-full"
-              style={{ width: `${Math.max((group.totalTokens / maxTokens) * 100, 6)}%` }}
+              style={{
+                width: group.totalTokens > 0
+                  ? `${Math.max((group.totalTokens / maxTokens) * 100, 6)}%`
+                  : '0%',
+              }}
             >
               {group.inputTokens > 0 && (
                 <div
@@ -439,3 +467,51 @@ function UsageBarChart({
 }
 
 export default Models;
+
+function UsageContentPopup({
+  entry,
+  onClose,
+  title,
+  closeLabel,
+  unknownModelLabel,
+}: {
+  entry: UsageHistoryEntry;
+  onClose: () => void;
+  title: string;
+  closeLabel: string;
+  unknownModelLabel: string;
+}) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4" role="dialog" aria-modal="true">
+      <div className="w-full max-w-3xl rounded-2xl border border-black/10 dark:border-white/10 bg-background shadow-xl">
+        <div className="flex items-start justify-between gap-3 border-b border-black/10 dark:border-white/10 px-5 py-4">
+          <div className="min-w-0">
+            <p className="text-sm font-semibold text-foreground">{title}</p>
+            <p className="text-xs text-muted-foreground truncate mt-0.5">
+              {(entry.model || unknownModelLabel)} • {formatUsageTimestamp(entry.timestamp)}
+            </p>
+          </div>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-8 w-8 rounded-full"
+            onClick={onClose}
+            aria-label={closeLabel}
+          >
+            <X className="h-4 w-4" />
+          </Button>
+        </div>
+        <div className="max-h-[65vh] overflow-y-auto px-5 py-4">
+          <pre className="whitespace-pre-wrap break-words text-sm text-foreground font-mono">
+            {entry.content}
+          </pre>
+        </div>
+        <div className="flex justify-end border-t border-black/10 dark:border-white/10 px-5 py-3">
+          <Button variant="outline" onClick={onClose}>
+            {closeLabel}
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}

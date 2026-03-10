@@ -2454,8 +2454,7 @@ function registerFileHandlers(): void {
  * Performs a soft-delete of a session's JSONL transcript on disk.
  * sessionKey format: "agent:<agentId>:<suffix>" — e.g. "agent:main:session-1234567890".
  * The JSONL file lives at: ~/.openclaw/agents/<agentId>/sessions/<suffix>.jsonl
- * Renaming to <suffix>.deleted.jsonl hides it from sessions.list and token-usage
- * (both already filter out filenames containing ".deleted.").
+ * Renaming to <suffix>.deleted.jsonl hides it from sessions.list.
  */
 function registerSessionHandlers(): void {
   ipcMain.handle('session:delete', async (_, sessionKey: string) => {

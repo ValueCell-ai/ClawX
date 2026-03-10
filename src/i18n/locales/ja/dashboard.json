@@ -33,7 +33,7 @@
     "more": "+{{count}} 件",
     "recentTokenHistory": {
         "title": "最近のトークン使用量",
-        "description": "トークン使用量が記録された最新のアシスタント応答を表示します。",
+        "description": "モデル/プロバイダー使用情報を含む、最近のアシスタント応答とツール結果を表示します。",
         "loading": "トークン使用履歴を読み込み中...",
         "empty": "トークン使用履歴はまだありません",
         "groupByModel": "モデル別",
@@ -55,6 +55,9 @@
         "output": "出力 {{value}}",
         "cacheRead": "キャッシュ読取 {{value}}",
         "cacheWrite": "キャッシュ書込 {{value}}",
-        "cost": "コスト ${{amount}}"
+        "cost": "コスト ${{amount}}",
+        "viewContent": "内容を見る",
+        "contentDialogTitle": "使用量詳細の内容",
+        "close": "閉じる"
     }
 }

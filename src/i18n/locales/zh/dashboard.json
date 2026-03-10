@@ -33,7 +33,7 @@
     "more": "+{{count}} 更多",
     "recentTokenHistory": {
         "title": "最近 Token 消耗",
-        "description": "展示最近带有 token 用量记录的助手回复。",
+        "description": "展示最近的助手回复与工具结果中的模型/提供商用量记录。",
         "loading": "正在加载 token 消耗历史...",
         "empty": "还没有 token 消耗历史",
         "groupByModel": "按模型",
@@ -55,6 +55,9 @@
         "output": "输出 {{value}}",
         "cacheRead": "缓存读取 {{value}}",
         "cacheWrite": "缓存写入 {{value}}",
-        "cost": "费用 ${{amount}}"
+        "cost": "费用 ${{amount}}",
+        "viewContent": "查看内容",
+        "contentDialogTitle": "用量明细内容",
+        "close": "关闭"
     }
 }

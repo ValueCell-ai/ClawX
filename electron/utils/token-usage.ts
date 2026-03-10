@@ -6,6 +6,14 @@ import { parseUsageEntriesFromJsonl, type TokenUsageHistoryEntry } from './token
 
 export { parseUsageEntriesFromJsonl, type TokenUsageHistoryEntry } from './token-usage-core';
 
+export function extractSessionIdFromTranscriptFileName(fileName: string): string | undefined {
+  if (!fileName.endsWith('.jsonl') && !fileName.includes('.jsonl.reset.')) return undefined;
+  return fileName
+    .replace(/\.jsonl\.reset\..+$/, '')
+    .replace(/\.deleted\.jsonl$/, '')
+    .replace(/\.jsonl$/, '');
+}
+
 async function listRecentSessionFiles(): Promise<Array<{ filePath: string; sessionId: string; agentId: string; mtimeMs: number }>> {
   const openclawDir = getOpenClawConfigDir();
   const agentsDir = join(openclawDir, 'agents');
@@ -20,13 +28,14 @@ async function listRecentSessionFiles(): Promise<Array<{ filePath: string; sessi
         const sessionEntries = await readdir(sessionsDir);
 
         for (const fileName of sessionEntries) {
-          if (!fileName.endsWith('.jsonl') || fileName.includes('.deleted.')) continue;
+          const sessionId = extractSessionIdFromTranscriptFileName(fileName);
+          if (!sessionId) continue;
           const filePath = join(sessionsDir, fileName);
           try {
             const fileStat = await stat(filePath);
             files.push({
               filePath,
-              sessionId: fileName.replace(/\.jsonl$/, ''),
+              sessionId,
               agentId,
               mtimeMs: fileStat.mtimeMs,
             });
