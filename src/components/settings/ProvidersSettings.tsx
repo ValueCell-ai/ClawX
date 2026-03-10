@@ -52,6 +52,9 @@ import { useSettingsStore } from '@/stores/settings';
 import { hostApiFetch } from '@/lib/host-api';
 import { subscribeHostEvent } from '@/lib/host-events';
 
+const inputClasses = 'h-[44px] rounded-xl font-mono text-[13px] bg-[#eeece3] dark:bg-[#151514] border-black/10 dark:border-white/10 focus-visible:ring-2 focus-visible:ring-blue-500/50 focus-visible:border-blue-500 shadow-sm transition-all text-foreground placeholder:text-foreground/40';
+const labelClasses = 'text-[14px] text-foreground/80 font-bold';
+
 function normalizeFallbackProviderIds(ids?: string[]): string[] {
   return Array.from(new Set((ids ?? []).filter(Boolean)));
 }
@@ -403,18 +406,25 @@ function ProviderCard({
     }
   };
 
+  const currentInputClasses = isDefault
+    ? "h-[40px] rounded-xl font-mono text-[13px] bg-white dark:bg-[#1a1a19] border-black/10 dark:border-white/10 focus-visible:ring-2 focus-visible:ring-blue-500/50 shadow-sm"
+    : inputClasses;
+
+  const currentLabelClasses = isDefault ? "text-[13px] text-muted-foreground" : labelClasses;
+  const currentSectionLabelClasses = isDefault ? "text-[14px] font-bold text-foreground/80" : labelClasses;
+
   return (
     <div
       className={cn(
         "group flex flex-col p-4 rounded-2xl transition-all relative overflow-hidden",
         isDefault
-          ? "bg-white dark:bg-[#1a1a19] border border-black/10 dark:border-white/10 shadow-sm"
+          ? "bg-white dark:bg-accent border border-black/10 dark:border-white/10 shadow-sm"
           : "bg-transparent border border-black/10 dark:border-white/10"
       )}
     >
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-4">
-          <div className={cn("h-[42px] w-[42px] shrink-0 flex items-center justify-center text-foreground border border-black/5 dark:border-white/10 rounded-full shadow-sm group-hover:scale-105 transition-transform", isDefault ? "bg-black/5 dark:bg-white/5" : "bg-white dark:bg-[#1a1a19]")}>
+          <div className={cn("h-[42px] w-[42px] shrink-0 flex items-center justify-center text-foreground border border-black/5 dark:border-white/10 rounded-full shadow-sm group-hover:scale-105 transition-transform", isDefault ? "bg-black/5 dark:bg-white/5" : "bg-white dark:bg-accent")}>
             {getProviderIconUrl(account.vendorId) ? (
               <img src={getProviderIconUrl(account.vendorId)} alt={typeInfo?.name || account.vendorId} className={cn('h-5 w-5', shouldInvertInDark(account.vendorId) && 'dark:invert')} />
             ) : (
@@ -505,32 +515,32 @@ function ProviderCard({
         <div className="space-y-6 mt-4 pt-4 border-t border-black/5 dark:border-white/5">
           {canEditModelConfig && (
             <div className="space-y-3">
-              <p className="text-[14px] font-bold text-foreground/80">{t('aiProviders.sections.model')}</p>
+              <p className={currentSectionLabelClasses}>{t('aiProviders.sections.model')}</p>
               {typeInfo?.showBaseUrl && (
                 <div className="space-y-1.5">
-                  <Label className="text-[13px] text-muted-foreground">{t('aiProviders.dialog.baseUrl')}</Label>
+                  <Label className={currentLabelClasses}>{t('aiProviders.dialog.baseUrl')}</Label>
                   <Input
                     value={baseUrl}
                     onChange={(e) => setBaseUrl(e.target.value)}
                     placeholder={apiProtocol === 'anthropic-messages' ? "https://api.example.com/anthropic" : "https://api.example.com/v1"}
-                    className="h-[40px] rounded-xl font-mono text-[13px] bg-white dark:bg-[#1a1a19] border-black/10 dark:border-white/10 focus-visible:ring-2 focus-visible:ring-blue-500/50 shadow-sm"
+                    className={currentInputClasses}
                   />
                 </div>
               )}
               {showModelIdField && (
                 <div className="space-y-1.5 pt-2">
-                  <Label className="text-[13px] text-muted-foreground">{t('aiProviders.dialog.modelId')}</Label>
+                  <Label className={currentLabelClasses}>{t('aiProviders.dialog.modelId')}</Label>
                   <Input
                     value={modelId}
                     onChange={(e) => setModelId(e.target.value)}
                     placeholder={typeInfo?.modelIdPlaceholder || 'provider/model-id'}
-                    className="h-[40px] rounded-xl font-mono text-[13px] bg-white dark:bg-[#1a1a19] border-black/10 dark:border-white/10 focus-visible:ring-2 focus-visible:ring-blue-500/50 shadow-sm"
+                    className={currentInputClasses}
                   />
                 </div>
               )}
               {account.vendorId === 'custom' && (
                 <div className="space-y-1.5 pt-2">
-                  <Label className="text-[13px] text-muted-foreground">{t('aiProviders.dialog.protocol', 'Protocol')}</Label>
+                  <Label className={currentLabelClasses}>{t('aiProviders.dialog.protocol', 'Protocol')}</Label>
                   <div className="flex gap-2 text-[13px]">
                     <button
                       type="button"
@@ -562,23 +572,25 @@ function ProviderCard({
             {showFallback && (
               <div className="space-y-3 pt-2">
                 <div className="space-y-1.5">
-                  <Label className="text-[13px] text-muted-foreground">{t('aiProviders.dialog.fallbackModelIds')}</Label>
+                  <Label className={currentLabelClasses}>{t('aiProviders.dialog.fallbackModelIds')}</Label>
                   <textarea
                     value={fallbackModelsText}
                     onChange={(e) => setFallbackModelsText(e.target.value)}
                     placeholder={t('aiProviders.dialog.fallbackModelIdsPlaceholder')}
-                    className="min-h-24 w-full rounded-xl border border-black/10 dark:border-white/10 bg-white dark:bg-[#1a1a19] px-3 py-2 text-[13px] font-mono outline-none focus-visible:ring-2 focus-visible:ring-blue-500/50 shadow-sm"
+                    className={isDefault
+                      ? "min-h-24 w-full rounded-xl border border-black/10 dark:border-white/10 bg-white dark:bg-[#1a1a19] px-3 py-2 text-[13px] font-mono outline-none focus-visible:ring-2 focus-visible:ring-blue-500/50 shadow-sm"
+                      : "min-h-24 w-full rounded-xl border border-black/10 dark:border-white/10 bg-[#eeece3] dark:bg-[#151514] px-3 py-2 text-[13px] font-mono outline-none focus-visible:ring-2 focus-visible:ring-blue-500/50 focus-visible:border-blue-500 shadow-sm transition-all text-foreground placeholder:text-foreground/40"}
                   />
                   <p className="text-[12px] text-muted-foreground">
                     {t('aiProviders.dialog.fallbackModelIdsHelp')}
                   </p>
                 </div>
                 <div className="space-y-2 pt-1">
-                  <Label className="text-[13px] text-muted-foreground">{t('aiProviders.dialog.fallbackProviders')}</Label>
+                  <Label className={currentLabelClasses}>{t('aiProviders.dialog.fallbackProviders')}</Label>
                   {fallbackOptions.length === 0 ? (
                     <p className="text-[13px] text-muted-foreground">{t('aiProviders.dialog.noFallbackOptions')}</p>
                   ) : (
-                    <div className="space-y-2 rounded-xl border border-black/10 dark:border-white/10 bg-white dark:bg-[#1a1a19] p-3 shadow-sm">
+                    <div className={cn("space-y-2 rounded-xl border border-black/10 dark:border-white/10 p-3 shadow-sm", isDefault ? "bg-white dark:bg-[#1a1a19]" : "bg-[#eeece3] dark:bg-[#151514]")}>
                       {fallbackOptions.map((candidate) => (
                         <label key={candidate.account.id} className="flex items-center gap-3 text-[13px] cursor-pointer group/label">
                           <input
@@ -602,7 +614,7 @@ function ProviderCard({
           <div className="space-y-3">
             <div className="flex items-center justify-between gap-3">
               <div className="space-y-0.5">
-                <Label className="text-[14px] font-bold text-foreground/80">{t('aiProviders.dialog.apiKey')}</Label>
+                <Label className={currentSectionLabelClasses}>{t('aiProviders.dialog.apiKey')}</Label>
                 <p className="text-[12px] text-muted-foreground">
                   {hasConfiguredCredentials(account, status)
                     ? t('aiProviders.dialog.apiKeyConfigured')
@@ -630,7 +642,7 @@ function ProviderCard({
               </div>
             )}
             <div className="space-y-1.5 pt-1">
-              <Label className="text-[13px] text-muted-foreground">{t('aiProviders.dialog.replaceApiKey')}</Label>
+              <Label className={currentLabelClasses}>{t('aiProviders.dialog.replaceApiKey')}</Label>
               <div className="flex gap-2">
                 <div className="relative flex-1">
                   <Input
@@ -638,7 +650,7 @@ function ProviderCard({
                     placeholder={typeInfo?.requiresApiKey ? typeInfo?.placeholder : (typeInfo?.id === 'ollama' ? t('aiProviders.notRequired') : t('aiProviders.card.editKey'))}
                     value={newKey}
                     onChange={(e) => setNewKey(e.target.value)}
-                    className="pr-10 h-[40px] rounded-xl font-mono text-[13px] bg-white dark:bg-[#1a1a19] border-black/10 dark:border-white/10 focus-visible:ring-2 focus-visible:ring-blue-500/50 shadow-sm"
+                    className={cn(currentInputClasses, 'pr-10')}
                   />
                   <button
                     type="button"
@@ -651,7 +663,12 @@ function ProviderCard({
                 <Button
                   variant="outline"
                   onClick={handleSaveEdits}
-                  className="h-[40px] rounded-xl px-4 bg-white dark:bg-[#1a1a19] border-black/10 dark:border-white/10 hover:bg-black/5 dark:hover:bg-white/10"
+                  className={cn(
+                    "rounded-xl px-4 border-black/10 dark:border-white/10",
+                    isDefault
+                      ? "h-[40px] bg-white dark:bg-[#1a1a19] hover:bg-black/5 dark:hover:bg-white/10"
+                      : "h-[44px] bg-[#eeece3] dark:bg-[#151514] hover:bg-black/5 dark:hover:bg-white/10 shadow-sm"
+                  )}
                   disabled={
                     validating
                     || saving
@@ -671,7 +688,16 @@ function ProviderCard({
                     <Check className="h-4 w-4 text-green-500" />
                   )}
                 </Button>
-                <Button variant="ghost" onClick={onCancelEdit} className="h-[40px] w-[40px] p-0 rounded-xl hover:bg-black/5 dark:hover:bg-white/10">
+                <Button
+                  variant="ghost"
+                  onClick={onCancelEdit}
+                  className={cn(
+                    "p-0 rounded-xl",
+                    isDefault
+                      ? "h-[40px] w-[40px] hover:bg-black/5 dark:hover:bg-white/10"
+                      : "h-[44px] w-[44px] bg-[#eeece3] dark:bg-[#151514] border border-black/10 dark:border-white/10 hover:bg-black/5 dark:hover:bg-white/10 shadow-sm text-muted-foreground hover:text-foreground"
+                  )}
+                >
                   <X className="h-4 w-4" />
                 </Button>
               </div>
@@ -1000,21 +1026,21 @@ function AddProviderDialog({
                 </div>
               </div>
 
-              <div className="space-y-4 bg-[#eeece3] dark:bg-[#151514] p-5 rounded-2xl border border-black/5 dark:border-white/5 shadow-sm">
-                <div className="space-y-2">
-                  <Label htmlFor="name" className="text-[14px] font-bold text-foreground/80">{t('aiProviders.dialog.displayName')}</Label>
+              <div className="space-y-6 bg-transparent p-0">
+                <div className="space-y-2.5">
+                  <Label htmlFor="name" className={labelClasses}>{t('aiProviders.dialog.displayName')}</Label>
                   <Input
                     id="name"
                     placeholder={typeInfo?.id === 'custom' ? t('aiProviders.custom') : typeInfo?.name}
                     value={name}
                     onChange={(e) => setName(e.target.value)}
-                    className="h-[44px] rounded-xl font-mono text-[13px] bg-white dark:bg-[#1a1a19] border-black/10 dark:border-white/10 focus-visible:ring-2 focus-visible:ring-blue-500/50 shadow-sm"
+                    className={inputClasses}
                   />
                 </div>
 
                 {/* Auth mode toggle for providers supporting both */}
                 {isOAuth && supportsApiKey && (
-                  <div className="flex rounded-xl border border-black/10 dark:border-white/10 overflow-hidden text-[13px] font-medium shadow-sm bg-white dark:bg-[#1a1a19] p-1 gap-1">
+                  <div className="flex rounded-xl border border-black/10 dark:border-white/10 overflow-hidden text-[13px] font-medium shadow-sm bg-[#eeece3] dark:bg-[#151514] p-1 gap-1">
                     <button
                       onClick={() => setAuthMode('oauth')}
                       className={cn(
@@ -1038,9 +1064,9 @@ function AddProviderDialog({
 
                 {/* API Key input — shown for non-OAuth providers or when apikey mode is selected */}
                 {(!isOAuth || (supportsApiKey && authMode === 'apikey')) && (
-                  <div className="space-y-2">
+                  <div className="space-y-2.5">
                     <div className="flex items-center justify-between">
-                      <Label htmlFor="apiKey" className="text-[14px] font-bold text-foreground/80">{t('aiProviders.dialog.apiKey')}</Label>
+                      <Label htmlFor="apiKey" className={labelClasses}>{t('aiProviders.dialog.apiKey')}</Label>
                       {typeInfo?.apiKeyUrl && (
                         <a
                           href={typeInfo.apiKeyUrl}
@@ -1063,7 +1089,7 @@ function AddProviderDialog({
                           setApiKey(e.target.value);
                           setValidationError(null);
                         }}
-                        className="pr-10 h-[44px] rounded-xl font-mono text-[13px] bg-white dark:bg-[#1a1a19] border-black/10 dark:border-white/10 focus-visible:ring-2 focus-visible:ring-blue-500/50 shadow-sm"
+                        className={inputClasses}
                       />
                       <button
                         type="button"
@@ -1083,21 +1109,21 @@ function AddProviderDialog({
                 )}
 
                 {typeInfo?.showBaseUrl && (
-                  <div className="space-y-2">
-                    <Label htmlFor="baseUrl" className="text-[14px] font-bold text-foreground/80">{t('aiProviders.dialog.baseUrl')}</Label>
+                  <div className="space-y-2.5">
+                    <Label htmlFor="baseUrl" className={labelClasses}>{t('aiProviders.dialog.baseUrl')}</Label>
                     <Input
                       id="baseUrl"
                       placeholder={apiProtocol === 'anthropic-messages' ? "https://api.example.com/anthropic" : "https://api.example.com/v1"}
                       value={baseUrl}
                       onChange={(e) => setBaseUrl(e.target.value)}
-                      className="h-[44px] rounded-xl font-mono text-[13px] bg-white dark:bg-[#1a1a19] border-black/10 dark:border-white/10 focus-visible:ring-2 focus-visible:ring-blue-500/50 shadow-sm"
+                      className={inputClasses}
                     />
                   </div>
                 )}
 
                 {showModelIdField && (
-                  <div className="space-y-2">
-                    <Label htmlFor="modelId" className="text-[14px] font-bold text-foreground/80">{t('aiProviders.dialog.modelId')}</Label>
+                  <div className="space-y-2.5">
+                    <Label htmlFor="modelId" className={labelClasses}>{t('aiProviders.dialog.modelId')}</Label>
                     <Input
                       id="modelId"
                       placeholder={typeInfo?.modelIdPlaceholder || 'provider/model-id'}
@@ -1106,13 +1132,13 @@ function AddProviderDialog({
                         setModelId(e.target.value);
                         setValidationError(null);
                       }}
-                      className="h-[44px] rounded-xl font-mono text-[13px] bg-white dark:bg-[#1a1a19] border-black/10 dark:border-white/10 focus-visible:ring-2 focus-visible:ring-blue-500/50 shadow-sm"
+                      className={inputClasses}
                     />
                   </div>
                 )}
                 {selectedType === 'custom' && (
-                  <div className="space-y-2">
-                    <Label className="text-[14px] font-bold text-foreground/80">{t('aiProviders.dialog.protocol', 'Protocol')}</Label>
+                  <div className="space-y-2.5">
+                    <Label className={labelClasses}>{t('aiProviders.dialog.protocol', 'Protocol')}</Label>
                     <div className="flex gap-2 text-[13px]">
                       <button
                         type="button"
