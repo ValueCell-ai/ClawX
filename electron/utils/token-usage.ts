@@ -7,6 +7,7 @@ import {
   parseUsageEntriesFromJsonl,
   type TokenUsageHistoryEntry,
 } from './token-usage-core';
+import { listConfiguredAgentIds } from './agent-config';
 
 export {
   extractSessionIdFromTranscriptFileName,
@@ -19,7 +20,7 @@ async function listRecentSessionFiles(): Promise<Array<{ filePath: string; sessi
   const agentsDir = join(openclawDir, 'agents');
 
   try {
-    const agentEntries = await readdir(agentsDir);
+    const agentEntries = await listConfiguredAgentIds();
     const files: Array<{ filePath: string; sessionId: string; agentId: string; mtimeMs: number }> = [];
 
     for (const agentId of agentEntries) {
