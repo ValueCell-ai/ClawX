@@ -110,18 +110,20 @@ export function Channels() {
     );
   }
 
+  const safeChannels = Array.isArray(channels) ? channels : [];
+
   return (
     <div className="flex flex-col -m-6 dark:bg-background h-[calc(100vh-2.5rem)] overflow-hidden">
       <div className="w-full max-w-5xl mx-auto flex flex-col h-full p-10 pt-16">
 
         {/* Header */}
-        <div className="flex flex-col md:flex-row md:items-start justify-between mb-12 shrink-0 gap-4">
+        <div className="flex flex-col md:flex-row md:items-start justify-between mb-8 shrink-0 gap-4">
           <div>
             <h1 className="text-5xl md:text-6xl font-serif text-foreground mb-3 font-normal tracking-tight" style={{ fontFamily: 'Georgia, Cambria, "Times New Roman", Times, serif' }}>
-              {t('title', 'Messaging Channels')}
+              {t('title') || 'Channels'}
             </h1>
             <p className="text-[17px] text-foreground/80 font-medium">
-              {t('subtitle', 'Manage your messaging channels and connections')}
+              {t('subtitle') || 'Connect to messaging platforms.'}
             </p>
           </div>
 
@@ -132,15 +134,16 @@ export function Channels() {
                 void fetchChannels();
                 void fetchConfiguredTypes();
               }}
+              disabled={gatewayStatus.state !== 'running'}
               className="h-9 text-[13px] font-medium rounded-full px-4 border-black/10 dark:border-white/10 bg-transparent hover:bg-black/5 dark:hover:bg-white/5 shadow-none text-foreground/80 hover:text-foreground transition-colors"
             >
-              <RefreshCw className="h-3.5 w-3.5 mr-2" />
+              <RefreshCw className={cn("h-3.5 w-3.5 mr-2", loading && "animate-spin")} />
               {t('refresh')}
             </Button>
           </div>
         </div>
         {/* Content Area */}
-        <div className="flex-1 overflow-y-auto pr-2 pb-10 min-h-0 -mr-2">
+        <div className="flex-1 overflow-y-auto min-h-0 pr-2 -mr-2 space-y-8 pb-10">
 
           {/* Gateway Warning */}
           {gatewayStatus.state !== 'running' && (
@@ -163,13 +166,13 @@ export function Channels() {
           )}
 
           {/* Available Channels (Configured) */}
-          {channels.length > 0 && (
+          {safeChannels.length > 0 && (
             <div className="mb-12">
               <h2 className="text-3xl font-serif text-foreground mb-6 font-normal tracking-tight" style={{ fontFamily: 'Georgia, Cambria, "Times New Roman", Times, serif' }}>
                 Available Channels
               </h2>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-4">
-                {channels.map((channel) => (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {safeChannels.map((channel) => (
                   <ChannelCard
                     key={channel.id}
                     channel={channel}
@@ -189,7 +192,7 @@ export function Channels() {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-4">
               {displayedChannelTypes.map((type) => {
                 const meta = CHANNEL_META[type];
-                const isConfigured = channels.some(c => c.type === type) || configuredTypes.includes(type);
+                const isConfigured = safeChannels.some(c => c.type === type) || configuredTypes.includes(type);
 
                 // Hide already configured channels from "Supported Channels" section
                 if (isConfigured) return null;

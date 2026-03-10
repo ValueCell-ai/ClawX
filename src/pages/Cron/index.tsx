@@ -284,8 +284,8 @@ function TaskDialog({ job, onClose, onSave }: TaskDialogProps) {
                     onClick={() => setSchedule(preset.value)}
                     className={cn(
                       "justify-start h-10 rounded-xl font-medium text-[13px] transition-all",
-                      schedule === preset.value 
-                        ? "bg-[#0a84ff] hover:bg-[#007aff] text-white shadow-sm border-transparent" 
+                      schedule === preset.value
+                        ? "bg-[#0a84ff] hover:bg-[#007aff] text-white shadow-sm border-transparent"
                         : "bg-[#eeece3] dark:bg-[#151514] border-black/10 dark:border-white/10 hover:bg-black/5 dark:hover:bg-white/5 text-foreground/80 hover:text-foreground"
                     )}
                   >
@@ -387,7 +387,7 @@ function CronJobCard({ job, onToggle, onEdit, onDelete, onTrigger }: CronJobCard
   };
 
   return (
-    <div 
+    <div
       className="group flex flex-col p-5 rounded-2xl bg-transparent border border-transparent hover:bg-black/5 dark:hover:bg-white/5 transition-all relative overflow-hidden cursor-pointer"
       onClick={onEdit}
     >
@@ -399,11 +399,11 @@ function CronJobCard({ job, onToggle, onEdit, onDelete, onTrigger }: CronJobCard
           <div className="flex flex-col min-w-0">
             <div className="flex items-center gap-2 mb-1">
               <h3 className="text-[16px] font-semibold text-foreground truncate">{job.name}</h3>
-              <div 
+              <div
                 className={cn(
                   "w-2 h-2 rounded-full shrink-0",
                   job.enabled ? "bg-green-500" : "bg-muted-foreground"
-                )} 
+                )}
                 title={job.enabled ? t('stats.active') : t('stats.paused')}
               />
             </div>
@@ -413,7 +413,7 @@ function CronJobCard({ job, onToggle, onEdit, onDelete, onTrigger }: CronJobCard
             </p>
           </div>
         </div>
-        
+
         <div className="flex items-center gap-2" onClick={e => e.stopPropagation()}>
           <Switch
             checked={job.enabled}
@@ -421,7 +421,7 @@ function CronJobCard({ job, onToggle, onEdit, onDelete, onTrigger }: CronJobCard
           />
         </div>
       </div>
-      
+
       <div className="flex-1 flex flex-col justify-end mt-2 pl-[62px]">
         <div className="flex items-start gap-2 mb-3">
           <MessageSquare className="h-3.5 w-3.5 mt-0.5 text-muted-foreground shrink-0" />
@@ -483,9 +483,9 @@ function CronJobCard({ job, onToggle, onEdit, onDelete, onTrigger }: CronJobCard
             )}
             {t('card.runNow')}
           </Button>
-          <Button 
-            variant="ghost" 
-            size="sm" 
+          <Button
+            variant="ghost"
+            size="sm"
             onClick={handleDelete}
             className="h-8 px-3 text-destructive/70 hover:text-destructive hover:bg-destructive/10 rounded-lg text-[13px] font-medium transition-colors"
           >
@@ -516,9 +516,10 @@ export function Cron() {
   }, [fetchJobs, isGatewayRunning]);
 
   // Statistics
-  const activeJobs = jobs.filter((j) => j.enabled);
-  const pausedJobs = jobs.filter((j) => !j.enabled);
-  const failedJobs = jobs.filter((j) => j.lastRun && !j.lastRun.success);
+  const safeJobs = Array.isArray(jobs) ? jobs : [];
+  const activeJobs = safeJobs.filter((j) => j.enabled);
+  const pausedJobs = safeJobs.filter((j) => !j.enabled);
+  const failedJobs = safeJobs.filter((j) => j.lastRun && !j.lastRun.success);
 
   const handleSave = useCallback(async (input: CronJobCreateInput) => {
     if (editingJob) {
@@ -615,11 +616,11 @@ export function Cron() {
                 </div>
               </div>
               <div className="mt-4 flex items-baseline gap-3">
-                <p className="text-[40px] leading-none font-serif text-foreground">{jobs.length}</p>
+                <p className="text-[40px] leading-none font-serif text-foreground">{safeJobs.length}</p>
                 <p className="text-[14px] font-medium text-muted-foreground">{t('stats.total')}</p>
               </div>
             </div>
-            
+
             <div className="p-5 rounded-[24px] bg-black/5 dark:bg-white/5 border border-transparent flex flex-col justify-between min-h-[130px] relative overflow-hidden group hover:bg-black/10 dark:hover:bg-white/10 transition-colors">
               <div className="flex items-center justify-between">
                 <div className="h-11 w-11 rounded-full bg-green-500/10 flex items-center justify-center">
@@ -658,7 +659,7 @@ export function Cron() {
           </div>
 
           {/* Jobs List */}
-          {jobs.length === 0 ? (
+          {safeJobs.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-20 text-muted-foreground bg-black/5 dark:bg-white/5 rounded-3xl border border-transparent border-dashed">
               <Clock className="h-10 w-10 mb-4 opacity-50" />
               <h3 className="text-lg font-medium mb-2 text-foreground">{t('empty.title')}</h3>
@@ -679,7 +680,7 @@ export function Cron() {
             </div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-4">
-              {jobs.map((job) => (
+              {safeJobs.map((job) => (
                 <CronJobCard
                   key={job.id}
                   job={job}

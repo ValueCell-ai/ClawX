@@ -225,7 +225,7 @@ export function Dashboard() {
             <CardTitle className="text-lg">{t('connectedChannels')}</CardTitle>
           </CardHeader>
           <CardContent>
-            {channels.length === 0 ? (
+            {(!Array.isArray(channels) || channels.length === 0) ? (
               <FeedbackState
                 state="empty"
                 title={t('noChannels')}
@@ -269,7 +269,7 @@ export function Dashboard() {
             <CardTitle className="text-lg">{t('activeSkills')}</CardTitle>
           </CardHeader>
           <CardContent>
-            {skills.filter((s) => s.enabled).length === 0 ? (
+            {(!Array.isArray(skills) || skills.filter((s) => s.enabled).length === 0) ? (
               <FeedbackState
                 state="empty"
                 title={t('noSkills')}
