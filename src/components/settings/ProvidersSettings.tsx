@@ -416,9 +416,9 @@ function ProviderCard({
   return (
     <div
       className={cn(
-        "group flex flex-col p-4 rounded-2xl transition-all relative overflow-hidden",
+        "group flex flex-col p-4 rounded-2xl transition-all relative overflow-hidden hover:bg-black/5 dark:hover:bg-white/5",
         isDefault
-          ? "bg-white dark:bg-accent border border-black/10 dark:border-white/10 shadow-sm"
+          ? "bg-black/[0.04] dark:bg-white/[0.06] border border-transparent"
           : "bg-transparent border border-black/10 dark:border-white/10"
       )}
     >
@@ -435,9 +435,9 @@ function ProviderCard({
             <div className="flex items-center gap-2">
               <span className="font-semibold text-[15px]">{account.label}</span>
               {isDefault && (
-                <span className="flex items-center gap-1 text-[11px] font-medium text-blue-600 dark:text-blue-400 bg-blue-500/10 px-2 py-0.5 rounded-full border border-blue-500/20">
+                <span className="flex items-center gap-1 font-mono text-[10px] font-medium px-2 py-0.5 rounded-full bg-black/[0.04] dark:bg-white/[0.08] border-0 shadow-none text-foreground/70">
                   <Check className="h-3 w-3" />
-                  Default
+                  {t('aiProviders.card.default')}
                 </span>
               )}
             </div>
