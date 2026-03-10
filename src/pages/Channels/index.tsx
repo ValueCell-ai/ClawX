@@ -676,27 +676,27 @@ function AddChannelDialog({ selectedType, onSelectType, onClose, onChannelAdded 
 
   return (
     <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
-      <Card className="w-full max-w-lg max-h-[90vh] overflow-y-auto">
-        <CardHeader className="flex flex-row items-start justify-between">
+      <Card className="w-full max-w-lg max-h-[90vh] flex flex-col rounded-3xl border-0 shadow-2xl bg-[#f3f1e9] dark:bg-[#1a1a19] overflow-hidden">
+        <CardHeader className="flex flex-row items-start justify-between pb-2 shrink-0">
           <div>
-            <CardTitle>
+            <CardTitle className="text-2xl font-serif font-normal">
               {selectedType
                 ? isExistingConfig
                   ? t('dialog.updateTitle', { name: CHANNEL_NAMES[selectedType] })
                   : t('dialog.configureTitle', { name: CHANNEL_NAMES[selectedType] })
                 : t('dialog.addTitle')}
             </CardTitle>
-            <CardDescription>
+            <CardDescription className="text-[15px] mt-1 text-foreground/70">
               {selectedType && isExistingConfig
                 ? t('dialog.existingDesc')
                 : meta ? t(meta.description.replace('channels:', '')) : t('dialog.selectDesc')}
             </CardDescription>
           </div>
-          <Button variant="ghost" size="icon" onClick={onClose}>
+          <Button variant="ghost" size="icon" onClick={onClose} className="rounded-full h-8 w-8 -mr-2 -mt-2 text-muted-foreground hover:text-foreground hover:bg-black/5 dark:hover:bg-white/5">
             <X className="h-4 w-4" />
           </Button>
         </CardHeader>
-        <CardContent className="space-y-4">
+        <CardContent className="space-y-6 pt-4 overflow-y-auto flex-1 p-6">
           {!selectedType ? (
             // Channel type selection
             <div className="grid grid-cols-2 gap-4">
@@ -706,13 +706,13 @@ function AddChannelDialog({ selectedType, onSelectType, onClose, onChannelAdded 
                   <button
                     key={type}
                     onClick={() => onSelectType(type)}
-                    className="p-4 rounded-lg border hover:bg-accent transition-colors text-left"
+                    className="p-4 rounded-2xl border border-black/5 dark:border-white/5 hover:bg-black/5 dark:hover:bg-white/5 transition-all text-left group"
                   >
-                    <div className="h-[46px] w-[46px] shrink-0 flex items-center justify-center text-foreground bg-white dark:bg-[#2c2c2a] border border-black/5 dark:border-white/10 rounded-full shadow-sm mb-3">
+                    <div className="h-[46px] w-[46px] shrink-0 flex items-center justify-center text-foreground bg-black/5 dark:bg-white/5 border border-black/5 dark:border-white/10 rounded-full shadow-sm mb-3 group-hover:scale-105 transition-transform">
                       <ChannelLogo type={type} />
                     </div>
-                    <p className="font-medium">{channelMeta.name}</p>
-                    <p className="text-xs text-muted-foreground mt-1">
+                    <p className="font-semibold text-[15px]">{channelMeta.name}</p>
+                    <p className="text-[13px] text-muted-foreground mt-0.5">
                       {channelMeta.connectionType === 'qr' ? t('dialog.qrCode') : t('dialog.token')}
                     </p>
                   </button>
@@ -721,60 +721,60 @@ function AddChannelDialog({ selectedType, onSelectType, onClose, onChannelAdded 
             </div>
           ) : qrCode ? (
             // QR Code display
-            <div className="text-center space-y-4">
-              <div className="bg-white p-4 rounded-lg inline-block shadow-sm border">
+            <div className="text-center space-y-5 py-4">
+              <div className="bg-white p-5 rounded-3xl inline-block shadow-sm border border-black/5">
                 {qrCode.startsWith('data:image') ? (
                   <img src={qrCode} alt="Scan QR Code" className="w-64 h-64 object-contain" />
                 ) : (
-                  <div className="w-64 h-64 bg-gray-100 flex items-center justify-center">
-                    <QrCode className="h-32 w-32 text-gray-400" />
+                  <div className="w-64 h-64 bg-gray-50 rounded-2xl flex items-center justify-center">
+                    <QrCode className="h-24 w-24 text-gray-300" />
                   </div>
                 )}
               </div>
-              <p className="text-sm text-muted-foreground">
+              <p className="text-[14px] text-muted-foreground font-medium">
                 {t('dialog.scanQR', { name: meta?.name })}
               </p>
-              <div className="flex justify-center gap-2">
+              <div className="flex justify-center gap-2 pt-2">
                 <Button variant="outline" onClick={() => {
                   setQrCode(null);
                   handleConnect(); // Retry
-                }}>
+                }} className="rounded-full px-6 h-[42px] text-[13px] font-semibold border-black/20 dark:border-white/20 bg-transparent hover:bg-black/5 dark:hover:bg-white/5 text-foreground/80 hover:text-foreground shadow-sm">
                   {t('dialog.refreshCode')}
                 </Button>
               </div>
             </div>
           ) : loadingConfig ? (
             // Loading saved config
-            <div className="flex items-center justify-center py-8">
-              <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-              <span className="ml-2 text-sm text-muted-foreground">{t('dialog.loadingConfig')}</span>
+            <div className="flex flex-col items-center justify-center py-12 space-y-4">
+              <Loader2 className="h-8 w-8 animate-spin text-muted-foreground/50" />
+              <span className="text-[14px] font-medium text-muted-foreground">{t('dialog.loadingConfig')}</span>
             </div>
           ) : (
             // Connection form
             <div className="space-y-4">
               {/* Existing config hint */}
               {isExistingConfig && (
-                <div className="bg-blue-500/10 text-blue-600 dark:text-blue-400 p-3 rounded-lg text-sm flex items-center gap-2">
-                  <CheckCircle className="h-4 w-4 shrink-0" />
+                <div className="bg-[#eeece3] dark:bg-[#151514] text-foreground/80 font-medium p-4 rounded-2xl text-[13.5px] flex items-center gap-2.5 shadow-sm border border-black/5 dark:border-white/5">
+                  <CheckCircle className="h-4 w-4 shrink-0 text-blue-500" />
                   <span>{t('dialog.existingHint')}</span>
                 </div>
               )}
 
               {/* Instructions */}
-              <div className="bg-muted p-4 rounded-lg space-y-3">
+              <div className="bg-[#eeece3] dark:bg-[#151514] p-5 rounded-2xl space-y-3 shadow-sm border border-black/5 dark:border-white/5">
                 <div className="flex items-center justify-between">
-                  <p className="font-medium text-sm">{t('dialog.howToConnect')}</p>
+                  <p className="font-semibold text-[14px] text-foreground/80">{t('dialog.howToConnect')}</p>
                   <Button
                     variant="link"
-                    className="p-0 h-auto text-sm"
+                    className="p-0 h-auto text-[13px] text-muted-foreground hover:text-foreground"
                     onClick={openDocs}
                   >
-                    <BookOpen className="h-3 w-3 mr-1" />
+                    <BookOpen className="h-3.5 w-3.5 mr-1.5" />
                     {t('dialog.viewDocs')}
                     <ExternalLink className="h-3 w-3 ml-1" />
                   </Button>
                 </div>
-                <ol className="list-decimal list-inside text-sm text-muted-foreground space-y-1">
+                <ol className="list-decimal list-inside text-[13.5px] text-muted-foreground space-y-1.5 leading-relaxed">
                   {meta?.instructions.map((instruction, i) => (
                     <li key={i}>{t(instruction.replace('channels:', ''))}</li>
                   ))}
@@ -782,14 +782,15 @@ function AddChannelDialog({ selectedType, onSelectType, onClose, onChannelAdded 
               </div>
 
               {/* Channel name */}
-              <div className="space-y-2">
-                <Label htmlFor="name">{t('dialog.channelName')}</Label>
+              <div className="space-y-2.5">
+                <Label htmlFor="name" className="text-[14px] text-foreground/80 font-bold">{t('dialog.channelName')}</Label>
                 <Input
                   ref={firstInputRef}
                   id="name"
                   placeholder={t('dialog.channelNamePlaceholder', { name: meta?.name })}
                   value={channelName}
                   onChange={(e) => setChannelName(e.target.value)}
+                  className="h-[44px] rounded-xl font-mono text-[13px] bg-[#eeece3] dark:bg-[#151514] border-black/10 dark:border-white/10 focus-visible:ring-2 focus-visible:ring-blue-500/50 focus-visible:border-blue-500 shadow-sm transition-all text-foreground placeholder:text-foreground/40"
                 />
               </div>
 
@@ -807,35 +808,35 @@ function AddChannelDialog({ selectedType, onSelectType, onClose, onChannelAdded 
 
               {/* Validation Results */}
               {validationResult && (
-                <div className={`p-4 rounded-lg text-sm ${validationResult.valid ? 'bg-green-500/10 text-green-600 dark:text-green-400' : 'bg-destructive/10 text-destructive'
+                <div className={`p-4 rounded-2xl text-[13.5px] shadow-sm border border-black/5 dark:border-white/5 ${validationResult.valid ? 'bg-[#eeece3] dark:bg-[#151514] text-foreground/80' : 'bg-destructive/10 text-destructive'
                   }`}>
-                  <div className="flex items-start gap-2">
+                  <div className="flex items-start gap-2.5">
                     {validationResult.valid ? (
-                      <CheckCircle className="h-4 w-4 mt-0.5 shrink-0" />
+                      <CheckCircle className="h-4 w-4 mt-0.5 shrink-0 text-green-500" />
                     ) : (
                       <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" />
                     )}
                     <div className="min-w-0">
-                      <h4 className="font-medium mb-1">
+                      <h4 className="font-bold mb-1">
                         {validationResult.valid ? t('dialog.credentialsVerified') : t('dialog.validationFailed')}
                       </h4>
                       {validationResult.errors.length > 0 && (
-                        <ul className="list-disc list-inside space-y-0.5">
+                        <ul className="list-disc list-inside space-y-0.5 font-medium">
                           {validationResult.errors.map((err, i) => (
                             <li key={i}>{err}</li>
                           ))}
                         </ul>
                       )}
                       {validationResult.valid && validationResult.warnings.length > 0 && (
-                        <div className="mt-1 text-green-600 dark:text-green-400 space-y-0.5">
+                        <div className="mt-1 text-green-600 dark:text-green-500 space-y-0.5 font-medium">
                           {validationResult.warnings.map((info, i) => (
-                            <p key={i} className="text-xs">{info}</p>
+                            <p key={i} className="text-[13px]">{info}</p>
                           ))}
                         </div>
                       )}
                       {!validationResult.valid && validationResult.warnings.length > 0 && (
-                        <div className="mt-2 text-yellow-600 dark:text-yellow-500">
-                          <p className="font-medium text-xs uppercase mb-1">{t('dialog.warnings')}</p>
+                        <div className="mt-2 text-yellow-600 dark:text-yellow-500 font-medium">
+                          <p className="font-bold text-[12px] uppercase mb-1">{t('dialog.warnings')}</p>
                           <ul className="list-disc list-inside space-y-0.5">
                             {validationResult.warnings.map((warn, i) => (
                               <li key={i}>{warn}</li>
@@ -848,19 +849,17 @@ function AddChannelDialog({ selectedType, onSelectType, onClose, onChannelAdded 
                 </div>
               )}
 
-              <Separator />
+              <Separator className="bg-black/10 dark:bg-white/10" />
 
-              <div className="flex justify-between">
-                <Button variant="outline" onClick={() => onSelectType(null)}>
-                  {t('dialog.back')}
-                </Button>
-                <div className="flex gap-2">
+              <div className="flex justify-end pt-4">
+                <div className="flex gap-3">
                   {/* Validation Button - Only for token-based channels for now */}
                   {meta?.connectionType === 'token' && (
                     <Button
                       variant="secondary"
                       onClick={handleValidate}
                       disabled={validating}
+                      className="rounded-full px-6 h-[42px] text-[13px] font-semibold bg-black/5 dark:bg-white/5 hover:bg-black/10 dark:hover:bg-white/10 text-foreground shadow-sm"
                     >
                       {validating ? (
                         <>
@@ -878,6 +877,7 @@ function AddChannelDialog({ selectedType, onSelectType, onClose, onChannelAdded 
                   <Button
                     onClick={handleConnect}
                     disabled={connecting || !isFormValid()}
+                    className="rounded-full px-6 h-[42px] text-[13px] font-semibold bg-[#0a84ff] hover:bg-[#007aff] text-white shadow-sm border border-transparent transition-all"
                   >
                     {connecting ? (
                       <>
@@ -918,8 +918,8 @@ function ConfigField({ field, value, onChange, showSecret, onToggleSecret }: Con
   const isPassword = field.type === 'password';
 
   return (
-    <div className="space-y-2">
-      <Label htmlFor={field.key}>
+    <div className="space-y-2.5">
+      <Label htmlFor={field.key} className="text-[14px] text-foreground/80 font-bold">
         {t(field.label.replace('channels:', ''))}
         {field.required && <span className="text-destructive ml-1">*</span>}
       </Label>
@@ -930,7 +930,7 @@ function ConfigField({ field, value, onChange, showSecret, onToggleSecret }: Con
           placeholder={field.placeholder ? t(field.placeholder.replace('channels:', '')) : undefined}
           value={value}
           onChange={(e) => onChange(e.target.value)}
-          className="font-mono text-sm"
+          className="h-[44px] rounded-xl font-mono text-[13px] bg-[#eeece3] dark:bg-[#151514] border-black/10 dark:border-white/10 focus-visible:ring-2 focus-visible:ring-blue-500/50 focus-visible:border-blue-500 shadow-sm transition-all text-foreground placeholder:text-foreground/40"
         />
         {isPassword && (
           <Button
@@ -938,18 +938,19 @@ function ConfigField({ field, value, onChange, showSecret, onToggleSecret }: Con
             variant="outline"
             size="icon"
             onClick={onToggleSecret}
+            className="h-[44px] w-[44px] rounded-xl bg-[#eeece3] dark:bg-[#151514] border-black/10 dark:border-white/10 text-muted-foreground hover:text-foreground shrink-0 shadow-sm"
           >
             {showSecret ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
           </Button>
         )}
       </div>
       {field.description && (
-        <p className="text-xs text-muted-foreground">
+        <p className="text-[13px] text-muted-foreground leading-relaxed">
           {t(field.description.replace('channels:', ''))}
         </p>
       )}
       {field.envVar && (
-        <p className="text-xs text-muted-foreground">
+        <p className="text-[12px] text-muted-foreground/70 font-mono">
           {t('dialog.envVar', { var: field.envVar })}
         </p>
       )}
