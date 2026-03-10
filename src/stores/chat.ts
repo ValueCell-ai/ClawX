@@ -979,7 +979,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
           return true;
         });
 
-        const { currentSessionKey } = get();
+        const { currentSessionKey, sessions: localSessions } = get();
         let nextSessionKey = currentSessionKey || DEFAULT_SESSION_KEY;
         if (!nextSessionKey.startsWith('agent:')) {
           const canonicalMatch = canonicalBySuffix.get(nextSessionKey);
@@ -988,9 +988,10 @@ export const useChatStore = create<ChatState>((set, get) => ({
           }
         }
         if (!dedupedSessions.find((s) => s.key === nextSessionKey) && dedupedSessions.length > 0) {
-          // Current session not found in the backend list
-          const isNewEmptySession = get().messages.length === 0;
-          if (!isNewEmptySession) {
+          // Preserve only locally-created pending sessions. On initial boot the
+          // default ghost key (`agent:main:main`) should yield to real history.
+          const hasLocalPendingSession = localSessions.some((session) => session.key === nextSessionKey);
+          if (!hasLocalPendingSession) {
             nextSessionKey = dedupedSessions[0].key;
           }
         }
