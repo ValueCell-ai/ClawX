@@ -136,12 +136,37 @@ async function discoverAgentIds(): Promise<string[]> {
 // ── OpenClaw Config Helpers ──────────────────────────────────────
 
 const OPENCLAW_CONFIG_PATH = join(homedir(), '.openclaw', 'openclaw.json');
+const VALID_COMPACTION_MODES = new Set(['default', 'safeguard']);
 
 async function readOpenClawJson(): Promise<Record<string, unknown>> {
   return (await readJsonFile<Record<string, unknown>>(OPENCLAW_CONFIG_PATH)) ?? {};
 }
 
+function normalizeAgentsDefaultsCompactionMode(config: Record<string, unknown>): void {
+  const agents = (config.agents && typeof config.agents === 'object'
+    ? config.agents as Record<string, unknown>
+    : null);
+  if (!agents) return;
+
+  const defaults = (agents.defaults && typeof agents.defaults === 'object'
+    ? agents.defaults as Record<string, unknown>
+    : null);
+  if (!defaults) return;
+
+  const compaction = (defaults.compaction && typeof defaults.compaction === 'object'
+    ? defaults.compaction as Record<string, unknown>
+    : null);
+  if (!compaction) return;
+
+  const mode = compaction.mode;
+  if (typeof mode === 'string' && mode.length > 0 && !VALID_COMPACTION_MODES.has(mode)) {
+    compaction.mode = 'default';
+  }
+}
+
 async function writeOpenClawJson(config: Record<string, unknown>): Promise<void> {
+  normalizeAgentsDefaultsCompactionMode(config);
+
   // Ensure SIGUSR1 graceful reload is authorized by OpenClaw config.
   const commands = (
     config.commands && typeof config.commands === 'object'
