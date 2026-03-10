@@ -61,7 +61,10 @@ export function Channels() {
   }, []);
 
   useEffect(() => {
-    void fetchConfiguredTypes();
+    const timer = window.setTimeout(() => {
+      void fetchConfiguredTypes();
+    }, 0);
+    return () => window.clearTimeout(timer);
   }, [fetchConfiguredTypes]);
 
   useEffect(() => {
