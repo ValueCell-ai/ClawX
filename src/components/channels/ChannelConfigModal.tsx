@@ -589,10 +589,7 @@ export function ChannelConfigModal({
 
               <Separator className="bg-black/10 dark:bg-white/10" />
 
-              <div className="flex flex-col-reverse sm:flex-row sm:justify-between gap-3 pt-2">
-                <Button variant="outline" onClick={() => setSelectedType(null)} className={outlineButtonClasses}>
-                  {t('dialog.back')}
-                </Button>
+              <div className="flex flex-col sm:flex-row sm:justify-end gap-3 pt-2">
                 <div className="flex flex-col sm:flex-row gap-2">
                   {meta?.connectionType === 'token' && (
                     <Button

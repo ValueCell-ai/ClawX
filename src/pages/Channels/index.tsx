@@ -150,6 +150,10 @@ export function Channels() {
                   <ChannelCard
                     key={channel.id}
                     channel={channel}
+                    onClick={() => {
+                      setSelectedChannelType(channel.type);
+                      setShowAddDialog(true);
+                    }}
                     onDelete={() => setChannelToDelete({ id: channel.id })}
                   />
                 ))}
@@ -264,15 +268,19 @@ function ChannelLogo({ type }: { type: ChannelType }) {
 
 interface ChannelCardProps {
   channel: Channel;
+  onClick: () => void;
   onDelete: () => void;
 }
 
-function ChannelCard({ channel, onDelete }: ChannelCardProps) {
+function ChannelCard({ channel, onClick, onDelete }: ChannelCardProps) {
   const { t } = useTranslation('channels');
   const meta = CHANNEL_META[channel.type];
 
   return (
-    <div className="group flex items-start gap-4 p-4 rounded-2xl transition-all text-left border relative overflow-hidden bg-transparent border-transparent hover:bg-black/5 dark:hover:bg-white/5">
+    <div 
+      onClick={onClick}
+      className="group flex items-start gap-4 p-4 rounded-2xl transition-all text-left border relative overflow-hidden bg-transparent border-transparent hover:bg-black/5 dark:hover:bg-white/5 cursor-pointer"
+    >
       <div className="h-[46px] w-[46px] shrink-0 flex items-center justify-center text-foreground bg-black/5 dark:bg-white/5 border border-black/5 dark:border-white/10 rounded-full shadow-sm mb-3">
         <ChannelLogo type={channel.type} />
       </div>
