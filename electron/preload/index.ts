@@ -55,6 +55,7 @@ const electronAPI = {
         'settings:setMany',
         'settings:getAll',
         'settings:reset',
+        'tray:updateLanguage',
         'usage:recentTokenHistory',
         // Update
         'update:status',

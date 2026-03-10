@@ -6,6 +6,8 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import i18n from '@/i18n';
 import { hostApiFetch } from '@/lib/host-api';
+import { invokeIpc } from '@/lib/api-client';
+import { useGatewayStore } from './gateway';
 
 type Theme = 'light' | 'dark' | 'system';
 type UpdateChannel = 'stable' | 'beta' | 'dev';
@@ -88,6 +90,24 @@ const defaultSettings = {
   setupComplete: false,
 };
 
+async function syncTrayTranslations(): Promise<void> {
+  const isGatewayRunning = useGatewayStore.getState().status.state === 'running';
+  await invokeIpc('tray:updateLanguage', {
+    tooltipRunning: i18n.t('tray.tooltipRunning'),
+    tooltipStopped: i18n.t('tray.tooltipStopped'),
+    show: i18n.t('tray.show'),
+    gatewayStatus: i18n.t('tray.gatewayStatus'),
+    running: i18n.t('tray.running'),
+    stopped: i18n.t('tray.stopped'),
+    quickActions: i18n.t('tray.quickActions'),
+    openDashboard: i18n.t('tray.openDashboard'),
+    openChat: i18n.t('tray.openChat'),
+    openSettings: i18n.t('tray.openSettings'),
+    checkUpdates: i18n.t('tray.checkUpdates'),
+    quit: i18n.t('tray.quit'),
+  }, isGatewayRunning);
+}
+
 export const useSettingsStore = create<SettingsState>()(
   persist(
     (set) => ({
@@ -114,6 +134,7 @@ export const useSettingsStore = create<SettingsState>()(
           method: 'PUT',
           body: JSON.stringify({ value: language }),
         }).catch(() => {});
+        void syncTrayTranslations();
       },
       setStartMinimized: (startMinimized) => set({ startMinimized }),
       setLaunchAtStartup: (launchAtStartup) => set({ launchAtStartup }),

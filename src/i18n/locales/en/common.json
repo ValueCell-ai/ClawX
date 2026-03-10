@@ -55,5 +55,19 @@
         "notRunning": "Gateway Not Running",
         "notRunningDesc": "The OpenClaw Gateway needs to be running to use this feature. It will start automatically, or you can start it from Settings.",
         "warning": "Gateway is not running."
+    },
+    "tray": {
+        "tooltipRunning": "ClawX - Gateway Running",
+        "tooltipStopped": "ClawX - Gateway Stopped",
+        "show": "Show ClawX",
+        "gatewayStatus": "Gateway Status",
+        "running": "Running",
+        "stopped": "Stopped",
+        "quickActions": "Quick Actions",
+        "openDashboard": "Open Dashboard",
+        "openChat": "Open Chat",
+        "openSettings": "Open Settings",
+        "checkUpdates": "Check for Updates...",
+        "quit": "Quit ClawX"
     }
 }

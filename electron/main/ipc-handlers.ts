@@ -51,6 +51,7 @@ import {
 } from '../services/providers/provider-runtime-sync';
 import { validateApiKeyWithProvider } from '../services/providers/provider-validation';
 import { appUpdater } from './updater';
+import { updateTrayMenu, type TrayTranslations } from './tray';
 import { PORTS } from '../utils/config';
 
 type AppRequest = {
@@ -2268,6 +2269,11 @@ function registerSettingsHandlers(gatewayManager: GatewayManager): void {
     const settings = await getAllSettings();
     await handleProxySettingsChange();
     return { success: true, settings };
+  });
+
+  ipcMain.handle('tray:updateLanguage', async (_, translations: TrayTranslations, gatewayRunning: boolean) => {
+    updateTrayMenu(translations, gatewayRunning);
+    return { success: true };
   });
 }
 function registerUsageHandlers(): void {

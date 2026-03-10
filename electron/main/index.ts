@@ -7,7 +7,7 @@ import type { Server } from 'node:http';
 import { join } from 'path';
 import { GatewayManager } from '../gateway/manager';
 import { registerIpcHandlers } from './ipc-handlers';
-import { createTray } from './tray';
+import { createTray, updateTrayStatus } from './tray';
 import { createMenu } from './menu';
 
 import { appUpdater, registerUpdateHandlers } from './updater';
@@ -236,6 +236,7 @@ async function initialize(): Promise<void> {
   // renderer subscribers observe the full startup lifecycle.
   gatewayManager.on('status', (status: { state: string }) => {
     hostEventBus.emit('gateway:status', status);
+    updateTrayStatus(status.state);
     if (status.state === 'running') {
       void ensureClawXContext().catch((error) => {
         logger.warn('Failed to re-merge ClawX context after gateway reconnect:', error);

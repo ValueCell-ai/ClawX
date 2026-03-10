@@ -55,5 +55,19 @@
         "notRunning": "网关未运行",
         "notRunningDesc": "OpenClaw 网关需要运行才能使用此功能。它将自动启动，或者您可以从设置中启动。",
         "warning": "网关未运行。"
+    },
+    "tray": {
+        "tooltipRunning": "ClawX - 网关运行中",
+        "tooltipStopped": "ClawX - 网关已停止",
+        "show": "显示 ClawX",
+        "gatewayStatus": "网关状态",
+        "running": "运行中",
+        "stopped": "已停止",
+        "quickActions": "快捷操作",
+        "openDashboard": "打开仪表盘",
+        "openChat": "打开聊天",
+        "openSettings": "打开设置",
+        "checkUpdates": "检查更新...",
+        "quit": "退出 ClawX"
     }
 }
