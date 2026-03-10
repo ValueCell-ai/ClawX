@@ -13,6 +13,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { hostApiFetch } from '@/lib/host-api';
 import { invokeIpc } from '@/lib/api-client';
 import { cn } from '@/lib/utils';
+import { useGatewayStore } from '@/stores/gateway';
 
 // ── Types ────────────────────────────────────────────────────────
 
@@ -84,6 +85,7 @@ export function ChatInput({ onSend, onStop, disabled = false, sending = false, i
   const [attachments, setAttachments] = useState<FileAttachment[]>([]);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const isComposingRef = useRef(false);
+  const gatewayStatus = useGatewayStore((s) => s.status);
 
   // Auto-resize textarea
   useEffect(() => {
@@ -407,7 +409,12 @@ export function ChatInput({ onSend, onStop, disabled = false, sending = false, i
           </Button>
         </div>
         <div className="mt-2.5 flex items-center justify-between gap-2 text-[11px] text-muted-foreground/60 px-4">
-          <span>Tip: switch sessions from the sidebar to keep context clean.</span>
+          <div className="flex items-center gap-1.5">
+            <div className={cn("w-1.5 h-1.5 rounded-full", gatewayStatus.state === 'running' ? "bg-green-500/80" : "bg-red-500/80")} />
+            <span>
+              gateway {gatewayStatus.state === 'running' ? 'connected' : gatewayStatus.state} | port: {gatewayStatus.port} {gatewayStatus.pid ? `| pid: ${gatewayStatus.pid}` : ''}
+            </span>
+          </div>
           {hasFailedAttachments && (
             <Button
               variant="link"
