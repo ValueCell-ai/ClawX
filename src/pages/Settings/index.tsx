@@ -8,16 +8,11 @@ import {
   Moon,
   Monitor,
   RefreshCw,
-  Terminal,
   ExternalLink,
-  Download,
   Copy,
-  ChevronDown,
-  ChevronRight,
   FileText,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { Separator } from '@/components/ui/separator';
@@ -44,6 +39,7 @@ import {
 import { useTranslation } from 'react-i18next';
 import { SUPPORTED_LANGUAGES } from '@/i18n';
 import { hostApiFetch } from '@/lib/host-api';
+import { cn } from '@/lib/utils';
 type ControlUiInfo = {
   url: string;
   token: string;
@@ -91,7 +87,6 @@ export function Settings() {
   const [proxyAllServerDraft, setProxyAllServerDraft] = useState('');
   const [proxyBypassRulesDraft, setProxyBypassRulesDraft] = useState('');
   const [proxyEnabledDraft, setProxyEnabledDraft] = useState(false);
-  const [showAdvancedProxy, setShowAdvancedProxy] = useState(false);
   const [savingProxy, setSavingProxy] = useState(false);
   const [wsDiagnosticEnabled, setWsDiagnosticEnabled] = useState(false);
   const [showTelemetryViewer, setShowTelemetryViewer] = useState(false);
@@ -124,27 +119,7 @@ export function Settings() {
     }
   };
 
-  // Open developer console
-  const openDevConsole = async () => {
-    try {
-      const result = await hostApiFetch<{
-        success: boolean;
-        url?: string;
-        token?: string;
-        port?: number;
-        error?: string;
-      }>('/api/gateway/control-ui');
-      if (result.success && result.url && result.token && typeof result.port === 'number') {
-        setControlUiInfo({ url: result.url, token: result.token, port: result.port });
-        trackUiEvent('settings.open_dev_console');
-        window.electron.openExternal(result.url);
-      } else {
-        console.error('Failed to get Dev Console URL:', result.error);
-      }
-    } catch (err) {
-      console.error('Error opening Dev Console:', err);
-    }
-  };
+
 
   const refreshControlUiInfo = async () => {
     try {
@@ -390,164 +365,182 @@ export function Settings() {
   };
 
   return (
-    <div className="flex flex-col gap-6 p-6">
-      <div>
-        <h1 className="text-2xl font-bold">{t('title')}</h1>
-        <p className="text-muted-foreground">
-          {t('subtitle')}
-        </p>
-      </div>
-
-      {/* Appearance */}
-      <Card className="order-2">
-        <CardHeader>
-          <CardTitle>{t('appearance.title')}</CardTitle>
-          <CardDescription>{t('appearance.description')}</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="space-y-2">
-            <Label>{t('appearance.theme')}</Label>
-            <div className="flex gap-2">
-              <Button
-                variant={theme === 'light' ? 'default' : 'outline'}
-                size="sm"
-                onClick={() => setTheme('light')}
-              >
-                <Sun className="h-4 w-4 mr-2" />
-                {t('appearance.light')}
-              </Button>
-              <Button
-                variant={theme === 'dark' ? 'default' : 'outline'}
-                size="sm"
-                onClick={() => setTheme('dark')}
-              >
-                <Moon className="h-4 w-4 mr-2" />
-                {t('appearance.dark')}
-              </Button>
-              <Button
-                variant={theme === 'system' ? 'default' : 'outline'}
-                size="sm"
-                onClick={() => setTheme('system')}
-              >
-                <Monitor className="h-4 w-4 mr-2" />
-                {t('appearance.system')}
-              </Button>
-            </div>
+    <div className="flex flex-col -m-6 dark:bg-background h-[calc(100vh-2.5rem)] overflow-hidden">
+      <div className="w-full max-w-4xl mx-auto flex flex-col h-full p-10 pt-16">
+        
+        {/* Header */}
+        <div className="flex flex-col md:flex-row md:items-start justify-between mb-12 shrink-0 gap-4">
+          <div>
+            <h1 className="text-5xl md:text-6xl font-serif text-foreground mb-3 font-normal tracking-tight" style={{ fontFamily: 'Georgia, Cambria, "Times New Roman", Times, serif' }}>
+              {t('title')}
+            </h1>
+            <p className="text-[17px] text-foreground/80 font-medium">
+              {t('subtitle')}
+            </p>
           </div>
-          <div className="space-y-2">
-            <Label>{t('appearance.language')}</Label>
-            <div className="flex gap-2">
-              {SUPPORTED_LANGUAGES.map((lang) => (
-                <Button
-                  key={lang.code}
-                  variant={language === lang.code ? 'default' : 'outline'}
-                  size="sm"
-                  onClick={() => setLanguage(lang.code)}
-                >
-                  {lang.label}
-                </Button>
-              ))}
-            </div>
-          </div>
-        </CardContent>
-      </Card>
+        </div>
 
-      {/* Gateway */}
-      <Card className="order-1">
-        <CardHeader>
-          <CardTitle>{t('gateway.title')}</CardTitle>
-          <CardDescription>{t('gateway.description')}</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="flex items-center justify-between">
-            <div>
-              <Label>{t('gateway.status')}</Label>
-              <p className="text-sm text-muted-foreground">
-                {t('gateway.port')}: {gatewayStatus.port}
-              </p>
-            </div>
-            <div className="flex items-center gap-2">
-              <Badge
-                variant={
-                  gatewayStatus.state === 'running'
-                    ? 'success'
-                    : gatewayStatus.state === 'error'
-                      ? 'destructive'
-                      : 'secondary'
-                }
-              >
-                {gatewayStatus.state}
-              </Badge>
-              <Button variant="outline" size="sm" onClick={restartGateway}>
-                <RefreshCw className="h-4 w-4 mr-2" />
-                {t('common:actions.restart')}
-              </Button>
-              <Button variant="outline" size="sm" onClick={handleShowLogs}>
-                <FileText className="h-4 w-4 mr-2" />
-                {t('gateway.logs')}
-              </Button>
-            </div>
-          </div>
+        {/* Content Area */}
+        <div className="flex-1 overflow-y-auto pr-2 pb-10 min-h-0 -mr-2 space-y-12">
 
-          {showLogs && (
-            <div className="mt-4 p-4 rounded-lg bg-black/10 dark:bg-black/40 border border-border">
-              <div className="flex items-center justify-between mb-2">
-                <p className="font-medium text-sm">{t('gateway.appLogs')}</p>
-                <div className="flex gap-2">
-                  <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={handleOpenLogDir}>
-                    <ExternalLink className="h-3 w-3 mr-1" />
-                    {t('gateway.openFolder')}
+          {/* Appearance */}
+          <div>
+            <h2 className="text-3xl font-serif text-foreground mb-6 font-normal tracking-tight" style={{ fontFamily: 'Georgia, Cambria, "Times New Roman", Times, serif' }}>
+              {t('appearance.title')}
+            </h2>
+            <div className="space-y-6">
+              <div className="space-y-3">
+                <Label className="text-[15px] font-medium text-foreground/80">{t('appearance.theme')}</Label>
+                <div className="flex flex-wrap gap-2">
+                  <Button
+                    variant={theme === 'light' ? 'secondary' : 'outline'}
+                    className={cn("rounded-full px-5 h-10 border-black/10 dark:border-white/10", theme === 'light' ? "bg-black/5 dark:bg-white/10 text-foreground" : "bg-transparent text-muted-foreground hover:bg-black/5 dark:hover:bg-white/5")}
+                    onClick={() => setTheme('light')}
+                  >
+                    <Sun className="h-4 w-4 mr-2" />
+                    {t('appearance.light')}
                   </Button>
-                  <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={() => setShowLogs(false)}>
-                    {t('common:actions.close')}
+                  <Button
+                    variant={theme === 'dark' ? 'secondary' : 'outline'}
+                    className={cn("rounded-full px-5 h-10 border-black/10 dark:border-white/10", theme === 'dark' ? "bg-black/5 dark:bg-white/10 text-foreground" : "bg-transparent text-muted-foreground hover:bg-black/5 dark:hover:bg-white/5")}
+                    onClick={() => setTheme('dark')}
+                  >
+                    <Moon className="h-4 w-4 mr-2" />
+                    {t('appearance.dark')}
+                  </Button>
+                  <Button
+                    variant={theme === 'system' ? 'secondary' : 'outline'}
+                    className={cn("rounded-full px-5 h-10 border-black/10 dark:border-white/10", theme === 'system' ? "bg-black/5 dark:bg-white/10 text-foreground" : "bg-transparent text-muted-foreground hover:bg-black/5 dark:hover:bg-white/5")}
+                    onClick={() => setTheme('system')}
+                  >
+                    <Monitor className="h-4 w-4 mr-2" />
+                    {t('appearance.system')}
                   </Button>
                 </div>
               </div>
-              <pre className="text-xs text-muted-foreground bg-background/50 p-3 rounded max-h-60 overflow-auto whitespace-pre-wrap font-mono">
-                {logContent || t('chat:noLogs')}
-              </pre>
+              <div className="space-y-3">
+                <Label className="text-[15px] font-medium text-foreground/80">{t('appearance.language')}</Label>
+                <div className="flex flex-wrap gap-2">
+                  {SUPPORTED_LANGUAGES.map((lang) => (
+                    <Button
+                      key={lang.code}
+                      variant={language === lang.code ? 'secondary' : 'outline'}
+                      className={cn("rounded-full px-5 h-10 border-black/10 dark:border-white/10", language === lang.code ? "bg-black/5 dark:bg-white/10 text-foreground" : "bg-transparent text-muted-foreground hover:bg-black/5 dark:hover:bg-white/5")}
+                      onClick={() => setLanguage(lang.code)}
+                    >
+                      {lang.label}
+                    </Button>
+                  ))}
+                </div>
+              </div>
             </div>
-          )}
-
-          <Separator />
-
-          <div className="flex items-center justify-between">
-            <div>
-              <Label>{t('gateway.autoStart')}</Label>
-              <p className="text-sm text-muted-foreground">
-                {t('gateway.autoStartDesc')}
-              </p>
-            </div>
-            <Switch
-              checked={gatewayAutoStart}
-              onCheckedChange={setGatewayAutoStart}
-            />
           </div>
 
-          <Separator />
+          <Separator className="bg-black/5 dark:bg-white/5" />
 
-          {devModeUnlocked ? (
-            <div className="space-y-4">
-              <div className="rounded-md border border-border/60 p-3">
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="w-full justify-start"
-                  onClick={() => setShowAdvancedProxy((prev) => !prev)}
-                >
-                  {showAdvancedProxy ? (
-                    <ChevronDown className="h-4 w-4 mr-2" />
-                  ) : (
-                    <ChevronRight className="h-4 w-4 mr-2" />
-                  )}
-                  {showAdvancedProxy ? t('gateway.hideAdvancedProxy') : t('gateway.showAdvancedProxy')}
-                </Button>
-                {showAdvancedProxy && (
-                  <div className="mt-3 space-y-4">
+          {/* Gateway */}
+          <div>
+            <h2 className="text-3xl font-serif text-foreground mb-6 font-normal tracking-tight" style={{ fontFamily: 'Georgia, Cambria, "Times New Roman", Times, serif' }}>
+              {t('gateway.title')}
+            </h2>
+            <div className="space-y-6">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div>
+                  <Label className="text-[15px] font-medium text-foreground">{t('gateway.status')}</Label>
+                  <p className="text-[13px] text-muted-foreground mt-1">
+                    {t('gateway.port')}: {gatewayStatus.port}
+                  </p>
+                </div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <div className={cn(
+                    "flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[13px] font-medium border",
+                    gatewayStatus.state === 'running' ? "bg-green-500/10 text-green-600 dark:text-green-500 border-green-500/20" : 
+                    gatewayStatus.state === 'error' ? "bg-red-500/10 text-red-600 dark:text-red-500 border-red-500/20" : 
+                    "bg-black/5 dark:bg-white/5 text-muted-foreground border-transparent"
+                  )}>
+                    <div className={cn("w-1.5 h-1.5 rounded-full", 
+                      gatewayStatus.state === 'running' ? "bg-green-500" : 
+                      gatewayStatus.state === 'error' ? "bg-red-500" : "bg-muted-foreground"
+                    )} />
+                    {gatewayStatus.state}
+                  </div>
+                  <Button variant="outline" size="sm" onClick={restartGateway} className="rounded-full h-8 px-4 border-black/10 dark:border-white/10 bg-transparent hover:bg-black/5 dark:hover:bg-white/5">
+                    <RefreshCw className="h-3.5 w-3.5 mr-1.5" />
+                    {t('common:actions.restart')}
+                  </Button>
+                  <Button variant="outline" size="sm" onClick={handleShowLogs} className="rounded-full h-8 px-4 border-black/10 dark:border-white/10 bg-transparent hover:bg-black/5 dark:hover:bg-white/5">
+                    <FileText className="h-3.5 w-3.5 mr-1.5" />
+                    {t('gateway.logs')}
+                  </Button>
+                </div>
+              </div>
+
+              {showLogs && (
+                <div className="p-4 rounded-2xl bg-black/5 dark:bg-white/5 border border-black/5 dark:border-white/5">
+                  <div className="flex items-center justify-between mb-3">
+                    <p className="font-medium text-[14px]">{t('gateway.appLogs')}</p>
+                    <div className="flex gap-2">
+                      <Button variant="ghost" size="sm" className="h-7 text-[12px] rounded-full hover:bg-black/5 dark:hover:bg-white/10" onClick={handleOpenLogDir}>
+                        <ExternalLink className="h-3 w-3 mr-1.5" />
+                        {t('gateway.openFolder')}
+                      </Button>
+                      <Button variant="ghost" size="sm" className="h-7 text-[12px] rounded-full hover:bg-black/5 dark:hover:bg-white/10" onClick={() => setShowLogs(false)}>
+                        {t('common:actions.close')}
+                      </Button>
+                    </div>
+                  </div>
+                  <pre className="text-[12px] text-muted-foreground bg-white dark:bg-[#1a1a19] p-4 rounded-xl max-h-60 overflow-auto whitespace-pre-wrap font-mono border border-black/5 dark:border-white/5 shadow-inner">
+                    {logContent || t('chat:noLogs')}
+                  </pre>
+                </div>
+              )}
+
+              <div className="flex items-center justify-between">
+                <div>
+                  <Label className="text-[15px] font-medium text-foreground">{t('gateway.autoStart')}</Label>
+                  <p className="text-[13px] text-muted-foreground mt-1">
+                    {t('gateway.autoStartDesc')}
+                  </p>
+                </div>
+                <Switch
+                  checked={gatewayAutoStart}
+                  onCheckedChange={setGatewayAutoStart}
+                />
+              </div>
+
+
+              <div className="flex items-center justify-between">
+                <div>
+                  <Label className="text-[15px] font-medium text-foreground">{t('advanced.devMode')}</Label>
+                  <p className="text-[13px] text-muted-foreground mt-1">
+                    {t('advanced.devModeDesc')}
+                  </p>
+                </div>
+                <Switch
+                  checked={devModeUnlocked}
+                  onCheckedChange={setDevModeUnlocked}
+                  />
+              </div>
+
+            </div>
+          </div>
+
+
+          {/* Developer */}
+          {devModeUnlocked && (
+            <>
+              <Separator className="bg-black/5 dark:bg-white/5" />
+              <div>
+                <h2 className="text-3xl font-serif text-foreground mb-6 font-normal tracking-tight" style={{ fontFamily: 'Georgia, Cambria, "Times New Roman", Times, serif' }}>
+                  {t('developer.title')}
+                </h2>
+                <div className="space-y-8">
+                  {/* Gateway Proxy */}
+                  <div className="space-y-4">
                     <div className="flex items-center justify-between">
                       <div>
-                        <Label>{t('gateway.proxyTitle')}</Label>
-                        <p className="text-sm text-muted-foreground">
+                        <Label className="text-[14px] font-medium text-foreground/80">Gateway Proxy</Label>
+                        <p className="text-[13px] text-muted-foreground">
                           {t('gateway.proxyDesc')}
                         </p>
                       </div>
@@ -557,387 +550,360 @@ export function Settings() {
                       />
                     </div>
 
-                    <div className="space-y-2">
-                      <Label htmlFor="proxy-server">{t('gateway.proxyServer')}</Label>
-                      <Input
-                        id="proxy-server"
-                        value={proxyServerDraft}
-                        onChange={(event) => setProxyServerDraft(event.target.value)}
-                        placeholder="http://127.0.0.1:7890"
-                      />
-                      <p className="text-xs text-muted-foreground">
-                        {t('gateway.proxyServerHelp')}
-                      </p>
-                    </div>
+                    {proxyEnabledDraft && (
+                      <div className="space-y-4 pt-2">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                          <div className="space-y-2">
+                            <Label htmlFor="proxy-server" className="text-[13px] text-foreground/80">{t('gateway.proxyServer')}</Label>
+                            <Input
+                              id="proxy-server"
+                              value={proxyServerDraft}
+                              onChange={(event) => setProxyServerDraft(event.target.value)}
+                              placeholder="http://127.0.0.1:7890"
+                              className="h-10 rounded-xl bg-black/5 dark:bg-white/5 border-transparent font-mono text-[13px]"
+                            />
+                            <p className="text-[11px] text-muted-foreground">
+                              {t('gateway.proxyServerHelp')}
+                            </p>
+                          </div>
 
-                    <div className="space-y-2">
-                      <Label htmlFor="proxy-http-server">{t('gateway.proxyHttpServer')}</Label>
-                      <Input
-                        id="proxy-http-server"
-                        value={proxyHttpServerDraft}
-                        onChange={(event) => setProxyHttpServerDraft(event.target.value)}
-                        placeholder={proxyServerDraft || 'http://127.0.0.1:7890'}
-                      />
-                      <p className="text-xs text-muted-foreground">
-                        {t('gateway.proxyHttpServerHelp')}
-                      </p>
-                    </div>
+                          <div className="space-y-2">
+                            <Label htmlFor="proxy-http-server" className="text-[13px] text-foreground/80">{t('gateway.proxyHttpServer')}</Label>
+                            <Input
+                              id="proxy-http-server"
+                              value={proxyHttpServerDraft}
+                              onChange={(event) => setProxyHttpServerDraft(event.target.value)}
+                              placeholder={proxyServerDraft || 'http://127.0.0.1:7890'}
+                              className="h-10 rounded-xl bg-black/5 dark:bg-white/5 border-transparent font-mono text-[13px]"
+                            />
+                            <p className="text-[11px] text-muted-foreground">
+                              {t('gateway.proxyHttpServerHelp')}
+                            </p>
+                          </div>
 
-                    <div className="space-y-2">
-                      <Label htmlFor="proxy-https-server">{t('gateway.proxyHttpsServer')}</Label>
-                      <Input
-                        id="proxy-https-server"
-                        value={proxyHttpsServerDraft}
-                        onChange={(event) => setProxyHttpsServerDraft(event.target.value)}
-                        placeholder={proxyServerDraft || 'http://127.0.0.1:7890'}
-                      />
-                      <p className="text-xs text-muted-foreground">
-                        {t('gateway.proxyHttpsServerHelp')}
-                      </p>
-                    </div>
+                          <div className="space-y-2">
+                            <Label htmlFor="proxy-https-server" className="text-[13px] text-foreground/80">{t('gateway.proxyHttpsServer')}</Label>
+                            <Input
+                              id="proxy-https-server"
+                              value={proxyHttpsServerDraft}
+                              onChange={(event) => setProxyHttpsServerDraft(event.target.value)}
+                              placeholder={proxyServerDraft || 'http://127.0.0.1:7890'}
+                              className="h-10 rounded-xl bg-black/5 dark:bg-white/5 border-transparent font-mono text-[13px]"
+                            />
+                            <p className="text-[11px] text-muted-foreground">
+                              {t('gateway.proxyHttpsServerHelp')}
+                            </p>
+                          </div>
 
-                    <div className="space-y-2">
-                      <Label htmlFor="proxy-all-server">{t('gateway.proxyAllServer')}</Label>
-                      <Input
-                        id="proxy-all-server"
-                        value={proxyAllServerDraft}
-                        onChange={(event) => setProxyAllServerDraft(event.target.value)}
-                        placeholder={proxyServerDraft || 'socks5://127.0.0.1:7891'}
-                      />
-                      <p className="text-xs text-muted-foreground">
-                        {t('gateway.proxyAllServerHelp')}
-                      </p>
-                    </div>
+                          <div className="space-y-2">
+                            <Label htmlFor="proxy-all-server" className="text-[13px] text-foreground/80">{t('gateway.proxyAllServer')}</Label>
+                            <Input
+                              id="proxy-all-server"
+                              value={proxyAllServerDraft}
+                              onChange={(event) => setProxyAllServerDraft(event.target.value)}
+                              placeholder={proxyServerDraft || 'socks5://127.0.0.1:7891'}
+                              className="h-10 rounded-xl bg-black/5 dark:bg-white/5 border-transparent font-mono text-[13px]"
+                            />
+                            <p className="text-[11px] text-muted-foreground">
+                              {t('gateway.proxyAllServerHelp')}
+                            </p>
+                          </div>
+                        </div>
 
-                    <div className="space-y-2">
-                      <Label htmlFor="proxy-bypass">{t('gateway.proxyBypass')}</Label>
-                      <Input
-                        id="proxy-bypass"
-                        value={proxyBypassRulesDraft}
-                        onChange={(event) => setProxyBypassRulesDraft(event.target.value)}
-                        placeholder="<local>;localhost;127.0.0.1;::1"
-                      />
-                      <p className="text-xs text-muted-foreground">
-                        {t('gateway.proxyBypassHelp')}
-                      </p>
-                    </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="proxy-bypass" className="text-[13px] text-foreground/80">{t('gateway.proxyBypass')}</Label>
+                          <Input
+                            id="proxy-bypass"
+                            value={proxyBypassRulesDraft}
+                            onChange={(event) => setProxyBypassRulesDraft(event.target.value)}
+                            placeholder="<local>;localhost;127.0.0.1;::1"
+                            className="h-10 rounded-xl bg-black/5 dark:bg-white/5 border-transparent font-mono text-[13px]"
+                          />
+                          <p className="text-[11px] text-muted-foreground">
+                            {t('gateway.proxyBypassHelp')}
+                          </p>
+                        </div>
 
-                    <div className="flex items-center justify-between gap-3 rounded-lg border border-border/60 bg-background/40 p-3">
-                      <p className="text-sm text-muted-foreground">
-                        {t('gateway.proxyRestartNote')}
-                      </p>
+                        <div className="flex items-center gap-4 pt-2">
+                          <Button
+                            variant="outline"
+                            onClick={handleSaveProxySettings}
+                            disabled={savingProxy}
+                            className="rounded-xl h-10 px-5 bg-transparent border-black/10 dark:border-white/10 hover:bg-black/5 dark:hover:bg-white/5"
+                          >
+                            <RefreshCw className={`h-4 w-4 mr-2${savingProxy ? ' animate-spin' : ''}`} />
+                            {savingProxy ? t('common:status.saving') : t('common:actions.save')}
+                          </Button>
+                          <p className="text-[12px] text-muted-foreground">
+                            {t('gateway.proxyRestartNote')}
+                          </p>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                  <div className="space-y-4 pt-4">
+                    <Label className="text-[14px] font-medium text-foreground/80">{t('developer.gatewayToken')}</Label>
+                    <p className="text-[13px] text-muted-foreground">
+                      {t('developer.gatewayTokenDesc')}
+                    </p>
+                    <div className="flex flex-wrap gap-2">
+                      <Input
+                        readOnly
+                        value={controlUiInfo?.token || ''}
+                        placeholder={t('developer.tokenUnavailable')}
+                        className="font-mono text-[13px] h-10 rounded-xl bg-black/5 dark:bg-white/5 border-transparent flex-1 min-w-[200px]"
+                      />
                       <Button
+                        type="button"
                         variant="outline"
-                        onClick={handleSaveProxySettings}
-                        disabled={savingProxy}
+                        onClick={refreshControlUiInfo}
+                        disabled={!devModeUnlocked}
+                        className="rounded-xl h-10 px-4 bg-transparent border-black/10 dark:border-white/10 hover:bg-black/5 dark:hover:bg-white/5"
                       >
-                        <RefreshCw className={`h-4 w-4 mr-2${savingProxy ? ' animate-spin' : ''}`} />
-                        {savingProxy ? t('common:status.saving') : t('common:actions.save')}
+                        <RefreshCw className="h-4 w-4 mr-2" />
+                        {t('common:actions.load')}
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={handleCopyGatewayToken}
+                        disabled={!controlUiInfo?.token}
+                        className="rounded-xl h-10 px-4 bg-transparent border-black/10 dark:border-white/10 hover:bg-black/5 dark:hover:bg-white/5"
+                      >
+                        <Copy className="h-4 w-4 mr-2" />
+                        {t('common:actions.copy')}
                       </Button>
                     </div>
                   </div>
-                )}
-              </div>
-            </div>
-          ) : (
-            <div className="rounded-md border border-border/60 bg-muted/30 p-4 text-sm text-muted-foreground">
-              {t('advanced.devModeDesc')}
-            </div>
-          )}
-        </CardContent>
-      </Card>
 
-      {/* Updates */}
-      <Card className="order-2">
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Download className="h-5 w-5" />
-            {t('updates.title')}
-          </CardTitle>
-          <CardDescription>{t('updates.description')}</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <UpdateSettings />
-
-          <Separator />
-
-          <div className="flex items-center justify-between">
-            <div>
-              <Label>{t('updates.autoCheck')}</Label>
-              <p className="text-sm text-muted-foreground">
-                {t('updates.autoCheckDesc')}
-              </p>
-            </div>
-            <Switch
-              checked={autoCheckUpdate}
-              onCheckedChange={setAutoCheckUpdate}
-            />
-          </div>
-
-          <div className="flex items-center justify-between">
-            <div>
-              <Label>{t('updates.autoDownload')}</Label>
-              <p className="text-sm text-muted-foreground">
-                {t('updates.autoDownloadDesc')}
-              </p>
-            </div>
-            <Switch
-              checked={autoDownloadUpdate}
-              onCheckedChange={(value) => {
-                setAutoDownloadUpdate(value);
-                updateSetAutoDownload(value);
-              }}
-            />
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Advanced */}
-      <Card className="order-2">
-        <CardHeader>
-          <CardTitle>{t('advanced.title')}</CardTitle>
-          <CardDescription>{t('advanced.description')}</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="flex items-center justify-between">
-            <div>
-              <Label>{t('advanced.devMode')}</Label>
-              <p className="text-sm text-muted-foreground">
-                {t('advanced.devModeDesc')}
-              </p>
-            </div>
-            <Switch
-              checked={devModeUnlocked}
-              onCheckedChange={setDevModeUnlocked}
-            />
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Developer */}
-      {devModeUnlocked && (
-        <Card className="order-2">
-          <CardHeader>
-            <CardTitle>{t('developer.title')}</CardTitle>
-            <CardDescription>{t('developer.description')}</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="space-y-2">
-              <Label>{t('developer.console')}</Label>
-              <p className="text-sm text-muted-foreground">
-                {t('developer.consoleDesc')}
-              </p>
-              <Button variant="outline" onClick={openDevConsole}>
-                <Terminal className="h-4 w-4 mr-2" />
-                {t('developer.openConsole')}
-                <ExternalLink className="h-3 w-3 ml-2" />
-              </Button>
-              <p className="text-xs text-muted-foreground">
-                {t('developer.consoleNote')}
-              </p>
-              <div className="space-y-2 pt-2">
-                <Label>{t('developer.gatewayToken')}</Label>
-                <p className="text-sm text-muted-foreground">
-                  {t('developer.gatewayTokenDesc')}
-                </p>
-                <div className="flex gap-2">
-                  <Input
-                    readOnly
-                    value={controlUiInfo?.token || ''}
-                    placeholder={t('developer.tokenUnavailable')}
-                    className="font-mono"
-                  />
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={refreshControlUiInfo}
-                    disabled={!devModeUnlocked}
-                  >
-                    <RefreshCw className="h-4 w-4 mr-2" />
-                    {t('common:actions.load')}
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={handleCopyGatewayToken}
-                    disabled={!controlUiInfo?.token}
-                  >
-                    <Copy className="h-4 w-4 mr-2" />
-                    {t('common:actions.copy')}
-                  </Button>
-                </div>
-              </div>
-            </div>
-            {showCliTools && (
-              <>
-                <Separator />
-                <div className="space-y-2">
-                  <Label>{t('developer.cli')}</Label>
-                  <p className="text-sm text-muted-foreground">
-                    {t('developer.cliDesc')}
-                  </p>
-                  {isWindows && (
-                    <p className="text-xs text-muted-foreground">
-                      {t('developer.cliPowershell')}
-                    </p>
+                  {showCliTools && (
+                    <div className="space-y-3">
+                      <Label className="text-[15px] font-medium text-foreground">{t('developer.cli')}</Label>
+                      <p className="text-[13px] text-muted-foreground">
+                        {t('developer.cliDesc')}
+                      </p>
+                      {isWindows && (
+                        <p className="text-[12px] text-muted-foreground">
+                          {t('developer.cliPowershell')}
+                        </p>
+                      )}
+                      <div className="flex flex-wrap gap-2">
+                        <Input
+                          readOnly
+                          value={openclawCliCommand}
+                          placeholder={openclawCliError || t('developer.cmdUnavailable')}
+                          className="font-mono text-[13px] h-10 rounded-xl bg-black/5 dark:bg-white/5 border-transparent flex-1 min-w-[200px]"
+                        />
+                        <Button
+                          type="button"
+                          variant="outline"
+                          onClick={handleCopyCliCommand}
+                          disabled={!openclawCliCommand}
+                          className="rounded-xl h-10 px-4 bg-transparent border-black/10 dark:border-white/10 hover:bg-black/5 dark:hover:bg-white/5"
+                        >
+                          <Copy className="h-4 w-4 mr-2" />
+                          {t('common:actions.copy')}
+                        </Button>
+                      </div>
+                    </div>
                   )}
-                  <div className="flex gap-2">
-                    <Input
-                      readOnly
-                      value={openclawCliCommand}
-                      placeholder={openclawCliError || t('developer.cmdUnavailable')}
-                      className="font-mono"
-                    />
-                    <Button
-                      type="button"
-                      variant="outline"
-                      onClick={handleCopyCliCommand}
-                      disabled={!openclawCliCommand}
-                    >
-                      <Copy className="h-4 w-4 mr-2" />
-                      {t('common:actions.copy')}
-                    </Button>
+
+                  <div className="space-y-4">
+                    <div className="flex items-center justify-between rounded-2xl border border-black/10 dark:border-white/10 p-5 bg-transparent">
+                      <div>
+                        <Label className="text-[14px] font-medium text-foreground">{t('developer.wsDiagnostic')}</Label>
+                        <p className="text-[13px] text-muted-foreground mt-1">
+                          {t('developer.wsDiagnosticDesc')}
+                        </p>
+                      </div>
+                      <Switch
+                        checked={wsDiagnosticEnabled}
+                        onCheckedChange={handleWsDiagnosticToggle}
+                      />
+                    </div>
+
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <Label className="text-[14px] font-medium text-foreground">{t('developer.telemetryViewer')}</Label>
+                        <p className="text-[13px] text-muted-foreground mt-1">
+                          {t('developer.telemetryViewerDesc')}
+                        </p>
+                      </div>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setShowTelemetryViewer((prev) => !prev)}
+                        className="rounded-full px-5 h-9 bg-transparent border-black/10 dark:border-white/10 hover:bg-black/5 dark:hover:bg-white/5"
+                      >
+                        {showTelemetryViewer
+                          ? t('common:actions.hide')
+                          : t('common:actions.show')}
+                      </Button>
+                    </div>
+
+                    {showTelemetryViewer && (
+                      <div className="space-y-4 rounded-2xl border border-black/10 dark:border-white/10 p-5 bg-black/5 dark:bg-white/5">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <Badge variant="secondary" className="rounded-full px-3 py-1 bg-white dark:bg-[#1a1a19] border border-black/5 dark:border-white/5">{t('developer.telemetryTotal')}: {telemetryStats.total}</Badge>
+                          <Badge variant={telemetryStats.errorCount > 0 ? 'destructive' : 'secondary'} className={cn("rounded-full px-3 py-1", telemetryStats.errorCount === 0 && "bg-white dark:bg-[#1a1a19] border border-black/5 dark:border-white/5")}>
+                            {t('developer.telemetryErrors')}: {telemetryStats.errorCount}
+                          </Badge>
+                          <Badge variant={telemetryStats.slowCount > 0 ? 'secondary' : 'outline'} className={cn("rounded-full px-3 py-1", telemetryStats.slowCount === 0 && "bg-white dark:bg-[#1a1a19] border border-black/5 dark:border-white/5")}>
+                            {t('developer.telemetrySlow')}: {telemetryStats.slowCount}
+                          </Badge>
+                          <div className="ml-auto flex gap-2">
+                            <Button type="button" variant="outline" size="sm" onClick={handleCopyTelemetry} className="rounded-full h-8 px-4 bg-white dark:bg-[#1a1a19] border-black/5 dark:border-white/5 hover:bg-black/5 dark:hover:bg-white/10">
+                              <Copy className="h-3.5 w-3.5 mr-1.5" />
+                              {t('common:actions.copy')}
+                            </Button>
+                            <Button type="button" variant="outline" size="sm" onClick={handleClearTelemetry} className="rounded-full h-8 px-4 bg-white dark:bg-[#1a1a19] border-black/5 dark:border-white/5 hover:bg-black/5 dark:hover:bg-white/10">
+                              {t('common:actions.clear')}
+                            </Button>
+                          </div>
+                        </div>
+
+                        <div className="max-h-80 overflow-auto rounded-xl border border-black/10 dark:border-white/10 bg-white dark:bg-[#1a1a19] shadow-inner">
+                          {telemetryByEvent.length > 0 && (
+                            <div className="border-b border-black/5 dark:border-white/5 bg-black/5 dark:bg-white/5 p-3">
+                              <p className="mb-3 text-[12px] font-semibold text-muted-foreground">
+                                {t('developer.telemetryAggregated')}
+                              </p>
+                              <div className="space-y-1.5 text-[12px]">
+                                {telemetryByEvent.map((item) => (
+                                  <div
+                                    key={item.event}
+                                    className="grid grid-cols-[minmax(0,1.6fr)_0.7fr_0.9fr_0.8fr_1fr] gap-2 rounded-lg border border-black/5 dark:border-white/5 bg-white dark:bg-[#1a1a19] px-3 py-2"
+                                  >
+                                    <span className="truncate font-medium" title={item.event}>{item.event}</span>
+                                    <span className="text-muted-foreground">n={item.count}</span>
+                                    <span className="text-muted-foreground">
+                                      avg={item.timedCount > 0 ? Math.round(item.totalDuration / item.timedCount) : 0}ms
+                                    </span>
+                                    <span className="text-muted-foreground">slow={item.slowCount}</span>
+                                    <span className="text-muted-foreground">err={item.errorCount}</span>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                          <div className="space-y-2 p-3 font-mono text-[12px]">
+                            {telemetryEntries.length === 0 ? (
+                              <div className="text-muted-foreground text-center py-4">{t('developer.telemetryEmpty')}</div>
+                            ) : (
+                              telemetryEntries
+                                .slice()
+                                .reverse()
+                                .map((entry) => (
+                                  <div key={entry.id} className="rounded-lg border border-black/5 dark:border-white/5 bg-black/5 dark:bg-white/5 p-3">
+                                    <div className="flex items-center justify-between gap-3 mb-2">
+                                      <span className="font-semibold text-foreground">{entry.event}</span>
+                                      <span className="text-muted-foreground text-[11px]">{entry.ts}</span>
+                                    </div>
+                                    <pre className="whitespace-pre-wrap text-[11px] text-muted-foreground overflow-x-auto">
+                                      {JSON.stringify({ count: entry.count, ...entry.payload }, null, 2)}
+                                    </pre>
+                                  </div>
+                                ))
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </div>
-              </>
-            )}
+              </div>
+            </>
+          )}
 
-            <Separator />
-            <div className="space-y-2">
-              <div className="flex items-center justify-between rounded-md border border-border/60 p-3">
+          <Separator className="bg-black/5 dark:bg-white/5" />
+
+          {/* Updates */}
+          <div>
+            <h2 className="text-3xl font-serif text-foreground mb-6 font-normal tracking-tight" style={{ fontFamily: 'Georgia, Cambria, "Times New Roman", Times, serif' }}>
+              {t('updates.title')}
+            </h2>
+            <div className="space-y-6">
+              <UpdateSettings />
+
+              <div className="flex items-center justify-between">
                 <div>
-                  <Label>{t('developer.wsDiagnostic')}</Label>
-                  <p className="text-sm text-muted-foreground">
-                    {t('developer.wsDiagnosticDesc')}
+                  <Label className="text-[15px] font-medium text-foreground">{t('updates.autoCheck')}</Label>
+                  <p className="text-[13px] text-muted-foreground mt-1">
+                    {t('updates.autoCheckDesc')}
                   </p>
                 </div>
                 <Switch
-                  checked={wsDiagnosticEnabled}
-                  onCheckedChange={handleWsDiagnosticToggle}
+                  checked={autoCheckUpdate}
+                  onCheckedChange={setAutoCheckUpdate}
                 />
               </div>
 
               <div className="flex items-center justify-between">
                 <div>
-                  <Label>{t('developer.telemetryViewer')}</Label>
-                  <p className="text-sm text-muted-foreground">
-                    {t('developer.telemetryViewerDesc')}
+                  <Label className="text-[15px] font-medium text-foreground">{t('updates.autoDownload')}</Label>
+                  <p className="text-[13px] text-muted-foreground mt-1">
+                    {t('updates.autoDownloadDesc')}
                   </p>
                 </div>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setShowTelemetryViewer((prev) => !prev)}
-                >
-                  {showTelemetryViewer
-                    ? t('common:actions.hide')
-                    : t('common:actions.show')}
-                </Button>
+                <Switch
+                  checked={autoDownloadUpdate}
+                  onCheckedChange={(value) => {
+                    setAutoDownloadUpdate(value);
+                    updateSetAutoDownload(value);
+                  }}
+                />
               </div>
 
-              {showTelemetryViewer && (
-                <div className="space-y-3 rounded-lg border border-border/60 p-3">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <Badge variant="secondary">{t('developer.telemetryTotal')}: {telemetryStats.total}</Badge>
-                    <Badge variant={telemetryStats.errorCount > 0 ? 'destructive' : 'secondary'}>
-                      {t('developer.telemetryErrors')}: {telemetryStats.errorCount}
-                    </Badge>
-                    <Badge variant={telemetryStats.slowCount > 0 ? 'secondary' : 'outline'}>
-                      {t('developer.telemetrySlow')}: {telemetryStats.slowCount}
-                    </Badge>
-                    <div className="ml-auto flex gap-2">
-                      <Button type="button" variant="outline" size="sm" onClick={handleCopyTelemetry}>
-                        <Copy className="h-4 w-4 mr-2" />
-                        {t('common:actions.copy')}
-                      </Button>
-                      <Button type="button" variant="outline" size="sm" onClick={handleClearTelemetry}>
-                        {t('common:actions.clear')}
-                      </Button>
-                    </div>
-                  </div>
-
-                  <div className="max-h-72 overflow-auto rounded-md border border-border/50 bg-muted/20">
-                    {telemetryByEvent.length > 0 && (
-                      <div className="border-b border-border/50 bg-background/70 p-2">
-                        <p className="mb-2 text-[11px] font-semibold text-muted-foreground">
-                          {t('developer.telemetryAggregated')}
-                        </p>
-                        <div className="space-y-1 text-[11px]">
-                          {telemetryByEvent.map((item) => (
-                            <div
-                              key={item.event}
-                              className="grid grid-cols-[minmax(0,1.6fr)_0.7fr_0.9fr_0.8fr_1fr] gap-2 rounded border border-border/40 px-2 py-1"
-                            >
-                              <span className="truncate font-medium" title={item.event}>{item.event}</span>
-                              <span className="text-muted-foreground">n={item.count}</span>
-                              <span className="text-muted-foreground">
-                                avg={item.timedCount > 0 ? Math.round(item.totalDuration / item.timedCount) : 0}ms
-                              </span>
-                              <span className="text-muted-foreground">slow={item.slowCount}</span>
-                              <span className="text-muted-foreground">err={item.errorCount}</span>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-                    <div className="space-y-1 p-2 font-mono text-xs">
-                      {telemetryEntries.length === 0 ? (
-                        <div className="text-muted-foreground">{t('developer.telemetryEmpty')}</div>
-                      ) : (
-                        telemetryEntries
-                          .slice()
-                          .reverse()
-                          .map((entry) => (
-                            <div key={entry.id} className="rounded border border-border/40 bg-background/60 p-2">
-                              <div className="flex items-center justify-between gap-3">
-                                <span className="font-semibold">{entry.event}</span>
-                                <span className="text-muted-foreground">{entry.ts}</span>
-                              </div>
-                              <pre className="mt-1 whitespace-pre-wrap text-[11px] text-muted-foreground">
-                                {JSON.stringify({ count: entry.count, ...entry.payload }, null, 2)}
-                              </pre>
-                            </div>
-                          ))
-                      )}
-                    </div>
-                  </div>
+              <div className="flex items-center justify-between">
+                <div>
+                  <Label className="text-[15px] font-medium text-foreground">{t('advanced.devMode')}</Label>
+                  <p className="text-[13px] text-muted-foreground mt-1">
+                    {t('advanced.devModeDesc')}
+                  </p>
                 </div>
-              )}
+                <Switch
+                  checked={devModeUnlocked}
+                  onCheckedChange={setDevModeUnlocked}
+                />
+              </div>
             </div>
-          </CardContent>
-        </Card>
-      )}
-
-      {/* About */}
-      <Card className="order-2">
-        <CardHeader>
-          <CardTitle>{t('about.title')}</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-2 text-sm text-muted-foreground">
-          <p>
-            <strong>{t('about.appName')}</strong> - {t('about.tagline')}
-          </p>
-          <p>{t('about.basedOn')}</p>
-          <p>{t('about.version', { version: currentVersion })}</p>
-          <div className="flex gap-4 pt-2">
-            <Button
-              variant="link"
-              className="h-auto p-0"
-              onClick={() => window.electron.openExternal('https://claw-x.com')}
-            >
-              {t('about.docs')}
-            </Button>
-            <Button
-              variant="link"
-              className="h-auto p-0"
-              onClick={() => window.electron.openExternal('https://github.com/ValueCell-ai/ClawX')}
-            >
-              {t('about.github')}
-            </Button>
           </div>
-        </CardContent>
-      </Card>
+
+          <Separator className="bg-black/5 dark:bg-white/5" />
+
+          {/* About */}
+          <div>
+            <h2 className="text-3xl font-serif text-foreground mb-6 font-normal tracking-tight" style={{ fontFamily: 'Georgia, Cambria, "Times New Roman", Times, serif' }}>
+              {t('about.title')}
+            </h2>
+            <div className="space-y-3 text-[14px] text-muted-foreground">
+              <p>
+                <strong className="text-foreground font-semibold">{t('about.appName')}</strong> - {t('about.tagline')}
+              </p>
+              <p>{t('about.basedOn')}</p>
+              <p>{t('about.version', { version: currentVersion })}</p>
+              <div className="flex gap-4 pt-3">
+                <Button
+                  variant="link"
+                  className="h-auto p-0 text-[14px] text-blue-500 hover:text-blue-600 font-medium"
+                  onClick={() => window.electron.openExternal('https://claw-x.com')}
+                >
+                  {t('about.docs')}
+                </Button>
+                <Button
+                  variant="link"
+                  className="h-auto p-0 text-[14px] text-blue-500 hover:text-blue-600 font-medium"
+                  onClick={() => window.electron.openExternal('https://github.com/ValueCell-ai/ClawX')}
+                >
+                  {t('about.github')}
+                </Button>
+              </div>
+            </div>
+          </div>
+
+        </div>
+      </div>
     </div>
   );
 }
