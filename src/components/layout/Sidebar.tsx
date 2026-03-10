@@ -6,9 +6,8 @@
 import { useEffect, useState } from 'react';
 import { NavLink, useLocation, useNavigate } from 'react-router-dom';
 import {
-  BarChart,
-  Folder,
-  Layers,
+  Network,
+  Puzzle,
   Clock,
   Settings as SettingsIcon,
   PanelLeftClose,
@@ -17,6 +16,8 @@ import {
   Terminal,
   ExternalLink,
   Trash2,
+  Cpu,
+  LayoutDashboard,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useSettingsStore } from '@/stores/settings';
@@ -168,10 +169,11 @@ export function Sidebar() {
   }
 
   const navItems = [
+    { to: '/models', icon: <Cpu className="h-[18px] w-[18px]" strokeWidth={2} />, label: t('sidebar.models', 'Models') },
+    { to: '/channels', icon: <Network className="h-[18px] w-[18px]" strokeWidth={2} />, label: t('sidebar.channels') },
+    { to: '/skills', icon: <Puzzle className="h-[18px] w-[18px]" strokeWidth={2} />, label: t('sidebar.skills') },
     { to: '/cron', icon: <Clock className="h-[18px] w-[18px]" strokeWidth={2} />, label: t('sidebar.cronTasks') },
-    { to: '/skills', icon: <Layers className="h-[18px] w-[18px]" strokeWidth={2} />, label: t('sidebar.skills') },
-    { to: '/channels', icon: <Folder className="h-[18px] w-[18px]" strokeWidth={2} />, label: t('sidebar.channels') },
-    { to: '/dashboard', icon: <BarChart className="h-[18px] w-[18px]" strokeWidth={2} />, label: t('sidebar.dashboard') },
+    { to: '/dashboard', icon: <LayoutDashboard className="h-[18px] w-[18px]" strokeWidth={2} />, label: t('sidebar.dashboard') },
   ];
 
   return (

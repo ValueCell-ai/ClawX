@@ -12,17 +12,16 @@ import {
   Check,
   X,
   Loader2,
-  Star,
   Key,
   ExternalLink,
   Copy,
   XCircle,
+  ChevronDown,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
 import {
   useProviderStore,
@@ -176,34 +175,35 @@ export function ProvidersSettings() {
   };
 
   return (
-    <div className="space-y-4">
-      <div className="flex justify-end">
-        <Button size="sm" onClick={() => setShowAddDialog(true)}>
+    <div className="space-y-6">
+      <div className="flex items-center justify-between">
+        <h2 className="text-3xl font-serif text-foreground font-normal tracking-tight" style={{ fontFamily: 'Georgia, Cambria, "Times New Roman", Times, serif' }}>
+          {t('aiProviders.title', 'AI Providers')}
+        </h2>
+        <Button onClick={() => setShowAddDialog(true)} className="rounded-full px-5 h-9 bg-black/5 dark:bg-white/5 hover:bg-black/10 dark:hover:bg-white/10 text-foreground border border-transparent shadow-none font-medium text-[13px]">
           <Plus className="h-4 w-4 mr-2" />
           {t('aiProviders.add')}
         </Button>
       </div>
 
       {loading ? (
-        <div className="flex items-center justify-center py-8">
+        <div className="flex items-center justify-center py-12 text-muted-foreground bg-black/5 dark:bg-white/5 rounded-3xl border border-transparent border-dashed">
           <Loader2 className="h-6 w-6 animate-spin" />
         </div>
       ) : displayProviders.length === 0 ? (
-        <Card>
-          <CardContent className="flex flex-col items-center justify-center py-12">
-            <Key className="h-12 w-12 text-muted-foreground mb-4" />
-            <h3 className="text-lg font-medium mb-2">{t('aiProviders.empty.title')}</h3>
-            <p className="text-muted-foreground text-center mb-4">
-              {t('aiProviders.empty.desc')}
-            </p>
-            <Button onClick={() => setShowAddDialog(true)}>
-              <Plus className="h-4 w-4 mr-2" />
-              {t('aiProviders.empty.cta')}
-            </Button>
-          </CardContent>
-        </Card>
+        <div className="flex flex-col items-center justify-center py-20 text-muted-foreground bg-black/5 dark:bg-white/5 rounded-3xl border border-transparent border-dashed">
+          <Key className="h-12 w-12 mb-4 opacity-50" />
+          <h3 className="text-[15px] font-medium mb-1 text-foreground">{t('aiProviders.empty.title')}</h3>
+          <p className="text-[13px] text-center mb-6 max-w-sm">
+            {t('aiProviders.empty.desc')}
+          </p>
+          <Button onClick={() => setShowAddDialog(true)} className="rounded-full px-6 h-10 bg-[#0a84ff] hover:bg-[#007aff] text-white">
+            <Plus className="h-4 w-4 mr-2" />
+            {t('aiProviders.empty.cta')}
+          </Button>
+        </div>
       ) : (
-        <div className="space-y-4">
+        <div className="space-y-3">
           {displayProviders.map((item) => (
             <ProviderCard
               key={item.account.id}
@@ -298,6 +298,7 @@ function ProviderCard({
     normalizeFallbackProviderIds(account.fallbackAccountIds)
   );
   const [showKey, setShowKey] = useState(false);
+  const [showFallback, setShowFallback] = useState(false);
   const [validating, setValidating] = useState(false);
   const [saving, setSaving] = useState(false);
 
@@ -395,244 +396,264 @@ function ProviderCard({
   };
 
   return (
-    <Card className={cn(isDefault && 'ring-2 ring-primary')}>
-      <CardContent className="p-4">
-        {/* Top row: icon + name */}
-        <div className="flex items-center justify-between mb-3">
-          <div className="flex items-center gap-3">
+    <div
+      className={cn(
+        "group flex flex-col p-4 rounded-2xl transition-all relative overflow-hidden",
+        isDefault
+          ? "bg-white dark:bg-[#1a1a19] border border-blue-500/20 shadow-sm ring-1 ring-blue-500/20"
+          : "bg-black/5 dark:bg-white/5 border border-transparent"
+      )}
+    >
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-4">
+          <div className={cn("h-[42px] w-[42px] shrink-0 flex items-center justify-center text-foreground border border-black/5 dark:border-white/10 rounded-full shadow-sm group-hover:scale-105 transition-transform", isDefault ? "bg-black/5 dark:bg-white/5" : "bg-white dark:bg-[#1a1a19]")}>
             {getProviderIconUrl(account.vendorId) ? (
               <img src={getProviderIconUrl(account.vendorId)} alt={typeInfo?.name || account.vendorId} className={cn('h-5 w-5', shouldInvertInDark(account.vendorId) && 'dark:invert')} />
             ) : (
               <span className="text-xl">{vendor?.icon || typeInfo?.icon || '⚙️'}</span>
             )}
-            <div>
-              <div className="flex items-center gap-2">
-                <span className="font-semibold">{account.label}</span>
-                <Badge variant="secondary">{vendor?.name || account.vendorId}</Badge>
-                <Badge variant="outline">{getAuthModeLabel(account.authMode, t)}</Badge>
-              </div>
-              <div className="mt-1 space-y-0.5">
-                <p className="text-xs text-muted-foreground capitalize">{account.vendorId}</p>
-                <p className="text-xs text-muted-foreground truncate">
-                  {t('aiProviders.dialog.modelId')}: {account.model || t('aiProviders.card.none')}
-                </p>
-              </div>
+          </div>
+          <div>
+            <div className="flex items-center gap-2">
+              <span className="font-semibold text-[15px]">{account.label}</span>
+              {isDefault && (
+                <span className="flex items-center gap-1 text-[11px] font-medium text-blue-600 dark:text-blue-400 bg-blue-500/10 px-2 py-0.5 rounded-full border border-blue-500/20">
+                  <Check className="h-3 w-3" />
+                  Default
+                </span>
+              )}
+            </div>
+            <div className="flex items-center gap-2 mt-0.5 text-[13px] text-muted-foreground">
+              <span className="capitalize">{vendor?.name || account.vendorId}</span>
+              <span className="w-1 h-1 rounded-full bg-black/20 dark:bg-white/20" />
+              <span>{getAuthModeLabel(account.authMode, t)}</span>
+              {account.model && (
+                <>
+                  <span className="w-1 h-1 rounded-full bg-black/20 dark:bg-white/20" />
+                  <span className="truncate max-w-[200px]">{account.model}</span>
+                </>
+              )}
+              <span className="w-1 h-1 rounded-full bg-black/20 dark:bg-white/20" />
+              <span className="flex items-center gap-1">
+                {status?.hasKey ? (
+                  <><div className="w-1.5 h-1.5 rounded-full bg-green-500" /> {t('aiProviders.card.configured')}</>
+                ) : (
+                  <><div className="w-1.5 h-1.5 rounded-full bg-red-500" /> {t('aiProviders.dialog.apiKeyMissing')}</>
+                )}
+              </span>
+              {((account.fallbackModels?.length ?? 0) > 0 || (account.fallbackAccountIds?.length ?? 0) > 0) && (
+                <>
+                  <span className="w-1 h-1 rounded-full bg-black/20 dark:bg-white/20" />
+                  <span className="truncate max-w-[150px]" title={t('aiProviders.sections.fallback')}>
+                    {t('aiProviders.sections.fallback')}: {[
+                      ...normalizeFallbackModels(account.fallbackModels),
+                      ...normalizeFallbackProviderIds(account.fallbackAccountIds)
+                        .map((fallbackId) => allProviders.find((candidate) => candidate.account.id === fallbackId)?.account.label)
+                        .filter(Boolean),
+                    ].join(', ')}
+                  </span>
+                </>
+              )}
             </div>
           </div>
         </div>
 
-        {/* Key row */}
-        {isEditing ? (
-          <div className="space-y-4">
-            {canEditModelConfig && (
-              <div className="space-y-3 rounded-md border p-3">
-                <p className="text-sm font-medium">{t('aiProviders.sections.model')}</p>
-                {typeInfo?.showBaseUrl && (
-                  <div className="space-y-1">
-                    <Label className="text-xs">{t('aiProviders.dialog.baseUrl')}</Label>
-                    <Input
-                      value={baseUrl}
-                      onChange={(e) => setBaseUrl(e.target.value)}
-                      placeholder="https://api.example.com/v1"
-                      className="h-9 text-sm"
-                    />
-                  </div>
-                )}
-                {showModelIdField && (
-                  <div className="space-y-1">
-                    <Label className="text-xs">{t('aiProviders.dialog.modelId')}</Label>
-                    <Input
-                      value={modelId}
-                      onChange={(e) => setModelId(e.target.value)}
-                      placeholder={typeInfo?.modelIdPlaceholder || 'provider/model-id'}
-                      className="h-9 text-sm"
-                    />
-                  </div>
-                )}
-              </div>
-            )}
-            <div className="space-y-3 rounded-md border p-3">
-              <p className="text-sm font-medium">{t('aiProviders.sections.fallback')}</p>
-              <div className="space-y-1">
-                <Label className="text-xs">{t('aiProviders.dialog.fallbackModelIds')}</Label>
-                <textarea
-                  value={fallbackModelsText}
-                  onChange={(e) => setFallbackModelsText(e.target.value)}
-                  placeholder={t('aiProviders.dialog.fallbackModelIdsPlaceholder')}
-                  className="min-h-24 w-full rounded-md border bg-background px-3 py-2 text-sm outline-none"
-                />
-                <p className="text-xs text-muted-foreground">
-                  {t('aiProviders.dialog.fallbackModelIdsHelp')}
-                </p>
-              </div>
-              <div className="space-y-2">
-                <Label className="text-xs">{t('aiProviders.dialog.fallbackProviders')}</Label>
-                {fallbackOptions.length === 0 ? (
-                  <p className="text-xs text-muted-foreground">{t('aiProviders.dialog.noFallbackOptions')}</p>
-                ) : (
-                  <div className="space-y-2 rounded-md border p-2">
-                    {fallbackOptions.map((candidate) => (
-                      <label key={candidate.account.id} className="flex items-center gap-2 text-sm">
-                        <input
-                          type="checkbox"
-                          checked={fallbackProviderIds.includes(candidate.account.id)}
-                          onChange={() => toggleFallbackProvider(candidate.account.id)}
-                        />
-                        <span className="font-medium">{candidate.account.label}</span>
-                        <span className="text-xs text-muted-foreground">
-                          {candidate.account.model || candidate.vendor?.name || candidate.account.vendorId}
-                        </span>
-                      </label>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </div>
-            <div className="space-y-3 rounded-md border p-3">
-              <div className="flex items-center justify-between gap-3">
-                <div className="space-y-1">
-                  <Label className="text-xs">{t('aiProviders.dialog.apiKey')}</Label>
-                  <p className="text-xs text-muted-foreground">
-                    {status?.hasKey
-                      ? t('aiProviders.dialog.apiKeyConfigured')
-                      : t('aiProviders.dialog.apiKeyMissing')}
-                  </p>
-                </div>
-                {status?.hasKey ? (
-                  <Badge variant="secondary">{t('aiProviders.card.configured')}</Badge>
-                ) : null}
-              </div>
-              {typeInfo?.apiKeyUrl && (
-                <div className="flex justify-start">
-                  <a
-                    href={typeInfo.apiKeyUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-xs text-primary hover:underline flex items-center gap-1"
-                    tabIndex={-1}
-                  >
-                    {t('aiProviders.oauth.getApiKey')} <ExternalLink className="h-3 w-3" />
-                  </a>
-                </div>
-              )}
-              <div className="space-y-1">
-                <Label className="text-xs">{t('aiProviders.dialog.replaceApiKey')}</Label>
-                <div className="flex gap-2">
-                  <div className="relative flex-1">
-                    <Input
-                      type={showKey ? 'text' : 'password'}
-                      placeholder={typeInfo?.requiresApiKey ? typeInfo?.placeholder : (typeInfo?.id === 'ollama' ? t('aiProviders.notRequired') : t('aiProviders.card.editKey'))}
-                      value={newKey}
-                      onChange={(e) => setNewKey(e.target.value)}
-                      className="pr-10 h-9 text-sm"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setShowKey(!showKey)}
-                      className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-                    >
-                      {showKey ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
-                    </button>
-                  </div>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={handleSaveEdits}
-                    disabled={
-                      validating
-                      || saving
-                      || (
-                        !newKey.trim()
-                        && (baseUrl.trim() || undefined) === (account.baseUrl || undefined)
-                        && (modelId.trim() || undefined) === (account.model || undefined)
-                        && fallbackModelsEqual(normalizeFallbackModels(fallbackModelsText.split('\n')), account.fallbackModels)
-                        && fallbackProviderIdsEqual(fallbackProviderIds, account.fallbackAccountIds)
-                      )
-                      || Boolean(showModelIdField && !modelId.trim())
-                    }
-                  >
-                    {validating || saving ? (
-                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                    ) : (
-                      <Check className="h-3.5 w-3.5" />
-                    )}
-                  </Button>
-                  <Button variant="ghost" size="sm" onClick={onCancelEdit}>
-                    <X className="h-3.5 w-3.5" />
-                  </Button>
-                </div>
-                <p className="text-xs text-muted-foreground">
-                  {t('aiProviders.dialog.replaceApiKeyHelp')}
-                </p>
-              </div>
-            </div>
-          </div>
-        ) : (
-          <div className="flex items-center justify-between rounded-md bg-muted/50 px-3 py-2">
-            <div className="min-w-0 space-y-1">
-              <div className="flex items-center gap-2 min-w-0">
-                {account.authMode === 'oauth_device' || account.authMode === 'oauth_browser' ? (
-                  <>
-                    <Key className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-                    <Badge variant="secondary" className="text-xs shrink-0">{t('aiProviders.card.configured')}</Badge>
-                  </>
-                ) : (
-                  <>
-                    <Key className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-                    <span className="text-sm font-mono text-muted-foreground truncate">
-                      {status?.hasKey
-                        ? (status.keyMasked && status.keyMasked.length > 12
-                          ? `${status.keyMasked.substring(0, 4)}...${status.keyMasked.substring(status.keyMasked.length - 4)}`
-                          : status.keyMasked)
-                        : t('aiProviders.card.noKey')}
-                    </span>
-                    {status?.hasKey && (
-                      <Badge variant="secondary" className="text-xs shrink-0">{t('aiProviders.card.configured')}</Badge>
-                    )}
-                  </>
-                )}
-              </div>
-              <p className="text-xs text-muted-foreground truncate">
-                {t('aiProviders.card.fallbacks', {
-                  count: (account.fallbackModels?.length ?? 0) + (account.fallbackAccountIds?.length ?? 0),
-                  names: [
-                    ...normalizeFallbackModels(account.fallbackModels),
-                    ...normalizeFallbackProviderIds(account.fallbackAccountIds)
-                      .map((fallbackId) => allProviders.find((candidate) => candidate.account.id === fallbackId)?.account.label)
-                      .filter(Boolean),
-                  ].join(', ') || t('aiProviders.card.none'),
-                })}
-              </p>
-            </div>
-            <div className="flex gap-0.5 shrink-0 ml-2">
+        {!isEditing && (
+          <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+            {!isDefault && (
               <Button
                 variant="ghost"
                 size="icon"
-                className="h-7 w-7"
-                onClick={isDefault ? undefined : onSetDefault}
-                title={isDefault ? t('aiProviders.card.default') : t('aiProviders.card.setDefault')}
-                disabled={isDefault}
+                className="h-8 w-8 rounded-full text-muted-foreground hover:text-blue-600 hover:bg-white dark:hover:bg-[#1a1a19] shadow-sm"
+                onClick={onSetDefault}
+                title={t('aiProviders.card.setDefault')}
               >
-                <Star
-                  className={cn(
-                    'h-3.5 w-3.5 transition-colors',
-                    isDefault
-                      ? 'fill-yellow-400 text-yellow-400'
-                      : 'text-muted-foreground'
-                  )}
-                />
+                <Check className="h-4 w-4" />
               </Button>
-              <Button variant="ghost" size="icon" className="h-7 w-7" onClick={onEdit} title={t('aiProviders.card.editKey')}>
-                <Edit className="h-3.5 w-3.5" />
-              </Button>
-              <Button variant="ghost" size="icon" className="h-7 w-7" onClick={onDelete} title={t('aiProviders.card.delete')}>
-                <Trash2 className="h-3.5 w-3.5 text-destructive" />
-              </Button>
-            </div>
+            )}
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-8 w-8 rounded-full text-muted-foreground hover:text-foreground hover:bg-white dark:hover:bg-[#1a1a19] shadow-sm"
+              onClick={onEdit}
+              title={t('aiProviders.card.editKey')}
+            >
+              <Edit className="h-4 w-4" />
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-8 w-8 rounded-full text-muted-foreground hover:text-destructive hover:bg-white dark:hover:bg-[#1a1a19] shadow-sm"
+              onClick={onDelete}
+              title={t('aiProviders.card.delete')}
+            >
+              <Trash2 className="h-4 w-4" />
+            </Button>
           </div>
         )}
-      </CardContent>
-    </Card>
+      </div>
+
+      {isEditing && (
+        <div className="space-y-4 mt-4 pt-4 border-t border-black/5 dark:border-white/5">
+          {canEditModelConfig && (
+            <div className="space-y-3 rounded-xl bg-[#eeece3] dark:bg-[#151514] border border-black/5 dark:border-white/5 p-4">
+              <p className="text-[14px] font-bold text-foreground/80">{t('aiProviders.sections.model')}</p>
+              {typeInfo?.showBaseUrl && (
+                <div className="space-y-1.5">
+                  <Label className="text-[13px] text-muted-foreground">{t('aiProviders.dialog.baseUrl')}</Label>
+                  <Input
+                    value={baseUrl}
+                    onChange={(e) => setBaseUrl(e.target.value)}
+                    placeholder="https://api.example.com/v1"
+                    className="h-[40px] rounded-xl font-mono text-[13px] bg-white dark:bg-[#1a1a19] border-black/10 dark:border-white/10 focus-visible:ring-2 focus-visible:ring-blue-500/50 shadow-sm"
+                  />
+                </div>
+              )}
+              {showModelIdField && (
+                <div className="space-y-1.5">
+                  <Label className="text-[13px] text-muted-foreground">{t('aiProviders.dialog.modelId')}</Label>
+                  <Input
+                    value={modelId}
+                    onChange={(e) => setModelId(e.target.value)}
+                    placeholder={typeInfo?.modelIdPlaceholder || 'provider/model-id'}
+                    className="h-[40px] rounded-xl font-mono text-[13px] bg-white dark:bg-[#1a1a19] border-black/10 dark:border-white/10 focus-visible:ring-2 focus-visible:ring-blue-500/50 shadow-sm"
+                  />
+                </div>
+              )}
+            </div>
+          )}
+          <div className="space-y-3 rounded-xl bg-[#eeece3] dark:bg-[#151514] border border-black/5 dark:border-white/5 p-4">
+            <button
+              onClick={() => setShowFallback(!showFallback)}
+              className="flex items-center justify-between w-full text-[14px] font-bold text-foreground/80 hover:text-foreground transition-colors"
+            >
+              <span>{t('aiProviders.sections.fallback')}</span>
+              <ChevronDown className={cn("h-4 w-4 transition-transform", showFallback && "rotate-180")} />
+            </button>
+            {showFallback && (
+              <div className="space-y-3 pt-2">
+                <div className="space-y-1.5">
+                  <Label className="text-[13px] text-muted-foreground">{t('aiProviders.dialog.fallbackModelIds')}</Label>
+                  <textarea
+                    value={fallbackModelsText}
+                    onChange={(e) => setFallbackModelsText(e.target.value)}
+                    placeholder={t('aiProviders.dialog.fallbackModelIdsPlaceholder')}
+                    className="min-h-24 w-full rounded-xl border border-black/10 dark:border-white/10 bg-white dark:bg-[#1a1a19] px-3 py-2 text-[13px] font-mono outline-none focus-visible:ring-2 focus-visible:ring-blue-500/50 shadow-sm"
+                  />
+                  <p className="text-[12px] text-muted-foreground">
+                    {t('aiProviders.dialog.fallbackModelIdsHelp')}
+                  </p>
+                </div>
+                <div className="space-y-2 pt-1">
+                  <Label className="text-[13px] text-muted-foreground">{t('aiProviders.dialog.fallbackProviders')}</Label>
+                  {fallbackOptions.length === 0 ? (
+                    <p className="text-[13px] text-muted-foreground">{t('aiProviders.dialog.noFallbackOptions')}</p>
+                  ) : (
+                    <div className="space-y-2 rounded-xl border border-black/10 dark:border-white/10 bg-white dark:bg-[#1a1a19] p-3 shadow-sm">
+                      {fallbackOptions.map((candidate) => (
+                        <label key={candidate.account.id} className="flex items-center gap-3 text-[13px] cursor-pointer group/label">
+                          <input
+                            type="checkbox"
+                            checked={fallbackProviderIds.includes(candidate.account.id)}
+                            onChange={() => toggleFallbackProvider(candidate.account.id)}
+                            className="rounded border-black/20 dark:border-white/20 text-blue-500 focus:ring-blue-500/50"
+                          />
+                          <span className="font-medium group-hover/label:text-blue-500 transition-colors">{candidate.account.label}</span>
+                          <span className="text-[12px] text-muted-foreground">
+                            {candidate.account.model || candidate.vendor?.name || candidate.account.vendorId}
+                          </span>
+                        </label>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+          <div className="space-y-3 rounded-xl bg-[#eeece3] dark:bg-[#151514] border border-black/5 dark:border-white/5 p-4">
+            <div className="flex items-center justify-between gap-3">
+              <div className="space-y-0.5">
+                <Label className="text-[14px] font-bold text-foreground/80">{t('aiProviders.dialog.apiKey')}</Label>
+                <p className="text-[12px] text-muted-foreground">
+                  {status?.hasKey
+                    ? t('aiProviders.dialog.apiKeyConfigured')
+                    : t('aiProviders.dialog.apiKeyMissing')}
+                </p>
+              </div>
+              {status?.hasKey ? (
+                <div className="flex items-center gap-1.5 text-[11px] font-medium text-green-600 dark:text-green-500 bg-green-500/10 px-2 py-1 rounded-md">
+                  <div className="w-1.5 h-1.5 rounded-full bg-current" />
+                  {t('aiProviders.card.configured')}
+                </div>
+              ) : null}
+            </div>
+            {typeInfo?.apiKeyUrl && (
+              <div className="flex justify-start">
+                <a
+                  href={typeInfo.apiKeyUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-[13px] text-blue-500 hover:text-blue-600 hover:underline flex items-center gap-1"
+                  tabIndex={-1}
+                >
+                  {t('aiProviders.oauth.getApiKey')} <ExternalLink className="h-3 w-3" />
+                </a>
+              </div>
+            )}
+            <div className="space-y-1.5 pt-1">
+              <Label className="text-[13px] text-muted-foreground">{t('aiProviders.dialog.replaceApiKey')}</Label>
+              <div className="flex gap-2">
+                <div className="relative flex-1">
+                  <Input
+                    type={showKey ? 'text' : 'password'}
+                    placeholder={typeInfo?.requiresApiKey ? typeInfo?.placeholder : (typeInfo?.id === 'ollama' ? t('aiProviders.notRequired') : t('aiProviders.card.editKey'))}
+                    value={newKey}
+                    onChange={(e) => setNewKey(e.target.value)}
+                    className="pr-10 h-[40px] rounded-xl font-mono text-[13px] bg-white dark:bg-[#1a1a19] border-black/10 dark:border-white/10 focus-visible:ring-2 focus-visible:ring-blue-500/50 shadow-sm"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowKey(!showKey)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                  >
+                    {showKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                  </button>
+                </div>
+                <Button
+                  variant="outline"
+                  onClick={handleSaveEdits}
+                  className="h-[40px] rounded-xl px-4 bg-white dark:bg-[#1a1a19] border-black/10 dark:border-white/10 hover:bg-black/5 dark:hover:bg-white/10"
+                  disabled={
+                    validating
+                    || saving
+                    || (
+                      !newKey.trim()
+                      && (baseUrl.trim() || undefined) === (account.baseUrl || undefined)
+                      && (modelId.trim() || undefined) === (account.model || undefined)
+                      && fallbackModelsEqual(normalizeFallbackModels(fallbackModelsText.split('\n')), account.fallbackModels)
+                      && fallbackProviderIdsEqual(fallbackProviderIds, account.fallbackAccountIds)
+                    )
+                    || Boolean(showModelIdField && !modelId.trim())
+                  }
+                >
+                  {validating || saving ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Check className="h-4 w-4 text-green-500" />
+                  )}
+                </Button>
+                <Button variant="ghost" onClick={onCancelEdit} className="h-[40px] w-[40px] p-0 rounded-xl hover:bg-black/5 dark:hover:bg-white/10">
+                  <X className="h-4 w-4" />
+                </Button>
+              </div>
+              <p className="text-[12px] text-muted-foreground">
+                {t('aiProviders.dialog.replaceApiKeyHelp')}
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -880,17 +901,25 @@ function AddProviderDialog({
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center">
-      <Card className="w-full max-w-md">
-        <CardHeader>
-          <CardTitle>{t('aiProviders.dialog.title')}</CardTitle>
-          <CardDescription>
+    <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
+      <Card className="w-full max-w-2xl max-h-[90vh] flex flex-col rounded-3xl border-0 shadow-2xl bg-[#f3f1e9] dark:bg-[#1a1a19] overflow-hidden">
+        <CardHeader className="relative pb-2 shrink-0">
+          <CardTitle className="text-2xl font-serif font-normal">{t('aiProviders.dialog.title')}</CardTitle>
+          <CardDescription className="text-[15px] mt-1 text-foreground/70">
             {t('aiProviders.dialog.desc')}
           </CardDescription>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="absolute right-4 top-4 rounded-full h-8 w-8 -mr-2 -mt-2 text-muted-foreground hover:text-foreground hover:bg-black/5 dark:hover:bg-white/5"
+            onClick={onClose}
+          >
+            <X className="h-4 w-4" />
+          </Button>
         </CardHeader>
-        <CardContent className="space-y-4">
+        <CardContent className="overflow-y-auto flex-1 p-6">
           {!selectedType ? (
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
               {availableTypes.map((type) => (
                 <button
                   key={type.id}
@@ -900,27 +929,31 @@ function AddProviderDialog({
                     setBaseUrl(type.defaultBaseUrl || '');
                     setModelId(type.defaultModelId || '');
                   }}
-                  className="p-4 rounded-lg border hover:bg-accent transition-colors text-center"
+                  className="p-4 rounded-2xl border border-black/5 dark:border-white/5 hover:bg-black/5 dark:hover:bg-white/5 transition-colors text-center group"
                 >
-                  {getProviderIconUrl(type.id) ? (
-                    <img src={getProviderIconUrl(type.id)} alt={type.name} className={cn('h-7 w-7 mx-auto', shouldInvertInDark(type.id) && 'dark:invert')} />
-                  ) : (
-                    <span className="text-2xl">{type.icon}</span>
-                  )}
-                  <p className="font-medium mt-2">{type.id === 'custom' ? t('aiProviders.custom') : type.name}</p>
+                  <div className="h-12 w-12 mx-auto mb-3 flex items-center justify-center bg-white dark:bg-[#1a1a19] rounded-xl shadow-sm border border-black/5 dark:border-white/5 group-hover:scale-105 transition-transform">
+                    {getProviderIconUrl(type.id) ? (
+                      <img src={getProviderIconUrl(type.id)} alt={type.name} className={cn('h-6 w-6', shouldInvertInDark(type.id) && 'dark:invert')} />
+                    ) : (
+                      <span className="text-2xl">{type.icon}</span>
+                    )}
+                  </div>
+                  <p className="font-medium text-[13px]">{type.id === 'custom' ? t('aiProviders.custom') : type.name}</p>
                 </button>
               ))}
             </div>
           ) : (
-            <div className="space-y-4">
-              <div className="flex items-center gap-3 p-3 rounded-lg bg-muted">
-                {getProviderIconUrl(selectedType!) ? (
-                  <img src={getProviderIconUrl(selectedType!)} alt={typeInfo?.name} className={cn('h-7 w-7', shouldInvertInDark(selectedType!) && 'dark:invert')} />
-                ) : (
-                  <span className="text-2xl">{typeInfo?.icon}</span>
-                )}
+            <div className="space-y-6">
+              <div className="flex items-center gap-3 p-4 rounded-2xl bg-white dark:bg-[#1a1a19] border border-black/5 dark:border-white/5 shadow-sm">
+                <div className="h-10 w-10 shrink-0 flex items-center justify-center bg-black/5 dark:bg-white/5 rounded-xl">
+                  {getProviderIconUrl(selectedType!) ? (
+                    <img src={getProviderIconUrl(selectedType!)} alt={typeInfo?.name} className={cn('h-6 w-6', shouldInvertInDark(selectedType!) && 'dark:invert')} />
+                  ) : (
+                    <span className="text-xl">{typeInfo?.icon}</span>
+                  )}
+                </div>
                 <div>
-                  <p className="font-medium">{typeInfo?.id === 'custom' ? t('aiProviders.custom') : typeInfo?.name}</p>
+                  <p className="font-semibold text-[15px]">{typeInfo?.id === 'custom' ? t('aiProviders.custom') : typeInfo?.name}</p>
                   <button
                     onClick={() => {
                       setSelectedType(null);
@@ -928,231 +961,234 @@ function AddProviderDialog({
                       setBaseUrl('');
                       setModelId('');
                     }}
-                    className="text-sm text-muted-foreground hover:text-foreground"
+                    className="text-[13px] text-blue-500 hover:text-blue-600 font-medium"
                   >
                     {t('aiProviders.dialog.change')}
                   </button>
                 </div>
               </div>
 
-              <div className="space-y-2">
-                <Label htmlFor="name">{t('aiProviders.dialog.displayName')}</Label>
-                <Input
-                  id="name"
-                  placeholder={typeInfo?.id === 'custom' ? t('aiProviders.custom') : typeInfo?.name}
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                />
-              </div>
-
-              {/* Auth mode toggle for providers supporting both */}
-              {isOAuth && supportsApiKey && (
-                <div className="flex rounded-lg border overflow-hidden text-sm">
-                  <button
-                    onClick={() => setAuthMode('oauth')}
-                    className={cn(
-                      'flex-1 py-2 px-3 transition-colors',
-                      authMode === 'oauth' ? 'bg-primary text-primary-foreground' : 'hover:bg-muted text-muted-foreground'
-                    )}
-                  >
-                    {t('aiProviders.oauth.loginMode')}
-                  </button>
-                  <button
-                    onClick={() => setAuthMode('apikey')}
-                    className={cn(
-                      'flex-1 py-2 px-3 transition-colors',
-                      authMode === 'apikey' ? 'bg-primary text-primary-foreground' : 'hover:bg-muted text-muted-foreground'
-                    )}
-                  >
-                    {t('aiProviders.oauth.apikeyMode')}
-                  </button>
-                </div>
-              )}
-
-              {/* API Key input — shown for non-OAuth providers or when apikey mode is selected */}
-              {(!isOAuth || (supportsApiKey && authMode === 'apikey')) && (
+              <div className="space-y-4 bg-[#eeece3] dark:bg-[#151514] p-5 rounded-2xl border border-black/5 dark:border-white/5 shadow-sm">
                 <div className="space-y-2">
-                  <div className="flex items-center justify-between">
-                    <Label htmlFor="apiKey">{t('aiProviders.dialog.apiKey')}</Label>
-                    {typeInfo?.apiKeyUrl && (
-                      <a
-                        href={typeInfo.apiKeyUrl}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-xs text-primary hover:underline flex items-center gap-1"
-                        tabIndex={-1}
-                      >
-                        {t('aiProviders.oauth.getApiKey')} <ExternalLink className="h-3 w-3" />
-                      </a>
-                    )}
-                  </div>
-                  <div className="relative">
-                    <Input
-                      id="apiKey"
-                      type={showKey ? 'text' : 'password'}
-                      placeholder={typeInfo?.id === 'ollama' ? t('aiProviders.notRequired') : typeInfo?.placeholder}
-                      value={apiKey}
-                      onChange={(e) => {
-                        setApiKey(e.target.value);
-                        setValidationError(null);
-                      }}
-                      className="pr-10"
-                    />
+                  <Label htmlFor="name" className="text-[14px] font-bold text-foreground/80">{t('aiProviders.dialog.displayName')}</Label>
+                  <Input
+                    id="name"
+                    placeholder={typeInfo?.id === 'custom' ? t('aiProviders.custom') : typeInfo?.name}
+                    value={name}
+                    onChange={(e) => setName(e.target.value)}
+                    className="h-[44px] rounded-xl font-mono text-[13px] bg-white dark:bg-[#1a1a19] border-black/10 dark:border-white/10 focus-visible:ring-2 focus-visible:ring-blue-500/50 shadow-sm"
+                  />
+                </div>
+
+                {/* Auth mode toggle for providers supporting both */}
+                {isOAuth && supportsApiKey && (
+                  <div className="flex rounded-xl border border-black/10 dark:border-white/10 overflow-hidden text-[13px] font-medium shadow-sm bg-white dark:bg-[#1a1a19] p-1 gap-1">
                     <button
-                      type="button"
-                      onClick={() => setShowKey(!showKey)}
-                      className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                      onClick={() => setAuthMode('oauth')}
+                      className={cn(
+                        'flex-1 py-2 px-3 rounded-lg transition-colors',
+                        authMode === 'oauth' ? 'bg-black/5 dark:bg-white/10 text-foreground' : 'text-muted-foreground hover:bg-black/5 dark:hover:bg-white/5'
+                      )}
                     >
-                      {showKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                      {t('aiProviders.oauth.loginMode')}
+                    </button>
+                    <button
+                      onClick={() => setAuthMode('apikey')}
+                      className={cn(
+                        'flex-1 py-2 px-3 rounded-lg transition-colors',
+                        authMode === 'apikey' ? 'bg-black/5 dark:bg-white/10 text-foreground' : 'text-muted-foreground hover:bg-black/5 dark:hover:bg-white/5'
+                      )}
+                    >
+                      {t('aiProviders.oauth.apikeyMode')}
                     </button>
                   </div>
-                  {validationError && (
-                    <p className="text-xs text-destructive">{validationError}</p>
-                  )}
-                  <p className="text-xs text-muted-foreground">
-                    {t('aiProviders.dialog.apiKeyStored')}
-                  </p>
-                </div>
-              )}
+                )}
 
-              {typeInfo?.showBaseUrl && (
-                <div className="space-y-2">
-                  <Label htmlFor="baseUrl">{t('aiProviders.dialog.baseUrl')}</Label>
-                  <Input
-                    id="baseUrl"
-                    placeholder="https://api.example.com/v1"
-                    value={baseUrl}
-                    onChange={(e) => setBaseUrl(e.target.value)}
-                  />
-                </div>
-              )}
-
-              {showModelIdField && (
-                <div className="space-y-2">
-                  <Label htmlFor="modelId">{t('aiProviders.dialog.modelId')}</Label>
-                  <Input
-                    id="modelId"
-                    placeholder={typeInfo?.modelIdPlaceholder || 'provider/model-id'}
-                    value={modelId}
-                    onChange={(e) => {
-                      setModelId(e.target.value);
-                      setValidationError(null);
-                    }}
-                  />
-                </div>
-              )}
-              {/* Device OAuth Trigger — only shown when in OAuth mode */}
-              {useOAuthFlow && (
-                <div className="space-y-4 pt-2">
-                  <div className="rounded-lg bg-blue-500/10 border border-blue-500/20 p-4 text-center">
-                    <p className="text-sm text-blue-200 mb-3 block">
-                      {t('aiProviders.oauth.loginPrompt')}
-                    </p>
-                    <Button
-                      onClick={handleStartOAuth}
-                      disabled={oauthFlowing}
-                      className="w-full bg-blue-600 hover:bg-blue-700 text-white"
-                    >
-                      {oauthFlowing ? (
-                        <><Loader2 className="h-4 w-4 mr-2 animate-spin" />{t('aiProviders.oauth.waiting')}</>
-                      ) : (
-                        t('aiProviders.oauth.loginButton')
+                {/* API Key input — shown for non-OAuth providers or when apikey mode is selected */}
+                {(!isOAuth || (supportsApiKey && authMode === 'apikey')) && (
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <Label htmlFor="apiKey" className="text-[14px] font-bold text-foreground/80">{t('aiProviders.dialog.apiKey')}</Label>
+                      {typeInfo?.apiKeyUrl && (
+                        <a
+                          href={typeInfo.apiKeyUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-[13px] text-blue-500 hover:text-blue-600 font-medium flex items-center gap-1"
+                          tabIndex={-1}
+                        >
+                          {t('aiProviders.oauth.getApiKey')} <ExternalLink className="h-3 w-3" />
+                        </a>
                       )}
-                    </Button>
+                    </div>
+                    <div className="relative">
+                      <Input
+                        id="apiKey"
+                        type={showKey ? 'text' : 'password'}
+                        placeholder={typeInfo?.id === 'ollama' ? t('aiProviders.notRequired') : typeInfo?.placeholder}
+                        value={apiKey}
+                        onChange={(e) => {
+                          setApiKey(e.target.value);
+                          setValidationError(null);
+                        }}
+                        className="pr-10 h-[44px] rounded-xl font-mono text-[13px] bg-white dark:bg-[#1a1a19] border-black/10 dark:border-white/10 focus-visible:ring-2 focus-visible:ring-blue-500/50 shadow-sm"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowKey(!showKey)}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                      >
+                        {showKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                      </button>
+                    </div>
+                    {validationError && (
+                      <p className="text-[13px] text-red-500 font-medium">{validationError}</p>
+                    )}
+                    <p className="text-[12px] text-muted-foreground">
+                      {t('aiProviders.dialog.apiKeyStored')}
+                    </p>
                   </div>
+                )}
 
-                  {/* OAuth Active State Modal / Inline View */}
-                  {oauthFlowing && (
-                    <div className="mt-4 p-4 border rounded-xl bg-card relative overflow-hidden">
-                      {/* Background pulse effect */}
-                      <div className="absolute inset-0 bg-primary/5 animate-pulse" />
+                {typeInfo?.showBaseUrl && (
+                  <div className="space-y-2">
+                    <Label htmlFor="baseUrl" className="text-[14px] font-bold text-foreground/80">{t('aiProviders.dialog.baseUrl')}</Label>
+                    <Input
+                      id="baseUrl"
+                      placeholder="https://api.example.com/v1"
+                      value={baseUrl}
+                      onChange={(e) => setBaseUrl(e.target.value)}
+                      className="h-[44px] rounded-xl font-mono text-[13px] bg-white dark:bg-[#1a1a19] border-black/10 dark:border-white/10 focus-visible:ring-2 focus-visible:ring-blue-500/50 shadow-sm"
+                    />
+                  </div>
+                )}
 
-                      <div className="relative z-10 flex flex-col items-center justify-center text-center space-y-4">
-                        {oauthError ? (
-                          <div className="text-red-400 space-y-2">
-                            <XCircle className="h-8 w-8 mx-auto" />
-                            <p className="font-medium">{t('aiProviders.oauth.authFailed')}</p>
-                            <p className="text-sm opacity-80">{oauthError}</p>
-                            <Button variant="outline" size="sm" onClick={handleCancelOAuth} className="mt-2 text-foreground">
-                              Try Again
-                            </Button>
-                          </div>
-                        ) : !oauthData ? (
-                          <div className="space-y-3 py-4">
-                            <Loader2 className="h-8 w-8 animate-spin text-primary mx-auto" />
-                            <p className="text-sm text-muted-foreground animate-pulse">{t('aiProviders.oauth.requestingCode')}</p>
-                          </div>
+                {showModelIdField && (
+                  <div className="space-y-2">
+                    <Label htmlFor="modelId" className="text-[14px] font-bold text-foreground/80">{t('aiProviders.dialog.modelId')}</Label>
+                    <Input
+                      id="modelId"
+                      placeholder={typeInfo?.modelIdPlaceholder || 'provider/model-id'}
+                      value={modelId}
+                      onChange={(e) => {
+                        setModelId(e.target.value);
+                        setValidationError(null);
+                      }}
+                      className="h-[44px] rounded-xl font-mono text-[13px] bg-white dark:bg-[#1a1a19] border-black/10 dark:border-white/10 focus-visible:ring-2 focus-visible:ring-blue-500/50 shadow-sm"
+                    />
+                  </div>
+                )}
+                {/* Device OAuth Trigger — only shown when in OAuth mode */}
+                {useOAuthFlow && (
+                  <div className="space-y-4 pt-2">
+                    <div className="rounded-xl bg-blue-500/10 border border-blue-500/20 p-5 text-center">
+                      <p className="text-[13px] font-medium text-blue-600 dark:text-blue-400 mb-4 block">
+                        {t('aiProviders.oauth.loginPrompt')}
+                      </p>
+                      <Button
+                        onClick={handleStartOAuth}
+                        disabled={oauthFlowing}
+                        className="w-full rounded-full h-[42px] font-semibold bg-[#0a84ff] hover:bg-[#007aff] text-white shadow-sm"
+                      >
+                        {oauthFlowing ? (
+                          <><Loader2 className="h-4 w-4 mr-2 animate-spin" />{t('aiProviders.oauth.waiting')}</>
                         ) : (
-                          <div className="space-y-4 w-full">
-                            <div className="space-y-1">
-                              <h3 className="font-medium text-lg text-foreground">{t('aiProviders.oauth.approveLogin')}</h3>
-                              <div className="text-sm text-muted-foreground text-left mt-2 space-y-1">
-                                <p>1. {t('aiProviders.oauth.step1')}</p>
-                                <p>2. {t('aiProviders.oauth.step2')}</p>
-                                <p>3. {t('aiProviders.oauth.step3')}</p>
-                              </div>
-                            </div>
+                          t('aiProviders.oauth.loginButton')
+                        )}
+                      </Button>
+                    </div>
 
-                            <div className="flex items-center justify-center gap-2 p-3 bg-background border rounded-lg">
-                              <code className="text-2xl font-mono tracking-widest font-bold text-primary">
-                                {oauthData.userCode}
-                              </code>
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                onClick={() => {
-                                  navigator.clipboard.writeText(oauthData.userCode);
-                                  toast.success(t('aiProviders.oauth.codeCopied'));
-                                }}
-                              >
-                                <Copy className="h-4 w-4" />
+                    {/* OAuth Active State Modal / Inline View */}
+                    {oauthFlowing && (
+                      <div className="mt-4 p-5 border border-black/10 dark:border-white/10 rounded-2xl bg-white dark:bg-[#1a1a19] shadow-sm relative overflow-hidden">
+                        {/* Background pulse effect */}
+                        <div className="absolute inset-0 bg-blue-500/5 animate-pulse" />
+
+                        <div className="relative z-10 flex flex-col items-center justify-center text-center space-y-5">
+                          {oauthError ? (
+                            <div className="text-red-500 space-y-3">
+                              <XCircle className="h-10 w-10 mx-auto" />
+                              <p className="font-semibold text-[15px]">{t('aiProviders.oauth.authFailed')}</p>
+                              <p className="text-[13px] opacity-80">{oauthError}</p>
+                              <Button variant="outline" size="sm" onClick={handleCancelOAuth} className="mt-2 rounded-full px-6 h-9">
+                                Try Again
                               </Button>
                             </div>
-
-                            <Button
-                              variant="secondary"
-                              className="w-full"
-                              onClick={() => invokeIpc('shell:openExternal', oauthData.verificationUri)}
-                            >
-                              <ExternalLink className="h-4 w-4 mr-2" />
-                              {t('aiProviders.oauth.openLoginPage')}
-                            </Button>
-
-                            <div className="flex items-center justify-center gap-2 text-xs text-muted-foreground pt-2">
-                              <Loader2 className="h-3 w-3 animate-spin" />
-                              <span>{t('aiProviders.oauth.waitingApproval')}</span>
+                          ) : !oauthData ? (
+                            <div className="space-y-4 py-6">
+                              <Loader2 className="h-10 w-10 animate-spin text-blue-500 mx-auto" />
+                              <p className="text-[13px] font-medium text-muted-foreground animate-pulse">{t('aiProviders.oauth.requestingCode')}</p>
                             </div>
+                          ) : (
+                            <div className="space-y-5 w-full">
+                              <div className="space-y-2">
+                                <h3 className="font-semibold text-[16px] text-foreground">{t('aiProviders.oauth.approveLogin')}</h3>
+                                <div className="text-[13px] text-muted-foreground text-left mt-2 space-y-1.5 bg-black/5 dark:bg-white/5 p-4 rounded-xl">
+                                  <p>1. {t('aiProviders.oauth.step1')}</p>
+                                  <p>2. {t('aiProviders.oauth.step2')}</p>
+                                  <p>3. {t('aiProviders.oauth.step3')}</p>
+                                </div>
+                              </div>
 
-                            <Button variant="ghost" size="sm" className="w-full mt-2" onClick={handleCancelOAuth}>
-                              Cancel
-                            </Button>
-                          </div>
-                        )}
+                              <div className="flex items-center justify-center gap-3 p-4 bg-[#eeece3] dark:bg-[#151514] border border-black/5 dark:border-white/5 rounded-xl shadow-inner">
+                                <code className="text-3xl font-mono tracking-[0.2em] font-bold text-foreground">
+                                  {oauthData.userCode}
+                                </code>
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-10 w-10 rounded-full hover:bg-black/5 dark:hover:bg-white/10"
+                                  onClick={() => {
+                                    navigator.clipboard.writeText(oauthData.userCode);
+                                    toast.success(t('aiProviders.oauth.codeCopied'));
+                                  }}
+                                >
+                                  <Copy className="h-5 w-5" />
+                                </Button>
+                              </div>
+
+                              <Button
+                                variant="secondary"
+                                className="w-full rounded-full h-[42px] font-semibold"
+                                onClick={() => invokeIpc('shell:openExternal', oauthData.verificationUri)}
+                              >
+                                <ExternalLink className="h-4 w-4 mr-2" />
+                                {t('aiProviders.oauth.openLoginPage')}
+                              </Button>
+
+                              <div className="flex items-center justify-center gap-2 text-[13px] font-medium text-muted-foreground pt-2">
+                                <Loader2 className="h-4 w-4 animate-spin text-blue-500" />
+                                <span>{t('aiProviders.oauth.waitingApproval')}</span>
+                              </div>
+
+                              <Button variant="ghost" className="w-full rounded-full h-[42px] font-semibold text-muted-foreground" onClick={handleCancelOAuth}>
+                                Cancel
+                              </Button>
+                            </div>
+                          )}
+                        </div>
                       </div>
-                    </div>
-                  )}
-                </div>
-              )}
+                    )}
+                  </div>
+                )}
+              </div>
+
+              <Separator className="bg-black/10 dark:bg-white/10" />
+
+              <div className="flex justify-end gap-3">
+                <Button
+                  onClick={handleAdd}
+                  className={cn("rounded-full px-8 h-[42px] text-[13px] font-semibold bg-[#0a84ff] hover:bg-[#007aff] text-white shadow-sm", useOAuthFlow && "hidden")}
+                  disabled={!selectedType || saving || (showModelIdField && modelId.trim().length === 0)}
+                >
+                  {saving ? (
+                    <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                  ) : null}
+                  {t('aiProviders.dialog.add')}
+                </Button>
+              </div>
             </div>
           )}
-
-          <Separator />
-
-          <div className="flex justify-end gap-2">
-            <Button variant="outline" onClick={onClose}>
-              {t('aiProviders.dialog.cancel')}
-            </Button>
-            <Button
-              onClick={handleAdd}
-              className={cn(useOAuthFlow && "hidden")}
-              disabled={!selectedType || saving || (showModelIdField && modelId.trim().length === 0)}
-            >
-              {saving ? (
-                <Loader2 className="h-4 w-4 animate-spin mr-2" />
-              ) : null}
-              {t('aiProviders.dialog.add')}
-            </Button>
-          </div>
         </CardContent>
       </Card>
     </div>
