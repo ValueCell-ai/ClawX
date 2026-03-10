@@ -408,8 +408,8 @@ function ProviderCard({
       className={cn(
         "group flex flex-col p-4 rounded-2xl transition-all relative overflow-hidden",
         isDefault
-          ? "bg-white dark:bg-[#1a1a19] border border-blue-500/20 shadow-sm ring-1 ring-blue-500/20"
-          : "bg-black/5 dark:bg-white/5 border border-transparent"
+          ? "bg-white dark:bg-[#1a1a19] border border-black/10 dark:border-white/10 shadow-sm"
+          : "bg-transparent border border-black/10 dark:border-white/10"
       )}
     >
       <div className="flex items-center justify-between">
@@ -502,9 +502,9 @@ function ProviderCard({
       </div>
 
       {isEditing && (
-        <div className="space-y-4 mt-4 pt-4 border-t border-black/5 dark:border-white/5">
+        <div className="space-y-6 mt-4 pt-4 border-t border-black/5 dark:border-white/5">
           {canEditModelConfig && (
-            <div className="space-y-3 rounded-xl bg-[#eeece3] dark:bg-[#151514] border border-black/5 dark:border-white/5 p-4">
+            <div className="space-y-3">
               <p className="text-[14px] font-bold text-foreground/80">{t('aiProviders.sections.model')}</p>
               {typeInfo?.showBaseUrl && (
                 <div className="space-y-1.5">
@@ -551,7 +551,7 @@ function ProviderCard({
               )}
             </div>
           )}
-          <div className="space-y-3 rounded-xl bg-[#eeece3] dark:bg-[#151514] border border-black/5 dark:border-white/5 p-4">
+          <div className="space-y-3">
             <button
               onClick={() => setShowFallback(!showFallback)}
               className="flex items-center justify-between w-full text-[14px] font-bold text-foreground/80 hover:text-foreground transition-colors"
@@ -599,7 +599,7 @@ function ProviderCard({
               </div>
             )}
           </div>
-          <div className="space-y-3 rounded-xl bg-[#eeece3] dark:bg-[#151514] border border-black/5 dark:border-white/5 p-4">
+          <div className="space-y-3">
             <div className="flex items-center justify-between gap-3">
               <div className="space-y-0.5">
                 <Label className="text-[14px] font-bold text-foreground/80">{t('aiProviders.dialog.apiKey')}</Label>
