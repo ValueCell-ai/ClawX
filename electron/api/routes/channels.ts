@@ -16,6 +16,14 @@ import { whatsAppLoginManager } from '../../utils/whatsapp-login';
 import type { HostApiContext } from '../context';
 import { parseJsonBody, sendJson } from '../route-utils';
 
+function scheduleGatewayChannelRestart(ctx: HostApiContext, reason: string): void {
+  if (ctx.gatewayManager.getStatus().state === 'stopped') {
+    return;
+  }
+  ctx.gatewayManager.debouncedRestart();
+  void reason;
+}
+
 async function ensureDingTalkPluginInstalled(): Promise<{ installed: boolean; warning?: string }> {
   const targetDir = join(homedir(), '.openclaw', 'extensions', 'dingtalk');
   const targetManifest = join(targetDir, 'openclaw.plugin.json');
@@ -168,6 +176,7 @@ export async function handleChannelRoutes(
         }
       }
       await saveChannelConfig(body.channelType, body.config);
+      scheduleGatewayChannelRestart(ctx, `channel:saveConfig:${body.channelType}`);
       sendJson(res, 200, { success: true });
     } catch (error) {
       sendJson(res, 500, { success: false, error: String(error) });
@@ -179,6 +188,7 @@ export async function handleChannelRoutes(
     try {
       const body = await parseJsonBody<{ channelType: string; enabled: boolean }>(req);
       await setChannelEnabled(body.channelType, body.enabled);
+      scheduleGatewayChannelRestart(ctx, `channel:setEnabled:${body.channelType}`);
       sendJson(res, 200, { success: true });
     } catch (error) {
       sendJson(res, 500, { success: false, error: String(error) });
@@ -203,6 +213,7 @@ export async function handleChannelRoutes(
     try {
       const channelType = decodeURIComponent(url.pathname.slice('/api/channels/config/'.length));
       await deleteChannelConfig(channelType);
+      scheduleGatewayChannelRestart(ctx, `channel:deleteConfig:${channelType}`);
       sendJson(res, 200, { success: true });
     } catch (error) {
       sendJson(res, 500, { success: false, error: String(error) });
