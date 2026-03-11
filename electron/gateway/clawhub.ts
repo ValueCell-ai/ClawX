@@ -67,6 +67,55 @@ export class ClawHubService {
         return line.replace(this.ansiRegex, '').trim();
     }
 
+    private extractFrontmatterName(skillManifestPath: string): string | null {
+        try {
+            const raw = fs.readFileSync(skillManifestPath, 'utf8');
+            // Match the first frontmatter block and read `name: ...`
+            const frontmatterMatch = raw.match(/^---\s*\n([\s\S]*?)\n---/);
+            if (!frontmatterMatch) return null;
+            const body = frontmatterMatch[1];
+            const nameMatch = body.match(/^\s*name\s*:\s*["']?([^"'\n]+)["']?\s*$/m);
+            if (!nameMatch) return null;
+            const name = nameMatch[1].trim();
+            return name || null;
+        } catch {
+            return null;
+        }
+    }
+
+    private resolveSkillDirByManifestName(candidates: string[]): string | null {
+        const skillsRoot = path.join(this.workDir, 'skills');
+        if (!fs.existsSync(skillsRoot)) return null;
+
+        const wanted = new Set(
+            candidates
+                .map((v) => v.trim().toLowerCase())
+                .filter((v) => v.length > 0),
+        );
+        if (wanted.size === 0) return null;
+
+        let entries: fs.Dirent[] = [];
+        try {
+            entries = fs.readdirSync(skillsRoot, { withFileTypes: true });
+        } catch {
+            return null;
+        }
+
+        for (const entry of entries) {
+            if (!entry.isDirectory()) continue;
+            const skillDir = path.join(skillsRoot, entry.name);
+            const skillManifestPath = path.join(skillDir, 'SKILL.md');
+            if (!fs.existsSync(skillManifestPath)) continue;
+
+            const frontmatterName = this.extractFrontmatterName(skillManifestPath);
+            if (!frontmatterName) continue;
+            if (wanted.has(frontmatterName.toLowerCase())) {
+                return skillDir;
+            }
+        }
+        return null;
+    }
+
     /**
      * Run a ClawHub CLI command
      */
@@ -323,9 +372,10 @@ export class ClawHubService {
             .filter((v): v is string => typeof v === 'string' && v.trim().length > 0)
             .map(v => v.trim());
         const uniqueCandidates = [...new Set(candidates)];
-        const skillDir = uniqueCandidates
+        const directSkillDir = uniqueCandidates
             .map((id) => path.join(this.workDir, 'skills', id))
             .find((dir) => fs.existsSync(dir));
+        const skillDir = directSkillDir || this.resolveSkillDirByManifestName(uniqueCandidates);
 
         // Try to find documentation file
         const possibleFiles = ['SKILL.md', 'README.md', 'skill.md', 'readme.md'];
