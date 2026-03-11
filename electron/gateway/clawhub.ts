@@ -94,7 +94,7 @@ export class ClawHubService {
         );
         if (wanted.size === 0) return null;
 
-        let entries: fs.Dirent[] = [];
+        let entries: fs.Dirent[];
         try {
             entries = fs.readdirSync(skillsRoot, { withFileTypes: true });
         } catch {
