@@ -82,11 +82,11 @@ function SkillDetailDialog({ skill, isOpen, onClose, onToggle, onUninstall }: Sk
   };
 
   const handleOpenEditor = async () => {
-    if (!skill?.slug) return;
+    if (!skill?.id) return;
     try {
       const result = await hostApiFetch<{ success: boolean; error?: string }>('/api/clawhub/open-readme', {
         method: 'POST',
-        body: JSON.stringify({ slug: skill.slug }),
+        body: JSON.stringify({ skillKey: skill.id, slug: skill.slug }),
       });
       if (result.success) {
         toast.success(t('toast.openedEditor'));
@@ -382,8 +382,14 @@ export function Skills() {
   // Filter skills
   const safeSkills = Array.isArray(skills) ? skills : [];
   const filteredSkills = safeSkills.filter((skill) => {
-    const matchesSearch = skill.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      skill.description.toLowerCase().includes(searchQuery.toLowerCase());
+    const q = searchQuery.toLowerCase().trim();
+    const matchesSearch =
+      q.length === 0 ||
+      skill.name.toLowerCase().includes(q) ||
+      skill.description.toLowerCase().includes(q) ||
+      skill.id.toLowerCase().includes(q) ||
+      (skill.slug || '').toLowerCase().includes(q) ||
+      (skill.author || '').toLowerCase().includes(q);
 
     let matchesSource = true;
     if (selectedSource === 'built-in') {
@@ -700,6 +706,11 @@ export function Skills() {
                             <Lock className="h-3 w-3 text-muted-foreground" />
                           ) : skill.isBundled ? (
                             <Puzzle className="h-3 w-3 text-blue-500/70" />
+                          ) : null}
+                          {skill.slug && skill.slug !== skill.name ? (
+                            <span className="text-[11px] font-mono px-1.5 py-0.5 rounded border border-black/10 dark:border-white/10 text-muted-foreground">
+                              {skill.slug}
+                            </span>
                           ) : null}
                         </div>
                         <p className="text-[13.5px] text-muted-foreground line-clamp-1 pr-6 leading-relaxed">

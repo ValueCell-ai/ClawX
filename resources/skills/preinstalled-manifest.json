@@ -38,12 +38,36 @@
       "repoPath": "skills/find-skills",
       "ref": "main",
       "version": "main",
-      "autoEnable": false
+      "autoEnable": true
     },
     {
       "slug": "self-improving-agent",
       "repo": "openclaw/skills",
       "repoPath": "skills/pskoett/self-improving-agent",
+      "ref": "main",
+      "version": "main",
+      "autoEnable": true
+    },
+    {
+      "slug": "tavily-search",
+      "repo": "tavily-ai/skills",
+      "repoPath": "skills/tavily/search",
+      "ref": "main",
+      "version": "main",
+      "autoEnable": true
+    },
+    {
+      "slug": "brave-web-search",
+      "repo": "brave/brave-search-skills",
+      "repoPath": "skills/web-search",
+      "ref": "main",
+      "version": "main",
+      "autoEnable": true
+    },
+    {
+      "slug": "bocha-skill",
+      "repo": "openclaw/skills",
+      "repoPath": "skills/ypw757/bocha-skill",
       "ref": "main",
       "version": "main",
       "autoEnable": true

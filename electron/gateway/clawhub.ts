@@ -318,24 +318,32 @@ export class ClawHubService {
     /**
      * Open skill README/manual in default editor
      */
-    async openSkillReadme(slug: string): Promise<boolean> {
-        const skillDir = path.join(this.workDir, 'skills', slug);
+    async openSkillReadme(skillKeyOrSlug: string, fallbackSlug?: string): Promise<boolean> {
+        const candidates = [skillKeyOrSlug, fallbackSlug]
+            .filter((v): v is string => typeof v === 'string' && v.trim().length > 0)
+            .map(v => v.trim());
+        const uniqueCandidates = [...new Set(candidates)];
+        const skillDir = uniqueCandidates
+            .map((id) => path.join(this.workDir, 'skills', id))
+            .find((dir) => fs.existsSync(dir));
 
         // Try to find documentation file
         const possibleFiles = ['SKILL.md', 'README.md', 'skill.md', 'readme.md'];
         let targetFile = '';
 
-        for (const file of possibleFiles) {
-            const filePath = path.join(skillDir, file);
-            if (fs.existsSync(filePath)) {
-                targetFile = filePath;
-                break;
+        if (skillDir) {
+            for (const file of possibleFiles) {
+                const filePath = path.join(skillDir, file);
+                if (fs.existsSync(filePath)) {
+                    targetFile = filePath;
+                    break;
+                }
             }
         }
 
         if (!targetFile) {
             // If no md file, just open the directory
-            if (fs.existsSync(skillDir)) {
+            if (skillDir) {
                 targetFile = skillDir;
             } else {
                 throw new Error('Skill directory not found');
