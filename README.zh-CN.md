@@ -110,7 +110,7 @@ ClawX 直接基于官方 **OpenClaw** 核心构建。无需单独安装，我们
 
 ### 🧩 可扩展技能系统
 通过预构建的技能扩展 AI 智能体的能力。在集成的技能面板中浏览、安装和管理技能——无需包管理器。
-ClawX 还会内置预装完整的文档处理技能（`pdf`、`xlsx`、`docx`、`pptx`），在启动时自动部署到 `~/.openclaw/skills`，并在首次安装时默认启用。
+ClawX 还会内置预装完整的文档处理技能（`pdf`、`xlsx`、`docx`、`pptx`），在启动时自动部署到 `~/.openclaw/skills`，并在首次安装时默认启用。`find-skills` 也会随包预装，但默认保持禁用。
 
 ### 🔐 安全的供应商集成
 连接多个 AI 供应商（OpenAI、Anthropic 等），凭证安全存储在系统原生密钥链中。OpenAI 同时支持 API Key 与浏览器 OAuth（Codex 订阅）登录。

@@ -31,6 +31,14 @@
       "ref": "main",
       "version": "main",
       "autoEnable": true
+    },
+    {
+      "slug": "find-skills",
+      "repo": "vercel-labs/skills",
+      "repoPath": "skills/find-skills",
+      "ref": "main",
+      "version": "main",
+      "autoEnable": false
     }
   ]
 }
