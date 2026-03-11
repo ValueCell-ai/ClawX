@@ -47,6 +47,30 @@ describe('Settings Store', () => {
     setDevModeUnlocked(true);
     expect(useSettingsStore.getState().devModeUnlocked).toBe(true);
   });
+
+  it('should persist launch-at-startup setting through host api', () => {
+    const invoke = vi.mocked(window.electron.ipcRenderer.invoke);
+    invoke.mockResolvedValueOnce({
+      ok: true,
+      data: {
+        status: 200,
+        ok: true,
+        json: { success: true },
+      },
+    });
+
+    const { setLaunchAtStartup } = useSettingsStore.getState();
+    setLaunchAtStartup(true);
+
+    expect(useSettingsStore.getState().launchAtStartup).toBe(true);
+    expect(invoke).toHaveBeenCalledWith(
+      'hostapi:fetch',
+      expect.objectContaining({
+        path: '/api/settings/launchAtStartup',
+        method: 'PUT',
+      }),
+    );
+  });
 });
 
 describe('Gateway Store', () => {

@@ -116,6 +116,9 @@ Connect to multiple AI providers (OpenAI, Anthropic, and more) with credentials 
 ### 🌙 Adaptive Theming
 Light mode, dark mode, or system-synchronized themes. ClawX adapts to your preferences automatically.
 
+### 🚀 Startup Launch Control
+In **Settings → General**, you can enable **Launch at system startup** so ClawX starts automatically after login.
+
 ---
 
 ## Getting Started
