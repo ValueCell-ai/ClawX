@@ -188,19 +188,23 @@ export function Chat() {
 // ── Welcome Screen ──────────────────────────────────────────────
 
 function WelcomeScreen() {
+  const { t } = useTranslation('chat');
+  const quickActions = [
+    { key: 'askQuestions', label: t('welcome.askQuestions') },
+    { key: 'creativeTasks', label: t('welcome.creativeTasks') },
+    { key: 'brainstorming', label: t('welcome.brainstorming') },
+  ];
+
   return (
     <div className="flex flex-col items-center justify-center text-center h-[60vh]">
-      <h1 className="text-6xl md:text-7xl font-serif text-foreground mb-3 font-normal tracking-tight" style={{ fontFamily: 'Georgia, Cambria, "Times New Roman", Times, serif' }}>
-        Welcome
+      <h1 className="text-4xl md:text-5xl font-serif text-foreground/80 mb-8 font-normal tracking-tight" style={{ fontFamily: 'Georgia, Cambria, "Times New Roman", Times, serif' }}>
+        {t('welcome.subtitle')}
       </h1>
-      <p className="text-[17px] text-foreground/80 mb-8 font-medium">
-        Your AI assistant is ready. Start a conversation below.
-      </p>
 
       <div className="flex flex-wrap items-center justify-center gap-2.5 max-w-lg w-full">
-        {['Ask Questions', 'Creative Tasks', 'Brainstorming'].map((label, i) => (
+        {quickActions.map(({ key, label }) => (
           <button 
-            key={i} 
+            key={key}
             className="px-4 py-1.5 rounded-full border border-black/10 dark:border-white/10 text-[13px] font-medium text-foreground/70 hover:bg-black/5 dark:hover:bg-white/5 transition-colors bg-black/[0.02]"
           >
             {label}

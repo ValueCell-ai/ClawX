@@ -3,11 +3,12 @@
     "gatewayRequired": "チャットを使用するには OpenClaw ゲートウェイが実行されている必要があります。自動的に起動するか、設定から起動できます。",
     "welcome": {
         "title": "ClawX チャット",
-        "subtitle": "AI アシスタントの準備ができました。下の入力欄から会話を始めましょう。",
-        "askQuestions": "質問する",
-        "askQuestionsDesc": "あらゆるトピックについて回答を得る",
-        "creativeTasks": "クリエイティブタスク",
-        "creativeTasksDesc": "ライティング、ブレスト、アイデア"
+        "subtitle": "何をお手伝いできますか？",
+        "askQuestions": "タスク処理",
+        "askQuestionsDesc": "タスク指向の依頼に対応します",
+        "creativeTasks": "継続実行",
+        "creativeTasksDesc": "複数ステップの作業を継続して進めます",
+        "brainstorming": "マルチエージェント並列"
     },
     "noLogs": "（ログはまだありません）",
     "toolbar": {
