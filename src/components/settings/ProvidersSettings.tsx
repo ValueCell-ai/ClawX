@@ -184,7 +184,7 @@ export function ProvidersSettings() {
         <h2 className="text-3xl font-serif text-foreground font-normal tracking-tight" style={{ fontFamily: 'Georgia, Cambria, "Times New Roman", Times, serif' }}>
           {t('aiProviders.title', 'AI Providers')}
         </h2>
-        <Button onClick={() => setShowAddDialog(true)} className="rounded-full px-5 h-9 bg-black/5 dark:bg-white/5 hover:bg-black/10 dark:hover:bg-white/10 text-foreground border border-transparent shadow-none font-medium text-[13px]">
+        <Button onClick={() => setShowAddDialog(true)} className="rounded-full px-5 h-9 shadow-none font-medium text-[13px]">
           <Plus className="h-4 w-4 mr-2" />
           {t('aiProviders.add')}
         </Button>
