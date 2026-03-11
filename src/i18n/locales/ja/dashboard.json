@@ -11,7 +11,7 @@
     "gatewayNotRunning": "ゲートウェイが停止中",
     "models": {
         "title": "モデル",
-        "subtitle": "AI プロバイダーを管理し、トークン使用量を監視します。"
+        "subtitle": "AI プロバイダーを管理し、トークン使用量を監視します"
     },
     "quickActions": {
         "title": "クイックアクション",
