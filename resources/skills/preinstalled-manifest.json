@@ -39,6 +39,14 @@
       "ref": "main",
       "version": "main",
       "autoEnable": false
+    },
+    {
+      "slug": "self-improving-agent",
+      "repo": "openclaw/skills",
+      "repoPath": "skills/pskoett/self-improving-agent",
+      "ref": "main",
+      "version": "main",
+      "autoEnable": true
     }
   ]
 }
