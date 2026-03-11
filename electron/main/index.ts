@@ -20,6 +20,7 @@ import { ensureClawXContext, repairClawXOnlyBootstrapFiles } from '../utils/open
 import { autoInstallCliIfNeeded, generateCompletionCache, installCompletionToProfile } from '../utils/openclaw-cli';
 import { isQuitting, setQuitting } from './app-state';
 import { applyProxySettings } from './proxy';
+import { syncLaunchAtStartupSettingFromStore } from './launch-at-startup';
 import { getSetting } from '../utils/store';
 import { ensureBuiltinSkillsInstalled } from '../utils/skill-config';
 import { startHostApiServer } from '../api/server';
@@ -162,6 +163,7 @@ async function initialize(): Promise<void> {
 
   // Apply persisted proxy settings before creating windows or network requests.
   await applyProxySettings();
+  await syncLaunchAtStartupSettingFromStore();
 
   // Set application menu
   createMenu();

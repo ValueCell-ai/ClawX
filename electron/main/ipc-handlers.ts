@@ -37,6 +37,7 @@ import { getProviderConfig } from '../utils/provider-registry';
 import { deviceOAuthManager, OAuthProviderType } from '../utils/device-oauth';
 import { browserOAuthManager, type BrowserOAuthProviderType } from '../utils/browser-oauth';
 import { applyProxySettings } from './proxy';
+import { syncLaunchAtStartupSettingFromStore } from './launch-at-startup';
 import { proxyAwareFetch } from '../utils/proxy-fetch';
 import { getRecentTokenUsageHistory } from '../utils/token-usage';
 import { getProviderService } from '../services/providers/provider-service';
@@ -222,6 +223,10 @@ function isProxyKey(key: keyof AppSettings): boolean {
     key === 'proxyAllServer' ||
     key === 'proxyBypassRules'
   );
+}
+
+function isLaunchAtStartupKey(key: keyof AppSettings): boolean {
+  return key === 'launchAtStartup';
 }
 
 function registerUnifiedRequestHandlers(gatewayManager: GatewayManager): void {
@@ -694,6 +699,9 @@ function registerUnifiedRequestHandlers(gatewayManager: GatewayManager): void {
             if (isProxyKey(key)) {
               await handleProxySettingsChange();
             }
+            if (isLaunchAtStartupKey(key)) {
+              await syncLaunchAtStartupSettingFromStore();
+            }
             data = { success: true };
             break;
           }
@@ -706,6 +714,9 @@ function registerUnifiedRequestHandlers(gatewayManager: GatewayManager): void {
             if (entries.some(([key]) => isProxyKey(key))) {
               await handleProxySettingsChange();
             }
+            if (entries.some(([key]) => isLaunchAtStartupKey(key))) {
+              await syncLaunchAtStartupSettingFromStore();
+            }
             data = { success: true };
             break;
           }
@@ -713,6 +724,7 @@ function registerUnifiedRequestHandlers(gatewayManager: GatewayManager): void {
             await resetSettings();
             const settings = await getAllSettings();
             await handleProxySettingsChange();
+            await syncLaunchAtStartupSettingFromStore();
             data = { success: true, settings };
             break;
           }
@@ -2239,6 +2251,9 @@ function registerSettingsHandlers(gatewayManager: GatewayManager): void {
     ) {
       await handleProxySettingsChange();
     }
+    if (key === 'launchAtStartup') {
+      await syncLaunchAtStartupSettingFromStore();
+    }
 
     return { success: true };
   });
@@ -2259,6 +2274,9 @@ function registerSettingsHandlers(gatewayManager: GatewayManager): void {
     )) {
       await handleProxySettingsChange();
     }
+    if (entries.some(([key]) => key === 'launchAtStartup')) {
+      await syncLaunchAtStartupSettingFromStore();
+    }
 
     return { success: true };
   });
@@ -2267,6 +2285,7 @@ function registerSettingsHandlers(gatewayManager: GatewayManager): void {
     await resetSettings();
     const settings = await getAllSettings();
     await handleProxySettingsChange();
+    await syncLaunchAtStartupSettingFromStore();
     return { success: true, settings };
   });
 }

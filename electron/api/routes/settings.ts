@@ -1,5 +1,6 @@
 import type { IncomingMessage, ServerResponse } from 'http';
 import { applyProxySettings } from '../../main/proxy';
+import { syncLaunchAtStartupSettingFromStore } from '../../main/launch-at-startup';
 import { getAllSettings, getSetting, resetSettings, setSetting, type AppSettings } from '../../utils/store';
 import type { HostApiContext } from '../context';
 import { parseJsonBody, sendJson } from '../route-utils';
@@ -23,6 +24,10 @@ function patchTouchesProxy(patch: Partial<AppSettings>): boolean {
   ));
 }
 
+function patchTouchesLaunchAtStartup(patch: Partial<AppSettings>): boolean {
+  return Object.prototype.hasOwnProperty.call(patch, 'launchAtStartup');
+}
+
 export async function handleSettingsRoutes(
   req: IncomingMessage,
   res: ServerResponse,
@@ -43,6 +48,9 @@ export async function handleSettingsRoutes(
       }
       if (patchTouchesProxy(patch)) {
         await handleProxySettingsChange(ctx);
+      }
+      if (patchTouchesLaunchAtStartup(patch)) {
+        await syncLaunchAtStartupSettingFromStore();
       }
       sendJson(res, 200, { success: true });
     } catch (error) {
@@ -76,6 +84,9 @@ export async function handleSettingsRoutes(
       ) {
         await handleProxySettingsChange(ctx);
       }
+      if (key === 'launchAtStartup') {
+        await syncLaunchAtStartupSettingFromStore();
+      }
       sendJson(res, 200, { success: true });
     } catch (error) {
       sendJson(res, 500, { success: false, error: String(error) });
@@ -87,6 +98,7 @@ export async function handleSettingsRoutes(
     try {
       await resetSettings();
       await handleProxySettingsChange(ctx);
+      await syncLaunchAtStartupSettingFromStore();
       sendJson(res, 200, { success: true, settings: await getAllSettings() });
     } catch (error) {
       sendJson(res, 500, { success: false, error: String(error) });
