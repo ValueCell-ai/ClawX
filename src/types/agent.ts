@@ -6,6 +6,7 @@ export interface AgentSummary {
   inheritedModel: boolean;
   workspace: string;
   agentDir: string;
+  mainSessionKey: string;
   channelTypes: string[];
 }
 

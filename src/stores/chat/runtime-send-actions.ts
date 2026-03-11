@@ -1,4 +1,5 @@
 import { invokeIpc } from '@/lib/api-client';
+import { useAgentsStore } from '@/stores/agents';
 import {
   clearErrorRecoveryTimer,
   clearHistoryPoll,
@@ -7,16 +8,78 @@ import {
   setLastChatEventAt,
   upsertImageCacheEntry,
 } from './helpers';
-import type { RawMessage } from './types';
+import type { ChatSession, RawMessage } from './types';
 import type { ChatGet, ChatSet, RuntimeActions } from './store-api';
+
+function normalizeAgentId(value: string | undefined | null): string {
+  return (value ?? '').trim().toLowerCase() || 'main';
+}
+
+function getAgentIdFromSessionKey(sessionKey: string): string {
+  if (!sessionKey.startsWith('agent:')) return 'main';
+  const [, agentId] = sessionKey.split(':');
+  return agentId || 'main';
+}
+
+function buildFallbackMainSessionKey(agentId: string): string {
+  return `agent:${normalizeAgentId(agentId)}:main`;
+}
+
+function resolveMainSessionKeyForAgent(agentId: string | undefined | null): string | null {
+  if (!agentId) return null;
+  const normalizedAgentId = normalizeAgentId(agentId);
+  const summary = useAgentsStore.getState().agents.find((agent) => agent.id === normalizedAgentId);
+  return summary?.mainSessionKey || buildFallbackMainSessionKey(normalizedAgentId);
+}
+
+function ensureSessionEntry(sessions: ChatSession[], sessionKey: string): ChatSession[] {
+  if (sessions.some((session) => session.key === sessionKey)) {
+    return sessions;
+  }
+  return [...sessions, { key: sessionKey, displayName: sessionKey }];
+}
 
 export function createRuntimeSendActions(set: ChatSet, get: ChatGet): Pick<RuntimeActions, 'sendMessage' | 'abortRun'> {
   return {
-    sendMessage: async (text: string, attachments?: Array<{ fileName: string; mimeType: string; fileSize: number; stagedPath: string; preview: string | null }>) => {
+    sendMessage: async (
+      text: string,
+      attachments?: Array<{ fileName: string; mimeType: string; fileSize: number; stagedPath: string; preview: string | null }>,
+      targetAgentId?: string | null,
+    ) => {
       const trimmed = text.trim();
       if (!trimmed && (!attachments || attachments.length === 0)) return;
 
-      const { currentSessionKey } = get();
+      const targetSessionKey = resolveMainSessionKeyForAgent(targetAgentId) ?? get().currentSessionKey;
+      if (targetSessionKey !== get().currentSessionKey) {
+        const current = get();
+        const leavingEmpty = !current.currentSessionKey.endsWith(':main') && current.messages.length === 0;
+        set((s) => ({
+          currentSessionKey: targetSessionKey,
+          currentAgentId: getAgentIdFromSessionKey(targetSessionKey),
+          sessions: ensureSessionEntry(
+            leavingEmpty ? s.sessions.filter((session) => session.key !== current.currentSessionKey) : s.sessions,
+            targetSessionKey,
+          ),
+          sessionLabels: leavingEmpty
+            ? Object.fromEntries(Object.entries(s.sessionLabels).filter(([key]) => key !== current.currentSessionKey))
+            : s.sessionLabels,
+          sessionLastActivity: leavingEmpty
+            ? Object.fromEntries(Object.entries(s.sessionLastActivity).filter(([key]) => key !== current.currentSessionKey))
+            : s.sessionLastActivity,
+          messages: [],
+          streamingText: '',
+          streamingMessage: null,
+          streamingTools: [],
+          activeRunId: null,
+          error: null,
+          pendingFinal: false,
+          lastUserMessageAt: null,
+          pendingToolImages: [],
+        }));
+        await get().loadHistory(true);
+      }
+
+      const currentSessionKey = targetSessionKey;
 
       // Add user message optimistically (with local file metadata for UI display)
       const nowMs = Date.now();

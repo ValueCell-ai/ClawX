@@ -76,6 +76,7 @@ export interface ChatState {
   // Sessions
   sessions: ChatSession[];
   currentSessionKey: string;
+  currentAgentId: string;
   /** First user message text per session key, used as display label */
   sessionLabels: Record<string, string>;
   /** Last message timestamp (ms) per session key, used for sorting */
@@ -100,7 +101,8 @@ export interface ChatState {
       fileSize: number;
       stagedPath: string;
       preview: string | null;
-    }>
+    }>,
+    targetAgentId?: string | null,
   ) => Promise<void>;
   abortRun: () => Promise<void>;
   handleChatEvent: (event: Record<string, unknown>) => void;

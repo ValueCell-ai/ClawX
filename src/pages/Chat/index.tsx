@@ -8,6 +8,7 @@ import { useEffect, useRef, useState } from 'react';
 import { AlertCircle, Loader2, Sparkles } from 'lucide-react';
 import { useChatStore, type RawMessage } from '@/stores/chat';
 import { useGatewayStore } from '@/stores/gateway';
+import { useAgentsStore } from '@/stores/agents';
 import { LoadingSpinner } from '@/components/common/LoadingSpinner';
 import { ChatMessage } from './ChatMessage';
 import { ChatInput } from './ChatInput';
@@ -32,6 +33,7 @@ export function Chat() {
   const sendMessage = useChatStore((s) => s.sendMessage);
   const abortRun = useChatStore((s) => s.abortRun);
   const clearError = useChatStore((s) => s.clearError);
+  const fetchAgents = useAgentsStore((s) => s.fetchAgents);
 
   const cleanupEmptySession = useChatStore((s) => s.cleanupEmptySession);
 
@@ -50,6 +52,10 @@ export function Chat() {
       cleanupEmptySession();
     };
   }, [cleanupEmptySession]);
+
+  useEffect(() => {
+    void fetchAgents();
+  }, [fetchAgents]);
 
   // Auto-scroll on new messages, streaming, or activity changes
   useEffect(() => {

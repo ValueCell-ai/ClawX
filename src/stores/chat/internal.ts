@@ -18,6 +18,7 @@ export const initialChatState: Pick<
   | 'pendingToolImages'
   | 'sessions'
   | 'currentSessionKey'
+  | 'currentAgentId'
   | 'sessionLabels'
   | 'sessionLastActivity'
   | 'showThinking'
@@ -38,6 +39,7 @@ export const initialChatState: Pick<
 
   sessions: [],
   currentSessionKey: DEFAULT_SESSION_KEY,
+  currentAgentId: 'main',
   sessionLabels: {},
   sessionLastActivity: {},
 

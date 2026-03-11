@@ -59,6 +59,10 @@ interface BindingConfig extends Record<string, unknown> {
 interface AgentConfigDocument extends Record<string, unknown> {
   agents?: AgentsConfig;
   bindings?: BindingConfig[];
+  session?: {
+    mainKey?: string;
+    [key: string]: unknown;
+  };
 }
 
 export interface AgentSummary {
@@ -69,6 +73,7 @@ export interface AgentSummary {
   inheritedModel: boolean;
   workspace: string;
   agentDir: string;
+  mainSessionKey: string;
   channelTypes: string[];
 }
 
@@ -199,6 +204,16 @@ function isSimpleChannelBinding(binding: unknown): binding is BindingConfig {
 /** Normalize agent ID for consistent comparison (bindings vs entries). */
 function normalizeAgentIdForBinding(id: string): string {
   return (id ?? '').trim().toLowerCase() || '';
+}
+
+function normalizeMainKey(value: unknown): string {
+  if (typeof value !== 'string') return 'main';
+  const trimmed = value.trim().toLowerCase();
+  return trimmed || 'main';
+}
+
+function buildAgentMainSessionKey(config: AgentConfigDocument, agentId: string): string {
+  return `agent:${normalizeAgentIdForBinding(agentId) || MAIN_AGENT_ID}:${normalizeMainKey(config.session?.mainKey)}`;
 }
 
 function getSimpleChannelBindingMap(bindings: unknown): Map<string, string> {
@@ -369,6 +384,7 @@ async function buildSnapshotFromConfig(config: AgentConfigDocument): Promise<Age
       inheritedModel,
       workspace: entry.workspace || (entry.id === MAIN_AGENT_ID ? getDefaultWorkspacePath(config) : `~/.openclaw/workspace-${entry.id}`),
       agentDir: entry.agentDir || getDefaultAgentDirPath(entry.id),
+      mainSessionKey: buildAgentMainSessionKey(config, entry.id),
       channelTypes: configuredChannels.filter((channelType) => channelOwners[channelType] === entryIdNorm),
     };
   });

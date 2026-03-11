@@ -72,6 +72,36 @@ describe('agent config lifecycle', () => {
     await expect(listConfiguredAgentIds()).resolves.toEqual(['main']);
   });
 
+  it('includes canonical per-agent main session keys in the snapshot', async () => {
+    await writeOpenClawJson({
+      session: {
+        mainKey: 'desk',
+      },
+      agents: {
+        list: [
+          { id: 'main', name: 'Main', default: true },
+          { id: 'research', name: 'Research' },
+        ],
+      },
+    });
+
+    const { listAgentsSnapshot } = await import('@electron/utils/agent-config');
+
+    const snapshot = await listAgentsSnapshot();
+    expect(snapshot.agents).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: 'main',
+          mainSessionKey: 'agent:main:desk',
+        }),
+        expect.objectContaining({
+          id: 'research',
+          mainSessionKey: 'agent:research:desk',
+        }),
+      ]),
+    );
+  });
+
   it('deletes the config entry, bindings, runtime directory, and managed workspace for a removed agent', async () => {
     await writeOpenClawJson({
       agents: {

@@ -6,6 +6,7 @@
 import { create } from 'zustand';
 import { hostApiFetch } from '@/lib/host-api';
 import { useGatewayStore } from './gateway';
+import { useAgentsStore } from './agents';
 
 // ── Types ────────────────────────────────────────────────────────
 
@@ -104,7 +105,11 @@ interface ChatState {
   deleteSession: (key: string) => Promise<void>;
   cleanupEmptySession: () => void;
   loadHistory: (quiet?: boolean) => Promise<void>;
-  sendMessage: (text: string, attachments?: Array<{ fileName: string; mimeType: string; fileSize: number; stagedPath: string; preview: string | null }>) => Promise<void>;
+  sendMessage: (
+    text: string,
+    attachments?: Array<{ fileName: string; mimeType: string; fileSize: number; stagedPath: string; preview: string | null }>,
+    targetAgentId?: string | null,
+  ) => Promise<void>;
   abortRun: () => Promise<void>;
   handleChatEvent: (event: Record<string, unknown>) => void;
   toggleThinking: () => void;
@@ -664,6 +669,66 @@ function getAgentIdFromSessionKey(sessionKey: string): string {
   return parts[1] || 'main';
 }
 
+function normalizeAgentId(value: string | undefined | null): string {
+  return (value ?? '').trim().toLowerCase() || 'main';
+}
+
+function buildFallbackMainSessionKey(agentId: string): string {
+  return `agent:${normalizeAgentId(agentId)}:main`;
+}
+
+function resolveMainSessionKeyForAgent(agentId: string | undefined | null): string | null {
+  if (!agentId) return null;
+  const normalizedAgentId = normalizeAgentId(agentId);
+  const summary = useAgentsStore.getState().agents.find((agent) => agent.id === normalizedAgentId);
+  return summary?.mainSessionKey || buildFallbackMainSessionKey(normalizedAgentId);
+}
+
+function ensureSessionEntry(sessions: ChatSession[], sessionKey: string): ChatSession[] {
+  if (sessions.some((session) => session.key === sessionKey)) {
+    return sessions;
+  }
+  return [...sessions, { key: sessionKey, displayName: sessionKey }];
+}
+
+function clearSessionEntryFromMap<T extends Record<string, unknown>>(entries: T, sessionKey: string): T {
+  return Object.fromEntries(Object.entries(entries).filter(([key]) => key !== sessionKey)) as T;
+}
+
+function buildSessionSwitchPatch(
+  state: Pick<
+    ChatState,
+    'currentSessionKey' | 'messages' | 'sessions' | 'sessionLabels' | 'sessionLastActivity'
+  >,
+  nextSessionKey: string,
+): Partial<ChatState> {
+  const leavingEmpty = !state.currentSessionKey.endsWith(':main') && state.messages.length === 0;
+  const nextSessions = leavingEmpty
+    ? state.sessions.filter((session) => session.key !== state.currentSessionKey)
+    : state.sessions;
+
+  return {
+    currentSessionKey: nextSessionKey,
+    currentAgentId: getAgentIdFromSessionKey(nextSessionKey),
+    sessions: ensureSessionEntry(nextSessions, nextSessionKey),
+    sessionLabels: leavingEmpty
+      ? clearSessionEntryFromMap(state.sessionLabels, state.currentSessionKey)
+      : state.sessionLabels,
+    sessionLastActivity: leavingEmpty
+      ? clearSessionEntryFromMap(state.sessionLastActivity, state.currentSessionKey)
+      : state.sessionLastActivity,
+    messages: [],
+    streamingText: '',
+    streamingMessage: null,
+    streamingTools: [],
+    activeRunId: null,
+    error: null,
+    pendingFinal: false,
+    lastUserMessageAt: null,
+    pendingToolImages: [],
+  };
+}
+
 function getCanonicalPrefixFromSessionKey(sessionKey: string): string | null {
   if (!sessionKey.startsWith('agent:')) return null;
   const parts = sessionKey.split(':');
@@ -1054,30 +1119,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
   // ── Switch session ──
 
   switchSession: (key: string) => {
-    const { currentSessionKey, messages } = get();
-    const leavingEmpty = !currentSessionKey.endsWith(':main') && messages.length === 0;
-    set((s) => ({
-      currentSessionKey: key,
-      currentAgentId: getAgentIdFromSessionKey(key),
-      messages: [],
-      streamingText: '',
-      streamingMessage: null,
-      streamingTools: [],
-      activeRunId: null,
-      error: null,
-      pendingFinal: false,
-      lastUserMessageAt: null,
-      pendingToolImages: [],
-      ...(leavingEmpty ? {
-        sessions: s.sessions.filter((s) => s.key !== currentSessionKey),
-        sessionLabels: Object.fromEntries(
-          Object.entries(s.sessionLabels).filter(([k]) => k !== currentSessionKey),
-        ),
-        sessionLastActivity: Object.fromEntries(
-          Object.entries(s.sessionLastActivity).filter(([k]) => k !== currentSessionKey),
-        ),
-      } : {}),
-    }));
+    set((s) => buildSessionSwitchPatch(s, key));
     get().loadHistory();
   },
 
@@ -1332,11 +1374,22 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
   // ── Send message ──
 
-  sendMessage: async (text: string, attachments?: Array<{ fileName: string; mimeType: string; fileSize: number; stagedPath: string; preview: string | null }>) => {
+  sendMessage: async (
+    text: string,
+    attachments?: Array<{ fileName: string; mimeType: string; fileSize: number; stagedPath: string; preview: string | null }>,
+    targetAgentId?: string | null,
+  ) => {
     const trimmed = text.trim();
     if (!trimmed && (!attachments || attachments.length === 0)) return;
 
-    const { currentSessionKey } = get();
+    const targetSessionKey = resolveMainSessionKeyForAgent(targetAgentId) ?? get().currentSessionKey;
+
+    if (targetSessionKey !== get().currentSessionKey) {
+      set((s) => buildSessionSwitchPatch(s, targetSessionKey));
+      await get().loadHistory(true);
+    }
+
+    const currentSessionKey = targetSessionKey;
 
     // Add user message optimistically (with local file metadata for UI display)
     const nowMs = Date.now();

@@ -3,7 +3,7 @@
  * Navigation sidebar with menu items.
  * No longer fixed - sits inside the flex layout below the title bar.
  */
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { NavLink, useLocation, useNavigate } from 'react-router-dom';
 import {
   Network,
@@ -23,6 +23,7 @@ import { cn } from '@/lib/utils';
 import { useSettingsStore } from '@/stores/settings';
 import { useChatStore } from '@/stores/chat';
 import { useGatewayStore } from '@/stores/gateway';
+import { useAgentsStore } from '@/stores/agents';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
@@ -103,6 +104,12 @@ function getSessionBucket(activityMs: number, nowMs: number): SessionBucketKey {
 
 const INITIAL_NOW_MS = Date.now();
 
+function getAgentIdFromSessionKey(sessionKey: string): string {
+  if (!sessionKey.startsWith('agent:')) return 'main';
+  const [, agentId] = sessionKey.split(':');
+  return agentId || 'main';
+}
+
 export function Sidebar() {
   const sidebarCollapsed = useSettingsStore((state) => state.sidebarCollapsed);
   const setSidebarCollapsed = useSettingsStore((state) => state.setSidebarCollapsed);
@@ -133,7 +140,8 @@ export function Sidebar() {
       cancelled = true;
     };
   }, [isGatewayRunning, loadHistory, loadSessions]);
-
+  const agents = useAgentsStore((s) => s.agents);
+  const fetchAgents = useAgentsStore((s) => s.fetchAgents);
 
   const navigate = useNavigate();
   const isOnChat = useLocation().pathname === '/';
@@ -168,6 +176,15 @@ export function Sidebar() {
     }, 60 * 1000);
     return () => window.clearInterval(timer);
   }, []);
+
+  useEffect(() => {
+    void fetchAgents();
+  }, [fetchAgents]);
+
+  const agentNameById = useMemo(
+    () => Object.fromEntries(agents.map((agent) => [agent.id, agent.name])),
+    [agents],
+  );
   const sessionBuckets: Array<{ key: SessionBucketKey; label: string; sessions: typeof sessions }> = [
     { key: 'today', label: t('chat:historyBuckets.today'), sessions: [] },
     { key: 'yesterday', label: t('chat:historyBuckets.yesterday'), sessions: [] },
@@ -265,39 +282,48 @@ export function Sidebar() {
                 <div className="px-2.5 pb-1 text-[11px] font-medium text-muted-foreground/60 tracking-tight">
                   {bucket.label}
                 </div>
-                {bucket.sessions.map((s) => (
-                  <div key={s.key} className="group relative flex items-center">
-                    <button
-                      onClick={() => { switchSession(s.key); navigate('/'); }}
-                      className={cn(
-                        'w-full text-left rounded-lg px-2.5 py-1.5 text-[13px] truncate transition-colors pr-7',
-                        'hover:bg-black/5 dark:hover:bg-white/5',
-                        isOnChat && currentSessionKey === s.key
-                          ? 'bg-black/5 dark:bg-white/10 text-foreground font-medium'
-                          : 'text-foreground/75',
-                      )}
-                    >
-                      {getSessionLabel(s.key, s.displayName, s.label)}
-                    </button>
-                    <button
-                      aria-label="Delete session"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setSessionToDelete({
-                          key: s.key,
-                          label: getSessionLabel(s.key, s.displayName, s.label),
-                        });
-                      }}
-                      className={cn(
-                        'absolute right-1 flex items-center justify-center rounded p-0.5 transition-opacity',
-                        'opacity-0 group-hover:opacity-100',
-                        'text-muted-foreground hover:text-destructive hover:bg-destructive/10',
-                      )}
-                    >
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </button>
-                  </div>
-                ))}
+                {bucket.sessions.map((s) => {
+                  const agentId = getAgentIdFromSessionKey(s.key);
+                  const agentName = agentNameById[agentId] || agentId;
+                  return (
+                    <div key={s.key} className="group relative flex items-center">
+                      <button
+                        onClick={() => { switchSession(s.key); navigate('/'); }}
+                        className={cn(
+                          'w-full text-left rounded-lg px-2.5 py-1.5 text-[13px] transition-colors pr-7',
+                          'hover:bg-black/5 dark:hover:bg-white/5',
+                          isOnChat && currentSessionKey === s.key
+                            ? 'bg-black/5 dark:bg-white/10 text-foreground font-medium'
+                            : 'text-foreground/75',
+                        )}
+                      >
+                        <div className="flex min-w-0 items-center gap-2">
+                          <span className="shrink-0 rounded-full bg-black/[0.04] px-2 py-0.5 text-[10px] font-medium text-foreground/70 dark:bg-white/[0.08]">
+                            {agentName}
+                          </span>
+                          <span className="truncate">{getSessionLabel(s.key, s.displayName, s.label)}</span>
+                        </div>
+                      </button>
+                      <button
+                        aria-label="Delete session"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setSessionToDelete({
+                            key: s.key,
+                            label: getSessionLabel(s.key, s.displayName, s.label),
+                          });
+                        }}
+                        className={cn(
+                          'absolute right-1 flex items-center justify-center rounded p-0.5 transition-opacity',
+                          'opacity-0 group-hover:opacity-100',
+                          'text-muted-foreground hover:text-destructive hover:bg-destructive/10',
+                        )}
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+                  );
+                })}
               </div>
             ) : null
           ))}

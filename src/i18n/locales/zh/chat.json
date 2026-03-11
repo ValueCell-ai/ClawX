@@ -13,7 +13,21 @@
     "toolbar": {
         "refresh": "刷新聊天",
         "showThinking": "显示思考过程",
-        "hideThinking": "隐藏思考过程"
+        "hideThinking": "隐藏思考过程",
+        "currentAgent": "当前对话对象：{{agent}}"
+    },
+    "composer": {
+        "attachFiles": "添加文件",
+        "pickAgent": "选择 Agent",
+        "clearTarget": "清除目标 Agent",
+        "targetChip": "@{{agent}}",
+        "agentPickerTitle": "将下一条消息直接发送给其他 Agent",
+        "gatewayDisconnectedPlaceholder": "网关未连接...",
+        "send": "发送",
+        "stop": "停止",
+        "gatewayConnected": "已连接",
+        "gatewayStatus": "gateway {{state}} | port: {{port}} {{pid}}",
+        "retryFailedAttachments": "重试失败的附件"
     },
     "historyBuckets": {
         "today": "今天",

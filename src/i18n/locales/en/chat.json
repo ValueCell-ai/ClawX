@@ -13,7 +13,21 @@
     "toolbar": {
         "refresh": "Refresh chat",
         "showThinking": "Show thinking",
-        "hideThinking": "Hide thinking"
+        "hideThinking": "Hide thinking",
+        "currentAgent": "Talking to {{agent}}"
+    },
+    "composer": {
+        "attachFiles": "Attach files",
+        "pickAgent": "Choose agent",
+        "clearTarget": "Clear target agent",
+        "targetChip": "@{{agent}}",
+        "agentPickerTitle": "Route the next message to another agent",
+        "gatewayDisconnectedPlaceholder": "Gateway not connected...",
+        "send": "Send",
+        "stop": "Stop",
+        "gatewayConnected": "connected",
+        "gatewayStatus": "gateway {{state}} | port: {{port}} {{pid}}",
+        "retryFailedAttachments": "Retry failed attachments"
     },
     "historyBuckets": {
         "today": "Today",

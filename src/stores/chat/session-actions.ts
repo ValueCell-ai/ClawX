@@ -3,6 +3,12 @@ import { getCanonicalPrefixFromSessions, getMessageText, toMs } from './helpers'
 import { DEFAULT_CANONICAL_PREFIX, DEFAULT_SESSION_KEY, type ChatSession, type RawMessage } from './types';
 import type { ChatGet, ChatSet, SessionHistoryActions } from './store-api';
 
+function getAgentIdFromSessionKey(sessionKey: string): string {
+  if (!sessionKey.startsWith('agent:')) return 'main';
+  const [, agentId] = sessionKey.split(':');
+  return agentId || 'main';
+}
+
 export function createSessionActions(
   set: ChatSet,
   get: ChatGet,
@@ -70,7 +76,11 @@ export function createSessionActions(
             ]
             : dedupedSessions;
 
-          set({ sessions: sessionsWithCurrent, currentSessionKey: nextSessionKey });
+          set({
+            sessions: sessionsWithCurrent,
+            currentSessionKey: nextSessionKey,
+            currentAgentId: getAgentIdFromSessionKey(nextSessionKey),
+          });
 
           if (currentSessionKey !== nextSessionKey) {
             get().loadHistory();
@@ -123,6 +133,7 @@ export function createSessionActions(
       const leavingEmpty = !currentSessionKey.endsWith(':main') && messages.length === 0;
       set((s) => ({
         currentSessionKey: key,
+        currentAgentId: getAgentIdFromSessionKey(key),
         messages: [],
         streamingText: '',
         streamingMessage: null,
@@ -190,6 +201,7 @@ export function createSessionActions(
           lastUserMessageAt: null,
           pendingToolImages: [],
           currentSessionKey: next?.key ?? DEFAULT_SESSION_KEY,
+          currentAgentId: getAgentIdFromSessionKey(next?.key ?? DEFAULT_SESSION_KEY),
         }));
         if (next) {
           get().loadHistory();
@@ -217,6 +229,7 @@ export function createSessionActions(
       const newSessionEntry: ChatSession = { key: newKey, displayName: newKey };
       set((s) => ({
         currentSessionKey: newKey,
+        currentAgentId: getAgentIdFromSessionKey(newKey),
         sessions: [
           ...(leavingEmpty ? s.sessions.filter((sess) => sess.key !== currentSessionKey) : s.sessions),
           newSessionEntry,
