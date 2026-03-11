@@ -254,7 +254,7 @@ export function Sidebar() {
           }}
           className={cn(
             'flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-[14px] font-medium transition-colors mb-2',
-            'bg-white dark:bg-accent shadow-sm border border-black/5 dark:border-white/10 text-foreground',
+            'bg-black/5 dark:bg-accent shadow-none border border-transparent text-foreground',
             sidebarCollapsed && 'justify-center px-0',
           )}
         >
