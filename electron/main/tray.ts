@@ -6,6 +6,39 @@ import { Tray, Menu, BrowserWindow, app, nativeImage } from 'electron';
 import { join } from 'path';
 
 let tray: Tray | null = null;
+let mainWindowRef: BrowserWindow | null = null;
+
+export interface TrayTranslations {
+  tooltipRunning: string;
+  tooltipStopped: string;
+  show: string;
+  gatewayStatus: string;
+  running: string;
+  stopped: string;
+  quickActions: string;
+  openDashboard: string;
+  openChat: string;
+  openSettings: string;
+  checkUpdates: string;
+  quit: string;
+}
+
+const defaultTranslations: TrayTranslations = {
+  tooltipRunning: 'ClawX - Gateway Running',
+  tooltipStopped: 'ClawX - Gateway Stopped',
+  show: 'Show ClawX',
+  gatewayStatus: 'Gateway Status',
+  running: 'Running',
+  stopped: 'Stopped',
+  quickActions: 'Quick Actions',
+  openDashboard: 'Open Dashboard',
+  openChat: 'Open Chat',
+  openSettings: 'Open Settings',
+  checkUpdates: 'Check for Updates...',
+  quit: 'Quit ClawX',
+};
+
+let currentTranslations: TrayTranslations = defaultTranslations;
 
 /**
  * Resolve the icons directory path (works in both dev and packaged mode)
@@ -17,10 +50,92 @@ function getIconsDir(): string {
   return join(__dirname, '../../resources/icons');
 }
 
+function buildContextMenu(translations: TrayTranslations, gatewayRunning: boolean): Electron.Menu {
+  const showWindow = () => {
+    if (!mainWindowRef || mainWindowRef.isDestroyed()) return;
+    mainWindowRef.show();
+    mainWindowRef.focus();
+  };
+
+  return Menu.buildFromTemplate([
+    {
+      label: translations.show,
+      click: showWindow,
+    },
+    {
+      type: 'separator',
+    },
+    {
+      label: translations.gatewayStatus,
+      enabled: false,
+    },
+    {
+      label: `  ${gatewayRunning ? translations.running : translations.stopped}`,
+      type: 'checkbox',
+      checked: gatewayRunning,
+      enabled: false,
+    },
+    {
+      type: 'separator',
+    },
+    {
+      label: translations.quickActions,
+      submenu: [
+        {
+          label: translations.openDashboard,
+          click: () => {
+            if (!mainWindowRef || mainWindowRef.isDestroyed()) return;
+            mainWindowRef.show();
+            mainWindowRef.webContents.send('navigate', '/');
+          },
+        },
+        {
+          label: translations.openChat,
+          click: () => {
+            if (!mainWindowRef || mainWindowRef.isDestroyed()) return;
+            mainWindowRef.show();
+            mainWindowRef.webContents.send('navigate', '/chat');
+          },
+        },
+        {
+          label: translations.openSettings,
+          click: () => {
+            if (!mainWindowRef || mainWindowRef.isDestroyed()) return;
+            mainWindowRef.show();
+            mainWindowRef.webContents.send('navigate', '/settings');
+          },
+        },
+      ],
+    },
+    {
+      type: 'separator',
+    },
+    {
+      label: translations.checkUpdates,
+      click: () => {
+        if (!mainWindowRef || mainWindowRef.isDestroyed()) return;
+        mainWindowRef.webContents.send('update:check');
+      },
+    },
+    {
+      type: 'separator',
+    },
+    {
+      label: translations.quit,
+      click: () => {
+        app.quit();
+      },
+    },
+  ]);
+}
+
 /**
  * Create system tray icon and menu
  */
 export function createTray(mainWindow: BrowserWindow): Tray {
+  // Store window reference for later use
+  mainWindowRef = mainWindow;
+
   // Use platform-appropriate icon for system tray
   const iconsDir = getIconsDir();
   let iconPath: string;
@@ -56,117 +171,59 @@ export function createTray(mainWindow: BrowserWindow): Tray {
   
   tray = new Tray(icon);
   
-  // Set tooltip
-  tray.setToolTip('ClawX - AI Assistant');
+  // Set initial tooltip (will be updated via updateTrayMenu)
+  tray.setToolTip(defaultTranslations.tooltipRunning);
   
-  const showWindow = () => {
-    if (mainWindow.isDestroyed()) return;
-    mainWindow.show();
-    mainWindow.focus();
-  };
-
-  // Create context menu
-  const contextMenu = Menu.buildFromTemplate([
-    {
-      label: 'Show ClawX',
-      click: showWindow,
-    },
-    {
-      type: 'separator',
-    },
-    {
-      label: 'Gateway Status',
-      enabled: false,
-    },
-    {
-      label: '  Running',
-      type: 'checkbox',
-      checked: true,
-      enabled: false,
-    },
-    {
-      type: 'separator',
-    },
-    {
-      label: 'Quick Actions',
-      submenu: [
-        {
-          label: 'Open Dashboard',
-          click: () => {
-            if (mainWindow.isDestroyed()) return;
-            mainWindow.show();
-            mainWindow.webContents.send('navigate', '/');
-          },
-        },
-        {
-          label: 'Open Chat',
-          click: () => {
-            if (mainWindow.isDestroyed()) return;
-            mainWindow.show();
-            mainWindow.webContents.send('navigate', '/chat');
-          },
-        },
-        {
-          label: 'Open Settings',
-          click: () => {
-            if (mainWindow.isDestroyed()) return;
-            mainWindow.show();
-            mainWindow.webContents.send('navigate', '/settings');
-          },
-        },
-      ],
-    },
-    {
-      type: 'separator',
-    },
-    {
-      label: 'Check for Updates...',
-      click: () => {
-        if (mainWindow.isDestroyed()) return;
-        mainWindow.webContents.send('update:check');
-      },
-    },
-    {
-      type: 'separator',
-    },
-    {
-      label: 'Quit ClawX',
-      click: () => {
-        app.quit();
-      },
-    },
-  ]);
-  
-  tray.setContextMenu(contextMenu);
+  // Set context menu
+  tray.setContextMenu(buildContextMenu(defaultTranslations, true));
   
   // Click to show window (Windows/Linux)
   tray.on('click', () => {
-    if (mainWindow.isDestroyed()) return;
-    if (mainWindow.isVisible()) {
-      mainWindow.hide();
+    if (!mainWindowRef || mainWindowRef.isDestroyed()) return;
+    if (mainWindowRef.isVisible()) {
+      mainWindowRef.hide();
     } else {
-      mainWindow.show();
-      mainWindow.focus();
+      mainWindowRef.show();
+      mainWindowRef.focus();
     }
   });
   
   // Double-click to show window (Windows)
   tray.on('double-click', () => {
-    if (mainWindow.isDestroyed()) return;
-    mainWindow.show();
-    mainWindow.focus();
+    if (!mainWindowRef || mainWindowRef.isDestroyed()) return;
+    mainWindowRef.show();
+    mainWindowRef.focus();
   });
   
   return tray;
 }
 
 /**
- * Update tray tooltip with Gateway status
+ * Update tray menu with translations and gateway status
  */
-export function updateTrayStatus(status: string): void {
-  if (tray) {
-    tray.setToolTip(`ClawX - ${status}`);
-  }
+export function updateTrayMenu(translations: TrayTranslations, gatewayRunning: boolean): void {
+  if (!tray) return;
+  
+  currentTranslations = translations;
+  tray.setToolTip(gatewayRunning ? translations.tooltipRunning : translations.tooltipStopped);
+  tray.setContextMenu(buildContextMenu(translations, gatewayRunning));
+}
+
+/**
+ * Get current tray translations
+ */
+export function getCurrentTrayTranslations(): TrayTranslations {
+  return currentTranslations;
+}
+
+/**
+ * Update tray tooltip with Gateway status (legacy function)
+ */
+export function updateTrayStatus(status: 'running' | 'stopped'): void {
+  if (!tray) return;
+  const isRunning = status === 'running';
+  tray.setToolTip(isRunning ? currentTranslations.tooltipRunning : currentTranslations.tooltipStopped);
+  tray.setContextMenu(buildContextMenu(currentTranslations, isRunning));
 }
 
 /**
@@ -176,5 +233,6 @@ export function destroyTray(): void {
   if (tray) {
     tray.destroy();
     tray = null;
+    mainWindowRef = null;
   }
 }

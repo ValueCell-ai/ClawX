@@ -55,5 +55,19 @@
         "notRunning": "ゲートウェイが停止中",
         "notRunningDesc": "この機能を使用するには OpenClaw ゲートウェイが実行されている必要があります。自動的に起動するか、設定から起動できます。",
         "warning": "ゲートウェイが停止中です。"
+    },
+    "tray": {
+        "tooltipRunning": "ClawX - ゲートウェイ実行中",
+        "tooltipStopped": "ClawX - ゲートウェイ停止",
+        "show": "ClawX を表示",
+        "gatewayStatus": "ゲートウェイ状態",
+        "running": "実行中",
+        "stopped": "停止",
+        "quickActions": "クイックアクション",
+        "openDashboard": "ダッシュボードを開く",
+        "openChat": "チャットを開く",
+        "openSettings": "設定を開く",
+        "checkUpdates": "アップデートを確認...",
+        "quit": "ClawX を終了"
     }
 }
