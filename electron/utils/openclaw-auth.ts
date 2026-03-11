@@ -977,6 +977,30 @@ export async function sanitizeOpenClawConfig(): Promise<void> {
     }
   }
 
+  // ── tools.profile & sessions.visibility ───────────────────────
+  // OpenClaw 3.8+ requires tools.profile = 'full' and tools.sessions.visibility = 'all'
+  // for ClawX to properly integrate with its updated tool system.
+  const toolsConfig = (config.tools as Record<string, unknown> | undefined) || {};
+  let toolsModified = false;
+
+  if (toolsConfig.profile !== 'full') {
+    toolsConfig.profile = 'full';
+    toolsModified = true;
+  }
+
+  const sessions = (toolsConfig.sessions as Record<string, unknown> | undefined) || {};
+  if (sessions.visibility !== 'all') {
+    sessions.visibility = 'all';
+    toolsConfig.sessions = sessions;
+    toolsModified = true;
+  }
+
+  if (toolsModified) {
+    config.tools = toolsConfig;
+    modified = true;
+    console.log('[sanitize] Enforced tools.profile="full" and tools.sessions.visibility="all" for OpenClaw 3.8+');
+  }
+
   if (modified) {
     await writeOpenClawJson(config);
     console.log('[sanitize] openclaw.json sanitized successfully');
