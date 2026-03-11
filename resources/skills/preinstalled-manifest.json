@@ -1,0 +1,36 @@
+{
+  "skills": [
+    {
+      "slug": "pdf",
+      "repo": "anthropics/skills",
+      "repoPath": "skills/pdf",
+      "ref": "main",
+      "version": "main",
+      "autoEnable": true
+    },
+    {
+      "slug": "xlsx",
+      "repo": "anthropics/skills",
+      "repoPath": "skills/xlsx",
+      "ref": "main",
+      "version": "main",
+      "autoEnable": true
+    },
+    {
+      "slug": "docx",
+      "repo": "anthropics/skills",
+      "repoPath": "skills/docx",
+      "ref": "main",
+      "version": "main",
+      "autoEnable": true
+    },
+    {
+      "slug": "pptx",
+      "repo": "anthropics/skills",
+      "repoPath": "skills/pptx",
+      "ref": "main",
+      "version": "main",
+      "autoEnable": true
+    }
+  ]
+}
