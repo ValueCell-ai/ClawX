@@ -419,7 +419,7 @@ function ProviderCard({
         "group flex flex-col p-4 rounded-2xl transition-all relative overflow-hidden hover:bg-black/5 dark:hover:bg-white/5",
         isDefault
           ? "bg-black/[0.04] dark:bg-white/[0.06] border border-transparent"
-          : "bg-transparent border border-black/10 dark:border-white/10"
+          : "bg-transparent border border-transparent"
       )}
     >
       <div className="flex items-center justify-between">
