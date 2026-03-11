@@ -2,13 +2,15 @@
   "title": "設定",
   "subtitle": "ClawX の体験をカスタマイズ",
   "appearance": {
-    "title": "外観",
+    "title": "通用",
     "description": "外観とスタイルをカスタマイズ",
     "theme": "テーマ",
     "light": "ライト",
     "dark": "ダーク",
     "system": "システム",
-    "language": "言語"
+    "language": "言語",
+    "launchAtStartup": "システム起動時に自動起動",
+    "launchAtStartupDesc": "ログイン時に ClawX を自動的に起動します"
   },
   "aiProviders": {
     "title": "AI プロバイダー",

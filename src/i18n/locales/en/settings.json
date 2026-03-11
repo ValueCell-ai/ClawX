@@ -2,13 +2,15 @@
   "title": "Settings",
   "subtitle": "Configure your ClawX experience",
   "appearance": {
-    "title": "Appearance",
+    "title": "General",
     "description": "Customize the look and feel",
     "theme": "Theme",
     "light": "Light",
     "dark": "Dark",
     "system": "System",
-    "language": "Language"
+    "language": "Language",
+    "launchAtStartup": "Launch at system startup",
+    "launchAtStartupDesc": "Automatically launch ClawX when you log in"
   },
   "aiProviders": {
     "title": "AI Providers",

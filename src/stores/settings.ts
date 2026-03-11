@@ -119,7 +119,13 @@ export const useSettingsStore = create<SettingsState>()(
         }).catch(() => { });
       },
       setStartMinimized: (startMinimized) => set({ startMinimized }),
-      setLaunchAtStartup: (launchAtStartup) => set({ launchAtStartup }),
+      setLaunchAtStartup: (launchAtStartup) => {
+        set({ launchAtStartup });
+        void hostApiFetch('/api/settings/launchAtStartup', {
+          method: 'PUT',
+          body: JSON.stringify({ value: launchAtStartup }),
+        }).catch(() => { });
+      },
       setTelemetryEnabled: (telemetryEnabled) => {
         set({ telemetryEnabled });
         void hostApiFetch('/api/settings/telemetryEnabled', {
