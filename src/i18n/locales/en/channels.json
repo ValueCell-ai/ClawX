@@ -183,8 +183,7 @@
                 "Read the documentation, then go to Feishu Open Platform",
                 "Create a new application",
                 "Get App ID and App Secret",
-                "Configure event subscription",
-                "Note: Not mentioned in current OpenClaw docs, but you MUST add 'contact:contact.base:readonly' **Application Permission** in Permission Management"
+                "Configure event subscription"
             ]
         },
         "wecom": {

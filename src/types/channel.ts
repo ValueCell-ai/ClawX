@@ -375,7 +375,6 @@ export const CHANNEL_META: Record<ChannelType, ChannelMeta> = {
       'channels:meta.feishu.instructions.1',
       'channels:meta.feishu.instructions.2',
       'channels:meta.feishu.instructions.3',
-      'channels:meta.feishu.instructions.4',
     ],
     isPlugin: true,
   },
