@@ -22,6 +22,7 @@ import {
 import { cn } from '@/lib/utils';
 import { useSettingsStore } from '@/stores/settings';
 import { useChatStore } from '@/stores/chat';
+import { useGatewayStore } from '@/stores/gateway';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
@@ -113,6 +114,26 @@ export function Sidebar() {
   const switchSession = useChatStore((s) => s.switchSession);
   const newSession = useChatStore((s) => s.newSession);
   const deleteSession = useChatStore((s) => s.deleteSession);
+  const loadSessions = useChatStore((s) => s.loadSessions);
+  const loadHistory = useChatStore((s) => s.loadHistory);
+
+  const gatewayStatus = useGatewayStore((s) => s.status);
+  const isGatewayRunning = gatewayStatus.state === 'running';
+
+  useEffect(() => {
+    if (!isGatewayRunning) return;
+    let cancelled = false;
+    const hasExistingMessages = useChatStore.getState().messages.length > 0;
+    (async () => {
+      await loadSessions();
+      if (cancelled) return;
+      await loadHistory(hasExistingMessages);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [isGatewayRunning, loadHistory, loadSessions]);
+
 
   const navigate = useNavigate();
   const isOnChat = useLocation().pathname === '/';

@@ -29,8 +29,6 @@ export function Chat() {
   const streamingMessage = useChatStore((s) => s.streamingMessage);
   const streamingTools = useChatStore((s) => s.streamingTools);
   const pendingFinal = useChatStore((s) => s.pendingFinal);
-  const loadHistory = useChatStore((s) => s.loadHistory);
-  const loadSessions = useChatStore((s) => s.loadSessions);
   const sendMessage = useChatStore((s) => s.sendMessage);
   const abortRun = useChatStore((s) => s.abortRun);
   const clearError = useChatStore((s) => s.clearError);
@@ -46,21 +44,12 @@ export function Chat() {
   // stay visible while fresh data loads in the background.  This avoids
   // an unnecessary messages → spinner → messages flicker.
   useEffect(() => {
-    if (!isGatewayRunning) return;
-    let cancelled = false;
-    const hasExistingMessages = useChatStore.getState().messages.length > 0;
-    (async () => {
-      await loadSessions();
-      if (cancelled) return;
-      await loadHistory(hasExistingMessages);
-    })();
     return () => {
-      cancelled = true;
       // If the user navigates away without sending any messages, remove the
       // empty session so it doesn't linger as a ghost entry in the sidebar.
       cleanupEmptySession();
     };
-  }, [isGatewayRunning, loadHistory, loadSessions, cleanupEmptySession]);
+  }, [cleanupEmptySession]);
 
   // Auto-scroll on new messages, streaming, or activity changes
   useEffect(() => {
