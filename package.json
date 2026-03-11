@@ -11,7 +11,10 @@
             "node-llama-cpp",
             "protobufjs",
             "sharp"
-        ]
+        ],
+        "overrides": {
+            "isbinaryfile": "^5.0.0"
+        }
     },
     "description": "ClawX - Graphical AI Assistant based on OpenClaw",
     "main": "dist-electron/main/index.js",
@@ -49,7 +52,8 @@
         "electron-updater": "^6.8.3",
         "node-machine-id": "^1.1.12",
         "posthog-node": "^5.28.0",
-        "ws": "^8.19.0"
+        "ws": "^8.19.0",
+        "ms": "^2.1.3"
     },
     "devDependencies": {
         "@eslint/js": "^10.0.1",
