@@ -253,7 +253,7 @@ function TaskDialog({ job, onClose, onSave }: TaskDialogProps) {
               placeholder={t('dialog.taskNamePlaceholder')}
               value={name}
               onChange={(e) => setName(e.target.value)}
-              className="h-[44px] rounded-xl font-mono text-[13px] bg-[#eeece3] dark:bg-muted border-black/10 dark:border-white/10 focus-visible:ring-2 focus-visible:ring-blue-500/50 focus-visible:border-blue-500 shadow-sm transition-all text-foreground placeholder:text-foreground/40"
+              className="h-[44px] rounded-xl font-mono text-[13px] bg-[#eeece3] dark:bg-muted border-black/10 dark:border-white/10 focus-visible:ring-2 focus-visible:ring-primary/50 focus-visible:border-primary shadow-sm transition-all text-foreground placeholder:text-foreground/40"
             />
           </div>
 
@@ -266,7 +266,7 @@ function TaskDialog({ job, onClose, onSave }: TaskDialogProps) {
               value={message}
               onChange={(e) => setMessage(e.target.value)}
               rows={3}
-              className="rounded-xl font-mono text-[13px] bg-[#eeece3] dark:bg-muted border-black/10 dark:border-white/10 focus-visible:ring-2 focus-visible:ring-blue-500/50 focus-visible:border-blue-500 shadow-sm transition-all text-foreground placeholder:text-foreground/40 resize-none"
+              className="rounded-xl font-mono text-[13px] bg-[#eeece3] dark:bg-muted border-black/10 dark:border-white/10 focus-visible:ring-2 focus-visible:ring-primary/50 focus-visible:border-primary shadow-sm transition-all text-foreground placeholder:text-foreground/40 resize-none"
             />
           </div>
 
@@ -285,7 +285,7 @@ function TaskDialog({ job, onClose, onSave }: TaskDialogProps) {
                     className={cn(
                       "justify-start h-10 rounded-xl font-medium text-[13px] transition-all",
                       schedule === preset.value
-                        ? "bg-[#0a84ff] hover:bg-[#007aff] text-white shadow-sm border-transparent"
+                        ? "bg-primary hover:bg-primary/90 text-primary-foreground shadow-sm border-transparent"
                         : "bg-[#eeece3] dark:bg-muted border-black/10 dark:border-white/10 hover:bg-black/5 dark:hover:bg-white/5 text-foreground/80 hover:text-foreground"
                     )}
                   >
@@ -299,7 +299,7 @@ function TaskDialog({ job, onClose, onSave }: TaskDialogProps) {
                 placeholder={t('dialog.cronPlaceholder')}
                 value={customSchedule}
                 onChange={(e) => setCustomSchedule(e.target.value)}
-                className="h-[44px] rounded-xl font-mono text-[13px] bg-[#eeece3] dark:bg-muted border-black/10 dark:border-white/10 focus-visible:ring-2 focus-visible:ring-blue-500/50 focus-visible:border-blue-500 shadow-sm transition-all text-foreground placeholder:text-foreground/40"
+                className="h-[44px] rounded-xl font-mono text-[13px] bg-[#eeece3] dark:bg-muted border-black/10 dark:border-white/10 focus-visible:ring-2 focus-visible:ring-primary/50 focus-visible:border-primary shadow-sm transition-all text-foreground placeholder:text-foreground/40"
               />
             )}
             <div className="flex items-center justify-between mt-2">
@@ -334,7 +334,7 @@ function TaskDialog({ job, onClose, onSave }: TaskDialogProps) {
             <Button variant="outline" onClick={onClose} className="rounded-full px-6 h-[42px] text-[13px] font-semibold border-black/20 dark:border-white/20 bg-transparent hover:bg-black/5 dark:hover:bg-white/5 text-foreground/80 hover:text-foreground shadow-sm">
               {t('common:actions.cancel', 'Cancel')}
             </Button>
-            <Button onClick={handleSubmit} disabled={saving} className="rounded-full px-6 h-[42px] text-[13px] font-semibold bg-[#0a84ff] hover:bg-[#007aff] text-white shadow-sm border border-transparent transition-all">
+            <Button onClick={handleSubmit} disabled={saving} className="rounded-full px-6 h-[42px] text-[13px] font-semibold shadow-sm border border-transparent transition-all">
               {saving ? (
                 <>
                   <Loader2 className="h-4 w-4 mr-2 animate-spin" />
