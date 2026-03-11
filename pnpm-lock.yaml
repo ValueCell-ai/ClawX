@@ -8,9 +8,6 @@ importers:
 
   .:
     dependencies:
-      '@wecom/wecom-openclaw-plugin':
-        specifier: ^1.0.6
-        version: 1.0.6
       clawhub:
         specifier: ^0.5.0
         version: 0.5.0
@@ -96,6 +93,9 @@ importers:
       '@vitejs/plugin-react':
         specifier: ^5.1.4
         version: 5.1.4(vite@7.3.1(@types/node@25.3.0)(jiti@1.21.7)(yaml@2.8.2))
+      '@wecom/wecom-openclaw-plugin':
+        specifier: ^1.0.6
+        version: 1.0.6
       autoprefixer:
         specifier: ^10.4.24
         version: 10.4.24(postcss@8.5.6)

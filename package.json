@@ -44,7 +44,6 @@
         "postversion": "git push && git push --tags"
     },
     "dependencies": {
-        "@wecom/wecom-openclaw-plugin": "^1.0.6",
         "clawhub": "^0.5.0",
         "electron-store": "^11.0.2",
         "electron-updater": "^6.8.3",
@@ -75,6 +74,7 @@
         "@typescript-eslint/eslint-plugin": "^8.56.0",
         "@typescript-eslint/parser": "^8.56.0",
         "@vitejs/plugin-react": "^5.1.4",
+        "@wecom/wecom-openclaw-plugin": "^1.0.6",
         "autoprefixer": "^10.4.24",
         "class-variance-authority": "^0.7.1",
         "clsx": "^2.1.1",

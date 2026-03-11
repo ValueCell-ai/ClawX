@@ -100,9 +100,9 @@ dmg:
 
 # Windows Configuration
 win:
-  forceCodeSigning: false
+  # Skip update signature verification: we ship via OSS + GitHub without a
+  # code-signing certificate, so verifying would always fail on the updater.
   verifyUpdateCodeSignature: false
-  signAndEditExecutable: true
   extraResources:
     - from: resources/bin/win32-${arch}
       to: bin

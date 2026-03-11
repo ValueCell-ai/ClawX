@@ -6,6 +6,11 @@ import { resolve } from 'path';
 
 // https://vitejs.dev/config/
 export default defineConfig({
+  // Required for Electron: all asset URLs must be relative because the renderer
+  // loads via file:// in production. vite-plugin-electron-renderer sets this
+  // automatically, but we declare it explicitly so the intent is clear and the
+  // build remains correct even if plugin order ever changes.
+  base: './',
   plugins: [
     react(),
     electron([
@@ -19,7 +24,7 @@ export default defineConfig({
           build: {
             outDir: 'dist-electron/main',
             rollupOptions: {
-              external: ['electron', 'electron-store', 'electron-updater', 'ws'],
+              external: ['electron-store', 'electron-updater', 'ws'],
             },
           },
         },
