@@ -424,7 +424,7 @@ function ProviderCard({
     >
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-4">
-          <div className={cn("h-[42px] w-[42px] shrink-0 flex items-center justify-center text-foreground border border-black/5 dark:border-white/10 rounded-full shadow-sm group-hover:scale-105 transition-transform", isDefault ? "bg-black/5 dark:bg-white/5" : "bg-white dark:bg-accent")}>
+          <div className="h-[42px] w-[42px] shrink-0 flex items-center justify-center text-foreground border border-black/5 dark:border-white/10 rounded-full bg-black/5 dark:bg-white/5 shadow-sm group-hover:scale-105 transition-transform">
             {getProviderIconUrl(account.vendorId) ? (
               <img src={getProviderIconUrl(account.vendorId)} alt={typeInfo?.name || account.vendorId} className={cn('h-5 w-5', shouldInvertInDark(account.vendorId) && 'dark:invert')} />
             ) : (
@@ -1027,7 +1027,7 @@ function AddProviderDialog({
                   }}
                   className="p-4 rounded-2xl border border-black/5 dark:border-white/5 hover:bg-black/5 dark:hover:bg-white/5 transition-colors text-center group"
                 >
-                  <div className="h-12 w-12 mx-auto mb-3 flex items-center justify-center bg-white dark:bg-card rounded-xl shadow-sm border border-black/5 dark:border-white/5 group-hover:scale-105 transition-transform">
+                  <div className="h-12 w-12 mx-auto mb-3 flex items-center justify-center bg-black/5 dark:bg-white/5 rounded-xl shadow-sm border border-black/5 dark:border-white/5 group-hover:scale-105 transition-transform">
                     {getProviderIconUrl(type.id) ? (
                       <img src={getProviderIconUrl(type.id)} alt={type.name} className={cn('h-6 w-6', shouldInvertInDark(type.id) && 'dark:invert')} />
                     ) : (
