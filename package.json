@@ -48,6 +48,8 @@
         "clawhub": "^0.5.0",
         "electron-store": "^11.0.2",
         "electron-updater": "^6.8.3",
+        "node-machine-id": "^1.1.12",
+        "posthog-node": "^5.28.0",
         "ws": "^8.19.0"
     },
     "devDependencies": {

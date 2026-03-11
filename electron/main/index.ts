@@ -13,6 +13,7 @@ import { createMenu } from './menu';
 import { appUpdater, registerUpdateHandlers } from './updater';
 import { logger } from '../utils/logger';
 import { warmupNetworkOptimization } from '../utils/uv-env';
+import { initTelemetry, shutdownTelemetry } from '../utils/telemetry';
 
 import { ClawHubService } from '../gateway/clawhub';
 import { ensureClawXContext, repairClawXOnlyBootstrapFiles } from '../utils/openclaw-workspace';
@@ -155,6 +156,9 @@ async function initialize(): Promise<void> {
 
   // Warm up network optimization (non-blocking)
   void warmupNetworkOptimization();
+
+  // Initialize Telemetry early
+  await initTelemetry();
 
   // Apply persisted proxy settings before creating windows or network requests.
   await applyProxySettings();
@@ -377,6 +381,10 @@ app.on('before-quit', () => {
   setQuitting();
   hostEventBus.closeAll();
   hostApiServer?.close();
+  // Flush telemetry data
+  void shutdownTelemetry().catch((err) => {
+    logger.warn('Failed to shutdown telemetry:', err);
+  });
   // Fire-and-forget: do not await gatewayManager.stop() here.
   // Awaiting inside before-quit can stall Electron's quit sequence.
   void gatewayManager.stop().catch((err) => {

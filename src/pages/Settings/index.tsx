@@ -73,6 +73,8 @@ export function Settings() {
     setAutoDownloadUpdate,
     devModeUnlocked,
     setDevModeUnlocked,
+    telemetryEnabled,
+    setTelemetryEnabled,
   } = useSettingsStore();
 
   const { status: gatewayStatus, restart: restartGateway } = useGatewayStore();
@@ -367,7 +369,7 @@ export function Settings() {
   return (
     <div className="flex flex-col -m-6 dark:bg-background h-[calc(100vh-2.5rem)] overflow-hidden">
       <div className="w-full max-w-4xl mx-auto flex flex-col h-full p-10 pt-16">
-        
+
         {/* Header */}
         <div className="flex flex-col md:flex-row md:items-start justify-between mb-12 shrink-0 gap-4">
           <div>
@@ -454,13 +456,13 @@ export function Settings() {
                 <div className="flex flex-wrap items-center gap-2">
                   <div className={cn(
                     "flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[13px] font-medium border",
-                    gatewayStatus.state === 'running' ? "bg-green-500/10 text-green-600 dark:text-green-500 border-green-500/20" : 
-                    gatewayStatus.state === 'error' ? "bg-red-500/10 text-red-600 dark:text-red-500 border-red-500/20" : 
-                    "bg-black/5 dark:bg-white/5 text-muted-foreground border-transparent"
+                    gatewayStatus.state === 'running' ? "bg-green-500/10 text-green-600 dark:text-green-500 border-green-500/20" :
+                      gatewayStatus.state === 'error' ? "bg-red-500/10 text-red-600 dark:text-red-500 border-red-500/20" :
+                        "bg-black/5 dark:bg-white/5 text-muted-foreground border-transparent"
                   )}>
-                    <div className={cn("w-1.5 h-1.5 rounded-full", 
-                      gatewayStatus.state === 'running' ? "bg-green-500" : 
-                      gatewayStatus.state === 'error' ? "bg-red-500" : "bg-muted-foreground"
+                    <div className={cn("w-1.5 h-1.5 rounded-full",
+                      gatewayStatus.state === 'running' ? "bg-green-500" :
+                        gatewayStatus.state === 'error' ? "bg-red-500" : "bg-muted-foreground"
                     )} />
                     {gatewayStatus.state}
                   </div>
@@ -519,7 +521,20 @@ export function Settings() {
                 <Switch
                   checked={devModeUnlocked}
                   onCheckedChange={setDevModeUnlocked}
-                  />
+                />
+              </div>
+
+              <div className="flex items-center justify-between">
+                <div>
+                  <Label className="text-[15px] font-medium text-foreground">{t('advanced.telemetry')}</Label>
+                  <p className="text-[13px] text-muted-foreground mt-1">
+                    {t('advanced.telemetryDesc')}
+                  </p>
+                </div>
+                <Switch
+                  checked={telemetryEnabled}
+                  onCheckedChange={setTelemetryEnabled}
+                />
               </div>
 
             </div>

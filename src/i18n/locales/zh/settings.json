@@ -194,7 +194,9 @@
       }
     },
     "devMode": "开发者模式",
-    "devModeDesc": "显示开发者工具和快捷方式"
+    "devModeDesc": "显示开发者工具和快捷方式",
+    "telemetry": "匿名使用数据",
+    "telemetryDesc": "允许提供匿名的基础使用数据，用于改进 ClawX"
   },
   "developer": {
     "title": "开发者",

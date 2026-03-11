@@ -194,7 +194,9 @@
       }
     },
     "devMode": "Developer Mode",
-    "devModeDesc": "Show developer tools and shortcuts"
+    "devModeDesc": "Show developer tools and shortcuts",
+    "telemetry": "Anonymous Usage Data",
+    "telemetryDesc": "Allow providing anonymous basic usage data to improve ClawX"
   },
   "developer": {
     "title": "Developer",

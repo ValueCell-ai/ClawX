@@ -20,6 +20,12 @@ importers:
       electron-updater:
         specifier: ^6.8.3
         version: 6.8.3
+      node-machine-id:
+        specifier: ^1.1.12
+        version: 1.1.12
+      posthog-node:
+        specifier: ^5.28.0
+        version: 5.28.0
       ws:
         specifier: ^8.19.0
         version: 8.19.0
@@ -278,10 +284,6 @@ packages:
     resolution: {integrity: sha512-ag7Qx78m1K3Dv7xlFgeHS4jBdopGZUISgVBMUy7Cj4fIgVH9EBmsc5K4hWozL8BJQctWke8Wsl96O7Gd+HCGhg==}
     engines: {node: '>=20.0.0'}
 
-  '@aws-sdk/client-bedrock@3.1000.0':
-    resolution: {integrity: sha512-wGU8uJXrPW/hZuHdPNVe1kAFIBiKcslBcoDBN0eYBzS13um8p5jJiQJ9WsD1nSpKCmyx7qZXc6xjcbIQPyOrrA==}
-    engines: {node: '>=20.0.0'}
-
   '@aws-sdk/client-bedrock@3.1006.0':
     resolution: {integrity: sha512-CWUrrlWaFDYZIK2rNIa9FUVn3wC3lZszz0r6bq5yRiRj1P+dSd+ZpGdlRYDAi6Nq9dsainEXdpadiuUwzL6YZQ==}
     engines: {node: '>=20.0.0'}
@@ -420,10 +422,6 @@ packages:
 
   '@aws-sdk/region-config-resolver@3.972.7':
     resolution: {integrity: sha512-/Ev/6AI8bvt4HAAptzSjThGUMjcWaX3GX8oERkB0F0F9x2dLSBdgFDiyrRz3i0u0ZFZFQ1b28is4QhyqXTUsVA==}
-    engines: {node: '>=20.0.0'}
-
-  '@aws-sdk/token-providers@3.1000.0':
-    resolution: {integrity: sha512-eOI+8WPtWpLdlYBGs8OCK3k5uIMUHVsNG3AFO4kaRaZcKReJ/2OO6+2O2Dd/3vTzM56kRjSKe7mBOCwa4PdYqg==}
     engines: {node: '>=20.0.0'}
 
   '@aws-sdk/token-providers@3.1005.0':
@@ -1747,6 +1745,9 @@ packages:
   '@pkgjs/parseargs@0.11.0':
     resolution: {integrity: sha512-+1VkjdD0QBLPodGrJUeqarH8VAIvQODIbwh9XpP5Syisf7YoQgsJKPNFoqqLQlu+VQ/tVSshMR6loPMn8U+dPg==}
     engines: {node: '>=14'}
+
+  '@posthog/core@1.23.2':
+    resolution: {integrity: sha512-zTDdda9NuSHrnwSOfFMxX/pyXiycF4jtU1kTr8DL61dHhV+7LF6XF1ndRZZTuaGGbfbb/GJYkEsjEX9SXfNZeQ==}
 
   '@protobufjs/aspromise@1.1.2':
     resolution: {integrity: sha512-j+gKExEuLmKwvz3OgROXtrJ2UG2x8Ch2YZUxahh+s1F2HZ+wAceUNLkvy6zKCPVRkU++ZWQrdxsUeQXmcg4uoQ==}
@@ -3828,9 +3829,6 @@ packages:
   discord-api-types@0.38.37:
     resolution: {integrity: sha512-Cv47jzY1jkGkh5sv0bfHYqGgKOWO1peOrGMkDFM4UmaGMOTgOW8QSexhvixa9sVOiz8MnVOBryWYyw/CEVhj7w==}
 
-  discord-api-types@0.38.40:
-    resolution: {integrity: sha512-P/His8cotqZgQqrt+hzrocp9L8RhQQz1GkrCnC9TMJ8Uw2q0tg8YyqJyGULxhXn/8kxHETN4IppmOv+P2m82lQ==}
-
   discord-api-types@0.38.42:
     resolution: {integrity: sha512-qs1kya7S84r5RR8m9kgttywGrmmoHaRifU1askAoi+wkoSefLpZP6aGXusjNw5b0jD3zOg3LTwUa3Tf2iHIceQ==}
 
@@ -4404,10 +4402,6 @@ packages:
 
   graceful-fs@4.2.11:
     resolution: {integrity: sha512-RbJ5/jmFcNNCcDV5o9eTnBLJ/HszWV0P73bc+Ff4nS/rJj+YaS6IGyiOL0VoBYX+l1Wrl3k63h/KrH+nhJ0XvQ==}
-
-  grammy@1.41.0:
-    resolution: {integrity: sha512-CAAu74SLT+/QCg40FBhUuYJalVsxxCN3D0c31TzhFBsWWTdXrMXYjGsKngBdfvN6hQ/VzHczluj/ugZVetFNCQ==}
-    engines: {node: ^12.20.0 || >=14.13.1}
 
   grammy@1.41.1:
     resolution: {integrity: sha512-wcHAQ1e7svL3fJMpDchcQVcWUmywhuepOOjHUHmMmWAwUJEIyK5ea5sbSjZd+Gy1aMpZeP8VYJa+4tP+j1YptQ==}
@@ -5335,6 +5329,9 @@ packages:
       typescript:
         optional: true
 
+  node-machine-id@1.1.12:
+    resolution: {integrity: sha512-QNABxbrPa3qEIfrE6GOJ7BYIuignnJw7iQ2YPbc3Nla1HzRJjXzZOiikfF8m7eAMfichLt3M4VgLOetqgDmgGQ==}
+
   node-readable-to-web-readable-stream@0.4.2:
     resolution: {integrity: sha512-/cMZNI34v//jUTrI+UIo4ieHAB5EZRY/+7OmXZgBxaWBMcW2tGdceIw06RFxWxrKZ5Jp3sI2i5TsRo+CBhtVLQ==}
 
@@ -5693,6 +5690,15 @@ packages:
   postcss@8.5.6:
     resolution: {integrity: sha512-3Ybi1tAuwAP9s0r1UQ2J4n5Y0G05bJkpUIO0/bI9MhwmD70S5aTWbXGBwxHrelT+XM1k6dM0pk+SwNkpTRN7Pg==}
     engines: {node: ^10 || ^12 || >=14}
+
+  posthog-node@5.28.0:
+    resolution: {integrity: sha512-EETYV0zA+7BLQmXzY+vGyDMoQK8uHf8f/1utbRjKncI41gPkw+4piGP7l4UT5Luld+4vQpJPOR1q1YrbXm7XjQ==}
+    engines: {node: ^20.20.0 || >=22.22.0}
+    peerDependencies:
+      rxjs: ^7.0.0
+    peerDependenciesMeta:
+      rxjs:
+        optional: true
 
   postject@1.0.0-alpha.6:
     resolution: {integrity: sha512-b9Eb8h2eVqNE8edvKdwqkrY6O7kAwmI8kcnBv1NScolYJbo59XUF0noFq+lxbC1yN20bmC0WBEbDC5H/7ASb0A==}
@@ -7046,51 +7052,6 @@ snapshots:
     transitivePeerDependencies:
       - aws-crt
 
-  '@aws-sdk/client-bedrock@3.1000.0':
-    dependencies:
-      '@aws-crypto/sha256-browser': 5.2.0
-      '@aws-crypto/sha256-js': 5.2.0
-      '@aws-sdk/core': 3.973.15
-      '@aws-sdk/credential-provider-node': 3.972.14
-      '@aws-sdk/middleware-host-header': 3.972.6
-      '@aws-sdk/middleware-logger': 3.972.6
-      '@aws-sdk/middleware-recursion-detection': 3.972.6
-      '@aws-sdk/middleware-user-agent': 3.972.15
-      '@aws-sdk/region-config-resolver': 3.972.6
-      '@aws-sdk/token-providers': 3.1000.0
-      '@aws-sdk/types': 3.973.4
-      '@aws-sdk/util-endpoints': 3.996.3
-      '@aws-sdk/util-user-agent-browser': 3.972.6
-      '@aws-sdk/util-user-agent-node': 3.973.0
-      '@smithy/config-resolver': 4.4.9
-      '@smithy/core': 3.23.6
-      '@smithy/fetch-http-handler': 5.3.11
-      '@smithy/hash-node': 4.2.10
-      '@smithy/invalid-dependency': 4.2.10
-      '@smithy/middleware-content-length': 4.2.10
-      '@smithy/middleware-endpoint': 4.4.20
-      '@smithy/middleware-retry': 4.4.37
-      '@smithy/middleware-serde': 4.2.11
-      '@smithy/middleware-stack': 4.2.10
-      '@smithy/node-config-provider': 4.3.10
-      '@smithy/node-http-handler': 4.4.12
-      '@smithy/protocol-http': 5.3.10
-      '@smithy/smithy-client': 4.12.0
-      '@smithy/types': 4.13.0
-      '@smithy/url-parser': 4.2.10
-      '@smithy/util-base64': 4.3.1
-      '@smithy/util-body-length-browser': 4.2.1
-      '@smithy/util-body-length-node': 4.2.2
-      '@smithy/util-defaults-mode-browser': 4.3.36
-      '@smithy/util-defaults-mode-node': 4.2.39
-      '@smithy/util-endpoints': 3.3.1
-      '@smithy/util-middleware': 4.2.10
-      '@smithy/util-retry': 4.2.10
-      '@smithy/util-utf8': 4.2.1
-      tslib: 2.8.1
-    transitivePeerDependencies:
-      - aws-crt
-
   '@aws-sdk/client-bedrock@3.1006.0':
     dependencies:
       '@aws-crypto/sha256-browser': 5.2.0
@@ -7612,18 +7573,6 @@ snapshots:
       '@smithy/node-config-provider': 4.3.11
       '@smithy/types': 4.13.0
       tslib: 2.8.1
-
-  '@aws-sdk/token-providers@3.1000.0':
-    dependencies:
-      '@aws-sdk/core': 3.973.15
-      '@aws-sdk/nested-clients': 3.996.3
-      '@aws-sdk/types': 3.973.4
-      '@smithy/property-provider': 4.2.10
-      '@smithy/shared-ini-file-loader': 4.4.5
-      '@smithy/types': 4.13.0
-      tslib: 2.8.1
-    transitivePeerDependencies:
-      - aws-crt
 
   '@aws-sdk/token-providers@3.1005.0':
     dependencies:
@@ -8286,20 +8235,10 @@ snapshots:
       - supports-color
       - utf-8-validate
 
-  '@grammyjs/runner@2.0.3(grammy@1.41.0(encoding@0.1.13))':
-    dependencies:
-      abort-controller: 3.0.0
-      grammy: 1.41.0(encoding@0.1.13)
-
   '@grammyjs/runner@2.0.3(grammy@1.41.1(encoding@0.1.13))':
     dependencies:
       abort-controller: 3.0.0
       grammy: 1.41.1(encoding@0.1.13)
-
-  '@grammyjs/transformer-throttler@1.2.1(grammy@1.41.0(encoding@0.1.13))':
-    dependencies:
-      bottleneck: 2.19.5
-      grammy: 1.41.0(encoding@0.1.13)
 
   '@grammyjs/transformer-throttler@1.2.1(grammy@1.41.1(encoding@0.1.13))':
     dependencies:
@@ -9067,6 +9006,10 @@ snapshots:
 
   '@pkgjs/parseargs@0.11.0':
     optional: true
+
+  '@posthog/core@1.23.2':
+    dependencies:
+      cross-spawn: 7.0.6
 
   '@protobufjs/aspromise@1.1.2': {}
 
@@ -11161,11 +11104,11 @@ snapshots:
   clawdbot@2026.1.24-3(@discordjs/opus@0.10.0(encoding@0.1.13))(@types/express@5.0.6)(devtools-protocol@0.0.1596832)(encoding@0.1.13)(opusscript@0.1.1)(typescript@5.9.3):
     dependencies:
       '@agentclientprotocol/sdk': 0.13.1(zod@4.3.6)
-      '@aws-sdk/client-bedrock': 3.1000.0
+      '@aws-sdk/client-bedrock': 3.1006.0
       '@buape/carbon': 0.14.0(@discordjs/opus@0.10.0(encoding@0.1.13))(hono@4.11.4)(opusscript@0.1.1)
       '@clack/prompts': 0.11.0
-      '@grammyjs/runner': 2.0.3(grammy@1.41.0(encoding@0.1.13))
-      '@grammyjs/transformer-throttler': 1.2.1(grammy@1.41.0(encoding@0.1.13))
+      '@grammyjs/runner': 2.0.3(grammy@1.41.1(encoding@0.1.13))
+      '@grammyjs/transformer-throttler': 1.2.1(grammy@1.41.1(encoding@0.1.13))
       '@homebridge/ciao': 1.3.5
       '@line/bot-sdk': 10.6.0
       '@lydell/node-pty': 1.2.0-beta.3
@@ -11187,11 +11130,11 @@ snapshots:
       commander: 14.0.3
       croner: 9.1.0
       detect-libc: 2.1.2
-      discord-api-types: 0.38.40
+      discord-api-types: 0.38.42
       dotenv: 17.3.1
       express: 5.2.1
       file-type: 21.3.0
-      grammy: 1.41.0(encoding@0.1.13)
+      grammy: 1.41.1(encoding@0.1.13)
       hono: 4.11.4
       jiti: 2.6.1
       json5: 2.2.3
@@ -11322,7 +11265,7 @@ snapshots:
       node-api-headers: 1.8.0
       rc: 1.2.8
       semver: 7.7.4
-      tar: 7.5.9
+      tar: 7.5.11
       url-join: 4.0.1
       which: 6.0.1
       yargs: 17.7.2
@@ -11542,8 +11485,6 @@ snapshots:
       p-limit: 3.1.0
 
   discord-api-types@0.38.37: {}
-
-  discord-api-types@0.38.40: {}
 
   discord-api-types@0.38.42: {}
 
@@ -12301,16 +12242,6 @@ snapshots:
       responselike: 2.0.1
 
   graceful-fs@4.2.11: {}
-
-  grammy@1.41.0(encoding@0.1.13):
-    dependencies:
-      '@grammyjs/types': 3.25.0
-      abort-controller: 3.0.0
-      debug: 4.4.3
-      node-fetch: 2.7.0(encoding@0.1.13)
-    transitivePeerDependencies:
-      - encoding
-      - supports-color
 
   grammy@1.41.1(encoding@0.1.13):
     dependencies:
@@ -13537,6 +13468,8 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
+  node-machine-id@1.1.12: {}
+
   node-readable-to-web-readable-stream@0.4.2:
     optional: true
 
@@ -13955,6 +13888,10 @@ snapshots:
       nanoid: 3.3.11
       picocolors: 1.1.1
       source-map-js: 1.2.1
+
+  posthog-node@5.28.0:
+    dependencies:
+      '@posthog/core': 1.23.2
 
   postject@1.0.0-alpha.6:
     dependencies:
