@@ -12,6 +12,7 @@ import {
   validateChannelConfig,
   validateChannelCredentials,
 } from '../../utils/channel-config';
+import { clearAllBindingsForChannel } from '../../utils/agent-config';
 import { whatsAppLoginManager } from '../../utils/whatsapp-login';
 import type { HostApiContext } from '../context';
 import { parseJsonBody, sendJson } from '../route-utils';
@@ -242,7 +243,7 @@ export async function handleChannelRoutes(
 
   if (url.pathname === '/api/channels/config' && req.method === 'POST') {
     try {
-      const body = await parseJsonBody<{ channelType: string; config: Record<string, unknown> }>(req);
+      const body = await parseJsonBody<{ channelType: string; config: Record<string, unknown>; accountId?: string }>(req);
       if (body.channelType === 'dingtalk') {
         const installResult = await ensureDingTalkPluginInstalled();
         if (!installResult.installed) {
@@ -271,7 +272,7 @@ export async function handleChannelRoutes(
           return true;
         }
       }
-      await saveChannelConfig(body.channelType, body.config);
+      await saveChannelConfig(body.channelType, body.config, body.accountId);
       scheduleGatewayChannelRestart(ctx, `channel:saveConfig:${body.channelType}`);
       sendJson(res, 200, { success: true });
     } catch (error) {
@@ -295,9 +296,10 @@ export async function handleChannelRoutes(
   if (url.pathname.startsWith('/api/channels/config/') && req.method === 'GET') {
     try {
       const channelType = decodeURIComponent(url.pathname.slice('/api/channels/config/'.length));
+      const accountId = url.searchParams.get('accountId') || undefined;
       sendJson(res, 200, {
         success: true,
-        values: await getChannelFormValues(channelType),
+        values: await getChannelFormValues(channelType, accountId),
       });
     } catch (error) {
       sendJson(res, 500, { success: false, error: String(error) });
@@ -309,6 +311,7 @@ export async function handleChannelRoutes(
     try {
       const channelType = decodeURIComponent(url.pathname.slice('/api/channels/config/'.length));
       await deleteChannelConfig(channelType);
+      await clearAllBindingsForChannel(channelType);
       scheduleGatewayChannelRestart(ctx, `channel:deleteConfig:${channelType}`);
       sendJson(res, 200, { success: true });
     } catch (error) {

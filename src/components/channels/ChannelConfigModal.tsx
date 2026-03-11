@@ -47,6 +47,7 @@ interface ChannelConfigModalProps {
   configuredTypes?: string[];
   showChannelName?: boolean;
   allowExistingConfig?: boolean;
+  agentId?: string;
   onClose: () => void;
   onChannelSaved?: (channelType: ChannelType) => void | Promise<void>;
 }
@@ -61,6 +62,7 @@ export function ChannelConfigModal({
   configuredTypes = [],
   showChannelName = true,
   allowExistingConfig = true,
+  agentId,
   onClose,
   onChannelSaved,
 }: ChannelConfigModalProps) {
@@ -115,8 +117,9 @@ export function ChannelConfigModal({
 
     (async () => {
       try {
+        const accountParam = agentId ? `?accountId=${encodeURIComponent(agentId === 'main' ? 'default' : agentId)}` : '';
         const result = await hostApiFetch<{ success: boolean; values?: Record<string, string> }>(
-          `/api/channels/config/${encodeURIComponent(selectedType)}`
+          `/api/channels/config/${encodeURIComponent(selectedType)}${accountParam}`
         );
         if (cancelled) return;
 
@@ -140,7 +143,7 @@ export function ChannelConfigModal({
     return () => {
       cancelled = true;
     };
-  }, [allowExistingConfig, configuredTypes, selectedType, showChannelName]);
+  }, [agentId, allowExistingConfig, configuredTypes, selectedType, showChannelName]);
 
   useEffect(() => {
     if (selectedType && !loadingConfig && showChannelName && firstInputRef.current) {
@@ -312,13 +315,14 @@ export function ChannelConfigModal({
       }
 
       const config: Record<string, unknown> = { ...configValues };
+      const resolvedAccountId = agentId ? (agentId === 'main' ? 'default' : agentId) : undefined;
       const saveResult = await hostApiFetch<{
         success?: boolean;
         error?: string;
         warning?: string;
       }>('/api/channels/config', {
         method: 'POST',
-        body: JSON.stringify({ channelType: selectedType, config }),
+        body: JSON.stringify({ channelType: selectedType, config, accountId: resolvedAccountId }),
       });
       if (!saveResult?.success) {
         throw new Error(saveResult?.error || 'Failed to save channel config');

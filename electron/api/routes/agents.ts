@@ -5,9 +5,10 @@ import {
   createAgent,
   deleteAgentConfig,
   listAgentsSnapshot,
+  resolveAccountIdForAgent,
   updateAgentName,
 } from '../../utils/agent-config';
-import { deleteChannelConfig } from '../../utils/channel-config';
+import { deleteChannelAccountConfig } from '../../utils/channel-config';
 import type { HostApiContext } from '../context';
 import { parseJsonBody, sendJson } from '../route-utils';
 
@@ -91,9 +92,11 @@ export async function handleAgentRoutes(
 
     if (parts.length === 3 && parts[1] === 'channels') {
       try {
+        const agentId = decodeURIComponent(parts[0]);
         const channelType = decodeURIComponent(parts[2]);
-        await deleteChannelConfig(channelType);
-        const snapshot = await clearChannelBinding(channelType);
+        const accountId = resolveAccountIdForAgent(agentId);
+        await deleteChannelAccountConfig(channelType, accountId);
+        const snapshot = await clearChannelBinding(channelType, accountId);
         scheduleGatewayReload(ctx, 'remove-agent-channel');
         sendJson(res, 200, { success: true, ...snapshot });
       } catch (error) {

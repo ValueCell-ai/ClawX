@@ -535,6 +535,7 @@ function AgentSettingsModal({
           configuredTypes={agent.channelTypes}
           showChannelName={false}
           allowExistingConfig
+          agentId={agent.id}
           onClose={() => setShowChannelModal(false)}
           onChannelSaved={async (channelType) => {
             await handleChannelSaved(channelType);

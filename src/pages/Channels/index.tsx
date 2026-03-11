@@ -94,6 +94,15 @@ export function Channels() {
   }
 
   const safeChannels = Array.isArray(channels) ? channels : [];
+  const configuredPlaceholderChannels: Channel[] = displayedChannelTypes
+    .filter((type) => configuredTypes.includes(type) && !safeChannels.some((channel) => channel.type === type))
+    .map((type) => ({
+      id: `${type}-default`,
+      type,
+      name: CHANNEL_NAMES[type] || CHANNEL_META[type].name,
+      status: 'disconnected',
+    }));
+  const availableChannels = [...safeChannels, ...configuredPlaceholderChannels];
 
   return (
     <div className="flex flex-col -m-6 dark:bg-background h-[calc(100vh-2.5rem)] overflow-hidden">
@@ -140,13 +149,13 @@ export function Channels() {
             </div>
           )}
 
-          {safeChannels.length > 0 && (
+          {availableChannels.length > 0 && (
             <div className="mb-12">
               <h2 className="text-3xl font-serif text-foreground mb-6 font-normal tracking-tight" style={{ fontFamily: 'Georgia, Cambria, "Times New Roman", Times, serif' }}>
                 {t('availableChannels')}
               </h2>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-4">
-                {safeChannels.map((channel) => (
+                {availableChannels.map((channel) => (
                   <ChannelCard
                     key={channel.id}
                     channel={channel}
@@ -169,9 +178,8 @@ export function Channels() {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-4">
               {displayedChannelTypes.map((type) => {
                 const meta = CHANNEL_META[type];
-                const isConfigured = safeChannels.some((channel) => channel.type === type)
-                  || configuredTypes.includes(type);
-                if (isConfigured) return null;
+                const isAvailable = availableChannels.some((channel) => channel.type === type);
+                if (isAvailable) return null;
 
                 return (
                   <button
