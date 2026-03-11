@@ -1001,6 +1001,42 @@ export async function sanitizeOpenClawConfig(): Promise<void> {
     console.log('[sanitize] Enforced tools.profile="full" and tools.sessions.visibility="all" for OpenClaw 3.8+');
   }
 
+  // ── plugins.entries.feishu cleanup ──────────────────────────────
+  // The official feishu plugin registers its channel AS 'feishu' via
+  // openclaw.plugin.json.  An explicit entries.feishu.enabled=false
+  // (set by older ClawX to disable the legacy built-in) blocks the
+  // official plugin's channel from starting.  Delete it.
+  if (typeof plugins === 'object' && !Array.isArray(plugins)) {
+    const pluginsObj = plugins as Record<string, unknown>;
+    const pEntries = pluginsObj.entries as Record<string, Record<string, unknown>> | undefined;
+    if (pEntries?.feishu) {
+      console.log('[sanitize] Removing stale plugins.entries.feishu that blocks the official feishu plugin channel');
+      delete pEntries.feishu;
+      modified = true;
+    }
+  }
+
+  // ── channels.feishu migration ──────────────────────────────────
+  // The official feishu plugin reads the default account's credentials from
+  // the top level of `channels.feishu` (appId, appSecret), but ClawX
+  // historically stored them only under `channels.feishu.accounts.default`.
+  // Mirror the default account credentials at the top level so the plugin
+  // can discover them.
+  const feishuSection = (config.channels as Record<string, Record<string, unknown>> | undefined)?.feishu;
+  if (feishuSection) {
+    const feishuAccounts = feishuSection.accounts as Record<string, Record<string, unknown>> | undefined;
+    const defaultAccount = feishuAccounts?.default;
+    if (defaultAccount?.appId && defaultAccount?.appSecret && !feishuSection.appId) {
+      for (const [key, value] of Object.entries(defaultAccount)) {
+        if (key !== 'enabled' && !(key in feishuSection)) {
+          feishuSection[key] = value;
+        }
+      }
+      modified = true;
+      console.log('[sanitize] Mirrored feishu default account credentials to top-level channels.feishu');
+    }
+  }
+
   if (modified) {
     await writeOpenClawJson(config);
     console.log('[sanitize] openclaw.json sanitized successfully');
