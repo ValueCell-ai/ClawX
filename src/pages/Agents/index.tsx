@@ -72,7 +72,7 @@ export function Agents() {
             >
               {t('title')}
             </h1>
-            <p className="text-[17px] text-foreground/80 font-medium">{t('subtitle')}</p>
+            <p className="text-[17px] text-foreground/70 font-medium">{t('subtitle')}</p>
           </div>
           <div className="flex items-center gap-3 md:mt-2">
             <Button
