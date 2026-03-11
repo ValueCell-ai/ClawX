@@ -277,7 +277,7 @@ function ChannelCard({ channel, onClick, onDelete }: ChannelCardProps) {
   const meta = CHANNEL_META[channel.type];
 
   return (
-    <div 
+    <div
       onClick={onClick}
       className="group flex items-start gap-4 p-4 rounded-2xl transition-all text-left border relative overflow-hidden bg-transparent border-transparent hover:bg-black/5 dark:hover:bg-white/5 cursor-pointer"
     >

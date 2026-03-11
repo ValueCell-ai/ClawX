@@ -99,6 +99,48 @@ export async function saveChannelConfig(
 ): Promise<void> {
     const currentConfig = await readOpenClawConfig();
 
+    if (channelType === 'feishu') {
+        const FEISHU_PLUGIN_ID = 'feishu-openclaw-plugin';
+        if (!currentConfig.plugins) {
+            currentConfig.plugins = {
+                allow: [FEISHU_PLUGIN_ID],
+                enabled: true,
+                entries: {
+                    feishu: { enabled: false },
+                    [FEISHU_PLUGIN_ID]: { enabled: true }
+                }
+            };
+        } else {
+            currentConfig.plugins.enabled = true;
+            const allow: string[] = Array.isArray(currentConfig.plugins.allow)
+                ? (currentConfig.plugins.allow as string[])
+                : [];
+
+            // Remove legacy 'feishu' plugin from allowlist
+            const normalizedAllow = allow.filter((pluginId) => pluginId !== 'feishu');
+
+            if (!normalizedAllow.includes(FEISHU_PLUGIN_ID)) {
+                currentConfig.plugins.allow = [...normalizedAllow, FEISHU_PLUGIN_ID];
+            } else if (normalizedAllow.length !== allow.length) {
+                currentConfig.plugins.allow = normalizedAllow;
+            }
+
+            // Explicitly disable the legacy plugin and enable the official one
+            if (!currentConfig.plugins.entries) {
+                currentConfig.plugins.entries = {};
+            }
+            if (!currentConfig.plugins.entries['feishu']) {
+                currentConfig.plugins.entries['feishu'] = {};
+            }
+            currentConfig.plugins.entries['feishu'].enabled = false;
+
+            if (!currentConfig.plugins.entries[FEISHU_PLUGIN_ID]) {
+                currentConfig.plugins.entries[FEISHU_PLUGIN_ID] = {};
+            }
+            currentConfig.plugins.entries[FEISHU_PLUGIN_ID].enabled = true;
+        }
+    }
+
     // DingTalk is a channel plugin; make sure it's explicitly allowed.
     // Newer OpenClaw versions may not load non-bundled plugins when allowlist is empty.
     if (channelType === 'dingtalk') {

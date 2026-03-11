@@ -167,8 +167,8 @@
             ]
         },
         "feishu": {
-            "description": "通过 WebSocket 连接飞书/Lark 机器人",
-            "docsUrl": "https://icnnp7d0dymg.feishu.cn/wiki/GKn8wOvHnibpPNkNkPzcAvGlnzK#Py88dTltfoJc1jxAhIBcW3Pkn7b",
+            "description": "通过飞书官方推出的 OpenClaw 插件连接飞书/Lark 机器人",
+            "docsUrl": "https://www.feishu.cn/content/article/7613711414611463386",
             "fields": {
                 "appId": {
                     "label": "应用 ID (App ID)",
@@ -180,10 +180,11 @@
                 }
             },
             "instructions": [
-                "阅读文档，前往飞书开放平台",
-                "创建一个新应用",
-                "获取 App ID 和 App Secret",
-                "配置事件订阅"
+                "前往 飞书开放平台 (open.feishu.cn) 并创建企业自建应用",
+                "在应用详情页获取 App ID 和 App Secret 并填入下方",
+                "确保应用已开通“机器人”能力",
+                "保存配置后，根据网关提示扫码完成机器人创建",
+                "详细步骤请参考飞书官方文档"
             ]
         },
         "wecom": {

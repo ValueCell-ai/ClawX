@@ -141,12 +141,7 @@ export async function getAllSkillConfigs(): Promise<Record<string, SkillEntry>> 
  * ~/.openclaw/skills/ on first launch.  These come from the openclaw package's
  * extensions directory and are available in both dev and packaged builds.
  */
-const BUILTIN_SKILLS = [
-    { slug: 'feishu-doc',   sourceExtension: 'feishu' },
-    { slug: 'feishu-drive', sourceExtension: 'feishu' },
-    { slug: 'feishu-perm',  sourceExtension: 'feishu' },
-    { slug: 'feishu-wiki',  sourceExtension: 'feishu' },
-] as const;
+const BUILTIN_SKILLS = [] as const;
 
 /**
  * Ensure built-in skills are deployed to ~/.openclaw/skills/<slug>/.

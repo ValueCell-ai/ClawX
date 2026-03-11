@@ -38,6 +38,7 @@ const PLUGINS = [
   { npmName: '@soimy/dingtalk', pluginId: 'dingtalk' },
   { npmName: '@wecom/wecom-openclaw-plugin', pluginId: 'wecom' },
   { npmName: '@sliverp/qqbot', pluginId: 'qqbot' },
+  { npmName: '@larksuite/openclaw-lark', pluginId: 'feishu-openclaw-plugin' },
 ];
 
 function getVirtualStoreNodeModules(realPkgPath) {
