@@ -291,7 +291,7 @@ function ProviderCard({
   onValidateKey,
   devModeUnlocked,
 }: ProviderCardProps) {
-  const { t } = useTranslation('settings');
+  const { t, i18n } = useTranslation('settings');
   const { account, vendor, status } = item;
   const [newKey, setNewKey] = useState('');
   const [baseUrl, setBaseUrl] = useState(account.baseUrl || '');
@@ -513,6 +513,21 @@ function ProviderCard({
 
       {isEditing && (
         <div className="space-y-6 mt-4 pt-4 border-t border-black/5 dark:border-white/5">
+          {account.vendorId === 'custom' && (
+            <div className="flex justify-end -mt-2 mb-2">
+              <a
+                href={i18n.language.startsWith('zh')
+                  ? 'https://icnnp7d0dymg.feishu.cn/wiki/BmiLwGBcEiloZDkdYnGc8RWnn6d#IWQCdfe5fobGU3xf3UGcgbLynGh'
+                  : 'https://icnnp7d0dymg.feishu.cn/wiki/BmiLwGBcEiloZDkdYnGc8RWnn6d#Ee1ldfvKJoVGvfxc32mcILwenth'}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-[12px] text-blue-500 hover:text-blue-600 font-medium inline-flex items-center gap-1"
+              >
+                {t('aiProviders.dialog.customDoc')}
+                <ExternalLink className="h-3 w-3" />
+              </a>
+            </div>
+          )}
           {canEditModelConfig && (
             <div className="space-y-3">
               <p className={currentSectionLabelClasses}>{t('aiProviders.sections.model')}</p>
@@ -738,7 +753,7 @@ function AddProviderDialog({
   onValidateKey,
   devModeUnlocked,
 }: AddProviderDialogProps) {
-  const { t } = useTranslation('settings');
+  const { t, i18n } = useTranslation('settings');
   const [selectedType, setSelectedType] = useState<ProviderType | null>(null);
   const [name, setName] = useState('');
   const [apiKey, setApiKey] = useState('');
@@ -1061,6 +1076,22 @@ function AddProviderDialog({
                   >
                     {t('aiProviders.dialog.change')}
                   </button>
+                  {selectedType === 'custom' && (
+                    <>
+                      <span className="mx-2 text-foreground/20">|</span>
+                      <a
+                        href={i18n.language.startsWith('zh')
+                          ? 'https://icnnp7d0dymg.feishu.cn/wiki/BmiLwGBcEiloZDkdYnGc8RWnn6d#IWQCdfe5fobGU3xf3UGcgbLynGh'
+                          : 'https://icnnp7d0dymg.feishu.cn/wiki/BmiLwGBcEiloZDkdYnGc8RWnn6d#Ee1ldfvKJoVGvfxc32mcILwenth'}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-[13px] text-blue-500 hover:text-blue-600 font-medium inline-flex items-center gap-1"
+                      >
+                        {t('aiProviders.dialog.customDoc')}
+                        <ExternalLink className="h-3 w-3" />
+                      </a>
+                    </>
+                  )}
                 </div>
               </div>
 
