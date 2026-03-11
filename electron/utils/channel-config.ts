@@ -103,7 +103,6 @@ function ensurePluginAllowlist(currentConfig: OpenClawConfig, channelType: strin
                 allow: [FEISHU_PLUGIN_ID],
                 enabled: true,
                 entries: {
-                    feishu: { enabled: false },
                     [FEISHU_PLUGIN_ID]: { enabled: true }
                 }
             };
@@ -122,10 +121,10 @@ function ensurePluginAllowlist(currentConfig: OpenClawConfig, channelType: strin
             if (!currentConfig.plugins.entries) {
                 currentConfig.plugins.entries = {};
             }
-            if (!currentConfig.plugins.entries['feishu']) {
-                currentConfig.plugins.entries['feishu'] = {};
-            }
-            currentConfig.plugins.entries['feishu'].enabled = false;
+            // Remove legacy 'feishu' entry — the official plugin registers its
+            // channel AS 'feishu' via openclaw.plugin.json, so an explicit
+            // entries.feishu.enabled=false would block the official plugin's channel.
+            delete currentConfig.plugins.entries['feishu'];
 
             if (!currentConfig.plugins.entries[FEISHU_PLUGIN_ID]) {
                 currentConfig.plugins.entries[FEISHU_PLUGIN_ID] = {};
