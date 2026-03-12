@@ -18,7 +18,8 @@
     "searchButton": "搜索",
     "actions": {
         "enableVisible": "批量启用可见项",
-        "disableVisible": "批量禁用可见项"
+        "disableVisible": "批量禁用可见项",
+        "installSkill": "安装技能"
     },
     "noSkills": "未找到技能",
     "noSkillsSearch": "尝试不同的搜索词",
@@ -79,6 +80,10 @@
     },
     "marketplace": {
         "title": "市场",
+        "installDialogTitle": "安装技能",
+        "installDialogSubtitle": "默认展示 Explore，输入关键词后执行搜索。",
+        "sourceLabel": "来源",
+        "sourceClawHub": "ClawHub",
         "securityNote": "安装前请点击技能卡片，在 ClawHub 上查看其文档和安全信息。",
         "manualInstallHint": "遇到网络问题？您可以随时从 ClawHub.ai 下载技能压缩包，并将其解压至 \"{{path}}\" 目录来完成手动安装。",
         "searching": "正在搜索 ClawHub...",

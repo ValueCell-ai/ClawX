@@ -18,7 +18,8 @@
     "searchButton": "Search",
     "actions": {
         "enableVisible": "Enable Visible",
-        "disableVisible": "Disable Visible"
+        "disableVisible": "Disable Visible",
+        "installSkill": "Install Skills"
     },
     "noSkills": "No skills found",
     "noSkillsSearch": "Try a different search term",
@@ -79,6 +80,10 @@
     },
     "marketplace": {
         "title": "Marketplace",
+        "installDialogTitle": "Install Skills",
+        "installDialogSubtitle": "Browse Explore by default, or enter keywords to search.",
+        "sourceLabel": "Source",
+        "sourceClawHub": "ClawHub",
         "securityNote": "Click skill card to view its documentation and security information on ClawHub before installation.",
         "manualInstallHint": "Network issues? You can always download skill ZIP archives from ClawHub.ai and extract them manually into \"{{path}}\".",
         "searching": "Searching ClawHub...",

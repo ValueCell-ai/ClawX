@@ -18,7 +18,8 @@
     "searchButton": "検索",
     "actions": {
         "enableVisible": "表示中を一括有効化",
-        "disableVisible": "表示中を一括無効化"
+        "disableVisible": "表示中を一括無効化",
+        "installSkill": "スキルをインストール"
     },
     "noSkills": "スキルが見つかりません",
     "noSkillsSearch": "別の検索語をお試しください",
@@ -79,6 +80,10 @@
     },
     "marketplace": {
         "title": "マーケットプレイス",
+        "installDialogTitle": "スキルをインストール",
+        "installDialogSubtitle": "初期表示は Explore、キーワード入力時は検索します。",
+        "sourceLabel": "ソース",
+        "sourceClawHub": "ClawHub",
         "securityNote": "インストール前にスキルカードをクリックして、ClawHubでドキュメントとセキュリティ情報を確認してください。",
         "manualInstallHint": "ネットワークに問題がありますか？いつでもClawHub.aiからスキルのZIPをダウンロードし、手動で \"{{path}}\" に展開してインストールできます。",
         "searching": "ClawHubを検索中...",
