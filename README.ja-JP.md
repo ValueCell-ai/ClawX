@@ -47,27 +47,27 @@ ClawXはベストプラクティスのモデルプロバイダーが事前設定
 ## スクリーンショット
 
 <p align="center">
-  <img src="resources/screenshot/chat.png" style="width: 100%; height: auto;">
+  <img src="resources/screenshot/jp/chat.png" style="width: 100%; height: auto;">
 </p>
 
 <p align="center">
-  <img src="resources/screenshot/cron_task.png" style="width: 100%; height: auto;">
+  <img src="resources/screenshot/jp/cron.png" style="width: 100%; height: auto;">
 </p>
 
 <p align="center">
-  <img src="resources/screenshot/skills.png" style="width: 100%; height: auto;">
-</p>
-
-<!-- <p align="center">
-  <img src="resources/screenshot/channels.png" style="width: 100%; height: auto;">
-</p> -->
-
-<p align="center">
-  <img src="resources/screenshot/dashboard.png" style="width: 100%; height: auto;">
+  <img src="resources/screenshot/jp/skills.png" style="width: 100%; height: auto;">
 </p>
 
 <p align="center">
-  <img src="resources/screenshot/settings.png" style="width: 100%; height: auto;">
+  <img src="resources/screenshot/jp/channels.png" style="width: 100%; height: auto;">
+</p>
+
+<p align="center">
+  <img src="resources/screenshot/jp/models.png" style="width: 100%; height: auto;">
+</p>
+
+<p align="center">
+  <img src="resources/screenshot/jp/settings.png" style="width: 100%; height: auto;">
 </p>
 
 ---

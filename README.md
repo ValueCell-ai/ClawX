@@ -47,27 +47,27 @@ ClawX comes pre-configured with best-practice model providers and natively suppo
 ## Screenshot
 
 <p align="center">
-  <img src="resources/screenshot/chat.png" style="width: 100%; height: auto;">
+  <img src="resources/screenshot/en/chat.png" style="width: 100%; height: auto;">
 </p>
 
 <p align="center">
-  <img src="resources/screenshot/cron_task.png" style="width: 100%; height: auto;">
+  <img src="resources/screenshot/en/cron.png" style="width: 100%; height: auto;">
 </p>
 
 <p align="center">
-  <img src="resources/screenshot/skills.png" style="width: 100%; height: auto;">
-</p>
-
-<!-- <p align="center">
-  <img src="resources/screenshot/channels.png" style="width: 100%; height: auto;">
-</p> -->
-
-<p align="center">
-  <img src="resources/screenshot/dashboard.png" style="width: 100%; height: auto;">
+  <img src="resources/screenshot/en/skills.png" style="width: 100%; height: auto;">
 </p>
 
 <p align="center">
-  <img src="resources/screenshot/settings.png" style="width: 100%; height: auto;">
+  <img src="resources/screenshot/en/channels.png" style="width: 100%; height: auto;">
+</p>
+
+<p align="center">
+  <img src="resources/screenshot/en/models.png" style="width: 100%; height: auto;">
+</p>
+
+<p align="center">
+  <img src="resources/screenshot/en/settings.png" style="width: 100%; height: auto;">
 </p>
 
 ---
