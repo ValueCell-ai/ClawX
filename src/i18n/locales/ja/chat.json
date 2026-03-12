@@ -1,33 +1,33 @@
 {
     "gatewayNotRunning": "ゲートウェイが停止中",
-    "gatewayRequired": "チャットを使用するには OpenClaw ゲートウェイが実行されている必要があります。自動的に起動するか、設定から起動できます。",
+    "gatewayRequired": "チャットを利用するには OpenClaw ゲートウェイが実行されている必要があります。自動的に起動するか、設定から起動できます。",
     "welcome": {
         "title": "ClawX チャット",
-        "subtitle": "何をお手伝いできますか？",
-        "askQuestions": "タスク処理",
+        "subtitle": "お手伝いできることはありますか？",
+        "askQuestions": "タスク対応",
         "askQuestionsDesc": "タスク指向の依頼に対応します",
-        "creativeTasks": "継続実行",
+        "creativeTasks": "連続実行",
         "creativeTasksDesc": "複数ステップの作業を継続して進めます",
-        "brainstorming": "マルチエージェント並列"
+        "brainstorming": "マルチエージェント並列実行"
     },
     "noLogs": "（ログはまだありません）",
     "toolbar": {
         "refresh": "チャットを更新",
         "showThinking": "思考を表示",
         "hideThinking": "思考を非表示",
-        "currentAgent": "現在の会話先: {{agent}}"
+        "currentAgent": "現在の会話相手: {{agent}}"
     },
     "composer": {
         "attachFiles": "ファイルを添付",
         "pickAgent": "Agent を選択",
-        "clearTarget": "対象 Agent をクリア",
+        "clearTarget": "送信先 Agent をクリア",
         "targetChip": "@{{agent}}",
-        "agentPickerTitle": "次のメッセージを別の Agent に直接送信",
+        "agentPickerTitle": "次のメッセージを別の Agent に直接送信します",
         "gatewayDisconnectedPlaceholder": "ゲートウェイ未接続...",
         "send": "送信",
         "stop": "停止",
         "gatewayConnected": "接続済み",
-        "gatewayStatus": "gateway {{state}} | port: {{port}} {{pid}}",
+        "gatewayStatus": "ゲートウェイ {{state}} | ポート: {{port}} {{pid}}",
         "retryFailedAttachments": "失敗した添付を再試行"
     },
     "historyBuckets": {
