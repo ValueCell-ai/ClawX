@@ -1158,6 +1158,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
   // ── Switch session ──
 
   switchSession: (key: string) => {
+    if (key === get().currentSessionKey) return;
     set((s) => buildSessionSwitchPatch(s, key));
     get().loadHistory();
   },

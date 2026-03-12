@@ -4,7 +4,7 @@
  * via gateway:rpc IPC. Session selector, thinking toggle, and refresh
  * are in the toolbar; messages render with markdown + streaming.
  */
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { AlertCircle, Loader2, Sparkles } from 'lucide-react';
 import { useChatStore, type RawMessage } from '@/stores/chat';
 import { useGatewayStore } from '@/stores/gateway';
@@ -16,6 +16,8 @@ import { ChatToolbar } from './ChatToolbar';
 import { extractImages, extractText, extractThinking, extractToolUse } from './message-utils';
 import { useTranslation } from 'react-i18next';
 import { cn } from '@/lib/utils';
+import { useStickToBottomInstant } from '@/hooks/use-stick-to-bottom-instant';
+import { useMinLoading } from '@/hooks/use-min-loading';
 
 export function Chat() {
   const { t } = useTranslation('chat');
@@ -23,6 +25,7 @@ export function Chat() {
   const isGatewayRunning = gatewayStatus.state === 'running';
 
   const messages = useChatStore((s) => s.messages);
+  const currentSessionKey = useChatStore((s) => s.currentSessionKey);
   const loading = useChatStore((s) => s.loading);
   const sending = useChatStore((s) => s.sending);
   const error = useChatStore((s) => s.error);
@@ -37,8 +40,9 @@ export function Chat() {
 
   const cleanupEmptySession = useChatStore((s) => s.cleanupEmptySession);
 
-  const messagesEndRef = useRef<HTMLDivElement>(null);
   const [streamingTimestamp, setStreamingTimestamp] = useState<number>(0);
+  const minLoading = useMinLoading(loading && messages.length > 0);
+  const { contentRef, scrollRef } = useStickToBottomInstant(currentSessionKey);
 
   // Load data when gateway is running.
   // When the store already holds messages for this session (i.e. the user
@@ -56,11 +60,6 @@ export function Chat() {
   useEffect(() => {
     void fetchAgents();
   }, [fetchAgents]);
-
-  // Auto-scroll on new messages, streaming, or activity changes
-  useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages, streamingMessage, sending, pendingFinal]);
 
   // Update timestamp when sending starts
   useEffect(() => {
@@ -89,23 +88,19 @@ export function Chat() {
   const shouldRenderStreaming = sending && (hasStreamText || hasStreamThinking || hasStreamTools || hasStreamImages || hasStreamToolStatus);
   const hasAnyStreamContent = hasStreamText || hasStreamThinking || hasStreamTools || hasStreamImages || hasStreamToolStatus;
 
-  const isEmpty = messages.length === 0 && !loading && !sending;
+  const isEmpty = messages.length === 0 && !sending;
 
   return (
-    <div className={cn("flex flex-col -m-6 transition-colors duration-500 dark:bg-background")} style={{ height: 'calc(100vh - 2.5rem)' }}>
+    <div className={cn("relative flex flex-col -m-6 transition-colors duration-500 dark:bg-background")} style={{ height: 'calc(100vh - 2.5rem)' }}>
       {/* Toolbar */}
       <div className="flex shrink-0 items-center justify-end px-4 py-2">
         <ChatToolbar />
       </div>
 
       {/* Messages Area */}
-      <div className="flex-1 overflow-y-auto px-4 py-4">
-        <div className="max-w-4xl mx-auto space-y-4">
-          {loading && !sending ? (
-            <div className="flex h-[60vh] items-center justify-center">
-              <LoadingSpinner size="lg" />
-            </div>
-          ) : isEmpty ? (
+      <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 py-4">
+        <div ref={contentRef} className="max-w-4xl mx-auto space-y-4">
+          {isEmpty ? (
             <WelcomeScreen />
           ) : (
             <>
@@ -149,9 +144,6 @@ export function Chat() {
               )}
             </>
           )}
-
-          {/* Scroll anchor */}
-          <div ref={messagesEndRef} />
         </div>
       </div>
 
@@ -181,6 +173,15 @@ export function Chat() {
         sending={sending}
         isEmpty={isEmpty}
       />
+
+      {/* Transparent loading overlay */}
+      {minLoading && !sending && (
+        <div className="absolute inset-0 z-50 flex items-center justify-center bg-background/20 backdrop-blur-[1px] rounded-xl pointer-events-auto">
+          <div className="bg-background shadow-lg rounded-full p-2.5 border border-border">
+            <LoadingSpinner size="md" />
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -220,10 +221,10 @@ function WelcomeScreen() {
 function TypingIndicator() {
   return (
     <div className="flex gap-3">
-      <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 text-white">
+      <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full mt-1 bg-black/5 dark:bg-white/5 text-foreground">
         <Sparkles className="h-4 w-4" />
       </div>
-      <div className="bg-muted rounded-2xl px-4 py-3">
+      <div className="bg-black/5 dark:bg-white/5 text-foreground rounded-2xl px-4 py-3">
         <div className="flex gap-1">
           <span className="w-2 h-2 bg-muted-foreground/50 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
           <span className="w-2 h-2 bg-muted-foreground/50 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
@@ -240,10 +241,10 @@ function ActivityIndicator({ phase }: { phase: 'tool_processing' }) {
   void phase;
   return (
     <div className="flex gap-3">
-      <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 text-white">
+      <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full mt-1 bg-black/5 dark:bg-white/5 text-foreground">
         <Sparkles className="h-4 w-4" />
       </div>
-      <div className="bg-muted rounded-2xl px-4 py-3">
+      <div className="bg-black/5 dark:bg-white/5 text-foreground rounded-2xl px-4 py-3">
         <div className="flex items-center gap-2 text-sm text-muted-foreground">
           <Loader2 className="h-3.5 w-3.5 animate-spin text-primary" />
           <span>Processing tool results…</span>
