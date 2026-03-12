@@ -17,10 +17,12 @@ const {
 }));
 
 vi.mock('posthog-node', () => ({
-  PostHog: vi.fn(() => ({
-    capture: captureMock,
-    shutdown: shutdownMock,
-  })),
+  PostHog: vi.fn(function PostHogMock() {
+    return {
+      capture: captureMock,
+      shutdown: shutdownMock,
+    };
+  }),
 }));
 
 vi.mock('@electron/utils/store', () => ({
