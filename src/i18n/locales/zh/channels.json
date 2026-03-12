@@ -189,7 +189,7 @@
         },
         "wecom": {
             "description": "通过插件连接企业微信机器人",
-            "docsUrl": "https://open.work.weixin.qq.com/help2/pc/cat?doc_id=21657",
+            "docsUrl": "https://icnnp7d0dymg.feishu.cn/wiki/JTGnwoV0RixKPtkr4w7c7gpAnDc",
             "fields": {
                 "botId": {
                     "label": "机器人 Bot ID",
@@ -320,7 +320,7 @@
         },
         "qqbot": {
             "description": "通过 @sliverp/qqbot 插件连接 QQ 机器人",
-            "docsUrl": "https://github.com/sliverp/qqbot/blob/main/README.zh.md",
+            "docsUrl": "https://icnnp7d0dymg.feishu.cn/wiki/KPIJwlyiGiupMrkiS9ice39Zn2c",
             "fields": {
                 "appId": {
                     "label": "App ID",

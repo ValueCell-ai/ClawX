@@ -188,7 +188,7 @@
         },
         "wecom": {
             "description": "Connect WeCom Bot via plugin",
-            "docsUrl": "https://open.work.weixin.qq.com/help2/pc/cat?doc_id=21657",
+            "docsUrl": "https://icnnp7d0dymg.feishu.cn/wiki/JTGnwoV0RixKPtkr4w7c7gpAnDc",
             "fields": {
                 "botId": {
                     "label": "Bot ID",
@@ -319,7 +319,7 @@
         },
         "qqbot": {
             "description": "Connect QQ Bot via @sliverp/qqbot plugin",
-            "docsUrl": "https://github.com/sliverp/qqbot/blob/main/README.zh.md",
+            "docsUrl": "https://icnnp7d0dymg.feishu.cn/wiki/KPIJwlyiGiupMrkiS9ice39Zn2c",
             "fields": {
                 "appId": {
                     "label": "App ID",

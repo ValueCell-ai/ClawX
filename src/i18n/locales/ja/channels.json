@@ -188,7 +188,7 @@
         },
         "wecom": {
             "description": "プラグイン経由で WeCom Bot (企業微信) に接続します",
-            "docsUrl": "https://open.work.weixin.qq.com/help2/pc/cat?doc_id=21657",
+            "docsUrl": "https://icnnp7d0dymg.feishu.cn/wiki/JTGnwoV0RixKPtkr4w7c7gpAnDc",
             "fields": {
                 "botId": {
                     "label": "ボット ID",
@@ -334,7 +334,7 @@
                 "App ID と Client Secret を取得します",
                 "認証情報を入力します"
             ],
-            "docsUrl": "https://github.com/sliverp/qqbot/blob/main/README.zh.md"
+            "docsUrl": "https://icnnp7d0dymg.feishu.cn/wiki/KPIJwlyiGiupMrkiS9ice39Zn2c"
         }
     },
     "viewDocs": "ドキュメントを表示"
