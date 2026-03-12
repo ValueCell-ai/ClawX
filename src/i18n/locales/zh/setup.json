@@ -67,6 +67,12 @@
         "baseUrl": "基础 URL",
         "modelId": "模型 ID",
         "modelIdDesc": "提供商的模型标识符（例如 deepseek-ai/DeepSeek-V3）",
+        "protocol": "协议",
+        "protocols": {
+            "openaiCompletions": "OpenAI Completions",
+            "openaiResponses": "OpenAI Responses",
+            "anthropic": "Anthropic 兼容"
+        },
         "apiKey": "API 密钥",
         "save": "保存",
         "validateSave": "验证并保存",

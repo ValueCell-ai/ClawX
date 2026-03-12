@@ -79,6 +79,8 @@
     },
     "protocols": {
       "openai": "OpenAI 兼容",
+      "openaiCompletions": "OpenAI Completions",
+      "openaiResponses": "OpenAI Responses",
       "anthropic": "Anthropic 兼容"
     },
     "toast": {

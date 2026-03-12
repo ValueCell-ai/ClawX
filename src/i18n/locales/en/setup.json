@@ -67,6 +67,12 @@
         "baseUrl": "Base URL",
         "modelId": "Model ID",
         "modelIdDesc": "The model identifier from your provider (e.g. deepseek-ai/DeepSeek-V3)",
+        "protocol": "Protocol",
+        "protocols": {
+            "openaiCompletions": "OpenAI Completions",
+            "openaiResponses": "OpenAI Responses",
+            "anthropic": "Anthropic Compatible"
+        },
         "apiKey": "API Key",
         "save": "Save",
         "validateSave": "Validate & Save",

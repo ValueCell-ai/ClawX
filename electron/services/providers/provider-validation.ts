@@ -2,11 +2,14 @@ import { proxyAwareFetch } from '../../utils/proxy-fetch';
 import { getProviderConfig } from '../../utils/provider-registry';
 
 type ValidationProfile =
-  | 'openai-compatible'
+  | 'openai-completions'
+  | 'openai-responses'
   | 'google-query-key'
   | 'anthropic-header'
   | 'openrouter'
   | 'none';
+
+type ValidationResult = { valid: boolean; error?: string; status?: number };
 
 function logValidationStatus(provider: string, status: number): void {
   console.log(`[clawx-validate] ${provider} HTTP ${status}`);
@@ -49,6 +52,28 @@ function buildOpenAiModelsUrl(baseUrl: string): string {
   return `${normalizeBaseUrl(baseUrl)}/models?limit=1`;
 }
 
+function resolveOpenAiProbeUrls(
+  baseUrl: string,
+  apiProtocol: 'openai-completions' | 'openai-responses',
+): { modelsUrl: string; probeUrl: string } {
+  const normalizedBase = normalizeBaseUrl(baseUrl);
+  const endpointSuffixPattern = /(\/responses?|\/chat\/completions)$/;
+  const rootBase = normalizedBase.replace(endpointSuffixPattern, '');
+  const modelsUrl = buildOpenAiModelsUrl(rootBase);
+
+  if (apiProtocol === 'openai-responses') {
+    const probeUrl = /(\/responses?)$/.test(normalizedBase)
+      ? normalizedBase
+      : `${rootBase}/responses`;
+    return { modelsUrl, probeUrl };
+  }
+
+  const probeUrl = /\/chat\/completions$/.test(normalizedBase)
+    ? normalizedBase
+    : `${rootBase}/chat/completions`;
+  return { modelsUrl, probeUrl };
+}
+
 function logValidationRequest(
   provider: string,
   method: string,
@@ -68,8 +93,11 @@ function getValidationProfile(
   if (providerApi === 'anthropic-messages') {
     return 'anthropic-header';
   }
-  if (providerApi === 'openai-completions' || providerApi === 'openai-responses') {
-    return 'openai-compatible';
+  if (providerApi === 'openai-responses') {
+    return 'openai-responses';
+  }
+  if (providerApi === 'openai-completions') {
+    return 'openai-completions';
   }
 
   switch (providerType) {
@@ -82,7 +110,7 @@ function getValidationProfile(
     case 'ollama':
       return 'none';
     default:
-      return 'openai-compatible';
+      return 'openai-completions';
   }
 }
 
@@ -90,13 +118,14 @@ async function performProviderValidationRequest(
   providerLabel: string,
   url: string,
   headers: Record<string, string>,
-): Promise<{ valid: boolean; error?: string }> {
+): Promise<ValidationResult> {
   try {
     logValidationRequest(providerLabel, 'GET', url, headers);
     const response = await proxyAwareFetch(url, { headers });
     logValidationStatus(providerLabel, response.status);
     const data = await response.json().catch(() => ({}));
-    return classifyAuthResponse(response.status, data);
+    const result = classifyAuthResponse(response.status, data);
+    return { ...result, status: response.status };
   } catch (error) {
     return {
       valid: false,
@@ -121,34 +150,73 @@ function classifyAuthResponse(
 async function validateOpenAiCompatibleKey(
   providerType: string,
   apiKey: string,
+  apiProtocol: 'openai-completions' | 'openai-responses',
   baseUrl?: string,
-): Promise<{ valid: boolean; error?: string }> {
+): Promise<ValidationResult> {
   const trimmedBaseUrl = baseUrl?.trim();
   if (!trimmedBaseUrl) {
     return { valid: false, error: `Base URL is required for provider "${providerType}" validation` };
   }
 
   const headers = { Authorization: `Bearer ${apiKey}` };
-  const modelsUrl = buildOpenAiModelsUrl(trimmedBaseUrl);
+  const { modelsUrl, probeUrl } = resolveOpenAiProbeUrls(trimmedBaseUrl, apiProtocol);
   const modelsResult = await performProviderValidationRequest(providerType, modelsUrl, headers);
 
-  if (modelsResult.error?.includes('API error: 404')) {
+  if (modelsResult.status === 404) {
     console.log(
-      `[clawx-validate] ${providerType} /models returned 404, falling back to /chat/completions probe`,
+      `[clawx-validate] ${providerType} /models returned 404, falling back to ${apiProtocol} probe`,
     );
-    const base = normalizeBaseUrl(trimmedBaseUrl);
-    const chatUrl = `${base}/chat/completions`;
-    return await performChatCompletionsProbe(providerType, chatUrl, headers);
+    if (apiProtocol === 'openai-responses') {
+      return await performResponsesProbe(providerType, probeUrl, headers);
+    }
+    return await performChatCompletionsProbe(providerType, probeUrl, headers);
   }
 
   return modelsResult;
+}
+
+async function performResponsesProbe(
+  providerLabel: string,
+  url: string,
+  headers: Record<string, string>,
+): Promise<ValidationResult> {
+  try {
+    logValidationRequest(providerLabel, 'POST', url, headers);
+    const response = await proxyAwareFetch(url, {
+      method: 'POST',
+      headers: { ...headers, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: 'validation-probe',
+        input: 'hi',
+      }),
+    });
+    logValidationStatus(providerLabel, response.status);
+    const data = await response.json().catch(() => ({}));
+
+    if (response.status === 401 || response.status === 403) {
+      return { valid: false, error: 'Invalid API key' };
+    }
+    if (
+      (response.status >= 200 && response.status < 300) ||
+      response.status === 400 ||
+      response.status === 429
+    ) {
+      return { valid: true };
+    }
+    return classifyAuthResponse(response.status, data);
+  } catch (error) {
+    return {
+      valid: false,
+      error: `Connection error: ${error instanceof Error ? error.message : String(error)}`,
+    };
+  }
 }
 
 async function performChatCompletionsProbe(
   providerLabel: string,
   url: string,
   headers: Record<string, string>,
-): Promise<{ valid: boolean; error?: string }> {
+): Promise<ValidationResult> {
   try {
     logValidationRequest(providerLabel, 'POST', url, headers);
     const response = await proxyAwareFetch(url, {
@@ -186,7 +254,7 @@ async function performAnthropicMessagesProbe(
   providerLabel: string,
   url: string,
   headers: Record<string, string>,
-): Promise<{ valid: boolean; error?: string }> {
+): Promise<ValidationResult> {
   try {
     logValidationRequest(providerLabel, 'POST', url, headers);
     const response = await proxyAwareFetch(url, {
@@ -224,7 +292,7 @@ async function validateGoogleQueryKey(
   providerType: string,
   apiKey: string,
   baseUrl?: string,
-): Promise<{ valid: boolean; error?: string }> {
+): Promise<ValidationResult> {
   const base = normalizeBaseUrl(baseUrl || 'https://generativelanguage.googleapis.com/v1beta');
   const url = `${base}/models?pageSize=1&key=${encodeURIComponent(apiKey)}`;
   return await performProviderValidationRequest(providerType, url, {});
@@ -234,7 +302,7 @@ async function validateAnthropicHeaderKey(
   providerType: string,
   apiKey: string,
   baseUrl?: string,
-): Promise<{ valid: boolean; error?: string }> {
+): Promise<ValidationResult> {
   const rawBase = normalizeBaseUrl(baseUrl || 'https://api.anthropic.com/v1');
   const base = rawBase.endsWith('/v1') ? rawBase : `${rawBase}/v1`;
   const url = `${base}/models?limit=1`;
@@ -246,7 +314,12 @@ async function validateAnthropicHeaderKey(
   const modelsResult = await performProviderValidationRequest(providerType, url, headers);
 
   // If the endpoint doesn't implement /models (like Minimax Anthropic compatibility), fallback to a /messages probe.
-  if (modelsResult.error?.includes('API error: 404') || modelsResult.error?.includes('API error: 400')) {
+  if (
+    modelsResult.status === 404 ||
+    modelsResult.status === 400 ||
+    modelsResult.error?.includes('API error: 404') ||
+    modelsResult.error?.includes('API error: 400')
+  ) {
     console.log(
       `[clawx-validate] ${providerType} /models returned error, falling back to /messages probe`,
     );
@@ -260,7 +333,7 @@ async function validateAnthropicHeaderKey(
 async function validateOpenRouterKey(
   providerType: string,
   apiKey: string,
-): Promise<{ valid: boolean; error?: string }> {
+): Promise<ValidationResult> {
   const url = 'https://openrouter.ai/api/v1/auth/key';
   const headers = { Authorization: `Bearer ${apiKey}` };
   return await performProviderValidationRequest(providerType, url, headers);
@@ -270,7 +343,7 @@ export async function validateApiKeyWithProvider(
   providerType: string,
   apiKey: string,
   options?: { baseUrl?: string; apiProtocol?: string },
-): Promise<{ valid: boolean; error?: string }> {
+): Promise<ValidationResult> {
   const profile = getValidationProfile(providerType, options);
   const resolvedBaseUrl = options?.baseUrl || getProviderConfig(providerType)?.baseUrl;
 
@@ -285,8 +358,20 @@ export async function validateApiKeyWithProvider(
 
   try {
     switch (profile) {
-      case 'openai-compatible':
-        return await validateOpenAiCompatibleKey(providerType, trimmedKey, resolvedBaseUrl);
+      case 'openai-completions':
+        return await validateOpenAiCompatibleKey(
+          providerType,
+          trimmedKey,
+          'openai-completions',
+          resolvedBaseUrl,
+        );
+      case 'openai-responses':
+        return await validateOpenAiCompatibleKey(
+          providerType,
+          trimmedKey,
+          'openai-responses',
+          resolvedBaseUrl,
+        );
       case 'google-query-key':
         return await validateGoogleQueryKey(providerType, trimmedKey, resolvedBaseUrl);
       case 'anthropic-header':

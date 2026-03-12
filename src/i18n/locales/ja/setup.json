@@ -67,6 +67,12 @@
         "baseUrl": "ベース URL",
         "modelId": "モデル ID",
         "modelIdDesc": "プロバイダーのモデル識別子（例：deepseek-ai/DeepSeek-V3）",
+        "protocol": "プロトコル",
+        "protocols": {
+            "openaiCompletions": "OpenAI Completions",
+            "openaiResponses": "OpenAI Responses",
+            "anthropic": "Anthropic 互換"
+        },
         "apiKey": "API キー",
         "save": "保存",
         "validateSave": "検証して保存",

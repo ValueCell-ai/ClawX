@@ -299,8 +299,8 @@ function registerUnifiedRequestHandlers(gatewayManager: GatewayManager): void {
           }
           if (request.action === 'validateKey') {
             const payload = request.payload as
-              | { providerId?: string; apiKey?: string; options?: { baseUrl?: string } }
-              | [string, string, { baseUrl?: string }?]
+              | { providerId?: string; apiKey?: string; options?: { baseUrl?: string; apiProtocol?: string } }
+              | [string, string, { baseUrl?: string; apiProtocol?: string }?]
               | undefined;
             const providerId = Array.isArray(payload) ? payload[0] : payload?.providerId;
             const apiKey = Array.isArray(payload) ? payload[1] : payload?.apiKey;
@@ -313,7 +313,11 @@ function registerUnifiedRequestHandlers(gatewayManager: GatewayManager): void {
             const providerType = provider?.type || providerId;
             const registryBaseUrl = getProviderConfig(providerType)?.baseUrl;
             const resolvedBaseUrl = options?.baseUrl || provider?.baseUrl || registryBaseUrl;
-            data = await validateApiKeyWithProvider(providerType, apiKey, { baseUrl: resolvedBaseUrl });
+            const resolvedProtocol = options?.apiProtocol || provider?.apiProtocol;
+            data = await validateApiKeyWithProvider(providerType, apiKey, {
+              baseUrl: resolvedBaseUrl,
+              apiProtocol: resolvedProtocol,
+            });
             break;
           }
           if (request.action === 'save') {
@@ -2062,7 +2066,7 @@ function registerProviderHandlers(gatewayManager: GatewayManager): void {
       _,
       providerId: string,
       apiKey: string,
-      options?: { baseUrl?: string }
+      options?: { baseUrl?: string; apiProtocol?: string }
     ) => {
       logLegacyProviderChannel('provider:validateKey');
       try {
@@ -2076,9 +2080,13 @@ function registerProviderHandlers(gatewayManager: GatewayManager): void {
         // Prefer caller-supplied baseUrl (live form value) over persisted config.
         // This ensures Setup/Settings validation reflects unsaved edits immediately.
         const resolvedBaseUrl = options?.baseUrl || provider?.baseUrl || registryBaseUrl;
+        const resolvedProtocol = options?.apiProtocol || provider?.apiProtocol;
 
         console.log(`[clawx-validate] validating provider type: ${providerType}`);
-        return await validateApiKeyWithProvider(providerType, apiKey, { baseUrl: resolvedBaseUrl });
+        return await validateApiKeyWithProvider(providerType, apiKey, {
+          baseUrl: resolvedBaseUrl,
+          apiProtocol: resolvedProtocol,
+        });
       } catch (error) {
         console.error('Validation error:', error);
         return { valid: false, error: String(error) };
