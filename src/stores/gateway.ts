@@ -65,10 +65,19 @@ function handleGatewayNotification(notification: { method?: string; params?: Rec
   if (phase === 'started' && runId != null && sessionKey != null) {
     import('./chat')
       .then(({ useChatStore }) => {
-        useChatStore.getState().handleChatEvent({
+        const state = useChatStore.getState();
+        const resolvedSessionKey = String(sessionKey);
+        const shouldRefreshSessions =
+          resolvedSessionKey !== state.currentSessionKey
+          || !state.sessions.some((session) => session.key === resolvedSessionKey);
+        if (shouldRefreshSessions) {
+          void state.loadSessions();
+        }
+
+        state.handleChatEvent({
           state: 'started',
           runId,
-          sessionKey,
+          sessionKey: resolvedSessionKey,
         });
       })
       .catch(() => {});
@@ -78,8 +87,22 @@ function handleGatewayNotification(notification: { method?: string; params?: Rec
     import('./chat')
       .then(({ useChatStore }) => {
         const state = useChatStore.getState();
-        state.loadHistory(true);
-        if (state.sending) {
+        const resolvedSessionKey = sessionKey != null ? String(sessionKey) : null;
+        const shouldRefreshSessions = resolvedSessionKey != null && (
+          resolvedSessionKey !== state.currentSessionKey
+          || !state.sessions.some((session) => session.key === resolvedSessionKey)
+        );
+        if (shouldRefreshSessions) {
+          void state.loadSessions();
+        }
+
+        const matchesCurrentSession = resolvedSessionKey == null || resolvedSessionKey === state.currentSessionKey;
+        const matchesActiveRun = runId != null && state.activeRunId != null && String(runId) === state.activeRunId;
+
+        if (matchesCurrentSession || matchesActiveRun) {
+          void state.loadHistory(true);
+        }
+        if ((matchesCurrentSession || matchesActiveRun) && state.sending) {
           useChatStore.setState({
             sending: false,
             activeRunId: null,

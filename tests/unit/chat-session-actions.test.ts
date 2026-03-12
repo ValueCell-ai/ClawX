@@ -8,7 +8,7 @@ vi.mock('@/lib/api-client', () => ({
 
 type ChatLikeState = {
   currentSessionKey: string;
-  sessions: Array<{ key: string; displayName?: string }>;
+  sessions: Array<{ key: string; displayName?: string; updatedAt?: number }>;
   messages: Array<{ role: string; timestamp?: number; content?: unknown }>;
   sessionLabels: Record<string, string>;
   sessionLastActivity: Record<string, number>;
@@ -118,6 +118,39 @@ describe('chat session actions', () => {
     expect(next.activeRunId).toBeNull();
     expect(next.pendingFinal).toBe(false);
     nowSpy.mockRestore();
+  });
+
+  it('seeds sessionLastActivity from backend updatedAt metadata', async () => {
+    const { createSessionActions } = await import('@/stores/chat/session-actions');
+    const h = makeHarness({
+      currentSessionKey: 'agent:main:main',
+      sessions: [],
+    });
+    const actions = createSessionActions(h.set as never, h.get as never);
+
+    invokeIpcMock.mockResolvedValueOnce({
+      success: true,
+      result: {
+        sessions: [
+          {
+            key: 'agent:main:main',
+            displayName: 'Main',
+            updatedAt: 1773281700000,
+          },
+          {
+            key: 'agent:main:cron:job-1',
+            label: 'Cron: Drink water',
+            updatedAt: 1773281731621,
+          },
+        ],
+      },
+    });
+
+    await actions.loadSessions();
+
+    expect(h.read().sessionLastActivity['agent:main:main']).toBe(1773281700000);
+    expect(h.read().sessionLastActivity['agent:main:cron:job-1']).toBe(1773281731621);
+    expect(h.read().sessions.find((session) => session.key === 'agent:main:cron:job-1')?.updatedAt).toBe(1773281731621);
   });
 });
 

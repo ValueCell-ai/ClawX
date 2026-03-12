@@ -9,6 +9,19 @@ function getAgentIdFromSessionKey(sessionKey: string): string {
   return agentId || 'main';
 }
 
+function parseSessionUpdatedAtMs(value: unknown): number | undefined {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return toMs(value);
+  }
+  if (typeof value === 'string' && value.trim()) {
+    const parsed = Date.parse(value);
+    if (Number.isFinite(parsed)) {
+      return parsed;
+    }
+  }
+  return undefined;
+}
+
 export function createSessionActions(
   set: ChatSet,
   get: ChatGet,
@@ -31,6 +44,7 @@ export function createSessionActions(
             displayName: s.displayName ? String(s.displayName) : undefined,
             thinkingLevel: s.thinkingLevel ? String(s.thinkingLevel) : undefined,
             model: s.model ? String(s.model) : undefined,
+            updatedAt: parseSessionUpdatedAtMs(s.updatedAt),
           })).filter((s: ChatSession) => s.key);
 
           const canonicalBySuffix = new Map<string, string>();
@@ -76,11 +90,21 @@ export function createSessionActions(
             ]
             : dedupedSessions;
 
-          set({
+          const discoveredActivity = Object.fromEntries(
+            sessionsWithCurrent
+              .filter((session) => typeof session.updatedAt === 'number' && Number.isFinite(session.updatedAt))
+              .map((session) => [session.key, session.updatedAt!]),
+          );
+
+          set((state) => ({
             sessions: sessionsWithCurrent,
             currentSessionKey: nextSessionKey,
             currentAgentId: getAgentIdFromSessionKey(nextSessionKey),
-          });
+            sessionLastActivity: {
+              ...state.sessionLastActivity,
+              ...discoveredActivity,
+            },
+          }));
 
           if (currentSessionKey !== nextSessionKey) {
             get().loadHistory();
