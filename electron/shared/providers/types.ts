@@ -1,31 +1,33 @@
-export const PROVIDER_TYPES = [
-  'anthropic',
-  'openai',
-  'google',
-  'openrouter',
-  'ark',
-  'moonshot',
-  'siliconflow',
-  'minimax-portal',
-  'minimax-portal-cn',
-  'qwen-portal',
-  'ollama',
-  'custom',
-] as const;
+ export const PROVIDER_TYPES = [
+   'anthropic',
+   'openai',
+   'google',
+   'openrouter',
+   'ark',
+   'moonshot',
+   'siliconflow',
+   'minimax-portal',
+   'minimax-portal-cn',
+   'qwen-portal',
+   'ollama',
+   'custom',
+   'novita',
+ ] as const;
 
-export const BUILTIN_PROVIDER_TYPES = [
-  'anthropic',
-  'openai',
-  'google',
-  'openrouter',
-  'ark',
-  'moonshot',
-  'siliconflow',
-  'minimax-portal',
-  'minimax-portal-cn',
-  'qwen-portal',
-  'ollama',
-] as const;
+ export const BUILTIN_PROVIDER_TYPES = [
+   'anthropic',
+   'openai',
+   'google',
+   'openrouter',
+   'ark',
+   'moonshot',
+   'siliconflow',
+   'minimax-portal',
+   'minimax-portal-cn',
+   'qwen-portal',
+   'ollama',
+   'novita',
+ ] as const;
 
 export type ProviderType = (typeof PROVIDER_TYPES)[number];
 export type BuiltinProviderType = (typeof BUILTIN_PROVIDER_TYPES)[number];

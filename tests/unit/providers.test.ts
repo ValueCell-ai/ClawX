@@ -52,11 +52,41 @@ describe('provider metadata', () => {
     );
   });
 
-  it('keeps builtin provider sources in sync', () => {
-    expect(BUILTIN_PROVIDER_TYPES).toEqual(
-      expect.arrayContaining(['anthropic', 'openai', 'google', 'openrouter', 'ark', 'moonshot', 'siliconflow', 'minimax-portal', 'minimax-portal-cn', 'qwen-portal', 'ollama'])
-    );
-  });
+   it('keeps builtin provider sources in sync', () => {
+     expect(BUILTIN_PROVIDER_TYPES).toEqual(
+       expect.arrayContaining(['anthropic', 'openai', 'google', 'openrouter', 'ark', 'moonshot', 'siliconflow', 'minimax-portal', 'minimax-portal-cn', 'qwen-portal', 'ollama', 'novita'])
+     );
+   });
+
+   it('includes Novita with OpenAI-compatible endpoint', () => {
+     expect(PROVIDER_TYPES).toContain('novita');
+     expect(PROVIDER_TYPE_INFO).toEqual(
+       expect.arrayContaining([
+         expect.objectContaining({
+           id: 'novita',
+           name: 'Novita',
+           requiresApiKey: true,
+           defaultBaseUrl: 'https://api.novita.ai/openai',
+           showBaseUrl: true,
+           showModelId: true,
+           modelIdPlaceholder: 'deepseek/deepseek-v3.2',
+           defaultModelId: 'deepseek/deepseek-v3.2',
+         }),
+       ])
+     );
+   });
+
+   it('includes Novita in the backend provider registry', () => {
+     expect(getProviderEnvVar('novita')).toBe('NOVITA_API_KEY');
+     expect(getProviderEnvVars('novita')).toEqual(['NOVITA_API_KEY']);
+     expect(getProviderConfig('novita')).toEqual(
+       expect.objectContaining({
+         baseUrl: 'https://api.novita.ai/openai',
+         api: 'openai-completions',
+         apiKeyEnv: 'NOVITA_API_KEY',
+       })
+     );
+   });
 
   it('uses OpenAI-compatible Ollama default base URL', () => {
     expect(PROVIDER_TYPE_INFO).toEqual(

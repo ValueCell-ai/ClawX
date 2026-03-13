@@ -19,6 +19,7 @@ export const PROVIDER_TYPES = [
   'qwen-portal',
   'ollama',
   'custom',
+  'novita',
 ] as const;
 export type ProviderType = (typeof PROVIDER_TYPES)[number];
 
@@ -34,6 +35,7 @@ export const BUILTIN_PROVIDER_TYPES = [
   'minimax-portal-cn',
   'qwen-portal',
   'ollama',
+  'novita',
 ] as const;
 
 export const OLLAMA_PLACEHOLDER_API_KEY = 'ollama-local';
@@ -120,41 +122,55 @@ export interface ProviderAccount {
 import { providerIcons } from '@/assets/providers';
 
 /** All supported provider types with UI metadata */
-export const PROVIDER_TYPE_INFO: ProviderTypeInfo[] = [
-  { id: 'anthropic', name: 'Anthropic', icon: '🤖', placeholder: 'sk-ant-api03-...', model: 'Claude', requiresApiKey: true },
-  {
-    id: 'openai',
-    name: 'OpenAI',
-    icon: '💚',
-    placeholder: 'sk-proj-...',
-    model: 'GPT',
-    requiresApiKey: true,
-    isOAuth: true,
-    supportsApiKey: true,
-    apiKeyUrl: 'https://platform.openai.com/api-keys',
-  },
-  {
-    id: 'google',
-    name: 'Google',
-    icon: '🔷',
-    placeholder: 'AIza...',
-    model: 'Gemini',
-    requiresApiKey: true,
-    isOAuth: true,
-    supportsApiKey: true,
-    defaultModelId: 'gemini-3.1-pro-preview',
-    apiKeyUrl: 'https://aistudio.google.com/app/apikey',
-  },
-  { id: 'openrouter', name: 'OpenRouter', icon: '🌐', placeholder: 'sk-or-v1-...', model: 'Multi-Model', requiresApiKey: true, showModelId: true, modelIdPlaceholder: 'anthropic/claude-opus-4.6', defaultModelId: 'anthropic/claude-opus-4.6' },
-  { id: 'ark', name: 'ByteDance Ark', icon: 'A', placeholder: 'your-ark-api-key', model: 'Doubao', requiresApiKey: true, defaultBaseUrl: 'https://ark.cn-beijing.volces.com/api/v3', showBaseUrl: true, showModelId: true, modelIdPlaceholder: 'ep-20260228000000-xxxxx' },
-  { id: 'moonshot', name: 'Moonshot (CN)', icon: '🌙', placeholder: 'sk-...', model: 'Kimi', requiresApiKey: true, defaultBaseUrl: 'https://api.moonshot.cn/v1', defaultModelId: 'kimi-k2.5' },
-  { id: 'siliconflow', name: 'SiliconFlow (CN)', icon: '🌊', placeholder: 'sk-...', model: 'Multi-Model', requiresApiKey: true, defaultBaseUrl: 'https://api.siliconflow.cn/v1', showModelId: true, showModelIdInDevModeOnly: true, modelIdPlaceholder: 'deepseek-ai/DeepSeek-V3', defaultModelId: 'deepseek-ai/DeepSeek-V3' },
-  { id: 'minimax-portal', name: 'MiniMax (Global)', icon: '☁️', placeholder: 'sk-...', model: 'MiniMax', requiresApiKey: false, isOAuth: true, supportsApiKey: true, defaultModelId: 'MiniMax-M2.5', apiKeyUrl: 'https://intl.minimaxi.com/' },
-  { id: 'minimax-portal-cn', name: 'MiniMax (CN)', icon: '☁️', placeholder: 'sk-...', model: 'MiniMax', requiresApiKey: false, isOAuth: true, supportsApiKey: true, defaultModelId: 'MiniMax-M2.5', apiKeyUrl: 'https://platform.minimaxi.com/' },
-  { id: 'qwen-portal', name: 'Qwen', icon: '☁️', placeholder: 'sk-...', model: 'Qwen', requiresApiKey: false, isOAuth: true, defaultModelId: 'coder-model' },
-  { id: 'ollama', name: 'Ollama', icon: '🦙', placeholder: 'Not required', requiresApiKey: false, defaultBaseUrl: 'http://localhost:11434/v1', showBaseUrl: true, showModelId: true, modelIdPlaceholder: 'qwen3:latest' },
-  { id: 'custom', name: 'Custom', icon: '⚙️', placeholder: 'API key...', requiresApiKey: true, showBaseUrl: true, showModelId: true, modelIdPlaceholder: 'your-provider/model-id' },
-];
+ export const PROVIDER_TYPE_INFO: ProviderTypeInfo[] = [
+   { id: 'anthropic', name: 'Anthropic', icon: '🤖', placeholder: 'sk-ant-api03-...', model: 'Claude', requiresApiKey: true },
+   {
+     id: 'openai',
+     name: 'OpenAI',
+     icon: '💚',
+     placeholder: 'sk-proj-...',
+     model: 'GPT',
+     requiresApiKey: true,
+     isOAuth: true,
+     supportsApiKey: true,
+     apiKeyUrl: 'https://platform.openai.com/api-keys',
+   },
+   {
+     id: 'google',
+     name: 'Google',
+     icon: '🔷',
+     placeholder: 'AIza...',
+     model: 'Gemini',
+     requiresApiKey: true,
+     isOAuth: true,
+     supportsApiKey: true,
+     defaultModelId: 'gemini-3.1-pro-preview',
+     apiKeyUrl: 'https://aistudio.google.com/app/apikey',
+   },
+   { id: 'openrouter', name: 'OpenRouter', icon: '🌐', placeholder: 'sk-or-v1-...', model: 'Multi-Model', requiresApiKey: true, showModelId: true, modelIdPlaceholder: 'anthropic/claude-opus-4.6', defaultModelId: 'anthropic/claude-opus-4.6' },
+   { id: 'ark', name: 'ByteDance Ark', icon: 'A', placeholder: 'your-ark-api-key', model: 'Doubao', requiresApiKey: true, defaultBaseUrl: 'https://ark.cn-beijing.volces.com/api/v3', showBaseUrl: true, showModelId: true, modelIdPlaceholder: 'ep-20260228000000-xxxxx' },
+   { id: 'moonshot', name: 'Moonshot (CN)', icon: '🌙', placeholder: 'sk-...', model: 'Kimi', requiresApiKey: true, defaultBaseUrl: 'https://api.moonshot.cn/v1', defaultModelId: 'kimi-k2.5' },
+   { id: 'siliconflow', name: 'SiliconFlow (CN)', icon: '🌊', placeholder: 'sk-...', model: 'Multi-Model', requiresApiKey: true, defaultBaseUrl: 'https://api.siliconflow.cn/v1', showModelId: true, showModelIdInDevModeOnly: true, modelIdPlaceholder: 'deepseek-ai/DeepSeek-V3', defaultModelId: 'deepseek-ai/DeepSeek-V3' },
+   { id: 'minimax-portal', name: 'MiniMax (Global)', icon: '☁️', placeholder: 'sk-...', model: 'MiniMax', requiresApiKey: false, isOAuth: true, supportsApiKey: true, defaultModelId: 'MiniMax-M2.5', apiKeyUrl: 'https://intl.minimaxi.com/' },
+   { id: 'minimax-portal-cn', name: 'MiniMax (CN)', icon: '☁️', placeholder: 'sk-...', model: 'MiniMax', requiresApiKey: false, isOAuth: true, supportsApiKey: true, defaultModelId: 'MiniMax-M2.5', apiKeyUrl: 'https://platform.minimaxi.com/' },
+   { id: 'qwen-portal', name: 'Qwen', icon: '☁️', placeholder: 'sk-...', model: 'Qwen', requiresApiKey: false, isOAuth: true, defaultModelId: 'coder-model' },
+   { id: 'ollama', name: 'Ollama', icon: '🦙', placeholder: 'Not required', requiresApiKey: false, defaultBaseUrl: 'http://localhost:11434/v1', showBaseUrl: true, showModelId: true, modelIdPlaceholder: 'qwen3:latest' },
+   { id: 'custom', name: 'Custom', icon: '⚙️', placeholder: 'API key...', requiresApiKey: true, showBaseUrl: true, showModelId: true, modelIdPlaceholder: 'your-provider/model-id' },
+   {
+     id: 'novita',
+     name: 'Novita',
+     icon: '🔮',
+     placeholder: 'novita-...',
+     model: 'Multi-Model',
+     requiresApiKey: true,
+     showModelId: true,
+     modelIdPlaceholder: 'deepseek/deepseek-v3.2',
+     defaultModelId: 'deepseek/deepseek-v3.2',
+     defaultBaseUrl: 'https://api.novita.ai/openai',
+     showBaseUrl: true,
+     showModelIdInDevModeOnly: false,
+   },
+ ];
 
 /** Get the SVG logo URL for a provider type, falls back to undefined */
 export function getProviderIconUrl(type: ProviderType | string): string | undefined {

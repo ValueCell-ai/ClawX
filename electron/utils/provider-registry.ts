@@ -18,13 +18,14 @@ import {
   getProviderEnvVar as getSharedProviderEnvVar,
 } from '../shared/providers/registry';
 
-// Additional env-backed providers that are not yet exposed in the UI.
+ // Additional env-backed providers that are not yet exposed in the UI.
 const EXTRA_ENV_ONLY_PROVIDERS: Record<string, { envVar: string }> = {
   groq: { envVar: 'GROQ_API_KEY' },
   deepgram: { envVar: 'DEEPGRAM_API_KEY' },
   cerebras: { envVar: 'CEREBRAS_API_KEY' },
   xai: { envVar: 'XAI_API_KEY' },
   mistral: { envVar: 'MISTRAL_API_KEY' },
+  novita: { envVar: 'NOVITA_API_KEY' },
 };
 
 /** Get the environment variable name for a provider type */
