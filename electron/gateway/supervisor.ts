@@ -6,6 +6,7 @@ import { getOpenClawDir, getOpenClawEntryPath } from '../utils/paths';
 import { getUvMirrorEnv } from '../utils/uv-env';
 import { isPythonReady, setupManagedPython } from '../utils/uv-setup';
 import { logger } from '../utils/logger';
+import { prependPathEntry } from '../utils/env-path';
 
 export function warmupManagedPythonReadiness(): void {
   void isPythonReady().then((pythonReady) => {
@@ -269,9 +270,10 @@ export async function runOpenClawDoctorRepair(): Promise<boolean> {
     ? path.join(process.resourcesPath, 'bin')
     : path.join(process.cwd(), 'resources', 'bin', target);
   const binPathExists = existsSync(binPath);
-  const finalPath = binPathExists
-    ? `${binPath}${path.delimiter}${process.env.PATH || ''}`
-    : process.env.PATH || '';
+  const baseProcessEnv = process.env as Record<string, string | undefined>;
+  const baseEnvPatched = binPathExists
+    ? prependPathEntry(baseProcessEnv, binPath).env
+    : baseProcessEnv;
 
   const uvEnv = await getUvMirrorEnv();
   const doctorArgs = ['doctor', '--fix', '--yes', '--non-interactive'];
@@ -281,8 +283,7 @@ export async function runOpenClawDoctorRepair(): Promise<boolean> {
 
   return await new Promise<boolean>((resolve) => {
     const forkEnv: Record<string, string | undefined> = {
-      ...process.env,
-      PATH: finalPath,
+      ...baseEnvPatched,
       ...uvEnv,
       OPENCLAW_NO_RESPAWN: '1',
     };

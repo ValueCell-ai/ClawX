@@ -11,6 +11,7 @@ import { syncGatewayTokenToConfig, syncBrowserConfigToOpenClaw, sanitizeOpenClaw
 import { buildProxyEnv, resolveProxySettings } from '../utils/proxy';
 import { syncProxyConfigToOpenClaw } from '../utils/openclaw-proxy';
 import { logger } from '../utils/logger';
+import { prependPathEntry } from '../utils/env-path';
 
 export interface GatewayLaunchContext {
   appSettings: Awaited<ReturnType<typeof getAllSettings>>;
@@ -141,9 +142,6 @@ export async function prepareGatewayLaunchContext(port: number): Promise<Gateway
     ? path.join(process.resourcesPath, 'bin')
     : path.join(process.cwd(), 'resources', 'bin', target);
   const binPathExists = existsSync(binPath);
-  const finalPath = binPathExists
-    ? `${binPath}${path.delimiter}${process.env.PATH || ''}`
-    : process.env.PATH || '';
 
   const { providerEnv, loadedProviderKeyCount } = await loadProviderEnv();
   const { skipChannels, channelStartupSummary } = await resolveChannelStartupPolicy();
@@ -155,9 +153,12 @@ export async function prepareGatewayLaunchContext(port: number): Promise<Gateway
     : 'disabled';
 
   const { NODE_OPTIONS: _nodeOptions, ...baseEnv } = process.env;
+  const baseEnvRecord = baseEnv as Record<string, string | undefined>;
+  const baseEnvPatched = binPathExists
+    ? prependPathEntry(baseEnvRecord, binPath).env
+    : baseEnvRecord;
   const forkEnv: Record<string, string | undefined> = {
-    ...baseEnv,
-    PATH: finalPath,
+    ...baseEnvPatched,
     ...providerEnv,
     ...uvEnv,
     ...proxyEnv,
