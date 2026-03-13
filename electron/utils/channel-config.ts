@@ -23,6 +23,25 @@ const CHANNEL_TOP_LEVEL_KEYS_TO_KEEP = new Set(['accounts', 'defaultAccount', 'e
 // Channels that are managed as plugins (config goes under plugins.entries, not channels)
 const PLUGIN_CHANNELS = ['whatsapp'];
 
+// Unique credential key per channel type – used for duplicate bot detection.
+// Maps each channel type to the field that uniquely identifies a bot/account.
+// When two agents try to use the same value for this field, the save is rejected.
+const CHANNEL_UNIQUE_CREDENTIAL_KEY: Record<string, string> = {
+    feishu: 'appId',
+    wecom: 'botId',
+    dingtalk: 'clientId',
+    telegram: 'botToken',
+    discord: 'token',
+    qqbot: 'appId',
+    signal: 'phoneNumber',
+    imessage: 'serverUrl',
+    matrix: 'accessToken',
+    line: 'channelAccessToken',
+    msteams: 'appId',
+    googlechat: 'serviceAccountKey',
+    mattermost: 'botToken',
+};
+
 // ── Helpers ──────────────────────────────────────────────────────
 
 async function fileExists(p: string): Promise<boolean> {
@@ -313,6 +332,39 @@ function migrateLegacyChannelConfigToAccounts(
     }
 }
 
+/**
+ * Throws if the unique credential (e.g. appId for Feishu) in `config` is
+ * already registered under a *different* account in the same channel section.
+ * This prevents two agents from silently sharing the same bot connection.
+ */
+function assertNoDuplicateCredential(
+    channelType: string,
+    config: ChannelConfigData,
+    channelSection: ChannelConfigData,
+    resolvedAccountId: string,
+): void {
+    const uniqueKey = CHANNEL_UNIQUE_CREDENTIAL_KEY[channelType];
+    if (!uniqueKey) return;
+
+    const incomingValue = config[uniqueKey];
+    if (!incomingValue || typeof incomingValue !== 'string') return;
+
+    const accounts = channelSection.accounts as Record<string, ChannelConfigData> | undefined;
+    if (!accounts) return;
+
+    for (const [existingAccountId, accountCfg] of Object.entries(accounts)) {
+        if (existingAccountId === resolvedAccountId) continue;
+        if (!accountCfg || typeof accountCfg !== 'object') continue;
+        const existingValue = accountCfg[uniqueKey];
+        if (typeof existingValue === 'string' && existingValue === incomingValue) {
+            throw new Error(
+                `The ${channelType} bot (${uniqueKey}: ${incomingValue}) is already bound to another agent (account: ${existingAccountId}). ` +
+                `Each agent must use a unique bot.`,
+            );
+        }
+    }
+}
+
 export async function saveChannelConfig(
     channelType: string,
     config: ChannelConfigData,
@@ -355,6 +407,10 @@ export async function saveChannelConfig(
 
         const channelSection = currentConfig.channels[channelType];
         migrateLegacyChannelConfigToAccounts(channelSection, DEFAULT_ACCOUNT_ID);
+
+        // Guard: reject if this bot/app credential is already used by another account.
+        assertNoDuplicateCredential(channelType, config, channelSection, resolvedAccountId);
+
         const existingAccountConfig = resolveAccountConfig(channelSection, resolvedAccountId);
         const transformedConfig = transformChannelConfig(channelType, config, existingAccountConfig);
 

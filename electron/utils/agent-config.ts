@@ -335,8 +335,8 @@ function getManagedWorkspaceDirectory(agent: AgentListEntry): string | null {
   return normalizedConfigured === normalizedManaged ? configuredWorkspace : null;
 }
 
-async function removeAgentWorkspaceDirectory(agent: AgentListEntry): Promise<void> {
-  const workspaceDir = getManagedWorkspaceDirectory(agent);
+export async function removeAgentWorkspaceDirectory(agent: { id: string; workspace?: string }): Promise<void> {
+  const workspaceDir = getManagedWorkspaceDirectory(agent as AgentListEntry);
   if (!workspaceDir) {
     logger.warn('Skipping agent workspace deletion for unmanaged path', {
       agentId: agent.id,
@@ -567,7 +567,7 @@ export async function updateAgentName(agentId: string, name: string): Promise<Ag
   });
 }
 
-export async function deleteAgentConfig(agentId: string): Promise<AgentsSnapshot> {
+export async function deleteAgentConfig(agentId: string): Promise<{ snapshot: AgentsSnapshot; removedEntry: AgentListEntry }> {
   return withConfigLock(async () => {
     if (agentId === MAIN_AGENT_ID) {
       throw new Error('The main agent cannot be deleted');
@@ -599,9 +599,14 @@ export async function deleteAgentConfig(agentId: string): Promise<AgentsSnapshot
     await writeOpenClawConfig(config);
     await deleteAgentChannelAccounts(agentId);
     await removeAgentRuntimeDirectory(agentId);
-    await removeAgentWorkspaceDirectory(removedEntry);
+    // NOTE: workspace directory is NOT deleted here intentionally.
+    // The caller (route handler) defers workspace removal until after
+    // the Gateway process has fully restarted, so that any in-flight
+    // process.chdir(workspace) calls complete before the directory
+    // disappears (otherwise process.cwd() throws ENOENT for the rest
+    // of the Gateway's lifetime).
     logger.info('Deleted agent config entry', { agentId });
-    return buildSnapshotFromConfig(config);
+    return { snapshot: await buildSnapshotFromConfig(config), removedEntry };
   });
 }
 
