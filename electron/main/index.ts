@@ -365,7 +365,9 @@ app.on('second-instance', () => {
 
 // Application lifecycle
 app.whenReady().then(() => {
-  initialize();
+  void initialize().catch((error) => {
+    logger.error('Application initialization failed:', error);
+  });
 
   // Register activate handler AFTER app is ready to prevent
   // "Cannot create BrowserWindow before app is ready" on macOS.

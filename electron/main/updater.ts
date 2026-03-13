@@ -52,6 +52,12 @@ export class AppUpdater extends EventEmitter {
 
   constructor() {
     super();
+
+    // EventEmitter treats an unhandled 'error' event as fatal. Keep a default
+    // listener so updater failures surface in logs/UI without terminating main.
+    this.on('error', (error: Error) => {
+      logger.error('[Updater] AppUpdater emitted error:', error);
+    });
     
     autoUpdater.autoDownload = false;
     autoUpdater.autoInstallOnAppQuit = true;
