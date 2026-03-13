@@ -72,7 +72,7 @@ describe('provider metadata', () => {
     );
   });
 
-  it('exposes OpenRouter model overrides by default and keeps SiliconFlow developer-only', () => {
+  it('exposes OpenRouter and SiliconFlow model overrides by default', () => {
     const openrouter = PROVIDER_TYPE_INFO.find((provider) => provider.id === 'openrouter');
     const siliconflow = PROVIDER_TYPE_INFO.find((provider) => provider.id === 'siliconflow');
 
@@ -82,23 +82,22 @@ describe('provider metadata', () => {
     });
     expect(siliconflow).toMatchObject({
       showModelId: true,
-      showModelIdInDevModeOnly: true,
       defaultModelId: 'deepseek-ai/DeepSeek-V3',
     });
 
     expect(shouldShowProviderModelId(openrouter, false)).toBe(true);
-    expect(shouldShowProviderModelId(siliconflow, false)).toBe(false);
+    expect(shouldShowProviderModelId(siliconflow, false)).toBe(true);
     expect(shouldShowProviderModelId(openrouter, true)).toBe(true);
     expect(shouldShowProviderModelId(siliconflow, true)).toBe(true);
   });
 
-  it('saves OpenRouter model overrides by default and keeps SiliconFlow developer-only', () => {
+  it('saves OpenRouter and SiliconFlow model overrides by default', () => {
     const openrouter = PROVIDER_TYPE_INFO.find((provider) => provider.id === 'openrouter');
     const siliconflow = PROVIDER_TYPE_INFO.find((provider) => provider.id === 'siliconflow');
     const ark = PROVIDER_TYPE_INFO.find((provider) => provider.id === 'ark');
 
     expect(resolveProviderModelForSave(openrouter, 'openai/gpt-5', false)).toBe('openai/gpt-5');
-    expect(resolveProviderModelForSave(siliconflow, 'Qwen/Qwen3-Coder-480B-A35B-Instruct', false)).toBeUndefined();
+    expect(resolveProviderModelForSave(siliconflow, 'Qwen/Qwen3-Coder-480B-A35B-Instruct', false)).toBe('Qwen/Qwen3-Coder-480B-A35B-Instruct');
 
     expect(resolveProviderModelForSave(openrouter, 'openai/gpt-5', true)).toBe('openai/gpt-5');
     expect(resolveProviderModelForSave(siliconflow, 'Qwen/Qwen3-Coder-480B-A35B-Instruct', true)).toBe('Qwen/Qwen3-Coder-480B-A35B-Instruct');
