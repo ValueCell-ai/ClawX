@@ -49,10 +49,24 @@
         "saveConfig": "保存配置",
         "configSaved": "配置已保存",
         "openManual": "打开手册",
+        "openActualFolder": "打开实际目录",
+        "copyPath": "复制路径",
+        "pathUnavailable": "路径不可用",
         "configurable": "可配置",
         "uninstall": "卸载",
         "enable": "启用",
         "disable": "禁用"
+    },
+    "source": {
+        "badge": {
+            "bundled": "内置",
+            "managed": "托管目录",
+            "workspace": "工作区",
+            "extra": "额外目录",
+            "agentsPersonal": "个人 .agents",
+            "agentsProject": "项目 .agents",
+            "unknown": "未知来源"
+        }
     },
     "toast": {
         "enabled": "技能已启用",
@@ -66,6 +80,9 @@
         "failedInstall": "安装失败",
         "failedUninstall": "卸载失败",
         "failedFolderNotFound": "技能文件夹尚不存在，请先安装一个技能。",
+        "copiedPath": "路径已复制",
+        "failedCopyPath": "复制路径失败",
+        "failedOpenActualFolder": "打开技能实际目录失败",
         "searchTimeoutError": "搜索超时，请检查网络。您也可访问 ClawHub.ai 搜索并下载压缩包，解压到 \"{{path}}\"",
         "installTimeoutError": "安装超时，请检查网络。您也可在 ClawHub.ai 下载该技能压缩包，解压到 \"{{path}}\"",
         "searchRateLimitError": "搜索请求过于频繁。您也可访问 ClawHub.ai 搜索并下载压缩包，解压到 \"{{path}}\"",

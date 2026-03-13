@@ -17,6 +17,7 @@ import {
   FolderOpen,
   FileCode,
   Globe,
+  Copy,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -33,6 +34,7 @@ import { trackUiEvent } from '@/lib/telemetry';
 import { toast } from 'sonner';
 import type { Skill } from '@/types/skill';
 import { useTranslation } from 'react-i18next';
+import type { TFunction } from 'i18next';
 
 
 
@@ -44,9 +46,25 @@ interface SkillDetailDialogProps {
   onClose: () => void;
   onToggle: (enabled: boolean) => void;
   onUninstall?: (slug: string) => void;
+  onOpenFolder?: (skill: Skill) => Promise<void> | void;
 }
 
-function SkillDetailDialog({ skill, isOpen, onClose, onToggle, onUninstall }: SkillDetailDialogProps) {
+function resolveSkillSourceLabel(skill: Skill, t: TFunction<'skills'>): string {
+  const source = (skill.source || '').trim().toLowerCase();
+  if (!source) {
+    if (skill.isBundled) return t('source.badge.bundled', { defaultValue: 'Bundled' });
+    return t('source.badge.unknown', { defaultValue: 'Unknown source' });
+  }
+  if (source === 'openclaw-bundled') return t('source.badge.bundled', { defaultValue: 'Bundled' });
+  if (source === 'openclaw-managed') return t('source.badge.managed', { defaultValue: 'Managed' });
+  if (source === 'openclaw-workspace') return t('source.badge.workspace', { defaultValue: 'Workspace' });
+  if (source === 'openclaw-extra') return t('source.badge.extra', { defaultValue: 'Extra dirs' });
+  if (source === 'agents-skills-personal') return t('source.badge.agentsPersonal', { defaultValue: 'Personal .agents' });
+  if (source === 'agents-skills-project') return t('source.badge.agentsProject', { defaultValue: 'Project .agents' });
+  return source;
+}
+
+function SkillDetailDialog({ skill, isOpen, onClose, onToggle, onUninstall, onOpenFolder }: SkillDetailDialogProps) {
   const { t } = useTranslation('skills');
   const { fetchSkills } = useSkillsStore();
   const [envVars, setEnvVars] = useState<Array<{ key: string; value: string }>>([]);
@@ -86,7 +104,7 @@ function SkillDetailDialog({ skill, isOpen, onClose, onToggle, onUninstall }: Sk
     try {
       const result = await hostApiFetch<{ success: boolean; error?: string }>('/api/clawhub/open-readme', {
         method: 'POST',
-        body: JSON.stringify({ skillKey: skill.id, slug: skill.slug }),
+        body: JSON.stringify({ skillKey: skill.id, slug: skill.slug, baseDir: skill.baseDir }),
       });
       if (result.success) {
         toast.success(t('toast.openedEditor'));
@@ -95,6 +113,16 @@ function SkillDetailDialog({ skill, isOpen, onClose, onToggle, onUninstall }: Sk
       }
     } catch (err) {
       toast.error(t('toast.failedEditor') + ': ' + String(err));
+    }
+  };
+
+  const handleCopyPath = async () => {
+    if (!skill?.baseDir) return;
+    try {
+      await navigator.clipboard.writeText(skill.baseDir);
+      toast.success(t('toast.copiedPath'));
+    } catch (err) {
+      toast.error(t('toast.failedCopyPath') + ': ' + String(err));
     }
   };
 
@@ -192,6 +220,42 @@ function SkillDetailDialog({ skill, isOpen, onClose, onToggle, onUninstall }: Sk
           </div>
 
           <div className="space-y-7 px-1">
+            <div className="space-y-2">
+              <h3 className="text-[13px] font-bold text-foreground/80">{t('detail.source')}</h3>
+              <div className="flex items-center gap-2 flex-wrap">
+                <Badge variant="secondary" className="font-mono text-[11px] font-medium px-3 py-0.5 rounded-full bg-black/[0.04] dark:bg-white/[0.08] border-0 shadow-none text-foreground/70">
+                  {resolveSkillSourceLabel(skill, t)}
+                </Badge>
+              </div>
+              <div className="flex items-center gap-2">
+                <Input
+                  value={skill.baseDir || t('detail.pathUnavailable')}
+                  readOnly
+                  className="h-[38px] font-mono text-[12px] bg-[#eeece3] dark:bg-muted border-black/10 dark:border-white/10 rounded-xl text-foreground/70"
+                />
+                <Button
+                  variant="outline"
+                  size="icon"
+                  className="h-[38px] w-[38px] border-black/10 dark:border-white/10"
+                  disabled={!skill.baseDir}
+                  onClick={handleCopyPath}
+                  title={t('detail.copyPath')}
+                >
+                  <Copy className="h-3.5 w-3.5" />
+                </Button>
+                <Button
+                  variant="outline"
+                  size="icon"
+                  className="h-[38px] w-[38px] border-black/10 dark:border-white/10"
+                  disabled={!skill.baseDir}
+                  onClick={() => onOpenFolder?.(skill)}
+                  title={t('detail.openActualFolder')}
+                >
+                  <FolderOpen className="h-3.5 w-3.5" />
+                </Button>
+              </div>
+            </div>
+
             {/* API Key Section */}
             {!skill.isCore && (
               <div className="space-y-2">
@@ -471,6 +535,24 @@ export function Skills() {
     }
   }, [t]);
 
+  const handleOpenSkillFolder = useCallback(async (skill: Skill) => {
+    try {
+      const result = await hostApiFetch<{ success: boolean; error?: string }>('/api/clawhub/open-path', {
+        method: 'POST',
+        body: JSON.stringify({
+          skillKey: skill.id,
+          slug: skill.slug,
+          baseDir: skill.baseDir,
+        }),
+      });
+      if (!result.success) {
+        throw new Error(result.error || 'Failed to open folder');
+      }
+    } catch (err) {
+      toast.error(t('toast.failedOpenActualFolder') + ': ' + String(err));
+    }
+  }, [t]);
+
   const [skillsDirPath, setSkillsDirPath] = useState('~/.openclaw/skills');
 
   useEffect(() => {
@@ -698,6 +780,14 @@ export function Skills() {
                       <p className="text-[13.5px] text-muted-foreground line-clamp-1 pr-6 leading-relaxed">
                         {skill.description}
                       </p>
+                      <div className="mt-1 flex items-center gap-2 text-[11px] text-foreground/55">
+                        <Badge variant="secondary" className="px-1.5 py-0 h-5 text-[10px] font-medium bg-black/5 dark:bg-white/10 border-0 shadow-none">
+                          {resolveSkillSourceLabel(skill, t)}
+                        </Badge>
+                        <span className="truncate font-mono">
+                          {skill.baseDir || t('detail.pathUnavailable')}
+                        </span>
+                      </div>
                     </div>
                   </div>
                   <div className="flex items-center gap-6 shrink-0" onClick={e => e.stopPropagation()}>
@@ -858,6 +948,7 @@ export function Skills() {
           setSelectedSkill({ ...selectedSkill, enabled });
         }}
         onUninstall={handleUninstall}
+        onOpenFolder={handleOpenSkillFolder}
       />
     </div>
   );

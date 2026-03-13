@@ -20,6 +20,9 @@ export interface Skill {
   isCore?: boolean;
   isBundled?: boolean;
   dependencies?: string[];
+  source?: string;
+  baseDir?: string;
+  filePath?: string;
 }
 
 /**

@@ -33,6 +33,13 @@ export interface ClawHubSkillResult {
     stars?: number;
 }
 
+export interface ClawHubInstalledSkillResult {
+    slug: string;
+    version: string;
+    source?: string;
+    baseDir?: string;
+}
+
 export class ClawHubService {
     private workDir: string;
     private cliPath: string;
@@ -339,7 +346,7 @@ export class ClawHubService {
     /**
      * List installed skills
      */
-    async listInstalled(): Promise<Array<{ slug: string; version: string }>> {
+    async listInstalled(): Promise<ClawHubInstalledSkillResult[]> {
         try {
             const output = await this.runCommand(['list']);
             if (!output || output.includes('No installed skills')) {
@@ -351,31 +358,41 @@ export class ClawHubService {
                 const cleanLine = this.stripAnsi(line);
                 const match = cleanLine.match(/^(\S+)\s+v?(\d+\.\S+)/);
                 if (match) {
+                    const slug = match[1];
                     return {
-                        slug: match[1],
+                        slug,
                         version: match[2],
+                        source: 'openclaw-managed',
+                        baseDir: path.join(this.workDir, 'skills', slug),
                     };
                 }
                 return null;
-            }).filter((s): s is { slug: string; version: string } => s !== null);
+            }).filter((s): s is ClawHubInstalledSkillResult => s !== null);
         } catch (error) {
             console.error('ClawHub list error:', error);
             return [];
         }
     }
 
-    /**
-     * Open skill README/manual in default editor
-     */
-    async openSkillReadme(skillKeyOrSlug: string, fallbackSlug?: string): Promise<boolean> {
+    private resolveSkillDir(skillKeyOrSlug: string, fallbackSlug?: string, preferredBaseDir?: string): string | null {
         const candidates = [skillKeyOrSlug, fallbackSlug]
             .filter((v): v is string => typeof v === 'string' && v.trim().length > 0)
             .map(v => v.trim());
         const uniqueCandidates = [...new Set(candidates)];
+        if (preferredBaseDir && preferredBaseDir.trim() && fs.existsSync(preferredBaseDir.trim())) {
+            return preferredBaseDir.trim();
+        }
         const directSkillDir = uniqueCandidates
             .map((id) => path.join(this.workDir, 'skills', id))
             .find((dir) => fs.existsSync(dir));
-        const skillDir = directSkillDir || this.resolveSkillDirByManifestName(uniqueCandidates);
+        return directSkillDir || this.resolveSkillDirByManifestName(uniqueCandidates);
+    }
+
+    /**
+     * Open skill README/manual in default editor
+     */
+    async openSkillReadme(skillKeyOrSlug: string, fallbackSlug?: string, preferredBaseDir?: string): Promise<boolean> {
+        const skillDir = this.resolveSkillDir(skillKeyOrSlug, fallbackSlug, preferredBaseDir);
 
         // Try to find documentation file
         const possibleFiles = ['SKILL.md', 'README.md', 'skill.md', 'readme.md'];
@@ -408,5 +425,20 @@ export class ClawHubService {
             console.error('Failed to open skill readme:', error);
             throw error;
         }
+    }
+
+    /**
+     * Open skill path in file explorer
+     */
+    async openSkillPath(skillKeyOrSlug: string, fallbackSlug?: string, preferredBaseDir?: string): Promise<boolean> {
+        const skillDir = this.resolveSkillDir(skillKeyOrSlug, fallbackSlug, preferredBaseDir);
+        if (!skillDir) {
+            throw new Error('Skill directory not found');
+        }
+        const openResult = await shell.openPath(skillDir);
+        if (openResult) {
+            throw new Error(openResult);
+        }
+        return true;
     }
 }
