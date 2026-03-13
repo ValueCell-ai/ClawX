@@ -121,37 +121,59 @@ describe('validateApiKeyWithProvider', () => {
     );
   });
 
-  it('does not duplicate endpoint suffix when baseUrl already points to /responses', async () => {
-    proxyAwareFetch
-      .mockResolvedValueOnce(
-        new Response(JSON.stringify({ error: { message: 'Not Found' } }), {
-          status: 404,
-          headers: { 'Content-Type': 'application/json' },
-        })
-      )
-      .mockResolvedValueOnce(
-        new Response(JSON.stringify({ error: { message: 'Unknown model' } }), {
-          status: 400,
-          headers: { 'Content-Type': 'application/json' },
-        })
-      );
+   it('does not duplicate endpoint suffix when baseUrl already points to /responses', async () => {
+     proxyAwareFetch
+       .mockResolvedValueOnce(
+         new Response(JSON.stringify({ error: { message: 'Not Found' } }), {
+           status: 404,
+           headers: { 'Content-Type': 'application/json' },
+         })
+       )
+       .mockResolvedValueOnce(
+         new Response(JSON.stringify({ error: { message: 'Unknown model' } }), {
+           status: 400,
+           headers: { 'Content-Type': 'application/json' },
+         })
+       );
 
-    const { validateApiKeyWithProvider } = await import('@electron/services/providers/provider-validation');
-    const result = await validateApiKeyWithProvider('custom', 'sk-endpoint-test', {
-      baseUrl: 'https://openrouter.ai/api/v1/responses',
-      apiProtocol: 'openai-responses',
-    });
+     const { validateApiKeyWithProvider } = await import('@electron/services/providers/provider-validation');
+     const result = await validateApiKeyWithProvider('custom', 'sk-endpoint-test', {
+       baseUrl: 'https://openrouter.ai/api/v1/responses',
+       apiProtocol: 'openai-responses',
+     });
 
-    expect(result).toMatchObject({ valid: true });
-    expect(proxyAwareFetch).toHaveBeenNthCalledWith(
-      1,
-      'https://openrouter.ai/api/v1/models?limit=1',
-      expect.anything(),
-    );
-    expect(proxyAwareFetch).toHaveBeenNthCalledWith(
-      2,
-      'https://openrouter.ai/api/v1/responses',
-      expect.anything(),
-    );
-  });
+     expect(result).toMatchObject({ valid: true });
+     expect(proxyAwareFetch).toHaveBeenNthCalledWith(
+       1,
+       'https://openrouter.ai/api/v1/models?limit=1',
+       expect.anything(),
+     );
+     expect(proxyAwareFetch).toHaveBeenNthCalledWith(
+       2,
+       'https://openrouter.ai/api/v1/responses',
+       expect.anything(),
+     );
+   });
+
+   it('validates Novita keys with OpenAI-compatible endpoint', async () => {
+     proxyAwareFetch.mockResolvedValue(
+       new Response(JSON.stringify({ data: [] }), {
+         status: 200,
+         headers: { 'Content-Type': 'application/json' },
+       })
+     );
+
+     const { validateApiKeyWithProvider } = await import('@electron/services/providers/provider-validation');
+     const result = await validateApiKeyWithProvider('novita', 'nv-test-key');
+
+     expect(result).toMatchObject({ valid: true });
+     expect(proxyAwareFetch).toHaveBeenCalledWith(
+       'https://api.novita.ai/openai/models?limit=1',
+       expect.objectContaining({
+         headers: expect.objectContaining({
+           Authorization: 'Bearer nv-test-key',
+         }),
+       })
+     );
+   });
 });

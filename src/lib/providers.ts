@@ -19,6 +19,7 @@ export const PROVIDER_TYPES = [
   'qwen-portal',
   'ollama',
   'custom',
+  'novita',
 ] as const;
 export type ProviderType = (typeof PROVIDER_TYPES)[number];
 
@@ -34,6 +35,7 @@ export const BUILTIN_PROVIDER_TYPES = [
   'minimax-portal-cn',
   'qwen-portal',
   'ollama',
+  'novita',
 ] as const;
 
 export const OLLAMA_PLACEHOLDER_API_KEY = 'ollama-local';
@@ -154,6 +156,17 @@ export const PROVIDER_TYPE_INFO: ProviderTypeInfo[] = [
   { id: 'qwen-portal', name: 'Qwen', icon: '☁️', placeholder: 'sk-...', model: 'Qwen', requiresApiKey: false, isOAuth: true, defaultModelId: 'coder-model' },
   { id: 'ollama', name: 'Ollama', icon: '🦙', placeholder: 'Not required', requiresApiKey: false, defaultBaseUrl: 'http://localhost:11434/v1', showBaseUrl: true, showModelId: true, modelIdPlaceholder: 'qwen3:latest' },
   { id: 'custom', name: 'Custom', icon: '⚙️', placeholder: 'API key...', requiresApiKey: true, showBaseUrl: true, showModelId: true, modelIdPlaceholder: 'your-provider/model-id' },
+  {
+    id: 'novita',
+    name: 'Novita AI',
+    icon: '🔮',
+    placeholder: 'nv-...',
+    model: 'Multi-Model',
+    requiresApiKey: true,
+    defaultBaseUrl: 'https://api.novita.ai/openai',
+    showModelId: true,
+    defaultModelId: 'deepseek/deepseek-v3.2',
+  },
 ];
 
 /** Get the SVG logo URL for a provider type, falls back to undefined */

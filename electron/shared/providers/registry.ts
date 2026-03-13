@@ -252,6 +252,25 @@ export const PROVIDER_DEFINITIONS: ProviderDefinition[] = [
     defaultAuthMode: 'api_key',
     supportsMultipleAccounts: true,
   },
+  {
+    id: 'novita',
+    name: 'Novita AI',
+    icon: '🔮',
+    placeholder: 'nv-...',
+    model: 'Multi-Model',
+    requiresApiKey: true,
+    category: 'compatible',
+    envVar: 'NOVITA_API_KEY',
+    defaultModelId: 'deepseek/deepseek-v3.2',
+    supportedAuthModes: ['api_key'],
+    defaultAuthMode: 'api_key',
+    supportsMultipleAccounts: true,
+    providerConfig: {
+      baseUrl: 'https://api.novita.ai/openai',
+      api: 'openai-completions',
+      apiKeyEnv: 'NOVITA_API_KEY',
+    },
+  },
 ];
 
 const PROVIDER_DEFINITION_MAP = new Map(
