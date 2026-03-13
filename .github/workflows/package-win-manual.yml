@@ -54,13 +54,36 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: pnpm run build:vite && pnpm exec zx scripts/bundle-openclaw.mjs && pnpm exec electron-builder --win --publish never
 
-      - name: Upload Windows artifacts
+      - name: Upload Windows Installer (x64)
         uses: actions/upload-artifact@v4
         with:
-          name: windows-package
+          name: windows-installer-x64
+          path: release/*-win-x64.exe
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Upload Windows Installer (arm64)
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-installer-arm64
+          path: release/*-win-arm64.exe
+          if-no-files-found: warn
+          retention-days: 7
+
+      - name: Upload Windows Blockmap Files
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-blockmap
+          path: release/*.blockmap
+          if-no-files-found: warn
+          retention-days: 7
+
+      - name: Upload Windows Update Manifests
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-update-manifests
           path: |
-            release/*.exe
-            release/*.blockmap
             release/*.yml
             !release/builder-debug.yml
+          if-no-files-found: warn
           retention-days: 7
