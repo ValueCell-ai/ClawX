@@ -1,6 +1,8 @@
 import { app } from 'electron';
 import path from 'path';
-import { existsSync } from 'fs';
+import { existsSync, readFileSync, cpSync, mkdirSync, rmSync } from 'fs';
+import { homedir } from 'os';
+import { join } from 'path';
 import { getAllSettings } from '../utils/store';
 import { getApiKey, getDefaultProvider, getProvider } from '../utils/secure-storage';
 import { getProviderEnvVar, getKeyableProviderTypes } from '../utils/provider-registry';
@@ -26,6 +28,73 @@ export interface GatewayLaunchContext {
   channelStartupSummary: string;
 }
 
+// ── Auto-upgrade bundled plugins on startup ──────────────────────
+
+const CHANNEL_PLUGIN_MAP: Record<string, string> = {
+  dingtalk: 'dingtalk',
+  wecom: 'wecom',
+  feishu: 'feishu-openclaw-plugin',
+  qqbot: 'qqbot',
+};
+
+function readPluginVersion(pkgJsonPath: string): string | null {
+  try {
+    const raw = readFileSync(pkgJsonPath, 'utf-8');
+    const parsed = JSON.parse(raw) as { version?: string };
+    return parsed.version ?? null;
+  } catch {
+    return null;
+  }
+}
+
+function buildPluginCandidateSources(pluginDirName: string): string[] {
+  return app.isPackaged
+    ? [
+      join(process.resourcesPath, 'openclaw-plugins', pluginDirName),
+      join(process.resourcesPath, 'app.asar.unpacked', 'build', 'openclaw-plugins', pluginDirName),
+      join(process.resourcesPath, 'app.asar.unpacked', 'openclaw-plugins', pluginDirName),
+    ]
+    : [
+      join(app.getAppPath(), 'build', 'openclaw-plugins', pluginDirName),
+      join(process.cwd(), 'build', 'openclaw-plugins', pluginDirName),
+    ];
+}
+
+/**
+ * Auto-upgrade all configured channel plugins before Gateway start.
+ * Compares the installed version in ~/.openclaw/extensions/ with the
+ * bundled version and overwrites if the bundled version is newer.
+ */
+function ensureConfiguredPluginsUpgraded(configuredChannels: string[]): void {
+  for (const channelType of configuredChannels) {
+    const pluginDirName = CHANNEL_PLUGIN_MAP[channelType];
+    if (!pluginDirName) continue;
+
+    const targetDir = join(homedir(), '.openclaw', 'extensions', pluginDirName);
+    const targetManifest = join(targetDir, 'openclaw.plugin.json');
+    if (!existsSync(targetManifest)) continue; // not installed, nothing to upgrade
+
+    const sources = buildPluginCandidateSources(pluginDirName);
+    const sourceDir = sources.find((dir) => existsSync(join(dir, 'openclaw.plugin.json')));
+    if (!sourceDir) continue; // no bundled source available
+
+    const installedVersion = readPluginVersion(join(targetDir, 'package.json'));
+    const sourceVersion = readPluginVersion(join(sourceDir, 'package.json'));
+    if (!sourceVersion || !installedVersion || sourceVersion === installedVersion) continue;
+
+    logger.info(`[plugin] Auto-upgrading ${channelType} plugin: ${installedVersion} → ${sourceVersion}`);
+    try {
+      mkdirSync(join(homedir(), '.openclaw', 'extensions'), { recursive: true });
+      rmSync(targetDir, { recursive: true, force: true });
+      cpSync(sourceDir, targetDir, { recursive: true, dereference: true });
+    } catch (err) {
+      logger.warn(`[plugin] Failed to auto-upgrade ${channelType} plugin:`, err);
+    }
+  }
+}
+
+// ── Pre-launch sync ──────────────────────────────────────────────
+
 export async function syncGatewayConfigBeforeLaunch(
   appSettings: Awaited<ReturnType<typeof getAllSettings>>,
 ): Promise<void> {
@@ -35,6 +104,15 @@ export async function syncGatewayConfigBeforeLaunch(
     await sanitizeOpenClawConfig();
   } catch (err) {
     logger.warn('Failed to sanitize openclaw.json:', err);
+  }
+
+  // Auto-upgrade installed plugins before Gateway starts so that
+  // the plugin manifest ID matches what sanitize wrote to the config.
+  try {
+    const configuredChannels = await listConfiguredChannels();
+    ensureConfiguredPluginsUpgraded(configuredChannels);
+  } catch (err) {
+    logger.warn('Failed to auto-upgrade plugins:', err);
   }
 
   try {

@@ -9,7 +9,6 @@ import WebSocket from 'ws';
 import { PORTS } from '../utils/config';
 import { JsonRpcNotification, isNotification, isResponse } from './protocol';
 import { logger } from '../utils/logger';
-import { sanitizeOpenClawConfig } from '../utils/openclaw-auth';
 import {
   loadOrCreateDeviceIdentity,
   type DeviceIdentity,
@@ -239,12 +238,6 @@ export class GatewayManager extends EventEmitter {
         onConnectedToManagedGateway: () => {
           this.startHealthCheck();
           logger.debug('Gateway started successfully');
-          // The Gateway binary may re-add stale plugin entries (e.g. bare
-          // "feishu") during its own config overwrite.  Re-run sanitize to
-          // clean them up after the Gateway finishes writing.
-          sanitizeOpenClawConfig().catch((err: unknown) => {
-            logger.warn('Post-startup sanitize failed:', err);
-          });
         },
         runDoctorRepair: async () => await runOpenClawDoctorRepair(),
         onDoctorRepairSuccess: () => {

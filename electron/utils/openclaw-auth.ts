@@ -1055,24 +1055,18 @@ export async function sanitizeOpenClawConfig(): Promise<void> {
         modified = true;
       }
 
-      // ── Remove stale bare 'feishu' when openclaw-lark is present ──
-      // The Gateway binary re-adds bare 'feishu' to plugins.allow and
-      // plugins.entries because the openclaw-lark plugin registers the
-      // 'feishu' channel.  These stale entries are redundant and
-      // potentially confusing.  Only clean them up when openclaw-lark
-      // is already configured, to avoid breaking legitimate old setups.
+      // ── Disable bare 'feishu' when openclaw-lark is present ────────
+      // The Gateway binary automatically adds bare 'feishu' to plugins
+      // config because the openclaw-lark plugin registers the 'feishu'
+      // channel.  We can't DELETE it (triggers config-change → restart →
+      // Gateway re-adds it → loop).  Instead, disable it so it doesn't
+      // conflict with openclaw-lark.
       const allowArr = Array.isArray(pluginsObj.allow) ? pluginsObj.allow as string[] : [];
       const hasNewFeishu = allowArr.includes(NEW_FEISHU_ID) || !!pEntries?.[NEW_FEISHU_ID];
-      if (hasNewFeishu) {
-        const bareIdx = allowArr.indexOf('feishu');
-        if (bareIdx !== -1) {
-          allowArr.splice(bareIdx, 1);
-          console.log(`[sanitize] Removed stale bare 'feishu' from plugins.allow (openclaw-lark is configured)`);
-          modified = true;
-        }
-        if (pEntries?.feishu) {
-          delete pEntries.feishu;
-          console.log(`[sanitize] Removed stale plugins.entries.feishu (openclaw-lark is configured)`);
+      if (hasNewFeishu && pEntries?.feishu) {
+        if (pEntries.feishu.enabled !== false) {
+          pEntries.feishu.enabled = false;
+          console.log(`[sanitize] Disabled bare plugins.entries.feishu (openclaw-lark is configured)`);
           modified = true;
         }
       }
