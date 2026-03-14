@@ -189,6 +189,24 @@
 - 验证：
   - `pnpm vitest run tests/unit/api-client.test.ts` 通过（18/18）。
 
+### 6.5 回归 case 扩充（通信优化专项）
+- 新增回放数据集（`scripts/comms/datasets/`）：
+  - `invalid-config-patch-recovered.jsonl`：覆盖配置 patch 异常后的恢复路径。
+  - `history-overlap-guard.jsonl`：覆盖 history single-flight/防重入路径。
+  - `multi-agent-channel-switch.jsonl`：覆盖多 agent 会话切换与路由稳定性。
+- `compare` 门禁增强（`scripts/comms/compare.mjs`）：
+  - 从仅 aggregate 判定，升级为“required scenario + 每场景 hard thresholds + aggregate 阈值”。
+  - required 场景缺失将直接失败，避免回归覆盖面被静默缩减。
+- 新增脚本单测（`tests/unit/comms-scripts.test.ts`）：
+  - 验证 replay 指标计算（去重、inflight、p95）与 aggregate 行为。
+  - 验证 compare 对 required scenario 缺失会 fail。
+- 验证：
+  - `node scripts/comms/replay.mjs`
+  - `node scripts/comms/baseline.mjs`
+  - `node scripts/comms/compare.mjs`（PASS）
+  - `pnpm vitest run tests/unit/comms-scripts.test.ts tests/unit/api-client.test.ts`（21/21）
+  - `pnpm run typecheck`
+
 ---
 
 ## 7) 主要改动文件清单

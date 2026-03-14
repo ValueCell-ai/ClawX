@@ -22,6 +22,15 @@ const RELATIVE_THRESHOLDS = {
   rpc_p95_ms: 0.15,
 };
 
+const REQUIRED_SCENARIOS = [
+  'gateway-restart-during-run',
+  'happy-path-chat',
+  'history-overlap-guard',
+  'invalid-config-patch-recovered',
+  'multi-agent-channel-switch',
+  'network-degraded',
+];
+
 function ratioDelta(current, baseline) {
   if (!Number.isFinite(baseline) || baseline === 0) return current === 0 ? 0 : Infinity;
   return (current - baseline) / baseline;
@@ -35,13 +44,27 @@ function fmtNumber(value) {
   return Number.isFinite(value) ? Number(value).toFixed(4) : String(value);
 }
 
-async function main() {
-  const current = JSON.parse(await readFile(CURRENT_FILE, 'utf8'));
-  const baseline = JSON.parse(await readFile(BASELINE_FILE, 'utf8'));
+export function evaluateReport(current, baseline) {
   const c = current.aggregate ?? {};
   const b = baseline.aggregate ?? {};
+  const scenarios = current.scenarios ?? {};
   const failures = [];
   const rows = [];
+
+  for (const scenario of REQUIRED_SCENARIOS) {
+    if (!scenarios[scenario]) {
+      failures.push(`missing scenario: ${scenario}`);
+      rows.push(`| scenario:${scenario} | missing | required | FAIL |`);
+      continue;
+    }
+    const scenarioMetrics = scenarios[scenario];
+    for (const [metric, threshold] of Object.entries(HARD_THRESHOLDS)) {
+      const cv = Number(scenarioMetrics[metric] ?? 0);
+      const pass = cv <= threshold;
+      if (!pass) failures.push(`scenario:${scenario} ${metric}=${cv} > ${threshold}`);
+      rows.push(`| ${scenario}.${metric} | ${fmtNumber(cv)} | <= ${threshold} | ${pass ? 'PASS' : 'FAIL'} |`);
+    }
+  }
 
   for (const [metric, threshold] of Object.entries(HARD_THRESHOLDS)) {
     const cv = Number(c[metric] ?? 0);
@@ -58,6 +81,14 @@ async function main() {
     if (!pass) failures.push(`${metric} delta=${delta} > ${maxIncrease}`);
     rows.push(`| ${metric} | ${fmtNumber(cv)} (baseline ${fmtNumber(bv)}) | delta <= ${fmtPercent(maxIncrease)} | ${pass ? 'PASS' : 'FAIL'} (${fmtPercent(delta)}) |`);
   }
+
+  return { failures, rows };
+}
+
+export async function main() {
+  const current = JSON.parse(await readFile(CURRENT_FILE, 'utf8'));
+  const baseline = JSON.parse(await readFile(BASELINE_FILE, 'utf8'));
+  const { failures, rows } = evaluateReport(current, baseline);
 
   const report = [
     '# Comms Regression Report',
@@ -82,7 +113,10 @@ async function main() {
   }
 }
 
-main().catch((error) => {
-  console.error('[comms:compare] failed:', error);
-  process.exitCode = 1;
-});
+const isEntrypoint = process.argv[1] && path.resolve(process.argv[1]) === path.resolve(new URL(import.meta.url).pathname);
+if (isEntrypoint) {
+  main().catch((error) => {
+    console.error('[comms:compare] failed:', error);
+    process.exitCode = 1;
+  });
+}

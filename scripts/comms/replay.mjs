@@ -7,14 +7,14 @@ const DATASET_DIR = path.join(ROOT, 'scripts/comms/datasets');
 const OUTPUT_DIR = path.join(ROOT, 'artifacts/comms');
 const OUTPUT_FILE = path.join(OUTPUT_DIR, 'current-metrics.json');
 
-function percentile(values, p) {
+export function percentile(values, p) {
   if (values.length === 0) return 0;
   const sorted = [...values].sort((a, b) => a - b);
   const idx = Math.min(sorted.length - 1, Math.ceil((p / 100) * sorted.length) - 1);
   return sorted[idx];
 }
 
-function dedupeKey(event) {
+export function dedupeKey(event) {
   if (event.type !== 'gateway_event') return null;
   const runId = event.runId ?? '';
   const sessionKey = event.sessionKey ?? '';
@@ -24,7 +24,7 @@ function dedupeKey(event) {
   return `${runId}|${sessionKey}|${seq}|${state}`;
 }
 
-function calculateScenarioMetrics(events) {
+export function calculateScenarioMetrics(events) {
   let totalGatewayEvents = 0;
   let uniqueGatewayEvents = 0;
   let fanoutTotal = 0;
@@ -110,7 +110,7 @@ function calculateScenarioMetrics(events) {
   };
 }
 
-function aggregateMetrics(metricsList) {
+export function aggregateMetrics(metricsList) {
   if (metricsList.length === 0) {
     return calculateScenarioMetrics([]);
   }
@@ -129,14 +129,14 @@ function aggregateMetrics(metricsList) {
   };
 }
 
-async function loadScenario(fileName) {
+export async function loadScenario(fileName) {
   const fullPath = path.join(DATASET_DIR, fileName);
   const raw = await readFile(fullPath, 'utf8');
   const lines = raw.split('\n').map((line) => line.trim()).filter(Boolean);
   return lines.map((line) => JSON.parse(line));
 }
 
-async function main() {
+export async function main() {
   const argScenario = process.argv.find((arg) => arg.startsWith('--scenario='))?.split('=')[1] ?? 'all';
   const files = (await readdir(DATASET_DIR)).filter((name) => name.endsWith('.jsonl')).sort();
   const selectedFiles = argScenario === 'all'
@@ -167,7 +167,10 @@ async function main() {
   console.log(`Wrote comms replay metrics to ${OUTPUT_FILE}`);
 }
 
-main().catch((error) => {
-  console.error('[comms:replay] failed:', error);
-  process.exitCode = 1;
-});
+const isEntrypoint = process.argv[1] && path.resolve(process.argv[1]) === path.resolve(new URL(import.meta.url).pathname);
+if (isEntrypoint) {
+  main().catch((error) => {
+    console.error('[comms:replay] failed:', error);
+    process.exitCode = 1;
+  });
+}

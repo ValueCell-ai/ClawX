@@ -1,0 +1,9 @@
+{"ts":0,"type":"gateway_event","runId":"run-invalid-1","sessionKey":"agent:main:session-invalid","seq":1,"state":"started","fanout":1}
+{"ts":0.2,"type":"rpc","method":"config.patch","latencyMs":110,"timeout":false}
+{"ts":0.4,"type":"rpc","method":"config.patch","latencyMs":130,"timeout":false}
+{"ts":0.7,"type":"gateway_reconnect"}
+{"ts":1.0,"type":"history_load","sessionKey":"agent:main:session-invalid","action":"start"}
+{"ts":1.3,"type":"history_load","sessionKey":"agent:main:session-invalid","action":"end"}
+{"ts":1.7,"type":"gateway_event","runId":"run-invalid-1","sessionKey":"agent:main:session-invalid","seq":2,"state":"delta","fanout":1}
+{"ts":2.1,"type":"gateway_event","runId":"run-invalid-1","sessionKey":"agent:main:session-invalid","seq":3,"state":"final","fanout":1}
+{"ts":2.4,"type":"message","lost":false,"orderViolation":false}
