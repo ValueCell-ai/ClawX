@@ -1,6 +1,6 @@
 import type { IncomingMessage, ServerResponse } from 'http';
 import { app } from 'electron';
-import { existsSync, cpSync, mkdirSync, rmSync } from 'node:fs';
+import { existsSync, cpSync, mkdirSync, rmSync, readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import {
@@ -25,72 +25,48 @@ function scheduleGatewayChannelRestart(ctx: HostApiContext, reason: string): voi
   void reason;
 }
 
-async function ensureDingTalkPluginInstalled(): Promise<{ installed: boolean; warning?: string }> {
-  const targetDir = join(homedir(), '.openclaw', 'extensions', 'dingtalk');
-  const targetManifest = join(targetDir, 'openclaw.plugin.json');
+// ── Generic plugin installer with version-aware upgrades ─────────
 
-  if (existsSync(targetManifest)) {
-    return { installed: true };
-  }
-
-  const candidateSources = app.isPackaged
-    ? [
-      join(process.resourcesPath, 'openclaw-plugins', 'dingtalk'),
-      join(process.resourcesPath, 'app.asar.unpacked', 'build', 'openclaw-plugins', 'dingtalk'),
-      join(process.resourcesPath, 'app.asar.unpacked', 'openclaw-plugins', 'dingtalk'),
-    ]
-    : [
-      join(app.getAppPath(), 'build', 'openclaw-plugins', 'dingtalk'),
-      join(process.cwd(), 'build', 'openclaw-plugins', 'dingtalk'),
-      join(__dirname, '../../../build/openclaw-plugins/dingtalk'),
-    ];
-
-  const sourceDir = candidateSources.find((dir) => existsSync(join(dir, 'openclaw.plugin.json')));
-  if (!sourceDir) {
-    return {
-      installed: false,
-      warning: `Bundled DingTalk plugin mirror not found. Checked: ${candidateSources.join(' | ')}`,
-    };
-  }
-
+function readPluginVersion(pkgJsonPath: string): string | null {
   try {
-    mkdirSync(join(homedir(), '.openclaw', 'extensions'), { recursive: true });
-    rmSync(targetDir, { recursive: true, force: true });
-    cpSync(sourceDir, targetDir, { recursive: true, dereference: true });
-    if (!existsSync(targetManifest)) {
-      return { installed: false, warning: 'Failed to install DingTalk plugin mirror (manifest missing).' };
-    }
-    return { installed: true };
+    const raw = readFileSync(pkgJsonPath, 'utf-8');
+    const parsed = JSON.parse(raw) as { version?: string };
+    return parsed.version ?? null;
   } catch {
-    return { installed: false, warning: 'Failed to install bundled DingTalk plugin mirror' };
+    return null;
   }
 }
 
-async function ensureWeComPluginInstalled(): Promise<{ installed: boolean; warning?: string }> {
-  const targetDir = join(homedir(), '.openclaw', 'extensions', 'wecom');
+function ensurePluginInstalled(
+  pluginDirName: string,
+  candidateSources: string[],
+  pluginLabel: string,
+): { installed: boolean; warning?: string } {
+  const targetDir = join(homedir(), '.openclaw', 'extensions', pluginDirName);
   const targetManifest = join(targetDir, 'openclaw.plugin.json');
-
-  if (existsSync(targetManifest)) {
-    return { installed: true };
-  }
-
-  const candidateSources = app.isPackaged
-    ? [
-      join(process.resourcesPath, 'openclaw-plugins', 'wecom'),
-      join(process.resourcesPath, 'app.asar.unpacked', 'build', 'openclaw-plugins', 'wecom'),
-      join(process.resourcesPath, 'app.asar.unpacked', 'openclaw-plugins', 'wecom'),
-    ]
-    : [
-      join(app.getAppPath(), 'build', 'openclaw-plugins', 'wecom'),
-      join(process.cwd(), 'build', 'openclaw-plugins', 'wecom'),
-      join(__dirname, '../../../build/openclaw-plugins/wecom'),
-    ];
+  const targetPkgJson = join(targetDir, 'package.json');
 
   const sourceDir = candidateSources.find((dir) => existsSync(join(dir, 'openclaw.plugin.json')));
+
+  // If already installed, check whether an upgrade is available
+  if (existsSync(targetManifest)) {
+    if (!sourceDir) return { installed: true }; // no bundled source to compare, keep existing
+    const installedVersion = readPluginVersion(targetPkgJson);
+    const sourceVersion = readPluginVersion(join(sourceDir, 'package.json'));
+    if (!sourceVersion || !installedVersion || sourceVersion === installedVersion) {
+      return { installed: true }; // same version or unable to compare
+    }
+    // Version differs — fall through to overwrite install
+    console.log(
+      `[plugin] Upgrading ${pluginLabel} plugin: ${installedVersion} → ${sourceVersion}`,
+    );
+  }
+
+  // Fresh install or upgrade
   if (!sourceDir) {
     return {
       installed: false,
-      warning: `Bundled WeCom plugin mirror not found. Checked: ${candidateSources.join(' | ')}`,
+      warning: `Bundled ${pluginLabel} plugin mirror not found. Checked: ${candidateSources.join(' | ')}`,
     };
   }
 
@@ -98,95 +74,49 @@ async function ensureWeComPluginInstalled(): Promise<{ installed: boolean; warni
     mkdirSync(join(homedir(), '.openclaw', 'extensions'), { recursive: true });
     rmSync(targetDir, { recursive: true, force: true });
     cpSync(sourceDir, targetDir, { recursive: true, dereference: true });
-    if (!existsSync(targetManifest)) {
-      return { installed: false, warning: 'Failed to install WeCom plugin mirror (manifest missing).' };
+    if (!existsSync(join(targetDir, 'openclaw.plugin.json'))) {
+      return { installed: false, warning: `Failed to install ${pluginLabel} plugin mirror (manifest missing).` };
     }
     return { installed: true };
   } catch {
-    return { installed: false, warning: 'Failed to install bundled WeCom plugin mirror' };
+    return { installed: false, warning: `Failed to install bundled ${pluginLabel} plugin mirror` };
   }
 }
 
-async function ensureFeishuPluginInstalled(): Promise<{ installed: boolean; warning?: string }> {
-  const targetDir = join(homedir(), '.openclaw', 'extensions', 'feishu-openclaw-plugin');
-  const targetManifest = join(targetDir, 'openclaw.plugin.json');
+// ── Per-channel plugin helpers (thin wrappers around ensurePluginInstalled) ──
 
-  if (existsSync(targetManifest)) {
-    return { installed: true };
-  }
-
-  const candidateSources = app.isPackaged
+function buildCandidateSources(pluginDirName: string): string[] {
+  return app.isPackaged
     ? [
-      join(process.resourcesPath, 'openclaw-plugins', 'feishu-openclaw-plugin'),
-      join(process.resourcesPath, 'app.asar.unpacked', 'build', 'openclaw-plugins', 'feishu-openclaw-plugin'),
-      join(process.resourcesPath, 'app.asar.unpacked', 'openclaw-plugins', 'feishu-openclaw-plugin'),
+      join(process.resourcesPath, 'openclaw-plugins', pluginDirName),
+      join(process.resourcesPath, 'app.asar.unpacked', 'build', 'openclaw-plugins', pluginDirName),
+      join(process.resourcesPath, 'app.asar.unpacked', 'openclaw-plugins', pluginDirName),
     ]
     : [
-      join(app.getAppPath(), 'build', 'openclaw-plugins', 'feishu-openclaw-plugin'),
-      join(process.cwd(), 'build', 'openclaw-plugins', 'feishu-openclaw-plugin'),
-      join(__dirname, '../../../build/openclaw-plugins/feishu-openclaw-plugin'),
+      join(app.getAppPath(), 'build', 'openclaw-plugins', pluginDirName),
+      join(process.cwd(), 'build', 'openclaw-plugins', pluginDirName),
+      join(__dirname, '../../../build/openclaw-plugins', pluginDirName),
     ];
-
-  const sourceDir = candidateSources.find((dir) => existsSync(join(dir, 'openclaw.plugin.json')));
-  if (!sourceDir) {
-    return {
-      installed: false,
-      warning: `Bundled Feishu plugin mirror not found. Checked: ${candidateSources.join(' | ')}`,
-    };
-  }
-
-  try {
-    mkdirSync(join(homedir(), '.openclaw', 'extensions'), { recursive: true });
-    rmSync(targetDir, { recursive: true, force: true });
-    cpSync(sourceDir, targetDir, { recursive: true, dereference: true });
-    if (!existsSync(targetManifest)) {
-      return { installed: false, warning: 'Failed to install Feishu plugin mirror (manifest missing).' };
-    }
-    return { installed: true };
-  } catch {
-    return { installed: false, warning: 'Failed to install bundled Feishu plugin mirror' };
-  }
 }
 
-async function ensureQQBotPluginInstalled(): Promise<{ installed: boolean; warning?: string }> {
-  const targetDir = join(homedir(), '.openclaw', 'extensions', 'qqbot');
-  const targetManifest = join(targetDir, 'openclaw.plugin.json');
+function ensureDingTalkPluginInstalled(): { installed: boolean; warning?: string } {
+  return ensurePluginInstalled('dingtalk', buildCandidateSources('dingtalk'), 'DingTalk');
+}
 
-  if (existsSync(targetManifest)) {
-    return { installed: true };
-  }
+function ensureWeComPluginInstalled(): { installed: boolean; warning?: string } {
+  return ensurePluginInstalled('wecom', buildCandidateSources('wecom'), 'WeCom');
+}
 
-  const candidateSources = app.isPackaged
-    ? [
-      join(process.resourcesPath, 'openclaw-plugins', 'qqbot'),
-      join(process.resourcesPath, 'app.asar.unpacked', 'build', 'openclaw-plugins', 'qqbot'),
-      join(process.resourcesPath, 'app.asar.unpacked', 'openclaw-plugins', 'qqbot'),
-    ]
-    : [
-      join(app.getAppPath(), 'build', 'openclaw-plugins', 'qqbot'),
-      join(process.cwd(), 'build', 'openclaw-plugins', 'qqbot'),
-      join(__dirname, '../../../build/openclaw-plugins/qqbot'),
-    ];
+function ensureFeishuPluginInstalled(): { installed: boolean; warning?: string } {
+  return ensurePluginInstalled(
+    'feishu-openclaw-plugin',
+    buildCandidateSources('feishu-openclaw-plugin'),
+    'Feishu',
+  );
+}
 
-  const sourceDir = candidateSources.find((dir) => existsSync(join(dir, 'openclaw.plugin.json')));
-  if (!sourceDir) {
-    return {
-      installed: false,
-      warning: `Bundled QQ Bot plugin mirror not found. Checked: ${candidateSources.join(' | ')}`,
-    };
-  }
-
-  try {
-    mkdirSync(join(homedir(), '.openclaw', 'extensions'), { recursive: true });
-    rmSync(targetDir, { recursive: true, force: true });
-    cpSync(sourceDir, targetDir, { recursive: true, dereference: true });
-    if (!existsSync(targetManifest)) {
-      return { installed: false, warning: 'Failed to install QQ Bot plugin mirror (manifest missing).' };
-    }
-    return { installed: true };
-  } catch {
-    return { installed: false, warning: 'Failed to install bundled QQ Bot plugin mirror' };
-  }
+function ensureQQBotPluginInstalled(): { installed: boolean; warning?: string } {
+  return ensurePluginInstalled('qqbot', buildCandidateSources('qqbot'), 'QQ Bot');
 }
 
 export async function handleChannelRoutes(

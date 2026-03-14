@@ -16,7 +16,8 @@ import { withConfigLock } from './config-mutex';
 const OPENCLAW_DIR = join(homedir(), '.openclaw');
 const CONFIG_FILE = join(OPENCLAW_DIR, 'openclaw.json');
 const WECOM_PLUGIN_ID = 'wecom-openclaw-plugin';
-const FEISHU_PLUGIN_ID = 'feishu-openclaw-plugin';
+const FEISHU_PLUGIN_ID = 'openclaw-lark';
+const LEGACY_FEISHU_PLUGIN_ID = 'feishu-openclaw-plugin';
 const DEFAULT_ACCOUNT_ID = 'default';
 const CHANNEL_TOP_LEVEL_KEYS_TO_KEEP = new Set(['accounts', 'defaultAccount', 'enabled']);
 
@@ -112,7 +113,10 @@ function ensurePluginAllowlist(currentConfig: OpenClawConfig, channelType: strin
             const allow: string[] = Array.isArray(currentConfig.plugins.allow)
                 ? (currentConfig.plugins.allow as string[])
                 : [];
-            const normalizedAllow = allow.filter((pluginId) => pluginId !== 'feishu');
+            // Remove legacy IDs: 'feishu' (built-in) and old 'feishu-openclaw-plugin'
+            const normalizedAllow = allow.filter(
+                (pluginId) => pluginId !== 'feishu' && pluginId !== LEGACY_FEISHU_PLUGIN_ID
+            );
             if (!normalizedAllow.includes(FEISHU_PLUGIN_ID)) {
                 currentConfig.plugins.allow = [...normalizedAllow, FEISHU_PLUGIN_ID];
             } else if (normalizedAllow.length !== allow.length) {
@@ -122,10 +126,9 @@ function ensurePluginAllowlist(currentConfig: OpenClawConfig, channelType: strin
             if (!currentConfig.plugins.entries) {
                 currentConfig.plugins.entries = {};
             }
-            // Remove legacy 'feishu' entry — the official plugin registers its
-            // channel AS 'feishu' via openclaw.plugin.json, so an explicit
-            // entries.feishu.enabled=false would block the official plugin's channel.
+            // Remove legacy entries that would conflict with the current plugin ID
             delete currentConfig.plugins.entries['feishu'];
+            delete currentConfig.plugins.entries[LEGACY_FEISHU_PLUGIN_ID];
 
             if (!currentConfig.plugins.entries[FEISHU_PLUGIN_ID]) {
                 currentConfig.plugins.entries[FEISHU_PLUGIN_ID] = {};
