@@ -1055,19 +1055,29 @@ export async function sanitizeOpenClawConfig(): Promise<void> {
         modified = true;
       }
 
-      // ── Disable bare 'feishu' when openclaw-lark is present ────────
-      // The Gateway binary automatically adds bare 'feishu' to plugins
-      // config because the openclaw-lark plugin registers the 'feishu'
-      // channel.  We can't DELETE it (triggers config-change → restart →
-      // Gateway re-adds it → loop).  Instead, disable it so it doesn't
-      // conflict with openclaw-lark.
-      const allowArr = Array.isArray(pluginsObj.allow) ? pluginsObj.allow as string[] : [];
-      const hasNewFeishu = allowArr.includes(NEW_FEISHU_ID) || !!pEntries?.[NEW_FEISHU_ID];
-      if (hasNewFeishu && pEntries?.feishu) {
-        if (pEntries.feishu.enabled !== false) {
-          pEntries.feishu.enabled = false;
-          console.log(`[sanitize] Disabled bare plugins.entries.feishu (openclaw-lark is configured)`);
+      // ── Remove bare 'feishu' when openclaw-lark is present ─────────
+      // The Gateway binary automatically adds bare 'feishu' to plugins.allow
+      // because the openclaw-lark plugin registers the 'feishu' channel.
+      // However, there's no plugin with id='feishu', so Gateway validation
+      // fails with "plugin not found: feishu".  Remove it from allow[] and
+      // disable the entries.feishu entry to prevent Gateway from re-adding it.
+      const allowArr2 = Array.isArray(pluginsObj.allow) ? pluginsObj.allow as string[] : [];
+      const hasNewFeishu = allowArr2.includes(NEW_FEISHU_ID) || !!pEntries?.[NEW_FEISHU_ID];
+      if (hasNewFeishu) {
+        // Remove bare 'feishu' from plugins.allow
+        const bareFeishuIdx = allowArr2.indexOf('feishu');
+        if (bareFeishuIdx !== -1) {
+          allowArr2.splice(bareFeishuIdx, 1);
+          console.log('[sanitize] Removed bare "feishu" from plugins.allow (openclaw-lark is configured)');
           modified = true;
+        }
+        // Disable bare 'feishu' in plugins.entries so Gateway won't re-add it
+        if (pEntries?.feishu) {
+          if (pEntries.feishu.enabled !== false) {
+            pEntries.feishu.enabled = false;
+            console.log('[sanitize] Disabled bare plugins.entries.feishu (openclaw-lark is configured)');
+            modified = true;
+          }
         }
       }
     }
