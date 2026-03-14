@@ -22,6 +22,10 @@ function scheduleGatewayReload(ctx: HostApiContext, reason: string): void {
   void reason;
 }
 
+import { exec } from 'child_process';
+import { promisify } from 'util';
+const execAsync = promisify(exec);
+
 /**
  * Force a full Gateway process restart after agent deletion.
  *
@@ -34,7 +38,61 @@ function scheduleGatewayReload(ctx: HostApiContext, reason: string): void {
  */
 async function restartGatewayForAgentDeletion(ctx: HostApiContext): Promise<void> {
   try {
-    console.log('[agents] Triggering Gateway restart (kill+respawn) after agent deletion');
+    // Capture the PID of the running Gateway BEFORE stop() clears it.
+    const status = ctx.gatewayManager.getStatus();
+    const pid = status.pid;
+    const port = status.port;
+    console.log('[agents] Triggering Gateway restart (kill+respawn) after agent deletion', { pid, port });
+
+    // Force-kill the Gateway process by PID.  The manager's stop() only
+    // kills "owned" processes; if the manager connected to an already-
+    // running Gateway (ownsProcess=false), stop() simply closes the WS
+    // and the old process stays alive with its stale channel connections.
+    if (pid) {
+      try {
+        process.kill(pid, 'SIGTERM');
+        // Give it a moment to die
+        await new Promise((resolve) => setTimeout(resolve, 500));
+        try { process.kill(pid, 0); process.kill(pid, 'SIGKILL'); } catch { /* already dead */ }
+      } catch {
+        // process already gone – that's fine
+      }
+    } else if (port) {
+      // If we don't know the PID (e.g. connected to an orphaned Gateway from
+      // a previous pnpm dev run), forcefully kill whatever is on the port.
+      try {
+        if (process.platform === 'darwin' || process.platform === 'linux') {
+          // MUST use -sTCP:LISTEN. Otherwise lsof returns the client process (ClawX itself) 
+          // that has an ESTABLISHED WebSocket connection to the port, causing us to kill ourselves.
+          const { stdout } = await execAsync(`lsof -t -i :${port} -sTCP:LISTEN`);
+          const pids = stdout.trim().split('\n').filter(Boolean);
+          for (const p of pids) {
+            try { process.kill(parseInt(p, 10), 'SIGTERM'); } catch { /* ignore */ }
+          }
+          await new Promise((resolve) => setTimeout(resolve, 500));
+          for (const p of pids) {
+            try { process.kill(parseInt(p, 10), 'SIGKILL'); } catch { /* ignore */ }
+          }
+        } else if (process.platform === 'win32') {
+          // Find PID listening on the port
+          const { stdout } = await execAsync(`netstat -ano | findstr :${port}`);
+          const lines = stdout.trim().split('\n');
+          const pids = new Set<string>();
+          for (const line of lines) {
+            const parts = line.trim().split(/\s+/);
+            if (parts.length >= 5 && parts[1].endsWith(`:${port}`) && parts[3] === 'LISTENING') {
+              pids.add(parts[4]);
+            }
+          }
+          for (const p of pids) {
+            try { await execAsync(`taskkill /F /PID ${p}`); } catch { /* ignore */ }
+          }
+        }
+      } catch {
+        // Port might not be bound or command failed; ignore
+      }
+    }
+
     await ctx.gatewayManager.restart();
     console.log('[agents] Gateway restart completed after agent deletion');
   } catch (err) {

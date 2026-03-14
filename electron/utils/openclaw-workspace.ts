@@ -5,7 +5,7 @@
  * main thread.
  */
 import { access, readFile, writeFile, readdir, mkdir, unlink } from 'fs/promises';
-import { constants, Dirent } from 'fs';
+import { constants } from 'fs';
 import { join } from 'path';
 import { homedir } from 'os';
 import { logger } from './logger';
@@ -78,16 +78,11 @@ async function resolveAllWorkspaceDirs(): Promise<string[]> {
     // ignore config parse errors
   }
 
-  try {
-    const entries: Dirent[] = await readdir(openclawDir, { withFileTypes: true });
-    for (const entry of entries) {
-      if (entry.isDirectory() && entry.name.startsWith('workspace')) {
-        dirs.add(join(openclawDir, entry.name));
-      }
-    }
-  } catch {
-    // ignore read errors
-  }
+  // We intentionally do NOT scan ~/.openclaw/ for any directory starting
+  // with 'workspace'. Doing so causes a race condition where a recently deleted
+  // agent's workspace (e.g., workspace-code23) is found and resuscitated by
+  // the context merge routine before its deletion finishes. Only workspaces
+  // explicitly declared in openclaw.json should be seeded.
 
   if (dirs.size === 0) {
     dirs.add(join(openclawDir, 'workspace'));
