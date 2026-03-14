@@ -30,6 +30,8 @@ import { browserOAuthManager } from '../utils/browser-oauth';
 import { whatsAppLoginManager } from '../utils/whatsapp-login';
 import { syncAllProviderAuthToRuntime } from '../services/providers/provider-runtime-sync';
 
+const WINDOWS_APP_USER_MODEL_ID = 'app.clawx.desktop';
+
 // Disable GPU hardware acceleration globally for maximum stability across
 // all GPU configurations (no GPU, integrated, discrete).
 //
@@ -58,16 +60,17 @@ if (process.platform === 'linux') {
 // Without this, two instances each spawn their own gateway process on the
 // same port, then each treats the other's gateway as "orphaned" and kills
 // it — creating an infinite kill/restart loop on Windows.
+// The losing process must exit immediately so it never reaches Gateway startup.
 const gotTheLock = app.requestSingleInstanceLock();
 if (!gotTheLock) {
-  app.quit();
+  app.exit(0);
 }
 
 // Global references
 let mainWindow: BrowserWindow | null = null;
-const gatewayManager = new GatewayManager();
-const clawHubService = new ClawHubService();
-const hostEventBus = new HostEventBus();
+let gatewayManager!: GatewayManager;
+let clawHubService!: ClawHubService;
+let hostEventBus!: HostEventBus;
 let hostApiServer: Server | null = null;
 
 /**
@@ -142,6 +145,19 @@ function createWindow(): BrowserWindow {
   }
 
   return win;
+}
+
+function focusMainWindow(): void {
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    return;
+  }
+
+  if (mainWindow.isMinimized()) {
+    mainWindow.restore();
+  }
+
+  mainWindow.show();
+  mainWindow.focus();
 }
 
 /**
@@ -354,50 +370,65 @@ async function initialize(): Promise<void> {
   });
 }
 
-// When a second instance is launched, focus the existing window instead.
-app.on('second-instance', () => {
-  if (mainWindow) {
-    if (mainWindow.isMinimized()) mainWindow.restore();
-    mainWindow.show();
-    mainWindow.focus();
+if (gotTheLock) {
+  if (process.platform === 'win32') {
+    app.setAppUserModelId(WINDOWS_APP_USER_MODEL_ID);
   }
-});
 
-// Application lifecycle
-app.whenReady().then(() => {
-  void initialize().catch((error) => {
-    logger.error('Application initialization failed:', error);
-  });
+  gatewayManager = new GatewayManager();
+  clawHubService = new ClawHubService();
+  hostEventBus = new HostEventBus();
 
-  // Register activate handler AFTER app is ready to prevent
-  // "Cannot create BrowserWindow before app is ready" on macOS.
-  app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) {
-      mainWindow = createWindow();
-    } else if (mainWindow && !mainWindow.isDestroyed()) {
-      // On macOS, clicking the dock icon should show the window if it's hidden
-      mainWindow.show();
-      mainWindow.focus();
+  // When a second instance is launched, focus the existing window instead.
+  app.on('second-instance', () => {
+    logger.info('Second ClawX instance detected; redirecting to the existing window');
+
+    if (mainWindow) {
+      focusMainWindow();
+      return;
+    }
+
+    if (!app.isReady()) {
+      app.once('browser-window-created', () => {
+        focusMainWindow();
+      });
     }
   });
-});
 
-app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') {
-    app.quit();
-  }
-});
+  // Application lifecycle
+  app.whenReady().then(() => {
+    void initialize().catch((error) => {
+      logger.error('Application initialization failed:', error);
+    });
 
-app.on('before-quit', () => {
-  setQuitting();
-  hostEventBus.closeAll();
-  hostApiServer?.close();
-  // Fire-and-forget: do not await gatewayManager.stop() here.
-  // Awaiting inside before-quit can stall Electron's quit sequence.
-  void gatewayManager.stop().catch((err) => {
-    logger.warn('gatewayManager.stop() error during quit:', err);
+    // Register activate handler AFTER app is ready to prevent
+    // "Cannot create BrowserWindow before app is ready" on macOS.
+    app.on('activate', () => {
+      if (BrowserWindow.getAllWindows().length === 0) {
+        mainWindow = createWindow();
+      } else {
+        focusMainWindow();
+      }
+    });
   });
-});
+
+  app.on('window-all-closed', () => {
+    if (process.platform !== 'darwin') {
+      app.quit();
+    }
+  });
+
+  app.on('before-quit', () => {
+    setQuitting();
+    hostEventBus.closeAll();
+    hostApiServer?.close();
+    // Fire-and-forget: do not await gatewayManager.stop() here.
+    // Awaiting inside before-quit can stall Electron's quit sequence.
+    void gatewayManager.stop().catch((err) => {
+      logger.warn('gatewayManager.stop() error during quit:', err);
+    });
+  });
+}
 
 // Export for testing
 export { mainWindow, gatewayManager };
