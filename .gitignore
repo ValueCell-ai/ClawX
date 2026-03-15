@@ -64,3 +64,4 @@ docs/pr-session-notes-*.md
 
 .cursor/
 .pnpm-store/
+.openclaw/

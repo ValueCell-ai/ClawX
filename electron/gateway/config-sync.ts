@@ -1,12 +1,16 @@
 import { app } from 'electron';
 import path from 'path';
 import { existsSync, readFileSync, cpSync, mkdirSync, rmSync, readdirSync, realpathSync } from 'fs';
-import { homedir } from 'os';
 import { join } from 'path';
 import { getAllSettings } from '../utils/store';
 import { getApiKey, getDefaultProvider, getProvider } from '../utils/secure-storage';
 import { getProviderEnvVar, getKeyableProviderTypes } from '../utils/provider-registry';
-import { getOpenClawDir, getOpenClawEntryPath, isOpenClawPresent } from '../utils/paths';
+import {
+  getOpenClawDir,
+  getOpenClawEntryPath,
+  getOpenClawExtensionsDir,
+  isOpenClawPresent,
+} from '../utils/paths';
 import { getUvMirrorEnv } from '../utils/uv-env';
 import { listConfiguredChannels } from '../utils/channel-config';
 import { syncGatewayTokenToConfig, syncBrowserConfigToOpenClaw, sanitizeOpenClawConfig } from '../utils/openclaw-auth';
@@ -177,7 +181,8 @@ function ensureConfiguredPluginsUpgraded(configuredChannels: string[]): void {
     if (!pluginInfo) continue;
     const { dirName, npmName } = pluginInfo;
 
-    const targetDir = join(homedir(), '.openclaw', 'extensions', dirName);
+    const extensionsDir = getOpenClawExtensionsDir();
+    const targetDir = join(extensionsDir, dirName);
     const targetManifest = join(targetDir, 'openclaw.plugin.json');
     if (!existsSync(targetManifest)) continue; // not installed, nothing to upgrade
 
@@ -192,7 +197,7 @@ function ensureConfiguredPluginsUpgraded(configuredChannels: string[]): void {
       if (sourceVersion && installedVersion && sourceVersion !== installedVersion) {
         logger.info(`[plugin] Auto-upgrading ${channelType} plugin: ${installedVersion} → ${sourceVersion} (bundled)`);
         try {
-          mkdirSync(join(homedir(), '.openclaw', 'extensions'), { recursive: true });
+          mkdirSync(extensionsDir, { recursive: true });
           rmSync(targetDir, { recursive: true, force: true });
           cpSync(bundledDir, targetDir, { recursive: true, dereference: true });
         } catch (err) {
@@ -211,7 +216,7 @@ function ensureConfiguredPluginsUpgraded(configuredChannels: string[]): void {
 
       logger.info(`[plugin] Auto-upgrading ${channelType} plugin: ${installedVersion} → ${sourceVersion} (dev/node_modules)`);
       try {
-        mkdirSync(join(homedir(), '.openclaw', 'extensions'), { recursive: true });
+        mkdirSync(extensionsDir, { recursive: true });
         copyPluginFromNodeModules(npmPkgPath, targetDir, npmName);
       } catch (err) {
         logger.warn(`[plugin] Failed to auto-upgrade ${channelType} plugin from node_modules:`, err);

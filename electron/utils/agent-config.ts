@@ -3,7 +3,7 @@ import { constants } from 'fs';
 import { join, normalize } from 'path';
 import { deleteAgentChannelAccounts, listConfiguredChannels, readOpenClawConfig, writeOpenClawConfig } from './channel-config';
 import { withConfigLock } from './config-mutex';
-import { expandPath, getOpenClawConfigDir } from './paths';
+import { expandOpenClawPath, getOpenClawConfigDir } from './paths';
 import * as logger from './logger';
 
 const MAIN_AGENT_ID = 'main';
@@ -327,7 +327,7 @@ function trimTrailingSeparators(path: string): string {
 function getManagedWorkspaceDirectory(agent: AgentListEntry): string | null {
   if (agent.id === MAIN_AGENT_ID) return null;
 
-  const configuredWorkspace = expandPath(agent.workspace || `~/.openclaw/workspace-${agent.id}`);
+  const configuredWorkspace = expandOpenClawPath(agent.workspace || `~/.openclaw/workspace-${agent.id}`);
   const managedWorkspace = join(getOpenClawConfigDir(), `workspace-${agent.id}`);
   const normalizedConfigured = trimTrailingSeparators(normalize(configuredWorkspace));
   const normalizedManaged = trimTrailingSeparators(normalize(managedWorkspace));
@@ -381,10 +381,10 @@ async function copyRuntimeFiles(sourceAgentDir: string, targetAgentDir: string):
 async function provisionAgentFilesystem(config: AgentConfigDocument, agent: AgentListEntry): Promise<void> {
   const { entries } = normalizeAgentsConfig(config);
   const mainEntry = entries.find((entry) => entry.id === MAIN_AGENT_ID) ?? createImplicitMainEntry(config);
-  const sourceWorkspace = expandPath(mainEntry.workspace || getDefaultWorkspacePath(config));
-  const targetWorkspace = expandPath(agent.workspace || `~/.openclaw/workspace-${agent.id}`);
-  const sourceAgentDir = expandPath(mainEntry.agentDir || getDefaultAgentDirPath(MAIN_AGENT_ID));
-  const targetAgentDir = expandPath(agent.agentDir || getDefaultAgentDirPath(agent.id));
+  const sourceWorkspace = expandOpenClawPath(mainEntry.workspace || getDefaultWorkspacePath(config));
+  const targetWorkspace = expandOpenClawPath(agent.workspace || `~/.openclaw/workspace-${agent.id}`);
+  const sourceAgentDir = expandOpenClawPath(mainEntry.agentDir || getDefaultAgentDirPath(MAIN_AGENT_ID));
+  const targetAgentDir = expandOpenClawPath(agent.agentDir || getDefaultAgentDirPath(agent.id));
   const targetSessionsDir = join(getOpenClawConfigDir(), 'agents', agent.id, 'sessions');
 
   await ensureDir(targetWorkspace);

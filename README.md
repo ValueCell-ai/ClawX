@@ -156,6 +156,9 @@ pnpm run init
 # Start in development mode
 pnpm dev
 ```
+
+In development mode, ClawX now scopes OpenClaw state to this checkout's `./.openclaw/` directory so multiple local clones do not share `~/.openclaw/`.
+
 ### First Launch
 
 When you launch ClawX for the first time, the **Setup Wizard** will guide you through:

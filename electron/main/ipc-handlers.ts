@@ -12,7 +12,15 @@ import { ClawHubService, ClawHubSearchParams, ClawHubInstallParams, ClawHubUnins
 import {
   type ProviderConfig,
 } from '../utils/secure-storage';
-import { getOpenClawStatus, getOpenClawDir, getOpenClawConfigDir, getOpenClawSkillsDir, ensureDir } from '../utils/paths';
+import {
+  ensureDir,
+  getOpenClawConfigDir,
+  getOpenClawDir,
+  getOpenClawExtensionsDir,
+  getOpenClawMediaOutboundDir,
+  getOpenClawSkillsDir,
+  getOpenClawStatus,
+} from '../utils/paths';
 import { getOpenClawCliCommand } from '../utils/openclaw-cli';
 import { getAllSettings, getSetting, resetSettings, setSetting, type AppSettings } from '../utils/store';
 import {
@@ -1397,7 +1405,8 @@ function registerOpenClawHandlers(gatewayManager: GatewayManager): void {
     candidateSources: string[],
     pluginLabel: string,
   ): { installed: boolean; warning?: string } {
-    const targetDir = join(homedir(), '.openclaw', 'extensions', pluginDirName);
+    const extensionsDir = getOpenClawExtensionsDir();
+    const targetDir = join(extensionsDir, pluginDirName);
     const targetManifest = join(targetDir, 'openclaw.plugin.json');
     const targetPkgJson = join(targetDir, 'package.json');
 
@@ -1423,7 +1432,7 @@ function registerOpenClawHandlers(gatewayManager: GatewayManager): void {
     }
 
     try {
-      mkdirSync(join(homedir(), '.openclaw', 'extensions'), { recursive: true });
+      mkdirSync(extensionsDir, { recursive: true });
       rmSync(targetDir, { recursive: true, force: true });
       cpSync(sourceDir, targetDir, { recursive: true, dereference: true });
 
@@ -2361,8 +2370,6 @@ function mimeToExt(mimeType: string): string {
   return '';
 }
 
-const OUTBOUND_DIR = join(homedir(), '.openclaw', 'media', 'outbound');
-
 /**
  * Generate a preview data URL for image files.
  * Resizes large images while preserving aspect ratio (only constrain the
@@ -2399,13 +2406,14 @@ function registerFileHandlers(): void {
   // Stage files from real disk paths (used with dialog:open)
   ipcMain.handle('file:stage', async (_, filePaths: string[]) => {
     const fsP = await import('fs/promises');
-    await fsP.mkdir(OUTBOUND_DIR, { recursive: true });
+    const outboundDir = getOpenClawMediaOutboundDir();
+    await fsP.mkdir(outboundDir, { recursive: true });
 
     const results = [];
     for (const filePath of filePaths) {
       const id = crypto.randomUUID();
       const ext = extname(filePath);
-      const stagedPath = join(OUTBOUND_DIR, `${id}${ext}`);
+      const stagedPath = join(outboundDir, `${id}${ext}`);
       await fsP.copyFile(filePath, stagedPath);
 
       const s = await fsP.stat(stagedPath);
@@ -2430,11 +2438,12 @@ function registerFileHandlers(): void {
     mimeType: string;
   }) => {
     const fsP = await import('fs/promises');
-    await fsP.mkdir(OUTBOUND_DIR, { recursive: true });
+    const outboundDir = getOpenClawMediaOutboundDir();
+    await fsP.mkdir(outboundDir, { recursive: true });
 
     const id = crypto.randomUUID();
     const ext = extname(payload.fileName) || mimeToExt(payload.mimeType);
-    const stagedPath = join(OUTBOUND_DIR, `${id}${ext}`);
+    const stagedPath = join(outboundDir, `${id}${ext}`);
     const buffer = Buffer.from(payload.base64, 'base64');
     await fsP.writeFile(stagedPath, buffer);
 

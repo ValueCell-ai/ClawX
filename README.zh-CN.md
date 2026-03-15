@@ -156,6 +156,9 @@ pnpm run init
 # 以开发模式启动
 pnpm dev
 ```
+
+在开发模式下，ClawX 现在会将 OpenClaw 状态固定到当前仓库的 `./.openclaw/` 目录，避免多个本地克隆共享同一个 `~/.openclaw/`。
+
 ### 首次启动
 
 首次启动 ClawX 时，**设置向导** 将引导你完成以下步骤：

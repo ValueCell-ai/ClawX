@@ -3,7 +3,7 @@
  * Cross-platform path resolution helpers
  */
 import { app } from 'electron';
-import { join } from 'path';
+import { dirname, join, resolve } from 'path';
 import { homedir } from 'os';
 import { existsSync, mkdirSync, readFileSync, realpathSync } from 'fs';
 import { logger } from './logger';
@@ -26,11 +26,89 @@ export function expandPath(path: string): string {
   return path;
 }
 
+function readFirstEnv(...keys: string[]): string | undefined {
+  for (const key of keys) {
+    const value = process.env[key]?.trim();
+    if (value) {
+      return value;
+    }
+  }
+  return undefined;
+}
+
+function resolveEnvPath(pathValue: string): string {
+  return resolve(expandPath(pathValue));
+}
+
+function getClawXProjectRoot(): string {
+  try {
+    return realpathSync(process.cwd());
+  } catch {
+    return resolve(process.cwd());
+  }
+}
+
+export function bootstrapProjectOpenClawEnv(): void {
+  if (app.isPackaged) {
+    return;
+  }
+  if (readFirstEnv(
+    'OPENCLAW_HOME',
+    'OPENCLAW_STATE_DIR',
+    'OPENCLAW_CONFIG_PATH',
+    'CLAWDBOT_STATE_DIR',
+    'CLAWDBOT_CONFIG_PATH',
+  )) {
+    return;
+  }
+
+  const projectRoot = getClawXProjectRoot();
+  const configDir = join(projectRoot, '.openclaw');
+  process.env.OPENCLAW_HOME = projectRoot;
+  process.env.OPENCLAW_CONFIG_PATH = join(configDir, 'openclaw.json');
+}
+
+export function getOpenClawHomeDir(): string {
+  const envHome = readFirstEnv('OPENCLAW_HOME');
+  if (envHome) {
+    return resolveEnvPath(envHome);
+  }
+  return homedir();
+}
+
+export function expandOpenClawPath(pathValue: string): string {
+  if (pathValue.startsWith('~')) {
+    return pathValue.replace('~', getOpenClawHomeDir());
+  }
+  return pathValue;
+}
+
 /**
  * Get OpenClaw config directory
  */
 export function getOpenClawConfigDir(): string {
-  return join(homedir(), '.openclaw');
+  const stateDir = readFirstEnv('OPENCLAW_STATE_DIR', 'CLAWDBOT_STATE_DIR');
+  if (stateDir) {
+    return resolveEnvPath(stateDir);
+  }
+
+  const configPath = readFirstEnv('OPENCLAW_CONFIG_PATH', 'CLAWDBOT_CONFIG_PATH');
+  if (configPath) {
+    return dirname(resolveEnvPath(configPath));
+  }
+
+  return join(getOpenClawHomeDir(), '.openclaw');
+}
+
+/**
+ * Get OpenClaw config file path
+ */
+export function getOpenClawConfigPath(): string {
+  const configPath = readFirstEnv('OPENCLAW_CONFIG_PATH', 'CLAWDBOT_CONFIG_PATH');
+  if (configPath) {
+    return resolveEnvPath(configPath);
+  }
+  return join(getOpenClawConfigDir(), 'openclaw.json');
 }
 
 /**
@@ -38,6 +116,22 @@ export function getOpenClawConfigDir(): string {
  */
 export function getOpenClawSkillsDir(): string {
   return join(getOpenClawConfigDir(), 'skills');
+}
+
+export function getOpenClawExtensionsDir(): string {
+  return join(getOpenClawConfigDir(), 'extensions');
+}
+
+export function getOpenClawAgentsDir(): string {
+  return join(getOpenClawConfigDir(), 'agents');
+}
+
+export function getOpenClawCredentialsDir(...segments: string[]): string {
+  return join(getOpenClawConfigDir(), 'credentials', ...segments);
+}
+
+export function getOpenClawMediaOutboundDir(): string {
+  return join(getOpenClawConfigDir(), 'media', 'outbound');
 }
 
 /**

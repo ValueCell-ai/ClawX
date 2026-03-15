@@ -7,9 +7,8 @@
 import { access, readFile, writeFile, readdir, mkdir, unlink } from 'fs/promises';
 import { constants } from 'fs';
 import { join } from 'path';
-import { homedir } from 'os';
 import { logger } from './logger';
-import { getResourcesDir } from './paths';
+import { expandOpenClawPath, getOpenClawConfigDir, getResourcesDir } from './paths';
 
 const CLAWX_BEGIN = '<!-- clawx:begin -->';
 const CLAWX_END = '<!-- clawx:end -->';
@@ -51,7 +50,7 @@ export function mergeClawXSection(existing: string, section: string): string {
  * directories that already exist under ~/.openclaw/.
  */
 async function resolveAllWorkspaceDirs(): Promise<string[]> {
-  const openclawDir = join(homedir(), '.openclaw');
+  const openclawDir = getOpenClawConfigDir();
   const dirs = new Set<string>();
 
   const configPath = join(openclawDir, 'openclaw.json');
@@ -61,7 +60,7 @@ async function resolveAllWorkspaceDirs(): Promise<string[]> {
 
       const defaultWs = config?.agents?.defaults?.workspace;
       if (typeof defaultWs === 'string' && defaultWs.trim()) {
-        dirs.add(defaultWs.replace(/^~/, homedir()));
+        dirs.add(expandOpenClawPath(defaultWs));
       }
 
       const agents = config?.agents?.list;
@@ -69,7 +68,7 @@ async function resolveAllWorkspaceDirs(): Promise<string[]> {
         for (const agent of agents) {
           const ws = agent?.workspace;
           if (typeof ws === 'string' && ws.trim()) {
-            dirs.add(ws.replace(/^~/, homedir()));
+            dirs.add(expandOpenClawPath(ws));
           }
         }
       }

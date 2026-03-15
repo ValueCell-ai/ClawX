@@ -1,10 +1,11 @@
 import type { IncomingMessage, ServerResponse } from 'http';
 import { dialog, nativeImage } from 'electron';
 import crypto from 'node:crypto';
-import { extname, join } from 'node:path';
 import { homedir } from 'node:os';
+import { extname, join } from 'node:path';
 import type { HostApiContext } from '../context';
 import { parseJsonBody, sendJson } from '../route-utils';
+import { getOpenClawMediaOutboundDir } from '../../utils/paths';
 
 const EXT_MIME_MAP: Record<string, string> = {
   '.png': 'image/png',
@@ -53,8 +54,6 @@ function mimeToExt(mimeType: string): string {
   return '';
 }
 
-const OUTBOUND_DIR = join(homedir(), '.openclaw', 'media', 'outbound');
-
 async function generateImagePreview(filePath: string, mimeType: string): Promise<string | null> {
   try {
     const img = nativeImage.createFromPath(filePath);
@@ -85,12 +84,13 @@ export async function handleFileRoutes(
     try {
       const body = await parseJsonBody<{ filePaths: string[] }>(req);
       const fsP = await import('node:fs/promises');
-      await fsP.mkdir(OUTBOUND_DIR, { recursive: true });
+      const outboundDir = getOpenClawMediaOutboundDir();
+      await fsP.mkdir(outboundDir, { recursive: true });
       const results = [];
       for (const filePath of body.filePaths) {
         const id = crypto.randomUUID();
         const ext = extname(filePath);
-        const stagedPath = join(OUTBOUND_DIR, `${id}${ext}`);
+        const stagedPath = join(outboundDir, `${id}${ext}`);
         await fsP.copyFile(filePath, stagedPath);
         const s = await fsP.stat(stagedPath);
         const mimeType = getMimeType(ext);
@@ -111,10 +111,11 @@ export async function handleFileRoutes(
     try {
       const body = await parseJsonBody<{ base64: string; fileName: string; mimeType: string }>(req);
       const fsP = await import('node:fs/promises');
-      await fsP.mkdir(OUTBOUND_DIR, { recursive: true });
+      const outboundDir = getOpenClawMediaOutboundDir();
+      await fsP.mkdir(outboundDir, { recursive: true });
       const id = crypto.randomUUID();
       const ext = extname(body.fileName) || mimeToExt(body.mimeType);
-      const stagedPath = join(OUTBOUND_DIR, `${id}${ext}`);
+      const stagedPath = join(outboundDir, `${id}${ext}`);
       const buffer = Buffer.from(body.base64, 'base64');
       await fsP.writeFile(stagedPath, buffer);
       const mimeType = body.mimeType || getMimeType(ext);

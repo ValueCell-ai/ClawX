@@ -7,14 +7,16 @@
 import { access, mkdir, readFile, writeFile, readdir, stat, rm } from 'fs/promises';
 import { constants } from 'fs';
 import { join } from 'path';
-import { homedir } from 'os';
-import { getOpenClawResolvedDir } from './paths';
+import {
+  getOpenClawConfigDir,
+  getOpenClawConfigPath,
+  getOpenClawCredentialsDir,
+  getOpenClawResolvedDir,
+} from './paths';
 import * as logger from './logger';
 import { proxyAwareFetch } from './proxy-fetch';
 import { withConfigLock } from './config-mutex';
 
-const OPENCLAW_DIR = join(homedir(), '.openclaw');
-const CONFIG_FILE = join(OPENCLAW_DIR, 'openclaw.json');
 const WECOM_PLUGIN_ID = 'wecom-openclaw-plugin';
 const FEISHU_PLUGIN_ID = 'openclaw-lark';
 const LEGACY_FEISHU_PLUGIN_ID = 'feishu-openclaw-plugin';
@@ -77,20 +79,22 @@ export interface OpenClawConfig {
 // ── Config I/O ───────────────────────────────────────────────────
 
 async function ensureConfigDir(): Promise<void> {
-    if (!(await fileExists(OPENCLAW_DIR))) {
-        await mkdir(OPENCLAW_DIR, { recursive: true });
+    const openclawDir = getOpenClawConfigDir();
+    if (!(await fileExists(openclawDir))) {
+        await mkdir(openclawDir, { recursive: true });
     }
 }
 
 export async function readOpenClawConfig(): Promise<OpenClawConfig> {
     await ensureConfigDir();
+    const configFile = getOpenClawConfigPath();
 
-    if (!(await fileExists(CONFIG_FILE))) {
+    if (!(await fileExists(configFile))) {
         return {};
     }
 
     try {
-        const content = await readFile(CONFIG_FILE, 'utf-8');
+        const content = await readFile(configFile, 'utf-8');
         return JSON.parse(content) as OpenClawConfig;
     } catch (error) {
         logger.error('Failed to read OpenClaw config', error);
@@ -101,6 +105,7 @@ export async function readOpenClawConfig(): Promise<OpenClawConfig> {
 
 export async function writeOpenClawConfig(config: OpenClawConfig): Promise<void> {
     await ensureConfigDir();
+    const configFile = getOpenClawConfigPath();
 
     try {
         // Enable graceful in-process reload authorization for SIGUSR1 flows.
@@ -111,7 +116,7 @@ export async function writeOpenClawConfig(config: OpenClawConfig): Promise<void>
         commands.restart = true;
         config.commands = commands;
 
-        await writeFile(CONFIG_FILE, JSON.stringify(config, null, 2), 'utf-8');
+        await writeFile(configFile, JSON.stringify(config, null, 2), 'utf-8');
     } catch (error) {
         logger.error('Failed to write OpenClaw config', error);
         console.error('Failed to write OpenClaw config:', error);
@@ -599,7 +604,7 @@ export async function deleteChannelConfig(channelType: string): Promise<void> {
 
         if (channelType === 'whatsapp') {
             try {
-                const whatsappDir = join(homedir(), '.openclaw', 'credentials', 'whatsapp');
+                const whatsappDir = getOpenClawCredentialsDir('whatsapp');
                 if (await fileExists(whatsappDir)) {
                     await rm(whatsappDir, { recursive: true, force: true });
                     console.log('Deleted WhatsApp credentials directory');
@@ -634,7 +639,7 @@ export async function listConfiguredChannels(): Promise<string[]> {
     }
 
     try {
-        const whatsappDir = join(homedir(), '.openclaw', 'credentials', 'whatsapp');
+        const whatsappDir = getOpenClawCredentialsDir('whatsapp');
         if (await fileExists(whatsappDir)) {
             const entries = await readdir(whatsappDir);
             const hasSession = await (async () => {

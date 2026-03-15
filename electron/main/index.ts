@@ -14,6 +14,7 @@ import { appUpdater, registerUpdateHandlers } from './updater';
 import { logger } from '../utils/logger';
 import { warmupNetworkOptimization } from '../utils/uv-env';
 import { initTelemetry } from '../utils/telemetry';
+import { bootstrapProjectOpenClawEnv } from '../utils/paths';
 
 import { ClawHubService } from '../gateway/clawhub';
 import { ensureClawXContext, repairClawXOnlyBootstrapFiles } from '../utils/openclaw-workspace';
@@ -71,6 +72,8 @@ const gotTheLock = app.requestSingleInstanceLock();
 if (!gotTheLock) {
   app.exit(0);
 }
+
+bootstrapProjectOpenClawEnv();
 
 // Global references
 let mainWindow: BrowserWindow | null = null;

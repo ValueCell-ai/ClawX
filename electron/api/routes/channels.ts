@@ -1,7 +1,6 @@
 import type { IncomingMessage, ServerResponse } from 'http';
 import { app } from 'electron';
 import { existsSync, cpSync, mkdirSync, rmSync, readFileSync } from 'node:fs';
-import { homedir } from 'node:os';
 import { join } from 'node:path';
 import {
   deleteChannelConfig,
@@ -13,6 +12,7 @@ import {
   validateChannelCredentials,
 } from '../../utils/channel-config';
 import { assignChannelToAgent, clearAllBindingsForChannel } from '../../utils/agent-config';
+import { getOpenClawExtensionsDir } from '../../utils/paths';
 import { whatsAppLoginManager } from '../../utils/whatsapp-login';
 import type { HostApiContext } from '../context';
 import { parseJsonBody, sendJson } from '../route-utils';
@@ -61,7 +61,8 @@ function ensurePluginInstalled(
   candidateSources: string[],
   pluginLabel: string,
 ): { installed: boolean; warning?: string } {
-  const targetDir = join(homedir(), '.openclaw', 'extensions', pluginDirName);
+  const extensionsDir = getOpenClawExtensionsDir();
+  const targetDir = join(extensionsDir, pluginDirName);
   const targetManifest = join(targetDir, 'openclaw.plugin.json');
   const targetPkgJson = join(targetDir, 'package.json');
 
@@ -90,7 +91,7 @@ function ensurePluginInstalled(
   }
 
   try {
-    mkdirSync(join(homedir(), '.openclaw', 'extensions'), { recursive: true });
+    mkdirSync(extensionsDir, { recursive: true });
     rmSync(targetDir, { recursive: true, force: true });
     cpSync(sourceDir, targetDir, { recursive: true, dereference: true });
     if (!existsSync(join(targetDir, 'openclaw.plugin.json'))) {
