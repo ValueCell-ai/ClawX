@@ -155,4 +155,23 @@ describe('openclaw doctor output handling', () => {
     expect(result.stdout).toBe('line-1\nline-2\n');
     expect(result.stderr).toBe('warn-1\nwarn-2\n');
   });
+
+  it('runs plain doctor command without --json', async () => {
+    const child = new MockUtilityChild();
+    mockFork.mockReturnValue(child);
+
+    const { runOpenClawDoctor } = await import('@electron/utils/openclaw-doctor');
+    const resultPromise = runOpenClawDoctor();
+
+    await vi.waitFor(() => {
+      expect(mockFork).toHaveBeenCalledTimes(1);
+    });
+    child.stdout.emit('data', Buffer.from('doctor ok\n'));
+    child.emit('exit', 0);
+
+    const result = await resultPromise;
+    expect(result.success).toBe(true);
+    expect(result.command).toBe('openclaw doctor');
+    expect(mockFork.mock.calls[0][1]).toEqual(['doctor']);
+  });
 });

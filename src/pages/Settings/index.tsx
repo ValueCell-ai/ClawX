@@ -169,7 +169,7 @@ export function Settings() {
         exitCode: null,
         stdout: '',
         stderr: '',
-        command: 'openclaw doctor --json',
+        command: 'openclaw doctor',
         cwd: '',
         durationMs: 0,
         error: message,

@@ -7,7 +7,7 @@ import { getUvMirrorEnv } from './uv-env';
 
 const OPENCLAW_DOCTOR_TIMEOUT_MS = 60_000;
 const MAX_DOCTOR_OUTPUT_BYTES = 10 * 1024 * 1024;
-const OPENCLAW_DOCTOR_ARGS = ['doctor', '--json'];
+const OPENCLAW_DOCTOR_ARGS = ['doctor'];
 const OPENCLAW_DOCTOR_FIX_ARGS = ['doctor', '--fix', '--yes', '--non-interactive'];
 
 export type OpenClawDoctorMode = 'diagnose' | 'fix';
@@ -65,10 +65,12 @@ function getBundledBinPath(): string {
     : path.join(process.cwd(), 'resources', 'bin', target);
 }
 
-async function runDoctorCommand(mode: OpenClawDoctorMode): Promise<OpenClawDoctorResult> {
+async function runDoctorCommandWithArgs(
+  mode: OpenClawDoctorMode,
+  args: string[],
+): Promise<OpenClawDoctorResult> {
   const openclawDir = getOpenClawDir();
   const entryScript = getOpenClawEntryPath();
-  const args = mode === 'fix' ? OPENCLAW_DOCTOR_FIX_ARGS : OPENCLAW_DOCTOR_ARGS;
   const command = `openclaw ${args.join(' ')}`;
   const startedAt = Date.now();
 
@@ -194,9 +196,9 @@ async function runDoctorCommand(mode: OpenClawDoctorMode): Promise<OpenClawDocto
 }
 
 export async function runOpenClawDoctor(): Promise<OpenClawDoctorResult> {
-  return await runDoctorCommand('diagnose');
+  return await runDoctorCommandWithArgs('diagnose', OPENCLAW_DOCTOR_ARGS);
 }
 
 export async function runOpenClawDoctorFix(): Promise<OpenClawDoctorResult> {
-  return await runDoctorCommand('fix');
+  return await runDoctorCommandWithArgs('fix', OPENCLAW_DOCTOR_FIX_ARGS);
 }

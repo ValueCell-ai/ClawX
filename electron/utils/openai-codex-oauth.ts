@@ -1,5 +1,6 @@
 import { createHash, randomBytes } from 'node:crypto';
 import { createServer } from 'node:http';
+import { proxyAwareFetch } from './proxy-fetch';
 
 const CLIENT_ID = 'app_EMoamEEZ73f0CkXaXp7hrann';
 const AUTHORIZE_URL = 'https://auth.openai.com/oauth/authorize';
@@ -206,7 +207,7 @@ async function exchangeAuthorizationCode(
   code: string,
   verifier: string,
 ): Promise<{ access: string; refresh: string; expires: number }> {
-  const response = await fetch(TOKEN_URL, {
+  const response = await proxyAwareFetch(TOKEN_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body: new URLSearchParams({

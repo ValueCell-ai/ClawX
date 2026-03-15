@@ -22,6 +22,7 @@ import { logger } from './logger';
 import { saveProvider, getProvider, ProviderConfig } from './secure-storage';
 import { getProviderDefaultModel } from './provider-registry';
 import { isOpenClawPresent } from './paths';
+import { proxyAwareFetch } from './proxy-fetch';
 import {
     loginMiniMaxPortalOAuth,
     type MiniMaxOAuthToken,
@@ -46,6 +47,17 @@ class DeviceOAuthManager extends EventEmitter {
     private activeLabel: string | null = null;
     private active: boolean = false;
     private mainWindow: BrowserWindow | null = null;
+
+    private async runWithProxyAwareFetch<T>(task: () => Promise<T>): Promise<T> {
+        const originalFetch = globalThis.fetch;
+        globalThis.fetch = ((input: string | URL, init?: RequestInit) =>
+            proxyAwareFetch(input, init)) as typeof fetch;
+        try {
+            return await task();
+        } finally {
+            globalThis.fetch = originalFetch;
+        }
+    }
 
     setWindow(window: BrowserWindow) {
         this.mainWindow = window;
@@ -109,7 +121,7 @@ class DeviceOAuthManager extends EventEmitter {
         }
         const provider = this.activeProvider!;
 
-        const token: MiniMaxOAuthToken = await loginMiniMaxPortalOAuth({
+        const token: MiniMaxOAuthToken = await this.runWithProxyAwareFetch(() => loginMiniMaxPortalOAuth({
             region,
             openUrl: async (url) => {
                 logger.info(`[DeviceOAuth] MiniMax opening browser: ${url}`);
@@ -133,7 +145,7 @@ class DeviceOAuthManager extends EventEmitter {
                 update: (msg) => logger.info(`[DeviceOAuth] MiniMax progress: ${msg}`),
                 stop: (msg) => logger.info(`[DeviceOAuth] MiniMax progress done: ${msg ?? ''}`),
             },
-        });
+        }));
 
         if (!this.active) return;
 
@@ -159,7 +171,7 @@ class DeviceOAuthManager extends EventEmitter {
         }
         const provider = this.activeProvider!;
 
-        const token: QwenOAuthToken = await loginQwenPortalOAuth({
+        const token: QwenOAuthToken = await this.runWithProxyAwareFetch(() => loginQwenPortalOAuth({
             openUrl: async (url) => {
                 logger.info(`[DeviceOAuth] Qwen opening browser: ${url}`);
                 shell.openExternal(url).catch((err) =>
@@ -179,7 +191,7 @@ class DeviceOAuthManager extends EventEmitter {
                 update: (msg) => logger.info(`[DeviceOAuth] Qwen progress: ${msg}`),
                 stop: (msg) => logger.info(`[DeviceOAuth] Qwen progress done: ${msg ?? ''}`),
             },
-        });
+        }));
 
         if (!this.active) return;
 

@@ -102,3 +102,38 @@ describe('channel credential normalization and duplicate checks', () => {
     );
   });
 });
+
+describe('parseDoctorValidationOutput', () => {
+  it('extracts channel error and warning lines', async () => {
+    const { parseDoctorValidationOutput } = await import('@electron/utils/channel-config');
+
+    const out = parseDoctorValidationOutput(
+      'feishu',
+      'feishu error: token invalid\nfeishu warning: fallback enabled\n',
+    );
+
+    expect(out.undetermined).toBe(false);
+    expect(out.errors).toEqual(['feishu error: token invalid']);
+    expect(out.warnings).toEqual(['feishu warning: fallback enabled']);
+  });
+
+  it('falls back with hint when output has no channel signal', async () => {
+    const { parseDoctorValidationOutput } = await import('@electron/utils/channel-config');
+
+    const out = parseDoctorValidationOutput('feishu', 'all good, no channel details');
+
+    expect(out.undetermined).toBe(true);
+    expect(out.errors).toEqual([]);
+    expect(out.warnings.some((w) => w.includes('falling back to local channel config checks'))).toBe(true);
+  });
+
+  it('falls back with hint when output is empty', async () => {
+    const { parseDoctorValidationOutput } = await import('@electron/utils/channel-config');
+
+    const out = parseDoctorValidationOutput('feishu', '   ');
+
+    expect(out.undetermined).toBe(true);
+    expect(out.errors).toEqual([]);
+    expect(out.warnings.some((w) => w.includes('falling back to local channel config checks'))).toBe(true);
+  });
+});
