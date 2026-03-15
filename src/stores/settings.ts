@@ -157,7 +157,13 @@ export const useSettingsStore = create<SettingsState>()(
       setAutoCheckUpdate: (autoCheckUpdate) => set({ autoCheckUpdate }),
       setAutoDownloadUpdate: (autoDownloadUpdate) => set({ autoDownloadUpdate }),
       setSidebarCollapsed: (sidebarCollapsed) => set({ sidebarCollapsed }),
-      setDevModeUnlocked: (devModeUnlocked) => set({ devModeUnlocked }),
+      setDevModeUnlocked: (devModeUnlocked) => {
+        set({ devModeUnlocked });
+        void hostApiFetch('/api/settings/devModeUnlocked', {
+          method: 'PUT',
+          body: JSON.stringify({ value: devModeUnlocked }),
+        }).catch(() => { });
+      },
       markSetupComplete: () => set({ setupComplete: true }),
       resetSettings: () => set(defaultSettings),
     }),
