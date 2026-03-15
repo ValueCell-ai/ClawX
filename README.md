@@ -165,6 +165,8 @@ When you launch ClawX for the first time, the **Setup Wizard** will guide you th
 3. **Skill Bundles** – Select pre-configured skills for common use cases
 4. **Verification** – Test your configuration before entering the main interface
 
+The wizard preselects your system language when it is supported, and falls back to English otherwise.
+
 > Note for Moonshot (Kimi): ClawX keeps Kimi web search enabled by default.  
 > When Moonshot is configured, ClawX also syncs Kimi web search to the China endpoint (`https://api.moonshot.cn/v1`) in OpenClaw config.
 

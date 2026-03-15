@@ -165,6 +165,8 @@ pnpm dev
 3. **技能包** – 选择适用于常见场景的预配置技能
 4. **验证** – 在进入主界面前测试你的配置
 
+如果系统语言在支持列表中，向导会默认选中该语言；否则回退到英文。
+
 > Moonshot（Kimi）说明：ClawX 默认保持开启 Kimi 的 web search。  
 > 当配置 Moonshot 后，ClawX 也会将 OpenClaw 配置中的 Kimi web search 同步到中国区端点（`https://api.moonshot.cn/v1`）。
 
