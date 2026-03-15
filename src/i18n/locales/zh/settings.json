@@ -220,7 +220,7 @@
     "cmdUnavailable": "命令不可用",
     "cmdCopied": "CLI 命令已复制",
     "doctor": "OpenClaw Doctor 诊断",
-    "doctorDesc": "运行 `openclaw doctor --json` 并查看原始诊断输出。",
+    "doctorDesc": "运行 `openclaw doctor` 并查看原始诊断输出。",
     "runDoctor": "运行 Doctor",
     "runDoctorFix": "运行 Doctor 并修复",
     "doctorSucceeded": "OpenClaw doctor 已完成",

@@ -853,21 +853,29 @@ export async function validateChannelConfig(channelType: string): Promise<Valida
 
         // Run openclaw doctor command to validate config (async to avoid
         // blocking the main thread).
-        const output = await new Promise<string>((resolve, reject) => {
-            exec(
-                `node openclaw.mjs doctor --json 2>&1`,
-                {
-                    cwd: openclawPath,
-                    encoding: 'utf-8',
-                    timeout: 30000,
-                    windowsHide: true,
-                },
-                (err, stdout) => {
-                    if (err) reject(err);
-                    else resolve(stdout);
-                },
-            );
-        });
+        const runDoctor = async (command: string): Promise<string> =>
+            await new Promise<string>((resolve, reject) => {
+                exec(
+                    command,
+                    {
+                        cwd: openclawPath,
+                        encoding: 'utf-8',
+                        timeout: 30000,
+                        windowsHide: true,
+                    },
+                    (err, stdout, stderr) => {
+                        const combined = `${stdout || ''}${stderr || ''}`;
+                        if (err) {
+                            const next = new Error(combined || err.message);
+                            reject(next);
+                            return;
+                        }
+                        resolve(combined);
+                    },
+                );
+            });
+
+        const output = await runDoctor(`node openclaw.mjs doctor 2>&1`);
 
         const lines = output.split('\n');
         for (const line of lines) {
