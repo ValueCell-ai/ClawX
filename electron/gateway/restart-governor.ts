@@ -97,6 +97,18 @@ export class GatewayRestartGovernor {
     };
   }
 
+  getObservability(): {
+    suppressed_total: number;
+    executed_total: number;
+    circuit_open_until: number;
+  } {
+    return {
+      suppressed_total: this.suppressedTotal,
+      executed_total: this.executedTotal,
+      circuit_open_until: this.circuitOpenUntil,
+    };
+  }
+
   private getCooldownMs(): number {
     const factor = Math.pow(2, Math.max(0, this.consecutiveRestarts));
     return Math.min(this.options.baseCooldownMs * factor, this.options.maxCooldownMs);
