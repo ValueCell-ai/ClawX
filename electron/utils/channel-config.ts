@@ -716,6 +716,65 @@ export interface ValidationResult {
     warnings: string[];
 }
 
+const DOCTOR_PARSER_FALLBACK_HINT =
+    'Doctor output could not be confidently interpreted; falling back to local channel config checks.';
+
+type DoctorValidationParseResult = {
+    errors: string[];
+    warnings: string[];
+    undetermined: boolean;
+};
+
+export function parseDoctorValidationOutput(channelType: string, output: string): DoctorValidationParseResult {
+    const errors: string[] = [];
+    const warnings: string[] = [];
+    const normalizedChannelType = channelType.toLowerCase();
+    const normalizedOutput = output.trim();
+
+    if (!normalizedOutput) {
+        return {
+            errors,
+            warnings: [DOCTOR_PARSER_FALLBACK_HINT],
+            undetermined: true,
+        };
+    }
+
+    const lines = output
+        .split('\n')
+        .map((line) => line.trim())
+        .filter(Boolean);
+    const channelLines = lines.filter((line) => line.toLowerCase().includes(normalizedChannelType));
+    let classifiedCount = 0;
+
+    for (const line of channelLines) {
+        const lowerLine = line.toLowerCase();
+        if (lowerLine.includes('error') || lowerLine.includes('unrecognized key')) {
+            errors.push(line);
+            classifiedCount += 1;
+            continue;
+        }
+        if (lowerLine.includes('warning')) {
+            warnings.push(line);
+            classifiedCount += 1;
+        }
+    }
+
+    if (channelLines.length === 0 || classifiedCount === 0) {
+        warnings.push(DOCTOR_PARSER_FALLBACK_HINT);
+        return {
+            errors,
+            warnings,
+            undetermined: true,
+        };
+    }
+
+    return {
+        errors,
+        warnings,
+        undetermined: false,
+    };
+}
+
 export interface CredentialValidationResult {
     valid: boolean;
     errors: string[];
@@ -877,18 +936,17 @@ export async function validateChannelConfig(channelType: string): Promise<Valida
 
         const output = await runDoctor(`node openclaw.mjs doctor 2>&1`);
 
-        const lines = output.split('\n');
-        for (const line of lines) {
-            const lowerLine = line.toLowerCase();
-            if (lowerLine.includes(channelType) && lowerLine.includes('error')) {
-                result.errors.push(line.trim());
-                result.valid = false;
-            } else if (lowerLine.includes(channelType) && lowerLine.includes('warning')) {
-                result.warnings.push(line.trim());
-            } else if (lowerLine.includes('unrecognized key') && lowerLine.includes(channelType)) {
-                result.errors.push(line.trim());
-                result.valid = false;
-            }
+        const parsedDoctor = parseDoctorValidationOutput(channelType, output);
+        result.errors.push(...parsedDoctor.errors);
+        result.warnings.push(...parsedDoctor.warnings);
+        if (parsedDoctor.errors.length > 0) {
+            result.valid = false;
+        }
+        if (parsedDoctor.undetermined) {
+            logger.warn('Doctor output parsing fell back to local channel checks', {
+                channelType,
+                hint: DOCTOR_PARSER_FALLBACK_HINT,
+            });
         }
 
         const config = await readOpenClawConfig();
