@@ -49,25 +49,26 @@ function toGitPath(inputPath) {
   return inputPath.replace(/\\/g, '/');
 }
 
-function toSparsePattern(repoPath) {
-  const normalized = repoPath.replace(/\\/g, '/').replace(/^\/+/, '').replace(/\/+$/, '');
-  return [normalized, `${normalized}/**`];
+function normalizeRepoPath(repoPath) {
+  return repoPath.replace(/\\/g, '/').replace(/^\/+/, '').replace(/\/+$/, '');
 }
 
 async function fetchSparseRepo(repo, ref, paths, checkoutDir) {
   const remote = `https://github.com/${repo}.git`;
   mkdirSync(checkoutDir, { recursive: true });
   const gitCheckoutDir = toGitPath(checkoutDir);
-  const sparsePatterns = [...new Set(paths.flatMap(toSparsePattern))];
+  const archivePath = join(checkoutDir, '.subset.tar');
+  const gitArchivePath = toGitPath(archivePath);
+  const archivePaths = [...new Set(paths.map(normalizeRepoPath))];
 
   await $`git init ${gitCheckoutDir}`;
   await $`git -C ${gitCheckoutDir} remote add origin ${remote}`;
-  // Use non-cone mode so we only materialize exact manifest paths. This avoids
-  // checking out unrelated files that may contain Windows-invalid path chars.
-  await $`git -C ${gitCheckoutDir} sparse-checkout init --no-cone`;
   await $`git -C ${gitCheckoutDir} fetch --depth 1 origin ${ref}`;
-  await $`git -C ${gitCheckoutDir} checkout FETCH_HEAD`;
-  await $`git -C ${gitCheckoutDir} sparse-checkout set --no-cone ${sparsePatterns}`;
+  // Do not checkout working tree on Windows: upstream repos may contain
+  // Windows-invalid paths. Export only requested directories via git archive.
+  await $`git -C ${gitCheckoutDir} archive --format=tar --output ${gitArchivePath} FETCH_HEAD ${archivePaths}`;
+  await $`tar -xf ${gitArchivePath} -C ${gitCheckoutDir}`;
+  rmSync(archivePath, { force: true });
 
   const commit = (await $`git -C ${gitCheckoutDir} rev-parse HEAD`).stdout.trim();
   return commit;
