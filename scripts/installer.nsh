@@ -8,13 +8,6 @@
 !endif
 
 !macro customCheckAppRunning
-  ; Pre-emptively remove old shortcuts to prevent the Windows "Missing Shortcut"
-  ; dialog during upgrades.  The built-in NSIS uninstaller deletes ClawX.exe
-  ; *before* removing shortcuts; Windows Shell link tracking can detect the
-  ; broken target in that brief window and pop a resolver dialog.
-  ; Delete is a silent no-op when the file doesn't exist (safe for fresh installs).
-  Delete "$DESKTOP\${PRODUCT_NAME}.lnk"
-  Delete "$SMPROGRAMS\${PRODUCT_NAME}.lnk"
 
   ${nsProcess::FindProcess} "${APP_EXECUTABLE_FILENAME}" $R0
 
