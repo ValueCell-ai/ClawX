@@ -49,15 +49,23 @@ function toGitPath(inputPath) {
   return inputPath.replace(/\\/g, '/');
 }
 
+function toSparsePattern(repoPath) {
+  const normalized = repoPath.replace(/\\/g, '/').replace(/^\/+/, '').replace(/\/+$/, '');
+  return `/${normalized}/`;
+}
+
 async function fetchSparseRepo(repo, ref, paths, checkoutDir) {
   const remote = `https://github.com/${repo}.git`;
   mkdirSync(checkoutDir, { recursive: true });
   const gitCheckoutDir = toGitPath(checkoutDir);
+  const sparsePatterns = [...new Set(paths.map(toSparsePattern))];
 
   await $`git init ${gitCheckoutDir}`;
   await $`git -C ${gitCheckoutDir} remote add origin ${remote}`;
-  await $`git -C ${gitCheckoutDir} sparse-checkout init --cone`;
-  await $`git -C ${gitCheckoutDir} sparse-checkout set ${paths}`;
+  // Use non-cone mode so we only materialize exact manifest paths. This avoids
+  // checking out unrelated files that may contain Windows-invalid path chars.
+  await $`git -C ${gitCheckoutDir} sparse-checkout init --no-cone`;
+  await $`git -C ${gitCheckoutDir} sparse-checkout set --no-cone ${sparsePatterns}`;
   await $`git -C ${gitCheckoutDir} fetch --depth 1 origin ${ref}`;
   await $`git -C ${gitCheckoutDir} checkout FETCH_HEAD`;
 
