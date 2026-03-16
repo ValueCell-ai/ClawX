@@ -312,7 +312,7 @@ Chain multiple skills together to create sophisticated automation pipelines. Pro
 ```bash
 # Development
 pnpm run init             # Install dependencies + download uv
-pnpm dev                  # Start with hot reload
+pnpm dev                  # Start with hot reload (auto-prepares bundled skills if missing)
 
 # Quality
 pnpm lint                 # Run ESLint
@@ -327,7 +327,7 @@ pnpm run comms:compare    # Compare replay metrics against baseline thresholds
 # Build & Package
 pnpm run build:vite       # Build frontend only
 pnpm build                # Full production build (with packaging assets)
-pnpm package              # Package for current platform
+pnpm package              # Package for current platform (includes bundled preinstalled skills)
 pnpm package:mac          # Package for macOS
 pnpm package:win          # Package for Windows
 pnpm package:linux        # Package for Linux

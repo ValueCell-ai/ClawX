@@ -40,6 +40,18 @@ jobs:
       - name: Build Windows
         run: pnpm run package:win
 
+      - name: Validate unsigned Windows artifacts before SignPath
+        shell: pwsh
+        run: |
+          $unsignedExeFiles = Get-ChildItem -Path "release" -Filter *.exe -File
+          if (-not $unsignedExeFiles) {
+            throw "No unsigned .exe files found in release/ before SignPath upload"
+          }
+          $unsignedCount = $unsignedExeFiles.Count
+          "UNSIGNED_EXE_COUNT=$unsignedCount" | Out-File -FilePath $env:GITHUB_ENV -Append
+          Write-Host "Found $unsignedCount unsigned .exe file(s):"
+          $unsignedExeFiles | ForEach-Object { Write-Host " - $($_.Name)" }
+
       # Required by SignPath Trusted Build: artifact must exist on GitHub first.
       - name: Upload unsigned Windows artifacts for SignPath
         id: upload-unsigned-windows-artifact
@@ -64,14 +76,23 @@ jobs:
       - name: Replace unsigned executables with signed ones
         shell: pwsh
         run: |
+          Write-Host "SignPath GitHub artifact ID: ${{ steps.upload-unsigned-windows-artifact.outputs.artifact-id }}"
           $signedExeFiles = Get-ChildItem -Path "release/signed" -Filter *.exe -File -Recurse
           if (-not $signedExeFiles) {
             throw "No signed .exe files found in release/signed"
           }
+          $signedCount = $signedExeFiles.Count
+          if ($env:UNSIGNED_EXE_COUNT -and ($signedCount -ne [int]$env:UNSIGNED_EXE_COUNT)) {
+            throw "Signed .exe count ($signedCount) does not match unsigned count ($env:UNSIGNED_EXE_COUNT)"
+          }
           foreach ($file in $signedExeFiles) {
             Copy-Item -Path $file.FullName -Destination "release/$($file.Name)" -Force
           }
-          Write-Host "Signed executables copied to release/"
+          $finalExeFiles = Get-ChildItem -Path "release" -Filter *.exe -File
+          if ($env:UNSIGNED_EXE_COUNT -and ($finalExeFiles.Count -ne [int]$env:UNSIGNED_EXE_COUNT)) {
+            throw "Final release .exe count ($($finalExeFiles.Count)) does not match unsigned count ($env:UNSIGNED_EXE_COUNT)"
+          }
+          Write-Host "Signed executables copied to release/ ($($finalExeFiles.Count) file(s))"
 
       - name: Upload signed Windows artifacts
         uses: actions/upload-artifact@v4

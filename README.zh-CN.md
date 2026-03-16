@@ -312,7 +312,7 @@ ClawX 采用 **双进程 + Host API 统一接入架构**。渲染进程只调用
 ```bash
 # 开发
 pnpm run init             # 安装依赖并下载 uv
-pnpm dev                  # 以热重载模式启动
+pnpm dev                  # 以热重载模式启动（若缺失会自动准备预装技能包）
 
 # 代码质量
 pnpm lint                 # 运行 ESLint 检查
@@ -327,7 +327,7 @@ pnpm run comms:compare    # 将回放指标与基线阈值对比
 # 构建与打包
 pnpm run build:vite       # 仅构建前端
 pnpm build                # 完整生产构建（含打包资源）
-pnpm package              # 为当前平台打包
+pnpm package              # 为当前平台打包（包含预装技能资源）
 pnpm package:mac          # 为 macOS 打包
 pnpm package:win          # 为 Windows 打包
 pnpm package:linux        # 为 Linux 打包
