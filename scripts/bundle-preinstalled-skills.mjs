@@ -2,7 +2,7 @@
 
 import 'zx/globals';
 import { readFileSync, existsSync, mkdirSync, rmSync, cpSync, writeFileSync } from 'node:fs';
-import { join, dirname } from 'node:path';
+import { join, dirname, basename } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -51,6 +51,13 @@ function toGitPath(inputPath) {
 
 function normalizeRepoPath(repoPath) {
   return repoPath.replace(/\\/g, '/').replace(/^\/+/, '').replace(/\/+$/, '');
+}
+
+function shouldCopySkillFile(srcPath) {
+  const base = basename(srcPath);
+  if (base === '.git') return false;
+  if (base === '.subset.tar') return false;
+  return true;
 }
 
 async function extractArchive(archiveFileName, cwd) {
@@ -125,7 +132,7 @@ for (const group of groups) {
     }
 
     rmSync(targetDir, { recursive: true, force: true });
-    cpSync(sourceDir, targetDir, { recursive: true, dereference: true });
+    cpSync(sourceDir, targetDir, { recursive: true, dereference: true, filter: shouldCopySkillFile });
 
     const skillManifest = join(targetDir, 'SKILL.md');
     if (!existsSync(skillManifest)) {
