@@ -204,6 +204,48 @@ function patchBrokenModules(nodeModulesDir) {
   }
 }
 
+// ── Plugin ID mismatch patcher ───────────────────────────────────────────────
+// Some plugins (e.g. wecom) have a compiled JS entry that hardcodes a different
+// ID than what openclaw.plugin.json declares.  The Gateway rejects mismatches,
+// so we fix them after copying.
+
+const PLUGIN_ID_FIXES = {
+  'wecom-openclaw-plugin': 'wecom',
+};
+
+function patchPluginIds(pluginDir, expectedId) {
+  const { readFileSync, writeFileSync } = require('fs');
+
+  const pkgJsonPath = join(pluginDir, 'package.json');
+  if (!existsSync(pkgJsonPath)) return;
+
+  const pkg = JSON.parse(readFileSync(pkgJsonPath, 'utf8'));
+  const entryFiles = [pkg.main, pkg.module].filter(Boolean);
+
+  for (const entry of entryFiles) {
+    const entryPath = join(pluginDir, entry);
+    if (!existsSync(entryPath)) continue;
+
+    let content = readFileSync(entryPath, 'utf8');
+    let patched = false;
+
+    for (const [wrongId, correctId] of Object.entries(PLUGIN_ID_FIXES)) {
+      if (correctId !== expectedId) continue;
+      const pattern = new RegExp(`(\\bid\\s*:\\s*)(["'])${wrongId.replace(/-/g, '\\-')}\\2`, 'g');
+      const replaced = content.replace(pattern, `$1$2${correctId}$2`);
+      if (replaced !== content) {
+        content = replaced;
+        patched = true;
+        console.log(`[after-pack] 🩹 Patching plugin ID in ${entry}: "${wrongId}" → "${correctId}"`);
+      }
+    }
+
+    if (patched) {
+      writeFileSync(entryPath, content, 'utf8');
+    }
+  }
+}
+
 // ── Plugin bundler ───────────────────────────────────────────────────────────
 // Bundles a single OpenClaw plugin (and its transitive deps) from node_modules
 // directly into the packaged resources directory.  Mirrors the logic in
@@ -383,6 +425,8 @@ exports.default = async function afterPack(context) {
         cleanupKoffi(pluginNM, platform, arch);
         cleanupNativePlatformPackages(pluginNM, platform, arch);
       }
+      // Fix hardcoded plugin ID mismatches in compiled JS
+      patchPluginIds(pluginDestDir, pluginId);
     }
   }
 

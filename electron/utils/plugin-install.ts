@@ -12,10 +12,10 @@ import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { logger } from './logger';
 
-// ── Known manifest ID corrections ───────────────────────────────────────────
+// ── Known plugin-ID corrections ─────────────────────────────────────────────
 // Some npm packages ship with an openclaw.plugin.json whose "id" field
 // doesn't match the ID the plugin code actually exports.  After copying we
-// patch the manifest so the Gateway doesn't reject it.
+// patch both the manifest AND the compiled JS so the Gateway accepts them.
 const MANIFEST_ID_FIXES: Record<string, string> = {
   'wecom-openclaw-plugin': 'wecom',
 };
@@ -74,6 +74,56 @@ export function fixupPluginManifest(targetDir: string): void {
     }
   } catch {
     // ignore
+  }
+
+  // 3. Fix hardcoded plugin IDs in compiled JS entry files.
+  //    The Gateway validates that the JS export's `id` matches the manifest.
+  patchPluginEntryIds(targetDir);
+}
+
+/**
+ * Patch the compiled JS entry files so the hardcoded `id` field in the
+ * plugin export matches the manifest.  Without this, the Gateway rejects
+ * the plugin with "plugin id mismatch".
+ */
+function patchPluginEntryIds(targetDir: string): void {
+  const pkgPath = join(targetDir, 'package.json');
+  let pkg: Record<string, unknown>;
+  try {
+    pkg = JSON.parse(readFileSync(pkgPath, 'utf-8'));
+  } catch {
+    return;
+  }
+
+  const entryFiles = [pkg.main, pkg.module].filter(Boolean) as string[];
+
+  for (const entry of entryFiles) {
+    const entryPath = join(targetDir, entry);
+    if (!existsSync(entryPath)) continue;
+
+    let content: string;
+    try {
+      content = readFileSync(entryPath, 'utf-8');
+    } catch {
+      continue;
+    }
+
+    let patched = false;
+    for (const [wrongId, correctId] of Object.entries(MANIFEST_ID_FIXES)) {
+      // Match patterns like:  id: "wecom-openclaw-plugin"  or  id: 'wecom-openclaw-plugin'
+      const escapedWrongId = wrongId.replace(/-/g, '\\-');
+      const pattern = new RegExp(`(\\bid\\s*:\\s*)(["'])${escapedWrongId}\\2`, 'g');
+      const replaced = content.replace(pattern, `$1$2${correctId}$2`);
+      if (replaced !== content) {
+        content = replaced;
+        patched = true;
+        logger.info(`[plugin] Patched plugin ID in ${entry}: "${wrongId}" → "${correctId}"`);
+      }
+    }
+
+    if (patched) {
+      writeFileSync(entryPath, content, 'utf-8');
+    }
   }
 }
 
