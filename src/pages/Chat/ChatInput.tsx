@@ -97,15 +97,15 @@ export function ChatInput({ onSend, onStop, disabled = false, sending = false, i
   const agents = useAgentsStore((s) => s.agents);
   const currentAgentId = useChatStore((s) => s.currentAgentId);
   const currentAgentName = useMemo(
-    () => agents.find((agent) => agent.id === currentAgentId)?.name ?? currentAgentId,
+    () => (agents ?? []).find((agent) => agent.id === currentAgentId)?.name ?? currentAgentId,
     [agents, currentAgentId],
   );
   const mentionableAgents = useMemo(
-    () => agents.filter((agent) => agent.id !== currentAgentId),
+    () => (agents ?? []).filter((agent) => agent.id !== currentAgentId),
     [agents, currentAgentId],
   );
   const selectedTarget = useMemo(
-    () => agents.find((agent) => agent.id === targetAgentId) ?? null,
+    () => (agents ?? []).find((agent) => agent.id === targetAgentId) ?? null,
     [agents, targetAgentId],
   );
   const showAgentPicker = mentionableAgents.length > 0;
@@ -132,7 +132,7 @@ export function ChatInput({ onSend, onStop, disabled = false, sending = false, i
       setPickerOpen(false);
       return;
     }
-    if (!agents.some((agent) => agent.id === targetAgentId)) {
+    if (!(agents ?? []).some((agent) => agent.id === targetAgentId)) {
       setTargetAgentId(null);
       setPickerOpen(false);
     }
