@@ -31,13 +31,18 @@ export function ConfirmDialog({
 }: ConfirmDialogProps) {
   const cancelRef = useRef<HTMLButtonElement>(null);
   const [confirming, setConfirming] = useState(false);
+  const prevOpenRef = useRef(open);
+
+  // Reset confirming when dialog closes (during render to avoid setState-in-effect)
+  if (prevOpenRef.current && !open) {
+    prevOpenRef.current = open;
+    setConfirming(false);
+  }
+  prevOpenRef.current = open;
 
   useEffect(() => {
     if (open && cancelRef.current) {
       cancelRef.current.focus();
-    }
-    if (!open) {
-      setConfirming(false);
     }
   }, [open]);
 
