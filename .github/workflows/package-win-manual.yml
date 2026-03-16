@@ -46,6 +46,19 @@ jobs:
       - name: Install dependencies
         run: pnpm install
 
+      - name: Preflight bundled preinstalled skills
+        shell: pwsh
+        run: |
+          pnpm run bundle:preinstalled-skills
+          if (!(Test-Path "build/preinstalled-skills/.preinstalled-lock.json")) {
+            throw "Preflight failed: missing build/preinstalled-skills/.preinstalled-lock.json"
+          }
+          $skillManifestFiles = Get-ChildItem -Path "build/preinstalled-skills" -Filter "SKILL.md" -File -Recurse
+          if (-not $skillManifestFiles) {
+            throw "Preflight failed: no SKILL.md files found under build/preinstalled-skills"
+          }
+          Write-Host "Preflight OK: found $($skillManifestFiles.Count) preinstalled skill manifest(s)."
+
       - name: Download uv binaries for Windows
         run: pnpm run uv:download:win
 
