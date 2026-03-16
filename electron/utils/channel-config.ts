@@ -16,8 +16,7 @@ import { withConfigLock } from './config-mutex';
 const OPENCLAW_DIR = join(homedir(), '.openclaw');
 const CONFIG_FILE = join(OPENCLAW_DIR, 'openclaw.json');
 const WECOM_PLUGIN_ID = 'wecom';
-const FEISHU_PLUGIN_ID = 'openclaw-lark';
-const LEGACY_FEISHU_PLUGIN_ID = 'feishu-openclaw-plugin';
+const FEISHU_PLUGIN_ID_CANDIDATES = ['openclaw-lark', 'feishu-openclaw-plugin'] as const;
 const DEFAULT_ACCOUNT_ID = 'default';
 const CHANNEL_TOP_LEVEL_KEYS_TO_KEEP = new Set(['accounts', 'defaultAccount', 'enabled']);
 
@@ -51,6 +50,24 @@ async function fileExists(p: string): Promise<boolean> {
 
 function normalizeCredentialValue(value: string): string {
     return value.trim();
+}
+
+async function resolveFeishuPluginId(): Promise<string> {
+    const extensionRoot = join(homedir(), '.openclaw', 'extensions');
+    for (const dirName of FEISHU_PLUGIN_ID_CANDIDATES) {
+        const manifestPath = join(extensionRoot, dirName, 'openclaw.plugin.json');
+        try {
+            const raw = await readFile(manifestPath, 'utf-8');
+            const parsed = JSON.parse(raw) as { id?: unknown };
+            if (typeof parsed.id === 'string' && parsed.id.trim()) {
+                return parsed.id.trim();
+            }
+        } catch {
+            // ignore and try next candidate
+        }
+    }
+    // Fallback to the modern id when extension manifests are not available yet.
+    return FEISHU_PLUGIN_ID_CANDIDATES[0];
 }
 
 // ── Types ────────────────────────────────────────────────────────
@@ -121,14 +138,15 @@ export async function writeOpenClawConfig(config: OpenClawConfig): Promise<void>
 
 // ── Channel operations ───────────────────────────────────────────
 
-function ensurePluginAllowlist(currentConfig: OpenClawConfig, channelType: string): void {
+async function ensurePluginAllowlist(currentConfig: OpenClawConfig, channelType: string): Promise<void> {
     if (channelType === 'feishu') {
+        const feishuPluginId = await resolveFeishuPluginId();
         if (!currentConfig.plugins) {
             currentConfig.plugins = {
-                allow: [FEISHU_PLUGIN_ID],
+                allow: [feishuPluginId],
                 enabled: true,
                 entries: {
-                    [FEISHU_PLUGIN_ID]: { enabled: true }
+                    [feishuPluginId]: { enabled: true }
                 }
             };
         } else {
@@ -136,12 +154,12 @@ function ensurePluginAllowlist(currentConfig: OpenClawConfig, channelType: strin
             const allow: string[] = Array.isArray(currentConfig.plugins.allow)
                 ? (currentConfig.plugins.allow as string[])
                 : [];
-            // Remove legacy IDs: 'feishu' (built-in) and old 'feishu-openclaw-plugin'
+            // Keep only one active feishu plugin id to avoid doctor validation conflicts.
             const normalizedAllow = allow.filter(
-                (pluginId) => pluginId !== 'feishu' && pluginId !== LEGACY_FEISHU_PLUGIN_ID
+                (pluginId) => pluginId !== 'feishu' && !FEISHU_PLUGIN_ID_CANDIDATES.includes(pluginId as typeof FEISHU_PLUGIN_ID_CANDIDATES[number])
             );
-            if (!normalizedAllow.includes(FEISHU_PLUGIN_ID)) {
-                currentConfig.plugins.allow = [...normalizedAllow, FEISHU_PLUGIN_ID];
+            if (!normalizedAllow.includes(feishuPluginId)) {
+                currentConfig.plugins.allow = [...normalizedAllow, feishuPluginId];
             } else if (normalizedAllow.length !== allow.length) {
                 currentConfig.plugins.allow = normalizedAllow;
             }
@@ -149,14 +167,18 @@ function ensurePluginAllowlist(currentConfig: OpenClawConfig, channelType: strin
             if (!currentConfig.plugins.entries) {
                 currentConfig.plugins.entries = {};
             }
-            // Remove legacy entries that would conflict with the current plugin ID
+            // Remove conflicting feishu entries; keep only the resolved plugin id.
             delete currentConfig.plugins.entries['feishu'];
-            delete currentConfig.plugins.entries[LEGACY_FEISHU_PLUGIN_ID];
-
-            if (!currentConfig.plugins.entries[FEISHU_PLUGIN_ID]) {
-                currentConfig.plugins.entries[FEISHU_PLUGIN_ID] = {};
+            for (const candidateId of FEISHU_PLUGIN_ID_CANDIDATES) {
+                if (candidateId !== feishuPluginId) {
+                    delete currentConfig.plugins.entries[candidateId];
+                }
             }
-            currentConfig.plugins.entries[FEISHU_PLUGIN_ID].enabled = true;
+
+            if (!currentConfig.plugins.entries[feishuPluginId]) {
+                currentConfig.plugins.entries[feishuPluginId] = {};
+            }
+            currentConfig.plugins.entries[feishuPluginId].enabled = true;
         }
     }
 
@@ -407,7 +429,7 @@ export async function saveChannelConfig(
         const currentConfig = await readOpenClawConfig();
         const resolvedAccountId = accountId || DEFAULT_ACCOUNT_ID;
 
-        ensurePluginAllowlist(currentConfig, channelType);
+        await ensurePluginAllowlist(currentConfig, channelType);
 
         // Plugin-based channels (e.g. WhatsApp) go under plugins.entries, not channels
         if (PLUGIN_CHANNELS.includes(channelType)) {
@@ -587,9 +609,23 @@ export async function deleteChannelAccountConfig(channelType: string, accountId:
         if (Object.keys(accounts).length === 0) {
             delete currentConfig.channels![channelType];
         } else {
+            if (channelSection.defaultAccount === accountId) {
+                const nextDefaultAccountId = Object.keys(accounts).sort((a, b) => {
+                    if (a === DEFAULT_ACCOUNT_ID) return -1;
+                    if (b === DEFAULT_ACCOUNT_ID) return 1;
+                    return a.localeCompare(b);
+                })[0];
+                if (nextDefaultAccountId) {
+                    channelSection.defaultAccount = nextDefaultAccountId;
+                }
+            }
             // Re-mirror default account credentials to top level after migration
             // stripped them (same rationale as saveChannelConfig).
-            const defaultAccountData = accounts[DEFAULT_ACCOUNT_ID];
+            const mirroredAccountId =
+                typeof channelSection.defaultAccount === 'string' && channelSection.defaultAccount.trim()
+                    ? channelSection.defaultAccount
+                    : DEFAULT_ACCOUNT_ID;
+            const defaultAccountData = accounts[mirroredAccountId] ?? accounts[DEFAULT_ACCOUNT_ID];
             if (defaultAccountData) {
                 for (const [key, value] of Object.entries(defaultAccountData)) {
                     channelSection[key] = value;
@@ -686,6 +722,84 @@ export async function listConfiguredChannels(): Promise<string[]> {
     return channels;
 }
 
+export interface ConfiguredChannelAccounts {
+    defaultAccountId: string;
+    accountIds: string[];
+}
+
+export async function listConfiguredChannelAccounts(): Promise<Record<string, ConfiguredChannelAccounts>> {
+    const config = await readOpenClawConfig();
+    const result: Record<string, ConfiguredChannelAccounts> = {};
+
+    if (!config.channels) {
+        return result;
+    }
+
+    for (const [channelType, section] of Object.entries(config.channels)) {
+        if (!section || section.enabled === false) continue;
+
+        const accountIds = section.accounts && typeof section.accounts === 'object'
+            ? Object.keys(section.accounts).filter(Boolean)
+            : [];
+
+        const defaultAccountId = typeof section.defaultAccount === 'string' && section.defaultAccount.trim()
+            ? section.defaultAccount
+            : DEFAULT_ACCOUNT_ID;
+
+        if (accountIds.length === 0) {
+            const hasAnyPayload = Object.keys(section).some((key) => !CHANNEL_TOP_LEVEL_KEYS_TO_KEEP.has(key));
+            if (!hasAnyPayload) continue;
+            result[channelType] = {
+                defaultAccountId,
+                accountIds: [DEFAULT_ACCOUNT_ID],
+            };
+            continue;
+        }
+
+        result[channelType] = {
+            defaultAccountId,
+            accountIds: accountIds.sort((a, b) => {
+                if (a === DEFAULT_ACCOUNT_ID) return -1;
+                if (b === DEFAULT_ACCOUNT_ID) return 1;
+                return a.localeCompare(b);
+            }),
+        };
+    }
+
+    return result;
+}
+
+export async function setChannelDefaultAccount(channelType: string, accountId: string): Promise<void> {
+    return withConfigLock(async () => {
+        const trimmedAccountId = accountId.trim();
+        if (!trimmedAccountId) {
+            throw new Error('accountId is required');
+        }
+
+        const currentConfig = await readOpenClawConfig();
+        const channelSection = currentConfig.channels?.[channelType];
+        if (!channelSection) {
+            throw new Error(`Channel "${channelType}" is not configured`);
+        }
+
+        migrateLegacyChannelConfigToAccounts(channelSection, DEFAULT_ACCOUNT_ID);
+        const accounts = channelSection.accounts as Record<string, ChannelConfigData> | undefined;
+        if (!accounts || !accounts[trimmedAccountId]) {
+            throw new Error(`Account "${trimmedAccountId}" is not configured for channel "${channelType}"`);
+        }
+
+        channelSection.defaultAccount = trimmedAccountId;
+
+        const defaultAccountData = accounts[trimmedAccountId];
+        for (const [key, value] of Object.entries(defaultAccountData)) {
+            channelSection[key] = value;
+        }
+
+        await writeOpenClawConfig(currentConfig);
+        logger.info('Set channel default account', { channelType, accountId: trimmedAccountId });
+    });
+}
+
 export async function deleteAgentChannelAccounts(agentId: string): Promise<void> {
     return withConfigLock(async () => {
         const currentConfig = await readOpenClawConfig();
@@ -704,9 +818,23 @@ export async function deleteAgentChannelAccounts(agentId: string): Promise<void>
             if (Object.keys(accounts).length === 0) {
                 delete currentConfig.channels[channelType];
             } else {
+                if (section.defaultAccount === accountId) {
+                    const nextDefaultAccountId = Object.keys(accounts).sort((a, b) => {
+                        if (a === DEFAULT_ACCOUNT_ID) return -1;
+                        if (b === DEFAULT_ACCOUNT_ID) return 1;
+                        return a.localeCompare(b);
+                    })[0];
+                    if (nextDefaultAccountId) {
+                        section.defaultAccount = nextDefaultAccountId;
+                    }
+                }
                 // Re-mirror default account credentials to top level after migration
                 // stripped them (same rationale as saveChannelConfig).
-                const defaultAccountData = accounts[DEFAULT_ACCOUNT_ID];
+                const mirroredAccountId =
+                    typeof section.defaultAccount === 'string' && section.defaultAccount.trim()
+                        ? section.defaultAccount
+                        : DEFAULT_ACCOUNT_ID;
+                const defaultAccountData = accounts[mirroredAccountId] ?? accounts[DEFAULT_ACCOUNT_ID];
                 if (defaultAccountData) {
                     for (const [key, value] of Object.entries(defaultAccountData)) {
                         section[key] = value;

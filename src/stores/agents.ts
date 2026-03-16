@@ -8,6 +8,7 @@ interface AgentsState {
   defaultAgentId: string;
   configuredChannelTypes: string[];
   channelOwners: Record<string, string>;
+  channelAccountOwners: Record<string, string>;
   loading: boolean;
   error: string | null;
   fetchAgents: () => Promise<void>;
@@ -25,6 +26,7 @@ function applySnapshot(snapshot: AgentsSnapshot | undefined) {
     defaultAgentId: snapshot.defaultAgentId,
     configuredChannelTypes: snapshot.configuredChannelTypes,
     channelOwners: snapshot.channelOwners,
+    channelAccountOwners: snapshot.channelAccountOwners,
   } : {};
 }
 
@@ -33,6 +35,7 @@ export const useAgentsStore = create<AgentsState>((set) => ({
   defaultAgentId: 'main',
   configuredChannelTypes: [],
   channelOwners: {},
+  channelAccountOwners: {},
   loading: false,
   error: null,
 

@@ -1,20 +1,29 @@
 import type { IncomingMessage, ServerResponse } from 'http';
 import {
+  deleteChannelAccountConfig,
   deleteChannelConfig,
   getChannelFormValues,
+  listConfiguredChannelAccounts,
   listConfiguredChannels,
+  readOpenClawConfig,
   saveChannelConfig,
+  setChannelDefaultAccount,
   setChannelEnabled,
   validateChannelConfig,
   validateChannelCredentials,
 } from '../../utils/channel-config';
+import {
+  assignChannelAccountToAgent,
+  clearAllBindingsForChannel,
+  clearChannelBinding,
+  listAgentsSnapshot,
+} from '../../utils/agent-config';
 import {
   ensureDingTalkPluginInstalled,
   ensureFeishuPluginInstalled,
   ensureQQBotPluginInstalled,
   ensureWeComPluginInstalled,
 } from '../../utils/plugin-install';
-import { assignChannelToAgent, clearAllBindingsForChannel } from '../../utils/agent-config';
 import { whatsAppLoginManager } from '../../utils/whatsapp-login';
 import type { HostApiContext } from '../context';
 import { parseJsonBody, sendJson } from '../route-utils';
@@ -79,16 +88,167 @@ function isSameConfigValues(
   return true;
 }
 
-function inferAgentIdFromAccountId(accountId: string): string {
-  if (accountId === 'default') return 'main';
-  return accountId;
-}
-
 async function ensureScopedChannelBinding(channelType: string, accountId?: string): Promise<void> {
   // Multi-agent safety: only bind when the caller explicitly scopes the account.
   // Global channel saves (no accountId) must not override routing to "main".
   if (!accountId) return;
-  await assignChannelToAgent(inferAgentIdFromAccountId(accountId), channelType).catch(() => undefined);
+  const agents = await listAgentsSnapshot();
+  if (!agents.entries || agents.entries.length === 0) return;
+
+  // Keep backward compatibility for the legacy default account.
+  if (accountId === 'default') {
+    if (agents.entries.some((entry) => entry.id === 'main')) {
+      await assignChannelAccountToAgent('main', channelType, 'default');
+    }
+    return;
+  }
+
+  // Legacy compatibility: if accountId matches an existing agentId, keep auto-binding.
+  if (agents.entries.some((entry) => entry.id === accountId)) {
+    await assignChannelAccountToAgent(accountId, channelType, accountId);
+  }
+}
+
+interface GatewayChannelStatusPayload {
+  channelOrder?: string[];
+  channels?: Record<string, unknown>;
+  channelAccounts?: Record<string, Array<{
+    accountId?: string;
+    configured?: boolean;
+    connected?: boolean;
+    running?: boolean;
+    lastError?: string;
+    name?: string;
+    linked?: boolean;
+    lastConnectedAt?: number | null;
+    lastInboundAt?: number | null;
+    lastOutboundAt?: number | null;
+  }>>;
+  channelDefaultAccountId?: Record<string, string>;
+}
+
+interface ChannelAccountView {
+  accountId: string;
+  name: string;
+  configured: boolean;
+  connected: boolean;
+  running: boolean;
+  linked: boolean;
+  lastError?: string;
+  status: 'connected' | 'connecting' | 'disconnected' | 'error';
+  isDefault: boolean;
+  agentId?: string;
+}
+
+interface ChannelAccountsView {
+  channelType: string;
+  defaultAccountId: string;
+  status: 'connected' | 'connecting' | 'disconnected' | 'error';
+  accounts: ChannelAccountView[];
+}
+
+function computeAccountStatus(account: {
+  connected?: boolean;
+  linked?: boolean;
+  running?: boolean;
+  lastError?: string;
+  lastConnectedAt?: number | null;
+  lastInboundAt?: number | null;
+  lastOutboundAt?: number | null;
+}): 'connected' | 'connecting' | 'disconnected' | 'error' {
+  const now = Date.now();
+  const recentMs = 10 * 60 * 1000;
+  const hasRecentActivity =
+    (typeof account.lastInboundAt === 'number' && now - account.lastInboundAt < recentMs)
+    || (typeof account.lastOutboundAt === 'number' && now - account.lastOutboundAt < recentMs)
+    || (typeof account.lastConnectedAt === 'number' && now - account.lastConnectedAt < recentMs);
+
+  if (account.connected === true || account.linked === true || hasRecentActivity) return 'connected';
+  if (account.running === true && !account.lastError) return 'connecting';
+  if (account.lastError) return 'error';
+  return 'disconnected';
+}
+
+function pickChannelStatus(accounts: ChannelAccountView[]): 'connected' | 'connecting' | 'disconnected' | 'error' {
+  if (accounts.some((account) => account.status === 'connected')) return 'connected';
+  if (accounts.some((account) => account.status === 'error')) return 'error';
+  if (accounts.some((account) => account.status === 'connecting')) return 'connecting';
+  return 'disconnected';
+}
+
+async function buildChannelAccountsView(ctx: HostApiContext): Promise<ChannelAccountsView[]> {
+  const [configuredChannels, configuredAccounts, openClawConfig, agentsSnapshot] = await Promise.all([
+    listConfiguredChannels(),
+    listConfiguredChannelAccounts(),
+    readOpenClawConfig(),
+    listAgentsSnapshot(),
+  ]);
+
+  let gatewayStatus: GatewayChannelStatusPayload | null;
+  try {
+    gatewayStatus = await ctx.gatewayManager.rpc<GatewayChannelStatusPayload>('channels.status', { probe: true });
+  } catch {
+    gatewayStatus = null;
+  }
+
+  const channelTypes = new Set<string>([
+    ...configuredChannels,
+    ...Object.keys(configuredAccounts),
+    ...Object.keys(gatewayStatus?.channelAccounts || {}),
+  ]);
+
+  const channels: ChannelAccountsView[] = [];
+  for (const channelType of channelTypes) {
+    const channelAccountsFromConfig = configuredAccounts[channelType]?.accountIds ?? [];
+    const hasLocalConfig = configuredChannels.includes(channelType) || Boolean(configuredAccounts[channelType]);
+    const channelSection = openClawConfig.channels?.[channelType];
+    const fallbackDefault =
+      typeof channelSection?.defaultAccount === 'string' && channelSection.defaultAccount.trim()
+        ? channelSection.defaultAccount
+        : 'default';
+    const defaultAccountId = configuredAccounts[channelType]?.defaultAccountId
+      ?? gatewayStatus?.channelDefaultAccountId?.[channelType]
+      ?? fallbackDefault;
+    const runtimeAccounts = gatewayStatus?.channelAccounts?.[channelType] ?? [];
+    const hasRuntimeConfigured = runtimeAccounts.some((account) => account.configured === true);
+    if (!hasLocalConfig && !hasRuntimeConfigured) {
+      continue;
+    }
+    const runtimeAccountIds = runtimeAccounts
+      .map((account) => account.accountId)
+      .filter((accountId): accountId is string => typeof accountId === 'string' && accountId.trim().length > 0);
+    const accountIds = Array.from(new Set([...channelAccountsFromConfig, ...runtimeAccountIds, defaultAccountId]));
+
+    const accounts: ChannelAccountView[] = accountIds.map((accountId) => {
+      const runtime = runtimeAccounts.find((item) => item.accountId === accountId);
+      const status = computeAccountStatus(runtime ?? {});
+      return {
+        accountId,
+        name: runtime?.name || accountId,
+        configured: channelAccountsFromConfig.includes(accountId) || runtime?.configured === true,
+        connected: runtime?.connected === true,
+        running: runtime?.running === true,
+        linked: runtime?.linked === true,
+        lastError: typeof runtime?.lastError === 'string' ? runtime.lastError : undefined,
+        status,
+        isDefault: accountId === defaultAccountId,
+        agentId: agentsSnapshot.channelAccountOwners[`${channelType}:${accountId}`],
+      };
+    }).sort((left, right) => {
+      if (left.accountId === defaultAccountId) return -1;
+      if (right.accountId === defaultAccountId) return 1;
+      return left.accountId.localeCompare(right.accountId);
+    });
+
+    channels.push({
+      channelType,
+      defaultAccountId,
+      status: pickChannelStatus(accounts),
+      accounts,
+    });
+  }
+
+  return channels.sort((left, right) => left.channelType.localeCompare(right.channelType));
 }
 
 export async function handleChannelRoutes(
@@ -99,6 +259,52 @@ export async function handleChannelRoutes(
 ): Promise<boolean> {
   if (url.pathname === '/api/channels/configured' && req.method === 'GET') {
     sendJson(res, 200, { success: true, channels: await listConfiguredChannels() });
+    return true;
+  }
+
+  if (url.pathname === '/api/channels/accounts' && req.method === 'GET') {
+    try {
+      const channels = await buildChannelAccountsView(ctx);
+      sendJson(res, 200, { success: true, channels });
+    } catch (error) {
+      sendJson(res, 500, { success: false, error: String(error) });
+    }
+    return true;
+  }
+
+  if (url.pathname === '/api/channels/default-account' && req.method === 'PUT') {
+    try {
+      const body = await parseJsonBody<{ channelType: string; accountId: string }>(req);
+      await setChannelDefaultAccount(body.channelType, body.accountId);
+      scheduleGatewayChannelSaveRefresh(ctx, body.channelType, `channel:setDefaultAccount:${body.channelType}`);
+      sendJson(res, 200, { success: true });
+    } catch (error) {
+      sendJson(res, 500, { success: false, error: String(error) });
+    }
+    return true;
+  }
+
+  if (url.pathname === '/api/channels/binding' && req.method === 'PUT') {
+    try {
+      const body = await parseJsonBody<{ channelType: string; accountId: string; agentId: string }>(req);
+      await assignChannelAccountToAgent(body.agentId, body.channelType, body.accountId);
+      scheduleGatewayChannelSaveRefresh(ctx, body.channelType, `channel:setBinding:${body.channelType}`);
+      sendJson(res, 200, { success: true });
+    } catch (error) {
+      sendJson(res, 500, { success: false, error: String(error) });
+    }
+    return true;
+  }
+
+  if (url.pathname === '/api/channels/binding' && req.method === 'DELETE') {
+    try {
+      const body = await parseJsonBody<{ channelType: string; accountId: string }>(req);
+      await clearChannelBinding(body.channelType, body.accountId);
+      scheduleGatewayChannelSaveRefresh(ctx, body.channelType, `channel:clearBinding:${body.channelType}`);
+      sendJson(res, 200, { success: true });
+    } catch (error) {
+      sendJson(res, 500, { success: false, error: String(error) });
+    }
     return true;
   }
 
@@ -219,9 +425,16 @@ export async function handleChannelRoutes(
   if (url.pathname.startsWith('/api/channels/config/') && req.method === 'DELETE') {
     try {
       const channelType = decodeURIComponent(url.pathname.slice('/api/channels/config/'.length));
-      await deleteChannelConfig(channelType);
-      await clearAllBindingsForChannel(channelType);
-      scheduleGatewayChannelRestart(ctx, `channel:deleteConfig:${channelType}`);
+      const accountId = url.searchParams.get('accountId') || undefined;
+      if (accountId) {
+        await deleteChannelAccountConfig(channelType, accountId);
+        await clearChannelBinding(channelType, accountId);
+        scheduleGatewayChannelSaveRefresh(ctx, channelType, `channel:deleteAccount:${channelType}`);
+      } else {
+        await deleteChannelConfig(channelType);
+        await clearAllBindingsForChannel(channelType);
+        scheduleGatewayChannelRestart(ctx, `channel:deleteConfig:${channelType}`);
+      }
       sendJson(res, 200, { success: true });
     } catch (error) {
       sendJson(res, 500, { success: false, error: String(error) });

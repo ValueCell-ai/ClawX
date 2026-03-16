@@ -92,6 +92,7 @@ export interface AgentsSnapshot {
   defaultAgentId: string;
   configuredChannelTypes: string[];
   channelOwners: Record<string, string>;
+  channelAccountOwners: Record<string, string>;
 }
 
 function formatModelLabel(model: unknown): string | null {
@@ -266,10 +267,16 @@ function upsertBindingsForChannel(
   agentId: string | null,
   accountId?: string,
 ): BindingConfig[] | undefined {
+  const normalizedAgentId = agentId ? normalizeAgentIdForBinding(agentId) : '';
   const nextBindings = Array.isArray(bindings)
     ? [...bindings as BindingConfig[]].filter((binding) => {
       if (!isChannelBinding(binding)) return true;
       if (binding.match?.channel !== channelType) return true;
+      // Keep a single account binding per (agent, channelType). Rebinding to
+      // another account should replace the previous one.
+      if (normalizedAgentId && normalizeAgentIdForBinding(binding.agentId || '') === normalizedAgentId) {
+        return false;
+      }
       // Only remove binding that matches the exact accountId scope
       if (accountId) {
         return binding.match?.accountId !== accountId;
@@ -288,6 +295,30 @@ function upsertBindingsForChannel(
   }
 
   return nextBindings.length > 0 ? nextBindings : undefined;
+}
+
+function assertAgentNotBoundToOtherChannel(
+  bindings: unknown,
+  agentId: string,
+  nextChannelType: string,
+): void {
+  if (!Array.isArray(bindings)) return;
+  const normalizedAgentId = normalizeAgentIdForBinding(agentId);
+  if (!normalizedAgentId) return;
+
+  const conflictChannels = new Set<string>();
+  for (const binding of bindings) {
+    if (!isChannelBinding(binding)) continue;
+    if (normalizeAgentIdForBinding(binding.agentId || '') !== normalizedAgentId) continue;
+    const boundChannel = binding.match?.channel;
+    if (!boundChannel || boundChannel === nextChannelType) continue;
+    conflictChannels.add(boundChannel);
+  }
+
+  if (conflictChannels.size > 0) {
+    const channels = Array.from(conflictChannels).sort().join(', ');
+    throw new Error(`Agent "${agentId}" is already bound to channel(s): ${channels}. One agent can only bind one channel.`);
+  }
 }
 
 async function listExistingAgentIdsOnDisk(): Promise<Set<string>> {
@@ -429,6 +460,7 @@ async function buildSnapshotFromConfig(config: AgentConfigDocument): Promise<Age
   const { channelToAgent, accountToAgent } = getChannelBindingMap(config.bindings);
   const defaultAgentIdNorm = normalizeAgentIdForBinding(defaultAgentId);
   const channelOwners: Record<string, string> = {};
+  const channelAccountOwners: Record<string, string> = {};
 
   // Build per-agent channel lists from account-scoped bindings
   const agentChannelSets = new Map<string, Set<string>>();
@@ -436,16 +468,24 @@ async function buildSnapshotFromConfig(config: AgentConfigDocument): Promise<Age
   for (const channelType of configuredChannels) {
     const accountIds = listConfiguredAccountIdsForChannel(config, channelType);
     let primaryOwner: string | undefined;
+    const hasExplicitAccountBindingForChannel = accountIds.some((accountId) =>
+      accountToAgent.has(`${channelType}:${accountId}`),
+    );
 
     for (const accountId of accountIds) {
       const owner =
         accountToAgent.get(`${channelType}:${accountId}`)
-        || (accountId === DEFAULT_ACCOUNT_ID ? (channelToAgent.get(channelType) || defaultAgentIdNorm) : undefined);
+        || (
+          accountId === DEFAULT_ACCOUNT_ID && !hasExplicitAccountBindingForChannel
+            ? (channelToAgent.get(channelType) || defaultAgentIdNorm)
+            : undefined
+        );
 
       if (!owner) {
         continue;
       }
 
+      channelAccountOwners[`${channelType}:${accountId}`] = owner;
       primaryOwner ??= owner;
       const existing = agentChannelSets.get(owner) ?? new Set();
       existing.add(channelType);
@@ -486,6 +526,7 @@ async function buildSnapshotFromConfig(config: AgentConfigDocument): Promise<Age
     defaultAgentId,
     configuredChannelTypes: configuredChannels,
     channelOwners,
+    channelAccountOwners,
   };
 }
 
@@ -618,10 +659,34 @@ export async function assignChannelToAgent(agentId: string, channelType: string)
       throw new Error(`Agent "${agentId}" not found`);
     }
 
+    assertAgentNotBoundToOtherChannel(config.bindings, agentId, channelType);
     const accountId = resolveAccountIdForAgent(agentId);
     config.bindings = upsertBindingsForChannel(config.bindings, channelType, agentId, accountId);
     await writeOpenClawConfig(config);
     logger.info('Assigned channel to agent', { agentId, channelType, accountId });
+    return buildSnapshotFromConfig(config);
+  });
+}
+
+export async function assignChannelAccountToAgent(
+  agentId: string,
+  channelType: string,
+  accountId: string,
+): Promise<AgentsSnapshot> {
+  return withConfigLock(async () => {
+    const config = await readOpenClawConfig() as AgentConfigDocument;
+    const { entries } = normalizeAgentsConfig(config);
+    if (!entries.some((entry) => entry.id === agentId)) {
+      throw new Error(`Agent "${agentId}" not found`);
+    }
+    if (!accountId.trim()) {
+      throw new Error('accountId is required');
+    }
+
+    assertAgentNotBoundToOtherChannel(config.bindings, agentId, channelType);
+    config.bindings = upsertBindingsForChannel(config.bindings, channelType, agentId, accountId.trim());
+    await writeOpenClawConfig(config);
+    logger.info('Assigned channel account to agent', { agentId, channelType, accountId: accountId.trim() });
     return buildSnapshotFromConfig(config);
   });
 }

@@ -131,10 +131,23 @@ async function discoverAgentIds(): Promise<string[]> {
 // ── OpenClaw Config Helpers ──────────────────────────────────────
 
 const OPENCLAW_CONFIG_PATH = join(homedir(), '.openclaw', 'openclaw.json');
+const FEISHU_PLUGIN_ID_CANDIDATES = ['openclaw-lark', 'feishu-openclaw-plugin'] as const;
 const VALID_COMPACTION_MODES = new Set(['default', 'safeguard']);
 
 async function readOpenClawJson(): Promise<Record<string, unknown>> {
   return (await readJsonFile<Record<string, unknown>>(OPENCLAW_CONFIG_PATH)) ?? {};
+}
+
+async function resolveInstalledFeishuPluginId(): Promise<string | null> {
+  const extensionRoot = join(homedir(), '.openclaw', 'extensions');
+  for (const dirName of FEISHU_PLUGIN_ID_CANDIDATES) {
+    const manifestPath = join(extensionRoot, dirName, 'openclaw.plugin.json');
+    const manifest = await readJsonFile<{ id?: unknown }>(manifestPath);
+    if (typeof manifest?.id === 'string' && manifest.id.trim()) {
+      return manifest.id.trim();
+    }
+  }
+  return null;
 }
 
 function normalizeAgentsDefaultsCompactionMode(config: Record<string, unknown>): void {
@@ -1016,43 +1029,58 @@ export async function sanitizeOpenClawConfig(): Promise<void> {
     }
 
     // ── plugins.entries.feishu cleanup ──────────────────────────────
-    // The official feishu plugin registers its channel AS 'feishu' via
-    // openclaw.plugin.json.  An explicit entries.feishu.enabled=false
-    // (set by older ClawX to disable the legacy built-in) blocks the
-    // official plugin's channel from starting.  Only clean up when the
-    // new openclaw-lark plugin is already configured (to avoid removing
-    // a legitimate old-style feishu plugin from users who haven't upgraded).
+    // Normalize feishu plugin ids dynamically based on installed manifest.
+    // Different environments may report either "openclaw-lark" or
+    // "feishu-openclaw-plugin" as the runtime plugin id.
     if (typeof plugins === 'object' && !Array.isArray(plugins)) {
       const pluginsObj = plugins as Record<string, unknown>;
-      const pEntries = pluginsObj.entries as Record<string, Record<string, unknown>> | undefined;
+      const pEntries = (
+        pluginsObj.entries && typeof pluginsObj.entries === 'object' && !Array.isArray(pluginsObj.entries)
+          ? pluginsObj.entries
+          : {}
+      ) as Record<string, Record<string, unknown>>;
+      if (!pluginsObj.entries || typeof pluginsObj.entries !== 'object' || Array.isArray(pluginsObj.entries)) {
+        pluginsObj.entries = pEntries;
+      }
 
-      // ── feishu-openclaw-plugin → openclaw-lark migration ────────
-      // Plugin @larksuite/openclaw-lark ≥2026.3.12 changed its manifest
-      // id from 'feishu-openclaw-plugin' to 'openclaw-lark'.  Migrate
-      // both plugins.allow and plugins.entries so Gateway validation
-      // doesn't reject the config with "plugin not found".
-      const LEGACY_FEISHU_ID = 'feishu-openclaw-plugin';
-      const NEW_FEISHU_ID = 'openclaw-lark';
-      if (Array.isArray(pluginsObj.allow)) {
-        const allowArr = pluginsObj.allow as string[];
-        const legacyIdx = allowArr.indexOf(LEGACY_FEISHU_ID);
-        if (legacyIdx !== -1) {
-          if (!allowArr.includes(NEW_FEISHU_ID)) {
-            allowArr[legacyIdx] = NEW_FEISHU_ID;
-          } else {
-            allowArr.splice(legacyIdx, 1);
-          }
-          console.log(`[sanitize] Migrated plugins.allow: ${LEGACY_FEISHU_ID} → ${NEW_FEISHU_ID}`);
+      const allowArr = Array.isArray(pluginsObj.allow) ? pluginsObj.allow as string[] : [];
+      if (!Array.isArray(pluginsObj.allow)) {
+        pluginsObj.allow = allowArr;
+      }
+
+      const installedFeishuId = await resolveInstalledFeishuPluginId();
+      const configuredFeishuId =
+        FEISHU_PLUGIN_ID_CANDIDATES.find((id) => allowArr.includes(id))
+        || FEISHU_PLUGIN_ID_CANDIDATES.find((id) => Boolean(pEntries[id]));
+      const canonicalFeishuId = installedFeishuId || configuredFeishuId || FEISHU_PLUGIN_ID_CANDIDATES[0];
+
+      const existingFeishuEntry =
+        FEISHU_PLUGIN_ID_CANDIDATES.map((id) => pEntries[id]).find(Boolean)
+        || pEntries.feishu;
+
+      const normalizedAllow = allowArr.filter(
+        (id) => id !== 'feishu' && !FEISHU_PLUGIN_ID_CANDIDATES.includes(id as typeof FEISHU_PLUGIN_ID_CANDIDATES[number]),
+      );
+      normalizedAllow.push(canonicalFeishuId);
+      if (JSON.stringify(normalizedAllow) !== JSON.stringify(allowArr)) {
+        pluginsObj.allow = normalizedAllow;
+        modified = true;
+        console.log(`[sanitize] Normalized plugins.allow for feishu -> ${canonicalFeishuId}`);
+      }
+
+      if (existingFeishuEntry || !pEntries[canonicalFeishuId]) {
+        pEntries[canonicalFeishuId] = {
+          ...(existingFeishuEntry || {}),
+          ...(pEntries[canonicalFeishuId] || {}),
+          enabled: true,
+        };
+        modified = true;
+      }
+      for (const id of FEISHU_PLUGIN_ID_CANDIDATES) {
+        if (id !== canonicalFeishuId && pEntries[id]) {
+          delete pEntries[id];
           modified = true;
         }
-      }
-      if (pEntries?.[LEGACY_FEISHU_ID]) {
-        if (!pEntries[NEW_FEISHU_ID]) {
-          pEntries[NEW_FEISHU_ID] = pEntries[LEGACY_FEISHU_ID];
-        }
-        delete pEntries[LEGACY_FEISHU_ID];
-        console.log(`[sanitize] Migrated plugins.entries: ${LEGACY_FEISHU_ID} → ${NEW_FEISHU_ID}`);
-        modified = true;
       }
 
       // ── wecom-openclaw-plugin → wecom migration ────────────────
@@ -1080,27 +1108,27 @@ export async function sanitizeOpenClawConfig(): Promise<void> {
         modified = true;
       }
 
-      // ── Remove bare 'feishu' when openclaw-lark is present ─────────
+      // ── Remove bare 'feishu' when canonical feishu plugin is present ──
       // The Gateway binary automatically adds bare 'feishu' to plugins.allow
-      // because the openclaw-lark plugin registers the 'feishu' channel.
+      // because the official plugin registers the 'feishu' channel.
       // However, there's no plugin with id='feishu', so Gateway validation
       // fails with "plugin not found: feishu".  Remove it from allow[] and
       // disable the entries.feishu entry to prevent Gateway from re-adding it.
       const allowArr2 = Array.isArray(pluginsObj.allow) ? pluginsObj.allow as string[] : [];
-      const hasNewFeishu = allowArr2.includes(NEW_FEISHU_ID) || !!pEntries?.[NEW_FEISHU_ID];
-      if (hasNewFeishu) {
+      const hasCanonicalFeishu = allowArr2.includes(canonicalFeishuId) || !!pEntries[canonicalFeishuId];
+      if (hasCanonicalFeishu) {
         // Remove bare 'feishu' from plugins.allow
         const bareFeishuIdx = allowArr2.indexOf('feishu');
         if (bareFeishuIdx !== -1) {
           allowArr2.splice(bareFeishuIdx, 1);
-          console.log('[sanitize] Removed bare "feishu" from plugins.allow (openclaw-lark is configured)');
+          console.log('[sanitize] Removed bare "feishu" from plugins.allow (feishu plugin is configured)');
           modified = true;
         }
         // Disable bare 'feishu' in plugins.entries so Gateway won't re-add it
-        if (pEntries?.feishu) {
+        if (pEntries.feishu) {
           if (pEntries.feishu.enabled !== false) {
             pEntries.feishu.enabled = false;
-            console.log('[sanitize] Disabled bare plugins.entries.feishu (openclaw-lark is configured)');
+            console.log('[sanitize] Disabled bare plugins.entries.feishu (feishu plugin is configured)');
             modified = true;
           }
         }
