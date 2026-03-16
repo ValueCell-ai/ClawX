@@ -103,6 +103,7 @@ When you target another agent with `@agent`, ClawX switches into that agent's ow
 
 ### 📡 Multi-Channel Management
 Configure and monitor multiple AI channels simultaneously. Each channel operates independently, allowing you to run specialized agents for different tasks.
+Each channel now supports multiple accounts, per-account agent binding, and switching the channel default account directly from the Channels page.
 
 ### ⏰ Cron-Based Automation
 Schedule AI tasks to run automatically. Define triggers, set intervals, and let your AI agents work around the clock without manual intervention.
