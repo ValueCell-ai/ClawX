@@ -5,7 +5,7 @@
 import { create } from 'zustand';
 import { hostApiFetch } from '@/lib/host-api';
 import { useGatewayStore } from './gateway';
-import type { Channel, ChannelType } from '../types/channel';
+import { CHANNEL_NAMES, type Channel, type ChannelType } from '../types/channel';
 
 interface AddChannelParams {
   type: ChannelType;
@@ -109,7 +109,7 @@ export const useChannelsStore = create<ChannelsState>((set, get) => ({
           channels.push({
             id: `${channelId}-${primaryAccount?.accountId || 'default'}`,
             type: channelId as ChannelType,
-            name: primaryAccount?.name || channelId,
+            name: primaryAccount?.name || CHANNEL_NAMES[channelId as ChannelType] || channelId,
             status,
             accountId: primaryAccount?.accountId,
             error:
