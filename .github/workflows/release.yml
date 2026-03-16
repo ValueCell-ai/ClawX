@@ -151,6 +151,7 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           path: release-artifacts
+          pattern: release-*
 
       - name: List all downloaded artifacts
         run: |
@@ -243,6 +244,7 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           path: release-artifacts
+          pattern: release-*
 
       - name: Extract version and channel
         id: version
