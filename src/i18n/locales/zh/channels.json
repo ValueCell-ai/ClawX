@@ -1,6 +1,6 @@
 {
     "title": "消息频道",
-    "subtitle": "连接到消息平台，配置仅对主 Agent 生效",
+    "subtitle": "统一管理消息频道、账号、账号与智能体的绑定关系，以及频道默认账号",
     "refresh": "刷新",
     "addChannel": "添加频道",
     "stats": {
@@ -24,8 +24,45 @@
         "whatsappFailed": "WhatsApp 连接失败: {{error}}",
         "channelSaved": "频道 {{name}} 已保存",
         "channelConnecting": "正在连接 {{name}}...",
+        "savedButRefreshFailed": "配置已保存，但刷新页面数据失败，请手动刷新查看最新状态",
         "restartManual": "请手动重启网关",
-        "configFailed": "配置失败: {{error}}"
+        "configFailed": "配置失败: {{error}}",
+        "bindingUpdated": "账号绑定已更新",
+        "defaultUpdated": "默认账号已更新",
+        "accountDeleted": "账号已删除",
+        "channelDeleted": "频道已删除"
+    },
+    "account": {
+        "add": "添加账号",
+        "edit": "编辑",
+        "delete": "删除账号",
+        "deleteChannel": "删除频道",
+        "deleteConfirm": "确定要删除该账号吗？",
+        "default": "当前默认",
+        "setDefault": "设为频道默认账号",
+        "unassigned": "未绑定",
+        "mainAccount": "主账号",
+        "customIdLabel": "账号 ID",
+        "customIdPlaceholder": "例如：feishu-sales-bot",
+        "customIdHint": "可自定义账号 ID，用于区分同一频道下的多个账号。",
+        "invalidId": "账号 ID 不能为空",
+        "idLabel": "ID: {{id}}",
+        "boundTo": "绑定对象：{{agent}}",
+        "handledBy": "由 {{agent}} 处理",
+        "bindingStatusLabel": "绑定状态：{{status}}",
+        "connectionStatusLabel": "连接状态：{{status}}",
+        "bindingStatus": {
+            "bound": "已绑定",
+            "unbound": "未绑定"
+        },
+        "connectionStatus": {
+            "connected": "已连接",
+            "connecting": "连接中",
+            "disconnected": "未连接",
+            "error": "异常"
+        },
+        "accountIdPrompt": "请输入该频道的新账号 ID",
+        "accountIdExists": "账号 ID {{accountId}} 已存在"
     },
     "dialog": {
         "updateTitle": "更新 {{name}}",

@@ -1,6 +1,6 @@
 {
     "title": "メッセージングチャンネル",
-    "subtitle": "メッセージングチャンネルと接続を管理。設定はメイン Agent のみ有効です",
+    "subtitle": "メッセージングチャンネル、アカウント、Agent への紐付け、チャンネルのデフォルトアカウントを一元管理します",
     "refresh": "更新",
     "addChannel": "チャンネルを追加",
     "stats": {
@@ -24,8 +24,45 @@
         "whatsappFailed": "WhatsApp 接続に失敗しました: {{error}}",
         "channelSaved": "チャンネル {{name}} が保存されました",
         "channelConnecting": "{{name}} に接続中...",
+        "savedButRefreshFailed": "設定は保存されましたが、画面データの更新に失敗しました。手動で再読み込みしてください。",
         "restartManual": "ゲートウェイを手動で再起動してください",
-        "configFailed": "設定に失敗しました: {{error}}"
+        "configFailed": "設定に失敗しました: {{error}}",
+        "bindingUpdated": "アカウントの紐付けを保存しました",
+        "defaultUpdated": "デフォルトアカウントを更新しました",
+        "accountDeleted": "アカウントを削除しました",
+        "channelDeleted": "チャンネルを削除しました"
+    },
+    "account": {
+        "add": "アカウントを追加",
+        "edit": "編集",
+        "delete": "アカウントを削除",
+        "deleteChannel": "チャンネルを削除",
+        "deleteConfirm": "このアカウントを削除してもよろしいですか？",
+        "default": "現在の既定",
+        "setDefault": "チャンネル既定に設定",
+        "unassigned": "未割り当て",
+        "mainAccount": "メインアカウント",
+        "customIdLabel": "アカウント ID",
+        "customIdPlaceholder": "例: feishu-sales-bot",
+        "customIdHint": "同じチャンネル内の複数アカウントを区別するため、任意の ID を設定できます。",
+        "invalidId": "アカウント ID は空にできません",
+        "idLabel": "ID: {{id}}",
+        "boundTo": "割り当て先: {{agent}}",
+        "handledBy": "{{agent}} が処理",
+        "bindingStatusLabel": "紐付け状態：{{status}}",
+        "connectionStatusLabel": "接続状態：{{status}}",
+        "bindingStatus": {
+            "bound": "紐付け済み",
+            "unbound": "未紐付け"
+        },
+        "connectionStatus": {
+            "connected": "接続済み",
+            "connecting": "接続中",
+            "disconnected": "未接続",
+            "error": "異常"
+        },
+        "accountIdPrompt": "このチャンネルの新しいアカウント ID を入力してください",
+        "accountIdExists": "アカウント ID {{accountId}} はすでに存在します"
     },
     "dialog": {
         "updateTitle": "{{name}} を更新",

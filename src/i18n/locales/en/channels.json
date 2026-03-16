@@ -1,6 +1,6 @@
 {
     "title": "Messaging Channels",
-    "subtitle": "Manage your messaging channels and connections. The configuration is only effective for the main Agent.",
+    "subtitle": "Manage messaging channels, accounts, account-to-agent bindings, and each channel's default account.",
     "refresh": "Refresh",
     "addChannel": "Add Channel",
     "stats": {
@@ -24,8 +24,45 @@
         "whatsappFailed": "WhatsApp connection failed: {{error}}",
         "channelSaved": "Channel {{name}} saved",
         "channelConnecting": "Connecting to {{name}}...",
+        "savedButRefreshFailed": "Configuration was saved, but refreshing page data failed. Please refresh manually.",
         "restartManual": "Please restart the gateway manually",
-        "configFailed": "Configuration failed: {{error}}"
+        "configFailed": "Configuration failed: {{error}}",
+        "bindingUpdated": "Account binding updated",
+        "defaultUpdated": "Default account updated",
+        "accountDeleted": "Account deleted",
+        "channelDeleted": "Channel deleted"
+    },
+    "account": {
+        "add": "Add Account",
+        "edit": "Edit",
+        "delete": "Delete Account",
+        "deleteChannel": "Delete channel",
+        "deleteConfirm": "Are you sure you want to delete this account?",
+        "default": "Current Default",
+        "setDefault": "Set as channel default",
+        "unassigned": "Unassigned",
+        "mainAccount": "Primary Account",
+        "customIdLabel": "Account ID",
+        "customIdPlaceholder": "e.g. feishu-sales-bot",
+        "customIdHint": "Use a custom account ID to distinguish multiple accounts under one channel.",
+        "invalidId": "Account ID cannot be empty",
+        "idLabel": "ID: {{id}}",
+        "boundTo": "Bound to: {{agent}}",
+        "handledBy": "Handled by {{agent}}",
+        "bindingStatusLabel": "Binding: {{status}}",
+        "connectionStatusLabel": "Connection: {{status}}",
+        "bindingStatus": {
+            "bound": "Bound",
+            "unbound": "Unbound"
+        },
+        "connectionStatus": {
+            "connected": "Connected",
+            "connecting": "Connecting",
+            "disconnected": "Disconnected",
+            "error": "Error"
+        },
+        "accountIdPrompt": "Enter a new account ID for this channel",
+        "accountIdExists": "Account ID {{accountId}} already exists"
     },
     "dialog": {
         "updateTitle": "Update {{name}}",
