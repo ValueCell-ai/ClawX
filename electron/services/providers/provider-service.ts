@@ -7,8 +7,10 @@ import type {
   ProviderConfig,
   ProviderDefinition,
 } from '../../shared/providers/types';
+import { BUILTIN_PROVIDER_TYPES } from '../../shared/providers/types';
 import { ensureProviderStoreMigrated } from './provider-migration';
 import {
+  deleteProviderAccount,
   getDefaultProviderAccountId,
   getProviderAccount,
   listProviderAccounts,
@@ -26,6 +28,8 @@ import {
   setDefaultProvider,
   storeApiKey,
 } from '../../utils/secure-storage';
+import { getActiveOpenClawProviders } from '../../utils/openclaw-auth';
+import { getOpenClawProviderKeyForType } from '../../utils/provider-keys';
 import type { ProviderWithKeyInfo } from '../../shared/providers/types';
 import { logger } from '../../utils/logger';
 
@@ -56,7 +60,40 @@ export class ProviderService {
 
   async listAccounts(): Promise<ProviderAccount[]> {
     await ensureProviderStoreMigrated();
-    return listProviderAccounts();
+    const accounts = await listProviderAccounts();
+
+    // Sync check: remove stale accounts whose provider no longer exists in
+    // OpenClaw JSON (e.g. user deleted openclaw.json manually).
+    if (accounts.length > 0) {
+      const activeProviders = await getActiveOpenClawProviders();
+      const configMissing = activeProviders.size === 0;
+      const staleIds: string[] = [];
+
+      for (const account of accounts) {
+        const isBuiltin = (BUILTIN_PROVIDER_TYPES as readonly string[]).includes(account.vendorId);
+        const openClawKey = getOpenClawProviderKeyForType(account.vendorId, account.id);
+        const isActive =
+          activeProviders.has(account.vendorId) ||
+          activeProviders.has(account.id) ||
+          activeProviders.has(openClawKey);
+
+        // If openclaw.json is completely empty/missing, drop ALL accounts.
+        // Otherwise only drop non-builtin accounts that are not in the config.
+        if (configMissing || (!isBuiltin && !isActive)) {
+          staleIds.push(account.id);
+        }
+      }
+
+      if (staleIds.length > 0) {
+        for (const id of staleIds) {
+          logger.info(`[provider-sync] Removing stale provider account "${id}" (no longer in OpenClaw config)`);
+          await deleteProviderAccount(id);
+        }
+        return accounts.filter((a) => !staleIds.includes(a.id));
+      }
+    }
+
+    return accounts;
   }
 
   async getAccount(accountId: string): Promise<ProviderAccount | null> {
