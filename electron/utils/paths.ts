@@ -65,6 +65,7 @@ export function bootstrapProjectOpenClawEnv(): void {
   const projectRoot = getClawXProjectRoot();
   const configDir = join(projectRoot, '.openclaw');
   process.env.OPENCLAW_HOME = projectRoot;
+  process.env.OPENCLAW_STATE_DIR = configDir;
   process.env.OPENCLAW_CONFIG_PATH = join(configDir, 'openclaw.json');
 }
 

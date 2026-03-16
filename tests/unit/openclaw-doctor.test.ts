@@ -93,6 +93,26 @@ describe('openclaw doctor output handling', () => {
     expect(mockLoggerWarn).not.toHaveBeenCalled();
   });
 
+  it('runs diagnose mode without the removed --json flag', async () => {
+    const child = new MockUtilityChild();
+    mockFork.mockReturnValue(child);
+
+    const { runOpenClawDoctor } = await import('@electron/utils/openclaw-doctor');
+    const resultPromise = runOpenClawDoctor();
+
+    await vi.waitFor(() => {
+      expect(mockFork).toHaveBeenCalledTimes(1);
+    });
+    expect(mockFork).toHaveBeenCalledWith(
+      '/tmp/openclaw/openclaw-entry.js',
+      ['doctor'],
+      expect.any(Object),
+    );
+    child.emit('exit', 0);
+
+    await resultPromise;
+  });
+
   it('truncates output when stdout exceeds MAX_DOCTOR_OUTPUT_BYTES', async () => {
     const child = new MockUtilityChild();
     mockFork.mockReturnValue(child);
@@ -154,5 +174,41 @@ describe('openclaw doctor output handling', () => {
     expect(result.exitCode).toBe(1);
     expect(result.stdout).toBe('line-1\nline-2\n');
     expect(result.stderr).toBe('warn-1\nwarn-2\n');
+  });
+
+  it('treats stderr output as doctor issues even when the process exits successfully', async () => {
+    const child = new MockUtilityChild();
+    mockFork.mockReturnValue(child);
+
+    const { runOpenClawDoctor } = await import('@electron/utils/openclaw-doctor');
+    const resultPromise = runOpenClawDoctor();
+
+    await vi.waitFor(() => {
+      expect(mockFork).toHaveBeenCalledTimes(1);
+    });
+    child.stderr.emit('data', Buffer.from('gateway connect failed: unauthorized\n'));
+    child.emit('exit', 0);
+
+    const result = await resultPromise;
+    expect(result.success).toBe(false);
+    expect(result.exitCode).toBe(0);
+  });
+
+  it('treats known issue markers in stdout as doctor issues even when the process exits successfully', async () => {
+    const child = new MockUtilityChild();
+    mockFork.mockReturnValue(child);
+
+    const { runOpenClawDoctor } = await import('@electron/utils/openclaw-doctor');
+    const resultPromise = runOpenClawDoctor();
+
+    await vi.waitFor(() => {
+      expect(mockFork).toHaveBeenCalledTimes(1);
+    });
+    child.stdout.emit('data', Buffer.from('gateway.mode is unset; gateway start will be blocked.\n'));
+    child.emit('exit', 0);
+
+    const result = await resultPromise;
+    expect(result.success).toBe(false);
+    expect(result.exitCode).toBe(0);
   });
 });

@@ -7,13 +7,27 @@ import { getUvMirrorEnv } from './uv-env';
 
 const OPENCLAW_DOCTOR_TIMEOUT_MS = 60_000;
 const MAX_DOCTOR_OUTPUT_BYTES = 10 * 1024 * 1024;
-const OPENCLAW_DOCTOR_ARGS = ['doctor', '--json'];
+const OPENCLAW_DOCTOR_ARGS = ['doctor'];
 const OPENCLAW_DOCTOR_FIX_ARGS = ['doctor', '--fix', '--yes', '--non-interactive'];
+const DOCTOR_ISSUE_PATTERNS = [
+  /\bgateway\.mode is unset\b/i,
+  /\bgateway auth is off or missing a token\b/i,
+  /\bgateway connect failed\b/i,
+  /\bunauthorized: gateway token missing\b/i,
+  /\bcritical:\b/i,
+  /\bsession store dir missing\b/i,
+  /\bgateway not running\b/i,
+  /\bgateway service not installed\b/i,
+  /\bport \d+ is already in use\b/i,
+  /\bconfig invalid\b/i,
+  /\binvalid config\b/i,
+];
 
 export type OpenClawDoctorMode = 'diagnose' | 'fix';
 
 export interface OpenClawDoctorResult {
   mode: OpenClawDoctorMode;
+  // success means the command completed without detected doctor issues.
   success: boolean;
   exitCode: number | null;
   stdout: string;
@@ -23,6 +37,20 @@ export interface OpenClawDoctorResult {
   durationMs: number;
   timedOut?: boolean;
   error?: string;
+}
+
+function detectDoctorIssues(
+  result: Pick<OpenClawDoctorResult, 'exitCode' | 'stdout' | 'stderr' | 'timedOut' | 'error'>,
+): boolean {
+  if (result.exitCode !== 0 || result.timedOut === true || typeof result.error === 'string') {
+    return true;
+  }
+
+  if (result.stderr.trim().length > 0) {
+    return true;
+  }
+
+  return DOCTOR_ISSUE_PATTERNS.some((pattern) => pattern.test(result.stdout));
 }
 
 function appendDoctorOutput(
@@ -119,11 +147,12 @@ async function runDoctorCommand(mode: OpenClawDoctorMode): Promise<OpenClawDocto
     let stderrTruncated = false;
     let settled = false;
 
-    const finish = (result: Omit<OpenClawDoctorResult, 'durationMs'>) => {
+    const finish = (result: Omit<OpenClawDoctorResult, 'durationMs' | 'success'>) => {
       if (settled) return;
       settled = true;
       resolve({
         ...result,
+        success: !detectDoctorIssues(result),
         durationMs: Date.now() - startedAt,
       });
     };
@@ -137,7 +166,6 @@ async function runDoctorCommand(mode: OpenClawDoctorMode): Promise<OpenClawDocto
       }
       finish({
         mode,
-        success: false,
         exitCode: null,
         stdout,
         stderr,
@@ -167,7 +195,6 @@ async function runDoctorCommand(mode: OpenClawDoctorMode): Promise<OpenClawDocto
       logger.error('Failed to spawn OpenClaw doctor process:', error);
       finish({
         mode,
-        success: false,
         exitCode: null,
         stdout,
         stderr,
@@ -182,7 +209,6 @@ async function runDoctorCommand(mode: OpenClawDoctorMode): Promise<OpenClawDocto
       logger.info(`OpenClaw doctor exited with code ${code ?? 'null'}`);
       finish({
         mode,
-        success: code === 0,
         exitCode: code,
         stdout,
         stderr,

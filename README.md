@@ -197,7 +197,7 @@ Notes:
 - If advanced proxy fields are left empty, ClawX falls back to `Proxy Server`.
 - Saving proxy settings reapplies Electron networking immediately and restarts the Gateway automatically.
 - ClawX also syncs the proxy to OpenClaw's Telegram channel config when Telegram is enabled.
-- In **Settings → Advanced → Developer**, you can run **OpenClaw Doctor** to execute `openclaw doctor --json` and inspect the diagnostic output without leaving the app.
+- In **Settings → Advanced → Developer**, you can run **OpenClaw Doctor** to execute `openclaw doctor` and inspect the diagnostic output without leaving the app.
 
 ---
 

@@ -34,10 +34,10 @@ export interface GatewayLaunchContext {
 
 // ── Auto-upgrade bundled plugins on startup ──────────────────────
 
-const CHANNEL_PLUGIN_MAP: Record<string, { dirName: string; npmName: string }> = {
+const CHANNEL_PLUGIN_MAP: Record<string, { dirName: string; npmName: string; sourceDirNames?: string[] }> = {
   dingtalk: { dirName: 'dingtalk', npmName: '@soimy/dingtalk' },
   wecom: { dirName: 'wecom', npmName: '@wecom/wecom-openclaw-plugin' },
-  feishu: { dirName: 'feishu-openclaw-plugin', npmName: '@larksuite/openclaw-lark' },
+  feishu: { dirName: 'openclaw-lark', npmName: '@larksuite/openclaw-lark', sourceDirNames: ['openclaw-lark', 'feishu-openclaw-plugin'] },
   qqbot: { dirName: 'qqbot', npmName: '@sliverp/qqbot' },
 };
 
@@ -157,8 +157,8 @@ function copyPluginFromNodeModules(npmPkgPath: string, targetDir: string, npmNam
   logger.info(`[plugin] Copied ${copiedNames.size} deps for ${npmName}`);
 }
 
-function buildBundledPluginSources(pluginDirName: string): string[] {
-  return app.isPackaged
+function buildBundledPluginSources(pluginDirNames: string[]): string[] {
+  return pluginDirNames.flatMap((pluginDirName) => app.isPackaged
     ? [
       join(process.resourcesPath, 'openclaw-plugins', pluginDirName),
       join(process.resourcesPath, 'app.asar.unpacked', 'build', 'openclaw-plugins', pluginDirName),
@@ -167,7 +167,7 @@ function buildBundledPluginSources(pluginDirName: string): string[] {
     : [
       join(app.getAppPath(), 'build', 'openclaw-plugins', pluginDirName),
       join(process.cwd(), 'build', 'openclaw-plugins', pluginDirName),
-    ];
+    ]);
 }
 
 /**
@@ -180,6 +180,7 @@ function ensureConfiguredPluginsUpgraded(configuredChannels: string[]): void {
     const pluginInfo = CHANNEL_PLUGIN_MAP[channelType];
     if (!pluginInfo) continue;
     const { dirName, npmName } = pluginInfo;
+    const sourceDirNames = pluginInfo.sourceDirNames ?? [dirName];
 
     const extensionsDir = getOpenClawExtensionsDir();
     const targetDir = join(extensionsDir, dirName);
@@ -189,7 +190,7 @@ function ensureConfiguredPluginsUpgraded(configuredChannels: string[]): void {
     const installedVersion = readPluginVersion(join(targetDir, 'package.json'));
 
     // Try bundled sources first (packaged mode or if bundle-plugins was run)
-    const bundledSources = buildBundledPluginSources(dirName);
+    const bundledSources = buildBundledPluginSources(sourceDirNames);
     const bundledDir = bundledSources.find((dir) => existsSync(join(dir, 'openclaw.plugin.json')));
 
     if (bundledDir) {

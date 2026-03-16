@@ -11,7 +11,6 @@ import {
   getOpenClawConfigDir,
   getOpenClawConfigPath,
   getOpenClawCredentialsDir,
-  getOpenClawResolvedDir,
 } from './paths';
 import * as logger from './logger';
 import { proxyAwareFetch } from './proxy-fetch';
@@ -849,30 +848,19 @@ async function validateTelegramCredentials(
 }
 
 export async function validateChannelConfig(channelType: string): Promise<ValidationResult> {
-    const { exec } = await import('child_process');
+    const { runOpenClawDoctor } = await import('./openclaw-doctor');
 
     const result: ValidationResult = { valid: true, errors: [], warnings: [] };
 
     try {
-        const openclawPath = getOpenClawResolvedDir();
+        const doctorResult = await runOpenClawDoctor();
+        if (doctorResult.error && !doctorResult.stdout.trim() && !doctorResult.stderr.trim()) {
+            throw new Error(doctorResult.error);
+        }
 
-        // Run openclaw doctor command to validate config (async to avoid
-        // blocking the main thread).
-        const output = await new Promise<string>((resolve, reject) => {
-            exec(
-                `node openclaw.mjs doctor --json 2>&1`,
-                {
-                    cwd: openclawPath,
-                    encoding: 'utf-8',
-                    timeout: 30000,
-                    windowsHide: true,
-                },
-                (err, stdout) => {
-                    if (err) reject(err);
-                    else resolve(stdout);
-                },
-            );
-        });
+        const output = [doctorResult.stdout, doctorResult.stderr]
+            .filter((value) => value.trim().length > 0)
+            .join('\n');
 
         const lines = output.split('\n');
         for (const line of lines) {
@@ -926,7 +914,7 @@ export async function validateChannelConfig(channelType: string): Promise<Valida
         if (errorMessage.includes('Unrecognized key') || errorMessage.includes('invalid config')) {
             result.errors.push(errorMessage);
             result.valid = false;
-        } else if (errorMessage.includes('ENOENT')) {
+        } else if (errorMessage.includes('ENOENT') || errorMessage.includes('entry script not found')) {
             result.errors.push('OpenClaw not found. Please ensure OpenClaw is installed.');
             result.valid = false;
         } else {

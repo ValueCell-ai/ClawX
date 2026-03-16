@@ -1,7 +1,4 @@
 import type { IncomingMessage, ServerResponse } from 'http';
-import { app } from 'electron';
-import { existsSync, cpSync, mkdirSync, rmSync, readFileSync } from 'node:fs';
-import { join } from 'node:path';
 import {
   deleteChannelConfig,
   getChannelFormValues,
@@ -12,7 +9,8 @@ import {
   validateChannelCredentials,
 } from '../../utils/channel-config';
 import { assignChannelToAgent, clearAllBindingsForChannel } from '../../utils/agent-config';
-import { getOpenClawExtensionsDir } from '../../utils/paths';
+import { ensureChannelPluginInstalled } from '../../utils/channel-plugin-install';
+import { installFeishuPluginWithLarkTools } from '../../utils/openclaw-lark-tools';
 import { whatsAppLoginManager } from '../../utils/whatsapp-login';
 import type { HostApiContext } from '../context';
 import { parseJsonBody, sendJson } from '../route-utils';
@@ -44,99 +42,20 @@ function scheduleGatewayChannelSaveRefresh(
   void reason;
 }
 
-// ── Generic plugin installer with version-aware upgrades ─────────
-
-function readPluginVersion(pkgJsonPath: string): string | null {
-  try {
-    const raw = readFileSync(pkgJsonPath, 'utf-8');
-    const parsed = JSON.parse(raw) as { version?: string };
-    return parsed.version ?? null;
-  } catch {
-    return null;
-  }
-}
-
-function ensurePluginInstalled(
-  pluginDirName: string,
-  candidateSources: string[],
-  pluginLabel: string,
-): { installed: boolean; warning?: string } {
-  const extensionsDir = getOpenClawExtensionsDir();
-  const targetDir = join(extensionsDir, pluginDirName);
-  const targetManifest = join(targetDir, 'openclaw.plugin.json');
-  const targetPkgJson = join(targetDir, 'package.json');
-
-  const sourceDir = candidateSources.find((dir) => existsSync(join(dir, 'openclaw.plugin.json')));
-
-  // If already installed, check whether an upgrade is available
-  if (existsSync(targetManifest)) {
-    if (!sourceDir) return { installed: true }; // no bundled source to compare, keep existing
-    const installedVersion = readPluginVersion(targetPkgJson);
-    const sourceVersion = readPluginVersion(join(sourceDir, 'package.json'));
-    if (!sourceVersion || !installedVersion || sourceVersion === installedVersion) {
-      return { installed: true }; // same version or unable to compare
-    }
-    // Version differs — fall through to overwrite install
-    console.log(
-      `[plugin] Upgrading ${pluginLabel} plugin: ${installedVersion} → ${sourceVersion}`,
-    );
-  }
-
-  // Fresh install or upgrade
-  if (!sourceDir) {
-    return {
-      installed: false,
-      warning: `Bundled ${pluginLabel} plugin mirror not found. Checked: ${candidateSources.join(' | ')}`,
-    };
-  }
-
-  try {
-    mkdirSync(extensionsDir, { recursive: true });
-    rmSync(targetDir, { recursive: true, force: true });
-    cpSync(sourceDir, targetDir, { recursive: true, dereference: true });
-    if (!existsSync(join(targetDir, 'openclaw.plugin.json'))) {
-      return { installed: false, warning: `Failed to install ${pluginLabel} plugin mirror (manifest missing).` };
-    }
-    return { installed: true };
-  } catch {
-    return { installed: false, warning: `Failed to install bundled ${pluginLabel} plugin mirror` };
-  }
-}
-
-// ── Per-channel plugin helpers (thin wrappers around ensurePluginInstalled) ──
-
-function buildCandidateSources(pluginDirName: string): string[] {
-  return app.isPackaged
-    ? [
-      join(process.resourcesPath, 'openclaw-plugins', pluginDirName),
-      join(process.resourcesPath, 'app.asar.unpacked', 'build', 'openclaw-plugins', pluginDirName),
-      join(process.resourcesPath, 'app.asar.unpacked', 'openclaw-plugins', pluginDirName),
-    ]
-    : [
-      join(app.getAppPath(), 'build', 'openclaw-plugins', pluginDirName),
-      join(process.cwd(), 'build', 'openclaw-plugins', pluginDirName),
-      join(__dirname, '../../../build/openclaw-plugins', pluginDirName),
-    ];
-}
-
 function ensureDingTalkPluginInstalled(): { installed: boolean; warning?: string } {
-  return ensurePluginInstalled('dingtalk', buildCandidateSources('dingtalk'), 'DingTalk');
+  return ensureChannelPluginInstalled({ pluginDirName: 'dingtalk', pluginLabel: 'DingTalk', npmName: '@soimy/dingtalk' });
 }
 
 function ensureWeComPluginInstalled(): { installed: boolean; warning?: string } {
-  return ensurePluginInstalled('wecom', buildCandidateSources('wecom'), 'WeCom');
+  return ensureChannelPluginInstalled({ pluginDirName: 'wecom', pluginLabel: 'WeCom', npmName: '@wecom/wecom-openclaw-plugin' });
 }
 
-function ensureFeishuPluginInstalled(): { installed: boolean; warning?: string } {
-  return ensurePluginInstalled(
-    'feishu-openclaw-plugin',
-    buildCandidateSources('feishu-openclaw-plugin'),
-    'Feishu',
-  );
+async function ensureFeishuPluginInstalled(config?: Record<string, unknown>): Promise<{ installed: boolean; warning?: string }> {
+  return await installFeishuPluginWithLarkTools(config);
 }
 
 function ensureQQBotPluginInstalled(): { installed: boolean; warning?: string } {
-  return ensurePluginInstalled('qqbot', buildCandidateSources('qqbot'), 'QQ Bot');
+  return ensureChannelPluginInstalled({ pluginDirName: 'qqbot', pluginLabel: 'QQ Bot', npmName: '@sliverp/qqbot' });
 }
 
 function toComparableConfig(input: Record<string, unknown>): Record<string, string> {
@@ -259,7 +178,7 @@ export async function handleChannelRoutes(
         }
       }
       if (body.channelType === 'feishu') {
-        const installResult = await ensureFeishuPluginInstalled();
+        const installResult = await ensureFeishuPluginInstalled(body.config);
         if (!installResult.installed) {
           sendJson(res, 500, { success: false, error: installResult.warning || 'Feishu plugin install failed' });
           return true;

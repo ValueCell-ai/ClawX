@@ -113,6 +113,8 @@ export function Settings() {
     timedOut?: boolean;
     error?: string;
   } | null>(null);
+  const getDoctorDisplayCommand = (mode: 'diagnose' | 'fix') =>
+    mode === 'fix' ? 'openclaw doctor --fix --yes --non-interactive' : 'openclaw doctor';
 
   const handleShowLogs = async () => {
     try {
@@ -169,7 +171,7 @@ export function Settings() {
         exitCode: null,
         stdout: '',
         stderr: '',
-        command: 'openclaw doctor --json',
+        command: getDoctorDisplayCommand(mode),
         cwd: '',
         durationMs: 0,
         error: message,
