@@ -37,8 +37,8 @@ importers:
         specifier: ^10.0.1
         version: 10.0.1(eslint@10.0.0(jiti@1.21.7))
       '@larksuite/openclaw-lark':
-        specifier: 2026.3.12
-        version: 2026.3.12
+        specifier: 2026.3.15
+        version: 2026.3.15
       '@radix-ui/react-dialog':
         specifier: ^1.1.15
         version: 1.1.15(@types/react-dom@19.2.3(@types/react@19.2.14))(@types/react@19.2.14)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)
@@ -296,10 +296,6 @@ packages:
     resolution: {integrity: sha512-ag7Qx78m1K3Dv7xlFgeHS4jBdopGZUISgVBMUy7Cj4fIgVH9EBmsc5K4hWozL8BJQctWke8Wsl96O7Gd+HCGhg==}
     engines: {node: '>=20.0.0'}
 
-  '@aws-sdk/client-bedrock@3.1006.0':
-    resolution: {integrity: sha512-CWUrrlWaFDYZIK2rNIa9FUVn3wC3lZszz0r6bq5yRiRj1P+dSd+ZpGdlRYDAi6Nq9dsainEXdpadiuUwzL6YZQ==}
-    engines: {node: '>=20.0.0'}
-
   '@aws-sdk/client-bedrock@3.1009.0':
     resolution: {integrity: sha512-KzLNqSg1T59sSlQvEA4EL3oDIAMidM54AB1b+UGouPFuUrrwGp2uUlZUYzIIlCvqpf7wEDh8wypqXISRItkgdg==}
     engines: {node: '>=20.0.0'}
@@ -442,10 +438,6 @@ packages:
 
   '@aws-sdk/token-providers@3.1005.0':
     resolution: {integrity: sha512-vMxd+ivKqSxU9bHx5vmAlFKDAkjGotFU56IOkDa5DaTu1WWwbcse0yFHEm9I537oVvodaiwMl3VBwgHfzQ2rvw==}
-    engines: {node: '>=20.0.0'}
-
-  '@aws-sdk/token-providers@3.1006.0':
-    resolution: {integrity: sha512-eCBaQI1w5PcliOdh8Y0YONOim2zNSTEK4E7gXYC4vIqiT/lzVODIFxmpc8oOBLPSANzcr9daIPPtjQ2C75dLFg==}
     engines: {node: '>=20.0.0'}
 
   '@aws-sdk/token-providers@3.1009.0':
@@ -1229,8 +1221,8 @@ packages:
   '@kwsites/promise-deferred@1.1.1':
     resolution: {integrity: sha512-GaHYm+c0O9MjZRu0ongGBRbinu8gVAMd2UZjji6jVmqKtZluZnptXGWhz1E8j8D2HJ3f/yMxKAUC0b+57wncIw==}
 
-  '@larksuite/openclaw-lark@2026.3.12':
-    resolution: {integrity: sha512-MNcDrerQrO42I09w+M8q6dwnWHMKxOnXSCLG4qNwcekjGeDmA53lIuWJtGMpjTzvDjYkoWnN+8Zg78+FRCSV9w==}
+  '@larksuite/openclaw-lark@2026.3.15':
+    resolution: {integrity: sha512-YGk63CgYG+YDUO2+TxdSPJZA6km52OpqAqf26vZHMUqawEKhiT4bcfD5JHh6VGazjUwRk5Bze1UyVKncc0csBA==}
 
   '@larksuiteoapi/node-sdk@1.59.0':
     resolution: {integrity: sha512-sBpkruTvZDOxnVtoTbepWKRX0j1Y1ZElQYu0x7+v088sI9pcpbVp6ZzCGn62dhrKPatzNyCJyzYCPXPYQWccrA==}
@@ -2512,10 +2504,6 @@ packages:
   '@slack/types@2.20.1':
     resolution: {integrity: sha512-eWX2mdt1ktpn8+40iiMc404uGrih+2fxiky3zBcPjtXKj6HLRdYlmhrPkJi7JTJm8dpXR6BWVWEDBXtaWMKD6A==}
     engines: {node: '>= 12.13.0', npm: '>= 6.12.0'}
-
-  '@slack/web-api@7.14.1':
-    resolution: {integrity: sha512-RoygyteJeFswxDPJjUMESn9dldWVMD2xUcHHd9DenVavSfVC6FeVnSdDerOO7m8LLvw4Q132nQM4hX8JiF7dng==}
-    engines: {node: '>= 18', npm: '>= 8.6.0'}
 
   '@slack/web-api@7.15.0':
     resolution: {integrity: sha512-va7zYIt3QHG1x9M/jqXXRPFMoOVlVSSRHC5YH+DzKYsrz5xUKOA3lR4THsu/Zxha9N1jOndbKFKLtr0WOPW1Vw==}
@@ -7211,51 +7199,6 @@ snapshots:
     transitivePeerDependencies:
       - aws-crt
 
-  '@aws-sdk/client-bedrock@3.1006.0':
-    dependencies:
-      '@aws-crypto/sha256-browser': 5.2.0
-      '@aws-crypto/sha256-js': 5.2.0
-      '@aws-sdk/core': 3.973.19
-      '@aws-sdk/credential-provider-node': 3.972.19
-      '@aws-sdk/middleware-host-header': 3.972.7
-      '@aws-sdk/middleware-logger': 3.972.7
-      '@aws-sdk/middleware-recursion-detection': 3.972.7
-      '@aws-sdk/middleware-user-agent': 3.972.20
-      '@aws-sdk/region-config-resolver': 3.972.7
-      '@aws-sdk/token-providers': 3.1006.0
-      '@aws-sdk/types': 3.973.5
-      '@aws-sdk/util-endpoints': 3.996.4
-      '@aws-sdk/util-user-agent-browser': 3.972.7
-      '@aws-sdk/util-user-agent-node': 3.973.5
-      '@smithy/config-resolver': 4.4.10
-      '@smithy/core': 3.23.9
-      '@smithy/fetch-http-handler': 5.3.13
-      '@smithy/hash-node': 4.2.11
-      '@smithy/invalid-dependency': 4.2.11
-      '@smithy/middleware-content-length': 4.2.11
-      '@smithy/middleware-endpoint': 4.4.23
-      '@smithy/middleware-retry': 4.4.40
-      '@smithy/middleware-serde': 4.2.12
-      '@smithy/middleware-stack': 4.2.11
-      '@smithy/node-config-provider': 4.3.11
-      '@smithy/node-http-handler': 4.4.14
-      '@smithy/protocol-http': 5.3.11
-      '@smithy/smithy-client': 4.12.3
-      '@smithy/types': 4.13.0
-      '@smithy/url-parser': 4.2.11
-      '@smithy/util-base64': 4.3.2
-      '@smithy/util-body-length-browser': 4.2.2
-      '@smithy/util-body-length-node': 4.2.3
-      '@smithy/util-defaults-mode-browser': 4.3.39
-      '@smithy/util-defaults-mode-node': 4.2.42
-      '@smithy/util-endpoints': 3.3.2
-      '@smithy/util-middleware': 4.2.11
-      '@smithy/util-retry': 4.2.11
-      '@smithy/util-utf8': 4.2.2
-      tslib: 2.8.1
-    transitivePeerDependencies:
-      - aws-crt
-
   '@aws-sdk/client-bedrock@3.1009.0':
     dependencies:
       '@aws-crypto/sha256-browser': 5.2.0
@@ -7780,18 +7723,6 @@ snapshots:
       tslib: 2.8.1
 
   '@aws-sdk/token-providers@3.1005.0':
-    dependencies:
-      '@aws-sdk/core': 3.973.19
-      '@aws-sdk/nested-clients': 3.996.8
-      '@aws-sdk/types': 3.973.5
-      '@smithy/property-provider': 4.2.11
-      '@smithy/shared-ini-file-loader': 4.4.6
-      '@smithy/types': 4.13.0
-      tslib: 2.8.1
-    transitivePeerDependencies:
-      - aws-crt
-
-  '@aws-sdk/token-providers@3.1006.0':
     dependencies:
       '@aws-sdk/core': 3.973.19
       '@aws-sdk/nested-clients': 3.996.8
@@ -8671,7 +8602,7 @@ snapshots:
   '@kwsites/promise-deferred@1.1.1':
     optional: true
 
-  '@larksuite/openclaw-lark@2026.3.12':
+  '@larksuite/openclaw-lark@2026.3.15':
     dependencies:
       '@larksuiteoapi/node-sdk': 1.59.0
       '@sinclair/typebox': 0.34.48
@@ -8874,7 +8805,7 @@ snapshots:
       chalk: 5.6.2
       cli-highlight: 2.1.11
       diff: 8.0.3
-      file-type: 21.3.0
+      file-type: 21.3.2
       glob: 11.1.0
       marked: 15.0.12
       minimatch: 10.2.4
@@ -9960,23 +9891,6 @@ snapshots:
   '@slack/types@2.20.0': {}
 
   '@slack/types@2.20.1': {}
-
-  '@slack/web-api@7.14.1':
-    dependencies:
-      '@slack/logger': 4.0.0
-      '@slack/types': 2.20.0
-      '@types/node': 25.3.0
-      '@types/retry': 0.12.0
-      axios: 1.13.5(debug@4.4.3)
-      eventemitter3: 5.0.4
-      form-data: 4.0.5
-      is-electron: 2.2.2
-      is-stream: 2.0.1
-      p-queue: 6.6.2
-      p-retry: 4.6.2
-      retry: 0.13.1
-    transitivePeerDependencies:
-      - debug
 
   '@slack/web-api@7.15.0':
     dependencies:
@@ -11467,7 +11381,7 @@ snapshots:
   clawdbot@2026.1.24-3(@discordjs/opus@0.10.0(encoding@0.1.13))(@modelcontextprotocol/sdk@1.27.1(zod@4.3.6))(@types/express@5.0.6)(devtools-protocol@0.0.1596832)(encoding@0.1.13)(opusscript@0.1.1)(typescript@5.9.3):
     dependencies:
       '@agentclientprotocol/sdk': 0.13.1(zod@4.3.6)
-      '@aws-sdk/client-bedrock': 3.1006.0
+      '@aws-sdk/client-bedrock': 3.1009.0
       '@buape/carbon': 0.14.0(@discordjs/opus@0.10.0(encoding@0.1.13))(hono@4.11.4)(opusscript@0.1.1)
       '@clack/prompts': 0.11.0
       '@grammyjs/runner': 2.0.3(grammy@1.41.1(encoding@0.1.13))
@@ -11482,7 +11396,7 @@ snapshots:
       '@mozilla/readability': 0.6.0
       '@sinclair/typebox': 0.34.47
       '@slack/bolt': 4.6.0(@types/express@5.0.6)
-      '@slack/web-api': 7.14.1
+      '@slack/web-api': 7.15.0
       '@whiskeysockets/baileys': 7.0.0-rc.9(sharp@0.34.5)
       ajv: 8.18.0
       body-parser: 2.2.2
@@ -11496,7 +11410,7 @@ snapshots:
       discord-api-types: 0.38.42
       dotenv: 17.3.1
       express: 5.2.1
-      file-type: 21.3.0
+      file-type: 21.3.2
       grammy: 1.41.1(encoding@0.1.13)
       hono: 4.11.4
       jiti: 2.6.1
@@ -11515,7 +11429,7 @@ snapshots:
       sqlite-vec: 0.1.7-alpha.2
       tar: 7.5.4
       tslog: 4.10.2
-      undici: 7.22.0
+      undici: 7.24.1
       ws: 8.19.0
       yaml: 2.8.2
       zod: 4.3.6
