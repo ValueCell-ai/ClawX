@@ -800,7 +800,7 @@ export async function setChannelDefaultAccount(channelType: string, accountId: s
     });
 }
 
-export async function deleteAgentChannelAccounts(agentId: string): Promise<void> {
+export async function deleteAgentChannelAccounts(agentId: string, ownedChannelAccounts?: Set<string>): Promise<void> {
     return withConfigLock(async () => {
         const currentConfig = await readOpenClawConfig();
         if (!currentConfig.channels) return;
@@ -813,6 +813,9 @@ export async function deleteAgentChannelAccounts(agentId: string): Promise<void>
             migrateLegacyChannelConfigToAccounts(section, DEFAULT_ACCOUNT_ID);
             const accounts = section.accounts as Record<string, ChannelConfigData> | undefined;
             if (!accounts?.[accountId]) continue;
+            if (ownedChannelAccounts && !ownedChannelAccounts.has(`${channelType}:${accountId}`)) {
+                continue;
+            }
 
             delete accounts[accountId];
             if (Object.keys(accounts).length === 0) {

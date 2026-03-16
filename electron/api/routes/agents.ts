@@ -188,9 +188,27 @@ export async function handleAgentRoutes(
       try {
         const agentId = decodeURIComponent(parts[0]);
         const channelType = decodeURIComponent(parts[2]);
-        const accountId = resolveAccountIdForAgent(agentId);
-        await deleteChannelAccountConfig(channelType, accountId);
-        const snapshot = await clearChannelBinding(channelType, accountId);
+        const ownerId = agentId.trim().toLowerCase();
+        const snapshotBefore = await listAgentsSnapshot();
+        const ownedAccountIds = Object.entries(snapshotBefore.channelAccountOwners)
+          .filter(([channelAccountKey, owner]) => {
+            if (owner !== ownerId) return false;
+            return channelAccountKey.startsWith(`${channelType}:`);
+          })
+          .map(([channelAccountKey]) => channelAccountKey.slice(channelAccountKey.indexOf(':') + 1));
+        // Backward compatibility for legacy agentId->accountId mapping.
+        if (ownedAccountIds.length === 0) {
+          const legacyAccountId = resolveAccountIdForAgent(agentId);
+          if (snapshotBefore.channelAccountOwners[`${channelType}:${legacyAccountId}`] === ownerId) {
+            ownedAccountIds.push(legacyAccountId);
+          }
+        }
+
+        for (const accountId of ownedAccountIds) {
+          await deleteChannelAccountConfig(channelType, accountId);
+          await clearChannelBinding(channelType, accountId);
+        }
+        const snapshot = await listAgentsSnapshot();
         scheduleGatewayReload(ctx, 'remove-agent-channel');
         sendJson(res, 200, { success: true, ...snapshot });
       } catch (error) {

@@ -616,6 +616,7 @@ export async function deleteAgentConfig(agentId: string): Promise<{ snapshot: Ag
 
     const config = await readOpenClawConfig() as AgentConfigDocument;
     const { agentsConfig, entries, defaultAgentId } = normalizeAgentsConfig(config);
+    const snapshotBeforeDeletion = await buildSnapshotFromConfig(config);
     const removedEntry = entries.find((entry) => entry.id === agentId);
     const nextEntries = entries.filter((entry) => entry.id !== agentId);
     if (!removedEntry || nextEntries.length === entries.length) {
@@ -637,8 +638,20 @@ export async function deleteAgentConfig(agentId: string): Promise<{ snapshot: Ag
       };
     }
 
+    const normalizedAgentId = normalizeAgentIdForBinding(agentId);
+    const legacyAccountId = resolveAccountIdForAgent(agentId);
+    const ownedLegacyAccounts = new Set(
+      Object.entries(snapshotBeforeDeletion.channelAccountOwners)
+        .filter(([channelAccountKey, owner]) => {
+          if (owner !== normalizedAgentId) return false;
+          const accountId = channelAccountKey.slice(channelAccountKey.indexOf(':') + 1);
+          return accountId === legacyAccountId;
+        })
+        .map(([channelAccountKey]) => channelAccountKey),
+    );
+
     await writeOpenClawConfig(config);
-    await deleteAgentChannelAccounts(agentId);
+    await deleteAgentChannelAccounts(agentId, ownedLegacyAccounts);
     await removeAgentRuntimeDirectory(agentId);
     // NOTE: workspace directory is NOT deleted here intentionally.
     // The caller (route handler) defers workspace removal until after

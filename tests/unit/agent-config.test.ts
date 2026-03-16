@@ -220,4 +220,44 @@ describe('agent config lifecycle', () => {
     warnSpy.mockRestore();
     infoSpy.mockRestore();
   });
+
+  it('does not delete a legacy-named account when it is owned by another agent', async () => {
+    await writeOpenClawJson({
+      agents: {
+        list: [
+          { id: 'main', name: 'Main', default: true },
+          { id: 'test2', name: 'test2' },
+          { id: 'test3', name: 'test3' },
+        ],
+      },
+      channels: {
+        feishu: {
+          enabled: true,
+          defaultAccount: 'default',
+          accounts: {
+            default: { enabled: true, appId: 'main-app' },
+            test2: { enabled: true, appId: 'legacy-test2-app' },
+          },
+        },
+      },
+      bindings: [
+        {
+          agentId: 'test3',
+          match: {
+            channel: 'feishu',
+            accountId: 'test2',
+          },
+        },
+      ],
+    });
+
+    const { deleteAgentConfig } = await import('@electron/utils/agent-config');
+    await deleteAgentConfig('test2');
+
+    const config = await readOpenClawJson();
+    const feishu = (config.channels as Record<string, unknown>).feishu as {
+      accounts?: Record<string, unknown>;
+    };
+    expect(feishu.accounts?.test2).toBeDefined();
+  });
 });
