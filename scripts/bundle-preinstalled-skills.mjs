@@ -53,6 +53,26 @@ function normalizeRepoPath(repoPath) {
   return repoPath.replace(/\\/g, '/').replace(/^\/+/, '').replace(/\/+$/, '');
 }
 
+async function extractArchive(archiveFileName, cwd) {
+  const prevCwd = $.cwd;
+  $.cwd = cwd;
+  try {
+    try {
+      await $`tar -xf ${archiveFileName}`;
+      return;
+    } catch (tarError) {
+      if (process.platform === 'win32') {
+        // Some Windows images expose bsdtar instead of tar.
+        await $`bsdtar -xf ${archiveFileName}`;
+        return;
+      }
+      throw tarError;
+    }
+  } finally {
+    $.cwd = prevCwd;
+  }
+}
+
 async function fetchSparseRepo(repo, ref, paths, checkoutDir) {
   const remote = `https://github.com/${repo}.git`;
   mkdirSync(checkoutDir, { recursive: true });
@@ -67,16 +87,10 @@ async function fetchSparseRepo(repo, ref, paths, checkoutDir) {
   // Do not checkout working tree on Windows: upstream repos may contain
   // Windows-invalid paths. Export only requested directories via git archive.
   await $`git -C ${gitCheckoutDir} archive --format=tar --output ${archiveFileName} FETCH_HEAD ${archivePaths}`;
-  const prevCwd = $.cwd;
-  $.cwd = checkoutDir;
-  try {
-    await $`tar -xf ${archiveFileName}`;
-  } finally {
-    $.cwd = prevCwd;
-  }
+  await extractArchive(archiveFileName, checkoutDir);
   rmSync(archivePath, { force: true });
 
-  const commit = (await $`git -C ${gitCheckoutDir} rev-parse HEAD`).stdout.trim();
+  const commit = (await $`git -C ${gitCheckoutDir} rev-parse FETCH_HEAD`).stdout.trim();
   return commit;
 }
 
