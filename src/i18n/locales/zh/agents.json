@@ -1,6 +1,6 @@
 {
     "title": "Agents",
-    "subtitle": "添加新的 Agent 时，ClawX 会复制主 Agent 的工作区引导文件和运行时认证配置， 配置可以通过以对话的形式进行修改",
+    "subtitle": "添加新的 Agent 时，T-CLAW 会复制主 Agent 的工作区引导文件和运行时认证配置， 配置可以通过以对话的形式进行修改",
     "refresh": "刷新",
     "addAgent": "添加 Agent",
     "gatewayWarning": "Gateway 服务未运行。Agent 或频道变更可能需要一点时间生效。",
@@ -14,13 +14,13 @@
     "creating": "创建中...",
     "createDialog": {
         "title": "添加 Agent",
-        "description": "只需输入名称即可创建新 Agent。ClawX 会复制主 Agent 的工作区引导文件和运行时认证配置。",
+        "description": "只需输入名称即可创建新 Agent。T-CLAW 会复制主 Agent 的工作区引导文件和运行时认证配置。",
         "nameLabel": "Agent 名称",
         "namePlaceholder": "Coding Helper"
     },
     "deleteDialog": {
         "title": "删除 Agent",
-        "message": "确认从 ClawX 删除 “{{name}}”？这会永久删除该 Agent 及其由 ClawX 管理的工作区、运行时和会话文件。"
+        "message": "确认从 T-CLAW 删除 “{{name}}”？这会永久删除该 Agent 及其由 T-CLAW 管理的工作区、运行时和会话文件。"
     },
     "settingsDialog": {
         "title": "{{name}} 设置",
@@ -29,7 +29,7 @@
         "agentIdLabel": "Agent ID",
         "modelLabel": "Model",
         "channelsTitle": "频道",
-        "channelsDescription": "每种频道类型在 ClawX 中只保留一份配置。在这里保存已配置的频道会将归属切换到当前 Agent。",
+        "channelsDescription": "每种频道类型在 T-CLAW 中只保留一份配置。在这里保存已配置的频道会将归属切换到当前 Agent。",
         "addChannel": "添加频道",
         "noChannels": "这个 Agent 还没有分配任何频道。"
     },

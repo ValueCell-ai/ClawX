@@ -1,6 +1,6 @@
 {
     "title": "Agents",
-    "subtitle": "When adding a new Agent, ClawX will copy the main Agent's workspace files and runtime auth setup. The configuration can be modified through a dialog.",
+    "subtitle": "When adding a new Agent, T-CLAW will copy the main Agent's workspace files and runtime auth setup. The configuration can be modified through a dialog.",
     "refresh": "Refresh",
     "addAgent": "Add Agent",
     "gatewayWarning": "Gateway service is not running. Agent/channel changes may take a moment to apply.",
@@ -14,13 +14,13 @@
     "creating": "Creating...",
     "createDialog": {
         "title": "Add Agent",
-        "description": "Create a new agent by name. ClawX will copy the main agent's workspace bootstrap files and runtime auth setup.",
+        "description": "Create a new agent by name. T-CLAW will copy the main agent's workspace bootstrap files and runtime auth setup.",
         "nameLabel": "Agent Name",
         "namePlaceholder": "Coding Helper"
     },
     "deleteDialog": {
         "title": "Delete Agent",
-        "message": "Delete \"{{name}}\" from ClawX? This permanently deletes the agent and its ClawX-managed workspace, runtime, and session files from disk."
+        "message": "Delete \"{{name}}\" from T-CLAW? This permanently deletes the agent and its T-CLAW-managed workspace, runtime, and session files from disk."
     },
     "settingsDialog": {
         "title": "{{name}} Settings",
@@ -29,13 +29,13 @@
         "agentIdLabel": "Agent ID",
         "modelLabel": "Model",
         "channelsTitle": "Channels",
-        "channelsDescription": "Each channel type has a single ClawX configuration. Saving a configured channel here moves ownership to this agent.",
+        "channelsDescription": "Each channel type has a single T-CLAW configuration. Saving a configured channel here moves ownership to this agent.",
         "addChannel": "Add Channel",
         "noChannels": "No channels are assigned to this agent yet."
     },
     "removeChannelDialog": {
         "title": "Remove Channel",
-        "message": "Remove {{name}} from ClawX? This deletes the current channel configuration."
+        "message": "Remove {{name}} from T-CLAW? This deletes the current channel configuration."
     },
     "toast": {
         "agentCreated": "Agent created",

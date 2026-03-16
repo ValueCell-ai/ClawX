@@ -1,6 +1,6 @@
 {
   "title": "Settings",
-  "subtitle": "Configure your ClawX experience",
+  "subtitle": "Configure your T-CLAW experience",
   "appearance": {
     "title": "General",
     "description": "Customize the look and feel",
@@ -10,7 +10,7 @@
     "system": "System",
     "language": "Language",
     "launchAtStartup": "Launch at system startup",
-    "launchAtStartupDesc": "Automatically launch ClawX when you log in"
+    "launchAtStartupDesc": "Automatically launch T-CLAW when you log in"
   },
   "aiProviders": {
     "title": "AI Providers",
@@ -37,7 +37,7 @@
     "notRequired": "Not required",
     "empty": {
       "title": "No providers configured",
-      "desc": "Add an AI provider to start using ClawX",
+      "desc": "Add an AI provider to start using T-CLAW",
       "cta": "Add Your First Provider"
     },
     "dialog": {
@@ -126,7 +126,7 @@
     "appLogs": "Application Logs",
     "openFolder": "Open Folder",
     "autoStart": "Auto-start Gateway",
-    "autoStartDesc": "Start Gateway when ClawX launches",
+    "autoStartDesc": "Start Gateway when T-CLAW launches",
     "proxyTitle": "Proxy",
     "proxyDesc": "Route Electron and Gateway traffic through your local proxy client.",
     "proxyServer": "Proxy Server",
@@ -147,7 +147,7 @@
   },
   "updates": {
     "title": "Updates",
-    "description": "Keep ClawX up to date",
+    "description": "Keep T-CLAW up to date",
     "autoCheck": "Auto-check for updates",
     "autoCheckDesc": "Check for updates on startup",
     "autoDownload": "Auto-update",
@@ -201,7 +201,7 @@
     "devMode": "Developer Mode",
     "devModeDesc": "Show developer tools and shortcuts",
     "telemetry": "Anonymous Usage Data",
-    "telemetryDesc": "Allow providing anonymous basic usage data to improve ClawX"
+    "telemetryDesc": "Allow providing anonymous basic usage data to improve T-CLAW"
   },
   "developer": {
     "title": "Developer",
@@ -240,7 +240,7 @@
   },
   "about": {
     "title": "About",
-    "appName": "ClawX",
+    "appName": "T-CLAW",
     "tagline": "Graphical AI Assistant",
     "basedOn": "Based on OpenClaw",
     "version": "Version {{version}}",

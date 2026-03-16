@@ -1,5 +1,5 @@
 {
-    "name": "clawx",
+    "name": "t-claw",
     "version": "0.2.1",
     "pnpm": {
         "onlyBuiltDependencies": [
@@ -16,9 +16,9 @@
             "isbinaryfile": "^5.0.0"
         }
     },
-    "description": "ClawX - Graphical AI Assistant based on OpenClaw",
+    "description": "T-CLAW - Graphical AI Assistant based on OpenClaw",
     "main": "dist-electron/main/index.js",
-    "author": "ClawX Team",
+    "author": "T-CLAW Team",
     "license": "MIT",
     "private": true,
     "scripts": {

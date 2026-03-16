@@ -149,7 +149,7 @@ class GatewayBrowserClient {
                 maxProtocol: 3,
                 client: {
                   id: 'gateway-client',
-                  displayName: 'ClawX',
+                  displayName: 'T-CLAW',
                   version: '0.1.0',
                   platform: navigator.platform,
                   mode: 'ui',

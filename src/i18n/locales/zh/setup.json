@@ -1,7 +1,7 @@
 {
     "steps": {
         "welcome": {
-            "title": "欢迎使用 ClawX",
+            "title": "欢迎使用 T-CLAW",
             "description": "您的 AI 助手已准备好进行配置"
         },
         "runtime": {
@@ -22,12 +22,12 @@
         },
         "complete": {
             "title": "准备就绪！",
-            "description": "ClawX 已准备好使用"
+            "description": "T-CLAW 已准备好使用"
         }
     },
     "welcome": {
-        "title": "欢迎使用 ClawX",
-        "description": "ClawX 是 OpenClaw 的图形界面，让您可以在喜爱的消息平台上轻松使用 AI 助手。",
+        "title": "欢迎使用 T-CLAW",
+        "description": "T-CLAW 是 OpenClaw 的图形界面，让您可以在喜爱的消息平台上轻松使用 AI 助手。",
         "features": {
             "noCommand": "无需命令行",
             "modernUI": "现代美观的界面",
@@ -108,7 +108,7 @@
     },
     "complete": {
         "title": "设置完成！",
-        "subtitle": "ClawX 已配置并准备就绪。您现在可以开始与您的 AI 助手聊天了。",
+        "subtitle": "T-CLAW 已配置并准备就绪。您现在可以开始与您的 AI 助手聊天了。",
         "provider": "AI 提供商",
         "components": "组件",
         "gateway": "网关",
