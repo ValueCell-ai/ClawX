@@ -1055,6 +1055,31 @@ export async function sanitizeOpenClawConfig(): Promise<void> {
         modified = true;
       }
 
+      // ── wecom-openclaw-plugin → wecom migration ────────────────
+      const LEGACY_WECOM_ID = 'wecom-openclaw-plugin';
+      const NEW_WECOM_ID = 'wecom';
+      if (Array.isArray(pluginsObj.allow)) {
+        const allowArr = pluginsObj.allow as string[];
+        const legacyIdx = allowArr.indexOf(LEGACY_WECOM_ID);
+        if (legacyIdx !== -1) {
+          if (!allowArr.includes(NEW_WECOM_ID)) {
+            allowArr[legacyIdx] = NEW_WECOM_ID;
+          } else {
+            allowArr.splice(legacyIdx, 1);
+          }
+          console.log(`[sanitize] Migrated plugins.allow: ${LEGACY_WECOM_ID} → ${NEW_WECOM_ID}`);
+          modified = true;
+        }
+      }
+      if (pEntries?.[LEGACY_WECOM_ID]) {
+        if (!pEntries[NEW_WECOM_ID]) {
+          pEntries[NEW_WECOM_ID] = pEntries[LEGACY_WECOM_ID];
+        }
+        delete pEntries[LEGACY_WECOM_ID];
+        console.log(`[sanitize] Migrated plugins.entries: ${LEGACY_WECOM_ID} → ${NEW_WECOM_ID}`);
+        modified = true;
+      }
+
       // ── Remove bare 'feishu' when openclaw-lark is present ─────────
       // The Gateway binary automatically adds bare 'feishu' to plugins.allow
       // because the openclaw-lark plugin registers the 'feishu' channel.

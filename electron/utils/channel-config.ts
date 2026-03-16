@@ -15,7 +15,7 @@ import { withConfigLock } from './config-mutex';
 
 const OPENCLAW_DIR = join(homedir(), '.openclaw');
 const CONFIG_FILE = join(OPENCLAW_DIR, 'openclaw.json');
-const WECOM_PLUGIN_ID = 'wecom-openclaw-plugin';
+const WECOM_PLUGIN_ID = 'wecom';
 const FEISHU_PLUGIN_ID = 'openclaw-lark';
 const LEGACY_FEISHU_PLUGIN_ID = 'feishu-openclaw-plugin';
 const DEFAULT_ACCOUNT_ID = 'default';
@@ -176,7 +176,13 @@ function ensurePluginAllowlist(currentConfig: OpenClawConfig, channelType: strin
 
     if (channelType === 'wecom') {
         if (!currentConfig.plugins) {
-            currentConfig.plugins = { allow: [WECOM_PLUGIN_ID], enabled: true };
+            currentConfig.plugins = {
+                allow: [WECOM_PLUGIN_ID],
+                enabled: true,
+                entries: {
+                    [WECOM_PLUGIN_ID]: { enabled: true }
+                }
+            };
         } else {
             currentConfig.plugins.enabled = true;
             const allow: string[] = Array.isArray(currentConfig.plugins.allow)
@@ -188,6 +194,14 @@ function ensurePluginAllowlist(currentConfig: OpenClawConfig, channelType: strin
             } else if (normalizedAllow.length !== allow.length) {
                 currentConfig.plugins.allow = normalizedAllow;
             }
+
+            if (!currentConfig.plugins.entries) {
+                currentConfig.plugins.entries = {};
+            }
+            if (!currentConfig.plugins.entries[WECOM_PLUGIN_ID]) {
+                currentConfig.plugins.entries[WECOM_PLUGIN_ID] = {};
+            }
+            currentConfig.plugins.entries[WECOM_PLUGIN_ID].enabled = true;
         }
     }
 
