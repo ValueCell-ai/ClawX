@@ -3,7 +3,7 @@
  * Registers all IPC handlers for main-renderer communication
  */
 import { ipcMain, BrowserWindow, shell, dialog, app, nativeImage } from 'electron';
-import { existsSync, cpSync, mkdirSync, rmSync, readFileSync } from 'node:fs';
+import { existsSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join, extname, basename } from 'node:path';
 import crypto from 'node:crypto';
@@ -32,6 +32,12 @@ import {
   validateChannelCredentials,
 } from '../utils/channel-config';
 import { checkUvInstalled, installUv, setupManagedPython } from '../utils/uv-setup';
+import {
+  ensureDingTalkPluginInstalled,
+  ensureFeishuPluginInstalled,
+  ensureQQBotPluginInstalled,
+  ensureWeComPluginInstalled,
+} from '../utils/plugin-install';
 import { updateSkillConfig, getSkillConfig, getAllSkillConfigs } from '../utils/skill-config';
 import { whatsAppLoginManager } from '../utils/whatsapp-login';
 import { getProviderConfig } from '../utils/provider-registry';
@@ -1381,102 +1387,6 @@ function registerOpenClawHandlers(gatewayManager: GatewayManager): void {
     logger.info(`Scheduling Gateway reload after ${reason}`);
     gatewayManager.debouncedReload();
   };
-
-  // ── Generic plugin installer with version-aware upgrades ─────────
-
-  function readPluginVersion(pkgJsonPath: string): string | null {
-    try {
-      const raw = readFileSync(pkgJsonPath, 'utf-8');
-      const parsed = JSON.parse(raw) as { version?: string };
-      return parsed.version ?? null;
-    } catch {
-      return null;
-    }
-  }
-
-  function ensurePluginInstalled(
-    pluginDirName: string,
-    candidateSources: string[],
-    pluginLabel: string,
-  ): { installed: boolean; warning?: string } {
-    const targetDir = join(homedir(), '.openclaw', 'extensions', pluginDirName);
-    const targetManifest = join(targetDir, 'openclaw.plugin.json');
-    const targetPkgJson = join(targetDir, 'package.json');
-
-    const sourceDir = candidateSources.find((dir) => existsSync(join(dir, 'openclaw.plugin.json')));
-
-    // If already installed, check whether an upgrade is available
-    if (existsSync(targetManifest)) {
-      if (!sourceDir) return { installed: true };
-      const installedVersion = readPluginVersion(targetPkgJson);
-      const sourceVersion = readPluginVersion(join(sourceDir, 'package.json'));
-      if (!sourceVersion || !installedVersion || sourceVersion === installedVersion) {
-        return { installed: true };
-      }
-      logger.info(`[plugin] Upgrading ${pluginLabel} plugin: ${installedVersion} → ${sourceVersion}`);
-    }
-
-    if (!sourceDir) {
-      logger.warn(`Bundled ${pluginLabel} plugin mirror not found in candidate paths`, { candidateSources });
-      return {
-        installed: false,
-        warning: `Bundled ${pluginLabel} plugin mirror not found. Checked: ${candidateSources.join(' | ')}`,
-      };
-    }
-
-    try {
-      mkdirSync(join(homedir(), '.openclaw', 'extensions'), { recursive: true });
-      rmSync(targetDir, { recursive: true, force: true });
-      cpSync(sourceDir, targetDir, { recursive: true, dereference: true });
-
-      if (!existsSync(join(targetDir, 'openclaw.plugin.json'))) {
-        return { installed: false, warning: `Failed to install ${pluginLabel} plugin mirror (manifest missing).` };
-      }
-
-      logger.info(`Installed ${pluginLabel} plugin from bundled mirror: ${sourceDir}`);
-      return { installed: true };
-    } catch (error) {
-      logger.warn(`Failed to install ${pluginLabel} plugin from bundled mirror:`, error);
-      return {
-        installed: false,
-        warning: `Failed to install bundled ${pluginLabel} plugin mirror`,
-      };
-    }
-  }
-
-  function buildCandidateSources(pluginDirName: string): string[] {
-    return app.isPackaged
-      ? [
-        join(process.resourcesPath, 'openclaw-plugins', pluginDirName),
-        join(process.resourcesPath, 'app.asar.unpacked', 'build', 'openclaw-plugins', pluginDirName),
-        join(process.resourcesPath, 'app.asar.unpacked', 'openclaw-plugins', pluginDirName),
-      ]
-      : [
-        join(app.getAppPath(), 'build', 'openclaw-plugins', pluginDirName),
-        join(process.cwd(), 'build', 'openclaw-plugins', pluginDirName),
-        join(__dirname, '../../build/openclaw-plugins', pluginDirName),
-      ];
-  }
-
-  function ensureDingTalkPluginInstalled(): { installed: boolean; warning?: string } {
-    return ensurePluginInstalled('dingtalk', buildCandidateSources('dingtalk'), 'DingTalk');
-  }
-
-  function ensureWeComPluginInstalled(): { installed: boolean; warning?: string } {
-    return ensurePluginInstalled('wecom', buildCandidateSources('wecom'), 'WeCom');
-  }
-
-  function ensureFeishuPluginInstalled(): { installed: boolean; warning?: string } {
-    return ensurePluginInstalled(
-      'feishu-openclaw-plugin',
-      buildCandidateSources('feishu-openclaw-plugin'),
-      'Feishu',
-    );
-  }
-
-  function ensureQQBotPluginInstalled(): { installed: boolean; warning?: string } {
-    return ensurePluginInstalled('qqbot', buildCandidateSources('qqbot'), 'QQ Bot');
-  }
 
   // Get OpenClaw package status
   ipcMain.handle('openclaw:status', () => {
