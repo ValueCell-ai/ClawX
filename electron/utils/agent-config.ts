@@ -297,30 +297,6 @@ function upsertBindingsForChannel(
   return nextBindings.length > 0 ? nextBindings : undefined;
 }
 
-function assertAgentNotBoundToOtherChannel(
-  bindings: unknown,
-  agentId: string,
-  nextChannelType: string,
-): void {
-  if (!Array.isArray(bindings)) return;
-  const normalizedAgentId = normalizeAgentIdForBinding(agentId);
-  if (!normalizedAgentId) return;
-
-  const conflictChannels = new Set<string>();
-  for (const binding of bindings) {
-    if (!isChannelBinding(binding)) continue;
-    if (normalizeAgentIdForBinding(binding.agentId || '') !== normalizedAgentId) continue;
-    const boundChannel = binding.match?.channel;
-    if (!boundChannel || boundChannel === nextChannelType) continue;
-    conflictChannels.add(boundChannel);
-  }
-
-  if (conflictChannels.size > 0) {
-    const channels = Array.from(conflictChannels).sort().join(', ');
-    throw new Error(`Agent "${agentId}" is already bound to channel(s): ${channels}. One agent can only bind one channel.`);
-  }
-}
-
 async function listExistingAgentIdsOnDisk(): Promise<Set<string>> {
   const ids = new Set<string>();
   const agentsDir = join(getOpenClawConfigDir(), 'agents');
@@ -672,7 +648,6 @@ export async function assignChannelToAgent(agentId: string, channelType: string)
       throw new Error(`Agent "${agentId}" not found`);
     }
 
-    assertAgentNotBoundToOtherChannel(config.bindings, agentId, channelType);
     const accountId = resolveAccountIdForAgent(agentId);
     config.bindings = upsertBindingsForChannel(config.bindings, channelType, agentId, accountId);
     await writeOpenClawConfig(config);
@@ -696,7 +671,6 @@ export async function assignChannelAccountToAgent(
       throw new Error('accountId is required');
     }
 
-    assertAgentNotBoundToOtherChannel(config.bindings, agentId, channelType);
     config.bindings = upsertBindingsForChannel(config.bindings, channelType, agentId, accountId.trim());
     await writeOpenClawConfig(config);
     logger.info('Assigned channel account to agent', { agentId, channelType, accountId: accountId.trim() });
