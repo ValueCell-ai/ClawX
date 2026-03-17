@@ -1,0 +1,126 @@
+{
+  "generated_at": "2026-03-14T15:02:39.817Z",
+  "scenario": "all",
+  "scenarios": {
+    "gateway-restart-during-run": {
+      "duplicate_event_rate": 0,
+      "event_fanout_ratio": 1,
+      "history_inflight_max": 1,
+      "history_load_qps": 0.4166666666666667,
+      "rpc_p50_ms": 240,
+      "rpc_p95_ms": 240,
+      "rpc_timeout_rate": 0,
+      "gateway_reconnect_count": 1,
+      "message_loss_count": 0,
+      "message_order_violation_count": 0,
+      "_meta": {
+        "duration_sec": 2.4,
+        "total_gateway_events": 4,
+        "unique_gateway_events": 4,
+        "total_rpc_calls": 1
+      }
+    },
+    "happy-path-chat": {
+      "duplicate_event_rate": 0,
+      "event_fanout_ratio": 1,
+      "history_inflight_max": 1,
+      "history_load_qps": 0.2857142857142857,
+      "rpc_p50_ms": 180,
+      "rpc_p95_ms": 180,
+      "rpc_timeout_rate": 0,
+      "gateway_reconnect_count": 0,
+      "message_loss_count": 0,
+      "message_order_violation_count": 0,
+      "_meta": {
+        "duration_sec": 3.5,
+        "total_gateway_events": 3,
+        "unique_gateway_events": 3,
+        "total_rpc_calls": 1
+      }
+    },
+    "history-overlap-guard": {
+      "duplicate_event_rate": 0,
+      "event_fanout_ratio": 1,
+      "history_inflight_max": 1,
+      "history_load_qps": 1,
+      "rpc_p50_ms": 95,
+      "rpc_p95_ms": 95,
+      "rpc_timeout_rate": 0,
+      "gateway_reconnect_count": 0,
+      "message_loss_count": 0,
+      "message_order_violation_count": 0,
+      "_meta": {
+        "duration_sec": 2,
+        "total_gateway_events": 2,
+        "unique_gateway_events": 2,
+        "total_rpc_calls": 1
+      }
+    },
+    "invalid-config-patch-recovered": {
+      "duplicate_event_rate": 0,
+      "event_fanout_ratio": 1,
+      "history_inflight_max": 1,
+      "history_load_qps": 0.4166666666666667,
+      "rpc_p50_ms": 110,
+      "rpc_p95_ms": 130,
+      "rpc_timeout_rate": 0,
+      "gateway_reconnect_count": 1,
+      "message_loss_count": 0,
+      "message_order_violation_count": 0,
+      "_meta": {
+        "duration_sec": 2.4,
+        "total_gateway_events": 3,
+        "unique_gateway_events": 3,
+        "total_rpc_calls": 2
+      }
+    },
+    "multi-agent-channel-switch": {
+      "duplicate_event_rate": 0,
+      "event_fanout_ratio": 1,
+      "history_inflight_max": 0,
+      "history_load_qps": 0,
+      "rpc_p50_ms": 210,
+      "rpc_p95_ms": 240,
+      "rpc_timeout_rate": 0,
+      "gateway_reconnect_count": 0,
+      "message_loss_count": 0,
+      "message_order_violation_count": 0,
+      "_meta": {
+        "duration_sec": 2.1,
+        "total_gateway_events": 5,
+        "unique_gateway_events": 5,
+        "total_rpc_calls": 2
+      }
+    },
+    "network-degraded": {
+      "duplicate_event_rate": 0,
+      "event_fanout_ratio": 1,
+      "history_inflight_max": 1,
+      "history_load_qps": 0.35714285714285715,
+      "rpc_p50_ms": 420,
+      "rpc_p95_ms": 820,
+      "rpc_timeout_rate": 0,
+      "gateway_reconnect_count": 1,
+      "message_loss_count": 0,
+      "message_order_violation_count": 0,
+      "_meta": {
+        "duration_sec": 2.8,
+        "total_gateway_events": 3,
+        "unique_gateway_events": 3,
+        "total_rpc_calls": 2
+      }
+    }
+  },
+  "aggregate": {
+    "duplicate_event_rate": 0,
+    "event_fanout_ratio": 1,
+    "history_inflight_max": 1,
+    "history_load_qps": 0.41269841269841273,
+    "rpc_p50_ms": 209.16666666666666,
+    "rpc_p95_ms": 284.1666666666667,
+    "rpc_timeout_rate": 0,
+    "gateway_reconnect_count": 3,
+    "message_loss_count": 0,
+    "message_order_violation_count": 0
+  }
+}

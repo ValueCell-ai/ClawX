@@ -6,6 +6,7 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import i18n from '@/i18n';
 import { hostApiFetch } from '@/lib/host-api';
+import { resolveSupportedLanguage } from '../../shared/language';
 
 type Theme = 'light' | 'dark' | 'system';
 type UpdateChannel = 'stable' | 'beta' | 'dev';
@@ -66,12 +67,7 @@ interface SettingsState {
 
 const defaultSettings = {
   theme: 'system' as Theme,
-  language: (() => {
-    const lang = navigator.language.toLowerCase();
-    if (lang.startsWith('zh')) return 'zh';
-    if (lang.startsWith('ja')) return 'ja';
-    return 'en';
-  })(),
+  language: resolveSupportedLanguage(typeof navigator !== 'undefined' ? navigator.language : undefined),
   startMinimized: false,
   launchAtStartup: false,
   telemetryEnabled: true,
@@ -99,9 +95,16 @@ export const useSettingsStore = create<SettingsState>()(
       init: async () => {
         try {
           const settings = await hostApiFetch<Partial<typeof defaultSettings>>('/api/settings');
-          set((state) => ({ ...state, ...settings }));
-          if (settings.language) {
-            i18n.changeLanguage(settings.language);
+          const resolvedLanguage = settings.language
+            ? resolveSupportedLanguage(settings.language)
+            : undefined;
+          set((state) => ({
+            ...state,
+            ...settings,
+            ...(resolvedLanguage ? { language: resolvedLanguage } : {}),
+          }));
+          if (resolvedLanguage) {
+            i18n.changeLanguage(resolvedLanguage);
           }
         } catch {
           // Keep renderer-persisted settings as a fallback when the main
@@ -111,11 +114,12 @@ export const useSettingsStore = create<SettingsState>()(
 
       setTheme: (theme) => set({ theme }),
       setLanguage: (language) => {
-        i18n.changeLanguage(language);
-        set({ language });
+        const resolvedLanguage = resolveSupportedLanguage(language);
+        i18n.changeLanguage(resolvedLanguage);
+        set({ language: resolvedLanguage });
         void hostApiFetch('/api/settings/language', {
           method: 'PUT',
-          body: JSON.stringify({ value: language }),
+          body: JSON.stringify({ value: resolvedLanguage }),
         }).catch(() => { });
       },
       setStartMinimized: (startMinimized) => set({ startMinimized }),
@@ -157,7 +161,13 @@ export const useSettingsStore = create<SettingsState>()(
       setAutoCheckUpdate: (autoCheckUpdate) => set({ autoCheckUpdate }),
       setAutoDownloadUpdate: (autoDownloadUpdate) => set({ autoDownloadUpdate }),
       setSidebarCollapsed: (sidebarCollapsed) => set({ sidebarCollapsed }),
-      setDevModeUnlocked: (devModeUnlocked) => set({ devModeUnlocked }),
+      setDevModeUnlocked: (devModeUnlocked) => {
+        set({ devModeUnlocked });
+        void hostApiFetch('/api/settings/devModeUnlocked', {
+          method: 'PUT',
+          body: JSON.stringify({ value: devModeUnlocked }),
+        }).catch(() => { });
+      },
       markSetupComplete: () => set({ setupComplete: true }),
       resetSettings: () => set(defaultSettings),
     }),

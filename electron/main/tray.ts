@@ -91,19 +91,11 @@ export function createTray(mainWindow: BrowserWindow): Tray {
       label: 'Quick Actions',
       submenu: [
         {
-          label: 'Open Dashboard',
-          click: () => {
-            if (mainWindow.isDestroyed()) return;
-            mainWindow.show();
-            mainWindow.webContents.send('navigate', '/');
-          },
-        },
-        {
           label: 'Open Chat',
           click: () => {
             if (mainWindow.isDestroyed()) return;
             mainWindow.show();
-            mainWindow.webContents.send('navigate', '/chat');
+            mainWindow.webContents.send('navigate', '/');
           },
         },
         {

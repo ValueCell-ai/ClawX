@@ -8,13 +8,6 @@
 !endif
 
 !macro customCheckAppRunning
-  ; Pre-emptively remove old shortcuts to prevent the Windows "Missing Shortcut"
-  ; dialog during upgrades.  The built-in NSIS uninstaller deletes ClawX.exe
-  ; *before* removing shortcuts; Windows Shell link tracking can detect the
-  ; broken target in that brief window and pop a resolver dialog.
-  ; Delete is a silent no-op when the file doesn't exist (safe for fresh installs).
-  Delete "$DESKTOP\${PRODUCT_NAME}.lnk"
-  Delete "$SMPROGRAMS\${PRODUCT_NAME}.lnk"
 
   ${nsProcess::FindProcess} "${APP_EXECUTABLE_FILENAME}" $R0
 
@@ -122,10 +115,65 @@
     /SD IDNO IDYES _cu_removeData IDNO _cu_skipRemove
 
   _cu_removeData:
+    ; Kill any lingering ClawX processes to release file locks on electron-store
+    ; JSON files (settings.json, clawx-providers.json, window-state.json, etc.)
+    ${nsProcess::FindProcess} "${APP_EXECUTABLE_FILENAME}" $R0
+    ${if} $R0 == 0
+      ${nsProcess::KillProcess} "${APP_EXECUTABLE_FILENAME}" $R0
+    ${endIf}
+    ${nsProcess::Unload}
+
+    ; Wait for processes to fully exit and release file handles
+    Sleep 2000
+
     ; --- Always remove current user's data first ---
     RMDir /r "$PROFILE\.openclaw"
     RMDir /r "$LOCALAPPDATA\clawx"
     RMDir /r "$APPDATA\clawx"
+
+    ; --- Retry: if directories still exist (locked files), wait and try again ---
+    ; Check .openclaw
+    IfFileExists "$PROFILE\.openclaw\*.*" 0 _cu_openclawDone
+      Sleep 3000
+      RMDir /r "$PROFILE\.openclaw"
+      IfFileExists "$PROFILE\.openclaw\*.*" 0 _cu_openclawDone
+        nsExec::ExecToStack 'cmd.exe /c rd /s /q "$PROFILE\.openclaw"'
+        Pop $0
+        Pop $1
+    _cu_openclawDone:
+
+    ; Check AppData\Local\clawx
+    IfFileExists "$LOCALAPPDATA\clawx\*.*" 0 _cu_localDone
+      Sleep 3000
+      RMDir /r "$LOCALAPPDATA\clawx"
+      IfFileExists "$LOCALAPPDATA\clawx\*.*" 0 _cu_localDone
+        nsExec::ExecToStack 'cmd.exe /c rd /s /q "$LOCALAPPDATA\clawx"'
+        Pop $0
+        Pop $1
+    _cu_localDone:
+
+    ; Check AppData\Roaming\clawx
+    IfFileExists "$APPDATA\clawx\*.*" 0 _cu_roamingDone
+      Sleep 3000
+      RMDir /r "$APPDATA\clawx"
+      IfFileExists "$APPDATA\clawx\*.*" 0 _cu_roamingDone
+        nsExec::ExecToStack 'cmd.exe /c rd /s /q "$APPDATA\clawx"'
+        Pop $0
+        Pop $1
+    _cu_roamingDone:
+
+    ; --- Final check: warn user if any directories could not be removed ---
+    StrCpy $R3 ""
+    IfFileExists "$PROFILE\.openclaw\*.*" 0 +2
+      StrCpy $R3 "$R3$\r$\n  • $PROFILE\.openclaw"
+    IfFileExists "$LOCALAPPDATA\clawx\*.*" 0 +2
+      StrCpy $R3 "$R3$\r$\n  • $LOCALAPPDATA\clawx"
+    IfFileExists "$APPDATA\clawx\*.*" 0 +2
+      StrCpy $R3 "$R3$\r$\n  • $APPDATA\clawx"
+    StrCmp $R3 "" _cu_cleanupOk
+      MessageBox MB_OK|MB_ICONEXCLAMATION \
+        "Some data directories could not be removed (files may be in use):$\r$\n$R3$\r$\n$\r$\nPlease delete them manually after restarting your computer."
+    _cu_cleanupOk:
 
     ; --- For per-machine (all users) installs, enumerate all user profiles ---
     StrCpy $R0 0

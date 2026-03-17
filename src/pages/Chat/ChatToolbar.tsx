@@ -21,7 +21,7 @@ export function ChatToolbar() {
   const agents = useAgentsStore((s) => s.agents);
   const { t } = useTranslation('chat');
   const currentAgentName = useMemo(
-    () => agents.find((agent) => agent.id === currentAgentId)?.name ?? currentAgentId,
+    () => (agents ?? []).find((agent) => agent.id === currentAgentId)?.name ?? currentAgentId,
     [agents, currentAgentId],
   );
 

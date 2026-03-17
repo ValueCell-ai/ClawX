@@ -1,0 +1,8 @@
+{"ts":0,"type":"gateway_event","runId":"run-a-main","sessionKey":"agent:main:session-1","seq":1,"state":"started","fanout":1}
+{"ts":0.2,"type":"rpc","method":"chat.send","latencyMs":210,"timeout":false}
+{"ts":0.5,"type":"gateway_event","runId":"run-a-main","sessionKey":"agent:main:session-1","seq":2,"state":"delta","fanout":1}
+{"ts":0.8,"type":"gateway_event","runId":"run-a-team","sessionKey":"agent:team-a:session-2","seq":1,"state":"started","fanout":1}
+{"ts":1.1,"type":"rpc","method":"chat.send","latencyMs":240,"timeout":false}
+{"ts":1.4,"type":"gateway_event","runId":"run-a-main","sessionKey":"agent:main:session-1","seq":3,"state":"final","fanout":1}
+{"ts":1.8,"type":"gateway_event","runId":"run-a-team","sessionKey":"agent:team-a:session-2","seq":2,"state":"final","fanout":1}
+{"ts":2.1,"type":"message","lost":false,"orderViolation":false}

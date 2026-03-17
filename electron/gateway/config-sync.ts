@@ -1,6 +1,8 @@
 import { app } from 'electron';
 import path from 'path';
-import { existsSync } from 'fs';
+import { existsSync, readFileSync, cpSync, mkdirSync, rmSync } from 'fs';
+import { homedir } from 'os';
+import { join } from 'path';
 import { getAllSettings } from '../utils/store';
 import { getApiKey, getDefaultProvider, getProvider } from '../utils/secure-storage';
 import { getProviderEnvVar, getKeyableProviderTypes } from '../utils/provider-registry';
@@ -12,6 +14,7 @@ import { buildProxyEnv, resolveProxySettings } from '../utils/proxy';
 import { syncProxyConfigToOpenClaw } from '../utils/openclaw-proxy';
 import { logger } from '../utils/logger';
 import { prependPathEntry } from '../utils/env-path';
+import { copyPluginFromNodeModules, fixupPluginManifest } from '../utils/plugin-install';
 
 export interface GatewayLaunchContext {
   appSettings: Awaited<ReturnType<typeof getAllSettings>>;
@@ -26,6 +29,98 @@ export interface GatewayLaunchContext {
   channelStartupSummary: string;
 }
 
+// ── Auto-upgrade bundled plugins on startup ──────────────────────
+
+const CHANNEL_PLUGIN_MAP: Record<string, { dirName: string; npmName: string }> = {
+  dingtalk: { dirName: 'dingtalk', npmName: '@soimy/dingtalk' },
+  wecom: { dirName: 'wecom', npmName: '@wecom/wecom-openclaw-plugin' },
+  feishu: { dirName: 'feishu-openclaw-plugin', npmName: '@larksuite/openclaw-lark' },
+  qqbot: { dirName: 'qqbot', npmName: '@sliverp/qqbot' },
+};
+
+function readPluginVersion(pkgJsonPath: string): string | null {
+  try {
+    const raw = readFileSync(pkgJsonPath, 'utf-8');
+    const parsed = JSON.parse(raw) as { version?: string };
+    return parsed.version ?? null;
+  } catch {
+    return null;
+  }
+}
+
+function buildBundledPluginSources(pluginDirName: string): string[] {
+  return app.isPackaged
+    ? [
+      join(process.resourcesPath, 'openclaw-plugins', pluginDirName),
+      join(process.resourcesPath, 'app.asar.unpacked', 'build', 'openclaw-plugins', pluginDirName),
+      join(process.resourcesPath, 'app.asar.unpacked', 'openclaw-plugins', pluginDirName),
+    ]
+    : [
+      join(app.getAppPath(), 'build', 'openclaw-plugins', pluginDirName),
+      join(process.cwd(), 'build', 'openclaw-plugins', pluginDirName),
+    ];
+}
+
+/**
+ * Auto-upgrade all configured channel plugins before Gateway start.
+ * - Packaged mode: uses bundled plugins from resources/ (includes deps)
+ * - Dev mode: falls back to node_modules/ with pnpm-aware dep collection
+ */
+function ensureConfiguredPluginsUpgraded(configuredChannels: string[]): void {
+  for (const channelType of configuredChannels) {
+    const pluginInfo = CHANNEL_PLUGIN_MAP[channelType];
+    if (!pluginInfo) continue;
+    const { dirName, npmName } = pluginInfo;
+
+    const targetDir = join(homedir(), '.openclaw', 'extensions', dirName);
+    const targetManifest = join(targetDir, 'openclaw.plugin.json');
+    const isInstalled = existsSync(targetManifest);
+    const installedVersion = isInstalled ? readPluginVersion(join(targetDir, 'package.json')) : null;
+
+    // Try bundled sources first (packaged mode or if bundle-plugins was run)
+    const bundledSources = buildBundledPluginSources(dirName);
+    const bundledDir = bundledSources.find((dir) => existsSync(join(dir, 'openclaw.plugin.json')));
+
+    if (bundledDir) {
+      const sourceVersion = readPluginVersion(join(bundledDir, 'package.json'));
+      // Install or upgrade if version differs or plugin not installed
+      if (!isInstalled || (sourceVersion && installedVersion && sourceVersion !== installedVersion)) {
+        logger.info(`[plugin] ${isInstalled ? 'Auto-upgrading' : 'Installing'} ${channelType} plugin${isInstalled ? `: ${installedVersion} → ${sourceVersion}` : `: ${sourceVersion}`} (bundled)`);
+        try {
+          mkdirSync(join(homedir(), '.openclaw', 'extensions'), { recursive: true });
+          rmSync(targetDir, { recursive: true, force: true });
+          cpSync(bundledDir, targetDir, { recursive: true, dereference: true });
+          fixupPluginManifest(targetDir);
+        } catch (err) {
+          logger.warn(`[plugin] Failed to ${isInstalled ? 'auto-upgrade' : 'install'} ${channelType} plugin:`, err);
+        }
+      }
+      continue;
+    }
+
+    // Dev mode fallback: copy from node_modules/ with pnpm dep resolution
+    if (!app.isPackaged) {
+      const npmPkgPath = join(process.cwd(), 'node_modules', ...npmName.split('/'));
+      if (!existsSync(join(npmPkgPath, 'openclaw.plugin.json'))) continue;
+      const sourceVersion = readPluginVersion(join(npmPkgPath, 'package.json'));
+      if (!sourceVersion) continue;
+      // Skip only if installed AND same version
+      if (isInstalled && installedVersion && sourceVersion === installedVersion) continue;
+
+      logger.info(`[plugin] ${isInstalled ? 'Auto-upgrading' : 'Installing'} ${channelType} plugin${isInstalled ? `: ${installedVersion} → ${sourceVersion}` : `: ${sourceVersion}`} (dev/node_modules)`);
+      try {
+        mkdirSync(join(homedir(), '.openclaw', 'extensions'), { recursive: true });
+        copyPluginFromNodeModules(npmPkgPath, targetDir, npmName);
+        fixupPluginManifest(targetDir);
+      } catch (err) {
+        logger.warn(`[plugin] Failed to ${isInstalled ? 'auto-upgrade' : 'install'} ${channelType} plugin from node_modules:`, err);
+      }
+    }
+  }
+}
+
+// ── Pre-launch sync ──────────────────────────────────────────────
+
 export async function syncGatewayConfigBeforeLaunch(
   appSettings: Awaited<ReturnType<typeof getAllSettings>>,
 ): Promise<void> {
@@ -35,6 +130,15 @@ export async function syncGatewayConfigBeforeLaunch(
     await sanitizeOpenClawConfig();
   } catch (err) {
     logger.warn('Failed to sanitize openclaw.json:', err);
+  }
+
+  // Auto-upgrade installed plugins before Gateway starts so that
+  // the plugin manifest ID matches what sanitize wrote to the config.
+  try {
+    const configuredChannels = await listConfiguredChannels();
+    ensureConfiguredPluginsUpgraded(configuredChannels);
+  } catch (err) {
+    logger.warn('Failed to auto-upgrade plugins:', err);
   }
 
   try {

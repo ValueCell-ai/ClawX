@@ -171,7 +171,66 @@ function bundleOnePlugin({ npmName, pluginId }) {
     throw new Error(`Missing openclaw.plugin.json in bundled plugin output: ${pluginId}`);
   }
 
+  // 4) Patch plugin ID mismatch: some npm packages hardcode a different ID in
+  //    their JS output than what openclaw.plugin.json declares.  The Gateway
+  //    validates that these match, so we fix it post-copy.
+  patchPluginId(outputDir, pluginId);
+
   echo`   ✅ ${pluginId}: copied ${copiedCount} deps (skipped dupes: ${skippedDupes})`;
+}
+
+/**
+ * Patch plugin entry JS files so the exported `id` matches openclaw.plugin.json.
+ * Some plugins (e.g. wecom) ship with a hardcoded ID in their compiled output
+ * that differs from the manifest, causing a Gateway "plugin id mismatch" error.
+ */
+function patchPluginId(pluginDir, expectedId) {
+  const manifestPath = path.join(pluginDir, 'openclaw.plugin.json');
+  if (!fs.existsSync(manifestPath)) return;
+
+  const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+  const manifestId = manifest.id;
+  if (manifestId !== expectedId) {
+    echo`   ⚠️  Manifest ID "${manifestId}" doesn't match expected "${expectedId}", skipping patch`;
+    return;
+  }
+
+  // Read the package.json to find the main entry point
+  const pkgJsonPath = path.join(pluginDir, 'package.json');
+  if (!fs.existsSync(pkgJsonPath)) return;
+
+  const pkg = JSON.parse(fs.readFileSync(pkgJsonPath, 'utf8'));
+  const entryFiles = [pkg.main, pkg.module].filter(Boolean);
+
+  // Known ID mismatches to patch.  Keys are the wrong ID found in compiled JS,
+  // values are the correct ID (must match openclaw.plugin.json).
+  const ID_FIXES = {
+    'wecom-openclaw-plugin': 'wecom',
+  };
+
+  for (const entry of entryFiles) {
+    const entryPath = path.join(pluginDir, entry);
+    if (!fs.existsSync(entryPath)) continue;
+
+    let content = fs.readFileSync(entryPath, 'utf8');
+    let patched = false;
+
+    for (const [wrongId, correctId] of Object.entries(ID_FIXES)) {
+      if (correctId !== expectedId) continue;
+      // Replace  id: "wecom-openclaw-plugin"  or  id: 'wecom-openclaw-plugin'
+      const pattern = new RegExp(`(\\bid\\s*:\\s*)(["'])${wrongId.replace(/-/g, '\\-')}\\2`, 'g');
+      const replaced = content.replace(pattern, `$1$2${correctId}$2`);
+      if (replaced !== content) {
+        content = replaced;
+        patched = true;
+        echo`   🩹 Patching plugin ID in ${entry}: "${wrongId}" → "${correctId}"`;
+      }
+    }
+
+    if (patched) {
+      fs.writeFileSync(entryPath, content, 'utf8');
+    }
+  }
 }
 
 echo`📦 Bundling OpenClaw plugin mirrors...`;

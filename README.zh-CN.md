@@ -104,18 +104,19 @@ ClawX 直接基于官方 **OpenClaw** 核心构建。无需单独安装，我们
 
 ### 📡 多频道管理
 同时配置和监控多个 AI 频道。每个频道独立运行，允许你为不同任务运行专门的智能体。
+现在每个频道支持多个账号，并可在 Channels 页面直接完成账号绑定到 Agent 与默认账号切换。
 
 ### ⏰ 定时任务自动化
 调度 AI 任务自动执行。定义触发器、设置时间间隔，让 AI 智能体 7×24 小时不间断工作。
 
 ### 🧩 可扩展技能系统
 通过预构建的技能扩展 AI 智能体的能力。在集成的技能面板中浏览、安装和管理技能——无需包管理器。
-ClawX 还会内置预装完整的文档处理技能（`pdf`、`xlsx`、`docx`、`pptx`），在启动时自动部署到 `~/.openclaw/skills`，并在首次安装时默认启用。额外预装技能（`find-skills`、`self-improving-agent`、`tavily-search`、`brave-web-search`、`bocha-skill`）也会默认启用；若缺少必需的 API Key，OpenClaw 会在运行时给出配置错误提示。
+ClawX 还会内置预装完整的文档处理技能（`pdf`、`xlsx`、`docx`、`pptx`），在启动时自动部署到托管技能目录（默认 `~/.openclaw/skills`），并在首次安装时默认启用。额外预装技能（`find-skills`、`self-improving-agent`、`tavily-search`、`brave-web-search`）也会默认启用；若缺少必需的 API Key，OpenClaw 会在运行时给出配置错误提示。  
+Skills 页面可展示来自多个 OpenClaw 来源的技能（托管目录、workspace、额外技能目录），并显示每个技能的实际路径，便于直接打开真实安装位置。
 
 重点搜索技能所需环境变量：
 - `BRAVE_SEARCH_API_KEY`：用于 `brave-web-search`
 - `TAVILY_API_KEY`：用于 `tavily-search`（上游运行时也可能支持 OAuth）
-- `BOCHA_API_KEY`：用于 `bocha-skill`
 
 ### 🔐 安全的供应商集成
 连接多个 AI 供应商（OpenAI、Anthropic 等），凭证安全存储在系统原生密钥链中。OpenAI 同时支持 API Key 与浏览器 OAuth（Codex 订阅）登录。
@@ -163,6 +164,8 @@ pnpm dev
 2. **AI 供应商** – 通过 API 密钥或 OAuth（支持浏览器/设备登录的供应商）添加账号
 3. **技能包** – 选择适用于常见场景的预配置技能
 4. **验证** – 在进入主界面前测试你的配置
+
+如果系统语言在支持列表中，向导会默认选中该语言；否则回退到英文。
 
 > Moonshot（Kimi）说明：ClawX 默认保持开启 Kimi 的 web search。  
 > 当配置 Moonshot 后，ClawX 也会将 OpenClaw 配置中的 Kimi web search 同步到中国区端点（`https://api.moonshot.cn/v1`）。
@@ -309,7 +312,7 @@ ClawX 采用 **双进程 + Host API 统一接入架构**。渲染进程只调用
 ```bash
 # 开发
 pnpm run init             # 安装依赖并下载 uv
-pnpm dev                  # 以热重载模式启动
+pnpm dev                  # 以热重载模式启动（若缺失会自动准备预装技能包）
 
 # 代码质量
 pnpm lint                 # 运行 ESLint 检查
@@ -317,15 +320,29 @@ pnpm typecheck            # TypeScript 类型检查
 
 # 测试
 pnpm test                 # 运行单元测试
+pnpm run comms:replay     # 计算通信回放指标
+pnpm run comms:baseline   # 刷新通信基线快照
+pnpm run comms:compare    # 将回放指标与基线阈值对比
 
 # 构建与打包
 pnpm run build:vite       # 仅构建前端
 pnpm build                # 完整生产构建（含打包资源）
-pnpm package              # 为当前平台打包
+pnpm package              # 为当前平台打包（包含预装技能资源）
 pnpm package:mac          # 为 macOS 打包
 pnpm package:win          # 为 Windows 打包
 pnpm package:linux        # 为 Linux 打包
 ```
+
+### 通信回归检查
+
+当 PR 涉及通信链路（Gateway 事件、Chat 收发流程、Channel 投递、传输回退）时，建议执行：
+
+```bash
+pnpm run comms:replay
+pnpm run comms:compare
+```
+
+CI 中的 `comms-regression` 会校验必选场景与阈值。
 ### 技术栈
 
 | 层级 | 技术 |

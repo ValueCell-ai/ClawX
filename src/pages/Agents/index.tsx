@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AlertCircle, Bot, Check, Plus, RefreshCw, Settings2, Trash2, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -6,12 +6,11 @@ import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
-import { StatusBadge } from '@/components/common/StatusBadge';
 import { LoadingSpinner } from '@/components/common/LoadingSpinner';
-import { ChannelConfigModal } from '@/components/channels/ChannelConfigModal';
 import { useAgentsStore } from '@/stores/agents';
-import { useChannelsStore } from '@/stores/channels';
 import { useGatewayStore } from '@/stores/gateway';
+import { hostApiFetch } from '@/lib/host-api';
+import { subscribeHostEvent } from '@/lib/host-events';
 import { CHANNEL_ICONS, CHANNEL_NAMES, type ChannelType } from '@/types/channel';
 import type { AgentSummary } from '@/types/agent';
 import { useTranslation } from 'react-i18next';
@@ -25,9 +24,27 @@ import feishuIcon from '@/assets/channels/feishu.svg';
 import wecomIcon from '@/assets/channels/wecom.svg';
 import qqIcon from '@/assets/channels/qq.svg';
 
+interface ChannelAccountItem {
+  accountId: string;
+  name: string;
+  configured: boolean;
+  status: 'connected' | 'connecting' | 'disconnected' | 'error';
+  lastError?: string;
+  isDefault: boolean;
+  agentId?: string;
+}
+
+interface ChannelGroupItem {
+  channelType: string;
+  defaultAccountId: string;
+  status: 'connected' | 'connecting' | 'disconnected' | 'error';
+  accounts: ChannelAccountItem[];
+}
+
 export function Agents() {
   const { t } = useTranslation('agents');
   const gatewayStatus = useGatewayStore((state) => state.status);
+  const lastGatewayStateRef = useRef(gatewayStatus.state);
   const {
     agents,
     loading,
@@ -36,21 +53,53 @@ export function Agents() {
     createAgent,
     deleteAgent,
   } = useAgentsStore();
-  const { channels, fetchChannels } = useChannelsStore();
+  const [channelGroups, setChannelGroups] = useState<ChannelGroupItem[]>([]);
 
   const [showAddDialog, setShowAddDialog] = useState(false);
   const [activeAgentId, setActiveAgentId] = useState<string | null>(null);
   const [agentToDelete, setAgentToDelete] = useState<AgentSummary | null>(null);
 
+  const fetchChannelAccounts = useCallback(async () => {
+    try {
+      const response = await hostApiFetch<{ success: boolean; channels?: ChannelGroupItem[] }>('/api/channels/accounts');
+      setChannelGroups(response.channels || []);
+    } catch {
+      setChannelGroups([]);
+    }
+  }, []);
+
   useEffect(() => {
-    void Promise.all([fetchAgents(), fetchChannels()]);
-  }, [fetchAgents, fetchChannels]);
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    void Promise.all([fetchAgents(), fetchChannelAccounts()]);
+  }, [fetchAgents, fetchChannelAccounts]);
+
+  useEffect(() => {
+    const unsubscribe = subscribeHostEvent('gateway:channel-status', () => {
+      void fetchChannelAccounts();
+    });
+    return () => {
+      if (typeof unsubscribe === 'function') {
+        unsubscribe();
+      }
+    };
+  }, [fetchChannelAccounts]);
+
+  useEffect(() => {
+    const previousGatewayState = lastGatewayStateRef.current;
+    lastGatewayStateRef.current = gatewayStatus.state;
+
+    if (previousGatewayState !== 'running' && gatewayStatus.state === 'running') {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      void fetchChannelAccounts();
+    }
+  }, [fetchChannelAccounts, gatewayStatus.state]);
+
   const activeAgent = useMemo(
     () => agents.find((agent) => agent.id === activeAgentId) ?? null,
     [activeAgentId, agents],
   );
   const handleRefresh = () => {
-    void Promise.all([fetchAgents(), fetchChannels()]);
+    void Promise.all([fetchAgents(), fetchChannelAccounts()]);
   };
 
   if (loading) {
@@ -117,6 +166,7 @@ export function Agents() {
               <AgentCard
                 key={agent.id}
                 agent={agent}
+                channelGroups={channelGroups}
                 onOpenSettings={() => setActiveAgentId(agent.id)}
                 onDelete={() => setAgentToDelete(agent)}
               />
@@ -139,7 +189,7 @@ export function Agents() {
       {activeAgent && (
         <AgentSettingsModal
           agent={activeAgent}
-          channels={channels}
+          channelGroups={channelGroups}
           onClose={() => setActiveAgentId(null)}
         />
       )}
@@ -153,12 +203,17 @@ export function Agents() {
         variant="destructive"
         onConfirm={async () => {
           if (!agentToDelete) return;
-          await deleteAgent(agentToDelete.id);
-          setAgentToDelete(null);
-          if (activeAgentId === agentToDelete.id) {
-            setActiveAgentId(null);
+          try {
+            await deleteAgent(agentToDelete.id);
+            const deletedId = agentToDelete.id;
+            setAgentToDelete(null);
+            if (activeAgentId === deletedId) {
+              setActiveAgentId(null);
+            }
+            toast.success(t('toast.agentDeleted'));
+          } catch (error) {
+            toast.error(t('toast.agentDeleteFailed', { error: String(error) }));
           }
-          toast.success(t('toast.agentDeleted'));
         }}
         onCancel={() => setAgentToDelete(null)}
       />
@@ -168,16 +223,30 @@ export function Agents() {
 
 function AgentCard({
   agent,
+  channelGroups,
   onOpenSettings,
   onDelete,
 }: {
   agent: AgentSummary;
+  channelGroups: ChannelGroupItem[];
   onOpenSettings: () => void;
   onDelete: () => void;
 }) {
   const { t } = useTranslation('agents');
-  const channelsText = agent.channelTypes.length > 0
-    ? agent.channelTypes.map((channelType) => CHANNEL_NAMES[channelType as ChannelType] || channelType).join(', ')
+  const boundChannelAccounts = channelGroups.flatMap((group) =>
+    group.accounts
+      .filter((account) => account.agentId === agent.id)
+      .map((account) => {
+        const channelName = CHANNEL_NAMES[group.channelType as ChannelType] || group.channelType;
+        const accountLabel =
+          account.accountId === 'default'
+            ? t('settingsDialog.mainAccount')
+            : account.name || account.accountId;
+        return `${channelName} · ${accountLabel}`;
+      }),
+  );
+  const channelsText = boundChannelAccounts.length > 0
+    ? boundChannelAccounts.join(', ')
     : t('none');
 
   return (
@@ -345,29 +414,21 @@ function AddAgentDialog({
 
 function AgentSettingsModal({
   agent,
-  channels,
+  channelGroups,
   onClose,
 }: {
   agent: AgentSummary;
-  channels: Array<{ type: string; name: string; status: 'connected' | 'connecting' | 'disconnected' | 'error'; error?: string }>;
+  channelGroups: ChannelGroupItem[];
   onClose: () => void;
 }) {
   const { t } = useTranslation('agents');
-  const { updateAgent, assignChannel, removeChannel } = useAgentsStore();
-  const { fetchChannels } = useChannelsStore();
+  const { updateAgent } = useAgentsStore();
   const [name, setName] = useState(agent.name);
   const [savingName, setSavingName] = useState(false);
-  const [showChannelModal, setShowChannelModal] = useState(false);
-  const [channelToRemove, setChannelToRemove] = useState<ChannelType | null>(null);
 
   useEffect(() => {
     setName(agent.name);
   }, [agent.name]);
-
-  const runtimeChannelsByType = useMemo(
-    () => Object.fromEntries(channels.map((channel) => [channel.type, channel])),
-    [channels],
-  );
 
   const handleSaveName = async () => {
     if (!name.trim() || name.trim() === agent.name) return;
@@ -382,26 +443,19 @@ function AgentSettingsModal({
     }
   };
 
-  const handleChannelSaved = async (channelType: ChannelType) => {
-    try {
-      await assignChannel(agent.id, channelType);
-      await fetchChannels();
-      toast.success(t('toast.channelAssigned', { channel: CHANNEL_NAMES[channelType] || channelType }));
-    } catch (error) {
-      toast.error(t('toast.channelAssignFailed', { error: String(error) }));
-      throw error;
-    }
-  };
-
-  const assignedChannels = agent.channelTypes.map((channelType) => {
-    const runtimeChannel = runtimeChannelsByType[channelType];
-    return {
-      channelType: channelType as ChannelType,
-      name: runtimeChannel?.name || CHANNEL_NAMES[channelType as ChannelType] || channelType,
-      status: runtimeChannel?.status || 'disconnected',
-      error: runtimeChannel?.error,
-    };
-  });
+  const assignedChannels = channelGroups.flatMap((group) =>
+    group.accounts
+      .filter((account) => account.agentId === agent.id)
+      .map((account) => ({
+        channelType: group.channelType as ChannelType,
+        accountId: account.accountId,
+        name:
+          account.accountId === 'default'
+            ? t('settingsDialog.mainAccount')
+            : account.name || account.accountId,
+        error: account.lastError,
+      })),
+  );
 
   return (
     <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
@@ -480,23 +534,16 @@ function AgentSettingsModal({
                 </h3>
                 <p className="text-[14px] text-foreground/70 mt-1">{t('settingsDialog.channelsDescription')}</p>
               </div>
-              <Button
-                onClick={() => setShowChannelModal(true)}
-                className="h-9 text-[13px] font-medium rounded-full px-4 shadow-none"
-              >
-                <Plus className="h-3.5 w-3.5 mr-2" />
-                {t('settingsDialog.addChannel')}
-              </Button>
             </div>
 
-            {assignedChannels.length === 0 ? (
+            {assignedChannels.length === 0 && agent.channelTypes.length === 0 ? (
               <div className="rounded-2xl border border-dashed border-black/10 dark:border-white/10 bg-black/5 dark:bg-white/5 p-4 text-[13.5px] text-muted-foreground">
                 {t('settingsDialog.noChannels')}
               </div>
             ) : (
               <div className="space-y-3">
                 {assignedChannels.map((channel) => (
-                  <div key={channel.channelType} className="flex items-center justify-between rounded-2xl bg-black/5 dark:bg-white/5 border border-transparent p-4">
+                  <div key={`${channel.channelType}-${channel.accountId}`} className="flex items-center justify-between rounded-2xl bg-black/5 dark:bg-white/5 border border-transparent p-4">
                     <div className="flex items-center gap-3 min-w-0">
                       <div className="h-[40px] w-[40px] shrink-0 flex items-center justify-center text-foreground bg-black/5 dark:bg-white/5 border border-black/5 dark:border-white/10 rounded-full shadow-sm">
                         <ChannelLogo type={channel.channelType} />
@@ -504,67 +551,26 @@ function AgentSettingsModal({
                       <div className="min-w-0">
                         <p className="text-[15px] font-semibold text-foreground">{channel.name}</p>
                         <p className="text-[13.5px] text-muted-foreground">
-                          {CHANNEL_NAMES[channel.channelType]}
+                          {CHANNEL_NAMES[channel.channelType]} · {channel.accountId === 'default' ? t('settingsDialog.mainAccount') : channel.accountId}
                         </p>
                         {channel.error && (
                           <p className="text-xs text-destructive mt-1">{channel.error}</p>
                         )}
                       </div>
                     </div>
-                    <div className="flex items-center gap-2 shrink-0">
-                      <StatusBadge status={channel.status} />
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-7 w-7 text-muted-foreground hover:text-destructive hover:bg-destructive/10"
-                        onClick={() => setChannelToRemove(channel.channelType)}
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
-                    </div>
+                    <div className="shrink-0" />
                   </div>
                 ))}
+                {assignedChannels.length === 0 && agent.channelTypes.length > 0 && (
+                  <div className="rounded-2xl border border-dashed border-black/10 dark:border-white/10 bg-black/5 dark:bg-white/5 p-4 text-[13.5px] text-muted-foreground">
+                    {t('settingsDialog.channelsManagedInChannels')}
+                  </div>
+                )}
               </div>
             )}
           </div>
         </CardContent>
       </Card>
-
-      {showChannelModal && (
-        <ChannelConfigModal
-          configuredTypes={agent.channelTypes}
-          showChannelName={false}
-          allowExistingConfig
-          agentId={agent.id}
-          onClose={() => setShowChannelModal(false)}
-          onChannelSaved={async (channelType) => {
-            await handleChannelSaved(channelType);
-            setShowChannelModal(false);
-          }}
-        />
-      )}
-
-      <ConfirmDialog
-        open={!!channelToRemove}
-        title={t('removeChannelDialog.title')}
-        message={channelToRemove ? t('removeChannelDialog.message', { name: CHANNEL_NAMES[channelToRemove] || channelToRemove }) : ''}
-        confirmLabel={t('common:actions.delete')}
-        cancelLabel={t('common:actions.cancel')}
-        variant="destructive"
-        onConfirm={async () => {
-          if (!channelToRemove) return;
-          try {
-            await removeChannel(agent.id, channelToRemove);
-            await fetchChannels();
-            toast.success(t('toast.channelRemoved', { channel: CHANNEL_NAMES[channelToRemove] || channelToRemove }));
-          } catch (error) {
-            toast.error(t('toast.channelRemoveFailed', { error: String(error) }));
-          } finally {
-            setChannelToRemove(null);
-          }
-        }}
-        onCancel={() => setChannelToRemove(null)}
-      />
     </div>
   );
 }

@@ -11,6 +11,15 @@ const TELEMETRY_SHUTDOWN_TIMEOUT_MS = 1500;
 let posthogClient: PostHog | null = null;
 let distinctId: string = '';
 
+function getCommonProperties(): Record<string, string> {
+    return {
+        $app_version: app.getVersion(),
+        $os: process.platform,
+        os_tag: process.platform,
+        arch: process.arch,
+    };
+}
+
 function isIgnorablePostHogShutdownError(error: unknown): boolean {
     if (!(error instanceof Error)) {
         return false;
@@ -54,12 +63,7 @@ export async function initTelemetry(): Promise<void> {
             logger.debug(`Generated new machine ID for telemetry: ${distinctId}`);
         }
 
-        // Common properties for all events
-        const properties = {
-            $app_version: app.getVersion(),
-            $os: process.platform,
-            arch: process.arch,
-        };
+        const properties = getCommonProperties();
 
         // Check if this is a new installation
         const hasReportedInstall = await getSetting('hasReportedInstall');
@@ -83,6 +87,29 @@ export async function initTelemetry(): Promise<void> {
 
     } catch (error) {
         logger.error('Failed to initialize telemetry:', error);
+    }
+}
+
+export function trackMetric(event: string, properties: Record<string, unknown> = {}): void {
+    logger.info(`[metric] ${event}`, properties);
+}
+
+export function captureTelemetryEvent(event: string, properties: Record<string, unknown> = {}): void {
+    if (!posthogClient || !distinctId) {
+        return;
+    }
+
+    try {
+        posthogClient.capture({
+            distinctId,
+            event,
+            properties: {
+                ...getCommonProperties(),
+                ...properties,
+            },
+        });
+    } catch (error) {
+        logger.debug(`Failed to capture telemetry event "${event}":`, error);
     }
 }
 

@@ -1,0 +1,8 @@
+{"ts":0,"type":"gateway_event","runId":"run-history-1","sessionKey":"agent:main:session-history","seq":1,"state":"started","fanout":1}
+{"ts":0.2,"type":"history_load","sessionKey":"agent:main:session-history","action":"start"}
+{"ts":0.4,"type":"history_load","sessionKey":"agent:main:session-history","action":"end"}
+{"ts":0.8,"type":"history_load","sessionKey":"agent:main:session-history","action":"start"}
+{"ts":1.0,"type":"history_load","sessionKey":"agent:main:session-history","action":"end"}
+{"ts":1.4,"type":"rpc","method":"chat.history","latencyMs":95,"timeout":false}
+{"ts":1.8,"type":"gateway_event","runId":"run-history-1","sessionKey":"agent:main:session-history","seq":2,"state":"final","fanout":1}
+{"ts":2.0,"type":"message","lost":false,"orderViolation":false}

@@ -18,6 +18,12 @@ export function classifyGatewayStderrMessage(message: string): GatewayStderrClas
   if (msg.includes('closed before connect') && msg.includes('token mismatch')) {
     return { level: 'drop', normalized: msg };
   }
+  if (msg.includes('[ws] closed before connect') && msg.includes('code=1005')) {
+    return { level: 'debug', normalized: msg };
+  }
+  if (msg.includes('security warning: dangerous config flags enabled')) {
+    return { level: 'debug', normalized: msg };
+  }
 
   // Downgrade frequent non-fatal noise.
   if (msg.includes('ExperimentalWarning')) return { level: 'debug', normalized: msg };

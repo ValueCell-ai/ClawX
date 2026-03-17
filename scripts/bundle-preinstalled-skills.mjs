@@ -2,7 +2,7 @@
 
 import 'zx/globals';
 import { readFileSync, existsSync, mkdirSync, rmSync, cpSync, writeFileSync } from 'node:fs';
-import { join, dirname } from 'node:path';
+import { join, dirname, basename } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -43,22 +43,71 @@ function createRepoDirName(repo, ref) {
   return `${repo.replace(/[\\/]/g, '__')}__${ref.replace(/[^a-zA-Z0-9._-]/g, '_')}`;
 }
 
+function toGitPath(inputPath) {
+  if (process.platform !== 'win32') return inputPath;
+  // Git on Windows accepts forward slashes and avoids backslash escape quirks.
+  return inputPath.replace(/\\/g, '/');
+}
+
+function normalizeRepoPath(repoPath) {
+  return repoPath.replace(/\\/g, '/').replace(/^\/+/, '').replace(/\/+$/, '');
+}
+
+function shouldCopySkillFile(srcPath) {
+  const base = basename(srcPath);
+  if (base === '.git') return false;
+  if (base === '.subset.tar') return false;
+  return true;
+}
+
+async function extractArchive(archiveFileName, cwd) {
+  const prevCwd = $.cwd;
+  $.cwd = cwd;
+  try {
+    try {
+      await $`tar -xf ${archiveFileName}`;
+      return;
+    } catch (tarError) {
+      if (process.platform === 'win32') {
+        // Some Windows images expose bsdtar instead of tar.
+        await $`bsdtar -xf ${archiveFileName}`;
+        return;
+      }
+      throw tarError;
+    }
+  } finally {
+    $.cwd = prevCwd;
+  }
+}
+
 async function fetchSparseRepo(repo, ref, paths, checkoutDir) {
   const remote = `https://github.com/${repo}.git`;
   mkdirSync(checkoutDir, { recursive: true });
+  const gitCheckoutDir = toGitPath(checkoutDir);
+  const archiveFileName = '.subset.tar';
+  const archivePath = join(checkoutDir, archiveFileName);
+  const archivePaths = [...new Set(paths.map(normalizeRepoPath))];
 
-  await $`git init ${checkoutDir}`;
-  await $`git -C ${checkoutDir} remote add origin ${remote}`;
-  await $`git -C ${checkoutDir} sparse-checkout init --cone`;
-  await $`git -C ${checkoutDir} sparse-checkout set ${paths}`;
-  await $`git -C ${checkoutDir} fetch --depth 1 origin ${ref}`;
-  await $`git -C ${checkoutDir} checkout FETCH_HEAD`;
+  await $`git init ${gitCheckoutDir}`;
+  await $`git -C ${gitCheckoutDir} remote add origin ${remote}`;
+  await $`git -C ${gitCheckoutDir} fetch --depth 1 origin ${ref}`;
+  // Do not checkout working tree on Windows: upstream repos may contain
+  // Windows-invalid paths. Export only requested directories via git archive.
+  await $`git -C ${gitCheckoutDir} archive --format=tar --output ${archiveFileName} FETCH_HEAD ${archivePaths}`;
+  await extractArchive(archiveFileName, checkoutDir);
+  rmSync(archivePath, { force: true });
 
-  const commit = (await $`git -C ${checkoutDir} rev-parse HEAD`).stdout.trim();
+  const commit = (await $`git -C ${gitCheckoutDir} rev-parse FETCH_HEAD`).stdout.trim();
   return commit;
 }
 
 echo`Bundling preinstalled skills...`;
+
+if (process.env.SKIP_PREINSTALLED_SKILLS === '1') {
+  echo`⏭  SKIP_PREINSTALLED_SKILLS=1 set, skipping skills fetch.`;
+  process.exit(0);
+}
+
 const manifestSkills = loadManifest();
 
 rmSync(OUTPUT_ROOT, { recursive: true, force: true });
@@ -89,7 +138,7 @@ for (const group of groups) {
     }
 
     rmSync(targetDir, { recursive: true, force: true });
-    cpSync(sourceDir, targetDir, { recursive: true, dereference: true });
+    cpSync(sourceDir, targetDir, { recursive: true, dereference: true, filter: shouldCopySkillFile });
 
     const skillManifest = join(targetDir, 'SKILL.md');
     if (!existsSync(skillManifest)) {

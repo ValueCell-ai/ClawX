@@ -103,18 +103,19 @@ When you target another agent with `@agent`, ClawX switches into that agent's ow
 
 ### 📡 Multi-Channel Management
 Configure and monitor multiple AI channels simultaneously. Each channel operates independently, allowing you to run specialized agents for different tasks.
+Each channel now supports multiple accounts, per-account agent binding, and switching the channel default account directly from the Channels page.
 
 ### ⏰ Cron-Based Automation
 Schedule AI tasks to run automatically. Define triggers, set intervals, and let your AI agents work around the clock without manual intervention.
 
 ### 🧩 Extensible Skill System
 Extend your AI agents with pre-built skills. Browse, install, and manage skills through the integrated skill panel—no package managers required.
-ClawX also pre-bundles full document-processing skills (`pdf`, `xlsx`, `docx`, `pptx`), deploys them automatically to `~/.openclaw/skills` on startup, and enables them by default on first install. Additional bundled skills (`find-skills`, `self-improving-agent`, `tavily-search`, `brave-web-search`, `bocha-skill`) are also enabled by default; if required API keys are missing, OpenClaw will surface configuration errors in runtime.
+ClawX also pre-bundles full document-processing skills (`pdf`, `xlsx`, `docx`, `pptx`), deploys them automatically to the managed skills directory (default `~/.openclaw/skills`) on startup, and enables them by default on first install. Additional bundled skills (`find-skills`, `self-improving-agent`, `tavily-search`, `brave-web-search`) are also enabled by default; if required API keys are missing, OpenClaw will surface configuration errors in runtime.  
+The Skills page can display skills discovered from multiple OpenClaw sources (managed dir, workspace, and extra skill dirs), and now shows each skill's actual location so you can open the real folder directly.
 
 Environment variables for bundled search skills:
 - `BRAVE_SEARCH_API_KEY` for `brave-web-search`
 - `TAVILY_API_KEY` for `tavily-search` (OAuth may also be supported by upstream skill runtime)
-- `BOCHA_API_KEY` for `bocha-skill`
 - `find-skills` and `self-improving-agent` do not require API keys
 
 ### 🔐 Secure Provider Integration
@@ -163,6 +164,8 @@ When you launch ClawX for the first time, the **Setup Wizard** will guide you th
 2. **AI Provider** – Add providers with API keys or OAuth (for providers that support browser/device login)
 3. **Skill Bundles** – Select pre-configured skills for common use cases
 4. **Verification** – Test your configuration before entering the main interface
+
+The wizard preselects your system language when it is supported, and falls back to English otherwise.
 
 > Note for Moonshot (Kimi): ClawX keeps Kimi web search enabled by default.  
 > When Moonshot is configured, ClawX also syncs Kimi web search to the China endpoint (`https://api.moonshot.cn/v1`) in OpenClaw config.
@@ -309,7 +312,7 @@ Chain multiple skills together to create sophisticated automation pipelines. Pro
 ```bash
 # Development
 pnpm run init             # Install dependencies + download uv
-pnpm dev                  # Start with hot reload
+pnpm dev                  # Start with hot reload (auto-prepares bundled skills if missing)
 
 # Quality
 pnpm lint                 # Run ESLint
@@ -317,15 +320,29 @@ pnpm typecheck            # TypeScript validation
 
 # Testing
 pnpm test                 # Run unit tests
+pnpm run comms:replay     # Compute communication replay metrics
+pnpm run comms:baseline   # Refresh communication baseline snapshot
+pnpm run comms:compare    # Compare replay metrics against baseline thresholds
 
 # Build & Package
 pnpm run build:vite       # Build frontend only
 pnpm build                # Full production build (with packaging assets)
-pnpm package              # Package for current platform
+pnpm package              # Package for current platform (includes bundled preinstalled skills)
 pnpm package:mac          # Package for macOS
 pnpm package:win          # Package for Windows
 pnpm package:linux        # Package for Linux
 ```
+
+### Communication Regression Checks
+
+When a PR changes communication paths (gateway events, chat runtime send/receive flow, channel delivery, or transport fallback), run:
+
+```bash
+pnpm run comms:replay
+pnpm run comms:compare
+```
+
+`comms-regression` in CI enforces required scenarios and threshold checks.
 ### Tech Stack
 
 | Layer | Technology |

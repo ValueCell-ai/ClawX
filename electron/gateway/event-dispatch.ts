@@ -17,18 +17,8 @@ export function dispatchProtocolEvent(
       emitter.emit('chat:message', { message: payload });
       break;
     case 'agent': {
-      const p = payload as Record<string, unknown>;
-      const data = (p.data && typeof p.data === 'object') ? p.data as Record<string, unknown> : {};
-      const chatEvent: Record<string, unknown> = {
-        ...data,
-        runId: p.runId ?? data.runId,
-        sessionKey: p.sessionKey ?? data.sessionKey,
-        state: p.state ?? data.state,
-        message: p.message ?? data.message,
-      };
-      if (chatEvent.state || chatEvent.message) {
-        emitter.emit('chat:message', { message: chatEvent });
-      }
+      // Keep "agent" on the canonical notification path to avoid double
+      // handling in renderer when both notification and chat-message are wired.
       emitter.emit('notification', { method: event, params: payload });
       break;
     }

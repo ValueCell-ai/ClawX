@@ -15,6 +15,7 @@ on:
 
 permissions:
   contents: write
+  actions: read
 
 jobs:
   release:
@@ -32,30 +33,18 @@ jobs:
     
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           fetch-depth: 0
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
 
       - name: Setup Node.js
         uses: actions/setup-node@v6
         with:
           node-version: '24'
-
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4
-
-      - name: Get pnpm store directory
-        shell: bash
-        run: |
-          echo "STORE_PATH=$(pnpm store path --silent)" >> $GITHUB_ENV
-
-      - name: Setup pnpm cache
-        uses: actions/cache@v4
-        with:
-          path: ${{ env.STORE_PATH }}
-          key: ${{ runner.os }}-pnpm-store-${{ hashFiles('**/pnpm-lock.yaml') }}
-          restore-keys: |
-            ${{ runner.os }}-pnpm-store-
+          cache: 'pnpm'
 
       - name: Install dependencies
         run: pnpm install
@@ -87,21 +76,74 @@ jobs:
         run: |
           ulimit -n 65536
           echo "File descriptor limit: $(ulimit -n)"
-          pnpm run build:vite && pnpm exec zx scripts/bundle-openclaw.mjs && pnpm exec electron-builder --mac --publish never
+          pnpm run package:mac
 
       # Windows specific steps
       - name: Build Windows
         if: matrix.platform == 'win'
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: pnpm run build:vite && pnpm exec zx scripts/bundle-openclaw.mjs && pnpm exec electron-builder --win --publish never
+        run: pnpm run package:win
+
+      - name: Validate unsigned Windows artifacts before SignPath
+        if: matrix.platform == 'win'
+        shell: pwsh
+        run: |
+          $unsignedExeFiles = Get-ChildItem -Path "release" -Filter *.exe -File
+          if (-not $unsignedExeFiles) {
+            throw "No unsigned .exe files found in release/ before SignPath upload"
+          }
+          $unsignedCount = $unsignedExeFiles.Count
+          "UNSIGNED_EXE_COUNT=$unsignedCount" | Out-File -FilePath $env:GITHUB_ENV -Append
+          Write-Host "Found $unsignedCount unsigned .exe file(s):"
+          $unsignedExeFiles | ForEach-Object { Write-Host " - $($_.Name)" }
+
+      - name: Upload unsigned Windows artifacts for SignPath
+        if: matrix.platform == 'win'
+        id: upload-unsigned-windows-artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: unsigned-win-exe-${{ github.run_id }}-${{ github.run_attempt }}
+          path: release/*.exe
+          retention-days: 1
+
+      - name: Sign Windows artifacts via SignPath
+        if: matrix.platform == 'win'
+        id: signpath-sign-windows
+        uses: signpath/github-action-submit-signing-request@v2
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: "78e37079-23df-4800-b41c-33312ad7c1e3"
+          project-slug: "ValueCell"
+          signing-policy-slug: "ValueCell-sign"
+          github-artifact-id: ${{ steps.upload-unsigned-windows-artifact.outputs.artifact-id }}
+          wait-for-completion: true
+          output-artifact-directory: release/signed
+
+      - name: Replace unsigned executables with signed ones
+        if: matrix.platform == 'win'
+        shell: pwsh
+        run: |
+          Write-Host "SignPath GitHub artifact ID: ${{ steps.upload-unsigned-windows-artifact.outputs.artifact-id }}"
+          $signedExeFiles = Get-ChildItem -Path "release/signed" -Filter *.exe -File -Recurse
+          if (-not $signedExeFiles) {
+            throw "No signed .exe files found in release/signed"
+          }
+          $signedCount = $signedExeFiles.Count
+          if ($env:UNSIGNED_EXE_COUNT -and ($signedCount -ne [int]$env:UNSIGNED_EXE_COUNT)) {
+            throw "Signed .exe count ($signedCount) does not match unsigned count ($env:UNSIGNED_EXE_COUNT)"
+          }
+          foreach ($file in $signedExeFiles) {
+            Copy-Item -Path $file.FullName -Destination "release/$($file.Name)" -Force
+          }
+          $finalExeFiles = Get-ChildItem -Path "release" -Filter *.exe -File
+          if ($env:UNSIGNED_EXE_COUNT -and ($finalExeFiles.Count -ne [int]$env:UNSIGNED_EXE_COUNT)) {
+            throw "Final release .exe count ($($finalExeFiles.Count)) does not match unsigned count ($env:UNSIGNED_EXE_COUNT)"
+          }
+          Write-Host "Signed executables copied to release/ ($($finalExeFiles.Count) file(s))"
 
       # Linux specific steps
       - name: Build Linux
         if: matrix.platform == 'linux'
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: pnpm run build:vite && pnpm exec zx scripts/bundle-openclaw.mjs && pnpm exec electron-builder --linux --publish never
+        run: pnpm run package:linux
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
@@ -127,13 +169,11 @@ jobs:
     runs-on: ubuntu-latest
     
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Download all artifacts
+      - name: Download release artifacts only
         uses: actions/download-artifact@v4
         with:
           path: release-artifacts
+          pattern: release-*
 
       - name: List all downloaded artifacts
         run: |
@@ -222,13 +262,11 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Download all artifacts
+      - name: Download release artifacts only
         uses: actions/download-artifact@v4
         with:
           path: release-artifacts
+          pattern: release-*
 
       - name: Extract version and channel
         id: version

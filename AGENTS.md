@@ -17,6 +17,9 @@ Standard dev commands are in `package.json` scripts and `README.md`. Key ones:
 | Lint (ESLint, auto-fix) | `pnpm run lint` |
 | Type check | `pnpm run typecheck` |
 | Unit tests (Vitest) | `pnpm test` |
+| Comms replay metrics | `pnpm run comms:replay` |
+| Comms baseline refresh | `pnpm run comms:baseline` |
+| Comms regression compare | `pnpm run comms:compare` |
 | E2E tests (Playwright) | `pnpm run test:e2e` |
 | Build frontend only | `pnpm run build:vite` |
 
@@ -38,4 +41,5 @@ Standard dev commands are in `package.json` scripts and `README.md`. Key ones:
   - Do not add new direct `window.electron.ipcRenderer.invoke(...)` calls in pages/components; expose them through host-api/api-client instead.
   - Do not call Gateway HTTP endpoints directly from renderer (`fetch('http://127.0.0.1:18789/...')` etc.). Use Main-process proxy channels (`hostapi:fetch`, `gateway:httpProxy`) to avoid CORS/env drift.
   - Transport policy is Main-owned and fixed as `WS -> HTTP -> IPC fallback`; renderer should not implement protocol switching UI/business logic.
+- **Comms-change checklist**: If your change touches communication paths (gateway events, runtime send/receive, delivery, or fallback), run `pnpm run comms:replay` and `pnpm run comms:compare` before pushing.
 - **Doc sync rule**: After any functional or architecture change, review `README.md`, `README.zh-CN.md`, and `README.ja-JP.md` for required updates; if behavior/flows/interfaces changed, update docs in the same PR/commit.

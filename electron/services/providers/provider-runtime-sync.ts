@@ -160,10 +160,12 @@ export async function getProviderFallbackModelRefs(config: ProviderConfig): Prom
   return results;
 }
 
-function scheduleGatewayRestart(
+type GatewayRefreshMode = 'reload' | 'restart';
+
+function scheduleGatewayRefresh(
   gatewayManager: GatewayManager | undefined,
   message: string,
-  options?: { delayMs?: number; onlyIfRunning?: boolean },
+  options?: { delayMs?: number; onlyIfRunning?: boolean; mode?: GatewayRefreshMode },
 ): void {
   if (!gatewayManager) {
     return;
@@ -174,7 +176,11 @@ function scheduleGatewayRestart(
   }
 
   logger.info(message);
-  gatewayManager.debouncedRestart(options?.delayMs);
+  if (options?.mode === 'restart') {
+    gatewayManager.debouncedRestart(options?.delayMs);
+    return;
+  }
+  gatewayManager.debouncedReload(options?.delayMs);
 }
 
 export async function syncProviderApiKeyToRuntime(
@@ -340,9 +346,9 @@ export async function syncSavedProviderToRuntime(
     return;
   }
 
-  scheduleGatewayRestart(
+  scheduleGatewayRefresh(
     gatewayManager,
-    `Scheduling Gateway restart after saving provider "${context.runtimeProviderKey}" config`,
+    `Scheduling Gateway reload after saving provider "${context.runtimeProviderKey}" config`,
   );
 }
 
@@ -381,9 +387,9 @@ export async function syncUpdatedProviderToRuntime(
     }
   }
 
-  scheduleGatewayRestart(
+  scheduleGatewayRefresh(
     gatewayManager,
-    `Scheduling Gateway restart after updating provider "${ock}" config`,
+    `Scheduling Gateway reload after updating provider "${ock}" config`,
   );
 }
 
@@ -400,9 +406,10 @@ export async function syncDeletedProviderToRuntime(
   const ock = runtimeProviderKey ?? await resolveRuntimeProviderKey({ ...provider, id: providerId });
   await removeProviderFromOpenClaw(ock);
 
-  scheduleGatewayRestart(
+  scheduleGatewayRefresh(
     gatewayManager,
     `Scheduling Gateway restart after deleting provider "${ock}"`,
+    { mode: 'restart' },
   );
 }
 
@@ -487,9 +494,9 @@ export async function syncDefaultProviderToRuntime(
 
       await setOpenClawDefaultModel(browserOAuthRuntimeProvider, modelOverride, fallbackModels);
       logger.info(`Configured openclaw.json for browser OAuth provider "${provider.id}"`);
-      scheduleGatewayRestart(
+      scheduleGatewayRefresh(
         gatewayManager,
-        `Scheduling Gateway restart after provider switch to "${browserOAuthRuntimeProvider}"`,
+        `Scheduling Gateway reload after provider switch to "${browserOAuthRuntimeProvider}"`,
       );
       return;
     }
@@ -548,9 +555,9 @@ export async function syncDefaultProviderToRuntime(
     });
   }
 
-  scheduleGatewayRestart(
+  scheduleGatewayRefresh(
     gatewayManager,
-    `Scheduling Gateway restart after provider switch to "${ock}"`,
+    `Scheduling Gateway reload after provider switch to "${ock}"`,
     { onlyIfRunning: true },
   );
 }

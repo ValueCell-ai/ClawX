@@ -4,6 +4,7 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, realpathSync, unlinkS
 import { createServer } from 'node:http';
 import { delimiter, dirname, join } from 'node:path';
 import { getClawXConfigDir } from './paths';
+import { proxyAwareFetch } from './proxy-fetch';
 
 const CLIENT_ID_KEYS = ['OPENCLAW_GEMINI_OAUTH_CLIENT_ID', 'GEMINI_CLI_OAUTH_CLIENT_ID'];
 const CLIENT_SECRET_KEYS = [
@@ -243,7 +244,7 @@ async function installViaNpm(onProgress?: (msg: string) => void): Promise<boolea
 async function installViaDirectDownload(onProgress?: (msg: string) => void): Promise<boolean> {
   try {
     onProgress?.('Downloading Gemini OAuth helper...');
-    const metaRes = await fetch('https://registry.npmjs.org/@google/gemini-cli-core/latest');
+    const metaRes = await proxyAwareFetch('https://registry.npmjs.org/@google/gemini-cli-core/latest');
     if (!metaRes.ok) {
       onProgress?.(`Failed to fetch Gemini package metadata: ${metaRes.status}`);
       return false;
@@ -256,7 +257,7 @@ async function installViaDirectDownload(onProgress?: (msg: string) => void): Pro
       return false;
     }
 
-    const tarRes = await fetch(tarballUrl);
+    const tarRes = await proxyAwareFetch(tarballUrl);
     if (!tarRes.ok) {
       onProgress?.(`Failed to download Gemini package: ${tarRes.status}`);
       return false;
@@ -440,7 +441,7 @@ async function waitForLocalCallback(params: {
 
 async function getUserEmail(accessToken: string): Promise<string | undefined> {
   try {
-    const response = await fetch(USERINFO_URL, {
+    const response = await proxyAwareFetch(USERINFO_URL, {
       headers: { Authorization: `Bearer ${accessToken}` },
     });
     if (response.ok) {
@@ -489,7 +490,7 @@ async function pollOperation(
 ): Promise<{ done?: boolean; response?: { cloudaicompanionProject?: { id?: string } } }> {
   for (let attempt = 0; attempt < 24; attempt += 1) {
     await new Promise((resolve) => setTimeout(resolve, 5000));
-    const response = await fetch(`${CODE_ASSIST_ENDPOINT}/v1internal/${operationName}`, { headers });
+    const response = await proxyAwareFetch(`${CODE_ASSIST_ENDPOINT}/v1internal/${operationName}`, { headers });
     if (!response.ok) {
       continue;
     }
@@ -530,7 +531,7 @@ async function discoverProject(accessToken: string): Promise<string> {
     allowedTiers?: Array<{ id?: string; isDefault?: boolean }>;
   } = {};
 
-  const response = await fetch(`${CODE_ASSIST_ENDPOINT}/v1internal:loadCodeAssist`, {
+  const response = await proxyAwareFetch(`${CODE_ASSIST_ENDPOINT}/v1internal:loadCodeAssist`, {
     method: 'POST',
     headers,
     body: JSON.stringify(loadBody),
@@ -583,7 +584,7 @@ async function discoverProject(accessToken: string): Promise<string> {
     (onboardBody.metadata as Record<string, unknown>).duetProject = envProject;
   }
 
-  const onboardResponse = await fetch(`${CODE_ASSIST_ENDPOINT}/v1internal:onboardUser`, {
+  const onboardResponse = await proxyAwareFetch(`${CODE_ASSIST_ENDPOINT}/v1internal:onboardUser`, {
     method: 'POST',
     headers,
     body: JSON.stringify(onboardBody),
@@ -638,7 +639,7 @@ async function exchangeCodeForTokens(
     body.set('client_secret', clientSecret);
   }
 
-  const response = await fetch(TOKEN_URL, {
+  const response = await proxyAwareFetch(TOKEN_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body: body.toString(),

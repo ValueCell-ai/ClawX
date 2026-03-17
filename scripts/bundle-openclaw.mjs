@@ -133,6 +133,12 @@ queue.push({ nodeModulesDir: openclawVirtualNM, skipPkg: 'openclaw' });
 const SKIP_PACKAGES = new Set([
   'typescript',
   '@playwright/test',
+  // @discordjs/opus is a native .node addon compiled for the system Node.js
+  // ABI. The Gateway runs inside Electron's utilityProcess which has a
+  // different ABI, so the binary fails with "Cannot find native binding".
+  // The package is optional — openclaw gracefully degrades when absent
+  // (only Discord voice features are affected; text chat works fine).
+  '@discordjs/opus',
 ]);
 const SKIP_SCOPES = ['@cloudflare/', '@types/'];
 let skippedDevCount = 0;

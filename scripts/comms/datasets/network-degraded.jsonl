@@ -1,0 +1,9 @@
+{"ts":0,"type":"gateway_event","runId":"run-net-1","sessionKey":"agent:main:session-net","seq":1,"state":"started","fanout":1}
+{"ts":0.2,"type":"rpc","method":"chat.send","latencyMs":420,"timeout":false}
+{"ts":0.8,"type":"rpc","method":"chat.history","latencyMs":820,"timeout":false}
+{"ts":1.0,"type":"history_load","sessionKey":"agent:main:session-net","action":"start"}
+{"ts":1.5,"type":"history_load","sessionKey":"agent:main:session-net","action":"end"}
+{"ts":1.6,"type":"gateway_reconnect"}
+{"ts":2.1,"type":"gateway_event","runId":"run-net-1","sessionKey":"agent:main:session-net","seq":2,"state":"delta","fanout":1}
+{"ts":2.3,"type":"gateway_event","runId":"run-net-1","sessionKey":"agent:main:session-net","seq":3,"state":"final","fanout":1}
+{"ts":2.8,"type":"message","lost":false,"orderViolation":false}

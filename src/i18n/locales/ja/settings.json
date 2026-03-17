@@ -217,7 +217,7 @@
     "cmdUnavailable": "コマンドが利用できません",
     "cmdCopied": "CLI コマンドをコピーしました",
     "doctor": "OpenClaw Doctor",
-    "doctorDesc": "`openclaw doctor --json` を実行して診断の生出力を確認します。",
+    "doctorDesc": "`openclaw doctor` を実行して診断の生出力を確認します。",
     "runDoctor": "Doctor を実行",
     "runDoctorFix": "Doctor 修復を実行",
     "doctorSucceeded": "OpenClaw doctor が完了しました",

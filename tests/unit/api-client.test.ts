@@ -244,4 +244,24 @@ describe('api-client', () => {
     expect(result.success).toBe(true);
     expect(result.result.channels[0].id).toBe('telegram-default');
   });
+
+  it('rejects invalid config.patch params before gateway:httpProxy call', async () => {
+    const invoke = vi.mocked(window.electron.ipcRenderer.invoke);
+    const invoker = createGatewayHttpTransportInvoker();
+
+    await expect(invoker('gateway:rpc', ['config.patch', 'abc'])).rejects.toThrow(
+      'gateway:rpc config.patch requires object params',
+    );
+    expect(invoke).not.toHaveBeenCalled();
+  });
+
+  it('rejects invalid config.patch.patch before gateway:httpProxy call', async () => {
+    const invoke = vi.mocked(window.electron.ipcRenderer.invoke);
+    const invoker = createGatewayHttpTransportInvoker();
+
+    await expect(invoker('gateway:rpc', ['config.patch', { patch: 'abc' }])).rejects.toThrow(
+      'gateway:rpc config.patch requires object patch',
+    );
+    expect(invoke).not.toHaveBeenCalled();
+  });
 });

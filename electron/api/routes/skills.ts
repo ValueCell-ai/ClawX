@@ -77,8 +77,19 @@ export async function handleSkillRoutes(
 
   if (url.pathname === '/api/clawhub/open-readme' && req.method === 'POST') {
     try {
-      const body = await parseJsonBody<{ slug?: string; skillKey?: string }>(req);
-      await ctx.clawHubService.openSkillReadme(body.skillKey || body.slug || '', body.slug);
+      const body = await parseJsonBody<{ slug?: string; skillKey?: string; baseDir?: string }>(req);
+      await ctx.clawHubService.openSkillReadme(body.skillKey || body.slug || '', body.slug, body.baseDir);
+      sendJson(res, 200, { success: true });
+    } catch (error) {
+      sendJson(res, 500, { success: false, error: String(error) });
+    }
+    return true;
+  }
+
+  if (url.pathname === '/api/clawhub/open-path' && req.method === 'POST') {
+    try {
+      const body = await parseJsonBody<{ slug?: string; skillKey?: string; baseDir?: string }>(req);
+      await ctx.clawHubService.openSkillPath(body.skillKey || body.slug || '', body.slug, body.baseDir);
       sendJson(res, 200, { success: true });
     } catch (error) {
       sendJson(res, 500, { success: false, error: String(error) });

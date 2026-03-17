@@ -29,7 +29,9 @@
         "agentIdLabel": "Agent ID",
         "modelLabel": "Model",
         "channelsTitle": "频道",
-        "channelsDescription": "每种频道类型在 ClawX 中只保留一份配置。在这里保存已配置的频道会将归属切换到当前 Agent。",
+        "channelsDescription": "该列表为只读。频道账号与绑定关系请在 Channels 页面管理。",
+        "mainAccount": "主账号",
+        "channelsManagedInChannels": "该 Agent 绑定了频道类型，但具体账号绑定请在 Channels 页面查看。",
         "addChannel": "添加频道",
         "noChannels": "这个 Agent 还没有分配任何频道。"
     },
@@ -41,6 +43,7 @@
         "agentCreated": "Agent 已创建",
         "agentCreateFailed": "创建 Agent 失败：{{error}}",
         "agentDeleted": "Agent 已删除",
+        "agentDeleteFailed": "删除 Agent 失败：{{error}}",
         "agentUpdated": "Agent 已更新",
         "agentUpdateFailed": "更新 Agent 失败：{{error}}",
         "channelAssigned": "{{channel}} 已分配给 Agent",

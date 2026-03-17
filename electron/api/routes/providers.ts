@@ -25,6 +25,16 @@ import { logger } from '../../utils/logger';
 
 const legacyProviderRoutesWarned = new Set<string>();
 
+function hasObjectChanges<T extends Record<string, unknown>>(
+  existing: T,
+  patch: Partial<T> | undefined,
+): boolean {
+  if (!patch) return false;
+  const keys = Object.keys(patch) as Array<keyof T>;
+  if (keys.length === 0) return false;
+  return keys.some((key) => JSON.stringify(existing[key]) !== JSON.stringify(patch[key]));
+}
+
 export async function handleProviderRoutes(
   req: IncomingMessage,
   res: ServerResponse,
@@ -70,6 +80,11 @@ export async function handleProviderRoutes(
   if (url.pathname === '/api/provider-accounts/default' && req.method === 'PUT') {
     try {
       const body = await parseJsonBody<{ accountId: string }>(req);
+      const currentDefault = await providerService.getDefaultAccountId();
+      if (currentDefault === body.accountId) {
+        sendJson(res, 200, { success: true, noChange: true });
+        return true;
+      }
       await providerService.setDefaultAccount(body.accountId);
       await syncDefaultProviderToRuntime(body.accountId, ctx.gatewayManager);
       sendJson(res, 200, { success: true });
@@ -92,6 +107,11 @@ export async function handleProviderRoutes(
       const existing = await providerService.getAccount(accountId);
       if (!existing) {
         sendJson(res, 404, { success: false, error: 'Provider account not found' });
+        return true;
+      }
+      const hasPatchChanges = hasObjectChanges(existing as unknown as Record<string, unknown>, body.updates);
+      if (!hasPatchChanges && body.apiKey === undefined) {
+        sendJson(res, 200, { success: true, noChange: true, account: existing });
         return true;
       }
       const nextAccount = await providerService.updateAccount(accountId, body.updates, body.apiKey);
@@ -152,6 +172,11 @@ export async function handleProviderRoutes(
     logLegacyProviderRoute('PUT /api/providers/default');
     try {
       const body = await parseJsonBody<{ providerId: string }>(req);
+      const currentDefault = await providerService.getDefaultLegacyProvider();
+      if (currentDefault === body.providerId) {
+        sendJson(res, 200, { success: true, noChange: true });
+        return true;
+      }
       await providerService.setDefaultLegacyProvider(body.providerId);
       await syncDefaultProviderToRuntime(body.providerId, ctx.gatewayManager);
       sendJson(res, 200, { success: true });
@@ -170,7 +195,7 @@ export async function handleProviderRoutes(
       const registryBaseUrl = getProviderConfig(providerType)?.baseUrl;
       const resolvedBaseUrl = body.options?.baseUrl || provider?.baseUrl || registryBaseUrl;
       const resolvedProtocol = body.options?.apiProtocol || provider?.apiProtocol;
-      sendJson(res, 200, await validateApiKeyWithProvider(providerType, body.apiKey, { baseUrl: resolvedBaseUrl, apiProtocol: resolvedProtocol as any }));
+      sendJson(res, 200, await validateApiKeyWithProvider(providerType, body.apiKey, { baseUrl: resolvedBaseUrl, apiProtocol: resolvedProtocol }));
     } catch (error) {
       sendJson(res, 500, { valid: false, error: String(error) });
     }
@@ -278,6 +303,11 @@ export async function handleProviderRoutes(
       const existing = await providerService.getLegacyProvider(providerId);
       if (!existing) {
         sendJson(res, 404, { success: false, error: 'Provider not found' });
+        return true;
+      }
+      const hasPatchChanges = hasObjectChanges(existing as unknown as Record<string, unknown>, body.updates);
+      if (!hasPatchChanges && body.apiKey === undefined) {
+        sendJson(res, 200, { success: true, noChange: true });
         return true;
       }
       const nextConfig: ProviderConfig = { ...existing, ...body.updates, updatedAt: new Date().toISOString() };

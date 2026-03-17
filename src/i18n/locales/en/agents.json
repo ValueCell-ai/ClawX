@@ -29,7 +29,9 @@
         "agentIdLabel": "Agent ID",
         "modelLabel": "Model",
         "channelsTitle": "Channels",
-        "channelsDescription": "Each channel type has a single ClawX configuration. Saving a configured channel here moves ownership to this agent.",
+        "channelsDescription": "This list is read-only. Manage channel accounts and bindings in the Channels page.",
+        "mainAccount": "Main account",
+        "channelsManagedInChannels": "This agent is linked to channel types. Manage exact account bindings in the Channels page.",
         "addChannel": "Add Channel",
         "noChannels": "No channels are assigned to this agent yet."
     },
@@ -41,6 +43,7 @@
         "agentCreated": "Agent created",
         "agentCreateFailed": "Failed to create agent: {{error}}",
         "agentDeleted": "Agent deleted",
+        "agentDeleteFailed": "Failed to delete agent: {{error}}",
         "agentUpdated": "Agent updated",
         "agentUpdateFailed": "Failed to update agent: {{error}}",
         "channelAssigned": "{{channel}} assigned to agent",

@@ -59,6 +59,8 @@ resources/bin
 *.key
 
 build/
+artifacts/
+docs/pr-session-notes-*.md
 
 .cursor/
 .pnpm-store/

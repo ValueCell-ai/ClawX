@@ -20,6 +20,9 @@ type GatewaySkillStatus = {
   config?: Record<string, unknown>;
   bundled?: boolean;
   always?: boolean;
+  source?: string;
+  baseDir?: string;
+  filePath?: string;
 };
 
 type GatewaySkillsStatusResult = {
@@ -29,6 +32,8 @@ type GatewaySkillsStatusResult = {
 type ClawHubListResult = {
   slug: string;
   version?: string;
+  source?: string;
+  baseDir?: string;
 };
 
 function mapErrorCodeToSkillErrorKey(
@@ -120,6 +125,9 @@ export const useSkillsStore = create<SkillsState>((set, get) => ({
             },
             isCore: s.bundled && s.always,
             isBundled: s.bundled,
+            source: s.source,
+            baseDir: s.baseDir,
+            filePath: s.filePath,
           };
         });
       } else if (currentSkills.length > 0) {
@@ -131,22 +139,31 @@ export const useSkillsStore = create<SkillsState>((set, get) => ({
       if (clawhubResult.success && clawhubResult.results) {
         clawhubResult.results.forEach((cs: ClawHubListResult) => {
           const existing = combinedSkills.find(s => s.id === cs.slug);
-          if (!existing) {
-            const directConfig = configResult[cs.slug] || {};
-            combinedSkills.push({
-              id: cs.slug,
-              slug: cs.slug,
-              name: cs.slug,
-              description: 'Recently installed, initializing...',
-              enabled: false,
-              icon: '⌛',
-              version: cs.version || 'unknown',
-              author: undefined,
-              config: directConfig,
-              isCore: false,
-              isBundled: false,
-            });
+          if (existing) {
+            if (!existing.baseDir && cs.baseDir) {
+              existing.baseDir = cs.baseDir;
+            }
+            if (!existing.source && cs.source) {
+              existing.source = cs.source;
+            }
+            return;
           }
+          const directConfig = configResult[cs.slug] || {};
+          combinedSkills.push({
+            id: cs.slug,
+            slug: cs.slug,
+            name: cs.slug,
+            description: 'Recently installed, initializing...',
+            enabled: false,
+            icon: '⌛',
+            version: cs.version || 'unknown',
+            author: undefined,
+            config: directConfig,
+            isCore: false,
+            isBundled: false,
+            source: cs.source || 'openclaw-managed',
+            baseDir: cs.baseDir,
+          });
         });
       }
 

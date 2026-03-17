@@ -10,7 +10,7 @@
 import { app } from 'electron';
 import { join } from 'path';
 import { existsSync, mkdirSync, appendFileSync } from 'fs';
-import { appendFile, readFile, readdir, stat } from 'fs/promises';
+import { appendFile, open, readdir, stat } from 'fs/promises';
 
 /**
  * Log levels
@@ -230,11 +230,33 @@ export function getRecentLogs(count?: number, minLevel?: LogLevel): string[] {
  */
 export async function readLogFile(tailLines = 200): Promise<string> {
   if (!logFilePath) return '(No log file found)';
+  const safeTailLines = Math.max(1, Math.floor(tailLines));
   try {
-    const content = await readFile(logFilePath, 'utf-8');
-    const lines = content.split('\n');
-    if (lines.length <= tailLines) return content;
-    return lines.slice(-tailLines).join('\n');
+    const file = await open(logFilePath, 'r');
+    try {
+      const fileStat = await file.stat();
+      if (fileStat.size === 0) return '';
+
+      const chunkSize = 64 * 1024;
+      let position = fileStat.size;
+      let content = '';
+      let lineCount = 0;
+
+      while (position > 0 && lineCount <= safeTailLines) {
+        const bytesToRead = Math.min(chunkSize, position);
+        position -= bytesToRead;
+        const buffer = Buffer.allocUnsafe(bytesToRead);
+        await file.read(buffer, 0, bytesToRead, position);
+        content = `${buffer.toString('utf-8')}${content}`;
+        lineCount = content.split('\n').length - 1;
+      }
+
+      const lines = content.split('\n');
+      if (lines.length <= safeTailLines) return content;
+      return lines.slice(-safeTailLines).join('\n');
+    } finally {
+      await file.close();
+    }
   } catch (err) {
     return `(Failed to read log file: ${err})`;
   }

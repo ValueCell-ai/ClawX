@@ -1,0 +1,52 @@
+name: Comms Regression
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'src/lib/api-client.ts'
+      - 'src/lib/host-api.ts'
+      - 'src/stores/gateway.ts'
+      - 'src/stores/chat.ts'
+      - 'electron/gateway/**'
+      - 'electron/main/ipc-handlers.ts'
+      - 'electron/utils/logger.ts'
+      - 'scripts/comms/**'
+      - 'tests/unit/gateway-events.test.ts'
+      - '.github/workflows/comms-regression.yml'
+
+jobs:
+  comms-regression:
+    runs-on: ubuntu-latest
+    env:
+      ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Run comms replay
+        run: pnpm run comms:replay
+
+      - name: Compare with baseline
+        run: pnpm run comms:compare
+
+      - name: Upload comms artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: comms-regression-artifacts
+          path: artifacts/comms

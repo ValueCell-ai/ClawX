@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   PROVIDER_TYPES,
   PROVIDER_TYPE_INFO,
+  getProviderDocsUrl,
   resolveProviderApiKeyForSave,
   resolveProviderModelForSave,
   shouldShowProviderModelId,
@@ -72,39 +73,62 @@ describe('provider metadata', () => {
     );
   });
 
-  it('exposes OpenRouter model overrides by default and keeps SiliconFlow developer-only', () => {
+  it('exposes provider documentation links', () => {
+    const anthropic = PROVIDER_TYPE_INFO.find((provider) => provider.id === 'anthropic');
+    const openrouter = PROVIDER_TYPE_INFO.find((provider) => provider.id === 'openrouter');
+    const moonshot = PROVIDER_TYPE_INFO.find((provider) => provider.id === 'moonshot');
+    const siliconflow = PROVIDER_TYPE_INFO.find((provider) => provider.id === 'siliconflow');
+    const ark = PROVIDER_TYPE_INFO.find((provider) => provider.id === 'ark');
+    const custom = PROVIDER_TYPE_INFO.find((provider) => provider.id === 'custom');
+
+    expect(anthropic).toMatchObject({
+      docsUrl: 'https://platform.claude.com/docs/en/api/overview',
+    });
+    expect(getProviderDocsUrl(anthropic, 'en')).toBe('https://platform.claude.com/docs/en/api/overview');
+    expect(getProviderDocsUrl(openrouter, 'en')).toBe('https://openrouter.ai/models');
+    expect(getProviderDocsUrl(moonshot, 'en')).toBe('https://platform.moonshot.cn/');
+    expect(getProviderDocsUrl(siliconflow, 'en')).toBe('https://docs.siliconflow.cn/cn/userguide/introduction');
+    expect(getProviderDocsUrl(ark, 'en')).toBe('https://www.volcengine.com/');
+    expect(getProviderDocsUrl(custom, 'en')).toBe(
+      'https://icnnp7d0dymg.feishu.cn/wiki/BmiLwGBcEiloZDkdYnGc8RWnn6d#Ee1ldfvKJoVGvfxc32mcILwenth'
+    );
+    expect(getProviderDocsUrl(custom, 'zh-CN')).toBe(
+      'https://icnnp7d0dymg.feishu.cn/wiki/BmiLwGBcEiloZDkdYnGc8RWnn6d#IWQCdfe5fobGU3xf3UGcgbLynGh'
+    );
+  });
+
+  it('exposes OpenRouter and SiliconFlow model overrides by default', () => {
     const openrouter = PROVIDER_TYPE_INFO.find((provider) => provider.id === 'openrouter');
     const siliconflow = PROVIDER_TYPE_INFO.find((provider) => provider.id === 'siliconflow');
 
     expect(openrouter).toMatchObject({
       showModelId: true,
-      defaultModelId: 'anthropic/claude-opus-4.6',
+      defaultModelId: 'openai/gpt-5.4',
     });
     expect(siliconflow).toMatchObject({
       showModelId: true,
-      showModelIdInDevModeOnly: true,
       defaultModelId: 'deepseek-ai/DeepSeek-V3',
     });
 
     expect(shouldShowProviderModelId(openrouter, false)).toBe(true);
-    expect(shouldShowProviderModelId(siliconflow, false)).toBe(false);
+    expect(shouldShowProviderModelId(siliconflow, false)).toBe(true);
     expect(shouldShowProviderModelId(openrouter, true)).toBe(true);
     expect(shouldShowProviderModelId(siliconflow, true)).toBe(true);
   });
 
-  it('saves OpenRouter model overrides by default and keeps SiliconFlow developer-only', () => {
+  it('saves OpenRouter and SiliconFlow model overrides by default', () => {
     const openrouter = PROVIDER_TYPE_INFO.find((provider) => provider.id === 'openrouter');
     const siliconflow = PROVIDER_TYPE_INFO.find((provider) => provider.id === 'siliconflow');
     const ark = PROVIDER_TYPE_INFO.find((provider) => provider.id === 'ark');
 
     expect(resolveProviderModelForSave(openrouter, 'openai/gpt-5', false)).toBe('openai/gpt-5');
-    expect(resolveProviderModelForSave(siliconflow, 'Qwen/Qwen3-Coder-480B-A35B-Instruct', false)).toBeUndefined();
+    expect(resolveProviderModelForSave(siliconflow, 'Qwen/Qwen3-Coder-480B-A35B-Instruct', false)).toBe('Qwen/Qwen3-Coder-480B-A35B-Instruct');
 
     expect(resolveProviderModelForSave(openrouter, 'openai/gpt-5', true)).toBe('openai/gpt-5');
     expect(resolveProviderModelForSave(siliconflow, 'Qwen/Qwen3-Coder-480B-A35B-Instruct', true)).toBe('Qwen/Qwen3-Coder-480B-A35B-Instruct');
 
-    expect(resolveProviderModelForSave(openrouter, '   ', false)).toBe('anthropic/claude-opus-4.6');
-    expect(resolveProviderModelForSave(openrouter, '   ', true)).toBe('anthropic/claude-opus-4.6');
+    expect(resolveProviderModelForSave(openrouter, '   ', false)).toBe('openai/gpt-5.4');
+    expect(resolveProviderModelForSave(openrouter, '   ', true)).toBe('openai/gpt-5.4');
     expect(resolveProviderModelForSave(siliconflow, '   ', true)).toBe('deepseek-ai/DeepSeek-V3');
     expect(resolveProviderModelForSave(ark, '  ep-custom-model  ', false)).toBe('ep-custom-model');
   });

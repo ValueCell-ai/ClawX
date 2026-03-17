@@ -9,6 +9,7 @@ vi.mock('@/lib/api-client', () => ({
 describe('host-api', () => {
   beforeEach(() => {
     vi.resetAllMocks();
+    window.localStorage.removeItem('clawx:allow-localhost-fallback');
   });
 
   it('uses IPC proxy and returns unified envelope json', async () => {
@@ -51,6 +52,7 @@ describe('host-api', () => {
       json: async () => ({ fallback: true }),
     });
     vi.stubGlobal('fetch', fetchMock);
+    window.localStorage.setItem('clawx:allow-localhost-fallback', '1');
 
     invokeIpcMock.mockResolvedValueOnce({
       ok: false,
@@ -86,6 +88,7 @@ describe('host-api', () => {
       json: async () => ({ fallback: true }),
     });
     vi.stubGlobal('fetch', fetchMock);
+    window.localStorage.setItem('clawx:allow-localhost-fallback', '1');
 
     invokeIpcMock.mockRejectedValueOnce(new Error('Invalid IPC channel: hostapi:fetch'));
 
@@ -97,5 +100,20 @@ describe('host-api', () => {
       'http://127.0.0.1:3210/api/test',
       expect.objectContaining({ headers: expect.any(Object) }),
     );
+  });
+
+  it('does not use localhost fallback when policy flag is disabled', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ fallback: true }),
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    invokeIpcMock.mockRejectedValueOnce(new Error('Invalid IPC channel: hostapi:fetch'));
+
+    const { hostApiFetch } = await import('@/lib/host-api');
+    await expect(hostApiFetch('/api/test')).rejects.toThrow('Invalid IPC channel: hostapi:fetch');
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 });

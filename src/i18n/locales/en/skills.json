@@ -49,10 +49,24 @@
         "saveConfig": "Save Configuration",
         "configSaved": "Configuration saved",
         "openManual": "Open Manual",
+        "openActualFolder": "Open Actual Folder",
+        "copyPath": "Copy path",
+        "pathUnavailable": "Path not available",
         "configurable": "Configurable",
         "uninstall": "Uninstall",
         "enable": "Enable",
         "disable": "Disable"
+    },
+    "source": {
+        "badge": {
+            "bundled": "Bundled",
+            "managed": "Managed",
+            "workspace": "Workspace",
+            "extra": "Extra dirs",
+            "agentsPersonal": "Personal .agents",
+            "agentsProject": "Project .agents",
+            "unknown": "Unknown source"
+        }
     },
     "toast": {
         "enabled": "Skill enabled",
@@ -66,6 +80,9 @@
         "failedInstall": "Failed to install",
         "failedUninstall": "Failed to uninstall",
         "failedFolderNotFound": "Skills folder does not exist yet. Install a skill first.",
+        "copiedPath": "Path copied",
+        "failedCopyPath": "Failed to copy path",
+        "failedOpenActualFolder": "Failed to open actual skill folder",
         "searchTimeoutError": "Search timed out, check network. You can also search on ClawHub.ai, download the ZIP, and extract it to \"{{path}}\"",
         "installTimeoutError": "Installation timed out, check network. You can also download the ZIP from ClawHub.ai and extract it to \"{{path}}\"",
         "searchRateLimitError": "Search rate limit exceeded. You can also search on ClawHub.ai, download the ZIP, and extract it to \"{{path}}\"",

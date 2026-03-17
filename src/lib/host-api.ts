@@ -129,6 +129,14 @@ function shouldFallbackToBrowser(message: string): boolean {
     || normalized.includes('window is not defined');
 }
 
+function allowLocalhostFallback(): boolean {
+  try {
+    return window.localStorage.getItem('clawx:allow-localhost-fallback') === '1';
+  } catch {
+    return false;
+  }
+}
+
 export async function hostApiFetch<T>(path: string, init?: RequestInit): Promise<T> {
   const startedAt = Date.now();
   const method = init?.method || 'GET';
@@ -158,6 +166,17 @@ export async function hostApiFetch<T>(path: string, init?: RequestInit): Promise
       code: normalized.code,
     });
     if (!shouldFallbackToBrowser(message)) {
+      throw normalized;
+    }
+    if (!allowLocalhostFallback()) {
+      trackUiEvent('hostapi.fetch_error', {
+        path,
+        method,
+        source: 'ipc-proxy',
+        durationMs: Date.now() - startedAt,
+        message: 'localhost fallback blocked by policy',
+        code: 'CHANNEL_UNAVAILABLE',
+      });
       throw normalized;
     }
   }

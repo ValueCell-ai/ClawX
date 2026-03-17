@@ -43,9 +43,27 @@ describe('Settings Store', () => {
   });
   
   it('should unlock dev mode', () => {
+    const invoke = vi.mocked(window.electron.ipcRenderer.invoke);
+    invoke.mockResolvedValueOnce({
+      ok: true,
+      data: {
+        status: 200,
+        ok: true,
+        json: { success: true },
+      },
+    });
+
     const { setDevModeUnlocked } = useSettingsStore.getState();
     setDevModeUnlocked(true);
+
     expect(useSettingsStore.getState().devModeUnlocked).toBe(true);
+    expect(invoke).toHaveBeenCalledWith(
+      'hostapi:fetch',
+      expect.objectContaining({
+        path: '/api/settings/devModeUnlocked',
+        method: 'PUT',
+      }),
+    );
   });
 
   it('should persist launch-at-startup setting through host api', () => {

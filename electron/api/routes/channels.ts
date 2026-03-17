@@ -1,18 +1,34 @@
 import type { IncomingMessage, ServerResponse } from 'http';
-import { app } from 'electron';
-import { existsSync, cpSync, mkdirSync, rmSync } from 'node:fs';
-import { homedir } from 'node:os';
-import { join } from 'node:path';
 import {
+  deleteChannelAccountConfig,
   deleteChannelConfig,
   getChannelFormValues,
+  listConfiguredChannelAccounts,
   listConfiguredChannels,
+  readOpenClawConfig,
   saveChannelConfig,
+  setChannelDefaultAccount,
   setChannelEnabled,
   validateChannelConfig,
   validateChannelCredentials,
 } from '../../utils/channel-config';
-import { clearAllBindingsForChannel } from '../../utils/agent-config';
+import {
+  assignChannelAccountToAgent,
+  clearAllBindingsForChannel,
+  clearChannelBinding,
+  listAgentsSnapshot,
+} from '../../utils/agent-config';
+import {
+  ensureDingTalkPluginInstalled,
+  ensureFeishuPluginInstalled,
+  ensureQQBotPluginInstalled,
+  ensureWeComPluginInstalled,
+} from '../../utils/plugin-install';
+import {
+  computeChannelRuntimeStatus,
+  pickChannelRuntimeStatus,
+  type ChannelRuntimeAccountSnapshot,
+} from '../../../src/lib/channel-status';
 import { whatsAppLoginManager } from '../../utils/whatsapp-login';
 import type { HostApiContext } from '../context';
 import { parseJsonBody, sendJson } from '../route-utils';
@@ -25,168 +41,197 @@ function scheduleGatewayChannelRestart(ctx: HostApiContext, reason: string): voi
   void reason;
 }
 
-async function ensureDingTalkPluginInstalled(): Promise<{ installed: boolean; warning?: string }> {
-  const targetDir = join(homedir(), '.openclaw', 'extensions', 'dingtalk');
-  const targetManifest = join(targetDir, 'openclaw.plugin.json');
+// Keep reload-first for feishu to avoid restart storms when channel auth/network is flaky.
+// GatewayManager.reload() already falls back to restart when reload is unhealthy.
+const FORCE_RESTART_CHANNELS = new Set(['dingtalk', 'wecom', 'whatsapp']);
 
-  if (existsSync(targetManifest)) {
-    return { installed: true };
+function scheduleGatewayChannelSaveRefresh(
+  ctx: HostApiContext,
+  channelType: string,
+  reason: string,
+): void {
+  if (ctx.gatewayManager.getStatus().state === 'stopped') {
+    return;
   }
-
-  const candidateSources = app.isPackaged
-    ? [
-      join(process.resourcesPath, 'openclaw-plugins', 'dingtalk'),
-      join(process.resourcesPath, 'app.asar.unpacked', 'build', 'openclaw-plugins', 'dingtalk'),
-      join(process.resourcesPath, 'app.asar.unpacked', 'openclaw-plugins', 'dingtalk'),
-    ]
-    : [
-      join(app.getAppPath(), 'build', 'openclaw-plugins', 'dingtalk'),
-      join(process.cwd(), 'build', 'openclaw-plugins', 'dingtalk'),
-      join(__dirname, '../../../build/openclaw-plugins/dingtalk'),
-    ];
-
-  const sourceDir = candidateSources.find((dir) => existsSync(join(dir, 'openclaw.plugin.json')));
-  if (!sourceDir) {
-    return {
-      installed: false,
-      warning: `Bundled DingTalk plugin mirror not found. Checked: ${candidateSources.join(' | ')}`,
-    };
+  if (FORCE_RESTART_CHANNELS.has(channelType)) {
+    ctx.gatewayManager.debouncedRestart();
+    void reason;
+    return;
   }
+  ctx.gatewayManager.debouncedReload();
+  void reason;
+}
 
-  try {
-    mkdirSync(join(homedir(), '.openclaw', 'extensions'), { recursive: true });
-    rmSync(targetDir, { recursive: true, force: true });
-    cpSync(sourceDir, targetDir, { recursive: true, dereference: true });
-    if (!existsSync(targetManifest)) {
-      return { installed: false, warning: 'Failed to install DingTalk plugin mirror (manifest missing).' };
+function toComparableConfig(input: Record<string, unknown>): Record<string, string> {
+  const next: Record<string, string> = {};
+  for (const [key, value] of Object.entries(input)) {
+    if (value === undefined || value === null) continue;
+    if (typeof value === 'string') {
+      next[key] = value.trim();
+      continue;
     }
-    return { installed: true };
-  } catch {
-    return { installed: false, warning: 'Failed to install bundled DingTalk plugin mirror' };
+    if (typeof value === 'number' || typeof value === 'boolean') {
+      next[key] = String(value);
+    }
+  }
+  return next;
+}
+
+function isSameConfigValues(
+  existing: Record<string, string> | undefined,
+  incoming: Record<string, unknown>,
+): boolean {
+  if (!existing) return false;
+  const next = toComparableConfig(incoming);
+  const keys = new Set([...Object.keys(existing), ...Object.keys(next)]);
+  if (keys.size === 0) return false;
+  for (const key of keys) {
+    if ((existing[key] ?? '') !== (next[key] ?? '')) {
+      return false;
+    }
+  }
+  return true;
+}
+
+async function ensureScopedChannelBinding(channelType: string, accountId?: string): Promise<void> {
+  // Multi-agent safety: only bind when the caller explicitly scopes the account.
+  // Global channel saves (no accountId) must not override routing to "main".
+  if (!accountId) return;
+  const agents = await listAgentsSnapshot();
+  if (!agents.entries || agents.entries.length === 0) return;
+
+  // Keep backward compatibility for the legacy default account.
+  if (accountId === 'default') {
+    if (agents.entries.some((entry) => entry.id === 'main')) {
+      await assignChannelAccountToAgent('main', channelType, 'default');
+    }
+    return;
+  }
+
+  // Legacy compatibility: if accountId matches an existing agentId, keep auto-binding.
+  if (agents.entries.some((entry) => entry.id === accountId)) {
+    await assignChannelAccountToAgent(accountId, channelType, accountId);
   }
 }
 
-async function ensureWeComPluginInstalled(): Promise<{ installed: boolean; warning?: string }> {
-  const targetDir = join(homedir(), '.openclaw', 'extensions', 'wecom');
-  const targetManifest = join(targetDir, 'openclaw.plugin.json');
-
-  if (existsSync(targetManifest)) {
-    return { installed: true };
-  }
-
-  const candidateSources = app.isPackaged
-    ? [
-      join(process.resourcesPath, 'openclaw-plugins', 'wecom'),
-      join(process.resourcesPath, 'app.asar.unpacked', 'build', 'openclaw-plugins', 'wecom'),
-      join(process.resourcesPath, 'app.asar.unpacked', 'openclaw-plugins', 'wecom'),
-    ]
-    : [
-      join(app.getAppPath(), 'build', 'openclaw-plugins', 'wecom'),
-      join(process.cwd(), 'build', 'openclaw-plugins', 'wecom'),
-      join(__dirname, '../../../build/openclaw-plugins/wecom'),
-    ];
-
-  const sourceDir = candidateSources.find((dir) => existsSync(join(dir, 'openclaw.plugin.json')));
-  if (!sourceDir) {
-    return {
-      installed: false,
-      warning: `Bundled WeCom plugin mirror not found. Checked: ${candidateSources.join(' | ')}`,
-    };
-  }
-
-  try {
-    mkdirSync(join(homedir(), '.openclaw', 'extensions'), { recursive: true });
-    rmSync(targetDir, { recursive: true, force: true });
-    cpSync(sourceDir, targetDir, { recursive: true, dereference: true });
-    if (!existsSync(targetManifest)) {
-      return { installed: false, warning: 'Failed to install WeCom plugin mirror (manifest missing).' };
-    }
-    return { installed: true };
-  } catch {
-    return { installed: false, warning: 'Failed to install bundled WeCom plugin mirror' };
-  }
+interface GatewayChannelStatusPayload {
+  channelOrder?: string[];
+  channels?: Record<string, unknown>;
+  channelAccounts?: Record<string, Array<{
+    accountId?: string;
+    configured?: boolean;
+    connected?: boolean;
+    running?: boolean;
+    lastError?: string;
+    name?: string;
+    linked?: boolean;
+    lastConnectedAt?: number | null;
+    lastInboundAt?: number | null;
+    lastOutboundAt?: number | null;
+    lastProbeAt?: number | null;
+    probe?: {
+      ok?: boolean;
+    } | null;
+  }>>;
+  channelDefaultAccountId?: Record<string, string>;
 }
 
-async function ensureFeishuPluginInstalled(): Promise<{ installed: boolean; warning?: string }> {
-  const targetDir = join(homedir(), '.openclaw', 'extensions', 'feishu-openclaw-plugin');
-  const targetManifest = join(targetDir, 'openclaw.plugin.json');
-
-  if (existsSync(targetManifest)) {
-    return { installed: true };
-  }
-
-  const candidateSources = app.isPackaged
-    ? [
-      join(process.resourcesPath, 'openclaw-plugins', 'feishu-openclaw-plugin'),
-      join(process.resourcesPath, 'app.asar.unpacked', 'build', 'openclaw-plugins', 'feishu-openclaw-plugin'),
-      join(process.resourcesPath, 'app.asar.unpacked', 'openclaw-plugins', 'feishu-openclaw-plugin'),
-    ]
-    : [
-      join(app.getAppPath(), 'build', 'openclaw-plugins', 'feishu-openclaw-plugin'),
-      join(process.cwd(), 'build', 'openclaw-plugins', 'feishu-openclaw-plugin'),
-      join(__dirname, '../../../build/openclaw-plugins/feishu-openclaw-plugin'),
-    ];
-
-  const sourceDir = candidateSources.find((dir) => existsSync(join(dir, 'openclaw.plugin.json')));
-  if (!sourceDir) {
-    return {
-      installed: false,
-      warning: `Bundled Feishu plugin mirror not found. Checked: ${candidateSources.join(' | ')}`,
-    };
-  }
-
-  try {
-    mkdirSync(join(homedir(), '.openclaw', 'extensions'), { recursive: true });
-    rmSync(targetDir, { recursive: true, force: true });
-    cpSync(sourceDir, targetDir, { recursive: true, dereference: true });
-    if (!existsSync(targetManifest)) {
-      return { installed: false, warning: 'Failed to install Feishu plugin mirror (manifest missing).' };
-    }
-    return { installed: true };
-  } catch {
-    return { installed: false, warning: 'Failed to install bundled Feishu plugin mirror' };
-  }
+interface ChannelAccountView {
+  accountId: string;
+  name: string;
+  configured: boolean;
+  connected: boolean;
+  running: boolean;
+  linked: boolean;
+  lastError?: string;
+  status: 'connected' | 'connecting' | 'disconnected' | 'error';
+  isDefault: boolean;
+  agentId?: string;
 }
 
-async function ensureQQBotPluginInstalled(): Promise<{ installed: boolean; warning?: string }> {
-  const targetDir = join(homedir(), '.openclaw', 'extensions', 'qqbot');
-  const targetManifest = join(targetDir, 'openclaw.plugin.json');
+interface ChannelAccountsView {
+  channelType: string;
+  defaultAccountId: string;
+  status: 'connected' | 'connecting' | 'disconnected' | 'error';
+  accounts: ChannelAccountView[];
+}
 
-  if (existsSync(targetManifest)) {
-    return { installed: true };
-  }
+async function buildChannelAccountsView(ctx: HostApiContext): Promise<ChannelAccountsView[]> {
+  const [configuredChannels, configuredAccounts, openClawConfig, agentsSnapshot] = await Promise.all([
+    listConfiguredChannels(),
+    listConfiguredChannelAccounts(),
+    readOpenClawConfig(),
+    listAgentsSnapshot(),
+  ]);
 
-  const candidateSources = app.isPackaged
-    ? [
-      join(process.resourcesPath, 'openclaw-plugins', 'qqbot'),
-      join(process.resourcesPath, 'app.asar.unpacked', 'build', 'openclaw-plugins', 'qqbot'),
-      join(process.resourcesPath, 'app.asar.unpacked', 'openclaw-plugins', 'qqbot'),
-    ]
-    : [
-      join(app.getAppPath(), 'build', 'openclaw-plugins', 'qqbot'),
-      join(process.cwd(), 'build', 'openclaw-plugins', 'qqbot'),
-      join(__dirname, '../../../build/openclaw-plugins/qqbot'),
-    ];
-
-  const sourceDir = candidateSources.find((dir) => existsSync(join(dir, 'openclaw.plugin.json')));
-  if (!sourceDir) {
-    return {
-      installed: false,
-      warning: `Bundled QQ Bot plugin mirror not found. Checked: ${candidateSources.join(' | ')}`,
-    };
-  }
-
+  let gatewayStatus: GatewayChannelStatusPayload | null;
   try {
-    mkdirSync(join(homedir(), '.openclaw', 'extensions'), { recursive: true });
-    rmSync(targetDir, { recursive: true, force: true });
-    cpSync(sourceDir, targetDir, { recursive: true, dereference: true });
-    if (!existsSync(targetManifest)) {
-      return { installed: false, warning: 'Failed to install QQ Bot plugin mirror (manifest missing).' };
-    }
-    return { installed: true };
+    gatewayStatus = await ctx.gatewayManager.rpc<GatewayChannelStatusPayload>('channels.status', { probe: true });
   } catch {
-    return { installed: false, warning: 'Failed to install bundled QQ Bot plugin mirror' };
+    gatewayStatus = null;
   }
+
+  const channelTypes = new Set<string>([
+    ...configuredChannels,
+    ...Object.keys(configuredAccounts),
+    ...Object.keys(gatewayStatus?.channelAccounts || {}),
+  ]);
+
+  const channels: ChannelAccountsView[] = [];
+  for (const channelType of channelTypes) {
+    const channelAccountsFromConfig = configuredAccounts[channelType]?.accountIds ?? [];
+    const hasLocalConfig = configuredChannels.includes(channelType) || Boolean(configuredAccounts[channelType]);
+    const channelSection = openClawConfig.channels?.[channelType];
+    const channelSummary =
+      (gatewayStatus?.channels?.[channelType] as { error?: string; lastError?: string } | undefined) ?? undefined;
+    const fallbackDefault =
+      typeof channelSection?.defaultAccount === 'string' && channelSection.defaultAccount.trim()
+        ? channelSection.defaultAccount
+        : 'default';
+    const defaultAccountId = configuredAccounts[channelType]?.defaultAccountId
+      ?? gatewayStatus?.channelDefaultAccountId?.[channelType]
+      ?? fallbackDefault;
+    const runtimeAccounts = gatewayStatus?.channelAccounts?.[channelType] ?? [];
+    const hasRuntimeConfigured = runtimeAccounts.some((account) => account.configured === true);
+    if (!hasLocalConfig && !hasRuntimeConfigured) {
+      continue;
+    }
+    const runtimeAccountIds = runtimeAccounts
+      .map((account) => account.accountId)
+      .filter((accountId): accountId is string => typeof accountId === 'string' && accountId.trim().length > 0);
+    const accountIds = Array.from(new Set([...channelAccountsFromConfig, ...runtimeAccountIds, defaultAccountId]));
+
+    const accounts: ChannelAccountView[] = accountIds.map((accountId) => {
+      const runtime = runtimeAccounts.find((item) => item.accountId === accountId);
+      const runtimeSnapshot: ChannelRuntimeAccountSnapshot = runtime ?? {};
+      const status = computeChannelRuntimeStatus(runtimeSnapshot);
+      return {
+        accountId,
+        name: runtime?.name || accountId,
+        configured: channelAccountsFromConfig.includes(accountId) || runtime?.configured === true,
+        connected: runtime?.connected === true,
+        running: runtime?.running === true,
+        linked: runtime?.linked === true,
+        lastError: typeof runtime?.lastError === 'string' ? runtime.lastError : undefined,
+        status,
+        isDefault: accountId === defaultAccountId,
+        agentId: agentsSnapshot.channelAccountOwners[`${channelType}:${accountId}`],
+      };
+    }).sort((left, right) => {
+      if (left.accountId === defaultAccountId) return -1;
+      if (right.accountId === defaultAccountId) return 1;
+      return left.accountId.localeCompare(right.accountId);
+    });
+
+    channels.push({
+      channelType,
+      defaultAccountId,
+      status: pickChannelRuntimeStatus(runtimeAccounts, channelSummary),
+      accounts,
+    });
+  }
+
+  return channels.sort((left, right) => left.channelType.localeCompare(right.channelType));
 }
 
 export async function handleChannelRoutes(
@@ -197,6 +242,52 @@ export async function handleChannelRoutes(
 ): Promise<boolean> {
   if (url.pathname === '/api/channels/configured' && req.method === 'GET') {
     sendJson(res, 200, { success: true, channels: await listConfiguredChannels() });
+    return true;
+  }
+
+  if (url.pathname === '/api/channels/accounts' && req.method === 'GET') {
+    try {
+      const channels = await buildChannelAccountsView(ctx);
+      sendJson(res, 200, { success: true, channels });
+    } catch (error) {
+      sendJson(res, 500, { success: false, error: String(error) });
+    }
+    return true;
+  }
+
+  if (url.pathname === '/api/channels/default-account' && req.method === 'PUT') {
+    try {
+      const body = await parseJsonBody<{ channelType: string; accountId: string }>(req);
+      await setChannelDefaultAccount(body.channelType, body.accountId);
+      scheduleGatewayChannelSaveRefresh(ctx, body.channelType, `channel:setDefaultAccount:${body.channelType}`);
+      sendJson(res, 200, { success: true });
+    } catch (error) {
+      sendJson(res, 500, { success: false, error: String(error) });
+    }
+    return true;
+  }
+
+  if (url.pathname === '/api/channels/binding' && req.method === 'PUT') {
+    try {
+      const body = await parseJsonBody<{ channelType: string; accountId: string; agentId: string }>(req);
+      await assignChannelAccountToAgent(body.agentId, body.channelType, body.accountId);
+      scheduleGatewayChannelSaveRefresh(ctx, body.channelType, `channel:setBinding:${body.channelType}`);
+      sendJson(res, 200, { success: true });
+    } catch (error) {
+      sendJson(res, 500, { success: false, error: String(error) });
+    }
+    return true;
+  }
+
+  if (url.pathname === '/api/channels/binding' && req.method === 'DELETE') {
+    try {
+      const body = await parseJsonBody<{ channelType: string; accountId: string }>(req);
+      await clearChannelBinding(body.channelType, body.accountId);
+      scheduleGatewayChannelSaveRefresh(ctx, body.channelType, `channel:clearBinding:${body.channelType}`);
+      sendJson(res, 200, { success: true });
+    } catch (error) {
+      sendJson(res, 500, { success: false, error: String(error) });
+    }
     return true;
   }
 
@@ -272,8 +363,15 @@ export async function handleChannelRoutes(
           return true;
         }
       }
+      const existingValues = await getChannelFormValues(body.channelType, body.accountId);
+      if (isSameConfigValues(existingValues, body.config)) {
+        await ensureScopedChannelBinding(body.channelType, body.accountId);
+        sendJson(res, 200, { success: true, noChange: true });
+        return true;
+      }
       await saveChannelConfig(body.channelType, body.config, body.accountId);
-      scheduleGatewayChannelRestart(ctx, `channel:saveConfig:${body.channelType}`);
+      await ensureScopedChannelBinding(body.channelType, body.accountId);
+      scheduleGatewayChannelSaveRefresh(ctx, body.channelType, `channel:saveConfig:${body.channelType}`);
       sendJson(res, 200, { success: true });
     } catch (error) {
       sendJson(res, 500, { success: false, error: String(error) });
@@ -310,9 +408,16 @@ export async function handleChannelRoutes(
   if (url.pathname.startsWith('/api/channels/config/') && req.method === 'DELETE') {
     try {
       const channelType = decodeURIComponent(url.pathname.slice('/api/channels/config/'.length));
-      await deleteChannelConfig(channelType);
-      await clearAllBindingsForChannel(channelType);
-      scheduleGatewayChannelRestart(ctx, `channel:deleteConfig:${channelType}`);
+      const accountId = url.searchParams.get('accountId') || undefined;
+      if (accountId) {
+        await deleteChannelAccountConfig(channelType, accountId);
+        await clearChannelBinding(channelType, accountId);
+        scheduleGatewayChannelSaveRefresh(ctx, channelType, `channel:deleteAccount:${channelType}`);
+      } else {
+        await deleteChannelConfig(channelType);
+        await clearAllBindingsForChannel(channelType);
+        scheduleGatewayChannelRestart(ctx, `channel:deleteConfig:${channelType}`);
+      }
       sendJson(res, 200, { success: true });
     } catch (error) {
       sendJson(res, 500, { success: false, error: String(error) });

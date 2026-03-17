@@ -220,7 +220,7 @@
     "cmdUnavailable": "Command unavailable",
     "cmdCopied": "CLI command copied",
     "doctor": "OpenClaw Doctor",
-    "doctorDesc": "Run `openclaw doctor --json` and inspect the raw diagnostic output.",
+    "doctorDesc": "Run `openclaw doctor` and inspect the raw diagnostic output.",
     "runDoctor": "Run Doctor",
     "runDoctorFix": "Run Doctor Fix",
     "doctorSucceeded": "OpenClaw doctor completed",
