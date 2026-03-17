@@ -40,6 +40,7 @@
         "deleteConfirm": "Are you sure you want to delete this account?",
         "default": "Current Default",
         "setDefault": "Set as channel default",
+        "bindAgentLabel": "Bound Agent",
         "unassigned": "Unassigned",
         "mainAccount": "Primary Account",
         "customIdLabel": "Account ID",

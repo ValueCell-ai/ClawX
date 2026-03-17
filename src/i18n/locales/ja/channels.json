@@ -40,6 +40,7 @@
         "deleteConfirm": "このアカウントを削除してもよろしいですか？",
         "default": "現在の既定",
         "setDefault": "チャンネル既定に設定",
+        "bindAgentLabel": "紐付け Agent",
         "unassigned": "未割り当て",
         "mainAccount": "メインアカウント",
         "customIdLabel": "アカウント ID",

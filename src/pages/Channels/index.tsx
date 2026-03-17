@@ -354,6 +354,7 @@ export function Channels() {
                             </div>
 
                             <div className="flex items-center gap-2">
+                              <span className="text-xs text-muted-foreground">{t('account.bindAgentLabel')}</span>
                               <select
                                 className="h-8 rounded-lg border border-black/10 dark:border-white/10 bg-background px-2 text-xs"
                                 value={account.agentId || ''}
