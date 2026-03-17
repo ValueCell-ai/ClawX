@@ -339,4 +339,28 @@ describe('agent config lifecycle', () => {
     const snapshot = await listAgentsSnapshot();
     expect(snapshot.channelAccountOwners['feishu:default']).toBe('test2');
   });
+
+  it('can clear one channel account binding without affecting another channel on the same agent', async () => {
+    await writeOpenClawJson({
+      agents: {
+        list: [
+          { id: 'main', name: 'Main', default: true },
+        ],
+      },
+      channels: {
+        feishu: { enabled: true },
+        telegram: { enabled: true },
+      },
+    });
+
+    const { assignChannelAccountToAgent, clearChannelBinding, listAgentsSnapshot } = await import('@electron/utils/agent-config');
+
+    await assignChannelAccountToAgent('main', 'feishu', 'default');
+    await assignChannelAccountToAgent('main', 'telegram', 'default');
+    await clearChannelBinding('feishu', 'default');
+
+    const snapshot = await listAgentsSnapshot();
+    expect(snapshot.channelAccountOwners['feishu:default']).toBeUndefined();
+    expect(snapshot.channelAccountOwners['telegram:default']).toBe('main');
+  });
 });

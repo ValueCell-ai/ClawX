@@ -453,7 +453,7 @@ async function buildSnapshotFromConfig(config: AgentConfigDocument): Promise<Age
         accountToAgent.get(`${channelType}:${accountId}`)
         || (
           accountId === DEFAULT_ACCOUNT_ID && !hasExplicitAccountBindingForChannel
-            ? (channelToAgent.get(channelType) || defaultAgentIdNorm)
+            ? channelToAgent.get(channelType)
             : undefined
         );
 
