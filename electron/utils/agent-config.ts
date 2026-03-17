@@ -7,7 +7,7 @@ import { expandPath, getOpenClawConfigDir } from './paths';
 import * as logger from './logger';
 
 const MAIN_AGENT_ID = 'main';
-const MAIN_AGENT_NAME = 'Main';
+const MAIN_AGENT_NAME = 'Main Agent';
 const DEFAULT_ACCOUNT_ID = 'default';
 const DEFAULT_WORKSPACE_PATH = '~/.openclaw/workspace';
 const AGENT_BOOTSTRAP_FILES = [
