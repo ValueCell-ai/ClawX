@@ -89,6 +89,7 @@ export function Agents() {
     lastGatewayStateRef.current = gatewayStatus.state;
 
     if (previousGatewayState !== 'running' && gatewayStatus.state === 'running') {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       void fetchChannelAccounts();
     }
   }, [fetchChannelAccounts, gatewayStatus.state]);

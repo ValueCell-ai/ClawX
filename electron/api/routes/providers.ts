@@ -195,7 +195,7 @@ export async function handleProviderRoutes(
       const registryBaseUrl = getProviderConfig(providerType)?.baseUrl;
       const resolvedBaseUrl = body.options?.baseUrl || provider?.baseUrl || registryBaseUrl;
       const resolvedProtocol = body.options?.apiProtocol || provider?.apiProtocol;
-      sendJson(res, 200, await validateApiKeyWithProvider(providerType, body.apiKey, { baseUrl: resolvedBaseUrl, apiProtocol: resolvedProtocol as any }));
+      sendJson(res, 200, await validateApiKeyWithProvider(providerType, body.apiKey, { baseUrl: resolvedBaseUrl, apiProtocol: resolvedProtocol }));
     } catch (error) {
       sendJson(res, 500, { valid: false, error: String(error) });
     }
