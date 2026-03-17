@@ -2,7 +2,7 @@
  * Skills Page
  * Browse and manage AI skills
  */
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useMemo } from 'react';
 import {
   Search,
   Puzzle,
@@ -24,8 +24,10 @@ import { Input } from '@/components/ui/input';
 import { Switch } from '@/components/ui/switch';
 import { Badge } from '@/components/ui/badge';
 import { Sheet, SheetContent } from '@/components/ui/sheet';
+import { Select } from '@/components/ui/select';
 import { useSkillsStore } from '@/stores/skills';
 import { useGatewayStore } from '@/stores/gateway';
+import { useAgentsStore } from '@/stores/agents';
 import { LoadingSpinner } from '@/components/common/LoadingSpinner';
 import { cn } from '@/lib/utils';
 import { invokeIpc } from '@/lib/api-client';
@@ -33,6 +35,7 @@ import { hostApiFetch } from '@/lib/host-api';
 import { trackUiEvent } from '@/lib/telemetry';
 import { toast } from 'sonner';
 import type { Skill } from '@/types/skill';
+import type { SkillPolicy } from '@/types/skill-policy';
 import { useTranslation } from 'react-i18next';
 import type { TFunction } from 'i18next';
 
@@ -43,6 +46,7 @@ import type { TFunction } from 'i18next';
 interface SkillDetailDialogProps {
   skill: Skill | null;
   isOpen: boolean;
+  enabledState: boolean;
   onClose: () => void;
   onToggle: (enabled: boolean) => void;
   onUninstall?: (slug: string) => void;
@@ -64,7 +68,40 @@ function resolveSkillSourceLabel(skill: Skill, t: TFunction<'skills'>): string {
   return source;
 }
 
-function SkillDetailDialog({ skill, isOpen, onClose, onToggle, onUninstall, onOpenFolder }: SkillDetailDialogProps) {
+function normalizeSkillKeys(input: unknown): string[] {
+  if (!Array.isArray(input)) return [];
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const value of input) {
+    if (typeof value !== 'string') continue;
+    const key = value.trim();
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    out.push(key);
+  }
+  return out;
+}
+
+function computeEffectiveSkillKeys(policy: SkillPolicy, agentId: string): string[] {
+  const id = agentId.trim();
+  const globalEnabled = normalizeSkillKeys(policy.globalEnabled);
+  if (!id) return globalEnabled;
+  const override = policy.agentOverrides[id];
+  if (!override) return globalEnabled;
+
+  const disabledSet = new Set(normalizeSkillKeys(override.disabled));
+  const enabled = normalizeSkillKeys(override.enabled);
+  const effective = globalEnabled.filter((key) => !disabledSet.has(key));
+  const included = new Set(effective);
+  for (const key of enabled) {
+    if (included.has(key)) continue;
+    included.add(key);
+    effective.push(key);
+  }
+  return effective;
+}
+
+function SkillDetailDialog({ skill, isOpen, enabledState, onClose, onToggle, onUninstall, onOpenFolder }: SkillDetailDialogProps) {
   const { t } = useTranslation('skills');
   const { fetchSkills } = useSkillsStore();
   const [envVars, setEnvVars] = useState<Array<{ key: string; value: string }>>([]);
@@ -375,13 +412,13 @@ function SkillDetailDialog({ skill, isOpen, onClose, onToggle, onUninstall, onOp
                     onUninstall(skill.slug);
                     onClose();
                   } else {
-                    onToggle(!skill.enabled);
+                    onToggle(!enabledState);
                   }
                 }}
               >
                 {!skill.isBundled && onUninstall
                   ? t('detail.uninstall')
-                  : (skill.enabled ? t('detail.disable') : t('detail.enable'))}
+                  : (enabledState ? t('detail.disable') : t('detail.enable'))}
               </Button>
             )}
           </div>
@@ -399,6 +436,11 @@ export function Skills() {
     fetchSkills,
     enableSkill,
     disableSkill,
+    policy,
+    policyLoading,
+    fetchPolicy,
+    setGlobalEnabledSkillKeys,
+    setAgentOverride,
     searchResults,
     searchSkills,
     installSkill,
@@ -407,6 +449,7 @@ export function Skills() {
     searchError,
     installing
   } = useSkillsStore();
+  const { agents, defaultAgentId, fetchAgents } = useAgentsStore();
   const { t } = useTranslation('skills');
   const gatewayStatus = useGatewayStore((state) => state.status);
   const [searchQuery, setSearchQuery] = useState('');
@@ -414,9 +457,24 @@ export function Skills() {
   const [installSheetOpen, setInstallSheetOpen] = useState(false);
   const [selectedSkill, setSelectedSkill] = useState<Skill | null>(null);
   const [selectedSource, setSelectedSource] = useState<'all' | 'built-in' | 'marketplace'>('all');
+  const [skillScope, setSkillScope] = useState<'global' | 'agent'>('global');
+  const [selectedAgentId, setSelectedAgentId] = useState('');
+  const [effectiveSkillKeys, setEffectiveSkillKeys] = useState<string[]>([]);
 
   const isGatewayRunning = gatewayStatus.state === 'running';
   const [showGatewayWarning, setShowGatewayWarning] = useState(false);
+
+  useEffect(() => {
+    void fetchAgents();
+  }, [fetchAgents]);
+
+  useEffect(() => {
+    if (selectedAgentId) return;
+    const fallback = (defaultAgentId || agents[0]?.id || '').trim();
+    if (fallback) {
+      setSelectedAgentId(fallback);
+    }
+  }, [agents, defaultAgentId, selectedAgentId]);
 
   useEffect(() => {
     let timer: NodeJS.Timeout;
@@ -438,7 +496,45 @@ export function Skills() {
     }
   }, [fetchSkills, isGatewayRunning]);
 
+  useEffect(() => {
+    const scopeAgentId = skillScope === 'agent' ? selectedAgentId.trim() : '';
+    if (skillScope === 'agent' && !scopeAgentId) {
+      setEffectiveSkillKeys(normalizeSkillKeys(policy.globalEnabled));
+      return;
+    }
+    void fetchPolicy(scopeAgentId || undefined)
+      .then((result) => {
+        const keys = skillScope === 'agent'
+          ? normalizeSkillKeys(result.effective || computeEffectiveSkillKeys(result.policy, scopeAgentId))
+          : normalizeSkillKeys(result.policy.globalEnabled);
+        setEffectiveSkillKeys(keys);
+      })
+      .catch(() => {
+        // Surface errors through explicit actions/toasts instead.
+      });
+  }, [fetchPolicy, policy.globalEnabled, selectedAgentId, skillScope]);
+
   const safeSkills = Array.isArray(skills) ? skills : [];
+  const activeAgentOverride = selectedAgentId ? policy.agentOverrides[selectedAgentId] : undefined;
+  const overrideEnabledSet = useMemo(
+    () => new Set(normalizeSkillKeys(activeAgentOverride?.enabled)),
+    [activeAgentOverride?.enabled],
+  );
+  const overrideDisabledSet = useMemo(
+    () => new Set(normalizeSkillKeys(activeAgentOverride?.disabled)),
+    [activeAgentOverride?.disabled],
+  );
+  const effectiveSkillSet = useMemo(
+    () => new Set(skillScope === 'agent'
+      ? effectiveSkillKeys
+      : normalizeSkillKeys(policy.globalEnabled)),
+    [effectiveSkillKeys, policy.globalEnabled, skillScope],
+  );
+  const isSkillEnabledForScope = useCallback((skill: Skill) => {
+    if (skillScope === 'global') return skill.enabled;
+    return effectiveSkillSet.has(skill.id);
+  }, [effectiveSkillSet, skillScope]);
+
   const filteredSkills = safeSkills.filter((skill) => {
     const q = searchQuery.toLowerCase().trim();
     const matchesSearch =
@@ -458,8 +554,10 @@ export function Skills() {
 
     return matchesSearch && matchesSource;
   }).sort((a, b) => {
-    if (a.enabled && !b.enabled) return -1;
-    if (!a.enabled && b.enabled) return 1;
+    const aEnabled = isSkillEnabledForScope(a);
+    const bEnabled = isSkillEnabledForScope(b);
+    if (aEnabled && !bEnabled) return -1;
+    if (!aEnabled && bEnabled) return 1;
     if (a.isCore && !b.isCore) return -1;
     if (!a.isCore && b.isCore) return 1;
     return a.name.localeCompare(b.name);
@@ -472,9 +570,52 @@ export function Skills() {
   };
 
   const bulkToggleVisible = useCallback(async (enable: boolean) => {
-    const candidates = filteredSkills.filter((skill) => !skill.isCore && skill.enabled !== enable);
+    const candidates = filteredSkills.filter((skill) => !skill.isCore && isSkillEnabledForScope(skill) !== enable);
     if (candidates.length === 0) {
       toast.info(enable ? t('toast.noBatchEnableTargets') : t('toast.noBatchDisableTargets'));
+      return;
+    }
+
+    if (skillScope === 'agent') {
+      const agentId = selectedAgentId.trim();
+      if (!agentId) {
+        toast.error(t('toast.agentRequired'));
+        return;
+      }
+      const override = policy.agentOverrides[agentId] || {};
+      const enabledSet = new Set(normalizeSkillKeys(override.enabled));
+      const disabledSet = new Set(normalizeSkillKeys(override.disabled));
+      const globalSet = new Set(normalizeSkillKeys(policy.globalEnabled));
+
+      for (const skill of candidates) {
+        const globallyEnabled = globalSet.has(skill.id);
+        if (enable) {
+          disabledSet.delete(skill.id);
+          if (!globallyEnabled) {
+            enabledSet.add(skill.id);
+          }
+        } else {
+          enabledSet.delete(skill.id);
+          if (globallyEnabled) {
+            disabledSet.add(skill.id);
+          }
+        }
+      }
+
+      const result = await setAgentOverride(agentId, {
+        enabled: Array.from(enabledSet),
+        disabled: Array.from(disabledSet),
+      });
+      setEffectiveSkillKeys(normalizeSkillKeys(result.effective || computeEffectiveSkillKeys(result.policy, agentId)));
+      trackUiEvent('skills.batch_toggle', {
+        enable,
+        scope: skillScope,
+        total: candidates.length,
+        succeeded: candidates.length,
+      });
+      toast.success(enable
+        ? t('toast.batchOverrideEnabled', { count: candidates.length })
+        : t('toast.batchOverrideDisabled', { count: candidates.length }));
       return;
     }
 
@@ -492,27 +633,99 @@ export function Skills() {
       }
     }
 
+    const globalEnabledSet = new Set(normalizeSkillKeys(policy.globalEnabled));
+    for (const skill of candidates) {
+      if (enable) {
+        globalEnabledSet.add(skill.id);
+      } else {
+        globalEnabledSet.delete(skill.id);
+      }
+    }
+    const nextPolicy = await setGlobalEnabledSkillKeys(Array.from(globalEnabledSet));
+    setEffectiveSkillKeys(normalizeSkillKeys(nextPolicy.globalEnabled));
+
     trackUiEvent('skills.batch_toggle', { enable, total: candidates.length, succeeded });
     if (succeeded === candidates.length) {
       toast.success(enable ? t('toast.batchEnabled', { count: succeeded }) : t('toast.batchDisabled', { count: succeeded }));
       return;
     }
     toast.warning(t('toast.batchPartial', { success: succeeded, total: candidates.length }));
-  }, [disableSkill, enableSkill, filteredSkills, t]);
+  }, [
+    disableSkill,
+    enableSkill,
+    filteredSkills,
+    isSkillEnabledForScope,
+    policy.agentOverrides,
+    policy.globalEnabled,
+    selectedAgentId,
+    setAgentOverride,
+    setGlobalEnabledSkillKeys,
+    skillScope,
+    t,
+  ]);
 
   const handleToggle = useCallback(async (skillId: string, enable: boolean) => {
     try {
+      if (skillScope === 'agent') {
+        const agentId = selectedAgentId.trim();
+        if (!agentId) {
+          toast.error(t('toast.agentRequired'));
+          return;
+        }
+        const override = policy.agentOverrides[agentId] || {};
+        const enabledSet = new Set(normalizeSkillKeys(override.enabled));
+        const disabledSet = new Set(normalizeSkillKeys(override.disabled));
+        const globallyEnabled = normalizeSkillKeys(policy.globalEnabled).includes(skillId);
+
+        if (enable) {
+          disabledSet.delete(skillId);
+          if (!globallyEnabled) {
+            enabledSet.add(skillId);
+          }
+        } else {
+          enabledSet.delete(skillId);
+          if (globallyEnabled) {
+            disabledSet.add(skillId);
+          }
+        }
+
+        const result = await setAgentOverride(agentId, {
+          enabled: Array.from(enabledSet),
+          disabled: Array.from(disabledSet),
+        });
+        setEffectiveSkillKeys(normalizeSkillKeys(result.effective || computeEffectiveSkillKeys(result.policy, agentId)));
+        toast.success(enable ? t('toast.overrideEnabled') : t('toast.overrideDisabled'));
+        return;
+      }
+
       if (enable) {
         await enableSkill(skillId);
-        toast.success(t('toast.enabled'));
       } else {
         await disableSkill(skillId);
-        toast.success(t('toast.disabled'));
       }
+      const globalEnabledSet = new Set(normalizeSkillKeys(policy.globalEnabled));
+      if (enable) {
+        globalEnabledSet.add(skillId);
+      } else {
+        globalEnabledSet.delete(skillId);
+      }
+      const nextPolicy = await setGlobalEnabledSkillKeys(Array.from(globalEnabledSet));
+      setEffectiveSkillKeys(normalizeSkillKeys(nextPolicy.globalEnabled));
+      toast.success(enable ? t('toast.enabled') : t('toast.disabled'));
     } catch (err) {
       toast.error(String(err));
     }
-  }, [enableSkill, disableSkill, t]);
+  }, [
+    disableSkill,
+    enableSkill,
+    policy.agentOverrides,
+    policy.globalEnabled,
+    selectedAgentId,
+    setAgentOverride,
+    setGlobalEnabledSkillKeys,
+    skillScope,
+    t,
+  ]);
 
   const hasInstalledSkills = safeSkills.some(s => !s.isBundled);
 
@@ -648,6 +861,55 @@ export function Skills() {
           </div>
         )}
 
+        <div className="mb-4 rounded-xl border border-black/10 dark:border-white/10 bg-black/[0.02] dark:bg-white/[0.03] px-4 py-3 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+          <div className="flex flex-col md:flex-row md:items-center gap-3">
+            <div className="flex items-center gap-2">
+              <span className="text-[12px] font-semibold text-foreground/70">{t('scope.modeLabel')}</span>
+              <Select
+                value={skillScope}
+                onChange={(event) => setSkillScope(event.target.value as 'global' | 'agent')}
+                className="h-8 text-[12px] min-w-[140px] border-black/10 dark:border-white/10 bg-transparent"
+              >
+                <option value="global">{t('scope.global')}</option>
+                <option value="agent">{t('scope.agent')}</option>
+              </Select>
+            </div>
+            {skillScope === 'agent' && (
+              <div className="flex items-center gap-2">
+                <span className="text-[12px] font-semibold text-foreground/70">{t('scope.agentLabel')}</span>
+                <Select
+                  value={selectedAgentId}
+                  onChange={(event) => setSelectedAgentId(event.target.value)}
+                  className="h-8 text-[12px] min-w-[180px] border-black/10 dark:border-white/10 bg-transparent"
+                >
+                  <option value="">{t('scope.selectAgent')}</option>
+                  {agents.map((agent) => (
+                    <option key={agent.id} value={agent.id}>
+                      {agent.name}
+                    </option>
+                  ))}
+                </Select>
+              </div>
+            )}
+          </div>
+          <span className="text-[12px] text-foreground/60">
+            {policyLoading
+              ? t('scope.loading')
+              : skillScope === 'global'
+                ? t('scope.globalHint')
+                : t('scope.agentHint')}
+          </span>
+        </div>
+
+        {skillScope === 'agent' && (
+          <div className="mb-4 p-3 rounded-xl border border-amber-500/40 bg-amber-500/10 flex items-center gap-2">
+            <AlertCircle className="h-4 w-4 text-amber-600 dark:text-amber-400 shrink-0" />
+            <span className="text-amber-700 dark:text-amber-300 text-xs font-medium">
+              {t('scope.runtimeWarning')}
+            </span>
+          </div>
+        )}
+
         {/* Sub Navigation and Actions */}
         <div className="flex flex-col md:flex-row md:items-center justify-between border-b border-black/10 dark:border-white/10 pb-4 mb-4 shrink-0 gap-4">
           <div className="flex items-center flex-wrap gap-4 text-[14px]">
@@ -771,6 +1033,21 @@ export function Skills() {
                         ) : skill.isBundled ? (
                           <Puzzle className="h-3 w-3 text-blue-500/70" />
                         ) : null}
+                        {skillScope === 'agent' && effectiveSkillSet.has(skill.id) && (
+                          <Badge variant="secondary" className="px-1.5 py-0 h-5 text-[10px] font-medium bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border-0 shadow-none">
+                            {t('scope.badges.effective')}
+                          </Badge>
+                        )}
+                        {skillScope === 'agent' && overrideEnabledSet.has(skill.id) && (
+                          <Badge variant="secondary" className="px-1.5 py-0 h-5 text-[10px] font-medium bg-blue-500/10 text-blue-700 dark:text-blue-300 border-0 shadow-none">
+                            {t('scope.badges.overrideEnable')}
+                          </Badge>
+                        )}
+                        {skillScope === 'agent' && overrideDisabledSet.has(skill.id) && (
+                          <Badge variant="secondary" className="px-1.5 py-0 h-5 text-[10px] font-medium bg-orange-500/10 text-orange-700 dark:text-orange-300 border-0 shadow-none">
+                            {t('scope.badges.overrideDisable')}
+                          </Badge>
+                        )}
                         {skill.slug && skill.slug !== skill.name ? (
                           <span className="text-[11px] font-mono px-1.5 py-0.5 rounded border border-black/10 dark:border-white/10 text-muted-foreground">
                             {skill.slug}
@@ -797,7 +1074,7 @@ export function Skills() {
                       </span>
                     )}
                     <Switch
-                      checked={skill.enabled}
+                      checked={isSkillEnabledForScope(skill)}
                       onCheckedChange={(checked) => handleToggle(skill.id, checked)}
                       disabled={skill.isCore}
                     />
@@ -941,11 +1218,14 @@ export function Skills() {
       <SkillDetailDialog
         skill={selectedSkill}
         isOpen={!!selectedSkill}
+        enabledState={selectedSkill ? isSkillEnabledForScope(selectedSkill) : false}
         onClose={() => setSelectedSkill(null)}
         onToggle={(enabled) => {
           if (!selectedSkill) return;
           handleToggle(selectedSkill.id, enabled);
-          setSelectedSkill({ ...selectedSkill, enabled });
+          if (skillScope === 'global') {
+            setSelectedSkill({ ...selectedSkill, enabled });
+          }
         }}
         onUninstall={handleUninstall}
         onOpenFolder={handleOpenSkillFolder}

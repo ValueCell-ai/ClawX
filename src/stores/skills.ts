@@ -7,6 +7,7 @@ import { hostApiFetch } from '@/lib/host-api';
 import { AppError, normalizeAppError } from '@/lib/error-model';
 import { useGatewayStore } from './gateway';
 import type { Skill, MarketplaceSkill } from '../types/skill';
+import type { SkillOverride, SkillPolicy, SkillPolicyResponse } from '../types/skill-policy';
 
 type GatewaySkillStatus = {
   skillKey: string;
@@ -65,6 +66,8 @@ interface SkillsState {
   searchError: string | null;
   installing: Record<string, boolean>; // slug -> boolean
   error: string | null;
+  policy: SkillPolicy;
+  policyLoading: boolean;
 
   // Actions
   fetchSkills: () => Promise<void>;
@@ -75,7 +78,16 @@ interface SkillsState {
   disableSkill: (skillId: string) => Promise<void>;
   setSkills: (skills: Skill[]) => void;
   updateSkill: (skillId: string, updates: Partial<Skill>) => void;
+  fetchPolicy: (agentId?: string) => Promise<{ policy: SkillPolicy; effective: string[] }>;
+  setGlobalEnabledSkillKeys: (enabledSkillKeys: string[]) => Promise<SkillPolicy>;
+  setAgentOverride: (agentId: string, override: SkillOverride) => Promise<{ policy: SkillPolicy; effective: string[] }>;
+  clearPolicy: () => void;
 }
+
+const EMPTY_POLICY: SkillPolicy = {
+  globalEnabled: [],
+  agentOverrides: {},
+};
 
 export const useSkillsStore = create<SkillsState>((set, get) => ({
   skills: [],
@@ -85,6 +97,8 @@ export const useSkillsStore = create<SkillsState>((set, get) => ({
   searchError: null,
   installing: {},
   error: null,
+  policy: EMPTY_POLICY,
+  policyLoading: false,
 
   fetchSkills: async () => {
     // Only show loading state if we have no skills yet (initial load)
@@ -287,5 +301,48 @@ export const useSkillsStore = create<SkillsState>((set, get) => ({
         skill.id === skillId ? { ...skill, ...updates } : skill
       ),
     }));
+  },
+
+  fetchPolicy: async (agentId) => {
+    set({ policyLoading: true });
+    try {
+      const query = agentId ? `?agentId=${encodeURIComponent(agentId)}` : '';
+      const result = await hostApiFetch<SkillPolicyResponse>(`/api/skills/policy${query}`);
+      const policy = result.policy || EMPTY_POLICY;
+      const effective = result.effective || policy.globalEnabled || [];
+      set({ policy, policyLoading: false });
+      return { policy, effective };
+    } catch (error) {
+      set({ policyLoading: false });
+      throw error;
+    }
+  },
+
+  setGlobalEnabledSkillKeys: async (enabledSkillKeys) => {
+    const result = await hostApiFetch<{ success: boolean; policy: SkillPolicy }>('/api/skills/policy/global', {
+      method: 'PUT',
+      body: JSON.stringify({ enabledSkillKeys }),
+    });
+    const policy = result.policy || EMPTY_POLICY;
+    set({ policy });
+    return policy;
+  },
+
+  setAgentOverride: async (agentId, override) => {
+    const result = await hostApiFetch<SkillPolicyResponse>(
+      `/api/skills/policy/agents/${encodeURIComponent(agentId)}`,
+      {
+        method: 'PUT',
+        body: JSON.stringify(override),
+      }
+    );
+    const policy = result.policy || EMPTY_POLICY;
+    const effective = result.effective || policy.globalEnabled || [];
+    set({ policy });
+    return { policy, effective };
+  },
+
+  clearPolicy: () => {
+    set({ policy: EMPTY_POLICY });
   },
 }));
