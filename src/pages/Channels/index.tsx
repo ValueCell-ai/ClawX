@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { RefreshCw, Trash2, AlertCircle, Plus } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -73,6 +73,7 @@ function removeDeletedTarget(groups: ChannelGroupItem[], target: DeleteTarget): 
 export function Channels() {
   const { t } = useTranslation('channels');
   const gatewayStatus = useGatewayStore((state) => state.status);
+  const lastGatewayStateRef = useRef(gatewayStatus.state);
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -129,6 +130,15 @@ export function Channels() {
       }
     };
   }, [fetchPageData]);
+
+  useEffect(() => {
+    const previousGatewayState = lastGatewayStateRef.current;
+    lastGatewayStateRef.current = gatewayStatus.state;
+
+    if (previousGatewayState !== 'running' && gatewayStatus.state === 'running') {
+      void fetchPageData();
+    }
+  }, [fetchPageData, gatewayStatus.state]);
 
   const configuredTypes = useMemo(
     () => channelGroups.map((group) => group.channelType),

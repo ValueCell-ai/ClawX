@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AlertCircle, Bot, Check, Plus, RefreshCw, Settings2, Trash2, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -10,6 +10,7 @@ import { LoadingSpinner } from '@/components/common/LoadingSpinner';
 import { useAgentsStore } from '@/stores/agents';
 import { useGatewayStore } from '@/stores/gateway';
 import { hostApiFetch } from '@/lib/host-api';
+import { subscribeHostEvent } from '@/lib/host-events';
 import { CHANNEL_ICONS, CHANNEL_NAMES, type ChannelType } from '@/types/channel';
 import type { AgentSummary } from '@/types/agent';
 import { useTranslation } from 'react-i18next';
@@ -43,6 +44,7 @@ interface ChannelGroupItem {
 export function Agents() {
   const { t } = useTranslation('agents');
   const gatewayStatus = useGatewayStore((state) => state.status);
+  const lastGatewayStateRef = useRef(gatewayStatus.state);
   const {
     agents,
     loading,
@@ -70,6 +72,27 @@ export function Agents() {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     void Promise.all([fetchAgents(), fetchChannelAccounts()]);
   }, [fetchAgents, fetchChannelAccounts]);
+
+  useEffect(() => {
+    const unsubscribe = subscribeHostEvent('gateway:channel-status', () => {
+      void fetchChannelAccounts();
+    });
+    return () => {
+      if (typeof unsubscribe === 'function') {
+        unsubscribe();
+      }
+    };
+  }, [fetchChannelAccounts]);
+
+  useEffect(() => {
+    const previousGatewayState = lastGatewayStateRef.current;
+    lastGatewayStateRef.current = gatewayStatus.state;
+
+    if (previousGatewayState !== 'running' && gatewayStatus.state === 'running') {
+      void fetchChannelAccounts();
+    }
+  }, [fetchChannelAccounts, gatewayStatus.state]);
+
   const activeAgent = useMemo(
     () => agents.find((agent) => agent.id === activeAgentId) ?? null,
     [activeAgentId, agents],

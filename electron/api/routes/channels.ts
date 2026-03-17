@@ -24,6 +24,11 @@ import {
   ensureQQBotPluginInstalled,
   ensureWeComPluginInstalled,
 } from '../../utils/plugin-install';
+import {
+  computeChannelRuntimeStatus,
+  pickChannelRuntimeStatus,
+  type ChannelRuntimeAccountSnapshot,
+} from '../../../src/lib/channel-status';
 import { whatsAppLoginManager } from '../../utils/whatsapp-login';
 import type { HostApiContext } from '../context';
 import { parseJsonBody, sendJson } from '../route-utils';
@@ -123,6 +128,10 @@ interface GatewayChannelStatusPayload {
     lastConnectedAt?: number | null;
     lastInboundAt?: number | null;
     lastOutboundAt?: number | null;
+    lastProbeAt?: number | null;
+    probe?: {
+      ok?: boolean;
+    } | null;
   }>>;
   channelDefaultAccountId?: Record<string, string>;
 }
@@ -145,35 +154,6 @@ interface ChannelAccountsView {
   defaultAccountId: string;
   status: 'connected' | 'connecting' | 'disconnected' | 'error';
   accounts: ChannelAccountView[];
-}
-
-function computeAccountStatus(account: {
-  connected?: boolean;
-  linked?: boolean;
-  running?: boolean;
-  lastError?: string;
-  lastConnectedAt?: number | null;
-  lastInboundAt?: number | null;
-  lastOutboundAt?: number | null;
-}): 'connected' | 'connecting' | 'disconnected' | 'error' {
-  const now = Date.now();
-  const recentMs = 10 * 60 * 1000;
-  const hasRecentActivity =
-    (typeof account.lastInboundAt === 'number' && now - account.lastInboundAt < recentMs)
-    || (typeof account.lastOutboundAt === 'number' && now - account.lastOutboundAt < recentMs)
-    || (typeof account.lastConnectedAt === 'number' && now - account.lastConnectedAt < recentMs);
-
-  if (account.connected === true || account.linked === true || hasRecentActivity) return 'connected';
-  if (account.running === true && !account.lastError) return 'connecting';
-  if (account.lastError) return 'error';
-  return 'disconnected';
-}
-
-function pickChannelStatus(accounts: ChannelAccountView[]): 'connected' | 'connecting' | 'disconnected' | 'error' {
-  if (accounts.some((account) => account.status === 'connected')) return 'connected';
-  if (accounts.some((account) => account.status === 'error')) return 'error';
-  if (accounts.some((account) => account.status === 'connecting')) return 'connecting';
-  return 'disconnected';
 }
 
 async function buildChannelAccountsView(ctx: HostApiContext): Promise<ChannelAccountsView[]> {
@@ -202,6 +182,8 @@ async function buildChannelAccountsView(ctx: HostApiContext): Promise<ChannelAcc
     const channelAccountsFromConfig = configuredAccounts[channelType]?.accountIds ?? [];
     const hasLocalConfig = configuredChannels.includes(channelType) || Boolean(configuredAccounts[channelType]);
     const channelSection = openClawConfig.channels?.[channelType];
+    const channelSummary =
+      (gatewayStatus?.channels?.[channelType] as { error?: string; lastError?: string } | undefined) ?? undefined;
     const fallbackDefault =
       typeof channelSection?.defaultAccount === 'string' && channelSection.defaultAccount.trim()
         ? channelSection.defaultAccount
@@ -221,7 +203,8 @@ async function buildChannelAccountsView(ctx: HostApiContext): Promise<ChannelAcc
 
     const accounts: ChannelAccountView[] = accountIds.map((accountId) => {
       const runtime = runtimeAccounts.find((item) => item.accountId === accountId);
-      const status = computeAccountStatus(runtime ?? {});
+      const runtimeSnapshot: ChannelRuntimeAccountSnapshot = runtime ?? {};
+      const status = computeChannelRuntimeStatus(runtimeSnapshot);
       return {
         accountId,
         name: runtime?.name || accountId,
@@ -243,7 +226,7 @@ async function buildChannelAccountsView(ctx: HostApiContext): Promise<ChannelAcc
     channels.push({
       channelType,
       defaultAccountId,
-      status: pickChannelStatus(accounts),
+      status: pickChannelRuntimeStatus(runtimeAccounts, channelSummary),
       accounts,
     });
   }
