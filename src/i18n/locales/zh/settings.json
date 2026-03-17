@@ -141,7 +141,7 @@
     "hideAdvancedProxy": "隐藏高级代理字段",
     "proxyBypass": "绕过规则",
     "proxyBypassHelp": "使用分号、逗号或换行分隔需要直连的主机。",
-    "proxyRestartNote": "保存后会立即重新应用 Electron 网络代理，并自动重启 Gateway。",
+    "proxyRestartNote": "保存后会立即重新应用 Electron 网络代理，并自动重启 Gateway。若代理已关闭，Gateway 常规重启会保留 Telegram 频道已有代理；如需清空，请在关闭代理后手动保存一次。",
     "proxySaved": "代理设置已保存",
     "proxySaveFailed": "保存代理设置失败"
   },

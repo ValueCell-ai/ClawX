@@ -19,6 +19,7 @@ import {
   saveProviderKeyToOpenClaw,
   removeProviderFromOpenClaw,
 } from '../utils/openclaw-auth';
+import { syncProxyConfigToOpenClaw } from '../utils/openclaw-proxy';
 import { buildOpenClawControlUiUrl } from '../utils/openclaw-control-ui';
 import { logger } from '../utils/logger';
 import {
@@ -240,6 +241,7 @@ function registerUnifiedRequestHandlers(gatewayManager: GatewayManager): void {
   const providerService = getProviderService();
   const handleProxySettingsChange = async () => {
     const settings = await getAllSettings();
+    await syncProxyConfigToOpenClaw(settings, { preserveExistingWhenDisabled: false });
     await applyProxySettings(settings);
     if (gatewayManager.getStatus().state === 'running') {
       await gatewayManager.restart();
@@ -2120,6 +2122,7 @@ function registerAppHandlers(): void {
 function registerSettingsHandlers(gatewayManager: GatewayManager): void {
   const handleProxySettingsChange = async () => {
     const settings = await getAllSettings();
+    await syncProxyConfigToOpenClaw(settings, { preserveExistingWhenDisabled: false });
     await applyProxySettings(settings);
     if (gatewayManager.getStatus().state === 'running') {
       await gatewayManager.restart();

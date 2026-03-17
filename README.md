@@ -194,6 +194,8 @@ Notes:
 - If advanced proxy fields are left empty, ClawX falls back to `Proxy Server`.
 - Saving proxy settings reapplies Electron networking immediately and restarts the Gateway automatically.
 - ClawX also syncs the proxy to OpenClaw's Telegram channel config when Telegram is enabled.
+- Gateway restarts preserve an existing Telegram channel proxy if ClawX proxy is currently disabled.
+- To explicitly clear Telegram channel proxy from OpenClaw config, save proxy settings with proxy disabled.
 - In **Settings → Advanced → Developer**, you can run **OpenClaw Doctor** to execute `openclaw doctor --json` and inspect the diagnostic output without leaving the app.
 
 ---

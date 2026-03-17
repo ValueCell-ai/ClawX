@@ -1,12 +1,14 @@
 import type { IncomingMessage, ServerResponse } from 'http';
 import { applyProxySettings } from '../../main/proxy';
 import { syncLaunchAtStartupSettingFromStore } from '../../main/launch-at-startup';
+import { syncProxyConfigToOpenClaw } from '../../utils/openclaw-proxy';
 import { getAllSettings, getSetting, resetSettings, setSetting, type AppSettings } from '../../utils/store';
 import type { HostApiContext } from '../context';
 import { parseJsonBody, sendJson } from '../route-utils';
 
 async function handleProxySettingsChange(ctx: HostApiContext): Promise<void> {
   const settings = await getAllSettings();
+  await syncProxyConfigToOpenClaw(settings, { preserveExistingWhenDisabled: false });
   await applyProxySettings(settings);
   if (ctx.gatewayManager.getStatus().state === 'running') {
     await ctx.gatewayManager.restart();

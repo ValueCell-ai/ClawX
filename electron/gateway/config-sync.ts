@@ -124,7 +124,7 @@ function ensureConfiguredPluginsUpgraded(configuredChannels: string[]): void {
 export async function syncGatewayConfigBeforeLaunch(
   appSettings: Awaited<ReturnType<typeof getAllSettings>>,
 ): Promise<void> {
-  await syncProxyConfigToOpenClaw(appSettings);
+  await syncProxyConfigToOpenClaw(appSettings, { preserveExistingWhenDisabled: true });
 
   try {
     await sanitizeOpenClawConfig();

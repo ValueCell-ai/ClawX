@@ -141,7 +141,7 @@
     "hideAdvancedProxy": "Hide advanced proxy fields",
     "proxyBypass": "Bypass Rules",
     "proxyBypassHelp": "Semicolon, comma, or newline separated hosts that should connect directly.",
-    "proxyRestartNote": "Saving reapplies Electron networking and restarts the Gateway immediately.",
+    "proxyRestartNote": "Saving reapplies Electron networking and restarts the Gateway immediately. Regular Gateway restarts keep existing Telegram channel proxy values when proxy is disabled; save while disabled to clear them.",
     "proxySaved": "Proxy settings saved",
     "proxySaveFailed": "Failed to save proxy settings"
   },

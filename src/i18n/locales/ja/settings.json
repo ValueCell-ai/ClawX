@@ -140,7 +140,7 @@
     "hideAdvancedProxy": "高度なプロキシ項目を非表示",
     "proxyBypass": "バイパスルール",
     "proxyBypassHelp": "直接接続するホストをセミコロン、カンマ、または改行で区切って指定します。",
-    "proxyRestartNote": "保存すると Electron のネットワーク設定を再適用し、Gateway をすぐ再起動します。",
+    "proxyRestartNote": "保存すると Electron のネットワーク設定を再適用し、Gateway をすぐ再起動します。プロキシ無効時の通常再起動では Telegram チャネルの既存プロキシ設定を保持し、無効状態で保存すると明示的に削除されます。",
     "proxySaved": "プロキシ設定を保存しました",
     "proxySaveFailed": "プロキシ設定の保存に失敗しました"
   },
