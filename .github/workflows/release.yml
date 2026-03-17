@@ -83,8 +83,27 @@ jobs:
         if: matrix.platform == 'win'
         run: pnpm run package:win
 
-      - name: Validate unsigned Windows artifacts before SignPath
+      # Detect release channel from tag to skip code signing for alpha/beta builds
+      - name: Detect Windows release channel
         if: matrix.platform == 'win'
+        id: win-channel
+        shell: bash
+        run: |
+          if [[ "${{ github.ref }}" == refs/tags/v* ]]; then
+            TAG="${GITHUB_REF#refs/tags/v}"
+          else
+            TAG="${{ github.event.inputs.version }}"
+          fi
+          if [[ "$TAG" =~ (alpha|beta) ]]; then
+            echo "is_stable=false" >> $GITHUB_OUTPUT
+            echo "Channel: prerelease ($TAG) — skipping code signing"
+          else
+            echo "is_stable=true" >> $GITHUB_OUTPUT
+            echo "Channel: stable ($TAG) — will sign"
+          fi
+
+      - name: Validate unsigned Windows artifacts before SignPath
+        if: matrix.platform == 'win' && steps.win-channel.outputs.is_stable == 'true'
         shell: pwsh
         run: |
           $unsignedExeFiles = Get-ChildItem -Path "release" -Filter *.exe -File
@@ -97,7 +116,7 @@ jobs:
           $unsignedExeFiles | ForEach-Object { Write-Host " - $($_.Name)" }
 
       - name: Upload unsigned Windows artifacts for SignPath
-        if: matrix.platform == 'win'
+        if: matrix.platform == 'win' && steps.win-channel.outputs.is_stable == 'true'
         id: upload-unsigned-windows-artifact
         uses: actions/upload-artifact@v4
         with:
@@ -106,7 +125,7 @@ jobs:
           retention-days: 1
 
       - name: Sign Windows artifacts via SignPath
-        if: matrix.platform == 'win'
+        if: matrix.platform == 'win' && steps.win-channel.outputs.is_stable == 'true'
         id: signpath-sign-windows
         uses: signpath/github-action-submit-signing-request@v2
         with:
@@ -119,7 +138,7 @@ jobs:
           output-artifact-directory: release/signed
 
       - name: Replace unsigned executables with signed ones
-        if: matrix.platform == 'win'
+        if: matrix.platform == 'win' && steps.win-channel.outputs.is_stable == 'true'
         shell: pwsh
         run: |
           Write-Host "SignPath GitHub artifact ID: ${{ steps.upload-unsigned-windows-artifact.outputs.artifact-id }}"
@@ -154,7 +173,7 @@ jobs:
       #   sha512: <base64>
       #   releaseDate: '...'
       - name: Update latest.yml sha512 after code signing
-        if: matrix.platform == 'win'
+        if: matrix.platform == 'win' && steps.win-channel.outputs.is_stable == 'true'
         shell: pwsh
         run: |
           $ymlFiles = Get-ChildItem -Path "release" -Filter "*.yml" -File | Where-Object { $_.Name -ne "builder-debug.yml" }
