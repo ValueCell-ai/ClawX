@@ -15,7 +15,8 @@ import { withConfigLock } from './config-mutex';
 
 const OPENCLAW_DIR = join(homedir(), '.openclaw');
 const CONFIG_FILE = join(OPENCLAW_DIR, 'openclaw.json');
-const WECOM_PLUGIN_ID = 'wecom-openclaw-plugin';
+const WECOM_PLUGIN_ID = 'wecom';
+const WECOM_PLUGIN_LEGACY_IDS = new Set(['wecom', 'wecom-openclaw-plugin']);
 const FEISHU_PLUGIN_ID = 'feishu-openclaw-plugin';
 const DEFAULT_ACCOUNT_ID = 'default';
 const CHANNEL_TOP_LEVEL_KEYS_TO_KEEP = new Set(['accounts', 'defaultAccount', 'enabled']);
@@ -156,7 +157,7 @@ function ensurePluginAllowlist(currentConfig: OpenClawConfig, channelType: strin
             const allow: string[] = Array.isArray(currentConfig.plugins.allow)
                 ? (currentConfig.plugins.allow as string[])
                 : [];
-            const normalizedAllow = allow.filter((pluginId) => pluginId !== 'wecom');
+            const normalizedAllow = allow.filter((pluginId) => !WECOM_PLUGIN_LEGACY_IDS.has(pluginId));
             if (!normalizedAllow.includes(WECOM_PLUGIN_ID)) {
                 currentConfig.plugins.allow = [...normalizedAllow, WECOM_PLUGIN_ID];
             } else if (normalizedAllow.length !== allow.length) {
