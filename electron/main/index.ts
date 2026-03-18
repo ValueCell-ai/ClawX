@@ -442,9 +442,18 @@ async function initialize(): Promise<void> {
 }
 
 if (gotTheLock) {
+  const releaseProcessLockOnSignal = (signal: NodeJS.Signals): void => {
+    logger.info(`Received ${signal}; releasing instance lock and requesting app quit`);
+    releaseProcessInstanceFileLock();
+    app.quit();
+  };
+
   process.on('exit', () => {
     releaseProcessInstanceFileLock();
   });
+
+  process.once('SIGINT', () => releaseProcessLockOnSignal('SIGINT'));
+  process.once('SIGTERM', () => releaseProcessLockOnSignal('SIGTERM'));
 
   app.on('will-quit', () => {
     releaseProcessInstanceFileLock();
