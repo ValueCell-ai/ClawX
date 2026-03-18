@@ -459,15 +459,30 @@ if (gotTheLock) {
     }
   });
 
-  app.on('before-quit', () => {
+  let gatewayCleanedUp = false;
+
+  app.on('before-quit', (event) => {
     setQuitting();
-    hostEventBus.closeAll();
-    hostApiServer?.close();
-    // Fire-and-forget: do not await gatewayManager.stop() here.
-    // Awaiting inside before-quit can stall Electron's quit sequence.
-    void gatewayManager.stop().catch((err) => {
-      logger.warn('gatewayManager.stop() error during quit:', err);
-    });
+
+    // On first before-quit, block the quit so we can await gateway cleanup.
+    // On Windows, fire-and-forget leaves orphaned Python/uv processes that
+    // hold port 18789, causing port conflicts on next launch.
+    if (!gatewayCleanedUp) {
+      gatewayCleanedUp = true;
+      event.preventDefault();
+
+      hostEventBus.closeAll();
+      hostApiServer?.close();
+
+      const stopPromise = gatewayManager.stop().catch((err) => {
+        logger.warn('gatewayManager.stop() error during quit:', err);
+      });
+      const timeoutPromise = new Promise<void>((resolve) => setTimeout(resolve, 5000));
+
+      void Promise.race([stopPromise, timeoutPromise]).then(() => {
+        app.exit(0);
+      });
+    }
   });
 }
 

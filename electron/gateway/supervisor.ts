@@ -32,20 +32,38 @@ export async function terminateOwnedGatewayProcess(child: Electron.UtilityProces
 
     const pid = child.pid;
     logger.info(`Sending kill to Gateway process (pid=${pid ?? 'unknown'})`);
-    try {
-      child.kill();
-    } catch {
-      // ignore if already exited
+
+    // On Windows, use taskkill /F /T to kill the entire process tree.
+    // child.kill() only terminates the direct utilityProcess; grandchild
+    // processes (Python/uv) survive and keep port 18789 occupied.
+    if (process.platform === 'win32' && pid) {
+      import('child_process').then((cp) => {
+        cp.exec(`taskkill /F /PID ${pid} /T`, { timeout: 5000, windowsHide: true }, () => {
+          // best-effort; fall through to timeout if taskkill fails
+        });
+      }).catch(() => { /* ignore */ });
+    } else {
+      try {
+        child.kill();
+      } catch {
+        // ignore if already exited
+      }
     }
 
     const timeout = setTimeout(() => {
       if (!exited) {
         logger.warn(`Gateway did not exit in time, force-killing (pid=${pid ?? 'unknown'})`);
         if (pid) {
-          try {
-            process.kill(pid, 'SIGKILL');
-          } catch {
-            // ignore
+          if (process.platform === 'win32') {
+            import('child_process').then((cp) => {
+              cp.exec(`taskkill /F /PID ${pid} /T`, { timeout: 5000, windowsHide: true }, () => {});
+            }).catch(() => {});
+          } else {
+            try {
+              process.kill(pid, 'SIGKILL');
+            } catch {
+              // ignore
+            }
           }
         }
       }
@@ -226,6 +244,9 @@ export async function findExistingGatewayProcess(options: {
       const pids = await getListeningProcessIds(port);
       if (pids.length > 0 && (!ownedPid || !pids.includes(String(ownedPid)))) {
         await terminateOrphanedProcessIds(port, pids);
+        // Verify the port is actually free after killing orphans.
+        // On Windows, TCP TIME_WAIT can hold the port for up to 120s.
+        await waitForPortFree(port, 10000);
         return null;
       }
     } catch (err) {
