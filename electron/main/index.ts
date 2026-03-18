@@ -113,6 +113,8 @@ function getAppIcon(): Electron.NativeImage | undefined {
  */
 function createWindow(): BrowserWindow {
   const isMac = process.platform === 'darwin';
+  const isWindows = process.platform === 'win32';
+  const useCustomTitleBar = isWindows;
 
   const win = new BrowserWindow({
     width: 1280,
@@ -127,9 +129,9 @@ function createWindow(): BrowserWindow {
       sandbox: false,
       webviewTag: true, // Enable <webview> for embedding OpenClaw Control UI
     },
-    titleBarStyle: isMac ? 'hiddenInset' : 'hidden',
+    titleBarStyle: isMac ? 'hiddenInset' : useCustomTitleBar ? 'hidden' : 'default',
     trafficLightPosition: isMac ? { x: 16, y: 16 } : undefined,
-    frame: isMac,
+    frame: isMac || !useCustomTitleBar,
     show: false,
   });
 
