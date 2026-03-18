@@ -3,7 +3,7 @@
 import 'zx/globals';
 
 const ROOT_DIR = path.resolve(__dirname, '..');
-const NODE_VERSION = '22.12.0';
+const NODE_VERSION = '22.16.0';
 const BASE_URL = `https://nodejs.org/dist/v${NODE_VERSION}`;
 const OUTPUT_BASE = path.join(ROOT_DIR, 'resources', 'bin');
 

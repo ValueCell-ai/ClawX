@@ -72,15 +72,15 @@ export function getOpenClawCliCommand(): string {
 
   if (app.isPackaged) {
     if (platform === 'win32') {
-      const bundledNode = getPackagedWindowsNodePath();
-      if (bundledNode) {
-        return `& ${quoteForPowerShell(bundledNode)} ${quoteForPowerShell(entryPath)}`;
-      }
-
       const cliDir = join(process.resourcesPath, 'cli');
       const cmdPath = join(cliDir, 'openclaw.cmd');
       if (existsSync(cmdPath)) {
         return `& ${quoteForPowerShell(cmdPath)}`;
+      }
+
+      const bundledNode = getPackagedWindowsNodePath();
+      if (bundledNode) {
+        return `& ${quoteForPowerShell(bundledNode)} ${quoteForPowerShell(entryPath)}`;
       }
     }
 
