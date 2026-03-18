@@ -265,6 +265,7 @@
     "basedOn": "OpenClaw ベース",
     "version": "バージョン {{version}}",
     "docs": "公式サイト",
-    "github": "GitHub"
+    "github": "GitHub",
+    "faq": "よくある質問"
   }
 }

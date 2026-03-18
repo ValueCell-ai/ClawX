@@ -268,6 +268,7 @@
     "basedOn": "Based on OpenClaw",
     "version": "Version {{version}}",
     "docs": "Website",
-    "github": "GitHub"
+    "github": "GitHub",
+    "faq": "FAQ"
   }
 }
