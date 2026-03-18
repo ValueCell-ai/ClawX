@@ -55,7 +55,7 @@ describe('chat session actions', () => {
     invokeIpcMock.mockResolvedValue({ success: true });
   });
 
-  it('switchSession removes empty non-main leaving session and loads history', async () => {
+  it('switchSession preserves non-main session that has activity history', async () => {
     const { createSessionActions } = await import('@/stores/chat/session-actions');
     const h = makeHarness({
       currentSessionKey: 'agent:foo:session-a',
@@ -69,9 +69,30 @@ describe('chat session actions', () => {
     actions.switchSession('agent:foo:main');
     const next = h.read();
     expect(next.currentSessionKey).toBe('agent:foo:main');
-    expect(next.sessions.find((s) => s.key === 'agent:foo:session-a')).toBeUndefined();
-    expect(next.sessionLabels['agent:foo:session-a']).toBeUndefined();
-    expect(next.sessionLastActivity['agent:foo:session-a']).toBeUndefined();
+    // Session with labels and activity should NOT be removed even though messages is empty,
+    // because messages get cleared eagerly during switchSession before loadHistory completes.
+    expect(next.sessions.find((s) => s.key === 'agent:foo:session-a')).toBeDefined();
+    expect(next.sessionLabels['agent:foo:session-a']).toBe('A');
+    expect(next.sessionLastActivity['agent:foo:session-a']).toBe(1);
+    expect(h.read().loadHistory).toHaveBeenCalledTimes(1);
+  });
+
+  it('switchSession removes truly empty non-main session (no activity, no labels)', async () => {
+    const { createSessionActions } = await import('@/stores/chat/session-actions');
+    const h = makeHarness({
+      currentSessionKey: 'agent:foo:session-b',
+      sessions: [{ key: 'agent:foo:session-b' }, { key: 'agent:foo:main' }],
+      messages: [],
+      sessionLabels: {},
+      sessionLastActivity: {},
+    });
+    const actions = createSessionActions(h.set as never, h.get as never);
+
+    actions.switchSession('agent:foo:main');
+    const next = h.read();
+    expect(next.currentSessionKey).toBe('agent:foo:main');
+    // Truly empty session (no labels, no activity) should be cleaned up
+    expect(next.sessions.find((s) => s.key === 'agent:foo:session-b')).toBeUndefined();
     expect(h.read().loadHistory).toHaveBeenCalledTimes(1);
   });
 

@@ -779,7 +779,14 @@ function buildSessionSwitchPatch(
   >,
   nextSessionKey: string,
 ): Partial<ChatState> {
-  const leavingEmpty = !state.currentSessionKey.endsWith(':main') && state.messages.length === 0;
+  // 仅将没有任何历史记录且无活动时间的会话视为空会话。
+  // 单纯依赖 messages.length 是不可靠的，因为 switchSession 会在真正调用 loadHistory 前抢先清空当前 messages，
+  // 造成竞争条件，使得带有真实历史的会话被判定为空并从侧边栏移除。
+  const leavingEmpty = !state.currentSessionKey.endsWith(':main')
+    && state.messages.length === 0
+    && !state.sessionLastActivity[state.currentSessionKey]
+    && !state.sessionLabels[state.currentSessionKey];
+
   const nextSessions = leavingEmpty
     ? state.sessions.filter((session) => session.key !== state.currentSessionKey)
     : state.sessions;
@@ -1302,8 +1309,12 @@ export const useChatStore = create<ChatState>((set, get) => ({
     // NOTE: We intentionally do NOT call sessions.reset on the old session.
     // sessions.reset archives (renames) the session JSONL file, making old
     // conversation history inaccessible when the user switches back to it.
-    const { currentSessionKey, messages, sessions } = get();
-    const leavingEmpty = !currentSessionKey.endsWith(':main') && messages.length === 0;
+    const { currentSessionKey, messages, sessions, sessionLastActivity, sessionLabels } = get();
+    // 仅将没有任何历史记录且无活动时间的会话视为空会话
+    const leavingEmpty = !currentSessionKey.endsWith(':main')
+      && messages.length === 0
+      && !sessionLastActivity[currentSessionKey]
+      && !sessionLabels[currentSessionKey];
     const prefix = getCanonicalPrefixFromSessionKey(currentSessionKey)
       ?? getCanonicalPrefixFromSessions(sessions)
       ?? DEFAULT_CANONICAL_PREFIX;
@@ -1337,12 +1348,17 @@ export const useChatStore = create<ChatState>((set, get) => ({
   // ── Cleanup empty session on navigate away ──
 
   cleanupEmptySession: () => {
-    const { currentSessionKey, messages } = get();
+    const { currentSessionKey, messages, sessionLastActivity, sessionLabels } = get();
     // Only remove non-main sessions that were never used (no messages sent).
     // This mirrors the "leavingEmpty" logic in switchSession so that creating
     // a new session and immediately navigating away doesn't leave a ghost entry
     // in the sidebar.
-    const isEmptyNonMain = !currentSessionKey.endsWith(':main') && messages.length === 0;
+    // 同样需要综合检查 sessionLastActivity 和 sessionLabels，
+    // 防止因为 switchSession 抢先清空 messages 而误判有历史的会话为空。
+    const isEmptyNonMain = !currentSessionKey.endsWith(':main')
+      && messages.length === 0
+      && !sessionLastActivity[currentSessionKey]
+      && !sessionLabels[currentSessionKey];
     if (!isEmptyNonMain) return;
     set((s) => ({
       sessions: s.sessions.filter((sess) => sess.key !== currentSessionKey),
@@ -1371,6 +1387,14 @@ export const useChatStore = create<ChatState>((set, get) => ({
     }
 
     if (!quiet) set({ loading: true, error: null });
+
+    // 安全保护：如果历史记录加载花费太多时间，则强制将 loading 设置为 false
+    // 防止 UI 永远卡在转圈状态。
+    let loadingTimedOut = false;
+    const loadingSafetyTimer = quiet ? null : setTimeout(() => {
+      loadingTimedOut = true;
+      set({ loading: false });
+    }, 15_000);
 
     const loadPromise = (async () => {
       const applyLoadedMessages = (rawMessages: RawMessage[], thinkingLevel: string | null) => {
@@ -1515,7 +1539,13 @@ export const useChatStore = create<ChatState>((set, get) => ({
     try {
       await loadPromise;
     } finally {
-      _lastHistoryLoadAtBySession.set(currentSessionKey, Date.now());
+      // 正常完成时清除安全定时器
+      if (loadingSafetyTimer) clearTimeout(loadingSafetyTimer);
+      if (!loadingTimedOut) {
+        // Only update load time if we actually didn't time out
+        _lastHistoryLoadAtBySession.set(currentSessionKey, Date.now());
+      }
+      
       const active = _historyLoadInFlight.get(currentSessionKey);
       if (active === loadPromise) {
         _historyLoadInFlight.delete(currentSessionKey);
