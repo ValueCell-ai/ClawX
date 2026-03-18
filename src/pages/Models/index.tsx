@@ -37,6 +37,7 @@ export function Models() {
   const [usageWindow, setUsageWindow] = useState<UsageWindow>('7d');
   const [usagePage, setUsagePage] = useState(1);
   const [selectedUsageEntry, setSelectedUsageEntry] = useState<UsageHistoryEntry | null>(null);
+  const [usageFetchDone, setUsageFetchDone] = useState(false);
   const usageFetchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const usageFetchGenerationRef = useRef(0);
 
@@ -50,8 +51,12 @@ export function Models() {
       usageFetchTimerRef.current = null;
     }
 
-    if (!isGatewayRunning) return;
+    if (!isGatewayRunning) {
+      setUsageFetchDone(false);
+      return;
+    }
 
+    setUsageFetchDone(false);
     const generation = usageFetchGenerationRef.current + 1;
     usageFetchGenerationRef.current = generation;
     const restartMarker = `${gatewayStatus.pid ?? 'na'}:${gatewayStatus.connectedAt ?? 'na'}`;
@@ -90,13 +95,16 @@ export function Models() {
           usageFetchTimerRef.current = setTimeout(() => {
             void fetchUsageHistoryWithRetry(attempt + 1);
           }, USAGE_FETCH_RETRY_DELAY_MS);
-        } else if (normalized.length === 0) {
-          trackUiEvent('models.token_usage_fetch_exhausted', {
-            generation,
-            attempt,
-            reason: 'empty',
-            restartMarker,
-          });
+        } else {
+          if (normalized.length === 0) {
+            trackUiEvent('models.token_usage_fetch_exhausted', {
+              generation,
+              attempt,
+              reason: 'empty',
+              restartMarker,
+            });
+          }
+          setUsageFetchDone(true);
         }
       } catch (error) {
         if (usageFetchGenerationRef.current !== generation) return;
@@ -119,6 +127,7 @@ export function Models() {
           return;
         }
         setUsageHistory([]);
+        setUsageFetchDone(true);
         trackUiEvent('models.token_usage_fetch_exhausted', {
           generation,
           attempt,
@@ -145,7 +154,7 @@ export function Models() {
   const usageTotalPages = Math.max(1, Math.ceil(filteredUsageHistory.length / usagePageSize));
   const safeUsagePage = Math.min(usagePage, usageTotalPages);
   const pagedUsageHistory = filteredUsageHistory.slice((safeUsagePage - 1) * usagePageSize, safeUsagePage * usagePageSize);
-  const usageLoading = isGatewayRunning && visibleUsageHistory.length === 0;
+  const usageLoading = isGatewayRunning && !usageFetchDone;
 
   return (
     <div className="flex flex-col -m-6 dark:bg-background h-[calc(100vh-2.5rem)] overflow-hidden">
