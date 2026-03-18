@@ -696,6 +696,49 @@ function patchBundledRuntime(outputDir) {
 patchBrokenModules(outputNodeModules);
 patchBundledRuntime(OUTPUT);
 
+// 7b. Patch WhatsApp active-listener singleton (fixes #559)
+//
+// The gateway's web/active-listener.js stores a module-level `listeners` Map.
+// When the module is duplicated across bundle chunks (e.g. by Rollup code-
+// splitting or when two chunks independently resolve the same source file),
+// each copy gets its own empty Map.  WhatsApp connection writes to Map A but
+// outbound send reads from Map B → "No active WhatsApp Web listener" error.
+//
+// Fix: store the Map on `globalThis` so every copy shares a single instance.
+function patchWhatsAppActiveListener(outputDir) {
+  const target = path.join(outputDir, 'dist', 'web', 'active-listener.js');
+  if (!fs.existsSync(target)) {
+    echo`   ⚠️  Skipped WhatsApp active-listener patch: file not found`;
+    return;
+  }
+
+  const current = fs.readFileSync(target, 'utf8');
+
+  // Only patch if the original module-level Map pattern is present
+  if (!current.includes('const listeners = new Map()') && !current.includes('const listeners = new Map();')) {
+    // Check if already patched
+    if (current.includes('globalThis.__ocActiveWebListeners')) {
+      echo`   ℹ️  WhatsApp active-listener already patched (globalThis singleton)`;
+      return;
+    }
+    echo`   ⚠️  Skipped WhatsApp active-listener patch: expected source pattern not found`;
+    return;
+  }
+
+  // Replace module-level Map with globalThis singleton
+  const patched = current.replace(
+    /const listeners = new Map\(\);?/,
+    'const listeners = (globalThis.__ocActiveWebListeners ??= new Map());',
+  );
+
+  if (patched !== current) {
+    fs.writeFileSync(target, patched, 'utf8');
+    echo`   🩹 Patched WhatsApp active-listener to use globalThis singleton (fixes #559)`;
+  }
+}
+
+patchWhatsAppActiveListener(OUTPUT);
+
 // 8. Verify the bundle
 const entryExists = fs.existsSync(path.join(OUTPUT, 'openclaw.mjs'));
 const distExists = fs.existsSync(path.join(OUTPUT, 'dist', 'entry.js'));
