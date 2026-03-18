@@ -13,7 +13,8 @@
             "sharp"
         ],
         "overrides": {
-            "isbinaryfile": "^5.0.0"
+            "isbinaryfile": "^5.0.0",
+            "https-proxy-agent": "7.0.6"
         }
     },
     "description": "ClawX - Graphical AI Assistant based on OpenClaw",
