@@ -4,16 +4,43 @@ type HealthResult = { ok: boolean; error?: string };
 
 export class GatewayConnectionMonitor {
   private pingInterval: NodeJS.Timeout | null = null;
+  private pongTimeout: NodeJS.Timeout | null = null;
   private healthCheckInterval: NodeJS.Timeout | null = null;
 
-  startPing(sendPing: () => void, intervalMs = 30000): void {
+  startPing(
+    sendPing: () => void,
+    onPongTimeout?: () => void,
+    intervalMs = 30000,
+    timeoutMs = 15000,
+  ): void {
     if (this.pingInterval) {
       clearInterval(this.pingInterval);
+    }
+    if (this.pongTimeout) {
+      clearTimeout(this.pongTimeout);
+      this.pongTimeout = null;
     }
 
     this.pingInterval = setInterval(() => {
       sendPing();
+
+      if (onPongTimeout) {
+        if (this.pongTimeout) {
+          clearTimeout(this.pongTimeout);
+        }
+        this.pongTimeout = setTimeout(() => {
+          this.pongTimeout = null;
+          onPongTimeout();
+        }, timeoutMs);
+      }
     }, intervalMs);
+  }
+
+  handlePong(): void {
+    if (this.pongTimeout) {
+      clearTimeout(this.pongTimeout);
+      this.pongTimeout = null;
+    }
   }
 
   startHealthCheck(options: {
@@ -50,6 +77,10 @@ export class GatewayConnectionMonitor {
     if (this.pingInterval) {
       clearInterval(this.pingInterval);
       this.pingInterval = null;
+    }
+    if (this.pongTimeout) {
+      clearTimeout(this.pongTimeout);
+      this.pongTimeout = null;
     }
     if (this.healthCheckInterval) {
       clearInterval(this.healthCheckInterval);

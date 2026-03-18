@@ -109,6 +109,8 @@ export class GatewayManager extends EventEmitter {
   private reconnectAttemptsTotal = 0;
   private reconnectSuccessTotal = 0;
   private static readonly RELOAD_POLICY_REFRESH_MS = 15_000;
+  public static readonly RESTART_COOLDOWN_MS = 5_000;
+  private lastRestartAt = 0;
 
   constructor(config?: Partial<ReconnectConfig>) {
     super();
@@ -727,6 +729,9 @@ export class GatewayManager extends EventEmitter {
       getToken: async () => await import('../utils/store').then(({ getSetting }) => getSetting('gatewayToken')),
       onHandshakeComplete: (ws) => {
         this.ws = ws;
+        this.ws.on('pong', () => {
+          this.connectionMonitor.handlePong();
+        });
         this.setStatus({
           state: 'running',
           port,
@@ -802,11 +807,24 @@ export class GatewayManager extends EventEmitter {
    * Start ping interval to keep connection alive
    */
   private startPing(): void {
-    this.connectionMonitor.startPing(() => {
-      if (this.ws?.readyState === WebSocket.OPEN) {
-        this.ws.ping();
+    this.connectionMonitor.startPing(
+      () => {
+        if (this.ws?.readyState === WebSocket.OPEN) {
+          this.ws.ping();
+        }
+      },
+      () => {
+        logger.error('Gateway WebSocket dead connection detected (pong timeout)');
+        if (this.ws) {
+          this.ws.terminate(); // Force close the dead connection immediately
+          this.ws = null;
+        }
+        if (this.status.state === 'running') {
+          this.setStatus({ state: 'error', error: 'WebSocket ping timeout' });
+          this.scheduleReconnect();
+        }
       }
-    });
+    );
   }
 
   /**
