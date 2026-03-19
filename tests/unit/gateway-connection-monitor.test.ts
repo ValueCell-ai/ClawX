@@ -1,6 +1,17 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { GatewayConnectionMonitor } from '@electron/gateway/connection-monitor';
 
+vi.mock('electron', () => ({
+  app: {
+    getPath: () => '/tmp',
+    getVersion: () => '0.0.0-test',
+    isPackaged: false,
+  },
+  utilityProcess: {
+    fork: vi.fn(),
+  },
+}));
+
 describe('GatewayConnectionMonitor heartbeat', () => {
   beforeEach(() => {
     vi.useFakeTimers();
