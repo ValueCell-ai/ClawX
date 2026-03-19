@@ -4,7 +4,9 @@ const mocks = vi.hoisted(() => ({
   ensureProviderStoreMigrated: vi.fn(),
   listProviderAccounts: vi.fn(),
   deleteProviderAccount: vi.fn(),
+  saveProviderAccount: vi.fn(),
   getActiveOpenClawProviders: vi.fn(),
+  getOpenClawProvidersConfig: vi.fn(),
   getOpenClawProviderKeyForType: vi.fn(),
   loggerWarn: vi.fn(),
   loggerInfo: vi.fn(),
@@ -21,12 +23,13 @@ vi.mock('@electron/services/providers/provider-store', () => ({
   getDefaultProviderAccountId: vi.fn(),
   providerAccountToConfig: vi.fn(),
   providerConfigToAccount: vi.fn(),
-  saveProviderAccount: vi.fn(),
+  saveProviderAccount: mocks.saveProviderAccount,
   setDefaultProviderAccount: vi.fn(),
 }));
 
 vi.mock('@electron/utils/openclaw-auth', () => ({
   getActiveOpenClawProviders: mocks.getActiveOpenClawProviders,
+  getOpenClawProvidersConfig: mocks.getOpenClawProvidersConfig,
 }));
 
 vi.mock('@electron/utils/provider-keys', () => ({
@@ -83,6 +86,7 @@ describe('ProviderService.listAccounts stale-account cleanup', () => {
     mocks.getOpenClawProviderKeyForType.mockImplementation(
       (type: string, id: string) => `${type}/${id}`,
     );
+    mocks.getOpenClawProvidersConfig.mockResolvedValue({ providers: {}, defaultModel: undefined });
     service = new ProviderService();
   });
 
@@ -139,13 +143,14 @@ describe('ProviderService.listAccounts stale-account cleanup', () => {
     expect(result).toEqual(accounts);
   });
 
-  it('returns accounts as-is when the list is empty', async () => {
+  it('returns empty when no accounts and no active OpenClaw providers', async () => {
     mocks.listProviderAccounts.mockResolvedValue([]);
+    mocks.getActiveOpenClawProviders.mockResolvedValue(new Set());
 
     const result = await service.listAccounts();
 
     expect(result).toEqual([]);
-    expect(mocks.getActiveOpenClawProviders).not.toHaveBeenCalled();
+    expect(mocks.getActiveOpenClawProviders).toHaveBeenCalled();
     expect(mocks.deleteProviderAccount).not.toHaveBeenCalled();
   });
 
