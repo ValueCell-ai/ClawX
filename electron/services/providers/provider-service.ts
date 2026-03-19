@@ -66,21 +66,33 @@ export class ProviderService {
     // OpenClaw JSON (e.g. user deleted openclaw.json manually).
     if (accounts.length > 0) {
       const activeProviders = await getActiveOpenClawProviders();
+
+      // If the OpenClaw config is empty or unreadable, skip cleanup entirely
+      // to avoid accidentally wiping valid accounts during transient states
+      // (e.g. gateway restart, file lock, first launch before config sync).
+      if (activeProviders.size === 0) {
+        logger.warn(
+          '[provider-sync] OpenClaw config has no active providers — skipping stale-account cleanup to preserve existing accounts',
+        );
+        return accounts;
+      }
+
       const staleIds: string[] = [];
 
       for (const account of accounts) {
         const isBuiltin = (BUILTIN_PROVIDER_TYPES as readonly string[]).includes(account.vendorId);
+        // Builtin providers (anthropic, openai, etc.) are always retained
+        // because they don't require an explicit models.providers entry in
+        // openclaw.json — the runtime recognises them natively.
+        if (isBuiltin) continue;
+
         const openClawKey = getOpenClawProviderKeyForType(account.vendorId, account.id);
         const isActive =
           activeProviders.has(account.vendorId) ||
           activeProviders.has(account.id) ||
           activeProviders.has(openClawKey);
 
-        // Drop non-builtin accounts whose provider is no longer in the config.
-        // Builtin providers (anthropic, openai, etc.) are always retained
-        // because they don't require an explicit models.providers entry in
-        // openclaw.json — the runtime recognises them natively.
-        if (!isBuiltin && !isActive) {
+        if (!isActive) {
           staleIds.push(account.id);
         }
       }
