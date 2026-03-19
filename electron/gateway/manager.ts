@@ -109,6 +109,9 @@ export class GatewayManager extends EventEmitter {
   private reconnectAttemptsTotal = 0;
   private reconnectSuccessTotal = 0;
   private static readonly RELOAD_POLICY_REFRESH_MS = 15_000;
+  private static readonly HEARTBEAT_INTERVAL_MS = 30_000;
+  private static readonly HEARTBEAT_TIMEOUT_MS = 12_000;
+  private static readonly HEARTBEAT_MAX_MISSES = 3;
 
   constructor(config?: Partial<ReconnectConfig>) {
     super();
@@ -692,6 +695,7 @@ export class GatewayManager extends EventEmitter {
       onExit: (exitedChild, code) => {
         this.processExitCode = code;
         this.ownsProcess = false;
+        this.connectionMonitor.clear();
         if (this.process === exitedChild) {
           this.process = null;
         }
@@ -727,6 +731,9 @@ export class GatewayManager extends EventEmitter {
       getToken: async () => await import('../utils/store').then(({ getSetting }) => getSetting('gatewayToken')),
       onHandshakeComplete: (ws) => {
         this.ws = ws;
+        ws.on('pong', () => {
+          this.connectionMonitor.markAlive('pong');
+        });
         this.setStatus({
           state: 'running',
           port,
@@ -738,6 +745,7 @@ export class GatewayManager extends EventEmitter {
         this.handleMessage(message);
       },
       onCloseAfterHandshake: () => {
+        this.connectionMonitor.clear();
         if (this.status.state === 'running') {
           this.setStatus({ state: 'stopped' });
           this.scheduleReconnect();
@@ -750,6 +758,8 @@ export class GatewayManager extends EventEmitter {
    * Handle incoming WebSocket message
    */
   private handleMessage(message: unknown): void {
+    this.connectionMonitor.markAlive('message');
+
     if (typeof message !== 'object' || message === null) {
       logger.debug('Received non-object Gateway message');
       return;
@@ -802,10 +812,33 @@ export class GatewayManager extends EventEmitter {
    * Start ping interval to keep connection alive
    */
   private startPing(): void {
-    this.connectionMonitor.startPing(() => {
-      if (this.ws?.readyState === WebSocket.OPEN) {
-        this.ws.ping();
-      }
+    this.connectionMonitor.startPing({
+      intervalMs: GatewayManager.HEARTBEAT_INTERVAL_MS,
+      timeoutMs: GatewayManager.HEARTBEAT_TIMEOUT_MS,
+      maxConsecutiveMisses: GatewayManager.HEARTBEAT_MAX_MISSES,
+      sendPing: () => {
+        if (this.ws?.readyState === WebSocket.OPEN) {
+          this.ws.ping();
+        }
+      },
+      onHeartbeatTimeout: ({ consecutiveMisses, timeoutMs }) => {
+        if (this.status.state !== 'running' || !this.shouldReconnect) {
+          return;
+        }
+        const ws = this.ws;
+        if (!ws || ws.readyState !== WebSocket.OPEN) {
+          return;
+        }
+
+        logger.warn(
+          `Gateway heartbeat timed out after ${consecutiveMisses} consecutive misses (timeout=${timeoutMs}ms); terminating stale socket`,
+        );
+        try {
+          ws.terminate();
+        } catch (error) {
+          logger.warn('Failed to terminate stale Gateway socket after heartbeat timeout:', error);
+        }
+      },
     });
   }
 
