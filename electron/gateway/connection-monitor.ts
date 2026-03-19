@@ -55,7 +55,8 @@ export class GatewayConnectionMonitor {
   }
 
   markAlive(reason: HeartbeatAliveReason): void {
-    if (this.waitingForAlive || this.consecutiveMisses > 0) {
+    // Only log true recovery cases to avoid steady-state heartbeat log spam.
+    if (this.consecutiveMisses > 0) {
       logger.debug(`Gateway heartbeat recovered via ${reason} (misses=${this.consecutiveMisses})`);
     }
     this.waitingForAlive = false;
