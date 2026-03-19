@@ -12,6 +12,43 @@ import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { logger } from './logger';
 
+function normalizeFsPathForWindows(filePath: string): string {
+  if (process.platform !== 'win32') return filePath;
+  if (!filePath) return filePath;
+  if (filePath.startsWith('\\\\?\\')) return filePath;
+
+  const windowsPath = filePath.replace(/\//g, '\\');
+  if (!path.win32.isAbsolute(windowsPath)) return windowsPath;
+  if (windowsPath.startsWith('\\\\')) {
+    return `\\\\?\\UNC\\${windowsPath.slice(2)}`;
+  }
+  return `\\\\?\\${windowsPath}`;
+}
+
+function fsPath(filePath: string): string {
+  return normalizeFsPathForWindows(filePath);
+}
+
+function asErrnoException(error: unknown): NodeJS.ErrnoException | null {
+  if (error && typeof error === 'object') {
+    return error as NodeJS.ErrnoException;
+  }
+  return null;
+}
+
+function toErrorDiagnostic(error: unknown): { code?: string; name?: string; message: string } {
+  const errno = asErrnoException(error);
+  if (!errno) {
+    return { message: String(error) };
+  }
+
+  return {
+    code: typeof errno.code === 'string' ? errno.code : undefined,
+    name: errno.name,
+    message: errno.message || String(error),
+  };
+}
+
 // ── Known plugin-ID corrections ─────────────────────────────────────────────
 // Some npm packages ship with an openclaw.plugin.json whose "id" field
 // doesn't match the ID the plugin code actually exports.  After copying we
@@ -29,13 +66,13 @@ export function fixupPluginManifest(targetDir: string): void {
   // 1. Fix openclaw.plugin.json id
   const manifestPath = join(targetDir, 'openclaw.plugin.json');
   try {
-    const raw = readFileSync(manifestPath, 'utf-8');
+    const raw = readFileSync(fsPath(manifestPath), 'utf-8');
     const manifest = JSON.parse(raw);
     const oldId = manifest.id as string | undefined;
     if (oldId && MANIFEST_ID_FIXES[oldId]) {
       const newId = MANIFEST_ID_FIXES[oldId];
       manifest.id = newId;
-      writeFileSync(manifestPath, JSON.stringify(manifest, null, 2) + '\n', 'utf-8');
+      writeFileSync(fsPath(manifestPath), JSON.stringify(manifest, null, 2) + '\n', 'utf-8');
       logger.info(`[plugin] Fixed manifest ID: ${oldId} → ${newId}`);
     }
   } catch {
@@ -45,7 +82,7 @@ export function fixupPluginManifest(targetDir: string): void {
   // 2. Fix package.json fields that Gateway uses as "entry hints"
   const pkgPath = join(targetDir, 'package.json');
   try {
-    const raw = readFileSync(pkgPath, 'utf-8');
+    const raw = readFileSync(fsPath(pkgPath), 'utf-8');
     const pkg = JSON.parse(raw);
     let modified = false;
 
@@ -69,7 +106,7 @@ export function fixupPluginManifest(targetDir: string): void {
     }
 
     if (modified) {
-      writeFileSync(pkgPath, JSON.stringify(pkg, null, 2) + '\n', 'utf-8');
+      writeFileSync(fsPath(pkgPath), JSON.stringify(pkg, null, 2) + '\n', 'utf-8');
       logger.info(`[plugin] Fixed package.json entry hints in ${targetDir}`);
     }
   } catch {
@@ -90,7 +127,7 @@ function patchPluginEntryIds(targetDir: string): void {
   const pkgPath = join(targetDir, 'package.json');
   let pkg: Record<string, unknown>;
   try {
-    pkg = JSON.parse(readFileSync(pkgPath, 'utf-8'));
+    pkg = JSON.parse(readFileSync(fsPath(pkgPath), 'utf-8'));
   } catch {
     return;
   }
@@ -99,11 +136,11 @@ function patchPluginEntryIds(targetDir: string): void {
 
   for (const entry of entryFiles) {
     const entryPath = join(targetDir, entry);
-    if (!existsSync(entryPath)) continue;
+    if (!existsSync(fsPath(entryPath))) continue;
 
     let content: string;
     try {
-      content = readFileSync(entryPath, 'utf-8');
+      content = readFileSync(fsPath(entryPath), 'utf-8');
     } catch {
       continue;
     }
@@ -122,7 +159,7 @@ function patchPluginEntryIds(targetDir: string): void {
     }
 
     if (patched) {
-      writeFileSync(entryPath, content, 'utf-8');
+      writeFileSync(fsPath(entryPath), content, 'utf-8');
     }
   }
 }
@@ -140,7 +177,7 @@ const PLUGIN_NPM_NAMES: Record<string, string> = {
 
 function readPluginVersion(pkgJsonPath: string): string | null {
   try {
-    const raw = readFileSync(pkgJsonPath, 'utf-8');
+    const raw = readFileSync(fsPath(pkgJsonPath), 'utf-8');
     const parsed = JSON.parse(raw) as { version?: string };
     return parsed.version ?? null;
   } catch {
@@ -163,15 +200,15 @@ function findParentNodeModules(startPath: string): string | null {
 /** List packages inside a node_modules dir (handles @scoped packages). */
 function listPackagesInDir(nodeModulesDir: string): Array<{ name: string; fullPath: string }> {
   const result: Array<{ name: string; fullPath: string }> = [];
-  if (!existsSync(nodeModulesDir)) return result;
+  if (!existsSync(fsPath(nodeModulesDir))) return result;
   const SKIP = new Set(['.bin', '.package-lock.json', '.modules.yaml', '.pnpm']);
-  for (const entry of readdirSync(nodeModulesDir, { withFileTypes: true })) {
+  for (const entry of readdirSync(fsPath(nodeModulesDir), { withFileTypes: true })) {
     if (!entry.isDirectory() && !entry.isSymbolicLink()) continue;
     if (SKIP.has(entry.name)) continue;
     const entryPath = join(nodeModulesDir, entry.name);
     if (entry.name.startsWith('@')) {
       try {
-        for (const sub of readdirSync(entryPath)) {
+        for (const sub of readdirSync(fsPath(entryPath))) {
           result.push({ name: `${entry.name}/${sub}`, fullPath: join(entryPath, sub) });
         }
       } catch { /* ignore */ }
@@ -190,15 +227,15 @@ function listPackagesInDir(nodeModulesDir: string): Array<{ name: string; fullPa
 export function copyPluginFromNodeModules(npmPkgPath: string, targetDir: string, npmName: string): void {
   let realPath: string;
   try {
-    realPath = realpathSync(npmPkgPath);
+    realPath = realpathSync(fsPath(npmPkgPath));
   } catch {
     throw new Error(`Cannot resolve real path for ${npmPkgPath}`);
   }
 
   // 1. Copy plugin package itself
-  rmSync(targetDir, { recursive: true, force: true });
-  mkdirSync(targetDir, { recursive: true });
-  cpSync(realPath, targetDir, { recursive: true, dereference: true });
+  rmSync(fsPath(targetDir), { recursive: true, force: true });
+  mkdirSync(fsPath(targetDir), { recursive: true });
+  cpSync(fsPath(realPath), fsPath(targetDir), { recursive: true, dereference: true });
 
   // 2. Collect transitive deps from pnpm virtual store
   const rootVirtualNM = findParentNodeModules(realPath);
@@ -210,7 +247,7 @@ export function copyPluginFromNodeModules(npmPkgPath: string, targetDir: string,
   // Read peer deps to skip (they're provided by the host gateway)
   const SKIP_PACKAGES = new Set(['typescript', '@playwright/test']);
   try {
-    const pluginPkg = JSON.parse(readFileSync(join(targetDir, 'package.json'), 'utf-8'));
+    const pluginPkg = JSON.parse(readFileSync(fsPath(join(targetDir, 'package.json')), 'utf-8'));
     for (const peer of Object.keys(pluginPkg.peerDependencies || {})) {
       SKIP_PACKAGES.add(peer);
     }
@@ -228,7 +265,7 @@ export function copyPluginFromNodeModules(npmPkgPath: string, targetDir: string,
       if (SKIP_PACKAGES.has(name) || name.startsWith('@types/')) continue;
       let depRealPath: string;
       try {
-        depRealPath = realpathSync(fullPath);
+        depRealPath = realpathSync(fsPath(fullPath));
       } catch { continue; }
       if (collected.has(depRealPath)) continue;
       collected.set(depRealPath, name);
@@ -241,15 +278,15 @@ export function copyPluginFromNodeModules(npmPkgPath: string, targetDir: string,
 
   // 3. Copy flattened deps into targetDir/node_modules/
   const outputNM = join(targetDir, 'node_modules');
-  mkdirSync(outputNM, { recursive: true });
+  mkdirSync(fsPath(outputNM), { recursive: true });
   const copiedNames = new Set<string>();
   for (const [depRealPath, pkgName] of collected) {
     if (copiedNames.has(pkgName)) continue;
     copiedNames.add(pkgName);
     const dest = join(outputNM, pkgName);
     try {
-      mkdirSync(path.dirname(dest), { recursive: true });
-      cpSync(depRealPath, dest, { recursive: true, dereference: true });
+      mkdirSync(fsPath(path.dirname(dest)), { recursive: true });
+      cpSync(fsPath(depRealPath), fsPath(dest), { recursive: true, dereference: true });
     } catch { /* skip individual dep failures */ }
   }
 
@@ -267,10 +304,10 @@ export function ensurePluginInstalled(
   const targetManifest = join(targetDir, 'openclaw.plugin.json');
   const targetPkgJson = join(targetDir, 'package.json');
 
-  const sourceDir = candidateSources.find((dir) => existsSync(join(dir, 'openclaw.plugin.json')));
+  const sourceDir = candidateSources.find((dir) => existsSync(fsPath(join(dir, 'openclaw.plugin.json'))));
 
   // If already installed, check whether an upgrade is available
-  if (existsSync(targetManifest)) {
+  if (existsSync(fsPath(targetManifest))) {
     if (!sourceDir) return { installed: true }; // no bundled source to compare, keep existing
     const installedVersion = readPluginVersion(targetPkgJson);
     const sourceVersion = readPluginVersion(join(sourceDir, 'package.json'));
@@ -285,19 +322,47 @@ export function ensurePluginInstalled(
 
   // Fresh install or upgrade — try bundled/build sources first
   if (sourceDir) {
-    try {
-      mkdirSync(join(homedir(), '.openclaw', 'extensions'), { recursive: true });
-      rmSync(targetDir, { recursive: true, force: true });
-      cpSync(sourceDir, targetDir, { recursive: true, dereference: true });
-      if (!existsSync(join(targetDir, 'openclaw.plugin.json'))) {
-        return { installed: false, warning: `Failed to install ${pluginLabel} plugin mirror (manifest missing).` };
+    const extensionsRoot = join(homedir(), '.openclaw', 'extensions');
+    const attempts: Array<{ attempt: number; code?: string; name?: string; message: string }> = [];
+    const maxAttempts = process.platform === 'win32' ? 2 : 1;
+
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      try {
+        mkdirSync(fsPath(extensionsRoot), { recursive: true });
+        rmSync(fsPath(targetDir), { recursive: true, force: true });
+        cpSync(fsPath(sourceDir), fsPath(targetDir), { recursive: true, dereference: true });
+        if (!existsSync(fsPath(join(targetDir, 'openclaw.plugin.json')))) {
+          return { installed: false, warning: `Failed to install ${pluginLabel} plugin mirror (manifest missing).` };
+        }
+        fixupPluginManifest(targetDir);
+        logger.info(`Installed ${pluginLabel} plugin from bundled mirror: ${sourceDir}`);
+        return { installed: true };
+      } catch (error) {
+        const diagnostic = toErrorDiagnostic(error);
+        attempts.push({ attempt, ...diagnostic });
+        if (attempt < maxAttempts) {
+          try {
+            rmSync(fsPath(targetDir), { recursive: true, force: true });
+          } catch {
+            // Ignore cleanup failures before retry.
+          }
+        }
       }
-      fixupPluginManifest(targetDir);
-      logger.info(`Installed ${pluginLabel} plugin from bundled mirror: ${sourceDir}`);
-      return { installed: true };
-    } catch {
-      return { installed: false, warning: `Failed to install bundled ${pluginLabel} plugin mirror` };
     }
+
+    logger.warn(
+      `[plugin] Bundled mirror install failed for ${pluginLabel}`,
+      {
+        pluginDirName,
+        pluginLabel,
+        sourceDir,
+        targetDir,
+        platform: process.platform,
+        attempts,
+      },
+    );
+
+    return { installed: false, warning: `Failed to install bundled ${pluginLabel} plugin mirror` };
   }
 
   // Dev mode fallback: copy from node_modules with pnpm-aware dep resolution
@@ -305,8 +370,8 @@ export function ensurePluginInstalled(
     const npmName = PLUGIN_NPM_NAMES[pluginDirName];
     if (npmName) {
       const npmPkgPath = join(process.cwd(), 'node_modules', ...npmName.split('/'));
-      if (existsSync(join(npmPkgPath, 'openclaw.plugin.json'))) {
-        const installedVersion = existsSync(targetPkgJson) ? readPluginVersion(targetPkgJson) : null;
+      if (existsSync(fsPath(join(npmPkgPath, 'openclaw.plugin.json')))) {
+        const installedVersion = existsSync(fsPath(targetPkgJson)) ? readPluginVersion(targetPkgJson) : null;
         const sourceVersion = readPluginVersion(join(npmPkgPath, 'package.json'));
         if (sourceVersion && (!installedVersion || sourceVersion !== installedVersion)) {
           logger.info(
@@ -314,16 +379,27 @@ export function ensurePluginInstalled(
             `${installedVersion ? `: ${installedVersion} → ${sourceVersion}` : `: ${sourceVersion}`} (dev/node_modules)`,
           );
           try {
-            mkdirSync(join(homedir(), '.openclaw', 'extensions'), { recursive: true });
+            mkdirSync(fsPath(join(homedir(), '.openclaw', 'extensions')), { recursive: true });
             copyPluginFromNodeModules(npmPkgPath, targetDir, npmName);
             fixupPluginManifest(targetDir);
-            if (existsSync(join(targetDir, 'openclaw.plugin.json'))) {
+            if (existsSync(fsPath(join(targetDir, 'openclaw.plugin.json')))) {
               return { installed: true };
             }
           } catch (err) {
-            logger.warn(`[plugin] Failed to install ${pluginLabel} plugin from node_modules:`, err);
+            logger.warn(
+              `[plugin] Failed to install ${pluginLabel} plugin from node_modules`,
+              {
+                pluginDirName,
+                pluginLabel,
+                npmName,
+                npmPkgPath,
+                targetDir,
+                platform: process.platform,
+                ...toErrorDiagnostic(err),
+              },
+            );
           }
-        } else if (existsSync(targetManifest)) {
+        } else if (existsSync(fsPath(targetManifest))) {
           return { installed: true }; // same version, already installed
         }
       }

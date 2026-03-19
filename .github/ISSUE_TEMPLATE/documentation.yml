@@ -1,0 +1,38 @@
+name: Documentation
+description: Report missing, unclear, or outdated documentation.
+title: "[Docs]: "
+labels:
+  - documentation
+body:
+  - type: textarea
+    id: issue
+    attributes:
+      label: Documentation Issue
+      description: What is missing, unclear, or incorrect?
+      placeholder: The README section ... is outdated because ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: location
+    attributes:
+      label: Affected Location
+      description: Which docs are impacted?
+      placeholder: README.md / README.zh-CN.md / README.ja-JP.md / other
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Suggested Update
+      description: What should the docs say instead?
+      placeholder: Replace ... with ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: references
+    attributes:
+      label: References
+      description: Related issue/PR/commit links.

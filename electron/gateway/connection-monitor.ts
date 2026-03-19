@@ -63,6 +63,11 @@ export class GatewayConnectionMonitor {
     this.timeoutTriggered = false;
   }
 
+  // Backward-compatible alias for old callers.
+  handlePong(): void {
+    this.markAlive('pong');
+  }
+
   getConsecutiveMisses(): number {
     return this.consecutiveMisses;
   }

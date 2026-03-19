@@ -31,6 +31,12 @@ function quoteForPowerShell(value: string): string {
   return `'${value.replace(/'/g, "''")}'`;
 }
 
+function getPackagedWindowsNodePath(): string | null {
+  if (!app.isPackaged || process.platform !== 'win32') return null;
+  const nodePath = join(process.resourcesPath, 'bin', 'node.exe');
+  return existsSync(nodePath) ? nodePath : null;
+}
+
 // ── CLI command string (for display / copy) ──────────────────────────────────
 
 export function getOpenClawCliCommand(): string {
@@ -69,7 +75,12 @@ export function getOpenClawCliCommand(): string {
       const cliDir = join(process.resourcesPath, 'cli');
       const cmdPath = join(cliDir, 'openclaw.cmd');
       if (existsSync(cmdPath)) {
-        return quoteForPowerShell(cmdPath);
+        return `& ${quoteForPowerShell(cmdPath)}`;
+      }
+
+      const bundledNode = getPackagedWindowsNodePath();
+      if (bundledNode) {
+        return `& ${quoteForPowerShell(bundledNode)} ${quoteForPowerShell(entryPath)}`;
       }
     }
 

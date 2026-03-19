@@ -153,8 +153,14 @@ export function createSessionActions(
     // ── Switch session ──
 
     switchSession: (key: string) => {
-      const { currentSessionKey, messages } = get();
-      const leavingEmpty = !currentSessionKey.endsWith(':main') && messages.length === 0;
+      const { currentSessionKey, messages, sessionLastActivity, sessionLabels } = get();
+      // 仅将没有任何历史记录且无活动时间的会话视为空会话。
+      // 单纯依赖 messages.length 是不可靠的，因为 switchSession 会在真正调用 loadHistory 前抢先清空当前 messages，
+      // 造成竞争条件，使得带有真实历史的会话被判定为空并从侧边栏移除。
+      const leavingEmpty = !currentSessionKey.endsWith(':main')
+        && messages.length === 0
+        && !sessionLastActivity[currentSessionKey]
+        && !sessionLabels[currentSessionKey];
       set((s) => ({
         currentSessionKey: key,
         currentAgentId: getAgentIdFromSessionKey(key),
@@ -246,8 +252,12 @@ export function createSessionActions(
       // NOTE: We intentionally do NOT call sessions.reset on the old session.
       // sessions.reset archives (renames) the session JSONL file, making old
       // conversation history inaccessible when the user switches back to it.
-      const { currentSessionKey, messages } = get();
-      const leavingEmpty = !currentSessionKey.endsWith(':main') && messages.length === 0;
+      const { currentSessionKey, messages, sessionLastActivity, sessionLabels } = get();
+      // 仅将没有任何历史记录且无活动时间的会话视为空会话
+      const leavingEmpty = !currentSessionKey.endsWith(':main')
+        && messages.length === 0
+        && !sessionLastActivity[currentSessionKey]
+        && !sessionLabels[currentSessionKey];
       const prefix = getCanonicalPrefixFromSessions(get().sessions) ?? DEFAULT_CANONICAL_PREFIX;
       const newKey = `${prefix}:session-${Date.now()}`;
       const newSessionEntry: ChatSession = { key: newKey, displayName: newKey };
@@ -279,12 +289,17 @@ export function createSessionActions(
     // ── Cleanup empty session on navigate away ──
 
     cleanupEmptySession: () => {
-      const { currentSessionKey, messages } = get();
+      const { currentSessionKey, messages, sessionLastActivity, sessionLabels } = get();
       // Only remove non-main sessions that were never used (no messages sent).
       // This mirrors the "leavingEmpty" logic in switchSession so that creating
       // a new session and immediately navigating away doesn't leave a ghost entry
       // in the sidebar.
-      const isEmptyNonMain = !currentSessionKey.endsWith(':main') && messages.length === 0;
+      // 同样需要综合检查 sessionLastActivity 和 sessionLabels，
+      // 防止因为 switchSession 抢先清空 messages 而误判有历史的会话为空。
+      const isEmptyNonMain = !currentSessionKey.endsWith(':main')
+        && messages.length === 0
+        && !sessionLastActivity[currentSessionKey]
+        && !sessionLabels[currentSessionKey];
       if (!isEmptyNonMain) return;
       set((s) => ({
         sessions: s.sessions.filter((sess) => sess.key !== currentSessionKey),

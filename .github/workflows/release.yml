@@ -83,8 +83,27 @@ jobs:
         if: matrix.platform == 'win'
         run: pnpm run package:win
 
-      - name: Validate unsigned Windows artifacts before SignPath
+      # Detect release channel from tag to skip code signing for alpha/beta builds
+      - name: Detect Windows release channel
         if: matrix.platform == 'win'
+        id: win-channel
+        shell: bash
+        run: |
+          if [[ "${{ github.ref }}" == refs/tags/v* ]]; then
+            TAG="${GITHUB_REF#refs/tags/v}"
+          else
+            TAG="${{ github.event.inputs.version }}"
+          fi
+          if [[ "$TAG" =~ (alpha|beta) ]]; then
+            echo "is_stable=false" >> $GITHUB_OUTPUT
+            echo "Channel: prerelease ($TAG) — skipping code signing"
+          else
+            echo "is_stable=true" >> $GITHUB_OUTPUT
+            echo "Channel: stable ($TAG) — will sign"
+          fi
+
+      - name: Validate unsigned Windows artifacts before SignPath
+        if: matrix.platform == 'win' && steps.win-channel.outputs.is_stable == 'true'
         shell: pwsh
         run: |
           $unsignedExeFiles = Get-ChildItem -Path "release" -Filter *.exe -File
@@ -97,7 +116,7 @@ jobs:
           $unsignedExeFiles | ForEach-Object { Write-Host " - $($_.Name)" }
 
       - name: Upload unsigned Windows artifacts for SignPath
-        if: matrix.platform == 'win'
+        if: matrix.platform == 'win' && steps.win-channel.outputs.is_stable == 'true'
         id: upload-unsigned-windows-artifact
         uses: actions/upload-artifact@v4
         with:
@@ -106,7 +125,7 @@ jobs:
           retention-days: 1
 
       - name: Sign Windows artifacts via SignPath
-        if: matrix.platform == 'win'
+        if: matrix.platform == 'win' && steps.win-channel.outputs.is_stable == 'true'
         id: signpath-sign-windows
         uses: signpath/github-action-submit-signing-request@v2
         with:
@@ -119,7 +138,7 @@ jobs:
           output-artifact-directory: release/signed
 
       - name: Replace unsigned executables with signed ones
-        if: matrix.platform == 'win'
+        if: matrix.platform == 'win' && steps.win-channel.outputs.is_stable == 'true'
         shell: pwsh
         run: |
           Write-Host "SignPath GitHub artifact ID: ${{ steps.upload-unsigned-windows-artifact.outputs.artifact-id }}"
@@ -139,6 +158,72 @@ jobs:
             throw "Final release .exe count ($($finalExeFiles.Count)) does not match unsigned count ($env:UNSIGNED_EXE_COUNT)"
           }
           Write-Host "Signed executables copied to release/ ($($finalExeFiles.Count) file(s))"
+
+      # Code signing changes the .exe binary, invalidating the sha512 hash that
+      # electron-builder wrote into latest.yml during the initial build.
+      # Recalculate the hash for each signed .exe and patch the yml files so
+      # electron-updater can verify the download successfully.
+      #
+      # Actual latest.yml structure (from electron-builder NSIS):
+      #   files:
+      #     - url: ClawX-0.2.4-win-x64.exe    ← files[] entries have url/sha512/size
+      #       sha512: <base64>
+      #       size: 430775882
+      #   path: ClawX-0.2.4-win-arm64.exe      ← top-level has path/sha512 (no size!)
+      #   sha512: <base64>
+      #   releaseDate: '...'
+      - name: Update latest.yml sha512 after code signing
+        if: matrix.platform == 'win' && steps.win-channel.outputs.is_stable == 'true'
+        shell: pwsh
+        run: |
+          $ymlFiles = Get-ChildItem -Path "release" -Filter "*.yml" -File | Where-Object { $_.Name -ne "builder-debug.yml" }
+          $exeFiles = Get-ChildItem -Path "release" -Filter "*.exe" -File
+
+          foreach ($yml in $ymlFiles) {
+            $content = Get-Content $yml.FullName -Raw
+            $modified = $false
+
+            foreach ($exe in $exeFiles) {
+              # Compute new sha512 (base64) for the signed exe
+              $hash = Get-FileHash -Path $exe.FullName -Algorithm SHA512
+              $hashBytes = [byte[]]::new($hash.Hash.Length / 2)
+              for ($i = 0; $i -lt $hashBytes.Length; $i++) {
+                $hashBytes[$i] = [Convert]::ToByte($hash.Hash.Substring($i * 2, 2), 16)
+              }
+              $newSha512 = [Convert]::ToBase64String($hashBytes)
+              $newSize = (Get-Item $exe.FullName).Length
+              $escapedName = [Regex]::Escape($exe.Name)
+
+              # 1) files[] entries:  url: <name>\n    sha512: <hash>\n    size: <n>
+              $urlPattern = "(?m)(url:\s*${escapedName}\s*\r?\n\s*sha512:\s*)(\S+)(\s*\r?\n\s*size:\s*)(\d+)"
+              if ($content -match $urlPattern) {
+                $content = $content -replace $urlPattern, "`${1}${newSha512}`${3}${newSize}"
+                $modified = $true
+                Write-Host "Updated $($yml.Name) files[]: $($exe.Name) sha512=$newSha512 size=$newSize"
+              }
+
+              # 2) Top-level entry:  path: <name>\nsha512: <hash>\n  (no size field)
+              $pathPattern = "(?m)(path:\s*${escapedName}\s*\r?\n)sha512:\s*\S+"
+              if ($content -match $pathPattern) {
+                $content = $content -replace $pathPattern, "`${1}sha512: ${newSha512}"
+                $modified = $true
+                Write-Host "Updated $($yml.Name) top-level: $($exe.Name) sha512=$newSha512"
+              }
+            }
+
+            if ($modified) {
+              Set-Content -Path $yml.FullName -Value $content -NoNewline
+              Write-Host "Saved updated $($yml.Name)"
+            }
+          }
+
+          Write-Host ""
+          Write-Host "=== Final yml contents ==="
+          foreach ($yml in $ymlFiles) {
+            Write-Host "--- $($yml.Name) ---"
+            Get-Content $yml.FullName
+            Write-Host ""
+          }
 
       # Linux specific steps
       - name: Build Linux

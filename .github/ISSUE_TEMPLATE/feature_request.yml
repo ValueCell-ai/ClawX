@@ -1,0 +1,51 @@
+name: Feature Request
+description: Propose a new capability or improvement.
+title: "[Feature]: "
+labels:
+  - enhancement
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the suggestion. Clear problem and success criteria help reviewers evaluate quickly.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem Statement
+      description: What user problem are you trying to solve?
+      placeholder: The current behavior is ... and it causes ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed Solution
+      description: Describe your preferred solution.
+      placeholder: We could add ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives Considered
+      description: Optional alternatives or tradeoffs.
+
+  - type: textarea
+    id: success
+    attributes:
+      label: Success Criteria
+      description: How should we know this is done?
+      placeholder: |
+        - [ ] ...
+        - [ ] ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional Context
+      description: Mockups, references, related links, etc.

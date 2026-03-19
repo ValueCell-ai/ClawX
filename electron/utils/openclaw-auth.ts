@@ -827,6 +827,45 @@ export async function syncBrowserConfigToOpenClaw(): Promise<void> {
 }
 
 /**
+ * Ensure session idle-reset is configured in ~/.openclaw/openclaw.json.
+ *
+ * By default OpenClaw resets the "main" session daily at 04:00 local time,
+ * which means conversations disappear after roughly one day.  ClawX sets
+ * `session.idleMinutes` to 10 080 (7 days) so that conversations are
+ * preserved for a week unless the user has explicitly configured their own
+ * value.  When `idleMinutes` is set without `session.reset` /
+ * `session.resetByType`, OpenClaw stays in idle-only mode (no daily reset).
+ */
+export async function syncSessionIdleMinutesToOpenClaw(): Promise<void> {
+  const DEFAULT_IDLE_MINUTES = 10_080; // 7 days
+
+  return withConfigLock(async () => {
+    const config = await readOpenClawJson();
+
+    const session = (
+      config.session && typeof config.session === 'object'
+        ? { ...(config.session as Record<string, unknown>) }
+        : {}
+    ) as Record<string, unknown>;
+
+    // Only set idleMinutes if the user has not configured it yet.
+    if (session.idleMinutes !== undefined) return;
+
+    // If the user has explicit reset / resetByType / resetByChannel config,
+    // they are actively managing session lifecycle — don't interfere.
+    if (session.reset !== undefined
+      || session.resetByType !== undefined
+      || session.resetByChannel !== undefined) return;
+
+    session.idleMinutes = DEFAULT_IDLE_MINUTES;
+    config.session = session;
+
+    await writeOpenClawJson(config);
+    console.log(`Synced session.idleMinutes=${DEFAULT_IDLE_MINUTES} (7d) to openclaw.json`);
+  });
+}
+
+/**
  * Update a provider entry in every discovered agent's models.json.
  */
 export async function updateAgentModelProvider(

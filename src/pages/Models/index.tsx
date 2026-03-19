@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useReducer, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
   ChevronLeft,
@@ -19,8 +19,8 @@ import {
   type UsageHistoryEntry,
   type UsageWindow,
 } from './usage-history';
-const DEFAULT_USAGE_FETCH_MAX_ATTEMPTS = 6;
-const WINDOWS_USAGE_FETCH_MAX_ATTEMPTS = 10;
+const DEFAULT_USAGE_FETCH_MAX_ATTEMPTS = 2;
+const WINDOWS_USAGE_FETCH_MAX_ATTEMPTS = 3;
 const USAGE_FETCH_RETRY_DELAY_MS = 1500;
 
 export function Models() {
@@ -32,11 +32,36 @@ export function Models() {
     ? WINDOWS_USAGE_FETCH_MAX_ATTEMPTS
     : DEFAULT_USAGE_FETCH_MAX_ATTEMPTS;
 
-  const [usageHistory, setUsageHistory] = useState<UsageHistoryEntry[]>([]);
   const [usageGroupBy, setUsageGroupBy] = useState<UsageGroupBy>('model');
   const [usageWindow, setUsageWindow] = useState<UsageWindow>('7d');
   const [usagePage, setUsagePage] = useState(1);
   const [selectedUsageEntry, setSelectedUsageEntry] = useState<UsageHistoryEntry | null>(null);
+
+  type FetchState = {
+    status: 'idle' | 'loading' | 'done';
+    data: UsageHistoryEntry[];
+  };
+  type FetchAction =
+    | { type: 'start' }
+    | { type: 'done'; data: UsageHistoryEntry[] }
+    | { type: 'reset' };
+
+  const [fetchState, dispatchFetch] = useReducer(
+    (state: FetchState, action: FetchAction): FetchState => {
+      switch (action.type) {
+        case 'start':
+          return { status: 'loading', data: state.data };
+        case 'done':
+          return { status: 'done', data: action.data };
+        case 'reset':
+          return { status: 'idle', data: [] };
+        default:
+          return state;
+      }
+    },
+    { status: 'idle' as const, data: [] as UsageHistoryEntry[] },
+  );
+
   const usageFetchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const usageFetchGenerationRef = useRef(0);
 
@@ -50,8 +75,12 @@ export function Models() {
       usageFetchTimerRef.current = null;
     }
 
-    if (!isGatewayRunning) return;
+    if (!isGatewayRunning) {
+      dispatchFetch({ type: 'reset' });
+      return;
+    }
 
+    dispatchFetch({ type: 'start' });
     const generation = usageFetchGenerationRef.current + 1;
     usageFetchGenerationRef.current = generation;
     const restartMarker = `${gatewayStatus.pid ?? 'na'}:${gatewayStatus.connectedAt ?? 'na'}`;
@@ -59,6 +88,17 @@ export function Models() {
       generation,
       restartMarker,
     });
+
+    // Safety timeout: if the fetch cycle hasn't resolved after 30 s,
+    // force-resolve to "done" with empty data to avoid an infinite spinner.
+    const safetyTimeout = setTimeout(() => {
+      if (usageFetchGenerationRef.current !== generation) return;
+      trackUiEvent('models.token_usage_fetch_safety_timeout', {
+        generation,
+        restartMarker,
+      });
+      dispatchFetch({ type: 'done', data: [] });
+    }, 30_000);
 
     const fetchUsageHistoryWithRetry = async (attempt: number) => {
       trackUiEvent('models.token_usage_fetch_attempt', {
@@ -71,7 +111,6 @@ export function Models() {
         if (usageFetchGenerationRef.current !== generation) return;
 
         const normalized = Array.isArray(entries) ? entries : [];
-        setUsageHistory(normalized);
         setUsagePage(1);
         trackUiEvent('models.token_usage_fetch_succeeded', {
           generation,
@@ -90,13 +129,16 @@ export function Models() {
           usageFetchTimerRef.current = setTimeout(() => {
             void fetchUsageHistoryWithRetry(attempt + 1);
           }, USAGE_FETCH_RETRY_DELAY_MS);
-        } else if (normalized.length === 0) {
-          trackUiEvent('models.token_usage_fetch_exhausted', {
-            generation,
-            attempt,
-            reason: 'empty',
-            restartMarker,
-          });
+        } else {
+          if (normalized.length === 0) {
+            trackUiEvent('models.token_usage_fetch_exhausted', {
+              generation,
+              attempt,
+              reason: 'empty',
+              restartMarker,
+            });
+          }
+          dispatchFetch({ type: 'done', data: normalized });
         }
       } catch (error) {
         if (usageFetchGenerationRef.current !== generation) return;
@@ -118,7 +160,7 @@ export function Models() {
           }, USAGE_FETCH_RETRY_DELAY_MS);
           return;
         }
-        setUsageHistory([]);
+        dispatchFetch({ type: 'done', data: [] });
         trackUiEvent('models.token_usage_fetch_exhausted', {
           generation,
           attempt,
@@ -131,6 +173,7 @@ export function Models() {
     void fetchUsageHistoryWithRetry(1);
 
     return () => {
+      clearTimeout(safetyTimeout);
       if (usageFetchTimerRef.current) {
         clearTimeout(usageFetchTimerRef.current);
         usageFetchTimerRef.current = null;
@@ -138,6 +181,7 @@ export function Models() {
     };
   }, [isGatewayRunning, gatewayStatus.connectedAt, gatewayStatus.pid, usageFetchMaxAttempts]);
 
+  const usageHistory = fetchState.data;
   const visibleUsageHistory = isGatewayRunning ? usageHistory : [];
   const filteredUsageHistory = filterUsageHistoryByWindow(visibleUsageHistory, usageWindow);
   const usageGroups = groupUsageHistory(filteredUsageHistory, usageGroupBy);
@@ -145,7 +189,7 @@ export function Models() {
   const usageTotalPages = Math.max(1, Math.ceil(filteredUsageHistory.length / usagePageSize));
   const safeUsagePage = Math.min(usagePage, usageTotalPages);
   const pagedUsageHistory = filteredUsageHistory.slice((safeUsagePage - 1) * usagePageSize, safeUsagePage * usagePageSize);
-  const usageLoading = isGatewayRunning && visibleUsageHistory.length === 0;
+  const usageLoading = isGatewayRunning && fetchState.status === 'loading';
 
   return (
     <div className="flex flex-col -m-6 dark:bg-background h-[calc(100vh-2.5rem)] overflow-hidden">

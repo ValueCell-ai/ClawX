@@ -269,7 +269,14 @@ export const useGatewayStore = create<GatewayState>((set, get) => ({
                   const state = useChannelsStore.getState();
                   const channel = state.channels.find((item) => item.type === update.channelId);
                   if (channel) {
-                    state.updateChannel(channel.id, { status: mapChannelStatus(update.status) });
+                    const newStatus = mapChannelStatus(update.status);
+                    state.updateChannel(channel.id, { status: newStatus });
+                    
+                    if (newStatus === 'disconnected' || newStatus === 'error') {
+                      state.scheduleAutoReconnect(channel.id);
+                    } else if (newStatus === 'connected' || newStatus === 'connecting') {
+                      state.clearAutoReconnect(channel.id);
+                    }
                   }
                 })
                 .catch(() => {});

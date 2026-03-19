@@ -2194,7 +2194,7 @@ function registerUsageHandlers(): void {
   });
 }
 /**
- * Window control handlers (for custom title bar on Windows/Linux)
+ * Window control handlers (for custom title bar on Windows)
  */
 function registerWindowHandlers(mainWindow: BrowserWindow): void {
   ipcMain.handle('window:minimize', () => {

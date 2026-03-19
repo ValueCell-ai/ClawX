@@ -33,7 +33,12 @@ interface ChannelsState {
   setChannels: (channels: Channel[]) => void;
   updateChannel: (channelId: string, updates: Partial<Channel>) => void;
   clearError: () => void;
+  scheduleAutoReconnect: (channelId: string) => void;
+  clearAutoReconnect: (channelId: string) => void;
 }
+
+const reconnectTimers = new Map<string, NodeJS.Timeout>();
+const reconnectAttempts = new Map<string, number>();
 
 export const useChannelsStore = create<ChannelsState>((set, get) => ({
   channels: [],
@@ -194,7 +199,8 @@ export const useChannelsStore = create<ChannelsState>((set, get) => ({
   },
 
   disconnectChannel: async (channelId) => {
-    const { updateChannel } = get();
+    const { updateChannel, clearAutoReconnect } = get();
+    clearAutoReconnect(channelId);
 
     try {
       await useGatewayStore.getState().rpc('channels.disconnect', { channelId });
@@ -223,4 +229,37 @@ export const useChannelsStore = create<ChannelsState>((set, get) => ({
   },
 
   clearError: () => set({ error: null }),
+
+  scheduleAutoReconnect: (channelId) => {
+    if (reconnectTimers.has(channelId)) return;
+    
+    const attempts = reconnectAttempts.get(channelId) || 0;
+    // Exponential backoff capped at 2 minutes
+    const delay = Math.min(5000 * Math.pow(2, attempts), 120000);
+    
+    console.log(`[Watchdog] Scheduling auto-reconnect for ${channelId} in ${delay}ms (attempt ${attempts + 1})`);
+    
+    const timer = setTimeout(() => {
+      reconnectTimers.delete(channelId);
+      const state = get();
+      const channel = state.channels.find((c) => c.id === channelId);
+      
+      if (channel && (channel.status === 'disconnected' || channel.status === 'error')) {
+        reconnectAttempts.set(channelId, attempts + 1);
+        console.log(`[Watchdog] Executing auto-reconnect for ${channelId} (attempt ${attempts + 1})`);
+        state.connectChannel(channelId).catch(() => {});
+      }
+    }, delay);
+    
+    reconnectTimers.set(channelId, timer);
+  },
+
+  clearAutoReconnect: (channelId) => {
+    const timer = reconnectTimers.get(channelId);
+    if (timer) {
+      clearTimeout(timer);
+      reconnectTimers.delete(channelId);
+    }
+    reconnectAttempts.delete(channelId);
+  },
 }));

@@ -112,6 +112,8 @@ export class GatewayManager extends EventEmitter {
   private static readonly HEARTBEAT_INTERVAL_MS = 30_000;
   private static readonly HEARTBEAT_TIMEOUT_MS = 12_000;
   private static readonly HEARTBEAT_MAX_MISSES = 3;
+  public static readonly RESTART_COOLDOWN_MS = 5_000;
+  private lastRestartAt = 0;
 
   constructor(config?: Partial<ReconnectConfig>) {
     super();
