@@ -60,26 +60,13 @@ import {
 import { validateApiKeyWithProvider } from '../services/providers/provider-validation';
 import { appUpdater } from './updater';
 import { registerHostApiProxyHandlers } from './ipc/host-api-proxy';
-
-type AppRequest = {
-  id?: string;
-  module: string;
-  action: string;
-  payload?: unknown;
-};
-
-type AppErrorCode = 'VALIDATION' | 'PERMISSION' | 'TIMEOUT' | 'GATEWAY' | 'INTERNAL' | 'UNSUPPORTED';
-
-type AppResponse = {
-  id?: string;
-  ok: boolean;
-  data?: unknown;
-  error?: {
-    code: AppErrorCode;
-    message: string;
-    details?: unknown;
-  };
-};
+import {
+  isLaunchAtStartupKey,
+  isProxyKey,
+  mapAppErrorCode,
+  type AppRequest,
+  type AppResponse,
+} from './ipc/request-helpers';
 
 /**
  * Register all IPC handlers
@@ -148,30 +135,6 @@ export function registerIpcHandlers(
 
   // File staging handlers (upload/send separation)
   registerFileHandlers();
-}
-
-function mapAppErrorCode(error: unknown): AppErrorCode {
-  const msg = error instanceof Error ? error.message.toLowerCase() : String(error).toLowerCase();
-  if (msg.includes('timeout')) return 'TIMEOUT';
-  if (msg.includes('permission') || msg.includes('denied') || msg.includes('forbidden')) return 'PERMISSION';
-  if (msg.includes('gateway')) return 'GATEWAY';
-  if (msg.includes('invalid') || msg.includes('required')) return 'VALIDATION';
-  return 'INTERNAL';
-}
-
-function isProxyKey(key: keyof AppSettings): boolean {
-  return (
-    key === 'proxyEnabled' ||
-    key === 'proxyServer' ||
-    key === 'proxyHttpServer' ||
-    key === 'proxyHttpsServer' ||
-    key === 'proxyAllServer' ||
-    key === 'proxyBypassRules'
-  );
-}
-
-function isLaunchAtStartupKey(key: keyof AppSettings): boolean {
-  return key === 'launchAtStartup';
 }
 
 function registerUnifiedRequestHandlers(gatewayManager: GatewayManager): void {
