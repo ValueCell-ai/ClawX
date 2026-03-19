@@ -242,8 +242,14 @@ export class GatewayManager extends EventEmitter {
           await this.connect(port, externalToken);
         },
         onConnectedToExistingGateway: () => {
-          this.ownsProcess = false;
-          this.setStatus({ pid: undefined });
+          // If the existing gateway is actually our own spawned UtilityProcess
+          // (e.g. after a self-restart code=1012), keep ownership so that
+          // stop() can still terminate the process during a restart() cycle.
+          const isOwnProcess = this.process?.pid != null && this.ownsProcess;
+          if (!isOwnProcess) {
+            this.ownsProcess = false;
+            this.setStatus({ pid: undefined });
+          }
           this.startHealthCheck();
         },
         waitForPortFree: async (port) => {
