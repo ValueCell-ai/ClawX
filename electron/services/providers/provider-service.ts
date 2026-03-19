@@ -66,7 +66,6 @@ export class ProviderService {
     // OpenClaw JSON (e.g. user deleted openclaw.json manually).
     if (accounts.length > 0) {
       const activeProviders = await getActiveOpenClawProviders();
-      const configMissing = activeProviders.size === 0;
       const staleIds: string[] = [];
 
       for (const account of accounts) {
@@ -77,9 +76,11 @@ export class ProviderService {
           activeProviders.has(account.id) ||
           activeProviders.has(openClawKey);
 
-        // If openclaw.json is completely empty/missing, drop ALL accounts.
-        // Otherwise only drop non-builtin accounts that are not in the config.
-        if (configMissing || (!isBuiltin && !isActive)) {
+        // Drop non-builtin accounts whose provider is no longer in the config.
+        // Builtin providers (anthropic, openai, etc.) are always retained
+        // because they don't require an explicit models.providers entry in
+        // openclaw.json — the runtime recognises them natively.
+        if (!isBuiltin && !isActive) {
           staleIds.push(account.id);
         }
       }
