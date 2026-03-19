@@ -28,7 +28,7 @@ import {
   setDefaultProvider,
   storeApiKey,
 } from '../../utils/secure-storage';
-import { getActiveOpenClawProviders } from '../../utils/openclaw-auth';
+import { getActiveOpenClawProviders, getOpenClawProvidersConfig } from '../../utils/openclaw-auth';
 import { getOpenClawProviderKeyForType } from '../../utils/provider-keys';
 import type { ProviderWithKeyInfo } from '../../shared/providers/types';
 import { logger } from '../../utils/logger';
@@ -60,11 +60,22 @@ export class ProviderService {
 
   async listAccounts(): Promise<ProviderAccount[]> {
     await ensureProviderStoreMigrated();
-    const accounts = await listProviderAccounts();
+    let accounts = await listProviderAccounts();
+
+    // Seed: when ClawX store is empty but OpenClaw config has providers,
+    // create ProviderAccount entries so the settings panel isn't blank.
+    // This covers users who configured providers via CLI or openclaw.json directly.
+    if (accounts.length === 0) {
+      const activeProviders = await getActiveOpenClawProviders();
+      if (activeProviders.size > 0) {
+        accounts = await this.seedAccountsFromOpenClawConfig();
+      }
+      return accounts;
+    }
 
     // Sync check: remove stale accounts whose provider no longer exists in
     // OpenClaw JSON (e.g. user deleted openclaw.json manually).
-    if (accounts.length > 0) {
+    {
       const activeProviders = await getActiveOpenClawProviders();
 
       // If the OpenClaw config is empty or unreadable, skip cleanup entirely
@@ -107,6 +118,63 @@ export class ProviderService {
     }
 
     return accounts;
+  }
+
+  /**
+   * Seed the ClawX provider store from openclaw.json when the store is empty.
+   * This is a one-time operation for users who configured providers externally.
+   */
+  private async seedAccountsFromOpenClawConfig(): Promise<ProviderAccount[]> {
+    const { providers, defaultModel } = await getOpenClawProvidersConfig();
+
+    // Determine the provider prefix from the default model (e.g. "siliconflow/deepseek..." → "siliconflow")
+    const defaultModelProvider = defaultModel?.includes('/')
+      ? defaultModel.split('/')[0]
+      : undefined;
+
+    const now = new Date().toISOString();
+    const seeded: ProviderAccount[] = [];
+
+    for (const [key, entry] of Object.entries(providers)) {
+      const definition = getProviderDefinition(key);
+      const isBuiltin = (BUILTIN_PROVIDER_TYPES as readonly string[]).includes(key);
+      const vendorId = isBuiltin ? key : 'custom';
+
+      const baseUrl = typeof entry.baseUrl === 'string' ? entry.baseUrl : definition?.providerConfig?.baseUrl;
+
+      // Infer model from the default model if it belongs to this provider
+      let model: string | undefined;
+      if (defaultModelProvider === key && defaultModel) {
+        model = defaultModel;
+      } else if (definition?.defaultModelId) {
+        model = definition.defaultModelId;
+      }
+
+      const account: ProviderAccount = {
+        id: key,
+        vendorId: (vendorId as ProviderAccount['vendorId']),
+        label: definition?.name ?? key.charAt(0).toUpperCase() + key.slice(1),
+        authMode: definition?.defaultAuthMode ?? 'api_key',
+        baseUrl,
+        apiProtocol: definition?.providerConfig?.api,
+        model,
+        enabled: true,
+        isDefault: false,
+        createdAt: now,
+        updatedAt: now,
+      };
+
+      await saveProviderAccount(account);
+      seeded.push(account);
+    }
+
+    if (seeded.length > 0) {
+      logger.info(
+        `[provider-seed] Seeded ${seeded.length} provider account(s) from openclaw.json: ${seeded.map((a) => a.id).join(', ')}`,
+      );
+    }
+
+    return seeded;
   }
 
   async getAccount(accountId: string): Promise<ProviderAccount | null> {
