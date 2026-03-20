@@ -36,7 +36,12 @@ async function setupTarget(id) {
 
   echo(chalk.blue`\n📦 Setting up Node.js for ${id}...`);
 
-  await fs.remove(targetDir);
+  // Only remove the target binary, not the entire directory,
+  // to avoid deleting uv.exe or other binaries placed by other download scripts.
+  const outputNode = path.join(targetDir, 'node.exe');
+  if (await fs.pathExists(outputNode)) {
+    await fs.remove(outputNode);
+  }
   await fs.remove(tempDir);
   await fs.ensureDir(targetDir);
   await fs.ensureDir(tempDir);
@@ -58,7 +63,6 @@ async function setupTarget(id) {
     }
 
     const expectedNode = path.join(tempDir, target.sourceDir, 'node.exe');
-    const outputNode = path.join(targetDir, 'node.exe');
     if (await fs.pathExists(expectedNode)) {
       await fs.move(expectedNode, outputNode, { overwrite: true });
     } else {
