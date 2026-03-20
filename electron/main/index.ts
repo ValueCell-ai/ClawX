@@ -545,6 +545,30 @@ if (gotTheLock) {
       app.quit();
     });
   });
+
+  // Best-effort Gateway cleanup on unexpected crashes.
+  // These handlers attempt to terminate the Gateway child process within a
+  // short timeout before force-exiting, preventing orphaned processes.
+  const emergencyGatewayCleanup = (reason: string, error: unknown): void => {
+    logger.error(`${reason}:`, error);
+    try {
+      void gatewayManager?.stop().catch(() => { /* ignore */ });
+    } catch {
+      // ignore — stop() may not be callable if state is corrupted
+    }
+    // Give Gateway stop a brief window, then force-exit.
+    setTimeout(() => {
+      process.exit(1);
+    }, 3000).unref();
+  };
+
+  process.on('uncaughtException', (error) => {
+    emergencyGatewayCleanup('Uncaught exception in main process', error);
+  });
+
+  process.on('unhandledRejection', (reason) => {
+    emergencyGatewayCleanup('Unhandled promise rejection in main process', reason);
+  });
 }
 
 // Export for testing

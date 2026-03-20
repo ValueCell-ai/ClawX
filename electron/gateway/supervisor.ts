@@ -22,8 +22,6 @@ export function warmupManagedPythonReadiness(): void {
 }
 
 export async function terminateOwnedGatewayProcess(child: Electron.UtilityProcess): Promise<void> {
-  let exited = false;
-
   const terminateWindowsProcessTree = async (pid: number): Promise<void> => {
     const cp = await import('child_process');
     await new Promise<void>((resolve) => {
@@ -32,8 +30,13 @@ export async function terminateOwnedGatewayProcess(child: Electron.UtilityProces
   };
 
   await new Promise<void>((resolve) => {
+    let exited = false;
+
+    // Register a single exit listener before any kill attempt to avoid
+    // the race where exit fires between two separate `once('exit')` calls.
     child.once('exit', () => {
       exited = true;
+      clearTimeout(timeout);
       resolve();
     });
 
@@ -71,10 +74,6 @@ export async function terminateOwnedGatewayProcess(child: Electron.UtilityProces
       }
       resolve();
     }, 5000);
-
-    child.once('exit', () => {
-      clearTimeout(timeout);
-    });
   });
 }
 

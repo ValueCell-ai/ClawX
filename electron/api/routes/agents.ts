@@ -85,7 +85,7 @@ async function restartGatewayForAgentDeletion(ctx: HostApiContext): Promise<void
             }
           }
           for (const p of pids) {
-            try { await execAsync(`taskkill /F /PID ${p}`); } catch { /* ignore */ }
+            try { await execAsync(`taskkill /F /PID ${p} /T`); } catch { /* ignore */ }
           }
         }
       } catch {
