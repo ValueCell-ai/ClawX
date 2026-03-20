@@ -12,6 +12,7 @@ export interface CronJobTarget {
   channelType: ChannelType;
   channelId: string;
   channelName: string;
+  to?: string;
 }
 
 /**
@@ -41,6 +42,7 @@ export interface CronJob {
   name: string;
   message: string;
   schedule: string | CronSchedule;
+  agentId?: string;
   target?: CronJobTarget;
   enabled: boolean;
   createdAt: string;
@@ -58,6 +60,11 @@ export interface CronJobCreateInput {
   name: string;
   message: string;
   schedule: string;
+  agentId?: string;
+  target?: {
+    channelType?: ChannelType;
+    to?: string;
+  };
   enabled?: boolean;
 }
 
@@ -68,6 +75,11 @@ export interface CronJobUpdateInput {
   name?: string;
   message?: string;
   schedule?: string;
+  agentId?: string | null;
+  target?: {
+    channelType?: ChannelType;
+    to?: string;
+  } | null;
   enabled?: boolean;
 }
 

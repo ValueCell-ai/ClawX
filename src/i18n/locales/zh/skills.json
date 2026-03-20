@@ -13,6 +13,22 @@
         "builtIn": "内置 ({{count}})",
         "marketplace": "市场 ({{count}})"
     },
+    "scope": {
+        "modeLabel": "作用域",
+        "global": "全局",
+        "agent": "Agent",
+        "agentLabel": "以 Agent 运行",
+        "selectAgent": "选择 Agent",
+        "loading": "正在加载策略...",
+        "globalHint": "全局作用域会同时更新运行时技能状态和基线策略。",
+        "agentHint": "Agent 作用域仅修改所选 Agent 的覆盖策略。",
+        "runtimeWarning": "Agent 覆盖策略当前仅保存在 ClawX。是否在运行时生效取决于 OpenClaw 支持。",
+        "badges": {
+            "effective": "生效",
+            "overrideEnable": "覆盖 +",
+            "overrideDisable": "覆盖 -"
+        }
+    },
     "search": "搜索技能...",
     "searchMarketplace": "搜索市场...",
     "searchButton": "搜索",
@@ -93,7 +109,12 @@
         "noBatchDisableTargets": "当前可见技能都已禁用。",
         "batchEnabled": "已启用 {{count}} 个技能。",
         "batchDisabled": "已禁用 {{count}} 个技能。",
-        "batchPartial": "已更新 {{success}} / {{total}} 个技能，部分操作失败。"
+        "batchPartial": "已更新 {{success}} / {{total}} 个技能，部分操作失败。",
+        "agentRequired": "请先选择一个 Agent。",
+        "overrideEnabled": "已启用 Agent 覆盖",
+        "overrideDisabled": "已禁用 Agent 覆盖",
+        "batchOverrideEnabled": "已为该 Agent 启用 {{count}} 个生效技能。",
+        "batchOverrideDisabled": "已为该 Agent 禁用 {{count}} 个生效技能。"
     },
     "marketplace": {
         "title": "市场",

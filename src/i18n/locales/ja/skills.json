@@ -13,6 +13,22 @@
         "builtIn": "内蔵 ({{count}})",
         "marketplace": "マーケットプレイス ({{count}})"
     },
+    "scope": {
+        "modeLabel": "スコープ",
+        "global": "グローバル",
+        "agent": "エージェント",
+        "agentLabel": "実行エージェント",
+        "selectAgent": "エージェントを選択",
+        "loading": "ポリシーを読み込み中...",
+        "globalHint": "グローバルスコープは実行時のスキル状態とベースラインポリシーを更新します。",
+        "agentHint": "エージェントスコープは選択中エージェントのオーバーライドのみ更新します。",
+        "runtimeWarning": "エージェントのオーバーライドは現在 ClawX 側ポリシーに保存されます。実行時反映は OpenClaw の対応状況に依存します。",
+        "badges": {
+            "effective": "有効",
+            "overrideEnable": "上書き +",
+            "overrideDisable": "上書き -"
+        }
+    },
     "search": "スキルを検索...",
     "searchMarketplace": "マーケットプレイスを検索...",
     "searchButton": "検索",
@@ -93,7 +109,12 @@
         "noBatchDisableTargets": "表示中のスキルはすべて無効です。",
         "batchEnabled": "{{count}} 件のスキルを有効化しました。",
         "batchDisabled": "{{count}} 件のスキルを無効化しました。",
-        "batchPartial": "{{success}} / {{total}} 件を更新しました。一部失敗しています。"
+        "batchPartial": "{{success}} / {{total}} 件を更新しました。一部失敗しています。",
+        "agentRequired": "先にエージェントを選択してください。",
+        "overrideEnabled": "エージェント上書きを有効化しました",
+        "overrideDisabled": "エージェント上書きを無効化しました",
+        "batchOverrideEnabled": "このエージェントで {{count}} 件の有効スキルを有効化しました。",
+        "batchOverrideDisabled": "このエージェントで {{count}} 件の有効スキルを無効化しました。"
     },
     "marketplace": {
         "title": "マーケットプレイス",

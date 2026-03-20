@@ -13,6 +13,22 @@
         "builtIn": "Built-in ({{count}})",
         "marketplace": "Marketplace ({{count}})"
     },
+    "scope": {
+        "modeLabel": "Scope",
+        "global": "Global",
+        "agent": "Agent",
+        "agentLabel": "Run as Agent",
+        "selectAgent": "Select an agent",
+        "loading": "Loading policy...",
+        "globalHint": "Global scope updates runtime skill states and baseline policy.",
+        "agentHint": "Agent scope edits override policy for the selected agent.",
+        "runtimeWarning": "Agent overrides are stored in ClawX policy. Runtime enforcement depends on OpenClaw support.",
+        "badges": {
+            "effective": "Effective",
+            "overrideEnable": "Override +",
+            "overrideDisable": "Override -"
+        }
+    },
     "search": "Search skills...",
     "searchMarketplace": "Search marketplace...",
     "searchButton": "Search",
@@ -93,7 +109,12 @@
         "noBatchDisableTargets": "All visible skills are already disabled.",
         "batchEnabled": "{{count}} skills enabled.",
         "batchDisabled": "{{count}} skills disabled.",
-        "batchPartial": "Updated {{success}} / {{total}} skills. Some items failed."
+        "batchPartial": "Updated {{success}} / {{total}} skills. Some items failed.",
+        "agentRequired": "Please select an agent first.",
+        "overrideEnabled": "Agent override enabled",
+        "overrideDisabled": "Agent override disabled",
+        "batchOverrideEnabled": "Enabled {{count}} effective skills for this agent.",
+        "batchOverrideDisabled": "Disabled {{count}} effective skills for this agent."
     },
     "marketplace": {
         "title": "Marketplace",

@@ -57,11 +57,8 @@ export const useCronStore = create<CronState>((set) => ({
         method: 'PUT',
         body: JSON.stringify(input),
       });
-      set((state) => ({
-        jobs: state.jobs.map((job) =>
-          job.id === id ? { ...job, ...input, updatedAt: new Date().toISOString() } : job
-        ),
-      }));
+      const jobs = await hostApiFetch<CronJob[]>('/api/cron/jobs');
+      set({ jobs });
     } catch (error) {
       console.error('Failed to update cron job:', error);
       throw error;

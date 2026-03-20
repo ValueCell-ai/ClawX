@@ -56,6 +56,11 @@ export interface AppSettings {
   selectedBundles: string[];
   enabledSkills: string[];
   disabledSkills: string[];
+  skillPolicy: {
+    globalEnabled: string[];
+    agentOverrides: Record<string, { enabled?: string[]; disabled?: string[] }>;
+  };
+  skillPolicyInitialized: boolean;
 }
 
 /**
@@ -107,6 +112,11 @@ function createDefaultSettings(): AppSettings {
     selectedBundles: ['productivity', 'developer'],
     enabledSkills: [],
     disabledSkills: [],
+    skillPolicy: {
+      globalEnabled: [],
+      agentOverrides: {},
+    },
+    skillPolicyInitialized: false,
   };
 }
 

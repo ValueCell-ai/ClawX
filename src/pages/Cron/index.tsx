@@ -2,7 +2,7 @@
  * Cron Page
  * Manage scheduled tasks
  */
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useMemo } from 'react';
 import {
   Plus,
   Clock,
@@ -26,14 +26,17 @@ import { Switch } from '@/components/ui/switch';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
+import { Select } from '@/components/ui/select';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { useCronStore } from '@/stores/cron';
 import { useGatewayStore } from '@/stores/gateway';
+import { useChannelsStore } from '@/stores/channels';
+import { useAgentsStore } from '@/stores/agents';
 import { LoadingSpinner } from '@/components/common/LoadingSpinner';
 import { formatRelativeTime, cn } from '@/lib/utils';
 import { toast } from 'sonner';
-import type { CronJob, CronJobCreateInput, ScheduleType } from '@/types/cron';
-import { CHANNEL_ICONS, type ChannelType } from '@/types/channel';
+import type { CronJob, CronJobCreateInput, CronJobUpdateInput, ScheduleType } from '@/types/cron';
+import { CHANNEL_ICONS, CHANNEL_NAMES, type ChannelType } from '@/types/channel';
 import { useTranslation } from 'react-i18next';
 import type { TFunction } from 'i18next';
 
@@ -173,16 +176,21 @@ function estimateNextRun(scheduleExpr: string): string | null {
 // Create/Edit Task Dialog
 interface TaskDialogProps {
   job?: CronJob;
+  agentOptions: Array<{ id: string; name: string }>;
+  channelOptions: Array<{ type: ChannelType; name: string }>;
   onClose: () => void;
   onSave: (input: CronJobCreateInput) => Promise<void>;
 }
 
-function TaskDialog({ job, onClose, onSave }: TaskDialogProps) {
+function TaskDialog({ job, agentOptions, channelOptions, onClose, onSave }: TaskDialogProps) {
   const { t } = useTranslation('cron');
   const [saving, setSaving] = useState(false);
 
   const [name, setName] = useState(job?.name || '');
   const [message, setMessage] = useState(job?.message || '');
+  const [agentId, setAgentId] = useState(job?.agentId || '');
+  const [targetChannelType, setTargetChannelType] = useState(job?.target?.channelType || '');
+  const [targetTo, setTargetTo] = useState(job?.target?.to || '');
   // Extract cron expression string from CronSchedule object or use as-is if string
   const initialSchedule = (() => {
     const s = job?.schedule;
@@ -221,6 +229,15 @@ function TaskDialog({ job, onClose, onSave }: TaskDialogProps) {
         name: name.trim(),
         message: message.trim(),
         schedule: finalSchedule,
+        ...(agentId.trim() ? { agentId: agentId.trim() } : {}),
+        ...(targetChannelType
+          ? {
+            target: {
+              channelType: targetChannelType as ChannelType,
+              ...(targetTo.trim() ? { to: targetTo.trim() } : {}),
+            },
+          }
+          : {}),
         enabled,
       });
       onClose();
@@ -268,6 +285,58 @@ function TaskDialog({ job, onClose, onSave }: TaskDialogProps) {
               rows={3}
               className="rounded-xl font-mono text-[13px] bg-[#eeece3] dark:bg-muted border-black/10 dark:border-white/10 focus-visible:ring-2 focus-visible:ring-primary/50 focus-visible:border-primary shadow-sm transition-all text-foreground placeholder:text-foreground/40 resize-none"
             />
+          </div>
+
+          {/* Agent */}
+          <div className="space-y-2.5">
+            <Label htmlFor="agentId" className="text-[14px] text-foreground/80 font-bold">{t('dialog.runAsAgent')}</Label>
+            <Select
+              id="agentId"
+              value={agentId}
+              onChange={(e) => setAgentId(e.target.value)}
+              className="h-[44px] rounded-xl font-mono text-[13px] bg-[#eeece3] dark:bg-muted border-black/10 dark:border-white/10 focus-visible:ring-2 focus-visible:ring-primary/50 focus-visible:border-primary shadow-sm transition-all text-foreground"
+            >
+              <option value="">{t('dialog.defaultAgent')}</option>
+              {agentOptions.map((agent) => (
+                <option key={agent.id} value={agent.id}>
+                  {agent.name} ({agent.id})
+                </option>
+              ))}
+            </Select>
+          </div>
+
+          {/* Delivery */}
+          <div className="space-y-2.5">
+            <Label htmlFor="targetChannel" className="text-[14px] text-foreground/80 font-bold">{t('dialog.targetChannel')}</Label>
+            <Select
+              id="targetChannel"
+              value={targetChannelType}
+              onChange={(e) => setTargetChannelType(e.target.value)}
+              className="h-[44px] rounded-xl font-mono text-[13px] bg-[#eeece3] dark:bg-muted border-black/10 dark:border-white/10 focus-visible:ring-2 focus-visible:ring-primary/50 focus-visible:border-primary shadow-sm transition-all text-foreground"
+            >
+              <option value="">{t('dialog.channelNone')}</option>
+              {channelOptions.map((channel) => (
+                <option key={channel.type} value={channel.type}>
+                  {channel.name}
+                </option>
+              ))}
+            </Select>
+            {channelOptions.length === 0 && (
+              <p className="text-[12px] text-muted-foreground">{t('dialog.noChannels')}</p>
+            )}
+            {targetChannelType && (
+              <div className="space-y-2.5">
+                <Label htmlFor="targetTo" className="text-[14px] text-foreground/80 font-bold">{t('dialog.targetTo')}</Label>
+                <Input
+                  id="targetTo"
+                  value={targetTo}
+                  onChange={(e) => setTargetTo(e.target.value)}
+                  placeholder={t('dialog.targetToPlaceholder')}
+                  className="h-[44px] rounded-xl font-mono text-[13px] bg-[#eeece3] dark:bg-muted border-black/10 dark:border-white/10 focus-visible:ring-2 focus-visible:ring-primary/50 focus-visible:border-primary shadow-sm transition-all text-foreground placeholder:text-foreground/40"
+                />
+                <p className="text-[12px] text-muted-foreground">{t('dialog.targetToDesc')}</p>
+              </div>
+            )}
           </div>
 
           {/* Schedule */}
@@ -357,13 +426,14 @@ function TaskDialog({ job, onClose, onSave }: TaskDialogProps) {
 // Job Card Component
 interface CronJobCardProps {
   job: CronJob;
+  agentName: string;
   onToggle: (enabled: boolean) => void;
   onEdit: () => void;
   onDelete: () => void;
   onTrigger: () => Promise<void>;
 }
 
-function CronJobCard({ job, onToggle, onEdit, onDelete, onTrigger }: CronJobCardProps) {
+function CronJobCard({ job, agentName, onToggle, onEdit, onDelete, onTrigger }: CronJobCardProps) {
   const { t } = useTranslation('cron');
   const [triggering, setTriggering] = useState(false);
 
@@ -432,10 +502,16 @@ function CronJobCard({ job, onToggle, onEdit, onDelete, onTrigger }: CronJobCard
 
         {/* Metadata */}
         <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-[12px] text-muted-foreground/80 font-medium mb-3">
+          <span className="flex items-center gap-1.5">
+            <Clock className="h-3.5 w-3.5" />
+            {t('card.agent')}: {agentName}
+          </span>
+
           {job.target && (
             <span className="flex items-center gap-1.5">
               {CHANNEL_ICONS[job.target.channelType as ChannelType]}
-              {job.target.channelName}
+              {CHANNEL_NAMES[job.target.channelType as ChannelType] || job.target.channelName}
+              {job.target.to ? ` (${job.target.to})` : ''}
             </span>
           )}
 
@@ -501,6 +577,10 @@ function CronJobCard({ job, onToggle, onEdit, onDelete, onTrigger }: CronJobCard
 export function Cron() {
   const { t } = useTranslation('cron');
   const { jobs, loading, error, fetchJobs, createJob, updateJob, toggleJob, deleteJob, triggerJob } = useCronStore();
+  const agents = useAgentsStore((state) => state.agents);
+  const fetchAgents = useAgentsStore((state) => state.fetchAgents);
+  const channels = useChannelsStore((state) => state.channels);
+  const fetchChannels = useChannelsStore((state) => state.fetchChannels);
   const gatewayStatus = useGatewayStore((state) => state.status);
   const [showDialog, setShowDialog] = useState(false);
   const [editingJob, setEditingJob] = useState<CronJob | undefined>();
@@ -511,9 +591,32 @@ export function Cron() {
   // Fetch jobs on mount
   useEffect(() => {
     if (isGatewayRunning) {
-      fetchJobs();
+      void Promise.all([fetchJobs(), fetchAgents(), fetchChannels()]);
     }
-  }, [fetchJobs, isGatewayRunning]);
+  }, [fetchAgents, fetchChannels, fetchJobs, isGatewayRunning]);
+
+  const agentNameById = useMemo(() => (
+    Object.fromEntries(agents.map((agent) => [agent.id, agent.name]))
+  ), [agents]);
+
+  const agentOptions = useMemo(
+    () => agents.map((agent) => ({ id: agent.id, name: agent.name })),
+    [agents],
+  );
+
+  const channelOptions = useMemo(() => {
+    const byType = new Map<ChannelType, { type: ChannelType; name: string }>();
+    for (const channel of channels) {
+      if (!channel.type) continue;
+      if (!byType.has(channel.type)) {
+        byType.set(channel.type, {
+          type: channel.type,
+          name: CHANNEL_NAMES[channel.type] || channel.name || channel.type,
+        });
+      }
+    }
+    return [...byType.values()].sort((a, b) => a.name.localeCompare(b.name));
+  }, [channels]);
 
   // Statistics
   const safeJobs = Array.isArray(jobs) ? jobs : [];
@@ -523,7 +626,12 @@ export function Cron() {
 
   const handleSave = useCallback(async (input: CronJobCreateInput) => {
     if (editingJob) {
-      await updateJob(editingJob.id, input);
+      const updateInput: CronJobUpdateInput = {
+        ...input,
+        agentId: input.agentId?.trim() ? input.agentId.trim() : null,
+        target: input.target?.channelType ? input.target : null,
+      };
+      await updateJob(editingJob.id, updateInput);
     } else {
       await createJob(input);
     }
@@ -684,6 +792,7 @@ export function Cron() {
                 <CronJobCard
                   key={job.id}
                   job={job}
+                  agentName={agentNameById[job.agentId || 'main'] || job.agentId || 'main'}
                   onToggle={(enabled) => handleToggle(job.id, enabled)}
                   onEdit={() => {
                     setEditingJob(job);
@@ -703,6 +812,8 @@ export function Cron() {
       {showDialog && (
         <TaskDialog
           job={editingJob}
+          agentOptions={agentOptions}
+          channelOptions={channelOptions}
           onClose={() => {
             setShowDialog(false);
             setEditingJob(undefined);

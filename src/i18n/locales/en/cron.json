@@ -19,7 +19,8 @@
         "runNow": "Run Now",
         "deleteConfirm": "Are you sure you want to delete this task?",
         "last": "Last",
-        "next": "Next"
+        "next": "Next",
+        "agent": "Agent"
     },
     "dialog": {
         "createTitle": "Create Task",
@@ -29,12 +30,18 @@
         "taskNamePlaceholder": "e.g., Morning briefing",
         "message": "Message / Prompt",
         "messagePlaceholder": "What should the AI do? e.g., Give me a summary of today's news and weather",
+        "runAsAgent": "Run as Agent",
+        "defaultAgent": "Default agent (main)",
         "schedule": "Schedule",
         "cronPlaceholder": "Cron expression (e.g., 0 9 * * *)",
         "usePresets": "Use presets",
         "useCustomCron": "Use custom cron",
         "targetChannel": "Target Channel",
+        "channelNone": "No external channel (ClawX chat only)",
         "noChannels": "No channels available. Add a channel first.",
+        "targetTo": "Target recipient (optional)",
+        "targetToPlaceholder": "Telegram chat ID / username / room",
+        "targetToDesc": "Leave empty to let OpenClaw choose the last active route.",
         "discordChannelId": "Discord Channel ID",
         "discordChannelIdPlaceholder": "e.g., 1438452657525100686",
         "discordChannelIdDesc": "Right-click the Discord channel → Copy Channel ID",

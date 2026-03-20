@@ -10,6 +10,7 @@
  */
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { mkdtemp, writeFile, readFile, rm } from 'fs/promises';
+import { existsSync } from 'fs';
 import { join } from 'path';
 import { tmpdir } from 'os';
 
@@ -40,6 +41,42 @@ async function sanitizeConfig(filePath: string): Promise<boolean> {
   const config = JSON.parse(raw) as Record<string, unknown>;
   let modified = false;
 
+  function pruneAbsolutePluginPaths(value: unknown): unknown {
+    if (Array.isArray(value)) {
+      return value.flatMap((item) => {
+        if (typeof item === 'string' && item.startsWith('/')) {
+          if (item.includes('node_modules/openclaw/extensions') || !existsSync(item)) {
+            modified = true;
+            return [];
+          }
+          return [item];
+        }
+        if (item && typeof item === 'object') {
+          return [pruneAbsolutePluginPaths(item)];
+        }
+        return [item];
+      });
+    }
+
+    if (value && typeof value === 'object') {
+      const obj = value as Record<string, unknown>;
+      for (const [key, child] of Object.entries(obj)) {
+        if (key === 'path' && typeof child === 'string' && child.startsWith('/')) {
+          if (child.includes('node_modules/openclaw/extensions') || !existsSync(child)) {
+            delete obj[key];
+            modified = true;
+          }
+          continue;
+        }
+        if (child && typeof child === 'object') {
+          obj[key] = pruneAbsolutePluginPaths(child);
+        }
+      }
+    }
+
+    return value;
+  }
+
   // Mirror of the production blocklist logic
   const skills = config.skills;
   if (skills && typeof skills === 'object' && !Array.isArray(skills)) {
@@ -67,6 +104,24 @@ async function sanitizeConfig(filePath: string): Promise<boolean> {
       tools.web = web;
       config.tools = tools;
       modified = true;
+    }
+  }
+
+  const plugins = config.plugins;
+  if (plugins) {
+    if (Array.isArray(plugins)) {
+      config.plugins = pruneAbsolutePluginPaths(plugins);
+    } else if (typeof plugins === 'object') {
+      const pluginsObj = plugins as Record<string, unknown>;
+      if (Array.isArray(pluginsObj.load)) {
+        pluginsObj.load = pruneAbsolutePluginPaths(pluginsObj.load);
+      }
+      if (pluginsObj.load && typeof pluginsObj.load === 'object') {
+        const loadObj = pluginsObj.load as Record<string, unknown>;
+        if ('paths' in loadObj) {
+          loadObj.paths = pruneAbsolutePluginPaths(loadObj.paths);
+        }
+      }
     }
   }
 
@@ -196,6 +251,29 @@ describe('sanitizeOpenClawConfig (blocklist approach)', () => {
 
     const modified = await sanitizeConfig(configPath);
     expect(modified).toBe(false);
+  });
+
+  it('removes stale plugin paths nested under plugins.load.paths', async () => {
+    const existingPluginDir = join(tempDir, 'existing-plugin');
+    await writeFile(existingPluginDir, 'ok', 'utf-8');
+    await writeConfig({
+      plugins: {
+        load: {
+          paths: [
+            '/Users/iCloud_GZ/Documents/New project/plugins/youtube-subscriptions',
+            existingPluginDir,
+          ],
+        },
+      },
+    });
+
+    const modified = await sanitizeConfig(configPath);
+    expect(modified).toBe(true);
+
+    const result = await readConfig();
+    const plugins = result.plugins as Record<string, unknown>;
+    const load = plugins.load as Record<string, unknown>;
+    expect(load.paths).toEqual([existingPluginDir]);
   });
 
   it('handles empty config', async () => {

@@ -19,7 +19,8 @@
         "runNow": "立即运行",
         "deleteConfirm": "确定要删除此任务吗？",
         "last": "上次运行",
-        "next": "下次运行"
+        "next": "下次运行",
+        "agent": "Agent"
     },
     "dialog": {
         "createTitle": "创建任务",
@@ -29,12 +30,18 @@
         "taskNamePlaceholder": "例如：早间简报",
         "message": "消息/提示词",
         "messagePlaceholder": "AI 应该做什么？例如：给我一份今天的新闻和天气摘要",
+        "runAsAgent": "运行 Agent",
+        "defaultAgent": "默认 Agent（main）",
         "schedule": "调度计划",
         "cronPlaceholder": "Cron 表达式 (例如：0 9 * * *)",
         "usePresets": "使用预设",
         "useCustomCron": "使用自定义 Cron",
         "targetChannel": "目标频道",
+        "channelNone": "不发送到外部频道（仅 ClawX 会话）",
         "noChannels": "无可用频道。请先添加频道。",
+        "targetTo": "目标接收者（可选）",
+        "targetToPlaceholder": "Telegram chat ID / 用户名 / 房间",
+        "targetToDesc": "留空时由 OpenClaw 自动选择最近活动路由。",
         "discordChannelId": "Discord 频道 ID",
         "discordChannelIdPlaceholder": "例如：1438452657525100686",
         "discordChannelIdDesc": "右键点击 Discord 频道 → 复制频道 ID",

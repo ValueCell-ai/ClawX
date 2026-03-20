@@ -948,6 +948,49 @@ export async function sanitizeOpenClawConfig(): Promise<void> {
     const config = await readOpenClawJson();
     let modified = false;
 
+    async function pruneAbsolutePluginPaths(value: unknown, label: string): Promise<unknown> {
+      if (Array.isArray(value)) {
+        const next: unknown[] = [];
+        for (const item of value) {
+          if (typeof item === 'string' && item.startsWith('/')) {
+            if (item.includes('node_modules/openclaw/extensions') || !(await fileExists(item))) {
+              console.log(`[sanitize] Removing stale/bundled plugin path "${item}" from ${label}`);
+              modified = true;
+            } else {
+              next.push(item);
+            }
+            continue;
+          }
+          if (item && typeof item === 'object') {
+            next.push(await pruneAbsolutePluginPaths(item, label));
+            continue;
+          }
+          next.push(item);
+        }
+        return next;
+      }
+
+      if (value && typeof value === 'object') {
+        const obj = value as Record<string, unknown>;
+        for (const [key, child] of Object.entries(obj)) {
+          if (key === 'path' && typeof child === 'string' && child.startsWith('/')) {
+            if (child.includes('node_modules/openclaw/extensions') || !(await fileExists(child))) {
+              console.log(`[sanitize] Removing stale/bundled plugin path "${child}" from ${label}`);
+              delete obj[key];
+              modified = true;
+            }
+            continue;
+          }
+          if (child && typeof child === 'object') {
+            obj[key] = await pruneAbsolutePluginPaths(child, `${label}.${key}`);
+          }
+        }
+        return obj;
+      }
+
+      return value;
+    }
+
     // ── skills section ──────────────────────────────────────────────
     // OpenClaw's Zod schema uses .strict() on the skills object, accepting
     // only: allowBundled, load, install, limits, entries.
@@ -972,37 +1015,17 @@ export async function sanitizeOpenClawConfig(): Promise<void> {
     const plugins = config.plugins;
     if (plugins) {
       if (Array.isArray(plugins)) {
-        const validPlugins: unknown[] = [];
-        for (const p of plugins) {
-          if (typeof p === 'string' && p.startsWith('/')) {
-            if (p.includes('node_modules/openclaw/extensions') || !(await fileExists(p))) {
-              console.log(`[sanitize] Removing stale/bundled plugin path "${p}" from openclaw.json`);
-              modified = true;
-            } else {
-              validPlugins.push(p);
-            }
-          } else {
-            validPlugins.push(p);
-          }
-        }
-        if (modified) config.plugins = validPlugins;
+        config.plugins = await pruneAbsolutePluginPaths(plugins, 'openclaw.json.plugins');
       } else if (typeof plugins === 'object') {
         const pluginsObj = plugins as Record<string, unknown>;
         if (Array.isArray(pluginsObj.load)) {
-          const validLoad: unknown[] = [];
-          for (const p of pluginsObj.load) {
-            if (typeof p === 'string' && p.startsWith('/')) {
-              if (p.includes('node_modules/openclaw/extensions') || !(await fileExists(p))) {
-                console.log(`[sanitize] Removing stale/bundled plugin path "${p}" from openclaw.json`);
-                modified = true;
-              } else {
-                validLoad.push(p);
-              }
-            } else {
-              validLoad.push(p);
-            }
+          pluginsObj.load = await pruneAbsolutePluginPaths(pluginsObj.load, 'openclaw.json.plugins.load');
+        }
+        if (pluginsObj.load && typeof pluginsObj.load === 'object') {
+          const loadObj = pluginsObj.load as Record<string, unknown>;
+          if ('paths' in loadObj) {
+            loadObj.paths = await pruneAbsolutePluginPaths(loadObj.paths, 'openclaw.json.plugins.load.paths');
           }
-          if (modified) pluginsObj.load = validLoad;
         }
       }
     }

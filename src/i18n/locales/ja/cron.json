@@ -19,7 +19,8 @@
         "runNow": "今すぐ実行",
         "deleteConfirm": "このタスクを削除してもよろしいですか？",
         "last": "前回",
-        "next": "次回"
+        "next": "次回",
+        "agent": "Agent"
     },
     "dialog": {
         "createTitle": "タスク作成",
@@ -29,12 +30,18 @@
         "taskNamePlaceholder": "例：朝のブリーフィング",
         "message": "メッセージ / プロンプト",
         "messagePlaceholder": "AIに何をさせますか？ 例：今日のニュースと天気のまとめを作成",
+        "runAsAgent": "実行 Agent",
+        "defaultAgent": "デフォルト Agent（main）",
         "schedule": "スケジュール",
         "cronPlaceholder": "Cron式（例：0 9 * * *）",
         "usePresets": "プリセットを使用",
         "useCustomCron": "カスタムCronを使用",
         "targetChannel": "ターゲットチャンネル",
+        "channelNone": "外部チャンネル配信なし（ClawX チャットのみ）",
         "noChannels": "利用可能なチャンネルがありません。先にチャンネルを追加してください。",
+        "targetTo": "配信先（任意）",
+        "targetToPlaceholder": "Telegram chat ID / ユーザー名 / ルーム",
+        "targetToDesc": "空欄の場合は OpenClaw が直近のルートを自動選択します。",
         "discordChannelId": "DiscordチャンネルID",
         "discordChannelIdPlaceholder": "例：1438452657525100686",
         "discordChannelIdDesc": "Discordチャンネルを右クリック → チャンネルIDをコピー",

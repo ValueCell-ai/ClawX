@@ -9,6 +9,7 @@ interface GatewayCronJob {
   id: string;
   name: string;
   description?: string;
+  agentId?: string | null;
   enabled: boolean;
   createdAtMs: number;
   updatedAtMs: number;
@@ -53,6 +54,56 @@ interface CronSessionFallbackMessage {
   content: string;
   timestamp: number;
   isError?: boolean;
+}
+
+interface CronDeliveryTargetInput {
+  channelType?: unknown;
+  to?: unknown;
+}
+
+function normalizeOptionalString(value: unknown): string | undefined {
+  if (typeof value !== 'string') return undefined;
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : undefined;
+}
+
+function buildDeliveryFromTarget(target: unknown): { mode: 'none' } | { mode: 'announce'; channel: string; to?: string } {
+  if (!target || typeof target !== 'object') {
+    return { mode: 'none' };
+  }
+  const raw = target as CronDeliveryTargetInput;
+  const channel = normalizeOptionalString(raw.channelType);
+  if (!channel) {
+    return { mode: 'none' };
+  }
+  const to = normalizeOptionalString(raw.to);
+  return to
+    ? { mode: 'announce', channel, to }
+    : { mode: 'announce', channel };
+}
+
+function normalizeCronPatch(input: Record<string, unknown>): Record<string, unknown> {
+  const patch: Record<string, unknown> = { ...input };
+  if (typeof patch.schedule === 'string') {
+    patch.schedule = { kind: 'cron', expr: patch.schedule };
+  }
+  if (typeof patch.message === 'string') {
+    patch.payload = { kind: 'agentTurn', message: patch.message };
+    delete patch.message;
+  }
+  if (Object.prototype.hasOwnProperty.call(patch, 'target')) {
+    patch.delivery = buildDeliveryFromTarget(patch.target);
+    delete patch.target;
+  }
+  if (Object.prototype.hasOwnProperty.call(patch, 'agentId')) {
+    if (patch.agentId === null) {
+      // Keep null to clear job-level agent binding.
+    } else {
+      const normalized = normalizeOptionalString(patch.agentId);
+      patch.agentId = normalized ?? null;
+    }
+  }
+  return patch;
 }
 
 function parseCronSessionKey(sessionKey: string): CronSessionKeyParts | null {
@@ -265,7 +316,12 @@ function transformCronJob(job: GatewayCronJob) {
   const message = job.payload?.message || job.payload?.text || '';
   const channelType = job.delivery?.channel;
   const target = channelType
-    ? { channelType, channelId: channelType, channelName: channelType }
+    ? {
+      channelType,
+      channelId: channelType,
+      channelName: channelType,
+      ...(job.delivery?.to ? { to: job.delivery.to } : {}),
+    }
     : undefined;
   const lastRun = job.state?.lastRunAtMs
     ? {
@@ -284,6 +340,7 @@ function transformCronJob(job: GatewayCronJob) {
     name: job.name,
     message,
     schedule: job.schedule,
+    ...(job.agentId ? { agentId: job.agentId } : {}),
     target,
     enabled: job.enabled,
     createdAt: new Date(job.createdAtMs).toISOString(),
@@ -378,7 +435,15 @@ export async function handleCronRoutes(
 
   if (url.pathname === '/api/cron/jobs' && req.method === 'POST') {
     try {
-      const input = await parseJsonBody<{ name: string; message: string; schedule: string; enabled?: boolean }>(req);
+      const input = await parseJsonBody<{
+        name: string;
+        message: string;
+        schedule: string;
+        enabled?: boolean;
+        agentId?: string | null;
+        target?: CronDeliveryTargetInput | null;
+      }>(req);
+      const agentId = normalizeOptionalString(input.agentId);
       const result = await ctx.gatewayManager.rpc('cron.add', {
         name: input.name,
         schedule: { kind: 'cron', expr: input.schedule },
@@ -386,7 +451,8 @@ export async function handleCronRoutes(
         enabled: input.enabled ?? true,
         wakeMode: 'next-heartbeat',
         sessionTarget: 'isolated',
-        delivery: { mode: 'none' },
+        ...(agentId ? { agentId } : {}),
+        delivery: buildDeliveryFromTarget(input.target),
       });
       sendJson(res, 200, result && typeof result === 'object' ? transformCronJob(result as GatewayCronJob) : result);
     } catch (error) {
@@ -399,14 +465,7 @@ export async function handleCronRoutes(
     try {
       const id = decodeURIComponent(url.pathname.slice('/api/cron/jobs/'.length));
       const input = await parseJsonBody<Record<string, unknown>>(req);
-      const patch = { ...input };
-      if (typeof patch.schedule === 'string') {
-        patch.schedule = { kind: 'cron', expr: patch.schedule };
-      }
-      if (typeof patch.message === 'string') {
-        patch.payload = { kind: 'agentTurn', message: patch.message };
-        delete patch.message;
-      }
+      const patch = normalizeCronPatch(input);
       sendJson(res, 200, await ctx.gatewayManager.rpc('cron.update', { id, patch }));
     } catch (error) {
       sendJson(res, 500, { success: false, error: String(error) });
