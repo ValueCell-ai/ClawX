@@ -117,6 +117,22 @@ describe('process instance file lock', () => {
     expect(readFileSync(lockPath, 'utf8')).toBe('not-a-pid');
   });
 
+  it('does not remove lock file if ownership changed before release', () => {
+    const userDataDir = createTempDir();
+    const lockPath = join(userDataDir, 'clawx.instance.lock');
+    const first = acquireProcessInstanceFileLock({
+      userDataDir,
+      lockName: 'clawx',
+      pid: 1234,
+    });
+
+    // Simulate a new process acquiring the lock after a handover race.
+    writeFileSync(lockPath, '9999', 'utf8');
+    first.release();
+
+    expect(readFileSync(lockPath, 'utf8')).toBe('9999');
+  });
+
   it('does not treat unknown structured lock schema as stale', () => {
     const userDataDir = createTempDir();
     const lockPath = join(userDataDir, 'clawx.instance.lock');

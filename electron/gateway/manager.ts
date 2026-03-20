@@ -359,6 +359,25 @@ export class GatewayManager extends EventEmitter {
   }
 
   /**
+   * Best-effort emergency cleanup for app-quit timeout paths.
+   * Only terminates a process this manager still owns.
+   */
+  async forceTerminateOwnedProcessForQuit(): Promise<boolean> {
+    if (!this.process || !this.ownsProcess) {
+      return false;
+    }
+
+    const child = this.process;
+    await terminateOwnedGatewayProcess(child);
+    if (this.process === child) {
+      this.process = null;
+    }
+    this.ownsProcess = false;
+    this.setStatus({ pid: undefined });
+    return true;
+  }
+
+  /**
    * Restart Gateway process
    */
   async restart(): Promise<void> {

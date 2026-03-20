@@ -123,6 +123,16 @@ export function acquireProcessInstanceFileLock(
           if (released) return;
           released = true;
           try {
+            const currentOwner = readLockOwner(lockPath);
+            if (
+              (currentOwner.kind === 'legacy' || currentOwner.kind === 'structured')
+              && currentOwner.pid !== pid
+            ) {
+              return;
+            }
+            if (currentOwner.kind === 'unknown') {
+              return;
+            }
             rmSync(lockPath, { force: true });
           } catch {
             // best-effort

@@ -540,6 +540,13 @@ if (gotTheLock) {
     void Promise.race([stopPromise.then(() => 'stopped' as const), timeoutPromise]).then((result) => {
       if (result === 'timeout') {
         logger.warn('Gateway shutdown timed out during app quit; proceeding with forced quit');
+        void gatewayManager.forceTerminateOwnedProcessForQuit().then((terminated) => {
+          if (terminated) {
+            logger.warn('Forced gateway process termination completed after quit timeout');
+          }
+        }).catch((err) => {
+          logger.warn('Forced gateway termination failed after quit timeout:', err);
+        });
       }
       markQuitCleanupCompleted(quitLifecycleState);
       app.quit();
