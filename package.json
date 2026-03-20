@@ -80,7 +80,7 @@
         "@radix-ui/react-toast": "^1.2.15",
         "@radix-ui/react-tooltip": "^1.2.8",
         "@sliverp/qqbot": "^1.6.1",
-        "@soimy/dingtalk": "^3.1.4",
+        "@soimy/dingtalk": "^3.3.0",
         "@testing-library/jest-dom": "^6.9.1",
         "@testing-library/react": "^16.3.2",
         "@types/node": "^25.3.0",
