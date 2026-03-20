@@ -14,4 +14,13 @@ case "$1" in
 esac
 
 export OPENCLAW_EMBEDDED_IN="ClawX"
-ELECTRON_RUN_AS_NODE=1 exec "$INSTALL_DIR/ClawX.exe" "$INSTALL_DIR/resources/openclaw/openclaw.mjs" "$@"
+NODE_EXE="$INSTALL_DIR/resources/bin/node.exe"
+OPENCLAW_ENTRY="$INSTALL_DIR/resources/openclaw/openclaw.mjs"
+
+if [ -f "$NODE_EXE" ]; then
+  if "$NODE_EXE" -e 'const [maj,min]=process.versions.node.split(".").map(Number);process.exit((maj>22||maj===22&&min>=16)?0:1)' >/dev/null 2>&1; then
+    exec "$NODE_EXE" "$OPENCLAW_ENTRY" "$@"
+  fi
+fi
+
+ELECTRON_RUN_AS_NODE=1 exec "$INSTALL_DIR/ClawX.exe" "$OPENCLAW_ENTRY" "$@"

@@ -1,6 +1,6 @@
 {
     "name": "clawx",
-    "version": "0.2.6-alpha.2",
+    "version": "0.2.7",
     "pnpm": {
         "onlyBuiltDependencies": [
             "@discordjs/opus",
@@ -13,7 +13,8 @@
             "sharp"
         ],
         "overrides": {
-            "isbinaryfile": "^5.0.0"
+            "isbinaryfile": "^5.0.0",
+            "https-proxy-agent": "7.0.6"
         }
     },
     "description": "ClawX - Graphical AI Assistant based on OpenClaw",
@@ -40,11 +41,13 @@
         "uv:download:win": "zx scripts/download-bundled-uv.mjs --platform=win",
         "uv:download:linux": "zx scripts/download-bundled-uv.mjs --platform=linux",
         "uv:download:all": "zx scripts/download-bundled-uv.mjs --all",
+        "node:download:win": "zx scripts/download-bundled-node.mjs --platform=win",
+        "prep:win-binaries": "pnpm run uv:download:win && pnpm run node:download:win",
         "icons": "zx scripts/generate-icons.mjs",
         "package": "vite build && zx scripts/bundle-openclaw.mjs && zx scripts/bundle-openclaw-plugins.mjs && zx scripts/bundle-preinstalled-skills.mjs",
         "package:mac": "pnpm run package && electron-builder --mac --publish never",
         "package:mac:local": "SKIP_PREINSTALLED_SKILLS=1 pnpm run package && electron-builder --mac --publish never",
-        "package:win": "pnpm run package && electron-builder --win --publish never",
+        "package:win": "pnpm run prep:win-binaries && pnpm run package && electron-builder --win --publish never",
         "package:linux": "pnpm run package && electron-builder --linux --publish never",
         "release": "pnpm run uv:download && pnpm run package && electron-builder --publish always",
         "version:patch": "pnpm version patch",
@@ -63,7 +66,7 @@
     },
     "devDependencies": {
         "@eslint/js": "^10.0.1",
-        "@larksuite/openclaw-lark": "2026.3.15",
+        "@larksuite/openclaw-lark": "2026.3.17",
         "@radix-ui/react-dialog": "^1.1.15",
         "@radix-ui/react-dropdown-menu": "^2.1.16",
         "@radix-ui/react-label": "^2.1.8",

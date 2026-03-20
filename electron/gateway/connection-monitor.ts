@@ -1,46 +1,76 @@
 import { logger } from '../utils/logger';
 
 type HealthResult = { ok: boolean; error?: string };
+type HeartbeatAliveReason = 'pong' | 'message';
+
+type PingOptions = {
+  sendPing: () => void;
+  onHeartbeatTimeout: (context: { consecutiveMisses: number; timeoutMs: number }) => void;
+  intervalMs?: number;
+  timeoutMs?: number;
+  maxConsecutiveMisses?: number;
+};
 
 export class GatewayConnectionMonitor {
   private pingInterval: NodeJS.Timeout | null = null;
-  private pongTimeout: NodeJS.Timeout | null = null;
   private healthCheckInterval: NodeJS.Timeout | null = null;
+  private lastPingAt = 0;
+  private waitingForAlive = false;
+  private consecutiveMisses = 0;
+  private timeoutTriggered = false;
 
-  startPing(
-    sendPing: () => void,
-    onPongTimeout?: () => void,
-    intervalMs = 30000,
-    timeoutMs = 15000,
-  ): void {
+  startPing(options: PingOptions): void {
+    const intervalMs = options.intervalMs ?? 30000;
+    const timeoutMs = options.timeoutMs ?? 10000;
+    const maxConsecutiveMisses = Math.max(1, options.maxConsecutiveMisses ?? 3);
+    this.resetHeartbeatState();
+
     if (this.pingInterval) {
       clearInterval(this.pingInterval);
     }
-    if (this.pongTimeout) {
-      clearTimeout(this.pongTimeout);
-      this.pongTimeout = null;
-    }
 
     this.pingInterval = setInterval(() => {
-      sendPing();
+      const now = Date.now();
 
-      if (onPongTimeout) {
-        if (this.pongTimeout) {
-          clearTimeout(this.pongTimeout);
+      if (this.waitingForAlive && now - this.lastPingAt >= timeoutMs) {
+        this.waitingForAlive = false;
+        this.consecutiveMisses += 1;
+        logger.warn(
+          `Gateway heartbeat missed (${this.consecutiveMisses}/${maxConsecutiveMisses}, timeout=${timeoutMs}ms)`,
+        );
+        if (this.consecutiveMisses >= maxConsecutiveMisses && !this.timeoutTriggered) {
+          this.timeoutTriggered = true;
+          options.onHeartbeatTimeout({
+            consecutiveMisses: this.consecutiveMisses,
+            timeoutMs,
+          });
+          return;
         }
-        this.pongTimeout = setTimeout(() => {
-          this.pongTimeout = null;
-          onPongTimeout();
-        }, timeoutMs);
       }
+
+      options.sendPing();
+      this.waitingForAlive = true;
+      this.lastPingAt = now;
     }, intervalMs);
   }
 
-  handlePong(): void {
-    if (this.pongTimeout) {
-      clearTimeout(this.pongTimeout);
-      this.pongTimeout = null;
+  markAlive(reason: HeartbeatAliveReason): void {
+    // Only log true recovery cases to avoid steady-state heartbeat log spam.
+    if (this.consecutiveMisses > 0) {
+      logger.debug(`Gateway heartbeat recovered via ${reason} (misses=${this.consecutiveMisses})`);
     }
+    this.waitingForAlive = false;
+    this.consecutiveMisses = 0;
+    this.timeoutTriggered = false;
+  }
+
+  // Backward-compatible alias for old callers.
+  handlePong(): void {
+    this.markAlive('pong');
+  }
+
+  getConsecutiveMisses(): number {
+    return this.consecutiveMisses;
   }
 
   startHealthCheck(options: {
@@ -78,13 +108,17 @@ export class GatewayConnectionMonitor {
       clearInterval(this.pingInterval);
       this.pingInterval = null;
     }
-    if (this.pongTimeout) {
-      clearTimeout(this.pongTimeout);
-      this.pongTimeout = null;
-    }
     if (this.healthCheckInterval) {
       clearInterval(this.healthCheckInterval);
       this.healthCheckInterval = null;
     }
+    this.resetHeartbeatState();
+  }
+
+  private resetHeartbeatState(): void {
+    this.lastPingAt = 0;
+    this.waitingForAlive = false;
+    this.consecutiveMisses = 0;
+    this.timeoutTriggered = false;
   }
 }

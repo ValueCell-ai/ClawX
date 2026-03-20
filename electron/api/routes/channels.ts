@@ -41,9 +41,10 @@ function scheduleGatewayChannelRestart(ctx: HostApiContext, reason: string): voi
   void reason;
 }
 
-// Keep reload-first for feishu to avoid restart storms when channel auth/network is flaky.
-// GatewayManager.reload() already falls back to restart when reload is unhealthy.
-const FORCE_RESTART_CHANNELS = new Set(['dingtalk', 'wecom', 'whatsapp']);
+// Plugin-based channels require a full Gateway process restart to properly
+// initialize / tear-down plugin connections.  SIGUSR1 in-process reload is
+// not sufficient for channel plugins (see restartGatewayForAgentDeletion).
+const FORCE_RESTART_CHANNELS = new Set(['dingtalk', 'wecom', 'whatsapp', 'feishu', 'qqbot']);
 
 function scheduleGatewayChannelSaveRefresh(
   ctx: HostApiContext,
