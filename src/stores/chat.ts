@@ -5,9 +5,12 @@
  */
 import { create } from 'zustand';
 import { hostApiFetch } from '@/lib/host-api';
-import { useGatewayStore } from './gateway';
-import { useAgentsStore } from './agents';
-import { buildCronSessionHistoryPath, isCronSessionKey } from './chat/cron-session-utils';
+import {
+  buildAttachedAgentSessionKey,
+  getAgentIdFromSessionKey,
+  getAttachedAgentIds,
+  normalizeAgentId,
+} from '@/lib/routing';
 import {
   CHAT_HISTORY_STARTUP_RETRY_DELAYS_MS,
   classifyHistoryStartupRetryError,
@@ -16,24 +19,123 @@ import {
   shouldRetryStartupHistoryLoad,
   sleep,
 } from './chat/history-startup-retry';
-import {
-  DEFAULT_CANONICAL_PREFIX,
-  DEFAULT_SESSION_KEY,
-  type AttachedFileMeta,
-  type ChatSession,
-  type ChatState,
-  type ContentBlock,
-  type RawMessage,
-  type ToolStatus,
-} from './chat/types';
+import { useChatMetaStore } from './chatMeta';
+import { useChatMirrorsStore, type MirroredChatMessage } from './chatMirrors';
+import { useGatewayStore } from './gateway';
+import { useAgentsStore } from './agents';
+import { buildCronSessionHistoryPath, isCronSessionKey } from './chat/cron-session-utils';
 
-export type {
-  AttachedFileMeta,
-  ChatSession,
-  ContentBlock,
-  RawMessage,
-  ToolStatus,
-} from './chat/types';
+// ── Types ────────────────────────────────────────────────────────
+
+/** Metadata for locally-attached files (not from Gateway) */
+export interface AttachedFileMeta {
+  fileName: string;
+  mimeType: string;
+  fileSize: number;
+  preview: string | null;
+  filePath?: string;
+}
+
+/** Raw message from OpenClaw chat.history */
+export interface RawMessage {
+  role: 'user' | 'assistant' | 'system' | 'toolresult';
+  content: unknown; // string | ContentBlock[]
+  timestamp?: number;
+  id?: string;
+  toolCallId?: string;
+  toolName?: string;
+  details?: unknown;
+  isError?: boolean;
+  /** Local-only: file metadata for user-uploaded attachments (not sent to/from Gateway) */
+  _attachedFiles?: AttachedFileMeta[];
+  _agentId?: string;
+  _sourceSessionKey?: string;
+  _mirrored?: boolean;
+}
+
+/** Content block inside a message */
+export interface ContentBlock {
+  type: 'text' | 'image' | 'thinking' | 'tool_use' | 'tool_result' | 'toolCall' | 'toolResult';
+  text?: string;
+  thinking?: string;
+  source?: { type: string; media_type?: string; data?: string; url?: string };
+  /** Flat image format from Gateway tool results (no source wrapper) */
+  data?: string;
+  mimeType?: string;
+  id?: string;
+  name?: string;
+  input?: unknown;
+  arguments?: unknown;
+  content?: unknown;
+}
+
+/** Session from sessions.list */
+export interface ChatSession {
+  key: string;
+  label?: string;
+  displayName?: string;
+  thinkingLevel?: string;
+  model?: string;
+  updatedAt?: number;
+}
+
+export interface ToolStatus {
+  id?: string;
+  toolCallId?: string;
+  name: string;
+  status: 'running' | 'completed' | 'error';
+  durationMs?: number;
+  summary?: string;
+  updatedAt: number;
+}
+
+interface ChatState {
+  // Messages
+  messages: RawMessage[];
+  loading: boolean;
+  error: string | null;
+
+  // Streaming
+  sending: boolean;
+  activeRunId: string | null;
+  streamingText: string;
+  streamingMessage: unknown | null;
+  streamingTools: ToolStatus[];
+  pendingFinal: boolean;
+  lastUserMessageAt: number | null;
+  /** Images collected from tool results, attached to the next assistant message */
+  pendingToolImages: AttachedFileMeta[];
+
+  // Sessions
+  sessions: ChatSession[];
+  currentSessionKey: string;
+  currentAgentId: string;
+  /** First user message text per session key, used as display label */
+  sessionLabels: Record<string, string>;
+  /** Last message timestamp (ms) per session key, used for sorting */
+  sessionLastActivity: Record<string, number>;
+
+  // Thinking
+  showThinking: boolean;
+  thinkingLevel: string | null;
+
+  // Actions
+  loadSessions: () => Promise<void>;
+  switchSession: (key: string) => void;
+  newSession: () => void;
+  deleteSession: (key: string) => Promise<void>;
+  cleanupEmptySession: () => void;
+  loadHistory: (quiet?: boolean) => Promise<void>;
+  sendMessage: (
+    text: string,
+    attachments?: Array<{ fileName: string; mimeType: string; fileSize: number; stagedPath: string; preview: string | null }>,
+  ) => Promise<void>;
+  abortRun: () => Promise<void>;
+  handleChatEvent: (event: Record<string, unknown>) => void;
+  toggleThinking: () => void;
+  refresh: () => Promise<void>;
+  clearError: () => void;
+}
 
 // Module-level timestamp tracking the last chat event received.
 // Used by the safety timeout to avoid false-positive "no response" errors
@@ -131,6 +233,9 @@ function isDuplicateChatEvent(eventState: string, event: Record<string, unknown>
   if (msgKey) _chatEventDedupe.set(msgKey, now);
   return false;
 }
+
+const DEFAULT_CANONICAL_PREFIX = 'agent:main';
+const DEFAULT_SESSION_KEY = `${DEFAULT_CANONICAL_PREFIX}:main`;
 
 // ── Local image cache ─────────────────────────────────────────
 // The Gateway doesn't store image attachments in session content blocks,
@@ -639,12 +744,6 @@ function getCanonicalPrefixFromSessions(sessions: ChatSession[]): string | null 
   return `${parts[0]}:${parts[1]}`;
 }
 
-function getAgentIdFromSessionKey(sessionKey: string): string {
-  if (!sessionKey.startsWith('agent:')) return 'main';
-  const parts = sessionKey.split(':');
-  return parts[1] || 'main';
-}
-
 function parseSessionUpdatedAtMs(value: unknown): number | undefined {
   if (typeof value === 'number' && Number.isFinite(value)) {
     return toMs(value);
@@ -669,21 +768,6 @@ async function loadCronFallbackMessages(sessionKey: string, limit = 200): Promis
     console.warn('Failed to load cron fallback history:', error);
     return [];
   }
-}
-
-function normalizeAgentId(value: string | undefined | null): string {
-  return (value ?? '').trim().toLowerCase() || 'main';
-}
-
-function buildFallbackMainSessionKey(agentId: string): string {
-  return `agent:${normalizeAgentId(agentId)}:main`;
-}
-
-function resolveMainSessionKeyForAgent(agentId: string | undefined | null): string | null {
-  if (!agentId) return null;
-  const normalizedAgentId = normalizeAgentId(agentId);
-  const summary = useAgentsStore.getState().agents.find((agent) => agent.id === normalizedAgentId);
-  return summary?.mainSessionKey || buildFallbackMainSessionKey(normalizedAgentId);
 }
 
 function ensureSessionEntry(sessions: ChatSession[], sessionKey: string): ChatSession[] {
@@ -737,6 +821,218 @@ function buildSessionSwitchPatch(
     lastUserMessageAt: null,
     pendingToolImages: [],
   };
+}
+
+function hashMessageValue(value: string): string {
+  let hash = 0;
+  for (let index = 0; index < value.length; index += 1) {
+    hash = ((hash << 5) - hash + value.charCodeAt(index)) | 0;
+  }
+  return Math.abs(hash).toString(36);
+}
+
+function annotateMessagesForSession(messages: RawMessage[], sessionKey: string): RawMessage[] {
+  const agentId = getAgentIdFromSessionKey(sessionKey);
+  return messages.map((message) => (
+    message.role === 'assistant' || message.role === 'system'
+      ? {
+        ...message,
+        _agentId: agentId,
+        _sourceSessionKey: sessionKey,
+      }
+      : message
+  ));
+}
+
+function mergeConversationMessages(
+  primaryMessages: RawMessage[],
+  mirroredMessages: RawMessage[],
+): RawMessage[] {
+  return [...primaryMessages, ...mirroredMessages]
+    .sort((left, right) => {
+      const leftTimestamp = typeof left.timestamp === 'number' ? toMs(left.timestamp) : Number.MAX_SAFE_INTEGER;
+      const rightTimestamp = typeof right.timestamp === 'number' ? toMs(right.timestamp) : Number.MAX_SAFE_INTEGER;
+      if (leftTimestamp !== rightTimestamp) return leftTimestamp - rightTimestamp;
+      const leftId = left.id ?? '';
+      const rightId = right.id ?? '';
+      if (leftId !== rightId) return leftId.localeCompare(rightId);
+      if (!!left._mirrored !== !!right._mirrored) {
+        return left._mirrored ? 1 : -1;
+      }
+      return 0;
+    });
+}
+
+function getMirroredMessagesForSession(sessionKey: string): MirroredChatMessage[] {
+  return useChatMirrorsStore.getState().mirroredBySession[sessionKey] ?? [];
+}
+
+function getConversationMessages(sessionKey: string, primaryMessages: RawMessage[]): RawMessage[] {
+  return mergeConversationMessages(primaryMessages, getMirroredMessagesForSession(sessionKey));
+}
+
+function getPrimaryMessages(messages: RawMessage[]): RawMessage[] {
+  return messages.filter((message) => !message._mirrored);
+}
+
+function prepareVisibleHistoryMessages(rawMessages: RawMessage[], sessionKey: string): RawMessage[] {
+  const messagesWithToolImages = enrichWithToolResultFiles(rawMessages);
+  const filteredMessages = messagesWithToolImages.filter(
+    (msg) => !isToolResultRole(msg.role) && !isInternalMessage(msg),
+  );
+  const enrichedMessages = enrichWithCachedImages(filteredMessages);
+  return annotateMessagesForSession(enrichedMessages, sessionKey);
+}
+
+function buildMirroredMessageId(anchorSessionKey: string, sourceSessionKey: string, message: RawMessage, index: number): string {
+  const explicitId = message.id ?? `${message.role}:${message.timestamp ?? 'na'}:${hashMessageValue(getMessageText(message.content))}:${index}`;
+  return `mirror:${hashMessageValue(anchorSessionKey)}:${hashMessageValue(sourceSessionKey)}:${explicitId}`;
+}
+
+function buildMirroredMessagesForSession(
+  anchorSessionKey: string,
+  sourceSessionKey: string,
+  rawMessages: RawMessage[],
+): MirroredChatMessage[] {
+  const visibleMessages = prepareVisibleHistoryMessages(rawMessages, sourceSessionKey);
+  return visibleMessages
+    .filter((message) => message.role === 'assistant' && !isToolOnlyMessage(message))
+    .map((message, index) => ({
+      ...message,
+      id: buildMirroredMessageId(anchorSessionKey, sourceSessionKey, message, index),
+      _mirrored: true,
+      _sourceSessionKey: sourceSessionKey,
+      _agentId: getAgentIdFromSessionKey(sourceSessionKey),
+    }));
+}
+
+async function sendGatewayMessage(
+  sessionKey: string,
+  text: string,
+  attachments?: Array<{ fileName: string; mimeType: string; fileSize: number; stagedPath: string; preview: string | null }>,
+): Promise<{ success: boolean; result?: { runId?: string }; error?: string }> {
+  const trimmed = text.trim();
+  const hasMedia = attachments && attachments.length > 0;
+  const idempotencyKey = crypto.randomUUID();
+
+  if (hasMedia && attachments) {
+    return await hostApiFetch<{ success: boolean; result?: { runId?: string }; error?: string }>(
+      '/api/chat/send-with-media',
+      {
+        method: 'POST',
+        body: JSON.stringify({
+          sessionKey,
+          message: trimmed || 'Process the attached file(s).',
+          deliver: false,
+          idempotencyKey,
+          media: attachments.map((attachment) => ({
+            filePath: attachment.stagedPath,
+            mimeType: attachment.mimeType,
+            fileName: attachment.fileName,
+          })),
+        }),
+      },
+    );
+  }
+
+  const rpcResult = await useGatewayStore.getState().rpc<{ runId?: string }>(
+    'chat.send',
+    {
+      sessionKey,
+      message: trimmed,
+      deliver: false,
+      idempotencyKey,
+    },
+    120_000,
+  );
+  return { success: true, result: rpcResult };
+}
+
+async function syncAttachedAgentMirror(anchorSessionKey: string, agentId: string): Promise<void> {
+  const metaState = useChatMetaStore.getState();
+  const sourceSessionKey = metaState.meta[anchorSessionKey]?.attachedAgentSessionKeys?.[agentId];
+  if (!sourceSessionKey) return;
+
+  try {
+    const history = await useGatewayStore.getState().rpc<Record<string, unknown>>(
+      'chat.history',
+      { sessionKey: sourceSessionKey, limit: 200 },
+    );
+    const rawMessages = Array.isArray(history.messages) ? history.messages as RawMessage[] : [];
+    const mirroredMessages = buildMirroredMessagesForSession(anchorSessionKey, sourceSessionKey, rawMessages);
+    if (mirroredMessages.length === 0) return;
+
+    useChatMirrorsStore.getState().upsertMessages(anchorSessionKey, mirroredMessages);
+
+    const chatState = useChatStore.getState();
+    if (chatState.currentSessionKey === anchorSessionKey) {
+      const primaryMessages = getPrimaryMessages(chatState.messages);
+      const mergedMessages = getConversationMessages(anchorSessionKey, primaryMessages);
+      setTimeout(() => {
+        if (useChatStore.getState().currentSessionKey === anchorSessionKey) {
+          useChatStore.setState({ messages: mergedMessages });
+        }
+      }, 0);
+      void loadMissingPreviews(mergedMessages).then((updated) => {
+        if (!updated) return;
+        if (useChatStore.getState().currentSessionKey === anchorSessionKey) {
+          const refreshedMessages = getConversationMessages(
+            anchorSessionKey,
+            getPrimaryMessages(useChatStore.getState().messages),
+          ).map((message) => (
+            message._attachedFiles
+              ? { ...message, _attachedFiles: message._attachedFiles.map((file) => ({ ...file })) }
+              : message
+          ));
+          useChatStore.setState({ messages: refreshedMessages });
+        }
+      });
+    }
+  } catch (error) {
+    console.warn(`[multi-agent] Failed to sync attached agent ${agentId} for ${anchorSessionKey}:`, error);
+  }
+}
+
+async function syncAllAttachedAgentMirrors(anchorSessionKey: string): Promise<void> {
+  const currentAgentId = getAgentIdFromSessionKey(anchorSessionKey);
+  const chatMeta = useChatMetaStore.getState().meta[anchorSessionKey];
+  const attachedAgentIds = getAttachedAgentIds(currentAgentId, chatMeta?.attachedAgentIds);
+  for (const agentId of attachedAgentIds) {
+    if (chatMeta?.attachedAgentSessionKeys?.[agentId]) {
+      await syncAttachedAgentMirror(anchorSessionKey, agentId);
+    }
+  }
+}
+
+async function runAttachedAgentFanout(
+  anchorSessionKey: string,
+  text: string,
+  attachments?: Array<{ fileName: string; mimeType: string; fileSize: number; stagedPath: string; preview: string | null }>,
+): Promise<void> {
+  const currentAgentId = getAgentIdFromSessionKey(anchorSessionKey);
+  const metaState = useChatMetaStore.getState();
+  const chatMeta = metaState.meta[anchorSessionKey];
+  const attachedAgentIds = getAttachedAgentIds(currentAgentId, chatMeta?.attachedAgentIds);
+
+  for (const agentId of attachedAgentIds) {
+    const linkedSessionKey = chatMeta?.attachedAgentSessionKeys?.[agentId]
+      ?? buildAttachedAgentSessionKey(anchorSessionKey, agentId);
+
+    if (!chatMeta?.attachedAgentSessionKeys?.[agentId]) {
+      metaState.setAttachedAgentSessionKey(anchorSessionKey, agentId, linkedSessionKey);
+    }
+
+    try {
+      const result = await sendGatewayMessage(linkedSessionKey, text, attachments);
+      if (!result.success) {
+        console.warn(`[multi-agent] Attached agent ${agentId} failed:`, result.error);
+        continue;
+      }
+      await syncAttachedAgentMirror(anchorSessionKey, agentId);
+    } catch (error) {
+      console.warn(`[multi-agent] Attached agent ${agentId} send failed:`, error);
+    }
+  }
 }
 
 function getCanonicalPrefixFromSessionKey(sessionKey: string): string | null {
@@ -796,16 +1092,6 @@ function isToolResultRole(role: unknown): boolean {
   if (!role) return false;
   const normalized = String(role).toLowerCase();
   return normalized === 'toolresult' || normalized === 'tool_result';
-}
-
-/** True for internal plumbing messages that should never be shown in the UI. */
-function isInternalMessage(msg: { role?: unknown; content?: unknown }): boolean {
-  if (msg.role === 'system') return true;
-  if (msg.role === 'assistant') {
-    const text = getMessageText(msg.content);
-    if (/^(HEARTBEAT_OK|NO_REPLY)\s*$/.test(text)) return true;
-  }
-  return false;
 }
 
 function extractTextFromContent(content: unknown): string {
@@ -1193,10 +1479,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
   switchSession: (key: string) => {
     if (key === get().currentSessionKey) return;
-    // Stop any background polling for the old session before switching.
-    // This prevents the poll timer from firing after the switch and loading
-    // the wrong session's history into the new session's view.
-    clearHistoryPoll();
     set((s) => buildSessionSwitchPatch(s, key));
     get().loadHistory();
   },
@@ -1235,6 +1517,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
     if (currentSessionKey === key) {
       // Switched away from deleted session — pick the first remaining or create new
       const next = remaining[0];
+      useChatMetaStore.getState().removeMeta(key);
+      useChatMirrorsStore.getState().clearSession(key);
       set((s) => ({
         sessions: remaining,
         sessionLabels: Object.fromEntries(Object.entries(s.sessionLabels).filter(([k]) => k !== key)),
@@ -1255,6 +1539,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
         get().loadHistory();
       }
     } else {
+      useChatMetaStore.getState().removeMeta(key);
+      useChatMirrorsStore.getState().clearSession(key);
       set((s) => ({
         sessions: remaining,
         sessionLabels: Object.fromEntries(Object.entries(s.sessionLabels).filter(([k]) => k !== key)),
@@ -1398,109 +1684,94 @@ export const useChatStore = create<ChatState>((set, get) => ({
       };
 
       const applyLoadedMessages = (rawMessages: RawMessage[], thinkingLevel: string | null) => {
-      // Guard: if the user switched sessions while this async load was in
-      // flight, discard the result to prevent overwriting the new session's
-      // messages with stale data from the old session.
-      if (!isCurrentSession()) return false;
+        if (!isCurrentSession()) return false;
+        const visibleHistoryMessages = prepareVisibleHistoryMessages(rawMessages, currentSessionKey);
+        const filteredMessages = visibleHistoryMessages.filter((msg) => !isToolResultRole(msg.role));
 
-      // Before filtering: attach images/files from tool_result messages to the next assistant message
-      const messagesWithToolImages = enrichWithToolResultFiles(rawMessages);
-      const filteredMessages = messagesWithToolImages.filter((msg) => !isToolResultRole(msg.role) && !isInternalMessage(msg));
-      // Restore file attachments for user/assistant messages (from cache + text patterns)
-      const enrichedMessages = enrichWithCachedImages(filteredMessages);
-
-      // Preserve the optimistic user message during an active send.
-      // The Gateway may not include the user's message in chat.history
-      // until the run completes, causing it to flash out of the UI.
-      let finalMessages = enrichedMessages;
-      const userMsgAt = get().lastUserMessageAt;
-      if (get().sending && userMsgAt) {
-        const userMsMs = toMs(userMsgAt);
-        const hasRecentUser = enrichedMessages.some(
-          (m) => m.role === 'user' && m.timestamp && Math.abs(toMs(m.timestamp) - userMsMs) < 5000,
-        );
-        if (!hasRecentUser) {
-          const currentMsgs = get().messages;
-          const optimistic = [...currentMsgs].reverse().find(
+        // Preserve the optimistic user message during an active send.
+        // The Gateway may not include the user's message in chat.history
+        // until the run completes, causing it to flash out of the UI.
+        let primaryMessages = visibleHistoryMessages;
+        const userMsgAt = get().lastUserMessageAt;
+        if (get().sending && userMsgAt) {
+          const userMsMs = toMs(userMsgAt);
+          const hasRecentUser = visibleHistoryMessages.some(
             (m) => m.role === 'user' && m.timestamp && Math.abs(toMs(m.timestamp) - userMsMs) < 5000,
           );
-          if (optimistic) {
-            finalMessages = [...enrichedMessages, optimistic];
+          if (!hasRecentUser) {
+            const currentMsgs = get().messages;
+            const optimistic = [...currentMsgs].reverse().find(
+              (m) => m.role === 'user' && m.timestamp && Math.abs(toMs(m.timestamp) - userMsMs) < 5000,
+            );
+            if (optimistic) {
+              primaryMessages = [...visibleHistoryMessages, optimistic];
+            }
           }
         }
-      }
 
-      set({ messages: finalMessages, thinkingLevel, loading: false });
+        const finalMessages = getConversationMessages(currentSessionKey, primaryMessages);
+        set({ messages: finalMessages, thinkingLevel, loading: false });
 
-      // Extract first user message text as a session label for display in the toolbar.
-      // Skip main sessions (key ends with ":main") — they rely on the Gateway-provided
-      // displayName (e.g. the configured agent name "ClawX") instead.
-      const isMainSession = currentSessionKey.endsWith(':main');
-      if (!isMainSession) {
-        const firstUserMsg = finalMessages.find((m) => m.role === 'user');
-        if (firstUserMsg) {
-          const labelText = getMessageText(firstUserMsg.content).trim();
-          if (labelText) {
-            const truncated = labelText.length > 50 ? `${labelText.slice(0, 50)}…` : labelText;
-            set((s) => ({
-              sessionLabels: { ...s.sessionLabels, [currentSessionKey]: truncated },
-            }));
+        const isMainSession = currentSessionKey.endsWith(':main');
+        if (!isMainSession) {
+          const firstUserMsg = primaryMessages.find((m) => m.role === 'user');
+          if (firstUserMsg) {
+            const labelText = getMessageText(firstUserMsg.content).trim();
+            if (labelText) {
+              const truncated = labelText.length > 50 ? `${labelText.slice(0, 50)}…` : labelText;
+              set((s) => ({
+                sessionLabels: { ...s.sessionLabels, [currentSessionKey]: truncated },
+              }));
+            }
           }
         }
-      }
 
-      // Record last activity time from the last message in history
-      const lastMsg = finalMessages[finalMessages.length - 1];
-      if (lastMsg?.timestamp) {
-        const lastAt = toMs(lastMsg.timestamp);
-        set((s) => ({
-          sessionLastActivity: { ...s.sessionLastActivity, [currentSessionKey]: lastAt },
-        }));
-      }
-
-      // Async: load missing image previews from disk (updates in background)
-      loadMissingPreviews(finalMessages).then((updated) => {
-        if (!isCurrentSession()) return;
-        if (updated) {
-          set((state) => ({
-            messages: mergeHydratedMessages(state.messages, finalMessages),
+        const lastMsg = primaryMessages[primaryMessages.length - 1];
+        if (lastMsg?.timestamp) {
+          const lastAt = toMs(lastMsg.timestamp);
+          set((s) => ({
+            sessionLastActivity: { ...s.sessionLastActivity, [currentSessionKey]: lastAt },
           }));
         }
-      });
-      const { pendingFinal, lastUserMessageAt, sending: isSendingNow } = get();
 
-      // If we're sending but haven't received streaming events, check
-      // whether the loaded history reveals intermediate tool-call activity.
-      // This surfaces progress via the pendingFinal → ActivityIndicator path.
-      const userMsTs = lastUserMessageAt ? toMs(lastUserMessageAt) : 0;
-      const isAfterUserMsg = (msg: RawMessage): boolean => {
-        if (!userMsTs || !msg.timestamp) return true;
-        return toMs(msg.timestamp) >= userMsTs;
-      };
-
-      if (isSendingNow && !pendingFinal) {
-        const hasRecentAssistantActivity = [...filteredMessages].reverse().some((msg) => {
-          if (msg.role !== 'assistant') return false;
-          return isAfterUserMsg(msg);
+        loadMissingPreviews(finalMessages).then((updated) => {
+          if (!isCurrentSession()) return;
+          if (updated) {
+            set((state) => ({
+              messages: mergeHydratedMessages(state.messages, finalMessages),
+            }));
+          }
         });
-        if (hasRecentAssistantActivity) {
-          set({ pendingFinal: true });
-        }
-      }
+        const { pendingFinal, lastUserMessageAt, sending: isSendingNow } = get();
 
-      // If pendingFinal, check whether the AI produced a final text response.
-      if (pendingFinal || get().pendingFinal) {
-        const recentAssistant = [...filteredMessages].reverse().find((msg) => {
-          if (msg.role !== 'assistant') return false;
-          if (!hasNonToolAssistantContent(msg)) return false;
-          return isAfterUserMsg(msg);
-        });
-        if (recentAssistant) {
-          clearHistoryPoll();
-          set({ sending: false, activeRunId: null, pendingFinal: false });
+        const userMsTs = lastUserMessageAt ? toMs(lastUserMessageAt) : 0;
+        const isAfterUserMsg = (msg: RawMessage): boolean => {
+          if (!userMsTs || !msg.timestamp) return true;
+          return toMs(msg.timestamp) >= userMsTs;
+        };
+
+        if (isSendingNow && !pendingFinal) {
+          const hasRecentAssistantActivity = [...filteredMessages].reverse().some((msg) => {
+            if (msg.role !== 'assistant') return false;
+            return isAfterUserMsg(msg);
+          });
+          if (hasRecentAssistantActivity) {
+            set({ pendingFinal: true });
+          }
         }
-      }
-      return true;
+
+        if (pendingFinal || get().pendingFinal) {
+          const recentAssistant = [...filteredMessages].reverse().find((msg) => {
+            if (msg.role !== 'assistant') return false;
+            if (!hasNonToolAssistantContent(msg)) return false;
+            return isAfterUserMsg(msg);
+          });
+          if (recentAssistant) {
+            clearHistoryPoll();
+            set({ sending: false, activeRunId: null, pendingFinal: false });
+          }
+        }
+        return true;
       };
 
       try {
@@ -1589,9 +1860,11 @@ export const useChatStore = create<ChatState>((set, get) => ({
             _foregroundHistoryLoadSeen.add(currentSessionKey);
           }
         } else {
-          applyLoadFailure(String(err));
+          set({ messages: [], loading: false });
         }
       }
+
+      void syncAllAttachedAgentMirrors(currentSessionKey);
     })();
 
     _historyLoadInFlight.set(currentSessionKey, loadPromise);
@@ -1617,19 +1890,10 @@ export const useChatStore = create<ChatState>((set, get) => ({
   sendMessage: async (
     text: string,
     attachments?: Array<{ fileName: string; mimeType: string; fileSize: number; stagedPath: string; preview: string | null }>,
-    targetAgentId?: string | null,
   ) => {
     const trimmed = text.trim();
     if (!trimmed && (!attachments || attachments.length === 0)) return;
-
-    const targetSessionKey = resolveMainSessionKeyForAgent(targetAgentId) ?? get().currentSessionKey;
-
-    if (targetSessionKey !== get().currentSessionKey) {
-      set((s) => buildSessionSwitchPatch(s, targetSessionKey));
-      await get().loadHistory(true);
-    }
-
-    const currentSessionKey = targetSessionKey;
+    const currentSessionKey = get().currentSessionKey;
 
     // Add user message optimistically (with local file metadata for UI display)
     const nowMs = Date.now();
@@ -1717,7 +1981,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
     setTimeout(checkStuck, 30_000);
 
     try {
-      const idempotencyKey = crypto.randomUUID();
       const hasMedia = attachments && attachments.length > 0;
       if (hasMedia) {
         console.log('[sendMessage] Media paths:', attachments!.map(a => a.stagedPath));
@@ -1738,45 +2001,15 @@ export const useChatStore = create<ChatState>((set, get) => ({
         saveImageCache(_imageCache);
       }
 
-      let result: { success: boolean; result?: { runId?: string }; error?: string };
-
-      // Longer timeout for chat sends to tolerate high-latency networks (avoids connect error)
-      const CHAT_SEND_TIMEOUT_MS = 120_000;
-
-      if (hasMedia) {
-        result = await hostApiFetch<{ success: boolean; result?: { runId?: string }; error?: string }>(
-          '/api/chat/send-with-media',
-          {
-            method: 'POST',
-            body: JSON.stringify({
-              sessionKey: currentSessionKey,
-              message: trimmed || 'Process the attached file(s).',
-              deliver: false,
-              idempotencyKey,
-              media: attachments.map((a) => ({
-                filePath: a.stagedPath,
-                mimeType: a.mimeType,
-                fileName: a.fileName,
-              })),
-            }),
-          },
-        );
-      } else {
-        const rpcResult = await useGatewayStore.getState().rpc<{ runId?: string }>(
-          'chat.send',
-          {
-            sessionKey: currentSessionKey,
-            message: trimmed,
-            deliver: false,
-            idempotencyKey,
-          },
-          CHAT_SEND_TIMEOUT_MS,
-        );
-        result = { success: true, result: rpcResult };
-      }
+      const result = await sendGatewayMessage(currentSessionKey, trimmed, attachments);
 
       console.log(`[sendMessage] RPC result: success=${result.success}, runId=${result.result?.runId || 'none'}`);
 
+      } else {
+        if (result.result?.runId) {
+          set({ activeRunId: result.result.runId });
+        }
+        void runAttachedAgentFanout(currentSessionKey, trimmed, attachments);
       if (!result.success) {
         const errorMsg = result.error || 'Failed to send message';
         if (isRecoverableChatSendTimeout(errorMsg)) {
@@ -1786,8 +2019,11 @@ export const useChatStore = create<ChatState>((set, get) => ({
           clearHistoryPoll();
           set({ error: errorMsg, sending: false });
         }
-      } else if (result.result?.runId) {
-        set({ activeRunId: result.result.runId });
+      } else {
+        if (result.result?.runId) {
+          set({ activeRunId: result.result.runId });
+        }
+        void runAttachedAgentFanout(currentSessionKey, trimmed, attachments);
       }
     } catch (err) {
       const errStr = String(err);
@@ -1827,6 +2063,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
     const eventState = String(event.state || '');
     const eventSessionKey = event.sessionKey != null ? String(event.sessionKey) : null;
     const { activeRunId, currentSessionKey } = get();
+    const currentMessageAgentId = getAgentIdFromSessionKey(currentSessionKey);
 
     // Only process events for the current session (when sessionKey is present)
     if (eventSessionKey != null && eventSessionKey !== currentSessionKey) return;
@@ -1950,6 +2187,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
                       ...(currentStream as RawMessage),
                       role: 'assistant',
                       id: snapId,
+                      _agentId: currentMessageAgentId,
+                      _sourceSessionKey: currentSessionKey,
                     });
                   }
                 }
@@ -1981,9 +2220,17 @@ export const useChatStore = create<ChatState>((set, get) => ({
                 ...finalMsg,
                 role: (finalMsg.role || 'assistant') as RawMessage['role'],
                 id: msgId,
+                _agentId: currentMessageAgentId,
+                _sourceSessionKey: currentSessionKey,
                 _attachedFiles: [...(finalMsg._attachedFiles || []), ...pendingImgs],
               }
-              : { ...finalMsg, role: (finalMsg.role || 'assistant') as RawMessage['role'], id: msgId };
+              : {
+                ...finalMsg,
+                role: (finalMsg.role || 'assistant') as RawMessage['role'],
+                id: msgId,
+                _agentId: currentMessageAgentId,
+                _sourceSessionKey: currentSessionKey,
+              };
             const clearPendingImages = { pendingToolImages: [] as AttachedFileMeta[] };
 
             // Check if message already exists (prevent duplicates)
@@ -2050,7 +2297,13 @@ export const useChatStore = create<ChatState>((set, get) => ({
           const alreadyExists = get().messages.some(m => m.id === snapId);
           if (!alreadyExists) {
             set((s) => ({
-              messages: [...s.messages, { ...currentStream, role: 'assistant' as const, id: snapId }],
+              messages: [...s.messages, {
+                ...currentStream,
+                role: 'assistant' as const,
+                id: snapId,
+                _agentId: currentMessageAgentId,
+                _sourceSessionKey: currentSessionKey,
+              }],
             }));
           }
         }
