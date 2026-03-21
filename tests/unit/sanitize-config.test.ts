@@ -9,7 +9,8 @@
  * on a temp directory with real file I/O.
  */
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { mkdtemp, writeFile, readFile, rm } from 'fs/promises';
+import { mkdtemp, writeFile, readFile, rm, access } from 'fs/promises';
+import { constants } from 'fs';
 import { join } from 'path';
 import { tmpdir } from 'os';
 
@@ -40,6 +41,16 @@ async function sanitizeConfig(filePath: string): Promise<boolean> {
   const config = JSON.parse(raw) as Record<string, unknown>;
   let modified = false;
 
+  /** Non-throwing async existence check. */
+  async function fileExists(p: string): Promise<boolean> {
+    try {
+      await access(p, constants.F_OK);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
   // Mirror of the production blocklist logic
   const skills = config.skills;
   if (skills && typeof skills === 'object' && !Array.isArray(skills)) {
@@ -49,6 +60,48 @@ async function sanitizeConfig(filePath: string): Promise<boolean> {
       if (key in skillsObj) {
         delete skillsObj[key];
         modified = true;
+      }
+    }
+  }
+
+  // Mirror: prune stale absolute plugin paths under plugins (array), plugins.load (array),
+  // and plugins.load.paths (nested object shape).
+  const plugins = config.plugins;
+  if (plugins && typeof plugins === 'object' && !Array.isArray(plugins)) {
+    const pluginsObj = plugins as Record<string, unknown>;
+    if (Array.isArray(pluginsObj.load)) {
+      const validLoad: unknown[] = [];
+      for (const p of pluginsObj.load) {
+        if (typeof p === 'string' && p.startsWith('/')) {
+          if (p.includes('node_modules/openclaw/extensions') || !(await fileExists(p))) {
+            modified = true;
+          } else {
+            validLoad.push(p);
+          }
+        } else {
+          validLoad.push(p);
+        }
+      }
+      if (modified) pluginsObj.load = validLoad;
+    } else if (pluginsObj.load && typeof pluginsObj.load === 'object' && !Array.isArray(pluginsObj.load)) {
+      const loadObj = pluginsObj.load as Record<string, unknown>;
+      if (Array.isArray(loadObj.paths)) {
+        const validPaths: unknown[] = [];
+        const countBefore = loadObj.paths.length;
+        for (const p of loadObj.paths) {
+          if (typeof p === 'string' && p.startsWith('/')) {
+            if (p.includes('node_modules/openclaw/extensions') || !(await fileExists(p))) {
+              modified = true;
+            } else {
+              validPaths.push(p);
+            }
+          } else {
+            validPaths.push(p);
+          }
+        }
+        if (validPaths.length !== countBefore) {
+          loadObj.paths = validPaths;
+        }
       }
     }
   }
@@ -293,5 +346,166 @@ describe('sanitizeOpenClawConfig (blocklist approach)', () => {
 
     const result = await readConfig();
     expect(result).toEqual(original);
+  });
+
+  // ── plugins.load.paths regression tests (issue #607) ──────────
+
+  it('removes stale absolute paths from plugins.load.paths', async () => {
+    await writeConfig({
+      plugins: {
+        load: {
+          paths: [
+            '/nonexistent/path/to/some-plugin',
+            '/another/missing/plugin/dir',
+          ],
+        },
+        entries: { whatsapp: { enabled: true } },
+      },
+      gateway: { mode: 'local' },
+    });
+
+    const modified = await sanitizeConfig(configPath);
+    expect(modified).toBe(true);
+
+    const result = await readConfig();
+    const plugins = result.plugins as Record<string, unknown>;
+    const load = plugins.load as Record<string, unknown>;
+    expect(load.paths).toEqual([]);
+    // Other plugin config is preserved
+    expect(plugins.entries).toEqual({ whatsapp: { enabled: true } });
+    // Other top-level sections untouched
+    expect(result.gateway).toEqual({ mode: 'local' });
+  });
+
+  it('removes bundled node_modules paths from plugins.load.paths', async () => {
+    await writeConfig({
+      plugins: {
+        load: {
+          paths: [
+            '/home/user/.nvm/versions/node/v22.0.0/lib/node_modules/openclaw/extensions/some-plugin',
+          ],
+        },
+      },
+    });
+
+    const modified = await sanitizeConfig(configPath);
+    expect(modified).toBe(true);
+
+    const result = await readConfig();
+    const plugins = result.plugins as Record<string, unknown>;
+    const load = plugins.load as Record<string, unknown>;
+    expect(load.paths).toEqual([]);
+  });
+
+  it('keeps valid existing paths in plugins.load.paths', async () => {
+    // Use tempDir itself as a "valid" path that actually exists
+    await writeConfig({
+      plugins: {
+        load: {
+          paths: [
+            tempDir,
+            '/nonexistent/stale/plugin',
+          ],
+        },
+      },
+    });
+
+    const modified = await sanitizeConfig(configPath);
+    expect(modified).toBe(true);
+
+    const result = await readConfig();
+    const plugins = result.plugins as Record<string, unknown>;
+    const load = plugins.load as Record<string, unknown>;
+    // tempDir exists so it should be preserved; nonexistent is pruned
+    expect(load.paths).toEqual([tempDir]);
+  });
+
+  it('preserves non-absolute entries in plugins.load.paths', async () => {
+    await writeConfig({
+      plugins: {
+        load: {
+          paths: [
+            'relative/plugin-path',
+            './another-relative',
+            '/nonexistent/absolute/path',
+          ],
+        },
+      },
+    });
+
+    const modified = await sanitizeConfig(configPath);
+    expect(modified).toBe(true);
+
+    const result = await readConfig();
+    const plugins = result.plugins as Record<string, unknown>;
+    const load = plugins.load as Record<string, unknown>;
+    // Relative paths are preserved (only absolute paths are checked)
+    expect(load.paths).toEqual(['relative/plugin-path', './another-relative']);
+  });
+
+  it('does nothing when plugins.load.paths contains only valid paths', async () => {
+    const original = {
+      plugins: {
+        load: {
+          paths: [tempDir],
+          watch: true,
+        },
+        entries: { test: { enabled: true } },
+      },
+    };
+    await writeConfig(original);
+
+    const modified = await sanitizeConfig(configPath);
+    expect(modified).toBe(false);
+
+    const result = await readConfig();
+    expect(result).toEqual(original);
+  });
+
+  it('preserves other keys in plugins.load alongside paths pruning', async () => {
+    await writeConfig({
+      plugins: {
+        load: {
+          paths: ['/nonexistent/stale/path'],
+          watch: true,
+          extraDirs: ['/some/dir'],
+        },
+      },
+    });
+
+    const modified = await sanitizeConfig(configPath);
+    expect(modified).toBe(true);
+
+    const result = await readConfig();
+    const plugins = result.plugins as Record<string, unknown>;
+    const load = plugins.load as Record<string, unknown>;
+    expect(load.paths).toEqual([]);
+    // Other load keys are preserved
+    expect(load.watch).toBe(true);
+    expect(load.extraDirs).toEqual(['/some/dir']);
+  });
+
+  it('handles plugins.load as empty object (no paths key)', async () => {
+    const original = {
+      plugins: {
+        load: {},
+      },
+    };
+    await writeConfig(original);
+
+    const modified = await sanitizeConfig(configPath);
+    expect(modified).toBe(false);
+  });
+
+  it('handles plugins.load.paths as empty array', async () => {
+    const original = {
+      plugins: {
+        load: { paths: [] },
+      },
+    };
+    await writeConfig(original);
+
+    const modified = await sanitizeConfig(configPath);
+    expect(modified).toBe(false);
   });
 });
