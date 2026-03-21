@@ -12,6 +12,7 @@ import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { invokeIpc } from '@/lib/api-client';
 import type { RawMessage, AttachedFileMeta } from '@/stores/chat';
+import { useAgentsStore } from '@/stores/agents';
 import { extractText, extractThinking, extractImages, extractToolUse, formatTimestamp } from './message-utils';
 
 interface ChatMessageProps {
@@ -56,6 +57,11 @@ export const ChatMessage = memo(function ChatMessage({
 
   const attachedFiles = message._attachedFiles || [];
   const [lightboxImg, setLightboxImg] = useState<{ src: string; fileName: string; filePath?: string; base64?: string; mimeType?: string } | null>(null);
+  const agentName = useAgentsStore((state) => (
+    message._agentId
+      ? state.agents.find((agent) => agent.id === message._agentId)?.name ?? message._agentId
+      : null
+  ));
 
   // Never render tool result messages in chat UI
   if (isToolResult) return null;
@@ -84,6 +90,19 @@ export const ChatMessage = memo(function ChatMessage({
           isUser ? 'items-end' : 'items-start',
         )}
       >
+        {!isUser && agentName && (
+          <div className="flex items-center gap-2 px-1">
+            <span className="inline-flex items-center rounded-full border border-black/10 bg-black/[0.04] px-2 py-0.5 text-[10px] font-medium uppercase tracking-[0.08em] text-foreground/70 dark:border-white/10 dark:bg-white/[0.08]">
+              {agentName}
+            </span>
+            {message._mirrored && (
+              <span className="text-[10px] uppercase tracking-[0.08em] text-muted-foreground">
+                Attached agent
+              </span>
+            )}
+          </div>
+        )}
+
         {isStreaming && !isUser && streamingTools.length > 0 && (
           <ToolStatusBar tools={streamingTools} />
         )}
