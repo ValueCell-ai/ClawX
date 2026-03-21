@@ -6,17 +6,14 @@
  * Files are staged to disk via IPC — only lightweight path references
  * are sent with the message (no base64 over WebSocket).
  */
-import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
-import { SendHorizontal, Square, X, Paperclip, FileText, Film, Music, FileArchive, File, Loader2, AtSign } from 'lucide-react';
+import { useState, useRef, useEffect, useCallback } from 'react';
+import { SendHorizontal, Square, X, Paperclip, FileText, Film, Music, FileArchive, File, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { hostApiFetch } from '@/lib/host-api';
 import { invokeIpc } from '@/lib/api-client';
 import { cn } from '@/lib/utils';
 import { useGatewayStore } from '@/stores/gateway';
-import { useAgentsStore } from '@/stores/agents';
-import { useChatStore } from '@/stores/chat';
-import type { AgentSummary } from '@/types/agent';
 import { useTranslation } from 'react-i18next';
 
 // ── Types ────────────────────────────────────────────────────────
@@ -33,7 +30,7 @@ export interface FileAttachment {
 }
 
 interface ChatInputProps {
-  onSend: (text: string, attachments?: FileAttachment[], targetAgentId?: string | null) => void;
+  onSend: (text: string, attachments?: FileAttachment[]) => void;
   onStop?: () => void;
   disabled?: boolean;
   sending?: boolean;
@@ -88,27 +85,9 @@ export function ChatInput({ onSend, onStop, disabled = false, sending = false, i
   const { t } = useTranslation('chat');
   const [input, setInput] = useState('');
   const [attachments, setAttachments] = useState<FileAttachment[]>([]);
-  const [targetAgentId, setTargetAgentId] = useState<string | null>(null);
-  const [pickerOpen, setPickerOpen] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const pickerRef = useRef<HTMLDivElement>(null);
   const isComposingRef = useRef(false);
   const gatewayStatus = useGatewayStore((s) => s.status);
-  const agents = useAgentsStore((s) => s.agents);
-  const currentAgentId = useChatStore((s) => s.currentAgentId);
-  const currentAgentName = useMemo(
-    () => (agents ?? []).find((agent) => agent.id === currentAgentId)?.name ?? currentAgentId,
-    [agents, currentAgentId],
-  );
-  const mentionableAgents = useMemo(
-    () => (agents ?? []).filter((agent) => agent.id !== currentAgentId),
-    [agents, currentAgentId],
-  );
-  const selectedTarget = useMemo(
-    () => (agents ?? []).find((agent) => agent.id === targetAgentId) ?? null,
-    [agents, targetAgentId],
-  );
-  const showAgentPicker = mentionableAgents.length > 0;
 
   // Auto-resize textarea
   useEffect(() => {
@@ -124,32 +103,6 @@ export function ChatInput({ onSend, onStop, disabled = false, sending = false, i
       textareaRef.current.focus();
     }
   }, [disabled]);
-
-  useEffect(() => {
-    if (!targetAgentId) return;
-    if (targetAgentId === currentAgentId) {
-      setTargetAgentId(null);
-      setPickerOpen(false);
-      return;
-    }
-    if (!(agents ?? []).some((agent) => agent.id === targetAgentId)) {
-      setTargetAgentId(null);
-      setPickerOpen(false);
-    }
-  }, [agents, currentAgentId, targetAgentId]);
-
-  useEffect(() => {
-    if (!pickerOpen) return;
-    const handlePointerDown = (event: MouseEvent) => {
-      if (!pickerRef.current?.contains(event.target as Node)) {
-        setPickerOpen(false);
-      }
-    };
-    document.addEventListener('mousedown', handlePointerDown);
-    return () => {
-      document.removeEventListener('mousedown', handlePointerDown);
-    };
-  }, [pickerOpen]);
 
   // ── File staging via native dialog ─────────────────────────────
 
@@ -307,10 +260,8 @@ export function ChatInput({ onSend, onStop, disabled = false, sending = false, i
     if (textareaRef.current) {
       textareaRef.current.style.height = 'auto';
     }
-    onSend(textToSend, attachmentsToSend, targetAgentId);
-    setTargetAgentId(null);
-    setPickerOpen(false);
-  }, [input, attachments, canSend, onSend, targetAgentId]);
+    onSend(textToSend, attachmentsToSend);
+  }, [input, attachments, canSend, onSend]);
 
   const handleStop = useCallback(() => {
     if (!canStop) return;
@@ -319,10 +270,6 @@ export function ChatInput({ onSend, onStop, disabled = false, sending = false, i
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
-      if (e.key === 'Backspace' && !input && targetAgentId) {
-        setTargetAgentId(null);
-        return;
-      }
       if (e.key === 'Enter' && !e.shiftKey) {
         const nativeEvent = e.nativeEvent as KeyboardEvent;
         if (isComposingRef.current || nativeEvent.isComposing || nativeEvent.keyCode === 229) {
@@ -332,7 +279,7 @@ export function ChatInput({ onSend, onStop, disabled = false, sending = false, i
         handleSend();
       }
     },
-    [handleSend, input, targetAgentId],
+    [handleSend],
   );
 
   // Handle paste (Ctrl/Cmd+V with files)
@@ -409,20 +356,6 @@ export function ChatInput({ onSend, onStop, disabled = false, sending = false, i
 
         {/* Input Row */}
         <div className={`relative bg-white dark:bg-card rounded-[28px] shadow-sm border p-1.5 transition-all ${dragOver ? 'border-primary ring-1 ring-primary' : 'border-black/10 dark:border-white/10'}`}>
-          {selectedTarget && (
-            <div className="px-2.5 pt-2 pb-1">
-              <button
-                type="button"
-                onClick={() => setTargetAgentId(null)}
-                className="inline-flex items-center gap-1.5 rounded-full border border-primary/20 bg-primary/5 px-3 py-1 text-[13px] font-medium text-foreground transition-colors hover:bg-primary/10"
-                title={t('composer.clearTarget')}
-              >
-                <span>{t('composer.targetChip', { agent: selectedTarget.name })}</span>
-                <X className="h-3.5 w-3.5 text-muted-foreground" />
-              </button>
-            </div>
-          )}
-
           <div className="flex items-end gap-1.5">
             {/* Attach Button */}
             <Button
@@ -435,45 +368,6 @@ export function ChatInput({ onSend, onStop, disabled = false, sending = false, i
             >
               <Paperclip className="h-4 w-4" />
             </Button>
-
-            {showAgentPicker && (
-              <div ref={pickerRef} className="relative shrink-0">
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className={cn(
-                    'h-10 w-10 rounded-full text-muted-foreground hover:bg-black/5 dark:hover:bg-white/10 hover:text-foreground transition-colors',
-                    (pickerOpen || selectedTarget) && 'bg-primary/10 text-primary hover:bg-primary/20'
-                  )}
-                  onClick={() => setPickerOpen((open) => !open)}
-                  disabled={disabled || sending}
-                  title={t('composer.pickAgent')}
-                >
-                  <AtSign className="h-4 w-4" />
-                </Button>
-                {pickerOpen && (
-                  <div className="absolute left-0 bottom-full z-20 mb-2 w-72 overflow-hidden rounded-2xl border border-black/10 bg-white p-1.5 shadow-xl dark:border-white/10 dark:bg-card">
-                    <div className="px-3 py-2 text-[11px] font-medium text-muted-foreground/80">
-                      {t('composer.agentPickerTitle', { currentAgent: currentAgentName })}
-                    </div>
-                    <div className="max-h-64 overflow-y-auto">
-                      {mentionableAgents.map((agent) => (
-                        <AgentPickerItem
-                          key={agent.id}
-                          agent={agent}
-                          selected={agent.id === targetAgentId}
-                          onSelect={() => {
-                            setTargetAgentId(agent.id);
-                            setPickerOpen(false);
-                            textareaRef.current?.focus();
-                          }}
-                        />
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </div>
-            )}
 
             {/* Textarea */}
             <div className="flex-1 relative">
@@ -606,31 +500,5 @@ function AttachmentPreview({
         <X className="h-3 w-3" />
       </button>
     </div>
-  );
-}
-
-function AgentPickerItem({
-  agent,
-  selected,
-  onSelect,
-}: {
-  agent: AgentSummary;
-  selected: boolean;
-  onSelect: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onSelect}
-      className={cn(
-        'flex w-full flex-col items-start rounded-xl px-3 py-2 text-left transition-colors',
-        selected ? 'bg-primary/10 text-foreground' : 'hover:bg-black/5 dark:hover:bg-white/5'
-      )}
-    >
-      <span className="text-[14px] font-medium text-foreground">{agent.name}</span>
-      <span className="text-[11px] text-muted-foreground">
-        {agent.modelDisplay}
-      </span>
-    </button>
   );
 }

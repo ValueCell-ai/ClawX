@@ -296,11 +296,15 @@ export function Chat() {
                             role: (typeof streamMsg.role === 'string' ? streamMsg.role : 'assistant') as RawMessage['role'],
                             content: streamMsg.content ?? streamText,
                             timestamp: streamMsg.timestamp ?? streamingTimestamp,
+                            _agentId: currentAgentId,
+                            _sourceSessionKey: currentSessionKey,
                           }
                         : {
                             role: 'assistant',
                             content: streamText,
                             timestamp: streamingTimestamp,
+                            _agentId: currentAgentId,
+                            _sourceSessionKey: currentSessionKey,
                           }) as RawMessage}
                       showThinking={showThinking}
                       isStreaming
