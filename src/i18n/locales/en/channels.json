@@ -373,6 +373,15 @@
                 "Get App ID and Client Secret",
                 "Fill in your credentials below"
             ]
+        },
+        "wechat": {
+            "description": "Connect WeChat via official OpenClaw plugin",
+            "docsUrl": "https://docs.openclaw.ai/channels/wechat",
+            "instructions": [
+                "The WeChat OpenClaw plugin will be installed automatically on first use",
+                "After installation, scan the QR code as prompted by the gateway to log in",
+                "Once logged in, you can send and receive WeChat messages"
+            ]
         }
     },
     "viewDocs": "View Documentation"

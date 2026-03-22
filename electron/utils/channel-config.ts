@@ -21,7 +21,7 @@ const DEFAULT_ACCOUNT_ID = 'default';
 const CHANNEL_TOP_LEVEL_KEYS_TO_KEEP = new Set(['accounts', 'defaultAccount', 'enabled']);
 
 // Channels that are managed as plugins (config goes under plugins.entries, not channels)
-const PLUGIN_CHANNELS = ['whatsapp'];
+const PLUGIN_CHANNELS = ['whatsapp', 'wechat'];
 
 // Unique credential key per channel type – used for duplicate bot detection.
 // Maps each channel type to the field that uniquely identifies a bot/account.
@@ -237,6 +237,34 @@ async function ensurePluginAllowlist(currentConfig: OpenClawConfig, channelType:
             : [];
         if (!allow.includes('qqbot')) {
             currentConfig.plugins.allow = [...allow, 'qqbot'];
+        }
+    }
+
+    if (channelType === 'wechat') {
+        if (!currentConfig.plugins) {
+            currentConfig.plugins = {
+                allow: ['wechat'],
+                enabled: true,
+                entries: {
+                    wechat: { enabled: true }
+                }
+            };
+        } else {
+            currentConfig.plugins.enabled = true;
+            const allow: string[] = Array.isArray(currentConfig.plugins.allow)
+                ? (currentConfig.plugins.allow as string[])
+                : [];
+            if (!allow.includes('wechat')) {
+                currentConfig.plugins.allow = [...allow, 'wechat'];
+            }
+
+            if (!currentConfig.plugins.entries) {
+                currentConfig.plugins.entries = {};
+            }
+            if (!currentConfig.plugins.entries.wechat) {
+                currentConfig.plugins.entries.wechat = {};
+            }
+            currentConfig.plugins.entries.wechat.enabled = true;
         }
     }
 }

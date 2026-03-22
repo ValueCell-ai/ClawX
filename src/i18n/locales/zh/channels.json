@@ -374,6 +374,15 @@
                 "获取 App ID 和 Client Secret",
                 "在下方填写凭证信息"
             ]
+        },
+        "wechat": {
+            "description": "通过微信官方 OpenClaw 插件直连微信",
+            "docsUrl": "https://docs.openclaw.ai/zh-CN/channels/wechat",
+            "instructions": [
+                "首次使用需要安装微信 OpenClaw 插件，保存配置后系统将自动安装",
+                "安装完成后，根据网关提示扫描二维码完成登录",
+                "登录成功后即可收发微信消息"
+            ]
         }
     },
     "viewDocs": "查看文档"

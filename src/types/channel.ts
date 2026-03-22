@@ -20,7 +20,8 @@ export type ChannelType =
   | 'msteams'
   | 'googlechat'
   | 'mattermost'
-  | 'qqbot';
+  | 'qqbot'
+  | 'wechat';
 
 /**
  * Channel connection status
@@ -94,6 +95,7 @@ export const CHANNEL_ICONS: Record<ChannelType, string> = {
   googlechat: '💭',
   mattermost: '💠',
   qqbot: '🐧',
+  wechat: '💚',
 };
 
 /**
@@ -114,6 +116,7 @@ export const CHANNEL_NAMES: Record<ChannelType, string> = {
   googlechat: 'Google Chat',
   mattermost: 'Mattermost',
   qqbot: 'QQ Bot',
+  wechat: 'WeChat',
 };
 
 /**
@@ -555,13 +558,28 @@ export const CHANNEL_META: Record<ChannelType, ChannelMeta> = {
     ],
     isPlugin: true,
   },
+  wechat: {
+    id: 'wechat',
+    name: 'WeChat',
+    icon: '💚',
+    description: 'channels:meta.wechat.description',
+    connectionType: 'qr',
+    docsUrl: 'channels:meta.wechat.docsUrl',
+    configFields: [],
+    instructions: [
+      'channels:meta.wechat.instructions.0',
+      'channels:meta.wechat.instructions.1',
+      'channels:meta.wechat.instructions.2',
+    ],
+    isPlugin: true,
+  },
 };
 
 /**
  * Get primary supported channels (non-plugin, commonly used)
  */
 export function getPrimaryChannels(): ChannelType[] {
-  return ['telegram', 'discord', 'whatsapp', 'dingtalk', 'feishu', 'wecom', 'qqbot'];
+  return ['telegram', 'discord', 'whatsapp', 'dingtalk', 'feishu', 'wecom', 'qqbot', 'wechat'];
 }
 
 /**

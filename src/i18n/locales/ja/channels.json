@@ -373,6 +373,15 @@
                 "認証情報を入力します"
             ],
             "docsUrl": "https://icnnp7d0dymg.feishu.cn/wiki/KPIJwlyiGiupMrkiS9ice39Zn2c"
+        },
+        "wechat": {
+            "description": "WeChat 公式 OpenClaw プラグイン経由で WeChat に接続します",
+            "docsUrl": "https://docs.openclaw.ai/channels/wechat",
+            "instructions": [
+                "初回使用時に WeChat OpenClaw プラグインが自動インストールされます",
+                "インストール後、ゲートウェイの指示に従って QR コードをスキャンしてログインします",
+                "ログイン成功後、WeChat メッセージの送受信が可能になります"
+            ]
         }
     },
     "viewDocs": "ドキュメントを表示"
