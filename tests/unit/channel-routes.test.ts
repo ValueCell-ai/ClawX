@@ -8,6 +8,7 @@ const listAgentsSnapshotMock = vi.fn();
 const sendJsonMock = vi.fn();
 
 vi.mock('@electron/utils/channel-config', () => ({
+  cleanupDanglingWeChatPluginState: vi.fn(),
   deleteChannelAccountConfig: vi.fn(),
   deleteChannelConfig: vi.fn(),
   getChannelFormValues: vi.fn(),
@@ -32,7 +33,15 @@ vi.mock('@electron/utils/plugin-install', () => ({
   ensureDingTalkPluginInstalled: vi.fn(),
   ensureFeishuPluginInstalled: vi.fn(),
   ensureQQBotPluginInstalled: vi.fn(),
+  ensureWeChatPluginInstalled: vi.fn(),
   ensureWeComPluginInstalled: vi.fn(),
+}));
+
+vi.mock('@electron/utils/wechat-login', () => ({
+  cancelWeChatLoginSession: vi.fn(),
+  saveWeChatAccountState: vi.fn(),
+  startWeChatLoginSession: vi.fn(),
+  waitForWeChatLoginSession: vi.fn(),
 }));
 
 vi.mock('@electron/utils/whatsapp-login', () => ({
@@ -51,7 +60,7 @@ describe('handleChannelRoutes', () => {
   beforeEach(() => {
     vi.resetAllMocks();
     listAgentsSnapshotMock.mockResolvedValue({
-      entries: [],
+      agents: [],
       channelAccountOwners: {},
     });
     readOpenClawConfigMock.mockResolvedValue({
@@ -75,7 +84,7 @@ describe('handleChannelRoutes', () => {
       },
     });
     listAgentsSnapshotMock.mockResolvedValue({
-      entries: [],
+      agents: [],
       channelAccountOwners: {
         'feishu:default': 'main',
         'feishu:feishu-2412524e': 'code',
