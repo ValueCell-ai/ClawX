@@ -21,6 +21,7 @@ import {
 import {
   ensureDingTalkPluginInstalled,
   ensureFeishuPluginInstalled,
+  ensureLinePluginInstalled,
   ensureQQBotPluginInstalled,
   ensureWeComPluginInstalled,
 } from '../../utils/plugin-install';
@@ -364,6 +365,13 @@ export async function handleChannelRoutes(
           return true;
         }
       }
+      let linePluginWarning: string | undefined;
+      if (body.channelType === 'line') {
+        const installResult = await ensureLinePluginInstalled();
+        if (!installResult.installed) {
+          linePluginWarning = installResult.warning || 'LINE plugin not found locally. Install the plugin via OpenClaw CLI if needed.';
+        }
+      }
       const existingValues = await getChannelFormValues(body.channelType, body.accountId);
       if (isSameConfigValues(existingValues, body.config)) {
         await ensureScopedChannelBinding(body.channelType, body.accountId);
@@ -373,7 +381,7 @@ export async function handleChannelRoutes(
       await saveChannelConfig(body.channelType, body.config, body.accountId);
       await ensureScopedChannelBinding(body.channelType, body.accountId);
       scheduleGatewayChannelSaveRefresh(ctx, body.channelType, `channel:saveConfig:${body.channelType}`);
-      sendJson(res, 200, { success: true });
+      sendJson(res, 200, { success: true, ...(linePluginWarning ? { warning: linePluginWarning } : {}) });
     } catch (error) {
       sendJson(res, 500, { success: false, error: String(error) });
     }

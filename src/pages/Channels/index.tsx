@@ -26,6 +26,7 @@ import dingtalkIcon from '@/assets/channels/dingtalk.svg';
 import feishuIcon from '@/assets/channels/feishu.svg';
 import wecomIcon from '@/assets/channels/wecom.svg';
 import qqIcon from '@/assets/channels/qq.svg';
+import lineIcon from '@/assets/channels/line.svg';
 
 interface ChannelAccountItem {
   accountId: string;
@@ -527,6 +528,8 @@ function ChannelLogo({ type }: { type: ChannelType }) {
       return <img src={wecomIcon} alt="WeCom" className="w-[22px] h-[22px] dark:invert" />;
     case 'qqbot':
       return <img src={qqIcon} alt="QQ" className="w-[22px] h-[22px] dark:invert" />;
+    case 'line':
+      return <img src={lineIcon} alt="LINE" className="w-[22px] h-[22px] dark:invert" />;
     default:
       return <span className="text-[22px]">{CHANNEL_ICONS[type] || '💬'}</span>;
   }

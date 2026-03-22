@@ -239,6 +239,19 @@ async function ensurePluginAllowlist(currentConfig: OpenClawConfig, channelType:
             currentConfig.plugins.allow = [...allow, 'qqbot'];
         }
     }
+
+    if (channelType === 'line') {
+        if (!currentConfig.plugins) {
+            currentConfig.plugins = {};
+        }
+        currentConfig.plugins.enabled = true;
+        const allow = Array.isArray(currentConfig.plugins.allow)
+            ? currentConfig.plugins.allow as string[]
+            : [];
+        if (!allow.includes('line')) {
+            currentConfig.plugins.allow = [...allow, 'line'];
+        }
+    }
 }
 
 function transformChannelConfig(
@@ -959,6 +972,8 @@ export async function validateChannelCredentials(
             return validateDiscordCredentials(config);
         case 'telegram':
             return validateTelegramCredentials(config);
+        case 'line':
+            return validateLineCredentials(config);
         default:
             return { valid: true, errors: [], warnings: ['No online validation available for this channel type.'] };
     }
@@ -1070,6 +1085,42 @@ async function validateTelegramCredentials(
     }
 }
 
+async function validateLineCredentials(
+    config: Record<string, string>
+): Promise<CredentialValidationResult> {
+    const channelAccessToken = config.channelAccessToken?.trim();
+    const channelSecret = config.channelSecret?.trim();
+
+    if (!channelAccessToken) return { valid: false, errors: ['Channel Access Token is required'], warnings: [] };
+    if (!channelSecret) return { valid: false, errors: ['Channel Secret is required'], warnings: [] };
+
+    try {
+        const response = await proxyAwareFetch('https://api.line.me/v2/bot/info', {
+            headers: { Authorization: `Bearer ${channelAccessToken}` },
+        });
+        if (!response.ok) {
+            if (response.status === 401) {
+                return { valid: false, errors: ['Invalid Channel Access Token. Please check and try again.'], warnings: [] };
+            }
+            const errorData = await response.json().catch(() => ({}));
+            const msg = (errorData as { message?: string }).message || `LINE API error: ${response.status}`;
+            return { valid: false, errors: [msg], warnings: [] };
+        }
+        const data = (await response.json()) as { displayName?: string; userId?: string; basicId?: string };
+        return {
+            valid: true,
+            errors: [],
+            warnings: [],
+            details: {
+                botUsername: data.displayName || 'Unknown',
+                ...(data.basicId ? { basicId: data.basicId } : {}),
+            },
+        };
+    } catch (error) {
+        return { valid: false, errors: [`Connection error: ${error instanceof Error ? error.message : String(error)}`], warnings: [] };
+    }
+}
+
 export async function validateChannelConfig(channelType: string): Promise<ValidationResult> {
     const { exec } = await import('child_process');
 
@@ -1141,6 +1192,15 @@ export async function validateChannelConfig(channelType: string): Promise<Valida
             const allowedUsers = telegramConfig?.allowFrom as string[] | undefined;
             if (!allowedUsers || allowedUsers.length === 0) {
                 result.errors.push('Telegram: Allowed User IDs are required');
+                result.valid = false;
+            }
+        } else if (channelType === 'line') {
+            if (!savedChannelConfig?.channelAccessToken) {
+                result.errors.push('LINE: Channel Access Token is required');
+                result.valid = false;
+            }
+            if (!savedChannelConfig?.channelSecret) {
+                result.errors.push('LINE: Channel Secret is required');
                 result.valid = false;
             }
         }

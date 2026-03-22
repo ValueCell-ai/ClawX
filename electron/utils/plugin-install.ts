@@ -450,6 +450,10 @@ export function ensureQQBotPluginInstalled(): { installed: boolean; warning?: st
   return ensurePluginInstalled('qqbot', buildCandidateSources('qqbot'), 'QQ Bot');
 }
 
+export function ensureLinePluginInstalled(): { installed: boolean; warning?: string } {
+  return ensurePluginInstalled('line', buildCandidateSources('line'), 'LINE');
+}
+
 // ── Bulk startup installer ───────────────────────────────────────────────────
 
 /**
@@ -460,6 +464,7 @@ const ALL_BUNDLED_PLUGINS = [
   { fn: ensureWeComPluginInstalled, label: 'WeCom' },
   { fn: ensureQQBotPluginInstalled, label: 'QQ Bot' },
   { fn: ensureFeishuPluginInstalled, label: 'Feishu' },
+  { fn: ensureLinePluginInstalled, label: 'LINE' },
 ] as const;
 
 /**
