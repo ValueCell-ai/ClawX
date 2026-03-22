@@ -451,51 +451,8 @@ export function ensureQQBotPluginInstalled(): { installed: boolean; warning?: st
   return ensurePluginInstalled('qqbot', buildCandidateSources('qqbot'), 'QQ Bot');
 }
 
-/**
- * WeChat plugin uses npx for installation instead of bundled mirrors.
- * Checks ~/.openclaw/extensions/wechat/ first; if missing, runs the
- * official install command.
- */
-export async function ensureWeChatPluginInstalled(): Promise<{ installed: boolean; warning?: string }> {
-  const targetDir = join(homedir(), '.openclaw', 'extensions', 'wechat');
-  const targetManifest = join(targetDir, 'openclaw.plugin.json');
-
-  if (existsSync(fsPath(targetManifest))) {
-    return { installed: true };
-  }
-
-  // Try bundled/build sources first (for packaged app or dev with build dir)
-  const candidateSources = buildCandidateSources('wechat');
-  const sourceDir = candidateSources.find((dir) => existsSync(fsPath(join(dir, 'openclaw.plugin.json'))));
-  if (sourceDir) {
-    const result = ensurePluginInstalled('wechat', candidateSources, 'WeChat');
-    return result;
-  }
-
-  // Dev mode fallback: copy from node_modules
-  if (!app.isPackaged) {
-    const npmName = PLUGIN_NPM_NAMES['wechat'];
-    if (npmName) {
-      const npmPkgPath = join(process.cwd(), 'node_modules', ...npmName.split('/'));
-      if (existsSync(fsPath(join(npmPkgPath, 'openclaw.plugin.json')))) {
-        try {
-          mkdirSync(fsPath(join(homedir(), '.openclaw', 'extensions')), { recursive: true });
-          copyPluginFromNodeModules(npmPkgPath, targetDir, npmName);
-          fixupPluginManifest(targetDir);
-          if (existsSync(fsPath(join(targetDir, 'openclaw.plugin.json')))) {
-            return { installed: true };
-          }
-        } catch (err) {
-          logger.warn(`[plugin] Failed to install WeChat plugin from node_modules`, { error: err });
-        }
-      }
-    }
-  }
-
-  return {
-    installed: false,
-    warning: 'WeChat plugin not found. Run: npx -y @tencent-weixin/openclaw-weixin-cli@latest install',
-  };
+export function ensureWeChatPluginInstalled(): { installed: boolean; warning?: string } {
+  return ensurePluginInstalled('wechat', buildCandidateSources('wechat'), 'WeChat');
 }
 
 // ── Bulk startup installer ───────────────────────────────────────────────────
@@ -508,6 +465,7 @@ const ALL_BUNDLED_PLUGINS = [
   { fn: ensureWeComPluginInstalled, label: 'WeCom' },
   { fn: ensureQQBotPluginInstalled, label: 'QQ Bot' },
   { fn: ensureFeishuPluginInstalled, label: 'Feishu' },
+  { fn: ensureWeChatPluginInstalled, label: 'WeChat' },
 ] as const;
 
 /**

@@ -438,6 +438,7 @@ exports.default = async function afterPack(context) {
     { npmName: '@wecom/wecom-openclaw-plugin', pluginId: 'wecom' },
     { npmName: '@sliverp/qqbot', pluginId: 'qqbot' },
     { npmName: '@larksuite/openclaw-lark', pluginId: 'feishu-openclaw-plugin' },
+    { npmName: '@tencent-weixin/openclaw-weixin-cli', pluginId: 'wechat' },
   ];
 
   mkdirSync(pluginsDestRoot, { recursive: true });

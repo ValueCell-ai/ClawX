@@ -375,11 +375,10 @@
             ]
         },
         "wechat": {
-            "description": "Connect WeChat via official OpenClaw plugin",
+            "description": "Connect WeChat via official OpenClaw plugin (bundled, ready to use)",
             "docsUrl": "https://docs.openclaw.ai/channels/wechat",
             "instructions": [
-                "The WeChat OpenClaw plugin will be installed automatically on first use",
-                "After installation, scan the QR code as prompted by the gateway to log in",
+                "Save the configuration, then scan the QR code as prompted by the gateway to log in",
                 "Once logged in, you can send and receive WeChat messages"
             ]
         }

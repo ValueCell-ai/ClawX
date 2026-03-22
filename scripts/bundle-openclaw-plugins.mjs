@@ -7,6 +7,9 @@
  * Current plugins:
  *   - @soimy/dingtalk -> build/openclaw-plugins/dingtalk
  *   - @wecom/wecom-openclaw-plugin -> build/openclaw-plugins/wecom
+ *   - @sliverp/qqbot -> build/openclaw-plugins/qqbot
+ *   - @larksuite/openclaw-lark -> build/openclaw-plugins/feishu-openclaw-plugin
+ *   - @tencent-weixin/openclaw-weixin-cli -> build/openclaw-plugins/wechat
  *
  * The output plugin directory contains:
  *   - plugin source files (index.ts, openclaw.plugin.json, package.json, ...)
@@ -39,6 +42,7 @@ const PLUGINS = [
   { npmName: '@wecom/wecom-openclaw-plugin', pluginId: 'wecom' },
   { npmName: '@sliverp/qqbot', pluginId: 'qqbot' },
   { npmName: '@larksuite/openclaw-lark', pluginId: 'feishu-openclaw-plugin' },
+  { npmName: '@tencent-weixin/openclaw-weixin-cli', pluginId: 'wechat' },
 ];
 
 function getVirtualStoreNodeModules(realPkgPath) {
