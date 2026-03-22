@@ -84,6 +84,9 @@ export interface ProviderTypeInfo {
   isOAuth?: boolean;
   supportsApiKey?: boolean;
   apiKeyUrl?: string;
+  codePlanPresetBaseUrl?: string;
+  codePlanPresetModelId?: string;
+  codePlanDocsUrl?: string;
 }
 
 export interface ProviderModelEntry extends Record<string, unknown> {

@@ -55,6 +55,7 @@ import { subscribeHostEvent } from '@/lib/host-events';
 
 const inputClasses = 'h-[44px] rounded-xl font-mono text-[13px] bg-[#eeece3] dark:bg-muted border-black/10 dark:border-white/10 focus-visible:ring-2 focus-visible:ring-blue-500/50 focus-visible:border-blue-500 shadow-sm transition-all text-foreground placeholder:text-foreground/40';
 const labelClasses = 'text-[14px] text-foreground/80 font-bold';
+type ArkMode = 'apikey' | 'codeplan';
 
 function normalizeFallbackProviderIds(ids?: string[]): string[] {
   return Array.from(new Set((ids ?? []).filter(Boolean)));
@@ -83,6 +84,17 @@ function fallbackModelsEqual(a?: string[], b?: string[]): boolean {
   const left = normalizeFallbackModels(a);
   const right = normalizeFallbackModels(b);
   return left.length === right.length && left.every((model, index) => model === right[index]);
+}
+
+function isArkCodePlanMode(
+  vendorId: string,
+  baseUrl: string | undefined,
+  modelId: string | undefined,
+  codePlanPresetBaseUrl?: string,
+  codePlanPresetModelId?: string,
+): boolean {
+  if (vendorId !== 'ark' || !codePlanPresetBaseUrl || !codePlanPresetModelId) return false;
+  return (baseUrl || '').trim() === codePlanPresetBaseUrl && (modelId || '').trim() === codePlanPresetModelId;
 }
 
 function getAuthModeLabel(
@@ -317,10 +329,20 @@ function ProviderCard({
   const [showFallback, setShowFallback] = useState(false);
   const [validating, setValidating] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [arkMode, setArkMode] = useState<ArkMode>('apikey');
 
   const typeInfo = PROVIDER_TYPE_INFO.find((t) => t.id === account.vendorId);
   const providerDocsUrl = getProviderDocsUrl(typeInfo, i18n.language);
   const showModelIdField = shouldShowProviderModelId(typeInfo, devModeUnlocked);
+  const codePlanPreset = typeInfo?.codePlanPresetBaseUrl && typeInfo?.codePlanPresetModelId
+    ? {
+      baseUrl: typeInfo.codePlanPresetBaseUrl,
+      modelId: typeInfo.codePlanPresetModelId,
+    }
+    : null;
+  const effectiveDocsUrl = account.vendorId === 'ark' && arkMode === 'codeplan'
+    ? (typeInfo?.codePlanDocsUrl || providerDocsUrl)
+    : providerDocsUrl;
   const canEditModelConfig = Boolean(typeInfo?.showBaseUrl || showModelIdField);
 
   useEffect(() => {
@@ -332,8 +354,17 @@ function ProviderCard({
       setModelId(account.model || '');
       setFallbackModelsText(normalizeFallbackModels(account.fallbackModels).join('\n'));
       setFallbackProviderIds(normalizeFallbackProviderIds(account.fallbackAccountIds));
+      setArkMode(
+        isArkCodePlanMode(
+          account.vendorId,
+          account.baseUrl,
+          account.model,
+          typeInfo?.codePlanPresetBaseUrl,
+          typeInfo?.codePlanPresetModelId,
+        ) ? 'codeplan' : 'apikey'
+      );
     }
-  }, [isEditing, account.baseUrl, account.fallbackModels, account.fallbackAccountIds, account.model, account.apiProtocol]);
+  }, [isEditing, account.baseUrl, account.fallbackModels, account.fallbackAccountIds, account.model, account.apiProtocol, account.vendorId, typeInfo?.codePlanPresetBaseUrl, typeInfo?.codePlanPresetModelId]);
 
   const fallbackOptions = allProviders.filter((candidate) => candidate.account.id !== account.id);
 
@@ -524,10 +555,10 @@ function ProviderCard({
 
       {isEditing && (
         <div className="space-y-6 mt-4 pt-4 border-t border-black/5 dark:border-white/5">
-          {providerDocsUrl && (
+          {effectiveDocsUrl && (
             <div className="flex justify-end -mt-2 mb-2">
               <a
-                href={providerDocsUrl}
+                href={effectiveDocsUrl}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="text-[12px] text-blue-500 hover:text-blue-600 font-medium inline-flex items-center gap-1"
@@ -560,6 +591,55 @@ function ProviderCard({
                     placeholder={typeInfo?.modelIdPlaceholder || 'provider/model-id'}
                     className={currentInputClasses}
                   />
+                </div>
+              )}
+              {account.vendorId === 'ark' && codePlanPreset && (
+                <div className="space-y-1.5 pt-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <Label className={currentLabelClasses}>{t('aiProviders.dialog.codePlanPreset')}</Label>
+                    {typeInfo?.codePlanDocsUrl && (
+                      <a
+                        href={typeInfo.codePlanDocsUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-[12px] text-blue-500 hover:text-blue-600 font-medium inline-flex items-center gap-1"
+                      >
+                        {t('aiProviders.dialog.codePlanDoc')}
+                        <ExternalLink className="h-3 w-3" />
+                      </a>
+                    )}
+                  </div>
+                  <div className="flex gap-2 text-[13px]">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setArkMode('apikey');
+                        setBaseUrl(typeInfo?.defaultBaseUrl || '');
+                        if (modelId.trim() === codePlanPreset.modelId) {
+                          setModelId(typeInfo?.defaultModelId || '');
+                        }
+                      }}
+                      className={cn("flex-1 py-1.5 px-3 rounded-lg border transition-colors", arkMode === 'apikey' ? "bg-white dark:bg-card border-black/20 dark:border-white/20 shadow-sm font-medium" : "border-transparent bg-black/5 dark:bg-white/5 text-muted-foreground hover:bg-black/10 dark:hover:bg-white/10")}
+                    >
+                      {t('aiProviders.authModes.apiKey')}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setArkMode('codeplan');
+                        setBaseUrl(codePlanPreset.baseUrl);
+                        setModelId(codePlanPreset.modelId);
+                      }}
+                      className={cn("flex-1 py-1.5 px-3 rounded-lg border transition-colors", arkMode === 'codeplan' ? "bg-white dark:bg-card border-black/20 dark:border-white/20 shadow-sm font-medium" : "border-transparent bg-black/5 dark:bg-white/5 text-muted-foreground hover:bg-black/10 dark:hover:bg-white/10")}
+                    >
+                      {t('aiProviders.dialog.codePlanMode')}
+                    </button>
+                  </div>
+                  {arkMode === 'codeplan' && (
+                    <p className="text-[12px] text-muted-foreground">
+                      {t('aiProviders.dialog.codePlanPresetDesc')}
+                    </p>
+                  )}
                 </div>
               )}
               {account.vendorId === 'custom' && (
@@ -776,6 +856,7 @@ function AddProviderDialog({
   const [baseUrl, setBaseUrl] = useState('');
   const [modelId, setModelId] = useState('');
   const [apiProtocol, setApiProtocol] = useState<ProviderAccount['apiProtocol']>('openai-completions');
+  const [arkMode, setArkMode] = useState<ArkMode>('apikey');
   const [showKey, setShowKey] = useState(false);
   const [saving, setSaving] = useState(false);
   const [validationError, setValidationError] = useState<string | null>(null);
@@ -801,6 +882,15 @@ function AddProviderDialog({
   const typeInfo = PROVIDER_TYPE_INFO.find((t) => t.id === selectedType);
   const providerDocsUrl = getProviderDocsUrl(typeInfo, i18n.language);
   const showModelIdField = shouldShowProviderModelId(typeInfo, devModeUnlocked);
+  const codePlanPreset = typeInfo?.codePlanPresetBaseUrl && typeInfo?.codePlanPresetModelId
+    ? {
+      baseUrl: typeInfo.codePlanPresetBaseUrl,
+      modelId: typeInfo.codePlanPresetModelId,
+    }
+    : null;
+  const effectiveDocsUrl = selectedType === 'ark' && arkMode === 'codeplan'
+    ? (typeInfo?.codePlanDocsUrl || providerDocsUrl)
+    : providerDocsUrl;
   const isOAuth = typeInfo?.isOAuth ?? false;
   const supportsApiKey = typeInfo?.supportsApiKey ?? false;
   const vendorMap = new Map(vendors.map((vendor) => [vendor.id, vendor]));
@@ -819,6 +909,23 @@ function AddProviderDialog({
     }
     setAuthMode(selectedVendor.defaultAuthMode === 'api_key' ? 'apikey' : 'oauth');
   }, [selectedVendor, isOAuth, supportsApiKey]);
+
+  useEffect(() => {
+    if (selectedType !== 'ark') {
+      setArkMode('apikey');
+      return;
+    }
+    setArkMode(
+      isArkCodePlanMode(
+        'ark',
+        baseUrl,
+        modelId,
+        typeInfo?.codePlanPresetBaseUrl,
+        typeInfo?.codePlanPresetModelId,
+      ) ? 'codeplan' : 'apikey'
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedType]);
 
   // Keep refs to the latest values so event handlers see the current dialog state.
   const latestRef = React.useRef({ selectedType, typeInfo, onAdd, onClose, t });
@@ -1056,6 +1163,7 @@ function AddProviderDialog({
                     setName(type.id === 'custom' ? t('aiProviders.custom') : type.name);
                     setBaseUrl(type.defaultBaseUrl || '');
                     setModelId(type.defaultModelId || '');
+                    setArkMode('apikey');
                   }}
                   className="p-4 rounded-2xl border border-black/5 dark:border-white/5 hover:bg-black/5 dark:hover:bg-white/5 transition-colors text-center group"
                 >
@@ -1088,16 +1196,17 @@ function AddProviderDialog({
                       setValidationError(null);
                       setBaseUrl('');
                       setModelId('');
+                      setArkMode('apikey');
                     }}
                     className="text-[13px] text-blue-500 hover:text-blue-600 font-medium"
                   >
                     {t('aiProviders.dialog.change')}
                   </button>
-                  {providerDocsUrl && (
+                  {effectiveDocsUrl && (
                     <>
                       <span className="mx-2 text-foreground/20">|</span>
                       <a
-                        href={providerDocsUrl}
+                        href={effectiveDocsUrl}
                         target="_blank"
                         rel="noopener noreferrer"
                         className="text-[13px] text-blue-500 hover:text-blue-600 font-medium inline-flex items-center gap-1"
@@ -1218,6 +1327,58 @@ function AddProviderDialog({
                       }}
                       className={inputClasses}
                     />
+                  </div>
+                )}
+                {selectedType === 'ark' && codePlanPreset && (
+                  <div className="space-y-2.5">
+                    <div className="flex items-center justify-between gap-2">
+                      <Label className={labelClasses}>{t('aiProviders.dialog.codePlanPreset')}</Label>
+                      {typeInfo?.codePlanDocsUrl && (
+                        <a
+                          href={typeInfo.codePlanDocsUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-[13px] text-blue-500 hover:text-blue-600 font-medium inline-flex items-center gap-1"
+                          tabIndex={-1}
+                        >
+                          {t('aiProviders.dialog.codePlanDoc')}
+                          <ExternalLink className="h-3 w-3" />
+                        </a>
+                      )}
+                    </div>
+                    <div className="flex gap-2 text-[13px]">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setArkMode('apikey');
+                          setBaseUrl(typeInfo?.defaultBaseUrl || '');
+                          if (modelId.trim() === codePlanPreset.modelId) {
+                            setModelId(typeInfo?.defaultModelId || '');
+                          }
+                          setValidationError(null);
+                        }}
+                        className={cn("flex-1 py-1.5 px-3 rounded-lg border transition-colors", arkMode === 'apikey' ? "bg-white dark:bg-card border-black/20 dark:border-white/20 shadow-sm font-medium" : "border-transparent bg-black/5 dark:bg-white/5 text-muted-foreground hover:bg-black/10 dark:hover:bg-white/10")}
+                      >
+                        {t('aiProviders.authModes.apiKey')}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setArkMode('codeplan');
+                          setBaseUrl(codePlanPreset.baseUrl);
+                          setModelId(codePlanPreset.modelId);
+                          setValidationError(null);
+                        }}
+                        className={cn("flex-1 py-1.5 px-3 rounded-lg border transition-colors", arkMode === 'codeplan' ? "bg-white dark:bg-card border-black/20 dark:border-white/20 shadow-sm font-medium" : "border-transparent bg-black/5 dark:bg-white/5 text-muted-foreground hover:bg-black/10 dark:hover:bg-white/10")}
+                      >
+                        {t('aiProviders.dialog.codePlanMode')}
+                      </button>
+                    </div>
+                    {arkMode === 'codeplan' && (
+                      <p className="text-[12px] text-muted-foreground">
+                        {t('aiProviders.dialog.codePlanPresetDesc')}
+                      </p>
+                    )}
                   </div>
                 )}
                 {selectedType === 'custom' && (

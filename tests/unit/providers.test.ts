@@ -27,6 +27,9 @@ describe('provider metadata', () => {
           defaultBaseUrl: 'https://ark.cn-beijing.volces.com/api/v3',
           showBaseUrl: true,
           showModelId: true,
+          codePlanPresetBaseUrl: 'https://ark.cn-beijing.volces.com/api/coding/v3',
+          codePlanPresetModelId: 'ark-code-latest',
+          codePlanDocsUrl: 'https://www.volcengine.com/docs/82379/1928261?lang=zh',
         }),
       ])
     );
