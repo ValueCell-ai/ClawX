@@ -6,7 +6,6 @@ import { createRequire } from 'node:module';
 import { join } from 'path';
 import { homedir } from 'os';
 import { existsSync, mkdirSync, readFileSync, realpathSync } from 'fs';
-import { logger } from './logger';
 
 const require = createRequire(import.meta.url);
 
@@ -214,6 +213,11 @@ export function getOpenClawStatus(): OpenClawStatus {
     version,
   };
 
-  logger.info('OpenClaw status:', status);
+  try {
+    const { logger } = require('./logger') as typeof import('./logger');
+    logger.info('OpenClaw status:', status);
+  } catch {
+    // Ignore logger bootstrap issues in non-Electron contexts such as unit tests.
+  }
   return status;
 }
