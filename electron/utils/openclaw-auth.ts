@@ -557,10 +557,12 @@ function upsertOpenClawProviderEntry(
     models: mergeProviderModels(registryModels, existingModels, runtimeModels),
   };
   if (options.apiKeyEnv) nextProvider.apiKey = options.apiKeyEnv;
-  if (options.headers && Object.keys(options.headers).length > 0) {
-    nextProvider.headers = options.headers;
-  } else {
-    delete nextProvider.headers;
+  if (options.headers !== undefined) {
+    if (Object.keys(options.headers).length > 0) {
+      nextProvider.headers = options.headers;
+    } else {
+      delete nextProvider.headers;
+    }
   }
   if (options.authHeader !== undefined) {
     nextProvider.authHeader = options.authHeader;

@@ -294,7 +294,7 @@ async function syncRuntimeProviderConfig(
     baseUrl: normalizeProviderBaseUrl(config, config.baseUrl || context.meta?.baseUrl, context.api),
     api: context.api,
     apiKeyEnv: context.meta?.apiKeyEnv,
-    headers: context.meta?.headers,
+    headers: config.headers ?? context.meta?.headers,
   });
 }
 
@@ -374,7 +374,7 @@ export async function syncUpdatedProviderToRuntime(
           baseUrl: normalizeProviderBaseUrl(config, config.baseUrl || context.meta?.baseUrl, context.api),
           api: context.api,
           apiKeyEnv: context.meta?.apiKeyEnv,
-          headers: context.meta?.headers,
+          headers: config.headers ?? context.meta?.headers,
         }, fallbackModels);
       } else {
         await setOpenClawDefaultModel(ock, modelOverride, fallbackModels);
@@ -383,6 +383,7 @@ export async function syncUpdatedProviderToRuntime(
       await setOpenClawDefaultModelWithOverride(ock, modelOverride, {
         baseUrl: normalizeProviderBaseUrl(config, config.baseUrl, config.apiProtocol || 'openai-completions'),
         api: config.apiProtocol || 'openai-completions',
+        headers: config.headers,
       }, fallbackModels);
     }
   }
@@ -451,6 +452,7 @@ export async function syncDefaultProviderToRuntime(
       await setOpenClawDefaultModelWithOverride(ock, modelOverride, {
         baseUrl: normalizeProviderBaseUrl(provider, provider.baseUrl, provider.apiProtocol || 'openai-completions'),
         api: provider.apiProtocol || 'openai-completions',
+        headers: provider.headers,
       }, fallbackModels);
     } else if (shouldUseExplicitDefaultOverride(provider, ock)) {
       await setOpenClawDefaultModelWithOverride(ock, modelOverride, {
@@ -461,7 +463,7 @@ export async function syncDefaultProviderToRuntime(
         ),
         api: provider.apiProtocol || getProviderConfig(provider.type)?.api,
         apiKeyEnv: getProviderConfig(provider.type)?.apiKeyEnv,
-        headers: getProviderConfig(provider.type)?.headers,
+        headers: provider.headers ?? getProviderConfig(provider.type)?.headers,
       }, fallbackModels);
     } else {
       await setOpenClawDefaultModel(ock, modelOverride, fallbackModels);

@@ -157,6 +157,9 @@ export class ProviderService {
         authMode: definition?.defaultAuthMode ?? 'api_key',
         baseUrl,
         apiProtocol: definition?.providerConfig?.api,
+        headers: (entry.headers && typeof entry.headers === 'object'
+          ? (entry.headers as Record<string, string>)
+          : undefined),
         model,
         enabled: true,
         isDefault: false,

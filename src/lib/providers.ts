@@ -44,6 +44,7 @@ export interface ProviderConfig {
   type: ProviderType;
   baseUrl?: string;
   apiProtocol?: 'openai-completions' | 'openai-responses' | 'anthropic-messages';
+  headers?: Record<string, string>;
   model?: string;
   fallbackModels?: string[];
   fallbackProviderIds?: string[];
@@ -107,6 +108,7 @@ export interface ProviderAccount {
   authMode: ProviderAuthMode;
   baseUrl?: string;
   apiProtocol?: 'openai-completions' | 'openai-responses' | 'anthropic-messages';
+  headers?: Record<string, string>;
   model?: string;
   fallbackModels?: string[];
   fallbackAccountIds?: string[];
