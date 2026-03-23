@@ -90,7 +90,7 @@ describe('ProviderService.listAccounts stale-account cleanup', () => {
     service = new ProviderService();
   });
 
-  it('removes ALL accounts when activeProviders is empty (config missing/deleted)', async () => {
+  it('hides ALL accounts when activeProviders is empty (config missing/deleted)', async () => {
     const accounts = [
       makeAccount({ id: 'custom-1', vendorId: 'custom' as ProviderAccount['vendorId'] }),
       makeAccount({ id: 'moonshot-1', vendorId: 'moonshot' as ProviderAccount['vendorId'] }),
@@ -101,12 +101,12 @@ describe('ProviderService.listAccounts stale-account cleanup', () => {
 
     const result = await service.listAccounts();
 
-    // All accounts should be removed when config is empty
+    // All accounts hidden (not deleted) when config is empty
     expect(result).toEqual([]);
-    expect(mocks.deleteProviderAccount).toHaveBeenCalledTimes(3);
+    expect(mocks.deleteProviderAccount).not.toHaveBeenCalled();
   });
 
-  it('removes stale non-builtin accounts when config has active providers', async () => {
+  it('hides stale non-builtin accounts when config has active providers', async () => {
     const accounts = [
       makeAccount({ id: 'moonshot-1', vendorId: 'moonshot' as ProviderAccount['vendorId'] }),
       makeAccount({ id: 'custom-stale', vendorId: 'custom' as ProviderAccount['vendorId'] }),
@@ -117,14 +117,13 @@ describe('ProviderService.listAccounts stale-account cleanup', () => {
 
     const result = await service.listAccounts();
 
-    // custom-stale should be deleted (non-builtin, not active)
-    expect(mocks.deleteProviderAccount).toHaveBeenCalledWith('custom-stale');
-    expect(mocks.deleteProviderAccount).toHaveBeenCalledTimes(1);
+    // custom-stale hidden (not deleted) from display
+    expect(mocks.deleteProviderAccount).not.toHaveBeenCalled();
     expect(result).toHaveLength(1);
     expect(result[0].id).toBe('moonshot-1');
   });
 
-  it('removes builtin provider accounts when not in activeProviders', async () => {
+  it('hides builtin provider accounts when not in activeProviders', async () => {
     const accounts = [
       makeAccount({ id: 'anthropic-1', vendorId: 'anthropic' as ProviderAccount['vendorId'] }),
       makeAccount({ id: 'openai-1', vendorId: 'openai' as ProviderAccount['vendorId'] }),
@@ -135,8 +134,8 @@ describe('ProviderService.listAccounts stale-account cleanup', () => {
 
     const result = await service.listAccounts();
 
-    // Builtin accounts should also be removed if not in OpenClaw config
-    expect(mocks.deleteProviderAccount).toHaveBeenCalledTimes(2);
+    // Builtin accounts also hidden when not in OpenClaw config
+    expect(mocks.deleteProviderAccount).not.toHaveBeenCalled();
     expect(result).toEqual([]);
   });
 

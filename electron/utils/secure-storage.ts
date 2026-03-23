@@ -285,9 +285,9 @@ export async function getAllProvidersWithKeyInfo(): Promise<
     const openClawKey = getOpenClawProviderKeyForType(provider.type, provider.id);
     const isActive = activeOpenClawProviders.has(provider.type) || activeOpenClawProviders.has(provider.id) || activeOpenClawProviders.has(openClawKey);
     if (configMissing || (!isBuiltin && !isActive)) {
-      console.log(`[Sync] Provider ${provider.id} (${provider.type}) missing from OpenClaw, dropping from ClawX UI`);
-      // Use local-only deletion to avoid mutating openclaw.json via runtime sync callbacks.
-      await deleteProviderAccount(provider.id);
+      console.log(`[Sync] Provider ${provider.id} (${provider.type}) missing from OpenClaw, hiding from UI`);
+      // Skip from display but don't delete from store — preserves API key
+      // associations so that restoring openclaw.json brings accounts back intact.
       continue;
     }
 

@@ -11,7 +11,6 @@ import type {
 import { BUILTIN_PROVIDER_TYPES } from '../../shared/providers/types';
 import { ensureProviderStoreMigrated } from './provider-migration';
 import {
-  deleteProviderAccount,
   getDefaultProviderAccountId,
   getProviderAccount,
   listProviderAccounts,
@@ -74,22 +73,22 @@ export class ProviderService {
       return accounts;
     }
 
-    // Sync check: remove stale accounts whose provider no longer exists in
-    // OpenClaw JSON (e.g. user deleted openclaw.json manually).
+    // Sync check: hide accounts whose provider no longer exists in OpenClaw
+    // JSON (e.g. user deleted openclaw.json manually).  We intentionally do
+    // NOT delete from the store — this preserves API key associations so that
+    // when the user restores the config, accounts reappear with keys intact.
     {
       const activeProviders = await getActiveOpenClawProviders();
       // When OpenClaw config has no providers (e.g. user deleted the file),
       // treat ALL accounts as stale so ClawX stays in sync.
       const configEmpty = activeProviders.size === 0;
 
-      const staleIds: string[] = [];
+      if (configEmpty) {
+        logger.info('[provider-sync] OpenClaw config empty — hiding all provider accounts from display');
+        return [];
+      }
 
-      for (const account of accounts) {
-        if (configEmpty) {
-          staleIds.push(account.id);
-          continue;
-        }
-
+      accounts = accounts.filter((account) => {
         const openClawKey = getOpenClawProviderKeyForType(account.vendorId, account.id);
         const isActive =
           activeProviders.has(account.vendorId) ||
@@ -97,17 +96,10 @@ export class ProviderService {
           activeProviders.has(openClawKey);
 
         if (!isActive) {
-          staleIds.push(account.id);
+          logger.info(`[provider-sync] Hiding stale provider account "${account.id}" (not in OpenClaw config)`);
         }
-      }
-
-      if (staleIds.length > 0) {
-        for (const id of staleIds) {
-          logger.info(`[provider-sync] Removing stale provider account "${id}" (no longer in OpenClaw config)`);
-          await deleteProviderAccount(id);
-        }
-        accounts = accounts.filter((a) => !staleIds.includes(a.id));
-      }
+        return isActive;
+      });
     }
 
     // Import: detect providers in OpenClaw config not yet in the ClawX store.
@@ -279,8 +271,7 @@ export class ProviderService {
    */
   async listLegacyProviders(): Promise<ProviderConfig[]> {
     logLegacyProviderApiUsage('listLegacyProviders', 'listAccounts');
-    await ensureProviderStoreMigrated();
-    const accounts = await listProviderAccounts();
+    const accounts = await this.listAccounts();
     return accounts.map(providerAccountToConfig);
   }
 
