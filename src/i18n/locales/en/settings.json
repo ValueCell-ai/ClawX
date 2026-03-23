@@ -201,7 +201,22 @@
     "devMode": "Developer Mode",
     "devModeDesc": "Show developer tools and shortcuts",
     "telemetry": "Anonymous Usage Data",
-    "telemetryDesc": "Allow providing anonymous basic usage data to improve ClawX"
+    "telemetryDesc": "Allow providing anonymous basic usage data to improve ClawX",
+    "mem0": {
+      "title": "mem0 Memory",
+      "desc": "Store long-term memories, inject relevant recall on send, and compact transcripts when chats grow too large.",
+      "apiKey": "mem0 API Key",
+      "apiKeyHelp": "Stored locally in ClawX and only used from the main process.",
+      "apiKeyConfigured": "An API key is already stored. Leave blank to keep it.",
+      "apiKeyStored": "A mem0 API key is already stored locally on this machine.",
+      "baseUrl": "API Base URL",
+      "topK": "Retrieved Memories",
+      "historyWindow": "Recent Messages",
+      "compactTrigger": "Compact After Messages",
+      "compactLines": "Keep Transcript Lines",
+      "saved": "mem0 settings saved",
+      "note": "Compaction trims the Gateway transcript and relies on mem0 recall to preserve longer-term context."
+    }
   },
   "developer": {
     "title": "Developer",

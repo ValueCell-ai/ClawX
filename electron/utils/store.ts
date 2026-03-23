@@ -42,6 +42,14 @@ export interface AppSettings {
   proxyAllServer: string;
   proxyBypassRules: string;
 
+  // Mem0
+  mem0Enabled: boolean;
+  mem0ApiBaseUrl: string;
+  mem0TopK: number;
+  mem0HistoryWindowMessages: number;
+  mem0CompactionTriggerMessages: number;
+  mem0CompactionMaxLines: number;
+
   // Update
   updateChannel: 'stable' | 'beta' | 'dev';
   autoCheckUpdate: boolean;
@@ -92,6 +100,14 @@ function createDefaultSettings(): AppSettings {
     proxyHttpsServer: '',
     proxyAllServer: '',
     proxyBypassRules: '<local>;localhost;127.0.0.1;::1',
+
+    // Mem0
+    mem0Enabled: false,
+    mem0ApiBaseUrl: 'https://api.mem0.ai',
+    mem0TopK: 6,
+    mem0HistoryWindowMessages: 8,
+    mem0CompactionTriggerMessages: 18,
+    mem0CompactionMaxLines: 120,
 
     // Update
     updateChannel: 'stable',

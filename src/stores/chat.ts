@@ -14,6 +14,7 @@ import { useChatMetaStore } from './chatMeta';
 import { useChatMirrorsStore, type MirroredChatMessage } from './chatMirrors';
 import { useGatewayStore } from './gateway';
 import { buildCronSessionHistoryPath, isCronSessionKey } from './chat/cron-session-utils';
+import { stripMem0Envelope, type Mem0MemoryContext } from '../../shared/mem0';
 
 // ── Types ────────────────────────────────────────────────────────
 
@@ -250,12 +251,12 @@ const _imageCache = loadImageCache();
 
 /** Extract plain text from message content (string or content blocks) */
 function getMessageText(content: unknown): string {
-  if (typeof content === 'string') return content;
+  if (typeof content === 'string') return stripMem0Envelope(content);
   if (Array.isArray(content)) {
-    return (content as Array<{ type?: string; text?: string }>)
+    return stripMem0Envelope((content as Array<{ type?: string; text?: string }>)
       .filter(b => b.type === 'text' && b.text)
       .map(b => b.text!)
-      .join('\n');
+      .join('\n'));
   }
   return '';
 }
@@ -885,6 +886,7 @@ async function sendGatewayMessage(
   sessionKey: string,
   text: string,
   attachments?: Array<{ fileName: string; mimeType: string; fileSize: number; stagedPath: string; preview: string | null }>,
+  memoryContext?: Mem0MemoryContext,
 ): Promise<{ success: boolean; result?: { runId?: string }; error?: string }> {
   const trimmed = text.trim();
   const hasMedia = attachments && attachments.length > 0;
@@ -900,6 +902,7 @@ async function sendGatewayMessage(
           message: trimmed || 'Process the attached file(s).',
           deliver: false,
           idempotencyKey,
+          memoryContext,
           media: attachments.map((attachment) => ({
             filePath: attachment.stagedPath,
             mimeType: attachment.mimeType,
@@ -917,6 +920,7 @@ async function sendGatewayMessage(
       message: trimmed,
       deliver: false,
       idempotencyKey,
+      memoryContext,
     },
     120_000,
   );
@@ -998,7 +1002,9 @@ async function runAttachedAgentFanout(
     }
 
     try {
-      const result = await sendGatewayMessage(linkedSessionKey, text, attachments);
+      const result = await sendGatewayMessage(linkedSessionKey, text, attachments, {
+        rootSessionKey: anchorSessionKey,
+      });
       if (!result.success) {
         console.warn(`[multi-agent] Attached agent ${agentId} failed:`, result.error);
         continue;
@@ -1870,7 +1876,9 @@ export const useChatStore = create<ChatState>((set, get) => ({
         saveImageCache(_imageCache);
       }
 
-      const result = await sendGatewayMessage(currentSessionKey, trimmed, attachments);
+      const result = await sendGatewayMessage(currentSessionKey, trimmed, attachments, {
+        rootSessionKey: currentSessionKey,
+      });
 
       console.log(`[sendMessage] RPC result: success=${result.success}, runId=${result.result?.runId || 'none'}`);
 

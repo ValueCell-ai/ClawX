@@ -4,6 +4,7 @@
  * message content formats returned by the Gateway.
  */
 import type { RawMessage, ContentBlock } from '@/stores/chat';
+import { stripMem0Envelope } from '../../../shared/mem0';
 
 /**
  * Clean Gateway metadata from user message text for display.
@@ -11,7 +12,7 @@ import type { RawMessage, ContentBlock } from '@/stores/chat';
  * and the timestamp prefix [Day Date Time Timezone].
  */
 function cleanUserText(text: string): string {
-  return text
+  return stripMem0Envelope(text
     // Remove [media attached: path (mime) | path] references
     .replace(/\s*\[media attached:[^\]]*\]/g, '')
     // Remove [message_id: uuid]
@@ -22,7 +23,7 @@ function cleanUserText(text: string): string {
     .replace(/^Conversation info\s*\([^)]*\):\s*\{[\s\S]*?\}\s*/i, '')
     // Remove Gateway timestamp prefix like [Fri 2026-02-13 22:39 GMT+8]
     .replace(/^\[(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun)\s+\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}\s+[^\]]+\]\s*/i, '')
-    .trim();
+    .trim());
 }
 
 /**
@@ -39,7 +40,7 @@ export function extractText(message: RawMessage | unknown): string {
   let result = '';
 
   if (typeof content === 'string') {
-    result = content.trim().length > 0 ? content : '';
+    result = content.trim().length > 0 ? stripMem0Envelope(content) : '';
   } else if (Array.isArray(content)) {
     const parts: string[] = [];
     for (const block of content as ContentBlock[]) {
@@ -50,10 +51,10 @@ export function extractText(message: RawMessage | unknown): string {
       }
     }
     const combined = parts.join('\n\n');
-    result = combined.trim().length > 0 ? combined : '';
+    result = combined.trim().length > 0 ? stripMem0Envelope(combined) : '';
   } else if (typeof msg.text === 'string') {
     // Fallback: try .text field
-    result = msg.text.trim().length > 0 ? msg.text : '';
+    result = msg.text.trim().length > 0 ? stripMem0Envelope(msg.text) : '';
   }
 
   // Strip Gateway metadata from user messages for clean display

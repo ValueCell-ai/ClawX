@@ -60,6 +60,7 @@ import {
 import { validateApiKeyWithProvider } from '../services/providers/provider-validation';
 import { appUpdater } from './updater';
 import { PORTS } from '../utils/config';
+import { Mem0Service } from '../services/mem0/service';
 
 type AppRequest = {
   id?: string;
@@ -87,7 +88,8 @@ type AppResponse = {
 export function registerIpcHandlers(
   gatewayManager: GatewayManager,
   clawHubService: ClawHubService,
-  mainWindow: BrowserWindow
+  mainWindow: BrowserWindow,
+  mem0Service: Mem0Service,
 ): void {
   // Unified request protocol (non-breaking: legacy channels remain available)
   registerUnifiedRequestHandlers(gatewayManager);
@@ -96,7 +98,7 @@ export function registerIpcHandlers(
   registerHostApiProxyHandlers();
 
   // Gateway handlers
-  registerGatewayHandlers(gatewayManager, mainWindow);
+  registerGatewayHandlers(gatewayManager, mainWindow, mem0Service);
 
   // ClawHub handlers
   registerClawHubHandlers(clawHubService);
@@ -1073,7 +1075,8 @@ function registerLogHandlers(): void {
  */
 function registerGatewayHandlers(
   gatewayManager: GatewayManager,
-  mainWindow: BrowserWindow
+  mainWindow: BrowserWindow,
+  mem0Service: Mem0Service,
 ): void {
   type GatewayHttpProxyRequest = {
     path?: string;
@@ -1126,7 +1129,17 @@ function registerGatewayHandlers(
   // Gateway RPC call
   ipcMain.handle('gateway:rpc', async (_, method: string, params?: unknown, timeoutMs?: number) => {
     try {
-      const result = await gatewayManager.rpc(method, params, timeoutMs);
+      const resolvedParams = method === 'chat.send' && params && typeof params === 'object'
+        ? await mem0Service.prepareChatSend(params as {
+          sessionKey: string;
+          message: string;
+          deliver?: boolean;
+          idempotencyKey?: string;
+          attachments?: unknown;
+          memoryContext?: { rootSessionKey?: string };
+        })
+        : params;
+      const result = await gatewayManager.rpc(method, resolvedParams, timeoutMs);
       return { success: true, result };
     } catch (error) {
       return { success: false, error: String(error) };
@@ -1218,6 +1231,7 @@ function registerGatewayHandlers(
     deliver?: boolean;
     idempotencyKey: string;
     media?: Array<{ filePath: string; mimeType: string; fileName: string }>;
+    memoryContext?: { rootSessionKey?: string };
   }) => {
     try {
       let message = params.message;
@@ -1265,16 +1279,26 @@ function registerGatewayHandlers(
         message = message ? `${message}\n\n${refs}` : refs;
       }
 
-      const rpcParams: Record<string, unknown> = {
+      let rpcParams: Record<string, unknown> = {
         sessionKey: params.sessionKey,
         message,
         deliver: params.deliver ?? false,
         idempotencyKey: params.idempotencyKey,
+        memoryContext: params.memoryContext,
       };
 
       if (imageAttachments.length > 0) {
         rpcParams.attachments = imageAttachments;
       }
+
+      rpcParams = await mem0Service.prepareChatSend(rpcParams as {
+        sessionKey: string;
+        message: string;
+        deliver?: boolean;
+        idempotencyKey?: string;
+        attachments?: unknown;
+        memoryContext?: { rootSessionKey?: string };
+      }) as Record<string, unknown>;
 
       logger.info(`[chat:sendWithMedia] Sending: message="${message.substring(0, 100)}", attachments=${imageAttachments.length}, fileRefs=${fileReferences.length}`);
 

@@ -100,6 +100,7 @@ Complete the entire setup—from installation to your first AI interaction—thr
 ### 💬 Intelligent Chat Interface
 Communicate with AI agents through a modern chat experience. Support for multiple conversation contexts, message history, rich content rendering with Markdown, and session-level multi-agent participation from the chat toolbar.
 Use the `+ Add Agent` control inside a chat to attach one or more existing agents to that conversation. The current session remains the primary streamed thread, while attached agents are invoked afterward in their own linked contexts and their replies are mirrored back into the same chat window with agent labels. Agent workspaces stay separate by default, and stronger isolation still depends on OpenClaw sandbox settings.
+ClawX also includes an optional mem0-backed memory layer in **Settings → Advanced**. When enabled, ClawX stores completed chat turns as long-term memories, recalls relevant context before each new send, and compacts oversized session transcripts so the live prompt only carries a recent sliding window plus retrieved memory.
 
 ### 📡 Multi-Channel Management
 Configure and monitor multiple AI channels simultaneously. Each channel operates independently, allowing you to run specialized agents for different tasks.

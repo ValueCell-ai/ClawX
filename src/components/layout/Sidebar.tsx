@@ -110,6 +110,7 @@ export function Sidebar() {
   const deleteProject = projectStore.deleteProject;
 
   const [expanded, setExpanded] = useState({ main: true, projects: true, agl: false });
+  const [collapsedProjects, setCollapsedProjects] = useState<Record<string, boolean>>({});
   const [sessionMenuOpenId, setSessionMenuOpenId] = useState<string | null>(null);
   const [projectMenuOpenId, setProjectMenuOpenId] = useState<string | null>(null);
   const [sessionToRename, setSessionToRename] = useState<string | null>(null);
@@ -348,12 +349,21 @@ export function Sidebar() {
     );
   };
 
-  const renderProjectHeader = (project: Project) => {
+  const renderProjectHeader = (project: Project, isCollapsed: boolean) => {
     const isActive = activeProjectId === project.id;
     const isRenaming = projectToRename === project.id;
 
     return (
       <div className="group flex items-center gap-1 px-2 py-1 rounded-md hover:bg-black/5 dark:hover:bg-white/5">
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            setCollapsedProjects((prev) => ({ ...prev, [project.id]: !prev[project.id] }));
+          }}
+          className="p-0.5 rounded-sm hover:bg-black/10 dark:hover:bg-white/10 text-muted-foreground flex-shrink-0"
+        >
+          {isCollapsed ? <ChevronRight className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+        </button>
         <div
           className={cn(
             'min-w-0 flex-1 cursor-pointer rounded-md px-1 py-0.5 text-[11px] font-medium uppercase tracking-wider transition-colors',
@@ -462,6 +472,7 @@ export function Sidebar() {
 
     return folderProjects.map((project) => {
       const pSessions = sessionsByProject[project.id] || [];
+      const isCollapsed = collapsedProjects[project.id] || false;
       return (
         <div
           key={project.id}
@@ -473,8 +484,8 @@ export function Sidebar() {
             if (sessionKey) setMeta(sessionKey, { folder: 'project', projectId: project.id });
           }}
         >
-          {renderProjectHeader(project)}
-          <div className="mt-0.5 space-y-0.5 pl-2">{pSessions.map(renderSession)}</div>
+          {renderProjectHeader(project, isCollapsed)}
+          {!isCollapsed && <div className="mt-0.5 space-y-0.5 pl-2">{pSessions.map(renderSession)}</div>}
         </div>
       );
     });
