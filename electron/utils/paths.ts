@@ -2,11 +2,13 @@
  * Path Utilities
  * Cross-platform path resolution helpers
  */
-import { app } from 'electron';
+import { createRequire } from 'node:module';
 import { join } from 'path';
 import { homedir } from 'os';
 import { existsSync, mkdirSync, readFileSync, realpathSync } from 'fs';
 import { logger } from './logger';
+
+const require = createRequire(import.meta.url);
 
 export {
   quoteForCmd,
@@ -15,6 +17,10 @@ export {
   normalizeNodeRequirePathForNodeOptions,
   appendNodeRequireToNodeOptions,
 } from './win-shell';
+
+function getElectronApp() {
+  return (require('electron') as typeof import('electron')).app;
+}
 
 /**
  * Expand ~ to home directory
@@ -51,14 +57,14 @@ export function getClawXConfigDir(): string {
  * Get ClawX logs directory
  */
 export function getLogsDir(): string {
-  return join(app.getPath('userData'), 'logs');
+  return join(getElectronApp().getPath('userData'), 'logs');
 }
 
 /**
  * Get ClawX data directory
  */
 export function getDataDir(): string {
-  return app.getPath('userData');
+  return getElectronApp().getPath('userData');
 }
 
 /**
@@ -74,7 +80,7 @@ export function ensureDir(dir: string): void {
  * Get resources directory (for bundled assets)
  */
 export function getResourcesDir(): string {
-  if (app.isPackaged) {
+  if (getElectronApp().isPackaged) {
     return join(process.resourcesPath, 'resources');
   }
   return join(__dirname, '../../resources');
@@ -93,7 +99,7 @@ export function getPreloadPath(): string {
  * - Development: from node_modules/openclaw
  */
 export function getOpenClawDir(): string {
-  if (app.isPackaged) {
+  if (getElectronApp().isPackaged) {
     return join(process.resourcesPath, 'openclaw');
   }
   // Development: use node_modules/openclaw
@@ -127,7 +133,7 @@ export function getOpenClawEntryPath(): string {
  * Get ClawHub CLI entry script path (clawdhub.js)
  */
 export function getClawHubCliEntryPath(): string {
-  return join(app.getAppPath(), 'node_modules', 'clawhub', 'bin', 'clawdhub.js');
+  return join(getElectronApp().getAppPath(), 'node_modules', 'clawhub', 'bin', 'clawdhub.js');
 }
 
 /**
@@ -135,7 +141,7 @@ export function getClawHubCliEntryPath(): string {
  */
 export function getClawHubCliBinPath(): string {
   const binName = process.platform === 'win32' ? 'clawhub.cmd' : 'clawhub';
-  return join(app.getAppPath(), 'node_modules', '.bin', binName);
+  return join(getElectronApp().getAppPath(), 'node_modules', '.bin', binName);
 }
 
 /**

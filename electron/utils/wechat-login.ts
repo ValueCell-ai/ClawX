@@ -18,9 +18,22 @@ const WECHAT_STATE_DIR = join(OPENCLAW_DIR, 'openclaw-weixin');
 const WECHAT_ACCOUNT_INDEX_FILE = join(WECHAT_STATE_DIR, 'accounts.json');
 const WECHAT_ACCOUNTS_DIR = join(WECHAT_STATE_DIR, 'accounts');
 const require = createRequire(import.meta.url);
+
+type QrCodeMatrix = {
+  addData(input: string): void;
+  make(): void;
+  getModuleCount(): number;
+  isDark(row: number, col: number): boolean;
+};
+
+type QrCodeConstructor = new (typeNumber: number, errorCorrectionLevel: unknown) => QrCodeMatrix;
+type QrErrorCorrectLevelModule = {
+  L: unknown;
+};
+
 type QrRenderDeps = {
-  QRCode: typeof import('qrcode-terminal/vendor/QRCode/index.js');
-  QRErrorCorrectLevel: typeof import('qrcode-terminal/vendor/QRCode/QRErrorCorrectLevel.js');
+  QRCode: QrCodeConstructor;
+  QRErrorCorrectLevel: QrErrorCorrectLevelModule;
 };
 
 let qrRenderDeps: QrRenderDeps | null = null;
