@@ -12,7 +12,7 @@ interface AgentsState {
   loading: boolean;
   error: string | null;
   fetchAgents: () => Promise<void>;
-  createAgent: (name: string) => Promise<void>;
+  createAgent: (name: string, options?: { inheritWorkspace?: boolean }) => Promise<void>;
   updateAgent: (agentId: string, name: string) => Promise<void>;
   deleteAgent: (agentId: string) => Promise<void>;
   assignChannel: (agentId: string, channelType: ChannelType) => Promise<void>;
@@ -52,12 +52,12 @@ export const useAgentsStore = create<AgentsState>((set) => ({
     }
   },
 
-  createAgent: async (name: string) => {
+  createAgent: async (name: string, options?: { inheritWorkspace?: boolean }) => {
     set({ error: null });
     try {
       const snapshot = await hostApiFetch<AgentsSnapshot & { success?: boolean }>('/api/agents', {
         method: 'POST',
-        body: JSON.stringify({ name }),
+        body: JSON.stringify({ name, inheritWorkspace: options?.inheritWorkspace }),
       });
       set(applySnapshot(snapshot));
     } catch (error) {

@@ -386,7 +386,11 @@ async function copyRuntimeFiles(sourceAgentDir: string, targetAgentDir: string):
   }
 }
 
-async function provisionAgentFilesystem(config: AgentConfigDocument, agent: AgentListEntry): Promise<void> {
+async function provisionAgentFilesystem(
+  config: AgentConfigDocument,
+  agent: AgentListEntry,
+  options?: { inheritWorkspace?: boolean },
+): Promise<void> {
   const { entries } = normalizeAgentsConfig(config);
   const mainEntry = entries.find((entry) => entry.id === MAIN_AGENT_ID) ?? createImplicitMainEntry(config);
   const sourceWorkspace = expandPath(mainEntry.workspace || getDefaultWorkspacePath(config));
@@ -399,7 +403,11 @@ async function provisionAgentFilesystem(config: AgentConfigDocument, agent: Agen
   await ensureDir(targetAgentDir);
   await ensureDir(targetSessionsDir);
 
-  if (targetWorkspace !== sourceWorkspace) {
+  // When inheritWorkspace is true, copy the main agent's workspace bootstrap
+  // files (SOUL.md, AGENTS.md, etc.) so the new agent inherits the same
+  // personality / instructions. When false (default), leave the workspace
+  // empty and let OpenClaw Gateway seed the default bootstrap files on startup.
+  if (options?.inheritWorkspace && targetWorkspace !== sourceWorkspace) {
     await copyBootstrapFiles(sourceWorkspace, targetWorkspace);
   }
   if (targetAgentDir !== sourceAgentDir) {
@@ -521,7 +529,10 @@ export async function listConfiguredAgentIds(): Promise<string[]> {
   return ids.length > 0 ? ids : [MAIN_AGENT_ID];
 }
 
-export async function createAgent(name: string): Promise<AgentsSnapshot> {
+export async function createAgent(
+  name: string,
+  options?: { inheritWorkspace?: boolean },
+): Promise<AgentsSnapshot> {
   return withConfigLock(async () => {
     const config = await readOpenClawConfig() as AgentConfigDocument;
     const { agentsConfig, entries, syntheticMain } = normalizeAgentsConfig(config);
@@ -554,9 +565,9 @@ export async function createAgent(name: string): Promise<AgentsSnapshot> {
       list: nextEntries,
     };
 
-    await provisionAgentFilesystem(config, newAgent);
+    await provisionAgentFilesystem(config, newAgent, { inheritWorkspace: options?.inheritWorkspace });
     await writeOpenClawConfig(config);
-    logger.info('Created agent config entry', { agentId: nextId });
+    logger.info('Created agent config entry', { agentId: nextId, inheritWorkspace: !!options?.inheritWorkspace });
     return buildSnapshotFromConfig(config);
   });
 }

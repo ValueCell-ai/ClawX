@@ -1,6 +1,6 @@
 {
     "title": "Agents",
-    "subtitle": "When adding a new Agent, ClawX will copy the main Agent's workspace files and runtime auth setup. The configuration can be modified through a dialog.",
+    "subtitle": "Create a new Agent to route specific channels to a separate personality or workspace.",
     "refresh": "Refresh",
     "addAgent": "Add Agent",
     "gatewayWarning": "Gateway service is not running. Agent/channel changes may take a moment to apply.",
@@ -14,9 +14,11 @@
     "creating": "Creating...",
     "createDialog": {
         "title": "Add Agent",
-        "description": "Create a new agent by name. ClawX will copy the main agent's workspace bootstrap files and runtime auth setup.",
+        "description": "Create a new agent by name. You can optionally inherit the main agent's workspace bootstrap files.",
         "nameLabel": "Agent Name",
-        "namePlaceholder": "Coding Helper"
+        "namePlaceholder": "Coding Helper",
+        "inheritWorkspaceLabel": "Inherit main agent workspace",
+        "inheritWorkspaceDescription": "Copy SOUL.md, AGENTS.md, etc. from the main agent"
     },
     "deleteDialog": {
         "title": "Delete Agent",

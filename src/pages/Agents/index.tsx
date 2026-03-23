@@ -6,6 +6,7 @@ import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
+import { Switch } from '@/components/ui/switch';
 import { LoadingSpinner } from '@/components/common/LoadingSpinner';
 import { useAgentsStore } from '@/stores/agents';
 import { useGatewayStore } from '@/stores/gateway';
@@ -179,8 +180,8 @@ export function Agents() {
       {showAddDialog && (
         <AddAgentDialog
           onClose={() => setShowAddDialog(false)}
-          onCreate={async (name) => {
-            await createAgent(name);
+          onCreate={async (name, options) => {
+            await createAgent(name, options);
             setShowAddDialog(false);
             toast.success(t('toast.agentCreated'));
           }}
@@ -345,17 +346,18 @@ function AddAgentDialog({
   onCreate,
 }: {
   onClose: () => void;
-  onCreate: (name: string) => Promise<void>;
+  onCreate: (name: string, options: { inheritWorkspace: boolean }) => Promise<void>;
 }) {
   const { t } = useTranslation('agents');
   const [name, setName] = useState('');
+  const [inheritWorkspace, setInheritWorkspace] = useState(false);
   const [saving, setSaving] = useState(false);
 
   const handleSubmit = async () => {
     if (!name.trim()) return;
     setSaving(true);
     try {
-      await onCreate(name.trim());
+      await onCreate(name.trim(), { inheritWorkspace });
     } catch (error) {
       toast.error(t('toast.agentCreateFailed', { error: String(error) }));
       setSaving(false);
@@ -384,6 +386,17 @@ function AddAgentDialog({
               onChange={(event) => setName(event.target.value)}
               placeholder={t('createDialog.namePlaceholder')}
               className={inputClasses}
+            />
+          </div>
+          <div className="flex items-center justify-between">
+            <div className="space-y-0.5">
+              <Label htmlFor="inherit-workspace" className={labelClasses}>{t('createDialog.inheritWorkspaceLabel')}</Label>
+              <p className="text-[13px] text-foreground/60">{t('createDialog.inheritWorkspaceDescription')}</p>
+            </div>
+            <Switch
+              id="inherit-workspace"
+              checked={inheritWorkspace}
+              onCheckedChange={setInheritWorkspace}
             />
           </div>
           <div className="flex justify-end gap-2">

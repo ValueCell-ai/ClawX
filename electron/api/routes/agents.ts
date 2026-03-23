@@ -117,8 +117,8 @@ export async function handleAgentRoutes(
 
   if (url.pathname === '/api/agents' && req.method === 'POST') {
     try {
-      const body = await parseJsonBody<{ name: string }>(req);
-      const snapshot = await createAgent(body.name);
+      const body = await parseJsonBody<{ name: string; inheritWorkspace?: boolean }>(req);
+      const snapshot = await createAgent(body.name, { inheritWorkspace: body.inheritWorkspace });
       // Sync provider API keys to the new agent's auth-profiles.json so the
       // embedded runner can authenticate with LLM providers when messages
       // arrive via channel bots (e.g. Feishu). Without this, the copied
