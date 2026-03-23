@@ -112,7 +112,13 @@ export const useSettingsStore = create<SettingsState>()(
         }
       },
 
-      setTheme: (theme) => set({ theme }),
+      setTheme: (theme) => {
+        set({ theme });
+        void hostApiFetch('/api/settings/theme', {
+          method: 'PUT',
+          body: JSON.stringify({ value: theme }),
+        }).catch(() => { });
+      },
       setLanguage: (language) => {
         const resolvedLanguage = resolveSupportedLanguage(language);
         i18n.changeLanguage(resolvedLanguage);
