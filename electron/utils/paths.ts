@@ -10,6 +10,8 @@ import { logger } from './logger';
 
 const require = createRequire(import.meta.url);
 
+type ElectronAppLike = Pick<typeof import('electron').app, 'isPackaged' | 'getPath' | 'getAppPath'>;
+
 export {
   quoteForCmd,
   needsWinShell,
@@ -19,7 +21,21 @@ export {
 } from './win-shell';
 
 function getElectronApp() {
-  return (require('electron') as typeof import('electron')).app;
+  if (process.versions?.electron) {
+    return (require('electron') as typeof import('electron')).app;
+  }
+
+  const fallbackUserData = process.env.CLAWX_USER_DATA_DIR?.trim() || join(homedir(), '.clawx');
+  const fallbackAppPath = process.cwd();
+  const fallbackApp: ElectronAppLike = {
+    isPackaged: false,
+    getPath: (name) => {
+      if (name === 'userData') return fallbackUserData;
+      return fallbackUserData;
+    },
+    getAppPath: () => fallbackAppPath,
+  };
+  return fallbackApp;
 }
 
 /**
