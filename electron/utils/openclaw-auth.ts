@@ -742,6 +742,18 @@ export async function getActiveOpenClawProviders(): Promise<Set<string>> {
         }
       }
     }
+
+    // 3. agents.defaults.model.primary — the default model reference encodes
+    //    the provider prefix (e.g. "qwen-portal/coder-model" → "qwen-portal").
+    //    This covers providers that are active via OAuth or env-key but don't
+    //    have an explicit models.providers entry.
+    const agents = config.agents as Record<string, unknown> | undefined;
+    const defaults = agents?.defaults as Record<string, unknown> | undefined;
+    const modelConfig = defaults?.model as Record<string, unknown> | undefined;
+    const primaryModel = typeof modelConfig?.primary === 'string' ? modelConfig.primary : undefined;
+    if (primaryModel?.includes('/')) {
+      activeProviders.add(primaryModel.split('/')[0]);
+    }
   } catch (err) {
     console.warn('Failed to read openclaw.json for active providers:', err);
   }

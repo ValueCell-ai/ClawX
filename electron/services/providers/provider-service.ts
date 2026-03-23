@@ -6,6 +6,7 @@ import type {
   ProviderAccount,
   ProviderConfig,
   ProviderDefinition,
+  ProviderType,
 } from '../../shared/providers/types';
 import { BUILTIN_PROVIDER_TYPES } from '../../shared/providers/types';
 import { ensureProviderStoreMigrated } from './provider-migration';
@@ -77,25 +78,17 @@ export class ProviderService {
     // OpenClaw JSON (e.g. user deleted openclaw.json manually).
     {
       const activeProviders = await getActiveOpenClawProviders();
-
-      // If the OpenClaw config is empty or unreadable, skip cleanup entirely
-      // to avoid accidentally wiping valid accounts during transient states
-      // (e.g. gateway restart, file lock, first launch before config sync).
-      if (activeProviders.size === 0) {
-        logger.warn(
-          '[provider-sync] OpenClaw config has no active providers — skipping stale-account cleanup to preserve existing accounts',
-        );
-        return accounts;
-      }
+      // When OpenClaw config has no providers (e.g. user deleted the file),
+      // treat ALL accounts as stale so ClawX stays in sync.
+      const configEmpty = activeProviders.size === 0;
 
       const staleIds: string[] = [];
 
       for (const account of accounts) {
-        const isBuiltin = (BUILTIN_PROVIDER_TYPES as readonly string[]).includes(account.vendorId);
-        // Builtin providers (anthropic, openai, etc.) are always retained
-        // because they don't require an explicit models.providers entry in
-        // openclaw.json — the runtime recognises them natively.
-        if (isBuiltin) continue;
+        if (configEmpty) {
+          staleIds.push(account.id);
+          continue;
+        }
 
         const openClawKey = getOpenClawProviderKeyForType(account.vendorId, account.id);
         const isActive =
@@ -113,7 +106,26 @@ export class ProviderService {
           logger.info(`[provider-sync] Removing stale provider account "${id}" (no longer in OpenClaw config)`);
           await deleteProviderAccount(id);
         }
-        return accounts.filter((a) => !staleIds.includes(a.id));
+        accounts = accounts.filter((a) => !staleIds.includes(a.id));
+      }
+    }
+
+    // Import: detect providers in OpenClaw config not yet in the ClawX store.
+    {
+      const { providers: openClawProviders, defaultModel } = await getOpenClawProvidersConfig();
+      const existingIds = new Set(accounts.map((a) => a.id));
+      const existingVendorIds = new Set(accounts.map((a) => a.vendorId));
+      const newAccounts = ProviderService.buildAccountsFromOpenClawEntries(
+        openClawProviders, existingIds, existingVendorIds, defaultModel,
+      );
+      for (const account of newAccounts) {
+        await saveProviderAccount(account);
+        accounts.push(account);
+      }
+      if (newAccounts.length > 0) {
+        logger.info(
+          `[provider-sync] Imported ${newAccounts.length} new provider(s) from openclaw.json: ${newAccounts.map((a) => a.id).join(', ')}`,
+        );
       }
     }
 
@@ -127,18 +139,50 @@ export class ProviderService {
   private async seedAccountsFromOpenClawConfig(): Promise<ProviderAccount[]> {
     const { providers, defaultModel } = await getOpenClawProvidersConfig();
 
-    // Determine the provider prefix from the default model (e.g. "siliconflow/deepseek..." → "siliconflow")
+    const seeded = ProviderService.buildAccountsFromOpenClawEntries(
+      providers, new Set(), new Set(), defaultModel,
+    );
+
+    for (const account of seeded) {
+      await saveProviderAccount(account);
+    }
+
+    if (seeded.length > 0) {
+      logger.info(
+        `[provider-seed] Seeded ${seeded.length} provider account(s) from openclaw.json: ${seeded.map((a) => a.id).join(', ')}`,
+      );
+    }
+
+    return seeded;
+  }
+
+  /**
+   * Build ProviderAccount objects from OpenClaw config entries, skipping any
+   * whose id or vendorId is already represented by an existing account.
+   */
+  static buildAccountsFromOpenClawEntries(
+    providers: Record<string, Record<string, unknown>>,
+    existingIds: Set<string>,
+    existingVendorIds: Set<string>,
+    defaultModel: string | undefined,
+  ): ProviderAccount[] {
     const defaultModelProvider = defaultModel?.includes('/')
       ? defaultModel.split('/')[0]
       : undefined;
 
     const now = new Date().toISOString();
-    const seeded: ProviderAccount[] = [];
+    const built: ProviderAccount[] = [];
 
     for (const [key, entry] of Object.entries(providers)) {
+      if (existingIds.has(key)) continue;
+
       const definition = getProviderDefinition(key);
       const isBuiltin = (BUILTIN_PROVIDER_TYPES as readonly string[]).includes(key);
       const vendorId = isBuiltin ? key : 'custom';
+
+      // Skip if an account with this vendorId already exists (e.g. user already
+      // created "openrouter-uuid" via UI — no need to import bare "openrouter").
+      if (existingVendorIds.has(vendorId)) continue;
 
       const baseUrl = typeof entry.baseUrl === 'string' ? entry.baseUrl : definition?.providerConfig?.baseUrl;
 
@@ -152,7 +196,7 @@ export class ProviderService {
 
       const account: ProviderAccount = {
         id: key,
-        vendorId: (vendorId as ProviderAccount['vendorId']),
+        vendorId: (vendorId as ProviderAccount['vendorId'] as ProviderType),
         label: definition?.name ?? key.charAt(0).toUpperCase() + key.slice(1),
         authMode: definition?.defaultAuthMode ?? 'api_key',
         baseUrl,
@@ -167,17 +211,10 @@ export class ProviderService {
         updatedAt: now,
       };
 
-      await saveProviderAccount(account);
-      seeded.push(account);
+      built.push(account);
     }
 
-    if (seeded.length > 0) {
-      logger.info(
-        `[provider-seed] Seeded ${seeded.length} provider account(s) from openclaw.json: ${seeded.map((a) => a.id).join(', ')}`,
-      );
-    }
-
-    return seeded;
+    return built;
   }
 
   async getAccount(accountId: string): Promise<ProviderAccount | null> {
