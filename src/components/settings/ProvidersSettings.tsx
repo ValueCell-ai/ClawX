@@ -86,6 +86,30 @@ function fallbackModelsEqual(a?: string[], b?: string[]): boolean {
   return left.length === right.length && left.every((model, index) => model === right[index]);
 }
 
+function getUserAgentHeader(headers?: Record<string, string>): string {
+  if (!headers) return '';
+  for (const [key, value] of Object.entries(headers)) {
+    if (key.toLowerCase() === 'user-agent') {
+      return value;
+    }
+  }
+  return '';
+}
+
+function mergeHeadersWithUserAgent(
+  headers: Record<string, string> | undefined,
+  userAgent: string,
+): Record<string, string> {
+  const next = Object.fromEntries(
+    Object.entries(headers ?? {}).filter(([key]) => key.toLowerCase() !== 'user-agent'),
+  );
+  const normalizedUserAgent = userAgent.trim();
+  if (normalizedUserAgent) {
+    next['User-Agent'] = normalizedUserAgent;
+  }
+  return next;
+}
+
 function isArkCodePlanMode(
   vendorId: string,
   baseUrl: string | undefined,
@@ -95,6 +119,14 @@ function isArkCodePlanMode(
 ): boolean {
   if (vendorId !== 'ark' || !codePlanPresetBaseUrl || !codePlanPresetModelId) return false;
   return (baseUrl || '').trim() === codePlanPresetBaseUrl && (modelId || '').trim() === codePlanPresetModelId;
+}
+
+function shouldShowUserAgentField(account: ProviderAccount): boolean {
+  return account.vendorId === 'custom';
+}
+
+function shouldShowUserAgentFieldForNewProvider(providerType: ProviderType | null): boolean {
+  return providerType === 'custom';
 }
 
 function getAuthModeLabel(
@@ -150,7 +182,13 @@ export function ProvidersSettings() {
     type: ProviderType,
     name: string,
     apiKey: string,
-    options?: { baseUrl?: string; model?: string; authMode?: ProviderAccount['authMode']; apiProtocol?: ProviderAccount['apiProtocol'] }
+    options?: {
+      baseUrl?: string;
+      model?: string;
+      authMode?: ProviderAccount['authMode'];
+      apiProtocol?: ProviderAccount['apiProtocol'];
+      headers?: Record<string, string>;
+    }
   ) => {
     const vendor = vendorMap.get(type);
     const id = buildProviderAccountId(type, null, vendors);
@@ -163,6 +201,7 @@ export function ProvidersSettings() {
         authMode: options?.authMode || vendor?.defaultAuthMode || (type === 'ollama' ? 'local' : 'api_key'),
         baseUrl: options?.baseUrl,
         apiProtocol: options?.apiProtocol,
+        headers: options?.headers,
         model: options?.model,
         enabled: true,
         isDefault: false,
@@ -246,6 +285,7 @@ export function ProvidersSettings() {
                 if (payload.updates) {
                   if (payload.updates.baseUrl !== undefined) updates.baseUrl = payload.updates.baseUrl;
                   if (payload.updates.apiProtocol !== undefined) updates.apiProtocol = payload.updates.apiProtocol;
+                  if (payload.updates.headers !== undefined) updates.headers = payload.updates.headers;
                   if (payload.updates.model !== undefined) updates.model = payload.updates.model;
                   if (payload.updates.fallbackModels !== undefined) updates.fallbackModels = payload.updates.fallbackModels;
                   if (payload.updates.fallbackProviderIds !== undefined) {
@@ -318,6 +358,7 @@ function ProviderCard({
   const [newKey, setNewKey] = useState('');
   const [baseUrl, setBaseUrl] = useState(account.baseUrl || '');
   const [apiProtocol, setApiProtocol] = useState<ProviderAccount['apiProtocol']>(account.apiProtocol || 'openai-completions');
+  const [userAgent, setUserAgent] = useState(getUserAgentHeader(account.headers));
   const [modelId, setModelId] = useState(account.model || '');
   const [fallbackModelsText, setFallbackModelsText] = useState(
     normalizeFallbackModels(account.fallbackModels).join('\n')
@@ -344,6 +385,7 @@ function ProviderCard({
     ? (typeInfo?.codePlanDocsUrl || providerDocsUrl)
     : providerDocsUrl;
   const canEditModelConfig = Boolean(typeInfo?.showBaseUrl || showModelIdField);
+  const showUserAgentField = shouldShowUserAgentField(account);
 
   useEffect(() => {
     if (isEditing) {
@@ -351,6 +393,7 @@ function ProviderCard({
       setShowKey(false);
       setBaseUrl(account.baseUrl || '');
       setApiProtocol(account.apiProtocol || 'openai-completions');
+      setUserAgent(getUserAgentHeader(account.headers));
       setModelId(account.model || '');
       setFallbackModelsText(normalizeFallbackModels(account.fallbackModels).join('\n'));
       setFallbackProviderIds(normalizeFallbackProviderIds(account.fallbackAccountIds));
@@ -364,7 +407,7 @@ function ProviderCard({
         ) ? 'codeplan' : 'apikey'
       );
     }
-  }, [isEditing, account.baseUrl, account.fallbackModels, account.fallbackAccountIds, account.model, account.apiProtocol, account.vendorId, typeInfo?.codePlanPresetBaseUrl, typeInfo?.codePlanPresetModelId]);
+  }, [isEditing, account.baseUrl, account.headers, account.fallbackModels, account.fallbackAccountIds, account.model, account.apiProtocol, account.vendorId, typeInfo?.codePlanPresetBaseUrl, typeInfo?.codePlanPresetModelId]);
 
   const fallbackOptions = allProviders.filter((candidate) => candidate.account.id !== account.id);
 
@@ -413,6 +456,11 @@ function ProviderCard({
         }
         if (showModelIdField && (modelId.trim() || undefined) !== (account.model || undefined)) {
           updates.model = modelId.trim() || undefined;
+        }
+        const existingUserAgent = getUserAgentHeader(account.headers).trim();
+        const nextUserAgent = userAgent.trim();
+        if (nextUserAgent !== existingUserAgent) {
+          updates.headers = mergeHeadersWithUserAgent(account.headers, nextUserAgent);
         }
         if (!fallbackModelsEqual(normalizedFallbackModels, account.fallbackModels)) {
           updates.fallbackModels = normalizedFallbackModels;
@@ -670,6 +718,17 @@ function ProviderCard({
                   </div>
                 </div>
               )}
+              {showUserAgentField && (
+                <div className="space-y-1.5 pt-2">
+                  <Label className={currentLabelClasses}>{t('aiProviders.dialog.userAgent')}</Label>
+                  <Input
+                    value={userAgent}
+                    onChange={(e) => setUserAgent(e.target.value)}
+                    placeholder={t('aiProviders.dialog.userAgentPlaceholder')}
+                    className={currentInputClasses}
+                  />
+                </div>
+              )}
             </div>
           )}
           <div className="space-y-3">
@@ -786,6 +845,7 @@ function ProviderCard({
                     || (
                       !newKey.trim()
                       && (baseUrl.trim() || undefined) === (account.baseUrl || undefined)
+                      && userAgent.trim() === getUserAgentHeader(account.headers).trim()
                       && (modelId.trim() || undefined) === (account.model || undefined)
                       && fallbackModelsEqual(normalizeFallbackModels(fallbackModelsText.split('\n')), account.fallbackModels)
                       && fallbackProviderIdsEqual(fallbackProviderIds, account.fallbackAccountIds)
@@ -831,7 +891,13 @@ interface AddProviderDialogProps {
     type: ProviderType,
     name: string,
     apiKey: string,
-    options?: { baseUrl?: string; model?: string; authMode?: ProviderAccount['authMode']; apiProtocol?: ProviderAccount['apiProtocol'] }
+    options?: {
+      baseUrl?: string;
+      model?: string;
+      authMode?: ProviderAccount['authMode'];
+      apiProtocol?: ProviderAccount['apiProtocol'];
+      headers?: Record<string, string>;
+    }
   ) => Promise<void>;
   onValidateKey: (
     type: string,
@@ -856,6 +922,8 @@ function AddProviderDialog({
   const [baseUrl, setBaseUrl] = useState('');
   const [modelId, setModelId] = useState('');
   const [apiProtocol, setApiProtocol] = useState<ProviderAccount['apiProtocol']>('openai-completions');
+  const [showAdvancedConfig, setShowAdvancedConfig] = useState(false);
+  const [userAgent, setUserAgent] = useState('');
   const [arkMode, setArkMode] = useState<ArkMode>('apikey');
   const [showKey, setShowKey] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -895,6 +963,7 @@ function AddProviderDialog({
   const supportsApiKey = typeInfo?.supportsApiKey ?? false;
   const vendorMap = new Map(vendors.map((vendor) => [vendor.id, vendor]));
   const selectedVendor = selectedType ? vendorMap.get(selectedType) : undefined;
+  const showUserAgentInAddDialog = shouldShowUserAgentFieldForNewProvider(selectedType);
   const preferredOAuthMode = selectedVendor?.supportedAuthModes.includes('oauth_browser')
     ? 'oauth_browser'
     : (selectedVendor?.supportedAuthModes.includes('oauth_device')
@@ -1120,6 +1189,7 @@ function AddProviderDialog({
         {
           baseUrl: baseUrl.trim() || undefined,
           apiProtocol: (selectedType === 'custom' || selectedType === 'ollama') ? apiProtocol : undefined,
+          headers: userAgent.trim() ? { 'User-Agent': userAgent.trim() } : undefined,
           model: resolveProviderModelForSave(typeInfo, modelId, devModeUnlocked),
           authMode: useOAuthFlow ? (preferredOAuthMode || 'oauth_device') : selectedType === 'ollama'
             ? 'local'
@@ -1163,6 +1233,8 @@ function AddProviderDialog({
                     setName(type.id === 'custom' ? t('aiProviders.custom') : type.name);
                     setBaseUrl(type.defaultBaseUrl || '');
                     setModelId(type.defaultModelId || '');
+                    setUserAgent('');
+                    setShowAdvancedConfig(false);
                     setArkMode('apikey');
                   }}
                   className="p-4 rounded-2xl border border-black/5 dark:border-white/5 hover:bg-black/5 dark:hover:bg-white/5 transition-colors text-center group"
@@ -1191,15 +1263,17 @@ function AddProviderDialog({
                 <div>
                   <p className="font-semibold text-[15px]">{typeInfo?.id === 'custom' ? t('aiProviders.custom') : typeInfo?.name}</p>
                   <button
-                    onClick={() => {
-                      setSelectedType(null);
-                      setValidationError(null);
-                      setBaseUrl('');
-                      setModelId('');
-                      setArkMode('apikey');
-                    }}
-                    className="text-[13px] text-blue-500 hover:text-blue-600 font-medium"
-                  >
+                  onClick={() => {
+                    setSelectedType(null);
+                    setValidationError(null);
+                    setBaseUrl('');
+                    setModelId('');
+                    setUserAgent('');
+                    setShowAdvancedConfig(false);
+                    setArkMode('apikey');
+                  }}
+                  className="text-[13px] text-blue-500 hover:text-blue-600 font-medium"
+                >
                     {t('aiProviders.dialog.change')}
                   </button>
                   {effectiveDocsUrl && (
@@ -1407,6 +1481,30 @@ function AddProviderDialog({
                         {t('aiProviders.protocols.anthropic', 'Anthropic')}
                       </button>
                     </div>
+                  </div>
+                )}
+                {showUserAgentInAddDialog && (
+                  <div className="space-y-2.5">
+                    <button
+                      type="button"
+                      onClick={() => setShowAdvancedConfig((value) => !value)}
+                      className="flex items-center justify-between w-full text-[14px] font-bold text-foreground/80 hover:text-foreground transition-colors"
+                    >
+                      <span>{t('aiProviders.dialog.advancedConfig')}</span>
+                      <ChevronDown className={cn("h-4 w-4 transition-transform", showAdvancedConfig && "rotate-180")} />
+                    </button>
+                    {showAdvancedConfig && (
+                      <div className="space-y-2.5 pt-1">
+                        <Label htmlFor="userAgent" className={labelClasses}>{t('aiProviders.dialog.userAgent')}</Label>
+                        <Input
+                          id="userAgent"
+                          placeholder={t('aiProviders.dialog.userAgentPlaceholder')}
+                          value={userAgent}
+                          onChange={(e) => setUserAgent(e.target.value)}
+                          className={inputClasses}
+                        />
+                      </div>
+                    )}
                   </div>
                 )}
                 {/* Device OAuth Trigger — only shown when in OAuth mode */}
