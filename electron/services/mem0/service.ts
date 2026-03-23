@@ -3,7 +3,6 @@ import { logger } from '../../utils/logger';
 import { proxyAwareFetch } from '../../utils/proxy-fetch';
 import { getSetting, setSetting, type AppSettings } from '../../utils/store';
 import {
-  DEFAULT_MEM0_SETTINGS,
   buildMem0Envelope,
   normalizeMem0Settings,
   resolveMem0RootSessionKey,
