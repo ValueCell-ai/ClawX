@@ -19,6 +19,7 @@ import { Settings } from './pages/Settings';
 import { Setup } from './pages/Setup';
 import { useSettingsStore } from './stores/settings';
 import { useGatewayStore } from './stores/gateway';
+import { useProviderStore } from './stores/providers';
 import { applyGatewayTransportPreference } from './lib/api-client';
 
 
@@ -94,6 +95,7 @@ function App() {
   const language = useSettingsStore((state) => state.language);
   const setupComplete = useSettingsStore((state) => state.setupComplete);
   const initGateway = useGatewayStore((state) => state.init);
+  const initProviders = useProviderStore((state) => state.init);
 
   useEffect(() => {
     initSettings();
@@ -110,6 +112,11 @@ function App() {
   useEffect(() => {
     initGateway();
   }, [initGateway]);
+
+  // Initialize provider snapshot on mount
+  useEffect(() => {
+    initProviders();
+  }, [initProviders]);
 
   // Redirect to setup wizard if not complete
   useEffect(() => {
