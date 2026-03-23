@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { chmod, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { existsSync, readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { dirname, join } from 'node:path';
+import { join } from 'node:path';
 import { deflateSync } from 'node:zlib';
 import { normalizeOpenClawAccountId } from './channel-alias';
 import { getOpenClawResolvedDir } from './paths';
@@ -44,10 +44,11 @@ function getQrRenderDeps(): QrRenderDeps {
   }
 
   const openclawRequire = createRequire(join(getOpenClawResolvedDir(), 'package.json'));
-  const qrcodeTerminalPath = dirname(openclawRequire.resolve('qrcode-terminal/package.json'));
+  const qrCodeModulePath = openclawRequire.resolve('qrcode-terminal/vendor/QRCode/index.js');
+  const qrErrorCorrectLevelPath = openclawRequire.resolve('qrcode-terminal/vendor/QRCode/QRErrorCorrectLevel.js');
   qrRenderDeps = {
-    QRCode: require(join(qrcodeTerminalPath, 'vendor', 'QRCode', 'index.js')),
-    QRErrorCorrectLevel: require(join(qrcodeTerminalPath, 'vendor', 'QRCode', 'QRErrorCorrectLevel.js')),
+    QRCode: require(qrCodeModulePath),
+    QRErrorCorrectLevel: require(qrErrorCorrectLevelPath),
   };
   return qrRenderDeps;
 }
