@@ -729,17 +729,16 @@ function AgentModelModal({
 
   const selectedProvider = runtimeProviderOptions.find((option) => option.runtimeProviderKey === selectedRuntimeProviderKey) || null;
   const trimmedModelId = modelIdInput.trim();
-  const hasOverrideModel = Boolean((agent.overrideModelRef || '').trim());
   const nextModelRef = selectedRuntimeProviderKey && trimmedModelId
     ? `${selectedRuntimeProviderKey}/${trimmedModelId}`
     : '';
   const normalizedDefaultModelRef = (defaultModelRef || '').trim();
+  const isUsingDefaultModelInForm = Boolean(normalizedDefaultModelRef) && nextModelRef === normalizedDefaultModelRef;
   const currentOverrideModelRef = (agent.overrideModelRef || '').trim();
   const desiredOverrideModelRef = nextModelRef && nextModelRef !== normalizedDefaultModelRef
     ? nextModelRef
     : null;
   const modelChanged = (desiredOverrideModelRef || '') !== currentOverrideModelRef;
-  const willInheritDefault = Boolean(nextModelRef) && nextModelRef === normalizedDefaultModelRef;
 
   const handleSaveModel = async () => {
     if (!selectedRuntimeProviderKey) {
@@ -768,18 +767,15 @@ function AgentModelModal({
     }
   };
 
-  const handleResetModel = async () => {
-    if (!hasOverrideModel) return;
-    setSavingModel(true);
-    try {
-      await updateAgentModel(agent.id, null);
-      toast.success(t('toast.agentModelReset'));
-      onClose();
-    } catch (error) {
-      toast.error(t('toast.agentModelResetFailed', { error: String(error) }));
-    } finally {
-      setSavingModel(false);
+  const handleUseDefaultModel = () => {
+    const parsedDefault = splitModelRef(normalizedDefaultModelRef);
+    if (!parsedDefault) {
+      setSelectedRuntimeProviderKey('');
+      setModelIdInput('');
+      return;
     }
+    setSelectedRuntimeProviderKey(parsedDefault.providerKey);
+    setModelIdInput(parsedDefault.modelId);
   };
 
   return (
@@ -842,11 +838,6 @@ function AgentModelModal({
               {t('settingsDialog.modelPreview')}: {nextModelRef}
             </p>
           )}
-          {willInheritDefault && (
-            <p className="text-[12px] text-foreground/60">
-              {t('settingsDialog.modelAutoInheritHint')}
-            </p>
-          )}
           {runtimeProviderOptions.length === 0 && (
             <p className="text-[12px] text-amber-600 dark:text-amber-400">
               {t('settingsDialog.modelProviderEmpty')}
@@ -855,8 +846,8 @@ function AgentModelModal({
           <div className="flex items-center justify-end gap-2 pt-2">
             <Button
               variant="outline"
-              onClick={() => void handleResetModel()}
-              disabled={savingModel || !hasOverrideModel}
+              onClick={handleUseDefaultModel}
+              disabled={savingModel || !normalizedDefaultModelRef || isUsingDefaultModelInForm}
               className="h-9 text-[13px] font-medium rounded-full px-4 border-black/10 dark:border-white/10 bg-transparent hover:bg-black/5 dark:hover:bg-white/5 shadow-none text-foreground/80 hover:text-foreground"
             >
               {t('settingsDialog.useDefaultModel')}
