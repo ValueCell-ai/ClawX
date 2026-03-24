@@ -109,6 +109,7 @@ ClawX now also bundles Tencent's official personal WeChat channel plugin, so you
 ### ⏰ Cron-Based Automation
 Schedule AI tasks to run automatically. Define triggers, set intervals, and let your AI agents work around the clock without manual intervention.
 The Cron page now lets you configure external delivery directly in the task form with separate sender-account and recipient-target selectors. For supported channels, recipient targets are discovered automatically from channel directories or known session history, so you no longer need to edit `jobs.json` by hand.
+Known limitation: WeChat is intentionally excluded from supported cron delivery channels for now. The current `openclaw-weixin` plugin requires a live conversation `contextToken` for outbound sends, so cron-style proactive delivery is not supported by the plugin itself.
 
 ### 🧩 Extensible Skill System
 Extend your AI agents with pre-built skills. Browse, install, and manage skills through the integrated skill panel—no package managers required.
