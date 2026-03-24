@@ -729,6 +729,7 @@ function AgentModelModal({
 
   const selectedProvider = runtimeProviderOptions.find((option) => option.runtimeProviderKey === selectedRuntimeProviderKey) || null;
   const trimmedModelId = modelIdInput.trim();
+  const hasOverrideModel = Boolean((agent.overrideModelRef || '').trim());
   const nextModelRef = selectedRuntimeProviderKey && trimmedModelId
     ? `${selectedRuntimeProviderKey}/${trimmedModelId}`
     : '';
@@ -762,6 +763,20 @@ function AgentModelModal({
       onClose();
     } catch (error) {
       toast.error(t('toast.agentModelUpdateFailed', { error: String(error) }));
+    } finally {
+      setSavingModel(false);
+    }
+  };
+
+  const handleResetModel = async () => {
+    if (!hasOverrideModel) return;
+    setSavingModel(true);
+    try {
+      await updateAgentModel(agent.id, null);
+      toast.success(t('toast.agentModelReset'));
+      onClose();
+    } catch (error) {
+      toast.error(t('toast.agentModelResetFailed', { error: String(error) }));
     } finally {
       setSavingModel(false);
     }
@@ -838,6 +853,14 @@ function AgentModelModal({
             </p>
           )}
           <div className="flex items-center justify-end gap-2 pt-2">
+            <Button
+              variant="outline"
+              onClick={() => void handleResetModel()}
+              disabled={savingModel || !hasOverrideModel}
+              className="h-9 text-[13px] font-medium rounded-full px-4 border-black/10 dark:border-white/10 bg-transparent hover:bg-black/5 dark:hover:bg-white/5 shadow-none text-foreground/80 hover:text-foreground"
+            >
+              {t('settingsDialog.useDefaultModel')}
+            </Button>
             <Button
               variant="outline"
               onClick={onClose}
