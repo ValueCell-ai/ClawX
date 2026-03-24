@@ -1,232 +1,35 @@
 /**
  * Device OAuth Manager
  *
- * Delegates MiniMax and Qwen OAuth to the OpenClaw extension oauth.ts functions
- * loaded dynamically at runtime from the bundled openclaw package.
+ * Manages Device Code OAuth flows for MiniMax and Qwen providers.
+ *
+ * The OAuth protocol implementations are fully self-contained in:
+ *   - ./minimax-oauth.ts  (MiniMax Device Code + PKCE)
+ *   - ./qwen-oauth.ts     (Qwen Device Code + PKCE)
  *
  * This approach:
- * - Avoids hardcoding client_id (lives in openclaw extension)
- * - Avoids duplicating HTTP OAuth logic
- * - Avoids spawning CLI process (which requires interactive TTY)
+ * - Hardcodes client_id and endpoints (same as openai-codex-oauth.ts)
+ * - Implements OAuth flows locally with zero openclaw dependency
+ * - Survives openclaw package upgrades without breakage
  * - Works identically on macOS, Windows, and Linux
- *
- * The extension oauth.ts/.js files only use `node:crypto` and global `fetch` —
- * they are pure Node.js HTTP functions, no TTY, no prompter needed.
  *
  * We provide our own callbacks (openUrl/note/progress) that hook into
  * the Electron IPC system to display UI in the ClawX frontend.
- *
- * NOTE: The OAuth modules are loaded via dynamic import() at runtime rather
- * than static imports, because the openclaw npm package may not ship the
- * extension source files at build time. They are resolved from the OpenClaw
- * runtime directory (dev: node_modules/openclaw, prod: resources/openclaw).
  */
-import { join } from 'path';
-import { readdirSync } from 'fs';
 import { EventEmitter } from 'events';
 import { BrowserWindow, shell } from 'electron';
 import { logger } from './logger';
 import { saveProvider, getProvider, ProviderConfig } from './secure-storage';
 import { getProviderDefaultModel } from './provider-registry';
-import { isOpenClawPresent, getOpenClawDir } from './paths';
 import { proxyAwareFetch } from './proxy-fetch';
 import { saveOAuthTokenToOpenClaw, setOpenClawDefaultModelWithOverride } from './openclaw-auth';
+import { loginMiniMaxPortalOAuth, type MiniMaxOAuthToken, type MiniMaxRegion } from './minimax-oauth';
+import { loginQwenPortalOAuth, type QwenOAuthToken } from './qwen-oauth';
 
 export type OAuthProviderType = 'minimax-portal' | 'minimax-portal-cn' | 'qwen-portal';
 
-// ── Types mirroring the OpenClaw extension oauth modules ─────
-// Defined locally to avoid build-time dependency on the openclaw package.
-
-export type MiniMaxRegion = 'global' | 'cn';
-
-export interface MiniMaxOAuthToken {
-    access: string;
-    refresh: string;
-    expires: number;
-    resourceUrl?: string;
-}
-
-export interface QwenOAuthToken {
-    access: string;
-    refresh: string;
-    expires: number;
-    resourceUrl?: string;
-}
-
-interface OAuthCallbacks {
-    openUrl: (url: string) => Promise<void>;
-    note: (message: string, title?: string) => Promise<void>;
-    progress: { update: (msg: string) => void; stop: (msg?: string) => void };
-}
-
-interface MiniMaxOAuthOptions extends OAuthCallbacks {
-    region?: MiniMaxRegion;
-}
-
-type QwenOAuthOptions = OAuthCallbacks;
-
-// ── Dynamic extension loaders ────────────────────────────────
-// The openclaw npm package has changed its layout across versions:
-//   - Old: extensions/minimax-portal-auth/oauth (source .ts/.js)
-//   - New: dist/extensions/minimax/index (bundled .js)
-// We try multiple candidate paths to remain compatible.
-
-
-import { getOpenClawResolvedDir } from './paths';
-
-/** Try importing a module from multiple candidate paths, return first success. */
-async function tryImportFrom(candidates: string[]): Promise<{ mod: Record<string, unknown>; path: string }> {
-    const errors: string[] = [];
-    for (const p of candidates) {
-        // ESM dynamic import() requires explicit .js extension;
-        // try both .js-suffixed and original path for CJS compat.
-        const variants = p.endsWith('.js') ? [p] : [`${p}.js`, p];
-        for (const v of variants) {
-            try {
-                const mod = await import(v);
-                return { mod, path: v };
-            } catch (err) {
-                errors.push(`  ${v}: ${err instanceof Error ? err.message : String(err)}`);
-            }
-        }
-    }
-
-    // On failure, list files in extension directories for debugging
-    const dirSet = new Set<string>();
-    for (const p of candidates) {
-        // Get parent directory of the candidate (e.g. dist/extensions/minimax)
-        // Use join(p, '..') instead of regex to handle both Unix / and Windows \ separators
-        const parentDir = join(p, '..');
-        if (dirSet.has(parentDir)) continue;
-        dirSet.add(parentDir);
-        try {
-            const files = readdirSync(parentDir);
-            errors.push(`  [dir listing] ${parentDir}: [${files.join(', ')}]`);
-        } catch {
-            errors.push(`  [dir listing] ${parentDir}: (not accessible)`);
-        }
-    }
-
-    throw new Error(
-        `Failed to load OAuth extension from any candidate path:\n${errors.join('\n')}`
-    );
-}
-
-function buildMiniMaxCandidates(): string[] {
-    const dirs = [getOpenClawDir(), getOpenClawResolvedDir()];
-    const seen = new Set<string>();
-    const candidates: string[] = [];
-    for (const dir of dirs) {
-        if (seen.has(dir)) continue;
-        seen.add(dir);
-        // New dist layout (openclaw >= 2026.3.23) — oauth module is separate from index
-        candidates.push(join(dir, 'dist', 'extensions', 'minimax', 'oauth'));
-        candidates.push(join(dir, 'dist', 'extensions', 'minimax-portal-auth', 'oauth'));
-        candidates.push(join(dir, 'dist', 'extensions', 'minimax', 'index'));
-        candidates.push(join(dir, 'dist', 'extensions', 'minimax-portal-auth', 'index'));
-        // Old source layout
-        candidates.push(join(dir, 'extensions', 'minimax-portal-auth', 'oauth'));
-        candidates.push(join(dir, 'extensions', 'minimax', 'oauth'));
-    }
-    return candidates;
-}
-
-function buildQwenCandidates(): string[] {
-    const dirs = [getOpenClawDir(), getOpenClawResolvedDir()];
-    const seen = new Set<string>();
-    const candidates: string[] = [];
-    for (const dir of dirs) {
-        if (seen.has(dir)) continue;
-        seen.add(dir);
-        // New dist layout — oauth module is separate from index
-        candidates.push(join(dir, 'dist', 'extensions', 'qwen', 'oauth'));
-        candidates.push(join(dir, 'dist', 'extensions', 'qwen-portal-auth', 'oauth'));
-        candidates.push(join(dir, 'dist', 'extensions', 'qwen', 'index'));
-        candidates.push(join(dir, 'dist', 'extensions', 'qwen-portal-auth', 'index'));
-        // Old source layout
-        candidates.push(join(dir, 'extensions', 'qwen-portal-auth', 'oauth'));
-        candidates.push(join(dir, 'extensions', 'qwen', 'oauth'));
-    }
-    return candidates;
-}
-
-/** Search for an OAuth function export by trying several naming conventions. */
-function findOAuthExport(
-    mod: Record<string, unknown>,
-    names: string[],
-    resolvedPath: string,
-    label: string,
-): (...args: unknown[]) => unknown {
-    // Log all exports for debugging
-    const topKeys = Object.keys(mod);
-    logger.info(`[DeviceOAuth] ${label} module top-level exports: [${topKeys.join(', ')}]`);
-    const defaultObj = mod.default as Record<string, unknown> | undefined;
-    if (defaultObj && typeof defaultObj === 'object') {
-        logger.info(`[DeviceOAuth] ${label} module default exports: [${Object.keys(defaultObj).join(', ')}]`);
-    }
-
-    // Search through candidate names in top-level, then in default
-    for (const name of names) {
-        if (typeof mod[name] === 'function') return mod[name] as (...args: unknown[]) => unknown;
-        if (defaultObj && typeof defaultObj[name] === 'function') return defaultObj[name] as (...args: unknown[]) => unknown;
-    }
-
-    // Fallback: find any function export whose name contains 'oauth' (case-insensitive)
-    for (const [k, v] of Object.entries(mod)) {
-        if (typeof v === 'function' && k.toLowerCase().includes('oauth')) {
-            logger.info(`[DeviceOAuth] ${label} using fallback function: ${k}`);
-            return v as (...args: unknown[]) => unknown;
-        }
-    }
-    if (defaultObj && typeof defaultObj === 'object') {
-        for (const [k, v] of Object.entries(defaultObj)) {
-            if (typeof v === 'function' && k.toLowerCase().includes('oauth')) {
-                logger.info(`[DeviceOAuth] ${label} using fallback default function: ${k}`);
-                return v as (...args: unknown[]) => unknown;
-            }
-        }
-    }
-
-    // If the default export itself is a function, try it
-    if (typeof mod.default === 'function') {
-        logger.info(`[DeviceOAuth] ${label} using default export as function`);
-        return mod.default as (...args: unknown[]) => unknown;
-    }
-
-    throw new Error(
-        `${label} OAuth module at ${resolvedPath} does not export any recognized OAuth function. ` +
-        `Top-level: [${topKeys.join(', ')}]` +
-        (defaultObj ? `, default: [${Object.keys(defaultObj).join(', ')}]` : '')
-    );
-}
-
-async function loadMiniMaxOAuth(): Promise<(opts: MiniMaxOAuthOptions) => Promise<MiniMaxOAuthToken>> {
-    const candidates = buildMiniMaxCandidates();
-    const { mod, path: resolvedPath } = await tryImportFrom(candidates);
-    logger.info(`[DeviceOAuth] Loaded MiniMax OAuth from: ${resolvedPath}`);
-    const fn = findOAuthExport(mod, [
-        'loginMiniMaxPortalOAuth',
-        'loginMiniMaxOAuth',
-        'loginMinimaxPortalOAuth',
-        'loginMinimaxOAuth',
-        'login',
-        'deviceCodeLogin',
-    ], resolvedPath, 'MiniMax');
-    return fn as (opts: MiniMaxOAuthOptions) => Promise<MiniMaxOAuthToken>;
-}
-
-async function loadQwenOAuth(): Promise<(opts: QwenOAuthOptions) => Promise<QwenOAuthToken>> {
-    const candidates = buildQwenCandidates();
-    const { mod, path: resolvedPath } = await tryImportFrom(candidates);
-    logger.info(`[DeviceOAuth] Loaded Qwen OAuth from: ${resolvedPath}`);
-    const fn = findOAuthExport(mod, [
-        'loginQwenPortalOAuth',
-        'loginQwenOAuth',
-        'login',
-        'deviceCodeLogin',
-    ], resolvedPath, 'Qwen');
-    return fn as (opts: QwenOAuthOptions) => Promise<QwenOAuthToken>;
-}
+// Re-export types for consumers
+export type { MiniMaxRegion, MiniMaxOAuthToken, QwenOAuthToken };
 
 // ─────────────────────────────────────────────────────────────
 // DeviceOAuthManager
@@ -307,22 +110,18 @@ class DeviceOAuthManager extends EventEmitter {
     // ─────────────────────────────────────────────────────────
 
     private async runMiniMaxFlow(region?: MiniMaxRegion, providerType: OAuthProviderType = 'minimax-portal'): Promise<void> {
-        if (!isOpenClawPresent()) {
-            throw new Error('OpenClaw package not found');
-        }
         const provider = this.activeProvider!;
 
-        const loginMiniMaxPortalOAuth = await loadMiniMaxOAuth();
         const token: MiniMaxOAuthToken = await this.runWithProxyAwareFetch(() => loginMiniMaxPortalOAuth({
             region,
-            openUrl: async (url) => {
+            openUrl: async (url: string) => {
                 logger.info(`[DeviceOAuth] MiniMax opening browser: ${url}`);
                 // Open the authorization URL in the system browser
-                shell.openExternal(url).catch((err) =>
+                shell.openExternal(url).catch((err: unknown) =>
                     logger.warn(`[DeviceOAuth] Failed to open browser:`, err)
                 );
             },
-            note: async (message, _title) => {
+            note: async (message: string, _title?: string) => {
                 if (!this.active) return;
                 // The extension calls note() with a message containing
                 // the user_code and verification_uri — parse them for the UI
@@ -334,8 +133,8 @@ class DeviceOAuthManager extends EventEmitter {
                 }
             },
             progress: {
-                update: (msg) => logger.info(`[DeviceOAuth] MiniMax progress: ${msg}`),
-                stop: (msg) => logger.info(`[DeviceOAuth] MiniMax progress done: ${msg ?? ''}`),
+                update: (msg: string) => logger.info(`[DeviceOAuth] MiniMax progress: ${msg}`),
+                stop: (msg?: string) => logger.info(`[DeviceOAuth] MiniMax progress done: ${msg ?? ''}`),
             },
         }));
 
@@ -358,20 +157,16 @@ class DeviceOAuthManager extends EventEmitter {
     // ─────────────────────────────────────────────────────────
 
     private async runQwenFlow(): Promise<void> {
-        if (!isOpenClawPresent()) {
-            throw new Error('OpenClaw package not found');
-        }
         const provider = this.activeProvider!;
 
-        const loginQwenPortalOAuth = await loadQwenOAuth();
         const token: QwenOAuthToken = await this.runWithProxyAwareFetch(() => loginQwenPortalOAuth({
-            openUrl: async (url) => {
+            openUrl: async (url: string) => {
                 logger.info(`[DeviceOAuth] Qwen opening browser: ${url}`);
-                shell.openExternal(url).catch((err) =>
+                shell.openExternal(url).catch((err: unknown) =>
                     logger.warn(`[DeviceOAuth] Failed to open browser:`, err)
                 );
             },
-            note: async (message, _title) => {
+            note: async (message: string, _title?: string) => {
                 if (!this.active) return;
                 const { verificationUri, userCode } = this.parseNote(message);
                 if (verificationUri && userCode) {
@@ -381,8 +176,8 @@ class DeviceOAuthManager extends EventEmitter {
                 }
             },
             progress: {
-                update: (msg) => logger.info(`[DeviceOAuth] Qwen progress: ${msg}`),
-                stop: (msg) => logger.info(`[DeviceOAuth] Qwen progress done: ${msg ?? ''}`),
+                update: (msg: string) => logger.info(`[DeviceOAuth] Qwen progress: ${msg}`),
+                stop: (msg?: string) => logger.info(`[DeviceOAuth] Qwen progress done: ${msg ?? ''}`),
             },
         }));
 
