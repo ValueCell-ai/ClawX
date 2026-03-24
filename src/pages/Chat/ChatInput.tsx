@@ -7,13 +7,14 @@
  * are sent with the message (no base64 over WebSocket).
  */
 import { useState, useRef, useEffect, useCallback } from 'react';
-import { SendHorizontal, Square, X, Paperclip, FileText, Film, Music, FileArchive, File, Loader2 } from 'lucide-react';
+import { SendHorizontal, Square, X, Paperclip, FileText, Film, Music, FileArchive, File, Loader2, Bot } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { hostApiFetch } from '@/lib/host-api';
 import { invokeIpc } from '@/lib/api-client';
 import { cn } from '@/lib/utils';
 import { useGatewayStore } from '@/stores/gateway';
+import { useAgentsStore } from '@/stores/agents';
 import { useTranslation } from 'react-i18next';
 
 // ── Types ────────────────────────────────────────────────────────
@@ -30,7 +31,7 @@ export interface FileAttachment {
 }
 
 interface ChatInputProps {
-  onSend: (text: string, attachments?: FileAttachment[]) => void;
+  onSend: (text: string, attachments?: FileAttachment[], agentId?: string) => void;
   onStop?: () => void;
   disabled?: boolean;
   sending?: boolean;
@@ -85,9 +86,12 @@ export function ChatInput({ onSend, onStop, disabled = false, sending = false, i
   const { t } = useTranslation('chat');
   const [input, setInput] = useState('');
   const [attachments, setAttachments] = useState<FileAttachment[]>([]);
+  const [targetAgentId, setTargetAgentId] = useState<string | null>(null);
+  const [isAgentPickerOpen, setIsAgentPickerOpen] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const isComposingRef = useRef(false);
   const gatewayStatus = useGatewayStore((s) => s.status);
+  const agents = useAgentsStore((s) => s.agents);
 
   // Auto-resize textarea
   useEffect(() => {
@@ -248,6 +252,7 @@ export function ChatInput({ onSend, onStop, disabled = false, sending = false, i
     // but keep attachments available for the async send
     const textToSend = input.trim();
     const attachmentsToSend = readyAttachments.length > 0 ? readyAttachments : undefined;
+    const agentToSend = targetAgentId || undefined;
     console.log(`[handleSend] text="${textToSend.substring(0, 50)}", attachments=${attachments.length}, ready=${readyAttachments.length}, sending=${!!attachmentsToSend}`);
     if (attachmentsToSend) {
       console.log('[handleSend] Attachment details:', attachmentsToSend.map(a => ({
@@ -257,11 +262,12 @@ export function ChatInput({ onSend, onStop, disabled = false, sending = false, i
     }
     setInput('');
     setAttachments([]);
+    setTargetAgentId(null);
     if (textareaRef.current) {
       textareaRef.current.style.height = 'auto';
     }
-    onSend(textToSend, attachmentsToSend);
-  }, [input, attachments, canSend, onSend]);
+    onSend(textToSend, attachmentsToSend, agentToSend);
+  }, [input, attachments, canSend, onSend, targetAgentId]);
 
   const handleStop = useCallback(() => {
     if (!canStop) return;
@@ -368,6 +374,66 @@ export function ChatInput({ onSend, onStop, disabled = false, sending = false, i
             >
               <Paperclip className="h-4 w-4" />
             </Button>
+
+            {/* Agent Picker Button */}
+            {agents.length > 1 && (
+              <div className="relative flex-shrink-0 flex items-center h-10">
+                {targetAgentId ? (
+                  <div
+                    className="shrink-0 h-8 px-3 rounded-full text-primary bg-primary/10 hover:bg-primary/20 transition-colors flex items-center gap-1.5 cursor-pointer"
+                    onClick={() => setIsAgentPickerOpen(!isAgentPickerOpen)}
+                    title={t('composer.agentPickerTitle')}
+                  >
+                    <span className="text-xs font-medium">{t('composer.targetChip', { agent: agents.find(a => a.id === targetAgentId)?.name || targetAgentId })}</span>
+                    <button
+                      className="ml-1 p-0.5 rounded-full hover:bg-primary/30"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setTargetAgentId(null);
+                        setIsAgentPickerOpen(false);
+                      }}
+                      title={t('composer.clearTarget')}
+                    >
+                      <X className="w-3 h-3" />
+                    </button>
+                  </div>
+                ) : (
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className={cn("shrink-0 h-10 w-10 rounded-full transition-colors", isAgentPickerOpen ? "bg-black/5 dark:bg-white/10 text-foreground" : "text-muted-foreground hover:bg-black/5 dark:hover:bg-white/10 hover:text-foreground")}
+                    onClick={() => setIsAgentPickerOpen(!isAgentPickerOpen)}
+                    disabled={disabled || sending}
+                    title={t('composer.pickAgent')}
+                  >
+                    <Bot className="h-4 w-4" />
+                  </Button>
+                )}
+                {isAgentPickerOpen && (
+                  <>
+                    <div className="fixed inset-0 z-40" onClick={() => setIsAgentPickerOpen(false)} />
+                    <div className="absolute bottom-12 left-0 z-50 w-48 rounded-md border bg-popover p-1 text-popover-foreground shadow-md text-xs">
+                      <div className="px-2 py-1.5 font-semibold text-muted-foreground">{t('composer.pickAgent')}</div>
+                      <div className="h-px bg-border my-1" />
+                      <div className="max-h-[200px] overflow-y-auto">
+                        {agents.map((agent) => (
+                          <button
+                            key={agent.id}
+                            className="w-full text-left px-2 py-1.5 hover:bg-accent hover:text-accent-foreground rounded-sm truncate"
+                            onClick={() => {
+                              setTargetAgentId(agent.id);
+                              setIsAgentPickerOpen(false);
+                            }}
+                          >
+                            {agent.name}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </>
+                )}
+              </div>
+            )}
 
             {/* Textarea */}
             <div className="flex-1 relative">

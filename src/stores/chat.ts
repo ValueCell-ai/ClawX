@@ -13,6 +13,7 @@ import {
 import { useChatMetaStore } from './chatMeta';
 import { useChatMirrorsStore, type MirroredChatMessage } from './chatMirrors';
 import { useGatewayStore } from './gateway';
+import { useAgentsStore } from './agents';
 import { buildCronSessionHistoryPath, isCronSessionKey } from './chat/cron-session-utils';
 import { stripMem0Envelope, type Mem0MemoryContext } from '../../shared/mem0';
 
@@ -120,6 +121,7 @@ interface ChatState {
   sendMessage: (
     text: string,
     attachments?: Array<{ fileName: string; mimeType: string; fileSize: number; stagedPath: string; preview: string | null }>,
+    targetAgentId?: string
   ) => Promise<void>;
   abortRun: () => Promise<void>;
   handleChatEvent: (event: Record<string, unknown>) => void;
@@ -1765,10 +1767,25 @@ export const useChatStore = create<ChatState>((set, get) => ({
   sendMessage: async (
     text: string,
     attachments?: Array<{ fileName: string; mimeType: string; fileSize: number; stagedPath: string; preview: string | null }>,
+    targetAgentId?: string,
   ) => {
     const trimmed = text.trim();
     if (!trimmed && (!attachments || attachments.length === 0)) return;
-    const currentSessionKey = get().currentSessionKey;
+    
+    let currentSessionKey = get().currentSessionKey;
+    if (targetAgentId && targetAgentId !== get().currentAgentId) {
+      const agents = useAgentsStore.getState().agents;
+      const targetAgent = agents.find(a => a.id === targetAgentId);
+      if (targetAgent && targetAgent.mainSessionKey) {
+        currentSessionKey = targetAgent.mainSessionKey;
+        if (!get().sessions.find(s => s.key === currentSessionKey)) {
+          // ensure session exists in list
+          get().switchSession(currentSessionKey);
+        } else {
+          get().switchSession(currentSessionKey);
+        }
+      }
+    }
 
     // Add user message optimistically (with local file metadata for UI display)
     const nowMs = Date.now();
