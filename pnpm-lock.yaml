@@ -83,8 +83,8 @@ importers:
         specifier: ^3.3.0
         version: 3.4.0(openclaw@2026.3.23-1(@napi-rs/canvas@0.1.95)(encoding@0.1.13)(node-llama-cpp@3.16.2(typescript@5.9.3)))
       '@tencent-weixin/openclaw-weixin':
-        specifier: ^1.0.2
-        version: 1.0.2
+        specifier: ^2.0.1
+        version: 2.0.1(openclaw@2026.3.23-1(@napi-rs/canvas@0.1.95)(encoding@0.1.13)(node-llama-cpp@3.16.2(typescript@5.9.3)))
       '@testing-library/jest-dom':
         specifier: ^6.9.1
         version: 6.9.1
@@ -2693,9 +2693,11 @@ packages:
   '@telegraf/types@7.1.0':
     resolution: {integrity: sha512-kGevOIbpMcIlCDeorKGpwZmdH7kHbqlk/Yj6dEpJMKEQw5lk0KVQY0OLXaCswy8GqlIVLd5625OB+rAntP9xVw==}
 
-  '@tencent-weixin/openclaw-weixin@1.0.2':
-    resolution: {integrity: sha512-kYPEowHB/0VWt9nQFee/AS6Fb+jbnu38wjkgZDBdKTuJoBL0IBW2obQ0ymgFKBFJJL9rDwnFrb/17ORGZD/X8Q==}
+  '@tencent-weixin/openclaw-weixin@2.0.1':
+    resolution: {integrity: sha512-Ib7onvLU8a1ox9craMZxPwrN+ffJQJbToZzeMwoYryBOMIoBlVY0oCuQF7BZvZ7GRQQKOSSAdxvFkO47hKu0rg==}
     engines: {node: '>=22'}
+    peerDependencies:
+      openclaw: '>=2026.3.22'
 
   '@testing-library/dom@10.4.1':
     resolution: {integrity: sha512-o4PXJQidqJl82ckFaXUeoAW+XysPLauYI43Abki5hABd853iMhitooc6znOnczgbTYmEP6U6/y1ZyKAIsvMKGg==}
@@ -9891,8 +9893,9 @@ snapshots:
   '@telegraf/types@7.1.0':
     optional: true
 
-  '@tencent-weixin/openclaw-weixin@1.0.2':
+  '@tencent-weixin/openclaw-weixin@2.0.1(openclaw@2026.3.23-1(@napi-rs/canvas@0.1.95)(encoding@0.1.13)(node-llama-cpp@3.16.2(typescript@5.9.3)))':
     dependencies:
+      openclaw: 2026.3.23-1(@napi-rs/canvas@0.1.95)(encoding@0.1.13)(node-llama-cpp@3.16.2(typescript@5.9.3))
       qrcode-terminal: 0.12.0
       zod: 4.3.6
 

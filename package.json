@@ -89,7 +89,7 @@
         "@radix-ui/react-toast": "^1.2.15",
         "@radix-ui/react-tooltip": "^1.2.8",
         "@sliverp/qqbot": "^1.6.1",
-        "@tencent-weixin/openclaw-weixin": "^1.0.2",
+        "@tencent-weixin/openclaw-weixin": "^2.0.1",
         "@soimy/dingtalk": "^3.3.0",
         "@testing-library/jest-dom": "^6.9.1",
         "@testing-library/react": "^16.3.2",
