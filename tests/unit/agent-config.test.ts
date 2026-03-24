@@ -102,6 +102,101 @@ describe('agent config lifecycle', () => {
     );
   });
 
+  it('exposes effective and override model refs in the snapshot', async () => {
+    await writeOpenClawJson({
+      agents: {
+        defaults: {
+          model: {
+            primary: 'moonshot/kimi-k2.5',
+          },
+        },
+        list: [
+          { id: 'main', name: 'Main', default: true },
+          { id: 'coder', name: 'Coder', model: { primary: 'ark/ark-code-latest' } },
+        ],
+      },
+    });
+
+    const { listAgentsSnapshot } = await import('@electron/utils/agent-config');
+    const snapshot = await listAgentsSnapshot();
+    const main = snapshot.agents.find((agent) => agent.id === 'main');
+    const coder = snapshot.agents.find((agent) => agent.id === 'coder');
+
+    expect(snapshot.defaultModelRef).toBe('moonshot/kimi-k2.5');
+    expect(main).toMatchObject({
+      modelRef: 'moonshot/kimi-k2.5',
+      overrideModelRef: null,
+      inheritedModel: true,
+      modelDisplay: 'kimi-k2.5',
+    });
+    expect(coder).toMatchObject({
+      modelRef: 'ark/ark-code-latest',
+      overrideModelRef: 'ark/ark-code-latest',
+      inheritedModel: false,
+      modelDisplay: 'ark-code-latest',
+    });
+  });
+
+  it('updates and clears per-agent model overrides', async () => {
+    await writeOpenClawJson({
+      agents: {
+        defaults: {
+          model: {
+            primary: 'moonshot/kimi-k2.5',
+          },
+        },
+        list: [
+          { id: 'main', name: 'Main', default: true },
+          { id: 'coder', name: 'Coder' },
+        ],
+      },
+    });
+
+    const { listAgentsSnapshot, updateAgentModel } = await import('@electron/utils/agent-config');
+
+    await updateAgentModel('coder', 'ark/ark-code-latest');
+    let config = await readOpenClawJson();
+    let coder = ((config.agents as { list: Array<{ id: string; model?: { primary?: string } }> }).list)
+      .find((agent) => agent.id === 'coder');
+    expect(coder?.model?.primary).toBe('ark/ark-code-latest');
+
+    let snapshot = await listAgentsSnapshot();
+    let snapshotCoder = snapshot.agents.find((agent) => agent.id === 'coder');
+    expect(snapshotCoder).toMatchObject({
+      modelRef: 'ark/ark-code-latest',
+      overrideModelRef: 'ark/ark-code-latest',
+      inheritedModel: false,
+    });
+
+    await updateAgentModel('coder', null);
+    config = await readOpenClawJson();
+    coder = ((config.agents as { list: Array<{ id: string; model?: unknown }> }).list)
+      .find((agent) => agent.id === 'coder');
+    expect(coder?.model).toBeUndefined();
+
+    snapshot = await listAgentsSnapshot();
+    snapshotCoder = snapshot.agents.find((agent) => agent.id === 'coder');
+    expect(snapshotCoder).toMatchObject({
+      modelRef: 'moonshot/kimi-k2.5',
+      overrideModelRef: null,
+      inheritedModel: true,
+    });
+  });
+
+  it('rejects invalid model ref formats when updating agent model', async () => {
+    await writeOpenClawJson({
+      agents: {
+        list: [{ id: 'main', name: 'Main', default: true }],
+      },
+    });
+
+    const { updateAgentModel } = await import('@electron/utils/agent-config');
+
+    await expect(updateAgentModel('main', 'invalid-model-ref')).rejects.toThrow(
+      'modelRef must be in "provider/model" format',
+    );
+  });
+
   it('deletes the config entry, bindings, runtime directory, and managed workspace for a removed agent', async () => {
     await writeOpenClawJson({
       agents: {
