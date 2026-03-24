@@ -3,6 +3,14 @@
 import 'zx/globals';
 import { readFileSync, existsSync, mkdirSync, rmSync, cpSync, writeFileSync } from 'node:fs';
 import { join, dirname, basename } from 'node:path';
+
+// zx requires a quote function for non-Bash shells (e.g. PowerShell on Windows).
+// Without this, all $ commands fail with "No quote function is defined".
+// See: https://google.github.io/zx/quotes
+if (process.platform === 'win32' && !$.quote) {
+  const { quotePowerShell } = await import('zx');
+  $.quote = quotePowerShell;
+}
 import { fileURLToPath } from 'node:url';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));

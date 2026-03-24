@@ -1,6 +1,13 @@
 #!/usr/bin/env zx
 
 import 'zx/globals';
+
+// zx requires a quote function for non-Bash shells (e.g. PowerShell on Windows).
+// See: https://google.github.io/zx/quotes
+if (process.platform === 'win32' && !$.quote) {
+  const { quotePowerShell } = await import('zx');
+  $.quote = quotePowerShell;
+}
 import { existsSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';

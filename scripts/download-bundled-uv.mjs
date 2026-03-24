@@ -2,6 +2,13 @@
 
 import 'zx/globals';
 
+// zx requires a quote function for non-Bash shells (e.g. PowerShell on Windows).
+// See: https://google.github.io/zx/quotes
+if (process.platform === 'win32' && !$.quote) {
+  const { quotePowerShell } = await import('zx');
+  $.quote = quotePowerShell;
+}
+
 const ROOT_DIR = path.resolve(__dirname, '..');
 const UV_VERSION = '0.10.0';
 const BASE_URL = `https://github.com/astral-sh/uv/releases/download/${UV_VERSION}`;
