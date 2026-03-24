@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => ({
   getActiveOpenClawProviders: vi.fn(),
   getOpenClawProvidersConfig: vi.fn(),
   getOpenClawProviderKeyForType: vi.fn(),
+  getAliasSourceTypes: vi.fn(),
   loggerWarn: vi.fn(),
   loggerInfo: vi.fn(),
 }));
@@ -34,6 +35,7 @@ vi.mock('@electron/utils/openclaw-auth', () => ({
 
 vi.mock('@electron/utils/provider-keys', () => ({
   getOpenClawProviderKeyForType: mocks.getOpenClawProviderKeyForType,
+  getAliasSourceTypes: mocks.getAliasSourceTypes,
 }));
 
 vi.mock('@electron/utils/secure-storage', () => ({
@@ -77,129 +79,82 @@ function makeAccount(overrides: Partial<ProviderAccount> = {}): ProviderAccount 
   };
 }
 
-describe('ProviderService.listAccounts stale-account cleanup', () => {
+/**
+ * Default mock: getOpenClawProviderKeyForType maps type to itself,
+ * except minimax-portal-cn → minimax-portal (alias).
+ */
+function setupDefaultKeyMapping() {
+  mocks.getOpenClawProviderKeyForType.mockImplementation(
+    (type: string) => type === 'minimax-portal-cn' ? 'minimax-portal' : type,
+  );
+}
+
+describe('ProviderService.listAccounts (openclaw.json as sole source of truth)', () => {
   let service: ProviderService;
 
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.ensureProviderStoreMigrated.mockResolvedValue(undefined);
-    mocks.getOpenClawProviderKeyForType.mockImplementation(
-      (type: string, id: string) => `${type}/${id}`,
-    );
+    setupDefaultKeyMapping();
+    mocks.getAliasSourceTypes.mockReturnValue([]);
     mocks.getOpenClawProvidersConfig.mockResolvedValue({ providers: {}, defaultModel: undefined });
+    mocks.listProviderAccounts.mockResolvedValue([]);
     service = new ProviderService();
   });
 
-  it('hides ALL accounts when activeProviders is empty (config missing/deleted)', async () => {
-    const accounts = [
-      makeAccount({ id: 'custom-1', vendorId: 'custom' as ProviderAccount['vendorId'] }),
+  it('returns empty when activeProviders is empty', async () => {
+    mocks.listProviderAccounts.mockResolvedValue([
       makeAccount({ id: 'moonshot-1', vendorId: 'moonshot' as ProviderAccount['vendorId'] }),
-      makeAccount({ id: 'anthropic-1', vendorId: 'anthropic' as ProviderAccount['vendorId'] }),
-    ];
-    mocks.listProviderAccounts.mockResolvedValue(accounts);
+    ]);
     mocks.getActiveOpenClawProviders.mockResolvedValue(new Set<string>());
 
     const result = await service.listAccounts();
 
-    // All accounts hidden (not deleted) when config is empty
     expect(result).toEqual([]);
-    expect(mocks.deleteProviderAccount).not.toHaveBeenCalled();
   });
 
-  it('hides stale non-builtin accounts when config has active providers', async () => {
-    const accounts = [
+  it('returns only providers present in openclaw.json, ignoring extra store accounts', async () => {
+    mocks.listProviderAccounts.mockResolvedValue([
       makeAccount({ id: 'moonshot-1', vendorId: 'moonshot' as ProviderAccount['vendorId'] }),
-      makeAccount({ id: 'custom-stale', vendorId: 'custom' as ProviderAccount['vendorId'] }),
-    ];
-    mocks.listProviderAccounts.mockResolvedValue(accounts);
-    // Only moonshot is active in config
+      makeAccount({ id: 'custom-orphan', vendorId: 'custom' as ProviderAccount['vendorId'] }),
+    ]);
+    // Only moonshot is active — custom is NOT in openclaw.json
     mocks.getActiveOpenClawProviders.mockResolvedValue(new Set(['moonshot']));
+    mocks.getOpenClawProvidersConfig.mockResolvedValue({
+      providers: { moonshot: { baseUrl: 'https://api.moonshot.cn/v1' } },
+      defaultModel: undefined,
+    });
 
     const result = await service.listAccounts();
 
-    // custom-stale hidden (not deleted) from display
-    expect(mocks.deleteProviderAccount).not.toHaveBeenCalled();
     expect(result).toHaveLength(1);
     expect(result[0].id).toBe('moonshot-1');
   });
 
-  it('hides builtin provider accounts when not in activeProviders', async () => {
-    const accounts = [
-      makeAccount({ id: 'anthropic-1', vendorId: 'anthropic' as ProviderAccount['vendorId'] }),
-      makeAccount({ id: 'openai-1', vendorId: 'openai' as ProviderAccount['vendorId'] }),
-    ];
-    mocks.listProviderAccounts.mockResolvedValue(accounts);
-    // Config has moonshot, but NOT anthropic or openai
-    mocks.getActiveOpenClawProviders.mockResolvedValue(new Set(['moonshot']));
-
-    const result = await service.listAccounts();
-
-    // Builtin accounts also hidden when not in OpenClaw config
-    expect(mocks.deleteProviderAccount).not.toHaveBeenCalled();
-    expect(result).toEqual([]);
-  });
-
-  it('returns empty when no accounts and no active OpenClaw providers', async () => {
-    mocks.listProviderAccounts.mockResolvedValue([]);
-    mocks.getActiveOpenClawProviders.mockResolvedValue(new Set());
-
-    const result = await service.listAccounts();
-
-    expect(result).toEqual([]);
-    expect(mocks.getActiveOpenClawProviders).toHaveBeenCalled();
-    expect(mocks.deleteProviderAccount).not.toHaveBeenCalled();
-  });
-
-  it('matches accounts by vendorId, id, or openClawKey', async () => {
-    const accounts = [
-      makeAccount({ id: 'custom-abc', vendorId: 'custom' as ProviderAccount['vendorId'] }),
-    ];
-    mocks.listProviderAccounts.mockResolvedValue(accounts);
-    // The openClawKey matches
-    mocks.getOpenClawProviderKeyForType.mockReturnValue('custom/custom-abc');
-    mocks.getActiveOpenClawProviders.mockResolvedValue(new Set(['custom/custom-abc']));
-
-    const result = await service.listAccounts();
-
-    expect(mocks.deleteProviderAccount).not.toHaveBeenCalled();
-    expect(result).toEqual(accounts);
-  });
-
-  it('imports new providers from OpenClaw config not yet in ClawX store', async () => {
-    const accounts = [
-      makeAccount({ id: 'moonshot', vendorId: 'moonshot' as ProviderAccount['vendorId'] }),
-    ];
-    mocks.listProviderAccounts.mockResolvedValue(accounts);
-    mocks.getActiveOpenClawProviders.mockResolvedValue(new Set(['moonshot', 'siliconflow']));
+  it('seeds new account from openclaw.json when no store match exists', async () => {
+    mocks.listProviderAccounts.mockResolvedValue([]); // empty store
+    mocks.getActiveOpenClawProviders.mockResolvedValue(new Set(['siliconflow']));
     mocks.getOpenClawProvidersConfig.mockResolvedValue({
-      providers: {
-        moonshot: { baseUrl: 'https://api.moonshot.cn/v1' },
-        siliconflow: { baseUrl: 'https://api.siliconflow.cn/v1' },
-      },
+      providers: { siliconflow: { baseUrl: 'https://api.siliconflow.cn/v1' } },
       defaultModel: undefined,
     });
 
     const result = await service.listAccounts();
 
-    // moonshot already exists, siliconflow should be imported
     expect(mocks.saveProviderAccount).toHaveBeenCalledTimes(1);
     expect(mocks.saveProviderAccount).toHaveBeenCalledWith(
       expect.objectContaining({ id: 'siliconflow' }),
     );
-    expect(result).toHaveLength(2);
-    expect(result.map((a: ProviderAccount) => a.id)).toContain('siliconflow');
+    expect(result).toHaveLength(1);
   });
 
-  it('does not import providers already in ClawX store', async () => {
-    const accounts = [
-      makeAccount({ id: 'moonshot', vendorId: 'moonshot' as ProviderAccount['vendorId'] }),
-    ];
-    mocks.listProviderAccounts.mockResolvedValue(accounts);
+  it('uses store metadata when match exists (does not re-seed)', async () => {
+    mocks.listProviderAccounts.mockResolvedValue([
+      makeAccount({ id: 'moonshot', vendorId: 'moonshot' as ProviderAccount['vendorId'], label: 'My Moonshot' }),
+    ]);
     mocks.getActiveOpenClawProviders.mockResolvedValue(new Set(['moonshot']));
     mocks.getOpenClawProvidersConfig.mockResolvedValue({
-      providers: {
-        moonshot: { baseUrl: 'https://api.moonshot.cn/v1' },
-      },
+      providers: { moonshot: { baseUrl: 'https://api.moonshot.cn/v1' } },
       defaultModel: undefined,
     });
 
@@ -207,28 +162,130 @@ describe('ProviderService.listAccounts stale-account cleanup', () => {
 
     expect(mocks.saveProviderAccount).not.toHaveBeenCalled();
     expect(result).toHaveLength(1);
+    expect(result[0].label).toBe('My Moonshot');
   });
 
-  it('does not create duplicate when account id differs but vendorId matches', async () => {
-    // User added openrouter via UI → id is "openrouter-uuid", vendorId is "openrouter"
-    // openclaw.json has "openrouter" entry → should NOT import because vendorId matches
-    const accounts = [
+  it('matches UUID-based store account to openclaw key via getOpenClawProviderKeyForType', async () => {
+    mocks.listProviderAccounts.mockResolvedValue([
       makeAccount({ id: 'openrouter-uuid-1234', vendorId: 'openrouter' as ProviderAccount['vendorId'] }),
-    ];
-    mocks.listProviderAccounts.mockResolvedValue(accounts);
+    ]);
     mocks.getActiveOpenClawProviders.mockResolvedValue(new Set(['openrouter']));
     mocks.getOpenClawProvidersConfig.mockResolvedValue({
-      providers: {
-        openrouter: { baseUrl: 'https://openrouter.ai/api/v1' },
-      },
-      defaultModel: 'openrouter/openai/gpt-5.4',
+      providers: { openrouter: { baseUrl: 'https://openrouter.ai/api/v1' } },
+      defaultModel: undefined,
     });
 
     const result = await service.listAccounts();
 
-    // Should NOT create a duplicate "openrouter" account
     expect(mocks.saveProviderAccount).not.toHaveBeenCalled();
     expect(result).toHaveLength(1);
     expect(result[0].id).toBe('openrouter-uuid-1234');
+  });
+
+  it('prefers CN alias account over Global phantom for minimax-portal key', async () => {
+    mocks.listProviderAccounts.mockResolvedValue([
+      makeAccount({
+        id: 'minimax-portal',
+        vendorId: 'minimax-portal' as ProviderAccount['vendorId'],
+        label: 'MiniMax (Global)',
+        updatedAt: '2026-03-20T00:00:00.000Z',
+      }),
+      makeAccount({
+        id: 'minimax-portal-cn-uuid',
+        vendorId: 'minimax-portal-cn' as ProviderAccount['vendorId'],
+        label: 'MiniMax (CN)',
+        updatedAt: '2026-03-21T00:00:00.000Z',
+      }),
+    ]);
+    mocks.getActiveOpenClawProviders.mockResolvedValue(new Set(['minimax-portal']));
+    mocks.getOpenClawProvidersConfig.mockResolvedValue({
+      providers: { 'minimax-portal': { baseUrl: 'https://api.minimaxi.com/anthropic' } },
+      defaultModel: undefined,
+    });
+
+    const result = await service.listAccounts();
+
+    // Only CN should remain, phantom Global deleted from store
+    expect(result).toHaveLength(1);
+    expect(result[0].id).toBe('minimax-portal-cn-uuid');
+    expect(result[0].label).toBe('MiniMax (CN)');
+    expect(mocks.deleteProviderAccount).toHaveBeenCalledWith('minimax-portal');
+  });
+
+  it('shows only one CN when only CN account exists (no phantom)', async () => {
+    mocks.listProviderAccounts.mockResolvedValue([
+      makeAccount({
+        id: 'minimax-portal-cn-uuid',
+        vendorId: 'minimax-portal-cn' as ProviderAccount['vendorId'],
+        label: 'MiniMax (CN)',
+      }),
+    ]);
+    mocks.getActiveOpenClawProviders.mockResolvedValue(new Set(['minimax-portal']));
+    mocks.getOpenClawProvidersConfig.mockResolvedValue({
+      providers: { 'minimax-portal': { baseUrl: 'https://api.minimaxi.com/anthropic' } },
+      defaultModel: undefined,
+    });
+
+    const result = await service.listAccounts();
+
+    expect(result).toHaveLength(1);
+    expect(result[0].id).toBe('minimax-portal-cn-uuid');
+    expect(mocks.saveProviderAccount).not.toHaveBeenCalled();
+    expect(mocks.deleteProviderAccount).not.toHaveBeenCalled();
+  });
+
+  it('deduplicates multiple CN accounts from delete+re-add, keeps newest', async () => {
+    mocks.listProviderAccounts.mockResolvedValue([
+      makeAccount({
+        id: 'minimax-portal-cn-uuid1',
+        vendorId: 'minimax-portal-cn' as ProviderAccount['vendorId'],
+        updatedAt: '2026-03-20T00:00:00.000Z',
+      }),
+      makeAccount({
+        id: 'minimax-portal-cn-uuid2',
+        vendorId: 'minimax-portal-cn' as ProviderAccount['vendorId'],
+        updatedAt: '2026-03-21T00:00:00.000Z',
+      }),
+      makeAccount({
+        id: 'minimax-portal-cn-uuid3',
+        vendorId: 'minimax-portal-cn' as ProviderAccount['vendorId'],
+        updatedAt: '2026-03-22T00:00:00.000Z',
+      }),
+    ]);
+    mocks.getActiveOpenClawProviders.mockResolvedValue(new Set(['minimax-portal']));
+    mocks.getOpenClawProvidersConfig.mockResolvedValue({
+      providers: { 'minimax-portal': {} },
+      defaultModel: undefined,
+    });
+
+    const result = await service.listAccounts();
+
+    expect(result).toHaveLength(1);
+    expect(result[0].id).toBe('minimax-portal-cn-uuid3');
+    expect(mocks.deleteProviderAccount).toHaveBeenCalledTimes(2);
+    expect(mocks.deleteProviderAccount).toHaveBeenCalledWith('minimax-portal-cn-uuid1');
+    expect(mocks.deleteProviderAccount).toHaveBeenCalledWith('minimax-portal-cn-uuid2');
+  });
+
+  it('handles multiple active providers from openclaw.json correctly', async () => {
+    mocks.listProviderAccounts.mockResolvedValue([
+      makeAccount({ id: 'openrouter-uuid', vendorId: 'openrouter' as ProviderAccount['vendorId'] }),
+      makeAccount({ id: 'minimax-portal-cn-uuid', vendorId: 'minimax-portal-cn' as ProviderAccount['vendorId'] }),
+    ]);
+    mocks.getActiveOpenClawProviders.mockResolvedValue(new Set(['openrouter', 'minimax-portal']));
+    mocks.getOpenClawProvidersConfig.mockResolvedValue({
+      providers: {
+        openrouter: { baseUrl: 'https://openrouter.ai/api/v1' },
+        'minimax-portal': { baseUrl: 'https://api.minimaxi.com/anthropic' },
+      },
+      defaultModel: undefined,
+    });
+
+    const result = await service.listAccounts();
+
+    expect(result).toHaveLength(2);
+    const ids = result.map((a: ProviderAccount) => a.id);
+    expect(ids).toContain('openrouter-uuid');
+    expect(ids).toContain('minimax-portal-cn-uuid');
   });
 });

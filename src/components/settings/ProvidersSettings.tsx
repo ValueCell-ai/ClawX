@@ -1076,11 +1076,8 @@ function AddProviderDialog({
   const handleStartOAuth = async () => {
     if (!selectedType) return;
 
-    if (selectedType === 'minimax-portal' && existingVendorIds.has('minimax-portal-cn')) {
-      toast.error(t('aiProviders.toast.minimaxConflict'));
-      return;
-    }
-    if (selectedType === 'minimax-portal-cn' && existingVendorIds.has('minimax-portal')) {
+    const hasMinimax = existingVendorIds.has('minimax-portal') || existingVendorIds.has('minimax-portal-cn');
+    if ((selectedType === 'minimax-portal' || selectedType === 'minimax-portal-cn') && hasMinimax) {
       toast.error(t('aiProviders.toast.minimaxConflict'));
       return;
     }
@@ -1133,6 +1130,11 @@ function AddProviderDialog({
   };
 
   const availableTypes = PROVIDER_TYPE_INFO.filter((type) => {
+    // MiniMax portal variants are mutually exclusive — hide BOTH variants
+    // when either one already exists (account may have vendorId of either variant).
+    const hasMinimax = existingVendorIds.has('minimax-portal') || existingVendorIds.has('minimax-portal-cn');
+    if ((type.id === 'minimax-portal' || type.id === 'minimax-portal-cn') && hasMinimax) return false;
+
     const vendor = vendorMap.get(type.id);
     if (!vendor) {
       return !existingVendorIds.has(type.id) || type.id === 'custom';
@@ -1143,11 +1145,8 @@ function AddProviderDialog({
   const handleAdd = async () => {
     if (!selectedType) return;
 
-    if (selectedType === 'minimax-portal' && existingVendorIds.has('minimax-portal-cn')) {
-      toast.error(t('aiProviders.toast.minimaxConflict'));
-      return;
-    }
-    if (selectedType === 'minimax-portal-cn' && existingVendorIds.has('minimax-portal')) {
+    const hasMinimax = existingVendorIds.has('minimax-portal') || existingVendorIds.has('minimax-portal-cn');
+    if ((selectedType === 'minimax-portal' || selectedType === 'minimax-portal-cn') && hasMinimax) {
       toast.error(t('aiProviders.toast.minimaxConflict'));
       return;
     }
