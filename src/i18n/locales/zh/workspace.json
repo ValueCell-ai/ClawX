@@ -1,0 +1,11 @@
+{
+    "title": "工作空间",
+    "subtitle": "浏览和预览 Agent 工作空间中的文件",
+    "refresh": "刷新",
+    "revealInFinder": "在 Finder 中显示",
+    "revealInExplorer": "在资源管理器中显示",
+    "revealInFileManager": "在文件管理器中打开",
+    "selectFileToPreview": "选择一个文件进行预览",
+    "binaryNotSupported": "无法预览二进制文件",
+    "emptyWorkspace": "工作空间为空"
+}

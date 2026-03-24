@@ -1,0 +1,11 @@
+{
+    "title": "Workspace",
+    "subtitle": "Browse and preview files in your agent workspaces",
+    "refresh": "Refresh",
+    "revealInFinder": "Reveal in Finder",
+    "revealInExplorer": "Reveal in Explorer",
+    "revealInFileManager": "Open in File Manager",
+    "selectFileToPreview": "Select a file to preview",
+    "binaryNotSupported": "Binary files cannot be previewed",
+    "emptyWorkspace": "This workspace is empty"
+}

@@ -1,0 +1,11 @@
+{
+    "title": "ワークスペース",
+    "subtitle": "エージェントワークスペース内のファイルを閲覧・プレビュー",
+    "refresh": "更新",
+    "revealInFinder": "Finder で表示",
+    "revealInExplorer": "エクスプローラーで表示",
+    "revealInFileManager": "ファイルマネージャーで開く",
+    "selectFileToPreview": "ファイルを選択してプレビュー",
+    "binaryNotSupported": "バイナリファイルはプレビューできません",
+    "emptyWorkspace": "ワークスペースは空です"
+}

@@ -11,7 +11,8 @@
         "devConsole": "開発者コンソール",
         "models": "モデル",
         "deleteSessionConfirm": "セッション \"{{label}}\" を削除してもよろしいですか？",
-        "openClawPage": "OpenClaw ページ"
+        "openClawPage": "OpenClaw ページ",
+        "workspace": "ワークスペース"
     },
     "actions": {
         "save": "保存",
