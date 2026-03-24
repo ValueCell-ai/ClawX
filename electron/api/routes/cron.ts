@@ -265,6 +265,13 @@ export function buildCronSessionFallbackMessages(params: {
 type JsonRecord = Record<string, unknown>;
 type GatewayCronDelivery = NonNullable<GatewayCronJob['delivery']>;
 
+function getUnsupportedCronDeliveryError(channel: string | undefined): string | null {
+  if (!channel) return null;
+  return toUiChannelType(channel) === 'wechat'
+    ? 'WeChat scheduled delivery is not supported because the plugin requires a live conversation context token.'
+    : null;
+}
+
 function normalizeCronDelivery(
   rawDelivery: unknown,
   fallbackMode: GatewayCronDelivery['mode'] = 'none',
@@ -479,6 +486,11 @@ export async function handleCronRoutes(
         enabled?: boolean;
       }>(req);
       const delivery = normalizeCronDelivery(input.delivery);
+      const unsupportedDeliveryError = getUnsupportedCronDeliveryError(delivery.channel);
+      if (delivery.mode === 'announce' && unsupportedDeliveryError) {
+        sendJson(res, 400, { success: false, error: unsupportedDeliveryError });
+        return true;
+      }
       const result = await ctx.gatewayManager.rpc('cron.add', {
         name: input.name,
         schedule: { kind: 'cron', expr: input.schedule },
@@ -500,6 +512,20 @@ export async function handleCronRoutes(
       const id = decodeURIComponent(url.pathname.slice('/api/cron/jobs/'.length));
       const input = await parseJsonBody<Record<string, unknown>>(req);
       const patch = buildCronUpdatePatch(input);
+      const deliveryPatch = patch.delivery && typeof patch.delivery === 'object'
+        ? patch.delivery as Record<string, unknown>
+        : undefined;
+      const deliveryChannel = typeof deliveryPatch?.channel === 'string' && deliveryPatch.channel.trim()
+        ? deliveryPatch.channel.trim()
+        : undefined;
+      const deliveryMode = typeof deliveryPatch?.mode === 'string' && deliveryPatch.mode.trim()
+        ? deliveryPatch.mode.trim()
+        : undefined;
+      const unsupportedDeliveryError = getUnsupportedCronDeliveryError(deliveryChannel);
+      if (unsupportedDeliveryError && deliveryMode !== 'none') {
+        sendJson(res, 400, { success: false, error: unsupportedDeliveryError });
+        return true;
+      }
       const result = await ctx.gatewayManager.rpc('cron.update', { id, patch });
       sendJson(res, 200, result && typeof result === 'object' ? transformCronJob(result as GatewayCronJob) : result);
     } catch (error) {

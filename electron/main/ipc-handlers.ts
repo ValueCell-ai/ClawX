@@ -624,6 +624,10 @@ function registerUnifiedRequestHandlers(gatewayManager: GatewayManager): void {
               sessionTarget: 'isolated',
               delivery: normalizeCronDelivery(input.delivery),
             };
+            const unsupportedDeliveryError = getUnsupportedCronDeliveryError(gatewayInput.delivery.channel);
+            if (gatewayInput.delivery.mode === 'announce' && unsupportedDeliveryError) {
+              throw new Error(unsupportedDeliveryError);
+            }
             const created = await gatewayManager.rpc('cron.add', gatewayInput);
             data = created && typeof created === 'object' ? transformCronJob(created as GatewayCronJob) : created;
             break;
@@ -637,6 +641,19 @@ function registerUnifiedRequestHandlers(gatewayManager: GatewayManager): void {
             const input = Array.isArray(payload) ? payload[1] : payload?.input;
             if (!id || !input) throw new Error('Invalid cron.update payload');
             const patch = buildCronUpdatePatch(input);
+            const deliveryPatch = patch.delivery && typeof patch.delivery === 'object'
+              ? patch.delivery as Record<string, unknown>
+              : undefined;
+            const deliveryChannel = typeof deliveryPatch?.channel === 'string' && deliveryPatch.channel.trim()
+              ? deliveryPatch.channel.trim()
+              : undefined;
+            const deliveryMode = typeof deliveryPatch?.mode === 'string' && deliveryPatch.mode.trim()
+              ? deliveryPatch.mode.trim()
+              : undefined;
+            const unsupportedDeliveryError = getUnsupportedCronDeliveryError(deliveryChannel);
+            if (unsupportedDeliveryError && deliveryMode !== 'none') {
+              throw new Error(unsupportedDeliveryError);
+            }
             data = await gatewayManager.rpc('cron.update', { id, patch });
             break;
           }
@@ -829,6 +846,13 @@ interface GatewayCronJob {
 }
 
 type GatewayCronDelivery = NonNullable<GatewayCronJob['delivery']>;
+
+function getUnsupportedCronDeliveryError(channel: string | undefined): string | null {
+  if (!channel) return null;
+  return toUiChannelType(channel) === 'wechat'
+    ? 'WeChat scheduled delivery is not supported because the plugin requires a live conversation context token.'
+    : null;
+}
 
 function normalizeCronDelivery(
   rawDelivery: unknown,
@@ -1035,6 +1059,10 @@ function registerCronHandlers(gatewayManager: GatewayManager): void {
         // with "Channel is required" when no channels are configured).
         delivery: normalizeCronDelivery(input.delivery),
       };
+      const unsupportedDeliveryError = getUnsupportedCronDeliveryError(gatewayInput.delivery.channel);
+      if (gatewayInput.delivery.mode === 'announce' && unsupportedDeliveryError) {
+        throw new Error(unsupportedDeliveryError);
+      }
       const result = await gatewayManager.rpc('cron.add', gatewayInput);
       // Transform the returned job to frontend format
       if (result && typeof result === 'object') {
@@ -1051,6 +1079,19 @@ function registerCronHandlers(gatewayManager: GatewayManager): void {
   ipcMain.handle('cron:update', async (_, id: string, input: Record<string, unknown>) => {
     try {
       const patch = buildCronUpdatePatch(input);
+      const deliveryPatch = patch.delivery && typeof patch.delivery === 'object'
+        ? patch.delivery as Record<string, unknown>
+        : undefined;
+      const deliveryChannel = typeof deliveryPatch?.channel === 'string' && deliveryPatch.channel.trim()
+        ? deliveryPatch.channel.trim()
+        : undefined;
+      const deliveryMode = typeof deliveryPatch?.mode === 'string' && deliveryPatch.mode.trim()
+        ? deliveryPatch.mode.trim()
+        : undefined;
+      const unsupportedDeliveryError = getUnsupportedCronDeliveryError(deliveryChannel);
+      if (unsupportedDeliveryError && deliveryMode !== 'none') {
+        throw new Error(unsupportedDeliveryError);
+      }
       const result = await gatewayManager.rpc('cron.update', { id, patch });
       return result && typeof result === 'object' ? transformCronJob(result as GatewayCronJob) : result;
     } catch (error) {

@@ -205,6 +205,12 @@ function getDeliveryAccountDisplayName(account: DeliveryChannelAccount, t: TFunc
     : account.name;
 }
 
+const TESTED_CRON_DELIVERY_CHANNELS = new Set<string>(['feishu', 'telegram', 'qqbot', 'wecom']);
+
+function isSupportedCronDeliveryChannel(channelType: string): boolean {
+  return TESTED_CRON_DELIVERY_CHANNELS.has(channelType);
+}
+
 interface SelectFieldProps extends SelectHTMLAttributes<HTMLSelectElement> {
   children: ReactNode;
 }
@@ -261,15 +267,17 @@ function TaskDialog({ job, configuredChannels, onClose, onSave }: TaskDialogProp
   const [channelTargetOptions, setChannelTargetOptions] = useState<ChannelTargetOption[]>([]);
   const [loadingChannelTargets, setLoadingChannelTargets] = useState(false);
   const schedulePreview = estimateNextRun(useCustom ? customSchedule : schedule);
-  const availableChannels = configuredChannels.some((group) => group.channelType === deliveryChannel)
-    ? configuredChannels
+  const selectableChannels = configuredChannels.filter((group) => isSupportedCronDeliveryChannel(group.channelType));
+  const availableChannels = selectableChannels.some((group) => group.channelType === deliveryChannel)
+    ? selectableChannels
     : (
-      deliveryChannel
-        ? [...configuredChannels, { channelType: deliveryChannel, defaultAccountId: 'default', accounts: [] }]
-        : configuredChannels
+      deliveryChannel && isSupportedCronDeliveryChannel(deliveryChannel)
+        ? [...selectableChannels, configuredChannels.find((group) => group.channelType === deliveryChannel) || { channelType: deliveryChannel, defaultAccountId: 'default', accounts: [] }]
+        : selectableChannels
     );
   const effectiveDeliveryChannel = deliveryChannel
     || (deliveryMode === 'announce' ? (availableChannels[0]?.channelType || '') : '');
+  const unsupportedDeliveryChannel = !!effectiveDeliveryChannel && !isSupportedCronDeliveryChannel(effectiveDeliveryChannel);
   const selectedChannel = availableChannels.find((group) => group.channelType === effectiveDeliveryChannel);
   const deliveryAccountOptions = (selectedChannel?.accounts ?? []).map((account) => ({
     accountId: account.accountId,
@@ -305,7 +313,7 @@ function TaskDialog({ job, configuredChannels, onClose, onSave }: TaskDialogProp
   }, [deliveryMode, selectedChannel?.defaultAccountId, selectedDeliveryAccountId]);
 
   useEffect(() => {
-    if (deliveryMode !== 'announce' || !effectiveDeliveryChannel) {
+    if (deliveryMode !== 'announce' || !effectiveDeliveryChannel || unsupportedDeliveryChannel) {
       setChannelTargetOptions([]);
       setLoadingChannelTargets(false);
       return;
@@ -345,7 +353,7 @@ function TaskDialog({ job, configuredChannels, onClose, onSave }: TaskDialogProp
     return () => {
       cancelled = true;
     };
-  }, [deliveryMode, effectiveDeliveryChannel, selectedResolvedAccountId, showsAccountSelector]);
+  }, [deliveryMode, effectiveDeliveryChannel, selectedResolvedAccountId, showsAccountSelector, unsupportedDeliveryChannel]);
 
   const handleSubmit = async () => {
     if (!name.trim()) {
@@ -379,6 +387,10 @@ function TaskDialog({ job, configuredChannels, onClose, onSave }: TaskDialogProp
       if (finalDelivery.mode === 'announce') {
         if (!finalDelivery.channel) {
           toast.error(t('toast.channelRequired'));
+          return;
+        }
+        if (!isSupportedCronDeliveryChannel(finalDelivery.channel)) {
+          toast.error(t('toast.deliveryChannelUnsupported', { channel: getChannelDisplayName(finalDelivery.channel) }));
           return;
         }
         if (!finalDelivery.to) {
@@ -551,12 +563,17 @@ function TaskDialog({ job, configuredChannels, onClose, onSave }: TaskDialogProp
                     <option value="">{t('dialog.selectChannel')}</option>
                     {availableChannels.map((group) => (
                       <option key={group.channelType} value={group.channelType}>
-                        {getChannelDisplayName(group.channelType)}
+                        {!isSupportedCronDeliveryChannel(group.channelType)
+                          ? `${getChannelDisplayName(group.channelType)} (${t('dialog.channelUnsupportedTag')})`
+                          : getChannelDisplayName(group.channelType)}
                       </option>
                     ))}
                   </SelectField>
                   {availableChannels.length === 0 && (
                     <p className="text-[12px] text-muted-foreground">{t('dialog.noChannels')}</p>
+                  )}
+                  {unsupportedDeliveryChannel && (
+                    <p className="text-[12px] text-destructive">{t('dialog.deliveryChannelUnsupported')}</p>
                   )}
                   {selectedChannel && (
                     <p className="text-[12px] text-muted-foreground">

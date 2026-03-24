@@ -158,7 +158,7 @@ describe('handleCronRoutes', () => {
     });
   });
 
-  it('normalizes WeChat delivery channels to the gateway alias and back', async () => {
+  it('rejects WeChat scheduled delivery because the plugin requires a live context token', async () => {
     parseJsonBodyMock.mockResolvedValue({
       name: 'WeChat delivery',
       message: 'Send update',
@@ -172,22 +172,7 @@ describe('handleCronRoutes', () => {
       enabled: true,
     });
 
-    const rpc = vi.fn().mockResolvedValue({
-      id: 'job-wechat',
-      name: 'WeChat delivery',
-      enabled: true,
-      createdAtMs: 1,
-      updatedAtMs: 2,
-      schedule: { kind: 'cron', expr: '0 10 * * *' },
-      payload: { kind: 'agentTurn', message: 'Send update' },
-      delivery: {
-        mode: 'announce',
-        channel: 'openclaw-weixin',
-        to: 'wechat:wxid_target',
-        accountId: 'wechat-bot',
-      },
-      state: {},
-    });
+    const rpc = vi.fn();
 
     const { handleCronRoutes } = await import('@electron/api/routes/cron');
     const handled = await handleCronRoutes(
@@ -200,25 +185,13 @@ describe('handleCronRoutes', () => {
     );
 
     expect(handled).toBe(true);
-    expect(rpc).toHaveBeenCalledWith('cron.add', expect.objectContaining({
-      delivery: {
-        mode: 'announce',
-        channel: 'openclaw-weixin',
-        to: 'wechat:wxid_target',
-        accountId: 'wechat-bot',
-      },
-    }));
+    expect(rpc).not.toHaveBeenCalled();
     expect(sendJsonMock).toHaveBeenCalledWith(
       expect.anything(),
-      200,
+      400,
       expect.objectContaining({
-        id: 'job-wechat',
-        delivery: {
-          mode: 'announce',
-          channel: 'wechat',
-          to: 'wechat:wxid_target',
-          accountId: 'wechat-bot',
-        },
+        success: false,
+        error: expect.stringContaining('WeChat scheduled delivery is not supported'),
       }),
     );
   });
