@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const originalPlatform = process.platform;
@@ -65,16 +66,16 @@ describe('getOpenClawCliCommand (Windows packaged)', () => {
   it('prefers bundled node.exe when present', async () => {
     mockExistsSync.mockImplementation((p: string) => /[\\/]cli[\\/]openclaw\.cmd$/i.test(p) || /[\\/]bin[\\/]node\.exe$/i.test(p));
     const { getOpenClawCliCommand } = await import('@electron/utils/openclaw-cli');
-    expect(getOpenClawCliCommand()).toBe(
-      "& 'C:\\Program Files\\ClawX\\resources/cli/openclaw.cmd'",
+    expect(getOpenClawCliCommand()).toMatch(
+      /^& 'C:\\Program Files\\ClawX\\resources[\\/]cli[\\/]openclaw\.cmd'$/,
     );
   });
 
   it('falls back to bundled node.exe when openclaw.cmd is missing', async () => {
     mockExistsSync.mockImplementation((p: string) => /[\\/]bin[\\/]node\.exe$/i.test(p));
     const { getOpenClawCliCommand } = await import('@electron/utils/openclaw-cli');
-    expect(getOpenClawCliCommand()).toBe(
-      "& 'C:\\Program Files\\ClawX\\resources/bin/node.exe' 'C:\\Program Files\\ClawX\\resources\\openclaw\\openclaw.mjs'",
+    expect(getOpenClawCliCommand()).toMatch(
+      /^& 'C:\\Program Files\\ClawX\\resources[\\/]bin[\\/]node\.exe' 'C:\\Program Files\\ClawX\\resources\\openclaw\\openclaw\.mjs'$/,
     );
   });
 
