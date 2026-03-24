@@ -1133,6 +1133,10 @@ function AddProviderDialog({
   };
 
   const availableTypes = PROVIDER_TYPE_INFO.filter((type) => {
+    // MiniMax portal variants are mutually exclusive — hide the other variant
+    if (type.id === 'minimax-portal' && existingVendorIds.has('minimax-portal-cn')) return false;
+    if (type.id === 'minimax-portal-cn' && existingVendorIds.has('minimax-portal')) return false;
+
     const vendor = vendorMap.get(type.id);
     if (!vendor) {
       return !existingVendorIds.has(type.id) || type.id === 'custom';
