@@ -4,6 +4,13 @@ import electron from 'vite-plugin-electron';
 import renderer from 'vite-plugin-electron-renderer';
 import { resolve } from 'path';
 
+function isMainProcessExternal(id: string): boolean {
+  if (!id || id.startsWith('\0')) return false;
+  if (id.startsWith('.') || id.startsWith('/') || /^[A-Za-z]:[\\/]/.test(id)) return false;
+  if (id.startsWith('@/') || id.startsWith('@electron/')) return false;
+  return true;
+}
+
 // https://vitejs.dev/config/
 export default defineConfig({
   // Required for Electron: all asset URLs must be relative because the renderer
@@ -24,7 +31,7 @@ export default defineConfig({
           build: {
             outDir: 'dist-electron/main',
             rollupOptions: {
-              external: ['electron-store', 'electron-updater', 'ws'],
+              external: isMainProcessExternal,
             },
           },
         },

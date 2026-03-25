@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { act, render, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { Channels } from '@/pages/Channels/index';
 
 const hostApiFetchMock = vi.fn();
@@ -125,5 +125,59 @@ describe('Channels page status refresh', () => {
       expect(channelFetchCalls).toHaveLength(2);
       expect(agentFetchCalls).toHaveLength(2);
     });
+  });
+
+  it('treats WeChat accounts as plugin-managed QR accounts', async () => {
+    subscribeHostEventMock.mockImplementation(() => vi.fn());
+    hostApiFetchMock.mockImplementation(async (path: string) => {
+      if (path === '/api/channels/accounts') {
+        return {
+          success: true,
+          channels: [
+            {
+              channelType: 'wechat',
+              defaultAccountId: 'wx-bot-im-bot',
+              status: 'connected',
+              accounts: [
+                {
+                  accountId: 'wx-bot-im-bot',
+                  name: 'WeChat ClawBot',
+                  configured: true,
+                  status: 'connected',
+                  isDefault: true,
+                },
+              ],
+            },
+          ],
+        };
+      }
+
+      if (path === '/api/agents') {
+        return {
+          success: true,
+          agents: [],
+        };
+      }
+
+      if (path === '/api/channels/wechat/cancel') {
+        return { success: true };
+      }
+
+      throw new Error(`Unexpected host API path: ${path}`);
+    });
+
+    render(<Channels />);
+
+    await waitFor(() => {
+      expect(screen.getByText('WeChat')).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'account.add' }));
+
+    await waitFor(() => {
+      expect(screen.getByText('dialog.configureTitle')).toBeInTheDocument();
+    });
+
+    expect(screen.queryByLabelText('account.customIdLabel')).not.toBeInTheDocument();
   });
 });

@@ -22,6 +22,8 @@
     "toast": {
         "whatsappConnected": "WhatsApp connected successfully",
         "whatsappFailed": "WhatsApp connection failed: {{error}}",
+        "qrConnected": "{{name}} connected successfully",
+        "qrFailed": "{{name}} connection failed: {{error}}",
         "channelSaved": "Channel {{name}} saved",
         "channelConnecting": "Connecting to {{name}}...",
         "savedButRefreshFailed": "Configuration was saved, but refreshing page data failed. Please refresh manually.",
@@ -155,6 +157,16 @@
                 "Go to Settings > Linked Devices > Link a Device",
                 "Scan the QR code shown below",
                 "The system will automatically identify your phone number"
+            ]
+        },
+        "wechat": {
+            "description": "Connect personal WeChat with Tencent's official OpenClaw plugin by scanning a QR code",
+            "docsUrl": "https://icnnp7d0dymg.feishu.cn/wiki/GHYZwuPCriF0gWkXwkFcJ9zon3b",
+            "instructions": [
+                "Click Generate QR Code to install and enable the official WeChat plugin inside OpenClaw",
+                "Scan the QR code below with WeChat and confirm the connection on your phone",
+                "After linking succeeds, a new WeChat ClawBot chat will appear in WeChat automatically",
+                "You can repeat the QR flow later to add another WeChat account or reconnect an existing one"
             ]
         },
         "dingtalk": {

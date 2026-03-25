@@ -67,6 +67,11 @@
         "baseUrl": "ベース URL",
         "modelId": "モデル ID",
         "modelIdDesc": "プロバイダーのモデル識別子（例：deepseek-ai/DeepSeek-V3）",
+        "codePlanPreset": "Code Plan プリセット",
+        "codePlanMode": "Code Plan",
+        "useCodePlanPreset": "Ark Code Plan プリセットを使用",
+        "codePlanPresetDesc": "Code Plan は https://ark.cn-beijing.volces.com/api/coding/v3 と model ark-code-latest を使います。Code Plan 通信に /api/v3 を使わないでください。",
+        "codePlanDoc": "Code Plan ドキュメント",
         "protocol": "プロトコル",
         "protocols": {
             "openaiCompletions": "OpenAI Completions",

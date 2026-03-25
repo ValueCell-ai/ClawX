@@ -16,12 +16,14 @@ import {
   getPrimaryChannels,
   type ChannelType,
 } from '@/types/channel';
+import { usesPluginManagedQrAccounts } from '@/lib/channel-alias';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 
 import telegramIcon from '@/assets/channels/telegram.svg';
 import discordIcon from '@/assets/channels/discord.svg';
 import whatsappIcon from '@/assets/channels/whatsapp.svg';
+import wechatIcon from '@/assets/channels/wechat.svg';
 import dingtalkIcon from '@/assets/channels/dingtalk.svg';
 import feishuIcon from '@/assets/channels/feishu.svg';
 import wecomIcon from '@/assets/channels/wecom.svg';
@@ -307,14 +309,17 @@ export function Channels() {
                           variant="outline"
                           className="h-8 text-xs rounded-full"
                           onClick={() => {
-                            const nextAccountId = createNewAccountId(
-                              group.channelType,
-                              group.accounts.map((item) => item.accountId),
-                            );
+                            const shouldUseGeneratedAccountId = !usesPluginManagedQrAccounts(group.channelType);
+                            const nextAccountId = shouldUseGeneratedAccountId
+                              ? createNewAccountId(
+                                group.channelType,
+                                group.accounts.map((item) => item.accountId),
+                              )
+                              : undefined;
                             setSelectedChannelType(group.channelType as ChannelType);
                             setSelectedAccountId(nextAccountId);
                             setAllowExistingConfigInModal(false);
-                            setAllowEditAccountIdInModal(true);
+                            setAllowEditAccountIdInModal(shouldUseGeneratedAccountId);
                             setExistingAccountIdsForModal(group.accounts.map((item) => item.accountId));
                             setInitialConfigValuesForModal(undefined);
                             setShowConfigModal(true);
@@ -519,6 +524,8 @@ function ChannelLogo({ type }: { type: ChannelType }) {
       return <img src={discordIcon} alt="Discord" className="w-[22px] h-[22px] dark:invert" />;
     case 'whatsapp':
       return <img src={whatsappIcon} alt="WhatsApp" className="w-[22px] h-[22px] dark:invert" />;
+    case 'wechat':
+      return <img src={wechatIcon} alt="WeChat" className="w-[22px] h-[22px] dark:invert" />;
     case 'dingtalk':
       return <img src={dingtalkIcon} alt="DingTalk" className="w-[22px] h-[22px] dark:invert" />;
     case 'feishu':

@@ -31,6 +31,7 @@ def process_image(path):
         bbox = bw_inv.getbbox()
         
         if bbox:
+            padding = 20
             # Add a small padding
             left, upper, right, lower = bbox
             width, height = img.size

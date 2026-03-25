@@ -22,6 +22,8 @@
     "toast": {
         "whatsappConnected": "WhatsApp が正常に接続されました",
         "whatsappFailed": "WhatsApp 接続に失敗しました: {{error}}",
+        "qrConnected": "{{name}} が正常に接続されました",
+        "qrFailed": "{{name}} の接続に失敗しました: {{error}}",
         "channelSaved": "チャンネル {{name}} が保存されました",
         "channelConnecting": "{{name}} に接続中...",
         "savedButRefreshFailed": "設定は保存されましたが、画面データの更新に失敗しました。手動で再読み込みしてください。",
@@ -155,6 +157,16 @@
                 "設定 > リンクされたデバイス > デバイスをリンク に移動します",
                 "以下に表示されるQRコードをスキャンします",
                 "システムが自動的に電話番号を識別します"
+            ]
+        },
+        "wechat": {
+            "description": "Tencent 公式の OpenClaw プラグインを使い、QRコードをスキャンして個人 WeChat に接続します",
+            "docsUrl": "https://icnnp7d0dymg.feishu.cn/wiki/GHYZwuPCriF0gWkXwkFcJ9zon3b",
+            "instructions": [
+                "QRコードを生成すると、ClawX が OpenClaw に公式 WeChat プラグインをインストールして有効化します",
+                "以下の QR コードを WeChat でスキャンし、スマートフォン側で接続を確認します",
+                "接続が完了すると、WeChat に新しい「WeChat ClawBot」チャットが自動で表示されます",
+                "後から同じ QR フローを使って、別の WeChat アカウントを追加したり既存アカウントを再接続したりできます"
             ]
         },
         "dingtalk": {

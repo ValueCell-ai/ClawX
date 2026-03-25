@@ -7,10 +7,11 @@ import {
   listAgentsSnapshot,
   removeAgentWorkspaceDirectory,
   resolveAccountIdForAgent,
+  updateAgentModel,
   updateAgentName,
 } from '../../utils/agent-config';
 import { deleteChannelAccountConfig } from '../../utils/channel-config';
-import { syncAllProviderAuthToRuntime } from '../../services/providers/provider-runtime-sync';
+import { syncAgentModelOverrideToRuntime, syncAllProviderAuthToRuntime } from '../../services/providers/provider-runtime-sync';
 import type { HostApiContext } from '../context';
 import { parseJsonBody, sendJson } from '../route-utils';
 
@@ -36,7 +37,7 @@ const execAsync = promisify(exec);
  * stale bot connections is to kill the Gateway process entirely and
  * spawn a fresh one that reads the updated openclaw.json from scratch.
  */
-async function restartGatewayForAgentDeletion(ctx: HostApiContext): Promise<void> {
+export async function restartGatewayForAgentDeletion(ctx: HostApiContext): Promise<void> {
   try {
     // Capture the PID of the running Gateway BEFORE stop() clears it.
     const status = ctx.gatewayManager.getStatus();
@@ -50,10 +51,14 @@ async function restartGatewayForAgentDeletion(ctx: HostApiContext): Promise<void
     // and the old process stays alive with its stale channel connections.
     if (pid) {
       try {
-        process.kill(pid, 'SIGTERM');
-        // Give it a moment to die
-        await new Promise((resolve) => setTimeout(resolve, 500));
-        try { process.kill(pid, 0); process.kill(pid, 'SIGKILL'); } catch { /* already dead */ }
+        if (process.platform === 'win32') {
+          await execAsync(`taskkill /F /PID ${pid} /T`);
+        } else {
+          process.kill(pid, 'SIGTERM');
+          // Give it a moment to die
+          await new Promise((resolve) => setTimeout(resolve, 500));
+          try { process.kill(pid, 0); process.kill(pid, 'SIGKILL'); } catch { /* already dead */ }
+        }
       } catch {
         // process already gone – that's fine
       }
@@ -85,7 +90,7 @@ async function restartGatewayForAgentDeletion(ctx: HostApiContext): Promise<void
             }
           }
           for (const p of pids) {
-            try { await execAsync(`taskkill /F /PID ${p}`); } catch { /* ignore */ }
+            try { await execAsync(`taskkill /F /PID ${p} /T`); } catch { /* ignore */ }
           }
         }
       } catch {
@@ -113,8 +118,8 @@ export async function handleAgentRoutes(
 
   if (url.pathname === '/api/agents' && req.method === 'POST') {
     try {
-      const body = await parseJsonBody<{ name: string }>(req);
-      const snapshot = await createAgent(body.name);
+      const body = await parseJsonBody<{ name: string; inheritWorkspace?: boolean }>(req);
+      const snapshot = await createAgent(body.name, { inheritWorkspace: body.inheritWorkspace });
       // Sync provider API keys to the new agent's auth-profiles.json so the
       // embedded runner can authenticate with LLM providers when messages
       // arrive via channel bots (e.g. Feishu). Without this, the copied
@@ -140,6 +145,26 @@ export async function handleAgentRoutes(
         const agentId = decodeURIComponent(parts[0]);
         const snapshot = await updateAgentName(agentId, body.name);
         scheduleGatewayReload(ctx, 'update-agent');
+        sendJson(res, 200, { success: true, ...snapshot });
+      } catch (error) {
+        sendJson(res, 500, { success: false, error: String(error) });
+      }
+      return true;
+    }
+
+    if (parts.length === 2 && parts[1] === 'model') {
+      try {
+        const body = await parseJsonBody<{ modelRef?: string | null }>(req);
+        const agentId = decodeURIComponent(parts[0]);
+        const snapshot = await updateAgentModel(agentId, body.modelRef ?? null);
+        try {
+          await syncAllProviderAuthToRuntime();
+          // Ensure this agent's runtime model registry reflects the new model override.
+          await syncAgentModelOverrideToRuntime(agentId);
+        } catch (syncError) {
+          console.warn('[agents] Failed to sync runtime after updating agent model:', syncError);
+        }
+        scheduleGatewayReload(ctx, 'update-agent-model');
         sendJson(res, 200, { success: true, ...snapshot });
       } catch (error) {
         sendJson(res, 500, { success: false, error: String(error) });

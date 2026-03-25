@@ -22,39 +22,58 @@ export function warmupManagedPythonReadiness(): void {
 }
 
 export async function terminateOwnedGatewayProcess(child: Electron.UtilityProcess): Promise<void> {
-  let exited = false;
+  const terminateWindowsProcessTree = async (pid: number): Promise<void> => {
+    const cp = await import('child_process');
+    await new Promise<void>((resolve) => {
+      cp.exec(`taskkill /F /PID ${pid} /T`, { timeout: 5000, windowsHide: true }, () => resolve());
+    });
+  };
 
   await new Promise<void>((resolve) => {
+    let exited = false;
+
+    // Register a single exit listener before any kill attempt to avoid
+    // the race where exit fires between two separate `once('exit')` calls.
     child.once('exit', () => {
       exited = true;
+      clearTimeout(timeout);
       resolve();
     });
 
     const pid = child.pid;
     logger.info(`Sending kill to Gateway process (pid=${pid ?? 'unknown'})`);
-    try {
-      child.kill();
-    } catch {
-      // ignore if already exited
+
+    if (process.platform === 'win32' && pid) {
+      void terminateWindowsProcessTree(pid).catch((err) => {
+        logger.warn(`Windows process-tree kill failed for Gateway pid=${pid}:`, err);
+      });
+    } else {
+      try {
+        child.kill();
+      } catch {
+        // ignore if already exited
+      }
     }
 
     const timeout = setTimeout(() => {
       if (!exited) {
         logger.warn(`Gateway did not exit in time, force-killing (pid=${pid ?? 'unknown'})`);
         if (pid) {
-          try {
-            process.kill(pid, 'SIGKILL');
-          } catch {
-            // ignore
+          if (process.platform === 'win32') {
+            void terminateWindowsProcessTree(pid).catch((err) => {
+              logger.warn(`Forced Windows process-tree kill failed for Gateway pid=${pid}:`, err);
+            });
+          } else {
+            try {
+              process.kill(pid, 'SIGKILL');
+            } catch {
+              // ignore
+            }
           }
         }
       }
       resolve();
     }, 5000);
-
-    child.once('exit', () => {
-      clearTimeout(timeout);
-    });
   });
 }
 
@@ -226,6 +245,9 @@ export async function findExistingGatewayProcess(options: {
       const pids = await getListeningProcessIds(port);
       if (pids.length > 0 && (!ownedPid || !pids.includes(String(ownedPid)))) {
         await terminateOrphanedProcessIds(port, pids);
+        if (process.platform === 'win32') {
+          await waitForPortFree(port, 10000);
+        }
         return null;
       }
     } catch (err) {

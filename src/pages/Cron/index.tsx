@@ -2,7 +2,7 @@
  * Cron Page
  * Manage scheduled tasks
  */
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, type ReactNode, type SelectHTMLAttributes } from 'react';
 import {
   Plus,
   Clock,
@@ -19,21 +19,24 @@ import {
   Timer,
   History,
   Pause,
+  ChevronDown,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Switch } from '@/components/ui/switch';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Select } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
+import { hostApiFetch } from '@/lib/host-api';
 import { useCronStore } from '@/stores/cron';
 import { useGatewayStore } from '@/stores/gateway';
 import { LoadingSpinner } from '@/components/common/LoadingSpinner';
 import { formatRelativeTime, cn } from '@/lib/utils';
 import { toast } from 'sonner';
 import type { CronJob, CronJobCreateInput, ScheduleType } from '@/types/cron';
-import { CHANNEL_ICONS, type ChannelType } from '@/types/channel';
+import { CHANNEL_ICONS, CHANNEL_NAMES, type ChannelType } from '@/types/channel';
 import { useTranslation } from 'react-i18next';
 import type { TFunction } from 'i18next';
 
@@ -170,14 +173,74 @@ function estimateNextRun(scheduleExpr: string): string | null {
   return null;
 }
 
+interface DeliveryChannelAccount {
+  accountId: string;
+  name: string;
+  isDefault: boolean;
+}
+
+interface DeliveryChannelGroup {
+  channelType: string;
+  defaultAccountId: string;
+  accounts: DeliveryChannelAccount[];
+}
+
+interface ChannelTargetOption {
+  value: string;
+  label: string;
+  kind: 'user' | 'group' | 'channel';
+}
+
+function isKnownChannelType(value: string): value is ChannelType {
+  return value in CHANNEL_NAMES;
+}
+
+function getChannelDisplayName(value: string): string {
+  return isKnownChannelType(value) ? CHANNEL_NAMES[value] : value;
+}
+
+function getDeliveryAccountDisplayName(account: DeliveryChannelAccount, t: TFunction): string {
+  return account.accountId === 'default' && account.name === account.accountId
+    ? t('channels:account.mainAccount')
+    : account.name;
+}
+
+const TESTED_CRON_DELIVERY_CHANNELS = new Set<string>(['feishu', 'telegram', 'qqbot', 'wecom']);
+
+function isSupportedCronDeliveryChannel(channelType: string): boolean {
+  return TESTED_CRON_DELIVERY_CHANNELS.has(channelType);
+}
+
+interface SelectFieldProps extends SelectHTMLAttributes<HTMLSelectElement> {
+  children: ReactNode;
+}
+
+function SelectField({ className, children, ...props }: SelectFieldProps) {
+  return (
+    <div className="relative">
+      <Select
+        className={cn(
+          'h-[44px] rounded-xl border-black/10 dark:border-white/10 bg-background text-[13px] pr-10 [background-image:none] appearance-none',
+          className,
+        )}
+        {...props}
+      >
+        {children}
+      </Select>
+      <ChevronDown className="pointer-events-none absolute right-4 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+    </div>
+  );
+}
+
 // Create/Edit Task Dialog
 interface TaskDialogProps {
   job?: CronJob;
+  configuredChannels: DeliveryChannelGroup[];
   onClose: () => void;
   onSave: (input: CronJobCreateInput) => Promise<void>;
 }
 
-function TaskDialog({ job, onClose, onSave }: TaskDialogProps) {
+function TaskDialog({ job, configuredChannels, onClose, onSave }: TaskDialogProps) {
   const { t } = useTranslation('cron');
   const [saving, setSaving] = useState(false);
 
@@ -197,7 +260,100 @@ function TaskDialog({ job, onClose, onSave }: TaskDialogProps) {
   const [customSchedule, setCustomSchedule] = useState('');
   const [useCustom, setUseCustom] = useState(false);
   const [enabled, setEnabled] = useState(job?.enabled ?? true);
+  const [deliveryMode, setDeliveryMode] = useState<'none' | 'announce'>(job?.delivery?.mode === 'announce' ? 'announce' : 'none');
+  const [deliveryChannel, setDeliveryChannel] = useState(job?.delivery?.channel || '');
+  const [deliveryTarget, setDeliveryTarget] = useState(job?.delivery?.to || '');
+  const [selectedDeliveryAccountId, setSelectedDeliveryAccountId] = useState(job?.delivery?.accountId || '');
+  const [channelTargetOptions, setChannelTargetOptions] = useState<ChannelTargetOption[]>([]);
+  const [loadingChannelTargets, setLoadingChannelTargets] = useState(false);
   const schedulePreview = estimateNextRun(useCustom ? customSchedule : schedule);
+  const selectableChannels = configuredChannels.filter((group) => isSupportedCronDeliveryChannel(group.channelType));
+  const availableChannels = selectableChannels.some((group) => group.channelType === deliveryChannel)
+    ? selectableChannels
+    : (
+      deliveryChannel && isSupportedCronDeliveryChannel(deliveryChannel)
+        ? [...selectableChannels, configuredChannels.find((group) => group.channelType === deliveryChannel) || { channelType: deliveryChannel, defaultAccountId: 'default', accounts: [] }]
+        : selectableChannels
+    );
+  const effectiveDeliveryChannel = deliveryChannel
+    || (deliveryMode === 'announce' ? (availableChannels[0]?.channelType || '') : '');
+  const unsupportedDeliveryChannel = !!effectiveDeliveryChannel && !isSupportedCronDeliveryChannel(effectiveDeliveryChannel);
+  const selectedChannel = availableChannels.find((group) => group.channelType === effectiveDeliveryChannel);
+  const deliveryAccountOptions = (selectedChannel?.accounts ?? []).map((account) => ({
+    accountId: account.accountId,
+    displayName: getDeliveryAccountDisplayName(account, t),
+  }));
+  const hasCurrentDeliveryTarget = !!deliveryTarget;
+  const currentDeliveryTargetOption = hasCurrentDeliveryTarget
+    ? {
+      value: deliveryTarget,
+      label: `${t('dialog.currentTarget')} (${deliveryTarget})`,
+      kind: 'user' as const,
+    }
+    : null;
+  const effectiveDeliveryAccountId = selectedDeliveryAccountId
+    || selectedChannel?.defaultAccountId
+    || deliveryAccountOptions[0]?.accountId
+    || '';
+  const showsAccountSelector = (selectedChannel?.accounts.length ?? 0) > 0;
+  const selectedResolvedAccountId = effectiveDeliveryAccountId || undefined;
+  const availableTargetOptions = currentDeliveryTargetOption
+    ? [currentDeliveryTargetOption, ...channelTargetOptions.filter((option) => option.value !== deliveryTarget)]
+    : channelTargetOptions;
+
+  useEffect(() => {
+    if (deliveryMode !== 'announce') {
+      setSelectedDeliveryAccountId('');
+      return;
+    }
+
+    if (!selectedDeliveryAccountId && selectedChannel?.defaultAccountId) {
+      setSelectedDeliveryAccountId(selectedChannel.defaultAccountId);
+    }
+  }, [deliveryMode, selectedChannel?.defaultAccountId, selectedDeliveryAccountId]);
+
+  useEffect(() => {
+    if (deliveryMode !== 'announce' || !effectiveDeliveryChannel || unsupportedDeliveryChannel) {
+      setChannelTargetOptions([]);
+      setLoadingChannelTargets(false);
+      return;
+    }
+
+    if (showsAccountSelector && !selectedResolvedAccountId) {
+      setChannelTargetOptions([]);
+      setLoadingChannelTargets(false);
+      return;
+    }
+
+    let cancelled = false;
+    setLoadingChannelTargets(true);
+    const params = new URLSearchParams({ channelType: effectiveDeliveryChannel });
+    if (selectedResolvedAccountId) {
+      params.set('accountId', selectedResolvedAccountId);
+    }
+    void hostApiFetch<{ success: boolean; targets?: ChannelTargetOption[]; error?: string }>(
+      `/api/channels/targets?${params.toString()}`,
+    ).then((result) => {
+      if (cancelled) return;
+      if (!result.success) {
+        throw new Error(result.error || 'Failed to load channel targets');
+      }
+      setChannelTargetOptions(result.targets || []);
+    }).catch((error) => {
+      if (!cancelled) {
+        console.warn('Failed to load channel targets:', error);
+        setChannelTargetOptions([]);
+      }
+    }).finally(() => {
+      if (!cancelled) {
+        setLoadingChannelTargets(false);
+      }
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [deliveryMode, effectiveDeliveryChannel, selectedResolvedAccountId, showsAccountSelector, unsupportedDeliveryChannel]);
 
   const handleSubmit = async () => {
     if (!name.trim()) {
@@ -217,10 +373,37 @@ function TaskDialog({ job, onClose, onSave }: TaskDialogProps) {
 
     setSaving(true);
     try {
+      const finalDelivery = deliveryMode === 'announce'
+        ? {
+          mode: 'announce' as const,
+          channel: effectiveDeliveryChannel.trim(),
+          ...(selectedResolvedAccountId
+            ? { accountId: effectiveDeliveryAccountId }
+            : {}),
+          to: deliveryTarget.trim(),
+        }
+        : { mode: 'none' as const };
+
+      if (finalDelivery.mode === 'announce') {
+        if (!finalDelivery.channel) {
+          toast.error(t('toast.channelRequired'));
+          return;
+        }
+        if (!isSupportedCronDeliveryChannel(finalDelivery.channel)) {
+          toast.error(t('toast.deliveryChannelUnsupported', { channel: getChannelDisplayName(finalDelivery.channel) }));
+          return;
+        }
+        if (!finalDelivery.to) {
+          toast.error(t('toast.deliveryTargetRequired'));
+          return;
+        }
+      }
+
       await onSave({
         name: name.trim(),
         message: message.trim(),
         schedule: finalSchedule,
+        delivery: finalDelivery,
         enabled,
       });
       onClose();
@@ -318,6 +501,141 @@ function TaskDialog({ job, onClose, onSave }: TaskDialogProps) {
             </div>
           </div>
 
+          {/* Delivery */}
+          <div className="space-y-3">
+            <div className="space-y-1">
+              <Label className="text-[14px] text-foreground/80 font-bold">{t('dialog.deliveryTitle')}</Label>
+              <p className="text-[12px] text-muted-foreground">{t('dialog.deliveryDescription')}</p>
+            </div>
+
+            <div className="grid grid-cols-2 gap-2">
+              <Button
+                type="button"
+                variant={deliveryMode === 'none' ? 'default' : 'outline'}
+                size="sm"
+                onClick={() => setDeliveryMode('none')}
+                className={cn(
+                  'justify-start h-auto min-h-12 rounded-xl px-4 py-3 text-left',
+                  deliveryMode === 'none'
+                    ? 'bg-primary hover:bg-primary/90 text-primary-foreground border-transparent'
+                    : 'bg-[#eeece3] dark:bg-muted border-black/10 dark:border-white/10 hover:bg-black/5 dark:hover:bg-white/5 text-foreground/80 hover:text-foreground',
+                )}
+              >
+                <div>
+                  <div className="text-[13px] font-semibold">{t('dialog.deliveryModeNone')}</div>
+                  <div className="text-[11px] opacity-80">{t('dialog.deliveryModeNoneDesc')}</div>
+                </div>
+              </Button>
+              <Button
+                type="button"
+                variant={deliveryMode === 'announce' ? 'default' : 'outline'}
+                size="sm"
+                onClick={() => setDeliveryMode('announce')}
+                className={cn(
+                  'justify-start h-auto min-h-12 rounded-xl px-4 py-3 text-left',
+                  deliveryMode === 'announce'
+                    ? 'bg-primary hover:bg-primary/90 text-primary-foreground border-transparent'
+                    : 'bg-[#eeece3] dark:bg-muted border-black/10 dark:border-white/10 hover:bg-black/5 dark:hover:bg-white/5 text-foreground/80 hover:text-foreground',
+                )}
+              >
+                <div>
+                  <div className="text-[13px] font-semibold">{t('dialog.deliveryModeAnnounce')}</div>
+                  <div className="text-[11px] opacity-80">{t('dialog.deliveryModeAnnounceDesc')}</div>
+                </div>
+              </Button>
+            </div>
+
+            {deliveryMode === 'announce' && (
+              <div className="space-y-3 rounded-2xl border border-black/5 dark:border-white/5 bg-[#eeece3] dark:bg-muted p-4 shadow-sm">
+                <div className="space-y-2">
+                  <Label htmlFor="delivery-channel" className="text-[13px] text-foreground/80 font-bold">
+                    {t('dialog.deliveryChannel')}
+                  </Label>
+                  <SelectField
+                    id="delivery-channel"
+                    value={effectiveDeliveryChannel}
+                    onChange={(event) => {
+                      setDeliveryChannel(event.target.value);
+                      setSelectedDeliveryAccountId('');
+                      setDeliveryTarget('');
+                    }}
+                  >
+                    <option value="">{t('dialog.selectChannel')}</option>
+                    {availableChannels.map((group) => (
+                      <option key={group.channelType} value={group.channelType}>
+                        {!isSupportedCronDeliveryChannel(group.channelType)
+                          ? `${getChannelDisplayName(group.channelType)} (${t('dialog.channelUnsupportedTag')})`
+                          : getChannelDisplayName(group.channelType)}
+                      </option>
+                    ))}
+                  </SelectField>
+                  {availableChannels.length === 0 && (
+                    <p className="text-[12px] text-muted-foreground">{t('dialog.noChannels')}</p>
+                  )}
+                  {unsupportedDeliveryChannel && (
+                    <p className="text-[12px] text-destructive">{t('dialog.deliveryChannelUnsupported')}</p>
+                  )}
+                  {selectedChannel && (
+                    <p className="text-[12px] text-muted-foreground">
+                      {t('dialog.deliveryDefaultAccountHint', { account: selectedChannel.defaultAccountId })}
+                    </p>
+                  )}
+                </div>
+
+                {showsAccountSelector && (
+                  <div className="space-y-2">
+                    <Label htmlFor="delivery-account" className="text-[13px] text-foreground/80 font-bold">
+                      {t('dialog.deliveryAccount')}
+                    </Label>
+                    <SelectField
+                      id="delivery-account"
+                      value={effectiveDeliveryAccountId}
+                      onChange={(event) => {
+                        setSelectedDeliveryAccountId(event.target.value);
+                        setDeliveryTarget('');
+                      }}
+                      disabled={deliveryAccountOptions.length === 0}
+                    >
+                      <option value="">
+                        {t('dialog.selectDeliveryAccount')}
+                      </option>
+                      {deliveryAccountOptions.map((option) => (
+                        <option key={option.accountId} value={option.accountId}>
+                          {option.displayName}
+                        </option>
+                      ))}
+                    </SelectField>
+                    <p className="text-[12px] text-muted-foreground">{t('dialog.deliveryAccountDesc')}</p>
+                  </div>
+                )}
+
+                <div className="space-y-2">
+                  <Label htmlFor="delivery-target-select" className="text-[13px] text-foreground/80 font-bold">
+                    {t('dialog.deliveryTarget')}
+                  </Label>
+                  <SelectField
+                    id="delivery-target-select"
+                    value={deliveryTarget}
+                    onChange={(event) => setDeliveryTarget(event.target.value)}
+                    disabled={loadingChannelTargets || availableTargetOptions.length === 0}
+                  >
+                    <option value="">{loadingChannelTargets ? t('dialog.loadingTargets') : t('dialog.selectDeliveryTarget')}</option>
+                    {availableTargetOptions.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </SelectField>
+                  <p className="text-[12px] text-muted-foreground">
+                    {availableTargetOptions.length > 0
+                      ? t('dialog.deliveryTargetDescAuto')
+                      : t('dialog.noDeliveryTargets')}
+                  </p>
+                </div>
+              </div>
+            )}
+          </div>
+
           {/* Enabled */}
           <div className="flex items-center justify-between bg-[#eeece3] dark:bg-muted p-4 rounded-2xl shadow-sm border border-black/5 dark:border-white/5">
             <div>
@@ -357,13 +675,14 @@ function TaskDialog({ job, onClose, onSave }: TaskDialogProps) {
 // Job Card Component
 interface CronJobCardProps {
   job: CronJob;
+  deliveryAccountName?: string;
   onToggle: (enabled: boolean) => void;
   onEdit: () => void;
   onDelete: () => void;
   onTrigger: () => Promise<void>;
 }
 
-function CronJobCard({ job, onToggle, onEdit, onDelete, onTrigger }: CronJobCardProps) {
+function CronJobCard({ job, deliveryAccountName, onToggle, onEdit, onDelete, onTrigger }: CronJobCardProps) {
   const { t } = useTranslation('cron');
   const [triggering, setTriggering] = useState(false);
 
@@ -385,6 +704,12 @@ function CronJobCard({ job, onToggle, onEdit, onDelete, onTrigger }: CronJobCard
     e.stopPropagation();
     onDelete();
   };
+
+  const deliveryChannel = typeof job.delivery?.channel === 'string' ? job.delivery.channel : '';
+  const deliveryLabel = deliveryChannel ? getChannelDisplayName(deliveryChannel) : '';
+  const deliveryIcon = deliveryChannel && isKnownChannelType(deliveryChannel)
+    ? CHANNEL_ICONS[deliveryChannel]
+    : null;
 
   return (
     <div
@@ -432,10 +757,15 @@ function CronJobCard({ job, onToggle, onEdit, onDelete, onTrigger }: CronJobCard
 
         {/* Metadata */}
         <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-[12px] text-muted-foreground/80 font-medium mb-3">
-          {job.target && (
+          {job.delivery?.mode === 'announce' && deliveryChannel && (
             <span className="flex items-center gap-1.5">
-              {CHANNEL_ICONS[job.target.channelType as ChannelType]}
-              {job.target.channelName}
+              {deliveryIcon}
+              <span>{deliveryLabel}</span>
+              {deliveryAccountName ? (
+                <span className="max-w-[220px] truncate">{deliveryAccountName}</span>
+              ) : job.delivery.to && (
+                <span className="max-w-[220px] truncate">{job.delivery.to}</span>
+              )}
             </span>
           )}
 
@@ -505,8 +835,24 @@ export function Cron() {
   const [showDialog, setShowDialog] = useState(false);
   const [editingJob, setEditingJob] = useState<CronJob | undefined>();
   const [jobToDelete, setJobToDelete] = useState<{ id: string } | null>(null);
+  const [configuredChannels, setConfiguredChannels] = useState<DeliveryChannelGroup[]>([]);
 
   const isGatewayRunning = gatewayStatus.state === 'running';
+
+  const fetchConfiguredChannels = useCallback(async () => {
+    try {
+      const response = await hostApiFetch<{ success: boolean; channels?: DeliveryChannelGroup[]; error?: string }>(
+        '/api/channels/accounts',
+      );
+      if (!response.success) {
+        throw new Error(response.error || 'Failed to load delivery channels');
+      }
+      setConfiguredChannels(response.channels || []);
+    } catch (fetchError) {
+      console.warn('Failed to load delivery channels:', fetchError);
+      setConfiguredChannels([]);
+    }
+  }, []);
 
   // Fetch jobs on mount
   useEffect(() => {
@@ -514,6 +860,10 @@ export function Cron() {
       fetchJobs();
     }
   }, [fetchJobs, isGatewayRunning]);
+
+  useEffect(() => {
+    void fetchConfiguredChannels();
+  }, [fetchConfiguredChannels]);
 
   // Statistics
   const safeJobs = Array.isArray(jobs) ? jobs : [];
@@ -564,7 +914,10 @@ export function Cron() {
           <div className="flex items-center gap-3 md:mt-2">
             <Button
               variant="outline"
-              onClick={fetchJobs}
+              onClick={() => {
+                void fetchJobs();
+                void fetchConfiguredChannels();
+              }}
               disabled={!isGatewayRunning}
               className="h-9 text-[13px] font-medium rounded-full px-4 border-black/10 dark:border-white/10 bg-transparent hover:bg-black/5 dark:hover:bg-white/5 shadow-none text-foreground/80 hover:text-foreground transition-colors"
             >
@@ -680,10 +1033,15 @@ export function Cron() {
             </div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-4">
-              {safeJobs.map((job) => (
+              {safeJobs.map((job) => {
+                const channelGroup = configuredChannels.find((group) => group.channelType === job.delivery?.channel);
+                const account = channelGroup?.accounts.find((item) => item.accountId === job.delivery?.accountId);
+                const deliveryAccountName = account ? getDeliveryAccountDisplayName(account, t) : undefined;
+                return (
                 <CronJobCard
                   key={job.id}
                   job={job}
+                  deliveryAccountName={deliveryAccountName}
                   onToggle={(enabled) => handleToggle(job.id, enabled)}
                   onEdit={() => {
                     setEditingJob(job);
@@ -692,7 +1050,8 @@ export function Cron() {
                   onDelete={() => setJobToDelete({ id: job.id })}
                   onTrigger={() => triggerJob(job.id)}
                 />
-              ))}
+                );
+              })}
             </div>
           )}
 
@@ -703,6 +1062,7 @@ export function Cron() {
       {showDialog && (
         <TaskDialog
           job={editingJob}
+          configuredChannels={configuredChannels}
           onClose={() => {
             setShowDialog(false);
             setEditingJob(undefined);

@@ -25,6 +25,16 @@ export function getOpenClawProviderKeyForType(type: string, providerId: string):
   return PROVIDER_KEY_ALIASES[type] ?? type;
 }
 
+/**
+ * Get all vendorId values that map to the given openclaw.json key via alias.
+ * e.g. getAliasSourceTypes('minimax-portal') → ['minimax-portal-cn']
+ */
+export function getAliasSourceTypes(openClawKey: string): string[] {
+  return Object.entries(PROVIDER_KEY_ALIASES)
+    .filter(([, target]) => target === openClawKey)
+    .map(([source]) => source);
+}
+
 export function isOAuthProviderType(type: string): boolean {
   return OAUTH_PROVIDER_TYPE_SET.has(type);
 }

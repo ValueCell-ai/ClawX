@@ -129,6 +129,24 @@ interface ChatState {
   refresh: () => Promise<void>;
   clearError: () => void;
 }
+import {
+  DEFAULT_CANONICAL_PREFIX,
+  DEFAULT_SESSION_KEY,
+  type AttachedFileMeta,
+  type ChatSession,
+  type ChatState,
+  type ContentBlock,
+  type RawMessage,
+  type ToolStatus,
+} from './chat/types';
+
+export type {
+  AttachedFileMeta,
+  ChatSession,
+  ContentBlock,
+  RawMessage,
+  ToolStatus,
+} from './chat/types';
 
 // Module-level timestamp tracking the last chat event received.
 // Used by the safety timeout to avoid false-positive "no response" errors
@@ -214,9 +232,6 @@ function isDuplicateChatEvent(eventState: string, event: Record<string, unknown>
   _chatEventDedupe.set(key, now);
   return false;
 }
-
-const DEFAULT_CANONICAL_PREFIX = 'agent:main';
-const DEFAULT_SESSION_KEY = `${DEFAULT_CANONICAL_PREFIX}:main`;
 
 // ── Local image cache ─────────────────────────────────────────
 // The Gateway doesn't store image attachments in session content blocks,

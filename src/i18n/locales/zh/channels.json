@@ -22,6 +22,8 @@
     "toast": {
         "whatsappConnected": "WhatsApp 连接成功",
         "whatsappFailed": "WhatsApp 连接失败: {{error}}",
+        "qrConnected": "{{name}} 连接成功",
+        "qrFailed": "{{name}} 连接失败: {{error}}",
         "channelSaved": "频道 {{name}} 已保存",
         "channelConnecting": "正在连接 {{name}}...",
         "savedButRefreshFailed": "配置已保存，但刷新页面数据失败，请手动刷新查看最新状态",
@@ -155,6 +157,16 @@
                 "前往 设置 > 已关联设备 >包含连接设备",
                 "扫描下方显示的二维码",
                 "系统将自动识别您的手机号"
+            ]
+        },
+        "wechat": {
+            "description": "通过腾讯官方 OpenClaw 插件扫码连接个人微信",
+            "docsUrl": "https://icnnp7d0dymg.feishu.cn/wiki/GHYZwuPCriF0gWkXwkFcJ9zon3b",
+            "instructions": [
+                "点击生成二维码，ClawX 会在 OpenClaw 中安装并启用官方微信插件",
+                "使用微信扫描下方二维码，并在手机上确认连接",
+                "连接成功后，微信里会自动出现新的「微信 ClawBot」对话",
+                "之后可再次通过扫码流程添加更多微信账号，或重新连接已有账号"
             ]
         },
         "dingtalk": {

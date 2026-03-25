@@ -557,10 +557,12 @@ function upsertOpenClawProviderEntry(
     models: mergeProviderModels(registryModels, existingModels, runtimeModels),
   };
   if (options.apiKeyEnv) nextProvider.apiKey = options.apiKeyEnv;
-  if (options.headers && Object.keys(options.headers).length > 0) {
-    nextProvider.headers = options.headers;
-  } else {
-    delete nextProvider.headers;
+  if (options.headers !== undefined) {
+    if (Object.keys(options.headers).length > 0) {
+      nextProvider.headers = options.headers;
+    } else {
+      delete nextProvider.headers;
+    }
   }
   if (options.authHeader !== undefined) {
     nextProvider.authHeader = options.authHeader;
@@ -740,11 +742,59 @@ export async function getActiveOpenClawProviders(): Promise<Set<string>> {
         }
       }
     }
+
+    // 3. agents.defaults.model.primary — the default model reference encodes
+    //    the provider prefix (e.g. "qwen-portal/coder-model" → "qwen-portal").
+    //    This covers providers that are active via OAuth or env-key but don't
+    //    have an explicit models.providers entry.
+    const agents = config.agents as Record<string, unknown> | undefined;
+    const defaults = agents?.defaults as Record<string, unknown> | undefined;
+    const modelConfig = defaults?.model as Record<string, unknown> | undefined;
+    const primaryModel = typeof modelConfig?.primary === 'string' ? modelConfig.primary : undefined;
+    if (primaryModel?.includes('/')) {
+      activeProviders.add(primaryModel.split('/')[0]);
+    }
   } catch (err) {
     console.warn('Failed to read openclaw.json for active providers:', err);
   }
 
   return activeProviders;
+}
+
+/**
+ * Read models.providers entries and agents.defaults.model from openclaw.json.
+ * Used by ClawX to seed the provider store when it's empty but providers are
+ * configured externally (e.g. via CLI or by editing openclaw.json directly).
+ */
+export async function getOpenClawProvidersConfig(): Promise<{
+  providers: Record<string, Record<string, unknown>>;
+  defaultModel: string | undefined;
+}> {
+  try {
+    const config = await readOpenClawJson();
+
+    const models = config.models as Record<string, unknown> | undefined;
+    const providers =
+      models?.providers && typeof models.providers === 'object'
+        ? (models.providers as Record<string, Record<string, unknown>>)
+        : {};
+
+    const agents = config.agents as Record<string, unknown> | undefined;
+    const defaults =
+      agents?.defaults && typeof agents.defaults === 'object'
+        ? (agents.defaults as Record<string, unknown>)
+        : undefined;
+    const modelConfig =
+      defaults?.model && typeof defaults.model === 'object'
+        ? (defaults.model as Record<string, unknown>)
+        : undefined;
+    const defaultModel =
+      typeof modelConfig?.primary === 'string' ? modelConfig.primary : undefined;
+
+    return { providers, defaultModel };
+  } catch {
+    return { providers: {}, defaultModel: undefined };
+  }
 }
 
 /**
@@ -868,18 +918,20 @@ export async function syncSessionIdleMinutesToOpenClaw(): Promise<void> {
 /**
  * Update a provider entry in every discovered agent's models.json.
  */
-export async function updateAgentModelProvider(
+type AgentModelProviderEntry = {
+  baseUrl?: string;
+  api?: string;
+  models?: Array<{ id: string; name: string }>;
+  apiKey?: string;
+  /** When true, pi-ai sends Authorization: Bearer instead of x-api-key */
+  authHeader?: boolean;
+};
+
+async function updateModelsJsonProviderEntriesForAgents(
+  agentIds: string[],
   providerType: string,
-  entry: {
-    baseUrl?: string;
-    api?: string;
-    models?: Array<{ id: string; name: string }>;
-    apiKey?: string;
-    /** When true, pi-ai sends Authorization: Bearer instead of x-api-key */
-    authHeader?: boolean;
-  }
+  entry: AgentModelProviderEntry,
 ): Promise<void> {
-  const agentIds = await discoverAgentIds();
   for (const agentId of agentIds) {
     const modelsPath = join(homedir(), '.openclaw', 'agents', agentId, 'agent', 'models.json');
     let data: Record<string, unknown> = {};
@@ -923,6 +975,26 @@ export async function updateAgentModelProvider(
       console.warn(`Failed to update models.json for agent "${agentId}":`, err);
     }
   }
+}
+
+export async function updateAgentModelProvider(
+  providerType: string,
+  entry: AgentModelProviderEntry,
+): Promise<void> {
+  const agentIds = await discoverAgentIds();
+  await updateModelsJsonProviderEntriesForAgents(agentIds, providerType, entry);
+}
+
+export async function updateSingleAgentModelProvider(
+  agentId: string,
+  providerType: string,
+  entry: AgentModelProviderEntry,
+): Promise<void> {
+  const normalizedAgentId = agentId.trim();
+  if (!normalizedAgentId) {
+    throw new Error('agentId is required');
+  }
+  await updateModelsJsonProviderEntriesForAgents([normalizedAgentId], providerType, entry);
 }
 
 /**
@@ -1003,6 +1075,28 @@ export async function sanitizeOpenClawConfig(): Promise<void> {
             }
           }
           if (modified) pluginsObj.load = validLoad;
+        } else if (pluginsObj.load && typeof pluginsObj.load === 'object' && !Array.isArray(pluginsObj.load)) {
+          // Handle nested shape: plugins.load.paths (array of absolute paths)
+          const loadObj = pluginsObj.load as Record<string, unknown>;
+          if (Array.isArray(loadObj.paths)) {
+            const validPaths: unknown[] = [];
+            const countBefore = loadObj.paths.length;
+            for (const p of loadObj.paths) {
+              if (typeof p === 'string' && p.startsWith('/')) {
+                if (p.includes('node_modules/openclaw/extensions') || !(await fileExists(p))) {
+                  console.log(`[sanitize] Removing stale/bundled plugin path "${p}" from plugins.load.paths`);
+                  modified = true;
+                } else {
+                  validPaths.push(p);
+                }
+              } else {
+                validPaths.push(p);
+              }
+            }
+            if (validPaths.length !== countBefore) {
+              loadObj.paths = validPaths;
+            }
+          }
         }
       }
     }

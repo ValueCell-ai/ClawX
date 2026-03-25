@@ -25,6 +25,10 @@ if (typeof window !== 'undefined') {
   });
 
   // Mock matchMedia
+}
+
+// Mock matchMedia
+if (typeof window !== 'undefined') {
   Object.defineProperty(window, 'matchMedia', {
     writable: true,
     value: vi.fn().mockImplementation((query) => ({

@@ -67,6 +67,11 @@
         "baseUrl": "基础 URL",
         "modelId": "模型 ID",
         "modelIdDesc": "提供商的模型标识符（例如 deepseek-ai/DeepSeek-V3）",
+        "codePlanPreset": "Code Plan 预设",
+        "codePlanMode": "Code Plan",
+        "useCodePlanPreset": "使用 Ark Code Plan 预设",
+        "codePlanPresetDesc": "Code Plan 使用 https://ark.cn-beijing.volces.com/api/coding/v3 与模型 ark-code-latest。请勿把 /api/v3 用于 Code Plan 流量。",
+        "codePlanDoc": "Code Plan 文档",
         "protocol": "协议",
         "protocols": {
             "openaiCompletions": "OpenAI Completions",
