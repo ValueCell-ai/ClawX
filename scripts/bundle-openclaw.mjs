@@ -512,6 +512,60 @@ function patchBrokenModules(nodeModulesDir) {
       count++;
     }
   }
+  // lru-cache CJS/ESM interop fix (recursive):
+  // Multiple versions of lru-cache may exist in the output tree — not just
+  // at node_modules/lru-cache/ but also nested inside other packages.
+  // Older CJS versions (v5, v6) export the class via `module.exports = LRUCache`
+  // without a named `LRUCache` property, so `import { LRUCache } from 'lru-cache'`
+  // fails in Node.js 22+ ESM interop (used by Electron 40+).
+  // We recursively scan the entire output for ALL lru-cache installations and
+  // patch each CJS entry to ensure `exports.LRUCache` always exists.
+  function patchAllLruCacheInstances(rootDir) {
+    let lruCount = 0;
+    const stack = [rootDir];
+    while (stack.length > 0) {
+      const dir = stack.pop();
+      let entries;
+      try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch { continue; }
+      for (const entry of entries) {
+        if (!entry.isDirectory()) continue;
+        const fullPath = path.join(dir, entry.name);
+        if (entry.name === 'lru-cache') {
+          const pkgPath = path.join(fullPath, 'package.json');
+          if (!fs.existsSync(pkgPath)) { stack.push(fullPath); continue; }
+          try {
+            const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8'));
+            if (pkg.type === 'module') continue; // ESM version — already has named exports
+            const mainFile = pkg.main || 'index.js';
+            const entryFile = path.join(fullPath, mainFile);
+            if (!fs.existsSync(entryFile)) continue;
+            const original = fs.readFileSync(entryFile, 'utf8');
+            if (original.includes('exports.LRUCache')) continue; // already patched
+            const patched = [
+              original,
+              '',
+              '// ClawX patch: add LRUCache named export for Node.js 22+ ESM interop',
+              'if (typeof module.exports === "function" && !module.exports.LRUCache) {',
+              '  module.exports.LRUCache = module.exports;',
+              '}',
+              '',
+            ].join('\n');
+            fs.writeFileSync(entryFile, patched, 'utf8');
+            lruCount++;
+            echo`   🩹 Patched lru-cache (CJS v${pkg.version}) at ${path.relative(rootDir, fullPath)}`;
+          } catch (err) {
+            echo`   ⚠️  Failed to patch lru-cache at ${fullPath}: ${err.message}`;
+          }
+        } else {
+          stack.push(fullPath);
+        }
+      }
+    }
+    return lruCount;
+  }
+  const lruPatched = patchAllLruCacheInstances(nodeModulesDir);
+  count += lruPatched;
+
   if (count > 0) {
     echo`   🩹 Patched ${count} broken module(s) in node_modules`;
   }

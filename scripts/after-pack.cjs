@@ -20,7 +20,7 @@
  */
 
 const { cpSync, existsSync, readdirSync, rmSync, statSync, mkdirSync, realpathSync } = require('fs');
-const { join, dirname, basename } = require('path');
+const { join, dirname, basename, relative } = require('path');
 
 // On Windows, paths in pnpm's virtual store can exceed the default MAX_PATH
 // limit (260 chars). Node.js 18.17+ respects the system LongPathsEnabled
@@ -286,6 +286,60 @@ function patchBrokenModules(nodeModulesDir) {
       console.warn('[after-pack] ⚠️  Failed to patch https-proxy-agent:', err.message);
     }
   }
+
+  // lru-cache CJS/ESM interop fix (recursive):
+  // Multiple versions of lru-cache may exist in the output tree — not just
+  // at node_modules/lru-cache/ but also nested inside other packages.
+  // Older CJS versions (v5, v6) export the class via `module.exports = LRUCache`
+  // without a named `LRUCache` property, so `import { LRUCache } from 'lru-cache'`
+  // fails in Node.js 22+ ESM interop (used by Electron 40+).
+  // We recursively scan the entire output for ALL lru-cache installations and
+  // patch each CJS entry to ensure `exports.LRUCache` always exists.
+  function patchAllLruCacheInstances(rootDir) {
+    let lruCount = 0;
+    const stack = [rootDir];
+    while (stack.length > 0) {
+      const dir = stack.pop();
+      let entries;
+      try { entries = readdirSync(dir, { withFileTypes: true }); } catch { continue; }
+      for (const entry of entries) {
+        if (!entry.isDirectory()) continue;
+        const fullPath = join(dir, entry.name);
+        if (entry.name === 'lru-cache') {
+          const pkgPath = join(fullPath, 'package.json');
+          if (!existsSync(pkgPath)) { stack.push(fullPath); continue; }
+          try {
+            const pkg = JSON.parse(readFileSync(pkgPath, 'utf8'));
+            if (pkg.type === 'module') continue; // ESM version — already has named exports
+            const mainFile = pkg.main || 'index.js';
+            const entryFile = join(fullPath, mainFile);
+            if (!existsSync(entryFile)) continue;
+            const original = readFileSync(entryFile, 'utf8');
+            if (original.includes('exports.LRUCache')) continue; // already patched
+            const patched = [
+              original,
+              '',
+              '// ClawX patch: add LRUCache named export for Node.js 22+ ESM interop',
+              'if (typeof module.exports === "function" && !module.exports.LRUCache) {',
+              '  module.exports.LRUCache = module.exports;',
+              '}',
+              '',
+            ].join('\n');
+            writeFileSync(entryFile, patched, 'utf8');
+            lruCount++;
+            console.log(`[after-pack] 🩹 Patched lru-cache (CJS v${pkg.version}) at ${relative(rootDir, fullPath)}`);
+          } catch (err) {
+            console.warn(`[after-pack] ⚠️  Failed to patch lru-cache at ${fullPath}:`, err.message);
+          }
+        } else {
+          stack.push(fullPath);
+        }
+      }
+    }
+    return lruCount;
+  }
+  const lruPatched = patchAllLruCacheInstances(nodeModulesDir);
+  count += lruPatched;
 
   if (count > 0) {
     console.log(`[after-pack] 🩹 Patched ${count} broken module(s) in ${nodeModulesDir}`);
