@@ -7,7 +7,17 @@
   !include "nsProcess.nsh"
 !endif
 
+!macro customHeader
+  ; Show install details by default so users can see what stage is running.
+  ShowInstDetails show
+  ShowUninstDetails show
+!macroend
+
 !macro customCheckAppRunning
+  ; Make stage logs visible on assisted installers (defaults to hidden).
+  SetDetailsPrint both
+  DetailPrint "Preparing installation..."
+  DetailPrint "Extracting ClawX runtime files. This can take a few minutes on slower disks or while antivirus scanning is active."
 
   ${nsProcess::FindProcess} "${APP_EXECUTABLE_FILENAME}" $R0
 
@@ -66,14 +76,18 @@
 !macroend
 
 !macro customInstall
+  DetailPrint "Core files extracted. Finalizing system integration..."
+
   ; Enable Windows long path support (Windows 10 1607+ / Windows 11).
   ; pnpm virtual store paths can exceed the default MAX_PATH limit of 260 chars.
   ; Writing to HKLM requires admin privileges; on per-user installs without
   ; elevation this call silently fails — no crash, just no key written.
+  DetailPrint "Enabling long-path support (if permissions allow)..."
   WriteRegDWORD HKLM "SYSTEM\CurrentControlSet\Control\FileSystem" "LongPathsEnabled" 1
 
   ; Use PowerShell to update the current user's PATH.
   ; This avoids NSIS string-buffer limits and preserves long PATH values.
+  DetailPrint "Updating user PATH for the OpenClaw CLI..."
   InitPluginsDir
   ClearErrors
   File "/oname=$PLUGINSDIR\update-user-path.ps1" "${PROJECT_DIR}\resources\cli\win32\update-user-path.ps1"
@@ -89,6 +103,7 @@
   DetailPrint "Warning: PowerShell PATH update exited with code $0."
 
   _ci_done:
+  DetailPrint "Installation steps complete."
 !macroend
 
 !macro customUnInstall
@@ -199,4 +214,3 @@
   _cu_enumDone:
   _cu_skipRemove:
 !macroend
-
