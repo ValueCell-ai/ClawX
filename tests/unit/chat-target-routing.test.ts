@@ -32,6 +32,10 @@ describe('chat target routing', () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date('2026-03-11T12:00:00Z'));
     window.localStorage.clear();
+    agentsState.agents = [
+      { id: 'main', mainSessionKey: 'agent:main:main' },
+      { id: 'research', mainSessionKey: 'agent:research:desk' }
+    ];
 
     agentsState.agents = [
       {
