@@ -33,9 +33,11 @@ export function registerHostApiProxyHandlers(): void {
           body = request.body;
         } else {
           body = JSON.stringify(request.body);
-          if (!headers['Content-Type'] && !headers['content-type']) {
-            headers['Content-Type'] = 'application/json';
-          }
+        }
+        // Ensure Content-Type is set for requests with a body so the
+        // server's anti-CSRF Content-Type gate does not reject them.
+        if (!headers['Content-Type'] && !headers['content-type']) {
+          headers['Content-Type'] = 'application/json';
         }
       }
 
