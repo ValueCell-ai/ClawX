@@ -320,19 +320,38 @@ function patchBrokenModules(nodeModulesDir) {
             const entryFile = join(fullPath, mainFile);
             if (!existsSync(normWin(entryFile))) continue;
             const original = readFileSync(normWin(entryFile), 'utf8');
-            if (original.includes('exports.LRUCache')) continue; // already patched
-            const patched = [
-              original,
-              '',
-              '// ClawX patch: add LRUCache named export for Node.js 22+ ESM interop',
-              'if (typeof module.exports === "function" && !module.exports.LRUCache) {',
-              '  module.exports.LRUCache = module.exports;',
-              '}',
-              '',
-            ].join('\n');
-            writeFileSync(normWin(entryFile), patched, 'utf8');
-            lruCount++;
-            console.log(`[after-pack] 🩹 Patched lru-cache (CJS v${pkg.version}) at ${relative(rootDir, fullPath)}`);
+            if (!original.includes('exports.LRUCache')) {
+              const patched = [
+                original,
+                '',
+                '// ClawX patch: add LRUCache named export for Node.js 22+ ESM interop',
+                'if (typeof module.exports === "function" && !module.exports.LRUCache) {',
+                '  module.exports.LRUCache = module.exports;',
+                '}',
+                '',
+              ].join('\n');
+              writeFileSync(normWin(entryFile), patched, 'utf8');
+              lruCount++;
+              console.log(`[after-pack] 🩹 Patched lru-cache CJS (v${pkg.version}) at ${relative(rootDir, fullPath)}`);
+            }
+
+            // lru-cache v7 ESM entry exports default only; add named export.
+            const moduleFile = typeof pkg.module === 'string' ? pkg.module : null;
+            if (moduleFile) {
+              const esmEntry = join(fullPath, moduleFile);
+              if (existsSync(normWin(esmEntry))) {
+                const esmOriginal = readFileSync(normWin(esmEntry), 'utf8');
+                if (
+                  esmOriginal.includes('export default LRUCache') &&
+                  !esmOriginal.includes('export { LRUCache')
+                ) {
+                  const esmPatched = [esmOriginal, '', 'export { LRUCache }', ''].join('\n');
+                  writeFileSync(normWin(esmEntry), esmPatched, 'utf8');
+                  lruCount++;
+                  console.log(`[after-pack] 🩹 Patched lru-cache ESM (v${pkg.version}) at ${relative(rootDir, fullPath)}`);
+                }
+              }
+            }
           } catch (err) {
             console.warn(`[after-pack] ⚠️  Failed to patch lru-cache at ${fullPath}:`, err.message);
           }
@@ -632,19 +651,38 @@ exports.default = async function afterPack(context) {
             const entryFile = join(fullPath, mainFile);
             if (!existsSync(normWin(entryFile))) continue;
             const original = readFS(normWin(entryFile), 'utf8');
-            if (original.includes('exports.LRUCache')) continue; // already patched
-            const patched = [
-              original,
-              '',
-              '// ClawX patch: add LRUCache named export for Node.js 22+ ESM interop',
-              'if (typeof module.exports === "function" && !module.exports.LRUCache) {',
-              '  module.exports.LRUCache = module.exports;',
-              '}',
-              '',
-            ].join('\n');
-            writeFS(normWin(entryFile), patched, 'utf8');
-            asarLruCount++;
-            console.log(`[after-pack] 🩹 Patched lru-cache (CJS v${pkg.version}) in app.asar.unpacked at ${relative(asarUnpackedDir, fullPath)}`);
+            if (!original.includes('exports.LRUCache')) {
+              const patched = [
+                original,
+                '',
+                '// ClawX patch: add LRUCache named export for Node.js 22+ ESM interop',
+                'if (typeof module.exports === "function" && !module.exports.LRUCache) {',
+                '  module.exports.LRUCache = module.exports;',
+                '}',
+                '',
+              ].join('\n');
+              writeFS(normWin(entryFile), patched, 'utf8');
+              asarLruCount++;
+              console.log(`[after-pack] 🩹 Patched lru-cache CJS (v${pkg.version}) in app.asar.unpacked at ${relative(asarUnpackedDir, fullPath)}`);
+            }
+
+            // lru-cache v7 ESM entry exports default only; add named export.
+            const moduleFile = typeof pkg.module === 'string' ? pkg.module : null;
+            if (moduleFile) {
+              const esmEntry = join(fullPath, moduleFile);
+              if (existsSync(normWin(esmEntry))) {
+                const esmOriginal = readFS(normWin(esmEntry), 'utf8');
+                if (
+                  esmOriginal.includes('export default LRUCache') &&
+                  !esmOriginal.includes('export { LRUCache')
+                ) {
+                  const esmPatched = [esmOriginal, '', 'export { LRUCache }', ''].join('\n');
+                  writeFS(normWin(esmEntry), esmPatched, 'utf8');
+                  asarLruCount++;
+                  console.log(`[after-pack] 🩹 Patched lru-cache ESM (v${pkg.version}) in app.asar.unpacked at ${relative(asarUnpackedDir, fullPath)}`);
+                }
+              }
+            }
           } catch (err) {
             console.warn(`[after-pack] ⚠️  Failed to patch lru-cache in asar.unpacked at ${fullPath}:`, err.message);
           }
