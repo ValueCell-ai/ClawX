@@ -385,6 +385,33 @@ export async function removeProviderFromOpenClaw(provider: string): Promise<void
         console.log(`Removed OpenClaw provider config: ${provider}`);
       }
 
+      // Clean up agents.defaults.model references that point to the deleted provider.
+      // Model refs use the format "providerType/modelId", e.g. "openai/gpt-4".
+      // Leaving stale refs causes the Gateway to report "Unknown model" errors.
+      const agents = config.agents as Record<string, unknown> | undefined;
+      const agentDefaults = (agents?.defaults && typeof agents.defaults === 'object'
+        ? agents.defaults as Record<string, unknown>
+        : null);
+      if (agentDefaults?.model && typeof agentDefaults.model === 'object') {
+        const modelCfg = agentDefaults.model as Record<string, unknown>;
+        const prefix = `${provider}/`;
+
+        if (typeof modelCfg.primary === 'string' && modelCfg.primary.startsWith(prefix)) {
+          delete modelCfg.primary;
+          modified = true;
+          console.log(`Removed deleted provider "${provider}" from agents.defaults.model.primary`);
+        }
+
+        if (Array.isArray(modelCfg.fallbacks)) {
+          const filtered = (modelCfg.fallbacks as string[]).filter((fb) => !fb.startsWith(prefix));
+          if (filtered.length !== modelCfg.fallbacks.length) {
+            modelCfg.fallbacks = filtered.length > 0 ? filtered : undefined;
+            modified = true;
+            console.log(`Removed deleted provider "${provider}" from agents.defaults.model.fallbacks`);
+          }
+        }
+      }
+
       if (modified) {
         await writeOpenClawJson(config);
       }
@@ -981,8 +1008,23 @@ export async function updateAgentModelProvider(
  */
 export async function sanitizeOpenClawConfig(): Promise<void> {
   return withConfigLock(async () => {
+    // Skip sanitization if the config file does not exist yet.
+    // Creating a skeleton config here would overwrite any data written
+    // by the Gateway on its first run.
+    if (!(await fileExists(OPENCLAW_CONFIG_PATH))) {
+      console.log('[sanitize] openclaw.json does not exist yet, skipping sanitization');
+      return;
+    }
+
     const config = await readOpenClawJson();
     let modified = false;
+
+    // If the file was unreadable or empty, bail out rather than overwriting
+    // the existing file with a stripped-down skeleton.
+    if (Object.keys(config).length === 0) {
+      console.log('[sanitize] openclaw.json appears empty or unreadable, skipping sanitization to preserve data');
+      return;
+    }
 
     // ── skills section ──────────────────────────────────────────────
     // OpenClaw's Zod schema uses .strict() on the skills object, accepting

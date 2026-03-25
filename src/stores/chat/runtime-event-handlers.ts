@@ -48,6 +48,18 @@ export function handleRuntimeEventState(
               if (event.message && typeof event.message === 'object') {
                 const msgRole = (event.message as RawMessage).role;
                 if (isToolResultRole(msgRole)) return s.streamingMessage;
+                // During multi-model fallback the Gateway may emit a delta with an
+                // empty or role-only message (e.g. `{}` or `{ role: 'assistant' }`)
+                // to signal a model switch.  Accepting such a value would silently
+                // discard all content accumulated so far in streamingMessage.
+                // Only replace when the incoming message carries actual payload.
+                const msgObj = event.message as RawMessage;
+                // Only accept this delta if the message carries actual content.
+                // An empty or role-only object (e.g. `{}`, `{ role: 'assistant' }`)
+                // that arrives during a multi-model fallback switch must not wipe
+                // out the content accumulated so far.
+                const hasPayload = msgObj.content !== undefined;
+                if (!hasPayload) return s.streamingMessage;
               }
               return event.message ?? s.streamingMessage;
             })(),
