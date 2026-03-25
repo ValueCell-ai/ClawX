@@ -368,7 +368,7 @@
             "docsUrl": "https://docs.openclaw.ai/channels/mattermost"
         },
         "qqbot": {
-            "description": "@sliverp/qqbot プラグイン経由で QQ ボットに接続します",
+            "description": "@tencent-connect/openclaw-qqbot プラグイン経由で QQ ボットに接続します",
             "fields": {
                 "appId": {
                     "label": "App ID",

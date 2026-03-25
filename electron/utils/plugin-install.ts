@@ -170,7 +170,7 @@ const PLUGIN_NPM_NAMES: Record<string, string> = {
   dingtalk: '@soimy/dingtalk',
   wecom: '@wecom/wecom-openclaw-plugin',
   'feishu-openclaw-plugin': '@larksuite/openclaw-lark',
-  qqbot: '@sliverp/qqbot',
+  qqbot: '@tencent-connect/openclaw-qqbot',
   'openclaw-weixin': '@tencent-weixin/openclaw-weixin',
 };
 
