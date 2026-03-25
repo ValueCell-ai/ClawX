@@ -40,7 +40,7 @@ import {
   toOpenClawChannelType,
   toUiChannelType,
 } from '../../utils/channel-alias';
-import { getOpenClawConfigDir } from '../../utils/paths';
+import { getOpenClawConfigDir, getOpenClawDir, getOpenClawResolvedDir } from '../../utils/paths';
 import {
   cancelWeChatLoginSession,
   saveWeChatAccountState,
@@ -49,29 +49,73 @@ import {
 } from '../../utils/wechat-login';
 import { whatsAppLoginManager } from '../../utils/whatsapp-login';
 import { proxyAwareFetch } from '../../utils/proxy-fetch';
-import {
+import { createRequire } from 'module';
+
+// openclaw is NOT in the asar's node_modules — it lives at resources/openclaw/
+// (extraResources).  Static `import ... from 'openclaw/plugin-sdk/...'` would
+// produce a runtime require() that fails inside the asar.
+//
+// Instead, we create a require context from the openclaw directory itself.
+// Node.js package self-referencing allows a package to require its own exports
+// by name, so `openclawRequire('openclaw/plugin-sdk/discord')` resolves via the
+// exports map in openclaw's package.json.
+//
+// In dev mode (pnpm), the resolved path is in the pnpm virtual store where
+// self-referencing also works.  The projectRequire fallback covers edge cases.
+const _openclawPath = getOpenClawDir();
+const _openclawResolvedPath = getOpenClawResolvedDir();
+const _openclawSdkRequire = createRequire(join(_openclawResolvedPath, 'package.json'));
+const _projectSdkRequire = createRequire(join(_openclawPath, 'package.json'));
+
+function requireOpenClawSdk(subpath: string): Record<string, unknown> {
+  try {
+    return _openclawSdkRequire(subpath);
+  } catch {
+    return _projectSdkRequire(subpath);
+  }
+}
+
+// --- Channel SDK dynamic imports ---
+const _discordSdk = requireOpenClawSdk('openclaw/plugin-sdk/discord') as {
+  listDiscordDirectoryGroupsFromConfig: (...args: unknown[]) => Promise<unknown[]>;
+  listDiscordDirectoryPeersFromConfig: (...args: unknown[]) => Promise<unknown[]>;
+  normalizeDiscordMessagingTarget: (target: string) => string | undefined;
+};
+const {
   listDiscordDirectoryGroupsFromConfig,
   listDiscordDirectoryPeersFromConfig,
   normalizeDiscordMessagingTarget,
-} from 'openclaw/plugin-sdk/discord';
-import {
+} = _discordSdk;
+
+const _telegramSdk = requireOpenClawSdk('openclaw/plugin-sdk/telegram') as {
+  listTelegramDirectoryGroupsFromConfig: (...args: unknown[]) => Promise<unknown[]>;
+  listTelegramDirectoryPeersFromConfig: (...args: unknown[]) => Promise<unknown[]>;
+  normalizeTelegramMessagingTarget: (target: string) => string | undefined;
+};
+const {
   listTelegramDirectoryGroupsFromConfig,
   listTelegramDirectoryPeersFromConfig,
   normalizeTelegramMessagingTarget,
-} from 'openclaw/plugin-sdk/telegram';
-import {
+} = _telegramSdk;
+
+const _slackSdk = requireOpenClawSdk('openclaw/plugin-sdk/slack') as {
+  listSlackDirectoryGroupsFromConfig: (...args: unknown[]) => Promise<unknown[]>;
+  listSlackDirectoryPeersFromConfig: (...args: unknown[]) => Promise<unknown[]>;
+  normalizeSlackMessagingTarget: (target: string) => string | undefined;
+};
+const {
   listSlackDirectoryGroupsFromConfig,
   listSlackDirectoryPeersFromConfig,
   normalizeSlackMessagingTarget,
-} from 'openclaw/plugin-sdk/slack';
-import {
-  normalizeWhatsAppMessagingTarget,
-} from 'openclaw/plugin-sdk/whatsapp-shared';
+} = _slackSdk;
 
-// These functions were removed from openclaw's public exports in 2026.3.23-1.
-// They exist internally but aren't re-exported via plugin-sdk/whatsapp-core or
-// whatsapp-shared.  Providing no-op stubs: the WhatsApp target picker still
-// works via session-based discovery (listSessionDerivedTargetOptions).
+const _whatsappSdk = requireOpenClawSdk('openclaw/plugin-sdk/whatsapp-shared') as {
+  normalizeWhatsAppMessagingTarget: (target: string) => string | undefined;
+};
+const { normalizeWhatsAppMessagingTarget } = _whatsappSdk;
+
+// listWhatsAppDirectory*FromConfig were removed from openclaw's public exports
+// in 2026.3.23-1.  No-op stubs; WhatsApp target picker uses session discovery.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 async function listWhatsAppDirectoryGroupsFromConfig(_params: any): Promise<any[]> { return []; }
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
