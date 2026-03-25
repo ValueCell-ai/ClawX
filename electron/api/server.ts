@@ -1,3 +1,4 @@
+import { randomBytes } from 'node:crypto';
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import { PORTS } from '../utils/config';
 import { logger } from '../utils/logger';
@@ -14,7 +15,7 @@ import { handleSkillRoutes } from './routes/skills';
 import { handleFileRoutes } from './routes/files';
 import { handleSessionRoutes } from './routes/sessions';
 import { handleCronRoutes } from './routes/cron';
-import { sendJson } from './route-utils';
+import { sendJson, setCorsHeaders, requireJsonContentType } from './route-utils';
 
 type RouteHandler = (
   req: IncomingMessage,
@@ -38,10 +39,61 @@ const routeHandlers: RouteHandler[] = [
   handleUsageRoutes,
 ];
 
+/**
+ * Per-session secret token used to authenticate Host API requests.
+ * Generated once at server start and shared with the renderer via IPC.
+ * This prevents cross-origin attackers from reading sensitive data even
+ * if they can reach 127.0.0.1:3210 (the CORS wildcard alone is not
+ * sufficient because browsers attach the Origin header but not a secret).
+ */
+let hostApiToken: string = '';
+
+/** Retrieve the current Host API auth token (for use by IPC proxy). */
+export function getHostApiToken(): string {
+  return hostApiToken;
+}
+
 export function startHostApiServer(ctx: HostApiContext, port = PORTS.CLAWX_HOST_API): Server {
+  // Generate a cryptographically random token for this session.
+  hostApiToken = randomBytes(32).toString('hex');
+
   const server = createServer(async (req, res) => {
     try {
       const requestUrl = new URL(req.url || '/', `http://127.0.0.1:${port}`);
+      // ── CORS headers ─────────────────────────────────────────
+      // Set origin-aware CORS headers early so every response
+      // (including error responses) carries them consistently.
+      const origin = req.headers.origin;
+      setCorsHeaders(res, origin);
+
+      // CORS preflight — respond before auth so browsers can negotiate.
+      if (req.method === 'OPTIONS') {
+        res.statusCode = 204;
+        res.end();
+        return;
+      }
+
+      // ── Auth gate ──────────────────────────────────────────────
+      // Every non-preflight request must carry a valid Bearer token.
+      // Accept via Authorization header (preferred) or ?token= query
+      // parameter (for EventSource which cannot set custom headers).
+      const authHeader = req.headers.authorization || '';
+      const bearerToken = authHeader.startsWith('Bearer ')
+        ? authHeader.slice(7)
+        : (requestUrl.searchParams.get('token') || '');
+      if (bearerToken !== hostApiToken) {
+        sendJson(res, 401, { success: false, error: 'Unauthorized' });
+        return;
+      }
+
+      // ── Content-Type gate (anti-CSRF) ──────────────────────────
+      // Mutation requests must use application/json to force a CORS
+      // preflight, preventing "simple request" CSRF attacks.
+      if (!requireJsonContentType(req)) {
+        sendJson(res, 415, { success: false, error: 'Content-Type must be application/json' });
+        return;
+      }
+
       for (const handler of routeHandlers) {
         if (await handler(req, res, requestUrl, ctx)) {
           return;
