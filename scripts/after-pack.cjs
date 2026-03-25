@@ -301,20 +301,20 @@ function patchBrokenModules(nodeModulesDir) {
     while (stack.length > 0) {
       const dir = stack.pop();
       let entries;
-      try { entries = readdirSync(dir, { withFileTypes: true }); } catch { continue; }
+      try { entries = readdirSync(normWin(dir), { withFileTypes: true }); } catch { continue; }
       for (const entry of entries) {
         if (!entry.isDirectory()) continue;
         const fullPath = join(dir, entry.name);
         if (entry.name === 'lru-cache') {
           const pkgPath = join(fullPath, 'package.json');
-          if (!existsSync(pkgPath)) { stack.push(fullPath); continue; }
+          if (!existsSync(normWin(pkgPath))) { stack.push(fullPath); continue; }
           try {
-            const pkg = JSON.parse(readFileSync(pkgPath, 'utf8'));
+            const pkg = JSON.parse(readFileSync(normWin(pkgPath), 'utf8'));
             if (pkg.type === 'module') continue; // ESM version — already has named exports
             const mainFile = pkg.main || 'index.js';
             const entryFile = join(fullPath, mainFile);
-            if (!existsSync(entryFile)) continue;
-            const original = readFileSync(entryFile, 'utf8');
+            if (!existsSync(normWin(entryFile))) continue;
+            const original = readFileSync(normWin(entryFile), 'utf8');
             if (original.includes('exports.LRUCache')) continue; // already patched
             const patched = [
               original,
@@ -325,7 +325,7 @@ function patchBrokenModules(nodeModulesDir) {
               '}',
               '',
             ].join('\n');
-            writeFileSync(entryFile, patched, 'utf8');
+            writeFileSync(normWin(entryFile), patched, 'utf8');
             lruCount++;
             console.log(`[after-pack] 🩹 Patched lru-cache (CJS v${pkg.version}) at ${relative(rootDir, fullPath)}`);
           } catch (err) {
@@ -608,20 +608,20 @@ exports.default = async function afterPack(context) {
     while (lruStack.length > 0) {
       const dir = lruStack.pop();
       let entries;
-      try { entries = readdirSync(dir, { withFileTypes: true }); } catch { continue; }
+      try { entries = readdirSync(normWin(dir), { withFileTypes: true }); } catch { continue; }
       for (const entry of entries) {
         if (!entry.isDirectory()) continue;
         const fullPath = join(dir, entry.name);
         if (entry.name === 'lru-cache') {
           const pkgPath = join(fullPath, 'package.json');
-          if (!existsSync(pkgPath)) { lruStack.push(fullPath); continue; }
+          if (!existsSync(normWin(pkgPath))) { lruStack.push(fullPath); continue; }
           try {
-            const pkg = JSON.parse(readFS(pkgPath, 'utf8'));
+            const pkg = JSON.parse(readFS(normWin(pkgPath), 'utf8'));
             if (pkg.type === 'module') continue; // ESM — already exports LRUCache
             const mainFile = pkg.main || 'index.js';
             const entryFile = join(fullPath, mainFile);
-            if (!existsSync(entryFile)) continue;
-            const original = readFS(entryFile, 'utf8');
+            if (!existsSync(normWin(entryFile))) continue;
+            const original = readFS(normWin(entryFile), 'utf8');
             if (original.includes('exports.LRUCache')) continue; // already patched
             const patched = [
               original,
@@ -632,7 +632,7 @@ exports.default = async function afterPack(context) {
               '}',
               '',
             ].join('\n');
-            writeFS(entryFile, patched, 'utf8');
+            writeFS(normWin(entryFile), patched, 'utf8');
             asarLruCount++;
             console.log(`[after-pack] 🩹 Patched lru-cache (CJS v${pkg.version}) in app.asar.unpacked at ${relative(asarUnpackedDir, fullPath)}`);
           } catch (err) {
