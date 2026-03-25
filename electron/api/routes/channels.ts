@@ -65,10 +65,17 @@ import {
   normalizeSlackMessagingTarget,
 } from 'openclaw/plugin-sdk/slack';
 import {
-  listWhatsAppDirectoryGroupsFromConfig,
-  listWhatsAppDirectoryPeersFromConfig,
   normalizeWhatsAppMessagingTarget,
-} from 'openclaw/plugin-sdk/whatsapp';
+} from 'openclaw/plugin-sdk/whatsapp-shared';
+
+// These functions were removed from openclaw's public exports in 2026.3.23-1.
+// They exist internally but aren't re-exported via plugin-sdk/whatsapp-core or
+// whatsapp-shared.  Providing no-op stubs: the WhatsApp target picker still
+// works via session-based discovery (listSessionDerivedTargetOptions).
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function listWhatsAppDirectoryGroupsFromConfig(_params: any): Promise<any[]> { return []; }
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function listWhatsAppDirectoryPeersFromConfig(_params: any): Promise<any[]> { return []; }
 import type { HostApiContext } from '../context';
 import { parseJsonBody, sendJson } from '../route-utils';
 

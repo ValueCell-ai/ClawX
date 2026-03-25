@@ -179,6 +179,61 @@ while (queue.length > 0) {
 echo`   Found ${collected.size} total packages (direct + transitive)`;
 echo`   Skipped ${skippedDevCount} dev-only package references`;
 
+// 4b. Collect extra packages required by ClawX's Electron main process that are
+//     NOT deps of openclaw.  These are resolved from openclaw's context at runtime
+//     (via createRequire from the openclaw directory) so they must live in the
+//     bundled openclaw/node_modules/.
+//
+//     For each package we resolve it from the workspace's own node_modules,
+//     then BFS its transitive deps exactly like we did for openclaw above.
+const EXTRA_BUNDLED_PACKAGES = [
+  '@whiskeysockets/baileys',   // WhatsApp channel (was a dep of old clawdbot, not openclaw)
+];
+
+let extraCount = 0;
+for (const pkgName of EXTRA_BUNDLED_PACKAGES) {
+  const pkgLink = path.join(NODE_MODULES, ...pkgName.split('/'));
+  if (!fs.existsSync(pkgLink)) {
+    echo`   ⚠️  Extra package ${pkgName} not found in workspace node_modules, skipping.`;
+    continue;
+  }
+
+  let pkgReal;
+  try { pkgReal = fs.realpathSync(pkgLink); } catch { continue; }
+
+  if (!collected.has(pkgReal)) {
+    collected.set(pkgReal, pkgName);
+    extraCount++;
+
+    // BFS this package's own transitive deps
+    const depVirtualNM = getVirtualStoreNodeModules(pkgReal);
+    if (depVirtualNM) {
+      const extraQueue = [{ nodeModulesDir: depVirtualNM, skipPkg: pkgName }];
+      while (extraQueue.length > 0) {
+        const { nodeModulesDir, skipPkg } = extraQueue.shift();
+        const packages = listPackages(nodeModulesDir);
+        for (const { name, fullPath } of packages) {
+          if (name === skipPkg) continue;
+          if (SKIP_PACKAGES.has(name) || SKIP_SCOPES.some(s => name.startsWith(s))) continue;
+          let realPath;
+          try { realPath = fs.realpathSync(fullPath); } catch { continue; }
+          if (collected.has(realPath)) continue;
+          collected.set(realPath, name);
+          extraCount++;
+          const innerVirtualNM = getVirtualStoreNodeModules(realPath);
+          if (innerVirtualNM && innerVirtualNM !== nodeModulesDir) {
+            extraQueue.push({ nodeModulesDir: innerVirtualNM, skipPkg: name });
+          }
+        }
+      }
+    }
+  }
+}
+
+if (extraCount > 0) {
+  echo`   Added ${extraCount} extra packages (+ transitive deps) for Electron main process`;
+}
+
 // 5. Copy all collected packages into OUTPUT/node_modules/ (flat structure)
 //
 // IMPORTANT: BFS guarantees direct deps are encountered before transitive deps.
