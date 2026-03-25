@@ -18,6 +18,7 @@ import {
   ExternalLink,
   Trash2,
   Cpu,
+  FolderTree,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useSettingsStore } from '@/stores/settings';
@@ -211,6 +212,7 @@ export function Sidebar() {
     { to: '/channels', icon: <Network className="h-[18px] w-[18px]" strokeWidth={2} />, label: t('sidebar.channels') },
     { to: '/skills', icon: <Puzzle className="h-[18px] w-[18px]" strokeWidth={2} />, label: t('sidebar.skills') },
     { to: '/cron', icon: <Clock className="h-[18px] w-[18px]" strokeWidth={2} />, label: t('sidebar.cronTasks') },
+    { to: '/workspace', icon: <FolderTree className="h-[18px] w-[18px]" strokeWidth={2} />, label: t('sidebar.workspace') },
   ];
 
   return (
