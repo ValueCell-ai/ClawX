@@ -101,7 +101,7 @@
         "@typescript-eslint/eslint-plugin": "^8.56.0",
         "@typescript-eslint/parser": "^8.56.0",
         "@vitejs/plugin-react": "^5.1.4",
-        "@wecom/wecom-openclaw-plugin": "^2026.3.20",
+        "@wecom/wecom-openclaw-plugin": "^2026.3.24",
         "autoprefixer": "^10.4.24",
         "class-variance-authority": "^0.7.1",
         "clsx": "^2.1.1",

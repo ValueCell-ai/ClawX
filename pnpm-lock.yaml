@@ -113,8 +113,8 @@ importers:
         specifier: ^5.1.4
         version: 5.1.4(vite@7.3.1(@types/node@25.3.0)(jiti@1.21.7)(yaml@2.8.3))
       '@wecom/wecom-openclaw-plugin':
-        specifier: ^2026.3.20
-        version: 2026.3.20
+        specifier: ^2026.3.24
+        version: 2026.3.24
       '@whiskeysockets/baileys':
         specifier: 7.0.0-rc.9
         version: 7.0.0-rc.9(sharp@0.34.5)
@@ -2979,8 +2979,8 @@ packages:
   '@wecom/aibot-node-sdk@1.0.4':
     resolution: {integrity: sha512-kZkrmlArq0NZyBvtOKw40m5nWTN1WlaA7XtqAo/1hn6N80P4c2mF99t3p1AMzj+dPo6OYvbsaelE8lbVWhkcBg==}
 
-  '@wecom/wecom-openclaw-plugin@2026.3.20':
-    resolution: {integrity: sha512-52lXXq7afwR12LdDVTY7vyZZCApXTcB88A9quuejHZm7eLm3NT/0rbowzyvaAsUVbx35vdk6reGl/5pOehYqrA==}
+  '@wecom/wecom-openclaw-plugin@2026.3.24':
+    resolution: {integrity: sha512-OLtuhEPiLnn/nRZAjeBOa3bBN4Vd9pRtHGhPYLluyZ7/W8K2slngCnC0QNcg3UiCf4b9GnXTJ/EQIckfSjW47w==}
 
   '@whiskeysockets/baileys@7.0.0-rc.9':
     resolution: {integrity: sha512-YFm5gKXfDP9byCXCW3OPHKXLzrAKzolzgVUlRosHHgwbnf2YOO3XknkMm6J7+F0ns8OA0uuSBhgkRHTDtqkacw==}
@@ -4064,10 +4064,6 @@ packages:
   file-entry-cache@8.0.0:
     resolution: {integrity: sha512-XXTUwCvisa5oacNGRP9SfNtYBNAMi+RPwBFmblZEF7N7swHYQS6/Zfk7SRwx4D5j3CH211YNRco1DEMNVfZCnQ==}
     engines: {node: '>=16.0.0'}
-
-  file-type@21.3.2:
-    resolution: {integrity: sha512-DLkUvGwep3poOV2wpzbHCOnSKGk1LzyXTv+aHFgN2VFl96wnp8YA9YjO2qPzg5PuL8q/SW9Pdi6WTkYOIh995w==}
-    engines: {node: '>=20'}
 
   file-type@21.3.4:
     resolution: {integrity: sha512-Ievi/yy8DS3ygGvT47PjSfdFoX+2isQueoYP1cntFW1JLYAuS4GD7NUPGg4zv2iZfV52uDyk5w5Z0TdpRS6Q1g==}
@@ -10265,16 +10261,16 @@ snapshots:
     dependencies:
       axios: 1.13.5(debug@4.4.3)
       eventemitter3: 5.0.4
-      ws: 8.19.0
+      ws: 8.20.0
     transitivePeerDependencies:
       - bufferutil
       - debug
       - utf-8-validate
 
-  '@wecom/wecom-openclaw-plugin@2026.3.20':
+  '@wecom/wecom-openclaw-plugin@2026.3.24':
     dependencies:
       '@wecom/aibot-node-sdk': 1.0.4
-      file-type: 21.3.2
+      file-type: 21.3.4
     transitivePeerDependencies:
       - bufferutil
       - debug
@@ -11625,15 +11621,6 @@ snapshots:
   file-entry-cache@8.0.0:
     dependencies:
       flat-cache: 4.0.1
-
-  file-type@21.3.2:
-    dependencies:
-      '@tokenizer/inflate': 0.4.1
-      strtok3: 10.3.4
-      token-types: 6.1.2
-      uint8array-extras: 1.5.0
-    transitivePeerDependencies:
-      - supports-color
 
   file-type@21.3.4:
     dependencies:
