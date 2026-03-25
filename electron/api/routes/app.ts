@@ -1,6 +1,6 @@
 import type { IncomingMessage, ServerResponse } from 'http';
 import type { HostApiContext } from '../context';
-import { parseJsonBody, sendJson, sendNoContent } from '../route-utils';
+import { parseJsonBody, sendJson } from '../route-utils';
 import { runOpenClawDoctor, runOpenClawDoctorFix } from '../../utils/openclaw-doctor';
 
 export async function handleAppRoutes(
