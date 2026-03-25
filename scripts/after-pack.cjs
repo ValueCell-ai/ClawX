@@ -303,8 +303,13 @@ function patchBrokenModules(nodeModulesDir) {
       let entries;
       try { entries = readdirSync(normWin(dir), { withFileTypes: true }); } catch { continue; }
       for (const entry of entries) {
-        if (!entry.isDirectory()) continue;
         const fullPath = join(dir, entry.name);
+        let isDirectory = entry.isDirectory();
+        if (!isDirectory) {
+          // pnpm layout may contain symlink/junction directories on Windows.
+          try { isDirectory = statSync(normWin(fullPath)).isDirectory(); } catch { isDirectory = false; }
+        }
+        if (!isDirectory) continue;
         if (entry.name === 'lru-cache') {
           const pkgPath = join(fullPath, 'package.json');
           if (!existsSync(normWin(pkgPath))) { stack.push(fullPath); continue; }
@@ -610,8 +615,13 @@ exports.default = async function afterPack(context) {
       let entries;
       try { entries = readdirSync(normWin(dir), { withFileTypes: true }); } catch { continue; }
       for (const entry of entries) {
-        if (!entry.isDirectory()) continue;
         const fullPath = join(dir, entry.name);
+        let isDirectory = entry.isDirectory();
+        if (!isDirectory) {
+          // pnpm layout may contain symlink/junction directories on Windows.
+          try { isDirectory = statSync(normWin(fullPath)).isDirectory(); } catch { isDirectory = false; }
+        }
+        if (!isDirectory) continue;
         if (entry.name === 'lru-cache') {
           const pkgPath = join(fullPath, 'package.json');
           if (!existsSync(normWin(pkgPath))) { lruStack.push(fullPath); continue; }
