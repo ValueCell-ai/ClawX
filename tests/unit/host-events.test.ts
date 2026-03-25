@@ -21,11 +21,11 @@ describe('host-events', () => {
 
   it('subscribes through IPC for mapped host events', async () => {
     const onMock = vi.mocked(window.electron.ipcRenderer.on);
-    const offMock = vi.mocked(window.electron.ipcRenderer.off);
     const captured: Array<(...args: unknown[]) => void> = [];
+    const cleanupSpy = vi.fn();
     onMock.mockImplementation((_, cb: (...args: unknown[]) => void) => {
       captured.push(cb);
-      return () => {};
+      return cleanupSpy;
     });
 
     const { subscribeHostEvent } = await import('@/lib/host-events');
@@ -38,8 +38,10 @@ describe('host-events', () => {
     captured[0]({ state: 'running' });
     expect(handler).toHaveBeenCalledWith({ state: 'running' });
 
+    // unsubscribe should use the cleanup returned by ipc.on() — NOT ipc.off()
+    // which would pass the wrong function reference (see preload wrapper mismatch)
     unsubscribe();
-    expect(offMock).toHaveBeenCalledWith('gateway:status-changed', expect.any(Function));
+    expect(cleanupSpy).toHaveBeenCalledTimes(1);
   });
 
   it('does not use SSE fallback by default for unknown events', async () => {
