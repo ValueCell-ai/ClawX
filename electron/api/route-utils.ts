@@ -33,6 +33,12 @@ export function requireJsonContentType(req: IncomingMessage): boolean {
   if (req.method === 'GET' || req.method === 'OPTIONS' || req.method === 'HEAD') {
     return true;
   }
+  // Requests without a body (content-length 0 or absent) are safe — CSRF
+  // "simple request" attacks rely on sending a crafted body.
+  const contentLength = req.headers['content-length'];
+  if (contentLength === '0' || contentLength === undefined) {
+    return true;
+  }
   const ct = req.headers['content-type'] || '';
   return ct.includes('application/json');
 }
