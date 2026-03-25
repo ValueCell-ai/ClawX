@@ -134,10 +134,12 @@ describe('sanitizeOpenClawConfig', () => {
     logSpy.mockRestore();
   });
 
-  it('skips sanitization and does not overwrite when openclaw.json is empty object', async () => {
-    // Write an empty config (simulates a failed/corrupted read scenario)
-    await writeOpenClawJson({});
-    const configPath = join(testHome, '.openclaw', 'openclaw.json');
+  it('skips sanitization when openclaw.json contains invalid JSON', async () => {
+    // Simulate a corrupted file: readJsonFile returns null, sanitize must bail out
+    const openclawDir = join(testHome, '.openclaw');
+    await mkdir(openclawDir, { recursive: true });
+    const configPath = join(openclawDir, 'openclaw.json');
+    await writeFile(configPath, 'NOT VALID JSON {{{', 'utf8');
     const before = await readFile(configPath, 'utf8');
 
     const { sanitizeOpenClawConfig } = await import('@electron/utils/openclaw-auth');
@@ -146,8 +148,27 @@ describe('sanitizeOpenClawConfig', () => {
     await sanitizeOpenClawConfig();
 
     const after = await readFile(configPath, 'utf8');
-    // File must not be changed - the empty guard must have bailed out
-    expect(JSON.parse(after)).toEqual(JSON.parse(before));
+    // Corrupt file must not be overwritten
+    expect(after).toBe(before);
+
+    logSpy.mockRestore();
+  });
+
+  it('properly sanitizes a genuinely empty {} config (fresh install)', async () => {
+    // A fresh install with {} is a valid config — sanitize should proceed
+    // and enforce tools.profile, commands.restart, etc.
+    await writeOpenClawJson({});
+
+    const { sanitizeOpenClawConfig } = await import('@electron/utils/openclaw-auth');
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+
+    await sanitizeOpenClawConfig();
+
+    const configPath = join(testHome, '.openclaw', 'openclaw.json');
+    const result = JSON.parse(await readFile(configPath, 'utf8')) as Record<string, unknown>;
+    // Fresh install should get tools settings enforced
+    const tools = result.tools as Record<string, unknown>;
+    expect(tools.profile).toBe('full');
 
     logSpy.mockRestore();
   });
