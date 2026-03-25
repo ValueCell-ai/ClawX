@@ -1052,15 +1052,17 @@ export async function sanitizeOpenClawConfig(): Promise<void> {
       return;
     }
 
-    const config = await readOpenClawJson();
-    let modified = false;
-
-    // If the file was unreadable or empty, bail out rather than overwriting
-    // the existing file with a stripped-down skeleton.
-    if (Object.keys(config).length === 0) {
-      console.log('[sanitize] openclaw.json appears empty or unreadable, skipping sanitization to preserve data');
+    // Read the raw file directly instead of going through readOpenClawJson()
+    // which coalesces null → {}.  We need to distinguish a genuinely empty
+    // file (valid, proceed normally) from a corrupt/unreadable file (null,
+    // bail out to avoid overwriting the user's data with a skeleton config).
+    const rawConfig = await readJsonFile<Record<string, unknown>>(OPENCLAW_CONFIG_PATH);
+    if (rawConfig === null) {
+      console.log('[sanitize] openclaw.json could not be parsed, skipping sanitization to preserve data');
       return;
     }
+    const config: Record<string, unknown> = rawConfig;
+    let modified = false;
 
     // ── skills section ──────────────────────────────────────────────
     // OpenClaw's Zod schema uses .strict() on the skills object, accepting
