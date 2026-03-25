@@ -38,6 +38,10 @@ afterPack: ./scripts/after-pack.cjs
 asar: true
 asarUnpack:
   - "**/*.node"
+  # lru-cache CJS/ESM interop: older CJS versions (v5, v6, v7) don't export
+  # `LRUCache` as a named property, breaking `import { LRUCache }` in Node.js
+  # 22+ (Electron 40+).  Unpacking lets afterPack patch them in place.
+  - "**/node_modules/lru-cache/**"
 
 # Disable native module rebuilding.
 # The Electron renderer/main process has no native (.node) dependencies.
