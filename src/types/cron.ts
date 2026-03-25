@@ -5,13 +5,23 @@
 
 import { ChannelType } from './channel';
 
+export type CronJobDeliveryMode = 'none' | 'announce';
+
+export interface CronJobDelivery {
+  mode: CronJobDeliveryMode;
+  channel?: ChannelType | string;
+  to?: string;
+  accountId?: string;
+}
+
 /**
  * Cron job target (where to send the result)
  */
 export interface CronJobTarget {
-  channelType: ChannelType;
+  channelType: ChannelType | string;
   channelId: string;
   channelName: string;
+  recipient?: string;
 }
 
 /**
@@ -41,6 +51,7 @@ export interface CronJob {
   name: string;
   message: string;
   schedule: string | CronSchedule;
+  delivery?: CronJobDelivery;
   target?: CronJobTarget;
   enabled: boolean;
   createdAt: string;
@@ -51,13 +62,12 @@ export interface CronJob {
 
 /**
  * Input for creating a cron job from the UI.
- * No target/delivery — UI-created tasks push results to the ClawX chat page.
- * Tasks created via external channels are handled directly by the Gateway.
  */
 export interface CronJobCreateInput {
   name: string;
   message: string;
   schedule: string;
+  delivery?: CronJobDelivery;
   enabled?: boolean;
 }
 
@@ -68,6 +78,7 @@ export interface CronJobUpdateInput {
   name?: string;
   message?: string;
   schedule?: string;
+  delivery?: CronJobDelivery;
   enabled?: boolean;
 }
 

@@ -918,18 +918,20 @@ export async function syncSessionIdleMinutesToOpenClaw(): Promise<void> {
 /**
  * Update a provider entry in every discovered agent's models.json.
  */
-export async function updateAgentModelProvider(
+type AgentModelProviderEntry = {
+  baseUrl?: string;
+  api?: string;
+  models?: Array<{ id: string; name: string }>;
+  apiKey?: string;
+  /** When true, pi-ai sends Authorization: Bearer instead of x-api-key */
+  authHeader?: boolean;
+};
+
+async function updateModelsJsonProviderEntriesForAgents(
+  agentIds: string[],
   providerType: string,
-  entry: {
-    baseUrl?: string;
-    api?: string;
-    models?: Array<{ id: string; name: string }>;
-    apiKey?: string;
-    /** When true, pi-ai sends Authorization: Bearer instead of x-api-key */
-    authHeader?: boolean;
-  }
+  entry: AgentModelProviderEntry,
 ): Promise<void> {
-  const agentIds = await discoverAgentIds();
   for (const agentId of agentIds) {
     const modelsPath = join(homedir(), '.openclaw', 'agents', agentId, 'agent', 'models.json');
     let data: Record<string, unknown> = {};
@@ -973,6 +975,26 @@ export async function updateAgentModelProvider(
       console.warn(`Failed to update models.json for agent "${agentId}":`, err);
     }
   }
+}
+
+export async function updateAgentModelProvider(
+  providerType: string,
+  entry: AgentModelProviderEntry,
+): Promise<void> {
+  const agentIds = await discoverAgentIds();
+  await updateModelsJsonProviderEntriesForAgents(agentIds, providerType, entry);
+}
+
+export async function updateSingleAgentModelProvider(
+  agentId: string,
+  providerType: string,
+  entry: AgentModelProviderEntry,
+): Promise<void> {
+  const normalizedAgentId = agentId.trim();
+  if (!normalizedAgentId) {
+    throw new Error('agentId is required');
+  }
+  await updateModelsJsonProviderEntriesForAgents([normalizedAgentId], providerType, entry);
 }
 
 /**

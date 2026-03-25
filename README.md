@@ -100,6 +100,7 @@ Complete the entire setup—from installation to your first AI interaction—thr
 ### 💬 Intelligent Chat Interface
 Communicate with AI agents through a modern chat experience. Support for multiple conversation contexts, message history, rich content rendering with Markdown, and direct `@agent` routing in the main composer for multi-agent setups.
 When you target another agent with `@agent`, ClawX switches into that agent's own conversation context directly instead of relaying through the default agent. Agent workspaces stay separate by default, and stronger isolation depends on OpenClaw sandbox settings.
+Each agent can also override its own `provider/model` runtime setting; agents without overrides continue inheriting the global default model.
 
 ### 📡 Multi-Channel Management
 Configure and monitor multiple AI channels simultaneously. Each channel operates independently, allowing you to run specialized agents for different tasks.
@@ -108,6 +109,8 @@ ClawX now also bundles Tencent's official personal WeChat channel plugin, so you
 
 ### ⏰ Cron-Based Automation
 Schedule AI tasks to run automatically. Define triggers, set intervals, and let your AI agents work around the clock without manual intervention.
+The Cron page now lets you configure external delivery directly in the task form with separate sender-account and recipient-target selectors. For supported channels, recipient targets are discovered automatically from channel directories or known session history, so you no longer need to edit `jobs.json` by hand.
+Known limitation: WeChat is intentionally excluded from supported cron delivery channels for now. The current `openclaw-weixin` plugin requires a live conversation `contextToken` for outbound sends, so cron-style proactive delivery is not supported by the plugin itself.
 
 ### 🧩 Extensible Skill System
 Extend your AI agents with pre-built skills. Browse, install, and manage skills through the integrated skill panel—no package managers required.

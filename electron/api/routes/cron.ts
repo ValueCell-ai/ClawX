@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import type { HostApiContext } from '../context';
 import { parseJsonBody, sendJson } from '../route-utils';
 import { getOpenClawConfigDir } from '../../utils/paths';
+import { toOpenClawChannelType, toUiChannelType } from '../../utils/channel-alias';
 
 interface GatewayCronJob {
   id: string;
@@ -14,7 +15,7 @@ interface GatewayCronJob {
   updatedAtMs: number;
   schedule: { kind: string; expr?: string; everyMs?: number; at?: string; tz?: string };
   payload: { kind: string; message?: string; text?: string };
-  delivery?: { mode: string; channel?: string; to?: string };
+  delivery?: { mode: string; channel?: string; to?: string; accountId?: string };
   sessionTarget?: string;
   state: {
     nextRunAtMs?: number;
@@ -261,11 +262,109 @@ export function buildCronSessionFallbackMessages(params: {
   return messages.slice(-limit);
 }
 
+type JsonRecord = Record<string, unknown>;
+type GatewayCronDelivery = NonNullable<GatewayCronJob['delivery']>;
+
+function getUnsupportedCronDeliveryError(channel: string | undefined): string | null {
+  if (!channel) return null;
+  return toUiChannelType(channel) === 'wechat'
+    ? 'WeChat scheduled delivery is not supported because the plugin requires a live conversation context token.'
+    : null;
+}
+
+function normalizeCronDelivery(
+  rawDelivery: unknown,
+  fallbackMode: GatewayCronDelivery['mode'] = 'none',
+): GatewayCronDelivery {
+  if (!rawDelivery || typeof rawDelivery !== 'object') {
+    return { mode: fallbackMode };
+  }
+
+  const delivery = rawDelivery as JsonRecord;
+  const mode = typeof delivery.mode === 'string' && delivery.mode.trim()
+    ? delivery.mode.trim()
+    : fallbackMode;
+  const channel = typeof delivery.channel === 'string' && delivery.channel.trim()
+    ? toOpenClawChannelType(delivery.channel.trim())
+    : undefined;
+  const to = typeof delivery.to === 'string' && delivery.to.trim()
+    ? delivery.to.trim()
+    : undefined;
+  const accountId = typeof delivery.accountId === 'string' && delivery.accountId.trim()
+    ? delivery.accountId.trim()
+    : undefined;
+
+  if (mode === 'announce' && !channel) {
+    return { mode: 'none' };
+  }
+
+  return {
+    mode,
+    ...(channel ? { channel } : {}),
+    ...(to ? { to } : {}),
+    ...(accountId ? { accountId } : {}),
+  };
+}
+
+function normalizeCronDeliveryPatch(rawDelivery: unknown): Record<string, unknown> {
+  if (!rawDelivery || typeof rawDelivery !== 'object') {
+    return {};
+  }
+
+  const delivery = rawDelivery as JsonRecord;
+  const patch: Record<string, unknown> = {};
+  if ('mode' in delivery) {
+    patch.mode = typeof delivery.mode === 'string' && delivery.mode.trim()
+      ? delivery.mode.trim()
+      : 'none';
+  }
+  if ('channel' in delivery) {
+    patch.channel = typeof delivery.channel === 'string' && delivery.channel.trim()
+      ? toOpenClawChannelType(delivery.channel.trim())
+      : '';
+  }
+  if ('to' in delivery) {
+    patch.to = typeof delivery.to === 'string' ? delivery.to : '';
+  }
+  if ('accountId' in delivery) {
+    patch.accountId = typeof delivery.accountId === 'string' ? delivery.accountId : '';
+  }
+  return patch;
+}
+
+function buildCronUpdatePatch(input: Record<string, unknown>): Record<string, unknown> {
+  const patch = { ...input };
+
+  if (typeof patch.schedule === 'string') {
+    patch.schedule = { kind: 'cron', expr: patch.schedule };
+  }
+
+  if (typeof patch.message === 'string') {
+    patch.payload = { kind: 'agentTurn', message: patch.message };
+    delete patch.message;
+  }
+
+  if ('delivery' in patch) {
+    patch.delivery = normalizeCronDeliveryPatch(patch.delivery);
+  }
+
+  return patch;
+}
+
 function transformCronJob(job: GatewayCronJob) {
   const message = job.payload?.message || job.payload?.text || '';
-  const channelType = job.delivery?.channel;
+  const gatewayDelivery = normalizeCronDelivery(job.delivery);
+  const channelType = gatewayDelivery.channel ? toUiChannelType(gatewayDelivery.channel) : undefined;
+  const delivery = channelType
+    ? { ...gatewayDelivery, channel: channelType }
+    : gatewayDelivery;
   const target = channelType
-    ? { channelType, channelId: channelType, channelName: channelType }
+    ? {
+      channelType,
+      channelId: delivery.accountId || gatewayDelivery.channel,
+      channelName: channelType,
+      recipient: delivery.to,
+    }
     : undefined;
   const lastRun = job.state?.lastRunAtMs
     ? {
@@ -284,6 +383,7 @@ function transformCronJob(job: GatewayCronJob) {
     name: job.name,
     message,
     schedule: job.schedule,
+    delivery,
     target,
     enabled: job.enabled,
     createdAt: new Date(job.createdAtMs).toISOString(),
@@ -378,7 +478,19 @@ export async function handleCronRoutes(
 
   if (url.pathname === '/api/cron/jobs' && req.method === 'POST') {
     try {
-      const input = await parseJsonBody<{ name: string; message: string; schedule: string; enabled?: boolean }>(req);
+      const input = await parseJsonBody<{
+        name: string;
+        message: string;
+        schedule: string;
+        delivery?: GatewayCronDelivery;
+        enabled?: boolean;
+      }>(req);
+      const delivery = normalizeCronDelivery(input.delivery);
+      const unsupportedDeliveryError = getUnsupportedCronDeliveryError(delivery.channel);
+      if (delivery.mode === 'announce' && unsupportedDeliveryError) {
+        sendJson(res, 400, { success: false, error: unsupportedDeliveryError });
+        return true;
+      }
       const result = await ctx.gatewayManager.rpc('cron.add', {
         name: input.name,
         schedule: { kind: 'cron', expr: input.schedule },
@@ -386,7 +498,7 @@ export async function handleCronRoutes(
         enabled: input.enabled ?? true,
         wakeMode: 'next-heartbeat',
         sessionTarget: 'isolated',
-        delivery: { mode: 'none' },
+        delivery,
       });
       sendJson(res, 200, result && typeof result === 'object' ? transformCronJob(result as GatewayCronJob) : result);
     } catch (error) {
@@ -399,15 +511,23 @@ export async function handleCronRoutes(
     try {
       const id = decodeURIComponent(url.pathname.slice('/api/cron/jobs/'.length));
       const input = await parseJsonBody<Record<string, unknown>>(req);
-      const patch = { ...input };
-      if (typeof patch.schedule === 'string') {
-        patch.schedule = { kind: 'cron', expr: patch.schedule };
+      const patch = buildCronUpdatePatch(input);
+      const deliveryPatch = patch.delivery && typeof patch.delivery === 'object'
+        ? patch.delivery as Record<string, unknown>
+        : undefined;
+      const deliveryChannel = typeof deliveryPatch?.channel === 'string' && deliveryPatch.channel.trim()
+        ? deliveryPatch.channel.trim()
+        : undefined;
+      const deliveryMode = typeof deliveryPatch?.mode === 'string' && deliveryPatch.mode.trim()
+        ? deliveryPatch.mode.trim()
+        : undefined;
+      const unsupportedDeliveryError = getUnsupportedCronDeliveryError(deliveryChannel);
+      if (unsupportedDeliveryError && deliveryMode !== 'none') {
+        sendJson(res, 400, { success: false, error: unsupportedDeliveryError });
+        return true;
       }
-      if (typeof patch.message === 'string') {
-        patch.payload = { kind: 'agentTurn', message: patch.message };
-        delete patch.message;
-      }
-      sendJson(res, 200, await ctx.gatewayManager.rpc('cron.update', { id, patch }));
+      const result = await ctx.gatewayManager.rpc('cron.update', { id, patch });
+      sendJson(res, 200, result && typeof result === 'object' ? transformCronJob(result as GatewayCronJob) : result);
     } catch (error) {
       sendJson(res, 500, { success: false, error: String(error) });
     }

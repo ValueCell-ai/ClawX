@@ -28,7 +28,8 @@ function resolveOpenClawPackageJson(packageName: string): string {
 }
 
 const baileysPath = dirname(resolveOpenClawPackageJson('@whiskeysockets/baileys'));
-const qrcodeTerminalPath = dirname(resolveOpenClawPackageJson('qrcode-terminal'));
+const qrCodeModulePath = openclawRequire.resolve('qrcode-terminal/vendor/QRCode/index.js');
+const qrErrorCorrectLevelPath = openclawRequire.resolve('qrcode-terminal/vendor/QRCode/QRErrorCorrectLevel.js');
 
 // Load Baileys dependencies dynamically
 const {
@@ -39,8 +40,8 @@ const {
 } = require(baileysPath);
 
 // Load QRCode dependencies dynamically
-const QRCodeModule = require(join(qrcodeTerminalPath, 'vendor', 'QRCode', 'index.js'));
-const QRErrorCorrectLevelModule = require(join(qrcodeTerminalPath, 'vendor', 'QRCode', 'QRErrorCorrectLevel.js'));
+const QRCodeModule = require(qrCodeModulePath);
+const QRErrorCorrectLevelModule = require(qrErrorCorrectLevelPath);
 
 // Types from Baileys (approximate since we don't have types for dynamic require)
 interface BaileysError extends Error {
