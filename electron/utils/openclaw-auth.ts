@@ -1266,6 +1266,43 @@ export async function sanitizeOpenClawConfig(): Promise<void> {
           }
         }
       }
+
+      // ── Remove legacy built-in channel plugin refs ──────────────────
+      // Recent OpenClaw versions treat WhatsApp as a built-in channel.
+      // Leaving `whatsapp` in plugins.allow activates a restrictive plugin
+      // allowlist that can block other built-in channels such as Discord.
+      const builtInChannelPluginIds = ['whatsapp'];
+      for (const pluginId of builtInChannelPluginIds) {
+        const allowIndex = allowArr2.indexOf(pluginId);
+        if (allowIndex !== -1) {
+          allowArr2.splice(allowIndex, 1);
+          console.log(`[sanitize] Removed built-in channel "${pluginId}" from plugins.allow`);
+          modified = true;
+        }
+        if (pEntries[pluginId]) {
+          delete pEntries[pluginId];
+          console.log(`[sanitize] Removed legacy plugins.entries.${pluginId} for built-in channel`);
+          modified = true;
+        }
+      }
+
+      if (Array.isArray(pluginsObj.allow) && pluginsObj.allow.length === 0) {
+        delete pluginsObj.allow;
+        modified = true;
+      }
+      if (pluginsObj.entries && Object.keys(pEntries).length === 0) {
+        delete pluginsObj.entries;
+        modified = true;
+      }
+      const pluginKeysExcludingEnabled = Object.keys(pluginsObj).filter((key) => key !== 'enabled');
+      if (pluginsObj.enabled === true && pluginKeysExcludingEnabled.length === 0) {
+        delete pluginsObj.enabled;
+        modified = true;
+      }
+      if (Object.keys(pluginsObj).length === 0) {
+        delete config.plugins;
+        modified = true;
+      }
     }
 
     // ── channels default-account migration ─────────────────────────

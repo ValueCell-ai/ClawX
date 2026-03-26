@@ -104,6 +104,43 @@ async function sanitizeConfig(filePath: string): Promise<boolean> {
         }
       }
     }
+
+    const allow = Array.isArray(pluginsObj.allow) ? [...pluginsObj.allow as string[]] : [];
+    const entries = (
+      pluginsObj.entries && typeof pluginsObj.entries === 'object' && !Array.isArray(pluginsObj.entries)
+        ? { ...(pluginsObj.entries as Record<string, unknown>) }
+        : {}
+    ) as Record<string, unknown>;
+
+    const nextAllow = allow.filter((id) => id !== 'whatsapp');
+    if (nextAllow.length !== allow.length) {
+      pluginsObj.allow = nextAllow;
+      modified = true;
+    }
+
+    if ('whatsapp' in entries) {
+      delete entries.whatsapp;
+      pluginsObj.entries = entries;
+      modified = true;
+    }
+
+    if (Array.isArray(pluginsObj.allow) && pluginsObj.allow.length === 0) {
+      delete pluginsObj.allow;
+      modified = true;
+    }
+    if (pluginsObj.entries && Object.keys(entries).length === 0) {
+      delete pluginsObj.entries;
+      modified = true;
+    }
+    const pluginKeysExcludingEnabled = Object.keys(pluginsObj).filter((key) => key !== 'enabled');
+    if (pluginsObj.enabled === true && pluginKeysExcludingEnabled.length === 0) {
+      delete pluginsObj.enabled;
+      modified = true;
+    }
+    if (Object.keys(pluginsObj).length === 0) {
+      delete config.plugins;
+      modified = true;
+    }
   }
 
   // Mirror: remove stale tools.web.search.kimi.apiKey when moonshot provider exists.
@@ -275,7 +312,7 @@ describe('sanitizeOpenClawConfig (blocklist approach)', () => {
     await writeConfig({
       skills: { enabled: true, entries: {} },
       channels: { discord: { token: 'abc', enabled: true } },
-      plugins: { entries: { whatsapp: { enabled: true } } },
+      plugins: { entries: { customPlugin: { enabled: true } } },
       gateway: { mode: 'local', auth: { token: 'xyz' } },
       agents: { defaults: { model: { primary: 'gpt-4' } } },
       models: { providers: { openai: { baseUrl: 'https://api.openai.com' } } },
@@ -289,7 +326,7 @@ describe('sanitizeOpenClawConfig (blocklist approach)', () => {
     expect(result.skills).not.toHaveProperty('enabled');
     // All other sections unchanged
     expect(result.channels).toEqual({ discord: { token: 'abc', enabled: true } });
-    expect(result.plugins).toEqual({ entries: { whatsapp: { enabled: true } } });
+    expect(result.plugins).toEqual({ entries: { customPlugin: { enabled: true } } });
     expect(result.gateway).toEqual({ mode: 'local', auth: { token: 'xyz' } });
     expect(result.agents).toEqual({ defaults: { model: { primary: 'gpt-4' } } });
   });
@@ -359,7 +396,7 @@ describe('sanitizeOpenClawConfig (blocklist approach)', () => {
             '/another/missing/plugin/dir',
           ],
         },
-        entries: { whatsapp: { enabled: true } },
+        entries: { customPlugin: { enabled: true } },
       },
       gateway: { mode: 'local' },
     });
@@ -372,9 +409,38 @@ describe('sanitizeOpenClawConfig (blocklist approach)', () => {
     const load = plugins.load as Record<string, unknown>;
     expect(load.paths).toEqual([]);
     // Other plugin config is preserved
-    expect(plugins.entries).toEqual({ whatsapp: { enabled: true } });
+    expect(plugins.entries).toEqual({ customPlugin: { enabled: true } });
     // Other top-level sections untouched
     expect(result.gateway).toEqual({ mode: 'local' });
+  });
+
+  it('removes legacy whatsapp plugin refs because whatsapp is a built-in channel', async () => {
+    await writeConfig({
+      plugins: {
+        enabled: true,
+        allow: ['whatsapp', 'customPlugin'],
+        entries: {
+          whatsapp: { enabled: true },
+          customPlugin: { enabled: true },
+        },
+      },
+      channels: {
+        discord: { enabled: true, token: 'abc' },
+      },
+    });
+
+    const modified = await sanitizeConfig(configPath);
+    expect(modified).toBe(true);
+
+    const result = await readConfig();
+    expect(result.channels).toEqual({ discord: { enabled: true, token: 'abc' } });
+    expect(result.plugins).toEqual({
+      enabled: true,
+      allow: ['customPlugin'],
+      entries: {
+        customPlugin: { enabled: true },
+      },
+    });
   });
 
   it('removes bundled node_modules paths from plugins.load.paths', async () => {

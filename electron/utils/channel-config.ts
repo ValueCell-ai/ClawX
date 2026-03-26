@@ -33,7 +33,8 @@ const LEGACY_WECHAT_CREDENTIALS_DIR = join(OPENCLAW_DIR, 'credentials', WECHAT_P
 const LEGACY_WECHAT_SYNC_DIR = join(OPENCLAW_DIR, 'agents', 'default', 'sessions', '.openclaw-weixin-sync');
 
 // Channels that are managed as plugins (config goes under plugins.entries, not channels)
-const PLUGIN_CHANNELS = ['whatsapp'];
+const PLUGIN_CHANNELS: string[] = [];
+const LEGACY_BUILTIN_CHANNEL_PLUGIN_IDS = new Set(['whatsapp']);
 
 // Unique credential key per channel type – used for duplicate bot detection.
 // Maps each channel type to the field that uniquely identifies a bot/account.
@@ -193,6 +194,45 @@ function channelHasConfiguredAccounts(channelSection: ChannelConfigData | undefi
     return Object.keys(channelSection).some((key) => !CHANNEL_TOP_LEVEL_KEYS_TO_KEEP.has(key));
 }
 
+function ensurePluginRegistration(currentConfig: OpenClawConfig, pluginId: string): void {
+    if (!currentConfig.plugins) {
+        currentConfig.plugins = {
+            allow: [pluginId],
+            enabled: true,
+            entries: {
+                [pluginId]: { enabled: true },
+            },
+        };
+        return;
+    }
+
+    currentConfig.plugins.enabled = true;
+    const allow = Array.isArray(currentConfig.plugins.allow)
+        ? currentConfig.plugins.allow as string[]
+        : [];
+    if (!allow.includes(pluginId)) {
+        currentConfig.plugins.allow = [...allow, pluginId];
+    }
+
+    if (!currentConfig.plugins.entries) {
+        currentConfig.plugins.entries = {};
+    }
+    if (!currentConfig.plugins.entries[pluginId]) {
+        currentConfig.plugins.entries[pluginId] = {};
+    }
+    currentConfig.plugins.entries[pluginId].enabled = true;
+}
+
+function cleanupLegacyBuiltInChannelPluginRegistration(
+    currentConfig: OpenClawConfig,
+    channelType: string,
+): boolean {
+    if (!LEGACY_BUILTIN_CHANNEL_PLUGIN_IDS.has(channelType)) {
+        return false;
+    }
+    return removePluginRegistration(currentConfig, channelType);
+}
+
 // ── Types ────────────────────────────────────────────────────────
 
 export interface ChannelConfigData {
@@ -262,6 +302,10 @@ export async function writeOpenClawConfig(config: OpenClawConfig): Promise<void>
 // ── Channel operations ───────────────────────────────────────────
 
 async function ensurePluginAllowlist(currentConfig: OpenClawConfig, channelType: string): Promise<void> {
+    if (PLUGIN_CHANNELS.includes(channelType)) {
+        ensurePluginRegistration(currentConfig, channelType);
+    }
+
     if (channelType === 'feishu') {
         const feishuPluginId = await resolveFeishuPluginId();
         if (!currentConfig.plugins) {
@@ -582,18 +626,14 @@ export async function saveChannelConfig(
         const currentConfig = await readOpenClawConfig();
         const resolvedAccountId = accountId || DEFAULT_ACCOUNT_ID;
 
+        cleanupLegacyBuiltInChannelPluginRegistration(currentConfig, resolvedChannelType);
         await ensurePluginAllowlist(currentConfig, resolvedChannelType);
 
         // Plugin-based channels (e.g. WhatsApp) go under plugins.entries, not channels
         if (PLUGIN_CHANNELS.includes(resolvedChannelType)) {
-            if (!currentConfig.plugins) {
-                currentConfig.plugins = {};
-            }
-            if (!currentConfig.plugins.entries) {
-                currentConfig.plugins.entries = {};
-            }
-            currentConfig.plugins.entries[resolvedChannelType] = {
-                ...currentConfig.plugins.entries[resolvedChannelType],
+            ensurePluginRegistration(currentConfig, resolvedChannelType);
+            currentConfig.plugins!.entries![resolvedChannelType] = {
+                ...currentConfig.plugins!.entries![resolvedChannelType],
                 enabled: config.enabled ?? true,
             };
             await writeOpenClawConfig(currentConfig);
@@ -815,6 +855,7 @@ export async function deleteChannelConfig(channelType: string): Promise<void> {
     return withConfigLock(async () => {
         const resolvedChannelType = resolveStoredChannelType(channelType);
         const currentConfig = await readOpenClawConfig();
+        cleanupLegacyBuiltInChannelPluginRegistration(currentConfig, resolvedChannelType);
 
         if (currentConfig.channels?.[resolvedChannelType]) {
             delete currentConfig.channels[resolvedChannelType];
@@ -827,14 +868,8 @@ export async function deleteChannelConfig(channelType: string): Promise<void> {
             }
             console.log(`Deleted channel config for ${resolvedChannelType}`);
         } else if (PLUGIN_CHANNELS.includes(resolvedChannelType)) {
-            if (currentConfig.plugins?.entries?.[resolvedChannelType]) {
-                delete currentConfig.plugins.entries[resolvedChannelType];
-                if (Object.keys(currentConfig.plugins.entries).length === 0) {
-                    delete currentConfig.plugins.entries;
-                }
-                if (currentConfig.plugins && Object.keys(currentConfig.plugins).length === 0) {
-                    delete currentConfig.plugins;
-                }
+            if (currentConfig.plugins?.entries?.[resolvedChannelType] || currentConfig.plugins?.allow?.includes(resolvedChannelType)) {
+                removePluginRegistration(currentConfig, resolvedChannelType);
                 await writeOpenClawConfig(currentConfig);
                 console.log(`Deleted plugin channel config for ${resolvedChannelType}`);
             }
@@ -1049,6 +1084,7 @@ export async function setChannelEnabled(channelType: string, enabled: boolean): 
     return withConfigLock(async () => {
         const resolvedChannelType = resolveStoredChannelType(channelType);
         const currentConfig = await readOpenClawConfig();
+        cleanupLegacyBuiltInChannelPluginRegistration(currentConfig, resolvedChannelType);
 
         if (isWechatChannelType(resolvedChannelType)) {
             if (enabled) {
@@ -1059,9 +1095,13 @@ export async function setChannelEnabled(channelType: string, enabled: boolean): 
         }
 
         if (PLUGIN_CHANNELS.includes(resolvedChannelType)) {
-            if (!currentConfig.plugins) currentConfig.plugins = {};
-            if (!currentConfig.plugins.entries) currentConfig.plugins.entries = {};
-            if (!currentConfig.plugins.entries[resolvedChannelType]) currentConfig.plugins.entries[resolvedChannelType] = {};
+            if (enabled) {
+                ensurePluginRegistration(currentConfig, resolvedChannelType);
+            } else {
+                if (!currentConfig.plugins) currentConfig.plugins = {};
+                if (!currentConfig.plugins.entries) currentConfig.plugins.entries = {};
+                if (!currentConfig.plugins.entries[resolvedChannelType]) currentConfig.plugins.entries[resolvedChannelType] = {};
+            }
             currentConfig.plugins.entries[resolvedChannelType].enabled = enabled;
             await writeOpenClawConfig(currentConfig);
             console.log(`Set plugin channel ${resolvedChannelType} enabled: ${enabled}`);
