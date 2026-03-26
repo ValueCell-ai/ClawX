@@ -283,7 +283,7 @@ class DeviceOAuthManager extends EventEmitter {
             enabled: existing?.enabled ?? true,
             baseUrl, // Save the dynamically resolved URL (Global vs CN)
 
-            model: existing?.model || getProviderDefaultModel(providerType),
+            model: getProviderDefaultModel(providerType) || existing?.model,
             createdAt: existing?.createdAt || new Date().toISOString(),
             updatedAt: new Date().toISOString(),
         };
