@@ -40,6 +40,19 @@ async function sanitizeConfig(filePath: string): Promise<boolean> {
 
   const config = JSON.parse(raw) as Record<string, unknown>;
   let modified = false;
+  const BUILTIN_CHANNEL_IDS = new Set([
+    'discord',
+    'telegram',
+    'whatsapp',
+    'slack',
+    'signal',
+    'imessage',
+    'matrix',
+    'line',
+    'msteams',
+    'googlechat',
+    'mattermost',
+  ]);
 
   /** Non-throwing async existence check. */
   async function fileExists(p: string): Promise<boolean> {
@@ -112,15 +125,40 @@ async function sanitizeConfig(filePath: string): Promise<boolean> {
         : {}
     ) as Record<string, unknown>;
 
-    const nextAllow = allow.filter((id) => id !== 'whatsapp');
-    if (nextAllow.length !== allow.length) {
-      pluginsObj.allow = nextAllow;
-      modified = true;
-    }
-
     if ('whatsapp' in entries) {
       delete entries.whatsapp;
       pluginsObj.entries = entries;
+      modified = true;
+    }
+
+    const configuredBuiltIns = new Set<string>();
+    const channels = config.channels;
+    if (channels && typeof channels === 'object' && !Array.isArray(channels)) {
+      for (const [channelId, section] of Object.entries(channels as Record<string, Record<string, unknown>>)) {
+        if (!BUILTIN_CHANNEL_IDS.has(channelId)) continue;
+        if (!section || section.enabled === false) continue;
+        if (Object.keys(section).length > 0) {
+          configuredBuiltIns.add(channelId);
+        }
+      }
+    }
+
+    const externalPluginIds = allow.filter((id) => !BUILTIN_CHANNEL_IDS.has(id));
+    const nextAllow = [...externalPluginIds];
+    if (externalPluginIds.length > 0) {
+      for (const channelId of configuredBuiltIns) {
+        if (!nextAllow.includes(channelId)) {
+          nextAllow.push(channelId);
+        }
+      }
+    }
+
+    if (JSON.stringify(nextAllow) !== JSON.stringify(allow)) {
+      if (nextAllow.length > 0) {
+        pluginsObj.allow = nextAllow;
+      } else {
+        delete pluginsObj.allow;
+      }
       modified = true;
     }
 
@@ -414,7 +452,7 @@ describe('sanitizeOpenClawConfig (blocklist approach)', () => {
     expect(result.gateway).toEqual({ mode: 'local' });
   });
 
-  it('removes legacy whatsapp plugin refs because whatsapp is a built-in channel', async () => {
+  it('keeps configured built-in channels in plugins.allow when external plugins are enabled', async () => {
     await writeConfig({
       plugins: {
         enabled: true,
@@ -436,7 +474,7 @@ describe('sanitizeOpenClawConfig (blocklist approach)', () => {
     expect(result.channels).toEqual({ discord: { enabled: true, token: 'abc' } });
     expect(result.plugins).toEqual({
       enabled: true,
-      allow: ['customPlugin'],
+      allow: ['customPlugin', 'discord'],
       entries: {
         customPlugin: { enabled: true },
       },

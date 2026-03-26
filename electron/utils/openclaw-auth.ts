@@ -133,6 +133,19 @@ async function discoverAgentIds(): Promise<string[]> {
 const OPENCLAW_CONFIG_PATH = join(homedir(), '.openclaw', 'openclaw.json');
 const FEISHU_PLUGIN_ID_CANDIDATES = ['openclaw-lark', 'feishu-openclaw-plugin'] as const;
 const VALID_COMPACTION_MODES = new Set(['default', 'safeguard']);
+const BUILTIN_CHANNEL_IDS = new Set([
+  'discord',
+  'telegram',
+  'whatsapp',
+  'slack',
+  'signal',
+  'imessage',
+  'matrix',
+  'line',
+  'msteams',
+  'googlechat',
+  'mattermost',
+]);
 
 async function readOpenClawJson(): Promise<Record<string, unknown>> {
   return (await readJsonFile<Record<string, unknown>>(OPENCLAW_CONFIG_PATH)) ?? {};
@@ -1267,23 +1280,47 @@ export async function sanitizeOpenClawConfig(): Promise<void> {
         }
       }
 
-      // ── Remove legacy built-in channel plugin refs ──────────────────
-      // Recent OpenClaw versions treat WhatsApp as a built-in channel.
-      // Leaving `whatsapp` in plugins.allow activates a restrictive plugin
-      // allowlist that can block other built-in channels such as Discord.
-      const builtInChannelPluginIds = ['whatsapp'];
-      for (const pluginId of builtInChannelPluginIds) {
-        const allowIndex = allowArr2.indexOf(pluginId);
-        if (allowIndex !== -1) {
-          allowArr2.splice(allowIndex, 1);
-          console.log(`[sanitize] Removed built-in channel "${pluginId}" from plugins.allow`);
-          modified = true;
+      // ── Reconcile built-in channels with restrictive plugin allowlists ──
+      // If plugins.allow is active because an external plugin is configured,
+      // configured built-in channels must also be present or they will be
+      // blocked on restart. If the allowlist only contains built-ins, drop it.
+      const configuredBuiltIns = new Set<string>();
+      const channelsObj = config.channels as Record<string, Record<string, unknown>> | undefined;
+      if (channelsObj && typeof channelsObj === 'object') {
+        for (const [channelId, section] of Object.entries(channelsObj)) {
+          if (!BUILTIN_CHANNEL_IDS.has(channelId)) continue;
+          if (!section || section.enabled === false) continue;
+          if (Object.keys(section).length > 0) {
+            configuredBuiltIns.add(channelId);
+          }
         }
-        if (pEntries[pluginId]) {
-          delete pEntries[pluginId];
-          console.log(`[sanitize] Removed legacy plugins.entries.${pluginId} for built-in channel`);
-          modified = true;
+      }
+
+      if (pEntries.whatsapp) {
+        delete pEntries.whatsapp;
+        console.log('[sanitize] Removed legacy plugins.entries.whatsapp for built-in channel');
+        modified = true;
+      }
+
+      const externalPluginIds = allowArr2.filter((pluginId) => !BUILTIN_CHANNEL_IDS.has(pluginId));
+      let nextAllow = [...externalPluginIds];
+      if (externalPluginIds.length > 0) {
+        for (const channelId of configuredBuiltIns) {
+          if (!nextAllow.includes(channelId)) {
+            nextAllow.push(channelId);
+            modified = true;
+            console.log(`[sanitize] Added configured built-in channel "${channelId}" to plugins.allow`);
+          }
         }
+      }
+
+      if (JSON.stringify(nextAllow) !== JSON.stringify(allowArr2)) {
+        if (nextAllow.length > 0) {
+          pluginsObj.allow = nextAllow;
+        } else {
+          delete pluginsObj.allow;
+        }
+        modified = true;
       }
 
       if (Array.isArray(pluginsObj.allow) && pluginsObj.allow.length === 0) {

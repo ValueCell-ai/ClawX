@@ -193,6 +193,19 @@ describe('WeCom plugin configuration', () => {
     const channels = config.channels as Record<string, { enabled?: boolean }>;
     expect(channels.whatsapp.enabled).toBe(true);
   });
+
+  it('keeps configured built-in channels in plugins.allow when a plugin-backed channel is enabled', async () => {
+    const { saveChannelConfig } = await import('@electron/utils/channel-config');
+
+    await saveChannelConfig('discord', { token: 'discord-token' }, 'default');
+    await saveChannelConfig('whatsapp', { enabled: true }, 'default');
+    await saveChannelConfig('qqbot', { appId: 'qq-app', token: 'qq-token', appSecret: 'qq-secret' }, 'default');
+
+    const config = await readOpenClawJson();
+    const plugins = config.plugins as { allow: string[] };
+
+    expect(plugins.allow).toEqual(expect.arrayContaining(['qqbot', 'discord', 'whatsapp']));
+  });
 });
 
 describe('WeChat dangling plugin cleanup', () => {
