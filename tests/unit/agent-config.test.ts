@@ -202,7 +202,7 @@ describe('agent config lifecycle', () => {
       agents: {
         defaults: {
           model: {
-            primary: 'custom-custom27/MiniMax-M2.5',
+            primary: 'custom-custom27/MiniMax-M2.7',
             fallbacks: [],
           },
         },
