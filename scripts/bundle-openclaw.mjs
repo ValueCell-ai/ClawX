@@ -188,8 +188,6 @@ echo`   Skipped ${skippedDevCount} dev-only package references`;
 //     then BFS its transitive deps exactly like we did for openclaw above.
 const EXTRA_BUNDLED_PACKAGES = [
   '@whiskeysockets/baileys',   // WhatsApp channel (was a dep of old clawdbot, not openclaw)
-  'discord.js',                // Discord channel (moved to peer/optional dep in openclaw 3.23)
-  'telegraf',                  // Telegram channel (removed from openclaw deps in 3.23)
 ];
 
 let extraCount = 0;
