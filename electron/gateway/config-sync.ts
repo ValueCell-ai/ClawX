@@ -1,6 +1,6 @@
 import { app } from 'electron';
 import path from 'path';
-import { existsSync, readFileSync, cpSync, mkdirSync, rmSync, readdirSync, statSync, writeFileSync, symlinkSync, copyFileSync } from 'fs';
+import { existsSync, readFileSync, cpSync, mkdirSync, rmSync } from 'fs';
 import { homedir } from 'os';
 import { join } from 'path';
 
@@ -248,97 +248,60 @@ async function resolveChannelStartupPolicy(): Promise<{
 
 /**
  * OpenClaw 3.22+ ships built-in channel plugins (Discord, Telegram, etc.) as
- * bundled extensions in `dist/extensions/`.  The gateway discovers them via a
- * `dist-runtime/extensions/` overlay created during the OpenClaw build by
- * `stageBundledPluginRuntime()`.  However, this overlay relies on symlinks and
- * wrapper modules that are NOT preserved in the npm tarball.
+ * bundled extensions in `dist/extensions/`.  The Gateway discovers external
+ * plugins from `~/.openclaw/extensions/` but does not reliably load built-in
+ * extensions from `dist-runtime/extensions/` when installed via npm.
  *
- * This function recreates the overlay so the gateway can discover and load
- * all built-in channel extensions correctly.
+ * This function installs configured channel extensions from the openclaw
+ * package's `dist/extensions/` into `~/.openclaw/extensions/` so the Gateway
+ * can discover and load them through its trusted external plugin path.
  */
-function ensureDistRuntimeOverlay(openclawDir: string): void {
+function ensureBuiltInChannelExtensions(openclawDir: string, configuredChannels: string[]): void {
   const distExtDir = join(openclawDir, 'dist', 'extensions');
-  const runtimeExtDir = join(openclawDir, 'dist-runtime', 'extensions');
-
   if (!existsSync(fsPath(distExtDir))) return;
 
-  // Check if overlay already has entries — skip if populated
-  try {
-    const existing = readdirSync(fsPath(runtimeExtDir)).filter(
-      (e: string) => statSync(fsPath(join(runtimeExtDir, e))).isDirectory(),
-    );
-    if (existing.length > 0) return;
-  } catch {
-    // dir doesn't exist yet
-  }
+  const extensionsHome = join(homedir(), '.openclaw', 'extensions');
 
-  let pluginCount = 0;
-  let entries: { name: string }[];
-  try {
-    entries = readdirSync(fsPath(distExtDir), { withFileTypes: true })
-      .filter((d: { isDirectory: () => boolean }) => d.isDirectory())
-      .filter((d: { name: string }) => existsSync(fsPath(join(distExtDir, d.name, 'openclaw.plugin.json'))));
-  } catch {
-    return;
-  }
+  for (const channelType of configuredChannels) {
+    // Skip channels that are already handled by CHANNEL_PLUGIN_MAP (external plugins)
+    if (CHANNEL_PLUGIN_MAP[channelType]) continue;
 
-  for (const dirent of entries) {
-    const pluginName = dirent.name;
-    const srcDir = join(distExtDir, pluginName);
-    const dstDir = join(runtimeExtDir, pluginName);
-    mkdirSync(fsPath(dstDir), { recursive: true });
+    const srcDir = join(distExtDir, channelType);
+    const srcManifest = join(srcDir, 'openclaw.plugin.json');
+    if (!existsSync(fsPath(srcManifest))) continue;
 
-    // Process each file in the source plugin directory
-    let srcEntries: { name: string; isDirectory: () => boolean; isFile: () => boolean }[];
+    // Check if manifest declares this as a channel extension
     try {
-      srcEntries = readdirSync(fsPath(srcDir), { withFileTypes: true });
+      const manifest = JSON.parse(readFileSync(fsPath(srcManifest), 'utf-8')) as {
+        id?: string;
+        channels?: string[];
+      };
+      if (!manifest.channels || manifest.channels.length === 0) continue;
     } catch {
       continue;
     }
 
-    for (const entry of srcEntries) {
-      if (entry.name === 'node_modules') continue;
-      const srcPath = join(srcDir, entry.name);
-      const dstPath = join(dstDir, entry.name);
+    const targetDir = join(extensionsHome, channelType);
+    const targetManifest = join(targetDir, 'openclaw.plugin.json');
+    const isInstalled = existsSync(fsPath(targetManifest));
+    const srcVersion = readPluginVersion(join(srcDir, 'package.json'));
+    const installedVersion = isInstalled ? readPluginVersion(join(targetDir, 'package.json')) : null;
 
-      if (entry.isDirectory()) continue; // skip subdirectories
-      if (!entry.isFile()) continue;
+    // Skip if already installed with same version
+    if (isInstalled && srcVersion && installedVersion && srcVersion === installedVersion) continue;
 
-      const ext = path.extname(entry.name);
-      if (ext === '.js' || ext === '.mjs') {
-        // Create ESM wrapper module that re-exports from dist/extensions
-        const relTarget = path.relative(dstDir, srcPath).replace(/\\/g, '/');
-        const specifier = relTarget.startsWith('.') ? relTarget : `./${relTarget}`;
-        writeFileSync(
-          fsPath(dstPath),
-          `export * from ${JSON.stringify(specifier)};\nimport * as module from ${JSON.stringify(specifier)};\nexport default module.default;\n`,
-          'utf8',
-        );
-      } else if (entry.name === 'package.json' || entry.name === 'openclaw.plugin.json') {
-        // Copy metadata files
-        copyFileSync(fsPath(srcPath), fsPath(dstPath));
-      }
-      // Other files are skipped (non-essential for plugin loading)
+    logger.info(
+      `[plugin] ${isInstalled ? 'Upgrading' : 'Installing'} built-in ${channelType} extension` +
+      `${isInstalled ? `: ${installedVersion} → ${srcVersion}` : `: ${srcVersion}`}`,
+    );
+
+    try {
+      mkdirSync(fsPath(extensionsHome), { recursive: true });
+      rmSync(fsPath(targetDir), { recursive: true, force: true });
+      cpSync(fsPath(srcDir), fsPath(targetDir), { recursive: true, dereference: true });
+    } catch (err) {
+      logger.warn(`[plugin] Failed to install built-in ${channelType} extension:`, err);
     }
-
-    // Symlink node_modules from dist/extensions/<plugin>/node_modules
-    const srcNM = join(srcDir, 'node_modules');
-    const dstNM = join(dstDir, 'node_modules');
-    if (existsSync(fsPath(srcNM)) && !existsSync(fsPath(dstNM))) {
-      try {
-        const symlinkType = process.platform === 'win32' ? 'junction' : 'dir';
-        symlinkSync(srcNM, dstNM, symlinkType);
-      } catch {
-        // Fallback: if symlink fails (e.g. Windows without admin), skip
-        // The plugin will try to resolve modules from parent dirs
-      }
-    }
-
-    pluginCount++;
-  }
-
-  if (pluginCount > 0) {
-    logger.info(`Recreated dist-runtime overlay for ${pluginCount} built-in extension(s)`);
   }
 }
 
@@ -350,11 +313,12 @@ export async function prepareGatewayLaunchContext(port: number): Promise<Gateway
     throw new Error(`OpenClaw package not found at: ${openclawDir}`);
   }
 
-  // Ensure built-in extension overlay exists (Discord, Telegram, etc.)
+  // Install built-in channel extensions (Discord, Telegram, etc.) before launch
   try {
-    ensureDistRuntimeOverlay(openclawDir);
+    const configuredChannels = await listConfiguredChannels();
+    ensureBuiltInChannelExtensions(openclawDir, configuredChannels);
   } catch (error) {
-    logger.warn('Failed to ensure dist-runtime overlay:', error);
+    logger.warn('Failed to install built-in channel extensions:', error);
   }
 
   const appSettings = await getAllSettings();
