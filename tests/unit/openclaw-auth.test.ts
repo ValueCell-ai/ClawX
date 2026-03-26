@@ -111,3 +111,93 @@ describe('saveProviderKeyToOpenClaw', () => {
     logSpy.mockRestore();
   });
 });
+
+describe('sanitizeOpenClawConfig', () => {
+  beforeEach(async () => {
+    vi.resetModules();
+    vi.restoreAllMocks();
+    await rm(testHome, { recursive: true, force: true });
+    await rm(testUserData, { recursive: true, force: true });
+  });
+
+  it('skips sanitization when openclaw.json does not exist', async () => {
+    // Ensure the .openclaw dir doesn't exist at all
+    const { sanitizeOpenClawConfig } = await import('@electron/utils/openclaw-auth');
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+
+    // Should not throw and should not create the file
+    await expect(sanitizeOpenClawConfig()).resolves.toBeUndefined();
+
+    const configPath = join(testHome, '.openclaw', 'openclaw.json');
+    await expect(readFile(configPath, 'utf8')).rejects.toThrow();
+
+    logSpy.mockRestore();
+  });
+
+  it('skips sanitization when openclaw.json contains invalid JSON', async () => {
+    // Simulate a corrupted file: readJsonFile returns null, sanitize must bail out
+    const openclawDir = join(testHome, '.openclaw');
+    await mkdir(openclawDir, { recursive: true });
+    const configPath = join(openclawDir, 'openclaw.json');
+    await writeFile(configPath, 'NOT VALID JSON {{{', 'utf8');
+    const before = await readFile(configPath, 'utf8');
+
+    const { sanitizeOpenClawConfig } = await import('@electron/utils/openclaw-auth');
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+
+    await sanitizeOpenClawConfig();
+
+    const after = await readFile(configPath, 'utf8');
+    // Corrupt file must not be overwritten
+    expect(after).toBe(before);
+
+    logSpy.mockRestore();
+  });
+
+  it('properly sanitizes a genuinely empty {} config (fresh install)', async () => {
+    // A fresh install with {} is a valid config — sanitize should proceed
+    // and enforce tools.profile, commands.restart, etc.
+    await writeOpenClawJson({});
+
+    const { sanitizeOpenClawConfig } = await import('@electron/utils/openclaw-auth');
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+
+    await sanitizeOpenClawConfig();
+
+    const configPath = join(testHome, '.openclaw', 'openclaw.json');
+    const result = JSON.parse(await readFile(configPath, 'utf8')) as Record<string, unknown>;
+    // Fresh install should get tools settings enforced
+    const tools = result.tools as Record<string, unknown>;
+    expect(tools.profile).toBe('full');
+
+    logSpy.mockRestore();
+  });
+
+  it('preserves user config (memory, agents, channels) when enforcing tools settings', async () => {
+    await writeOpenClawJson({
+      agents: { defaults: { model: { primary: 'openai/gpt-4' } } },
+      channels: { discord: { token: 'tok', enabled: true } },
+      memory: { enabled: true, limit: 100 },
+    });
+
+    const { sanitizeOpenClawConfig } = await import('@electron/utils/openclaw-auth');
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+
+    await sanitizeOpenClawConfig();
+
+    const configPath = join(testHome, '.openclaw', 'openclaw.json');
+    const result = JSON.parse(await readFile(configPath, 'utf8')) as Record<string, unknown>;
+
+    // User-owned sections must survive the sanitize pass
+    expect(result.memory).toEqual({ enabled: true, limit: 100 });
+    expect(result.channels).toEqual({ discord: { token: 'tok', enabled: true } });
+    expect((result.agents as Record<string, unknown>).defaults).toEqual({
+      model: { primary: 'openai/gpt-4' },
+    });
+    // tools settings should now be enforced
+    const tools = result.tools as Record<string, unknown>;
+    expect(tools.profile).toBe('full');
+
+    logSpy.mockRestore();
+  });
+});

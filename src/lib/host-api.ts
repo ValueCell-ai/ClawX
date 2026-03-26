@@ -5,6 +5,19 @@ import { normalizeAppError } from './error-model';
 const HOST_API_PORT = 3210;
 const HOST_API_BASE = `http://127.0.0.1:${HOST_API_PORT}`;
 
+/** Cached Host API auth token, fetched once from the main process via IPC. */
+let cachedHostApiToken: string | null = null;
+
+async function getHostApiToken(): Promise<string> {
+  if (cachedHostApiToken) return cachedHostApiToken;
+  try {
+    cachedHostApiToken = await invokeIpc<string>('hostapi:token');
+  } catch {
+    cachedHostApiToken = '';
+  }
+  return cachedHostApiToken ?? '';
+}
+
 type HostApiProxyResponse = {
   ok?: boolean;
   data?: {
@@ -182,10 +195,12 @@ export async function hostApiFetch<T>(path: string, init?: RequestInit): Promise
   }
 
   // Browser-only fallback (non-Electron environments).
+  const token = await getHostApiToken();
   const response = await fetch(`${HOST_API_BASE}${path}`, {
     ...init,
     headers: {
       'Content-Type': 'application/json',
+      'Authorization': `Bearer ${token}`,
       ...(init?.headers || {}),
     },
   });
@@ -204,7 +219,11 @@ export async function hostApiFetch<T>(path: string, init?: RequestInit): Promise
 }
 
 export function createHostEventSource(path = '/api/events'): EventSource {
-  return new EventSource(`${HOST_API_BASE}${path}`);
+  // EventSource does not support custom headers, so pass the auth token
+  // as a query parameter. The server accepts both mechanisms.
+  const separator = path.includes('?') ? '&' : '?';
+  const tokenParam = `token=${encodeURIComponent(cachedHostApiToken ?? '')}`;
+  return new EventSource(`${HOST_API_BASE}${path}${separator}${tokenParam}`);
 }
 
 export function getHostApiBase(): string {
