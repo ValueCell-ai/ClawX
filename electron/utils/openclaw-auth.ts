@@ -385,6 +385,33 @@ export async function removeProviderFromOpenClaw(provider: string): Promise<void
         console.log(`Removed OpenClaw provider config: ${provider}`);
       }
 
+      // Clean up agents.defaults.model references that point to the deleted provider.
+      // Model refs use the format "providerType/modelId", e.g. "openai/gpt-4".
+      // Leaving stale refs causes the Gateway to report "Unknown model" errors.
+      const agents = config.agents as Record<string, unknown> | undefined;
+      const agentDefaults = (agents?.defaults && typeof agents.defaults === 'object'
+        ? agents.defaults as Record<string, unknown>
+        : null);
+      if (agentDefaults?.model && typeof agentDefaults.model === 'object') {
+        const modelCfg = agentDefaults.model as Record<string, unknown>;
+        const prefix = `${provider}/`;
+
+        if (typeof modelCfg.primary === 'string' && modelCfg.primary.startsWith(prefix)) {
+          delete modelCfg.primary;
+          modified = true;
+          console.log(`Removed deleted provider "${provider}" from agents.defaults.model.primary`);
+        }
+
+        if (Array.isArray(modelCfg.fallbacks)) {
+          const filtered = (modelCfg.fallbacks as string[]).filter((fb) => !fb.startsWith(prefix));
+          if (filtered.length !== modelCfg.fallbacks.length) {
+            modelCfg.fallbacks = filtered.length > 0 ? filtered : undefined;
+            modified = true;
+            console.log(`Removed deleted provider "${provider}" from agents.defaults.model.fallbacks`);
+          }
+        }
+      }
+
       if (modified) {
         await writeOpenClawJson(config);
       }
@@ -1017,7 +1044,24 @@ export async function updateSingleAgentModelProvider(
  */
 export async function sanitizeOpenClawConfig(): Promise<void> {
   return withConfigLock(async () => {
-    const config = await readOpenClawJson();
+    // Skip sanitization if the config file does not exist yet.
+    // Creating a skeleton config here would overwrite any data written
+    // by the Gateway on its first run.
+    if (!(await fileExists(OPENCLAW_CONFIG_PATH))) {
+      console.log('[sanitize] openclaw.json does not exist yet, skipping sanitization');
+      return;
+    }
+
+    // Read the raw file directly instead of going through readOpenClawJson()
+    // which coalesces null → {}.  We need to distinguish a genuinely empty
+    // file (valid, proceed normally) from a corrupt/unreadable file (null,
+    // bail out to avoid overwriting the user's data with a skeleton config).
+    const rawConfig = await readJsonFile<Record<string, unknown>>(OPENCLAW_CONFIG_PATH);
+    if (rawConfig === null) {
+      console.log('[sanitize] openclaw.json could not be parsed, skipping sanitization to preserve data');
+      return;
+    }
+    const config: Record<string, unknown> = rawConfig;
     let modified = false;
 
     // ── skills section ──────────────────────────────────────────────

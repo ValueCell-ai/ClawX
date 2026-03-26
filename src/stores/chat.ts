@@ -1456,6 +1456,10 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
   switchSession: (key: string) => {
     if (key === get().currentSessionKey) return;
+    // Stop any background polling for the old session before switching.
+    // This prevents the poll timer from firing after the switch and loading
+    // the wrong session's history into the new session's view.
+    clearHistoryPoll();
     set((s) => buildSessionSwitchPatch(s, key));
     get().loadHistory();
   },
@@ -1624,6 +1628,16 @@ export const useChatStore = create<ChatState>((set, get) => ({
       const applyLoadedMessages = (rawMessages: RawMessage[], thinkingLevel: string | null) => {
       const visibleHistoryMessages = prepareVisibleHistoryMessages(rawMessages, currentSessionKey);
       const filteredMessages = visibleHistoryMessages.filter((msg) => !isToolResultRole(msg.role));
+      // Guard: if the user switched sessions while this async load was in
+      // flight, discard the result to prevent overwriting the new session's
+      // messages with stale data from the old session.
+      if (get().currentSessionKey !== currentSessionKey) return;
+
+      // Before filtering: attach images/files from tool_result messages to the next assistant message
+      const messagesWithToolImages = enrichWithToolResultFiles(rawMessages);
+      const filteredMessages = messagesWithToolImages.filter((msg) => !isToolResultRole(msg.role));
+      // Restore file attachments for user/assistant messages (from cache + text patterns)
+      const enrichedMessages = enrichWithCachedImages(filteredMessages);
 
       // Preserve the optimistic user message during an active send.
       // The Gateway may not include the user's message in chat.history

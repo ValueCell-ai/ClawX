@@ -1,7 +1,6 @@
 import type { IncomingMessage, ServerResponse } from 'http';
 import type { HostApiContext } from '../context';
-import { parseJsonBody } from '../route-utils';
-import { setCorsHeaders, sendJson, sendNoContent } from '../route-utils';
+import { parseJsonBody, sendJson } from '../route-utils';
 import { runOpenClawDoctor, runOpenClawDoctorFix } from '../../utils/openclaw-doctor';
 
 export async function handleAppRoutes(
@@ -11,7 +10,7 @@ export async function handleAppRoutes(
   ctx: HostApiContext,
 ): Promise<boolean> {
   if (url.pathname === '/api/events' && req.method === 'GET') {
-    setCorsHeaders(res);
+    // CORS headers are already set by the server middleware.
     res.writeHead(200, {
       'Content-Type': 'text/event-stream; charset=utf-8',
       'Cache-Control': 'no-cache, no-transform',
@@ -32,10 +31,7 @@ export async function handleAppRoutes(
     return true;
   }
 
-  if (req.method === 'OPTIONS') {
-    sendNoContent(res);
-    return true;
-  }
+  // OPTIONS is handled by the server middleware; no route-level handler needed.
 
   return false;
 }
