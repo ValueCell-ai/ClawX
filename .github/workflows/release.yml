@@ -61,7 +61,25 @@ jobs:
         if: matrix.platform == 'linux'
         run: pnpm run uv:download:linux
 
+
       # macOS specific steps
+      - name: Free disk space (macOS)
+        if: matrix.platform == 'mac'
+        run: |
+          echo "=== Disk usage before cleanup ==="
+          df -h /
+          # Remove large pre-installed toolchains not needed for Electron builds
+          sudo rm -rf /usr/local/lib/android || true
+          sudo rm -rf /usr/share/dotnet || true
+          sudo rm -rf /usr/local/share/powershell || true
+          sudo rm -rf /usr/local/share/chromium || true
+          sudo rm -rf /usr/local/lib/node_modules || true
+          rm -rf ~/Library/Caches/electron-builder/dmg-builder* || true
+          # Homebrew cleanup
+          brew cleanup --prune=all 2>/dev/null || true
+          echo "=== Disk usage after cleanup ==="
+          df -h /
+
       # --publish never: prevent electron-builder from auto-publishing to GitHub.
       # All artifacts are collected and published atomically in the publish job.
       - name: Build macOS
