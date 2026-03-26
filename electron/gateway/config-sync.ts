@@ -51,6 +51,28 @@ const CHANNEL_PLUGIN_MAP: Record<string, { dirName: string; npmName: string }> =
   'openclaw-weixin': { dirName: 'openclaw-weixin', npmName: '@tencent-weixin/openclaw-weixin' },
 };
 
+/**
+ * OpenClaw 3.22+ ships Discord, Telegram, and other channels as built-in
+ * extensions.  If a previous ClawX version copied one of these into
+ * ~/.openclaw/extensions/, the broken copy overrides the working built-in
+ * plugin and must be removed.
+ */
+const BUILTIN_CHANNEL_EXTENSIONS = ['discord', 'telegram'];
+
+function cleanupStaleBuiltInExtensions(): void {
+  for (const ext of BUILTIN_CHANNEL_EXTENSIONS) {
+    const extDir = join(homedir(), '.openclaw', 'extensions', ext);
+    if (existsSync(fsPath(extDir))) {
+      logger.info(`[plugin] Removing stale built-in extension copy: ${ext}`);
+      try {
+        rmSync(fsPath(extDir), { recursive: true, force: true });
+      } catch (err) {
+        logger.warn(`[plugin] Failed to remove stale extension ${ext}:`, err);
+      }
+    }
+  }
+}
+
 function readPluginVersion(pkgJsonPath: string): string | null {
   try {
     const raw = readFileSync(fsPath(pkgJsonPath), 'utf-8');
@@ -151,6 +173,14 @@ export async function syncGatewayConfigBeforeLaunch(
     logger.warn('Failed to clean dangling WeChat plugin state before launch:', err);
   }
 
+  // Remove stale copies of built-in extensions (Discord, Telegram) that
+  // override OpenClaw's working built-in plugins and break channel loading.
+  try {
+    cleanupStaleBuiltInExtensions();
+  } catch (err) {
+    logger.warn('Failed to clean stale built-in extensions:', err);
+  }
+
   // Auto-upgrade installed plugins before Gateway starts so that
   // the plugin manifest ID matches what sanitize wrote to the config.
   try {
@@ -246,79 +276,12 @@ async function resolveChannelStartupPolicy(): Promise<{
   }
 }
 
-/**
- * OpenClaw 3.22+ ships built-in channel plugins (Discord, Telegram, etc.) as
- * bundled extensions in `dist/extensions/`.  The Gateway discovers external
- * plugins from `~/.openclaw/extensions/` but does not reliably load built-in
- * extensions from `dist-runtime/extensions/` when installed via npm.
- *
- * This function installs configured channel extensions from the openclaw
- * package's `dist/extensions/` into `~/.openclaw/extensions/` so the Gateway
- * can discover and load them through its trusted external plugin path.
- */
-function ensureBuiltInChannelExtensions(openclawDir: string, configuredChannels: string[]): void {
-  const distExtDir = join(openclawDir, 'dist', 'extensions');
-  if (!existsSync(fsPath(distExtDir))) return;
-
-  const extensionsHome = join(homedir(), '.openclaw', 'extensions');
-
-  for (const channelType of configuredChannels) {
-    // Skip channels that are already handled by CHANNEL_PLUGIN_MAP (external plugins)
-    if (CHANNEL_PLUGIN_MAP[channelType]) continue;
-
-    const srcDir = join(distExtDir, channelType);
-    const srcManifest = join(srcDir, 'openclaw.plugin.json');
-    if (!existsSync(fsPath(srcManifest))) continue;
-
-    // Check if manifest declares this as a channel extension
-    try {
-      const manifest = JSON.parse(readFileSync(fsPath(srcManifest), 'utf-8')) as {
-        id?: string;
-        channels?: string[];
-      };
-      if (!manifest.channels || manifest.channels.length === 0) continue;
-    } catch {
-      continue;
-    }
-
-    const targetDir = join(extensionsHome, channelType);
-    const targetManifest = join(targetDir, 'openclaw.plugin.json');
-    const isInstalled = existsSync(fsPath(targetManifest));
-    const srcVersion = readPluginVersion(join(srcDir, 'package.json'));
-    const installedVersion = isInstalled ? readPluginVersion(join(targetDir, 'package.json')) : null;
-
-    // Skip if already installed with same version
-    if (isInstalled && srcVersion && installedVersion && srcVersion === installedVersion) continue;
-
-    logger.info(
-      `[plugin] ${isInstalled ? 'Upgrading' : 'Installing'} built-in ${channelType} extension` +
-      `${isInstalled ? `: ${installedVersion} → ${srcVersion}` : `: ${srcVersion}`}`,
-    );
-
-    try {
-      mkdirSync(fsPath(extensionsHome), { recursive: true });
-      rmSync(fsPath(targetDir), { recursive: true, force: true });
-      cpSync(fsPath(srcDir), fsPath(targetDir), { recursive: true, dereference: true });
-    } catch (err) {
-      logger.warn(`[plugin] Failed to install built-in ${channelType} extension:`, err);
-    }
-  }
-}
-
 export async function prepareGatewayLaunchContext(port: number): Promise<GatewayLaunchContext> {
   const openclawDir = getOpenClawDir();
   const entryScript = getOpenClawEntryPath();
 
   if (!isOpenClawPresent()) {
     throw new Error(`OpenClaw package not found at: ${openclawDir}`);
-  }
-
-  // Install built-in channel extensions (Discord, Telegram, etc.) before launch
-  try {
-    const configuredChannels = await listConfiguredChannels();
-    ensureBuiltInChannelExtensions(openclawDir, configuredChannels);
-  } catch (error) {
-    logger.warn('Failed to install built-in channel extensions:', error);
   }
 
   const appSettings = await getAllSettings();
