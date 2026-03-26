@@ -171,7 +171,7 @@ export const PROVIDER_DEFINITIONS: ProviderDefinition[] = [
     isOAuth: true,
     supportsApiKey: true,
     defaultModelId: 'MiniMax-M2.7',
-    apiKeyUrl: 'https://intl.minimaxi.com/',
+    apiKeyUrl: 'https://platform.minimax.io',
     category: 'official',
     envVar: 'MINIMAX_API_KEY',
     supportedAuthModes: ['oauth_device', 'api_key'],
