@@ -195,7 +195,13 @@ function scheduleGatewayChannelRestart(ctx: HostApiContext, reason: string): voi
 // Plugin-based channels require a full Gateway process restart to properly
 // initialize / tear-down plugin connections.  SIGUSR1 in-process reload is
 // not sufficient for channel plugins (see restartGatewayForAgentDeletion).
-const FORCE_RESTART_CHANNELS = new Set(['dingtalk', 'wecom', 'whatsapp', 'feishu', 'qqbot', OPENCLAW_WECHAT_CHANNEL_TYPE]);
+// OpenClaw 3.23+ does not reliably support in-process channel reload for any
+// channel type.  All channel config saves must trigger a full Gateway process
+// restart to ensure the channel adapter properly initializes with the new config.
+const FORCE_RESTART_CHANNELS = new Set([
+  'dingtalk', 'wecom', 'whatsapp', 'feishu', 'qqbot', OPENCLAW_WECHAT_CHANNEL_TYPE,
+  'discord', 'telegram', 'signal', 'imessage', 'matrix', 'line', 'msteams', 'googlechat', 'mattermost',
+]);
 
 function scheduleGatewayChannelSaveRefresh(
   ctx: HostApiContext,

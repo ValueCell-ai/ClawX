@@ -99,6 +99,8 @@
         "@types/react-dom": "^19.2.3",
         "@types/ws": "^8.18.1",
         "@whiskeysockets/baileys": "7.0.0-rc.9",
+        "discord.js": "^14.18.0",
+        "telegraf": "^4.16.0",
         "@typescript-eslint/eslint-plugin": "^8.56.0",
         "@typescript-eslint/parser": "^8.56.0",
         "@vitejs/plugin-react": "^5.1.4",
