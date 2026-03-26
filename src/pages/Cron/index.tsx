@@ -515,7 +515,7 @@ function TaskDialog({ job, configuredChannels, onClose, onSave }: TaskDialogProp
                 size="sm"
                 onClick={() => setDeliveryMode('none')}
                 className={cn(
-                  'justify-start h-auto min-h-12 rounded-xl px-4 py-3 text-left',
+                  'justify-start h-auto min-h-12 rounded-xl px-4 py-3 text-left whitespace-normal',
                   deliveryMode === 'none'
                     ? 'bg-primary hover:bg-primary/90 text-primary-foreground border-transparent'
                     : 'bg-[#eeece3] dark:bg-muted border-black/10 dark:border-white/10 hover:bg-black/5 dark:hover:bg-white/5 text-foreground/80 hover:text-foreground',
@@ -532,7 +532,7 @@ function TaskDialog({ job, configuredChannels, onClose, onSave }: TaskDialogProp
                 size="sm"
                 onClick={() => setDeliveryMode('announce')}
                 className={cn(
-                  'justify-start h-auto min-h-12 rounded-xl px-4 py-3 text-left',
+                  'justify-start h-auto min-h-12 rounded-xl px-4 py-3 text-left whitespace-normal',
                   deliveryMode === 'announce'
                     ? 'bg-primary hover:bg-primary/90 text-primary-foreground border-transparent'
                     : 'bg-[#eeece3] dark:bg-muted border-black/10 dark:border-white/10 hover:bg-black/5 dark:hover:bg-white/5 text-foreground/80 hover:text-foreground',

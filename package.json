@@ -65,6 +65,7 @@
         "postversion": "git push && git push --tags"
     },
     "dependencies": {
+        "@sinclair/typebox": "^0.34.48",
         "clawhub": "^0.5.0",
         "electron-store": "^11.0.2",
         "electron-updater": "^6.8.3",

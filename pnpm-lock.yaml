@@ -12,6 +12,9 @@ importers:
 
   .:
     dependencies:
+      '@sinclair/typebox':
+        specifier: ^0.34.48
+        version: 0.34.48
       clawhub:
         specifier: ^0.5.0
         version: 0.5.0
