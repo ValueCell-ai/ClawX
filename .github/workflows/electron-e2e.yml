@@ -36,13 +36,6 @@ jobs:
           node-version: '24'
           cache: 'pnpm'
 
-      - name: Rewrite GitHub SSH dependencies to HTTPS
-        shell: bash
-        run: |
-          git config --global url."https://github.com/".insteadOf git@github.com:
-          git config --global url."https://github.com/".insteadOf ssh://git@github.com/
-          git config --global url."https://github.com/".insteadOf https://git@github.com/
-
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 

@@ -30,13 +30,6 @@ jobs:
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
 
-      - name: Rewrite GitHub SSH dependencies to HTTPS
-        shell: bash
-        run: |
-          git config --global url."https://github.com/".insteadOf git@github.com:
-          git config --global url."https://github.com/".insteadOf ssh://git@github.com/
-          git config --global url."https://github.com/".insteadOf https://git@github.com/
-
       - name: Get pnpm store directory
         shell: bash
         run: |
