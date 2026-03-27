@@ -57,7 +57,7 @@ async function launchClawXElectron(homeDir: string, userDataDir: string): Promis
 }
 
 export const test = base.extend<ElectronFixtures>({
-  homeDir: async (_unused, provideHomeDir) => {
+  homeDir: async ({ browserName: _browserName }, provideHomeDir) => {
     const homeDir = await mkdtemp(join(tmpdir(), 'clawx-e2e-home-'));
     await mkdir(join(homeDir, '.config'), { recursive: true });
     await mkdir(join(homeDir, 'AppData', 'Local'), { recursive: true });
@@ -69,7 +69,7 @@ export const test = base.extend<ElectronFixtures>({
     }
   },
 
-  userDataDir: async (_unused, provideUserDataDir) => {
+  userDataDir: async ({ browserName: _browserName }, provideUserDataDir) => {
     const userDataDir = await mkdtemp(join(tmpdir(), 'clawx-e2e-user-data-'));
     try {
       await provideUserDataDir(userDataDir);
