@@ -130,17 +130,25 @@ function removeProfilesForProvider(store: AuthProfilesStore, provider: string): 
   return true;
 }
 
-function removeProfileFromStore(store: AuthProfilesStore, profileId: string): boolean {
+function removeProfileFromStore(
+  store: AuthProfilesStore,
+  profileId: string,
+  expectedType?: AuthProfileEntry['type'] | OAuthProfileEntry['type'],
+): boolean {
   const profile = store.profiles[profileId];
-  if (!profile) {
-    return false;
+  let changed = false;
+  const shouldCleanReferences = !profile || !expectedType || profile.type === expectedType;
+  if (profile && (!expectedType || profile.type === expectedType)) {
+    delete store.profiles[profileId];
+    changed = true;
   }
 
-  delete store.profiles[profileId];
-
-  if (store.order) {
+  if (shouldCleanReferences && store.order) {
     for (const [orderProvider, profileIds] of Object.entries(store.order)) {
       const nextProfileIds = profileIds.filter((id) => id !== profileId);
+      if (nextProfileIds.length !== profileIds.length) {
+        changed = true;
+      }
       if (nextProfileIds.length > 0) {
         store.order[orderProvider] = nextProfileIds;
       } else {
@@ -149,15 +157,16 @@ function removeProfileFromStore(store: AuthProfilesStore, profileId: string): bo
     }
   }
 
-  if (store.lastGood) {
+  if (shouldCleanReferences && store.lastGood) {
     for (const [lastGoodProvider, lastGoodProfileId] of Object.entries(store.lastGood)) {
       if (lastGoodProfileId === profileId) {
         delete store.lastGood[lastGoodProvider];
+        changed = true;
       }
     }
   }
 
-  return true;
+  return changed;
 }
 
 // ── Auth Profiles I/O ────────────────────────────────────────────
@@ -413,16 +422,12 @@ export async function removeProviderKeyFromOpenClaw(
   provider: string,
   agentId?: string
 ): Promise<void> {
-  if (isOAuthProviderType(provider)) {
-    console.log(`Skipping auth-profiles removal for OAuth provider "${provider}" (managed by OpenClaw plugin)`);
-    return;
-  }
   const agentIds = agentId ? [agentId] : await discoverAgentIds();
   if (agentIds.length === 0) agentIds.push('main');
 
   for (const id of agentIds) {
     const store = await readAuthProfiles(id);
-    if (removeProfileFromStore(store, `${provider}:default`)) {
+    if (removeProfileFromStore(store, `${provider}:default`, 'api_key')) {
       await writeAuthProfiles(store, id);
     }
   }
