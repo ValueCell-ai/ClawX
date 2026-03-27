@@ -7,7 +7,8 @@
  */
 import { app } from 'electron';
 import path from 'node:path';
-import { existsSync, cpSync, mkdirSync, rmSync, readFileSync, writeFileSync, readdirSync, realpathSync } from 'node:fs';
+import { existsSync, cpSync, copyFileSync, statSync, mkdirSync, rmSync, readFileSync, writeFileSync, readdirSync, realpathSync } from 'node:fs';
+import { readdir, stat, copyFile, mkdir } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { logger } from './logger';
@@ -27,6 +28,66 @@ function normalizeFsPathForWindows(filePath: string): string {
 
 function fsPath(filePath: string): string {
   return normalizeFsPathForWindows(filePath);
+}
+
+/**
+ * Unicode-safe recursive directory copy.
+ *
+ * Node.js `cpSync` / `cp` crash on Windows when paths contain non-ASCII
+ * characters such as Chinese (nodejs/node#54476).  On Windows we fall back
+ * to a manual recursive walk using `copyFileSync` which is unaffected.
+ */
+export function cpSyncSafe(src: string, dest: string): void {
+  if (process.platform !== 'win32') {
+    cpSync(fsPath(src), fsPath(dest), { recursive: true, dereference: true });
+    return;
+  }
+  // Windows: manual recursive copy with per-file copyFileSync
+  _copyDirSyncRecursive(fsPath(src), fsPath(dest));
+}
+
+function _copyDirSyncRecursive(src: string, dest: string): void {
+  mkdirSync(dest, { recursive: true });
+  const entries = readdirSync(src, { withFileTypes: true });
+  for (const entry of entries) {
+    const srcChild = join(src, entry.name);
+    const destChild = join(dest, entry.name);
+    // Dereference symlinks: use statSync (follows links) instead of lstatSync
+    const info = statSync(srcChild);
+    if (info.isDirectory()) {
+      _copyDirSyncRecursive(srcChild, destChild);
+    } else {
+      copyFileSync(srcChild, destChild);
+    }
+  }
+}
+
+/**
+ * Async variant of `cpSyncSafe` for use with fs/promises.
+ */
+export async function cpAsyncSafe(src: string, dest: string): Promise<void> {
+  if (process.platform !== 'win32') {
+    const { cp } = await import('node:fs/promises');
+    await cp(fsPath(src), fsPath(dest), { recursive: true, dereference: true });
+    return;
+  }
+  // Windows: manual recursive copy with per-file copyFile
+  await _copyDirAsyncRecursive(fsPath(src), fsPath(dest));
+}
+
+async function _copyDirAsyncRecursive(src: string, dest: string): Promise<void> {
+  await mkdir(dest, { recursive: true });
+  const entries = await readdir(src, { withFileTypes: true });
+  for (const entry of entries) {
+    const srcChild = join(src, entry.name);
+    const destChild = join(dest, entry.name);
+    const info = await stat(srcChild);
+    if (info.isDirectory()) {
+      await _copyDirAsyncRecursive(srcChild, destChild);
+    } else {
+      await copyFile(srcChild, destChild);
+    }
+  }
 }
 
 function asErrnoException(error: unknown): NodeJS.ErrnoException | null {
@@ -236,7 +297,7 @@ export function copyPluginFromNodeModules(npmPkgPath: string, targetDir: string,
   // 1. Copy plugin package itself
   rmSync(fsPath(targetDir), { recursive: true, force: true });
   mkdirSync(fsPath(targetDir), { recursive: true });
-  cpSync(fsPath(realPath), fsPath(targetDir), { recursive: true, dereference: true });
+  cpSyncSafe(realPath, targetDir);
 
   // 2. Collect transitive deps from pnpm virtual store
   const rootVirtualNM = findParentNodeModules(realPath);
@@ -287,7 +348,7 @@ export function copyPluginFromNodeModules(npmPkgPath: string, targetDir: string,
     const dest = join(outputNM, pkgName);
     try {
       mkdirSync(fsPath(path.dirname(dest)), { recursive: true });
-      cpSync(fsPath(depRealPath), fsPath(dest), { recursive: true, dereference: true });
+      cpSyncSafe(depRealPath, dest);
     } catch { /* skip individual dep failures */ }
   }
 
@@ -331,7 +392,7 @@ export function ensurePluginInstalled(
       try {
         mkdirSync(fsPath(extensionsRoot), { recursive: true });
         rmSync(fsPath(targetDir), { recursive: true, force: true });
-        cpSync(fsPath(sourceDir), fsPath(targetDir), { recursive: true, dereference: true });
+        cpSyncSafe(sourceDir, targetDir);
         if (!existsSync(fsPath(join(targetDir, 'openclaw.plugin.json')))) {
           return { installed: false, warning: `Failed to install ${pluginLabel} plugin mirror (manifest missing).` };
         }

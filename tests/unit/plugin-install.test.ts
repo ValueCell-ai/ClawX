@@ -3,6 +3,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 const {
   mockExistsSync,
   mockCpSync,
+  mockCopyFileSync,
+  mockStatSync,
   mockMkdirSync,
   mockRmSync,
   mockReadFileSync,
@@ -16,6 +18,8 @@ const {
 } = vi.hoisted(() => ({
   mockExistsSync: vi.fn(),
   mockCpSync: vi.fn(),
+  mockCopyFileSync: vi.fn(),
+  mockStatSync: vi.fn(() => ({ isDirectory: () => false })),
   mockMkdirSync: vi.fn(),
   mockRmSync: vi.fn(),
   mockReadFileSync: vi.fn(),
@@ -39,6 +43,8 @@ vi.mock('node:fs', async () => {
     ...actual,
     existsSync: mockExistsSync,
     cpSync: mockCpSync,
+    copyFileSync: mockCopyFileSync,
+    statSync: mockStatSync,
     mkdirSync: mockMkdirSync,
     rmSync: mockRmSync,
     readFileSync: mockReadFileSync,
@@ -49,6 +55,17 @@ vi.mock('node:fs', async () => {
   return {
     ...mocked,
     default: mocked,
+  };
+});
+
+vi.mock('node:fs/promises', async () => {
+  const actual = await vi.importActual<typeof import('node:fs/promises')>('node:fs/promises');
+  return {
+    ...actual,
+    readdir: vi.fn(),
+    stat: vi.fn(),
+    copyFile: vi.fn(),
+    mkdir: vi.fn(),
   };
 });
 
@@ -118,10 +135,15 @@ describe('plugin installer diagnostics', () => {
     const sourceManifestSuffix = 'Program Files\\ClawX\\resources\\openclaw-plugins\\wecom\\openclaw.plugin.json';
 
     mockExistsSync.mockImplementation((input: string) => String(input).includes(sourceManifestSuffix));
-    mockCpSync.mockImplementation(() => {
-      const error = new Error('path too long') as NodeJS.ErrnoException;
-      error.code = 'ENAMETOOLONG';
-      throw error;
+    // On win32, cpSyncSafe uses _copyDirSyncRecursive (readdirSync) instead of cpSync.
+    // Simulate copy failure by making readdirSync throw during directory traversal.
+    mockReaddirSync.mockImplementation((_path: string, opts?: unknown) => {
+      if (opts && typeof opts === 'object' && 'withFileTypes' in (opts as Record<string, unknown>)) {
+        const error = new Error('path too long') as NodeJS.ErrnoException;
+        error.code = 'ENAMETOOLONG';
+        throw error;
+      }
+      return [];
     });
 
     const { ensurePluginInstalled } = await import('@electron/utils/plugin-install');
@@ -132,10 +154,16 @@ describe('plugin installer diagnostics', () => {
       warning: 'Failed to install bundled WeCom plugin mirror',
     });
 
-    expect(mockCpSync).toHaveBeenCalledTimes(2);
-    const [firstSourcePath, firstTargetPath] = mockCpSync.mock.calls[0] as [string, string];
-    expect(firstSourcePath.startsWith('\\\\?\\')).toBe(true);
-    expect(firstTargetPath.startsWith('\\\\?\\')).toBe(true);
+    // On win32, cpSyncSafe walks the directory via readdirSync (with withFileTypes)
+    const copyAttempts = mockReaddirSync.mock.calls.filter(
+      (call: unknown[]) => {
+        const opts = call[1];
+        return opts && typeof opts === 'object' && 'withFileTypes' in (opts as Record<string, unknown>);
+      },
+    );
+    expect(copyAttempts).toHaveLength(2); // initial + 1 retry
+    const firstSrcPath = String(copyAttempts[0][0]);
+    expect(firstSrcPath.startsWith('\\\\?\\')).toBe(true);
 
     expect(mockLoggerWarn).toHaveBeenCalledWith(
       '[plugin] Bundled mirror install failed for WeCom',
@@ -160,10 +188,14 @@ describe('plugin installer diagnostics', () => {
     const sourceManifestSuffix = 'Program Files\\ClawX\\resources\\openclaw-plugins\\wecom\\openclaw.plugin.json';
 
     mockExistsSync.mockImplementation((input: string) => String(input).includes(sourceManifestSuffix));
-    mockCpSync.mockImplementation(() => {
-      const error = new Error('access denied') as NodeJS.ErrnoException;
-      error.code = 'EPERM';
-      throw error;
+    // On win32, cpSyncSafe uses _copyDirSyncRecursive (readdirSync) instead of cpSync.
+    mockReaddirSync.mockImplementation((_path: string, opts?: unknown) => {
+      if (opts && typeof opts === 'object' && 'withFileTypes' in (opts as Record<string, unknown>)) {
+        const error = new Error('access denied') as NodeJS.ErrnoException;
+        error.code = 'EPERM';
+        throw error;
+      }
+      return [];
     });
 
     const { ensurePluginInstalled } = await import('@electron/utils/plugin-install');

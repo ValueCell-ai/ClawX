@@ -5,13 +5,14 @@
  *
  * All file I/O uses async fs/promises to avoid blocking the main thread.
  */
-import { readFile, writeFile, access, cp, mkdir } from 'fs/promises';
+import { readFile, writeFile, access, mkdir } from 'fs/promises';
 import { existsSync } from 'fs';
 import { constants } from 'fs';
 import { join } from 'path';
 import { homedir } from 'os';
 import { getOpenClawDir, getResourcesDir } from './paths';
 import { logger } from './logger';
+import { cpAsyncSafe } from './plugin-install';
 import { withConfigLock } from './config-mutex';
 
 const OPENCLAW_CONFIG_PATH = join(homedir(), '.openclaw', 'openclaw.json');
@@ -220,7 +221,7 @@ export async function ensureBuiltinSkillsInstalled(): Promise<void> {
 
         try {
             await mkdir(targetDir, { recursive: true });
-            await cp(sourceDir, targetDir, { recursive: true });
+            await cpAsyncSafe(sourceDir, targetDir);
             logger.info(`Installed built-in skill: ${slug} -> ${targetDir}`);
         } catch (error) {
             logger.warn(`Failed to install built-in skill ${slug}:`, error);
@@ -362,7 +363,7 @@ export async function ensurePreinstalledSkillsInstalled(): Promise<void> {
 
         try {
             await mkdir(targetDir, { recursive: true });
-            await cp(sourceDir, targetDir, { recursive: true, force: true });
+            await cpAsyncSafe(sourceDir, targetDir);
             const markerPayload: PreinstalledMarker = {
                 source: 'clawx-preinstalled',
                 slug: spec.slug,
