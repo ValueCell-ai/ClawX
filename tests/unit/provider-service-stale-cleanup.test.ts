@@ -9,6 +9,7 @@ const mocks = vi.hoisted(() => ({
   getOpenClawProvidersConfig: vi.fn(),
   getOpenClawProviderKeyForType: vi.fn(),
   getAliasSourceTypes: vi.fn(),
+  getProviderDefinition: vi.fn(),
   loggerWarn: vi.fn(),
   loggerInfo: vi.fn(),
 }));
@@ -59,7 +60,7 @@ vi.mock('@electron/utils/logger', () => ({
 
 vi.mock('@electron/shared/providers/registry', () => ({
   PROVIDER_DEFINITIONS: [],
-  getProviderDefinition: vi.fn(),
+  getProviderDefinition: mocks.getProviderDefinition,
 }));
 
 import { ProviderService } from '@electron/services/providers/provider-service';
@@ -97,6 +98,7 @@ describe('ProviderService.listAccounts (openclaw.json as sole source of truth)',
     mocks.ensureProviderStoreMigrated.mockResolvedValue(undefined);
     setupDefaultKeyMapping();
     mocks.getAliasSourceTypes.mockReturnValue([]);
+    mocks.getProviderDefinition.mockReturnValue(undefined);
     mocks.getOpenClawProvidersConfig.mockResolvedValue({ providers: {}, defaultModel: undefined });
     mocks.listProviderAccounts.mockResolvedValue([]);
     service = new ProviderService();
@@ -287,5 +289,60 @@ describe('ProviderService.listAccounts (openclaw.json as sole source of truth)',
     const ids = result.map((a: ProviderAccount) => a.id);
     expect(ids).toContain('openrouter-uuid');
     expect(ids).toContain('minimax-portal-cn-uuid');
+  });
+
+  it('seeds builtin providers discovered from auth profiles without explicit models.providers entries', async () => {
+    mocks.listProviderAccounts.mockResolvedValue([]);
+    mocks.getActiveOpenClawProviders.mockResolvedValue(new Set(['openai', 'anthropic']));
+    mocks.getOpenClawProvidersConfig.mockResolvedValue({
+      providers: {
+        openai: {},
+        anthropic: {},
+      },
+      defaultModel: undefined,
+    });
+    mocks.getProviderDefinition.mockImplementation((key: string) => {
+      if (key === 'openai') {
+        return {
+          id: 'openai',
+          name: 'OpenAI',
+          defaultAuthMode: 'oauth_browser',
+          defaultModelId: 'gpt-5.2',
+          providerConfig: {
+            baseUrl: 'https://api.openai.com/v1',
+            api: 'openai-responses',
+          },
+        };
+      }
+      if (key === 'anthropic') {
+        return {
+          id: 'anthropic',
+          name: 'Anthropic',
+          defaultAuthMode: 'api_key',
+          defaultModelId: 'claude-opus-4-6',
+        };
+      }
+      return undefined;
+    });
+
+    const result = await service.listAccounts();
+
+    expect(mocks.saveProviderAccount).toHaveBeenCalledTimes(2);
+    expect(result).toHaveLength(2);
+    expect(result).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        id: 'openai',
+        vendorId: 'openai',
+        authMode: 'oauth_browser',
+        baseUrl: 'https://api.openai.com/v1',
+        model: 'gpt-5.2',
+      }),
+      expect.objectContaining({
+        id: 'anthropic',
+        vendorId: 'anthropic',
+        authMode: 'api_key',
+        model: 'claude-opus-4-6',
+      }),
+    ]));
   });
 });

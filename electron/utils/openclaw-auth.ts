@@ -146,6 +146,43 @@ const BUILTIN_CHANNEL_IDS = new Set([
   'googlechat',
   'mattermost',
 ]);
+const AUTH_PROFILE_PROVIDER_KEY_MAP: Record<string, string> = {
+  'openai-codex': 'openai',
+  'google-gemini-cli': 'google',
+};
+
+function normalizeAuthProfileProviderKey(provider: string): string {
+  return AUTH_PROFILE_PROVIDER_KEY_MAP[provider] ?? provider;
+}
+
+function addProvidersFromProfileEntries(
+  profiles: Record<string, unknown> | undefined,
+  target: Set<string>,
+): void {
+  if (!profiles || typeof profiles !== 'object') {
+    return;
+  }
+
+  for (const profile of Object.values(profiles)) {
+    const provider = typeof (profile as Record<string, unknown>)?.provider === 'string'
+      ? ((profile as Record<string, unknown>).provider as string)
+      : undefined;
+    if (!provider) continue;
+    target.add(normalizeAuthProfileProviderKey(provider));
+  }
+}
+
+async function getProvidersFromAuthProfileStores(): Promise<Set<string>> {
+  const providers = new Set<string>();
+  const agentIds = await discoverAgentIds();
+
+  for (const agentId of agentIds) {
+    const store = await readAuthProfiles(agentId);
+    addProvidersFromProfileEntries(store.profiles, providers);
+  }
+
+  return providers;
+}
 
 async function readOpenClawJson(): Promise<Record<string, unknown>> {
   return (await readJsonFile<Record<string, unknown>>(OPENCLAW_CONFIG_PATH)) ?? {};
@@ -794,6 +831,16 @@ export async function getActiveOpenClawProviders(): Promise<Set<string>> {
     if (primaryModel?.includes('/')) {
       activeProviders.add(primaryModel.split('/')[0]);
     }
+
+    // 4. auth.profiles — OAuth/device-token based providers may exist only in
+    //    auth-profiles without explicit models.providers entries yet.
+    const auth = config.auth as Record<string, unknown> | undefined;
+    addProvidersFromProfileEntries(auth?.profiles as Record<string, unknown> | undefined, activeProviders);
+
+    const authProfileProviders = await getProvidersFromAuthProfileStores();
+    for (const provider of authProfileProviders) {
+      activeProviders.add(provider);
+    }
   } catch (err) {
     console.warn('Failed to read openclaw.json for active providers:', err);
   }
@@ -830,6 +877,21 @@ export async function getOpenClawProvidersConfig(): Promise<{
         : undefined;
     const defaultModel =
       typeof modelConfig?.primary === 'string' ? modelConfig.primary : undefined;
+
+    const authProviders = new Set<string>();
+    const auth = config.auth as Record<string, unknown> | undefined;
+    addProvidersFromProfileEntries(auth?.profiles as Record<string, unknown> | undefined, authProviders);
+
+    const authProfileProviders = await getProvidersFromAuthProfileStores();
+    for (const provider of authProfileProviders) {
+      authProviders.add(provider);
+    }
+
+    for (const provider of authProviders) {
+      if (!providers[provider]) {
+        providers[provider] = {};
+      }
+    }
 
     return { providers, defaultModel };
   } catch {

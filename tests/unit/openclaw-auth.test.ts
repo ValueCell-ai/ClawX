@@ -41,6 +41,12 @@ async function readAuthProfiles(agentId: string): Promise<Record<string, unknown
   return JSON.parse(content) as Record<string, unknown>;
 }
 
+async function writeAgentAuthProfiles(agentId: string, store: Record<string, unknown>): Promise<void> {
+  const agentDir = join(testHome, '.openclaw', 'agents', agentId, 'agent');
+  await mkdir(agentDir, { recursive: true });
+  await writeFile(join(agentDir, 'auth-profiles.json'), JSON.stringify(store, null, 2), 'utf8');
+}
+
 describe('saveProviderKeyToOpenClaw', () => {
   beforeEach(async () => {
     vi.resetModules();
@@ -199,5 +205,91 @@ describe('sanitizeOpenClawConfig', () => {
     expect(tools.profile).toBe('full');
 
     logSpy.mockRestore();
+  });
+});
+
+describe('auth-backed provider discovery', () => {
+  beforeEach(async () => {
+    vi.resetModules();
+    vi.restoreAllMocks();
+    await rm(testHome, { recursive: true, force: true });
+    await rm(testUserData, { recursive: true, force: true });
+  });
+
+  it('detects active providers from openclaw auth profiles and per-agent auth stores', async () => {
+    await writeOpenClawJson({
+      agents: {
+        list: [
+          { id: 'main', name: 'Main', default: true, workspace: '~/.openclaw/workspace', agentDir: '~/.openclaw/agents/main/agent' },
+          { id: 'work', name: 'Work', workspace: '~/.openclaw/workspace-work', agentDir: '~/.openclaw/agents/work/agent' },
+        ],
+      },
+      auth: {
+        profiles: {
+          'openai-codex:default': { type: 'oauth', provider: 'openai-codex', access: 'acc', refresh: 'ref', expires: 1 },
+          'anthropic:default': { type: 'api_key', provider: 'anthropic', key: 'sk-ant' },
+        },
+      },
+    });
+
+    await writeAgentAuthProfiles('work', {
+      version: 1,
+      profiles: {
+        'google-gemini-cli:default': {
+          type: 'oauth',
+          provider: 'google-gemini-cli',
+          access: 'goog-access',
+          refresh: 'goog-refresh',
+          expires: 2,
+        },
+      },
+    });
+
+    const { getActiveOpenClawProviders } = await import('@electron/utils/openclaw-auth');
+
+    await expect(getActiveOpenClawProviders()).resolves.toEqual(
+      new Set(['openai', 'anthropic', 'google']),
+    );
+  });
+
+  it('seeds provider config entries from auth profiles when models.providers is empty', async () => {
+    await writeOpenClawJson({
+      agents: {
+        list: [
+          { id: 'main', name: 'Main', default: true, workspace: '~/.openclaw/workspace', agentDir: '~/.openclaw/agents/main/agent' },
+          { id: 'work', name: 'Work', workspace: '~/.openclaw/workspace-work', agentDir: '~/.openclaw/agents/work/agent' },
+        ],
+        defaults: {
+          model: {
+            primary: 'openai/gpt-5.4',
+          },
+        },
+      },
+      auth: {
+        profiles: {
+          'openai-codex:default': { type: 'oauth', provider: 'openai-codex', access: 'acc', refresh: 'ref', expires: 1 },
+        },
+      },
+    });
+
+    await writeAgentAuthProfiles('work', {
+      version: 1,
+      profiles: {
+        'anthropic:default': {
+          type: 'api_key',
+          provider: 'anthropic',
+          key: 'sk-ant',
+        },
+      },
+    });
+
+    const { getOpenClawProvidersConfig } = await import('@electron/utils/openclaw-auth');
+    const result = await getOpenClawProvidersConfig();
+
+    expect(result.defaultModel).toBe('openai/gpt-5.4');
+    expect(result.providers).toMatchObject({
+      openai: {},
+      anthropic: {},
+    });
   });
 });
