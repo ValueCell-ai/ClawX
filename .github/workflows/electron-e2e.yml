@@ -39,6 +39,9 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Rebuild Electron binary
+        run: pnpm rebuild electron
+
       - name: Run Electron E2E on Linux
         if: runner.os == 'Linux'
         run: xvfb-run -a pnpm run test:e2e
