@@ -769,7 +769,14 @@ export class GatewayManager extends EventEmitter {
           port,
           connectedAt: Date.now(),
         });
-        this.startPing();
+        // On Windows, skip WebSocket heartbeat ping to avoid cascading failures:
+        // heartbeat timeout → terminate socket → reconnect → port conflict
+        // (old process holds port due to TCP TIME_WAIT) → ~2 min downtime.
+        // Gateway is a local child process; actual crashes are caught by the
+        // process exit handler, and graceful restarts use code=1012 close frames.
+        if (process.platform !== 'win32') {
+          this.startPing();
+        }
       },
       onMessage: (message) => {
         this.handleMessage(message);
