@@ -65,6 +65,15 @@ function shouldUseExplicitDefaultOverride(config: ProviderConfig, runtimeProvide
 
 export function getOpenClawProviderKey(type: string, providerId: string): string {
   if (type === 'custom' || type === 'ollama') {
+    // If the providerId is already a runtime key (e.g. re-seeded from openclaw.json
+    // as "custom-XXXXXXXX"), return it directly to avoid double-hashing.
+    const prefix = `${type}-`;
+    if (providerId.startsWith(prefix)) {
+      const tail = providerId.slice(prefix.length);
+      if (tail.length === 8 && !tail.includes('-')) {
+        return providerId;
+      }
+    }
     const suffix = providerId.replace(/-/g, '').slice(0, 8);
     return `${type}-${suffix}`;
   }
