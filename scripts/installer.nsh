@@ -23,21 +23,38 @@
 
   ${if} $R0 == 0
     ${if} ${isUpdated}
-      # allow app to exit without explicit kill
-      Sleep 1000
-      Goto doStopProcess
+      # Auto-update: the app is already shutting down (quitAndInstall was called).
+      # The before-quit handler needs up to 8s to gracefully stop the Gateway
+      # process tree (5s timeout + force-terminate + re-quit).  Wait for the
+      # app to exit on its own before resorting to force-kill.
+      DetailPrint `Waiting for "${PRODUCT_NAME}" to finish shutting down...`
+      Sleep 8000
+      ${nsProcess::FindProcess} "${APP_EXECUTABLE_FILENAME}" $R0
+      ${if} $R0 != 0
+        Goto not_running
+      ${endIf}
+      # App didn't exit in time; fall through to force-kill
     ${endIf}
-    MessageBox MB_OKCANCEL|MB_ICONEXCLAMATION "$(appRunning)" /SD IDOK IDOK doStopProcess
-    Quit
+    ${if} ${isUpdated} ; skip the dialog for auto-updates
+    ${else}
+      MessageBox MB_OKCANCEL|MB_ICONEXCLAMATION "$(appRunning)" /SD IDOK IDOK doStopProcess
+      Quit
+    ${endIf}
 
     doStopProcess:
     DetailPrint `Closing running "${PRODUCT_NAME}"...`
 
-    # Silently kill the process using nsProcess instead of taskkill / cmd.exe
-    ${nsProcess::KillProcess} "${APP_EXECUTABLE_FILENAME}" $R0
-    
-    # to ensure that files are not "in-use"
-    Sleep 300
+    # Kill the entire process tree.  Electron runs multiple ClawX.exe processes
+    # (main, renderer, GPU, UtilityProcess/Gateway) and the Gateway may spawn
+    # Python child processes.  taskkill /F /T /IM kills ALL matching processes
+    # and their descendants atomically — unlike nsProcess::KillProcess which
+    # terminates only one instance per call.
+    nsExec::ExecToStack 'taskkill /F /T /IM "${APP_EXECUTABLE_FILENAME}"'
+    Pop $0
+    Pop $1
+
+    # Wait for file handles to be released across the full process tree
+    Sleep 2000
 
     # Retry counter
     StrCpy $R1 0
@@ -47,14 +64,17 @@
 
       ${nsProcess::FindProcess} "${APP_EXECUTABLE_FILENAME}" $R0
       ${if} $R0 == 0
-        # wait to give a chance to exit gracefully
+        # wait to give processes a chance to fully exit
+        Sleep 2000
+        nsExec::ExecToStack 'taskkill /F /T /IM "${APP_EXECUTABLE_FILENAME}"'
+        Pop $0
+        Pop $1
+
         Sleep 1000
-        ${nsProcess::KillProcess} "${APP_EXECUTABLE_FILENAME}" $R0
-        
         ${nsProcess::FindProcess} "${APP_EXECUTABLE_FILENAME}" $R0
         ${If} $R0 == 0
           DetailPrint `Waiting for "${PRODUCT_NAME}" to close.`
-          Sleep 2000
+          Sleep 3000
         ${else}
           Goto not_running
         ${endIf}
@@ -64,7 +84,7 @@
 
       # App likely running with elevated permissions.
       # Ask user to close it manually
-      ${if} $R1 > 1
+      ${if} $R1 > 2
         MessageBox MB_RETRYCANCEL|MB_ICONEXCLAMATION "$(appCannotBeClosed)" /SD IDCANCEL IDRETRY loop
         Quit
       ${else}
@@ -130,11 +150,13 @@
     /SD IDNO IDYES _cu_removeData IDNO _cu_skipRemove
 
   _cu_removeData:
-    ; Kill any lingering ClawX processes to release file locks on electron-store
-    ; JSON files (settings.json, clawx-providers.json, window-state.json, etc.)
+    ; Kill any lingering ClawX processes (and their child process trees) to
+    ; release file locks on electron-store JSON files, Gateway sockets, etc.
     ${nsProcess::FindProcess} "${APP_EXECUTABLE_FILENAME}" $R0
     ${if} $R0 == 0
-      ${nsProcess::KillProcess} "${APP_EXECUTABLE_FILENAME}" $R0
+      nsExec::ExecToStack 'taskkill /F /T /IM "${APP_EXECUTABLE_FILENAME}"'
+      Pop $0
+      Pop $1
     ${endIf}
     ${nsProcess::Unload}
 
