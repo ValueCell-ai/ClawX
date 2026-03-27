@@ -17,6 +17,14 @@ export interface ProcessInstanceFileLockOptions {
   lockName: string;
   pid?: number;
   isPidAlive?: (pid: number) => boolean;
+  /**
+   * When true, unconditionally remove any existing lock file before attempting
+   * to acquire.  Use this when an external mechanism (e.g. Electron's
+   * `requestSingleInstanceLock`) already guarantees that no other real instance
+   * is running, so a surviving lock file can only be stale (orphan child
+   * process, PID recycling on Windows, etc.).
+   */
+  force?: boolean;
 }
 
 function defaultPidAlive(pid: number): boolean {
@@ -100,6 +108,23 @@ export function acquireProcessInstanceFileLock(
 
   mkdirSync(options.userDataDir, { recursive: true });
   const lockPath = join(options.userDataDir, `${options.lockName}.instance.lock`);
+
+  // When force mode is enabled, unconditionally remove any existing lock file
+  // before attempting acquisition.  This is safe because an external mechanism
+  // (Electron's requestSingleInstanceLock) already guarantees exclusivity.
+  if (options.force && existsSync(lockPath)) {
+    const staleOwner = readLockOwner(lockPath);
+    try {
+      rmSync(lockPath, { force: true });
+    } catch {
+      // best-effort; fall through to normal acquisition
+    }
+    if (staleOwner.kind !== 'unknown') {
+      console.info(
+        `[ClawX] Force-cleaned stale instance lock (pid=${staleOwner.pid}, format=${staleOwner.kind})`,
+      );
+    }
+  }
 
   let ownerPid: number | undefined;
   let ownerFormat: ProcessInstanceFileLock['ownerFormat'] = 'unknown';

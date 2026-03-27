@@ -154,4 +154,40 @@ describe('process instance file lock', () => {
     expect(lock.ownerFormat).toBe('unknown');
     expect(readFileSync(lockPath, 'utf8')).toContain('future-lock-schema');
   });
+
+  it('force: true acquires lock even when existing owner pid is alive', () => {
+    const userDataDir = createTempDir();
+    const lockPath = join(userDataDir, 'clawx.instance.lock');
+    // Simulate a lock held by a live process (e.g. orphan Python process after update)
+    writeFileSync(lockPath, '14736', 'utf8');
+
+    const lock = acquireProcessInstanceFileLock({
+      userDataDir,
+      lockName: 'clawx',
+      pid: 5555,
+      isPidAlive: () => true, // owner appears alive (PID recycled on Windows)
+      force: true,
+    });
+
+    expect(lock.acquired).toBe(true);
+    expect(readFileSync(lockPath, 'utf8')).toBe('5555');
+    lock.release();
+  });
+
+  it('force: true acquires lock when lock file has malformed content', () => {
+    const userDataDir = createTempDir();
+    const lockPath = join(userDataDir, 'clawx.instance.lock');
+    writeFileSync(lockPath, 'garbage-content', 'utf8');
+
+    const lock = acquireProcessInstanceFileLock({
+      userDataDir,
+      lockName: 'clawx',
+      pid: 7777,
+      force: true,
+    });
+
+    expect(lock.acquired).toBe(true);
+    expect(readFileSync(lockPath, 'utf8')).toBe('7777');
+    lock.release();
+  });
 });

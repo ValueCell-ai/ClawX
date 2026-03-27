@@ -87,6 +87,7 @@ if (gotElectronLock) {
     const fileLock = acquireProcessInstanceFileLock({
       userDataDir: app.getPath('userData'),
       lockName: 'clawx',
+      force: true, // Electron lock already guarantees exclusivity; force-clean orphan/recycled-PID locks
     });
     gotFileLock = fileLock.acquired;
     releaseProcessInstanceFileLock = fileLock.release;
