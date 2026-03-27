@@ -57,45 +57,45 @@ async function launchClawXElectron(homeDir: string, userDataDir: string): Promis
 }
 
 export const test = base.extend<ElectronFixtures>({
-  homeDir: async ({}, use) => {
+  homeDir: async (_unused, provideHomeDir) => {
     const homeDir = await mkdtemp(join(tmpdir(), 'clawx-e2e-home-'));
     await mkdir(join(homeDir, '.config'), { recursive: true });
     await mkdir(join(homeDir, 'AppData', 'Local'), { recursive: true });
     await mkdir(join(homeDir, 'AppData', 'Roaming'), { recursive: true });
     try {
-      await use(homeDir);
+      await provideHomeDir(homeDir);
     } finally {
       await rm(homeDir, { recursive: true, force: true });
     }
   },
 
-  userDataDir: async ({}, use) => {
+  userDataDir: async (_unused, provideUserDataDir) => {
     const userDataDir = await mkdtemp(join(tmpdir(), 'clawx-e2e-user-data-'));
     try {
-      await use(userDataDir);
+      await provideUserDataDir(userDataDir);
     } finally {
       await rm(userDataDir, { recursive: true, force: true });
     }
   },
 
-  launchElectronApp: async ({ homeDir, userDataDir }, use) => {
-    await use(async () => await launchClawXElectron(homeDir, userDataDir));
+  launchElectronApp: async ({ homeDir, userDataDir }, provideLauncher) => {
+    await provideLauncher(async () => await launchClawXElectron(homeDir, userDataDir));
   },
 
-  electronApp: async ({ launchElectronApp }, use) => {
+  electronApp: async ({ launchElectronApp }, provideElectronApp) => {
     const app = await launchElectronApp();
 
     try {
-      await use(app);
+      await provideElectronApp(app);
     } finally {
       await app.close();
     }
   },
 
-  page: async ({ electronApp }, use) => {
+  page: async ({ electronApp }, providePage) => {
     const page = await electronApp.firstWindow();
     await page.waitForLoadState('domcontentloaded');
-    await use(page);
+    await providePage(page);
   },
 });
 
