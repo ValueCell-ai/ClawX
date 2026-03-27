@@ -49,6 +49,15 @@ vi.mock('ws', () => ({
   default: wsState.MockWebSocket,
 }));
 
+vi.mock('@electron/utils/logger', () => ({
+  logger: {
+    info: vi.fn(),
+    warn: vi.fn(),
+    error: vi.fn(),
+    debug: vi.fn(),
+  },
+}));
+
 import {
   GATEWAY_CONNECT_HANDSHAKE_TIMEOUT_MS,
   connectGatewaySocket,
