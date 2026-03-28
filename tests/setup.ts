@@ -23,6 +23,8 @@ if (typeof window !== 'undefined') {
     value: mockElectron,
     writable: true,
   });
+
+  // Mock matchMedia
 }
 
 // Mock matchMedia

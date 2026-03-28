@@ -40,6 +40,7 @@ import { useTranslation } from 'react-i18next';
 import { SUPPORTED_LANGUAGES } from '@/i18n';
 import { hostApiFetch } from '@/lib/host-api';
 import { cn } from '@/lib/utils';
+import type { Mem0ConfigSnapshot } from '../../../shared/mem0';
 type ControlUiInfo = {
   url: string;
   token: string;
@@ -95,6 +96,9 @@ export function Settings() {
   const [wsDiagnosticEnabled, setWsDiagnosticEnabled] = useState(false);
   const [showTelemetryViewer, setShowTelemetryViewer] = useState(false);
   const [telemetryEntries, setTelemetryEntries] = useState<UiTelemetryEntry[]>([]);
+  const [mem0Config, setMem0Config] = useState<Mem0ConfigSnapshot | null>(null);
+  const [mem0ApiKeyDraft, setMem0ApiKeyDraft] = useState('');
+  const [mem0Saving, setMem0Saving] = useState(false);
 
   const isWindows = window.electron.platform === 'win32';
   const showCliTools = true;
@@ -230,6 +234,43 @@ export function Settings() {
     }
   };
 
+  const loadMem0Config = async () => {
+    try {
+      const config = await hostApiFetch<Mem0ConfigSnapshot>('/api/mem0/config');
+      setMem0Config(config);
+      setMem0ApiKeyDraft('');
+    } catch (error) {
+      toast.error(`Failed to load mem0 settings: ${String(error)}`);
+    }
+  };
+
+  const handleSaveMem0Config = async () => {
+    if (!mem0Config) return;
+    setMem0Saving(true);
+    try {
+      const payload = {
+        enabled: mem0Config.enabled,
+        apiBaseUrl: mem0Config.apiBaseUrl,
+        topK: mem0Config.topK,
+        historyWindowMessages: mem0Config.historyWindowMessages,
+        compactionTriggerMessages: mem0Config.compactionTriggerMessages,
+        compactionMaxLines: mem0Config.compactionMaxLines,
+        ...(mem0ApiKeyDraft.trim() ? { apiKey: mem0ApiKeyDraft.trim() } : {}),
+      };
+      const next = await hostApiFetch<Mem0ConfigSnapshot>('/api/mem0/config', {
+        method: 'PUT',
+        body: JSON.stringify(payload),
+      });
+      setMem0Config(next);
+      setMem0ApiKeyDraft('');
+      toast.success(t('advanced.mem0.saved'));
+    } catch (error) {
+      toast.error(`Failed to save mem0 settings: ${String(error)}`);
+    } finally {
+      setMem0Saving(false);
+    }
+  };
+
   useEffect(() => {
     if (!showCliTools) return;
     let cancelled = false;
@@ -258,6 +299,10 @@ export function Settings() {
 
     return () => { cancelled = true; };
   }, [devModeUnlocked, showCliTools]);
+
+  useEffect(() => {
+    void loadMem0Config();
+  }, []);
 
   const handleCopyCliCommand = async () => {
     if (!openclawCliCommand) return;
@@ -628,6 +673,115 @@ export function Settings() {
                   checked={telemetryEnabled}
                   onCheckedChange={setTelemetryEnabled}
                 />
+              </div>
+
+              <div className="space-y-4 rounded-2xl border border-black/10 dark:border-white/10 p-5 bg-black/5 dark:bg-white/5">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <Label className="text-[15px] font-medium text-foreground">{t('advanced.mem0.title')}</Label>
+                    <p className="text-[13px] text-muted-foreground mt-1">
+                      {t('advanced.mem0.desc')}
+                    </p>
+                  </div>
+                  <Switch
+                    checked={mem0Config?.enabled ?? false}
+                    onCheckedChange={(checked) => setMem0Config((prev) => prev ? { ...prev, enabled: checked } : prev)}
+                  />
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div className="space-y-2 sm:col-span-2">
+                    <Label htmlFor="mem0-api-key" className="text-[13px] text-foreground/80">{t('advanced.mem0.apiKey')}</Label>
+                    <Input
+                      id="mem0-api-key"
+                      type="password"
+                      value={mem0ApiKeyDraft}
+                      onChange={(event) => setMem0ApiKeyDraft(event.target.value)}
+                      placeholder={mem0Config?.hasApiKey ? t('advanced.mem0.apiKeyConfigured') : 'm0-...'}
+                      className="h-10 rounded-xl bg-white dark:bg-card border-black/5 dark:border-white/5 font-mono text-[13px]"
+                    />
+                    <p className="text-[11px] text-muted-foreground">
+                      {mem0Config?.hasApiKey ? t('advanced.mem0.apiKeyStored') : t('advanced.mem0.apiKeyHelp')}
+                    </p>
+                  </div>
+
+                  <div className="space-y-2 sm:col-span-2">
+                    <Label htmlFor="mem0-base-url" className="text-[13px] text-foreground/80">{t('advanced.mem0.baseUrl')}</Label>
+                    <Input
+                      id="mem0-base-url"
+                      value={mem0Config?.apiBaseUrl ?? ''}
+                      onChange={(event) => setMem0Config((prev) => prev ? { ...prev, apiBaseUrl: event.target.value } : prev)}
+                      className="h-10 rounded-xl bg-white dark:bg-card border-black/5 dark:border-white/5 font-mono text-[13px]"
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="mem0-top-k" className="text-[13px] text-foreground/80">{t('advanced.mem0.topK')}</Label>
+                    <Input
+                      id="mem0-top-k"
+                      type="number"
+                      min={1}
+                      max={20}
+                      value={mem0Config?.topK ?? 6}
+                      onChange={(event) => setMem0Config((prev) => prev ? { ...prev, topK: Number(event.target.value || 6) } : prev)}
+                      className="h-10 rounded-xl bg-white dark:bg-card border-black/5 dark:border-white/5 font-mono text-[13px]"
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="mem0-window" className="text-[13px] text-foreground/80">{t('advanced.mem0.historyWindow')}</Label>
+                    <Input
+                      id="mem0-window"
+                      type="number"
+                      min={2}
+                      max={20}
+                      value={mem0Config?.historyWindowMessages ?? 8}
+                      onChange={(event) => setMem0Config((prev) => prev ? { ...prev, historyWindowMessages: Number(event.target.value || 8) } : prev)}
+                      className="h-10 rounded-xl bg-white dark:bg-card border-black/5 dark:border-white/5 font-mono text-[13px]"
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="mem0-trigger" className="text-[13px] text-foreground/80">{t('advanced.mem0.compactTrigger')}</Label>
+                    <Input
+                      id="mem0-trigger"
+                      type="number"
+                      min={6}
+                      max={100}
+                      value={mem0Config?.compactionTriggerMessages ?? 18}
+                      onChange={(event) => setMem0Config((prev) => prev ? { ...prev, compactionTriggerMessages: Number(event.target.value || 18) } : prev)}
+                      className="h-10 rounded-xl bg-white dark:bg-card border-black/5 dark:border-white/5 font-mono text-[13px]"
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="mem0-lines" className="text-[13px] text-foreground/80">{t('advanced.mem0.compactLines')}</Label>
+                    <Input
+                      id="mem0-lines"
+                      type="number"
+                      min={20}
+                      max={400}
+                      value={mem0Config?.compactionMaxLines ?? 120}
+                      onChange={(event) => setMem0Config((prev) => prev ? { ...prev, compactionMaxLines: Number(event.target.value || 120) } : prev)}
+                      className="h-10 rounded-xl bg-white dark:bg-card border-black/5 dark:border-white/5 font-mono text-[13px]"
+                    />
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-4 pt-2">
+                  <Button
+                    variant="outline"
+                    onClick={handleSaveMem0Config}
+                    disabled={mem0Saving || !mem0Config}
+                    className="rounded-xl h-10 px-5 bg-transparent border-black/10 dark:border-white/10 hover:bg-black/5 dark:hover:bg-white/5"
+                  >
+                    <RefreshCw className={`h-4 w-4 mr-2${mem0Saving ? ' animate-spin' : ''}`} />
+                    {mem0Saving ? t('common:status.saving') : t('common:actions.save')}
+                  </Button>
+                  <p className="text-[12px] text-muted-foreground">
+                    {t('advanced.mem0.note')}
+                  </p>
+                </div>
               </div>
 
             </div>

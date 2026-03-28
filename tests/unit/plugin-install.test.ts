@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const {
@@ -208,7 +209,7 @@ describe('plugin installer diagnostics', () => {
       '[plugin] Bundled mirror install failed for WeCom',
       expect.objectContaining({
         sourceDir,
-        targetDir: expect.stringContaining('.openclaw/extensions/wecom'),
+        targetDir: expect.stringMatching(/[\\/]\.openclaw[\\/]extensions[\\/]wecom$/),
         platform: 'win32',
         attempts: [
           expect.objectContaining({ attempt: 1, code: 'EPERM' }),

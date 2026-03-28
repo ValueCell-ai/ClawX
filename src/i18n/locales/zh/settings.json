@@ -209,7 +209,22 @@
     "devMode": "开发者模式",
     "devModeDesc": "显示开发者工具和快捷方式",
     "telemetry": "匿名使用数据",
-    "telemetryDesc": "允许提供匿名的基础使用数据，用于改进 ClawX"
+    "telemetryDesc": "允许提供匿名的基础使用数据，用于改进 ClawX",
+    "mem0": {
+      "title": "mem0 记忆",
+      "desc": "存储长期记忆、在发送前注入相关回忆，并在聊天过长时自动压缩转录。",
+      "apiKey": "mem0 API Key",
+      "apiKeyHelp": "仅保存在本机 ClawX 中，并只会由主进程使用。",
+      "apiKeyConfigured": "已保存 API Key。留空可继续使用当前密钥。",
+      "apiKeyStored": "此设备上已经本地保存了 mem0 API Key。",
+      "baseUrl": "API 基础地址",
+      "topK": "召回记忆数",
+      "historyWindow": "最近消息数",
+      "compactTrigger": "触发压缩的消息数",
+      "compactLines": "保留的转录行数",
+      "saved": "mem0 设置已保存",
+      "note": "压缩会裁剪 Gateway 转录，并依赖 mem0 的记忆召回来保留更长期的上下文。"
+    }
   },
   "developer": {
     "title": "开发者",

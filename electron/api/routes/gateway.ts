@@ -85,6 +85,7 @@ export async function handleGatewayRoutes(
         deliver?: boolean;
         idempotencyKey: string;
         media?: Array<{ filePath: string; mimeType: string; fileName: string }>;
+        memoryContext?: { rootSessionKey?: string };
       }>(req);
       const VISION_MIME_TYPES = new Set([
         'image/png', 'image/jpeg', 'image/bmp', 'image/webp',
@@ -109,15 +110,24 @@ export async function handleGatewayRoutes(
       const message = fileReferences.length > 0
         ? [body.message, ...fileReferences].filter(Boolean).join('\n')
         : body.message;
-      const rpcParams: Record<string, unknown> = {
+      let rpcParams: Record<string, unknown> = {
         sessionKey: body.sessionKey,
         message,
         deliver: body.deliver ?? false,
         idempotencyKey: body.idempotencyKey,
+        memoryContext: body.memoryContext,
       };
       if (imageAttachments.length > 0) {
         rpcParams.attachments = imageAttachments;
       }
+      rpcParams = await ctx.mem0Service.prepareChatSend(rpcParams as {
+        sessionKey: string;
+        message: string;
+        deliver?: boolean;
+        idempotencyKey?: string;
+        attachments?: unknown;
+        memoryContext?: { rootSessionKey?: string };
+      }) as Record<string, unknown>;
       const result = await ctx.gatewayManager.rpc('chat.send', rpcParams, 120000);
       sendJson(res, 200, { success: true, result });
     } catch (error) {

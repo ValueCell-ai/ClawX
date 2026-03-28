@@ -43,6 +43,7 @@ import { deviceOAuthManager } from '../utils/device-oauth';
 import { browserOAuthManager } from '../utils/browser-oauth';
 import { whatsAppLoginManager } from '../utils/whatsapp-login';
 import { syncAllProviderAuthToRuntime } from '../services/providers/provider-runtime-sync';
+import { Mem0Service } from '../services/mem0/service';
 
 const WINDOWS_APP_USER_MODEL_ID = 'app.clawx.desktop';
 
@@ -113,6 +114,7 @@ let mainWindow: BrowserWindow | null = null;
 let gatewayManager!: GatewayManager;
 let clawHubService!: ClawHubService;
 let hostEventBus!: HostEventBus;
+let mem0Service!: Mem0Service;
 let hostApiServer: Server | null = null;
 const mainWindowFocusState = createMainWindowFocusState();
 const quitLifecycleState = createQuitLifecycleState();
@@ -308,11 +310,12 @@ async function initialize(): Promise<void> {
   );
 
   // Register IPC handlers
-  registerIpcHandlers(gatewayManager, clawHubService, window);
+  registerIpcHandlers(gatewayManager, clawHubService, window, mem0Service);
 
   hostApiServer = startHostApiServer({
     gatewayManager,
     clawHubService,
+    mem0Service,
     eventBus: hostEventBus,
     mainWindow: window,
   });
@@ -482,6 +485,7 @@ if (gotTheLock) {
   gatewayManager = new GatewayManager();
   clawHubService = new ClawHubService();
   hostEventBus = new HostEventBus();
+  mem0Service = new Mem0Service(gatewayManager);
 
   // When a second instance is launched, focus the existing window instead.
   app.on('second-instance', () => {

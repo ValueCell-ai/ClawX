@@ -26,6 +26,7 @@ export function Chat() {
 
   const messages = useChatStore((s) => s.messages);
   const currentSessionKey = useChatStore((s) => s.currentSessionKey);
+  const currentAgentId = useChatStore((s) => s.currentAgentId);
   const loading = useChatStore((s) => s.loading);
   const sending = useChatStore((s) => s.sending);
   const error = useChatStore((s) => s.error);
@@ -121,12 +122,16 @@ export function Chat() {
                         role: (typeof streamMsg.role === 'string' ? streamMsg.role : 'assistant') as RawMessage['role'],
                         content: streamMsg.content ?? streamText,
                         timestamp: streamMsg.timestamp ?? streamingTimestamp,
+                        _agentId: currentAgentId,
+                        _sourceSessionKey: currentSessionKey,
                       }
                     : {
                         role: 'assistant',
                         content: streamText,
                         timestamp: streamingTimestamp,
-                      }) as RawMessage}
+                      _agentId: currentAgentId,
+                      _sourceSessionKey: currentSessionKey,
+                    }) as RawMessage}
                   showThinking={showThinking}
                   isStreaming
                   streamingTools={streamingTools}

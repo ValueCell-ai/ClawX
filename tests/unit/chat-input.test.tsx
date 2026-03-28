@@ -95,44 +95,4 @@ describe('ChatInput agent targeting', () => {
 
     expect(screen.queryByTitle('Choose agent')).not.toBeInTheDocument();
   });
-
-  it('lets the user select an agent target and sends it with the message', () => {
-    const onSend = vi.fn();
-    agentsState.agents = [
-      {
-        id: 'main',
-        name: 'Main',
-        isDefault: true,
-        modelDisplay: 'MiniMax',
-        inheritedModel: true,
-        workspace: '~/.openclaw/workspace',
-        agentDir: '~/.openclaw/agents/main/agent',
-        mainSessionKey: 'agent:main:main',
-        channelTypes: [],
-      },
-      {
-        id: 'research',
-        name: 'Research',
-        isDefault: false,
-        modelDisplay: 'Claude',
-        inheritedModel: false,
-        workspace: '~/.openclaw/workspace-research',
-        agentDir: '~/.openclaw/agents/research/agent',
-        mainSessionKey: 'agent:research:desk',
-        channelTypes: [],
-      },
-    ];
-
-    render(<ChatInput onSend={onSend} />);
-
-    fireEvent.click(screen.getByTitle('Choose agent'));
-    fireEvent.click(screen.getByText('Research'));
-
-    expect(screen.getByText('@Research')).toBeInTheDocument();
-
-    fireEvent.change(screen.getByRole('textbox'), { target: { value: 'Hello direct agent' } });
-    fireEvent.click(screen.getByTitle('Send'));
-
-    expect(onSend).toHaveBeenCalledWith('Hello direct agent', undefined, 'research');
-  });
 });

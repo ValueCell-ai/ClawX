@@ -206,7 +206,22 @@
       }
     },
     "devMode": "開発者モード",
-    "devModeDesc": "開発者ツールとショートカットを表示"
+    "devModeDesc": "開発者ツールとショートカットを表示",
+    "mem0": {
+      "title": "mem0 メモリ",
+      "desc": "長期メモリを保存し、送信前に関連記憶を注入し、会話が大きくなったらトランスクリプトを自動圧縮します。",
+      "apiKey": "mem0 API キー",
+      "apiKeyHelp": "ClawX にローカル保存され、メインプロセスからのみ使用されます。",
+      "apiKeyConfigured": "API キーはすでに保存されています。空欄のままなら現在のキーを維持します。",
+      "apiKeyStored": "この端末には mem0 API キーがすでにローカル保存されています。",
+      "baseUrl": "API ベース URL",
+      "topK": "取得メモリ数",
+      "historyWindow": "直近メッセージ数",
+      "compactTrigger": "圧縮開始メッセージ数",
+      "compactLines": "保持するトランスクリプト行数",
+      "saved": "mem0 設定を保存しました",
+      "note": "圧縮は Gateway のトランスクリプトを短くし、長期コンテキストの維持は mem0 の想起に委ねます。"
+    }
   },
   "developer": {
     "title": "開発者",

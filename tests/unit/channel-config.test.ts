@@ -1,3 +1,5 @@
+// @vitest-environment node
+import { readFile, rm } from 'fs/promises';
 import { existsSync } from 'fs';
 import { mkdir, readFile, rm, writeFile } from 'fs/promises';
 import { join } from 'path';
