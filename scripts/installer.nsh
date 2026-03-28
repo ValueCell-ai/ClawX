@@ -31,7 +31,7 @@
       Sleep 8000
       ${nsProcess::FindProcess} "${APP_EXECUTABLE_FILENAME}" $R0
       ${if} $R0 != 0
-        Goto not_running
+        Goto done_killing
       ${endIf}
       # App didn't exit in time; fall through to force-kill
     ${endIf}
@@ -47,52 +47,82 @@
     # Kill the entire process tree.  Electron runs multiple ClawX.exe processes
     # (main, renderer, GPU, UtilityProcess/Gateway) and the Gateway may spawn
     # Python child processes.  taskkill /F /T /IM kills ALL matching processes
-    # and their descendants atomically — unlike nsProcess::KillProcess which
-    # terminates only one instance per call.
+    # and their descendants atomically.
     nsExec::ExecToStack 'taskkill /F /T /IM "${APP_EXECUTABLE_FILENAME}"'
     Pop $0
     Pop $1
 
+    # Also kill related child processes that may have detached from the
+    # Electron process tree: Gateway, Python (skills), and uv (package mgr).
+    # These won't match APP_EXECUTABLE_FILENAME but hold file locks in $INSTDIR.
+    nsExec::ExecToStack 'taskkill /F /IM openclaw-gateway.exe'
+    Pop $0
+    Pop $1
+    nsExec::ExecToStack 'taskkill /F /IM uv.exe'
+    Pop $0
+    Pop $1
+
     # Wait for file handles to be released across the full process tree
-    Sleep 2000
+    Sleep 3000
+    DetailPrint "Processes terminated. Continuing installation..."
 
-    # Retry counter
-    StrCpy $R1 0
-
-    loop:
-      IntOp $R1 $R1 + 1
-
-      ${nsProcess::FindProcess} "${APP_EXECUTABLE_FILENAME}" $R0
-      ${if} $R0 == 0
-        # wait to give processes a chance to fully exit
-        Sleep 2000
-        nsExec::ExecToStack 'taskkill /F /T /IM "${APP_EXECUTABLE_FILENAME}"'
-        Pop $0
-        Pop $1
-
-        Sleep 1000
-        ${nsProcess::FindProcess} "${APP_EXECUTABLE_FILENAME}" $R0
-        ${If} $R0 == 0
-          DetailPrint `Waiting for "${PRODUCT_NAME}" to close.`
-          Sleep 3000
-        ${else}
-          Goto not_running
-        ${endIf}
-      ${else}
-        Goto not_running
-      ${endIf}
-
-      # App likely running with elevated permissions.
-      # Ask user to close it manually
-      ${if} $R1 > 2
-        MessageBox MB_RETRYCANCEL|MB_ICONEXCLAMATION "$(appCannotBeClosed)" /SD IDCANCEL IDRETRY loop
-        Quit
-      ${else}
-        Goto loop
-      ${endIf}
-    not_running:
+    done_killing:
       ${nsProcess::Unload}
   ${endIf}
+
+  ; Pre-emptively remove the old uninstall registry entry so that
+  ; electron-builder's uninstallOldVersion skips the old uninstaller entirely.
+  ;
+  ; Why: uninstallOldVersion has a hardcoded 5-retry loop that runs the old
+  ; uninstaller repeatedly.  The old uninstaller's atomicRMDir fails on locked
+  ; files (antivirus, indexing) causing a blocking "ClawX 无法关闭" dialog.
+  ; Deleting UninstallString makes uninstallOldVersion return immediately.
+  ; The new installer will overwrite / extract all files on top of the old dir.
+  ; registryAddInstallInfo will write the correct new entries afterwards.
+  ; Clean both SHELL_CONTEXT and HKCU to cover cross-hive upgrades
+  ; (e.g. old install was per-user, new install is per-machine or vice versa).
+  DeleteRegValue SHELL_CONTEXT "${UNINSTALL_REGISTRY_KEY}" UninstallString
+  DeleteRegValue SHELL_CONTEXT "${UNINSTALL_REGISTRY_KEY}" QuietUninstallString
+  DeleteRegValue HKCU "${UNINSTALL_REGISTRY_KEY}" UninstallString
+  DeleteRegValue HKCU "${UNINSTALL_REGISTRY_KEY}" QuietUninstallString
+  !ifdef UNINSTALL_REGISTRY_KEY_2
+    DeleteRegValue SHELL_CONTEXT "${UNINSTALL_REGISTRY_KEY_2}" UninstallString
+    DeleteRegValue SHELL_CONTEXT "${UNINSTALL_REGISTRY_KEY_2}" QuietUninstallString
+    DeleteRegValue HKCU "${UNINSTALL_REGISTRY_KEY_2}" UninstallString
+    DeleteRegValue HKCU "${UNINSTALL_REGISTRY_KEY_2}" QuietUninstallString
+  !endif
+!macroend
+
+; Override electron-builder's handleUninstallResult to prevent the
+; "ClawX 无法关闭" retry dialog when the old uninstaller fails.
+;
+; During upgrades, electron-builder copies the old uninstaller to a temp dir
+; and runs it silently.  The old uninstaller uses atomicRMDir to rename every
+; file out of $INSTDIR.  If ANY file is still locked (antivirus scanner,
+; Windows Search indexer, delayed kernel handle release after taskkill), it
+; aborts with a non-zero exit code.  The default handler retries 5× then shows
+; a blocking MessageBox.
+;
+; This macro clears the error and lets the new installer proceed — it will
+; simply overwrite / extract new files on top of the (partially cleaned) old
+; installation directory.  This is safe because:
+;   1. Processes have already been force-killed in customCheckAppRunning.
+;   2. The new installer extracts a complete, self-contained file tree.
+;   3. Any leftover old files that weren't removed are harmless.
+!macro customUnInstallCheck
+  ${if} $R0 != 0
+    DetailPrint "Old uninstaller exited with code $R0. Continuing with overwrite install..."
+  ${endIf}
+  ClearErrors
+!macroend
+
+; Same safety net for the HKEY_CURRENT_USER uninstall path.
+; Without this, handleUninstallResult would show a fatal error and Quit.
+!macro customUnInstallCheckCurrentUser
+  ${if} $R0 != 0
+    DetailPrint "Old uninstaller (current user) exited with code $R0. Continuing..."
+  ${endIf}
+  ClearErrors
 !macroend
 
 !macro customInstall
