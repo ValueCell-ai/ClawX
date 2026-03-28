@@ -638,7 +638,7 @@ export function Settings() {
                 <Switch
                   checked={devModeUnlocked}
                   onCheckedChange={setDevModeUnlocked}
-                  data-testid="settings-dev-mode-toggle"
+                  data-testid="settings-dev-mode-switch"
                 />
               </div>
 

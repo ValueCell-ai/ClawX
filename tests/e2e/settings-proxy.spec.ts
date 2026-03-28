@@ -1,35 +1,6 @@
 import type { Locator, Page } from '@playwright/test';
 import { completeSetup, expect, test } from './fixtures/electron';
 
-async function openSettingsPage(page: Page): Promise<void> {
-  await page.evaluate(() => {
-    localStorage.setItem('clawx-settings', JSON.stringify({
-      state: {
-        setupComplete: true,
-      },
-      version: 0,
-    }));
-    window.location.hash = '#/settings';
-    window.location.reload();
-  });
-
-  await page.waitForLoadState('domcontentloaded');
-  const settingsPage = page.getByTestId('settings-page');
-  if (await settingsPage.isVisible().catch(() => false)) {
-    return;
-  }
-
-  const setupPage = page.getByTestId('setup-page');
-  if (await setupPage.isVisible().catch(() => false)) {
-    await completeSetup(page);
-  }
-
-  if (!await settingsPage.isVisible().catch(() => false)) {
-    await page.getByTestId('sidebar-nav-settings').click();
-  }
-  await expect(page.getByTestId('settings-page')).toBeVisible();
-}
-
 async function ensureSwitchState(toggle: Locator, checked: boolean): Promise<void> {
   const currentState = await toggle.getAttribute('data-state');
   const isChecked = currentState === 'checked';
@@ -47,9 +18,12 @@ async function readProxyEnabled(page: Page): Promise<boolean> {
 
 test.describe('ClawX developer proxy settings', () => {
   test('keeps proxy save available when disabling proxy in developer mode', async ({ page }) => {
-    await openSettingsPage(page);
+    await completeSetup(page);
 
-    const devModeToggle = page.getByTestId('settings-dev-mode-toggle');
+    await page.getByTestId('sidebar-nav-settings').click();
+    await expect(page.getByTestId('settings-page')).toBeVisible();
+
+    const devModeToggle = page.getByTestId('settings-dev-mode-switch');
     await expect(devModeToggle).toBeVisible();
     await ensureSwitchState(devModeToggle, true);
 

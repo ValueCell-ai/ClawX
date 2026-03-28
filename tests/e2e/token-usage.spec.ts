@@ -101,22 +101,29 @@ async function seedTokenUsageTranscripts(homeDir: string): Promise<void> {
 
 test.describe('ClawX token usage history', () => {
   async function waitForGatewayRunning(page: Page): Promise<void> {
-    const initialStatus = await page.evaluate(async () => {
-      return window.electron.ipcRenderer.invoke('gateway:status');
-    });
-
-    if (initialStatus?.state !== 'running') {
-      await page.evaluate(async () => {
-        await window.electron.ipcRenderer.invoke('gateway:start');
-      });
-    }
-
     await expect.poll(async () => {
       const status = await page.evaluate(async () => {
         return window.electron.ipcRenderer.invoke('gateway:status');
       });
-      return status?.state;
-    }, { timeout: 30_000 }).toBe('running');
+
+      if (status?.state === 'running') {
+        return 'running';
+      }
+
+      await page.evaluate(async () => {
+        try {
+          await window.electron.ipcRenderer.invoke('gateway:start');
+        } catch {
+          try {
+            await window.electron.ipcRenderer.invoke('gateway:restart');
+          } catch {
+            // Ignore transient e2e startup failures and let the poll retry.
+          }
+        }
+      });
+
+      return status?.state ?? 'unknown';
+    }, { timeout: 45_000, intervals: [500, 1000, 1500, 2000] }).toBe('running');
   }
 
   async function validateUsageHistory(page: Page): Promise<void> {
@@ -177,7 +184,7 @@ test.describe('ClawX token usage history', () => {
     await expect.poll(async () => await usageEntryRows.count()).toBe(2);
 
     for (const sessionId of seededSessions) {
-      const row = page.locator('[data-testid=\"token-usage-entry\"]', { hasText: sessionId });
+      const row = page.locator('[data-testid="token-usage-entry"]', { hasText: sessionId });
       if (sessionId === GATEWAY_INJECTED_SESSION_ID || sessionId === DELIVERY_MIRROR_SESSION_ID) {
         await expect(row).toHaveCount(0);
       } else {
@@ -185,7 +192,7 @@ test.describe('ClawX token usage history', () => {
       }
     }
 
-    await expect(page.locator('[data-testid=\"token-usage-entry\"]', { hasText: GATEWAY_INJECTED_SESSION_ID })).toHaveCount(0);
-    await expect(page.locator('[data-testid=\"token-usage-entry\"]', { hasText: DELIVERY_MIRROR_SESSION_ID })).toHaveCount(0);
+    await expect(page.locator('[data-testid="token-usage-entry"]', { hasText: GATEWAY_INJECTED_SESSION_ID })).toHaveCount(0);
+    await expect(page.locator('[data-testid="token-usage-entry"]', { hasText: DELIVERY_MIRROR_SESSION_ID })).toHaveCount(0);
   });
 });

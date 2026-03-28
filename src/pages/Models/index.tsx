@@ -214,7 +214,6 @@ export function Models() {
     };
   }, [isGatewayRunning, gatewayStatus.connectedAt, gatewayStatus.pid, usageFetchMaxAttempts]);
 
-  const usageHistory = fetchState.data;
   const visibleUsageHistory = isGatewayRunning
     ? fetchState.data.filter((entry) => !shouldHideUsageEntry(entry))
     : [];
