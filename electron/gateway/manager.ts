@@ -427,6 +427,7 @@ export class GatewayManager extends EventEmitter {
     try {
       await this.restartInFlight;
       this.restartGovernor.recordExecuted();
+      this.restartController.recordRestartCompleted();
       const observability = this.restartGovernor.getObservability();
       const props = {
         gateway_restart_executed_total: observability.executed_total,
@@ -508,13 +509,6 @@ export class GatewayManager extends EventEmitter {
       return;
     }
 
-    if (process.platform === 'win32') {
-      logger.warn('[gateway-refresh] mode=reload result=fallback_restart cause=windows');
-      logger.debug('Windows detected, falling back to Gateway restart for reload');
-      await this.restart();
-      return;
-    }
-
     const connectedForMs = this.status.connectedAt
       ? Date.now() - this.status.connectedAt
       : Number.POSITIVE_INFINITY;
@@ -525,6 +519,15 @@ export class GatewayManager extends EventEmitter {
         `[gateway-refresh] mode=reload result=skipped_recent_connect connectedForMs=${connectedForMs} pid=${this.process.pid}`,
       );
       logger.info(`Gateway connected ${connectedForMs}ms ago, skipping reload signal`);
+      return;
+    }
+
+    if (process.platform === 'win32') {
+      // Windows does not support SIGUSR1 for in-process reload.
+      // Fall back to a full restart.  The connectedForMs < 8000 guard above
+      // already skips unnecessary restarts for recently-started processes.
+      logger.warn('[gateway-refresh] mode=reload result=fallback_restart cause=windows');
+      await this.restart();
       return;
     }
 
@@ -785,7 +788,14 @@ export class GatewayManager extends EventEmitter {
         this.connectionMonitor.clear();
         if (this.status.state === 'running') {
           this.setStatus({ state: 'stopped' });
-          this.scheduleReconnect();
+          // On Windows, skip reconnect from WS close.  The Gateway is a local
+          // child process; actual crashes are already caught by the process exit
+          // handler (`onExit`) which calls scheduleReconnect().  Triggering
+          // reconnect from WS close as well races with the exit handler and can
+          // cause double start() attempts or port conflicts during TCP TIME_WAIT.
+          if (process.platform !== 'win32') {
+            this.scheduleReconnect();
+          }
         }
       },
     });

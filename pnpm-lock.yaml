@@ -44,8 +44,8 @@ importers:
         specifier: ^10.0.1
         version: 10.0.1(eslint@10.1.0(jiti@1.21.7))
       '@larksuite/openclaw-lark':
-        specifier: 2026.3.25
-        version: 2026.3.25(@napi-rs/canvas@0.1.97)(encoding@0.1.13)
+        specifier: 2026.3.26
+        version: 2026.3.26(openclaw@2026.3.24(@napi-rs/canvas@0.1.97)(encoding@0.1.13))
       '@playwright/test':
         specifier: ^1.56.1
         version: 1.58.2
@@ -1076,9 +1076,11 @@ packages:
   '@keyv/serialize@1.1.1':
     resolution: {integrity: sha512-dXn3FZhPv0US+7dtJsIi2R+c7qWYiReoEh5zUntWCf4oSpMNib8FDhSoed6m3QyZdx5hK7iLFkYk3rNxwt8vTA==}
 
-  '@larksuite/openclaw-lark@2026.3.25':
-    resolution: {integrity: sha512-SkNm0vuBLL58FFIVaDZ4vmdgTYXPfnfAy1vP2h+j0jnw5V+VSTj6IEKUq1oFmfyw7fIztUw/5GaM/quuMuRjog==}
+  '@larksuite/openclaw-lark@2026.3.26':
+    resolution: {integrity: sha512-U+IWK07g+YuZbHgrlXstHJt7zusM3H0FOZPCazFYGcJZT3bmSc5RbIQ5jFAZ3KFbPcs1xMgqY2tnMRcWIylYew==}
     hasBin: true
+    peerDependencies:
+      openclaw: '>=2026.3.22'
 
   '@larksuiteoapi/node-sdk@1.59.0':
     resolution: {integrity: sha512-sBpkruTvZDOxnVtoTbepWKRX0j1Y1ZElQYu0x7+v088sI9pcpbVp6ZzCGn62dhrKPatzNyCJyzYCPXPYQWccrA==}
@@ -2526,8 +2528,8 @@ packages:
       link-preview-js:
         optional: true
 
-  '@whiskeysockets/libsignal-node@git+https://github.com/whiskeysockets/libsignal-node.git#1c30d7d7e76a3b0aa120b04dc6a26f5a12dccf67':
-    resolution: {commit: 1c30d7d7e76a3b0aa120b04dc6a26f5a12dccf67, repo: https://github.com/whiskeysockets/libsignal-node.git, type: git}
+  '@whiskeysockets/libsignal-node@https://codeload.github.com/whiskeysockets/libsignal-node/tar.gz/1c30d7d7e76a3b0aa120b04dc6a26f5a12dccf67':
+    resolution: {tarball: https://codeload.github.com/whiskeysockets/libsignal-node/tar.gz/1c30d7d7e76a3b0aa120b04dc6a26f5a12dccf67}
     version: 2.0.1
 
   '@xmldom/xmldom@0.8.11':
@@ -7075,7 +7077,7 @@ snapshots:
 
   '@keyv/serialize@1.1.1': {}
 
-  '@larksuite/openclaw-lark@2026.3.25(@napi-rs/canvas@0.1.97)(encoding@0.1.13)':
+  '@larksuite/openclaw-lark@2026.3.26(openclaw@2026.3.24(@napi-rs/canvas@0.1.97)(encoding@0.1.13))':
     dependencies:
       '@larksuiteoapi/node-sdk': 1.59.0
       '@sinclair/typebox': 0.34.48
@@ -7083,15 +7085,8 @@ snapshots:
       openclaw: 2026.3.24(@napi-rs/canvas@0.1.97)(encoding@0.1.13)
       zod: 4.3.6
     transitivePeerDependencies:
-      - '@cfworker/json-schema'
-      - '@napi-rs/canvas'
-      - aws-crt
       - bufferutil
-      - canvas
       - debug
-      - encoding
-      - node-llama-cpp
-      - supports-color
       - utf-8-validate
 
   '@larksuiteoapi/node-sdk@1.59.0':
@@ -8670,7 +8665,7 @@ snapshots:
       '@cacheable/node-cache': 1.7.6
       '@hapi/boom': 9.1.4
       async-mutex: 0.5.0
-      libsignal: '@whiskeysockets/libsignal-node@git+https://github.com/whiskeysockets/libsignal-node.git#1c30d7d7e76a3b0aa120b04dc6a26f5a12dccf67'
+      libsignal: '@whiskeysockets/libsignal-node@https://codeload.github.com/whiskeysockets/libsignal-node/tar.gz/1c30d7d7e76a3b0aa120b04dc6a26f5a12dccf67'
       lru-cache: 11.2.7
       music-metadata: 11.12.3
       p-queue: 9.1.0
@@ -8683,7 +8678,7 @@ snapshots:
       - supports-color
       - utf-8-validate
 
-  '@whiskeysockets/libsignal-node@git+https://github.com/whiskeysockets/libsignal-node.git#1c30d7d7e76a3b0aa120b04dc6a26f5a12dccf67':
+  '@whiskeysockets/libsignal-node@https://codeload.github.com/whiskeysockets/libsignal-node/tar.gz/1c30d7d7e76a3b0aa120b04dc6a26f5a12dccf67':
     dependencies:
       curve25519-js: 0.0.4
       protobufjs: 6.8.8
