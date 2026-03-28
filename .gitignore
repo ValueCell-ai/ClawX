@@ -39,6 +39,8 @@ desktop.ini
 
 # Test coverage
 coverage/
+playwright-report/
+test-results/
 
 # Cache
 .cache/

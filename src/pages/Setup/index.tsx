@@ -200,7 +200,7 @@ export function Setup() {
 
 
   return (
-    <div className="flex h-screen flex-col overflow-hidden bg-background text-foreground">
+    <div data-testid="setup-page" className="flex h-screen flex-col overflow-hidden bg-background text-foreground">
       <TitleBar />
       <div className="flex-1 overflow-auto">
         {/* Progress Indicator */}
@@ -293,11 +293,11 @@ export function Setup() {
                 </div>
                 <div className="flex gap-2">
                   {!isLastStep && safeStepIndex !== STEP.RUNTIME && (
-                    <Button variant="ghost" onClick={handleSkip}>
+                    <Button data-testid="setup-skip-button" variant="ghost" onClick={handleSkip}>
                       {t('nav.skipSetup')}
                     </Button>
                   )}
-                  <Button onClick={handleNext} disabled={!canProceed}>
+                  <Button data-testid="setup-next-button" onClick={handleNext} disabled={!canProceed}>
                     {isLastStep ? (
                       t('nav.getStarted')
                     ) : (
@@ -324,7 +324,7 @@ function WelcomeContent() {
   const { language, setLanguage } = useSettingsStore();
 
   return (
-    <div className="text-center space-y-4">
+    <div data-testid="setup-welcome-step" className="text-center space-y-4">
       <div className="mb-4 flex justify-center">
         <img src={clawxIcon} alt="ClawX" className="h-16 w-16" />
       </div>

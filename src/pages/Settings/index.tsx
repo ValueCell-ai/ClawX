@@ -448,7 +448,7 @@ export function Settings() {
   };
 
   return (
-    <div className="flex flex-col -m-6 dark:bg-background h-[calc(100vh-2.5rem)] overflow-hidden">
+    <div data-testid="settings-page" className="flex flex-col -m-6 dark:bg-background h-[calc(100vh-2.5rem)] overflow-hidden">
       <div className="w-full max-w-5xl mx-auto flex flex-col h-full p-10 pt-16">
 
         {/* Header */}
@@ -612,6 +612,7 @@ export function Settings() {
                   </p>
                 </div>
                 <Switch
+                  data-testid="settings-dev-mode-switch"
                   checked={devModeUnlocked}
                   onCheckedChange={setDevModeUnlocked}
                 />
@@ -638,8 +639,8 @@ export function Settings() {
           {devModeUnlocked && (
             <>
               <Separator className="bg-black/5 dark:bg-white/5" />
-              <div>
-                <h2 className="text-3xl font-serif text-foreground mb-6 font-normal tracking-tight" style={{ fontFamily: 'Georgia, Cambria, "Times New Roman", Times, serif' }}>
+              <div data-testid="settings-developer-section">
+                <h2 data-testid="settings-developer-title" className="text-3xl font-serif text-foreground mb-6 font-normal tracking-tight" style={{ fontFamily: 'Georgia, Cambria, "Times New Roman", Times, serif' }}>
                   {t('developer.title')}
                 </h2>
                 <div className="space-y-8">
@@ -756,6 +757,7 @@ export function Settings() {
                     </p>
                     <div className="flex flex-wrap gap-2">
                       <Input
+                        data-testid="settings-developer-gateway-token"
                         readOnly
                         value={controlUiInfo?.token || ''}
                         placeholder={t('developer.tokenUnavailable')}

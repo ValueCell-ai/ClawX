@@ -339,6 +339,8 @@ pnpm typecheck            # TypeScript validation
 
 # Testing
 pnpm test                 # Run unit tests
+pnpm run test:e2e         # Run Electron E2E smoke tests with Playwright
+pnpm run test:e2e:headed  # Run Electron E2E tests with a visible window
 pnpm run comms:replay     # Compute communication replay metrics
 pnpm run comms:baseline   # Refresh communication baseline snapshot
 pnpm run comms:compare    # Compare replay metrics against baseline thresholds
@@ -362,6 +364,28 @@ pnpm run comms:compare
 ```
 
 `comms-regression` in CI enforces required scenarios and threshold checks.
+
+### Electron E2E Tests
+
+The Playwright Electron suite launches the packaged renderer and main process
+from `dist/` and `dist-electron/`, so it does not require manually running
+`pnpm dev` first.
+
+`pnpm run test:e2e` automatically:
+
+- builds the renderer and Electron bundles with `pnpm run build:vite`
+- starts Electron in an isolated E2E mode with a temporary `HOME`
+- uses a temporary ClawX `userData` directory
+- skips heavy startup side effects such as gateway auto-start, bundled skill
+  installation, tray creation, and CLI auto-install
+
+The first two baseline specs cover:
+
+- first-launch setup wizard visibility on a fresh profile
+- skipping setup and navigating to the Models page inside the Electron app
+
+Add future Electron flows under `tests/e2e/` and reuse the shared fixture in
+`tests/e2e/fixtures/electron.ts`.
 ### Tech Stack
 
 | Layer | Technology |
