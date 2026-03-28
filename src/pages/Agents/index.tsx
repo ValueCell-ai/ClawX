@@ -493,10 +493,21 @@ function AgentSettingsModal({
   const [name, setName] = useState(agent.name);
   const [savingName, setSavingName] = useState(false);
   const [showModelModal, setShowModelModal] = useState(false);
+  const [showCloseConfirm, setShowCloseConfirm] = useState(false);
 
   useEffect(() => {
     setName(agent.name);
   }, [agent.name]);
+
+  const hasNameChanges = name.trim() !== agent.name;
+
+  const handleRequestClose = () => {
+    if (savingName || hasNameChanges) {
+      setShowCloseConfirm(true);
+      return;
+    }
+    onClose();
+  };
 
   const handleSaveName = async () => {
     if (!name.trim() || name.trim() === agent.name) return;
@@ -540,7 +551,7 @@ function AgentSettingsModal({
           <Button
             variant="ghost"
             size="icon"
-            onClick={onClose}
+            onClick={handleRequestClose}
             className="rounded-full h-8 w-8 -mr-2 -mt-2 text-muted-foreground hover:text-foreground hover:bg-black/5 dark:hover:bg-white/5"
           >
             <X className="h-4 w-4" />
@@ -652,6 +663,19 @@ function AgentSettingsModal({
           onClose={() => setShowModelModal(false)}
         />
       )}
+      <ConfirmDialog
+        open={showCloseConfirm}
+        title={t('settingsDialog.unsavedChangesTitle')}
+        message={t('settingsDialog.unsavedChangesMessage')}
+        confirmLabel={t('settingsDialog.closeWithoutSaving')}
+        cancelLabel={t('common:actions.cancel')}
+        onConfirm={() => {
+          setShowCloseConfirm(false);
+          setName(agent.name);
+          onClose();
+        }}
+        onCancel={() => setShowCloseConfirm(false)}
+      />
     </div>
   );
 }
@@ -672,6 +696,7 @@ function AgentModelModal({
   const [selectedRuntimeProviderKey, setSelectedRuntimeProviderKey] = useState('');
   const [modelIdInput, setModelIdInput] = useState('');
   const [savingModel, setSavingModel] = useState(false);
+  const [showCloseConfirm, setShowCloseConfirm] = useState(false);
 
   const runtimeProviderOptions = useMemo<RuntimeProviderOption[]>(() => {
     const vendorMap = new Map<string, ProviderVendorInfo>(providerVendors.map((vendor) => [vendor.id, vendor]));
@@ -740,6 +765,14 @@ function AgentModelModal({
     : null;
   const modelChanged = (desiredOverrideModelRef || '') !== currentOverrideModelRef;
 
+  const handleRequestClose = () => {
+    if (savingModel || modelChanged) {
+      setShowCloseConfirm(true);
+      return;
+    }
+    onClose();
+  };
+
   const handleSaveModel = async () => {
     if (!selectedRuntimeProviderKey) {
       toast.error(t('toast.agentModelProviderRequired'));
@@ -793,7 +826,7 @@ function AgentModelModal({
           <Button
             variant="ghost"
             size="icon"
-            onClick={onClose}
+            onClick={handleRequestClose}
             className="rounded-full h-8 w-8 -mr-2 -mt-2 text-muted-foreground hover:text-foreground hover:bg-black/5 dark:hover:bg-white/5"
           >
             <X className="h-4 w-4" />
@@ -854,7 +887,7 @@ function AgentModelModal({
             </Button>
             <Button
               variant="outline"
-              onClick={onClose}
+              onClick={handleRequestClose}
               className="h-9 text-[13px] font-medium rounded-full px-4 border-black/10 dark:border-white/10 bg-transparent hover:bg-black/5 dark:hover:bg-white/5 shadow-none text-foreground/80 hover:text-foreground"
             >
               {t('common:actions.cancel')}
@@ -873,6 +906,18 @@ function AgentModelModal({
           </div>
         </CardContent>
       </Card>
+      <ConfirmDialog
+        open={showCloseConfirm}
+        title={t('settingsDialog.unsavedChangesTitle')}
+        message={t('settingsDialog.unsavedChangesMessage')}
+        confirmLabel={t('settingsDialog.closeWithoutSaving')}
+        cancelLabel={t('common:actions.cancel')}
+        onConfirm={() => {
+          setShowCloseConfirm(false);
+          onClose();
+        }}
+        onCancel={() => setShowCloseConfirm(false)}
+      />
     </div>
   );
 }
