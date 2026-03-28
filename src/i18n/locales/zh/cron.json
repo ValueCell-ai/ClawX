@@ -71,6 +71,10 @@
         "discordChannelId": "Discord 频道 ID",
         "discordChannelIdPlaceholder": "例如：1438452657525100686",
         "discordChannelIdDesc": "右键点击 Discord 频道 → 复制频道 ID",
+        "agentBinding": "智能体绑定",
+        "agentBindingDesc": "将此任务绑定到特定智能体以使用其技能和配置",
+        "selectAgent": "选择智能体",
+        "noAgent": "不绑定智能体",
         "enableImmediately": "立即启用",
         "enableImmediatelyDesc": "创建后立即开始运行此任务",
         "saveChanges": "保存更改"

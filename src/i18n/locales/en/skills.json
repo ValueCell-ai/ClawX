@@ -107,5 +107,22 @@
         "noResults": "No skills found matching your search.",
         "emptyPrompt": "Search for new skills to expand your capabilities.",
         "searchError": "ClawHub search failed. Check your connection or installation."
+    },
+    "scope": {
+        "title": "Scope",
+        "global": "Global",
+        "agent": "Agent",
+        "globalDesc": "Global scope: affects all agents",
+        "agentDesc": "Agent scope: affects only selected agent",
+        "selectAgent": "Select Agent",
+        "runtimeWarning": "Agent-scoped enforcement depends on OpenClaw runtime support. Currently effective in UI only.",
+        "effective": "Effective",
+        "override": "Override"
+    },
+    "policy": {
+        "title": "Skill Policy",
+        "globalEnabled": "Global Enabled",
+        "agentOverrides": "Agent Overrides",
+        "noOverrides": "No overrides configured"
     }
 }

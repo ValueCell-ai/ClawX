@@ -107,5 +107,22 @@
         "noResults": "未找到匹配的技能。",
         "emptyPrompt": "搜索新技能以扩展您的能力。",
         "searchError": "ClawHub 搜索失败。请检查您的连接或安装。"
+    },
+    "scope": {
+        "title": "作用域",
+        "global": "全局",
+        "agent": "智能体",
+        "globalDesc": "全局作用域：影响所有智能体",
+        "agentDesc": "智能体作用域：仅影响选中的智能体",
+        "selectAgent": "选择智能体",
+        "runtimeWarning": "智能体作用域的强制执行依赖于 OpenClaw 运行时支持。当前仅在 UI 中生效。",
+        "effective": "生效",
+        "override": "覆盖"
+    },
+    "policy": {
+        "title": "技能策略",
+        "globalEnabled": "全局启用",
+        "agentOverrides": "智能体覆盖",
+        "noOverrides": "暂无覆盖设置"
     }
 }

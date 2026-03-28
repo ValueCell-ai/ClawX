@@ -71,6 +71,10 @@
         "discordChannelId": "Discord Channel ID",
         "discordChannelIdPlaceholder": "e.g., 1438452657525100686",
         "discordChannelIdDesc": "Right-click the Discord channel → Copy Channel ID",
+        "agentBinding": "Agent Binding",
+        "agentBindingDesc": "Bind this task to a specific agent to use its skills and configuration",
+        "selectAgent": "Select Agent",
+        "noAgent": "No agent binding",
         "enableImmediately": "Enable immediately",
         "enableImmediatelyDesc": "Start running this task after creation",
         "saveChanges": "Save Changes"
