@@ -76,7 +76,11 @@ function normalizeUsageNumber(value: unknown): number | undefined {
     return value;
   }
   if (typeof value === 'string') {
-    const parsed = Number(value.trim());
+    const trimmed = value.trim();
+    if (trimmed.length === 0) {
+      return undefined;
+    }
+    const parsed = Number(trimmed);
     return Number.isFinite(parsed) ? parsed : undefined;
   }
   return undefined;

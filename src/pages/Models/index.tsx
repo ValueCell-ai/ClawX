@@ -65,7 +65,6 @@ export function Models() {
   function shouldHideUsageEntry(entry: UsageHistoryEntry): boolean {
     return (
       isHiddenUsageSource(entry.provider)
-      || isHiddenUsageSource(entry.agentId)
       || isHiddenUsageSource(entry.model)
     );
   }
@@ -473,7 +472,7 @@ function getUsageTotalClass(entry: UsageHistoryEntry): string {
 }
 
 function formatUsageTotal(entry: UsageHistoryEntry, t: TFunction): string {
-  if (entry.usageStatus === 'error') return `✕ ${t('dashboard:recentTokenHistory.usageParseError')}`;
+  if (entry.usageStatus === 'error') return '✕';
   if (entry.usageStatus === 'missing') return '—';
   return formatTokenCount(entry.totalTokens);
 }

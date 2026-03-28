@@ -80,7 +80,7 @@ describe('parseUsageEntriesFromJsonl', () => {
       JSON.stringify({ type: 'message', timestamp: '2026-02-28T10:01:00.000Z', message: { role: 'user', usage: { total: 123 } } }),
     ].join('\n');
 
-      expect(parseUsageEntriesFromJsonl(jsonl, { sessionId: 'abc', agentId: 'default' })).toEqual([]);
+    expect(parseUsageEntriesFromJsonl(jsonl, { sessionId: 'abc', agentId: 'default' })).toEqual([]);
   });
 
   it('still skips tool result entries without usage payload', () => {
