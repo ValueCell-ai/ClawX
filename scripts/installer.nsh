@@ -44,17 +44,26 @@
     doStopProcess:
     DetailPrint `Closing running "${PRODUCT_NAME}"...`
 
-    # Kill the entire process tree.  Electron runs multiple ClawX.exe processes
-    # (main, renderer, GPU, UtilityProcess/Gateway) and the Gateway may spawn
-    # Python child processes.  taskkill /F /T /IM kills ALL matching processes
-    # and their descendants atomically.
-    nsExec::ExecToStack 'taskkill /F /T /IM "${APP_EXECUTABLE_FILENAME}"'
+    # Kill ALL processes whose executable lives inside $INSTDIR.
+    # This covers ClawX.exe (multiple Electron processes), openclaw-gateway.exe,
+    # python.exe (skills runtime), uv.exe (package manager), and any other
+    # child process that might hold file locks in the installation directory.
+    #
+    # Use PowerShell Get-CimInstance for path-based matching (most reliable),
+    # with taskkill name-based fallback for restricted environments.
+    nsExec::ExecToStack '"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command "Get-CimInstance -ClassName Win32_Process | Where-Object { $$_.ExecutablePath -and $$_.ExecutablePath.StartsWith(''$INSTDIR'', [System.StringComparison]::OrdinalIgnoreCase) } | ForEach-Object { Stop-Process -Id $$_.ProcessId -Force -ErrorAction SilentlyContinue }"'
     Pop $0
     Pop $1
 
-    # Also kill related child processes that may have detached from the
-    # Electron process tree: Gateway, Python (skills), and uv (package mgr).
-    # These won't match APP_EXECUTABLE_FILENAME but hold file locks in $INSTDIR.
+    ${if} $0 != 0
+      # PowerShell failed (policy restriction, etc.) — fall back to name-based kill
+      nsExec::ExecToStack 'taskkill /F /T /IM "${APP_EXECUTABLE_FILENAME}"'
+      Pop $0
+      Pop $1
+    ${endIf}
+
+    # Also kill well-known child processes that may have detached from the
+    # Electron process tree or run from outside $INSTDIR (e.g. system python).
     nsExec::ExecToStack 'taskkill /F /IM openclaw-gateway.exe'
     Pop $0
     Pop $1
@@ -62,13 +71,24 @@
     Pop $0
     Pop $1
 
-    # Wait for file handles to be released across the full process tree
-    Sleep 3000
+    # Wait for Windows to fully release file handles after process termination.
+    # 5 seconds accommodates slow antivirus scanners and filesystem flush delays.
+    Sleep 5000
     DetailPrint "Processes terminated. Continuing installation..."
 
     done_killing:
       ${nsProcess::Unload}
   ${endIf}
+
+  ; Even if ClawX.exe was not detected as running, orphan child processes
+  ; (python.exe, openclaw-gateway.exe, uv.exe, etc.) from a previous crash
+  ; or unclean shutdown may still hold file locks inside $INSTDIR.
+  ; Unconditionally kill any process whose executable lives in the install dir.
+  nsExec::ExecToStack '"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command "Get-CimInstance -ClassName Win32_Process | Where-Object { $$_.ExecutablePath -and $$_.ExecutablePath.StartsWith(''$INSTDIR'', [System.StringComparison]::OrdinalIgnoreCase) } | ForEach-Object { Stop-Process -Id $$_.ProcessId -Force -ErrorAction SilentlyContinue }"'
+  Pop $0
+  Pop $1
+  ; Brief wait for handle release (main wait was already done above if app was running)
+  Sleep 2000
 
   ; Pre-emptively remove the old uninstall registry entry so that
   ; electron-builder's uninstallOldVersion skips the old uninstaller entirely.
