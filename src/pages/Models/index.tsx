@@ -360,7 +360,7 @@ export function Models() {
                           </div>
                           <div className="text-right shrink-0">
                             <p className={getUsageTotalClass(entry)}>
-                              {formatUsageTotal(entry, t)}
+                              {formatUsageTotal(entry)}
                             </p>
                             {entry.usageStatus === 'missing' && (
                               <p className="text-[12px] text-muted-foreground mt-0.5">
@@ -471,7 +471,7 @@ function getUsageTotalClass(entry: UsageHistoryEntry): string {
   return 'font-bold text-[15px]';
 }
 
-function formatUsageTotal(entry: UsageHistoryEntry, t: TFunction): string {
+function formatUsageTotal(entry: UsageHistoryEntry): string {
   if (entry.usageStatus === 'error') return '✕';
   if (entry.usageStatus === 'missing') return '—';
   return formatTokenCount(entry.totalTokens);
