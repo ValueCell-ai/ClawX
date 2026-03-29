@@ -90,6 +90,53 @@
   ; Brief wait for handle release (main wait was already done above if app was running)
   Sleep 2000
 
+  ; Pre-emptively clear the old installation directory so that the 7z
+  ; extraction `CopyFiles` step in extractAppPackage.nsh won't fail on
+  ; locked files.  electron-builder's extractUsing7za macro extracts to a
+  ; temp folder first, then uses `CopyFiles /SILENT` to copy into $INSTDIR.
+  ; If ANY file in $INSTDIR is still locked, CopyFiles fails and triggers a
+  ; "Can't modify ClawX's files" retry loop → "ClawX 无法关闭" dialog.
+  ;
+  ; Strategy: rename (move) the old $INSTDIR out of the way.  Rename works
+  ; even when AV/indexer have files open for reading (they use
+  ; FILE_SHARE_DELETE sharing mode), whereas CopyFiles fails because it
+  ; needs write/overwrite access which some AV products deny.
+  ;
+  ; We must first change NSIS's CWD away from $INSTDIR (.onInit sets it),
+  ; otherwise the OS refuses to rename the directory.
+  IfFileExists "$INSTDIR\*.*" 0 _instdir_clean
+    ; Release NSIS's CWD on $INSTDIR so the OS allows the rename
+    SetOutPath $TEMP
+
+    ; Clean up any leftover $INSTDIR.old from a previous failed upgrade
+    IfFileExists "$INSTDIR.old\*.*" 0 _no_stale_old
+      RMDir /r "$INSTDIR.old"
+      ; If RMDir failed (locked files), force-delete with cmd.exe
+      IfFileExists "$INSTDIR.old\*.*" 0 _no_stale_old
+        nsExec::ExecToStack 'cmd.exe /c rd /s /q "$INSTDIR.old"'
+        Pop $0
+        Pop $1
+    _no_stale_old:
+
+    ; Try to rename the entire directory atomically
+    ClearErrors
+    Rename "$INSTDIR" "$INSTDIR.old"
+    IfErrors 0 _instdir_moved
+      ; Atomic rename failed — some files are still locked with exclusive
+      ; handles.  Clear as much as we can; any remaining locked files will
+      ; be handled by extractUsing7za's Nsis7z::Extract fallback.
+      nsExec::ExecToStack 'cmd.exe /c rd /s /q "$INSTDIR"'
+      Pop $0
+      Pop $1
+      Sleep 1000
+      CreateDirectory "$INSTDIR"
+      Goto _instdir_clean
+    _instdir_moved:
+      ; Old dir will be cleaned up later in customInstall (after file
+      ; extraction is done and all file handles have been released).
+      CreateDirectory "$INSTDIR"
+  _instdir_clean:
+
   ; Pre-emptively remove the old uninstall registry entry so that
   ; electron-builder's uninstallOldVersion skips the old uninstaller entirely.
   ;
@@ -146,6 +193,16 @@
 !macroend
 
 !macro customInstall
+  ; Clean up $INSTDIR.old left over from the rename in customCheckAppRunning.
+  ; By this point, file extraction is complete and AV/indexer handles on the
+  ; old files have long been released, so deletion should always succeed.
+  IfFileExists "$INSTDIR.old\*.*" 0 _ci_old_cleaned
+    RMDir /r "$INSTDIR.old"
+    IfFileExists "$INSTDIR.old\*.*" 0 _ci_old_cleaned
+      nsExec::ExecToStack 'cmd.exe /c rd /s /q "$INSTDIR.old"'
+      Pop $0
+      Pop $1
+  _ci_old_cleaned:
   DetailPrint "Core files extracted. Finalizing system integration..."
 
   ; Enable Windows long path support (Windows 10 1607+ / Windows 11).
