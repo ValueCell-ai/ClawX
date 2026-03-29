@@ -31,6 +31,14 @@
       Sleep 8000
       ${nsProcess::FindProcess} "${APP_EXECUTABLE_FILENAME}" $R0
       ${if} $R0 != 0
+        # App exited cleanly. Still kill long-lived child processes (gateway,
+        # uv, python) which may not have followed the app's graceful exit.
+        nsExec::ExecToStack 'taskkill /F /IM openclaw-gateway.exe'
+        Pop $0
+        Pop $1
+        nsExec::ExecToStack 'taskkill /F /IM uv.exe'
+        Pop $0
+        Pop $1
         Goto done_killing
       ${endIf}
       # App didn't exit in time; fall through to force-kill
@@ -51,7 +59,8 @@
     #
     # Use PowerShell Get-CimInstance for path-based matching (most reliable),
     # with taskkill name-based fallback for restricted environments.
-    nsExec::ExecToStack '"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command "Get-CimInstance -ClassName Win32_Process | Where-Object { $$_.ExecutablePath -and $$_.ExecutablePath.StartsWith(''$INSTDIR'', [System.StringComparison]::OrdinalIgnoreCase) } | ForEach-Object { Stop-Process -Id $$_.ProcessId -Force -ErrorAction SilentlyContinue }"'
+    # Note: Using backticks ` ` for the NSIS string allows us to use single quotes inside.
+    nsExec::ExecToStack `"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command "Get-CimInstance -ClassName Win32_Process | Where-Object { $$_.ExecutablePath -and $$_.ExecutablePath.StartsWith('$INSTDIR', [System.StringComparison]::OrdinalIgnoreCase) } | ForEach-Object { Stop-Process -Id $$_.ProcessId -Force -ErrorAction SilentlyContinue }"`
     Pop $0
     Pop $1
 
@@ -84,35 +93,52 @@
   ; (python.exe, openclaw-gateway.exe, uv.exe, etc.) from a previous crash
   ; or unclean shutdown may still hold file locks inside $INSTDIR.
   ; Unconditionally kill any process whose executable lives in the install dir.
-  nsExec::ExecToStack '"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command "Get-CimInstance -ClassName Win32_Process | Where-Object { $$_.ExecutablePath -and $$_.ExecutablePath.StartsWith(''$INSTDIR'', [System.StringComparison]::OrdinalIgnoreCase) } | ForEach-Object { Stop-Process -Id $$_.ProcessId -Force -ErrorAction SilentlyContinue }"'
+  nsExec::ExecToStack `"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command "Get-CimInstance -ClassName Win32_Process | Where-Object { $$_.ExecutablePath -and $$_.ExecutablePath.StartsWith('$INSTDIR', [System.StringComparison]::OrdinalIgnoreCase) } | ForEach-Object { Stop-Process -Id $$_.ProcessId -Force -ErrorAction SilentlyContinue }"`
   Pop $0
   Pop $1
+
+  ${if} $0 != 0
+    # Fallback to unconditionally killing known processes if PowerShell fails
+    nsExec::ExecToStack 'taskkill /F /T /IM "${APP_EXECUTABLE_FILENAME}"'
+    Pop $0
+    Pop $1
+    nsExec::ExecToStack 'taskkill /F /IM openclaw-gateway.exe'
+    Pop $0
+    Pop $1
+    nsExec::ExecToStack 'taskkill /F /IM uv.exe'
+    Pop $0
+    Pop $1
+  ${endIf}
+
   ; Brief wait for handle release (main wait was already done above if app was running)
   Sleep 2000
+
+  ; Release NSIS's CWD on $INSTDIR BEFORE the rename check.
+  ; NSIS sets CWD to $INSTDIR in .onInit; Windows refuses to rename a directory
+  ; that any process (including NSIS itself) has as its CWD.
+  SetOutPath $TEMP
 
   ; Pre-emptively clear the old installation directory so that the 7z
   ; extraction `CopyFiles` step in extractAppPackage.nsh won't fail on
   ; locked files.  electron-builder's extractUsing7za macro extracts to a
   ; temp folder first, then uses `CopyFiles /SILENT` to copy into $INSTDIR.
   ; If ANY file in $INSTDIR is still locked, CopyFiles fails and triggers a
-  ; "Can't modify ClawX's files" retry loop → "ClawX 无法关闭" dialog.
+  ; "Can't modify ClawX's files" retry loop -> "ClawX 无法关闭" dialog.
   ;
   ; Strategy: rename (move) the old $INSTDIR out of the way.  Rename works
   ; even when AV/indexer have files open for reading (they use
   ; FILE_SHARE_DELETE sharing mode), whereas CopyFiles fails because it
   ; needs write/overwrite access which some AV products deny.
-  ;
-  ; We must first change NSIS's CWD away from $INSTDIR (.onInit sets it),
-  ; otherwise the OS refuses to rename the directory.
-  IfFileExists "$INSTDIR\*.*" 0 _instdir_clean
-    ; Release NSIS's CWD on $INSTDIR so the OS allows the rename
-    SetOutPath $TEMP
-
+  ; Check if a previous installation exists ($INSTDIR is a directory).
+  ; Use trailing backslash — the correct NSIS idiom for directory existence.
+  ; (IfFileExists "$INSTDIR\*.*" only matches files containing a dot and
+  ;  would fail for extensionless files or pure-subdirectory layouts.)
+  IfFileExists "$INSTDIR\" 0 _instdir_clean
     ; Clean up any leftover $INSTDIR.old from a previous failed upgrade
-    IfFileExists "$INSTDIR.old\*.*" 0 _no_stale_old
+    IfFileExists "$INSTDIR.old\" 0 _no_stale_old
       RMDir /r "$INSTDIR.old"
       ; If RMDir failed (locked files), force-delete with cmd.exe
-      IfFileExists "$INSTDIR.old\*.*" 0 _no_stale_old
+      IfFileExists "$INSTDIR.old\" 0 _no_stale_old
         nsExec::ExecToStack 'cmd.exe /c rd /s /q "$INSTDIR.old"'
         Pop $0
         Pop $1
@@ -196,12 +222,13 @@
   ; Clean up $INSTDIR.old left over from the rename in customCheckAppRunning.
   ; By this point, file extraction is complete and AV/indexer handles on the
   ; old files have long been released, so deletion should always succeed.
-  IfFileExists "$INSTDIR.old\*.*" 0 _ci_old_cleaned
-    RMDir /r "$INSTDIR.old"
-    IfFileExists "$INSTDIR.old\*.*" 0 _ci_old_cleaned
-      nsExec::ExecToStack 'cmd.exe /c rd /s /q "$INSTDIR.old"'
-      Pop $0
-      Pop $1
+  IfFileExists "$INSTDIR.old\" 0 _ci_old_cleaned
+    ; Spawn deletion in background via `start /B` so the 200MB+ cleanup
+    ; does not block the installer. cmd.exe exits immediately after
+    ; launching rd, so nsExec returns quickly and no window is shown.
+    nsExec::ExecToStack 'cmd.exe /c start "" /B rd /s /q "$INSTDIR.old"'
+    Pop $0
+    Pop $1
   _ci_old_cleaned:
   DetailPrint "Core files extracted. Finalizing system integration..."
 
@@ -329,12 +356,13 @@
     ReadRegStr $R2 HKLM "SOFTWARE\Microsoft\Windows NT\CurrentVersion\ProfileList\$R1" "ProfileImagePath"
     StrCmp $R2 "" _cu_enumNext
 
-    ExpandEnvStrings $R2 $R2
-    StrCmp $R2 $PROFILE _cu_enumNext
+    ; ExpandEnvStrings requires distinct src and dest registers
+    ExpandEnvStrings $R3 $R2
+    StrCmp $R3 $PROFILE _cu_enumNext
 
-    RMDir /r "$R2\.openclaw"
-    RMDir /r "$R2\AppData\Local\clawx"
-    RMDir /r "$R2\AppData\Roaming\clawx"
+    RMDir /r "$R3\.openclaw"
+    RMDir /r "$R3\AppData\Local\clawx"
+    RMDir /r "$R3\AppData\Roaming\clawx"
 
   _cu_enumNext:
     IntOp $R0 $R0 + 1
