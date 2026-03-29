@@ -134,32 +134,50 @@
   ; (IfFileExists "$INSTDIR\*.*" only matches files containing a dot and
   ;  would fail for extensionless files or pure-subdirectory layouts.)
   IfFileExists "$INSTDIR\" 0 _instdir_clean
-    ; Clean up any leftover $INSTDIR.old from a previous failed upgrade
+    ; IMPORTANT: All deletions here must be non-blocking (async).
+    ; Synchronous RMDir/rd of a 300MB old installation directory causes a
+    ; multi-minute hang visible to the user as a frozen installer.
+    ;
+    ; Strategy: cascade RENAME (instant, < 1ms each):
+    ;   1. $INSTDIR.old.old  (if exists) → async delete, no wait
+    ;   2. $INSTDIR.old      (if exists) → rename to $INSTDIR.old.old
+    ;   3. $INSTDIR          → rename to $INSTDIR.old
+    ;   4. CreateDirectory $INSTDIR (empty, CopyFiles has no locked files)
+    ; All actual disk I/O (deleting .old, .old.old) runs async in customInstall.
+
+    ; Step 1: If a doubly-stale directory exists, delete it async (fire and forget).
+    IfFileExists "$INSTDIR.old.old\" 0 _no_stale2
+      nsExec::ExecToStack 'cmd.exe /c start "" /B rd /s /q "$INSTDIR.old.old"'
+      Pop $0
+      Pop $1
+    _no_stale2:
+
+    ; Step 2: Move $INSTDIR.old → $INSTDIR.old.old so $INSTDIR.old is free.
     IfFileExists "$INSTDIR.old\" 0 _no_stale_old
-      RMDir /r "$INSTDIR.old"
-      ; If RMDir failed (locked files), force-delete with cmd.exe
-      IfFileExists "$INSTDIR.old\" 0 _no_stale_old
-        nsExec::ExecToStack 'cmd.exe /c rd /s /q "$INSTDIR.old"'
+      ClearErrors
+      Rename "$INSTDIR.old" "$INSTDIR.old.old"
+      ; If rename failed (e.g., .old.old async delete not yet done), delete async
+      ; and wait briefly. Actual disk I/O will complete in the background.
+      IfErrors 0 _no_stale_old
+        nsExec::ExecToStack 'cmd.exe /c start "" /B rd /s /q "$INSTDIR.old"'
         Pop $0
         Pop $1
+        Sleep 2000
     _no_stale_old:
 
-    ; Try to rename the entire directory atomically
+    ; Step 3: Rename $INSTDIR → $INSTDIR.old (should always succeed now).
     ClearErrors
     Rename "$INSTDIR" "$INSTDIR.old"
     IfErrors 0 _instdir_moved
-      ; Atomic rename failed — some files are still locked with exclusive
-      ; handles.  Clear as much as we can; any remaining locked files will
-      ; be handled by extractUsing7za's Nsis7z::Extract fallback.
-      nsExec::ExecToStack 'cmd.exe /c rd /s /q "$INSTDIR"'
+      ; Rename still failed — a process reopened a file in $INSTDIR after our kill.
+      ; Delete async; wait 2s and recreate an empty dir for CopyFiles.
+      nsExec::ExecToStack 'cmd.exe /c start "" /B rd /s /q "$INSTDIR"'
       Pop $0
       Pop $1
-      Sleep 1000
+      Sleep 2000
       CreateDirectory "$INSTDIR"
       Goto _instdir_clean
     _instdir_moved:
-      ; Old dir will be cleaned up later in customInstall (after file
-      ; extraction is done and all file handles have been released).
       CreateDirectory "$INSTDIR"
   _instdir_clean:
 
@@ -219,17 +237,18 @@
 !macroend
 
 !macro customInstall
-  ; Clean up $INSTDIR.old left over from the rename in customCheckAppRunning.
-  ; By this point, file extraction is complete and AV/indexer handles on the
-  ; old files have long been released, so deletion should always succeed.
-  IfFileExists "$INSTDIR.old\" 0 _ci_old_cleaned
-    ; Spawn deletion in background via `start /B` so the 200MB+ cleanup
-    ; does not block the installer. cmd.exe exits immediately after
-    ; launching rd, so nsExec returns quickly and no window is shown.
-    nsExec::ExecToStack 'cmd.exe /c start "" /B rd /s /q "$INSTDIR.old"'
+  ; Async cleanup of old dirs left by the cascade rename in customCheckAppRunning.
+  ; Wait 60s before starting deletion to avoid I/O contention with ClawX's
+  ; first launch (Windows Defender scan, ASAR mapping, etc.).
+  ; "ping -n 61 127.0.0.1" sleeps ~60s without requiring admin rights.
+  IfFileExists "$INSTDIR.old\" 0 +3
+    nsExec::ExecToStack `cmd.exe /c start "" /B cmd /c "ping -n 61 127.0.0.1 > nul & rd /s /q $\"$INSTDIR.old$\""`
     Pop $0
     Pop $1
-  _ci_old_cleaned:
+  IfFileExists "$INSTDIR.old.old\" 0 +3
+    nsExec::ExecToStack `cmd.exe /c start "" /B cmd /c "ping -n 31 127.0.0.1 > nul & rd /s /q $\"$INSTDIR.old.old$\""`
+    Pop $0
+    Pop $1
   DetailPrint "Core files extracted. Finalizing system integration..."
 
   ; Enable Windows long path support (Windows 10 1607+ / Windows 11).
