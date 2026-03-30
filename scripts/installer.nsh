@@ -283,7 +283,7 @@
 
   _cu_pathDone:
 
-  ; Ask user if they want to completely remove all user data
+  ; Ask user if they want to remove AppData (preserves .openclaw)
   MessageBox MB_YESNO|MB_ICONQUESTION \
     "Do you want to remove ClawX application data?$\r$\n$\r$\nThis will delete:$\r$\n  • AppData\Local\clawx (local app data)$\r$\n  • AppData\Roaming\clawx (roaming app data)$\r$\n$\r$\nYour .openclaw folder (configuration & skills) will be preserved.$\r$\nSelect 'No' to keep all data for future reinstallation." \
     /SD IDNO IDYES _cu_removeData IDNO _cu_skipRemove
