@@ -97,18 +97,19 @@
   Pop $0
   Pop $1
 
-  ${if} $0 != 0
-    # Fallback to unconditionally killing known processes if PowerShell fails
-    nsExec::ExecToStack 'taskkill /F /T /IM "${APP_EXECUTABLE_FILENAME}"'
-    Pop $0
-    Pop $1
-    nsExec::ExecToStack 'taskkill /F /IM openclaw-gateway.exe'
-    Pop $0
-    Pop $1
-    nsExec::ExecToStack 'taskkill /F /IM uv.exe'
-    Pop $0
-    Pop $1
-  ${endIf}
+  ; Always kill known process names as a belt-and-suspenders approach.
+  ; PowerShell path-based kill may miss processes if the old ClawX was installed
+  ; in a different directory than $INSTDIR (e.g., per-machine -> per-user migration).
+  ; taskkill is name-based and catches processes regardless of their install location.
+  nsExec::ExecToStack 'taskkill /F /T /IM "${APP_EXECUTABLE_FILENAME}"'
+  Pop $0
+  Pop $1
+  nsExec::ExecToStack 'taskkill /F /IM openclaw-gateway.exe'
+  Pop $0
+  Pop $1
+  nsExec::ExecToStack 'taskkill /F /IM uv.exe'
+  Pop $0
+  Pop $1
 
   ; Brief wait for handle release (main wait was already done above if app was running)
   Sleep 2000
