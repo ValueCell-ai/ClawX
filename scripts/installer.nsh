@@ -285,7 +285,7 @@
 
   ; Ask user if they want to completely remove all user data
   MessageBox MB_YESNO|MB_ICONQUESTION \
-    "Do you want to completely remove all ClawX user data?$\r$\n$\r$\nThis will delete:$\r$\n  • .openclaw folder (configuration & skills)$\r$\n  • AppData\Local\clawx (local app data)$\r$\n  • AppData\Roaming\clawx (roaming app data)$\r$\n$\r$\nSelect 'No' to keep your data for future reinstallation." \
+    "Do you want to remove ClawX application data?$\r$\n$\r$\nThis will delete:$\r$\n  • AppData\Local\clawx (local app data)$\r$\n  • AppData\Roaming\clawx (roaming app data)$\r$\n$\r$\nYour .openclaw folder (configuration & skills) will be preserved.$\r$\nSelect 'No' to keep all data for future reinstallation." \
     /SD IDNO IDYES _cu_removeData IDNO _cu_skipRemove
 
   _cu_removeData:
@@ -302,21 +302,12 @@
     ; Wait for processes to fully exit and release file handles
     Sleep 2000
 
-    ; --- Always remove current user's data first ---
-    RMDir /r "$PROFILE\.openclaw"
+    ; --- Always remove current user's AppData first ---
+    ; NOTE: .openclaw directory is intentionally preserved (user configuration & skills)
     RMDir /r "$LOCALAPPDATA\clawx"
     RMDir /r "$APPDATA\clawx"
 
     ; --- Retry: if directories still exist (locked files), wait and try again ---
-    ; Check .openclaw
-    IfFileExists "$PROFILE\.openclaw\*.*" 0 _cu_openclawDone
-      Sleep 3000
-      RMDir /r "$PROFILE\.openclaw"
-      IfFileExists "$PROFILE\.openclaw\*.*" 0 _cu_openclawDone
-        nsExec::ExecToStack 'cmd.exe /c rd /s /q "$PROFILE\.openclaw"'
-        Pop $0
-        Pop $1
-    _cu_openclawDone:
 
     ; Check AppData\Local\clawx
     IfFileExists "$LOCALAPPDATA\clawx\*.*" 0 _cu_localDone
@@ -340,8 +331,6 @@
 
     ; --- Final check: warn user if any directories could not be removed ---
     StrCpy $R3 ""
-    IfFileExists "$PROFILE\.openclaw\*.*" 0 +2
-      StrCpy $R3 "$R3$\r$\n  • $PROFILE\.openclaw"
     IfFileExists "$LOCALAPPDATA\clawx\*.*" 0 +2
       StrCpy $R3 "$R3$\r$\n  • $LOCALAPPDATA\clawx"
     IfFileExists "$APPDATA\clawx\*.*" 0 +2
@@ -365,7 +354,7 @@
     ExpandEnvStrings $R3 $R2
     StrCmp $R3 $PROFILE _cu_enumNext
 
-    RMDir /r "$R3\.openclaw"
+    ; NOTE: .openclaw directory is intentionally preserved for all users
     RMDir /r "$R3\AppData\Local\clawx"
     RMDir /r "$R3\AppData\Roaming\clawx"
 
