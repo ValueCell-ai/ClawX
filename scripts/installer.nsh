@@ -237,6 +237,15 @@
   DetailPrint "Enabling long-path support (if permissions allow)..."
   WriteRegDWORD HKLM "SYSTEM\CurrentControlSet\Control\FileSystem" "LongPathsEnabled" 1
 
+  ; Add $INSTDIR to Windows Defender exclusion list so that real-time scanning
+  ; doesn't block the first app launch (Defender scans every newly-created file,
+  ; causing 10-30s startup delay on a fresh install).  Requires elevation;
+  ; silently fails on non-admin per-user installs (no harm done).
+  DetailPrint "Configuring Windows Defender exclusion..."
+  nsExec::ExecToStack `"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command "Add-MpPreference -ExclusionPath '$INSTDIR' -ErrorAction SilentlyContinue"`
+  Pop $0
+  Pop $1
+
   ; Use PowerShell to update the current user's PATH.
   ; This avoids NSIS string-buffer limits and preserves long PATH values.
   DetailPrint "Updating user PATH for the OpenClaw CLI..."
@@ -259,6 +268,11 @@
 !macroend
 
 !macro customUnInstall
+  ; Remove Windows Defender exclusion added during install
+  nsExec::ExecToStack `"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command "Remove-MpPreference -ExclusionPath '$INSTDIR' -ErrorAction SilentlyContinue"`
+  Pop $0
+  Pop $1
+
   ; Remove resources\cli from user PATH via PowerShell so long PATH values are handled safely
   InitPluginsDir
   ClearErrors
