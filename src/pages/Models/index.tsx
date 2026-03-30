@@ -36,6 +36,37 @@ export function Models() {
   const [usageWindow, setUsageWindow] = useState<UsageWindow>('7d');
   const [usagePage, setUsagePage] = useState(1);
   const [selectedUsageEntry, setSelectedUsageEntry] = useState<UsageHistoryEntry | null>(null);
+  const HIDDEN_USAGE_SOURCES = new Set([
+    'gateway-injected',
+    'delivery-mirror',
+  ]);
+
+  function isHiddenUsageSource(source?: string): boolean {
+    if (!source) return false;
+    const normalizedSource = source.trim().toLowerCase();
+    return (
+      HIDDEN_USAGE_SOURCES.has(normalizedSource)
+      || normalizedSource.includes('gateway-injected')
+      || normalizedSource.includes('delivery-mirror')
+    );
+  }
+
+  function formatUsageSource(source?: string): string | undefined {
+    if (!source) return undefined;
+
+    if (isHiddenUsageSource(source)) {
+      return undefined;
+    }
+
+    return source;
+  }
+
+  function shouldHideUsageEntry(entry: UsageHistoryEntry): boolean {
+    return (
+      isHiddenUsageSource(entry.provider)
+      || isHiddenUsageSource(entry.model)
+    );
+  }
 
   type FetchState = {
     status: 'idle' | 'loading' | 'done';
@@ -181,8 +212,9 @@ export function Models() {
     };
   }, [isGatewayRunning, gatewayStatus.connectedAt, gatewayStatus.pid, usageFetchMaxAttempts]);
 
-  const usageHistory = fetchState.data;
-  const visibleUsageHistory = isGatewayRunning ? usageHistory : [];
+  const visibleUsageHistory = isGatewayRunning
+    ? fetchState.data.filter((entry) => !shouldHideUsageEntry(entry))
+    : [];
   const filteredUsageHistory = filterUsageHistoryByWindow(visibleUsageHistory, usageWindow);
   const usageGroups = groupUsageHistory(filteredUsageHistory, usageGroupBy);
   const usagePageSize = 5;
@@ -313,6 +345,7 @@ export function Models() {
                     {pagedUsageHistory.map((entry) => (
                       <div
                         key={`${entry.sessionId}-${entry.timestamp}`}
+                        data-testid="token-usage-entry"
                         className="rounded-2xl bg-transparent border border-black/10 dark:border-white/10 p-5 hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
                       >
                         <div className="flex items-start justify-between gap-3">
@@ -321,24 +354,46 @@ export function Models() {
                               {entry.model || t('dashboard:recentTokenHistory.unknownModel')}
                             </p>
                             <p className="text-[13px] text-muted-foreground truncate mt-0.5">
-                              {[entry.provider, entry.agentId, entry.sessionId].filter(Boolean).join(' • ')}
+                              {[formatUsageSource(entry.provider), formatUsageSource(entry.agentId), entry.sessionId].filter(Boolean).join(' • ')}
                             </p>
                           </div>
                           <div className="text-right shrink-0">
-                            <p className="font-bold text-[15px]">{formatTokenCount(entry.totalTokens)}</p>
+                            <p className={getUsageTotalClass(entry)}>
+                              {formatUsageTotal(entry)}
+                            </p>
+                            {entry.usageStatus === 'missing' && (
+                              <p className="text-[12px] text-muted-foreground mt-0.5">
+                                {t('dashboard:recentTokenHistory.noUsage')}
+                              </p>
+                            )}
+                            {entry.usageStatus === 'error' && (
+                              <p className="text-[12px] text-red-500 dark:text-red-400 mt-0.5">
+                                {t('dashboard:recentTokenHistory.usageParseError')}
+                              </p>
+                            )}
                             <p className="text-[12px] text-muted-foreground mt-0.5">
                               {formatUsageTimestamp(entry.timestamp)}
                             </p>
                           </div>
                         </div>
                         <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1.5 text-[12.5px] font-medium text-muted-foreground">
-                          <span className="flex items-center gap-1.5"><div className="w-2 h-2 rounded-full bg-sky-500"></div>{t('dashboard:recentTokenHistory.input', { value: formatTokenCount(entry.inputTokens) })}</span>
-                          <span className="flex items-center gap-1.5"><div className="w-2 h-2 rounded-full bg-violet-500"></div>{t('dashboard:recentTokenHistory.output', { value: formatTokenCount(entry.outputTokens) })}</span>
-                          {entry.cacheReadTokens > 0 && (
-                            <span className="flex items-center gap-1.5"><div className="w-2 h-2 rounded-full bg-amber-500"></div>{t('dashboard:recentTokenHistory.cacheRead', { value: formatTokenCount(entry.cacheReadTokens) })}</span>
-                          )}
-                          {entry.cacheWriteTokens > 0 && (
-                            <span className="flex items-center gap-1.5"><div className="w-2 h-2 rounded-full bg-amber-500"></div>{t('dashboard:recentTokenHistory.cacheWrite', { value: formatTokenCount(entry.cacheWriteTokens) })}</span>
+                          {entry.usageStatus === 'available' || entry.usageStatus === undefined ? (
+                            <>
+                              <span className="flex items-center gap-1.5"><div className="w-2 h-2 rounded-full bg-sky-500"></div>{t('dashboard:recentTokenHistory.input', { value: formatTokenCount(entry.inputTokens) })}</span>
+                              <span className="flex items-center gap-1.5"><div className="w-2 h-2 rounded-full bg-violet-500"></div>{t('dashboard:recentTokenHistory.output', { value: formatTokenCount(entry.outputTokens) })}</span>
+                              {entry.cacheReadTokens > 0 && (
+                                <span className="flex items-center gap-1.5"><div className="w-2 h-2 rounded-full bg-amber-500"></div>{t('dashboard:recentTokenHistory.cacheRead', { value: formatTokenCount(entry.cacheReadTokens) })}</span>
+                              )}
+                              {entry.cacheWriteTokens > 0 && (
+                                <span className="flex items-center gap-1.5"><div className="w-2 h-2 rounded-full bg-amber-500"></div>{t('dashboard:recentTokenHistory.cacheWrite', { value: formatTokenCount(entry.cacheWriteTokens) })}</span>
+                              )}
+                            </>
+                          ) : (
+                            <span className="text-[12px]">
+                              {entry.usageStatus === 'missing'
+                                ? t('dashboard:recentTokenHistory.noUsage')
+                                : t('dashboard:recentTokenHistory.usageParseError')}
+                            </span>
                           )}
                           {typeof entry.costUsd === 'number' && Number.isFinite(entry.costUsd) && (
                             <span className="flex items-center gap-1.5 ml-auto text-foreground/80 bg-black/5 dark:bg-white/5 px-2 py-0.5 rounded-md">{t('dashboard:recentTokenHistory.cost', { amount: entry.costUsd.toFixed(4) })}</span>
@@ -407,6 +462,18 @@ export function Models() {
 
 function formatTokenCount(value: number): string {
   return Intl.NumberFormat().format(value);
+}
+
+function getUsageTotalClass(entry: UsageHistoryEntry): string {
+  if (entry.usageStatus === 'error') return 'font-bold text-[15px] text-red-500 dark:text-red-400';
+  if (entry.usageStatus === 'missing') return 'font-bold text-[15px] text-muted-foreground';
+  return 'font-bold text-[15px]';
+}
+
+function formatUsageTotal(entry: UsageHistoryEntry): string {
+  if (entry.usageStatus === 'error') return '✕';
+  if (entry.usageStatus === 'missing') return '—';
+  return formatTokenCount(entry.totalTokens);
 }
 
 function formatUsageTimestamp(timestamp: string): string {

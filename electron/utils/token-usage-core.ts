@@ -5,6 +5,7 @@ export interface TokenUsageHistoryEntry {
   model?: string;
   provider?: string;
   content?: string;
+  usageStatus: 'available' | 'missing' | 'error';
   inputTokens: number;
   outputTokens: number;
   cacheReadTokens: number;
@@ -22,6 +23,7 @@ export function extractSessionIdFromTranscriptFileName(fileName: string): string
 }
 
 interface TranscriptUsageShape {
+  [key: string]: unknown;
   input?: number;
   output?: number;
   total?: number;
@@ -30,8 +32,166 @@ interface TranscriptUsageShape {
   promptTokens?: number;
   completionTokens?: number;
   totalTokens?: number;
+  input_tokens?: number;
+  output_tokens?: number;
+  total_tokens?: number;
+  cache_read?: number;
+  cache_write?: number;
+  prompt_tokens?: number;
+  completion_tokens?: number;
+  cache_read_tokens?: number;
+  cache_write_tokens?: number;
+  inputTokenCount?: number;
+  input_token_count?: number;
+  outputTokenCount?: number;
+  output_token_count?: number;
+  promptTokenCount?: number;
+  prompt_token_count?: number;
+  completionTokenCount?: number;
+  completion_token_count?: number;
+  totalTokenCount?: number;
+  total_token_count?: number;
+  cacheReadTokenCount?: number;
+  cacheReadTokens?: number;
+  cache_write_token_count?: number;
   cost?: {
     total?: number;
+  };
+}
+
+type UsageRecordStatus = 'available' | 'missing' | 'error';
+
+interface ParsedUsageTokens {
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadTokens: number;
+  cacheWriteTokens: number;
+  totalTokens: number;
+  costUsd?: number;
+  usageStatus: UsageRecordStatus;
+}
+
+function normalizeUsageNumber(value: unknown): number | undefined {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return value;
+  }
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    if (trimmed.length === 0) {
+      return undefined;
+    }
+    const parsed = Number(trimmed);
+    return Number.isFinite(parsed) ? parsed : undefined;
+  }
+  return undefined;
+}
+
+function firstUsageNumber(usage: TranscriptUsageShape | undefined, candidates: string[]): number | undefined {
+  if (!usage) return undefined;
+  for (const key of candidates) {
+    const value = usage[key];
+    const parsed = normalizeUsageNumber(value);
+    if (parsed !== undefined) return parsed;
+  }
+  return undefined;
+}
+
+function parseUsageFromShape(usage: unknown): ParsedUsageTokens | undefined {
+  if (usage === undefined) {
+    return undefined;
+  }
+
+  if (usage === null || typeof usage !== 'object' || Array.isArray(usage)) {
+    return {
+      usageStatus: 'error',
+      inputTokens: 0,
+      outputTokens: 0,
+      cacheReadTokens: 0,
+      cacheWriteTokens: 0,
+      totalTokens: 0,
+    };
+  }
+
+  const usageShape = usage as TranscriptUsageShape;
+
+  const inputTokens = firstUsageNumber(usageShape, [
+    'input',
+    'promptTokens',
+    'prompt_tokens',
+    'input_tokens',
+    'inputTokenCount',
+    'input_token_count',
+    'promptTokenCount',
+    'prompt_token_count',
+  ]);
+  const outputTokens = firstUsageNumber(usageShape, [
+    'output',
+    'completionTokens',
+    'completion_tokens',
+    'output_tokens',
+    'outputTokenCount',
+    'output_token_count',
+    'completionTokenCount',
+    'completion_token_count',
+  ]);
+  const cacheReadTokens = firstUsageNumber(usageShape, [
+    'cacheRead',
+    'cache_read',
+    'cacheReadTokens',
+    'cache_read_tokens',
+    'cacheReadTokenCount',
+    'cache_read_token_count',
+  ]);
+  const cacheWriteTokens = firstUsageNumber(usageShape, [
+    'cacheWrite',
+    'cache_write',
+    'cacheWriteTokens',
+    'cache_write_tokens',
+    'cacheWriteTokenCount',
+    'cache_write_token_count',
+  ]);
+  const explicitTotalTokens = firstUsageNumber(usageShape, [
+    'total',
+    'totalTokens',
+    'total_tokens',
+    'totalTokenCount',
+    'total_token_count',
+  ]);
+
+  const hasUsageValue =
+    inputTokens !== undefined
+    || outputTokens !== undefined
+    || cacheReadTokens !== undefined
+    || cacheWriteTokens !== undefined
+    || explicitTotalTokens !== undefined
+    || normalizeUsageNumber(usageShape.cost?.total) !== undefined;
+
+  if (!hasUsageValue) {
+    return {
+      usageStatus: 'missing',
+      inputTokens: 0,
+      outputTokens: 0,
+      cacheReadTokens: 0,
+      cacheWriteTokens: 0,
+      totalTokens: 0,
+    };
+  }
+
+  const totalTokens = explicitTotalTokens ?? (
+    (inputTokens ?? 0)
+      + (outputTokens ?? 0)
+      + (cacheReadTokens ?? 0)
+      + (cacheWriteTokens ?? 0)
+  );
+
+  return {
+    usageStatus: 'available',
+    inputTokens: inputTokens ?? 0,
+    outputTokens: outputTokens ?? 0,
+    cacheReadTokens: cacheReadTokens ?? 0,
+    cacheWriteTokens: cacheWriteTokens ?? 0,
+    totalTokens,
+    costUsd: normalizeUsageNumber(usageShape.cost?.total),
   };
 }
 
@@ -121,17 +281,9 @@ export function parseUsageEntriesFromJsonl(
       continue;
     }
 
-    if (message.role === 'assistant' && message.usage) {
-      const usage = message.usage;
-      const inputTokens = usage.input ?? usage.promptTokens ?? 0;
-      const outputTokens = usage.output ?? usage.completionTokens ?? 0;
-      const cacheReadTokens = usage.cacheRead ?? 0;
-      const cacheWriteTokens = usage.cacheWrite ?? 0;
-      const totalTokens = usage.total ?? usage.totalTokens ?? inputTokens + outputTokens + cacheReadTokens + cacheWriteTokens;
-
-      if (totalTokens <= 0) {
-        continue;
-      }
+    if (message.role === 'assistant' && 'usage' in message) {
+      const usage = parseUsageFromShape(message.usage);
+      if (!usage) continue;
 
       const contentText = normalizeUsageContent((message as Record<string, unknown>).content);
       entries.push({
@@ -141,12 +293,7 @@ export function parseUsageEntriesFromJsonl(
         model: message.model ?? message.modelRef,
         provider: message.provider,
         ...(contentText ? { content: contentText } : {}),
-        inputTokens,
-        outputTokens,
-        cacheReadTokens,
-        cacheWriteTokens,
-        totalTokens,
-        costUsd: usage.cost?.total,
+        ...usage,
       });
       continue;
     }
@@ -156,29 +303,17 @@ export function parseUsageEntriesFromJsonl(
     }
 
     const details = message.details;
-    if (!details) {
+    if (!details || !('usage' in details)) {
       continue;
     }
 
-    const usage = details.usage;
-    const inputTokens = usage?.input ?? usage?.promptTokens ?? 0;
-    const outputTokens = usage?.output ?? usage?.completionTokens ?? 0;
-    const cacheReadTokens = usage?.cacheRead ?? 0;
-    const cacheWriteTokens = usage?.cacheWrite ?? 0;
-    const totalTokens = usage?.total ?? usage?.totalTokens ?? inputTokens + outputTokens + cacheReadTokens + cacheWriteTokens;
+    const usage = parseUsageFromShape(details.usage);
+    if (!usage) continue;
 
     const provider = details.provider ?? details.externalContent?.provider ?? message.provider;
     const model = details.model ?? message.model ?? message.modelRef;
     const contentText = normalizeUsageContent(details.content)
       ?? normalizeUsageContent((message as Record<string, unknown>).content);
-
-    if (!provider && !model) {
-      continue;
-    }
-
-    if (totalTokens <= 0) {
-      continue;
-    }
 
     entries.push({
       timestamp: parsed.timestamp,
@@ -187,12 +322,7 @@ export function parseUsageEntriesFromJsonl(
       model,
       provider,
       ...(contentText ? { content: contentText } : {}),
-      inputTokens,
-      outputTokens,
-      cacheReadTokens,
-      cacheWriteTokens,
-      totalTokens,
-      costUsd: usage?.cost?.total,
+      ...usage,
     });
   }
 

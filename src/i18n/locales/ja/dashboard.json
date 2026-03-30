@@ -58,6 +58,8 @@
         "cost": "コスト ${{amount}}",
         "viewContent": "内容を見る",
         "contentDialogTitle": "使用量詳細の内容",
-        "close": "閉じる"
+        "close": "閉じる",
+        "noUsage": "使用量なし",
+        "usageParseError": "使用量解析エラー"
     }
 }
