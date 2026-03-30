@@ -44,8 +44,8 @@ importers:
         specifier: ^10.0.1
         version: 10.0.1(eslint@10.1.0(jiti@1.21.7))
       '@larksuite/openclaw-lark':
-        specifier: 2026.3.26
-        version: 2026.3.26(openclaw@2026.3.24(@napi-rs/canvas@0.1.97)(encoding@0.1.13))
+        specifier: 2026.3.29
+        version: 2026.3.29(openclaw@2026.3.24(@napi-rs/canvas@0.1.97)(encoding@0.1.13))
       '@playwright/test':
         specifier: ^1.56.1
         version: 1.58.2
@@ -86,14 +86,14 @@ importers:
         specifier: ^1.2.8
         version: 1.2.8(@types/react-dom@19.2.3(@types/react@19.2.14))(@types/react@19.2.14)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)
       '@soimy/dingtalk':
-        specifier: ^3.4.2
-        version: 3.4.2(openclaw@2026.3.24(@napi-rs/canvas@0.1.97)(encoding@0.1.13))
+        specifier: ^3.5.1
+        version: 3.5.1(openclaw@2026.3.24(@napi-rs/canvas@0.1.97)(encoding@0.1.13))
       '@tencent-connect/openclaw-qqbot':
-        specifier: ^1.6.5
-        version: 1.6.5(openclaw@2026.3.24(@napi-rs/canvas@0.1.97)(encoding@0.1.13))
+        specifier: ^1.6.6
+        version: 1.6.6(openclaw@2026.3.24(@napi-rs/canvas@0.1.97)(encoding@0.1.13))
       '@tencent-weixin/openclaw-weixin':
-        specifier: ^2.0.1
-        version: 2.0.1(openclaw@2026.3.24(@napi-rs/canvas@0.1.97)(encoding@0.1.13))
+        specifier: ^2.1.1
+        version: 2.1.1
       '@testing-library/jest-dom':
         specifier: ^6.9.1
         version: 6.9.1
@@ -122,8 +122,8 @@ importers:
         specifier: ^5.1.4
         version: 5.2.0(vite@7.3.1(@types/node@25.5.0)(jiti@1.21.7)(yaml@2.8.3))
       '@wecom/wecom-openclaw-plugin':
-        specifier: ^2026.3.24
-        version: 2026.3.25
+        specifier: ^2026.3.26
+        version: 2026.3.26
       '@whiskeysockets/baileys':
         specifier: 7.0.0-rc.9
         version: 7.0.0-rc.9(sharp@0.34.5)
@@ -1076,14 +1076,15 @@ packages:
   '@keyv/serialize@1.1.1':
     resolution: {integrity: sha512-dXn3FZhPv0US+7dtJsIi2R+c7qWYiReoEh5zUntWCf4oSpMNib8FDhSoed6m3QyZdx5hK7iLFkYk3rNxwt8vTA==}
 
-  '@larksuite/openclaw-lark@2026.3.26':
-    resolution: {integrity: sha512-U+IWK07g+YuZbHgrlXstHJt7zusM3H0FOZPCazFYGcJZT3bmSc5RbIQ5jFAZ3KFbPcs1xMgqY2tnMRcWIylYew==}
+  '@larksuite/openclaw-lark@2026.3.29':
+    resolution: {integrity: sha512-dDUN7UWZBDVEfB7OGGwVBApE3uWgsVDiiJQV/MI0BrJODus3f4Eh65SU0PYLud5DbZ5uN7UcWFbn+5b3BQwOcw==}
+    engines: {node: '>=22'}
     hasBin: true
     peerDependencies:
       openclaw: '>=2026.3.22'
 
-  '@larksuiteoapi/node-sdk@1.59.0':
-    resolution: {integrity: sha512-sBpkruTvZDOxnVtoTbepWKRX0j1Y1ZElQYu0x7+v088sI9pcpbVp6ZzCGn62dhrKPatzNyCJyzYCPXPYQWccrA==}
+  '@larksuiteoapi/node-sdk@1.60.0':
+    resolution: {integrity: sha512-MS1eXx7K6HHIyIcCBkJLb21okoa8ZatUGQWZaCCUePm6a37RWFmT6ZKlKvHxAanSX26wNuNlwP0RhgscsE+T6g==}
 
   '@line/bot-sdk@10.6.0':
     resolution: {integrity: sha512-4hSpglL/G/cW2JCcohaYz/BS0uOSJNV9IEYdMm0EiPEvDLayoI2hGq2D86uYPQFD2gvgkyhmzdShpWLG3P5r3w==}
@@ -2241,10 +2242,10 @@ packages:
     resolution: {integrity: sha512-O/IEdcCUKkubz60tFbGA7ceITTAJsty+lBjNoorP4Z6XRqaFb/OjQjZODophEcuq68nKm6/0r+6/lLQ+XVpk8g==}
     engines: {node: '>=18.0.0'}
 
-  '@soimy/dingtalk@3.4.2':
-    resolution: {integrity: sha512-zUHxtRKp8Od3LG3o9sX9/xMOcqep24wZ836zhUwmFsJzS/dlkq356Ci1pn1Mvf8K1OdGSmFbmwCJTkTSLgRkfw==}
+  '@soimy/dingtalk@3.5.1':
+    resolution: {integrity: sha512-HRVkxy1v+Ee6qVEodnsdFJ7U3JeRqbcpSr1XjXAcxkWzsyUJoTdmEnmX4IqX4D4DDVOnx0IUh9kd9cDwCyeCVQ==}
     peerDependencies:
-      openclaw: '>=2026.3.14'
+      openclaw: '>=2026.3.24'
 
   '@standard-schema/spec@1.1.0':
     resolution: {integrity: sha512-l2aFy5jALhniG5HgqrD6jXLi/rUWrKvqN/qJx6yoJsgKhblVd+iqqU4RCXavm/jPityDo5TCvKMnpjKnOriy0w==}
@@ -2256,8 +2257,8 @@ packages:
   '@telegraf/types@7.1.0':
     resolution: {integrity: sha512-kGevOIbpMcIlCDeorKGpwZmdH7kHbqlk/Yj6dEpJMKEQw5lk0KVQY0OLXaCswy8GqlIVLd5625OB+rAntP9xVw==}
 
-  '@tencent-connect/openclaw-qqbot@1.6.5':
-    resolution: {integrity: sha512-791d8Jgq8VJMeK5NOmIqnXX+nZJpr49Eu5wBvtak9a2TBQukN3WQMqvwoHtZLwJkBocls664PHj/hNhVmBb7Mg==}
+  '@tencent-connect/openclaw-qqbot@1.6.6':
+    resolution: {integrity: sha512-Zn0oj0gGukvywRWB7/m2Bq82capwYsjUv+d+wAPZTBbJioR5A7J/z4U8o2YJOvw6e2vW67LkPmqTFf9qJkDDUg==}
     hasBin: true
     peerDependencies:
       openclaw: '*'
@@ -2266,11 +2267,9 @@ packages:
       - silk-wasm
       - ws
 
-  '@tencent-weixin/openclaw-weixin@2.0.1':
-    resolution: {integrity: sha512-Ib7onvLU8a1ox9craMZxPwrN+ffJQJbToZzeMwoYryBOMIoBlVY0oCuQF7BZvZ7GRQQKOSSAdxvFkO47hKu0rg==}
+  '@tencent-weixin/openclaw-weixin@2.1.1':
+    resolution: {integrity: sha512-lSiTI+9eQQuvZXehuteNps3Ia4/ih5zml6QEgICwA2+9xT1sd5z8C+ldgRfrYd8lZTxYWC8ffkLtG0EVo2E7Ag==}
     engines: {node: '>=22'}
-    peerDependencies:
-      openclaw: '>=2026.3.22'
 
   '@testing-library/dom@10.4.1':
     resolution: {integrity: sha512-o4PXJQidqJl82ckFaXUeoAW+XysPLauYI43Abki5hABd853iMhitooc6znOnczgbTYmEP6U6/y1ZyKAIsvMKGg==}
@@ -2509,8 +2508,8 @@ packages:
   '@wecom/aibot-node-sdk@1.0.4':
     resolution: {integrity: sha512-kZkrmlArq0NZyBvtOKw40m5nWTN1WlaA7XtqAo/1hn6N80P4c2mF99t3p1AMzj+dPo6OYvbsaelE8lbVWhkcBg==}
 
-  '@wecom/wecom-openclaw-plugin@2026.3.25':
-    resolution: {integrity: sha512-daPAaXVFrFlcQLB2g+7AEPrgKjIrVdC4WqhXMs7oSb1+qbvY+HYpvbDbX5VO0L8Mq1AnmOd4nS4Zobdfu3AMug==}
+  '@wecom/wecom-openclaw-plugin@2026.3.26':
+    resolution: {integrity: sha512-I7ZNO2UYQ0YyrRGhpqRKJgo7cCO3ONZtTO/C8sOUcg0KpELqEE2HVYP/7l5eWRB7v1HT0RI/SPnG3UTviGqAXA==}
 
   '@whiskeysockets/baileys@7.0.0-rc.9':
     resolution: {integrity: sha512-YFm5gKXfDP9byCXCW3OPHKXLzrAKzolzgVUlRosHHgwbnf2YOO3XknkMm6J7+F0ns8OA0uuSBhgkRHTDtqkacw==}
@@ -7077,9 +7076,9 @@ snapshots:
 
   '@keyv/serialize@1.1.1': {}
 
-  '@larksuite/openclaw-lark@2026.3.26(openclaw@2026.3.24(@napi-rs/canvas@0.1.97)(encoding@0.1.13))':
+  '@larksuite/openclaw-lark@2026.3.29(openclaw@2026.3.24(@napi-rs/canvas@0.1.97)(encoding@0.1.13))':
     dependencies:
-      '@larksuiteoapi/node-sdk': 1.59.0
+      '@larksuiteoapi/node-sdk': 1.60.0
       '@sinclair/typebox': 0.34.48
       image-size: 2.0.2
       openclaw: 2026.3.24(@napi-rs/canvas@0.1.97)(encoding@0.1.13)
@@ -7089,7 +7088,7 @@ snapshots:
       - debug
       - utf-8-validate
 
-  '@larksuiteoapi/node-sdk@1.59.0':
+  '@larksuiteoapi/node-sdk@1.60.0':
     dependencies:
       axios: 1.13.6(debug@4.4.3)
       lodash.identity: 3.0.0
@@ -8298,7 +8297,7 @@ snapshots:
     dependencies:
       tslib: 2.8.1
 
-  '@soimy/dingtalk@3.4.2(openclaw@2026.3.24(@napi-rs/canvas@0.1.97)(encoding@0.1.13))':
+  '@soimy/dingtalk@3.5.1(openclaw@2026.3.24(@napi-rs/canvas@0.1.97)(encoding@0.1.13))':
     dependencies:
       axios: 1.13.6(debug@4.4.3)
       dingtalk-stream: 2.1.5
@@ -8322,13 +8321,12 @@ snapshots:
   '@telegraf/types@7.1.0':
     optional: true
 
-  '@tencent-connect/openclaw-qqbot@1.6.5(openclaw@2026.3.24(@napi-rs/canvas@0.1.97)(encoding@0.1.13))':
+  '@tencent-connect/openclaw-qqbot@1.6.6(openclaw@2026.3.24(@napi-rs/canvas@0.1.97)(encoding@0.1.13))':
     dependencies:
       openclaw: 2026.3.24(@napi-rs/canvas@0.1.97)(encoding@0.1.13)
 
-  '@tencent-weixin/openclaw-weixin@2.0.1(openclaw@2026.3.24(@napi-rs/canvas@0.1.97)(encoding@0.1.13))':
+  '@tencent-weixin/openclaw-weixin@2.1.1':
     dependencies:
-      openclaw: 2026.3.24(@napi-rs/canvas@0.1.97)(encoding@0.1.13)
       qrcode-terminal: 0.12.0
       zod: 4.3.6
 
@@ -8650,7 +8648,7 @@ snapshots:
       - debug
       - utf-8-validate
 
-  '@wecom/wecom-openclaw-plugin@2026.3.25':
+  '@wecom/wecom-openclaw-plugin@2026.3.26':
     dependencies:
       '@wecom/aibot-node-sdk': 1.0.4
       file-type: 21.3.4
@@ -11389,7 +11387,7 @@ snapshots:
 
   pdfjs-dist@5.4.296:
     optionalDependencies:
-      '@napi-rs/canvas': 0.1.80
+      '@napi-rs/canvas': 0.1.97
 
   pdfjs-dist@5.5.207:
     optionalDependencies:
