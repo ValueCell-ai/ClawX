@@ -134,51 +134,30 @@
   ; (IfFileExists "$INSTDIR\*.*" only matches files containing a dot and
   ;  would fail for extensionless files or pure-subdirectory layouts.)
   IfFileExists "$INSTDIR\" 0 _instdir_clean
-    ; IMPORTANT: All deletions here must be non-blocking (async).
-    ; Synchronous RMDir/rd of a 300MB old installation directory causes a
-    ; multi-minute hang visible to the user as a frozen installer.
-    ;
-    ; Strategy: cascade RENAME (instant, < 1ms each):
-    ;   1. $INSTDIR.old.old  (if exists) → async delete, no wait
-    ;   2. $INSTDIR.old      (if exists) → rename to $INSTDIR.old.old
-    ;   3. $INSTDIR          → rename to $INSTDIR.old
-    ;   4. CreateDirectory $INSTDIR (empty, CopyFiles has no locked files)
-    ; All actual disk I/O (deleting .old, .old.old) runs async in customInstall.
+    ; Find the first available stale directory name (e.g. $INSTDIR._stale_0)
+    ; This ensures we NEVER have to synchronously delete old leftovers before
+    ; renaming the current $INSTDIR. We just move it out of the way instantly.
+    StrCpy $R8 0
+  _find_free_stale:
+    IfFileExists "$INSTDIR._stale_$R8\" 0 _found_free_stale
+    IntOp $R8 $R8 + 1
+    Goto _find_free_stale
 
-    ; Step 1: If a doubly-stale directory exists, delete it async (fire and forget).
-    IfFileExists "$INSTDIR.old.old\" 0 _no_stale2
-      nsExec::ExecToStack 'cmd.exe /c start "" /B rd /s /q "$INSTDIR.old.old"'
-      Pop $0
-      Pop $1
-    _no_stale2:
-
-    ; Step 2: Move $INSTDIR.old → $INSTDIR.old.old so $INSTDIR.old is free.
-    IfFileExists "$INSTDIR.old\" 0 _no_stale_old
-      ClearErrors
-      Rename "$INSTDIR.old" "$INSTDIR.old.old"
-      ; If rename failed (e.g., .old.old async delete not yet done), delete async
-      ; and wait briefly. Actual disk I/O will complete in the background.
-      IfErrors 0 _no_stale_old
-        nsExec::ExecToStack 'cmd.exe /c start "" /B rd /s /q "$INSTDIR.old"'
-        Pop $0
-        Pop $1
-        Sleep 2000
-    _no_stale_old:
-
-    ; Step 3: Rename $INSTDIR → $INSTDIR.old (should always succeed now).
+  _found_free_stale:
     ClearErrors
-    Rename "$INSTDIR" "$INSTDIR.old"
-    IfErrors 0 _instdir_moved
-      ; Rename still failed — a process reopened a file in $INSTDIR after our kill.
-      ; Delete async; wait 2s and recreate an empty dir for CopyFiles.
-      nsExec::ExecToStack 'cmd.exe /c start "" /B rd /s /q "$INSTDIR"'
+    Rename "$INSTDIR" "$INSTDIR._stale_$R8"
+    IfErrors 0 _stale_moved
+      ; Rename still failed — a process reopened a file or holds CWD in $INSTDIR.
+      ; We must delete forcibly and synchronously to make room for CopyFiles.
+      ; This can be slow (~1-3 minutes) if there are 10,000+ files and AV is active.
+      nsExec::ExecToStack 'cmd.exe /c rd /s /q "$INSTDIR"'
       Pop $0
       Pop $1
       Sleep 2000
       CreateDirectory "$INSTDIR"
       Goto _instdir_clean
-    _instdir_moved:
-      CreateDirectory "$INSTDIR"
+  _stale_moved:
+    CreateDirectory "$INSTDIR"
   _instdir_clean:
 
   ; Pre-emptively remove the old uninstall registry entry so that
@@ -237,18 +216,18 @@
 !macroend
 
 !macro customInstall
-  ; Async cleanup of old dirs left by the cascade rename in customCheckAppRunning.
+  ; Async cleanup of old dirs left by the rename loop in customCheckAppRunning.
   ; Wait 60s before starting deletion to avoid I/O contention with ClawX's
   ; first launch (Windows Defender scan, ASAR mapping, etc.).
-  ; "ping -n 61 127.0.0.1" sleeps ~60s without requiring admin rights.
-  IfFileExists "$INSTDIR.old\" 0 +3
-    nsExec::ExecToStack `cmd.exe /c start "" /B cmd /c "ping -n 61 127.0.0.1 > nul & rd /s /q $\"$INSTDIR.old$\""`
-    Pop $0
-    Pop $1
-  IfFileExists "$INSTDIR.old.old\" 0 +3
-    nsExec::ExecToStack `cmd.exe /c start "" /B cmd /c "ping -n 31 127.0.0.1 > nul & rd /s /q $\"$INSTDIR.old.old$\""`
-    Pop $0
-    Pop $1
+  ; ExecShell SW_HIDE is completely detached from NSIS and avoids pipe blocking.
+  IfFileExists "$INSTDIR._stale_0\" 0 _ci_stale_cleaned
+    ; cd to parent dir of $INSTDIR, then glob with relative path.
+    ; cmd.exe doesn't expand wildcards inside double-quotes, so the
+    ; glob pattern must be unquoted.  The parent dir is pushed via cd /d,
+    ; and the base name (e.g. ClawX._stale_*) is safe because it never
+    ; contains spaces.
+    ExecShell "" "cmd.exe" '/c ping -n 61 127.0.0.1 >nul & cd /d "$INSTDIR\.." & for /d %D in (${PRODUCT_FILENAME}._stale_*) do rd /s /q "%~fD"' SW_HIDE
+  _ci_stale_cleaned:
   DetailPrint "Core files extracted. Finalizing system integration..."
 
   ; Enable Windows long path support (Windows 10 1607+ / Windows 11).
