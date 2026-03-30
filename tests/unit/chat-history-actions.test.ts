@@ -11,6 +11,14 @@ const hasNonToolAssistantContent = vi.fn((message: { content?: unknown } | undef
   return typeof message.content === 'string' ? message.content.trim().length > 0 : true;
 });
 const isToolResultRole = vi.fn((role: unknown) => role === 'toolresult' || role === 'tool_result');
+const isInternalMessage = vi.fn((msg: { role?: unknown; content?: unknown }) => {
+  if (msg.role === 'system') return true;
+  if (msg.role === 'assistant') {
+    const text = typeof msg.content === 'string' ? msg.content : '';
+    if (/^(HEARTBEAT_OK|NO_REPLY)\s*$/.test(text)) return true;
+  }
+  return false;
+});
 const loadMissingPreviews = vi.fn(async () => false);
 const toMs = vi.fn((ts: number) => ts < 1e12 ? ts * 1000 : ts);
 
@@ -28,6 +36,7 @@ vi.mock('@/stores/chat/helpers', () => ({
   enrichWithToolResultFiles: (...args: unknown[]) => enrichWithToolResultFiles(...args),
   getMessageText: (...args: unknown[]) => getMessageText(...args),
   hasNonToolAssistantContent: (...args: unknown[]) => hasNonToolAssistantContent(...args),
+  isInternalMessage: (...args: unknown[]) => isInternalMessage(...args),
   isToolResultRole: (...args: unknown[]) => isToolResultRole(...args),
   loadMissingPreviews: (...args: unknown[]) => loadMissingPreviews(...args),
   toMs: (...args: unknown[]) => toMs(...args as Parameters<typeof toMs>),
@@ -108,7 +117,6 @@ describe('chat history actions', () => {
       '/api/cron/session-history?sessionKey=agent%3Amain%3Acron%3Ajob-1&limit=200',
     );
     expect(h.read().messages.map((message) => message.content)).toEqual([
-      'Scheduled task: Drink water',
       'Drink water 💧',
     ]);
     expect(h.read().sessionLastActivity['agent:main:cron:job-1']).toBe(1773281732751);
@@ -127,5 +135,100 @@ describe('chat history actions', () => {
     expect(hostApiFetchMock).not.toHaveBeenCalled();
     expect(h.read().messages).toEqual([]);
     expect(h.read().loading).toBe(false);
+  });
+
+  it('filters out system messages from loaded history', async () => {
+    const { createHistoryActions } = await import('@/stores/chat/history-actions');
+    const h = makeHarness();
+    const actions = createHistoryActions(h.set as never, h.get as never);
+
+    invokeIpcMock.mockResolvedValueOnce({
+      success: true,
+      result: {
+        messages: [
+          { role: 'user', content: 'Hello', timestamp: 1000 },
+          { role: 'system', content: 'Gateway restarted', timestamp: 1001 },
+          { role: 'assistant', content: 'Hi there!', timestamp: 1002 },
+        ],
+      },
+    });
+
+    await actions.loadHistory();
+
+    expect(h.read().messages.map((m) => m.content)).toEqual([
+      'Hello',
+      'Hi there!',
+    ]);
+  });
+
+  it('filters out HEARTBEAT_OK assistant messages', async () => {
+    const { createHistoryActions } = await import('@/stores/chat/history-actions');
+    const h = makeHarness();
+    const actions = createHistoryActions(h.set as never, h.get as never);
+
+    invokeIpcMock.mockResolvedValueOnce({
+      success: true,
+      result: {
+        messages: [
+          { role: 'user', content: 'Hello', timestamp: 1000 },
+          { role: 'assistant', content: 'HEARTBEAT_OK', timestamp: 1001 },
+          { role: 'assistant', content: 'Real response', timestamp: 1002 },
+        ],
+      },
+    });
+
+    await actions.loadHistory();
+
+    expect(h.read().messages.map((m) => m.content)).toEqual([
+      'Hello',
+      'Real response',
+    ]);
+  });
+
+  it('filters out NO_REPLY assistant messages', async () => {
+    const { createHistoryActions } = await import('@/stores/chat/history-actions');
+    const h = makeHarness();
+    const actions = createHistoryActions(h.set as never, h.get as never);
+
+    invokeIpcMock.mockResolvedValueOnce({
+      success: true,
+      result: {
+        messages: [
+          { role: 'user', content: 'Hello', timestamp: 1000 },
+          { role: 'assistant', content: 'NO_REPLY', timestamp: 1001 },
+          { role: 'assistant', content: 'Actual answer', timestamp: 1002 },
+        ],
+      },
+    });
+
+    await actions.loadHistory();
+
+    expect(h.read().messages.map((m) => m.content)).toEqual([
+      'Hello',
+      'Actual answer',
+    ]);
+  });
+
+  it('keeps normal assistant messages that contain HEARTBEAT_OK as substring', async () => {
+    const { createHistoryActions } = await import('@/stores/chat/history-actions');
+    const h = makeHarness();
+    const actions = createHistoryActions(h.set as never, h.get as never);
+
+    invokeIpcMock.mockResolvedValueOnce({
+      success: true,
+      result: {
+        messages: [
+          { role: 'user', content: 'What is HEARTBEAT_OK?', timestamp: 1000 },
+          { role: 'assistant', content: 'HEARTBEAT_OK is a status code', timestamp: 1001 },
+        ],
+      },
+    });
+
+    await actions.loadHistory();
+
+    expect(h.read().messages.map((m) => m.content)).toEqual([
+      'What is HEARTBEAT_OK?',
+      'HEARTBEAT_OK is a status code',
+    ]);
   });
 });

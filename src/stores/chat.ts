@@ -777,6 +777,16 @@ function isToolResultRole(role: unknown): boolean {
   return normalized === 'toolresult' || normalized === 'tool_result';
 }
 
+/** True for internal plumbing messages that should never be shown in the UI. */
+function isInternalMessage(msg: { role?: unknown; content?: unknown }): boolean {
+  if (msg.role === 'system') return true;
+  if (msg.role === 'assistant') {
+    const text = getMessageText(msg.content);
+    if (/^(HEARTBEAT_OK|NO_REPLY)\s*$/.test(text)) return true;
+  }
+  return false;
+}
+
 function extractTextFromContent(content: unknown): string {
   if (typeof content === 'string') return content;
   if (!Array.isArray(content)) return '';
@@ -1314,7 +1324,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
       // Before filtering: attach images/files from tool_result messages to the next assistant message
       const messagesWithToolImages = enrichWithToolResultFiles(rawMessages);
-      const filteredMessages = messagesWithToolImages.filter((msg) => !isToolResultRole(msg.role));
+      const filteredMessages = messagesWithToolImages.filter((msg) => !isToolResultRole(msg.role) && !isInternalMessage(msg));
       // Restore file attachments for user/assistant messages (from cache + text patterns)
       const enrichedMessages = enrichWithCachedImages(filteredMessages);
 

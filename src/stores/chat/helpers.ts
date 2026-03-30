@@ -598,6 +598,16 @@ function isToolResultRole(role: unknown): boolean {
   return normalized === 'toolresult' || normalized === 'tool_result';
 }
 
+/** True for internal plumbing messages that should never be shown in the UI. */
+function isInternalMessage(msg: { role?: unknown; content?: unknown }): boolean {
+  if (msg.role === 'system') return true;
+  if (msg.role === 'assistant') {
+    const text = getMessageText(msg.content);
+    if (/^(HEARTBEAT_OK|NO_REPLY)\s*$/.test(text)) return true;
+  }
+  return false;
+}
+
 function extractTextFromContent(content: unknown): string {
   if (typeof content === 'string') return content;
   if (!Array.isArray(content)) return '';
@@ -824,6 +834,7 @@ export {
   extractRawFilePaths,
   makeAttachedFile,
   enrichWithToolResultFiles,
+  isInternalMessage,
   isToolResultRole,
   enrichWithCachedImages,
   loadMissingPreviews,
