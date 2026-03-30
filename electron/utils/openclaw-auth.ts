@@ -1436,6 +1436,35 @@ export async function sanitizeOpenClawConfig(): Promise<void> {
         modified = true;
       }
 
+      // ── qqbot → openclaw-qqbot migration ────────────────────────
+      // The qqbot npm package (@tencent-connect/openclaw-qqbot) declares
+      // id="openclaw-qqbot" in its manifest, but older ClawX versions
+      // wrote bare "qqbot" into plugins.allow.  Migrate to the manifest ID
+      // so the Gateway can resolve the plugin correctly.
+      const LEGACY_QQBOT_ID = 'qqbot';
+      const NEW_QQBOT_ID = 'openclaw-qqbot';
+      if (Array.isArray(pluginsObj.allow)) {
+        const allowArr = pluginsObj.allow as string[];
+        const legacyIdx = allowArr.indexOf(LEGACY_QQBOT_ID);
+        if (legacyIdx !== -1) {
+          if (!allowArr.includes(NEW_QQBOT_ID)) {
+            allowArr[legacyIdx] = NEW_QQBOT_ID;
+          } else {
+            allowArr.splice(legacyIdx, 1);
+          }
+          console.log(`[sanitize] Migrated plugins.allow: ${LEGACY_QQBOT_ID} → ${NEW_QQBOT_ID}`);
+          modified = true;
+        }
+      }
+      if (pEntries?.[LEGACY_QQBOT_ID]) {
+        if (!pEntries[NEW_QQBOT_ID]) {
+          pEntries[NEW_QQBOT_ID] = pEntries[LEGACY_QQBOT_ID];
+        }
+        delete pEntries[LEGACY_QQBOT_ID];
+        console.log(`[sanitize] Migrated plugins.entries: ${LEGACY_QQBOT_ID} → ${NEW_QQBOT_ID}`);
+        modified = true;
+      }
+
       // ── Remove bare 'feishu' when canonical feishu plugin is present ──
       // The Gateway binary automatically adds bare 'feishu' to plugins.allow
       // because the official plugin registers the 'feishu' channel.

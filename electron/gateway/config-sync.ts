@@ -202,17 +202,23 @@ export async function syncGatewayConfigBeforeLaunch(
     try {
       const rawCfg = await readOpenClawConfig();
       const allowList = Array.isArray(rawCfg.plugins?.allow) ? (rawCfg.plugins!.allow as string[]) : [];
-      // Build a reverse map: dirName/pluginId → channelType
-      const dirNameToChannel: Record<string, string> = {};
+      // Build reverse maps: dirName → channelType AND known manifest IDs → channelType
+      const pluginIdToChannel: Record<string, string> = {};
       for (const [channelType, info] of Object.entries(CHANNEL_PLUGIN_MAP)) {
-        dirNameToChannel[info.dirName] = channelType;
+        pluginIdToChannel[info.dirName] = channelType;
       }
+      // Known manifest IDs that differ from their dirName/channelType
+      pluginIdToChannel['openclaw-qqbot'] = 'qqbot';
+      pluginIdToChannel['openclaw-lark'] = 'feishu';
+      pluginIdToChannel['feishu-openclaw-plugin'] = 'feishu';
+
       for (const pluginId of allowList) {
-        const channelType = dirNameToChannel[pluginId] ?? pluginId;
+        const channelType = pluginIdToChannel[pluginId] ?? pluginId;
         if (CHANNEL_PLUGIN_MAP[channelType] && !configuredChannels.includes(channelType)) {
           configuredChannels.push(channelType);
         }
       }
+
     } catch (err) {
       logger.warn('[plugin] Failed to augment channel list from plugins.allow:', err);
     }

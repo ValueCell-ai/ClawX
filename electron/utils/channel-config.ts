@@ -22,6 +22,7 @@ import {
 const OPENCLAW_DIR = join(homedir(), '.openclaw');
 const CONFIG_FILE = join(OPENCLAW_DIR, 'openclaw.json');
 const WECOM_PLUGIN_ID = 'wecom';
+const QQBOT_PLUGIN_ID = 'openclaw-qqbot';
 const WECHAT_PLUGIN_ID = OPENCLAW_WECHAT_CHANNEL_TYPE;
 const FEISHU_PLUGIN_ID_CANDIDATES = ['openclaw-lark', 'feishu-openclaw-plugin'] as const;
 const DEFAULT_ACCOUNT_ID = 'default';
@@ -465,14 +466,33 @@ async function ensurePluginAllowlist(currentConfig: OpenClawConfig, channelType:
 
     if (channelType === 'qqbot') {
         if (!currentConfig.plugins) {
-            currentConfig.plugins = {};
-        }
-        currentConfig.plugins.enabled = true;
-        const allow = Array.isArray(currentConfig.plugins.allow)
-            ? currentConfig.plugins.allow as string[]
-            : [];
-        if (!allow.includes('qqbot')) {
-            currentConfig.plugins.allow = [...allow, 'qqbot'];
+            currentConfig.plugins = {
+                allow: [QQBOT_PLUGIN_ID],
+                enabled: true,
+                entries: {
+                    [QQBOT_PLUGIN_ID]: { enabled: true }
+                }
+            };
+        } else {
+            currentConfig.plugins.enabled = true;
+            const allow: string[] = Array.isArray(currentConfig.plugins.allow)
+                ? (currentConfig.plugins.allow as string[])
+                : [];
+            // Normalize: remove bare 'qqbot' and ensure the actual manifest ID is present.
+            const normalizedAllow = allow.filter((pluginId) => pluginId !== 'qqbot');
+            if (!normalizedAllow.includes(QQBOT_PLUGIN_ID)) {
+                currentConfig.plugins.allow = [...normalizedAllow, QQBOT_PLUGIN_ID];
+            } else if (normalizedAllow.length !== allow.length) {
+                currentConfig.plugins.allow = normalizedAllow;
+            }
+
+            if (!currentConfig.plugins.entries) {
+                currentConfig.plugins.entries = {};
+            }
+            if (!currentConfig.plugins.entries[QQBOT_PLUGIN_ID]) {
+                currentConfig.plugins.entries[QQBOT_PLUGIN_ID] = {};
+            }
+            currentConfig.plugins.entries[QQBOT_PLUGIN_ID].enabled = true;
         }
     }
 
