@@ -36,9 +36,6 @@
         nsExec::ExecToStack 'taskkill /F /IM openclaw-gateway.exe'
         Pop $0
         Pop $1
-        nsExec::ExecToStack 'taskkill /F /IM uv.exe'
-        Pop $0
-        Pop $1
         Goto done_killing
       ${endIf}
       # App didn't exit in time; fall through to force-kill
@@ -76,9 +73,6 @@
     nsExec::ExecToStack 'taskkill /F /IM openclaw-gateway.exe'
     Pop $0
     Pop $1
-    nsExec::ExecToStack 'taskkill /F /IM uv.exe'
-    Pop $0
-    Pop $1
 
     # Wait for Windows to fully release file handles after process termination.
     # 5 seconds accommodates slow antivirus scanners and filesystem flush delays.
@@ -107,9 +101,9 @@
   nsExec::ExecToStack 'taskkill /F /IM openclaw-gateway.exe'
   Pop $0
   Pop $1
-  nsExec::ExecToStack 'taskkill /F /IM uv.exe'
-  Pop $0
-  Pop $1
+  ; Note: we intentionally do NOT kill uv.exe globally — it is a popular
+  ; Python package manager and other users/CI jobs may have uv running.
+  ; The PowerShell path-based kill above already handles uv inside $INSTDIR.
 
   ; Brief wait for handle release (main wait was already done above if app was running)
   Sleep 2000
@@ -222,12 +216,10 @@
   ; first launch (Windows Defender scan, ASAR mapping, etc.).
   ; ExecShell SW_HIDE is completely detached from NSIS and avoids pipe blocking.
   IfFileExists "$INSTDIR._stale_0\" 0 _ci_stale_cleaned
-    ; cd to parent dir of $INSTDIR, then glob with relative path.
-    ; cmd.exe doesn't expand wildcards inside double-quotes, so the
-    ; glob pattern must be unquoted.  The parent dir is pushed via cd /d,
-    ; and the base name (e.g. ClawX._stale_*) is safe because it never
-    ; contains spaces.
-    ExecShell "" "cmd.exe" '/c ping -n 61 127.0.0.1 >nul & cd /d "$INSTDIR\.." & for /d %D in (${PRODUCT_FILENAME}._stale_*) do rd /s /q "%~fD"' SW_HIDE
+    ; Use PowerShell to extract the basename of $INSTDIR so the glob works
+    ; even when the user picked a custom install folder name.
+    ; E.g. $INSTDIR = D:\Apps\MyClaw → glob = MyClaw._stale_*
+    ExecShell "" "cmd.exe" `/c ping -n 61 127.0.0.1 >nul & cd /d "$INSTDIR\.." & for /d %D in ("$INSTDIR._stale_*") do rd /s /q "%D"` SW_HIDE
   _ci_stale_cleaned:
   DetailPrint "Core files extracted. Finalizing system integration..."
 
