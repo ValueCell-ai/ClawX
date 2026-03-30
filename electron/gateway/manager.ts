@@ -705,6 +705,9 @@ export class GatewayManager extends EventEmitter {
     await unloadLaunchctlGatewayService();
     this.processExitCode = null;
 
+    // Per-process dedup map for stderr lines — resets on each new spawn.
+    const stderrDedup = new Map<string, number>();
+
     const { child, lastSpawnSummary } = await launchGatewayProcess({
       port: this.status.port,
       launchContext,
@@ -715,6 +718,18 @@ export class GatewayManager extends EventEmitter {
         recordGatewayStartupStderrLine(this.recentStartupStderrLines, line);
         const classified = classifyGatewayStderrMessage(line);
         if (classified.level === 'drop') return;
+
+        // Dedup: suppress identical stderr lines after the first occurrence.
+        const count = (stderrDedup.get(classified.normalized) ?? 0) + 1;
+        stderrDedup.set(classified.normalized, count);
+        if (count > 1) {
+          // Log a summary every 50 duplicates to stay visible without flooding.
+          if (count % 50 === 0) {
+            logger.debug(`[Gateway stderr] (suppressed ${count} repeats) ${classified.normalized}`);
+          }
+          return;
+        }
+
         if (classified.level === 'debug') {
           logger.debug(`[Gateway stderr] ${classified.normalized}`);
           return;

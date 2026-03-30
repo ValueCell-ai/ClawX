@@ -116,6 +116,9 @@ function toErrorDiagnostic(error: unknown): { code?: string; name?: string; mess
 // patch both the manifest AND the compiled JS so the Gateway accepts them.
 const MANIFEST_ID_FIXES: Record<string, string> = {
   'wecom-openclaw-plugin': 'wecom',
+  // @tencent-connect/openclaw-qqbot ships with id="openclaw-qqbot" in its
+  // manifest, but ClawX writes "qqbot" into plugins.allow.  Rewrite to match.
+  'openclaw-qqbot': 'qqbot',
 };
 
 /**

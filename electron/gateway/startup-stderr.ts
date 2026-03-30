@@ -30,6 +30,9 @@ export function classifyGatewayStderrMessage(message: string): GatewayStderrClas
   if (msg.includes('DeprecationWarning')) return { level: 'debug', normalized: msg };
   if (msg.includes('Debugger attached')) return { level: 'debug', normalized: msg };
 
+  // Gateway config warnings (e.g. stale plugin entries) are informational, not actionable.
+  if (msg.includes('Config warnings:')) return { level: 'debug', normalized: msg };
+
   // Electron restricts NODE_OPTIONS in packaged apps; this is expected and harmless.
   if (msg.includes('node: --require is not allowed in NODE_OPTIONS')) {
     return { level: 'debug', normalized: msg };
