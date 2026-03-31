@@ -270,6 +270,32 @@ export const PROVIDER_DEFINITIONS: ProviderDefinition[] = [
     defaultAuthMode: 'api_key',
     supportsMultipleAccounts: true,
   },
+  {
+    id: 'novita',
+    name: 'Novita AI',
+    icon: '🔮',
+    placeholder: 'nv-...',
+    model: 'Multi-Model',
+    requiresApiKey: true,
+    showModelId: true,
+    modelIdPlaceholder: 'moonshotai/kimi-k2.5',
+    defaultModelId: 'moonshotai/kimi-k2.5',
+    category: 'compatible',
+    envVar: 'NOVITA_API_KEY',
+    supportedAuthModes: ['api_key'],
+    defaultAuthMode: 'api_key',
+    supportsMultipleAccounts: true,
+    providerConfig: {
+      baseUrl: 'https://api.novita.ai/openai',
+      api: 'openai-completions',
+      apiKeyEnv: 'NOVITA_API_KEY',
+      models: [
+        { id: 'moonshotai/kimi-k2.5', name: 'Kimi K2.5' },
+        { id: 'zai-org/glm-5', name: 'GLM-5' },
+        { id: 'minimax/minimax-m2.5', name: 'MiniMax M2.5' },
+      ],
+    },
+  },
 ];
 
 const PROVIDER_DEFINITION_MAP = new Map(

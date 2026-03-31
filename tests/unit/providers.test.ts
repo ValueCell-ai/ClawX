@@ -58,7 +58,7 @@ describe('provider metadata', () => {
 
   it('keeps builtin provider sources in sync', () => {
     expect(BUILTIN_PROVIDER_TYPES).toEqual(
-      expect.arrayContaining(['anthropic', 'openai', 'google', 'openrouter', 'ark', 'moonshot', 'siliconflow', 'minimax-portal', 'minimax-portal-cn', 'qwen-portal', 'ollama'])
+      expect.arrayContaining(['anthropic', 'openai', 'google', 'openrouter', 'ark', 'moonshot', 'siliconflow', 'minimax-portal', 'minimax-portal-cn', 'qwen-portal', 'ollama', 'novita'])
     );
   });
 
@@ -176,5 +176,34 @@ describe('provider metadata', () => {
     expect(resolveProviderApiKeyForSave('ollama', 'real-key')).toBe('real-key');
     expect(resolveProviderApiKeyForSave('openai', '')).toBeUndefined();
     expect(resolveProviderApiKeyForSave('openai', ' sk-test ')).toBe('sk-test');
+  });
+
+  it('includes novita in the frontend provider registry', () => {
+    expect(PROVIDER_TYPES).toContain('novita');
+
+    expect(PROVIDER_TYPE_INFO).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: 'novita',
+          name: 'Novita AI',
+          requiresApiKey: true,
+          defaultBaseUrl: 'https://api.novita.ai/openai',
+          showModelId: true,
+          defaultModelId: 'moonshotai/kimi-k2.5',
+        }),
+      ])
+    );
+  });
+
+  it('includes novita in the backend provider registry', () => {
+    expect(BUILTIN_PROVIDER_TYPES).toContain('novita');
+    expect(getProviderEnvVar('novita')).toBe('NOVITA_API_KEY');
+    expect(getProviderConfig('novita')).toEqual(
+      expect.objectContaining({
+        baseUrl: 'https://api.novita.ai/openai',
+        api: 'openai-completions',
+        apiKeyEnv: 'NOVITA_API_KEY',
+      })
+    );
   });
 });
