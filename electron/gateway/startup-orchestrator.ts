@@ -25,6 +25,8 @@ type StartupHooks = {
   runDoctorRepair: () => Promise<boolean>;
   onDoctorRepairSuccess: () => void;
   delay: (ms: number) => Promise<void>;
+  /** Called before a retry to terminate the previously spawned process if still running */
+  terminateOwnedProcess?: () => Promise<void>;
 };
 
 export async function runGatewayStartupSequence(hooks: StartupHooks): Promise<void> {
@@ -97,6 +99,17 @@ export async function runGatewayStartupSequence(hooks: StartupHooks): Promise<vo
       if (recoveryAction === 'retry') {
         logger.warn(`Transient start error: ${String(error)}. Retrying... (${startAttempts}/${maxStartAttempts})`);
         await hooks.delay(1000);
+        // Terminate the previously spawned process before retrying so it doesn't
+        // hold the port and cause another handshake failure.
+        if (hooks.terminateOwnedProcess) {
+          await hooks.terminateOwnedProcess().catch((err) => {
+            logger.warn('Failed to terminate owned process before retry:', err);
+          });
+        }
+        // Wait for port to become free before retrying (handles lingering processes)
+        if (hooks.shouldWaitForPortFree) {
+          await hooks.waitForPortFree(hooks.port);
+        }
         continue;
       }
 

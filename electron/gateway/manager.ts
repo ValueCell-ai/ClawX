@@ -277,6 +277,13 @@ export class GatewayManager extends EventEmitter {
         delay: async (ms) => {
           await new Promise((resolve) => setTimeout(resolve, ms));
         },
+        terminateOwnedProcess: async () => {
+          if (this.process && this.ownsProcess) {
+            logger.info('Terminating owned Gateway process before retry...');
+            await terminateOwnedGatewayProcess(this.process).catch(() => {});
+            this.process = null;
+          }
+        },
       });
     } catch (error) {
       if (error instanceof LifecycleSupersededError) {
