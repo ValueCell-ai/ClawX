@@ -117,20 +117,22 @@ export async function launchGatewayProcess(options: {
   const lastSpawnSummary = `mode=${mode}, entry="${entryScript}", args="${options.sanitizeSpawnArgs(gatewayArgs).join(' ')}", cwd="${openclawDir}"`;
 
   const runtimeEnv = { ...forkEnv };
-  // Apply the fetch/child_process preload in all modes (dev + packaged).
-  // On Windows the child_process patch sets windowsHide:true on all spawned
-  // subprocesses, preventing black console windows from flashing during
-  // restart retry loops.  Previously this only ran in dev mode.
-  try {
-    const preloadPath = ensureGatewayFetchPreload();
-    if (existsSync(preloadPath)) {
-      runtimeEnv.NODE_OPTIONS = appendNodeRequireToNodeOptions(
-        runtimeEnv.NODE_OPTIONS,
-        preloadPath,
-      );
+  // Only apply the fetch/child_process preload in dev mode.
+  // In packaged builds Electron's UtilityProcess rejects NODE_OPTIONS
+  // with --require, logging "Most NODE_OPTIONs are not supported in
+  // packaged apps" and the preload never loads.
+  if (!app.isPackaged) {
+    try {
+      const preloadPath = ensureGatewayFetchPreload();
+      if (existsSync(preloadPath)) {
+        runtimeEnv.NODE_OPTIONS = appendNodeRequireToNodeOptions(
+          runtimeEnv.NODE_OPTIONS,
+          preloadPath,
+        );
+      }
+    } catch (err) {
+      logger.warn('Failed to set up OpenRouter headers preload:', err);
     }
-  } catch (err) {
-    logger.warn('Failed to set up OpenRouter headers preload:', err);
   }
 
   return await new Promise<{ child: Electron.UtilityProcess; lastSpawnSummary: string }>((resolve, reject) => {

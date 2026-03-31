@@ -174,7 +174,7 @@ export async function connectGatewaySocket(options: {
   getToken: () => Promise<string>;
   onHandshakeComplete: (ws: WebSocket) => void;
   onMessage: (message: unknown) => void;
-  onCloseAfterHandshake: () => void;
+  onCloseAfterHandshake: (code: number) => void;
   challengeTimeoutMs?: number;
   connectTimeoutMs?: number;
 }): Promise<WebSocket> {
@@ -311,7 +311,7 @@ export async function connectGatewaySocket(options: {
         return;
       }
       cleanupHandshakeRequest();
-      options.onCloseAfterHandshake();
+      options.onCloseAfterHandshake(code);
     });
 
     ws.on('error', (error) => {

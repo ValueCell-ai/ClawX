@@ -802,7 +802,7 @@ export class GatewayManager extends EventEmitter {
       onMessage: (message) => {
         this.handleMessage(message);
       },
-      onCloseAfterHandshake: () => {
+      onCloseAfterHandshake: (closeCode) => {
         this.connectionMonitor.clear();
         if (this.status.state === 'running') {
           this.setStatus({ state: 'stopped' });
@@ -811,7 +811,11 @@ export class GatewayManager extends EventEmitter {
           // handler (`onExit`) which calls scheduleReconnect().  Triggering
           // reconnect from WS close as well races with the exit handler and can
           // cause double start() attempts or port conflicts during TCP TIME_WAIT.
-          if (process.platform !== 'win32') {
+          //
+          // Exception: code=1012 means the Gateway is performing an in-process
+          // restart (e.g. config reload).  The UtilityProcess stays alive, so
+          // `onExit` will never fire — we MUST reconnect from the WS close path.
+          if (process.platform !== 'win32' || closeCode === 1012) {
             this.scheduleReconnect();
           }
         }
