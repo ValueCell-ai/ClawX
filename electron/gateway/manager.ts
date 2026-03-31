@@ -787,14 +787,7 @@ export class GatewayManager extends EventEmitter {
           port,
           connectedAt: Date.now(),
         });
-        // On Windows, skip WebSocket heartbeat ping to avoid cascading failures:
-        // heartbeat timeout → terminate socket → reconnect → port conflict
-        // (old process holds port due to TCP TIME_WAIT) → ~2 min downtime.
-        // Gateway is a local child process; actual crashes are caught by the
-        // process exit handler, and graceful restarts use code=1012 close frames.
-        if (process.platform !== 'win32') {
-          this.startPing();
-        }
+        this.startPing();
       },
       onMessage: (message) => {
         this.handleMessage(message);
@@ -899,6 +892,14 @@ export class GatewayManager extends EventEmitter {
           ws.terminate();
         } catch (error) {
           logger.warn('Failed to terminate stale Gateway socket after heartbeat timeout:', error);
+        }
+
+        // On Windows, onCloseAfterHandshake intentionally skips scheduleReconnect()
+        // to avoid double-reconnect races with the process exit handler.  However,
+        // a heartbeat timeout means the socket is stale while the process may still
+        // be alive (no exit event), so we must explicitly trigger reconnect here.
+        if (process.platform === 'win32') {
+          this.scheduleReconnect();
         }
       },
     });
