@@ -106,10 +106,12 @@ export async function runGatewayStartupSequence(hooks: StartupHooks): Promise<vo
             logger.warn('Failed to terminate owned process before retry:', err);
           });
         }
+        hooks.assertLifecycle('start/retry-pre-port-wait');
         // Wait for port to become free before retrying (handles lingering processes)
         if (hooks.shouldWaitForPortFree) {
           await hooks.waitForPortFree(hooks.port);
         }
+        hooks.assertLifecycle('start/retry-post-port-wait');
         continue;
       }
 
