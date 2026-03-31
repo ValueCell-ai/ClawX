@@ -421,13 +421,6 @@ async function buildAgentModelProviderEntry(
       authHeader = true;
       apiKey = 'minimax-oauth';
     }
-  } else if (config.type === 'qwen-portal') {
-    const accountApiKey = await getApiKey(config.id);
-    if (accountApiKey) {
-      apiKey = accountApiKey;
-    } else {
-      apiKey = 'qwen-oauth';
-    }
   }
 
   return {
@@ -591,7 +584,7 @@ export async function syncDefaultProviderToRuntime(
   const ock = await resolveRuntimeProviderKey(provider);
   const providerKey = await getApiKey(providerId);
   const fallbackModels = await getProviderFallbackModelRefs(provider);
-  const oauthTypes = ['qwen-portal', 'minimax-portal', 'minimax-portal-cn'];
+  const oauthTypes = ['minimax-portal', 'minimax-portal-cn'];
   const browserOAuthRuntimeProvider = await getBrowserOAuthRuntimeProvider(provider);
   const isOAuthProvider = (oauthTypes.includes(provider.type) && !providerKey) || Boolean(browserOAuthRuntimeProvider);
 
@@ -662,20 +655,15 @@ export async function syncDefaultProviderToRuntime(
 
     const defaultBaseUrl = provider.type === 'minimax-portal'
       ? 'https://api.minimax.io/anthropic'
-      : (provider.type === 'minimax-portal-cn' ? 'https://api.minimaxi.com/anthropic' : 'https://portal.qwen.ai/v1');
-    const api: 'anthropic-messages' | 'openai-completions' =
-      (provider.type === 'minimax-portal' || provider.type === 'minimax-portal-cn')
-        ? 'anthropic-messages'
-        : 'openai-completions';
+      : 'https://api.minimaxi.com/anthropic';
+    const api = 'anthropic-messages' as const;
 
     let baseUrl = provider.baseUrl || defaultBaseUrl;
-    if ((provider.type === 'minimax-portal' || provider.type === 'minimax-portal-cn') && baseUrl) {
+    if (baseUrl) {
       baseUrl = baseUrl.replace(/\/v1$/, '').replace(/\/anthropic$/, '').replace(/\/$/, '') + '/anthropic';
     }
 
-    const targetProviderKey = (provider.type === 'minimax-portal' || provider.type === 'minimax-portal-cn')
-      ? 'minimax-portal'
-      : provider.type;
+    const targetProviderKey = 'minimax-portal';
 
     await setOpenClawDefaultModelWithOverride(targetProviderKey, getProviderModelRef(provider), {
       baseUrl,

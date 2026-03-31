@@ -20,7 +20,7 @@ export const providerIcons: Record<string, string> = {
     siliconflow,
     'minimax-portal': minimaxPortal,
     'minimax-portal-cn': minimaxPortal,
-    'qwen-portal': qwenPortal,
+    'modelstudio': qwenPortal,
     ollama,
     custom,
 };

@@ -1134,6 +1134,9 @@ function AddProviderDialog({
   };
 
   const availableTypes = PROVIDER_TYPE_INFO.filter((type) => {
+    // Skip providers that are temporarily hidden from the UI.
+    if (type.hidden) return false;
+
     // MiniMax portal variants are mutually exclusive — hide BOTH variants
     // when either one already exists (account may have vendorId of either variant).
     const hasMinimax = existingVendorIds.has('minimax-portal') || existingVendorIds.has('minimax-portal-cn');

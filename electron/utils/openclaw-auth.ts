@@ -473,7 +473,7 @@ export async function removeProviderFromOpenClaw(provider: string): Promise<void
       const config = await readOpenClawJson();
       let modified = false;
 
-      // Disable plugin (for OAuth like qwen-portal-auth)
+      // Disable plugin (for OAuth like minimax-portal-auth)
       const plugins = config.plugins as Record<string, unknown> | undefined;
       const entries = (plugins?.entries ?? {}) as Record<string, Record<string, unknown>>;
       const pluginName = `${provider}-auth`;
@@ -872,6 +872,10 @@ export async function setOpenClawDefaultModelWithOverride(
  * Get a set of all active provider IDs configured in openclaw.json.
  * Reads the file ONCE and extracts both models.providers and plugins.entries.
  */
+// Provider IDs that have been deprecated and should never appear as active.
+// These may still linger in openclaw.json from older versions.
+const DEPRECATED_PROVIDER_IDS = new Set(['qwen-portal']);
+
 export async function getActiveOpenClawProviders(): Promise<Set<string>> {
   const activeProviders = new Set<string>();
 
@@ -897,7 +901,7 @@ export async function getActiveOpenClawProviders(): Promise<Set<string>> {
     }
 
     // 3. agents.defaults.model.primary — the default model reference encodes
-    //    the provider prefix (e.g. "qwen-portal/coder-model" → "qwen-portal").
+    //    the provider prefix (e.g. "modelstudio/qwen3.5-plus" → "modelstudio").
     //    This covers providers that are active via OAuth or env-key but don't
     //    have an explicit models.providers entry.
     const agents = config.agents as Record<string, unknown> | undefined;
@@ -919,6 +923,11 @@ export async function getActiveOpenClawProviders(): Promise<Set<string>> {
     }
   } catch (err) {
     console.warn('Failed to read openclaw.json for active providers:', err);
+  }
+
+  // Remove deprecated providers that may still linger in config/auth files.
+  for (const deprecated of DEPRECATED_PROVIDER_IDS) {
+    activeProviders.delete(deprecated);
   }
 
   return activeProviders;
@@ -1464,6 +1473,44 @@ export async function sanitizeOpenClawConfig(): Promise<void> {
         console.log(`[sanitize] Migrated plugins.entries: ${LEGACY_QQBOT_ID} → ${NEW_QQBOT_ID}`);
         modified = true;
       }
+
+      // ── qwen-portal → modelstudio migration ────────────────────
+      // OpenClaw 2026.3.28 deprecated qwen-portal OAuth (portal.qwen.ai)
+      // in favor of Model Studio (DashScope API key).  Clean up legacy
+      // qwen-portal-auth plugin entries and qwen-portal provider config.
+      const LEGACY_QWEN_PLUGIN_ID = 'qwen-portal-auth';
+      if (Array.isArray(pluginsObj.allow)) {
+        const allowArr = pluginsObj.allow as string[];
+        const legacyIdx = allowArr.indexOf(LEGACY_QWEN_PLUGIN_ID);
+        if (legacyIdx !== -1) {
+          allowArr.splice(legacyIdx, 1);
+          console.log(`[sanitize] Removed deprecated plugin from plugins.allow: ${LEGACY_QWEN_PLUGIN_ID}`);
+          modified = true;
+        }
+      }
+      if (pEntries?.[LEGACY_QWEN_PLUGIN_ID]) {
+        delete pEntries[LEGACY_QWEN_PLUGIN_ID];
+        console.log(`[sanitize] Removed deprecated plugin from plugins.entries: ${LEGACY_QWEN_PLUGIN_ID}`);
+        modified = true;
+      }
+
+      // Remove deprecated models.providers.qwen-portal
+      const LEGACY_QWEN_PROVIDER = 'qwen-portal';
+      if (providers[LEGACY_QWEN_PROVIDER]) {
+        delete providers[LEGACY_QWEN_PROVIDER];
+        console.log(`[sanitize] Removed deprecated provider: ${LEGACY_QWEN_PROVIDER}`);
+        modified = true;
+      }
+
+      // Clean up qwen-portal OAuth auth profile (no longer functional)
+      const authConfig = config.auth as Record<string, unknown> | undefined;
+      const authProfiles = authConfig?.profiles as Record<string, unknown> | undefined;
+      if (authProfiles?.[LEGACY_QWEN_PROVIDER]) {
+        delete authProfiles[LEGACY_QWEN_PROVIDER];
+        console.log(`[sanitize] Removed deprecated auth profile: ${LEGACY_QWEN_PROVIDER}`);
+        modified = true;
+      }
+
 
       // ── Remove bare 'feishu' when canonical feishu plugin is present ──
       // The Gateway binary automatically adds bare 'feishu' to plugins.allow
