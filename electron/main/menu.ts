@@ -49,7 +49,7 @@ export function createMenu(): void {
           accelerator: 'CmdOrCtrl+N',
           click: () => {
             const win = BrowserWindow.getFocusedWindow();
-            win?.webContents.send('navigate', '/chat');
+            win?.webContents.send('new-chat');
           },
         },
         { type: 'separator' },
@@ -114,7 +114,7 @@ export function createMenu(): void {
           accelerator: 'CmdOrCtrl+2',
           click: () => {
             const win = BrowserWindow.getFocusedWindow();
-            win?.webContents.send('navigate', '/chat');
+            win?.webContents.send('navigate', '/');
           },
         },
         {
