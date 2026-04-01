@@ -235,8 +235,13 @@ export class GatewayManager extends EventEmitter {
         assertLifecycle: (phase) => {
           this.lifecycleController.assert(startEpoch, phase);
         },
-        findExistingGateway: async (port, ownedPid) => {
-          return await findExistingGatewayProcess({ port, ownedPid });
+        findExistingGateway: async (port) => {
+          // Always read the current process pid dynamically so that retries
+          // don't treat a just-spawned gateway as an orphan.  The ownedPid
+          // snapshot captured at start() entry is stale after startProcess()
+          // replaces this.process — leading to the just-started pid being
+          // immediately killed as a false orphan on the next retry iteration.
+          return await findExistingGatewayProcess({ port, ownedPid: this.process?.pid });
         },
         connect: async (port, externalToken) => {
           await this.connect(port, externalToken);
@@ -335,9 +340,14 @@ export class GatewayManager extends EventEmitter {
       }
     }
 
-    // Close WebSocket
+    // Close WebSocket — use terminate() to force-close the TCP connection
+    // immediately without waiting for the WebSocket close handshake.
+    // ws.close() sends a close frame and waits for the server to respond;
+    // if the gateway process is being killed concurrently, the handshake
+    // never completes and the connection stays ESTABLISHED indefinitely,
+    // accumulating leaked connections on every restart cycle.
     if (this.ws) {
-      this.ws.close(1000, 'Gateway stopped by user');
+      try { this.ws.terminate(); } catch { /* ignore */ }
       this.ws = null;
     }
 
@@ -427,6 +437,7 @@ export class GatewayManager extends EventEmitter {
     try {
       await this.restartInFlight;
       this.restartGovernor.recordExecuted();
+      this.restartController.recordRestartCompleted();
       const observability = this.restartGovernor.getObservability();
       const props = {
         gateway_restart_executed_total: observability.executed_total,
@@ -508,13 +519,6 @@ export class GatewayManager extends EventEmitter {
       return;
     }
 
-    if (process.platform === 'win32') {
-      logger.warn('[gateway-refresh] mode=reload result=fallback_restart cause=windows');
-      logger.debug('Windows detected, falling back to Gateway restart for reload');
-      await this.restart();
-      return;
-    }
-
     const connectedForMs = this.status.connectedAt
       ? Date.now() - this.status.connectedAt
       : Number.POSITIVE_INFINITY;
@@ -525,6 +529,15 @@ export class GatewayManager extends EventEmitter {
         `[gateway-refresh] mode=reload result=skipped_recent_connect connectedForMs=${connectedForMs} pid=${this.process.pid}`,
       );
       logger.info(`Gateway connected ${connectedForMs}ms ago, skipping reload signal`);
+      return;
+    }
+
+    if (process.platform === 'win32') {
+      // Windows does not support SIGUSR1 for in-process reload.
+      // Fall back to a full restart.  The connectedForMs < 8000 guard above
+      // already skips unnecessary restarts for recently-started processes.
+      logger.warn('[gateway-refresh] mode=reload result=fallback_restart cause=windows');
+      await this.restart();
       return;
     }
 
@@ -702,6 +715,9 @@ export class GatewayManager extends EventEmitter {
     await unloadLaunchctlGatewayService();
     this.processExitCode = null;
 
+    // Per-process dedup map for stderr lines — resets on each new spawn.
+    const stderrDedup = new Map<string, number>();
+
     const { child, lastSpawnSummary } = await launchGatewayProcess({
       port: this.status.port,
       launchContext,
@@ -712,6 +728,18 @@ export class GatewayManager extends EventEmitter {
         recordGatewayStartupStderrLine(this.recentStartupStderrLines, line);
         const classified = classifyGatewayStderrMessage(line);
         if (classified.level === 'drop') return;
+
+        // Dedup: suppress identical stderr lines after the first occurrence.
+        const count = (stderrDedup.get(classified.normalized) ?? 0) + 1;
+        stderrDedup.set(classified.normalized, count);
+        if (count > 1) {
+          // Log a summary every 50 duplicates to stay visible without flooding.
+          if (count % 50 === 0) {
+            logger.debug(`[Gateway stderr] (suppressed ${count} repeats) ${classified.normalized}`);
+          }
+          return;
+        }
+
         if (classified.level === 'debug') {
           logger.debug(`[Gateway stderr] ${classified.normalized}`);
           return;
@@ -769,23 +797,27 @@ export class GatewayManager extends EventEmitter {
           port,
           connectedAt: Date.now(),
         });
-        // On Windows, skip WebSocket heartbeat ping to avoid cascading failures:
-        // heartbeat timeout → terminate socket → reconnect → port conflict
-        // (old process holds port due to TCP TIME_WAIT) → ~2 min downtime.
-        // Gateway is a local child process; actual crashes are caught by the
-        // process exit handler, and graceful restarts use code=1012 close frames.
-        if (process.platform !== 'win32') {
-          this.startPing();
-        }
+        this.startPing();
       },
       onMessage: (message) => {
         this.handleMessage(message);
       },
-      onCloseAfterHandshake: () => {
+      onCloseAfterHandshake: (closeCode) => {
         this.connectionMonitor.clear();
         if (this.status.state === 'running') {
           this.setStatus({ state: 'stopped' });
-          this.scheduleReconnect();
+          // On Windows, skip reconnect from WS close.  The Gateway is a local
+          // child process; actual crashes are already caught by the process exit
+          // handler (`onExit`) which calls scheduleReconnect().  Triggering
+          // reconnect from WS close as well races with the exit handler and can
+          // cause double start() attempts or port conflicts during TCP TIME_WAIT.
+          //
+          // Exception: code=1012 means the Gateway is performing an in-process
+          // restart (e.g. config reload).  The UtilityProcess stays alive, so
+          // `onExit` will never fire — we MUST reconnect from the WS close path.
+          if (process.platform !== 'win32' || closeCode === 1012) {
+            this.scheduleReconnect();
+          }
         }
       },
     });
@@ -874,6 +906,14 @@ export class GatewayManager extends EventEmitter {
           ws.terminate();
         } catch (error) {
           logger.warn('Failed to terminate stale Gateway socket after heartbeat timeout:', error);
+        }
+
+        // On Windows, onCloseAfterHandshake intentionally skips scheduleReconnect()
+        // to avoid double-reconnect races with the process exit handler.  However,
+        // a heartbeat timeout means the socket is stale while the process may still
+        // be alive (no exit event), so we must explicitly trigger reconnect here.
+        if (process.platform === 'win32') {
+          this.scheduleReconnect();
         }
       },
     });

@@ -20,13 +20,15 @@ import { getApiKey, getDefaultProvider, getProvider } from '../utils/secure-stor
 import { getProviderEnvVar, getKeyableProviderTypes } from '../utils/provider-registry';
 import { getOpenClawDir, getOpenClawEntryPath, isOpenClawPresent } from '../utils/paths';
 import { getUvMirrorEnv } from '../utils/uv-env';
-import { cleanupDanglingWeChatPluginState, listConfiguredChannels } from '../utils/channel-config';
+import { cleanupDanglingWeChatPluginState, listConfiguredChannels, readOpenClawConfig } from '../utils/channel-config';
 import { syncGatewayTokenToConfig, syncBrowserConfigToOpenClaw, syncSessionIdleMinutesToOpenClaw, sanitizeOpenClawConfig } from '../utils/openclaw-auth';
 import { buildProxyEnv, resolveProxySettings } from '../utils/proxy';
 import { syncProxyConfigToOpenClaw } from '../utils/openclaw-proxy';
 import { logger } from '../utils/logger';
 import { prependPathEntry } from '../utils/env-path';
 import { copyPluginFromNodeModules, fixupPluginManifest, cpSyncSafe } from '../utils/plugin-install';
+import { stripSystemdSupervisorEnv } from './config-sync-env';
+
 
 export interface GatewayLaunchContext {
   appSettings: Awaited<ReturnType<typeof getAllSettings>>;
@@ -129,6 +131,10 @@ function ensureConfiguredPluginsUpgraded(configuredChannels: string[]): void {
         } catch (err) {
           logger.warn(`[plugin] Failed to ${isInstalled ? 'auto-upgrade' : 'install'} ${channelType} plugin:`, err);
         }
+      } else if (isInstalled) {
+        // Same version already installed — still patch manifest ID in case it was
+        // never corrected (e.g. installed before MANIFEST_ID_FIXES included this plugin).
+        fixupPluginManifest(targetDir);
       }
       continue;
     }
@@ -139,10 +145,14 @@ function ensureConfiguredPluginsUpgraded(configuredChannels: string[]): void {
       if (!existsSync(fsPath(join(npmPkgPath, 'openclaw.plugin.json')))) continue;
       const sourceVersion = readPluginVersion(join(npmPkgPath, 'package.json'));
       if (!sourceVersion) continue;
-      // Skip only if installed AND same version
-      if (isInstalled && installedVersion && sourceVersion === installedVersion) continue;
+      // Skip only if installed AND same version — but still patch manifest ID.
+      if (isInstalled && installedVersion && sourceVersion === installedVersion) {
+        fixupPluginManifest(targetDir);
+        continue;
+      }
 
       logger.info(`[plugin] ${isInstalled ? 'Auto-upgrading' : 'Installing'} ${channelType} plugin${isInstalled ? `: ${installedVersion} → ${sourceVersion}` : `: ${sourceVersion}`} (dev/node_modules)`);
+
       try {
         mkdirSync(fsPath(join(homedir(), '.openclaw', 'extensions')), { recursive: true });
         copyPluginFromNodeModules(npmPkgPath, targetDir, npmName);
@@ -185,6 +195,34 @@ export async function syncGatewayConfigBeforeLaunch(
   // the plugin manifest ID matches what sanitize wrote to the config.
   try {
     const configuredChannels = await listConfiguredChannels();
+
+    // Also ensure plugins referenced in plugins.allow are installed even if
+    // they have no channels.X section yet (e.g. qqbot added via plugins.allow
+    // but never fully saved through ClawX UI).
+    try {
+      const rawCfg = await readOpenClawConfig();
+      const allowList = Array.isArray(rawCfg.plugins?.allow) ? (rawCfg.plugins!.allow as string[]) : [];
+      // Build reverse maps: dirName → channelType AND known manifest IDs → channelType
+      const pluginIdToChannel: Record<string, string> = {};
+      for (const [channelType, info] of Object.entries(CHANNEL_PLUGIN_MAP)) {
+        pluginIdToChannel[info.dirName] = channelType;
+      }
+      // Known manifest IDs that differ from their dirName/channelType
+      pluginIdToChannel['openclaw-qqbot'] = 'qqbot';
+      pluginIdToChannel['openclaw-lark'] = 'feishu';
+      pluginIdToChannel['feishu-openclaw-plugin'] = 'feishu';
+
+      for (const pluginId of allowList) {
+        const channelType = pluginIdToChannel[pluginId] ?? pluginId;
+        if (CHANNEL_PLUGIN_MAP[channelType] && !configuredChannels.includes(channelType)) {
+          configuredChannels.push(channelType);
+        }
+      }
+
+    } catch (err) {
+      logger.warn('[plugin] Failed to augment channel list from plugins.allow:', err);
+    }
+
     ensureConfiguredPluginsUpgraded(configuredChannels);
   } catch (err) {
     logger.warn('Failed to auto-upgrade plugins:', err);
@@ -317,7 +355,7 @@ export async function prepareGatewayLaunchContext(port: number): Promise<Gateway
     ? prependPathEntry(baseEnvRecord, binPath).env
     : baseEnvRecord;
   const forkEnv: Record<string, string | undefined> = {
-    ...baseEnvPatched,
+    ...stripSystemdSupervisorEnv(baseEnvPatched),
     ...providerEnv,
     ...uvEnv,
     ...proxyEnv,

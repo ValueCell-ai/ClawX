@@ -156,7 +156,8 @@ export async function waitForPortFree(port: number, timeoutMs = 30000): Promise<
     await new Promise((resolve) => setTimeout(resolve, pollInterval));
   }
 
-  logger.warn(`Port ${port} still occupied after ${timeoutMs}ms, proceeding anyway`);
+  logger.error(`Port ${port} still occupied after ${timeoutMs}ms; aborting startup to avoid port conflict`);
+  throw new Error(`Port ${port} still occupied after ${timeoutMs}ms`);
 }
 
 async function getListeningProcessIds(port: number): Promise<string[]> {
@@ -256,15 +257,18 @@ export async function findExistingGatewayProcess(options: {
 
     return await new Promise<{ port: number; externalToken?: string } | null>((resolve) => {
       const testWs = new WebSocket(`ws://localhost:${port}/ws`);
+      const terminateAndResolve = (result: { port: number; externalToken?: string } | null) => {
+        // terminate() avoids TIME_WAIT on Windows (vs close() which does WS handshake)
+        try { testWs.terminate(); } catch { /* ignore */ }
+        resolve(result);
+      };
       const timeout = setTimeout(() => {
-        testWs.close();
-        resolve(null);
+        terminateAndResolve(null);
       }, 2000);
 
       testWs.on('open', () => {
         clearTimeout(timeout);
-        testWs.close();
-        resolve({ port });
+        terminateAndResolve({ port });
       });
 
       testWs.on('error', () => {

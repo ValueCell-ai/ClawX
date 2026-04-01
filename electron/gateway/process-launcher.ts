@@ -117,6 +117,10 @@ export async function launchGatewayProcess(options: {
   const lastSpawnSummary = `mode=${mode}, entry="${entryScript}", args="${options.sanitizeSpawnArgs(gatewayArgs).join(' ')}", cwd="${openclawDir}"`;
 
   const runtimeEnv = { ...forkEnv };
+  // Only apply the fetch/child_process preload in dev mode.
+  // In packaged builds Electron's UtilityProcess rejects NODE_OPTIONS
+  // with --require, logging "Most NODE_OPTIONs are not supported in
+  // packaged apps" and the preload never loads.
   if (!app.isPackaged) {
     try {
       const preloadPath = ensureGatewayFetchPreload();

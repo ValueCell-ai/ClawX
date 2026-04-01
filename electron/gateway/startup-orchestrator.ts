@@ -9,13 +9,13 @@ export interface ExistingGatewayInfo {
 
 type StartupHooks = {
   port: number;
-  ownedPid?: number;
+  ownedPid?: never; // Removed: pid is now read dynamically in findExistingGateway to avoid stale-snapshot bug
   shouldWaitForPortFree: boolean;
   maxStartAttempts?: number;
   resetStartupStderrLines: () => void;
   getStartupStderrLines: () => string[];
   assertLifecycle: (phase: string) => void;
-  findExistingGateway: (port: number, ownedPid?: number) => Promise<ExistingGatewayInfo | null>;
+  findExistingGateway: (port: number) => Promise<ExistingGatewayInfo | null>;
   connect: (port: number, externalToken?: string) => Promise<void>;
   onConnectedToExistingGateway: () => void;
   waitForPortFree: (port: number) => Promise<void>;
@@ -39,7 +39,7 @@ export async function runGatewayStartupSequence(hooks: StartupHooks): Promise<vo
 
     try {
       logger.debug('Checking for existing Gateway...');
-      const existing = await hooks.findExistingGateway(hooks.port, hooks.ownedPid);
+      const existing = await hooks.findExistingGateway(hooks.port);
       hooks.assertLifecycle('start/find-existing');
       if (existing) {
         logger.debug(`Found existing Gateway on port ${existing.port}`);

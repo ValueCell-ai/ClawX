@@ -36,6 +36,11 @@ async function writeOpenClawJson(config: unknown): Promise<void> {
   await writeFile(join(openclawDir, 'openclaw.json'), JSON.stringify(config, null, 2), 'utf8');
 }
 
+async function readOpenClawJson(): Promise<Record<string, unknown>> {
+  const content = await readFile(join(testHome, '.openclaw', 'openclaw.json'), 'utf8');
+  return JSON.parse(content) as Record<string, unknown>;
+}
+
 async function readAuthProfiles(agentId: string): Promise<Record<string, unknown>> {
   const content = await readFile(join(testHome, '.openclaw', 'agents', agentId, 'agent', 'auth-profiles.json'), 'utf8');
   return JSON.parse(content) as Record<string, unknown>;
@@ -115,6 +120,188 @@ describe('saveProviderKeyToOpenClaw', () => {
     );
 
     logSpy.mockRestore();
+  });
+});
+
+describe('removeProviderKeyFromOpenClaw', () => {
+  beforeEach(async () => {
+    vi.resetModules();
+    vi.restoreAllMocks();
+    await rm(testHome, { recursive: true, force: true });
+    await rm(testUserData, { recursive: true, force: true });
+  });
+
+  it('removes only the default api-key profile for a provider', async () => {
+    await writeAgentAuthProfiles('main', {
+      version: 1,
+      profiles: {
+        'custom-abc12345:default': {
+          type: 'api_key',
+          provider: 'custom-abc12345',
+          key: 'sk-main',
+        },
+        'custom-abc12345:backup': {
+          type: 'api_key',
+          provider: 'custom-abc12345',
+          key: 'sk-backup',
+        },
+      },
+      order: {
+        'custom-abc12345': [
+          'custom-abc12345:default',
+          'custom-abc12345:backup',
+        ],
+      },
+      lastGood: {
+        'custom-abc12345': 'custom-abc12345:default',
+      },
+    });
+
+    const { removeProviderKeyFromOpenClaw } = await import('@electron/utils/openclaw-auth');
+
+    await removeProviderKeyFromOpenClaw('custom-abc12345', 'main');
+
+    const mainProfiles = await readAuthProfiles('main');
+    expect(mainProfiles.profiles).toEqual({
+      'custom-abc12345:backup': {
+        type: 'api_key',
+        provider: 'custom-abc12345',
+        key: 'sk-backup',
+      },
+    });
+    expect(mainProfiles.order).toEqual({
+      'custom-abc12345': ['custom-abc12345:backup'],
+    });
+    expect(mainProfiles.lastGood).toEqual({});
+  });
+
+  it('cleans stale default-profile references even when the profile object is already missing', async () => {
+    await writeAgentAuthProfiles('main', {
+      version: 1,
+      profiles: {
+        'custom-abc12345:backup': {
+          type: 'api_key',
+          provider: 'custom-abc12345',
+          key: 'sk-backup',
+        },
+      },
+      order: {
+        'custom-abc12345': [
+          'custom-abc12345:default',
+          'custom-abc12345:backup',
+        ],
+      },
+      lastGood: {
+        'custom-abc12345': 'custom-abc12345:default',
+      },
+    });
+
+    const { removeProviderKeyFromOpenClaw } = await import('@electron/utils/openclaw-auth');
+
+    await removeProviderKeyFromOpenClaw('custom-abc12345', 'main');
+
+    const mainProfiles = await readAuthProfiles('main');
+    expect(mainProfiles.profiles).toEqual({
+      'custom-abc12345:backup': {
+        type: 'api_key',
+        provider: 'custom-abc12345',
+        key: 'sk-backup',
+      },
+    });
+    expect(mainProfiles.order).toEqual({
+      'custom-abc12345': ['custom-abc12345:backup'],
+    });
+    expect(mainProfiles.lastGood).toEqual({});
+  });
+
+  it('does not remove oauth default profiles when deleting only an api key', async () => {
+    await writeAgentAuthProfiles('main', {
+      version: 1,
+      profiles: {
+        'openai-codex:default': {
+          type: 'oauth',
+          provider: 'openai-codex',
+          access: 'acc',
+          refresh: 'ref',
+          expires: 1,
+        },
+      },
+      order: {
+        'openai-codex': ['openai-codex:default'],
+      },
+      lastGood: {
+        'openai-codex': 'openai-codex:default',
+      },
+    });
+
+    const { removeProviderKeyFromOpenClaw } = await import('@electron/utils/openclaw-auth');
+
+    await removeProviderKeyFromOpenClaw('openai-codex', 'main');
+
+    const mainProfiles = await readAuthProfiles('main');
+    expect(mainProfiles.profiles).toEqual({
+      'openai-codex:default': {
+        type: 'oauth',
+        provider: 'openai-codex',
+        access: 'acc',
+        refresh: 'ref',
+        expires: 1,
+      },
+    });
+    expect(mainProfiles.order).toEqual({
+      'openai-codex': ['openai-codex:default'],
+    });
+    expect(mainProfiles.lastGood).toEqual({
+      'openai-codex': 'openai-codex:default',
+    });
+  });
+
+  it('removes api-key defaults for oauth-capable providers that support api keys', async () => {
+    await writeAgentAuthProfiles('main', {
+      version: 1,
+      profiles: {
+        'minimax-portal:default': {
+          type: 'api_key',
+          provider: 'minimax-portal',
+          key: 'sk-minimax',
+        },
+        'minimax-portal:oauth-backup': {
+          type: 'oauth',
+          provider: 'minimax-portal',
+          access: 'acc',
+          refresh: 'ref',
+          expires: 1,
+        },
+      },
+      order: {
+        'minimax-portal': [
+          'minimax-portal:default',
+          'minimax-portal:oauth-backup',
+        ],
+      },
+      lastGood: {
+        'minimax-portal': 'minimax-portal:default',
+      },
+    });
+
+    const { removeProviderKeyFromOpenClaw } = await import('@electron/utils/openclaw-auth');
+
+    await removeProviderKeyFromOpenClaw('minimax-portal', 'main');
+
+    const mainProfiles = await readAuthProfiles('main');
+    expect(mainProfiles.profiles).toEqual({
+      'minimax-portal:oauth-backup': {
+        type: 'oauth',
+        provider: 'minimax-portal',
+        access: 'acc',
+        refresh: 'ref',
+        expires: 1,
+      },
+    });
+    expect(mainProfiles.order).toEqual({
+      'minimax-portal': ['minimax-portal:oauth-backup'],
+    });
+    expect(mainProfiles.lastGood).toEqual({});
   });
 });
 
@@ -291,5 +478,87 @@ describe('auth-backed provider discovery', () => {
       openai: {},
       anthropic: {},
     });
+  });
+
+  it('removes all matching auth profiles for a deleted provider so it does not reappear', async () => {
+    await writeOpenClawJson({
+      agents: {
+        list: [
+          { id: 'main', name: 'Main', default: true, workspace: '~/.openclaw/workspace', agentDir: '~/.openclaw/agents/main/agent' },
+          { id: 'work', name: 'Work', workspace: '~/.openclaw/workspace-work', agentDir: '~/.openclaw/agents/work/agent' },
+        ],
+      },
+      models: {
+        providers: {
+          'custom-abc12345': {
+            baseUrl: 'https://api.moonshot.cn/v1',
+            api: 'openai-completions',
+          },
+        },
+      },
+      auth: {
+        profiles: {
+          'custom-abc12345:oauth': {
+            type: 'oauth',
+            provider: 'custom-abc12345',
+            access: 'acc',
+            refresh: 'ref',
+            expires: 1,
+          },
+          'custom-abc12345:secondary': {
+            type: 'api_key',
+            provider: 'custom-abc12345',
+            key: 'sk-inline',
+          },
+        },
+      },
+    });
+
+    await writeAgentAuthProfiles('main', {
+      version: 1,
+      profiles: {
+        'custom-abc12345:default': {
+          type: 'api_key',
+          provider: 'custom-abc12345',
+          key: 'sk-main',
+        },
+        'custom-abc12345:backup': {
+          type: 'api_key',
+          provider: 'custom-abc12345',
+          key: 'sk-backup',
+        },
+      },
+      order: {
+        'custom-abc12345': [
+          'custom-abc12345:default',
+          'custom-abc12345:backup',
+        ],
+      },
+      lastGood: {
+        'custom-abc12345': 'custom-abc12345:backup',
+      },
+    });
+
+    const {
+      getActiveOpenClawProviders,
+      getOpenClawProvidersConfig,
+      removeProviderFromOpenClaw,
+    } = await import('@electron/utils/openclaw-auth');
+
+    await expect(getActiveOpenClawProviders()).resolves.toEqual(new Set(['custom-abc12345']));
+
+    await removeProviderFromOpenClaw('custom-abc12345');
+
+    const mainProfiles = await readAuthProfiles('main');
+    const config = await readOpenClawJson();
+    const result = await getOpenClawProvidersConfig();
+
+    expect(mainProfiles.profiles).toEqual({});
+    expect(mainProfiles.order).toEqual({});
+    expect(mainProfiles.lastGood).toEqual({});
+    expect((config.auth as { profiles?: Record<string, unknown> }).profiles).toEqual({});
+    expect((config.models as { providers?: Record<string, unknown> }).providers).toEqual({});
+    expect(result.providers).toEqual({});
+    await expect(getActiveOpenClawProviders()).resolves.toEqual(new Set());
   });
 });

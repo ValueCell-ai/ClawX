@@ -93,6 +93,82 @@ interface AuthProfilesStore {
   lastGood?: Record<string, string>;
 }
 
+function removeProfilesForProvider(store: AuthProfilesStore, provider: string): boolean {
+  const removedProfileIds = new Set<string>();
+
+  for (const [profileId, profile] of Object.entries(store.profiles)) {
+    if (profile?.provider !== provider) {
+      continue;
+    }
+    delete store.profiles[profileId];
+    removedProfileIds.add(profileId);
+  }
+
+  if (removedProfileIds.size === 0) {
+    return false;
+  }
+
+  if (store.order) {
+    for (const [orderProvider, profileIds] of Object.entries(store.order)) {
+      const nextProfileIds = profileIds.filter((profileId) => !removedProfileIds.has(profileId));
+      if (nextProfileIds.length > 0) {
+        store.order[orderProvider] = nextProfileIds;
+      } else {
+        delete store.order[orderProvider];
+      }
+    }
+  }
+
+  if (store.lastGood) {
+    for (const [lastGoodProvider, profileId] of Object.entries(store.lastGood)) {
+      if (removedProfileIds.has(profileId)) {
+        delete store.lastGood[lastGoodProvider];
+      }
+    }
+  }
+
+  return true;
+}
+
+function removeProfileFromStore(
+  store: AuthProfilesStore,
+  profileId: string,
+  expectedType?: AuthProfileEntry['type'] | OAuthProfileEntry['type'],
+): boolean {
+  const profile = store.profiles[profileId];
+  let changed = false;
+  const shouldCleanReferences = !profile || !expectedType || profile.type === expectedType;
+  if (profile && (!expectedType || profile.type === expectedType)) {
+    delete store.profiles[profileId];
+    changed = true;
+  }
+
+  if (shouldCleanReferences && store.order) {
+    for (const [orderProvider, profileIds] of Object.entries(store.order)) {
+      const nextProfileIds = profileIds.filter((id) => id !== profileId);
+      if (nextProfileIds.length !== profileIds.length) {
+        changed = true;
+      }
+      if (nextProfileIds.length > 0) {
+        store.order[orderProvider] = nextProfileIds;
+      } else {
+        delete store.order[orderProvider];
+      }
+    }
+  }
+
+  if (shouldCleanReferences && store.lastGood) {
+    for (const [lastGoodProvider, lastGoodProfileId] of Object.entries(store.lastGood)) {
+      if (lastGoodProfileId === profileId) {
+        delete store.lastGood[lastGoodProvider];
+        changed = true;
+      }
+    }
+  }
+
+  return changed;
+}
+
 // ── Auth Profiles I/O ────────────────────────────────────────────
 
 function getAuthProfilesPath(agentId = 'main'): string {
@@ -346,26 +422,14 @@ export async function removeProviderKeyFromOpenClaw(
   provider: string,
   agentId?: string
 ): Promise<void> {
-  if (isOAuthProviderType(provider)) {
-    console.log(`Skipping auth-profiles removal for OAuth provider "${provider}" (managed by OpenClaw plugin)`);
-    return;
-  }
   const agentIds = agentId ? [agentId] : await discoverAgentIds();
   if (agentIds.length === 0) agentIds.push('main');
 
   for (const id of agentIds) {
     const store = await readAuthProfiles(id);
-    const profileId = `${provider}:default`;
-
-    delete store.profiles[profileId];
-
-    if (store.order?.[provider]) {
-      store.order[provider] = store.order[provider].filter((aid) => aid !== profileId);
-      if (store.order[provider].length === 0) delete store.order[provider];
+    if (removeProfileFromStore(store, `${provider}:default`, 'api_key')) {
+      await writeAuthProfiles(store, id);
     }
-    if (store.lastGood?.[provider] === profileId) delete store.lastGood[provider];
-
-    await writeAuthProfiles(store, id);
   }
   console.log(`Removed API key for provider "${provider}" from OpenClaw auth-profiles (agents: ${agentIds.join(', ')})`);
 }
@@ -379,14 +443,7 @@ export async function removeProviderFromOpenClaw(provider: string): Promise<void
   if (agentIds.length === 0) agentIds.push('main');
   for (const id of agentIds) {
     const store = await readAuthProfiles(id);
-    const profileId = `${provider}:default`;
-    if (store.profiles[profileId]) {
-      delete store.profiles[profileId];
-      if (store.order?.[provider]) {
-        store.order[provider] = store.order[provider].filter((aid) => aid !== profileId);
-        if (store.order[provider].length === 0) delete store.order[provider];
-      }
-      if (store.lastGood?.[provider] === profileId) delete store.lastGood[provider];
+    if (removeProfilesForProvider(store, provider)) {
       await writeAuthProfiles(store, id);
     }
   }
@@ -416,7 +473,7 @@ export async function removeProviderFromOpenClaw(provider: string): Promise<void
       const config = await readOpenClawJson();
       let modified = false;
 
-      // Disable plugin (for OAuth like qwen-portal-auth)
+      // Disable plugin (for OAuth like minimax-portal-auth)
       const plugins = config.plugins as Record<string, unknown> | undefined;
       const entries = (plugins?.entries ?? {}) as Record<string, Record<string, unknown>>;
       const pluginName = `${provider}-auth`;
@@ -433,6 +490,25 @@ export async function removeProviderFromOpenClaw(provider: string): Promise<void
         delete providers[provider];
         modified = true;
         console.log(`Removed OpenClaw provider config: ${provider}`);
+      }
+
+      const auth = (config.auth && typeof config.auth === 'object'
+        ? config.auth as Record<string, unknown>
+        : null);
+      const authProfiles = (
+        auth?.profiles && typeof auth.profiles === 'object'
+          ? auth.profiles as Record<string, AuthProfileEntry | OAuthProfileEntry>
+          : null
+      );
+      if (authProfiles) {
+        for (const [profileId, profile] of Object.entries(authProfiles)) {
+          if (profile?.provider !== provider) {
+            continue;
+          }
+          delete authProfiles[profileId];
+          modified = true;
+          console.log(`Removed OpenClaw auth profile: ${profileId}`);
+        }
       }
 
       // Clean up agents.defaults.model references that point to the deleted provider.
@@ -796,6 +872,10 @@ export async function setOpenClawDefaultModelWithOverride(
  * Get a set of all active provider IDs configured in openclaw.json.
  * Reads the file ONCE and extracts both models.providers and plugins.entries.
  */
+// Provider IDs that have been deprecated and should never appear as active.
+// These may still linger in openclaw.json from older versions.
+const DEPRECATED_PROVIDER_IDS = new Set(['qwen-portal']);
+
 export async function getActiveOpenClawProviders(): Promise<Set<string>> {
   const activeProviders = new Set<string>();
 
@@ -821,7 +901,7 @@ export async function getActiveOpenClawProviders(): Promise<Set<string>> {
     }
 
     // 3. agents.defaults.model.primary — the default model reference encodes
-    //    the provider prefix (e.g. "qwen-portal/coder-model" → "qwen-portal").
+    //    the provider prefix (e.g. "modelstudio/qwen3.5-plus" → "modelstudio").
     //    This covers providers that are active via OAuth or env-key but don't
     //    have an explicit models.providers entry.
     const agents = config.agents as Record<string, unknown> | undefined;
@@ -843,6 +923,11 @@ export async function getActiveOpenClawProviders(): Promise<Set<string>> {
     }
   } catch (err) {
     console.warn('Failed to read openclaw.json for active providers:', err);
+  }
+
+  // Remove deprecated providers that may still linger in config/auth files.
+  for (const deprecated of DEPRECATED_PROVIDER_IDS) {
+    activeProviders.delete(deprecated);
   }
 
   return activeProviders;
@@ -1274,10 +1359,24 @@ export async function sanitizeOpenClawConfig(): Promise<void> {
       toolsModified = true;
     }
 
+    // ── tools.exec approvals (OpenClaw 3.28+) ──────────────────────
+    // ClawX is a local desktop app where the user is the trusted operator.
+    // Exec approval prompts add unnecessary friction in this context, so we
+    // set security="full" (allow all commands) and ask="off" (never prompt).
+    // If a user has manually configured a stricter ~/.openclaw/exec-approvals.json,
+    // OpenClaw's minSecurity/maxAsk merge will still respect their intent.
+    const execConfig = (toolsConfig.exec as Record<string, unknown> | undefined) || {};
+    if (execConfig.security !== 'full' || execConfig.ask !== 'off') {
+      execConfig.security = 'full';
+      execConfig.ask = 'off';
+      toolsConfig.exec = execConfig;
+      toolsModified = true;
+      console.log('[sanitize] Set tools.exec.security="full" and tools.exec.ask="off" to disable exec approvals for ClawX desktop');
+    }
+
     if (toolsModified) {
       config.tools = toolsConfig;
       modified = true;
-      console.log('[sanitize] Enforced tools.profile="full" and tools.sessions.visibility="all" for OpenClaw 3.8+');
     }
 
     // ── plugins.entries.feishu cleanup ──────────────────────────────
@@ -1359,6 +1458,73 @@ export async function sanitizeOpenClawConfig(): Promise<void> {
         console.log(`[sanitize] Migrated plugins.entries: ${LEGACY_WECOM_ID} → ${NEW_WECOM_ID}`);
         modified = true;
       }
+
+      // ── qqbot → openclaw-qqbot migration ────────────────────────
+      // The qqbot npm package (@tencent-connect/openclaw-qqbot) declares
+      // id="openclaw-qqbot" in its manifest, but older ClawX versions
+      // wrote bare "qqbot" into plugins.allow.  Migrate to the manifest ID
+      // so the Gateway can resolve the plugin correctly.
+      const LEGACY_QQBOT_ID = 'qqbot';
+      const NEW_QQBOT_ID = 'openclaw-qqbot';
+      if (Array.isArray(pluginsObj.allow)) {
+        const allowArr = pluginsObj.allow as string[];
+        const legacyIdx = allowArr.indexOf(LEGACY_QQBOT_ID);
+        if (legacyIdx !== -1) {
+          if (!allowArr.includes(NEW_QQBOT_ID)) {
+            allowArr[legacyIdx] = NEW_QQBOT_ID;
+          } else {
+            allowArr.splice(legacyIdx, 1);
+          }
+          console.log(`[sanitize] Migrated plugins.allow: ${LEGACY_QQBOT_ID} → ${NEW_QQBOT_ID}`);
+          modified = true;
+        }
+      }
+      if (pEntries?.[LEGACY_QQBOT_ID]) {
+        if (!pEntries[NEW_QQBOT_ID]) {
+          pEntries[NEW_QQBOT_ID] = pEntries[LEGACY_QQBOT_ID];
+        }
+        delete pEntries[LEGACY_QQBOT_ID];
+        console.log(`[sanitize] Migrated plugins.entries: ${LEGACY_QQBOT_ID} → ${NEW_QQBOT_ID}`);
+        modified = true;
+      }
+
+      // ── qwen-portal → modelstudio migration ────────────────────
+      // OpenClaw 2026.3.28 deprecated qwen-portal OAuth (portal.qwen.ai)
+      // in favor of Model Studio (DashScope API key).  Clean up legacy
+      // qwen-portal-auth plugin entries and qwen-portal provider config.
+      const LEGACY_QWEN_PLUGIN_ID = 'qwen-portal-auth';
+      if (Array.isArray(pluginsObj.allow)) {
+        const allowArr = pluginsObj.allow as string[];
+        const legacyIdx = allowArr.indexOf(LEGACY_QWEN_PLUGIN_ID);
+        if (legacyIdx !== -1) {
+          allowArr.splice(legacyIdx, 1);
+          console.log(`[sanitize] Removed deprecated plugin from plugins.allow: ${LEGACY_QWEN_PLUGIN_ID}`);
+          modified = true;
+        }
+      }
+      if (pEntries?.[LEGACY_QWEN_PLUGIN_ID]) {
+        delete pEntries[LEGACY_QWEN_PLUGIN_ID];
+        console.log(`[sanitize] Removed deprecated plugin from plugins.entries: ${LEGACY_QWEN_PLUGIN_ID}`);
+        modified = true;
+      }
+
+      // Remove deprecated models.providers.qwen-portal
+      const LEGACY_QWEN_PROVIDER = 'qwen-portal';
+      if (providers[LEGACY_QWEN_PROVIDER]) {
+        delete providers[LEGACY_QWEN_PROVIDER];
+        console.log(`[sanitize] Removed deprecated provider: ${LEGACY_QWEN_PROVIDER}`);
+        modified = true;
+      }
+
+      // Clean up qwen-portal OAuth auth profile (no longer functional)
+      const authConfig = config.auth as Record<string, unknown> | undefined;
+      const authProfiles = authConfig?.profiles as Record<string, unknown> | undefined;
+      if (authProfiles?.[LEGACY_QWEN_PROVIDER]) {
+        delete authProfiles[LEGACY_QWEN_PROVIDER];
+        console.log(`[sanitize] Removed deprecated auth profile: ${LEGACY_QWEN_PROVIDER}`);
+        modified = true;
+      }
+
 
       // ── Remove bare 'feishu' when canonical feishu plugin is present ──
       // The Gateway binary automatically adds bare 'feishu' to plugins.allow

@@ -61,14 +61,22 @@ describe('provider-model-sync', () => {
     });
   });
 
-  it('returns null for oauth and multi-instance providers', () => {
+  it('builds modelstudio payload and returns null for multi-instance providers', () => {
     expect(
       buildNonOAuthAgentProviderUpdate(
-        providerConfig({ type: 'qwen-portal', id: 'qwen-portal' }),
-        'qwen-portal',
-        'qwen-portal/coder-model',
+        providerConfig({ type: 'modelstudio', id: 'modelstudio' }),
+        'modelstudio',
+        'modelstudio/qwen3.5-plus',
       ),
-    ).toBeNull();
+    ).toEqual({
+      providerKey: 'modelstudio',
+      entry: {
+        baseUrl: 'https://coding.dashscope.aliyuncs.com/v1',
+        api: 'openai-completions',
+        apiKey: 'MODELSTUDIO_API_KEY',
+        models: [{ id: 'qwen3.5-plus', name: 'qwen3.5-plus' }],
+      },
+    });
 
     expect(
       buildNonOAuthAgentProviderUpdate(

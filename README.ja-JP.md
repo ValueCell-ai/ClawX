@@ -337,6 +337,7 @@ pnpm typecheck            # TypeScriptの型チェック
 # テスト
 pnpm test                 # ユニットテストを実行
 pnpm run test:e2e         # Electron E2E スモークテストを実行
+pnpm run test:e2e:headed  # 表示付きウィンドウで Electron E2E を実行
 pnpm run comms:replay     # 通信リプレイ指標を算出
 pnpm run comms:baseline   # 通信ベースラインを更新
 pnpm run comms:compare    # リプレイ指標をベースライン閾値と比較

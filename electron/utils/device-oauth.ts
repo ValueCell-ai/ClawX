@@ -1,11 +1,10 @@
 /**
  * Device OAuth Manager
  *
- * Manages Device Code OAuth flows for MiniMax and Qwen providers.
+ * Manages Device Code OAuth flows for MiniMax providers.
  *
  * The OAuth protocol implementations are fully self-contained in:
  *   - ./minimax-oauth.ts  (MiniMax Device Code + PKCE)
- *   - ./qwen-oauth.ts     (Qwen Device Code + PKCE)
  *
  * This approach:
  * - Hardcodes client_id and endpoints (same as openai-codex-oauth.ts)
@@ -24,12 +23,11 @@ import { getProviderDefaultModel } from './provider-registry';
 import { proxyAwareFetch } from './proxy-fetch';
 import { saveOAuthTokenToOpenClaw, setOpenClawDefaultModelWithOverride } from './openclaw-auth';
 import { loginMiniMaxPortalOAuth, type MiniMaxOAuthToken, type MiniMaxRegion } from './minimax-oauth';
-import { loginQwenPortalOAuth, type QwenOAuthToken } from './qwen-oauth';
 
-export type OAuthProviderType = 'minimax-portal' | 'minimax-portal-cn' | 'qwen-portal';
+export type OAuthProviderType = 'minimax-portal' | 'minimax-portal-cn';
 
 // Re-export types for consumers
-export type { MiniMaxRegion, MiniMaxOAuthToken, QwenOAuthToken };
+export type { MiniMaxRegion, MiniMaxOAuthToken };
 
 // ─────────────────────────────────────────────────────────────
 // DeviceOAuthManager
@@ -76,8 +74,6 @@ class DeviceOAuthManager extends EventEmitter {
             if (provider === 'minimax-portal' || provider === 'minimax-portal-cn') {
                 const actualRegion = provider === 'minimax-portal-cn' ? 'cn' : (region || 'global');
                 await this.runMiniMaxFlow(actualRegion, provider);
-            } else if (provider === 'qwen-portal') {
-                await this.runQwenFlow();
             } else {
                 throw new Error(`Unsupported OAuth provider type: ${provider}`);
             }
@@ -152,47 +148,7 @@ class DeviceOAuthManager extends EventEmitter {
         });
     }
 
-    // ─────────────────────────────────────────────────────────
-    // Qwen flow
-    // ─────────────────────────────────────────────────────────
 
-    private async runQwenFlow(): Promise<void> {
-        const provider = this.activeProvider!;
-
-        const token: QwenOAuthToken = await this.runWithProxyAwareFetch(() => loginQwenPortalOAuth({
-            openUrl: async (url: string) => {
-                logger.info(`[DeviceOAuth] Qwen opening browser: ${url}`);
-                shell.openExternal(url).catch((err: unknown) =>
-                    logger.warn(`[DeviceOAuth] Failed to open browser:`, err)
-                );
-            },
-            note: async (message: string, _title?: string) => {
-                if (!this.active) return;
-                const { verificationUri, userCode } = this.parseNote(message);
-                if (verificationUri && userCode) {
-                    this.emitCode({ provider, verificationUri, userCode, expiresIn: 300 });
-                } else {
-                    logger.info(`[DeviceOAuth] Qwen note: ${message}`);
-                }
-            },
-            progress: {
-                update: (msg: string) => logger.info(`[DeviceOAuth] Qwen progress: ${msg}`),
-                stop: (msg?: string) => logger.info(`[DeviceOAuth] Qwen progress done: ${msg ?? ''}`),
-            },
-        }));
-
-        if (!this.active) return;
-
-        await this.onSuccess('qwen-portal', {
-            access: token.access,
-            refresh: token.refresh,
-            expires: token.expires,
-            // Qwen returns a per-account resourceUrl as the API base URL
-            resourceUrl: token.resourceUrl,
-            // Qwen uses OpenAI Completions API format
-            api: 'openai-completions',
-        });
-    }
 
     // ─────────────────────────────────────────────────────────
     // Success handler
@@ -235,7 +191,7 @@ class DeviceOAuthManager extends EventEmitter {
         //    or falls back to the provider's default public endpoint.
         const defaultBaseUrl = providerType === 'minimax-portal'
             ? 'https://api.minimax.io/anthropic'
-            : (providerType === 'minimax-portal-cn' ? 'https://api.minimaxi.com/anthropic' : 'https://portal.qwen.ai/v1');
+            : 'https://api.minimaxi.com/anthropic';
 
         let baseUrl = token.resourceUrl || defaultBaseUrl;
 
@@ -247,11 +203,6 @@ class DeviceOAuthManager extends EventEmitter {
         // Ensure the base URL ends with /anthropic
         if (providerType.startsWith('minimax-portal') && baseUrl) {
             baseUrl = baseUrl.replace(/\/v1$/, '').replace(/\/anthropic$/, '').replace(/\/$/, '') + '/anthropic';
-        } else if (providerType === 'qwen-portal' && baseUrl) {
-            // Ensure Qwen API gets /v1 at the end
-            if (!baseUrl.endsWith('/v1')) {
-                baseUrl = baseUrl.replace(/\/$/, '') + '/v1';
-            }
         }
 
         try {
@@ -263,7 +214,7 @@ class DeviceOAuthManager extends EventEmitter {
                 authHeader: providerType.startsWith('minimax-portal') ? true : undefined,
                 // OAuth placeholder — tells Gateway to resolve credentials
                 // from auth-profiles.json (type: 'oauth') instead of a static API key.
-                apiKeyEnv: tokenProviderId === 'minimax-portal' ? 'minimax-oauth' : 'qwen-oauth',
+                apiKeyEnv: 'minimax-oauth',
             });
         } catch (err) {
             logger.warn(`[DeviceOAuth] Failed to configure openclaw models:`, err);
@@ -274,7 +225,6 @@ class DeviceOAuthManager extends EventEmitter {
         const nameMap: Record<OAuthProviderType, string> = {
             'minimax-portal': 'MiniMax (Global)',
             'minimax-portal-cn': 'MiniMax (CN)',
-            'qwen-portal': 'Qwen',
         };
         const providerConfig: ProviderConfig = {
             id: accountId,

@@ -2,7 +2,6 @@ import type { ProviderAccount, ProviderConfig, ProviderType } from '../../shared
 import { getProviderDefinition } from '../../shared/providers/registry';
 import { getClawXProviderStore } from './store-instance';
 
-const PROVIDER_STORE_SCHEMA_VERSION = 1;
 
 function inferAuthMode(type: ProviderType): ProviderAccount['authMode'] {
   if (type === 'ollama') {
@@ -75,7 +74,6 @@ export async function saveProviderAccount(account: ProviderAccount): Promise<voi
   const accounts = (store.get('providerAccounts') ?? {}) as Record<string, ProviderAccount>;
   accounts[account.id] = account;
   store.set('providerAccounts', accounts);
-  store.set('schemaVersion', PROVIDER_STORE_SCHEMA_VERSION);
 }
 
 export async function deleteProviderAccount(accountId: string): Promise<void> {

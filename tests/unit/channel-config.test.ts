@@ -204,7 +204,7 @@ describe('WeCom plugin configuration', () => {
     const config = await readOpenClawJson();
     const plugins = config.plugins as { allow: string[] };
 
-    expect(plugins.allow).toEqual(expect.arrayContaining(['qqbot', 'discord', 'whatsapp']));
+    expect(plugins.allow).toEqual(expect.arrayContaining(['openclaw-qqbot', 'discord', 'whatsapp']));
   });
 });
 

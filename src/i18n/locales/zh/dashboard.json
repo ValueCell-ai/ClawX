@@ -58,6 +58,8 @@
         "cost": "费用 ${{amount}}",
         "viewContent": "查看内容",
         "contentDialogTitle": "用量明细内容",
-        "close": "关闭"
+        "close": "关闭",
+        "noUsage": "无用量数据",
+        "usageParseError": "用量解析失败"
     }
 }

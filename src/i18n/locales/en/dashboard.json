@@ -58,6 +58,8 @@
         "cost": "Cost ${{amount}}",
         "viewContent": "View content",
         "contentDialogTitle": "Usage detail content",
-        "close": "Close"
+        "close": "Close",
+        "noUsage": "No usage",
+        "usageParseError": "Usage parse error"
     }
 }

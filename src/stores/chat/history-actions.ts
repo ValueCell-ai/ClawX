@@ -6,6 +6,7 @@ import {
   enrichWithToolResultFiles,
   getMessageText,
   hasNonToolAssistantContent,
+  isInternalMessage,
   isToolResultRole,
   loadMissingPreviews,
   toMs,
@@ -52,7 +53,7 @@ export function createHistoryActions(
         if (!isCurrentSession()) return;
         // Before filtering: attach images/files from tool_result messages to the next assistant message
         const messagesWithToolImages = enrichWithToolResultFiles(rawMessages);
-        const filteredMessages = messagesWithToolImages.filter((msg) => !isToolResultRole(msg.role));
+        const filteredMessages = messagesWithToolImages.filter((msg) => !isToolResultRole(msg.role) && !isInternalMessage(msg));
         // Restore file attachments for user/assistant messages (from cache + text patterns)
         const enrichedMessages = enrichWithCachedImages(filteredMessages);
 

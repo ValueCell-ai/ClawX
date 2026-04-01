@@ -6,6 +6,7 @@ import { getAllProviders, getApiKey, getDefaultProvider, getProvider } from '../
 import { getProviderConfig, getProviderDefaultModel } from '../../utils/provider-registry';
 import {
   removeProviderFromOpenClaw,
+  removeProviderKeyFromOpenClaw,
   saveOAuthTokenToOpenClaw,
   saveProviderKeyToOpenClaw,
   setOpenClawDefaultModel,
@@ -20,7 +21,7 @@ import { listAgentsSnapshot } from '../../utils/agent-config';
 const GOOGLE_OAUTH_RUNTIME_PROVIDER = 'google-gemini-cli';
 const GOOGLE_OAUTH_DEFAULT_MODEL_REF = `${GOOGLE_OAUTH_RUNTIME_PROVIDER}/gemini-3-pro-preview`;
 const OPENAI_OAUTH_RUNTIME_PROVIDER = 'openai-codex';
-const OPENAI_OAUTH_DEFAULT_MODEL_REF = `${OPENAI_OAUTH_RUNTIME_PROVIDER}/gpt-5.3-codex`;
+const OPENAI_OAUTH_DEFAULT_MODEL_REF = `${OPENAI_OAUTH_RUNTIME_PROVIDER}/gpt-5.4`;
 
 type RuntimeProviderSyncContext = {
   runtimeProviderKey: string;
@@ -347,6 +348,24 @@ async function syncProviderToRuntime(
   return context;
 }
 
+async function removeDeletedProviderFromOpenClaw(
+  provider: ProviderConfig,
+  providerId: string,
+  runtimeProviderKey?: string,
+): Promise<void> {
+  const keys = new Set<string>();
+  if (runtimeProviderKey) {
+    keys.add(runtimeProviderKey);
+  } else {
+    keys.add(await resolveRuntimeProviderKey({ ...provider, id: providerId }));
+  }
+  keys.add(providerId);
+
+  for (const key of keys) {
+    await removeProviderFromOpenClaw(key);
+  }
+}
+
 function parseModelRef(modelRef: string): { providerKey: string; modelId: string } | null {
   const trimmed = modelRef.trim();
   const separatorIndex = trimmed.indexOf('/');
@@ -401,13 +420,6 @@ async function buildAgentModelProviderEntry(
     } else {
       authHeader = true;
       apiKey = 'minimax-oauth';
-    }
-  } else if (config.type === 'qwen-portal') {
-    const accountApiKey = await getApiKey(config.id);
-    if (accountApiKey) {
-      apiKey = accountApiKey;
-    } else {
-      apiKey = 'qwen-oauth';
     }
   }
 
@@ -538,7 +550,7 @@ export async function syncDeletedProviderToRuntime(
   }
 
   const ock = runtimeProviderKey ?? await resolveRuntimeProviderKey({ ...provider, id: providerId });
-  await removeProviderFromOpenClaw(ock);
+  await removeDeletedProviderFromOpenClaw(provider, providerId, ock);
 
   scheduleGatewayRefresh(
     gatewayManager,
@@ -557,7 +569,7 @@ export async function syncDeletedProviderApiKeyToRuntime(
   }
 
   const ock = runtimeProviderKey ?? await resolveRuntimeProviderKey({ ...provider, id: providerId });
-  await removeProviderFromOpenClaw(ock);
+  await removeProviderKeyFromOpenClaw(ock);
 }
 
 export async function syncDefaultProviderToRuntime(
@@ -572,7 +584,7 @@ export async function syncDefaultProviderToRuntime(
   const ock = await resolveRuntimeProviderKey(provider);
   const providerKey = await getApiKey(providerId);
   const fallbackModels = await getProviderFallbackModelRefs(provider);
-  const oauthTypes = ['qwen-portal', 'minimax-portal', 'minimax-portal-cn'];
+  const oauthTypes = ['minimax-portal', 'minimax-portal-cn'];
   const browserOAuthRuntimeProvider = await getBrowserOAuthRuntimeProvider(provider);
   const isOAuthProvider = (oauthTypes.includes(provider.type) && !providerKey) || Boolean(browserOAuthRuntimeProvider);
 
@@ -643,20 +655,15 @@ export async function syncDefaultProviderToRuntime(
 
     const defaultBaseUrl = provider.type === 'minimax-portal'
       ? 'https://api.minimax.io/anthropic'
-      : (provider.type === 'minimax-portal-cn' ? 'https://api.minimaxi.com/anthropic' : 'https://portal.qwen.ai/v1');
-    const api: 'anthropic-messages' | 'openai-completions' =
-      (provider.type === 'minimax-portal' || provider.type === 'minimax-portal-cn')
-        ? 'anthropic-messages'
-        : 'openai-completions';
+      : 'https://api.minimaxi.com/anthropic';
+    const api = 'anthropic-messages' as const;
 
     let baseUrl = provider.baseUrl || defaultBaseUrl;
-    if ((provider.type === 'minimax-portal' || provider.type === 'minimax-portal-cn') && baseUrl) {
+    if (baseUrl) {
       baseUrl = baseUrl.replace(/\/v1$/, '').replace(/\/anthropic$/, '').replace(/\/$/, '') + '/anthropic';
     }
 
-    const targetProviderKey = (provider.type === 'minimax-portal' || provider.type === 'minimax-portal-cn')
-      ? 'minimax-portal'
-      : provider.type;
+    const targetProviderKey = 'minimax-portal';
 
     await setOpenClawDefaultModelWithOverride(targetProviderKey, getProviderModelRef(provider), {
       baseUrl,

@@ -323,6 +323,30 @@ export function Settings() {
     setProxyBypassRulesDraft(proxyBypassRules);
   }, [proxyBypassRules]);
 
+  const proxySettingsDirty = useMemo(() => {
+    return (
+      proxyEnabledDraft !== proxyEnabled
+      || proxyServerDraft.trim() !== proxyServer
+      || proxyHttpServerDraft.trim() !== proxyHttpServer
+      || proxyHttpsServerDraft.trim() !== proxyHttpsServer
+      || proxyAllServerDraft.trim() !== proxyAllServer
+      || proxyBypassRulesDraft.trim() !== proxyBypassRules
+    );
+  }, [
+    proxyAllServer,
+    proxyAllServerDraft,
+    proxyBypassRules,
+    proxyBypassRulesDraft,
+    proxyEnabled,
+    proxyEnabledDraft,
+    proxyHttpServer,
+    proxyHttpServerDraft,
+    proxyHttpsServer,
+    proxyHttpsServerDraft,
+    proxyServer,
+    proxyServerDraft,
+  ]);
+
   const handleSaveProxySettings = async () => {
     setSavingProxy(true);
     try {
@@ -448,7 +472,7 @@ export function Settings() {
   };
 
   return (
-    <div className="flex flex-col -m-6 dark:bg-background h-[calc(100vh-2.5rem)] overflow-hidden">
+    <div data-testid="settings-page" className="flex flex-col -m-6 dark:bg-background h-[calc(100vh-2.5rem)] overflow-hidden">
       <div className="w-full max-w-5xl mx-auto flex flex-col h-full p-10 pt-16">
 
         {/* Header */}
@@ -614,6 +638,7 @@ export function Settings() {
                 <Switch
                   checked={devModeUnlocked}
                   onCheckedChange={setDevModeUnlocked}
+                  data-testid="settings-dev-mode-switch"
                 />
               </div>
 
@@ -638,13 +663,13 @@ export function Settings() {
           {devModeUnlocked && (
             <>
               <Separator className="bg-black/5 dark:bg-white/5" />
-              <div>
-                <h2 className="text-3xl font-serif text-foreground mb-6 font-normal tracking-tight" style={{ fontFamily: 'Georgia, Cambria, "Times New Roman", Times, serif' }}>
+              <div data-testid="settings-developer-section">
+                <h2 data-testid="settings-developer-title" className="text-3xl font-serif text-foreground mb-6 font-normal tracking-tight" style={{ fontFamily: 'Georgia, Cambria, "Times New Roman", Times, serif' }}>
                   {t('developer.title')}
                 </h2>
                 <div className="space-y-8">
                   {/* Gateway Proxy */}
-                  <div className="space-y-4">
+                  <div className="space-y-4" data-testid="settings-proxy-section">
                     <div className="flex items-center justify-between">
                       <div>
                         <Label className="text-[14px] font-medium text-foreground/80">Gateway Proxy</Label>
@@ -655,7 +680,24 @@ export function Settings() {
                       <Switch
                         checked={proxyEnabledDraft}
                         onCheckedChange={setProxyEnabledDraft}
+                        data-testid="settings-proxy-toggle"
                       />
+                    </div>
+
+                    <div className="flex items-center gap-4">
+                      <Button
+                        variant="outline"
+                        onClick={handleSaveProxySettings}
+                        disabled={savingProxy || !proxySettingsDirty}
+                        data-testid="settings-proxy-save-button"
+                        className="rounded-xl h-10 px-5 bg-transparent border-black/10 dark:border-white/10 hover:bg-black/5 dark:hover:bg-white/5"
+                      >
+                        <RefreshCw className={`h-4 w-4 mr-2${savingProxy ? ' animate-spin' : ''}`} />
+                        {savingProxy ? t('common:status.saving') : t('common:actions.save')}
+                      </Button>
+                      <p className="text-[12px] text-muted-foreground">
+                        {t('gateway.proxyRestartNote')}
+                      </p>
                     </div>
 
                     {proxyEnabledDraft && (
@@ -732,20 +774,6 @@ export function Settings() {
                           </p>
                         </div>
 
-                        <div className="flex items-center gap-4 pt-2">
-                          <Button
-                            variant="outline"
-                            onClick={handleSaveProxySettings}
-                            disabled={savingProxy}
-                            className="rounded-xl h-10 px-5 bg-transparent border-black/10 dark:border-white/10 hover:bg-black/5 dark:hover:bg-white/5"
-                          >
-                            <RefreshCw className={`h-4 w-4 mr-2${savingProxy ? ' animate-spin' : ''}`} />
-                            {savingProxy ? t('common:status.saving') : t('common:actions.save')}
-                          </Button>
-                          <p className="text-[12px] text-muted-foreground">
-                            {t('gateway.proxyRestartNote')}
-                          </p>
-                        </div>
                       </div>
                     )}
                   </div>
@@ -756,6 +784,7 @@ export function Settings() {
                     </p>
                     <div className="flex flex-wrap gap-2">
                       <Input
+                        data-testid="settings-developer-gateway-token"
                         readOnly
                         value={controlUiInfo?.token || ''}
                         placeholder={t('developer.tokenUnavailable')}

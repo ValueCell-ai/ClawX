@@ -340,7 +340,8 @@ pnpm typecheck            # TypeScript 类型检查
 
 # 测试
 pnpm test                 # 运行单元测试
-pnpm run test:e2e         # 运行 Electron 端到端冒烟测试
+pnpm run test:e2e         # 运行 Electron E2E 冒烟测试
+pnpm run test:e2e:headed  # 以可见窗口运行 Electron E2E 测试
 pnpm run comms:replay     # 计算通信回放指标
 pnpm run comms:baseline   # 刷新通信基线快照
 pnpm run comms:compare    # 将回放指标与基线阈值对比
