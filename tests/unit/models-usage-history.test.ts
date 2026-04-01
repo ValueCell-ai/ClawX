@@ -68,17 +68,24 @@ describe('models usage history helpers', () => {
     expect(filtered.map((entry) => entry.totalTokens)).toEqual([12, 11]);
   });
 
-  it('preserves the last stable usage snapshot when a refresh returns empty', () => {
+  it('clears the stable usage snapshot when a successful refresh returns empty', () => {
     const stable = [createEntry(12, 12)];
 
-    expect(resolveStableUsageHistory(stable, [])).toEqual(stable);
+    expect(resolveStableUsageHistory(stable, [])).toEqual([]);
+  });
+
+  it('can preserve the last stable usage snapshot while a refresh is still in flight', () => {
+    const stable = [createEntry(12, 12)];
+
+    expect(resolveStableUsageHistory(stable, [], { preservePreviousOnEmpty: true })).toEqual(stable);
   });
 
   it('prefers fresh usage entries over the cached snapshot when available', () => {
     const stable = [createEntry(12, 12)];
     const fresh = [createEntry(13, 13)];
 
-    expect(resolveVisibleUsageHistory([], stable)).toEqual(stable);
-    expect(resolveVisibleUsageHistory(fresh, stable)).toEqual(fresh);
+    expect(resolveVisibleUsageHistory([], stable)).toEqual([]);
+    expect(resolveVisibleUsageHistory([], stable, { preferStableOnEmpty: true })).toEqual(stable);
+    expect(resolveVisibleUsageHistory(fresh, stable, { preferStableOnEmpty: true })).toEqual(fresh);
   });
 });

@@ -29,15 +29,25 @@ export type UsageGroup = {
 export function resolveStableUsageHistory(
   previousStableEntries: UsageHistoryEntry[],
   nextEntries: UsageHistoryEntry[],
+  options: { preservePreviousOnEmpty?: boolean } = {},
 ): UsageHistoryEntry[] {
-  return nextEntries.length > 0 ? nextEntries : previousStableEntries;
+  if (nextEntries.length > 0) {
+    return nextEntries;
+  }
+
+  return options.preservePreviousOnEmpty ? previousStableEntries : [];
 }
 
 export function resolveVisibleUsageHistory(
   currentEntries: UsageHistoryEntry[],
   stableEntries: UsageHistoryEntry[],
+  options: { preferStableOnEmpty?: boolean } = {},
 ): UsageHistoryEntry[] {
-  return currentEntries.length > 0 ? currentEntries : stableEntries;
+  if (options.preferStableOnEmpty && currentEntries.length === 0) {
+    return stableEntries;
+  }
+
+  return currentEntries;
 }
 
 export function formatUsageDay(timestamp: string): string {

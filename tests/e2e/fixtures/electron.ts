@@ -75,14 +75,18 @@ async function closeElectronApp(app: ElectronApplication, timeoutMs = 5_000): Pr
   let closed = false;
 
   await Promise.race([
-    Promise.allSettled([
-      app.waitForEvent('close', { timeout: timeoutMs }),
-      app.evaluate(({ app: electronApp }) => {
-        electronApp.quit();
-      }),
-    ]).then(() => {
-      closed = true;
-    }),
+    (async () => {
+      const [closeResult] = await Promise.allSettled([
+        app.waitForEvent('close', { timeout: timeoutMs }),
+        app.evaluate(({ app: electronApp }) => {
+          electronApp.quit();
+        }),
+      ]);
+
+      if (closeResult.status === 'fulfilled') {
+        closed = true;
+      }
+    })(),
     new Promise((resolve) => setTimeout(resolve, timeoutMs)),
   ]);
 

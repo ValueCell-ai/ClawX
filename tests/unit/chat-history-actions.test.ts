@@ -303,4 +303,68 @@ describe('chat history actions', () => {
     expect(h.read().currentSessionKey).toBe('agent:main:session-b');
     expect(h.read().messages.map((message) => message.content)).toEqual(['session b content']);
   });
+
+  it('preserves newer same-session messages when preview hydration finishes later', async () => {
+    const { createHistoryActions } = await import('@/stores/chat/history-actions');
+    let releasePreviewHydration: (() => void) | null = null;
+    loadMissingPreviews.mockImplementationOnce(async (messages) => {
+      await new Promise<void>((resolve) => {
+        releasePreviewHydration = () => {
+          messages[0]!._attachedFiles = [
+            {
+              fileName: 'image.png',
+              mimeType: 'image/png',
+              fileSize: 42,
+              preview: 'data:image/png;base64,abc',
+              filePath: '/tmp/image.png',
+            },
+          ];
+          resolve();
+        };
+      });
+      return true;
+    });
+
+    invokeIpcMock.mockResolvedValueOnce({
+      success: true,
+      result: {
+        messages: [
+          {
+            id: 'history-1',
+            role: 'assistant',
+            content: 'older message',
+            timestamp: 1000,
+          },
+        ],
+      },
+    });
+
+    const h = makeHarness({
+      currentSessionKey: 'agent:main:main',
+    });
+    const actions = createHistoryActions(h.set as never, h.get as never);
+
+    await actions.loadHistory();
+
+    h.set((state) => ({
+      messages: [
+        ...state.messages,
+        {
+          id: 'newer-1',
+          role: 'assistant',
+          content: 'newer message',
+          timestamp: 1001,
+        },
+      ],
+    }));
+
+    releasePreviewHydration?.();
+    await Promise.resolve();
+
+    expect(h.read().messages.map((message) => message.content)).toEqual([
+      'older message',
+      'newer message',
+    ]);
+    expect(h.read().messages[0]?._attachedFiles?.[0]?.preview).toBe('data:image/png;base64,abc');
+  });
 });

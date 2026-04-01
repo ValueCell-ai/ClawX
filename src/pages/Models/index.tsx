@@ -78,6 +78,7 @@ export function Models() {
   type FetchAction =
     | { type: 'start' }
     | { type: 'done'; data: UsageHistoryEntry[] }
+    | { type: 'failed' }
     | { type: 'reset' };
 
   const [fetchState, dispatchFetch] = useReducer(
@@ -91,8 +92,10 @@ export function Models() {
             data: action.data,
             stableData: resolveStableUsageHistory(state.stableData, action.data),
           };
+        case 'failed':
+          return { ...state, status: 'done' };
         case 'reset':
-          return { ...state, status: 'idle', data: [] };
+          return { status: 'idle', data: [], stableData: [] };
         default:
           return state;
       }
@@ -135,7 +138,7 @@ export function Models() {
         generation,
         restartMarker,
       });
-      dispatchFetch({ type: 'done', data: [] });
+      dispatchFetch({ type: 'failed' });
     }, 30_000);
 
     const fetchUsageHistoryWithRetry = async (attempt: number) => {
@@ -198,7 +201,7 @@ export function Models() {
           }, USAGE_FETCH_RETRY_DELAY_MS);
           return;
         }
-        dispatchFetch({ type: 'done', data: [] });
+        dispatchFetch({ type: 'failed' });
         trackUiEvent('models.token_usage_fetch_exhausted', {
           generation,
           attempt,
@@ -222,8 +225,12 @@ export function Models() {
   const usageHistory = isGatewayRunning
     ? fetchState.data.filter((entry) => !shouldHideUsageEntry(entry))
     : [];
-  const stableUsageHistory = fetchState.stableData.filter((entry) => !shouldHideUsageEntry(entry));
-  const visibleUsageHistory = resolveVisibleUsageHistory(usageHistory, stableUsageHistory);
+  const stableUsageHistory = isGatewayRunning
+    ? fetchState.stableData.filter((entry) => !shouldHideUsageEntry(entry))
+    : [];
+  const visibleUsageHistory = resolveVisibleUsageHistory(usageHistory, stableUsageHistory, {
+    preferStableOnEmpty: isGatewayRunning && fetchState.status === 'loading',
+  });
   const filteredUsageHistory = filterUsageHistoryByWindow(visibleUsageHistory, usageWindow);
   const usageGroups = groupUsageHistory(filteredUsageHistory, usageGroupBy);
   const usagePageSize = 5;
