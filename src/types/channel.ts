@@ -151,7 +151,6 @@ export const CHANNEL_META: Record<ChannelType, ChannelMeta> = {
       'channels:meta.qqbot.instructions.1',
       'channels:meta.qqbot.instructions.2',
     ],
-    isPlugin: true,
   },
   dingtalk: {
     id: 'dingtalk',

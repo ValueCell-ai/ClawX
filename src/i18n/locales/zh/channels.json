@@ -369,7 +369,7 @@
             ]
         },
         "qqbot": {
-            "description": "通过 @tencent-connect/openclaw-qqbot 插件连接 QQ 机器人",
+            "description": "连接 QQ 机器人频道（OpenClaw 3.31 起内置）",
             "docsUrl": "https://icnnp7d0dymg.feishu.cn/wiki/KPIJwlyiGiupMrkiS9ice39Zn2c",
             "fields": {
                 "appId": {

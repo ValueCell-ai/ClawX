@@ -194,7 +194,7 @@ describe('WeCom plugin configuration', () => {
     expect(channels.whatsapp.enabled).toBe(true);
   });
 
-  it('keeps configured built-in channels in plugins.allow when a plugin-backed channel is enabled', async () => {
+  it('saves qqbot as a built-in channel without plugin registration (OpenClaw 3.31+)', async () => {
     const { saveChannelConfig } = await import('@electron/utils/channel-config');
 
     await saveChannelConfig('discord', { token: 'discord-token' }, 'default');
@@ -202,9 +202,17 @@ describe('WeCom plugin configuration', () => {
     await saveChannelConfig('qqbot', { appId: 'qq-app', token: 'qq-token', appSecret: 'qq-secret' }, 'default');
 
     const config = await readOpenClawJson();
-    const plugins = config.plugins as { allow: string[] };
+    const channels = config.channels as Record<string, { accounts?: Record<string, unknown> }>;
 
-    expect(plugins.allow).toEqual(expect.arrayContaining(['openclaw-qqbot', 'discord', 'whatsapp']));
+    // QQBot config should be saved under channels.qqbot
+    expect(channels.qqbot.accounts?.default).toBeDefined();
+
+    // QQBot should NOT appear in plugins.entries (built-in channel)
+    const plugins = config.plugins as { entries?: Record<string, unknown> } | undefined;
+    if (plugins?.entries) {
+      expect(plugins.entries['openclaw-qqbot']).toBeUndefined();
+      expect(plugins.entries['qqbot']).toBeUndefined();
+    }
   });
 });
 

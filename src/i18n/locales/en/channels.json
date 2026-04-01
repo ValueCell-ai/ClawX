@@ -368,7 +368,7 @@
             ]
         },
         "qqbot": {
-            "description": "Connect QQ Bot via @tencent-connect/openclaw-qqbot plugin",
+            "description": "Connect QQ Bot channel (built-in since OpenClaw 3.31)",
             "docsUrl": "https://icnnp7d0dymg.feishu.cn/wiki/KPIJwlyiGiupMrkiS9ice39Zn2c",
             "fields": {
                 "appId": {

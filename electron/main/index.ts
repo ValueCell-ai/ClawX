@@ -363,8 +363,9 @@ async function initialize(): Promise<void> {
     });
   }
 
-  // Pre-deploy/upgrade bundled OpenClaw plugins (dingtalk, wecom, qqbot, feishu, wechat)
+  // Pre-deploy/upgrade bundled OpenClaw plugins (dingtalk, wecom, feishu, wechat)
   // to ~/.openclaw/extensions/ so they are always up-to-date after an app update.
+  // Note: qqbot was moved to a built-in channel in OpenClaw 3.31.
   if (!isE2EMode) {
     void ensureAllBundledPluginsInstalled().catch((error) => {
       logger.warn('Failed to install/upgrade bundled plugins:', error);

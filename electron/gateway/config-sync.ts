@@ -49,7 +49,7 @@ const CHANNEL_PLUGIN_MAP: Record<string, { dirName: string; npmName: string }> =
   dingtalk: { dirName: 'dingtalk', npmName: '@soimy/dingtalk' },
   wecom: { dirName: 'wecom', npmName: '@wecom/wecom-openclaw-plugin' },
   feishu: { dirName: 'feishu-openclaw-plugin', npmName: '@larksuite/openclaw-lark' },
-  qqbot: { dirName: 'qqbot', npmName: '@tencent-connect/openclaw-qqbot' },
+
   'openclaw-weixin': { dirName: 'openclaw-weixin', npmName: '@tencent-weixin/openclaw-weixin' },
 };
 
@@ -59,7 +59,7 @@ const CHANNEL_PLUGIN_MAP: Record<string, { dirName: string; npmName: string }> =
  * ~/.openclaw/extensions/, the broken copy overrides the working built-in
  * plugin and must be removed.
  */
-const BUILTIN_CHANNEL_EXTENSIONS = ['discord', 'telegram'];
+const BUILTIN_CHANNEL_EXTENSIONS = ['discord', 'telegram', 'qqbot'];
 
 function cleanupStaleBuiltInExtensions(): void {
   for (const ext of BUILTIN_CHANNEL_EXTENSIONS) {
@@ -208,7 +208,7 @@ export async function syncGatewayConfigBeforeLaunch(
         pluginIdToChannel[info.dirName] = channelType;
       }
       // Known manifest IDs that differ from their dirName/channelType
-      pluginIdToChannel['openclaw-qqbot'] = 'qqbot';
+
       pluginIdToChannel['openclaw-lark'] = 'feishu';
       pluginIdToChannel['feishu-openclaw-plugin'] = 'feishu';
 

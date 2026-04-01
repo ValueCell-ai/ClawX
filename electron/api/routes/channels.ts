@@ -24,7 +24,6 @@ import {
 import {
   ensureDingTalkPluginInstalled,
   ensureFeishuPluginInstalled,
-  ensureQQBotPluginInstalled,
   ensureWeChatPluginInstalled,
   ensureWeComPluginInstalled,
 } from '../../utils/plugin-install';
@@ -1198,13 +1197,7 @@ export async function handleChannelRoutes(
           return true;
         }
       }
-      if (storedChannelType === 'qqbot') {
-        const installResult = await ensureQQBotPluginInstalled();
-        if (!installResult.installed) {
-          sendJson(res, 500, { success: false, error: installResult.warning || 'QQ Bot plugin install failed' });
-          return true;
-        }
-      }
+      // QQBot is a built-in channel since OpenClaw 3.31 — no plugin install needed
       if (storedChannelType === 'feishu') {
         const installResult = await ensureFeishuPluginInstalled();
         if (!installResult.installed) {
