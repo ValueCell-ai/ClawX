@@ -643,6 +643,7 @@ function patchBundledRuntime(outputDir) {
 \t\t\tplatform: process$1.platform
 \t\t}) ? { shell: true } : {}
 \t});`,
+    },
     // Note: OpenClaw 3.31 removed the hash-suffixed agent-scope-*.js, chrome-*.js,
     // and qmd-manager-*.js files from dist/plugin-sdk/. Patches for those spawn
     // sites are no longer needed — the runtime now uses windowsHide natively.
