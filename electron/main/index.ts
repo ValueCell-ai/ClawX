@@ -255,7 +255,7 @@ function createMainWindow(): BrowserWindow {
   });
 
   win.on('close', (event) => {
-    if (!isQuitting()) {
+    if (!isQuitting() && !isE2EMode) {
       event.preventDefault();
       win.hide();
     }
@@ -555,7 +555,7 @@ if (gotTheLock) {
   });
 
   app.on('window-all-closed', () => {
-    if (process.platform !== 'darwin') {
+    if (process.platform !== 'darwin' || isE2EMode) {
       app.quit();
     }
   });

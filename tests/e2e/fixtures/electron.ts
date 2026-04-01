@@ -75,16 +75,26 @@ async function closeElectronApp(app: ElectronApplication, timeoutMs = 5_000): Pr
   let closed = false;
 
   await Promise.race([
-    app.close()
-      .then(() => {
-        closed = true;
-      })
-      .catch(() => {}),
+    Promise.allSettled([
+      app.waitForEvent('close', { timeout: timeoutMs }),
+      app.evaluate(({ app: electronApp }) => {
+        electronApp.quit();
+      }),
+    ]).then(() => {
+      closed = true;
+    }),
     new Promise((resolve) => setTimeout(resolve, timeoutMs)),
   ]);
 
   if (closed) {
     return;
+  }
+
+  try {
+    await app.close();
+    return;
+  } catch {
+    // Fall through to process kill if Playwright cannot close the app cleanly.
   }
 
   try {
