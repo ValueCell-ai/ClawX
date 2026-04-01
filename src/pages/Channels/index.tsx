@@ -5,7 +5,6 @@ import { Badge } from '@/components/ui/badge';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { useGatewayStore } from '@/stores/gateway';
 import { LoadingSpinner } from '@/components/common/LoadingSpinner';
-import { useStableSnapshot } from '@/hooks/use-stable-snapshot';
 import { hostApiFetch } from '@/lib/host-api';
 import { subscribeHostEvent } from '@/lib/host-events';
 import { ChannelConfigModal } from '@/components/channels/ChannelConfigModal';
@@ -92,19 +91,10 @@ export function Channels() {
   const [deleteTarget, setDeleteTarget] = useState<DeleteTarget | null>(null);
 
   const displayedChannelTypes = getPrimaryChannels();
-  const pageData = useMemo(() => ({
-    channelGroups,
-    agents,
-  }), [channelGroups, agents]);
-  const { value: stablePageData, hasStableValue, isUsingStableValue } = useStableSnapshot(
-    pageData,
-    {
-      shouldPersist: !loading && !error,
-      shouldUseStable: loading || Boolean(error),
-    },
-  );
-  const visibleChannelGroups = stablePageData.channelGroups;
-  const visibleAgents = stablePageData.agents;
+  const visibleChannelGroups = channelGroups;
+  const visibleAgents = agents;
+  const hasStableValue = visibleChannelGroups.length > 0 || visibleAgents.length > 0;
+  const isUsingStableValue = hasStableValue && (loading || Boolean(error));
 
   const fetchPageData = useCallback(async () => {
     setLoading(true);

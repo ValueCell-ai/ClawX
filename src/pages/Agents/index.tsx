@@ -8,7 +8,6 @@ import { Badge } from '@/components/ui/badge';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { Switch } from '@/components/ui/switch';
 import { LoadingSpinner } from '@/components/common/LoadingSpinner';
-import { useStableSnapshot } from '@/hooks/use-stable-snapshot';
 import { useAgentsStore } from '@/stores/agents';
 import { useGatewayStore } from '@/stores/gateway';
 import { useProviderStore } from '@/stores/providers';
@@ -161,24 +160,14 @@ export function Agents() {
     [activeAgentId, agents],
   );
 
-  const pageData = useMemo(() => ({
-    agents,
-    channelGroups,
-  }), [agents, channelGroups]);
-  const { value: stablePageData, hasStableValue, isUsingStableValue } = useStableSnapshot(
-    pageData,
-    {
-      shouldPersist: hasCompletedInitialLoad && !loading,
-      shouldUseStable: loading,
-    },
-  );
-  const visibleAgents = stablePageData.agents;
-  const visibleChannelGroups = stablePageData.channelGroups;
+  const visibleAgents = agents;
+  const visibleChannelGroups = channelGroups;
+  const isUsingStableValue = loading && hasCompletedInitialLoad;
   const handleRefresh = () => {
     void Promise.all([fetchAgents(), fetchChannelAccounts()]);
   };
 
-  if (loading && !hasStableValue && !hasCompletedInitialLoad) {
+  if (loading && !hasCompletedInitialLoad) {
     return (
       <div className="flex flex-col -m-6 dark:bg-background min-h-[calc(100vh-2.5rem)] items-center justify-center">
         <LoadingSpinner size="lg" />
