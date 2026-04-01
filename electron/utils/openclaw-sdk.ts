@@ -37,7 +37,7 @@ const _discordSdk = requireOpenClawSdk('openclaw/plugin-sdk/discord') as {
   normalizeDiscordMessagingTarget: (target: string) => string | undefined;
 };
 
-const _telegramSdk = requireOpenClawSdk('openclaw/plugin-sdk/telegram') as {
+const _telegramSdk = requireOpenClawSdk('openclaw/plugin-sdk/telegram-surface') as {
   listTelegramDirectoryGroupsFromConfig: (...args: unknown[]) => Promise<unknown[]>;
   listTelegramDirectoryPeersFromConfig: (...args: unknown[]) => Promise<unknown[]>;
   normalizeTelegramMessagingTarget: (target: string) => string | undefined;

@@ -458,34 +458,7 @@ function patchBrokenModules(nodeModulesDir) {
     ].join('\n'),
   };
   const replacePatches = [
-    {
-      rel: '@mariozechner/pi-coding-agent/dist/core/bash-executor.js',
-      search: `        const child = spawn(shell, [...args, command], {
-            detached: true,
-            env: getShellEnv(),
-            stdio: ["ignore", "pipe", "pipe"],
-        });`,
-      replace: `        const child = spawn(shell, [...args, command], {
-            detached: true,
-            env: getShellEnv(),
-            stdio: ["ignore", "pipe", "pipe"],
-            windowsHide: true,
-        });`,
-    },
-    {
-      rel: '@mariozechner/pi-coding-agent/dist/core/exec.js',
-      search: `        const proc = spawn(command, args, {
-            cwd,
-            shell: false,
-            stdio: ["ignore", "pipe", "pipe"],
-        });`,
-      replace: `        const proc = spawn(command, args, {
-            cwd,
-            shell: false,
-            stdio: ["ignore", "pipe", "pipe"],
-            windowsHide: true,
-        });`,
-    },
+    // Note: @mariozechner/pi-coding-agent is no longer a dep of openclaw 3.31.
   ];
 
   let count = 0;
@@ -670,77 +643,9 @@ function patchBundledRuntime(outputDir) {
 \t\t\tplatform: process$1.platform
 \t\t}) ? { shell: true } : {}
 \t});`,
-    },
-    {
-      label: 'agent scope command runner',
-      target: () => findFirstFileByName(path.join(outputDir, 'dist', 'plugin-sdk'), /^agent-scope-.*\.js$/),
-      search: `\tconst child = spawn(resolvedCommand, finalArgv.slice(1), {
-\t\tstdio,
-\t\tcwd,
-\t\tenv: resolvedEnv,
-\t\twindowsVerbatimArguments,
-\t\t...shouldSpawnWithShell({
-\t\t\tresolvedCommand,
-\t\t\tplatform: process$1.platform
-\t\t}) ? { shell: true } : {}
-\t});`,
-      replace: `\tconst child = spawn(resolvedCommand, finalArgv.slice(1), {
-\t\tstdio,
-\t\tcwd,
-\t\tenv: resolvedEnv,
-\t\twindowsVerbatimArguments,
-\t\twindowsHide: true,
-\t\t...shouldSpawnWithShell({
-\t\t\tresolvedCommand,
-\t\t\tplatform: process$1.platform
-\t\t}) ? { shell: true } : {}
-\t});`,
-    },
-    {
-      label: 'chrome launcher',
-      target: () => findFirstFileByName(path.join(outputDir, 'dist', 'plugin-sdk'), /^chrome-.*\.js$/),
-      search: `\t\treturn spawn(exe.path, args, {
-\t\t\tstdio: "pipe",
-\t\t\tenv: {
-\t\t\t\t...process.env,
-\t\t\t\tHOME: os.homedir()
-\t\t\t}
-\t\t});`,
-      replace: `\t\treturn spawn(exe.path, args, {
-\t\t\tstdio: "pipe",
-\t\t\twindowsHide: true,
-\t\t\tenv: {
-\t\t\t\t...process.env,
-\t\t\t\tHOME: os.homedir()
-\t\t\t}
-\t\t});`,
-    },
-    {
-      label: 'qmd runner',
-      target: () => findFirstFileByName(path.join(outputDir, 'dist', 'plugin-sdk'), /^qmd-manager-.*\.js$/),
-      search: `\t\t\tconst child = spawn(resolveWindowsCommandShim(this.qmd.command), args, {
-\t\t\t\tenv: this.env,
-\t\t\t\tcwd: this.workspaceDir
-\t\t\t});`,
-      replace: `\t\t\tconst child = spawn(resolveWindowsCommandShim(this.qmd.command), args, {
-\t\t\t\tenv: this.env,
-\t\t\t\tcwd: this.workspaceDir,
-\t\t\t\twindowsHide: true
-\t\t\t});`,
-    },
-    {
-      label: 'mcporter runner',
-      target: () => findFirstFileByName(path.join(outputDir, 'dist', 'plugin-sdk'), /^qmd-manager-.*\.js$/),
-      search: `\t\t\tconst child = spawn(resolveWindowsCommandShim("mcporter"), args, {
-\t\t\t\tenv: this.env,
-\t\t\t\tcwd: this.workspaceDir
-\t\t\t});`,
-      replace: `\t\t\tconst child = spawn(resolveWindowsCommandShim("mcporter"), args, {
-\t\t\t\tenv: this.env,
-\t\t\t\tcwd: this.workspaceDir,
-\t\t\t\twindowsHide: true
-\t\t\t});`,
-    },
+    // Note: OpenClaw 3.31 removed the hash-suffixed agent-scope-*.js, chrome-*.js,
+    // and qmd-manager-*.js files from dist/plugin-sdk/. Patches for those spawn
+    // sites are no longer needed — the runtime now uses windowsHide natively.
   ];
 
   let count = 0;
