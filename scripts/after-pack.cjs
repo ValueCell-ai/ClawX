@@ -596,6 +596,28 @@ exports.default = async function afterPack(context) {
     }
   }
 
+  // 1.2 Copy built-in extension node_modules that electron-builder skipped.
+  //     OpenClaw 3.31+ ships built-in extensions (discord, qqbot, etc.) under
+  //     dist/extensions/<ext>/node_modules/. These are skipped by extraResources
+  //     because .gitignore contains "node_modules/".
+  const buildExtDir = join(__dirname, '..', 'build', 'openclaw', 'dist', 'extensions');
+  const packExtDir = join(openclawRoot, 'dist', 'extensions');
+  if (existsSync(buildExtDir)) {
+    let extNMCount = 0;
+    for (const extEntry of readdirSync(buildExtDir, { withFileTypes: true })) {
+      if (!extEntry.isDirectory()) continue;
+      const srcNM = join(buildExtDir, extEntry.name, 'node_modules');
+      if (!existsSync(srcNM)) continue;
+      const destNM = join(packExtDir, extEntry.name, 'node_modules');
+      if (existsSync(destNM)) continue; // already present (shouldn't happen, but be safe)
+      cpSync(srcNM, destNM, { recursive: true });
+      extNMCount++;
+    }
+    if (extNMCount > 0) {
+      console.log(`[after-pack] ✅ Copied node_modules for ${extNMCount} built-in extension(s).`);
+    }
+  }
+
   // 2. General cleanup on the full openclaw directory (not just node_modules)
   console.log('[after-pack] 🧹 Cleaning up unnecessary files ...');
   const removedRoot = cleanupUnnecessaryFiles(openclawRoot);
