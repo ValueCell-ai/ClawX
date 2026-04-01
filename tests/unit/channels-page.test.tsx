@@ -37,6 +37,14 @@ vi.mock('sonner', () => ({
   },
 }));
 
+function createDeferred<T>() {
+  let resolve!: (value: T | PromiseLike<T>) => void;
+  const promise = new Promise<T>((res) => {
+    resolve = res;
+  });
+  return { promise, resolve };
+}
+
 describe('Channels page status refresh', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -179,5 +187,87 @@ describe('Channels page status refresh', () => {
     });
 
     expect(screen.queryByLabelText('account.customIdLabel')).not.toBeInTheDocument();
+  });
+
+  it('keeps the last channel snapshot visible while refresh is pending', async () => {
+    subscribeHostEventMock.mockImplementation(() => vi.fn());
+
+    const channelsDeferred = createDeferred<{
+      success: boolean;
+      channels: Array<Record<string, unknown>>;
+    }>();
+    const agentsDeferred = createDeferred<{
+      success: boolean;
+      agents: Array<Record<string, unknown>>;
+    }>();
+
+    let refreshCallCount = 0;
+    hostApiFetchMock.mockImplementation((path: string) => {
+      if (path === '/api/channels/accounts') {
+        if (refreshCallCount === 0) {
+          refreshCallCount += 1;
+          return Promise.resolve({
+            success: true,
+            channels: [
+              {
+                channelType: 'feishu',
+                defaultAccountId: 'default',
+                status: 'connected',
+                accounts: [
+                  {
+                    accountId: 'default',
+                    name: 'Primary Account',
+                    configured: true,
+                    status: 'connected',
+                    isDefault: true,
+                  },
+                ],
+              },
+            ],
+          });
+        }
+        return channelsDeferred.promise;
+      }
+
+      if (path === '/api/agents') {
+        if (refreshCallCount === 1) {
+          return Promise.resolve({ success: true, agents: [] });
+        }
+        return agentsDeferred.promise;
+      }
+
+      throw new Error(`Unexpected host API path: ${path}`);
+    });
+
+    render(<Channels />);
+
+    expect(await screen.findByText('Feishu / Lark')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'refresh' }));
+
+    expect(screen.getByText('Feishu / Lark')).toBeInTheDocument();
+
+    await act(async () => {
+      channelsDeferred.resolve({
+        success: true,
+        channels: [
+          {
+            channelType: 'feishu',
+            defaultAccountId: 'default',
+            status: 'connected',
+            accounts: [
+              {
+                accountId: 'default',
+                name: 'Primary Account',
+                configured: true,
+                status: 'connected',
+                isDefault: true,
+              },
+            ],
+          },
+        ],
+      });
+      agentsDeferred.resolve({ success: true, agents: [] });
+    });
   });
 });

@@ -1306,11 +1306,23 @@ export const useChatStore = create<ChatState>((set, get) => ({
     }, 15_000);
 
     const loadPromise = (async () => {
+      const isCurrentSession = () => get().currentSessionKey === currentSessionKey;
+
+      const applyLoadFailure = (errorMessage: string | null) => {
+        if (!isCurrentSession()) return;
+        const hasMessages = get().messages.length > 0;
+        set((state) => ({
+          loading: false,
+          error: !quiet && errorMessage ? errorMessage : state.error,
+          ...(hasMessages ? {} : { messages: [] as RawMessage[] }),
+        }));
+      };
+
       const applyLoadedMessages = (rawMessages: RawMessage[], thinkingLevel: string | null) => {
       // Guard: if the user switched sessions while this async load was in
       // flight, discard the result to prevent overwriting the new session's
       // messages with stale data from the old session.
-      if (get().currentSessionKey !== currentSessionKey) return;
+      if (!isCurrentSession()) return;
 
       // Before filtering: attach images/files from tool_result messages to the next assistant message
       const messagesWithToolImages = enrichWithToolResultFiles(rawMessages);
@@ -1369,6 +1381,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
       // Async: load missing image previews from disk (updates in background)
       loadMissingPreviews(finalMessages).then((updated) => {
+        if (!isCurrentSession()) return;
         if (updated) {
           // Create new object references so React.memo detects changes.
           // loadMissingPreviews mutates AttachedFileMeta in place, so we
@@ -1435,7 +1448,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
           if (fallbackMessages.length > 0) {
             applyLoadedMessages(fallbackMessages, null);
           } else {
-            set({ messages: [], loading: false });
+            applyLoadFailure('Failed to load chat history');
           }
         }
       } catch (err) {
@@ -1444,7 +1457,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
         if (fallbackMessages.length > 0) {
           applyLoadedMessages(fallbackMessages, null);
         } else {
-          set({ messages: [], loading: false });
+          applyLoadFailure(String(err));
         }
       }
     })();

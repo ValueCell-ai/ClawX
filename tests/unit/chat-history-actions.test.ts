@@ -128,4 +128,76 @@ describe('chat history actions', () => {
     expect(h.read().messages).toEqual([]);
     expect(h.read().loading).toBe(false);
   });
+
+  it('preserves existing messages when history refresh fails for the current session', async () => {
+    const { createHistoryActions } = await import('@/stores/chat/history-actions');
+    const h = makeHarness({
+      currentSessionKey: 'agent:main:main',
+      messages: [
+        {
+          role: 'assistant',
+          content: 'still here',
+          timestamp: 1773281732,
+        },
+      ],
+    });
+    const actions = createHistoryActions(h.set as never, h.get as never);
+
+    invokeIpcMock.mockRejectedValueOnce(new Error('Gateway unavailable'));
+
+    await actions.loadHistory();
+
+    expect(h.read().messages.map((message) => message.content)).toEqual(['still here']);
+    expect(h.read().error).toBe('Error: Gateway unavailable');
+    expect(h.read().loading).toBe(false);
+  });
+
+  it('drops stale history results after the user switches sessions', async () => {
+    const { createHistoryActions } = await import('@/stores/chat/history-actions');
+    let resolveHistory: ((value: unknown) => void) | null = null;
+    invokeIpcMock.mockImplementationOnce(() => new Promise((resolve) => {
+      resolveHistory = resolve;
+    }));
+
+    const h = makeHarness({
+      currentSessionKey: 'agent:main:session-a',
+      messages: [
+        {
+          role: 'assistant',
+          content: 'session b content',
+          timestamp: 1773281732,
+        },
+      ],
+    });
+    const actions = createHistoryActions(h.set as never, h.get as never);
+
+    const loadPromise = actions.loadHistory();
+    h.set({
+      currentSessionKey: 'agent:main:session-b',
+      messages: [
+        {
+          role: 'assistant',
+          content: 'session b content',
+          timestamp: 1773281733,
+        },
+      ],
+    });
+    resolveHistory?.({
+      success: true,
+      result: {
+        messages: [
+          {
+            role: 'assistant',
+            content: 'stale session a content',
+            timestamp: 1773281734,
+          },
+        ],
+      },
+    });
+
+    await loadPromise;
+
+    expect(h.read().currentSessionKey).toBe('agent:main:session-b');
+    expect(h.read().messages.map((message) => message.content)).toEqual(['session b content']);
+  });
 });

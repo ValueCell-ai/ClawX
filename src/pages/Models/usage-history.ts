@@ -25,6 +25,20 @@ export type UsageGroup = {
   sortKey: number | string;
 };
 
+export function resolveStableUsageHistory(
+  previousStableEntries: UsageHistoryEntry[],
+  nextEntries: UsageHistoryEntry[],
+): UsageHistoryEntry[] {
+  return nextEntries.length > 0 ? nextEntries : previousStableEntries;
+}
+
+export function resolveVisibleUsageHistory(
+  currentEntries: UsageHistoryEntry[],
+  stableEntries: UsageHistoryEntry[],
+): UsageHistoryEntry[] {
+  return currentEntries.length > 0 ? currentEntries : stableEntries;
+}
+
 export function formatUsageDay(timestamp: string): string {
   const date = new Date(timestamp);
   if (Number.isNaN(date.getTime())) return timestamp;

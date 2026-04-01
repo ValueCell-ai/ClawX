@@ -5,6 +5,7 @@ import { Badge } from '@/components/ui/badge';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { useGatewayStore } from '@/stores/gateway';
 import { LoadingSpinner } from '@/components/common/LoadingSpinner';
+import { useStableSnapshot } from '@/hooks/use-stable-snapshot';
 import { hostApiFetch } from '@/lib/host-api';
 import { subscribeHostEvent } from '@/lib/host-events';
 import { ChannelConfigModal } from '@/components/channels/ChannelConfigModal';
@@ -91,6 +92,19 @@ export function Channels() {
   const [deleteTarget, setDeleteTarget] = useState<DeleteTarget | null>(null);
 
   const displayedChannelTypes = getPrimaryChannels();
+  const pageData = useMemo(() => ({
+    channelGroups,
+    agents,
+  }), [channelGroups, agents]);
+  const { value: stablePageData, hasStableValue, isUsingStableValue } = useStableSnapshot(
+    pageData,
+    {
+      shouldPersist: !loading && !error,
+      shouldUseStable: loading || Boolean(error),
+    },
+  );
+  const visibleChannelGroups = stablePageData.channelGroups;
+  const visibleAgents = stablePageData.agents;
 
   const fetchPageData = useCallback(async () => {
     setLoading(true);
@@ -143,21 +157,21 @@ export function Channels() {
   }, [fetchPageData, gatewayStatus.state]);
 
   const configuredTypes = useMemo(
-    () => channelGroups.map((group) => group.channelType),
-    [channelGroups],
+    () => visibleChannelGroups.map((group) => group.channelType),
+    [visibleChannelGroups],
   );
 
   const groupedByType = useMemo(() => {
-    return Object.fromEntries(channelGroups.map((group) => [group.channelType, group]));
-  }, [channelGroups]);
+    return Object.fromEntries(visibleChannelGroups.map((group) => [group.channelType, group]));
+  }, [visibleChannelGroups]);
 
   const configuredGroups = useMemo(() => {
     const known = displayedChannelTypes
       .map((type) => groupedByType[type])
       .filter((group): group is ChannelGroupItem => Boolean(group));
-    const unknown = channelGroups.filter((group) => !displayedChannelTypes.includes(group.channelType as ChannelType));
+    const unknown = visibleChannelGroups.filter((group) => !displayedChannelTypes.includes(group.channelType as ChannelType));
     return [...known, ...unknown];
-  }, [channelGroups, displayedChannelTypes, groupedByType]);
+  }, [visibleChannelGroups, displayedChannelTypes, groupedByType]);
 
   const unsupportedGroups = displayedChannelTypes.filter((type) => !configuredTypes.includes(type));
 
@@ -217,7 +231,7 @@ export function Channels() {
     return nextAccountId;
   };
 
-  if (loading) {
+  if (loading && !hasStableValue) {
     return (
       <div className="flex flex-col -m-6 dark:bg-background min-h-[calc(100vh-2.5rem)] items-center justify-center">
         <LoadingSpinner size="lg" />
@@ -245,7 +259,7 @@ export function Channels() {
               disabled={gatewayStatus.state !== 'running'}
               className="h-9 text-[13px] font-medium rounded-full px-4 border-black/10 dark:border-white/10 bg-transparent hover:bg-black/5 dark:hover:bg-white/5 shadow-none text-foreground/80 hover:text-foreground transition-colors"
             >
-              <RefreshCw className="h-3.5 w-3.5 mr-2" />
+              <RefreshCw className={cn('h-3.5 w-3.5 mr-2', isUsingStableValue && 'animate-spin')} />
               {t('refresh')}
             </Button>
           </div>
@@ -368,7 +382,7 @@ export function Channels() {
                                 }}
                               >
                                 <option value="">{t('account.unassigned')}</option>
-                                {agents.map((agent) => (
+                                {visibleAgents.map((agent) => (
                                   <option key={agent.id} value={agent.id}>{agent.name}</option>
                                 ))}
                               </select>

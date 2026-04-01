@@ -36,7 +36,20 @@ export function createHistoryActions(
       const { currentSessionKey } = get();
       if (!quiet) set({ loading: true, error: null });
 
+      const isCurrentSession = () => get().currentSessionKey === currentSessionKey;
+
+      const applyLoadFailure = (errorMessage: string | null) => {
+        if (!isCurrentSession()) return;
+        const hasMessages = get().messages.length > 0;
+        set((state) => ({
+          loading: false,
+          error: !quiet && errorMessage ? errorMessage : state.error,
+          ...(hasMessages ? {} : { messages: [] as RawMessage[] }),
+        }));
+      };
+
       const applyLoadedMessages = (rawMessages: RawMessage[], thinkingLevel: string | null) => {
+        if (!isCurrentSession()) return;
         // Before filtering: attach images/files from tool_result messages to the next assistant message
         const messagesWithToolImages = enrichWithToolResultFiles(rawMessages);
         const filteredMessages = messagesWithToolImages.filter((msg) => !isToolResultRole(msg.role));
@@ -94,6 +107,7 @@ export function createHistoryActions(
 
         // Async: load missing image previews from disk (updates in background)
         loadMissingPreviews(finalMessages).then((updated) => {
+          if (!isCurrentSession()) return;
           if (updated) {
             // Create new object references so React.memo detects changes.
             // loadMissingPreviews mutates AttachedFileMeta in place, so we
@@ -162,7 +176,7 @@ export function createHistoryActions(
           if (fallbackMessages.length > 0) {
             applyLoadedMessages(fallbackMessages, null);
           } else {
-            set({ messages: [], loading: false });
+            applyLoadFailure(result.error || 'Failed to load chat history');
           }
         }
       } catch (err) {
@@ -171,7 +185,7 @@ export function createHistoryActions(
         if (fallbackMessages.length > 0) {
           applyLoadedMessages(fallbackMessages, null);
         } else {
-          set({ messages: [], loading: false });
+          applyLoadFailure(String(err));
         }
       }
     },

@@ -15,6 +15,8 @@ import { FeedbackState } from '@/components/common/FeedbackState';
 import {
   filterUsageHistoryByWindow,
   groupUsageHistory,
+  resolveStableUsageHistory,
+  resolveVisibleUsageHistory,
   type UsageGroupBy,
   type UsageHistoryEntry,
   type UsageWindow,
@@ -40,6 +42,7 @@ export function Models() {
   type FetchState = {
     status: 'idle' | 'loading' | 'done';
     data: UsageHistoryEntry[];
+    stableData: UsageHistoryEntry[];
   };
   type FetchAction =
     | { type: 'start' }
@@ -50,16 +53,20 @@ export function Models() {
     (state: FetchState, action: FetchAction): FetchState => {
       switch (action.type) {
         case 'start':
-          return { status: 'loading', data: state.data };
+          return { ...state, status: 'loading' };
         case 'done':
-          return { status: 'done', data: action.data };
+          return {
+            status: 'done',
+            data: action.data,
+            stableData: resolveStableUsageHistory(state.stableData, action.data),
+          };
         case 'reset':
-          return { status: 'idle', data: [] };
+          return { ...state, status: 'idle', data: [] };
         default:
           return state;
       }
     },
-    { status: 'idle' as const, data: [] as UsageHistoryEntry[] },
+    { status: 'idle' as const, data: [] as UsageHistoryEntry[], stableData: [] as UsageHistoryEntry[] },
   );
 
   const usageFetchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -182,14 +189,15 @@ export function Models() {
   }, [isGatewayRunning, gatewayStatus.connectedAt, gatewayStatus.pid, usageFetchMaxAttempts]);
 
   const usageHistory = fetchState.data;
-  const visibleUsageHistory = isGatewayRunning ? usageHistory : [];
+  const visibleUsageHistory = resolveVisibleUsageHistory(usageHistory, fetchState.stableData);
   const filteredUsageHistory = filterUsageHistoryByWindow(visibleUsageHistory, usageWindow);
   const usageGroups = groupUsageHistory(filteredUsageHistory, usageGroupBy);
   const usagePageSize = 5;
   const usageTotalPages = Math.max(1, Math.ceil(filteredUsageHistory.length / usagePageSize));
   const safeUsagePage = Math.min(usagePage, usageTotalPages);
   const pagedUsageHistory = filteredUsageHistory.slice((safeUsagePage - 1) * usagePageSize, safeUsagePage * usagePageSize);
-  const usageLoading = isGatewayRunning && fetchState.status === 'loading';
+  const usageLoading = isGatewayRunning && fetchState.status === 'loading' && visibleUsageHistory.length === 0;
+  const usageRefreshing = isGatewayRunning && fetchState.status === 'loading' && visibleUsageHistory.length > 0;
 
   return (
     <div className="flex flex-col -m-6 dark:bg-background h-[calc(100vh-2.5rem)] overflow-hidden">
@@ -296,7 +304,9 @@ export function Models() {
                       </div>
                     </div>
                     <p className="text-[13px] font-medium text-muted-foreground">
-                      {t('dashboard:recentTokenHistory.showingLast', { count: filteredUsageHistory.length })}
+                      {usageRefreshing
+                        ? t('dashboard:recentTokenHistory.loading')
+                        : t('dashboard:recentTokenHistory.showingLast', { count: filteredUsageHistory.length })}
                     </p>
                   </div>
 

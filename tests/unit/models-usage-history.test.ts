@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 import {
   filterUsageHistoryByWindow,
   groupUsageHistory,
+  resolveStableUsageHistory,
+  resolveVisibleUsageHistory,
   type UsageHistoryEntry,
 } from '@/pages/Models/usage-history';
 
@@ -64,5 +66,19 @@ describe('models usage history helpers', () => {
 
     expect(filtered).toHaveLength(2);
     expect(filtered.map((entry) => entry.totalTokens)).toEqual([12, 11]);
+  });
+
+  it('preserves the last stable usage snapshot when a refresh returns empty', () => {
+    const stable = [createEntry(12, 12)];
+
+    expect(resolveStableUsageHistory(stable, [])).toEqual(stable);
+  });
+
+  it('prefers fresh usage entries over the cached snapshot when available', () => {
+    const stable = [createEntry(12, 12)];
+    const fresh = [createEntry(13, 13)];
+
+    expect(resolveVisibleUsageHistory([], stable)).toEqual(stable);
+    expect(resolveVisibleUsageHistory(fresh, stable)).toEqual(fresh);
   });
 });

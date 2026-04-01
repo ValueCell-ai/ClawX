@@ -214,4 +214,46 @@ describe('Agents page status refresh', () => {
     expect((modelIdInput as HTMLInputElement).value).toBe('anthropic/claude-opus-4.6');
     expect(useDefaultButton).toBeDisabled();
   });
+
+  it('keeps the last agent snapshot visible while a refresh is in flight', async () => {
+    agentsState.agents = [
+      {
+        id: 'main',
+        name: 'Main',
+        isDefault: true,
+        modelDisplay: 'gpt-5',
+        modelRef: 'openai/gpt-5',
+        overrideModelRef: null,
+        inheritedModel: true,
+        workspace: '~/.openclaw/workspace',
+        agentDir: '~/.openclaw/agents/main/agent',
+        mainSessionKey: 'agent:main:main',
+        channelTypes: [],
+      },
+    ];
+
+    const { rerender } = render(<Agents />);
+
+    expect(await screen.findByText('Main')).toBeInTheDocument();
+
+    agentsState.loading = true;
+    await act(async () => {
+      rerender(<Agents />);
+    });
+
+    expect(screen.getByText('Main')).toBeInTheDocument();
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+  });
+
+  it('keeps the blocking spinner during the initial load before any stable snapshot exists', async () => {
+    agentsState.loading = true;
+    fetchAgentsMock.mockImplementation(() => new Promise(() => {}));
+    refreshProviderSnapshotMock.mockImplementation(() => new Promise(() => {}));
+    hostApiFetchMock.mockImplementation(() => new Promise(() => {}));
+
+    const { container } = render(<Agents />);
+
+    expect(container.querySelector('svg.animate-spin')).toBeTruthy();
+    expect(screen.queryByText('title')).not.toBeInTheDocument();
+  });
 });
