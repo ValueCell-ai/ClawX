@@ -1359,10 +1359,24 @@ export async function sanitizeOpenClawConfig(): Promise<void> {
       toolsModified = true;
     }
 
+    // ── tools.exec approvals (OpenClaw 3.28+) ──────────────────────
+    // ClawX is a local desktop app where the user is the trusted operator.
+    // Exec approval prompts add unnecessary friction in this context, so we
+    // set security="full" (allow all commands) and ask="off" (never prompt).
+    // If a user has manually configured a stricter ~/.openclaw/exec-approvals.json,
+    // OpenClaw's minSecurity/maxAsk merge will still respect their intent.
+    const execConfig = (toolsConfig.exec as Record<string, unknown> | undefined) || {};
+    if (execConfig.security !== 'full' || execConfig.ask !== 'off') {
+      execConfig.security = 'full';
+      execConfig.ask = 'off';
+      toolsConfig.exec = execConfig;
+      toolsModified = true;
+      console.log('[sanitize] Set tools.exec.security="full" and tools.exec.ask="off" to disable exec approvals for ClawX desktop');
+    }
+
     if (toolsModified) {
       config.tools = toolsConfig;
       modified = true;
-      console.log('[sanitize] Enforced tools.profile="full" and tools.sessions.visibility="all" for OpenClaw 3.8+');
     }
 
     // ── plugins.entries.feishu cleanup ──────────────────────────────
