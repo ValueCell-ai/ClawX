@@ -9,10 +9,11 @@
  * Responding" hangs.
  */
 import { access, mkdir, readFile, writeFile } from 'fs/promises';
-import { constants } from 'fs';
+import { constants, readdirSync, readFileSync, existsSync } from 'fs';
 import { join } from 'path';
 import { homedir } from 'os';
 import { listConfiguredAgentIds } from './agent-config';
+import { getOpenClawResolvedDir } from './paths';
 import {
   getProviderEnvVar,
   getProviderDefaultModel,
@@ -226,6 +227,53 @@ const AUTH_PROFILE_PROVIDER_KEY_MAP: Record<string, string> = {
   'openai-codex': 'openai',
   'google-gemini-cli': 'google',
 };
+
+/**
+ * Scan OpenClaw's bundled extensions directory to find all plugins that have
+ * `enabledByDefault: true` in their `openclaw.plugin.json` manifest.
+ *
+ * When `plugins.allow` is explicitly set (e.g. for third-party channel
+ * plugins), OpenClaw blocks ALL plugins not in the allowlist — even bundled
+ * ones with `enabledByDefault: true`.  This function discovers those plugins
+ * so they can be preserved in the allowlist.
+ *
+ * Results are cached for the lifetime of the process since bundled
+ * extensions don't change at runtime.
+ */
+let _bundledPluginCache: { all: Set<string>; enabledByDefault: string[] } | null = null;
+function discoverBundledPlugins(): { all: Set<string>; enabledByDefault: string[] } {
+  if (_bundledPluginCache) return _bundledPluginCache;
+  const all = new Set<string>();
+  const enabledByDefault: string[] = [];
+  try {
+    const extensionsDir = join(getOpenClawResolvedDir(), 'dist', 'extensions');
+    if (!existsSync(extensionsDir)) {
+      _bundledPluginCache = { all, enabledByDefault };
+      return _bundledPluginCache;
+    }
+    for (const entry of readdirSync(extensionsDir, { withFileTypes: true })) {
+      if (!entry.isDirectory()) continue;
+      const manifestPath = join(extensionsDir, entry.name, 'openclaw.plugin.json');
+      if (!existsSync(manifestPath)) continue;
+      try {
+        const manifest = JSON.parse(readFileSync(manifestPath, 'utf-8'));
+        if (typeof manifest.id === 'string') {
+          all.add(manifest.id);
+          if (manifest.enabledByDefault === true) {
+            enabledByDefault.push(manifest.id);
+          }
+        }
+      } catch {
+        // Malformed manifest — skip silently
+      }
+    }
+  } catch {
+    // Extension directory not found or unreadable — return empty
+  }
+  _bundledPluginCache = { all, enabledByDefault };
+  return _bundledPluginCache;
+}
+
 
 function normalizeAuthProfileProviderKey(provider: string): string {
   return AUTH_PROFILE_PROVIDER_KEY_MAP[provider] ?? provider;
@@ -1574,7 +1622,15 @@ export async function sanitizeOpenClawConfig(): Promise<void> {
         modified = true;
       }
 
-      const externalPluginIds = allowArr2.filter((pluginId) => !BUILTIN_CHANNEL_IDS.has(pluginId));
+      // Discover all bundled extension IDs and which ones are enabledByDefault
+      // so we can (a) exclude them from the "external" set (prevents stale
+      // entries surviving across OpenClaw upgrades) and (b) re-add the
+      // enabledByDefault ones to prevent the allowlist from blocking them.
+      const bundled = discoverBundledPlugins();
+
+      const externalPluginIds = allowArr2.filter(
+        (pluginId) => !BUILTIN_CHANNEL_IDS.has(pluginId) && !bundled.all.has(pluginId),
+      );
       let nextAllow = [...externalPluginIds];
       if (externalPluginIds.length > 0) {
         for (const channelId of configuredBuiltIns) {
@@ -1582,6 +1638,20 @@ export async function sanitizeOpenClawConfig(): Promise<void> {
             nextAllow.push(channelId);
             modified = true;
             console.log(`[sanitize] Added configured built-in channel "${channelId}" to plugins.allow`);
+          }
+        }
+      }
+
+      // ── Ensure enabledByDefault built-in plugins survive restrictive allowlists ──
+      // OpenClaw's plugin enable logic checks the allowlist BEFORE enabledByDefault,
+      // so any bundled plugin with enabledByDefault: true (e.g. browser, diffs, etc.)
+      // gets blocked when plugins.allow is non-empty.  We add them back here.
+      // On upgrade, plugins removed from enabledByDefault are also removed from the
+      // allowlist because they were excluded from externalPluginIds above.
+      if (nextAllow.length > 0) {
+        for (const pluginId of bundled.enabledByDefault) {
+          if (!nextAllow.includes(pluginId)) {
+            nextAllow.push(pluginId);
           }
         }
       }

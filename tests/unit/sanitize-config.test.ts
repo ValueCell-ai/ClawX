@@ -30,7 +30,10 @@ async function readConfig(): Promise<Record<string, unknown>> {
  * Standalone mirror of the sanitization logic in openclaw-auth.ts.
  * Uses the same blocklist approach as the production code.
  */
-async function sanitizeConfig(filePath: string): Promise<boolean> {
+async function sanitizeConfig(
+  filePath: string,
+  bundledPlugins?: { all: string[]; enabledByDefault: string[] },
+): Promise<boolean> {
   let raw: string;
   try {
     raw = await readFile(filePath, 'utf-8');
@@ -143,12 +146,28 @@ async function sanitizeConfig(filePath: string): Promise<boolean> {
       }
     }
 
-    const externalPluginIds = allow.filter((id) => !BUILTIN_CHANNEL_IDS.has(id));
+    // Mirror production logic: exclude both built-in channels AND bundled
+    // extension IDs from the "external" set, then re-add enabledByDefault ones.
+    const bundledAll = new Set(bundledPlugins?.all ?? []);
+    const bundledEnabledByDefault = bundledPlugins?.enabledByDefault ?? [];
+
+    const externalPluginIds = allow.filter(
+      (id) => !BUILTIN_CHANNEL_IDS.has(id) && !bundledAll.has(id),
+    );
     const nextAllow = [...externalPluginIds];
     if (externalPluginIds.length > 0) {
       for (const channelId of configuredBuiltIns) {
         if (!nextAllow.includes(channelId)) {
           nextAllow.push(channelId);
+        }
+      }
+    }
+
+    // Re-add enabledByDefault plugins when allowlist is non-empty
+    if (nextAllow.length > 0) {
+      for (const pluginId of bundledEnabledByDefault) {
+        if (!nextAllow.includes(pluginId)) {
+          nextAllow.push(pluginId);
         }
       }
     }
@@ -610,6 +629,119 @@ describe('sanitizeOpenClawConfig (blocklist approach)', () => {
     await writeConfig(original);
 
     const modified = await sanitizeConfig(configPath);
+    expect(modified).toBe(false);
+  });
+
+  // ── enabledByDefault bundled plugin allowlist tests ──────────────
+
+  it('adds enabledByDefault bundled plugins to plugins.allow when allowlist is non-empty', async () => {
+    await writeConfig({
+      plugins: {
+        allow: ['customPlugin'],
+        entries: { customPlugin: { enabled: true } },
+      },
+    });
+
+    const bundled = {
+      all: ['browser', 'openai', 'diffs'],
+      enabledByDefault: ['browser', 'openai'],
+    };
+
+    const modified = await sanitizeConfig(configPath, bundled);
+    expect(modified).toBe(true);
+
+    const result = await readConfig();
+    const plugins = result.plugins as Record<string, unknown>;
+    const allow = plugins.allow as string[];
+    expect(allow).toContain('customPlugin');
+    expect(allow).toContain('browser');
+    expect(allow).toContain('openai');
+    // 'diffs' is bundled but NOT enabledByDefault — should not be added
+    expect(allow).not.toContain('diffs');
+  });
+
+  it('removes stale bundled plugin IDs from allowlist on upgrade', async () => {
+    // Simulate: previous version had 'old-bundled' as enabledByDefault,
+    // new version still has it bundled but no longer enabledByDefault.
+    // Also 'unknown-plugin' is not in bundled.all — it could be a
+    // user-installed third-party plugin, so it must be preserved.
+    await writeConfig({
+      plugins: {
+        allow: ['customPlugin', 'unknown-plugin', 'old-bundled', 'browser'],
+      },
+    });
+
+    const bundled = {
+      all: ['browser', 'openai', 'old-bundled'],  // old-bundled still bundled
+      enabledByDefault: ['browser', 'openai'],      // but no longer enabledByDefault
+    };
+
+    const modified = await sanitizeConfig(configPath, bundled);
+    expect(modified).toBe(true);
+
+    const result = await readConfig();
+    const plugins = result.plugins as Record<string, unknown>;
+    const allow = plugins.allow as string[];
+    expect(allow).toContain('customPlugin');      // external — preserved
+    expect(allow).toContain('unknown-plugin');    // not bundled — treated as external, preserved
+    expect(allow).toContain('browser');           // still enabledByDefault
+    expect(allow).toContain('openai');            // newly added enabledByDefault
+    expect(allow).not.toContain('old-bundled');   // bundled but demoted — removed
+  });
+
+  it('removes demoted bundled plugin from allowlist when no longer enabledByDefault', async () => {
+    // Simulate: 'diffs' was enabledByDefault in v1, demoted to opt-in in v2
+    await writeConfig({
+      plugins: {
+        allow: ['customPlugin', 'diffs', 'browser'],
+      },
+    });
+
+    const bundled = {
+      all: ['browser', 'diffs', 'openai'],
+      enabledByDefault: ['browser', 'openai'],  // diffs no longer enabledByDefault
+    };
+
+    const modified = await sanitizeConfig(configPath, bundled);
+    expect(modified).toBe(true);
+
+    const result = await readConfig();
+    const plugins = result.plugins as Record<string, unknown>;
+    const allow = plugins.allow as string[];
+    expect(allow).toContain('customPlugin');
+    expect(allow).toContain('browser');
+    expect(allow).toContain('openai');
+    expect(allow).not.toContain('diffs');  // demoted — removed
+  });
+
+  it('does not add enabledByDefault plugins when allowlist is empty (no external plugins)', async () => {
+    // When no external plugins exist, allowlist should be dropped entirely
+    await writeConfig({
+      plugins: {
+        allow: ['whatsapp'],  // built-in channel only
+      },
+    });
+
+    const bundled = {
+      all: ['browser', 'openai'],
+      enabledByDefault: ['browser', 'openai'],
+    };
+
+    const modified = await sanitizeConfig(configPath, bundled);
+    expect(modified).toBe(true);
+
+    const result = await readConfig();
+    // plugins.allow should be removed (only built-in, no external plugins)
+    expect(result.plugins).toBeUndefined();
+  });
+
+  it('does not modify config when no bundled plugins and no allowlist', async () => {
+    const original = {
+      gateway: { mode: 'local' },
+    };
+    await writeConfig(original);
+
+    const modified = await sanitizeConfig(configPath, { all: ['browser'], enabledByDefault: ['browser'] });
     expect(modified).toBe(false);
   });
 });
