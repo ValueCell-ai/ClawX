@@ -90,6 +90,8 @@ class ErrorBoundary extends Component<
 function App() {
   const navigate = useNavigate();
   const location = useLocation();
+  const skipSetupForE2E = typeof window !== 'undefined'
+    && new URLSearchParams(window.location.search).get('e2eSkipSetup') === '1';
   const initSettings = useSettingsStore((state) => state.init);
   const theme = useSettingsStore((state) => state.theme);
   const language = useSettingsStore((state) => state.language);
@@ -120,10 +122,10 @@ function App() {
 
   // Redirect to setup wizard if not complete
   useEffect(() => {
-    if (!setupComplete && !location.pathname.startsWith('/setup')) {
+    if (!setupComplete && !skipSetupForE2E && !location.pathname.startsWith('/setup')) {
       navigate('/setup');
     }
-  }, [setupComplete, location.pathname, navigate]);
+  }, [setupComplete, skipSetupForE2E, location.pathname, navigate]);
 
   // Listen for navigation events from main process
   useEffect(() => {

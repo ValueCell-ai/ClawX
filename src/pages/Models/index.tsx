@@ -200,7 +200,7 @@ export function Models() {
   const usageRefreshing = isGatewayRunning && fetchState.status === 'loading' && visibleUsageHistory.length > 0;
 
   return (
-    <div className="flex flex-col -m-6 dark:bg-background h-[calc(100vh-2.5rem)] overflow-hidden">
+    <div data-testid="models-page" className="flex flex-col -m-6 dark:bg-background h-[calc(100vh-2.5rem)] overflow-hidden">
       <div className="w-full max-w-5xl mx-auto flex flex-col h-full p-10 pt-16">
         
         {/* Header */}

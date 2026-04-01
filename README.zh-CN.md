@@ -322,6 +322,7 @@ ClawX 采用 **双进程 + Host API 统一接入架构**。渲染进程只调用
 │   ├── i18n/                # 国际化资源
 │   └── types/               # TypeScript 类型定义
 ├── tests/
+│   ├── e2e/                 # Playwright Electron 端到端冒烟测试
 │   └── unit/                # Vitest 单元/集成型测试
 ├── resources/                # 静态资源（图标、图片）
 └── scripts/                  # 构建与工具脚本
@@ -339,6 +340,7 @@ pnpm typecheck            # TypeScript 类型检查
 
 # 测试
 pnpm test                 # 运行单元测试
+pnpm run test:e2e         # 运行 Electron 端到端冒烟测试
 pnpm run comms:replay     # 计算通信回放指标
 pnpm run comms:baseline   # 刷新通信基线快照
 pnpm run comms:compare    # 将回放指标与基线阈值对比
@@ -351,6 +353,8 @@ pnpm package:mac          # 为 macOS 打包
 pnpm package:win          # 为 Windows 打包
 pnpm package:linux        # 为 Linux 打包
 ```
+
+在无头 Linux 环境下，Electron 测试需要显示服务；可使用 `xvfb-run -a pnpm run test:e2e`。
 
 ### 通信回归检查
 

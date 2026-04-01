@@ -322,6 +322,7 @@ Chain multiple skills together to create sophisticated automation pipelines. Pro
 │   ├── i18n/                # Localization resources
 │   └── types/               # TypeScript type definitions
 ├── tests/
+│   ├── e2e/                 # Playwright Electron end-to-end smoke tests
 │   └── unit/                # Vitest unit/integration-like tests
 ├── resources/                # Static assets (icons/images)
 └── scripts/                  # Build and utility scripts
@@ -339,6 +340,7 @@ pnpm typecheck            # TypeScript validation
 
 # Testing
 pnpm test                 # Run unit tests
+pnpm run test:e2e         # Run Electron end-to-end smoke tests
 pnpm run comms:replay     # Compute communication replay metrics
 pnpm run comms:baseline   # Refresh communication baseline snapshot
 pnpm run comms:compare    # Compare replay metrics against baseline thresholds
@@ -351,6 +353,8 @@ pnpm package:mac          # Package for macOS
 pnpm package:win          # Package for Windows
 pnpm package:linux        # Package for Linux
 ```
+
+On headless Linux, run Electron tests under a display server such as `xvfb-run -a pnpm run test:e2e`.
 
 ### Communication Regression Checks
 

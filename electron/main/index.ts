@@ -70,6 +70,11 @@ if (process.platform === 'linux') {
   app.setDesktopName('clawx.desktop');
 }
 
+const e2eUserDataDir = process.env.CLAWX_USER_DATA_DIR?.trim();
+if (e2eUserDataDir) {
+  app.setPath('userData', e2eUserDataDir);
+}
+
 // Prevent multiple instances of the app from running simultaneously.
 // Without this, two instances each spawn their own gateway process on the
 // same port, then each treats the other's gateway as "orphaned" and kills
@@ -151,6 +156,7 @@ function createWindow(): BrowserWindow {
   const isMac = process.platform === 'darwin';
   const isWindows = process.platform === 'win32';
   const useCustomTitleBar = isWindows;
+  const shouldSkipSetupForE2E = process.env.CLAWX_E2E_SKIP_SETUP === '1';
 
   const win = new BrowserWindow({
     width: 1280,
@@ -189,10 +195,18 @@ function createWindow(): BrowserWindow {
 
   // Load the app
   if (process.env.VITE_DEV_SERVER_URL) {
-    win.loadURL(process.env.VITE_DEV_SERVER_URL);
+    const rendererUrl = new URL(process.env.VITE_DEV_SERVER_URL);
+    if (shouldSkipSetupForE2E) {
+      rendererUrl.searchParams.set('e2eSkipSetup', '1');
+    }
+    win.loadURL(rendererUrl.toString());
     win.webContents.openDevTools();
   } else {
-    win.loadFile(join(__dirname, '../../dist/index.html'));
+    win.loadFile(join(__dirname, '../../dist/index.html'), {
+      query: shouldSkipSetupForE2E
+        ? { e2eSkipSetup: '1' }
+        : undefined,
+    });
   }
 
   return win;
