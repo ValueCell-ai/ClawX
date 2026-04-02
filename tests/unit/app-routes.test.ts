@@ -30,7 +30,7 @@ describe('handleAppRoutes', () => {
     const handled = await handleAppRoutes(
       { method: 'POST' } as IncomingMessage,
       {} as ServerResponse,
-      new URL('http://127.0.0.1:3210/api/app/openclaw-doctor'),
+      new URL('http://127.0.0.1:13210/api/app/openclaw-doctor'),
       {} as never,
     );
 
@@ -48,7 +48,7 @@ describe('handleAppRoutes', () => {
     const handled = await handleAppRoutes(
       { method: 'POST' } as IncomingMessage,
       {} as ServerResponse,
-      new URL('http://127.0.0.1:3210/api/app/openclaw-doctor'),
+      new URL('http://127.0.0.1:13210/api/app/openclaw-doctor'),
       {} as never,
     );
 

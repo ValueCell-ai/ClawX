@@ -24,7 +24,7 @@ describe('handleUsageRoutes', () => {
     const handled = await handleUsageRoutes(
       { method: 'GET' } as IncomingMessage,
       {} as ServerResponse,
-      new URL('http://127.0.0.1:3210/api/usage/recent-token-history'),
+      new URL('http://127.0.0.1:13210/api/usage/recent-token-history'),
       {} as never,
     );
 
@@ -44,7 +44,7 @@ describe('handleUsageRoutes', () => {
     await handleUsageRoutes(
       { method: 'GET' } as IncomingMessage,
       {} as ServerResponse,
-      new URL('http://127.0.0.1:3210/api/usage/recent-token-history?limit=50.9'),
+      new URL('http://127.0.0.1:13210/api/usage/recent-token-history?limit=50.9'),
       {} as never,
     );
 

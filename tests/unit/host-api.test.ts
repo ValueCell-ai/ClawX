@@ -64,7 +64,7 @@ describe('host-api', () => {
 
     expect(result.fallback).toBe(true);
     expect(fetchMock).toHaveBeenCalledWith(
-      'http://127.0.0.1:3210/api/test',
+      'http://127.0.0.1:13210/api/test',
       expect.objectContaining({ headers: expect.any(Object) }),
     );
   });
@@ -97,7 +97,7 @@ describe('host-api', () => {
 
     expect(result.fallback).toBe(true);
     expect(fetchMock).toHaveBeenCalledWith(
-      'http://127.0.0.1:3210/api/test',
+      'http://127.0.0.1:13210/api/test',
       expect.objectContaining({ headers: expect.any(Object) }),
     );
   });

@@ -43,7 +43,7 @@ const routeHandlers: RouteHandler[] = [
  * Per-session secret token used to authenticate Host API requests.
  * Generated once at server start and shared with the renderer via IPC.
  * This prevents cross-origin attackers from reading sensitive data even
- * if they can reach 127.0.0.1:3210 (the CORS wildcard alone is not
+ * if they can reach 127.0.0.1:13210 (the CORS wildcard alone is not
  * sufficient because browsers attach the Origin header but not a secret).
  */
 let hostApiToken: string = '';
@@ -103,6 +103,18 @@ export function startHostApiServer(ctx: HostApiContext, port = getPort('CLAWX_HO
     } catch (error) {
       logger.error('Host API request failed:', error);
       sendJson(res, 500, { success: false, error: String(error) });
+    }
+  });
+
+  server.on('error', (error: NodeJS.ErrnoException) => {
+    if (error.code === 'EACCES' || error.code === 'EADDRINUSE') {
+      logger.error(
+        `Host API server failed to bind port ${port}: ${error.message}. ` +
+        'On Windows this is often caused by Hyper-V reserving the port range. ' +
+        `Set CLAWX_PORT_CLAWX_HOST_API env var to override the default port.`,
+      );
+    } else {
+      logger.error('Host API server error:', error);
     }
   });
 

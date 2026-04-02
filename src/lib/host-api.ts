@@ -2,7 +2,7 @@ import { invokeIpc } from '@/lib/api-client';
 import { trackUiEvent } from './telemetry';
 import { normalizeAppError } from './error-model';
 
-const HOST_API_PORT = 3210;
+const HOST_API_PORT = 13210;
 const HOST_API_BASE = `http://127.0.0.1:${HOST_API_PORT}`;
 
 /** Cached Host API auth token, fetched once from the main process via IPC. */
