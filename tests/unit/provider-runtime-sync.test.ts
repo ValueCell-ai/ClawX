@@ -76,6 +76,7 @@ import {
   syncDeletedProviderApiKeyToRuntime,
   syncDeletedProviderToRuntime,
   syncSavedProviderToRuntime,
+  syncUpdatedProviderToRuntime,
 } from '@electron/services/providers/provider-runtime-sync';
 
 function createProvider(overrides: Partial<ProviderConfig> = {}): ProviderConfig {
@@ -309,5 +310,52 @@ describe('provider-runtime-sync refresh strategy', () => {
       }),
       expect.any(Array),
     );
+  });
+  it('syncs updated Ollama provider as default with correct override config', async () => {
+    const ollamaProvider = createProvider({
+      id: 'ollamafd',
+      type: 'ollama',
+      name: 'Ollama',
+      model: 'qwen3:30b',
+      baseUrl: 'http://localhost:11434/v1',
+    });
+
+    mocks.getProviderConfig.mockReturnValue(undefined);
+    mocks.getProviderSecret.mockResolvedValue({ type: 'local', apiKey: 'ollama-local' });
+    mocks.getDefaultProvider.mockResolvedValue('ollamafd');
+
+    const gateway = createGateway('running');
+    await syncUpdatedProviderToRuntime(ollamaProvider, undefined, gateway as GatewayManager);
+
+    // Should use the custom/ollama branch with explicit override
+    expect(mocks.setOpenClawDefaultModelWithOverride).toHaveBeenCalledWith(
+      'ollama-ollamafd',
+      'ollama-ollamafd/qwen3:30b',
+      expect.objectContaining({
+        baseUrl: 'http://localhost:11434/v1',
+        api: 'openai-completions',
+      }),
+      expect.any(Array),
+    );
+    // Should NOT call the non-override path
+    expect(mocks.setOpenClawDefaultModel).not.toHaveBeenCalled();
+    expect(gateway.debouncedReload).toHaveBeenCalledTimes(1);
+  });
+
+  it('removes Ollama provider from runtime on delete', async () => {
+    const ollamaProvider = createProvider({
+      id: 'ollamafd',
+      type: 'ollama',
+      name: 'Ollama',
+      model: 'qwen3:30b',
+      baseUrl: 'http://localhost:11434/v1',
+    });
+
+    const gateway = createGateway('running');
+    await syncDeletedProviderToRuntime(ollamaProvider, 'ollamafd', gateway as GatewayManager);
+
+    expect(mocks.removeProviderFromOpenClaw).toHaveBeenCalledWith('ollama-ollamafd');
+    expect(mocks.removeProviderFromOpenClaw).toHaveBeenCalledWith('ollamafd');
+    expect(gateway.debouncedRestart).toHaveBeenCalledTimes(1);
   });
 });
