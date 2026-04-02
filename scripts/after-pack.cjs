@@ -600,21 +600,56 @@ exports.default = async function afterPack(context) {
   //     OpenClaw 3.31+ ships built-in extensions (discord, qqbot, etc.) under
   //     dist/extensions/<ext>/node_modules/. These are skipped by extraResources
   //     because .gitignore contains "node_modules/".
+  //
+  //     Extension code is loaded via shared chunks in dist/ (e.g. outbound-*.js)
+  //     which resolve modules from the top-level openclaw/node_modules/, NOT from
+  //     the extension's own node_modules/. So we must merge extension deps into
+  //     the top-level node_modules/ as well.
   const buildExtDir = join(__dirname, '..', 'build', 'openclaw', 'dist', 'extensions');
   const packExtDir = join(openclawRoot, 'dist', 'extensions');
   if (existsSync(buildExtDir)) {
     let extNMCount = 0;
+    let mergedPkgCount = 0;
     for (const extEntry of readdirSync(buildExtDir, { withFileTypes: true })) {
       if (!extEntry.isDirectory()) continue;
       const srcNM = join(buildExtDir, extEntry.name, 'node_modules');
       if (!existsSync(srcNM)) continue;
-      const destNM = join(packExtDir, extEntry.name, 'node_modules');
-      if (existsSync(destNM)) continue; // already present (shouldn't happen, but be safe)
-      cpSync(srcNM, destNM, { recursive: true });
+
+      // Copy to extension's own node_modules (for direct requires from extension code)
+      const destExtNM = join(packExtDir, extEntry.name, 'node_modules');
+      if (!existsSync(destExtNM)) {
+        cpSync(srcNM, destExtNM, { recursive: true });
+      }
       extNMCount++;
+
+      // Merge into top-level openclaw/node_modules/ (for shared chunks in dist/)
+      for (const pkgEntry of readdirSync(srcNM, { withFileTypes: true })) {
+        if (!pkgEntry.isDirectory() || pkgEntry.name === '.bin') continue;
+        const srcPkg = join(srcNM, pkgEntry.name);
+        const destPkg = join(dest, pkgEntry.name);
+
+        if (pkgEntry.name.startsWith('@')) {
+          // Scoped package — iterate sub-entries
+          for (const scopeEntry of readdirSync(srcPkg, { withFileTypes: true })) {
+            if (!scopeEntry.isDirectory()) continue;
+            const srcScoped = join(srcPkg, scopeEntry.name);
+            const destScoped = join(destPkg, scopeEntry.name);
+            if (!existsSync(destScoped)) {
+              mkdirSync(dirname(destScoped), { recursive: true });
+              cpSync(srcScoped, destScoped, { recursive: true });
+              mergedPkgCount++;
+            }
+          }
+        } else {
+          if (!existsSync(destPkg)) {
+            cpSync(srcPkg, destPkg, { recursive: true });
+            mergedPkgCount++;
+          }
+        }
+      }
     }
     if (extNMCount > 0) {
-      console.log(`[after-pack] ✅ Copied node_modules for ${extNMCount} built-in extension(s).`);
+      console.log(`[after-pack] ✅ Copied node_modules for ${extNMCount} built-in extension(s), merged ${mergedPkgCount} packages into top-level.`);
     }
   }
 
