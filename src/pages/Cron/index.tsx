@@ -629,7 +629,7 @@ function TaskDialog({ job, configuredChannels, onClose, onSave }: TaskDialogProp
                   <p className="text-[12px] text-muted-foreground">
                     {availableTargetOptions.length > 0
                       ? t('dialog.deliveryTargetDescAuto')
-                      : t('dialog.noDeliveryTargets')}
+                      : t('dialog.noDeliveryTargets', { channel: getChannelDisplayName(effectiveDeliveryChannel) })}
                   </p>
                 </div>
               </div>

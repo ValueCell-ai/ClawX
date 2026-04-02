@@ -52,7 +52,7 @@
         "deliveryTargetGroupDefault": "おすすめ",
         "deliveryTargetGroupUsers": "ユーザー",
         "deliveryTargetGroupChats": "グループ",
-        "noDeliveryTargets": "この Feishu アカウントでは選択可能な送信先が見つかりませんでした。",
+        "noDeliveryTargets": "この {{channel}} アカウントでは選択可能な送信先が見つかりませんでした。",
         "deliveryTargetPlaceholder": "このチャンネルの送信先を入力",
         "deliveryTargetPlaceholderFeishu": "例: user:ou_xxx または chat:oc_xxx",
         "deliveryTargetDesc": "この値は OpenClaw の delivery.to にそのまま保存されます。",

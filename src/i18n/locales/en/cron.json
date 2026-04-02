@@ -54,7 +54,7 @@
         "deliveryTargetGroupDefault": "Recommended",
         "deliveryTargetGroupUsers": "Users",
         "deliveryTargetGroupChats": "Chats",
-        "noDeliveryTargets": "No delivery targets are available for the selected Feishu account.",
+        "noDeliveryTargets": "No delivery targets are available for the selected {{channel}} account.",
         "deliveryTargetPlaceholder": "Enter the delivery target for this channel",
         "deliveryTargetPlaceholderFeishu": "e.g., user:ou_xxx or chat:oc_xxx",
         "deliveryTargetDesc": "This maps to delivery.to in OpenClaw and is sent as-is.",

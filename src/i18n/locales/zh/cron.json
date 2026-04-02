@@ -54,7 +54,7 @@
         "deliveryTargetGroupDefault": "推荐",
         "deliveryTargetGroupUsers": "用户",
         "deliveryTargetGroupChats": "群聊",
-        "noDeliveryTargets": "当前飞书账号暂无可选投递目标。",
+        "noDeliveryTargets": "当前 {{channel}} 账号暂无可选投递目标。",
         "deliveryTargetPlaceholder": "输入该通道的投递目标",
         "deliveryTargetPlaceholderFeishu": "例如：user:ou_xxx 或 chat:oc_xxx",
         "deliveryTargetDesc": "这里会直接写入 OpenClaw 的 delivery.to。",
