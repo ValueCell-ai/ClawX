@@ -18,15 +18,13 @@ type StartupHooks = {
   findExistingGateway: (port: number) => Promise<ExistingGatewayInfo | null>;
   connect: (port: number, externalToken?: string) => Promise<void>;
   onConnectedToExistingGateway: () => void;
-  waitForPortFree: (port: number, signal?: AbortSignal) => Promise<void>;
+  waitForPortFree: (port: number) => Promise<void>;
   startProcess: () => Promise<void>;
   waitForReady: (port: number) => Promise<void>;
   onConnectedToManagedGateway: () => void;
   runDoctorRepair: () => Promise<boolean>;
   onDoctorRepairSuccess: () => void;
   delay: (ms: number) => Promise<void>;
-  /** Called before a retry to terminate the previously spawned process if still running */
-  terminateOwnedProcess?: () => Promise<void>;
 };
 
 export async function runGatewayStartupSequence(hooks: StartupHooks): Promise<void> {
@@ -99,34 +97,6 @@ export async function runGatewayStartupSequence(hooks: StartupHooks): Promise<vo
       if (recoveryAction === 'retry') {
         logger.warn(`Transient start error: ${String(error)}. Retrying... (${startAttempts}/${maxStartAttempts})`);
         await hooks.delay(1000);
-        // Terminate the previously spawned process before retrying so it doesn't
-        // hold the port and cause another handshake failure.
-        if (hooks.terminateOwnedProcess) {
-          await hooks.terminateOwnedProcess().catch((err) => {
-            logger.warn('Failed to terminate owned process before retry:', err);
-          });
-        }
-        hooks.assertLifecycle('start/retry-pre-port-wait');
-        // Wait for port to become free before retrying (handles lingering processes).
-        // Use a short-polling AbortController so that a superseding stop()/restart()
-        // can cancel the wait promptly instead of blocking for the full 30s timeout.
-        if (hooks.shouldWaitForPortFree) {
-          const abortController = new AbortController();
-          // Poll lifecycle every 500ms and abort the port-wait if superseded
-          const lifecyclePollInterval = setInterval(() => {
-            try {
-              hooks.assertLifecycle('start/retry-port-wait-poll');
-            } catch {
-              abortController.abort();
-            }
-          }, 500);
-          try {
-            await hooks.waitForPortFree(hooks.port, abortController.signal);
-          } finally {
-            clearInterval(lifecyclePollInterval);
-          }
-        }
-        hooks.assertLifecycle('start/retry-post-port-wait');
         continue;
       }
 
