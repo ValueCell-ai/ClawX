@@ -297,13 +297,11 @@ export class GatewayManager extends EventEmitter {
                 process.kill(pid, 0);
                 // Still alive — keep this.process so later cleanup can reach it
               } catch {
-                // Process is gone — safe to clear the handle and ownership flag
+                // Process is gone — safe to clear the handle
                 this.process = null;
-                this.ownsProcess = false;
               }
             } else {
               this.process = null;
-              this.ownsProcess = false;
             }
           }
         },
