@@ -34,12 +34,11 @@ export async function terminateOwnedGatewayProcess(child: Electron.UtilityProces
 
     // Register a single exit listener before any kill attempt to avoid
     // the race where exit fires between two separate `once('exit')` calls.
-    const exitListener = () => {
+    child.once('exit', () => {
       exited = true;
       clearTimeout(timeout);
       resolve();
-    };
-    child.once('exit', exitListener);
+    });
 
     const pid = child.pid;
     logger.info(`Sending kill to Gateway process (pid=${pid ?? 'unknown'})`);
@@ -73,8 +72,6 @@ export async function terminateOwnedGatewayProcess(child: Electron.UtilityProces
           }
         }
       }
-      // Clean up the exit listener on timeout to prevent listener leaks
-      child.off('exit', exitListener);
       resolve();
     }, 5000);
   });
@@ -128,18 +125,13 @@ export async function unloadLaunchctlGatewayService(): Promise<void> {
   }
 }
 
-export async function waitForPortFree(port: number, timeoutMs = 30000, signal?: AbortSignal): Promise<void> {
+export async function waitForPortFree(port: number, timeoutMs = 30000): Promise<void> {
   const net = await import('net');
   const start = Date.now();
   const pollInterval = 500;
   let logged = false;
 
   while (Date.now() - start < timeoutMs) {
-    if (signal?.aborted) {
-      logger.debug(`waitForPortFree: aborted while waiting for port ${port}`);
-      return;
-    }
-
     const available = await new Promise<boolean>((resolve) => {
       const server = net.createServer();
       server.once('error', () => resolve(false));
