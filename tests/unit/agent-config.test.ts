@@ -1,3 +1,5 @@
+// @vitest-environment node
+
 import { access, mkdir, readFile, rm, writeFile } from 'fs/promises';
 import { join } from 'path';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
