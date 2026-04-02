@@ -22,7 +22,10 @@ const {
 }));
 
 /* ---------- module mocks ---------- */
-vi.mock('child_process', () => ({ spawn: mockSpawn }));
+vi.mock('child_process', async () => {
+  const actual = await vi.importActual<typeof import('child_process')>('child_process');
+  return { ...actual, default: { ...actual, spawn: mockSpawn }, spawn: mockSpawn };
+});
 
 vi.mock('fs', async () => {
   const actual = await vi.importActual<typeof import('fs')>('fs');
