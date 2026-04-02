@@ -256,4 +256,58 @@ describe('provider-runtime-sync refresh strategy', () => {
       }),
     );
   });
+
+  it('syncs Ollama provider config to runtime without adding model prefix', async () => {
+    const ollamaProvider = createProvider({
+      id: 'ollamafd',
+      type: 'ollama',
+      name: 'Ollama',
+      model: 'qwen3:30b',
+      baseUrl: 'http://localhost:11434/v1',
+    });
+
+    mocks.getProviderConfig.mockReturnValue(undefined);
+    mocks.getProviderSecret.mockResolvedValue({ type: 'local', apiKey: 'ollama-local' });
+
+    const gateway = createGateway('running');
+    await syncSavedProviderToRuntime(ollamaProvider, undefined, gateway as GatewayManager);
+
+    expect(mocks.syncProviderConfigToOpenClaw).toHaveBeenCalledWith(
+      'ollama-ollamafd',
+      'qwen3:30b',
+      expect.objectContaining({
+        baseUrl: 'http://localhost:11434/v1',
+        api: 'openai-completions',
+      }),
+    );
+    expect(gateway.debouncedReload).toHaveBeenCalledTimes(1);
+  });
+
+  it('syncs Ollama as default provider with correct baseUrl and api protocol', async () => {
+    const ollamaProvider = createProvider({
+      id: 'ollamafd',
+      type: 'ollama',
+      name: 'Ollama',
+      model: 'qwen3:30b',
+      baseUrl: 'http://localhost:11434/v1',
+    });
+
+    mocks.getProvider.mockResolvedValue(ollamaProvider);
+    mocks.getDefaultProvider.mockResolvedValue('ollamafd');
+    mocks.getProviderConfig.mockReturnValue(undefined);
+    mocks.getApiKey.mockResolvedValue('ollama-local');
+
+    const gateway = createGateway('running');
+    await syncDefaultProviderToRuntime('ollamafd', gateway as GatewayManager);
+
+    expect(mocks.setOpenClawDefaultModelWithOverride).toHaveBeenCalledWith(
+      'ollama-ollamafd',
+      'ollama-ollamafd/qwen3:30b',
+      expect.objectContaining({
+        baseUrl: 'http://localhost:11434/v1',
+        api: 'openai-completions',
+      }),
+      expect.any(Array),
+    );
+  });
 });

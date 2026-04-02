@@ -286,7 +286,7 @@ async function syncProviderSecretToRuntime(
 async function resolveRuntimeSyncContext(config: ProviderConfig): Promise<RuntimeProviderSyncContext | null> {
   const runtimeProviderKey = await resolveRuntimeProviderKey(config);
   const meta = getProviderConfig(config.type);
-  const api = config.apiProtocol || (config.type === 'custom' ? 'openai-completions' : meta?.api);
+  const api = config.apiProtocol || ((config.type === 'custom' || config.type === 'ollama') ? 'openai-completions' : meta?.api);
   if (!api) {
     return null;
   }
@@ -315,7 +315,7 @@ async function syncCustomProviderAgentModel(
   runtimeProviderKey: string,
   apiKey: string | undefined,
 ): Promise<void> {
-  if (config.type !== 'custom') {
+  if (config.type !== 'custom' && config.type !== 'ollama') {
     return;
   }
 
@@ -402,7 +402,7 @@ async function buildAgentModelProviderEntry(
   authHeader?: boolean;
 } | null> {
   const meta = getProviderConfig(config.type);
-  const api = config.apiProtocol || (config.type === 'custom' ? 'openai-completions' : meta?.api);
+  const api = config.apiProtocol || ((config.type === 'custom' || config.type === 'ollama') ? 'openai-completions' : meta?.api);
   const baseUrl = normalizeProviderBaseUrl(config, config.baseUrl || meta?.baseUrl, api);
   if (!api || !baseUrl) {
     return null;
@@ -593,7 +593,7 @@ export async function syncDefaultProviderToRuntime(
       ? (provider.model.startsWith(`${ock}/`) ? provider.model : `${ock}/${provider.model}`)
       : undefined;
 
-    if (provider.type === 'custom') {
+    if (provider.type === 'custom' || provider.type === 'ollama') {
       await setOpenClawDefaultModelWithOverride(ock, modelOverride, {
         baseUrl: normalizeProviderBaseUrl(provider, provider.baseUrl, provider.apiProtocol || 'openai-completions'),
         api: provider.apiProtocol || 'openai-completions',
@@ -689,7 +689,7 @@ export async function syncDefaultProviderToRuntime(
   }
 
   if (
-    provider.type === 'custom' &&
+    (provider.type === 'custom' || provider.type === 'ollama') &&
     providerKey &&
     provider.baseUrl
   ) {
