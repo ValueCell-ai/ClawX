@@ -137,7 +137,7 @@ export async function waitForPortFree(port: number, timeoutMs = 30000, signal?: 
   while (Date.now() - start < timeoutMs) {
     if (signal?.aborted) {
       logger.debug(`waitForPortFree: aborted while waiting for port ${port}`);
-      return;
+      throw new Error(`waitForPortFree: aborted while waiting for port ${port}`);
     }
 
     const available = await new Promise<boolean>((resolve) => {

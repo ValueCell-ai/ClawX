@@ -98,14 +98,15 @@ export async function runGatewayStartupSequence(hooks: StartupHooks): Promise<vo
 
       if (recoveryAction === 'retry') {
         logger.warn(`Transient start error: ${String(error)}. Retrying... (${startAttempts}/${maxStartAttempts})`);
-        await hooks.delay(1000);
-        // Terminate the previously spawned process before retrying so it doesn't
-        // hold the port and cause another handshake failure.
+        // Terminate the previously spawned process before the backoff delay so
+        // it releases the port as early as possible; the subsequent delay gives
+        // the OS time to recycle the port (especially TCP TIME_WAIT on Windows).
         if (hooks.terminateOwnedProcess) {
           await hooks.terminateOwnedProcess().catch((err) => {
             logger.warn('Failed to terminate owned process before retry:', err);
           });
         }
+        await hooks.delay(1000);
         hooks.assertLifecycle('start/retry-pre-port-wait');
         // Wait for port to become free before retrying (handles lingering processes).
         // Use a short-polling AbortController so that a superseding stop()/restart()
@@ -122,6 +123,12 @@ export async function runGatewayStartupSequence(hooks: StartupHooks): Promise<vo
           }, 500);
           try {
             await hooks.waitForPortFree(hooks.port, abortController.signal);
+          } catch (portWaitError) {
+            // If the wait was aborted due to lifecycle supersede, convert to
+            // LifecycleSupersededError so the outer handler propagates correctly.
+            hooks.assertLifecycle('start/retry-port-wait-aborted');
+            // If assertLifecycle didn't throw, it's a genuine port-wait error — rethrow.
+            throw portWaitError;
           } finally {
             clearInterval(lifecyclePollInterval);
           }
