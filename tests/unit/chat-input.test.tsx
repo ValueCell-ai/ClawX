@@ -69,7 +69,7 @@ vi.mock('react-i18next', () => ({
   }),
 }));
 
-describe('ChatInput agent targeting', () => {
+describe('ChatInput composer', () => {
   beforeEach(() => {
     agentsState.agents = [];
     chatState.currentAgentId = 'main';
@@ -96,7 +96,7 @@ describe('ChatInput agent targeting', () => {
     expect(screen.queryByTitle('Choose agent')).not.toBeInTheDocument();
   });
 
-  it('lets the user select an agent target and sends it with the message', () => {
+  it('keeps agent targeting out of the composer and still sends the message', () => {
     const onSend = vi.fn();
     agentsState.agents = [
       {
@@ -125,14 +125,11 @@ describe('ChatInput agent targeting', () => {
 
     render(<ChatInput onSend={onSend} />);
 
-    fireEvent.click(screen.getByTitle('Choose agent'));
-    fireEvent.click(screen.getByText('Research'));
-
-    expect(screen.getByText('@Research')).toBeInTheDocument();
+    expect(screen.queryByTitle('Choose agent')).not.toBeInTheDocument();
 
     fireEvent.change(screen.getByRole('textbox'), { target: { value: 'Hello direct agent' } });
     fireEvent.click(screen.getByTitle('Send'));
 
-    expect(onSend).toHaveBeenCalledWith('Hello direct agent', undefined, 'research');
+    expect(onSend).toHaveBeenCalledWith('Hello direct agent', undefined);
   });
 });

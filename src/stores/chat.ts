@@ -9,10 +9,12 @@ import {
   buildAttachedAgentSessionKey,
   getAgentIdFromSessionKey,
   getAttachedAgentIds,
+  normalizeAgentId,
 } from '@/lib/routing';
 import { useChatMetaStore } from './chatMeta';
 import { useChatMirrorsStore, type MirroredChatMessage } from './chatMirrors';
 import { useGatewayStore } from './gateway';
+import { useAgentsStore } from './agents';
 import { buildCronSessionHistoryPath, isCronSessionKey } from './chat/cron-session-utils';
 
 // ── Types ────────────────────────────────────────────────────────
@@ -119,6 +121,7 @@ interface ChatState {
   sendMessage: (
     text: string,
     attachments?: Array<{ fileName: string; mimeType: string; fileSize: number; stagedPath: string; preview: string | null }>,
+    targetAgentId?: string,
   ) => Promise<void>;
   abortRun: () => Promise<void>;
   handleChatEvent: (event: Record<string, unknown>) => void;
@@ -820,6 +823,21 @@ function annotateMessagesForSession(messages: RawMessage[], sessionKey: string):
       }
       : message
   ));
+}
+
+function resolveAgentMainSessionKey(targetAgentId: string): string {
+  const normalizedTarget = normalizeAgentId(targetAgentId);
+  const agents = useAgentsStore.getState().agents ?? [];
+  const matchedAgent = agents.find((agent) => (
+    normalizeAgentId(agent.id) === normalizedTarget
+    || normalizeAgentId(agent.name) === normalizedTarget
+  ));
+
+  if (typeof matchedAgent?.mainSessionKey === 'string' && matchedAgent.mainSessionKey) {
+    return matchedAgent.mainSessionKey;
+  }
+
+  return `agent:${normalizedTarget}:main`;
 }
 
 function mergeConversationMessages(
@@ -1769,10 +1787,20 @@ export const useChatStore = create<ChatState>((set, get) => ({
   sendMessage: async (
     text: string,
     attachments?: Array<{ fileName: string; mimeType: string; fileSize: number; stagedPath: string; preview: string | null }>,
+    targetAgentId?: string,
   ) => {
     const trimmed = text.trim();
     if (!trimmed && (!attachments || attachments.length === 0)) return;
-    const currentSessionKey = get().currentSessionKey;
+    let currentSessionKey = get().currentSessionKey;
+
+    if (targetAgentId) {
+      const targetSessionKey = resolveAgentMainSessionKey(targetAgentId);
+      if (targetSessionKey !== currentSessionKey) {
+        set((state) => buildSessionSwitchPatch(state, targetSessionKey));
+        await get().loadHistory(true);
+        currentSessionKey = get().currentSessionKey;
+      }
+    }
 
     // Add user message optimistically (with local file metadata for UI display)
     const nowMs = Date.now();
