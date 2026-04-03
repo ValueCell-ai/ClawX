@@ -17,6 +17,7 @@ import { Skills } from './pages/Skills';
 import { Cron } from './pages/Cron';
 import { Settings } from './pages/Settings';
 import { Setup } from './pages/Setup';
+import { useChatStore } from '@/stores/chat';
 import { useSettingsStore } from './stores/settings';
 import { useGatewayStore } from './stores/gateway';
 import { useProviderStore } from './stores/providers';
@@ -137,6 +138,23 @@ function App() {
     };
 
     const unsubscribe = window.electron.ipcRenderer.on('navigate', handleNavigate);
+
+    return () => {
+      if (typeof unsubscribe === 'function') {
+        unsubscribe();
+      }
+    };
+  }, [navigate]);
+
+  // Listen for new-chat event from main process (Cmd+N / Ctrl+N)
+  useEffect(() => {
+    const handleNewChat = () => {
+      const { messages, newSession } = useChatStore.getState();
+      if (messages.length > 0) newSession();
+      navigate('/');
+    };
+
+    const unsubscribe = window.electron.ipcRenderer.on('new-chat', handleNewChat);
 
     return () => {
       if (typeof unsubscribe === 'function') {
