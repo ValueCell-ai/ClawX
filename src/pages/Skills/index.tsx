@@ -739,7 +739,7 @@ export function Skills() {
             <div className="mb-4 p-4 rounded-xl border border-destructive/50 bg-destructive/10 text-destructive text-sm font-medium flex items-center gap-2">
               <AlertCircle className="h-5 w-5 shrink-0" />
               <span>
-                {['fetchTimeoutError', 'fetchRateLimitError', 'timeoutError', 'rateLimitError'].includes(error)
+                {['fetchTimeoutError', 'fetchRateLimitError'].includes(error)
                   ? t(`toast.${error}`, { path: skillsDirPath })
                   : error}
               </span>
@@ -851,7 +851,7 @@ export function Skills() {
               <div className="mb-4 p-4 rounded-xl border border-destructive/50 bg-destructive/10 text-destructive text-sm font-medium flex items-center gap-2">
                 <AlertCircle className="h-5 w-5 shrink-0" />
                 <span>
-                  {['searchTimeoutError', 'searchRateLimitError', 'timeoutError', 'rateLimitError'].includes(searchError.replace('Error: ', ''))
+                  {['searchTimeoutError', 'searchRateLimitError'].includes(searchError.replace('Error: ', ''))
                     ? t(`toast.${searchError.replace('Error: ', '')}`, { path: skillsDirPath })
                     : t('marketplace.searchError')}
                 </span>

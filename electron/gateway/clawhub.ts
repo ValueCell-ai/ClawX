@@ -8,6 +8,7 @@ import path from 'path';
 import { app, shell } from 'electron';
 import { getOpenClawConfigDir, ensureDir, getClawHubCliBinPath, getClawHubCliEntryPath, quoteForCmd } from '../utils/paths';
 
+
 export interface ClawHubSearchParams {
     query: string;
     limit?: number;
@@ -127,6 +128,7 @@ export class ClawHubService {
      * Run a ClawHub CLI command
      */
     private async runCommand(args: string[]): Promise<string> {
+
         return new Promise((resolve, reject) => {
             if (this.useNodeRunner && !fs.existsSync(this.cliEntryPath)) {
                 reject(new Error(`ClawHub CLI entry not found at: ${this.cliEntryPath}`));
@@ -145,7 +147,7 @@ export class ClawHubService {
             const isWin = process.platform === 'win32';
             const useShell = isWin && !this.useNodeRunner;
             const { NODE_OPTIONS: _nodeOptions, ...baseEnv } = process.env;
-            const env = {
+            const env: Record<string, string | undefined> = {
                 ...baseEnv,
                 CI: 'true',
                 FORCE_COLOR: '0',

@@ -16,8 +16,8 @@ importers:
         specifier: ^0.34.48
         version: 0.34.48
       clawhub:
-        specifier: ^0.5.0
-        version: 0.5.0
+        specifier: ^0.9.0
+        version: 0.9.0
       electron-store:
         specifier: ^11.0.2
         version: 11.0.2
@@ -528,14 +528,8 @@ packages:
   '@cacheable/utils@2.4.0':
     resolution: {integrity: sha512-PeMMsqjVq+bF0WBsxFBxr/WozBJiZKY0rUojuaCoIaKnEl3Ju1wfEwS+SV1DU/cSe8fqHIPiYJFif8T3MVt4cQ==}
 
-  '@clack/core@0.5.0':
-    resolution: {integrity: sha512-p3y0FIOwaYRUPRcMO7+dlmLh8PSRcrjuTndsiA0WAFbWES0mLZlrjVoBRZ9DzkPFJZG6KGkJmoEAY0ZcVWTkow==}
-
   '@clack/core@1.1.0':
     resolution: {integrity: sha512-SVcm4Dqm2ukn64/8Gub2wnlA5nS2iWJyCkdNHcvNHPIeBTGojpdJ+9cZKwLfmqy7irD4N5qLteSilJlE0WLAtA==}
-
-  '@clack/prompts@0.11.0':
-    resolution: {integrity: sha512-pMN5FcrEw9hUkZA4f+zLlzivQSeQf5dRGJjSUbvVYDLvpKCdQx5OaknvKzgbtXOizhP+SJJJjqEbOe55uKKfAw==}
 
   '@clack/prompts@1.1.0':
     resolution: {integrity: sha512-pkqbPGtohJAvm4Dphs2M8xE29ggupihHdy1x84HNojZuMtFsHiUlRvqD24tM2+XmI+61LlfNceM3Wr7U5QES5g==}
@@ -2884,8 +2878,8 @@ packages:
   class-variance-authority@0.7.1:
     resolution: {integrity: sha512-Ka+9Trutv7G8M6WT6SeiRWz792K5qEqIGEGzXKhAE6xOWAY6pPH8U+9IY3oCMv6kqTmLsv7Xh/2w2RigkePMsg==}
 
-  clawhub@0.5.0:
-    resolution: {integrity: sha512-tIPoup8mY3ojR+fzzf85ft+vrhMd6u6188QzBEOf/f5/0NSoWW0fl7ojw6VgVSLbBtLa5MGQDxSuZkf9TqPwIw==}
+  clawhub@0.9.0:
+    resolution: {integrity: sha512-p4qFJ84qF194KlGj0LlnuggPk0kKRgbp1wN27aJnRQ5FkwXlEalGqw8wngG2Ghca7q6vbvyVoI4V4KDv2zJWdQ==}
     engines: {node: '>=20'}
     hasBin: true
 
@@ -6615,19 +6609,8 @@ snapshots:
       hashery: 1.5.1
       keyv: 5.6.0
 
-  '@clack/core@0.5.0':
-    dependencies:
-      picocolors: 1.1.1
-      sisteransi: 1.0.5
-
   '@clack/core@1.1.0':
     dependencies:
-      sisteransi: 1.0.5
-
-  '@clack/prompts@0.11.0':
-    dependencies:
-      '@clack/core': 0.5.0
-      picocolors: 1.1.1
       sisteransi: 1.0.5
 
   '@clack/prompts@1.1.0':
@@ -9105,9 +9088,9 @@ snapshots:
     dependencies:
       clsx: 2.1.1
 
-  clawhub@0.5.0:
+  clawhub@0.9.0:
     dependencies:
-      '@clack/prompts': 0.11.0
+      '@clack/prompts': 1.1.0
       arktype: 2.2.0
       commander: 14.0.3
       fflate: 0.8.2
