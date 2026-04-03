@@ -1,11 +1,60 @@
 #!/usr/bin/env zx
 
 import 'zx/globals';
+import { Agent, ProxyAgent, setGlobalDispatcher } from 'undici';
 
 const ROOT_DIR = path.resolve(__dirname, '..');
 const NODE_VERSION = '22.16.0';
 const BASE_URL = `https://nodejs.org/dist/v${NODE_VERSION}`;
 const OUTPUT_BASE = path.join(ROOT_DIR, 'resources', 'bin');
+
+let networkConfigured = false;
+let networkInfo = { proxy: undefined, caFile: undefined, rejectUnauthorized: true };
+async function configureNetworkOnce() {
+  if (networkConfigured) return;
+  networkConfigured = true;
+
+  const proxy =
+    process.env.HTTPS_PROXY ??
+    process.env.https_proxy ??
+    process.env.HTTP_PROXY ??
+    process.env.http_proxy;
+
+  const caFile =
+    process.env.NODE_DOWNLOAD_CA_FILE ??
+    process.env.CLAWX_CA_FILE ??
+    process.env.NODE_EXTRA_CA_CERTS;
+
+  const rejectUnauthorized = process.env.NODE_TLS_REJECT_UNAUTHORIZED === '0' ? false : true;
+  networkInfo = { proxy, caFile, rejectUnauthorized };
+
+  let ca;
+  if (caFile) {
+    try {
+      ca = await fs.readFile(caFile);
+    } catch {
+      ca = undefined;
+    }
+  }
+
+  if (!proxy && rejectUnauthorized && !ca) return;
+
+  if (proxy) {
+    setGlobalDispatcher(
+      new ProxyAgent({
+        uri: proxy,
+        connect: { ca, rejectUnauthorized },
+      }),
+    );
+    return;
+  }
+
+  setGlobalDispatcher(
+    new Agent({
+      connect: { ca, rejectUnauthorized },
+    }),
+  );
+}
 
 const TARGETS = {
   'win32-x64': {
@@ -48,7 +97,33 @@ async function setupTarget(id) {
 
   try {
     echo`⬇️ Downloading: ${downloadUrl}`;
-    const response = await fetch(downloadUrl);
+    await configureNetworkOnce();
+    let response;
+    try {
+      response = await fetch(downloadUrl);
+    } catch (err) {
+      const cause = err?.cause;
+      const code = cause?.code ?? err?.code;
+      if (code === 'ECONNREFUSED' && networkInfo.proxy) {
+        throw new Error(
+          `Proxy connection refused when downloading ${downloadUrl}.\n\n` +
+            `Detected proxy: ${networkInfo.proxy}\n\n` +
+            `Fix options:\n` +
+            `- Start your proxy service, or\n` +
+            `- Unset HTTPS_PROXY/HTTP_PROXY for this build environment.\n`,
+        );
+      }
+      if (code === 'UNABLE_TO_VERIFY_LEAF_SIGNATURE') {
+        throw new Error(
+          `TLS certificate verification failed when downloading ${downloadUrl}.\n\n` +
+            `Fix options:\n` +
+            `- Preferred: export your corporate root CA to a PEM file and set NODE_EXTRA_CA_CERTS or NODE_DOWNLOAD_CA_FILE to that file path.\n` +
+            `- If you must use a proxy, set HTTPS_PROXY/HTTP_PROXY as well.\n` +
+            `- Last resort (insecure): set NODE_TLS_REJECT_UNAUTHORIZED=0.\n`,
+        );
+      }
+      throw err;
+    }
     if (!response.ok) throw new Error(`Failed to download: ${response.statusText}`);
     const buffer = await response.arrayBuffer();
     await fs.writeFile(archivePath, Buffer.from(buffer));
