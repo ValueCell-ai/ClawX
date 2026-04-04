@@ -97,7 +97,11 @@ export function Channels() {
   const isUsingStableValue = hasStableValue && (loading || Boolean(error));
 
   const fetchPageData = useCallback(async () => {
-    setLoading(true);
+    // Only show loading spinner on first load (stale-while-revalidate).
+    const hasData = channelGroups.length > 0 || agents.length > 0;
+    if (!hasData) {
+      setLoading(true);
+    }
     setError(null);
     try {
       const [channelsRes, agentsRes] = await Promise.all([
@@ -116,23 +120,43 @@ export function Channels() {
       setChannelGroups(channelsRes.channels || []);
       setAgents(agentsRes.agents || []);
     } catch (fetchError) {
+      // Preserve previous data on error — don't clear channelGroups/agents.
       setError(String(fetchError));
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [channelGroups.length, agents.length]);
 
   useEffect(() => {
     void fetchPageData();
-  }, [fetchPageData]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
+    // Throttle channel-status events to avoid flooding fetchPageData during AI tasks.
+    let throttleTimer: ReturnType<typeof setTimeout> | null = null;
+    let pending = false;
+
     const unsubscribe = subscribeHostEvent('gateway:channel-status', () => {
+      if (throttleTimer) {
+        pending = true;
+        return;
+      }
       void fetchPageData();
+      throttleTimer = setTimeout(() => {
+        throttleTimer = null;
+        if (pending) {
+          pending = false;
+          void fetchPageData();
+        }
+      }, 2000);
     });
     return () => {
       if (typeof unsubscribe === 'function') {
         unsubscribe();
+      }
+      if (throttleTimer) {
+        clearTimeout(throttleTimer);
       }
     };
   }, [fetchPageData]);

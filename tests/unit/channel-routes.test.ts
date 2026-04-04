@@ -18,7 +18,9 @@ vi.mock('@electron/utils/channel-config', () => ({
   deleteChannelConfig: vi.fn(),
   getChannelFormValues: vi.fn(),
   listConfiguredChannelAccounts: (...args: unknown[]) => listConfiguredChannelAccountsMock(...args),
+  listConfiguredChannelAccountsFromConfig: (...args: unknown[]) => listConfiguredChannelAccountsMock(...args),
   listConfiguredChannels: (...args: unknown[]) => listConfiguredChannelsMock(...args),
+  listConfiguredChannelsFromConfig: (...args: unknown[]) => listConfiguredChannelsMock(...args),
   readOpenClawConfig: (...args: unknown[]) => readOpenClawConfigMock(...args),
   saveChannelConfig: vi.fn(),
   setChannelDefaultAccount: vi.fn(),
@@ -32,6 +34,7 @@ vi.mock('@electron/utils/agent-config', () => ({
   clearAllBindingsForChannel: vi.fn(),
   clearChannelBinding: vi.fn(),
   listAgentsSnapshot: (...args: unknown[]) => listAgentsSnapshotMock(...args),
+  listAgentsSnapshotFromConfig: (...args: unknown[]) => listAgentsSnapshotMock(...args),
 }));
 
 vi.mock('@electron/utils/plugin-install', () => ({
@@ -171,7 +174,7 @@ describe('handleChannelRoutes', () => {
     );
 
     expect(handled).toBe(true);
-    expect(rpc).toHaveBeenCalledWith('channels.status', { probe: true });
+    expect(rpc).toHaveBeenCalledWith('channels.status', { probe: false }, 8000);
     expect(sendJsonMock).toHaveBeenCalledWith(
       expect.anything(),
       200,

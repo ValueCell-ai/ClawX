@@ -27,12 +27,19 @@ export const useCronStore = create<CronState>((set) => ({
   error: null,
   
   fetchJobs: async () => {
-    set({ loading: true, error: null });
+    const currentJobs = useCronStore.getState().jobs;
+    // Only show loading spinner when there's no data yet (stale-while-revalidate).
+    if (currentJobs.length === 0) {
+      set({ loading: true, error: null });
+    } else {
+      set({ error: null });
+    }
     
     try {
       const result = await hostApiFetch<CronJob[]>('/api/cron/jobs');
       set({ jobs: result, loading: false });
     } catch (error) {
+      // Preserve previous jobs on error so the user sees stale data instead of nothing.
       set({ error: String(error), loading: false });
     }
   },
