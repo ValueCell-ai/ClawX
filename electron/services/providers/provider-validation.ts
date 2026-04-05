@@ -147,6 +147,15 @@ function classifyAuthResponse(
   return { valid: false, error: msg };
 }
 
+function isModelsEndpointUnavailable(status: number | undefined): boolean {
+  if (status === undefined) return false;
+  // 404: endpoint doesn't exist
+  // 400: endpoint rejects the request format (some providers don't implement /models)
+  // 405: GET method not allowed on /models
+  // 501: endpoint not implemented
+  return status === 404 || status === 400 || status === 405 || status === 501;
+}
+
 async function validateOpenAiCompatibleKey(
   providerType: string,
   apiKey: string,
@@ -162,9 +171,9 @@ async function validateOpenAiCompatibleKey(
   const { modelsUrl, probeUrl } = resolveOpenAiProbeUrls(trimmedBaseUrl, apiProtocol);
   const modelsResult = await performProviderValidationRequest(providerType, modelsUrl, headers);
 
-  if (modelsResult.status === 404) {
+  if (isModelsEndpointUnavailable(modelsResult.status)) {
     console.log(
-      `[clawx-validate] ${providerType} /models returned 404, falling back to ${apiProtocol} probe`,
+      `[clawx-validate] ${providerType} /models returned ${modelsResult.status}, falling back to ${apiProtocol} probe`,
     );
     if (apiProtocol === 'openai-responses') {
       return await performResponsesProbe(providerType, probeUrl, headers);
