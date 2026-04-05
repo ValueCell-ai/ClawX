@@ -1,6 +1,6 @@
 import { app } from 'electron';
 import path from 'path';
-import { existsSync, readFileSync, mkdirSync, rmSync } from 'fs';
+import { existsSync, readFileSync, mkdirSync, readdirSync, rmSync, symlinkSync } from 'fs';
 import { homedir } from 'os';
 import { join } from 'path';
 
@@ -161,6 +161,73 @@ function ensureConfiguredPluginsUpgraded(configuredChannels: string[]): void {
         logger.warn(`[plugin] Failed to ${isInstalled ? 'auto-upgrade' : 'install'} ${channelType} plugin from node_modules:`, err);
       }
     }
+  }
+}
+
+/**
+ * Ensure extension-specific packages are resolvable from shared dist/ chunks.
+ *
+ * OpenClaw's Rollup bundler creates shared chunks in dist/ (e.g.
+ * sticker-cache-*.js) that eagerly `import "grammy"`.  ESM bare specifier
+ * resolution walks from the importing file's directory upward:
+ *   dist/node_modules/ → openclaw/node_modules/ → …
+ * It does NOT search `dist/extensions/telegram/node_modules/`.
+ *
+ * NODE_PATH only works for CJS require(), NOT for ESM import statements.
+ *
+ * Fix: create symlinks in openclaw/node_modules/ pointing to packages in
+ * dist/extensions/<ext>/node_modules/.  This makes the standard ESM
+ * resolution algorithm find them.  Skip-if-exists avoids overwriting
+ * openclaw's own deps (they take priority).
+ */
+function ensureExtensionDepsResolvable(openclawDir: string): void {
+  const extDir = join(openclawDir, 'dist', 'extensions');
+  const topNM = join(openclawDir, 'node_modules');
+  let linkedCount = 0;
+
+  try {
+    if (!existsSync(extDir)) return;
+
+    for (const ext of readdirSync(extDir, { withFileTypes: true })) {
+      if (!ext.isDirectory()) continue;
+      const extNM = join(extDir, ext.name, 'node_modules');
+      if (!existsSync(extNM)) continue;
+
+      for (const pkg of readdirSync(extNM, { withFileTypes: true })) {
+        if (pkg.name === '.bin') continue;
+
+        if (pkg.name.startsWith('@')) {
+          // Scoped package — iterate sub-entries
+          const scopeDir = join(extNM, pkg.name);
+          let scopeEntries;
+          try { scopeEntries = readdirSync(scopeDir, { withFileTypes: true }); } catch { continue; }
+          for (const sub of scopeEntries) {
+            if (!sub.isDirectory()) continue;
+            const dest = join(topNM, pkg.name, sub.name);
+            if (existsSync(dest)) continue;
+            try {
+              mkdirSync(join(topNM, pkg.name), { recursive: true });
+              symlinkSync(join(scopeDir, sub.name), dest);
+              linkedCount++;
+            } catch { /* skip on error — non-fatal */ }
+          }
+        } else {
+          const dest = join(topNM, pkg.name);
+          if (existsSync(dest)) continue;
+          try {
+            mkdirSync(topNM, { recursive: true });
+            symlinkSync(join(extNM, pkg.name), dest);
+            linkedCount++;
+          } catch { /* skip on error — non-fatal */ }
+        }
+      }
+    }
+  } catch {
+    // extensions dir may not exist or be unreadable — non-fatal
+  }
+
+  if (linkedCount > 0) {
+    logger.info(`[extension-deps] Linked ${linkedCount} extension packages into ${topNM}`);
   }
 }
 
@@ -364,6 +431,11 @@ export async function prepareGatewayLaunchContext(port: number): Promise<Gateway
     CLAWDBOT_SKIP_CHANNELS: skipChannels ? '1' : '',
     OPENCLAW_NO_RESPAWN: '1',
   };
+
+  // Ensure extension-specific packages (e.g. grammy from the telegram
+  // extension) are resolvable by shared dist/ chunks via symlinks in
+  // openclaw/node_modules/.  NODE_PATH does NOT work for ESM imports.
+  ensureExtensionDepsResolvable(openclawDir);
 
   return {
     appSettings,
