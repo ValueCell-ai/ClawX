@@ -121,6 +121,82 @@ describe('validateApiKeyWithProvider', () => {
     );
   });
 
+  it('falls back to /chat/completions for openai-completions when /models returns 400', async () => {
+    proxyAwareFetch
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ error: { message: 'Bad Request' } }), {
+          status: 400,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ error: { message: 'Unknown model' } }), {
+          status: 400,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      );
+
+    const { validateApiKeyWithProvider } = await import('@electron/services/providers/provider-validation');
+    const result = await validateApiKeyWithProvider('custom', 'sk-mobile-cloud-test', {
+      baseUrl: 'https://ai.example-mobile.com/v1',
+      apiProtocol: 'openai-completions',
+    });
+
+    expect(result).toMatchObject({ valid: true });
+    expect(proxyAwareFetch).toHaveBeenNthCalledWith(
+      2,
+      'https://ai.example-mobile.com/v1/chat/completions',
+      expect.objectContaining({ method: 'POST' })
+    );
+  });
+
+  it('falls back to /chat/completions for openai-completions when /models returns 405', async () => {
+    proxyAwareFetch
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ error: { message: 'Method Not Allowed' } }), {
+          status: 405,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ id: 'chatcmpl-123' }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      );
+
+    const { validateApiKeyWithProvider } = await import('@electron/services/providers/provider-validation');
+    const result = await validateApiKeyWithProvider('custom', 'sk-opencode-test', {
+      baseUrl: 'https://opencode.example.com/v1',
+      apiProtocol: 'openai-completions',
+    });
+
+    expect(result).toMatchObject({ valid: true });
+    expect(proxyAwareFetch).toHaveBeenNthCalledWith(
+      2,
+      'https://opencode.example.com/v1/chat/completions',
+      expect.objectContaining({ method: 'POST' })
+    );
+  });
+
+  it('does not fall back when /models returns 401 (invalid key)', async () => {
+    proxyAwareFetch.mockResolvedValueOnce(
+      new Response(JSON.stringify({ error: { message: 'Unauthorized' } }), {
+        status: 401,
+        headers: { 'Content-Type': 'application/json' },
+      })
+    );
+
+    const { validateApiKeyWithProvider } = await import('@electron/services/providers/provider-validation');
+    const result = await validateApiKeyWithProvider('custom', 'sk-bad-key', {
+      baseUrl: 'https://api.example.com/v1',
+      apiProtocol: 'openai-completions',
+    });
+
+    expect(result).toMatchObject({ valid: false });
+    expect(proxyAwareFetch).toHaveBeenCalledTimes(1);
+  });
+
   it('does not duplicate endpoint suffix when baseUrl already points to /responses', async () => {
     proxyAwareFetch
       .mockResolvedValueOnce(
