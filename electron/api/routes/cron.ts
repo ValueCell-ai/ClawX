@@ -414,7 +414,7 @@ export async function handleCronRoutes(
 
     try {
       const [jobsResult, runs, sessionEntry] = await Promise.all([
-        ctx.gatewayManager.rpc('cron.list', { includeDisabled: true })
+        ctx.gatewayManager.rpc('cron.list', { includeDisabled: true }, 8000)
           .catch(() => ({ jobs: [] as GatewayCronJob[] })),
         readCronRunLog(parsedSession.jobId),
         readSessionStoreEntry(parsedSession.agentId, sessionKey),
@@ -501,7 +501,7 @@ export async function handleCronRoutes(
         }
       }
 
-      sendJson(res, 200, jobs.map(transformCronJob));
+      sendJson(res, 200, jobs.map((job) => ({ ...transformCronJob(job), ...(usedFallback ? { _fromFallback: true } : {}) })));
     } catch (error) {
       sendJson(res, 500, { success: false, error: String(error) });
     }

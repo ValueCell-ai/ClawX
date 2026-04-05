@@ -96,9 +96,17 @@ export function Channels() {
   const hasStableValue = visibleChannelGroups.length > 0 || visibleAgents.length > 0;
   const isUsingStableValue = hasStableValue && (loading || Boolean(error));
 
+  // Use refs to read current state inside fetchPageData without making it
+  // a dependency — keeps the callback reference stable across renders so
+  // downstream useEffects don't re-execute every time data changes.
+  const channelGroupsRef = useRef(channelGroups);
+  channelGroupsRef.current = channelGroups;
+  const agentsRef = useRef(agents);
+  agentsRef.current = agents;
+
   const fetchPageData = useCallback(async () => {
     // Only show loading spinner on first load (stale-while-revalidate).
-    const hasData = channelGroups.length > 0 || agents.length > 0;
+    const hasData = channelGroupsRef.current.length > 0 || agentsRef.current.length > 0;
     if (!hasData) {
       setLoading(true);
     }
@@ -125,12 +133,13 @@ export function Channels() {
     } finally {
       setLoading(false);
     }
-  }, [channelGroups.length, agents.length]);
+  // Stable reference — reads state via refs, no deps needed.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     void fetchPageData();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [fetchPageData]);
 
   useEffect(() => {
     // Throttle channel-status events to avoid flooding fetchPageData during AI tasks.
