@@ -207,12 +207,36 @@ async function sanitizeConfig(
     const web = (tools.web as Record<string, unknown> | undefined) || {};
     const search = (web.search as Record<string, unknown> | undefined) || {};
     const kimi = (search.kimi as Record<string, unknown> | undefined) || {};
-    if ('apiKey' in kimi) {
+    const plugins = Array.isArray(config.plugins)
+      ? { load: [...config.plugins] }
+      : ((config.plugins as Record<string, unknown> | undefined) || {});
+    const entries = (plugins.entries as Record<string, unknown> | undefined) || {};
+    const moonshot = (entries.moonshot as Record<string, unknown> | undefined) || {};
+    const moonshotConfig = (moonshot.config as Record<string, unknown> | undefined) || {};
+    const currentWebSearch = (moonshotConfig.webSearch as Record<string, unknown> | undefined) || {};
+    if (Object.keys(kimi).length > 0) {
       delete kimi.apiKey;
-      search.kimi = kimi;
-      web.search = search;
-      tools.web = web;
-      config.tools = tools;
+      moonshotConfig.webSearch = { ...kimi, ...currentWebSearch, baseUrl: 'https://api.moonshot.cn/v1' };
+      moonshot.config = moonshotConfig;
+      entries.moonshot = moonshot;
+      plugins.entries = entries;
+      config.plugins = plugins;
+      delete search.kimi;
+      if (Object.keys(search).length === 0) {
+        delete web.search;
+      } else {
+        web.search = search;
+      }
+      if (Object.keys(web).length === 0) {
+        delete tools.web;
+      } else {
+        tools.web = web;
+      }
+      if (Object.keys(tools).length === 0) {
+        delete config.tools;
+      } else {
+        config.tools = tools;
+      }
       modified = true;
     }
   }
@@ -388,7 +412,7 @@ describe('sanitizeOpenClawConfig (blocklist approach)', () => {
     expect(result.agents).toEqual({ defaults: { model: { primary: 'gpt-4' } } });
   });
 
-  it('removes tools.web.search.kimi.apiKey when moonshot provider exists', async () => {
+  it('migrates tools.web.search.kimi into plugins.entries.moonshot.config.webSearch when moonshot provider exists', async () => {
     await writeConfig({
       models: {
         providers: {
@@ -411,9 +435,44 @@ describe('sanitizeOpenClawConfig (blocklist approach)', () => {
     expect(modified).toBe(true);
 
     const result = await readConfig();
-    const kimi = ((((result.tools as Record<string, unknown>).web as Record<string, unknown>).search as Record<string, unknown>).kimi as Record<string, unknown>);
-    expect(kimi).not.toHaveProperty('apiKey');
-    expect(kimi.baseUrl).toBe('https://api.moonshot.cn/v1');
+    const tools = (result.tools as Record<string, unknown> | undefined) || {};
+    const web = (tools.web as Record<string, unknown> | undefined) || {};
+    const search = (web.search as Record<string, unknown> | undefined) || {};
+    const moonshot = ((((result.plugins as Record<string, unknown>).entries as Record<string, unknown>).moonshot as Record<string, unknown>).config as Record<string, unknown>).webSearch as Record<string, unknown>;
+    expect(search).not.toHaveProperty('kimi');
+    expect(moonshot).not.toHaveProperty('apiKey');
+    expect(moonshot.baseUrl).toBe('https://api.moonshot.cn/v1');
+  });
+
+  it('preserves legacy plugins array while migrating moonshot web search config', async () => {
+    await writeConfig({
+      plugins: ['/tmp/custom-plugin.js'],
+      models: {
+        providers: {
+          moonshot: { baseUrl: 'https://api.moonshot.cn/v1', api: 'openai-completions' },
+        },
+      },
+      tools: {
+        web: {
+          search: {
+            kimi: {
+              baseUrl: 'https://api.moonshot.cn/v1',
+            },
+          },
+        },
+      },
+    });
+
+    const modified = await sanitizeConfig(configPath);
+    expect(modified).toBe(true);
+
+    const result = await readConfig();
+    const plugins = result.plugins as Record<string, unknown>;
+    const load = plugins.load as string[];
+    const moonshot = ((((result.plugins as Record<string, unknown>).entries as Record<string, unknown>).moonshot as Record<string, unknown>).config as Record<string, unknown>).webSearch as Record<string, unknown>;
+
+    expect(load).toEqual(['/tmp/custom-plugin.js']);
+    expect(moonshot.baseUrl).toBe('https://api.moonshot.cn/v1');
   });
 
   it('keeps tools.web.search.kimi.apiKey when moonshot provider is absent', async () => {

@@ -788,23 +788,66 @@ function removeLegacyMoonshotProviderEntry(
   return false;
 }
 
+function isPlainRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function removeLegacyMoonshotKimiSearchConfig(config: Record<string, unknown>): boolean {
+  const tools = isPlainRecord(config.tools) ? config.tools : null;
+  const web = tools && isPlainRecord(tools.web) ? tools.web : null;
+  const search = web && isPlainRecord(web.search) ? web.search : null;
+  if (!search || !('kimi' in search)) return false;
+
+  delete search.kimi;
+  if (Object.keys(search).length === 0) {
+    delete web.search;
+  }
+  if (Object.keys(web).length === 0) {
+    delete tools.web;
+  }
+  if (Object.keys(tools).length === 0) {
+    delete config.tools;
+  }
+  return true;
+}
+
+function upsertMoonshotWebSearchConfig(
+  config: Record<string, unknown>,
+  legacyKimi?: Record<string, unknown>,
+): void {
+  const plugins = isPlainRecord(config.plugins)
+    ? config.plugins
+    : (Array.isArray(config.plugins) ? { load: [...config.plugins] } : {});
+  const entries = isPlainRecord(plugins.entries) ? plugins.entries : {};
+  const moonshot = isPlainRecord(entries[OPENCLAW_PROVIDER_KEY_MOONSHOT])
+    ? entries[OPENCLAW_PROVIDER_KEY_MOONSHOT] as Record<string, unknown>
+    : {};
+  const moonshotConfig = isPlainRecord(moonshot.config) ? moonshot.config as Record<string, unknown> : {};
+  const currentWebSearch = isPlainRecord(moonshotConfig.webSearch)
+    ? moonshotConfig.webSearch as Record<string, unknown>
+    : {};
+
+  const nextWebSearch = { ...(legacyKimi || {}), ...currentWebSearch };
+  delete nextWebSearch.apiKey;
+  nextWebSearch.baseUrl = 'https://api.moonshot.cn/v1';
+
+  moonshotConfig.webSearch = nextWebSearch;
+  moonshot.config = moonshotConfig;
+  entries[OPENCLAW_PROVIDER_KEY_MOONSHOT] = moonshot;
+  plugins.entries = entries;
+  config.plugins = plugins;
+}
+
 function ensureMoonshotKimiWebSearchCnBaseUrl(config: Record<string, unknown>, provider: string): void {
   if (provider !== OPENCLAW_PROVIDER_KEY_MOONSHOT) return;
 
-  const tools = (config.tools || {}) as Record<string, unknown>;
-  const web = (tools.web || {}) as Record<string, unknown>;
-  const search = (web.search || {}) as Record<string, unknown>;
-  const kimi = (search.kimi && typeof search.kimi === 'object' && !Array.isArray(search.kimi))
-    ? (search.kimi as Record<string, unknown>)
-    : {};
+  const tools = isPlainRecord(config.tools) ? config.tools : null;
+  const web = tools && isPlainRecord(tools.web) ? tools.web : null;
+  const search = web && isPlainRecord(web.search) ? web.search : null;
+  const legacyKimi = search && isPlainRecord(search.kimi) ? search.kimi : undefined;
 
-  // Prefer env/auth-profiles for key resolution; stale inline kimi.apiKey can cause persistent 401.
-  delete kimi.apiKey;
-  kimi.baseUrl = 'https://api.moonshot.cn/v1';
-  search.kimi = kimi;
-  web.search = search;
-  tools.web = web;
-  config.tools = tools;
+  upsertMoonshotWebSearchConfig(config, legacyKimi);
+  removeLegacyMoonshotKimiSearchConfig(config);
 }
 
 /**
@@ -1369,24 +1412,43 @@ export async function sanitizeOpenClawConfig(): Promise<void> {
     }
 
     // ── tools.web.search.kimi ─────────────────────────────────────
-    // OpenClaw web_search(kimi) prioritizes tools.web.search.kimi.apiKey over
-    // environment/auth-profiles. A stale inline key can cause persistent 401s.
-    // When ClawX-managed moonshot provider exists, prefer centralized key
-    // resolution and strip the inline key.
+    // OpenClaw moved moonshot web search config under
+    // plugins.entries.moonshot.config.webSearch. Migrate the old key and strip
+    // any inline apiKey so auth-profiles/env remain the single source of truth.
     const providers = ((config.models as Record<string, unknown> | undefined)?.providers as Record<string, unknown> | undefined) || {};
     if (providers[OPENCLAW_PROVIDER_KEY_MOONSHOT]) {
-      const tools = (config.tools as Record<string, unknown> | undefined) || {};
-      const web = (tools.web as Record<string, unknown> | undefined) || {};
-      const search = (web.search as Record<string, unknown> | undefined) || {};
-      const kimi = (search.kimi as Record<string, unknown> | undefined) || {};
-      if ('apiKey' in kimi) {
-        console.log('[sanitize] Removing stale key "tools.web.search.kimi.apiKey" from openclaw.json');
-        delete kimi.apiKey;
-        search.kimi = kimi;
-        web.search = search;
-        tools.web = web;
-        config.tools = tools;
+      const tools = isPlainRecord(config.tools) ? config.tools : null;
+      const web = tools && isPlainRecord(tools.web) ? tools.web : null;
+      const search = web && isPlainRecord(web.search) ? web.search : null;
+      const legacyKimi = search && isPlainRecord(search.kimi) ? search.kimi : undefined;
+      const hadInlineApiKey = Boolean(legacyKimi && 'apiKey' in legacyKimi);
+      const hadLegacyKimi = Boolean(legacyKimi);
+
+      if (legacyKimi) {
+        upsertMoonshotWebSearchConfig(config, legacyKimi);
+        removeLegacyMoonshotKimiSearchConfig(config);
         modified = true;
+        console.log('[sanitize] Migrated legacy "tools.web.search.kimi" to "plugins.entries.moonshot.config.webSearch"');
+      } else {
+        const plugins = isPlainRecord(config.plugins) ? config.plugins : null;
+        const entries = plugins && isPlainRecord(plugins.entries) ? plugins.entries : null;
+        const moonshot = entries && isPlainRecord(entries[OPENCLAW_PROVIDER_KEY_MOONSHOT])
+          ? entries[OPENCLAW_PROVIDER_KEY_MOONSHOT] as Record<string, unknown>
+          : null;
+        const moonshotConfig = moonshot && isPlainRecord(moonshot.config) ? moonshot.config as Record<string, unknown> : null;
+        const webSearch = moonshotConfig && isPlainRecord(moonshotConfig.webSearch)
+          ? moonshotConfig.webSearch as Record<string, unknown>
+          : null;
+        if (webSearch && 'apiKey' in webSearch) {
+          delete webSearch.apiKey;
+          moonshotConfig!.webSearch = webSearch;
+          modified = true;
+        }
+      }
+      if (hadInlineApiKey) {
+        console.log('[sanitize] Removing stale key "tools.web.search.kimi.apiKey" from openclaw.json');
+      } else if (hadLegacyKimi) {
+        console.log('[sanitize] Removing legacy key "tools.web.search.kimi" from openclaw.json');
       }
     }
 
