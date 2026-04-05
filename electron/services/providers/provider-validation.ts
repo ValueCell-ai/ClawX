@@ -11,6 +11,8 @@ type ValidationProfile =
 
 type ValidationResult = { valid: boolean; error?: string; status?: number };
 
+const AUTH_ERROR_PATTERN = /\b(invalid|unauthorized|forbidden|authentication|auth|access denied|api key|token|credential|signature)\b|鉴权|認証|认证|憑證|凭证|密钥|密鑰/i;
+
 function logValidationStatus(provider: string, status: number): void {
   console.log(`[clawx-validate] ${provider} HTTP ${status}`);
 }
@@ -138,13 +140,42 @@ function classifyAuthResponse(
   status: number,
   data: unknown,
 ): { valid: boolean; error?: string } {
+  const obj = data as { error?: { message?: string }; message?: string } | null;
+  const msg = obj?.error?.message || obj?.message || `API error: ${status}`;
+
   if (status >= 200 && status < 300) return { valid: true };
   if (status === 429) return { valid: true };
   if (status === 401 || status === 403) return { valid: false, error: 'Invalid API key' };
+  if (status === 400 && AUTH_ERROR_PATTERN.test(msg)) {
+    return { valid: false, error: msg || 'Invalid API key' };
+  }
 
-  const obj = data as { error?: { message?: string }; message?: string } | null;
-  const msg = obj?.error?.message || obj?.message || `API error: ${status}`;
   return { valid: false, error: msg };
+}
+
+function shouldFallbackFromModelsProbe(result: ValidationResult): boolean {
+  if (result.valid || result.status === undefined) return false;
+  if (result.status === 401 || result.status === 403) return false;
+  if (result.error && AUTH_ERROR_PATTERN.test(result.error)) return false;
+  return true;
+}
+
+function classifyProbeResponse(
+  status: number,
+  data: unknown,
+): ValidationResult {
+  const classified = classifyAuthResponse(status, data);
+
+  if (status >= 200 && status < 300) {
+    return { valid: true, status };
+  }
+  if (status === 429) {
+    return { valid: true, status };
+  }
+  if (status === 400 && classified.error && !AUTH_ERROR_PATTERN.test(classified.error)) {
+    return { valid: true, status };
+  }
+  return { ...classified, status };
 }
 
 async function validateOpenAiCompatibleKey(
@@ -162,9 +193,9 @@ async function validateOpenAiCompatibleKey(
   const { modelsUrl, probeUrl } = resolveOpenAiProbeUrls(trimmedBaseUrl, apiProtocol);
   const modelsResult = await performProviderValidationRequest(providerType, modelsUrl, headers);
 
-  if (modelsResult.status === 404) {
+  if (shouldFallbackFromModelsProbe(modelsResult)) {
     console.log(
-      `[clawx-validate] ${providerType} /models returned 404, falling back to ${apiProtocol} probe`,
+      `[clawx-validate] ${providerType} /models returned ${modelsResult.status}, falling back to ${apiProtocol} probe`,
     );
     if (apiProtocol === 'openai-responses') {
       return await performResponsesProbe(providerType, probeUrl, headers);
@@ -192,18 +223,7 @@ async function performResponsesProbe(
     });
     logValidationStatus(providerLabel, response.status);
     const data = await response.json().catch(() => ({}));
-
-    if (response.status === 401 || response.status === 403) {
-      return { valid: false, error: 'Invalid API key' };
-    }
-    if (
-      (response.status >= 200 && response.status < 300) ||
-      response.status === 400 ||
-      response.status === 429
-    ) {
-      return { valid: true };
-    }
-    return classifyAuthResponse(response.status, data);
+    return classifyProbeResponse(response.status, data);
   } catch (error) {
     return {
       valid: false,
@@ -230,18 +250,7 @@ async function performChatCompletionsProbe(
     });
     logValidationStatus(providerLabel, response.status);
     const data = await response.json().catch(() => ({}));
-
-    if (response.status === 401 || response.status === 403) {
-      return { valid: false, error: 'Invalid API key' };
-    }
-    if (
-      (response.status >= 200 && response.status < 300) ||
-      response.status === 400 ||
-      response.status === 429
-    ) {
-      return { valid: true };
-    }
-    return classifyAuthResponse(response.status, data);
+    return classifyProbeResponse(response.status, data);
   } catch (error) {
     return {
       valid: false,
@@ -268,18 +277,7 @@ async function performAnthropicMessagesProbe(
     });
     logValidationStatus(providerLabel, response.status);
     const data = await response.json().catch(() => ({}));
-
-    if (response.status === 401 || response.status === 403) {
-      return { valid: false, error: 'Invalid API key' };
-    }
-    if (
-      (response.status >= 200 && response.status < 300) ||
-      response.status === 400 ||
-      response.status === 429
-    ) {
-      return { valid: true };
-    }
-    return classifyAuthResponse(response.status, data);
+    return classifyProbeResponse(response.status, data);
   } catch (error) {
     return {
       valid: false,
