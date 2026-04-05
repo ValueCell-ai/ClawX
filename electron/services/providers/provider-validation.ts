@@ -10,8 +10,10 @@ type ValidationProfile =
   | 'none';
 
 type ValidationResult = { valid: boolean; error?: string; status?: number };
+type ClassifiedValidationResult = ValidationResult & { authFailure?: boolean };
 
 const AUTH_ERROR_PATTERN = /\b(unauthorized|forbidden|access denied|invalid api key|api key invalid|incorrect api key|api key incorrect|authentication failed|auth failed|invalid credential|credential invalid|invalid signature|signature invalid|invalid access token|access token invalid|invalid bearer token|bearer token invalid|access token expired)\b|鉴权失败|認証失敗|认证失败|無效密鑰|无效密钥|密钥无效|密鑰無效|憑證無效|凭证无效/i;
+const AUTH_ERROR_CODE_PATTERN = /\b(unauthorized|forbidden|access[_-]?denied|invalid[_-]?api[_-]?key|api[_-]?key[_-]?invalid|incorrect[_-]?api[_-]?key|api[_-]?key[_-]?incorrect|authentication[_-]?failed|auth[_-]?failed|invalid[_-]?credential|credential[_-]?invalid|invalid[_-]?signature|signature[_-]?invalid|invalid[_-]?access[_-]?token|access[_-]?token[_-]?invalid|invalid[_-]?bearer[_-]?token|bearer[_-]?token[_-]?invalid|access[_-]?token[_-]?expired|invalid[_-]?token|token[_-]?invalid|token[_-]?expired)\b/i;
 
 function logValidationStatus(provider: string, status: number): void {
   console.log(`[clawx-validate] ${provider} HTTP ${status}`);
@@ -120,7 +122,7 @@ async function performProviderValidationRequest(
   providerLabel: string,
   url: string,
   headers: Record<string, string>,
-): Promise<ValidationResult> {
+): Promise<ClassifiedValidationResult> {
   try {
     logValidationRequest(providerLabel, 'GET', url, headers);
     const response = await proxyAwareFetch(url, { headers });
@@ -139,31 +141,42 @@ async function performProviderValidationRequest(
 function classifyAuthResponse(
   status: number,
   data: unknown,
-): { valid: boolean; error?: string } {
-  const obj = data as { error?: { message?: string }; message?: string } | null;
+) : ClassifiedValidationResult {
+  const obj = data as {
+    error?: { message?: string; code?: string };
+    message?: string;
+    code?: string;
+  } | null;
   const msg = obj?.error?.message || obj?.message || `API error: ${status}`;
+  const code = obj?.error?.code || obj?.code;
+  const hasAuthCode = typeof code === 'string' && AUTH_ERROR_CODE_PATTERN.test(code);
 
   if (status >= 200 && status < 300) return { valid: true };
   if (status === 429) return { valid: true };
-  if (status === 401 || status === 403) return { valid: false, error: 'Invalid API key' };
-  if (status === 400 && AUTH_ERROR_PATTERN.test(msg)) {
-    return { valid: false, error: msg || 'Invalid API key' };
+  if (status === 401 || status === 403) {
+    return { valid: false, error: 'Invalid API key', authFailure: true };
+  }
+  if (status === 400 && (AUTH_ERROR_PATTERN.test(msg) || hasAuthCode)) {
+    const error = hasAuthCode && msg === `API error: ${status}`
+      ? `Invalid API key (${code})`
+      : msg || 'Invalid API key';
+    return { valid: false, error, authFailure: true };
   }
 
   return { valid: false, error: msg };
 }
 
-function shouldFallbackFromModelsProbe(result: ValidationResult): boolean {
+function shouldFallbackFromModelsProbe(result: ClassifiedValidationResult): boolean {
   if (result.valid || result.status === undefined) return false;
   if (result.status === 401 || result.status === 403) return false;
-  if (result.error && AUTH_ERROR_PATTERN.test(result.error)) return false;
+  if (result.authFailure) return false;
   return true;
 }
 
 function classifyProbeResponse(
   status: number,
   data: unknown,
-): ValidationResult {
+): ClassifiedValidationResult {
   const classified = classifyAuthResponse(status, data);
 
   if (status >= 200 && status < 300) {
@@ -172,7 +185,7 @@ function classifyProbeResponse(
   if (status === 429) {
     return { valid: true, status };
   }
-  if (status === 400 && classified.error && !AUTH_ERROR_PATTERN.test(classified.error)) {
+  if (status === 400 && !classified.authFailure) {
     return { valid: true, status };
   }
   return { ...classified, status };
