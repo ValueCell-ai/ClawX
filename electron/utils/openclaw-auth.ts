@@ -230,6 +230,28 @@ const AUTH_PROFILE_PROVIDER_KEY_MAP: Record<string, string> = {
 };
 
 /**
+ * Reverse of AUTH_PROFILE_PROVIDER_KEY_MAP.
+ * Maps a UI provider key (e.g. "openai") to all raw auth-profile provider
+ * keys that normalise to it (e.g. ["openai-codex"]).
+ */
+const AUTH_PROFILE_PROVIDER_KEY_REVERSE_MAP: Record<string, string[]> = Object.entries(
+  AUTH_PROFILE_PROVIDER_KEY_MAP,
+).reduce<Record<string, string[]>>((acc, [raw, normalized]) => {
+  if (!acc[normalized]) acc[normalized] = [];
+  acc[normalized].push(raw);
+  return acc;
+}, {});
+
+/**
+ * Return all raw auth-profile `provider` values that should be treated as
+ * equivalent to `provider` when cleaning up auth-profile entries.
+ * Always includes the provider itself.
+ */
+function expandProviderKeysForDeletion(provider: string): string[] {
+  return [provider, ...(AUTH_PROFILE_PROVIDER_KEY_REVERSE_MAP[provider] ?? [])];
+}
+
+/**
  * Scan OpenClaw's bundled extensions directory to find all plugins that have
  * `enabledByDefault: true` in their `openclaw.plugin.json` manifest.
  *
@@ -487,12 +509,23 @@ export async function removeProviderKeyFromOpenClaw(
  * Remove a provider completely from OpenClaw (delete config, disable plugins, delete keys)
  */
 export async function removeProviderFromOpenClaw(provider: string): Promise<void> {
-  // 1. Remove from auth-profiles.json
+  // 1. Remove from auth-profiles.json.
+  // We must also remove entries whose raw `provider` field maps to this UI
+  // provider key via AUTH_PROFILE_PROVIDER_KEY_MAP (e.g. "openai-codex" → "openai").
+  // If those entries survive, getProvidersFromAuthProfileStores() will re-add
+  // the provider and trigger a re-seed loop in listAccounts().
+  const providerKeysToRemove = expandProviderKeysForDeletion(provider);
   const agentIds = await discoverAgentIds();
   if (agentIds.length === 0) agentIds.push('main');
   for (const id of agentIds) {
     const store = await readAuthProfiles(id);
-    if (removeProfilesForProvider(store, provider)) {
+    let storeModified = false;
+    for (const key of providerKeysToRemove) {
+      if (removeProfilesForProvider(store, key)) {
+        storeModified = true;
+      }
+    }
+    if (storeModified) {
       await writeAuthProfiles(store, id);
     }
   }
@@ -550,8 +583,11 @@ export async function removeProviderFromOpenClaw(provider: string): Promise<void
           : null
       );
       if (authProfiles) {
+        // Also clean up raw auth-profile provider keys that map to this provider
+        // (e.g. "openai-codex" is stored as-is but maps to "openai" in the UI).
+        const providerKeysToClean = new Set(expandProviderKeysForDeletion(provider));
         for (const [profileId, profile] of Object.entries(authProfiles)) {
-          if (profile?.provider !== provider) {
+          if (!providerKeysToClean.has(profile?.provider)) {
             continue;
           }
           delete authProfiles[profileId];
