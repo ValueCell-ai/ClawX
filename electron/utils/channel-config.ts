@@ -966,8 +966,7 @@ function channelHasAnyAccount(channelSection: ChannelConfigData): boolean {
     return false;
 }
 
-export async function listConfiguredChannels(): Promise<string[]> {
-    const config = await readOpenClawConfig();
+export async function listConfiguredChannelsFromConfig(config: OpenClawConfig): Promise<string[]> {
     const channels: string[] = [];
 
     if (config.channels) {
@@ -1005,13 +1004,17 @@ export async function listConfiguredChannels(): Promise<string[]> {
     return channels;
 }
 
+export async function listConfiguredChannels(): Promise<string[]> {
+    const config = await readOpenClawConfig();
+    return listConfiguredChannelsFromConfig(config);
+}
+
 export interface ConfiguredChannelAccounts {
     defaultAccountId: string;
     accountIds: string[];
 }
 
-export async function listConfiguredChannelAccounts(): Promise<Record<string, ConfiguredChannelAccounts>> {
-    const config = await readOpenClawConfig();
+export function listConfiguredChannelAccountsFromConfig(config: OpenClawConfig): Record<string, ConfiguredChannelAccounts> {
     const result: Record<string, ConfiguredChannelAccounts> = {};
 
     if (!config.channels) {
@@ -1057,6 +1060,11 @@ export async function listConfiguredChannelAccounts(): Promise<Record<string, Co
     }
 
     return result;
+}
+
+export async function listConfiguredChannelAccounts(): Promise<Record<string, ConfiguredChannelAccounts>> {
+    const config = await readOpenClawConfig();
+    return listConfiguredChannelAccountsFromConfig(config);
 }
 
 export async function setChannelDefaultAccount(channelType: string, accountId: string): Promise<void> {
