@@ -459,6 +459,30 @@ describe('syncProviderConfigToOpenClaw', () => {
     expect(search).not.toHaveProperty('kimi');
     expect(moonshot.baseUrl).toBe('https://api.moonshot.cn/v1');
   });
+
+  it('preserves legacy plugins array by converting it into plugins.load during moonshot sync', async () => {
+    await writeOpenClawJson({
+      plugins: ['/tmp/custom-plugin.js'],
+      models: {
+        providers: {},
+      },
+    });
+
+    const { syncProviderConfigToOpenClaw } = await import('@electron/utils/openclaw-auth');
+
+    await syncProviderConfigToOpenClaw('moonshot', 'kimi-k2.5', {
+      baseUrl: 'https://api.moonshot.cn/v1',
+      api: 'openai-completions',
+    });
+
+    const result = await readOpenClawJson();
+    const plugins = result.plugins as Record<string, unknown>;
+    const load = plugins.load as string[];
+    const moonshot = (((plugins.entries as Record<string, unknown>).moonshot as Record<string, unknown>).config as Record<string, unknown>).webSearch as Record<string, unknown>;
+
+    expect(load).toEqual(['/tmp/custom-plugin.js']);
+    expect(moonshot.baseUrl).toBe('https://api.moonshot.cn/v1');
+  });
 });
 
 describe('auth-backed provider discovery', () => {

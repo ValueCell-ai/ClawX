@@ -175,6 +175,24 @@ describe('validateApiKeyWithProvider', () => {
     expect(proxyAwareFetch).toHaveBeenCalledTimes(1);
   });
 
+  it('treats incorrect api key wording as an auth failure', async () => {
+    proxyAwareFetch.mockResolvedValueOnce(
+      new Response(JSON.stringify({ error: { message: 'Incorrect API key provided' } }), {
+        status: 400,
+        headers: { 'Content-Type': 'application/json' },
+      })
+    );
+
+    const { validateApiKeyWithProvider } = await import('@electron/services/providers/provider-validation');
+    const result = await validateApiKeyWithProvider('custom', 'sk-bad-key-incorrect', {
+      baseUrl: 'https://chat.example.com/v1',
+      apiProtocol: 'openai-completions',
+    });
+
+    expect(result).toMatchObject({ valid: false, error: 'Incorrect API key provided', status: 400 });
+    expect(proxyAwareFetch).toHaveBeenCalledTimes(1);
+  });
+
   it('keeps non-auth invalid_request style 400 probe responses as valid', async () => {
     proxyAwareFetch
       .mockResolvedValueOnce(

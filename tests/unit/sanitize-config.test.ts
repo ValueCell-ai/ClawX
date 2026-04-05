@@ -207,7 +207,9 @@ async function sanitizeConfig(
     const web = (tools.web as Record<string, unknown> | undefined) || {};
     const search = (web.search as Record<string, unknown> | undefined) || {};
     const kimi = (search.kimi as Record<string, unknown> | undefined) || {};
-    const plugins = (config.plugins as Record<string, unknown> | undefined) || {};
+    const plugins = Array.isArray(config.plugins)
+      ? { load: [...config.plugins] }
+      : ((config.plugins as Record<string, unknown> | undefined) || {});
     const entries = (plugins.entries as Record<string, unknown> | undefined) || {};
     const moonshot = (entries.moonshot as Record<string, unknown> | undefined) || {};
     const moonshotConfig = (moonshot.config as Record<string, unknown> | undefined) || {};
@@ -439,6 +441,37 @@ describe('sanitizeOpenClawConfig (blocklist approach)', () => {
     const moonshot = ((((result.plugins as Record<string, unknown>).entries as Record<string, unknown>).moonshot as Record<string, unknown>).config as Record<string, unknown>).webSearch as Record<string, unknown>;
     expect(search).not.toHaveProperty('kimi');
     expect(moonshot).not.toHaveProperty('apiKey');
+    expect(moonshot.baseUrl).toBe('https://api.moonshot.cn/v1');
+  });
+
+  it('preserves legacy plugins array while migrating moonshot web search config', async () => {
+    await writeConfig({
+      plugins: ['/tmp/custom-plugin.js'],
+      models: {
+        providers: {
+          moonshot: { baseUrl: 'https://api.moonshot.cn/v1', api: 'openai-completions' },
+        },
+      },
+      tools: {
+        web: {
+          search: {
+            kimi: {
+              baseUrl: 'https://api.moonshot.cn/v1',
+            },
+          },
+        },
+      },
+    });
+
+    const modified = await sanitizeConfig(configPath);
+    expect(modified).toBe(true);
+
+    const result = await readConfig();
+    const plugins = result.plugins as Record<string, unknown>;
+    const load = plugins.load as string[];
+    const moonshot = ((((result.plugins as Record<string, unknown>).entries as Record<string, unknown>).moonshot as Record<string, unknown>).config as Record<string, unknown>).webSearch as Record<string, unknown>;
+
+    expect(load).toEqual(['/tmp/custom-plugin.js']);
     expect(moonshot.baseUrl).toBe('https://api.moonshot.cn/v1');
   });
 

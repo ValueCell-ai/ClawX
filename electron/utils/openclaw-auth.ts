@@ -815,7 +815,9 @@ function upsertMoonshotWebSearchConfig(
   config: Record<string, unknown>,
   legacyKimi?: Record<string, unknown>,
 ): void {
-  const plugins = isPlainRecord(config.plugins) ? config.plugins : {};
+  const plugins = isPlainRecord(config.plugins)
+    ? config.plugins
+    : (Array.isArray(config.plugins) ? { load: [...config.plugins] } : {});
   const entries = isPlainRecord(plugins.entries) ? plugins.entries : {};
   const moonshot = isPlainRecord(entries[OPENCLAW_PROVIDER_KEY_MOONSHOT])
     ? entries[OPENCLAW_PROVIDER_KEY_MOONSHOT] as Record<string, unknown>
