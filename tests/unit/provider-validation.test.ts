@@ -175,6 +175,54 @@ describe('validateApiKeyWithProvider', () => {
     expect(proxyAwareFetch).toHaveBeenCalledTimes(1);
   });
 
+  it('keeps non-auth invalid_request style 400 probe responses as valid', async () => {
+    proxyAwareFetch
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ error: { message: 'Method Not Allowed' } }), {
+          status: 405,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ error: { message: 'invalid_request_error: invalid model' } }), {
+          status: 400,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      );
+
+    const { validateApiKeyWithProvider } = await import('@electron/services/providers/provider-validation');
+    const result = await validateApiKeyWithProvider('custom', 'sk-invalid-model-ok', {
+      baseUrl: 'https://chat.example.com/v1',
+      apiProtocol: 'openai-completions',
+    });
+
+    expect(result).toMatchObject({ valid: true, status: 400 });
+  });
+
+  it('keeps token-limit style 400 probe responses as valid', async () => {
+    proxyAwareFetch
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ error: { message: 'Method Not Allowed' } }), {
+          status: 405,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ error: { message: 'max tokens exceeded' } }), {
+          status: 400,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      );
+
+    const { validateApiKeyWithProvider } = await import('@electron/services/providers/provider-validation');
+    const result = await validateApiKeyWithProvider('custom', 'sk-token-limit-ok', {
+      baseUrl: 'https://responses.example.com/v1',
+      apiProtocol: 'openai-responses',
+    });
+
+    expect(result).toMatchObject({ valid: true, status: 400 });
+  });
+
   it('does not mask localized auth-like 400 errors behind a fallback probe', async () => {
     proxyAwareFetch.mockResolvedValueOnce(
       new Response(JSON.stringify({ error: { message: '无效密钥' } }), {
