@@ -17,6 +17,35 @@
         "hideThinking": "隐藏思考过程",
         "currentAgent": "当前对话对象：{{agent}}"
     },
+    "taskPanel": {
+        "eyebrow": "运行视图",
+        "title": "任务脉络",
+        "emptyTitle": "还没有结构化步骤",
+        "emptyBody": "当一次运行开始后，ClawX 会在这里展示思考、工具调用和收尾状态。",
+        "status": {
+            "idle": "空闲",
+            "running_one": "1 个活动步骤",
+            "running_other": "{{count}} 个活动步骤"
+        },
+        "stepStatus": {
+            "running": "进行中",
+            "completed": "完成",
+            "error": "错误"
+        }
+    },
+    "executionGraph": {
+        "eyebrow": "对话执行",
+        "title": "执行关系图",
+        "status": {
+            "active": "执行中",
+            "latest": "最近一次"
+        },
+        "userTrigger": "用户触发",
+        "userTriggerHint": "对应上方这条用户消息",
+        "agentRun": "{{agent}} 执行",
+        "agentReply": "助手回复",
+        "agentReplyHint": "结果体现在下方这条助手回复里"
+    },
     "composer": {
         "attachFiles": "添加文件",
         "pickAgent": "选择 Agent",

@@ -13,9 +13,9 @@ export function MainLayout() {
       <TitleBar />
 
       {/* Below the title bar: sidebar + content */}
-      <div className="flex flex-1 overflow-hidden">
+      <div className="flex min-h-0 flex-1 overflow-hidden">
         <Sidebar />
-        <main data-testid="main-content" className="flex-1 overflow-auto p-6">
+        <main data-testid="main-content" className="min-h-0 flex-1 overflow-auto p-6">
           <Outlet />
         </main>
       </div>

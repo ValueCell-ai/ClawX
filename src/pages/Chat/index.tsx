@@ -9,11 +9,14 @@ import { AlertCircle, Loader2, Sparkles } from 'lucide-react';
 import { useChatStore, type RawMessage } from '@/stores/chat';
 import { useGatewayStore } from '@/stores/gateway';
 import { useAgentsStore } from '@/stores/agents';
+import { hostApiFetch } from '@/lib/host-api';
 import { LoadingSpinner } from '@/components/common/LoadingSpinner';
 import { ChatMessage } from './ChatMessage';
 import { ChatInput } from './ChatInput';
+import { ExecutionGraphCard } from './ExecutionGraphCard';
 import { ChatToolbar } from './ChatToolbar';
 import { extractImages, extractText, extractThinking, extractToolUse } from './message-utils';
+import { deriveTaskSteps, parseSubagentCompletionInfo } from './task-visualization';
 import { useTranslation } from 'react-i18next';
 import { cn } from '@/lib/utils';
 import { useStickToBottomInstant } from '@/hooks/use-stick-to-bottom-instant';
@@ -26,6 +29,8 @@ export function Chat() {
 
   const messages = useChatStore((s) => s.messages);
   const currentSessionKey = useChatStore((s) => s.currentSessionKey);
+  const currentAgentId = useChatStore((s) => s.currentAgentId);
+  const sessionLabels = useChatStore((s) => s.sessionLabels);
   const loading = useChatStore((s) => s.loading);
   const sending = useChatStore((s) => s.sending);
   const error = useChatStore((s) => s.error);
@@ -37,8 +42,10 @@ export function Chat() {
   const abortRun = useChatStore((s) => s.abortRun);
   const clearError = useChatStore((s) => s.clearError);
   const fetchAgents = useAgentsStore((s) => s.fetchAgents);
+  const agents = useAgentsStore((s) => s.agents);
 
   const cleanupEmptySession = useChatStore((s) => s.cleanupEmptySession);
+  const [childTranscripts, setChildTranscripts] = useState<Record<string, RawMessage[]>>({});
 
   const [streamingTimestamp, setStreamingTimestamp] = useState<number>(0);
   const minLoading = useMinLoading(loading && messages.length > 0);
@@ -60,6 +67,39 @@ export function Chat() {
   useEffect(() => {
     void fetchAgents();
   }, [fetchAgents]);
+
+  useEffect(() => {
+    const completions = messages
+      .map((message) => parseSubagentCompletionInfo(message))
+      .filter((value): value is NonNullable<typeof value> => value != null);
+    const missing = completions.filter((completion) => !childTranscripts[completion.sessionId]);
+    if (missing.length === 0) return;
+
+    let cancelled = false;
+    void Promise.all(
+      missing.map(async (completion) => {
+        const result = await hostApiFetch<{ success: boolean; messages: RawMessage[] }>(
+          `/api/sessions/transcript?agentId=${encodeURIComponent(completion.agentId)}&sessionId=${encodeURIComponent(completion.sessionId)}`,
+        );
+        return { sessionId: completion.sessionId, messages: result.messages || [] };
+      }),
+    ).then((results) => {
+      if (cancelled) return;
+      setChildTranscripts((current) => {
+        const next = { ...current };
+        for (const result of results) {
+          next[result.sessionId] = result.messages;
+        }
+        return next;
+      });
+    }).catch((error) => {
+      console.warn('Failed to load child transcripts:', error);
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [messages, childTranscripts]);
 
   // Update timestamp when sending starts
   useEffect(() => {
@@ -89,61 +129,171 @@ export function Chat() {
   const hasAnyStreamContent = hasStreamText || hasStreamThinking || hasStreamTools || hasStreamImages || hasStreamToolStatus;
 
   const isEmpty = messages.length === 0 && !sending;
+  const userRunCards = messages.flatMap((message, idx) => {
+    if (message.role !== 'user' || parseSubagentCompletionInfo(message)) return [];
+
+    const nextUserIndex = messages.findIndex(
+      (candidate, candidateIndex) =>
+        candidateIndex > idx
+        && candidate.role === 'user'
+        && !parseSubagentCompletionInfo(candidate),
+    );
+    const segmentEnd = nextUserIndex === -1 ? messages.length : nextUserIndex;
+    const segmentMessages = messages.slice(idx + 1, segmentEnd);
+    const replyIndexOffset = segmentMessages.findIndex((candidate) => candidate.role === 'assistant');
+    const replyIndex = replyIndexOffset === -1 ? null : idx + 1 + replyIndexOffset;
+    const completionInfos = segmentMessages
+      .map((candidate) => parseSubagentCompletionInfo(candidate))
+      .filter((value): value is NonNullable<typeof value> => value != null);
+    const isLatestOpenRun = nextUserIndex === -1 && (sending || pendingFinal || hasAnyStreamContent);
+    let steps = deriveTaskSteps({
+      messages: segmentMessages,
+      streamingMessage: isLatestOpenRun ? streamingMessage : null,
+      streamingTools: isLatestOpenRun ? streamingTools : [],
+      sending: isLatestOpenRun ? sending : false,
+      pendingFinal: isLatestOpenRun ? pendingFinal : false,
+      showThinking,
+    });
+
+    for (const completion of completionInfos) {
+      const childMessages = childTranscripts[completion.sessionId];
+      if (!childMessages || childMessages.length === 0) continue;
+      const branchRootId = `subagent:${completion.sessionId}`;
+      const childSteps = deriveTaskSteps({
+        messages: childMessages,
+        streamingMessage: null,
+        streamingTools: [],
+        sending: false,
+        pendingFinal: false,
+        showThinking,
+      }).map((step) => ({
+        ...step,
+        id: `${completion.sessionId}:${step.id}`,
+        depth: step.depth + 1,
+        parentId: branchRootId,
+      }));
+
+      steps = [
+        ...steps,
+        {
+          id: branchRootId,
+          label: `${completion.agentId} subagent`,
+          status: 'completed',
+          kind: 'system' as const,
+          detail: completion.sessionKey,
+          depth: 1,
+          parentId: 'agent-run',
+        },
+        ...childSteps,
+      ];
+    }
+
+    if (steps.length === 0) return [];
+
+    const segmentAgentId = currentAgentId;
+    const segmentAgentLabel = agents.find((agent) => agent.id === segmentAgentId)?.name || segmentAgentId;
+    const segmentSessionLabel = sessionLabels[currentSessionKey] || currentSessionKey;
+
+    return [{
+      triggerIndex: idx,
+      replyIndex,
+      active: isLatestOpenRun,
+      agentLabel: segmentAgentLabel,
+      sessionLabel: segmentSessionLabel,
+      steps,
+    }];
+  });
 
   return (
-    <div className={cn("relative flex flex-col -m-6 transition-colors duration-500 dark:bg-background")} style={{ height: 'calc(100vh - 2.5rem)' }}>
+    <div className={cn("relative flex min-h-0 flex-col -m-6 transition-colors duration-500 dark:bg-background")} style={{ height: 'calc(100vh - 2.5rem)' }}>
       {/* Toolbar */}
       <div className="flex shrink-0 items-center justify-end px-4 py-2">
         <ChatToolbar />
       </div>
 
       {/* Messages Area */}
-      <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 py-4">
-        <div ref={contentRef} className="max-w-4xl mx-auto space-y-4">
-          {isEmpty ? (
-            <WelcomeScreen />
-          ) : (
-            <>
-              {messages.map((msg, idx) => (
-                <ChatMessage
-                  key={msg.id || `msg-${idx}`}
-                  message={msg}
-                  showThinking={showThinking}
-                />
-              ))}
+      <div className="min-h-0 flex-1 overflow-hidden px-4 py-4">
+        <div className="mx-auto flex h-full min-h-0 max-w-6xl flex-col gap-4 lg:flex-row lg:items-stretch">
+          <div ref={scrollRef} className="min-h-0 min-w-0 flex-1 overflow-y-auto">
+            <div ref={contentRef} className="max-w-4xl space-y-4">
+              {isEmpty ? (
+                <WelcomeScreen />
+              ) : (
+                <>
+                  {messages.map((msg, idx) => (
+                    <div
+                      key={msg.id || `msg-${idx}`}
+                      className="space-y-3"
+                      id={`chat-message-${idx}`}
+                      data-testid={`chat-message-${idx}`}
+                    >
+                      <ChatMessage
+                        message={msg}
+                        showThinking={showThinking}
+                        suppressToolCards={userRunCards.some((card) => idx > card.triggerIndex)}
+                      />
+                      {userRunCards
+                        .filter((card) => card.triggerIndex === idx)
+                        .map((card) => (
+                          <ExecutionGraphCard
+                            key={`graph-${idx}`}
+                            agentLabel={card.agentLabel}
+                            sessionLabel={card.sessionLabel}
+                            steps={card.steps}
+                            active={card.active}
+                            onJumpToTrigger={() => {
+                              document.getElementById(`chat-message-${card.triggerIndex}`)?.scrollIntoView({
+                                behavior: 'smooth',
+                                block: 'center',
+                              });
+                            }}
+                            onJumpToReply={() => {
+                              if (card.replyIndex == null) return;
+                              document.getElementById(`chat-message-${card.replyIndex}`)?.scrollIntoView({
+                                behavior: 'smooth',
+                                block: 'center',
+                              });
+                            }}
+                          />
+                        ))}
+                    </div>
+                  ))}
 
-              {/* Streaming message */}
-              {shouldRenderStreaming && (
-                <ChatMessage
-                  message={(streamMsg
-                    ? {
-                        ...(streamMsg as Record<string, unknown>),
-                        role: (typeof streamMsg.role === 'string' ? streamMsg.role : 'assistant') as RawMessage['role'],
-                        content: streamMsg.content ?? streamText,
-                        timestamp: streamMsg.timestamp ?? streamingTimestamp,
-                      }
-                    : {
-                        role: 'assistant',
-                        content: streamText,
-                        timestamp: streamingTimestamp,
-                      }) as RawMessage}
-                  showThinking={showThinking}
-                  isStreaming
-                  streamingTools={streamingTools}
-                />
-              )}
+                  {/* Streaming message */}
+                  {shouldRenderStreaming && (
+                    <ChatMessage
+                      message={(streamMsg
+                        ? {
+                            ...(streamMsg as Record<string, unknown>),
+                            role: (typeof streamMsg.role === 'string' ? streamMsg.role : 'assistant') as RawMessage['role'],
+                            content: streamMsg.content ?? streamText,
+                            timestamp: streamMsg.timestamp ?? streamingTimestamp,
+                          }
+                        : {
+                            role: 'assistant',
+                            content: streamText,
+                            timestamp: streamingTimestamp,
+                          }) as RawMessage}
+                      showThinking={showThinking}
+                      isStreaming
+                      streamingTools={streamingTools}
+                    />
+                  )}
 
-              {/* Activity indicator: waiting for next AI turn after tool execution */}
-              {sending && pendingFinal && !shouldRenderStreaming && (
-                <ActivityIndicator phase="tool_processing" />
-              )}
+                  {/* Activity indicator: waiting for next AI turn after tool execution */}
+                  {sending && pendingFinal && !shouldRenderStreaming && (
+                    <ActivityIndicator phase="tool_processing" />
+                  )}
 
-              {/* Typing indicator when sending but no stream content yet */}
-              {sending && !pendingFinal && !hasAnyStreamContent && (
-                <TypingIndicator />
+                  {/* Typing indicator when sending but no stream content yet */}
+                  {sending && !pendingFinal && !hasAnyStreamContent && (
+                    <TypingIndicator />
+                  )}
+                </>
               )}
-            </>
-          )}
+            </div>
+          </div>
+
         </div>
       </div>
 

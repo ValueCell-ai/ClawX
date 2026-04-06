@@ -17,6 +17,7 @@ import { extractText, extractThinking, extractImages, extractToolUse, formatTime
 interface ChatMessageProps {
   message: RawMessage;
   showThinking: boolean;
+  suppressToolCards?: boolean;
   isStreaming?: boolean;
   streamingTools?: Array<{
     id?: string;
@@ -40,6 +41,7 @@ function imageSrc(img: ExtractedImage): string | null {
 export const ChatMessage = memo(function ChatMessage({
   message,
   showThinking,
+  suppressToolCards = false,
   isStreaming = false,
   streamingTools = [],
 }: ChatMessageProps) {
@@ -52,7 +54,7 @@ export const ChatMessage = memo(function ChatMessage({
   const images = extractImages(message);
   const tools = extractToolUse(message);
   const visibleThinking = showThinking ? thinking : null;
-  const visibleTools = tools;
+  const visibleTools = suppressToolCards ? [] : tools;
 
   const attachedFiles = message._attachedFiles || [];
   const [lightboxImg, setLightboxImg] = useState<{ src: string; fileName: string; filePath?: string; base64?: string; mimeType?: string } | null>(null);

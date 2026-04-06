@@ -17,6 +17,35 @@
         "hideThinking": "Hide thinking",
         "currentAgent": "Talking to {{agent}}"
     },
+    "taskPanel": {
+        "eyebrow": "Run View",
+        "title": "Task Outline",
+        "emptyTitle": "No structured steps yet",
+        "emptyBody": "Once a run starts, ClawX will surface thinking, tool calls, and handoff states here.",
+        "status": {
+            "idle": "Idle",
+            "running_one": "1 active step",
+            "running_other": "{{count}} active steps"
+        },
+        "stepStatus": {
+            "running": "Running",
+            "completed": "Done",
+            "error": "Error"
+        }
+    },
+    "executionGraph": {
+        "eyebrow": "Conversation Run",
+        "title": "Execution Graph",
+        "status": {
+            "active": "Active",
+            "latest": "Latest"
+        },
+        "userTrigger": "User Trigger",
+        "userTriggerHint": "Triggered by the user message above",
+        "agentRun": "{{agent}} execution",
+        "agentReply": "Assistant Reply",
+        "agentReplyHint": "Resolved in the assistant reply below"
+    },
     "composer": {
         "attachFiles": "Attach files",
         "pickAgent": "Choose agent",

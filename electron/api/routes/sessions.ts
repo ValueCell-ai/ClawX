@@ -10,6 +10,35 @@ export async function handleSessionRoutes(
   url: URL,
   _ctx: HostApiContext,
 ): Promise<boolean> {
+  if (url.pathname === '/api/sessions/transcript' && req.method === 'GET') {
+    try {
+      const agentId = url.searchParams.get('agentId')?.trim() || '';
+      const sessionId = url.searchParams.get('sessionId')?.trim() || '';
+      if (!agentId || !sessionId) {
+        sendJson(res, 400, { success: false, error: 'agentId and sessionId are required' });
+        return true;
+      }
+
+      const transcriptPath = join(getOpenClawConfigDir(), 'agents', agentId, 'sessions', `${sessionId}.jsonl`);
+      const fsP = await import('node:fs/promises');
+      const raw = await fsP.readFile(transcriptPath, 'utf8');
+      const lines = raw.split(/\r?\n/).filter(Boolean);
+      const messages = lines.flatMap((line) => {
+        try {
+          const entry = JSON.parse(line) as { type?: string; message?: unknown };
+          return entry.type === 'message' && entry.message ? [entry.message] : [];
+        } catch {
+          return [];
+        }
+      });
+
+      sendJson(res, 200, { success: true, messages });
+    } catch (error) {
+      sendJson(res, 500, { success: false, error: String(error) });
+    }
+    return true;
+  }
+
   if (url.pathname === '/api/sessions/delete' && req.method === 'POST') {
     try {
       const body = await parseJsonBody<{ sessionKey: string }>(req);

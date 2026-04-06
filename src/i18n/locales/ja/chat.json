@@ -17,6 +17,35 @@
         "hideThinking": "思考を非表示",
         "currentAgent": "現在の会話相手: {{agent}}"
     },
+    "taskPanel": {
+        "eyebrow": "実行ビュー",
+        "title": "タスクの流れ",
+        "emptyTitle": "まだ構造化されたステップはありません",
+        "emptyBody": "実行が始まると、ClawX は思考・ツール呼び出し・最終化の状態をここに表示します。",
+        "status": {
+            "idle": "待機中",
+            "running_one": "進行中 1 件",
+            "running_other": "進行中 {{count}} 件"
+        },
+        "stepStatus": {
+            "running": "実行中",
+            "completed": "完了",
+            "error": "エラー"
+        }
+    },
+    "executionGraph": {
+        "eyebrow": "会話実行",
+        "title": "実行グラフ",
+        "status": {
+            "active": "進行中",
+            "latest": "直近"
+        },
+        "userTrigger": "ユーザー入力",
+        "userTriggerHint": "上のユーザーメッセージがトリガーです",
+        "agentRun": "{{agent}} の実行",
+        "agentReply": "アシスタント返信",
+        "agentReplyHint": "結果は下のアシスタント返信に反映されます"
+    },
     "composer": {
         "attachFiles": "ファイルを添付",
         "pickAgent": "Agent を選択",
