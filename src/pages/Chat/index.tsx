@@ -78,22 +78,38 @@ export function Chat() {
     let cancelled = false;
     void Promise.all(
       missing.map(async (completion) => {
-        const result = await hostApiFetch<{ success: boolean; messages: RawMessage[] }>(
-          `/api/sessions/transcript?agentId=${encodeURIComponent(completion.agentId)}&sessionId=${encodeURIComponent(completion.sessionId)}`,
-        );
-        return { sessionId: completion.sessionId, messages: result.messages || [] };
+        try {
+          const result = await hostApiFetch<{ success: boolean; messages?: RawMessage[] }>(
+            `/api/sessions/transcript?agentId=${encodeURIComponent(completion.agentId)}&sessionId=${encodeURIComponent(completion.sessionId)}`,
+          );
+          if (!result.success) {
+            console.warn('Failed to load child transcript:', {
+              agentId: completion.agentId,
+              sessionId: completion.sessionId,
+              result,
+            });
+            return null;
+          }
+          return { sessionId: completion.sessionId, messages: result.messages || [] };
+        } catch (error) {
+          console.warn('Failed to load child transcript:', {
+            agentId: completion.agentId,
+            sessionId: completion.sessionId,
+            error,
+          });
+          return null;
+        }
       }),
     ).then((results) => {
       if (cancelled) return;
       setChildTranscripts((current) => {
         const next = { ...current };
         for (const result of results) {
+          if (!result) continue;
           next[result.sessionId] = result.messages;
         }
         return next;
       });
-    }).catch((error) => {
-      console.warn('Failed to load child transcripts:', error);
     });
 
     return () => {
@@ -129,21 +145,26 @@ export function Chat() {
   const hasAnyStreamContent = hasStreamText || hasStreamThinking || hasStreamTools || hasStreamImages || hasStreamToolStatus;
 
   const isEmpty = messages.length === 0 && !sending;
-  const userRunCards = messages.flatMap((message, idx) => {
-    if (message.role !== 'user' || parseSubagentCompletionInfo(message)) return [];
+  const subagentCompletionInfos = messages.map((message) => parseSubagentCompletionInfo(message));
+  const nextUserMessageIndexes = new Array<number>(messages.length).fill(-1);
+  let nextUserMessageIndex = -1;
+  for (let idx = messages.length - 1; idx >= 0; idx -= 1) {
+    nextUserMessageIndexes[idx] = nextUserMessageIndex;
+    if (messages[idx].role === 'user' && !subagentCompletionInfos[idx]) {
+      nextUserMessageIndex = idx;
+    }
+  }
 
-    const nextUserIndex = messages.findIndex(
-      (candidate, candidateIndex) =>
-        candidateIndex > idx
-        && candidate.role === 'user'
-        && !parseSubagentCompletionInfo(candidate),
-    );
+  const userRunCards = messages.flatMap((message, idx) => {
+    if (message.role !== 'user' || subagentCompletionInfos[idx]) return [];
+
+    const nextUserIndex = nextUserMessageIndexes[idx];
     const segmentEnd = nextUserIndex === -1 ? messages.length : nextUserIndex;
     const segmentMessages = messages.slice(idx + 1, segmentEnd);
     const replyIndexOffset = segmentMessages.findIndex((candidate) => candidate.role === 'assistant');
     const replyIndex = replyIndexOffset === -1 ? null : idx + 1 + replyIndexOffset;
-    const completionInfos = segmentMessages
-      .map((candidate) => parseSubagentCompletionInfo(candidate))
+    const completionInfos = subagentCompletionInfos
+      .slice(idx + 1, segmentEnd)
       .filter((value): value is NonNullable<typeof value> => value != null);
     const isLatestOpenRun = nextUserIndex === -1 && (sending || pendingFinal || hasAnyStreamContent);
     let steps = deriveTaskSteps({
@@ -200,6 +221,7 @@ export function Chat() {
       active: isLatestOpenRun,
       agentLabel: segmentAgentLabel,
       sessionLabel: segmentSessionLabel,
+      segmentEnd: replyIndex ?? (nextUserIndex === -1 ? messages.length - 1 : nextUserIndex - 1),
       steps,
     }];
   });
@@ -220,7 +242,11 @@ export function Chat() {
                 <WelcomeScreen />
               ) : (
                 <>
-                  {messages.map((msg, idx) => (
+                  {messages.map((msg, idx) => {
+                    const suppressToolCards = userRunCards.some((card) =>
+                      idx > card.triggerIndex && idx <= card.segmentEnd,
+                    );
+                    return (
                     <div
                       key={msg.id || `msg-${idx}`}
                       className="space-y-3"
@@ -230,7 +256,7 @@ export function Chat() {
                       <ChatMessage
                         message={msg}
                         showThinking={showThinking}
-                        suppressToolCards={userRunCards.some((card) => idx > card.triggerIndex)}
+                        suppressToolCards={suppressToolCards}
                       />
                       {userRunCards
                         .filter((card) => card.triggerIndex === idx)
@@ -257,7 +283,8 @@ export function Chat() {
                           />
                         ))}
                     </div>
-                  ))}
+                    );
+                  })}
 
                   {/* Streaming message */}
                   {shouldRenderStreaming && (

@@ -13,6 +13,8 @@ export interface TaskStep {
   parentId?: string;
 }
 
+const MAX_TASK_STEPS = 8;
+
 interface DeriveTaskStepsInput {
   messages: RawMessage[];
   streamingMessage: unknown | null;
@@ -238,18 +240,18 @@ export function deriveTaskSteps({
   }
 
   if (steps.length === 0) {
-    const lastRelevantAssistant = [...messages].reverse().find((message) => {
+    const relevantAssistantMessages = messages.filter((message) => {
       if (!message || message.role !== 'assistant') return false;
       if (extractToolUse(message).length > 0) return true;
       return showThinking && !!extractThinking(message);
     });
 
-    if (lastRelevantAssistant) {
+    for (const [messageIndex, assistantMessage] of relevantAssistantMessages.entries()) {
       if (showThinking) {
-        const thinking = extractThinking(lastRelevantAssistant);
+        const thinking = extractThinking(assistantMessage);
         if (thinking) {
           pushStep({
-            id: `last-thinking-${lastRelevantAssistant.id || 'assistant'}`,
+            id: `history-thinking-${assistantMessage.id || messageIndex}`,
             label: 'Thinking',
             status: 'completed',
             kind: 'thinking',
@@ -259,9 +261,9 @@ export function deriveTaskSteps({
         }
       }
 
-      extractToolUse(lastRelevantAssistant).forEach((tool, index) => {
+      extractToolUse(assistantMessage).forEach((tool, index) => {
         pushStep({
-          id: tool.id || makeToolId('last-tool', tool.name, index),
+          id: tool.id || makeToolId(`history-tool-${assistantMessage.id || messageIndex}`, tool.name, index),
           label: tool.name,
           status: 'completed',
           kind: 'tool',
@@ -272,5 +274,5 @@ export function deriveTaskSteps({
     }
   }
 
-  return attachTopology(steps.slice(0, 8));
+  return attachTopology(steps).slice(0, MAX_TASK_STEPS);
 }

@@ -4,6 +4,15 @@ const PROJECT_MANAGER_SESSION_KEY = 'agent:main:main';
 const CODER_SESSION_KEY = 'agent:coder:subagent:child-123';
 const CODER_SESSION_ID = 'child-session-id';
 
+function stableStringify(value: unknown): string {
+  if (value == null || typeof value !== 'object') return JSON.stringify(value);
+  if (Array.isArray(value)) return `[${value.map((item) => stableStringify(item)).join(',')}]`;
+  const entries = Object.entries(value as Record<string, unknown>)
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([key, entryValue]) => `${JSON.stringify(key)}:${stableStringify(entryValue)}`);
+  return `{${entries.join(',')}}`;
+}
+
 const seededHistory = [
   {
     role: 'user',
@@ -137,19 +146,19 @@ test.describe('ClawX chat execution graph', () => {
       await installIpcMocks(app, {
         gatewayStatus: { state: 'running', port: 18789, pid: 12345 },
         gatewayRpc: {
-          [JSON.stringify(['sessions.list', {}])]: {
+          [stableStringify(['sessions.list', {}])]: {
             success: true,
             result: {
               sessions: [{ key: PROJECT_MANAGER_SESSION_KEY, displayName: 'main' }],
             },
           },
-          [JSON.stringify(['chat.history', { sessionKey: PROJECT_MANAGER_SESSION_KEY, limit: 200 }])]: {
+          [stableStringify(['chat.history', { sessionKey: PROJECT_MANAGER_SESSION_KEY, limit: 200 }])]: {
             success: true,
             result: {
               messages: seededHistory,
             },
           },
-          [JSON.stringify(['chat.history', { sessionKey: PROJECT_MANAGER_SESSION_KEY, limit: 1000 }])]: {
+          [stableStringify(['chat.history', { sessionKey: PROJECT_MANAGER_SESSION_KEY, limit: 1000 }])]: {
             success: true,
             result: {
               messages: seededHistory,
@@ -157,7 +166,7 @@ test.describe('ClawX chat execution graph', () => {
           },
         },
         hostApi: {
-          [JSON.stringify(['/api/gateway/status', 'GET'])]: {
+          [stableStringify(['/api/gateway/status', 'GET'])]: {
             ok: true,
             data: {
               status: 200,
@@ -165,7 +174,7 @@ test.describe('ClawX chat execution graph', () => {
               json: { state: 'running', port: 18789, pid: 12345 },
             },
           },
-          [JSON.stringify(['/api/agents', 'GET'])]: {
+          [stableStringify(['/api/agents', 'GET'])]: {
             ok: true,
             data: {
               status: 200,
@@ -179,7 +188,7 @@ test.describe('ClawX chat execution graph', () => {
               },
             },
           },
-          [JSON.stringify([`/api/sessions/transcript?agentId=coder&sessionId=${CODER_SESSION_ID}`, 'GET'])]: {
+          [stableStringify([`/api/sessions/transcript?agentId=coder&sessionId=${CODER_SESSION_ID}`, 'GET'])]: {
             ok: true,
             data: {
               status: 200,

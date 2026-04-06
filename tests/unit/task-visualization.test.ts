@@ -66,14 +66,18 @@ describe('deriveTaskSteps', () => {
 
     expect(steps).toEqual([
       expect.objectContaining({
-        id: 'last-thinking-assistant-1',
+        id: 'history-thinking-assistant-1',
         label: 'Thinking',
         status: 'completed',
+        kind: 'thinking',
+        depth: 1,
       }),
       expect.objectContaining({
         id: 'tool-2',
         label: 'read_file',
         status: 'completed',
+        kind: 'tool',
+        depth: 1,
       }),
     ]);
   });

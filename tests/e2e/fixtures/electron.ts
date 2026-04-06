@@ -208,15 +208,23 @@ export async function installIpcMocks(
   await app.evaluate(
     async ({ app: _app }, mockConfig) => {
       const { ipcMain } = process.mainModule!.require('electron') as typeof import('electron');
+      const stableStringify = (value: unknown): string => {
+        if (value == null || typeof value !== 'object') return JSON.stringify(value);
+        if (Array.isArray(value)) return `[${value.map((item) => stableStringify(item)).join(',')}]`;
+        const entries = Object.entries(value as Record<string, unknown>)
+          .sort(([left], [right]) => left.localeCompare(right))
+          .map(([key, entryValue]) => `${JSON.stringify(key)}:${stableStringify(entryValue)}`);
+        return `{${entries.join(',')}}`;
+      };
 
       if (mockConfig.gatewayRpc) {
         ipcMain.removeHandler('gateway:rpc');
         ipcMain.handle('gateway:rpc', async (_event: unknown, method: string, payload: unknown) => {
-          const key = JSON.stringify([method, payload ?? null]);
+          const key = stableStringify([method, payload ?? null]);
           if (key in mockConfig.gatewayRpc!) {
             return mockConfig.gatewayRpc![key];
           }
-          const fallbackKey = JSON.stringify([method, null]);
+          const fallbackKey = stableStringify([method, null]);
           if (fallbackKey in mockConfig.gatewayRpc!) {
             return mockConfig.gatewayRpc![fallbackKey];
           }
@@ -227,7 +235,7 @@ export async function installIpcMocks(
       if (mockConfig.hostApi) {
         ipcMain.removeHandler('hostapi:fetch');
         ipcMain.handle('hostapi:fetch', async (_event: unknown, request: { path?: string; method?: string }) => {
-          const key = JSON.stringify([request?.path ?? '', request?.method ?? 'GET']);
+          const key = stableStringify([request?.path ?? '', request?.method ?? 'GET']);
           if (key in mockConfig.hostApi!) {
             return mockConfig.hostApi![key];
           }

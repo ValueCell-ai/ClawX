@@ -38,8 +38,10 @@
         "title": "実行グラフ",
         "status": {
             "active": "進行中",
-            "latest": "直近"
+            "latest": "直近",
+            "previous": "履歴"
         },
+        "branchLabel": "branch",
         "userTrigger": "ユーザー入力",
         "userTriggerHint": "上のユーザーメッセージがトリガーです",
         "agentRun": "{{agent}} の実行",

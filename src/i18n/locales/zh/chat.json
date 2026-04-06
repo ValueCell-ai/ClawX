@@ -38,8 +38,10 @@
         "title": "执行关系图",
         "status": {
             "active": "执行中",
-            "latest": "最近一次"
+            "latest": "最近一次",
+            "previous": "历史"
         },
+        "branchLabel": "分支",
         "userTrigger": "用户触发",
         "userTriggerHint": "对应上方这条用户消息",
         "agentRun": "{{agent}} 执行",

@@ -38,8 +38,10 @@
         "title": "Execution Graph",
         "status": {
             "active": "Active",
-            "latest": "Latest"
+            "latest": "Latest",
+            "previous": "Previous"
         },
+        "branchLabel": "branch",
         "userTrigger": "User Trigger",
         "userTriggerHint": "Triggered by the user message above",
         "agentRun": "{{agent}} execution",

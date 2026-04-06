@@ -42,7 +42,7 @@ function StepDetailCard({ step }: { step: TaskStep }) {
             </span>
             {step.depth > 1 && (
               <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-primary">
-                branch
+                {t('executionGraph.branchLabel')}
               </span>
             )}
           </div>
@@ -98,7 +98,7 @@ export function ExecutionGraphCard({
             active ? 'bg-primary/10 text-primary' : 'bg-black/5 text-foreground/70 dark:bg-white/10 dark:text-foreground/70',
           )}
         >
-          {active ? t('executionGraph.status.active') : t('executionGraph.status.latest')}
+          {active ? t('executionGraph.status.active') : t('executionGraph.status.previous')}
         </span>
       </div>
 
