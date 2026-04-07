@@ -66,7 +66,7 @@ describe('getGatewayStartupRecoveryAction', () => {
     expect(action).toBe('repair');
   });
 
-  it('returns fail when repair was attempted but config is still invalid', () => {
+  it('returns retry when repair was attempted but error is still transient', () => {
     const action = getGatewayStartupRecoveryAction({
       startupError: transientError,
       startupStderrLines: configInvalidStderr,
@@ -74,7 +74,7 @@ describe('getGatewayStartupRecoveryAction', () => {
       attempt: 1,
       maxAttempts: 3,
     });
-    expect(action).toBe('fail');
+    expect(action).toBe('retry');
   });
 
   it('returns retry for transient errors after successful repair (no config signal)', () => {
