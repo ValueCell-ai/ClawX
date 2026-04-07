@@ -57,8 +57,10 @@ export const ChatMessage = memo(function ChatMessage({
   const tools = extractToolUse(message);
   const visibleThinking = showThinking ? thinking : null;
   const visibleTools = suppressToolCards ? [] : tools;
+  const shouldHideProcessAttachments = suppressProcessAttachments
+    && (hasText || !!visibleThinking || images.length > 0 || visibleTools.length > 0);
 
-  const attachedFiles = suppressProcessAttachments
+  const attachedFiles = shouldHideProcessAttachments
     ? (message._attachedFiles || []).filter((file) => file.source !== 'tool-result')
     : (message._attachedFiles || []);
   const [lightboxImg, setLightboxImg] = useState<{ src: string; fileName: string; filePath?: string; base64?: string; mimeType?: string } | null>(null);

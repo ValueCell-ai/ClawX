@@ -287,5 +287,8 @@ export function deriveTaskSteps({
     });
   }
 
-  return attachTopology(steps).slice(0, MAX_TASK_STEPS);
+  const withTopology = attachTopology(steps);
+  return withTopology.length > MAX_TASK_STEPS
+    ? withTopology.slice(-MAX_TASK_STEPS)
+    : withTopology;
 }

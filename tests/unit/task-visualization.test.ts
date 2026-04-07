@@ -127,6 +127,45 @@ describe('deriveTaskSteps', () => {
     ]);
   });
 
+  it('keeps the newest running step when the execution graph exceeds the max length', () => {
+    const messages: RawMessage[] = Array.from({ length: 9 }, (_, index) => ({
+      role: 'assistant',
+      id: `assistant-${index}`,
+      content: [
+        { type: 'tool_use', id: `tool-${index}`, name: `read_${index}`, input: { filePath: `/tmp/${index}.md` } },
+      ],
+    }));
+
+    const steps = deriveTaskSteps({
+      messages,
+      streamingMessage: {
+        role: 'assistant',
+        content: [
+          { type: 'tool_use', id: 'tool-live', name: 'grep_live', input: { pattern: 'TODO' } },
+        ],
+      },
+      streamingTools: [
+        {
+          toolCallId: 'tool-live',
+          name: 'grep_live',
+          status: 'running',
+          updatedAt: Date.now(),
+          summary: 'Scanning current workspace',
+        },
+      ],
+      sending: true,
+      pendingFinal: false,
+      showThinking: false,
+    });
+
+    expect(steps).toHaveLength(8);
+    expect(steps.at(-1)).toEqual(expect.objectContaining({
+      id: 'tool-live',
+      label: 'grep_live',
+      status: 'running',
+    }));
+  });
+
   it('keeps recent completed steps from assistant history', () => {
     const messages: RawMessage[] = [
       {
