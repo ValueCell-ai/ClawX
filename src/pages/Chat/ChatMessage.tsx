@@ -18,6 +18,7 @@ interface ChatMessageProps {
   message: RawMessage;
   showThinking: boolean;
   suppressToolCards?: boolean;
+  suppressProcessAttachments?: boolean;
   isStreaming?: boolean;
   streamingTools?: Array<{
     id?: string;
@@ -42,6 +43,7 @@ export const ChatMessage = memo(function ChatMessage({
   message,
   showThinking,
   suppressToolCards = false,
+  suppressProcessAttachments = false,
   isStreaming = false,
   streamingTools = [],
 }: ChatMessageProps) {
@@ -56,7 +58,9 @@ export const ChatMessage = memo(function ChatMessage({
   const visibleThinking = showThinking ? thinking : null;
   const visibleTools = suppressToolCards ? [] : tools;
 
-  const attachedFiles = message._attachedFiles || [];
+  const attachedFiles = suppressProcessAttachments
+    ? (message._attachedFiles || []).filter((file) => file.source !== 'tool-result')
+    : (message._attachedFiles || []);
   const [lightboxImg, setLightboxImg] = useState<{ src: string; fileName: string; filePath?: string; base64?: string; mimeType?: string } | null>(null);
 
   // Never render tool result messages in chat UI

@@ -11,13 +11,14 @@ const getToolCallFilePath = vi.fn(() => undefined);
 const hasErrorRecoveryTimer = vi.fn(() => false);
 const hasNonToolAssistantContent = vi.fn(() => true);
 const isToolOnlyMessage = vi.fn(() => false);
-const isToolResultRole = vi.fn((role: unknown) => role === 'toolresult');
-const makeAttachedFile = vi.fn((ref: { filePath: string; mimeType: string }) => ({
+const isToolResultRole = vi.fn((role: unknown) => role === 'toolresult' || role === 'toolResult' || role === 'tool_result');
+const makeAttachedFile = vi.fn((ref: { filePath: string; mimeType: string }, source?: 'user-upload' | 'tool-result' | 'message-ref') => ({
   fileName: ref.filePath.split('/').pop() || 'file',
   mimeType: ref.mimeType,
   fileSize: 0,
   preview: null,
   filePath: ref.filePath,
+  source,
 }));
 const setErrorRecoveryTimer = vi.fn();
 const upsertToolStatuses = vi.fn((_current, updates) => updates);
@@ -128,6 +129,51 @@ describe('chat runtime event handlers', () => {
     expect(h.read().loadHistory).toHaveBeenCalledTimes(1);
   });
 
+  it('marks tool-result attachments before appending them to the final assistant reply', async () => {
+    extractMediaRefs.mockReturnValue([{ filePath: '/tmp/CHECKLIST.md', mimeType: 'text/markdown' }]);
+    getMessageText.mockReturnValue('[media attached: /tmp/CHECKLIST.md (text/markdown) | /tmp/CHECKLIST.md]');
+    hasNonToolAssistantContent.mockReturnValue(true);
+
+    const { handleRuntimeEventState } = await import('@/stores/chat/runtime-event-handlers');
+    const h = makeHarness({
+      pendingToolImages: [],
+      streamingMessage: {
+        role: 'assistant',
+        id: 'streaming-assistant',
+        content: [{ type: 'tool_use', id: 'call-1', name: 'read', input: { filePath: '/tmp/CHECKLIST.md' } }],
+      },
+    });
+
+    handleRuntimeEventState(h.set as never, h.get as never, {
+      message: {
+        role: 'toolResult',
+        toolCallId: 'call-1',
+        toolName: 'read',
+        content: [{ type: 'text', text: '[media attached: /tmp/CHECKLIST.md (text/markdown) | /tmp/CHECKLIST.md]' }],
+      },
+    }, 'final', 'run-4');
+
+    handleRuntimeEventState(h.set as never, h.get as never, {
+      message: {
+        role: 'assistant',
+        id: 'final-assistant',
+        content: [{ type: 'text', text: 'Done.' }],
+      },
+    }, 'final', 'run-4');
+
+    expect(h.read().messages).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        id: 'final-assistant',
+        _attachedFiles: [
+          expect.objectContaining({
+            filePath: '/tmp/CHECKLIST.md',
+            source: 'tool-result',
+          }),
+        ],
+      }),
+    ]));
+  });
+
   it('handles error event and finalizes immediately when not sending', async () => {
     const { handleRuntimeEventState } = await import('@/stores/chat/runtime-event-handlers');
     const h = makeHarness({ sending: false, activeRunId: 'r1', lastUserMessageAt: 123 });
@@ -203,4 +249,3 @@ describe('chat runtime event handlers', () => {
     expect(next.pendingToolImages).toEqual([]);
   });
 });
-

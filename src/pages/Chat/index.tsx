@@ -221,7 +221,7 @@ export function Chat() {
       active: isLatestOpenRun,
       agentLabel: segmentAgentLabel,
       sessionLabel: segmentSessionLabel,
-      segmentEnd: replyIndex ?? (nextUserIndex === -1 ? messages.length - 1 : nextUserIndex - 1),
+      segmentEnd: nextUserIndex === -1 ? messages.length - 1 : nextUserIndex - 1,
       steps,
     }];
   });
@@ -257,6 +257,7 @@ export function Chat() {
                         message={msg}
                         showThinking={showThinking}
                         suppressToolCards={suppressToolCards}
+                        suppressProcessAttachments={suppressToolCards}
                       />
                       {userRunCards
                         .filter((card) => card.triggerIndex === idx)
