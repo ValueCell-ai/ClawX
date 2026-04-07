@@ -45,7 +45,7 @@
         "selectDeliveryAccount": "选择账号",
         "deliveryAccountDesc": "这里直接复用 Channels 页面里的已配置账号列表。",
         "selectChannel": "选择通道",
-        "deliveryChannelUnsupported": "微信通道当前不支持定时任务主动投递，因为插件要求实时会话里的 contextToken。",
+        "deliveryChannelUnsupported": "{{channel}} 通道当前不支持定时任务主动投递。",
         "deliveryDefaultAccountHint": "将使用该通道当前的默认账号：{{account}}",
         "deliveryTarget": "接收目标",
         "selectDeliveryTarget": "选择接收目标",
