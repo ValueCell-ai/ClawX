@@ -26,15 +26,12 @@ const WINDOWS_USAGE_FETCH_MAX_ATTEMPTS = 3;
 const USAGE_FETCH_RETRY_DELAY_MS = 1500;
 const USAGE_AUTO_REFRESH_INTERVAL_MS = 15_000;
 
-const HIDDEN_USAGE_SOURCES = new Set([
-  'gateway-injected',
-  'delivery-mirror',
-]);
+const HIDDEN_USAGE_MARKERS = ['gateway-injected', 'delivery-mirror'];
 
 function isHiddenUsageSource(source?: string): boolean {
   if (!source) return false;
   const normalizedSource = source.trim().toLowerCase();
-  return HIDDEN_USAGE_SOURCES.has(normalizedSource);
+  return HIDDEN_USAGE_MARKERS.some((marker) => normalizedSource.includes(marker));
 }
 
 export function Models() {
