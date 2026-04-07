@@ -8,7 +8,7 @@
  * equivalents could stall for 500 ms – 2 s+ per call, causing "Not
  * Responding" hangs.
  */
-import { access, mkdir, readFile, writeFile } from 'fs/promises';
+import { access, mkdir, open, readFile, rm, writeFile } from 'fs/promises';
 import { constants, readdirSync, readFileSync, existsSync } from 'fs';
 import { join } from 'path';
 import { homedir } from 'os';
@@ -191,6 +191,94 @@ async function readAuthProfiles(agentId = 'main'): Promise<AuthProfilesStore> {
 
 async function writeAuthProfiles(store: AuthProfilesStore, agentId = 'main'): Promise<void> {
   await writeJsonFile(getAuthProfilesPath(agentId), store);
+}
+
+/**
+ * Check whether a process ID is still running.
+ * Returns false if the process is gone (ESRCH) or we get a definitive
+ * "no such process" signal; returns true on EPERM (process exists but
+ * we cannot signal it) or any other unexpected error (conservative).
+ */
+function isPidAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (err: unknown) {
+    return (err as NodeJS.ErrnoException).code === 'EPERM';
+  }
+}
+
+/**
+ * Run `fn` while holding the `.lock` sidecar file that the OpenClaw gateway
+ * uses to guard concurrent writes to auth-profiles.json.  Both sides must
+ * participate in this protocol so their reads and writes are serialised.
+ *
+ * Protocol (mirrors node_modules/openclaw/dist/file-lock-B4wypLkV.js):
+ *   lock path  = `${auth-profiles.json}.lock`
+ *   acquire    = fs.open(lockPath, 'wx')  — atomic EEXIST on collision
+ *   lock body  = JSON { pid, createdAt }  — used for stale detection
+ *   stale      = PID no longer alive OR lock file older than 30 s
+ *   release    = fs.rm(lockPath, { force: true })
+ */
+async function withAuthProfilesLock<T>(agentId: string, fn: () => Promise<T>): Promise<T> {
+  const authPath = getAuthProfilesPath(agentId);
+  const lockPath = `${authPath}.lock`;
+  const staleMs = 30_000;
+  const maxAttempts = 10;
+  const baseDelayMs = 50;
+
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    let handle: Awaited<ReturnType<typeof open>> | null = null;
+    try {
+      // Ensure parent dir exists before trying to create the lock file
+      await ensureDir(join(authPath, '..'));
+      handle = await open(lockPath, 'wx');
+      await handle.writeFile(
+        JSON.stringify({ pid: process.pid, createdAt: new Date().toISOString() }),
+        'utf-8',
+      );
+      await handle.close();
+      handle = null;
+
+      try {
+        return await fn();
+      } finally {
+        await rm(lockPath, { force: true }).catch(() => {});
+      }
+    } catch (err: unknown) {
+      if (handle) {
+        await handle.close().catch(() => {});
+        handle = null;
+      }
+      if ((err as NodeJS.ErrnoException).code !== 'EEXIST') throw err;
+
+      // Lock file already exists — check if it is stale
+      const isStale = await (async (): Promise<boolean> => {
+        try {
+          const raw = await readFile(lockPath, 'utf-8');
+          const parsed = JSON.parse(raw) as { pid?: number; createdAt?: string };
+          if (typeof parsed.pid === 'number' && !isPidAlive(parsed.pid)) return true;
+          if (typeof parsed.createdAt === 'string') {
+            const age = Date.now() - Date.parse(parsed.createdAt);
+            if (!Number.isFinite(age) || age > staleMs) return true;
+          }
+          return false;
+        } catch {
+          return true; // unreadable / malformed lock → treat as stale
+        }
+      })();
+
+      if (isStale) {
+        await rm(lockPath, { force: true }).catch(() => {});
+        continue; // retry immediately after clearing stale lock
+      }
+
+      if (attempt >= maxAttempts - 1) break;
+      await new Promise<void>((resolve) => setTimeout(resolve, baseDelayMs * (attempt + 1)));
+    }
+  }
+
+  throw new Error(`auth-profiles lock timeout for agent "${agentId}"`);
 }
 
 // ── Agent Discovery ──────────────────────────────────────────────
@@ -376,29 +464,31 @@ export async function saveOAuthTokenToOpenClaw(
   if (agentIds.length === 0) agentIds.push('main');
 
   for (const id of agentIds) {
-    const store = await readAuthProfiles(id);
-    const profileId = `${provider}:default`;
+    await withAuthProfilesLock(id, async () => {
+      const store = await readAuthProfiles(id);
+      const profileId = `${provider}:default`;
 
-    store.profiles[profileId] = {
-      type: 'oauth',
-      provider,
-      access: token.access,
-      refresh: token.refresh,
-      expires: token.expires,
-      email: token.email,
-      projectId: token.projectId,
-    };
+      store.profiles[profileId] = {
+        type: 'oauth',
+        provider,
+        access: token.access,
+        refresh: token.refresh,
+        expires: token.expires,
+        email: token.email,
+        projectId: token.projectId,
+      };
 
-    if (!store.order) store.order = {};
-    if (!store.order[provider]) store.order[provider] = [];
-    if (!store.order[provider].includes(profileId)) {
-      store.order[provider].push(profileId);
-    }
+      if (!store.order) store.order = {};
+      if (!store.order[provider]) store.order[provider] = [];
+      if (!store.order[provider].includes(profileId)) {
+        store.order[provider].push(profileId);
+      }
 
-    if (!store.lastGood) store.lastGood = {};
-    store.lastGood[provider] = profileId;
+      if (!store.lastGood) store.lastGood = {};
+      store.lastGood[provider] = profileId;
 
-    await writeAuthProfiles(store, id);
+      await writeAuthProfiles(store, id);
+    });
   }
   console.log(`Saved OAuth token for provider "${provider}" to OpenClaw auth-profiles (agents: ${agentIds.join(', ')})`);
 }
@@ -445,21 +535,23 @@ export async function saveProviderKeyToOpenClaw(
   if (agentIds.length === 0) agentIds.push('main');
 
   for (const id of agentIds) {
-    const store = await readAuthProfiles(id);
-    const profileId = `${provider}:default`;
+    await withAuthProfilesLock(id, async () => {
+      const store = await readAuthProfiles(id);
+      const profileId = `${provider}:default`;
 
-    store.profiles[profileId] = { type: 'api_key', provider, key: apiKey };
+      store.profiles[profileId] = { type: 'api_key', provider, key: apiKey };
 
-    if (!store.order) store.order = {};
-    if (!store.order[provider]) store.order[provider] = [];
-    if (!store.order[provider].includes(profileId)) {
-      store.order[provider].push(profileId);
-    }
+      if (!store.order) store.order = {};
+      if (!store.order[provider]) store.order[provider] = [];
+      if (!store.order[provider].includes(profileId)) {
+        store.order[provider].push(profileId);
+      }
 
-    if (!store.lastGood) store.lastGood = {};
-    store.lastGood[provider] = profileId;
+      if (!store.lastGood) store.lastGood = {};
+      store.lastGood[provider] = profileId;
 
-    await writeAuthProfiles(store, id);
+      await writeAuthProfiles(store, id);
+    });
   }
   console.log(`Saved API key for provider "${provider}" to OpenClaw auth-profiles (agents: ${agentIds.join(', ')})`);
 }
@@ -475,10 +567,12 @@ export async function removeProviderKeyFromOpenClaw(
   if (agentIds.length === 0) agentIds.push('main');
 
   for (const id of agentIds) {
-    const store = await readAuthProfiles(id);
-    if (removeProfileFromStore(store, `${provider}:default`, 'api_key')) {
-      await writeAuthProfiles(store, id);
-    }
+    await withAuthProfilesLock(id, async () => {
+      const store = await readAuthProfiles(id);
+      if (removeProfileFromStore(store, `${provider}:default`, 'api_key')) {
+        await writeAuthProfiles(store, id);
+      }
+    });
   }
   console.log(`Removed API key for provider "${provider}" from OpenClaw auth-profiles (agents: ${agentIds.join(', ')})`);
 }
@@ -491,10 +585,12 @@ export async function removeProviderFromOpenClaw(provider: string): Promise<void
   const agentIds = await discoverAgentIds();
   if (agentIds.length === 0) agentIds.push('main');
   for (const id of agentIds) {
-    const store = await readAuthProfiles(id);
-    if (removeProfilesForProvider(store, provider)) {
-      await writeAuthProfiles(store, id);
-    }
+    await withAuthProfilesLock(id, async () => {
+      const store = await readAuthProfiles(id);
+      if (removeProfilesForProvider(store, provider)) {
+        await writeAuthProfiles(store, id);
+      }
+    });
   }
 
   // 2. Remove from models.json (per-agent model registry used by pi-ai directly)

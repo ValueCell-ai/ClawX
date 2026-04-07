@@ -652,3 +652,67 @@ describe('auth-backed provider discovery', () => {
     await expect(getActiveOpenClawProviders()).resolves.toEqual(new Set());
   });
 });
+
+describe('auth-profiles file-lock protocol', () => {
+  beforeEach(async () => {
+    vi.resetModules();
+    vi.restoreAllMocks();
+    await rm(testHome, { recursive: true, force: true });
+    await rm(testUserData, { recursive: true, force: true });
+  });
+
+  it('removes the .lock sidecar file after a successful write', async () => {
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    const { saveProviderKeyToOpenClaw } = await import('@electron/utils/openclaw-auth');
+    await saveProviderKeyToOpenClaw('moonshot', 'sk-moon', 'main');
+
+    const lockPath = join(testHome, '.openclaw', 'agents', 'main', 'agent', 'auth-profiles.json.lock');
+    await expect(readFile(lockPath, 'utf8')).rejects.toThrow();
+
+    logSpy.mockRestore();
+  });
+
+  it('clears a stale lock (dead PID) and proceeds normally', async () => {
+    const agentDir = join(testHome, '.openclaw', 'agents', 'main', 'agent');
+    await mkdir(agentDir, { recursive: true });
+    const lockPath = join(agentDir, 'auth-profiles.json.lock');
+
+    // Plant a lock file referencing a PID that cannot possibly be alive
+    await writeFile(
+      lockPath,
+      JSON.stringify({ pid: 999_999_999, createdAt: new Date().toISOString() }),
+      'utf8',
+    );
+
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    const { saveProviderKeyToOpenClaw } = await import('@electron/utils/openclaw-auth');
+    await saveProviderKeyToOpenClaw('anthropic', 'sk-ant', 'main');
+
+    const store = await readAuthProfiles('main');
+    expect((store.profiles as Record<string, { key: string }>)['anthropic:default'].key).toBe('sk-ant');
+
+    // Stale lock should have been removed
+    await expect(readFile(lockPath, 'utf8')).rejects.toThrow();
+
+    logSpy.mockRestore();
+  });
+
+  it('concurrent writes to the same agent are serialised — no key is lost', async () => {
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    const { saveProviderKeyToOpenClaw } = await import('@electron/utils/openclaw-auth');
+
+    // Two simultaneous saves; without locking the second read sees an empty
+    // store and overwrites the first key when it writes back.
+    await Promise.all([
+      saveProviderKeyToOpenClaw('openai', 'sk-openai', 'main'),
+      saveProviderKeyToOpenClaw('anthropic', 'sk-anthropic', 'main'),
+    ]);
+
+    const store = await readAuthProfiles('main');
+    const profiles = store.profiles as Record<string, { key: string }>;
+    expect(profiles['openai:default']?.key).toBe('sk-openai');
+    expect(profiles['anthropic:default']?.key).toBe('sk-anthropic');
+
+    logSpy.mockRestore();
+  });
+});
