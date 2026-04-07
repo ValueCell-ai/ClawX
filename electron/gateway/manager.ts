@@ -775,8 +775,19 @@ export class GatewayManager extends EventEmitter {
 
         if (this.status.state === 'running') {
           this.setStatus({ state: 'stopped' });
-          this.scheduleReconnect();
         }
+
+        // Always attempt reconnect from process exit.  scheduleReconnect()
+        // internally checks shouldReconnect and reconnect-timer guards, so
+        // calling it unconditionally is safe — intentional stop() calls set
+        // shouldReconnect=false which makes scheduleReconnect() no-op.
+        //
+        // On Windows, the WS close handler intentionally skips reconnect
+        // (to avoid racing with this exit handler).  However, WS close
+        // fires *before* process exit and sets state='stopped', which
+        // previously caused this handler to also skip reconnect — leaving
+        // the gateway permanently dead with no recovery path.
+        this.scheduleReconnect();
       },
       onError: () => {
         this.ownsProcess = false;
