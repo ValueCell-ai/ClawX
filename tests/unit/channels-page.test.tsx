@@ -270,4 +270,27 @@ describe('Channels page status refresh', () => {
       agentsDeferred.resolve({ success: true, agents: [] });
     });
   });
+
+  it('keeps filled Feishu credentials when account ID is edited', async () => {
+    subscribeHostEventMock.mockImplementation(() => vi.fn());
+
+    render(<Channels />);
+
+    await waitFor(() => {
+      expect(screen.getByText('Feishu / Lark')).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'account.add' }));
+
+    const appIdInput = await screen.findByPlaceholderText('channels:meta.feishu.fields.appId.placeholder');
+    const appSecretInput = screen.getByPlaceholderText('channels:meta.feishu.fields.appSecret.placeholder');
+    const accountIdInput = screen.getByLabelText('account.customIdLabel');
+
+    fireEvent.change(appIdInput, { target: { value: 'cli_test_app' } });
+    fireEvent.change(appSecretInput, { target: { value: 'secret_test_value' } });
+    fireEvent.change(accountIdInput, { target: { value: 'feishu-renamed-account' } });
+
+    expect(appIdInput).toHaveValue('cli_test_app');
+    expect(appSecretInput).toHaveValue('secret_test_value');
+  });
 });

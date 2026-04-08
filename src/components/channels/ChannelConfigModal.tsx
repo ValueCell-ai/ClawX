@@ -104,6 +104,10 @@ export function ChannelConfigModal({
     : showAccountIdEditor
       ? accountIdInput.trim()
       : (accountId ?? (agentId ? (agentId === 'main' ? 'default' : agentId) : undefined));
+  const shouldLoadExistingConfig = Boolean(
+    selectedType && allowExistingConfig && configuredTypes.includes(selectedType)
+  );
+  const accountIdForConfigLoad = shouldLoadExistingConfig ? resolvedAccountId : undefined;
 
   useEffect(() => {
     setSelectedType(initialSelectedType);
@@ -124,7 +128,6 @@ export function ChannelConfigModal({
       return;
     }
 
-    const shouldLoadExistingConfig = allowExistingConfig && configuredTypes.includes(selectedType);
     if (!shouldLoadExistingConfig) {
       setConfigValues({});
       setIsExistingConfig(false);
@@ -147,7 +150,7 @@ export function ChannelConfigModal({
 
     (async () => {
       try {
-        const accountParam = resolvedAccountId ? `?accountId=${encodeURIComponent(resolvedAccountId)}` : '';
+        const accountParam = accountIdForConfigLoad ? `?accountId=${encodeURIComponent(accountIdForConfigLoad)}` : '';
         const result = await hostApiFetch<{ success: boolean; values?: Record<string, string> }>(
           `/api/channels/config/${encodeURIComponent(selectedType)}${accountParam}`
         );
@@ -173,7 +176,7 @@ export function ChannelConfigModal({
     return () => {
       cancelled = true;
     };
-  }, [allowExistingConfig, configuredTypes, initialConfigValues, resolvedAccountId, selectedType, showChannelName]);
+  }, [accountIdForConfigLoad, initialConfigValues, selectedType, shouldLoadExistingConfig, showChannelName]);
 
   useEffect(() => {
     if (selectedType && !loadingConfig && showChannelName && firstInputRef.current) {
