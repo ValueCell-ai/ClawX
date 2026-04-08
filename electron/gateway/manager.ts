@@ -242,6 +242,7 @@ export class GatewayManager extends EventEmitter {
         port: this.status.port,
         ownedPid: this.process?.pid,
         shouldWaitForPortFree: process.platform === 'win32',
+        hasOwnedProcess: () => this.process?.pid != null && this.ownsProcess,
         resetStartupStderrLines: () => {
           this.recentStartupStderrLines = [];
         },
@@ -446,7 +447,16 @@ export class GatewayManager extends EventEmitter {
     logger.info(`[gateway-refresh] mode=restart requested pidBefore=${pidBefore ?? 'n/a'}`);
     this.restartInFlight = (async () => {
       await this.stop();
-      await this.start();
+      try {
+        await this.start();
+      } catch (err) {
+        // stop() set shouldReconnect=false. Restore it so the gateway
+        // can self-heal via scheduleReconnect() instead of dying permanently.
+        logger.warn('Gateway restart: start() failed after stop(), enabling auto-reconnect recovery', err);
+        this.shouldReconnect = true;
+        this.scheduleReconnect();
+        throw err;
+      }
     })();
 
     try {

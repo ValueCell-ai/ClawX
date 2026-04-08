@@ -1,12 +1,12 @@
 import { app, utilityProcess } from 'electron';
 import path from 'path';
 import { existsSync } from 'fs';
-import WebSocket from 'ws';
 import { getOpenClawDir, getOpenClawEntryPath } from '../utils/paths';
 import { getUvMirrorEnv } from '../utils/uv-env';
 import { isPythonReady, setupManagedPython } from '../utils/uv-setup';
 import { logger } from '../utils/logger';
 import { prependPathEntry } from '../utils/env-path';
+import { probeGatewayReady } from './ws-client';
 
 export function warmupManagedPythonReadiness(): void {
   void isPythonReady().then((pythonReady) => {
@@ -255,27 +255,8 @@ export async function findExistingGatewayProcess(options: {
       logger.warn('Error checking for existing process on port:', err);
     }
 
-    return await new Promise<{ port: number; externalToken?: string } | null>((resolve) => {
-      const testWs = new WebSocket(`ws://localhost:${port}/ws`);
-      const terminateAndResolve = (result: { port: number; externalToken?: string } | null) => {
-        // terminate() avoids TIME_WAIT on Windows (vs close() which does WS handshake)
-        try { testWs.terminate(); } catch { /* ignore */ }
-        resolve(result);
-      };
-      const timeout = setTimeout(() => {
-        terminateAndResolve(null);
-      }, 2000);
-
-      testWs.on('open', () => {
-        clearTimeout(timeout);
-        terminateAndResolve({ port });
-      });
-
-      testWs.on('error', () => {
-        clearTimeout(timeout);
-        resolve(null);
-      });
-    });
+    const ready = await probeGatewayReady(port, 5000);
+    return ready ? { port } : null;
   } catch {
     return null;
   }
