@@ -1912,11 +1912,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
       console.log(`[sendMessage] RPC result: success=${result.success}, runId=${result.result?.runId || 'none'}`);
 
-      } else {
-        if (result.result?.runId) {
-          set({ activeRunId: result.result.runId });
-        }
-        void runAttachedAgentFanout(currentSessionKey, trimmed, attachments);
       if (!result.success) {
         const errorMsg = result.error || 'Failed to send message';
         if (isRecoverableChatSendTimeout(errorMsg)) {
