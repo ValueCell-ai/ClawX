@@ -51,7 +51,6 @@ describe('GatewayManager restart recovery', () => {
     internals.shouldReconnect = true;
 
     // Mock stop to just reset flags (simulates normal stop)
-    const originalStop = manager.stop.bind(manager);
     vi.spyOn(manager, 'stop').mockImplementation(async () => {
       internals.shouldReconnect = false;
       internals.status = { state: 'stopped', port: 18789 };
