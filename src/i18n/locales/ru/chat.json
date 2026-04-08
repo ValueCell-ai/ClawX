@@ -1,0 +1,72 @@
+{
+    "gatewayNotRunning": "Шлюз не запущен",
+    "gatewayRequired": "Для использования чата требуется запущенный шлюз OpenClaw. Он запустится автоматически, или вы можете запустить его в Настройках.",
+    "welcome": {
+        "title": "Чат ClawX",
+        "subtitle": "Чем могу помочь?",
+        "askQuestions": "Задачи",
+        "askQuestionsDesc": "Работа над задачами",
+        "creativeTasks": "Непрерывное выполнение",
+        "creativeTasksDesc": "Выполнение многошаговых задач",
+        "brainstorming": "Параллельные агенты"
+    },
+    "noLogs": "(Журналы ещё недоступны)",
+    "toolbar": {
+        "refresh": "Обновить чат",
+        "showThinking": "Показать размышления",
+        "hideThinking": "Скрыть размышления",
+        "currentAgent": "Общение с {{agent}}"
+    },
+    "taskPanel": {
+        "eyebrow": "Вид выполнения",
+        "title": "Структура задачи",
+        "emptyTitle": "Пока нет структурированных шагов",
+        "emptyBody": "Когда начнётся выполнение, ClawX покажет размышления, вызовы инструментов и состояния передачи здесь.",
+        "status": {
+            "idle": "Бездействует",
+            "running_one": "1 активный шаг",
+            "running_other": "{{count}} активных шагов"
+        },
+        "stepStatus": {
+            "running": "Выполняется",
+            "completed": "Готово",
+            "error": "Ошибка"
+        }
+    },
+    "executionGraph": {
+        "eyebrow": "Выполнение в чате",
+        "title": "Граф выполнения",
+        "status": {
+            "active": "Активно",
+            "latest": "Последнее",
+            "previous": "Предыдущее"
+        },
+        "branchLabel": "ветвь",
+        "userTrigger": "Триггер пользователя",
+        "userTriggerHint": "Запущен пользовательским сообщением выше",
+        "agentRun": "Выполнение {{agent}}",
+        "agentReply": "Ответ ассистента",
+        "agentReplyHint": "Разрешено в ответе ассистента ниже"
+    },
+    "composer": {
+        "attachFiles": "Прикрепить файлы",
+        "pickAgent": "Выбрать агента",
+        "clearTarget": "Очистить целевого агента",
+        "targetChip": "@{{agent}}",
+        "agentPickerTitle": "Направить следующее сообщение другому агенту",
+        "gatewayDisconnectedPlaceholder": "Шлюз не подключён...",
+        "send": "Отправить",
+        "stop": "Остановить",
+        "gatewayConnected": "подключён",
+        "gatewayStatus": "шлюз {{state}} | порт: {{port}} {{pid}}",
+        "retryFailedAttachments": "Повторить неудавшиеся вложения"
+    },
+    "historyBuckets": {
+        "today": "Сегодня",
+        "yesterday": "Вчера",
+        "withinWeek": "В течение недели",
+        "withinTwoWeeks": "В течение 2 недель",
+        "withinMonth": "В течение месяца",
+        "older": "Старее месяца"
+    }
+}

@@ -1,0 +1,392 @@
+{
+    "title": "Каналы сообщений",
+    "subtitle": "Управляйте каналами сообщений, учётными записями, привязками учётных записей к агентам и настройками по умолчанию для каждого канала.",
+    "refresh": "Обновить",
+    "addChannel": "Добавить канал",
+    "stats": {
+        "total": "Всего каналов",
+        "connected": "Подключено",
+        "disconnected": "Отключено"
+    },
+    "gatewayWarning": "Служба шлюза не запущена. Каналы не могут подключиться.",
+    "availableChannels": "Доступные каналы",
+    "supportedChannels": "Поддерживаемые каналы",
+    "available": "Доступные каналы",
+    "availableDesc": "Подключить новый канал",
+    "configured": "Настроенные каналы",
+    "configuredDesc": "Управление уже настроенными каналами",
+    "configuredBadge": "Настроен",
+    "deleteConfirm": "Вы уверены, что хотите удалить этот канал?",
+    "showAll": "Показать все",
+    "pluginBadge": "Плагин",
+    "toast": {
+        "whatsappConnected": "WhatsApp успешно подключён",
+        "whatsappFailed": "Не удалось подключить WhatsApp: {{error}}",
+        "qrConnected": "{{name}} успешно подключён",
+        "qrFailed": "Не удалось подключить {{name}}: {{error}}",
+        "channelSaved": "Канал {{name}} сохранён",
+        "channelConnecting": "Подключение к {{name}}...",
+        "savedButRefreshFailed": "Конфигурация сохранена, но обновление данных страницы не удалось. Пожалуйста, обновите вручную.",
+        "restartManual": "Пожалуйста, перезапустите шлюз вручную",
+        "configFailed": "Ошибка конфигурации: {{error}}",
+        "bindingUpdated": "Привязка учётной записи обновлена",
+        "defaultUpdated": "Учётная запись по умолчанию обновлена",
+        "accountDeleted": "Учётная запись удалена",
+        "channelDeleted": "Канал удалён"
+    },
+    "account": {
+        "add": "Добавить учётную запись",
+        "edit": "Редактировать",
+        "delete": "Удалить учётную запись",
+        "deleteChannel": "Удалить канал",
+        "deleteConfirm": "Вы уверены, что хотите удалить эту учётную запись?",
+        "default": "Текущая по умолчанию",
+        "setDefault": "Установить как канал по умолчанию",
+        "bindAgentLabel": "Связанный агент",
+        "unassigned": "Не назначено",
+        "mainAccount": "Основная учётная запись",
+        "customIdLabel": "ID учётной записи",
+        "customIdPlaceholder": "напр., feishu-sales-bot",
+        "customIdHint": "Используйте ID учётной записи из строчных букв (буквы, цифры, дефис, подчёркивание) для раз multiple учётных записей одного канала.",
+        "invalidId": "ID учётной записи не может быть пустым",
+        "invalidCanonicalId": "ID учётной записи должен содержать строчные буквы, цифры, дефисы или подчёркивания, начинаться с буквы/цифры и быть не более 64 символов.",
+        "idLabel": "ID: {{id}}",
+        "boundTo": "Связан с: {{agent}}",
+        "handledBy": "Обрабатывается {{agent}}",
+        "bindingStatusLabel": "Привязка: {{status}}",
+        "connectionStatusLabel": "Подключение: {{status}}",
+        "bindingStatus": {
+            "bound": "Связан",
+            "unbound": "Не связан"
+        },
+        "connectionStatus": {
+            "connected": "Подключён",
+            "connecting": "Подключение",
+            "disconnected": "Отключён",
+            "error": "Ошибка"
+        },
+        "accountIdPrompt": "Введите новый ID учётной записи для этого канала",
+        "accountIdExists": "ID учётной записи {{accountId}} уже существует"
+    },
+    "dialog": {
+        "updateTitle": "Обновить {{name}}",
+        "configureTitle": "Настроить {{name}}",
+        "addTitle": "Добавить канал",
+        "existingDesc": "Обновите существующую конфигурацию",
+        "selectDesc": "Выберите тип канала для настройки",
+        "qrCode": "QR-код",
+        "token": "Токен",
+        "scanQR": "Сканируйте этот QR-код с {{name}}",
+        "refreshCode": "Обновить код",
+        "loadingConfig": "Загрузка конфигурации...",
+        "existingHint": "У вас уже есть конфигурация для этого канала",
+        "howToConnect": "Как подключить",
+        "viewDocs": "Просмотреть документацию",
+        "channelName": "Название канала",
+        "channelNamePlaceholder": "Мой {{name}}",
+        "enableChannel": "Включить канал",
+        "enableChannelDesc": "При выключении конфигурация сохраняется, но канал остаётся отключённым",
+        "credentialsVerified": "Учётные данные проверены",
+        "validationFailed": "Ошибка проверки",
+        "warnings": "Предупреждения",
+        "back": "Назад",
+        "validating": "Проверка...",
+        "validateConfig": "Проверить конфигурацию",
+        "generatingQR": "Генерация QR...",
+        "validatingAndSaving": "Проверка и сохранение...",
+        "generateQRCode": "Сгенерировать QR-код",
+        "updateAndReconnect": "Обновить и переподключить",
+        "saveAndConnect": "Сохранить и подключить",
+        "envVar": "Переменная окружения: {{var}}"
+    },
+    "meta": {
+        "telegram": {
+            "description": "Подключите Telegram через токен бота от @BotFather",
+            "docsUrl": "https://icnnp7d0dymg.feishu.cn/wiki/TjiGwxsMWi7hpDkDAQBc0ydMnEf#MEkKdqXP1orZU2x4SrFcdUHgnl1",
+            "fields": {
+                "botToken": {
+                    "label": "Токен бота",
+                    "placeholder": "123456:ABC-DEF..."
+                },
+                "allowedUsers": {
+                    "label": "ID разрешённых пользователей",
+                    "placeholder": "напр., 123456789, 987654321",
+                    "description": "Разделённый запятой список ID пользователей, которым разрешено использовать бота. Требуется для безопасности."
+                }
+            },
+            "instructions": [
+                "Откройте Telegram и найдите @BotFather",
+                "Отправьте /newbot и следуйте инструкциям",
+                "Скопируйте токен бота",
+                "Вставьте токен ниже",
+                "Получите свой ID пользователя от @userinfobot и вставьте ниже"
+            ]
+        },
+        "discord": {
+            "description": "Подключите Discord через токен бота из Developer Portal",
+            "docsUrl": "https://icnnp7d0dymg.feishu.cn/wiki/BkOywJYCAiYRN9k4KTTceKPMnxg#QS6LdxnA2oNtfcxtFc8cgabnnNd",
+            "fields": {
+                "token": {
+                    "label": "Токен бота",
+                    "placeholder": "Токен вашего Discord-бота"
+                },
+                "guildId": {
+                    "label": "ID сервера",
+                    "placeholder": "напр., 123456789012345678",
+                    "description": "Ограничьте бота определённым сервером. Правый клик по серверу → Копировать ID сервера."
+                },
+                "channelId": {
+                    "label": "ID канала (опционально)",
+                    "placeholder": "напр., 123456789012345678",
+                    "description": "Ограничьте бота определённым каналом. Правый клик по каналу → Копировать ID канала."
+                }
+            },
+            "instructions": [
+                "Перейдите в Discord Developer Portal → Приложения → Новое приложение",
+                "В разделе Бот: Добавить бота, затем скопируйте токен бота",
+                "Включите Message Content Intent + Server Members Intent в Бот → Privileged Gateway Intents",
+                "В OAuth2 → URL Generator: выберите \"bot\" + \"applications.commands\", добавьте права на сообщения",
+                "Пригласите бота на сервер через сгенерированный URL",
+                "Вставьте токен бота ниже"
+            ]
+        },
+        "whatsapp": {
+            "description": "Подключите WhatsApp сканированием QR-кода (номер телефона не требуется)",
+            "docsUrl": "https://icnnp7d0dymg.feishu.cn/wiki/ES7fwUfH8iGl8FkHYfFcyWB3n4d#doxcnUElomBZLi0NnKLUzn6zLbd",
+            "instructions": [
+                "Откройте WhatsApp на телефоне",
+                "Перейдите в Настройки > Связанные устройства > Подключить устройство",
+                "Сканируйте QR-код, показанный ниже",
+                "Система автоматически определит ваш номер телефона"
+            ]
+        },
+        "wechat": {
+            "description": "Подключите личный WeChat через официальный плагин OpenClaw от Tencent, сканированием QR-кода",
+            "docsUrl": "https://icnnp7d0dymg.feishu.cn/wiki/GHYZwuPCriF0gWkXwkFcJ9zon3b",
+            "instructions": [
+                "Нажмите \"Сгенерировать QR-код\" для установки и включения официального плагина WeChat внутри OpenClaw",
+                "Сканируйте QR-код ниже через WeChat и подтвердите подключение на телефоне",
+                "После успешного связывания новый чат WeChat ClawBot автоматически появится в WeChat",
+                "Вы можете повторить QR-процедуру позже, чтобы добавить другую учётную запись WeChat или переподключить существующую"
+            ]
+        },
+        "dingtalk": {
+            "description": "Подключите DingTalk через плагин канала OpenClaw (режим Stream)",
+            "docsUrl": "https://icnnp7d0dymg.feishu.cn/wiki/Y5eNwiSiZidkLskrwtJc1rUln0b#doxcnDgA78n43DbkiQjI1OqUA7b",
+            "fields": {
+                "clientId": {
+                    "label": "Client ID (AppKey)",
+                    "placeholder": "dingxxxxxx"
+                },
+                "clientSecret": {
+                    "label": "Client Secret (AppSecret)",
+                    "placeholder": "Секрет вашего приложения"
+                },
+                "robotCode": {
+                    "label": "Robot Code (опционально)",
+                    "placeholder": "Обычно совпадает с Client ID"
+                },
+                "corpId": {
+                    "label": "Corp ID (опционально)",
+                    "placeholder": "dingxxxxxx"
+                },
+                "agentId": {
+                    "label": "Agent ID (опционально)",
+                    "placeholder": "123456789"
+                }
+            },
+            "instructions": [
+                "Установите и включите плагин dingtalk в OpenClaw",
+                "Создайте внутреннее приложение DingTalk и включите режим Stream",
+                "Заполните Client ID и Client Secret (обязательно)",
+                "Заполните Robot Code / Corp ID / Agent ID, если ваша настройка требует этого"
+            ]
+        },
+        "signal": {
+            "description": "Подключите Signal через signal-cli",
+            "docsUrl": "https://docs.openclaw.ai/channels/signal",
+            "fields": {
+                "phoneNumber": {
+                    "label": "Номер телефона",
+                    "placeholder": "+1234567890"
+                }
+            },
+            "instructions": [
+                "Установите signal-cli в вашей системе",
+                "Зарегистрируйте или привяжите ваш номер телефона",
+                "Введите ваш номер телефона ниже"
+            ]
+        },
+        "feishu": {
+            "description": "Подключите бота Feishu/Lark через WebSocket",
+            "docsUrl": "https://icnnp7d0dymg.feishu.cn/wiki/GKn8wOvHnibpPNkNkPzcAvGlnzK#GdHUdp9t9oqyegxwV8ScLvVGn1c",
+            "fields": {
+                "appId": {
+                    "label": "App ID",
+                    "placeholder": "cli_xxxxxx"
+                },
+                "appSecret": {
+                    "label": "App Secret",
+                    "placeholder": "Секрет вашего приложения"
+                }
+            },
+            "instructions": [
+                "Прочитайте документацию, затем перейдите на Feishu Open Platform",
+                "Создайте новое приложение",
+                "Получите App ID и App Secret",
+                "Настройте подписку на события"
+            ]
+        },
+        "wecom": {
+            "description": "Подключите бота WeCom через плагин",
+            "docsUrl": "https://icnnp7d0dymg.feishu.cn/wiki/JTGnwoV0RixKPtkr4w7c7gpAnDc",
+            "fields": {
+                "botId": {
+                    "label": "Bot ID",
+                    "placeholder": "ww_xxxxxx"
+                },
+                "secret": {
+                    "label": "App Secret",
+                    "placeholder": "Секрет вашего WeCom бота"
+                }
+            },
+            "instructions": [
+                "Создайте приложение в WeCom Admin Console для получения информации о конфигурации",
+                "Убедитесь, что конфигурация сервера получения сообщений включена",
+                "Введите ваш Bot ID (или Corp ID) и Secret для установления соединения"
+            ]
+        },
+        "imessage": {
+            "description": "Подключите iMessage через BlueBubbles (macOS)",
+            "docsUrl": "https://docs.openclaw.ai/channels/bluebubbles",
+            "fields": {
+                "serverUrl": {
+                    "label": "URL сервера BlueBubbles",
+                    "placeholder": "http://localhost:1234"
+                },
+                "password": {
+                    "label": "Пароль сервера",
+                    "placeholder": "Пароль вашего сервера"
+                }
+            },
+            "instructions": [
+                "Установите сервер BlueBubbles на ваш Mac",
+                "Запишите URL сервера и пароль",
+                "Введите данные подключения ниже"
+            ]
+        },
+        "matrix": {
+            "description": "Подключитесь к протоколу Matrix",
+            "docsUrl": "https://docs.openclaw.ai/channels/matrix",
+            "fields": {
+                "homeserver": {
+                    "label": "URL Homeserver",
+                    "placeholder": "https://matrix.org"
+                },
+                "accessToken": {
+                    "label": "Access Token",
+                    "placeholder": "Ваш access token"
+                }
+            },
+            "instructions": [
+                "Создайте учётную запись Matrix или используйте существующую",
+                "Получите access token из вашего клиента",
+                "Введите homeserver и token ниже"
+            ]
+        },
+        "line": {
+            "description": "Подключите LINE Messaging API",
+            "docsUrl": "https://docs.openclaw.ai/channels/line",
+            "fields": {
+                "channelAccessToken": {
+                    "label": "Channel Access Token",
+                    "placeholder": "Ваш LINE channel access token"
+                },
+                "channelSecret": {
+                    "label": "Channel Secret",
+                    "placeholder": "Ваш LINE channel secret"
+                }
+            },
+            "instructions": [
+                "Перейдите в LINE Developers Console",
+                "Создайте канал Messaging API",
+                "Получите Channel Access Token и Secret"
+            ]
+        },
+        "msteams": {
+            "description": "Подключите Microsoft Teams через Bot Framework",
+            "docsUrl": "https://docs.openclaw.ai/channels/msteams",
+            "fields": {
+                "appId": {
+                    "label": "App ID",
+                    "placeholder": "Ваш Microsoft App ID"
+                },
+                "appPassword": {
+                    "label": "App Password",
+                    "placeholder": "Ваш Microsoft App Password"
+                }
+            },
+            "instructions": [
+                "Перейдите на Azure Portal",
+                "Зарегистрируйте новое приложение бота",
+                "Получите App ID и создайте пароль",
+                "Настройте канал Teams"
+            ]
+        },
+        "googlechat": {
+            "description": "Подключите Google Chat через webhook",
+            "docsUrl": "https://docs.openclaw.ai/channels/googlechat",
+            "fields": {
+                "serviceAccountKey": {
+                    "label": "Путь к JSON файлу сервисного аккаунта",
+                    "placeholder": "/path/to/service-account.json"
+                }
+            },
+            "instructions": [
+                "Создайте проект Google Cloud",
+                "Включите Google Chat API",
+                "Создайте сервисный аккаунт",
+                "Скачайте файл ключа JSON"
+            ]
+        },
+        "mattermost": {
+            "description": "Подключите Mattermost через Bot API",
+            "docsUrl": "https://docs.openclaw.ai/channels/mattermost",
+            "fields": {
+                "serverUrl": {
+                    "label": "URL сервера",
+                    "placeholder": "https://your-mattermost.com"
+                },
+                "botToken": {
+                    "label": "Bot Access Token",
+                    "placeholder": "Ваш bot access token"
+                }
+            },
+            "instructions": [
+                "Перейдите в Mattermost Integrations",
+                "Создайте новую учётную запись бота",
+                "Скопируйте access token"
+            ]
+        },
+        "qqbot": {
+            "description": "Подключите канал QQ Bot (встроенный с OpenClaw 3.31)",
+            "docsUrl": "https://icnnp7d0dymg.feishu.cn/wiki/KPIJwlyiGiupMrkiS9ice39Zn2c",
+            "fields": {
+                "appId": {
+                    "label": "App ID",
+                    "placeholder": "Ваш QQ Bot App ID"
+                },
+                "clientSecret": {
+                    "label": "Client Secret",
+                    "placeholder": "Ваш QQ Bot Client Secret"
+                }
+            },
+            "instructions": [
+                "Зарегистрируйте приложение на QQ Bot Open Platform",
+                "Получите App ID и Client Secret",
+                "Заполните ваши учётные данные ниже"
+            ]
+        }
+    },
+    "viewDocs": "Просмотреть документацию"
+}
