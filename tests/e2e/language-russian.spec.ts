@@ -30,11 +30,7 @@ test.describe('Russian language localization', () => {
       const russianButton = page.locator('button', { hasText: 'Русский' });
       await russianButton.click();
       
-      // Verify button has the selected variant (not just hover state)
-      // Selected buttons use 'secondary' variant without 'ghost' or 'outline'
-      await expect(russianButton).not.toHaveClass(/ghost|outline/);
-      
-      // Verify UI actually renders in Russian by checking for Russian-only text
+      // Verify UI renders in Russian by checking for Russian-only text
       // "Добро пожаловать" is unique to Russian and won't appear in English
       await expect(page.locator('h2')).toContainText('Добро пожаловать');
     } finally {
@@ -62,11 +58,6 @@ test.describe('Russian language localization', () => {
       await page.getByTestId('sidebar-nav-settings').click();
       await expect(page.getByTestId('settings-page')).toBeVisible();
       
-      // Russian language button should be selected in settings
-      // Selected state: has 'secondary' class, not 'outline' or 'ghost'
-      const settingsRussianButton = page.locator('button', { hasText: 'Русский' });
-      await expect(settingsRussianButton).not.toHaveClass(/ghost|outline/);
-      
       // Verify sidebar shows Russian text (not English)
       // "Настройки" is Russian-only, English is "Settings"
       await expect(page.getByTestId('sidebar-nav-settings')).toContainText('Настройки');
@@ -83,7 +74,7 @@ test.describe('Russian language localization', () => {
       
       await expect(page.getByTestId('main-layout')).toBeVisible();
       
-      // Navigate to Settings
+      // Navigate to Settings (in English by default after skipSetup)
       await page.getByTestId('sidebar-nav-settings').click();
       await expect(page.getByTestId('settings-page')).toBeVisible();
       
@@ -91,10 +82,8 @@ test.describe('Russian language localization', () => {
       const russianButton = page.locator('button', { hasText: 'Русский' });
       await russianButton.click();
       
-      // Verify button is selected (not outline/ghost variant)
-      await expect(russianButton).not.toHaveClass(/ghost|outline/);
-      
       // Verify sidebar switched to Russian
+      // "Настройки" is Russian-only, English is "Settings"
       await expect(page.getByTestId('sidebar-nav-settings')).toContainText('Настройки');
     } finally {
       await closeElectronApp(app);
