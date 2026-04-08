@@ -274,6 +274,85 @@ describe('handleChannelRoutes', () => {
     );
   });
 
+  it('filters runtime-only stale accounts when not configured locally', async () => {
+    listConfiguredChannelsMock.mockResolvedValue(['feishu']);
+    listConfiguredChannelAccountsMock.mockResolvedValue({
+      feishu: {
+        defaultAccountId: 'default',
+        accountIds: ['default'],
+      },
+    });
+    readOpenClawConfigMock.mockResolvedValue({
+      channels: {
+        feishu: {
+          defaultAccount: 'default',
+        },
+      },
+    });
+
+    const rpc = vi.fn().mockResolvedValue({
+      channels: {
+        feishu: {
+          configured: true,
+        },
+      },
+      channelAccounts: {
+        feishu: [
+          {
+            accountId: 'default',
+            configured: true,
+            connected: true,
+            running: true,
+          },
+          {
+            accountId: '2',
+            configured: false,
+            connected: false,
+            running: false,
+            lastError: 'stale runtime session',
+          },
+        ],
+      },
+      channelDefaultAccountId: {
+        feishu: 'default',
+      },
+    });
+
+    const { handleChannelRoutes } = await import('@electron/api/routes/channels');
+    await handleChannelRoutes(
+      { method: 'GET' } as IncomingMessage,
+      {} as ServerResponse,
+      new URL('http://127.0.0.1:13210/api/channels/accounts'),
+      {
+        gatewayManager: {
+          rpc,
+          getStatus: () => ({ state: 'running' }),
+          debouncedReload: vi.fn(),
+          debouncedRestart: vi.fn(),
+        },
+      } as never,
+    );
+
+    expect(sendJsonMock).toHaveBeenCalledWith(
+      expect.anything(),
+      200,
+      expect.objectContaining({
+        success: true,
+        channels: [
+          expect.objectContaining({
+            channelType: 'feishu',
+            accounts: [expect.objectContaining({ accountId: 'default' })],
+          }),
+        ],
+      }),
+    );
+    const payload = sendJsonMock.mock.calls.at(-1)?.[2] as {
+      channels?: Array<{ channelType: string; accounts: Array<{ accountId: string }> }>;
+    };
+    const feishu = payload.channels?.find((entry) => entry.channelType === 'feishu');
+    expect(feishu?.accounts.map((entry) => entry.accountId)).toEqual(['default']);
+  });
+
   it('lists known QQ Bot targets for a configured account', async () => {
     const knownUsersPath = join(testOpenClawConfigDir, 'qqbot', 'data');
     mkdirSync(knownUsersPath, { recursive: true });

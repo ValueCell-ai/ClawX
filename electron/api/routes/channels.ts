@@ -317,6 +317,20 @@ interface ChannelAccountsView {
   accounts: ChannelAccountView[];
 }
 
+function shouldIncludeRuntimeAccountId(
+  accountId: string,
+  configuredAccountIds: Set<string>,
+  runtimeAccount: { configured?: boolean },
+): boolean {
+  if (configuredAccountIds.has(accountId)) {
+    return true;
+  }
+  // Defensive filtering: channels.status can occasionally expose transient
+  // runtime rows for stale sessions. Only include runtime-only accounts when
+  // gateway marks them as configured.
+  return runtimeAccount.configured === true;
+}
+
 interface ChannelTargetOptionView {
   value: string;
   label: string;
@@ -375,6 +389,7 @@ async function buildChannelAccountsView(ctx: HostApiContext): Promise<ChannelAcc
   for (const rawChannelType of channelTypes) {
     const uiChannelType = toUiChannelType(rawChannelType);
     const channelAccountsFromConfig = configuredAccounts[rawChannelType]?.accountIds ?? [];
+    const configuredAccountIdSet = new Set(channelAccountsFromConfig);
     const hasLocalConfig = configuredChannels.includes(rawChannelType) || Boolean(configuredAccounts[rawChannelType]);
     const channelSection = openClawConfig.channels?.[rawChannelType];
     const channelSummary =
@@ -396,9 +411,17 @@ async function buildChannelAccountsView(ctx: HostApiContext): Promise<ChannelAcc
     if (!hasLocalConfig && !hasRuntimeConfigured) {
       continue;
     }
-    const runtimeAccountIds = runtimeAccounts
-      .map((account) => account.accountId)
-      .filter((accountId): accountId is string => typeof accountId === 'string' && accountId.trim().length > 0);
+    const runtimeAccountIds = runtimeAccounts.reduce<string[]>((acc, account) => {
+      const accountId = typeof account.accountId === 'string' ? account.accountId.trim() : '';
+      if (!accountId) {
+        return acc;
+      }
+      if (!shouldIncludeRuntimeAccountId(accountId, configuredAccountIdSet, account)) {
+        return acc;
+      }
+      acc.push(accountId);
+      return acc;
+    }, []);
     const accountIds = Array.from(new Set([...channelAccountsFromConfig, ...runtimeAccountIds, defaultAccountId]));
 
     const accounts: ChannelAccountView[] = accountIds.map((accountId) => {

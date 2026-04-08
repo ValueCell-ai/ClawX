@@ -200,11 +200,33 @@ function removePluginRegistration(currentConfig: OpenClawConfig, pluginId: strin
     return modified;
 }
 
+function getChannelAccountsMap(
+    channelSection: ChannelConfigData | undefined,
+): Record<string, ChannelConfigData> | undefined {
+    if (!channelSection || typeof channelSection !== 'object') return undefined;
+    const accounts = channelSection.accounts;
+    if (!accounts || typeof accounts !== 'object' || Array.isArray(accounts)) {
+        return undefined;
+    }
+    return accounts as Record<string, ChannelConfigData>;
+}
+
+function ensureChannelAccountsMap(
+    channelSection: ChannelConfigData,
+): Record<string, ChannelConfigData> {
+    const accounts = getChannelAccountsMap(channelSection);
+    if (accounts) {
+        return accounts;
+    }
+    channelSection.accounts = {};
+    return channelSection.accounts as Record<string, ChannelConfigData>;
+}
+
 function channelHasConfiguredAccounts(channelSection: ChannelConfigData | undefined): boolean {
     if (!channelSection || typeof channelSection !== 'object') return false;
-    const accounts = channelSection.accounts as Record<string, ChannelConfigData> | undefined;
-    if (accounts && typeof accounts === 'object') {
-        return Object.keys(accounts).length > 0;
+    const accounts = getChannelAccountsMap(channelSection);
+    if (accounts) {
+        return Object.keys(accounts).some((accountId) => accountId.trim().length > 0);
     }
     return Object.keys(channelSection).some((key) => !CHANNEL_TOP_LEVEL_KEYS_TO_KEEP.has(key));
 }
@@ -578,7 +600,7 @@ function resolveAccountConfig(
     accountId: string,
 ): ChannelConfigData {
     if (!channelSection) return {};
-    const accounts = channelSection.accounts as Record<string, ChannelConfigData> | undefined;
+    const accounts = getChannelAccountsMap(channelSection);
     return accounts?.[accountId] ?? {};
 }
 
@@ -597,10 +619,8 @@ function migrateLegacyChannelConfigToAccounts(
 ): void {
     const legacyPayload = getLegacyChannelPayload(channelSection);
     const legacyKeys = Object.keys(legacyPayload);
-    const hasAccounts =
-        Boolean(channelSection.accounts) &&
-        typeof channelSection.accounts === 'object' &&
-        Object.keys(channelSection.accounts as Record<string, ChannelConfigData>).length > 0;
+    const existingAccounts = getChannelAccountsMap(channelSection);
+    const hasAccounts = Boolean(existingAccounts) && Object.keys(existingAccounts).length > 0;
 
     if (legacyKeys.length === 0) {
         if (hasAccounts && typeof channelSection.defaultAccount !== 'string') {
@@ -609,10 +629,7 @@ function migrateLegacyChannelConfigToAccounts(
         return;
     }
 
-    if (!channelSection.accounts || typeof channelSection.accounts !== 'object') {
-        channelSection.accounts = {};
-    }
-    const accounts = channelSection.accounts as Record<string, ChannelConfigData>;
+    const accounts = ensureChannelAccountsMap(channelSection);
     const existingDefaultAccount = accounts[defaultAccountId] ?? {};
 
     accounts[defaultAccountId] = {
@@ -657,7 +674,7 @@ function assertNoDuplicateCredential(
         });
     }
 
-    const accounts = channelSection.accounts as Record<string, ChannelConfigData> | undefined;
+    const accounts = getChannelAccountsMap(channelSection);
     if (!accounts) return;
 
     for (const [existingAccountId, accountCfg] of Object.entries(accounts)) {
@@ -737,10 +754,7 @@ export async function saveChannelConfig(
         }
 
         // Write credentials into accounts.<accountId>
-        if (!channelSection.accounts || typeof channelSection.accounts !== 'object') {
-            channelSection.accounts = {};
-        }
-        const accounts = channelSection.accounts as Record<string, ChannelConfigData>;
+        const accounts = ensureChannelAccountsMap(channelSection);
         channelSection.defaultAccount =
             typeof channelSection.defaultAccount === 'string' && channelSection.defaultAccount.trim()
                 ? channelSection.defaultAccount
@@ -790,7 +804,7 @@ export async function getChannelConfig(channelType: string, accountId?: string):
     if (!channelSection) return undefined;
 
     const resolvedAccountId = accountId || DEFAULT_ACCOUNT_ID;
-    const accounts = channelSection.accounts as Record<string, ChannelConfigData> | undefined;
+    const accounts = getChannelAccountsMap(channelSection);
     if (accounts?.[resolvedAccountId]) {
         return accounts[resolvedAccountId];
     }
@@ -868,7 +882,7 @@ export async function deleteChannelAccountConfig(channelType: string, accountId:
         }
 
         migrateLegacyChannelConfigToAccounts(channelSection, DEFAULT_ACCOUNT_ID);
-        const accounts = channelSection.accounts as Record<string, ChannelConfigData> | undefined;
+        const accounts = getChannelAccountsMap(channelSection);
         if (!accounts?.[accountId]) return;
 
         delete accounts[accountId];
@@ -959,8 +973,8 @@ export async function deleteChannelConfig(channelType: string): Promise<void> {
 }
 
 function channelHasAnyAccount(channelSection: ChannelConfigData): boolean {
-    const accounts = channelSection.accounts as Record<string, ChannelConfigData> | undefined;
-    if (accounts && typeof accounts === 'object') {
+    const accounts = getChannelAccountsMap(channelSection);
+    if (accounts) {
         return Object.values(accounts).some((acc) => acc.enabled !== false);
     }
     return false;
@@ -1024,8 +1038,9 @@ export function listConfiguredChannelAccountsFromConfig(config: OpenClawConfig):
     for (const [channelType, section] of Object.entries(config.channels)) {
         if (!section || section.enabled === false) continue;
 
-        const accountIds = section.accounts && typeof section.accounts === 'object'
-            ? Object.keys(section.accounts).filter(Boolean)
+        const accounts = getChannelAccountsMap(section);
+        const accountIds = accounts
+            ? Object.keys(accounts).filter((accountId) => accountId.trim().length > 0)
             : [];
 
         let defaultAccountId = typeof section.defaultAccount === 'string' && section.defaultAccount.trim()
@@ -1082,7 +1097,7 @@ export async function setChannelDefaultAccount(channelType: string, accountId: s
         }
 
         migrateLegacyChannelConfigToAccounts(channelSection, DEFAULT_ACCOUNT_ID);
-        const accounts = channelSection.accounts as Record<string, ChannelConfigData> | undefined;
+        const accounts = getChannelAccountsMap(channelSection);
         if (!accounts || !accounts[trimmedAccountId]) {
             throw new Error(`Account "${trimmedAccountId}" is not configured for channel "${resolvedChannelType}"`);
         }
@@ -1110,7 +1125,7 @@ export async function deleteAgentChannelAccounts(agentId: string, ownedChannelAc
         for (const channelType of Object.keys(currentConfig.channels)) {
             const section = currentConfig.channels[channelType];
             migrateLegacyChannelConfigToAccounts(section, DEFAULT_ACCOUNT_ID);
-            const accounts = section.accounts as Record<string, ChannelConfigData> | undefined;
+            const accounts = getChannelAccountsMap(section);
             if (!accounts?.[accountId]) continue;
             if (ownedChannelAccounts && !ownedChannelAccounts.has(`${channelType}:${accountId}`)) {
                 continue;

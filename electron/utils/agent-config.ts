@@ -139,7 +139,7 @@ function slugifyAgentId(name: string): string {
     .replace(/-+/g, '-')
     .replace(/^-|-$/g, '');
 
-  if (!normalized) return 'agent';
+  if (!normalized || /^\d+$/.test(normalized)) return 'agent';
   if (normalized === MAIN_AGENT_ID) return 'agent';
   return normalized;
 }

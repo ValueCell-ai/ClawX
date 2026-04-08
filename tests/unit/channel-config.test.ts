@@ -250,3 +250,55 @@ describe('WeChat dangling plugin cleanup', () => {
     expect(existsSync(join(testHome, '.openclaw', 'openclaw-weixin'))).toBe(false);
   });
 });
+
+describe('configured channel account extraction', () => {
+  beforeEach(async () => {
+    vi.resetAllMocks();
+    vi.resetModules();
+    await rm(testHome, { recursive: true, force: true });
+    await rm(testUserData, { recursive: true, force: true });
+  });
+
+  it('ignores malformed array-shaped accounts and falls back to default account', async () => {
+    const { listConfiguredChannelAccountsFromConfig } = await import('@electron/utils/channel-config');
+
+    const result = listConfiguredChannelAccountsFromConfig({
+      channels: {
+        feishu: {
+          enabled: true,
+          defaultAccount: 'default',
+          accounts: [null, null, { appId: 'ghost-account' }],
+          appId: 'cli_real_app',
+          appSecret: 'real_secret',
+        },
+      },
+    });
+
+    expect(result.feishu).toEqual({
+      defaultAccountId: 'default',
+      accountIds: ['default'],
+    });
+    expect(result.feishu.accountIds).not.toContain('2');
+  });
+
+  it('keeps intentionally configured numeric account ids from object-shaped accounts', async () => {
+    const { listConfiguredChannelAccountsFromConfig } = await import('@electron/utils/channel-config');
+
+    const result = listConfiguredChannelAccountsFromConfig({
+      channels: {
+        feishu: {
+          enabled: true,
+          defaultAccount: '2',
+          accounts: {
+            '2': { enabled: true, appId: 'cli_numeric' },
+          },
+        },
+      },
+    });
+
+    expect(result.feishu).toEqual({
+      defaultAccountId: '2',
+      accountIds: ['2'],
+    });
+  });
+});
