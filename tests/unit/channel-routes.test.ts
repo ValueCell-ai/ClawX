@@ -99,6 +99,7 @@ describe('handleChannelRoutes', () => {
     rmSync(testOpenClawConfigDir, { recursive: true, force: true });
     proxyAwareFetchMock.mockReset();
     parseJsonBodyMock.mockResolvedValue({});
+    listConfiguredChannelAccountsMock.mockReturnValue({});
     listAgentsSnapshotMock.mockResolvedValue({
       agents: [],
       channelAccountOwners: {},
@@ -234,6 +235,47 @@ describe('handleChannelRoutes', () => {
     expect(saveChannelConfigMock).not.toHaveBeenCalled();
   });
 
+  it('allows legacy non-canonical account ID on channel config save when account already exists', async () => {
+    parseJsonBodyMock.mockResolvedValue({
+      channelType: 'telegram',
+      accountId: 'Legacy_Account',
+      config: { botToken: 'token', allowedUsers: '123456' },
+    });
+    listConfiguredChannelAccountsMock.mockReturnValue({
+      telegram: {
+        defaultAccountId: 'default',
+        accountIds: ['default', 'Legacy_Account'],
+      },
+    });
+
+    const { handleChannelRoutes } = await import('@electron/api/routes/channels');
+    const handled = await handleChannelRoutes(
+      { method: 'POST' } as IncomingMessage,
+      {} as ServerResponse,
+      new URL('http://127.0.0.1:13210/api/channels/config'),
+      {
+        gatewayManager: {
+          rpc: vi.fn(),
+          getStatus: () => ({ state: 'running' }),
+          debouncedReload: vi.fn(),
+          debouncedRestart: vi.fn(),
+        },
+      } as never,
+    );
+
+    expect(handled).toBe(true);
+    expect(saveChannelConfigMock).toHaveBeenCalledWith(
+      'telegram',
+      { botToken: 'token', allowedUsers: '123456' },
+      'Legacy_Account',
+    );
+    expect(sendJsonMock).toHaveBeenCalledWith(
+      expect.anything(),
+      200,
+      expect.objectContaining({ success: true }),
+    );
+  });
+
   it('rejects non-canonical account ID on default-account route', async () => {
     parseJsonBodyMock.mockResolvedValue({
       channelType: 'feishu',
@@ -316,6 +358,55 @@ describe('handleChannelRoutes', () => {
       } as never,
     );
     expect(clearChannelBindingMock).not.toHaveBeenCalled();
+  });
+
+  it('allows legacy non-canonical account ID on default-account and binding routes', async () => {
+    listConfiguredChannelAccountsMock.mockReturnValue({
+      feishu: {
+        defaultAccountId: 'default',
+        accountIds: ['default', 'Legacy_Account'],
+      },
+    });
+
+    parseJsonBodyMock.mockResolvedValue({
+      channelType: 'feishu',
+      accountId: 'Legacy_Account',
+    });
+    const { handleChannelRoutes } = await import('@electron/api/routes/channels');
+    await handleChannelRoutes(
+      { method: 'PUT' } as IncomingMessage,
+      {} as ServerResponse,
+      new URL('http://127.0.0.1:13210/api/channels/default-account'),
+      {
+        gatewayManager: {
+          rpc: vi.fn(),
+          getStatus: () => ({ state: 'running' }),
+          debouncedReload: vi.fn(),
+          debouncedRestart: vi.fn(),
+        },
+      } as never,
+    );
+    expect(setChannelDefaultAccountMock).toHaveBeenCalledWith('feishu', 'Legacy_Account');
+
+    parseJsonBodyMock.mockResolvedValue({
+      channelType: 'feishu',
+      accountId: 'Legacy_Account',
+      agentId: 'main',
+    });
+    await handleChannelRoutes(
+      { method: 'PUT' } as IncomingMessage,
+      {} as ServerResponse,
+      new URL('http://127.0.0.1:13210/api/channels/binding'),
+      {
+        gatewayManager: {
+          rpc: vi.fn(),
+          getStatus: () => ({ state: 'running' }),
+          debouncedReload: vi.fn(),
+          debouncedRestart: vi.fn(),
+        },
+      } as never,
+    );
+    expect(assignChannelAccountToAgentMock).toHaveBeenCalledWith('main', 'feishu', 'Legacy_Account');
   });
 
   it('keeps channel connected when one account is healthy and another errors', async () => {

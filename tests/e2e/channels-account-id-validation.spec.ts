@@ -82,7 +82,7 @@ test.describe('Channels account ID validation', () => {
     await page.locator('#appSecret').fill('secret_test');
 
     await page.getByRole('button', { name: /Save & Connect|dialog\.saveAndConnect/ }).click();
-    await expect(page.getByText(/account\.invalidCanonicalId|must use lowercase letters/i)).toBeVisible();
+    await expect(page.getByText(/account\.invalidCanonicalId|must use lowercase letters/i).first()).toBeVisible();
 
     const saveCalls = await electronApp.evaluate(() => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
