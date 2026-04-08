@@ -38,6 +38,7 @@ import {
   OPENCLAW_WECHAT_CHANNEL_TYPE,
   UI_WECHAT_CHANNEL_TYPE,
   buildQrChannelEventName,
+  isCanonicalOpenClawAccountId,
   toOpenClawChannelType,
   toUiChannelType,
 } from '../../utils/channel-alias';
@@ -87,6 +88,16 @@ function resolveStoredChannelType(channelType: string): string {
 
 function buildQrLoginKey(channelType: string, accountId?: string): string {
   return `${toUiChannelType(channelType)}:${accountId?.trim() || '__new__'}`;
+}
+
+function validateCanonicalAccountId(accountId: string | undefined): string | null {
+  if (!accountId) return null;
+  const trimmed = accountId.trim();
+  if (!trimmed) return 'accountId cannot be empty';
+  if (!isCanonicalOpenClawAccountId(trimmed)) {
+    return 'Invalid accountId format. Use lowercase letters, numbers, hyphens, or underscores only (max 64 chars, must start with a letter or number).';
+  }
+  return null;
 }
 
 function setActiveQrLogin(channelType: string, sessionKey: string, accountId?: string): string {
@@ -1064,6 +1075,11 @@ export async function handleChannelRoutes(
   if (url.pathname === '/api/channels/default-account' && req.method === 'PUT') {
     try {
       const body = await parseJsonBody<{ channelType: string; accountId: string }>(req);
+      const accountIdError = validateCanonicalAccountId(body.accountId);
+      if (accountIdError) {
+        sendJson(res, 400, { success: false, error: accountIdError });
+        return true;
+      }
       await setChannelDefaultAccount(body.channelType, body.accountId);
       scheduleGatewayChannelSaveRefresh(ctx, body.channelType, `channel:setDefaultAccount:${body.channelType}`);
       sendJson(res, 200, { success: true });
@@ -1076,6 +1092,11 @@ export async function handleChannelRoutes(
   if (url.pathname === '/api/channels/binding' && req.method === 'PUT') {
     try {
       const body = await parseJsonBody<{ channelType: string; accountId: string; agentId: string }>(req);
+      const accountIdError = validateCanonicalAccountId(body.accountId);
+      if (accountIdError) {
+        sendJson(res, 400, { success: false, error: accountIdError });
+        return true;
+      }
       await assignChannelAccountToAgent(body.agentId, resolveStoredChannelType(body.channelType), body.accountId);
       scheduleGatewayChannelSaveRefresh(ctx, body.channelType, `channel:setBinding:${body.channelType}`);
       sendJson(res, 200, { success: true });
@@ -1088,6 +1109,11 @@ export async function handleChannelRoutes(
   if (url.pathname === '/api/channels/binding' && req.method === 'DELETE') {
     try {
       const body = await parseJsonBody<{ channelType: string; accountId: string }>(req);
+      const accountIdError = validateCanonicalAccountId(body.accountId);
+      if (accountIdError) {
+        sendJson(res, 400, { success: false, error: accountIdError });
+        return true;
+      }
       await clearChannelBinding(resolveStoredChannelType(body.channelType), body.accountId);
       scheduleGatewayChannelSaveRefresh(ctx, body.channelType, `channel:clearBinding:${body.channelType}`);
       sendJson(res, 200, { success: true });
@@ -1189,6 +1215,11 @@ export async function handleChannelRoutes(
   if (url.pathname === '/api/channels/config' && req.method === 'POST') {
     try {
       const body = await parseJsonBody<{ channelType: string; config: Record<string, unknown>; accountId?: string }>(req);
+      const accountIdError = validateCanonicalAccountId(body.accountId);
+      if (accountIdError) {
+        sendJson(res, 400, { success: false, error: accountIdError });
+        return true;
+      }
       const storedChannelType = resolveStoredChannelType(body.channelType);
       if (storedChannelType === 'dingtalk') {
         const installResult = await ensureDingTalkPluginInstalled();
