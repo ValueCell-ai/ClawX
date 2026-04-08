@@ -138,7 +138,7 @@ export const useSkillsStore = create<SkillsState>((set, get) => ({
       // Merge with ClawHub results
       if (clawhubResult.success && clawhubResult.results) {
         clawhubResult.results.forEach((cs: ClawHubListResult) => {
-          const existing = combinedSkills.find(s => s.id === cs.slug);
+          const existing = combinedSkills.find(s => s.id === cs.slug || s.slug === cs.slug);
           if (existing) {
             if (!existing.baseDir && cs.baseDir) {
               existing.baseDir = cs.baseDir;
