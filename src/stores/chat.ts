@@ -34,6 +34,7 @@ export interface AttachedFileMeta {
   fileSize: number;
   preview: string | null;
   filePath?: string;
+  source?: 'user' | 'tool-result';
 }
 
 /** Raw message from OpenClaw chat.history */
@@ -392,6 +393,7 @@ function extractImagesAsAttachedFiles(content: unknown): AttachedFileMeta[] {
             mimeType,
             fileSize: 0,
             preview: `data:${mimeType};base64,${src.data}`,
+            source: 'tool-result',
           });
         } else if (src.type === 'url' && src.url) {
           files.push({
@@ -399,6 +401,7 @@ function extractImagesAsAttachedFiles(content: unknown): AttachedFileMeta[] {
             mimeType,
             fileSize: 0,
             preview: src.url,
+            source: 'tool-result',
           });
         }
       }
@@ -410,6 +413,7 @@ function extractImagesAsAttachedFiles(content: unknown): AttachedFileMeta[] {
           mimeType,
           fileSize: 0,
           preview: `data:${mimeType};base64,${block.data}`,
+          source: 'tool-result',
         });
       }
     }
@@ -426,9 +430,9 @@ function extractImagesAsAttachedFiles(content: unknown): AttachedFileMeta[] {
  */
 function makeAttachedFile(ref: { filePath: string; mimeType: string }): AttachedFileMeta {
   const cached = _imageCache.get(ref.filePath);
-  if (cached) return { ...cached, filePath: ref.filePath };
+  if (cached) return { ...cached, filePath: ref.filePath, source: 'tool-result' };
   const fileName = ref.filePath.split(/[\\/]/).pop() || 'file';
-  return { fileName, mimeType: ref.mimeType, fileSize: 0, preview: null, filePath: ref.filePath };
+  return { fileName, mimeType: ref.mimeType, fileSize: 0, preview: null, filePath: ref.filePath, source: 'tool-result' };
 }
 
 /**
@@ -631,9 +635,22 @@ function enrichWithCachedImages(messages: RawMessage[]): RawMessage[] {
 
     const files: AttachedFileMeta[] = allRefs.map(ref => {
       const cached = _imageCache.get(ref.filePath);
-      if (cached) return { ...cached, filePath: ref.filePath };
+      if (cached) {
+        return {
+          ...cached,
+          filePath: ref.filePath,
+          source: msg.role === 'user' ? 'user' : cached.source,
+        };
+      }
       const fileName = ref.filePath.split(/[\\/]/).pop() || 'file';
-      return { fileName, mimeType: ref.mimeType, fileSize: 0, preview: null, filePath: ref.filePath };
+      return {
+        fileName,
+        mimeType: ref.mimeType,
+        fileSize: 0,
+        preview: null,
+        filePath: ref.filePath,
+        source: msg.role === 'user' ? 'user' : undefined,
+      };
     });
     return { ...msg, _attachedFiles: files };
   });
@@ -1742,7 +1759,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
           }
         }
 
-        const lastMsg = primaryMessages[primaryMessages.length - 1];
+          // Record last activity time from the last message in history
+          const lastMsg = primaryMessages[primaryMessages.length - 1];
         if (lastMsg?.timestamp) {
           const lastAt = toMs(lastMsg.timestamp);
           set((s) => ({
@@ -1750,17 +1768,20 @@ export const useChatStore = create<ChatState>((set, get) => ({
           }));
         }
 
-        loadMissingPreviews(finalMessages).then((updated) => {
-          if (!isCurrentSession()) return;
-          if (updated) {
-            set((state) => ({
-              messages: mergeHydratedMessages(state.messages, finalMessages),
-            }));
-          }
-        });
-        const { pendingFinal, lastUserMessageAt, sending: isSendingNow } = get();
+          loadMissingPreviews(finalMessages).then((updated) => {
+            if (!isCurrentSession()) return;
+            if (updated) {
+              set((state) => ({
+                messages: mergeHydratedMessages(state.messages, finalMessages),
+              }));
+            }
+          });
+          const { pendingFinal, lastUserMessageAt, sending: isSendingNow } = get();
 
-        const userMsTs = lastUserMessageAt ? toMs(lastUserMessageAt) : 0;
+          // If we're sending but haven't received streaming events, check
+          // whether the loaded history reveals intermediate tool-call activity.
+          // This surfaces progress via the pendingFinal → ActivityIndicator path.
+          const userMsTs = lastUserMessageAt ? toMs(lastUserMessageAt) : 0;
         const isAfterUserMsg = (msg: RawMessage): boolean => {
           if (!userMsTs || !msg.timestamp) return true;
           return toMs(msg.timestamp) >= userMsTs;
@@ -1776,7 +1797,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
           }
         }
 
-        if (pendingFinal || get().pendingFinal) {
+          // If pendingFinal, check whether the AI produced a final text response.
+          if (pendingFinal || get().pendingFinal) {
           const recentAssistant = [...filteredMessages].reverse().find((msg) => {
             if (msg.role !== 'assistant') return false;
             if (!hasNonToolAssistantContent(msg)) return false;
@@ -1787,8 +1809,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
             set({ sending: false, activeRunId: null, pendingFinal: false });
           }
         }
-        return true;
-      };
+          return true;
+        };
 
       try {
         let data: Record<string, unknown> | null = null;
@@ -1861,24 +1883,24 @@ export const useChatStore = create<ChatState>((set, get) => ({
               _foregroundHistoryLoadSeen.add(currentSessionKey);
             }
           } else {
-            applyLoadFailure(
-              (lastError instanceof Error ? lastError.message : String(lastError))
-              || 'Failed to load chat history',
-            );
+              applyLoadFailure(
+                (lastError instanceof Error ? lastError.message : String(lastError))
+                || 'Failed to load chat history',
+              );
+            }
+          }
+        } catch (err) {
+          console.warn('Failed to load chat history:', err);
+          const fallbackMessages = await loadCronFallbackMessages(currentSessionKey, 200);
+          if (fallbackMessages.length > 0) {
+            const applied = applyLoadedMessages(fallbackMessages, null);
+            if (applied && isInitialForegroundLoad) {
+              _foregroundHistoryLoadSeen.add(currentSessionKey);
+            }
+          } else {
+            applyLoadFailure(err instanceof Error ? err.message : String(err));
           }
         }
-      } catch (err) {
-        console.warn('Failed to load chat history:', err);
-        const fallbackMessages = await loadCronFallbackMessages(currentSessionKey, 200);
-        if (fallbackMessages.length > 0) {
-          const applied = applyLoadedMessages(fallbackMessages, null);
-          if (applied && isInitialForegroundLoad) {
-            _foregroundHistoryLoadSeen.add(currentSessionKey);
-          }
-        } else {
-          set({ messages: [], loading: false });
-        }
-      }
 
       void syncAllAttachedAgentMirrors(currentSessionKey);
     })();
@@ -1934,6 +1956,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
         fileSize: a.fileSize,
         preview: a.preview,
         filePath: a.stagedPath,
+        source: 'user',
       })),
     };
     set((s) => ({

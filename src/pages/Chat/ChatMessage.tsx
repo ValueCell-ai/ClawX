@@ -61,7 +61,9 @@ export const ChatMessage = memo(function ChatMessage({
   const shouldHideProcessAttachments = suppressProcessAttachments
     && (hasText || !!visibleThinking || images.length > 0 || visibleTools.length > 0);
 
-  const attachedFiles = shouldHideProcessAttachments ? [] : (message._attachedFiles || []);
+  const attachedFiles = shouldHideProcessAttachments
+    ? (message._attachedFiles || []).filter((file) => file.source !== 'tool-result')
+    : (message._attachedFiles || []);
   const [lightboxImg, setLightboxImg] = useState<{ src: string; fileName: string; filePath?: string; base64?: string; mimeType?: string } | null>(null);
   const agentName = useAgentsStore((state) => (
     message._agentId
