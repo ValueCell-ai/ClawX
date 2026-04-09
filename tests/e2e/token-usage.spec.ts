@@ -144,12 +144,48 @@ test.describe('ClawX token usage history', () => {
   test('hides gateway internal usage rows from the usage list overview', async ({ electronApp, page, homeDir }) => {
     await seedTokenUsageTranscripts(homeDir);
     await completeSetup(page);
-    // Mock gateway status as running so the Models page renders without
-    // needing a real OpenClaw runtime (unavailable in CI temp HOME).
+    await validateUsageHistory(page);
+
+    // Read the seeded usage data via the direct IPC handler so we can
+    // feed it back through the hostapi:fetch mock that the Models page uses.
+    const seededUsageData = await page.evaluate(async () => {
+      return window.electron.ipcRenderer.invoke('usage:recentTokenHistory', 20);
+    });
+
+    // Mock both gateway:status IPC *and* hostapi:fetch so the renderer's
+    // Zustand store sees the gateway as running and the Models page can
+    // fetch usage data — no real OpenClaw runtime needed in CI.
     await installIpcMocks(electronApp, {
       gatewayStatus: { state: 'running', port: 18789 },
+      hostApi: {
+        // Gateway status endpoint — the store calls this to determine isGatewayRunning
+        [JSON.stringify(['/api/gateway/status', 'GET'])]: {
+          ok: true,
+          data: { status: 200, ok: true, json: { state: 'running', port: 18789 } },
+        },
+        // Gateway start/stop/restart/health — return sensible defaults
+        [JSON.stringify(['/api/gateway/start', 'POST'])]: {
+          ok: true,
+          data: { status: 200, ok: true, json: { success: true } },
+        },
+        [JSON.stringify(['/api/gateway/health', 'GET'])]: {
+          ok: true,
+          data: { status: 200, ok: true, json: { ok: true } },
+        },
+        // Usage history endpoint — the Models page fetches data from here
+        [JSON.stringify(['/api/usage/recent-token-history', 'GET'])]: {
+          ok: true,
+          data: { status: 200, ok: true, json: seededUsageData },
+        },
+      },
     });
-    await validateUsageHistory(page);
+
+    // Reload the page so the gateway store re-initializes from scratch.
+    // On mount, App.tsx calls useGatewayStore.init() which fetches
+    // /api/gateway/status via hostapi:fetch — now hitting our mock.
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    await expect(page.getByTestId('main-layout')).toBeVisible();
+
     await page.getByTestId('sidebar-nav-models').click();
     await expect(page.getByTestId('models-page')).toBeVisible();
 
@@ -160,7 +196,7 @@ test.describe('ClawX token usage history', () => {
       DELIVERY_MIRROR_SESSION_ID,
     ];
     const usageEntryRows = page.getByTestId('token-usage-entry');
-    await expect.poll(async () => await usageEntryRows.count()).toBe(2);
+    await expect.poll(async () => await usageEntryRows.count(), { timeout: 15_000 }).toBe(2);
 
     for (const sessionId of seededSessions) {
       const row = page.locator('[data-testid="token-usage-entry"]', { hasText: sessionId });
