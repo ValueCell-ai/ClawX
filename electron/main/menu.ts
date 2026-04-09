@@ -49,7 +49,10 @@ export function createMenu(): void {
           accelerator: 'CmdOrCtrl+N',
           click: () => {
             const win = BrowserWindow.getFocusedWindow();
-            win?.webContents.send('navigate', '/chat');
+            // '/new-chat' is a special signal handled in App.tsx:
+            // it creates a new session (if messages exist) then navigates to root.
+            // Previously '/chat' was sent, which matched no route → blank screen (#720).
+            win?.webContents.send('navigate', '/new-chat');
           },
         },
         { type: 'separator' },
@@ -114,7 +117,7 @@ export function createMenu(): void {
           accelerator: 'CmdOrCtrl+2',
           click: () => {
             const win = BrowserWindow.getFocusedWindow();
-            win?.webContents.send('navigate', '/chat');
+            win?.webContents.send('navigate', '/');
           },
         },
         {
