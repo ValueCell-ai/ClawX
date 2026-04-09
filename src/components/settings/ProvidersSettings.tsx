@@ -439,7 +439,7 @@ function ProviderCard({
           setSaving(false);
           return;
         }
-        payload.newApiKey = resolveProviderApiKeyForSave(account.vendorId, normalizedNewKey) as string;
+        payload.newApiKey = normalizedNewKey;
       }
 
       {
