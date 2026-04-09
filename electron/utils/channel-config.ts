@@ -768,6 +768,10 @@ export async function saveChannelConfig(
             ...transformedConfig,
             enabled: transformedConfig.enabled ?? true,
         };
+        // Keep channel-level enabled explicit so built-in channels that no longer
+        // receive top-level credential mirroring (e.g. whatsapp) still expose a
+        // stable channels.<type>.enabled flag for existing callers/tests.
+        channelSection.enabled = transformedConfig.enabled ?? channelSection.enabled ?? true;
 
         // Some OpenClaw channel plugins (feishu, wecom) read the default
         // account's credentials from the top level of `channels.<type>`
