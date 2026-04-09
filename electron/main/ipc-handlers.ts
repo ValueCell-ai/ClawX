@@ -136,6 +136,9 @@ export function registerIpcHandlers(
 
   // File staging handlers (upload/send separation)
   registerFileHandlers();
+
+  // Trinity system file handlers
+  registerTrinityHandlers();
 }
 
 function registerUnifiedRequestHandlers(gatewayManager: GatewayManager): void {
@@ -2461,6 +2464,75 @@ function registerSessionHandlers(): void {
     } catch (err) {
       logger.error(`[session:delete] Unexpected error for ${sessionKey}:`, err);
       return { success: false, error: String(err) };
+    }
+  });
+}
+
+/**
+ * Trinity system file handlers
+ * Reads/writes ~/.newclaw/trinity/ files for the Trinity Dashboard
+ */
+function registerTrinityHandlers(): void {
+  const TRINITY_DIR = join(homedir(), '.newclaw', 'trinity');
+
+  ipcMain.handle('trinity:readFiles', async () => {
+    const fsP = await import('fs/promises');
+    const readSafe = async (filename: string, tailLines?: number): Promise<string> => {
+      const filePath = join(TRINITY_DIR, filename);
+      if (!existsSync(filePath)) return '';
+      try {
+        const content = await fsP.readFile(filePath, 'utf8');
+        if (tailLines && tailLines > 0) {
+          const lines = content.split('\n');
+          return lines.slice(-tailLines).join('\n');
+        }
+        return content;
+      } catch {
+        return '';
+      }
+    };
+
+    const [stateRaw, goal, progress, nearMiss, debt] = await Promise.all([
+      readSafe('STATE.json'),
+      readSafe('GOAL_v1.md'),
+      readSafe('PROGRESS.md', 60),
+      readSafe('NEAR_MISS.log', 30),
+      readSafe('DEBT.md'),
+    ]);
+
+    let state: Record<string, unknown> = {};
+    try { state = JSON.parse(stateRaw); } catch { /* ignore */ }
+
+    return { state, goal, progress, nearMiss, debt, trinityDir: TRINITY_DIR };
+  });
+
+  ipcMain.handle('trinity:appendLog', async (_, file: string, content: string) => {
+    const fsP = await import('fs/promises');
+    const allowed = ['NEAR_MISS.log', 'PROGRESS.md', 'FAIL.log', 'DECISIONS.md'];
+    if (!allowed.includes(file)) return { ok: false, error: 'file not allowed' };
+    const filePath = join(TRINITY_DIR, file);
+    try {
+      await fsP.appendFile(filePath, '\n' + content, 'utf8');
+      return { ok: true };
+    } catch (err) {
+      return { ok: false, error: String(err) };
+    }
+  });
+
+  ipcMain.handle('trinity:updateState', async (_, patch: Record<string, unknown>) => {
+    const fsP = await import('fs/promises');
+    const statePath = join(TRINITY_DIR, 'STATE.json');
+    try {
+      let current: Record<string, unknown> = {};
+      if (existsSync(statePath)) {
+        const raw = await fsP.readFile(statePath, 'utf8');
+        try { current = JSON.parse(raw); } catch { /* ignore */ }
+      }
+      const updated = { ...current, ...patch, last_updated: new Date().toISOString() };
+      await fsP.writeFile(statePath, JSON.stringify(updated, null, 2), 'utf8');
+      return { ok: true };
+    } catch (err) {
+      return { ok: false, error: String(err) };
     }
   });
 }

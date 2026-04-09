@@ -137,6 +137,10 @@ const electronAPI = {
         'openclaw:getConfigDir',
         'openclaw:getSkillsDir',
         'openclaw:getCliCommand',
+        // Trinity system files
+        'trinity:readFiles',
+        'trinity:appendLog',
+        'trinity:updateState',
       ];
 
       if (validChannels.includes(channel)) {
