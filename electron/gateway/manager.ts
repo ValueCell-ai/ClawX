@@ -272,6 +272,15 @@ export class GatewayManager extends EventEmitter {
             this.setStatus({ pid: undefined });
           }
 
+          // Treat a successful reconnect to the owned process as a restart
+          // completion (e.g. after a Gateway code-1012 in-process restart).
+          // This updates lastRestartCompletedAt so that flushDeferredRestart
+          // drops any deferred restart requested before this reconnect,
+          // avoiding a redundant kill+respawn cycle.
+          if (isOwnProcess) {
+            this.restartController.recordRestartCompleted();
+          }
+
           this.startHealthCheck();
         },
         waitForPortFree: async (port) => {
