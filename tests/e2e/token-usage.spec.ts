@@ -1,7 +1,7 @@
 import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { Page } from '@playwright/test';
-import { completeSetup, expect, test } from './fixtures/electron';
+import { completeSetup, expect, installIpcMocks, test } from './fixtures/electron';
 
 const TEST_AGENT_ID = 'agent';
 const ZERO_TOKEN_SESSION_ID = 'agent-session-zero-token';
@@ -100,31 +100,6 @@ async function seedTokenUsageTranscripts(homeDir: string): Promise<void> {
 }
 
 test.describe('ClawX token usage history', () => {
-  async function waitForGatewayRunning(page: Page): Promise<void> {
-    await expect.poll(async () => {
-      const status = await page.evaluate(async () => {
-        return window.electron.ipcRenderer.invoke('gateway:status');
-      });
-
-      if (status?.state === 'running') {
-        return 'running';
-      }
-
-      await page.evaluate(async () => {
-        try {
-          await window.electron.ipcRenderer.invoke('gateway:start');
-        } catch {
-          try {
-            await window.electron.ipcRenderer.invoke('gateway:restart');
-          } catch {
-            // Ignore transient e2e startup failures and let the poll retry.
-          }
-        }
-      });
-
-      return status?.state ?? 'unknown';
-    }, { timeout: 45_000, intervals: [500, 1000, 1500, 2000] }).toBe('running');
-  }
 
   async function validateUsageHistory(page: Page): Promise<void> {
     const usageHistory = await page.evaluate(async () => {
@@ -166,10 +141,14 @@ test.describe('ClawX token usage history', () => {
     expect(nonzeroEntry?.provider).toBe('kimi');
   });
 
-  test('hides gateway internal usage rows from the usage list overview', async ({ page, homeDir }) => {
+  test('hides gateway internal usage rows from the usage list overview', async ({ electronApp, page, homeDir }) => {
     await seedTokenUsageTranscripts(homeDir);
     await completeSetup(page);
-    await waitForGatewayRunning(page);
+    // Mock gateway status as running so the Models page renders without
+    // needing a real OpenClaw runtime (unavailable in CI temp HOME).
+    await installIpcMocks(electronApp, {
+      gatewayStatus: { state: 'running', port: 18789 },
+    });
     await validateUsageHistory(page);
     await page.getByTestId('sidebar-nav-models').click();
     await expect(page.getByTestId('models-page')).toBeVisible();
