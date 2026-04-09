@@ -138,7 +138,7 @@ export function registerIpcHandlers(
   registerFileHandlers();
 
   // Trinity system file handlers
-  registerTrinityHandlers();
+  registerTrinityHandlers(gatewayManager);
 }
 
 function registerUnifiedRequestHandlers(gatewayManager: GatewayManager): void {
@@ -2472,8 +2472,9 @@ function registerSessionHandlers(): void {
  * Trinity system file handlers
  * Reads/writes ~/.newclaw/trinity/ files for the Trinity Dashboard
  */
-function registerTrinityHandlers(): void {
+function registerTrinityHandlers(gatewayManager: GatewayManager): void {
   const TRINITY_DIR = join(homedir(), '.newclaw', 'trinity');
+  const TRINITY_CRON_TAG = 'trinity-ai3-commander';
 
   ipcMain.handle('trinity:readFiles', async () => {
     const fsP = await import('fs/promises');
@@ -2532,6 +2533,65 @@ function registerTrinityHandlers(): void {
       await fsP.writeFile(statePath, JSON.stringify(updated, null, 2), 'utf8');
       return { ok: true };
     } catch (err) {
+      return { ok: false, error: String(err) };
+    }
+  });
+
+  // Set AI3 commander cron interval (1-1440 minutes)
+  // Creates or replaces the AI3 gateway cron job with the new schedule
+  ipcMain.handle('trinity:setAI3Interval', async (_, minutes: number) => {
+    const mins = Math.max(1, Math.min(1440, Math.round(minutes)));
+    const fsP = await import('fs/promises');
+
+    // Build cron expression
+    let cronExpr: string;
+    if (mins === 1) cronExpr = '* * * * *';
+    else if (mins < 60) cronExpr = `*/${mins} * * * *`;
+    else if (mins === 60) cronExpr = '0 * * * *';
+    else if (mins % 60 === 0) cronExpr = `0 */${mins / 60} * * *`;
+    else cronExpr = `*/${mins} * * * *`; // fallback for irregular values
+
+    const ai3Message = `你是 NewClaw 三核永动框架的 AI3 指挥官 👑。读取 ~/.newclaw/trinity/GOAL_v1.md 和 STATE.json，诊断当前状态，选择最高优先级任务执行，更新 PROGRESS.md 和 STATE.json。遵守 99/1 准则，不要停下来问用户。`;
+
+    try {
+      // Find existing AI3 job
+      const listResult = await gatewayManager.rpc('cron.list', { includeDisabled: true }) as { jobs?: Array<{ id: string; name?: string; tags?: string[] }> } | null;
+      const jobs = (listResult as { jobs?: Array<{ id: string; name?: string; tags?: string[] }> })?.jobs ?? [];
+      const existing = jobs.find((j) => j.tags?.includes(TRINITY_CRON_TAG) || j.name === 'AI3 Commander');
+
+      if (existing) {
+        await gatewayManager.rpc('cron.update', {
+          id: existing.id,
+          patch: { schedule: { kind: 'cron', expr: cronExpr } },
+        });
+      } else {
+        await gatewayManager.rpc('cron.add', {
+          name: 'AI3 Commander',
+          schedule: { kind: 'cron', expr: cronExpr },
+          payload: { kind: 'agentTurn', message: ai3Message },
+          enabled: true,
+          wakeMode: 'next-heartbeat',
+          sessionTarget: 'isolated',
+          delivery: { mode: 'none' },
+          tags: [TRINITY_CRON_TAG],
+        });
+      }
+
+      // Persist interval preference to STATE.json
+      const statePath = join(TRINITY_DIR, 'STATE.json');
+      let current: Record<string, unknown> = {};
+      if (existsSync(statePath)) {
+        const raw = await fsP.readFile(statePath, 'utf8');
+        try { current = JSON.parse(raw); } catch { /* ignore */ }
+      }
+      current.ai3_cron_interval_minutes = mins;
+      current.ai3_cron_expr = cronExpr;
+      current.last_updated = new Date().toISOString();
+      await fsP.writeFile(statePath, JSON.stringify(current, null, 2), 'utf8');
+
+      return { ok: true, intervalMinutes: mins, cronExpr };
+    } catch (err) {
+      logger.error('[trinity:setAI3Interval] Error:', err);
       return { ok: false, error: String(err) };
     }
   });

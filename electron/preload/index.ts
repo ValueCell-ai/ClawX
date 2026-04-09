@@ -141,6 +141,7 @@ const electronAPI = {
         'trinity:readFiles',
         'trinity:appendLog',
         'trinity:updateState',
+        'trinity:setAI3Interval',
       ];
 
       if (validChannels.includes(channel)) {
