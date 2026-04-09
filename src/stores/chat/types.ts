@@ -5,6 +5,7 @@ export interface AttachedFileMeta {
   fileSize: number;
   preview: string | null;
   filePath?: string;
+  source?: 'user-upload' | 'tool-result' | 'message-ref';
 }
 
 /** Raw message from OpenClaw chat.history */

@@ -162,7 +162,12 @@ export async function launchGatewayProcess(options: {
     });
 
     child.on('exit', (code: number) => {
-      const expectedExit = !options.getShouldReconnect() || options.getCurrentState() === 'stopped';
+      // Only check shouldReconnect — not current state.  On Windows the WS
+      // close handler fires before the process exit handler and sets state to
+      // 'stopped', which would make an unexpected crash look like a planned
+      // shutdown in logs.  shouldReconnect is the reliable indicator: stop()
+      // sets it to false (expected), crashes leave it true (unexpected).
+      const expectedExit = !options.getShouldReconnect();
       const level = expectedExit ? logger.info : logger.warn;
       level(`Gateway process exited (code=${code}, expected=${expectedExit ? 'yes' : 'no'})`);
       options.onExit(child, code);

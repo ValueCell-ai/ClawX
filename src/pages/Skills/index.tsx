@@ -36,6 +36,9 @@ import type { Skill } from '@/types/skill';
 import { useTranslation } from 'react-i18next';
 import type { TFunction } from 'i18next';
 
+const INSTALL_ERROR_CODES = new Set(['installTimeoutError', 'installRateLimitError']);
+const FETCH_ERROR_CODES = new Set(['fetchTimeoutError', 'fetchRateLimitError', 'timeoutError', 'rateLimitError']);
+const SEARCH_ERROR_CODES = new Set(['searchTimeoutError', 'searchRateLimitError', 'timeoutError', 'rateLimitError']);
 
 
 
@@ -585,7 +588,7 @@ export function Skills() {
       toast.success(t('toast.installed'));
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : String(err);
-      if (['installTimeoutError', 'installRateLimitError'].includes(errorMessage)) {
+      if (INSTALL_ERROR_CODES.has(errorMessage)) {
         toast.error(t(`toast.${errorMessage}`, { path: skillsDirPath }), { duration: 10000 });
       } else {
         toast.error(t('toast.failedInstall') + ': ' + errorMessage);
@@ -739,7 +742,7 @@ export function Skills() {
             <div className="mb-4 p-4 rounded-xl border border-destructive/50 bg-destructive/10 text-destructive text-sm font-medium flex items-center gap-2">
               <AlertCircle className="h-5 w-5 shrink-0" />
               <span>
-                {['fetchTimeoutError', 'fetchRateLimitError', 'timeoutError', 'rateLimitError'].includes(error)
+                {FETCH_ERROR_CODES.has(error)
                   ? t(`toast.${error}`, { path: skillsDirPath })
                   : error}
               </span>
@@ -851,7 +854,7 @@ export function Skills() {
               <div className="mb-4 p-4 rounded-xl border border-destructive/50 bg-destructive/10 text-destructive text-sm font-medium flex items-center gap-2">
                 <AlertCircle className="h-5 w-5 shrink-0" />
                 <span>
-                  {['searchTimeoutError', 'searchRateLimitError', 'timeoutError', 'rateLimitError'].includes(searchError.replace('Error: ', ''))
+                  {SEARCH_ERROR_CODES.has(searchError.replace('Error: ', ''))
                     ? t(`toast.${searchError.replace('Error: ', '')}`, { path: skillsDirPath })
                     : t('marketplace.searchError')}
                 </span>

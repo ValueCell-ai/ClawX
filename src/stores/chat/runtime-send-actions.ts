@@ -94,6 +94,7 @@ export function createRuntimeSendActions(set: ChatSet, get: ChatGet): Pick<Runti
           fileSize: a.fileSize,
           preview: a.preview,
           filePath: a.stagedPath,
+          source: 'user-upload',
         })),
       };
       set((s) => ({

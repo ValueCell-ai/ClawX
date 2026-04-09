@@ -205,7 +205,7 @@ function getDeliveryAccountDisplayName(account: DeliveryChannelAccount, t: TFunc
     : account.name;
 }
 
-const TESTED_CRON_DELIVERY_CHANNELS = new Set<string>(['feishu', 'telegram', 'qqbot', 'wecom']);
+const TESTED_CRON_DELIVERY_CHANNELS = new Set<string>(['feishu', 'telegram', 'qqbot', 'wecom', 'wechat']);
 
 function isSupportedCronDeliveryChannel(channelType: string): boolean {
   return TESTED_CRON_DELIVERY_CHANNELS.has(channelType);
@@ -573,7 +573,7 @@ function TaskDialog({ job, configuredChannels, onClose, onSave }: TaskDialogProp
                     <p className="text-[12px] text-muted-foreground">{t('dialog.noChannels')}</p>
                   )}
                   {unsupportedDeliveryChannel && (
-                    <p className="text-[12px] text-destructive">{t('dialog.deliveryChannelUnsupported')}</p>
+                    <p className="text-[12px] text-destructive">{t('dialog.deliveryChannelUnsupported', { channel: getChannelDisplayName(effectiveDeliveryChannel) })}</p>
                   )}
                   {selectedChannel && (
                     <p className="text-[12px] text-muted-foreground">

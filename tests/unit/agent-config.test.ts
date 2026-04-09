@@ -458,4 +458,25 @@ describe('agent config lifecycle', () => {
     expect(snapshot.channelAccountOwners['feishu:default']).toBeUndefined();
     expect(snapshot.channelAccountOwners['telegram:default']).toBe('main');
   });
+
+  it('avoids numeric-only ids when creating agents from CJK names', async () => {
+    await writeOpenClawJson({
+      agents: {
+        list: [{ id: 'main', name: 'Main', default: true }],
+      },
+    });
+
+    const { createAgent, listAgentsSnapshot } = await import('@electron/utils/agent-config');
+
+    await createAgent('测试2');
+    await createAgent('测试1');
+
+    const snapshot = await listAgentsSnapshot();
+    const agentIds = snapshot.agents.map((agent) => agent.id);
+
+    expect(agentIds).toContain('agent');
+    expect(agentIds).toContain('agent-2');
+    expect(agentIds).not.toContain('2');
+    expect(agentIds).not.toContain('1');
+  });
 });

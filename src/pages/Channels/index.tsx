@@ -96,8 +96,20 @@ export function Channels() {
   const hasStableValue = visibleChannelGroups.length > 0 || visibleAgents.length > 0;
   const isUsingStableValue = hasStableValue && (loading || Boolean(error));
 
+  // Use refs to read current state inside fetchPageData without making it
+  // a dependency — keeps the callback reference stable across renders so
+  // downstream useEffects don't re-execute every time data changes.
+  const channelGroupsRef = useRef(channelGroups);
+  channelGroupsRef.current = channelGroups;
+  const agentsRef = useRef(agents);
+  agentsRef.current = agents;
+
   const fetchPageData = useCallback(async () => {
-    setLoading(true);
+    // Only show loading spinner on first load (stale-while-revalidate).
+    const hasData = channelGroupsRef.current.length > 0 || agentsRef.current.length > 0;
+    if (!hasData) {
+      setLoading(true);
+    }
     setError(null);
     try {
       const [channelsRes, agentsRes] = await Promise.all([
@@ -116,10 +128,13 @@ export function Channels() {
       setChannelGroups(channelsRes.channels || []);
       setAgents(agentsRes.agents || []);
     } catch (fetchError) {
+      // Preserve previous data on error — don't clear channelGroups/agents.
       setError(String(fetchError));
     } finally {
       setLoading(false);
     }
+  // Stable reference — reads state via refs, no deps needed.
+   
   }, []);
 
   useEffect(() => {
@@ -127,12 +142,30 @@ export function Channels() {
   }, [fetchPageData]);
 
   useEffect(() => {
+    // Throttle channel-status events to avoid flooding fetchPageData during AI tasks.
+    let throttleTimer: ReturnType<typeof setTimeout> | null = null;
+    let pending = false;
+
     const unsubscribe = subscribeHostEvent('gateway:channel-status', () => {
+      if (throttleTimer) {
+        pending = true;
+        return;
+      }
       void fetchPageData();
+      throttleTimer = setTimeout(() => {
+        throttleTimer = null;
+        if (pending) {
+          pending = false;
+          void fetchPageData();
+        }
+      }, 2000);
     });
     return () => {
       if (typeof unsubscribe === 'function') {
         unsubscribe();
+      }
+      if (throttleTimer) {
+        clearTimeout(throttleTimer);
       }
     };
   }, [fetchPageData]);

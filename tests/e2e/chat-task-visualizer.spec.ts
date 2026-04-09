@@ -95,6 +95,16 @@ status: completed successfully`,
   {
     role: 'assistant',
     content: [{ type: 'text', text: '我让 coder 分析完了，下面是结论。' }],
+    _attachedFiles: [
+      {
+        fileName: 'CHECKLIST.md',
+        mimeType: 'text/markdown',
+        fileSize: 433,
+        preview: null,
+        filePath: '/Users/bytedance/.openclaw/workspace/CHECKLIST.md',
+        source: 'tool-result',
+      },
+    ],
     timestamp: Date.now(),
   },
 ];
@@ -203,7 +213,13 @@ test.describe('ClawX chat execution graph', () => {
       });
 
       const page = await getStableWindow(app);
-      await page.reload();
+      try {
+        await page.reload();
+      } catch (error) {
+        if (!String(error).includes('ERR_FILE_NOT_FOUND')) {
+          throw error;
+        }
+      }
       await expect(page.getByTestId('main-layout')).toBeVisible();
       await expect(page.getByTestId('chat-execution-graph')).toBeVisible({ timeout: 30_000 });
       await expect(
@@ -214,6 +230,7 @@ test.describe('ClawX chat execution graph', () => {
         page.locator('[data-testid="chat-execution-graph"] [data-testid="chat-execution-step"]').getByText('exec', { exact: true }),
       ).toBeVisible();
       await expect(page.locator('[data-testid="chat-execution-graph"]').getByText('我让 coder 去拆 ~/Velaria 当前未提交改动的核心块了，等它回来我直接给你结论。')).toBeVisible();
+      await expect(page.getByText('CHECKLIST.md')).toHaveCount(0);
     } finally {
       await closeElectronApp(app);
     }

@@ -6,8 +6,9 @@ import {
   deleteChannelConfig,
   cleanupDanglingWeChatPluginState,
   getChannelFormValues,
-  listConfiguredChannelAccounts,
+  listConfiguredChannelAccountsFromConfig,
   listConfiguredChannels,
+  listConfiguredChannelsFromConfig,
   readOpenClawConfig,
   saveChannelConfig,
   setChannelDefaultAccount,
@@ -20,6 +21,7 @@ import {
   clearAllBindingsForChannel,
   clearChannelBinding,
   listAgentsSnapshot,
+  listAgentsSnapshotFromConfig,
 } from '../../utils/agent-config';
 import {
   ensureDingTalkPluginInstalled,
@@ -36,6 +38,7 @@ import {
   OPENCLAW_WECHAT_CHANNEL_TYPE,
   UI_WECHAT_CHANNEL_TYPE,
   buildQrChannelEventName,
+  isCanonicalOpenClawAccountId,
   toOpenClawChannelType,
   toUiChannelType,
 } from '../../utils/channel-alias';
@@ -85,6 +88,47 @@ function resolveStoredChannelType(channelType: string): string {
 
 function buildQrLoginKey(channelType: string, accountId?: string): string {
   return `${toUiChannelType(channelType)}:${accountId?.trim() || '__new__'}`;
+}
+
+async function isLegacyConfiguredAccountId(channelType: string, accountId: string): Promise<boolean> {
+  const config = await readOpenClawConfig();
+  const configuredAccounts = listConfiguredChannelAccountsFromConfig(config) ?? {};
+  const storedChannelType = resolveStoredChannelType(channelType);
+  const knownAccountIds = configuredAccounts[storedChannelType]?.accountIds ?? [];
+  return knownAccountIds.includes(accountId);
+}
+
+async function validateCanonicalAccountId(
+  channelType: string,
+  accountId: string | undefined,
+  options?: { allowLegacyConfiguredId?: boolean },
+): Promise<string | null> {
+  if (!accountId) return null;
+  const trimmed = accountId.trim();
+  if (!trimmed) return 'accountId cannot be empty';
+  if (isCanonicalOpenClawAccountId(trimmed)) {
+    return null;
+  }
+  if (options?.allowLegacyConfiguredId && await isLegacyConfiguredAccountId(channelType, trimmed)) {
+    return null;
+  }
+  // Backward compatibility note:
+  // existing legacy IDs can still be edited/bound if they already exist in config.
+  // new account IDs must be canonical to match OpenClaw runtime routing behavior.
+  return 'Invalid accountId format. Use lowercase letters, numbers, hyphens, or underscores only (max 64 chars, must start with a letter or number).';
+}
+
+async function validateAccountIdOrReply(
+  res: ServerResponse,
+  channelType: string,
+  accountId: string | undefined,
+): Promise<boolean> {
+  const error = await validateCanonicalAccountId(channelType, accountId, { allowLegacyConfiguredId: true });
+  if (!error) {
+    return true;
+  }
+  sendJson(res, 400, { success: false, error });
+  return false;
 }
 
 function setActiveQrLogin(channelType: string, sessionKey: string, accountId?: string): string {
@@ -315,6 +359,20 @@ interface ChannelAccountsView {
   accounts: ChannelAccountView[];
 }
 
+function shouldIncludeRuntimeAccountId(
+  accountId: string,
+  configuredAccountIds: Set<string>,
+  runtimeAccount: { configured?: boolean },
+): boolean {
+  if (configuredAccountIds.has(accountId)) {
+    return true;
+  }
+  // Defensive filtering: channels.status can occasionally expose transient
+  // runtime rows for stale sessions. Only include runtime-only accounts when
+  // gateway marks them as configured.
+  return runtimeAccount.configured === true;
+}
+
 interface ChannelTargetOptionView {
   value: string;
   label: string;
@@ -344,16 +402,21 @@ const CHANNEL_TARGET_CACHE_ENABLED = process.env.VITEST !== 'true';
 const channelTargetCache = new Map<string, { expiresAt: number; targets: ChannelTargetOptionView[] }>();
 
 async function buildChannelAccountsView(ctx: HostApiContext): Promise<ChannelAccountsView[]> {
-  const [configuredChannels, configuredAccounts, openClawConfig, agentsSnapshot] = await Promise.all([
-    listConfiguredChannels(),
-    listConfiguredChannelAccounts(),
-    readOpenClawConfig(),
-    listAgentsSnapshot(),
+  // Read config once and share across all sub-calls (was 5 readFile calls before).
+  const openClawConfig = await readOpenClawConfig();
+
+  const [configuredChannels, configuredAccounts, agentsSnapshot] = await Promise.all([
+    listConfiguredChannelsFromConfig(openClawConfig),
+    Promise.resolve(listConfiguredChannelAccountsFromConfig(openClawConfig)),
+    listAgentsSnapshotFromConfig(openClawConfig),
   ]);
 
   let gatewayStatus: GatewayChannelStatusPayload | null;
   try {
-    gatewayStatus = await ctx.gatewayManager.rpc<GatewayChannelStatusPayload>('channels.status', { probe: true });
+    // probe: false — use cached runtime state instead of active network probes
+    // per channel. Real-time status updates arrive via channel.status events.
+    // 8s timeout — fail fast when Gateway is busy with AI tasks.
+    gatewayStatus = await ctx.gatewayManager.rpc<GatewayChannelStatusPayload>('channels.status', { probe: false }, 8000);
   } catch {
     gatewayStatus = null;
   }
@@ -368,6 +431,7 @@ async function buildChannelAccountsView(ctx: HostApiContext): Promise<ChannelAcc
   for (const rawChannelType of channelTypes) {
     const uiChannelType = toUiChannelType(rawChannelType);
     const channelAccountsFromConfig = configuredAccounts[rawChannelType]?.accountIds ?? [];
+    const configuredAccountIdSet = new Set(channelAccountsFromConfig);
     const hasLocalConfig = configuredChannels.includes(rawChannelType) || Boolean(configuredAccounts[rawChannelType]);
     const channelSection = openClawConfig.channels?.[rawChannelType];
     const channelSummary =
@@ -389,9 +453,17 @@ async function buildChannelAccountsView(ctx: HostApiContext): Promise<ChannelAcc
     if (!hasLocalConfig && !hasRuntimeConfigured) {
       continue;
     }
-    const runtimeAccountIds = runtimeAccounts
-      .map((account) => account.accountId)
-      .filter((accountId): accountId is string => typeof accountId === 'string' && accountId.trim().length > 0);
+    const runtimeAccountIds = runtimeAccounts.reduce<string[]>((acc, account) => {
+      const accountId = typeof account.accountId === 'string' ? account.accountId.trim() : '';
+      if (!accountId) {
+        return acc;
+      }
+      if (!shouldIncludeRuntimeAccountId(accountId, configuredAccountIdSet, account)) {
+        return acc;
+      }
+      acc.push(accountId);
+      return acc;
+    }, []);
     const accountIds = Array.from(new Set([...channelAccountsFromConfig, ...runtimeAccountIds, defaultAccountId]));
 
     const accounts: ChannelAccountView[] = accountIds.map((accountId) => {
@@ -1057,6 +1129,10 @@ export async function handleChannelRoutes(
   if (url.pathname === '/api/channels/default-account' && req.method === 'PUT') {
     try {
       const body = await parseJsonBody<{ channelType: string; accountId: string }>(req);
+      const validAccountId = await validateAccountIdOrReply(res, body.channelType, body.accountId);
+      if (!validAccountId) {
+        return true;
+      }
       await setChannelDefaultAccount(body.channelType, body.accountId);
       scheduleGatewayChannelSaveRefresh(ctx, body.channelType, `channel:setDefaultAccount:${body.channelType}`);
       sendJson(res, 200, { success: true });
@@ -1069,6 +1145,10 @@ export async function handleChannelRoutes(
   if (url.pathname === '/api/channels/binding' && req.method === 'PUT') {
     try {
       const body = await parseJsonBody<{ channelType: string; accountId: string; agentId: string }>(req);
+      const validAccountId = await validateAccountIdOrReply(res, body.channelType, body.accountId);
+      if (!validAccountId) {
+        return true;
+      }
       await assignChannelAccountToAgent(body.agentId, resolveStoredChannelType(body.channelType), body.accountId);
       scheduleGatewayChannelSaveRefresh(ctx, body.channelType, `channel:setBinding:${body.channelType}`);
       sendJson(res, 200, { success: true });
@@ -1081,6 +1161,10 @@ export async function handleChannelRoutes(
   if (url.pathname === '/api/channels/binding' && req.method === 'DELETE') {
     try {
       const body = await parseJsonBody<{ channelType: string; accountId: string }>(req);
+      const validAccountId = await validateAccountIdOrReply(res, body.channelType, body.accountId);
+      if (!validAccountId) {
+        return true;
+      }
       await clearChannelBinding(resolveStoredChannelType(body.channelType), body.accountId);
       scheduleGatewayChannelSaveRefresh(ctx, body.channelType, `channel:clearBinding:${body.channelType}`);
       sendJson(res, 200, { success: true });
@@ -1182,6 +1266,10 @@ export async function handleChannelRoutes(
   if (url.pathname === '/api/channels/config' && req.method === 'POST') {
     try {
       const body = await parseJsonBody<{ channelType: string; config: Record<string, unknown>; accountId?: string }>(req);
+      const validAccountId = await validateAccountIdOrReply(res, body.channelType, body.accountId);
+      if (!validAccountId) {
+        return true;
+      }
       const storedChannelType = resolveStoredChannelType(body.channelType);
       if (storedChannelType === 'dingtalk') {
         const installResult = await ensureDingTalkPluginInstalled();

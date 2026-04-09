@@ -43,6 +43,129 @@ describe('deriveTaskSteps', () => {
     ]);
   });
 
+  it('keeps completed tool steps visible while a later tool is still streaming', () => {
+    const steps = deriveTaskSteps({
+      messages: [
+        {
+          role: 'assistant',
+          id: 'assistant-history',
+          content: [
+            { type: 'tool_use', id: 'tool-read', name: 'read', input: { filePath: '/tmp/a.md' } },
+          ],
+        },
+      ],
+      streamingMessage: {
+        role: 'assistant',
+        content: [
+          { type: 'tool_use', id: 'tool-grep', name: 'grep', input: { pattern: 'TODO' } },
+        ],
+      },
+      streamingTools: [
+        {
+          toolCallId: 'tool-grep',
+          name: 'grep',
+          status: 'running',
+          updatedAt: Date.now(),
+          summary: 'Scanning files',
+        },
+      ],
+      sending: true,
+      pendingFinal: false,
+      showThinking: false,
+    });
+
+    expect(steps).toEqual([
+      expect.objectContaining({
+        id: 'tool-read',
+        label: 'read',
+        status: 'completed',
+        kind: 'tool',
+      }),
+      expect.objectContaining({
+        id: 'tool-grep',
+        label: 'grep',
+        status: 'running',
+        kind: 'tool',
+      }),
+    ]);
+  });
+
+  it('upgrades a completed historical tool step when streaming status reports a later state', () => {
+    const steps = deriveTaskSteps({
+      messages: [
+        {
+          role: 'assistant',
+          id: 'assistant-history',
+          content: [
+            { type: 'tool_use', id: 'tool-read', name: 'read', input: { filePath: '/tmp/a.md' } },
+          ],
+        },
+      ],
+      streamingMessage: null,
+      streamingTools: [
+        {
+          toolCallId: 'tool-read',
+          name: 'read',
+          status: 'error',
+          updatedAt: Date.now(),
+          summary: 'Permission denied',
+        },
+      ],
+      sending: true,
+      pendingFinal: false,
+      showThinking: false,
+    });
+
+    expect(steps).toEqual([
+      expect.objectContaining({
+        id: 'tool-read',
+        label: 'read',
+        status: 'error',
+        kind: 'tool',
+        detail: 'Permission denied',
+      }),
+    ]);
+  });
+
+  it('keeps the newest running step when the execution graph exceeds the max length', () => {
+    const messages: RawMessage[] = Array.from({ length: 9 }, (_, index) => ({
+      role: 'assistant',
+      id: `assistant-${index}`,
+      content: [
+        { type: 'tool_use', id: `tool-${index}`, name: `read_${index}`, input: { filePath: `/tmp/${index}.md` } },
+      ],
+    }));
+
+    const steps = deriveTaskSteps({
+      messages,
+      streamingMessage: {
+        role: 'assistant',
+        content: [
+          { type: 'tool_use', id: 'tool-live', name: 'grep_live', input: { pattern: 'TODO' } },
+        ],
+      },
+      streamingTools: [
+        {
+          toolCallId: 'tool-live',
+          name: 'grep_live',
+          status: 'running',
+          updatedAt: Date.now(),
+          summary: 'Scanning current workspace',
+        },
+      ],
+      sending: true,
+      pendingFinal: false,
+      showThinking: false,
+    });
+
+    expect(steps).toHaveLength(8);
+    expect(steps.at(-1)).toEqual(expect.objectContaining({
+      id: 'tool-live',
+      label: 'grep_live',
+      status: 'running',
+    }));
+  });
+
   it('keeps recent completed steps from assistant history', () => {
     const messages: RawMessage[] = [
       {
@@ -70,14 +193,12 @@ describe('deriveTaskSteps', () => {
         label: 'Thinking',
         status: 'completed',
         kind: 'thinking',
-        depth: 1,
       }),
       expect.objectContaining({
         id: 'tool-2',
         label: 'read_file',
         status: 'completed',
         kind: 'tool',
-        depth: 1,
       }),
     ]);
   });

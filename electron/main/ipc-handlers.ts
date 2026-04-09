@@ -747,11 +747,10 @@ interface GatewayCronJob {
 
 type GatewayCronDelivery = NonNullable<GatewayCronJob['delivery']>;
 
-function getUnsupportedCronDeliveryError(channel: string | undefined): string | null {
-  if (!channel) return null;
-  return toUiChannelType(channel) === 'wechat'
-    ? 'WeChat scheduled delivery is not supported because the plugin requires a live conversation context token.'
-    : null;
+function getUnsupportedCronDeliveryError(_channel: string | undefined): string | null {
+  // Channel support is gated by the frontend whitelist (TESTED_CRON_DELIVERY_CHANNELS).
+  // No per-channel backend blocks are needed.
+  return null;
 }
 
 function normalizeCronDelivery(
@@ -1152,6 +1151,7 @@ function registerGatewayHandlers(
       const result = await gatewayManager.rpc(method, params, timeoutMs);
       return { success: true, result };
     } catch (error) {
+      logger.warn(`[gateway:rpc] ${method} failed (timeoutMs=${timeoutMs ?? 30000}): ${String(error)}`);
       return { success: false, error: String(error) };
     }
   });

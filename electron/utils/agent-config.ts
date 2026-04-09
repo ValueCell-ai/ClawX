@@ -2,6 +2,7 @@ import { access, copyFile, mkdir, readdir, rm } from 'fs/promises';
 import { constants } from 'fs';
 import { join, normalize } from 'path';
 import { deleteAgentChannelAccounts, listConfiguredChannels, readOpenClawConfig, writeOpenClawConfig } from './channel-config';
+import type { OpenClawConfig } from './channel-config';
 import { withConfigLock } from './config-mutex';
 import { expandPath, getOpenClawConfigDir } from './paths';
 import * as logger from './logger';
@@ -138,7 +139,7 @@ function slugifyAgentId(name: string): string {
     .replace(/-+/g, '-')
     .replace(/^-|-$/g, '');
 
-  if (!normalized) return 'agent';
+  if (!normalized || /^\d+$/.test(normalized)) return 'agent';
   if (normalized === MAIN_AGENT_ID) return 'agent';
   return normalized;
 }
@@ -450,9 +451,9 @@ function listConfiguredAccountIdsForChannel(config: AgentConfigDocument, channel
     });
 }
 
-async function buildSnapshotFromConfig(config: AgentConfigDocument): Promise<AgentsSnapshot> {
+async function buildSnapshotFromConfig(config: AgentConfigDocument, preloadedChannels?: string[]): Promise<AgentsSnapshot> {
   const { entries, defaultAgentId } = normalizeAgentsConfig(config);
-  const configuredChannels = await listConfiguredChannels();
+  const configuredChannels = preloadedChannels ?? await listConfiguredChannels();
   const { channelToAgent, accountToAgent } = getChannelBindingMap(config.bindings);
   const defaultAgentIdNorm = normalizeAgentIdForBinding(defaultAgentId);
   const channelOwners: Record<string, string> = {};
@@ -537,6 +538,10 @@ async function buildSnapshotFromConfig(config: AgentConfigDocument): Promise<Age
 export async function listAgentsSnapshot(): Promise<AgentsSnapshot> {
   const config = await readOpenClawConfig() as AgentConfigDocument;
   return buildSnapshotFromConfig(config);
+}
+
+export async function listAgentsSnapshotFromConfig(config: OpenClawConfig, configuredChannels?: string[]): Promise<AgentsSnapshot> {
+  return buildSnapshotFromConfig(config as AgentConfigDocument, configuredChannels);
 }
 
 export async function listConfiguredAgentIds(): Promise<string[]> {

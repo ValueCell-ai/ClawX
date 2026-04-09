@@ -166,23 +166,64 @@ export function deriveTaskSteps({
   showThinking,
 }: DeriveTaskStepsInput): TaskStep[] {
   const steps: TaskStep[] = [];
-  const seenIds = new Set<string>();
-  const activeToolNames = new Set<string>();
+  const stepIndexById = new Map<string, number>();
 
-  const pushStep = (step: TaskStep): void => {
-    if (seenIds.has(step.id)) return;
-    seenIds.add(step.id);
-    steps.push(step);
+  const upsertStep = (step: TaskStep): void => {
+    const existingIndex = stepIndexById.get(step.id);
+    if (existingIndex == null) {
+      stepIndexById.set(step.id, steps.length);
+      steps.push(step);
+      return;
+    }
+    const existing = steps[existingIndex];
+    steps[existingIndex] = {
+      ...existing,
+      ...step,
+      detail: step.detail ?? existing.detail,
+    };
   };
 
   const streamMessage = streamingMessage && typeof streamingMessage === 'object'
     ? streamingMessage as RawMessage
     : null;
 
+  const relevantAssistantMessages = messages.filter((message) => {
+    if (!message || message.role !== 'assistant') return false;
+    if (extractToolUse(message).length > 0) return true;
+    return showThinking && !!extractThinking(message);
+  });
+
+  for (const [messageIndex, assistantMessage] of relevantAssistantMessages.entries()) {
+    if (showThinking) {
+      const thinking = extractThinking(assistantMessage);
+      if (thinking) {
+        upsertStep({
+          id: `history-thinking-${assistantMessage.id || messageIndex}`,
+          label: 'Thinking',
+          status: 'completed',
+          kind: 'thinking',
+          detail: normalizeText(thinking),
+          depth: 1,
+        });
+      }
+    }
+
+    extractToolUse(assistantMessage).forEach((tool, index) => {
+      upsertStep({
+        id: tool.id || makeToolId(`history-tool-${assistantMessage.id || messageIndex}`, tool.name, index),
+        label: tool.name,
+        status: 'completed',
+        kind: 'tool',
+        detail: normalizeText(JSON.stringify(tool.input, null, 2)),
+        depth: 1,
+      });
+    });
+  }
+
   if (streamMessage && showThinking) {
     const thinking = extractThinking(streamMessage);
     if (thinking) {
-      pushStep({
+      upsertStep({
         id: 'stream-thinking',
         label: 'Thinking',
         status: 'running',
@@ -193,10 +234,16 @@ export function deriveTaskSteps({
     }
   }
 
+  const activeToolIds = new Set<string>();
+  const activeToolNamesWithoutIds = new Set<string>();
   streamingTools.forEach((tool, index) => {
-    activeToolNames.add(tool.name);
-    pushStep({
-      id: tool.toolCallId || tool.id || makeToolId('stream-status', tool.name, index),
+    const id = tool.toolCallId || tool.id || makeToolId('stream-status', tool.name, index);
+    activeToolIds.add(id);
+    if (!tool.toolCallId && !tool.id) {
+      activeToolNamesWithoutIds.add(tool.name);
+    }
+    upsertStep({
+      id,
       label: tool.name,
       status: tool.status,
       kind: 'tool',
@@ -207,9 +254,10 @@ export function deriveTaskSteps({
 
   if (streamMessage) {
     extractToolUse(streamMessage).forEach((tool, index) => {
-      if (activeToolNames.has(tool.name)) return;
-      pushStep({
-        id: tool.id || makeToolId('stream-tool', tool.name, index),
+      const id = tool.id || makeToolId('stream-tool', tool.name, index);
+      if (activeToolIds.has(id) || activeToolNamesWithoutIds.has(tool.name)) return;
+      upsertStep({
+        id,
         label: tool.name,
         status: 'running',
         kind: 'tool',
@@ -220,59 +268,27 @@ export function deriveTaskSteps({
   }
 
   if (sending && pendingFinal) {
-    pushStep({
-      id: 'system-finalizing',
-      label: 'Finalizing answer',
-      status: 'running',
+      upsertStep({
+        id: 'system-finalizing',
+        label: 'Finalizing answer',
+        status: 'running',
       kind: 'system',
       detail: 'Waiting for the assistant to finish this run.',
       depth: 1,
     });
   } else if (sending && steps.length === 0) {
-    pushStep({
-      id: 'system-preparing',
-      label: 'Preparing run',
-      status: 'running',
+      upsertStep({
+        id: 'system-preparing',
+        label: 'Preparing run',
+        status: 'running',
       kind: 'system',
       detail: 'Waiting for the first streaming update.',
       depth: 1,
     });
   }
 
-  if (steps.length === 0) {
-    const relevantAssistantMessages = messages.filter((message) => {
-      if (!message || message.role !== 'assistant') return false;
-      if (extractToolUse(message).length > 0) return true;
-      return showThinking && !!extractThinking(message);
-    });
-
-    for (const [messageIndex, assistantMessage] of relevantAssistantMessages.entries()) {
-      if (showThinking) {
-        const thinking = extractThinking(assistantMessage);
-        if (thinking) {
-          pushStep({
-            id: `history-thinking-${assistantMessage.id || messageIndex}`,
-            label: 'Thinking',
-            status: 'completed',
-            kind: 'thinking',
-            detail: normalizeText(thinking),
-            depth: 1,
-          });
-        }
-      }
-
-      extractToolUse(assistantMessage).forEach((tool, index) => {
-        pushStep({
-          id: tool.id || makeToolId(`history-tool-${assistantMessage.id || messageIndex}`, tool.name, index),
-          label: tool.name,
-          status: 'completed',
-          kind: 'tool',
-          detail: normalizeText(JSON.stringify(tool.input, null, 2)),
-          depth: 1,
-        });
-      });
-    }
-  }
-
-  return attachTopology(steps).slice(0, MAX_TASK_STEPS);
+  const withTopology = attachTopology(steps);
+  return withTopology.length > MAX_TASK_STEPS
+    ? withTopology.slice(-MAX_TASK_STEPS)
+    : withTopology;
 }

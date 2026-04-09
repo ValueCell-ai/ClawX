@@ -45,7 +45,7 @@
         "selectDeliveryAccount": "Select an account",
         "deliveryAccountDesc": "Uses the same configured account list shown on the Channels page.",
         "selectChannel": "Select a channel",
-        "deliveryChannelUnsupported": "WeChat does not currently support scheduled outbound delivery because the plugin requires a live conversation context token.",
+        "deliveryChannelUnsupported": "{{channel}} does not currently support scheduled outbound delivery.",
         "deliveryDefaultAccountHint": "Uses the channel's default account: {{account}}",
         "deliveryTarget": "Recipient / Target",
         "selectDeliveryTarget": "Select a delivery target",

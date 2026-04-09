@@ -684,9 +684,10 @@ function buildSessionSwitchPatch(
   >,
   nextSessionKey: string,
 ): Partial<ChatState> {
-  // 仅将没有任何历史记录且无活动时间的会话视为空会话。
-  // 单纯依赖 messages.length 是不可靠的，因为 switchSession 会在真正调用 loadHistory 前抢先清空当前 messages，
-  // 造成竞争条件，使得带有真实历史的会话被判定为空并从侧边栏移除。
+  // Only treat sessions with no history records and no activity timestamp as empty.
+  // Relying solely on messages.length is unreliable because switchSession clears
+  // the current messages before loadHistory runs, creating a race condition that
+  // could cause sessions with real history to be incorrectly removed from the sidebar.
   const leavingEmpty = !state.currentSessionKey.endsWith(':main')
     && state.messages.length === 0
     && !state.sessionLastActivity[state.currentSessionKey]
@@ -953,6 +954,15 @@ function upsertToolStatuses(current: ToolStatus[], updates: ToolStatus[]): ToolS
     };
   }
   return next;
+}
+
+/**
+ * Only treat an explicit chat.send ack timeout as recoverable.
+ * Gateway stopped / Gateway not connected are hard failures that
+ * should still terminate the send immediately.
+ */
+function isRecoverableChatSendTimeout(error: string): boolean {
+  return error.includes('RPC timeout: chat.send');
 }
 
 function collectToolUpdates(message: unknown, eventState: string): ToolStatus[] {
@@ -1229,7 +1239,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
     // sessions.reset archives (renames) the session JSONL file, making old
     // conversation history inaccessible when the user switches back to it.
     const { currentSessionKey, messages, sessions, sessionLastActivity, sessionLabels } = get();
-    // 仅将没有任何历史记录且无活动时间的会话视为空会话
+    // Only treat sessions with no history records and no activity timestamp as empty
     const leavingEmpty = !currentSessionKey.endsWith(':main')
       && messages.length === 0
       && !sessionLastActivity[currentSessionKey]
@@ -1272,8 +1282,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
     // This mirrors the "leavingEmpty" logic in switchSession so that creating
     // a new session and immediately navigating away doesn't leave a ghost entry
     // in the sidebar.
-    // 同样需要综合检查 sessionLastActivity 和 sessionLabels，
-    // 防止因为 switchSession 抢先清空 messages 而误判有历史的会话为空。
+    // Also check sessionLastActivity and sessionLabels comprehensively to prevent
+    // falsely treating sessions with history as empty due to switchSession clearing messages early.
     const isEmptyNonMain = !currentSessionKey.endsWith(':main')
       && messages.length === 0
       && !sessionLastActivity[currentSessionKey]
@@ -1307,8 +1317,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
     if (!quiet) set({ loading: true, error: null });
 
-    // 安全保护：如果历史记录加载花费太多时间，则强制将 loading 设置为 false
-    // 防止 UI 永远卡在转圈状态。
+    // Safety guard: if history loading takes too long, force loading to false
+    // to prevent the UI from being stuck in a spinner forever.
     let loadingTimedOut = false;
     const loadingSafetyTimer = quiet ? null : setTimeout(() => {
       loadingTimedOut = true;
@@ -1494,7 +1504,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
     try {
       await loadPromise;
     } finally {
-      // 正常完成时清除安全定时器
+      // Clear the safety timer on normal completion
       if (loadingSafetyTimer) clearTimeout(loadingSafetyTimer);
       if (!loadingTimedOut) {
         // Only update load time if we actually didn't time out
@@ -1674,14 +1684,26 @@ export const useChatStore = create<ChatState>((set, get) => ({
       console.log(`[sendMessage] RPC result: success=${result.success}, runId=${result.result?.runId || 'none'}`);
 
       if (!result.success) {
-        clearHistoryPoll();
-        set({ error: result.error || 'Failed to send message', sending: false });
+        const errorMsg = result.error || 'Failed to send message';
+        if (isRecoverableChatSendTimeout(errorMsg)) {
+          console.warn(`[sendMessage] Recoverable chat.send timeout, keeping poll alive: ${errorMsg}`);
+          set({ error: errorMsg });
+        } else {
+          clearHistoryPoll();
+          set({ error: errorMsg, sending: false });
+        }
       } else if (result.result?.runId) {
         set({ activeRunId: result.result.runId });
       }
     } catch (err) {
-      clearHistoryPoll();
-      set({ error: String(err), sending: false });
+      const errStr = String(err);
+      if (isRecoverableChatSendTimeout(errStr)) {
+        console.warn(`[sendMessage] Recoverable chat.send timeout, keeping poll alive: ${errStr}`);
+        set({ error: errStr });
+      } else {
+        clearHistoryPoll();
+        set({ error: errStr, sending: false });
+      }
     }
   },
 
@@ -1760,11 +1782,11 @@ export const useChatStore = create<ChatState>((set, get) => ({
         break;
       }
       case 'delta': {
-        // If we're receiving new deltas, the Gateway has recovered from any
-        // prior error — cancel the error finalization timer and clear the
-        // stale error banner so the user sees the live stream again.
+        // Clear any stale error (including RPC timeout) when new data arrives.
         if (_errorRecoveryTimer) {
           clearErrorRecoveryTimer();
+        }
+        if (get().error) {
           set({ error: null });
         }
         const updates = collectToolUpdates(event.message, resolvedState);

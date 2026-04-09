@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   getDeferredRestartAction,
+  getReconnectScheduleDecision,
   getReconnectSkipReason,
   isLifecycleSuperseded,
   nextLifecycleEpoch,
@@ -107,6 +108,67 @@ describe('gateway process policy helpers', () => {
           shouldReconnect: false,
         })
       ).toBe('drop');
+    });
+  });
+
+  describe('getReconnectScheduleDecision', () => {
+    const baseContext = {
+      shouldReconnect: true,
+      hasReconnectTimer: false,
+      reconnectAttempts: 0,
+      maxAttempts: 10,
+      baseDelay: 1000,
+      maxDelay: 30000,
+    };
+
+    it('skips reconnect when shouldReconnect is false (intentional stop)', () => {
+      const decision = getReconnectScheduleDecision({
+        ...baseContext,
+        shouldReconnect: false,
+      });
+      expect(decision).toEqual({ action: 'skip', reason: 'auto-reconnect disabled' });
+    });
+
+    it('returns already-scheduled when a reconnect timer exists (prevents double-scheduling)', () => {
+      const decision = getReconnectScheduleDecision({
+        ...baseContext,
+        hasReconnectTimer: true,
+      });
+      expect(decision).toEqual({ action: 'already-scheduled' });
+    });
+
+    it('fails when max reconnect attempts are exhausted', () => {
+      const decision = getReconnectScheduleDecision({
+        ...baseContext,
+        reconnectAttempts: 10,
+        maxAttempts: 10,
+      });
+      expect(decision).toEqual({ action: 'fail', attempts: 10, maxAttempts: 10 });
+    });
+
+    it('schedules reconnect with exponential backoff delay', () => {
+      const decision = getReconnectScheduleDecision({
+        ...baseContext,
+        reconnectAttempts: 0,
+      });
+      expect(decision).toEqual({
+        action: 'schedule',
+        nextAttempt: 1,
+        maxAttempts: 10,
+        delay: 1000,
+      });
+    });
+
+    it('caps backoff delay at maxDelay', () => {
+      const decision = getReconnectScheduleDecision({
+        ...baseContext,
+        reconnectAttempts: 8,
+        maxDelay: 30000,
+      });
+      expect(decision).toMatchObject({ action: 'schedule' });
+      if (decision.action === 'schedule') {
+        expect(decision.delay).toBeLessThanOrEqual(30000);
+      }
     });
   });
 });
