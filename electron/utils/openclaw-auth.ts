@@ -1772,35 +1772,35 @@ export async function sanitizeOpenClawConfig(): Promise<void> {
 
     // ── channels default-account migration and cleanup ─────────────
     // Most OpenClaw channel plugins/built-ins read the default account's
-    // credentials from the top level of `channels.<type>` (e.g.
-    // channels.feishu.appId).  Mirror them there so the runtime can
-    // discover them.
-    // Channels with strict JSON schemas (additionalProperties: false),
-    // such as dingtalk, MUST NOT get mirrored — actively REMOVE stale
-    // credentials from the top level so they don't crash the Gateway.
+    // credentials from the top level of `channels.<type>`.  Mirror them
+    // there so the runtime can discover them.
+    //
+    // Strict-schema channels (e.g. dingtalk, additionalProperties:false)
+    // reject the `accounts` / `defaultAccount` keys entirely — strip them
+    // so the Gateway doesn't crash on startup.
     const channelsObj = config.channels as Record<string, Record<string, unknown>> | undefined;
     const CHANNELS_EXCLUDING_TOP_LEVEL_MIRROR = new Set(['dingtalk']);
-    const VALID_TOP_LEVEL_KEYS = new Set(['accounts', 'defaultAccount', 'enabled', 'groupPolicy', 'dmPolicy']);
 
     if (channelsObj && typeof channelsObj === 'object') {
       for (const [channelType, section] of Object.entries(channelsObj)) {
         if (!section || typeof section !== 'object') continue;
-        const accounts = section.accounts as Record<string, Record<string, unknown>> | undefined;
 
         if (CHANNELS_EXCLUDING_TOP_LEVEL_MIRROR.has(channelType)) {
-          // Strict schema channel: prune stale credentials leaked to the top level.
-          // Only do this if `accounts` exists, which means the config was correctly migrated.
-          if (accounts && typeof accounts === 'object') {
-            for (const key of Object.keys(section)) {
-              if (!VALID_TOP_LEVEL_KEYS.has(key)) {
-                delete section[key];
-                modified = true;
-                console.log(`[sanitize] Removed stale non-schema key "${key}" from top-level channels.${channelType}`);
-              }
-            }
+          // Strict-schema channel: strip `accounts` and `defaultAccount`.
+          // Credentials should live flat at the channel root.
+          if ('accounts' in section) {
+            delete section['accounts'];
+            modified = true;
+            console.log(`[sanitize] Removed incompatible 'accounts' from channels.${channelType}`);
+          }
+          if ('defaultAccount' in section) {
+            delete section['defaultAccount'];
+            modified = true;
+            console.log(`[sanitize] Removed incompatible 'defaultAccount' from channels.${channelType}`);
           }
         } else {
-          // Mirror each missing key from the default account to the top level
+          // Normal channel: mirror missing keys from default account to top level.
+          const accounts = section.accounts as Record<string, Record<string, unknown>> | undefined;
           const defaultAccountId =
             typeof section.defaultAccount === 'string' && section.defaultAccount.trim()
                 ? section.defaultAccount

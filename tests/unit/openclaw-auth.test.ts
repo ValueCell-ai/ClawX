@@ -455,7 +455,7 @@ describe('sanitizeOpenClawConfig', () => {
     expect(telegram.botToken).toBe('telegram-token');
   });
 
-  it('prunes stale non-schema keys from dingtalk top level during sanitize', async () => {
+  it('strips accounts/defaultAccount from dingtalk (strict-schema channel) during sanitize', async () => {
     await writeOpenClawJson({
       channels: {
         dingtalk: {
@@ -463,13 +463,13 @@ describe('sanitizeOpenClawConfig', () => {
           defaultAccount: 'default',
           accounts: {
             default: {
-              clientId: 'dt-client-id',
-              clientSecret: 'dt-secret',
+              clientId: 'dt-client-id-nested',
+              clientSecret: 'dt-secret-nested',
               enabled: true,
             },
           },
-          clientId: 'leaked-client-id',
-          clientSecret: 'leaked-secret',
+          clientId: 'dt-client-id',
+          clientSecret: 'dt-secret',
         },
       },
     });
@@ -480,11 +480,13 @@ describe('sanitizeOpenClawConfig', () => {
     const result = await readOpenClawJson();
     const channels = result.channels as Record<string, Record<string, unknown>>;
     const dingtalk = channels.dingtalk;
-    // dingtalk IS in the exclude set (strict schema) — stale keys must be pruned
+    // dingtalk's strict schema rejects accounts/defaultAccount — they must be stripped
     expect(dingtalk.enabled).toBe(true);
-    expect(dingtalk.accounts).toBeDefined();
-    expect(dingtalk.clientId).toBeUndefined();
-    expect(dingtalk.clientSecret).toBeUndefined();
+    expect(dingtalk.accounts).toBeUndefined();
+    expect(dingtalk.defaultAccount).toBeUndefined();
+    // Top-level credentials must be preserved
+    expect(dingtalk.clientId).toBe('dt-client-id');
+    expect(dingtalk.clientSecret).toBe('dt-secret');
   });
 });
 
