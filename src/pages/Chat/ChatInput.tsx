@@ -7,7 +7,7 @@
  * are sent with the message (no base64 over WebSocket).
  */
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
-import { SendHorizontal, Square, X, Paperclip, FileText, Film, Music, FileArchive, File, Loader2, AtSign } from 'lucide-react';
+import { SendHorizontal, Square, X, Paperclip, FileText, Film, Music, FileArchive, File, Loader2, AtSign, ChevronDown, ChevronUp } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { hostApiFetch } from '@/lib/host-api';
@@ -90,6 +90,7 @@ export function ChatInput({ onSend, onStop, disabled = false, sending = false, i
   const [attachments, setAttachments] = useState<FileAttachment[]>([]);
   const [targetAgentId, setTargetAgentId] = useState<string | null>(null);
   const [pickerOpen, setPickerOpen] = useState(false);
+  const [inputExpanded, setInputExpanded] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const pickerRef = useRef<HTMLDivElement>(null);
   const isComposingRef = useRef(false);
@@ -110,13 +111,14 @@ export function ChatInput({ onSend, onStop, disabled = false, sending = false, i
   );
   const showAgentPicker = mentionableAgents.length > 0;
 
-  // Auto-resize textarea
+  // Auto-resize textarea (respects expanded mode cap)
+  const maxInputHeight = inputExpanded ? 500 : 200;
   useEffect(() => {
     if (textareaRef.current) {
       textareaRef.current.style.height = 'auto';
-      textareaRef.current.style.height = `${Math.min(textareaRef.current.scrollHeight, 200)}px`;
+      textareaRef.current.style.height = `${Math.min(textareaRef.current.scrollHeight, maxInputHeight)}px`;
     }
-  }, [input]);
+  }, [input, maxInputHeight]);
 
   // Focus textarea on mount (avoids Windows focus loss after session delete + native dialog)
   useEffect(() => {
@@ -491,10 +493,29 @@ export function ChatInput({ onSend, onStop, disabled = false, sending = false, i
                 onPaste={handlePaste}
                 placeholder={disabled ? t('composer.gatewayDisconnectedPlaceholder') : ''}
                 disabled={disabled}
-                className="min-h-[40px] max-h-[200px] resize-none border-0 focus-visible:ring-0 focus-visible:ring-offset-0 shadow-none bg-transparent py-2.5 px-2 text-[15px] placeholder:text-muted-foreground/60 leading-relaxed"
+                className={cn(
+                  "min-h-[40px] resize-none border-0 focus-visible:ring-0 focus-visible:ring-offset-0 shadow-none bg-transparent py-2.5 px-2 text-[15px] placeholder:text-muted-foreground/60 leading-relaxed transition-all duration-200",
+                  inputExpanded ? "max-h-[500px]" : "max-h-[200px]"
+                )}
                 rows={1}
               />
             </div>
+
+            {/* Expand / Collapse Button */}
+            <Button
+              onClick={() => setInputExpanded((v) => !v)}
+              size="icon"
+              className="shrink-0 h-10 w-10 rounded-full transition-colors text-muted-foreground/50 hover:text-foreground hover:bg-black/5 dark:hover:bg-white/10 bg-transparent"
+              variant="ghost"
+              title={inputExpanded ? t('composer.collapseInput', 'Collapse input') : t('composer.expandInput', 'Expand input')}
+              tabIndex={-1}
+            >
+              {inputExpanded ? (
+                <ChevronDown className="h-[18px] w-[18px]" strokeWidth={2} />
+              ) : (
+                <ChevronUp className="h-[18px] w-[18px]" strokeWidth={2} />
+              )}
+            </Button>
 
             {/* Send Button */}
             <Button
