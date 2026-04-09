@@ -6,6 +6,7 @@ import { create } from 'zustand';
 import type {
   ProviderAccount,
   ProviderConfig,
+  ProviderProfileState,
   ProviderVendorInfo,
   ProviderWithKeyInfo,
 } from '@/lib/providers';
@@ -18,6 +19,7 @@ import {
 export type {
   ProviderAccount,
   ProviderConfig,
+  ProviderProfileState,
   ProviderVendorInfo,
   ProviderWithKeyInfo,
 } from '@/lib/providers';
@@ -25,6 +27,7 @@ export type { ProviderSnapshot } from '@/lib/provider-accounts';
 
 interface ProviderState {
   statuses: ProviderWithKeyInfo[];
+  profileStates: ProviderProfileState[];
   accounts: ProviderAccount[];
   vendors: ProviderVendorInfo[];
   defaultAccountId: string | null;
@@ -70,6 +73,7 @@ interface ProviderState {
 
 export const useProviderStore = create<ProviderState>((set, get) => ({
   statuses: [],
+  profileStates: [],
   accounts: [],
   vendors: [],
   defaultAccountId: null,
@@ -88,6 +92,7 @@ export const useProviderStore = create<ProviderState>((set, get) => ({
       
       set({ 
         statuses: snapshot.statuses ?? [],
+        profileStates: snapshot.profileStates ?? [],
         accounts: snapshot.accounts ?? [],
         vendors: snapshot.vendors ?? [],
         defaultAccountId: snapshot.defaultAccountId ?? null,

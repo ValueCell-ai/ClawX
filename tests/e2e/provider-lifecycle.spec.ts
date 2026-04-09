@@ -62,4 +62,17 @@ test.describe('ClawX provider lifecycle', () => {
       await relaunchedApp.close();
     }
   });
+
+  test('shows profile lifecycle status and priority controls', async ({ page }) => {
+    await completeSetup(page);
+    await seedTestProvider(page);
+
+    await page.getByTestId('sidebar-nav-models').click();
+    const card = page.getByTestId(`provider-card-${TEST_PROVIDER_ID}`);
+    await expect(card).toContainText('active');
+
+    await card.hover();
+    await expect(page.getByTestId(`provider-priority-up-${TEST_PROVIDER_ID}`)).toBeVisible();
+    await expect(page.getByTestId(`provider-priority-down-${TEST_PROVIDER_ID}`)).toBeVisible();
+  });
 });

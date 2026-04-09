@@ -1,6 +1,7 @@
 import { hostApiFetch } from '@/lib/host-api';
 import type {
   ProviderAccount,
+  ProviderProfileState,
   ProviderType,
   ProviderVendorInfo,
   ProviderWithKeyInfo,
@@ -9,6 +10,7 @@ import type {
 export interface ProviderSnapshot {
   accounts: ProviderAccount[];
   statuses: ProviderWithKeyInfo[];
+  profileStates: ProviderProfileState[];
   vendors: ProviderVendorInfo[];
   defaultAccountId: string | null;
 }
@@ -20,9 +22,10 @@ export interface ProviderListItem {
 }
 
 export async function fetchProviderSnapshot(): Promise<ProviderSnapshot> {
-  const [accounts, statuses, vendors, defaultInfo] = await Promise.all([
+  const [accounts, statuses, profileStates, vendors, defaultInfo] = await Promise.all([
     hostApiFetch<ProviderAccount[]>('/api/provider-accounts'),
     hostApiFetch<ProviderWithKeyInfo[]>('/api/providers'),
+    hostApiFetch<ProviderProfileState[]>('/api/provider-profiles'),
     hostApiFetch<ProviderVendorInfo[]>('/api/provider-vendors'),
     hostApiFetch<{ accountId: string | null }>('/api/provider-accounts/default'),
   ]);
@@ -30,6 +33,7 @@ export async function fetchProviderSnapshot(): Promise<ProviderSnapshot> {
   return {
     accounts,
     statuses,
+    profileStates,
     vendors,
     defaultAccountId: defaultInfo.accountId,
   };

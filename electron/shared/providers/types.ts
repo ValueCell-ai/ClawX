@@ -116,6 +116,7 @@ export interface ProviderAccount {
   id: string;
   vendorId: ProviderType;
   label: string;
+  priority?: number;
   authMode: ProviderAuthMode;
   baseUrl?: string;
   apiProtocol?: ProviderProtocol;
@@ -132,6 +133,19 @@ export interface ProviderAccount {
     customModels?: string[];
   };
   createdAt: string;
+  updatedAt: string;
+}
+
+export type ProviderProfileStatus = 'active' | 'failed' | 'expired' | 'cooldown';
+
+export interface ProviderProfileState {
+  accountId: string;
+  providerKey: string;
+  priority: number;
+  status: ProviderProfileStatus;
+  cooldownUntil?: number;
+  failureCount: number;
+  lastFailureReason?: string;
   updatedAt: string;
 }
 

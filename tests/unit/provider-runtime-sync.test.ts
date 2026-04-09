@@ -166,7 +166,11 @@ describe('provider-runtime-sync refresh strategy', () => {
 
     await syncDeletedProviderApiKeyToRuntime(openaiProvider, 'openai-personal');
 
-    expect(mocks.removeProviderKeyFromOpenClaw).toHaveBeenCalledWith('openai');
+    expect(mocks.removeProviderKeyFromOpenClaw).toHaveBeenCalledWith(
+      'openai',
+      undefined,
+      { profileId: 'openai:openai-personal' },
+    );
     expect(mocks.removeProviderFromOpenClaw).not.toHaveBeenCalled();
   });
 
