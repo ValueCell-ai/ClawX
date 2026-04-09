@@ -21,6 +21,7 @@ import { Trinity } from './pages/Trinity';
 import { useSettingsStore } from './stores/settings';
 import { useGatewayStore } from './stores/gateway';
 import { useProviderStore } from './stores/providers';
+import { useChatStore } from './stores/chat';
 import { applyGatewayTransportPreference } from './lib/api-client';
 
 
@@ -131,7 +132,14 @@ function App() {
     const handleNavigate = (...args: unknown[]) => {
       const path = args[0];
       if (typeof path === 'string') {
-        navigate(path);
+        // Special case: '/new-chat' creates a new session then navigates to root
+        if (path === '/new-chat') {
+          const { messages, newSession } = useChatStore.getState();
+          if (messages.length > 0) newSession();
+          navigate('/');
+        } else {
+          navigate(path);
+        }
       }
     };
 
