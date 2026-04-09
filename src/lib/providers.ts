@@ -246,9 +246,13 @@ export function resolveProviderModelForSave(
   return trimmedModelId || provider?.defaultModelId || undefined;
 }
 
+export function normalizeProviderApiKeyInput(apiKey: string): string {
+  return apiKey.trim();
+}
+
 /** Normalize provider API key before saving; Ollama uses a local placeholder when blank. */
 export function resolveProviderApiKeyForSave(type: ProviderType | string, apiKey: string): string | undefined {
-  const trimmed = apiKey.trim();
+  const trimmed = normalizeProviderApiKeyInput(apiKey);
   if (type === 'ollama') {
     return trimmed || OLLAMA_PLACEHOLDER_API_KEY;
   }

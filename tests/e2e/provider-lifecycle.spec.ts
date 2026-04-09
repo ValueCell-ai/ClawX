@@ -62,4 +62,83 @@ test.describe('ClawX provider lifecycle', () => {
       await relaunchedApp.close();
     }
   });
+
+  test('trims whitespace before validating and saving a custom provider key', async ({ electronApp, page }) => {
+    await completeSetup(page);
+
+    await electronApp.evaluate(async ({ app: _app }) => {
+      const { ipcMain } = process.mainModule!.require('electron') as typeof import('electron');
+
+      let accounts: Array<Record<string, unknown>> = [];
+      let statuses: Array<Record<string, unknown>> = [];
+      let defaultAccountId: string | null = null;
+
+      const respond = (json: unknown, status = 200) => ({
+        ok: true,
+        data: {
+          status,
+          ok: status >= 200 && status < 300,
+          json,
+        },
+      });
+
+      ipcMain.removeHandler('hostapi:fetch');
+      ipcMain.handle('hostapi:fetch', async (_event: unknown, request: { path?: string; method?: string; body?: string | null }) => {
+        const path = request?.path ?? '';
+        const method = request?.method ?? 'GET';
+        const body = request?.body ? JSON.parse(request.body) : null;
+
+        if (path === '/api/provider-accounts' && method === 'GET') return respond(accounts);
+        if (path === '/api/providers' && method === 'GET') return respond(statuses);
+        if (path === '/api/provider-vendors' && method === 'GET') return respond([]);
+        if (path === '/api/provider-accounts/default' && method === 'GET') return respond({ accountId: defaultAccountId });
+
+        if (path === '/api/providers/validate' && method === 'POST') {
+          if (body?.apiKey !== 'sk-lm-test') {
+            return respond({ valid: false, error: `unexpected key: ${String(body?.apiKey)}` }, 400);
+          }
+          return respond({ valid: true });
+        }
+
+        if (path === '/api/provider-accounts' && method === 'POST') {
+          accounts = [body.account];
+          statuses = [{
+            id: body.account.id,
+            name: body.account.label,
+            type: body.account.vendorId,
+            baseUrl: body.account.baseUrl,
+            model: body.account.model,
+            enabled: body.account.enabled,
+            createdAt: body.account.createdAt,
+            updatedAt: body.account.updatedAt,
+            hasKey: Boolean(body.apiKey),
+            keyMasked: body.apiKey ? 'sk-***' : null,
+          }];
+          return respond({ success: true });
+        }
+
+        if (path === '/api/provider-accounts/default' && method === 'PUT') {
+          defaultAccountId = body?.accountId ?? null;
+          return respond({ success: true });
+        }
+
+        return respond({});
+      });
+    });
+
+    await page.getByTestId('sidebar-nav-models').click();
+    await expect(page.getByTestId('providers-settings')).toBeVisible();
+
+    await page.getByTestId('providers-add-button').click();
+    await expect(page.getByTestId('add-provider-dialog')).toBeVisible();
+
+    await page.getByTestId('add-provider-type-custom').click();
+    await page.getByTestId('add-provider-name-input').fill('LM Studio Local');
+    await page.getByTestId('add-provider-api-key-input').fill('  sk-lm-test \n');
+    await page.getByTestId('add-provider-base-url-input').fill('http://127.0.0.1:1234/v1');
+    await page.getByTestId('add-provider-model-id-input').fill('local-model');
+    await page.getByTestId('add-provider-submit-button').click();
+
+    await expect(page.getByTestId('provider-card-custom')).toContainText('LM Studio Local');
+  });
 });

@@ -99,6 +99,7 @@ import {
   type ProviderTypeInfo,
   getProviderDocsUrl,
   getProviderIconUrl,
+  normalizeProviderApiKeyInput,
   resolveProviderApiKeyForSave,
   resolveProviderModelForSave,
   shouldInvertInDark,
@@ -1034,11 +1035,12 @@ function ProviderContent({
     try {
       // Validate key if the provider requires one and a key was entered
       const isApiKeyRequired = requiresKey || (supportsApiKey && authMode === 'apikey');
-      if (isApiKeyRequired && apiKey) {
+      const normalizedApiKey = normalizeProviderApiKeyInput(apiKey);
+      if (isApiKeyRequired && normalizedApiKey) {
         const result = await invokeIpc(
           'provider:validateKey',
           selectedAccountId || selectedProvider,
-          apiKey,
+          normalizedApiKey,
           {
             baseUrl: baseUrl.trim() || undefined,
             apiProtocol: (selectedProvider === 'custom' || selectedProvider === 'ollama')
