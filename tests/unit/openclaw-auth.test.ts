@@ -426,6 +426,34 @@ describe('sanitizeOpenClawConfig', () => {
     expect(moonshot).not.toHaveProperty('apiKey');
     expect(moonshot.baseUrl).toBe('https://api.moonshot.cn/v1');
   });
+
+  it('preserves channels.telegram.proxy during sanitize', async () => {
+    await writeOpenClawJson({
+      channels: {
+        telegram: {
+          enabled: true,
+          defaultAccount: 'default',
+          accounts: {
+            default: {
+              botToken: 'telegram-token',
+              enabled: true,
+            },
+          },
+          proxy: 'socks5://127.0.0.1:7891',
+          staleLegacyField: 'should-be-removed',
+        },
+      },
+    });
+
+    const { sanitizeOpenClawConfig } = await import('@electron/utils/openclaw-auth');
+    await sanitizeOpenClawConfig();
+
+    const result = await readOpenClawJson();
+    const channels = result.channels as Record<string, Record<string, unknown>>;
+    const telegram = channels.telegram;
+    expect(telegram.proxy).toBe('socks5://127.0.0.1:7891');
+    expect(telegram.staleLegacyField).toBeUndefined();
+  });
 });
 
 describe('syncProviderConfigToOpenClaw', () => {

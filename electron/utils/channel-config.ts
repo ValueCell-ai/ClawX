@@ -26,6 +26,10 @@ const WECOM_PLUGIN_ID = 'wecom';
 const WECHAT_PLUGIN_ID = OPENCLAW_WECHAT_CHANNEL_TYPE;
 const FEISHU_PLUGIN_ID_CANDIDATES = ['openclaw-lark', 'feishu-openclaw-plugin'] as const;
 const DEFAULT_ACCOUNT_ID = 'default';
+// Channels whose plugin/runtime still reads credentials from the top level
+// of `channels.<type>` instead of from `accounts.<accountId>`.  Only these
+// get the "mirror default account to top level" treatment in saveChannelConfig.
+const CHANNELS_REQUIRING_TOP_LEVEL_MIRROR = new Set(['feishu', 'wecom']);
 const CHANNEL_TOP_LEVEL_KEYS_TO_KEEP = new Set(['accounts', 'defaultAccount', 'enabled']);
 const WECHAT_STATE_DIR = join(OPENCLAW_DIR, WECHAT_PLUGIN_ID);
 const WECHAT_ACCOUNT_INDEX_FILE = join(WECHAT_STATE_DIR, 'accounts.json');
@@ -765,23 +769,23 @@ export async function saveChannelConfig(
             enabled: transformedConfig.enabled ?? true,
         };
 
-        // Most OpenClaw channel plugins read the default account's credentials
-        // from the top level of `channels.<type>` (e.g. channels.feishu.appId),
-        // not from `accounts.default`.  Mirror them there so plugins can discover
-        // the credentials correctly.
-        // This MUST run unconditionally (not just when saving the default account)
-        // because migrateLegacyChannelConfigToAccounts() above strips top-level
-        // credential keys on every invocation.  Without this, saving a non-default
-        // account (e.g. a sub-agent's Feishu bot) leaves the top-level credentials
-        // missing, breaking plugins that only read from the top level.
-        const mirroredAccountId =
-            typeof channelSection.defaultAccount === 'string' && channelSection.defaultAccount.trim()
-                ? channelSection.defaultAccount
-                : resolvedAccountId;
-        const defaultAccountData = accounts[mirroredAccountId] ?? accounts[resolvedAccountId] ?? accounts[DEFAULT_ACCOUNT_ID];
-        if (defaultAccountData) {
-            for (const [key, value] of Object.entries(defaultAccountData)) {
-                channelSection[key] = value;
+        // Some OpenClaw channel plugins (feishu, wecom) read the default
+        // account's credentials from the top level of `channels.<type>`
+        // (e.g. channels.feishu.appId), not from `accounts.default`.
+        // Mirror them there so those plugins can discover the credentials.
+        // Channels with strict schemas (e.g. dingtalk has
+        // additionalProperties:false) MUST NOT get mirrored, otherwise the
+        // Gateway rejects the config on startup.
+        if (CHANNELS_REQUIRING_TOP_LEVEL_MIRROR.has(resolvedChannelType)) {
+            const mirroredAccountId =
+                typeof channelSection.defaultAccount === 'string' && channelSection.defaultAccount.trim()
+                    ? channelSection.defaultAccount
+                    : resolvedAccountId;
+            const defaultAccountData = accounts[mirroredAccountId] ?? accounts[resolvedAccountId] ?? accounts[DEFAULT_ACCOUNT_ID];
+            if (defaultAccountData) {
+                for (const [key, value] of Object.entries(defaultAccountData)) {
+                    channelSection[key] = value;
+                }
             }
         }
 
@@ -883,7 +887,18 @@ export async function deleteChannelAccountConfig(channelType: string, accountId:
 
         migrateLegacyChannelConfigToAccounts(channelSection, DEFAULT_ACCOUNT_ID);
         const accounts = getChannelAccountsMap(channelSection);
-        if (!accounts?.[accountId]) return;
+        if (!accounts?.[accountId]) {
+            if (CHANNELS_REQUIRING_TOP_LEVEL_MIRROR.has(resolvedChannelType)) {
+                const mirroredAccountId = typeof channelSection.defaultAccount === 'string' && channelSection.defaultAccount.trim() ? channelSection.defaultAccount : DEFAULT_ACCOUNT_ID;
+                const defaultAccountData = accounts?.[mirroredAccountId] ?? accounts?.[DEFAULT_ACCOUNT_ID];
+                if (defaultAccountData) {
+                    for (const [key, value] of Object.entries(defaultAccountData)) {
+                        channelSection[key] = value;
+                    }
+                }
+            }
+            return;
+        }
 
         delete accounts[accountId];
 
@@ -905,14 +920,16 @@ export async function deleteChannelAccountConfig(channelType: string, accountId:
             }
             // Re-mirror default account credentials to top level after migration
             // stripped them (same rationale as saveChannelConfig).
-            const mirroredAccountId =
-                typeof channelSection.defaultAccount === 'string' && channelSection.defaultAccount.trim()
-                    ? channelSection.defaultAccount
-                    : DEFAULT_ACCOUNT_ID;
-            const defaultAccountData = accounts[mirroredAccountId] ?? accounts[DEFAULT_ACCOUNT_ID];
-            if (defaultAccountData) {
-                for (const [key, value] of Object.entries(defaultAccountData)) {
-                    channelSection[key] = value;
+            if (CHANNELS_REQUIRING_TOP_LEVEL_MIRROR.has(resolvedChannelType)) {
+                const mirroredAccountId =
+                    typeof channelSection.defaultAccount === 'string' && channelSection.defaultAccount.trim()
+                        ? channelSection.defaultAccount
+                        : DEFAULT_ACCOUNT_ID;
+                const defaultAccountData = accounts[mirroredAccountId] ?? accounts[DEFAULT_ACCOUNT_ID];
+                if (defaultAccountData) {
+                    for (const [key, value] of Object.entries(defaultAccountData)) {
+                        channelSection[key] = value;
+                    }
                 }
             }
         }
@@ -1104,9 +1121,11 @@ export async function setChannelDefaultAccount(channelType: string, accountId: s
 
         channelSection.defaultAccount = trimmedAccountId;
 
-        const defaultAccountData = accounts[trimmedAccountId];
-        for (const [key, value] of Object.entries(defaultAccountData)) {
-            channelSection[key] = value;
+        if (CHANNELS_REQUIRING_TOP_LEVEL_MIRROR.has(resolvedChannelType)) {
+            const defaultAccountData = accounts[trimmedAccountId];
+            for (const [key, value] of Object.entries(defaultAccountData)) {
+                channelSection[key] = value;
+            }
         }
 
         await writeOpenClawConfig(currentConfig);
@@ -1126,8 +1145,16 @@ export async function deleteAgentChannelAccounts(agentId: string, ownedChannelAc
             const section = currentConfig.channels[channelType];
             migrateLegacyChannelConfigToAccounts(section, DEFAULT_ACCOUNT_ID);
             const accounts = getChannelAccountsMap(section);
-            if (!accounts?.[accountId]) continue;
-            if (ownedChannelAccounts && !ownedChannelAccounts.has(`${channelType}:${accountId}`)) {
+            if (!accounts?.[accountId] || (ownedChannelAccounts && !ownedChannelAccounts.has(`${channelType}:${accountId}`))) {
+                if (CHANNELS_REQUIRING_TOP_LEVEL_MIRROR.has(channelType)) {
+                    const mirroredAccountId = typeof section.defaultAccount === 'string' && section.defaultAccount.trim() ? section.defaultAccount : DEFAULT_ACCOUNT_ID;
+                    const defaultAccountData = accounts?.[mirroredAccountId] ?? accounts?.[DEFAULT_ACCOUNT_ID];
+                    if (defaultAccountData) {
+                        for (const [key, value] of Object.entries(defaultAccountData)) {
+                            section[key] = value;
+                        }
+                    }
+                }
                 continue;
             }
 
@@ -1147,14 +1174,16 @@ export async function deleteAgentChannelAccounts(agentId: string, ownedChannelAc
                 }
                 // Re-mirror default account credentials to top level after migration
                 // stripped them (same rationale as saveChannelConfig).
-                const mirroredAccountId =
-                    typeof section.defaultAccount === 'string' && section.defaultAccount.trim()
-                        ? section.defaultAccount
-                        : DEFAULT_ACCOUNT_ID;
-                const defaultAccountData = accounts[mirroredAccountId] ?? accounts[DEFAULT_ACCOUNT_ID];
-                if (defaultAccountData) {
-                    for (const [key, value] of Object.entries(defaultAccountData)) {
-                        section[key] = value;
+                if (CHANNELS_REQUIRING_TOP_LEVEL_MIRROR.has(channelType)) {
+                    const mirroredAccountId =
+                        typeof section.defaultAccount === 'string' && section.defaultAccount.trim()
+                            ? section.defaultAccount
+                            : DEFAULT_ACCOUNT_ID;
+                    const defaultAccountData = accounts[mirroredAccountId] ?? accounts[DEFAULT_ACCOUNT_ID];
+                    if (defaultAccountData) {
+                        for (const [key, value] of Object.entries(defaultAccountData)) {
+                            section[key] = value;
+                        }
                     }
                 }
             }
