@@ -26,10 +26,11 @@ const WECOM_PLUGIN_ID = 'wecom';
 const WECHAT_PLUGIN_ID = OPENCLAW_WECHAT_CHANNEL_TYPE;
 const FEISHU_PLUGIN_ID_CANDIDATES = ['openclaw-lark', 'feishu-openclaw-plugin'] as const;
 const DEFAULT_ACCOUNT_ID = 'default';
-// Channels whose plugin/runtime still reads credentials from the top level
-// of `channels.<type>` instead of from `accounts.<accountId>`.  Only these
-// get the "mirror default account to top level" treatment in saveChannelConfig.
-const CHANNELS_REQUIRING_TOP_LEVEL_MIRROR = new Set(['feishu', 'wecom']);
+// Channels whose plugin schema uses additionalProperties:false, meaning
+// credential keys MUST NOT appear at the top level of `channels.<type>`.
+// All other channels get the default account mirrored to the top level
+// so their runtime/plugin can discover the credentials.
+const CHANNELS_EXCLUDING_TOP_LEVEL_MIRROR = new Set(['dingtalk']);
 const CHANNEL_TOP_LEVEL_KEYS_TO_KEEP = new Set(['accounts', 'defaultAccount', 'enabled']);
 const WECHAT_STATE_DIR = join(OPENCLAW_DIR, WECHAT_PLUGIN_ID);
 const WECHAT_ACCOUNT_INDEX_FILE = join(WECHAT_STATE_DIR, 'accounts.json');
@@ -768,19 +769,15 @@ export async function saveChannelConfig(
             ...transformedConfig,
             enabled: transformedConfig.enabled ?? true,
         };
-        // Keep channel-level enabled explicit so built-in channels that no longer
-        // receive top-level credential mirroring (e.g. whatsapp) still expose a
-        // stable channels.<type>.enabled flag for existing callers/tests.
-        channelSection.enabled = transformedConfig.enabled ?? channelSection.enabled ?? true;
 
-        // Some OpenClaw channel plugins (feishu, wecom) read the default
-        // account's credentials from the top level of `channels.<type>`
-        // (e.g. channels.feishu.appId), not from `accounts.default`.
-        // Mirror them there so those plugins can discover the credentials.
+        // Most OpenClaw channel plugins/built-ins read the default account's
+        // credentials from the top level of `channels.<type>` (e.g.
+        // channels.feishu.appId), not from `accounts.default`.
+        // Mirror them there so the runtime can discover the credentials.
         // Channels with strict schemas (e.g. dingtalk has
         // additionalProperties:false) MUST NOT get mirrored, otherwise the
         // Gateway rejects the config on startup.
-        if (CHANNELS_REQUIRING_TOP_LEVEL_MIRROR.has(resolvedChannelType)) {
+        if (!CHANNELS_EXCLUDING_TOP_LEVEL_MIRROR.has(resolvedChannelType)) {
             const mirroredAccountId =
                 typeof channelSection.defaultAccount === 'string' && channelSection.defaultAccount.trim()
                     ? channelSection.defaultAccount
@@ -892,7 +889,7 @@ export async function deleteChannelAccountConfig(channelType: string, accountId:
         migrateLegacyChannelConfigToAccounts(channelSection, DEFAULT_ACCOUNT_ID);
         const accounts = getChannelAccountsMap(channelSection);
         if (!accounts?.[accountId]) {
-            if (CHANNELS_REQUIRING_TOP_LEVEL_MIRROR.has(resolvedChannelType)) {
+            if (!CHANNELS_EXCLUDING_TOP_LEVEL_MIRROR.has(resolvedChannelType)) {
                 const mirroredAccountId = typeof channelSection.defaultAccount === 'string' && channelSection.defaultAccount.trim() ? channelSection.defaultAccount : DEFAULT_ACCOUNT_ID;
                 const defaultAccountData = accounts?.[mirroredAccountId] ?? accounts?.[DEFAULT_ACCOUNT_ID];
                 if (defaultAccountData) {
@@ -924,7 +921,7 @@ export async function deleteChannelAccountConfig(channelType: string, accountId:
             }
             // Re-mirror default account credentials to top level after migration
             // stripped them (same rationale as saveChannelConfig).
-            if (CHANNELS_REQUIRING_TOP_LEVEL_MIRROR.has(resolvedChannelType)) {
+            if (!CHANNELS_EXCLUDING_TOP_LEVEL_MIRROR.has(resolvedChannelType)) {
                 const mirroredAccountId =
                     typeof channelSection.defaultAccount === 'string' && channelSection.defaultAccount.trim()
                         ? channelSection.defaultAccount
@@ -1125,7 +1122,7 @@ export async function setChannelDefaultAccount(channelType: string, accountId: s
 
         channelSection.defaultAccount = trimmedAccountId;
 
-        if (CHANNELS_REQUIRING_TOP_LEVEL_MIRROR.has(resolvedChannelType)) {
+        if (!CHANNELS_EXCLUDING_TOP_LEVEL_MIRROR.has(resolvedChannelType)) {
             const defaultAccountData = accounts[trimmedAccountId];
             for (const [key, value] of Object.entries(defaultAccountData)) {
                 channelSection[key] = value;
@@ -1150,7 +1147,7 @@ export async function deleteAgentChannelAccounts(agentId: string, ownedChannelAc
             migrateLegacyChannelConfigToAccounts(section, DEFAULT_ACCOUNT_ID);
             const accounts = getChannelAccountsMap(section);
             if (!accounts?.[accountId] || (ownedChannelAccounts && !ownedChannelAccounts.has(`${channelType}:${accountId}`))) {
-                if (CHANNELS_REQUIRING_TOP_LEVEL_MIRROR.has(channelType)) {
+                if (!CHANNELS_EXCLUDING_TOP_LEVEL_MIRROR.has(channelType)) {
                     const mirroredAccountId = typeof section.defaultAccount === 'string' && section.defaultAccount.trim() ? section.defaultAccount : DEFAULT_ACCOUNT_ID;
                     const defaultAccountData = accounts?.[mirroredAccountId] ?? accounts?.[DEFAULT_ACCOUNT_ID];
                     if (defaultAccountData) {
@@ -1178,7 +1175,7 @@ export async function deleteAgentChannelAccounts(agentId: string, ownedChannelAc
                 }
                 // Re-mirror default account credentials to top level after migration
                 // stripped them (same rationale as saveChannelConfig).
-                if (CHANNELS_REQUIRING_TOP_LEVEL_MIRROR.has(channelType)) {
+                if (!CHANNELS_EXCLUDING_TOP_LEVEL_MIRROR.has(channelType)) {
                     const mirroredAccountId =
                         typeof section.defaultAccount === 'string' && section.defaultAccount.trim()
                             ? section.defaultAccount

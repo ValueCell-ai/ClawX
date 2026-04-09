@@ -427,7 +427,7 @@ describe('sanitizeOpenClawConfig', () => {
     expect(moonshot.baseUrl).toBe('https://api.moonshot.cn/v1');
   });
 
-  it('preserves channels.telegram.proxy during sanitize', async () => {
+  it('mirrors telegram default account credentials to top level during sanitize', async () => {
     await writeOpenClawJson({
       channels: {
         telegram: {
@@ -440,7 +440,6 @@ describe('sanitizeOpenClawConfig', () => {
             },
           },
           proxy: 'socks5://127.0.0.1:7891',
-          staleLegacyField: 'should-be-removed',
         },
       },
     });
@@ -451,8 +450,41 @@ describe('sanitizeOpenClawConfig', () => {
     const result = await readOpenClawJson();
     const channels = result.channels as Record<string, Record<string, unknown>>;
     const telegram = channels.telegram;
+    // telegram is NOT in the exclude set, so credentials are mirrored to top level
     expect(telegram.proxy).toBe('socks5://127.0.0.1:7891');
-    expect(telegram.staleLegacyField).toBeUndefined();
+    expect(telegram.botToken).toBe('telegram-token');
+  });
+
+  it('prunes stale non-schema keys from dingtalk top level during sanitize', async () => {
+    await writeOpenClawJson({
+      channels: {
+        dingtalk: {
+          enabled: true,
+          defaultAccount: 'default',
+          accounts: {
+            default: {
+              clientId: 'dt-client-id',
+              clientSecret: 'dt-secret',
+              enabled: true,
+            },
+          },
+          clientId: 'leaked-client-id',
+          clientSecret: 'leaked-secret',
+        },
+      },
+    });
+
+    const { sanitizeOpenClawConfig } = await import('@electron/utils/openclaw-auth');
+    await sanitizeOpenClawConfig();
+
+    const result = await readOpenClawJson();
+    const channels = result.channels as Record<string, Record<string, unknown>>;
+    const dingtalk = channels.dingtalk;
+    // dingtalk IS in the exclude set (strict schema) — stale keys must be pruned
+    expect(dingtalk.enabled).toBe(true);
+    expect(dingtalk.accounts).toBeDefined();
+    expect(dingtalk.clientId).toBeUndefined();
+    expect(dingtalk.clientSecret).toBeUndefined();
   });
 });
 

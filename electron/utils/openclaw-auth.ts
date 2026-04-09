@@ -1771,32 +1771,42 @@ export async function sanitizeOpenClawConfig(): Promise<void> {
     }
 
     // ── channels default-account migration and cleanup ─────────────
-    // Some OpenClaw channel plugins (feishu, wecom) read the default account's credentials
-    // from the top level of `channels.<type>` (e.g. channels.feishu.appId).
-    // Mirror them there so plugins can discover them.
-    // For other channels (dingtalk, qqbot, etc.) that have strict JSON schemas
-    // (additionalProperties: false), actively REMOVE stale credentials from the
-    // top level so they don't crash the Gateway on startup.
+    // Most OpenClaw channel plugins/built-ins read the default account's
+    // credentials from the top level of `channels.<type>` (e.g.
+    // channels.feishu.appId).  Mirror them there so the runtime can
+    // discover them.
+    // Channels with strict JSON schemas (additionalProperties: false),
+    // such as dingtalk, MUST NOT get mirrored — actively REMOVE stale
+    // credentials from the top level so they don't crash the Gateway.
     const channelsObj = config.channels as Record<string, Record<string, unknown>> | undefined;
-    const CHANNELS_REQUIRING_TOP_LEVEL_MIRROR = new Set(['feishu', 'wecom']);
+    const CHANNELS_EXCLUDING_TOP_LEVEL_MIRROR = new Set(['dingtalk']);
     const VALID_TOP_LEVEL_KEYS = new Set(['accounts', 'defaultAccount', 'enabled', 'groupPolicy', 'dmPolicy']);
-    const CHANNEL_EXTRA_ALLOWED_TOP_LEVEL_KEYS: Record<string, Set<string>> = {
-      telegram: new Set(['proxy']),
-    };
 
     if (channelsObj && typeof channelsObj === 'object') {
       for (const [channelType, section] of Object.entries(channelsObj)) {
         if (!section || typeof section !== 'object') continue;
         const accounts = section.accounts as Record<string, Record<string, unknown>> | undefined;
-        
-        if (CHANNELS_REQUIRING_TOP_LEVEL_MIRROR.has(channelType)) {
+
+        if (CHANNELS_EXCLUDING_TOP_LEVEL_MIRROR.has(channelType)) {
+          // Strict schema channel: prune stale credentials leaked to the top level.
+          // Only do this if `accounts` exists, which means the config was correctly migrated.
+          if (accounts && typeof accounts === 'object') {
+            for (const key of Object.keys(section)) {
+              if (!VALID_TOP_LEVEL_KEYS.has(key)) {
+                delete section[key];
+                modified = true;
+                console.log(`[sanitize] Removed stale non-schema key "${key}" from top-level channels.${channelType}`);
+              }
+            }
+          }
+        } else {
+          // Mirror each missing key from the default account to the top level
           const defaultAccountId =
             typeof section.defaultAccount === 'string' && section.defaultAccount.trim()
                 ? section.defaultAccount
                 : 'default';
           const defaultAccountData = accounts?.[defaultAccountId] ?? accounts?.['default'];
           if (!defaultAccountData || typeof defaultAccountData !== 'object') continue;
-          // Mirror each missing key from the default account to the top level
           let mirrored = false;
           for (const [key, value] of Object.entries(defaultAccountData)) {
             if (!(key in section)) {
@@ -1807,19 +1817,6 @@ export async function sanitizeOpenClawConfig(): Promise<void> {
           if (mirrored) {
             modified = true;
             console.log(`[sanitize] Mirrored ${channelType} default account credentials to top-level channels.${channelType}`);
-          }
-        } else {
-          // Strict schema channel: prune stale credentials leaked to the top level.
-          // Only do this if `accounts` exists, which means the config was correctly migrated.
-          if (accounts && typeof accounts === 'object') {
-            const extraAllowedTopLevelKeys = CHANNEL_EXTRA_ALLOWED_TOP_LEVEL_KEYS[channelType] ?? new Set<string>();
-            for (const key of Object.keys(section)) {
-              if (!VALID_TOP_LEVEL_KEYS.has(key) && !extraAllowedTopLevelKeys.has(key)) {
-                delete section[key];
-                modified = true;
-                console.log(`[sanitize] Removed stale non-schema key "${key}" from top-level channels.${channelType}`);
-              }
-            }
           }
         }
       }
