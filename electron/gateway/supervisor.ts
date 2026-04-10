@@ -284,6 +284,8 @@ export async function runOpenClawDoctorRepair(): Promise<boolean> {
 
   const uvEnv = await getUvMirrorEnv();
   const doctorArgs = ['doctor', '--fix', '--yes', '--non-interactive'];
+  const timeoutMs = 120000;
+  const lateExitGraceMs = 5000;
   logger.info(
     `Running OpenClaw doctor repair (entry="${entryScript}", args="${doctorArgs.join(' ')}", cwd="${openclawDir}", bundledBin=${binPathExists ? 'yes' : 'no'})`,
   );
@@ -302,24 +304,37 @@ export async function runOpenClawDoctorRepair(): Promise<boolean> {
     });
 
     let settled = false;
+    let softTimedOut = false;
     const finish = (ok: boolean) => {
       if (settled) return;
       settled = true;
+      clearTimeout(timeout);
+      if (hardTimeout) {
+        clearTimeout(hardTimeout);
+      }
       resolve(ok);
     };
 
     const timeout = setTimeout(() => {
-      logger.error('OpenClaw doctor repair timed out after 120000ms');
-      try {
-        child.kill();
-      } catch {
-        // ignore
-      }
-      finish(false);
-    }, 120000);
+      softTimedOut = true;
+      logger.error(
+        `OpenClaw doctor repair timed out after ${timeoutMs}ms; waiting up to ${lateExitGraceMs}ms for late success before terminating`,
+      );
+      hardTimeout = setTimeout(() => {
+        logger.error(
+          `OpenClaw doctor repair did not exit within ${lateExitGraceMs}ms grace period after timeout; terminating process`,
+        );
+        try {
+          child.kill();
+        } catch {
+          // ignore
+        }
+        finish(false);
+      }, lateExitGraceMs);
+    }, timeoutMs);
+    let hardTimeout: NodeJS.Timeout | null = null;
 
     child.on('error', (err) => {
-      clearTimeout(timeout);
       logger.error('Failed to spawn OpenClaw doctor repair process:', err);
       finish(false);
     });
@@ -343,11 +358,17 @@ export async function runOpenClawDoctorRepair(): Promise<boolean> {
     });
 
     child.on('exit', (code: number) => {
-      clearTimeout(timeout);
       if (code === 0) {
-        logger.info('OpenClaw doctor repair completed successfully');
+        if (softTimedOut) {
+          logger.info('OpenClaw doctor repair completed successfully after timeout grace');
+        } else {
+          logger.info('OpenClaw doctor repair completed successfully');
+        }
         finish(true);
         return;
+      }
+      if (softTimedOut) {
+        logger.warn(`OpenClaw doctor repair exited after timeout grace (code=${code})`);
       }
       logger.warn(`OpenClaw doctor repair exited (code=${code})`);
       finish(false);
