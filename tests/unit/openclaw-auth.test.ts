@@ -488,6 +488,99 @@ describe('sanitizeOpenClawConfig', () => {
     expect(dingtalk.clientId).toBe('dt-client-id');
     expect(dingtalk.clientSecret).toBe('dt-secret');
   });
+
+  it('disables invalid memory-lancedb plugin config and resets memory slot to memory-core', async () => {
+    await writeOpenClawJson({
+      plugins: {
+        slots: {
+          memory: 'memory-lancedb',
+        },
+        entries: {
+          'memory-lancedb': {
+            enabled: true,
+            config: {},
+          },
+        },
+      },
+    });
+
+    const { sanitizeOpenClawConfig } = await import('@electron/utils/openclaw-auth');
+    await sanitizeOpenClawConfig();
+
+    const result = await readOpenClawJson();
+    const plugins = result.plugins as Record<string, unknown>;
+    const slots = plugins.slots as Record<string, unknown>;
+    const entries = plugins.entries as Record<string, Record<string, unknown>>;
+    expect(slots.memory).toBe('memory-core');
+    expect(entries['memory-lancedb'].enabled).toBe(false);
+  });
+
+  it('disables invalid memory-lancedb plugin when embedding block is missing apiKey', async () => {
+    await writeOpenClawJson({
+      plugins: {
+        slots: {
+          memory: 'memory-lancedb',
+        },
+        entries: {
+          'memory-lancedb': {
+            enabled: true,
+            config: {
+              embedding: {
+                model: 'text-embedding-3-small',
+              },
+            },
+          },
+        },
+      },
+    });
+
+    const { sanitizeOpenClawConfig } = await import('@electron/utils/openclaw-auth');
+    await sanitizeOpenClawConfig();
+
+    const result = await readOpenClawJson();
+    const plugins = result.plugins as Record<string, unknown>;
+    const slots = plugins.slots as Record<string, unknown>;
+    const entries = plugins.entries as Record<string, Record<string, unknown>>;
+    expect(slots.memory).toBe('memory-core');
+    expect(entries['memory-lancedb'].enabled).toBe(false);
+  });
+
+  it('preserves valid memory-lancedb config', async () => {
+    await writeOpenClawJson({
+      plugins: {
+        slots: {
+          memory: 'memory-lancedb',
+        },
+        entries: {
+          'memory-lancedb': {
+            enabled: true,
+            config: {
+              embedding: {
+                apiKey: '${OPENAI_API_KEY}',
+                model: 'text-embedding-3-small',
+              },
+            },
+          },
+        },
+      },
+    });
+
+    const { sanitizeOpenClawConfig } = await import('@electron/utils/openclaw-auth');
+    await sanitizeOpenClawConfig();
+
+    const result = await readOpenClawJson();
+    const plugins = result.plugins as Record<string, unknown>;
+    const slots = plugins.slots as Record<string, unknown>;
+    const entries = plugins.entries as Record<string, Record<string, unknown>>;
+    expect(slots.memory).toBe('memory-lancedb');
+    expect(entries['memory-lancedb'].enabled).toBe(true);
+    expect(entries['memory-lancedb'].config).toEqual({
+      embedding: {
+        apiKey: '${OPENAI_API_KEY}',
+        model: 'text-embedding-3-small',
+      },
+    });
+  });
 });
 
 describe('syncProviderConfigToOpenClaw', () => {

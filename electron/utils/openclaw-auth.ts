@@ -828,6 +828,12 @@ function isPlainRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
+function hasValidMemoryLanceDbEmbeddingConfig(value: unknown): boolean {
+  if (!isPlainRecord(value)) return false;
+  const embedding = value.embedding;
+  return isPlainRecord(embedding) && typeof embedding.apiKey === 'string' && embedding.apiKey.trim().length > 0;
+}
+
 function removeLegacyMoonshotKimiSearchConfig(config: Record<string, unknown>): boolean {
   const tools = isPlainRecord(config.tools) ? config.tools : null;
   const web = tools && isPlainRecord(tools.web) ? tools.web : null;
@@ -1524,6 +1530,38 @@ export async function sanitizeOpenClawConfig(): Promise<void> {
     if (toolsModified) {
       config.tools = toolsConfig;
       modified = true;
+    }
+
+    // ── plugins.entries.memory-lancedb cleanup ─────────────────────
+    // Invalid memory-lancedb config now hard-fails Gateway startup.
+    // We cannot synthesize embedding credentials, so when the configured
+    // entry is missing the required embedding.apiKey we conservatively
+    // disable the plugin and fall back to the default memory plugin.
+    if (isPlainRecord(plugins) && isPlainRecord(plugins.entries)) {
+      const pluginsObj = plugins as Record<string, unknown>;
+      const entries = plugins.entries as Record<string, unknown>;
+      const memoryLanceDbEntry = isPlainRecord(entries['memory-lancedb'])
+        ? entries['memory-lancedb'] as Record<string, unknown>
+        : null;
+      const memoryLanceDbConfig = memoryLanceDbEntry && isPlainRecord(memoryLanceDbEntry.config)
+        ? memoryLanceDbEntry.config as Record<string, unknown>
+        : null;
+      const slots = isPlainRecord(pluginsObj.slots) ? pluginsObj.slots as Record<string, unknown> : null;
+
+      if (memoryLanceDbEntry && !hasValidMemoryLanceDbEmbeddingConfig(memoryLanceDbConfig)) {
+        if (memoryLanceDbEntry.enabled !== false) {
+          memoryLanceDbEntry.enabled = false;
+          modified = true;
+          console.log('[sanitize] Disabled plugins.entries.memory-lancedb because embedding.apiKey is missing');
+        }
+
+        if (slots?.memory === 'memory-lancedb') {
+          slots.memory = 'memory-core';
+          pluginsObj.slots = slots;
+          modified = true;
+          console.log('[sanitize] Switched plugins.slots.memory from "memory-lancedb" to "memory-core" because the plugin config is invalid');
+        }
+      }
     }
 
     // ── plugins.entries.feishu cleanup ──────────────────────────────
