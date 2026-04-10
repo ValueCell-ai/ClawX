@@ -1,5 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+const telemetry = vi.hoisted(() => ({
+  trackMetric: vi.fn(),
+  captureTelemetryEvent: vi.fn(),
+}));
+
 vi.mock('electron', () => ({
   app: {
     getPath: () => '/tmp',
@@ -8,6 +13,15 @@ vi.mock('electron', () => ({
   utilityProcess: {
     fork: vi.fn(),
   },
+}));
+
+vi.mock('@electron/utils/telemetry', () => ({
+  trackMetric: (...args: unknown[]) => telemetry.trackMetric(...args),
+  captureTelemetryEvent: (...args: unknown[]) => telemetry.captureTelemetryEvent(...args),
+}));
+
+vi.mock('posthog-node', () => ({
+  PostHog: class PostHog {},
 }));
 
 vi.mock('@electron/utils/logger', () => ({

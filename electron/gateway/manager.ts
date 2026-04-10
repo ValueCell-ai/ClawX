@@ -63,6 +63,10 @@ export interface GatewayStatus {
   reconnectAttempts?: number;
 }
 
+export interface GatewayStartResult {
+  outcome: 'started' | 'already-running' | 'ignored';
+}
+
 /**
  * Gateway Manager Events
  */
@@ -195,15 +199,15 @@ export class GatewayManager extends EventEmitter {
   /**
    * Start Gateway process
    */
-  async start(): Promise<void> {
+  async start(): Promise<GatewayStartResult> {
     if (this.startLock) {
       logger.debug('Gateway start ignored because a start flow is already in progress');
-      return;
+      return { outcome: 'ignored' };
     }
 
     if (this.status.state === 'running') {
       logger.debug('Gateway already running, skipping start');
-      return;
+      return { outcome: 'already-running' };
     }
 
     this.startLock = true;
@@ -309,8 +313,8 @@ export class GatewayManager extends EventEmitter {
       });
     } catch (error) {
       if (error instanceof LifecycleSupersededError) {
-        logger.debug(error.message);
-        return;
+          logger.debug(error.message);
+          return { outcome: 'ignored' };
       }
       logger.error(
         `Gateway start failed (port=${this.status.port}, reconnectAttempts=${this.reconnectAttempts}, spawn=${this.lastSpawnSummary ?? 'n/a'})`,
@@ -334,6 +338,8 @@ export class GatewayManager extends EventEmitter {
         },
       );
     }
+
+    return { outcome: 'started' };
   }
 
   /**
@@ -1020,13 +1026,29 @@ export class GatewayManager extends EventEmitter {
         logger.debug(`Skipping reconnect attempt: ${skipReason}`);
         return;
       }
+      if (this.startLock) {
+        logger.debug(
+          'Skipping reconnect attempt because Gateway startup is already in progress; rescheduling without counting an attempt',
+        );
+        this.reconnectAttempts = Math.max(0, this.reconnectAttempts - 1);
+        this.scheduleReconnect();
+        return;
+      }
       const attemptNo = this.reconnectAttempts;
       this.reconnectAttemptsTotal += 1;
       try {
         // Use the guarded start() flow so reconnect attempts cannot bypass
         // lifecycle locking and accidentally start duplicate Gateway processes.
         this.isAutoReconnectStart = true;
-        await this.start();
+        const startResult = await this.start();
+        if (startResult.outcome !== 'started') {
+          logger.debug(
+            `Gateway reconnect attempt did not start a new flow (outcome=${startResult.outcome}); rescheduling without counting success`,
+          );
+          this.reconnectAttempts = Math.max(0, this.reconnectAttempts - 1);
+          this.scheduleReconnect();
+          return;
+        }
         this.reconnectSuccessTotal += 1;
         this.emitReconnectMetric('success', {
           attemptNo,
