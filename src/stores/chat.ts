@@ -9,6 +9,14 @@ import { useGatewayStore } from './gateway';
 import { useAgentsStore } from './agents';
 import { buildCronSessionHistoryPath, isCronSessionKey } from './chat/cron-session-utils';
 import {
+  CHAT_HISTORY_LOADING_SAFETY_TIMEOUT_MS,
+  CHAT_HISTORY_STARTUP_RETRY_DELAYS_MS,
+  classifyHistoryStartupRetryError,
+  getStartupHistoryTimeoutOverride,
+  shouldRetryStartupHistoryLoad,
+  sleep,
+} from './chat/history-startup-retry';
+import {
   DEFAULT_CANONICAL_PREFIX,
   DEFAULT_SESSION_KEY,
   type AttachedFileMeta,
@@ -52,6 +60,7 @@ let _loadSessionsInFlight: Promise<void> | null = null;
 let _lastLoadSessionsAt = 0;
 const _historyLoadInFlight = new Map<string, Promise<void>>();
 const _lastHistoryLoadAtBySession = new Map<string, number>();
+const _foregroundHistoryLoadSeen = new Set<string>();
 const SESSION_LOAD_MIN_INTERVAL_MS = 1_200;
 const HISTORY_LOAD_MIN_INTERVAL_MS = 800;
 const HISTORY_POLL_SILENCE_WINDOW_MS = 2_500;
@@ -1304,6 +1313,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
   loadHistory: async (quiet = false) => {
     const { currentSessionKey } = get();
+    const isInitialForegroundLoad = !quiet && !_foregroundHistoryLoadSeen.has(currentSessionKey);
+    const historyTimeoutOverride = getStartupHistoryTimeoutOverride(isInitialForegroundLoad);
     const existingLoad = _historyLoadInFlight.get(currentSessionKey);
     if (existingLoad) {
       await existingLoad;
@@ -1323,7 +1334,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
     const loadingSafetyTimer = quiet ? null : setTimeout(() => {
       loadingTimedOut = true;
       set({ loading: false });
-    }, 15_000);
+    }, CHAT_HISTORY_LOADING_SAFETY_TIMEOUT_MS);
 
     const loadPromise = (async () => {
       const isCurrentSession = () => get().currentSessionKey === currentSessionKey;
@@ -1367,7 +1378,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       // Guard: if the user switched sessions while this async load was in
       // flight, discard the result to prevent overwriting the new session's
       // messages with stale data from the old session.
-      if (!isCurrentSession()) return;
+      if (!isCurrentSession()) return false;
 
       // Before filtering: attach images/files from tool_result messages to the next assistant message
       const messagesWithToolImages = enrichWithToolResultFiles(rawMessages);
@@ -1466,13 +1477,45 @@ export const useChatStore = create<ChatState>((set, get) => ({
           set({ sending: false, activeRunId: null, pendingFinal: false });
         }
       }
+      return true;
       };
 
       try {
-        const data = await useGatewayStore.getState().rpc<Record<string, unknown>>(
-          'chat.history',
-          { sessionKey: currentSessionKey, limit: 200 },
-        );
+        let data: Record<string, unknown> | null = null;
+        let lastError: unknown = null;
+
+        for (let attempt = 0; attempt <= CHAT_HISTORY_STARTUP_RETRY_DELAYS_MS.length; attempt += 1) {
+          try {
+            data = await useGatewayStore.getState().rpc<Record<string, unknown>>(
+              'chat.history',
+              { sessionKey: currentSessionKey, limit: 200 },
+              historyTimeoutOverride,
+            );
+            lastError = null;
+            break;
+          } catch (error) {
+            lastError = error;
+          }
+
+          const errorKind = classifyHistoryStartupRetryError(lastError);
+          const shouldRetry = isInitialForegroundLoad
+            && attempt < CHAT_HISTORY_STARTUP_RETRY_DELAYS_MS.length
+            && shouldRetryStartupHistoryLoad(useGatewayStore.getState().status, errorKind);
+
+          if (!shouldRetry) {
+            break;
+          }
+
+          console.warn('[chat.history] startup retry scheduled', {
+            sessionKey: currentSessionKey,
+            attempt: attempt + 1,
+            gatewayState: useGatewayStore.getState().status.state,
+            errorKind,
+            error: String(lastError),
+          });
+          await sleep(CHAT_HISTORY_STARTUP_RETRY_DELAYS_MS[attempt]!);
+        }
+
         if (data) {
           let rawMessages = Array.isArray(data.messages) ? data.messages as RawMessage[] : [];
           const thinkingLevel = data.thinkingLevel ? String(data.thinkingLevel) : null;
@@ -1480,20 +1523,40 @@ export const useChatStore = create<ChatState>((set, get) => ({
             rawMessages = await loadCronFallbackMessages(currentSessionKey, 200);
           }
 
-          applyLoadedMessages(rawMessages, thinkingLevel);
+          const applied = applyLoadedMessages(rawMessages, thinkingLevel);
+          if (applied && isInitialForegroundLoad) {
+            _foregroundHistoryLoadSeen.add(currentSessionKey);
+          }
         } else {
+          if (isInitialForegroundLoad && classifyHistoryStartupRetryError(lastError)) {
+            console.warn('[chat.history] startup retry exhausted', {
+              sessionKey: currentSessionKey,
+              gatewayState: useGatewayStore.getState().status.state,
+              error: String(lastError),
+            });
+          }
+
           const fallbackMessages = await loadCronFallbackMessages(currentSessionKey, 200);
           if (fallbackMessages.length > 0) {
-            applyLoadedMessages(fallbackMessages, null);
+            const applied = applyLoadedMessages(fallbackMessages, null);
+            if (applied && isInitialForegroundLoad) {
+              _foregroundHistoryLoadSeen.add(currentSessionKey);
+            }
           } else {
-            applyLoadFailure('Failed to load chat history');
+            applyLoadFailure(
+              (lastError instanceof Error ? lastError.message : String(lastError))
+              || 'Failed to load chat history',
+            );
           }
         }
       } catch (err) {
         console.warn('Failed to load chat history:', err);
         const fallbackMessages = await loadCronFallbackMessages(currentSessionKey, 200);
         if (fallbackMessages.length > 0) {
-          applyLoadedMessages(fallbackMessages, null);
+          const applied = applyLoadedMessages(fallbackMessages, null);
+          if (applied && isInitialForegroundLoad) {
+            _foregroundHistoryLoadSeen.add(currentSessionKey);
+          }
         } else {
           applyLoadFailure(String(err));
         }
