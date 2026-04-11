@@ -347,6 +347,14 @@ function buildCronUpdatePatch(input: Record<string, unknown>): Record<string, un
     patch.delivery = normalizeCronDeliveryPatch(patch.delivery);
   }
 
+  if ('agentId' in patch) {
+    const agentId = typeof patch.agentId === 'string' && patch.agentId.trim()
+      ? patch.agentId.trim()
+      : 'main';
+    patch.agentId = agentId;
+    // Keep sessionTarget as isolated when agentId changes
+  }
+
   return patch;
 }
 
@@ -377,6 +385,9 @@ function transformCronJob(job: GatewayCronJob) {
     ? new Date(job.state.nextRunAtMs).toISOString()
     : undefined;
 
+  // Parse agentId from the job's agentId field
+  const agentId = (job as unknown as { agentId?: string }).agentId || 'main';
+
   return {
     id: job.id,
     name: job.name,
@@ -389,6 +400,7 @@ function transformCronJob(job: GatewayCronJob) {
     updatedAt: new Date(job.updatedAtMs).toISOString(),
     lastRun,
     nextRun,
+    agentId,
   };
 }
 
@@ -515,7 +527,11 @@ export async function handleCronRoutes(
         schedule: string;
         delivery?: GatewayCronDelivery;
         enabled?: boolean;
+        agentId?: string;
       }>(req);
+      const agentId = typeof input.agentId === 'string' && input.agentId.trim()
+        ? input.agentId.trim()
+        : 'main';
       const delivery = normalizeCronDelivery(input.delivery);
       const unsupportedDeliveryError = getUnsupportedCronDeliveryError(delivery.channel);
       if (delivery.mode === 'announce' && unsupportedDeliveryError) {
@@ -529,6 +545,7 @@ export async function handleCronRoutes(
         enabled: input.enabled ?? true,
         wakeMode: 'next-heartbeat',
         sessionTarget: 'isolated',
+        agentId,
         delivery,
       });
       sendJson(res, 200, result && typeof result === 'object' ? transformCronJob(result as GatewayCronJob) : result);

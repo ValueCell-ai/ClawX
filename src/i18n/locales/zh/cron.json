@@ -29,6 +29,7 @@
         "taskNamePlaceholder": "例如：早间简报",
         "message": "消息/提示词",
         "messagePlaceholder": "AI 应该做什么？例如：给我一份今天的新闻和天气摘要",
+        "agent": "智能体",
         "schedule": "调度计划",
         "cronPlaceholder": "Cron 表达式 (例如：0 9 * * *)",
         "usePresets": "使用预设",
