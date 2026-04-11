@@ -102,6 +102,46 @@ describe('channel credential normalization and duplicate checks', () => {
       expect.objectContaining({ channelType: 'feishu', accountId: 'agent-a', key: 'appId' }),
     );
   });
+
+  it('persists official Feishu plugin streaming settings and returns them in form values', async () => {
+    const { saveChannelConfig, getChannelFormValues } = await import('@electron/utils/channel-config');
+
+    await saveChannelConfig(
+      'feishu',
+      {
+        appId: 'cli_stream_app',
+        appSecret: 'secret-stream',
+        streaming: true,
+        replyMode: 'streaming',
+        groupReplyMode: 'streaming',
+      },
+      'agent-a',
+    );
+
+    const config = await readOpenClawJson();
+    const channels = config.channels as Record<string, {
+      streaming?: boolean;
+      replyMode?: string | { group?: string };
+      accounts: Record<string, {
+        streaming?: boolean;
+        replyMode?: string | { group?: string };
+      }>;
+    }>;
+
+    expect(channels.feishu.streaming).toBe(true);
+    expect(channels.feishu.replyMode).toBe('streaming');
+    expect(channels.feishu.accounts['agent-a'].streaming).toBe(true);
+    expect(channels.feishu.accounts['agent-a'].replyMode).toBe('streaming');
+
+    const formValues = await getChannelFormValues('feishu', 'agent-a');
+    expect(formValues).toMatchObject({
+      appId: 'cli_stream_app',
+      appSecret: 'secret-stream',
+      streaming: 'true',
+      replyModeDefault: 'streaming',
+      groupReplyMode: 'streaming',
+    });
+  });
 });
 
 describe('parseDoctorValidationOutput', () => {

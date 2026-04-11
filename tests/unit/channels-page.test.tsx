@@ -384,4 +384,32 @@ describe('Channels page status refresh', () => {
     expect(appIdInput).toHaveValue('cli_test_app');
     expect(appSecretInput).toHaveValue('secret_test_value');
   });
+
+  it('shows and preserves Feishu streaming settings in the add-account modal', async () => {
+    subscribeHostEventMock.mockImplementation(() => vi.fn());
+
+    render(<Channels />);
+
+    await waitFor(() => {
+      expect(screen.getByText('Feishu / Lark')).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'account.add' }));
+
+    const streamingSelect = await screen.findByLabelText('channels:meta.feishu.fields.streaming.label');
+    const defaultReplyModeSelect = screen.getByLabelText('channels:meta.feishu.fields.replyMode.label');
+    const groupReplyModeSelect = screen.getByLabelText('channels:meta.feishu.fields.replyModeGroup.label');
+
+    expect(streamingSelect).toHaveValue('true');
+    expect(defaultReplyModeSelect).toHaveValue('auto');
+    expect(groupReplyModeSelect).toHaveValue('inherit');
+
+    fireEvent.change(streamingSelect, { target: { value: 'false' } });
+    fireEvent.change(defaultReplyModeSelect, { target: { value: 'static' } });
+    fireEvent.change(groupReplyModeSelect, { target: { value: 'streaming' } });
+
+    expect(streamingSelect).toHaveValue('false');
+    expect(defaultReplyModeSelect).toHaveValue('static');
+    expect(groupReplyModeSelect).toHaveValue('streaming');
+  });
 });

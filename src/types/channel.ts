@@ -387,6 +387,66 @@ export const CHANNEL_META: Record<ChannelType, ChannelMeta> = {
         required: true,
         envVar: 'FEISHU_APP_SECRET',
       },
+      {
+        key: 'streaming',
+        label: 'channels:meta.feishu.fields.streaming.label',
+        type: 'select',
+        description: 'channels:meta.feishu.fields.streaming.description',
+        options: [
+          {
+            value: 'true',
+            label: 'channels:meta.feishu.fields.streaming.options.enabled',
+          },
+          {
+            value: 'false',
+            label: 'channels:meta.feishu.fields.streaming.options.disabled',
+          },
+        ],
+      },
+      {
+        key: 'replyMode',
+        label: 'channels:meta.feishu.fields.replyMode.label',
+        type: 'select',
+        description: 'channels:meta.feishu.fields.replyMode.description',
+        options: [
+          {
+            value: 'auto',
+            label: 'channels:meta.feishu.fields.replyMode.options.auto',
+          },
+          {
+            value: 'streaming',
+            label: 'channels:meta.feishu.fields.replyMode.options.streaming',
+          },
+          {
+            value: 'static',
+            label: 'channels:meta.feishu.fields.replyMode.options.static',
+          },
+        ],
+      },
+      {
+        key: 'replyModeGroup',
+        label: 'channels:meta.feishu.fields.replyModeGroup.label',
+        type: 'select',
+        description: 'channels:meta.feishu.fields.replyModeGroup.description',
+        options: [
+          {
+            value: 'inherit',
+            label: 'channels:meta.feishu.fields.replyModeGroup.options.inherit',
+          },
+          {
+            value: 'streaming',
+            label: 'channels:meta.feishu.fields.replyModeGroup.options.streaming',
+          },
+          {
+            value: 'static',
+            label: 'channels:meta.feishu.fields.replyModeGroup.options.static',
+          },
+          {
+            value: 'auto',
+            label: 'channels:meta.feishu.fields.replyModeGroup.options.auto',
+          },
+        ],
+      },
     ],
     instructions: [
       'channels:meta.feishu.instructions.0',

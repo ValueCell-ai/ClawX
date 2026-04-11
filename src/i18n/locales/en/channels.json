@@ -228,13 +228,35 @@
                 "appSecret": {
                     "label": "App Secret",
                     "placeholder": "Your app secret"
+                },
+                "streaming": {
+                    "label": "Streaming replies",
+                    "description": "Enable the official Feishu plugin's streaming card updates."
+                },
+                "replyModeDefault": {
+                    "label": "Default reply mode",
+                    "description": "Controls how the official Feishu plugin replies when no scene-specific override is set.",
+                    "options": {
+                        "auto": "Auto",
+                        "static": "Static",
+                        "streaming": "Streaming"
+                    }
+                },
+                "replyModeDirect": {
+                    "label": "Direct message reply mode",
+                    "description": "Direct chats usually stream when auto mode is enabled."
+                },
+                "replyModeGroup": {
+                    "label": "Group reply mode",
+                    "description": "Group chats stay static in auto mode unless you explicitly force streaming."
                 }
             },
             "instructions": [
                 "Read the documentation, then go to Feishu Open Platform",
                 "Create a new application",
                 "Get App ID and App Secret",
-                "Configure event subscription"
+                "Configure event subscription",
+                "Optional: enable streaming replies and choose per-scene reply modes below"
             ]
         },
         "wecom": {

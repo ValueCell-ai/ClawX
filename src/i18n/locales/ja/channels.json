@@ -218,7 +218,7 @@
             "docsUrl": "https://docs.openclaw.ai/channels/signal"
         },
         "feishu": {
-            "description": "WebSocket 経由で Feishu/Lark ボットに接続します",
+            "description": "飛書公式 OpenClaw プラグインで Feishu/Lark ボットを接続します",
             "docsUrl": "https://icnnp7d0dymg.feishu.cn/wiki/GKn8wOvHnibpPNkNkPzcAvGlnzK#GdHUdp9t9oqyegxwV8ScLvVGn1c",
             "fields": {
                 "appId": {
@@ -228,13 +228,37 @@
                 "appSecret": {
                     "label": "App Secret",
                     "placeholder": "アプリのシークレット"
+                },
+                "streaming": {
+                    "label": "ストリーミング応答を有効化",
+                    "placeholder": ""
+                },
+                "replyMode": {
+                    "label": "デフォルトの返信モード",
+                    "placeholder": ""
+                },
+                "replyModeDirect": {
+                    "label": "DM の返信モード",
+                    "placeholder": ""
+                },
+                "replyModeGroup": {
+                    "label": "グループの返信モード",
+                    "placeholder": ""
+                },
+                "footerStatus": {
+                    "label": "ステータスフッターを表示",
+                    "placeholder": ""
+                },
+                "footerElapsed": {
+                    "label": "経過時間フッターを表示",
+                    "placeholder": ""
                 }
             },
             "instructions": [
-                "ドキュメントを読み、Feishu Open Platform に移動します",
-                "新しいアプリケーションを作成します",
-                "App ID と App Secret を取得します",
-                "イベント購読を設定します"
+                "Feishu Open Platform で新しい自社利用アプリを作成します",
+                "App ID と App Secret をここに入力します",
+                "必要に応じてストリーミングを有効にします。デフォルトではプラグインは静的返信です",
+                "グループでもストリーミングしたい場合は、グループ返信モードを「streaming」に変更してください"
             ]
         },
         "wecom": {

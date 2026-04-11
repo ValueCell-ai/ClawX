@@ -228,12 +228,46 @@
                 "appSecret": {
                     "label": "应用密钥 (App Secret)",
                     "placeholder": "您的应用密钥"
+                },
+                "streaming": {
+                    "label": "启用流式回复",
+                    "description": "为飞书官方插件写入 channels.feishu.streaming=true。关闭时将始终使用非流式回复。"
+                },
+                "replyMode": {
+                    "label": "默认回复模式",
+                    "description": "auto 会让私聊使用流式、群聊使用静态；streaming 会尽量在所有聊天类型启用流式。",
+                    "options": {
+                        "auto": "自动",
+                        "static": "静态",
+                        "streaming": "流式"
+                    }
+                },
+                "groupReplyMode": {
+                    "label": "群聊回复模式",
+                    "description": "覆盖群聊默认行为。官方插件的 auto 默认会让群聊使用静态回复。",
+                    "options": {
+                        "inherit": "跟随默认模式",
+                        "auto": "自动",
+                        "static": "静态",
+                        "streaming": "流式"
+                    }
+                },
+                "directReplyMode": {
+                    "label": "私聊回复模式",
+                    "description": "覆盖私聊默认行为。官方插件的 auto 默认会让私聊使用流式回复。",
+                    "options": {
+                        "inherit": "跟随默认模式",
+                        "auto": "自动",
+                        "static": "静态",
+                        "streaming": "流式"
+                    }
                 }
             },
             "instructions": [
                 "前往 飞书开放平台 (open.feishu.cn) 并创建企业自建应用",
                 "在应用详情页获取 App ID 和 App Secret 并填入下方",
                 "确保应用已开通“机器人”能力",
+                "如需实时流式输出，请同时开启“启用流式回复”；若需要群聊也流式，请把“群聊回复模式”改为“流式”",
                 "保存配置后，根据网关提示扫码完成机器人创建",
                 "详细步骤请参考飞书官方文档"
             ]

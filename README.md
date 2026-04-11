@@ -107,6 +107,7 @@ Configure and monitor multiple AI channels simultaneously. Each channel operates
 Each channel now supports multiple accounts, per-account agent binding, and switching the channel default account directly from the Channels page.
 For custom channel account IDs, ClawX enforces OpenClaw-compatible canonical IDs (`[a-z0-9_-]`, lowercase, max 64 chars, must start with a letter/number) to prevent routing mismatches.
 ClawX now also bundles Tencent's official personal WeChat channel plugin, so you can link WeChat directly from the Channels page with an in-app QR flow.
+For the official Feishu/Lark plugin, the Channels page now also exposes streaming controls. You can explicitly enable `channels.feishu.streaming` and choose separate reply modes for direct chats vs group chats, matching the plugin's DM/group streaming behavior.
 
 ### ⏰ Cron-Based Automation
 Schedule AI tasks to run automatically. Define triggers, set intervals, and let your AI agents work around the clock without manual intervention.

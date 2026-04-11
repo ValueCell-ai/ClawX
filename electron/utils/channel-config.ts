@@ -531,6 +531,72 @@ function transformChannelConfig(
 ): ChannelConfigData {
     let transformedConfig: ChannelConfigData = { ...config };
 
+    if (channelType === 'feishu') {
+        const rawStreaming = transformedConfig.streaming;
+        if (typeof rawStreaming === 'string') {
+            if (rawStreaming === 'true') {
+                transformedConfig.streaming = true;
+            } else if (rawStreaming === 'false') {
+                transformedConfig.streaming = false;
+            } else {
+                delete transformedConfig.streaming;
+            }
+        }
+
+        const rawReplyMode = typeof transformedConfig.replyMode === 'string'
+            ? transformedConfig.replyMode.trim()
+            : undefined;
+        const rawReplyModeGroup = typeof transformedConfig.replyModeGroup === 'string'
+            ? transformedConfig.replyModeGroup.trim()
+            : undefined;
+
+        if (rawReplyModeGroup) {
+            const nextReplyMode: Record<string, string> = {};
+            if (rawReplyMode && rawReplyMode !== 'inherit') {
+                nextReplyMode.default = rawReplyMode;
+            }
+            if (rawReplyModeGroup !== 'inherit') {
+                nextReplyMode.group = rawReplyModeGroup;
+            }
+
+            if (Object.keys(nextReplyMode).length > 0) {
+                transformedConfig.replyMode = nextReplyMode;
+            } else if (rawReplyMode === 'inherit' || !rawReplyMode) {
+                delete transformedConfig.replyMode;
+            }
+        } else if (rawReplyMode) {
+            transformedConfig.replyMode = rawReplyMode;
+        }
+
+        delete transformedConfig.replyModeGroup;
+
+        const normalizeFooterFlag = (value: unknown): boolean | undefined => {
+            if (typeof value === 'boolean') return value;
+            if (value === 'true') return true;
+            if (value === 'false') return false;
+            return undefined;
+        };
+
+        const footerStatus = normalizeFooterFlag(transformedConfig.footerStatus);
+        const footerElapsed = normalizeFooterFlag(transformedConfig.footerElapsed);
+
+        if (footerStatus !== undefined || footerElapsed !== undefined) {
+            const existingFooter = (
+                existingAccountConfig.footer && typeof existingAccountConfig.footer === 'object' && !Array.isArray(existingAccountConfig.footer)
+                    ? existingAccountConfig.footer as Record<string, unknown>
+                    : {}
+            );
+            transformedConfig.footer = {
+                ...existingFooter,
+                ...(footerStatus !== undefined ? { status: footerStatus } : {}),
+                ...(footerElapsed !== undefined ? { elapsed: footerElapsed } : {}),
+            };
+        }
+
+        delete transformedConfig.footerStatus;
+        delete transformedConfig.footerElapsed;
+    }
+
     if (channelType === 'discord') {
         const { guildId, channelId, ...restConfig } = config;
         transformedConfig = { ...restConfig };
@@ -865,6 +931,41 @@ function extractFormValues(channelType: string, saved: ChannelConfigData): Recor
         for (const [key, value] of Object.entries(saved)) {
             if (typeof value === 'string' && key !== 'enabled') {
                 values[key] = value;
+            }
+        }
+    } else if (channelType === 'feishu') {
+        for (const [key, value] of Object.entries(saved)) {
+            if (typeof value === 'string' && key !== 'enabled') {
+                values[key] = value;
+            }
+        }
+
+        if (typeof saved.streaming === 'boolean') {
+            values.streaming = saved.streaming ? 'true' : 'false';
+        }
+
+        const replyMode = saved.replyMode;
+        if (typeof replyMode === 'string') {
+            values.replyModeDefault = replyMode;
+        } else if (replyMode && typeof replyMode === 'object' && !Array.isArray(replyMode)) {
+            if (typeof replyMode.default === 'string') {
+                values.replyModeDefault = replyMode.default;
+            }
+            if (typeof replyMode.direct === 'string') {
+                values.replyModeDirect = replyMode.direct;
+            }
+            if (typeof replyMode.group === 'string') {
+                values.replyModeGroup = replyMode.group;
+            }
+        }
+
+        const footer = saved.footer;
+        if (footer && typeof footer === 'object' && !Array.isArray(footer)) {
+            if (typeof footer.status === 'boolean') {
+                values.footerStatus = footer.status ? 'true' : 'false';
+            }
+            if (typeof footer.elapsed === 'boolean') {
+                values.footerElapsed = footer.elapsed ? 'true' : 'false';
             }
         }
     } else {
