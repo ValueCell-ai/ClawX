@@ -59,6 +59,20 @@
             "openFolder": "ログフォルダを開く",
             "close": "閉じる",
             "noLogs": "（ログはまだありません）"
+        },
+        "errors": {
+            "packageNotFound": "OpenClaw パッケージが見つかりません: {{dir}}",
+            "distMissing": "OpenClaw パッケージはありますが dist がありません",
+            "checkFailed": "チェック失敗: {{error}}",
+            "waitingForGateway": "ゲートウェイを待機中...",
+            "failedToStart": "起動に失敗しました",
+            "startupTimedOut": "ゲートウェイ起動タイムアウト",
+            "starting": "起動中...",
+            "failedToLoadLogs": "（ログの読み込みに失敗）",
+            "configFailed": "設定失敗: {{error}}",
+            "installUnknownError": "インストール中に不明なエラーが発生しました",
+            "envSetupFailed": "環境設定に失敗しました",
+            "installError": "インストールエラー"
         }
     },
     "provider": {
@@ -109,7 +123,12 @@
         "error": "セットアップエラー：",
         "restart": "アプリを再起動してください",
         "wait": "これには少し時間がかかる場合があります...",
-        "skip": "この手順をスキップ"
+        "skip": "この手順をスキップ",
+        "errors": {
+            "unknownError": "インストール中に不明なエラーが発生しました",
+            "envSetupFailed": "環境設定に失敗しました",
+            "installError": "インストールエラー"
+        }
     },
     "complete": {
         "title": "セットアップ完了！",

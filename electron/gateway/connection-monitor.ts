@@ -84,11 +84,18 @@ export class GatewayConnectionMonitor {
       clearInterval(this.healthCheckInterval);
     }
 
+    let isRunning = false;
     this.healthCheckInterval = setInterval(async () => {
+      // Prevent overlapping health checks: if a previous check is still
+      // in-flight, skip this tick rather queuing another concurrent execution.
+      if (isRunning) {
+        return;
+      }
       if (!options.shouldCheck()) {
         return;
       }
 
+      isRunning = true;
       try {
         const health = await options.checkHealth();
         if (!health.ok) {
@@ -99,6 +106,8 @@ export class GatewayConnectionMonitor {
       } catch (error) {
         logger.error('Gateway health check error:', error);
         options.onError(error);
+      } finally {
+        isRunning = false;
       }
     }, options.intervalMs ?? 30000);
   }

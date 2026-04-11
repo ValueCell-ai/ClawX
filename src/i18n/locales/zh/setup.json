@@ -59,6 +59,20 @@
             "openFolder": "打开日志文件夹",
             "close": "关闭",
             "noLogs": "（暂无日志）"
+        },
+        "errors": {
+            "packageNotFound": "未找到 OpenClaw 包，路径：{{dir}}",
+            "distMissing": "找到 OpenClaw 包但 dist 目录缺失",
+            "checkFailed": "检查失败：{{error}}",
+            "waitingForGateway": "等待网关启动...",
+            "failedToStart": "启动失败",
+            "startupTimedOut": "网关启动超时",
+            "starting": "启动中...",
+            "failedToLoadLogs": "（加载日志失败）",
+            "configFailed": "配置失败：{{error}}",
+            "installUnknownError": "安装过程中发生未知错误",
+            "envSetupFailed": "环境设置失败",
+            "installError": "安装错误"
         }
     },
     "provider": {
@@ -109,7 +123,12 @@
         "error": "设置错误：",
         "restart": "尝试重启应用",
         "wait": "这可能需要一点时间...",
-        "skip": "跳过此步骤"
+        "skip": "跳过此步骤",
+        "errors": {
+            "unknownError": "安装过程中发生未知错误",
+            "envSetupFailed": "环境设置失败",
+            "installError": "安装错误"
+        }
     },
     "complete": {
         "title": "设置完成！",

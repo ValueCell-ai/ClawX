@@ -121,7 +121,11 @@
       "step1": "以下の認証コードをコピーしてください。",
       "step2": "ブラウザでログインページを開いてください。",
       "step3": "コードを貼り付けてアクセスを承認してください。",
-      "requestingCode": "セキュアログインコードを取得中..."
+      "requestingCode": "セキュアログインコードを取得中...",
+      "completeLogin": "OpenAI ログインを完了",
+      "openAuthPage": "認証ページを開き、ログインを完了してから、コールバック URL またはコードを以下に貼り付けてください。",
+      "pasteCode": "コールバック URL またはコードを貼り付け",
+      "submitCode": "コードを送信"
     }
   },
   "gateway": {
@@ -206,7 +210,9 @@
       }
     },
     "devMode": "開発者モード",
-    "devModeDesc": "開発者ツールとショートカットを表示"
+    "devModeDesc": "開発者ツールとショートカットを表示",
+    "telemetry": "匿名使用データ",
+    "telemetryDesc": "ClawX の改善のため匿名の基本使用データを提供することを許可する"
   },
   "developer": {
     "title": "開発者",

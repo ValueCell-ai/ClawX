@@ -122,7 +122,11 @@
       "step1": "Copy the authorization code below.",
       "step2": "Open the login page in your browser.",
       "step3": "Paste the code to approve access.",
-      "requestingCode": "Requesting secure login code..."
+      "requestingCode": "Requesting secure login code...",
+      "completeLogin": "Complete OpenAI Login",
+      "openAuthPage": "Open the authorization page, complete login, then paste the callback URL or code below.",
+      "pasteCode": "Paste callback URL or code",
+      "submitCode": "Submit Code"
     }
   },
   "gateway": {
