@@ -96,6 +96,73 @@ jobs:
           echo "File descriptor limit: $(ulimit -n)"
           pnpm run package:mac
 
+      # Verify macOS code signature, notarization staple, and Gatekeeper acceptance.
+      # This catches silently broken signatures BEFORE artifacts are published.
+      # Modelled after VSCode's post-build verification (build/darwin/sign.ts).
+      - name: Verify macOS code signature and notarization
+        if: matrix.platform == 'mac'
+        run: |
+          set -euo pipefail
+
+          verify_app() {
+            local APP_PATH="$1"
+            local LABEL="$2"
+
+            if [ ! -d "$APP_PATH" ]; then
+              echo "⚠️  ${APP_PATH} not found, skipping verification for ${LABEL}"
+              return 0
+            fi
+
+            echo ""
+            echo "🔍 Verifying ${LABEL}: ${APP_PATH}"
+
+            # 1. Deep code signature verification (same flags as VSCode CI)
+            echo "  [1/4] Checking code signature (--deep --strict)..."
+            codesign --verify --deep --strict --verbose=2 "$APP_PATH"
+            echo "        ✅ Code signature valid"
+
+            # 2. Verify secure timestamp exists (prevents expiry-based rejection)
+            echo "  [2/4] Checking for secure timestamp..."
+            CODESIGN_DISPLAY=$(codesign -dvvv "$APP_PATH" 2>&1 || true)
+            if echo "$CODESIGN_DISPLAY" | grep -q "Timestamp="; then
+              TIMESTAMP=$(echo "$CODESIGN_DISPLAY" | grep "Timestamp=" | head -1)
+              echo "        ✅ ${TIMESTAMP}"
+            else
+              echo "        ❌ ERROR: No secure timestamp found in signature!"
+              echo "$CODESIGN_DISPLAY"
+              exit 1
+            fi
+
+            # 3. Gatekeeper assessment (will the OS allow this app to launch?)
+            echo "  [3/4] Assessing Gatekeeper acceptance..."
+            spctl --assess --type execute --verbose "$APP_PATH" 2>&1
+            echo "        ✅ Gatekeeper accepted"
+
+            # 4. Verify notarization ticket is stapled
+            echo "  [4/4] Verifying notarization staple..."
+            xcrun stapler validate "$APP_PATH" 2>&1
+            echo "        ✅ Notarization staple valid"
+
+            echo "  ✅ All checks passed for ${LABEL}"
+          }
+
+          # Verify both architecture builds
+          verify_app "release/mac/ClawX.app" "macOS x64"
+          verify_app "release/mac-arm64/ClawX.app" "macOS arm64"
+
+          # Verify DMG files (informational — DMGs themselves are often unsigned)
+          echo ""
+          echo "🔍 Checking DMG artifacts..."
+          for dmg in release/*.dmg; do
+            if [ -f "$dmg" ]; then
+              echo "  DMG: $(basename "$dmg")"
+              xcrun stapler validate "$dmg" 2>&1 && echo "    ✅ DMG stapled" || echo "    ℹ️  DMG not stapled (expected if only .app is stapled)"
+            fi
+          done
+
+          echo ""
+          echo "✅ All macOS verification checks passed"
+
       # Windows specific steps
       - name: Build Windows
         if: matrix.platform == 'win'
