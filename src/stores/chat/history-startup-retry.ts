@@ -2,7 +2,10 @@ import type { GatewayStatus } from '@/types/gateway';
 
 export const CHAT_HISTORY_RPC_TIMEOUT_MS = 35_000;
 export const CHAT_HISTORY_STARTUP_RETRY_DELAYS_MS = [600] as const;
-export const CHAT_HISTORY_STARTUP_RUNNING_WINDOW_MS = 15_000;
+export const CHAT_HISTORY_STARTUP_CONNECTION_GRACE_MS = 15_000;
+export const CHAT_HISTORY_STARTUP_RUNNING_WINDOW_MS =
+  CHAT_HISTORY_RPC_TIMEOUT_MS + CHAT_HISTORY_STARTUP_CONNECTION_GRACE_MS;
+export const CHAT_HISTORY_DEFAULT_LOADING_SAFETY_TIMEOUT_MS = 15_000;
 export const CHAT_HISTORY_LOADING_SAFETY_TIMEOUT_MS =
   CHAT_HISTORY_RPC_TIMEOUT_MS * (CHAT_HISTORY_STARTUP_RETRY_DELAYS_MS.length + 1)
   + CHAT_HISTORY_STARTUP_RETRY_DELAYS_MS.reduce((sum, delay) => sum + delay, 0)
@@ -67,4 +70,10 @@ export function getStartupHistoryTimeoutOverride(
   isInitialForegroundLoad: boolean,
 ): number | undefined {
   return isInitialForegroundLoad ? CHAT_HISTORY_RPC_TIMEOUT_MS : undefined;
+}
+
+export function getHistoryLoadingSafetyTimeout(isInitialForegroundLoad: boolean): number {
+  return isInitialForegroundLoad
+    ? CHAT_HISTORY_LOADING_SAFETY_TIMEOUT_MS
+    : CHAT_HISTORY_DEFAULT_LOADING_SAFETY_TIMEOUT_MS;
 }

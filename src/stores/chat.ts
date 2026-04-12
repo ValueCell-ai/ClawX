@@ -9,9 +9,9 @@ import { useGatewayStore } from './gateway';
 import { useAgentsStore } from './agents';
 import { buildCronSessionHistoryPath, isCronSessionKey } from './chat/cron-session-utils';
 import {
-  CHAT_HISTORY_LOADING_SAFETY_TIMEOUT_MS,
   CHAT_HISTORY_STARTUP_RETRY_DELAYS_MS,
   classifyHistoryStartupRetryError,
+  getHistoryLoadingSafetyTimeout,
   getStartupHistoryTimeoutOverride,
   shouldRetryStartupHistoryLoad,
   sleep,
@@ -1334,7 +1334,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
     const loadingSafetyTimer = quiet ? null : setTimeout(() => {
       loadingTimedOut = true;
       set({ loading: false });
-    }, CHAT_HISTORY_LOADING_SAFETY_TIMEOUT_MS);
+    }, getHistoryLoadingSafetyTimeout(isInitialForegroundLoad));
 
     const loadPromise = (async () => {
       const isCurrentSession = () => get().currentSessionKey === currentSessionKey;
@@ -1485,6 +1485,10 @@ export const useChatStore = create<ChatState>((set, get) => ({
         let lastError: unknown = null;
 
         for (let attempt = 0; attempt <= CHAT_HISTORY_STARTUP_RETRY_DELAYS_MS.length; attempt += 1) {
+          if (!isCurrentSession()) {
+            break;
+          }
+
           try {
             data = await useGatewayStore.getState().rpc<Record<string, unknown>>(
               'chat.history',
@@ -1495,6 +1499,10 @@ export const useChatStore = create<ChatState>((set, get) => ({
             break;
           } catch (error) {
             lastError = error;
+          }
+
+          if (!isCurrentSession()) {
+            break;
           }
 
           const errorKind = classifyHistoryStartupRetryError(lastError);
@@ -1528,7 +1536,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
             _foregroundHistoryLoadSeen.add(currentSessionKey);
           }
         } else {
-          if (isInitialForegroundLoad && classifyHistoryStartupRetryError(lastError)) {
+          if (isCurrentSession() && isInitialForegroundLoad && classifyHistoryStartupRetryError(lastError)) {
             console.warn('[chat.history] startup retry exhausted', {
               sessionKey: currentSessionKey,
               gatewayState: useGatewayStore.getState().status.state,

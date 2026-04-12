@@ -193,6 +193,10 @@ export function createHistoryActions(
         let lastError: unknown = null;
 
         for (let attempt = 0; attempt <= CHAT_HISTORY_STARTUP_RETRY_DELAYS_MS.length; attempt += 1) {
+          if (!isCurrentSession()) {
+            break;
+          }
+
           try {
             result = await invokeIpc(
               'gateway:rpc',
@@ -209,6 +213,10 @@ export function createHistoryActions(
             lastError = new Error(result.error || 'Failed to load chat history');
           } catch (error) {
             lastError = error;
+          }
+
+          if (!isCurrentSession()) {
+            break;
           }
 
           const errorKind = classifyHistoryStartupRetryError(lastError);
@@ -245,7 +253,7 @@ export function createHistoryActions(
           return;
         }
 
-        if (isInitialForegroundLoad && classifyHistoryStartupRetryError(lastError)) {
+        if (isCurrentSession() && isInitialForegroundLoad && classifyHistoryStartupRetryError(lastError)) {
           console.warn('[chat.history] startup retry exhausted', {
             sessionKey: currentSessionKey,
             gatewayState: useGatewayStore.getState().status.state,

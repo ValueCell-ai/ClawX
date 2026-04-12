@@ -43,6 +43,7 @@ describe('useChatStore startup history retry', () => {
   });
 
   it('uses the longer timeout only for the initial foreground history load', async () => {
+    const setTimeoutSpy = vi.spyOn(globalThis, 'setTimeout');
     const { useChatStore } = await import('@/stores/chat');
     useChatStore.setState({
       currentSessionKey: 'agent:main:main',
@@ -89,6 +90,54 @@ describe('useChatStore startup history retry', () => {
       { sessionKey: 'agent:main:main', limit: 200 },
       undefined,
     );
+    expect(setTimeoutSpy).toHaveBeenCalledWith(expect.any(Function), 72_600);
+    setTimeoutSpy.mockRestore();
+  });
+
+  it('keeps non-startup foreground loading safety timeout at 15 seconds', async () => {
+    const setTimeoutSpy = vi.spyOn(globalThis, 'setTimeout');
+    const { useChatStore } = await import('@/stores/chat');
+    useChatStore.setState({
+      currentSessionKey: 'agent:main:main',
+      currentAgentId: 'main',
+      sessions: [{ key: 'agent:main:main' }],
+      messages: [],
+      sessionLabels: {},
+      sessionLastActivity: {},
+      sending: false,
+      activeRunId: null,
+      streamingText: '',
+      streamingMessage: null,
+      streamingTools: [],
+      pendingFinal: false,
+      lastUserMessageAt: null,
+      pendingToolImages: [],
+      error: null,
+      loading: false,
+      thinkingLevel: null,
+      showThinking: true,
+    });
+
+    gatewayRpcMock
+      .mockResolvedValueOnce({
+        messages: [{ role: 'assistant', content: 'first load', timestamp: 1000 }],
+      })
+      .mockResolvedValueOnce({
+        messages: [{ role: 'assistant', content: 'second foreground load', timestamp: 1001 }],
+      });
+
+    await useChatStore.getState().loadHistory(false);
+    setTimeoutSpy.mockClear();
+    await useChatStore.getState().loadHistory(false);
+
+    expect(gatewayRpcMock).toHaveBeenNthCalledWith(
+      2,
+      'chat.history',
+      { sessionKey: 'agent:main:main', limit: 200 },
+      undefined,
+    );
+    expect(setTimeoutSpy).toHaveBeenCalledWith(expect.any(Function), 15_000);
+    setTimeoutSpy.mockRestore();
   });
 
   it('does not burn the first-load retry path when the first attempt becomes stale', async () => {
@@ -168,6 +217,50 @@ describe('useChatStore startup history retry', () => {
         attempt: 1,
       }),
     );
+    warnSpy.mockRestore();
+  });
+
+  it('stops retrying once the user switches sessions mid-load', async () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const { useChatStore } = await import('@/stores/chat');
+
+    useChatStore.setState({
+      currentSessionKey: 'agent:main:main',
+      currentAgentId: 'main',
+      sessions: [{ key: 'agent:main:main' }, { key: 'agent:main:other' }],
+      messages: [],
+      sessionLabels: {},
+      sessionLastActivity: {},
+      sending: false,
+      activeRunId: null,
+      streamingText: '',
+      streamingMessage: null,
+      streamingTools: [],
+      pendingFinal: false,
+      lastUserMessageAt: null,
+      pendingToolImages: [],
+      error: null,
+      loading: false,
+      thinkingLevel: null,
+      showThinking: true,
+    });
+
+    gatewayRpcMock.mockImplementationOnce(async () => {
+      useChatStore.setState({
+        currentSessionKey: 'agent:main:other',
+        messages: [{ role: 'assistant', content: 'other session', timestamp: 1001 }],
+        loading: false,
+      });
+      throw new Error('RPC timeout: chat.history');
+    });
+
+    await useChatStore.getState().loadHistory(false);
+
+    expect(gatewayRpcMock).toHaveBeenCalledTimes(1);
+    expect(useChatStore.getState().currentSessionKey).toBe('agent:main:other');
+    expect(useChatStore.getState().messages.map((message) => message.content)).toEqual(['other session']);
+    expect(useChatStore.getState().error).toBeNull();
+    expect(warnSpy).not.toHaveBeenCalled();
     warnSpy.mockRestore();
   });
 });

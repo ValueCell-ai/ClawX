@@ -180,6 +180,9 @@ describe('chat history actions', () => {
       currentSessionKey: 'agent:main:main',
     });
     const actions = createHistoryActions(h.set as never, h.get as never);
+    gatewayStoreGetStateMock.mockReturnValue({
+      status: { state: 'running', port: 18789, connectedAt: Date.now() - 40_000 },
+    });
 
     invokeIpcMock
       .mockResolvedValueOnce({ success: false, error: 'RPC timeout: chat.history' })
@@ -220,6 +223,34 @@ describe('chat history actions', () => {
         errorKind: 'timeout',
       }),
     );
+    warnSpy.mockRestore();
+  });
+
+  it('stops retrying once the load no longer belongs to the active session', async () => {
+    vi.useFakeTimers();
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const { createHistoryActions } = await import('@/stores/chat/history-actions');
+    const h = makeHarness({
+      currentSessionKey: 'agent:main:main',
+    });
+    const actions = createHistoryActions(h.set as never, h.get as never);
+
+    invokeIpcMock.mockImplementationOnce(async () => {
+      h.set({
+        currentSessionKey: 'agent:main:other',
+        loading: false,
+        messages: [{ role: 'assistant', content: 'other session', timestamp: 1001 }],
+      });
+      return { success: false, error: 'RPC timeout: chat.history' };
+    });
+
+    await actions.loadHistory();
+
+    expect(invokeIpcMock).toHaveBeenCalledTimes(1);
+    expect(h.read().currentSessionKey).toBe('agent:main:other');
+    expect(h.read().messages.map((message) => message.content)).toEqual(['other session']);
+    expect(h.read().error).toBeNull();
+    expect(warnSpy).not.toHaveBeenCalled();
     warnSpy.mockRestore();
   });
 
