@@ -1,4 +1,5 @@
 import { readFile, readdir } from 'node:fs/promises';
+import { extractSessionRecords } from '../../utils/session-util';
 import type { IncomingMessage, ServerResponse } from 'http';
 import { join } from 'node:path';
 import {
@@ -677,16 +678,6 @@ function inferTargetKindFromValue(
   if (target.includes(':channel:')) return 'channel';
   if (channelType === 'dingtalk' && target.startsWith('cid')) return 'group';
   return 'user';
-}
-
-function extractSessionRecords(store: JsonRecord): JsonRecord[] {
-  const directEntries = Object.entries(store)
-    .filter(([key, value]) => key !== 'sessions' && value && typeof value === 'object')
-    .map(([, value]) => value as JsonRecord);
-  const arrayEntries = Array.isArray(store.sessions)
-    ? store.sessions.filter((entry): entry is JsonRecord => Boolean(entry && typeof entry === 'object'))
-    : [];
-  return [...directEntries, ...arrayEntries];
 }
 
 function buildChannelTargetCacheKey(params: {

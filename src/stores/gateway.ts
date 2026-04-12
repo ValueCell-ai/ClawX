@@ -17,6 +17,7 @@ const LOAD_SESSIONS_MIN_INTERVAL_MS = 1_200;
 const LOAD_HISTORY_MIN_INTERVAL_MS = 800;
 let lastLoadSessionsAt = 0;
 let lastLoadHistoryAt = 0;
+let cronRepairTriggeredThisSession = false;
 
 interface GatewayHealth {
   ok: boolean;
@@ -262,6 +263,17 @@ export const useGatewayStore = create<GatewayState>((set, get) => ({
           const unsubscribers: Array<() => void> = [];
           unsubscribers.push(subscribeHostEvent<GatewayStatus>('gateway:status', (payload) => {
             set({ status: payload });
+
+            // Trigger cron repair when gateway becomes ready
+            if (!cronRepairTriggeredThisSession && payload.state === 'running') {
+              cronRepairTriggeredThisSession = true;
+              // Fire-and-forget: fetch cron jobs to trigger repair logic in background
+              import('./cron')
+                .then(({ useCronStore }) => {
+                  useCronStore.getState().fetchJobs();
+                })
+                .catch(() => {});
+            }
           }));
           unsubscribers.push(subscribeHostEvent<{ message?: string }>('gateway:error', (payload) => {
             set({ lastError: payload.message || 'Gateway error' });

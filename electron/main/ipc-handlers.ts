@@ -22,6 +22,8 @@ import {
 import { syncProxyConfigToOpenClaw } from '../utils/openclaw-proxy';
 import { buildOpenClawControlUiUrl } from '../utils/openclaw-control-ui';
 import { logger } from '../utils/logger';
+import { resolveAgentIdFromChannel } from '../utils/agent-config';
+import { resolveAccountIdFromSessionHistory } from '../utils/session-util';
 import {
   saveChannelConfig,
   getChannelConfig,
@@ -891,8 +893,7 @@ function registerCronHandlers(gatewayManager: GatewayManager): void {
   ipcMain.handle('cron:list', async () => {
     try {
       const result = await gatewayManager.rpc('cron.list', { includeDisabled: true });
-      const data = result as { jobs?: GatewayCronJob[] };
-      const jobs = data?.jobs ?? [];
+      const jobs = Array.isArray(result) ? result : (result as { jobs?: GatewayCronJob[] })?.jobs ?? [];
 
       // Auto-repair legacy UI-created jobs that were saved without
       // delivery: { mode: 'none' }.  The Gateway auto-normalizes them
@@ -1031,6 +1032,65 @@ function registerCronHandlers(gatewayManager: GatewayManager): void {
       throw error;
     }
   });
+
+  // Periodic cron job repair: checks for jobs with undefined agentId and repairs them
+  // This handles cases where cron jobs were created via openclaw CLI without specifying agent
+  const CRON_AGENT_REPAIR_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
+  let _lastRepairErrorLogAt = 0;
+  const REPAIR_ERROR_LOG_INTERVAL_MS = 60 * 60 * 1000; // 1 hour
+  setInterval(async () => {
+    try {
+      const status = gatewayManager.getStatus();
+      if (status.state !== 'running') return;
+
+      const result = await gatewayManager.rpc('cron.list', { includeDisabled: true });
+      const jobs = Array.isArray(result)
+        ? result
+        : (result as { jobs?: Array<{ id: string; name: string; sessionTarget?: string; payload?: { kind: string }; delivery?: { mode: string; channel?: string; to?: string; accountId?: string }; state?: Record<string, unknown> }> })?.jobs ?? [];
+
+      for (const job of jobs) {
+        const jobAgentId = (job as unknown as { agentId?: string }).agentId;
+        if (
+          (job.sessionTarget === 'isolated' || !job.sessionTarget) &&
+          job.payload?.kind === 'agentTurn' &&
+          job.delivery?.mode === 'announce' &&
+          job.delivery?.channel &&
+          jobAgentId === undefined
+        ) {
+          const channel = job.delivery.channel;
+          const accountId = job.delivery.accountId;
+          const toAddress = job.delivery.to;
+
+          let correctAgentId = await resolveAgentIdFromChannel(channel, accountId);
+
+          // If no accountId, try to resolve it from session history
+          let resolvedAccountId: string | null = null;
+          if (!correctAgentId && !accountId && toAddress) {
+            resolvedAccountId = await resolveAccountIdFromSessionHistory(toAddress, channel);
+            if (resolvedAccountId) {
+              correctAgentId = await resolveAgentIdFromChannel(channel, resolvedAccountId);
+            }
+          }
+
+          if (correctAgentId) {
+            console.debug(`Periodic repair: job "${job.name}" agentId undefined -> "${correctAgentId}"`);
+            // When accountId was resolved via to address, include it in the patch
+            const patch: Record<string, unknown> = { agentId: correctAgentId };
+            if (resolvedAccountId && !accountId) {
+              patch.delivery = { accountId: resolvedAccountId };
+            }
+            await gatewayManager.rpc('cron.update', { id: job.id, patch });
+          }
+        }
+      }
+    } catch (error) {
+      const now = Date.now();
+      if (now - _lastRepairErrorLogAt >= REPAIR_ERROR_LOG_INTERVAL_MS) {
+        _lastRepairErrorLogAt = now;
+        console.debug('Periodic cron repair error:', error);
+      }
+    }
+  }, CRON_AGENT_REPAIR_INTERVAL_MS);
 }
 
 /**

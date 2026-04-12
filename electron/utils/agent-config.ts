@@ -555,6 +555,25 @@ export async function listConfiguredAgentIds(): Promise<string[]> {
   return ids.length > 0 ? ids : [MAIN_AGENT_ID];
 }
 
+/**
+ * Resolve agentId from channel and accountId using bindings.
+ * Returns the agentId if found, or null if no binding exists.
+ */
+export async function resolveAgentIdFromChannel(channel: string, accountId?: string): Promise<string | null> {
+  const config = await readOpenClawConfig() as AgentConfigDocument;
+  const { channelToAgent, accountToAgent } = getChannelBindingMap(config.bindings);
+
+  // First try account-specific binding
+  if (accountId) {
+    const agentId = accountToAgent.get(`${channel}:${accountId}`);
+    if (agentId) return agentId;
+  }
+
+  // Fallback to channel-only binding
+  const agentId = channelToAgent.get(channel);
+  return agentId ?? null;
+}
+
 export async function createAgent(
   name: string,
   options?: { inheritWorkspace?: boolean },
