@@ -2,6 +2,7 @@
 
 import 'zx/globals';
 import { readFileSync, existsSync, mkdirSync, rmSync, cpSync, writeFileSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
 import { join, dirname, basename } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -61,22 +62,16 @@ function shouldCopySkillFile(srcPath) {
 }
 
 async function extractArchive(archiveFileName, cwd) {
-  const prevCwd = $.cwd;
-  $.cwd = cwd;
   try {
-    try {
-      await $`tar -xf ${archiveFileName}`;
+    execFileSync('tar', ['-xf', archiveFileName], { cwd, stdio: 'inherit' });
+    return;
+  } catch (tarError) {
+    if (process.platform === 'win32') {
+      // Some Windows images expose bsdtar instead of tar.
+      execFileSync('bsdtar', ['-xf', archiveFileName], { cwd, stdio: 'inherit' });
       return;
-    } catch (tarError) {
-      if (process.platform === 'win32') {
-        // Some Windows images expose bsdtar instead of tar.
-        await $`bsdtar -xf ${archiveFileName}`;
-        return;
-      }
-      throw tarError;
     }
-  } finally {
-    $.cwd = prevCwd;
+    throw tarError;
   }
 }
 
@@ -88,16 +83,19 @@ async function fetchSparseRepo(repo, ref, paths, checkoutDir) {
   const archivePath = join(checkoutDir, archiveFileName);
   const archivePaths = [...new Set(paths.map(normalizeRepoPath))];
 
-  await $`git init ${gitCheckoutDir}`;
-  await $`git -C ${gitCheckoutDir} remote add origin ${remote}`;
-  await $`git -C ${gitCheckoutDir} fetch --depth 1 origin ${ref}`;
+  execFileSync('git', ['init', gitCheckoutDir], { stdio: 'inherit' });
+  execFileSync('git', ['-C', gitCheckoutDir, 'remote', 'add', 'origin', remote], { stdio: 'inherit' });
+  execFileSync('git', ['-C', gitCheckoutDir, 'fetch', '--depth', '1', 'origin', ref], { stdio: 'inherit' });
   // Do not checkout working tree on Windows: upstream repos may contain
   // Windows-invalid paths. Export only requested directories via git archive.
-  await $`git -C ${gitCheckoutDir} archive --format=tar --output ${archiveFileName} FETCH_HEAD ${archivePaths}`;
+  execFileSync('git', ['-C', gitCheckoutDir, 'archive', '--format=tar', '--output', archiveFileName, 'FETCH_HEAD', ...archivePaths], { stdio: 'inherit' });
   await extractArchive(archiveFileName, checkoutDir);
   rmSync(archivePath, { force: true });
 
-  const commit = (await $`git -C ${gitCheckoutDir} rev-parse FETCH_HEAD`).stdout.trim();
+  const commit = execFileSync('git', ['-C', gitCheckoutDir, 'rev-parse', 'FETCH_HEAD'], {
+    encoding: 'utf8',
+    stdio: ['ignore', 'pipe', 'inherit'],
+  }).trim();
   return commit;
 }
 
