@@ -79,7 +79,7 @@ test.describe('Channels first-load resilience', () => {
       await page.getByTestId('sidebar-nav-channels').click();
 
       await expect(page.getByTestId('channels-page')).toBeVisible();
-      await expect(page.getByText('Messaging Channels')).toBeVisible();
+      await expect(page.getByRole('heading', { name: 'Messaging Channels' })).toBeVisible();
       await expect(page.getByTestId('channels-initial-loading')).toBeVisible();
       await expect(page.getByText('Integration Bot')).toBeHidden();
 
