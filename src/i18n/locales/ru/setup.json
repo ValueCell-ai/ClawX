@@ -48,7 +48,9 @@
             "success": "Node.js доступен",
             "error": "Ошибка",
             "gatewayRunning": "Запущен на порту {{port}}",
-            "packageReady": "Пакет OpenClaw готов"
+            "packageReady": "Пакет OpenClaw готов",
+            "versionMismatch": "заявленная версия {{declaredVersion}} отличается от фактически запущенной",
+            "versionMismatchHelp": "Фактически используется другая версия OpenClaw, чем указано в package.json. Это часто означает устаревшую установку node_modules или отсутствие собранного build/openclaw."
         },
         "issue": {
             "title": "Обнаружена проблема с окружением",

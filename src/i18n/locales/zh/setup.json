@@ -48,7 +48,9 @@
             "success": "Node.js 可用",
             "error": "失败",
             "gatewayRunning": "运行在端口 {{port}}",
-            "packageReady": "OpenClaw 包已就绪"
+            "packageReady": "OpenClaw 包已就绪",
+            "versionMismatch": "声明版本 {{declaredVersion}} 与当前运行时不一致",
+            "versionMismatchHelp": "检测到已安装的 OpenClaw 版本与仓库声明版本不一致。开发环境可能仍在使用旧的 node_modules 依赖。"
         },
         "issue": {
             "title": "检测到环境问题",

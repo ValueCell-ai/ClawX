@@ -48,7 +48,10 @@
             "success": "Node.js is available",
             "error": "Failed",
             "gatewayRunning": "Running on port {{port}}",
-            "packageReady": "OpenClaw package ready"
+            "packageReady": "OpenClaw package ready",
+            "versionMismatch": "declared {{declaredVersion}} differs from the active runtime",
+            "versionMismatchHelp": "ClawX detected a different OpenClaw runtime than package.json declares. Gateway timing may reflect a stale install instead of current source.",
+            "versionMismatchPathHint": "The path below shows which OpenClaw copy ClawX will actually launch."
         },
         "issue": {
             "title": "Environment issue detected",

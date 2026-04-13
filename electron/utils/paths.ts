@@ -19,6 +19,27 @@ export {
   appendNodeRequireToNodeOptions,
 } from './win-shell';
 
+export type OpenClawInstallationSource =
+  | 'packaged-openclaw'
+  | 'build-openclaw'
+  | 'node_modules-openclaw';
+
+export interface OpenClawInstallationCandidate {
+  dir: string;
+  entryPath: string;
+  packageExists: boolean;
+  version?: string;
+  source: OpenClawInstallationSource;
+}
+
+export interface OpenClawResolution {
+  declaredVersion?: string;
+  selected: OpenClawInstallationCandidate;
+  candidates: OpenClawInstallationCandidate[];
+  versionMismatch: boolean;
+  warning?: string;
+}
+
 function getElectronApp() {
   if (process.versions?.electron) {
     return (require('electron') as typeof import('electron')).app;
@@ -35,6 +56,174 @@ function getElectronApp() {
     getAppPath: () => fallbackAppPath,
   };
   return fallbackApp;
+}
+
+function readJsonFile<T>(filePath: string): T | null {
+  if (!existsSync(filePath)) {
+    return null;
+  }
+
+  try {
+    return JSON.parse(readFileSync(filePath, 'utf-8')) as T;
+  } catch {
+    return null;
+  }
+}
+
+type RootPackageJson = {
+  dependencies?: Record<string, string>;
+  devDependencies?: Record<string, string>;
+};
+
+function normalizeDeclaredVersion(value: string | undefined): string | undefined {
+  const trimmed = value?.trim();
+  if (!trimmed) return undefined;
+
+  const match = trimmed.match(/\d{4}\.\d+\.\d+/);
+  return match?.[0] ?? trimmed;
+}
+
+function readOpenClawVersion(dir: string): string | undefined {
+  const pkg = readJsonFile<{ version?: string }>(join(dir, 'package.json'));
+  return typeof pkg?.version === 'string' && pkg.version.trim()
+    ? pkg.version.trim()
+    : undefined;
+}
+
+export function getDeclaredOpenClawVersion(appPath = getElectronApp().getAppPath()): string | undefined {
+  const rootPkg = readJsonFile<RootPackageJson>(join(appPath, 'package.json'));
+  return normalizeDeclaredVersion(
+    rootPkg?.dependencies?.openclaw
+    ?? rootPkg?.devDependencies?.openclaw,
+  );
+}
+
+function dedupeCandidatePaths(
+  entries: Array<{ dir: string; source: OpenClawInstallationSource }>,
+): Array<{ dir: string; source: OpenClawInstallationSource }> {
+  const seen = new Set<string>();
+  const next: Array<{ dir: string; source: OpenClawInstallationSource }> = [];
+
+  for (const entry of entries) {
+    if (seen.has(entry.dir)) continue;
+    seen.add(entry.dir);
+    next.push(entry);
+  }
+
+  return next;
+}
+
+export function collectOpenClawCandidates(params?: {
+  isPackaged?: boolean;
+  appPath?: string;
+  resourcesPath?: string;
+  cwd?: string;
+}): OpenClawInstallationCandidate[] {
+  const electronApp = getElectronApp();
+  const isPackaged = params?.isPackaged ?? electronApp.isPackaged;
+  const appPath = params?.appPath ?? electronApp.getAppPath();
+  const cwd = params?.cwd ?? process.cwd();
+
+  const rawCandidates = isPackaged
+    ? [
+      {
+        dir: join(params?.resourcesPath ?? process.resourcesPath, 'openclaw'),
+        source: 'packaged-openclaw' as const,
+      },
+    ]
+    : dedupeCandidatePaths([
+      { dir: join(appPath, 'build', 'openclaw'), source: 'build-openclaw' },
+      { dir: join(cwd, 'build', 'openclaw'), source: 'build-openclaw' },
+      { dir: join(__dirname, '../../build/openclaw'), source: 'build-openclaw' },
+      { dir: join(appPath, 'node_modules', 'openclaw'), source: 'node_modules-openclaw' },
+      { dir: join(cwd, 'node_modules', 'openclaw'), source: 'node_modules-openclaw' },
+      { dir: join(__dirname, '../../node_modules/openclaw'), source: 'node_modules-openclaw' },
+    ]);
+
+  return rawCandidates.map(({ dir, source }) => {
+    const packageExists = existsSync(dir) && existsSync(join(dir, 'package.json'));
+    return {
+      dir,
+      entryPath: join(dir, 'openclaw.mjs'),
+      packageExists,
+      version: packageExists ? readOpenClawVersion(dir) : undefined,
+      source,
+    };
+  });
+}
+
+export function selectOpenClawCandidate(
+  candidates: OpenClawInstallationCandidate[],
+  declaredVersion?: string,
+): OpenClawInstallationCandidate | undefined {
+  const available = candidates.filter((candidate) => candidate.packageExists);
+  if (available.length === 0) {
+    return candidates[0];
+  }
+
+  const normalizedDeclaredVersion = normalizeDeclaredVersion(declaredVersion);
+  if (normalizedDeclaredVersion) {
+    const exactMatch = available.find((candidate) => candidate.version === normalizedDeclaredVersion);
+    if (exactMatch) {
+      return exactMatch;
+    }
+  }
+
+  return available[0];
+}
+
+export function formatOpenClawVersionWarning(params: {
+  declaredVersion?: string;
+  resolvedVersion?: string;
+  dir: string;
+  source: OpenClawInstallationSource;
+}): string | undefined {
+  const declaredVersion = normalizeDeclaredVersion(params.declaredVersion);
+  const resolvedVersion = params.resolvedVersion?.trim();
+
+  if (!declaredVersion || !resolvedVersion || declaredVersion === resolvedVersion) {
+    return undefined;
+  }
+
+  return [
+    `OpenClaw version mismatch: declared ${declaredVersion}`,
+    `but resolved ${resolvedVersion} from ${params.dir}`,
+    `(source=${params.source}).`,
+  ].join(' ');
+}
+
+export function resolveOpenClawInstallation(params?: {
+  isPackaged?: boolean;
+  appPath?: string;
+  resourcesPath?: string;
+  cwd?: string;
+  declaredVersion?: string;
+}): OpenClawResolution {
+  const candidates = collectOpenClawCandidates(params);
+  const fallbackCandidate = candidates[0] ?? {
+    dir: join(__dirname, '../../node_modules/openclaw'),
+    entryPath: join(__dirname, '../../node_modules/openclaw', 'openclaw.mjs'),
+    packageExists: false,
+    source: (params?.isPackaged ?? getElectronApp().isPackaged)
+      ? 'packaged-openclaw'
+      : 'node_modules-openclaw',
+  };
+  const declaredVersion = params?.declaredVersion ?? getDeclaredOpenClawVersion(params?.appPath);
+  const selected = selectOpenClawCandidate(candidates, declaredVersion) ?? fallbackCandidate;
+  const warning = formatOpenClawVersionWarning({
+    declaredVersion,
+    resolvedVersion: selected.version,
+    dir: selected.dir,
+    source: selected.source,
+  });
+
+  return {
+    declaredVersion,
+    selected,
+    candidates,
+    versionMismatch: Boolean(warning),
+    warning,
+  };
 }
 
 /**
@@ -114,11 +303,7 @@ export function getPreloadPath(): string {
  * - Development: from node_modules/openclaw
  */
 export function getOpenClawDir(): string {
-  if (getElectronApp().isPackaged) {
-    return join(process.resourcesPath, 'openclaw');
-  }
-  // Development: use node_modules/openclaw
-  return join(__dirname, '../../node_modules/openclaw');
+  return resolveOpenClawInstallation().selected.dir;
 }
 
 /**
@@ -141,7 +326,7 @@ export function getOpenClawResolvedDir(): string {
  * Get OpenClaw entry script path (openclaw.mjs)
  */
 export function getOpenClawEntryPath(): string {
-  return join(getOpenClawDir(), 'openclaw.mjs');
+  return resolveOpenClawInstallation().selected.entryPath;
 }
 
 /**
@@ -163,9 +348,7 @@ export function getClawHubCliBinPath(): string {
  * Check if OpenClaw package exists
  */
 export function isOpenClawPresent(): boolean {
-  const dir = getOpenClawDir();
-  const pkgJsonPath = join(dir, 'package.json');
-  return existsSync(dir) && existsSync(pkgJsonPath);
+  return resolveOpenClawInstallation().selected.packageExists;
 }
 
 /**
@@ -188,29 +371,39 @@ export interface OpenClawStatus {
   entryPath: string;
   dir: string;
   version?: string;
+  declaredVersion?: string;
+  versionMismatch?: boolean;
+  warning?: string;
+  source?: OpenClawInstallationSource;
+  candidateVersions?: Array<{
+    dir: string;
+    source: OpenClawInstallationSource;
+    version?: string;
+    packageExists: boolean;
+  }>;
 }
 
 export function getOpenClawStatus(): OpenClawStatus {
-  const dir = getOpenClawDir();
-  let version: string | undefined;
-
-  // Try to read version from package.json
-  try {
-    const pkgPath = join(dir, 'package.json');
-    if (existsSync(pkgPath)) {
-      const pkg = JSON.parse(readFileSync(pkgPath, 'utf-8'));
-      version = pkg.version;
-    }
-  } catch {
-    // Ignore version read errors
-  }
+  const resolution = resolveOpenClawInstallation();
+  const dir = resolution.selected.dir;
+  const version = resolution.selected.version;
 
   const status: OpenClawStatus = {
-    packageExists: isOpenClawPresent(),
+    packageExists: resolution.selected.packageExists,
     isBuilt: isOpenClawBuilt(),
-    entryPath: getOpenClawEntryPath(),
+    entryPath: resolution.selected.entryPath,
     dir,
     version,
+    declaredVersion: resolution.declaredVersion,
+    versionMismatch: resolution.versionMismatch,
+    warning: resolution.warning,
+    source: resolution.selected.source,
+    candidateVersions: resolution.candidates.map((candidate) => ({
+      dir: candidate.dir,
+      source: candidate.source,
+      version: candidate.version,
+      packageExists: candidate.packageExists,
+    })),
   };
 
   try {

@@ -48,7 +48,9 @@
             "success": "Node.js は利用可能です",
             "error": "失敗",
             "gatewayRunning": "ポート {{port}} で実行中",
-            "packageReady": "OpenClaw パッケージ準備完了"
+            "packageReady": "OpenClaw パッケージ準備完了",
+            "versionMismatch": "宣言済み {{declaredVersion}} と異なる実行環境です",
+            "versionMismatchHelp": "インストール済みの OpenClaw が package.json の宣言と一致しません。依存関係の再インストールや build/openclaw の再生成が必要な可能性があります。"
         },
         "issue": {
             "title": "環境の問題が検出されました",

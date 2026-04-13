@@ -5,9 +5,26 @@ const originalResourcesPath = process.resourcesPath;
 
 const {
   mockExistsSync,
+  mockReadFileSync,
   mockIsPackagedGetter,
 } = vi.hoisted(() => ({
   mockExistsSync: vi.fn<(path: string) => boolean>(),
+  mockReadFileSync: vi.fn((filePath: string) => {
+    if (filePath.includes('/build/openclaw/') || filePath.includes('\\build\\openclaw\\')) {
+      return JSON.stringify({ version: '2026.4.11' });
+    }
+    if (filePath.includes('/node_modules/openclaw/') || filePath.includes('\\node_modules\\openclaw\\')) {
+      return JSON.stringify({ version: '2026.2.23' });
+    }
+    if (filePath.endsWith('/package.json') || filePath.endsWith('\\package.json')) {
+      return JSON.stringify({
+        dependencies: {
+          openclaw: '2026.4.11',
+        },
+      });
+    }
+    return JSON.stringify({});
+  }),
   mockIsPackagedGetter: { value: false },
 }));
 
@@ -15,17 +32,22 @@ function setPlatform(platform: string) {
   Object.defineProperty(process, 'platform', { value: platform, writable: true });
 }
 
-vi.mock('node:fs', async () => {
+async function createFsMock() {
   const actual = await vi.importActual<typeof import('node:fs')>('node:fs');
   return {
     ...actual,
+    readFileSync: mockReadFileSync,
     existsSync: mockExistsSync,
     default: {
       ...actual,
+      readFileSync: mockReadFileSync,
       existsSync: mockExistsSync,
     },
   };
-});
+}
+
+vi.mock('node:fs', createFsMock);
+vi.mock('fs', createFsMock);
 
 vi.mock('electron', () => ({
   app: {
@@ -84,5 +106,54 @@ describe('getOpenClawCliCommand (Windows packaged)', () => {
     const command = getOpenClawCliCommand();
     expect(command.startsWith('$env:ELECTRON_RUN_AS_NODE=1; & ')).toBe(true);
     expect(command.endsWith("'C:\\Program Files\\ClawX\\resources\\openclaw\\openclaw.mjs'")).toBe(true);
+  });
+});
+
+describe('resolveOpenClawInstallation', () => {
+  beforeEach(() => {
+    vi.resetModules();
+    vi.clearAllMocks();
+    setPlatform('linux');
+    mockIsPackagedGetter.value = false;
+  });
+
+  afterEach(() => {
+    Object.defineProperty(process, 'platform', { value: originalPlatform, writable: true });
+  });
+
+  it('prefers a build/openclaw candidate that matches the declared version over stale node_modules', async () => {
+    mockExistsSync.mockImplementation((p: string) => {
+      if (p.includes('/build/openclaw')) return true;
+      if (p.includes('/node_modules/openclaw')) return true;
+      return false;
+    });
+
+    vi.doUnmock('@electron/utils/paths');
+    const { resolveOpenClawInstallation } = await import('@electron/utils/paths');
+    const resolution = resolveOpenClawInstallation({
+      appPath: '/workspace',
+      cwd: '/workspace',
+      declaredVersion: '2026.4.11',
+    });
+
+    expect(resolution.selected.dir).toContain('/build/openclaw');
+    expect(resolution.versionMismatch).toBe(false);
+  });
+
+  it('reports a mismatch warning when only stale node_modules is available', async () => {
+    mockExistsSync.mockImplementation((p: string) => p.includes('/node_modules/openclaw'));
+
+    vi.doUnmock('@electron/utils/paths');
+    const { resolveOpenClawInstallation } = await import('@electron/utils/paths');
+    const resolution = resolveOpenClawInstallation({
+      appPath: '/workspace',
+      cwd: '/workspace',
+      declaredVersion: '2026.4.11',
+    });
+
+    expect(resolution.selected.dir).toContain('/node_modules/openclaw');
+    expect(resolution.versionMismatch).toBe(true);
+    expect(resolution.warning).toContain('declared 2026.4.11');
+    expect(resolution.warning).toContain('resolved 2026.2.23');
   });
 });

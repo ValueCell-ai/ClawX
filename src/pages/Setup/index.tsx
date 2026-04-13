@@ -388,6 +388,7 @@ function RuntimeContent({ onStatusChange }: RuntimeContentProps) {
   const [showLogs, setShowLogs] = useState(false);
   const [logContent, setLogContent] = useState('');
   const [openclawDir, setOpenclawDir] = useState('');
+  const [openclawVersionMismatch, setOpenclawVersionMismatch] = useState(false);
   const gatewayTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   const runChecks = useCallback(async () => {
@@ -411,9 +412,13 @@ function RuntimeContent({ onStatusChange }: RuntimeContentProps) {
         isBuilt: boolean;
         dir: string;
         version?: string;
+        declaredVersion?: string;
+        versionMismatch?: boolean;
+        warning?: string;
       };
 
       setOpenclawDir(openclawStatus.dir);
+      setOpenclawVersionMismatch(Boolean(openclawStatus.versionMismatch));
 
       if (!openclawStatus.packageExists) {
         setChecks((prev) => ({
@@ -433,15 +438,21 @@ function RuntimeContent({ onStatusChange }: RuntimeContentProps) {
         }));
       } else {
         const versionLabel = openclawStatus.version ? ` v${openclawStatus.version}` : '';
+        const mismatchLabel = openclawStatus.versionMismatch && openclawStatus.declaredVersion
+          ? ` (${t('runtime.status.versionMismatch', {
+            declaredVersion: openclawStatus.declaredVersion,
+          })})`
+          : '';
         setChecks((prev) => ({
           ...prev,
           openclaw: {
             status: 'success',
-            message: `OpenClaw package ready${versionLabel}`
+            message: `OpenClaw package ready${versionLabel}${mismatchLabel}`
           },
         }));
       }
     } catch (error) {
+      setOpenclawVersionMismatch(false);
       setChecks((prev) => ({
         ...prev,
         openclaw: { status: 'error', message: `Check failed: ${error}` },
@@ -635,6 +646,11 @@ function RuntimeContent({ onStatusChange }: RuntimeContentProps) {
         <div className="grid grid-cols-[1fr_auto] items-center gap-4 p-3 rounded-lg bg-muted/50">
           <div className="text-left min-w-0">
             <span>{t('runtime.openclaw')}</span>
+            {checks.openclaw.status === 'success' && openclawVersionMismatch && (
+              <p className="text-xs text-yellow-500 mt-1 break-words">
+                {t('runtime.status.versionMismatchHelp')}
+              </p>
+            )}
             {openclawDir && (
               <p className="text-xs text-muted-foreground mt-0.5 font-mono break-all">
                 {openclawDir}
