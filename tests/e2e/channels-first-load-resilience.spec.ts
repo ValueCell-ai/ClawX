@@ -7,7 +7,7 @@ test.describe('Channels first-load resilience', () => {
     try {
       await electronApp.evaluate(({ ipcMain }) => {
         const state = {
-          delayMs: 1500,
+          calls: 0,
         };
 
         ipcMain.removeHandler('hostapi:fetch');
@@ -16,7 +16,38 @@ test.describe('Channels first-load resilience', () => {
           const path = request?.path ?? '';
 
           if (path === '/api/channels/accounts' && method === 'GET') {
-            await new Promise((resolve) => setTimeout(resolve, state.delayMs));
+            state.calls += 1;
+            if (state.calls === 1) {
+              return {
+                ok: true,
+                data: {
+                  status: 200,
+                  ok: true,
+                  json: {
+                    success: true,
+                    runtimeStatusPending: true,
+                    channels: [
+                      {
+                        channelType: 'telegram',
+                        defaultAccountId: 'default',
+                        status: 'connecting',
+                        accounts: [
+                          {
+                            accountId: 'default',
+                            name: 'Integration Bot',
+                            configured: true,
+                            status: 'connecting',
+                            isDefault: true,
+                            agentId: 'main',
+                          },
+                        ],
+                      },
+                    ],
+                  },
+                },
+              };
+            }
+
             return {
               ok: true,
               data: {
@@ -24,17 +55,18 @@ test.describe('Channels first-load resilience', () => {
                 ok: true,
                 json: {
                   success: true,
+                  runtimeStatusPending: false,
                   channels: [
                     {
                       channelType: 'telegram',
                       defaultAccountId: 'default',
-                      status: 'connecting',
+                      status: 'connected',
                       accounts: [
                         {
                           accountId: 'default',
                           name: 'Integration Bot',
                           configured: true,
-                          status: 'connecting',
+                          status: 'connected',
                           isDefault: true,
                           agentId: 'main',
                         },
@@ -80,11 +112,11 @@ test.describe('Channels first-load resilience', () => {
 
       await expect(page.getByTestId('channels-page')).toBeVisible();
       await expect(page.getByRole('heading', { name: 'Messaging Channels' })).toBeVisible();
-      await expect(page.getByTestId('channels-initial-loading')).toBeVisible();
-      await expect(page.getByText('Integration Bot')).toBeHidden();
+      await expect(page.getByText('Integration Bot')).toBeVisible();
+      await expect(page.locator('[class*="bg-yellow-500"]').first()).toBeVisible();
+      await expect(page.locator('button', { hasText: 'Telegram' })).toBeHidden();
 
-      await expect(page.getByText('Integration Bot')).toBeVisible({ timeout: 5000 });
-      await expect(page.getByTestId('channels-initial-loading')).toBeHidden();
+      await expect(page.locator('[class*="bg-green-500"]').first()).toBeVisible({ timeout: 7000 });
     } finally {
       await closeElectronApp(electronApp);
     }

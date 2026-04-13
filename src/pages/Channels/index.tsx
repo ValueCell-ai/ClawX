@@ -51,6 +51,13 @@ interface AgentItem {
   name: string;
 }
 
+interface ChannelsAccountsResponse {
+  success: boolean;
+  channels?: ChannelGroupItem[];
+  error?: string;
+  runtimeStatusPending?: boolean;
+}
+
 interface DeleteTarget {
   channelType: string;
   accountId?: string;
@@ -89,6 +96,7 @@ export function Channels() {
   const [existingAccountIdsForModal, setExistingAccountIdsForModal] = useState<string[]>([]);
   const [initialConfigValuesForModal, setInitialConfigValuesForModal] = useState<Record<string, string> | undefined>(undefined);
   const [deleteTarget, setDeleteTarget] = useState<DeleteTarget | null>(null);
+  const [runtimeStatusPending, setRuntimeStatusPending] = useState(false);
 
   const displayedChannelTypes = getPrimaryChannels();
   const visibleChannelGroups = channelGroups;
@@ -103,6 +111,8 @@ export function Channels() {
   channelGroupsRef.current = channelGroups;
   const agentsRef = useRef(agents);
   agentsRef.current = agents;
+  const retryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const retryCountRef = useRef(0);
 
   const fetchPageData = useCallback(async () => {
     // Only show loading spinner on first load (stale-while-revalidate).
@@ -113,7 +123,7 @@ export function Channels() {
     setError(null);
     try {
       const [channelsRes, agentsRes] = await Promise.all([
-        hostApiFetch<{ success: boolean; channels?: ChannelGroupItem[]; error?: string }>('/api/channels/accounts'),
+        hostApiFetch<ChannelsAccountsResponse>('/api/channels/accounts'),
         hostApiFetch<{ success: boolean; agents?: AgentItem[]; error?: string }>('/api/agents'),
       ]);
 
@@ -127,9 +137,11 @@ export function Channels() {
 
       setChannelGroups(channelsRes.channels || []);
       setAgents(agentsRes.agents || []);
+      setRuntimeStatusPending(channelsRes.runtimeStatusPending === true);
     } catch (fetchError) {
       // Preserve previous data on error — don't clear channelGroups/agents.
       setError(String(fetchError));
+      setRuntimeStatusPending(false);
     } finally {
       setLoading(false);
     }
@@ -175,9 +187,37 @@ export function Channels() {
     lastGatewayStateRef.current = gatewayStatus.state;
 
     if (previousGatewayState !== 'running' && gatewayStatus.state === 'running') {
+      retryCountRef.current = 0;
       void fetchPageData();
     }
   }, [fetchPageData, gatewayStatus.state]);
+
+  useEffect(() => {
+    if (retryTimerRef.current) {
+      clearTimeout(retryTimerRef.current);
+      retryTimerRef.current = null;
+    }
+
+    if (!runtimeStatusPending || gatewayStatus.state !== 'running' || retryCountRef.current >= 3) {
+      if (!runtimeStatusPending || gatewayStatus.state !== 'running') {
+        retryCountRef.current = 0;
+      }
+      return;
+    }
+
+    retryTimerRef.current = setTimeout(() => {
+      retryTimerRef.current = null;
+      retryCountRef.current += 1;
+      void fetchPageData();
+    }, 2000);
+
+    return () => {
+      if (retryTimerRef.current) {
+        clearTimeout(retryTimerRef.current);
+        retryTimerRef.current = null;
+      }
+    };
+  }, [fetchPageData, gatewayStatus.state, runtimeStatusPending]);
 
   const configuredTypes = useMemo(
     () => visibleChannelGroups.map((group) => group.channelType),
@@ -196,7 +236,12 @@ export function Channels() {
     return [...known, ...unknown];
   }, [visibleChannelGroups, displayedChannelTypes, groupedByType]);
 
-  const unsupportedGroups = displayedChannelTypes.filter((type) => !configuredTypes.includes(type));
+  const unsupportedGroups = useMemo(() => {
+    if (loading && !hasStableValue) {
+      return [];
+    }
+    return displayedChannelTypes.filter((type) => !configuredTypes.includes(type));
+  }, [configuredTypes, displayedChannelTypes, hasStableValue, loading]);
 
   const handleRefresh = () => {
     void fetchPageData();

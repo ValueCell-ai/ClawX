@@ -415,6 +415,11 @@ interface ChannelAccountsView {
   accounts: ChannelAccountView[];
 }
 
+interface ChannelAccountsViewResult {
+  channels: ChannelAccountsView[];
+  runtimeStatusPending: boolean;
+}
+
 function shouldIncludeRuntimeAccountId(
   accountId: string,
   configuredAccountIds: Set<string>,
@@ -519,7 +524,7 @@ async function fetchBestEffortGatewayChannelStatus(
   }
 }
 
-async function buildChannelAccountsView(ctx: HostApiContext): Promise<ChannelAccountsView[]> {
+async function buildChannelAccountsView(ctx: HostApiContext): Promise<ChannelAccountsViewResult> {
   // Read config once and share across all sub-calls (was 5 readFile calls before).
   const openClawConfig = await readOpenClawConfig();
   const gatewayLifecycleState = ctx.gatewayManager.getStatus().state;
@@ -531,6 +536,7 @@ async function buildChannelAccountsView(ctx: HostApiContext): Promise<ChannelAcc
   ]);
 
   const gatewayStatus = await fetchBestEffortGatewayChannelStatus(ctx);
+  const runtimeStatusPending = gatewayLifecycleState === 'running' && gatewayStatus === null;
 
   const channelTypes = new Set<string>([
     ...configuredChannels,
@@ -612,7 +618,10 @@ async function buildChannelAccountsView(ctx: HostApiContext): Promise<ChannelAcc
     });
   }
 
-  return channels.sort((left, right) => left.channelType.localeCompare(right.channelType));
+  return {
+    channels: channels.sort((left, right) => left.channelType.localeCompare(right.channelType)),
+    runtimeStatusPending,
+  };
 }
 
 function buildChannelTargetLabel(baseLabel: string, value: string): string {
@@ -1216,8 +1225,8 @@ export async function handleChannelRoutes(
 
   if (url.pathname === '/api/channels/accounts' && req.method === 'GET') {
     try {
-      const channels = await buildChannelAccountsView(ctx);
-      sendJson(res, 200, { success: true, channels });
+      const result = await buildChannelAccountsView(ctx);
+      sendJson(res, 200, { success: true, ...result });
     } catch (error) {
       sendJson(res, 500, { success: false, error: String(error) });
     }

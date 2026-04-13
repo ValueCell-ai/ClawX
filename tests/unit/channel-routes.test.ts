@@ -188,6 +188,7 @@ describe('handleChannelRoutes', () => {
       200,
       expect.objectContaining({
         success: true,
+        runtimeStatusPending: false,
         channels: [
           expect.objectContaining({
             channelType: 'feishu',
@@ -248,6 +249,7 @@ describe('handleChannelRoutes', () => {
       200,
       expect.objectContaining({
         success: true,
+        runtimeStatusPending: false,
         channels: [
           expect.objectContaining({
             channelType: 'telegram',
@@ -305,6 +307,7 @@ describe('handleChannelRoutes', () => {
       200,
       expect.objectContaining({
         success: true,
+        runtimeStatusPending: true,
         channels: [
           expect.objectContaining({
             channelType: 'discord',
