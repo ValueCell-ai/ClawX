@@ -230,12 +230,13 @@
                     "placeholder": "Your app secret"
                 }
             },
-            "instructions": [
-                "Read the documentation, then go to Feishu Open Platform",
-                "Create a new application",
-                "Get App ID and App Secret",
-                "Configure event subscription"
-            ]
+      "instructions": [
+        "Read the documentation, then go to Feishu Open Platform",
+        "Create a new application",
+        "Get App ID and App Secret",
+        "Configure event subscription",
+        "After connection, private chats stream by default while group chats stay non-streaming"
+      ]
         },
         "wecom": {
             "description": "Connect WeCom Bot via plugin",
