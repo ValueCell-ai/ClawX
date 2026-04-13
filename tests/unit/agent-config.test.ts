@@ -379,7 +379,7 @@ describe('agent config lifecycle', () => {
     expect(snapshot.channelAccountOwners['telegram:default']).toBe('main');
   });
 
-  it('replaces previous account binding for the same agent and channel', async () => {
+  it('keeps sibling account bindings for the same agent and channel', async () => {
     await writeOpenClawJson({
       agents: {
         list: [
@@ -404,8 +404,38 @@ describe('agent config lifecycle', () => {
     await assignChannelAccountToAgent('main', 'feishu', 'alt');
 
     const snapshot = await listAgentsSnapshot();
-    expect(snapshot.channelAccountOwners['feishu:default']).toBeUndefined();
+    expect(snapshot.channelAccountOwners['feishu:default']).toBe('main');
     expect(snapshot.channelAccountOwners['feishu:alt']).toBe('main');
+  });
+
+  it('preserves original agentId casing when persisting bindings', async () => {
+    await writeOpenClawJson({
+      agents: {
+        list: [
+          { id: 'MainAgent', name: 'Main Agent', default: true },
+        ],
+      },
+      channels: {
+        feishu: {
+          enabled: true,
+          accounts: {
+            default: { enabled: true, appId: 'main-app' },
+          },
+        },
+      },
+    });
+
+    const { assignChannelAccountToAgent } = await import('@electron/utils/agent-config');
+
+    await assignChannelAccountToAgent('MainAgent', 'feishu', 'default');
+
+    const config = await readOpenClawJson();
+    expect(config.bindings).toEqual([
+      {
+        agentId: 'MainAgent',
+        match: { channel: 'feishu', accountId: 'default' },
+      },
+    ]);
   });
 
   it('keeps a single owner for the same channel account', async () => {

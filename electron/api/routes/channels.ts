@@ -101,9 +101,11 @@ async function isLegacyConfiguredAccountId(channelType: string, accountId: strin
 async function validateCanonicalAccountId(
   channelType: string,
   accountId: string | undefined,
-  options?: { allowLegacyConfiguredId?: boolean },
+  options?: { allowLegacyConfiguredId?: boolean; required?: boolean },
 ): Promise<string | null> {
-  if (!accountId) return null;
+  if (!accountId) {
+    return options?.required ? 'accountId is required' : null;
+  }
   const trimmed = accountId.trim();
   if (!trimmed) return 'accountId cannot be empty';
   if (isCanonicalOpenClawAccountId(trimmed)) {
@@ -122,8 +124,12 @@ async function validateAccountIdOrReply(
   res: ServerResponse,
   channelType: string,
   accountId: string | undefined,
+  options?: { required?: boolean },
 ): Promise<boolean> {
-  const error = await validateCanonicalAccountId(channelType, accountId, { allowLegacyConfiguredId: true });
+  const error = await validateCanonicalAccountId(channelType, accountId, {
+    allowLegacyConfiguredId: true,
+    required: options?.required,
+  });
   if (!error) {
     return true;
   }
@@ -313,8 +319,58 @@ async function ensureScopedChannelBinding(channelType: string, accountId?: strin
 
   // Legacy compatibility: if accountId matches an existing agentId, keep auto-binding.
   if (agents.agents.some((entry) => entry.id === accountId)) {
+    await migrateLegacyChannelWideBinding(storedChannelType);
     await assignChannelAccountToAgent(accountId, storedChannelType, accountId);
+    return;
   }
+
+  await migrateLegacyChannelWideBinding(storedChannelType);
+}
+
+async function migrateLegacyChannelWideBinding(channelType: string): Promise<void> {
+  const explicitDefaultOwner = await readChannelBindingOwner(channelType, 'default');
+  const legacyOwner = await readChannelBindingOwner(channelType);
+  if (!legacyOwner) {
+    return;
+  }
+
+  const agents = await listAgentsSnapshot();
+  const validAgentIds = new Set(agents.agents.map((agent) => agent.id));
+  const defaultOwner = explicitDefaultOwner && validAgentIds.has(explicitDefaultOwner)
+    ? explicitDefaultOwner
+    : (legacyOwner && validAgentIds.has(legacyOwner) ? legacyOwner : null);
+
+  if (defaultOwner) {
+    await assignChannelAccountToAgent(defaultOwner, channelType, 'default');
+  }
+
+  // Remove the legacy channel-wide fallback so newly added non-default
+  // accounts do not silently inherit default-agent routing.
+  await clearChannelBinding(channelType);
+}
+
+async function readChannelBindingOwner(channelType: string, accountId?: string): Promise<string | null> {
+  const config = await readOpenClawConfig();
+  const bindings = Array.isArray((config as { bindings?: unknown }).bindings)
+    ? (config as { bindings: unknown[] }).bindings
+    : [];
+
+  for (const binding of bindings) {
+    if (!binding || typeof binding !== 'object') continue;
+    const candidate = binding as {
+      agentId?: unknown;
+      match?: { channel?: unknown; accountId?: unknown } | unknown;
+    };
+    if (typeof candidate.agentId !== 'string' || !candidate.agentId.trim()) continue;
+    if (!candidate.match || typeof candidate.match !== 'object' || Array.isArray(candidate.match)) continue;
+    const match = candidate.match as { channel?: unknown; accountId?: unknown };
+    if (match.channel !== channelType) continue;
+    const bindingAccountId = typeof match.accountId === 'string' ? match.accountId.trim() : '';
+    if ((accountId?.trim() || '') !== bindingAccountId) continue;
+    return candidate.agentId;
+  }
+
+  return null;
 }
 
 interface GatewayChannelStatusPayload {
@@ -1145,11 +1201,19 @@ export async function handleChannelRoutes(
   if (url.pathname === '/api/channels/binding' && req.method === 'PUT') {
     try {
       const body = await parseJsonBody<{ channelType: string; accountId: string; agentId: string }>(req);
-      const validAccountId = await validateAccountIdOrReply(res, body.channelType, body.accountId);
+      const validAccountId = await validateAccountIdOrReply(res, body.channelType, body.accountId, { required: true });
       if (!validAccountId) {
         return true;
       }
-      await assignChannelAccountToAgent(body.agentId, resolveStoredChannelType(body.channelType), body.accountId);
+      const agents = await listAgentsSnapshot();
+      if (!agents.agents.some((entry) => entry.id === body.agentId)) {
+        throw new Error(`Agent "${body.agentId}" not found`);
+      }
+      const storedChannelType = resolveStoredChannelType(body.channelType);
+      if (body.accountId !== 'default') {
+        await migrateLegacyChannelWideBinding(storedChannelType);
+      }
+      await assignChannelAccountToAgent(body.agentId, storedChannelType, body.accountId);
       scheduleGatewayChannelSaveRefresh(ctx, body.channelType, `channel:setBinding:${body.channelType}`);
       sendJson(res, 200, { success: true });
     } catch (error) {
