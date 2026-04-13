@@ -43,9 +43,6 @@ importers:
       '@eslint/js':
         specifier: ^10.0.1
         version: 10.0.1(eslint@10.1.0(jiti@1.21.7))
-      '@larksuite/openclaw-lark':
-        specifier: 2026.4.7
-        version: 2026.4.7(openclaw@2026.4.11(@emnapi/core@1.9.2)(@emnapi/runtime@1.9.1)(@napi-rs/canvas@0.1.97)(@types/express@5.0.6)(apache-arrow@18.1.0)(encoding@0.1.13)(typescript@5.9.3))
       '@playwright/test':
         specifier: ^1.56.1
         version: 1.59.0
@@ -1306,16 +1303,6 @@ packages:
     os: [darwin, linux, win32]
     peerDependencies:
       apache-arrow: '>=15.0.0 <=18.1.0'
-
-  '@larksuite/openclaw-lark@2026.4.7':
-    resolution: {integrity: sha512-oiS7hHwJpoOQCHjgAT2xPTO9zmmUKEje2kgsYC+Q8ZMu0gn/sI+FE2NYnQ3dVcgqw7z+2rdajgcTP6kkisFxNw==}
-    engines: {node: '>=22'}
-    hasBin: true
-    peerDependencies:
-      openclaw: '>=2026.3.22'
-    peerDependenciesMeta:
-      openclaw:
-        optional: true
 
   '@larksuiteoapi/node-sdk@1.60.0':
     resolution: {integrity: sha512-MS1eXx7K6HHIyIcCBkJLb21okoa8ZatUGQWZaCCUePm6a37RWFmT6ZKlKvHxAanSX26wNuNlwP0RhgscsE+T6g==}
@@ -4429,11 +4416,6 @@ packages:
 
   image-q@4.0.0:
     resolution: {integrity: sha512-PfJGVgIfKQJuq3s0tTDOKtztksibuUEbJQIYT3by6wctQo+Rdlh7ef4evJ5NCdxY4CfMbvFkocEwbl4BF8RlJw==}
-
-  image-size@2.0.2:
-    resolution: {integrity: sha512-IRqXKlaXwgSMAMtpNzZa1ZAe8m+Sa1770Dhk8VkSsP9LS+iHD62Zd8FQKs8fbPiagBE7BzoFX23cxFnwshpV6w==}
-    engines: {node: '>=16.x'}
-    hasBin: true
 
   immediate@3.0.6:
     resolution: {integrity: sha512-XXOFtyqDjNDAQxVfYxuF7g9Il/IbWmmlQg2MYKOH8ExIT1qg6xc4zyS3HaEEATgs1btfzxq15ciUiY7gjSXRGQ==}
@@ -8428,19 +8410,6 @@ snapshots:
       '@lancedb/lancedb-win32-arm64-msvc': 0.27.2
       '@lancedb/lancedb-win32-x64-msvc': 0.27.2
 
-  '@larksuite/openclaw-lark@2026.4.7(openclaw@2026.4.11(@emnapi/core@1.9.2)(@emnapi/runtime@1.9.1)(@napi-rs/canvas@0.1.97)(@types/express@5.0.6)(apache-arrow@18.1.0)(encoding@0.1.13)(typescript@5.9.3))':
-    dependencies:
-      '@larksuiteoapi/node-sdk': 1.60.0
-      '@sinclair/typebox': 0.34.48
-      image-size: 2.0.2
-      zod: 4.3.6
-    optionalDependencies:
-      openclaw: 2026.4.11(@emnapi/core@1.9.2)(@emnapi/runtime@1.9.1)(@napi-rs/canvas@0.1.97)(@types/express@5.0.6)(apache-arrow@18.1.0)(encoding@0.1.13)(typescript@5.9.3)
-    transitivePeerDependencies:
-      - bufferutil
-      - debug
-      - utf-8-validate
-
   '@larksuiteoapi/node-sdk@1.60.0':
     dependencies:
       axios: 1.13.6(debug@4.4.3)
@@ -9921,7 +9890,7 @@ snapshots:
   '@types/body-parser@1.19.6':
     dependencies:
       '@types/connect': 3.4.38
-      '@types/node': 25.5.0
+      '@types/node': 25.6.0
 
   '@types/bun@1.3.11':
     dependencies:
@@ -9946,7 +9915,7 @@ snapshots:
 
   '@types/connect@3.4.38':
     dependencies:
-      '@types/node': 25.5.0
+      '@types/node': 25.6.0
 
   '@types/debug@4.1.13':
     dependencies:
@@ -9966,7 +9935,7 @@ snapshots:
 
   '@types/express-serve-static-core@5.1.1':
     dependencies:
-      '@types/node': 25.5.0
+      '@types/node': 25.6.0
       '@types/qs': 6.15.0
       '@types/range-parser': 1.2.7
       '@types/send': 1.2.1
@@ -10056,12 +10025,12 @@ snapshots:
 
   '@types/send@1.2.1':
     dependencies:
-      '@types/node': 25.5.0
+      '@types/node': 25.6.0
 
   '@types/serve-static@2.2.0':
     dependencies:
       '@types/http-errors': 2.0.5
-      '@types/node': 25.5.0
+      '@types/node': 25.6.0
 
   '@types/unist@2.0.11': {}
 
@@ -12031,8 +12000,6 @@ snapshots:
   image-q@4.0.0:
     dependencies:
       '@types/node': 16.9.1
-
-  image-size@2.0.2: {}
 
   immediate@3.0.6: {}
 

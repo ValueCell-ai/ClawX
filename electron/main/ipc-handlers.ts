@@ -36,7 +36,6 @@ import { toOpenClawChannelType, toUiChannelType } from '../utils/channel-alias';
 import { checkUvInstalled, installUv, setupManagedPython } from '../utils/uv-setup';
 import {
   ensureDingTalkPluginInstalled,
-  ensureFeishuPluginInstalled,
   ensureWeComPluginInstalled,
 } from '../utils/plugin-install';
 import { updateSkillConfig, getSkillConfig, getAllSkillConfigs } from '../utils/skill-config';
@@ -1497,23 +1496,7 @@ function registerOpenClawHandlers(gatewayManager: GatewayManager): void {
           warning: installResult.warning,
         };
       }
-      // QQBot is a built-in channel since OpenClaw 3.31 — no plugin install needed
-      if (channelType === 'feishu') {
-        const installResult = await ensureFeishuPluginInstalled();
-        if (!installResult.installed) {
-          return {
-            success: false,
-            error: installResult.warning || 'Feishu plugin install failed',
-          };
-        }
-        await saveChannelConfig(channelType, config);
-        scheduleGatewayChannelSaveRefresh(channelType, `channel:saveConfig (${channelType})`);
-        return {
-          success: true,
-          pluginInstalled: installResult.installed,
-          warning: installResult.warning,
-        };
-      }
+      // Feishu is a built-in extension since OpenClaw 2026.4.11 — no plugin install needed
       await saveChannelConfig(channelType, config);
       scheduleGatewayChannelSaveRefresh(channelType, `channel:saveConfig (${channelType})`);
       return { success: true };

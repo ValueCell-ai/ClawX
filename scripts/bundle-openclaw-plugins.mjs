@@ -5,9 +5,12 @@
  *
  * Build a self-contained mirror of OpenClaw third-party plugins for packaging.
  * Current plugins:
- *   - @soimy/dingtalk -> build/openclaw-plugins/dingtalk
+ *   - @soimy/dingtalk            -> build/openclaw-plugins/dingtalk
  *   - @wecom/wecom-openclaw-plugin -> build/openclaw-plugins/wecom
  *   - @tencent-weixin/openclaw-weixin -> build/openclaw-plugins/openclaw-weixin
+ *
+ * Note: Feishu (@larksuite/openclaw-lark) is now a built-in extension in
+ * OpenClaw 2026.4.11+ and no longer needs to be bundled separately.
  *
  * The output plugin directory contains:
  *   - plugin source files (index.ts, openclaw.plugin.json, package.json, ...)
@@ -38,7 +41,6 @@ function normWin(p) {
 const PLUGINS = [
   { npmName: '@soimy/dingtalk', pluginId: 'dingtalk' },
   { npmName: '@wecom/wecom-openclaw-plugin', pluginId: 'wecom' },
-  { npmName: '@larksuite/openclaw-lark', pluginId: 'feishu-openclaw-plugin' },
   { npmName: '@tencent-weixin/openclaw-weixin', pluginId: 'openclaw-weixin' },
 ];
 

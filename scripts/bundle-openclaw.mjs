@@ -470,7 +470,7 @@ function cleanupBundle(outputDir) {
     'node_modules/koffi/src',
     'node_modules/koffi/vendor',
     'node_modules/koffi/doc',
-    'extensions/feishu', // Removed in favor of official @larksuite/openclaw-lark plugin
+    // Note: extensions/feishu is the built-in Feishu plugin since OpenClaw 2026.4.11
   ];
   for (const rel of LARGE_REMOVALS) {
     if (rmSafe(path.join(outputDir, rel))) removedCount++;
