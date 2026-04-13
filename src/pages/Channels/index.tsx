@@ -376,6 +376,8 @@ export function Channels() {
                           <p className="text-[12px] text-muted-foreground">{group.channelType}</p>
                         </div>
                         <div
+                          data-testid={`channel-group-status-${group.channelType}`}
+                          data-status={group.status}
                           className={cn(
                             'w-2 h-2 rounded-full shrink-0',
                             group.status === 'connected'

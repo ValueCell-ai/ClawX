@@ -94,6 +94,20 @@ test.describe('Channels first-load resilience', () => {
             };
           }
 
+          if (path === '/api/gateway/status' && method === 'GET') {
+            return {
+              ok: true,
+              data: {
+                status: 200,
+                ok: true,
+                json: {
+                  state: 'running',
+                  port: 18789,
+                },
+              },
+            };
+          }
+
           return {
             ok: true,
             data: {
@@ -113,10 +127,10 @@ test.describe('Channels first-load resilience', () => {
       await expect(page.getByTestId('channels-page')).toBeVisible();
       await expect(page.getByRole('heading', { name: 'Messaging Channels' })).toBeVisible();
       await expect(page.getByText('Integration Bot')).toBeVisible();
-      await expect(page.locator('[class*="bg-yellow-500"]').first()).toBeVisible();
-      await expect(page.locator('button', { hasText: 'Telegram' })).toBeHidden();
+      await expect(page.getByTestId('channel-group-status-telegram')).toHaveAttribute('data-status', 'connecting');
+      await expect(page.getByRole('button', { name: 'Telegram' })).toHaveCount(0);
 
-      await expect(page.locator('[class*="bg-green-500"]').first()).toBeVisible({ timeout: 7000 });
+      await expect(page.getByTestId('channel-group-status-telegram')).toHaveAttribute('data-status', 'connected', { timeout: 7000 });
     } finally {
       await closeElectronApp(electronApp);
     }
