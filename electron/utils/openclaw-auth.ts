@@ -21,6 +21,7 @@ import {
 } from './provider-registry';
 import {
   OPENCLAW_PROVIDER_KEY_MOONSHOT,
+  OPENCLAW_PROVIDER_KEY_MOONSHOT_GLOBAL,
   isOAuthProviderType,
   isOpenClawOAuthPluginProviderKey,
 } from './provider-keys';
@@ -849,14 +850,16 @@ function removeLegacyMoonshotKimiSearchConfig(config: Record<string, unknown>): 
 
 function upsertMoonshotWebSearchConfig(
   config: Record<string, unknown>,
+  providerKey: string,
+  baseUrl: string,
   legacyKimi?: Record<string, unknown>,
 ): void {
   const plugins = isPlainRecord(config.plugins)
     ? config.plugins
     : (Array.isArray(config.plugins) ? { load: [...config.plugins] } : {});
   const entries = isPlainRecord(plugins.entries) ? plugins.entries : {};
-  const moonshot = isPlainRecord(entries[OPENCLAW_PROVIDER_KEY_MOONSHOT])
-    ? entries[OPENCLAW_PROVIDER_KEY_MOONSHOT] as Record<string, unknown>
+  const moonshot = isPlainRecord(entries[providerKey])
+    ? entries[providerKey] as Record<string, unknown>
     : {};
   const moonshotConfig = isPlainRecord(moonshot.config) ? moonshot.config as Record<string, unknown> : {};
   const currentWebSearch = isPlainRecord(moonshotConfig.webSearch)
@@ -865,25 +868,27 @@ function upsertMoonshotWebSearchConfig(
 
   const nextWebSearch = { ...(legacyKimi || {}), ...currentWebSearch };
   delete nextWebSearch.apiKey;
-  nextWebSearch.baseUrl = 'https://api.moonshot.cn/v1';
+  nextWebSearch.baseUrl = baseUrl;
 
   moonshotConfig.webSearch = nextWebSearch;
   moonshot.config = moonshotConfig;
-  entries[OPENCLAW_PROVIDER_KEY_MOONSHOT] = moonshot;
+  entries[providerKey] = moonshot;
   plugins.entries = entries;
   config.plugins = plugins;
 }
 
 function ensureMoonshotKimiWebSearchCnBaseUrl(config: Record<string, unknown>, provider: string): void {
-  if (provider !== OPENCLAW_PROVIDER_KEY_MOONSHOT) return;
+  if (provider === OPENCLAW_PROVIDER_KEY_MOONSHOT) {
+    const tools = isPlainRecord(config.tools) ? config.tools : null;
+    const web = tools && isPlainRecord(tools.web) ? tools.web : null;
+    const search = web && isPlainRecord(web.search) ? web.search : null;
+    const legacyKimi = search && isPlainRecord(search.kimi) ? search.kimi : undefined;
 
-  const tools = isPlainRecord(config.tools) ? config.tools : null;
-  const web = tools && isPlainRecord(tools.web) ? tools.web : null;
-  const search = web && isPlainRecord(web.search) ? web.search : null;
-  const legacyKimi = search && isPlainRecord(search.kimi) ? search.kimi : undefined;
-
-  upsertMoonshotWebSearchConfig(config, legacyKimi);
-  removeLegacyMoonshotKimiSearchConfig(config);
+    upsertMoonshotWebSearchConfig(config, OPENCLAW_PROVIDER_KEY_MOONSHOT, 'https://api.moonshot.cn/v1', legacyKimi);
+    removeLegacyMoonshotKimiSearchConfig(config);
+  } else if (provider === OPENCLAW_PROVIDER_KEY_MOONSHOT_GLOBAL) {
+    upsertMoonshotWebSearchConfig(config, OPENCLAW_PROVIDER_KEY_MOONSHOT_GLOBAL, 'https://api.moonshot.ai/v1');
+  }
 }
 
 /**
@@ -1461,7 +1466,7 @@ export async function sanitizeOpenClawConfig(): Promise<void> {
       const hadLegacyKimi = Boolean(legacyKimi);
 
       if (legacyKimi) {
-        upsertMoonshotWebSearchConfig(config, legacyKimi);
+        upsertMoonshotWebSearchConfig(config, OPENCLAW_PROVIDER_KEY_MOONSHOT, 'https://api.moonshot.cn/v1', legacyKimi);
         removeLegacyMoonshotKimiSearchConfig(config);
         modified = true;
         console.log('[sanitize] Migrated legacy "tools.web.search.kimi" to "plugins.entries.moonshot.config.webSearch"');
