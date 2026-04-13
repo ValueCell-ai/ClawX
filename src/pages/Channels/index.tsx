@@ -254,14 +254,6 @@ export function Channels() {
     return nextAccountId;
   };
 
-  if (loading && !hasStableValue) {
-    return (
-      <div className="flex flex-col -m-6 dark:bg-background min-h-[calc(100vh-2.5rem)] items-center justify-center">
-        <LoadingSpinner size="lg" />
-      </div>
-    );
-  }
-
   return (
     <div data-testid="channels-page" className="flex flex-col -m-6 dark:bg-background h-[calc(100vh-2.5rem)] overflow-hidden">
       <div className="w-full max-w-5xl mx-auto flex flex-col h-full p-10 pt-16">
@@ -289,6 +281,18 @@ export function Channels() {
         </div>
 
         <div className="flex-1 overflow-y-auto pr-2 pb-10 min-h-0 -mr-2">
+          {loading && !hasStableValue && (
+            <div
+              data-testid="channels-initial-loading"
+              className="mb-8 p-4 rounded-2xl border border-black/10 dark:border-white/10 bg-black/[0.03] dark:bg-white/[0.04] flex items-center gap-3"
+            >
+              <LoadingSpinner size="sm" />
+              <span className="text-sm text-foreground/70 font-medium">
+                {t('common.loading', 'Loading')}...
+              </span>
+            </div>
+          )}
+
           {gatewayStatus.state !== 'running' && (
             <div className="mb-8 p-4 rounded-xl border border-yellow-500/50 bg-yellow-500/10 flex items-center gap-3">
               <AlertCircle className="h-5 w-5 text-yellow-600 dark:text-yellow-400" />

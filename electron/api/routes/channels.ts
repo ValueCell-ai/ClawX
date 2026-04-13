@@ -455,11 +455,74 @@ type DirectoryEntry = {
 
 const CHANNEL_TARGET_CACHE_TTL_MS = 60_000;
 const CHANNEL_TARGET_CACHE_ENABLED = process.env.VITEST !== 'true';
+const CHANNEL_STATUS_BEST_EFFORT_TIMEOUT_MS = 500;
+const CHANNEL_STATUS_RPC_TIMEOUT_MS = 1_500;
 const channelTargetCache = new Map<string, { expiresAt: number; targets: ChannelTargetOptionView[] }>();
+
+function synthesizeConfigOnlyChannelStatus(
+  gatewayState: string,
+): ChannelAccountsView['status'] {
+  switch (gatewayState) {
+    case 'running':
+    case 'starting':
+    case 'reconnecting':
+      return 'connecting';
+    default:
+      return 'disconnected';
+  }
+}
+
+async function withTimeout<T>(
+  promise: Promise<T>,
+  timeoutMs: number,
+  fallback: T,
+): Promise<T> {
+  return await new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => {
+      resolve(fallback);
+    }, timeoutMs);
+
+    void promise.then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      (error) => {
+        clearTimeout(timer);
+        reject(error);
+      },
+    );
+  });
+}
+
+async function fetchBestEffortGatewayChannelStatus(
+  ctx: HostApiContext,
+): Promise<GatewayChannelStatusPayload | null> {
+  if (ctx.gatewayManager.getStatus().state !== 'running') {
+    return null;
+  }
+
+  try {
+    // Use cached runtime state when it is available, but do not let a busy
+    // channel runtime block the whole Channels page from rendering config data.
+    return await withTimeout(
+      ctx.gatewayManager.rpc<GatewayChannelStatusPayload>(
+        'channels.status',
+        { probe: false },
+        CHANNEL_STATUS_RPC_TIMEOUT_MS,
+      ),
+      CHANNEL_STATUS_BEST_EFFORT_TIMEOUT_MS,
+      null,
+    );
+  } catch {
+    return null;
+  }
+}
 
 async function buildChannelAccountsView(ctx: HostApiContext): Promise<ChannelAccountsView[]> {
   // Read config once and share across all sub-calls (was 5 readFile calls before).
   const openClawConfig = await readOpenClawConfig();
+  const gatewayLifecycleState = ctx.gatewayManager.getStatus().state;
 
   const [configuredChannels, configuredAccounts, agentsSnapshot] = await Promise.all([
     listConfiguredChannelsFromConfig(openClawConfig),
@@ -467,15 +530,7 @@ async function buildChannelAccountsView(ctx: HostApiContext): Promise<ChannelAcc
     listAgentsSnapshotFromConfig(openClawConfig),
   ]);
 
-  let gatewayStatus: GatewayChannelStatusPayload | null;
-  try {
-    // probe: false — use cached runtime state instead of active network probes
-    // per channel. Real-time status updates arrive via channel.status events.
-    // 8s timeout — fail fast when Gateway is busy with AI tasks.
-    gatewayStatus = await ctx.gatewayManager.rpc<GatewayChannelStatusPayload>('channels.status', { probe: false }, 8000);
-  } catch {
-    gatewayStatus = null;
-  }
+  const gatewayStatus = await fetchBestEffortGatewayChannelStatus(ctx);
 
   const channelTypes = new Set<string>([
     ...configuredChannels,
@@ -486,6 +541,7 @@ async function buildChannelAccountsView(ctx: HostApiContext): Promise<ChannelAcc
   const channels: ChannelAccountsView[] = [];
   for (const rawChannelType of channelTypes) {
     const uiChannelType = toUiChannelType(rawChannelType);
+    const fallbackStatus = synthesizeConfigOnlyChannelStatus(gatewayLifecycleState);
     const channelAccountsFromConfig = configuredAccounts[rawChannelType]?.accountIds ?? [];
     const configuredAccountIdSet = new Set(channelAccountsFromConfig);
     const hasLocalConfig = configuredChannels.includes(rawChannelType) || Boolean(configuredAccounts[rawChannelType]);
@@ -525,7 +581,9 @@ async function buildChannelAccountsView(ctx: HostApiContext): Promise<ChannelAcc
     const accounts: ChannelAccountView[] = accountIds.map((accountId) => {
       const runtime = runtimeAccounts.find((item) => item.accountId === accountId);
       const runtimeSnapshot: ChannelRuntimeAccountSnapshot = runtime ?? {};
-      const status = computeChannelRuntimeStatus(runtimeSnapshot);
+      const status = gatewayStatus
+        ? computeChannelRuntimeStatus(runtimeSnapshot)
+        : fallbackStatus;
       return {
         accountId,
         name: runtime?.name || accountId,
@@ -547,7 +605,9 @@ async function buildChannelAccountsView(ctx: HostApiContext): Promise<ChannelAcc
     channels.push({
       channelType: uiChannelType,
       defaultAccountId,
-      status: pickChannelRuntimeStatus(runtimeAccounts, channelSummary),
+      status: gatewayStatus
+        ? pickChannelRuntimeStatus(runtimeAccounts, channelSummary)
+        : fallbackStatus,
       accounts,
     });
   }

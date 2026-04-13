@@ -182,7 +182,7 @@ describe('handleChannelRoutes', () => {
     );
 
     expect(handled).toBe(true);
-    expect(rpc).toHaveBeenCalledWith('channels.status', { probe: false }, 8000);
+    expect(rpc).toHaveBeenCalledWith('channels.status', { probe: false }, 1500);
     expect(sendJsonMock).toHaveBeenCalledWith(
       expect.anything(),
       200,
@@ -196,6 +196,125 @@ describe('handleChannelRoutes', () => {
               expect.objectContaining({ accountId: 'default', status: 'connected' }),
               expect.objectContaining({ accountId: 'feishu-2412524e', status: 'connected' }),
             ]),
+          }),
+        ],
+      }),
+    );
+  });
+
+  it('returns config-derived channels immediately when gateway is not yet running', async () => {
+    listConfiguredChannelsMock.mockResolvedValue(['telegram']);
+    listConfiguredChannelAccountsMock.mockResolvedValue({
+      telegram: {
+        defaultAccountId: 'default',
+        accountIds: ['default'],
+      },
+    });
+    readOpenClawConfigMock.mockResolvedValue({
+      channels: {
+        telegram: {
+          defaultAccount: 'default',
+        },
+      },
+    });
+    listAgentsSnapshotMock.mockResolvedValue({
+      agents: [],
+      channelAccountOwners: {
+        'telegram:default': 'main',
+      },
+    });
+
+    const rpc = vi.fn();
+
+    const { handleChannelRoutes } = await import('@electron/api/routes/channels');
+    const handled = await handleChannelRoutes(
+      { method: 'GET' } as IncomingMessage,
+      {} as ServerResponse,
+      new URL('http://127.0.0.1:13210/api/channels/accounts'),
+      {
+        gatewayManager: {
+          rpc,
+          getStatus: () => ({ state: 'starting' }),
+          debouncedReload: vi.fn(),
+          debouncedRestart: vi.fn(),
+        },
+      } as never,
+    );
+
+    expect(handled).toBe(true);
+    expect(rpc).not.toHaveBeenCalled();
+    expect(sendJsonMock).toHaveBeenCalledWith(
+      expect.anything(),
+      200,
+      expect.objectContaining({
+        success: true,
+        channels: [
+          expect.objectContaining({
+            channelType: 'telegram',
+            status: 'connecting',
+            accounts: [
+              expect.objectContaining({
+                accountId: 'default',
+                status: 'connecting',
+                agentId: 'main',
+              }),
+            ],
+          }),
+        ],
+      }),
+    );
+  });
+
+  it('falls back to config-derived channels when channel status rpc rejects', async () => {
+    listConfiguredChannelsMock.mockResolvedValue(['discord']);
+    listConfiguredChannelAccountsMock.mockResolvedValue({
+      discord: {
+        defaultAccountId: 'default',
+        accountIds: ['default'],
+      },
+    });
+    readOpenClawConfigMock.mockResolvedValue({
+      channels: {
+        discord: {
+          defaultAccount: 'default',
+        },
+      },
+    });
+
+    const rpc = vi.fn().mockRejectedValue(new Error('gateway busy'));
+
+    const { handleChannelRoutes } = await import('@electron/api/routes/channels');
+    const handled = await handleChannelRoutes(
+      { method: 'GET' } as IncomingMessage,
+      {} as ServerResponse,
+      new URL('http://127.0.0.1:13210/api/channels/accounts'),
+      {
+        gatewayManager: {
+          rpc,
+          getStatus: () => ({ state: 'running' }),
+          debouncedReload: vi.fn(),
+          debouncedRestart: vi.fn(),
+        },
+      } as never,
+    );
+
+    expect(handled).toBe(true);
+    expect(rpc).toHaveBeenCalledWith('channels.status', { probe: false }, 1500);
+    expect(sendJsonMock).toHaveBeenCalledWith(
+      expect.anything(),
+      200,
+      expect.objectContaining({
+        success: true,
+        channels: [
+          expect.objectContaining({
+            channelType: 'discord',
+            status: 'connecting',
+            accounts: [
+              expect.objectContaining({
+                accountId: 'default',
+                status: 'connecting',
+              }),
+            ],
           }),
         ],
       }),
