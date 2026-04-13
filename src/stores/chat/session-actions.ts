@@ -1,5 +1,6 @@
 import { invokeIpc } from '@/lib/api-client';
 import { getCanonicalPrefixFromSessions, getMessageText, toMs } from './helpers';
+import { classifyHistoryStartupRetryError, sleep } from './history-startup-retry';
 import { DEFAULT_CANONICAL_PREFIX, DEFAULT_SESSION_KEY, type ChatSession, type RawMessage } from './types';
 import type { ChatGet, ChatSet, SessionHistoryActions } from './store-api';
 
@@ -111,38 +112,54 @@ export function createSessionActions(
           }
 
           // Background: fetch first user message for every non-main session to populate labels upfront.
-          // Uses a small limit so it's cheap; runs in parallel and doesn't block anything.
+          // Retries on "gateway startup" errors since the gateway may still be initializing.
           const sessionsToLabel = sessionsWithCurrent.filter((s) => !s.key.endsWith(':main'));
           if (sessionsToLabel.length > 0) {
-            void Promise.all(
-              sessionsToLabel.map(async (session) => {
-                try {
-                  const r = await invokeIpc(
-                    'gateway:rpc',
-                    'chat.history',
-                    { sessionKey: session.key, limit: 1000 },
-                  ) as { success: boolean; result?: Record<string, unknown> };
-                  if (!r.success || !r.result) return;
-                  const msgs = Array.isArray(r.result.messages) ? r.result.messages as RawMessage[] : [];
-                  const firstUser = msgs.find((m) => m.role === 'user');
-                  const lastMsg = msgs[msgs.length - 1];
-                  set((s) => {
-                    const next: Partial<typeof s> = {};
-                    if (firstUser) {
-                      const labelText = getMessageText(firstUser.content).trim();
-                      if (labelText) {
-                        const truncated = labelText.length > 50 ? `${labelText.slice(0, 50)}…` : labelText;
-                        next.sessionLabels = { ...s.sessionLabels, [session.key]: truncated };
+            const LABEL_RETRY_DELAYS = [2_000, 5_000, 10_000];
+            void (async () => {
+              let pending = sessionsToLabel;
+              for (let attempt = 0; attempt <= LABEL_RETRY_DELAYS.length; attempt += 1) {
+                const failed: typeof pending = [];
+                await Promise.all(
+                  pending.map(async (session) => {
+                    try {
+                      const r = await invokeIpc(
+                        'gateway:rpc',
+                        'chat.history',
+                        { sessionKey: session.key, limit: 1000 },
+                      ) as { success: boolean; result?: Record<string, unknown>; error?: string };
+                      if (!r.success) {
+                        if (classifyHistoryStartupRetryError(r.error) === 'gateway_startup') {
+                          failed.push(session);
+                        }
+                        return;
                       }
-                    }
-                    if (lastMsg?.timestamp) {
-                      next.sessionLastActivity = { ...s.sessionLastActivity, [session.key]: toMs(lastMsg.timestamp) };
-                    }
-                    return next;
-                  });
-                } catch { /* ignore per-session errors */ }
-              }),
-            );
+                      if (!r.result) return;
+                      const msgs = Array.isArray(r.result.messages) ? r.result.messages as RawMessage[] : [];
+                      const firstUser = msgs.find((m) => m.role === 'user');
+                      const lastMsg = msgs[msgs.length - 1];
+                      set((s) => {
+                        const next: Partial<typeof s> = {};
+                        if (firstUser) {
+                          const labelText = getMessageText(firstUser.content).trim();
+                          if (labelText) {
+                            const truncated = labelText.length > 50 ? `${labelText.slice(0, 50)}…` : labelText;
+                            next.sessionLabels = { ...s.sessionLabels, [session.key]: truncated };
+                          }
+                        }
+                        if (lastMsg?.timestamp) {
+                          next.sessionLastActivity = { ...s.sessionLastActivity, [session.key]: toMs(lastMsg.timestamp) };
+                        }
+                        return next;
+                      });
+                    } catch { /* ignore per-session errors */ }
+                  }),
+                );
+                if (failed.length === 0 || attempt >= LABEL_RETRY_DELAYS.length) break;
+                await sleep(LABEL_RETRY_DELAYS[attempt]!);
+                pending = failed;
+              }
+            })();
           }
         }
       } catch (err) {

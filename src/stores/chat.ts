@@ -1129,38 +1129,50 @@ export const useChatStore = create<ChatState>((set, get) => ({
           }
 
           // Background: fetch first user message for every non-main session to populate labels upfront.
-          // Uses a small limit so it's cheap; runs in parallel and doesn't block anything.
+          // Retries on "gateway startup" errors since the gateway may still be initializing.
           const sessionsToLabel = sessionsWithCurrent.filter((s) => !s.key.endsWith(':main'));
           if (sessionsToLabel.length > 0) {
-            void Promise.all(
-              sessionsToLabel.map(async (session) => {
-                try {
-                  const r = await useGatewayStore.getState().rpc<Record<string, unknown>>(
-                    'chat.history',
-                    { sessionKey: session.key, limit: 1000 },
-                  );
-                  const msgs = Array.isArray(r.messages) ? r.messages as RawMessage[] : [];
-                  const firstUser = msgs.find((m) => m.role === 'user');
-                  const lastMsg = msgs[msgs.length - 1];
-                  set((s) => {
-                    const next: Partial<typeof s> = {};
-                    if (firstUser) {
-                      const labelText = getMessageText(firstUser.content).trim();
-                      if (labelText) {
-                        const truncated = labelText.length > 50 ? `${labelText.slice(0, 50)}…` : labelText;
-                        next.sessionLabels = { ...s.sessionLabels, [session.key]: truncated };
+            const LABEL_RETRY_DELAYS = [2_000, 5_000, 10_000];
+            void (async () => {
+              let pending = sessionsToLabel;
+              for (let attempt = 0; attempt <= LABEL_RETRY_DELAYS.length; attempt += 1) {
+                const failed: typeof pending = [];
+                await Promise.all(
+                  pending.map(async (session) => {
+                    try {
+                      const r = await useGatewayStore.getState().rpc<Record<string, unknown>>(
+                        'chat.history',
+                        { sessionKey: session.key, limit: 1000 },
+                      );
+                      const msgs = Array.isArray(r.messages) ? r.messages as RawMessage[] : [];
+                      const firstUser = msgs.find((m) => m.role === 'user');
+                      const lastMsg = msgs[msgs.length - 1];
+                      set((s) => {
+                        const next: Partial<typeof s> = {};
+                        if (firstUser) {
+                          const labelText = getMessageText(firstUser.content).trim();
+                          if (labelText) {
+                            const truncated = labelText.length > 50 ? `${labelText.slice(0, 50)}…` : labelText;
+                            next.sessionLabels = { ...s.sessionLabels, [session.key]: truncated };
+                          }
+                        }
+                        if (lastMsg?.timestamp) {
+                          next.sessionLastActivity = { ...s.sessionLastActivity, [session.key]: toMs(lastMsg.timestamp) };
+                        }
+                        return next;
+                      });
+                    } catch (err) {
+                      if (classifyHistoryStartupRetryError(err) === 'gateway_startup') {
+                        failed.push(session);
                       }
                     }
-                    if (lastMsg?.timestamp) {
-                      next.sessionLastActivity = { ...s.sessionLastActivity, [session.key]: toMs(lastMsg.timestamp) };
-                    }
-                    return next;
-                  });
-                } catch {
-                  // ignore per-session errors
-                }
-              }),
-            );
+                  }),
+                );
+                if (failed.length === 0 || attempt >= LABEL_RETRY_DELAYS.length) break;
+                await sleep(LABEL_RETRY_DELAYS[attempt]!);
+                pending = failed;
+              }
+            })();
           }
         }
       } catch (err) {

@@ -253,10 +253,12 @@ export function createHistoryActions(
           return;
         }
 
-        if (isCurrentSession() && isInitialForegroundLoad && classifyHistoryStartupRetryError(lastError)) {
+        const errorKind = classifyHistoryStartupRetryError(lastError);
+        if (isCurrentSession() && isInitialForegroundLoad && errorKind) {
           console.warn('[chat.history] startup retry exhausted', {
             sessionKey: currentSessionKey,
             gatewayState: useGatewayStore.getState().status.state,
+            errorKind,
             error: String(lastError),
           });
         }
@@ -267,6 +269,11 @@ export function createHistoryActions(
           if (applied && isInitialForegroundLoad) {
             foregroundHistoryLoadSeen.add(currentSessionKey);
           }
+        } else if (errorKind === 'gateway_startup') {
+          // Suppress error UI for gateway startup -- the history will load
+          // once the gateway finishes initializing (via sidebar refresh or
+          // the next session switch).
+          set({ loading: false });
         } else {
           applyLoadFailure(
             result?.error
