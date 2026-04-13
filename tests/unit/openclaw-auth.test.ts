@@ -455,6 +455,78 @@ describe('sanitizeOpenClawConfig', () => {
     expect(telegram.botToken).toBe('telegram-token');
   });
 
+  it('backfills Feishu streaming defaults for configured channels during sanitize', async () => {
+    await writeOpenClawJson({
+      channels: {
+        feishu: {
+          enabled: true,
+          defaultAccount: 'default',
+          accounts: {
+            default: {
+              appId: 'cli_test_feishu',
+              appSecret: 'secret_test_feishu',
+              enabled: true,
+            },
+          },
+        },
+      },
+    });
+
+    const { sanitizeOpenClawConfig } = await import('@electron/utils/openclaw-auth');
+    await sanitizeOpenClawConfig();
+
+    const result = await readOpenClawJson();
+    const channels = result.channels as Record<string, Record<string, unknown>>;
+    const feishu = channels.feishu;
+    expect(feishu.appId).toBe('cli_test_feishu');
+    expect(feishu.appSecret).toBe('secret_test_feishu');
+    expect(feishu.streaming).toBe(true);
+  });
+
+  it('preserves explicit Feishu streaming preferences during sanitize', async () => {
+    await writeOpenClawJson({
+      channels: {
+        feishu: {
+          enabled: true,
+          streaming: false,
+          defaultAccount: 'default',
+          accounts: {
+            default: {
+              appId: 'cli_test_feishu',
+              appSecret: 'secret_test_feishu',
+              enabled: true,
+              streaming: false,
+            },
+          },
+        },
+      },
+    });
+
+    const { sanitizeOpenClawConfig } = await import('@electron/utils/openclaw-auth');
+    await sanitizeOpenClawConfig();
+
+    const result = await readOpenClawJson();
+    const channels = result.channels as Record<string, Record<string, unknown>>;
+    expect(channels.feishu.streaming).toBe(false);
+  });
+
+  it('does not mark empty Feishu sections as streaming-enabled during sanitize', async () => {
+    await writeOpenClawJson({
+      channels: {
+        feishu: {
+          enabled: true,
+        },
+      },
+    });
+
+    const { sanitizeOpenClawConfig } = await import('@electron/utils/openclaw-auth');
+    await sanitizeOpenClawConfig();
+
+    const result = await readOpenClawJson();
+    const channels = result.channels as Record<string, Record<string, unknown>>;
+    expect(channels.feishu.streaming).toBeUndefined();
+  });
+
   it('strips accounts/defaultAccount from dingtalk (strict-schema channel) during sanitize', async () => {
     await writeOpenClawJson({
       channels: {

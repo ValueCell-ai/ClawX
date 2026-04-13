@@ -829,6 +829,18 @@ function isPlainRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
+function hasConfiguredChannelPayload(section: Record<string, unknown>): boolean {
+  return Object.keys(section).some((key) => key !== 'enabled' && key !== 'defaultAccount' && key !== 'accounts');
+}
+
+function hasConfiguredAccountPayload(accounts: Record<string, unknown> | undefined): boolean {
+  if (!accounts) return false;
+  return Object.values(accounts).some((account) => {
+    if (!isPlainRecord(account)) return false;
+    return hasConfiguredChannelPayload(account);
+  });
+}
+
 function removeLegacyMoonshotKimiSearchConfig(config: Record<string, unknown>): boolean {
   const tools = isPlainRecord(config.tools) ? config.tools : null;
   const web = tools && isPlainRecord(tools.web) ? tools.web : null;
@@ -1822,6 +1834,20 @@ export async function sanitizeOpenClawConfig(): Promise<void> {
           if (mirrored) {
             modified = true;
             console.log(`[sanitize] Mirrored ${channelType} default account credentials to top-level channels.${channelType}`);
+          }
+        }
+
+        if (channelType === 'feishu' && !('streaming' in section)) {
+          const accounts = (
+            isPlainRecord(section.accounts) ? section.accounts as Record<string, unknown> : undefined
+          );
+          const isConfiguredFeishuSection =
+            hasConfiguredChannelPayload(section)
+            || hasConfiguredAccountPayload(accounts);
+          if (isConfiguredFeishuSection) {
+            section.streaming = true;
+            modified = true;
+            console.log('[sanitize] Backfilled channels.feishu.streaming=true for configured Feishu channel');
           }
         }
       }

@@ -200,6 +200,72 @@ async function sanitizeConfig(
     }
   }
 
+  const channelsObj = config.channels as Record<string, Record<string, unknown>> | undefined;
+  const CHANNELS_EXCLUDING_TOP_LEVEL_MIRROR = new Set(['dingtalk']);
+
+  function hasMeaningfulFeishuConfig(section: Record<string, unknown>): boolean {
+    if (typeof section.appId === 'string' && section.appId.trim()) return true;
+    if (typeof section.appSecret === 'string' && section.appSecret.trim()) return true;
+
+    const accounts = section.accounts;
+    if (!accounts || typeof accounts !== 'object' || Array.isArray(accounts)) {
+      return false;
+    }
+
+    return Object.values(accounts).some((account) => {
+      if (!account || typeof account !== 'object' || Array.isArray(account)) {
+        return false;
+      }
+      const accountRecord = account as Record<string, unknown>;
+      return (
+        (typeof accountRecord.appId === 'string' && accountRecord.appId.trim().length > 0)
+        || (typeof accountRecord.appSecret === 'string' && accountRecord.appSecret.trim().length > 0)
+      );
+    });
+  }
+
+  if (channelsObj && typeof channelsObj === 'object') {
+    for (const [channelType, section] of Object.entries(channelsObj)) {
+      if (!section || typeof section !== 'object') continue;
+
+      if (CHANNELS_EXCLUDING_TOP_LEVEL_MIRROR.has(channelType)) {
+        if ('accounts' in section) {
+          delete section.accounts;
+          modified = true;
+        }
+        if ('defaultAccount' in section) {
+          delete section.defaultAccount;
+          modified = true;
+        }
+        continue;
+      }
+
+      const accounts = section.accounts as Record<string, Record<string, unknown>> | undefined;
+      const defaultAccountId =
+        typeof section.defaultAccount === 'string' && section.defaultAccount.trim()
+          ? section.defaultAccount
+          : 'default';
+      const defaultAccountData = accounts?.[defaultAccountId] ?? accounts?.default;
+      if (defaultAccountData && typeof defaultAccountData === 'object') {
+        for (const [key, value] of Object.entries(defaultAccountData)) {
+          if (!(key in section)) {
+            section[key] = value;
+            modified = true;
+          }
+        }
+      }
+
+      if (
+        channelType === 'feishu'
+        && section.streaming === undefined
+        && hasMeaningfulFeishuConfig(section)
+      ) {
+        section.streaming = true;
+        modified = true;
+      }
+    }
+  }
+
   // Mirror: remove stale tools.web.search.kimi.apiKey when moonshot provider exists.
   const providers = ((config.models as Record<string, unknown> | undefined)?.providers as Record<string, unknown> | undefined) || {};
   if (providers.moonshot) {
