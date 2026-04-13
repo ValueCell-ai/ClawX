@@ -600,6 +600,40 @@ function transformChannelConfig(
     return transformedConfig;
 }
 
+function hasOwnConfigKey(config: ChannelConfigData | undefined, key: string): boolean {
+    return Boolean(config) && Object.prototype.hasOwnProperty.call(config, key);
+}
+
+function shouldApplyFeishuStreamingDefault(
+    channelType: string,
+    incomingConfig: ChannelConfigData,
+    existingAccountConfig: ChannelConfigData,
+    channelSection: ChannelConfigData,
+    defaultAccountConfig: ChannelConfigData,
+): boolean {
+    if (channelType !== 'feishu') {
+        return false;
+    }
+
+    if (hasOwnConfigKey(incomingConfig, 'streaming')) {
+        return false;
+    }
+
+    if (hasOwnConfigKey(existingAccountConfig, 'streaming')) {
+        return false;
+    }
+
+    if (hasOwnConfigKey(channelSection, 'streaming')) {
+        return false;
+    }
+
+    if (hasOwnConfigKey(defaultAccountConfig, 'streaming')) {
+        return false;
+    }
+
+    return true;
+}
+
 function resolveAccountConfig(
     channelSection: ChannelConfigData | undefined,
     accountId: string,
@@ -743,7 +777,25 @@ export async function saveChannelConfig(
         assertNoDuplicateCredential(resolvedChannelType, config, channelSection, resolvedAccountId);
 
         const existingAccountConfig = resolveAccountConfig(channelSection, resolvedAccountId);
-        const transformedConfig = transformChannelConfig(resolvedChannelType, config, existingAccountConfig);
+        const currentDefaultAccountId =
+            typeof channelSection.defaultAccount === 'string' && channelSection.defaultAccount.trim()
+                ? channelSection.defaultAccount
+                : DEFAULT_ACCOUNT_ID;
+        const defaultAccountConfig = resolveAccountConfig(channelSection, currentDefaultAccountId);
+        const configWithDefaults = shouldApplyFeishuStreamingDefault(
+            resolvedChannelType,
+            config,
+            existingAccountConfig,
+            channelSection,
+            defaultAccountConfig,
+        )
+            ? { ...config, streaming: true }
+            : config;
+        const transformedConfig = transformChannelConfig(
+            resolvedChannelType,
+            configWithDefaults,
+            existingAccountConfig,
+        );
         const uniqueKey = CHANNEL_UNIQUE_CREDENTIAL_KEY[resolvedChannelType];
         if (uniqueKey && typeof transformedConfig[uniqueKey] === 'string') {
             const rawCredentialValue = transformedConfig[uniqueKey] as string;

@@ -104,6 +104,66 @@ describe('channel credential normalization and duplicate checks', () => {
   });
 });
 
+describe('Feishu streaming defaults', () => {
+  beforeEach(async () => {
+    vi.resetAllMocks();
+    vi.resetModules();
+    await rm(testHome, { recursive: true, force: true });
+    await rm(testUserData, { recursive: true, force: true });
+  });
+
+  it('defaults Feishu configs to streaming replies', async () => {
+    const { saveChannelConfig } = await import('@electron/utils/channel-config');
+
+    await saveChannelConfig('feishu', { appId: 'cli_default', appSecret: 'secret-default' }, 'agent-a');
+
+    const config = await readOpenClawJson();
+    const channels = config.channels as Record<string, {
+      streaming?: boolean;
+      defaultAccount?: string;
+      accounts: Record<string, { streaming?: boolean }>;
+    }>;
+
+    expect(channels.feishu.defaultAccount).toBe('agent-a');
+    expect(channels.feishu.streaming).toBe(true);
+    expect(channels.feishu.accounts['agent-a'].streaming).toBe(true);
+  });
+
+  it('preserves explicit streaming preferences when saving Feishu configs', async () => {
+    const { saveChannelConfig, writeOpenClawConfig } = await import('@electron/utils/channel-config');
+
+    await writeOpenClawConfig({
+      channels: {
+        feishu: {
+          enabled: true,
+          streaming: false,
+          defaultAccount: 'default',
+          accounts: {
+            default: {
+              enabled: true,
+              appId: 'cli_existing',
+              appSecret: 'secret-existing',
+              streaming: false,
+            },
+          },
+        },
+      },
+    });
+
+    await saveChannelConfig('feishu', { appId: 'cli_new', appSecret: 'secret-new' }, 'agent-b');
+
+    const config = await readOpenClawJson();
+    const channels = config.channels as Record<string, {
+      streaming?: boolean;
+      accounts: Record<string, { streaming?: boolean }>;
+    }>;
+
+    expect(channels.feishu.streaming).toBe(false);
+    expect(channels.feishu.accounts.default.streaming).toBe(false);
+    expect(channels.feishu.accounts['agent-b'].streaming).toBeUndefined();
+  });
+});
+
 describe('parseDoctorValidationOutput', () => {
   it('extracts channel error and warning lines', async () => {
     const { parseDoctorValidationOutput } = await import('@electron/utils/channel-config');
