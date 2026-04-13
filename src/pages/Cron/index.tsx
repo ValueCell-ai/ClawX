@@ -251,7 +251,6 @@ function TaskDialog({ job, configuredChannels, onClose, onSave }: TaskDialogProp
   const [name, setName] = useState(job?.name || '');
   const [message, setMessage] = useState(job?.message || '');
   const [selectedAgentId, setSelectedAgentId] = useState(job?.agentId || useChatStore.getState().currentAgentId);
-  const [agentIdChanged, setAgentIdChanged] = useState(false);
   // Extract cron expression string from CronSchedule object or use as-is if string
   const initialSchedule = (() => {
     const s = job?.schedule;
@@ -411,7 +410,7 @@ function TaskDialog({ job, configuredChannels, onClose, onSave }: TaskDialogProp
         schedule: finalSchedule,
         delivery: finalDelivery,
         enabled,
-        ...(agentIdChanged ? { agentId: selectedAgentId } : {}),
+        agentId: selectedAgentId,
       });
       onClose();
       toast.success(job ? t('toast.updated') : t('toast.created'));
@@ -468,7 +467,6 @@ function TaskDialog({ job, configuredChannels, onClose, onSave }: TaskDialogProp
               value={selectedAgentId}
               onChange={(e) => {
                 setSelectedAgentId(e.target.value);
-                setAgentIdChanged(true);
               }}
               className="h-[44px] rounded-xl border-black/10 dark:border-white/10 bg-[#eeece3] dark:bg-muted text-[13px]"
             >
