@@ -1277,7 +1277,6 @@ export async function batchSyncConfigFields(token: string): Promise<void> {
     gateway.controlUi = controlUi;
     if (!gateway.mode) gateway.mode = 'local';
     config.gateway = gateway;
-    modified = true;
 
     // ── Browser config ──
     const browser = (
