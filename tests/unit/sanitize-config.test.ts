@@ -128,6 +128,56 @@ async function sanitizeConfig(
         : {}
     ) as Record<string, unknown>;
 
+    const acpxEntry = (entries.acpx && typeof entries.acpx === 'object' && !Array.isArray(entries.acpx))
+      ? { ...(entries.acpx as Record<string, unknown>) }
+      : null;
+    const acpxConfig = (acpxEntry?.config && typeof acpxEntry.config === 'object' && !Array.isArray(acpxEntry.config))
+      ? { ...(acpxEntry.config as Record<string, unknown>) }
+      : null;
+    if (acpxConfig) {
+      for (const legacyKey of ['command', 'expectedVersion'] as const) {
+        if (legacyKey in acpxConfig) {
+          delete acpxConfig[legacyKey];
+          modified = true;
+        }
+      }
+      acpxEntry!.config = acpxConfig;
+      entries.acpx = acpxEntry!;
+      pluginsObj.entries = entries;
+    }
+
+    const installs = (
+      pluginsObj.installs && typeof pluginsObj.installs === 'object' && !Array.isArray(pluginsObj.installs)
+        ? { ...(pluginsObj.installs as Record<string, unknown>) }
+        : {}
+    ) as Record<string, unknown>;
+    const acpxInstall = (installs.acpx && typeof installs.acpx === 'object' && !Array.isArray(installs.acpx))
+      ? installs.acpx as Record<string, unknown>
+      : null;
+    if (acpxInstall) {
+      const currentBundledAcpxDir = join(tempDir, 'node_modules', 'openclaw', 'dist', 'extensions', 'acpx').replace(/\\/g, '/');
+      const sourcePath = typeof acpxInstall.sourcePath === 'string' ? acpxInstall.sourcePath : '';
+      const installPath = typeof acpxInstall.installPath === 'string' ? acpxInstall.installPath : '';
+      const normalizedSourcePath = sourcePath.replace(/\\/g, '/');
+      const normalizedInstallPath = installPath.replace(/\\/g, '/');
+      const pointsAtDifferentBundledTree = [normalizedSourcePath, normalizedInstallPath].some(
+        (candidate) => candidate.includes('/node_modules/.pnpm/openclaw@') && candidate !== currentBundledAcpxDir,
+      );
+      const pointsAtMissingPath = (sourcePath && !(await fileExists(sourcePath)))
+        || (installPath && !(await fileExists(installPath)));
+
+      if (pointsAtDifferentBundledTree || pointsAtMissingPath) {
+        delete installs.acpx;
+        modified = true;
+      }
+
+      if (Object.keys(installs).length > 0) {
+        pluginsObj.installs = installs;
+      } else {
+        delete pluginsObj.installs;
+      }
+    }
+
     if ('whatsapp' in entries) {
       delete entries.whatsapp;
       pluginsObj.entries = entries;
@@ -623,6 +673,49 @@ describe('sanitizeOpenClawConfig (blocklist approach)', () => {
     const load = plugins.load as Record<string, unknown>;
     // Relative paths are preserved (only absolute paths are checked)
     expect(load.paths).toEqual(['relative/plugin-path', './another-relative']);
+  });
+
+  it('removes legacy acpx overrides and stale bundled install metadata', async () => {
+    await writeConfig({
+      plugins: {
+        entries: {
+          acpx: {
+            enabled: true,
+            config: {
+              permissionMode: 'approve-all',
+              nonInteractivePermissions: 'fail',
+              command: '/Users/example/project/node_modules/.pnpm/openclaw@2026.4.1/node_modules/openclaw/dist/extensions/acpx/node_modules/acpx/dist/cli.js',
+              expectedVersion: 'any',
+              pluginToolsMcpBridge: true,
+            },
+          },
+        },
+        installs: {
+          acpx: {
+            source: 'path',
+            spec: 'acpx',
+            sourcePath: '/Users/example/project/node_modules/.pnpm/openclaw@2026.4.1/node_modules/openclaw/dist/extensions/acpx',
+            installPath: '/Users/example/project/node_modules/.pnpm/openclaw@2026.4.1/node_modules/openclaw/dist/extensions/acpx',
+          },
+        },
+      },
+    });
+
+    const modified = await sanitizeConfig(configPath);
+    expect(modified).toBe(true);
+
+    const result = await readConfig();
+    const plugins = result.plugins as Record<string, unknown>;
+    const entries = plugins.entries as Record<string, unknown>;
+    const acpx = entries.acpx as Record<string, unknown>;
+    const acpxConfig = acpx.config as Record<string, unknown>;
+
+    expect(acpxConfig).toEqual({
+      permissionMode: 'approve-all',
+      nonInteractivePermissions: 'fail',
+      pluginToolsMcpBridge: true,
+    });
+    expect(plugins).not.toHaveProperty('installs');
   });
 
   it('does nothing when plugins.load.paths contains only valid paths', async () => {

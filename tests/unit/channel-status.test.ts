@@ -63,4 +63,42 @@ describe('channel runtime status helpers', () => {
       ),
     ).toBe('error');
   });
+
+  it('returns degraded when gateway health is degraded', () => {
+    expect(
+      computeChannelRuntimeStatus(
+        { running: true, connected: false, linked: false },
+        { gatewayHealthState: 'degraded' },
+      ),
+    ).toBe('degraded');
+  });
+
+  it('keeps runtime error higher priority than degraded overlay', () => {
+    expect(
+      computeChannelRuntimeStatus(
+        { running: true, lastError: 'bot token invalid' },
+        { gatewayHealthState: 'degraded' },
+      ),
+    ).toBe('error');
+  });
+
+  it('degrades channel summary when gateway health is degraded', () => {
+    expect(
+      pickChannelRuntimeStatus(
+        [{ connected: false, running: false }],
+        undefined,
+        { gatewayHealthState: 'degraded' },
+      ),
+    ).toBe('degraded');
+  });
+
+  it('keeps summary error higher priority than degraded gateway health', () => {
+    expect(
+      pickChannelRuntimeStatus(
+        [{ connected: false, running: false }],
+        { error: 'channel bootstrap failed' },
+        { gatewayHealthState: 'degraded' },
+      ),
+    ).toBe('error');
+  });
 });

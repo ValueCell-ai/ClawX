@@ -51,11 +51,22 @@ function createDeferred<T>() {
 describe('Channels page status refresh', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    Object.defineProperty(globalThis.navigator, 'clipboard', {
+      value: {
+        writeText: vi.fn(),
+      },
+      configurable: true,
+    });
     gatewayState.status = { state: 'running', port: 18789 };
     hostApiFetchMock.mockImplementation(async (path: string) => {
       if (path === '/api/channels/accounts') {
         return {
           success: true,
+          gatewayHealth: {
+            state: 'healthy',
+            reasons: [],
+            consecutiveHeartbeatMisses: 0,
+          },
           channels: [
             {
               channelType: 'feishu',
@@ -383,5 +394,158 @@ describe('Channels page status refresh', () => {
 
     expect(appIdInput).toHaveValue('cli_test_app');
     expect(appSecretInput).toHaveValue('secret_test_value');
+  });
+
+  it('shows degraded gateway banner and copies diagnostics snapshot', async () => {
+    subscribeHostEventMock.mockImplementation(() => vi.fn());
+    const writeTextMock = vi.mocked(navigator.clipboard.writeText);
+
+    hostApiFetchMock.mockImplementation(async (path: string, init?: { method?: string }) => {
+      if (path === '/api/channels/accounts') {
+        return {
+          success: true,
+          gatewayHealth: {
+            state: 'degraded',
+            reasons: ['channels_status_timeout'],
+            consecutiveHeartbeatMisses: 1,
+          },
+          channels: [
+            {
+              channelType: 'feishu',
+              defaultAccountId: 'default',
+              status: 'degraded',
+              statusReason: 'channels_status_timeout',
+              accounts: [
+                {
+                  accountId: 'default',
+                  name: 'Primary Account',
+                  configured: true,
+                  status: 'degraded',
+                  statusReason: 'channels_status_timeout',
+                  isDefault: true,
+                },
+              ],
+            },
+          ],
+        };
+      }
+
+      if (path === '/api/agents') {
+        return {
+          success: true,
+          agents: [],
+        };
+      }
+
+      if (path === '/api/diagnostics/gateway-snapshot') {
+        return {
+          capturedAt: 123,
+          platform: 'darwin',
+          gateway: {
+            state: 'degraded',
+            reasons: ['channels_status_timeout'],
+            consecutiveHeartbeatMisses: 1,
+          },
+          channels: [],
+          clawxLogTail: 'clawx',
+          gatewayLogTail: 'gateway',
+          gatewayErrLogTail: '',
+        };
+      }
+
+      if (path === '/api/gateway/restart' && init?.method === 'POST') {
+        return { success: true };
+      }
+
+      throw new Error(`Unexpected host API path: ${path}`);
+    });
+
+    render(<Channels />);
+
+    expect(await screen.findByTestId('channels-health-banner')).toBeInTheDocument();
+    expect(screen.getByText('health.state.degraded')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByTestId('channels-copy-diagnostics'));
+
+    await waitFor(() => {
+      expect(hostApiFetchMock).toHaveBeenCalledWith('/api/diagnostics/gateway-snapshot');
+      expect(writeTextMock).toHaveBeenCalledWith(expect.stringContaining('"platform": "darwin"'));
+    });
+  });
+
+  it('refetches diagnostics snapshot every time the diagnostics panel is reopened', async () => {
+    subscribeHostEventMock.mockImplementation(() => vi.fn());
+
+    let diagnosticsFetchCount = 0;
+    hostApiFetchMock.mockImplementation(async (path: string) => {
+      if (path === '/api/channels/accounts') {
+        return {
+          success: true,
+          gatewayHealth: {
+            state: 'degraded',
+            reasons: ['channels_status_timeout'],
+            consecutiveHeartbeatMisses: 1,
+          },
+          channels: [
+            {
+              channelType: 'feishu',
+              defaultAccountId: 'default',
+              status: 'degraded',
+              statusReason: 'channels_status_timeout',
+              accounts: [
+                {
+                  accountId: 'default',
+                  name: 'Primary Account',
+                  configured: true,
+                  status: 'degraded',
+                  statusReason: 'channels_status_timeout',
+                  isDefault: true,
+                },
+              ],
+            },
+          ],
+        };
+      }
+      if (path === '/api/agents') {
+        return { success: true, agents: [] };
+      }
+      if (path === '/api/diagnostics/gateway-snapshot') {
+        diagnosticsFetchCount += 1;
+        return {
+          capturedAt: diagnosticsFetchCount,
+          platform: 'darwin',
+          gateway: {
+            state: 'degraded',
+            reasons: ['channels_status_timeout'],
+            consecutiveHeartbeatMisses: 1,
+          },
+          channels: [],
+          clawxLogTail: `clawx-${diagnosticsFetchCount}`,
+          gatewayLogTail: 'gateway',
+          gatewayErrLogTail: '',
+        };
+      }
+
+      throw new Error(`Unexpected host API path: ${path}`);
+    });
+
+    render(<Channels />);
+
+    expect(await screen.findByTestId('channels-health-banner')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByTestId('channels-toggle-diagnostics'));
+    await waitFor(() => {
+      expect(screen.getByTestId('channels-diagnostics')).toHaveTextContent('"capturedAt": 1');
+    });
+
+    fireEvent.click(screen.getByTestId('channels-toggle-diagnostics'));
+    expect(screen.queryByTestId('channels-diagnostics')).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByTestId('channels-toggle-diagnostics'));
+    await waitFor(() => {
+      expect(screen.getByTestId('channels-diagnostics')).toHaveTextContent('"capturedAt": 2');
+    });
+
+    expect(diagnosticsFetchCount).toBe(2);
   });
 });
