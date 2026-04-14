@@ -1,8 +1,9 @@
 import { invokeIpc } from '@/lib/api-client';
 import { getCanonicalPrefixFromSessions, getMessageText, toMs } from './helpers';
-import { classifyHistoryStartupRetryError, sleep } from './history-startup-retry';
 import { DEFAULT_CANONICAL_PREFIX, DEFAULT_SESSION_KEY, type ChatSession, type RawMessage } from './types';
 import type { ChatGet, ChatSet, SessionHistoryActions } from './store-api';
+
+const LABEL_FETCH_CONCURRENCY = 5;
 
 function getAgentIdFromSessionKey(sessionKey: string): string {
   if (!sessionKey.startsWith('agent:')) return 'main';
@@ -111,30 +112,24 @@ export function createSessionActions(
             get().loadHistory();
           }
 
-          // Background: fetch first user message for every non-main session to populate labels upfront.
-          // Retries on "gateway startup" errors since the gateway may still be initializing.
+          // Background: fetch first user message for every non-main session to populate labels.
+          // Concurrency-limited to avoid flooding the gateway with parallel RPCs.
+          // By the time this runs, the gateway should already be fully ready (Sidebar
+          // gates on gatewayReady), so no startup-retry loop is needed.
           const sessionsToLabel = sessionsWithCurrent.filter((s) => !s.key.endsWith(':main'));
           if (sessionsToLabel.length > 0) {
-            const LABEL_RETRY_DELAYS = [2_000, 5_000, 10_000];
             void (async () => {
-              let pending = sessionsToLabel;
-              for (let attempt = 0; attempt <= LABEL_RETRY_DELAYS.length; attempt += 1) {
-                const failed: typeof pending = [];
+              for (let i = 0; i < sessionsToLabel.length; i += LABEL_FETCH_CONCURRENCY) {
+                const batch = sessionsToLabel.slice(i, i + LABEL_FETCH_CONCURRENCY);
                 await Promise.all(
-                  pending.map(async (session) => {
+                  batch.map(async (session) => {
                     try {
                       const r = await invokeIpc(
                         'gateway:rpc',
                         'chat.history',
                         { sessionKey: session.key, limit: 1000 },
                       ) as { success: boolean; result?: Record<string, unknown>; error?: string };
-                      if (!r.success) {
-                        if (classifyHistoryStartupRetryError(r.error) === 'gateway_startup') {
-                          failed.push(session);
-                        }
-                        return;
-                      }
-                      if (!r.result) return;
+                      if (!r.success || !r.result) return;
                       const msgs = Array.isArray(r.result.messages) ? r.result.messages as RawMessage[] : [];
                       const firstUser = msgs.find((m) => m.role === 'user');
                       const lastMsg = msgs[msgs.length - 1];
@@ -155,9 +150,6 @@ export function createSessionActions(
                     } catch { /* ignore per-session errors */ }
                   }),
                 );
-                if (failed.length === 0 || attempt >= LABEL_RETRY_DELAYS.length) break;
-                await sleep(LABEL_RETRY_DELAYS[attempt]!);
-                pending = failed;
               }
             })();
           }
