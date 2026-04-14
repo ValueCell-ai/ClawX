@@ -638,14 +638,20 @@ export async function buildChannelAccountsView(
       return left.accountId.localeCompare(right.accountId);
     });
 
-    const hasRuntimeError = runtimeAccounts.some((account) => typeof account.lastError === 'string' && account.lastError.trim())
+    const visibleAccountSnapshots: ChannelRuntimeAccountSnapshot[] = accounts.map((account) => ({
+      connected: account.connected,
+      running: account.running,
+      linked: account.linked,
+      lastError: account.lastError,
+    }));
+    const hasRuntimeError = visibleAccountSnapshots.some((account) => typeof account.lastError === 'string' && account.lastError.trim())
       || Boolean(channelSummary?.error?.trim() || channelSummary?.lastError?.trim());
-    const baseGroupStatus = pickChannelRuntimeStatus(runtimeAccounts, channelSummary);
+    const baseGroupStatus = pickChannelRuntimeStatus(visibleAccountSnapshots, channelSummary);
     const groupStatus = !gatewayStatus && ctx.gatewayManager.getStatus().state === 'running'
       ? 'degraded'
       : gatewayHealthState && !hasRuntimeError && baseGroupStatus === 'connected'
         ? 'degraded'
-        : pickChannelRuntimeStatus(runtimeAccounts, channelSummary, {
+        : pickChannelRuntimeStatus(visibleAccountSnapshots, channelSummary, {
           gatewayHealthState,
         });
 
