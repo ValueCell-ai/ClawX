@@ -1828,6 +1828,14 @@ export async function sanitizeOpenClawConfig(): Promise<void> {
       // allowlist because they were excluded from externalPluginIds above.
       if (nextAllow.length > 0) {
         for (const pluginId of bundled.enabledByDefault) {
+          // When the official openclaw-lark (or similar) plugin replaces the
+          // built-in 'feishu' extension, skip re-adding 'feishu' here —
+          // otherwise the enabledByDefault logic undoes the conflict
+          // resolution performed above and the built-in extension keeps
+          // reappearing in plugins.allow on every gateway restart.
+          if (pluginId === 'feishu' && canonicalFeishuId !== 'feishu') {
+            continue;
+          }
           if (!nextAllow.includes(pluginId)) {
             nextAllow.push(pluginId);
           }
