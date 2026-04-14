@@ -300,6 +300,11 @@ Chain multiple skills together to create sophisticated automation pipelines. Pro
 
 - **Node.js**: 22+ (LTS recommended)
 - **Package Manager**: pnpm 9+ (recommended) or npm
+- **Linux (Ubuntu/Debian)**: Install required system libraries before running Electron:
+  ```bash
+  sudo apt-get install -y libnss3 libgtk-3-0 libxss1 libxtst6 libatspi2.0-0 libnotify4 xdg-utils
+  ```
+  On Ubuntu 24.04+, some packages use a `t64` suffix; run the above command and `apt` will automatically select the correct variant.
 
 ### Project Structure
 
