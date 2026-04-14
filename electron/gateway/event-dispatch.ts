@@ -23,6 +23,7 @@ export function dispatchProtocolEvent(
       break;
     }
     case 'channel.status':
+    case 'channel.status_changed':
       emitter.emit('channel:status', payload as { channelId: string; status: string });
       break;
     case 'gateway.ready':

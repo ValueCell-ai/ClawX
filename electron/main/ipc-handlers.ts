@@ -1392,7 +1392,7 @@ function registerOpenClawHandlers(gatewayManager: GatewayManager): void {
   const scheduleGatewayChannelRestart = (reason: string): void => {
     if (gatewayManager.getStatus().state !== 'stopped') {
       logger.info(`Scheduling Gateway restart after ${reason}`);
-      gatewayManager.debouncedRestart();
+      gatewayManager.debouncedRestart(150);
     } else {
       logger.info(`Gateway is stopped; skip immediate restart after ${reason}`);
     }
@@ -1405,11 +1405,11 @@ function registerOpenClawHandlers(gatewayManager: GatewayManager): void {
     }
     if (forceRestartChannels.has(channelType)) {
       logger.info(`Scheduling Gateway restart after ${reason}`);
-      gatewayManager.debouncedRestart();
+      gatewayManager.debouncedRestart(150);
       return;
     }
     logger.info(`Scheduling Gateway reload after ${reason}`);
-    gatewayManager.debouncedReload();
+    gatewayManager.debouncedReload(150);
   };
 
   // Get OpenClaw package status

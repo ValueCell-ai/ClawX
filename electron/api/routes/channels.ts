@@ -63,6 +63,7 @@ import {
   normalizeSlackMessagingTarget,
   normalizeWhatsAppMessagingTarget,
 } from '../../utils/openclaw-sdk';
+import { logger } from '../../utils/logger';
 
 // listWhatsAppDirectory*FromConfig were removed from openclaw's public exports
 // in 2026.3.23-1.  No-op stubs; WhatsApp target picker uses session discovery.
@@ -262,11 +263,11 @@ function scheduleGatewayChannelSaveRefresh(
     return;
   }
   if (FORCE_RESTART_CHANNELS.has(storedChannelType)) {
-    ctx.gatewayManager.debouncedRestart();
+    ctx.gatewayManager.debouncedRestart(150);
     void reason;
     return;
   }
-  ctx.gatewayManager.debouncedReload();
+  ctx.gatewayManager.debouncedReload(150);
   void reason;
 }
 
@@ -415,6 +416,28 @@ interface ChannelAccountsView {
   accounts: ChannelAccountView[];
 }
 
+function buildGatewayStatusSnapshot(status: GatewayChannelStatusPayload | null): string {
+  if (!status?.channelAccounts) return 'none';
+  const entries = Object.entries(status.channelAccounts);
+  if (entries.length === 0) return 'empty';
+  return entries
+    .slice(0, 12)
+    .map(([channelType, accounts]) => {
+      const channelStatus = pickChannelRuntimeStatus(accounts);
+      const flags = accounts.slice(0, 4).map((account) => {
+        const accountId = typeof account.accountId === 'string' ? account.accountId : 'default';
+        const connected = account.connected === true ? '1' : '0';
+        const running = account.running === true ? '1' : '0';
+        const linked = account.linked === true ? '1' : '0';
+        const probeOk = account.probe?.ok === true ? '1' : '0';
+        const hasErr = typeof account.lastError === 'string' && account.lastError.trim().length > 0 ? '1' : '0';
+        return `${accountId}[c${connected}r${running}l${linked}p${probeOk}e${hasErr}]`;
+      }).join('|');
+      return `${channelType}:${channelStatus}{${flags}}`;
+    })
+    .join(', ');
+}
+
 function shouldIncludeRuntimeAccountId(
   accountId: string,
   configuredAccountIds: Set<string>,
@@ -457,7 +480,11 @@ const CHANNEL_TARGET_CACHE_TTL_MS = 60_000;
 const CHANNEL_TARGET_CACHE_ENABLED = process.env.VITEST !== 'true';
 const channelTargetCache = new Map<string, { expiresAt: number; targets: ChannelTargetOptionView[] }>();
 
-async function buildChannelAccountsView(ctx: HostApiContext): Promise<ChannelAccountsView[]> {
+async function buildChannelAccountsView(
+  ctx: HostApiContext,
+  options?: { probe?: boolean },
+): Promise<ChannelAccountsView[]> {
+  const startedAt = Date.now();
   // Read config once and share across all sub-calls (was 5 readFile calls before).
   const openClawConfig = await readOpenClawConfig();
 
@@ -469,11 +496,24 @@ async function buildChannelAccountsView(ctx: HostApiContext): Promise<ChannelAcc
 
   let gatewayStatus: GatewayChannelStatusPayload | null;
   try {
-    // probe: false — use cached runtime state instead of active network probes
-    // per channel. Real-time status updates arrive via channel.status events.
+    // probe=false uses cached runtime state (lighter); probe=true forces
+    // adapter-level connectivity checks for faster post-restart convergence.
+    const probe = options?.probe === true;
     // 8s timeout — fail fast when Gateway is busy with AI tasks.
-    gatewayStatus = await ctx.gatewayManager.rpc<GatewayChannelStatusPayload>('channels.status', { probe: false }, 8000);
+    const rpcStartedAt = Date.now();
+    gatewayStatus = await ctx.gatewayManager.rpc<GatewayChannelStatusPayload>(
+      'channels.status',
+      { probe },
+      probe ? 5000 : 8000,
+    );
+    logger.info(
+      `[channels.accounts] channels.status probe=${probe ? '1' : '0'} elapsedMs=${Date.now() - rpcStartedAt} snapshot=${buildGatewayStatusSnapshot(gatewayStatus)}`
+    );
   } catch {
+    const probe = options?.probe === true;
+    logger.warn(
+      `[channels.accounts] channels.status probe=${probe ? '1' : '0'} failed after ${Date.now() - startedAt}ms`
+    );
     gatewayStatus = null;
   }
 
@@ -552,7 +592,11 @@ async function buildChannelAccountsView(ctx: HostApiContext): Promise<ChannelAcc
     });
   }
 
-  return channels.sort((left, right) => left.channelType.localeCompare(right.channelType));
+  const sorted = channels.sort((left, right) => left.channelType.localeCompare(right.channelType));
+  logger.info(
+    `[channels.accounts] response probe=${options?.probe === true ? '1' : '0'} elapsedMs=${Date.now() - startedAt} view=${sorted.map((item) => `${item.channelType}:${item.status}`).join(',')}`
+  );
+  return sorted;
 }
 
 function buildChannelTargetLabel(baseLabel: string, value: string): string {
@@ -1156,7 +1200,9 @@ export async function handleChannelRoutes(
 
   if (url.pathname === '/api/channels/accounts' && req.method === 'GET') {
     try {
-      const channels = await buildChannelAccountsView(ctx);
+      const probe = url.searchParams.get('probe') === '1';
+      logger.info(`[channels.accounts] request probe=${probe ? '1' : '0'}`);
+      const channels = await buildChannelAccountsView(ctx, { probe });
       sendJson(res, 200, { success: true, channels });
     } catch (error) {
       sendJson(res, 500, { success: false, error: String(error) });

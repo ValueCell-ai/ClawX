@@ -12,11 +12,6 @@ vi.mock('@/stores/chat/helpers', () => ({
   toMs: (v: unknown) => typeof v === 'number' ? v : 0,
 }));
 
-vi.mock('@/stores/chat/history-startup-retry', () => ({
-  classifyHistoryStartupRetryError: () => null,
-  sleep: vi.fn().mockResolvedValue(undefined),
-}));
-
 describe('session label fetch concurrency', () => {
   beforeEach(() => {
     vi.clearAllMocks();

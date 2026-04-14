@@ -182,6 +182,15 @@ function ensureConfiguredPluginsUpgraded(configuredChannels: string[]): void {
  */
 let _extensionDepsLinked = false;
 
+/**
+ * Reset the extension-deps-linked cache so the next
+ * ensureExtensionDepsResolvable() call re-scans and links.
+ * Called before each Gateway launch to pick up newly installed extensions.
+ */
+export function resetExtensionDepsLinked(): void {
+  _extensionDepsLinked = false;
+}
+
 function ensureExtensionDepsResolvable(openclawDir: string): void {
   if (_extensionDepsLinked) return;
 
@@ -242,6 +251,11 @@ function ensureExtensionDepsResolvable(openclawDir: string): void {
 export async function syncGatewayConfigBeforeLaunch(
   appSettings: Awaited<ReturnType<typeof getAllSettings>>,
 ): Promise<void> {
+  // Reset the extension-deps cache so that newly installed extensions
+  // (e.g. user added a channel while the app was running) get their
+  // node_modules linked on the next Gateway spawn.
+  resetExtensionDepsLinked();
+
   await syncProxyConfigToOpenClaw(appSettings, { preserveExistingWhenDisabled: true });
 
   try {

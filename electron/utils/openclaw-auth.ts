@@ -1754,9 +1754,10 @@ export async function sanitizeOpenClawConfig(): Promise<void> {
       // that conflicts with the official @larksuite/openclaw-lark plugin
       // (id: 'openclaw-lark').  When the canonical feishu plugin is NOT the
       // built-in 'feishu' itself, we must:
-      //   1. Remove bare 'feishu' from plugins.allow
-      //   2. Always set plugins.entries.feishu = { enabled: false } to explicitly
-      //      disable the built-in — it loads automatically unless disabled.
+      //   1. Remove bare 'feishu' from plugins.allow (already done above at line ~1648)
+      //   2. Delete plugins.entries.feishu entirely — keeping it with enabled:false
+      //      causes the Gateway to report the feishu channel as "disabled".
+      //      Since 'feishu' is not in plugins.allow, the built-in won't load.
       const allowArr2 = Array.isArray(pluginsObj.allow) ? pluginsObj.allow as string[] : [];
       const hasCanonicalFeishu = allowArr2.includes(canonicalFeishuId) || !!pEntries[canonicalFeishuId];
       if (hasCanonicalFeishu && canonicalFeishuId !== 'feishu') {
@@ -1767,11 +1768,13 @@ export async function sanitizeOpenClawConfig(): Promise<void> {
           console.log('[sanitize] Removed bare "feishu" from plugins.allow (openclaw-lark plugin is configured)');
           modified = true;
         }
-        // Always ensure the built-in feishu plugin is explicitly disabled.
-        // Built-in extensions load automatically unless plugins.entries.<id>.enabled = false.
-        if (!pEntries.feishu || pEntries.feishu.enabled !== false) {
-          pEntries.feishu = { ...(pEntries.feishu || {}), enabled: false };
-          console.log('[sanitize] Disabled built-in feishu plugin (openclaw-lark plugin is configured)');
+        // Delete the built-in feishu entry entirely instead of setting enabled:false.
+        // Setting enabled:false causes the Gateway to report the channel as "disabled"
+        // which shows as an error in the UI.  Since 'feishu' is removed from
+        // plugins.allow above, the built-in extension won't auto-load.
+        if (pEntries.feishu) {
+          delete pEntries.feishu;
+          console.log('[sanitize] Removed built-in feishu plugin entry (openclaw-lark plugin is configured)');
           modified = true;
         }
       }
