@@ -473,6 +473,112 @@ describe('Channels page status refresh', () => {
     });
   });
 
+  it('surfaces diagnostics fetch failure payloads instead of caching them as snapshots', async () => {
+    subscribeHostEventMock.mockImplementation(() => vi.fn());
+
+    hostApiFetchMock.mockImplementation(async (path: string) => {
+      if (path === '/api/channels/accounts') {
+        return {
+          success: true,
+          gatewayHealth: {
+            state: 'degraded',
+            reasons: ['channels_status_timeout'],
+            consecutiveHeartbeatMisses: 1,
+          },
+          channels: [
+            {
+              channelType: 'feishu',
+              defaultAccountId: 'default',
+              status: 'degraded',
+              statusReason: 'channels_status_timeout',
+              accounts: [
+                {
+                  accountId: 'default',
+                  name: 'Primary Account',
+                  configured: true,
+                  status: 'degraded',
+                  statusReason: 'channels_status_timeout',
+                  isDefault: true,
+                },
+              ],
+            },
+          ],
+        };
+      }
+      if (path === '/api/agents') {
+        return { success: true, agents: [] };
+      }
+      if (path === '/api/diagnostics/gateway-snapshot') {
+        return { success: false, error: 'snapshot failed' };
+      }
+
+      throw new Error(`Unexpected host API path: ${path}`);
+    });
+
+    render(<Channels />);
+    expect(await screen.findByTestId('channels-health-banner')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByTestId('channels-toggle-diagnostics'));
+
+    await waitFor(() => {
+      expect(toastErrorMock).toHaveBeenCalledWith('health.diagnosticsCopyFailed');
+    });
+    expect(screen.queryByTestId('channels-diagnostics')).not.toBeInTheDocument();
+  });
+
+  it('shows restart failure when gateway restart returns success=false', async () => {
+    subscribeHostEventMock.mockImplementation(() => vi.fn());
+
+    hostApiFetchMock.mockImplementation(async (path: string, init?: { method?: string }) => {
+      if (path === '/api/channels/accounts') {
+        return {
+          success: true,
+          gatewayHealth: {
+            state: 'degraded',
+            reasons: ['channels_status_timeout'],
+            consecutiveHeartbeatMisses: 1,
+          },
+          channels: [
+            {
+              channelType: 'feishu',
+              defaultAccountId: 'default',
+              status: 'degraded',
+              statusReason: 'channels_status_timeout',
+              accounts: [
+                {
+                  accountId: 'default',
+                  name: 'Primary Account',
+                  configured: true,
+                  status: 'degraded',
+                  statusReason: 'channels_status_timeout',
+                  isDefault: true,
+                },
+              ],
+            },
+          ],
+        };
+      }
+      if (path === '/api/agents') {
+        return { success: true, agents: [] };
+      }
+      if (path === '/api/gateway/restart' && init?.method === 'POST') {
+        return { success: false, error: 'restart failed' };
+      }
+
+      throw new Error(`Unexpected host API path: ${path}`);
+    });
+
+    render(<Channels />);
+    expect(await screen.findByTestId('channels-health-banner')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByTestId('channels-restart-gateway'));
+
+    await waitFor(() => {
+      expect(toastErrorMock).toHaveBeenCalledWith('health.restartFailed');
+    });
+    expect(toastSuccessMock).not.toHaveBeenCalledWith('health.restartTriggered');
+  });
+
   it('refetches diagnostics snapshot every time the diagnostics panel is reopened', async () => {
     subscribeHostEventMock.mockImplementation(() => vi.fn());
 

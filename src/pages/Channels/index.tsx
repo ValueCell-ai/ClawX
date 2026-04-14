@@ -70,6 +70,24 @@ interface GatewayDiagnosticSnapshot {
   gatewayErrLogTail: string;
 }
 
+function isGatewayDiagnosticSnapshot(value: unknown): value is GatewayDiagnosticSnapshot {
+  if (!value || typeof value !== 'object') {
+    return false;
+  }
+
+  const snapshot = value as Record<string, unknown>;
+  return (
+    typeof snapshot.capturedAt === 'number'
+    && typeof snapshot.platform === 'string'
+    && typeof snapshot.gateway === 'object'
+    && snapshot.gateway !== null
+    && Array.isArray(snapshot.channels)
+    && typeof snapshot.clawxLogTail === 'string'
+    && typeof snapshot.gatewayLogTail === 'string'
+    && typeof snapshot.gatewayErrLogTail === 'string'
+  );
+}
+
 interface AgentItem {
   id: string;
   name: string;
@@ -314,16 +332,29 @@ export function Channels() {
   };
 
   const fetchDiagnosticsSnapshot = useCallback(async (): Promise<GatewayDiagnosticSnapshot> => {
-    const snapshot = await hostApiFetch<GatewayDiagnosticSnapshot>('/api/diagnostics/gateway-snapshot');
+    const response = await hostApiFetch<unknown>('/api/diagnostics/gateway-snapshot');
+    if (response && typeof response === 'object') {
+      const payload = response as Record<string, unknown>;
+      if (payload.success === false || typeof payload.error === 'string') {
+        throw new Error(typeof payload.error === 'string' ? payload.error : 'Failed to fetch gateway diagnostics snapshot');
+      }
+    }
+    if (!isGatewayDiagnosticSnapshot(response)) {
+      throw new Error('Invalid gateway diagnostics snapshot response');
+    }
+    const snapshot = response;
     setDiagnosticsSnapshot(snapshot);
     return snapshot;
   }, []);
 
   const handleRestartGateway = async () => {
     try {
-      await hostApiFetch<{ success: boolean; error?: string }>('/api/gateway/restart', {
+      const result = await hostApiFetch<{ success?: boolean; error?: string }>('/api/gateway/restart', {
         method: 'POST',
       });
+      if (result?.success !== true) {
+        throw new Error(result?.error || 'Failed to restart gateway');
+      }
       setDiagnosticsSnapshot(null);
       setShowDiagnostics(false);
       toast.success(t('health.restartTriggered'));

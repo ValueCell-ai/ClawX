@@ -27,8 +27,8 @@ async function readTail(filePath: string, tailLines = DEFAULT_TAIL_LINES): Promi
         const bytesToRead = Math.min(chunkSize, position);
         position -= bytesToRead;
         const buffer = Buffer.allocUnsafe(bytesToRead);
-        await file.read(buffer, 0, bytesToRead, position);
-        content = `${buffer.toString('utf-8')}${content}`;
+        const { bytesRead } = await file.read(buffer, 0, bytesToRead, position);
+        content = `${buffer.subarray(0, bytesRead).toString('utf-8')}${content}`;
         lineCount = content.split('\n').length - 1;
       }
 

@@ -138,4 +138,29 @@ describe('handleDiagnosticsRoutes', () => {
     expect(payload.gatewayLogTail).toBe('');
     expect(payload.gatewayErrLogTail).toBe('');
   });
+
+  it('reads tailed logs without leaking unread buffer bytes', async () => {
+    writeFileSync(join(testOpenClawConfigDir, 'logs', 'gateway.log'), 'only-one-line');
+
+    const { handleDiagnosticsRoutes } = await import('@electron/api/routes/diagnostics');
+    await handleDiagnosticsRoutes(
+      { method: 'GET' } as IncomingMessage,
+      {} as ServerResponse,
+      new URL('http://127.0.0.1:13210/api/diagnostics/gateway-snapshot'),
+      {
+        gatewayManager: {
+          getStatus: () => ({ state: 'running', port: 18789 }),
+          getDiagnostics: () => ({
+            consecutiveHeartbeatMisses: 0,
+            consecutiveRpcFailures: 0,
+          }),
+        },
+      } as never,
+    );
+
+    const payload = sendJsonMock.mock.calls.at(-1)?.[2] as {
+      gatewayLogTail?: string;
+    };
+    expect(payload.gatewayLogTail).toBe('only-one-line');
+  });
 });
