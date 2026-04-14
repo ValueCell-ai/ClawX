@@ -1245,7 +1245,7 @@ export async function batchSyncConfigFields(token: string): Promise<void> {
 
   return withConfigLock(async () => {
     const config = await readOpenClawJson();
-    let modified = false;
+    let modified = true;
 
     // ── Gateway token + controlUi ──
     const gateway = (
