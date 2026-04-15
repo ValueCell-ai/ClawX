@@ -1205,9 +1205,35 @@ function registerGatewayHandlers(
     }
   });
 
-  // Gateway RPC call
+  // Gateway RPC call — restricted to a whitelist of safe methods
+  const ALLOWED_RPC_METHODS = new Set([
+    'chat.history',
+    'chat.send',
+    'chat.abort',
+    'sessions.list',
+    'skills.update',
+    'channels.delete',
+    'channels.connect',
+    'channels.disconnect',
+    'config.patch',
+    'shutdown',
+    'health',
+    'cron.list',
+    'cron.get',
+    'cron.create',
+    'cron.update',
+    'cron.delete',
+    'cron.run',
+    'cron.pause',
+    'cron.resume',
+  ]);
+
   ipcMain.handle('gateway:rpc', async (_, method: string, params?: unknown, timeoutMs?: number) => {
     try {
+      if (typeof method !== 'string' || !ALLOWED_RPC_METHODS.has(method)) {
+        logger.warn(`[gateway:rpc] blocked method "${method}" — not in whitelist`);
+        return { success: false, error: `RPC method "${method}" is not allowed` };
+      }
       const result = await gatewayManager.rpc(method, params, timeoutMs);
       return { success: true, result };
     } catch (error) {

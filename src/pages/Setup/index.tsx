@@ -420,7 +420,7 @@ function RuntimeContent({ onStatusChange }: RuntimeContentProps) {
           ...prev,
           openclaw: {
             status: 'error',
-            message: `OpenClaw package not found at: ${openclawStatus.dir}`
+            message: t('setup:runtime.errors.packageNotFound', { dir: openclawStatus.dir })
           },
         }));
       } else if (!openclawStatus.isBuilt) {
@@ -428,7 +428,7 @@ function RuntimeContent({ onStatusChange }: RuntimeContentProps) {
           ...prev,
           openclaw: {
             status: 'error',
-            message: 'OpenClaw package found but dist is missing'
+            message: t('setup:runtime.errors.distMissing')
           },
         }));
       } else {
@@ -444,7 +444,7 @@ function RuntimeContent({ onStatusChange }: RuntimeContentProps) {
     } catch (error) {
       setChecks((prev) => ({
         ...prev,
-        openclaw: { status: 'error', message: `Check failed: ${error}` },
+        openclaw: { status: 'error', message: t('setup:runtime.errors.checkFailed', { error: String(error) }) },
       }));
     }
 
@@ -468,7 +468,7 @@ function RuntimeContent({ onStatusChange }: RuntimeContentProps) {
         ...prev,
         gateway: {
           status: 'checking',
-          message: currentGateway.state === 'starting' ? t('runtime.status.checking') : 'Waiting for gateway...'
+          message: currentGateway.state === 'starting' ? t('runtime.status.checking') : t('setup:runtime.errors.waitingForGateway')
         },
       }));
     }
@@ -496,12 +496,12 @@ function RuntimeContent({ onStatusChange }: RuntimeContentProps) {
     } else if (gatewayStatus.state === 'error') {
       setChecks((prev) => ({
         ...prev,
-        gateway: { status: 'error', message: gatewayStatus.error || 'Failed to start' },
+        gateway: { status: 'error', message: gatewayStatus.error || t('setup:runtime.errors.failedToStart') },
       }));
     } else if (gatewayStatus.state === 'starting' || gatewayStatus.state === 'reconnecting') {
       setChecks((prev) => ({
         ...prev,
-        gateway: { status: 'checking', message: 'Starting...' },
+        gateway: { status: 'checking', message: t('setup:runtime.errors.starting') },
       }));
     }
     // 'stopped' state: keep current check status (likely 'checking') to allow startup time
@@ -525,7 +525,7 @@ function RuntimeContent({ onStatusChange }: RuntimeContentProps) {
         if (prev.gateway.status === 'checking') {
           return {
             ...prev,
-            gateway: { status: 'error', message: 'Gateway startup timed out' },
+            gateway: { status: 'error', message: t('setup:runtime.errors.startupTimedOut') },
           };
         }
         return prev;
@@ -543,7 +543,7 @@ function RuntimeContent({ onStatusChange }: RuntimeContentProps) {
   const handleStartGateway = async () => {
     setChecks((prev) => ({
       ...prev,
-      gateway: { status: 'checking', message: 'Starting...' },
+      gateway: { status: 'checking', message: t('setup:runtime.errors.starting') },
     }));
     await startGateway();
   };
@@ -554,7 +554,7 @@ function RuntimeContent({ onStatusChange }: RuntimeContentProps) {
       setLogContent(logs.content);
       setShowLogs(true);
     } catch {
-      setLogContent('(Failed to load logs)');
+      setLogContent(t('setup:runtime.errors.failedToLoadLogs'));
       setShowLogs(true);
     }
   };
@@ -1146,7 +1146,7 @@ function ProviderContent({
     } catch (error) {
       setKeyValid(false);
       onConfiguredChange(false);
-      toast.error('Configuration failed: ' + String(error));
+      toast.error(t('setup:runtime.errors.configFailed', { error: String(error) }));
     } finally {
       setValidating(false);
     }
@@ -1489,7 +1489,7 @@ function ProviderContent({
             <div className="space-y-4 pt-2">
               <div className="rounded-lg bg-blue-500/10 border border-blue-500/20 p-4 text-center">
                 <p className="text-sm text-blue-200 mb-3 block">
-                  This provider requires signing in via your browser.
+                  {t('settings:aiProviders.oauth.loginPrompt')}
                 </p>
                 <Button
                   onClick={handleStartOAuth}
@@ -1497,9 +1497,9 @@ function ProviderContent({
                   className="w-full bg-blue-600 hover:bg-blue-700 text-white"
                 >
                   {oauthFlowing ? (
-                    <><Loader2 className="h-4 w-4 mr-2 animate-spin" /> Waiting...</>
+                    <><Loader2 className="h-4 w-4 mr-2 animate-spin" /> {t('settings:aiProviders.oauth.waiting')}</>
                   ) : (
-                    'Login with Browser'
+                    t('settings:aiProviders.oauth.loginButton')
                   )}
                 </Button>
               </div>
@@ -1514,23 +1514,23 @@ function ProviderContent({
                     {oauthError ? (
                       <div className="text-red-400 space-y-2">
                         <XCircle className="h-8 w-8 mx-auto" />
-                        <p className="font-medium">Authentication Failed</p>
+                        <p className="font-medium">{t('settings:aiProviders.oauth.authFailed')}</p>
                         <p className="text-sm opacity-80">{oauthError}</p>
                         <Button variant="outline" size="sm" onClick={handleCancelOAuth} className="mt-2">
-                          Try Again
+                          {t('settings:aiProviders.oauth.tryAgain')}
                         </Button>
                       </div>
                     ) : !oauthData ? (
                       <div className="space-y-3 py-4">
                         <Loader2 className="h-8 w-8 animate-spin text-primary mx-auto" />
-                        <p className="text-sm text-muted-foreground animate-pulse">Requesting secure login code...</p>
+                        <p className="text-sm text-muted-foreground animate-pulse">{t('settings:aiProviders.oauth.requestingCode')}</p>
                       </div>
                     ) : oauthData.mode === 'manual' ? (
                       <div className="space-y-4 w-full">
                         <div className="space-y-1">
-                          <h3 className="font-medium text-lg">Complete OpenAI Login</h3>
+                          <h3 className="font-medium text-lg">{t('settings:aiProviders.oauth.completeLogin')}</h3>
                           <p className="text-sm text-muted-foreground text-left mt-2">
-                            {oauthData.message || 'Open the authorization page, complete login, then paste the callback URL or code below.'}
+                            {oauthData.message || t('settings:aiProviders.oauth.openAuthPage')}
                           </p>
                         </div>
 
@@ -1540,11 +1540,11 @@ function ProviderContent({
                           onClick={() => invokeIpc('shell:openExternal', oauthData.authorizationUrl)}
                         >
                           <ExternalLink className="h-4 w-4 mr-2" />
-                          Open Authorization Page
+                          {t('settings:aiProviders.oauth.openAuthPage')}
                         </Button>
 
                         <Input
-                          placeholder="Paste callback URL or code"
+                          placeholder={t('settings:aiProviders.oauth.pasteCode')}
                           value={manualCodeInput}
                           onChange={(e) => setManualCodeInput(e.target.value)}
                         />
@@ -1554,21 +1554,21 @@ function ProviderContent({
                           onClick={handleSubmitManualOAuthCode}
                           disabled={!manualCodeInput.trim()}
                         >
-                          Submit Code
+                          {t('settings:aiProviders.oauth.submitCode')}
                         </Button>
 
                         <Button variant="ghost" size="sm" className="w-full mt-2" onClick={handleCancelOAuth}>
-                          Cancel
+                          {t('settings:aiProviders.oauth.cancel')}
                         </Button>
                       </div>
                     ) : (
                       <div className="space-y-4 w-full">
                         <div className="space-y-1">
-                          <h3 className="font-medium text-lg">Approve Login</h3>
+                          <h3 className="font-medium text-lg">{t('settings:aiProviders.oauth.approveLogin')}</h3>
                           <div className="text-sm text-muted-foreground text-left mt-2 space-y-1">
-                            <p>1. Copy the authorization code below.</p>
-                            <p>2. Open the login page in your browser.</p>
-                            <p>3. Paste the code to approve access.</p>
+                            <p>{t('settings:aiProviders.oauth.step1')}</p>
+                            <p>{t('settings:aiProviders.oauth.step2')}</p>
+                            <p>{t('settings:aiProviders.oauth.step3')}</p>
                           </div>
                         </div>
 
@@ -1581,7 +1581,7 @@ function ProviderContent({
                             size="icon"
                             onClick={() => {
                               navigator.clipboard.writeText(oauthData.userCode);
-                              toast.success('Code copied to clipboard');
+                              toast.success(t('settings:aiProviders.oauth.codeCopied'));
                             }}
                           >
                             <Copy className="h-4 w-4" />
@@ -1594,16 +1594,16 @@ function ProviderContent({
                           onClick={() => invokeIpc('shell:openExternal', oauthData.verificationUri)}
                         >
                           <ExternalLink className="h-4 w-4 mr-2" />
-                          Open Login Page
+                          {t('settings:aiProviders.oauth.openLoginPage')}
                         </Button>
 
                         <div className="flex items-center justify-center gap-2 text-xs text-muted-foreground pt-2">
                           <Loader2 className="h-3 w-3 animate-spin" />
-                          <span>Waiting for approval in browser...</span>
+                          <span>{t('settings:aiProviders.oauth.waitingApproval')}</span>
                         </div>
 
                         <Button variant="ghost" size="sm" className="w-full mt-2" onClick={handleCancelOAuth}>
-                          Cancel
+                          {t('settings:aiProviders.oauth.cancel')}
                         </Button>
                       </div>
                     )}
@@ -1692,13 +1692,13 @@ function InstallingContent({ skills, onComplete, onSkip }: InstallingContentProp
           onComplete(skills.map(s => s.id));
         } else {
           setSkillStates(prev => prev.map(s => ({ ...s, status: 'failed' })));
-          setErrorMessage(result.error || 'Unknown error during installation');
-          toast.error('Environment setup failed');
+          setErrorMessage(result.error || t('setup:installing.errors.unknownError'));
+          toast.error(t('setup:installing.errors.envSetupFailed'));
         }
       } catch (err) {
         setSkillStates(prev => prev.map(s => ({ ...s, status: 'failed' })));
         setErrorMessage(String(err));
-        toast.error('Installation error');
+        toast.error(t('setup:installing.errors.installError'));
       }
     };
 

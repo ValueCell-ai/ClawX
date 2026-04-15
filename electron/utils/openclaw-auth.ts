@@ -510,6 +510,8 @@ export async function removeProviderKeyFromOpenClaw(
  * Remove a provider completely from OpenClaw (delete config, disable plugins, delete keys)
  */
 export async function removeProviderFromOpenClaw(provider: string): Promise<void> {
+  const cleanupErrors: string[] = [];
+
   // 1. Remove from auth-profiles.json.
   // We must also remove entries whose raw `provider` field maps to this UI
   // provider key via AUTH_PROFILE_PROVIDER_KEY_MAP (e.g. "openai-codex" → "openai").
@@ -546,7 +548,9 @@ export async function removeProviderFromOpenClaw(provider: string): Promise<void
         }
       }
     } catch (err) {
-      console.warn(`Failed to remove provider ${provider} from models.json (agent "${id}"):`, err);
+      const msg = `Failed to remove provider ${provider} from models.json (agent "${id}"): ${String(err)}`;
+      console.warn(msg);
+      cleanupErrors.push(msg);
     }
   }
 
@@ -629,7 +633,19 @@ export async function removeProviderFromOpenClaw(provider: string): Promise<void
       }
     });
   } catch (err) {
-    console.warn(`Failed to remove provider ${provider} from openclaw.json:`, err);
+    const msg = `Failed to remove provider ${provider} from openclaw.json: ${String(err)}`;
+    console.warn(msg);
+    cleanupErrors.push(msg);
+  }
+
+  // If any cleanup step failed, surface the errors so callers can react
+  // (e.g., show a toast or log a warning). The provider was still removed
+  // from auth-profiles and the internal store, so partial cleanup is better
+  // than nothing, but the inconsistency should not be silently ignored.
+  if (cleanupErrors.length > 0) {
+    throw new Error(
+      `Provider "${provider}" was removed from local store, but openclaw.json cleanup encountered errors:\n${cleanupErrors.join('\n')}`,
+    );
   }
 }
 

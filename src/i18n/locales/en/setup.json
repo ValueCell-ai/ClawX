@@ -59,6 +59,20 @@
             "openFolder": "Open Log Folder",
             "close": "Close",
             "noLogs": "(No logs available yet)"
+        },
+        "errors": {
+            "packageNotFound": "OpenClaw package not found at: {{dir}}",
+            "distMissing": "OpenClaw package found but dist is missing",
+            "checkFailed": "Check failed: {{error}}",
+            "waitingForGateway": "Waiting for gateway...",
+            "failedToStart": "Failed to start",
+            "startupTimedOut": "Gateway startup timed out",
+            "starting": "Starting...",
+            "failedToLoadLogs": "(Failed to load logs)",
+            "configFailed": "Configuration failed: {{error}}",
+            "installUnknownError": "Unknown error during installation",
+            "envSetupFailed": "Environment setup failed",
+            "installError": "Installation error"
         }
     },
     "provider": {
@@ -109,7 +123,12 @@
         "error": "Setup Error:",
         "restart": "Try restarting the app",
         "wait": "This may take a few moments...",
-        "skip": "Skip this step"
+        "skip": "Skip this step",
+        "errors": {
+            "unknownError": "Unknown error during installation",
+            "envSetupFailed": "Environment setup failed",
+            "installError": "Installation error"
+        }
     },
     "complete": {
         "title": "Setup Complete!",
