@@ -837,8 +837,13 @@ export async function getChannelConfig(channelType: string, accountId?: string):
         return accounts[resolvedAccountId];
     }
 
-    // Backward compat: fall back to flat top-level config (legacy format without accounts)
-    if (!accounts || Object.keys(accounts).length === 0) {
+    // Backward compat: fall back to flat top-level config (legacy format without accounts).
+    // Only apply when no specific account ID is requested, or when the default account is
+    // requested, to avoid treating the legacy flat config as data for a newly-generated
+    // account ID.  Without this guard, isSameConfigValues() falsely reports "no change"
+    // when a user adds a second account with the same credentials as the existing one
+    // stored in legacy flat format, silently skipping the save (fixes #831).
+    if ((!accounts || Object.keys(accounts).length === 0) && (!accountId || resolvedAccountId === DEFAULT_ACCOUNT_ID)) {
         return channelSection;
     }
 
