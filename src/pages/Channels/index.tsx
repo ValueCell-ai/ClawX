@@ -114,21 +114,22 @@ function removeDeletedTarget(groups: ChannelGroupItem[], target: DeleteTarget): 
   return groups.filter((group) => group.channelType !== target.channelType);
 }
 
+const DEFAULT_GATEWAY_HEALTH: GatewayHealthSummary = {
+  state: 'healthy',
+  reasons: [],
+  consecutiveHeartbeatMisses: 0,
+};
+
 export function Channels() {
   const { t } = useTranslation('channels');
   const gatewayStatus = useGatewayStore((state) => state.status);
   const lastGatewayStateRef = useRef(gatewayStatus.state);
-  const defaultGatewayHealth = useMemo<GatewayHealthSummary>(() => ({
-    state: 'healthy',
-    reasons: [],
-    consecutiveHeartbeatMisses: 0,
-  }), []);
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [channelGroups, setChannelGroups] = useState<ChannelGroupItem[]>([]);
   const [agents, setAgents] = useState<AgentItem[]>([]);
-  const [gatewayHealth, setGatewayHealth] = useState<GatewayHealthSummary>(defaultGatewayHealth);
+  const [gatewayHealth, setGatewayHealth] = useState<GatewayHealthSummary>(DEFAULT_GATEWAY_HEALTH);
   const [diagnosticsSnapshot, setDiagnosticsSnapshot] = useState<GatewayDiagnosticSnapshot | null>(null);
   const [showDiagnostics, setShowDiagnostics] = useState(false);
   const [diagnosticsLoading, setDiagnosticsLoading] = useState(false);
@@ -208,7 +209,7 @@ export function Channels() {
 
       setChannelGroups(channelsPayload.channels || []);
       setAgents(agentsRes.agents || []);
-      setGatewayHealth(channelsPayload.gatewayHealth || defaultGatewayHealth);
+      setGatewayHealth(channelsPayload.gatewayHealth || DEFAULT_GATEWAY_HEALTH);
       setDiagnosticsSnapshot(null);
       setShowDiagnostics(false);
       console.info(

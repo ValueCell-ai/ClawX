@@ -28,6 +28,9 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Generate extension bridge
+        run: pnpm run ext:bridge
+
       - name: Run linter
         run: pnpm run lint
 
@@ -56,6 +59,9 @@ jobs:
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
+
+      - name: Generate extension bridge
+        run: pnpm run ext:bridge
 
       - name: Build
         run: pnpm run build:vite
