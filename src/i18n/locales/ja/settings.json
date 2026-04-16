@@ -109,6 +109,7 @@
       "apikeyMode": "APIキー",
       "loginPrompt": "このプロバイダーはブラウザからのサインインが必要です。",
       "loginButton": "ブラウザでログイン",
+      "getApiKey": "APIキーを取得",
       "waiting": "待機中...",
       "openLoginPage": "ログインページを開く",
       "waitingApproval": "ブラウザの承認を待っています...",
@@ -206,7 +207,9 @@
       }
     },
     "devMode": "開発者モード",
-    "devModeDesc": "開発者ツールとショートカットを表示"
+    "devModeDesc": "開発者ツールとショートカットを表示",
+    "telemetry": "匿名使用データ",
+    "telemetryDesc": "ClawXの改善のため、匿名の基本的な使用データの提供を許可する"
   },
   "developer": {
     "title": "開発者",
