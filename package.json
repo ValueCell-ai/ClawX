@@ -79,7 +79,6 @@
         "ws": "^8.19.0"
     },
     "devDependencies": {
-        "@clawx-biz/extensions": "link:../ClawX-biz",
         "@eslint/js": "^10.0.1",
         "@larksuite/openclaw-lark": "2026.4.7",
         "@playwright/test": "^1.56.1",
