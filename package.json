@@ -33,9 +33,10 @@
     "private": true,
     "scripts": {
         "init": "pnpm install && pnpm run uv:download",
-        "predev": "zx scripts/prepare-preinstalled-skills-dev.mjs",
+        "predev": "node scripts/generate-ext-bridge.mjs && zx scripts/prepare-preinstalled-skills-dev.mjs",
         "dev": "vite",
-        "build": "vite build && zx scripts/bundle-openclaw.mjs && zx scripts/bundle-openclaw-plugins.mjs && zx scripts/bundle-preinstalled-skills.mjs && electron-builder",
+        "ext:bridge": "node scripts/generate-ext-bridge.mjs",
+        "build": "node scripts/generate-ext-bridge.mjs && vite build && zx scripts/bundle-openclaw.mjs && zx scripts/bundle-openclaw-plugins.mjs && zx scripts/bundle-preinstalled-skills.mjs && electron-builder",
         "build:vite": "vite build",
         "bundle:openclaw-plugins": "zx scripts/bundle-openclaw-plugins.mjs",
         "bundle:preinstalled-skills": "zx scripts/bundle-preinstalled-skills.mjs",
@@ -78,8 +79,10 @@
         "ws": "^8.19.0"
     },
     "devDependencies": {
+        "@clawx-biz/extensions": "link:../ClawX-biz",
         "@eslint/js": "^10.0.1",
         "@larksuite/openclaw-lark": "2026.4.7",
+        "@playwright/test": "^1.56.1",
         "@radix-ui/react-dialog": "^1.1.15",
         "@radix-ui/react-dropdown-menu": "^2.1.16",
         "@radix-ui/react-label": "^2.1.8",
@@ -92,7 +95,6 @@
         "@radix-ui/react-tabs": "^1.1.13",
         "@radix-ui/react-toast": "^1.2.15",
         "@radix-ui/react-tooltip": "^1.2.8",
-        "@playwright/test": "^1.56.1",
         "@soimy/dingtalk": "^3.5.3",
         "@tencent-weixin/openclaw-weixin": "^2.1.8",
         "@testing-library/jest-dom": "^6.9.1",
