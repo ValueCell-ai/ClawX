@@ -1188,6 +1188,18 @@ export async function syncBrowserConfigToOpenClaw(): Promise<void> {
       changed = true;
     }
 
+    // Default ssrfPolicy to allow private network access for enterprise/internal use
+    if (browser.ssrfPolicy == null) {
+      browser.ssrfPolicy = { dangerouslyAllowPrivateNetwork: true };
+      changed = true;
+    } else if (
+      typeof browser.ssrfPolicy === 'object' &&
+      (browser.ssrfPolicy as Record<string, unknown>).dangerouslyAllowPrivateNetwork === undefined
+    ) {
+      (browser.ssrfPolicy as Record<string, unknown>).dangerouslyAllowPrivateNetwork = true;
+      changed = true;
+    }
+
     if (!changed) return;
 
     config.browser = browser;
@@ -1291,6 +1303,19 @@ export async function batchSyncConfigFields(token: string): Promise<void> {
     }
     if (browser.defaultProfile === undefined) {
       browser.defaultProfile = 'openclaw';
+      config.browser = browser;
+      modified = true;
+    }
+    // Default ssrfPolicy to allow private network access for enterprise/internal use
+    if (browser.ssrfPolicy == null) {
+      browser.ssrfPolicy = { dangerouslyAllowPrivateNetwork: true };
+      config.browser = browser;
+      modified = true;
+    } else if (
+      typeof browser.ssrfPolicy === 'object' &&
+      (browser.ssrfPolicy as Record<string, unknown>).dangerouslyAllowPrivateNetwork === undefined
+    ) {
+      (browser.ssrfPolicy as Record<string, unknown>).dangerouslyAllowPrivateNetwork = true;
       config.browser = browser;
       modified = true;
     }
