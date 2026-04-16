@@ -65,7 +65,12 @@ export async function loadExtensionsFromManifest(): Promise<void> {
         logger.warn(`[extensions] Module "${extensionId}" does not export a valid Extension`);
       }
     } catch (err) {
-      logger.warn(`[extensions] Failed to load extension "${extensionId}":`, err);
+      const message = err instanceof Error ? err.message : String(err);
+      if (message.includes('Cannot find module')) {
+        logger.debug(`[extensions] "${extensionId}" not loadable at runtime (expected when using ext-bridge)`);
+      } else {
+        logger.warn(`[extensions] Failed to load extension "${extensionId}": ${message}`);
+      }
     }
   }
 }
