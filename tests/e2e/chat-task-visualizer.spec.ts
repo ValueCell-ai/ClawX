@@ -235,4 +235,139 @@ test.describe('ClawX chat execution graph', () => {
       await closeElectronApp(app);
     }
   });
+
+  test('does not duplicate the in-flight user prompt or cumulative streaming content', async ({ launchElectronApp }) => {
+    const app = await launchElectronApp({ skipSetup: true });
+
+    try {
+      await installIpcMocks(app, {
+        gatewayStatus: { state: 'running', port: 18789, pid: 12345 },
+        gatewayRpc: {
+          [stableStringify(['sessions.list', {}])]: {
+            success: true,
+            result: {
+              sessions: [{ key: PROJECT_MANAGER_SESSION_KEY, displayName: 'main' }],
+            },
+          },
+          [stableStringify(['chat.history', { sessionKey: PROJECT_MANAGER_SESSION_KEY, limit: 200 }])]: {
+            success: true,
+            result: {
+              messages: [],
+            },
+          },
+        },
+        hostApi: {
+          [stableStringify(['/api/gateway/status', 'GET'])]: {
+            ok: true,
+            data: {
+              status: 200,
+              ok: true,
+              json: { state: 'running', port: 18789, pid: 12345 },
+            },
+          },
+          [stableStringify(['/api/agents', 'GET'])]: {
+            ok: true,
+            data: {
+              status: 200,
+              ok: true,
+              json: {
+                success: true,
+                agents: [{ id: 'main', name: 'main' }],
+              },
+            },
+          },
+        },
+      });
+
+      await app.evaluate(async ({ app: _app }) => {
+        const { ipcMain } = process.mainModule!.require('electron') as typeof import('electron');
+        const sendPayloads: Array<{ message?: string; sessionKey?: string }> = [];
+        ipcMain.removeHandler('gateway:rpc');
+        ipcMain.handle('gateway:rpc', async (_event: unknown, method: string, payload: unknown) => {
+          if (method === 'sessions.list') {
+            return {
+              success: true,
+              result: {
+                sessions: [{ key: 'agent:main:main', displayName: 'main' }],
+              },
+            };
+          }
+          if (method === 'chat.history') {
+            return {
+              success: true,
+              result: { messages: [] },
+            };
+          }
+          if (method === 'chat.send') {
+            if (payload && typeof payload === 'object') {
+              const p = payload as { message?: string; sessionKey?: string };
+              sendPayloads.push({ message: p.message, sessionKey: p.sessionKey });
+            }
+            return {
+              success: true,
+              result: { runId: 'mock-run' },
+            };
+          }
+          return { success: true, result: {} };
+        });
+        (globalThis as typeof globalThis & { __clawxSendPayloads?: Array<{ message?: string; sessionKey?: string }> }).__clawxSendPayloads = sendPayloads;
+      });
+
+      const page = await getStableWindow(app);
+      try {
+        await page.reload();
+      } catch (error) {
+        if (!String(error).includes('ERR_FILE_NOT_FOUND')) {
+          throw error;
+        }
+      }
+
+      await expect(page.getByTestId('main-layout')).toBeVisible();
+      await page.getByTestId('chat-composer-input').fill('打开浏览器，搜索腾讯新闻，截图给我');
+      await page.getByTestId('chat-composer-send').click();
+
+      await expect(page.getByText('打开浏览器，搜索腾讯新闻，截图给我')).toHaveCount(1);
+      await expect.poll(async () => {
+        return await app.evaluate(() => {
+          const sendPayloads = (globalThis as typeof globalThis & {
+            __clawxSendPayloads?: Array<{ message?: string; sessionKey?: string }>;
+          }).__clawxSendPayloads || [];
+          return sendPayloads.length;
+        });
+      }).toBe(1);
+
+      await app.evaluate(async ({ BrowserWindow }) => {
+        const win = BrowserWindow.getAllWindows()[0];
+        win?.webContents.send('gateway:notification', {
+          method: 'agent',
+          params: {
+            runId: 'mock-run',
+            sessionKey: 'agent:main:main',
+            state: 'delta',
+            message: {
+              role: 'assistant',
+              content: [
+                { type: 'thinking', thinking: '思考 1' },
+                { type: 'thinking', thinking: '思考 1 2' },
+                { type: 'thinking', thinking: '思考 1 2 3' },
+                { type: 'text', text: '1' },
+                { type: 'text', text: '1 2' },
+                { type: 'text', text: '1 2 3' },
+              ],
+            },
+          },
+        });
+      });
+
+      await expect(page.getByText('打开浏览器，搜索腾讯新闻，截图给我')).toHaveCount(1);
+      await expect(page.getByText('思考 1 2 3')).toHaveCount(1);
+      await expect(page.getByText('思考 1 2')).toHaveCount(0);
+      await expect(page.getByText('思考 1')).toHaveCount(0);
+      await expect(page.getByText(/^1 2 3$/)).toHaveCount(1);
+      await expect(page.getByText(/^1 2$/)).toHaveCount(0);
+      await expect(page.getByText(/^1$/)).toHaveCount(0);
+    } finally {
+      await closeElectronApp(app);
+    }
+  });
 });
