@@ -1,4 +1,5 @@
 import { invokeIpc } from '@/lib/api-client';
+import { buildMainAgentSessionKey } from '@/lib/routing';
 import { getCanonicalPrefixFromSessions, getMessageText, toMs } from './helpers';
 import { DEFAULT_CANONICAL_PREFIX, DEFAULT_SESSION_KEY, type ChatSession, type RawMessage } from './types';
 import type { ChatGet, ChatSet, SessionHistoryActions } from './store-api';
@@ -27,7 +28,7 @@ function parseSessionUpdatedAtMs(value: unknown): number | undefined {
 export function createSessionActions(
   set: ChatSet,
   get: ChatGet,
-): Pick<SessionHistoryActions, 'loadSessions' | 'switchSession' | 'newSession' | 'deleteSession' | 'cleanupEmptySession'> {
+): Pick<SessionHistoryActions, 'loadSessions' | 'switchSession' | 'openAgentSession' | 'newSession' | 'deleteSession' | 'cleanupEmptySession'> {
   return {
     loadSessions: async () => {
       try {
@@ -192,6 +193,45 @@ export function createSessionActions(
             Object.entries(s.sessionLastActivity).filter(([k]) => k !== currentSessionKey),
           ),
         } : {}),
+      }));
+      get().loadHistory();
+    },
+
+    openAgentSession: (agentId: string) => {
+      const nextSessionKey = buildMainAgentSessionKey(agentId);
+      if (nextSessionKey === get().currentSessionKey) {
+        get().loadHistory();
+        return;
+      }
+      const { currentSessionKey, messages, sessionLastActivity, sessionLabels } = get();
+      const leavingEmpty = !currentSessionKey.endsWith(':main')
+        && messages.length === 0
+        && !sessionLastActivity[currentSessionKey]
+        && !sessionLabels[currentSessionKey];
+      set((s) => ({
+        currentSessionKey: nextSessionKey,
+        currentAgentId: getAgentIdFromSessionKey(nextSessionKey),
+        messages: [],
+        streamingText: '',
+        streamingMessage: null,
+        streamingTools: [],
+        activeRunId: null,
+        error: null,
+        pendingFinal: false,
+        lastUserMessageAt: null,
+        pendingToolImages: [],
+        sessions: [
+          ...(leavingEmpty ? s.sessions.filter((session) => session.key !== currentSessionKey) : s.sessions),
+          ...(!s.sessions.some((session) => session.key === nextSessionKey)
+            ? [{ key: nextSessionKey, displayName: nextSessionKey }]
+            : []),
+        ],
+        sessionLabels: leavingEmpty
+          ? Object.fromEntries(Object.entries(s.sessionLabels).filter(([k]) => k !== currentSessionKey))
+          : s.sessionLabels,
+        sessionLastActivity: leavingEmpty
+          ? Object.fromEntries(Object.entries(s.sessionLastActivity).filter(([k]) => k !== currentSessionKey))
+          : s.sessionLastActivity,
       }));
       get().loadHistory();
     },

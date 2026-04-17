@@ -96,6 +96,27 @@ describe('chat session actions', () => {
     expect(h.read().loadHistory).toHaveBeenCalledTimes(1);
   });
 
+  it('openAgentSession switches to the selected agent main session and preserves history cleanup rules', async () => {
+    const { createSessionActions } = await import('@/stores/chat/session-actions');
+    const h = makeHarness({
+      currentSessionKey: 'agent:foo:session-b',
+      sessions: [{ key: 'agent:foo:session-b' }, { key: 'agent:foo:main' }],
+      messages: [],
+      sessionLabels: {},
+      sessionLastActivity: {},
+    });
+    const actions = createSessionActions(h.set as never, h.get as never);
+
+    actions.openAgentSession('research');
+
+    const next = h.read();
+    expect(next.currentSessionKey).toBe('agent:research:main');
+    expect(next.currentAgentId).toBe('research');
+    expect(next.sessions.find((session) => session.key === 'agent:foo:session-b')).toBeUndefined();
+    expect(next.sessions.find((session) => session.key === 'agent:research:main')).toBeDefined();
+    expect(h.read().loadHistory).toHaveBeenCalledTimes(1);
+  });
+
   it('deleteSession updates current session and keeps sidebar consistent', async () => {
     const { createSessionActions } = await import('@/stores/chat/session-actions');
     const h = makeHarness({

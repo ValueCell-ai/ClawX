@@ -28,6 +28,10 @@ export function buildAttachedAgentSessionKey(anchorSessionKey: string, agentId: 
   return `agent:${normalizeAgentId(agentId)}:attached-${hashText(anchorSessionKey)}`;
 }
 
+export function buildMainAgentSessionKey(agentId: string): string {
+  return `agent:${normalizeAgentId(agentId)}:main`;
+}
+
 export function getAttachedAgentIds(
   currentAgentId: string,
   attachedAgentIds: string[] | undefined,

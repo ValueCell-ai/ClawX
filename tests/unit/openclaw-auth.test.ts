@@ -125,6 +125,76 @@ describe('saveProviderKeyToOpenClaw', () => {
   });
 });
 
+describe('batchSyncConfigFields', () => {
+  beforeEach(async () => {
+    vi.resetModules();
+    vi.restoreAllMocks();
+    await rm(testHome, { recursive: true, force: true });
+    await rm(testUserData, { recursive: true, force: true });
+  });
+
+  it('parses BOM-prefixed openclaw.json files without clobbering existing config', async () => {
+    const openclawDir = join(testHome, '.openclaw');
+    await mkdir(openclawDir, { recursive: true });
+    await writeFile(
+      join(openclawDir, 'openclaw.json'),
+      `\ufeff${JSON.stringify({
+        channels: {
+          telegram: {
+            enabled: true,
+            accounts: {
+              max: {
+                botToken: 'token-1',
+              },
+            },
+            defaultAccount: 'max',
+          },
+        },
+        bindings: [
+          {
+            agentId: 'main',
+            match: { channel: 'telegram', accountId: 'max' },
+          },
+        ],
+        agents: {
+          list: [{ id: 'main', name: 'Main' }],
+        },
+      }, null, 2)}`,
+      'utf8',
+    );
+
+    const { batchSyncConfigFields } = await import('@electron/utils/openclaw-auth');
+    await batchSyncConfigFields('gateway-token');
+
+    const config = await readOpenClawJson();
+    expect(config.channels).toEqual({
+      telegram: {
+        enabled: true,
+        accounts: {
+          max: {
+            botToken: 'token-1',
+          },
+        },
+        defaultAccount: 'max',
+      },
+    });
+    expect(config.bindings).toEqual([
+      {
+        agentId: 'main',
+        match: { channel: 'telegram', accountId: 'max' },
+      },
+    ]);
+    expect(config.agents).toEqual({
+      list: [{ id: 'main', name: 'Main' }],
+    });
+
+    const gateway = config.gateway as Record<string, unknown>;
+    const auth = gateway.auth as Record<string, unknown>;
+    expect(auth.mode).toBe('token');
+    expect(auth.token).toBe('gateway-token');
+  });
+});
+
 describe('removeProviderKeyFromOpenClaw', () => {
   beforeEach(async () => {
     vi.resetModules();

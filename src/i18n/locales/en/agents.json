@@ -9,6 +9,7 @@
     "none": "none",
     "modelLine": "Model: {{model}}{{suffix}}",
     "channelsLine": "Channels: {{channels}}",
+    "openChat": "Open chat",
     "deleteAgent": "Delete Agent",
     "settings": "Settings",
     "creating": "Creating...",

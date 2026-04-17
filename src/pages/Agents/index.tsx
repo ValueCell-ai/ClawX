@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { AlertCircle, Bot, Check, Plus, RefreshCw, Settings2, Trash2, X } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { AlertCircle, Bot, Check, MessageSquare, Plus, RefreshCw, Settings2, Trash2, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -9,6 +10,7 @@ import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { Switch } from '@/components/ui/switch';
 import { LoadingSpinner } from '@/components/common/LoadingSpinner';
 import { useAgentsStore } from '@/stores/agents';
+import { useChatStore } from '@/stores/chat';
 import { useGatewayStore } from '@/stores/gateway';
 import { useProviderStore } from '@/stores/providers';
 import { hostApiFetch } from '@/lib/host-api';
@@ -94,6 +96,7 @@ function hasConfiguredProviderCredentials(
 
 export function Agents() {
   const { t } = useTranslation('agents');
+  const navigate = useNavigate();
   const gatewayStatus = useGatewayStore((state) => state.status);
   const refreshProviderSnapshot = useProviderStore((state) => state.refreshProviderSnapshot);
   const lastGatewayStateRef = useRef(gatewayStatus.state);
@@ -105,6 +108,7 @@ export function Agents() {
     createAgent,
     deleteAgent,
   } = useAgentsStore();
+  const openAgentSession = useChatStore((state) => state.openAgentSession);
   const [channelGroups, setChannelGroups] = useState<ChannelGroupItem[]>([]);
   const [hasCompletedInitialLoad, setHasCompletedInitialLoad] = useState(() => agents.length > 0);
 
@@ -232,6 +236,10 @@ export function Agents() {
                 key={agent.id}
                 agent={agent}
                 channelGroups={visibleChannelGroups}
+                onOpenChat={() => {
+                  openAgentSession(agent.id);
+                  navigate('/');
+                }}
                 onOpenSettings={() => setActiveAgentId(agent.id)}
                 onDelete={() => setAgentToDelete(agent)}
               />
@@ -289,15 +297,18 @@ export function Agents() {
 function AgentCard({
   agent,
   channelGroups,
+  onOpenChat,
   onOpenSettings,
   onDelete,
 }: {
   agent: AgentSummary;
   channelGroups: ChannelGroupItem[];
+  onOpenChat: () => void;
   onOpenSettings: () => void;
   onDelete: () => void;
 }) {
   const { t } = useTranslation('agents');
+
   const boundChannelAccounts = channelGroups.flatMap((group) =>
     group.accounts
       .filter((account) => account.agentId === agent.id)
@@ -339,6 +350,17 @@ function AgentCard({
             )}
           </div>
           <div className="flex items-center gap-1 shrink-0">
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-7 w-7 text-primary/80 hover:text-primary hover:bg-primary/10 transition-all"
+              onClick={onOpenChat}
+              title={t('openChat')}
+              aria-label={t('openChat')}
+              data-testid={`agents-open-chat-${agent.id}`}
+            >
+              <MessageSquare className="h-4 w-4" />
+            </Button>
             {!agent.isDefault && (
               <Button
                 variant="ghost"

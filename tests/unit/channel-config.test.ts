@@ -48,6 +48,33 @@ async function readOpenClawJson(): Promise<Record<string, unknown>> {
   return JSON.parse(content) as Record<string, unknown>;
 }
 
+describe('readOpenClawConfig', () => {
+  beforeEach(async () => {
+    vi.resetAllMocks();
+    vi.resetModules();
+    await rm(testHome, { recursive: true, force: true });
+    await rm(testUserData, { recursive: true, force: true });
+  });
+
+  it('parses configs that start with a UTF-8 BOM', async () => {
+    await mkdir(join(testHome, '.openclaw'), { recursive: true });
+    await writeFile(
+      join(testHome, '.openclaw', 'openclaw.json'),
+      '\ufeff{\n  "channels": {\n    "telegram": {\n      "enabled": true\n    }\n  }\n}',
+      'utf8',
+    );
+
+    const { readOpenClawConfig } = await import('@electron/utils/channel-config');
+    const config = await readOpenClawConfig();
+
+    expect(config.channels).toEqual({
+      telegram: {
+        enabled: true,
+      },
+    });
+  });
+});
+
 describe('channel credential normalization and duplicate checks', () => {
   beforeEach(async () => {
     vi.resetAllMocks();

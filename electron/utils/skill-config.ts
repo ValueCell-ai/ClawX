@@ -61,6 +61,10 @@ async function fileExists(p: string): Promise<boolean> {
     try { await access(p, constants.F_OK); return true; } catch { return false; }
 }
 
+function stripUtf8Bom(content: string): string {
+    return content.charCodeAt(0) === 0xfeff ? content.slice(1) : content;
+}
+
 /**
  * Read the current OpenClaw config
  */
@@ -70,7 +74,7 @@ async function readConfig(): Promise<OpenClawConfig> {
     }
     try {
         const raw = await readFile(OPENCLAW_CONFIG_PATH, 'utf-8');
-        return JSON.parse(raw);
+        return JSON.parse(stripUtf8Bom(raw));
     } catch (err) {
         console.error('Failed to read openclaw config:', err);
         return {};

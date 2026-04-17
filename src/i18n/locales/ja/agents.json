@@ -9,6 +9,7 @@
     "none": "なし",
     "modelLine": "Model: {{model}}{{suffix}}",
     "channelsLine": "Channels: {{channels}}",
+    "openChat": "チャットを開く",
     "deleteAgent": "Agent を削除",
     "settings": "設定",
     "creating": "作成中...",

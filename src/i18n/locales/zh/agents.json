@@ -9,6 +9,7 @@
     "none": "无",
     "modelLine": "Model: {{model}}{{suffix}}",
     "channelsLine": "频道: {{channels}}",
+    "openChat": "打开聊天",
     "deleteAgent": "删除 Agent",
     "settings": "设置",
     "creating": "创建中...",

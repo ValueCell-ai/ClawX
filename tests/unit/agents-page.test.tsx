@@ -9,6 +9,8 @@ const fetchAgentsMock = vi.fn();
 const updateAgentMock = vi.fn();
 const updateAgentModelMock = vi.fn();
 const refreshProviderSnapshotMock = vi.fn();
+const openAgentSessionMock = vi.fn();
+const navigateMock = vi.fn();
 
 const { gatewayState, agentsState, providersState } = vi.hoisted(() => ({
   gatewayState: {
@@ -64,6 +66,14 @@ vi.mock('@/stores/providers', () => ({
   },
 }));
 
+vi.mock('@/stores/chat', () => ({
+  useChatStore: (selector: (state: {
+    openAgentSession: typeof openAgentSessionMock;
+  }) => unknown) => selector({
+    openAgentSession: openAgentSessionMock,
+  }),
+}));
+
 vi.mock('@/lib/host-api', () => ({
   hostApiFetch: (...args: unknown[]) => hostApiFetchMock(...args),
 }));
@@ -76,6 +86,10 @@ vi.mock('react-i18next', () => ({
   useTranslation: () => ({
     t: (key: string) => key,
   }),
+}));
+
+vi.mock('react-router-dom', () => ({
+  useNavigate: () => navigateMock,
 }));
 
 vi.mock('sonner', () => ({
@@ -100,6 +114,8 @@ describe('Agents page status refresh', () => {
     updateAgentMock.mockResolvedValue(undefined);
     updateAgentModelMock.mockResolvedValue(undefined);
     refreshProviderSnapshotMock.mockResolvedValue(undefined);
+    openAgentSessionMock.mockReset();
+    navigateMock.mockReset();
     hostApiFetchMock.mockResolvedValue({
       success: true,
       channels: [],
@@ -255,5 +271,34 @@ describe('Agents page status refresh', () => {
 
     expect(container.querySelector('svg.animate-spin')).toBeTruthy();
     expect(screen.queryByText('title')).not.toBeInTheDocument();
+  });
+
+  it('opens the selected agent in chat from the Agents page', async () => {
+    agentsState.agents = [
+      {
+        id: 'research',
+        name: 'Research Desk',
+        isDefault: false,
+        modelDisplay: 'gpt-5',
+        modelRef: 'openai/gpt-5',
+        overrideModelRef: null,
+        inheritedModel: false,
+        workspace: '~/.openclaw/workspace',
+        agentDir: '~/.openclaw/agents/research/agent',
+        mainSessionKey: 'agent:research:main',
+        channelTypes: [],
+      },
+    ];
+
+    render(<Agents />);
+
+    await waitFor(() => {
+      expect(screen.getByText('Research Desk')).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByTitle('openChat'));
+
+    expect(openAgentSessionMock).toHaveBeenCalledWith('research');
+    expect(navigateMock).toHaveBeenCalledWith('/');
   });
 });

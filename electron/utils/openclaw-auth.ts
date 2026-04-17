@@ -53,12 +53,16 @@ async function ensureDir(dir: string): Promise<void> {
   }
 }
 
+function stripUtf8Bom(content: string): string {
+  return content.charCodeAt(0) === 0xfeff ? content.slice(1) : content;
+}
+
 /** Read a JSON file, returning `null` on any error. */
 async function readJsonFile<T>(filePath: string): Promise<T | null> {
   try {
     if (!(await fileExists(filePath))) return null;
     const raw = await readFile(filePath, 'utf-8');
-    return JSON.parse(raw) as T;
+    return JSON.parse(stripUtf8Bom(raw)) as T;
   } catch {
     return null;
   }
@@ -1245,7 +1249,7 @@ export async function batchSyncConfigFields(token: string): Promise<void> {
 
   return withConfigLock(async () => {
     const config = await readOpenClawJson();
-    let modified = true;
+    let modified = false;
 
     // ── Gateway token + controlUi ──
     const gateway = (
@@ -1260,7 +1264,10 @@ export async function batchSyncConfigFields(token: string): Promise<void> {
         : {}
     ) as Record<string, unknown>;
     auth.mode = 'token';
-    auth.token = token;
+    if (auth.token !== token) {
+      auth.token = token;
+      modified = true;
+    }
     gateway.auth = auth;
 
     const controlUi = (
@@ -1273,9 +1280,13 @@ export async function batchSyncConfigFields(token: string): Promise<void> {
       : [];
     if (!allowedOrigins.includes('file://')) {
       controlUi.allowedOrigins = [...allowedOrigins, 'file://'];
+      modified = true;
     }
     gateway.controlUi = controlUi;
-    if (!gateway.mode) gateway.mode = 'local';
+    if (!gateway.mode) {
+      gateway.mode = 'local';
+      modified = true;
+    }
     config.gateway = gateway;
 
     // ── Browser config ──

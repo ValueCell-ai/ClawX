@@ -360,6 +360,10 @@ async function ensureConfigDir(): Promise<void> {
     }
 }
 
+function stripUtf8Bom(content: string): string {
+    return content.charCodeAt(0) === 0xfeff ? content.slice(1) : content;
+}
+
 export async function readOpenClawConfig(): Promise<OpenClawConfig> {
     await ensureConfigDir();
 
@@ -368,7 +372,7 @@ export async function readOpenClawConfig(): Promise<OpenClawConfig> {
     }
 
     try {
-        const content = await readFile(CONFIG_FILE, 'utf-8');
+        const content = stripUtf8Bom(await readFile(CONFIG_FILE, 'utf-8'));
         return JSON.parse(content) as OpenClawConfig;
     } catch (error) {
         logger.error('Failed to read OpenClaw config', error);

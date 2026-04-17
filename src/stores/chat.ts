@@ -7,6 +7,7 @@ import { create } from 'zustand';
 import { hostApiFetch } from '@/lib/host-api';
 import {
   buildAttachedAgentSessionKey,
+  buildMainAgentSessionKey,
   getAgentIdFromSessionKey,
   getAttachedAgentIds,
   normalizeAgentId,
@@ -123,6 +124,7 @@ interface ChatState {
   // Actions
   loadSessions: () => Promise<void>;
   switchSession: (key: string) => void;
+  openAgentSession: (agentId: string) => void;
   newSession: () => void;
   deleteSession: (key: string) => Promise<void>;
   cleanupEmptySession: () => void;
@@ -1523,6 +1525,16 @@ export const useChatStore = create<ChatState>((set, get) => ({
     if (key === get().currentSessionKey) return;
     set((s) => buildSessionSwitchPatch(s, key));
     get().loadHistory();
+  },
+
+  openAgentSession: (agentId: string) => {
+    const nextSessionKey = buildMainAgentSessionKey(agentId);
+    if (nextSessionKey === get().currentSessionKey) {
+      void get().loadHistory(true);
+      return;
+    }
+    set((s) => buildSessionSwitchPatch(s, nextSessionKey));
+    void get().loadHistory();
   },
 
   // ── Delete session ──
