@@ -4,13 +4,14 @@
  */
 import { create } from 'zustand';
 import { hostApiFetch } from '@/lib/host-api';
+import { useChatStore } from './chat';
 import type { CronJob, CronJobCreateInput, CronJobUpdateInput } from '../types/cron';
 
 interface CronState {
   jobs: CronJob[];
   loading: boolean;
   error: string | null;
-  
+
   // Actions
   fetchJobs: () => Promise<void>;
   createJob: (input: CronJobCreateInput) => Promise<CronJob>;
@@ -25,7 +26,7 @@ export const useCronStore = create<CronState>((set) => ({
   jobs: [],
   loading: false,
   error: null,
-  
+
   fetchJobs: async () => {
     const currentJobs = useCronStore.getState().jobs;
     // Only show loading spinner when there's no data yet (stale-while-revalidate).
@@ -34,21 +35,31 @@ export const useCronStore = create<CronState>((set) => ({
     } else {
       set({ error: null });
     }
-    
+
     try {
       const result = await hostApiFetch<CronJob[]>('/api/cron/jobs');
-      set({ jobs: result, loading: false });
+
+      // Gateway now correctly returns agentId for all jobs.
+      // If Gateway returned fewer jobs than we have (e.g. race condition), preserve
+      // the extra ones from current state to avoid losing data.
+      const resultIds = new Set(result.map((j) => j.id));
+      const extraJobs = currentJobs.filter((j) => !resultIds.has(j.id));
+      const allJobs = [...result, ...extraJobs];
+
+      set({ jobs: allJobs, loading: false });
     } catch (error) {
       // Preserve previous jobs on error so the user sees stale data instead of nothing.
       set({ error: String(error), loading: false });
     }
   },
-  
+
   createJob: async (input) => {
     try {
+      // Auto-capture currentAgentId if not provided
+      const agentId = input.agentId ?? useChatStore.getState().currentAgentId;
       const job = await hostApiFetch<CronJob>('/api/cron/jobs', {
         method: 'POST',
-        body: JSON.stringify(input),
+        body: JSON.stringify({ ...input, agentId }),
       });
       set((state) => ({ jobs: [...state.jobs, job] }));
       return job;
@@ -57,7 +68,7 @@ export const useCronStore = create<CronState>((set) => ({
       throw error;
     }
   },
-  
+
   updateJob: async (id, input) => {
     try {
       const updatedJob = await hostApiFetch<CronJob>(`/api/cron/jobs/${encodeURIComponent(id)}`, {
@@ -74,7 +85,7 @@ export const useCronStore = create<CronState>((set) => ({
       throw error;
     }
   },
-  
+
   deleteJob: async (id) => {
     try {
       await hostApiFetch(`/api/cron/jobs/${encodeURIComponent(id)}`, {
@@ -88,7 +99,7 @@ export const useCronStore = create<CronState>((set) => ({
       throw error;
     }
   },
-  
+
   toggleJob: async (id, enabled) => {
     try {
       await hostApiFetch('/api/cron/toggle', {
@@ -105,18 +116,17 @@ export const useCronStore = create<CronState>((set) => ({
       throw error;
     }
   },
-  
+
   triggerJob: async (id) => {
     try {
-      const result = await hostApiFetch('/api/cron/trigger', {
+      await hostApiFetch('/api/cron/trigger', {
         method: 'POST',
         body: JSON.stringify({ id }),
       });
-      console.log('Cron trigger result:', result);
       // Refresh jobs after trigger to update lastRun/nextRun state
       try {
-        const jobs = await hostApiFetch<CronJob[]>('/api/cron/jobs');
-        set({ jobs });
+        const result = await hostApiFetch<CronJob[]>('/api/cron/jobs');
+        set({ jobs: result });
       } catch {
         // Ignore refresh error
       }
@@ -125,6 +135,6 @@ export const useCronStore = create<CronState>((set) => ({
       throw error;
     }
   },
-  
+
   setJobs: (jobs) => set({ jobs }),
 }));

@@ -30,7 +30,7 @@
 </p>
 
 <p align="center">
-  <a href="README.md">English</a> | 简体中文 | <a href="README.ja-JP.md">日本語</a>
+  <a href="README.md">English</a> | 简体中文 | <a href="README.ja-JP.md">日本語</a> | <a href="README.ru-RU.md">Русский</a>
 </p>
 
 ---

@@ -1,4 +1,5 @@
-export type ChannelConnectionStatus = 'connected' | 'connecting' | 'disconnected' | 'error';
+export type GatewayHealthState = 'healthy' | 'degraded' | 'unresponsive';
+export type ChannelConnectionStatus = 'connected' | 'connecting' | 'degraded' | 'disconnected' | 'error';
 
 export interface ChannelRuntimeAccountSnapshot {
   connected?: boolean;
@@ -17,6 +18,10 @@ export interface ChannelRuntimeAccountSnapshot {
 export interface ChannelRuntimeSummarySnapshot {
   error?: string | null;
   lastError?: string | null;
+}
+
+export interface ChannelHealthOverlay {
+  gatewayHealthState?: GatewayHealthState;
 }
 
 const RECENT_ACTIVITY_MS = 10 * 60 * 1000;
@@ -74,9 +79,11 @@ export function isChannelRuntimeConnected(
 
 export function computeChannelRuntimeStatus(
   account: ChannelRuntimeAccountSnapshot,
+  healthOverlay?: ChannelHealthOverlay,
 ): ChannelConnectionStatus {
-  if (isChannelRuntimeConnected(account)) return 'connected';
   if (hasChannelRuntimeError(account)) return 'error';
+  if (healthOverlay?.gatewayHealthState && healthOverlay.gatewayHealthState !== 'healthy') return 'degraded';
+  if (isChannelRuntimeConnected(account)) return 'connected';
   if (account.running === true) return 'connecting';
   return 'disconnected';
 }
@@ -84,6 +91,7 @@ export function computeChannelRuntimeStatus(
 export function pickChannelRuntimeStatus(
   accounts: ChannelRuntimeAccountSnapshot[],
   summary?: ChannelRuntimeSummarySnapshot,
+  healthOverlay?: ChannelHealthOverlay,
 ): ChannelConnectionStatus {
   if (accounts.some((account) => isChannelRuntimeConnected(account))) {
     return 'connected';
@@ -91,6 +99,10 @@ export function pickChannelRuntimeStatus(
 
   if (accounts.some((account) => hasChannelRuntimeError(account)) || hasSummaryRuntimeError(summary)) {
     return 'error';
+  }
+
+  if (healthOverlay?.gatewayHealthState && healthOverlay.gatewayHealthState !== 'healthy') {
+    return 'degraded';
   }
 
   if (accounts.some((account) => account.running === true)) {

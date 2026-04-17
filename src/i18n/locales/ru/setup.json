@@ -1,0 +1,152 @@
+{
+    "steps": {
+        "welcome": {
+            "title": "Добро пожаловать",
+            "description": "Ваш AI-ассистент готов к настройке"
+        },
+        "runtime": {
+            "title": "Проверка окружения",
+            "description": "Проверка системных требований"
+        },
+        "provider": {
+            "title": "AI-провайдер",
+            "description": "Настройте ваш AI-сервис"
+        },
+        "channel": {
+            "title": "Подключить канал",
+            "description": "Подключите платформу обмена сообщениями (опционально)"
+        },
+        "installing": {
+            "title": "Настройка",
+            "description": "Установка необходимых компонентов"
+        },
+        "complete": {
+            "title": "Готово!",
+            "description": "ClawX готов к использованию"
+        }
+    },
+    "welcome": {
+        "title": "Добро пожаловать в ClawX",
+        "description": "ClawX — это графический интерфейс для OpenClaw, упрощающий использование AI-ассистентов через ваши любимые платформы обмена сообщениями.",
+        "features": {
+            "noCommand": "Без командной строки",
+            "modernUI": "Современный красивый интерфейс",
+            "bundles": "Предварительно установленные наборы навыков",
+            "crossPlatform": "Кроссплатформенная поддержка"
+        }
+    },
+    "runtime": {
+        "title": "Проверка окружения",
+        "viewLogs": "Просмотреть журналы",
+        "recheck": "Перепроверить",
+        "nodejs": "Среда выполнения Node.js",
+        "openclaw": "Пакет OpenClaw",
+        "gateway": "Служба шлюза",
+        "startGateway": "Запустить шлюз",
+        "status": {
+            "checking": "Проверка...",
+            "success": "Node.js доступен",
+            "error": "Ошибка",
+            "gatewayRunning": "Запущен на порту {{port}}",
+            "packageReady": "Пакет OpenClaw готов"
+        },
+        "issue": {
+            "title": "Обнаружена проблема с окружением",
+            "desc": "Пожалуйста, убедитесь, что OpenClaw установлен правильно. Проверьте журналы для получения подробной информации."
+        },
+        "logs": {
+            "title": "Журналы приложения",
+            "openFolder": "Открыть папку журналов",
+            "close": "Закрыть",
+            "noLogs": "(Журналы ещё недоступны)"
+        }
+    },
+    "provider": {
+        "label": "Провайдер модели",
+        "selectPlaceholder": "Выберите провайдера...",
+        "baseUrl": "Базовый URL",
+        "modelId": "ID модели",
+        "modelIdDesc": "Идентификатор модели от вашего провайдера (напр. deepseek-ai/DeepSeek-V3)",
+        "codePlanPreset": "Пресет Code Plan",
+        "codePlanMode": "Code Plan",
+        "useCodePlanPreset": "Использовать пресет Ark Code Plan",
+        "codePlanPresetDesc": "Code Plan использует https://ark.cn-beijing.volces.com/api/coding/v3 и модель ark-code-latest. Не используйте /api/v3 для трафика Code Plan.",
+        "codePlanDoc": "Документация Code Plan",
+        "protocol": "Протокол",
+        "protocols": {
+            "openaiCompletions": "OpenAI Completions",
+            "openaiResponses": "OpenAI Responses",
+            "anthropic": "Совместимый с Anthropic"
+        },
+        "apiKey": "API-ключ",
+        "save": "Сохранить",
+        "validateSave": "Проверить и сохранить",
+        "valid": "Провайдер успешно настроен",
+        "invalid": "Неверный API-ключ",
+        "storedLocally": "Ваш API-ключ хранится локально на вашем компьютере."
+    },
+    "channel": {
+        "title": "Подключить канал сообщений",
+        "subtitle": "Выберите платформу для подключения вашего AI-ассистента. Вы можете добавить больше каналов позже в Настройках.",
+        "configure": "Настроить {{name}}",
+        "howTo": "Как подключить:",
+        "viewDocs": "Просмотреть документацию",
+        "validationError": "Ошибка проверки",
+        "connected": "{{name}} подключён",
+        "connectedDesc": "Ваш канал настроен. Он подключится при запуске шлюза.",
+        "configureAnother": "Настроить другой канал"
+    },
+    "installing": {
+        "title": "Установка необходимых компонентов",
+        "subtitle": "Настройка инструментов для вашего AI-ассистента",
+        "progress": "Прогресс",
+        "status": {
+            "pending": "Ожидание",
+            "installing": "Установка...",
+            "installed": "Установлено",
+            "failed": "Ошибка"
+        },
+        "error": "Ошибка настройки:",
+        "restart": "Попробуйте перезапустить приложение",
+        "wait": "Это может занять несколько моментов...",
+        "skip": "Пропустить этот шаг"
+    },
+    "complete": {
+        "title": "Настройка завершена!",
+        "subtitle": "ClawX настроен и готов к использованию. Теперь вы можете начать общение с вашим AI-ассистентом.",
+        "provider": "AI-провайдер",
+        "components": "Компоненты",
+        "gateway": "Шлюз",
+        "running": "Запущен",
+        "footer": "Вы можете настраивать навыки и подключать каналы в Настройках"
+    },
+    "nav": {
+        "next": "Далее",
+        "back": "Назад",
+        "skipStep": "Пропустить этот шаг",
+        "skipSetup": "Пропустить настройку",
+        "getStarted": "Начать"
+    },
+    "defaultSkills": {
+        "opencode": {
+            "name": "OpenCode",
+            "description": "AI-помощник по программированию"
+        },
+        "python-env": {
+            "name": "Python-среда",
+            "description": "Python runtime для навыков"
+        },
+        "code-assist": {
+            "name": "Помощник по коду",
+            "description": "Анализ и предложения по коду"
+        },
+        "file-tools": {
+            "name": "Инструменты файлов",
+            "description": "Операции с файлами и управление"
+        },
+        "terminal": {
+            "name": "Терминал",
+            "description": "Выполнение shell-команд"
+        }
+    }
+}

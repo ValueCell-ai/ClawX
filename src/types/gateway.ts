@@ -15,6 +15,8 @@ export interface GatewayStatus {
   connectedAt?: number;
   version?: string;
   reconnectAttempts?: number;
+  /** True once the gateway's internal subsystems (skills, plugins) are ready for RPC calls. */
+  gatewayReady?: boolean;
 }
 
 /**

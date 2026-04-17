@@ -1,4 +1,5 @@
 import { readFile, readdir } from 'node:fs/promises';
+import { extractSessionRecords } from '../../utils/session-util';
 import type { IncomingMessage, ServerResponse } from 'http';
 import { join } from 'node:path';
 import {
@@ -32,7 +33,9 @@ import {
 import {
   computeChannelRuntimeStatus,
   pickChannelRuntimeStatus,
+  type ChannelConnectionStatus,
   type ChannelRuntimeAccountSnapshot,
+  type GatewayHealthState,
 } from '../../utils/channel-status';
 import {
   OPENCLAW_WECHAT_CHANNEL_TYPE,
@@ -63,6 +66,9 @@ import {
   normalizeSlackMessagingTarget,
   normalizeWhatsAppMessagingTarget,
 } from '../../utils/openclaw-sdk';
+import { logger } from '../../utils/logger';
+import { buildGatewayHealthSummary } from '../../utils/gateway-health';
+import type { GatewayHealthSummary } from '../../gateway/manager';
 
 // listWhatsAppDirectory*FromConfig were removed from openclaw's public exports
 // in 2026.3.23-1.  No-op stubs; WhatsApp target picker uses session discovery.
@@ -101,9 +107,11 @@ async function isLegacyConfiguredAccountId(channelType: string, accountId: strin
 async function validateCanonicalAccountId(
   channelType: string,
   accountId: string | undefined,
-  options?: { allowLegacyConfiguredId?: boolean },
+  options?: { allowLegacyConfiguredId?: boolean; required?: boolean },
 ): Promise<string | null> {
-  if (!accountId) return null;
+  if (!accountId) {
+    return options?.required ? 'accountId is required' : null;
+  }
   const trimmed = accountId.trim();
   if (!trimmed) return 'accountId cannot be empty';
   if (isCanonicalOpenClawAccountId(trimmed)) {
@@ -122,8 +130,12 @@ async function validateAccountIdOrReply(
   res: ServerResponse,
   channelType: string,
   accountId: string | undefined,
+  options?: { required?: boolean },
 ): Promise<boolean> {
-  const error = await validateCanonicalAccountId(channelType, accountId, { allowLegacyConfiguredId: true });
+  const error = await validateCanonicalAccountId(channelType, accountId, {
+    allowLegacyConfiguredId: true,
+    required: options?.required,
+  });
   if (!error) {
     return true;
   }
@@ -256,11 +268,11 @@ function scheduleGatewayChannelSaveRefresh(
     return;
   }
   if (FORCE_RESTART_CHANNELS.has(storedChannelType)) {
-    ctx.gatewayManager.debouncedRestart();
+    ctx.gatewayManager.debouncedRestart(150);
     void reason;
     return;
   }
-  ctx.gatewayManager.debouncedReload();
+  ctx.gatewayManager.debouncedReload(150);
   void reason;
 }
 
@@ -313,8 +325,58 @@ async function ensureScopedChannelBinding(channelType: string, accountId?: strin
 
   // Legacy compatibility: if accountId matches an existing agentId, keep auto-binding.
   if (agents.agents.some((entry) => entry.id === accountId)) {
+    await migrateLegacyChannelWideBinding(storedChannelType);
     await assignChannelAccountToAgent(accountId, storedChannelType, accountId);
+    return;
   }
+
+  await migrateLegacyChannelWideBinding(storedChannelType);
+}
+
+async function migrateLegacyChannelWideBinding(channelType: string): Promise<void> {
+  const explicitDefaultOwner = await readChannelBindingOwner(channelType, 'default');
+  const legacyOwner = await readChannelBindingOwner(channelType);
+  if (!legacyOwner) {
+    return;
+  }
+
+  const agents = await listAgentsSnapshot();
+  const validAgentIds = new Set(agents.agents.map((agent) => agent.id));
+  const defaultOwner = explicitDefaultOwner && validAgentIds.has(explicitDefaultOwner)
+    ? explicitDefaultOwner
+    : (legacyOwner && validAgentIds.has(legacyOwner) ? legacyOwner : null);
+
+  if (defaultOwner) {
+    await assignChannelAccountToAgent(defaultOwner, channelType, 'default');
+  }
+
+  // Remove the legacy channel-wide fallback so newly added non-default
+  // accounts do not silently inherit default-agent routing.
+  await clearChannelBinding(channelType);
+}
+
+async function readChannelBindingOwner(channelType: string, accountId?: string): Promise<string | null> {
+  const config = await readOpenClawConfig();
+  const bindings = Array.isArray((config as { bindings?: unknown }).bindings)
+    ? (config as { bindings: unknown[] }).bindings
+    : [];
+
+  for (const binding of bindings) {
+    if (!binding || typeof binding !== 'object') continue;
+    const candidate = binding as {
+      agentId?: unknown;
+      match?: { channel?: unknown; accountId?: unknown } | unknown;
+    };
+    if (typeof candidate.agentId !== 'string' || !candidate.agentId.trim()) continue;
+    if (!candidate.match || typeof candidate.match !== 'object' || Array.isArray(candidate.match)) continue;
+    const match = candidate.match as { channel?: unknown; accountId?: unknown };
+    if (match.channel !== channelType) continue;
+    const bindingAccountId = typeof match.accountId === 'string' ? match.accountId.trim() : '';
+    if ((accountId?.trim() || '') !== bindingAccountId) continue;
+    return candidate.agentId;
+  }
+
+  return null;
 }
 
 interface GatewayChannelStatusPayload {
@@ -347,7 +409,8 @@ interface ChannelAccountView {
   running: boolean;
   linked: boolean;
   lastError?: string;
-  status: 'connected' | 'connecting' | 'disconnected' | 'error';
+  status: ChannelConnectionStatus;
+  statusReason?: string;
   isDefault: boolean;
   agentId?: string;
 }
@@ -355,8 +418,54 @@ interface ChannelAccountView {
 interface ChannelAccountsView {
   channelType: string;
   defaultAccountId: string;
-  status: 'connected' | 'connecting' | 'disconnected' | 'error';
+  status: ChannelConnectionStatus;
+  statusReason?: string;
   accounts: ChannelAccountView[];
+}
+
+export function getChannelStatusDiagnostics(): {
+  lastChannelsStatusOkAt?: number;
+  lastChannelsStatusFailureAt?: number;
+} {
+  return {
+    lastChannelsStatusOkAt,
+    lastChannelsStatusFailureAt,
+  };
+}
+
+function gatewayHealthStateForChannels(
+  gatewayHealthState: GatewayHealthState,
+): GatewayHealthState | undefined {
+  return gatewayHealthState === 'healthy' ? undefined : gatewayHealthState;
+}
+
+function overlayStatusReason(
+  gatewayHealth: GatewayHealthSummary,
+  fallbackReason: string,
+): string {
+  return gatewayHealth.reasons[0] || fallbackReason;
+}
+
+function buildGatewayStatusSnapshot(status: GatewayChannelStatusPayload | null): string {
+  if (!status?.channelAccounts) return 'none';
+  const entries = Object.entries(status.channelAccounts);
+  if (entries.length === 0) return 'empty';
+  return entries
+    .slice(0, 12)
+    .map(([channelType, accounts]) => {
+      const channelStatus = pickChannelRuntimeStatus(accounts);
+      const flags = accounts.slice(0, 4).map((account) => {
+        const accountId = typeof account.accountId === 'string' ? account.accountId : 'default';
+        const connected = account.connected === true ? '1' : '0';
+        const running = account.running === true ? '1' : '0';
+        const linked = account.linked === true ? '1' : '0';
+        const probeOk = account.probe?.ok === true ? '1' : '0';
+        const hasErr = typeof account.lastError === 'string' && account.lastError.trim().length > 0 ? '1' : '0';
+        return `${accountId}[c${connected}r${running}l${linked}p${probeOk}e${hasErr}]`;
+      }).join('|');
+      return `${channelType}:${channelStatus}{${flags}}`;
+    })
+    .join(', ');
 }
 
 function shouldIncludeRuntimeAccountId(
@@ -400,8 +509,14 @@ type DirectoryEntry = {
 const CHANNEL_TARGET_CACHE_TTL_MS = 60_000;
 const CHANNEL_TARGET_CACHE_ENABLED = process.env.VITEST !== 'true';
 const channelTargetCache = new Map<string, { expiresAt: number; targets: ChannelTargetOptionView[] }>();
+let lastChannelsStatusOkAt: number | undefined;
+let lastChannelsStatusFailureAt: number | undefined;
 
-async function buildChannelAccountsView(ctx: HostApiContext): Promise<ChannelAccountsView[]> {
+export async function buildChannelAccountsView(
+  ctx: HostApiContext,
+  options?: { probe?: boolean },
+): Promise<{ channels: ChannelAccountsView[]; gatewayHealth: GatewayHealthSummary }> {
+  const startedAt = Date.now();
   // Read config once and share across all sub-calls (was 5 readFile calls before).
   const openClawConfig = await readOpenClawConfig();
 
@@ -413,13 +528,41 @@ async function buildChannelAccountsView(ctx: HostApiContext): Promise<ChannelAcc
 
   let gatewayStatus: GatewayChannelStatusPayload | null;
   try {
-    // probe: false — use cached runtime state instead of active network probes
-    // per channel. Real-time status updates arrive via channel.status events.
+    // probe=false uses cached runtime state (lighter); probe=true forces
+    // adapter-level connectivity checks for faster post-restart convergence.
+    const probe = options?.probe === true;
     // 8s timeout — fail fast when Gateway is busy with AI tasks.
-    gatewayStatus = await ctx.gatewayManager.rpc<GatewayChannelStatusPayload>('channels.status', { probe: false }, 8000);
+    const rpcStartedAt = Date.now();
+    gatewayStatus = await ctx.gatewayManager.rpc<GatewayChannelStatusPayload>(
+      'channels.status',
+      { probe },
+      probe ? 5000 : 8000,
+    );
+    lastChannelsStatusOkAt = Date.now();
+    logger.info(
+      `[channels.accounts] channels.status probe=${probe ? '1' : '0'} elapsedMs=${Date.now() - rpcStartedAt} snapshot=${buildGatewayStatusSnapshot(gatewayStatus)}`
+    );
   } catch {
+    const probe = options?.probe === true;
+    lastChannelsStatusFailureAt = Date.now();
+    logger.warn(
+      `[channels.accounts] channels.status probe=${probe ? '1' : '0'} failed after ${Date.now() - startedAt}ms`
+    );
     gatewayStatus = null;
   }
+
+  const gatewayDiagnostics = ctx.gatewayManager.getDiagnostics?.() ?? {
+    consecutiveHeartbeatMisses: 0,
+    consecutiveRpcFailures: 0,
+  };
+  const gatewayHealth = buildGatewayHealthSummary({
+    status: ctx.gatewayManager.getStatus(),
+    diagnostics: gatewayDiagnostics,
+    lastChannelsStatusOkAt,
+    lastChannelsStatusFailureAt,
+    platform: process.platform,
+  });
+  const gatewayHealthState = gatewayHealthStateForChannels(gatewayHealth.state);
 
   const channelTypes = new Set<string>([
     ...configuredChannels,
@@ -469,7 +612,9 @@ async function buildChannelAccountsView(ctx: HostApiContext): Promise<ChannelAcc
     const accounts: ChannelAccountView[] = accountIds.map((accountId) => {
       const runtime = runtimeAccounts.find((item) => item.accountId === accountId);
       const runtimeSnapshot: ChannelRuntimeAccountSnapshot = runtime ?? {};
-      const status = computeChannelRuntimeStatus(runtimeSnapshot);
+      const status = computeChannelRuntimeStatus(runtimeSnapshot, {
+        gatewayHealthState,
+      });
       return {
         accountId,
         name: runtime?.name || accountId,
@@ -479,6 +624,11 @@ async function buildChannelAccountsView(ctx: HostApiContext): Promise<ChannelAcc
         linked: runtime?.linked === true,
         lastError: typeof runtime?.lastError === 'string' ? runtime.lastError : undefined,
         status,
+        statusReason: status === 'degraded'
+          ? overlayStatusReason(gatewayHealth, 'gateway_degraded')
+          : status === 'error'
+            ? 'runtime_error'
+            : undefined,
         isDefault: accountId === defaultAccountId,
         agentId: agentsSnapshot.channelAccountOwners[`${rawChannelType}:${accountId}`],
       };
@@ -488,15 +638,41 @@ async function buildChannelAccountsView(ctx: HostApiContext): Promise<ChannelAcc
       return left.accountId.localeCompare(right.accountId);
     });
 
+    const visibleAccountSnapshots: ChannelRuntimeAccountSnapshot[] = accounts.map((account) => ({
+      connected: account.connected,
+      running: account.running,
+      linked: account.linked,
+      lastError: account.lastError,
+    }));
+    const hasRuntimeError = visibleAccountSnapshots.some((account) => typeof account.lastError === 'string' && account.lastError.trim())
+      || Boolean(channelSummary?.error?.trim() || channelSummary?.lastError?.trim());
+    const baseGroupStatus = pickChannelRuntimeStatus(visibleAccountSnapshots, channelSummary);
+    const groupStatus = !gatewayStatus && ctx.gatewayManager.getStatus().state === 'running'
+      ? 'degraded'
+      : gatewayHealthState && !hasRuntimeError && baseGroupStatus === 'connected'
+        ? 'degraded'
+        : pickChannelRuntimeStatus(visibleAccountSnapshots, channelSummary, {
+          gatewayHealthState,
+        });
+
     channels.push({
       channelType: uiChannelType,
       defaultAccountId,
-      status: pickChannelRuntimeStatus(runtimeAccounts, channelSummary),
+      status: groupStatus,
+      statusReason: !gatewayStatus && ctx.gatewayManager.getStatus().state === 'running'
+        ? 'channels_status_timeout'
+        : groupStatus === 'degraded'
+          ? overlayStatusReason(gatewayHealth, 'gateway_degraded')
+        : undefined,
       accounts,
     });
   }
 
-  return channels.sort((left, right) => left.channelType.localeCompare(right.channelType));
+  const sorted = channels.sort((left, right) => left.channelType.localeCompare(right.channelType));
+  logger.info(
+    `[channels.accounts] response probe=${options?.probe === true ? '1' : '0'} elapsedMs=${Date.now() - startedAt} view=${sorted.map((item) => `${item.channelType}:${item.status}`).join(',')}`
+  );
+  return { channels: sorted, gatewayHealth };
 }
 
 function buildChannelTargetLabel(baseLabel: string, value: string): string {
@@ -621,16 +797,6 @@ function inferTargetKindFromValue(
   if (target.includes(':channel:')) return 'channel';
   if (channelType === 'dingtalk' && target.startsWith('cid')) return 'group';
   return 'user';
-}
-
-function extractSessionRecords(store: JsonRecord): JsonRecord[] {
-  const directEntries = Object.entries(store)
-    .filter(([key, value]) => key !== 'sessions' && value && typeof value === 'object')
-    .map(([, value]) => value as JsonRecord);
-  const arrayEntries = Array.isArray(store.sessions)
-    ? store.sessions.filter((entry): entry is JsonRecord => Boolean(entry && typeof entry === 'object'))
-    : [];
-  return [...directEntries, ...arrayEntries];
 }
 
 function buildChannelTargetCacheKey(params: {
@@ -1100,8 +1266,10 @@ export async function handleChannelRoutes(
 
   if (url.pathname === '/api/channels/accounts' && req.method === 'GET') {
     try {
-      const channels = await buildChannelAccountsView(ctx);
-      sendJson(res, 200, { success: true, channels });
+      const probe = url.searchParams.get('probe') === '1';
+      logger.info(`[channels.accounts] request probe=${probe ? '1' : '0'}`);
+      const { channels, gatewayHealth } = await buildChannelAccountsView(ctx, { probe });
+      sendJson(res, 200, { success: true, channels, gatewayHealth });
     } catch (error) {
       sendJson(res, 500, { success: false, error: String(error) });
     }
@@ -1145,11 +1313,19 @@ export async function handleChannelRoutes(
   if (url.pathname === '/api/channels/binding' && req.method === 'PUT') {
     try {
       const body = await parseJsonBody<{ channelType: string; accountId: string; agentId: string }>(req);
-      const validAccountId = await validateAccountIdOrReply(res, body.channelType, body.accountId);
+      const validAccountId = await validateAccountIdOrReply(res, body.channelType, body.accountId, { required: true });
       if (!validAccountId) {
         return true;
       }
-      await assignChannelAccountToAgent(body.agentId, resolveStoredChannelType(body.channelType), body.accountId);
+      const agents = await listAgentsSnapshot();
+      if (!agents.agents.some((entry) => entry.id === body.agentId)) {
+        throw new Error(`Agent "${body.agentId}" not found`);
+      }
+      const storedChannelType = resolveStoredChannelType(body.channelType);
+      if (body.accountId !== 'default') {
+        await migrateLegacyChannelWideBinding(storedChannelType);
+      }
+      await assignChannelAccountToAgent(body.agentId, storedChannelType, body.accountId);
       scheduleGatewayChannelSaveRefresh(ctx, body.channelType, `channel:setBinding:${body.channelType}`);
       sendJson(res, 200, { success: true });
     } catch (error) {

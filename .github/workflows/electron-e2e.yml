@@ -40,6 +40,9 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Generate extension bridge
+        run: pnpm run ext:bridge
+
       - name: Rebuild Electron binary
         run: pnpm rebuild electron
 

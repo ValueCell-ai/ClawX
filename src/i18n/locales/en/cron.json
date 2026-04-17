@@ -29,6 +29,7 @@
         "taskNamePlaceholder": "e.g., Morning briefing",
         "message": "Message / Prompt",
         "messagePlaceholder": "What should the AI do? e.g., Give me a summary of today's news and weather",
+        "agent": "Agent",
         "schedule": "Schedule",
         "cronPlaceholder": "Cron expression (e.g., 0 9 * * *)",
         "usePresets": "Use presets",

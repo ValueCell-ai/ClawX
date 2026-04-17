@@ -62,6 +62,7 @@
         "connectionStatus": {
             "connected": "接続済み",
             "connecting": "接続中",
+            "degraded": "劣化中",
             "disconnected": "未接続",
             "error": "異常"
         },
@@ -98,6 +99,30 @@
         "updateAndReconnect": "更新して再接続",
         "saveAndConnect": "保存して接続",
         "envVar": "環境変数: {{var}}"
+    },
+    "health": {
+        "state": {
+            "degraded": "ゲートウェイ劣化",
+            "unresponsive": "ゲートウェイ無応答"
+        },
+        "reasons": {
+            "gateway_degraded": "ゲートウェイのハートビートに劣化が見られます。",
+            "gateway_unresponsive": "ゲートウェイの制御プレーンが無応答です。",
+            "channels_status_timeout": "チャンネル状態の問い合わせがタイムアウトしました。",
+            "rpc_timeout": "最近のゲートウェイ RPC がタイムアウトしました。",
+            "gateway_not_running": "ゲートウェイは起動していません。",
+            "gateway_error": "ゲートウェイはエラー状態です。",
+            "runtime_error": "チャンネルランタイムがエラーを返しました。"
+        },
+        "restartGateway": "ゲートウェイを再起動",
+        "copyDiagnostics": "診断をコピー",
+        "viewDiagnostics": "診断を表示",
+        "hideDiagnostics": "診断を隠す",
+        "diagnosticsTitle": "ゲートウェイ診断スナップショット",
+        "diagnosticsCopied": "診断をクリップボードにコピーしました",
+        "diagnosticsCopyFailed": "診断の取得に失敗しました: {{error}}",
+        "restartTriggered": "ゲートウェイの再起動を要求しました",
+        "restartFailed": "ゲートウェイの再起動に失敗しました: {{error}}"
     },
     "meta": {
         "telegram": {

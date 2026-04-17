@@ -26,7 +26,7 @@ export type ChannelType =
 /**
  * Channel connection status
  */
-export type ChannelStatus = 'connected' | 'disconnected' | 'connecting' | 'error';
+export type ChannelStatus = 'connected' | 'disconnected' | 'connecting' | 'degraded' | 'error';
 
 /**
  * Channel connection type

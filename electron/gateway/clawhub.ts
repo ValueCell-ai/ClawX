@@ -40,12 +40,30 @@ export interface ClawHubInstalledSkillResult {
     baseDir?: string;
 }
 
+export interface MarketplaceProvider {
+    getCapability(): Promise<{ mode: string; canSearch: boolean; canInstall: boolean; reason?: string }>;
+    search(params: ClawHubSearchParams): Promise<ClawHubSkillResult[]>;
+    install(params: ClawHubInstallParams): Promise<void>;
+}
+
 export class ClawHubService {
     private workDir: string;
     private cliPath: string;
     private cliEntryPath: string;
     private useNodeRunner: boolean;
     private ansiRegex: RegExp;
+    private marketplaceProvider: MarketplaceProvider | null = null;
+
+    setMarketplaceProvider(provider: MarketplaceProvider): void {
+        this.marketplaceProvider = provider;
+    }
+
+    async getMarketplaceCapability(): Promise<{ mode: string; canSearch: boolean; canInstall: boolean; reason?: string }> {
+        if (this.marketplaceProvider) {
+            return this.marketplaceProvider.getCapability();
+        }
+        return { mode: 'clawhub', canSearch: true, canInstall: true };
+    }
 
     constructor() {
         // Use the user's OpenClaw config directory (~/.openclaw) for skill management
@@ -194,9 +212,13 @@ export class ClawHubService {
     }
 
     /**
-     * Search for skills
+     * Search for skills. Delegates to the marketplace provider if one is set,
+     * otherwise falls back to the local ClawHub CLI.
      */
     async search(params: ClawHubSearchParams): Promise<ClawHubSkillResult[]> {
+        if (this.marketplaceProvider) {
+            return this.marketplaceProvider.search(params);
+        }
         try {
             // If query is empty, use 'explore' to show trending skills
             if (!params.query || params.query.trim() === '') {
@@ -298,9 +320,13 @@ export class ClawHubService {
     }
 
     /**
-     * Install a skill
+     * Install a skill. Delegates to the marketplace provider if one is set,
+     * otherwise falls back to the local ClawHub CLI.
      */
     async install(params: ClawHubInstallParams): Promise<void> {
+        if (this.marketplaceProvider) {
+            return this.marketplaceProvider.install(params);
+        }
         const args = ['install', params.slug];
 
         if (params.version) {

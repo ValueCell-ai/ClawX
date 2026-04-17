@@ -1,5 +1,6 @@
 import { invokeIpc } from '@/lib/api-client';
 import { hostApiFetch } from '@/lib/host-api';
+import { useGatewayStore } from '@/stores/gateway';
 import {
   clearHistoryPoll,
   enrichWithCachedImages,
@@ -12,8 +13,17 @@ import {
   toMs,
 } from './helpers';
 import { buildCronSessionHistoryPath, isCronSessionKey } from './cron-session-utils';
+import {
+  CHAT_HISTORY_STARTUP_RETRY_DELAYS_MS,
+  classifyHistoryStartupRetryError,
+  getStartupHistoryTimeoutOverride,
+  shouldRetryStartupHistoryLoad,
+  sleep,
+} from './history-startup-retry';
 import type { RawMessage } from './types';
 import type { ChatGet, ChatSet, SessionHistoryActions } from './store-api';
+
+const foregroundHistoryLoadSeen = new Set<string>();
 
 async function loadCronFallbackMessages(sessionKey: string, limit = 200): Promise<RawMessage[]> {
   if (!isCronSessionKey(sessionKey)) return [];
@@ -35,6 +45,8 @@ export function createHistoryActions(
   return {
     loadHistory: async (quiet = false) => {
       const { currentSessionKey } = get();
+      const isInitialForegroundLoad = !quiet && !foregroundHistoryLoadSeen.has(currentSessionKey);
+      const historyTimeoutOverride = getStartupHistoryTimeoutOverride(isInitialForegroundLoad);
       if (!quiet) set({ loading: true, error: null });
 
       const isCurrentSession = () => get().currentSessionKey === currentSessionKey;
@@ -75,7 +87,7 @@ export function createHistoryActions(
       };
 
       const applyLoadedMessages = (rawMessages: RawMessage[], thinkingLevel: string | null) => {
-        if (!isCurrentSession()) return;
+        if (!isCurrentSession()) return false;
         // Before filtering: attach images/files from tool_result messages to the next assistant message
         const messagesWithToolImages = enrichWithToolResultFiles(rawMessages);
         const filteredMessages = messagesWithToolImages.filter((msg) => !isToolResultRole(msg.role) && !isInternalMessage(msg));
@@ -173,36 +185,110 @@ export function createHistoryActions(
             set({ sending: false, activeRunId: null, pendingFinal: false });
           }
         }
+        return true;
       };
 
       try {
-        const result = await invokeIpc(
-          'gateway:rpc',
-          'chat.history',
-          { sessionKey: currentSessionKey, limit: 200 }
-        ) as { success: boolean; result?: Record<string, unknown>; error?: string };
+        let result: { success: boolean; result?: Record<string, unknown>; error?: string } | null = null;
+        let lastError: unknown = null;
 
-        if (result.success && result.result) {
+        for (let attempt = 0; attempt <= CHAT_HISTORY_STARTUP_RETRY_DELAYS_MS.length; attempt += 1) {
+          if (!isCurrentSession()) {
+            break;
+          }
+
+          try {
+            result = await invokeIpc(
+              'gateway:rpc',
+              'chat.history',
+              { sessionKey: currentSessionKey, limit: 200 },
+              ...(historyTimeoutOverride != null ? [historyTimeoutOverride] as const : []),
+            ) as { success: boolean; result?: Record<string, unknown>; error?: string };
+
+            if (result.success) {
+              lastError = null;
+              break;
+            }
+
+            lastError = new Error(result.error || 'Failed to load chat history');
+          } catch (error) {
+            lastError = error;
+          }
+
+          if (!isCurrentSession()) {
+            break;
+          }
+
+          const errorKind = classifyHistoryStartupRetryError(lastError);
+          const shouldRetry = result?.success !== true
+            && isInitialForegroundLoad
+            && attempt < CHAT_HISTORY_STARTUP_RETRY_DELAYS_MS.length
+            && shouldRetryStartupHistoryLoad(useGatewayStore.getState().status, errorKind);
+
+          if (!shouldRetry) {
+            break;
+          }
+
+          console.warn('[chat.history] startup retry scheduled', {
+            sessionKey: currentSessionKey,
+            attempt: attempt + 1,
+            gatewayState: useGatewayStore.getState().status.state,
+            errorKind,
+            error: String(lastError),
+          });
+          await sleep(CHAT_HISTORY_STARTUP_RETRY_DELAYS_MS[attempt]!);
+        }
+
+        if (result?.success && result.result) {
           const data = result.result;
           let rawMessages = Array.isArray(data.messages) ? data.messages as RawMessage[] : [];
           const thinkingLevel = data.thinkingLevel ? String(data.thinkingLevel) : null;
           if (rawMessages.length === 0 && isCronSessionKey(currentSessionKey)) {
             rawMessages = await loadCronFallbackMessages(currentSessionKey, 200);
           }
-          applyLoadedMessages(rawMessages, thinkingLevel);
-        } else {
-          const fallbackMessages = await loadCronFallbackMessages(currentSessionKey, 200);
-          if (fallbackMessages.length > 0) {
-            applyLoadedMessages(fallbackMessages, null);
-          } else {
-            applyLoadFailure(result.error || 'Failed to load chat history');
+          const applied = applyLoadedMessages(rawMessages, thinkingLevel);
+          if (applied && isInitialForegroundLoad) {
+            foregroundHistoryLoadSeen.add(currentSessionKey);
           }
+          return;
+        }
+
+        const errorKind = classifyHistoryStartupRetryError(lastError);
+        if (isCurrentSession() && isInitialForegroundLoad && errorKind) {
+          console.warn('[chat.history] startup retry exhausted', {
+            sessionKey: currentSessionKey,
+            gatewayState: useGatewayStore.getState().status.state,
+            errorKind,
+            error: String(lastError),
+          });
+        }
+
+        const fallbackMessages = await loadCronFallbackMessages(currentSessionKey, 200);
+        if (fallbackMessages.length > 0) {
+          const applied = applyLoadedMessages(fallbackMessages, null);
+          if (applied && isInitialForegroundLoad) {
+            foregroundHistoryLoadSeen.add(currentSessionKey);
+          }
+        } else if (errorKind === 'gateway_startup') {
+          // Suppress error UI for gateway startup -- the history will load
+          // once the gateway finishes initializing (via sidebar refresh or
+          // the next session switch).
+          set({ loading: false });
+        } else {
+          applyLoadFailure(
+            result?.error
+            || (lastError instanceof Error ? lastError.message : String(lastError))
+            || 'Failed to load chat history',
+          );
         }
       } catch (err) {
         console.warn('Failed to load chat history:', err);
         const fallbackMessages = await loadCronFallbackMessages(currentSessionKey, 200);
         if (fallbackMessages.length > 0) {
-          applyLoadedMessages(fallbackMessages, null);
+          const applied = applyLoadedMessages(fallbackMessages, null);
+          if (applied && isInitialForegroundLoad) {
+            foregroundHistoryLoadSeen.add(currentSessionKey);
+          }
         } else {
           applyLoadFailure(String(err));
         }

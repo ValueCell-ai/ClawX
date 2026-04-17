@@ -39,10 +39,22 @@ import jaSkills from './locales/ja/skills.json';
 import jaCron from './locales/ja/cron.json';
 import jaSetup from './locales/ja/setup.json';
 
+// RU
+import ruCommon from './locales/ru/common.json';
+import ruSettings from './locales/ru/settings.json';
+import ruDashboard from './locales/ru/dashboard.json';
+import ruChat from './locales/ru/chat.json';
+import ruChannels from './locales/ru/channels.json';
+import ruAgents from './locales/ru/agents.json';
+import ruSkills from './locales/ru/skills.json';
+import ruCron from './locales/ru/cron.json';
+import ruSetup from './locales/ru/setup.json';
+
 export const SUPPORTED_LANGUAGES = [
     { code: 'en', label: 'English' },
     { code: 'zh', label: '中文' },
     { code: 'ja', label: '日本語' },
+    { code: 'ru', label: 'Русский' },
 ] as const satisfies ReadonlyArray<{ code: LanguageCode; label: string }>;
 
 const resources = {
@@ -78,6 +90,17 @@ const resources = {
         skills: jaSkills,
         cron: jaCron,
         setup: jaSetup,
+    },
+    ru: {
+        common: ruCommon,
+        settings: ruSettings,
+        dashboard: ruDashboard,
+        chat: ruChat,
+        channels: ruChannels,
+        agents: ruAgents,
+        skills: ruSkills,
+        cron: ruCron,
+        setup: ruSetup,
     },
 };
 
