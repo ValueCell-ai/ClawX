@@ -266,6 +266,24 @@
     "installMessage": "\"openclaw\" コマンドをインストールしますか？",
     "installDetail": "~/.local/bin/openclaw が作成されます。グローバルに実行するには ~/.local/bin が PATH に含まれていることを確認してください。"
   },
+  "streaming": {
+    "title": "ストリーミング & Verbose",
+    "description": "メッセージのストリーミング表示を制御します。",
+    "verboseTitle": "Verbose レベル",
+    "verboseDesc": "ツール実行の可視性を制御します。Full ですべてのツールステップが表示されます。",
+    "verboseOff": "オフ",
+    "verboseOn": "オン",
+    "verboseFull": "フル",
+    "breakTitle": "ストリーミング区切り設定",
+    "breakSentence": "文",
+    "breakParagraph": "段落",
+    "breakNewline": "改行",
+    "minChars": "最小チャンク",
+    "maxChars": "最大チャンク",
+    "saveButton": "適用して保存",
+    "saveSuccess": "ストリーミング設定を保存しました。Gateway がリロードします。",
+    "saveFailed": "保存に失敗しました：{{error}}"
+  },
   "about": {
     "title": "バージョン情報",
     "appName": "ClawX",

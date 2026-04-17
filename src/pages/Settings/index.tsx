@@ -1028,6 +1028,15 @@ export function Settings() {
                       </div>
                     )}
                   </div>
+
+                  {/* Streaming & Verbose */}
+                  <div className="space-y-4" data-testid="settings-streaming-section">
+                    <Label className="text-[15px] font-medium text-foreground">{t('streaming.title')}</Label>
+                    <p className="text-[13px] text-muted-foreground">
+                      {t('streaming.description')}
+                    </p>
+                    <StreamingVerboseSettings />
+                  </div>
                 </div>
               </div>
             </>
@@ -1114,6 +1123,134 @@ export function Settings() {
           </div>
 
         </div>
+      </div>
+    </div>
+  );
+}
+
+function StreamingVerboseSettings() {
+  const { t } = useTranslation('settings');
+  const verboseDefault = useSettingsStore((s) => s.verboseDefault);
+  const blockStreamingMinChars = useSettingsStore((s) => s.blockStreamingMinChars);
+  const blockStreamingMaxChars = useSettingsStore((s) => s.blockStreamingMaxChars);
+  const blockStreamingBreakPreference = useSettingsStore((s) => s.blockStreamingBreakPreference);
+  const saveStreamingDefaults = useSettingsStore((s) => s.saveStreamingDefaults);
+
+  const [localVerbose, setLocalVerbose] = useState<'off' | 'on' | 'full'>(verboseDefault);
+  const [localMinChars, setLocalMinChars] = useState(blockStreamingMinChars);
+  const [localMaxChars, setLocalMaxChars] = useState(blockStreamingMaxChars);
+  const [localBreakPref, setLocalBreakPref] = useState<'sentence' | 'paragraph' | 'newline'>(blockStreamingBreakPreference);
+  const [saving, setSaving] = useState(false);
+
+  // Sync local state when store data loads
+  useEffect(() => {
+    setLocalVerbose(verboseDefault);
+  }, [verboseDefault]);
+
+  useEffect(() => {
+    setLocalMinChars(blockStreamingMinChars);
+  }, [blockStreamingMinChars]);
+
+  useEffect(() => {
+    setLocalMaxChars(blockStreamingMaxChars);
+  }, [blockStreamingMaxChars]);
+
+  useEffect(() => {
+    setLocalBreakPref(blockStreamingBreakPreference);
+  }, [blockStreamingBreakPreference]);
+
+  const handleSave = async () => {
+    setSaving(true);
+    try {
+      await saveStreamingDefaults(localVerbose, localMinChars, localMaxChars, localBreakPref);
+      toast.success(t('streaming.saveSuccess'));
+    } catch (err) {
+      toast.error(t('streaming.saveFailed', { error: String(err) }));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="space-y-4 rounded-2xl border border-black/10 dark:border-white/10 p-5 bg-black/5 dark:bg-white/5">
+      <div className="space-y-4">
+        <div className="space-y-3">
+          <Label className="text-[14px] font-medium text-foreground/80">{t('streaming.verboseTitle')}</Label>
+          <p className="text-[12px] text-muted-foreground">
+            {t('streaming.verboseDesc')}
+          </p>
+          <div className="flex flex-wrap gap-2">
+            {(['off', 'on', 'full'] as const).map((v) => (
+              <Button
+                key={v}
+                size="sm"
+                variant={localVerbose === v ? 'default' : 'outline'}
+                onClick={() => setLocalVerbose(v)}
+                className={cn(
+                  'rounded-full px-4 h-9',
+                  localVerbose !== v && 'bg-transparent border-black/10 dark:border-white/10 hover:bg-black/5 dark:hover:bg-white/5'
+                )}
+              >
+                {t(`streaming.verbose${v.charAt(0).toUpperCase() + v.slice(1)}`)}
+              </Button>
+            ))}
+          </div>
+        </div>
+
+        <div className="space-y-3">
+          <Label className="text-[14px] font-medium text-foreground/80">{t('streaming.breakTitle')}</Label>
+          <div className="flex flex-wrap gap-2">
+            {(['sentence', 'paragraph', 'newline'] as const).map((bp) => (
+              <Button
+                key={bp}
+                size="sm"
+                variant={localBreakPref === bp ? 'default' : 'outline'}
+                onClick={() => setLocalBreakPref(bp)}
+                className={cn(
+                  'rounded-full px-4 h-9',
+                  localBreakPref !== bp && 'bg-transparent border-black/10 dark:border-white/10 hover:bg-black/5 dark:hover:bg-white/5'
+                )}
+              >
+                {t(`streaming.break${bp.charAt(0).toUpperCase() + bp.slice(1)}`)}
+              </Button>
+            ))}
+          </div>
+          <div className="grid grid-cols-2 gap-4 pt-2">
+            <div className="space-y-1">
+              <Label htmlFor="streaming-min-chars" className="text-[13px] text-foreground/70">{t('streaming.minChars')}</Label>
+              <Input
+                id="streaming-min-chars"
+                type="number"
+                min={1}
+                max={localMaxChars - 1}
+                value={localMinChars}
+                onChange={(e) => setLocalMinChars(Math.max(1, parseInt(e.target.value, 10) || 1))}
+                className="h-9 rounded-xl bg-black/5 dark:bg-white/5 border-transparent font-mono text-[13px]"
+              />
+            </div>
+            <div className="space-y-1">
+              <Label htmlFor="streaming-max-chars" className="text-[13px] text-foreground/70">{t('streaming.maxChars')}</Label>
+              <Input
+                id="streaming-max-chars"
+                type="number"
+                min={localMinChars + 1}
+                value={localMaxChars}
+                onChange={(e) => setLocalMaxChars(Math.max(localMinChars + 1, parseInt(e.target.value, 10) || 50))}
+                className="h-9 rounded-xl bg-black/5 dark:bg-white/5 border-transparent font-mono text-[13px]"
+              />
+            </div>
+          </div>
+        </div>
+
+        <Button
+          variant="outline"
+          onClick={handleSave}
+          disabled={saving}
+          className="rounded-xl h-10 px-5 bg-transparent border-black/10 dark:border-white/10 hover:bg-black/5 dark:hover:bg-white/5"
+        >
+          <RefreshCw className={cn('h-4 w-4 mr-2', saving && 'animate-spin')} />
+          {saving ? t('common:status.saving') : t('streaming.saveButton')}
+        </Button>
       </div>
     </div>
   );

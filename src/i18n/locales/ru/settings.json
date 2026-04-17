@@ -269,6 +269,24 @@
     "installMessage": "Установить команду \"openclaw\"?",
     "installDetail": "Это создаст ~/.local/bin/openclaw. Убедитесь, что ~/.local/bin в PATH, если хотите запускать глобально."
   },
+  "streaming": {
+    "title": "Стриминг и Verbose",
+    "description": "Управление отображением сообщений при стриминге.",
+    "verboseTitle": "Уровень Verbose",
+    "verboseDesc": "Управление видимостью выполнения инструментов. Full показывает все шаги.",
+    "verboseOff": "выкл",
+    "verboseOn": "вкл",
+    "verboseFull": "полный",
+    "breakTitle": "Предпочтение разбиения стрима",
+    "breakSentence": "предложение",
+    "breakParagraph": "абзац",
+    "breakNewline": "перенос строки",
+    "minChars": "Мин. чанк",
+    "maxChars": "Макс. чанк",
+    "saveButton": "Применить и сохранить",
+    "saveSuccess": "Настройки стриминга сохранены. Gateway будет перезагружен.",
+    "saveFailed": "Ошибка сохранения: {{error}}"
+  },
   "about": {
     "title": "О приложении",
     "appName": "ClawX",

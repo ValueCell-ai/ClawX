@@ -269,6 +269,24 @@
     "installMessage": "Install the \"openclaw\" command?",
     "installDetail": "This will create ~/.local/bin/openclaw. Ensure ~/.local/bin is on your PATH if you want to run it globally."
   },
+  "streaming": {
+    "title": "Streaming & Verbose",
+    "description": "Controls how messages are streamed and displayed.",
+    "verboseTitle": "Verbose Level",
+    "verboseDesc": "Controls tool execution visibility in chat. Full shows all tool steps.",
+    "verboseOff": "off",
+    "verboseOn": "on",
+    "verboseFull": "full",
+    "breakTitle": "Streaming Break Preference",
+    "breakSentence": "sentence",
+    "breakParagraph": "paragraph",
+    "breakNewline": "newline",
+    "minChars": "Min chars",
+    "maxChars": "Max chars",
+    "saveButton": "Apply & Save",
+    "saveSuccess": "Streaming settings saved. Gateway will reload.",
+    "saveFailed": "Failed to save: {{error}}"
+  },
   "about": {
     "title": "About",
     "appName": "ClawX",

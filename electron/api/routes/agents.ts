@@ -4,9 +4,11 @@ import {
   clearChannelBinding,
   createAgent,
   deleteAgentConfig,
+  listAgentDefaults,
   listAgentsSnapshot,
   removeAgentWorkspaceDirectory,
   resolveAccountIdForAgent,
+  updateAgentDefaults,
   updateAgentModel,
   updateAgentName,
 } from '../../utils/agent-config';
@@ -15,9 +17,9 @@ import { syncAgentModelOverrideToRuntime, syncAllProviderAuthToRuntime } from '.
 import type { HostApiContext } from '../context';
 import { parseJsonBody, sendJson } from '../route-utils';
 
-function scheduleGatewayReload(ctx: HostApiContext, reason: string): void {
+function scheduleGatewayReload(ctx: HostApiContext, reason: string, delayMs?: number): void {
   if (ctx.gatewayManager.getStatus().state !== 'stopped') {
-    ctx.gatewayManager.debouncedReload();
+    ctx.gatewayManager.debouncedReload(delayMs);
     return;
   }
   void reason;
@@ -116,6 +118,11 @@ export async function handleAgentRoutes(
     return true;
   }
 
+  if (url.pathname === '/api/agents/defaults' && req.method === 'GET') {
+    sendJson(res, 200, { success: true, ...(await listAgentDefaults()) });
+    return true;
+  }
+
   if (url.pathname === '/api/agents' && req.method === 'POST') {
     try {
       const body = await parseJsonBody<{ name: string; inheritWorkspace?: boolean }>(req);
@@ -138,6 +145,26 @@ export async function handleAgentRoutes(
   if (url.pathname.startsWith('/api/agents/') && req.method === 'PUT') {
     const suffix = url.pathname.slice('/api/agents/'.length);
     const parts = suffix.split('/').filter(Boolean);
+
+    if (parts.length === 1 && parts[0] === 'defaults') {
+      try {
+        const body = await parseJsonBody<{
+          verboseDefault?: string;
+          blockStreamingChunk?: Record<string, unknown>;
+          blockStreamingCoalesce?: Record<string, unknown>;
+        }>(req);
+        const snapshot = await updateAgentDefaults(
+          body.verboseDefault as 'off' | 'on' | 'full' | undefined,
+          body.blockStreamingChunk as { minChars?: number; maxChars?: number; breakPreference?: 'paragraph' | 'newline' | 'sentence' } | undefined,
+          body.blockStreamingCoalesce as { minChars?: number; maxChars?: number; idleMs?: number } | undefined,
+        );
+        scheduleGatewayReload(ctx, 'update-agent-defaults', 150);
+        sendJson(res, 200, { success: true, ...snapshot });
+      } catch (error) {
+        sendJson(res, 500, { success: false, error: String(error) });
+      }
+      return true;
+    }
 
     if (parts.length === 1) {
       try {

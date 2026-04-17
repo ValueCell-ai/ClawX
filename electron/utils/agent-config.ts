@@ -544,6 +544,18 @@ export async function listAgentsSnapshot(): Promise<AgentsSnapshot> {
   return buildSnapshotFromConfig(config);
 }
 
+export async function listAgentDefaults(): Promise<{
+  verboseDefault?: 'off' | 'on' | 'full';
+  blockStreamingChunk?: { minChars?: number; maxChars?: number; breakPreference?: 'paragraph' | 'newline' | 'sentence' };
+}> {
+  const config = await readOpenClawConfig() as AgentConfigDocument;
+  const agentDefaults = (config.agents as AgentsConfig | undefined)?.defaults as AgentDefaultsConfig | undefined;
+  return {
+    verboseDefault: agentDefaults?.verboseDefault as 'off' | 'on' | 'full' | undefined,
+    blockStreamingChunk: agentDefaults?.blockStreamingChunk as { minChars?: number; maxChars?: number; breakPreference?: 'paragraph' | 'newline' | 'sentence' } | undefined,
+  };
+}
+
 export async function listAgentsSnapshotFromConfig(config: OpenClawConfig, configuredChannels?: string[]): Promise<AgentsSnapshot> {
   return buildSnapshotFromConfig(config as AgentConfigDocument, configuredChannels);
 }
@@ -677,6 +689,46 @@ export async function updateAgentModel(agentId: string, modelRef: string | null)
 
     await writeOpenClawConfig(config);
     logger.info('Updated agent model', { agentId, modelRef: normalizedModelRef || null });
+    return buildSnapshotFromConfig(config);
+  });
+}
+
+export async function updateAgentDefaults(
+  verboseDefault?: 'off' | 'on' | 'full',
+  blockStreamingChunk?: { minChars?: number; maxChars?: number; breakPreference?: 'paragraph' | 'newline' | 'sentence' },
+  blockStreamingCoalesce?: { minChars?: number; maxChars?: number; idleMs?: number },
+): Promise<AgentsSnapshot> {
+  return withConfigLock(async () => {
+    const config = await readOpenClawConfig() as AgentConfigDocument;
+    const agentsConfig = (config.agents && typeof config.agents === 'object'
+      ? { ...(config.agents as AgentsConfig) }
+      : {}) as AgentsConfig;
+    const defaults = (agentsConfig.defaults && typeof agentsConfig.defaults === 'object'
+      ? { ...(agentsConfig.defaults as AgentDefaultsConfig) }
+      : {}) as AgentDefaultsConfig;
+
+    if (verboseDefault !== undefined) {
+      defaults.verboseDefault = verboseDefault;
+    }
+
+    if (blockStreamingChunk !== undefined) {
+      const existing = (defaults.blockStreamingChunk && typeof defaults.blockStreamingChunk === 'object'
+        ? defaults.blockStreamingChunk
+        : {}) as Record<string, unknown>;
+      defaults.blockStreamingChunk = { ...existing, ...blockStreamingChunk };
+    }
+
+    if (blockStreamingCoalesce !== undefined) {
+      const existing = (defaults.blockStreamingCoalesce && typeof defaults.blockStreamingCoalesce === 'object'
+        ? defaults.blockStreamingCoalesce
+        : {}) as Record<string, unknown>;
+      defaults.blockStreamingCoalesce = { ...existing, ...blockStreamingCoalesce };
+    }
+
+    agentsConfig.defaults = defaults;
+    config.agents = agentsConfig;
+    await writeOpenClawConfig(config);
+    logger.info('Updated agent defaults', { verboseDefault, blockStreamingChunk, blockStreamingCoalesce });
     return buildSnapshotFromConfig(config);
   });
 }

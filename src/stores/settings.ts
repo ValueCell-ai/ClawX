@@ -41,6 +41,12 @@ interface SettingsState {
   // Setup
   setupComplete: boolean;
 
+  // Streaming / Verbose
+  verboseDefault: 'off' | 'on' | 'full';
+  blockStreamingMinChars: number;
+  blockStreamingMaxChars: number;
+  blockStreamingBreakPreference: 'sentence' | 'paragraph' | 'newline';
+
   // Actions
   init: () => Promise<void>;
   setTheme: (theme: Theme) => void;
@@ -63,6 +69,12 @@ interface SettingsState {
   setDevModeUnlocked: (value: boolean) => void;
   markSetupComplete: () => void;
   resetSettings: () => void;
+  saveStreamingDefaults: (
+    verboseDefault: 'off' | 'on' | 'full',
+    minChars: number,
+    maxChars: number,
+    breakPreference: 'sentence' | 'paragraph' | 'newline',
+  ) => Promise<void>;
 }
 
 const defaultSettings = {
@@ -85,6 +97,10 @@ const defaultSettings = {
   sidebarCollapsed: false,
   devModeUnlocked: false,
   setupComplete: false,
+  verboseDefault: 'full' as const,
+  blockStreamingMinChars: 1,
+  blockStreamingMaxChars: 50,
+  blockStreamingBreakPreference: 'sentence' as const,
 };
 
 export const useSettingsStore = create<SettingsState>()(
@@ -109,6 +125,22 @@ export const useSettingsStore = create<SettingsState>()(
         } catch {
           // Keep renderer-persisted settings as a fallback when the main
           // process store is not reachable.
+        }
+
+        // Load current streaming/verbose defaults from openclaw.json
+        try {
+          const defaults = await hostApiFetch<{
+            verboseDefault?: 'off' | 'on' | 'full';
+            blockStreamingChunk?: { minChars?: number; maxChars?: number; breakPreference?: string };
+          }>('/api/agents/defaults');
+          set({
+            verboseDefault: defaults.verboseDefault ?? 'full',
+            blockStreamingMinChars: defaults.blockStreamingChunk?.minChars ?? 1,
+            blockStreamingMaxChars: defaults.blockStreamingChunk?.maxChars ?? 50,
+            blockStreamingBreakPreference: (defaults.blockStreamingChunk?.breakPreference as 'sentence' | 'paragraph' | 'newline') ?? 'sentence',
+          });
+        } catch {
+          // ignore
         }
       },
 
@@ -176,6 +208,17 @@ export const useSettingsStore = create<SettingsState>()(
       },
       markSetupComplete: () => set({ setupComplete: true }),
       resetSettings: () => set(defaultSettings),
+
+      saveStreamingDefaults: async (verboseDefault, minChars, maxChars, breakPreference) => {
+        await hostApiFetch('/api/agents/defaults', {
+          method: 'PUT',
+          body: JSON.stringify({
+            verboseDefault,
+            blockStreamingChunk: { minChars, maxChars, breakPreference },
+          }),
+        });
+        set({ verboseDefault, blockStreamingMinChars: minChars, blockStreamingMaxChars: maxChars, blockStreamingBreakPreference: breakPreference });
+      },
     }),
     {
       name: 'clawx-settings',

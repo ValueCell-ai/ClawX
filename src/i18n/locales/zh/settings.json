@@ -269,6 +269,24 @@
     "installMessage": "安装 \"openclaw\" 命令？",
     "installDetail": "这将创建 ~/.local/bin/openclaw。确保 ~/.local/bin 在您的 PATH 中。"
   },
+  "streaming": {
+    "title": "流式输出与 Verbose",
+    "description": "控制消息的流式输出和显示方式。",
+    "verboseTitle": "Verbose 级别",
+    "verboseDesc": "控制工具执行过程的可见性。Full 显示完整的工具调用步骤。",
+    "verboseOff": "关闭",
+    "verboseOn": "开启",
+    "verboseFull": "完整",
+    "breakTitle": "流式截断偏好",
+    "breakSentence": "句子",
+    "breakParagraph": "段落",
+    "breakNewline": "换行",
+    "minChars": "最小块",
+    "maxChars": "最大块",
+    "saveButton": "应用并保存",
+    "saveSuccess": "流式设置已保存，网关即将重启。",
+    "saveFailed": "保存失败：{{error}}"
+  },
   "about": {
     "title": "关于",
     "appName": "ClawX",
