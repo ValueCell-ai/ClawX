@@ -138,7 +138,7 @@ test.describe('Channels health diagnostics', () => {
     await expect(page.getByTestId('channels-page')).toBeVisible();
     await expect(page.getByTestId('channels-health-banner')).toBeVisible();
     await expect(page.getByText(/Gateway degraded|网关状态异常|ゲートウェイ劣化/)).toBeVisible();
-    await expect(page.locator('div.rounded-2xl').getByTitle(/Degraded|异常降级|劣化中/).first()).toBeVisible();
+    await expect(page.locator('div.rounded-2xl').getByText(/Degraded|异常降级|劣化中/).first()).toBeVisible();
 
     await page.getByTestId('channels-restart-gateway').click();
     await page.getByTestId('channels-copy-diagnostics').click();
