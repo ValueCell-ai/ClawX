@@ -360,9 +360,9 @@ test.describe('ClawX chat execution graph', () => {
       });
 
       await expect(page.getByText('打开浏览器，搜索腾讯新闻，截图给我')).toHaveCount(1);
-      await expect(page.getByText('思考 1 2 3')).toHaveCount(1);
-      await expect(page.getByText('思考 1 2')).toHaveCount(0);
-      await expect(page.getByText('思考 1')).toHaveCount(0);
+      await expect(page.getByText(/^思考 1 2 3$/)).toHaveCount(1);
+      await expect(page.getByText(/^思考 1 2$/)).toHaveCount(0);
+      await expect(page.getByText(/^思考 1$/)).toHaveCount(0);
       await expect(page.getByText(/^1 2 3$/)).toHaveCount(1);
       await expect(page.getByText(/^1 2$/)).toHaveCount(0);
       await expect(page.getByText(/^1$/)).toHaveCount(0);
