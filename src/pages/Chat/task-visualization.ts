@@ -16,21 +16,25 @@ export interface TaskStep {
 /**
  * Detects the index of the "final reply" assistant message in a run segment.
  *
- * The final reply is the last assistant message that contains plain-text
- * content and no tool calls. When this returns a non-negative index, the
- * caller should avoid folding that message's text into the graph (it is the
- * answer the user sees as the chat reply). When the run is still active
- * (streaming) the final reply is produced via `streamingMessage` instead, so
- * callers pass `hasStreamingReply = true` to skip the protection and let every
- * pure-text assistant message in history be folded into the graph as
- * narration.
+ * The reply is the last assistant message that carries non-empty text
+ * content, regardless of whether it ALSO carries tool calls. (Mixed
+ * `text + toolCall` replies are rare but real — the model can emit a parting
+ * text block alongside a final tool call. Treating such a message as the
+ * reply avoids mis-protecting an earlier narration as the "answer" and
+ * leaking the actual last text into the fold.)
+ *
+ * When this returns a non-negative index, the caller should avoid folding
+ * that message's text into the graph (it is the answer the user sees in the
+ * chat stream). When the run is still active (streaming) the final reply is
+ * produced via `streamingMessage` instead, so callers pass
+ * `hasStreamingReply = true` to skip protection and let every assistant-with-
+ * text message in history be folded into the graph as narration.
  */
 export function findReplyMessageIndex(messages: RawMessage[], hasStreamingReply: boolean): number {
   if (hasStreamingReply) return -1;
   for (let idx = messages.length - 1; idx >= 0; idx -= 1) {
     const message = messages[idx];
     if (!message || message.role !== 'assistant') continue;
-    if (extractToolUse(message).length > 0) continue;
     if (extractText(message).trim().length === 0) continue;
     return idx;
   }
@@ -231,10 +235,15 @@ export function deriveTaskSteps({
     }
 
     const toolUses = extractToolUse(message);
-    const isPureTextNarration = toolUses.length === 0
-      && extractText(message).trim().length > 0
+    // Fold any intermediate assistant text into the graph as a narration
+    // step — including text that lives on a mixed `text + toolCall` message.
+    // The narration step is emitted BEFORE the tool steps so the graph
+    // preserves the original ordering (the assistant "thinks out loud" and
+    // then invokes the tool).
+    const narrationText = extractText(message).trim();
+    const isIntermediateNarration = narrationText.length > 0
       && messageIndex !== replyIndex;
-    if (isPureTextNarration) {
+    if (isIntermediateNarration) {
       upsertStep({
         id: `history-message-${message.id || messageIndex}`,
         label: 'Message',

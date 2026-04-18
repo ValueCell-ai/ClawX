@@ -18,6 +18,14 @@ interface ChatMessageProps {
   message: RawMessage;
   suppressToolCards?: boolean;
   suppressProcessAttachments?: boolean;
+  /**
+   * When true, hides the assistant text bubble (and any thinking block that
+   * would be shown above it). Used when the message's text is being folded
+   * into an ExecutionGraphCard as a narration step, to prevent the same text
+   * from appearing both inside the graph and as an orphan bubble in the chat
+   * stream.
+   */
+  suppressAssistantText?: boolean;
   isStreaming?: boolean;
   streamingTools?: Array<{
     id?: string;
@@ -42,6 +50,7 @@ export const ChatMessage = memo(function ChatMessage({
   message,
   suppressToolCards = false,
   suppressProcessAttachments = false,
+  suppressAssistantText = false,
   isStreaming = false,
   streamingTools = [],
 }: ChatMessageProps) {
@@ -49,8 +58,14 @@ export const ChatMessage = memo(function ChatMessage({
   const role = typeof message.role === 'string' ? message.role.toLowerCase() : '';
   const isToolResult = role === 'toolresult' || role === 'tool_result';
   const text = extractText(message);
-  const hasText = text.trim().length > 0;
-  const visibleThinking = extractThinking(message);
+  // When text is folded into an ExecutionGraphCard, treat the message as
+  // having no text for rendering purposes. Keeping this behind a flag (vs
+  // blanking `text` outright) lets future hover affordances still read the
+  // original content without surfacing the bubble.
+  const hideAssistantText = suppressAssistantText && !isUser;
+  const hasText = !hideAssistantText && text.trim().length > 0;
+  const visibleThinkingRaw = extractThinking(message);
+  const visibleThinking = hideAssistantText ? null : visibleThinkingRaw;
   const images = extractImages(message);
   const tools = extractToolUse(message);
   const visibleTools = suppressToolCards ? [] : tools;

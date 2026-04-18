@@ -45,6 +45,13 @@ export function Chat() {
 
   const cleanupEmptySession = useChatStore((s) => s.cleanupEmptySession);
   const [childTranscripts, setChildTranscripts] = useState<Record<string, RawMessage[]>>({});
+  // Persistent per-run override for the Execution Graph's expanded/collapsed
+  // state. Keyed by a stable run id (trigger message id, or a fallback of
+  // `${sessionKey}:${triggerIdx}`) so user toggles survive the `loadHistory`
+  // refresh that runs after every final event — otherwise the card would
+  // remount and reset. `undefined` values mean "user hasn't toggled, let the
+  // card pick a default from its own `active` prop."
+  const [graphExpandedOverrides, setGraphExpandedOverrides] = useState<Record<string, boolean>>({});
 
   const [streamingTimestamp, setStreamingTimestamp] = useState<number>(0);
   const minLoading = useMinLoading(loading && messages.length > 0);
@@ -217,18 +224,23 @@ export function Chat() {
     const segmentAgentLabel = agents.find((agent) => agent.id === segmentAgentId)?.name || segmentAgentId;
     const segmentSessionLabel = sessionLabels[currentSessionKey] || currentSessionKey;
 
-    // Mark intermediate pure-text assistant messages so that the chat stream
-    // can hide them (they now live inside the ExecutionGraphCard instead).
-    // When the run is still streaming (`isLatestOpenRun`), the final reply is
-    // not yet part of `segmentMessages`, so every pure-text assistant in the
-    // segment is intermediate. For completed runs we preserve the final reply
-    // bubble by passing `hasStreamingReply = false` to `findReplyMessageIndex`.
+    // Mark intermediate assistant messages whose text should be folded into
+    // the ExecutionGraphCard. We fold the text regardless of whether the
+    // message ALSO carries tool calls (mixed `text + toolCall` messages are
+    // common — e.g. "waiting for the page to load…" followed by a `wait`
+    // tool call). This prevents orphan narration bubbles from leaking into
+    // the chat stream once the graph is collapsed.
+    //
+    // When the run is still streaming (`isLatestOpenRun`) the final reply is
+    // not yet part of `segmentMessages`, so every assistant message in the
+    // segment counts as intermediate. For completed runs, we preserve the
+    // final reply bubble by skipping the message that `findReplyMessageIndex`
+    // identifies as the answer.
     const segmentReplyOffset = findReplyMessageIndex(segmentMessages, isLatestOpenRun);
     for (let offset = 0; offset < segmentMessages.length; offset += 1) {
       if (offset === segmentReplyOffset) continue;
       const candidate = segmentMessages[offset];
       if (!candidate || candidate.role !== 'assistant') continue;
-      if (extractToolUse(candidate).length > 0) continue;
       if (extractText(candidate).trim().length === 0) continue;
       foldedNarrationIndices.add(idx + 1 + offset);
     }
@@ -285,14 +297,24 @@ export function Chat() {
                       />
                       {userRunCards
                         .filter((card) => card.triggerIndex === idx)
-                        .map((card) => (
-                          <ExecutionGraphCard
-                            key={`graph-${idx}`}
-                            agentLabel={card.agentLabel}
-                            steps={card.steps}
-                            active={card.active}
-                          />
-                        ))}
+                        .map((card) => {
+                          const triggerMsg = messages[card.triggerIndex];
+                          const runKey = triggerMsg?.id
+                            ? `msg-${triggerMsg.id}`
+                            : `${currentSessionKey}:trigger-${card.triggerIndex}`;
+                          return (
+                            <ExecutionGraphCard
+                              key={`graph-${runKey}`}
+                              agentLabel={card.agentLabel}
+                              steps={card.steps}
+                              active={card.active}
+                              expanded={graphExpandedOverrides[runKey]}
+                              onExpandedChange={(next) =>
+                                setGraphExpandedOverrides((prev) => ({ ...prev, [runKey]: next }))
+                              }
+                            />
+                          );
+                        })}
                     </div>
                     );
                   })}

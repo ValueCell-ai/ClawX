@@ -8,6 +8,13 @@ interface ExecutionGraphCardProps {
   agentLabel: string;
   steps: TaskStep[];
   active: boolean;
+  /**
+   * When provided, the card becomes fully controlled: the parent owns the
+   * expand state (e.g. to persist across remounts) and toggling goes through
+   * `onExpandedChange`. When omitted, the card manages its own local state.
+   */
+  expanded?: boolean;
+  onExpandedChange?: (expanded: boolean) => void;
 }
 
 function GraphStatusIcon({ status }: { status: TaskStep['status'] }) {
@@ -88,20 +95,35 @@ export function ExecutionGraphCard({
   agentLabel,
   steps,
   active,
+  expanded: controlledExpanded,
+  onExpandedChange,
 }: ExecutionGraphCardProps) {
   const { t } = useTranslation('chat');
 
-  // Collapse by default when the run is already completed (e.g. loaded from
-  // history). While running, always stay expanded. When a run transitions from
-  // active -> completed, auto-collapse it. We derive the reset during render
-  // via the "adjust state on prop change" pattern recommended by React so the
-  // transition is reflected in the same render and doesn't require an effect.
-  const [expanded, setExpanded] = useState(active);
+  // Start expanded for runs that are active on first mount (so users see the
+  // graph as it's running). For completed/historical runs, start collapsed.
+  //
+  // IMPORTANT: we intentionally do NOT auto-collapse when a run transitions
+  // from active -> completed. The final reply arrives in the same render tick
+  // that flips `active` to `false`; collapsing in that frame yanks the graph
+  // shut just as the user starts reading the result (premature collapse).
+  // Users can close the card manually via the header chevron.
+  const [uncontrolledExpanded, setUncontrolledExpanded] = useState(active);
   const [prevActive, setPrevActive] = useState(active);
   if (prevActive !== active) {
     setPrevActive(active);
-    setExpanded(active);
+    // Auto-expand when a run starts (false -> true). Never auto-collapse.
+    if (active && controlledExpanded == null && !uncontrolledExpanded) {
+      setUncontrolledExpanded(true);
+    }
   }
+
+  const isControlled = controlledExpanded != null;
+  const expanded = isControlled ? controlledExpanded : uncontrolledExpanded;
+  const setExpanded = (next: boolean) => {
+    if (!isControlled) setUncontrolledExpanded(next);
+    onExpandedChange?.(next);
+  };
 
   const toolCount = steps.filter((step) => step.kind === 'tool').length;
   const processCount = steps.length - toolCount;
@@ -131,18 +153,16 @@ export function ExecutionGraphCard({
     >
       <div className="flex items-center gap-2">
         <h3 className="text-base font-semibold text-foreground">{t('executionGraph.title')}</h3>
-        {!active && (
-          <button
-            type="button"
-            data-testid="chat-execution-graph-collapse"
-            onClick={() => setExpanded(false)}
-            className="flex h-6 w-6 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-black/5 hover:text-foreground dark:hover:bg-white/10"
-            aria-label={t('executionGraph.collapseAction')}
-            title={t('executionGraph.collapseAction')}
-          >
-            <ChevronDown className="h-4 w-4" />
-          </button>
-        )}
+        <button
+          type="button"
+          data-testid="chat-execution-graph-collapse"
+          onClick={() => setExpanded(false)}
+          className="flex h-6 w-6 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-black/5 hover:text-foreground dark:hover:bg-white/10"
+          aria-label={t('executionGraph.collapseAction')}
+          title={t('executionGraph.collapseAction')}
+        >
+          <ChevronDown className="h-4 w-4" />
+        </button>
       </div>
 
       <div className="mt-4 space-y-3">
