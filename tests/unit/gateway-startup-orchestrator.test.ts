@@ -148,6 +148,27 @@ describe('runGatewayStartupSequence', () => {
     expect(hooks.onConnectedToManagedGateway).toHaveBeenCalledTimes(1);
   });
 
+  it('retries when a foreign process still owns the port during external attach/restart windows', async () => {
+    let calls = 0;
+    const hooks = createMockHooks({
+      findExistingGateway: vi.fn().mockImplementation(async () => {
+        calls++;
+        if (calls === 1) {
+          throw new Error('Port 18789 is already in use by another process (PIDs: 4321)');
+        }
+        return { port: 18789 };
+      }),
+      maxStartAttempts: 3,
+    });
+
+    await runGatewayStartupSequence(hooks);
+
+    expect(hooks.findExistingGateway).toHaveBeenCalledTimes(2);
+    expect(hooks.delay).toHaveBeenCalledWith(1000);
+    expect(hooks.connect).toHaveBeenCalledWith(18789, undefined);
+    expect(hooks.onConnectedToExistingGateway).toHaveBeenCalledTimes(1);
+  });
+
   it('runs doctor repair on config-invalid stderr signal', async () => {
     let attemptNumber = 0;
     const hooks = createMockHooks({

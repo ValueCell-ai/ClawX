@@ -455,21 +455,24 @@ describe('sanitizeOpenClawConfig', () => {
     expect(telegram.botToken).toBe('telegram-token');
   });
 
-  it('strips accounts/defaultAccount from dingtalk (strict-schema channel) during sanitize', async () => {
+  it('preserves dingtalk named accounts during sanitize and mirrors default credentials to top level', async () => {
     await writeOpenClawJson({
       channels: {
         dingtalk: {
           enabled: true,
-          defaultAccount: 'default',
+          defaultAccount: 'sales',
           accounts: {
             default: {
-              clientId: 'dt-client-id-nested',
-              clientSecret: 'dt-secret-nested',
+              clientId: 'dt-client-id-default',
+              clientSecret: 'dt-secret-default',
+              enabled: true,
+            },
+            sales: {
+              clientId: 'dt-client-id-sales',
+              clientSecret: 'dt-secret-sales',
               enabled: true,
             },
           },
-          clientId: 'dt-client-id',
-          clientSecret: 'dt-secret',
         },
       },
     });
@@ -480,13 +483,22 @@ describe('sanitizeOpenClawConfig', () => {
     const result = await readOpenClawJson();
     const channels = result.channels as Record<string, Record<string, unknown>>;
     const dingtalk = channels.dingtalk;
-    // dingtalk's strict schema rejects accounts/defaultAccount — they must be stripped
     expect(dingtalk.enabled).toBe(true);
-    expect(dingtalk.accounts).toBeUndefined();
-    expect(dingtalk.defaultAccount).toBeUndefined();
-    // Top-level credentials must be preserved
-    expect(dingtalk.clientId).toBe('dt-client-id');
-    expect(dingtalk.clientSecret).toBe('dt-secret');
+    expect(dingtalk.defaultAccount).toBe('sales');
+    expect(dingtalk.accounts).toEqual({
+      default: {
+        clientId: 'dt-client-id-default',
+        clientSecret: 'dt-secret-default',
+        enabled: true,
+      },
+      sales: {
+        clientId: 'dt-client-id-sales',
+        clientSecret: 'dt-secret-sales',
+        enabled: true,
+      },
+    });
+    expect(dingtalk.clientId).toBe('dt-client-id-sales');
+    expect(dingtalk.clientSecret).toBe('dt-secret-sales');
   });
 });
 

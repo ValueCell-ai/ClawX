@@ -194,72 +194,47 @@ async function getListeningProcessIds(port: number): Promise<string[]> {
   return [...new Set(stdout.trim().split(/\r?\n/).map((value) => value.trim()).filter(Boolean))];
 }
 
-async function terminateOrphanedProcessIds(port: number, pids: string[]): Promise<void> {
-  logger.info(`Found orphaned process listening on port ${port} (PIDs: ${pids.join(', ')}), attempting to kill...`);
-
-  if (process.platform === 'darwin') {
-    await unloadLaunchctlGatewayService();
-  }
-
-  for (const pid of pids) {
-    try {
-      if (process.platform === 'win32') {
-        const cp = await import('child_process');
-        await new Promise<void>((resolve) => {
-          cp.exec(
-            `taskkill /F /PID ${pid} /T`,
-            { timeout: 5000, windowsHide: true },
-            () => resolve(),
-          );
-        });
-      } else {
-        process.kill(parseInt(pid, 10), 'SIGTERM');
-      }
-    } catch {
-      // Ignore processes that have already exited.
-    }
-  }
-
-  await new Promise((resolve) => setTimeout(resolve, process.platform === 'win32' ? 2000 : 3000));
-
-  if (process.platform !== 'win32') {
-    for (const pid of pids) {
-      try {
-        process.kill(parseInt(pid, 10), 0);
-        process.kill(parseInt(pid, 10), 'SIGKILL');
-      } catch {
-        // Already exited.
-      }
-    }
-    await new Promise((resolve) => setTimeout(resolve, 1000));
-  }
-}
-
 export async function findExistingGatewayProcess(options: {
   port: number;
   ownedPid?: number;
 }): Promise<{ port: number; externalToken?: string } | null> {
   const { port, ownedPid } = options;
+  let foreignPids: string[] = [];
 
   try {
-    try {
-      const pids = await getListeningProcessIds(port);
-      if (pids.length > 0 && (!ownedPid || !pids.includes(String(ownedPid)))) {
-        await terminateOrphanedProcessIds(port, pids);
-        if (process.platform === 'win32') {
-          await waitForPortFree(port, 10000);
-        }
-        return null;
-      }
-    } catch (err) {
-      logger.warn('Error checking for existing process on port:', err);
+    const pids = await getListeningProcessIds(port);
+    foreignPids = ownedPid
+      ? pids.filter((pid) => pid !== String(ownedPid))
+      : pids;
+    if (foreignPids.length > 0) {
+      logger.info(
+        `Found external process listening on port ${port} (PIDs: ${foreignPids.join(', ')}); probing for attachable Gateway`,
+      );
     }
-
-    const ready = await probeGatewayReady(port, 5000);
-    return ready ? { port } : null;
-  } catch {
-    return null;
+  } catch (err) {
+    logger.warn('Error checking for existing process on port:', err);
   }
+
+  try {
+    const ready = await probeGatewayReady(port, 5000);
+    if (ready) {
+      return { port };
+    }
+  } catch {
+    if (foreignPids.length > 0) {
+      throw new Error(
+        `Port ${port} is already in use by another process (PIDs: ${foreignPids.join(', ')})`,
+      );
+    }
+  }
+
+  if (foreignPids.length > 0) {
+    throw new Error(
+      `Port ${port} is already in use by another process (PIDs: ${foreignPids.join(', ')})`,
+    );
+  }
+
+  return null;
 }
 
 export async function runOpenClawDoctorRepair(): Promise<boolean> {

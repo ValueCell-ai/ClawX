@@ -1946,11 +1946,10 @@ export async function sanitizeOpenClawConfig(): Promise<void> {
     // credentials from the top level of `channels.<type>`.  Mirror them
     // there so the runtime can discover them.
     //
-    // Strict-schema channels (e.g. dingtalk, additionalProperties:false)
-    // reject the `accounts` / `defaultAccount` keys entirely — strip them
-    // so the Gateway doesn't crash on startup.
+    // Some channels may require flat-only config, but the current bundled set,
+    // including DingTalk 3.5.3, supports preserving named `accounts`.
     const channelsObj = config.channels as Record<string, Record<string, unknown>> | undefined;
-    const CHANNELS_EXCLUDING_TOP_LEVEL_MIRROR = new Set(['dingtalk']);
+    const CHANNELS_EXCLUDING_TOP_LEVEL_MIRROR = new Set<string>();
 
     if (channelsObj && typeof channelsObj === 'object') {
       for (const [channelType, section] of Object.entries(channelsObj)) {
@@ -1978,8 +1977,20 @@ export async function sanitizeOpenClawConfig(): Promise<void> {
                 : 'default';
           const defaultAccountData = accounts?.[defaultAccountId] ?? accounts?.['default'];
           if (!defaultAccountData || typeof defaultAccountData !== 'object') continue;
+          const mirroredKeys = new Set<string>();
+          for (const accountConfig of Object.values(accounts ?? {})) {
+            if (!accountConfig || typeof accountConfig !== 'object') continue;
+            for (const key of Object.keys(accountConfig)) {
+              if (key === 'accounts' || key === 'defaultAccount' || key === 'enabled') continue;
+              mirroredKeys.add(key);
+            }
+          }
+          for (const key of mirroredKeys) {
+            delete section[key];
+          }
           let mirrored = false;
           for (const [key, value] of Object.entries(defaultAccountData)) {
+            if (key === 'accounts' || key === 'defaultAccount' || key === 'enabled') continue;
             if (!(key in section)) {
               section[key] = value;
               mirrored = true;

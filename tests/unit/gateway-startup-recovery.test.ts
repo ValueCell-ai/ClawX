@@ -3,6 +3,7 @@ import {
   getGatewayStartupRecoveryAction,
   hasInvalidConfigFailureSignal,
   isInvalidConfigSignal,
+  isTransientGatewayStartError,
   shouldAttemptConfigAutoRepair,
 } from '@electron/gateway/startup-recovery';
 
@@ -48,6 +49,14 @@ describe('gateway startup recovery heuristics', () => {
     expect(isInvalidConfigSignal('skills: Unrecognized key: "enabled"')).toBe(true);
     expect(isInvalidConfigSignal('Run: openclaw doctor --fix')).toBe(true);
     expect(isInvalidConfigSignal('Gateway ready after 3 attempts')).toBe(false);
+  });
+
+  it('treats external port-conflict attach windows as transient startup errors', () => {
+    expect(
+      isTransientGatewayStartError(
+        new Error('Port 18789 is already in use by another process (PIDs: 4321)'),
+      ),
+    ).toBe(true);
   });
 });
 

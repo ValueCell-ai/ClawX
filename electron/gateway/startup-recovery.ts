@@ -20,6 +20,8 @@ const TRANSIENT_START_ERROR_PATTERNS: RegExp[] = [
   /Connect handshake timeout/i,
   // Port occupied after orphan kill: transient, worth retrying with backoff
   /Port \d+ still occupied after \d+ms/i,
+  // External gateway may still be booting or shutting down during attach/restart.
+  /Port \d+ is already in use by another process/i,
 ];
 
 function normalizeLogLine(value: string): string {
@@ -98,4 +100,3 @@ export function getGatewayStartupRecoveryAction(options: {
 
   return 'fail';
 }
-

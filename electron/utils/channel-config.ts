@@ -26,11 +26,10 @@ const WECOM_PLUGIN_ID = 'wecom';
 const WECHAT_PLUGIN_ID = OPENCLAW_WECHAT_CHANNEL_TYPE;
 const FEISHU_PLUGIN_ID_CANDIDATES = ['openclaw-lark', 'feishu-openclaw-plugin'] as const;
 const DEFAULT_ACCOUNT_ID = 'default';
-// Channels whose plugin schema uses additionalProperties:false, meaning
-// credential keys MUST NOT appear at the top level of `channels.<type>`.
-// All other channels get the default account mirrored to the top level
-// so their runtime/plugin can discover the credentials.
-const CHANNELS_EXCLUDING_TOP_LEVEL_MIRROR = new Set(['dingtalk']);
+// Channels whose runtime truly rejects account maps would be listed here.
+// The current bundled channel set, including DingTalk 3.5.3, supports
+// `accounts` plus top-level default-account mirroring.
+const CHANNELS_EXCLUDING_TOP_LEVEL_MIRROR = new Set<string>();
 const CHANNEL_TOP_LEVEL_KEYS_TO_KEEP = new Set(['accounts', 'defaultAccount', 'enabled']);
 const WECHAT_STATE_DIR = join(OPENCLAW_DIR, WECHAT_PLUGIN_ID);
 const WECHAT_ACCOUNT_INDEX_FILE = join(WECHAT_STATE_DIR, 'accounts.json');
@@ -635,6 +634,10 @@ function migrateLegacyChannelConfigToAccounts(
     const legacyKeys = Object.keys(legacyPayload);
     const existingAccounts = getChannelAccountsMap(channelSection);
     const hasAccounts = Boolean(existingAccounts) && Object.keys(existingAccounts).length > 0;
+    const resolvedDefaultAccountId =
+        typeof channelSection.defaultAccount === 'string' && channelSection.defaultAccount.trim()
+            ? channelSection.defaultAccount
+            : defaultAccountId;
 
     if (legacyKeys.length === 0) {
         if (hasAccounts && typeof channelSection.defaultAccount !== 'string') {
@@ -644,9 +647,9 @@ function migrateLegacyChannelConfigToAccounts(
     }
 
     const accounts = ensureChannelAccountsMap(channelSection);
-    const existingDefaultAccount = accounts[defaultAccountId] ?? {};
+    const existingDefaultAccount = accounts[resolvedDefaultAccountId] ?? {};
 
-    accounts[defaultAccountId] = {
+    accounts[resolvedDefaultAccountId] = {
         ...(channelSection.enabled !== undefined ? { enabled: channelSection.enabled } : {}),
         ...legacyPayload,
         ...existingDefaultAccount,
@@ -655,10 +658,59 @@ function migrateLegacyChannelConfigToAccounts(
     channelSection.defaultAccount =
         typeof channelSection.defaultAccount === 'string' && channelSection.defaultAccount.trim()
             ? channelSection.defaultAccount
-            : defaultAccountId;
+            : resolvedDefaultAccountId;
 
     for (const key of legacyKeys) {
         delete channelSection[key];
+    }
+}
+
+function getMirroredAccountKeys(
+    channelSection: ChannelConfigData,
+): string[] {
+    const accounts = getChannelAccountsMap(channelSection);
+    if (!accounts) return [];
+
+    const keys = new Set<string>();
+    for (const accountConfig of Object.values(accounts)) {
+        if (!accountConfig || typeof accountConfig !== 'object') continue;
+        for (const key of Object.keys(accountConfig)) {
+            if (CHANNEL_TOP_LEVEL_KEYS_TO_KEEP.has(key)) continue;
+            keys.add(key);
+        }
+    }
+    return Array.from(keys);
+}
+
+function remirrorDefaultAccountToTopLevel(
+    channelSection: ChannelConfigData,
+    fallbackAccountId: string = DEFAULT_ACCOUNT_ID,
+    extraKeysToClear: Iterable<string> = [],
+): void {
+    const accounts = getChannelAccountsMap(channelSection);
+    if (!accounts) return;
+
+    const keysToClear = new Set([
+        ...getMirroredAccountKeys(channelSection),
+        ...Array.from(extraKeysToClear),
+    ]);
+
+    for (const key of keysToClear) {
+        delete channelSection[key];
+    }
+
+    const mirroredAccountId =
+        typeof channelSection.defaultAccount === 'string' && channelSection.defaultAccount.trim()
+            ? channelSection.defaultAccount
+            : fallbackAccountId;
+    const defaultAccountData = accounts[mirroredAccountId] ?? accounts[fallbackAccountId];
+    if (!defaultAccountData || typeof defaultAccountData !== 'object') {
+        return;
+    }
+
+    for (const [key, value] of Object.entries(defaultAccountData)) {
+        if (CHANNEL_TOP_LEVEL_KEYS_TO_KEEP.has(key)) continue;
+        channelSection[key] = value;
     }
 }
 
@@ -767,7 +819,7 @@ export async function saveChannelConfig(
             }
         }
 
-        // ── Strict-schema channels (e.g. dingtalk) ──────────────────────
+        // ── Strict-schema channels ──────────────────────────────────────
         // These plugins declare additionalProperties:false and do NOT
         // recognise `accounts` / `defaultAccount`.  Write credentials
         // flat to the channel root and strip the multi-account keys.
@@ -801,16 +853,7 @@ export async function saveChannelConfig(
             // account's credentials from the top level of `channels.<type>`
             // (e.g. channels.feishu.appId).  Mirror them there so the
             // runtime can discover them.
-            const mirroredAccountId =
-                typeof channelSection.defaultAccount === 'string' && channelSection.defaultAccount.trim()
-                    ? channelSection.defaultAccount
-                    : resolvedAccountId;
-            const defaultAccountData = accounts[mirroredAccountId] ?? accounts[resolvedAccountId] ?? accounts[DEFAULT_ACCOUNT_ID];
-            if (defaultAccountData) {
-                for (const [key, value] of Object.entries(defaultAccountData)) {
-                    channelSection[key] = value;
-                }
-            }
+            remirrorDefaultAccountToTopLevel(channelSection, resolvedAccountId);
         }
 
         await writeOpenClawConfig(currentConfig);
@@ -923,16 +966,11 @@ export async function deleteChannelAccountConfig(channelType: string, accountId:
         const accounts = getChannelAccountsMap(channelSection);
         if (!accounts?.[accountId]) {
             // Account not found; just ensure top-level mirror is consistent
-            const mirroredAccountId = typeof channelSection.defaultAccount === 'string' && channelSection.defaultAccount.trim() ? channelSection.defaultAccount : DEFAULT_ACCOUNT_ID;
-            const defaultAccountData = accounts?.[mirroredAccountId] ?? accounts?.[DEFAULT_ACCOUNT_ID];
-            if (defaultAccountData) {
-                for (const [key, value] of Object.entries(defaultAccountData)) {
-                    channelSection[key] = value;
-                }
-            }
+            remirrorDefaultAccountToTopLevel(channelSection, DEFAULT_ACCOUNT_ID);
             return;
         }
 
+        const mirroredKeysBeforeDelete = getMirroredAccountKeys(channelSection);
         delete accounts[accountId];
 
         if (Object.keys(accounts).length === 0) {
@@ -954,16 +992,7 @@ export async function deleteChannelAccountConfig(channelType: string, accountId:
             // Re-mirror default account credentials to top level after migration
             // stripped them (same rationale as saveChannelConfig).
             // (Strict-schema channels already returned above, so this is safe.)
-            const mirroredAccountId =
-                typeof channelSection.defaultAccount === 'string' && channelSection.defaultAccount.trim()
-                    ? channelSection.defaultAccount
-                    : DEFAULT_ACCOUNT_ID;
-            const defaultAccountData = accounts[mirroredAccountId] ?? accounts[DEFAULT_ACCOUNT_ID];
-            if (defaultAccountData) {
-                for (const [key, value] of Object.entries(defaultAccountData)) {
-                    channelSection[key] = value;
-                }
-            }
+            remirrorDefaultAccountToTopLevel(channelSection, DEFAULT_ACCOUNT_ID, mirroredKeysBeforeDelete);
         }
 
         syncBuiltinChannelsWithPluginAllowlist(currentConfig);
@@ -1153,11 +1182,9 @@ export async function setChannelDefaultAccount(channelType: string, accountId: s
 
         channelSection.defaultAccount = trimmedAccountId;
 
-        // Strict-schema channels don't use defaultAccount — always mirror for others
-        const defaultAccountData = accounts[trimmedAccountId];
-        for (const [key, value] of Object.entries(defaultAccountData)) {
-            channelSection[key] = value;
-        }
+        // Mirror the chosen default account to top-level channel keys so the
+        // runtime can resolve the active account without losing named accounts.
+        remirrorDefaultAccountToTopLevel(channelSection, trimmedAccountId);
 
         await writeOpenClawConfig(currentConfig);
         logger.info('Set channel default account', { channelType: resolvedChannelType, accountId: trimmedAccountId });
@@ -1180,17 +1207,12 @@ export async function deleteAgentChannelAccounts(agentId: string, ownedChannelAc
                 // Strict-schema channels have no accounts map; skip them.
                 // For normal channels, ensure top-level mirror is consistent.
                 if (!CHANNELS_EXCLUDING_TOP_LEVEL_MIRROR.has(channelType)) {
-                    const mirroredAccountId = typeof section.defaultAccount === 'string' && section.defaultAccount.trim() ? section.defaultAccount : DEFAULT_ACCOUNT_ID;
-                    const defaultAccountData = accounts?.[mirroredAccountId] ?? accounts?.[DEFAULT_ACCOUNT_ID];
-                    if (defaultAccountData) {
-                        for (const [key, value] of Object.entries(defaultAccountData)) {
-                            section[key] = value;
-                        }
-                    }
+                    remirrorDefaultAccountToTopLevel(section, DEFAULT_ACCOUNT_ID);
                 }
                 continue;
             }
 
+            const mirroredKeysBeforeDelete = getMirroredAccountKeys(section);
             delete accounts[accountId];
             if (Object.keys(accounts).length === 0) {
                 delete currentConfig.channels[channelType];
@@ -1207,16 +1229,7 @@ export async function deleteAgentChannelAccounts(agentId: string, ownedChannelAc
                 }
                 // Re-mirror default account credentials to top level after migration
                 // stripped them (same rationale as saveChannelConfig).
-                const mirroredAccountId =
-                    typeof section.defaultAccount === 'string' && section.defaultAccount.trim()
-                        ? section.defaultAccount
-                        : DEFAULT_ACCOUNT_ID;
-                const defaultAccountData = accounts[mirroredAccountId] ?? accounts[DEFAULT_ACCOUNT_ID];
-                if (defaultAccountData) {
-                    for (const [key, value] of Object.entries(defaultAccountData)) {
-                        section[key] = value;
-                    }
-                }
+                remirrorDefaultAccountToTopLevel(section, DEFAULT_ACCOUNT_ID, mirroredKeysBeforeDelete);
             }
             modified = true;
         }

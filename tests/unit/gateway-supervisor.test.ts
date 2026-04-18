@@ -6,9 +6,11 @@ const originalPlatform = process.platform;
 const {
   mockExec,
   mockCreateServer,
+  mockProbeGatewayReady,
 } = vi.hoisted(() => ({
   mockExec: vi.fn(),
   mockCreateServer: vi.fn(),
+  mockProbeGatewayReady: vi.fn(),
 }));
 
 vi.mock('electron', () => ({
@@ -34,6 +36,10 @@ vi.mock('net', () => ({
   createServer: mockCreateServer,
 }));
 
+vi.mock('@electron/gateway/ws-client', () => ({
+  probeGatewayReady: (...args: unknown[]) => mockProbeGatewayReady(...args),
+}));
+
 class MockUtilityChild extends EventEmitter {
   pid?: number;
   kill = vi.fn();
@@ -52,6 +58,7 @@ describe('gateway supervisor process cleanup', () => {
   beforeEach(() => {
     vi.resetModules();
     vi.clearAllMocks();
+    mockProbeGatewayReady.mockResolvedValue(false);
 
     mockExec.mockImplementation((_cmd: string, _opts: object, cb: (err: Error | null, stdout: string) => void) => {
       cb(null, '');
@@ -111,9 +118,10 @@ describe('gateway supervisor process cleanup', () => {
     expect(child.kill).toHaveBeenCalledTimes(1);
   });
 
-  it('waits for port release after orphan cleanup on Windows', async () => {
+  it('attaches to a ready external gateway instead of killing it on Windows', async () => {
     setPlatform('win32');
     const { findExistingGatewayProcess } = await import('@electron/gateway/supervisor');
+    mockProbeGatewayReady.mockResolvedValue(true);
 
     mockExec.mockImplementation((cmd: string, _opts: object, cb: (err: Error | null, stdout: string) => void) => {
       if (cmd.includes('netstat -ano')) {
@@ -125,13 +133,40 @@ describe('gateway supervisor process cleanup', () => {
     });
 
     const result = await findExistingGatewayProcess({ port: 18789 });
-    expect(result).toBeNull();
+    expect(result).toEqual({ port: 18789 });
 
-    expect(mockExec).toHaveBeenCalledWith(
+    expect(mockProbeGatewayReady).toHaveBeenCalledWith(18789, 5000);
+    expect(mockExec).not.toHaveBeenCalledWith(
       expect.stringContaining('taskkill /F /PID 4321 /T'),
-      expect.objectContaining({ timeout: 5000, windowsHide: true }),
+      expect.anything(),
       expect.any(Function),
     );
-    expect(mockCreateServer).toHaveBeenCalled();
+    expect(mockCreateServer).not.toHaveBeenCalled();
+  });
+
+  it('reports port conflicts for foreign non-gateway processes without killing them', async () => {
+    setPlatform('linux');
+    const { findExistingGatewayProcess } = await import('@electron/gateway/supervisor');
+    mockProbeGatewayReady.mockResolvedValue(false);
+
+    mockExec.mockImplementation((cmd: string, _opts: object, cb: (err: Error | null, stdout: string) => void) => {
+      if (cmd.includes('lsof -i :18789')) {
+        cb(null, '4321\n');
+        return {} as never;
+      }
+      cb(null, '');
+      return {} as never;
+    });
+
+    await expect(findExistingGatewayProcess({ port: 18789 })).rejects.toThrow(
+      'Port 18789 is already in use by another process (PIDs: 4321)',
+    );
+
+    expect(mockProbeGatewayReady).toHaveBeenCalledWith(18789, 5000);
+    expect(mockExec).not.toHaveBeenCalledWith(
+      expect.stringContaining('taskkill /F /PID 4321 /T'),
+      expect.anything(),
+      expect.any(Function),
+    );
   });
 });

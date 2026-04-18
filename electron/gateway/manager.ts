@@ -404,7 +404,8 @@ export class GatewayManager extends EventEmitter {
   /**
    * Stop Gateway process
    */
-  async stop(): Promise<void> {
+  async stop(options?: { shutdownExternal?: boolean }): Promise<void> {
+    const shutdownExternal = options?.shutdownExternal ?? false;
     logger.info('Gateway stop requested');
     this.lifecycleController.bump('stop');
     // Disable auto-reconnect
@@ -413,9 +414,14 @@ export class GatewayManager extends EventEmitter {
     // Clear all timers
     this.clearAllTimers();
 
-    // If this manager is attached to an external gateway process, ask it to shut down
-    // over protocol before closing the socket.
-    if (!this.ownsProcess && this.ws?.readyState === WebSocket.OPEN && this.externalShutdownSupported !== false) {
+    // Only explicit restart flows should request shutdown for an externally
+    // managed Gateway. App close / disconnect should leave foreign processes alone.
+    if (
+      shutdownExternal
+      && !this.ownsProcess
+      && this.ws?.readyState === WebSocket.OPEN
+      && this.externalShutdownSupported !== false
+    ) {
       try {
         await this.rpc('shutdown', undefined, 5000);
         this.externalShutdownSupported = true;
@@ -521,7 +527,7 @@ export class GatewayManager extends EventEmitter {
     const pidBefore = this.status.pid;
     logger.info(`[gateway-refresh] mode=restart requested pidBefore=${pidBefore ?? 'n/a'}`);
     this.restartInFlight = (async () => {
-      await this.stop();
+      await this.stop({ shutdownExternal: true });
       try {
         await this.start();
       } catch (err) {

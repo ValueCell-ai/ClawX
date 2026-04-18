@@ -119,4 +119,26 @@ describe('GatewayManager restart recovery', () => {
     // (it may be called from other paths, but not the restart-recovery catch)
     expect(scheduleReconnectSpy).not.toHaveBeenCalled();
   });
+
+  it('requests external shutdown semantics during restart stop phase', async () => {
+    const { GatewayManager } = await import('@electron/gateway/manager');
+    const manager = new GatewayManager();
+
+    const internals = manager as unknown as {
+      shouldReconnect: boolean;
+      status: { state: string; port: number };
+      startLock: boolean;
+    };
+
+    internals.status = { state: 'running', port: 18789 };
+    internals.startLock = false;
+    internals.shouldReconnect = true;
+
+    const stopSpy = vi.spyOn(manager, 'stop').mockResolvedValue();
+    vi.spyOn(manager, 'start').mockResolvedValue();
+
+    await manager.restart();
+
+    expect(stopSpy).toHaveBeenCalledWith({ shutdownExternal: true });
+  });
 });

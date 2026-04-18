@@ -214,6 +214,127 @@ describe('WeCom plugin configuration', () => {
       expect(plugins.entries['qqbot']).toBeUndefined();
     }
   });
+
+  it('preserves multiple dingtalk accounts and mirrors the default account to top level', async () => {
+    const { saveChannelConfig, setChannelDefaultAccount } = await import('@electron/utils/channel-config');
+
+    await saveChannelConfig('dingtalk', {
+      clientId: 'dt-main',
+      clientSecret: 'secret-main',
+    }, 'default');
+    await saveChannelConfig('dingtalk', {
+      clientId: 'dt-sales',
+      clientSecret: 'secret-sales',
+    }, 'sales');
+    await setChannelDefaultAccount('dingtalk', 'sales');
+
+    const config = await readOpenClawJson();
+    const channels = config.channels as Record<string, {
+      defaultAccount?: string;
+      clientId?: string;
+      clientSecret?: string;
+      accounts?: Record<string, { clientId?: string; clientSecret?: string }>;
+    }>;
+
+    expect(channels.dingtalk.defaultAccount).toBe('sales');
+    expect(channels.dingtalk.accounts).toEqual({
+      default: {
+        clientId: 'dt-main',
+        clientSecret: 'secret-main',
+        enabled: true,
+      },
+      sales: {
+        clientId: 'dt-sales',
+        clientSecret: 'secret-sales',
+        enabled: true,
+      },
+    });
+    expect(channels.dingtalk.clientId).toBe('dt-sales');
+    expect(channels.dingtalk.clientSecret).toBe('secret-sales');
+  });
+
+  it('deletes only the targeted dingtalk account when multiple accounts exist', async () => {
+    const { deleteChannelAccountConfig, saveChannelConfig } = await import('@electron/utils/channel-config');
+
+    await saveChannelConfig('dingtalk', {
+      clientId: 'dt-main',
+      clientSecret: 'secret-main',
+    }, 'default');
+    await saveChannelConfig('dingtalk', {
+      clientId: 'dt-sales',
+      clientSecret: 'secret-sales',
+    }, 'sales');
+
+    await deleteChannelAccountConfig('dingtalk', 'sales');
+
+    const config = await readOpenClawJson();
+    const channels = config.channels as Record<string, {
+      defaultAccount?: string;
+      accounts?: Record<string, { clientId?: string }>;
+    }>;
+
+    expect(channels.dingtalk.defaultAccount).toBe('default');
+    expect(channels.dingtalk.accounts).toEqual({
+      default: {
+        clientId: 'dt-main',
+        clientSecret: 'secret-main',
+        enabled: true,
+      },
+    });
+  });
+
+  it('clears stale top-level dingtalk fields when switching the default account', async () => {
+    const { saveChannelConfig, setChannelDefaultAccount } = await import('@electron/utils/channel-config');
+
+    await saveChannelConfig('dingtalk', {
+      clientId: 'dt-main',
+      clientSecret: 'secret-main',
+      robotCode: 'robot-main',
+      corpId: 'corp-main',
+    }, 'default');
+    await saveChannelConfig('dingtalk', {
+      clientId: 'dt-sales',
+      clientSecret: 'secret-sales',
+    }, 'sales');
+
+    await setChannelDefaultAccount('dingtalk', 'sales');
+
+    const config = await readOpenClawJson();
+    const channels = config.channels as Record<string, Record<string, unknown>>;
+
+    expect(channels.dingtalk.defaultAccount).toBe('sales');
+    expect(channels.dingtalk.clientId).toBe('dt-sales');
+    expect(channels.dingtalk.clientSecret).toBe('secret-sales');
+    expect(channels.dingtalk.robotCode).toBeUndefined();
+    expect(channels.dingtalk.corpId).toBeUndefined();
+  });
+
+  it('clears stale top-level dingtalk fields when deleting the current default account', async () => {
+    const { deleteChannelAccountConfig, saveChannelConfig, setChannelDefaultAccount } = await import('@electron/utils/channel-config');
+
+    await saveChannelConfig('dingtalk', {
+      clientId: 'dt-main',
+      clientSecret: 'secret-main',
+    }, 'default');
+    await saveChannelConfig('dingtalk', {
+      clientId: 'dt-sales',
+      clientSecret: 'secret-sales',
+      agentId: 'agent-sales',
+      robotCode: 'robot-sales',
+    }, 'sales');
+    await setChannelDefaultAccount('dingtalk', 'sales');
+
+    await deleteChannelAccountConfig('dingtalk', 'sales');
+
+    const config = await readOpenClawJson();
+    const channels = config.channels as Record<string, Record<string, unknown>>;
+
+    expect(channels.dingtalk.defaultAccount).toBe('default');
+    expect(channels.dingtalk.clientId).toBe('dt-main');
+    expect(channels.dingtalk.clientSecret).toBe('secret-main');
+    expect(channels.dingtalk.agentId).toBeUndefined();
+    expect(channels.dingtalk.robotCode).toBeUndefined();
+  });
 });
 
 describe('WeChat dangling plugin cleanup', () => {
