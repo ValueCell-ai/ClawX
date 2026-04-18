@@ -16,6 +16,10 @@ import { warmupNetworkOptimization } from '../utils/uv-env';
 import { initTelemetry } from '../utils/telemetry';
 
 import { ClawHubService } from '../gateway/clawhub';
+import { extensionRegistry } from '../extensions/registry';
+import { loadExtensionsFromManifest } from '../extensions/loader';
+import { registerAllBuiltinExtensions } from '../extensions/builtin';
+import { loadExternalMainExtensions } from '../extensions/_ext-bridge.generated';
 import { ensureClawXContext, repairClawXOnlyBootstrapFiles } from '../utils/openclaw-workspace';
 import { autoInstallCliIfNeeded, generateCompletionCache, installCompletionToProfile } from '../utils/openclaw-cli';
 import { isQuitting, setQuitting } from './app-state';
@@ -340,6 +344,19 @@ async function initialize(): Promise<void> {
     mainWindow: window,
   });
 
+  // Initialize extension system
+  await extensionRegistry.initialize({
+    gatewayManager,
+    eventBus: hostEventBus,
+    getMainWindow: () => mainWindow,
+  });
+
+  // Wire marketplace provider to ClawHubService if an extension provides one
+  const marketplaceProvider = extensionRegistry.getMarketplaceProvider();
+  if (marketplaceProvider) {
+    clawHubService.setMarketplaceProvider(marketplaceProvider);
+  }
+
   // Register update handlers
   registerUpdateHandlers(appUpdater, window);
 
@@ -521,6 +538,13 @@ if (gotTheLock) {
   clawHubService = new ClawHubService();
   hostEventBus = new HostEventBus();
 
+  // Register builtin extensions and load manifest
+  registerAllBuiltinExtensions();
+  loadExternalMainExtensions();
+  void loadExtensionsFromManifest().catch((err) => {
+    logger.warn('Failed to load extensions from manifest:', err);
+  });
+
   // When a second instance is launched, focus the existing window instead.
   app.on('second-instance', () => {
     logger.info('Second ClawX instance detected; redirecting to the existing window');
@@ -578,6 +602,7 @@ if (gotTheLock) {
 
     hostEventBus.closeAll();
     hostApiServer?.close();
+    void extensionRegistry.teardownAll();
 
     const stopPromise = gatewayManager.stop().catch((err) => {
       logger.warn('gatewayManager.stop() error during quit:', err);

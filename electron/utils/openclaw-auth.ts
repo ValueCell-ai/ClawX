@@ -1192,6 +1192,18 @@ export async function syncBrowserConfigToOpenClaw(): Promise<void> {
       changed = true;
     }
 
+    // Default ssrfPolicy to allow private network access for enterprise/internal use
+    if (browser.ssrfPolicy == null) {
+      browser.ssrfPolicy = { dangerouslyAllowPrivateNetwork: true };
+      changed = true;
+    } else if (
+      typeof browser.ssrfPolicy === 'object' &&
+      (browser.ssrfPolicy as Record<string, unknown>).dangerouslyAllowPrivateNetwork === undefined
+    ) {
+      (browser.ssrfPolicy as Record<string, unknown>).dangerouslyAllowPrivateNetwork = true;
+      changed = true;
+    }
+
     if (!changed) return;
 
     config.browser = browser;
@@ -1263,7 +1275,10 @@ export async function batchSyncConfigFields(token: string): Promise<void> {
         ? { ...(gateway.auth as Record<string, unknown>) }
         : {}
     ) as Record<string, unknown>;
-    auth.mode = 'token';
+    if (auth.mode !== 'token') {
+      auth.mode = 'token';
+      modified = true;
+    }
     if (auth.token !== token) {
       auth.token = token;
       modified = true;
@@ -1302,6 +1317,19 @@ export async function batchSyncConfigFields(token: string): Promise<void> {
     }
     if (browser.defaultProfile === undefined) {
       browser.defaultProfile = 'openclaw';
+      config.browser = browser;
+      modified = true;
+    }
+    // Default ssrfPolicy to allow private network access for enterprise/internal use
+    if (browser.ssrfPolicy == null) {
+      browser.ssrfPolicy = { dangerouslyAllowPrivateNetwork: true };
+      config.browser = browser;
+      modified = true;
+    } else if (
+      typeof browser.ssrfPolicy === 'object' &&
+      (browser.ssrfPolicy as Record<string, unknown>).dangerouslyAllowPrivateNetwork === undefined
+    ) {
+      (browser.ssrfPolicy as Record<string, unknown>).dangerouslyAllowPrivateNetwork = true;
       config.browser = browser;
       modified = true;
     }
@@ -1643,6 +1671,51 @@ export async function sanitizeOpenClawConfig(): Promise<void> {
       const allowArr = Array.isArray(pluginsObj.allow) ? pluginsObj.allow as string[] : [];
       if (!Array.isArray(pluginsObj.allow)) {
         pluginsObj.allow = allowArr;
+      }
+
+      // ── acpx legacy config/install cleanup ─────────────────────
+      // Older OpenClaw releases allowed plugins.entries.acpx.config.command
+      // and expectedVersion overrides. Current bundled acpx schema rejects
+      // them, which causes the Gateway to fail validation before startup.
+      // Strip those keys and drop stale installs metadata that still points
+      // at an older bundled OpenClaw tree so the current bundled plugin can
+      // be re-registered cleanly.
+      const acpxEntry = isPlainRecord(pEntries.acpx) ? pEntries.acpx as Record<string, unknown> : null;
+      const acpxConfig = acpxEntry && isPlainRecord(acpxEntry.config)
+        ? acpxEntry.config as Record<string, unknown>
+        : null;
+      if (acpxConfig) {
+        for (const legacyKey of ['command', 'expectedVersion'] as const) {
+          if (legacyKey in acpxConfig) {
+            delete acpxConfig[legacyKey];
+            modified = true;
+            console.log(`[sanitize] Removed legacy plugins.entries.acpx.config.${legacyKey}`);
+          }
+        }
+      }
+
+      const installs = isPlainRecord(pluginsObj.installs) ? pluginsObj.installs as Record<string, unknown> : null;
+      const acpxInstall = installs && isPlainRecord(installs.acpx) ? installs.acpx as Record<string, unknown> : null;
+      if (acpxInstall) {
+        const currentBundledAcpxDir = join(getOpenClawResolvedDir(), 'dist', 'extensions', 'acpx').replace(/\\/g, '/');
+        const sourcePath = typeof acpxInstall.sourcePath === 'string' ? acpxInstall.sourcePath : '';
+        const installPath = typeof acpxInstall.installPath === 'string' ? acpxInstall.installPath : '';
+        const normalizedSourcePath = sourcePath.replace(/\\/g, '/');
+        const normalizedInstallPath = installPath.replace(/\\/g, '/');
+        const pointsAtDifferentBundledTree = [normalizedSourcePath, normalizedInstallPath].some(
+          (candidate) => candidate.includes('/node_modules/.pnpm/openclaw@') && candidate !== currentBundledAcpxDir,
+        );
+        const pointsAtMissingPath = (sourcePath && !(await fileExists(sourcePath)))
+          || (installPath && !(await fileExists(installPath)));
+
+        if (pointsAtDifferentBundledTree || pointsAtMissingPath) {
+          delete installs.acpx;
+          if (Object.keys(installs).length === 0) {
+            delete pluginsObj.installs;
+          }
+          modified = true;
+          console.log('[sanitize] Removed stale plugins.installs.acpx metadata');
+        }
       }
 
       const installedFeishuId = await resolveInstalledFeishuPluginId();

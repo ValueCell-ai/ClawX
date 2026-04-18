@@ -97,6 +97,9 @@ function maybeLoadSessions(
   state: { loadSessions: () => Promise<void> },
   force = false,
 ): void {
+  const { status } = useGatewayStore.getState();
+  if (status.gatewayReady === false) return;
+
   const now = Date.now();
   if (!force && now - lastLoadSessionsAt < LOAD_SESSIONS_MIN_INTERVAL_MS) return;
   lastLoadSessionsAt = now;

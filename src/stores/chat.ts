@@ -7,7 +7,6 @@ import { create } from 'zustand';
 import { hostApiFetch } from '@/lib/host-api';
 import {
   buildAttachedAgentSessionKey,
-  buildMainAgentSessionKey,
   getAgentIdFromSessionKey,
   getAttachedAgentIds,
   normalizeAgentId,
@@ -274,14 +273,181 @@ function saveImageCache(cache: Map<string, AttachedFileMeta>): void {
 
 const _imageCache = loadImageCache();
 
+function normalizeBlockText(text: string | undefined): string {
+  return typeof text === 'string' ? text.replace(/\r\n/g, '\n').trim() : '';
+}
+
+function compactProgressiveTextParts(parts: string[]): string[] {
+  const compacted: string[] = [];
+
+  for (const part of parts) {
+    const current = normalizeBlockText(part);
+    if (!current) continue;
+
+    const previous = compacted.at(-1);
+    if (!previous) {
+      compacted.push(part);
+      continue;
+    }
+
+    const normalizedPrevious = normalizeBlockText(previous);
+    if (!normalizedPrevious) {
+      compacted[compacted.length - 1] = part;
+      continue;
+    }
+
+    if (current === normalizedPrevious || normalizedPrevious.startsWith(current)) {
+      continue;
+    }
+
+    if (current.startsWith(normalizedPrevious)) {
+      compacted[compacted.length - 1] = part;
+      continue;
+    }
+
+    compacted.push(part);
+  }
+
+  return compacted;
+}
+
+function normalizeLiveContentBlocks(content: ContentBlock[]): ContentBlock[] {
+  const normalized: ContentBlock[] = [];
+
+  let textBuffer: string[] = [];
+  let thinkingBuffer: string[] = [];
+
+  const flushTextBuffer = () => {
+    for (const part of compactProgressiveTextParts(textBuffer)) {
+      normalized.push({ type: 'text', text: part });
+    }
+    textBuffer = [];
+  };
+
+  const flushThinkingBuffer = () => {
+    for (const part of compactProgressiveTextParts(thinkingBuffer)) {
+      normalized.push({ type: 'thinking', thinking: part });
+    }
+    thinkingBuffer = [];
+  };
+
+  for (const block of content) {
+    if (block.type === 'text' && block.text) {
+      textBuffer.push(block.text);
+      continue;
+    }
+
+    if (block.type === 'thinking' && block.thinking) {
+      thinkingBuffer.push(block.thinking);
+      continue;
+    }
+
+    flushTextBuffer();
+    flushThinkingBuffer();
+    normalized.push(block);
+  }
+
+  flushTextBuffer();
+  flushThinkingBuffer();
+
+  return normalized;
+}
+
+function normalizeStreamingMessage(message: unknown): unknown {
+  if (!message || typeof message !== 'object') return message;
+
+  const rawMessage = message as RawMessage;
+  const rawContent = rawMessage.content;
+  if (!Array.isArray(rawContent)) return rawMessage;
+
+  const normalizedContent = normalizeLiveContentBlocks(rawContent as ContentBlock[]);
+  const didChange = normalizedContent.some((block, index) => block !== rawContent[index])
+    || normalizedContent.length !== rawContent.length;
+
+  return didChange
+    ? { ...rawMessage, content: normalizedContent }
+    : rawMessage;
+}
+
+function normalizeComparableUserText(content: unknown): string {
+  return getMessageText(content)
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function getComparableAttachmentSignature(message: Pick<RawMessage, '_attachedFiles'>): string {
+  const files = (message._attachedFiles || [])
+    .map((file) => file.filePath || `${file.fileName}|${file.mimeType}|${file.fileSize}`)
+    .filter(Boolean)
+    .sort();
+  return files.join('::');
+}
+
+function matchesOptimisticUserMessage(
+  candidate: RawMessage,
+  optimistic: RawMessage,
+  optimisticTimestampMs: number,
+): boolean {
+  if (candidate.role !== 'user') return false;
+
+  const optimisticText = normalizeComparableUserText(optimistic.content);
+  const candidateText = normalizeComparableUserText(candidate.content);
+  const sameText = optimisticText.length > 0 && optimisticText === candidateText;
+
+  const optimisticAttachments = getComparableAttachmentSignature(optimistic);
+  const candidateAttachments = getComparableAttachmentSignature(candidate);
+  const sameAttachments = optimisticAttachments.length > 0 && optimisticAttachments === candidateAttachments;
+
+  const hasOptimisticTimestamp = Number.isFinite(optimisticTimestampMs) && optimisticTimestampMs > 0;
+  const hasCandidateTimestamp = candidate.timestamp != null;
+  const timestampMatches = hasOptimisticTimestamp && hasCandidateTimestamp
+    ? Math.abs(toMs(candidate.timestamp as number) - optimisticTimestampMs) < 5000
+    : false;
+
+  if (sameText && sameAttachments) return true;
+  if (sameText && (!optimisticAttachments || !candidateAttachments) && (timestampMatches || !hasCandidateTimestamp)) return true;
+  if (sameAttachments && (!optimisticText || !candidateText) && (timestampMatches || !hasCandidateTimestamp)) return true;
+  return false;
+}
+
+function snapshotStreamingAssistantMessage(
+  currentStream: RawMessage | null,
+  existingMessages: RawMessage[],
+  runId: string,
+  metadata?: Pick<RawMessage, '_agentId' | '_sourceSessionKey'>,
+): RawMessage[] {
+  if (!currentStream) return [];
+
+  const normalizedStream = normalizeStreamingMessage(currentStream) as RawMessage;
+  const streamRole = normalizedStream.role;
+  if (streamRole !== 'assistant' && streamRole !== undefined) return [];
+
+  const snapId = normalizedStream.id || `${runId || 'run'}-turn-${existingMessages.length}`;
+  if (existingMessages.some((message) => message.id === snapId)) return [];
+
+  return [{
+    ...normalizedStream,
+    role: 'assistant',
+    id: snapId,
+    ...(metadata?._agentId ? { _agentId: metadata._agentId } : {}),
+    ...(metadata?._sourceSessionKey ? { _sourceSessionKey: metadata._sourceSessionKey } : {}),
+  }];
+}
+
+function getLatestOptimisticUserMessage(messages: RawMessage[], userTimestampMs: number): RawMessage | undefined {
+  return [...messages].reverse().find(
+    (message) => message.role === 'user' && (!message.timestamp || Math.abs(toMs(message.timestamp) - userTimestampMs) < 5000),
+  );
+}
+
 /** Extract plain text from message content (string or content blocks) */
 function getMessageText(content: unknown): string {
   if (typeof content === 'string') return content;
   if (Array.isArray(content)) {
-    return (content as Array<{ type?: string; text?: string }>)
+    const parts = (content as Array<{ type?: string; text?: string }>)
       .filter(b => b.type === 'text' && b.text)
-      .map(b => b.text!)
-      .join('\n');
+      .map(b => b.text!);
+    return compactProgressiveTextParts(parts).join('\n');
   }
   return '';
 }
@@ -1528,7 +1694,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
   },
 
   openAgentSession: (agentId: string) => {
-    const nextSessionKey = buildMainAgentSessionKey(agentId);
+    const nextSessionKey = resolveAgentMainSessionKey(agentId);
     if (nextSessionKey === get().currentSessionKey) {
       void get().loadHistory(true);
       return;
@@ -1739,32 +1905,25 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
       const applyLoadedMessages = (rawMessages: RawMessage[], thinkingLevel: string | null) => {
         if (!isCurrentSession()) return false;
-        const visibleHistoryMessages = prepareVisibleHistoryMessages(rawMessages, currentSessionKey);
-        const filteredMessages = visibleHistoryMessages.filter((msg) => !isToolResultRole(msg.role));
+        let primaryMessages = prepareVisibleHistoryMessages(rawMessages, currentSessionKey);
 
         // Preserve the optimistic user message during an active send.
         // The Gateway may not include the user's message in chat.history
         // until the run completes, causing it to flash out of the UI.
-        let primaryMessages = visibleHistoryMessages;
         const userMsgAt = get().lastUserMessageAt;
         if (get().sending && userMsgAt) {
           const userMsMs = toMs(userMsgAt);
-          const hasRecentUser = visibleHistoryMessages.some(
-            (m) => m.role === 'user' && m.timestamp && Math.abs(toMs(m.timestamp) - userMsMs) < 5000,
-          );
-          if (!hasRecentUser) {
-            const currentMsgs = get().messages;
-            const optimistic = [...currentMsgs].reverse().find(
-              (m) => m.role === 'user' && m.timestamp && Math.abs(toMs(m.timestamp) - userMsMs) < 5000,
-            );
-            if (optimistic) {
-              primaryMessages = [...visibleHistoryMessages, optimistic];
-            }
+          const optimistic = getLatestOptimisticUserMessage(get().messages, userMsMs);
+          const hasMatchingUser = optimistic
+            ? primaryMessages.some((message) => matchesOptimisticUserMessage(message, optimistic, userMsMs))
+            : false;
+          if (optimistic && !hasMatchingUser) {
+            primaryMessages = [...primaryMessages, optimistic];
           }
         }
 
-        const finalMessages = getConversationMessages(currentSessionKey, primaryMessages);
-        set({ messages: finalMessages, thinkingLevel, loading: false });
+        const conversationMessages = getConversationMessages(currentSessionKey, primaryMessages);
+        set({ messages: conversationMessages, thinkingLevel, loading: false });
 
         const isMainSession = currentSessionKey.endsWith(':main');
         if (!isMainSession) {
@@ -1780,8 +1939,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
           }
         }
 
-          // Record last activity time from the last message in history
-          const lastMsg = primaryMessages[primaryMessages.length - 1];
+        // Record last activity time from the last message in history
+        const lastMsg = primaryMessages[primaryMessages.length - 1];
         if (lastMsg?.timestamp) {
           const lastAt = toMs(lastMsg.timestamp);
           set((s) => ({
@@ -1789,27 +1948,27 @@ export const useChatStore = create<ChatState>((set, get) => ({
           }));
         }
 
-          loadMissingPreviews(finalMessages).then((updated) => {
-            if (!isCurrentSession()) return;
-            if (updated) {
-              set((state) => ({
-                messages: mergeHydratedMessages(state.messages, finalMessages),
-              }));
-            }
-          });
-          const { pendingFinal, lastUserMessageAt, sending: isSendingNow } = get();
+        void loadMissingPreviews(conversationMessages).then((updated) => {
+          if (!isCurrentSession()) return;
+          if (updated) {
+            set((state) => ({
+              messages: mergeHydratedMessages(state.messages, conversationMessages),
+            }));
+          }
+        });
+        const { pendingFinal, lastUserMessageAt, sending: isSendingNow } = get();
 
-          // If we're sending but haven't received streaming events, check
-          // whether the loaded history reveals intermediate tool-call activity.
-          // This surfaces progress via the pendingFinal → ActivityIndicator path.
-          const userMsTs = lastUserMessageAt ? toMs(lastUserMessageAt) : 0;
+        // If we're sending but haven't received streaming events, check
+        // whether the loaded history reveals intermediate tool-call activity.
+        // This surfaces progress via the pendingFinal -> ActivityIndicator path.
+        const userMsTs = lastUserMessageAt ? toMs(lastUserMessageAt) : 0;
         const isAfterUserMsg = (msg: RawMessage): boolean => {
           if (!userMsTs || !msg.timestamp) return true;
           return toMs(msg.timestamp) >= userMsTs;
         };
 
         if (isSendingNow && !pendingFinal) {
-          const hasRecentAssistantActivity = [...filteredMessages].reverse().some((msg) => {
+          const hasRecentAssistantActivity = [...primaryMessages].reverse().some((msg) => {
             if (msg.role !== 'assistant') return false;
             return isAfterUserMsg(msg);
           });
@@ -1818,9 +1977,9 @@ export const useChatStore = create<ChatState>((set, get) => ({
           }
         }
 
-          // If pendingFinal, check whether the AI produced a final text response.
-          if (pendingFinal || get().pendingFinal) {
-          const recentAssistant = [...filteredMessages].reverse().find((msg) => {
+        // If pendingFinal, check whether the AI produced a final text response.
+        if (pendingFinal || get().pendingFinal) {
+          const recentAssistant = [...primaryMessages].reverse().find((msg) => {
             if (msg.role !== 'assistant') return false;
             if (!hasNonToolAssistantContent(msg)) return false;
             return isAfterUserMsg(msg);
@@ -1830,8 +1989,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
             set({ sending: false, activeRunId: null, pendingFinal: false });
           }
         }
-          return true;
-        };
+        return true;
+      };
 
       try {
         let data: Record<string, unknown> | null = null;
@@ -2192,7 +2351,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
               const msgRole = (event.message as RawMessage).role;
               if (isToolResultRole(msgRole)) return s.streamingMessage;
             }
-            return event.message ?? s.streamingMessage;
+            return normalizeStreamingMessage(event.message ?? s.streamingMessage);
           })(),
           streamingTools: updates.length > 0 ? upsertToolStatuses(s.streamingTools, updates) : s.streamingTools,
         }));
@@ -2204,17 +2363,18 @@ export const useChatStore = create<ChatState>((set, get) => ({
         // Message complete - add to history and clear streaming
         const finalMsg = event.message as RawMessage | undefined;
         if (finalMsg) {
-          const updates = collectToolUpdates(finalMsg, resolvedState);
-          if (isToolResultRole(finalMsg.role)) {
+          const normalizedFinalMessage = normalizeStreamingMessage(finalMsg) as RawMessage;
+          const updates = collectToolUpdates(normalizedFinalMessage, resolvedState);
+          if (isToolResultRole(normalizedFinalMessage.role)) {
             // Resolve file path from the streaming assistant message's matching tool call
             const currentStreamForPath = get().streamingMessage as RawMessage | null;
-            const matchedPath = (currentStreamForPath && finalMsg.toolCallId)
-              ? getToolCallFilePath(currentStreamForPath, finalMsg.toolCallId)
+            const matchedPath = (currentStreamForPath && normalizedFinalMessage.toolCallId)
+              ? getToolCallFilePath(currentStreamForPath, normalizedFinalMessage.toolCallId)
               : undefined;
 
             // Mirror enrichWithToolResultFiles: collect images + file refs for next assistant msg
             const toolFiles: AttachedFileMeta[] = [
-              ...extractImagesAsAttachedFiles(finalMsg.content),
+              ...extractImagesAsAttachedFiles(normalizedFinalMessage.content),
             ];
             if (matchedPath) {
               for (const f of toolFiles) {
@@ -2224,7 +2384,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
                 }
               }
             }
-            const text = getMessageText(finalMsg.content);
+            const text = getMessageText(normalizedFinalMessage.content);
             if (text) {
               const mediaRefs = extractMediaRefs(text);
               const mediaRefPaths = new Set(mediaRefs.map(r => r.filePath));
@@ -2240,24 +2400,10 @@ export const useChatStore = create<ChatState>((set, get) => ({
               // tool result. Without snapshotting here, the intermediate thinking+tool steps
               // would be overwritten by the next turn's deltas and never appear in the UI.
               const currentStream = s.streamingMessage as RawMessage | null;
-              const snapshotMsgs: RawMessage[] = [];
-              if (currentStream) {
-                const streamRole = currentStream.role;
-                if (streamRole === 'assistant' || streamRole === undefined) {
-                  // Use message's own id if available, otherwise derive a stable one from runId
-                  const snapId = currentStream.id
-                    || `${runId || 'run'}-turn-${s.messages.length}`;
-                  if (!s.messages.some(m => m.id === snapId)) {
-                    snapshotMsgs.push({
-                      ...(currentStream as RawMessage),
-                      role: 'assistant',
-                      id: snapId,
-                      _agentId: currentMessageAgentId,
-                      _sourceSessionKey: currentSessionKey,
-                    });
-                  }
-                }
-              }
+              const snapshotMsgs = snapshotStreamingAssistantMessage(currentStream, s.messages, runId, {
+                _agentId: currentMessageAgentId,
+                _sourceSessionKey: currentSessionKey,
+              });
               return {
                 messages: snapshotMsgs.length > 0 ? [...s.messages, ...snapshotMsgs] : s.messages,
                 streamingText: '',
@@ -2271,9 +2417,9 @@ export const useChatStore = create<ChatState>((set, get) => ({
             });
             break;
           }
-          const toolOnly = isToolOnlyMessage(finalMsg);
-          const hasOutput = hasNonToolAssistantContent(finalMsg);
-          const msgId = finalMsg.id || (toolOnly ? `run-${runId}-tool-${Date.now()}` : `run-${runId}`);
+          const toolOnly = isToolOnlyMessage(normalizedFinalMessage);
+          const hasOutput = hasNonToolAssistantContent(normalizedFinalMessage);
+          const msgId = normalizedFinalMessage.id || (toolOnly ? `run-${runId}-tool-${Date.now()}` : `run-${runId}`);
           set((s) => {
             const nextTools = updates.length > 0 ? upsertToolStatuses(s.streamingTools, updates) : s.streamingTools;
             const streamingTools = hasOutput ? [] : nextTools;
@@ -2282,16 +2428,16 @@ export const useChatStore = create<ChatState>((set, get) => ({
             const pendingImgs = s.pendingToolImages;
             const msgWithImages: RawMessage = pendingImgs.length > 0
               ? {
-                ...finalMsg,
-                role: (finalMsg.role || 'assistant') as RawMessage['role'],
+                ...normalizedFinalMessage,
+                role: (normalizedFinalMessage.role || 'assistant') as RawMessage['role'],
                 id: msgId,
                 _agentId: currentMessageAgentId,
                 _sourceSessionKey: currentSessionKey,
-                _attachedFiles: [...(finalMsg._attachedFiles || []), ...pendingImgs],
+                _attachedFiles: [...(normalizedFinalMessage._attachedFiles || []), ...pendingImgs],
               }
               : {
-                ...finalMsg,
-                role: (finalMsg.role || 'assistant') as RawMessage['role'],
+                ...normalizedFinalMessage,
+                role: (normalizedFinalMessage.role || 'assistant') as RawMessage['role'],
                 id: msgId,
                 _agentId: currentMessageAgentId,
                 _sourceSessionKey: currentSessionKey,
@@ -2356,21 +2502,19 @@ export const useChatStore = create<ChatState>((set, get) => ({
         // content ("Let me get that written down...") is preserved in the UI
         // rather than being silently discarded.
         const currentStream = get().streamingMessage as RawMessage | null;
-        if (currentStream && (currentStream.role === 'assistant' || currentStream.role === undefined)) {
-          const snapId = (currentStream as RawMessage).id
-            || `error-snap-${Date.now()}`;
-          const alreadyExists = get().messages.some(m => m.id === snapId);
-          if (!alreadyExists) {
-            set((s) => ({
-              messages: [...s.messages, {
-                ...currentStream,
-                role: 'assistant' as const,
-                id: snapId,
-                _agentId: currentMessageAgentId,
-                _sourceSessionKey: currentSessionKey,
-              }],
-            }));
-          }
+        const errorSnapshot = snapshotStreamingAssistantMessage(
+          currentStream,
+          get().messages,
+          `error-${runId || Date.now()}`,
+          {
+            _agentId: currentMessageAgentId,
+            _sourceSessionKey: currentSessionKey,
+          },
+        );
+        if (errorSnapshot.length > 0) {
+          set((s) => ({
+            messages: [...s.messages, ...errorSnapshot],
+          }));
         }
 
         set({

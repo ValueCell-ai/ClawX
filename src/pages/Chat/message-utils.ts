@@ -25,6 +25,44 @@ function cleanUserText(text: string): string {
     .trim();
 }
 
+function normalizeProgressiveText(text: string | undefined): string {
+  return typeof text === 'string' ? text.replace(/\r\n/g, '\n').trim() : '';
+}
+
+function compactProgressiveParts(parts: string[]): string[] {
+  const compacted: string[] = [];
+
+  for (const part of parts) {
+    const current = normalizeProgressiveText(part);
+    if (!current) continue;
+
+    const previous = compacted.at(-1);
+    if (!previous) {
+      compacted.push(part);
+      continue;
+    }
+
+    const normalizedPrevious = normalizeProgressiveText(previous);
+    if (!normalizedPrevious) {
+      compacted[compacted.length - 1] = part;
+      continue;
+    }
+
+    if (current === normalizedPrevious || normalizedPrevious.startsWith(current)) {
+      continue;
+    }
+
+    if (current.startsWith(normalizedPrevious)) {
+      compacted[compacted.length - 1] = part;
+      continue;
+    }
+
+    compacted.push(part);
+  }
+
+  return compacted;
+}
+
 /**
  * Extract displayable text from a message's content field.
  * Handles both string content and array-of-blocks content.
@@ -49,7 +87,7 @@ export function extractText(message: RawMessage | unknown): string {
         }
       }
     }
-    const combined = parts.join('\n\n');
+    const combined = compactProgressiveParts(parts).join('\n\n');
     result = combined.trim().length > 0 ? combined : '';
   } else if (typeof msg.text === 'string') {
     // Fallback: try .text field
@@ -85,7 +123,7 @@ export function extractThinking(message: RawMessage | unknown): string | null {
     }
   }
 
-  const combined = parts.join('\n\n').trim();
+  const combined = compactProgressiveParts(parts).join('\n\n').trim();
   return combined.length > 0 ? combined : null;
 }
 

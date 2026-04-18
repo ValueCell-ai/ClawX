@@ -1,6 +1,6 @@
 {
     "name": "clawx",
-    "version": "0.3.9",
+    "version": "0.3.10-beta.2",
     "pnpm": {
         "onlyBuiltDependencies": [
             "@discordjs/opus",
@@ -33,9 +33,10 @@
     "private": true,
     "scripts": {
         "init": "pnpm install && pnpm run uv:download",
-        "predev": "zx scripts/prepare-preinstalled-skills-dev.mjs",
+        "predev": "node scripts/generate-ext-bridge.mjs && zx scripts/prepare-preinstalled-skills-dev.mjs",
         "dev": "vite",
-        "build": "vite build && zx scripts/bundle-openclaw.mjs && zx scripts/bundle-openclaw-plugins.mjs && zx scripts/bundle-preinstalled-skills.mjs && electron-builder",
+        "ext:bridge": "node scripts/generate-ext-bridge.mjs",
+        "build": "node scripts/generate-ext-bridge.mjs && vite build && zx scripts/bundle-openclaw.mjs && zx scripts/bundle-openclaw-plugins.mjs && zx scripts/bundle-preinstalled-skills.mjs && electron-builder",
         "build:vite": "vite build",
         "bundle:openclaw-plugins": "zx scripts/bundle-openclaw-plugins.mjs",
         "bundle:preinstalled-skills": "zx scripts/bundle-preinstalled-skills.mjs",
@@ -55,7 +56,7 @@
         "node:download:win": "zx scripts/download-bundled-node.mjs --platform=win",
         "prep:win-binaries": "pnpm run uv:download:win && pnpm run node:download:win",
         "icons": "zx scripts/generate-icons.mjs",
-        "package": "vite build && zx scripts/bundle-openclaw.mjs && zx scripts/bundle-openclaw-plugins.mjs && zx scripts/bundle-preinstalled-skills.mjs",
+        "package": "node scripts/generate-ext-bridge.mjs && vite build && zx scripts/bundle-openclaw.mjs && zx scripts/bundle-openclaw-plugins.mjs && zx scripts/bundle-preinstalled-skills.mjs",
         "package:mac": "pnpm run package && electron-builder --mac --publish never",
         "package:mac:local": "SKIP_PREINSTALLED_SKILLS=1 pnpm run package && electron-builder --mac --publish never",
         "package:win": "pnpm run prep:win-binaries && pnpm run package && electron-builder --win --publish never",
@@ -79,7 +80,8 @@
     },
     "devDependencies": {
         "@eslint/js": "^10.0.1",
-        "@larksuite/openclaw-lark": "2026.4.7",
+        "@larksuite/openclaw-lark": "2026.4.8",
+        "@playwright/test": "^1.56.1",
         "@radix-ui/react-dialog": "^1.1.15",
         "@radix-ui/react-dropdown-menu": "^2.1.16",
         "@radix-ui/react-label": "^2.1.8",
@@ -92,7 +94,6 @@
         "@radix-ui/react-tabs": "^1.1.13",
         "@radix-ui/react-toast": "^1.2.15",
         "@radix-ui/react-tooltip": "^1.2.8",
-        "@playwright/test": "^1.56.1",
         "@soimy/dingtalk": "^3.5.3",
         "@tencent-weixin/openclaw-weixin": "^2.1.8",
         "@testing-library/jest-dom": "^6.9.1",
@@ -119,7 +120,7 @@
         "i18next": "^25.8.11",
         "jsdom": "^28.1.0",
         "lucide-react": "^0.563.0",
-        "openclaw": "2026.4.11",
+        "openclaw": "2026.4.15",
         "png2icons": "^2.0.1",
         "postcss": "^8.5.6",
         "react": "^19.2.4",

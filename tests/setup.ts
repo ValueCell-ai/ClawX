@@ -5,8 +5,31 @@
 import { vi } from 'vitest';
 import '@testing-library/jest-dom';
 
+// Provide a minimal `electron` mock so tests that transitively import
+// main-process code (logger, store, etc.) don't blow up when the Electron
+// binary is not present (e.g. CI with ELECTRON_SKIP_BINARY_DOWNLOAD=1).
+// Individual test files can override with their own vi.mock('electron', ...).
+vi.mock('electron', () => ({
+  app: {
+    getPath: vi.fn().mockReturnValue('/tmp/clawx-test'),
+    getVersion: vi.fn().mockReturnValue('0.0.0-test'),
+    getName: vi.fn().mockReturnValue('clawx-test'),
+    isPackaged: false,
+    isReady: vi.fn().mockResolvedValue(true),
+    on: vi.fn(),
+    off: vi.fn(),
+    quit: vi.fn(),
+    whenReady: vi.fn().mockResolvedValue(undefined),
+  },
+  BrowserWindow: vi.fn(),
+  ipcMain: { on: vi.fn(), handle: vi.fn(), removeHandler: vi.fn() },
+  dialog: { showOpenDialog: vi.fn(), showMessageBox: vi.fn() },
+  shell: { openExternal: vi.fn() },
+  session: { defaultSession: { webRequest: { onBeforeSendHeaders: vi.fn() } } },
+  utilityProcess: {},
+}));
+
 if (typeof window !== 'undefined') {
-  // Mock window.electron API
   const mockElectron = {
     ipcRenderer: {
       invoke: vi.fn(),
@@ -24,7 +47,6 @@ if (typeof window !== 'undefined') {
     writable: true,
   });
 
-  // Mock matchMedia
   Object.defineProperty(window, 'matchMedia', {
     writable: true,
     value: vi.fn().mockImplementation((query) => ({
@@ -40,7 +62,6 @@ if (typeof window !== 'undefined') {
   });
 }
 
-// Reset mocks after each test
 afterEach(() => {
   vi.clearAllMocks();
 });

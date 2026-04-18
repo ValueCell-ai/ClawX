@@ -66,5 +66,10 @@ artifacts/
 docs/pr-session-notes-*.md
 
 .cursor/
+.claude/
 .pnpm-store/
 package-lock.json
+
+# Generated extension bridges (created by scripts/generate-ext-bridge.mjs)
+electron/extensions/_ext-bridge.generated.ts
+src/extensions/_ext-bridge.generated.ts

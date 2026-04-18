@@ -203,6 +203,31 @@ describe('deriveTaskSteps', () => {
     ]);
   });
 
+  it('collapses cumulative streaming thinking details into the newest version', () => {
+    const steps = deriveTaskSteps({
+      messages: [],
+      streamingMessage: {
+        role: 'assistant',
+        content: [
+          { type: 'thinking', thinking: 'thinking 1' },
+          { type: 'thinking', thinking: 'thinking 1 2' },
+          { type: 'thinking', thinking: 'thinking 1 2 3' },
+        ],
+      },
+      streamingTools: [],
+      sending: true,
+      pendingFinal: false,
+      showThinking: true,
+    });
+
+    expect(steps).toEqual([
+      expect.objectContaining({
+        id: 'stream-thinking',
+        detail: 'thinking 1 2 3',
+      }),
+    ]);
+  });
+
   it('builds a branch for spawned subagents', () => {
     const messages: RawMessage[] = [
       {

@@ -1,0 +1,9 @@
+{
+  "extensions": {
+    "main": [
+      "builtin/clawhub-marketplace",
+      "builtin/diagnostics"
+    ],
+    "renderer": []
+  }
+}

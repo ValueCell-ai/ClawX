@@ -175,6 +175,7 @@ describe('handleChannelRoutes', () => {
         gatewayManager: {
           rpc,
           getStatus: () => ({ state: 'running' }),
+          getDiagnostics: () => ({ consecutiveHeartbeatMisses: 0, consecutiveRpcFailures: 0 }),
           debouncedReload: vi.fn(),
           debouncedRestart: vi.fn(),
         },
@@ -919,6 +920,145 @@ describe('handleChannelRoutes', () => {
     };
     const feishu = payload.channels?.find((entry) => entry.channelType === 'feishu');
     expect(feishu?.accounts.map((entry) => entry.accountId)).toEqual(['default']);
+  });
+
+  it('returns degraded channel health when channels.status times out while gateway is still running', async () => {
+    listConfiguredChannelsMock.mockResolvedValue(['feishu']);
+    listConfiguredChannelAccountsMock.mockResolvedValue({
+      feishu: {
+        defaultAccountId: 'default',
+        accountIds: ['default'],
+      },
+    });
+    readOpenClawConfigMock.mockResolvedValue({
+      channels: {
+        feishu: {
+          defaultAccount: 'default',
+        },
+      },
+    });
+
+    const rpc = vi.fn().mockRejectedValue(new Error('RPC timeout: channels.status'));
+
+    const { handleChannelRoutes } = await import('@electron/api/routes/channels');
+    await handleChannelRoutes(
+      { method: 'GET' } as IncomingMessage,
+      {} as ServerResponse,
+      new URL('http://127.0.0.1:13210/api/channels/accounts'),
+      {
+        gatewayManager: {
+          rpc,
+          getStatus: () => ({ state: 'running' }),
+          getDiagnostics: () => ({ consecutiveHeartbeatMisses: 0, consecutiveRpcFailures: 0 }),
+          debouncedReload: vi.fn(),
+          debouncedRestart: vi.fn(),
+        },
+      } as never,
+    );
+
+    expect(sendJsonMock).toHaveBeenCalledWith(
+      expect.anything(),
+      200,
+      expect.objectContaining({
+        success: true,
+        gatewayHealth: expect.objectContaining({
+          state: 'degraded',
+          reasons: expect.arrayContaining(['channels_status_timeout']),
+        }),
+        channels: [
+          expect.objectContaining({
+            channelType: 'feishu',
+            status: 'degraded',
+            statusReason: 'channels_status_timeout',
+            accounts: [
+              expect.objectContaining({
+                accountId: 'default',
+                status: 'degraded',
+              }),
+            ],
+          }),
+        ],
+      }),
+    );
+  });
+
+  it('keeps channel degraded when only filtered stale runtime accounts carry lastError', async () => {
+    listConfiguredChannelsMock.mockResolvedValue(['feishu']);
+    listConfiguredChannelAccountsMock.mockResolvedValue({
+      feishu: {
+        defaultAccountId: 'default',
+        accountIds: ['default'],
+      },
+    });
+    readOpenClawConfigMock.mockResolvedValue({
+      channels: {
+        feishu: {
+          defaultAccount: 'default',
+        },
+      },
+    });
+
+    const rpc = vi.fn().mockResolvedValue({
+      channels: {
+        feishu: {
+          configured: true,
+        },
+      },
+      channelAccounts: {
+        feishu: [
+          {
+            accountId: 'default',
+            configured: true,
+            connected: true,
+            running: true,
+            linked: false,
+          },
+          {
+            accountId: '2',
+            configured: false,
+            connected: false,
+            running: false,
+            lastError: 'stale runtime session',
+          },
+        ],
+      },
+      channelDefaultAccountId: {
+        feishu: 'default',
+      },
+    });
+
+    const { handleChannelRoutes } = await import('@electron/api/routes/channels');
+    await handleChannelRoutes(
+      { method: 'GET' } as IncomingMessage,
+      {} as ServerResponse,
+      new URL('http://127.0.0.1:13210/api/channels/accounts'),
+      {
+        gatewayManager: {
+          rpc,
+          getStatus: () => ({ state: 'running' }),
+          getDiagnostics: () => ({ consecutiveHeartbeatMisses: 1, consecutiveRpcFailures: 0 }),
+          debouncedReload: vi.fn(),
+          debouncedRestart: vi.fn(),
+        },
+      } as never,
+    );
+
+    expect(sendJsonMock).toHaveBeenCalledWith(
+      expect.anything(),
+      200,
+      expect.objectContaining({
+        success: true,
+        channels: [
+          expect.objectContaining({
+            channelType: 'feishu',
+            status: 'degraded',
+            accounts: [
+              expect.objectContaining({ accountId: 'default', status: 'degraded' }),
+            ],
+          }),
+        ],
+      }),
+    );
   });
 
   it('lists known QQ Bot targets for a configured account', async () => {
