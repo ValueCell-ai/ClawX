@@ -234,7 +234,13 @@ export function Chat() {
       <div className="min-h-0 flex-1 overflow-hidden px-4 py-4">
         <div className="mx-auto flex h-full min-h-0 max-w-6xl flex-col gap-4 lg:flex-row lg:items-stretch">
           <div ref={scrollRef} className="min-h-0 min-w-0 flex-1 overflow-y-auto">
-            <div ref={contentRef} className="max-w-4xl space-y-4">
+            <div
+              ref={contentRef}
+              className={cn(
+                "space-y-4 transition-all duration-300",
+                isEmpty ? "mx-auto w-full max-w-3xl" : "max-w-4xl",
+              )}
+            >
               {isEmpty ? (
                 <WelcomeScreen />
               ) : (
