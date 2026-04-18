@@ -13,8 +13,6 @@
     "noLogs": "(No logs available yet)",
     "toolbar": {
         "refresh": "Refresh chat",
-        "showThinking": "Show thinking",
-        "hideThinking": "Hide thinking",
         "currentAgent": "Talking to {{agent}}"
     },
     "taskPanel": {

@@ -23,7 +23,6 @@ describe('ChatMessage attachment dedupe', () => {
     render(
       <ChatMessage
         message={message}
-        showThinking={false}
         suppressProcessAttachments
       />,
     );

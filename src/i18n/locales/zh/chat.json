@@ -13,8 +13,6 @@
     "noLogs": "（暂无日志）",
     "toolbar": {
         "refresh": "刷新聊天",
-        "showThinking": "显示思考过程",
-        "hideThinking": "隐藏思考过程",
         "currentAgent": "当前对话对象：{{agent}}"
     },
     "taskPanel": {

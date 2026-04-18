@@ -21,7 +21,6 @@ interface DeriveTaskStepsInput {
   streamingTools: ToolStatus[];
   sending: boolean;
   pendingFinal: boolean;
-  showThinking: boolean;
 }
 
 export interface SubagentCompletionInfo {
@@ -163,7 +162,6 @@ export function deriveTaskSteps({
   streamingTools,
   sending,
   pendingFinal,
-  showThinking,
 }: DeriveTaskStepsInput): TaskStep[] {
   const steps: TaskStep[] = [];
   const stepIndexById = new Map<string, number>();
@@ -190,22 +188,20 @@ export function deriveTaskSteps({
   const relevantAssistantMessages = messages.filter((message) => {
     if (!message || message.role !== 'assistant') return false;
     if (extractToolUse(message).length > 0) return true;
-    return showThinking && !!extractThinking(message);
+    return !!extractThinking(message);
   });
 
   for (const [messageIndex, assistantMessage] of relevantAssistantMessages.entries()) {
-    if (showThinking) {
-      const thinking = extractThinking(assistantMessage);
-      if (thinking) {
-        upsertStep({
-          id: `history-thinking-${assistantMessage.id || messageIndex}`,
-          label: 'Thinking',
-          status: 'completed',
-          kind: 'thinking',
-          detail: normalizeText(thinking),
-          depth: 1,
-        });
-      }
+    const thinking = extractThinking(assistantMessage);
+    if (thinking) {
+      upsertStep({
+        id: `history-thinking-${assistantMessage.id || messageIndex}`,
+        label: 'Thinking',
+        status: 'completed',
+        kind: 'thinking',
+        detail: normalizeText(thinking),
+        depth: 1,
+      });
     }
 
     extractToolUse(assistantMessage).forEach((tool, index) => {
@@ -220,7 +216,7 @@ export function deriveTaskSteps({
     });
   }
 
-  if (streamMessage && showThinking) {
+  if (streamMessage) {
     const thinking = extractThinking(streamMessage);
     if (thinking) {
       upsertStep({

@@ -1,6 +1,6 @@
 /**
  * Chat State Store
- * Manages chat messages, sessions, streaming, and thinking state.
+ * Manages chat messages, sessions, and streaming state.
  * Communicates with OpenClaw Gateway via renderer WebSocket RPC.
  */
 import { create } from 'zustand';
@@ -1199,7 +1199,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
   sessionLabels: {},
   sessionLastActivity: {},
 
-  showThinking: true,
   thinkingLevel: null,
 
   // ── Load sessions via sessions.list ──
@@ -2270,10 +2269,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
       }
     }
   },
-
-  // ── Toggle thinking visibility ──
-
-  toggleThinking: () => set((s) => ({ showThinking: !s.showThinking })),
 
   // ── Refresh: reload history + sessions ──
 

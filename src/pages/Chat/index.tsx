@@ -34,7 +34,6 @@ export function Chat() {
   const loading = useChatStore((s) => s.loading);
   const sending = useChatStore((s) => s.sending);
   const error = useChatStore((s) => s.error);
-  const showThinking = useChatStore((s) => s.showThinking);
   const streamingMessage = useChatStore((s) => s.streamingMessage);
   const streamingTools = useChatStore((s) => s.streamingTools);
   const pendingFinal = useChatStore((s) => s.pendingFinal);
@@ -135,7 +134,7 @@ export function Chat() {
   const streamText = streamMsg ? extractText(streamMsg) : (typeof streamingMessage === 'string' ? streamingMessage : '');
   const hasStreamText = streamText.trim().length > 0;
   const streamThinking = streamMsg ? extractThinking(streamMsg) : null;
-  const hasStreamThinking = showThinking && !!streamThinking && streamThinking.trim().length > 0;
+  const hasStreamThinking = !!streamThinking && streamThinking.trim().length > 0;
   const streamTools = streamMsg ? extractToolUse(streamMsg) : [];
   const hasStreamTools = streamTools.length > 0;
   const streamImages = streamMsg ? extractImages(streamMsg) : [];
@@ -173,7 +172,6 @@ export function Chat() {
       streamingTools: isLatestOpenRun ? streamingTools : [],
       sending: isLatestOpenRun ? sending : false,
       pendingFinal: isLatestOpenRun ? pendingFinal : false,
-      showThinking,
     });
 
     for (const completion of completionInfos) {
@@ -186,7 +184,6 @@ export function Chat() {
         streamingTools: [],
         sending: false,
         pendingFinal: false,
-        showThinking,
       }).map((step) => ({
         ...step,
         id: `${completion.sessionId}:${step.id}`,
@@ -255,7 +252,6 @@ export function Chat() {
                     >
                       <ChatMessage
                         message={msg}
-                        showThinking={showThinking}
                         suppressToolCards={suppressToolCards}
                         suppressProcessAttachments={suppressToolCards}
                       />
@@ -302,7 +298,6 @@ export function Chat() {
                             content: streamText,
                             timestamp: streamingTimestamp,
                           }) as RawMessage}
-                      showThinking={showThinking}
                       isStreaming
                       streamingTools={streamingTools}
                     />

@@ -13,8 +13,6 @@
     "noLogs": "（ログはまだありません）",
     "toolbar": {
         "refresh": "チャットを更新",
-        "showThinking": "思考を表示",
-        "hideThinking": "思考を非表示",
         "currentAgent": "現在の会話相手: {{agent}}"
     },
     "taskPanel": {

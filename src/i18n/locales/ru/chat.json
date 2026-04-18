@@ -13,8 +13,6 @@
     "noLogs": "(Журналы ещё недоступны)",
     "toolbar": {
         "refresh": "Обновить чат",
-        "showThinking": "Показать размышления",
-        "hideThinking": "Скрыть размышления",
         "currentAgent": "Общение с {{agent}}"
     },
     "taskPanel": {

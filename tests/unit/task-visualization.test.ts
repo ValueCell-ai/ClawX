@@ -25,7 +25,6 @@ describe('deriveTaskSteps', () => {
       streamingTools,
       sending: true,
       pendingFinal: false,
-      showThinking: true,
     });
 
     expect(steps).toEqual([
@@ -71,7 +70,6 @@ describe('deriveTaskSteps', () => {
       ],
       sending: true,
       pendingFinal: false,
-      showThinking: false,
     });
 
     expect(steps).toEqual([
@@ -113,7 +111,6 @@ describe('deriveTaskSteps', () => {
       ],
       sending: true,
       pendingFinal: false,
-      showThinking: false,
     });
 
     expect(steps).toEqual([
@@ -155,7 +152,6 @@ describe('deriveTaskSteps', () => {
       ],
       sending: true,
       pendingFinal: false,
-      showThinking: false,
     });
 
     expect(steps).toHaveLength(8);
@@ -184,7 +180,6 @@ describe('deriveTaskSteps', () => {
       streamingTools: [],
       sending: false,
       pendingFinal: false,
-      showThinking: true,
     });
 
     expect(steps).toEqual([
@@ -217,7 +212,6 @@ describe('deriveTaskSteps', () => {
       streamingTools: [],
       sending: true,
       pendingFinal: false,
-      showThinking: true,
     });
 
     expect(steps).toEqual([
@@ -256,7 +250,6 @@ describe('deriveTaskSteps', () => {
       streamingTools: [],
       sending: false,
       pendingFinal: false,
-      showThinking: true,
     });
 
     expect(steps).toEqual([

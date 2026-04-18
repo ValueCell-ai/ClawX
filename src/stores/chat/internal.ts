@@ -21,7 +21,6 @@ export const initialChatState: Pick<
   | 'currentAgentId'
   | 'sessionLabels'
   | 'sessionLastActivity'
-  | 'showThinking'
   | 'thinkingLevel'
 > = {
   messages: [],
@@ -43,7 +42,6 @@ export const initialChatState: Pick<
   sessionLabels: {},
   sessionLastActivity: {},
 
-  showThinking: true,
   thinkingLevel: null,
 };
 
@@ -61,7 +59,6 @@ export function createChatActions(
   | 'sendMessage'
   | 'abortRun'
   | 'handleChatEvent'
-  | 'toggleThinking'
   | 'refresh'
   | 'clearError'
 > {
