@@ -32,19 +32,11 @@
         }
     },
     "executionGraph": {
-        "eyebrow": "Conversation Run",
         "title": "Execution Graph",
-        "status": {
-            "active": "Active",
-            "latest": "Latest",
-            "previous": "Previous"
-        },
         "branchLabel": "branch",
-        "userTrigger": "User Trigger",
-        "userTriggerHint": "Triggered by the user message above",
         "agentRun": "{{agent}} execution",
-        "agentReply": "Assistant Reply",
-        "agentReplyHint": "Resolved in the assistant reply below"
+        "collapsedSummary": "{{toolCount}} tool calls · {{processCount}} process messages",
+        "collapseAction": "Collapse execution graph"
     },
     "composer": {
         "attachFiles": "Attach files",

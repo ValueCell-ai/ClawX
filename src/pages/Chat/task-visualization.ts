@@ -1,4 +1,4 @@
-import { extractThinking, extractToolUse } from './message-utils';
+import { extractText, extractThinking, extractToolUse } from './message-utils';
 import type { RawMessage, ToolStatus } from '@/stores/chat';
 
 export type TaskStepStatus = 'running' | 'completed' | 'error';
@@ -7,10 +7,34 @@ export interface TaskStep {
   id: string;
   label: string;
   status: TaskStepStatus;
-  kind: 'thinking' | 'tool' | 'system';
+  kind: 'thinking' | 'tool' | 'system' | 'message';
   detail?: string;
   depth: number;
   parentId?: string;
+}
+
+/**
+ * Detects the index of the "final reply" assistant message in a run segment.
+ *
+ * The final reply is the last assistant message that contains plain-text
+ * content and no tool calls. When this returns a non-negative index, the
+ * caller should avoid folding that message's text into the graph (it is the
+ * answer the user sees as the chat reply). When the run is still active
+ * (streaming) the final reply is produced via `streamingMessage` instead, so
+ * callers pass `hasStreamingReply = true` to skip the protection and let every
+ * pure-text assistant message in history be folded into the graph as
+ * narration.
+ */
+export function findReplyMessageIndex(messages: RawMessage[], hasStreamingReply: boolean): number {
+  if (hasStreamingReply) return -1;
+  for (let idx = messages.length - 1; idx >= 0; idx -= 1) {
+    const message = messages[idx];
+    if (!message || message.role !== 'assistant') continue;
+    if (extractToolUse(message).length > 0) continue;
+    if (extractText(message).trim().length === 0) continue;
+    return idx;
+  }
+  return -1;
 }
 
 const MAX_TASK_STEPS = 8;
@@ -127,7 +151,7 @@ function attachTopology(steps: TaskStep[]): TaskStep[] {
       continue;
     }
 
-    if (step.kind === 'thinking') {
+    if (step.kind === 'thinking' || step.kind === 'message') {
       withTopology.push({
         ...step,
         depth: activeBranchNodeId ? 3 : 1,
@@ -185,17 +209,19 @@ export function deriveTaskSteps({
     ? streamingMessage as RawMessage
     : null;
 
-  const relevantAssistantMessages = messages.filter((message) => {
-    if (!message || message.role !== 'assistant') return false;
-    if (extractToolUse(message).length > 0) return true;
-    return !!extractThinking(message);
-  });
+  // The final answer the user sees as a chat bubble. We avoid folding it into
+  // the graph to prevent duplication. When a run is still streaming, the
+  // reply lives in `streamingMessage`, so every pure-text assistant message in
+  // `messages` is treated as intermediate narration.
+  const replyIndex = findReplyMessageIndex(messages, streamMessage != null);
 
-  for (const [messageIndex, assistantMessage] of relevantAssistantMessages.entries()) {
-    const thinking = extractThinking(assistantMessage);
+  for (const [messageIndex, message] of messages.entries()) {
+    if (!message || message.role !== 'assistant') continue;
+
+    const thinking = extractThinking(message);
     if (thinking) {
       upsertStep({
-        id: `history-thinking-${assistantMessage.id || messageIndex}`,
+        id: `history-thinking-${message.id || messageIndex}`,
         label: 'Thinking',
         status: 'completed',
         kind: 'thinking',
@@ -204,9 +230,24 @@ export function deriveTaskSteps({
       });
     }
 
-    extractToolUse(assistantMessage).forEach((tool, index) => {
+    const toolUses = extractToolUse(message);
+    const isPureTextNarration = toolUses.length === 0
+      && extractText(message).trim().length > 0
+      && messageIndex !== replyIndex;
+    if (isPureTextNarration) {
       upsertStep({
-        id: tool.id || makeToolId(`history-tool-${assistantMessage.id || messageIndex}`, tool.name, index),
+        id: `history-message-${message.id || messageIndex}`,
+        label: 'Message',
+        status: 'completed',
+        kind: 'message',
+        detail: normalizeText(extractText(message)),
+        depth: 1,
+      });
+    }
+
+    toolUses.forEach((tool, index) => {
+      upsertStep({
+        id: tool.id || makeToolId(`history-tool-${message.id || messageIndex}`, tool.name, index),
         label: tool.name,
         status: 'completed',
         kind: 'tool',

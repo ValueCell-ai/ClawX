@@ -222,6 +222,13 @@ test.describe('ClawX chat execution graph', () => {
       }
       await expect(page.getByTestId('main-layout')).toBeVisible();
       await expect(page.getByTestId('chat-execution-graph')).toBeVisible({ timeout: 30_000 });
+      // Completed runs auto-collapse into a single-line summary button. Expand
+      // it first so the underlying step details are rendered.
+      const graph = page.getByTestId('chat-execution-graph');
+      if ((await graph.getAttribute('data-collapsed')) === 'true') {
+        await graph.click();
+      }
+      await expect(page.getByTestId('chat-execution-graph')).toHaveAttribute('data-collapsed', 'false');
       await expect(
         page.locator('[data-testid="chat-execution-graph"] [data-testid="chat-execution-step"]').getByText('sessions_yield', { exact: true }),
       ).toBeVisible();

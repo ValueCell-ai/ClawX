@@ -1,16 +1,13 @@
 import { useState } from 'react';
-import { ArrowDown, ArrowUp, Bot, CheckCircle2, ChevronDown, ChevronRight, CircleDashed, GitBranch, Sparkles, Wrench, XCircle } from 'lucide-react';
+import { Bot, CheckCircle2, ChevronDown, ChevronRight, CircleDashed, GitBranch, MessageSquare, Sparkles, Wrench, XCircle } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { cn } from '@/lib/utils';
 import type { TaskStep } from './task-visualization';
 
 interface ExecutionGraphCardProps {
   agentLabel: string;
-  sessionLabel: string;
   steps: TaskStep[];
   active: boolean;
-  onJumpToTrigger?: () => void;
-  onJumpToReply?: () => void;
 }
 
 function GraphStatusIcon({ status }: { status: TaskStep['status'] }) {
@@ -23,6 +20,10 @@ function StepDetailCard({ step }: { step: TaskStep }) {
   const { t } = useTranslation('chat');
   const [expanded, setExpanded] = useState(false);
   const hasDetail = !!step.detail;
+  // Narration steps (intermediate pure-text assistant messages folded from
+  // the chat stream) are rendered without a label/status pill: the message
+  // text IS the primary content.
+  const isNarration = step.kind === 'message';
 
   return (
     <div className="min-w-0 flex-1 rounded-xl border border-black/10 bg-white/40 px-3 py-2 dark:border-white/10 dark:bg-white/[0.03]">
@@ -35,19 +36,30 @@ function StepDetailCard({ step }: { step: TaskStep }) {
         }}
       >
         <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-2">
-            <p className="text-sm font-medium text-foreground">{step.label}</p>
-            <span className="rounded-full bg-black/5 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground dark:bg-white/10">
-              {t(`taskPanel.stepStatus.${step.status}`)}
-            </span>
-            {step.depth > 1 && (
-              <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-primary">
-                {t('executionGraph.branchLabel')}
+          {!isNarration && (
+            <div className="flex items-center gap-2">
+              <p className="text-sm font-medium text-foreground">{step.label}</p>
+              <span className="rounded-full bg-black/5 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground dark:bg-white/10">
+                {t(`taskPanel.stepStatus.${step.status}`)}
               </span>
-            )}
-          </div>
+              {step.depth > 1 && (
+                <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-primary">
+                  {t('executionGraph.branchLabel')}
+                </span>
+              )}
+            </div>
+          )}
           {step.detail && !expanded && (
-            <p className="mt-1 text-[12px] leading-5 text-muted-foreground line-clamp-2">{step.detail}</p>
+            <p
+              className={cn(
+                'text-muted-foreground',
+                isNarration
+                  ? 'text-[13px] leading-6 text-foreground/80 line-clamp-2'
+                  : 'mt-1 text-[12px] leading-5 line-clamp-2',
+              )}
+            >
+              {step.detail}
+            </p>
           )}
         </div>
         {hasDetail && (
@@ -58,7 +70,12 @@ function StepDetailCard({ step }: { step: TaskStep }) {
       </button>
       {step.detail && expanded && (
         <div className="mt-3 rounded-lg border border-black/10 bg-black/[0.03] px-3 py-2 dark:border-white/10 dark:bg-white/[0.03]">
-          <pre className="whitespace-pre-wrap break-all text-[12px] leading-5 text-muted-foreground">
+          <pre
+            className={cn(
+              'whitespace-pre-wrap text-[12px] leading-5',
+              isNarration ? 'text-foreground/80' : 'break-all text-muted-foreground',
+            )}
+          >
             {step.detail}
           </pre>
         </div>
@@ -69,54 +86,66 @@ function StepDetailCard({ step }: { step: TaskStep }) {
 
 export function ExecutionGraphCard({
   agentLabel,
-  sessionLabel,
   steps,
   active,
-  onJumpToTrigger,
-  onJumpToReply,
 }: ExecutionGraphCardProps) {
   const { t } = useTranslation('chat');
+
+  // Collapse by default when the run is already completed (e.g. loaded from
+  // history). While running, always stay expanded. When a run transitions from
+  // active -> completed, auto-collapse it. We derive the reset during render
+  // via the "adjust state on prop change" pattern recommended by React so the
+  // transition is reflected in the same render and doesn't require an effect.
+  const [expanded, setExpanded] = useState(active);
+  const [prevActive, setPrevActive] = useState(active);
+  if (prevActive !== active) {
+    setPrevActive(active);
+    setExpanded(active);
+  }
+
+  const toolCount = steps.filter((step) => step.kind === 'tool').length;
+  const processCount = steps.length - toolCount;
+
+  if (!expanded) {
+    return (
+      <button
+        type="button"
+        data-testid="chat-execution-graph"
+        data-collapsed="true"
+        onClick={() => setExpanded(true)}
+        className="group flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-[12px] text-muted-foreground transition-colors hover:bg-black/5 hover:text-foreground dark:hover:bg-white/5"
+      >
+        <ChevronRight className="h-3.5 w-3.5 shrink-0 transition-transform group-hover:translate-x-0.5" />
+        <span className="truncate">
+          {t('executionGraph.collapsedSummary', { toolCount, processCount })}
+        </span>
+      </button>
+    );
+  }
 
   return (
     <div
       data-testid="chat-execution-graph"
+      data-collapsed="false"
       className="w-full rounded-2xl border border-black/10 bg-[#f5f1e8]/70 px-4 py-4 shadow-sm dark:border-white/10 dark:bg-white/[0.04]"
     >
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground/70">
-            {t('executionGraph.eyebrow')}
-          </p>
-          <h3 className="mt-1 text-base font-semibold text-foreground">{t('executionGraph.title')}</h3>
-          <p className="mt-1 text-[12px] text-muted-foreground">
-            {agentLabel} · {sessionLabel}
-          </p>
-        </div>
-        <span
-          className={cn(
-            'rounded-full px-2.5 py-1 text-[11px] font-medium',
-            active ? 'bg-primary/10 text-primary' : 'bg-black/5 text-foreground/70 dark:bg-white/10 dark:text-foreground/70',
-          )}
-        >
-          {active ? t('executionGraph.status.active') : t('executionGraph.status.previous')}
-        </span>
+      <div className="flex items-center gap-2">
+        <h3 className="text-base font-semibold text-foreground">{t('executionGraph.title')}</h3>
+        {!active && (
+          <button
+            type="button"
+            data-testid="chat-execution-graph-collapse"
+            onClick={() => setExpanded(false)}
+            className="flex h-6 w-6 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-black/5 hover:text-foreground dark:hover:bg-white/10"
+            aria-label={t('executionGraph.collapseAction')}
+            title={t('executionGraph.collapseAction')}
+          >
+            <ChevronDown className="h-4 w-4" />
+          </button>
+        )}
       </div>
 
       <div className="mt-4 space-y-3">
-        <button
-          type="button"
-          data-testid="chat-execution-jump-trigger"
-          onClick={onJumpToTrigger}
-          className="flex items-center gap-2 text-[12px] text-muted-foreground hover:text-foreground transition-colors"
-        >
-          <ArrowUp className="h-3.5 w-3.5" />
-          <span>{t('executionGraph.userTriggerHint')}</span>
-        </button>
-
-        <div className="pl-4">
-          <div className="ml-4 h-4 w-px bg-border" />
-        </div>
-
         <div className="flex gap-3">
           <div className="flex w-8 shrink-0 justify-center">
             <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary/10 text-primary">
@@ -131,7 +160,7 @@ export function ExecutionGraphCard({
           </div>
         </div>
 
-        {steps.map((step, index) => (
+        {steps.map((step) => (
           <div key={step.id}>
             <div
               className="pl-4"
@@ -157,28 +186,18 @@ export function ExecutionGraphCard({
                       step.status === 'error' && 'bg-destructive/10 text-destructive',
                     )}
                   >
-                    {step.kind === 'thinking' ? <Sparkles className="h-4 w-4" /> : step.kind === 'tool' ? <Wrench className="h-4 w-4" /> : <GraphStatusIcon status={step.status} />}
+                    {step.kind === 'thinking'
+                      ? <Sparkles className="h-4 w-4" />
+                      : step.kind === 'tool'
+                        ? <Wrench className="h-4 w-4" />
+                        : step.kind === 'message'
+                          ? <MessageSquare className="h-4 w-4" />
+                          : <GraphStatusIcon status={step.status} />}
                   </div>
                 </div>
               </div>
               <StepDetailCard step={step} />
             </div>
-            {index === steps.length - 1 && (
-              <>
-                <div className="pl-4">
-                  <div className="ml-4 h-4 w-px bg-border" />
-                </div>
-                <button
-                  type="button"
-                  data-testid="chat-execution-jump-reply"
-                  onClick={onJumpToReply}
-                  className="flex items-center gap-2 pl-11 text-[12px] text-muted-foreground hover:text-foreground transition-colors"
-                >
-                  <ArrowDown className="h-3.5 w-3.5" />
-                  <span>{t('executionGraph.agentReplyHint')}</span>
-                </button>
-              </>
-            )}
           </div>
         ))}
       </div>

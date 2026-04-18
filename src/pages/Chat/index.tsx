@@ -16,7 +16,7 @@ import { ChatInput } from './ChatInput';
 import { ExecutionGraphCard } from './ExecutionGraphCard';
 import { ChatToolbar } from './ChatToolbar';
 import { extractImages, extractText, extractThinking, extractToolUse } from './message-utils';
-import { deriveTaskSteps, parseSubagentCompletionInfo } from './task-visualization';
+import { deriveTaskSteps, findReplyMessageIndex, parseSubagentCompletionInfo } from './task-visualization';
 import { useTranslation } from 'react-i18next';
 import { cn } from '@/lib/utils';
 import { useStickToBottomInstant } from '@/hooks/use-stick-to-bottom-instant';
@@ -154,6 +154,11 @@ export function Chat() {
     }
   }
 
+  // Indices of pure-text assistant messages that were folded into an
+  // ExecutionGraphCard as narration steps. We suppress them from the chat
+  // stream so they don't appear duplicated below the graph.
+  const foldedNarrationIndices = new Set<number>();
+
   const userRunCards = messages.flatMap((message, idx) => {
     if (message.role !== 'user' || subagentCompletionInfos[idx]) return [];
 
@@ -212,6 +217,22 @@ export function Chat() {
     const segmentAgentLabel = agents.find((agent) => agent.id === segmentAgentId)?.name || segmentAgentId;
     const segmentSessionLabel = sessionLabels[currentSessionKey] || currentSessionKey;
 
+    // Mark intermediate pure-text assistant messages so that the chat stream
+    // can hide them (they now live inside the ExecutionGraphCard instead).
+    // When the run is still streaming (`isLatestOpenRun`), the final reply is
+    // not yet part of `segmentMessages`, so every pure-text assistant in the
+    // segment is intermediate. For completed runs we preserve the final reply
+    // bubble by passing `hasStreamingReply = false` to `findReplyMessageIndex`.
+    const segmentReplyOffset = findReplyMessageIndex(segmentMessages, isLatestOpenRun);
+    for (let offset = 0; offset < segmentMessages.length; offset += 1) {
+      if (offset === segmentReplyOffset) continue;
+      const candidate = segmentMessages[offset];
+      if (!candidate || candidate.role !== 'assistant') continue;
+      if (extractToolUse(candidate).length > 0) continue;
+      if (extractText(candidate).trim().length === 0) continue;
+      foldedNarrationIndices.add(idx + 1 + offset);
+    }
+
     return [{
       triggerIndex: idx,
       replyIndex,
@@ -246,6 +267,7 @@ export function Chat() {
               ) : (
                 <>
                   {messages.map((msg, idx) => {
+                    if (foldedNarrationIndices.has(idx)) return null;
                     const suppressToolCards = userRunCards.some((card) =>
                       idx > card.triggerIndex && idx <= card.segmentEnd,
                     );
@@ -267,22 +289,8 @@ export function Chat() {
                           <ExecutionGraphCard
                             key={`graph-${idx}`}
                             agentLabel={card.agentLabel}
-                            sessionLabel={card.sessionLabel}
                             steps={card.steps}
                             active={card.active}
-                            onJumpToTrigger={() => {
-                              document.getElementById(`chat-message-${card.triggerIndex}`)?.scrollIntoView({
-                                behavior: 'smooth',
-                                block: 'center',
-                              });
-                            }}
-                            onJumpToReply={() => {
-                              if (card.replyIndex == null) return;
-                              document.getElementById(`chat-message-${card.replyIndex}`)?.scrollIntoView({
-                                behavior: 'smooth',
-                                block: 'center',
-                              });
-                            }}
                           />
                         ))}
                     </div>
