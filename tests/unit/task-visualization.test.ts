@@ -209,9 +209,9 @@ describe('deriveTaskSteps', () => {
       streamingMessage: {
         role: 'assistant',
         content: [
-          { type: 'thinking', thinking: '思考 1' },
-          { type: 'thinking', thinking: '思考 1 2' },
-          { type: 'thinking', thinking: '思考 1 2 3' },
+          { type: 'thinking', thinking: 'thinking 1' },
+          { type: 'thinking', thinking: 'thinking 1 2' },
+          { type: 'thinking', thinking: 'thinking 1 2 3' },
         ],
       },
       streamingTools: [],
@@ -223,7 +223,7 @@ describe('deriveTaskSteps', () => {
     expect(steps).toEqual([
       expect.objectContaining({
         id: 'stream-thinking',
-        detail: '思考 1 2 3',
+        detail: 'thinking 1 2 3',
       }),
     ]);
   });

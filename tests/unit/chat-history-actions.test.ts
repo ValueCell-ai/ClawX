@@ -566,7 +566,7 @@ describe('chat history actions', () => {
       messages: [
         {
           role: 'user',
-          content: '[Fri 2026-03-13 10:00 GMT+8] 打开浏览器，搜索腾讯新闻，截图给我',
+          content: '[Fri 2026-03-13 10:00 GMT+8] Open browser, search for tech news, and take a screenshot',
           timestamp: 1_773_281_732,
         },
       ],
@@ -579,11 +579,11 @@ describe('chat history actions', () => {
         messages: [
           {
             role: 'user',
-            content: '打开浏览器，搜索腾讯新闻，截图给我',
+            content: 'Open browser, search for tech news, and take a screenshot',
           },
           {
             role: 'assistant',
-            content: '正在处理',
+            content: 'Processing',
             timestamp: 1_773_281_733,
           },
         ],
@@ -593,8 +593,8 @@ describe('chat history actions', () => {
     await actions.loadHistory(true);
 
     expect(h.read().messages.map((message) => message.content)).toEqual([
-      '打开浏览器，搜索腾讯新闻，截图给我',
-      '正在处理',
+      'Open browser, search for tech news, and take a screenshot',
+      'Processing',
     ]);
   });
 });

@@ -16,7 +16,7 @@ function stableStringify(value: unknown): string {
 const seededHistory = [
   {
     role: 'user',
-    content: [{ type: 'text', text: '[Mon 2026-04-06 15:18 GMT+8] 分析 Velaria 当前未提交改动' }],
+    content: [{ type: 'text', text: '[Mon 2026-04-06 15:18 GMT+8] Analyze Velaria uncommitted changes' }],
     timestamp: Date.now(),
   },
   {
@@ -57,7 +57,7 @@ const seededHistory = [
       type: 'toolCall',
       id: 'yield-call',
       name: 'sessions_yield',
-      arguments: { message: '我让 coder 去拆 ~/Velaria 当前未提交改动的核心块了，等它回来我直接给你结论。' },
+      arguments: { message: 'I asked coder to break down the core blocks of ~/Velaria uncommitted changes; will give you the conclusion when it returns.' },
     }],
     timestamp: Date.now(),
   },
@@ -69,12 +69,12 @@ const seededHistory = [
       type: 'text',
       text: JSON.stringify({
         status: 'yielded',
-        message: '我让 coder 去拆 ~/Velaria 当前未提交改动的核心块了，等它回来我直接给你结论。',
+        message: 'I asked coder to break down the core blocks of ~/Velaria uncommitted changes; will give you the conclusion when it returns.',
       }, null, 2),
     }],
     details: {
       status: 'yielded',
-      message: '我让 coder 去拆 ~/Velaria 当前未提交改动的核心块了，等它回来我直接给你结论。',
+      message: 'I asked coder to break down the core blocks of ~/Velaria uncommitted changes; will give you the conclusion when it returns.',
     },
     isError: false,
     timestamp: Date.now(),
@@ -94,7 +94,7 @@ status: completed successfully`,
   },
   {
     role: 'assistant',
-    content: [{ type: 'text', text: '我让 coder 分析完了，下面是结论。' }],
+    content: [{ type: 'text', text: 'Coder has finished the analysis, here are the conclusions.' }],
     _attachedFiles: [
       {
         fileName: 'CHECKLIST.md',
@@ -112,7 +112,7 @@ status: completed successfully`,
 const childTranscriptMessages = [
   {
     role: 'user',
-    content: [{ type: 'text', text: '分析 ~/Velaria 当前未提交改动的核心内容' }],
+    content: [{ type: 'text', text: 'Analyze the core content of ~/Velaria uncommitted changes' }],
     timestamp: Date.now(),
   },
   {
@@ -143,7 +143,7 @@ const childTranscriptMessages = [
   },
   {
     role: 'assistant',
-    content: [{ type: 'text', text: '已完成分析，最关键的有 4 块。' }],
+    content: [{ type: 'text', text: 'Analysis complete, there are 4 key blocks.' }],
     timestamp: Date.now(),
   },
 ];
@@ -229,7 +229,7 @@ test.describe('ClawX chat execution graph', () => {
       await expect(
         page.locator('[data-testid="chat-execution-graph"] [data-testid="chat-execution-step"]').getByText('exec', { exact: true }),
       ).toBeVisible();
-      await expect(page.locator('[data-testid="chat-execution-graph"]').getByText('我让 coder 去拆 ~/Velaria 当前未提交改动的核心块了，等它回来我直接给你结论。')).toBeVisible();
+      await expect(page.locator('[data-testid="chat-execution-graph"]').getByText('I asked coder to break down the core blocks of ~/Velaria uncommitted changes; will give you the conclusion when it returns.')).toBeVisible();
       await expect(page.getByText('CHECKLIST.md')).toHaveCount(0);
     } finally {
       await closeElectronApp(app);
@@ -323,10 +323,10 @@ test.describe('ClawX chat execution graph', () => {
       }
 
       await expect(page.getByTestId('main-layout')).toBeVisible();
-      await page.getByTestId('chat-composer-input').fill('打开浏览器，搜索腾讯新闻，截图给我');
+      await page.getByTestId('chat-composer-input').fill('Open browser, search for tech news, and take a screenshot');
       await page.getByTestId('chat-composer-send').click();
 
-      await expect(page.getByText('打开浏览器，搜索腾讯新闻，截图给我')).toHaveCount(1);
+      await expect(page.getByText('Open browser, search for tech news, and take a screenshot')).toHaveCount(1);
       await expect.poll(async () => {
         return await app.evaluate(() => {
           const sendPayloads = (globalThis as typeof globalThis & {
@@ -347,9 +347,9 @@ test.describe('ClawX chat execution graph', () => {
             message: {
               role: 'assistant',
               content: [
-                { type: 'thinking', thinking: '思考 1' },
-                { type: 'thinking', thinking: '思考 1 2' },
-                { type: 'thinking', thinking: '思考 1 2 3' },
+                { type: 'thinking', thinking: 'thinking 1' },
+                { type: 'thinking', thinking: 'thinking 1 2' },
+                { type: 'thinking', thinking: 'thinking 1 2 3' },
                 { type: 'text', text: '1' },
                 { type: 'text', text: '1 2' },
                 { type: 'text', text: '1 2 3' },
@@ -359,10 +359,10 @@ test.describe('ClawX chat execution graph', () => {
         });
       });
 
-      await expect(page.getByText('打开浏览器，搜索腾讯新闻，截图给我')).toHaveCount(1);
-      await expect(page.getByText(/^思考 1 2 3$/)).toHaveCount(1);
-      await expect(page.getByText(/^思考 1 2$/)).toHaveCount(0);
-      await expect(page.getByText(/^思考 1$/)).toHaveCount(0);
+      await expect(page.getByText('Open browser, search for tech news, and take a screenshot')).toHaveCount(1);
+      await expect(page.getByText(/^thinking 1 2 3$/)).toHaveCount(1);
+      await expect(page.getByText(/^thinking 1 2$/)).toHaveCount(0);
+      await expect(page.getByText(/^thinking 1$/)).toHaveCount(0);
       await expect(page.getByText(/^1 2 3$/)).toHaveCount(1);
       await expect(page.getByText(/^1 2$/)).toHaveCount(0);
       await expect(page.getByText(/^1$/)).toHaveCount(0);

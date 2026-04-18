@@ -240,7 +240,7 @@ describe('chat runtime event handlers', () => {
     normalizeStreamingMessage.mockReturnValue({
       role: 'assistant',
       content: [
-        { type: 'thinking', thinking: '思考 1 2 3' },
+        { type: 'thinking', thinking: 'thinking 1 2 3' },
         { type: 'text', text: '1 2 3' },
       ],
     });
@@ -249,9 +249,9 @@ describe('chat runtime event handlers', () => {
       message: {
         role: 'assistant',
         content: [
-          { type: 'thinking', thinking: '思考 1' },
-          { type: 'thinking', thinking: '思考 1 2' },
-          { type: 'thinking', thinking: '思考 1 2 3' },
+          { type: 'thinking', thinking: 'thinking 1' },
+          { type: 'thinking', thinking: 'thinking 1 2' },
+          { type: 'thinking', thinking: 'thinking 1 2 3' },
           { type: 'text', text: '1' },
           { type: 'text', text: '1 2' },
           { type: 'text', text: '1 2 3' },
@@ -262,7 +262,7 @@ describe('chat runtime event handlers', () => {
     expect(h.read().streamingMessage).toEqual({
       role: 'assistant',
       content: [
-        { type: 'thinking', thinking: '思考 1 2 3' },
+        { type: 'thinking', thinking: 'thinking 1 2 3' },
         { type: 'text', text: '1 2 3' },
       ],
     });
@@ -275,7 +275,7 @@ describe('chat runtime event handlers', () => {
       return {
         ...msg,
         content: [
-          { type: 'thinking', thinking: '思考 1 2 3' },
+          { type: 'thinking', thinking: 'thinking 1 2 3' },
           { type: 'tool_use', id: 'call-1', name: 'read', input: { filePath: '/tmp/demo.md' } },
           { type: 'text', text: '1 2 3' },
         ],
@@ -286,7 +286,7 @@ describe('chat runtime event handlers', () => {
       return [{
         ...msg,
         content: [
-          { type: 'thinking', thinking: '思考 1 2 3' },
+          { type: 'thinking', thinking: 'thinking 1 2 3' },
           { type: 'tool_use', id: 'call-1', name: 'read', input: { filePath: '/tmp/demo.md' } },
           { type: 'text', text: '1 2 3' },
         ],
@@ -297,8 +297,8 @@ describe('chat runtime event handlers', () => {
         role: 'assistant',
         id: 'streaming-assistant',
         content: [
-          { type: 'thinking', thinking: '思考 1' },
-          { type: 'thinking', thinking: '思考 1 2 3' },
+          { type: 'thinking', thinking: 'thinking 1' },
+          { type: 'thinking', thinking: 'thinking 1 2 3' },
           { type: 'tool_use', id: 'call-1', name: 'read', input: { filePath: '/tmp/demo.md' } },
           { type: 'text', text: '1' },
           { type: 'text', text: '1 2 3' },
@@ -320,7 +320,7 @@ describe('chat runtime event handlers', () => {
         role: 'assistant',
         id: 'streaming-assistant',
         content: [
-          { type: 'thinking', thinking: '思考 1 2 3' },
+          { type: 'thinking', thinking: 'thinking 1 2 3' },
           { type: 'tool_use', id: 'call-1', name: 'read', input: { filePath: '/tmp/demo.md' } },
           { type: 'text', text: '1 2 3' },
         ],
