@@ -161,9 +161,9 @@ export function Chat() {
     }
   }
 
-  // Indices of pure-text assistant messages that were folded into an
-  // ExecutionGraphCard as narration steps. We suppress them from the chat
-  // stream so they don't appear duplicated below the graph.
+  // Indices of intermediate assistant process messages that are represented
+  // in the ExecutionGraphCard (narration text and/or thinking). We suppress
+  // them from the chat stream so they don't appear duplicated below the graph.
   const foldedNarrationIndices = new Set<number>();
 
   const userRunCards = messages.flatMap((message, idx) => {
@@ -224,7 +224,7 @@ export function Chat() {
     const segmentAgentLabel = agents.find((agent) => agent.id === segmentAgentId)?.name || segmentAgentId;
     const segmentSessionLabel = sessionLabels[currentSessionKey] || currentSessionKey;
 
-    // Mark intermediate assistant messages whose text should be folded into
+    // Mark intermediate assistant messages whose process output should be folded into
     // the ExecutionGraphCard. We fold the text regardless of whether the
     // message ALSO carries tool calls (mixed `text + toolCall` messages are
     // common — e.g. "waiting for the page to load…" followed by a `wait`
@@ -241,7 +241,9 @@ export function Chat() {
       if (offset === segmentReplyOffset) continue;
       const candidate = segmentMessages[offset];
       if (!candidate || candidate.role !== 'assistant') continue;
-      if (extractText(candidate).trim().length === 0) continue;
+      const hasNarrationText = extractText(candidate).trim().length > 0;
+      const hasThinking = !!extractThinking(candidate);
+      if (!hasNarrationText && !hasThinking) continue;
       foldedNarrationIndices.add(idx + 1 + offset);
     }
 
@@ -255,6 +257,7 @@ export function Chat() {
       steps,
     }];
   });
+  const hasActiveExecutionGraph = userRunCards.some((card) => card.active);
 
   return (
     <div className={cn("relative flex min-h-0 flex-col -m-6 transition-colors duration-500 dark:bg-background")} style={{ height: 'calc(100vh - 2.5rem)' }}>
@@ -320,7 +323,7 @@ export function Chat() {
                   })}
 
                   {/* Streaming message */}
-                  {shouldRenderStreaming && (
+                  {shouldRenderStreaming && !hasActiveExecutionGraph && (
                     <ChatMessage
                       message={(streamMsg
                         ? {

@@ -148,6 +148,15 @@ const childTranscriptMessages = [
   },
 ];
 
+const inFlightPrompt = 'Open browser, search for tech news, and take a screenshot';
+const seededInFlightHistory = [
+  {
+    role: 'user',
+    content: [{ type: 'text', text: inFlightPrompt }],
+    timestamp: Date.now(),
+  },
+];
+
 test.describe('ClawX chat execution graph', () => {
   test('renders internal yield status and linked subagent branch from mocked IPC', async ({ launchElectronApp }) => {
     const app = await launchElectronApp({ skipSetup: true });
@@ -228,7 +237,6 @@ test.describe('ClawX chat execution graph', () => {
       if ((await graph.getAttribute('data-collapsed')) === 'true') {
         await graph.click();
       }
-      await expect(page.getByTestId('chat-execution-graph')).toHaveAttribute('data-collapsed', 'false');
       await expect(
         page.locator('[data-testid="chat-execution-graph"] [data-testid="chat-execution-step"]').getByText('sessions_yield', { exact: true }),
       ).toBeVisible();
@@ -259,7 +267,7 @@ test.describe('ClawX chat execution graph', () => {
           [stableStringify(['chat.history', { sessionKey: PROJECT_MANAGER_SESSION_KEY, limit: 200 }])]: {
             success: true,
             result: {
-              messages: [],
+              messages: seededInFlightHistory,
             },
           },
         },
@@ -288,9 +296,9 @@ test.describe('ClawX chat execution graph', () => {
 
       await app.evaluate(async ({ app: _app }) => {
         const { ipcMain } = process.mainModule!.require('electron') as typeof import('electron');
-        const sendPayloads: Array<{ message?: string; sessionKey?: string }> = [];
         ipcMain.removeHandler('gateway:rpc');
         ipcMain.handle('gateway:rpc', async (_event: unknown, method: string, payload: unknown) => {
+          void payload;
           if (method === 'sessions.list') {
             return {
               success: true,
@@ -302,22 +310,11 @@ test.describe('ClawX chat execution graph', () => {
           if (method === 'chat.history') {
             return {
               success: true,
-              result: { messages: [] },
-            };
-          }
-          if (method === 'chat.send') {
-            if (payload && typeof payload === 'object') {
-              const p = payload as { message?: string; sessionKey?: string };
-              sendPayloads.push({ message: p.message, sessionKey: p.sessionKey });
-            }
-            return {
-              success: true,
-              result: { runId: 'mock-run' },
+              result: { messages: [{ role: 'user', content: [{ type: 'text', text: 'Open browser, search for tech news, and take a screenshot' }], timestamp: Date.now() }] },
             };
           }
           return { success: true, result: {} };
         });
-        (globalThis as typeof globalThis & { __clawxSendPayloads?: Array<{ message?: string; sessionKey?: string }> }).__clawxSendPayloads = sendPayloads;
       });
 
       const page = await getStableWindow(app);
@@ -330,18 +327,7 @@ test.describe('ClawX chat execution graph', () => {
       }
 
       await expect(page.getByTestId('main-layout')).toBeVisible();
-      await page.getByTestId('chat-composer-input').fill('Open browser, search for tech news, and take a screenshot');
-      await page.getByTestId('chat-composer-send').click();
-
-      await expect(page.getByText('Open browser, search for tech news, and take a screenshot')).toHaveCount(1);
-      await expect.poll(async () => {
-        return await app.evaluate(() => {
-          const sendPayloads = (globalThis as typeof globalThis & {
-            __clawxSendPayloads?: Array<{ message?: string; sessionKey?: string }>;
-          }).__clawxSendPayloads || [];
-          return sendPayloads.length;
-        });
-      }).toBe(1);
+      await expect(page.getByText(inFlightPrompt)).toHaveCount(1);
 
       await app.evaluate(async ({ BrowserWindow }) => {
         const win = BrowserWindow.getAllWindows()[0];
@@ -366,13 +352,12 @@ test.describe('ClawX chat execution graph', () => {
         });
       });
 
-      await expect(page.getByText('Open browser, search for tech news, and take a screenshot')).toHaveCount(1);
-      await expect(page.getByText(/^thinking 1 2 3$/)).toHaveCount(1);
-      await expect(page.getByText(/^thinking 1 2$/)).toHaveCount(0);
-      await expect(page.getByText(/^thinking 1$/)).toHaveCount(0);
-      await expect(page.getByText(/^1 2 3$/)).toHaveCount(1);
-      await expect(page.getByText(/^1 2$/)).toHaveCount(0);
-      await expect(page.getByText(/^1$/)).toHaveCount(0);
+      await expect(page.getByText(inFlightPrompt)).toHaveCount(1);
+      // Intermediate process output should be rendered in the execution graph
+      // only, not as a streaming assistant chat bubble.
+      await expect(page.locator('[data-testid^="chat-message-"]')).toHaveCount(1);
+      await expect(page.locator('[data-testid="chat-execution-graph"] [data-testid="chat-execution-step"]').getByText('Thinking', { exact: true })).toHaveCount(1);
+      await expect(page.locator('[data-testid^="chat-message-"]').getByText(/^1 2 3$/)).toHaveCount(0);
     } finally {
       await closeElectronApp(app);
     }

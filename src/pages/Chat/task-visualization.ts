@@ -278,6 +278,21 @@ export function deriveTaskSteps({
         depth: 1,
       });
     }
+
+    // Stream-time narration should also appear in the execution graph so that
+    // intermediate process output stays in P1 instead of leaking into the
+    // assistant reply area.
+    const streamNarration = extractText(streamMessage);
+    if (streamNarration.trim().length > 0) {
+      upsertStep({
+        id: 'stream-message',
+        label: 'Message',
+        status: 'running',
+        kind: 'message',
+        detail: normalizeText(streamNarration),
+        depth: 1,
+      });
+    }
   }
 
   const activeToolIds = new Set<string>();
