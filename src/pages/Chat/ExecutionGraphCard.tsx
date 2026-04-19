@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Bot, CheckCircle2, ChevronDown, ChevronRight, CircleDashed, GitBranch, MessageSquare, Sparkles, Wrench, XCircle } from 'lucide-react';
+import { CheckCircle2, ChevronDown, ChevronRight, CircleDashed, GitBranch, MessageSquare, Wrench, XCircle } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { cn } from '@/lib/utils';
 import type { TaskStep } from './task-visualization';
@@ -17,6 +17,18 @@ interface ExecutionGraphCardProps {
   onExpandedChange?: (expanded: boolean) => void;
 }
 
+const TOOL_ROW_EXTRA_INDENT_PX = 8;
+
+function AnimatedDots({ className }: { className?: string }) {
+  return (
+    <span className={cn('flex items-center gap-0.5 leading-none text-muted-foreground', className)} aria-hidden="true">
+      <span className="inline-block animate-bounce [animation-delay:0ms]">.</span>
+      <span className="inline-block animate-bounce [animation-delay:150ms]">.</span>
+      <span className="inline-block animate-bounce [animation-delay:300ms]">.</span>
+    </span>
+  );
+}
+
 function GraphStatusIcon({ status }: { status: TaskStep['status'] }) {
   if (status === 'completed') return <CheckCircle2 className="h-4 w-4" />;
   if (status === 'error') return <XCircle className="h-4 w-4" />;
@@ -31,61 +43,102 @@ function StepDetailCard({ step }: { step: TaskStep }) {
   // the chat stream) are rendered without a label/status pill: the message
   // text IS the primary content.
   const isNarration = step.kind === 'message';
+  const isTool = step.kind === 'tool';
+  const isThinking = step.kind === 'thinking';
+  const showRunningDots = isTool && step.status === 'running';
+  const hideStatusText = isTool && step.status === 'completed';
+  const detailPreview = step.detail?.replace(/\s+/g, ' ').trim();
+  const canExpand = hasDetail;
+  const usePlainExpandedDetail = isTool || isThinking;
 
   return (
-    <div className="min-w-0 flex-1 rounded-xl border border-black/10 bg-white/40 px-3 py-2 dark:border-white/10 dark:bg-white/[0.03]">
+    <div
+      className={cn(
+        'min-w-0 flex-1 text-muted-foreground',
+        isTool || isNarration
+          ? 'px-0 py-0'
+          : 'rounded-xl border border-black/10 bg-white/40 px-3 py-2 dark:border-white/10 dark:bg-white/[0.03]',
+      )}
+    >
       <button
         type="button"
-        className={cn('flex w-full items-start gap-2 text-left', hasDetail ? 'cursor-pointer' : 'cursor-default')}
+        className={cn(
+          'flex w-full gap-2 text-left',
+          isTool ? 'items-center' : 'items-start',
+          canExpand ? 'cursor-pointer' : 'cursor-default',
+        )}
         onClick={() => {
-          if (!hasDetail) return;
+          if (!canExpand) return;
           setExpanded((value) => !value);
         }}
       >
         <div className="min-w-0 flex-1">
           {!isNarration && (
-            <div className="flex items-center gap-2">
-              <p className="text-sm font-medium text-foreground">{step.label}</p>
-              <span className="rounded-full bg-black/5 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground dark:bg-white/10">
-                {t(`taskPanel.stepStatus.${step.status}`)}
-              </span>
+            <div className="flex min-w-0 items-center gap-2">
+              <p className="shrink-0 text-sm font-medium text-muted-foreground">{step.label}</p>
+              {isTool && detailPreview && !expanded && (
+                <p className="min-w-0 truncate text-[12px] leading-4 text-muted-foreground/80">
+                  {detailPreview}
+                </p>
+              )}
+              {!hideStatusText && !showRunningDots && (
+                <span className="rounded-full bg-black/5 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground dark:bg-white/10">
+                  {t(`taskPanel.stepStatus.${step.status}`)}
+                </span>
+              )}
+              {showRunningDots && (
+                <AnimatedDots className="text-[14px]" />
+              )}
               {step.depth > 1 && (
-                <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-primary">
+                <span className="rounded-full bg-black/5 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground dark:bg-white/10">
                   {t('executionGraph.branchLabel')}
                 </span>
               )}
             </div>
           )}
-          {step.detail && !expanded && (
+          {step.detail && !expanded && !isTool && (
             <p
               className={cn(
                 'text-muted-foreground',
-                isNarration
-                  ? 'text-[13px] leading-6 text-foreground/80 line-clamp-2'
-                  : 'mt-1 text-[12px] leading-5 line-clamp-2',
+                isThinking
+                  ? 'mt-0.5 text-[12px] leading-5 line-clamp-1'
+                  : isNarration
+                  ? 'text-[13px] leading-6 text-muted-foreground line-clamp-2'
+                  : 'mt-0.5 text-[12px] leading-5 line-clamp-2',
               )}
             >
               {step.detail}
             </p>
           )}
         </div>
-        {hasDetail && (
+        {canExpand && (
           <span className="mt-0.5 shrink-0 text-muted-foreground">
             {expanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
           </span>
         )}
       </button>
-      {step.detail && expanded && (
+      {step.detail && expanded && canExpand && (
+        usePlainExpandedDetail ? (
+          <pre
+            className={cn(
+              'mt-0.5 whitespace-pre-wrap text-[12px] leading-5 text-muted-foreground',
+              isTool ? 'break-all' : 'break-words',
+            )}
+          >
+            {step.detail}
+          </pre>
+        ) : (
         <div className="mt-3 rounded-lg border border-black/10 bg-black/[0.03] px-3 py-2 dark:border-white/10 dark:bg-white/[0.03]">
           <pre
             className={cn(
               'whitespace-pre-wrap text-[12px] leading-5',
-              isNarration ? 'text-foreground/80' : 'break-all text-muted-foreground',
+              isNarration ? 'text-muted-foreground' : 'break-all text-muted-foreground',
             )}
           >
             {step.detail}
           </pre>
         </div>
+        )
       )}
     </div>
   );
@@ -127,6 +180,9 @@ export function ExecutionGraphCard({
 
   const toolCount = steps.filter((step) => step.kind === 'tool').length;
   const processCount = steps.length - toolCount;
+  const hasRunningTool = steps.some((step) => step.kind === 'tool' && step.status === 'running');
+  const hasRunningThinking = steps.some((step) => step.kind === 'thinking' && step.status === 'running');
+  const shouldShowTrailingThinking = active && hasRunningTool && !hasRunningThinking;
 
   if (!expanded) {
     return (
@@ -135,7 +191,7 @@ export function ExecutionGraphCard({
         data-testid="chat-execution-graph"
         data-collapsed="true"
         onClick={() => setExpanded(true)}
-        className="group flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-[12px] text-muted-foreground transition-colors hover:bg-black/5 hover:text-foreground dark:hover:bg-white/5"
+        className="group flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-[12px] text-muted-foreground transition-colors hover:bg-black/5 hover:text-muted-foreground dark:hover:bg-white/5"
       >
         <ChevronRight className="h-3.5 w-3.5 shrink-0 transition-transform group-hover:translate-x-0.5" />
         <span className="truncate">
@@ -149,69 +205,66 @@ export function ExecutionGraphCard({
     <div
       data-testid="chat-execution-graph"
       data-collapsed="false"
-      className="w-full rounded-2xl border border-black/10 bg-[#f5f1e8]/70 px-4 py-4 shadow-sm dark:border-white/10 dark:bg-white/[0.04]"
+      className="w-full px-0 py-0 text-muted-foreground"
     >
-      <div className="flex items-center gap-2">
-        <h3 className="text-base font-semibold text-foreground">{t('executionGraph.title')}</h3>
-        <button
-          type="button"
-          data-testid="chat-execution-graph-collapse"
-          onClick={() => setExpanded(false)}
-          className="flex h-6 w-6 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-black/5 hover:text-foreground dark:hover:bg-white/10"
-          aria-label={t('executionGraph.collapseAction')}
-          title={t('executionGraph.collapseAction')}
-        >
-          <ChevronDown className="h-4 w-4" />
-        </button>
-      </div>
+      <button
+        type="button"
+        data-testid="chat-execution-graph-collapse"
+        onClick={() => setExpanded(false)}
+        className="group flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-[12px] text-muted-foreground transition-colors hover:bg-black/5 hover:text-muted-foreground dark:hover:bg-white/5"
+        aria-label={t('executionGraph.collapseAction')}
+        title={t('executionGraph.collapseAction')}
+      >
+        <ChevronRight className="h-3.5 w-3.5 shrink-0 rotate-90" />
+        <span className="truncate">{t('executionGraph.title')}</span>
+      </button>
 
-      <div className="mt-4 space-y-3">
-        <div className="flex gap-3">
-          <div className="flex w-8 shrink-0 justify-center">
-            <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary/10 text-primary">
-              <Bot className="h-4 w-4" />
+      <div className="mt-0 px-0 py-0">
+        <div className="mt-0.5 flex items-center gap-0.5" style={{ marginLeft: `${TOOL_ROW_EXTRA_INDENT_PX}px` }}>
+          <div className="flex w-6 shrink-0 justify-center">
+            <div className="flex h-6 w-6 items-center justify-center text-muted-foreground">
+              <GitBranch className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
             </div>
           </div>
-          <div className="min-w-0 flex-1 rounded-xl border border-primary/15 bg-primary/5 px-3 py-2">
-            <div className="flex items-center gap-2 text-sm font-medium text-foreground">
-              <GitBranch className="h-4 w-4 text-primary" />
-              <span>{t('executionGraph.agentRun', { agent: agentLabel })}</span>
-            </div>
+          <div className="min-w-0 flex-1">
+            <span className="truncate text-sm font-medium text-muted-foreground">
+              {t('executionGraph.agentRun', { agent: agentLabel })}
+            </span>
           </div>
         </div>
 
-        {steps.map((step) => (
-          <div key={step.id}>
+        {steps.map((step) => {
+          const toolIndentOffset = step.kind === 'tool' ? TOOL_ROW_EXTRA_INDENT_PX : 0;
+          const rowMarginLeft = (Math.max(step.depth - 1, 0) * 24) + toolIndentOffset;
+          return (
+          <div key={step.id} className="mt-0.5">
             <div
-              className="pl-4"
-              style={{ marginLeft: `${Math.max(step.depth - 1, 0) * 24}px` }}
+              className="pl-3"
+              style={{ marginLeft: `${rowMarginLeft}px` }}
             >
-              <div className="ml-4 h-4 w-px bg-border" />
+              <div className="ml-3 h-1 w-px bg-border" />
             </div>
             <div
-              className="flex gap-3"
+              className="flex items-start gap-0.5"
               data-testid="chat-execution-step"
-              style={{ marginLeft: `${Math.max(step.depth - 1, 0) * 24}px` }}
+              style={{ marginLeft: `${rowMarginLeft}px` }}
             >
-              <div className="flex w-8 shrink-0 justify-center">
+              <div className="flex w-6 shrink-0 justify-center">
                 <div className="relative flex items-center justify-center">
                   {step.depth > 1 && (
-                    <div className="absolute -left-4 top-1/2 h-px w-4 -translate-y-1/2 bg-border" />
+                    <div className="absolute -left-3 top-1/2 h-px w-3 -translate-y-1/2 bg-border" />
                   )}
                   <div
                     className={cn(
-                      'flex h-8 w-8 items-center justify-center rounded-full',
-                      step.status === 'running' && 'bg-primary/10 text-primary',
-                      step.status === 'completed' && 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400',
-                      step.status === 'error' && 'bg-destructive/10 text-destructive',
+                      'flex h-6 w-6 items-center justify-center text-muted-foreground',
                     )}
                   >
                     {step.kind === 'thinking'
-                      ? <Sparkles className="h-4 w-4" />
+                      ? <AnimatedDots className="text-[14px]" />
                       : step.kind === 'tool'
-                        ? <Wrench className="h-4 w-4" />
+                        ? <Wrench className="h-3.5 w-3.5" />
                         : step.kind === 'message'
-                          ? <MessageSquare className="h-4 w-4" />
+                          ? <MessageSquare className="h-3.5 w-3.5" />
                           : <GraphStatusIcon status={step.status} />}
                   </div>
                 </div>
@@ -219,7 +272,25 @@ export function ExecutionGraphCard({
               <StepDetailCard step={step} />
             </div>
           </div>
-        ))}
+        )})}
+        {shouldShowTrailingThinking && (
+          <div className="mt-0.5">
+            <div className="pl-3">
+              <div className="ml-3 h-1 w-px bg-border" />
+            </div>
+            <div className="flex items-center gap-0.5" data-testid="chat-execution-step-thinking-trailing">
+              <div className="flex w-6 shrink-0 justify-center">
+                <div className="flex h-6 w-6 items-center justify-center text-muted-foreground">
+                  <AnimatedDots className="text-[14px]" />
+                </div>
+              </div>
+              <div className="min-w-0 flex-1 text-sm text-muted-foreground">
+                <span className="font-medium">Thinking</span>
+                <AnimatedDots className="ml-1 inline-flex text-[14px]" />
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

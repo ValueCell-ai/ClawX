@@ -244,6 +244,9 @@ test.describe('ClawX chat execution graph', () => {
       await expect(
         page.locator('[data-testid="chat-execution-graph"] [data-testid="chat-execution-step"]').getByText('exec', { exact: true }),
       ).toBeVisible();
+      const execRow = page.locator('[data-testid="chat-execution-step"]').filter({ hasText: 'exec' }).first();
+      await execRow.click();
+      await expect(execRow.locator('pre')).toBeVisible();
       await expect(page.locator('[data-testid="chat-execution-graph"]').getByText('I asked coder to break down the core blocks of ~/Velaria uncommitted changes; will give you the conclusion when it returns.')).toBeVisible();
       await expect(page.getByText('CHECKLIST.md')).toHaveCount(0);
     } finally {
@@ -357,7 +360,8 @@ test.describe('ClawX chat execution graph', () => {
       // only, not as a streaming assistant chat bubble.
       await expect(page.locator('[data-testid^="chat-message-"]')).toHaveCount(1);
       await expect(page.locator('[data-testid="chat-execution-graph"] [data-testid="chat-execution-step"]').getByText('Thinking', { exact: true })).toHaveCount(1);
-      await expect(page.locator('[data-testid^="chat-message-"]').getByText(/^1 2 3$/)).toHaveCount(0);
+      const firstChatBubble = page.locator('[data-testid^="chat-message-"] > div').first();
+      await expect(firstChatBubble.getByText(/^1 2 3$/)).toHaveCount(0);
     } finally {
       await closeElectronApp(app);
     }
