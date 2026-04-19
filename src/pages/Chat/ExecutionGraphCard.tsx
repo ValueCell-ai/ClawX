@@ -6,7 +6,6 @@ import type { TaskStep } from './task-visualization';
 
 interface ExecutionGraphCardProps {
   agentLabel: string;
-  sessionLabel: string;
   steps: TaskStep[];
   active: boolean;
   onJumpToTrigger?: () => void;
@@ -103,7 +102,6 @@ function StepDetailCard({ step, defaultExpanded }: { step: TaskStep; defaultExpa
 
 export function ExecutionGraphCard({
   agentLabel,
-  sessionLabel,
   steps,
   active,
   onJumpToTrigger,
@@ -120,9 +118,6 @@ export function ExecutionGraphCard({
       <div className="flex items-start justify-between gap-3">
         <div>
           <h3 className="text-base font-semibold text-foreground">{t('executionGraph.title')}</h3>
-          <p className="mt-1 text-[12px] text-muted-foreground">
-            {agentLabel} · {sessionLabel}
-          </p>
         </div>
         <div className="flex items-center gap-2">
           <span

@@ -213,14 +213,12 @@ export function Chat() {
 
     const segmentAgentId = currentAgentId;
     const segmentAgentLabel = agents.find((agent) => agent.id === segmentAgentId)?.name || segmentAgentId;
-    const segmentSessionLabel = getMessageText(message.content) || currentSessionKey;
 
     return [{
       triggerIndex: idx,
       replyIndex,
       active: isLatestOpenRun,
       agentLabel: segmentAgentLabel,
-      sessionLabel: segmentSessionLabel,
       segmentEnd: nextUserIndex === -1 ? messages.length - 1 : nextUserIndex - 1,
       steps,
     }];
@@ -265,7 +263,6 @@ export function Chat() {
                           <ExecutionGraphCard
                             key={`graph-${idx}`}
                             agentLabel={card.agentLabel}
-                            sessionLabel={card.sessionLabel}
                             steps={card.steps}
                             active={card.active}
                             onJumpToTrigger={() => {
@@ -302,7 +299,7 @@ export function Chat() {
                             content: streamText,
                             timestamp: streamingTimestamp,
                           }) as RawMessage}
-                      showThinking={showThinking}
+                      showThinking={false}
                       isStreaming
                       streamingTools={streamingTools}
                     />
