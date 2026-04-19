@@ -4,7 +4,7 @@
  * via gateway:rpc IPC. Session selector, thinking toggle, and refresh
  * are in the toolbar; messages render with markdown + streaming.
  */
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { AlertCircle, Loader2, Sparkles } from 'lucide-react';
 import { useChatStore, type RawMessage } from '@/stores/chat';
 import { useGatewayStore } from '@/stores/gateway';
@@ -358,28 +358,23 @@ export function Chat() {
   }
   const streamingReplyText = userRunCards.find((card) => card.streamingReplyText != null)?.streamingReplyText ?? null;
 
-  useEffect(() => {
-    const runKeysToCollapse = userRunCards
-      .filter((card) => card.streamingReplyText != null || (card.replyIndex != null && replyTextOverrides.has(card.replyIndex)))
-      .map((card) => {
-        const triggerMsg = messages[card.triggerIndex];
-        return triggerMsg?.id
-          ? `msg-${triggerMsg.id}`
-          : `${currentSessionKey}:trigger-${card.triggerIndex}`;
-      });
-
-    if (runKeysToCollapse.length === 0) return;
-
-    setGraphExpandedOverrides((current) => {
-      let changed = false;
-      const next = { ...current };
-      for (const runKey of runKeysToCollapse) {
-        if (next[runKey] === false) continue;
-        next[runKey] = false;
-        changed = true;
-      }
-      return changed ? next : current;
-    });
+  // Derive the set of run keys that should be auto-collapsed (run finished
+  // streaming or has a reply override) during render instead of in an effect,
+  // so we don't violate react-hooks/set-state-in-effect. Explicit user toggles
+  // still win via `graphExpandedOverrides` and are merged in at the call site.
+  const autoCollapsedRunKeys = useMemo(() => {
+    const keys = new Set<string>();
+    for (const card of userRunCards) {
+      const shouldCollapse = card.streamingReplyText != null
+        || (card.replyIndex != null && replyTextOverrides.has(card.replyIndex));
+      if (!shouldCollapse) continue;
+      const triggerMsg = messages[card.triggerIndex];
+      const runKey = triggerMsg?.id
+        ? `msg-${triggerMsg.id}`
+        : `${currentSessionKey}:trigger-${card.triggerIndex}`;
+      keys.add(runKey);
+    }
+    return keys;
   }, [currentSessionKey, messages, replyTextOverrides, userRunCards]);
 
   useEffect(() => {
@@ -479,13 +474,19 @@ export function Chat() {
                           const runKey = triggerMsg?.id
                             ? `msg-${triggerMsg.id}`
                             : `${currentSessionKey}:trigger-${card.triggerIndex}`;
+                          const userOverride = graphExpandedOverrides[runKey];
+                          const expanded = userOverride != null
+                            ? userOverride
+                            : autoCollapsedRunKeys.has(runKey)
+                              ? false
+                              : undefined;
                           return (
                             <ExecutionGraphCard
                               key={`graph-${runKey}`}
                               agentLabel={card.agentLabel}
                               steps={card.steps}
                               active={card.active}
-                              expanded={graphExpandedOverrides[runKey]}
+                              expanded={expanded}
                               onExpandedChange={(next) =>
                                 setGraphExpandedOverrides((prev) => ({ ...prev, [runKey]: next }))
                               }
