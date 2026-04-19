@@ -35,9 +35,9 @@
     },
     "executionGraph": {
         "eyebrow": "对话执行",
-        "title": "执行关系图",
+        "title": "执行过程",
         "status": {
-            "active": "执行中",
+            "active": "最新",
             "latest": "最近一次",
             "previous": "历史"
         },

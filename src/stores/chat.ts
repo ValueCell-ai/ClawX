@@ -1199,7 +1199,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
   sessionLabels: {},
   sessionLastActivity: {},
 
-  showThinking: true,
+  showThinking: false,
   thinkingLevel: null,
 
   // ── Load sessions via sessions.list ──

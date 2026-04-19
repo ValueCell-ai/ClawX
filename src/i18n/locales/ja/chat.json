@@ -35,9 +35,9 @@
     },
     "executionGraph": {
         "eyebrow": "会話実行",
-        "title": "実行グラフ",
+        "title": "実行過程",
         "status": {
-            "active": "進行中",
+            "active": "最後",
             "latest": "直近",
             "previous": "履歴"
         },

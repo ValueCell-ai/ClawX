@@ -35,9 +35,9 @@
     },
     "executionGraph": {
         "eyebrow": "Conversation Run",
-        "title": "Execution Graph",
+        "title": "Execution Process",
         "status": {
-            "active": "Active",
+            "active": "Latest",
             "latest": "Latest",
             "previous": "Previous"
         },

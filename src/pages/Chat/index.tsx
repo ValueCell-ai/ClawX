@@ -15,7 +15,8 @@ import { ChatMessage } from './ChatMessage';
 import { ChatInput } from './ChatInput';
 import { ExecutionGraphCard } from './ExecutionGraphCard';
 import { ChatToolbar } from './ChatToolbar';
-import { extractImages, extractText, extractThinking, extractToolUse } from './message-utils';
+import { extractImages, extractThinking, extractToolUse } from './message-utils';
+import { getMessageText } from '@/stores/chat/helpers';
 import { deriveTaskSteps, parseSubagentCompletionInfo } from './task-visualization';
 import { useTranslation } from 'react-i18next';
 import { cn } from '@/lib/utils';
@@ -30,7 +31,6 @@ export function Chat() {
   const messages = useChatStore((s) => s.messages);
   const currentSessionKey = useChatStore((s) => s.currentSessionKey);
   const currentAgentId = useChatStore((s) => s.currentAgentId);
-  const sessionLabels = useChatStore((s) => s.sessionLabels);
   const loading = useChatStore((s) => s.loading);
   const sending = useChatStore((s) => s.sending);
   const error = useChatStore((s) => s.error);
@@ -132,7 +132,7 @@ export function Chat() {
   const streamMsg = streamingMessage && typeof streamingMessage === 'object'
     ? streamingMessage as unknown as { role?: string; content?: unknown; timestamp?: number }
     : null;
-  const streamText = streamMsg ? extractText(streamMsg) : (typeof streamingMessage === 'string' ? streamingMessage : '');
+  const streamText = streamMsg ? getMessageText(streamMsg.content) : (typeof streamingMessage === 'string' ? streamingMessage : '');
   const hasStreamText = streamText.trim().length > 0;
   const streamThinking = streamMsg ? extractThinking(streamMsg) : null;
   const hasStreamThinking = showThinking && !!streamThinking && streamThinking.trim().length > 0;
@@ -166,14 +166,14 @@ export function Chat() {
     const completionInfos = subagentCompletionInfos
       .slice(idx + 1, segmentEnd)
       .filter((value): value is NonNullable<typeof value> => value != null);
-    const isLatestOpenRun = nextUserIndex === -1 && (sending || pendingFinal || hasAnyStreamContent);
+    const isLatestOpenRun = nextUserIndex === -1;
     let steps = deriveTaskSteps({
       messages: segmentMessages,
       streamingMessage: isLatestOpenRun ? streamingMessage : null,
       streamingTools: isLatestOpenRun ? streamingTools : [],
       sending: isLatestOpenRun ? sending : false,
       pendingFinal: isLatestOpenRun ? pendingFinal : false,
-      showThinking,
+      showThinking: true,
     });
 
     for (const completion of completionInfos) {
@@ -186,7 +186,7 @@ export function Chat() {
         streamingTools: [],
         sending: false,
         pendingFinal: false,
-        showThinking,
+        showThinking: true,
       }).map((step) => ({
         ...step,
         id: `${completion.sessionId}:${step.id}`,
@@ -213,7 +213,7 @@ export function Chat() {
 
     const segmentAgentId = currentAgentId;
     const segmentAgentLabel = agents.find((agent) => agent.id === segmentAgentId)?.name || segmentAgentId;
-    const segmentSessionLabel = sessionLabels[currentSessionKey] || currentSessionKey;
+    const segmentSessionLabel = getMessageText(message.content) || currentSessionKey;
 
     return [{
       triggerIndex: idx,
