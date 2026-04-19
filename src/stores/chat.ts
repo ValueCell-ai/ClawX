@@ -1940,7 +1940,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
         const errorMsg = result.error || 'Failed to send message';
         if (isRecoverableChatSendTimeout(errorMsg)) {
           console.warn(`[sendMessage] Recoverable chat.send timeout, keeping poll alive: ${errorMsg}`);
-          set({ error: errorMsg });
         } else {
           clearHistoryPoll();
           set({ error: errorMsg, sending: false });
@@ -1952,7 +1951,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
       const errStr = String(err);
       if (isRecoverableChatSendTimeout(errStr)) {
         console.warn(`[sendMessage] Recoverable chat.send timeout, keeping poll alive: ${errStr}`);
-        set({ error: errStr });
       } else {
         clearHistoryPoll();
         set({ error: errStr, sending: false });
