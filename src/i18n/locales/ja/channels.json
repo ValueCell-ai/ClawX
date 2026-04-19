@@ -206,25 +206,12 @@
                 "clientSecret": {
                     "label": "Client Secret (AppSecret)",
                     "placeholder": "アプリのシークレット"
-                },
-                "robotCode": {
-                    "label": "Robot Code（任意）",
-                    "placeholder": "通常は Client ID と同じ"
-                },
-                "corpId": {
-                    "label": "Corp ID（任意）",
-                    "placeholder": "dingxxxxxx"
-                },
-                "agentId": {
-                    "label": "Agent ID（任意）",
-                    "placeholder": "123456789"
                 }
             },
             "instructions": [
                 "まず OpenClaw に dingtalk プラグインをインストールして有効化します",
                 "DingTalk 開発者コンソールで社内アプリを作成し Stream モードを有効にします",
-                "Client ID と Client Secret を入力します（必須）",
-                "必要に応じて Robot Code / Corp ID / Agent ID を入力します"
+                "Client ID (AppKey) と Client Secret (AppSecret) を入力します"
             ]
         },
         "signal": {
