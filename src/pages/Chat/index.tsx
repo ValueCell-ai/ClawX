@@ -222,8 +222,6 @@ export function Chat() {
         messages: segmentMessages,
         streamingMessage: isLatestOpenRun ? streamingMessage : null,
         streamingTools: isLatestOpenRun ? streamingTools : [],
-        sending: isLatestOpenRun ? sending : false,
-        pendingFinal: isLatestOpenRun ? pendingFinal : false,
         omitLastStreamingMessageSegment: isLatestOpenRun ? omitLastStreamingMessageSegment : false,
       });
 
@@ -235,8 +233,6 @@ export function Chat() {
           messages: childMessages,
           streamingMessage: null,
           streamingTools: [],
-          sending: false,
-          pendingFinal: false,
         }).map((step) => ({
           ...step,
           id: `${completion.sessionId}:${step.id}`,

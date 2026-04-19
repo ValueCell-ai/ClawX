@@ -24,8 +24,6 @@ describe('deriveTaskSteps', () => {
         ],
       },
       streamingTools,
-      sending: true,
-      pendingFinal: false,
     });
 
     expect(steps).toEqual([
@@ -69,8 +67,6 @@ describe('deriveTaskSteps', () => {
           summary: 'Scanning files',
         },
       ],
-      sending: true,
-      pendingFinal: false,
     });
 
     expect(steps).toEqual([
@@ -110,8 +106,6 @@ describe('deriveTaskSteps', () => {
           summary: 'Permission denied',
         },
       ],
-      sending: true,
-      pendingFinal: false,
     });
 
     expect(steps).toEqual([
@@ -151,8 +145,6 @@ describe('deriveTaskSteps', () => {
           summary: 'Scanning current workspace',
         },
       ],
-      sending: true,
-      pendingFinal: false,
     });
 
     expect(steps).toHaveLength(8);
@@ -179,8 +171,6 @@ describe('deriveTaskSteps', () => {
       messages,
       streamingMessage: null,
       streamingTools: [],
-      sending: false,
-      pendingFinal: false,
     });
 
     expect(steps).toEqual([
@@ -211,8 +201,6 @@ describe('deriveTaskSteps', () => {
         ],
       },
       streamingTools: [],
-      sending: true,
-      pendingFinal: false,
     });
 
     expect(steps).toEqual([
@@ -246,8 +234,6 @@ describe('deriveTaskSteps', () => {
         ],
       },
       streamingTools: [],
-      sending: true,
-      pendingFinal: true,
       omitLastStreamingMessageSegment: true,
     });
 
@@ -280,8 +266,6 @@ describe('deriveTaskSteps', () => {
       ],
       streamingMessage: null,
       streamingTools: [],
-      sending: false,
-      pendingFinal: false,
     });
 
     expect(steps).toEqual([
@@ -331,8 +315,6 @@ describe('deriveTaskSteps', () => {
       messages,
       streamingMessage: null,
       streamingTools: [],
-      sending: false,
-      pendingFinal: false,
     });
 
     expect(steps).toEqual([

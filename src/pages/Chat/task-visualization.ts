@@ -47,8 +47,6 @@ interface DeriveTaskStepsInput {
   messages: RawMessage[];
   streamingMessage: unknown | null;
   streamingTools: ToolStatus[];
-  sending: boolean;
-  pendingFinal: boolean;
   omitLastStreamingMessageSegment?: boolean;
 }
 
@@ -215,8 +213,6 @@ export function deriveTaskSteps({
   messages,
   streamingMessage,
   streamingTools,
-  sending,
-  pendingFinal,
   omitLastStreamingMessageSegment = false,
 }: DeriveTaskStepsInput): TaskStep[] {
   const steps: TaskStep[] = [];
@@ -343,17 +339,6 @@ export function deriveTaskSteps({
         detail: normalizeText(JSON.stringify(tool.input, null, 2)),
         depth: 1,
       });
-    });
-  }
-
-  if (sending && pendingFinal && !omitLastStreamingMessageSegment) {
-      upsertStep({
-        id: 'system-finalizing',
-        label: 'Finalizing answer',
-        status: 'running',
-      kind: 'system',
-      detail: 'Waiting for the assistant to finish this run.',
-      depth: 1,
     });
   }
 
