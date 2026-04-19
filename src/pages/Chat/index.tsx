@@ -22,6 +22,21 @@ import { cn } from '@/lib/utils';
 import { useStickToBottomInstant } from '@/hooks/use-stick-to-bottom-instant';
 import { useMinLoading } from '@/hooks/use-min-loading';
 
+type GraphStepCacheEntry = {
+  steps: ReturnType<typeof deriveTaskSteps>;
+  agentLabel: string;
+  sessionLabel: string;
+  segmentEnd: number;
+  replyIndex: number | null;
+  triggerIndex: number;
+};
+
+// Keep the last non-empty execution-graph snapshot per session/run outside
+// React state so `loadHistory` refreshes can still fall back to the previous
+// steps without tripping React's set-state-in-effect lint rule.
+const graphStepCacheStore = new Map<string, Record<string, GraphStepCacheEntry>>();
+const streamingTimestampStore = new Map<string, number>();
+
 export function Chat() {
   const { t } = useTranslation('chat');
   const gatewayStatus = useGatewayStore((s) => s.status);
@@ -52,16 +67,7 @@ export function Chat() {
   // remount and reset. `undefined` values mean "user hasn't toggled, let the
   // card pick a default from its own `active` prop."
   const [graphExpandedOverrides, setGraphExpandedOverrides] = useState<Record<string, boolean>>({});
-  const [graphStepCache, setGraphStepCache] = useState<Record<string, {
-    steps: ReturnType<typeof deriveTaskSteps>;
-    agentLabel: string;
-    sessionLabel: string;
-    segmentEnd: number;
-    replyIndex: number | null;
-    triggerIndex: number;
-  }>>({});
-
-  const [streamingTimestamp, setStreamingTimestamp] = useState<number>(0);
+  const graphStepCache: Record<string, GraphStepCacheEntry> = graphStepCacheStore.get(currentSessionKey) ?? {};
   const minLoading = useMinLoading(loading && messages.length > 0);
   const { contentRef, scrollRef } = useStickToBottomInstant(currentSessionKey);
 
@@ -131,21 +137,23 @@ export function Chat() {
     };
   }, [messages, childTranscripts]);
 
-  // Update timestamp when sending starts
-  useEffect(() => {
-    if (sending && streamingTimestamp === 0) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      setStreamingTimestamp(Date.now() / 1000);
-    } else if (!sending && streamingTimestamp !== 0) {
-      setStreamingTimestamp(0);
-    }
-  }, [sending, streamingTimestamp]);
-
-  // Gateway not running block has been completely removed so the UI always renders.
-
   const streamMsg = streamingMessage && typeof streamingMessage === 'object'
     ? streamingMessage as unknown as { role?: string; content?: unknown; timestamp?: number }
     : null;
+  const streamTimestamp = typeof streamMsg?.timestamp === 'number' ? streamMsg.timestamp : 0;
+  useEffect(() => {
+    if (!sending) {
+      streamingTimestampStore.delete(currentSessionKey);
+      return;
+    }
+    if (!streamingTimestampStore.has(currentSessionKey)) {
+      streamingTimestampStore.set(currentSessionKey, streamTimestamp || Date.now() / 1000);
+    }
+  }, [currentSessionKey, sending, streamTimestamp]);
+
+  const streamingTimestamp = sending
+    ? (streamingTimestampStore.get(currentSessionKey) ?? streamTimestamp)
+    : 0;
   const streamText = streamMsg ? extractText(streamMsg) : (typeof streamingMessage === 'string' ? streamingMessage : '');
   const hasStreamText = streamText.trim().length > 0;
   const streamThinking = streamMsg ? extractThinking(streamMsg) : null;
@@ -284,51 +292,52 @@ export function Chat() {
 
   useEffect(() => {
     if (userRunCards.length === 0) return;
-    setGraphStepCache((current) => {
-      let changed = false;
-      const next = { ...current };
-      for (const card of userRunCards) {
-        if (card.steps.length === 0) continue;
-        const triggerMsg = messages[card.triggerIndex];
-        const runKey = triggerMsg?.id
-          ? `msg-${triggerMsg.id}`
-          : `${currentSessionKey}:trigger-${card.triggerIndex}`;
-        const existing = current[runKey];
-        const sameSteps = !!existing
-          && existing.steps.length === card.steps.length
-          && existing.steps.every((step, index) => {
-            const nextStep = card.steps[index];
-            return nextStep
-              && step.id === nextStep.id
-              && step.label === nextStep.label
-              && step.status === nextStep.status
-              && step.kind === nextStep.kind
-              && step.detail === nextStep.detail
-              && step.depth === nextStep.depth
-              && step.parentId === nextStep.parentId;
-          });
-        if (
-          sameSteps
-          && existing?.agentLabel === card.agentLabel
-          && existing?.sessionLabel === card.sessionLabel
-          && existing?.segmentEnd === card.segmentEnd
-          && existing?.replyIndex === card.replyIndex
-          && existing?.triggerIndex === card.triggerIndex
-        ) {
-          continue;
-        }
-        next[runKey] = {
-          steps: card.steps,
-          agentLabel: card.agentLabel,
-          sessionLabel: card.sessionLabel,
-          segmentEnd: card.segmentEnd,
-          replyIndex: card.replyIndex,
-          triggerIndex: card.triggerIndex,
-        };
-        changed = true;
+    const current = graphStepCacheStore.get(currentSessionKey) ?? {};
+    let changed = false;
+    const next = { ...current };
+    for (const card of userRunCards) {
+      if (card.steps.length === 0) continue;
+      const triggerMsg = messages[card.triggerIndex];
+      const runKey = triggerMsg?.id
+        ? `msg-${triggerMsg.id}`
+        : `${currentSessionKey}:trigger-${card.triggerIndex}`;
+      const existing = current[runKey];
+      const sameSteps = !!existing
+        && existing.steps.length === card.steps.length
+        && existing.steps.every((step, index) => {
+          const nextStep = card.steps[index];
+          return nextStep
+            && step.id === nextStep.id
+            && step.label === nextStep.label
+            && step.status === nextStep.status
+            && step.kind === nextStep.kind
+            && step.detail === nextStep.detail
+            && step.depth === nextStep.depth
+            && step.parentId === nextStep.parentId;
+        });
+      if (
+        sameSteps
+        && existing?.agentLabel === card.agentLabel
+        && existing?.sessionLabel === card.sessionLabel
+        && existing?.segmentEnd === card.segmentEnd
+        && existing?.replyIndex === card.replyIndex
+        && existing?.triggerIndex === card.triggerIndex
+      ) {
+        continue;
       }
-      return changed ? next : current;
-    });
+      next[runKey] = {
+        steps: card.steps,
+        agentLabel: card.agentLabel,
+        sessionLabel: card.sessionLabel,
+        segmentEnd: card.segmentEnd,
+        replyIndex: card.replyIndex,
+        triggerIndex: card.triggerIndex,
+      };
+      changed = true;
+    }
+    if (changed) {
+      graphStepCacheStore.set(currentSessionKey, next);
+    }
   }, [userRunCards, messages, currentSessionKey]);
 
   return (
