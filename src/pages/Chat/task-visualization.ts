@@ -1,4 +1,4 @@
-import { extractText, extractThinking, extractToolUse } from './message-utils';
+import { extractText, extractTextSegments, extractThinkingSegments, extractToolUse } from './message-utils';
 import type { RawMessage, ToolStatus } from '@/stores/chat';
 
 export type TaskStepStatus = 'running' | 'completed' | 'error';
@@ -49,6 +49,7 @@ interface DeriveTaskStepsInput {
   streamingTools: ToolStatus[];
   sending: boolean;
   pendingFinal: boolean;
+  omitLastStreamingMessageSegment?: boolean;
 }
 
 export interface SubagentCompletionInfo {
@@ -184,12 +185,39 @@ function attachTopology(steps: TaskStep[]): TaskStep[] {
   return withTopology;
 }
 
+function appendDetailSegments(
+  segments: string[],
+  options: {
+    idPrefix: string;
+    label: string;
+    kind: Extract<TaskStep['kind'], 'thinking' | 'message'>;
+    running: boolean;
+    upsertStep: (step: TaskStep) => void;
+  },
+): void {
+  const normalizedSegments = segments
+    .map((segment) => normalizeText(segment))
+    .filter((segment): segment is string => !!segment);
+
+  normalizedSegments.forEach((detail, index) => {
+    options.upsertStep({
+      id: `${options.idPrefix}-${index}`,
+      label: options.label,
+      status: options.running && index === normalizedSegments.length - 1 ? 'running' : 'completed',
+      kind: options.kind,
+      detail,
+      depth: 1,
+    });
+  });
+}
+
 export function deriveTaskSteps({
   messages,
   streamingMessage,
   streamingTools,
   sending,
   pendingFinal,
+  omitLastStreamingMessageSegment = false,
 }: DeriveTaskStepsInput): TaskStep[] {
   const steps: TaskStep[] = [];
   const stepIndexById = new Map<string, number>();
@@ -222,17 +250,13 @@ export function deriveTaskSteps({
   for (const [messageIndex, message] of messages.entries()) {
     if (!message || message.role !== 'assistant') continue;
 
-    const thinking = extractThinking(message);
-    if (thinking) {
-      upsertStep({
-        id: `history-thinking-${message.id || messageIndex}`,
-        label: 'Thinking',
-        status: 'completed',
-        kind: 'thinking',
-        detail: normalizeText(thinking),
-        depth: 1,
-      });
-    }
+    appendDetailSegments(extractThinkingSegments(message), {
+      idPrefix: `history-thinking-${message.id || messageIndex}`,
+      label: 'Thinking',
+      kind: 'thinking',
+      running: false,
+      upsertStep,
+    });
 
     const toolUses = extractToolUse(message);
     // Fold any intermediate assistant text into the graph as a narration
@@ -240,19 +264,17 @@ export function deriveTaskSteps({
     // The narration step is emitted BEFORE the tool steps so the graph
     // preserves the original ordering (the assistant "thinks out loud" and
     // then invokes the tool).
-    const narrationText = extractText(message).trim();
-    const isIntermediateNarration = narrationText.length > 0
-      && messageIndex !== replyIndex;
-    if (isIntermediateNarration) {
-      upsertStep({
-        id: `history-message-${message.id || messageIndex}`,
-        label: 'Message',
-        status: 'completed',
-        kind: 'message',
-        detail: normalizeText(extractText(message)),
-        depth: 1,
-      });
-    }
+    const narrationSegments = extractTextSegments(message);
+    const graphNarrationSegments = messageIndex === replyIndex
+      ? narrationSegments.slice(0, -1)
+      : narrationSegments;
+    appendDetailSegments(graphNarrationSegments, {
+      idPrefix: `history-message-${message.id || messageIndex}`,
+      label: 'Message',
+      kind: 'message',
+      running: false,
+      upsertStep,
+    });
 
     toolUses.forEach((tool, index) => {
       upsertStep({
@@ -267,32 +289,28 @@ export function deriveTaskSteps({
   }
 
   if (streamMessage) {
-    const thinking = extractThinking(streamMessage);
-    if (thinking) {
-      upsertStep({
-        id: 'stream-thinking',
-        label: 'Thinking',
-        status: 'running',
-        kind: 'thinking',
-        detail: normalizeText(thinking),
-        depth: 1,
-      });
-    }
+    appendDetailSegments(extractThinkingSegments(streamMessage), {
+      idPrefix: 'stream-thinking',
+      label: 'Thinking',
+      kind: 'thinking',
+      running: true,
+      upsertStep,
+    });
 
     // Stream-time narration should also appear in the execution graph so that
     // intermediate process output stays in P1 instead of leaking into the
     // assistant reply area.
-    const streamNarration = extractText(streamMessage);
-    if (streamNarration.trim().length > 0) {
-      upsertStep({
-        id: 'stream-message',
-        label: 'Message',
-        status: 'running',
-        kind: 'message',
-        detail: normalizeText(streamNarration),
-        depth: 1,
-      });
-    }
+    const streamNarrationSegments = extractTextSegments(streamMessage);
+    const graphStreamNarrationSegments = omitLastStreamingMessageSegment
+      ? streamNarrationSegments.slice(0, -1)
+      : streamNarrationSegments;
+    appendDetailSegments(graphStreamNarrationSegments, {
+      idPrefix: 'stream-message',
+      label: 'Message',
+      kind: 'message',
+      running: !omitLastStreamingMessageSegment,
+      upsertStep,
+    });
   }
 
   const activeToolIds = new Set<string>();
@@ -328,7 +346,7 @@ export function deriveTaskSteps({
     });
   }
 
-  if (sending && pendingFinal) {
+  if (sending && pendingFinal && !omitLastStreamingMessageSegment) {
       upsertStep({
         id: 'system-finalizing',
         label: 'Finalizing answer',

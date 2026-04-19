@@ -63,6 +63,52 @@ function compactProgressiveParts(parts: string[]): string[] {
   return compacted;
 }
 
+function splitProgressiveParts(parts: string[]): string[] {
+  const segments: string[] = [];
+  let previous = '';
+
+  for (const part of parts) {
+    const current = normalizeProgressiveText(part);
+    if (!current) continue;
+
+    if (!previous) {
+      segments.push(current);
+      previous = current;
+      continue;
+    }
+
+    if (current === previous || previous.startsWith(current)) {
+      continue;
+    }
+
+    if (current.startsWith(previous)) {
+      const incremental = current.slice(previous.length).trim();
+      if (incremental) {
+        segments.push(incremental);
+      }
+      previous = current;
+      continue;
+    }
+
+    segments.push(current);
+    previous = current;
+  }
+
+  return segments;
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function consumeLeadingSegment(text: string, segment: string): number {
+  const tokens = segment.trim().split(/\s+/).filter(Boolean);
+  if (tokens.length === 0) return 0;
+  const pattern = new RegExp(`^\\s*${tokens.map(escapeRegExp).join('\\s+')}\\s*`, 'u');
+  const match = text.match(pattern);
+  return match ? match[0].length : 0;
+}
+
 /**
  * Extract displayable text from a message's content field.
  * Handles both string content and array-of-blocks content.
@@ -102,6 +148,37 @@ export function extractText(message: RawMessage | unknown): string {
   return result;
 }
 
+export function extractTextSegments(message: RawMessage | unknown): string[] {
+  if (!message || typeof message !== 'object') return [];
+  const msg = message as Record<string, unknown>;
+  const content = msg.content;
+  const isUser = msg.role === 'user';
+
+  let segments: string[] = [];
+
+  if (typeof content === 'string') {
+    const cleaned = content.trim();
+    segments = cleaned ? [cleaned] : [];
+  } else if (Array.isArray(content)) {
+    const parts: string[] = [];
+    for (const block of content as ContentBlock[]) {
+      if (block.type === 'text' && block.text && block.text.trim()) {
+        parts.push(block.text);
+      }
+    }
+    segments = splitProgressiveParts(parts);
+  } else if (typeof msg.text === 'string') {
+    const cleaned = msg.text.trim();
+    segments = cleaned ? [cleaned] : [];
+  }
+
+  if (!isUser) return segments;
+
+  return segments
+    .map((segment) => cleanUserText(segment))
+    .filter((segment) => segment.length > 0);
+}
+
 /**
  * Extract thinking/reasoning content from a message.
  * Returns null if no thinking content found.
@@ -125,6 +202,43 @@ export function extractThinking(message: RawMessage | unknown): string | null {
 
   const combined = compactProgressiveParts(parts).join('\n\n').trim();
   return combined.length > 0 ? combined : null;
+}
+
+export function extractThinkingSegments(message: RawMessage | unknown): string[] {
+  if (!message || typeof message !== 'object') return [];
+  const msg = message as Record<string, unknown>;
+  const content = msg.content;
+
+  if (!Array.isArray(content)) return [];
+
+  const parts: string[] = [];
+  for (const block of content as ContentBlock[]) {
+    if (block.type === 'thinking' && block.thinking) {
+      const cleaned = block.thinking.trim();
+      if (cleaned) {
+        parts.push(cleaned);
+      }
+    }
+  }
+
+  return splitProgressiveParts(parts);
+}
+
+export function stripProcessMessagePrefix(text: string, processSegments: string[]): string {
+  let remaining = text;
+  let strippedAny = false;
+
+  for (const segment of processSegments) {
+    const normalizedSegment = normalizeProgressiveText(segment);
+    if (!normalizedSegment) continue;
+    const consumed = consumeLeadingSegment(remaining, normalizedSegment);
+    if (consumed === 0) break;
+    remaining = remaining.slice(consumed);
+    strippedAny = true;
+  }
+
+  const trimmed = remaining.trimStart();
+  return strippedAny && trimmed ? trimmed : text;
 }
 
 /**

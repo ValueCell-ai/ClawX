@@ -93,6 +93,13 @@ function buildChatEventDedupeKey(eventState: string, event: Record<string, unkno
   const runId = event.runId != null ? String(event.runId) : '';
   const sessionKey = event.sessionKey != null ? String(event.sessionKey) : '';
   const seq = event.seq != null ? String(event.seq) : '';
+  // Some gateways emit multiple `delta` updates without a monotonically
+  // increasing `seq`. Deduping those by just `runId + sessionKey + state`
+  // collapses legitimate stream progression, so only seq-backed deltas are
+  // safe to dedupe generically.
+  if (eventState === 'delta' && !seq) {
+    return null;
+  }
   if (runId || sessionKey || seq || eventState) {
     return [runId, sessionKey, seq, eventState].join('|');
   }
@@ -204,45 +211,7 @@ function compactProgressiveTextParts(parts: string[]): string[] {
 }
 
 function normalizeLiveContentBlocks(content: ContentBlock[]): ContentBlock[] {
-  const normalized: ContentBlock[] = [];
-
-  let textBuffer: string[] = [];
-  let thinkingBuffer: string[] = [];
-
-  const flushTextBuffer = () => {
-    for (const part of compactProgressiveTextParts(textBuffer)) {
-      normalized.push({ type: 'text', text: part });
-    }
-    textBuffer = [];
-  };
-
-  const flushThinkingBuffer = () => {
-    for (const part of compactProgressiveTextParts(thinkingBuffer)) {
-      normalized.push({ type: 'thinking', thinking: part });
-    }
-    thinkingBuffer = [];
-  };
-
-  for (const block of content) {
-    if (block.type === 'text' && block.text) {
-      textBuffer.push(block.text);
-      continue;
-    }
-
-    if (block.type === 'thinking' && block.thinking) {
-      thinkingBuffer.push(block.thinking);
-      continue;
-    }
-
-    flushTextBuffer();
-    flushThinkingBuffer();
-    normalized.push(block);
-  }
-
-  flushTextBuffer();
-  flushThinkingBuffer();
-
-  return normalized;
+  return content.map((block) => ({ ...block }));
 }
 
 function normalizeStreamingMessage(message: unknown): unknown {

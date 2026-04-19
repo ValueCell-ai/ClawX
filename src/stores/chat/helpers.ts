@@ -109,44 +109,7 @@ function compactProgressiveTextParts(parts: string[]): string[] {
 }
 
 function normalizeLiveContentBlocks(content: ContentBlock[]): ContentBlock[] {
-  const normalized: ContentBlock[] = [];
-  let textBuffer: string[] = [];
-  let thinkingBuffer: string[] = [];
-
-  const flushTextBuffer = () => {
-    for (const part of compactProgressiveTextParts(textBuffer)) {
-      normalized.push({ type: 'text', text: part });
-    }
-    textBuffer = [];
-  };
-
-  const flushThinkingBuffer = () => {
-    for (const part of compactProgressiveTextParts(thinkingBuffer)) {
-      normalized.push({ type: 'thinking', thinking: part });
-    }
-    thinkingBuffer = [];
-  };
-
-  for (const block of content) {
-    if (block.type === 'text' && block.text) {
-      textBuffer.push(block.text);
-      continue;
-    }
-
-    if (block.type === 'thinking' && block.thinking) {
-      thinkingBuffer.push(block.thinking);
-      continue;
-    }
-
-    flushTextBuffer();
-    flushThinkingBuffer();
-    normalized.push(block);
-  }
-
-  flushTextBuffer();
-  flushThinkingBuffer();
-
-  return normalized;
+  return content.map((block) => ({ ...block }));
 }
 
 function normalizeStreamingMessage(message: unknown): unknown {

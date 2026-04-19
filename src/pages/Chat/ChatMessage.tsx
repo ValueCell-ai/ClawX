@@ -16,6 +16,7 @@ import { extractText, extractThinking, extractImages, extractToolUse, formatTime
 
 interface ChatMessageProps {
   message: RawMessage;
+  textOverride?: string;
   suppressToolCards?: boolean;
   suppressProcessAttachments?: boolean;
   /**
@@ -48,6 +49,7 @@ function imageSrc(img: ExtractedImage): string | null {
 
 export const ChatMessage = memo(function ChatMessage({
   message,
+  textOverride,
   suppressToolCards = false,
   suppressProcessAttachments = false,
   suppressAssistantText = false,
@@ -57,7 +59,7 @@ export const ChatMessage = memo(function ChatMessage({
   const isUser = message.role === 'user';
   const role = typeof message.role === 'string' ? message.role.toLowerCase() : '';
   const isToolResult = role === 'toolresult' || role === 'tool_result';
-  const text = extractText(message);
+  const text = textOverride ?? extractText(message);
   // When text is folded into an ExecutionGraphCard, treat the message as
   // having no text for rendering purposes. Keeping this behind a flag (vs
   // blanking `text` outright) lets future hover affordances still read the

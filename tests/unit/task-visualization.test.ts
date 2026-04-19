@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { deriveTaskSteps, parseSubagentCompletionInfo } from '@/pages/Chat/task-visualization';
+import { stripProcessMessagePrefix } from '@/pages/Chat/message-utils';
 import type { RawMessage, ToolStatus } from '@/stores/chat';
 
 describe('deriveTaskSteps', () => {
@@ -29,7 +30,7 @@ describe('deriveTaskSteps', () => {
 
     expect(steps).toEqual([
       expect.objectContaining({
-        id: 'stream-thinking',
+        id: 'stream-thinking-0',
         label: 'Thinking',
         status: 'running',
         kind: 'thinking',
@@ -184,7 +185,7 @@ describe('deriveTaskSteps', () => {
 
     expect(steps).toEqual([
       expect.objectContaining({
-        id: 'history-thinking-assistant-1',
+        id: 'history-thinking-assistant-1-0',
         label: 'Thinking',
         status: 'completed',
         kind: 'thinking',
@@ -198,15 +199,15 @@ describe('deriveTaskSteps', () => {
     ]);
   });
 
-  it('collapses cumulative streaming thinking details into the newest version', () => {
+  it('splits cumulative streaming thinking into separate execution steps', () => {
     const steps = deriveTaskSteps({
       messages: [],
       streamingMessage: {
         role: 'assistant',
         content: [
-          { type: 'thinking', thinking: 'thinking 1' },
-          { type: 'thinking', thinking: 'thinking 1 2' },
-          { type: 'thinking', thinking: 'thinking 1 2 3' },
+          { type: 'thinking', thinking: 'Reviewing X.' },
+          { type: 'thinking', thinking: 'Reviewing X. Comparing Y.' },
+          { type: 'thinking', thinking: 'Reviewing X. Comparing Y. Drafting answer.' },
         ],
       },
       streamingTools: [],
@@ -216,10 +217,92 @@ describe('deriveTaskSteps', () => {
 
     expect(steps).toEqual([
       expect.objectContaining({
-        id: 'stream-thinking',
-        detail: 'thinking 1 2 3',
+        id: 'stream-thinking-0',
+        detail: 'Reviewing X.',
+        status: 'completed',
+      }),
+      expect.objectContaining({
+        id: 'stream-thinking-1',
+        detail: 'Comparing Y.',
+        status: 'completed',
+      }),
+      expect.objectContaining({
+        id: 'stream-thinking-2',
+        detail: 'Drafting answer.',
+        status: 'running',
       }),
     ]);
+  });
+
+  it('keeps earlier reply segments in the graph when the last streaming segment is rendered separately', () => {
+    const steps = deriveTaskSteps({
+      messages: [],
+      streamingMessage: {
+        role: 'assistant',
+        content: [
+          { type: 'text', text: 'Checked X.' },
+          { type: 'text', text: 'Checked X. Checked Snowball.' },
+          { type: 'text', text: 'Checked X. Checked Snowball. Here is the summary.' },
+        ],
+      },
+      streamingTools: [],
+      sending: true,
+      pendingFinal: true,
+      omitLastStreamingMessageSegment: true,
+    });
+
+    expect(steps).toEqual([
+      expect.objectContaining({
+        id: 'stream-message-0',
+        detail: 'Checked X.',
+        status: 'completed',
+      }),
+      expect.objectContaining({
+        id: 'stream-message-1',
+        detail: 'Checked Snowball.',
+        status: 'completed',
+      }),
+    ]);
+  });
+
+  it('folds earlier reply segments into the graph but leaves the final answer for the chat bubble', () => {
+    const steps = deriveTaskSteps({
+      messages: [
+        {
+          role: 'assistant',
+          id: 'assistant-reply',
+          content: [
+            { type: 'text', text: 'Checked X.' },
+            { type: 'text', text: 'Checked X. Checked Snowball.' },
+            { type: 'text', text: 'Checked X. Checked Snowball. Here is the summary.' },
+          ],
+        },
+      ],
+      streamingMessage: null,
+      streamingTools: [],
+      sending: false,
+      pendingFinal: false,
+    });
+
+    expect(steps).toEqual([
+      expect.objectContaining({
+        id: 'history-message-assistant-reply-0',
+        detail: 'Checked X.',
+        status: 'completed',
+      }),
+      expect.objectContaining({
+        id: 'history-message-assistant-reply-1',
+        detail: 'Checked Snowball.',
+        status: 'completed',
+      }),
+    ]);
+  });
+
+  it('strips folded process narration from the final reply text', () => {
+    expect(stripProcessMessagePrefix(
+      'Checked X. Checked Snowball. Here is the summary.',
+      ['Checked X.', 'Checked Snowball.'],
+    )).toBe('Here is the summary.');
   });
 
   it('builds a branch for spawned subagents', () => {

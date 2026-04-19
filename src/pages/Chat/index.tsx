@@ -15,8 +15,8 @@ import { ChatMessage } from './ChatMessage';
 import { ChatInput } from './ChatInput';
 import { ExecutionGraphCard } from './ExecutionGraphCard';
 import { ChatToolbar } from './ChatToolbar';
-import { extractImages, extractText, extractThinking, extractToolUse } from './message-utils';
-import { deriveTaskSteps, findReplyMessageIndex, parseSubagentCompletionInfo } from './task-visualization';
+import { extractImages, extractText, extractThinking, extractToolUse, stripProcessMessagePrefix } from './message-utils';
+import { deriveTaskSteps, findReplyMessageIndex, parseSubagentCompletionInfo, type TaskStep } from './task-visualization';
 import { useTranslation } from 'react-i18next';
 import { cn } from '@/lib/utils';
 import { useStickToBottomInstant } from '@/hooks/use-stick-to-bottom-instant';
@@ -30,6 +30,24 @@ type GraphStepCacheEntry = {
   replyIndex: number | null;
   triggerIndex: number;
 };
+
+type UserRunCard = {
+  triggerIndex: number;
+  replyIndex: number | null;
+  active: boolean;
+  agentLabel: string;
+  sessionLabel: string;
+  segmentEnd: number;
+  steps: TaskStep[];
+  messageStepTexts: string[];
+  streamingReplyText: string | null;
+};
+
+function getPrimaryMessageStepTexts(steps: TaskStep[]): string[] {
+  return steps
+    .filter((step) => step.kind === 'message' && step.parentId === 'agent-run' && !!step.detail)
+    .map((step) => step.detail!);
+}
 
 // Keep the last non-empty execution-graph snapshot per session/run outside
 // React state so `loadHistory` refreshes can still fall back to the previous
@@ -163,6 +181,7 @@ export function Chat() {
   const streamImages = streamMsg ? extractImages(streamMsg) : [];
   const hasStreamImages = streamImages.length > 0;
   const hasStreamToolStatus = streamingTools.length > 0;
+  const hasRunningStreamToolStatus = streamingTools.some((tool) => tool.status === 'running');
   const shouldRenderStreaming = sending && (hasStreamText || hasStreamThinking || hasStreamTools || hasStreamImages || hasStreamToolStatus);
   const hasAnyStreamContent = hasStreamText || hasStreamThinking || hasStreamTools || hasStreamImages || hasStreamToolStatus;
 
@@ -182,7 +201,7 @@ export function Chat() {
   // them from the chat stream so they don't appear duplicated below the graph.
   const foldedNarrationIndices = new Set<number>();
 
-  const userRunCards = messages.flatMap((message, idx) => {
+  const userRunCards: UserRunCard[] = messages.flatMap((message, idx) => {
     if (message.role !== 'user' || subagentCompletionInfos[idx]) return [];
 
     const runKey = message.id
@@ -191,50 +210,74 @@ export function Chat() {
     const nextUserIndex = nextUserMessageIndexes[idx];
     const segmentEnd = nextUserIndex === -1 ? messages.length : nextUserIndex;
     const segmentMessages = messages.slice(idx + 1, segmentEnd);
-    const replyIndexOffset = segmentMessages.findIndex((candidate) => candidate.role === 'assistant');
-    const replyIndex = replyIndexOffset === -1 ? null : idx + 1 + replyIndexOffset;
     const completionInfos = subagentCompletionInfos
       .slice(idx + 1, segmentEnd)
       .filter((value): value is NonNullable<typeof value> => value != null);
     const isLatestOpenRun = nextUserIndex === -1 && (sending || pendingFinal || hasAnyStreamContent);
-    let steps = deriveTaskSteps({
-      messages: segmentMessages,
-      streamingMessage: isLatestOpenRun ? streamingMessage : null,
-      streamingTools: isLatestOpenRun ? streamingTools : [],
-      sending: isLatestOpenRun ? sending : false,
-      pendingFinal: isLatestOpenRun ? pendingFinal : false,
-    });
+    const replyIndexOffset = findReplyMessageIndex(segmentMessages, isLatestOpenRun);
+    const replyIndex = replyIndexOffset === -1 ? null : idx + 1 + replyIndexOffset;
 
-    for (const completion of completionInfos) {
-      const childMessages = childTranscripts[completion.sessionId];
-      if (!childMessages || childMessages.length === 0) continue;
-      const branchRootId = `subagent:${completion.sessionId}`;
-      const childSteps = deriveTaskSteps({
-        messages: childMessages,
-        streamingMessage: null,
-        streamingTools: [],
-        sending: false,
-        pendingFinal: false,
-      }).map((step) => ({
-        ...step,
-        id: `${completion.sessionId}:${step.id}`,
-        depth: step.depth + 1,
-        parentId: branchRootId,
-      }));
+    const buildSteps = (omitLastStreamingMessageSegment: boolean): TaskStep[] => {
+      let builtSteps = deriveTaskSteps({
+        messages: segmentMessages,
+        streamingMessage: isLatestOpenRun ? streamingMessage : null,
+        streamingTools: isLatestOpenRun ? streamingTools : [],
+        sending: isLatestOpenRun ? sending : false,
+        pendingFinal: isLatestOpenRun ? pendingFinal : false,
+        omitLastStreamingMessageSegment: isLatestOpenRun ? omitLastStreamingMessageSegment : false,
+      });
 
-      steps = [
-        ...steps,
-        {
-          id: branchRootId,
-          label: `${completion.agentId} subagent`,
-          status: 'completed',
-          kind: 'system' as const,
-          detail: completion.sessionKey,
-          depth: 1,
-          parentId: 'agent-run',
-        },
-        ...childSteps,
-      ];
+      for (const completion of completionInfos) {
+        const childMessages = childTranscripts[completion.sessionId];
+        if (!childMessages || childMessages.length === 0) continue;
+        const branchRootId = `subagent:${completion.sessionId}`;
+        const childSteps = deriveTaskSteps({
+          messages: childMessages,
+          streamingMessage: null,
+          streamingTools: [],
+          sending: false,
+          pendingFinal: false,
+        }).map((step) => ({
+          ...step,
+          id: `${completion.sessionId}:${step.id}`,
+          depth: step.depth + 1,
+          parentId: branchRootId,
+        }));
+
+        builtSteps = [
+          ...builtSteps,
+          {
+            id: branchRootId,
+            label: `${completion.agentId} subagent`,
+            status: 'completed',
+            kind: 'system' as const,
+            detail: completion.sessionKey,
+            depth: 1,
+            parentId: 'agent-run',
+          },
+          ...childSteps,
+        ];
+      }
+
+      return builtSteps;
+    };
+
+    const rawStreamingReplyCandidate = isLatestOpenRun
+      && pendingFinal
+      && (hasStreamText || hasStreamImages)
+      && streamTools.length === 0
+      && !hasRunningStreamToolStatus;
+
+    let steps = buildSteps(rawStreamingReplyCandidate);
+    let streamingReplyText: string | null = null;
+    if (rawStreamingReplyCandidate) {
+      const trimmedReplyText = stripProcessMessagePrefix(streamText, getPrimaryMessageStepTexts(steps));
+      const hasReplyText = trimmedReplyText.trim().length > 0;
+      if (hasReplyText || hasStreamImages) {
+        streamingReplyText = trimmedReplyText;
+      } else {
+        steps = buildSteps(false);
+      }
     }
 
     const segmentAgentId = currentAgentId;
@@ -252,6 +295,8 @@ export function Chat() {
         sessionLabel: cached.sessionLabel,
         segmentEnd: nextUserIndex === -1 ? messages.length - 1 : nextUserIndex - 1,
         steps: cached.steps,
+        messageStepTexts: getPrimaryMessageStepTexts(cached.steps),
+        streamingReplyText: null,
       }];
     }
 
@@ -281,14 +326,52 @@ export function Chat() {
     return [{
       triggerIndex: idx,
       replyIndex,
-      active: isLatestOpenRun,
+      active: isLatestOpenRun && streamingReplyText == null,
       agentLabel: segmentAgentLabel,
       sessionLabel: segmentSessionLabel,
       segmentEnd: nextUserIndex === -1 ? messages.length - 1 : nextUserIndex - 1,
       steps,
+      messageStepTexts: getPrimaryMessageStepTexts(steps),
+      streamingReplyText,
     }];
   });
   const hasActiveExecutionGraph = userRunCards.some((card) => card.active);
+  const replyTextOverrides = new Map<number, string>();
+  for (const card of userRunCards) {
+    if (card.replyIndex == null) continue;
+    const replyMessage = messages[card.replyIndex];
+    if (!replyMessage || replyMessage.role !== 'assistant') continue;
+    const fullReplyText = extractText(replyMessage);
+    const trimmedReplyText = stripProcessMessagePrefix(fullReplyText, card.messageStepTexts);
+    if (trimmedReplyText !== fullReplyText) {
+      replyTextOverrides.set(card.replyIndex, trimmedReplyText);
+    }
+  }
+  const streamingReplyText = userRunCards.find((card) => card.streamingReplyText != null)?.streamingReplyText ?? null;
+
+  useEffect(() => {
+    const runKeysToCollapse = userRunCards
+      .filter((card) => card.streamingReplyText != null || (card.replyIndex != null && replyTextOverrides.has(card.replyIndex)))
+      .map((card) => {
+        const triggerMsg = messages[card.triggerIndex];
+        return triggerMsg?.id
+          ? `msg-${triggerMsg.id}`
+          : `${currentSessionKey}:trigger-${card.triggerIndex}`;
+      });
+
+    if (runKeysToCollapse.length === 0) return;
+
+    setGraphExpandedOverrides((current) => {
+      let changed = false;
+      const next = { ...current };
+      for (const runKey of runKeysToCollapse) {
+        if (next[runKey] === false) continue;
+        next[runKey] = false;
+        changed = true;
+      }
+      return changed ? next : current;
+    });
+  }, [currentSessionKey, messages, replyTextOverrides, userRunCards]);
 
   useEffect(() => {
     if (userRunCards.length === 0) return;
@@ -376,6 +459,7 @@ export function Chat() {
                     >
                       <ChatMessage
                         message={msg}
+                        textOverride={replyTextOverrides.get(idx)}
                         suppressToolCards={suppressToolCards}
                         suppressProcessAttachments={suppressToolCards}
                       />
@@ -418,8 +502,9 @@ export function Chat() {
                             content: streamText,
                             timestamp: streamingTimestamp,
                           }) as RawMessage}
+                      textOverride={streamingReplyText ?? undefined}
                       isStreaming
-                      streamingTools={streamingTools}
+                      streamingTools={streamingReplyText != null ? [] : streamingTools}
                     />
                   )}
 
