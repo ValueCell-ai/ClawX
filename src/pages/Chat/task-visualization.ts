@@ -41,8 +41,6 @@ export function findReplyMessageIndex(messages: RawMessage[], hasStreamingReply:
   return -1;
 }
 
-const MAX_TASK_STEPS = 8;
-
 interface DeriveTaskStepsInput {
   messages: RawMessage[];
   streamingMessage: unknown | null;
@@ -342,8 +340,5 @@ export function deriveTaskSteps({
     });
   }
 
-  const withTopology = attachTopology(steps);
-  return withTopology.length > MAX_TASK_STEPS
-    ? withTopology.slice(-MAX_TASK_STEPS)
-    : withTopology;
+  return attachTopology(steps);
 }

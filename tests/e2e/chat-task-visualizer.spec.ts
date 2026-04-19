@@ -156,6 +156,29 @@ const seededInFlightHistory = [
     timestamp: Date.now(),
   },
 ];
+const longRunPrompt = 'Inspect the workspace and summarize the result';
+const longRunProcessSegments = Array.from({ length: 9 }, (_, index) => `Checked source ${index + 1}.`);
+const longRunSummary = 'Here is the summary.';
+const longRunReplyText = `${longRunProcessSegments.join(' ')} ${longRunSummary}`;
+const longRunHistory = [
+  {
+    role: 'user',
+    content: [{ type: 'text', text: longRunPrompt }],
+    timestamp: Date.now(),
+  },
+  ...longRunProcessSegments.map((segment, index) => ({
+    role: 'assistant',
+    id: `long-run-step-${index + 1}`,
+    content: [{ type: 'text', text: segment }],
+    timestamp: Date.now(),
+  })),
+  {
+    role: 'assistant',
+    id: 'long-run-final',
+    content: [{ type: 'text', text: longRunReplyText }],
+    timestamp: Date.now(),
+  },
+];
 
 test.describe('ClawX chat execution graph', () => {
   test('renders internal yield status and linked subagent branch from mocked IPC', async ({ launchElectronApp }) => {
@@ -448,6 +471,76 @@ test.describe('ClawX chat execution graph', () => {
 
       await expect(page.getByText('Done.')).toBeVisible();
       await expect(page.locator('[data-testid="chat-execution-graph"]')).toHaveAttribute('data-collapsed', 'true');
+    } finally {
+      await closeElectronApp(app);
+    }
+  });
+
+  test('preserves long execution history counts and strips the full folded reply prefix', async ({ launchElectronApp }) => {
+    const app = await launchElectronApp({ skipSetup: true });
+
+    try {
+      await installIpcMocks(app, {
+        gatewayStatus: { state: 'running', port: 18789, pid: 12345 },
+        gatewayRpc: {
+          [stableStringify(['sessions.list', {}])]: {
+            success: true,
+            result: {
+              sessions: [{ key: PROJECT_MANAGER_SESSION_KEY, displayName: 'main' }],
+            },
+          },
+          [stableStringify(['chat.history', { sessionKey: PROJECT_MANAGER_SESSION_KEY, limit: 200 }])]: {
+            success: true,
+            result: {
+              messages: longRunHistory,
+            },
+          },
+          [stableStringify(['chat.history', { sessionKey: PROJECT_MANAGER_SESSION_KEY, limit: 1000 }])]: {
+            success: true,
+            result: {
+              messages: longRunHistory,
+            },
+          },
+        },
+        hostApi: {
+          [stableStringify(['/api/gateway/status', 'GET'])]: {
+            ok: true,
+            data: {
+              status: 200,
+              ok: true,
+              json: { state: 'running', port: 18789, pid: 12345 },
+            },
+          },
+          [stableStringify(['/api/agents', 'GET'])]: {
+            ok: true,
+            data: {
+              status: 200,
+              ok: true,
+              json: {
+                success: true,
+                agents: [{ id: 'main', name: 'main' }],
+              },
+            },
+          },
+        },
+      });
+
+      const page = await getStableWindow(app);
+      try {
+        await page.reload();
+      } catch (error) {
+        if (!String(error).includes('ERR_FILE_NOT_FOUND')) {
+          throw error;
+        }
+      }
+
+      await expect(page.getByTestId('main-layout')).toBeVisible();
+      await expect(page.getByTestId('chat-execution-graph')).toBeVisible({ timeout: 30_000 });
+      await expect(page.getByTestId('chat-execution-graph')).toHaveAttribute('data-collapsed', 'true');
+      await expect(page.getByTestId('chat-execution-graph')).toContainText('0 tool calls');
+      await expect(page.getByTestId('chat-execution-graph')).toContainText('9 process messages');
+      await expect(page.getByText(longRunSummary, { exact: true })).toBeVisible();
+      await expect(page.getByText(longRunReplyText, { exact: true })).toHaveCount(0);
     } finally {
       await closeElectronApp(app);
     }

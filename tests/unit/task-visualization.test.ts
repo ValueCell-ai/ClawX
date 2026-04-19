@@ -119,7 +119,7 @@ describe('deriveTaskSteps', () => {
     ]);
   });
 
-  it('keeps the newest running step when the execution graph exceeds the max length', () => {
+  it('keeps all steps when the execution graph exceeds the previous max length', () => {
     const messages: RawMessage[] = Array.from({ length: 9 }, (_, index) => ({
       role: 'assistant',
       id: `assistant-${index}`,
@@ -147,7 +147,12 @@ describe('deriveTaskSteps', () => {
       ],
     });
 
-    expect(steps).toHaveLength(8);
+    expect(steps).toHaveLength(10);
+    expect(steps[0]).toEqual(expect.objectContaining({
+      id: 'tool-0',
+      label: 'read_0',
+      status: 'completed',
+    }));
     expect(steps.at(-1)).toEqual(expect.objectContaining({
       id: 'tool-live',
       label: 'grep_live',
