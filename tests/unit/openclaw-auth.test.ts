@@ -455,7 +455,7 @@ describe('sanitizeOpenClawConfig', () => {
     expect(telegram.botToken).toBe('telegram-token');
   });
 
-  it('strips accounts/defaultAccount from dingtalk (strict-schema channel) during sanitize', async () => {
+  it('strips defaultAccount (but preserves accounts) from dingtalk during sanitize', async () => {
     await writeOpenClawJson({
       channels: {
         dingtalk: {
@@ -480,11 +480,17 @@ describe('sanitizeOpenClawConfig', () => {
     const result = await readOpenClawJson();
     const channels = result.channels as Record<string, Record<string, unknown>>;
     const dingtalk = channels.dingtalk;
-    // dingtalk's strict schema rejects accounts/defaultAccount — they must be stripped
+    // dingtalk's schema accepts `accounts` but NOT `defaultAccount`
     expect(dingtalk.enabled).toBe(true);
-    expect(dingtalk.accounts).toBeUndefined();
+    expect(dingtalk.accounts).toEqual({
+      default: {
+        clientId: 'dt-client-id-nested',
+        clientSecret: 'dt-secret-nested',
+        enabled: true,
+      },
+    });
     expect(dingtalk.defaultAccount).toBeUndefined();
-    // Top-level credentials must be preserved
+    // Top-level credentials preserved (were already there + mirrored)
     expect(dingtalk.clientId).toBe('dt-client-id');
     expect(dingtalk.clientSecret).toBe('dt-secret');
   });
