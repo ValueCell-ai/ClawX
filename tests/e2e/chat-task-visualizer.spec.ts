@@ -351,6 +351,23 @@ test.describe('ClawX chat execution graph', () => {
           params: {
             runId: 'mock-run',
             sessionKey: 'agent:main:main',
+            state: 'started',
+          },
+        });
+      });
+
+      await expect(page.locator('[data-testid="chat-execution-graph"]')).toHaveAttribute('data-collapsed', 'false');
+      await expect(page.locator('[data-testid="chat-execution-step-thinking-trailing"]')).toBeVisible();
+      await expect(page.locator('[data-testid="chat-execution-step-thinking-trailing"] [aria-hidden="true"]')).toHaveCount(1);
+      await expect(page.locator('[data-testid^="chat-message-"]')).toHaveCount(1);
+
+      await app.evaluate(async ({ BrowserWindow }) => {
+        const win = BrowserWindow.getAllWindows()[0];
+        win?.webContents.send('gateway:notification', {
+          method: 'agent',
+          params: {
+            runId: 'mock-run',
+            sessionKey: 'agent:main:main',
             state: 'delta',
             message: {
               role: 'assistant',
@@ -372,6 +389,8 @@ test.describe('ClawX chat execution graph', () => {
       // only, not as a streaming assistant chat bubble.
       await expect(page.locator('[data-testid^="chat-message-"]')).toHaveCount(1);
       await expect(page.locator('[data-testid="chat-execution-graph"]')).toHaveAttribute('data-collapsed', 'false');
+      await expect(page.locator('[data-testid="chat-execution-step-thinking-trailing"]')).toBeVisible();
+      await expect(page.locator('[data-testid="chat-execution-step-thinking-trailing"] [aria-hidden="true"]')).toHaveCount(1);
       await expect(page.locator('[data-testid="chat-execution-graph"] [data-testid="chat-execution-step"]').getByText('Thinking', { exact: true })).toHaveCount(3);
       const firstChatBubble = page.locator('[data-testid^="chat-message-"] > div').first();
       await expect(firstChatBubble.getByText(/^1 2 3$/)).toHaveCount(0);

@@ -50,6 +50,7 @@ function StepDetailCard({ step }: { step: TaskStep }) {
   const detailPreview = step.detail?.replace(/\s+/g, ' ').trim();
   const canExpand = hasDetail;
   const usePlainExpandedDetail = isTool || isThinking;
+  const displayLabel = isThinking ? t('executionGraph.thinkingLabel') : step.label;
 
   return (
     <div
@@ -75,7 +76,7 @@ function StepDetailCard({ step }: { step: TaskStep }) {
         <div className="min-w-0 flex-1">
           {!isNarration && (
             <div className="flex min-w-0 items-center gap-2">
-              <p className="shrink-0 text-sm font-medium text-muted-foreground">{step.label}</p>
+              <p className="shrink-0 text-sm font-medium text-muted-foreground">{displayLabel}</p>
               {isTool && detailPreview && !expanded && (
                 <p className="min-w-0 truncate text-[12px] leading-4 text-muted-foreground/80">
                   {detailPreview}
@@ -174,9 +175,7 @@ export function ExecutionGraphCard({
 
   const toolCount = steps.filter((step) => step.kind === 'tool').length;
   const processCount = steps.length - toolCount;
-  const hasRunningTool = steps.some((step) => step.kind === 'tool' && step.status === 'running');
-  const hasRunningThinking = steps.some((step) => step.kind === 'thinking' && step.status === 'running');
-  const shouldShowTrailingThinking = active && hasRunningTool && !hasRunningThinking;
+  const shouldShowTrailingThinking = active;
 
   if (!expanded) {
     return (
@@ -281,13 +280,9 @@ export function ExecutionGraphCard({
               data-testid="chat-execution-step-thinking-trailing"
               style={{ marginLeft: `${TOOL_ROW_EXTRA_INDENT_PX}px` }}
             >
-              <div className="flex w-6 shrink-0 justify-center">
-                <div className="flex h-6 w-6 items-center justify-center text-muted-foreground">
-                  <AnimatedDots className="text-[14px]" />
-                </div>
-              </div>
+              <div className="w-6 shrink-0" />
               <div className="min-w-0 flex-1 text-sm text-muted-foreground">
-                <span className="font-medium">Thinking</span>
+                <span className="font-medium">{t('executionGraph.thinkingLabel')}</span>
                 <AnimatedDots className="ml-1 inline-flex text-[14px]" />
               </div>
             </div>

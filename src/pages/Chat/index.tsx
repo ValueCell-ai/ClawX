@@ -281,6 +281,19 @@ export function Chat() {
     const segmentSessionLabel = sessionLabels[currentSessionKey] || currentSessionKey;
 
     if (steps.length === 0) {
+      if (isLatestOpenRun && streamingReplyText == null) {
+        return [{
+          triggerIndex: idx,
+          replyIndex,
+          active: true,
+          agentLabel: segmentAgentLabel,
+          sessionLabel: segmentSessionLabel,
+          segmentEnd: nextUserIndex === -1 ? messages.length - 1 : nextUserIndex - 1,
+          steps: [],
+          messageStepTexts: [],
+          streamingReplyText: null,
+        }];
+      }
       const cached = graphStepCache[runKey];
       if (!cached) return [];
       return [{
@@ -505,12 +518,12 @@ export function Chat() {
                   )}
 
                   {/* Activity indicator: waiting for next AI turn after tool execution */}
-                  {sending && pendingFinal && !shouldRenderStreaming && (
+                  {sending && pendingFinal && !shouldRenderStreaming && !hasActiveExecutionGraph && (
                     <ActivityIndicator phase="tool_processing" />
                   )}
 
                   {/* Typing indicator when sending but no stream content yet */}
-                  {sending && !pendingFinal && !hasAnyStreamContent && (
+                  {sending && !pendingFinal && !hasAnyStreamContent && !hasActiveExecutionGraph && (
                     <TypingIndicator />
                   )}
                 </>

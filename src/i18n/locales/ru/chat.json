@@ -34,6 +34,7 @@
     "executionGraph": {
         "title": "Граф выполнения",
         "branchLabel": "ветвь",
+        "thinkingLabel": "Думаю",
         "agentRun": "Выполнение {{agent}}",
         "collapsedSummary": "Вызовов инструментов: {{toolCount}} · Промежуточных сообщений: {{processCount}}",
         "collapseAction": "Свернуть граф выполнения"

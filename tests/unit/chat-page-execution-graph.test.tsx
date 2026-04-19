@@ -40,6 +40,9 @@ vi.mock('react-i18next', () => ({
       if (key === 'executionGraph.collapseAction') {
         return 'Collapse';
       }
+      if (key === 'executionGraph.thinkingLabel') {
+        return 'Thinking';
+      }
       if (key.startsWith('taskPanel.stepStatus.')) {
         return key.split('.').at(-1) ?? key;
       }
@@ -134,5 +137,44 @@ describe('Chat execution graph lifecycle', () => {
 
     expect(screen.getByText('Here is the summary.')).toBeInTheDocument();
     expect(screen.queryByText('Checked X. Here is the summary.')).not.toBeInTheDocument();
+  });
+
+  it('renders the execution graph immediately for an active run before any stream content arrives', async () => {
+    const { useChatStore } = await import('@/stores/chat');
+    useChatStore.setState({
+      messages: [
+        {
+          role: 'user',
+          content: 'Check semiconductor chatter',
+        },
+      ],
+      loading: false,
+      error: null,
+      sending: true,
+      activeRunId: 'run-starting',
+      streamingText: '',
+      streamingMessage: null,
+      streamingTools: [],
+      pendingFinal: false,
+      lastUserMessageAt: Date.now(),
+      pendingToolImages: [],
+      sessions: [{ key: 'agent:main:main' }],
+      currentSessionKey: 'agent:main:main',
+      currentAgentId: 'main',
+      sessionLabels: {},
+      sessionLastActivity: {},
+      thinkingLevel: null,
+    });
+
+    const { Chat } = await import('@/pages/Chat/index');
+
+    render(<Chat />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('chat-execution-graph')).toHaveAttribute('data-collapsed', 'false');
+    });
+
+    expect(screen.getByTestId('chat-execution-step-thinking-trailing')).toBeInTheDocument();
+    expect(screen.getAllByText('Thinking').length).toBeGreaterThan(0);
   });
 });
