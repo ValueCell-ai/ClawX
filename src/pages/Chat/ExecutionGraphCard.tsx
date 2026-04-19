@@ -153,21 +153,15 @@ export function ExecutionGraphCard({
 }: ExecutionGraphCardProps) {
   const { t } = useTranslation('chat');
 
-  // Start expanded for runs that are active on first mount (so users see the
-  // graph as it's running). For completed/historical runs, start collapsed.
-  //
-  // IMPORTANT: we intentionally do NOT auto-collapse when a run transitions
-  // from active -> completed. The final reply arrives in the same render tick
-  // that flips `active` to `false`; collapsing in that frame yanks the graph
-  // shut just as the user starts reading the result (premature collapse).
-  // Users can close the card manually via the header chevron.
+  // Active runs should stay expanded by default so the user can follow the
+  // execution live. Once the run completes, the default state returns to
+  // collapsed. Explicit user toggles remain controlled by the parent override.
   const [uncontrolledExpanded, setUncontrolledExpanded] = useState(active);
   const [prevActive, setPrevActive] = useState(active);
   if (prevActive !== active) {
     setPrevActive(active);
-    // Auto-expand when a run starts (false -> true). Never auto-collapse.
-    if (active && controlledExpanded == null && !uncontrolledExpanded) {
-      setUncontrolledExpanded(true);
+    if (controlledExpanded == null && uncontrolledExpanded !== active) {
+      setUncontrolledExpanded(active);
     }
   }
 
@@ -234,8 +228,12 @@ export function ExecutionGraphCard({
         </div>
 
         {steps.map((step) => {
-          const toolIndentOffset = step.kind === 'tool' ? TOOL_ROW_EXTRA_INDENT_PX : 0;
-          const rowMarginLeft = (Math.max(step.depth - 1, 0) * 24) + toolIndentOffset;
+          const alignedIndentOffset = (
+            step.kind === 'tool'
+            || step.kind === 'message'
+            || step.kind === 'thinking'
+          ) ? TOOL_ROW_EXTRA_INDENT_PX : 0;
+          const rowMarginLeft = (Math.max(step.depth - 1, 0) * 24) + alignedIndentOffset;
           return (
           <div key={step.id} className="mt-0.5">
             <div
@@ -275,10 +273,14 @@ export function ExecutionGraphCard({
         )})}
         {shouldShowTrailingThinking && (
           <div className="mt-0.5">
-            <div className="pl-3">
+            <div className="pl-3" style={{ marginLeft: `${TOOL_ROW_EXTRA_INDENT_PX}px` }}>
               <div className="ml-3 h-1 w-px bg-border" />
             </div>
-            <div className="flex items-center gap-0.5" data-testid="chat-execution-step-thinking-trailing">
+            <div
+              className="flex items-center gap-0.5"
+              data-testid="chat-execution-step-thinking-trailing"
+              style={{ marginLeft: `${TOOL_ROW_EXTRA_INDENT_PX}px` }}
+            >
               <div className="flex w-6 shrink-0 justify-center">
                 <div className="flex h-6 w-6 items-center justify-center text-muted-foreground">
                   <AnimatedDots className="text-[14px]" />

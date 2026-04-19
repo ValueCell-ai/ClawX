@@ -299,6 +299,13 @@ test.describe('ClawX chat execution graph', () => {
 
       await app.evaluate(async ({ app: _app }) => {
         const { ipcMain } = process.mainModule!.require('electron') as typeof import('electron');
+        (globalThis as typeof globalThis & { __chatExecutionHistory?: unknown[] }).__chatExecutionHistory = [
+          {
+            role: 'user',
+            content: [{ type: 'text', text: 'Open browser, search for tech news, and take a screenshot' }],
+            timestamp: Date.now(),
+          },
+        ];
         ipcMain.removeHandler('gateway:rpc');
         ipcMain.handle('gateway:rpc', async (_event: unknown, method: string, payload: unknown) => {
           void payload;
@@ -313,7 +320,12 @@ test.describe('ClawX chat execution graph', () => {
           if (method === 'chat.history') {
             return {
               success: true,
-              result: { messages: [{ role: 'user', content: [{ type: 'text', text: 'Open browser, search for tech news, and take a screenshot' }], timestamp: Date.now() }] },
+              result: {
+                messages: (
+                  (globalThis as typeof globalThis & { __chatExecutionHistory?: unknown[] }).__chatExecutionHistory
+                  ?? seededInFlightHistory
+                ),
+              },
             };
           }
           return { success: true, result: {} };
@@ -359,9 +371,64 @@ test.describe('ClawX chat execution graph', () => {
       // Intermediate process output should be rendered in the execution graph
       // only, not as a streaming assistant chat bubble.
       await expect(page.locator('[data-testid^="chat-message-"]')).toHaveCount(1);
+      await expect(page.locator('[data-testid="chat-execution-graph"]')).toHaveAttribute('data-collapsed', 'false');
       await expect(page.locator('[data-testid="chat-execution-graph"] [data-testid="chat-execution-step"]').getByText('Thinking', { exact: true })).toHaveCount(1);
       const firstChatBubble = page.locator('[data-testid^="chat-message-"] > div').first();
       await expect(firstChatBubble.getByText(/^1 2 3$/)).toHaveCount(0);
+
+      await app.evaluate(async ({ BrowserWindow }) => {
+        (globalThis as typeof globalThis & { __chatExecutionHistory?: unknown[] }).__chatExecutionHistory = [
+          {
+            role: 'user',
+            content: [{ type: 'text', text: 'Open browser, search for tech news, and take a screenshot' }],
+            timestamp: Date.now(),
+          },
+          {
+            role: 'assistant',
+            content: [{
+              type: 'toolCall',
+              id: 'browser-start-call',
+              name: 'browser',
+              arguments: { action: 'start' },
+            }],
+            timestamp: Date.now(),
+          },
+          {
+            role: 'assistant',
+            content: [{
+              type: 'toolCall',
+              id: 'browser-open-call',
+              name: 'browser',
+              arguments: { action: 'open', targetUrl: 'https://x.com/home' },
+            }],
+            timestamp: Date.now(),
+          },
+          {
+            role: 'assistant',
+            id: 'final-response',
+            content: [{ type: 'text', text: 'Done.' }],
+            timestamp: Date.now(),
+          },
+        ];
+        const win = BrowserWindow.getAllWindows()[0];
+        win?.webContents.send('gateway:notification', {
+          method: 'agent',
+          params: {
+            runId: 'mock-run',
+            sessionKey: 'agent:main:main',
+            state: 'final',
+            message: {
+              role: 'assistant',
+              id: 'final-response',
+              content: [{ type: 'text', text: 'Done.' }],
+              timestamp: Date.now(),
+            },
+          },
+        });
+      });
+
+      await expect(page.getByText('Done.')).toBeVisible();
+      await expect(page.locator('[data-testid="chat-execution-graph"]')).toHaveAttribute('data-collapsed', 'true');
     } finally {
       await closeElectronApp(app);
     }

@@ -52,6 +52,14 @@ export function Chat() {
   // remount and reset. `undefined` values mean "user hasn't toggled, let the
   // card pick a default from its own `active` prop."
   const [graphExpandedOverrides, setGraphExpandedOverrides] = useState<Record<string, boolean>>({});
+  const [graphStepCache, setGraphStepCache] = useState<Record<string, {
+    steps: ReturnType<typeof deriveTaskSteps>;
+    agentLabel: string;
+    sessionLabel: string;
+    segmentEnd: number;
+    replyIndex: number | null;
+    triggerIndex: number;
+  }>>({});
 
   const [streamingTimestamp, setStreamingTimestamp] = useState<number>(0);
   const minLoading = useMinLoading(loading && messages.length > 0);
@@ -169,6 +177,9 @@ export function Chat() {
   const userRunCards = messages.flatMap((message, idx) => {
     if (message.role !== 'user' || subagentCompletionInfos[idx]) return [];
 
+    const runKey = message.id
+      ? `msg-${message.id}`
+      : `${currentSessionKey}:trigger-${idx}`;
     const nextUserIndex = nextUserMessageIndexes[idx];
     const segmentEnd = nextUserIndex === -1 ? messages.length : nextUserIndex;
     const segmentMessages = messages.slice(idx + 1, segmentEnd);
@@ -218,11 +229,23 @@ export function Chat() {
       ];
     }
 
-    if (steps.length === 0) return [];
-
     const segmentAgentId = currentAgentId;
     const segmentAgentLabel = agents.find((agent) => agent.id === segmentAgentId)?.name || segmentAgentId;
     const segmentSessionLabel = sessionLabels[currentSessionKey] || currentSessionKey;
+
+    if (steps.length === 0) {
+      const cached = graphStepCache[runKey];
+      if (!cached) return [];
+      return [{
+        triggerIndex: idx,
+        replyIndex: cached.replyIndex,
+        active: false,
+        agentLabel: cached.agentLabel,
+        sessionLabel: cached.sessionLabel,
+        segmentEnd: nextUserIndex === -1 ? messages.length - 1 : nextUserIndex - 1,
+        steps: cached.steps,
+      }];
+    }
 
     // Mark intermediate assistant messages whose process output should be folded into
     // the ExecutionGraphCard. We fold the text regardless of whether the
@@ -258,6 +281,55 @@ export function Chat() {
     }];
   });
   const hasActiveExecutionGraph = userRunCards.some((card) => card.active);
+
+  useEffect(() => {
+    if (userRunCards.length === 0) return;
+    setGraphStepCache((current) => {
+      let changed = false;
+      const next = { ...current };
+      for (const card of userRunCards) {
+        if (card.steps.length === 0) continue;
+        const triggerMsg = messages[card.triggerIndex];
+        const runKey = triggerMsg?.id
+          ? `msg-${triggerMsg.id}`
+          : `${currentSessionKey}:trigger-${card.triggerIndex}`;
+        const existing = current[runKey];
+        const sameSteps = !!existing
+          && existing.steps.length === card.steps.length
+          && existing.steps.every((step, index) => {
+            const nextStep = card.steps[index];
+            return nextStep
+              && step.id === nextStep.id
+              && step.label === nextStep.label
+              && step.status === nextStep.status
+              && step.kind === nextStep.kind
+              && step.detail === nextStep.detail
+              && step.depth === nextStep.depth
+              && step.parentId === nextStep.parentId;
+          });
+        if (
+          sameSteps
+          && existing?.agentLabel === card.agentLabel
+          && existing?.sessionLabel === card.sessionLabel
+          && existing?.segmentEnd === card.segmentEnd
+          && existing?.replyIndex === card.replyIndex
+          && existing?.triggerIndex === card.triggerIndex
+        ) {
+          continue;
+        }
+        next[runKey] = {
+          steps: card.steps,
+          agentLabel: card.agentLabel,
+          sessionLabel: card.sessionLabel,
+          segmentEnd: card.segmentEnd,
+          replyIndex: card.replyIndex,
+          triggerIndex: card.triggerIndex,
+        };
+        changed = true;
+      }
+      return changed ? next : current;
+    });
+  }, [userRunCards, messages, currentSessionKey]);
 
   return (
     <div className={cn("relative flex min-h-0 flex-col -m-6 transition-colors duration-500 dark:bg-background")} style={{ height: 'calc(100vh - 2.5rem)' }}>
