@@ -148,38 +148,6 @@ const childTranscriptMessages = [
   },
 ];
 
-const inFlightPrompt = 'Open browser, search for tech news, and take a screenshot';
-const seededInFlightHistory = [
-  {
-    role: 'user',
-    content: [{ type: 'text', text: inFlightPrompt }],
-    timestamp: Date.now(),
-  },
-];
-const longRunPrompt = 'Inspect the workspace and summarize the result';
-const longRunProcessSegments = Array.from({ length: 9 }, (_, index) => `Checked source ${index + 1}.`);
-const longRunSummary = 'Here is the summary.';
-const longRunReplyText = `${longRunProcessSegments.join(' ')} ${longRunSummary}`;
-const longRunHistory = [
-  {
-    role: 'user',
-    content: [{ type: 'text', text: longRunPrompt }],
-    timestamp: Date.now(),
-  },
-  ...longRunProcessSegments.map((segment, index) => ({
-    role: 'assistant',
-    id: `long-run-step-${index + 1}`,
-    content: [{ type: 'text', text: segment }],
-    timestamp: Date.now(),
-  })),
-  {
-    role: 'assistant',
-    id: 'long-run-final',
-    content: [{ type: 'text', text: longRunReplyText }],
-    timestamp: Date.now(),
-  },
-];
-
 test.describe('ClawX chat execution graph', () => {
   test('renders internal yield status and linked subagent branch from mocked IPC', async ({ launchElectronApp }) => {
     const app = await launchElectronApp({ skipSetup: true });
@@ -254,12 +222,6 @@ test.describe('ClawX chat execution graph', () => {
       }
       await expect(page.getByTestId('main-layout')).toBeVisible();
       await expect(page.getByTestId('chat-execution-graph')).toBeVisible({ timeout: 30_000 });
-      // Completed runs auto-collapse into a single-line summary button. Expand
-      // it first so the underlying step details are rendered.
-      const graph = page.getByTestId('chat-execution-graph');
-      if ((await graph.getAttribute('data-collapsed')) === 'true') {
-        await graph.click();
-      }
       await expect(
         page.locator('[data-testid="chat-execution-graph"] [data-testid="chat-execution-step"]').getByText('sessions_yield', { exact: true }),
       ).toBeVisible();
@@ -267,9 +229,6 @@ test.describe('ClawX chat execution graph', () => {
       await expect(
         page.locator('[data-testid="chat-execution-graph"] [data-testid="chat-execution-step"]').getByText('exec', { exact: true }),
       ).toBeVisible();
-      const execRow = page.locator('[data-testid="chat-execution-step"]').filter({ hasText: 'exec' }).first();
-      await execRow.click();
-      await expect(execRow.locator('pre')).toBeVisible();
       await expect(page.locator('[data-testid="chat-execution-graph"]').getByText('I asked coder to break down the core blocks of ~/Velaria uncommitted changes; will give you the conclusion when it returns.')).toBeVisible();
       await expect(page.getByText('CHECKLIST.md')).toHaveCount(0);
     } finally {
@@ -293,7 +252,7 @@ test.describe('ClawX chat execution graph', () => {
           [stableStringify(['chat.history', { sessionKey: PROJECT_MANAGER_SESSION_KEY, limit: 200 }])]: {
             success: true,
             result: {
-              messages: seededInFlightHistory,
+              messages: [],
             },
           },
         },
@@ -322,16 +281,9 @@ test.describe('ClawX chat execution graph', () => {
 
       await app.evaluate(async ({ app: _app }) => {
         const { ipcMain } = process.mainModule!.require('electron') as typeof import('electron');
-        (globalThis as typeof globalThis & { __chatExecutionHistory?: unknown[] }).__chatExecutionHistory = [
-          {
-            role: 'user',
-            content: [{ type: 'text', text: 'Open browser, search for tech news, and take a screenshot' }],
-            timestamp: Date.now(),
-          },
-        ];
+        const sendPayloads: Array<{ message?: string; sessionKey?: string }> = [];
         ipcMain.removeHandler('gateway:rpc');
         ipcMain.handle('gateway:rpc', async (_event: unknown, method: string, payload: unknown) => {
-          void payload;
           if (method === 'sessions.list') {
             return {
               success: true,
@@ -343,16 +295,22 @@ test.describe('ClawX chat execution graph', () => {
           if (method === 'chat.history') {
             return {
               success: true,
-              result: {
-                messages: (
-                  (globalThis as typeof globalThis & { __chatExecutionHistory?: unknown[] }).__chatExecutionHistory
-                  ?? seededInFlightHistory
-                ),
-              },
+              result: { messages: [] },
+            };
+          }
+          if (method === 'chat.send') {
+            if (payload && typeof payload === 'object') {
+              const p = payload as { message?: string; sessionKey?: string };
+              sendPayloads.push({ message: p.message, sessionKey: p.sessionKey });
+            }
+            return {
+              success: true,
+              result: { runId: 'mock-run' },
             };
           }
           return { success: true, result: {} };
         });
+        (globalThis as typeof globalThis & { __clawxSendPayloads?: Array<{ message?: string; sessionKey?: string }> }).__clawxSendPayloads = sendPayloads;
       });
 
       const page = await getStableWindow(app);
@@ -365,24 +323,18 @@ test.describe('ClawX chat execution graph', () => {
       }
 
       await expect(page.getByTestId('main-layout')).toBeVisible();
-      await expect(page.getByText(inFlightPrompt)).toHaveCount(1);
+      await page.getByTestId('chat-composer-input').fill('Open browser, search for tech news, and take a screenshot');
+      await page.getByTestId('chat-composer-send').click();
 
-      await app.evaluate(async ({ BrowserWindow }) => {
-        const win = BrowserWindow.getAllWindows()[0];
-        win?.webContents.send('gateway:notification', {
-          method: 'agent',
-          params: {
-            runId: 'mock-run',
-            sessionKey: 'agent:main:main',
-            state: 'started',
-          },
+      await expect(page.getByText('Open browser, search for tech news, and take a screenshot')).toHaveCount(1);
+      await expect.poll(async () => {
+        return await app.evaluate(() => {
+          const sendPayloads = (globalThis as typeof globalThis & {
+            __clawxSendPayloads?: Array<{ message?: string; sessionKey?: string }>;
+          }).__clawxSendPayloads || [];
+          return sendPayloads.length;
         });
-      });
-
-      await expect(page.locator('[data-testid="chat-execution-graph"]')).toHaveAttribute('data-collapsed', 'false');
-      await expect(page.locator('[data-testid="chat-execution-step-thinking-trailing"]')).toBeVisible();
-      await expect(page.locator('[data-testid="chat-execution-step-thinking-trailing"] [aria-hidden="true"]')).toHaveCount(1);
-      await expect(page.locator('[data-testid^="chat-message-"]')).toHaveCount(1);
+      }).toBe(1);
 
       await app.evaluate(async ({ BrowserWindow }) => {
         const win = BrowserWindow.getAllWindows()[0];
@@ -407,143 +359,15 @@ test.describe('ClawX chat execution graph', () => {
         });
       });
 
-      await expect(page.getByText(inFlightPrompt)).toHaveCount(1);
-      // Intermediate process output should be rendered in the execution graph
-      // only, not as a streaming assistant chat bubble.
-      await expect(page.locator('[data-testid^="chat-message-"]')).toHaveCount(1);
-      await expect(page.locator('[data-testid="chat-execution-graph"]')).toHaveAttribute('data-collapsed', 'false');
-      await expect(page.locator('[data-testid="chat-execution-step-thinking-trailing"]')).toBeVisible();
-      await expect(page.locator('[data-testid="chat-execution-step-thinking-trailing"] [aria-hidden="true"]')).toHaveCount(1);
-      await expect(page.locator('[data-testid="chat-execution-graph"] [data-testid="chat-execution-step"]').getByText('Thinking', { exact: true })).toHaveCount(3);
-      const firstChatBubble = page.locator('[data-testid^="chat-message-"] > div').first();
-      await expect(firstChatBubble.getByText(/^1 2 3$/)).toHaveCount(0);
-
-      await app.evaluate(async ({ BrowserWindow }) => {
-        (globalThis as typeof globalThis & { __chatExecutionHistory?: unknown[] }).__chatExecutionHistory = [
-          {
-            role: 'user',
-            content: [{ type: 'text', text: 'Open browser, search for tech news, and take a screenshot' }],
-            timestamp: Date.now(),
-          },
-          {
-            role: 'assistant',
-            content: [{
-              type: 'toolCall',
-              id: 'browser-start-call',
-              name: 'browser',
-              arguments: { action: 'start' },
-            }],
-            timestamp: Date.now(),
-          },
-          {
-            role: 'assistant',
-            content: [{
-              type: 'toolCall',
-              id: 'browser-open-call',
-              name: 'browser',
-              arguments: { action: 'open', targetUrl: 'https://x.com/home' },
-            }],
-            timestamp: Date.now(),
-          },
-          {
-            role: 'assistant',
-            id: 'final-response',
-            content: [{ type: 'text', text: 'Done.' }],
-            timestamp: Date.now(),
-          },
-        ];
-        const win = BrowserWindow.getAllWindows()[0];
-        win?.webContents.send('gateway:notification', {
-          method: 'agent',
-          params: {
-            runId: 'mock-run',
-            sessionKey: 'agent:main:main',
-            state: 'final',
-            message: {
-              role: 'assistant',
-              id: 'final-response',
-              content: [{ type: 'text', text: 'Done.' }],
-              timestamp: Date.now(),
-            },
-          },
-        });
-      });
-
-      await expect(page.getByText('Done.')).toBeVisible();
-      await expect(page.locator('[data-testid="chat-execution-graph"]')).toHaveAttribute('data-collapsed', 'true');
+      await expect(page.getByText('Open browser, search for tech news, and take a screenshot')).toHaveCount(1);
+      await expect(page.getByText(/^thinking 1 2 3$/)).toHaveCount(1);
+      await expect(page.getByText(/^thinking 1 2$/)).toHaveCount(0);
+      await expect(page.getByText(/^thinking 1$/)).toHaveCount(0);
+      await expect(page.getByText(/^1 2 3$/)).toHaveCount(1);
+      await expect(page.getByText(/^1 2$/)).toHaveCount(0);
+      await expect(page.getByText(/^1$/)).toHaveCount(0);
     } finally {
       await closeElectronApp(app);
     }
   });
-
-  test('preserves long execution history counts and strips the full folded reply prefix', async ({ launchElectronApp }) => {
-    const app = await launchElectronApp({ skipSetup: true });
-
-    try {
-      await installIpcMocks(app, {
-        gatewayStatus: { state: 'running', port: 18789, pid: 12345 },
-        gatewayRpc: {
-          [stableStringify(['sessions.list', {}])]: {
-            success: true,
-            result: {
-              sessions: [{ key: PROJECT_MANAGER_SESSION_KEY, displayName: 'main' }],
-            },
-          },
-          [stableStringify(['chat.history', { sessionKey: PROJECT_MANAGER_SESSION_KEY, limit: 200 }])]: {
-            success: true,
-            result: {
-              messages: longRunHistory,
-            },
-          },
-          [stableStringify(['chat.history', { sessionKey: PROJECT_MANAGER_SESSION_KEY, limit: 1000 }])]: {
-            success: true,
-            result: {
-              messages: longRunHistory,
-            },
-          },
-        },
-        hostApi: {
-          [stableStringify(['/api/gateway/status', 'GET'])]: {
-            ok: true,
-            data: {
-              status: 200,
-              ok: true,
-              json: { state: 'running', port: 18789, pid: 12345 },
-            },
-          },
-          [stableStringify(['/api/agents', 'GET'])]: {
-            ok: true,
-            data: {
-              status: 200,
-              ok: true,
-              json: {
-                success: true,
-                agents: [{ id: 'main', name: 'main' }],
-              },
-            },
-          },
-        },
-      });
-
-      const page = await getStableWindow(app);
-      try {
-        await page.reload();
-      } catch (error) {
-        if (!String(error).includes('ERR_FILE_NOT_FOUND')) {
-          throw error;
-        }
-      }
-
-      await expect(page.getByTestId('main-layout')).toBeVisible();
-      await expect(page.getByTestId('chat-execution-graph')).toBeVisible({ timeout: 30_000 });
-      await expect(page.getByTestId('chat-execution-graph')).toHaveAttribute('data-collapsed', 'true');
-      await expect(page.getByTestId('chat-execution-graph')).toContainText('0 tool calls');
-      await expect(page.getByTestId('chat-execution-graph')).toContainText('9 process messages');
-      await expect(page.getByText(longRunSummary, { exact: true })).toBeVisible();
-      await expect(page.getByText(longRunReplyText, { exact: true })).toHaveCount(0);
-    } finally {
-      await closeElectronApp(app);
-    }
-  });
-
 });

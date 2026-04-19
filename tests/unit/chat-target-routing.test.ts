@@ -104,6 +104,7 @@ describe('chat target routing', () => {
       error: null,
       loading: false,
       thinkingLevel: null,
+      showThinking: true,
     });
 
     await useChatStore.getState().sendMessage('Hello direct agent', undefined, 'research');
@@ -147,6 +148,7 @@ describe('chat target routing', () => {
       error: null,
       loading: false,
       thinkingLevel: null,
+      showThinking: true,
     });
 
     await useChatStore.getState().sendMessage(

@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest';
 import { deriveTaskSteps, parseSubagentCompletionInfo } from '@/pages/Chat/task-visualization';
-import { stripProcessMessagePrefix } from '@/pages/Chat/message-utils';
 import type { RawMessage, ToolStatus } from '@/stores/chat';
 
 describe('deriveTaskSteps', () => {
@@ -24,11 +23,14 @@ describe('deriveTaskSteps', () => {
         ],
       },
       streamingTools,
+      sending: true,
+      pendingFinal: false,
+      showThinking: true,
     });
 
     expect(steps).toEqual([
       expect.objectContaining({
-        id: 'stream-thinking-0',
+        id: 'stream-thinking',
         label: 'Thinking',
         status: 'running',
         kind: 'thinking',
@@ -67,6 +69,9 @@ describe('deriveTaskSteps', () => {
           summary: 'Scanning files',
         },
       ],
+      sending: true,
+      pendingFinal: false,
+      showThinking: false,
     });
 
     expect(steps).toEqual([
@@ -106,6 +111,9 @@ describe('deriveTaskSteps', () => {
           summary: 'Permission denied',
         },
       ],
+      sending: true,
+      pendingFinal: false,
+      showThinking: false,
     });
 
     expect(steps).toEqual([
@@ -119,7 +127,7 @@ describe('deriveTaskSteps', () => {
     ]);
   });
 
-  it('keeps all steps when the execution graph exceeds the previous max length', () => {
+  it('keeps the newest running step when the execution graph exceeds the max length', () => {
     const messages: RawMessage[] = Array.from({ length: 9 }, (_, index) => ({
       role: 'assistant',
       id: `assistant-${index}`,
@@ -145,14 +153,12 @@ describe('deriveTaskSteps', () => {
           summary: 'Scanning current workspace',
         },
       ],
+      sending: true,
+      pendingFinal: false,
+      showThinking: false,
     });
 
-    expect(steps).toHaveLength(10);
-    expect(steps[0]).toEqual(expect.objectContaining({
-      id: 'tool-0',
-      label: 'read_0',
-      status: 'completed',
-    }));
+    expect(steps).toHaveLength(8);
     expect(steps.at(-1)).toEqual(expect.objectContaining({
       id: 'tool-live',
       label: 'grep_live',
@@ -176,11 +182,14 @@ describe('deriveTaskSteps', () => {
       messages,
       streamingMessage: null,
       streamingTools: [],
+      sending: false,
+      pendingFinal: false,
+      showThinking: true,
     });
 
     expect(steps).toEqual([
       expect.objectContaining({
-        id: 'history-thinking-assistant-1-0',
+        id: 'history-thinking-assistant-1',
         label: 'Thinking',
         status: 'completed',
         kind: 'thinking',
@@ -194,104 +203,29 @@ describe('deriveTaskSteps', () => {
     ]);
   });
 
-  it('splits cumulative streaming thinking into separate execution steps', () => {
+  it('collapses cumulative streaming thinking details into the newest version', () => {
     const steps = deriveTaskSteps({
       messages: [],
       streamingMessage: {
         role: 'assistant',
         content: [
-          { type: 'thinking', thinking: 'Reviewing X.' },
-          { type: 'thinking', thinking: 'Reviewing X. Comparing Y.' },
-          { type: 'thinking', thinking: 'Reviewing X. Comparing Y. Drafting answer.' },
+          { type: 'thinking', thinking: 'thinking 1' },
+          { type: 'thinking', thinking: 'thinking 1 2' },
+          { type: 'thinking', thinking: 'thinking 1 2 3' },
         ],
       },
       streamingTools: [],
+      sending: true,
+      pendingFinal: false,
+      showThinking: true,
     });
 
     expect(steps).toEqual([
       expect.objectContaining({
-        id: 'stream-thinking-0',
-        detail: 'Reviewing X.',
-        status: 'completed',
-      }),
-      expect.objectContaining({
-        id: 'stream-thinking-1',
-        detail: 'Comparing Y.',
-        status: 'completed',
-      }),
-      expect.objectContaining({
-        id: 'stream-thinking-2',
-        detail: 'Drafting answer.',
-        status: 'running',
+        id: 'stream-thinking',
+        detail: 'thinking 1 2 3',
       }),
     ]);
-  });
-
-  it('keeps earlier reply segments in the graph when the last streaming segment is rendered separately', () => {
-    const steps = deriveTaskSteps({
-      messages: [],
-      streamingMessage: {
-        role: 'assistant',
-        content: [
-          { type: 'text', text: 'Checked X.' },
-          { type: 'text', text: 'Checked X. Checked Snowball.' },
-          { type: 'text', text: 'Checked X. Checked Snowball. Here is the summary.' },
-        ],
-      },
-      streamingTools: [],
-      omitLastStreamingMessageSegment: true,
-    });
-
-    expect(steps).toEqual([
-      expect.objectContaining({
-        id: 'stream-message-0',
-        detail: 'Checked X.',
-        status: 'completed',
-      }),
-      expect.objectContaining({
-        id: 'stream-message-1',
-        detail: 'Checked Snowball.',
-        status: 'completed',
-      }),
-    ]);
-  });
-
-  it('folds earlier reply segments into the graph but leaves the final answer for the chat bubble', () => {
-    const steps = deriveTaskSteps({
-      messages: [
-        {
-          role: 'assistant',
-          id: 'assistant-reply',
-          content: [
-            { type: 'text', text: 'Checked X.' },
-            { type: 'text', text: 'Checked X. Checked Snowball.' },
-            { type: 'text', text: 'Checked X. Checked Snowball. Here is the summary.' },
-          ],
-        },
-      ],
-      streamingMessage: null,
-      streamingTools: [],
-    });
-
-    expect(steps).toEqual([
-      expect.objectContaining({
-        id: 'history-message-assistant-reply-0',
-        detail: 'Checked X.',
-        status: 'completed',
-      }),
-      expect.objectContaining({
-        id: 'history-message-assistant-reply-1',
-        detail: 'Checked Snowball.',
-        status: 'completed',
-      }),
-    ]);
-  });
-
-  it('strips folded process narration from the final reply text', () => {
-    expect(stripProcessMessagePrefix(
-      'Checked X. Checked Snowball. Here is the summary.',
-      ['Checked X.', 'Checked Snowball.'],
-    )).toBe('Here is the summary.');
   });
 
   it('builds a branch for spawned subagents', () => {
@@ -320,6 +254,9 @@ describe('deriveTaskSteps', () => {
       messages,
       streamingMessage: null,
       streamingTools: [],
+      sending: false,
+      pendingFinal: false,
+      showThinking: true,
     });
 
     expect(steps).toEqual([

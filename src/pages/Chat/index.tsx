@@ -4,7 +4,7 @@
  * via gateway:rpc IPC. Session selector, thinking toggle, and refresh
  * are in the toolbar; messages render with markdown + streaming.
  */
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { AlertCircle, Loader2, Sparkles } from 'lucide-react';
 import { useChatStore, type RawMessage } from '@/stores/chat';
 import { useGatewayStore } from '@/stores/gateway';
@@ -15,45 +15,12 @@ import { ChatMessage } from './ChatMessage';
 import { ChatInput } from './ChatInput';
 import { ExecutionGraphCard } from './ExecutionGraphCard';
 import { ChatToolbar } from './ChatToolbar';
-import { extractImages, extractText, extractThinking, extractToolUse, stripProcessMessagePrefix } from './message-utils';
-import { deriveTaskSteps, findReplyMessageIndex, parseSubagentCompletionInfo, type TaskStep } from './task-visualization';
+import { extractImages, extractText, extractThinking, extractToolUse } from './message-utils';
+import { deriveTaskSteps, parseSubagentCompletionInfo } from './task-visualization';
 import { useTranslation } from 'react-i18next';
 import { cn } from '@/lib/utils';
 import { useStickToBottomInstant } from '@/hooks/use-stick-to-bottom-instant';
 import { useMinLoading } from '@/hooks/use-min-loading';
-
-type GraphStepCacheEntry = {
-  steps: ReturnType<typeof deriveTaskSteps>;
-  agentLabel: string;
-  sessionLabel: string;
-  segmentEnd: number;
-  replyIndex: number | null;
-  triggerIndex: number;
-};
-
-type UserRunCard = {
-  triggerIndex: number;
-  replyIndex: number | null;
-  active: boolean;
-  agentLabel: string;
-  sessionLabel: string;
-  segmentEnd: number;
-  steps: TaskStep[];
-  messageStepTexts: string[];
-  streamingReplyText: string | null;
-};
-
-function getPrimaryMessageStepTexts(steps: TaskStep[]): string[] {
-  return steps
-    .filter((step) => step.kind === 'message' && step.parentId === 'agent-run' && !!step.detail)
-    .map((step) => step.detail!);
-}
-
-// Keep the last non-empty execution-graph snapshot per session/run outside
-// React state so `loadHistory` refreshes can still fall back to the previous
-// steps without tripping React's set-state-in-effect lint rule.
-const graphStepCacheStore = new Map<string, Record<string, GraphStepCacheEntry>>();
-const streamingTimestampStore = new Map<string, number>();
 
 export function Chat() {
   const { t } = useTranslation('chat');
@@ -67,6 +34,7 @@ export function Chat() {
   const loading = useChatStore((s) => s.loading);
   const sending = useChatStore((s) => s.sending);
   const error = useChatStore((s) => s.error);
+  const showThinking = useChatStore((s) => s.showThinking);
   const streamingMessage = useChatStore((s) => s.streamingMessage);
   const streamingTools = useChatStore((s) => s.streamingTools);
   const pendingFinal = useChatStore((s) => s.pendingFinal);
@@ -78,14 +46,8 @@ export function Chat() {
 
   const cleanupEmptySession = useChatStore((s) => s.cleanupEmptySession);
   const [childTranscripts, setChildTranscripts] = useState<Record<string, RawMessage[]>>({});
-  // Persistent per-run override for the Execution Graph's expanded/collapsed
-  // state. Keyed by a stable run id (trigger message id, or a fallback of
-  // `${sessionKey}:${triggerIdx}`) so user toggles survive the `loadHistory`
-  // refresh that runs after every final event — otherwise the card would
-  // remount and reset. `undefined` values mean "user hasn't toggled, let the
-  // card pick a default from its own `active` prop."
-  const [graphExpandedOverrides, setGraphExpandedOverrides] = useState<Record<string, boolean>>({});
-  const graphStepCache: Record<string, GraphStepCacheEntry> = graphStepCacheStore.get(currentSessionKey) ?? {};
+
+  const [streamingTimestamp, setStreamingTimestamp] = useState<number>(0);
   const minLoading = useMinLoading(loading && messages.length > 0);
   const { contentRef, scrollRef } = useStickToBottomInstant(currentSessionKey);
 
@@ -155,33 +117,30 @@ export function Chat() {
     };
   }, [messages, childTranscripts]);
 
+  // Update timestamp when sending starts
+  useEffect(() => {
+    if (sending && streamingTimestamp === 0) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setStreamingTimestamp(Date.now() / 1000);
+    } else if (!sending && streamingTimestamp !== 0) {
+      setStreamingTimestamp(0);
+    }
+  }, [sending, streamingTimestamp]);
+
+  // Gateway not running block has been completely removed so the UI always renders.
+
   const streamMsg = streamingMessage && typeof streamingMessage === 'object'
     ? streamingMessage as unknown as { role?: string; content?: unknown; timestamp?: number }
     : null;
-  const streamTimestamp = typeof streamMsg?.timestamp === 'number' ? streamMsg.timestamp : 0;
-  useEffect(() => {
-    if (!sending) {
-      streamingTimestampStore.delete(currentSessionKey);
-      return;
-    }
-    if (!streamingTimestampStore.has(currentSessionKey)) {
-      streamingTimestampStore.set(currentSessionKey, streamTimestamp || Date.now() / 1000);
-    }
-  }, [currentSessionKey, sending, streamTimestamp]);
-
-  const streamingTimestamp = sending
-    ? (streamingTimestampStore.get(currentSessionKey) ?? streamTimestamp)
-    : 0;
   const streamText = streamMsg ? extractText(streamMsg) : (typeof streamingMessage === 'string' ? streamingMessage : '');
   const hasStreamText = streamText.trim().length > 0;
   const streamThinking = streamMsg ? extractThinking(streamMsg) : null;
-  const hasStreamThinking = !!streamThinking && streamThinking.trim().length > 0;
+  const hasStreamThinking = showThinking && !!streamThinking && streamThinking.trim().length > 0;
   const streamTools = streamMsg ? extractToolUse(streamMsg) : [];
   const hasStreamTools = streamTools.length > 0;
   const streamImages = streamMsg ? extractImages(streamMsg) : [];
   const hasStreamImages = streamImages.length > 0;
   const hasStreamToolStatus = streamingTools.length > 0;
-  const hasRunningStreamToolStatus = streamingTools.some((tool) => tool.status === 'running');
   const shouldRenderStreaming = sending && (hasStreamText || hasStreamThinking || hasStreamTools || hasStreamImages || hasStreamToolStatus);
   const hasAnyStreamContent = hasStreamText || hasStreamThinking || hasStreamTools || hasStreamImages || hasStreamToolStatus;
 
@@ -196,236 +155,76 @@ export function Chat() {
     }
   }
 
-  // Indices of intermediate assistant process messages that are represented
-  // in the ExecutionGraphCard (narration text and/or thinking). We suppress
-  // them from the chat stream so they don't appear duplicated below the graph.
-  const foldedNarrationIndices = new Set<number>();
-
-  const userRunCards: UserRunCard[] = messages.flatMap((message, idx) => {
+  const userRunCards = messages.flatMap((message, idx) => {
     if (message.role !== 'user' || subagentCompletionInfos[idx]) return [];
 
-    const runKey = message.id
-      ? `msg-${message.id}`
-      : `${currentSessionKey}:trigger-${idx}`;
     const nextUserIndex = nextUserMessageIndexes[idx];
     const segmentEnd = nextUserIndex === -1 ? messages.length : nextUserIndex;
     const segmentMessages = messages.slice(idx + 1, segmentEnd);
+    const replyIndexOffset = segmentMessages.findIndex((candidate) => candidate.role === 'assistant');
+    const replyIndex = replyIndexOffset === -1 ? null : idx + 1 + replyIndexOffset;
     const completionInfos = subagentCompletionInfos
       .slice(idx + 1, segmentEnd)
       .filter((value): value is NonNullable<typeof value> => value != null);
     const isLatestOpenRun = nextUserIndex === -1 && (sending || pendingFinal || hasAnyStreamContent);
-    const replyIndexOffset = findReplyMessageIndex(segmentMessages, isLatestOpenRun);
-    const replyIndex = replyIndexOffset === -1 ? null : idx + 1 + replyIndexOffset;
+    let steps = deriveTaskSteps({
+      messages: segmentMessages,
+      streamingMessage: isLatestOpenRun ? streamingMessage : null,
+      streamingTools: isLatestOpenRun ? streamingTools : [],
+      sending: isLatestOpenRun ? sending : false,
+      pendingFinal: isLatestOpenRun ? pendingFinal : false,
+      showThinking,
+    });
 
-    const buildSteps = (omitLastStreamingMessageSegment: boolean): TaskStep[] => {
-      let builtSteps = deriveTaskSteps({
-        messages: segmentMessages,
-        streamingMessage: isLatestOpenRun ? streamingMessage : null,
-        streamingTools: isLatestOpenRun ? streamingTools : [],
-        omitLastStreamingMessageSegment: isLatestOpenRun ? omitLastStreamingMessageSegment : false,
-      });
+    for (const completion of completionInfos) {
+      const childMessages = childTranscripts[completion.sessionId];
+      if (!childMessages || childMessages.length === 0) continue;
+      const branchRootId = `subagent:${completion.sessionId}`;
+      const childSteps = deriveTaskSteps({
+        messages: childMessages,
+        streamingMessage: null,
+        streamingTools: [],
+        sending: false,
+        pendingFinal: false,
+        showThinking,
+      }).map((step) => ({
+        ...step,
+        id: `${completion.sessionId}:${step.id}`,
+        depth: step.depth + 1,
+        parentId: branchRootId,
+      }));
 
-      for (const completion of completionInfos) {
-        const childMessages = childTranscripts[completion.sessionId];
-        if (!childMessages || childMessages.length === 0) continue;
-        const branchRootId = `subagent:${completion.sessionId}`;
-        const childSteps = deriveTaskSteps({
-          messages: childMessages,
-          streamingMessage: null,
-          streamingTools: [],
-        }).map((step) => ({
-          ...step,
-          id: `${completion.sessionId}:${step.id}`,
-          depth: step.depth + 1,
-          parentId: branchRootId,
-        }));
-
-        builtSteps = [
-          ...builtSteps,
-          {
-            id: branchRootId,
-            label: `${completion.agentId} subagent`,
-            status: 'completed',
-            kind: 'system' as const,
-            detail: completion.sessionKey,
-            depth: 1,
-            parentId: 'agent-run',
-          },
-          ...childSteps,
-        ];
-      }
-
-      return builtSteps;
-    };
-
-    const rawStreamingReplyCandidate = isLatestOpenRun
-      && pendingFinal
-      && (hasStreamText || hasStreamImages)
-      && streamTools.length === 0
-      && !hasRunningStreamToolStatus;
-
-    let steps = buildSteps(rawStreamingReplyCandidate);
-    let streamingReplyText: string | null = null;
-    if (rawStreamingReplyCandidate) {
-      const trimmedReplyText = stripProcessMessagePrefix(streamText, getPrimaryMessageStepTexts(steps));
-      const hasReplyText = trimmedReplyText.trim().length > 0;
-      if (hasReplyText || hasStreamImages) {
-        streamingReplyText = trimmedReplyText;
-      } else {
-        steps = buildSteps(false);
-      }
+      steps = [
+        ...steps,
+        {
+          id: branchRootId,
+          label: `${completion.agentId} subagent`,
+          status: 'completed',
+          kind: 'system' as const,
+          detail: completion.sessionKey,
+          depth: 1,
+          parentId: 'agent-run',
+        },
+        ...childSteps,
+      ];
     }
+
+    if (steps.length === 0) return [];
 
     const segmentAgentId = currentAgentId;
     const segmentAgentLabel = agents.find((agent) => agent.id === segmentAgentId)?.name || segmentAgentId;
     const segmentSessionLabel = sessionLabels[currentSessionKey] || currentSessionKey;
 
-    if (steps.length === 0) {
-      if (isLatestOpenRun && streamingReplyText == null) {
-        return [{
-          triggerIndex: idx,
-          replyIndex,
-          active: true,
-          agentLabel: segmentAgentLabel,
-          sessionLabel: segmentSessionLabel,
-          segmentEnd: nextUserIndex === -1 ? messages.length - 1 : nextUserIndex - 1,
-          steps: [],
-          messageStepTexts: [],
-          streamingReplyText: null,
-        }];
-      }
-      const cached = graphStepCache[runKey];
-      if (!cached) return [];
-      return [{
-        triggerIndex: idx,
-        replyIndex: cached.replyIndex,
-        active: false,
-        agentLabel: cached.agentLabel,
-        sessionLabel: cached.sessionLabel,
-        segmentEnd: nextUserIndex === -1 ? messages.length - 1 : nextUserIndex - 1,
-        steps: cached.steps,
-        messageStepTexts: getPrimaryMessageStepTexts(cached.steps),
-        streamingReplyText: null,
-      }];
-    }
-
-    // Mark intermediate assistant messages whose process output should be folded into
-    // the ExecutionGraphCard. We fold the text regardless of whether the
-    // message ALSO carries tool calls (mixed `text + toolCall` messages are
-    // common — e.g. "waiting for the page to load…" followed by a `wait`
-    // tool call). This prevents orphan narration bubbles from leaking into
-    // the chat stream once the graph is collapsed.
-    //
-    // When the run is still streaming (`isLatestOpenRun`) the final reply is
-    // not yet part of `segmentMessages`, so every assistant message in the
-    // segment counts as intermediate. For completed runs, we preserve the
-    // final reply bubble by skipping the message that `findReplyMessageIndex`
-    // identifies as the answer.
-    const segmentReplyOffset = findReplyMessageIndex(segmentMessages, isLatestOpenRun);
-    for (let offset = 0; offset < segmentMessages.length; offset += 1) {
-      if (offset === segmentReplyOffset) continue;
-      const candidate = segmentMessages[offset];
-      if (!candidate || candidate.role !== 'assistant') continue;
-      const hasNarrationText = extractText(candidate).trim().length > 0;
-      const hasThinking = !!extractThinking(candidate);
-      if (!hasNarrationText && !hasThinking) continue;
-      foldedNarrationIndices.add(idx + 1 + offset);
-    }
-
     return [{
       triggerIndex: idx,
       replyIndex,
-      active: isLatestOpenRun && streamingReplyText == null,
+      active: isLatestOpenRun,
       agentLabel: segmentAgentLabel,
       sessionLabel: segmentSessionLabel,
       segmentEnd: nextUserIndex === -1 ? messages.length - 1 : nextUserIndex - 1,
       steps,
-      messageStepTexts: getPrimaryMessageStepTexts(steps),
-      streamingReplyText,
     }];
   });
-  const hasActiveExecutionGraph = userRunCards.some((card) => card.active);
-  const replyTextOverrides = new Map<number, string>();
-  for (const card of userRunCards) {
-    if (card.replyIndex == null) continue;
-    const replyMessage = messages[card.replyIndex];
-    if (!replyMessage || replyMessage.role !== 'assistant') continue;
-    const fullReplyText = extractText(replyMessage);
-    const trimmedReplyText = stripProcessMessagePrefix(fullReplyText, card.messageStepTexts);
-    if (trimmedReplyText !== fullReplyText) {
-      replyTextOverrides.set(card.replyIndex, trimmedReplyText);
-    }
-  }
-  const streamingReplyText = userRunCards.find((card) => card.streamingReplyText != null)?.streamingReplyText ?? null;
-
-  // Derive the set of run keys that should be auto-collapsed (run finished
-  // streaming or has a reply override) during render instead of in an effect,
-  // so we don't violate react-hooks/set-state-in-effect. Explicit user toggles
-  // still win via `graphExpandedOverrides` and are merged in at the call site.
-  const autoCollapsedRunKeys = useMemo(() => {
-    const keys = new Set<string>();
-    for (const card of userRunCards) {
-      const shouldCollapse = card.streamingReplyText != null
-        || (card.replyIndex != null && replyTextOverrides.has(card.replyIndex));
-      if (!shouldCollapse) continue;
-      const triggerMsg = messages[card.triggerIndex];
-      const runKey = triggerMsg?.id
-        ? `msg-${triggerMsg.id}`
-        : `${currentSessionKey}:trigger-${card.triggerIndex}`;
-      keys.add(runKey);
-    }
-    return keys;
-  }, [currentSessionKey, messages, replyTextOverrides, userRunCards]);
-
-  useEffect(() => {
-    if (userRunCards.length === 0) return;
-    const current = graphStepCacheStore.get(currentSessionKey) ?? {};
-    let changed = false;
-    const next = { ...current };
-    for (const card of userRunCards) {
-      if (card.steps.length === 0) continue;
-      const triggerMsg = messages[card.triggerIndex];
-      const runKey = triggerMsg?.id
-        ? `msg-${triggerMsg.id}`
-        : `${currentSessionKey}:trigger-${card.triggerIndex}`;
-      const existing = current[runKey];
-      const sameSteps = !!existing
-        && existing.steps.length === card.steps.length
-        && existing.steps.every((step, index) => {
-          const nextStep = card.steps[index];
-          return nextStep
-            && step.id === nextStep.id
-            && step.label === nextStep.label
-            && step.status === nextStep.status
-            && step.kind === nextStep.kind
-            && step.detail === nextStep.detail
-            && step.depth === nextStep.depth
-            && step.parentId === nextStep.parentId;
-        });
-      if (
-        sameSteps
-        && existing?.agentLabel === card.agentLabel
-        && existing?.sessionLabel === card.sessionLabel
-        && existing?.segmentEnd === card.segmentEnd
-        && existing?.replyIndex === card.replyIndex
-        && existing?.triggerIndex === card.triggerIndex
-      ) {
-        continue;
-      }
-      next[runKey] = {
-        steps: card.steps,
-        agentLabel: card.agentLabel,
-        sessionLabel: card.sessionLabel,
-        segmentEnd: card.segmentEnd,
-        replyIndex: card.replyIndex,
-        triggerIndex: card.triggerIndex,
-      };
-      changed = true;
-    }
-    if (changed) {
-      graphStepCacheStore.set(currentSessionKey, next);
-    }
-  }, [userRunCards, messages, currentSessionKey]);
 
   return (
     <div className={cn("relative flex min-h-0 flex-col -m-6 transition-colors duration-500 dark:bg-background")} style={{ height: 'calc(100vh - 2.5rem)' }}>
@@ -438,19 +237,12 @@ export function Chat() {
       <div className="min-h-0 flex-1 overflow-hidden px-4 py-4">
         <div className="mx-auto flex h-full min-h-0 max-w-6xl flex-col gap-4 lg:flex-row lg:items-stretch">
           <div ref={scrollRef} className="min-h-0 min-w-0 flex-1 overflow-y-auto">
-            <div
-              ref={contentRef}
-              className={cn(
-                "space-y-4 transition-all duration-300",
-                isEmpty ? "mx-auto w-full max-w-3xl" : "max-w-4xl",
-              )}
-            >
+            <div ref={contentRef} className="max-w-4xl space-y-4">
               {isEmpty ? (
                 <WelcomeScreen />
               ) : (
                 <>
                   {messages.map((msg, idx) => {
-                    if (foldedNarrationIndices.has(idx)) return null;
                     const suppressToolCards = userRunCards.some((card) =>
                       idx > card.triggerIndex && idx <= card.segmentEnd,
                     );
@@ -463,42 +255,40 @@ export function Chat() {
                     >
                       <ChatMessage
                         message={msg}
-                        textOverride={replyTextOverrides.get(idx)}
+                        showThinking={showThinking}
                         suppressToolCards={suppressToolCards}
                         suppressProcessAttachments={suppressToolCards}
                       />
                       {userRunCards
                         .filter((card) => card.triggerIndex === idx)
-                        .map((card) => {
-                          const triggerMsg = messages[card.triggerIndex];
-                          const runKey = triggerMsg?.id
-                            ? `msg-${triggerMsg.id}`
-                            : `${currentSessionKey}:trigger-${card.triggerIndex}`;
-                          const userOverride = graphExpandedOverrides[runKey];
-                          const expanded = userOverride != null
-                            ? userOverride
-                            : autoCollapsedRunKeys.has(runKey)
-                              ? false
-                              : undefined;
-                          return (
-                            <ExecutionGraphCard
-                              key={`graph-${runKey}`}
-                              agentLabel={card.agentLabel}
-                              steps={card.steps}
-                              active={card.active}
-                              expanded={expanded}
-                              onExpandedChange={(next) =>
-                                setGraphExpandedOverrides((prev) => ({ ...prev, [runKey]: next }))
-                              }
-                            />
-                          );
-                        })}
+                        .map((card) => (
+                          <ExecutionGraphCard
+                            key={`graph-${idx}`}
+                            agentLabel={card.agentLabel}
+                            sessionLabel={card.sessionLabel}
+                            steps={card.steps}
+                            active={card.active}
+                            onJumpToTrigger={() => {
+                              document.getElementById(`chat-message-${card.triggerIndex}`)?.scrollIntoView({
+                                behavior: 'smooth',
+                                block: 'center',
+                              });
+                            }}
+                            onJumpToReply={() => {
+                              if (card.replyIndex == null) return;
+                              document.getElementById(`chat-message-${card.replyIndex}`)?.scrollIntoView({
+                                behavior: 'smooth',
+                                block: 'center',
+                              });
+                            }}
+                          />
+                        ))}
                     </div>
                     );
                   })}
 
                   {/* Streaming message */}
-                  {shouldRenderStreaming && !hasActiveExecutionGraph && (
+                  {shouldRenderStreaming && (
                     <ChatMessage
                       message={(streamMsg
                         ? {
@@ -512,19 +302,19 @@ export function Chat() {
                             content: streamText,
                             timestamp: streamingTimestamp,
                           }) as RawMessage}
-                      textOverride={streamingReplyText ?? undefined}
+                      showThinking={showThinking}
                       isStreaming
-                      streamingTools={streamingReplyText != null ? [] : streamingTools}
+                      streamingTools={streamingTools}
                     />
                   )}
 
                   {/* Activity indicator: waiting for next AI turn after tool execution */}
-                  {sending && pendingFinal && !shouldRenderStreaming && !hasActiveExecutionGraph && (
+                  {sending && pendingFinal && !shouldRenderStreaming && (
                     <ActivityIndicator phase="tool_processing" />
                   )}
 
                   {/* Typing indicator when sending but no stream content yet */}
-                  {sending && !pendingFinal && !hasAnyStreamContent && !hasActiveExecutionGraph && (
+                  {sending && !pendingFinal && !hasAnyStreamContent && (
                     <TypingIndicator />
                   )}
                 </>

@@ -13,6 +13,8 @@
     "noLogs": "(Журналы ещё недоступны)",
     "toolbar": {
         "refresh": "Обновить чат",
+        "showThinking": "Показать размышления",
+        "hideThinking": "Скрыть размышления",
         "currentAgent": "Общение с {{agent}}"
     },
     "taskPanel": {
@@ -32,12 +34,19 @@
         }
     },
     "executionGraph": {
+        "eyebrow": "Выполнение в чате",
         "title": "Граф выполнения",
+        "status": {
+            "active": "Активно",
+            "latest": "Последнее",
+            "previous": "Предыдущее"
+        },
         "branchLabel": "ветвь",
-        "thinkingLabel": "Думаю",
+        "userTrigger": "Триггер пользователя",
+        "userTriggerHint": "Запущен пользовательским сообщением выше",
         "agentRun": "Выполнение {{agent}}",
-        "collapsedSummary": "Вызовов инструментов: {{toolCount}} · Промежуточных сообщений: {{processCount}}",
-        "collapseAction": "Свернуть граф выполнения"
+        "agentReply": "Ответ ассистента",
+        "agentReplyHint": "Разрешено в ответе ассистента ниже"
     },
     "composer": {
         "attachFiles": "Прикрепить файлы",
