@@ -388,17 +388,20 @@ export function Chat() {
     }];
   });
   const hasActiveExecutionGraph = userRunCards.some((card) => card.active);
-  const replyTextOverrides = new Map<number, string>();
-  for (const card of userRunCards) {
-    if (card.replyIndex == null) continue;
-    const replyMessage = messages[card.replyIndex];
-    if (!replyMessage || replyMessage.role !== 'assistant') continue;
-    const fullReplyText = extractText(replyMessage);
-    const trimmedReplyText = stripProcessMessagePrefix(fullReplyText, card.messageStepTexts);
-    if (trimmedReplyText !== fullReplyText) {
-      replyTextOverrides.set(card.replyIndex, trimmedReplyText);
+  const replyTextOverrides = useMemo(() => {
+    const map = new Map<number, string>();
+    for (const card of userRunCards) {
+      if (card.replyIndex == null) continue;
+      const replyMessage = messages[card.replyIndex];
+      if (!replyMessage || replyMessage.role !== 'assistant') continue;
+      const fullReplyText = extractText(replyMessage);
+      const trimmedReplyText = stripProcessMessagePrefix(fullReplyText, card.messageStepTexts);
+      if (trimmedReplyText !== fullReplyText) {
+        map.set(card.replyIndex, trimmedReplyText);
+      }
     }
-  }
+    return map;
+  }, [userRunCards, messages]);
   const streamingReplyText = userRunCards.find((card) => card.streamingReplyText != null)?.streamingReplyText ?? null;
 
   // Derive the set of run keys that should be auto-collapsed (run finished

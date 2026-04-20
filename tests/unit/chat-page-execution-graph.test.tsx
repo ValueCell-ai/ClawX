@@ -126,13 +126,13 @@ describe('Chat execution graph lifecycle', () => {
     });
   });
 
-  it('collapses execution once the reply starts streaming and keeps only the reply suffix in the bubble', async () => {
+  it('keeps the execution graph expanded while the reply is still streaming and shows only the reply suffix in the bubble', async () => {
     const { Chat } = await import('@/pages/Chat/index');
 
     render(<Chat />);
 
     await waitFor(() => {
-      expect(screen.getByTestId('chat-execution-graph')).toHaveAttribute('data-collapsed', 'true');
+      expect(screen.getByTestId('chat-execution-graph')).toHaveAttribute('data-collapsed', 'false');
     });
 
     expect(screen.getByText('Here is the summary.')).toBeInTheDocument();
