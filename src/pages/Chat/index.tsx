@@ -378,12 +378,12 @@ export function Chat() {
   const autoCollapsedRunKeys = useMemo(() => {
     const keys = new Set<string>();
     for (const card of userRunCards) {
-      // Auto-collapse once the reply is visible — either the streaming
-      // reply bubble is already rendering (streamingReplyText != null)
-      // or the run finished and we have a reply text override.
-      const hasStreamingReply = card.streamingReplyText != null;
-      const hasHistoricalReply = card.replyIndex != null && replyTextOverrides.has(card.replyIndex);
-      const shouldCollapse = hasStreamingReply || hasHistoricalReply;
+      // Only auto-collapse after the run is fully complete — not while
+      // the reply is still streaming, otherwise the graph jumps to a
+      // collapsed summary mid-stream.
+      const isStillStreaming = card.streamingReplyText != null;
+      const shouldCollapse = !isStillStreaming
+        && (card.replyIndex != null && replyTextOverrides.has(card.replyIndex));
       if (!shouldCollapse) continue;
       const triggerMsg = messages[card.triggerIndex];
       const runKey = triggerMsg?.id
@@ -492,11 +492,18 @@ export function Chat() {
                             ? `msg-${triggerMsg.id}`
                             : `${currentSessionKey}:trigger-${card.triggerIndex}`;
                           const userOverride = graphExpandedOverrides[runKey];
+                          // Keep the graph expanded while the streaming reply
+                          // renders — `active` flips to false once the reply
+                          // bubble appears, which would trigger auto-collapse
+                          // inside ExecutionGraphCard's uncontrolled path.
+                          const isStreamingReply = card.streamingReplyText != null;
                           const expanded = userOverride != null
                             ? userOverride
                             : autoCollapsedRunKeys.has(runKey)
                               ? false
-                              : undefined;
+                              : isStreamingReply
+                                ? true
+                                : undefined;
                           return (
                             <ExecutionGraphCard
                               key={`graph-${runKey}`}
@@ -517,18 +524,33 @@ export function Chat() {
                   {/* Streaming message */}
                   {shouldRenderStreaming && !hasActiveExecutionGraph && (
                     <ChatMessage
-                      message={(streamMsg
-                        ? {
-                            ...(streamMsg as Record<string, unknown>),
-                            role: (typeof streamMsg.role === 'string' ? streamMsg.role : 'assistant') as RawMessage['role'],
-                            content: streamMsg.content ?? streamText,
-                            timestamp: streamMsg.timestamp ?? streamingTimestamp,
-                          }
-                        : {
-                            role: 'assistant',
-                            content: streamText,
-                            timestamp: streamingTimestamp,
-                          }) as RawMessage}
+                      message={(() => {
+                        const base = streamMsg
+                          ? {
+                              ...(streamMsg as Record<string, unknown>),
+                              role: (typeof streamMsg.role === 'string' ? streamMsg.role : 'assistant') as RawMessage['role'],
+                              content: streamMsg.content ?? streamText,
+                              timestamp: streamMsg.timestamp ?? streamingTimestamp,
+                            }
+                          : {
+                              role: 'assistant' as const,
+                              content: streamText,
+                              timestamp: streamingTimestamp,
+                            };
+                        // When the reply renders as a separate bubble, strip
+                        // thinking blocks from the message — they belong to
+                        // the execution phase and are already omitted from
+                        // the graph via omitLastStreamingMessageSegment.
+                        if (streamingReplyText != null && Array.isArray(base.content)) {
+                          return {
+                            ...base,
+                            content: (base.content as Array<{ type?: string }>).filter(
+                              (block) => block.type !== 'thinking',
+                            ),
+                          } as RawMessage;
+                        }
+                        return base as RawMessage;
+                      })()}
                       textOverride={streamingReplyText ?? undefined}
                       isStreaming
                       streamingTools={streamingReplyText != null ? [] : streamingTools}
