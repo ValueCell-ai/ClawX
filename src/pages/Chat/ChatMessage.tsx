@@ -3,7 +3,7 @@
  * Renders user / assistant / system / toolresult messages
  * with markdown, thinking sections, images, and tool cards.
  */
-import { useState, useCallback, useEffect, memo } from 'react';
+import { useState, useCallback, useEffect, memo, useDeferredValue, useMemo } from 'react';
 import { Sparkles, Copy, Check, ChevronDown, ChevronRight, Wrench, FileText, Film, Music, FileArchive, File, X, FolderOpen, ZoomIn, Loader2, CheckCircle2, AlertCircle } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -78,6 +78,24 @@ export const ChatMessage = memo(function ChatMessage({
     ? (message._attachedFiles || []).filter((file) => file.source !== 'tool-result')
     : (message._attachedFiles || []);
   const [lightboxImg, setLightboxImg] = useState<{ src: string; fileName: string; filePath?: string; base64?: string; mimeType?: string } | null>(null);
+
+  // Defer markdown text during streaming to prevent blocking the main thread.
+  // When text is very long and updating on every token, ReactMarkdown re-parses
+  // the full AST synchronously. useDeferredValue lets React skip intermediate
+  // renders so the UI stays responsive (#133).
+  const deferredText = useDeferredValue(text);
+
+  // For extremely long outputs, cap what we feed to ReactMarkdown to avoid
+  // O(n²) cumulative parse cost. Show a hint so the user knows content was
+  // truncated while streaming; full text renders once streaming finishes.
+  const MARKDOWN_RENDER_LIMIT = 50_000; // chars
+  const renderText = useMemo(() => {
+    if (isStreaming && deferredText.length > MARKDOWN_RENDER_LIMIT) {
+      return deferredText.slice(-MARKDOWN_RENDER_LIMIT);
+    }
+    return deferredText;
+  }, [isStreaming, deferredText]);
+  const isTruncated = isStreaming && deferredText.length > MARKDOWN_RENDER_LIMIT;
 
   // Never render tool result messages in chat UI
   if (isToolResult) return null;
@@ -367,6 +385,11 @@ function MessageBubble({
         <p className="whitespace-pre-wrap break-words break-all text-sm">{text}</p>
       ) : (
         <div className="prose prose-sm dark:prose-invert max-w-none break-words break-all">
+          {isTruncated && (
+            <p className="text-xs text-muted-foreground italic mb-2">
+              ⚡ Showing last {Math.round(MARKDOWN_RENDER_LIMIT / 1000)}k chars while streaming — full content renders when complete.
+            </p>
+          )}
           <ReactMarkdown
             remarkPlugins={[remarkGfm]}
             components={{
@@ -397,7 +420,7 @@ function MessageBubble({
               },
             }}
           >
-            {text}
+            {renderText}
           </ReactMarkdown>
           {isStreaming && (
             <span className="inline-block w-2 h-4 bg-foreground/50 animate-pulse ml-0.5" />
