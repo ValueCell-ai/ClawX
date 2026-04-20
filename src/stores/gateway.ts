@@ -19,6 +19,20 @@ let lastLoadSessionsAt = 0;
 let lastLoadHistoryAt = 0;
 let cronRepairTriggeredThisSession = false;
 
+// Grace timer for agent phase completion.  The Gateway sends phase "end"
+// after each tool-execution round, not just at the end of the entire run.
+// We delay `sending=false` to give the next sub-run's "started" event
+// time to arrive.  If a new streaming event or started phase cancels the
+// timer, sending stays true seamlessly.
+let _phaseCompletionTimer: ReturnType<typeof setTimeout> | null = null;
+const PHASE_COMPLETION_GRACE_MS = 5_000;
+function clearPhaseCompletionTimer(): void {
+  if (_phaseCompletionTimer) {
+    clearTimeout(_phaseCompletionTimer);
+    _phaseCompletionTimer = null;
+  }
+}
+
 interface GatewayHealth {
   ok: boolean;
   error?: string;
@@ -128,6 +142,9 @@ function handleGatewayNotification(notification: { method?: string; params?: Rec
   const hasChatData = (p.state ?? data.state) || (p.message ?? data.message);
 
   if (hasChatData) {
+    // Any streaming data cancels the phase-completion grace timer — the
+    // run is still producing output (or a new sub-run has started).
+    clearPhaseCompletionTimer();
     const normalizedEvent: Record<string, unknown> = {
       ...data,
       runId: p.runId ?? data.runId,
@@ -149,6 +166,7 @@ function handleGatewayNotification(notification: { method?: string; params?: Rec
   const runId = p.runId ?? data.runId;
   const sessionKey = p.sessionKey ?? data.sessionKey;
   if (phase === 'started' && runId != null && sessionKey != null) {
+    clearPhaseCompletionTimer();
     import('./chat')
       .then(({ useChatStore }) => {
         const state = useChatStore.getState();
@@ -189,13 +207,27 @@ function handleGatewayNotification(notification: { method?: string; params?: Rec
           maybeLoadHistory(state);
         }
         if ((matchesCurrentSession || matchesActiveRun) && state.sending) {
-          useChatStore.setState({
-            sending: false,
-            activeRunId: null,
-            pendingFinal: false,
-            lastUserMessageAt: null,
-            error: null,
-          });
+          // The Gateway sends phase "end" after each tool-execution round,
+          // not only when the entire conversation finishes.  Delay the
+          // sending=false so a subsequent sub-run's "started" event or
+          // streaming delta can cancel it and keep the UI in the active state.
+          clearPhaseCompletionTimer();
+          _phaseCompletionTimer = setTimeout(() => {
+            _phaseCompletionTimer = null;
+            const current = useChatStore.getState();
+            // Only finalize if still in the same run and no new streaming data arrived.
+            if (current.sending && !current.streamingMessage) {
+              useChatStore.setState({
+                sending: false,
+                activeRunId: null,
+                pendingFinal: false,
+                lastUserMessageAt: null,
+                error: null,
+              });
+              // Reload history to get the final state.
+              maybeLoadHistory(current);
+            }
+          }, PHASE_COMPLETION_GRACE_MS);
         }
       })
       .catch(() => {});
