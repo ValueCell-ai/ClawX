@@ -171,13 +171,19 @@ export function createHistoryActions(
         }
 
         // If pendingFinal, check whether the AI produced a final text response.
+        // Only finalize when the candidate is the very last message in the
+        // history — intermediate assistant messages (narration + tool_use) are
+        // followed by tool-result messages and must NOT be treated as the
+        // completed response, otherwise `pendingFinal` is cleared too early
+        // and the streaming reply bubble never renders.
         if (pendingFinal || get().pendingFinal) {
           const recentAssistant = [...filteredMessages].reverse().find((msg) => {
             if (msg.role !== 'assistant') return false;
             if (!hasNonToolAssistantContent(msg)) return false;
             return isAfterUserMsg(msg);
           });
-          if (recentAssistant) {
+          const lastMsg = filteredMessages[filteredMessages.length - 1];
+          if (recentAssistant && lastMsg === recentAssistant) {
             clearHistoryPoll();
             set({ sending: false, activeRunId: null, pendingFinal: false });
           }

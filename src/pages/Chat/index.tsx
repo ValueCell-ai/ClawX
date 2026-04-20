@@ -258,8 +258,14 @@ export function Chat() {
       return builtSteps;
     };
 
+    // Show the streaming response as a separate bubble (not inside the
+    // execution graph) once all tool calls have finished.  `pendingFinal`
+    // is the primary signal, but a loadHistory race can clear it before
+    // response deltas arrive.  Fall back to checking that tracked tools
+    // all completed — this is equivalent and immune to the race.
+    const allToolsCompleted = streamingTools.length > 0 && !hasRunningStreamToolStatus;
     const rawStreamingReplyCandidate = isLatestOpenRun
-      && pendingFinal
+      && (pendingFinal || allToolsCompleted)
       && (hasStreamText || hasStreamImages)
       && streamTools.length === 0
       && !hasRunningStreamToolStatus;
