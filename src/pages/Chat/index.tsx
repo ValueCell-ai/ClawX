@@ -378,12 +378,12 @@ export function Chat() {
   const autoCollapsedRunKeys = useMemo(() => {
     const keys = new Set<string>();
     for (const card of userRunCards) {
-      // Only auto-collapse after the run is fully complete — not while
-      // the reply is still streaming, otherwise the graph jumps to a
-      // collapsed summary mid-stream.
-      const isStillStreaming = card.streamingReplyText != null;
-      const shouldCollapse = !isStillStreaming
-        && (card.replyIndex != null && replyTextOverrides.has(card.replyIndex));
+      // Auto-collapse once the reply is visible — either the streaming
+      // reply bubble is already rendering (streamingReplyText != null)
+      // or the run finished and we have a reply text override.
+      const hasStreamingReply = card.streamingReplyText != null;
+      const hasHistoricalReply = card.replyIndex != null && replyTextOverrides.has(card.replyIndex);
+      const shouldCollapse = hasStreamingReply || hasHistoricalReply;
       if (!shouldCollapse) continue;
       const triggerMsg = messages[card.triggerIndex];
       const runKey = triggerMsg?.id
@@ -492,18 +492,11 @@ export function Chat() {
                             ? `msg-${triggerMsg.id}`
                             : `${currentSessionKey}:trigger-${card.triggerIndex}`;
                           const userOverride = graphExpandedOverrides[runKey];
-                          // Keep the graph expanded while the streaming reply
-                          // renders — `active` flips to false once the reply
-                          // bubble appears, which would trigger auto-collapse
-                          // inside ExecutionGraphCard's uncontrolled path.
-                          const isStreamingReply = card.streamingReplyText != null;
                           const expanded = userOverride != null
                             ? userOverride
                             : autoCollapsedRunKeys.has(runKey)
                               ? false
-                              : isStreamingReply
-                                ? true
-                                : undefined;
+                              : undefined;
                           return (
                             <ExecutionGraphCard
                               key={`graph-${runKey}`}
