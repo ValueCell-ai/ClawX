@@ -278,19 +278,15 @@ export function Chat() {
     // Three signals indicate "tools finished, now streaming the reply":
     //   1. `pendingFinal`        — set by tool-result final events
     //   2. `allToolsCompleted`   — all entries in streamingTools are completed
-    //   3. `hasCompletedToolPhase` — the Gateway executed tools server-side
-    //      (no streaming tool events) and the tool phase is over.  Detected
-    //      by finding tool_use in historical messages AND the last assistant
-    //      message in the segment having no tool_use blocks (meaning the
-    //      model has moved past tool calls into the reply phase).
+    //   3. `hasCompletedToolPhase` — historical messages (loaded by the poll)
+    //      contain tool_use blocks, meaning the Gateway executed tools
+    //      server-side without sending streaming tool events to the client.
+    //      During intermediate narration (before reply), stripProcessMessagePrefix
+    //      will produce an empty trimmedReplyText, so the graph stays active.
     const allToolsCompleted = streamingTools.length > 0 && !hasRunningStreamToolStatus;
-    const lastAssistantInSegment = [...segmentMessages].reverse().find((m) => m.role === 'assistant');
-    const segmentHasTools = segmentMessages.some((msg) =>
+    const hasCompletedToolPhase = segmentMessages.some((msg) =>
       msg.role === 'assistant' && extractToolUse(msg).length > 0,
     );
-    const lastAssistantHasNoTools = lastAssistantInSegment != null
-      && extractToolUse(lastAssistantInSegment).length === 0;
-    const hasCompletedToolPhase = segmentHasTools && lastAssistantHasNoTools;
     const rawStreamingReplyCandidate = isLatestOpenRun
       && (pendingFinal || allToolsCompleted || hasCompletedToolPhase)
       && (hasStreamText || hasStreamImages)
@@ -329,16 +325,13 @@ export function Chat() {
       }
       const cached = graphStepCache[runKey];
       if (!cached) return [];
-      // When using cached steps for a completed run, filter out message
-      // steps whose text matches the final reply.  The cache was captured
-      // during streaming when all text was narration; now that the run is
-      // complete the reply should not appear inside the graph.
-      const cachedReplyIdx = cached.replyIndex;
-      const replyMsg = cachedReplyIdx != null ? messages[cachedReplyIdx] : null;
-      const replyText = replyMsg ? extractText(replyMsg).trim() : '';
-      const cleanedSteps = replyText
-        ? cached.steps.filter((s) => !(s.kind === 'message' && s.detail?.trim() === replyText))
-        : cached.steps;
+      // The cache was captured during streaming and may contain stream-
+      // generated message steps that include accumulated narration + reply
+      // text.  Strip these out — historical message steps (from messages[])
+      // will be properly recomputed on the next render with fresh data.
+      const cleanedSteps = cached.steps.filter(
+        (s) => !(s.kind === 'message' && s.id.startsWith('stream-message')),
+      );
       return [{
         triggerIndex: idx,
         replyIndex: cached.replyIndex,
