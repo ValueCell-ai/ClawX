@@ -187,11 +187,25 @@ export function Chat() {
 
   const isEmpty = messages.length === 0 && !sending;
   const subagentCompletionInfos = messages.map((message) => parseSubagentCompletionInfo(message));
+  // Build an index of the *next* real user message after each position.
+  // Gateway history may contain `role: 'user'` messages that are actually
+  // tool-result wrappers (Anthropic API format).  These must NOT split
+  // the run into multiple segments — only genuine user-authored messages
+  // should act as run boundaries.
+  const isRealUserMessage = (msg: RawMessage): boolean => {
+    if (msg.role !== 'user') return false;
+    const content = msg.content;
+    if (!Array.isArray(content)) return true;
+    // If every block in the content is a tool_result, this is a Gateway
+    // tool-result wrapper, not a real user message.
+    const blocks = content as Array<{ type?: string }>;
+    return blocks.length === 0 || !blocks.every((b) => b.type === 'tool_result');
+  };
   const nextUserMessageIndexes = new Array<number>(messages.length).fill(-1);
   let nextUserMessageIndex = -1;
   for (let idx = messages.length - 1; idx >= 0; idx -= 1) {
     nextUserMessageIndexes[idx] = nextUserMessageIndex;
-    if (messages[idx].role === 'user' && !subagentCompletionInfos[idx]) {
+    if (isRealUserMessage(messages[idx]) && !subagentCompletionInfos[idx]) {
       nextUserMessageIndex = idx;
     }
   }
@@ -202,7 +216,7 @@ export function Chat() {
   const foldedNarrationIndices = new Set<number>();
 
   const userRunCards: UserRunCard[] = messages.flatMap((message, idx) => {
-    if (message.role !== 'user' || subagentCompletionInfos[idx]) return [];
+    if (!isRealUserMessage(message) || subagentCompletionInfos[idx]) return [];
 
     const runKey = message.id
       ? `msg-${message.id}`
@@ -345,10 +359,12 @@ export function Chat() {
       foldedNarrationIndices.add(idx + 1 + offset);
     }
 
+    const cardActive = isLatestOpenRun && streamingReplyText == null;
+
     return [{
       triggerIndex: idx,
       replyIndex,
-      active: isLatestOpenRun && streamingReplyText == null,
+      active: cardActive,
       agentLabel: segmentAgentLabel,
       sessionLabel: segmentSessionLabel,
       segmentEnd: nextUserIndex === -1 ? messages.length - 1 : nextUserIndex - 1,
