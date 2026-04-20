@@ -227,7 +227,27 @@ export function Chat() {
     const completionInfos = subagentCompletionInfos
       .slice(idx + 1, segmentEnd)
       .filter((value): value is NonNullable<typeof value> => value != null);
-    const isLatestOpenRun = nextUserIndex === -1 && (sending || pendingFinal || hasAnyStreamContent);
+    // A run is considered "open" (still active) when it's the last segment
+    // AND at least one of:
+    //  - sending/pendingFinal/streaming data (normal streaming path)
+    //  - segment has tool calls but no pure-text final reply yet (server-side
+    //    tool execution — Gateway fires phase "end" per tool round which
+    //    briefly clears sending, but the run is still in progress)
+    const hasToolActivity = segmentMessages.some((m) =>
+      m.role === 'assistant' && extractToolUse(m).length > 0,
+    );
+    const hasFinalReply = segmentMessages.some((m) => {
+      if (m.role !== 'assistant') return false;
+      if (extractText(m).trim().length === 0) return false;
+      const content = m.content;
+      if (!Array.isArray(content)) return true;
+      return !(content as Array<{ type?: string }>).some(
+        (b) => b.type === 'tool_use' || b.type === 'toolCall',
+      );
+    });
+    const runStillExecutingTools = hasToolActivity && !hasFinalReply;
+    const isLatestOpenRun = nextUserIndex === -1
+      && (sending || pendingFinal || hasAnyStreamContent || runStillExecutingTools);
     const replyIndexOffset = findReplyMessageIndex(segmentMessages, isLatestOpenRun);
     const replyIndex = replyIndexOffset === -1 ? null : idx + 1 + replyIndexOffset;
 
@@ -411,12 +431,10 @@ export function Chat() {
   const autoCollapsedRunKeys = useMemo(() => {
     const keys = new Set<string>();
     for (const card of userRunCards) {
-      // Only auto-collapse after the run is fully complete — not while
-      // the reply is still streaming, otherwise the graph jumps to a
-      // collapsed summary mid-stream.
+      // Auto-collapse once the run is complete and a final reply exists.
+      // Don't collapse while the reply is still streaming.
       const isStillStreaming = card.streamingReplyText != null;
-      const shouldCollapse = !isStillStreaming
-        && (card.replyIndex != null && replyTextOverrides.has(card.replyIndex));
+      const shouldCollapse = !isStillStreaming && !card.active && card.replyIndex != null;
       if (!shouldCollapse) continue;
       const triggerMsg = messages[card.triggerIndex];
       const runKey = triggerMsg?.id
@@ -629,7 +647,7 @@ export function Chat() {
         onSend={sendMessage}
         onStop={abortRun}
         disabled={!isGatewayRunning}
-        sending={sending}
+        sending={sending || hasActiveExecutionGraph}
         isEmpty={isEmpty}
       />
 

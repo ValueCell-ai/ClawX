@@ -128,8 +128,6 @@ function handleGatewayNotification(notification: { method?: string; params?: Rec
   const hasChatData = (p.state ?? data.state) || (p.message ?? data.message);
 
   if (hasChatData) {
-    // Any streaming data cancels the phase-completion grace timer — the
-    // run is still producing output (or a new sub-run has started).
     const normalizedEvent: Record<string, unknown> = {
       ...data,
       runId: p.runId ?? data.runId,
@@ -190,11 +188,15 @@ function handleGatewayNotification(notification: { method?: string; params?: Rec
         if (matchesCurrentSession || matchesActiveRun) {
           maybeLoadHistory(state);
         }
-        // Note: we do NOT set sending=false here.  The Gateway sends
-        // phase "end" after each tool-execution round (sub-run), not only
-        // when the entire conversation finishes.  Run completion is
-        // determined by the chat.send RPC returning (runtime-send-actions)
-        // or a streaming "final" event with output (runtime-event-handlers).
+        if ((matchesCurrentSession || matchesActiveRun) && state.sending) {
+          useChatStore.setState({
+            sending: false,
+            activeRunId: null,
+            pendingFinal: false,
+            lastUserMessageAt: null,
+            error: null,
+          });
+        }
       })
       .catch(() => {});
   }

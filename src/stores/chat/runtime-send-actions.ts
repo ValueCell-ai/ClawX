@@ -223,19 +223,8 @@ export function createRuntimeSendActions(set: ChatSet, get: ChatGet): Pick<Runti
         if (!result.success) {
           clearHistoryPoll();
           set({ error: result.error || 'Failed to send message', sending: false });
-        } else {
-          if (result.result?.runId) {
-            set({ activeRunId: result.result.runId });
-          }
-          // The chat.send RPC blocks until the entire agent conversation
-          // finishes.  If sending is still true (streaming events haven't
-          // finalized it yet), finalize now — this is the authoritative
-          // signal that the run is complete.
-          if (get().sending) {
-            clearHistoryPoll();
-            set({ sending: false, activeRunId: null, pendingFinal: false, lastUserMessageAt: null });
-            get().loadHistory(true);
-          }
+        } else if (result.result?.runId) {
+          set({ activeRunId: result.result.runId });
         }
       } catch (err) {
         clearHistoryPoll();
