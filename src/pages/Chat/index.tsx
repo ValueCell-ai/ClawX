@@ -368,7 +368,12 @@ export function Chat() {
       foldedNarrationIndices.add(idx + 1 + offset);
     }
 
-    const cardActive = isLatestOpenRun && streamingReplyText == null;
+    // The graph should stay "active" (expanded, can show trailing thinking)
+    // for the entire duration of the run — not just until a streaming reply
+    // appears.  Tying active to streamingReplyText caused a flicker: a brief
+    // active→false→true transition collapsed the graph via ExecutionGraphCard's
+    // uncontrolled path before the controlled `expanded` override could kick in.
+    const cardActive = isLatestOpenRun;
 
     return [{
       triggerIndex: idx,
@@ -517,24 +522,22 @@ export function Chat() {
                             ? `msg-${triggerMsg.id}`
                             : `${currentSessionKey}:trigger-${card.triggerIndex}`;
                           const userOverride = graphExpandedOverrides[runKey];
-                          // Keep the graph expanded while the streaming reply
-                          // renders — `active` flips to false once the reply
-                          // bubble appears, which would trigger auto-collapse
-                          // inside ExecutionGraphCard's uncontrolled path.
-                          const isStreamingReply = card.streamingReplyText != null;
+                          // Always use the controlled expanded prop instead of
+                          // relying on ExecutionGraphCard's uncontrolled state.
+                          // Uncontrolled state is lost on remount (key changes
+                          // when loadHistory replaces message ids), causing
+                          // spurious collapse.  The controlled prop survives
+                          // remounts because it's computed fresh each render.
                           const expanded = userOverride != null
                             ? userOverride
-                            : autoCollapsedRunKeys.has(runKey)
-                              ? false
-                              : isStreamingReply
-                                ? true
-                                : undefined;
+                            : !autoCollapsedRunKeys.has(runKey);
                           return (
                             <ExecutionGraphCard
-                              key={`graph-${runKey}`}
+                              key={`graph-${currentSessionKey}:${card.triggerIndex}`}
                               agentLabel={card.agentLabel}
                               steps={card.steps}
                               active={card.active}
+                              suppressThinking={card.streamingReplyText != null}
                               expanded={expanded}
                               onExpandedChange={(next) =>
                                 setGraphExpandedOverrides((prev) => ({ ...prev, [runKey]: next }))
@@ -546,8 +549,9 @@ export function Chat() {
                     );
                   })}
 
-                  {/* Streaming message */}
-                  {shouldRenderStreaming && !hasActiveExecutionGraph && (
+                  {/* Streaming message — render when reply text is separated from graph,
+                      OR when there's streaming content without an active graph */}
+                  {shouldRenderStreaming && (streamingReplyText != null || !hasActiveExecutionGraph) && (
                     <ChatMessage
                       message={(() => {
                         const base = streamMsg

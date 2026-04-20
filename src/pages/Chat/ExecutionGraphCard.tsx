@@ -8,6 +8,8 @@ interface ExecutionGraphCardProps {
   agentLabel: string;
   steps: TaskStep[];
   active: boolean;
+  /** Hide the trailing "Thinking ..." indicator even when active. */
+  suppressThinking?: boolean;
   /**
    * When provided, the card becomes fully controlled: the parent owns the
    * expand state (e.g. to persist across remounts) and toggling goes through
@@ -149,6 +151,7 @@ export function ExecutionGraphCard({
   agentLabel,
   steps,
   active,
+  suppressThinking = false,
   expanded: controlledExpanded,
   onExpandedChange,
 }: ExecutionGraphCardProps) {
@@ -175,7 +178,7 @@ export function ExecutionGraphCard({
 
   const toolCount = steps.filter((step) => step.kind === 'tool').length;
   const processCount = steps.length - toolCount;
-  const shouldShowTrailingThinking = active;
+  const shouldShowTrailingThinking = active && !suppressThinking;
 
   if (!expanded) {
     return (
