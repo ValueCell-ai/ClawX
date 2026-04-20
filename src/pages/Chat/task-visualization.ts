@@ -283,13 +283,18 @@ export function deriveTaskSteps({
   }
 
   if (streamMessage) {
-    appendDetailSegments(extractThinkingSegments(streamMessage), {
-      idPrefix: 'stream-thinking',
-      label: 'Thinking',
-      kind: 'thinking',
-      running: true,
-      upsertStep,
-    });
+    // When the reply is being rendered as a separate bubble
+    // (omitLastStreamingMessageSegment), thinking that accompanies
+    // the reply belongs to the bubble — omit it from the graph.
+    if (!omitLastStreamingMessageSegment) {
+      appendDetailSegments(extractThinkingSegments(streamMessage), {
+        idPrefix: 'stream-thinking',
+        label: 'Thinking',
+        kind: 'thinking',
+        running: true,
+        upsertStep,
+      });
+    }
 
     // Stream-time narration should also appear in the execution graph so that
     // intermediate process output stays in P1 instead of leaking into the

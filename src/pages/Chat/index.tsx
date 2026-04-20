@@ -259,13 +259,20 @@ export function Chat() {
     };
 
     // Show the streaming response as a separate bubble (not inside the
-    // execution graph) once all tool calls have finished.  `pendingFinal`
-    // is the primary signal, but a loadHistory race can clear it before
-    // response deltas arrive.  Fall back to checking that tracked tools
-    // all completed — this is equivalent and immune to the race.
+    // execution graph) once all tool calls have finished.
+    //
+    // Three signals indicate "tools finished, now streaming the reply":
+    //   1. `pendingFinal`        — set by tool-result final events
+    //   2. `allToolsCompleted`   — all entries in streamingTools are completed
+    //   3. `hasCompletedToolPhase` — historical messages (loaded by the poll)
+    //      contain tool_use blocks, meaning the Gateway executed tools
+    //      server-side without sending streaming tool events to the client
     const allToolsCompleted = streamingTools.length > 0 && !hasRunningStreamToolStatus;
+    const hasCompletedToolPhase = segmentMessages.some((msg) =>
+      msg.role === 'assistant' && extractToolUse(msg).length > 0,
+    );
     const rawStreamingReplyCandidate = isLatestOpenRun
-      && (pendingFinal || allToolsCompleted)
+      && (pendingFinal || allToolsCompleted || hasCompletedToolPhase)
       && (hasStreamText || hasStreamImages)
       && streamTools.length === 0
       && !hasRunningStreamToolStatus;
@@ -371,8 +378,12 @@ export function Chat() {
   const autoCollapsedRunKeys = useMemo(() => {
     const keys = new Set<string>();
     for (const card of userRunCards) {
-      const shouldCollapse = card.streamingReplyText != null
-        || (card.replyIndex != null && replyTextOverrides.has(card.replyIndex));
+      // Only auto-collapse after the run is fully complete — not while
+      // the reply is still streaming, otherwise the graph jumps to a
+      // collapsed summary mid-stream.
+      const isStillStreaming = card.streamingReplyText != null;
+      const shouldCollapse = !isStillStreaming
+        && (card.replyIndex != null && replyTextOverrides.has(card.replyIndex));
       if (!shouldCollapse) continue;
       const triggerMsg = messages[card.triggerIndex];
       const runKey = triggerMsg?.id
@@ -481,11 +492,18 @@ export function Chat() {
                             ? `msg-${triggerMsg.id}`
                             : `${currentSessionKey}:trigger-${card.triggerIndex}`;
                           const userOverride = graphExpandedOverrides[runKey];
+                          // Keep the graph expanded while the streaming reply
+                          // renders — `active` flips to false once the reply
+                          // bubble appears, which would trigger auto-collapse
+                          // inside ExecutionGraphCard's uncontrolled path.
+                          const isStreamingReply = card.streamingReplyText != null;
                           const expanded = userOverride != null
                             ? userOverride
                             : autoCollapsedRunKeys.has(runKey)
                               ? false
-                              : undefined;
+                              : isStreamingReply
+                                ? true
+                                : undefined;
                           return (
                             <ExecutionGraphCard
                               key={`graph-${runKey}`}
