@@ -517,6 +517,7 @@ export async function buildChannelAccountsView(
   options?: { probe?: boolean },
 ): Promise<{ channels: ChannelAccountsView[]; gatewayHealth: GatewayHealthSummary }> {
   const startedAt = Date.now();
+  const gatewayStatusState = ctx.gatewayManager.getStatus();
   // Read config once and share across all sub-calls (was 5 readFile calls before).
   const openClawConfig = await readOpenClawConfig();
 
@@ -527,28 +528,35 @@ export async function buildChannelAccountsView(
   ]);
 
   let gatewayStatus: GatewayChannelStatusPayload | null;
-  try {
+  if (gatewayStatusState.state !== 'running' || gatewayStatusState.gatewayReady === false) {
+    if (gatewayStatusState.state === 'running' && gatewayStatusState.gatewayReady === false) {
+      logger.info('[channels.accounts] skipping channels.status probe while gateway startup is still settling');
+    }
+    gatewayStatus = null;
+  } else {
+    try {
     // probe=false uses cached runtime state (lighter); probe=true forces
     // adapter-level connectivity checks for faster post-restart convergence.
-    const probe = options?.probe === true;
+      const probe = options?.probe === true;
     // 8s timeout — fail fast when Gateway is busy with AI tasks.
-    const rpcStartedAt = Date.now();
-    gatewayStatus = await ctx.gatewayManager.rpc<GatewayChannelStatusPayload>(
-      'channels.status',
-      { probe },
-      probe ? 5000 : 8000,
-    );
-    lastChannelsStatusOkAt = Date.now();
-    logger.info(
-      `[channels.accounts] channels.status probe=${probe ? '1' : '0'} elapsedMs=${Date.now() - rpcStartedAt} snapshot=${buildGatewayStatusSnapshot(gatewayStatus)}`
-    );
-  } catch {
-    const probe = options?.probe === true;
-    lastChannelsStatusFailureAt = Date.now();
-    logger.warn(
-      `[channels.accounts] channels.status probe=${probe ? '1' : '0'} failed after ${Date.now() - startedAt}ms`
-    );
-    gatewayStatus = null;
+      const rpcStartedAt = Date.now();
+      gatewayStatus = await ctx.gatewayManager.rpc<GatewayChannelStatusPayload>(
+        'channels.status',
+        { probe },
+        probe ? 5000 : 8000,
+      );
+      lastChannelsStatusOkAt = Date.now();
+      logger.info(
+        `[channels.accounts] channels.status probe=${probe ? '1' : '0'} elapsedMs=${Date.now() - rpcStartedAt} snapshot=${buildGatewayStatusSnapshot(gatewayStatus)}`
+      );
+    } catch {
+      const probe = options?.probe === true;
+      lastChannelsStatusFailureAt = Date.now();
+      logger.warn(
+        `[channels.accounts] channels.status probe=${probe ? '1' : '0'} failed after ${Date.now() - startedAt}ms`
+      );
+      gatewayStatus = null;
+    }
   }
 
   const gatewayDiagnostics = ctx.gatewayManager.getDiagnostics?.() ?? {
@@ -556,7 +564,7 @@ export async function buildChannelAccountsView(
     consecutiveRpcFailures: 0,
   };
   const gatewayHealth = buildGatewayHealthSummary({
-    status: ctx.gatewayManager.getStatus(),
+    status: gatewayStatusState,
     diagnostics: gatewayDiagnostics,
     lastChannelsStatusOkAt,
     lastChannelsStatusFailureAt,
@@ -647,7 +655,7 @@ export async function buildChannelAccountsView(
     const hasRuntimeError = visibleAccountSnapshots.some((account) => typeof account.lastError === 'string' && account.lastError.trim())
       || Boolean(channelSummary?.error?.trim() || channelSummary?.lastError?.trim());
     const baseGroupStatus = pickChannelRuntimeStatus(visibleAccountSnapshots, channelSummary);
-    const groupStatus = !gatewayStatus && ctx.gatewayManager.getStatus().state === 'running'
+    const groupStatus = !gatewayStatus && gatewayStatusState.state === 'running'
       ? 'degraded'
       : gatewayHealthState && !hasRuntimeError && baseGroupStatus === 'connected'
         ? 'degraded'
@@ -659,7 +667,7 @@ export async function buildChannelAccountsView(
       channelType: uiChannelType,
       defaultAccountId,
       status: groupStatus,
-      statusReason: !gatewayStatus && ctx.gatewayManager.getStatus().state === 'running'
+      statusReason: !gatewayStatus && gatewayStatusState.state === 'running'
         ? 'channels_status_timeout'
         : groupStatus === 'degraded'
           ? overlayStatusReason(gatewayHealth, 'gateway_degraded')

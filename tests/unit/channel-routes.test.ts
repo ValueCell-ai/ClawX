@@ -203,6 +203,61 @@ describe('handleChannelRoutes', () => {
     );
   });
 
+  it('skips channels.status rpc when gateway is not running', async () => {
+    listConfiguredChannelsMock.mockResolvedValue(['feishu']);
+    listConfiguredChannelAccountsMock.mockResolvedValue({
+      feishu: {
+        defaultAccountId: 'default',
+        accountIds: ['default'],
+      },
+    });
+    readOpenClawConfigMock.mockResolvedValue({
+      channels: {
+        feishu: {
+          defaultAccount: 'default',
+        },
+      },
+    });
+
+    const rpc = vi.fn();
+
+    const { handleChannelRoutes } = await import('@electron/api/routes/channels');
+    const handled = await handleChannelRoutes(
+      { method: 'GET' } as IncomingMessage,
+      {} as ServerResponse,
+      new URL('http://127.0.0.1:13210/api/channels/accounts'),
+      {
+        gatewayManager: {
+          rpc,
+          getStatus: () => ({ state: 'starting' }),
+          getDiagnostics: () => ({ consecutiveHeartbeatMisses: 0, consecutiveRpcFailures: 0 }),
+          debouncedReload: vi.fn(),
+          debouncedRestart: vi.fn(),
+        },
+      } as never,
+    );
+
+    expect(handled).toBe(true);
+    expect(rpc).not.toHaveBeenCalled();
+    expect(sendJsonMock).toHaveBeenCalledWith(
+      expect.anything(),
+      200,
+      expect.objectContaining({
+        success: true,
+        gatewayHealth: expect.objectContaining({
+          state: 'degraded',
+          reasons: expect.arrayContaining(['gateway_not_running']),
+        }),
+        channels: [
+          expect.objectContaining({
+            channelType: 'feishu',
+            status: 'degraded',
+          }),
+        ],
+      }),
+    );
+  });
+
   it('rejects non-canonical account ID on channel config save', async () => {
     parseJsonBodyMock.mockResolvedValue({
       channelType: 'feishu',

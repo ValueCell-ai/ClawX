@@ -65,9 +65,22 @@ async function readJsonFile<T>(filePath: string): Promise<T | null> {
 }
 
 /** Write a JSON file, creating parent directories if needed. */
-async function writeJsonFile(filePath: string, data: unknown): Promise<void> {
+async function writeJsonFile(filePath: string, data: unknown): Promise<boolean> {
+  const nextContent = JSON.stringify(data, null, 2);
+  if (await fileExists(filePath)) {
+    try {
+      const currentContent = await readFile(filePath, 'utf-8');
+      if (currentContent === nextContent) {
+        return false;
+      }
+    } catch {
+      // Fall through and rewrite unreadable/corrupt files.
+    }
+  }
+
   await ensureDir(join(filePath, '..'));
-  await writeFile(filePath, JSON.stringify(data, null, 2), 'utf-8');
+  await writeFile(filePath, nextContent, 'utf-8');
+  return true;
 }
 
 // ── Types ────────────────────────────────────────────────────────
@@ -190,8 +203,8 @@ async function readAuthProfiles(agentId = 'main'): Promise<AuthProfilesStore> {
   return { version: AUTH_STORE_VERSION, profiles: {} };
 }
 
-async function writeAuthProfiles(store: AuthProfilesStore, agentId = 'main'): Promise<void> {
-  await writeJsonFile(getAuthProfilesPath(agentId), store);
+async function writeAuthProfiles(store: AuthProfilesStore, agentId = 'main'): Promise<boolean> {
+  return await writeJsonFile(getAuthProfilesPath(agentId), store);
 }
 
 // ── Agent Discovery ──────────────────────────────────────────────
@@ -370,7 +383,7 @@ function normalizeAgentsDefaultsCompactionMode(config: Record<string, unknown>):
   }
 }
 
-async function writeOpenClawJson(config: Record<string, unknown>): Promise<void> {
+async function writeOpenClawJson(config: Record<string, unknown>): Promise<boolean> {
   normalizeAgentsDefaultsCompactionMode(config);
 
   // Ensure SIGUSR1 graceful reload is authorized by OpenClaw config.
@@ -382,7 +395,7 @@ async function writeOpenClawJson(config: Record<string, unknown>): Promise<void>
   commands.restart = true;
   config.commands = commands;
 
-  await writeJsonFile(OPENCLAW_CONFIG_PATH, config);
+  return await writeJsonFile(OPENCLAW_CONFIG_PATH, config);
 }
 
 // ── Exported Functions (all async) ───────────────────────────────
@@ -397,6 +410,7 @@ export async function saveOAuthTokenToOpenClaw(
 ): Promise<void> {
   const agentIds = agentId ? [agentId] : await discoverAgentIds();
   if (agentIds.length === 0) agentIds.push('main');
+  let changed = false;
 
   for (const id of agentIds) {
     const store = await readAuthProfiles(id);
@@ -421,9 +435,11 @@ export async function saveOAuthTokenToOpenClaw(
     if (!store.lastGood) store.lastGood = {};
     store.lastGood[provider] = profileId;
 
-    await writeAuthProfiles(store, id);
+    changed = await writeAuthProfiles(store, id) || changed;
   }
-  console.log(`Saved OAuth token for provider "${provider}" to OpenClaw auth-profiles (agents: ${agentIds.join(', ')})`);
+  if (changed) {
+    console.log(`Saved OAuth token for provider "${provider}" to OpenClaw auth-profiles (agents: ${agentIds.join(', ')})`);
+  }
 }
 
 /**
@@ -466,6 +482,7 @@ export async function saveProviderKeyToOpenClaw(
   }
   const agentIds = agentId ? [agentId] : await discoverAgentIds();
   if (agentIds.length === 0) agentIds.push('main');
+  let changed = false;
 
   for (const id of agentIds) {
     const store = await readAuthProfiles(id);
@@ -482,9 +499,11 @@ export async function saveProviderKeyToOpenClaw(
     if (!store.lastGood) store.lastGood = {};
     store.lastGood[provider] = profileId;
 
-    await writeAuthProfiles(store, id);
+    changed = await writeAuthProfiles(store, id) || changed;
   }
-  console.log(`Saved API key for provider "${provider}" to OpenClaw auth-profiles (agents: ${agentIds.join(', ')})`);
+  if (changed) {
+    console.log(`Saved API key for provider "${provider}" to OpenClaw auth-profiles (agents: ${agentIds.join(', ')})`);
+  }
 }
 
 /**
@@ -1005,9 +1024,10 @@ export async function setOpenClawDefaultModelWithOverride(
  * Get a set of all active provider IDs configured in openclaw.json.
  * Reads the file ONCE and extracts both models.providers and plugins.entries.
  */
-// Provider IDs that have been deprecated and should never appear as active.
-// These may still linger in openclaw.json from older versions.
+// Provider IDs / auth plugins that have been deprecated and should never
+// appear as active. These may still linger in openclaw.json from older versions.
 const DEPRECATED_PROVIDER_IDS = new Set(['qwen-portal']);
+const DEPRECATED_PROVIDER_PLUGIN_IDS = new Set(['qwen-portal-auth', 'minimax-portal-auth']);
 
 export async function getActiveOpenClawProviders(): Promise<Set<string>> {
   const activeProviders = new Set<string>();
@@ -1257,7 +1277,7 @@ export async function batchSyncConfigFields(token: string): Promise<void> {
 
   return withConfigLock(async () => {
     const config = await readOpenClawJson();
-    let modified = true;
+    let modified = false;
 
     // ── Gateway token + controlUi ──
     const gateway = (
@@ -1271,8 +1291,14 @@ export async function batchSyncConfigFields(token: string): Promise<void> {
         ? { ...(gateway.auth as Record<string, unknown>) }
         : {}
     ) as Record<string, unknown>;
-    auth.mode = 'token';
-    auth.token = token;
+    if (auth.mode !== 'token') {
+      auth.mode = 'token';
+      modified = true;
+    }
+    if (auth.token !== token) {
+      auth.token = token;
+      modified = true;
+    }
     gateway.auth = auth;
 
     const controlUi = (
@@ -1285,9 +1311,13 @@ export async function batchSyncConfigFields(token: string): Promise<void> {
       : [];
     if (!allowedOrigins.includes('file://')) {
       controlUi.allowedOrigins = [...allowedOrigins, 'file://'];
+      modified = true;
     }
     gateway.controlUi = controlUi;
-    if (!gateway.mode) gateway.mode = 'local';
+    if (!gateway.mode) {
+      gateway.mode = 'local';
+      modified = true;
+    }
     config.gateway = gateway;
 
     // ── Browser config ──
@@ -1337,8 +1367,10 @@ export async function batchSyncConfigFields(token: string): Promise<void> {
     }
 
     if (modified) {
-      await writeOpenClawJson(config);
-      console.log('Synced gateway token, browser config, and session idle to openclaw.json');
+      const wrote = await writeOpenClawJson(config);
+      if (wrote) {
+        console.log('Synced gateway token, browser config, and session idle to openclaw.json');
+      }
     }
   });
 }
@@ -1784,20 +1816,21 @@ export async function sanitizeOpenClawConfig(): Promise<void> {
       // OpenClaw 2026.3.28 deprecated qwen-portal OAuth (portal.qwen.ai)
       // in favor of Model Studio (DashScope API key).  Clean up legacy
       // qwen-portal-auth plugin entries and qwen-portal provider config.
-      const LEGACY_QWEN_PLUGIN_ID = 'qwen-portal-auth';
-      if (Array.isArray(pluginsObj.allow)) {
-        const allowArr = pluginsObj.allow as string[];
-        const legacyIdx = allowArr.indexOf(LEGACY_QWEN_PLUGIN_ID);
-        if (legacyIdx !== -1) {
-          allowArr.splice(legacyIdx, 1);
-          console.log(`[sanitize] Removed deprecated plugin from plugins.allow: ${LEGACY_QWEN_PLUGIN_ID}`);
+      for (const deprecatedPluginId of DEPRECATED_PROVIDER_PLUGIN_IDS) {
+        if (Array.isArray(pluginsObj.allow)) {
+          const allowArr = pluginsObj.allow as string[];
+          const legacyIdx = allowArr.indexOf(deprecatedPluginId);
+          if (legacyIdx !== -1) {
+            allowArr.splice(legacyIdx, 1);
+            console.log(`[sanitize] Removed deprecated plugin from plugins.allow: ${deprecatedPluginId}`);
+            modified = true;
+          }
+        }
+        if (pEntries?.[deprecatedPluginId]) {
+          delete pEntries[deprecatedPluginId];
+          console.log(`[sanitize] Removed deprecated plugin from plugins.entries: ${deprecatedPluginId}`);
           modified = true;
         }
-      }
-      if (pEntries?.[LEGACY_QWEN_PLUGIN_ID]) {
-        delete pEntries[LEGACY_QWEN_PLUGIN_ID];
-        console.log(`[sanitize] Removed deprecated plugin from plugins.entries: ${LEGACY_QWEN_PLUGIN_ID}`);
-        modified = true;
       }
 
       // Remove deprecated models.providers.qwen-portal

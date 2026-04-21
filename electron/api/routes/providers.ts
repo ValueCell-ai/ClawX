@@ -55,6 +55,11 @@ export async function handleProviderRoutes(
     return true;
   }
 
+  if (url.pathname === '/api/provider-snapshot' && req.method === 'GET') {
+    sendJson(res, 200, await providerService.getSnapshot());
+    return true;
+  }
+
   if (url.pathname === '/api/provider-accounts' && req.method === 'GET') {
     sendJson(res, 200, await providerService.listAccounts());
     return true;

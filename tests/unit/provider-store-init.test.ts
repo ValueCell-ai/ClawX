@@ -31,9 +31,9 @@ describe('useProviderStore – init()', () => {
 
   it('init() calls refreshProviderSnapshot and populates state', async () => {
     const fakeSnapshot = {
-      statuses: [{ id: 'anthropic', name: 'Anthropic', hasKey: true, keyMasked: 'sk-***' }],
-      accounts: [{ id: 'acc-1', name: 'My Anthropic', type: 'anthropic' }],
-      vendors: [{ id: 'anthropic', displayName: 'Anthropic' }],
+      statuses: [{ id: 'acc-1', name: 'Anthropic', type: 'anthropic', enabled: true, createdAt: '', updatedAt: '', hasKey: true, keyMasked: 'sk-***' }],
+      accounts: [{ id: 'acc-1', vendorId: 'anthropic', label: 'My Anthropic', authMode: 'api_key', enabled: true, isDefault: false, createdAt: '', updatedAt: '' }],
+      vendors: [{ id: 'anthropic', name: 'Anthropic' }],
       defaultAccountId: 'acc-1',
     };
     mockFetchProviderSnapshot.mockResolvedValueOnce(fakeSnapshot);
@@ -95,9 +95,9 @@ describe('useProviderStore – init()', () => {
       defaultAccountId: null,
     };
     const snapshot2 = {
-      statuses: [{ id: 'openai', name: 'OpenAI', hasKey: true, keyMasked: 'sk-***' }],
-      accounts: [{ id: 'acc-2', name: 'My OpenAI', type: 'openai' }],
-      vendors: [{ id: 'openai', displayName: 'OpenAI' }],
+      statuses: [{ id: 'acc-2', name: 'OpenAI', type: 'openai', enabled: true, createdAt: '', updatedAt: '', hasKey: true, keyMasked: 'sk-***' }],
+      accounts: [{ id: 'acc-2', vendorId: 'openai', label: 'My OpenAI', authMode: 'api_key', enabled: true, isDefault: false, createdAt: '', updatedAt: '' }],
+      vendors: [{ id: 'openai', name: 'OpenAI' }],
       defaultAccountId: 'acc-2',
     };
     mockFetchProviderSnapshot.mockResolvedValueOnce(snapshot1).mockResolvedValueOnce(snapshot2);

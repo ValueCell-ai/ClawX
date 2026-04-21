@@ -20,19 +20,7 @@ export interface ProviderListItem {
 }
 
 export async function fetchProviderSnapshot(): Promise<ProviderSnapshot> {
-  const [accounts, statuses, vendors, defaultInfo] = await Promise.all([
-    hostApiFetch<ProviderAccount[]>('/api/provider-accounts'),
-    hostApiFetch<ProviderWithKeyInfo[]>('/api/providers'),
-    hostApiFetch<ProviderVendorInfo[]>('/api/provider-vendors'),
-    hostApiFetch<{ accountId: string | null }>('/api/provider-accounts/default'),
-  ]);
-
-  return {
-    accounts,
-    statuses,
-    vendors,
-    defaultAccountId: defaultInfo.accountId,
-  };
+  return await hostApiFetch<ProviderSnapshot>('/api/provider-snapshot');
 }
 
 export function hasConfiguredCredentials(

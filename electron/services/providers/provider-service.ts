@@ -28,6 +28,7 @@ import {
   setDefaultProvider,
   storeApiKey,
 } from '../../utils/secure-storage';
+import { getProviderSecret } from '../secrets/secret-store';
 import { getActiveOpenClawProviders, getOpenClawProvidersConfig } from '../../utils/openclaw-auth';
 import { getAliasSourceTypes, getOpenClawProviderKeyForType } from '../../utils/provider-keys';
 import type { ProviderWithKeyInfo } from '../../shared/providers/types';
@@ -39,6 +40,29 @@ function maskApiKey(apiKey: string | null): string | null {
     return `${apiKey.substring(0, 4)}${'*'.repeat(apiKey.length - 8)}${apiKey.substring(apiKey.length - 4)}`;
   }
   return '*'.repeat(apiKey.length);
+}
+
+function buildCredentialSummary(account: ProviderAccount, secret: Awaited<ReturnType<typeof getProviderSecret>>): {
+  hasKey: boolean;
+  keyMasked: string | null;
+} {
+  if (account.authMode === 'oauth_browser' || account.authMode === 'oauth_device') {
+    return {
+      hasKey: secret?.type === 'oauth',
+      keyMasked: null,
+    };
+  }
+
+  const apiKey = secret?.type === 'api_key'
+    ? secret.apiKey
+    : secret?.type === 'local'
+      ? (secret.apiKey ?? null)
+      : null;
+
+  return {
+    hasKey: Boolean(apiKey),
+    keyMasked: maskApiKey(apiKey),
+  };
 }
 
 const legacyProviderApiWarned = new Set<string>();
@@ -56,6 +80,46 @@ function logLegacyProviderApiUsage(method: string, replacement: string): void {
 export class ProviderService {
   async listVendors(): Promise<ProviderDefinition[]> {
     return PROVIDER_DEFINITIONS;
+  }
+
+  async getSnapshot(): Promise<{
+    accounts: ProviderAccount[];
+    statuses: ProviderWithKeyInfo[];
+    vendors: ProviderDefinition[];
+    defaultAccountId: string | null;
+  }> {
+    const [accounts, vendors, defaultAccountId] = await Promise.all([
+      this.listAccounts(),
+      this.listVendors(),
+      this.getDefaultAccountId(),
+    ]);
+
+    const statuses = await Promise.all(accounts.map(async (account) => {
+      const secret = await getProviderSecret(account.id);
+      const apiKey = secret?.type === 'api_key'
+        ? secret.apiKey
+        : secret?.type === 'local'
+          ? (secret.apiKey ?? null)
+          : null;
+      const hasKey = account.authMode === 'api_key'
+        ? Boolean(apiKey)
+        : account.authMode === 'local'
+          ? Boolean(apiKey)
+          : false;
+
+      return {
+        ...providerAccountToConfig(account),
+        hasKey,
+        keyMasked: maskApiKey(apiKey),
+      };
+    }));
+
+    return {
+      accounts,
+      statuses,
+      vendors,
+      defaultAccountId: defaultAccountId ?? null,
+    };
   }
 
   async listAccounts(): Promise<ProviderAccount[]> {

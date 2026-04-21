@@ -29,6 +29,64 @@ import { prependPathEntry } from '../utils/env-path';
 import { copyPluginFromNodeModules, fixupPluginManifest, cpSyncSafe } from '../utils/plugin-install';
 import { stripSystemdSupervisorEnv } from './config-sync-env';
 
+const LOCAL_GATEWAY_HOST = '127.0.0.1';
+const CLAWX_LOCAL_MDNS_MODE = 'off';
+
+function isLocalOnlyGatewayBind(bind: string | undefined): boolean {
+  if (!bind) return true;
+  const normalized = bind.trim().toLowerCase();
+  return normalized === ''
+    || normalized === 'loopback'
+    || normalized === '127.0.0.1'
+    || normalized === 'localhost';
+}
+
+export function buildGatewayLaunchArgs(
+  port: number,
+  token: string,
+  allowUnconfigured: boolean,
+): string[] {
+  return [
+    'gateway',
+    '--port',
+    String(port),
+    '--token',
+    token,
+    ...(allowUnconfigured ? ['--allow-unconfigured'] : []),
+  ];
+}
+
+export function buildGatewayLaunchEnv(options: {
+  baseEnv: Record<string, string | undefined>;
+  providerEnv: Record<string, string | undefined>;
+  uvEnv: Record<string, string | undefined>;
+  proxyEnv: Record<string, string | undefined>;
+  token: string;
+  skipChannels: boolean;
+  gatewayMode: string | undefined;
+  gatewayBind: string | undefined;
+}): Record<string, string | undefined> {
+  const env: Record<string, string | undefined> = {
+    ...stripSystemdSupervisorEnv(options.baseEnv),
+    ...options.providerEnv,
+    ...options.uvEnv,
+    ...options.proxyEnv,
+    OPENCLAW_GATEWAY_TOKEN: options.token,
+    OPENCLAW_SKIP_CHANNELS: options.skipChannels ? '1' : '',
+    CLAWDBOT_SKIP_CHANNELS: options.skipChannels ? '1' : '',
+    OPENCLAW_NO_RESPAWN: '1',
+  };
+
+  if (!options.gatewayMode && isLocalOnlyGatewayBind(options.gatewayBind)) {
+    env.OPENCLAW_GATEWAY_BIND = LOCAL_GATEWAY_HOST;
+  }
+
+  if (options.gatewayMode === 'local' && isLocalOnlyGatewayBind(options.gatewayBind)) {
+    env.OPENCLAW_DISABLE_BONJOUR = '1';
+  }
+
+  return env;
+}
 
 export interface GatewayLaunchContext {
   appSettings: Awaited<ReturnType<typeof getAllSettings>>;
@@ -390,6 +448,60 @@ async function resolveChannelStartupPolicy(): Promise<{
   }
 }
 
+async function shouldAllowUnconfiguredGateway(): Promise<boolean> {
+  try {
+    const rawCfg = await readOpenClawConfig();
+    const gateway = rawCfg.gateway;
+    if (!gateway || typeof gateway !== 'object') {
+      return true;
+    }
+
+    const mode = typeof gateway.mode === 'string' ? gateway.mode.trim() : '';
+    if (!mode) {
+      return true;
+    }
+
+    const auth = gateway.auth;
+    const authMode = auth && typeof auth === 'object' && typeof auth.mode === 'string'
+      ? auth.mode.trim()
+      : '';
+    return authMode !== 'token';
+  } catch (error) {
+    logger.warn('Failed to inspect OpenClaw gateway config before launch; keeping --allow-unconfigured:', error);
+    return true;
+  }
+}
+
+async function readGatewayLaunchConfig(): Promise<{
+  gatewayMode: string | undefined;
+  gatewayBind: string | undefined;
+}> {
+  try {
+    const rawCfg = await readOpenClawConfig();
+    const gateway = rawCfg.gateway;
+    if (!gateway || typeof gateway !== 'object') {
+      return {
+        gatewayMode: undefined,
+        gatewayBind: undefined,
+      };
+    }
+
+    return {
+      gatewayMode: typeof gateway.mode === 'string' && gateway.mode.trim()
+        ? gateway.mode.trim()
+        : undefined,
+      gatewayBind: typeof gateway.bind === 'string' && gateway.bind.trim()
+        ? gateway.bind.trim()
+        : undefined,
+    };
+  } catch {
+    return {
+      gatewayMode: undefined,
+      gatewayBind: undefined,
+    };
+  }
+}
+
 export async function prepareGatewayLaunchContext(port: number): Promise<GatewayLaunchContext> {
   const openclawDir = getOpenClawDir();
   const entryScript = getOpenClawEntryPath();
@@ -405,7 +517,13 @@ export async function prepareGatewayLaunchContext(port: number): Promise<Gateway
     throw new Error(`OpenClaw entry script not found at: ${entryScript}`);
   }
 
-  const gatewayArgs = ['gateway', '--port', String(port), '--token', appSettings.gatewayToken, '--allow-unconfigured'];
+  const allowUnconfigured = await shouldAllowUnconfiguredGateway();
+  const { gatewayMode, gatewayBind } = await readGatewayLaunchConfig();
+  const gatewayArgs = buildGatewayLaunchArgs(
+    port,
+    appSettings.gatewayToken,
+    allowUnconfigured,
+  );
   const mode = app.isPackaged ? 'packaged' : 'dev';
 
   const platform = process.platform;
@@ -430,21 +548,33 @@ export async function prepareGatewayLaunchContext(port: number): Promise<Gateway
   const baseEnvPatched = binPathExists
     ? prependPathEntry(baseEnvRecord, binPath).env
     : baseEnvRecord;
-  const forkEnv: Record<string, string | undefined> = {
-    ...stripSystemdSupervisorEnv(baseEnvPatched),
-    ...providerEnv,
-    ...uvEnv,
-    ...proxyEnv,
-    OPENCLAW_GATEWAY_TOKEN: appSettings.gatewayToken,
-    OPENCLAW_SKIP_CHANNELS: skipChannels ? '1' : '',
-    CLAWDBOT_SKIP_CHANNELS: skipChannels ? '1' : '',
-    OPENCLAW_NO_RESPAWN: '1',
-  };
+  const forkEnv = buildGatewayLaunchEnv({
+    baseEnv: baseEnvPatched,
+    providerEnv,
+    uvEnv,
+    proxyEnv,
+    token: appSettings.gatewayToken,
+    skipChannels,
+    gatewayMode,
+    gatewayBind: allowUnconfigured ? LOCAL_GATEWAY_HOST : gatewayBind,
+  });
 
   // Ensure extension-specific packages (e.g. grammy from the telegram
   // extension) are resolvable by shared dist/ chunks via symlinks in
   // openclaw/node_modules/.  NODE_PATH does NOT work for ESM imports.
   ensureExtensionDepsResolvable(openclawDir);
+
+  try {
+    const rawCfg = await readOpenClawConfig();
+    const currentMode = typeof rawCfg.discovery?.mdns?.mode === 'string'
+      ? rawCfg.discovery.mdns.mode.trim()
+      : '';
+    if (forkEnv.OPENCLAW_DISABLE_BONJOUR === '1' && currentMode !== CLAWX_LOCAL_MDNS_MODE) {
+      logger.info(`ClawX local gateway startup is overriding discovery.mdns via env (configured="${currentMode || 'default'}", effective="${CLAWX_LOCAL_MDNS_MODE}")`);
+    }
+  } catch {
+    // Best effort: launch env already disables Bonjour.
+  }
 
   return {
     appSettings,

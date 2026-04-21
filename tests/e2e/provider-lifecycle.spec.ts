@@ -88,10 +88,14 @@ test.describe('ClawX provider lifecycle', () => {
         const method = request?.method ?? 'GET';
         const body = request?.body ? JSON.parse(request.body) : null;
 
-        if (path === '/api/provider-accounts' && method === 'GET') return respond(accounts);
-        if (path === '/api/providers' && method === 'GET') return respond(statuses);
-        if (path === '/api/provider-vendors' && method === 'GET') return respond([]);
-        if (path === '/api/provider-accounts/default' && method === 'GET') return respond({ accountId: defaultAccountId });
+        if (path === '/api/provider-snapshot' && method === 'GET') {
+          return respond({
+            accounts,
+            statuses,
+            vendors: [],
+            defaultAccountId,
+          });
+        }
 
         if (path === '/api/providers/validate' && method === 'POST') {
           if (body?.apiKey !== 'sk-lm-test') {

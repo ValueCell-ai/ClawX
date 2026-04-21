@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { createServer, type Server } from 'node:net';
 
 const wsState = vi.hoisted(() => ({
   sockets: [] as unknown[],
@@ -65,6 +66,7 @@ import {
   GATEWAY_CONNECT_HANDSHAKE_TIMEOUT_MS,
   connectGatewaySocket,
   probeGatewayReady,
+  waitForGatewayReady,
 } from '@electron/gateway/ws-client';
 
 async function flushMicrotasks(): Promise<void> {
@@ -119,6 +121,7 @@ describe('connectGatewaySocket', () => {
     });
 
     const socket = getLatestSocket();
+    expect(socket.url).toBe('ws://127.0.0.1:18789/ws');
     socket.emitOpen();
     socket.emitJsonMessage({
       type: 'event',
@@ -202,6 +205,7 @@ describe('probeGatewayReady', () => {
   it('resolves true when connect.challenge message is received', async () => {
     const probePromise = probeGatewayReady(18789, 5000);
     const socket = getLatestSocket();
+    expect(socket.url).toBe('ws://127.0.0.1:18789/ws');
 
     socket.emitOpen();
     socket.emitJsonMessage({
@@ -307,5 +311,62 @@ describe('probeGatewayReady', () => {
 
     await vi.advanceTimersByTimeAsync(1001);
     await expect(probePromise).resolves.toBe(false);
+  });
+});
+
+describe('waitForGatewayReady', () => {
+  let listenerServer: Server | null = null;
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    wsState.sockets.length = 0;
+  });
+
+  afterEach(() => {
+    listenerServer?.close();
+    listenerServer = null;
+    vi.useRealTimers();
+    vi.clearAllMocks();
+    wsState.sockets.length = 0;
+  });
+
+  it('waits through staged probing intervals before a successful challenge', async () => {
+    listenerServer = await new Promise<Server>((resolve, reject) => {
+      const server = createServer();
+      server.once('error', reject);
+      server.listen(0, '127.0.0.1', () => resolve(server));
+    });
+    const address = listenerServer.address();
+    if (!address || typeof address === 'string') {
+      throw new Error('Expected TCP listener address');
+    }
+
+    const readyPromise = waitForGatewayReady({
+      port: address.port,
+      getProcessExitCode: () => null,
+      retries: 3,
+      intervalMs: 50,
+    });
+
+    await vi.advanceTimersByTimeAsync(0);
+    await flushMicrotasks();
+    const firstSocket = getLatestSocket();
+    expect(firstSocket.url).toBe(`ws://127.0.0.1:${address.port}/ws`);
+
+    firstSocket.emitOpen();
+    await vi.advanceTimersByTimeAsync(1501);
+
+    // allow the staged wait interval to elapse before the second probe
+    await vi.advanceTimersByTimeAsync(51);
+    const secondSocket = getLatestSocket();
+    expect(secondSocket).not.toBe(firstSocket);
+    secondSocket.emitOpen();
+    secondSocket.emitJsonMessage({
+      type: 'event',
+      event: 'connect.challenge',
+      payload: { nonce: 'ready-nonce' },
+    });
+
+    await expect(readyPromise).resolves.toBeUndefined();
   });
 });

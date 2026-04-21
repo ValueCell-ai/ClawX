@@ -121,6 +121,57 @@ describe('saveProviderKeyToOpenClaw', () => {
 
     logSpy.mockRestore();
   });
+
+  it('skips rewriting auth profiles when provider key is unchanged', async () => {
+    await writeOpenClawJson({
+      agents: {
+        list: [
+          {
+            id: 'main',
+            name: 'Main',
+            default: true,
+            workspace: '~/.openclaw/workspace',
+            agentDir: '~/.openclaw/agents/main/agent',
+          },
+        ],
+      },
+    });
+
+    await writeAgentAuthProfiles('main', {
+      version: 1,
+      profiles: {
+        'openrouter:default': {
+          type: 'api_key',
+          provider: 'openrouter',
+          key: 'sk-test',
+        },
+      },
+      order: {
+        openrouter: ['openrouter:default'],
+      },
+      lastGood: {
+        openrouter: 'openrouter:default',
+      },
+    });
+
+    const before = await readFile(
+      join(testHome, '.openclaw', 'agents', 'main', 'agent', 'auth-profiles.json'),
+      'utf8',
+    );
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    const { saveProviderKeyToOpenClaw } = await import('@electron/utils/openclaw-auth');
+
+    await saveProviderKeyToOpenClaw('openrouter', 'sk-test');
+
+    const after = await readFile(
+      join(testHome, '.openclaw', 'agents', 'main', 'agent', 'auth-profiles.json'),
+      'utf8',
+    );
+    expect(after).toBe(before);
+    expect(logSpy).not.toHaveBeenCalled();
+
+    logSpy.mockRestore();
+  });
 });
 
 describe('removeProviderKeyFromOpenClaw', () => {
@@ -493,6 +544,102 @@ describe('sanitizeOpenClawConfig', () => {
     // Top-level credentials preserved (were already there + mirrored)
     expect(dingtalk.clientId).toBe('dt-client-id');
     expect(dingtalk.clientSecret).toBe('dt-secret');
+  });
+
+  it('removes stale minimax portal auth plugin references before gateway startup', async () => {
+    await writeOpenClawJson({
+      plugins: {
+        allow: ['minimax-portal-auth', 'custom-plugin'],
+        entries: {
+          'minimax-portal-auth': { enabled: true },
+          'custom-plugin': { enabled: true },
+        },
+      },
+    });
+
+    const { sanitizeOpenClawConfig } = await import('@electron/utils/openclaw-auth');
+    await sanitizeOpenClawConfig();
+
+    const result = await readOpenClawJson();
+    const plugins = result.plugins as Record<string, unknown>;
+    expect(plugins.allow).toContain('custom-plugin');
+    expect(plugins.allow).not.toContain('minimax-portal-auth');
+    expect(plugins.entries).toEqual(expect.objectContaining({
+      'custom-plugin': { enabled: true },
+    }));
+    expect((plugins.entries as Record<string, unknown>)['minimax-portal-auth']).toBeUndefined();
+  });
+
+  it('does not rewrite auth profiles when saving an unchanged api key', async () => {
+    await writeAgentAuthProfiles('main', {
+      version: 1,
+      profiles: {
+        'openrouter:default': {
+          type: 'api_key',
+          provider: 'openrouter',
+          key: 'sk-same',
+        },
+      },
+      order: {
+        openrouter: ['openrouter:default'],
+      },
+      lastGood: {
+        openrouter: 'openrouter:default',
+      },
+    });
+
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    const authProfilesPath = join(testHome, '.openclaw', 'agents', 'main', 'agent', 'auth-profiles.json');
+    const before = await readFile(authProfilesPath, 'utf8');
+    const { saveProviderKeyToOpenClaw } = await import('@electron/utils/openclaw-auth');
+
+    await saveProviderKeyToOpenClaw('openrouter', 'sk-same', 'main');
+
+    const after = await readFile(authProfilesPath, 'utf8');
+    expect(after).toBe(before);
+    expect(logSpy).not.toHaveBeenCalled();
+
+    logSpy.mockRestore();
+  });
+
+  it('does not rewrite auth profiles when saving an unchanged oauth token', async () => {
+    await writeAgentAuthProfiles('main', {
+      version: 1,
+      profiles: {
+        'google-gemini-cli:default': {
+          type: 'oauth',
+          provider: 'google-gemini-cli',
+          access: 'access-token',
+          refresh: 'refresh-token',
+          expires: 123,
+          email: 'user@example.com',
+        },
+      },
+      order: {
+        'google-gemini-cli': ['google-gemini-cli:default'],
+      },
+      lastGood: {
+        'google-gemini-cli': 'google-gemini-cli:default',
+      },
+    });
+
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    const authProfilesPath = join(testHome, '.openclaw', 'agents', 'main', 'agent', 'auth-profiles.json');
+    const before = await readFile(authProfilesPath, 'utf8');
+    const { saveOAuthTokenToOpenClaw } = await import('@electron/utils/openclaw-auth');
+
+    await saveOAuthTokenToOpenClaw('google-gemini-cli', {
+      access: 'access-token',
+      refresh: 'refresh-token',
+      expires: 123,
+      email: 'user@example.com',
+    }, 'main');
+
+    const after = await readFile(authProfilesPath, 'utf8');
+    expect(after).toBe(before);
+    expect(logSpy).not.toHaveBeenCalled();
+
+    logSpy.mockRestore();
   });
 });
 

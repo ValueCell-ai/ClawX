@@ -8,15 +8,50 @@ import {
 } from '../utils/device-identity';
 import { logger } from '../utils/logger';
 
+export const GATEWAY_LOOPBACK_HOST = '127.0.0.1';
 export const GATEWAY_CHALLENGE_TIMEOUT_MS = 10_000;
 export const GATEWAY_CONNECT_HANDSHAKE_TIMEOUT_MS = 20_000;
+
+export async function probeGatewayPortListening(
+  port: number,
+  timeoutMs = 250,
+): Promise<boolean> {
+  const net = await import('node:net');
+
+  return await new Promise<boolean>((resolve) => {
+    const socket = net.createConnection({
+      host: GATEWAY_LOOPBACK_HOST,
+      port,
+    });
+    let settled = false;
+
+    const resolveOnce = (value: boolean) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeout);
+      socket.destroy();
+      resolve(value);
+    };
+
+    const timeout = setTimeout(() => {
+      resolveOnce(false);
+    }, timeoutMs);
+
+    socket.once('connect', () => {
+      resolveOnce(true);
+    });
+    socket.once('error', () => {
+      resolveOnce(false);
+    });
+  });
+}
 
 export async function probeGatewayReady(
   port: number,
   timeoutMs = 1500,
 ): Promise<boolean> {
   return await new Promise<boolean>((resolve) => {
-    const testWs = new WebSocket(`ws://localhost:${port}/ws`);
+    const testWs = new WebSocket(`ws://${GATEWAY_LOOPBACK_HOST}:${port}/ws`);
     let settled = false;
 
     const resolveOnce = (value: boolean) => {
@@ -70,9 +105,12 @@ export async function waitForGatewayReady(options: {
   getProcessExitCode: () => number | null;
   retries?: number;
   intervalMs?: number;
+  challengeProbeCooldownMs?: number;
 }): Promise<void> {
   const retries = options.retries ?? 2400;
-  const intervalMs = options.intervalMs ?? 200;
+  const intervalMs = options.intervalMs ?? 250;
+  const challengeProbeCooldownMs = options.challengeProbeCooldownMs ?? 1000;
+  let lastChallengeProbeAt = 0;
 
   for (let i = 0; i < retries; i++) {
     const exitCode = options.getProcessExitCode();
@@ -82,10 +120,15 @@ export async function waitForGatewayReady(options: {
     }
 
     try {
-      const ready = await probeGatewayReady(options.port, 1500);
-      if (ready) {
-        logger.debug(`Gateway ready after ${i + 1} attempt(s)`);
-        return;
+      const listening = await probeGatewayPortListening(options.port, Math.min(intervalMs, 250));
+      const now = Date.now();
+      if (listening && (lastChallengeProbeAt === 0 || now - lastChallengeProbeAt >= challengeProbeCooldownMs)) {
+        lastChallengeProbeAt = now;
+        const ready = await probeGatewayReady(options.port, 1000);
+        if (ready) {
+          logger.debug(`Gateway ready after ${i + 1} attempt(s)`);
+          return;
+        }
       }
     } catch {
       // Gateway not ready yet.
@@ -178,12 +221,12 @@ export async function connectGatewaySocket(options: {
   challengeTimeoutMs?: number;
   connectTimeoutMs?: number;
 }): Promise<WebSocket> {
-  logger.debug(`Connecting Gateway WebSocket (ws://localhost:${options.port}/ws)`);
+  logger.debug(`Connecting Gateway WebSocket (ws://${GATEWAY_LOOPBACK_HOST}:${options.port}/ws)`);
   const challengeTimeoutMs = options.challengeTimeoutMs ?? GATEWAY_CHALLENGE_TIMEOUT_MS;
   const connectTimeoutMs = options.connectTimeoutMs ?? GATEWAY_CONNECT_HANDSHAKE_TIMEOUT_MS;
 
   return await new Promise<WebSocket>((resolve, reject) => {
-    const wsUrl = `ws://localhost:${options.port}/ws`;
+    const wsUrl = `ws://${GATEWAY_LOOPBACK_HOST}:${options.port}/ws`;
     const ws = new WebSocket(wsUrl);
     let handshakeComplete = false;
     let connectId: string | null = null;
