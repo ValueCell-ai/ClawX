@@ -233,7 +233,8 @@ async function mergeClawXContextOnce(): Promise<number> {
       }
 
       const section = await readFile(join(contextDir, file), 'utf-8');
-      let existing = await readFile(targetPath, 'utf-8');
+      const originalExisting = await readFile(targetPath, 'utf-8');
+      let existing = originalExisting;
 
       // Strip unwanted Gateway-seeded sections before merging
       if (targetName === 'AGENTS.md') {
@@ -245,7 +246,9 @@ async function mergeClawXContextOnce(): Promise<number> {
       }
 
       const merged = mergeClawXSection(existing, section);
-      if (merged !== existing) {
+      // Compare against on-disk content so we persist changes even when only
+      // First Run stripping happened and the ClawX section stayed identical.
+      if (merged !== originalExisting) {
         await writeFile(targetPath, merged, 'utf-8');
         logger.info(`Merged ClawX context into ${targetName} (${workspaceDir})`);
       }

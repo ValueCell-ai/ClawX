@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { stripFirstRunSection } from '../../electron/utils/openclaw-workspace';
+import { mergeClawXSection, stripFirstRunSection } from '../../electron/utils/openclaw-workspace';
 
 describe('stripFirstRunSection', () => {
   it('removes the First Run section when it exists', () => {
@@ -100,5 +100,40 @@ describe('stripFirstRunSection', () => {
     expect(result).not.toMatch(/\n{3,}/);
     expect(result).toContain('before');
     expect(result).toContain('after');
+  });
+
+  it('still changes AGENTS content when only First Run is removed', () => {
+    const section = [
+      '## ClawX Environment',
+      '',
+      'You are ClawX.',
+    ].join('\n');
+    const original = [
+      '# AGENTS.md',
+      '',
+      '## First Run',
+      '',
+      "If `BOOTSTRAP.md` exists, that's your birth certificate. Follow it, figure out who you are, then delete it. You won't need it again.",
+      '',
+      '## Session Startup',
+      '',
+      'Read SOUL.md first.',
+      '',
+      '<!-- clawx:begin -->',
+      '## ClawX Environment',
+      '',
+      'You are ClawX.',
+      '<!-- clawx:end -->',
+      '',
+    ].join('\n');
+
+    const stripped = stripFirstRunSection(original);
+    const merged = mergeClawXSection(stripped, section);
+
+    expect(merged).not.toBe(original);
+    expect(merged).not.toContain('## First Run');
+    expect(merged).toContain('## Session Startup');
+    expect(merged).toContain('<!-- clawx:begin -->');
+    expect(merged).toContain('<!-- clawx:end -->');
   });
 });
