@@ -1,10 +1,8 @@
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-// Static import uses real process.platform; we re-import per-test with env
-// overrides for the Windows-specific path.
 import { checkMsvcRuntime } from '@electron/utils/windows-runtime-check';
 
 describe('checkMsvcRuntime', () => {
