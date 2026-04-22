@@ -7,6 +7,8 @@ import { useState, useCallback, useEffect, memo } from 'react';
 import { Sparkles, Copy, Check, ChevronDown, ChevronRight, Wrench, FileText, Film, Music, FileArchive, File, X, FolderOpen, ZoomIn, Loader2, CheckCircle2, AlertCircle } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import remarkMath from 'remark-math';
+import rehypeKatex from 'rehype-katex';
 import { createPortal } from 'react-dom';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
@@ -39,6 +41,36 @@ interface ChatMessageProps {
 }
 
 interface ExtractedImage { url?: string; data?: string; mimeType: string; }
+
+/**
+ * Normalize LaTeX delimiters so `remark-math` can detect them.
+ *
+ * Many LLMs emit LaTeX using `\(` / `\)` for inline math and `\[` / `\]`
+ * for block math (OpenAI style), which are NOT recognized by remark-math.
+ * remark-math only parses `$...$` and `$$...$$`.
+ *
+ * We convert the backslash-paren/bracket forms to dollar-sign forms so the
+ * math is rendered regardless of which convention the model uses.
+ *
+ * Transformations are skipped inside fenced/inline code spans to avoid
+ * clobbering code samples that legitimately contain `\(` etc.
+ */
+function normalizeLatexDelimiters(input: string): string {
+  if (!input || (input.indexOf('\\(') === -1 && input.indexOf('\\[') === -1)) {
+    return input;
+  }
+
+  const parts = input.split(/(```[\s\S]*?```|`[^`\n]*`)/g);
+  for (let i = 0; i < parts.length; i++) {
+    const part = parts[i];
+    if (!part) continue;
+    if (part.startsWith('```') || part.startsWith('`')) continue;
+    let next = part.replace(/\\\[([\s\S]+?)\\\]/g, (_m, body: string) => `\n$$\n${body.trim()}\n$$\n`);
+    next = next.replace(/\\\(([\s\S]+?)\\\)/g, (_m, body: string) => `$${body}$`);
+    parts[i] = next;
+  }
+  return parts.join('');
+}
 
 /** Resolve an ExtractedImage to a displayable src string, or null if not possible. */
 function imageSrc(img: ExtractedImage): string | null {
@@ -368,7 +400,8 @@ function MessageBubble({
       ) : (
         <div className="prose prose-sm dark:prose-invert max-w-none break-words break-all">
           <ReactMarkdown
-            remarkPlugins={[remarkGfm]}
+            remarkPlugins={[remarkGfm, remarkMath]}
+            rehypePlugins={[[rehypeKatex, { strict: false, throwOnError: false, output: 'html' }]]}
             components={{
               code({ className, children, ...props }) {
                 const match = /language-(\w+)/.exec(className || '');
@@ -397,7 +430,7 @@ function MessageBubble({
               },
             }}
           >
-            {text}
+            {normalizeLatexDelimiters(text)}
           </ReactMarkdown>
           {isStreaming && (
             <span className="inline-block w-2 h-4 bg-foreground/50 animate-pulse ml-0.5" />
@@ -426,7 +459,12 @@ function ThinkingBlock({ content }: { content: string }) {
       {expanded && (
         <div className="px-3 pb-3 text-muted-foreground">
           <div className="prose prose-sm dark:prose-invert max-w-none opacity-75">
-            <ReactMarkdown remarkPlugins={[remarkGfm]}>{content}</ReactMarkdown>
+            <ReactMarkdown
+              remarkPlugins={[remarkGfm, remarkMath]}
+              rehypePlugins={[[rehypeKatex, { strict: false, throwOnError: false, output: 'html' }]]}
+            >
+              {normalizeLatexDelimiters(content)}
+            </ReactMarkdown>
           </div>
         </div>
       )}
