@@ -58,7 +58,7 @@ export interface SubagentCompletionInfo {
 
 function normalizeText(text: string | null | undefined): string | undefined {
   if (!text) return undefined;
-  const normalized = text.replace(/\s+/g, ' ').trim();
+  const normalized = text.replace(/[ \t]+/g, ' ').trim();
   if (!normalized) return undefined;
   return normalized;
 }

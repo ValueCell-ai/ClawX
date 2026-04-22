@@ -443,7 +443,7 @@ export function Chat() {
       keys.add(runKey);
     }
     return keys;
-  }, [currentSessionKey, messages, replyTextOverrides, userRunCards]);
+  }, [currentSessionKey, messages, userRunCards]);
 
   useEffect(() => {
     if (userRunCards.length === 0) return;
