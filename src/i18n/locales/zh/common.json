@@ -55,5 +55,13 @@
         "notRunning": "网关未运行",
         "notRunningDesc": "OpenClaw 网关需要运行才能使用此功能。它将自动启动，或者您可以从设置中启动。",
         "warning": "网关未运行。"
+    },
+    "diagnostics": {
+        "acpxVcRedistMissing": {
+            "title": "需要安装 Microsoft Visual C++ 运行库",
+            "body": "ClawX 内置的 ACP 运行时（codex）启动失败，原因是系统缺少 Microsoft Visual C++ 2015–2022 Redistributable。请先安装再重启 ClawX，否则聊天记录和新消息可能无法加载。",
+            "downloadButton": "下载 VC++ 运行库",
+            "learnMoreButton": "了解更多"
+        }
     }
 }

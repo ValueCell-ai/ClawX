@@ -55,5 +55,13 @@
         "notRunning": "Шлюз не запущен",
         "notRunningDesc": "Для использования этой функции требуется запущенный шлюз OpenClaw. Он запустится автоматически, или вы можете запустить его в Настройках.",
         "warning": "Шлюз не запущен."
+    },
+    "diagnostics": {
+        "acpxVcRedistMissing": {
+            "title": "Требуется Microsoft Visual C++ Redistributable",
+            "body": "Встроенный в ClawX ACP-рантайм (codex) завершился с ошибкой, так как в системе отсутствует Microsoft Visual C++ 2015–2022 Redistributable. Установите его и перезапустите ClawX. До этого история чата и новые сообщения могут не загружаться.",
+            "downloadButton": "Скачать VC++ Redistributable",
+            "learnMoreButton": "Подробнее"
+        }
     }
 }

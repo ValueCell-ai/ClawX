@@ -55,5 +55,13 @@
         "notRunning": "ゲートウェイが停止中",
         "notRunningDesc": "この機能を使用するには OpenClaw ゲートウェイが実行されている必要があります。自動的に起動するか、設定から起動できます。",
         "warning": "ゲートウェイが停止中です。"
+    },
+    "diagnostics": {
+        "acpxVcRedistMissing": {
+            "title": "Microsoft Visual C++ 再頒布可能パッケージが必要です",
+            "body": "Microsoft Visual C++ 2015–2022 Redistributable が見つからないため、ClawX に同梱された ACP ランタイム (codex) が起動できませんでした。インストール後に ClawX を再起動してください。未解決の状態ではチャット履歴や新しいメッセージが読み込めない場合があります。",
+            "downloadButton": "VC++ 再頒布可能パッケージをダウンロード",
+            "learnMoreButton": "詳細を見る"
+        }
     }
 }

@@ -11,6 +11,7 @@ import { useGatewayStore } from '@/stores/gateway';
 import { useAgentsStore } from '@/stores/agents';
 import { hostApiFetch } from '@/lib/host-api';
 import { LoadingSpinner } from '@/components/common/LoadingSpinner';
+import { GatewayDiagnosticsBanner } from '@/components/diagnostics/GatewayDiagnosticsBanner';
 import { ChatMessage } from './ChatMessage';
 import { ChatInput } from './ChatInput';
 import { ExecutionGraphCard } from './ExecutionGraphCard';
@@ -623,6 +624,9 @@ export function Chat() {
 
         </div>
       </div>
+
+      {/* Actionable Gateway startup diagnostics (e.g. missing VC++ runtime) */}
+      <GatewayDiagnosticsBanner />
 
       {/* Error bar */}
       {error && (
