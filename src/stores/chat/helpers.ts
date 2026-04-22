@@ -128,8 +128,31 @@ function normalizeStreamingMessage(message: unknown): unknown {
     : rawMessage;
 }
 
+/**
+ * Strip Gateway-injected metadata that does NOT exist on the renderer's
+ * optimistic user message but is echoed back when the Gateway persists it:
+ *   - leading timestamp `[Wed 2026-04-22 10:30 GMT+8] `
+ *   - `[message_id: uuid]` tags sprinkled throughout the text
+ *   - `[media attached: path (mime) | path]` references appended when the
+ *     renderer sends attachments via `chat:sendWithMedia`
+ *   - Gateway-injected "Conversation info (untrusted metadata): ..." blocks
+ *
+ * Keeping this aligned with `cleanUserText` in `pages/Chat/message-utils.ts`
+ * is important: the user bubble renders the cleaned text, so the comparison
+ * used to dedupe optimistic vs server echoes must operate on the same
+ * cleaned form — otherwise the same visible message renders twice.
+ */
+function stripGatewayUserMetadata(text: string): string {
+  return text
+    .replace(/^\s*\[(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun)\s+\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}\s+[^\]]+\]\s*/i, '')
+    .replace(/\s*\[media attached:[^\]]*\]/g, '')
+    .replace(/\s*\[message_id:\s*[^\]]+\]/g, '')
+    .replace(/^Conversation info\s*\([^)]*\):\s*```[a-z]*\n[\s\S]*?```\s*/i, '')
+    .replace(/^Conversation info\s*\([^)]*\):\s*\{[\s\S]*?\}\s*/i, '');
+}
+
 function normalizeComparableUserText(content: unknown): string {
-  return getMessageText(content)
+  return stripGatewayUserMetadata(getMessageText(content))
     .replace(/\s+/g, ' ')
     .trim();
 }
