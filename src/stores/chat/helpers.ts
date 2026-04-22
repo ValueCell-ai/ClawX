@@ -737,9 +737,46 @@ function isToolResultRole(role: unknown): boolean {
 /** True for internal plumbing messages that should never be shown in the UI. */
 function isInternalMessage(msg: { role?: unknown; content?: unknown }): boolean {
   if (msg.role === 'system') return true;
+  const text = getMessageText(msg.content);
   if (msg.role === 'assistant') {
-    const text = getMessageText(msg.content);
     if (/^(HEARTBEAT_OK|NO_REPLY)\s*$/.test(text)) return true;
+  }
+  // Runtime system injections: these arrive as user or assistant-role messages
+  // but are internal plumbing (exec results, async-command notices, time pings, etc.)
+  if ((msg.role === 'user' || msg.role === 'assistant') && isRuntimeSystemInjection(text)) return true;
+  return false;
+}
+
+/**
+ * Detect runtime-injected system messages that should be hidden from the chat UI.
+ * These are injected by the OpenClaw runtime as user-role messages and include:
+ *   - "System (untrusted): ..." — exec results, tool output, etc.
+ *   - "An async command you ran earlier has completed" — async completion notices
+ *   - "Current time: ..." followed by nothing else — periodic heartbeat time pings
+ *   - "Handle the result internally. Do not relay it to the user" — internal directives
+ */
+function isRuntimeSystemInjection(text: string): boolean {
+  if (!text) return false;
+  const normalized = text.trim();
+  // "System (untrusted): ..." at the start (with optional leading whitespace)
+  if (/^\s*System\s*\(untrusted\)\s*:/i.test(normalized)) return true;
+
+  // Async command completion notice + internal relay directive commonly arrive together.
+  // Require both markers to avoid hiding normal conversational text that quotes one phrase.
+  if (
+    /An async command you ran earlier has completed/i.test(normalized)
+    && /Do not relay it to the user unless explicitly requested/i.test(normalized)
+  ) {
+    return true;
+  }
+
+  // Standalone time injection (e.g. "Current time: Wednesday, April 22nd, 2026 - 10:06 (Asia/Shanghai) / 2026-04-22 02:06 UTC")
+  // Only match when the full message is the time announcement.
+  if (
+    /^\s*Current time\s*:/i.test(normalized)
+    && /^\s*Current time\s*:[^\n]*\/\s*\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}\s+UTC\s*$/i.test(normalized)
+  ) {
+    return true;
   }
   return false;
 }
