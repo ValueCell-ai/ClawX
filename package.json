@@ -76,6 +76,7 @@
         "ms": "^2.1.3",
         "node-machine-id": "^1.1.12",
         "posthog-node": "^5.28.0",
+        "tar": "^6.2.1",
         "ws": "^8.19.0"
     },
     "devDependencies": {
