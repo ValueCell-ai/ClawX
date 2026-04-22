@@ -93,6 +93,13 @@ test.describe('Gateway startup diagnostics banner', () => {
       await expect(
         banner.getByRole('button', { name: /download/i }),
       ).toBeVisible();
+
+      // Take a screenshot for PR documentation when an output path is set.
+      // Run with CLAWX_BANNER_SCREENSHOT=<path> to capture.
+      const screenshotPath = process.env.CLAWX_BANNER_SCREENSHOT;
+      if (screenshotPath) {
+        await page.screenshot({ path: screenshotPath, fullPage: false });
+      }
     } finally {
       await closeElectronApp(app);
     }
