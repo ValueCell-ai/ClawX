@@ -4,6 +4,7 @@ import path from 'node:path';
 import { getOpenClawDir, getOpenClawEntryPath } from './paths';
 import { logger } from './logger';
 import { getUvMirrorEnv } from './uv-env';
+import { checkMsvcRuntime, type MsvcRuntimeCheckResult } from './windows-runtime-check';
 
 const OPENCLAW_DOCTOR_TIMEOUT_MS = 60_000;
 const MAX_DOCTOR_OUTPUT_BYTES = 10 * 1024 * 1024;
@@ -11,6 +12,10 @@ const OPENCLAW_DOCTOR_ARGS = ['doctor'];
 const OPENCLAW_DOCTOR_FIX_ARGS = ['doctor', '--fix', '--yes', '--non-interactive'];
 
 export type OpenClawDoctorMode = 'diagnose' | 'fix';
+
+export interface HostDoctorChecks {
+  msvcRuntime?: MsvcRuntimeCheckResult;
+}
 
 export interface OpenClawDoctorResult {
   mode: OpenClawDoctorMode;
@@ -23,6 +28,11 @@ export interface OpenClawDoctorResult {
   durationMs: number;
   timedOut?: boolean;
   error?: string;
+  /**
+   * ClawX host-side checks that are not part of `openclaw doctor`.
+   * Populated by the host before returning the result to the renderer.
+   */
+  hostChecks?: HostDoctorChecks;
 }
 
 function appendDoctorOutput(
@@ -195,10 +205,25 @@ async function runDoctorCommandWithArgs(
   });
 }
 
+/**
+ * Run the in-process host checks that aren't part of `openclaw doctor`.
+ * Today this is just the Windows MSVC Redistributable probe, but the
+ * shape is intentionally open so more checks can be layered in later.
+ */
+export function collectHostDoctorChecks(): HostDoctorChecks {
+  return {
+    msvcRuntime: checkMsvcRuntime(),
+  };
+}
+
 export async function runOpenClawDoctor(): Promise<OpenClawDoctorResult> {
-  return await runDoctorCommandWithArgs('diagnose', OPENCLAW_DOCTOR_ARGS);
+  const result = await runDoctorCommandWithArgs('diagnose', OPENCLAW_DOCTOR_ARGS);
+  result.hostChecks = collectHostDoctorChecks();
+  return result;
 }
 
 export async function runOpenClawDoctorFix(): Promise<OpenClawDoctorResult> {
-  return await runDoctorCommandWithArgs('fix', OPENCLAW_DOCTOR_FIX_ARGS);
+  const result = await runDoctorCommandWithArgs('fix', OPENCLAW_DOCTOR_FIX_ARGS);
+  result.hostChecks = collectHostDoctorChecks();
+  return result;
 }
