@@ -718,6 +718,66 @@ describe('sanitizeOpenClawConfig (blocklist approach)', () => {
     expect(plugins).not.toHaveProperty('installs');
   });
 
+  it('preserves plugins.entries.acpx.enabled=false (user opt-out)', async () => {
+    // Regression guard for issue #884: if a user disables the acpx plugin
+    // because the embedded ACP probe crashes (e.g. missing MSVC runtime),
+    // the sanitiser must not re-enable it on every launch.
+    await writeConfig({
+      plugins: {
+        entries: {
+          acpx: {
+            enabled: false,
+            config: {
+              permissionMode: 'approve-all',
+            },
+          },
+        },
+      },
+    });
+
+    const modified = await sanitizeConfig(configPath);
+    expect(modified).toBe(false);
+
+    const result = await readConfig();
+    const plugins = result.plugins as Record<string, unknown>;
+    const entries = plugins.entries as Record<string, unknown>;
+    const acpx = entries.acpx as Record<string, unknown>;
+    expect(acpx.enabled).toBe(false);
+    expect(acpx.config).toEqual({ permissionMode: 'approve-all' });
+  });
+
+  it('preserves plugins.entries.acpx.config.probeAgent override', async () => {
+    // A user may work around a broken codex ACP probe by switching the probe
+    // agent to claude.  The sanitiser only wipes the known-legacy keys
+    // (command, expectedVersion); probeAgent must survive.
+    await writeConfig({
+      plugins: {
+        entries: {
+          acpx: {
+            enabled: true,
+            config: {
+              probeAgent: 'claude',
+              permissionMode: 'approve-all',
+              timeoutSeconds: 180,
+            },
+          },
+        },
+      },
+    });
+
+    const modified = await sanitizeConfig(configPath);
+    expect(modified).toBe(false);
+
+    const result = await readConfig();
+    const plugins = result.plugins as Record<string, unknown>;
+    const entries = plugins.entries as Record<string, unknown>;
+    const acpx = entries.acpx as Record<string, unknown>;
+    const acpxConfig = acpx.config as Record<string, unknown>;
+    expect(acpxConfig.probeAgent).toBe('claude');
+    expect(acpxConfig.permissionMode).toBe('approve-all');
+    expect(acpxConfig.timeoutSeconds).toBe(180);
+  });
+
   it('does nothing when plugins.load.paths contains only valid paths', async () => {
     const original = {
       plugins: {
