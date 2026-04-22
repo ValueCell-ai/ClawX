@@ -63,6 +63,14 @@
       "ref": "main",
       "version": "main",
       "autoEnable": true
+    },
+    {
+      "slug": "mmx-cli",
+      "repo": "MiniMax-AI/cli",
+      "repoPath": "skill",
+      "ref": "main",
+      "version": "main",
+      "autoEnable": true
     }
   ]
 }
