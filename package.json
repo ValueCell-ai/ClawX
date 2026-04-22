@@ -1,6 +1,6 @@
 {
     "name": "clawx",
-    "version": "0.3.9",
+    "version": "0.3.10",
     "pnpm": {
         "onlyBuiltDependencies": [
             "@discordjs/opus",
@@ -56,15 +56,18 @@
         "node:download:win": "zx scripts/download-bundled-node.mjs --platform=win",
         "prep:win-binaries": "pnpm run uv:download:win && pnpm run node:download:win",
         "icons": "zx scripts/generate-icons.mjs",
-        "package": "vite build && zx scripts/bundle-openclaw.mjs && zx scripts/bundle-openclaw-plugins.mjs && zx scripts/bundle-preinstalled-skills.mjs",
+        "package": "node scripts/generate-ext-bridge.mjs && vite build && zx scripts/bundle-openclaw.mjs && zx scripts/bundle-openclaw-plugins.mjs && zx scripts/bundle-preinstalled-skills.mjs",
         "package:mac": "pnpm run package && electron-builder --mac --publish never",
         "package:mac:local": "SKIP_PREINSTALLED_SKILLS=1 pnpm run package && electron-builder --mac --publish never",
         "package:win": "pnpm run prep:win-binaries && pnpm run package && electron-builder --win --publish never",
         "package:linux": "pnpm run package && electron-builder --linux --publish never",
         "release": "pnpm run uv:download && pnpm run package && electron-builder --publish always",
+        "version": "node scripts/assert-release-version.mjs",
         "version:patch": "pnpm version patch",
         "version:minor": "pnpm version minor",
         "version:major": "pnpm version major",
+        "version:prerelease-beta": "pnpm version prerelease --preid=beta",
+        "release:validate": "node scripts/assert-tag-matches-package.mjs",
         "postversion": "git push && git push --tags"
     },
     "dependencies": {
@@ -72,16 +75,19 @@
         "clawhub": "^0.5.0",
         "electron-store": "^11.0.2",
         "electron-updater": "^6.8.3",
+        "katex": "^0.16.45",
         "lru-cache": "^11.2.6",
         "ms": "^2.1.3",
         "node-machine-id": "^1.1.12",
         "posthog-node": "^5.28.0",
         "tar": "^6.2.1",
+        "rehype-katex": "^7.0.1",
+        "remark-math": "^6.0.0",
         "ws": "^8.19.0"
     },
     "devDependencies": {
         "@eslint/js": "^10.0.1",
-        "@larksuite/openclaw-lark": "2026.4.7",
+        "@larksuite/openclaw-lark": "2026.4.8",
         "@playwright/test": "^1.56.1",
         "@radix-ui/react-dialog": "^1.1.15",
         "@radix-ui/react-dropdown-menu": "^2.1.16",
@@ -121,7 +127,7 @@
         "i18next": "^25.8.11",
         "jsdom": "^28.1.0",
         "lucide-react": "^0.563.0",
-        "openclaw": "2026.4.11",
+        "openclaw": "2026.4.15",
         "png2icons": "^2.0.1",
         "postcss": "^8.5.6",
         "react": "^19.2.4",

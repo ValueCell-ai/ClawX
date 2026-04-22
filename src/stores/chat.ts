@@ -1,6 +1,6 @@
 /**
  * Chat State Store
- * Manages chat messages, sessions, streaming, and thinking state.
+ * Manages chat messages, sessions, and streaming state.
  * Communicates with OpenClaw Gateway via renderer WebSocket RPC.
  */
 import { create } from 'zustand';
@@ -93,6 +93,13 @@ function buildChatEventDedupeKey(eventState: string, event: Record<string, unkno
   const runId = event.runId != null ? String(event.runId) : '';
   const sessionKey = event.sessionKey != null ? String(event.sessionKey) : '';
   const seq = event.seq != null ? String(event.seq) : '';
+  // Some gateways emit multiple `delta` updates without a monotonically
+  // increasing `seq`. Deduping those by just `runId + sessionKey + state`
+  // collapses legitimate stream progression, so only seq-backed deltas are
+  // safe to dedupe generically.
+  if (eventState === 'delta' && !seq) {
+    return null;
+  }
   if (runId || sessionKey || seq || eventState) {
     return [runId, sessionKey, seq, eventState].join('|');
   }
@@ -165,14 +172,140 @@ function saveImageCache(cache: Map<string, AttachedFileMeta>): void {
 
 const _imageCache = loadImageCache();
 
+function normalizeBlockText(text: string | undefined): string {
+  return typeof text === 'string' ? text.replace(/\r\n/g, '\n').trim() : '';
+}
+
+function compactProgressiveTextParts(parts: string[]): string[] {
+  const compacted: string[] = [];
+
+  for (const part of parts) {
+    const current = normalizeBlockText(part);
+    if (!current) continue;
+
+    const previous = compacted.at(-1);
+    if (!previous) {
+      compacted.push(part);
+      continue;
+    }
+
+    const normalizedPrevious = normalizeBlockText(previous);
+    if (!normalizedPrevious) {
+      compacted[compacted.length - 1] = part;
+      continue;
+    }
+
+    if (current === normalizedPrevious || normalizedPrevious.startsWith(current)) {
+      continue;
+    }
+
+    if (current.startsWith(normalizedPrevious)) {
+      compacted[compacted.length - 1] = part;
+      continue;
+    }
+
+    compacted.push(part);
+  }
+
+  return compacted;
+}
+
+function normalizeLiveContentBlocks(content: ContentBlock[]): ContentBlock[] {
+  return content.map((block) => ({ ...block }));
+}
+
+function normalizeStreamingMessage(message: unknown): unknown {
+  if (!message || typeof message !== 'object') return message;
+
+  const rawMessage = message as RawMessage;
+  const rawContent = rawMessage.content;
+  if (!Array.isArray(rawContent)) return rawMessage;
+
+  const normalizedContent = normalizeLiveContentBlocks(rawContent as ContentBlock[]);
+  const didChange = normalizedContent.some((block, index) => block !== rawContent[index])
+    || normalizedContent.length !== rawContent.length;
+
+  return didChange
+    ? { ...rawMessage, content: normalizedContent }
+    : rawMessage;
+}
+
+function normalizeComparableUserText(content: unknown): string {
+  return getMessageText(content)
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function getComparableAttachmentSignature(message: Pick<RawMessage, '_attachedFiles'>): string {
+  const files = (message._attachedFiles || [])
+    .map((file) => file.filePath || `${file.fileName}|${file.mimeType}|${file.fileSize}`)
+    .filter(Boolean)
+    .sort();
+  return files.join('::');
+}
+
+function matchesOptimisticUserMessage(
+  candidate: RawMessage,
+  optimistic: RawMessage,
+  optimisticTimestampMs: number,
+): boolean {
+  if (candidate.role !== 'user') return false;
+
+  const optimisticText = normalizeComparableUserText(optimistic.content);
+  const candidateText = normalizeComparableUserText(candidate.content);
+  const sameText = optimisticText.length > 0 && optimisticText === candidateText;
+
+  const optimisticAttachments = getComparableAttachmentSignature(optimistic);
+  const candidateAttachments = getComparableAttachmentSignature(candidate);
+  const sameAttachments = optimisticAttachments.length > 0 && optimisticAttachments === candidateAttachments;
+
+  const hasOptimisticTimestamp = Number.isFinite(optimisticTimestampMs) && optimisticTimestampMs > 0;
+  const hasCandidateTimestamp = candidate.timestamp != null;
+  const timestampMatches = hasOptimisticTimestamp && hasCandidateTimestamp
+    ? Math.abs(toMs(candidate.timestamp as number) - optimisticTimestampMs) < 5000
+    : false;
+
+  if (sameText && sameAttachments) return true;
+  if (sameText && (!optimisticAttachments || !candidateAttachments) && (timestampMatches || !hasCandidateTimestamp)) return true;
+  if (sameAttachments && (!optimisticText || !candidateText) && (timestampMatches || !hasCandidateTimestamp)) return true;
+  return false;
+}
+
+function snapshotStreamingAssistantMessage(
+  currentStream: RawMessage | null,
+  existingMessages: RawMessage[],
+  runId: string,
+): RawMessage[] {
+  if (!currentStream) return [];
+
+  const normalizedStream = normalizeStreamingMessage(currentStream) as RawMessage;
+  const streamRole = normalizedStream.role;
+  if (streamRole !== 'assistant' && streamRole !== undefined) return [];
+
+  const snapId = normalizedStream.id || `${runId || 'run'}-turn-${existingMessages.length}`;
+  if (existingMessages.some((message) => message.id === snapId)) return [];
+
+  return [{
+    ...normalizedStream,
+    role: 'assistant',
+    id: snapId,
+  }];
+}
+
+function getLatestOptimisticUserMessage(messages: RawMessage[], userTimestampMs: number): RawMessage | undefined {
+  return [...messages].reverse().find(
+    (message) => message.role === 'user' && (!message.timestamp || Math.abs(toMs(message.timestamp) - userTimestampMs) < 5000),
+  );
+}
+
 /** Extract plain text from message content (string or content blocks) */
 function getMessageText(content: unknown): string {
   if (typeof content === 'string') return content;
   if (Array.isArray(content)) {
-    return (content as Array<{ type?: string; text?: string }>)
+    const parts = (content as Array<{ type?: string; text?: string }>)
       .filter(b => b.type === 'text' && b.text)
-      .map(b => b.text!)
-      .join('\n');
+      .map(b => b.text!);
+    return compactProgressiveTextParts(parts).join('\n');
   }
   return '';
 }
@@ -1035,7 +1168,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
   sessionLabels: {},
   sessionLastActivity: {},
 
-  showThinking: true,
   thinkingLevel: null,
 
   // ── Load sessions via sessions.list ──
@@ -1416,17 +1548,12 @@ export const useChatStore = create<ChatState>((set, get) => ({
       const userMsgAt = get().lastUserMessageAt;
       if (get().sending && userMsgAt) {
         const userMsMs = toMs(userMsgAt);
-        const hasRecentUser = enrichedMessages.some(
-          (m) => m.role === 'user' && m.timestamp && Math.abs(toMs(m.timestamp) - userMsMs) < 5000,
-        );
-        if (!hasRecentUser) {
-          const currentMsgs = get().messages;
-          const optimistic = [...currentMsgs].reverse().find(
-            (m) => m.role === 'user' && m.timestamp && Math.abs(toMs(m.timestamp) - userMsMs) < 5000,
-          );
-          if (optimistic) {
-            finalMessages = [...enrichedMessages, optimistic];
-          }
+        const optimistic = getLatestOptimisticUserMessage(get().messages, userMsMs);
+        const hasMatchingUser = optimistic
+          ? enrichedMessages.some((message) => matchesOptimisticUserMessage(message, optimistic, userMsMs))
+          : false;
+        if (optimistic && !hasMatchingUser) {
+          finalMessages = [...enrichedMessages, optimistic];
         }
       }
 
@@ -1781,7 +1908,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
         const errorMsg = result.error || 'Failed to send message';
         if (isRecoverableChatSendTimeout(errorMsg)) {
           console.warn(`[sendMessage] Recoverable chat.send timeout, keeping poll alive: ${errorMsg}`);
-          set({ error: errorMsg });
         } else {
           clearHistoryPoll();
           set({ error: errorMsg, sending: false });
@@ -1793,7 +1919,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
       const errStr = String(err);
       if (isRecoverableChatSendTimeout(errStr)) {
         console.warn(`[sendMessage] Recoverable chat.send timeout, keeping poll alive: ${errStr}`);
-        set({ error: errStr });
       } else {
         clearHistoryPoll();
         set({ error: errStr, sending: false });
@@ -1890,7 +2015,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
               const msgRole = (event.message as RawMessage).role;
               if (isToolResultRole(msgRole)) return s.streamingMessage;
             }
-            return event.message ?? s.streamingMessage;
+            return normalizeStreamingMessage(event.message ?? s.streamingMessage);
           })(),
           streamingTools: updates.length > 0 ? upsertToolStatuses(s.streamingTools, updates) : s.streamingTools,
         }));
@@ -1902,17 +2027,18 @@ export const useChatStore = create<ChatState>((set, get) => ({
         // Message complete - add to history and clear streaming
         const finalMsg = event.message as RawMessage | undefined;
         if (finalMsg) {
-          const updates = collectToolUpdates(finalMsg, resolvedState);
-          if (isToolResultRole(finalMsg.role)) {
+          const normalizedFinalMessage = normalizeStreamingMessage(finalMsg) as RawMessage;
+          const updates = collectToolUpdates(normalizedFinalMessage, resolvedState);
+          if (isToolResultRole(normalizedFinalMessage.role)) {
             // Resolve file path from the streaming assistant message's matching tool call
             const currentStreamForPath = get().streamingMessage as RawMessage | null;
-            const matchedPath = (currentStreamForPath && finalMsg.toolCallId)
-              ? getToolCallFilePath(currentStreamForPath, finalMsg.toolCallId)
+            const matchedPath = (currentStreamForPath && normalizedFinalMessage.toolCallId)
+              ? getToolCallFilePath(currentStreamForPath, normalizedFinalMessage.toolCallId)
               : undefined;
 
             // Mirror enrichWithToolResultFiles: collect images + file refs for next assistant msg
             const toolFiles: AttachedFileMeta[] = [
-              ...extractImagesAsAttachedFiles(finalMsg.content),
+              ...extractImagesAsAttachedFiles(normalizedFinalMessage.content),
             ];
             if (matchedPath) {
               for (const f of toolFiles) {
@@ -1922,7 +2048,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
                 }
               }
             }
-            const text = getMessageText(finalMsg.content);
+            const text = getMessageText(normalizedFinalMessage.content);
             if (text) {
               const mediaRefs = extractMediaRefs(text);
               const mediaRefPaths = new Set(mediaRefs.map(r => r.filePath));
@@ -1938,22 +2064,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
               // tool result. Without snapshotting here, the intermediate thinking+tool steps
               // would be overwritten by the next turn's deltas and never appear in the UI.
               const currentStream = s.streamingMessage as RawMessage | null;
-              const snapshotMsgs: RawMessage[] = [];
-              if (currentStream) {
-                const streamRole = currentStream.role;
-                if (streamRole === 'assistant' || streamRole === undefined) {
-                  // Use message's own id if available, otherwise derive a stable one from runId
-                  const snapId = currentStream.id
-                    || `${runId || 'run'}-turn-${s.messages.length}`;
-                  if (!s.messages.some(m => m.id === snapId)) {
-                    snapshotMsgs.push({
-                      ...(currentStream as RawMessage),
-                      role: 'assistant',
-                      id: snapId,
-                    });
-                  }
-                }
-              }
+              const snapshotMsgs = snapshotStreamingAssistantMessage(currentStream, s.messages, runId);
               return {
                 messages: snapshotMsgs.length > 0 ? [...s.messages, ...snapshotMsgs] : s.messages,
                 streamingText: '',
@@ -1967,9 +2078,9 @@ export const useChatStore = create<ChatState>((set, get) => ({
             });
             break;
           }
-          const toolOnly = isToolOnlyMessage(finalMsg);
-          const hasOutput = hasNonToolAssistantContent(finalMsg);
-          const msgId = finalMsg.id || (toolOnly ? `run-${runId}-tool-${Date.now()}` : `run-${runId}`);
+          const toolOnly = isToolOnlyMessage(normalizedFinalMessage);
+          const hasOutput = hasNonToolAssistantContent(normalizedFinalMessage);
+          const msgId = normalizedFinalMessage.id || (toolOnly ? `run-${runId}-tool-${Date.now()}` : `run-${runId}`);
           set((s) => {
             const nextTools = updates.length > 0 ? upsertToolStatuses(s.streamingTools, updates) : s.streamingTools;
             const streamingTools = hasOutput ? [] : nextTools;
@@ -1978,12 +2089,12 @@ export const useChatStore = create<ChatState>((set, get) => ({
             const pendingImgs = s.pendingToolImages;
             const msgWithImages: RawMessage = pendingImgs.length > 0
               ? {
-                ...finalMsg,
-                role: (finalMsg.role || 'assistant') as RawMessage['role'],
+                ...normalizedFinalMessage,
+                role: (normalizedFinalMessage.role || 'assistant') as RawMessage['role'],
                 id: msgId,
-                _attachedFiles: [...(finalMsg._attachedFiles || []), ...pendingImgs],
+                _attachedFiles: [...(normalizedFinalMessage._attachedFiles || []), ...pendingImgs],
               }
-              : { ...finalMsg, role: (finalMsg.role || 'assistant') as RawMessage['role'], id: msgId };
+              : { ...normalizedFinalMessage, role: (normalizedFinalMessage.role || 'assistant') as RawMessage['role'], id: msgId };
             const clearPendingImages = { pendingToolImages: [] as AttachedFileMeta[] };
 
             // Check if message already exists (prevent duplicates)
@@ -2044,15 +2155,15 @@ export const useChatStore = create<ChatState>((set, get) => ({
         // content ("Let me get that written down...") is preserved in the UI
         // rather than being silently discarded.
         const currentStream = get().streamingMessage as RawMessage | null;
-        if (currentStream && (currentStream.role === 'assistant' || currentStream.role === undefined)) {
-          const snapId = (currentStream as RawMessage).id
-            || `error-snap-${Date.now()}`;
-          const alreadyExists = get().messages.some(m => m.id === snapId);
-          if (!alreadyExists) {
-            set((s) => ({
-              messages: [...s.messages, { ...currentStream, role: 'assistant' as const, id: snapId }],
-            }));
-          }
+        const errorSnapshot = snapshotStreamingAssistantMessage(
+          currentStream,
+          get().messages,
+          `error-${runId || Date.now()}`,
+        );
+        if (errorSnapshot.length > 0) {
+          set((s) => ({
+            messages: [...s.messages, ...errorSnapshot],
+          }));
         }
 
         set({
@@ -2125,10 +2236,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
       }
     }
   },
-
-  // ── Toggle thinking visibility ──
-
-  toggleThinking: () => set((s) => ({ showThinking: !s.showThinking })),
 
   // ── Refresh: reload history + sessions ──
 

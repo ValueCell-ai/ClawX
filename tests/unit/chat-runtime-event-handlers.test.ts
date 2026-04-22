@@ -20,7 +20,9 @@ const makeAttachedFile = vi.fn((ref: { filePath: string; mimeType: string }, sou
   filePath: ref.filePath,
   source,
 }));
+const normalizeStreamingMessage = vi.fn((message: unknown) => message);
 const setErrorRecoveryTimer = vi.fn();
+const snapshotStreamingAssistantMessage = vi.fn((currentStream: unknown) => currentStream ? [currentStream] : []);
 const upsertToolStatuses = vi.fn((_current, updates) => updates);
 
 vi.mock('@/stores/chat/helpers', () => ({
@@ -37,7 +39,9 @@ vi.mock('@/stores/chat/helpers', () => ({
   isToolOnlyMessage: (...args: unknown[]) => isToolOnlyMessage(...args),
   isToolResultRole: (...args: unknown[]) => isToolResultRole(...args),
   makeAttachedFile: (...args: unknown[]) => makeAttachedFile(...args),
+  normalizeStreamingMessage: (...args: unknown[]) => normalizeStreamingMessage(...args),
   setErrorRecoveryTimer: (...args: unknown[]) => setErrorRecoveryTimer(...args),
+  snapshotStreamingAssistantMessage: (...args: unknown[]) => snapshotStreamingAssistantMessage(...args),
   upsertToolStatuses: (...args: unknown[]) => upsertToolStatuses(...args),
 }));
 
@@ -84,6 +88,8 @@ describe('chat runtime event handlers', () => {
     vi.resetAllMocks();
     hasErrorRecoveryTimer.mockReturnValue(false);
     collectToolUpdates.mockReturnValue([]);
+    normalizeStreamingMessage.mockImplementation((message: unknown) => message);
+    snapshotStreamingAssistantMessage.mockImplementation((currentStream: unknown) => currentStream ? [currentStream as Record<string, unknown>] : []);
     upsertToolStatuses.mockImplementation((_current, updates) => updates);
   });
 
@@ -226,6 +232,100 @@ describe('chat runtime event handlers', () => {
 
     handleRuntimeEventState(h.set as never, h.get as never, { message: incoming }, 'delta', 'run-x');
     expect(h.read().streamingMessage).toEqual(incoming);
+  });
+
+  it('normalizes cumulative text and thinking blocks while streaming', async () => {
+    const { handleRuntimeEventState } = await import('@/stores/chat/runtime-event-handlers');
+    const h = makeHarness({ streamingMessage: null });
+    normalizeStreamingMessage.mockReturnValue({
+      role: 'assistant',
+      content: [
+        { type: 'thinking', thinking: 'thinking 1 2 3' },
+        { type: 'text', text: '1 2 3' },
+      ],
+    });
+
+    handleRuntimeEventState(h.set as never, h.get as never, {
+      message: {
+        role: 'assistant',
+        content: [
+          { type: 'thinking', thinking: 'thinking 1' },
+          { type: 'thinking', thinking: 'thinking 1 2' },
+          { type: 'thinking', thinking: 'thinking 1 2 3' },
+          { type: 'text', text: '1' },
+          { type: 'text', text: '1 2' },
+          { type: 'text', text: '1 2 3' },
+        ],
+      },
+    }, 'delta', 'run-stream');
+
+    expect(h.read().streamingMessage).toEqual({
+      role: 'assistant',
+      content: [
+        { type: 'thinking', thinking: 'thinking 1 2 3' },
+        { type: 'text', text: '1 2 3' },
+      ],
+    });
+  });
+
+  it('snapshots normalized streaming content when tool results arrive', async () => {
+    const { handleRuntimeEventState } = await import('@/stores/chat/runtime-event-handlers');
+    normalizeStreamingMessage.mockImplementation((message: unknown) => {
+      const msg = message as { role: string; id: string; content: unknown[] };
+      return {
+        ...msg,
+        content: [
+          { type: 'thinking', thinking: 'thinking 1 2 3' },
+          { type: 'tool_use', id: 'call-1', name: 'read', input: { filePath: '/tmp/demo.md' } },
+          { type: 'text', text: '1 2 3' },
+        ],
+      };
+    });
+    snapshotStreamingAssistantMessage.mockImplementation((currentStream: unknown) => {
+      const msg = currentStream as { role: string; id: string; content: unknown[] };
+      return [{
+        ...msg,
+        content: [
+          { type: 'thinking', thinking: 'thinking 1 2 3' },
+          { type: 'tool_use', id: 'call-1', name: 'read', input: { filePath: '/tmp/demo.md' } },
+          { type: 'text', text: '1 2 3' },
+        ],
+      }];
+    });
+    const h = makeHarness({
+      streamingMessage: {
+        role: 'assistant',
+        id: 'streaming-assistant',
+        content: [
+          { type: 'thinking', thinking: 'thinking 1' },
+          { type: 'thinking', thinking: 'thinking 1 2 3' },
+          { type: 'tool_use', id: 'call-1', name: 'read', input: { filePath: '/tmp/demo.md' } },
+          { type: 'text', text: '1' },
+          { type: 'text', text: '1 2 3' },
+        ],
+      },
+    });
+
+    handleRuntimeEventState(h.set as never, h.get as never, {
+      message: {
+        role: 'toolResult',
+        toolCallId: 'call-1',
+        toolName: 'read',
+        content: [{ type: 'text', text: 'done' }],
+      },
+    }, 'final', 'run-normalize');
+
+    expect(h.read().messages).toEqual([
+      {
+        role: 'assistant',
+        id: 'streaming-assistant',
+        content: [
+          { type: 'thinking', thinking: 'thinking 1 2 3' },
+          { type: 'tool_use', id: 'call-1', name: 'read', input: { filePath: '/tmp/demo.md' } },
+          { type: 'text', text: '1 2 3' },
+        ],
+      },
+    ]);
   });
 
   it('clears runtime state on aborted event', async () => {

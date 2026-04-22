@@ -18,7 +18,18 @@ permissions:
   actions: read
 
 jobs:
+  # Fails fast on tag pushes if package.json "version" does not match the tag.
+  validate-release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Assert tag matches package.json
+        run: node scripts/assert-tag-matches-package.mjs
+
   release:
+    needs: validate-release
     strategy:
       matrix:
         include:

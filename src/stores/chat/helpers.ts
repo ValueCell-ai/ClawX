@@ -70,6 +70,132 @@ function saveImageCache(cache: Map<string, AttachedFileMeta>): void {
 
 const _imageCache = loadImageCache();
 
+function normalizeBlockText(text: string | undefined): string {
+  return typeof text === 'string' ? text.replace(/\r\n/g, '\n').trim() : '';
+}
+
+function compactProgressiveTextParts(parts: string[]): string[] {
+  const compacted: string[] = [];
+
+  for (const part of parts) {
+    const current = normalizeBlockText(part);
+    if (!current) continue;
+
+    const previous = compacted.at(-1);
+    if (!previous) {
+      compacted.push(part);
+      continue;
+    }
+
+    const normalizedPrevious = normalizeBlockText(previous);
+    if (!normalizedPrevious) {
+      compacted[compacted.length - 1] = part;
+      continue;
+    }
+
+    if (current === normalizedPrevious || normalizedPrevious.startsWith(current)) {
+      continue;
+    }
+
+    if (current.startsWith(normalizedPrevious)) {
+      compacted[compacted.length - 1] = part;
+      continue;
+    }
+
+    compacted.push(part);
+  }
+
+  return compacted;
+}
+
+function normalizeLiveContentBlocks(content: ContentBlock[]): ContentBlock[] {
+  return content.map((block) => ({ ...block }));
+}
+
+function normalizeStreamingMessage(message: unknown): unknown {
+  if (!message || typeof message !== 'object') return message;
+
+  const rawMessage = message as RawMessage;
+  const rawContent = rawMessage.content;
+  if (!Array.isArray(rawContent)) return rawMessage;
+
+  const normalizedContent = normalizeLiveContentBlocks(rawContent as ContentBlock[]);
+  const didChange = normalizedContent.some((block, index) => block !== rawContent[index])
+    || normalizedContent.length !== rawContent.length;
+
+  return didChange
+    ? { ...rawMessage, content: normalizedContent }
+    : rawMessage;
+}
+
+function normalizeComparableUserText(content: unknown): string {
+  return getMessageText(content)
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function getComparableAttachmentSignature(message: Pick<RawMessage, '_attachedFiles'>): string {
+  const files = (message._attachedFiles || [])
+    .map((file) => file.filePath || `${file.fileName}|${file.mimeType}|${file.fileSize}`)
+    .filter(Boolean)
+    .sort();
+  return files.join('::');
+}
+
+function matchesOptimisticUserMessage(
+  candidate: RawMessage,
+  optimistic: RawMessage,
+  optimisticTimestampMs: number,
+): boolean {
+  if (candidate.role !== 'user') return false;
+
+  const optimisticText = normalizeComparableUserText(optimistic.content);
+  const candidateText = normalizeComparableUserText(candidate.content);
+  const sameText = optimisticText.length > 0 && optimisticText === candidateText;
+
+  const optimisticAttachments = getComparableAttachmentSignature(optimistic);
+  const candidateAttachments = getComparableAttachmentSignature(candidate);
+  const sameAttachments = optimisticAttachments.length > 0 && optimisticAttachments === candidateAttachments;
+
+  const hasOptimisticTimestamp = Number.isFinite(optimisticTimestampMs) && optimisticTimestampMs > 0;
+  const hasCandidateTimestamp = candidate.timestamp != null;
+  const timestampMatches = hasOptimisticTimestamp && hasCandidateTimestamp
+    ? Math.abs(toMs(candidate.timestamp as number) - optimisticTimestampMs) < 5000
+    : false;
+
+  if (sameText && sameAttachments) return true;
+  if (sameText && (!optimisticAttachments || !candidateAttachments) && (timestampMatches || !hasCandidateTimestamp)) return true;
+  if (sameAttachments && (!optimisticText || !candidateText) && (timestampMatches || !hasCandidateTimestamp)) return true;
+  return false;
+}
+
+function snapshotStreamingAssistantMessage(
+  currentStream: RawMessage | null,
+  existingMessages: RawMessage[],
+  runId: string,
+): RawMessage[] {
+  if (!currentStream) return [];
+
+  const normalizedStream = normalizeStreamingMessage(currentStream) as RawMessage;
+  const streamRole = normalizedStream.role;
+  if (streamRole !== 'assistant' && streamRole !== undefined) return [];
+
+  const snapId = normalizedStream.id || `${runId || 'run'}-turn-${existingMessages.length}`;
+  if (existingMessages.some((message) => message.id === snapId)) return [];
+
+  return [{
+    ...normalizedStream,
+    role: 'assistant',
+    id: snapId,
+  }];
+}
+
+function getLatestOptimisticUserMessage(messages: RawMessage[], userTimestampMs: number): RawMessage | undefined {
+  return [...messages].reverse().find(
+    (message) => message.role === 'user' && (!message.timestamp || Math.abs(toMs(message.timestamp) - userTimestampMs) < 5000),
+  );
+}
+
 function upsertImageCacheEntry(filePath: string, file: Omit<AttachedFileMeta, 'filePath'>): void {
   _imageCache.set(filePath, { ...file, filePath });
   saveImageCache(_imageCache);
@@ -86,10 +212,10 @@ function withAttachedFileSource(
 function getMessageText(content: unknown): string {
   if (typeof content === 'string') return content;
   if (Array.isArray(content)) {
-    return (content as Array<{ type?: string; text?: string }>)
+    const parts = (content as Array<{ type?: string; text?: string }>)
       .filter(b => b.type === 'text' && b.text)
-      .map(b => b.text!)
-      .join('\n');
+      .map(b => b.text!);
+    return compactProgressiveTextParts(parts).join('\n');
   }
   return '';
 }
@@ -627,7 +753,7 @@ function extractTextFromContent(content: unknown): string {
       parts.push(block.text);
     }
   }
-  return parts.join('\n');
+  return compactProgressiveTextParts(parts).join('\n');
 }
 
 function summarizeToolOutput(text: string): string | undefined {
@@ -855,6 +981,10 @@ export {
   upsertToolStatuses,
   hasNonToolAssistantContent,
   isToolOnlyMessage,
+  normalizeStreamingMessage,
+  matchesOptimisticUserMessage,
+  snapshotStreamingAssistantMessage,
+  getLatestOptimisticUserMessage,
   setHistoryPollTimer,
   hasErrorRecoveryTimer,
   setErrorRecoveryTimer,

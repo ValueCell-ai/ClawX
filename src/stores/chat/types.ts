@@ -85,7 +85,6 @@ export interface ChatState {
   sessionLastActivity: Record<string, number>;
 
   // Thinking
-  showThinking: boolean;
   thinkingLevel: string | null;
 
   // Actions
@@ -108,7 +107,6 @@ export interface ChatState {
   ) => Promise<void>;
   abortRun: () => Promise<void>;
   handleChatEvent: (event: Record<string, unknown>) => void;
-  toggleThinking: () => void;
   refresh: () => Promise<void>;
   clearError: () => void;
 }

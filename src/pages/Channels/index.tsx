@@ -616,19 +616,24 @@ export function Channels() {
                           <h3 className="text-[16px] font-semibold text-foreground truncate">
                             {CHANNEL_NAMES[group.channelType as ChannelType] || group.channelType}
                           </h3>
-                          <p className="text-[12px] text-muted-foreground">{group.channelType}</p>
+                          <div className="flex items-center gap-2 text-[12px] text-muted-foreground">
+                            <span>{group.channelType}</span>
+                            <span className="w-1 h-1 rounded-full bg-black/20 dark:bg-white/20" />
+                            <span className="flex items-center gap-1">
+                              <span
+                                className={cn(
+                                  'inline-block h-1.5 w-1.5 rounded-full shrink-0',
+                                  group.status === 'connected' && 'bg-green-500',
+                                  group.status === 'connecting' && 'bg-sky-500 animate-pulse',
+                                  group.status === 'degraded' && 'bg-yellow-500',
+                                  group.status === 'error' && 'bg-red-500',
+                                  group.status === 'disconnected' && 'bg-gray-400',
+                                )}
+                              />
+                              {statusLabel(group.status)}
+                            </span>
+                          </div>
                         </div>
-                        <span
-                          className={cn(
-                            'inline-block h-2.5 w-2.5 rounded-full shrink-0',
-                            group.status === 'connected' && 'bg-green-500',
-                            group.status === 'connecting' && 'bg-sky-500 animate-pulse',
-                            group.status === 'degraded' && 'bg-yellow-500',
-                            group.status === 'error' && 'bg-red-500',
-                            group.status === 'disconnected' && 'bg-gray-400',
-                          )}
-                          title={statusLabel(group.status)}
-                        />
                       </div>
 
                       <div className="flex items-center gap-2">

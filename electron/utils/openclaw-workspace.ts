@@ -43,6 +43,66 @@ export function mergeClawXSection(existing: string, section: string): string {
   return existing.trimEnd() + '\n\n' + wrapped + '\n';
 }
 
+/**
+ * Strip the "## First Run" section from workspace AGENTS.md content.
+ * This section is seeded by the OpenClaw Gateway but is unnecessary
+ * for ClawX-managed workspaces.  Removes everything from the heading
+ * line until the next markdown heading (any level) or end of content.
+ */
+export function stripFirstRunSection(content: string): string {
+  const lines = content.split('\n');
+  const result: string[] = [];
+  let skipping = false;
+  let consumedFirstParagraph = false;
+  let seenBlankAfterParagraph = false;
+
+  for (const line of lines) {
+    const isHeading = /^#{1,6}\s/.test(line);
+    const trimmed = line.trim();
+
+    if (line.trim() === '## First Run') {
+      skipping = true;
+      consumedFirstParagraph = false;
+      seenBlankAfterParagraph = false;
+      continue;
+    }
+
+    if (skipping) {
+      // A new heading marks the end of the First Run block.
+      if (isHeading) {
+        skipping = false;
+      } else if (!consumedFirstParagraph) {
+        // Drop leading blank lines and the first guidance paragraph.
+        if (trimmed.length === 0) {
+          continue;
+        }
+        consumedFirstParagraph = true;
+        continue;
+      } else if (!seenBlankAfterParagraph) {
+        // Keep consuming the same paragraph until a blank line appears.
+        if (trimmed.length === 0) {
+          seenBlankAfterParagraph = true;
+          continue;
+        }
+        continue;
+      } else {
+        // After paragraph + blank line, preserve subsequent body content.
+        if (trimmed.length === 0) {
+          continue;
+        }
+        skipping = false;
+      }
+    }
+
+    if (!skipping) {
+      result.push(line);
+    }
+  }
+
+  // Collapse any resulting triple+ blank lines into double
+  return result.join('\n').replace(/\n{3,}/g, '\n\n');
+}
+
 // ── Workspace directory resolution ───────────────────────────────
 
 /**
@@ -173,10 +233,22 @@ async function mergeClawXContextOnce(): Promise<number> {
       }
 
       const section = await readFile(join(contextDir, file), 'utf-8');
-      const existing = await readFile(targetPath, 'utf-8');
+      const originalExisting = await readFile(targetPath, 'utf-8');
+      let existing = originalExisting;
+
+      // Strip unwanted Gateway-seeded sections before merging
+      if (targetName === 'AGENTS.md') {
+        const stripped = stripFirstRunSection(existing);
+        if (stripped !== existing) {
+          existing = stripped;
+          logger.info(`Stripped First Run section from ${targetName} (${workspaceDir})`);
+        }
+      }
 
       const merged = mergeClawXSection(existing, section);
-      if (merged !== existing) {
+      // Compare against on-disk content so we persist changes even when only
+      // First Run stripping happened and the ClawX section stayed identical.
+      if (merged !== originalExisting) {
         await writeFile(targetPath, merged, 'utf-8');
         logger.info(`Merged ClawX context into ${targetName} (${workspaceDir})`);
       }

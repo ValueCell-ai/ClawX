@@ -1946,49 +1946,42 @@ export async function sanitizeOpenClawConfig(): Promise<void> {
     // credentials from the top level of `channels.<type>`.  Mirror them
     // there so the runtime can discover them.
     //
-    // Strict-schema channels (e.g. dingtalk, additionalProperties:false)
-    // reject the `accounts` / `defaultAccount` keys entirely — strip them
-    // so the Gateway doesn't crash on startup.
+    // Channels whose top-level schema (additionalProperties:false) does NOT
+    // include `defaultAccount` but DOES include `accounts`.  Strip only
+    // `defaultAccount` to allow multi-account support.
     const channelsObj = config.channels as Record<string, Record<string, unknown>> | undefined;
-    const CHANNELS_EXCLUDING_TOP_LEVEL_MIRROR = new Set(['dingtalk']);
+    const CHANNELS_OMIT_DEFAULT_ACCOUNT_KEY = new Set(['dingtalk']);
 
     if (channelsObj && typeof channelsObj === 'object') {
       for (const [channelType, section] of Object.entries(channelsObj)) {
         if (!section || typeof section !== 'object') continue;
 
-        if (CHANNELS_EXCLUDING_TOP_LEVEL_MIRROR.has(channelType)) {
-          // Strict-schema channel: strip `accounts` and `defaultAccount`.
-          // Credentials should live flat at the channel root.
-          if ('accounts' in section) {
-            delete section['accounts'];
-            modified = true;
-            console.log(`[sanitize] Removed incompatible 'accounts' from channels.${channelType}`);
+        // Channels that accept accounts but not defaultAccount:
+        // strip defaultAccount only.
+        if (CHANNELS_OMIT_DEFAULT_ACCOUNT_KEY.has(channelType) && 'defaultAccount' in section) {
+          delete section['defaultAccount'];
+          modified = true;
+          console.log(`[sanitize] Removed incompatible 'defaultAccount' from channels.${channelType}`);
+        }
+
+        // Mirror missing keys from default account to top level.
+        const accounts = section.accounts as Record<string, Record<string, unknown>> | undefined;
+        const defaultAccountId =
+          typeof section.defaultAccount === 'string' && section.defaultAccount.trim()
+              ? section.defaultAccount
+              : 'default';
+        const defaultAccountData = accounts?.[defaultAccountId] ?? accounts?.['default'];
+        if (!defaultAccountData || typeof defaultAccountData !== 'object') continue;
+        let mirrored = false;
+        for (const [key, value] of Object.entries(defaultAccountData)) {
+          if (!(key in section)) {
+            section[key] = value;
+            mirrored = true;
           }
-          if ('defaultAccount' in section) {
-            delete section['defaultAccount'];
-            modified = true;
-            console.log(`[sanitize] Removed incompatible 'defaultAccount' from channels.${channelType}`);
-          }
-        } else {
-          // Normal channel: mirror missing keys from default account to top level.
-          const accounts = section.accounts as Record<string, Record<string, unknown>> | undefined;
-          const defaultAccountId =
-            typeof section.defaultAccount === 'string' && section.defaultAccount.trim()
-                ? section.defaultAccount
-                : 'default';
-          const defaultAccountData = accounts?.[defaultAccountId] ?? accounts?.['default'];
-          if (!defaultAccountData || typeof defaultAccountData !== 'object') continue;
-          let mirrored = false;
-          for (const [key, value] of Object.entries(defaultAccountData)) {
-            if (!(key in section)) {
-              section[key] = value;
-              mirrored = true;
-            }
-          }
-          if (mirrored) {
-            modified = true;
-            console.log(`[sanitize] Mirrored ${channelType} default account credentials to top-level channels.${channelType}`);
-          }
+        }
+        if (mirrored) {
+          modified = true;
+          console.log(`[sanitize] Mirrored ${channelType} default account credentials to top-level channels.${channelType}`);
         }
       }
     }

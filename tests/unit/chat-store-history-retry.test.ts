@@ -63,7 +63,6 @@ describe('useChatStore startup history retry', () => {
       error: null,
       loading: false,
       thinkingLevel: null,
-      showThinking: true,
     });
 
     gatewayRpcMock
@@ -115,7 +114,6 @@ describe('useChatStore startup history retry', () => {
       error: null,
       loading: false,
       thinkingLevel: null,
-      showThinking: true,
     });
 
     gatewayRpcMock
@@ -162,7 +160,6 @@ describe('useChatStore startup history retry', () => {
       error: null,
       loading: false,
       thinkingLevel: null,
-      showThinking: true,
     });
 
     let resolveFirstAttempt: ((value: { messages: Array<{ role: string; content: string; timestamp: number }> }) => void) | null = null;
@@ -242,7 +239,6 @@ describe('useChatStore startup history retry', () => {
       error: null,
       loading: false,
       thinkingLevel: null,
-      showThinking: true,
     });
 
     gatewayRpcMock.mockImplementationOnce(async () => {

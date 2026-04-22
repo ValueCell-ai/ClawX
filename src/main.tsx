@@ -7,6 +7,7 @@ import { HashRouter } from 'react-router-dom';
 import App from './App';
 import './i18n';
 import './styles/globals.css';
+import 'katex/dist/katex.min.css';
 import { initializeDefaultTransports } from './lib/api-client';
 
 initializeDefaultTransports();

@@ -14,6 +14,7 @@ import { deleteChannelAccountConfig } from '../../utils/channel-config';
 import { syncAgentModelOverrideToRuntime, syncAllProviderAuthToRuntime } from '../../services/providers/provider-runtime-sync';
 import type { HostApiContext } from '../context';
 import { parseJsonBody, sendJson } from '../route-utils';
+import { ensureClawXContext } from '../../utils/openclaw-workspace';
 
 function scheduleGatewayReload(ctx: HostApiContext, reason: string): void {
   if (ctx.gatewayManager.getStatus().state !== 'stopped') {
@@ -128,6 +129,11 @@ export async function handleAgentRoutes(
         console.warn('[agents] Failed to sync provider auth after agent creation:', err);
       });
       scheduleGatewayReload(ctx, 'create-agent');
+      // Ensure newly provisioned workspaces get ClawX context merge/cleanup
+      // even when gateway status events do not fire (e.g. in-process reload).
+      void ensureClawXContext().catch((err) => {
+        console.warn('[agents] Failed to ensure ClawX context after agent creation:', err);
+      });
       sendJson(res, 200, { success: true, ...snapshot });
     } catch (error) {
       sendJson(res, 500, { success: false, error: String(error) });

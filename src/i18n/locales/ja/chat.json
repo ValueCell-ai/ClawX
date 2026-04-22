@@ -13,8 +13,6 @@
     "noLogs": "（ログはまだありません）",
     "toolbar": {
         "refresh": "チャットを更新",
-        "showThinking": "思考を表示",
-        "hideThinking": "思考を非表示",
         "currentAgent": "現在の会話相手: {{agent}}"
     },
     "taskPanel": {
@@ -34,19 +32,12 @@
         }
     },
     "executionGraph": {
-        "eyebrow": "会話実行",
         "title": "実行グラフ",
-        "status": {
-            "active": "進行中",
-            "latest": "直近",
-            "previous": "履歴"
-        },
         "branchLabel": "branch",
-        "userTrigger": "ユーザー入力",
-        "userTriggerHint": "上のユーザーメッセージがトリガーです",
+        "thinkingLabel": "考え中",
         "agentRun": "{{agent}} の実行",
-        "agentReply": "アシスタント返信",
-        "agentReplyHint": "結果は下のアシスタント返信に反映されます"
+        "collapsedSummary": "ツール呼び出し {{toolCount}} 件 · プロセスメッセージ {{processCount}} 件",
+        "collapseAction": "実行グラフを折りたたむ"
     },
     "composer": {
         "attachFiles": "ファイルを添付",
