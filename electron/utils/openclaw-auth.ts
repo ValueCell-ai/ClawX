@@ -1710,32 +1710,60 @@ export async function sanitizeOpenClawConfig(): Promise<void> {
         || FEISHU_PLUGIN_ID_CANDIDATES.find((id) => Boolean(pEntries[id]));
       const canonicalFeishuId = installedFeishuId || configuredFeishuId || FEISHU_PLUGIN_ID_CANDIDATES[0];
 
-      const existingFeishuEntry =
-        FEISHU_PLUGIN_ID_CANDIDATES.map((id) => pEntries[id]).find(Boolean)
-        || pEntries.feishu;
+      // Only add feishu plugin to plugins.allow and plugins.entries when the
+      // feishu channel is actually configured.  If not configured, remove all
+      // feishu-related entries so they don't linger in the config.
+      const feishuChannelSection = (config.channels as Record<string, Record<string, unknown>> | undefined)?.feishu;
+      const isFeishuConfigured = feishuChannelSection
+        && typeof feishuChannelSection === 'object'
+        && feishuChannelSection.enabled !== false
+        && Object.keys(feishuChannelSection).length > 0;
 
-      const normalizedAllow = allowArr.filter(
-        (id) => id !== 'feishu' && !FEISHU_PLUGIN_ID_CANDIDATES.includes(id as typeof FEISHU_PLUGIN_ID_CANDIDATES[number]),
-      );
-      normalizedAllow.push(canonicalFeishuId);
-      if (JSON.stringify(normalizedAllow) !== JSON.stringify(allowArr)) {
-        pluginsObj.allow = normalizedAllow;
-        modified = true;
-        console.log(`[sanitize] Normalized plugins.allow for feishu -> ${canonicalFeishuId}`);
-      }
+      if (isFeishuConfigured) {
+        const existingFeishuEntry =
+          FEISHU_PLUGIN_ID_CANDIDATES.map((id) => pEntries[id]).find(Boolean)
+          || pEntries.feishu;
 
-      if (existingFeishuEntry || !pEntries[canonicalFeishuId]) {
-        pEntries[canonicalFeishuId] = {
-          ...(existingFeishuEntry || {}),
-          ...(pEntries[canonicalFeishuId] || {}),
-          enabled: true,
-        };
-        modified = true;
-      }
-      for (const id of FEISHU_PLUGIN_ID_CANDIDATES) {
-        if (id !== canonicalFeishuId && pEntries[id]) {
-          delete pEntries[id];
+        const normalizedAllow = allowArr.filter(
+          (id) => id !== 'feishu' && !FEISHU_PLUGIN_ID_CANDIDATES.includes(id as typeof FEISHU_PLUGIN_ID_CANDIDATES[number]),
+        );
+        normalizedAllow.push(canonicalFeishuId);
+        if (JSON.stringify(normalizedAllow) !== JSON.stringify(allowArr)) {
+          pluginsObj.allow = normalizedAllow;
           modified = true;
+          console.log(`[sanitize] Normalized plugins.allow for feishu -> ${canonicalFeishuId}`);
+        }
+
+        if (existingFeishuEntry || !pEntries[canonicalFeishuId]) {
+          pEntries[canonicalFeishuId] = {
+            ...(existingFeishuEntry || {}),
+            ...(pEntries[canonicalFeishuId] || {}),
+            enabled: true,
+          };
+          modified = true;
+        }
+        for (const id of FEISHU_PLUGIN_ID_CANDIDATES) {
+          if (id !== canonicalFeishuId && pEntries[id]) {
+            delete pEntries[id];
+            modified = true;
+          }
+        }
+      } else {
+        // Feishu channel not configured — remove all feishu plugin entries
+        const normalizedAllow = allowArr.filter(
+          (id) => id !== 'feishu' && !FEISHU_PLUGIN_ID_CANDIDATES.includes(id as typeof FEISHU_PLUGIN_ID_CANDIDATES[number]),
+        );
+        if (normalizedAllow.length !== allowArr.length) {
+          pluginsObj.allow = normalizedAllow;
+          modified = true;
+          console.log('[sanitize] Removed unconfigured feishu plugin from plugins.allow');
+        }
+        for (const id of [...FEISHU_PLUGIN_ID_CANDIDATES, 'feishu'] as const) {
+          if (pEntries[id]) {
+            delete pEntries[id];
+            modified = true;
+            console.log(`[sanitize] Removed unconfigured feishu plugin entry: ${id}`);
+          }
         }
       }
 
@@ -1821,31 +1849,31 @@ export async function sanitizeOpenClawConfig(): Promise<void> {
       // ── Disable built-in 'feishu' when official openclaw-lark plugin is active ──
       // OpenClaw ships a built-in 'feishu' extension in dist/extensions/feishu/
       // that conflicts with the official @larksuite/openclaw-lark plugin
-      // (id: 'openclaw-lark').  When the canonical feishu plugin is NOT the
-      // built-in 'feishu' itself, we must:
-      //   1. Remove bare 'feishu' from plugins.allow (already done above at line ~1648)
-      //   2. Delete plugins.entries.feishu entirely — keeping it with enabled:false
-      //      causes the Gateway to report the feishu channel as "disabled".
-      //      Since 'feishu' is not in plugins.allow, the built-in won't load.
+      // (id: 'openclaw-lark').  When the feishu channel IS configured and the
+      // canonical plugin is NOT the built-in 'feishu' itself, we must:
+      //   1. Remove bare 'feishu' from plugins.allow
+      //   2. Explicitly disable the built-in feishu extension
       const allowArr2 = Array.isArray(pluginsObj.allow) ? pluginsObj.allow as string[] : [];
-      const hasCanonicalFeishu = allowArr2.includes(canonicalFeishuId) || !!pEntries[canonicalFeishuId];
-      if (hasCanonicalFeishu && canonicalFeishuId !== 'feishu') {
-        // Remove bare 'feishu' from plugins.allow
-        const bareFeishuIdx = allowArr2.indexOf('feishu');
-        if (bareFeishuIdx !== -1) {
-          allowArr2.splice(bareFeishuIdx, 1);
-          console.log('[sanitize] Removed bare "feishu" from plugins.allow (openclaw-lark plugin is configured)');
-          modified = true;
-        }
-        // Explicitly disable the built-in feishu extension so it doesn't
-        // conflict with the official openclaw-lark plugin at runtime.
-        // Simply deleting the entry is NOT sufficient — the built-in
-        // extension in dist/extensions/feishu/ (enabledByDefault: true) will
-        // still load unless explicitly marked as disabled.
-        if (!pEntries.feishu || (pEntries.feishu as Record<string, unknown>).enabled !== false) {
-          pEntries.feishu = { enabled: false };
-          console.log('[sanitize] Disabled built-in feishu plugin (openclaw-lark plugin is configured)');
-          modified = true;
+      if (isFeishuConfigured) {
+        const hasCanonicalFeishu = allowArr2.includes(canonicalFeishuId) || !!pEntries[canonicalFeishuId];
+        if (hasCanonicalFeishu && canonicalFeishuId !== 'feishu') {
+          // Remove bare 'feishu' from plugins.allow
+          const bareFeishuIdx = allowArr2.indexOf('feishu');
+          if (bareFeishuIdx !== -1) {
+            allowArr2.splice(bareFeishuIdx, 1);
+            console.log('[sanitize] Removed bare "feishu" from plugins.allow (openclaw-lark plugin is configured)');
+            modified = true;
+          }
+          // Explicitly disable the built-in feishu extension so it doesn't
+          // conflict with the official openclaw-lark plugin at runtime.
+          // Simply deleting the entry is NOT sufficient — the built-in
+          // extension in dist/extensions/feishu/ (enabledByDefault: true) will
+          // still load unless explicitly marked as disabled.
+          if (!pEntries.feishu || (pEntries.feishu as Record<string, unknown>).enabled !== false) {
+            pEntries.feishu = { enabled: false };
+            console.log('[sanitize] Disabled built-in feishu plugin (openclaw-lark plugin is configured)');
+            modified = true;
+          }
         }
       }
 
@@ -1899,12 +1927,12 @@ export async function sanitizeOpenClawConfig(): Promise<void> {
       // allowlist because they were excluded from externalPluginIds above.
       if (nextAllow.length > 0) {
         for (const pluginId of bundled.enabledByDefault) {
-          // When the official openclaw-lark (or similar) plugin replaces the
-          // built-in 'feishu' extension, skip re-adding 'feishu' here —
-          // otherwise the enabledByDefault logic undoes the conflict
-          // resolution performed above and the built-in extension keeps
-          // reappearing in plugins.allow on every gateway restart.
-          if (pluginId === 'feishu' && canonicalFeishuId !== 'feishu') {
+          // When feishu is not configured at all, or the official
+          // openclaw-lark plugin replaces the built-in 'feishu' extension,
+          // skip re-adding 'feishu' here — otherwise the enabledByDefault
+          // logic undoes the cleanup performed above and the built-in
+          // extension keeps reappearing in plugins.allow.
+          if (pluginId === 'feishu' && (!isFeishuConfigured || canonicalFeishuId !== 'feishu')) {
             continue;
           }
           if (!nextAllow.includes(pluginId)) {
