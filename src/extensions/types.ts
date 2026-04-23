@@ -1,4 +1,5 @@
 import type { ComponentType } from 'react';
+import type { Skill } from '../types/skill';
 
 export interface NavItemDef {
   to: string;
@@ -37,11 +38,21 @@ export interface SettingsSectionExtension {
   sections: SettingsSectionDef[];
 }
 
+export interface SkillDetailMetaProps {
+  skill: Skill;
+}
+
+export interface SkillsExtension {
+  id: string;
+  detailMetaComponents?: ComponentType<SkillDetailMetaProps>[];
+}
+
 export interface RendererExtension {
   id: string;
   sidebar?: SidebarExtension;
   routes?: RouteExtension;
   settings?: SettingsSectionExtension;
+  skills?: SkillsExtension;
   i18nResources?: I18nResources;
   setup?(): void | Promise<void>;
   teardown?(): void;
