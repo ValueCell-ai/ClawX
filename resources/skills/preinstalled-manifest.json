@@ -55,14 +55,6 @@
       "ref": "main",
       "version": "main",
       "autoEnable": true
-    },
-    {
-      "slug": "brave-web-search",
-      "repo": "brave/brave-search-skills",
-      "repoPath": "skills/web-search",
-      "ref": "main",
-      "version": "main",
-      "autoEnable": true
     }
   ]
 }
