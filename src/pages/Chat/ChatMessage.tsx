@@ -1,7 +1,8 @@
 /**
  * Chat Message Component
  * Renders user / assistant / system / toolresult messages
- * with markdown, thinking sections, images, and tool cards.
+ * with markdown, images, and tool cards. Thinking output is
+ * surfaced via ExecutionGraphCard, not inside message bubbles.
  */
 import { useState, useCallback, useEffect, memo } from 'react';
 import { Sparkles, Copy, Check, ChevronDown, ChevronRight, Wrench, FileText, Film, Music, FileArchive, File, X, FolderOpen, ZoomIn, Loader2, CheckCircle2, AlertCircle } from 'lucide-react';
@@ -14,7 +15,7 @@ import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { invokeIpc } from '@/lib/api-client';
 import type { RawMessage, AttachedFileMeta } from '@/stores/chat';
-import { extractText, extractThinking, extractImages, extractToolUse, formatTimestamp } from './message-utils';
+import { extractText, extractImages, extractToolUse, formatTimestamp } from './message-utils';
 
 interface ChatMessageProps {
   message: RawMessage;
@@ -98,13 +99,11 @@ export const ChatMessage = memo(function ChatMessage({
   // original content without surfacing the bubble.
   const hideAssistantText = suppressAssistantText && !isUser;
   const hasText = !hideAssistantText && text.trim().length > 0;
-  const visibleThinkingRaw = extractThinking(message);
-  const visibleThinking = hideAssistantText ? null : visibleThinkingRaw;
   const images = extractImages(message);
   const tools = extractToolUse(message);
   const visibleTools = suppressToolCards ? [] : tools;
   const shouldHideProcessAttachments = suppressProcessAttachments
-    && (hasText || !!visibleThinking || images.length > 0 || visibleTools.length > 0);
+    && (hasText || images.length > 0 || visibleTools.length > 0);
 
   const attachedFiles = shouldHideProcessAttachments
     ? (message._attachedFiles || []).filter((file) => file.source !== 'tool-result')
@@ -115,7 +114,7 @@ export const ChatMessage = memo(function ChatMessage({
   if (isToolResult) return null;
 
   const hasStreamingToolStatus = isStreaming && streamingTools.length > 0;
-  if (!hasText && !visibleThinking && images.length === 0 && visibleTools.length === 0 && attachedFiles.length === 0 && !hasStreamingToolStatus) return null;
+  if (!hasText && images.length === 0 && visibleTools.length === 0 && attachedFiles.length === 0 && !hasStreamingToolStatus) return null;
 
   return (
     <div
@@ -140,11 +139,6 @@ export const ChatMessage = memo(function ChatMessage({
       >
         {isStreaming && !isUser && streamingTools.length > 0 && (
           <ToolStatusBar tools={streamingTools} />
-        )}
-
-        {/* Thinking section */}
-        {visibleThinking && (
-          <ThinkingBlock content={visibleThinking} />
         )}
 
         {/* Tool use cards */}
@@ -438,36 +432,6 @@ function MessageBubble({
         </div>
       )}
 
-    </div>
-  );
-}
-
-// ── Thinking Block ──────────────────────────────────────────────
-
-function ThinkingBlock({ content }: { content: string }) {
-  const [expanded, setExpanded] = useState(false);
-
-  return (
-    <div className="w-full rounded-xl border border-black/10 dark:border-white/10 bg-black/5 dark:bg-white/5 text-[14px]">
-      <button
-        className="flex items-center gap-2 w-full px-3 py-2 text-muted-foreground hover:text-foreground transition-colors"
-        onClick={() => setExpanded(!expanded)}
-      >
-        {expanded ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
-        <span className="font-medium">Thinking</span>
-      </button>
-      {expanded && (
-        <div className="px-3 pb-3 text-muted-foreground">
-          <div className="prose prose-sm dark:prose-invert max-w-none opacity-75">
-            <ReactMarkdown
-              remarkPlugins={[remarkGfm, remarkMath]}
-              rehypePlugins={[[rehypeKatex, { strict: false, throwOnError: false, output: 'html' }]]}
-            >
-              {normalizeLatexDelimiters(content)}
-            </ReactMarkdown>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

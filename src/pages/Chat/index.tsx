@@ -174,16 +174,14 @@ export function Chat() {
     : 0;
   const streamText = streamMsg ? extractText(streamMsg) : (typeof streamingMessage === 'string' ? streamingMessage : '');
   const hasStreamText = streamText.trim().length > 0;
-  const streamThinking = streamMsg ? extractThinking(streamMsg) : null;
-  const hasStreamThinking = !!streamThinking && streamThinking.trim().length > 0;
   const streamTools = streamMsg ? extractToolUse(streamMsg) : [];
   const hasStreamTools = streamTools.length > 0;
   const streamImages = streamMsg ? extractImages(streamMsg) : [];
   const hasStreamImages = streamImages.length > 0;
   const hasStreamToolStatus = streamingTools.length > 0;
   const hasRunningStreamToolStatus = streamingTools.some((tool) => tool.status === 'running');
-  const shouldRenderStreaming = sending && (hasStreamText || hasStreamThinking || hasStreamTools || hasStreamImages || hasStreamToolStatus);
-  const hasAnyStreamContent = hasStreamText || hasStreamThinking || hasStreamTools || hasStreamImages || hasStreamToolStatus;
+  const shouldRenderStreaming = sending && (hasStreamText || hasStreamTools || hasStreamImages || hasStreamToolStatus);
+  const hasAnyStreamContent = hasStreamText || hasStreamTools || hasStreamImages || hasStreamToolStatus;
 
   const isEmpty = messages.length === 0 && !sending;
   const subagentCompletionInfos = messages.map((message) => parseSubagentCompletionInfo(message));
