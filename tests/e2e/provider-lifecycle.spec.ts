@@ -11,7 +11,7 @@ async function seedTestProvider(page: Parameters<typeof completeSetup>[0]): Prom
       name: providerLabel,
       type: 'moonshot',
       baseUrl: 'https://api.moonshot.cn/v1',
-      model: 'kimi-k2.5',
+      model: 'kimi-k2.6',
       enabled: true,
       createdAt: now,
       updatedAt: now,

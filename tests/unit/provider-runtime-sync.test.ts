@@ -84,7 +84,7 @@ function createProvider(overrides: Partial<ProviderConfig> = {}): ProviderConfig
     id: 'moonshot',
     name: 'Moonshot',
     type: 'moonshot',
-    model: 'kimi-k2.5',
+    model: 'kimi-k2.6',
     enabled: true,
     createdAt: '2026-03-14T00:00:00.000Z',
     updatedAt: '2026-03-14T00:00:00.000Z',
@@ -109,7 +109,7 @@ describe('provider-runtime-sync refresh strategy', () => {
     mocks.getApiKey.mockResolvedValue('sk-test');
     mocks.getDefaultProvider.mockResolvedValue('moonshot');
     mocks.getProvider.mockResolvedValue(createProvider());
-    mocks.getProviderDefaultModel.mockReturnValue('kimi-k2.5');
+    mocks.getProviderDefaultModel.mockReturnValue('kimi-k2.6');
     mocks.getProviderConfig.mockReturnValue({
       api: 'openai-completions',
       baseUrl: 'https://api.moonshot.cn/v1',

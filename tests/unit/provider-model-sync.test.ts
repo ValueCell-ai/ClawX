@@ -16,8 +16,8 @@ function providerConfig(overrides: Partial<ProviderConfig>): ProviderConfig {
 
 describe('provider-model-sync', () => {
   it('extracts model ID from provider/model refs', () => {
-    expect(getModelIdFromRef('moonshot/kimi-k2.5', 'moonshot')).toBe('kimi-k2.5');
-    expect(getModelIdFromRef('kimi-k2.5', 'moonshot')).toBe('kimi-k2.5');
+    expect(getModelIdFromRef('moonshot/kimi-k2.6', 'moonshot')).toBe('kimi-k2.6');
+    expect(getModelIdFromRef('kimi-k2.6', 'moonshot')).toBe('kimi-k2.6');
     expect(getModelIdFromRef(undefined, 'moonshot')).toBeUndefined();
   });
 
@@ -25,7 +25,7 @@ describe('provider-model-sync', () => {
     const payload = buildNonOAuthAgentProviderUpdate(
       providerConfig({ type: 'moonshot', id: 'moonshot' }),
       'moonshot',
-      'moonshot/kimi-k2.5',
+      'moonshot/kimi-k2.6',
     );
 
     expect(payload).toEqual({
@@ -34,7 +34,7 @@ describe('provider-model-sync', () => {
         baseUrl: 'https://api.moonshot.cn/v1',
         api: 'openai-completions',
         apiKey: 'MOONSHOT_API_KEY',
-        models: [{ id: 'kimi-k2.5', name: 'kimi-k2.5' }],
+        models: [{ id: 'kimi-k2.6', name: 'kimi-k2.6' }],
       },
     });
   });

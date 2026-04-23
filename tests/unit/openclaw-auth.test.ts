@@ -513,7 +513,7 @@ describe('syncProviderConfigToOpenClaw', () => {
 
     const { syncProviderConfigToOpenClaw } = await import('@electron/utils/openclaw-auth');
 
-    await syncProviderConfigToOpenClaw('moonshot', 'kimi-k2.5', {
+    await syncProviderConfigToOpenClaw('moonshot', 'kimi-k2.6', {
       baseUrl: 'https://api.moonshot.cn/v1',
       api: 'openai-completions',
     });
@@ -538,7 +538,7 @@ describe('syncProviderConfigToOpenClaw', () => {
 
     const { syncProviderConfigToOpenClaw } = await import('@electron/utils/openclaw-auth');
 
-    await syncProviderConfigToOpenClaw('moonshot', 'kimi-k2.5', {
+    await syncProviderConfigToOpenClaw('moonshot', 'kimi-k2.6', {
       baseUrl: 'https://api.moonshot.cn/v1',
       api: 'openai-completions',
     });

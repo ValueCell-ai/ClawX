@@ -121,7 +121,7 @@ export const PROVIDER_DEFINITIONS: ProviderDefinition[] = [
     model: 'Kimi',
     requiresApiKey: true,
     defaultBaseUrl: 'https://api.moonshot.cn/v1',
-    defaultModelId: 'kimi-k2.5',
+    defaultModelId: 'kimi-k2.6',
     category: 'official',
     envVar: 'MOONSHOT_API_KEY',
     supportedAuthModes: ['api_key'],
@@ -133,8 +133,8 @@ export const PROVIDER_DEFINITIONS: ProviderDefinition[] = [
       apiKeyEnv: 'MOONSHOT_API_KEY',
       models: [
         {
-          id: 'kimi-k2.5',
-          name: 'Kimi K2.5',
+          id: 'kimi-k2.6',
+          name: 'Kimi K2.6',
           reasoning: false,
           input: ['text'],
           cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
@@ -152,7 +152,7 @@ export const PROVIDER_DEFINITIONS: ProviderDefinition[] = [
     model: 'Kimi',
     requiresApiKey: true,
     defaultBaseUrl: 'https://api.moonshot.ai/v1',
-    defaultModelId: 'kimi-k2.5',
+    defaultModelId: 'kimi-k2.6',
     category: 'official',
     envVar: 'MOONSHOT_GLOBAL_API_KEY',
     supportedAuthModes: ['api_key'],
@@ -164,8 +164,8 @@ export const PROVIDER_DEFINITIONS: ProviderDefinition[] = [
       apiKeyEnv: 'MOONSHOT_GLOBAL_API_KEY',
       models: [
         {
-          id: 'kimi-k2.5',
-          name: 'Kimi K2.5',
+          id: 'kimi-k2.6',
+          name: 'Kimi K2.6',
           reasoning: false,
           input: ['text'],
           cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },

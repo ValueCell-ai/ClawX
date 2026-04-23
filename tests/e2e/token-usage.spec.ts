@@ -23,7 +23,7 @@ async function seedTokenUsageTranscripts(homeDir: string): Promise<void> {
         timestamp: zeroTimestamp,
         message: {
           role: 'assistant',
-          model: 'kimi-k2.5',
+          model: 'kimi-k2.6',
           provider: 'kimi',
           usage: {
             total_tokens: 0,
@@ -44,7 +44,7 @@ async function seedTokenUsageTranscripts(homeDir: string): Promise<void> {
         timestamp: nonzeroTimestamp,
         message: {
           role: 'assistant',
-          model: 'kimi-k2.5',
+          model: 'kimi-k2.6',
           provider: 'kimi',
           usage: {
             total_tokens: 27,

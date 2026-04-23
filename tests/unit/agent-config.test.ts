@@ -107,7 +107,7 @@ describe('agent config lifecycle', () => {
       agents: {
         defaults: {
           model: {
-            primary: 'moonshot/kimi-k2.5',
+            primary: 'moonshot/kimi-k2.6',
           },
         },
         list: [
@@ -122,12 +122,12 @@ describe('agent config lifecycle', () => {
     const main = snapshot.agents.find((agent) => agent.id === 'main');
     const coder = snapshot.agents.find((agent) => agent.id === 'coder');
 
-    expect(snapshot.defaultModelRef).toBe('moonshot/kimi-k2.5');
+    expect(snapshot.defaultModelRef).toBe('moonshot/kimi-k2.6');
     expect(main).toMatchObject({
-      modelRef: 'moonshot/kimi-k2.5',
+      modelRef: 'moonshot/kimi-k2.6',
       overrideModelRef: null,
       inheritedModel: true,
-      modelDisplay: 'kimi-k2.5',
+      modelDisplay: 'kimi-k2.6',
     });
     expect(coder).toMatchObject({
       modelRef: 'ark/ark-code-latest',
@@ -142,7 +142,7 @@ describe('agent config lifecycle', () => {
       agents: {
         defaults: {
           model: {
-            primary: 'moonshot/kimi-k2.5',
+            primary: 'moonshot/kimi-k2.6',
           },
         },
         list: [
@@ -177,7 +177,7 @@ describe('agent config lifecycle', () => {
     snapshot = await listAgentsSnapshot();
     snapshotCoder = snapshot.agents.find((agent) => agent.id === 'coder');
     expect(snapshotCoder).toMatchObject({
-      modelRef: 'moonshot/kimi-k2.5',
+      modelRef: 'moonshot/kimi-k2.6',
       overrideModelRef: null,
       inheritedModel: true,
     });
