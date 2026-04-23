@@ -86,6 +86,7 @@ export default defineConfig({
       '@': resolve(__dirname, 'src'),
       '@electron': resolve(__dirname, 'electron'),
     },
+    dedupe: ['react', 'react-dom', 'react-i18next', 'zustand', 'sonner', 'lucide-react'],
   },
   server: {
     port: 5173,
