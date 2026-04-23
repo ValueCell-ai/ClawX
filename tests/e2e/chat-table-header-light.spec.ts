@@ -1,3 +1,6 @@
+import { mkdirSync, copyFileSync } from 'node:fs';
+import { dirname } from 'node:path';
+
 import { closeElectronApp, expect, getStableWindow, installIpcMocks, test } from './fixtures/electron';
 
 const SESSION_KEY = 'agent:main:main';
@@ -12,21 +15,21 @@ function stableStringify(value: unknown): string {
 }
 
 const tableMarkdown = [
-  '| 账号 | 内容 | 热度 |',
-  '|------|------|------|',
-  '| @OpenAI | ChatGPT 推出 Workspace Agents（共享智能体），可跨团队处理复杂工作流 | 15K 2.2K转 4.4M浏览 |',
-  '| @oran_ge | GPT Images 2 限时免费一周，每人100张，Labnana平台 | 68 |',
-  '| @caiyue5 | X平台能自动识别"由AI生成"的图片，GPT Images 2引发讨论 | 74 |',
-  '| @fkysly | "GPT Image2团队全是华人？" 引发热议 | 482 |',
-  '| @binghe | 分析Claude封号的可能原因 | 620 |',
-  '| @turingou | "GPT Images 2水平完全可以替代Claude design" | 187 |',
-  '| @DashHuang | "OpenAI也开始KYC了" 截图引发讨论 | — |',
+  '| Account | Content | Heat |',
+  '|---------|---------|------|',
+  '| @OpenAI | ChatGPT launches Workspace Agents (shared agents) for cross-team complex workflows | 15K 2.2K RT 4.4M views |',
+  '| @oran_ge | GPT Images 2 free for one week, 100 images per user, on the Labnana platform | 68 |',
+  '| @caiyue5 | X now auto-detects "AI-generated" images, sparking GPT Images 2 discussion | 74 |',
+  '| @fkysly | "Is the GPT Image 2 team entirely Chinese?" goes viral | 482 |',
+  '| @binghe | Analyzing the possible reasons behind Claude account bans | 620 |',
+  '| @turingou | "GPT Images 2 can fully replace Claude for design work" | 187 |',
+  '| @DashHuang | "OpenAI is rolling out KYC" screenshot sparks discussion | — |',
 ].join('\n');
 
 const seededHistory = [
   {
     role: 'user',
-    content: [{ type: 'text', text: '请汇总今日 X 上的 AI 新闻。' }],
+    content: [{ type: 'text', text: 'Please summarize today\'s AI news on X.' }],
     timestamp: Date.now(),
   },
   {
@@ -34,25 +37,27 @@ const seededHistory = [
     content: [{
       type: 'text',
       text: [
-        '好，全部都查完了，给你汇总一下 👇',
+        'All done — here is a quick roundup for you:',
         '',
-        '🐦 **X（Twitter）关注列表 AI 新闻**',
+        '**X (Twitter) following list — AI news**',
         '',
-        '点击 **Following（关注）** 标签后，过滤掉了推荐内容，看到了你关注账号的真实动态：',
+        'After clicking the **Following** tab and filtering out recommended content, here is what your followed accounts are actually posting:',
         '',
-        '🔥 **热门 AI 推文**',
+        '**Trending AI tweets**',
         '',
         tableMarkdown,
         '',
-        '**主要趋势：** X上今日AI圈最热的三个话题是 ① GPT Images 2 / GPT Image2 ② Claude账号被封 ③ OpenAI Workspace Agents',
+        '**Key trends:** Today\'s hottest three topics in the AI corner of X are (1) GPT Images 2 / GPT Image2, (2) Claude account bans, and (3) OpenAI Workspace Agents.',
       ].join('\n'),
     }],
     timestamp: Date.now(),
   },
 ];
 
+const CLOUD_ARTIFACT_PATH = '/opt/cursor/artifacts/chat_table_header_light.png';
+
 test.describe('ClawX chat table header styling', () => {
-  test('renders markdown table headers with transparent background and bold text in light theme', async ({ launchElectronApp }) => {
+  test('renders markdown table headers with transparent background and bold text in light theme', async ({ launchElectronApp }, testInfo) => {
     const app = await launchElectronApp({ skipSetup: true });
 
     try {
@@ -127,7 +132,20 @@ test.describe('ClawX chat table header styling', () => {
 
       const tableEl = page.locator('.prose table').first();
       await tableEl.scrollIntoViewIfNeeded();
-      await tableEl.screenshot({ path: '/opt/cursor/artifacts/chat_table_header_light.png' });
+
+      const screenshotPath = testInfo.outputPath('chat_table_header_light.png');
+      await tableEl.screenshot({ path: screenshotPath });
+      await testInfo.attach('chat_table_header_light', {
+        path: screenshotPath,
+        contentType: 'image/png',
+      });
+
+      try {
+        mkdirSync(dirname(CLOUD_ARTIFACT_PATH), { recursive: true });
+        copyFileSync(screenshotPath, CLOUD_ARTIFACT_PATH);
+      } catch {
+        // Cloud artifact directory is optional; ignore when unavailable (e.g. on CI runners).
+      }
     } finally {
       await closeElectronApp(app);
     }
