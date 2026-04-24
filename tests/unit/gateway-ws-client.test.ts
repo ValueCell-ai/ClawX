@@ -62,8 +62,13 @@ vi.mock('@electron/utils/logger', () => ({
 }));
 
 import {
+  GATEWAY_CHALLENGE_TIMEOUT_MS,
+  GATEWAY_CHALLENGE_TIMEOUT_MS_WIN,
   GATEWAY_CONNECT_HANDSHAKE_TIMEOUT_MS,
+  GATEWAY_CONNECT_HANDSHAKE_TIMEOUT_MS_WIN,
   connectGatewaySocket,
+  getPlatformChallengeTimeoutMs,
+  getPlatformConnectHandshakeTimeoutMs,
   probeGatewayReady,
 } from '@electron/gateway/ws-client';
 
@@ -146,6 +151,71 @@ describe('connectGatewaySocket', () => {
     await expect(connectionPromise).resolves.toBe(socket);
     expect(onHandshakeComplete).toHaveBeenCalledWith(socket);
     expect(pendingRequests.size).toBe(0);
+  });
+
+  it('uses the Windows-specific handshake/challenge timeouts by default on win32', async () => {
+    // Pure helper test — no socket construction required.
+    expect(getPlatformChallengeTimeoutMs('win32')).toBe(GATEWAY_CHALLENGE_TIMEOUT_MS_WIN);
+    expect(getPlatformChallengeTimeoutMs('darwin')).toBe(GATEWAY_CHALLENGE_TIMEOUT_MS);
+    expect(getPlatformChallengeTimeoutMs('linux')).toBe(GATEWAY_CHALLENGE_TIMEOUT_MS);
+    expect(getPlatformConnectHandshakeTimeoutMs('win32')).toBe(GATEWAY_CONNECT_HANDSHAKE_TIMEOUT_MS_WIN);
+    expect(getPlatformConnectHandshakeTimeoutMs('darwin')).toBe(GATEWAY_CONNECT_HANDSHAKE_TIMEOUT_MS);
+    // Windows ceilings must be wider than the defaults — otherwise there is
+    // no reason for the helper to exist.
+    expect(GATEWAY_CHALLENGE_TIMEOUT_MS_WIN).toBeGreaterThan(GATEWAY_CHALLENGE_TIMEOUT_MS);
+    expect(GATEWAY_CONNECT_HANDSHAKE_TIMEOUT_MS_WIN).toBeGreaterThan(GATEWAY_CONNECT_HANDSHAKE_TIMEOUT_MS);
+  });
+
+  it('does not time out on win32 within the default non-windows handshake window', async () => {
+    const pendingRequests = new Map();
+    const onHandshakeComplete = vi.fn();
+
+    const connectionPromise = connectGatewaySocket({
+      port: 18789,
+      deviceIdentity: null,
+      platform: 'win32',
+      pendingRequests,
+      getToken: vi.fn().mockResolvedValue('token-123'),
+      onHandshakeComplete,
+      onMessage: (message) => {
+        if (typeof message !== 'object' || message === null) return;
+        const msg = message as { type?: string; id?: string; ok?: boolean; payload?: unknown; error?: unknown };
+        if (msg.type !== 'res' || typeof msg.id !== 'string') return;
+        const pending = pendingRequests.get(msg.id);
+        if (!pending) return;
+        if (msg.ok === false || msg.error) {
+          pending.reject(new Error(String(msg.error ?? 'Gateway request failed')));
+          return;
+        }
+        pending.resolve(msg.payload ?? msg);
+      },
+      onCloseAfterHandshake: vi.fn(),
+    });
+
+    const socket = getLatestSocket();
+    socket.emitOpen();
+    socket.emitJsonMessage({
+      type: 'event',
+      event: 'connect.challenge',
+      payload: { nonce: 'nonce-win-123' },
+    });
+    await flushMicrotasks();
+
+    // Jump well past the non-windows default — handshake must still be alive
+    // because win32 now uses GATEWAY_CONNECT_HANDSHAKE_TIMEOUT_MS_WIN (45s).
+    await vi.advanceTimersByTimeAsync(GATEWAY_CONNECT_HANDSHAKE_TIMEOUT_MS + 5_000);
+    expect(onHandshakeComplete).not.toHaveBeenCalled();
+
+    const connectFrame = JSON.parse(socket.sentFrames[0]) as { id: string };
+    socket.emitJsonMessage({
+      type: 'res',
+      id: connectFrame.id,
+      ok: true,
+      payload: { protocol: 3 },
+    });
+
+    await expect(connectionPromise).resolves.toBe(socket);
+    expect(onHandshakeComplete).toHaveBeenCalledWith(socket);
   });
 
   it('still fails when the connect response exceeds the configured timeout', async () => {
