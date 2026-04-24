@@ -155,7 +155,12 @@ export class GatewayManager extends EventEmitter {
   private static readonly HEARTBEAT_TIMEOUT_MS_WIN = 25_000;
   private static readonly HEARTBEAT_MAX_MISSES_WIN = 5;
   public static readonly RESTART_COOLDOWN_MS = 5_000;
-  private static readonly GATEWAY_READY_FALLBACK_MS = 30_000;
+  // Fallback for the server-side gateway.ready event: if the event doesn't
+  // arrive within this window after the WS handshake completes, we assume the
+  // gateway is effectively ready so downstream consumers don't block forever.
+  // Kept short (5s) because handshake completion already implies a working
+  // RPC channel — this is only a safety net, not the primary signal.
+  private static readonly GATEWAY_READY_FALLBACK_MS = 5_000;
   private lastRestartAt = 0;
   /** Set by scheduleReconnect() before calling start() to signal auto-reconnect. */
   private isAutoReconnectStart = false;
