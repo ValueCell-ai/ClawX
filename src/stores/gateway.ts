@@ -98,7 +98,11 @@ function maybeLoadSessions(
   force = false,
 ): void {
   const { status } = useGatewayStore.getState();
-  if (status.gatewayReady === false) return;
+  // Gate on the RPC channel being live (handshake complete), not the later
+  // gateway.ready event. The ready event can lag up to GATEWAY_READY_FALLBACK_MS
+  // behind handshake completion while plugins finish booting, and sessions.list
+  // does not require plugins to be up.
+  if (status.state !== 'running') return;
 
   const now = Date.now();
   if (!force && now - lastLoadSessionsAt < LOAD_SESSIONS_MIN_INTERVAL_MS) return;
