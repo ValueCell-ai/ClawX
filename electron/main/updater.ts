@@ -1,19 +1,35 @@
 /**
  * Auto-Updater Module
- * Handles automatic application updates using electron-updater
+ * Handles automatic application updates using electron-updater.
  *
- * Update providers are configured in electron-builder.yml (OSS primary, GitHub fallback).
- * For prerelease channels (alpha, beta), the feed URL is overridden at runtime
- * to point at the channel-specific OSS directory (e.g. /alpha/, /beta/).
+ * Region-aware provider selection (runtime, not electron-builder.yml):
+ *   - Mainland-CN-like users  → primary OSS,    fallback GitHub.
+ *   - All other regions       → primary GitHub, fallback OSS.
+ *
+ * `electron-builder.yml`'s `publish:` block is only consumed at build time to
+ * stamp `app-update.yml`; at runtime we bypass it entirely by calling
+ * `setFeedURL()` ourselves for each attempt, so the order there is not
+ * load-bearing.
+ *
+ * For prerelease channels (alpha, beta), the OSS feed URL points at the
+ * channel-specific directory (e.g. `/alpha/`, `/beta/`). GitHub handles
+ * channels via semver tag parsing on the releases atom feed.
  */
 import { autoUpdater, UpdateInfo, ProgressInfo, UpdateDownloadedEvent } from 'electron-updater';
 import { BrowserWindow, app, ipcMain } from 'electron';
 import { logger } from '../utils/logger';
 import { EventEmitter } from 'events';
 import { setQuitting } from './app-state';
+import { shouldOptimizeNetwork } from '../utils/uv-env';
 
 /** Base CDN URL (without trailing channel path) */
 const OSS_BASE_URL = 'https://oss.intelli-spectrum.com';
+
+/** GitHub release coordinates. Mirrors electron-builder.yml. */
+const GITHUB_OWNER = 'ValueCell-ai';
+const GITHUB_REPO = 'ClawX';
+
+type UpdateProviderKind = 'oss' | 'github';
 
 export interface UpdateStatus {
   status: 'idle' | 'checking' | 'available' | 'not-available' | 'downloading' | 'downloaded' | 'error';
@@ -46,6 +62,17 @@ export class AppUpdater extends EventEmitter {
   private status: UpdateStatus = { status: 'idle' };
   private autoInstallTimer: NodeJS.Timeout | null = null;
   private autoInstallCountdown = 0;
+  /**
+   * Currently-applied feed provider (set by `applyFeed`). Purely informational
+   * for logs / IPC; the source of truth lives in electron-updater.
+   */
+  private currentProvider: UpdateProviderKind | null = null;
+  /**
+   * While a non-terminal provider attempt is in flight, we hide
+   * `error` status updates from the renderer so the UI doesn't flash red
+   * before the fallback attempt has a chance to succeed.
+   */
+  private suppressErrorStatus = false;
 
   /** Delay (in seconds) before auto-installing a downloaded update. */
   private static readonly AUTO_INSTALL_DELAY_SECONDS = 5;
@@ -58,10 +85,10 @@ export class AppUpdater extends EventEmitter {
     this.on('error', (error: Error) => {
       logger.error('[Updater] AppUpdater emitted error:', error);
     });
-    
+
     autoUpdater.autoDownload = false;
     autoUpdater.autoInstallOnAppQuit = true;
-    
+
     autoUpdater.logger = {
       info: (msg: string) => logger.info('[Updater]', msg),
       warn: (msg: string) => logger.warn('[Updater]', msg),
@@ -69,25 +96,62 @@ export class AppUpdater extends EventEmitter {
       debug: (msg: string) => logger.debug('[Updater]', msg),
     };
 
-    // Override feed URL for prerelease channels so that
-    // alpha -> /alpha/alpha-mac.yml, beta -> /beta/beta-mac.yml, etc.
     const version = app.getVersion();
     const channel = detectChannel(version);
-    const feedUrl = `${OSS_BASE_URL}/${channel}`;
-
-    logger.info(`[Updater] Version: ${version}, channel: ${channel}, feedUrl: ${feedUrl}`);
-
-    // Set channel so electron-updater requests the correct yml filename.
-    // e.g. channel "alpha" → requests alpha-mac.yml, channel "latest" → requests latest-mac.yml
+    logger.info(`[Updater] Version: ${version}, channel: ${channel} (feed selected per check)`);
     autoUpdater.channel = channel;
 
-    autoUpdater.setFeedURL({
-      provider: 'generic',
-      url: feedUrl,
-      useMultipleRangeRequest: false,
-    });
-
     this.setupListeners();
+  }
+
+  /**
+   * Point electron-updater at a specific provider. Called before every
+   * `autoUpdater.checkForUpdates()` so region detection / fallback can
+   * re-route dynamically. `setFeedURL` replaces any previous client, so this
+   * is safe to call repeatedly.
+   */
+  private applyFeed(kind: UpdateProviderKind): void {
+    const channel = detectChannel(app.getVersion());
+    autoUpdater.channel = channel;
+
+    if (kind === 'oss') {
+      const feedUrl = `${OSS_BASE_URL}/${channel}`;
+      logger.info(`[Updater] Applying OSS feed: ${feedUrl}`);
+      autoUpdater.setFeedURL({
+        provider: 'generic',
+        url: feedUrl,
+        useMultipleRangeRequest: false,
+      });
+    } else {
+      // CI publishes every GitHub release with `prerelease: true`, so the
+      // GitHub provider must be told to accept prereleases. It still
+      // channel-filters via semver tags on the atom feed, so alpha/beta/
+      // stable users only see matching tags.
+      logger.info(`[Updater] Applying GitHub feed: ${GITHUB_OWNER}/${GITHUB_REPO} (channel=${channel})`);
+      autoUpdater.allowPrerelease = true;
+      autoUpdater.setFeedURL({
+        provider: 'github',
+        owner: GITHUB_OWNER,
+        repo: GITHUB_REPO,
+      });
+    }
+
+    this.currentProvider = kind;
+  }
+
+  /**
+   * Mainland-CN-like users → OSS primary; everyone else → GitHub primary.
+   * Uses the same detection as the uv mirror (timezone/locale + Google 204
+   * probe). Failures default to OSS to preserve existing behavior.
+   */
+  private async detectPreferredProvider(): Promise<UpdateProviderKind> {
+    try {
+      const isMainlandLike = await shouldOptimizeNetwork();
+      return isMainlandLike ? 'oss' : 'github';
+    } catch (err) {
+      logger.warn('[Updater] Region detection failed, defaulting to OSS:', err);
+      return 'oss';
+    }
   }
 
   /**
@@ -138,6 +202,12 @@ export class AppUpdater extends EventEmitter {
     });
 
     autoUpdater.on('error', (error: Error) => {
+      if (this.suppressErrorStatus) {
+        logger.info(
+          `[Updater] Suppressed provider error during fallback (provider=${this.currentProvider ?? 'unknown'}): ${error.message}`
+        );
+        return;
+      }
       this.updateStatus({ status: 'error', error: error.message });
       this.emit('error', error);
     });
@@ -166,39 +236,70 @@ export class AppUpdater extends EventEmitter {
   }
 
   /**
-   * Check for updates.
-   * electron-updater automatically tries providers defined in electron-builder.yml in order.
+   * Check for updates across region-preferred providers with fallback.
+   *
+   * Order:
+   *   - Mainland-CN-like users  → [oss, github]
+   *   - Other regions           → [github, oss]
+   *
+   * Fallback is only triggered on *transport-level* failures (promise
+   * rejection). `update-not-available` is a successful terminal state and
+   * does NOT cause a fallback.
    *
    * In dev mode (not packed), autoUpdater.checkForUpdates() silently returns
-   * null without emitting any events, so we must detect this and force a
-   * final status so the UI never gets stuck in 'checking'.
+   * null without emitting any events, so we detect this and force a final
+   * status so the UI never gets stuck in 'checking'.
    */
   async checkForUpdates(): Promise<UpdateInfo | null> {
-    try {
-      const result = await autoUpdater.checkForUpdates();
+    const preferred = await this.detectPreferredProvider();
+    const order: UpdateProviderKind[] = preferred === 'oss' ? ['oss', 'github'] : ['github', 'oss'];
+    logger.info(`[Updater] Check order: ${order.join(' → ')} (preferred=${preferred})`);
 
-      // In dev mode (app not packaged), autoUpdater silently returns null
-      // without emitting ANY events (not even checking-for-update).
-      // Detect this and force an error so the UI never stays silent.
-      if (result == null) {
-        this.updateStatus({
-          status: 'error',
-          error: 'Update check skipped (dev mode – app is not packaged)',
-        });
-        return null;
+    let lastError: Error | null = null;
+
+    for (let i = 0; i < order.length; i++) {
+      const kind = order[i];
+      const isLast = i === order.length - 1;
+
+      this.applyFeed(kind);
+      this.suppressErrorStatus = !isLast;
+
+      try {
+        const result = await autoUpdater.checkForUpdates();
+
+        // Dev mode: autoUpdater short-circuits without emitting events.
+        if (result == null) {
+          this.updateStatus({
+            status: 'error',
+            error: 'Update check skipped (dev mode – app is not packaged)',
+          });
+          return null;
+        }
+
+        // Safety net: if events somehow didn't fire, force a final state.
+        if (this.status.status === 'checking' || this.status.status === 'idle') {
+          this.updateStatus({ status: 'not-available' });
+        }
+
+        logger.info(`[Updater] Check succeeded via ${kind}`);
+        return result.updateInfo || null;
+      } catch (error) {
+        lastError = error as Error;
+        logger.warn(`[Updater] Check via ${kind} failed: ${(error as Error).message || String(error)}`);
+        if (!isLast) {
+          logger.info(`[Updater] Falling back to ${order[i + 1]}`);
+        }
+      } finally {
+        this.suppressErrorStatus = false;
       }
-
-      // Safety net: if events somehow didn't fire, force a final state.
-      if (this.status.status === 'checking' || this.status.status === 'idle') {
-        this.updateStatus({ status: 'not-available' });
-      }
-
-      return result.updateInfo || null;
-    } catch (error) {
-      logger.error('[Updater] Check for updates failed:', error);
-      this.updateStatus({ status: 'error', error: (error as Error).message || String(error) });
-      throw error;
     }
+
+    logger.error('[Updater] All providers failed:', lastError);
+    this.updateStatus({
+      status: 'error',
+      error: lastError?.message || String(lastError),
+    });
+    throw lastError ?? new Error('Unknown update check failure');
   }
 
   /**
