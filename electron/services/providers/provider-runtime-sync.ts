@@ -17,6 +17,7 @@ import {
 } from '../../utils/openclaw-auth';
 import { logger } from '../../utils/logger';
 import { listAgentsSnapshot } from '../../utils/agent-config';
+import { listProviderProfileStates } from './provider-profile-lifecycle';
 
 const GOOGLE_OAUTH_RUNTIME_PROVIDER = 'google-gemini-cli';
 const GOOGLE_OAUTH_DEFAULT_MODEL_REF = `${GOOGLE_OAUTH_RUNTIME_PROVIDER}/gemini-3-pro-preview`;
@@ -214,8 +215,15 @@ export async function syncProviderApiKeyToRuntime(
 
 export async function syncAllProviderAuthToRuntime(): Promise<void> {
   const accounts = await listProviderAccounts();
+  const profileStates = await listProviderProfileStates(accounts);
+  const stateByAccountId = new Map(profileStates.map((state) => [state.accountId, state]));
+  const sortedAccounts = [...accounts].sort((a, b) => (a.priority ?? 1000) - (b.priority ?? 1000));
 
-  for (const account of accounts) {
+  for (const account of sortedAccounts) {
+    const profileState = stateByAccountId.get(account.id);
+    if (profileState && profileState.status !== 'active') {
+      continue;
+    }
     const runtimeProviderKey = await resolveRuntimeProviderKey({
       id: account.id,
       name: account.label,
@@ -235,12 +243,16 @@ export async function syncAllProviderAuthToRuntime(): Promise<void> {
     }
 
     if (secret.type === 'api_key') {
-      await saveProviderKeyToOpenClaw(runtimeProviderKey, secret.apiKey);
+      await saveProviderKeyToOpenClaw(runtimeProviderKey, secret.apiKey, undefined, {
+        profileId: `${runtimeProviderKey}:${account.id}`,
+      });
       continue;
     }
 
     if (secret.type === 'local' && secret.apiKey) {
-      await saveProviderKeyToOpenClaw(runtimeProviderKey, secret.apiKey);
+      await saveProviderKeyToOpenClaw(runtimeProviderKey, secret.apiKey, undefined, {
+        profileId: `${runtimeProviderKey}:${account.id}`,
+      });
       continue;
     }
 
@@ -251,6 +263,8 @@ export async function syncAllProviderAuthToRuntime(): Promise<void> {
         expires: secret.expiresAt,
         email: secret.email,
         projectId: secret.subject,
+      }, undefined, {
+        profileId: `${runtimeProviderKey}:${account.id}`,
       });
     }
   }
@@ -265,13 +279,17 @@ async function syncProviderSecretToRuntime(
   if (apiKey !== undefined) {
     const trimmedKey = apiKey.trim();
     if (trimmedKey) {
-      await saveProviderKeyToOpenClaw(runtimeProviderKey, trimmedKey);
+      await saveProviderKeyToOpenClaw(runtimeProviderKey, trimmedKey, undefined, {
+        profileId: `${runtimeProviderKey}:${config.id}`,
+      });
     }
     return;
   }
 
   if (secret?.type === 'api_key') {
-    await saveProviderKeyToOpenClaw(runtimeProviderKey, secret.apiKey);
+    await saveProviderKeyToOpenClaw(runtimeProviderKey, secret.apiKey, undefined, {
+      profileId: `${runtimeProviderKey}:${config.id}`,
+    });
     return;
   }
 
@@ -282,12 +300,16 @@ async function syncProviderSecretToRuntime(
       expires: secret.expiresAt,
       email: secret.email,
       projectId: secret.subject,
+    }, undefined, {
+      profileId: `${runtimeProviderKey}:${config.id}`,
     });
     return;
   }
 
   if (secret?.type === 'local' && secret.apiKey) {
-    await saveProviderKeyToOpenClaw(runtimeProviderKey, secret.apiKey);
+    await saveProviderKeyToOpenClaw(runtimeProviderKey, secret.apiKey, undefined, {
+      profileId: `${runtimeProviderKey}:${config.id}`,
+    });
   }
 }
 
@@ -577,7 +599,7 @@ export async function syncDeletedProviderApiKeyToRuntime(
   }
 
   const ock = runtimeProviderKey ?? await resolveRuntimeProviderKey({ ...provider, id: providerId });
-  await removeProviderKeyFromOpenClaw(ock);
+  await removeProviderKeyFromOpenClaw(ock, undefined, { profileId: `${ock}:${providerId}` });
 }
 
 export async function syncDefaultProviderToRuntime(
@@ -623,7 +645,7 @@ export async function syncDefaultProviderToRuntime(
     }
 
     if (providerKey) {
-      await saveProviderKeyToOpenClaw(ock, providerKey);
+      await saveProviderKeyToOpenClaw(ock, providerKey, undefined, { profileId: `${ock}:${provider.id}` });
     }
   } else {
     if (browserOAuthRuntimeProvider) {
@@ -635,7 +657,7 @@ export async function syncDefaultProviderToRuntime(
           expires: secret.expiresAt,
           email: secret.email,
           projectId: secret.subject,
-        });
+        }, undefined, { profileId: `${browserOAuthRuntimeProvider}:${provider.id}` });
       }
 
       const defaultModelRef = browserOAuthRuntimeProvider === GOOGLE_OAUTH_RUNTIME_PROVIDER

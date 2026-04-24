@@ -596,14 +596,15 @@ async function writeOpenClawJson(config: Record<string, unknown>): Promise<void>
 export async function saveOAuthTokenToOpenClaw(
   provider: string,
   token: { access: string; refresh: string; expires: number; email?: string; projectId?: string },
-  agentId?: string
+  agentId?: string,
+  options?: { profileId?: string; priority?: number }
 ): Promise<void> {
   const agentIds = agentId ? [agentId] : await discoverAgentIds();
   if (agentIds.length === 0) agentIds.push('main');
 
   for (const id of agentIds) {
     const store = await readAuthProfiles(id);
-    const profileId = `${provider}:default`;
+    const profileId = options?.profileId || `${provider}:default`;
 
     store.profiles[profileId] = {
       type: 'oauth',
@@ -661,7 +662,8 @@ export async function getOAuthTokenFromOpenClaw(
 export async function saveProviderKeyToOpenClaw(
   provider: string,
   apiKey: string,
-  agentId?: string
+  agentId?: string,
+  options?: { profileId?: string; priority?: number }
 ): Promise<void> {
   if (isOAuthProviderType(provider) && !apiKey) {
     console.log(`Skipping auth-profiles write for OAuth provider "${provider}" (no API key provided, using OAuth)`);
@@ -672,7 +674,7 @@ export async function saveProviderKeyToOpenClaw(
 
   for (const id of agentIds) {
     const store = await readAuthProfiles(id);
-    const profileId = `${provider}:default`;
+    const profileId = options?.profileId || `${provider}:default`;
 
     store.profiles[profileId] = { type: 'api_key', provider, key: apiKey };
 
@@ -695,14 +697,15 @@ export async function saveProviderKeyToOpenClaw(
  */
 export async function removeProviderKeyFromOpenClaw(
   provider: string,
-  agentId?: string
+  agentId?: string,
+  options?: { profileId?: string }
 ): Promise<void> {
   const agentIds = agentId ? [agentId] : await discoverAgentIds();
   if (agentIds.length === 0) agentIds.push('main');
 
   for (const id of agentIds) {
     const store = await readAuthProfiles(id);
-    if (removeProfileFromStore(store, `${provider}:default`, 'api_key')) {
+    if (removeProfileFromStore(store, options?.profileId || `${provider}:default`, 'api_key')) {
       await writeAuthProfiles(store, id);
     }
   }

@@ -32,6 +32,7 @@ import { getActiveOpenClawProviders, getOpenClawProvidersConfig } from '../../ut
 import { getAliasSourceTypes, getOpenClawProviderKeyForType } from '../../utils/provider-keys';
 import type { ProviderWithKeyInfo } from '../../shared/providers/types';
 import { logger } from '../../utils/logger';
+import { listProviderProfileStates } from './provider-profile-lifecycle';
 
 function maskApiKey(apiKey: string | null): string | null {
   if (!apiKey) return null;
@@ -146,7 +147,14 @@ export class ProviderService {
       }
     }
 
-    return result;
+    const profileStates = await listProviderProfileStates(result);
+    const priorityByAccountId = new Map(profileStates.map((state) => [state.accountId, state.priority]));
+    return result
+      .map((account) => ({
+        ...account,
+        priority: priorityByAccountId.get(account.id) ?? account.priority,
+      }))
+      .sort((a, b) => (a.priority ?? 1000) - (b.priority ?? 1000));
   }
 
 
@@ -230,6 +238,11 @@ export class ProviderService {
 
   async createAccount(account: ProviderAccount, apiKey?: string): Promise<ProviderAccount> {
     await ensureProviderStoreMigrated();
+    if (!Number.isFinite(account.priority)) {
+      const existing = await listProviderAccounts();
+      const maxPriority = existing.reduce((max, item) => Math.max(max, item.priority ?? 1000), 0);
+      account.priority = maxPriority + 10;
+    }
     // Only save to providerAccounts store — do NOT call saveProvider() which
     // writes to the legacy `providers` store and causes phantom/duplicate issues.
     await saveProviderAccount(account);

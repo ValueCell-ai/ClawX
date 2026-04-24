@@ -22,6 +22,12 @@ import { getProviderService } from '../../services/providers/provider-service';
 import { providerAccountToConfig } from '../../services/providers/provider-store';
 import type { ProviderAccount } from '../../shared/providers/types';
 import { logger } from '../../utils/logger';
+import {
+  listProviderProfileStates,
+  markProviderProfileFailure,
+  markProviderProfileSuccess,
+  reorderProviderProfiles,
+} from '../../services/providers/provider-profile-lifecycle';
 
 const legacyProviderRoutesWarned = new Set<string>();
 
@@ -57,6 +63,53 @@ export async function handleProviderRoutes(
 
   if (url.pathname === '/api/provider-accounts' && req.method === 'GET') {
     sendJson(res, 200, await providerService.listAccounts());
+    return true;
+  }
+
+  if (url.pathname === '/api/provider-profiles' && req.method === 'GET') {
+    const accounts = await providerService.listAccounts();
+    sendJson(res, 200, await listProviderProfileStates(accounts));
+    return true;
+  }
+
+  if (url.pathname === '/api/provider-profiles/reorder' && req.method === 'PUT') {
+    try {
+      const body = await parseJsonBody<{ priorities: Array<{ accountId: string; priority: number }> }>(req);
+      await reorderProviderProfiles(body.priorities ?? []);
+      sendJson(res, 200, { success: true });
+    } catch (error) {
+      sendJson(res, 500, { success: false, error: String(error) });
+    }
+    return true;
+  }
+
+  if (url.pathname === '/api/provider-profiles/failure' && req.method === 'POST') {
+    try {
+      const body = await parseJsonBody<{
+        accountId: string;
+        reason: string;
+        status?: 'failed' | 'expired' | 'cooldown';
+        cooldownMs?: number;
+      }>(req);
+      const state = await markProviderProfileFailure(body.accountId, body.reason, {
+        status: body.status,
+        cooldownMs: body.cooldownMs,
+      });
+      sendJson(res, 200, { success: true, state });
+    } catch (error) {
+      sendJson(res, 500, { success: false, error: String(error) });
+    }
+    return true;
+  }
+
+  if (url.pathname === '/api/provider-profiles/success' && req.method === 'POST') {
+    try {
+      const body = await parseJsonBody<{ accountId: string }>(req);
+      const state = await markProviderProfileSuccess(body.accountId);
+      sendJson(res, 200, { success: true, state });
+    } catch (error) {
+      sendJson(res, 500, { success: false, error: String(error) });
+    }
     return true;
   }
 

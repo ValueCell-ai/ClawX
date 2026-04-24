@@ -17,6 +17,8 @@ import {
   Copy,
   XCircle,
   ChevronDown,
+  ArrowUp,
+  ArrowDown,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -27,6 +29,7 @@ import {
   useProviderStore,
   type ProviderAccount,
   type ProviderConfig,
+  type ProviderProfileState,
   type ProviderVendorInfo,
 } from '@/stores/providers';
 import {
@@ -153,6 +156,7 @@ export function ProvidersSettings() {
   const devModeUnlocked = useSettingsStore((state) => state.devModeUnlocked);
   const {
     statuses,
+    profileStates,
     accounts,
     vendors,
     defaultAccountId,
@@ -172,6 +176,10 @@ export function ProvidersSettings() {
   const displayProviders = useMemo(
     () => buildProviderListItems(accounts, statuses, vendors, defaultAccountId),
     [accounts, statuses, vendors, defaultAccountId],
+  );
+  const profileStateMap = useMemo(
+    () => new Map(profileStates.map((state) => [state.accountId, state])),
+    [profileStates],
   );
 
   // Fetch providers on mount
@@ -240,6 +248,27 @@ export function ProvidersSettings() {
     }
   };
 
+  const handleMovePriority = async (accountId: string, direction: 'up' | 'down') => {
+    const ordered = [...accounts].sort((a, b) => (a.priority ?? 1000) - (b.priority ?? 1000));
+    const index = ordered.findIndex((item) => item.id === accountId);
+    const swapIndex = direction === 'up' ? index - 1 : index + 1;
+    if (index < 0 || swapIndex < 0 || swapIndex >= ordered.length) return;
+    const current = ordered[index];
+    const swap = ordered[swapIndex];
+    const currentPriority = current.priority ?? ((index + 1) * 10);
+    const swapPriority = swap.priority ?? ((swapIndex + 1) * 10);
+    await hostApiFetch('/api/provider-profiles/reorder', {
+      method: 'PUT',
+      body: JSON.stringify({
+        priorities: [
+          { accountId: current.id, priority: swapPriority },
+          { accountId: swap.id, priority: currentPriority },
+        ],
+      }),
+    });
+    await refreshProviderSnapshot();
+  };
+
   return (
     <div data-testid="providers-settings" className="space-y-6">
       <div className="flex items-center justify-between">
@@ -274,6 +303,7 @@ export function ProvidersSettings() {
             <ProviderCard
               key={item.account.id}
               item={item}
+              profileState={profileStateMap.get(item.account.id)}
               allProviders={displayProviders}
               isDefault={item.account.id === defaultAccountId}
               isEditing={editingProvider === item.account.id}
@@ -281,6 +311,7 @@ export function ProvidersSettings() {
               onCancelEdit={() => setEditingProvider(null)}
               onDelete={() => handleDeleteProvider(item.account.id)}
               onSetDefault={() => handleSetDefault(item.account.id)}
+              onMovePriority={handleMovePriority}
               onSaveEdits={async (payload) => {
                 const updates: Partial<ProviderAccount> = {};
                 if (payload.updates) {
@@ -324,6 +355,7 @@ export function ProvidersSettings() {
 
 interface ProviderCardProps {
   item: ProviderListItem;
+  profileState?: ProviderProfileState;
   allProviders: ProviderListItem[];
   isDefault: boolean;
   isEditing: boolean;
@@ -331,6 +363,7 @@ interface ProviderCardProps {
   onCancelEdit: () => void;
   onDelete: () => void;
   onSetDefault: () => void;
+  onMovePriority: (accountId: string, direction: 'up' | 'down') => Promise<void>;
   onSaveEdits: (payload: { newApiKey?: string; updates?: Partial<ProviderConfig> }) => Promise<void>;
   onValidateKey: (
     key: string,
@@ -343,6 +376,7 @@ interface ProviderCardProps {
 
 function ProviderCard({
   item,
+  profileState,
   allProviders,
   isDefault,
   isEditing,
@@ -350,12 +384,14 @@ function ProviderCard({
   onCancelEdit,
   onDelete,
   onSetDefault,
+  onMovePriority,
   onSaveEdits,
   onValidateKey,
   devModeUnlocked,
 }: ProviderCardProps) {
   const { t, i18n } = useTranslation('settings');
   const { account, vendor, status } = item;
+  const lifecycleStatus = profileState?.status || 'active';
   const [newKey, setNewKey] = useState('');
   const [baseUrl, setBaseUrl] = useState(account.baseUrl || '');
   const [apiProtocol, setApiProtocol] = useState<ProviderAccount['apiProtocol']>(account.apiProtocol || 'openai-completions');
@@ -552,6 +588,8 @@ function ProviderCard({
                   <><div className="w-1.5 h-1.5 rounded-full bg-red-500" /> {t('aiProviders.dialog.apiKeyMissing')}</>
                 )}
               </span>
+              <span className="w-1 h-1 rounded-full bg-black/20 dark:bg-white/20" />
+              <span className="capitalize">{lifecycleStatus}</span>
               {((account.fallbackModels?.length ?? 0) > 0 || (account.fallbackAccountIds?.length ?? 0) > 0) && (
                 <>
                   <span className="w-1 h-1 rounded-full bg-black/20 dark:bg-white/20" />
@@ -592,6 +630,26 @@ function ProviderCard({
               title={t('aiProviders.card.editKey')}
             >
               <Edit className="h-4 w-4" />
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon"
+              data-testid={`provider-priority-up-${account.id}`}
+              className="h-8 w-8 rounded-full text-muted-foreground hover:text-foreground hover:bg-white dark:hover:bg-card shadow-sm"
+              onClick={() => onMovePriority(account.id, 'up')}
+              title={t('aiProviders.card.priorityUp', 'Move priority up')}
+            >
+              <ArrowUp className="h-4 w-4" />
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon"
+              data-testid={`provider-priority-down-${account.id}`}
+              className="h-8 w-8 rounded-full text-muted-foreground hover:text-foreground hover:bg-white dark:hover:bg-card shadow-sm"
+              onClick={() => onMovePriority(account.id, 'down')}
+              title={t('aiProviders.card.priorityDown', 'Move priority down')}
+            >
+              <ArrowDown className="h-4 w-4" />
             </Button>
             <Button
               data-testid={`provider-delete-${account.id}`}
