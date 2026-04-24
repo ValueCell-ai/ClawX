@@ -1,6 +1,6 @@
 {
     "name": "clawx",
-    "version": "0.3.11",
+    "version": "0.3.12-alpha.1",
     "pnpm": {
         "onlyBuiltDependencies": [
             "@discordjs/opus",
@@ -64,10 +64,13 @@
         "package:linux": "pnpm run package && electron-builder --linux --publish never",
         "release": "pnpm run uv:download && pnpm run package && electron-builder --publish always",
         "version": "node scripts/assert-release-version.mjs",
-        "version:patch": "pnpm version patch",
-        "version:minor": "pnpm version minor",
-        "version:major": "pnpm version major",
-        "version:prerelease-beta": "pnpm version prerelease --preid=beta",
+        "version:auto": "node scripts/bump-release-version.mjs",
+        "version:patch": "pnpm run version:auto -- patch",
+        "version:minor": "pnpm run version:auto -- minor",
+        "version:major": "pnpm run version:auto -- major",
+        "version:prerelease": "pnpm run version:auto -- prerelease --preid=alpha",
+        "version:prerelease-alpha": "pnpm run version:auto -- prerelease --preid=alpha",
+        "version:prerelease-beta": "pnpm run version:auto -- prerelease --preid=beta",
         "release:validate": "node scripts/assert-tag-matches-package.mjs",
         "postversion": "git push && git push --tags"
     },
