@@ -681,15 +681,28 @@ function InstallingContent({ skills, onComplete, onSkip }: InstallingContentProp
         // Step 2: Call the backend to install uv and setup Python
         const result = await invokeIpc('uv:install-all') as {
           success: boolean;
+          skippedPythonInstall?: boolean;
+          reason?: string;
           error?: string
         };
 
         if (result.success) {
-          setSkillStates(prev => prev.map(s => ({ ...s, status: 'completed' })));
+          const installedSkillIds = skills
+            .filter((skill) => !(result.skippedPythonInstall && skill.id === 'python-env'))
+            .map((skill) => skill.id);
+
+          setSkillStates(prev => prev.map(s => ({
+            ...s,
+            status: result.skippedPythonInstall && s.id === 'python-env' ? 'pending' : 'completed',
+          })));
           setOverallProgress(100);
 
+          if (result.skippedPythonInstall && result.reason === 'offline') {
+            toast.info(t('installing.pythonDeferredOffline'));
+          }
+
           await new Promise((resolve) => setTimeout(resolve, 800));
-          onComplete(skills.map(s => s.id));
+          onComplete(installedSkillIds);
         } else {
           setSkillStates(prev => prev.map(s => ({ ...s, status: 'failed' })));
           setErrorMessage(result.error || 'Unknown error during installation');
@@ -732,7 +745,7 @@ function InstallingContent({ skills, onComplete, onSkip }: InstallingContentProp
   };
 
   return (
-    <div className="space-y-6">
+    <div data-testid="setup-installing-step" className="space-y-6">
       <div className="text-center">
         <div className="text-4xl mb-4">⚙️</div>
         <h2 className="text-xl font-semibold mb-2">{t('installing.title')}</h2>
@@ -762,6 +775,7 @@ function InstallingContent({ skills, onComplete, onSkip }: InstallingContentProp
         {skillStates.map((skill) => (
           <motion.div
             key={skill.id}
+            data-testid={`setup-skill-${skill.id}`}
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
             className={cn(
@@ -838,7 +852,7 @@ function CompleteContent({ installedSkills }: CompleteContentProps) {
     .join(', ');
 
   return (
-    <div className="text-center space-y-6">
+    <div data-testid="setup-complete-step" className="text-center space-y-6">
       <div className="text-6xl mb-4">🎉</div>
       <h2 className="text-xl font-semibold">{t('complete.title')}</h2>
       <p className="text-muted-foreground">
