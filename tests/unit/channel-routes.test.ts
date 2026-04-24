@@ -102,6 +102,7 @@ describe('handleChannelRoutes', () => {
     listConfiguredChannelAccountsMock.mockReturnValue({});
     listAgentsSnapshotMock.mockResolvedValue({
       agents: [],
+      channelOwners: {},
       channelAccountOwners: {},
     });
     readOpenClawConfigMock.mockResolvedValue({
@@ -174,6 +175,7 @@ describe('handleChannelRoutes', () => {
         gatewayManager: {
           rpc,
           getStatus: () => ({ state: 'running' }),
+          getDiagnostics: () => ({ consecutiveHeartbeatMisses: 0, consecutiveRpcFailures: 0 }),
           debouncedReload: vi.fn(),
           debouncedRestart: vi.fn(),
         },
@@ -367,6 +369,11 @@ describe('handleChannelRoutes', () => {
         accountIds: ['default', 'Legacy_Account'],
       },
     });
+    listAgentsSnapshotMock.mockResolvedValue({
+      agents: [{ id: 'main', name: 'Main Agent' }],
+      channelOwners: {},
+      channelAccountOwners: {},
+    });
 
     parseJsonBodyMock.mockResolvedValue({
       channelType: 'feishu',
@@ -407,6 +414,353 @@ describe('handleChannelRoutes', () => {
       } as never,
     );
     expect(assignChannelAccountToAgentMock).toHaveBeenCalledWith('main', 'feishu', 'Legacy_Account');
+  });
+
+  it('migrates legacy channel-wide fallback before manually binding a non-default account', async () => {
+    listConfiguredChannelAccountsMock.mockReturnValue({
+      telegram: {
+        defaultAccountId: 'default',
+        accountIds: ['default', 'telegram-a1b2c3d4'],
+      },
+    });
+    listAgentsSnapshotMock.mockResolvedValue({
+      agents: [{ id: 'main', name: 'Main' }, { id: 'code', name: 'Code Agent' }],
+      channelOwners: { telegram: 'main' },
+      channelAccountOwners: {},
+    });
+    readOpenClawConfigMock.mockResolvedValue({
+      bindings: [
+        { agentId: 'main', match: { channel: 'telegram' } },
+      ],
+    });
+    parseJsonBodyMock.mockResolvedValue({
+      channelType: 'telegram',
+      accountId: 'telegram-a1b2c3d4',
+      agentId: 'code',
+    });
+
+    const { handleChannelRoutes } = await import('@electron/api/routes/channels');
+    await handleChannelRoutes(
+      { method: 'PUT' } as IncomingMessage,
+      {} as ServerResponse,
+      new URL('http://127.0.0.1:13210/api/channels/binding'),
+      {
+        gatewayManager: {
+          rpc: vi.fn(),
+          getStatus: () => ({ state: 'running' }),
+          debouncedReload: vi.fn(),
+          debouncedRestart: vi.fn(),
+        },
+      } as never,
+    );
+
+    expect(assignChannelAccountToAgentMock).toHaveBeenNthCalledWith(1, 'main', 'telegram', 'default');
+    expect(clearChannelBindingMock).toHaveBeenCalledWith('telegram');
+    expect(assignChannelAccountToAgentMock).toHaveBeenNthCalledWith(2, 'code', 'telegram', 'telegram-a1b2c3d4');
+  });
+
+  it('does not synthesize a default binding when no legacy channel-wide binding exists', async () => {
+    listConfiguredChannelAccountsMock.mockReturnValue({
+      telegram: {
+        defaultAccountId: 'default',
+        accountIds: ['default', 'telegram-a1b2c3d4'],
+      },
+    });
+    listAgentsSnapshotMock.mockResolvedValue({
+      agents: [{ id: 'main', name: 'Main' }, { id: 'code', name: 'Code Agent' }],
+      channelOwners: { telegram: 'code' },
+      channelAccountOwners: {
+        'telegram:telegram-a1b2c3d4': 'code',
+      },
+    });
+    readOpenClawConfigMock.mockResolvedValue({
+      bindings: [
+        { agentId: 'code', match: { channel: 'telegram', accountId: 'telegram-a1b2c3d4' } },
+      ],
+    });
+    parseJsonBodyMock.mockResolvedValue({
+      channelType: 'telegram',
+      accountId: 'telegram-b2c3d4e5',
+      agentId: 'code',
+    });
+
+    const { handleChannelRoutes } = await import('@electron/api/routes/channels');
+    await handleChannelRoutes(
+      { method: 'PUT' } as IncomingMessage,
+      {} as ServerResponse,
+      new URL('http://127.0.0.1:13210/api/channels/binding'),
+      {
+        gatewayManager: {
+          rpc: vi.fn(),
+          getStatus: () => ({ state: 'running' }),
+          debouncedReload: vi.fn(),
+          debouncedRestart: vi.fn(),
+        },
+      } as never,
+    );
+
+    expect(clearChannelBindingMock).not.toHaveBeenCalled();
+    expect(assignChannelAccountToAgentMock).toHaveBeenCalledTimes(1);
+    expect(assignChannelAccountToAgentMock).toHaveBeenCalledWith('code', 'telegram', 'telegram-b2c3d4e5');
+  });
+
+  it('preserves mixed-case agent ids when migrating a legacy channel-wide binding', async () => {
+    listConfiguredChannelAccountsMock.mockReturnValue({
+      telegram: {
+        defaultAccountId: 'default',
+        accountIds: ['default', 'telegram-a1b2c3d4'],
+      },
+    });
+    listAgentsSnapshotMock.mockResolvedValue({
+      agents: [{ id: 'MainAgent', name: 'Main Agent' }, { id: 'code', name: 'Code Agent' }],
+      channelOwners: { telegram: 'mainagent' },
+      channelAccountOwners: {},
+    });
+    readOpenClawConfigMock.mockResolvedValue({
+      bindings: [
+        { agentId: 'MainAgent', match: { channel: 'telegram' } },
+      ],
+    });
+    parseJsonBodyMock.mockResolvedValue({
+      channelType: 'telegram',
+      accountId: 'telegram-a1b2c3d4',
+      agentId: 'code',
+    });
+
+    const { handleChannelRoutes } = await import('@electron/api/routes/channels');
+    await handleChannelRoutes(
+      { method: 'PUT' } as IncomingMessage,
+      {} as ServerResponse,
+      new URL('http://127.0.0.1:13210/api/channels/binding'),
+      {
+        gatewayManager: {
+          rpc: vi.fn(),
+          getStatus: () => ({ state: 'running' }),
+          debouncedReload: vi.fn(),
+          debouncedRestart: vi.fn(),
+        },
+      } as never,
+    );
+
+    expect(assignChannelAccountToAgentMock).toHaveBeenNthCalledWith(1, 'MainAgent', 'telegram', 'default');
+    expect(assignChannelAccountToAgentMock).toHaveBeenNthCalledWith(2, 'code', 'telegram', 'telegram-a1b2c3d4');
+  });
+
+  it('does not mutate legacy bindings when the requested agent does not exist', async () => {
+    listConfiguredChannelAccountsMock.mockReturnValue({
+      telegram: {
+        defaultAccountId: 'default',
+        accountIds: ['default', 'telegram-a1b2c3d4'],
+      },
+    });
+    listAgentsSnapshotMock.mockResolvedValue({
+      agents: [{ id: 'main', name: 'Main Agent' }],
+      channelOwners: { telegram: 'main' },
+      channelAccountOwners: {},
+    });
+    readOpenClawConfigMock.mockResolvedValue({
+      bindings: [
+        { agentId: 'main', match: { channel: 'telegram' } },
+      ],
+    });
+    parseJsonBodyMock.mockResolvedValue({
+      channelType: 'telegram',
+      accountId: 'telegram-a1b2c3d4',
+      agentId: 'missing-agent',
+    });
+
+    const { handleChannelRoutes } = await import('@electron/api/routes/channels');
+    await handleChannelRoutes(
+      { method: 'PUT' } as IncomingMessage,
+      {} as ServerResponse,
+      new URL('http://127.0.0.1:13210/api/channels/binding'),
+      {
+        gatewayManager: {
+          rpc: vi.fn(),
+          getStatus: () => ({ state: 'running' }),
+          debouncedReload: vi.fn(),
+          debouncedRestart: vi.fn(),
+        },
+      } as never,
+    );
+
+    expect(clearChannelBindingMock).not.toHaveBeenCalled();
+    expect(assignChannelAccountToAgentMock).not.toHaveBeenCalled();
+    expect(sendJsonMock).toHaveBeenCalledWith(
+      expect.anything(),
+      500,
+      expect.objectContaining({
+        success: false,
+        error: expect.stringContaining('Agent "missing-agent" not found'),
+      }),
+    );
+  });
+
+  it('rejects binding requests without accountId before legacy migration runs', async () => {
+    listAgentsSnapshotMock.mockResolvedValue({
+      agents: [{ id: 'main', name: 'Main Agent' }],
+      channelOwners: {},
+      channelAccountOwners: {},
+    });
+    parseJsonBodyMock.mockResolvedValue({
+      channelType: 'telegram',
+      agentId: 'main',
+    });
+
+    const { handleChannelRoutes } = await import('@electron/api/routes/channels');
+    await handleChannelRoutes(
+      { method: 'PUT' } as IncomingMessage,
+      {} as ServerResponse,
+      new URL('http://127.0.0.1:13210/api/channels/binding'),
+      {
+        gatewayManager: {
+          rpc: vi.fn(),
+          getStatus: () => ({ state: 'running' }),
+          debouncedReload: vi.fn(),
+          debouncedRestart: vi.fn(),
+        },
+      } as never,
+    );
+
+    expect(clearChannelBindingMock).not.toHaveBeenCalled();
+    expect(assignChannelAccountToAgentMock).not.toHaveBeenCalled();
+    expect(sendJsonMock).toHaveBeenCalledWith(
+      expect.anything(),
+      400,
+      expect.objectContaining({
+        success: false,
+        error: 'accountId is required',
+      }),
+    );
+  });
+
+  it('falls back to the legacy owner when explicit default owner is stale', async () => {
+    listConfiguredChannelAccountsMock.mockReturnValue({
+      telegram: {
+        defaultAccountId: 'default',
+        accountIds: ['default', 'telegram-a1b2c3d4'],
+      },
+    });
+    listAgentsSnapshotMock.mockResolvedValue({
+      agents: [{ id: 'MainAgent', name: 'Main Agent' }, { id: 'code', name: 'Code Agent' }],
+      channelOwners: {},
+      channelAccountOwners: {},
+    });
+    readOpenClawConfigMock.mockResolvedValue({
+      bindings: [
+        { agentId: 'MissingAgent', match: { channel: 'telegram', accountId: 'default' } },
+        { agentId: 'MainAgent', match: { channel: 'telegram' } },
+      ],
+    });
+    parseJsonBodyMock.mockResolvedValue({
+      channelType: 'telegram',
+      accountId: 'telegram-a1b2c3d4',
+      agentId: 'code',
+    });
+
+    const { handleChannelRoutes } = await import('@electron/api/routes/channels');
+    await handleChannelRoutes(
+      { method: 'PUT' } as IncomingMessage,
+      {} as ServerResponse,
+      new URL('http://127.0.0.1:13210/api/channels/binding'),
+      {
+        gatewayManager: {
+          rpc: vi.fn(),
+          getStatus: () => ({ state: 'running' }),
+          debouncedReload: vi.fn(),
+          debouncedRestart: vi.fn(),
+        },
+      } as never,
+    );
+
+    expect(assignChannelAccountToAgentMock).toHaveBeenNthCalledWith(1, 'MainAgent', 'telegram', 'default');
+    expect(assignChannelAccountToAgentMock).toHaveBeenNthCalledWith(2, 'code', 'telegram', 'telegram-a1b2c3d4');
+  });
+
+  it('skips default binding migration when both explicit and legacy owners are stale', async () => {
+    listConfiguredChannelAccountsMock.mockReturnValue({
+      telegram: {
+        defaultAccountId: 'default',
+        accountIds: ['default', 'telegram-a1b2c3d4'],
+      },
+    });
+    listAgentsSnapshotMock.mockResolvedValue({
+      agents: [{ id: 'code', name: 'Code Agent' }],
+      channelOwners: {},
+      channelAccountOwners: {},
+    });
+    readOpenClawConfigMock.mockResolvedValue({
+      bindings: [
+        { agentId: 'MissingDefault', match: { channel: 'telegram', accountId: 'default' } },
+        { agentId: 'MissingLegacy', match: { channel: 'telegram' } },
+      ],
+    });
+    parseJsonBodyMock.mockResolvedValue({
+      channelType: 'telegram',
+      accountId: 'telegram-a1b2c3d4',
+      agentId: 'code',
+    });
+
+    const { handleChannelRoutes } = await import('@electron/api/routes/channels');
+    await handleChannelRoutes(
+      { method: 'PUT' } as IncomingMessage,
+      {} as ServerResponse,
+      new URL('http://127.0.0.1:13210/api/channels/binding'),
+      {
+        gatewayManager: {
+          rpc: vi.fn(),
+          getStatus: () => ({ state: 'running' }),
+          debouncedReload: vi.fn(),
+          debouncedRestart: vi.fn(),
+        },
+      } as never,
+    );
+
+    expect(clearChannelBindingMock).toHaveBeenCalledWith('telegram');
+    expect(assignChannelAccountToAgentMock).toHaveBeenCalledTimes(1);
+    expect(assignChannelAccountToAgentMock).toHaveBeenCalledWith('code', 'telegram', 'telegram-a1b2c3d4');
+  });
+
+  it('converts legacy channel-wide fallback into an explicit default binding when saving a non-default account', async () => {
+    parseJsonBodyMock.mockResolvedValue({
+      channelType: 'telegram',
+      accountId: 'telegram-a1b2c3d4',
+      config: { botToken: 'token', allowedUsers: '123456' },
+    });
+    listAgentsSnapshotMock.mockResolvedValue({
+      agents: [{ id: 'main', name: 'Main' }],
+      channelOwners: { telegram: 'main' },
+      channelAccountOwners: {},
+    });
+    readOpenClawConfigMock.mockResolvedValue({
+      bindings: [
+        { agentId: 'main', match: { channel: 'telegram' } },
+      ],
+    });
+
+    const { handleChannelRoutes } = await import('@electron/api/routes/channels');
+    await handleChannelRoutes(
+      { method: 'POST' } as IncomingMessage,
+      {} as ServerResponse,
+      new URL('http://127.0.0.1:13210/api/channels/config'),
+      {
+        gatewayManager: {
+          rpc: vi.fn(),
+          getStatus: () => ({ state: 'running' }),
+          debouncedReload: vi.fn(),
+          debouncedRestart: vi.fn(),
+        },
+      } as never,
+    );
+
+    expect(saveChannelConfigMock).toHaveBeenCalledWith(
+      'telegram',
+      { botToken: 'token', allowedUsers: '123456' },
+      'telegram-a1b2c3d4',
+    );
+    expect(assignChannelAccountToAgentMock).toHaveBeenCalledWith('main', 'telegram', 'default');
+    expect(clearChannelBindingMock).toHaveBeenCalledWith('telegram');
+    expect(assignChannelAccountToAgentMock).not.toHaveBeenCalledWith('main', 'telegram', 'telegram-a1b2c3d4');
   });
 
   it('keeps channel connected when one account is healthy and another errors', async () => {
@@ -566,6 +920,145 @@ describe('handleChannelRoutes', () => {
     };
     const feishu = payload.channels?.find((entry) => entry.channelType === 'feishu');
     expect(feishu?.accounts.map((entry) => entry.accountId)).toEqual(['default']);
+  });
+
+  it('returns degraded channel health when channels.status times out while gateway is still running', async () => {
+    listConfiguredChannelsMock.mockResolvedValue(['feishu']);
+    listConfiguredChannelAccountsMock.mockResolvedValue({
+      feishu: {
+        defaultAccountId: 'default',
+        accountIds: ['default'],
+      },
+    });
+    readOpenClawConfigMock.mockResolvedValue({
+      channels: {
+        feishu: {
+          defaultAccount: 'default',
+        },
+      },
+    });
+
+    const rpc = vi.fn().mockRejectedValue(new Error('RPC timeout: channels.status'));
+
+    const { handleChannelRoutes } = await import('@electron/api/routes/channels');
+    await handleChannelRoutes(
+      { method: 'GET' } as IncomingMessage,
+      {} as ServerResponse,
+      new URL('http://127.0.0.1:13210/api/channels/accounts'),
+      {
+        gatewayManager: {
+          rpc,
+          getStatus: () => ({ state: 'running' }),
+          getDiagnostics: () => ({ consecutiveHeartbeatMisses: 0, consecutiveRpcFailures: 0 }),
+          debouncedReload: vi.fn(),
+          debouncedRestart: vi.fn(),
+        },
+      } as never,
+    );
+
+    expect(sendJsonMock).toHaveBeenCalledWith(
+      expect.anything(),
+      200,
+      expect.objectContaining({
+        success: true,
+        gatewayHealth: expect.objectContaining({
+          state: 'degraded',
+          reasons: expect.arrayContaining(['channels_status_timeout']),
+        }),
+        channels: [
+          expect.objectContaining({
+            channelType: 'feishu',
+            status: 'degraded',
+            statusReason: 'channels_status_timeout',
+            accounts: [
+              expect.objectContaining({
+                accountId: 'default',
+                status: 'degraded',
+              }),
+            ],
+          }),
+        ],
+      }),
+    );
+  });
+
+  it('keeps channel degraded when only filtered stale runtime accounts carry lastError', async () => {
+    listConfiguredChannelsMock.mockResolvedValue(['feishu']);
+    listConfiguredChannelAccountsMock.mockResolvedValue({
+      feishu: {
+        defaultAccountId: 'default',
+        accountIds: ['default'],
+      },
+    });
+    readOpenClawConfigMock.mockResolvedValue({
+      channels: {
+        feishu: {
+          defaultAccount: 'default',
+        },
+      },
+    });
+
+    const rpc = vi.fn().mockResolvedValue({
+      channels: {
+        feishu: {
+          configured: true,
+        },
+      },
+      channelAccounts: {
+        feishu: [
+          {
+            accountId: 'default',
+            configured: true,
+            connected: true,
+            running: true,
+            linked: false,
+          },
+          {
+            accountId: '2',
+            configured: false,
+            connected: false,
+            running: false,
+            lastError: 'stale runtime session',
+          },
+        ],
+      },
+      channelDefaultAccountId: {
+        feishu: 'default',
+      },
+    });
+
+    const { handleChannelRoutes } = await import('@electron/api/routes/channels');
+    await handleChannelRoutes(
+      { method: 'GET' } as IncomingMessage,
+      {} as ServerResponse,
+      new URL('http://127.0.0.1:13210/api/channels/accounts'),
+      {
+        gatewayManager: {
+          rpc,
+          getStatus: () => ({ state: 'running' }),
+          getDiagnostics: () => ({ consecutiveHeartbeatMisses: 1, consecutiveRpcFailures: 0 }),
+          debouncedReload: vi.fn(),
+          debouncedRestart: vi.fn(),
+        },
+      } as never,
+    );
+
+    expect(sendJsonMock).toHaveBeenCalledWith(
+      expect.anything(),
+      200,
+      expect.objectContaining({
+        success: true,
+        channels: [
+          expect.objectContaining({
+            channelType: 'feishu',
+            status: 'degraded',
+            accounts: [
+              expect.objectContaining({ accountId: 'default', status: 'degraded' }),
+            ],
+          }),
+        ],
+      }),
+    );
   });
 
   it('lists known QQ Bot targets for a configured account', async () => {

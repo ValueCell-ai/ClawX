@@ -21,6 +21,7 @@ import {
 } from './provider-registry';
 import {
   OPENCLAW_PROVIDER_KEY_MOONSHOT,
+  OPENCLAW_PROVIDER_KEY_MOONSHOT_GLOBAL,
   isOAuthProviderType,
   isOpenClawOAuthPluginProviderKey,
 } from './provider-keys';
@@ -849,14 +850,16 @@ function removeLegacyMoonshotKimiSearchConfig(config: Record<string, unknown>): 
 
 function upsertMoonshotWebSearchConfig(
   config: Record<string, unknown>,
+  providerKey: string,
+  baseUrl: string,
   legacyKimi?: Record<string, unknown>,
 ): void {
   const plugins = isPlainRecord(config.plugins)
     ? config.plugins
     : (Array.isArray(config.plugins) ? { load: [...config.plugins] } : {});
   const entries = isPlainRecord(plugins.entries) ? plugins.entries : {};
-  const moonshot = isPlainRecord(entries[OPENCLAW_PROVIDER_KEY_MOONSHOT])
-    ? entries[OPENCLAW_PROVIDER_KEY_MOONSHOT] as Record<string, unknown>
+  const moonshot = isPlainRecord(entries[providerKey])
+    ? entries[providerKey] as Record<string, unknown>
     : {};
   const moonshotConfig = isPlainRecord(moonshot.config) ? moonshot.config as Record<string, unknown> : {};
   const currentWebSearch = isPlainRecord(moonshotConfig.webSearch)
@@ -865,25 +868,27 @@ function upsertMoonshotWebSearchConfig(
 
   const nextWebSearch = { ...(legacyKimi || {}), ...currentWebSearch };
   delete nextWebSearch.apiKey;
-  nextWebSearch.baseUrl = 'https://api.moonshot.cn/v1';
+  nextWebSearch.baseUrl = baseUrl;
 
   moonshotConfig.webSearch = nextWebSearch;
   moonshot.config = moonshotConfig;
-  entries[OPENCLAW_PROVIDER_KEY_MOONSHOT] = moonshot;
+  entries[providerKey] = moonshot;
   plugins.entries = entries;
   config.plugins = plugins;
 }
 
 function ensureMoonshotKimiWebSearchCnBaseUrl(config: Record<string, unknown>, provider: string): void {
-  if (provider !== OPENCLAW_PROVIDER_KEY_MOONSHOT) return;
+  if (provider === OPENCLAW_PROVIDER_KEY_MOONSHOT) {
+    const tools = isPlainRecord(config.tools) ? config.tools : null;
+    const web = tools && isPlainRecord(tools.web) ? tools.web : null;
+    const search = web && isPlainRecord(web.search) ? web.search : null;
+    const legacyKimi = search && isPlainRecord(search.kimi) ? search.kimi : undefined;
 
-  const tools = isPlainRecord(config.tools) ? config.tools : null;
-  const web = tools && isPlainRecord(tools.web) ? tools.web : null;
-  const search = web && isPlainRecord(web.search) ? web.search : null;
-  const legacyKimi = search && isPlainRecord(search.kimi) ? search.kimi : undefined;
-
-  upsertMoonshotWebSearchConfig(config, legacyKimi);
-  removeLegacyMoonshotKimiSearchConfig(config);
+    upsertMoonshotWebSearchConfig(config, OPENCLAW_PROVIDER_KEY_MOONSHOT, 'https://api.moonshot.cn/v1', legacyKimi);
+    removeLegacyMoonshotKimiSearchConfig(config);
+  } else if (provider === OPENCLAW_PROVIDER_KEY_MOONSHOT_GLOBAL) {
+    upsertMoonshotWebSearchConfig(config, OPENCLAW_PROVIDER_KEY_MOONSHOT_GLOBAL, 'https://api.moonshot.ai/v1');
+  }
 }
 
 /**
@@ -1183,6 +1188,18 @@ export async function syncBrowserConfigToOpenClaw(): Promise<void> {
       changed = true;
     }
 
+    // Default ssrfPolicy to allow private network access for enterprise/internal use
+    if (browser.ssrfPolicy == null) {
+      browser.ssrfPolicy = { dangerouslyAllowPrivateNetwork: true };
+      changed = true;
+    } else if (
+      typeof browser.ssrfPolicy === 'object' &&
+      (browser.ssrfPolicy as Record<string, unknown>).dangerouslyAllowPrivateNetwork === undefined
+    ) {
+      (browser.ssrfPolicy as Record<string, unknown>).dangerouslyAllowPrivateNetwork = true;
+      changed = true;
+    }
+
     if (!changed) return;
 
     config.browser = browser;
@@ -1227,6 +1244,102 @@ export async function syncSessionIdleMinutesToOpenClaw(): Promise<void> {
 
     await writeOpenClawJson(config);
     console.log(`Synced session.idleMinutes=${DEFAULT_IDLE_MINUTES} (7d) to openclaw.json`);
+  });
+}
+
+/**
+ * Batch-apply gateway token, browser config, and session idle minutes in a
+ * single config lock + read + write cycle.  Replaces three separate
+ * withConfigLock calls during pre-launch sync.
+ */
+export async function batchSyncConfigFields(token: string): Promise<void> {
+  const DEFAULT_IDLE_MINUTES = 10_080; // 7 days
+
+  return withConfigLock(async () => {
+    const config = await readOpenClawJson();
+    let modified = true;
+
+    // ── Gateway token + controlUi ──
+    const gateway = (
+      config.gateway && typeof config.gateway === 'object'
+        ? { ...(config.gateway as Record<string, unknown>) }
+        : {}
+    ) as Record<string, unknown>;
+
+    const auth = (
+      gateway.auth && typeof gateway.auth === 'object'
+        ? { ...(gateway.auth as Record<string, unknown>) }
+        : {}
+    ) as Record<string, unknown>;
+    auth.mode = 'token';
+    auth.token = token;
+    gateway.auth = auth;
+
+    const controlUi = (
+      gateway.controlUi && typeof gateway.controlUi === 'object'
+        ? { ...(gateway.controlUi as Record<string, unknown>) }
+        : {}
+    ) as Record<string, unknown>;
+    const allowedOrigins = Array.isArray(controlUi.allowedOrigins)
+      ? (controlUi.allowedOrigins as unknown[]).filter((v): v is string => typeof v === 'string')
+      : [];
+    if (!allowedOrigins.includes('file://')) {
+      controlUi.allowedOrigins = [...allowedOrigins, 'file://'];
+    }
+    gateway.controlUi = controlUi;
+    if (!gateway.mode) gateway.mode = 'local';
+    config.gateway = gateway;
+
+    // ── Browser config ──
+    const browser = (
+      config.browser && typeof config.browser === 'object'
+        ? { ...(config.browser as Record<string, unknown>) }
+        : {}
+    ) as Record<string, unknown>;
+    if (browser.enabled === undefined) {
+      browser.enabled = true;
+      config.browser = browser;
+      modified = true;
+    }
+    if (browser.defaultProfile === undefined) {
+      browser.defaultProfile = 'openclaw';
+      config.browser = browser;
+      modified = true;
+    }
+    // Default ssrfPolicy to allow private network access for enterprise/internal use
+    if (browser.ssrfPolicy == null) {
+      browser.ssrfPolicy = { dangerouslyAllowPrivateNetwork: true };
+      config.browser = browser;
+      modified = true;
+    } else if (
+      typeof browser.ssrfPolicy === 'object' &&
+      (browser.ssrfPolicy as Record<string, unknown>).dangerouslyAllowPrivateNetwork === undefined
+    ) {
+      (browser.ssrfPolicy as Record<string, unknown>).dangerouslyAllowPrivateNetwork = true;
+      config.browser = browser;
+      modified = true;
+    }
+
+    // ── Session idle minutes ──
+    const session = (
+      config.session && typeof config.session === 'object'
+        ? { ...(config.session as Record<string, unknown>) }
+        : {}
+    ) as Record<string, unknown>;
+    const hasExplicitSessionConfig = session.idleMinutes !== undefined
+      || session.reset !== undefined
+      || session.resetByType !== undefined
+      || session.resetByChannel !== undefined;
+    if (!hasExplicitSessionConfig) {
+      session.idleMinutes = DEFAULT_IDLE_MINUTES;
+      config.session = session;
+      modified = true;
+    }
+
+    if (modified) {
+      await writeOpenClawJson(config);
+      console.log('Synced gateway token, browser config, and session idle to openclaw.json');
+    }
   });
 }
 
@@ -1461,7 +1574,7 @@ export async function sanitizeOpenClawConfig(): Promise<void> {
       const hadLegacyKimi = Boolean(legacyKimi);
 
       if (legacyKimi) {
-        upsertMoonshotWebSearchConfig(config, legacyKimi);
+        upsertMoonshotWebSearchConfig(config, OPENCLAW_PROVIDER_KEY_MOONSHOT, 'https://api.moonshot.cn/v1', legacyKimi);
         removeLegacyMoonshotKimiSearchConfig(config);
         modified = true;
         console.log('[sanitize] Migrated legacy "tools.web.search.kimi" to "plugins.entries.moonshot.config.webSearch"');
@@ -1546,38 +1659,111 @@ export async function sanitizeOpenClawConfig(): Promise<void> {
         pluginsObj.allow = allowArr;
       }
 
+      // ── acpx legacy config/install cleanup ─────────────────────
+      // Older OpenClaw releases allowed plugins.entries.acpx.config.command
+      // and expectedVersion overrides. Current bundled acpx schema rejects
+      // them, which causes the Gateway to fail validation before startup.
+      // Strip those keys and drop stale installs metadata that still points
+      // at an older bundled OpenClaw tree so the current bundled plugin can
+      // be re-registered cleanly.
+      const acpxEntry = isPlainRecord(pEntries.acpx) ? pEntries.acpx as Record<string, unknown> : null;
+      const acpxConfig = acpxEntry && isPlainRecord(acpxEntry.config)
+        ? acpxEntry.config as Record<string, unknown>
+        : null;
+      if (acpxConfig) {
+        for (const legacyKey of ['command', 'expectedVersion'] as const) {
+          if (legacyKey in acpxConfig) {
+            delete acpxConfig[legacyKey];
+            modified = true;
+            console.log(`[sanitize] Removed legacy plugins.entries.acpx.config.${legacyKey}`);
+          }
+        }
+      }
+
+      const installs = isPlainRecord(pluginsObj.installs) ? pluginsObj.installs as Record<string, unknown> : null;
+      const acpxInstall = installs && isPlainRecord(installs.acpx) ? installs.acpx as Record<string, unknown> : null;
+      if (acpxInstall) {
+        const currentBundledAcpxDir = join(getOpenClawResolvedDir(), 'dist', 'extensions', 'acpx').replace(/\\/g, '/');
+        const sourcePath = typeof acpxInstall.sourcePath === 'string' ? acpxInstall.sourcePath : '';
+        const installPath = typeof acpxInstall.installPath === 'string' ? acpxInstall.installPath : '';
+        const normalizedSourcePath = sourcePath.replace(/\\/g, '/');
+        const normalizedInstallPath = installPath.replace(/\\/g, '/');
+        const pointsAtDifferentBundledTree = [normalizedSourcePath, normalizedInstallPath].some(
+          (candidate) => candidate.includes('/node_modules/.pnpm/openclaw@') && candidate !== currentBundledAcpxDir,
+        );
+        const pointsAtMissingPath = (sourcePath && !(await fileExists(sourcePath)))
+          || (installPath && !(await fileExists(installPath)));
+
+        if (pointsAtDifferentBundledTree || pointsAtMissingPath) {
+          delete installs.acpx;
+          if (Object.keys(installs).length === 0) {
+            delete pluginsObj.installs;
+          }
+          modified = true;
+          console.log('[sanitize] Removed stale plugins.installs.acpx metadata');
+        }
+      }
+
       const installedFeishuId = await resolveInstalledFeishuPluginId();
       const configuredFeishuId =
         FEISHU_PLUGIN_ID_CANDIDATES.find((id) => allowArr.includes(id))
         || FEISHU_PLUGIN_ID_CANDIDATES.find((id) => Boolean(pEntries[id]));
       const canonicalFeishuId = installedFeishuId || configuredFeishuId || FEISHU_PLUGIN_ID_CANDIDATES[0];
 
-      const existingFeishuEntry =
-        FEISHU_PLUGIN_ID_CANDIDATES.map((id) => pEntries[id]).find(Boolean)
-        || pEntries.feishu;
+      // Only add feishu plugin to plugins.allow and plugins.entries when the
+      // feishu channel is actually configured.  If not configured, remove all
+      // feishu-related entries so they don't linger in the config.
+      const feishuChannelSection = (config.channels as Record<string, Record<string, unknown>> | undefined)?.feishu;
+      const isFeishuConfigured = feishuChannelSection
+        && typeof feishuChannelSection === 'object'
+        && feishuChannelSection.enabled !== false
+        && Object.keys(feishuChannelSection).length > 0;
 
-      const normalizedAllow = allowArr.filter(
-        (id) => id !== 'feishu' && !FEISHU_PLUGIN_ID_CANDIDATES.includes(id as typeof FEISHU_PLUGIN_ID_CANDIDATES[number]),
-      );
-      normalizedAllow.push(canonicalFeishuId);
-      if (JSON.stringify(normalizedAllow) !== JSON.stringify(allowArr)) {
-        pluginsObj.allow = normalizedAllow;
-        modified = true;
-        console.log(`[sanitize] Normalized plugins.allow for feishu -> ${canonicalFeishuId}`);
-      }
+      if (isFeishuConfigured) {
+        const existingFeishuEntry =
+          FEISHU_PLUGIN_ID_CANDIDATES.map((id) => pEntries[id]).find(Boolean)
+          || pEntries.feishu;
 
-      if (existingFeishuEntry || !pEntries[canonicalFeishuId]) {
-        pEntries[canonicalFeishuId] = {
-          ...(existingFeishuEntry || {}),
-          ...(pEntries[canonicalFeishuId] || {}),
-          enabled: true,
-        };
-        modified = true;
-      }
-      for (const id of FEISHU_PLUGIN_ID_CANDIDATES) {
-        if (id !== canonicalFeishuId && pEntries[id]) {
-          delete pEntries[id];
+        const normalizedAllow = allowArr.filter(
+          (id) => id !== 'feishu' && !FEISHU_PLUGIN_ID_CANDIDATES.includes(id as typeof FEISHU_PLUGIN_ID_CANDIDATES[number]),
+        );
+        normalizedAllow.push(canonicalFeishuId);
+        if (JSON.stringify(normalizedAllow) !== JSON.stringify(allowArr)) {
+          pluginsObj.allow = normalizedAllow;
           modified = true;
+          console.log(`[sanitize] Normalized plugins.allow for feishu -> ${canonicalFeishuId}`);
+        }
+
+        if (existingFeishuEntry || !pEntries[canonicalFeishuId]) {
+          pEntries[canonicalFeishuId] = {
+            ...(existingFeishuEntry || {}),
+            ...(pEntries[canonicalFeishuId] || {}),
+            enabled: true,
+          };
+          modified = true;
+        }
+        for (const id of FEISHU_PLUGIN_ID_CANDIDATES) {
+          if (id !== canonicalFeishuId && pEntries[id]) {
+            delete pEntries[id];
+            modified = true;
+          }
+        }
+      } else {
+        // Feishu channel not configured — remove all feishu plugin entries
+        const normalizedAllow = allowArr.filter(
+          (id) => id !== 'feishu' && !FEISHU_PLUGIN_ID_CANDIDATES.includes(id as typeof FEISHU_PLUGIN_ID_CANDIDATES[number]),
+        );
+        if (normalizedAllow.length !== allowArr.length) {
+          pluginsObj.allow = normalizedAllow;
+          modified = true;
+          console.log('[sanitize] Removed unconfigured feishu plugin from plugins.allow');
+        }
+        for (const id of [...FEISHU_PLUGIN_ID_CANDIDATES, 'feishu'] as const) {
+          if (pEntries[id]) {
+            delete pEntries[id];
+            modified = true;
+            console.log(`[sanitize] Removed unconfigured feishu plugin entry: ${id}`);
+          }
         }
       }
 
@@ -1660,27 +1846,32 @@ export async function sanitizeOpenClawConfig(): Promise<void> {
       }
 
 
-      // ── Remove bare 'feishu' when canonical feishu plugin is present ──
-      // The Gateway binary automatically adds bare 'feishu' to plugins.allow
-      // because the official plugin registers the 'feishu' channel.
-      // However, there's no plugin with id='feishu', so Gateway validation
-      // fails with "plugin not found: feishu".  Remove it from allow[] and
-      // disable the entries.feishu entry to prevent Gateway from re-adding it.
+      // ── Disable built-in 'feishu' when official openclaw-lark plugin is active ──
+      // OpenClaw ships a built-in 'feishu' extension in dist/extensions/feishu/
+      // that conflicts with the official @larksuite/openclaw-lark plugin
+      // (id: 'openclaw-lark').  When the feishu channel IS configured and the
+      // canonical plugin is NOT the built-in 'feishu' itself, we must:
+      //   1. Remove bare 'feishu' from plugins.allow
+      //   2. Explicitly disable the built-in feishu extension
       const allowArr2 = Array.isArray(pluginsObj.allow) ? pluginsObj.allow as string[] : [];
-      const hasCanonicalFeishu = allowArr2.includes(canonicalFeishuId) || !!pEntries[canonicalFeishuId];
-      if (hasCanonicalFeishu) {
-        // Remove bare 'feishu' from plugins.allow
-        const bareFeishuIdx = allowArr2.indexOf('feishu');
-        if (bareFeishuIdx !== -1) {
-          allowArr2.splice(bareFeishuIdx, 1);
-          console.log('[sanitize] Removed bare "feishu" from plugins.allow (feishu plugin is configured)');
-          modified = true;
-        }
-        // Disable bare 'feishu' in plugins.entries so Gateway won't re-add it
-        if (pEntries.feishu) {
-          if (pEntries.feishu.enabled !== false) {
-            pEntries.feishu.enabled = false;
-            console.log('[sanitize] Disabled bare plugins.entries.feishu (feishu plugin is configured)');
+      if (isFeishuConfigured) {
+        const hasCanonicalFeishu = allowArr2.includes(canonicalFeishuId) || !!pEntries[canonicalFeishuId];
+        if (hasCanonicalFeishu && canonicalFeishuId !== 'feishu') {
+          // Remove bare 'feishu' from plugins.allow
+          const bareFeishuIdx = allowArr2.indexOf('feishu');
+          if (bareFeishuIdx !== -1) {
+            allowArr2.splice(bareFeishuIdx, 1);
+            console.log('[sanitize] Removed bare "feishu" from plugins.allow (openclaw-lark plugin is configured)');
+            modified = true;
+          }
+          // Explicitly disable the built-in feishu extension so it doesn't
+          // conflict with the official openclaw-lark plugin at runtime.
+          // Simply deleting the entry is NOT sufficient — the built-in
+          // extension in dist/extensions/feishu/ (enabledByDefault: true) will
+          // still load unless explicitly marked as disabled.
+          if (!pEntries.feishu || (pEntries.feishu as Record<string, unknown>).enabled !== false) {
+            pEntries.feishu = { enabled: false };
+            console.log('[sanitize] Disabled built-in feishu plugin (openclaw-lark plugin is configured)');
             modified = true;
           }
         }
@@ -1736,6 +1927,14 @@ export async function sanitizeOpenClawConfig(): Promise<void> {
       // allowlist because they were excluded from externalPluginIds above.
       if (nextAllow.length > 0) {
         for (const pluginId of bundled.enabledByDefault) {
+          // When feishu is not configured at all, or the official
+          // openclaw-lark plugin replaces the built-in 'feishu' extension,
+          // skip re-adding 'feishu' here — otherwise the enabledByDefault
+          // logic undoes the cleanup performed above and the built-in
+          // extension keeps reappearing in plugins.allow.
+          if (pluginId === 'feishu' && (!isFeishuConfigured || canonicalFeishuId !== 'feishu')) {
+            continue;
+          }
           if (!nextAllow.includes(pluginId)) {
             nextAllow.push(pluginId);
           }
@@ -1775,49 +1974,42 @@ export async function sanitizeOpenClawConfig(): Promise<void> {
     // credentials from the top level of `channels.<type>`.  Mirror them
     // there so the runtime can discover them.
     //
-    // Strict-schema channels (e.g. dingtalk, additionalProperties:false)
-    // reject the `accounts` / `defaultAccount` keys entirely — strip them
-    // so the Gateway doesn't crash on startup.
+    // Channels whose top-level schema (additionalProperties:false) does NOT
+    // include `defaultAccount` but DOES include `accounts`.  Strip only
+    // `defaultAccount` to allow multi-account support.
     const channelsObj = config.channels as Record<string, Record<string, unknown>> | undefined;
-    const CHANNELS_EXCLUDING_TOP_LEVEL_MIRROR = new Set(['dingtalk']);
+    const CHANNELS_OMIT_DEFAULT_ACCOUNT_KEY = new Set(['dingtalk']);
 
     if (channelsObj && typeof channelsObj === 'object') {
       for (const [channelType, section] of Object.entries(channelsObj)) {
         if (!section || typeof section !== 'object') continue;
 
-        if (CHANNELS_EXCLUDING_TOP_LEVEL_MIRROR.has(channelType)) {
-          // Strict-schema channel: strip `accounts` and `defaultAccount`.
-          // Credentials should live flat at the channel root.
-          if ('accounts' in section) {
-            delete section['accounts'];
-            modified = true;
-            console.log(`[sanitize] Removed incompatible 'accounts' from channels.${channelType}`);
+        // Channels that accept accounts but not defaultAccount:
+        // strip defaultAccount only.
+        if (CHANNELS_OMIT_DEFAULT_ACCOUNT_KEY.has(channelType) && 'defaultAccount' in section) {
+          delete section['defaultAccount'];
+          modified = true;
+          console.log(`[sanitize] Removed incompatible 'defaultAccount' from channels.${channelType}`);
+        }
+
+        // Mirror missing keys from default account to top level.
+        const accounts = section.accounts as Record<string, Record<string, unknown>> | undefined;
+        const defaultAccountId =
+          typeof section.defaultAccount === 'string' && section.defaultAccount.trim()
+              ? section.defaultAccount
+              : 'default';
+        const defaultAccountData = accounts?.[defaultAccountId] ?? accounts?.['default'];
+        if (!defaultAccountData || typeof defaultAccountData !== 'object') continue;
+        let mirrored = false;
+        for (const [key, value] of Object.entries(defaultAccountData)) {
+          if (!(key in section)) {
+            section[key] = value;
+            mirrored = true;
           }
-          if ('defaultAccount' in section) {
-            delete section['defaultAccount'];
-            modified = true;
-            console.log(`[sanitize] Removed incompatible 'defaultAccount' from channels.${channelType}`);
-          }
-        } else {
-          // Normal channel: mirror missing keys from default account to top level.
-          const accounts = section.accounts as Record<string, Record<string, unknown>> | undefined;
-          const defaultAccountId =
-            typeof section.defaultAccount === 'string' && section.defaultAccount.trim()
-                ? section.defaultAccount
-                : 'default';
-          const defaultAccountData = accounts?.[defaultAccountId] ?? accounts?.['default'];
-          if (!defaultAccountData || typeof defaultAccountData !== 'object') continue;
-          let mirrored = false;
-          for (const [key, value] of Object.entries(defaultAccountData)) {
-            if (!(key in section)) {
-              section[key] = value;
-              mirrored = true;
-            }
-          }
-          if (mirrored) {
-            modified = true;
-            console.log(`[sanitize] Mirrored ${channelType} default account credentials to top-level channels.${channelType}`);
-          }
+        }
+        if (mirrored) {
+          modified = true;
+          console.log(`[sanitize] Mirrored ${channelType} default account credentials to top-level channels.${channelType}`);
         }
       }
     }

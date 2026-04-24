@@ -29,6 +29,7 @@
         "taskNamePlaceholder": "例：朝のブリーフィング",
         "message": "メッセージ / プロンプト",
         "messagePlaceholder": "AIに何をさせますか？ 例：今日のニュースと天気のまとめを作成",
+        "agent": "エージェント",
         "schedule": "スケジュール",
         "cronPlaceholder": "Cron式（例：0 9 * * *）",
         "usePresets": "プリセットを使用",

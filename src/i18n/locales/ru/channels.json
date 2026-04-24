@@ -181,25 +181,12 @@
                 "clientSecret": {
                     "label": "Client Secret (AppSecret)",
                     "placeholder": "Секрет вашего приложения"
-                },
-                "robotCode": {
-                    "label": "Robot Code (опционально)",
-                    "placeholder": "Обычно совпадает с Client ID"
-                },
-                "corpId": {
-                    "label": "Corp ID (опционально)",
-                    "placeholder": "dingxxxxxx"
-                },
-                "agentId": {
-                    "label": "Agent ID (опционально)",
-                    "placeholder": "123456789"
                 }
             },
             "instructions": [
                 "Установите и включите плагин dingtalk в OpenClaw",
                 "Создайте внутреннее приложение DingTalk и включите режим Stream",
-                "Заполните Client ID и Client Secret (обязательно)",
-                "Заполните Robot Code / Corp ID / Agent ID, если ваша настройка требует этого"
+                "Заполните Client ID (AppKey) и Client Secret (AppSecret)"
             ]
         },
         "signal": {

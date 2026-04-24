@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  normalizeProviderApiKeyInput,
   PROVIDER_TYPES,
   PROVIDER_TYPE_INFO,
   getProviderDocsUrl,
@@ -171,6 +172,7 @@ describe('provider metadata', () => {
   });
 
   it('normalizes provider API keys for save flow', () => {
+    expect(normalizeProviderApiKeyInput('  sk-test \n')).toBe('sk-test');
     expect(resolveProviderApiKeyForSave('ollama', '')).toBe('ollama-local');
     expect(resolveProviderApiKeyForSave('ollama', '   ')).toBe('ollama-local');
     expect(resolveProviderApiKeyForSave('ollama', 'real-key')).toBe('real-key');

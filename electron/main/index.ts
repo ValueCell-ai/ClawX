@@ -16,6 +16,10 @@ import { warmupNetworkOptimization } from '../utils/uv-env';
 import { initTelemetry } from '../utils/telemetry';
 
 import { ClawHubService } from '../gateway/clawhub';
+import { extensionRegistry } from '../extensions/registry';
+import { loadExtensionsFromManifest } from '../extensions/loader';
+import { registerAllBuiltinExtensions } from '../extensions/builtin';
+import { loadExternalMainExtensions } from '../extensions/_ext-bridge.generated';
 import { ensureClawXContext, repairClawXOnlyBootstrapFiles } from '../utils/openclaw-workspace';
 import { autoInstallCliIfNeeded, generateCompletionCache, installCompletionToProfile } from '../utils/openclaw-cli';
 import { isQuitting, setQuitting } from './app-state';
@@ -36,7 +40,7 @@ import { createSignalQuitHandler } from './signal-quit';
 import { acquireProcessInstanceFileLock } from './process-instance-lock';
 import { getSetting } from '../utils/store';
 import { ensureBuiltinSkillsInstalled, ensurePreinstalledSkillsInstalled } from '../utils/skill-config';
-import { ensureAllBundledPluginsInstalled } from '../utils/plugin-install';
+
 import { startHostApiServer } from '../api/server';
 import { HostEventBus } from '../api/event-bus';
 import { deviceOAuthManager } from '../utils/device-oauth';
@@ -340,6 +344,19 @@ async function initialize(): Promise<void> {
     mainWindow: window,
   });
 
+  // Initialize extension system
+  await extensionRegistry.initialize({
+    gatewayManager,
+    eventBus: hostEventBus,
+    getMainWindow: () => mainWindow,
+  });
+
+  // Wire marketplace provider to ClawHubService if an extension provides one
+  const marketplaceProvider = extensionRegistry.getMarketplaceProvider();
+  if (marketplaceProvider) {
+    clawHubService.setMarketplaceProvider(marketplaceProvider);
+  }
+
   // Register update handlers
   registerUpdateHandlers(appUpdater, window);
 
@@ -372,14 +389,10 @@ async function initialize(): Promise<void> {
     });
   }
 
-  // Pre-deploy/upgrade bundled OpenClaw plugins (dingtalk, wecom, feishu, wechat)
-  // to ~/.openclaw/extensions/ so they are always up-to-date after an app update.
-  // Note: qqbot was moved to a built-in channel in OpenClaw 3.31.
-  if (!isE2EMode) {
-    void ensureAllBundledPluginsInstalled().catch((error) => {
-      logger.warn('Failed to install/upgrade bundled plugins:', error);
-    });
-  }
+  // Plugin installation is now configuration-driven:
+  // - When a channel is added via UI: ensureXxxPluginInstalled() in IPC handlers
+  // - When Gateway starts: ensureConfiguredPluginsUpgraded() in config-sync.ts
+  // No need to pre-install all bundled plugins at app startup.
 
   // Bridge gateway and host-side events before any auto-start logic runs, so
   // renderer subscribers observe the full startup lifecycle.
@@ -521,6 +534,13 @@ if (gotTheLock) {
   clawHubService = new ClawHubService();
   hostEventBus = new HostEventBus();
 
+  // Register builtin extensions and load manifest
+  registerAllBuiltinExtensions();
+  loadExternalMainExtensions();
+  void loadExtensionsFromManifest().catch((err) => {
+    logger.warn('Failed to load extensions from manifest:', err);
+  });
+
   // When a second instance is launched, focus the existing window instead.
   app.on('second-instance', () => {
     logger.info('Second ClawX instance detected; redirecting to the existing window');
@@ -578,6 +598,7 @@ if (gotTheLock) {
 
     hostEventBus.closeAll();
     hostApiServer?.close();
+    void extensionRegistry.teardownAll();
 
     const stopPromise = gatewayManager.stop().catch((err) => {
       logger.warn('gatewayManager.stop() error during quit:', err);

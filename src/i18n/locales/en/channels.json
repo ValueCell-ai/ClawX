@@ -62,6 +62,7 @@
         "connectionStatus": {
             "connected": "Connected",
             "connecting": "Connecting",
+            "degraded": "Degraded",
             "disconnected": "Disconnected",
             "error": "Error"
         },
@@ -98,6 +99,30 @@
         "updateAndReconnect": "Update & Reconnect",
         "saveAndConnect": "Save & Connect",
         "envVar": "Environment Variable: {{var}}"
+    },
+    "health": {
+        "state": {
+            "degraded": "Gateway degraded",
+            "unresponsive": "Gateway unresponsive"
+        },
+        "reasons": {
+            "gateway_degraded": "Gateway heartbeat recently degraded.",
+            "gateway_unresponsive": "Gateway control plane appears unresponsive.",
+            "channels_status_timeout": "Channel runtime status probe timed out.",
+            "rpc_timeout": "Recent Gateway RPC calls timed out.",
+            "gateway_not_running": "Gateway is not running.",
+            "gateway_error": "Gateway is in an error state.",
+            "runtime_error": "Channel runtime reported an error."
+        },
+        "restartGateway": "Restart Gateway",
+        "copyDiagnostics": "Copy Diagnostics",
+        "viewDiagnostics": "View Diagnostics",
+        "hideDiagnostics": "Hide Diagnostics",
+        "diagnosticsTitle": "Gateway Diagnostics Snapshot",
+        "diagnosticsCopied": "Diagnostics copied to clipboard",
+        "diagnosticsCopyFailed": "Failed to collect diagnostics: {{error}}",
+        "restartTriggered": "Gateway restart requested",
+        "restartFailed": "Failed to restart gateway: {{error}}"
     },
     "meta": {
         "telegram": {
@@ -181,25 +206,12 @@
                 "clientSecret": {
                     "label": "Client Secret (AppSecret)",
                     "placeholder": "Your app secret"
-                },
-                "robotCode": {
-                    "label": "Robot Code (optional)",
-                    "placeholder": "Usually same as Client ID"
-                },
-                "corpId": {
-                    "label": "Corp ID (optional)",
-                    "placeholder": "dingxxxxxx"
-                },
-                "agentId": {
-                    "label": "Agent ID (optional)",
-                    "placeholder": "123456789"
                 }
             },
             "instructions": [
                 "Install and enable the dingtalk plugin in OpenClaw",
                 "Create a DingTalk internal app and enable Stream mode",
-                "Fill in Client ID and Client Secret (required)",
-                "Fill in Robot Code / Corp ID / Agent ID if your setup requires them"
+                "Fill in Client ID (AppKey) and Client Secret (AppSecret)"
             ]
         },
         "signal": {

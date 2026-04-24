@@ -17,6 +17,7 @@ const LOAD_SESSIONS_MIN_INTERVAL_MS = 1_200;
 const LOAD_HISTORY_MIN_INTERVAL_MS = 800;
 let lastLoadSessionsAt = 0;
 let lastLoadHistoryAt = 0;
+let cronRepairTriggeredThisSession = false;
 
 interface GatewayHealth {
   ok: boolean;
@@ -67,15 +68,28 @@ function buildGatewayEventDedupeKey(event: Record<string, unknown>): string | nu
   return null;
 }
 
+function getMessageIdDedupeKey(event: Record<string, unknown>): string | null {
+  const state = event.state != null ? String(event.state) : '';
+  if (state !== 'final') return null;
+  const message = event.message;
+  if (message && typeof message === 'object') {
+    const msgId = (message as Record<string, unknown>).id;
+    if (msgId != null) return `final-msgid|${String(msgId)}`;
+  }
+  return null;
+}
+
 function shouldProcessGatewayEvent(event: Record<string, unknown>): boolean {
   const key = buildGatewayEventDedupeKey(event);
-  if (!key) return true;
+  const msgKey = getMessageIdDedupeKey(event);
+  if (!key && !msgKey) return true;
   const now = Date.now();
   pruneGatewayEventDedupe(now);
-  if (gatewayEventDedupe.has(key)) {
+  if ((key && gatewayEventDedupe.has(key)) || (msgKey && gatewayEventDedupe.has(msgKey))) {
     return false;
   }
-  gatewayEventDedupe.set(key, now);
+  if (key) gatewayEventDedupe.set(key, now);
+  if (msgKey) gatewayEventDedupe.set(msgKey, now);
   return true;
 }
 
@@ -83,6 +97,9 @@ function maybeLoadSessions(
   state: { loadSessions: () => Promise<void> },
   force = false,
 ): void {
+  const { status } = useGatewayStore.getState();
+  if (status.gatewayReady === false) return;
+
   const now = Date.now();
   if (!force && now - lastLoadSessionsAt < LOAD_SESSIONS_MIN_INTERVAL_MS) return;
   lastLoadSessionsAt = now;
@@ -249,6 +266,17 @@ export const useGatewayStore = create<GatewayState>((set, get) => ({
           const unsubscribers: Array<() => void> = [];
           unsubscribers.push(subscribeHostEvent<GatewayStatus>('gateway:status', (payload) => {
             set({ status: payload });
+
+            // Trigger cron repair when gateway becomes ready
+            if (!cronRepairTriggeredThisSession && payload.state === 'running') {
+              cronRepairTriggeredThisSession = true;
+              // Fire-and-forget: fetch cron jobs to trigger repair logic in background
+              import('./cron')
+                .then(({ useCronStore }) => {
+                  useCronStore.getState().fetchJobs();
+                })
+                .catch(() => {});
+            }
           }));
           unsubscribers.push(subscribeHostEvent<{ message?: string }>('gateway:error', (payload) => {
             set({ lastError: payload.message || 'Gateway error' });

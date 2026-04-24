@@ -280,29 +280,33 @@ function upsertBindingsForChannel(
   agentId: string | null,
   accountId?: string,
 ): BindingConfig[] | undefined {
-  const normalizedAgentId = agentId ? normalizeAgentIdForBinding(agentId) : '';
+  const normalizedAccountId = accountId?.trim() || '';
   const nextBindings = Array.isArray(bindings)
     ? [...bindings as BindingConfig[]].filter((binding) => {
       if (!isChannelBinding(binding)) return true;
       if (binding.match?.channel !== channelType) return true;
-      // Keep a single account binding per (agent, channelType). Rebinding to
-      // another account should replace the previous one.
-      if (normalizedAgentId && normalizeAgentIdForBinding(binding.agentId || '') === normalizedAgentId) {
-        return false;
+
+      const bindingAccountId = typeof binding.match?.accountId === 'string'
+        ? binding.match.accountId.trim()
+        : '';
+
+      // Account-scoped updates must only replace the exact account owner.
+      // Otherwise rebinding one Feishu/Lark account can silently drop a
+      // sibling account binding on the same agent, which looks like routing
+      // or model config "drift" in multi-account setups.
+      if (normalizedAccountId) {
+        return bindingAccountId !== normalizedAccountId;
       }
-      // Only remove binding that matches the exact accountId scope
-      if (accountId) {
-        return binding.match?.accountId !== accountId;
-      }
+
       // No accountId: remove channel-wide binding (legacy)
-      return Boolean(binding.match?.accountId);
+      return Boolean(bindingAccountId);
     })
     : [];
 
   if (agentId) {
     const match: BindingMatch = { channel: channelType };
-    if (accountId) {
-      match.accountId = accountId;
+    if (normalizedAccountId) {
+      match.accountId = normalizedAccountId;
     }
     nextBindings.push({ agentId, match });
   }
@@ -549,6 +553,25 @@ export async function listConfiguredAgentIds(): Promise<string[]> {
   const { entries } = normalizeAgentsConfig(config);
   const ids = [...new Set(entries.map((entry) => entry.id.trim()).filter(Boolean))];
   return ids.length > 0 ? ids : [MAIN_AGENT_ID];
+}
+
+/**
+ * Resolve agentId from channel and accountId using bindings.
+ * Returns the agentId if found, or null if no binding exists.
+ */
+export async function resolveAgentIdFromChannel(channel: string, accountId?: string): Promise<string | null> {
+  const config = await readOpenClawConfig() as AgentConfigDocument;
+  const { channelToAgent, accountToAgent } = getChannelBindingMap(config.bindings);
+
+  // First try account-specific binding
+  if (accountId) {
+    const agentId = accountToAgent.get(`${channel}:${accountId}`);
+    if (agentId) return agentId;
+  }
+
+  // Fallback to channel-only binding
+  const agentId = channelToAgent.get(channel);
+  return agentId ?? null;
 }
 
 export async function createAgent(

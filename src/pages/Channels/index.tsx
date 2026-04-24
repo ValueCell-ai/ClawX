@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import { RefreshCw, Trash2, AlertCircle, Plus } from 'lucide-react';
+import { RefreshCw, Trash2, AlertCircle, Plus, Copy, RotateCcw, ChevronDown, ChevronUp } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
@@ -33,7 +33,8 @@ interface ChannelAccountItem {
   accountId: string;
   name: string;
   configured: boolean;
-  status: 'connected' | 'connecting' | 'disconnected' | 'error';
+  status: 'connected' | 'connecting' | 'degraded' | 'disconnected' | 'error';
+  statusReason?: string;
   lastError?: string;
   isDefault: boolean;
   agentId?: string;
@@ -42,8 +43,49 @@ interface ChannelAccountItem {
 interface ChannelGroupItem {
   channelType: string;
   defaultAccountId: string;
-  status: 'connected' | 'connecting' | 'disconnected' | 'error';
+  status: 'connected' | 'connecting' | 'degraded' | 'disconnected' | 'error';
+  statusReason?: string;
   accounts: ChannelAccountItem[];
+}
+
+interface GatewayHealthSummary {
+  state: 'healthy' | 'degraded' | 'unresponsive';
+  reasons: string[];
+  consecutiveHeartbeatMisses: number;
+  lastAliveAt?: number;
+  lastRpcSuccessAt?: number;
+  lastRpcFailureAt?: number;
+  lastRpcFailureMethod?: string;
+  lastChannelsStatusOkAt?: number;
+  lastChannelsStatusFailureAt?: number;
+}
+
+interface GatewayDiagnosticSnapshot {
+  capturedAt: number;
+  platform: string;
+  gateway: GatewayHealthSummary & Record<string, unknown>;
+  channels: ChannelGroupItem[];
+  clawxLogTail: string;
+  gatewayLogTail: string;
+  gatewayErrLogTail: string;
+}
+
+function isGatewayDiagnosticSnapshot(value: unknown): value is GatewayDiagnosticSnapshot {
+  if (!value || typeof value !== 'object') {
+    return false;
+  }
+
+  const snapshot = value as Record<string, unknown>;
+  return (
+    typeof snapshot.capturedAt === 'number'
+    && typeof snapshot.platform === 'string'
+    && typeof snapshot.gateway === 'object'
+    && snapshot.gateway !== null
+    && Array.isArray(snapshot.channels)
+    && typeof snapshot.clawxLogTail === 'string'
+    && typeof snapshot.gatewayLogTail === 'string'
+    && typeof snapshot.gatewayErrLogTail === 'string'
+  );
 }
 
 interface AgentItem {
@@ -55,6 +97,12 @@ interface DeleteTarget {
   channelType: string;
   accountId?: string;
 }
+
+type FetchPageDataOptions = {
+  probe?: boolean;
+  configOnly?: boolean;
+  forceAgentsRefresh?: boolean;
+};
 
 function removeDeletedTarget(groups: ChannelGroupItem[], target: DeleteTarget): ChannelGroupItem[] {
   if (target.accountId) {
@@ -72,6 +120,12 @@ function removeDeletedTarget(groups: ChannelGroupItem[], target: DeleteTarget): 
   return groups.filter((group) => group.channelType !== target.channelType);
 }
 
+const DEFAULT_GATEWAY_HEALTH: GatewayHealthSummary = {
+  state: 'healthy',
+  reasons: [],
+  consecutiveHeartbeatMisses: 0,
+};
+
 export function Channels() {
   const { t } = useTranslation('channels');
   const gatewayStatus = useGatewayStore((state) => state.status);
@@ -81,6 +135,10 @@ export function Channels() {
   const [error, setError] = useState<string | null>(null);
   const [channelGroups, setChannelGroups] = useState<ChannelGroupItem[]>([]);
   const [agents, setAgents] = useState<AgentItem[]>([]);
+  const [gatewayHealth, setGatewayHealth] = useState<GatewayHealthSummary>(DEFAULT_GATEWAY_HEALTH);
+  const [diagnosticsSnapshot, setDiagnosticsSnapshot] = useState<GatewayDiagnosticSnapshot | null>(null);
+  const [showDiagnostics, setShowDiagnostics] = useState(false);
+  const [diagnosticsLoading, setDiagnosticsLoading] = useState(false);
   const [showConfigModal, setShowConfigModal] = useState(false);
   const [selectedChannelType, setSelectedChannelType] = useState<ChannelType | null>(null);
   const [selectedAccountId, setSelectedAccountId] = useState<string | undefined>(undefined);
@@ -89,6 +147,11 @@ export function Channels() {
   const [existingAccountIdsForModal, setExistingAccountIdsForModal] = useState<string[]>([]);
   const [initialConfigValuesForModal, setInitialConfigValuesForModal] = useState<Record<string, string> | undefined>(undefined);
   const [deleteTarget, setDeleteTarget] = useState<DeleteTarget | null>(null);
+  const convergenceRefreshTimersRef = useRef<number[]>([]);
+  const fetchInFlightRef = useRef(false);
+  const queuedFetchOptionsRef = useRef<FetchPageDataOptions | null>(null);
+  const agentsFetchInFlightRef = useRef<Promise<void> | null>(null);
+  const hasLoadedAgentsRef = useRef(false);
 
   const displayedChannelTypes = getPrimaryChannels();
   const visibleChannelGroups = channelGroups;
@@ -104,42 +167,149 @@ export function Channels() {
   const agentsRef = useRef(agents);
   agentsRef.current = agents;
 
-  const fetchPageData = useCallback(async () => {
+  const ensureAgentsLoaded = useCallback(async () => {
+    if (hasLoadedAgentsRef.current) return;
+    if (agentsFetchInFlightRef.current) {
+      await agentsFetchInFlightRef.current;
+      return;
+    }
+
+    agentsFetchInFlightRef.current = (async () => {
+      try {
+        const agentsRes = await hostApiFetch<{ success: boolean; agents?: AgentItem[]; error?: string }>('/api/agents');
+        if (!agentsRes.success) {
+          throw new Error(agentsRes.error || 'Failed to load agents');
+        }
+        setAgents(agentsRes.agents || []);
+        hasLoadedAgentsRef.current = true;
+      } catch (agentsError) {
+        console.warn(`[channels-ui] load agents failed error=${String(agentsError)}`);
+      } finally {
+        agentsFetchInFlightRef.current = null;
+      }
+    })();
+
+    await agentsFetchInFlightRef.current;
+  }, []);
+
+  const mergeFetchOptions = (
+    base: FetchPageDataOptions | null,
+    incoming: FetchPageDataOptions | undefined,
+  ): FetchPageDataOptions => {
+    if (!base) return incoming ?? {};
+    if (!incoming) return base;
+    return {
+      probe: Boolean(base?.probe) || Boolean(incoming?.probe),
+      // If either request needs runtime data, do not keep config-only mode.
+      configOnly: Boolean(base?.configOnly) && Boolean(incoming?.configOnly),
+      forceAgentsRefresh: Boolean(base?.forceAgentsRefresh) || Boolean(incoming?.forceAgentsRefresh),
+    };
+  };
+
+  const fetchPageData = useCallback(async (options?: FetchPageDataOptions) => {
+    if (fetchInFlightRef.current) {
+      queuedFetchOptionsRef.current = mergeFetchOptions(queuedFetchOptionsRef.current, options);
+      return;
+    }
+    fetchInFlightRef.current = true;
+    const startedAt = Date.now();
+    const probe = options?.probe === true;
+    const configOnly = options?.configOnly === true;
+    console.info(`[channels-ui] fetch start mode=${configOnly ? 'config' : 'runtime'} probe=${probe ? '1' : '0'}`);
     // Only show loading spinner on first load (stale-while-revalidate).
     const hasData = channelGroupsRef.current.length > 0 || agentsRef.current.length > 0;
     if (!hasData) {
       setLoading(true);
     }
     setError(null);
+    if (options?.forceAgentsRefresh) {
+      hasLoadedAgentsRef.current = false;
+    }
+    void ensureAgentsLoaded();
     try {
-      const [channelsRes, agentsRes] = await Promise.all([
-        hostApiFetch<{ success: boolean; channels?: ChannelGroupItem[]; error?: string }>('/api/channels/accounts'),
-        hostApiFetch<{ success: boolean; agents?: AgentItem[]; error?: string }>('/api/agents'),
-      ]);
+      const channelsPath = configOnly
+        ? '/api/channels/accounts?mode=config'
+        : options?.probe
+          ? '/api/channels/accounts?probe=1'
+          : '/api/channels/accounts';
+      const channelsRes = await hostApiFetch<{ success: boolean; channels?: ChannelGroupItem[]; error?: string }>(
+        channelsPath
+      );
 
-      if (!channelsRes.success) {
-        throw new Error(channelsRes.error || 'Failed to load channels');
+      type ChannelsResponse = {
+        success: boolean;
+        channels?: ChannelGroupItem[];
+        gatewayHealth?: GatewayHealthSummary;
+        error?: string;
+      };
+      const channelsPayload = channelsRes as ChannelsResponse;
+
+      if (!channelsPayload.success) {
+        throw new Error(channelsPayload.error || 'Failed to load channels');
       }
 
-      if (!agentsRes.success) {
-        throw new Error(agentsRes.error || 'Failed to load agents');
-      }
-
-      setChannelGroups(channelsRes.channels || []);
-      setAgents(agentsRes.agents || []);
+      setChannelGroups(channelsPayload.channels || []);
+      setGatewayHealth(channelsPayload.gatewayHealth || DEFAULT_GATEWAY_HEALTH);
+      setDiagnosticsSnapshot(null);
+      setShowDiagnostics(false);
+      console.info(
+        `[channels-ui] fetch ok mode=${configOnly ? 'config' : 'runtime'} probe=${probe ? '1' : '0'} elapsedMs=${Date.now() - startedAt} view=${(channelsPayload.channels || []).map((item) => `${item.channelType}:${item.status}`).join(',')}`
+      );
     } catch (fetchError) {
       // Preserve previous data on error — don't clear channelGroups/agents.
       setError(String(fetchError));
+      console.warn(
+        `[channels-ui] fetch fail mode=${configOnly ? 'config' : 'runtime'} probe=${probe ? '1' : '0'} elapsedMs=${Date.now() - startedAt} error=${String(fetchError)}`
+      );
     } finally {
+      fetchInFlightRef.current = false;
       setLoading(false);
+      const queued = queuedFetchOptionsRef.current;
+      if (queued) {
+        queuedFetchOptionsRef.current = null;
+        void fetchPageData(queued);
+      }
     }
   // Stable reference — reads state via refs, no deps needed.
    
+  }, [ensureAgentsLoaded]);
+
+  const clearConvergenceRefreshTimers = useCallback(() => {
+    convergenceRefreshTimersRef.current.forEach((timerId) => {
+      window.clearTimeout(timerId);
+    });
+    convergenceRefreshTimersRef.current = [];
   }, []);
 
+  const scheduleConvergenceRefresh = useCallback(() => {
+    clearConvergenceRefreshTimers();
+    // Channel adapters can take time to reconnect after gateway restart.
+    // First few rounds use probe=true to force runtime connectivity checks,
+    // then fall back to cached pulls to reduce load.
+    [
+      { delay: 1200, probe: true },
+      { delay: 2600, probe: false },
+      { delay: 4500, probe: false },
+      { delay: 7000, probe: false },
+      { delay: 10500, probe: false },
+    ].forEach(({ delay, probe }) => {
+      const timerId = window.setTimeout(() => {
+        void fetchPageData({ probe });
+      }, delay);
+      convergenceRefreshTimersRef.current.push(timerId);
+    });
+  }, [clearConvergenceRefreshTimers, fetchPageData]);
+
   useEffect(() => {
+    void fetchPageData({ configOnly: true });
     void fetchPageData();
   }, [fetchPageData]);
+
+  useEffect(() => {
+    return () => {
+      clearConvergenceRefreshTimers();
+    };
+  }, [clearConvergenceRefreshTimers]);
 
   useEffect(() => {
     // Throttle channel-status events to avoid flooding fetchPageData during AI tasks.
@@ -176,8 +346,9 @@ export function Channels() {
 
     if (previousGatewayState !== 'running' && gatewayStatus.state === 'running') {
       void fetchPageData();
+      scheduleConvergenceRefresh();
     }
-  }, [fetchPageData, gatewayStatus.state]);
+  }, [fetchPageData, gatewayStatus.state, scheduleConvergenceRefresh]);
 
   const configuredTypes = useMemo(
     () => visibleChannelGroups.map((group) => group.channelType),
@@ -199,8 +370,90 @@ export function Channels() {
   const unsupportedGroups = displayedChannelTypes.filter((type) => !configuredTypes.includes(type));
 
   const handleRefresh = () => {
-    void fetchPageData();
+    void fetchPageData({ probe: true, forceAgentsRefresh: true });
   };
+
+  const fetchDiagnosticsSnapshot = useCallback(async (): Promise<GatewayDiagnosticSnapshot> => {
+    const response = await hostApiFetch<unknown>('/api/diagnostics/gateway-snapshot');
+    if (response && typeof response === 'object') {
+      const payload = response as Record<string, unknown>;
+      if (payload.success === false || typeof payload.error === 'string') {
+        throw new Error(typeof payload.error === 'string' ? payload.error : 'Failed to fetch gateway diagnostics snapshot');
+      }
+    }
+    if (!isGatewayDiagnosticSnapshot(response)) {
+      throw new Error('Invalid gateway diagnostics snapshot response');
+    }
+    const snapshot = response;
+    setDiagnosticsSnapshot(snapshot);
+    return snapshot;
+  }, []);
+
+  const handleRestartGateway = async () => {
+    try {
+      const result = await hostApiFetch<{ success?: boolean; error?: string }>('/api/gateway/restart', {
+        method: 'POST',
+      });
+      if (result?.success !== true) {
+        throw new Error(result?.error || 'Failed to restart gateway');
+      }
+      setDiagnosticsSnapshot(null);
+      setShowDiagnostics(false);
+      toast.success(t('health.restartTriggered'));
+      void fetchPageData({ probe: true });
+    } catch (restartError) {
+      toast.error(t('health.restartFailed', { error: String(restartError) }));
+    }
+  };
+
+  const handleCopyDiagnostics = async () => {
+    setDiagnosticsLoading(true);
+    try {
+      const snapshot = await fetchDiagnosticsSnapshot();
+      await navigator.clipboard.writeText(JSON.stringify(snapshot, null, 2));
+      toast.success(t('health.diagnosticsCopied'));
+    } catch (copyError) {
+      toast.error(t('health.diagnosticsCopyFailed', { error: String(copyError) }));
+    } finally {
+      setDiagnosticsLoading(false);
+    }
+  };
+
+  const handleToggleDiagnostics = async () => {
+    if (showDiagnostics) {
+      setShowDiagnostics(false);
+      return;
+    }
+    setDiagnosticsLoading(true);
+    try {
+      await fetchDiagnosticsSnapshot();
+    } catch (diagnosticsError) {
+      toast.error(t('health.diagnosticsCopyFailed', { error: String(diagnosticsError) }));
+      setDiagnosticsLoading(false);
+      return;
+    } finally {
+      setDiagnosticsLoading(false);
+    }
+    setShowDiagnostics(true);
+  };
+
+  const healthReasonLabel = useMemo(() => {
+    const primaryReason = gatewayHealth.reasons[0];
+    if (!primaryReason) return '';
+    return t(`health.reasons.${primaryReason}`);
+  }, [gatewayHealth.reasons, t]);
+
+  const diagnosticsText = useMemo(
+    () => diagnosticsSnapshot ? JSON.stringify(diagnosticsSnapshot, null, 2) : '',
+    [diagnosticsSnapshot],
+  );
+
+
+
+
+  const statusLabel = useCallback((status: ChannelGroupItem['status']) => {
+    return t(`account.connectionStatus.${status}`);
+  }, [t]);
 
   const handleBindAgent = async (channelType: string, accountId: string, agentId: string) => {
     try {
@@ -298,6 +551,86 @@ export function Channels() {
             </div>
           )}
 
+          {gatewayStatus.state === 'running' && gatewayHealth.state !== 'healthy' && (
+            <div
+              data-testid="channels-health-banner"
+              className={cn(
+                'mb-8 rounded-xl border p-4',
+                gatewayHealth.state === 'unresponsive'
+                  ? 'border-destructive/50 bg-destructive/10'
+                  : 'border-yellow-500/50 bg-yellow-500/10',
+              )}
+            >
+              <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+                <div className="flex items-start gap-3">
+                  <AlertCircle
+                    className={cn(
+                      'mt-0.5 h-5 w-5 shrink-0',
+                      gatewayHealth.state === 'unresponsive'
+                        ? 'text-destructive'
+                        : 'text-yellow-600 dark:text-yellow-400',
+                    )}
+                  />
+                  <div>
+                    <p className="text-sm font-semibold text-foreground">
+                      {t(`health.state.${gatewayHealth.state}`)}
+                    </p>
+                    {healthReasonLabel && (
+                      <p className="mt-1 text-sm text-foreground/75">{healthReasonLabel}</p>
+                    )}
+                  </div>
+                </div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <Button
+                    data-testid="channels-restart-gateway"
+                    size="sm"
+                    variant="outline"
+                    className="h-8 rounded-full text-xs"
+                    onClick={() => { void handleRestartGateway(); }}
+                  >
+                    <RotateCcw className="mr-2 h-3.5 w-3.5" />
+                    {t('health.restartGateway')}
+                  </Button>
+                  <Button
+                    data-testid="channels-copy-diagnostics"
+                    size="sm"
+                    variant="outline"
+                    className="h-8 rounded-full text-xs"
+                    disabled={diagnosticsLoading}
+                    onClick={() => { void handleCopyDiagnostics(); }}
+                  >
+                    <Copy className="mr-2 h-3.5 w-3.5" />
+                    {t('health.copyDiagnostics')}
+                  </Button>
+                  <Button
+                    data-testid="channels-toggle-diagnostics"
+                    size="sm"
+                    variant="outline"
+                    className="h-8 rounded-full text-xs"
+                    disabled={diagnosticsLoading}
+                    onClick={() => { void handleToggleDiagnostics(); }}
+                  >
+                    {showDiagnostics ? (
+                      <ChevronUp className="mr-2 h-3.5 w-3.5" />
+                    ) : (
+                      <ChevronDown className="mr-2 h-3.5 w-3.5" />
+                    )}
+                    {showDiagnostics ? t('health.hideDiagnostics') : t('health.viewDiagnostics')}
+                  </Button>
+                </div>
+              </div>
+
+              {showDiagnostics && diagnosticsText && (
+                <div className="mt-4 rounded-xl border border-black/10 dark:border-white/10 bg-background/80 p-3">
+                  <p className="mb-2 text-xs font-medium text-muted-foreground">{t('health.diagnosticsTitle')}</p>
+                  <pre data-testid="channels-diagnostics" className="max-h-[320px] overflow-auto whitespace-pre-wrap break-all text-[11px] text-foreground/85">
+                    {diagnosticsText}
+                  </pre>
+                </div>
+              )}
+            </div>
+          )}
+
           {error && (
             <div className="mb-8 p-4 rounded-xl border border-destructive/50 bg-destructive/10 flex items-center gap-3">
               <AlertCircle className="h-5 w-5 text-destructive" />
@@ -324,20 +657,24 @@ export function Channels() {
                           <h3 className="text-[16px] font-semibold text-foreground truncate">
                             {CHANNEL_NAMES[group.channelType as ChannelType] || group.channelType}
                           </h3>
-                          <p className="text-[12px] text-muted-foreground">{group.channelType}</p>
+                          <div className="flex items-center gap-2 text-[12px] text-muted-foreground">
+                            <span>{group.channelType}</span>
+                            <span className="w-1 h-1 rounded-full bg-black/20 dark:bg-white/20" />
+                            <span className="flex items-center gap-1">
+                              <span
+                                className={cn(
+                                  'inline-block h-1.5 w-1.5 rounded-full shrink-0',
+                                  group.status === 'connected' && 'bg-green-500',
+                                  group.status === 'connecting' && 'bg-sky-500 animate-pulse',
+                                  group.status === 'degraded' && 'bg-yellow-500',
+                                  group.status === 'error' && 'bg-red-500',
+                                  group.status === 'disconnected' && 'bg-gray-400',
+                                )}
+                              />
+                              {statusLabel(group.status)}
+                            </span>
+                          </div>
                         </div>
-                        <div
-                          className={cn(
-                            'w-2 h-2 rounded-full shrink-0',
-                            group.status === 'connected'
-                              ? 'bg-green-500'
-                              : group.status === 'connecting'
-                                ? 'bg-yellow-500 animate-pulse'
-                                : group.status === 'error'
-                                  ? 'bg-destructive'
-                                  : 'bg-muted-foreground'
-                          )}
-                        />
                       </div>
 
                       <div className="flex items-center gap-2">
@@ -392,6 +729,11 @@ export function Channels() {
                               </div>
                               {account.lastError && (
                                 <div className="text-[12px] text-destructive mt-1">{account.lastError}</div>
+                              )}
+                              {!account.lastError && account.statusReason && account.status === 'degraded' && (
+                                <div className="text-[12px] text-yellow-700 dark:text-yellow-300 mt-1">
+                                  {t(`health.reasons.${account.statusReason}`)}
+                                </div>
                               )}
                             </div>
 
@@ -525,7 +867,8 @@ export function Channels() {
             setInitialConfigValuesForModal(undefined);
           }}
           onChannelSaved={async () => {
-            await fetchPageData();
+            await fetchPageData({ probe: true });
+            scheduleConvergenceRefresh();
             setShowConfigModal(false);
             setSelectedChannelType(null);
             setSelectedAccountId(undefined);

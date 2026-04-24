@@ -13,8 +13,6 @@
     "noLogs": "(No logs available yet)",
     "toolbar": {
         "refresh": "Refresh chat",
-        "showThinking": "Show thinking",
-        "hideThinking": "Hide thinking",
         "currentAgent": "Talking to {{agent}}"
     },
     "taskPanel": {
@@ -34,19 +32,12 @@
         }
     },
     "executionGraph": {
-        "eyebrow": "Conversation Run",
         "title": "Execution Graph",
-        "status": {
-            "active": "Active",
-            "latest": "Latest",
-            "previous": "Previous"
-        },
         "branchLabel": "branch",
-        "userTrigger": "User Trigger",
-        "userTriggerHint": "Triggered by the user message above",
+        "thinkingLabel": "Thinking",
         "agentRun": "{{agent}} execution",
-        "agentReply": "Assistant Reply",
-        "agentReplyHint": "Resolved in the assistant reply below"
+        "collapsedSummary": "{{toolCount}} tool calls · {{processCount}} process messages",
+        "collapseAction": "Collapse execution graph"
     },
     "composer": {
         "attachFiles": "Attach files",

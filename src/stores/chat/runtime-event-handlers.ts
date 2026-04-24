@@ -12,7 +12,9 @@ import {
   isToolOnlyMessage,
   isToolResultRole,
   makeAttachedFile,
+  normalizeStreamingMessage,
   setErrorRecoveryTimer,
+  snapshotStreamingAssistantMessage,
   upsertToolStatuses,
 } from './helpers';
 import type { AttachedFileMeta, RawMessage } from './types';
@@ -65,7 +67,7 @@ export function handleRuntimeEventState(
                   return s.streamingMessage;
                 }
               }
-              return event.message ?? s.streamingMessage;
+              return normalizeStreamingMessage(event.message ?? s.streamingMessage);
             })(),
             streamingTools: updates.length > 0 ? upsertToolStatuses(s.streamingTools, updates) : s.streamingTools,
           }));
@@ -77,16 +79,17 @@ export function handleRuntimeEventState(
           // Message complete - add to history and clear streaming
           const finalMsg = event.message as RawMessage | undefined;
           if (finalMsg) {
-            const updates = collectToolUpdates(finalMsg, resolvedState);
-            if (isToolResultRole(finalMsg.role)) {
+            const normalizedFinalMessage = normalizeStreamingMessage(finalMsg) as RawMessage;
+            const updates = collectToolUpdates(normalizedFinalMessage, resolvedState);
+            if (isToolResultRole(normalizedFinalMessage.role)) {
               // Resolve file path from the streaming assistant message's matching tool call
               const currentStreamForPath = get().streamingMessage as RawMessage | null;
-              const matchedPath = (currentStreamForPath && finalMsg.toolCallId)
-                ? getToolCallFilePath(currentStreamForPath, finalMsg.toolCallId)
+              const matchedPath = (currentStreamForPath && normalizedFinalMessage.toolCallId)
+                ? getToolCallFilePath(currentStreamForPath, normalizedFinalMessage.toolCallId)
                 : undefined;
 
               // Mirror enrichWithToolResultFiles: collect images + file refs for next assistant msg
-              const toolFiles: AttachedFileMeta[] = extractImagesAsAttachedFiles(finalMsg.content)
+              const toolFiles: AttachedFileMeta[] = extractImagesAsAttachedFiles(normalizedFinalMessage.content)
                 .map((file) => (file.source ? file : { ...file, source: 'tool-result' }));
               if (matchedPath) {
                 for (const f of toolFiles) {
@@ -96,7 +99,7 @@ export function handleRuntimeEventState(
                   }
                 }
               }
-              const text = getMessageText(finalMsg.content);
+              const text = getMessageText(normalizedFinalMessage.content);
               if (text) {
                 const mediaRefs = extractMediaRefs(text);
                 const mediaRefPaths = new Set(mediaRefs.map(r => r.filePath));
@@ -112,22 +115,7 @@ export function handleRuntimeEventState(
                 // tool result. Without snapshotting here, the intermediate thinking+tool steps
                 // would be overwritten by the next turn's deltas and never appear in the UI.
                 const currentStream = s.streamingMessage as RawMessage | null;
-                const snapshotMsgs: RawMessage[] = [];
-                if (currentStream) {
-                  const streamRole = currentStream.role;
-                  if (streamRole === 'assistant' || streamRole === undefined) {
-                    // Use message's own id if available, otherwise derive a stable one from runId
-                    const snapId = currentStream.id
-                      || `${runId || 'run'}-turn-${s.messages.length}`;
-                    if (!s.messages.some(m => m.id === snapId)) {
-                      snapshotMsgs.push({
-                        ...(currentStream as RawMessage),
-                        role: 'assistant',
-                        id: snapId,
-                      });
-                    }
-                  }
-                }
+                const snapshotMsgs = snapshotStreamingAssistantMessage(currentStream, s.messages, runId);
                 return {
                   messages: snapshotMsgs.length > 0 ? [...s.messages, ...snapshotMsgs] : s.messages,
                   streamingText: '',
@@ -141,9 +129,9 @@ export function handleRuntimeEventState(
               });
               break;
             }
-            const toolOnly = isToolOnlyMessage(finalMsg);
-            const hasOutput = hasNonToolAssistantContent(finalMsg);
-            const msgId = finalMsg.id || (toolOnly ? `run-${runId}-tool-${Date.now()}` : `run-${runId}`);
+            const toolOnly = isToolOnlyMessage(normalizedFinalMessage);
+            const hasOutput = hasNonToolAssistantContent(normalizedFinalMessage);
+            const msgId = normalizedFinalMessage.id || (toolOnly ? `run-${runId}-tool-${Date.now()}` : `run-${runId}`);
             set((s) => {
               const nextTools = updates.length > 0 ? upsertToolStatuses(s.streamingTools, updates) : s.streamingTools;
               const streamingTools = hasOutput ? [] : nextTools;
@@ -152,12 +140,12 @@ export function handleRuntimeEventState(
               const pendingImgs = s.pendingToolImages;
               const msgWithImages: RawMessage = pendingImgs.length > 0
                 ? {
-                  ...finalMsg,
-                  role: (finalMsg.role || 'assistant') as RawMessage['role'],
+                  ...normalizedFinalMessage,
+                  role: (normalizedFinalMessage.role || 'assistant') as RawMessage['role'],
                   id: msgId,
-                  _attachedFiles: [...(finalMsg._attachedFiles || []), ...pendingImgs],
+                  _attachedFiles: [...(normalizedFinalMessage._attachedFiles || []), ...pendingImgs],
                 }
-                : { ...finalMsg, role: (finalMsg.role || 'assistant') as RawMessage['role'], id: msgId };
+                : { ...normalizedFinalMessage, role: (normalizedFinalMessage.role || 'assistant') as RawMessage['role'], id: msgId };
               const clearPendingImages = { pendingToolImages: [] as AttachedFileMeta[] };
 
               // Check if message already exists (prevent duplicates)
@@ -218,15 +206,15 @@ export function handleRuntimeEventState(
           // content ("Let me get that written down...") is preserved in the UI
           // rather than being silently discarded.
           const currentStream = get().streamingMessage as RawMessage | null;
-          if (currentStream && (currentStream.role === 'assistant' || currentStream.role === undefined)) {
-            const snapId = (currentStream as RawMessage).id
-              || `error-snap-${Date.now()}`;
-            const alreadyExists = get().messages.some(m => m.id === snapId);
-            if (!alreadyExists) {
-              set((s) => ({
-                messages: [...s.messages, { ...currentStream, role: 'assistant' as const, id: snapId }],
-              }));
-            }
+          const errorSnapshot = snapshotStreamingAssistantMessage(
+            currentStream,
+            get().messages,
+            `error-${runId || Date.now()}`,
+          );
+          if (errorSnapshot.length > 0) {
+            set((s) => ({
+              messages: [...s.messages, ...errorSnapshot],
+            }));
           }
 
           set({
@@ -291,7 +279,7 @@ export function handleRuntimeEventState(
             console.warn(`[handleChatEvent] Unknown event state "${resolvedState}", treating message as streaming delta. Event keys:`, Object.keys(event));
             const updates = collectToolUpdates(event.message, 'delta');
             set((s) => ({
-              streamingMessage: event.message ?? s.streamingMessage,
+              streamingMessage: normalizeStreamingMessage(event.message ?? s.streamingMessage),
               streamingTools: updates.length > 0 ? upsertToolStatuses(s.streamingTools, updates) : s.streamingTools,
             }));
           }

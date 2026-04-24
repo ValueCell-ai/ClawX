@@ -149,6 +149,11 @@
 }
 
 .prose th {
+  background: transparent;
+  font-weight: 700;
+}
+
+.dark .prose th {
   background: hsl(var(--muted));
 }
 

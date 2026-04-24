@@ -109,7 +109,7 @@ describe('parseUsageEntriesFromJsonl', () => {
         timestamp: '2026-03-10T03:00:00.000Z',
         message: {
           role: 'assistant',
-          model: 'kimi-k2.5',
+          model: 'kimi-k2.6',
           provider: 'moonshot',
           usage: {
             total: 0,
@@ -123,7 +123,7 @@ describe('parseUsageEntriesFromJsonl', () => {
         timestamp: '2026-03-10T03:00:00.000Z',
         sessionId: 'abc',
         agentId: 'default',
-        model: 'kimi-k2.5',
+        model: 'kimi-k2.6',
         provider: 'moonshot',
         usageStatus: 'available',
         inputTokens: 0,
@@ -143,7 +143,7 @@ describe('parseUsageEntriesFromJsonl', () => {
         timestamp: '2026-03-10T03:10:00.000Z',
         message: {
           role: 'assistant',
-          model: 'kimi-k2.5',
+          model: 'kimi-k2.6',
           provider: 'moonshot',
           usage: {
             input_tokens: 12,
@@ -161,7 +161,7 @@ describe('parseUsageEntriesFromJsonl', () => {
         timestamp: '2026-03-10T03:10:00.000Z',
         sessionId: 'abc',
         agentId: 'default',
-        model: 'kimi-k2.5',
+        model: 'kimi-k2.6',
         provider: 'moonshot',
         usageStatus: 'available',
         inputTokens: 12,
@@ -254,7 +254,7 @@ describe('parseUsageEntriesFromJsonl', () => {
         timestamp: '2026-03-10T02:20:04.057Z',
         message: {
           role: 'assistant',
-          model: 'kimi-k2.5',
+          model: 'kimi-k2.6',
           provider: 'moonshot',
           content: [{ type: 'text', text: '这是一条测试回复内容。' }],
           usage: {
@@ -269,7 +269,7 @@ describe('parseUsageEntriesFromJsonl', () => {
         timestamp: '2026-03-10T02:20:04.057Z',
         sessionId: 'abc',
         agentId: 'default',
-        model: 'kimi-k2.5',
+        model: 'kimi-k2.6',
         provider: 'moonshot',
         usageStatus: 'available',
         content: '这是一条测试回复内容。',
@@ -328,7 +328,7 @@ describe('parseUsageEntriesFromJsonl', () => {
         timestamp: '2026-03-10T03:30:00.000Z',
         message: {
           role: 'assistant',
-          model: 'kimi-k2.5',
+          model: 'kimi-k2.6',
           provider: 'moonshot',
           usage: { notes: 'tool call' },
         },
@@ -340,7 +340,7 @@ describe('parseUsageEntriesFromJsonl', () => {
         timestamp: '2026-03-10T03:30:00.000Z',
         sessionId: 'abc',
         agentId: 'default',
-        model: 'kimi-k2.5',
+        model: 'kimi-k2.6',
         provider: 'moonshot',
         usageStatus: 'missing',
         inputTokens: 0,
@@ -360,7 +360,7 @@ describe('parseUsageEntriesFromJsonl', () => {
         timestamp: '2026-03-10T03:40:00.000Z',
         message: {
           role: 'assistant',
-          model: 'kimi-k2.5',
+          model: 'kimi-k2.6',
           provider: 'moonshot',
           usage: 'invalid',
         },
@@ -372,7 +372,7 @@ describe('parseUsageEntriesFromJsonl', () => {
         timestamp: '2026-03-10T03:40:00.000Z',
         sessionId: 'abc',
         agentId: 'default',
-        model: 'kimi-k2.5',
+        model: 'kimi-k2.6',
         provider: 'moonshot',
         usageStatus: 'error',
         inputTokens: 0,

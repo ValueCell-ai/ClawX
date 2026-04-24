@@ -1,24 +1,35 @@
 /**
  * Chat Message Component
  * Renders user / assistant / system / toolresult messages
- * with markdown, thinking sections, images, and tool cards.
+ * with markdown, images, and tool cards. Thinking output is
+ * surfaced via ExecutionGraphCard, not inside message bubbles.
  */
 import { useState, useCallback, useEffect, memo } from 'react';
 import { Sparkles, Copy, Check, ChevronDown, ChevronRight, Wrench, FileText, Film, Music, FileArchive, File, X, FolderOpen, ZoomIn, Loader2, CheckCircle2, AlertCircle } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import remarkMath from 'remark-math';
+import rehypeKatex from 'rehype-katex';
 import { createPortal } from 'react-dom';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { invokeIpc } from '@/lib/api-client';
 import type { RawMessage, AttachedFileMeta } from '@/stores/chat';
-import { extractText, extractThinking, extractImages, extractToolUse, formatTimestamp } from './message-utils';
+import { extractText, extractImages, extractToolUse, formatTimestamp } from './message-utils';
 
 interface ChatMessageProps {
   message: RawMessage;
-  showThinking: boolean;
+  textOverride?: string;
   suppressToolCards?: boolean;
   suppressProcessAttachments?: boolean;
+  /**
+   * When true, hides the assistant text bubble (and any thinking block that
+   * would be shown above it). Used when the message's text is being folded
+   * into an ExecutionGraphCard as a narration step, to prevent the same text
+   * from appearing both inside the graph and as an orphan bubble in the chat
+   * stream.
+   */
+  suppressAssistantText?: boolean;
   isStreaming?: boolean;
   streamingTools?: Array<{
     id?: string;
@@ -32,6 +43,36 @@ interface ChatMessageProps {
 
 interface ExtractedImage { url?: string; data?: string; mimeType: string; }
 
+/**
+ * Normalize LaTeX delimiters so `remark-math` can detect them.
+ *
+ * Many LLMs emit LaTeX using `\(` / `\)` for inline math and `\[` / `\]`
+ * for block math (OpenAI style), which are NOT recognized by remark-math.
+ * remark-math only parses `$...$` and `$$...$$`.
+ *
+ * We convert the backslash-paren/bracket forms to dollar-sign forms so the
+ * math is rendered regardless of which convention the model uses.
+ *
+ * Transformations are skipped inside fenced/inline code spans to avoid
+ * clobbering code samples that legitimately contain `\(` etc.
+ */
+function normalizeLatexDelimiters(input: string): string {
+  if (!input || (input.indexOf('\\(') === -1 && input.indexOf('\\[') === -1)) {
+    return input;
+  }
+
+  const parts = input.split(/(```[\s\S]*?```|`[^`\n]*`)/g);
+  for (let i = 0; i < parts.length; i++) {
+    const part = parts[i];
+    if (!part) continue;
+    if (part.startsWith('```') || part.startsWith('`')) continue;
+    let next = part.replace(/\\\[([\s\S]+?)\\\]/g, (_m, body: string) => `\n$$\n${body.trim()}\n$$\n`);
+    next = next.replace(/\\\(([\s\S]+?)\\\)/g, (_m, body: string) => `$${body}$`);
+    parts[i] = next;
+  }
+  return parts.join('');
+}
+
 /** Resolve an ExtractedImage to a displayable src string, or null if not possible. */
 function imageSrc(img: ExtractedImage): string | null {
   if (img.url) return img.url;
@@ -41,24 +82,28 @@ function imageSrc(img: ExtractedImage): string | null {
 
 export const ChatMessage = memo(function ChatMessage({
   message,
-  showThinking,
+  textOverride,
   suppressToolCards = false,
   suppressProcessAttachments = false,
+  suppressAssistantText = false,
   isStreaming = false,
   streamingTools = [],
 }: ChatMessageProps) {
   const isUser = message.role === 'user';
   const role = typeof message.role === 'string' ? message.role.toLowerCase() : '';
   const isToolResult = role === 'toolresult' || role === 'tool_result';
-  const text = extractText(message);
-  const hasText = text.trim().length > 0;
-  const thinking = extractThinking(message);
+  const text = textOverride ?? extractText(message);
+  // When text is folded into an ExecutionGraphCard, treat the message as
+  // having no text for rendering purposes. Keeping this behind a flag (vs
+  // blanking `text` outright) lets future hover affordances still read the
+  // original content without surfacing the bubble.
+  const hideAssistantText = suppressAssistantText && !isUser;
+  const hasText = !hideAssistantText && text.trim().length > 0;
   const images = extractImages(message);
   const tools = extractToolUse(message);
-  const visibleThinking = showThinking ? thinking : null;
   const visibleTools = suppressToolCards ? [] : tools;
   const shouldHideProcessAttachments = suppressProcessAttachments
-    && (hasText || !!visibleThinking || images.length > 0 || visibleTools.length > 0);
+    && (hasText || images.length > 0 || visibleTools.length > 0);
 
   const attachedFiles = shouldHideProcessAttachments
     ? (message._attachedFiles || []).filter((file) => file.source !== 'tool-result')
@@ -69,7 +114,7 @@ export const ChatMessage = memo(function ChatMessage({
   if (isToolResult) return null;
 
   const hasStreamingToolStatus = isStreaming && streamingTools.length > 0;
-  if (!hasText && !visibleThinking && images.length === 0 && visibleTools.length === 0 && attachedFiles.length === 0 && !hasStreamingToolStatus) return null;
+  if (!hasText && images.length === 0 && visibleTools.length === 0 && attachedFiles.length === 0 && !hasStreamingToolStatus) return null;
 
   return (
     <div
@@ -94,11 +139,6 @@ export const ChatMessage = memo(function ChatMessage({
       >
         {isStreaming && !isUser && streamingTools.length > 0 && (
           <ToolStatusBar tools={streamingTools} />
-        )}
-
-        {/* Thinking section */}
-        {visibleThinking && (
-          <ThinkingBlock content={visibleThinking} />
         )}
 
         {/* Tool use cards */}
@@ -354,7 +394,8 @@ function MessageBubble({
       ) : (
         <div className="prose prose-sm dark:prose-invert max-w-none break-words break-all">
           <ReactMarkdown
-            remarkPlugins={[remarkGfm]}
+            remarkPlugins={[remarkGfm, remarkMath]}
+            rehypePlugins={[[rehypeKatex, { strict: false, throwOnError: false, output: 'html' }]]}
             components={{
               code({ className, children, ...props }) {
                 const match = /language-(\w+)/.exec(className || '');
@@ -383,7 +424,7 @@ function MessageBubble({
               },
             }}
           >
-            {text}
+            {normalizeLatexDelimiters(text)}
           </ReactMarkdown>
           {isStreaming && (
             <span className="inline-block w-2 h-4 bg-foreground/50 animate-pulse ml-0.5" />
@@ -391,31 +432,6 @@ function MessageBubble({
         </div>
       )}
 
-    </div>
-  );
-}
-
-// ── Thinking Block ──────────────────────────────────────────────
-
-function ThinkingBlock({ content }: { content: string }) {
-  const [expanded, setExpanded] = useState(false);
-
-  return (
-    <div className="w-full rounded-xl border border-black/10 dark:border-white/10 bg-black/5 dark:bg-white/5 text-[14px]">
-      <button
-        className="flex items-center gap-2 w-full px-3 py-2 text-muted-foreground hover:text-foreground transition-colors"
-        onClick={() => setExpanded(!expanded)}
-      >
-        {expanded ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
-        <span className="font-medium">Thinking</span>
-      </button>
-      {expanded && (
-        <div className="px-3 pb-3 text-muted-foreground">
-          <div className="prose prose-sm dark:prose-invert max-w-none opacity-75">
-            <ReactMarkdown remarkPlugins={[remarkGfm]}>{content}</ReactMarkdown>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

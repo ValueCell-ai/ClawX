@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const invokeIpcMock = vi.fn();
 const hostApiFetchMock = vi.fn();
+const gatewayStoreGetStateMock = vi.fn();
 const clearHistoryPoll = vi.fn();
 const enrichWithCachedImages = vi.fn((messages) => messages);
 const enrichWithToolResultFiles = vi.fn((messages) => messages);
@@ -30,15 +31,50 @@ vi.mock('@/lib/host-api', () => ({
   hostApiFetch: (...args: unknown[]) => hostApiFetchMock(...args),
 }));
 
+vi.mock('@/stores/gateway', () => ({
+  useGatewayStore: {
+    getState: () => gatewayStoreGetStateMock(),
+  },
+}));
+
 vi.mock('@/stores/chat/helpers', () => ({
   clearHistoryPoll: (...args: unknown[]) => clearHistoryPoll(...args),
   enrichWithCachedImages: (...args: unknown[]) => enrichWithCachedImages(...args),
   enrichWithToolResultFiles: (...args: unknown[]) => enrichWithToolResultFiles(...args),
+  getLatestOptimisticUserMessage: (messages: Array<{ role: string; timestamp?: number }>, userTimestampMs: number) =>
+    [...messages].reverse().find(
+      (message) => message.role === 'user'
+        && (!message.timestamp || Math.abs(toMs(message.timestamp) - userTimestampMs) < 5000),
+    ),
   getMessageText: (...args: unknown[]) => getMessageText(...args),
   hasNonToolAssistantContent: (...args: unknown[]) => hasNonToolAssistantContent(...args),
   isInternalMessage: (...args: unknown[]) => isInternalMessage(...args),
   isToolResultRole: (...args: unknown[]) => isToolResultRole(...args),
   loadMissingPreviews: (...args: unknown[]) => loadMissingPreviews(...args),
+  matchesOptimisticUserMessage: (
+    candidate: { role: string; timestamp?: number; content?: unknown; _attachedFiles?: Array<{ filePath?: string; fileName?: string; mimeType?: string; fileSize?: number }> },
+    optimistic: { role: string; timestamp?: number; content?: unknown; _attachedFiles?: Array<{ filePath?: string; fileName?: string; mimeType?: string; fileSize?: number }> },
+    optimisticTimestampMs: number,
+  ) => {
+    if (candidate.role !== 'user') return false;
+    const normalizeText = (content: unknown) => (typeof content === 'string' ? content : '')
+      .replace(/^\[(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun)\s+\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}\s+[^\]]+\]\s*/i, '')
+      .replace(/\s+/g, ' ')
+      .trim();
+    const candidateText = normalizeText(candidate.content);
+    const optimisticText = normalizeText(optimistic.content);
+    const candidateAttachments = (candidate._attachedFiles || []).map((file) => file.filePath || `${file.fileName}|${file.mimeType}|${file.fileSize}`).sort().join('::');
+    const optimisticAttachments = (optimistic._attachedFiles || []).map((file) => file.filePath || `${file.fileName}|${file.mimeType}|${file.fileSize}`).sort().join('::');
+    const hasCandidateTimestamp = candidate.timestamp != null;
+    const timestampMatches = hasCandidateTimestamp
+      ? Math.abs(toMs(candidate.timestamp as number) - optimisticTimestampMs) < 5000
+      : false;
+
+    if (candidateText && optimisticText && candidateText === optimisticText && candidateAttachments === optimisticAttachments) return true;
+    if (candidateText && optimisticText && candidateText === optimisticText && (!hasCandidateTimestamp || timestampMatches)) return true;
+    if (candidateAttachments && optimisticAttachments && candidateAttachments === optimisticAttachments && (!hasCandidateTimestamp || timestampMatches)) return true;
+    return false;
+  },
   toMs: (...args: unknown[]) => toMs(...args as Parameters<typeof toMs>),
 }));
 
@@ -83,8 +119,13 @@ function makeHarness(initial?: Partial<ChatLikeState>) {
 describe('chat history actions', () => {
   beforeEach(() => {
     vi.resetAllMocks();
+    vi.resetModules();
+    vi.useRealTimers();
     invokeIpcMock.mockResolvedValue({ success: true, result: { messages: [] } });
     hostApiFetchMock.mockResolvedValue({ messages: [] });
+    gatewayStoreGetStateMock.mockReturnValue({
+      status: { state: 'running', port: 18789, connectedAt: Date.now() },
+    });
   });
 
   it('uses cron session fallback when gateway history is empty', async () => {
@@ -156,8 +197,156 @@ describe('chat history actions', () => {
     await actions.loadHistory();
 
     expect(h.read().messages.map((message) => message.content)).toEqual(['still here']);
-    expect(h.read().error).toBe('Error: Gateway unavailable');
+    expect(h.read().error).toBe('Gateway unavailable');
     expect(h.read().loading).toBe(false);
+  });
+
+  it('retries the first foreground startup history load after a timeout and then succeeds', async () => {
+    vi.useFakeTimers();
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const { createHistoryActions } = await import('@/stores/chat/history-actions');
+    const h = makeHarness({
+      currentSessionKey: 'agent:main:main',
+    });
+    const actions = createHistoryActions(h.set as never, h.get as never);
+    gatewayStoreGetStateMock.mockReturnValue({
+      status: { state: 'running', port: 18789, connectedAt: Date.now() - 40_000 },
+    });
+
+    invokeIpcMock
+      .mockResolvedValueOnce({ success: false, error: 'RPC timeout: chat.history' })
+      .mockResolvedValueOnce({
+        success: true,
+        result: {
+          messages: [
+            { role: 'assistant', content: 'restored after retry', timestamp: 1000 },
+          ],
+        },
+      });
+
+    const loadPromise = actions.loadHistory();
+    await vi.runAllTimersAsync();
+    await loadPromise;
+
+    expect(invokeIpcMock).toHaveBeenNthCalledWith(
+      1,
+      'gateway:rpc',
+      'chat.history',
+      { sessionKey: 'agent:main:main', limit: 200 },
+      35_000,
+    );
+    expect(invokeIpcMock).toHaveBeenNthCalledWith(
+      2,
+      'gateway:rpc',
+      'chat.history',
+      { sessionKey: 'agent:main:main', limit: 200 },
+      35_000,
+    );
+    expect(h.read().messages.map((message) => message.content)).toEqual(['restored after retry']);
+    expect(h.read().error).toBeNull();
+    expect(warnSpy).toHaveBeenCalledWith(
+      '[chat.history] startup retry scheduled',
+      expect.objectContaining({
+        sessionKey: 'agent:main:main',
+        attempt: 1,
+        errorKind: 'timeout',
+      }),
+    );
+    warnSpy.mockRestore();
+  });
+
+  it('stops retrying once the load no longer belongs to the active session', async () => {
+    vi.useFakeTimers();
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const { createHistoryActions } = await import('@/stores/chat/history-actions');
+    const h = makeHarness({
+      currentSessionKey: 'agent:main:main',
+    });
+    const actions = createHistoryActions(h.set as never, h.get as never);
+
+    invokeIpcMock.mockImplementationOnce(async () => {
+      h.set({
+        currentSessionKey: 'agent:main:other',
+        loading: false,
+        messages: [{ role: 'assistant', content: 'other session', timestamp: 1001 }],
+      });
+      return { success: false, error: 'RPC timeout: chat.history' };
+    });
+
+    await actions.loadHistory();
+
+    expect(invokeIpcMock).toHaveBeenCalledTimes(1);
+    expect(h.read().currentSessionKey).toBe('agent:main:other');
+    expect(h.read().messages.map((message) => message.content)).toEqual(['other session']);
+    expect(h.read().error).toBeNull();
+    expect(warnSpy).not.toHaveBeenCalled();
+    warnSpy.mockRestore();
+  });
+
+  it('surfaces a final error only after startup retry budget is exhausted', async () => {
+    vi.useFakeTimers();
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const { createHistoryActions } = await import('@/stores/chat/history-actions');
+    const h = makeHarness({
+      currentSessionKey: 'agent:main:main',
+    });
+    const actions = createHistoryActions(h.set as never, h.get as never);
+
+    invokeIpcMock.mockResolvedValue({
+      success: false,
+      error: 'RPC timeout: chat.history',
+    });
+
+    const loadPromise = actions.loadHistory();
+    await vi.runAllTimersAsync();
+    await loadPromise;
+
+    expect(invokeIpcMock).toHaveBeenCalledTimes(5);
+    expect(h.read().messages).toEqual([]);
+    expect(h.read().error).toBe('RPC timeout: chat.history');
+    expect(warnSpy).toHaveBeenCalledWith(
+      '[chat.history] startup retry exhausted',
+      expect.objectContaining({
+        sessionKey: 'agent:main:main',
+      }),
+    );
+    warnSpy.mockRestore();
+  });
+
+  it('does not retry quiet history refreshes', async () => {
+    const { createHistoryActions } = await import('@/stores/chat/history-actions');
+    const h = makeHarness({
+      currentSessionKey: 'agent:main:main',
+    });
+    const actions = createHistoryActions(h.set as never, h.get as never);
+
+    invokeIpcMock.mockResolvedValue({
+      success: false,
+      error: 'RPC timeout: chat.history',
+    });
+
+    await actions.loadHistory(true);
+
+    expect(invokeIpcMock).toHaveBeenCalledTimes(1);
+    expect(h.read().error).toBeNull();
+  });
+
+  it('does not retry non-retryable startup failures', async () => {
+    const { createHistoryActions } = await import('@/stores/chat/history-actions');
+    const h = makeHarness({
+      currentSessionKey: 'agent:main:main',
+    });
+    const actions = createHistoryActions(h.set as never, h.get as never);
+
+    invokeIpcMock.mockResolvedValue({
+      success: false,
+      error: 'Validation failed: bad session key',
+    });
+
+    await actions.loadHistory();
+
+    expect(invokeIpcMock).toHaveBeenCalledTimes(1);
+    expect(h.read().error).toBe('Validation failed: bad session key');
   });
 
   it('filters out system messages from loaded history', async () => {
@@ -366,5 +555,46 @@ describe('chat history actions', () => {
       'newer message',
     ]);
     expect(h.read().messages[0]?._attachedFiles?.[0]?.preview).toBe('data:image/png;base64,abc');
+  });
+
+  it('does not append an optimistic duplicate when history already includes the user message without timestamp', async () => {
+    const { createHistoryActions } = await import('@/stores/chat/history-actions');
+    const h = makeHarness({
+      currentSessionKey: 'agent:main:main',
+      sending: true,
+      lastUserMessageAt: 1_773_281_732_000,
+      messages: [
+        {
+          role: 'user',
+          content: '[Fri 2026-03-13 10:00 GMT+8] Open browser, search for tech news, and take a screenshot',
+          timestamp: 1_773_281_732,
+        },
+      ],
+    });
+    const actions = createHistoryActions(h.set as never, h.get as never);
+
+    invokeIpcMock.mockResolvedValueOnce({
+      success: true,
+      result: {
+        messages: [
+          {
+            role: 'user',
+            content: 'Open browser, search for tech news, and take a screenshot',
+          },
+          {
+            role: 'assistant',
+            content: 'Processing',
+            timestamp: 1_773_281_733,
+          },
+        ],
+      },
+    });
+
+    await actions.loadHistory(true);
+
+    expect(h.read().messages.map((message) => message.content)).toEqual([
+      'Open browser, search for tech news, and take a screenshot',
+      'Processing',
+    ]);
   });
 });
