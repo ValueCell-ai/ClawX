@@ -20,6 +20,7 @@ import {
   getProviderConfig,
 } from './provider-registry';
 import {
+  OPENCLAW_PROVIDER_KEY_MINIMAX,
   OPENCLAW_PROVIDER_KEY_MOONSHOT,
   OPENCLAW_PROVIDER_KEY_MOONSHOT_GLOBAL,
   isOAuthProviderType,
@@ -29,9 +30,228 @@ import { withConfigLock } from './config-mutex';
 
 const AUTH_STORE_VERSION = 1;
 const AUTH_PROFILE_FILENAME = 'auth-profiles.json';
+const LEGACY_MINIMAX_OAUTH_PLUGIN_ID = 'minimax-portal-auth';
+const MERGED_MINIMAX_PLUGIN_ID = 'minimax';
 
-function getOAuthPluginId(provider: string): string {
-  return `${provider}-auth`;
+interface BundledPluginManifest {
+  id: string;
+  enabledByDefault: boolean;
+  providers: string[];
+  legacyPluginIds: string[];
+}
+
+interface OAuthPluginRegistration {
+  canonicalPluginId: string;
+  stalePluginIds: string[];
+}
+
+interface MiniMaxPluginRegistration extends OAuthPluginRegistration {
+  mergedPlugin: boolean;
+}
+
+let _bundledPluginManifestCache: BundledPluginManifest[] | null = null;
+let _bundledPluginCache: { all: Set<string>; enabledByDefault: string[] } | null = null;
+let _miniMaxPluginRegistrationCache: MiniMaxPluginRegistration | null = null;
+
+export function resetOpenClawPluginDiscoveryCaches(): void {
+  _bundledPluginManifestCache = null;
+  _bundledPluginCache = null;
+  _miniMaxPluginRegistrationCache = null;
+}
+
+function getOpenClawExtensionsRoots(): string[] {
+  const openClawDir = getOpenClawResolvedDir();
+  return [
+    join(openClawDir, 'dist', 'extensions'),
+    join(openClawDir, 'extensions'),
+  ];
+}
+
+function discoverBundledPluginManifests(): BundledPluginManifest[] {
+  if (_bundledPluginManifestCache) return _bundledPluginManifestCache;
+
+  const manifests = new Map<string, BundledPluginManifest>();
+
+  for (const extensionsDir of getOpenClawExtensionsRoots()) {
+    try {
+      if (!existsSync(extensionsDir)) {
+        continue;
+      }
+
+      for (const entry of readdirSync(extensionsDir, { withFileTypes: true })) {
+        if (!entry.isDirectory()) continue;
+
+        const manifestPath = join(extensionsDir, entry.name, 'openclaw.plugin.json');
+        if (!existsSync(manifestPath)) continue;
+
+        try {
+          const parsed = JSON.parse(readFileSync(manifestPath, 'utf-8')) as {
+            id?: unknown;
+            enabledByDefault?: unknown;
+            providers?: unknown;
+            legacyPluginIds?: unknown;
+          };
+          if (typeof parsed.id !== 'string' || !parsed.id.trim()) {
+            continue;
+          }
+
+          const existing = manifests.get(parsed.id) ?? {
+            id: parsed.id,
+            enabledByDefault: false,
+            providers: [],
+            legacyPluginIds: [],
+          };
+
+          const providers = Array.isArray(parsed.providers)
+            ? parsed.providers.filter((provider): provider is string => typeof provider === 'string' && provider.trim().length > 0)
+            : [];
+          const legacyPluginIds = Array.isArray(parsed.legacyPluginIds)
+            ? parsed.legacyPluginIds.filter((pluginId): pluginId is string => typeof pluginId === 'string' && pluginId.trim().length > 0)
+            : [];
+
+          existing.enabledByDefault = existing.enabledByDefault || parsed.enabledByDefault === true;
+          existing.providers = Array.from(new Set([...existing.providers, ...providers]));
+          existing.legacyPluginIds = Array.from(new Set([...existing.legacyPluginIds, ...legacyPluginIds]));
+
+          manifests.set(parsed.id, existing);
+        } catch {
+          // Malformed manifest — skip silently
+        }
+      }
+    } catch {
+      // Extension directory not found or unreadable — ignore
+    }
+  }
+
+  _bundledPluginManifestCache = Array.from(manifests.values());
+  return _bundledPluginManifestCache;
+}
+
+function resolveMiniMaxPluginRegistration(): MiniMaxPluginRegistration {
+  if (_miniMaxPluginRegistrationCache) return _miniMaxPluginRegistrationCache;
+
+  const manifests = discoverBundledPluginManifests();
+  const mergedManifest = manifests.find((manifest) => (
+    manifest.id === MERGED_MINIMAX_PLUGIN_ID
+      && (
+        manifest.providers.includes(OPENCLAW_PROVIDER_KEY_MINIMAX)
+        || manifest.legacyPluginIds.includes(LEGACY_MINIMAX_OAUTH_PLUGIN_ID)
+      )
+  ));
+  const legacyManifest = manifests.find((manifest) => manifest.id === LEGACY_MINIMAX_OAUTH_PLUGIN_ID);
+
+  const canonicalPluginId = mergedManifest ? MERGED_MINIMAX_PLUGIN_ID : LEGACY_MINIMAX_OAUTH_PLUGIN_ID;
+  const knownPluginIds = new Set<string>([
+    LEGACY_MINIMAX_OAUTH_PLUGIN_ID,
+    MERGED_MINIMAX_PLUGIN_ID,
+  ]);
+
+  for (const manifest of [mergedManifest, legacyManifest]) {
+    if (!manifest) continue;
+    knownPluginIds.add(manifest.id);
+    for (const legacyPluginId of manifest.legacyPluginIds) {
+      knownPluginIds.add(legacyPluginId);
+    }
+  }
+
+  _miniMaxPluginRegistrationCache = {
+    canonicalPluginId,
+    stalePluginIds: Array.from(knownPluginIds).filter((pluginId) => pluginId !== canonicalPluginId),
+    mergedPlugin: Boolean(mergedManifest),
+  };
+  return _miniMaxPluginRegistrationCache;
+}
+
+function getOAuthPluginRegistration(provider: string): OAuthPluginRegistration {
+  if (provider === OPENCLAW_PROVIDER_KEY_MINIMAX) {
+    return resolveMiniMaxPluginRegistration();
+  }
+
+  return {
+    canonicalPluginId: `${provider}-auth`,
+    stalePluginIds: [],
+  };
+}
+
+function ensureOAuthPluginEnabled(config: Record<string, unknown>, provider: string): void {
+  const { canonicalPluginId, stalePluginIds } = getOAuthPluginRegistration(provider);
+  const plugins = isPlainRecord(config.plugins) ? config.plugins as Record<string, unknown> : {};
+  const allow = Array.isArray(plugins.allow)
+    ? (plugins.allow as unknown[]).filter((value): value is string => typeof value === 'string')
+    : [];
+  const pEntries = isPlainRecord(plugins.entries) ? plugins.entries as Record<string, Record<string, unknown>> : {};
+
+  const nextAllow = allow.filter((pluginId) => !stalePluginIds.includes(pluginId));
+  if (!nextAllow.includes(canonicalPluginId)) {
+    nextAllow.push(canonicalPluginId);
+  }
+
+  for (const stalePluginId of stalePluginIds) {
+    delete pEntries[stalePluginId];
+  }
+
+  pEntries[canonicalPluginId] = {
+    ...(isPlainRecord(pEntries[canonicalPluginId]) ? pEntries[canonicalPluginId] : {}),
+    enabled: true,
+  };
+
+  plugins.allow = nextAllow;
+  plugins.entries = pEntries;
+  config.plugins = plugins;
+}
+
+function removePluginRegistrations(
+  config: Record<string, unknown>,
+  pluginIds: string[],
+): boolean {
+  const uniquePluginIds = Array.from(new Set(pluginIds.filter(Boolean)));
+  if (uniquePluginIds.length === 0 || !isPlainRecord(config.plugins)) {
+    return false;
+  }
+
+  const plugins = config.plugins as Record<string, unknown>;
+  let modified = false;
+
+  if (Array.isArray(plugins.allow)) {
+    const allow = (plugins.allow as unknown[]).filter((value): value is string => typeof value === 'string');
+    const nextAllow = allow.filter((pluginId) => !uniquePluginIds.includes(pluginId));
+    if (nextAllow.length !== allow.length) {
+      modified = true;
+      if (nextAllow.length > 0) {
+        plugins.allow = nextAllow;
+      } else {
+        delete plugins.allow;
+      }
+    }
+  }
+
+  if (isPlainRecord(plugins.entries)) {
+    const entries = plugins.entries as Record<string, unknown>;
+    for (const pluginId of uniquePluginIds) {
+      if (pluginId in entries) {
+        delete entries[pluginId];
+        modified = true;
+      }
+    }
+    if (Object.keys(entries).length === 0) {
+      delete plugins.entries;
+    }
+  }
+
+  if (plugins.enabled === true) {
+    const pluginKeysExcludingEnabled = Object.keys(plugins).filter((key) => key !== 'enabled');
+    if (pluginKeysExcludingEnabled.length === 0) {
+      delete plugins.enabled;
+      modified = true;
+    }
+  }
+
+  if (Object.keys(plugins).length === 0) {
+    delete config.plugins;
+    modified = true;
+  }
+
+  return modified;
 }
 
 // ── Helpers ──────────────────────────────────────────────────────
@@ -264,36 +484,19 @@ function expandProviderKeysForDeletion(provider: string): string[] {
  * Results are cached for the lifetime of the process since bundled
  * extensions don't change at runtime.
  */
-let _bundledPluginCache: { all: Set<string>; enabledByDefault: string[] } | null = null;
 function discoverBundledPlugins(): { all: Set<string>; enabledByDefault: string[] } {
   if (_bundledPluginCache) return _bundledPluginCache;
+
   const all = new Set<string>();
   const enabledByDefault: string[] = [];
-  try {
-    const extensionsDir = join(getOpenClawResolvedDir(), 'dist', 'extensions');
-    if (!existsSync(extensionsDir)) {
-      _bundledPluginCache = { all, enabledByDefault };
-      return _bundledPluginCache;
+
+  for (const manifest of discoverBundledPluginManifests()) {
+    all.add(manifest.id);
+    if (manifest.enabledByDefault) {
+      enabledByDefault.push(manifest.id);
     }
-    for (const entry of readdirSync(extensionsDir, { withFileTypes: true })) {
-      if (!entry.isDirectory()) continue;
-      const manifestPath = join(extensionsDir, entry.name, 'openclaw.plugin.json');
-      if (!existsSync(manifestPath)) continue;
-      try {
-        const manifest = JSON.parse(readFileSync(manifestPath, 'utf-8'));
-        if (typeof manifest.id === 'string') {
-          all.add(manifest.id);
-          if (manifest.enabledByDefault === true) {
-            enabledByDefault.push(manifest.id);
-          }
-        }
-      } catch {
-        // Malformed manifest — skip silently
-      }
-    }
-  } catch {
-    // Extension directory not found or unreadable — return empty
   }
+
   _bundledPluginCache = { all, enabledByDefault };
   return _bundledPluginCache;
 }
@@ -556,14 +759,13 @@ export async function removeProviderFromOpenClaw(provider: string): Promise<void
       const config = await readOpenClawJson();
       let modified = false;
 
-      // Disable plugin (for OAuth like minimax-portal-auth)
-      const plugins = config.plugins as Record<string, unknown> | undefined;
-      const entries = (plugins?.entries ?? {}) as Record<string, Record<string, unknown>>;
-      const pluginName = `${provider}-auth`;
-      if (entries[pluginName]) {
-        entries[pluginName].enabled = false;
-        modified = true;
-        console.log(`Disabled OpenClaw plugin: ${pluginName}`);
+      // Remove plugin registrations for OAuth providers (e.g. MiniMax).
+      if (isOpenClawOAuthPluginProviderKey(provider)) {
+        const { canonicalPluginId, stalePluginIds } = getOAuthPluginRegistration(provider);
+        if (removePluginRegistrations(config, [canonicalPluginId, ...stalePluginIds])) {
+          modified = true;
+          console.log(`Removed OpenClaw plugin registrations for provider "${provider}"`);
+        }
       }
 
       // Remove from models.providers
@@ -916,17 +1118,7 @@ export async function syncProviderConfigToOpenClaw(
 
     // Ensure extension is enabled for oauth providers to prevent gateway wiping config
     if (isOpenClawOAuthPluginProviderKey(provider)) {
-      const plugins = (config.plugins || {}) as Record<string, unknown>;
-      const allow = Array.isArray(plugins.allow) ? [...plugins.allow as string[]] : [];
-      const pEntries = (plugins.entries || {}) as Record<string, unknown>;
-      const pluginId = getOAuthPluginId(provider);
-      if (!allow.includes(pluginId)) {
-        allow.push(pluginId);
-      }
-      pEntries[pluginId] = { enabled: true };
-      plugins.allow = allow;
-      plugins.entries = pEntries;
-      config.plugins = plugins;
+      ensureOAuthPluginEnabled(config, provider);
     }
 
     await writeOpenClawJson(config);
@@ -981,17 +1173,7 @@ export async function setOpenClawDefaultModelWithOverride(
 
     // Ensure the extension plugin is marked as enabled in openclaw.json
     if (isOpenClawOAuthPluginProviderKey(provider)) {
-      const plugins = (config.plugins || {}) as Record<string, unknown>;
-      const allow = Array.isArray(plugins.allow) ? [...plugins.allow as string[]] : [];
-      const pEntries = (plugins.entries || {}) as Record<string, unknown>;
-      const pluginId = getOAuthPluginId(provider);
-      if (!allow.includes(pluginId)) {
-        allow.push(pluginId);
-      }
-      pEntries[pluginId] = { enabled: true };
-      plugins.allow = allow;
-      plugins.entries = pEntries;
-      config.plugins = plugins;
+      ensureOAuthPluginEnabled(config, provider);
     }
 
     await writeOpenClawJson(config);
@@ -1657,6 +1839,34 @@ export async function sanitizeOpenClawConfig(): Promise<void> {
       const allowArr = Array.isArray(pluginsObj.allow) ? pluginsObj.allow as string[] : [];
       if (!Array.isArray(pluginsObj.allow)) {
         pluginsObj.allow = allowArr;
+      }
+
+      // ── MiniMax merged-plugin compatibility cleanup ─────────────
+      // Newer OpenClaw releases merged the legacy minimax-portal-auth plugin
+      // into the canonical "minimax" plugin. Legacy ids may still be accepted
+      // in some allowlist paths, but explicit plugins.entries map keys are not
+      // consistently normalized upstream, which causes "plugin not found"
+      // warnings. Migrate stale ids only when a merged MiniMax plugin is
+      // actually installed; otherwise preserve the old plugin for compatibility.
+      const miniMaxPluginRegistration = resolveMiniMaxPluginRegistration();
+      if (miniMaxPluginRegistration.mergedPlugin) {
+        let miniMaxModified = false;
+        for (const stalePluginId of miniMaxPluginRegistration.stalePluginIds) {
+          const staleAllowIdx = allowArr.indexOf(stalePluginId);
+          if (staleAllowIdx !== -1) {
+            allowArr.splice(staleAllowIdx, 1);
+            miniMaxModified = true;
+            console.log(`[sanitize] Removed stale MiniMax plugin from plugins.allow: ${stalePluginId}`);
+          }
+          if (pEntries[stalePluginId]) {
+            delete pEntries[stalePluginId];
+            miniMaxModified = true;
+            console.log(`[sanitize] Removed stale MiniMax plugin from plugins.entries: ${stalePluginId}`);
+          }
+        }
+        if (miniMaxModified) {
+          modified = true;
+        }
       }
 
       // ── acpx legacy config/install cleanup ─────────────────────
