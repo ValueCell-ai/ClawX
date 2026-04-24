@@ -64,6 +64,7 @@ describe('uv-env network reachability', () => {
 
   it('uses the managed python mirror reachability when region optimization is enabled', async () => {
     mockApp.getLocale.mockReturnValue('zh-CN');
+    Intl.DateTimeFormat.prototype.resolvedOptions = () => ({ timeZone: 'Asia/Shanghai' }) as Intl.ResolvedDateTimeFormatOptions;
     mockProxyAwareFetch.mockResolvedValue({ status: 200 });
 
     const { canReachManagedPythonDownloadSource } = await import('@electron/utils/uv-env');
@@ -86,14 +87,21 @@ describe('uv-env network reachability', () => {
     await expect(canReachManagedPythonDownloadSource()).resolves.toBe(false);
   });
 
-  it('uses the managed python mirror when timezone indicates China', async () => {
-    Intl.DateTimeFormat.prototype.resolvedOptions = () => ({ timeZone: 'Asia/Shanghai' }) as Intl.ResolvedDateTimeFormatOptions;
+  it('prefers timezone over locale when deciding managed python mirror usage', async () => {
+    mockApp.getLocale.mockReturnValue('zh-CN');
+    Intl.DateTimeFormat.prototype.resolvedOptions = () => ({ timeZone: 'UTC' }) as Intl.ResolvedDateTimeFormatOptions;
 
     const { canReachManagedPythonDownloadSource } = await import('@electron/utils/uv-env');
 
     await expect(canReachManagedPythonDownloadSource()).resolves.toBe(true);
-    expect(mockProxyAwareFetch).toHaveBeenCalledWith(
-      'https://registry.npmmirror.com/-/binary/python-build-standalone/',
+    expect(mockProxyAwareFetch).toHaveBeenNthCalledWith(
+      1,
+      'https://www.google.com/generate_204',
+      expect.objectContaining({ method: 'GET' }),
+    );
+    expect(mockProxyAwareFetch).toHaveBeenNthCalledWith(
+      2,
+      'https://www.google.com/generate_204',
       expect.objectContaining({ method: 'GET' }),
     );
   });
