@@ -174,7 +174,7 @@ describe('handleChannelRoutes', () => {
       {
         gatewayManager: {
           rpc,
-          getStatus: () => ({ state: 'running' }),
+          getStatus: () => ({ state: 'running', gatewayReady: true }),
           getDiagnostics: () => ({ consecutiveHeartbeatMisses: 0, consecutiveRpcFailures: 0 }),
           debouncedReload: vi.fn(),
           debouncedRestart: vi.fn(),
@@ -218,7 +218,7 @@ describe('handleChannelRoutes', () => {
       {
         gatewayManager: {
           rpc: vi.fn(),
-          getStatus: () => ({ state: 'running' }),
+          getStatus: () => ({ state: 'running', gatewayReady: true }),
           debouncedReload: vi.fn(),
           debouncedRestart: vi.fn(),
         },
@@ -258,7 +258,7 @@ describe('handleChannelRoutes', () => {
       {
         gatewayManager: {
           rpc: vi.fn(),
-          getStatus: () => ({ state: 'running' }),
+          getStatus: () => ({ state: 'running', gatewayReady: true }),
           debouncedReload: vi.fn(),
           debouncedRestart: vi.fn(),
         },
@@ -292,7 +292,7 @@ describe('handleChannelRoutes', () => {
       {
         gatewayManager: {
           rpc: vi.fn(),
-          getStatus: () => ({ state: 'running' }),
+          getStatus: () => ({ state: 'running', gatewayReady: true }),
           debouncedReload: vi.fn(),
           debouncedRestart: vi.fn(),
         },
@@ -325,7 +325,7 @@ describe('handleChannelRoutes', () => {
       {
         gatewayManager: {
           rpc: vi.fn(),
-          getStatus: () => ({ state: 'running' }),
+          getStatus: () => ({ state: 'running', gatewayReady: true }),
           debouncedReload: vi.fn(),
           debouncedRestart: vi.fn(),
         },
@@ -353,7 +353,7 @@ describe('handleChannelRoutes', () => {
       {
         gatewayManager: {
           rpc: vi.fn(),
-          getStatus: () => ({ state: 'running' }),
+          getStatus: () => ({ state: 'running', gatewayReady: true }),
           debouncedReload: vi.fn(),
           debouncedRestart: vi.fn(),
         },
@@ -387,7 +387,7 @@ describe('handleChannelRoutes', () => {
       {
         gatewayManager: {
           rpc: vi.fn(),
-          getStatus: () => ({ state: 'running' }),
+          getStatus: () => ({ state: 'running', gatewayReady: true }),
           debouncedReload: vi.fn(),
           debouncedRestart: vi.fn(),
         },
@@ -407,7 +407,7 @@ describe('handleChannelRoutes', () => {
       {
         gatewayManager: {
           rpc: vi.fn(),
-          getStatus: () => ({ state: 'running' }),
+          getStatus: () => ({ state: 'running', gatewayReady: true }),
           debouncedReload: vi.fn(),
           debouncedRestart: vi.fn(),
         },
@@ -447,7 +447,7 @@ describe('handleChannelRoutes', () => {
       {
         gatewayManager: {
           rpc: vi.fn(),
-          getStatus: () => ({ state: 'running' }),
+          getStatus: () => ({ state: 'running', gatewayReady: true }),
           debouncedReload: vi.fn(),
           debouncedRestart: vi.fn(),
         },
@@ -492,7 +492,7 @@ describe('handleChannelRoutes', () => {
       {
         gatewayManager: {
           rpc: vi.fn(),
-          getStatus: () => ({ state: 'running' }),
+          getStatus: () => ({ state: 'running', gatewayReady: true }),
           debouncedReload: vi.fn(),
           debouncedRestart: vi.fn(),
         },
@@ -535,7 +535,7 @@ describe('handleChannelRoutes', () => {
       {
         gatewayManager: {
           rpc: vi.fn(),
-          getStatus: () => ({ state: 'running' }),
+          getStatus: () => ({ state: 'running', gatewayReady: true }),
           debouncedReload: vi.fn(),
           debouncedRestart: vi.fn(),
         },
@@ -577,7 +577,7 @@ describe('handleChannelRoutes', () => {
       {
         gatewayManager: {
           rpc: vi.fn(),
-          getStatus: () => ({ state: 'running' }),
+          getStatus: () => ({ state: 'running', gatewayReady: true }),
           debouncedReload: vi.fn(),
           debouncedRestart: vi.fn(),
         },
@@ -615,7 +615,7 @@ describe('handleChannelRoutes', () => {
       {
         gatewayManager: {
           rpc: vi.fn(),
-          getStatus: () => ({ state: 'running' }),
+          getStatus: () => ({ state: 'running', gatewayReady: true }),
           debouncedReload: vi.fn(),
           debouncedRestart: vi.fn(),
         },
@@ -666,7 +666,7 @@ describe('handleChannelRoutes', () => {
       {
         gatewayManager: {
           rpc: vi.fn(),
-          getStatus: () => ({ state: 'running' }),
+          getStatus: () => ({ state: 'running', gatewayReady: true }),
           debouncedReload: vi.fn(),
           debouncedRestart: vi.fn(),
         },
@@ -709,7 +709,7 @@ describe('handleChannelRoutes', () => {
       {
         gatewayManager: {
           rpc: vi.fn(),
-          getStatus: () => ({ state: 'running' }),
+          getStatus: () => ({ state: 'running', gatewayReady: true }),
           debouncedReload: vi.fn(),
           debouncedRestart: vi.fn(),
         },
@@ -746,7 +746,7 @@ describe('handleChannelRoutes', () => {
       {
         gatewayManager: {
           rpc: vi.fn(),
-          getStatus: () => ({ state: 'running' }),
+          getStatus: () => ({ state: 'running', gatewayReady: true }),
           debouncedReload: vi.fn(),
           debouncedRestart: vi.fn(),
         },
@@ -817,7 +817,7 @@ describe('handleChannelRoutes', () => {
       {
         gatewayManager: {
           rpc,
-          getStatus: () => ({ state: 'running' }),
+          getStatus: () => ({ state: 'running', gatewayReady: true }),
           debouncedReload: vi.fn(),
           debouncedRestart: vi.fn(),
         },
@@ -895,7 +895,7 @@ describe('handleChannelRoutes', () => {
       {
         gatewayManager: {
           rpc,
-          getStatus: () => ({ state: 'running' }),
+          getStatus: () => ({ state: 'running', gatewayReady: true }),
           debouncedReload: vi.fn(),
           debouncedRestart: vi.fn(),
         },
@@ -948,7 +948,7 @@ describe('handleChannelRoutes', () => {
       {
         gatewayManager: {
           rpc,
-          getStatus: () => ({ state: 'running' }),
+          getStatus: () => ({ state: 'running', gatewayReady: true }),
           getDiagnostics: () => ({ consecutiveHeartbeatMisses: 0, consecutiveRpcFailures: 0 }),
           debouncedReload: vi.fn(),
           debouncedRestart: vi.fn(),
@@ -1035,7 +1035,7 @@ describe('handleChannelRoutes', () => {
       {
         gatewayManager: {
           rpc,
-          getStatus: () => ({ state: 'running' }),
+          getStatus: () => ({ state: 'running', gatewayReady: true }),
           getDiagnostics: () => ({ consecutiveHeartbeatMisses: 1, consecutiveRpcFailures: 0 }),
           debouncedReload: vi.fn(),
           debouncedRestart: vi.fn(),
@@ -1090,7 +1090,7 @@ describe('handleChannelRoutes', () => {
       {
         gatewayManager: {
           rpc: vi.fn(),
-          getStatus: () => ({ state: 'running' }),
+          getStatus: () => ({ state: 'running', gatewayReady: true }),
           debouncedReload: vi.fn(),
           debouncedRestart: vi.fn(),
         },
@@ -1204,7 +1204,7 @@ describe('handleChannelRoutes', () => {
       {
         gatewayManager: {
           rpc: vi.fn(),
-          getStatus: () => ({ state: 'running' }),
+          getStatus: () => ({ state: 'running', gatewayReady: true }),
           debouncedReload: vi.fn(),
           debouncedRestart: vi.fn(),
         },
@@ -1263,7 +1263,7 @@ describe('handleChannelRoutes', () => {
       {
         gatewayManager: {
           rpc: vi.fn(),
-          getStatus: () => ({ state: 'running' }),
+          getStatus: () => ({ state: 'running', gatewayReady: true }),
           debouncedReload: vi.fn(),
           debouncedRestart: vi.fn(),
         },
@@ -1313,7 +1313,7 @@ describe('handleChannelRoutes', () => {
       {
         gatewayManager: {
           rpc: vi.fn(),
-          getStatus: () => ({ state: 'running' }),
+          getStatus: () => ({ state: 'running', gatewayReady: true }),
           debouncedReload: vi.fn(),
           debouncedRestart: vi.fn(),
         },
@@ -1365,7 +1365,7 @@ describe('handleChannelRoutes', () => {
       {
         gatewayManager: {
           rpc: vi.fn(),
-          getStatus: () => ({ state: 'running' }),
+          getStatus: () => ({ state: 'running', gatewayReady: true }),
           debouncedReload: vi.fn(),
           debouncedRestart: vi.fn(),
         },
