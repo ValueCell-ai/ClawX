@@ -35,6 +35,7 @@
         "title": "Execution Graph",
         "branchLabel": "branch",
         "thinkingLabel": "Thinking",
+        "errorLabel": "Error",
         "agentRun": "{{agent}} execution",
         "collapsedSummary": "{{toolCount}} tool calls · {{processCount}} process messages",
         "collapseAction": "Collapse execution graph"

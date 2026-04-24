@@ -35,6 +35,7 @@
         "title": "Граф выполнения",
         "branchLabel": "ветвь",
         "thinkingLabel": "Думаю",
+        "runErrorLabel": "Ошибка модели",
         "agentRun": "Выполнение {{agent}}",
         "collapsedSummary": "Вызовов инструментов: {{toolCount}} · Промежуточных сообщений: {{processCount}}",
         "collapseAction": "Свернуть граф выполнения"

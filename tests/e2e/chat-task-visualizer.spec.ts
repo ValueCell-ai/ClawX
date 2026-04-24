@@ -172,6 +172,23 @@ const longRunHistory = [
   },
 ];
 
+const errorRunPrompt = '你是什么模型？';
+const errorRunHistory = [
+  {
+    role: 'user',
+    content: [{ type: 'text', text: errorRunPrompt }],
+    timestamp: Date.now(),
+  },
+  {
+    role: 'assistant',
+    id: 'error-final',
+    content: [],
+    stopReason: 'error',
+    errorMessage: '404 Resource not found',
+    timestamp: Date.now(),
+  },
+];
+
 test.describe('ClawX chat execution graph', () => {
   test('renders internal yield status and linked subagent branch from mocked IPC', async ({ launchElectronApp }) => {
     const app = await launchElectronApp({ skipSetup: true });
@@ -334,6 +351,77 @@ test.describe('ClawX chat execution graph', () => {
       await expect(page.getByTestId('chat-execution-graph')).toContainText('9 process messages');
       await expect(page.getByText(longRunSummary, { exact: true })).toBeVisible();
       await expect(page.getByText(longRunReplyText, { exact: true })).toHaveCount(0);
+    } finally {
+      await closeElectronApp(app);
+    }
+  });
+
+  test('surfaces terminal model errors and stops the stale thinking state', async ({ launchElectronApp }) => {
+    const app = await launchElectronApp({ skipSetup: true });
+
+    try {
+      await installIpcMocks(app, {
+        gatewayStatus: { state: 'running', port: 18789, pid: 12345 },
+        gatewayRpc: {
+          [stableStringify(['sessions.list', {}])]: {
+            success: true,
+            result: {
+              sessions: [{ key: PROJECT_MANAGER_SESSION_KEY, displayName: 'main' }],
+            },
+          },
+          [stableStringify(['chat.history', { sessionKey: PROJECT_MANAGER_SESSION_KEY, limit: 200 }])]: {
+            success: true,
+            result: {
+              messages: errorRunHistory,
+            },
+          },
+          [stableStringify(['chat.history', { sessionKey: PROJECT_MANAGER_SESSION_KEY, limit: 1000 }])]: {
+            success: true,
+            result: {
+              messages: errorRunHistory,
+            },
+          },
+        },
+        hostApi: {
+          [stableStringify(['/api/gateway/status', 'GET'])]: {
+            ok: true,
+            data: {
+              status: 200,
+              ok: true,
+              json: { state: 'running', port: 18789, pid: 12345 },
+            },
+          },
+          [stableStringify(['/api/agents', 'GET'])]: {
+            ok: true,
+            data: {
+              status: 200,
+              ok: true,
+              json: {
+                success: true,
+                agents: [{ id: 'main', name: 'main' }],
+              },
+            },
+          },
+        },
+      });
+
+      const page = await getStableWindow(app);
+      try {
+        await page.reload();
+      } catch (error) {
+        if (!String(error).includes('ERR_FILE_NOT_FOUND')) {
+          throw error;
+        }
+      }
+
+      await expect(page.getByTestId('main-layout')).toBeVisible();
+      await expect(page.getByText('404 Resource not found')).toBeVisible({ timeout: 30_000 });
+      await expect(page.getByText('runError.title')).toBeVisible();
+      await expect(page.getByTestId('chat-execution-graph')).toHaveCount(0);
+      await expect(page.getByTestId('chat-execution-step-thinking-trailing')).toHaveCount(0);
+      await expect(page.getByText('404 Resource not found')).toHaveCount(1);
+      await page.getByTestId('chat-composer-input').fill('retry');
+      await expect(page.getByTestId('chat-composer-send')).toBeEnabled();
     } finally {
       await closeElectronApp(app);
     }

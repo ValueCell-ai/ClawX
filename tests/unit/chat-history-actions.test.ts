@@ -6,6 +6,14 @@ const gatewayStoreGetStateMock = vi.fn();
 const clearHistoryPoll = vi.fn();
 const enrichWithCachedImages = vi.fn((messages) => messages);
 const enrichWithToolResultFiles = vi.fn((messages) => messages);
+const getMessageErrorMessage = vi.fn((message: { errorMessage?: string; error_message?: string } | undefined) => {
+  if (!message) return null;
+  return message.errorMessage ?? message.error_message ?? null;
+});
+const getMessageStopReason = vi.fn((message: { stopReason?: string; stop_reason?: string } | undefined) => {
+  if (!message) return null;
+  return message.stopReason ?? message.stop_reason ?? null;
+});
 const getMessageText = vi.fn((content: unknown) => typeof content === 'string' ? content : '');
 const hasNonToolAssistantContent = vi.fn((message: { content?: unknown } | undefined) => {
   if (!message) return false;
@@ -75,6 +83,8 @@ vi.mock('@/stores/chat/helpers', () => ({
     if (candidateAttachments && optimisticAttachments && candidateAttachments === optimisticAttachments && (!hasCandidateTimestamp || timestampMatches)) return true;
     return false;
   },
+  getMessageErrorMessage: (...args: unknown[]) => getMessageErrorMessage(...args),
+  getMessageStopReason: (...args: unknown[]) => getMessageStopReason(...args),
   toMs: (...args: unknown[]) => toMs(...args as Parameters<typeof toMs>),
 }));
 
@@ -83,6 +93,7 @@ type ChatLikeState = {
   messages: Array<{ role: string; timestamp?: number; content?: unknown; _attachedFiles?: unknown[] }>;
   loading: boolean;
   error: string | null;
+  runError: string | null;
   sending: boolean;
   lastUserMessageAt: number | null;
   pendingFinal: boolean;
@@ -98,6 +109,7 @@ function makeHarness(initial?: Partial<ChatLikeState>) {
     messages: [],
     loading: false,
     error: null,
+    runError: null,
     sending: false,
     lastUserMessageAt: null,
     pendingFinal: false,
@@ -199,6 +211,70 @@ describe('chat history actions', () => {
     expect(h.read().messages.map((message) => message.content)).toEqual(['still here']);
     expect(h.read().error).toBe('Gateway unavailable');
     expect(h.read().loading).toBe(false);
+  });
+
+  it('finalizes sending and surfaces the latest terminal assistant error from history', async () => {
+    const { createHistoryActions } = await import('@/stores/chat/history-actions');
+    const h = makeHarness({
+      currentSessionKey: 'agent:main:main',
+      sending: true,
+      activeRunId: 'run-error',
+      pendingFinal: true,
+      lastUserMessageAt: 1773281731000,
+    });
+    const actions = createHistoryActions(h.set as never, h.get as never);
+
+    invokeIpcMock.mockResolvedValueOnce({
+      success: true,
+      result: {
+        messages: [
+          { role: 'user', content: 'What model are you?', timestamp: 1773281731 },
+          {
+            role: 'assistant',
+            content: [],
+            timestamp: 1773281732,
+            stopReason: 'error',
+            errorMessage: '404 Resource not found',
+          },
+        ],
+      },
+    });
+
+    await actions.loadHistory(true);
+
+    expect(clearHistoryPoll).toHaveBeenCalledTimes(1);
+    expect(h.read().runError).toBe('404 Resource not found');
+    expect(h.read().sending).toBe(false);
+    expect(h.read().pendingFinal).toBe(false);
+    expect(h.read().activeRunId).toBeNull();
+    expect(h.read().lastUserMessageAt).toBeNull();
+  });
+
+  it('clears stale runError when refreshed history no longer contains a terminal assistant error', async () => {
+    const { createHistoryActions } = await import('@/stores/chat/history-actions');
+    const h = makeHarness({
+      currentSessionKey: 'agent:main:main',
+      runError: 'old model error',
+    });
+    const actions = createHistoryActions(h.set as never, h.get as never);
+
+    invokeIpcMock.mockResolvedValueOnce({
+      success: true,
+      result: {
+        messages: [
+          { role: 'user', content: 'What model are you?', timestamp: 1773281731 },
+          { role: 'assistant', content: 'I am MiniMax-M2.7', timestamp: 1773281732 },
+        ],
+      },
+    });
+
+    await actions.loadHistory(true);
+
+    expect(h.read().runError).toBeNull();
+    expect(h.read().messages.map((message) => message.content)).toEqual([
+      'What model are you?',
+      'I am MiniMax-M2.7',
+    ]);
   });
 
   it('retries the first foreground startup history load after a timeout and then succeeds', async () => {

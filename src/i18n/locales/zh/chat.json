@@ -35,6 +35,7 @@
         "title": "执行关系图",
         "branchLabel": "分支",
         "thinkingLabel": "思考中",
+        "modelErrorTitle": "模型调用失败",
         "agentRun": "{{agent}} 执行",
         "collapsedSummary": "{{toolCount}} 个工具调用，{{processCount}} 条过程消息",
         "collapseAction": "收起执行关系图"

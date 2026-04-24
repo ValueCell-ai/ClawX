@@ -79,6 +79,7 @@ export function Chat() {
   const loading = useChatStore((s) => s.loading);
   const sending = useChatStore((s) => s.sending);
   const error = useChatStore((s) => s.error);
+  const runError = useChatStore((s) => s.runError);
   const streamingMessage = useChatStore((s) => s.streamingMessage);
   const streamingTools = useChatStore((s) => s.streamingTools);
   const pendingFinal = useChatStore((s) => s.pendingFinal);
@@ -280,7 +281,9 @@ export function Chat() {
       );
     });
     const runStillExecutingTools = hasToolActivity && !hasFinalReply;
-    const isLatestOpenRun = nextUserIndex === -1
+    const isLatestRunSegment = nextUserIndex === -1;
+    const isLatestOpenRun = isLatestRunSegment
+      && !runError
       && (sending || pendingFinal || hasAnyStreamContent || runStillExecutingTools);
     const replyIndexOffset = findReplyMessageIndex(segmentMessages, isLatestOpenRun);
     const replyIndex = replyIndexOffset === -1 ? null : idx + 1 + replyIndexOffset;
@@ -474,7 +477,7 @@ export function Chat() {
       streamingReplyText,
       suppressThinking,
     }];
-  });
+  }, [messages, subagentCompletionInfos, currentSessionKey, streamingMessage, streamingTools, pendingFinal, sending, hasAnyStreamContent, hasStreamText, hasStreamImages, streamText, streamTools.length, hasRunningStreamToolStatus, childTranscripts, currentAgentId, agents, sessionLabels, graphStepCache, runError]);
   const hasActiveExecutionGraph = userRunCards.some((card) => card.active);
   const replyTextOverrides = useMemo(() => {
     const map = new Map<number, string>();
@@ -691,6 +694,21 @@ export function Chat() {
 
         </div>
       </div>
+
+      {/* Run error callout */}
+      {runError && (
+        <div className="px-4 pt-2">
+          <div className="max-w-4xl mx-auto rounded-xl border border-destructive/20 bg-destructive/10 px-4 py-3">
+            <p className="text-sm font-medium text-destructive flex items-center gap-2">
+              <AlertCircle className="h-4 w-4" />
+              {t('runError.title')}
+            </p>
+            <p className="mt-1 text-sm text-destructive/90 break-words">
+              {runError}
+            </p>
+          </div>
+        </div>
+      )}
 
       {/* Error bar */}
       {error && (

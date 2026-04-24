@@ -35,6 +35,7 @@
         "title": "実行グラフ",
         "branchLabel": "branch",
         "thinkingLabel": "考え中",
+        "errorLabel": "エラー",
         "agentRun": "{{agent}} の実行",
         "collapsedSummary": "ツール呼び出し {{toolCount}} 件 · プロセスメッセージ {{processCount}} 件",
         "collapseAction": "実行グラフを折りたたむ"
