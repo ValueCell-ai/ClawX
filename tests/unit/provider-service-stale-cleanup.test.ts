@@ -291,6 +291,49 @@ describe('ProviderService.listAccounts (openclaw.json as sole source of truth)',
     expect(ids).toContain('minimax-portal-cn-uuid');
   });
 
+  it('seeds a MiniMax CN account when minimax-portal baseUrl points at the CN endpoint', async () => {
+    mocks.listProviderAccounts.mockResolvedValue([]);
+    mocks.getActiveOpenClawProviders.mockResolvedValue(new Set(['minimax-portal']));
+    mocks.getOpenClawProvidersConfig.mockResolvedValue({
+      providers: {
+        'minimax-portal': { baseUrl: 'https://api.minimaxi.com/anthropic' },
+      },
+      defaultModel: undefined,
+    });
+    mocks.getProviderDefinition.mockImplementation((key: string) => {
+      if (key === 'minimax-portal-cn') {
+        return {
+          id: 'minimax-portal-cn',
+          name: 'MiniMax (CN)',
+          defaultAuthMode: 'oauth_device',
+          defaultModelId: 'MiniMax-M2.7',
+          providerConfig: {
+            baseUrl: 'https://api.minimaxi.com/anthropic',
+            api: 'anthropic-messages',
+          },
+        };
+      }
+      return undefined;
+    });
+
+    const result = await service.listAccounts();
+
+    expect(mocks.saveProviderAccount).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: 'minimax-portal',
+        vendorId: 'minimax-portal-cn',
+        label: 'MiniMax (CN)',
+        baseUrl: 'https://api.minimaxi.com/anthropic',
+      }),
+    );
+    expect(result).toHaveLength(1);
+    expect(result[0]).toEqual(expect.objectContaining({
+      id: 'minimax-portal',
+      vendorId: 'minimax-portal-cn',
+      label: 'MiniMax (CN)',
+    }));
+  });
+
   it('seeds builtin providers discovered from auth profiles without explicit models.providers entries', async () => {
     mocks.listProviderAccounts.mockResolvedValue([]);
     mocks.getActiveOpenClawProviders.mockResolvedValue(new Set(['openai', 'anthropic']));
