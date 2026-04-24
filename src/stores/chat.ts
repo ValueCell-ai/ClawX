@@ -1610,6 +1610,23 @@ export const useChatStore = create<ChatState>((set, get) => ({
         }
       }
 
+      // Guard: during an active send, don't let a history poll replace the local
+      // conversation with fewer messages from the gateway. This can happen when
+      // the gateway is reconnecting after a brief disconnect or hasn't fully
+      // persisted the conversation yet. Without this guard, the history poll
+      // causes chat history to vanish mid-conversation (issue #709).
+      {
+        const preApplyState = get();
+        if (
+          preApplyState.sending &&
+          preApplyState.lastUserMessageAt &&
+          finalMessages.length < preApplyState.messages.length &&
+          preApplyState.messages.length > 1
+        ) {
+          finalMessages = preApplyState.messages;
+        }
+      }
+
       set({ messages: finalMessages, thinkingLevel, loading: false });
 
       // Extract first user message text as a session label for display in the toolbar.
