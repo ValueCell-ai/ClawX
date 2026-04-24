@@ -1,4 +1,11 @@
-import { clearHistoryPoll, getLastAbortedRunId, queueBlockedRunEvent, setLastAbortedRunId, setLastChatEventAt } from './helpers';
+import {
+  clearHistoryPoll,
+  getLastAbortedRunId,
+  getMessageStopReason,
+  queueBlockedRunEvent,
+  setLastAbortedRunId,
+  setLastChatEventAt,
+} from './helpers';
 import type { ChatGet, ChatSet, RuntimeActions } from './store-api';
 import { handleRuntimeEventState } from './runtime-event-handlers';
 
@@ -44,9 +51,9 @@ export function createRuntimeEventActions(set: ChatSet, get: ChatGet): Pick<Runt
       let resolvedState = eventState;
       if (!resolvedState && event.message && typeof event.message === 'object') {
         const msg = event.message as Record<string, unknown>;
-        const stopReason = msg.stopReason ?? msg.stop_reason;
+        const stopReason = getMessageStopReason(msg);
         if (stopReason) {
-          resolvedState = 'final';
+          resolvedState = stopReason === 'error' ? 'error' : 'final';
         } else if (msg.role || msg.content) {
           resolvedState = 'delta';
         }
@@ -64,7 +71,7 @@ export function createRuntimeEventActions(set: ChatSet, get: ChatGet): Pick<Runt
         // show loading/streaming in the app when this session has an active run.
         const { sending } = get();
         if (!sending && runId) {
-          set({ sending: true, activeRunId: runId, error: null });
+          set({ sending: true, activeRunId: runId, error: null, runError: null });
         }
       }
 

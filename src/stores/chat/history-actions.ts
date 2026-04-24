@@ -2,9 +2,12 @@ import { invokeIpc } from '@/lib/api-client';
 import { hostApiFetch } from '@/lib/host-api';
 import { useGatewayStore } from '@/stores/gateway';
 import {
+  clearHistoryPoll,
   enrichWithCachedImages,
   enrichWithToolResultFiles,
   getLatestOptimisticUserMessage,
+  getMessageErrorMessage,
+  getMessageStopReason,
   getMessageText,
   isInternalMessage,
   isToolResultRole,
@@ -110,7 +113,27 @@ export function createHistoryActions(
           }
         }
 
-        set({ messages: finalMessages, thinkingLevel, loading: false });
+        const { pendingFinal, lastUserMessageAt, sending: isSendingNow } = get();
+        const userMsTs = lastUserMessageAt ? toMs(lastUserMessageAt) : 0;
+        const isAfterUserMsg = (msg: RawMessage): boolean => {
+          if (!userMsTs || !msg.timestamp) return true;
+          return toMs(msg.timestamp) >= userMsTs;
+        };
+        const latestTerminalAssistantError = [...filteredMessages].reverse().find((msg) => (
+          msg.role === 'assistant'
+          && getMessageStopReason(msg) === 'error'
+          && isAfterUserMsg(msg)
+        ));
+        const latestTerminalAssistantErrorMessage = latestTerminalAssistantError
+          ? getMessageErrorMessage(latestTerminalAssistantError)
+          : null;
+
+        set({
+          messages: finalMessages,
+          thinkingLevel,
+          loading: false,
+          runError: latestTerminalAssistantErrorMessage,
+        });
 
         // Extract first user message text as a session label for display in the toolbar.
         // Skip main sessions (key ends with ":main") — they rely on the Gateway-provided
@@ -147,17 +170,6 @@ export function createHistoryActions(
             }));
           }
         });
-        const { pendingFinal, lastUserMessageAt, sending: isSendingNow } = get();
-
-        // If we're sending but haven't received streaming events, check
-        // whether the loaded history reveals intermediate tool-call activity.
-        // This surfaces progress via the pendingFinal → ActivityIndicator path.
-        const userMsTs = lastUserMessageAt ? toMs(lastUserMessageAt) : 0;
-        const isAfterUserMsg = (msg: RawMessage): boolean => {
-          if (!userMsTs || !msg.timestamp) return true;
-          return toMs(msg.timestamp) >= userMsTs;
-        };
-
         // If we're sending but haven't received streaming events, check
         // whether the loaded history reveals assistant activity (tool calls,
         // narration, etc.).  Setting pendingFinal surfaces the execution
@@ -170,6 +182,17 @@ export function createHistoryActions(
         // Attempting to infer completion from message history is fragile
         // and leads to premature sending=false during server-side tool
         // execution.
+        if (latestTerminalAssistantErrorMessage) {
+          clearHistoryPoll();
+          set({
+            sending: false,
+            activeRunId: null,
+            pendingFinal: false,
+            lastUserMessageAt: null,
+          });
+          return true;
+        }
+
         if (isSendingNow && !pendingFinal) {
           const hasRecentAssistantActivity = [...filteredMessages].reverse().some((msg) => {
             if (msg.role !== 'assistant') return false;

@@ -4,17 +4,17 @@ import {
   collectToolUpdates,
   extractImagesAsAttachedFiles,
   extractMediaRefs,
+  getMessageErrorMessage,
   extractRawFilePaths,
   getMessageText,
   getToolCallFilePath,
-  hasErrorRecoveryTimer,
   hasNonToolAssistantContent,
   isInternalMessage,
+  isTerminalAssistantErrorMessage,
   isToolOnlyMessage,
   isToolResultRole,
   makeAttachedFile,
   normalizeStreamingMessage,
-  setErrorRecoveryTimer,
   snapshotStreamingAssistantMessage,
   upsertToolStatuses,
 } from './helpers';
@@ -41,10 +41,8 @@ export function handleRuntimeEventState(
           // If we're receiving new deltas, the Gateway has recovered from any
           // prior error — cancel the error finalization timer and clear the
           // stale error banner so the user sees the live stream again.
-          if (hasErrorRecoveryTimer()) {
-            clearErrorRecoveryTimer();
-            set({ error: null });
-          }
+          clearErrorRecoveryTimer();
+          if (get().error || get().runError) set({ error: null, runError: null });
           const updates = collectToolUpdates(event.message, resolvedState);
           set((s) => ({
             streamingMessage: (() => {
@@ -76,11 +74,25 @@ export function handleRuntimeEventState(
         }
         case 'final': {
           clearErrorRecoveryTimer();
-          if (get().error) set({ error: null });
+          if (get().error || get().runError) set({ error: null, runError: null });
           // Message complete - add to history and clear streaming
           const finalMsg = event.message as RawMessage | undefined;
           if (finalMsg) {
             const normalizedFinalMessage = normalizeStreamingMessage(finalMsg) as RawMessage;
+            if (isTerminalAssistantErrorMessage(normalizedFinalMessage)) {
+              handleRuntimeEventState(
+                set,
+                get,
+                {
+                  ...event,
+                  errorMessage: getMessageErrorMessage(normalizedFinalMessage) ?? event.errorMessage,
+                  message: normalizedFinalMessage,
+                },
+                'error',
+                runId,
+              );
+              break;
+            }
             const updates = collectToolUpdates(normalizedFinalMessage, resolvedState);
             // Filter out internal-only final responses (NO_REPLY, HEARTBEAT_OK, etc.)
             // before adding to messages. Without this guard, the internal token appears
@@ -218,7 +230,12 @@ export function handleRuntimeEventState(
           break;
         }
         case 'error': {
-          const errorMsg = String(event.errorMessage || 'An error occurred');
+          const errorMsg = String(
+            event.errorMessage
+            || getMessageErrorMessage(event.message)
+            || 'An error occurred',
+          );
+          const terminalAssistantError = isTerminalAssistantErrorMessage(event.message);
           const wasSending = get().sending;
 
           // Snapshot the current streaming message into messages[] so partial
@@ -237,40 +254,21 @@ export function handleRuntimeEventState(
           }
 
           set({
-            error: errorMsg,
+            error: terminalAssistantError ? null : errorMsg,
+            runError: terminalAssistantError ? errorMsg : null,
+            sending: false,
+            activeRunId: null,
             streamingText: '',
             streamingMessage: null,
             streamingTools: [],
             pendingFinal: false,
+            lastUserMessageAt: null,
             pendingToolImages: [],
           });
-
-          // Don't immediately give up: the Gateway often retries internally
-          // after transient API failures (e.g. "terminated"). Keep `sending`
-          // true for a grace period so that recovery events are processed and
-          // the agent-phase-completion handler can still trigger loadHistory.
+          clearHistoryPoll();
+          clearErrorRecoveryTimer();
           if (wasSending) {
-            clearErrorRecoveryTimer();
-            const ERROR_RECOVERY_GRACE_MS = 15_000;
-            setErrorRecoveryTimer(setTimeout(() => {
-              setErrorRecoveryTimer(null);
-              const state = get();
-              if (state.sending && !state.streamingMessage) {
-                clearHistoryPoll();
-                // Grace period expired with no recovery — finalize the error
-                set({
-                  sending: false,
-                  activeRunId: null,
-                  lastUserMessageAt: null,
-                });
-                // One final history reload in case the Gateway completed in the
-                // background and we just missed the event.
-                state.loadHistory(true);
-              }
-            }, ERROR_RECOVERY_GRACE_MS));
-          } else {
-            clearHistoryPoll();
-            set({ sending: false, activeRunId: null, lastUserMessageAt: null });
+            void get().loadHistory(true);
           }
           break;
         }

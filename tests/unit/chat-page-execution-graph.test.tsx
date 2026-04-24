@@ -70,6 +70,23 @@ vi.mock('@/pages/Chat/ChatInput', () => ({
   ChatInput: () => null,
 }));
 
+vi.mock('@/pages/Chat/ChatMessage', () => ({
+  ChatMessage: ({ message, textOverride }: { message: { content?: unknown }; textOverride?: string }) => {
+    const text = typeof textOverride === 'string'
+      ? textOverride
+      : typeof message?.content === 'string'
+        ? message.content
+        : Array.isArray(message?.content)
+          ? message.content
+            .filter((block): block is { type?: string; text?: string } => typeof block === 'object' && block !== null)
+            .filter((block) => block.type === 'text' && typeof block.text === 'string')
+            .map((block) => block.text)
+            .join(' ')
+          : '';
+    return <div>{text}</div>;
+  },
+}));
+
 describe('Chat execution graph lifecycle', () => {
   beforeEach(async () => {
     vi.resetModules();
@@ -95,6 +112,7 @@ describe('Chat execution graph lifecycle', () => {
       ],
       loading: false,
       error: null,
+      runError: null,
       sending: true,
       activeRunId: 'run-live',
       streamingText: '',
@@ -150,6 +168,7 @@ describe('Chat execution graph lifecycle', () => {
       ],
       loading: false,
       error: null,
+      runError: null,
       sending: true,
       activeRunId: 'run-starting',
       streamingText: '',
@@ -176,5 +195,53 @@ describe('Chat execution graph lifecycle', () => {
 
     expect(screen.getByTestId('chat-execution-step-thinking-trailing')).toBeInTheDocument();
     expect(screen.getAllByText('Thinking').length).toBeGreaterThan(0);
+  });
+
+  it('stops showing trailing thinking and renders run error callout after terminal model error', async () => {
+    const { useChatStore } = await import('@/stores/chat');
+    useChatStore.setState({
+      messages: [
+        {
+          role: 'user',
+          content: 'Check semiconductor chatter',
+        },
+        {
+          role: 'assistant',
+          id: 'tool-turn',
+          content: [
+            { type: 'text', text: 'Checked X.' },
+            { type: 'tool_use', id: 'browser-search', name: 'browser', input: { action: 'search', query: 'semiconductor' } },
+          ],
+        },
+      ],
+      loading: false,
+      error: '404 Resource not found',
+      runError: '404 Resource not found',
+      sending: false,
+      activeRunId: null,
+      streamingText: '',
+      streamingMessage: null,
+      streamingTools: [],
+      pendingFinal: false,
+      lastUserMessageAt: null,
+      pendingToolImages: [],
+      sessions: [{ key: 'agent:main:main' }],
+      currentSessionKey: 'agent:main:main',
+      currentAgentId: 'main',
+      sessionLabels: {},
+      sessionLastActivity: {},
+      thinkingLevel: null,
+    });
+
+    const { Chat } = await import('@/pages/Chat/index');
+
+    render(<Chat />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('chat-execution-graph')).toBeInTheDocument();
+    });
+
+    expect(screen.queryByTestId('chat-execution-step-thinking-trailing')).not.toBeInTheDocument();
+    expect(screen.getAllByText('404 Resource not found').length).toBeGreaterThan(0);
   });
 });

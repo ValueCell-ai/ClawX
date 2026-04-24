@@ -121,7 +121,10 @@ async function launchClawXElectron(
 ): Promise<ElectronApplication> {
   const hostApiPort = await allocatePort();
   const electronEnv = process.platform === 'linux'
-    ? { ELECTRON_DISABLE_SANDBOX: '1' }
+    ? {
+      ELECTRON_DISABLE_SANDBOX: '1',
+      DISPLAY: process.env.DISPLAY || ':1',
+    }
     : {};
   return await electron.launch({
     executablePath: electronBinaryPath,

@@ -249,6 +249,30 @@ function getMessageText(content: unknown): string {
   return '';
 }
 
+function getMessageStopReason(message: RawMessage | unknown): string | null {
+  if (!message || typeof message !== 'object') return null;
+  const msg = message as Record<string, unknown>;
+  const rawStopReason = msg.stopReason ?? msg.stop_reason;
+  if (typeof rawStopReason !== 'string') return null;
+  const normalized = rawStopReason.trim().toLowerCase();
+  return normalized || null;
+}
+
+function getMessageErrorMessage(message: RawMessage | unknown): string | null {
+  if (!message || typeof message !== 'object') return null;
+  const msg = message as Record<string, unknown>;
+  const rawError = msg.errorMessage ?? msg.error_message;
+  if (typeof rawError !== 'string') return null;
+  const normalized = rawError.trim();
+  return normalized || null;
+}
+
+function isTerminalAssistantErrorMessage(message: RawMessage | unknown): boolean {
+  if (!message || typeof message !== 'object') return false;
+  const msg = message as Record<string, unknown>;
+  return msg.role === 'assistant' && getMessageStopReason(message) === 'error';
+}
+
 /** Extract media file refs from [media attached: <path> (<mime>) | ...] patterns */
 function extractMediaRefs(text: string): Array<{ filePath: string; mimeType: string }> {
   const refs: Array<{ filePath: string; mimeType: string }> = [];
@@ -1053,6 +1077,9 @@ export {
   clearHistoryPoll,
   extractImagesAsAttachedFiles,
   getMessageText,
+  getMessageStopReason,
+  getMessageErrorMessage,
+  isTerminalAssistantErrorMessage,
   extractMediaRefs,
   extractRawFilePaths,
   makeAttachedFile,

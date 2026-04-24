@@ -7,10 +7,16 @@ const extractImagesAsAttachedFiles = vi.fn(() => []);
 const extractMediaRefs = vi.fn(() => []);
 const extractRawFilePaths = vi.fn(() => []);
 const getMessageText = vi.fn(() => '');
+const getMessageErrorMessage = vi.fn((message: { errorMessage?: string; error_message?: string } | undefined) =>
+  message?.errorMessage ?? message?.error_message ?? null);
 const getToolCallFilePath = vi.fn(() => undefined);
 const hasErrorRecoveryTimer = vi.fn(() => false);
 const hasNonToolAssistantContent = vi.fn(() => true);
 const isInternalMessage = vi.fn(() => false);
+const isTerminalAssistantErrorMessage = vi.fn((message: { role?: string; stopReason?: string; stop_reason?: string } | undefined) => {
+  const stopReason = message?.stopReason ?? message?.stop_reason;
+  return message?.role === 'assistant' && stopReason === 'error';
+});
 const isToolOnlyMessage = vi.fn(() => false);
 const isToolResultRole = vi.fn((role: unknown) => role === 'toolresult' || role === 'toolResult' || role === 'tool_result');
 const makeAttachedFile = vi.fn((ref: { filePath: string; mimeType: string }, source?: 'user-upload' | 'tool-result' | 'message-ref') => ({
@@ -32,12 +38,14 @@ vi.mock('@/stores/chat/helpers', () => ({
   collectToolUpdates: (...args: unknown[]) => collectToolUpdates(...args),
   extractImagesAsAttachedFiles: (...args: unknown[]) => extractImagesAsAttachedFiles(...args),
   extractMediaRefs: (...args: unknown[]) => extractMediaRefs(...args),
+  getMessageErrorMessage: (...args: unknown[]) => getMessageErrorMessage(...args),
   extractRawFilePaths: (...args: unknown[]) => extractRawFilePaths(...args),
   getMessageText: (...args: unknown[]) => getMessageText(...args),
   getToolCallFilePath: (...args: unknown[]) => getToolCallFilePath(...args),
   hasErrorRecoveryTimer: (...args: unknown[]) => hasErrorRecoveryTimer(...args),
   hasNonToolAssistantContent: (...args: unknown[]) => hasNonToolAssistantContent(...args),
   isInternalMessage: (...args: unknown[]) => isInternalMessage(...args),
+  isTerminalAssistantErrorMessage: (...args: unknown[]) => isTerminalAssistantErrorMessage(...args),
   isToolOnlyMessage: (...args: unknown[]) => isToolOnlyMessage(...args),
   isToolResultRole: (...args: unknown[]) => isToolResultRole(...args),
   makeAttachedFile: (...args: unknown[]) => makeAttachedFile(...args),
@@ -51,6 +59,7 @@ type ChatLikeState = {
   sending: boolean;
   activeRunId: string | null;
   error: string | null;
+  runError: string | null;
   streamingMessage: unknown | null;
   streamingTools: unknown[];
   messages: Array<Record<string, unknown>>;
@@ -66,6 +75,7 @@ function makeHarness(initial?: Partial<ChatLikeState>) {
     sending: false,
     activeRunId: null,
     error: 'stale error',
+    runError: null,
     streamingMessage: null,
     streamingTools: [],
     messages: [],
@@ -122,6 +132,7 @@ describe('chat runtime event handlers', () => {
     const next = h.read();
     expect(clearErrorRecoveryTimer).toHaveBeenCalledTimes(1);
     expect(next.error).toBeNull();
+    expect(next.runError).toBeNull();
     expect(next.streamingMessage).toEqual(event.message);
     expect(next.streamingTools).toEqual([{ name: 'tool-a', status: 'running', updatedAt: 1 }]);
   });
@@ -190,10 +201,34 @@ describe('chat runtime event handlers', () => {
     const next = h.read();
     expect(clearHistoryPoll).toHaveBeenCalledTimes(1);
     expect(next.error).toBe('boom');
+    expect(next.runError).toBeNull();
     expect(next.sending).toBe(false);
     expect(next.activeRunId).toBeNull();
     expect(next.lastUserMessageAt).toBeNull();
     expect(next.streamingTools).toEqual([]);
+  });
+
+  it('treats stopReason=error assistant finals as runtime errors', async () => {
+    const { handleRuntimeEventState } = await import('@/stores/chat/runtime-event-handlers');
+    const h = makeHarness({ sending: true, activeRunId: 'run-err', lastUserMessageAt: 123 });
+
+    handleRuntimeEventState(h.set as never, h.get as never, {
+      message: {
+        role: 'assistant',
+        id: 'assistant-error',
+        content: [],
+        stopReason: 'error',
+        errorMessage: '404 Resource not found',
+      },
+    }, 'final', 'run-err');
+
+    const next = h.read();
+    expect(next.error).toBeNull();
+    expect(next.runError).toBe('404 Resource not found');
+    expect(next.pendingFinal).toBe(false);
+    expect(next.streamingMessage).toBeNull();
+    expect(clearHistoryPoll).toHaveBeenCalledTimes(1);
+    expect(setErrorRecoveryTimer).not.toHaveBeenCalled();
   });
 
   it('delta with empty object does not overwrite existing streamingMessage', async () => {

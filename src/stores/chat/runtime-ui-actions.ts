@@ -9,6 +9,6 @@ export function createRuntimeUiActions(set: ChatSet, get: ChatGet): Pick<Runtime
       await Promise.all([loadHistory(), loadSessions()]);
     },
 
-    clearError: () => set({ error: null }),
+    clearError: () => set({ error: null, runError: null }),
   };
 }
