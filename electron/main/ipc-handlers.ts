@@ -1448,11 +1448,14 @@ function registerOpenClawHandlers(gatewayManager: GatewayManager): void {
   // initialize / tear-down plugin connections.  SIGUSR1 in-process reload is
   // not sufficient for channel plugins (see restartGatewayForAgentDeletion).
   const forceRestartChannels = new Set(['dingtalk', 'wecom', 'whatsapp', 'feishu', 'qqbot']);
+  // Debounce window for gateway refreshes triggered by a channel save.
+  // See electron/api/routes/channels.ts for rationale.
+  const CHANNEL_SAVE_RESTART_DEBOUNCE_MS = 2000;
 
   const scheduleGatewayChannelRestart = (reason: string): void => {
     if (gatewayManager.getStatus().state !== 'stopped') {
       logger.info(`Scheduling Gateway restart after ${reason}`);
-      gatewayManager.debouncedRestart(150);
+      gatewayManager.debouncedRestart(CHANNEL_SAVE_RESTART_DEBOUNCE_MS);
     } else {
       logger.info(`Gateway is stopped; skip immediate restart after ${reason}`);
     }
@@ -1465,11 +1468,11 @@ function registerOpenClawHandlers(gatewayManager: GatewayManager): void {
     }
     if (forceRestartChannels.has(channelType)) {
       logger.info(`Scheduling Gateway restart after ${reason}`);
-      gatewayManager.debouncedRestart(150);
+      gatewayManager.debouncedRestart(CHANNEL_SAVE_RESTART_DEBOUNCE_MS);
       return;
     }
     logger.info(`Scheduling Gateway reload after ${reason}`);
-    gatewayManager.debouncedReload(150);
+    gatewayManager.debouncedReload(CHANNEL_SAVE_RESTART_DEBOUNCE_MS);
   };
 
   // Get OpenClaw package status
