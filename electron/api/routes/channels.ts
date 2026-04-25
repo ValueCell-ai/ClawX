@@ -514,9 +514,10 @@ let lastChannelsStatusFailureAt: number | undefined;
 
 export async function buildChannelAccountsView(
   ctx: HostApiContext,
-  options?: { probe?: boolean },
+  options?: { probe?: boolean; skipRuntime?: boolean },
 ): Promise<{ channels: ChannelAccountsView[]; gatewayHealth: GatewayHealthSummary }> {
   const startedAt = Date.now();
+  const skipRuntime = options?.skipRuntime === true;
   // Read config once and share across all sub-calls (was 5 readFile calls before).
   const openClawConfig = await readOpenClawConfig();
 
@@ -526,29 +527,31 @@ export async function buildChannelAccountsView(
     listAgentsSnapshotFromConfig(openClawConfig),
   ]);
 
-  let gatewayStatus: GatewayChannelStatusPayload | null;
-  try {
-    // probe=false uses cached runtime state (lighter); probe=true forces
-    // adapter-level connectivity checks for faster post-restart convergence.
-    const probe = options?.probe === true;
-    // 8s timeout — fail fast when Gateway is busy with AI tasks.
-    const rpcStartedAt = Date.now();
-    gatewayStatus = await ctx.gatewayManager.rpc<GatewayChannelStatusPayload>(
-      'channels.status',
-      { probe },
-      probe ? 5000 : 8000,
-    );
-    lastChannelsStatusOkAt = Date.now();
-    logger.info(
-      `[channels.accounts] channels.status probe=${probe ? '1' : '0'} elapsedMs=${Date.now() - rpcStartedAt} snapshot=${buildGatewayStatusSnapshot(gatewayStatus)}`
-    );
-  } catch {
-    const probe = options?.probe === true;
-    lastChannelsStatusFailureAt = Date.now();
-    logger.warn(
-      `[channels.accounts] channels.status probe=${probe ? '1' : '0'} failed after ${Date.now() - startedAt}ms`
-    );
-    gatewayStatus = null;
+  let gatewayStatus: GatewayChannelStatusPayload | null = null;
+  if (!skipRuntime) {
+    try {
+      // probe=false uses cached runtime state (lighter); probe=true forces
+      // adapter-level connectivity checks for faster post-restart convergence.
+      const probe = options?.probe === true;
+      // 8s timeout — fail fast when Gateway is busy with AI tasks.
+      const rpcStartedAt = Date.now();
+      gatewayStatus = await ctx.gatewayManager.rpc<GatewayChannelStatusPayload>(
+        'channels.status',
+        { probe },
+        probe ? 5000 : 8000,
+      );
+      lastChannelsStatusOkAt = Date.now();
+      logger.info(
+        `[channels.accounts] channels.status probe=${probe ? '1' : '0'} elapsedMs=${Date.now() - rpcStartedAt} snapshot=${buildGatewayStatusSnapshot(gatewayStatus)}`
+      );
+    } catch {
+      const probe = options?.probe === true;
+      lastChannelsStatusFailureAt = Date.now();
+      logger.warn(
+        `[channels.accounts] channels.status probe=${probe ? '1' : '0'} failed after ${Date.now() - startedAt}ms`
+      );
+      gatewayStatus = null;
+    }
   }
 
   const gatewayDiagnostics = ctx.gatewayManager.getDiagnostics?.() ?? {
@@ -563,6 +566,7 @@ export async function buildChannelAccountsView(
     platform: process.platform,
   });
   const gatewayHealthState = gatewayHealthStateForChannels(gatewayHealth.state);
+  const effectiveGatewayHealthState = skipRuntime ? undefined : gatewayHealthState;
 
   const channelTypes = new Set<string>([
     ...configuredChannels,
@@ -613,7 +617,7 @@ export async function buildChannelAccountsView(
       const runtime = runtimeAccounts.find((item) => item.accountId === accountId);
       const runtimeSnapshot: ChannelRuntimeAccountSnapshot = runtime ?? {};
       const status = computeChannelRuntimeStatus(runtimeSnapshot, {
-        gatewayHealthState,
+        gatewayHealthState: effectiveGatewayHealthState,
       });
       return {
         accountId,
@@ -646,22 +650,24 @@ export async function buildChannelAccountsView(
     }));
     const hasRuntimeError = visibleAccountSnapshots.some((account) => typeof account.lastError === 'string' && account.lastError.trim())
       || Boolean(channelSummary?.error?.trim() || channelSummary?.lastError?.trim());
-    const baseGroupStatus = pickChannelRuntimeStatus(visibleAccountSnapshots, channelSummary);
-    const groupStatus = !gatewayStatus && ctx.gatewayManager.getStatus().state === 'running'
+    const baseGroupStatus = pickChannelRuntimeStatus(visibleAccountSnapshots, channelSummary, {
+      gatewayHealthState: effectiveGatewayHealthState,
+    });
+    const groupStatus = !gatewayStatus && !skipRuntime && ctx.gatewayManager.getStatus().state === 'running'
       ? 'degraded'
-      : gatewayHealthState && !hasRuntimeError && baseGroupStatus === 'connected'
+      : effectiveGatewayHealthState && !hasRuntimeError && baseGroupStatus === 'connected'
         ? 'degraded'
         : pickChannelRuntimeStatus(visibleAccountSnapshots, channelSummary, {
-          gatewayHealthState,
+          gatewayHealthState: effectiveGatewayHealthState,
         });
 
     channels.push({
       channelType: uiChannelType,
       defaultAccountId,
       status: groupStatus,
-      statusReason: !gatewayStatus && ctx.gatewayManager.getStatus().state === 'running'
+      statusReason: !gatewayStatus && !skipRuntime && ctx.gatewayManager.getStatus().state === 'running'
         ? 'channels_status_timeout'
-        : groupStatus === 'degraded'
+        : groupStatus === 'degraded' && effectiveGatewayHealthState
           ? overlayStatusReason(gatewayHealth, 'gateway_degraded')
         : undefined,
       accounts,
@@ -670,7 +676,7 @@ export async function buildChannelAccountsView(
 
   const sorted = channels.sort((left, right) => left.channelType.localeCompare(right.channelType));
   logger.info(
-    `[channels.accounts] response probe=${options?.probe === true ? '1' : '0'} elapsedMs=${Date.now() - startedAt} view=${sorted.map((item) => `${item.channelType}:${item.status}`).join(',')}`
+    `[channels.accounts] response mode=${skipRuntime ? 'config' : 'runtime'} probe=${options?.probe === true ? '1' : '0'} elapsedMs=${Date.now() - startedAt} view=${sorted.map((item) => `${item.channelType}:${item.status}`).join(',')}`
   );
   return { channels: sorted, gatewayHealth };
 }
@@ -1266,9 +1272,13 @@ export async function handleChannelRoutes(
 
   if (url.pathname === '/api/channels/accounts' && req.method === 'GET') {
     try {
-      const probe = url.searchParams.get('probe') === '1';
-      logger.info(`[channels.accounts] request probe=${probe ? '1' : '0'}`);
-      const { channels, gatewayHealth } = await buildChannelAccountsView(ctx, { probe });
+      const mode = url.searchParams.get('mode') === 'config' ? 'config' : 'runtime';
+      const probe = mode !== 'config' && url.searchParams.get('probe') === '1';
+      logger.info(`[channels.accounts] request mode=${mode} probe=${probe ? '1' : '0'}`);
+      const { channels, gatewayHealth } = await buildChannelAccountsView(ctx, {
+        probe,
+        skipRuntime: mode === 'config',
+      });
       sendJson(res, 200, { success: true, channels, gatewayHealth });
     } catch (error) {
       sendJson(res, 500, { success: false, error: String(error) });

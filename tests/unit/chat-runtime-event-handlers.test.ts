@@ -10,6 +10,7 @@ const getMessageText = vi.fn(() => '');
 const getToolCallFilePath = vi.fn(() => undefined);
 const hasErrorRecoveryTimer = vi.fn(() => false);
 const hasNonToolAssistantContent = vi.fn(() => true);
+const isInternalMessage = vi.fn(() => false);
 const isToolOnlyMessage = vi.fn(() => false);
 const isToolResultRole = vi.fn((role: unknown) => role === 'toolresult' || role === 'toolResult' || role === 'tool_result');
 const makeAttachedFile = vi.fn((ref: { filePath: string; mimeType: string }, source?: 'user-upload' | 'tool-result' | 'message-ref') => ({
@@ -36,6 +37,7 @@ vi.mock('@/stores/chat/helpers', () => ({
   getToolCallFilePath: (...args: unknown[]) => getToolCallFilePath(...args),
   hasErrorRecoveryTimer: (...args: unknown[]) => hasErrorRecoveryTimer(...args),
   hasNonToolAssistantContent: (...args: unknown[]) => hasNonToolAssistantContent(...args),
+  isInternalMessage: (...args: unknown[]) => isInternalMessage(...args),
   isToolOnlyMessage: (...args: unknown[]) => isToolOnlyMessage(...args),
   isToolResultRole: (...args: unknown[]) => isToolResultRole(...args),
   makeAttachedFile: (...args: unknown[]) => makeAttachedFile(...args),
@@ -347,5 +349,34 @@ describe('chat runtime event handlers', () => {
     expect(next.pendingFinal).toBe(false);
     expect(next.lastUserMessageAt).toBeNull();
     expect(next.pendingToolImages).toEqual([]);
+  });
+
+  it('filters out NO_REPLY internal message in final event without adding to messages', async () => {
+    isInternalMessage.mockReturnValueOnce(true);
+    const { handleRuntimeEventState } = await import('@/stores/chat/runtime-event-handlers');
+    const h = makeHarness({
+      sending: true,
+      activeRunId: 'r3',
+      messages: [{ role: 'user', content: 'hello', id: 'u1' }],
+    });
+
+    handleRuntimeEventState(
+      h.set as never,
+      h.get as never,
+      { message: { role: 'assistant', content: 'NO_REPLY', id: 'a1' } },
+      'final',
+      'r3',
+    );
+    const next = h.read();
+    // NO_REPLY must not appear in messages
+    expect(next.messages).toEqual([{ role: 'user', content: 'hello', id: 'u1' }]);
+    expect(next.sending).toBe(false);
+    expect(next.activeRunId).toBeNull();
+    expect(next.pendingFinal).toBe(false);
+    expect(next.streamingText).toBe('');
+    expect(next.streamingMessage).toBeNull();
+    // Should trigger history reload
+    expect(clearHistoryPoll).toHaveBeenCalled();
+    expect(next.loadHistory).toHaveBeenCalledWith(true);
   });
 });

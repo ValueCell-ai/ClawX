@@ -53,6 +53,20 @@ function logLegacyProviderApiUsage(method: string, replacement: string): void {
   );
 }
 
+function inferProviderVendorIdFromOpenClawEntry(
+  key: string,
+  entry: Record<string, unknown>,
+): ProviderType | 'custom' {
+  if (key === 'minimax-portal') {
+    const baseUrl = typeof entry.baseUrl === 'string' ? entry.baseUrl.toLowerCase() : '';
+    if (baseUrl.includes('api.minimaxi.com')) {
+      return 'minimax-portal-cn';
+    }
+  }
+
+  return ((BUILTIN_PROVIDER_TYPES as readonly string[]).includes(key) ? key : 'custom') as ProviderType | 'custom';
+}
+
 export class ProviderService {
   async listVendors(): Promise<ProviderDefinition[]> {
     return PROVIDER_DEFINITIONS;
@@ -157,9 +171,8 @@ export class ProviderService {
     for (const [key, entry] of Object.entries(providers)) {
       if (existingIds.has(key)) continue;
 
-      const definition = getProviderDefinition(key);
-      const isBuiltin = (BUILTIN_PROVIDER_TYPES as readonly string[]).includes(key);
-      const vendorId = isBuiltin ? key : 'custom';
+      const vendorId = inferProviderVendorIdFromOpenClawEntry(key, entry);
+      const definition = getProviderDefinition(vendorId === 'custom' ? key : vendorId);
 
       // Skip if an account with this vendorId already exists (e.g. user already
       // created "openrouter-uuid" via UI — no need to import bare "openrouter").

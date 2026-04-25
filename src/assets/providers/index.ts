@@ -9,6 +9,7 @@ import minimaxPortal from './minimax.svg';
 import qwenPortal from './qwen.svg';
 import ollama from './ollama.svg';
 import custom from './custom.svg';
+import deepseek from './deepseek.svg';
 
 export const providerIcons: Record<string, string> = {
     anthropic,
@@ -24,4 +25,5 @@ export const providerIcons: Record<string, string> = {
     'modelstudio': qwenPortal,
     ollama,
     custom,
+    deepseek,
 };

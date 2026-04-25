@@ -41,6 +41,18 @@ type UserRunCard = {
   steps: TaskStep[];
   messageStepTexts: string[];
   streamingReplyText: string | null;
+  /**
+   * Whether the trailing "Thinking..." indicator should be hidden for this
+   * card. True only when the run's live stream is currently rendered AS a
+   * streaming step inside the graph (the step itself already signals
+   * liveness, so the extra indicator would be redundant). False in all
+   * other cases — including when the stream is promoted to a bubble
+   * below the graph, or when there is no streaming content at all (the
+   * gap between tool rounds), because the graph has no visible activity
+   * of its own in those windows and the indicator is what tells the user
+   * "work is still in progress".
+   */
+  suppressThinking: boolean;
 };
 
 function getPrimaryMessageStepTexts(steps: TaskStep[]): string[] {
@@ -70,6 +82,7 @@ export function Chat() {
   const streamingMessage = useChatStore((s) => s.streamingMessage);
   const streamingTools = useChatStore((s) => s.streamingTools);
   const pendingFinal = useChatStore((s) => s.pendingFinal);
+  const activeRunId = useChatStore((s) => s.activeRunId);
   const sendMessage = useChatStore((s) => s.sendMessage);
   const abortRun = useChatStore((s) => s.abortRun);
   const clearError = useChatStore((s) => s.clearError);
@@ -174,6 +187,13 @@ export function Chat() {
     : 0;
   const streamText = streamMsg ? extractText(streamMsg) : (typeof streamingMessage === 'string' ? streamingMessage : '');
   const hasStreamText = streamText.trim().length > 0;
+  // Whether the streaming chunk currently carries a `thinking` block. Used as
+  // a liveness signal so the run stays "active" (and the ExecutionGraphCard
+  // keeps showing its trailing "Thinking..." indicator) during the brief window
+  // between a tool finishing and the next text/tool chunk arriving — that gap
+  // is normally only filled by streamed thinking. NOT included in
+  // `shouldRenderStreaming`: a thinking-only stream chunk should not produce
+  // a chat bubble (thinking is rendered exclusively inside the ExecutionGraph).
   const streamThinking = streamMsg ? extractThinking(streamMsg) : null;
   const hasStreamThinking = !!streamThinking && streamThinking.trim().length > 0;
   const streamTools = streamMsg ? extractToolUse(streamMsg) : [];
@@ -182,7 +202,7 @@ export function Chat() {
   const hasStreamImages = streamImages.length > 0;
   const hasStreamToolStatus = streamingTools.length > 0;
   const hasRunningStreamToolStatus = streamingTools.some((tool) => tool.status === 'running');
-  const shouldRenderStreaming = sending && (hasStreamText || hasStreamThinking || hasStreamTools || hasStreamImages || hasStreamToolStatus);
+  const shouldRenderStreaming = sending && (hasStreamText || hasStreamTools || hasStreamImages || hasStreamToolStatus);
   const hasAnyStreamContent = hasStreamText || hasStreamThinking || hasStreamTools || hasStreamImages || hasStreamToolStatus;
 
   const isEmpty = messages.length === 0 && !sending;
@@ -236,7 +256,22 @@ export function Chat() {
     const hasToolActivity = segmentMessages.some((m) =>
       m.role === 'assistant' && extractToolUse(m).length > 0,
     );
-    const hasFinalReply = segmentMessages.some((m) => {
+    // Locate the last tool-use message so we only count text messages that
+    // come AFTER all tool calls as "final reply".  Intermediate narration
+    // messages (pure text, no tool_use) sit BEFORE tool calls and must not
+    // be misread as the concluding reply — otherwise `runStillExecutingTools`
+    // flips to false between tool rounds, collapsing the trailing
+    // "Thinking..." indicator during the brief gap before the next stream chunk.
+    let lastToolUseOffset = -1;
+    for (let i = segmentMessages.length - 1; i >= 0; i -= 1) {
+      const m = segmentMessages[i];
+      if (m.role === 'assistant' && extractToolUse(m).length > 0) {
+        lastToolUseOffset = i;
+        break;
+      }
+    }
+    const hasFinalReply = segmentMessages.some((m, i) => {
+      if (i <= lastToolUseOffset) return false;
       if (m.role !== 'assistant') return false;
       if (extractText(m).trim().length === 0) return false;
       const content = m.content;
@@ -246,8 +281,12 @@ export function Chat() {
       );
     });
     const runStillExecutingTools = hasToolActivity && !hasFinalReply;
+    // runStillExecutingTools bridges the brief gap between tool rounds when
+    // Gateway temporarily clears sending.  However, after an explicit abort
+    // (which clears activeRunId), we must NOT keep the run "open" — so we
+    // gate it on activeRunId being present.
     const isLatestOpenRun = nextUserIndex === -1
-      && (sending || pendingFinal || hasAnyStreamContent || runStillExecutingTools);
+      && (sending || pendingFinal || hasAnyStreamContent || (runStillExecutingTools && !!activeRunId));
     const replyIndexOffset = findReplyMessageIndex(segmentMessages, isLatestOpenRun);
     const replyIndex = replyIndexOffset === -1 ? null : idx + 1 + replyIndexOffset;
 
@@ -293,22 +332,36 @@ export function Chat() {
     };
 
     // Show the streaming response as a separate bubble (not inside the
-    // execution graph) once all tool calls have finished.
+    // execution graph) once tool activity has happened and the CURRENT stream
+    // chunk carries no tool_use block.
     //
-    // Three signals indicate "tools finished, now streaming the reply":
-    //   1. `pendingFinal`        — set by tool-result final events
-    //   2. `allToolsCompleted`   — all entries in streamingTools are completed
-    //   3. `hasCompletedToolPhase` — historical messages (loaded by the poll)
-    //      contain tool_use blocks, meaning the Gateway executed tools
-    //      server-side without sending streaming tool events to the client.
-    //      During intermediate narration (before reply), stripProcessMessagePrefix
-    //      will produce an empty trimmedReplyText, so the graph stays active.
+    // We use an optimistic promotion strategy because the distinguishing
+    // signal between "narration-before-next-tool" and "final reply" is not
+    // available during early deltas — both are text-only, both arrive after
+    // `hasToolActivity` has flipped true.  Any of these signals opens the
+    // promotion gate:
+    //   1. `pendingFinal`       — tool-result final just fired; next text is
+    //      (almost always) the final reply.
+    //   2. `allToolsCompleted`  — every client-tracked tool entry reached
+    //      `completed` state.
+    //   3. `hasToolActivity`    — at least one prior tool_use exists in the
+    //      segment, i.e. we're past the first tool round.
+    //
+    // Demotion happens the moment a tool_use block appears in the streaming
+    // message (`streamTools.length > 0`) OR a tool transitions back to
+    // `running`.  When demoted, the stream re-renders inside the graph as a
+    // narration step.  A brief flicker when narration turns into the next
+    // tool round is inherent to optimistic promotion and is accepted.
+    //
+    // Earlier iterations tried restricting this gate to only
+    // `pendingFinal || allToolsCompleted` to protect the trailing
+    // "Thinking..." indicator.  That check is real, but belongs in the
+    // `suppressThinking` coupling below — not here.  With the coupling
+    // fixed, the three-signal gate gives the correct bubble placement for
+    // both narration and final reply.
     const allToolsCompleted = streamingTools.length > 0 && !hasRunningStreamToolStatus;
-    const hasCompletedToolPhase = segmentMessages.some((msg) =>
-      msg.role === 'assistant' && extractToolUse(msg).length > 0,
-    );
     const rawStreamingReplyCandidate = isLatestOpenRun
-      && (pendingFinal || allToolsCompleted || hasCompletedToolPhase)
+      && (pendingFinal || allToolsCompleted || hasToolActivity)
       && (hasStreamText || hasStreamImages)
       && streamTools.length === 0
       && !hasRunningStreamToolStatus;
@@ -341,6 +394,7 @@ export function Chat() {
           steps: [],
           messageStepTexts: [],
           streamingReplyText: null,
+          suppressThinking: false,
         }];
       }
       const cached = graphStepCache[runKey];
@@ -362,6 +416,7 @@ export function Chat() {
         steps: cleanedSteps,
         messageStepTexts: getPrimaryMessageStepTexts(cleanedSteps),
         streamingReplyText: null,
+        suppressThinking: false,
       }];
     }
 
@@ -395,6 +450,23 @@ export function Chat() {
     // uncontrolled path before the controlled `expanded` override could kick in.
     const cardActive = isLatestOpenRun;
 
+    // Suppress the trailing "Thinking..." indicator only when the live stream is
+    // currently rendered AS a streaming step inside this card's graph. In
+    // that case the streaming step itself is the activity signal, and the
+    // separate trailing indicator would be redundant.
+    //   - streamingReplyText != null: stream is promoted to a bubble → graph
+    //     has no live step of its own → DO show the trailing indicator so the
+    //     user still sees progress in the graph (indicator rendered above the
+    //     bubble).
+    //   - no stream content at all (the gap between tool rounds): graph also
+    //     has no live step → DO show the indicator — this is the very case
+    //     the indicator exists for.
+    //   - stream IS in graph (e.g. tool_use is streaming): indicator is
+    //     redundant → suppress.
+    const streamIsInGraph =
+      isLatestOpenRun && streamingReplyText == null && hasAnyStreamContent;
+    const suppressThinking = streamIsInGraph;
+
     return [{
       triggerIndex: idx,
       replyIndex,
@@ -405,6 +477,7 @@ export function Chat() {
       steps,
       messageStepTexts: getPrimaryMessageStepTexts(steps),
       streamingReplyText,
+      suppressThinking,
     }];
   });
   const hasActiveExecutionGraph = userRunCards.some((card) => card.active);
@@ -558,7 +631,7 @@ export function Chat() {
                               agentLabel={card.agentLabel}
                               steps={card.steps}
                               active={card.active}
-                              suppressThinking={card.streamingReplyText != null}
+                              suppressThinking={card.suppressThinking}
                               expanded={expanded}
                               onExpandedChange={(next) =>
                                 setGraphExpandedOverrides((prev) => ({ ...prev, [runKey]: next }))

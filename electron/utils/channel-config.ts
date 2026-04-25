@@ -994,6 +994,22 @@ export async function deleteChannelConfig(channelType: string): Promise<void> {
             if (isWechatChannelType(resolvedChannelType)) {
                 removePluginRegistration(currentConfig, WECHAT_PLUGIN_ID);
             }
+            // Clean up third-party plugin registrations when their channel is removed.
+            if (resolvedChannelType === 'feishu') {
+                for (const candidateId of FEISHU_PLUGIN_ID_CANDIDATES) {
+                    removePluginRegistration(currentConfig, candidateId);
+                }
+                // Also remove the built-in feishu disable entry since it's no longer needed
+                if (currentConfig.plugins?.entries?.feishu) {
+                    delete currentConfig.plugins.entries.feishu;
+                }
+            }
+            if (resolvedChannelType === 'dingtalk') {
+                removePluginRegistration(currentConfig, 'dingtalk');
+            }
+            if (resolvedChannelType === 'wecom') {
+                removePluginRegistration(currentConfig, WECOM_PLUGIN_ID);
+            }
             syncBuiltinChannelsWithPluginAllowlist(currentConfig);
             await writeOpenClawConfig(currentConfig);
             if (isWechatChannelType(resolvedChannelType)) {

@@ -3,9 +3,12 @@ import { useAgentsStore } from '@/stores/agents';
 import {
   clearErrorRecoveryTimer,
   clearHistoryPoll,
+  getLastAbortedRunId,
   getLastChatEventAt,
   setHistoryPollTimer,
   setLastChatEventAt,
+  setLastAbortedRunId,
+  takeBlockedRunEvents,
   upsertImageCacheEntry,
 } from './helpers';
 import type { ChatSession, RawMessage } from './types';
@@ -39,6 +42,8 @@ function ensureSessionEntry(sessions: ChatSession[], sessionKey: string): ChatSe
   return [...sessions, { key: sessionKey, displayName: sessionKey }];
 }
 
+let sendGeneration = 0;
+
 export function createRuntimeSendActions(set: ChatSet, get: ChatGet): Pick<RuntimeActions, 'sendMessage' | 'abortRun'> {
   return {
     sendMessage: async (
@@ -48,6 +53,7 @@ export function createRuntimeSendActions(set: ChatSet, get: ChatGet): Pick<Runti
     ) => {
       const trimmed = text.trim();
       if (!trimmed && (!attachments || attachments.length === 0)) return;
+      const currentSendGeneration = ++sendGeneration;
 
       const targetSessionKey = resolveMainSessionKeyForAgent(targetAgentId) ?? get().currentSessionKey;
       if (targetSessionKey !== get().currentSessionKey) {
@@ -220,13 +226,43 @@ export function createRuntimeSendActions(set: ChatSet, get: ChatGet): Pick<Runti
 
         console.log(`[sendMessage] RPC result: success=${result.success}, runId=${result.result?.runId || 'none'}`);
 
+        const returnedRunId = result.result?.runId;
+        if (returnedRunId && currentSendGeneration !== sendGeneration) {
+          // This send was stopped or superseded while the RPC was in flight.
+          // If the stop happened before activeRunId was known, narrow the
+          // wildcard abort marker to the concrete runId we just learned.
+          // Keep '*' while a newer send is still pending its runId so early
+          // events from that newer run cannot re-arm the UI before ownership
+          // is established.
+          const lastAbortedRunId = getLastAbortedRunId();
+          if (!get().sending && (!lastAbortedRunId || lastAbortedRunId === '*' || lastAbortedRunId === returnedRunId)) {
+            setLastAbortedRunId(returnedRunId);
+          }
+          return;
+        }
+
+        if (currentSendGeneration !== sendGeneration) return;
+
         if (!result.success) {
           clearHistoryPoll();
           set({ error: result.error || 'Failed to send message', sending: false });
-        } else if (result.result?.runId) {
-          set({ activeRunId: result.result.runId });
+        } else if (returnedRunId && get().sending) {
+          set({ activeRunId: returnedRunId });
+          // Now that we have a valid activeRunId for the new run, the
+          // activeRunId guard will filter stale events from the old run.
+          // Safe to clear the abort marker.
+          setLastAbortedRunId(null);
+          const blockedEvents = takeBlockedRunEvents(returnedRunId);
+          if (blockedEvents.length > 0) {
+            queueMicrotask(() => {
+              for (const blockedEvent of blockedEvents) {
+                get().handleChatEvent(blockedEvent);
+              }
+            });
+          }
         }
       } catch (err) {
+        if (currentSendGeneration !== sendGeneration) return;
         clearHistoryPoll();
         set({ error: String(err), sending: false });
       }
@@ -235,10 +271,16 @@ export function createRuntimeSendActions(set: ChatSet, get: ChatGet): Pick<Runti
     // ── Abort active run ──
 
     abortRun: async () => {
+      sendGeneration += 1;
       clearHistoryPoll();
       clearErrorRecoveryTimer();
-      const { currentSessionKey } = get();
-      set({ sending: false, streamingText: '', streamingMessage: null, pendingFinal: false, lastUserMessageAt: null, pendingToolImages: [] });
+      const { currentSessionKey, activeRunId } = get();
+      // Mark the run as aborted BEFORE clearing state, so the event handler
+      // rejects any lingering Gateway events from this run.  Use wildcard '*'
+      // when activeRunId is not yet known (user stopped before chat.send
+      // returned a runId) to block ALL run events from re-arming sending.
+      setLastAbortedRunId(activeRunId || '*');
+      set({ sending: false, activeRunId: null, streamingText: '', streamingMessage: null, pendingFinal: false, lastUserMessageAt: null, pendingToolImages: [] });
       set({ streamingTools: [] });
 
       try {
@@ -250,6 +292,9 @@ export function createRuntimeSendActions(set: ChatSet, get: ChatGet): Pick<Runti
       } catch (err) {
         set({ error: String(err) });
       }
+      // Reload history to pick up final transcript state from Gateway,
+      // which resolves hasFinalReply and clears hasActiveExecutionGraph.
+      void get().loadHistory(true);
     },
 
     // ── Handle incoming chat events from Gateway ──

@@ -23,6 +23,12 @@ let _historyPollTimer: ReturnType<typeof setTimeout> | null = null;
 // before committing the error to give the recovery path a chance.
 let _errorRecoveryTimer: ReturnType<typeof setTimeout> | null = null;
 
+// Track the last run ID that was explicitly aborted by the user.
+// Prevents lingering Gateway events from the aborted run from re-arming
+// the sending state after abortRun clears it.
+let _lastAbortedRunId: string | null = null;
+const _blockedRunEvents = new Map<string, Record<string, unknown>[]>();
+
 function clearErrorRecoveryTimer(): void {
   if (_errorRecoveryTimer) {
     clearTimeout(_errorRecoveryTimer);
@@ -128,8 +134,31 @@ function normalizeStreamingMessage(message: unknown): unknown {
     : rawMessage;
 }
 
+/**
+ * Strip Gateway-injected metadata that does NOT exist on the renderer's
+ * optimistic user message but is echoed back when the Gateway persists it:
+ *   - leading timestamp `[Wed 2026-04-22 10:30 GMT+8] `
+ *   - `[message_id: uuid]` tags sprinkled throughout the text
+ *   - `[media attached: path (mime) | path]` references appended when the
+ *     renderer sends attachments via `chat:sendWithMedia`
+ *   - Gateway-injected "Conversation info (untrusted metadata): ..." blocks
+ *
+ * Keeping this aligned with `cleanUserText` in `pages/Chat/message-utils.ts`
+ * is important: the user bubble renders the cleaned text, so the comparison
+ * used to dedupe optimistic vs server echoes must operate on the same
+ * cleaned form — otherwise the same visible message renders twice.
+ */
+function stripGatewayUserMetadata(text: string): string {
+  return text
+    .replace(/^\s*\[(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun)\s+\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}\s+[^\]]+\]\s*/i, '')
+    .replace(/\s*\[media attached:[^\]]*\]/g, '')
+    .replace(/\s*\[message_id:\s*[^\]]+\]/g, '')
+    .replace(/^Conversation info\s*\([^)]*\):\s*```[a-z]*\n[\s\S]*?```\s*/i, '')
+    .replace(/^Conversation info\s*\([^)]*\):\s*\{[\s\S]*?\}\s*/i, '');
+}
+
 function normalizeComparableUserText(content: unknown): string {
-  return getMessageText(content)
+  return stripGatewayUserMetadata(getMessageText(content))
     .replace(/\s+/g, ' ')
     .trim();
 }
@@ -997,6 +1026,27 @@ function getLastChatEventAt(): number {
   return _lastChatEventAt;
 }
 
+function setLastAbortedRunId(id: string | null): void {
+  _lastAbortedRunId = id;
+}
+
+function getLastAbortedRunId(): string | null {
+  return _lastAbortedRunId;
+}
+
+function queueBlockedRunEvent(runId: string, event: Record<string, unknown>): void {
+  const events = _blockedRunEvents.get(runId) ?? [];
+  events.push({ ...event });
+  if (events.length > 100) events.shift();
+  _blockedRunEvents.set(runId, events);
+}
+
+function takeBlockedRunEvents(runId: string): Record<string, unknown>[] {
+  const events = _blockedRunEvents.get(runId) ?? [];
+  _blockedRunEvents.delete(runId);
+  return events;
+}
+
 export {
   toMs,
   clearErrorRecoveryTimer,
@@ -1027,4 +1077,8 @@ export {
   setErrorRecoveryTimer,
   setLastChatEventAt,
   getLastChatEventAt,
+  setLastAbortedRunId,
+  getLastAbortedRunId,
+  queueBlockedRunEvent,
+  takeBlockedRunEvents,
 };

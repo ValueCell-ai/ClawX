@@ -1,5 +1,32 @@
-import { describe, it, expect } from 'vitest';
-import { mergeClawXSection, stripFirstRunSection } from '../../electron/utils/openclaw-workspace';
+import { access, mkdir, readFile, rm, writeFile } from 'fs/promises';
+import { join } from 'path';
+import { beforeEach, describe, it, expect, vi } from 'vitest';
+
+const { testHome } = vi.hoisted(() => ({
+  testHome: `/tmp/clawx-openclaw-workspace-${Math.random().toString(36).slice(2)}`,
+}));
+
+vi.mock('os', async () => {
+  const actual = await vi.importActual<typeof import('os')>('os');
+  const mocked = {
+    ...actual,
+    homedir: () => testHome,
+  };
+  return {
+    ...mocked,
+    default: mocked,
+  };
+});
+
+import {
+  mergeClawXSection,
+  removeChatFirstBootstrapFiles,
+  stripFirstRunSection,
+} from '../../electron/utils/openclaw-workspace';
+
+beforeEach(async () => {
+  await rm(testHome, { recursive: true, force: true });
+});
 
 describe('stripFirstRunSection', () => {
   it('removes the First Run section when it exists', () => {
@@ -135,5 +162,44 @@ describe('stripFirstRunSection', () => {
     expect(merged).toContain('## Session Startup');
     expect(merged).toContain('<!-- clawx:begin -->');
     expect(merged).toContain('<!-- clawx:end -->');
+  });
+});
+
+describe('removeChatFirstBootstrapFiles', () => {
+  it('removes only BOOTSTRAP.md from the default workspace', async () => {
+    const workspaceDir = join(testHome, '.openclaw', 'workspace');
+    await mkdir(workspaceDir, { recursive: true });
+    await writeFile(join(workspaceDir, 'BOOTSTRAP.md'), 'chat-first bootstrap', 'utf-8');
+    await writeFile(join(workspaceDir, 'SOUL.md'), 'existing soul', 'utf-8');
+
+    await removeChatFirstBootstrapFiles();
+
+    await expect(access(join(workspaceDir, 'BOOTSTRAP.md'))).rejects.toThrow();
+    await expect(readFile(join(workspaceDir, 'SOUL.md'), 'utf-8')).resolves.toBe('existing soul');
+  });
+
+  it('removes BOOTSTRAP.md from configured agent workspaces', async () => {
+    const openclawDir = join(testHome, '.openclaw');
+    const mainWorkspace = join(openclawDir, 'workspace-main');
+    const agentWorkspace = join(openclawDir, 'workspace-agent');
+    await mkdir(mainWorkspace, { recursive: true });
+    await mkdir(agentWorkspace, { recursive: true });
+    await writeFile(join(mainWorkspace, 'BOOTSTRAP.md'), 'main bootstrap', 'utf-8');
+    await writeFile(join(agentWorkspace, 'BOOTSTRAP.md'), 'agent bootstrap', 'utf-8');
+    await writeFile(
+      join(openclawDir, 'openclaw.json'),
+      JSON.stringify({
+        agents: {
+          defaults: { workspace: mainWorkspace },
+          list: [{ workspace: agentWorkspace }],
+        },
+      }),
+      'utf-8',
+    );
+
+    await removeChatFirstBootstrapFiles();
+
+    await expect(access(join(mainWorkspace, 'BOOTSTRAP.md'))).rejects.toThrow();
+    await expect(access(join(agentWorkspace, 'BOOTSTRAP.md'))).rejects.toThrow();
   });
 });

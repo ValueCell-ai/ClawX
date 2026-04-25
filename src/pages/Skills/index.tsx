@@ -33,6 +33,7 @@ import { hostApiFetch } from '@/lib/host-api';
 import { trackUiEvent } from '@/lib/telemetry';
 import { toast } from 'sonner';
 import type { Skill } from '@/types/skill';
+import { rendererExtensionRegistry } from '@/extensions/registry';
 import { useTranslation } from 'react-i18next';
 import type { TFunction } from 'i18next';
 
@@ -73,6 +74,7 @@ function SkillDetailDialog({ skill, isOpen, onClose, onToggle, onUninstall, onOp
   const [envVars, setEnvVars] = useState<Array<{ key: string; value: string }>>([]);
   const [apiKey, setApiKey] = useState('');
   const [isSaving, setIsSaving] = useState(false);
+  const detailMetaComponents = rendererExtensionRegistry.getSkillDetailMetaComponents();
 
   // Initialize config from skill
   useEffect(() => {
@@ -206,13 +208,16 @@ function SkillDetailDialog({ skill, isOpen, onClose, onToggle, onUninstall, onOp
             <h2 className="text-[28px] font-serif text-foreground font-normal mb-3 text-center tracking-tight">
               {skill.name}
             </h2>
-            <div className="flex items-center justify-center gap-2.5 mb-6 opacity-80">
+            <div data-skill-detail-meta-row="1" className="flex items-center justify-center gap-2.5 mb-6 opacity-80">
               <Badge variant="secondary" className="font-mono text-[11px] font-medium px-3 py-0.5 rounded-full bg-black/[0.04] dark:bg-white/[0.08] hover:bg-black/[0.08] dark:hover:bg-white/[0.12] border-0 shadow-none text-foreground/70 transition-colors">
                 v{skill.version}
               </Badge>
               <Badge variant="secondary" className="font-mono text-[11px] font-medium px-3 py-0.5 rounded-full bg-black/[0.04] dark:bg-white/[0.08] hover:bg-black/[0.08] dark:hover:bg-white/[0.12] border-0 shadow-none text-foreground/70 transition-colors">
                 {skill.isCore ? t('detail.coreSystem') : skill.isBundled ? t('detail.bundled') : t('detail.userInstalled')}
               </Badge>
+              {detailMetaComponents.map((DetailMetaComponent, index) => (
+                <DetailMetaComponent key={`skill-detail-meta-${index}`} skill={skill} />
+              ))}
             </div>
 
             {skill.description && (

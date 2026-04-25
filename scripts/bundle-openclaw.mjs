@@ -789,6 +789,42 @@ function patchBundledRuntime(outputDir) {
   if (ptyCount > 0) {
     echo`   🩹 Patched ${ptyCount} bundled PTY site(s)`;
   }
+
+  // --- Browser tool hint patch ---
+  // OpenClaw's BROWSER_TOOL_MODEL_HINT tells the model "Do NOT retry the
+  // browser tool — it will keep failing" after ANY error, causing the model
+  // to permanently refuse browser usage even on transient failures.
+  // Replace with a gentler hint that allows retries on transient errors.
+  const ORIGINAL_HINT =
+    'Do NOT retry the browser tool \u2014 it will keep failing. Use an alternative approach or inform the user that the browser is currently unavailable.';
+  const PATCHED_HINT =
+    'If this was a transient error (timeout, network), you may retry once. If the same error persists after retry, try an alternative approach and let the user know.';
+  const ORIGINAL_SHORT = 'Do NOT retry the browser tool.';
+  const PATCHED_SHORT = 'You may retry once if this was a transient error.';
+
+  const distDir = path.join(outputDir, 'dist');
+  let hintCount = 0;
+  if (fs.existsSync(distDir)) {
+    for (const file of fs.readdirSync(distDir)) {
+      if (!file.endsWith('.js')) continue;
+      const filePath = path.join(distDir, file);
+      try {
+        const content = fs.readFileSync(filePath, 'utf8');
+        if (!content.includes(ORIGINAL_HINT) && !content.includes(ORIGINAL_SHORT)) continue;
+        const patched = content
+          .replaceAll(ORIGINAL_HINT, PATCHED_HINT)
+          .replaceAll(ORIGINAL_SHORT, PATCHED_SHORT);
+        if (patched !== content) {
+          fs.writeFileSync(filePath, patched, 'utf8');
+          hintCount++;
+        }
+      } catch { /* skip on error */ }
+    }
+  }
+
+  if (hintCount > 0) {
+    echo`   🩹 Patched ${hintCount} browser tool hint(s) to allow transient error retry`;
+  }
 }
 
 patchBrokenModules(outputNodeModules);

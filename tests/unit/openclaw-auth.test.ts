@@ -30,6 +30,16 @@ vi.mock('electron', () => ({
   },
 }));
 
+vi.mock('@electron/utils/paths', async () => {
+  const actual = await vi.importActual<typeof import('@electron/utils/paths')>('@electron/utils/paths');
+  const resolvedDir = join(testHome, '.openclaw-test-openclaw');
+  return {
+    ...actual,
+    getOpenClawResolvedDir: () => resolvedDir,
+    getOpenClawDir: () => resolvedDir,
+  };
+});
+
 async function writeOpenClawJson(config: unknown): Promise<void> {
   const openclawDir = join(testHome, '.openclaw');
   await mkdir(openclawDir, { recursive: true });
@@ -494,6 +504,58 @@ describe('sanitizeOpenClawConfig', () => {
     expect(dingtalk.clientId).toBe('dt-client-id');
     expect(dingtalk.clientSecret).toBe('dt-secret');
   });
+
+  it('removes stale minimax-portal-auth plugin entries when merged minimax plugin is installed', async () => {
+    await writeOpenClawJson({
+      plugins: {
+        allow: ['minimax-portal-auth', 'custom-plugin'],
+        entries: {
+          'minimax-portal-auth': { enabled: true },
+          'custom-plugin': { enabled: true },
+        },
+      },
+      models: {
+        providers: {
+          'minimax-portal': {
+            baseUrl: 'https://api.minimax.io/anthropic',
+            api: 'anthropic-messages',
+          },
+        },
+      },
+    });
+
+    const openclawDir = join(testHome, '.openclaw-package-sanitize');
+    await mkdir(join(openclawDir, 'dist', 'extensions', 'minimax'), { recursive: true });
+    await writeFile(
+      join(openclawDir, 'dist', 'extensions', 'minimax', 'openclaw.plugin.json'),
+      JSON.stringify({
+        id: 'minimax',
+        providers: ['minimax', 'minimax-portal'],
+        legacyPluginIds: ['minimax-portal-auth'],
+      }, null, 2),
+      'utf8',
+    );
+
+    vi.doMock('@electron/utils/paths', async () => {
+      const actual = await vi.importActual<typeof import('@electron/utils/paths')>('@electron/utils/paths');
+      return {
+        ...actual,
+        getOpenClawResolvedDir: () => openclawDir,
+      };
+    });
+
+    const { sanitizeOpenClawConfig } = await import('@electron/utils/openclaw-auth');
+    await sanitizeOpenClawConfig();
+
+    const result = await readOpenClawJson();
+    const plugins = result.plugins as Record<string, unknown>;
+    const allow = plugins.allow as string[];
+    const entries = plugins.entries as Record<string, Record<string, unknown>>;
+
+    expect(allow).toEqual(['custom-plugin']);
+    expect(entries['minimax-portal-auth']).toBeUndefined();
+    expect(entries['custom-plugin']).toEqual({ enabled: true });
+  });
 });
 
 describe('syncProviderConfigToOpenClaw', () => {
@@ -502,6 +564,100 @@ describe('syncProviderConfigToOpenClaw', () => {
     vi.restoreAllMocks();
     await rm(testHome, { recursive: true, force: true });
     await rm(testUserData, { recursive: true, force: true });
+  });
+
+  it('uses legacy minimax-portal-auth plugin registration when only the legacy plugin exists', async () => {
+    await writeOpenClawJson({
+      models: { providers: {} },
+    });
+
+    const openclawDir = join(testHome, '.openclaw-package-old');
+    await mkdir(join(openclawDir, 'extensions', 'minimax-portal-auth'), { recursive: true });
+    await writeFile(
+      join(openclawDir, 'extensions', 'minimax-portal-auth', 'openclaw.plugin.json'),
+      JSON.stringify({
+        id: 'minimax-portal-auth',
+        providers: ['minimax-portal'],
+      }, null, 2),
+      'utf8',
+    );
+
+    vi.doMock('@electron/utils/paths', async () => {
+      const actual = await vi.importActual<typeof import('@electron/utils/paths')>('@electron/utils/paths');
+      return {
+        ...actual,
+        getOpenClawResolvedDir: () => openclawDir,
+      };
+    });
+
+    const { syncProviderConfigToOpenClaw } = await import('@electron/utils/openclaw-auth');
+
+    await syncProviderConfigToOpenClaw('minimax-portal', 'MiniMax-M2.7', {
+      baseUrl: 'https://api.minimax.io/anthropic',
+      api: 'anthropic-messages',
+      apiKeyEnv: 'minimax-oauth',
+    });
+
+    const result = await readOpenClawJson();
+    const plugins = result.plugins as Record<string, unknown>;
+    const allow = plugins.allow as string[];
+    const entries = plugins.entries as Record<string, Record<string, unknown>>;
+
+    expect(allow).toContain('minimax-portal-auth');
+    expect(entries['minimax-portal-auth']).toEqual({ enabled: true });
+    expect(entries.minimax).toBeUndefined();
+  });
+
+  it('uses merged minimax plugin registration and removes stale legacy ids when minimax plugin is installed', async () => {
+    await writeOpenClawJson({
+      plugins: {
+        allow: ['minimax-portal-auth', 'custom-plugin'],
+        entries: {
+          'minimax-portal-auth': { enabled: true },
+          'custom-plugin': { enabled: true },
+        },
+      },
+      models: { providers: {} },
+    });
+
+    const openclawDir = join(testHome, '.openclaw-package-new');
+    await mkdir(join(openclawDir, 'dist', 'extensions', 'minimax'), { recursive: true });
+    await writeFile(
+      join(openclawDir, 'dist', 'extensions', 'minimax', 'openclaw.plugin.json'),
+      JSON.stringify({
+        id: 'minimax',
+        providers: ['minimax', 'minimax-portal'],
+        legacyPluginIds: ['minimax-portal-auth'],
+      }, null, 2),
+      'utf8',
+    );
+
+    vi.doMock('@electron/utils/paths', async () => {
+      const actual = await vi.importActual<typeof import('@electron/utils/paths')>('@electron/utils/paths');
+      return {
+        ...actual,
+        getOpenClawResolvedDir: () => openclawDir,
+      };
+    });
+
+    const { syncProviderConfigToOpenClaw } = await import('@electron/utils/openclaw-auth');
+
+    await syncProviderConfigToOpenClaw('minimax-portal', 'MiniMax-M2.7', {
+      baseUrl: 'https://api.minimax.io/anthropic',
+      api: 'anthropic-messages',
+      apiKeyEnv: 'minimax-oauth',
+    });
+
+    const result = await readOpenClawJson();
+    const plugins = result.plugins as Record<string, unknown>;
+    const allow = plugins.allow as string[];
+    const entries = plugins.entries as Record<string, Record<string, unknown>>;
+
+    expect(allow).toContain('minimax');
+    expect(allow).toContain('custom-plugin');
+    expect(allow).not.toContain('minimax-portal-auth');
+    expect(entries.minimax).toEqual({ enabled: true });
+    expect(entries['minimax-portal-auth']).toBeUndefined();
   });
 
   it('writes moonshot web search config to plugin config instead of tools.web.search.kimi', async () => {
@@ -718,5 +874,105 @@ describe('auth-backed provider discovery', () => {
     expect((config.models as { providers?: Record<string, unknown> }).providers).toEqual({});
     expect(result.providers).toEqual({});
     await expect(getActiveOpenClawProviders()).resolves.toEqual(new Set());
+  });
+
+  it('removes merged and legacy minimax plugin registrations when deleting the provider', async () => {
+    await writeOpenClawJson({
+      plugins: {
+        allow: ['minimax', 'minimax-portal-auth', 'custom-plugin'],
+        entries: {
+          minimax: { enabled: true },
+          'minimax-portal-auth': { enabled: true },
+          'custom-plugin': { enabled: true },
+        },
+      },
+      models: {
+        providers: {
+          'minimax-portal': {
+            baseUrl: 'https://api.minimax.io/anthropic',
+            api: 'anthropic-messages',
+          },
+        },
+      },
+    });
+
+    const openclawDir = join(testHome, '.openclaw-package-new');
+    await mkdir(join(openclawDir, 'dist', 'extensions', 'minimax'), { recursive: true });
+    await writeFile(
+      join(openclawDir, 'dist', 'extensions', 'minimax', 'openclaw.plugin.json'),
+      JSON.stringify({
+        id: 'minimax',
+        providers: ['minimax', 'minimax-portal'],
+        legacyPluginIds: ['minimax-portal-auth'],
+      }, null, 2),
+      'utf8',
+    );
+
+    vi.doMock('@electron/utils/paths', async () => {
+      const actual = await vi.importActual<typeof import('@electron/utils/paths')>('@electron/utils/paths');
+      return {
+        ...actual,
+        getOpenClawResolvedDir: () => openclawDir,
+      };
+    });
+
+    const { removeProviderFromOpenClaw } = await import('@electron/utils/openclaw-auth');
+
+    await removeProviderFromOpenClaw('minimax-portal');
+
+    const result = await readOpenClawJson();
+    const plugins = result.plugins as Record<string, unknown>;
+    const allow = plugins.allow as string[];
+    const entries = plugins.entries as Record<string, Record<string, unknown>>;
+
+    expect(allow).toEqual(['custom-plugin']);
+    expect(entries.minimax).toBeUndefined();
+    expect(entries['minimax-portal-auth']).toBeUndefined();
+    expect(entries['custom-plugin']).toEqual({ enabled: true });
+  });
+
+  it('sanitizes stale minimax-portal-auth entries when merged minimax plugin is installed', async () => {
+    await writeOpenClawJson({
+      plugins: {
+        allow: ['minimax-portal-auth', 'custom-plugin'],
+        entries: {
+          'minimax-portal-auth': { enabled: true },
+          'custom-plugin': { enabled: true },
+        },
+      },
+    });
+
+    const openclawDir = join(testHome, '.openclaw-package-new');
+    await mkdir(join(openclawDir, 'dist', 'extensions', 'minimax'), { recursive: true });
+    await writeFile(
+      join(openclawDir, 'dist', 'extensions', 'minimax', 'openclaw.plugin.json'),
+      JSON.stringify({
+        id: 'minimax',
+        providers: ['minimax', 'minimax-portal'],
+        legacyPluginIds: ['minimax-portal-auth'],
+      }, null, 2),
+      'utf8',
+    );
+
+    vi.doMock('@electron/utils/paths', async () => {
+      const actual = await vi.importActual<typeof import('@electron/utils/paths')>('@electron/utils/paths');
+      return {
+        ...actual,
+        getOpenClawResolvedDir: () => openclawDir,
+      };
+    });
+
+    const { sanitizeOpenClawConfig } = await import('@electron/utils/openclaw-auth');
+
+    await sanitizeOpenClawConfig();
+
+    const result = await readOpenClawJson();
+    const plugins = result.plugins as Record<string, unknown>;
+    const allow = plugins.allow as string[];
+    const entries = plugins.entries as Record<string, Record<string, unknown>>;
+
+    expect(allow).toEqual(['custom-plugin']);
+    expect(entries['minimax-portal-auth']).toBeUndefined();
+    expect(entries['custom-plugin']).toEqual({ enabled: true });
   });
 });

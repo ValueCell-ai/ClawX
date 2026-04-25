@@ -137,9 +137,11 @@ export function Sidebar() {
     let cancelled = false;
     const hasExistingMessages = useChatStore.getState().messages.length > 0;
     (async () => {
-      await loadSessions();
+      await Promise.allSettled([
+        loadSessions(),
+        loadHistory(hasExistingMessages),
+      ]);
       if (cancelled) return;
-      await loadHistory(hasExistingMessages);
     })();
     return () => {
       cancelled = true;
