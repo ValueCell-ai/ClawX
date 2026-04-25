@@ -1,4 +1,4 @@
-import { clearHistoryPoll, getLastAbortedRunId, setLastAbortedRunId, setLastChatEventAt } from './helpers';
+import { clearHistoryPoll, getLastAbortedRunId, queueBlockedRunEvent, setLastAbortedRunId, setLastChatEventAt } from './helpers';
 import type { ChatGet, ChatSet, RuntimeActions } from './store-api';
 import { handleRuntimeEventState } from './runtime-event-handlers';
 
@@ -18,16 +18,24 @@ export function createRuntimeEventActions(set: ChatSet, get: ChatGet): Pick<Runt
 
       // Reject lingering events from a run that the user explicitly aborted.
       // The 'aborted' confirmation event is allowed through to finalize state.
+      // '*' is a wildcard meaning "abort was requested before we knew the runId".
       const lastAbortedRunId = getLastAbortedRunId();
-      if (lastAbortedRunId && runId && runId === lastAbortedRunId) {
-        if (eventState === 'aborted') {
-          // Gateway confirmed the abort — clear the marker so future runs
-          // with a recycled ID aren't accidentally blocked.
-          setLastAbortedRunId(null);
+      if (lastAbortedRunId && runId && (lastAbortedRunId === '*' || runId === lastAbortedRunId)) {
+        if (eventState === 'aborted' && lastAbortedRunId === '*') {
+          // Gateway confirmed which run was aborted. Narrow the wildcard so
+          // later unrelated runs can be adopted while this run stays blocked.
+          setLastAbortedRunId(runId);
         }
         // Let the 'aborted' event fall through to handleRuntimeEventState
-        // which properly clears all state.  All other events are dropped.
-        if (eventState !== 'aborted') return;
+        // which properly clears all state.  Other wildcard-blocked events may
+        // belong to a newer send whose runId has not returned yet, so keep a
+        // bounded queue and replay only if that runId becomes the active run.
+        if (eventState !== 'aborted') {
+          if (lastAbortedRunId === '*' && !activeRunId && get().sending) {
+            queueBlockedRunEvent(runId, event);
+          }
+          return;
+        }
       }
 
       setLastChatEventAt(Date.now());

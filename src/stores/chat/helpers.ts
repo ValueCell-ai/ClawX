@@ -27,6 +27,7 @@ let _errorRecoveryTimer: ReturnType<typeof setTimeout> | null = null;
 // Prevents lingering Gateway events from the aborted run from re-arming
 // the sending state after abortRun clears it.
 let _lastAbortedRunId: string | null = null;
+const _blockedRunEvents = new Map<string, Record<string, unknown>[]>();
 
 function clearErrorRecoveryTimer(): void {
   if (_errorRecoveryTimer) {
@@ -1033,6 +1034,19 @@ function getLastAbortedRunId(): string | null {
   return _lastAbortedRunId;
 }
 
+function queueBlockedRunEvent(runId: string, event: Record<string, unknown>): void {
+  const events = _blockedRunEvents.get(runId) ?? [];
+  events.push({ ...event });
+  if (events.length > 100) events.shift();
+  _blockedRunEvents.set(runId, events);
+}
+
+function takeBlockedRunEvents(runId: string): Record<string, unknown>[] {
+  const events = _blockedRunEvents.get(runId) ?? [];
+  _blockedRunEvents.delete(runId);
+  return events;
+}
+
 export {
   toMs,
   clearErrorRecoveryTimer,
@@ -1065,4 +1079,6 @@ export {
   getLastChatEventAt,
   setLastAbortedRunId,
   getLastAbortedRunId,
+  queueBlockedRunEvent,
+  takeBlockedRunEvents,
 };
