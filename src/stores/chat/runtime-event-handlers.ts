@@ -9,6 +9,7 @@ import {
   getToolCallFilePath,
   hasErrorRecoveryTimer,
   hasNonToolAssistantContent,
+  isInternalMessage,
   isToolOnlyMessage,
   isToolResultRole,
   makeAttachedFile,
@@ -81,6 +82,24 @@ export function handleRuntimeEventState(
           if (finalMsg) {
             const normalizedFinalMessage = normalizeStreamingMessage(finalMsg) as RawMessage;
             const updates = collectToolUpdates(normalizedFinalMessage, resolvedState);
+            // Filter out internal-only final responses (NO_REPLY, HEARTBEAT_OK, etc.)
+            // before adding to messages. Without this guard, the internal token appears
+            // briefly in the UI until loadHistory replaces the message list — and if the
+            // quiet-mode reload is debounced away, the token can stay visible permanently.
+            if (isInternalMessage(normalizedFinalMessage)) {
+              set({
+                streamingText: '',
+                streamingMessage: null,
+                sending: false,
+                activeRunId: null,
+                pendingFinal: false,
+                streamingTools: [],
+                pendingToolImages: [],
+              });
+              clearHistoryPoll();
+              void get().loadHistory(true);
+              break;
+            }
             if (isToolResultRole(normalizedFinalMessage.role)) {
               // Resolve file path from the streaming assistant message's matching tool call
               const currentStreamForPath = get().streamingMessage as RawMessage | null;
