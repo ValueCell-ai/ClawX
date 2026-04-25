@@ -17,6 +17,7 @@ import {
   CHAT_HISTORY_STARTUP_RETRY_DELAYS_MS,
   classifyHistoryStartupRetryError,
   getStartupHistoryTimeoutOverride,
+  hasFatalStartupDiagnostic,
   shouldRetryStartupHistoryLoad,
   sleep,
 } from './history-startup-retry';
@@ -263,10 +264,18 @@ export function createHistoryActions(
           if (applied && isInitialForegroundLoad) {
             foregroundHistoryLoadSeen.add(currentSessionKey);
           }
-        } else if (errorKind === 'gateway_startup') {
-          // Suppress error UI for gateway startup -- the history will load
-          // once the gateway finishes initializing (via sidebar refresh or
-          // the next session switch).
+        } else if (
+          errorKind === 'gateway_startup'
+          || hasFatalStartupDiagnostic(useGatewayStore.getState().status)
+        ) {
+          // Suppress error UI.  Either:
+          //   1. gateway_startup: the history will load once the gateway
+          //      finishes initializing (via sidebar refresh or the next
+          //      session switch); OR
+          //   2. A fatal startup diagnostic (e.g. ACPX_VC_REDIST_MISSING)
+          //      is active -- GatewayDiagnosticsBanner is already
+          //      communicating the real root cause, so don't also scream
+          //      a generic RPC timeout in the chat error bar.
           set({ loading: false });
         } else {
           applyLoadFailure(

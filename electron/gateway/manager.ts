@@ -49,8 +49,23 @@ import {
   loadGatewayReloadPolicy,
   type GatewayReloadPolicy,
 } from './reload-policy';
-import { classifyGatewayStderrMessage, recordGatewayStartupStderrLine } from './startup-stderr';
+import {
+  classifyGatewayStderrMessage,
+  detectGatewayStartupDiagnostic,
+  recordGatewayStartupStderrLine,
+  type GatewayStartupDiagnostic,
+  type GatewayStartupDiagnosticCode,
+} from './startup-stderr';
 import { runGatewayStartupSequence } from './startup-orchestrator';
+
+export interface GatewayStartupDiagnosticSnapshot extends GatewayStartupDiagnostic {
+  /** Epoch millis when the diagnostic was first observed in this Gateway session. */
+  firstSeenAt: number;
+  /** Epoch millis when the diagnostic was last observed. */
+  lastSeenAt: number;
+  /** Number of stderr lines matching this diagnostic (for observability). */
+  occurrences: number;
+}
 
 export interface GatewayStatus {
   state: GatewayLifecycleState;
@@ -63,6 +78,13 @@ export interface GatewayStatus {
   reconnectAttempts?: number;
   /** True once the gateway's internal subsystems (skills, plugins) are ready for RPC calls. */
   gatewayReady?: boolean;
+  /**
+   * Actionable diagnostic codes raised during the current Gateway session.
+   * Populated by the startup stderr classifier; consumed by the renderer
+   * to surface actionable errors (e.g. missing VC++ Redistributable).
+   * Cleared on every successful Gateway start.
+   */
+  activeDiagnostics?: GatewayStartupDiagnosticSnapshot[];
 }
 
 export type GatewayHealthState = 'healthy' | 'degraded' | 'unresponsive';
@@ -110,6 +132,13 @@ export interface GatewayManagerEvents {
   error: (error: Error) => void;
   'channel:status': (data: { channelId: string; status: string }) => void;
   'chat:message': (data: { message: unknown }) => void;
+  /**
+   * Emitted when the startup stderr classifier detects a known actionable
+   * diagnostic (see GatewayStartupDiagnosticCode).  The renderer uses this
+   * to surface an error banner and to stop retrying dependent RPCs
+   * (e.g. chat.history).
+   */
+  diagnostic: (snapshot: GatewayStartupDiagnosticSnapshot) => void;
 }
 
 /**
@@ -130,6 +159,13 @@ export class GatewayManager extends EventEmitter {
   private startLock = false;
   private lastSpawnSummary: string | null = null;
   private recentStartupStderrLines: string[] = [];
+  /**
+   * Active startup diagnostics (keyed by code) raised during the current
+   * Gateway session.  Cleared on every successful `start` so transient
+   * diagnostics from a previous attempt do not leak into a fresh one.
+   */
+  private activeDiagnostics: Map<GatewayStartupDiagnosticCode, GatewayStartupDiagnosticSnapshot> =
+    new Map();
   private pendingRequests: Map<string, PendingGatewayRequest> = new Map();
   private deviceIdentity: DeviceIdentity | null = null;
   private restartInFlight: Promise<void> | null = null;
@@ -229,14 +265,80 @@ export class GatewayManager extends EventEmitter {
     return /unknown method:\s*shutdown/i.test(message);
   }
   /**
-   * Get current Gateway status
+   * Get current Gateway status, enriched with any active startup
+   * diagnostics so renderer consumers don't need a separate subscription.
    */
   getStatus(): GatewayStatus {
-    return this.stateController.getStatus();
+    const baseStatus = this.stateController.getStatus();
+    const diagnostics = this.getActiveStartupDiagnostics();
+    if (diagnostics.length === 0) {
+      return baseStatus;
+    }
+    return { ...baseStatus, activeDiagnostics: diagnostics };
   }
 
   getDiagnostics(): GatewayDiagnosticsSnapshot {
     return { ...this.diagnostics };
+  }
+
+  /**
+   * Return a shallow copy of active startup diagnostics (e.g.
+   * ACPX_VC_REDIST_MISSING).  Snapshot is ordered by first-seen time.
+   */
+  getActiveStartupDiagnostics(): GatewayStartupDiagnosticSnapshot[] {
+    if (this.activeDiagnostics.size === 0) return [];
+    return [...this.activeDiagnostics.values()].sort(
+      (a, b) => a.firstSeenAt - b.firstSeenAt,
+    );
+  }
+
+  /**
+   * Record a freshly-observed startup diagnostic.  Returns the stored
+   * snapshot (new or updated).  Emits a `diagnostic` event only the first
+   * time a code is seen in the current session so the renderer is not
+   * spammed by repeated occurrences.
+   */
+  private recordStartupDiagnostic(
+    diagnostic: GatewayStartupDiagnostic,
+  ): GatewayStartupDiagnosticSnapshot {
+    const now = Date.now();
+    const existing = this.activeDiagnostics.get(diagnostic.code);
+    if (existing) {
+      existing.lastSeenAt = now;
+      existing.occurrences += 1;
+      existing.rawLine = diagnostic.rawLine;
+      existing.detail = diagnostic.detail;
+      this.activeDiagnostics.set(diagnostic.code, existing);
+      return existing;
+    }
+    const snapshot: GatewayStartupDiagnosticSnapshot = {
+      ...diagnostic,
+      firstSeenAt: now,
+      lastSeenAt: now,
+      occurrences: 1,
+    };
+    this.activeDiagnostics.set(diagnostic.code, snapshot);
+    logger.warn(
+      `[gateway-diagnostic] ${snapshot.code} detected (detail="${snapshot.detail}")`,
+    );
+    this.emit('diagnostic', snapshot);
+    // Re-emit status so subscribers that snapshot `status.activeDiagnostics`
+    // pick up the change without requiring them to subscribe to the
+    // `diagnostic` event separately.
+    this.setStatus({});
+    return snapshot;
+  }
+
+  /**
+   * Clear all active startup diagnostics — typically called just before a
+   * new Gateway start attempt so stale entries don't leak into the next
+   * session.  If anything was cleared, fires a status event so consumers
+   * drop the stale banner.
+   */
+  private clearStartupDiagnostics(): void {
+    if (this.activeDiagnostics.size === 0) return;
+    this.activeDiagnostics.clear();
+    this.setStatus({});
   }
 
   /**
@@ -265,6 +367,9 @@ export class GatewayManager extends EventEmitter {
     logger.info(`Gateway start requested (port=${this.status.port})`);
     this.lastSpawnSummary = null;
     this.shouldReconnect = true;
+    // Drop any diagnostics raised by the previous session — they'll be
+    // re-detected from stderr of the new process if still applicable.
+    this.clearStartupDiagnostics();
     await this.refreshReloadPolicy(true);
 
     // Lazily load device identity (async file I/O + key generation).
@@ -879,6 +984,14 @@ export class GatewayManager extends EventEmitter {
       getShouldReconnect: () => this.shouldReconnect,
       onStderrLine: (line) => {
         recordGatewayStartupStderrLine(this.recentStartupStderrLines, line);
+
+        // Try to extract an actionable diagnostic BEFORE classification so
+        // we still record diagnostics from lines that classifier downgrades.
+        const diagnostic = detectGatewayStartupDiagnostic(line);
+        if (diagnostic) {
+          this.recordStartupDiagnostic(diagnostic);
+        }
+
         const classified = classifyGatewayStderrMessage(line);
         if (classified.level === 'drop') return;
 

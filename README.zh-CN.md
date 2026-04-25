@@ -383,6 +383,56 @@ CI 中的 `comms-regression` 会校验必选场景与阈值。
 
 ---
 
+## 故障排查
+
+### Windows：提示 "embedded acpx runtime backend probe failed"，聊天记录无法加载
+
+**现象**（Issue [#884](https://github.com/ValueCell-ai/ClawX/issues/884)）：首次启动或刚装完 Windows，ClawX 卡在 `chat.history unavailable during gateway startup`，随后超时，Gateway 日志里出现：
+
+```
+[plugins] embedded acpx runtime backend probe failed:
+  embedded ACP runtime probe failed
+  (agent=codex; command=npx @zed-industries/codex-acp@^0.11.x;
+   ACP agent exited before initialize completed (exit=3221225781, signal=null))
+```
+
+**原因**：退出码 `3221225781` 对应 Windows 的 `0xC0000135` / `STATUS_DLL_NOT_FOUND`。内置的 OpenClaw ACP 插件在启动时会执行 `npx @zed-industries/codex-acp`，该 npm 包依赖的 Rust 原生二进制需要 **Microsoft Visual C++ 2015–2022 Redistributable**（`VCRUNTIME140.dll` / `MSVCP140.dll` / `VCRUNTIME140_1.dll`），而系统里缺少这些运行库。
+
+**修复**：从 Microsoft 官网安装运行库：
+
+- x64（大多数电脑）：<https://aka.ms/vs/17/release/vc_redist.x64.exe>
+- ARM64（Windows on ARM）：<https://aka.ms/vs/17/release/vc_redist.arm64.exe>
+- x86（仅 32 位构建）：<https://aka.ms/vs/17/release/vc_redist.x86.exe>
+
+PowerShell 一键安装：
+
+```powershell
+$u = 'https://aka.ms/vs/17/release/vc_redist.x64.exe'
+$f = "$env:TEMP\vc_redist.x64.exe"
+Invoke-WebRequest $u -OutFile $f -UseBasicParsing
+Start-Process -FilePath $f -ArgumentList '/install','/quiet','/norestart' -Wait
+```
+
+安装完成后重启 ClawX，聊天记录即可加载，黄色提示横幅也会消失。
+
+ClawX v0.3.11+ 会自动识别此问题并在界面顶部展示带有「下载 VC++ 运行库」一键按钮的横幅。在 `设置 → 高级 → 开发者 → 运行 Doctor` 中也会显示 "Visual C++ Runtime missing"，当 `System32` / `SysWOW64` 找不到上述任一 DLL 时触发。
+
+如果你完全不需要 ACP 运行时，可以编辑 `%USERPROFILE%\.openclaw\openclaw.json`：
+
+```jsonc
+{
+  "plugins": {
+    "entries": {
+      "acpx": { "enabled": false }
+    }
+  }
+}
+```
+
+ClawX 的配置清理逻辑会保留此设置，不会在每次启动时覆盖它。嵌入式 ACP 插件只影响 `/acp` 斜杠命令相关流程，聊天、定时任务和频道功能不会受影响。
+
+---
+
 ## 参与贡献
 
 我们欢迎社区的各种贡献！无论是修复 Bug、开发新功能、改进文档还是翻译——每一份贡献都让 ClawX 变得更好。

@@ -404,6 +404,56 @@ pnpm run comms:compare
 
 ---
 
+## Устранение неполадок
+
+### Windows: «embedded acpx runtime backend probe failed» / история чата не загружается
+
+**Симптом** (Issue [#884](https://github.com/ValueCell-ai/ClawX/issues/884)): сразу после установки или на свежей Windows ClawX зависает на `chat.history unavailable during gateway startup`, затем получает таймаут; в логах Gateway появляется:
+
+```
+[plugins] embedded acpx runtime backend probe failed:
+  embedded ACP runtime probe failed
+  (agent=codex; command=npx @zed-industries/codex-acp@^0.11.x;
+   ACP agent exited before initialize completed (exit=3221225781, signal=null))
+```
+
+**Причина**: код выхода `3221225781` — это Windows `0xC0000135` / `STATUS_DLL_NOT_FOUND`. Встроенный ACP-плагин OpenClaw запускает `npx @zed-industries/codex-acp`, чья нативная Rust-сборка зависит от **Microsoft Visual C++ 2015–2022 Redistributable** (`VCRUNTIME140.dll` / `MSVCP140.dll` / `VCRUNTIME140_1.dll`), отсутствующего в системе.
+
+**Решение**: установите Redistributable с сайта Microsoft:
+
+- x64 (большинство систем): <https://aka.ms/vs/17/release/vc_redist.x64.exe>
+- ARM64 (Windows on ARM): <https://aka.ms/vs/17/release/vc_redist.arm64.exe>
+- x86 (32-битная сборка): <https://aka.ms/vs/17/release/vc_redist.x86.exe>
+
+PowerShell:
+
+```powershell
+$u = 'https://aka.ms/vs/17/release/vc_redist.x64.exe'
+$f = "$env:TEMP\vc_redist.x64.exe"
+Invoke-WebRequest $u -OutFile $f -UseBasicParsing
+Start-Process -FilePath $f -ArgumentList '/install','/quiet','/norestart' -Wait
+```
+
+После перезапуска ClawX история чата должна загрузиться, а жёлтый баннер исчезнет.
+
+ClawX v0.3.11+ автоматически определяет такую ситуацию и показывает баннер с кнопкой «Скачать VC++ Redistributable». В `Настройки → Расширенные → Разработчик → Запустить Doctor` также появится предупреждение "Visual C++ Runtime missing", когда соответствующие DLL отсутствуют в `System32` / `SysWOW64`.
+
+Если встроенный ACP-рантайм не нужен, его можно отключить в `%USERPROFILE%\.openclaw\openclaw.json`:
+
+```jsonc
+{
+  "plugins": {
+    "entries": {
+      "acpx": { "enabled": false }
+    }
+  }
+}
+```
+
+Санитайзер конфигурации ClawX сохраняет этот флаг между запусками. Встроенный ACP-плагин обслуживает только команды `/acp`; чат, cron и каналы продолжат работать без него.
+
+---
+
 ## Участие
 
 Мы приветствуем вклад сообщества! Исправления багов, новые функции, улучшения документации или переводы — каждый вклад делает ClawX лучше.
