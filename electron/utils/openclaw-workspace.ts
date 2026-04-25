@@ -195,6 +195,26 @@ export async function repairClawXOnlyBootstrapFiles(): Promise<void> {
   }
 }
 
+/**
+ * ClawX ships a default desktop identity and does not need OpenClaw's
+ * chat-first personalization script. Once the Gateway has seeded the regular
+ * workspace files, remove BOOTSTRAP.md so sessions start normally.
+ */
+export async function removeChatFirstBootstrapFiles(): Promise<void> {
+  const workspaceDirs = await resolveAllWorkspaceDirs();
+  for (const workspaceDir of workspaceDirs) {
+    const bootstrapPath = join(workspaceDir, 'BOOTSTRAP.md');
+    if (!(await fileExists(bootstrapPath))) continue;
+
+    try {
+      await unlink(bootstrapPath);
+      logger.info(`Removed chat-first bootstrap file from ClawX workspace (${workspaceDir})`);
+    } catch {
+      logger.warn(`Failed to remove chat-first bootstrap file: ${bootstrapPath}`);
+    }
+  }
+}
+
 // ── Context merging ──────────────────────────────────────────────
 
 /**
@@ -267,12 +287,16 @@ const MAX_RETRIES = 15;
  */
 export async function ensureClawXContext(): Promise<void> {
   let skipped = await mergeClawXContextOnce();
-  if (skipped === 0) return;
+  if (skipped === 0) {
+    await removeChatFirstBootstrapFiles();
+    return;
+  }
 
   for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
     await new Promise((r) => setTimeout(r, RETRY_INTERVAL_MS));
     skipped = await mergeClawXContextOnce();
     if (skipped === 0) {
+      await removeChatFirstBootstrapFiles();
       logger.info(`ClawX context merge completed after ${attempt} retry(ies)`);
       return;
     }
@@ -280,4 +304,5 @@ export async function ensureClawXContext(): Promise<void> {
   }
 
   logger.warn(`ClawX context merge: ${skipped} file(s) still missing after ${MAX_RETRIES} retries`);
+  await removeChatFirstBootstrapFiles();
 }
