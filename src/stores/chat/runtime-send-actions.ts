@@ -6,6 +6,7 @@ import {
   getLastChatEventAt,
   setHistoryPollTimer,
   setLastChatEventAt,
+  setLastAbortedRunId,
   upsertImageCacheEntry,
 } from './helpers';
 import type { ChatSession, RawMessage } from './types';
@@ -225,6 +226,10 @@ export function createRuntimeSendActions(set: ChatSet, get: ChatGet): Pick<Runti
           set({ error: result.error || 'Failed to send message', sending: false });
         } else if (result.result?.runId) {
           set({ activeRunId: result.result.runId });
+          // Now that we have a valid activeRunId for the new run, the
+          // activeRunId guard will filter stale events from the old run.
+          // Safe to clear the abort marker.
+          setLastAbortedRunId(null);
         }
       } catch (err) {
         clearHistoryPoll();
@@ -237,8 +242,11 @@ export function createRuntimeSendActions(set: ChatSet, get: ChatGet): Pick<Runti
     abortRun: async () => {
       clearHistoryPoll();
       clearErrorRecoveryTimer();
-      const { currentSessionKey } = get();
-      set({ sending: false, streamingText: '', streamingMessage: null, pendingFinal: false, lastUserMessageAt: null, pendingToolImages: [] });
+      const { currentSessionKey, activeRunId } = get();
+      // Mark the run as aborted BEFORE clearing state, so the event handler
+      // rejects any lingering Gateway events from this run.
+      if (activeRunId) setLastAbortedRunId(activeRunId);
+      set({ sending: false, activeRunId: null, streamingText: '', streamingMessage: null, pendingFinal: false, lastUserMessageAt: null, pendingToolImages: [] });
       set({ streamingTools: [] });
 
       try {
@@ -250,6 +258,9 @@ export function createRuntimeSendActions(set: ChatSet, get: ChatGet): Pick<Runti
       } catch (err) {
         set({ error: String(err) });
       }
+      // Reload history to pick up final transcript state from Gateway,
+      // which resolves hasFinalReply and clears hasActiveExecutionGraph.
+      void get().loadHistory(true);
     },
 
     // ── Handle incoming chat events from Gateway ──

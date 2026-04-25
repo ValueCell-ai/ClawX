@@ -82,6 +82,7 @@ export function Chat() {
   const streamingMessage = useChatStore((s) => s.streamingMessage);
   const streamingTools = useChatStore((s) => s.streamingTools);
   const pendingFinal = useChatStore((s) => s.pendingFinal);
+  const activeRunId = useChatStore((s) => s.activeRunId);
   const sendMessage = useChatStore((s) => s.sendMessage);
   const abortRun = useChatStore((s) => s.abortRun);
   const clearError = useChatStore((s) => s.clearError);
@@ -280,8 +281,12 @@ export function Chat() {
       );
     });
     const runStillExecutingTools = hasToolActivity && !hasFinalReply;
+    // runStillExecutingTools bridges the brief gap between tool rounds when
+    // Gateway temporarily clears sending.  However, after an explicit abort
+    // (which clears activeRunId), we must NOT keep the run "open" — so we
+    // gate it on activeRunId being present.
     const isLatestOpenRun = nextUserIndex === -1
-      && (sending || pendingFinal || hasAnyStreamContent || runStillExecutingTools);
+      && (sending || pendingFinal || hasAnyStreamContent || (runStillExecutingTools && !!activeRunId));
     const replyIndexOffset = findReplyMessageIndex(segmentMessages, isLatestOpenRun);
     const replyIndex = replyIndexOffset === -1 ? null : idx + 1 + replyIndexOffset;
 

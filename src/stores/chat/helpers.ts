@@ -23,6 +23,11 @@ let _historyPollTimer: ReturnType<typeof setTimeout> | null = null;
 // before committing the error to give the recovery path a chance.
 let _errorRecoveryTimer: ReturnType<typeof setTimeout> | null = null;
 
+// Track the last run ID that was explicitly aborted by the user.
+// Prevents lingering Gateway events from the aborted run from re-arming
+// the sending state after abortRun clears it.
+let _lastAbortedRunId: string | null = null;
+
 function clearErrorRecoveryTimer(): void {
   if (_errorRecoveryTimer) {
     clearTimeout(_errorRecoveryTimer);
@@ -1020,6 +1025,14 @@ function getLastChatEventAt(): number {
   return _lastChatEventAt;
 }
 
+function setLastAbortedRunId(id: string | null): void {
+  _lastAbortedRunId = id;
+}
+
+function getLastAbortedRunId(): string | null {
+  return _lastAbortedRunId;
+}
+
 export {
   toMs,
   clearErrorRecoveryTimer,
@@ -1050,4 +1063,6 @@ export {
   setErrorRecoveryTimer,
   setLastChatEventAt,
   getLastChatEventAt,
+  setLastAbortedRunId,
+  getLastAbortedRunId,
 };

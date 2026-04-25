@@ -1,4 +1,4 @@
-import { clearHistoryPoll, setLastChatEventAt } from './helpers';
+import { clearHistoryPoll, getLastAbortedRunId, setLastAbortedRunId, setLastChatEventAt } from './helpers';
 import type { ChatGet, ChatSet, RuntimeActions } from './store-api';
 import { handleRuntimeEventState } from './runtime-event-handlers';
 
@@ -15,6 +15,20 @@ export function createRuntimeEventActions(set: ChatSet, get: ChatGet): Pick<Runt
 
       // Only process events for the active run (or if no active run set)
       if (activeRunId && runId && runId !== activeRunId) return;
+
+      // Reject lingering events from a run that the user explicitly aborted.
+      // The 'aborted' confirmation event is allowed through to finalize state.
+      const lastAbortedRunId = getLastAbortedRunId();
+      if (lastAbortedRunId && runId && runId === lastAbortedRunId) {
+        if (eventState === 'aborted') {
+          // Gateway confirmed the abort — clear the marker so future runs
+          // with a recycled ID aren't accidentally blocked.
+          setLastAbortedRunId(null);
+        }
+        // Let the 'aborted' event fall through to handleRuntimeEventState
+        // which properly clears all state.  All other events are dropped.
+        if (eventState !== 'aborted') return;
+      }
 
       setLastChatEventAt(Date.now());
 
