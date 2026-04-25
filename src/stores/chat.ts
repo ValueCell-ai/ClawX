@@ -60,6 +60,7 @@ let _loadSessionsInFlight: Promise<void> | null = null;
 let _lastLoadSessionsAt = 0;
 const _historyLoadInFlight = new Map<string, Promise<void>>();
 const _lastHistoryLoadAtBySession = new Map<string, number>();
+const _forceNextHistoryLoadBySession = new Set<string>();
 const _foregroundHistoryLoadSeen = new Set<string>();
 const SESSION_LOAD_MIN_INTERVAL_MS = 1_200;
 const HISTORY_LOAD_MIN_INTERVAL_MS = 800;
@@ -79,6 +80,10 @@ function clearHistoryPoll(): void {
     clearTimeout(_historyPollTimer);
     _historyPollTimer = null;
   }
+}
+
+function forceNextHistoryLoad(sessionKey: string): void {
+  _forceNextHistoryLoadBySession.add(sessionKey);
 }
 
 function pruneChatEventDedupe(now: number): void {
@@ -1523,14 +1528,20 @@ export const useChatStore = create<ChatState>((set, get) => ({
     const { currentSessionKey } = get();
     const isInitialForegroundLoad = !quiet && !_foregroundHistoryLoadSeen.has(currentSessionKey);
     const historyTimeoutOverride = getStartupHistoryTimeoutOverride(isInitialForegroundLoad);
+    const forceLoad = _forceNextHistoryLoadBySession.delete(currentSessionKey);
     const existingLoad = _historyLoadInFlight.get(currentSessionKey);
     if (existingLoad) {
       await existingLoad;
-      return;
+      if (!forceLoad) {
+        return;
+      }
+      if (get().currentSessionKey !== currentSessionKey) {
+        return;
+      }
     }
 
     const lastLoadAt = _lastHistoryLoadAtBySession.get(currentSessionKey) || 0;
-    if (quiet && Date.now() - lastLoadAt < HISTORY_LOAD_MIN_INTERVAL_MS) {
+    if (!forceLoad && quiet && Date.now() - lastLoadAt < HISTORY_LOAD_MIN_INTERVAL_MS) {
       return;
     }
 
@@ -2087,6 +2098,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
           // briefly in the UI until loadHistory replaces the message list — and if the
           // quiet-mode reload is debounced away, the token can stay visible permanently.
           if (isInternalMessage(normalizedFinalMessage)) {
+            const sessionKeyForReload = get().currentSessionKey;
             set({
               streamingText: '',
               streamingMessage: null,
@@ -2097,6 +2109,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
               pendingToolImages: [],
             });
             clearHistoryPoll();
+            forceNextHistoryLoad(sessionKeyForReload);
             void get().loadHistory(true);
             break;
           }

@@ -93,6 +93,66 @@ describe('useChatStore startup history retry', () => {
     setTimeoutSpy.mockRestore();
   });
 
+  it('forces the internal final-message reload through the quiet history cooldown', async () => {
+    const { useChatStore } = await import('@/stores/chat');
+    useChatStore.setState({
+      currentSessionKey: 'agent:main:main',
+      currentAgentId: 'main',
+      sessions: [{ key: 'agent:main:main' }],
+      messages: [],
+      sessionLabels: {},
+      sessionLastActivity: {},
+      sending: false,
+      activeRunId: null,
+      streamingText: '',
+      streamingMessage: null,
+      streamingTools: [],
+      pendingFinal: false,
+      lastUserMessageAt: null,
+      pendingToolImages: [],
+      error: null,
+      loading: false,
+      thinkingLevel: null,
+    });
+
+    gatewayRpcMock
+      .mockResolvedValueOnce({
+        messages: [{ role: 'user', content: 'hello', id: 'u1', timestamp: 1000 }],
+      })
+      .mockResolvedValueOnce({
+        messages: [
+          { role: 'user', content: 'hello', id: 'u1', timestamp: 1000 },
+          { role: 'assistant', content: 'Real answer', id: 'a2', timestamp: 1001 },
+        ],
+      });
+
+    await useChatStore.getState().loadHistory(true);
+    useChatStore.setState({
+      sending: true,
+      activeRunId: 'run-internal',
+      streamingText: 'NO_REPLY',
+      streamingMessage: { role: 'assistant', content: 'NO_REPLY' },
+    });
+
+    useChatStore.getState().handleChatEvent({
+      state: 'final',
+      runId: 'run-internal',
+      sessionKey: 'agent:main:main',
+      message: { role: 'assistant', content: 'NO_REPLY', id: 'a1' },
+    });
+
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(gatewayRpcMock).toHaveBeenCalledTimes(2);
+    expect(useChatStore.getState().messages.map((message) => message.content)).toEqual([
+      'hello',
+      'Real answer',
+    ]);
+    expect(useChatStore.getState().sending).toBe(false);
+    expect(useChatStore.getState().activeRunId).toBeNull();
+  });
+
   it('keeps non-startup foreground loading safety timeout at 15 seconds', async () => {
     const setTimeoutSpy = vi.spyOn(globalThis, 'setTimeout');
     const { useChatStore } = await import('@/stores/chat');
