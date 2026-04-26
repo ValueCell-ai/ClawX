@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('electron', () => ({
   app: {
@@ -119,7 +119,7 @@ describe('GatewayManager heartbeat recovery', () => {
     (manager as unknown as { connectionMonitor: { clear: () => void } }).connectionMonitor.clear();
   });
 
-  it('keeps heartbeat recovery disabled on windows', async () => {
+  it('defers heartbeat recovery on windows while inside the 5-minute silence guard', async () => {
     Object.defineProperty(process, 'platform', { value: 'win32' });
 
     const { GatewayManager } = await import('@electron/gateway/manager');
@@ -138,13 +138,58 @@ describe('GatewayManager heartbeat recovery', () => {
       state: 'running',
       port: 18789,
     };
+    // Recent alive signal → first threshold breach should defer (<5 min silence).
+    (manager as unknown as { diagnostics: { lastAliveAt: number; consecutiveHeartbeatMisses: number; consecutiveRpcFailures: number } }).diagnostics = {
+      lastAliveAt: Date.now(),
+      consecutiveHeartbeatMisses: 0,
+      consecutiveRpcFailures: 0,
+    };
     const restartSpy = vi.spyOn(manager, 'restart').mockResolvedValue();
 
     (manager as unknown as { startPing: () => void }).startPing();
 
-    vi.advanceTimersByTime(400_000);
+    // Windows interval=60s, timeout=25s, max=5 misses: threshold fires around
+    // ~5 * 60s == 300s.  Advance only that far so the silence-window guard
+    // is still inside the 5-minute quiet requirement → restart should defer.
+    vi.advanceTimersByTime(5 * 60_000);
 
     expect(restartSpy).not.toHaveBeenCalled();
+
+    (manager as unknown as { connectionMonitor: { clear: () => void } }).connectionMonitor.clear();
+  });
+
+  it('triggers heartbeat recovery on windows after prolonged silence', async () => {
+    Object.defineProperty(process, 'platform', { value: 'win32' });
+
+    const { GatewayManager } = await import('@electron/gateway/manager');
+    const manager = new GatewayManager();
+
+    const ws = {
+      readyState: 1,
+      ping: vi.fn(),
+      terminate: vi.fn(),
+      on: vi.fn(),
+    };
+
+    (manager as unknown as { ws: typeof ws }).ws = ws;
+    (manager as unknown as { shouldReconnect: boolean }).shouldReconnect = true;
+    (manager as unknown as { status: { state: string; port: number } }).status = {
+      state: 'running',
+      port: 18789,
+    };
+    // Alive signal from 10 minutes ago → guard is satisfied at first breach.
+    (manager as unknown as { diagnostics: { lastAliveAt: number; consecutiveHeartbeatMisses: number; consecutiveRpcFailures: number } }).diagnostics = {
+      lastAliveAt: Date.now() - 10 * 60_000,
+      consecutiveHeartbeatMisses: 0,
+      consecutiveRpcFailures: 0,
+    };
+    const restartSpy = vi.spyOn(manager, 'restart').mockResolvedValue();
+
+    (manager as unknown as { startPing: () => void }).startPing();
+
+    vi.advanceTimersByTime(6 * 60_000);
+
+    expect(restartSpy).toHaveBeenCalledTimes(1);
 
     (manager as unknown as { connectionMonitor: { clear: () => void } }).connectionMonitor.clear();
   });
