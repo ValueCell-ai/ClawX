@@ -234,7 +234,11 @@ async function validateOpenAiCompatibleKey(
       ? await performResponsesProbe(providerType, probeUrl, headers)
       : await performChatCompletionsProbe(providerType, probeUrl, headers);
     if (probeResult.valid) return probeResult;
-    // Probe also failed — return the original /models auth error
+    // Only fall back to the /models auth error when the probe also indicates an
+    // auth failure. If the probe failed for non-auth reasons (5xx, connection
+    // error, unknown), surface that result so we don't misreport a server error
+    // as "Invalid API key".
+    if (!(probeResult as ClassifiedValidationResult).authFailure) return probeResult;
   }
 
   return modelsResult;
