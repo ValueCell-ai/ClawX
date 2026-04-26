@@ -61,7 +61,7 @@ test.describe('ClawX startup chat history recovery', () => {
               },
             };
           }
-          if (key === stableStringify(['chat.history', { sessionKey: 'agent:main:main', limit: 200 }])) {
+          if (key === stableStringify(['chat.history', { sessionKey: 'agent:main:main', limit: 1000 }])) {
             chatHistoryCallCount += 1;
             if (chatHistoryCallCount === 1) {
               return {

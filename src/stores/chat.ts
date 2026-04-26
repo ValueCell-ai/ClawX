@@ -64,6 +64,7 @@ const _forceNextHistoryLoadBySession = new Set<string>();
 const _foregroundHistoryLoadSeen = new Set<string>();
 const SESSION_LOAD_MIN_INTERVAL_MS = 1_200;
 const HISTORY_LOAD_MIN_INTERVAL_MS = 800;
+const CHAT_HISTORY_LIMIT = 1000;
 const HISTORY_POLL_SILENCE_WINDOW_MS = 2_500;
 const CHAT_EVENT_DEDUPE_TTL_MS = 30_000;
 const _chatEventDedupe = new Map<string, number>();
@@ -819,7 +820,7 @@ function parseSessionUpdatedAtMs(value: unknown): number | undefined {
   return undefined;
 }
 
-async function loadCronFallbackMessages(sessionKey: string, limit = 200): Promise<RawMessage[]> {
+async function loadCronFallbackMessages(sessionKey: string, limit = CHAT_HISTORY_LIMIT): Promise<RawMessage[]> {
   if (!isCronSessionKey(sessionKey)) return [];
   try {
     const response = await hostApiFetch<{ messages?: RawMessage[] }>(
@@ -1706,7 +1707,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
           try {
             data = await useGatewayStore.getState().rpc<Record<string, unknown>>(
               'chat.history',
-              { sessionKey: currentSessionKey, limit: 200 },
+              { sessionKey: currentSessionKey, limit: CHAT_HISTORY_LIMIT },
               historyTimeoutOverride,
             );
             lastError = null;
@@ -1742,7 +1743,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
           let rawMessages = Array.isArray(data.messages) ? data.messages as RawMessage[] : [];
           const thinkingLevel = data.thinkingLevel ? String(data.thinkingLevel) : null;
           if (rawMessages.length === 0 && isCronSessionKey(currentSessionKey)) {
-            rawMessages = await loadCronFallbackMessages(currentSessionKey, 200);
+            rawMessages = await loadCronFallbackMessages(currentSessionKey);
           }
 
           const applied = applyLoadedMessages(rawMessages, thinkingLevel);
@@ -1758,7 +1759,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
             });
           }
 
-          const fallbackMessages = await loadCronFallbackMessages(currentSessionKey, 200);
+          const fallbackMessages = await loadCronFallbackMessages(currentSessionKey);
           if (fallbackMessages.length > 0) {
             const applied = applyLoadedMessages(fallbackMessages, null);
             if (applied && isInitialForegroundLoad) {
@@ -1773,7 +1774,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
         }
       } catch (err) {
         console.warn('Failed to load chat history:', err);
-        const fallbackMessages = await loadCronFallbackMessages(currentSessionKey, 200);
+        const fallbackMessages = await loadCronFallbackMessages(currentSessionKey);
         if (fallbackMessages.length > 0) {
           const applied = applyLoadedMessages(fallbackMessages, null);
           if (applied && isInitialForegroundLoad) {

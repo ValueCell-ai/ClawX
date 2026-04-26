@@ -155,7 +155,7 @@ describe('chat history actions', () => {
     await actions.loadHistory();
 
     expect(hostApiFetchMock).toHaveBeenCalledWith(
-      '/api/cron/session-history?sessionKey=agent%3Amain%3Acron%3Ajob-1&limit=200',
+      '/api/cron/session-history?sessionKey=agent%3Amain%3Acron%3Ajob-1&limit=1000',
     );
     expect(h.read().messages.map((message) => message.content)).toEqual([
       'Drink water 💧',
@@ -232,14 +232,14 @@ describe('chat history actions', () => {
       1,
       'gateway:rpc',
       'chat.history',
-      { sessionKey: 'agent:main:main', limit: 200 },
+      { sessionKey: 'agent:main:main', limit: 1000 },
       35_000,
     );
     expect(invokeIpcMock).toHaveBeenNthCalledWith(
       2,
       'gateway:rpc',
       'chat.history',
-      { sessionKey: 'agent:main:main', limit: 200 },
+      { sessionKey: 'agent:main:main', limit: 1000 },
       35_000,
     );
     expect(h.read().messages.map((message) => message.content)).toEqual(['restored after retry']);

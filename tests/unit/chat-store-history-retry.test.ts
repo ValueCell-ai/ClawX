@@ -80,13 +80,13 @@ describe('useChatStore startup history retry', () => {
     expect(gatewayRpcMock).toHaveBeenNthCalledWith(
       1,
       'chat.history',
-      { sessionKey: 'agent:main:main', limit: 200 },
+      { sessionKey: 'agent:main:main', limit: 1000 },
       35_000,
     );
     expect(gatewayRpcMock).toHaveBeenNthCalledWith(
       2,
       'chat.history',
-      { sessionKey: 'agent:main:main', limit: 200 },
+      { sessionKey: 'agent:main:main', limit: 1000 },
       undefined,
     );
     expect(setTimeoutSpy).toHaveBeenCalledWith(expect.any(Function), 191_800);
@@ -191,7 +191,7 @@ describe('useChatStore startup history retry', () => {
     expect(gatewayRpcMock).toHaveBeenNthCalledWith(
       2,
       'chat.history',
-      { sessionKey: 'agent:main:main', limit: 200 },
+      { sessionKey: 'agent:main:main', limit: 1000 },
       undefined,
     );
     expect(setTimeoutSpy).toHaveBeenCalledWith(expect.any(Function), 15_000);
@@ -253,17 +253,17 @@ describe('useChatStore startup history retry', () => {
     expect(gatewayRpcMock).toHaveBeenCalledTimes(3);
     expect(gatewayRpcMock.mock.calls[0]).toEqual([
       'chat.history',
-      { sessionKey: 'agent:main:main', limit: 200 },
+      { sessionKey: 'agent:main:main', limit: 1000 },
       35_000,
     ]);
     expect(gatewayRpcMock.mock.calls[1]).toEqual([
       'chat.history',
-      { sessionKey: 'agent:main:main', limit: 200 },
+      { sessionKey: 'agent:main:main', limit: 1000 },
       35_000,
     ]);
     expect(gatewayRpcMock.mock.calls[2]).toEqual([
       'chat.history',
-      { sessionKey: 'agent:main:main', limit: 200 },
+      { sessionKey: 'agent:main:main', limit: 1000 },
       35_000,
     ]);
     expect(useChatStore.getState().messages.map((message) => message.content)).toEqual(['restored after retry']);

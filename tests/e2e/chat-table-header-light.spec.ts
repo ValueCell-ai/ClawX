@@ -70,10 +70,6 @@ test.describe('ClawX chat table header styling', () => {
               sessions: [{ key: SESSION_KEY, displayName: 'main' }],
             },
           },
-          [stableStringify(['chat.history', { sessionKey: SESSION_KEY, limit: 200 }])]: {
-            success: true,
-            result: { messages: seededHistory },
-          },
           [stableStringify(['chat.history', { sessionKey: SESSION_KEY, limit: 1000 }])]: {
             success: true,
             result: { messages: seededHistory },

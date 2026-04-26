@@ -115,7 +115,7 @@ describe('chat target routing', () => {
     expect(state.messages.at(-1)?.content).toBe('Hello direct agent');
 
     const historyCall = gatewayRpcMock.mock.calls.find(([method]) => method === 'chat.history');
-    expect(historyCall?.[1]).toEqual({ sessionKey: 'agent:research:desk', limit: 200 });
+    expect(historyCall?.[1]).toEqual({ sessionKey: 'agent:research:desk', limit: 1000 });
 
     const sendCall = gatewayRpcMock.mock.calls.find(([method]) => method === 'chat.send');
     expect(sendCall?.[1]).toMatchObject({

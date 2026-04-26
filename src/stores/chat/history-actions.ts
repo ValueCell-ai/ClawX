@@ -23,9 +23,11 @@ import {
 import type { RawMessage } from './types';
 import type { ChatGet, ChatSet, SessionHistoryActions } from './store-api';
 
+const CHAT_HISTORY_LIMIT = 1000;
+
 const foregroundHistoryLoadSeen = new Set<string>();
 
-async function loadCronFallbackMessages(sessionKey: string, limit = 200): Promise<RawMessage[]> {
+async function loadCronFallbackMessages(sessionKey: string, limit = CHAT_HISTORY_LIMIT): Promise<RawMessage[]> {
   if (!isCronSessionKey(sessionKey)) return [];
   try {
     const response = await hostApiFetch<{ messages?: RawMessage[] }>(
@@ -195,7 +197,7 @@ export function createHistoryActions(
             result = await invokeIpc(
               'gateway:rpc',
               'chat.history',
-              { sessionKey: currentSessionKey, limit: 200 },
+              { sessionKey: currentSessionKey, limit: CHAT_HISTORY_LIMIT },
               ...(historyTimeoutOverride != null ? [historyTimeoutOverride] as const : []),
             ) as { success: boolean; result?: Record<string, unknown>; error?: string };
 
@@ -238,7 +240,7 @@ export function createHistoryActions(
           let rawMessages = Array.isArray(data.messages) ? data.messages as RawMessage[] : [];
           const thinkingLevel = data.thinkingLevel ? String(data.thinkingLevel) : null;
           if (rawMessages.length === 0 && isCronSessionKey(currentSessionKey)) {
-            rawMessages = await loadCronFallbackMessages(currentSessionKey, 200);
+            rawMessages = await loadCronFallbackMessages(currentSessionKey);
           }
           const applied = applyLoadedMessages(rawMessages, thinkingLevel);
           if (applied && isInitialForegroundLoad) {
@@ -257,7 +259,7 @@ export function createHistoryActions(
           });
         }
 
-        const fallbackMessages = await loadCronFallbackMessages(currentSessionKey, 200);
+        const fallbackMessages = await loadCronFallbackMessages(currentSessionKey);
         if (fallbackMessages.length > 0) {
           const applied = applyLoadedMessages(fallbackMessages, null);
           if (applied && isInitialForegroundLoad) {
@@ -277,7 +279,7 @@ export function createHistoryActions(
         }
       } catch (err) {
         console.warn('Failed to load chat history:', err);
-        const fallbackMessages = await loadCronFallbackMessages(currentSessionKey, 200);
+        const fallbackMessages = await loadCronFallbackMessages(currentSessionKey);
         if (fallbackMessages.length > 0) {
           const applied = applyLoadedMessages(fallbackMessages, null);
           if (applied && isInitialForegroundLoad) {

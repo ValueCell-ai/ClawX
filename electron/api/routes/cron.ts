@@ -424,10 +424,10 @@ export async function handleCronRoutes(
       return true;
     }
 
-    const rawLimit = Number(url.searchParams.get('limit') || '200');
+    const rawLimit = Number(url.searchParams.get('limit') || '1000');
     const limit = Number.isFinite(rawLimit)
-      ? Math.min(Math.max(Math.floor(rawLimit), 1), 200)
-      : 200;
+      ? Math.min(Math.max(Math.floor(rawLimit), 1), 1000)
+      : 1000;
 
     try {
       const [jobsResult, runs, sessionEntry] = await Promise.all([

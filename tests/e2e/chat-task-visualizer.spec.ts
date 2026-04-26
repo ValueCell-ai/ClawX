@@ -186,12 +186,6 @@ test.describe('ClawX chat execution graph', () => {
               sessions: [{ key: PROJECT_MANAGER_SESSION_KEY, displayName: 'main' }],
             },
           },
-          [stableStringify(['chat.history', { sessionKey: PROJECT_MANAGER_SESSION_KEY, limit: 200 }])]: {
-            success: true,
-            result: {
-              messages: seededHistory,
-            },
-          },
           [stableStringify(['chat.history', { sessionKey: PROJECT_MANAGER_SESSION_KEY, limit: 1000 }])]: {
             success: true,
             result: {
@@ -280,12 +274,6 @@ test.describe('ClawX chat execution graph', () => {
             success: true,
             result: {
               sessions: [{ key: PROJECT_MANAGER_SESSION_KEY, displayName: 'main' }],
-            },
-          },
-          [stableStringify(['chat.history', { sessionKey: PROJECT_MANAGER_SESSION_KEY, limit: 200 }])]: {
-            success: true,
-            result: {
-              messages: longRunHistory,
             },
           },
           [stableStringify(['chat.history', { sessionKey: PROJECT_MANAGER_SESSION_KEY, limit: 1000 }])]: {
