@@ -13,6 +13,7 @@ type IpcMockConfig = {
   gatewayStatus?: Record<string, unknown>;
   gatewayRpc?: Record<string, unknown>;
   hostApi?: Record<string, unknown>;
+  ipc?: Record<string, unknown>;
 };
 
 type ElectronFixtures = {
@@ -249,6 +250,13 @@ export async function installIpcMocks(
       if (mockConfig.gatewayStatus) {
         ipcMain.removeHandler('gateway:status');
         ipcMain.handle('gateway:status', async () => mockConfig.gatewayStatus);
+      }
+
+      if (mockConfig.ipc) {
+        for (const [channel, value] of Object.entries(mockConfig.ipc)) {
+          ipcMain.removeHandler(channel);
+          ipcMain.handle(channel, async () => value);
+        }
       }
     },
     config,

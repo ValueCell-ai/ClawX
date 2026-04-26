@@ -109,7 +109,8 @@
         "error": "设置错误：",
         "restart": "尝试重启应用",
         "wait": "这可能需要一点时间...",
-        "skip": "跳过此步骤"
+        "skip": "跳过此步骤",
+        "pythonDeferredOffline": "当前网络不可用，暂时跳过 Python 环境下载"
     },
     "complete": {
         "title": "设置完成！",

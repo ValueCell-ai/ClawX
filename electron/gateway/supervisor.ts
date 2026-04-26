@@ -2,15 +2,21 @@ import { app, utilityProcess } from 'electron';
 import path from 'path';
 import { existsSync } from 'fs';
 import { getOpenClawDir, getOpenClawEntryPath } from '../utils/paths';
-import { getUvMirrorEnv } from '../utils/uv-env';
+import { canReachManagedPythonDownloadSource, getUvMirrorEnv } from '../utils/uv-env';
 import { isPythonReady, setupManagedPython } from '../utils/uv-setup';
 import { logger } from '../utils/logger';
 import { prependPathEntry } from '../utils/env-path';
 import { probeGatewayReady } from './ws-client';
 
 export function warmupManagedPythonReadiness(): void {
-  void isPythonReady().then((pythonReady) => {
+  void isPythonReady().then(async (pythonReady) => {
     if (!pythonReady) {
+      const downloadReachable = await canReachManagedPythonDownloadSource();
+      if (!downloadReachable) {
+        logger.info('Python environment missing, but download source is unreachable; skipping background repair for now');
+        return;
+      }
+
       logger.info('Python environment missing or incomplete, attempting background repair...');
       void setupManagedPython().catch((err) => {
         logger.error('Background Python repair failed:', err);

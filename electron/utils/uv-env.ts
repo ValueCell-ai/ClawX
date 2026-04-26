@@ -1,14 +1,14 @@
 import { app } from 'electron';
-import { request } from 'https';
 import { logger } from './logger';
+import { proxyAwareFetch } from './proxy-fetch';
 
 const UV_MIRROR_ENV: Record<string, string> = {
   UV_PYTHON_INSTALL_MIRROR: 'https://registry.npmmirror.com/-/binary/python-build-standalone/',
   UV_INDEX_URL: 'https://pypi.tuna.tsinghua.edu.cn/simple/',
 };
 
-const GOOGLE_204_HOST = 'www.google.com';
-const GOOGLE_204_PATH = '/generate_204';
+const GOOGLE_204_URL = 'https://www.google.com/generate_204';
+const MANAGED_PYTHON_MIRROR_URL = 'https://registry.npmmirror.com/-/binary/python-build-standalone/';
 const GOOGLE_204_TIMEOUT_MS = 2000;
 
 let cachedOptimized: boolean | null = null;
@@ -27,35 +27,27 @@ function isRegionOptimized(locale: string, timezone: string): boolean {
   return locale === 'zh-CN';
 }
 
-function probeGoogle204(timeoutMs: number): Promise<boolean> {
-  return new Promise((resolve) => {
-    let done = false;
-    const finish = (value: boolean) => {
-      if (done) return;
-      done = true;
-      resolve(value);
-    };
+async function probeUrlReachable(url: string, timeoutMs: number): Promise<boolean> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => {
+    controller.abort(new Error('reachability_timeout'));
+  }, timeoutMs);
 
-    const req = request(
-      {
-        method: 'GET',
-        hostname: GOOGLE_204_HOST,
-        path: GOOGLE_204_PATH,
-      },
-      (res) => {
-        const status = res.statusCode || 0;
-        res.resume();
-        finish(status >= 200 && status < 300);
-      }
-    );
-
-    req.setTimeout(timeoutMs, () => {
-      req.destroy(new Error('google_204_timeout'));
+  try {
+    const response = await proxyAwareFetch(url, {
+      method: 'GET',
+      signal: controller.signal,
     });
+    return response.status >= 200 && response.status < 300;
+  } catch {
+    return false;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
 
-    req.on('error', () => finish(false));
-    req.end();
-  });
+function probeGoogle204(timeoutMs: number): Promise<boolean> {
+  return probeUrlReachable(GOOGLE_204_URL, timeoutMs);
 }
 
 async function computeOptimization(): Promise<boolean> {
@@ -109,6 +101,12 @@ export async function shouldOptimizeNetwork(): Promise<boolean> {
 export async function getUvMirrorEnv(): Promise<Record<string, string>> {
   const isOptimized = await shouldOptimizeNetwork();
   return isOptimized ? { ...UV_MIRROR_ENV } : {};
+}
+
+export async function canReachManagedPythonDownloadSource(): Promise<boolean> {
+  const isOptimized = await shouldOptimizeNetwork();
+  const probeUrl = isOptimized ? MANAGED_PYTHON_MIRROR_URL : GOOGLE_204_URL;
+  return await probeUrlReachable(probeUrl, GOOGLE_204_TIMEOUT_MS);
 }
 
 export async function warmupNetworkOptimization(): Promise<void> {

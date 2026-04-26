@@ -6,9 +6,21 @@ const originalPlatform = process.platform;
 const {
   mockExec,
   mockCreateServer,
+  mockIsPythonReady,
+  mockSetupManagedPython,
+  mockCanReachManagedPythonDownloadSource,
+  mockLoggerInfo,
+  mockLoggerWarn,
+  mockLoggerError,
 } = vi.hoisted(() => ({
   mockExec: vi.fn(),
   mockCreateServer: vi.fn(),
+  mockIsPythonReady: vi.fn(),
+  mockSetupManagedPython: vi.fn(),
+  mockCanReachManagedPythonDownloadSource: vi.fn(),
+  mockLoggerInfo: vi.fn(),
+  mockLoggerWarn: vi.fn(),
+  mockLoggerError: vi.fn(),
 }));
 
 vi.mock('electron', () => ({
@@ -32,6 +44,24 @@ vi.mock('child_process', () => ({
 
 vi.mock('net', () => ({
   createServer: mockCreateServer,
+}));
+
+vi.mock('@electron/utils/uv-setup', () => ({
+  isPythonReady: mockIsPythonReady,
+  setupManagedPython: mockSetupManagedPython,
+}));
+
+vi.mock('@electron/utils/uv-env', () => ({
+  getUvMirrorEnv: vi.fn().mockResolvedValue({}),
+  canReachManagedPythonDownloadSource: mockCanReachManagedPythonDownloadSource,
+}));
+
+vi.mock('@electron/utils/logger', () => ({
+  logger: {
+    info: mockLoggerInfo,
+    warn: mockLoggerWarn,
+    error: mockLoggerError,
+  },
 }));
 
 class MockUtilityChild extends EventEmitter {
@@ -133,5 +163,21 @@ describe('gateway supervisor process cleanup', () => {
       expect.any(Function),
     );
     expect(mockCreateServer).toHaveBeenCalled();
+  });
+
+  it('skips background python repair when download source is unreachable', async () => {
+    mockIsPythonReady.mockResolvedValue(false);
+    mockCanReachManagedPythonDownloadSource.mockResolvedValue(false);
+
+    const { warmupManagedPythonReadiness } = await import('@electron/gateway/supervisor');
+    warmupManagedPythonReadiness();
+
+    await vi.waitFor(() => {
+      expect(mockCanReachManagedPythonDownloadSource).toHaveBeenCalledTimes(1);
+    });
+    expect(mockSetupManagedPython).not.toHaveBeenCalled();
+    expect(mockLoggerInfo).toHaveBeenCalledWith(
+      'Python environment missing, but download source is unreachable; skipping background repair for now',
+    );
   });
 });

@@ -35,7 +35,7 @@ import {
   validateChannelCredentials,
 } from '../utils/channel-config';
 import { toOpenClawChannelType, toUiChannelType } from '../utils/channel-alias';
-import { checkUvInstalled, installUv, setupManagedPython } from '../utils/uv-setup';
+import { checkUvInstalled, installUv, isPythonReady, setupManagedPython } from '../utils/uv-setup';
 import {
   ensureDingTalkPluginInstalled,
   ensureFeishuPluginInstalled,
@@ -50,6 +50,7 @@ import { applyProxySettings } from './proxy';
 import { syncLaunchAtStartupSettingFromStore } from './launch-at-startup';
 import { proxyAwareFetch } from '../utils/proxy-fetch';
 import { getRecentTokenUsageHistory } from '../utils/token-usage';
+import { canReachManagedPythonDownloadSource } from '../utils/uv-env';
 import { getProviderService } from '../services/providers/provider-service';
 import {
   getOpenClawProviderKey,
@@ -1109,8 +1110,22 @@ function registerUvHandlers(): void {
       if (!isInstalled) {
         await installUv();
       }
-      // Always run python setup to ensure it exists in uv's cache
-      await setupManagedPython();
+
+      const pythonReady = await isPythonReady();
+      if (!pythonReady) {
+        const downloadReachable = await canReachManagedPythonDownloadSource();
+        if (!downloadReachable) {
+          logger.warn('Skipping uv managed Python install during setup because download source is unreachable');
+          return {
+            success: true,
+            skippedPythonInstall: true,
+            reason: 'offline',
+          };
+        }
+
+        await setupManagedPython();
+      }
+
       return { success: true };
     } catch (error) {
       console.error('Failed to setup uv/python:', error);
