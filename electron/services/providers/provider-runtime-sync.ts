@@ -52,6 +52,19 @@ function normalizeProviderBaseUrl(
     return normalized.replace(/\/v1$/, '').replace(/\/anthropic$/, '').replace(/\/$/, '') + '/anthropic';
   }
 
+  if (config.type === 'ollama') {
+    // Strip any trailing chat endpoint suffix, then ensure /v1 is present.
+    // Ollama's OpenAI-compatible API is always served under /v1, so requests to
+    // bare URLs like http://localhost:11434 (without /v1) result in 410 errors.
+    const withoutEndpoint = normalized
+      .replace(/\/v1\/chat\/completions$/i, '/v1')
+      .replace(/\/chat\/completions$/i, '');
+    if (!withoutEndpoint.endsWith('/v1')) {
+      return withoutEndpoint + '/v1';
+    }
+    return withoutEndpoint;
+  }
+
   if (isUnregisteredProviderType(config.type)) {
     const protocol = apiProtocol || config.apiProtocol || 'openai-completions';
     if (protocol === 'openai-responses') {
