@@ -75,6 +75,46 @@ const GATEWAY_FETCH_PRELOAD_SOURCE = `'use strict';
       // ignore
     }
   }
+
+  if (process.platform === 'darwin') {
+    try {
+      var cp = require('child_process');
+      if (!cp.__clawxPatchedMac) {
+        cp.__clawxPatchedMac = true;
+        ['spawn', 'exec', 'execFile', 'fork', 'spawnSync', 'execSync', 'execFileSync'].forEach(function(method) {
+          var original = cp[method];
+          if (typeof original !== 'function') return;
+          cp[method] = function() {
+            var args = Array.prototype.slice.call(arguments);
+            var optIdx = -1;
+            for (var i = 1; i < args.length; i++) {
+              var a = args[i];
+              if (a && typeof a === 'object' && !Array.isArray(a)) {
+                optIdx = i;
+                break;
+              }
+            }
+            if (optIdx >= 0) {
+              if (!args[optIdx].env) {
+                args[optIdx].env = Object.assign({}, process.env);
+              }
+              args[optIdx].env.LSUIElement = '1';
+            } else {
+              var opts = { env: Object.assign({}, process.env, { LSUIElement: '1' }) };
+              if (typeof args[args.length - 1] === 'function') {
+                args.splice(args.length - 1, 0, opts);
+              } else {
+                args.push(opts);
+              }
+            }
+            return original.apply(this, args);
+          };
+        });
+      }
+    } catch (e) {
+      // ignore
+    }
+  }
 })();
 `;
 
