@@ -86,6 +86,7 @@
         "ws": "^8.19.0"
     },
     "devDependencies": {
+        "acpx": "0.5.3",
         "@buape/carbon": "0.16.0",
         "@discordjs/voice": "^0.19.2",
         "@eslint/js": "^10.0.1",
@@ -139,6 +140,7 @@
         "mpg123-decoder": "^1.0.3",
         "openclaw": "2026.4.24",
         "opusscript": "^0.1.1",
+        "playwright-core": "1.59.1",
         "png2icons": "^2.0.1",
         "postcss": "^8.5.6",
         "qrcode-terminal": "0.12.0",

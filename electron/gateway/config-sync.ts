@@ -223,8 +223,29 @@ function ensureExtensionDepsResolvable(openclawDir: string): void {
   const topNM = join(openclawDir, 'node_modules');
   let linkedCount = 0;
 
+  // Use 'junction' on Windows (no admin required); on other platforms the
+  // type argument is ignored by Node so 'junction' is harmless.
+  const symlinkType = process.platform === 'win32' ? 'junction' : 'dir';
+
   try {
     if (!existsSync(extDir)) return;
+
+    // Create openclaw self-reference so built-in extension runtime files can
+    // resolve bare `import 'openclaw/plugin-sdk/...'` via native ESM.
+    // Extensions ship their own package.json (e.g. "@openclaw/codex"),
+    // creating a separate package scope that prevents Node's ESM
+    // package-self-reference from reaching the openclaw root package.
+    // Only needed in packaged mode — in dev pnpm already provides resolution.
+    if (app.isPackaged) {
+      const selfRef = join(topNM, 'openclaw');
+      if (!existsSync(selfRef)) {
+        try {
+          mkdirSync(topNM, { recursive: true });
+          symlinkSync(openclawDir, selfRef, symlinkType);
+          linkedCount++;
+        } catch { /* skip on error — non-fatal */ }
+      }
+    }
 
     for (const ext of readdirSync(extDir, { withFileTypes: true })) {
       if (!ext.isDirectory()) continue;
@@ -245,7 +266,7 @@ function ensureExtensionDepsResolvable(openclawDir: string): void {
             if (existsSync(dest)) continue;
             try {
               mkdirSync(join(topNM, pkg.name), { recursive: true });
-              symlinkSync(join(scopeDir, sub.name), dest);
+              symlinkSync(join(scopeDir, sub.name), dest, symlinkType);
               linkedCount++;
             } catch { /* skip on error — non-fatal */ }
           }
@@ -254,7 +275,7 @@ function ensureExtensionDepsResolvable(openclawDir: string): void {
           if (existsSync(dest)) continue;
           try {
             mkdirSync(topNM, { recursive: true });
-            symlinkSync(join(extNM, pkg.name), dest);
+            symlinkSync(join(extNM, pkg.name), dest, symlinkType);
             linkedCount++;
           } catch { /* skip on error — non-fatal */ }
         }

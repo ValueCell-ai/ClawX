@@ -219,7 +219,9 @@ const EXTRA_BUNDLED_PACKAGES = [
   'qrcode-terminal',           // QR rendering used by WhatsApp/WeChat login helpers
 ];
 
-const BUNDLED_CHANNEL_RUNTIME_DEP_PLUGIN_IDS = [
+const BUNDLED_EXTENSION_RUNTIME_DEP_PLUGIN_IDS = [
+  'acpx',
+  'browser',
   'discord',
   'qqbot',
   'telegram',
@@ -233,9 +235,9 @@ function readJsonFile(filePath) {
   }
 }
 
-function collectBundledChannelRuntimePackages(extensionsRoot) {
+function collectBundledExtensionRuntimePackages(extensionsRoot) {
   const packages = [];
-  for (const pluginId of BUNDLED_CHANNEL_RUNTIME_DEP_PLUGIN_IDS) {
+  for (const pluginId of BUNDLED_EXTENSION_RUNTIME_DEP_PLUGIN_IDS) {
     const packageJson = readJsonFile(path.join(extensionsRoot, pluginId, 'package.json'));
     if (!packageJson || typeof packageJson !== 'object') continue;
     for (const deps of [packageJson.dependencies, packageJson.optionalDependencies]) {
@@ -246,8 +248,8 @@ function collectBundledChannelRuntimePackages(extensionsRoot) {
   return [...new Set(packages)].sort((a, b) => a.localeCompare(b));
 }
 
-const bundledChannelRuntimePackages = collectBundledChannelRuntimePackages(extensionsDir);
-for (const pkgName of bundledChannelRuntimePackages) {
+const bundledExtensionRuntimePackages = collectBundledExtensionRuntimePackages(extensionsDir);
+for (const pkgName of bundledExtensionRuntimePackages) {
   if (!EXTRA_BUNDLED_PACKAGES.includes(pkgName)) {
     EXTRA_BUNDLED_PACKAGES.push(pkgName);
   }
@@ -768,6 +770,12 @@ function patchBundledRuntime(outputDir) {
       replace: `\t\tconst packageRoot = resolveBundledPluginPackageRoot(params.pluginRoot);
 \t\tconst dependencySearchRoots = [installRoot, ...packageRoot ? [packageRoot] : []];
 \t\tconst missingSpecs = deps.filter((dep) => !hasDependencySentinel(dependencySearchRoots, dep)).map((dep) => \`\${dep.name}@\${dep.version}\`).toSorted((left, right) => left.localeCompare(right));`,
+    },
+    {
+      label: 'packaged scan bundled runtime deps lookup',
+      target: () => findFirstFileByName(path.join(outputDir, 'dist'), /^bundled-runtime-deps-.*\.js$/),
+      search: `\tconst packageSearchRoots = [resolveBundledRuntimeDependencyPackageInstallRoot(params.packageRoot, { env: params.env })];`,
+      replace: `\tconst packageSearchRoots = [resolveBundledRuntimeDependencyPackageInstallRoot(params.packageRoot, { env: params.env }), params.packageRoot];`,
     },
     {
       label: 'workspace command runner',
