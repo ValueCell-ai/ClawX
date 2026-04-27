@@ -709,6 +709,39 @@ describe('syncProviderConfigToOpenClaw', () => {
   });
 });
 
+describe('batchSyncConfigFields', () => {
+  beforeEach(async () => {
+    vi.resetModules();
+    vi.restoreAllMocks();
+    await rm(testHome, { recursive: true, force: true });
+    await rm(testUserData, { recursive: true, force: true });
+  });
+
+  it('allowlists packaged file origins for the control UI websocket', async () => {
+    await writeOpenClawJson({
+      gateway: {
+        controlUi: {
+          allowedOrigins: ['http://localhost:18789', 'file://'],
+        },
+      },
+    });
+
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    const { batchSyncConfigFields } = await import('@electron/utils/openclaw-auth');
+
+    await batchSyncConfigFields('test-token');
+
+    const result = await readOpenClawJson();
+    const gateway = result.gateway as Record<string, unknown>;
+    const controlUi = gateway.controlUi as Record<string, unknown>;
+
+    expect(controlUi.allowedOrigins).toEqual(['http://localhost:18789', 'file://', 'null']);
+    expect(gateway.auth).toEqual({ mode: 'token', token: 'test-token' });
+
+    logSpy.mockRestore();
+  });
+});
+
 describe('auth-backed provider discovery', () => {
   beforeEach(async () => {
     vi.resetModules();

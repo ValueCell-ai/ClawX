@@ -41,6 +41,26 @@ if (!fs.existsSync(openclawLink)) {
 const openclawReal = fs.realpathSync(openclawLink);
 echo`   openclaw resolved: ${openclawReal}`;
 
+function shouldCopyOpenClawPackageEntry(src) {
+  const rel = path.relative(openclawReal, src);
+  if (!rel || rel.startsWith('..')) return true;
+  const parts = rel.split(path.sep);
+
+  if (parts[0] === 'dist' && parts[1] === 'extensions') {
+    const nodeModulesIndex = parts.indexOf('node_modules');
+    if (nodeModulesIndex >= 0) {
+      return false;
+    }
+  }
+
+  for (let i = 0; i < parts.length - 1; i++) {
+    if (parts[i] === 'node_modules' && parts[i + 1] === '.bin') {
+      return false;
+    }
+  }
+  return true;
+}
+
 // 2. Clean and create output directory
 if (fs.existsSync(OUTPUT)) {
   fs.rmSync(OUTPUT, { recursive: true });
@@ -49,7 +69,11 @@ fs.mkdirSync(OUTPUT, { recursive: true });
 
 // 3. Copy openclaw package itself to OUTPUT root
 echo`   Copying openclaw package...`;
-fs.cpSync(openclawReal, OUTPUT, { recursive: true, dereference: true });
+fs.cpSync(openclawReal, OUTPUT, {
+  recursive: true,
+  dereference: true,
+  filter: shouldCopyOpenClawPackageEntry,
+});
 
 // 4. Recursively collect ALL transitive dependencies via pnpm virtual store BFS
 //
@@ -188,6 +212,7 @@ echo`   Skipped ${skippedDevCount} dev-only package references`;
 //     then BFS its transitive deps exactly like we did for openclaw above.
 const EXTRA_BUNDLED_PACKAGES = [
   '@whiskeysockets/baileys',   // WhatsApp channel (was a dep of old clawdbot, not openclaw)
+  '@larksuiteoapi/node-sdk',   // Built-in Feishu extension dependency in openclaw 2026.4.23+
 ];
 
 let extraCount = 0;
@@ -279,7 +304,7 @@ for (const [realPath, pkgName] of collected) {
 // Fix: copy extension deps into the top-level node_modules/ so they are
 // resolvable from shared chunks.  Skip-if-exists preserves version priority
 // (openclaw's own deps take precedence over extension deps).
-const extensionsDir = path.join(OUTPUT, 'dist', 'extensions');
+const extensionsDir = path.join(openclawReal, 'dist', 'extensions');
 let mergedExtCount = 0;
 if (fs.existsSync(extensionsDir)) {
   for (const extEntry of fs.readdirSync(extensionsDir, { withFileTypes: true })) {

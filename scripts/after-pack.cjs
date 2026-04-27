@@ -596,15 +596,11 @@ exports.default = async function afterPack(context) {
     }
   }
 
-  // 1.2 Copy built-in extension node_modules that electron-builder skipped.
-  //     OpenClaw 3.31+ ships built-in extensions (discord, qqbot, etc.) under
-  //     dist/extensions/<ext>/node_modules/. These are skipped by extraResources
-  //     because .gitignore contains "node_modules/".
-  //
-  //     Extension code is loaded via shared chunks in dist/ (e.g. outbound-*.js)
-  //     which resolve modules from the top-level openclaw/node_modules/, NOT from
-  //     the extension's own node_modules/. So we must merge extension deps into
-  //     the top-level node_modules/ as well.
+  // 1.2 Legacy safety net for build/openclaw bundles that still contain nested
+  //     built-in extension node_modules. The current bundle-openclaw.mjs skips
+  //     these nested directories and merges their packages into the top-level
+  //     OpenClaw node_modules instead, which is where shared dist chunks resolve
+  //     bare imports from at runtime.
   const buildExtDir = join(__dirname, '..', 'build', 'openclaw', 'dist', 'extensions');
   const packExtDir = join(openclawRoot, 'dist', 'extensions');
   if (existsSync(buildExtDir)) {
