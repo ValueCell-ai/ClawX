@@ -194,11 +194,53 @@ async function getListeningProcessIds(port: number): Promise<string[]> {
   return [...new Set(stdout.trim().split(/\r?\n/).map((value) => value.trim()).filter(Boolean))];
 }
 
+async function stopSystemdGatewayService(): Promise<void> {
+  if (process.platform !== 'linux') return;
+
+  try {
+    const cp = await import('child_process');
+
+    const active = await new Promise<boolean>((resolve) => {
+      cp.exec(
+        'systemctl --user is-active openclaw-gateway',
+        { timeout: 5000 },
+        (err, stdout) => {
+          resolve(!err && stdout.trim() === 'active');
+        },
+      );
+    });
+
+    if (!active) return;
+
+    logger.info('Stopping systemd user service openclaw-gateway to prevent auto-respawn');
+    await new Promise<void>((resolve) => {
+      cp.exec(
+        'systemctl --user stop openclaw-gateway',
+        { timeout: 10000 },
+        (err) => {
+          if (err) {
+            logger.warn(`Failed to stop systemd gateway service: ${err.message}`);
+          } else {
+            logger.info('Successfully stopped systemd gateway service');
+          }
+          resolve();
+        },
+      );
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 2000));
+  } catch (err) {
+    logger.warn('Error while stopping systemd gateway service:', err);
+  }
+}
+
 async function terminateOrphanedProcessIds(port: number, pids: string[]): Promise<void> {
   logger.info(`Found orphaned process listening on port ${port} (PIDs: ${pids.join(', ')}), attempting to kill...`);
 
   if (process.platform === 'darwin') {
     await unloadLaunchctlGatewayService();
+  } else if (process.platform === 'linux') {
+    await stopSystemdGatewayService();
   }
 
   for (const pid of pids) {
@@ -242,19 +284,27 @@ export async function findExistingGatewayProcess(options: {
   const { port, ownedPid } = options;
 
   try {
-    try {
-      const pids = await getListeningProcessIds(port);
-      if (pids.length > 0 && (!ownedPid || !pids.includes(String(ownedPid)))) {
-        await terminateOrphanedProcessIds(port, pids);
-        if (process.platform === 'win32') {
-          await waitForPortFree(port, 10000);
-        }
-        return null;
+    const pids = await getListeningProcessIds(port).catch(() => [] as string[]);
+
+    if (pids.length > 0 && (!ownedPid || !pids.includes(String(ownedPid)))) {
+      // Something non-owned is listening — probe before killing so we can
+      // adopt an externally-managed gateway (e.g. systemd) instead of
+      // entering a kill-restart loop.
+      const ready = await probeGatewayReady(port, 5000);
+      if (ready) {
+        logger.info(`Adopting existing external gateway on port ${port}`);
+        return { port };
       }
-    } catch (err) {
-      logger.warn('Error checking for existing process on port:', err);
+
+      // Not a healthy gateway — safe to terminate.
+      await terminateOrphanedProcessIds(port, pids);
+      if (process.platform === 'win32') {
+        await waitForPortFree(port, 10000);
+      }
+      return null;
     }
 
+    // Either no process is listening or it's our own — probe as before.
     const ready = await probeGatewayReady(port, 5000);
     return ready ? { port } : null;
   } catch {

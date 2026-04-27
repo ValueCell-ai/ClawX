@@ -6,9 +6,11 @@ const originalPlatform = process.platform;
 const {
   mockExec,
   mockCreateServer,
+  mockProbeGatewayReady,
 } = vi.hoisted(() => ({
   mockExec: vi.fn(),
   mockCreateServer: vi.fn(),
+  mockProbeGatewayReady: vi.fn(),
 }));
 
 vi.mock('electron', () => ({
@@ -32,6 +34,10 @@ vi.mock('child_process', () => ({
 
 vi.mock('net', () => ({
   createServer: mockCreateServer,
+}));
+
+vi.mock('@electron/gateway/ws-client', () => ({
+  probeGatewayReady: mockProbeGatewayReady,
 }));
 
 class MockUtilityChild extends EventEmitter {
@@ -74,6 +80,8 @@ describe('gateway supervisor process cleanup', () => {
         },
       };
     });
+
+    mockProbeGatewayReady.mockResolvedValue(false);
   });
 
   afterEach(() => {
@@ -124,6 +132,9 @@ describe('gateway supervisor process cleanup', () => {
       return {} as never;
     });
 
+    // Probe fails — orphaned process is not a healthy gateway
+    mockProbeGatewayReady.mockResolvedValue(false);
+
     const result = await findExistingGatewayProcess({ port: 18789 });
     expect(result).toBeNull();
 
@@ -133,5 +144,73 @@ describe('gateway supervisor process cleanup', () => {
       expect.any(Function),
     );
     expect(mockCreateServer).toHaveBeenCalled();
+  });
+
+  it('adopts an external gateway when WebSocket probe succeeds', async () => {
+    setPlatform('linux');
+    const { findExistingGatewayProcess } = await import('@electron/gateway/supervisor');
+
+    mockExec.mockImplementation((cmd: string, _opts: object, cb: (err: Error | null, stdout: string) => void) => {
+      if (cmd.includes('lsof')) {
+        cb(null, '5555\n');
+        return {} as never;
+      }
+      cb(null, '');
+      return {} as never;
+    });
+
+    // Healthy external gateway is running
+    mockProbeGatewayReady.mockResolvedValue(true);
+
+    const result = await findExistingGatewayProcess({ port: 18789 });
+    expect(result).toEqual({ port: 18789 });
+
+    // Should NOT have attempted to kill the process
+    expect(mockExec).not.toHaveBeenCalledWith(
+      expect.stringContaining('SIGTERM'),
+      expect.anything(),
+      expect.anything(),
+    );
+  });
+
+  it('stops systemd service before killing orphan on Linux', { timeout: 15000 }, async () => {
+    vi.useFakeTimers();
+    vi.spyOn(process, 'kill').mockImplementation(() => true);
+    setPlatform('linux');
+    const { findExistingGatewayProcess } = await import('@electron/gateway/supervisor');
+
+    mockExec.mockImplementation((cmd: string, _opts: object, cb: (err: Error | null, stdout: string) => void) => {
+      if (cmd.includes('lsof')) {
+        cb(null, '7777\n');
+        return {} as never;
+      }
+      if (cmd.includes('systemctl --user is-active')) {
+        cb(null, 'active');
+        return {} as never;
+      }
+      cb(null, '');
+      return {} as never;
+    });
+
+    // Probe fails — not a healthy gateway
+    mockProbeGatewayReady.mockResolvedValue(false);
+
+    const resultPromise = findExistingGatewayProcess({ port: 18789 });
+    // Advance past all internal setTimeout delays
+    await vi.advanceTimersByTimeAsync(10000);
+    const result = await resultPromise;
+    expect(result).toBeNull();
+
+    expect(mockExec).toHaveBeenCalledWith(
+      'systemctl --user is-active openclaw-gateway',
+      expect.objectContaining({ timeout: 5000 }),
+      expect.any(Function),
+    );
+    expect(mockExec).toHaveBeenCalledWith(
+      'systemctl --user stop openclaw-gateway',
+      expect.objectContaining({ timeout: 10000 }),
+      expect.any(Function),
+    );
+    vi.useRealTimers();
   });
 });
