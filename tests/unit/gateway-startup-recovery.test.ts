@@ -4,6 +4,9 @@ import {
   hasInvalidConfigFailureSignal,
   isInvalidConfigSignal,
   shouldAttemptConfigAutoRepair,
+  isSystemdConflictSignal,
+  hasSystemdConflictSignal,
+  getGatewayStartupRecoveryAction,
 } from '@electron/gateway/startup-recovery';
 
 describe('gateway startup recovery heuristics', () => {
@@ -48,6 +51,61 @@ describe('gateway startup recovery heuristics', () => {
     expect(isInvalidConfigSignal('skills: Unrecognized key: "enabled"')).toBe(true);
     expect(isInvalidConfigSignal('Run: openclaw doctor --fix')).toBe(true);
     expect(isInvalidConfigSignal('Gateway ready after 3 attempts')).toBe(false);
+  });
+
+  describe('systemd conflict detection', () => {
+    it('detects already-running-under-systemd signal', () => {
+      expect(isSystemdConflictSignal('2026-03-27T13:08:36.125+11:00 [gateway] already running under systemd; waiting 5000ms before retrying startup')).toBe(true);
+      expect(isSystemdConflictSignal('already running under systemd')).toBe(true);
+      expect(isSystemdConflictSignal('ALREADY RUNNING UNDER SYSTEMD')).toBe(true);
+    });
+
+    it('does not false-positive on unrelated messages', () => {
+      expect(isSystemdConflictSignal('Gateway process exited (code=1)')).toBe(false);
+      expect(isSystemdConflictSignal('WebSocket closed before handshake')).toBe(false);
+      expect(isSystemdConflictSignal('')).toBe(false);
+    });
+
+    it('hasSystemdConflictSignal returns true when any line matches', () => {
+      const lines = [
+        'Starting gateway...',
+        '[gateway] already running under systemd; waiting 5000ms before retrying startup',
+        'Retrying...',
+      ];
+      expect(hasSystemdConflictSignal(lines)).toBe(true);
+    });
+
+    it('hasSystemdConflictSignal returns false when no lines match', () => {
+      const lines = ['Gateway ready', 'Listening on port 18789'];
+      expect(hasSystemdConflictSignal(lines)).toBe(false);
+    });
+
+    it('getGatewayStartupRecoveryAction returns fail immediately on systemd conflict', () => {
+      const stderrLines = [
+        '[gateway] already running under systemd; waiting 5000ms before retrying startup',
+      ];
+      // Should fail even on the first attempt and even for an error that would
+      // normally be classified as transient.
+      const action = getGatewayStartupRecoveryAction({
+        startupError: new Error('Gateway process exited before becoming ready (code=1)'),
+        startupStderrLines: stderrLines,
+        configRepairAttempted: false,
+        attempt: 1,
+        maxAttempts: 3,
+      });
+      expect(action).toBe('fail');
+    });
+
+    it('getGatewayStartupRecoveryAction still retries transient errors without systemd signal', () => {
+      const action = getGatewayStartupRecoveryAction({
+        startupError: new Error('Gateway process exited before becoming ready (code=1)'),
+        startupStderrLines: [],
+        configRepairAttempted: false,
+        attempt: 1,
+        maxAttempts: 3,
+      });
+      expect(action).toBe('retry');
+    });
   });
 });
 
