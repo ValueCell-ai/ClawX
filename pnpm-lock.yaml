@@ -58,6 +58,9 @@ importers:
       '@larksuite/openclaw-lark':
         specifier: 2026.4.8
         version: 2026.4.8(openclaw@2026.4.23(@napi-rs/canvas@0.1.97)(encoding@0.1.13))
+      '@larksuiteoapi/node-sdk':
+        specifier: ^1.61.1
+        version: 1.62.0
       '@playwright/test':
         specifier: ^1.56.1
         version: 1.59.0
@@ -184,6 +187,9 @@ importers:
       postcss:
         specifier: ^8.5.6
         version: 8.5.8
+      qrcode-terminal:
+        specifier: 0.12.0
+        version: 0.12.0
       react:
         specifier: ^19.2.4
         version: 19.2.4
@@ -1202,8 +1208,8 @@ packages:
       openclaw:
         optional: true
 
-  '@larksuiteoapi/node-sdk@1.60.0':
-    resolution: {integrity: sha512-MS1eXx7K6HHIyIcCBkJLb21okoa8ZatUGQWZaCCUePm6a37RWFmT6ZKlKvHxAanSX26wNuNlwP0RhgscsE+T6g==}
+  '@larksuiteoapi/node-sdk@1.62.0':
+    resolution: {integrity: sha512-ZITiuAkiVgphn6OPO8MHeWV1q7+UNByLmNiYVDIAxF5+HJ8USl4xPinDOq9AMJSEUqdBJtiLdz7UltV5jP+EDg==}
 
   '@lydell/node-pty-darwin-arm64@1.2.0-beta.12':
     resolution: {integrity: sha512-tqaifcY9Cr41SblO1+FLzh8oxxtkNhuW9Dhl22lKme9BreYvKvxEZcdPIXTuqkJc5tagOEC4QHShKmJjLyLXLQ==}
@@ -7689,7 +7695,7 @@ snapshots:
 
   '@larksuite/openclaw-lark@2026.4.8(openclaw@2026.4.23(@napi-rs/canvas@0.1.97)(encoding@0.1.13))':
     dependencies:
-      '@larksuiteoapi/node-sdk': 1.60.0
+      '@larksuiteoapi/node-sdk': 1.62.0
       '@sinclair/typebox': 0.34.48
       image-size: 2.0.2
       zod: 4.3.6
@@ -7700,7 +7706,7 @@ snapshots:
       - debug
       - utf-8-validate
 
-  '@larksuiteoapi/node-sdk@1.60.0':
+  '@larksuiteoapi/node-sdk@1.62.0':
     dependencies:
       axios: 1.13.6(debug@4.4.3)
       lodash.identity: 3.0.0

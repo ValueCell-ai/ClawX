@@ -6,7 +6,7 @@ import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { deflateSync } from 'node:zlib';
 import { normalizeOpenClawAccountId } from './channel-alias';
-import { getOpenClawResolvedDir } from './paths';
+import { getOpenClawDir, getOpenClawResolvedDir } from './paths';
 
 export const DEFAULT_WECHAT_BASE_URL = 'https://ilinkai.weixin.qq.com';
 const DEFAULT_ILINK_BOT_TYPE = '3';
@@ -18,6 +18,10 @@ const WECHAT_STATE_DIR = join(OPENCLAW_DIR, 'openclaw-weixin');
 const WECHAT_ACCOUNT_INDEX_FILE = join(WECHAT_STATE_DIR, 'accounts.json');
 const WECHAT_ACCOUNTS_DIR = join(WECHAT_STATE_DIR, 'accounts');
 const require = createRequire(import.meta.url);
+const openclawPath = getOpenClawDir();
+const openclawResolvedPath = getOpenClawResolvedDir();
+const openclawRequire = createRequire(join(openclawResolvedPath, 'package.json'));
+const projectRequire = createRequire(join(openclawPath, 'package.json'));
 
 type QrCodeMatrix = {
   addData(input: string): void;
@@ -38,14 +42,29 @@ type QrRenderDeps = {
 
 let qrRenderDeps: QrRenderDeps | null = null;
 
+function resolveOpenClawModule(specifier: string): string {
+  try {
+    return openclawRequire.resolve(specifier);
+  } catch { /* fall through */ }
+  try {
+    return projectRequire.resolve(specifier);
+  } catch (err) {
+    const reason = err instanceof Error ? err.message : String(err);
+    throw new Error(
+      `Failed to resolve "${specifier}" from OpenClaw context. ` +
+      `openclawPath=${openclawPath}, resolvedPath=${openclawResolvedPath}. ${reason}`,
+      { cause: err },
+    );
+  }
+}
+
 function getQrRenderDeps(): QrRenderDeps {
   if (qrRenderDeps) {
     return qrRenderDeps;
   }
 
-  const openclawRequire = createRequire(join(getOpenClawResolvedDir(), 'package.json'));
-  const qrCodeModulePath = openclawRequire.resolve('qrcode-terminal/vendor/QRCode/index.js');
-  const qrErrorCorrectLevelPath = openclawRequire.resolve('qrcode-terminal/vendor/QRCode/QRErrorCorrectLevel.js');
+  const qrCodeModulePath = resolveOpenClawModule('qrcode-terminal/vendor/QRCode/index.js');
+  const qrErrorCorrectLevelPath = resolveOpenClawModule('qrcode-terminal/vendor/QRCode/QRErrorCorrectLevel.js');
   qrRenderDeps = {
     QRCode: require(qrCodeModulePath),
     QRErrorCorrectLevel: require(qrErrorCorrectLevelPath),

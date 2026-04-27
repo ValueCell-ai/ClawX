@@ -213,6 +213,7 @@ echo`   Skipped ${skippedDevCount} dev-only package references`;
 const EXTRA_BUNDLED_PACKAGES = [
   '@whiskeysockets/baileys',   // WhatsApp channel (was a dep of old clawdbot, not openclaw)
   '@larksuiteoapi/node-sdk',   // Built-in Feishu extension dependency in openclaw 2026.4.23+
+  'qrcode-terminal',           // QR rendering used by WhatsApp/WeChat login helpers
 ];
 
 let extraCount = 0;
