@@ -459,10 +459,19 @@ function bundlePlugin(nodeModulesRoot, npmName, destDir) {
   let realPluginPath;
   try { realPluginPath = realpathSync(pkgPath); } catch { realPluginPath = pkgPath; }
 
+  function shouldCopyNodePackageEntry(src) {
+    const base = basename(src);
+    return base !== '.vscode' && base !== '.idea';
+  }
+
   // Copy plugin package itself
   if (existsSync(normWin(destDir))) rmSync(normWin(destDir), { recursive: true, force: true });
   mkdirSync(normWin(destDir), { recursive: true });
-  cpSync(normWin(realPluginPath), normWin(destDir), { recursive: true, dereference: true });
+  cpSync(normWin(realPluginPath), normWin(destDir), {
+    recursive: true,
+    dereference: true,
+    filter: shouldCopyNodePackageEntry,
+  });
 
   // Collect transitive deps via pnpm virtual store BFS
   const collected = new Map();
@@ -515,7 +524,11 @@ function bundlePlugin(nodeModulesRoot, npmName, destDir) {
     const d = join(destNM, pkgName);
     try {
       mkdirSync(normWin(dirname(d)), { recursive: true });
-      cpSync(normWin(rp), normWin(d), { recursive: true, dereference: true });
+      cpSync(normWin(rp), normWin(d), {
+        recursive: true,
+        dereference: true,
+        filter: shouldCopyNodePackageEntry,
+      });
       count++;
     } catch (e) {
       console.warn(`[after-pack]   Skipped dep ${pkgName}: ${e.message}`);

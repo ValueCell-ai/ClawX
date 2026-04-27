@@ -93,13 +93,22 @@ function bundleOnePlugin({ npmName, pluginId }) {
 
   echo`📦 Bundling plugin ${npmName} -> ${outputDir}`;
 
+  function shouldCopyNodePackageEntry(src) {
+    const base = path.basename(src);
+    return base !== '.vscode' && base !== '.idea';
+  }
+
   if (fs.existsSync(outputDir)) {
     fs.rmSync(outputDir, { recursive: true, force: true });
   }
   fs.mkdirSync(outputDir, { recursive: true });
 
   // 1) Copy plugin package itself
-  fs.cpSync(realPluginPath, outputDir, { recursive: true, dereference: true });
+  fs.cpSync(realPluginPath, outputDir, {
+    recursive: true,
+    dereference: true,
+    filter: shouldCopyNodePackageEntry,
+  });
 
   // 2) Collect transitive deps from pnpm virtual store
   const collected = new Map();
@@ -160,7 +169,11 @@ function bundleOnePlugin({ npmName, pluginId }) {
     const dest = path.join(outputNodeModules, pkgName);
     try {
       fs.mkdirSync(normWin(path.dirname(dest)), { recursive: true });
-      fs.cpSync(normWin(realPath), normWin(dest), { recursive: true, dereference: true });
+      fs.cpSync(normWin(realPath), normWin(dest), {
+        recursive: true,
+        dereference: true,
+        filter: shouldCopyNodePackageEntry,
+      });
       copiedCount++;
     } catch (err) {
       echo`   ⚠️  Skipped ${pkgName}: ${err.message}`;
