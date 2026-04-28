@@ -137,6 +137,16 @@ export interface ProviderAccount {
   updatedAt: string;
 }
 
+export interface ProviderProfile {
+  id: string;
+  label: string;
+  authMode: ProviderAuthMode;
+  hasCredential: boolean;
+  isDefault: boolean;
+  order: number;
+}
+
+
 export type ProviderSecret =
   | {
     type: 'api_key';

@@ -53,6 +53,8 @@ import { invokeIpc } from '@/lib/api-client';
 import { useSettingsStore } from '@/stores/settings';
 import { hostApiFetch } from '@/lib/host-api';
 import { subscribeHostEvent } from '@/lib/host-events';
+import { ProviderProfileRow } from '@/components/settings/ProviderProfileRow';
+import { AddProfileDialog } from '@/components/settings/AddProfileDialog';
 
 const inputClasses = 'h-[44px] rounded-xl font-mono text-meta bg-surface-input border-black/10 dark:border-white/10 focus-visible:ring-2 focus-visible:ring-blue-500/50 focus-visible:border-blue-500 shadow-sm transition-all text-foreground placeholder:text-foreground/40';
 const labelClasses = 'text-sm text-foreground/80 font-bold';
@@ -155,6 +157,7 @@ export function ProvidersSettings() {
     statuses,
     accounts,
     vendors,
+    profilesByAccount,
     defaultAccountId,
     loading,
     refreshProviderSnapshot,
@@ -163,6 +166,11 @@ export function ProvidersSettings() {
     updateAccount,
     setDefaultAccount,
     validateAccountApiKey,
+    fetchProfilesForAccount,
+    addProfileToAccount,
+    removeProfileFromAccount,
+    reorderProfiles,
+    setPrimaryProfile,
   } = useProviderStore();
 
   const [showAddDialog, setShowAddDialog] = useState(false);
@@ -301,6 +309,12 @@ export function ProvidersSettings() {
                 setEditingProvider(null);
               }}
               onValidateKey={(key, options) => validateAccountApiKey(item.account.id, key, options)}
+              profiles={profilesByAccount[item.account.id] ?? []}
+              onLoadProfiles={() => fetchProfilesForAccount(item.account.id)}
+              onAddProfile={(label, apiKey, _addAsFallback) => addProfileToAccount(item.account.id, label, apiKey)}
+              onRemoveProfile={(profileId) => removeProfileFromAccount(item.account.id, profileId)}
+              onReorderProfiles={(ids) => reorderProfiles(item.account.id, ids)}
+              onSetPrimaryProfile={(profileId) => setPrimaryProfile(item.account.id, profileId)}
               devModeUnlocked={devModeUnlocked}
             />
           ))}
@@ -336,6 +350,16 @@ interface ProviderCardProps {
     key: string,
     options?: { baseUrl?: string; apiProtocol?: ProviderAccount['apiProtocol'] }
   ) => Promise<{ valid: boolean; error?: string }>;
+  profiles: Array<{
+    id: string;
+    label: string;
+    isDefault: boolean;
+  }>;
+  onLoadProfiles: () => Promise<void>;
+  onAddProfile: (label: string, apiKey: string, addAsFallback: boolean) => Promise<void>;
+  onRemoveProfile: (profileId: string) => Promise<void>;
+  onReorderProfiles: (orderedProfileIds: string[]) => Promise<void>;
+  onSetPrimaryProfile: (profileId: string) => Promise<void>;
   devModeUnlocked: boolean;
 }
 
@@ -352,6 +376,12 @@ function ProviderCard({
   onSetDefault,
   onSaveEdits,
   onValidateKey,
+  profiles,
+  onLoadProfiles,
+  onAddProfile,
+  onRemoveProfile,
+  onReorderProfiles,
+  onSetPrimaryProfile,
   devModeUnlocked,
 }: ProviderCardProps) {
   const { t, i18n } = useTranslation('settings');
@@ -372,6 +402,7 @@ function ProviderCard({
   const [validating, setValidating] = useState(false);
   const [saving, setSaving] = useState(false);
   const [arkMode, setArkMode] = useState<ArkMode>('apikey');
+  const [showAddProfileDialog, setShowAddProfileDialog] = useState(false);
 
   const typeInfo = PROVIDER_TYPE_INFO.find((t) => t.id === account.vendorId);
   const providerDocsUrl = getProviderDocsUrl(typeInfo, i18n.language);
@@ -387,6 +418,12 @@ function ProviderCard({
     : providerDocsUrl;
   const canEditModelConfig = Boolean(typeInfo?.showBaseUrl || showModelIdField);
   const showUserAgentField = shouldShowUserAgentField(account);
+
+  useEffect(() => {
+    if (account.authMode === 'api_key') {
+      void onLoadProfiles();
+    }
+  }, [account.authMode, onLoadProfiles]);
 
   useEffect(() => {
     if (isEditing) {
@@ -606,6 +643,49 @@ function ProviderCard({
           </div>
         )}
       </div>
+
+      {account.authMode !== 'local' && (
+        <div className="mt-4 rounded-xl border border-black/10 dark:border-white/10 p-3 space-y-2" data-testid={`provider-profiles-${account.id}`}>
+          <div className="flex items-center justify-between">
+            <p className="text-sm font-semibold">Profiles (Fallback Order)</p>
+            {account.authMode === 'api_key' ? (
+              <Button size="sm" variant="outline" onClick={() => setShowAddProfileDialog(true)} data-testid={`provider-add-profile-${account.id}`}>
+                <Plus className="h-3 w-3 mr-1" />
+                Add Profile
+              </Button>
+            ) : (
+              <span className="text-xs text-muted-foreground">Add via OAuth sign-in</span>
+            )}
+          </div>
+          {profiles.length === 0 ? (
+            <p className="text-xs text-muted-foreground">No extra profiles configured.</p>
+          ) : (
+            <div className="space-y-2">
+              {profiles.map((profile, index) => (
+                <ProviderProfileRow
+                  key={profile.id}
+                  profile={{ ...profile, authMode: account.authMode, hasCredential: true, order: index }}
+                  isPrimary={index === 0 || profile.isDefault}
+                  canMoveUp={index > 0}
+                  canMoveDown={index < profiles.length - 1}
+                  onMakePrimary={() => onSetPrimaryProfile(profile.id)}
+                  onDelete={() => onRemoveProfile(profile.id)}
+                  onMoveUp={() => {
+                    const next = profiles.map((p) => p.id);
+                    [next[index - 1], next[index]] = [next[index], next[index - 1]];
+                    void onReorderProfiles(next);
+                  }}
+                  onMoveDown={() => {
+                    const next = profiles.map((p) => p.id);
+                    [next[index + 1], next[index]] = [next[index], next[index + 1]];
+                    void onReorderProfiles(next);
+                  }}
+                />
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
       {isEditing && (
         <div className="space-y-6 mt-4 pt-4 border-t border-black/5 dark:border-white/5">
@@ -884,6 +964,23 @@ function ProviderCard({
             </div>
           </div>
         </div>
+      )}
+      {account.authMode === 'api_key' && (
+        <AddProfileDialog
+          providerLabel={account.label}
+          open={showAddProfileDialog}
+          onClose={() => setShowAddProfileDialog(false)}
+          onSubmit={async ({ label, apiKey, addAsFallback }) => {
+            await onAddProfile(label, apiKey, addAsFallback);
+            if (!addAsFallback) {
+              const matching = profiles.find((profile) => profile.label.toLowerCase() === label.toLowerCase());
+              if (matching) {
+                await onSetPrimaryProfile(matching.id);
+              }
+            }
+            await onLoadProfiles();
+          }}
+        />
       )}
     </div>
   );

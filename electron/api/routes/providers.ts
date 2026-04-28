@@ -94,6 +94,75 @@ export async function handleProviderRoutes(
     return true;
   }
 
+  const profileListMatch = url.pathname.match(/^\/api\/provider-accounts\/([^/]+)\/profiles$/);
+  if (profileListMatch && req.method === 'GET') {
+    const accountId = decodeURIComponent(profileListMatch[1]);
+    sendJson(res, 200, await providerService.listProfilesForAccount(accountId));
+    return true;
+  }
+
+  if (profileListMatch && req.method === 'POST') {
+    const accountId = decodeURIComponent(profileListMatch[1]);
+    try {
+      const body = await parseJsonBody<{
+        label: string;
+        apiKey?: string;
+        authMode?: ProviderAccount['authMode'];
+        oauthToken?: { access: string; refresh: string; expires: number; email?: string; projectId?: string };
+      }>(req);
+      const profile = await providerService.addProfileToAccount(
+        accountId,
+        body.label,
+        body.apiKey,
+        body.authMode,
+        body.oauthToken,
+      );
+      sendJson(res, 200, { success: true, profile });
+    } catch (error) {
+      sendJson(res, 500, { success: false, error: String(error) });
+    }
+    return true;
+  }
+
+  const profileOrderMatch = url.pathname.match(/^\/api\/provider-accounts\/([^/]+)\/profiles\/order$/);
+  if (profileOrderMatch && req.method === 'PUT') {
+    const accountId = decodeURIComponent(profileOrderMatch[1]);
+    try {
+      const body = await parseJsonBody<{ orderedProfileIds: string[] }>(req);
+      await providerService.setProfileFallbackOrder(accountId, body.orderedProfileIds ?? []);
+      sendJson(res, 200, { success: true });
+    } catch (error) {
+      sendJson(res, 500, { success: false, error: String(error) });
+    }
+    return true;
+  }
+
+  const setPrimaryMatch = url.pathname.match(/^\/api\/provider-accounts\/([^/]+)\/profiles\/([^/]+)\/primary$/);
+  if (setPrimaryMatch && req.method === 'PUT') {
+    const accountId = decodeURIComponent(setPrimaryMatch[1]);
+    const profileId = decodeURIComponent(setPrimaryMatch[2]);
+    try {
+      await providerService.setPrimaryProfile(accountId, profileId);
+      sendJson(res, 200, { success: true });
+    } catch (error) {
+      sendJson(res, 500, { success: false, error: String(error) });
+    }
+    return true;
+  }
+
+  const removeProfileMatch = url.pathname.match(/^\/api\/provider-accounts\/([^/]+)\/profiles\/([^/]+)$/);
+  if (removeProfileMatch && req.method === 'DELETE') {
+    const accountId = decodeURIComponent(removeProfileMatch[1]);
+    const profileId = decodeURIComponent(removeProfileMatch[2]);
+    try {
+      await providerService.removeProfileFromAccount(accountId, profileId);
+      sendJson(res, 200, { success: true });
+    } catch (error) {
+      sendJson(res, 500, { success: false, error: String(error) });
+    }
+    return true;
+  }
+
   if (url.pathname.startsWith('/api/provider-accounts/') && req.method === 'GET') {
     const accountId = decodeURIComponent(url.pathname.slice('/api/provider-accounts/'.length));
     sendJson(res, 200, await providerService.getAccount(accountId));

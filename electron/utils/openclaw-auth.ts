@@ -28,7 +28,7 @@ import {
 } from './provider-keys';
 import { withConfigLock } from './config-mutex';
 
-const AUTH_STORE_VERSION = 1;
+const AUTH_STORE_VERSION = 2;
 const AUTH_PROFILE_FILENAME = 'auth-profiles.json';
 const LEGACY_MINIMAX_OAUTH_PLUGIN_ID = 'minimax-portal-auth';
 const MERGED_MINIMAX_PLUGIN_ID = 'minimax';
@@ -311,13 +311,13 @@ async function writeJsonFile(filePath: string, data: unknown): Promise<void> {
 
 // ── Types ────────────────────────────────────────────────────────
 
-interface AuthProfileEntry {
+export interface AuthProfileEntry {
   type: 'api_key';
   provider: string;
   key: string;
 }
 
-interface OAuthProfileEntry {
+export interface OAuthProfileEntry {
   type: 'oauth';
   provider: string;
   access: string;
@@ -421,7 +421,15 @@ async function readAuthProfiles(agentId = 'main'): Promise<AuthProfilesStore> {
   try {
     const data = await readJsonFile<AuthProfilesStore>(filePath);
     if (data?.version && data.profiles && typeof data.profiles === 'object') {
-      return data;
+      if (data.version >= AUTH_STORE_VERSION) {
+        return data;
+      }
+      return {
+        ...data,
+        version: AUTH_STORE_VERSION,
+        order: data.order ?? {},
+        lastGood: data.lastGood ?? {},
+      };
     }
   } catch (error) {
     console.warn('Failed to read auth-profiles.json, creating fresh store:', error);
@@ -615,6 +623,8 @@ async function writeOpenClawJson(config: Record<string, unknown>): Promise<void>
 export async function saveOAuthTokenToOpenClaw(
   provider: string,
   token: { access: string; refresh: string; expires: number; email?: string; projectId?: string },
+  profileId = `${provider}:default`,
+  appendToOrder = false,
   agentId?: string
 ): Promise<void> {
   const agentIds = agentId ? [agentId] : await discoverAgentIds();
@@ -622,7 +632,6 @@ export async function saveOAuthTokenToOpenClaw(
 
   for (const id of agentIds) {
     const store = await readAuthProfiles(id);
-    const profileId = `${provider}:default`;
 
     store.profiles[profileId] = {
       type: 'oauth',
@@ -635,10 +644,12 @@ export async function saveOAuthTokenToOpenClaw(
     };
 
     if (!store.order) store.order = {};
-    if (!store.order[provider]) store.order[provider] = [];
-    if (!store.order[provider].includes(profileId)) {
-      store.order[provider].push(profileId);
-    }
+    const existingOrder = store.order[provider] ?? [];
+    const dedupedOrder = existingOrder.filter((id) => id !== profileId);
+    const hasExistingProfileOrder = existingOrder.includes(profileId);
+    store.order[provider] = appendToOrder
+      ? [...dedupedOrder, profileId]
+      : (hasExistingProfileOrder ? existingOrder : [profileId, ...dedupedOrder]);
 
     if (!store.lastGood) store.lastGood = {};
     store.lastGood[provider] = profileId;
@@ -680,6 +691,8 @@ export async function getOAuthTokenFromOpenClaw(
 export async function saveProviderKeyToOpenClaw(
   provider: string,
   apiKey: string,
+  profileId = `${provider}:default`,
+  appendToOrder = false,
   agentId?: string
 ): Promise<void> {
   if (isOAuthProviderType(provider) && !apiKey) {
@@ -691,15 +704,16 @@ export async function saveProviderKeyToOpenClaw(
 
   for (const id of agentIds) {
     const store = await readAuthProfiles(id);
-    const profileId = `${provider}:default`;
 
     store.profiles[profileId] = { type: 'api_key', provider, key: apiKey };
 
     if (!store.order) store.order = {};
-    if (!store.order[provider]) store.order[provider] = [];
-    if (!store.order[provider].includes(profileId)) {
-      store.order[provider].push(profileId);
-    }
+    const existingOrder = store.order[provider] ?? [];
+    const dedupedOrder = existingOrder.filter((id) => id !== profileId);
+    const hasExistingProfileOrder = existingOrder.includes(profileId);
+    store.order[provider] = appendToOrder
+      ? [...dedupedOrder, profileId]
+      : (hasExistingProfileOrder ? existingOrder : [profileId, ...dedupedOrder]);
 
     if (!store.lastGood) store.lastGood = {};
     store.lastGood[provider] = profileId;
@@ -707,6 +721,110 @@ export async function saveProviderKeyToOpenClaw(
     await writeAuthProfiles(store, id);
   }
   console.log(`Saved API key for provider "${provider}" to OpenClaw auth-profiles (agents: ${agentIds.join(', ')})`);
+}
+
+export async function addProfileToProvider(
+  provider: string,
+  profileId: string,
+  credential: AuthProfileEntry | OAuthProfileEntry,
+  agentId?: string,
+): Promise<void> {
+  const agentIds = agentId ? [agentId] : await discoverAgentIds();
+  if (agentIds.length === 0) agentIds.push('main');
+
+  for (const id of agentIds) {
+    const store = await readAuthProfiles(id);
+    store.profiles[profileId] = credential;
+    if (!store.order) store.order = {};
+    const existingOrder = store.order[provider] ?? [];
+    store.order[provider] = [...existingOrder.filter((id) => id !== profileId), profileId];
+    if (!store.lastGood) store.lastGood = {};
+    store.lastGood[provider] = store.order[provider][0] ?? profileId;
+    await writeAuthProfiles(store, id);
+  }
+}
+
+export async function listProfilesForProvider(
+  provider: string,
+  agentId?: string,
+): Promise<Array<{ id: string; profile: AuthProfileEntry | OAuthProfileEntry }>> {
+  const store = await readAuthProfiles(agentId ?? 'main');
+  const orderedIds = store.order?.[provider] ?? [];
+  const ordered = orderedIds
+    .map((id) => ({ id, profile: store.profiles[id] }))
+    .filter((entry): entry is { id: string; profile: AuthProfileEntry | OAuthProfileEntry } => Boolean(entry.profile))
+    .filter((entry) => entry.profile.provider === provider);
+  const seen = new Set(ordered.map((entry) => entry.id));
+  const remaining = Object.entries(store.profiles)
+    .filter(([id, entry]) => !seen.has(id) && entry.provider === provider)
+    .map(([id, profile]) => ({ id, profile }));
+  return [...ordered, ...remaining];
+}
+
+export async function reorderProviderProfiles(
+  provider: string,
+  orderedProfileIds: string[],
+  agentId?: string,
+): Promise<void> {
+  const agentIds = agentId ? [agentId] : await discoverAgentIds();
+  if (agentIds.length === 0) agentIds.push('main');
+
+  for (const id of agentIds) {
+    const store = await readAuthProfiles(id);
+    const knownProviderProfileIds = new Set(
+      Object.entries(store.profiles)
+        .filter(([, profile]) => profile.provider === provider)
+        .map(([profileId]) => profileId),
+    );
+    const nextOrder = orderedProfileIds.filter((profileId) => knownProviderProfileIds.has(profileId));
+    for (const profileId of knownProviderProfileIds) {
+      if (!nextOrder.includes(profileId)) {
+        nextOrder.push(profileId);
+      }
+    }
+    if (!store.order) store.order = {};
+    if (nextOrder.length > 0) {
+      store.order[provider] = nextOrder;
+      if (!store.lastGood) store.lastGood = {};
+      store.lastGood[provider] = nextOrder[0];
+    } else {
+      delete store.order[provider];
+      if (store.lastGood) delete store.lastGood[provider];
+    }
+    await writeAuthProfiles(store, id);
+  }
+}
+
+export async function removeProfileById(
+  provider: string,
+  profileId: string,
+  agentId?: string,
+  expectedType?: AuthProfileEntry['type'] | OAuthProfileEntry['type'],
+): Promise<void> {
+  const agentIds = agentId ? [agentId] : await discoverAgentIds();
+  if (agentIds.length === 0) agentIds.push('main');
+
+  for (const id of agentIds) {
+    const store = await readAuthProfiles(id);
+    const profile = store.profiles[profileId];
+    if (profile && profile.provider !== provider) {
+      continue;
+    }
+    if (!removeProfileFromStore(store, profileId, expectedType)) {
+      continue;
+    }
+    const providerOrder = store.order?.[provider] ?? [];
+    if (providerOrder.length > 0) {
+      if (!store.lastGood) store.lastGood = {};
+      if (!store.lastGood[provider] || store.lastGood[provider] === profileId) {
+        store.lastGood[provider] = providerOrder[0];
+      }
+    } else {
+      if (store.order) delete store.order[provider];
+      if (store.lastGood) delete store.lastGood[provider];
+    }
+    await writeAuthProfiles(store, id);
+  }
 }
 
 /**
