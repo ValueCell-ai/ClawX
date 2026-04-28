@@ -2,9 +2,39 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ──────────────────────────────────────────────────────────────────────────
+ * ClawX design tokens — CSS variable layer
+ * ──────────────────────────────────────────────────────────────────────────
+ *
+ * This file is the *CSS variable layer only*. HSL channel triplets are
+ * stored without an `hsl()` wrapper — `tailwind.config.js` re-assembles
+ * them through `hsl(var(--xxx))` or `hsl(var(--xxx) / <alpha-value>)`.
+ *
+ * Two groups of variables:
+ *
+ *   1. shadcn semantic tokens (--background / --foreground / --primary
+ *      / ...). The standard shadcn/ui palette — do not rename or remove,
+ *      Radix-driven components read these directly.
+ *
+ *   2. ClawX surface tokens (--surface-modal / --surface-input /
+ *      --surface-sidebar). Three light-mode "cream paper" layers added
+ *      by ClawX. In dark mode each one is redirected to an existing
+ *      shadcn token (--card / --muted / --background) so we don't have
+ *      to maintain a second dark-cream palette.
+ *
+ * Usage:
+ *   - Application code should always go through Tailwind utilities, e.g.
+ *       bg-foreground   bg-surface-modal   bg-brand
+ *     Do NOT hand-write `var(--xxx)` or `hsl(var(--xxx))` in components.
+ *   - Adding a new color: define the CSS variable here → map it to a
+ *     utility token in tailwind.config.js → use the utility in code.
+ * ────────────────────────────────────────────────────────────────────────── */
+
 @layer base {
   :root {
-    /* #f1ede1 */
+    /* ── shadcn semantic tokens (light) ─────────────────────────── */
+    /* #f1ede1 — ClawX cream page background; gentler than pure white
+     *           for long sessions in front of the editor. */
     --background: 45 36.4% 91.4%;
     --foreground: 222.2 84% 4.9%;
     --card: 0 0% 100%;
@@ -25,6 +55,25 @@
     --input: 214.3 31.8% 91.4%;
     --ring: 221.2 83.2% 53.3%;
     --radius: 0.5rem;
+
+    /* ── ClawX cream surfaces (light) ────────────────────────────
+     *
+     * Three stacked cream layers — think "a cream paper laid on top
+     * of a slightly paler cream paper". The contrast between layers
+     * is deliberately low so we can suggest hierarchy without using
+     * heavy shadows. Pixel values are extracted from the hex literals
+     * that used to be sprinkled across components.
+     *
+     *   --surface-modal   = #f3f1e9   large rounded modal panels (top)
+     *                                 was: bg-[#f3f1e9] dark:bg-card
+     *   --surface-input   = #eeece3   inputs / selects / code panes
+     *                                 was: bg-[#eeece3] dark:bg-muted
+     *   --surface-sidebar = #eae8e1   left navigation rail (often /60)
+     *                                 was: bg-[#eae8e1]/60 dark:bg-background
+     * ─────────────────────────────────────────────────────────── */
+    --surface-modal: 48 29% 93%;
+    --surface-input: 49 24% 91%;
+    --surface-sidebar: 47 18% 90%;
   }
 
   /* Neutral deep-gray dark palette */
@@ -48,6 +97,18 @@
     --border: 240 3% 24%;
     --input: 240 3% 18%;
     --ring: 217.2 91.2% 59.8%;
+
+    /* In dark mode the three cream surfaces collapse onto existing
+     * shadcn tokens:
+     *     modal   → card
+     *     input   → muted
+     *     sidebar → background
+     * This way every `bg-surface-*` utility resolves correctly in
+     * both themes, and components no longer need `dark:bg-card`-style
+     * companion classes for theme switching. */
+    --surface-modal: 240 3% 14%;
+    --surface-input: 240 3% 18%;
+    --surface-sidebar: 240 4% 11%;
   }
 }
 

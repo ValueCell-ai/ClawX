@@ -109,7 +109,7 @@ function renderHighlightedComposerText(
       <span
         key={`skill-token-${tokenRange.start}`}
         data-testid="chat-composer-skill-token"
-        className="rounded-md bg-[#2F6BFF]/14 text-[#1D4ED8] [-webkit-box-decoration-break:clone] [box-decoration-break:clone] [text-shadow:0_0_10px_rgba(47,107,255,0.38)] dark:bg-[#2F6BFF]/18 dark:text-[#2563EB] dark:[text-shadow:0_0_12px_rgba(37,99,235,0.42)]"
+        className="rounded-md bg-skill-bg/14 text-skill-fg [-webkit-box-decoration-break:clone] [box-decoration-break:clone] [text-shadow:0_0_10px_rgba(47,107,255,0.38)] dark:bg-skill-bg/18 dark:text-skill-fg-dark dark:[text-shadow:0_0_12px_rgba(37,99,235,0.42)]"
       >
         {tokenLabel}
       </span>,
@@ -672,7 +672,7 @@ export function ChatInput({ onSend, onStop, disabled = false, sending = false, i
               <button
                 type="button"
                 onClick={() => setTargetAgentId(null)}
-                className="inline-flex items-center gap-1.5 rounded-lg border border-primary/20 bg-primary/5 px-2.5 py-1 text-[13px] font-medium text-foreground transition-colors hover:bg-primary/10"
+                className="inline-flex items-center gap-1.5 rounded-lg border border-primary/20 bg-primary/5 px-2.5 py-1 text-meta font-medium text-foreground transition-colors hover:bg-primary/10"
                 title={t('composer.clearTarget')}
               >
                 <span>{t('composer.targetChip', { agent: selectedTarget.name })}</span>
@@ -751,7 +751,7 @@ export function ChatInput({ onSend, onStop, disabled = false, sending = false, i
                 </Button>
                 {pickerOpen && (
                   <div className="absolute left-0 bottom-full z-20 mb-2 w-72 overflow-hidden rounded-2xl border border-black/10 bg-white p-1.5 shadow-xl dark:border-white/10 dark:bg-card">
-                    <div className="px-3 py-2 text-[11px] font-medium text-muted-foreground/80">
+                    <div className="px-3 py-2 text-tiny font-medium text-muted-foreground/80">
                       {t('composer.agentPickerTitle', { currentAgent: currentAgentName })}
                     </div>
                     <div className="max-h-64 overflow-y-auto">
@@ -778,7 +778,7 @@ export function ChatInput({ onSend, onStop, disabled = false, sending = false, i
                 type="button"
                 data-testid="chat-composer-skill"
                 className={cn(
-                  'inline-flex h-8 items-center gap-1 rounded-lg px-1.5 text-[13px] font-medium text-muted-foreground transition-colors hover:bg-transparent hover:text-foreground focus-visible:outline-none focus-visible:ring-0 disabled:pointer-events-none disabled:opacity-50',
+                  'inline-flex h-8 items-center gap-1 rounded-lg px-1.5 text-meta font-medium text-muted-foreground transition-colors hover:bg-transparent hover:text-foreground focus-visible:outline-none focus-visible:ring-0 disabled:pointer-events-none disabled:opacity-50',
                   (skillPickerOpen || selectedSkill) && 'text-foreground',
                 )}
                 onClick={() => {
@@ -799,24 +799,24 @@ export function ChatInput({ onSend, onStop, disabled = false, sending = false, i
                       value={skillQuery}
                       onChange={(event) => setSkillQuery(event.target.value)}
                       placeholder={t('composer.skillSearchPlaceholder')}
-                      className="w-full bg-transparent text-[13px] outline-none placeholder:text-muted-foreground/70"
+                      className="w-full bg-transparent text-meta outline-none placeholder:text-muted-foreground/70"
                       autoFocus
                     />
                   </div>
-                  <div className="px-3 py-2 text-[11px] font-medium text-muted-foreground/80">
+                  <div className="px-3 py-2 text-tiny font-medium text-muted-foreground/80">
                     {t('composer.skillPickerTitle', { agent: currentAgentName })}
                   </div>
                   <div className="max-h-72 overflow-y-auto">
                     {skillsLoading ? (
-                      <div className="px-3 py-4 text-[12px] text-muted-foreground">
+                      <div className="px-3 py-4 text-xs text-muted-foreground">
                         {t('composer.skillLoading')}
                       </div>
                     ) : skillsError ? (
-                      <div className="px-3 py-4 text-[12px] text-destructive">
+                      <div className="px-3 py-4 text-xs text-destructive">
                         {skillsError}
                       </div>
                     ) : filteredQuickSkills.length === 0 ? (
-                      <div className="px-3 py-4 text-[12px] text-muted-foreground">
+                      <div className="px-3 py-4 text-xs text-muted-foreground">
                         {t('composer.skillEmpty')}
                       </div>
                     ) : (
@@ -876,7 +876,7 @@ export function ChatInput({ onSend, onStop, disabled = false, sending = false, i
             </Button>
           </div>
         </div>
-        <div className="mt-2.5 flex items-center justify-between gap-2 text-[11px] text-muted-foreground/60 px-4">
+        <div className="mt-2.5 flex items-center justify-between gap-2 text-tiny text-muted-foreground/60 px-4">
           <div className="flex items-center gap-1.5">
             <div className={cn("w-1.5 h-1.5 rounded-full", gatewayStatus.state === 'running' ? "bg-green-500/80" : "bg-red-500/80")} />
             <span>
@@ -896,7 +896,7 @@ export function ChatInput({ onSend, onStop, disabled = false, sending = false, i
             <Button
               variant="link"
               size="sm"
-              className="h-auto p-0 text-[11px]"
+              className="h-auto p-0 text-tiny"
               onClick={() => {
                 setAttachments((prev) => prev.filter((att) => att.status !== 'error'));
                 void pickFiles();
@@ -939,7 +939,7 @@ function AttachmentPreview({
           <FileIcon mimeType={attachment.mimeType} className="h-5 w-5 shrink-0 text-muted-foreground" />
           <div className="min-w-0 overflow-hidden">
             <p className="text-xs font-medium truncate">{attachment.fileName}</p>
-            <p className="text-[10px] text-muted-foreground">
+            <p className="text-2xs text-muted-foreground">
               {attachment.fileSize > 0 ? formatFileSize(attachment.fileSize) : '...'}
             </p>
           </div>
@@ -956,7 +956,7 @@ function AttachmentPreview({
       {/* Error overlay */}
       {attachment.status === 'error' && (
         <div className="absolute inset-0 bg-destructive/20 flex items-center justify-center">
-          <span className="text-[10px] text-destructive font-medium px-1">Error</span>
+          <span className="text-2xs text-destructive font-medium px-1">Error</span>
         </div>
       )}
 
@@ -989,8 +989,8 @@ function AgentPickerItem({
         selected ? 'bg-primary/10 text-foreground' : 'hover:bg-black/5 dark:hover:bg-white/5'
       )}
     >
-      <span className="text-[14px] font-medium text-foreground">{agent.name}</span>
-      <span className="text-[11px] text-muted-foreground">
+      <span className="text-sm font-medium text-foreground">{agent.name}</span>
+      <span className="text-tiny text-muted-foreground">
         {agent.modelDisplay}
       </span>
     </button>
@@ -1019,19 +1019,19 @@ function SkillPickerItem({
           )}
         >
           <div className="min-w-0">
-            <div className="truncate text-[13px] font-semibold text-foreground">
+            <div className="truncate text-meta font-semibold text-foreground">
               <span className="font-mono">/{skill.name}</span>
             </div>
-            <div className="truncate text-[11px] text-muted-foreground">
+            <div className="truncate text-tiny text-muted-foreground">
               {skill.sourceLabel}
             </div>
           </div>
-          <span className="rounded-full border border-black/10 bg-black/[0.03] px-2 py-0.5 text-[10px] font-medium text-muted-foreground dark:border-white/10 dark:bg-white/[0.04]">
+          <span className="rounded-full border border-black/10 bg-black/[0.03] px-2 py-0.5 text-2xs font-medium text-muted-foreground dark:border-white/10 dark:bg-white/[0.04]">
             {skill.sourceLabel}
           </span>
         </button>
       </TooltipTrigger>
-      <TooltipContent side="right" className="max-w-xs text-[12px] leading-relaxed">
+      <TooltipContent side="right" className="max-w-xs text-xs leading-relaxed">
         {skill.description}
       </TooltipContent>
     </Tooltip>

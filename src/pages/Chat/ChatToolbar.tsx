@@ -25,7 +25,7 @@ export function ChatToolbar() {
 
   return (
     <div className="flex items-center gap-2">
-      <div className="hidden sm:flex items-center gap-1.5 rounded-full border border-black/10 bg-white/70 px-3 py-1.5 text-[12px] font-medium text-foreground/80 dark:border-white/10 dark:bg-white/5">
+      <div className="hidden sm:flex items-center gap-1.5 rounded-full border border-black/10 bg-white/70 px-3 py-1.5 text-xs font-medium text-foreground/80 dark:border-white/10 dark:bg-white/5">
         <Bot className="h-3.5 w-3.5 text-primary" />
         <span>{t('toolbar.currentAgent', { agent: currentAgentName })}</span>
       </div>

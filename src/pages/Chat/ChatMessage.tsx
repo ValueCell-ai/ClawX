@@ -328,10 +328,10 @@ function ToolStatusBar({
             {!isRunning && !isError && <CheckCircle2 className="h-3.5 w-3.5 text-green-500 shrink-0" />}
             {isError && <AlertCircle className="h-3.5 w-3.5 text-destructive shrink-0" />}
             <Wrench className="h-3 w-3 shrink-0 opacity-60" />
-            <span className="font-mono text-[12px] font-medium">{tool.name}</span>
-            {duration && <span className="text-[11px] opacity-60">{tool.summary ? `(${duration})` : duration}</span>}
+            <span className="font-mono text-xs font-medium">{tool.name}</span>
+            {duration && <span className="text-tiny opacity-60">{tool.summary ? `(${duration})` : duration}</span>}
             {tool.summary && (
-              <span className="truncate text-[11px] opacity-70">{tool.summary}</span>
+              <span className="truncate text-tiny opacity-70">{tool.summary}</span>
             )}
           </div>
         );
@@ -385,7 +385,7 @@ function MessageBubble({
         'relative rounded-2xl px-4 py-3',
         !isUser && 'w-full',
         isUser
-          ? 'bg-[#0a84ff] text-white shadow-sm'
+          ? 'bg-brand text-white shadow-sm'
           : 'bg-black/5 dark:bg-white/5 text-foreground',
       )}
     >
@@ -473,7 +473,7 @@ function FileCard({ file }: { file: AttachedFileMeta }) {
       <FileIcon mimeType={file.mimeType} className="h-5 w-5 shrink-0 text-muted-foreground" />
       <div className="min-w-0 overflow-hidden">
         <p className="text-xs font-medium truncate">{file.fileName}</p>
-        <p className="text-[10px] text-muted-foreground">
+        <p className="text-2xs text-muted-foreground">
           {file.fileSize > 0 ? formatFileSize(file.fileSize) : 'File'}
         </p>
       </div>
@@ -627,7 +627,7 @@ function ToolCard({ name, input }: { name: string; input: unknown }) {
   const [expanded, setExpanded] = useState(false);
 
   return (
-    <div className="rounded-xl border border-black/10 dark:border-white/10 bg-black/5 dark:bg-white/5 text-[14px]">
+    <div className="rounded-xl border border-black/10 dark:border-white/10 bg-black/5 dark:bg-white/5 text-sm">
       <button
         className="flex items-center gap-2 w-full px-3 py-1.5 text-muted-foreground hover:text-foreground transition-colors"
         onClick={() => setExpanded(!expanded)}

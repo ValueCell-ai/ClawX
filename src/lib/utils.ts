@@ -3,10 +3,50 @@
  * Common utility functions for the application
  */
 import { type ClassValue, clsx } from 'clsx';
-import { twMerge } from 'tailwind-merge';
+import { extendTailwindMerge } from 'tailwind-merge';
 
 /**
- * Merge class names with Tailwind CSS classes
+ * tailwind-merge instance configured for ClawX's custom design tokens.
+ *
+ * Why this is necessary:
+ *   `tailwind-merge` ships with hardcoded knowledge of Tailwind's standard
+ *   font-size scale (xs / sm / base / lg / xl / 2xl / ...). It does NOT
+ *   read tailwind.config.js, so any custom font-size key we add — e.g.
+ *   `text-meta`, `text-tiny`, `text-subtitle`, `text-2xs`, `text-stat` —
+ *   is classified by twMerge as a *text color* instead of a font-size.
+ *
+ *   When that happens, merging shadcn's button variant
+ *     `bg-primary text-primary-foreground`
+ *   with a caller-supplied class string like
+ *     `text-meta font-medium rounded-full ...`
+ *   silently *removes* `text-primary-foreground` (twMerge thinks both are
+ *   colors and keeps only the later one). The button then has no explicit
+ *   text color and falls back to inheriting `text-foreground`, producing
+ *   the wrong "blue background + dark text" rendering reported in
+ *   https://github.com/<repo>/issues — see the Agents page "Add Agent"
+ *   button for a live example before this fix.
+ *
+ * Fix: extend twMerge's `font-size` class group with our custom token
+ * names so it correctly identifies them as font-sizes and stops eating
+ * the text color.
+ *
+ * IMPORTANT: keep this list in sync with `theme.extend.fontSize` in
+ * `tailwind.config.js`.
+ */
+const twMerge = extendTailwindMerge({
+  extend: {
+    classGroups: {
+      'font-size': [
+        { text: ['2xs', 'tiny', 'meta', 'subtitle', 'stat'] },
+      ],
+    },
+  },
+});
+
+/**
+ * Merge class names with Tailwind CSS classes.
+ * Uses the ClawX-aware twMerge above so custom font-size tokens
+ * (text-2xs / tiny / meta / subtitle / stat) are not mistaken for colors.
  */
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
