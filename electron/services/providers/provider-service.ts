@@ -90,6 +90,18 @@ export class ProviderService {
       .join(' ');
   }
 
+  private static resolveAuthProfileProviderKey(account: ProviderAccount): string {
+    if (account.authMode === 'oauth_browser') {
+      if (account.vendorId === 'google') {
+        return 'google-gemini-cli';
+      }
+      if (account.vendorId === 'openai') {
+        return 'openai-codex';
+      }
+    }
+    return getOpenClawProviderKeyForType(account.vendorId, account.id);
+  }
+
   async listVendors(): Promise<ProviderDefinition[]> {
     return PROVIDER_DEFINITIONS;
   }
@@ -423,7 +435,8 @@ export class ProviderService {
     if (!account || account.authMode === 'local') {
       return [];
     }
-    const profiles = await listProfilesForProvider(account.id);
+    const providerKey = ProviderService.resolveAuthProfileProviderKey(account);
+    const profiles = await listProfilesForProvider(providerKey);
     return profiles.map((entry, index) => ({
       id: entry.id,
       label: ProviderService.profileLabelFromId(entry.id),
@@ -449,21 +462,22 @@ export class ProviderService {
     if (effectiveAuthMode === 'local') {
       throw new Error('Local providers do not support fallback profiles');
     }
+    const providerKey = ProviderService.resolveAuthProfileProviderKey(account);
     const slug = ProviderService.slugifyProfileLabel(profileLabel);
-    let profileId = `${account.id}:${slug}`;
+    let profileId = `${providerKey}:${slug}`;
     if (effectiveAuthMode === 'api_key') {
       const trimmedApiKey = apiKey?.trim();
       if (!trimmedApiKey) {
         throw new Error('API key is required for api_key profiles');
       }
-      await saveProviderKeyToOpenClaw(account.id, trimmedApiKey, profileId, true);
+      await saveProviderKeyToOpenClaw(providerKey, trimmedApiKey, profileId, true);
     } else if (effectiveAuthMode === 'oauth_device' || effectiveAuthMode === 'oauth_browser') {
       if (!oauthToken?.access || !oauthToken.refresh || !oauthToken.expires) {
         throw new Error('OAuth token is required for oauth profiles');
       }
       let appendToOrder = true;
       if (oauthToken.email) {
-        const existingProfiles = await listProfilesForProvider(account.id);
+        const existingProfiles = await listProfilesForProvider(providerKey);
         const matchedByEmail = existingProfiles.find(
           (entry) => entry.profile.type === 'oauth' && entry.profile.email === oauthToken.email,
         );
@@ -472,7 +486,7 @@ export class ProviderService {
           appendToOrder = false;
         }
       }
-      await saveOAuthTokenToOpenClaw(account.id, oauthToken, profileId, appendToOrder);
+      await saveOAuthTokenToOpenClaw(providerKey, oauthToken, profileId, appendToOrder);
     }
     const profiles = await this.listProfilesForAccount(accountId);
     return profiles.find((profile) => profile.id === profileId) ?? {
@@ -488,21 +502,22 @@ export class ProviderService {
   async removeProfileFromAccount(accountId: string, profileId: string): Promise<void> {
     const account = await this.getAccount(accountId);
     if (!account) throw new Error('Provider account not found');
-    await removeProfileById(account.id, profileId);
+    await removeProfileById(ProviderService.resolveAuthProfileProviderKey(account), profileId);
   }
 
   async setProfileFallbackOrder(accountId: string, orderedProfileIds: string[]): Promise<void> {
     const account = await this.getAccount(accountId);
     if (!account) throw new Error('Provider account not found');
-    await reorderProviderProfiles(account.id, orderedProfileIds);
+    await reorderProviderProfiles(ProviderService.resolveAuthProfileProviderKey(account), orderedProfileIds);
   }
 
   async setPrimaryProfile(accountId: string, profileId: string): Promise<void> {
     const account = await this.getAccount(accountId);
     if (!account) throw new Error('Provider account not found');
-    const profiles = await listProfilesForProvider(account.id);
+    const providerKey = ProviderService.resolveAuthProfileProviderKey(account);
+    const profiles = await listProfilesForProvider(providerKey);
     const reordered = [profileId, ...profiles.map((entry) => entry.id).filter((id) => id !== profileId)];
-    await reorderProviderProfiles(account.id, reordered);
+    await reorderProviderProfiles(providerKey, reordered);
   }
 }
 
