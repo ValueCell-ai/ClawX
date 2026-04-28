@@ -42,7 +42,7 @@
     "composer": {
         "attachFiles": "Attach files",
         "pickSkill": "Choose skill",
-        "skillButton": "Skill",
+        "skillButton": "Skills",
         "skillPickerTitle": "Quick skill access for {{agent}}",
         "skillSearchPlaceholder": "Search skills",
         "skillLoading": "Loading skills...",

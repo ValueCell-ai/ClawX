@@ -42,7 +42,7 @@
     "composer": {
         "attachFiles": "ファイルを添付",
         "pickSkill": "Skill を選択",
-        "skillButton": "Skill",
+        "skillButton": "Skills",
         "skillPickerTitle": "{{agent}} のクイック Skill",
         "skillSearchPlaceholder": "Skill を検索",
         "skillLoading": "Skill を読み込み中...",
