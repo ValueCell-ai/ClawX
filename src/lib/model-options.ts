@@ -69,9 +69,12 @@ export function buildRuntimeProviderOptions(
   providerVendors: ProviderVendorInfo[],
   providerDefaultAccountId: string | null,
 ): RuntimeProviderOption[] {
-  const vendorMap = new Map<string, ProviderVendorInfo>(providerVendors.map((vendor) => [vendor.id, vendor]));
-  const statusById = new Map<string, ProviderWithKeyInfo>(providerStatuses.map((status) => [status.id, status]));
-  const entries = providerAccounts
+  const safeAccounts = Array.isArray(providerAccounts) ? providerAccounts : [];
+  const safeStatuses = Array.isArray(providerStatuses) ? providerStatuses : [];
+  const safeVendors = Array.isArray(providerVendors) ? providerVendors : [];
+  const vendorMap = new Map<string, ProviderVendorInfo>(safeVendors.map((vendor) => [vendor.id, vendor]));
+  const statusById = new Map<string, ProviderWithKeyInfo>(safeStatuses.map((status) => [status.id, status]));
+  const entries = safeAccounts
     .filter((account) => account.enabled && hasConfiguredProviderCredentials(account, statusById))
     .sort((left, right) => {
       if (left.id === providerDefaultAccountId) return -1;
@@ -108,8 +111,10 @@ export function buildConfiguredModelOptions(
   providerStatuses: ProviderWithKeyInfo[],
   providerDefaultAccountId: string | null,
 ): ConfiguredModelOption[] {
-  const statusById = new Map<string, ProviderWithKeyInfo>(providerStatuses.map((status) => [status.id, status]));
-  const entries = providerAccounts
+  const safeAccounts = Array.isArray(providerAccounts) ? providerAccounts : [];
+  const safeStatuses = Array.isArray(providerStatuses) ? providerStatuses : [];
+  const statusById = new Map<string, ProviderWithKeyInfo>(safeStatuses.map((status) => [status.id, status]));
+  const entries = safeAccounts
     .filter((account) => account.enabled && account.model?.trim() && hasConfiguredProviderCredentials(account, statusById))
     .sort((left, right) => {
       if (left.id === providerDefaultAccountId) return -1;
