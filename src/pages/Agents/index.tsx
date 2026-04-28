@@ -15,7 +15,11 @@ import { hostApiFetch } from '@/lib/host-api';
 import { subscribeHostEvent } from '@/lib/host-events';
 import { CHANNEL_ICONS, CHANNEL_NAMES, type ChannelType } from '@/types/channel';
 import type { AgentSummary } from '@/types/agent';
-import type { ProviderAccount, ProviderVendorInfo, ProviderWithKeyInfo } from '@/lib/providers';
+import {
+  buildRuntimeProviderOptions,
+  splitModelRef,
+  type RuntimeProviderOption,
+} from '@/lib/model-options';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
@@ -43,53 +47,6 @@ interface ChannelGroupItem {
   defaultAccountId: string;
   status: 'connected' | 'connecting' | 'disconnected' | 'error';
   accounts: ChannelAccountItem[];
-}
-
-interface RuntimeProviderOption {
-  runtimeProviderKey: string;
-  accountId: string;
-  label: string;
-  modelIdPlaceholder?: string;
-  configuredModelId?: string;
-}
-
-function resolveRuntimeProviderKey(account: ProviderAccount): string {
-  if (account.authMode === 'oauth_browser') {
-    if (account.vendorId === 'google') return 'google-gemini-cli';
-    if (account.vendorId === 'openai') return 'openai-codex';
-  }
-
-  if (account.vendorId === 'custom' || account.vendorId === 'ollama') {
-    const suffix = account.id.replace(/-/g, '').slice(0, 8);
-    return `${account.vendorId}-${suffix}`;
-  }
-
-  if (account.vendorId === 'minimax-portal-cn') {
-    return 'minimax-portal';
-  }
-
-  return account.vendorId;
-}
-
-function splitModelRef(modelRef: string | null | undefined): { providerKey: string; modelId: string } | null {
-  const value = (modelRef || '').trim();
-  if (!value) return null;
-  const separatorIndex = value.indexOf('/');
-  if (separatorIndex <= 0 || separatorIndex >= value.length - 1) return null;
-  return {
-    providerKey: value.slice(0, separatorIndex),
-    modelId: value.slice(separatorIndex + 1),
-  };
-}
-
-function hasConfiguredProviderCredentials(
-  account: ProviderAccount,
-  statusById: Map<string, ProviderWithKeyInfo>,
-): boolean {
-  if (account.authMode === 'oauth_device' || account.authMode === 'oauth_browser' || account.authMode === 'local') {
-    return true;
-  }
-  return statusById.get(account.id)?.hasKey ?? false;
 }
 
 export function Agents() {
@@ -708,40 +665,15 @@ function AgentModelModal({
   const [savingModel, setSavingModel] = useState(false);
   const [showCloseConfirm, setShowCloseConfirm] = useState(false);
 
-  const runtimeProviderOptions = useMemo<RuntimeProviderOption[]>(() => {
-    const vendorMap = new Map<string, ProviderVendorInfo>(providerVendors.map((vendor) => [vendor.id, vendor]));
-    const statusById = new Map<string, ProviderWithKeyInfo>(providerStatuses.map((status) => [status.id, status]));
-    const entries = providerAccounts
-      .filter((account) => account.enabled && hasConfiguredProviderCredentials(account, statusById))
-      .sort((left, right) => {
-        if (left.id === providerDefaultAccountId) return -1;
-        if (right.id === providerDefaultAccountId) return 1;
-        return right.updatedAt.localeCompare(left.updatedAt);
-      });
-
-    const deduped = new Map<string, RuntimeProviderOption>();
-    for (const account of entries) {
-      const runtimeProviderKey = resolveRuntimeProviderKey(account);
-      if (!runtimeProviderKey || deduped.has(runtimeProviderKey)) continue;
-      const vendor = vendorMap.get(account.vendorId);
-      const label = `${account.label} (${vendor?.name || account.vendorId})`;
-      const configuredModelId = account.model
-        ? (account.model.startsWith(`${runtimeProviderKey}/`)
-          ? account.model.slice(runtimeProviderKey.length + 1)
-          : account.model)
-        : undefined;
-
-      deduped.set(runtimeProviderKey, {
-        runtimeProviderKey,
-        accountId: account.id,
-        label,
-        modelIdPlaceholder: vendor?.modelIdPlaceholder,
-        configuredModelId,
-      });
-    }
-
-    return [...deduped.values()];
-  }, [providerAccounts, providerDefaultAccountId, providerStatuses, providerVendors]);
+  const runtimeProviderOptions = useMemo<RuntimeProviderOption[]>(
+    () => buildRuntimeProviderOptions(
+      providerAccounts,
+      providerStatuses,
+      providerVendors,
+      providerDefaultAccountId,
+    ),
+    [providerAccounts, providerDefaultAccountId, providerStatuses, providerVendors],
+  );
 
   useEffect(() => {
     const override = splitModelRef(agent.overrideModelRef);

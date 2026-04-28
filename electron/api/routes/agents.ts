@@ -170,7 +170,6 @@ export async function handleAgentRoutes(
         } catch (syncError) {
           console.warn('[agents] Failed to sync runtime after updating agent model:', syncError);
         }
-        scheduleGatewayReload(ctx, 'update-agent-model');
         sendJson(res, 200, { success: true, ...snapshot });
       } catch (error) {
         sendJson(res, 500, { success: false, error: String(error) });
