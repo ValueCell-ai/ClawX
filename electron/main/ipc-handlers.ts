@@ -1437,6 +1437,12 @@ function registerGatewayHandlers(
       mainWindow.webContents.send('gateway:error', error.message);
     }
   });
+
+  gatewayManager.on('diagnostic', (snapshot) => {
+    if (!mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('gateway:diagnostic', snapshot);
+    }
+  });
 }
 
 /**

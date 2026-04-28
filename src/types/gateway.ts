@@ -4,6 +4,31 @@
  */
 
 /**
+ * Actionable diagnostic code surfaced by the Gateway stderr classifier.
+ *
+ * `ACPX_VC_REDIST_MISSING`: the embedded `acpx` plugin (OpenClaw 2026.4+) was
+ * unable to spawn the `codex` ACP adapter because the Microsoft Visual C++
+ * 2015–2022 Redistributable is missing on Windows (exit=3221225781 /
+ * 0xC0000135 / STATUS_DLL_NOT_FOUND). Tracked in ValueCell-ai/ClawX#884.
+ */
+export type GatewayStartupDiagnosticCode = 'ACPX_VC_REDIST_MISSING';
+
+/**
+ * Snapshot of an active Gateway startup diagnostic delivered to the
+ * renderer.  The main process records the first-seen time, last-seen
+ * time, and occurrence count so the UI can show "this has happened N
+ * times" and avoid spamming banners.
+ */
+export interface GatewayStartupDiagnosticSnapshot {
+  code: GatewayStartupDiagnosticCode;
+  rawLine: string;
+  detail: string;
+  firstSeenAt: number;
+  lastSeenAt: number;
+  occurrences: number;
+}
+
+/**
  * Gateway connection status
  */
 export interface GatewayStatus {
@@ -17,6 +42,11 @@ export interface GatewayStatus {
   reconnectAttempts?: number;
   /** True once the gateway's internal subsystems (skills, plugins) are ready for RPC calls. */
   gatewayReady?: boolean;
+  /**
+   * Actionable diagnostics raised during the current Gateway session.
+   * Omitted when there are none.
+   */
+  activeDiagnostics?: GatewayStartupDiagnosticSnapshot[];
 }
 
 /**

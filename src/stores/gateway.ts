@@ -6,7 +6,7 @@ import { create } from 'zustand';
 import { hostApiFetch } from '@/lib/host-api';
 import { invokeIpc } from '@/lib/api-client';
 import { subscribeHostEvent } from '@/lib/host-events';
-import type { GatewayStatus } from '../types/gateway';
+import type { GatewayStartupDiagnosticSnapshot, GatewayStatus } from '../types/gateway';
 
 let gatewayInitPromise: Promise<void> | null = null;
 let gatewayEventUnsubscribers: Array<() => void> | null = null;
@@ -281,6 +281,20 @@ export const useGatewayStore = create<GatewayState>((set, get) => ({
           unsubscribers.push(subscribeHostEvent<{ message?: string }>('gateway:error', (payload) => {
             set({ lastError: payload.message || 'Gateway error' });
           }));
+          unsubscribers.push(subscribeHostEvent<GatewayStartupDiagnosticSnapshot>(
+            'gateway:diagnostic',
+            (payload) => {
+              // Merge the diagnostic into status.activeDiagnostics so consumers
+              // that observe `status.activeDiagnostics` pick it up even when
+              // the status event arrives out of order with the diagnostic event.
+              const current = get().status;
+              const existing = current.activeDiagnostics ?? [];
+              const next = existing.some((d) => d.code === payload.code)
+                ? existing.map((d) => (d.code === payload.code ? payload : d))
+                : [...existing, payload];
+              set({ status: { ...current, activeDiagnostics: next } });
+            },
+          ));
           unsubscribers.push(subscribeHostEvent<{ method?: string; params?: Record<string, unknown> }>(
             'gateway:notification',
             (payload) => {

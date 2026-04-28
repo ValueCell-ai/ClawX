@@ -379,6 +379,56 @@ CI の `comms-regression` が必須シナリオと閾値を検証します。
 
 ---
 
+## トラブルシューティング
+
+### Windows：「embedded acpx runtime backend probe failed」/ チャット履歴が読み込めない
+
+**症状**（Issue [#884](https://github.com/ValueCell-ai/ClawX/issues/884)）: 初回起動または Windows を再インストールした直後、ClawX が `chat.history unavailable during gateway startup` でスタックし、やがてタイムアウトします。Gateway のログに以下が出力されます:
+
+```
+[plugins] embedded acpx runtime backend probe failed:
+  embedded ACP runtime probe failed
+  (agent=codex; command=npx @zed-industries/codex-acp@^0.11.x;
+   ACP agent exited before initialize completed (exit=3221225781, signal=null))
+```
+
+**原因**: 終了コード `3221225781` は Windows の `0xC0000135` / `STATUS_DLL_NOT_FOUND` に相当します。内蔵の OpenClaw ACP プラグインが起動時に `npx @zed-industries/codex-acp` を実行しますが、その npm パッケージが依存する Rust 製ネイティブバイナリは **Microsoft Visual C++ 2015–2022 Redistributable**（`VCRUNTIME140.dll` / `MSVCP140.dll` / `VCRUNTIME140_1.dll`）を必要とし、システムに存在しないため即座にクラッシュします。
+
+**対策**: Microsoft 公式から再頒布可能パッケージをインストールします:
+
+- x64（一般的なデスクトップ）: <https://aka.ms/vs/17/release/vc_redist.x64.exe>
+- ARM64（Windows on ARM）: <https://aka.ms/vs/17/release/vc_redist.arm64.exe>
+- x86（32 ビットビルド専用）: <https://aka.ms/vs/17/release/vc_redist.x86.exe>
+
+PowerShell ワンライナー:
+
+```powershell
+$u = 'https://aka.ms/vs/17/release/vc_redist.x64.exe'
+$f = "$env:TEMP\vc_redist.x64.exe"
+Invoke-WebRequest $u -OutFile $f -UseBasicParsing
+Start-Process -FilePath $f -ArgumentList '/install','/quiet','/norestart' -Wait
+```
+
+インストール後 ClawX を再起動すると、チャット履歴が読み込めるようになり、黄色のバナーも消えます。
+
+ClawX v0.3.11+ はこの状況を自動検出し、「VC++ 再頒布可能パッケージをダウンロード」ボタン付きのバナーをチャット画面に表示します。`設定 → 詳細設定 → 開発者 → Run Doctor` も、`System32` / `SysWOW64` に DLL が見つからない場合は "Visual C++ Runtime missing" として報告します。
+
+ACP ランタイムを使わない場合は、`%USERPROFILE%\.openclaw\openclaw.json` を編集して無効化できます:
+
+```jsonc
+{
+  "plugins": {
+    "entries": {
+      "acpx": { "enabled": false }
+    }
+  }
+}
+```
+
+ClawX の設定サニタイザーはこの無効化設定を起動ごとに維持するため、再起動しても上書きされません。組み込み ACP プラグインは `/acp` スラッシュコマンド関連の機能にしか影響せず、チャット・cron・チャンネルの機能は問題なく動作します。
+
+---
+
 ## コントリビューション
 
 コミュニティからのコントリビューションを歓迎します！バグ修正、新機能、ドキュメントの改善、翻訳など、あらゆる貢献がClawXをより良くするのに役立ちます。

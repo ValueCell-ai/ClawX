@@ -405,6 +405,56 @@ Add future Electron flows under `tests/e2e/` and reuse the shared fixture in
 
 ---
 
+## Troubleshooting
+
+### Windows: "embedded acpx runtime backend probe failed" / chat history can't load
+
+**Symptom** (issue [#884](https://github.com/ValueCell-ai/ClawX/issues/884)): on first launch or after a fresh Windows install, ClawX gets stuck with `chat.history unavailable during gateway startup`, eventually timing out, and the Gateway logs include:
+
+```
+[plugins] embedded acpx runtime backend probe failed:
+  embedded ACP runtime probe failed
+  (agent=codex; command=npx @zed-industries/codex-acp@^0.11.x;
+   ACP agent exited before initialize completed (exit=3221225781, signal=null))
+```
+
+**Cause**: exit code `3221225781` is Windows `0xC0000135` / `STATUS_DLL_NOT_FOUND`. The bundled OpenClaw ACP plugin spawns `npx @zed-industries/codex-acp` at startup; its Rust-native binary depends on the **Microsoft Visual C++ 2015–2022 Redistributable** (`VCRUNTIME140.dll` / `MSVCP140.dll` / `VCRUNTIME140_1.dll`), which is missing on your system.
+
+**Fix**: install the redistributable from Microsoft:
+
+- x64 (most desktops): <https://aka.ms/vs/17/release/vc_redist.x64.exe>
+- ARM64 (Windows-on-ARM): <https://aka.ms/vs/17/release/vc_redist.arm64.exe>
+- x86 (32-bit builds only): <https://aka.ms/vs/17/release/vc_redist.x86.exe>
+
+PowerShell one-liner:
+
+```powershell
+$u = 'https://aka.ms/vs/17/release/vc_redist.x64.exe'
+$f = "$env:TEMP\vc_redist.x64.exe"
+Invoke-WebRequest $u -OutFile $f -UseBasicParsing
+Start-Process -FilePath $f -ArgumentList '/install','/quiet','/norestart' -Wait
+```
+
+Then restart ClawX. Chat history should load and the yellow in-app banner will disappear.
+
+ClawX v0.3.11+ detects this situation automatically and shows the banner with a one-click "Download VC++ Redistributable" button. `Settings → Advanced → Developer → Run Doctor` also reports "Visual C++ Runtime missing" when any of the three DLLs cannot be found in `System32`/`SysWOW64`.
+
+If you'd rather skip the embedded ACP runtime entirely, open `%USERPROFILE%\.openclaw\openclaw.json` and set:
+
+```jsonc
+{
+  "plugins": {
+    "entries": {
+      "acpx": { "enabled": false }
+    }
+  }
+}
+```
+
+ClawX's config sanitiser preserves this opt-out across launches. The embedded ACP plugin only provides the `/acp` slash-command flows — core chat, cron, and channel features work without it.
+
+---
+
 ## Contributing
 
 We welcome contributions from the community! Whether it's bug fixes, new features, documentation improvements, or translations—every contribution helps make ClawX better.

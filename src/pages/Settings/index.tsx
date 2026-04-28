@@ -112,6 +112,16 @@ export function Settings() {
     durationMs: number;
     timedOut?: boolean;
     error?: string;
+    hostChecks?: {
+      msvcRuntime?: {
+        installed: boolean;
+        missing: string[];
+        present: string[];
+        searchedDirs: string[];
+        platform: string;
+        applicable: boolean;
+      };
+    };
   } | null>(null);
 
   const handleShowLogs = async () => {
@@ -150,6 +160,16 @@ export function Settings() {
         durationMs: number;
         timedOut?: boolean;
         error?: string;
+        hostChecks?: {
+          msvcRuntime?: {
+            installed: boolean;
+            missing: string[];
+            present: string[];
+            searchedDirs: string[];
+            platform: string;
+            applicable: boolean;
+          };
+        };
       }>('/api/app/openclaw-doctor', {
         method: 'POST',
         body: JSON.stringify({ mode }),
@@ -921,6 +941,39 @@ export function Settings() {
                             </pre>
                           </div>
                         </div>
+                        {doctorResult.hostChecks?.msvcRuntime?.applicable && (
+                          <div className="space-y-2">
+                            <p className="text-[12px] font-semibold text-foreground/80">
+                              {t('developer.doctorHostChecks')}
+                            </p>
+                            <div className="flex flex-wrap gap-2 text-[12px]">
+                              <Badge
+                                variant={
+                                  doctorResult.hostChecks.msvcRuntime.installed
+                                    ? 'secondary'
+                                    : 'destructive'
+                                }
+                                className="rounded-full px-3 py-1"
+                                data-testid="doctor-msvc-runtime-badge"
+                              >
+                                {doctorResult.hostChecks.msvcRuntime.installed
+                                  ? t('developer.doctorMsvcOk')
+                                  : t('developer.doctorMsvcMissing')}
+                              </Badge>
+                              {!doctorResult.hostChecks.msvcRuntime.installed
+                                && doctorResult.hostChecks.msvcRuntime.missing.length > 0 && (
+                                <span className="text-[12px] text-muted-foreground font-mono">
+                                  {doctorResult.hostChecks.msvcRuntime.missing.join(', ')}
+                                </span>
+                              )}
+                            </div>
+                            {!doctorResult.hostChecks.msvcRuntime.installed && (
+                              <p className="text-[12px] text-muted-foreground">
+                                {t('developer.doctorMsvcMissingHint')}
+                              </p>
+                            )}
+                          </div>
+                        )}
                       </div>
                     )}
                   </div>

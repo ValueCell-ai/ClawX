@@ -55,5 +55,13 @@
         "notRunning": "Gateway Not Running",
         "notRunningDesc": "The OpenClaw Gateway needs to be running to use this feature. It will start automatically, or you can start it from Settings.",
         "warning": "Gateway is not running."
+    },
+    "diagnostics": {
+        "acpxVcRedistMissing": {
+            "title": "Microsoft Visual C++ Redistributable required",
+            "body": "ClawX's bundled ACP runtime (codex) crashed because the Microsoft Visual C++ 2015–2022 Redistributable is missing. Install it and restart ClawX. Until then, chat history and new messages may fail to load.",
+            "downloadButton": "Download VC++ Redistributable",
+            "learnMoreButton": "Learn more"
+        }
     }
 }
