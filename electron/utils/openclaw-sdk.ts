@@ -2,7 +2,7 @@
  * Dynamic imports for openclaw plugin-sdk subpath exports.
  *
  * openclaw is NOT in the asar's node_modules — packaged builds stage it under
- * resources/openclaw-runtime/openclaw-*/. Static
+ * resources/openclaw-runtime/<openclaw-versioned-dir>. Static
  * `import ... from 'openclaw/plugin-sdk/...'` would produce a runtime require()
  * that fails inside the asar.
  *
