@@ -8,5 +8,9 @@ export type {
   SidebarExtension,
   RouteExtension,
   SettingsSectionExtension,
+  ChatBeforeSendContext,
+  ChatBeforeSendResult,
+  ChatComposerStatusProps,
+  ChatExtension,
   I18nResources,
 } from './types';

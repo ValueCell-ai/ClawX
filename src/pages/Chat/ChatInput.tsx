@@ -18,6 +18,8 @@ import { useAgentsStore } from '@/stores/agents';
 import { useChatStore } from '@/stores/chat';
 import type { AgentSummary } from '@/types/agent';
 import { useTranslation } from 'react-i18next';
+import { toast } from 'sonner';
+import { rendererExtensionRegistry } from '@/extensions/registry';
 
 // ── Types ────────────────────────────────────────────────────────
 
@@ -109,6 +111,7 @@ export function ChatInput({ onSend, onStop, disabled = false, sending = false, i
     [agents, targetAgentId],
   );
   const showAgentPicker = mentionableAgents.length > 0;
+  const chatComposerStatusComponents = rendererExtensionRegistry.getChatComposerStatusComponents();
 
   // Auto-resize textarea
   useEffect(() => {
@@ -288,13 +291,26 @@ export function ChatInput({ onSend, onStop, disabled = false, sending = false, i
   const canSend = (input.trim() || attachments.length > 0) && allReady && !disabled && !sending;
   const canStop = sending && !disabled && !!onStop;
 
-  const handleSend = useCallback(() => {
+  const handleSend = useCallback(async () => {
     if (!canSend) return;
     const readyAttachments = attachments.filter(a => a.status === 'ready');
-    // Capture values before clearing — clear input immediately for snappy UX,
-    // but keep attachments available for the async send
     const textToSend = input.trim();
     const attachmentsToSend = readyAttachments.length > 0 ? readyAttachments : undefined;
+
+    const guard = await rendererExtensionRegistry.runChatBeforeSend({
+      text: textToSend,
+      attachments: attachmentsToSend,
+      targetAgentId,
+    });
+    if (!guard.ok) {
+      if (guard.message) {
+        toast.error(guard.message);
+      }
+      return;
+    }
+
+    // Capture values before clearing — clear input immediately for snappy UX,
+    // but keep attachments available for the async send
     console.log(`[handleSend] text="${textToSend.substring(0, 50)}", attachments=${attachments.length}, ready=${readyAttachments.length}, sending=${!!attachmentsToSend}`);
     if (attachmentsToSend) {
       console.log('[handleSend] Attachment details:', attachmentsToSend.map(a => ({
@@ -530,6 +546,9 @@ export function ChatInput({ onSend, onStop, disabled = false, sending = false, i
                 pid: gatewayStatus.pid ? `| pid: ${gatewayStatus.pid}` : '',
               })}
             </span>
+            {chatComposerStatusComponents.map((Component, index) => (
+              <Component key={`${index}`} gatewayStatus={gatewayStatus} />
+            ))}
           </div>
           {hasFailedAttachments && (
             <Button
