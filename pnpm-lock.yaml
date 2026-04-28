@@ -14,6 +14,9 @@ importers:
       '@sinclair/typebox':
         specifier: ^0.34.48
         version: 0.34.48
+      chokidar:
+        specifier: ^5.0.0
+        version: 5.0.0
       clawhub:
         specifier: ^0.5.0
         version: 0.5.0

@@ -131,7 +131,7 @@ export async function handleAgentRoutes(
       scheduleGatewayReload(ctx, 'create-agent');
       // Ensure newly provisioned workspaces get ClawX context merge/cleanup
       // even when gateway status events do not fire (e.g. in-process reload).
-      void ensureClawXContext().catch((err) => {
+      void ensureClawXContext({ waitForAllConfiguredWorkspaces: true }).catch((err) => {
         console.warn('[agents] Failed to ensure ClawX context after agent creation:', err);
       });
       sendJson(res, 200, { success: true, ...snapshot });

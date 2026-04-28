@@ -19,6 +19,7 @@ vi.mock('os', async () => {
 });
 
 import {
+  ensureClawXContext,
   mergeClawXSection,
   removeChatFirstBootstrapFiles,
   stripFirstRunSection,
@@ -201,5 +202,60 @@ describe('removeChatFirstBootstrapFiles', () => {
 
     await expect(access(join(mainWorkspace, 'BOOTSTRAP.md'))).rejects.toThrow();
     await expect(access(join(agentWorkspace, 'BOOTSTRAP.md'))).rejects.toThrow();
+  });
+});
+
+describe('ensureClawXContext', () => {
+  it('does not wait for missing files in non-default agent workspaces', async () => {
+    const openclawDir = join(testHome, '.openclaw');
+    const defaultWorkspace = join(openclawDir, 'workspace-main');
+    const agentWorkspace = join(openclawDir, 'workspace-agent');
+    await mkdir(defaultWorkspace, { recursive: true });
+    await mkdir(agentWorkspace, { recursive: true });
+    await writeFile(join(defaultWorkspace, 'AGENTS.md'), '# AGENTS.md\n\nExisting agents.\n', 'utf-8');
+    await writeFile(join(defaultWorkspace, 'TOOLS.md'), '# TOOLS.md\n\nExisting tools.\n', 'utf-8');
+    await writeFile(
+      join(openclawDir, 'openclaw.json'),
+      JSON.stringify({
+        agents: {
+          defaults: { workspace: defaultWorkspace },
+          list: [{ id: 'agent', workspace: agentWorkspace }],
+        },
+      }),
+      'utf-8',
+    );
+
+    const result = await Promise.race([
+      ensureClawXContext().then(() => 'done'),
+      new Promise((resolve) => setTimeout(() => resolve('timeout'), 200)),
+    ]);
+
+    expect(result).toBe('done');
+    await expect(readFile(join(defaultWorkspace, 'AGENTS.md'), 'utf-8')).resolves.toContain('## ClawX Environment');
+    await expect(readFile(join(defaultWorkspace, 'TOOLS.md'), 'utf-8')).resolves.toContain('## ClawX Tool Notes');
+    await expect(access(join(agentWorkspace, 'AGENTS.md'))).rejects.toThrow();
+    await expect(access(join(agentWorkspace, 'TOOLS.md'))).rejects.toThrow();
+  });
+
+  it('does not wait for missing external default workspaces', async () => {
+    const openclawDir = join(testHome, '.openclaw');
+    const externalWorkspace = join(testHome, '..', `external-missing-${Date.now()}`);
+    await mkdir(openclawDir, { recursive: true });
+    await writeFile(
+      join(openclawDir, 'openclaw.json'),
+      JSON.stringify({
+        agents: {
+          defaults: { workspace: externalWorkspace },
+        },
+      }),
+      'utf-8',
+    );
+
+    const result = await Promise.race([
+      ensureClawXContext().then(() => 'done'),
+      new Promise((resolve) => setTimeout(() => resolve('timeout'), 200)),
+    ]);
+
+    expect(result).toBe('done');
   });
 });
