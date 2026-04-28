@@ -233,6 +233,23 @@ export function ChatInput({ onSend, onStop, disabled = false, sending = false, i
   }, [refreshProviderSnapshot]);
 
   useEffect(() => {
+    if (gatewayStatus.state === 'running') return;
+    let cancelled = false;
+    invokeIpc('gateway:status')
+      .then((status: unknown) => {
+        if (cancelled) return;
+        const latest = status as { state?: string };
+        if (latest?.state === 'running') {
+          void refreshProviderSnapshot();
+        }
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [gatewayStatus.state, refreshProviderSnapshot]);
+
+  useEffect(() => {
     setOptimisticModelRef(null);
   }, [currentAgent?.modelRef, currentAgentId]);
 
