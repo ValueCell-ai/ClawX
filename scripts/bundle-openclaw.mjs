@@ -225,7 +225,6 @@ const BUNDLED_EXTENSION_RUNTIME_DEP_PLUGIN_IDS = [
   'bonjour',
   'browser',
   'discord',
-  'memory-core',
   'qqbot',
   'telegram',
 ];
