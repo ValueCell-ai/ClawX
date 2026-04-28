@@ -1,5 +1,6 @@
 import type { IncomingMessage, ServerResponse } from 'http';
 import { getAllSkillConfigs, updateSkillConfig } from '../../utils/skill-config';
+import { collectQuickAccessSkills } from '../../utils/skill-quick-access';
 import type { HostApiContext } from '../context';
 import { parseJsonBody, sendJson } from '../route-utils';
 
@@ -25,6 +26,25 @@ export async function handleSkillRoutes(
         apiKey: body.apiKey,
         env: body.env,
       }));
+    } catch (error) {
+      sendJson(res, 500, { success: false, error: String(error) });
+    }
+    return true;
+  }
+
+  if (url.pathname === '/api/skills/quick-access' && req.method === 'POST') {
+    try {
+      const body = await parseJsonBody<{
+        workspace?: string;
+        agentDir?: string;
+      }>(req);
+      sendJson(res, 200, {
+        success: true,
+        skills: await collectQuickAccessSkills({
+          workspace: body.workspace,
+          agentDir: body.agentDir,
+        }),
+      });
     } catch (error) {
       sendJson(res, 500, { success: false, error: String(error) });
     }

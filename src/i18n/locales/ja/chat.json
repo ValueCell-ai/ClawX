@@ -41,6 +41,12 @@
     },
     "composer": {
         "attachFiles": "ファイルを添付",
+        "pickSkill": "Skill を選択",
+        "skillButton": "Skill",
+        "skillPickerTitle": "{{agent}} のクイック Skill",
+        "skillSearchPlaceholder": "Skill を検索",
+        "skillLoading": "Skill を読み込み中...",
+        "skillEmpty": "一致する Skill がありません",
         "pickAgent": "Agent を選択",
         "clearTarget": "送信先 Agent をクリア",
         "targetChip": "@{{agent}}",

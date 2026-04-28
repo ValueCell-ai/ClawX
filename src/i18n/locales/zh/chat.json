@@ -41,6 +41,12 @@
     },
     "composer": {
         "attachFiles": "添加文件",
+        "pickSkill": "选择技能",
+        "skillButton": "技能",
+        "skillPickerTitle": "{{agent}} 的快捷技能",
+        "skillSearchPlaceholder": "搜索技能",
+        "skillLoading": "正在加载技能...",
+        "skillEmpty": "未找到匹配的技能",
         "pickAgent": "选择 Agent",
         "clearTarget": "清除目标 Agent",
         "targetChip": "@{{agent}}",

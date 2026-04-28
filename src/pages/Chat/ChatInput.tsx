@@ -7,9 +7,10 @@
  * are sent with the message (no base64 over WebSocket).
  */
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
-import { SendHorizontal, Square, X, Paperclip, FileText, Film, Music, FileArchive, File, Loader2, AtSign } from 'lucide-react';
+import { SendHorizontal, Square, X, Paperclip, FileText, Film, Music, FileArchive, File, Loader2, AtSign, Search, ChevronDown } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { hostApiFetch } from '@/lib/host-api';
 import { invokeIpc } from '@/lib/api-client';
 import { cn } from '@/lib/utils';
@@ -17,6 +18,7 @@ import { useGatewayStore } from '@/stores/gateway';
 import { useAgentsStore } from '@/stores/agents';
 import { useChatStore } from '@/stores/chat';
 import type { AgentSummary } from '@/types/agent';
+import type { QuickAccessSkill } from '@/types/skill';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 import { rendererExtensionRegistry } from '@/extensions/registry';
@@ -49,6 +51,23 @@ function formatFileSize(bytes: number): string {
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
   if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
   return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
+}
+
+function getSkillPrefix(skillName: string): string {
+  return `/${skillName} `;
+}
+
+function findSkillTokenRange(value: string, skillName: string): { start: number; end: number } | null {
+  const token = getSkillPrefix(skillName);
+  const start = value.indexOf(token);
+  if (start === -1) return null;
+  return { start, end: start + token.length };
+}
+
+function removeSkillToken(value: string, skillName: string): string {
+  const range = findSkillTokenRange(value, skillName);
+  if (!range) return value;
+  return `${value.slice(0, range.start)}${value.slice(range.end)}`;
 }
 
 function FileIcon({ mimeType, className }: { mimeType: string; className?: string }) {
@@ -92,15 +111,26 @@ export function ChatInput({ onSend, onStop, disabled = false, sending = false, i
   const [attachments, setAttachments] = useState<FileAttachment[]>([]);
   const [targetAgentId, setTargetAgentId] = useState<string | null>(null);
   const [pickerOpen, setPickerOpen] = useState(false);
+  const [skillPickerOpen, setSkillPickerOpen] = useState(false);
+  const [skillQuery, setSkillQuery] = useState('');
+  const [quickSkills, setQuickSkills] = useState<QuickAccessSkill[]>([]);
+  const [skillsLoading, setSkillsLoading] = useState(false);
+  const [skillsError, setSkillsError] = useState<string | null>(null);
+  const [selectedSkill, setSelectedSkill] = useState<QuickAccessSkill | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const pickerRef = useRef<HTMLDivElement>(null);
+  const skillPickerRef = useRef<HTMLDivElement>(null);
   const isComposingRef = useRef(false);
   const gatewayStatus = useGatewayStore((s) => s.status);
   const agents = useAgentsStore((s) => s.agents);
   const currentAgentId = useChatStore((s) => s.currentAgentId);
-  const currentAgentName = useMemo(
-    () => (agents ?? []).find((agent) => agent.id === currentAgentId)?.name ?? currentAgentId,
+  const currentAgent = useMemo(
+    () => (agents ?? []).find((agent) => agent.id === currentAgentId) ?? null,
     [agents, currentAgentId],
+  );
+  const currentAgentName = useMemo(
+    () => currentAgent?.name ?? currentAgentId,
+    [currentAgent, currentAgentId],
   );
   const mentionableAgents = useMemo(
     () => (agents ?? []).filter((agent) => agent.id !== currentAgentId),
@@ -110,6 +140,15 @@ export function ChatInput({ onSend, onStop, disabled = false, sending = false, i
     () => (agents ?? []).find((agent) => agent.id === targetAgentId) ?? null,
     [agents, targetAgentId],
   );
+  const filteredQuickSkills = useMemo(() => {
+    const query = skillQuery.trim().toLowerCase();
+    if (!query) return quickSkills;
+    return quickSkills.filter((skill) =>
+      skill.name.toLowerCase().includes(query)
+      || skill.description.toLowerCase().includes(query)
+      || skill.sourceLabel.toLowerCase().includes(query),
+    );
+  }, [quickSkills, skillQuery]);
   const showAgentPicker = mentionableAgents.length > 0;
   const chatComposerStatusComponents = rendererExtensionRegistry.getChatComposerStatusComponents();
 
@@ -142,17 +181,87 @@ export function ChatInput({ onSend, onStop, disabled = false, sending = false, i
   }, [agents, currentAgentId, targetAgentId]);
 
   useEffect(() => {
-    if (!pickerOpen) return;
+    if (!pickerOpen && !skillPickerOpen) return;
     const handlePointerDown = (event: MouseEvent) => {
-      if (!pickerRef.current?.contains(event.target as Node)) {
+      const target = event.target as Node;
+      const insideAgentPicker = pickerRef.current?.contains(target);
+      const insideSkillPicker = skillPickerRef.current?.contains(target);
+      if (!insideAgentPicker && !insideSkillPicker) {
         setPickerOpen(false);
+        setSkillPickerOpen(false);
       }
     };
     document.addEventListener('mousedown', handlePointerDown);
     return () => {
       document.removeEventListener('mousedown', handlePointerDown);
     };
-  }, [pickerOpen]);
+  }, [pickerOpen, skillPickerOpen]);
+
+  useEffect(() => {
+    setSelectedSkill((prev) => {
+      if (prev) {
+        setInput((currentInput) => removeSkillToken(currentInput, prev.name));
+      }
+      return null;
+    });
+    setSkillPickerOpen(false);
+    setSkillQuery('');
+    setQuickSkills([]);
+    setSkillsError(null);
+  }, [currentAgentId]);
+
+  useEffect(() => {
+    if (!selectedSkill) return;
+    const tokenRange = findSkillTokenRange(input, selectedSkill.name);
+    if (!tokenRange) {
+      setSelectedSkill(null);
+    }
+  }, [input, selectedSkill]);
+
+  const handleInputChange = useCallback((value: string) => {
+    setInput(value);
+    if (!selectedSkill) return;
+    if (!findSkillTokenRange(value, selectedSkill.name)) {
+      setSelectedSkill(null);
+    }
+  }, [selectedSkill]);
+
+  const loadQuickSkills = useCallback(async () => {
+    if (!currentAgent) {
+      setQuickSkills([]);
+      setSkillsError(null);
+      return;
+    }
+    setSkillsLoading(true);
+    setSkillsError(null);
+    try {
+      const result = await hostApiFetch<{
+        success: boolean;
+        skills?: QuickAccessSkill[];
+        error?: string;
+      }>('/api/skills/quick-access', {
+        method: 'POST',
+        body: JSON.stringify({
+          workspace: currentAgent.workspace,
+          agentDir: currentAgent.agentDir,
+        }),
+      });
+      if (!result.success) {
+        throw new Error(result.error || 'Failed to load skills');
+      }
+      setQuickSkills(result.skills || []);
+    } catch (error) {
+      setQuickSkills([]);
+      setSkillsError(String(error));
+    } finally {
+      setSkillsLoading(false);
+    }
+  }, [currentAgent]);
+
+  useEffect(() => {
+    if (!skillPickerOpen) return;
+    void loadQuickSkills();
+  }, [skillPickerOpen, loadQuickSkills]);
 
   // ── File staging via native dialog ─────────────────────────────
 
@@ -322,12 +431,15 @@ export function ChatInput({ onSend, onStop, disabled = false, sending = false, i
     }
     setInput('');
     setAttachments([]);
+    setSelectedSkill(null);
+    setSkillQuery('');
     if (textareaRef.current) {
       textareaRef.current.style.height = 'auto';
     }
     onSend(textToSend, attachmentsToSend, targetAgentId);
     setTargetAgentId(null);
     setPickerOpen(false);
+    setSkillPickerOpen(false);
   }, [input, attachments, canSend, onSend, targetAgentId]);
 
   const handleStop = useCallback(() => {
@@ -337,8 +449,42 @@ export function ChatInput({ onSend, onStop, disabled = false, sending = false, i
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
-      if (e.key === 'Backspace' && !input && targetAgentId) {
-        setTargetAgentId(null);
+      if (e.key === 'Backspace') {
+        const textarea = textareaRef.current;
+        const selectionStart = textarea?.selectionStart ?? 0;
+        const selectionEnd = textarea?.selectionEnd ?? 0;
+        const tokenRange = selectedSkill ? findSkillTokenRange(input, selectedSkill.name) : null;
+
+        if (
+          selectedSkill
+          && tokenRange
+          && selectionStart === selectionEnd
+          && selectionStart > tokenRange.start
+          && selectionStart <= tokenRange.end
+        ) {
+          e.preventDefault();
+          const valueWithoutToken = `${input.slice(0, tokenRange.start)}${input.slice(tokenRange.end)}`;
+          setInput(valueWithoutToken);
+          setSelectedSkill(null);
+          requestAnimationFrame(() => {
+            textareaRef.current?.focus();
+            textareaRef.current?.setSelectionRange(tokenRange.start, tokenRange.start);
+          });
+          return;
+        }
+
+        if (!input) {
+          if (selectedSkill) {
+            setSelectedSkill(null);
+            return;
+          }
+          setTargetAgentId(null);
+          return;
+        }
+      }
+      if (e.key === 'Escape') {
+        setPickerOpen(false);
+        setSkillPickerOpen(false);
         return;
       }
       if (e.key === 'Enter' && !e.shiftKey) {
@@ -350,7 +496,7 @@ export function ChatInput({ onSend, onStop, disabled = false, sending = false, i
         handleSend();
       }
     },
-    [handleSend, input, targetAgentId],
+    [handleSend, input, selectedSkill],
   );
 
   // Handle paste (Ctrl/Cmd+V with files)
@@ -428,7 +574,7 @@ export function ChatInput({ onSend, onStop, disabled = false, sending = false, i
         {/* Input Container */}
         <div className={`relative bg-white dark:bg-card rounded-2xl shadow-sm border px-3 pt-2.5 pb-1.5 transition-all ${dragOver ? 'border-primary ring-1 ring-primary' : 'border-black/10 dark:border-white/10'}`}>
           {selectedTarget && (
-            <div className="pb-1.5">
+            <div className="flex flex-wrap gap-2 pb-1.5">
               <button
                 type="button"
                 onClick={() => setTargetAgentId(null)}
@@ -445,7 +591,7 @@ export function ChatInput({ onSend, onStop, disabled = false, sending = false, i
           <Textarea
             ref={textareaRef}
             value={input}
-            onChange={(e) => setInput(e.target.value)}
+            onChange={(e) => handleInputChange(e.target.value)}
             onKeyDown={handleKeyDown}
             onCompositionStart={() => {
               isComposingRef.current = true;
@@ -480,11 +626,15 @@ export function ChatInput({ onSend, onStop, disabled = false, sending = false, i
                 <Button
                   variant="ghost"
                   size="icon"
+                  data-testid="chat-composer-agent"
                   className={cn(
                     'h-8 w-8 rounded-lg text-muted-foreground hover:bg-black/5 dark:hover:bg-white/10 hover:text-foreground transition-colors',
                     (pickerOpen || selectedTarget) && 'bg-primary/10 text-primary hover:bg-primary/20'
                   )}
-                  onClick={() => setPickerOpen((open) => !open)}
+                  onClick={() => {
+                    setSkillPickerOpen(false);
+                    setPickerOpen((open) => !open);
+                  }}
                   disabled={disabled || sending}
                   title={t('composer.pickAgent')}
                 >
@@ -513,6 +663,99 @@ export function ChatInput({ onSend, onStop, disabled = false, sending = false, i
                 )}
               </div>
             )}
+
+            <div ref={skillPickerRef} className="relative shrink-0">
+              <button
+                type="button"
+                data-testid="chat-composer-skill"
+                className={cn(
+                  'inline-flex h-8 items-center gap-1 rounded-lg px-1.5 text-[13px] font-medium text-muted-foreground transition-colors hover:bg-transparent hover:text-foreground focus-visible:outline-none focus-visible:ring-0 disabled:pointer-events-none disabled:opacity-50',
+                  (skillPickerOpen || selectedSkill) && 'text-foreground',
+                )}
+                onClick={() => {
+                  setPickerOpen(false);
+                  setSkillPickerOpen((open) => !open);
+                }}
+                disabled={disabled || sending}
+                title={t('composer.pickSkill')}
+              >
+                <span>{t('composer.skillButton')}</span>
+                <ChevronDown className={cn('h-3.5 w-3.5 transition-transform', skillPickerOpen && 'rotate-180')} />
+              </button>
+              {skillPickerOpen && (
+                <div className="absolute left-0 bottom-full z-20 mb-2 w-80 overflow-hidden rounded-2xl border border-black/10 bg-white p-1.5 shadow-xl dark:border-white/10 dark:bg-card">
+                  <div className="flex items-center gap-2 rounded-xl border border-black/10 bg-black/[0.03] px-3 py-2 dark:border-white/10 dark:bg-white/[0.04]">
+                    <Search className="h-3.5 w-3.5 text-muted-foreground" />
+                    <input
+                      value={skillQuery}
+                      onChange={(event) => setSkillQuery(event.target.value)}
+                      placeholder={t('composer.skillSearchPlaceholder')}
+                      className="w-full bg-transparent text-[13px] outline-none placeholder:text-muted-foreground/70"
+                      autoFocus
+                    />
+                  </div>
+                  <div className="px-3 py-2 text-[11px] font-medium text-muted-foreground/80">
+                    {t('composer.skillPickerTitle', { agent: currentAgentName })}
+                  </div>
+                  <div className="max-h-72 overflow-y-auto">
+                    {skillsLoading ? (
+                      <div className="px-3 py-4 text-[12px] text-muted-foreground">
+                        {t('composer.skillLoading')}
+                      </div>
+                    ) : skillsError ? (
+                      <div className="px-3 py-4 text-[12px] text-destructive">
+                        {skillsError}
+                      </div>
+                    ) : filteredQuickSkills.length === 0 ? (
+                      <div className="px-3 py-4 text-[12px] text-muted-foreground">
+                        {t('composer.skillEmpty')}
+                      </div>
+                    ) : (
+                      filteredQuickSkills.map((skill) => (
+                        <SkillPickerItem
+                          key={`${skill.source}:${skill.name}`}
+                          skill={skill}
+                          selected={skill.name === selectedSkill?.name}
+                          onSelect={() => {
+                            const textarea = textareaRef.current;
+                            const nextToken = getSkillPrefix(skill.name);
+                            const selectionStart = textarea?.selectionStart ?? input.length;
+                            const selectionEnd = textarea?.selectionEnd ?? input.length;
+                            let nextValue = input;
+                            let adjustedStart = selectionStart;
+                            let adjustedEnd = selectionEnd;
+
+                            if (selectedSkill) {
+                              const existingRange = findSkillTokenRange(nextValue, selectedSkill.name);
+                              if (existingRange) {
+                                nextValue = `${nextValue.slice(0, existingRange.start)}${nextValue.slice(existingRange.end)}`;
+                                if (existingRange.start < adjustedStart) {
+                                  adjustedStart = Math.max(existingRange.start, adjustedStart - (existingRange.end - existingRange.start));
+                                }
+                                if (existingRange.start < adjustedEnd) {
+                                  adjustedEnd = Math.max(existingRange.start, adjustedEnd - (existingRange.end - existingRange.start));
+                                }
+                              }
+                            }
+
+                            nextValue = `${nextValue.slice(0, adjustedStart)}${nextToken}${nextValue.slice(adjustedEnd)}`;
+                            setSelectedSkill(skill);
+                            setInput(nextValue);
+                            setSkillPickerOpen(false);
+                            setSkillQuery('');
+                            requestAnimationFrame(() => {
+                              textareaRef.current?.focus();
+                              const cursorPosition = adjustedStart + nextToken.length;
+                              textareaRef.current?.setSelectionRange(cursorPosition, cursorPosition);
+                            });
+                          }}
+                        />
+                      ))
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
 
             {/* Send Button — pushed to the right */}
             <Button
@@ -654,5 +897,45 @@ function AgentPickerItem({
         {agent.modelDisplay}
       </span>
     </button>
+  );
+}
+
+function SkillPickerItem({
+  skill,
+  selected,
+  onSelect,
+}: {
+  skill: QuickAccessSkill;
+  selected: boolean;
+  onSelect: () => void;
+}) {
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <button
+          type="button"
+          onClick={onSelect}
+          className={cn(
+            'flex w-full items-center justify-between gap-3 rounded-xl px-3 py-2 text-left transition-colors',
+            selected ? 'bg-primary/10 text-foreground' : 'hover:bg-black/5 dark:hover:bg-white/5',
+          )}
+        >
+          <div className="min-w-0">
+            <div className="truncate text-[13px] font-semibold text-foreground">
+              <span className="font-mono">/{skill.name}</span>
+            </div>
+            <div className="truncate text-[11px] text-muted-foreground">
+              {skill.sourceLabel}
+            </div>
+          </div>
+          <span className="rounded-full border border-black/10 bg-black/[0.03] px-2 py-0.5 text-[10px] font-medium text-muted-foreground dark:border-white/10 dark:bg-white/[0.04]">
+            {skill.sourceLabel}
+          </span>
+        </button>
+      </TooltipTrigger>
+      <TooltipContent side="right" className="max-w-xs text-[12px] leading-relaxed">
+        {skill.description}
+      </TooltipContent>
+    </Tooltip>
   );
 }

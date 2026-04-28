@@ -25,6 +25,15 @@ export interface Skill {
   filePath?: string;
 }
 
+export interface QuickAccessSkill {
+  name: string;
+  description: string;
+  source: 'workspace' | 'openclaw' | 'system';
+  sourceLabel: string;
+  manifestPath: string;
+  baseDir: string;
+}
+
 /**
  * Skill bundle (preset skill collection)
  */

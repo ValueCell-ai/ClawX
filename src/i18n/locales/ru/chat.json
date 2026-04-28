@@ -41,6 +41,12 @@
     },
     "composer": {
         "attachFiles": "Прикрепить файлы",
+        "pickSkill": "Выбрать Skill",
+        "skillButton": "Skill",
+        "skillPickerTitle": "Быстрый доступ к Skill для {{agent}}",
+        "skillSearchPlaceholder": "Поиск Skill",
+        "skillLoading": "Загрузка Skill...",
+        "skillEmpty": "Подходящие Skill не найдены",
         "pickAgent": "Выбрать агента",
         "clearTarget": "Очистить целевого агента",
         "targetChip": "@{{agent}}",
