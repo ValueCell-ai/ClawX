@@ -6,13 +6,19 @@ import { create } from 'zustand';
 import type {
   ProviderAccount,
   ProviderConfig,
+  ProviderProfile,
   ProviderVendorInfo,
   ProviderWithKeyInfo,
 } from '@/lib/providers';
 import { normalizeProviderApiKeyInput } from '@/lib/providers';
 import { hostApiFetch } from '@/lib/host-api';
 import {
+  addProfile,
+  deleteProfile,
+  fetchProfilesForAccount,
   fetchProviderSnapshot,
+  reorderProfiles,
+  setPrimaryProfile,
 } from '@/lib/provider-accounts';
 
 // Re-export types for consumers that imported from here
@@ -28,6 +34,7 @@ interface ProviderState {
   statuses: ProviderWithKeyInfo[];
   accounts: ProviderAccount[];
   vendors: ProviderVendorInfo[];
+  profilesByAccount: Record<string, ProviderProfile[]>;
   defaultAccountId: string | null;
   loading: boolean;
   error: string | null;
@@ -43,6 +50,11 @@ interface ProviderState {
     options?: { baseUrl?: string; apiProtocol?: ProviderAccount['apiProtocol'] }
   ) => Promise<{ valid: boolean; error?: string }>;
   getAccountApiKey: (accountId: string) => Promise<string | null>;
+  fetchProfilesForAccount: (accountId: string) => Promise<void>;
+  addProfileToAccount: (accountId: string, label: string, apiKey: string) => Promise<void>;
+  removeProfileFromAccount: (accountId: string, profileId: string) => Promise<void>;
+  reorderProfiles: (accountId: string, orderedProfileIds: string[]) => Promise<void>;
+  setPrimaryProfile: (accountId: string, profileId: string) => Promise<void>;
 
   // Legacy compatibility aliases
   fetchProviders: () => Promise<void>;
@@ -73,6 +85,7 @@ export const useProviderStore = create<ProviderState>((set, get) => ({
   statuses: [],
   accounts: [],
   vendors: [],
+  profilesByAccount: {},
   defaultAccountId: null,
   loading: false,
   error: null,
@@ -350,4 +363,34 @@ export const useProviderStore = create<ProviderState>((set, get) => ({
   },
 
   getApiKey: async (providerId) => get().getAccountApiKey(providerId),
+
+  fetchProfilesForAccount: async (accountId) => {
+    const profiles = await fetchProfilesForAccount(accountId);
+    set((state) => ({
+      profilesByAccount: {
+        ...state.profilesByAccount,
+        [accountId]: profiles,
+      },
+    }));
+  },
+
+  addProfileToAccount: async (accountId, label, apiKey) => {
+    await addProfile(accountId, label, apiKey);
+    await get().fetchProfilesForAccount(accountId);
+  },
+
+  removeProfileFromAccount: async (accountId, profileId) => {
+    await deleteProfile(accountId, profileId);
+    await get().fetchProfilesForAccount(accountId);
+  },
+
+  reorderProfiles: async (accountId, orderedProfileIds) => {
+    await reorderProfiles(accountId, orderedProfileIds);
+    await get().fetchProfilesForAccount(accountId);
+  },
+
+  setPrimaryProfile: async (accountId, profileId) => {
+    await setPrimaryProfile(accountId, profileId);
+    await get().fetchProfilesForAccount(accountId);
+  },
 }));

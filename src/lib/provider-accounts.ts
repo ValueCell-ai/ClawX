@@ -1,6 +1,7 @@
 import { hostApiFetch } from '@/lib/host-api';
 import type {
   ProviderAccount,
+  ProviderProfile,
   ProviderType,
   ProviderVendorInfo,
   ProviderWithKeyInfo,
@@ -123,4 +124,63 @@ export function buildProviderListItems(
     vendor: vendorMap.get(status.type),
     status,
   }));
+}
+
+export async function fetchProfilesForAccount(accountId: string): Promise<ProviderProfile[]> {
+  return hostApiFetch<ProviderProfile[]>(`/api/provider-accounts/${encodeURIComponent(accountId)}/profiles`);
+}
+
+export async function addProfile(
+  accountId: string,
+  label: string,
+  apiKey: string,
+  options?: {
+    authMode?: ProviderAccount['authMode'];
+    oauthToken?: { access: string; refresh: string; expires: number; email?: string; projectId?: string };
+  },
+): Promise<ProviderProfile> {
+  const result = await hostApiFetch<{ success: boolean; profile: ProviderProfile; error?: string }>(
+    `/api/provider-accounts/${encodeURIComponent(accountId)}/profiles`,
+    {
+      method: 'POST',
+      body: JSON.stringify({ label, apiKey, authMode: options?.authMode, oauthToken: options?.oauthToken }),
+    },
+  );
+  if (!result.success) {
+    throw new Error(result.error || 'Failed to add provider profile');
+  }
+  return result.profile;
+}
+
+export async function deleteProfile(accountId: string, profileId: string): Promise<void> {
+  const result = await hostApiFetch<{ success: boolean; error?: string }>(
+    `/api/provider-accounts/${encodeURIComponent(accountId)}/profiles/${encodeURIComponent(profileId)}`,
+    { method: 'DELETE' },
+  );
+  if (!result.success) {
+    throw new Error(result.error || 'Failed to delete provider profile');
+  }
+}
+
+export async function reorderProfiles(accountId: string, orderedProfileIds: string[]): Promise<void> {
+  const result = await hostApiFetch<{ success: boolean; error?: string }>(
+    `/api/provider-accounts/${encodeURIComponent(accountId)}/profiles/order`,
+    {
+      method: 'PUT',
+      body: JSON.stringify({ orderedProfileIds }),
+    },
+  );
+  if (!result.success) {
+    throw new Error(result.error || 'Failed to reorder provider profiles');
+  }
+}
+
+export async function setPrimaryProfile(accountId: string, profileId: string): Promise<void> {
+  const result = await hostApiFetch<{ success: boolean; error?: string }>(
+    `/api/provider-accounts/${encodeURIComponent(accountId)}/profiles/${encodeURIComponent(profileId)}/primary`,
+    { method: 'PUT' },
+  );
+  if (!result.success) {
+    throw new Error(result.error || 'Failed to set primary profile');
+  }
 }

@@ -27,6 +27,7 @@ test.describe('ClawX provider lifecycle', () => {
     await page.getByTestId('sidebar-nav-models').click();
     await expect(page.getByTestId('providers-settings')).toBeVisible();
     await expect(page.getByTestId(`provider-card-${TEST_PROVIDER_ID}`)).toContainText(TEST_PROVIDER_LABEL);
+    await expect(page.getByTestId(`provider-profiles-${TEST_PROVIDER_ID}`)).toContainText('Profiles (Fallback Order)');
 
     await page.getByTestId(`provider-card-${TEST_PROVIDER_ID}`).hover();
     await page.getByTestId(`provider-delete-${TEST_PROVIDER_ID}`).click();
