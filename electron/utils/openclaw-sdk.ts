@@ -1,9 +1,10 @@
 /**
  * Dynamic imports for openclaw plugin-sdk subpath exports.
  *
- * openclaw is NOT in the asar's node_modules — it lives at resources/openclaw/
- * (extraResources).  Static `import ... from 'openclaw/plugin-sdk/...'` would
- * produce a runtime require() that fails inside the asar.
+ * openclaw is NOT in the asar's node_modules — packaged builds stage it under
+ * resources/openclaw-runtime/openclaw-*/. Static
+ * `import ... from 'openclaw/plugin-sdk/...'` would produce a runtime require()
+ * that fails inside the asar.
  *
  * Instead, we create a require context from the openclaw directory itself.
  * Node.js package self-referencing allows a package to require its own exports

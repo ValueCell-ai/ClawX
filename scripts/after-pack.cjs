@@ -19,10 +19,12 @@
  *      @mariozechner/clipboard).
  */
 
-const { cpSync, existsSync, readdirSync, rmSync, statSync, mkdirSync, realpathSync, readFileSync } = require('fs');
+const { createHash } = require('crypto');
+const { cpSync, existsSync, readdirSync, rmSync, statSync, mkdirSync, realpathSync, readFileSync, renameSync, writeFileSync } = require('fs');
 const { join, dirname, basename, relative } = require('path');
 
 const RUNTIME_DEPS_MANIFEST = 'clawx-runtime-deps.json';
+const OPENCLAW_RUNTIME_READY_MARKER = '.clawx-runtime-ready.json';
 
 // On Windows, paths in pnpm's virtual store can exceed the default MAX_PATH
 // limit (260 chars). Node.js 18.17+ respects the system LongPathsEnabled
@@ -571,6 +573,53 @@ function validateRuntimeDepsManifest(openclawRoot) {
   console.log(`[after-pack] ✅ Verified ${RUNTIME_DEPS_MANIFEST}.`);
 }
 
+function hashOpenClawRuntime(openclawRoot) {
+  const packageJsonPath = join(openclawRoot, 'package.json');
+  const manifestPath = join(openclawRoot, RUNTIME_DEPS_MANIFEST);
+  const packageJsonRaw = readFileSync(normWin(packageJsonPath), 'utf8');
+  const manifestRaw = existsSync(normWin(manifestPath)) ? readFileSync(normWin(manifestPath), 'utf8') : '';
+  const packageJson = JSON.parse(packageJsonRaw);
+  const version = packageJson.version || 'unknown';
+  const manifestHash = createHash('sha256')
+    .update(packageJsonRaw)
+    .update('\0')
+    .update(manifestRaw)
+    .digest('hex')
+    .slice(0, 12);
+  const safeVersion = String(version).replace(/[^a-zA-Z0-9._-]/g, '_');
+  return {
+    key: `openclaw-${safeVersion}-${manifestHash}`,
+    version,
+    manifestHash,
+  };
+}
+
+function stageOpenClawRuntimeForPackagedApp(resourcesDir, openclawRoot) {
+  if (!existsSync(normWin(openclawRoot))) {
+    throw new Error(`[after-pack] Cannot stage OpenClaw runtime; missing ${openclawRoot}`);
+  }
+
+  const { key, version, manifestHash } = hashOpenClawRuntime(openclawRoot);
+  const runtimeRoot = join(resourcesDir, 'openclaw-runtime');
+  const targetDir = join(runtimeRoot, key);
+  mkdirSync(normWin(runtimeRoot), { recursive: true });
+  rmSync(normWin(targetDir), { recursive: true, force: true });
+  renameSync(normWin(openclawRoot), normWin(targetDir));
+  writeFileSync(
+    normWin(join(targetDir, OPENCLAW_RUNTIME_READY_MARKER)),
+    `${JSON.stringify({
+      version,
+      manifestHash,
+      source: 'after-pack',
+      createdAt: new Date().toISOString(),
+    }, null, 2)}\n`,
+    'utf8',
+  );
+  validateRuntimeDepsManifest(targetDir);
+  console.log(`[after-pack] ✅ Staged OpenClaw runtime at ${targetDir}`);
+  return targetDir;
+}
+
 // ── Main hook ────────────────────────────────────────────────────────────────
 
 exports.default = async function afterPack(context) {
@@ -712,6 +761,15 @@ exports.default = async function afterPack(context) {
   if (nativeRemoved > 0) {
     console.log(`[after-pack] ✅ Removed ${nativeRemoved} non-target native platform packages.`);
   }
+
+  // 4.1 Move the finalized OpenClaw tree into the shape OpenClaw already
+  // recognizes as an external runtime root:
+  //   resources/openclaw-runtime/openclaw-<version>-<hash>
+  //
+  // At runtime ClawX sets OPENCLAW_PLUGIN_STAGE_DIR to resources/openclaw-runtime
+  // and launches from the staged openclaw-* directory. This avoids a first-run
+  // copy while still preventing OpenClaw from running npm install.
+  stageOpenClawRuntimeForPackagedApp(resourcesDir, openclawRoot);
 
   // 5. Patch lru-cache in app.asar.unpacked
   //

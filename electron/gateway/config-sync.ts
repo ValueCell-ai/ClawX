@@ -18,7 +18,7 @@ function fsPath(filePath: string): string {
 import { getAllSettings } from '../utils/store';
 import { getApiKey, getDefaultProvider, getProvider } from '../utils/secure-storage';
 import { getProviderEnvVar, getKeyableProviderTypes } from '../utils/provider-registry';
-import { getOpenClawDir, getOpenClawEntryPath, isOpenClawPresent } from '../utils/paths';
+import { getOpenClawPluginStageDir, getOpenClawRuntimeDir, getOpenClawRuntimeEntryPath, isOpenClawPresent } from '../utils/paths';
 import { getUvMirrorEnv } from '../utils/uv-env';
 import { cleanupDanglingWeChatPluginState, listConfiguredChannelsFromConfig, readOpenClawConfig } from '../utils/channel-config';
 import { sanitizeOpenClawConfig, batchSyncConfigFields } from '../utils/openclaw-auth';
@@ -34,6 +34,7 @@ export interface GatewayLaunchContext {
   appSettings: Awaited<ReturnType<typeof getAllSettings>>;
   openclawDir: string;
   entryScript: string;
+  pluginStageDir: string | null;
   gatewayArgs: string[];
   forkEnv: Record<string, string | undefined>;
   mode: 'dev' | 'packaged';
@@ -415,8 +416,9 @@ async function resolveChannelStartupPolicy(): Promise<{
 }
 
 export async function prepareGatewayLaunchContext(port: number): Promise<GatewayLaunchContext> {
-  const openclawDir = getOpenClawDir();
-  const entryScript = getOpenClawEntryPath();
+  const openclawDir = getOpenClawRuntimeDir();
+  const entryScript = getOpenClawRuntimeEntryPath();
+  const pluginStageDir = getOpenClawPluginStageDir(openclawDir);
 
   if (!isOpenClawPresent()) {
     throw new Error(`OpenClaw package not found at: ${openclawDir}`);
@@ -463,6 +465,7 @@ export async function prepareGatewayLaunchContext(port: number): Promise<Gateway
     OPENCLAW_SKIP_CHANNELS: skipChannels ? '1' : '',
     CLAWDBOT_SKIP_CHANNELS: skipChannels ? '1' : '',
     OPENCLAW_NO_RESPAWN: '1',
+    ...(pluginStageDir ? { OPENCLAW_PLUGIN_STAGE_DIR: pluginStageDir } : {}),
   };
 
   // Ensure extension-specific packages (e.g. grammy from the telegram
@@ -474,6 +477,7 @@ export async function prepareGatewayLaunchContext(port: number): Promise<Gateway
     appSettings,
     openclawDir,
     entryScript,
+    pluginStageDir,
     gatewayArgs,
     forkEnv,
     mode,

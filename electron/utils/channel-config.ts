@@ -8,7 +8,7 @@ import { access, mkdir, readFile, writeFile, readdir, stat, rm } from 'fs/promis
 import { constants } from 'fs';
 import { join } from 'path';
 import { homedir } from 'os';
-import { getOpenClawResolvedDir } from './paths';
+import { getOpenClawPluginStageDir, getOpenClawRuntimeDir } from './paths';
 import * as logger from './logger';
 import { proxyAwareFetch } from './proxy-fetch';
 import { withConfigLock } from './config-mutex';
@@ -1528,7 +1528,8 @@ export async function validateChannelConfig(channelType: string): Promise<Valida
     const result: ValidationResult = { valid: true, errors: [], warnings: [] };
 
     try {
-        const openclawPath = getOpenClawResolvedDir();
+        const openclawPath = getOpenClawRuntimeDir();
+        const pluginStageDir = getOpenClawPluginStageDir(openclawPath);
 
         // Run openclaw doctor command to validate config (async to avoid
         // blocking the main thread).
@@ -1539,6 +1540,11 @@ export async function validateChannelConfig(channelType: string): Promise<Valida
                     {
                         cwd: openclawPath,
                         encoding: 'utf-8',
+                        env: {
+                            ...process.env,
+                            ...(pluginStageDir ? { OPENCLAW_PLUGIN_STAGE_DIR: pluginStageDir } : {}),
+                            OPENCLAW_NO_RESPAWN: '1',
+                        },
                         timeout: 30000,
                         windowsHide: true,
                     },

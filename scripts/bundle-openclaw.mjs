@@ -222,6 +222,7 @@ const EXTRA_BUNDLED_PACKAGES = [
 
 const BUNDLED_EXTENSION_RUNTIME_DEP_PLUGIN_IDS = [
   'acpx',
+  'bonjour',
   'browser',
   'discord',
   'qqbot',
@@ -825,70 +826,6 @@ function findFilesByName(rootDir, matcher) {
 
 function patchBundledRuntime(outputDir) {
   const replacePatches = [
-    {
-      label: 'packaged bundled runtime deps lookup',
-      required: true,
-      target: () => findFirstFileByName(path.join(outputDir, 'dist'), /^bundled-runtime-deps-.*\.js$/),
-      search: `\t\tconst missingSpecs = deps.filter((dep) => !hasDependencySentinel([installRoot], dep)).map((dep) => \`\${dep.name}@\${dep.version}\`).toSorted((left, right) => left.localeCompare(right));`,
-      replace: `\t\tconst packageRoot = resolveBundledPluginPackageRoot(params.pluginRoot);
-\t\tconst dependencySearchRoots = [installRoot, ...packageRoot ? [packageRoot] : []];
-\t\tconst missingSpecs = deps.filter((dep) => !hasDependencySentinel(dependencySearchRoots, dep)).map((dep) => \`\${dep.name}@\${dep.version}\`).toSorted((left, right) => left.localeCompare(right));`,
-    },
-    {
-      label: 'packaged bundled runtime deps lock bypass',
-      required: true,
-      target: () => findFirstFileByName(path.join(outputDir, 'dist'), /^bundled-runtime-deps-.*\.js$/),
-      search: `\tconst installRoot = resolveBundledRuntimeDependencyInstallRoot(params.pluginRoot, { env: params.env });
-\treturn withBundledRuntimeDepsInstallRootLock(installRoot, () => {`,
-      replace: `\tconst packageRoot = resolveBundledPluginPackageRoot(params.pluginRoot);
-\tconst clawxRuntimeDepsManifest = packageRoot ? readJsonObject(path.join(packageRoot, "${RUNTIME_DEPS_MANIFEST}")) : null;
-\tconst clawxRuntimeDeps = clawxRuntimeDepsManifest && typeof clawxRuntimeDepsManifest === "object" && clawxRuntimeDepsManifest.plugins && typeof clawxRuntimeDepsManifest.plugins === "object" ? clawxRuntimeDepsManifest.plugins[params.pluginId] : null;
-\tif (packageRoot && Array.isArray(clawxRuntimeDeps) && deps.every((dep) => clawxRuntimeDeps.some((entry) => entry && entry.name === dep.name && entry.present !== false) && fs.existsSync(path.join(packageRoot, "node_modules", ...dep.name.split("/"), "package.json")))) return {
-\t\tinstalledSpecs: [],
-\t\tretainSpecs: []
-\t};
-\tconst installRoot = resolveBundledRuntimeDependencyInstallRoot(params.pluginRoot, { env: params.env });
-\treturn withBundledRuntimeDepsInstallRootLock(installRoot, () => {`,
-    },
-    {
-      label: 'packaged scan bundled runtime deps lookup',
-      required: true,
-      target: () => findFirstFileByName(path.join(outputDir, 'dist'), /^bundled-runtime-deps-.*\.js$/),
-      search: `\tconst packageSearchRoots = [resolveBundledRuntimeDependencyPackageInstallRoot(params.packageRoot, { env: params.env })];`,
-      replace: `\tconst packageSearchRoots = [resolveBundledRuntimeDependencyPackageInstallRoot(params.packageRoot, { env: params.env }), params.packageRoot];`,
-    },
-    {
-      label: 'packaged bundled runtime root mirror bypass',
-      required: true,
-      target: () => findFirstFileByName(path.join(outputDir, 'dist'), /^bundled-runtime-root-.*\.js$/),
-      search: `\tconst env = params.env ?? process.env;
-\tconst installRoot = resolveBundledRuntimeDependencyInstallRoot(params.pluginRoot, { env });`,
-      replace: `\tconst env = params.env ?? process.env;
-\tconst packageRoot = resolveBundledRuntimeDependencyPackageRoot(params.pluginRoot);
-\tif (packageRoot) {
-\t\tlet clawxRuntimeDeps = null;
-\t\ttry {
-\t\t\tconst clawxRuntimeDepsManifest = JSON.parse(fs.readFileSync(path.join(packageRoot, "${RUNTIME_DEPS_MANIFEST}"), "utf8"));
-\t\t\tclawxRuntimeDeps = clawxRuntimeDepsManifest && typeof clawxRuntimeDepsManifest === "object" && clawxRuntimeDepsManifest.plugins && typeof clawxRuntimeDepsManifest.plugins === "object" ? clawxRuntimeDepsManifest.plugins[params.pluginId] : null;
-\t\t} catch {}
-\t\tif (Array.isArray(clawxRuntimeDeps) && clawxRuntimeDeps.every((entry) => entry && typeof entry.name === "string" && entry.present !== false && fs.existsSync(path.join(packageRoot, "node_modules", ...entry.name.split("/"), "package.json")))) {
-\t\t\tregisterBundledRuntimeDependencyNodePath(packageRoot);
-\t\t\treturn {
-\t\t\t\tpluginRoot: params.pluginRoot,
-\t\t\t\tmodulePath: params.modulePath
-\t\t\t};
-\t\t}
-\t}
-\tconst installRoot = resolveBundledRuntimeDependencyInstallRoot(params.pluginRoot, { env });`,
-    },
-    {
-      label: 'packaged bundled runtime root package reuse',
-      required: true,
-      target: () => findFirstFileByName(path.join(outputDir, 'dist'), /^bundled-runtime-root-.*\.js$/),
-      search: `\tconst packageRoot = resolveBundledRuntimeDependencyPackageRoot(params.pluginRoot);
-\tif (packageRoot) registerBundledRuntimeDependencyNodePath(packageRoot);`,
-      replace: `\tif (packageRoot) registerBundledRuntimeDependencyNodePath(packageRoot);`,
-    },
     {
       label: 'workspace command runner',
       target: () => findFirstFileByName(path.join(outputDir, 'dist'), /^workspace-.*\.js$/),

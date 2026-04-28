@@ -12,7 +12,7 @@ const require = createRequire(import.meta.url);
 const openclawPath = getOpenClawDir();
 const openclawResolvedPath = getOpenClawResolvedDir();
 // Primary: resolves from openclaw's real (dereferenced) path in pnpm store.
-// In packaged builds this is the flat `resources/openclaw/node_modules/`.
+// In packaged builds this is the staged `resources/openclaw-runtime/openclaw-*/node_modules/`.
 const openclawRequire = createRequire(join(openclawResolvedPath, 'package.json'));
 // Fallback: resolves from the symlink path (`node_modules/openclaw`).
 // In dev mode, Node walks UP from here to `<project>/node_modules/`, which

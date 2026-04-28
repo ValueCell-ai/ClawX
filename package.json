@@ -1,6 +1,6 @@
 {
     "name": "clawx",
-    "version": "0.3.12-beta.1",
+    "version": "0.3.12-beta.2",
     "pnpm": {
         "onlyBuiltDependencies": [
             "@discordjs/opus",
@@ -86,12 +86,12 @@
         "ws": "^8.19.0"
     },
     "devDependencies": {
-        "acpx": "0.5.3",
         "@buape/carbon": "0.16.0",
         "@discordjs/voice": "^0.19.2",
         "@eslint/js": "^10.0.1",
         "@grammyjs/runner": "^2.0.3",
         "@grammyjs/transformer-throttler": "^1.2.1",
+        "@homebridge/ciao": "^1.3.7",
         "@larksuite/openclaw-lark": "2026.4.8",
         "@larksuiteoapi/node-sdk": "^1.61.1",
         "@playwright/test": "^1.56.1",
@@ -121,6 +121,7 @@
         "@vitejs/plugin-react": "^5.1.4",
         "@wecom/wecom-openclaw-plugin": "^2026.4.23",
         "@whiskeysockets/baileys": "7.0.0-rc.9",
+        "acpx": "0.5.3",
         "autoprefixer": "^10.4.24",
         "class-variance-authority": "^0.7.1",
         "clsx": "^2.1.1",
@@ -138,7 +139,7 @@
         "jsdom": "^28.1.0",
         "lucide-react": "^0.563.0",
         "mpg123-decoder": "^1.0.3",
-        "openclaw": "2026.4.24",
+        "openclaw": "2026.4.26",
         "opusscript": "^0.1.1",
         "playwright-core": "1.59.1",
         "png2icons": "^2.0.1",

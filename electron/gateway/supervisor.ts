@@ -1,7 +1,7 @@
 import { app, utilityProcess } from 'electron';
 import path from 'path';
 import { existsSync } from 'fs';
-import { getOpenClawDir, getOpenClawEntryPath } from '../utils/paths';
+import { getOpenClawPluginStageDir, getOpenClawRuntimeDir, getOpenClawRuntimeEntryPath } from '../utils/paths';
 import { getUvMirrorEnv } from '../utils/uv-env';
 import { isPythonReady, setupManagedPython } from '../utils/uv-setup';
 import { logger } from '../utils/logger';
@@ -263,8 +263,9 @@ export async function findExistingGatewayProcess(options: {
 }
 
 export async function runOpenClawDoctorRepair(): Promise<boolean> {
-  const openclawDir = getOpenClawDir();
-  const entryScript = getOpenClawEntryPath();
+  const openclawDir = getOpenClawRuntimeDir();
+  const entryScript = getOpenClawRuntimeEntryPath();
+  const pluginStageDir = getOpenClawPluginStageDir(openclawDir);
   if (!existsSync(entryScript)) {
     logger.error(`Cannot run OpenClaw doctor repair: entry script not found at ${entryScript}`);
     return false;
@@ -285,7 +286,7 @@ export async function runOpenClawDoctorRepair(): Promise<boolean> {
   const uvEnv = await getUvMirrorEnv();
   const doctorArgs = ['doctor', '--fix', '--yes', '--non-interactive'];
   logger.info(
-    `Running OpenClaw doctor repair (entry="${entryScript}", args="${doctorArgs.join(' ')}", cwd="${openclawDir}", bundledBin=${binPathExists ? 'yes' : 'no'})`,
+    `Running OpenClaw doctor repair (entry="${entryScript}", args="${doctorArgs.join(' ')}", cwd="${openclawDir}", stage="${pluginStageDir || '-'}", bundledBin=${binPathExists ? 'yes' : 'no'})`,
   );
 
   return await new Promise<boolean>((resolve) => {
@@ -293,6 +294,7 @@ export async function runOpenClawDoctorRepair(): Promise<boolean> {
       ...baseEnvPatched,
       ...uvEnv,
       OPENCLAW_NO_RESPAWN: '1',
+      ...(pluginStageDir ? { OPENCLAW_PLUGIN_STAGE_DIR: pluginStageDir } : {}),
     };
 
     const child = utilityProcess.fork(entryScript, doctorArgs, {

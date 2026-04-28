@@ -1,7 +1,7 @@
 import { app, utilityProcess } from 'electron';
 import { existsSync } from 'node:fs';
 import path from 'node:path';
-import { getOpenClawDir, getOpenClawEntryPath } from './paths';
+import { getOpenClawPluginStageDir, getOpenClawRuntimeDir, getOpenClawRuntimeEntryPath } from './paths';
 import { logger } from './logger';
 import { getUvMirrorEnv } from './uv-env';
 
@@ -69,8 +69,9 @@ async function runDoctorCommandWithArgs(
   mode: OpenClawDoctorMode,
   args: string[],
 ): Promise<OpenClawDoctorResult> {
-  const openclawDir = getOpenClawDir();
-  const entryScript = getOpenClawEntryPath();
+  const openclawDir = getOpenClawRuntimeDir();
+  const entryScript = getOpenClawRuntimeEntryPath();
+  const pluginStageDir = getOpenClawPluginStageDir(openclawDir);
   const command = `openclaw ${args.join(' ')}`;
   const startedAt = Date.now();
 
@@ -98,7 +99,7 @@ async function runDoctorCommandWithArgs(
   const uvEnv = await getUvMirrorEnv();
 
   logger.info(
-    `Running OpenClaw doctor (mode=${mode}, entry="${entryScript}", args="${args.join(' ')}", cwd="${openclawDir}", bundledBin=${binPathExists ? 'yes' : 'no'})`,
+    `Running OpenClaw doctor (mode=${mode}, entry="${entryScript}", args="${args.join(' ')}", cwd="${openclawDir}", stage="${pluginStageDir || '-'}", bundledBin=${binPathExists ? 'yes' : 'no'})`,
   );
 
   return await new Promise<OpenClawDoctorResult>((resolve) => {
@@ -110,6 +111,7 @@ async function runDoctorCommandWithArgs(
         ...uvEnv,
         PATH: finalPath,
         OPENCLAW_NO_RESPAWN: '1',
+        ...(pluginStageDir ? { OPENCLAW_PLUGIN_STAGE_DIR: pluginStageDir } : {}),
       } as NodeJS.ProcessEnv,
     });
 
