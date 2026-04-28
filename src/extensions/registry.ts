@@ -1,4 +1,4 @@
-import i18n from '@/i18n';
+import i18n from 'i18next';
 import type {
   RendererExtension,
   NavItemDef,
@@ -67,6 +67,10 @@ class RendererExtensionRegistry {
 
   getChatComposerStatusComponents(): ComponentType<ChatComposerStatusProps>[] {
     return this.extensions.flatMap((ext) => ext.chat?.composerStatusComponents ?? []);
+  }
+
+  hasChatBeforeSendHooks(): boolean {
+    return this.extensions.some((ext) => (ext.chat?.beforeSend?.length ?? 0) > 0);
   }
 
   async runChatBeforeSend(context: ChatBeforeSendContext): Promise<ChatBeforeSendResult> {

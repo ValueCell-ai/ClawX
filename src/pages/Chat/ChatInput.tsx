@@ -297,16 +297,18 @@ export function ChatInput({ onSend, onStop, disabled = false, sending = false, i
     const textToSend = input.trim();
     const attachmentsToSend = readyAttachments.length > 0 ? readyAttachments : undefined;
 
-    const guard = await rendererExtensionRegistry.runChatBeforeSend({
-      text: textToSend,
-      attachments: attachmentsToSend,
-      targetAgentId,
-    });
-    if (!guard.ok) {
-      if (guard.message) {
-        toast.error(guard.message);
+    if (rendererExtensionRegistry.hasChatBeforeSendHooks()) {
+      const guard = await rendererExtensionRegistry.runChatBeforeSend({
+        text: textToSend,
+        attachments: attachmentsToSend,
+        targetAgentId,
+      });
+      if (!guard.ok) {
+        if (guard.message) {
+          toast.error(guard.message);
+        }
+        return;
       }
-      return;
     }
 
     // Capture values before clearing — clear input immediately for snappy UX,
