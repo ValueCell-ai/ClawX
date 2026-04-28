@@ -86,6 +86,25 @@ function readPluginVersion(pkgJsonPath: string): string | null {
   }
 }
 
+function collectPluginRuntimeDeps(pluginDir: string): string[] {
+  try {
+    const raw = readFileSync(fsPath(join(pluginDir, 'package.json')), 'utf-8');
+    const pkg = JSON.parse(raw) as { dependencies?: Record<string, string>; optionalDependencies?: Record<string, string> };
+    return Object.keys({
+      ...pkg.dependencies,
+      ...pkg.optionalDependencies,
+    });
+  } catch {
+    return [];
+  }
+}
+
+function hasPluginRuntimeDeps(pluginDir: string): boolean {
+  const deps = collectPluginRuntimeDeps(pluginDir);
+  if (deps.length === 0) return true;
+  return deps.every((depName) => existsSync(fsPath(join(pluginDir, 'node_modules', ...depName.split('/'), 'package.json'))));
+}
+
 function buildBundledPluginSources(pluginDirName: string): string[] {
   return app.isPackaged
     ? [
@@ -122,7 +141,7 @@ function ensureConfiguredPluginsUpgraded(configuredChannels: string[]): void {
     if (bundledDir) {
       const sourceVersion = readPluginVersion(join(bundledDir, 'package.json'));
       // Install or upgrade if version differs or plugin not installed
-      if (!isInstalled || (sourceVersion && installedVersion && sourceVersion !== installedVersion)) {
+      if (!isInstalled || !hasPluginRuntimeDeps(targetDir) || (sourceVersion && installedVersion && sourceVersion !== installedVersion)) {
         logger.info(`[plugin] ${isInstalled ? 'Auto-upgrading' : 'Installing'} ${channelType} plugin${isInstalled ? `: ${installedVersion} → ${sourceVersion}` : `: ${sourceVersion}`} (bundled)`);
         try {
           mkdirSync(fsPath(join(homedir(), '.openclaw', 'extensions')), { recursive: true });

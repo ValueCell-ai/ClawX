@@ -250,6 +250,25 @@ function readPluginVersion(pkgJsonPath: string): string | null {
   }
 }
 
+function collectPluginRuntimeDeps(pluginDir: string): string[] {
+  try {
+    const raw = readFileSync(fsPath(join(pluginDir, 'package.json')), 'utf-8');
+    const pkg = JSON.parse(raw) as { dependencies?: Record<string, string>; optionalDependencies?: Record<string, string> };
+    return Object.keys({
+      ...pkg.dependencies,
+      ...pkg.optionalDependencies,
+    });
+  } catch {
+    return [];
+  }
+}
+
+function hasPluginRuntimeDeps(pluginDir: string): boolean {
+  const deps = collectPluginRuntimeDeps(pluginDir);
+  if (deps.length === 0) return true;
+  return deps.every((depName) => existsSync(fsPath(join(pluginDir, 'node_modules', ...depName.split('/'), 'package.json'))));
+}
+
 // ── pnpm-aware node_modules copy helpers ─────────────────────────────────────
 
 /** Walk up from a path until we find a parent named node_modules. */
@@ -376,7 +395,7 @@ export function ensurePluginInstalled(
     if (!sourceDir) return { installed: true }; // no bundled source to compare, keep existing
     const installedVersion = readPluginVersion(targetPkgJson);
     const sourceVersion = readPluginVersion(join(sourceDir, 'package.json'));
-    if (!sourceVersion || !installedVersion || sourceVersion === installedVersion) {
+    if ((!sourceVersion || !installedVersion || sourceVersion === installedVersion) && hasPluginRuntimeDeps(targetDir)) {
       return { installed: true }; // same version or unable to compare
     }
     // Version differs — fall through to overwrite install

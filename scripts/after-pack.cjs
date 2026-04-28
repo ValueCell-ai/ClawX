@@ -542,6 +542,54 @@ function bundlePlugin(nodeModulesRoot, npmName, destDir) {
   return true;
 }
 
+function hasPluginRuntimeDeps(pluginDestDir) {
+  const pluginNM = join(pluginDestDir, 'node_modules');
+  if (!existsSync(normWin(pluginNM))) return false;
+  try {
+    return readdirSync(normWin(pluginNM)).some((entry) => entry !== '.bin');
+  } catch {
+    return false;
+  }
+}
+
+function collectPluginRuntimeDeps(pluginDestDir) {
+  try {
+    const pkg = JSON.parse(readFileSync(normWin(join(pluginDestDir, 'package.json')), 'utf8'));
+    return Object.keys({
+      ...pkg.dependencies,
+      ...pkg.optionalDependencies,
+    });
+  } catch {
+    return [];
+  }
+}
+
+function missingPluginRuntimeDeps(pluginDestDir) {
+  return collectPluginRuntimeDeps(pluginDestDir).filter((depName) => {
+    const depPackageJson = join(pluginDestDir, 'node_modules', ...depName.split('/'), 'package.json');
+    return !existsSync(normWin(depPackageJson));
+  });
+}
+
+function preparePackagedPluginMirror(nodeModulesRoot, npmName, pluginId, pluginDestDir, platform, arch) {
+  const manifestPath = join(pluginDestDir, 'openclaw.plugin.json');
+  if (!existsSync(normWin(manifestPath)) || !hasPluginRuntimeDeps(pluginDestDir) || missingPluginRuntimeDeps(pluginDestDir).length > 0) {
+    console.log(`[after-pack] Bundling plugin ${npmName} -> ${pluginDestDir}`);
+    const ok = bundlePlugin(nodeModulesRoot, npmName, pluginDestDir);
+    if (!ok) return;
+  } else {
+    console.log(`[after-pack] ✅ Plugin mirror already present: ${pluginDestDir}`);
+  }
+
+  const pluginNM = join(pluginDestDir, 'node_modules');
+  cleanupUnnecessaryFiles(pluginDestDir);
+  if (existsSync(normWin(pluginNM))) {
+    cleanupKoffi(pluginNM, platform, arch);
+    cleanupNativePlatformPackages(pluginNM, platform, arch);
+  }
+  patchPluginIds(pluginDestDir, pluginId);
+}
+
 function validateRuntimeDepsManifest(openclawRoot) {
   const manifestPath = join(openclawRoot, RUNTIME_DEPS_MANIFEST);
   if (!existsSync(normWin(manifestPath))) {
@@ -678,17 +726,14 @@ exports.default = async function afterPack(context) {
   mkdirSync(pluginsDestRoot, { recursive: true });
   for (const { npmName, pluginId } of BUNDLED_PLUGINS) {
     const pluginDestDir = join(pluginsDestRoot, pluginId);
-    console.log(`[after-pack] Bundling plugin ${npmName} -> ${pluginDestDir}`);
-    const ok = bundlePlugin(nodeModulesRoot, npmName, pluginDestDir);
-    if (ok) {
-      const pluginNM = join(pluginDestDir, 'node_modules');
-      cleanupUnnecessaryFiles(pluginDestDir);
-      if (existsSync(pluginNM)) {
-        cleanupKoffi(pluginNM, platform, arch);
-        cleanupNativePlatformPackages(pluginNM, platform, arch);
-      }
-      // Fix hardcoded plugin ID mismatches in compiled JS
-      patchPluginIds(pluginDestDir, pluginId);
+    preparePackagedPluginMirror(nodeModulesRoot, npmName, pluginId, pluginDestDir, platform, arch);
+    const manifestPath = join(pluginDestDir, 'openclaw.plugin.json');
+    if (!existsSync(normWin(manifestPath))) {
+      throw new Error(`[after-pack] Missing packaged plugin mirror: ${pluginId} (${npmName})`);
+    }
+    const missingRuntimeDeps = missingPluginRuntimeDeps(pluginDestDir);
+    if (missingRuntimeDeps.length > 0) {
+      throw new Error(`[after-pack] Missing packaged plugin runtime deps for ${pluginId}: ${missingRuntimeDeps.join(', ')}`);
     }
   }
 
