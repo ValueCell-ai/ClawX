@@ -208,11 +208,11 @@ function SkillDetailDialog({ skill, isOpen, onClose, onToggle, onUninstall, onOp
             <h2 className="text-[28px] font-serif text-foreground font-normal mb-3 text-center tracking-tight">
               {skill.name}
             </h2>
-            <div data-skill-detail-meta-row="1" className="flex items-center justify-center gap-2.5 mb-6 opacity-80">
-              <Badge variant="secondary" className="font-mono text-[11px] font-medium px-3 py-0.5 rounded-full bg-black/[0.04] dark:bg-white/[0.08] hover:bg-black/[0.08] dark:hover:bg-white/[0.12] border-0 shadow-none text-foreground/70 transition-colors">
+            <div data-skill-detail-meta-row="1" className="flex items-center justify-center flex-wrap gap-2.5 mb-6 opacity-80">
+              <Badge variant="secondary" className="shrink-0 whitespace-nowrap font-mono text-[11px] font-medium px-3 py-0.5 rounded-full bg-black/[0.04] dark:bg-white/[0.08] hover:bg-black/[0.08] dark:hover:bg-white/[0.12] border-0 shadow-none text-foreground/70 transition-colors">
                 v{skill.version}
               </Badge>
-              <Badge variant="secondary" className="font-mono text-[11px] font-medium px-3 py-0.5 rounded-full bg-black/[0.04] dark:bg-white/[0.08] hover:bg-black/[0.08] dark:hover:bg-white/[0.12] border-0 shadow-none text-foreground/70 transition-colors">
+              <Badge variant="secondary" className="shrink-0 whitespace-nowrap font-mono text-[11px] font-medium px-3 py-0.5 rounded-full bg-black/[0.04] dark:bg-white/[0.08] hover:bg-black/[0.08] dark:hover:bg-white/[0.12] border-0 shadow-none text-foreground/70 transition-colors">
                 {skill.isCore ? t('detail.coreSystem') : skill.isBundled ? t('detail.bundled') : t('detail.userInstalled')}
               </Badge>
               {detailMetaComponents.map((DetailMetaComponent, index) => (
@@ -231,7 +231,7 @@ function SkillDetailDialog({ skill, isOpen, onClose, onToggle, onUninstall, onOp
             <div className="space-y-2">
               <h3 className="text-[13px] font-bold text-foreground/80">{t('detail.source')}</h3>
               <div className="flex items-center gap-2 flex-wrap">
-                <Badge variant="secondary" className="font-mono text-[11px] font-medium px-3 py-0.5 rounded-full bg-black/[0.04] dark:bg-white/[0.08] border-0 shadow-none text-foreground/70">
+                <Badge variant="secondary" className="shrink-0 whitespace-nowrap font-mono text-[11px] font-medium px-3 py-0.5 rounded-full bg-black/[0.04] dark:bg-white/[0.08] border-0 shadow-none text-foreground/70">
                   {resolveSkillSourceLabel(skill, t)}
                 </Badge>
               </div>
@@ -788,11 +788,11 @@ export function Skills() {
                       <p className="text-[13.5px] text-muted-foreground line-clamp-1 pr-6 leading-relaxed">
                         {skill.description}
                       </p>
-                      <div className="mt-1 flex items-center gap-2 text-[11px] text-foreground/55">
-                        <Badge variant="secondary" className="px-1.5 py-0 h-5 text-[10px] font-medium bg-black/5 dark:bg-white/10 border-0 shadow-none">
+                      <div className="mt-1 flex items-center gap-2 text-[11px] text-foreground/55 min-w-0">
+                        <Badge variant="secondary" className="shrink-0 whitespace-nowrap px-1.5 py-0 h-5 text-[10px] font-medium bg-black/5 dark:bg-white/10 border-0 shadow-none">
                           {resolveSkillSourceLabel(skill, t)}
                         </Badge>
-                        <span className="truncate font-mono">
+                        <span className="truncate font-mono min-w-0">
                           {skill.baseDir || t('detail.pathUnavailable')}
                         </span>
                       </div>
