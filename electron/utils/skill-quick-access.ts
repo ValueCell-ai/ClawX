@@ -1,9 +1,10 @@
 import { access, lstat, readdir, readFile, realpath, stat } from 'node:fs/promises';
 import { constants } from 'node:fs';
+import { homedir } from 'node:os';
 import { basename, join, relative, resolve } from 'node:path';
-import { expandPath, getOpenClawDir, getResourcesDir } from './paths';
+import { expandPath, getOpenClawSkillsDir, getResourcesDir } from './paths';
 
-export type QuickAccessSkillSource = 'workspace' | 'openclaw' | 'system';
+export type QuickAccessSkillSource = 'workspace' | 'openclaw' | 'agents';
 
 export interface QuickAccessSkill {
   name: string;
@@ -15,10 +16,10 @@ export interface QuickAccessSkill {
 }
 
 type QuickAccessScanParams = {
+  agentsRoots?: string[];
+  openClawRoots?: string[];
   workspace?: string | null;
-  agentDir?: string | null;
   openClawDir?: string | null;
-  systemRoots?: string[];
 };
 
 type SourceDescriptor = {
@@ -206,35 +207,24 @@ async function scanRoot(descriptor: Omit<SourceDescriptor, 'roots'> & { root: st
   return items.filter((item): item is QuickAccessSkill => item != null);
 }
 
-function resolveSystemRoots(agentDir?: string | null, explicitRoots?: string[]): string[] {
-  if (explicitRoots && explicitRoots.length > 0) {
-    return dedupePaths(explicitRoots);
-  }
-
-  const roots: string[] = [];
-  const expandedAgentDir = agentDir ? expandPath(agentDir) : '';
-  if (expandedAgentDir) {
-    roots.push(join(expandedAgentDir, 'skill'));
-    roots.push(join(expandedAgentDir, 'skills'));
-  }
-
-  const resourcesDir = getResourcesDir();
-  roots.push(join(resourcesDir, 'agent', 'skill'));
-  roots.push(join(resourcesDir, 'agent', 'skills'));
-  roots.push(join(process.cwd(), 'agent', 'skill'));
-  roots.push(join(process.cwd(), 'agent', 'skills'));
-
-  if (process.resourcesPath) {
-    roots.push(join(process.resourcesPath, 'agent', 'skill'));
-    roots.push(join(process.resourcesPath, 'agent', 'skills'));
-  }
-
-  return dedupePaths(roots);
-}
-
 function buildDescriptors(params: QuickAccessScanParams): SourceDescriptor[] {
   const workspace = params.workspace ? expandPath(params.workspace) : '';
-  const openClawDir = params.openClawDir ? expandPath(params.openClawDir) : getOpenClawDir();
+  const openClawDir = params.openClawDir ? expandPath(params.openClawDir) : '';
+  const personalAgentsDir = join(homedir(), '.agents');
+  const resourcesDir = getResourcesDir();
+  const agentsRoots = params.agentsRoots
+    ? dedupePaths(params.agentsRoots)
+    : dedupePaths([
+      join(workspace, '.agents', 'skills'),
+      join(personalAgentsDir, 'skills'),
+      join(resourcesDir, '.agents', 'skills'),
+    ].filter(Boolean));
+  const openClawRoots = params.openClawRoots
+    ? dedupePaths(params.openClawRoots)
+    : dedupePaths([
+      getOpenClawSkillsDir(),
+      openClawDir ? join(openClawDir, 'skills') : '',
+    ].filter(Boolean));
 
   return [
     {
@@ -250,13 +240,13 @@ function buildDescriptors(params: QuickAccessScanParams): SourceDescriptor[] {
       source: 'openclaw',
       sourceLabel: 'OpenClaw',
       priority: 1,
-      roots: dedupePaths([join(openClawDir, 'skills')]),
+      roots: openClawRoots,
     },
     {
-      source: 'system',
-      sourceLabel: 'System',
+      source: 'agents',
+      sourceLabel: '.agents',
       priority: 2,
-      roots: resolveSystemRoots(params.agentDir, params.systemRoots),
+      roots: agentsRoots,
     },
   ];
 }
@@ -265,22 +255,20 @@ export async function collectQuickAccessSkills(params: QuickAccessScanParams): P
   const descriptors = buildDescriptors(params);
   const discovered = await Promise.all(
     descriptors.flatMap((descriptor) =>
-      descriptor.roots.map((root) => scanRoot({ ...descriptor, root })),
+      descriptor.roots.map(async (root) => {
+        const items = await scanRoot({ ...descriptor, root });
+        return items.map((item) => ({ ...item, priority: descriptor.priority }));
+      }),
     ),
   );
 
   const byName = new Map<string, QuickAccessSkill & { priority: number }>();
-  for (const descriptor of descriptors) {
-    const items = discovered
-      .flat()
-      .filter((item) => item.source === descriptor.source);
-    for (const item of items) {
-      const key = item.name.trim().toLowerCase();
-      if (!key) continue;
-      const existing = byName.get(key);
-      if (!existing || descriptor.priority < existing.priority) {
-        byName.set(key, { ...item, priority: descriptor.priority });
-      }
+  for (const item of discovered.flat()) {
+    const key = item.name.trim().toLowerCase();
+    if (!key) continue;
+    const existing = byName.get(key);
+    if (!existing || item.priority < existing.priority) {
+      byName.set(key, item);
     }
   }
 

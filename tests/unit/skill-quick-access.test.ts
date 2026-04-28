@@ -22,10 +22,10 @@ describe('collectQuickAccessSkills', () => {
     rmSync(testRoot, { recursive: true, force: true });
   });
 
-  it('prioritizes workspace skills over openclaw and system duplicates', async () => {
+  it('prioritizes workspace over openclaw over agents duplicates', async () => {
     const workspaceDir = join(testRoot, 'workspace');
-    const agentDir = join(testRoot, 'agent');
     const openClawDir = join(testRoot, 'openclaw');
+    const personalAgentsDir = join(testRoot, 'personal-agents');
 
     writeSkill(
       join(workspaceDir, 'skill'),
@@ -38,9 +38,9 @@ describe('collectQuickAccessSkills', () => {
       "---\ndescription: OpenClaw fallback.\n---\n# OpenClaw Skill\n",
     );
     writeSkill(
-      join(agentDir, 'skill'),
+      join(personalAgentsDir, '.agents', 'skills'),
       'create-skill',
-      "---\ndescription: System fallback.\n---\n# System Skill\n",
+      "---\ndescription: Agents fallback.\n---\n# Agents Skill\n",
     );
     writeSkill(
       join(openClawDir, 'skills'),
@@ -49,8 +49,9 @@ describe('collectQuickAccessSkills', () => {
     );
 
     const skills = await collectQuickAccessSkills({
+      agentsRoots: [join(personalAgentsDir, '.agents', 'skills')],
+      openClawRoots: [join(openClawDir, 'skills')],
       workspace: workspaceDir,
-      agentDir,
       openClawDir,
     });
 
@@ -76,9 +77,10 @@ describe('collectQuickAccessSkills', () => {
     );
 
     const skills = await collectQuickAccessSkills({
+      agentsRoots: [],
+      openClawRoots: [join(openClawDir, 'skills')],
       workspace: workspaceDir,
       openClawDir,
-      systemRoots: [],
     });
 
     expect(skills).toHaveLength(1);
@@ -86,6 +88,79 @@ describe('collectQuickAccessSkills', () => {
       name: 'docs-search',
       source: 'workspace',
       description: 'Search project docs and summarize the answer.',
+    });
+  });
+
+  it('loads project and personal .agents skill directories under the agents source', async () => {
+    const workspaceDir = join(testRoot, 'workspace');
+    const personalAgentsDir = join(testRoot, 'personal-agents');
+
+    writeSkill(
+      join(workspaceDir, '.agents', 'skills'),
+      'project-skill',
+      "---\ndescription: Project level .agents skill.\n---\n# Project Skill\n",
+    );
+    writeSkill(
+      join(personalAgentsDir, '.agents', 'skills'),
+      'personal-skill',
+      "---\ndescription: Personal .agents skill.\n---\n# Personal Skill\n",
+    );
+
+    const skills = await collectQuickAccessSkills({
+      agentsRoots: [
+        join(workspaceDir, '.agents', 'skills'),
+        join(personalAgentsDir, '.agents', 'skills'),
+      ],
+      openClawRoots: [join(testRoot, 'openclaw', 'skills')],
+      workspace: workspaceDir,
+      openClawDir: join(testRoot, 'openclaw'),
+    });
+
+    expect(skills.map((skill) => `${skill.source}:${skill.name}`)).toEqual([
+      'agents:personal-skill',
+      'agents:project-skill',
+    ]);
+    expect(skills.find((skill) => skill.name === 'personal-skill')).toMatchObject({
+      source: 'agents',
+      sourceLabel: '.agents',
+    });
+    expect(skills.find((skill) => skill.name === 'project-skill')).toMatchObject({
+      source: 'agents',
+      sourceLabel: '.agents',
+    });
+  });
+
+  it('prefers project .agents skills over personal .agents duplicates', async () => {
+    const workspaceDir = join(testRoot, 'workspace');
+    const personalAgentsDir = join(testRoot, 'personal-agents');
+
+    writeSkill(
+      join(workspaceDir, '.agents', 'skills'),
+      'shared-skill',
+      "---\ndescription: Project .agents wins.\n---\n# Shared Skill\n",
+    );
+    writeSkill(
+      join(personalAgentsDir, '.agents', 'skills'),
+      'shared-skill',
+      "---\ndescription: Personal .agents fallback.\n---\n# Shared Skill\n",
+    );
+
+    const skills = await collectQuickAccessSkills({
+      agentsRoots: [
+        join(workspaceDir, '.agents', 'skills'),
+        join(personalAgentsDir, '.agents', 'skills'),
+      ],
+      openClawRoots: [join(testRoot, 'openclaw', 'skills')],
+      workspace: workspaceDir,
+      openClawDir: join(testRoot, 'openclaw'),
+    });
+
+    expect(skills).toHaveLength(1);
+    expect(skills[0]).toMatchObject({
+      name: 'shared-skill',
+      source: 'agents',
+      sourceLabel: '.agents',
+      description: 'Project .agents wins.',
     });
   });
 });
