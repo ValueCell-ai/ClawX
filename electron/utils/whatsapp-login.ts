@@ -39,9 +39,23 @@ function resolveOpenClawPackageJson(packageName: string): string {
     }
 }
 
+function resolveOpenClawModule(specifier: string): string {
+    try {
+        return openclawRequire.resolve(specifier);
+    } catch { /* fall through */ }
+    try {
+        return projectRequire.resolve(specifier);
+    } catch (err) {
+        const reason = err instanceof Error ? err.message : String(err);
+        throw new Error(
+            `Failed to resolve "${specifier}" from OpenClaw context. ` +
+            `openclawPath=${openclawPath}, resolvedPath=${openclawResolvedPath}. ${reason}`,
+            { cause: err }
+        );
+    }
+}
+
 const baileysPath = dirname(resolveOpenClawPackageJson('@whiskeysockets/baileys'));
-const qrCodeModulePath = openclawRequire.resolve('qrcode-terminal/vendor/QRCode/index.js');
-const qrErrorCorrectLevelPath = openclawRequire.resolve('qrcode-terminal/vendor/QRCode/QRErrorCorrectLevel.js');
 
 // Load Baileys dependencies dynamically
 const {
@@ -50,10 +64,6 @@ const {
     DisconnectReason,
     fetchLatestBaileysVersion
 } = require(baileysPath);
-
-// Load QRCode dependencies dynamically
-const QRCodeModule = require(qrCodeModulePath);
-const QRErrorCorrectLevelModule = require(qrErrorCorrectLevelPath);
 
 // Types from Baileys (approximate since we don't have types for dynamic require)
 interface BaileysError extends Error {
@@ -68,12 +78,41 @@ type ConnectionState = {
     qr?: string;
 };
 
+type QrCodeMatrix = {
+    addData(input: string): void;
+    make(): void;
+    getModuleCount(): number;
+    isDark(row: number, col: number): boolean;
+};
+type QrCodeConstructor = new (typeNumber: number, errorCorrectionLevel: unknown) => QrCodeMatrix;
+type QrErrorCorrectLevelModule = {
+    L: unknown;
+};
+type QrRenderDeps = {
+    QRCode: QrCodeConstructor;
+    QRErrorCorrectLevel: QrErrorCorrectLevelModule;
+};
+
+let qrRenderDeps: QrRenderDeps | null = null;
+
+function getQrRenderDeps(): QrRenderDeps {
+    if (qrRenderDeps) {
+        return qrRenderDeps;
+    }
+
+    const qrCodeModulePath = resolveOpenClawModule('qrcode-terminal/vendor/QRCode/index.js');
+    const qrErrorCorrectLevelPath = resolveOpenClawModule('qrcode-terminal/vendor/QRCode/QRErrorCorrectLevel.js');
+    qrRenderDeps = {
+        QRCode: require(qrCodeModulePath),
+        QRErrorCorrectLevel: require(qrErrorCorrectLevelPath),
+    };
+    return qrRenderDeps;
+}
+
 // --- QR Generation Logic (Adapted from OpenClaw) ---
 
-const QRCode = QRCodeModule;
-const QRErrorCorrectLevel = QRErrorCorrectLevelModule;
-
 function createQrMatrix(input: string) {
+    const { QRCode, QRErrorCorrectLevel } = getQrRenderDeps();
     const qr = new QRCode(-1, QRErrorCorrectLevel.L);
     qr.addData(input);
     qr.make();

@@ -19,8 +19,10 @@
  *      @mariozechner/clipboard).
  */
 
-const { cpSync, existsSync, readdirSync, rmSync, statSync, mkdirSync, realpathSync } = require('fs');
+const { cpSync, existsSync, readdirSync, rmSync, statSync, mkdirSync, realpathSync, readFileSync } = require('fs');
 const { join, dirname, basename, relative } = require('path');
+
+const RUNTIME_DEPS_MANIFEST = 'clawx-runtime-deps.json';
 
 // On Windows, paths in pnpm's virtual store can exceed the default MAX_PATH
 // limit (260 chars). Node.js 18.17+ respects the system LongPathsEnabled
@@ -459,10 +461,19 @@ function bundlePlugin(nodeModulesRoot, npmName, destDir) {
   let realPluginPath;
   try { realPluginPath = realpathSync(pkgPath); } catch { realPluginPath = pkgPath; }
 
+  function shouldCopyNodePackageEntry(src) {
+    const base = basename(src);
+    return base !== '.vscode' && base !== '.idea';
+  }
+
   // Copy plugin package itself
   if (existsSync(normWin(destDir))) rmSync(normWin(destDir), { recursive: true, force: true });
   mkdirSync(normWin(destDir), { recursive: true });
-  cpSync(normWin(realPluginPath), normWin(destDir), { recursive: true, dereference: true });
+  cpSync(normWin(realPluginPath), normWin(destDir), {
+    recursive: true,
+    dereference: true,
+    filter: shouldCopyNodePackageEntry,
+  });
 
   // Collect transitive deps via pnpm virtual store BFS
   const collected = new Map();
@@ -515,7 +526,11 @@ function bundlePlugin(nodeModulesRoot, npmName, destDir) {
     const d = join(destNM, pkgName);
     try {
       mkdirSync(normWin(dirname(d)), { recursive: true });
-      cpSync(normWin(rp), normWin(d), { recursive: true, dereference: true });
+      cpSync(normWin(rp), normWin(d), {
+        recursive: true,
+        dereference: true,
+        filter: shouldCopyNodePackageEntry,
+      });
       count++;
     } catch (e) {
       console.warn(`[after-pack]   Skipped dep ${pkgName}: ${e.message}`);
@@ -523,6 +538,37 @@ function bundlePlugin(nodeModulesRoot, npmName, destDir) {
   }
   console.log(`[after-pack] ✅ Plugin ${npmName}: copied ${count} deps to ${destDir}`);
   return true;
+}
+
+function validateRuntimeDepsManifest(openclawRoot) {
+  const manifestPath = join(openclawRoot, RUNTIME_DEPS_MANIFEST);
+  if (!existsSync(normWin(manifestPath))) {
+    throw new Error(`[after-pack] Missing ${RUNTIME_DEPS_MANIFEST} in packaged OpenClaw resources`);
+  }
+
+  const manifest = JSON.parse(readFileSync(normWin(manifestPath), 'utf8'));
+  const plugins = manifest && typeof manifest === 'object' ? manifest.plugins : null;
+  if (!plugins || typeof plugins !== 'object' || Array.isArray(plugins)) {
+    throw new Error(`[after-pack] Invalid ${RUNTIME_DEPS_MANIFEST}: missing plugins object`);
+  }
+
+  const missing = [];
+  for (const [pluginId, deps] of Object.entries(plugins)) {
+    if (!Array.isArray(deps)) continue;
+    for (const dep of deps) {
+      if (!dep || typeof dep.name !== 'string') continue;
+      const depPackageJson = join(openclawRoot, 'node_modules', ...dep.name.split('/'), 'package.json');
+      if (!existsSync(normWin(depPackageJson))) {
+        missing.push(`${pluginId}:${dep.name}`);
+      }
+    }
+  }
+
+  if (missing.length > 0) {
+    throw new Error(`[after-pack] Missing packaged OpenClaw runtime deps: ${missing.join(', ')}`);
+  }
+
+  console.log(`[after-pack] ✅ Verified ${RUNTIME_DEPS_MANIFEST}.`);
 }
 
 // ── Main hook ────────────────────────────────────────────────────────────────
@@ -562,6 +608,7 @@ exports.default = async function afterPack(context) {
   console.log(`[after-pack] Copying ${depCount} openclaw dependencies to ${dest} ...`);
   cpSync(src, dest, { recursive: true });
   console.log('[after-pack] ✅ openclaw node_modules copied.');
+  validateRuntimeDepsManifest(openclawRoot);
 
   // Patch broken modules whose CJS transpiled output sets module.exports = undefined,
   // causing TypeError in Node.js 22+ ESM interop.
@@ -596,15 +643,11 @@ exports.default = async function afterPack(context) {
     }
   }
 
-  // 1.2 Copy built-in extension node_modules that electron-builder skipped.
-  //     OpenClaw 3.31+ ships built-in extensions (discord, qqbot, etc.) under
-  //     dist/extensions/<ext>/node_modules/. These are skipped by extraResources
-  //     because .gitignore contains "node_modules/".
-  //
-  //     Extension code is loaded via shared chunks in dist/ (e.g. outbound-*.js)
-  //     which resolve modules from the top-level openclaw/node_modules/, NOT from
-  //     the extension's own node_modules/. So we must merge extension deps into
-  //     the top-level node_modules/ as well.
+  // 1.2 Legacy safety net for build/openclaw bundles that still contain nested
+  //     built-in extension node_modules. The current bundle-openclaw.mjs skips
+  //     these nested directories and merges their packages into the top-level
+  //     OpenClaw node_modules instead, which is where shared dist chunks resolve
+  //     bare imports from at runtime.
   const buildExtDir = join(__dirname, '..', 'build', 'openclaw', 'dist', 'extensions');
   const packExtDir = join(openclawRoot, 'dist', 'extensions');
   if (existsSync(buildExtDir)) {
