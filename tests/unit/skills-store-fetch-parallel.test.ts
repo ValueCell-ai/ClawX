@@ -53,4 +53,64 @@ describe('skills store fetch parallelization', () => {
     gatewayDeferred.resolve({ skills: [] });
     await fetchPromise;
   });
+
+  it('does not block initial skills state on slow clawhub list', async () => {
+    const clawhubDeferred = deferred<{ success: boolean; results: Array<{ slug: string; version: string; source: string; baseDir: string }> }>();
+    rpcMock.mockResolvedValueOnce({
+      skills: [
+        {
+          skillKey: 'demo-skill',
+          slug: 'demo-skill',
+          name: 'Demo Skill',
+          description: 'Gateway skill',
+          disabled: false,
+          version: '1.0.0',
+          source: 'openclaw-bundled',
+        },
+      ],
+    });
+    hostApiFetchMock.mockImplementation((path: unknown) => {
+      if (path === '/api/clawhub/list') return clawhubDeferred.promise;
+      if (path === '/api/skills/configs') return Promise.resolve({});
+      return Promise.reject(new Error(`Unexpected path: ${String(path)}`));
+    });
+
+    const { useSkillsStore } = await import('@/stores/skills');
+    useSkillsStore.setState({ skills: [], loading: false, error: null });
+
+    await useSkillsStore.getState().fetchSkills();
+
+    expect(useSkillsStore.getState().loading).toBe(false);
+    expect(useSkillsStore.getState().skills).toEqual([
+      expect.objectContaining({
+        id: 'demo-skill',
+        name: 'Demo Skill',
+        source: 'openclaw-bundled',
+      }),
+    ]);
+
+    clawhubDeferred.resolve({
+      success: true,
+      results: [
+        {
+          slug: 'later-skill',
+          version: '2.0.0',
+          source: 'openclaw-managed',
+          baseDir: '/tmp/later-skill',
+        },
+      ],
+    });
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(useSkillsStore.getState().skills).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        id: 'demo-skill',
+      }),
+      expect.objectContaining({
+        id: 'later-skill',
+        baseDir: '/tmp/later-skill',
+      }),
+    ]));
+  });
 });

@@ -8,6 +8,8 @@ import { AppError, normalizeAppError } from '@/lib/error-model';
 import { useGatewayStore } from './gateway';
 import type { Skill, MarketplaceSkill } from '../types/skill';
 
+let latestFetchSkillsRequestId = 0;
+
 type GatewaySkillStatus = {
   skillKey: string;
   slug?: string;
@@ -35,6 +37,87 @@ type ClawHubListResult = {
   source?: string;
   baseDir?: string;
 };
+
+function buildSkillsFromGatewayAndConfig(
+  gatewayData: GatewaySkillsStatusResult,
+  configResult: Record<string, { apiKey?: string; env?: Record<string, string> }>,
+  currentSkills: Skill[],
+): Skill[] {
+  if (gatewayData.skills) {
+    return gatewayData.skills.map((s: GatewaySkillStatus) => {
+      const directConfig = configResult[s.skillKey] || {};
+
+      return {
+        id: s.skillKey,
+        slug: s.slug || s.skillKey,
+        name: s.name || s.skillKey,
+        description: s.description || '',
+        enabled: !s.disabled,
+        icon: s.emoji || '📦',
+        version: s.version || '1.0.0',
+        author: s.author,
+        config: {
+          ...(s.config || {}),
+          ...directConfig,
+        },
+        isCore: s.bundled && s.always,
+        isBundled: s.bundled,
+        source: s.source,
+        baseDir: s.baseDir,
+        filePath: s.filePath,
+      };
+    });
+  }
+
+  if (currentSkills.length > 0) {
+    return [...currentSkills];
+  }
+
+  return [];
+}
+
+function mergeClawHubSkills(
+  baseSkills: Skill[],
+  clawhubResult: { success: boolean; results?: ClawHubListResult[]; error?: string },
+  configResult: Record<string, { apiKey?: string; env?: Record<string, string> }>,
+): Skill[] {
+  if (!clawhubResult.success || !clawhubResult.results) {
+    return baseSkills;
+  }
+
+  const mergedSkills = [...baseSkills];
+  clawhubResult.results.forEach((cs: ClawHubListResult) => {
+    const existing = mergedSkills.find(s => s.id === cs.slug);
+    if (existing) {
+      if (!existing.baseDir && cs.baseDir) {
+        existing.baseDir = cs.baseDir;
+      }
+      if (!existing.source && cs.source) {
+        existing.source = cs.source;
+      }
+      return;
+    }
+
+    const directConfig = configResult[cs.slug] || {};
+    mergedSkills.push({
+      id: cs.slug,
+      slug: cs.slug,
+      name: cs.slug,
+      description: 'Recently installed, initializing...',
+      enabled: false,
+      icon: '⌛',
+      version: cs.version || 'unknown',
+      author: undefined,
+      config: directConfig,
+      isCore: false,
+      isBundled: false,
+      source: cs.source || 'openclaw-managed',
+      baseDir: cs.baseDir,
+    });
+  });
+
+  return mergedSkills;
+}
 
 function mapErrorCodeToSkillErrorKey(
   code: AppError['code'],
@@ -87,88 +170,39 @@ export const useSkillsStore = create<SkillsState>((set, get) => ({
   error: null,
 
   fetchSkills: async () => {
+    const requestId = ++latestFetchSkillsRequestId;
     // Only show loading state if we have no skills yet (initial load)
     if (get().skills.length === 0) {
       set({ loading: true, error: null });
     }
     try {
-      // Fetch all skill sources in parallel to reduce first-load latency.
+      // Start all sources immediately, but do not block first paint on the
+      // slower ClawHub CLI listing used only for enrichment.
       const gatewayDataPromise = useGatewayStore.getState().rpc<GatewaySkillsStatusResult>('skills.status');
       const clawhubResultPromise = hostApiFetch<{ success: boolean; results?: ClawHubListResult[]; error?: string }>('/api/clawhub/list');
       const configResultPromise = hostApiFetch<Record<string, { apiKey?: string; env?: Record<string, string> }>>('/api/skills/configs');
-      const [gatewayData, clawhubResult, configResult] = await Promise.all([
+      const [gatewayData, configResult] = await Promise.all([
         gatewayDataPromise,
-        clawhubResultPromise,
         configResultPromise,
       ]);
 
-      let combinedSkills: Skill[] = [];
-      const currentSkills = get().skills;
-
-      // Map gateway skills info
-      if (gatewayData.skills) {
-        combinedSkills = gatewayData.skills.map((s: GatewaySkillStatus) => {
-          // Merge with direct config if available
-          const directConfig = configResult[s.skillKey] || {};
-
-          return {
-            id: s.skillKey,
-            slug: s.slug || s.skillKey,
-            name: s.name || s.skillKey,
-            description: s.description || '',
-            enabled: !s.disabled,
-            icon: s.emoji || '📦',
-            version: s.version || '1.0.0',
-            author: s.author,
-            config: {
-              ...(s.config || {}),
-              ...directConfig,
-            },
-            isCore: s.bundled && s.always,
-            isBundled: s.bundled,
-            source: s.source,
-            baseDir: s.baseDir,
-            filePath: s.filePath,
-          };
-        });
-      } else if (currentSkills.length > 0) {
-        // ... if gateway down ...
-        combinedSkills = [...currentSkills];
+      const combinedSkills = buildSkillsFromGatewayAndConfig(gatewayData, configResult, get().skills);
+      if (requestId === latestFetchSkillsRequestId) {
+        set({ skills: combinedSkills, loading: false, error: null });
       }
 
-      // Merge with ClawHub results
-      if (clawhubResult.success && clawhubResult.results) {
-        clawhubResult.results.forEach((cs: ClawHubListResult) => {
-          const existing = combinedSkills.find(s => s.id === cs.slug);
-          if (existing) {
-            if (!existing.baseDir && cs.baseDir) {
-              existing.baseDir = cs.baseDir;
-            }
-            if (!existing.source && cs.source) {
-              existing.source = cs.source;
-            }
+      void clawhubResultPromise
+        .then((clawhubResult) => {
+          if (requestId !== latestFetchSkillsRequestId) {
             return;
           }
-          const directConfig = configResult[cs.slug] || {};
-          combinedSkills.push({
-            id: cs.slug,
-            slug: cs.slug,
-            name: cs.slug,
-            description: 'Recently installed, initializing...',
-            enabled: false,
-            icon: '⌛',
-            version: cs.version || 'unknown',
-            author: undefined,
-            config: directConfig,
-            isCore: false,
-            isBundled: false,
-            source: cs.source || 'openclaw-managed',
-            baseDir: cs.baseDir,
-          });
+          set((state) => ({
+            skills: mergeClawHubSkills(state.skills, clawhubResult, configResult),
+          }));
+        })
+        .catch((error) => {
+          console.warn('Failed to enrich skills from ClawHub list:', error);
         });
-      }
-
-      set({ skills: combinedSkills, loading: false });
     } catch (error) {
       console.error('Failed to fetch skills:', error);
       const appError = normalizeAppError(error, { module: 'skills', operation: 'fetch' });
