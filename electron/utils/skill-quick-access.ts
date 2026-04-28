@@ -2,9 +2,9 @@ import { access, lstat, readdir, readFile, realpath, stat } from 'node:fs/promis
 import { constants } from 'node:fs';
 import { homedir } from 'node:os';
 import { basename, join, relative, resolve } from 'node:path';
-import { expandPath, getOpenClawSkillsDir, getResourcesDir } from './paths';
+import { expandPath, getOpenClawResolvedDir, getOpenClawSkillsDir, getResourcesDir } from './paths';
 
-export type QuickAccessSkillSource = 'workspace' | 'openclaw' | 'agents';
+export type QuickAccessSkillSource = 'workspace' | 'openclaw' | 'agents' | 'legacy';
 
 export interface QuickAccessSkill {
   name: string;
@@ -17,9 +17,18 @@ export interface QuickAccessSkill {
 
 type QuickAccessScanParams = {
   agentsRoots?: string[];
+  legacyRoots?: string[];
   openClawRoots?: string[];
   workspace?: string | null;
   openClawDir?: string | null;
+};
+
+export type QuickAccessRuntimeSkillStatus = {
+  skillKey?: string;
+  slug?: string;
+  name?: string;
+  disabled?: boolean;
+  baseDir?: string;
 };
 
 type SourceDescriptor = {
@@ -207,7 +216,45 @@ async function scanRoot(descriptor: Omit<SourceDescriptor, 'roots'> & { root: st
   return items.filter((item): item is QuickAccessSkill => item != null);
 }
 
-function buildDescriptors(params: QuickAccessScanParams): SourceDescriptor[] {
+async function discoverExtensionSkillRoots(extensionRoots: string[]): Promise<string[]> {
+  const skillRoots: string[] = [];
+  for (const extensionRoot of extensionRoots) {
+    if (!(await pathExists(extensionRoot))) continue;
+    try {
+      const entries = await readdir(extensionRoot, { withFileTypes: true });
+      for (const entry of entries) {
+        if (!entry.isDirectory()) continue;
+        const skillsRoot = join(extensionRoot, entry.name, 'skills');
+        if (await pathExists(skillsRoot)) {
+          skillRoots.push(skillsRoot);
+        }
+      }
+    } catch {
+      // Ignore unreadable extension roots.
+    }
+  }
+  return dedupePaths(skillRoots);
+}
+
+async function resolveLegacyRoots(explicitRoots?: string[]): Promise<string[]> {
+  if (explicitRoots) {
+    return dedupePaths(explicitRoots);
+  }
+
+  const openClawDir = getOpenClawResolvedDir();
+  const extensionSkillRoots = await discoverExtensionSkillRoots([
+    join(homedir(), '.openclaw', 'extensions'),
+    join(openClawDir, 'extensions'),
+    join(openClawDir, 'dist', 'extensions'),
+  ]);
+
+  return dedupePaths([
+    join(openClawDir, 'skills'),
+    ...extensionSkillRoots,
+  ]);
+}
+
+async function buildDescriptors(params: QuickAccessScanParams): Promise<SourceDescriptor[]> {
   const workspace = params.workspace ? expandPath(params.workspace) : '';
   const openClawDir = params.openClawDir ? expandPath(params.openClawDir) : '';
   const personalAgentsDir = join(homedir(), '.agents');
@@ -225,6 +272,7 @@ function buildDescriptors(params: QuickAccessScanParams): SourceDescriptor[] {
       getOpenClawSkillsDir(),
       openClawDir ? join(openClawDir, 'skills') : '',
     ].filter(Boolean));
+  const legacyRoots = await resolveLegacyRoots(params.legacyRoots);
 
   return [
     {
@@ -248,11 +296,17 @@ function buildDescriptors(params: QuickAccessScanParams): SourceDescriptor[] {
       priority: 2,
       roots: agentsRoots,
     },
+    {
+      source: 'legacy',
+      sourceLabel: 'Legacy',
+      priority: 3,
+      roots: legacyRoots,
+    },
   ];
 }
 
 export async function collectQuickAccessSkills(params: QuickAccessScanParams): Promise<QuickAccessSkill[]> {
-  const descriptors = buildDescriptors(params);
+  const descriptors = await buildDescriptors(params);
   const discovered = await Promise.all(
     descriptors.flatMap((descriptor) =>
       descriptor.roots.map(async (root) => {
@@ -280,4 +334,82 @@ export async function collectQuickAccessSkills(params: QuickAccessScanParams): P
       return left.name.localeCompare(right.name);
     })
     .map(({ priority: _priority, ...skill }) => skill);
+}
+
+function normalizeLookupKey(value?: string | null): string {
+  return (value || '').trim().toLowerCase();
+}
+
+export function filterEnabledQuickAccessSkills(
+  skills: QuickAccessSkill[],
+  runtimeSkills?: QuickAccessRuntimeSkillStatus[] | null,
+  configs?: Record<string, { enabled?: boolean } | undefined>,
+): QuickAccessSkill[] {
+  const enabledKeys = new Set<string>();
+  const disabledKeys = new Set<string>();
+  const knownKeys = new Set<string>();
+  const enabledPaths = new Set<string>();
+  const disabledPaths = new Set<string>();
+  const configDisabledKeys = new Set<string>();
+  const configEnabledKeys = new Set<string>();
+
+  for (const [skillKey, config] of Object.entries(configs || {})) {
+    const normalizedKey = normalizeLookupKey(skillKey);
+    if (!normalizedKey) continue;
+    if (config?.enabled === false) {
+      configDisabledKeys.add(normalizedKey);
+    } else if (config?.enabled === true) {
+      configEnabledKeys.add(normalizedKey);
+    }
+  }
+
+  for (const skill of runtimeSkills || []) {
+    const aliases = [
+      skill.skillKey,
+      skill.slug,
+      skill.name,
+      skill.baseDir ? basename(skill.baseDir) : '',
+    ]
+      .map((value) => normalizeLookupKey(value))
+      .filter(Boolean);
+    const targetKeys = skill.disabled ? disabledKeys : enabledKeys;
+    for (const alias of aliases) {
+      targetKeys.add(alias);
+      knownKeys.add(alias);
+    }
+    if (skill.baseDir) {
+      const normalizedPath = resolve(skill.baseDir);
+      if (skill.disabled) {
+        disabledPaths.add(normalizedPath);
+      } else {
+        enabledPaths.add(normalizedPath);
+      }
+    }
+  }
+
+  return skills.filter((skill) => {
+    const normalizedKey = normalizeLookupKey(skill.name);
+    const normalizedPath = resolve(skill.baseDir);
+    if (
+      disabledKeys.has(normalizedKey)
+      || disabledPaths.has(normalizedPath)
+      || configDisabledKeys.has(normalizedKey)
+    ) {
+      return false;
+    }
+
+    if (!runtimeSkills || runtimeSkills.length === 0) {
+      return true;
+    }
+
+    if (
+      enabledKeys.has(normalizedKey)
+      || enabledPaths.has(normalizedPath)
+      || configEnabledKeys.has(normalizedKey)
+    ) {
+      return true;
+    }
+
+    return !knownKeys.has(normalizedKey);
+  });
 }

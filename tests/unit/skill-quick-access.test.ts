@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { collectQuickAccessSkills } from '@electron/utils/skill-quick-access';
+import { collectQuickAccessSkills, filterEnabledQuickAccessSkills, type QuickAccessSkill } from '@electron/utils/skill-quick-access';
 
 const testRoot = join(tmpdir(), 'clawx-tests', 'skill-quick-access');
 
@@ -50,6 +50,7 @@ describe('collectQuickAccessSkills', () => {
 
     const skills = await collectQuickAccessSkills({
       agentsRoots: [join(personalAgentsDir, '.agents', 'skills')],
+      legacyRoots: [],
       openClawRoots: [join(openClawDir, 'skills')],
       workspace: workspaceDir,
       openClawDir,
@@ -78,6 +79,7 @@ describe('collectQuickAccessSkills', () => {
 
     const skills = await collectQuickAccessSkills({
       agentsRoots: [],
+      legacyRoots: [],
       openClawRoots: [join(openClawDir, 'skills')],
       workspace: workspaceDir,
       openClawDir,
@@ -111,6 +113,7 @@ describe('collectQuickAccessSkills', () => {
         join(workspaceDir, '.agents', 'skills'),
         join(personalAgentsDir, '.agents', 'skills'),
       ],
+      legacyRoots: [],
       openClawRoots: [join(testRoot, 'openclaw', 'skills')],
       workspace: workspaceDir,
       openClawDir: join(testRoot, 'openclaw'),
@@ -150,6 +153,7 @@ describe('collectQuickAccessSkills', () => {
         join(workspaceDir, '.agents', 'skills'),
         join(personalAgentsDir, '.agents', 'skills'),
       ],
+      legacyRoots: [],
       openClawRoots: [join(testRoot, 'openclaw', 'skills')],
       workspace: workspaceDir,
       openClawDir: join(testRoot, 'openclaw'),
@@ -162,5 +166,83 @@ describe('collectQuickAccessSkills', () => {
       sourceLabel: '.agents',
       description: 'Project .agents wins.',
     });
+  });
+
+  it('loads legacy openclaw and extension skill roots at the lowest priority', async () => {
+    const workspaceDir = join(testRoot, 'workspace');
+    const openClawDir = join(testRoot, 'openclaw');
+    const agentsDir = join(testRoot, 'agents-home');
+    const extensionDir = join(testRoot, 'extensions');
+
+    writeSkill(
+      join(openClawDir, 'skills'),
+      'apple-notes',
+      "---\ndescription: Legacy OpenClaw built-in skill.\n---\n# Apple Notes\n",
+    );
+    writeSkill(
+      join(extensionDir, 'wecom', 'skills'),
+      'wecom-meeting-manage',
+      "---\ndescription: Extension-provided skill.\n---\n# WeCom Meeting Manage\n",
+    );
+
+    const skills = await collectQuickAccessSkills({
+      agentsRoots: [join(agentsDir, '.agents', 'skills')],
+      legacyRoots: [
+        join(openClawDir, 'skills'),
+        join(extensionDir, 'wecom', 'skills'),
+      ],
+      openClawRoots: [],
+      workspace: workspaceDir,
+    });
+
+    expect(skills.map((skill) => `${skill.source}:${skill.name}`)).toEqual([
+      'legacy:apple-notes',
+      'legacy:wecom-meeting-manage',
+    ]);
+  });
+
+  it('filters out disabled skills from runtime/config state', () => {
+    const skills: QuickAccessSkill[] = [
+      {
+        name: 'apple-notes',
+        description: 'Legacy OpenClaw built-in skill.',
+        source: 'legacy',
+        sourceLabel: 'Legacy',
+        manifestPath: '/tmp/openclaw/skills/apple-notes/SKILL.md',
+        baseDir: '/tmp/openclaw/skills/apple-notes',
+      },
+      {
+        name: 'wecom-meeting-manage',
+        description: 'Extension skill.',
+        source: 'legacy',
+        sourceLabel: 'Legacy',
+        manifestPath: '/tmp/extensions/wecom/skills/wecom-meeting-manage/SKILL.md',
+        baseDir: '/tmp/extensions/wecom/skills/wecom-meeting-manage',
+      },
+      {
+        name: 'workspace-skill',
+        description: 'Workspace skill.',
+        source: 'workspace',
+        sourceLabel: 'Workspace',
+        manifestPath: '/tmp/workspace/skills/workspace-skill/SKILL.md',
+        baseDir: '/tmp/workspace/skills/workspace-skill',
+      },
+    ];
+
+    const filtered = filterEnabledQuickAccessSkills(
+      skills,
+      [
+        { skillKey: 'apple-notes', disabled: false, baseDir: '/tmp/openclaw/skills/apple-notes' },
+        { skillKey: 'wecom-meeting-manage', disabled: true, baseDir: '/tmp/extensions/wecom/skills/wecom-meeting-manage' },
+      ],
+      {
+        'workspace-skill': { enabled: true },
+      },
+    );
+
+    expect(filtered.map((skill) => skill.name)).toEqual([
+      'apple-notes',
+      'workspace-skill',
+    ]);
   });
 });
