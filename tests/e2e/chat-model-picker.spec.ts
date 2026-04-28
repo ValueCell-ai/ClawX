@@ -3,17 +3,6 @@ import { closeElectronApp, expect, getStableWindow, test } from './fixtures/elec
 const alphaModelRef = 'custom-alpha123/model-alpha';
 const betaModelRef = 'custom-beta5678/provider/model-beta';
 
-function respond(json: unknown, status = 200) {
-  return {
-    ok: true,
-    data: {
-      status,
-      ok: status >= 200 && status < 300,
-      json,
-    },
-  };
-}
-
 test.describe('ClawX chat model picker', () => {
   test('switches the current agent model without requesting a gateway refresh', async ({ launchElectronApp }) => {
     const app = await launchElectronApp({ skipSetup: true });
@@ -25,6 +14,14 @@ test.describe('ClawX chat model picker', () => {
         let currentModelRef = refs.alphaModelRef;
         const hostRequests: Array<{ path: string; method: string; body: unknown }> = [];
         const now = new Date().toISOString();
+        const makeResponse = (json: unknown, status = 200) => ({
+          ok: true,
+          data: {
+            status,
+            ok: status >= 200 && status < 300,
+            json,
+          },
+        });
 
         const agentsSnapshot = () => ({
           success: true,
@@ -71,17 +68,17 @@ test.describe('ClawX chat model picker', () => {
           hostRequests.push({ path, method, body });
 
           if (path === '/api/gateway/status' && method === 'GET') {
-            return respond({ state: 'running', port: 18789, pid: 12345, gatewayReady: true });
+            return makeResponse({ state: 'running', port: 18789, pid: 12345, gatewayReady: true });
           }
           if (path === '/api/agents' && method === 'GET') {
-            return respond(agentsSnapshot());
+            return makeResponse(agentsSnapshot());
           }
           if (path === '/api/agents/main/model' && method === 'PUT') {
             currentModelRef = body?.modelRef ?? refs.alphaModelRef;
-            return respond(agentsSnapshot());
+            return makeResponse(agentsSnapshot());
           }
           if (path === '/api/provider-accounts' && method === 'GET') {
-            return respond([
+            return makeResponse([
               {
                 id: 'alpha1234',
                 vendorId: 'custom',
@@ -109,19 +106,19 @@ test.describe('ClawX chat model picker', () => {
             ]);
           }
           if (path === '/api/providers' && method === 'GET') {
-            return respond([
+            return makeResponse([
               { id: 'alpha1234', type: 'custom', name: 'Alpha', enabled: true, hasKey: true, keyMasked: 'sk-***', createdAt: now, updatedAt: now },
               { id: 'beta5678', type: 'custom', name: 'Beta', enabled: true, hasKey: true, keyMasked: 'sk-***', createdAt: now, updatedAt: now },
             ]);
           }
           if (path === '/api/provider-vendors' && method === 'GET') {
-            return respond([]);
+            return makeResponse([]);
           }
           if (path === '/api/provider-accounts/default' && method === 'GET') {
-            return respond({ accountId: 'alpha1234' });
+            return makeResponse({ accountId: 'alpha1234' });
           }
 
-          return respond({});
+          return makeResponse({});
         });
 
         (globalThis as typeof globalThis & { __chatModelPickerRequests?: typeof hostRequests }).__chatModelPickerRequests = hostRequests;
@@ -130,6 +127,10 @@ test.describe('ClawX chat model picker', () => {
       const page = await getStableWindow(app);
       await page.reload();
       await expect(page.getByTestId('main-layout')).toBeVisible();
+      await app.evaluate(({ BrowserWindow }) => {
+        const win = BrowserWindow.getAllWindows()[0];
+        win?.webContents.send('gateway:status-changed', { state: 'running', port: 18789, pid: 12345, gatewayReady: true });
+      });
 
       await expect(page.getByTestId('chat-model-picker-button')).toContainText('model-alpha');
       await page.getByTestId('chat-model-picker-button').click();
