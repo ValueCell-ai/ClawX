@@ -54,20 +54,76 @@ function formatFileSize(bytes: number): string {
 }
 
 function getSkillPrefix(skillName: string): string {
-  return `/${skillName} `;
+  return `/${skillName}  `;
 }
 
-function findSkillTokenRange(value: string, skillName: string): { start: number; end: number } | null {
+function needsLeadingSkillSpace(value: string, position: number): boolean {
+  return position > 0 && !/\s/.test(value[position - 1] ?? '');
+}
+
+type SkillTokenRange = { start: number; end: number };
+
+function findSkillTokenRange(value: string, skillName: string): SkillTokenRange | null {
   const token = getSkillPrefix(skillName);
   const start = value.indexOf(token);
   if (start === -1) return null;
   return { start, end: start + token.length };
 }
 
+function findSkillTokenRanges(value: string): SkillTokenRange[] {
+  const ranges: SkillTokenRange[] = [];
+  const skillTokenPattern = /\/[^\s]+ {2}/g;
+  let match: RegExpExecArray | null;
+  while ((match = skillTokenPattern.exec(value)) !== null) {
+    ranges.push({ start: match.index, end: match.index + match[0].length });
+  }
+  return ranges;
+}
+
 function removeSkillToken(value: string, skillName: string): string {
   const range = findSkillTokenRange(value, skillName);
   if (!range) return value;
   return `${value.slice(0, range.start)}${value.slice(range.end)}`;
+}
+
+function renderHighlightedComposerText(
+  value: string,
+  tokenRanges: SkillTokenRange[],
+) {
+  if (tokenRanges.length === 0) {
+    return <>{value}{value.endsWith('\n') ? '\n' : '\u200b'}</>;
+  }
+
+  const chunks: React.ReactNode[] = [];
+  let cursor = 0;
+
+  for (const tokenRange of tokenRanges) {
+    const token = value.slice(tokenRange.start, tokenRange.end);
+    const tokenLabel = token.trimEnd();
+    const tokenTrailingSpace = token.slice(tokenLabel.length);
+
+    if (tokenRange.start > cursor) {
+      chunks.push(value.slice(cursor, tokenRange.start));
+    }
+    chunks.push(
+      <span
+        key={`skill-token-${tokenRange.start}`}
+        data-testid="chat-composer-skill-token"
+        className="rounded-md bg-[#2F6BFF]/14 text-[#1D4ED8] [-webkit-box-decoration-break:clone] [box-decoration-break:clone] [text-shadow:0_0_10px_rgba(47,107,255,0.38)] dark:bg-[#2F6BFF]/18 dark:text-[#2563EB] dark:[text-shadow:0_0_12px_rgba(37,99,235,0.42)]"
+      >
+        {tokenLabel}
+      </span>,
+      tokenTrailingSpace,
+    );
+    cursor = tokenRange.end;
+  }
+
+  if (cursor < value.length) {
+    chunks.push(value.slice(cursor));
+  }
+  chunks.push(value.endsWith('\n') ? '\n' : '\u200b');
+
+  return <>{chunks}</>;
 }
 
 function FileIcon({ mimeType, className }: { mimeType: string; className?: string }) {
@@ -151,6 +207,7 @@ export function ChatInput({ onSend, onStop, disabled = false, sending = false, i
   }, [quickSkills, skillQuery]);
   const showAgentPicker = mentionableAgents.length > 0;
   const chatComposerStatusComponents = rendererExtensionRegistry.getChatComposerStatusComponents();
+  const skillTokenRanges = useMemo(() => findSkillTokenRanges(input), [input]);
 
   // Auto-resize textarea
   useEffect(() => {
@@ -220,11 +277,29 @@ export function ChatInput({ onSend, onStop, disabled = false, sending = false, i
 
   const handleInputChange = useCallback((value: string) => {
     setInput(value);
-    if (!selectedSkill) return;
-    if (!findSkillTokenRange(value, selectedSkill.name)) {
-      setSelectedSkill(null);
+  }, []);
+
+  const moveCaretTo = useCallback((position: number) => {
+    textareaRef.current?.focus();
+    textareaRef.current?.setSelectionRange(position, position);
+    requestAnimationFrame(() => {
+      textareaRef.current?.focus();
+      textareaRef.current?.setSelectionRange(position, position);
+    });
+  }, []);
+
+  const normalizeSelectionAroundSkill = useCallback(() => {
+    if (skillTokenRanges.length === 0) return;
+    const textarea = textareaRef.current;
+    if (!textarea) return;
+    const selectionStart = textarea.selectionStart ?? 0;
+    const selectionEnd = textarea.selectionEnd ?? 0;
+    if (selectionStart !== selectionEnd) return;
+    const tokenRange = skillTokenRanges.find((range) => selectionStart > range.start && selectionStart < range.end);
+    if (tokenRange) {
+      moveCaretTo(tokenRange.end);
     }
-  }, [selectedSkill]);
+  }, [moveCaretTo, skillTokenRanges]);
 
   const loadQuickSkills = useCallback(async () => {
     if (!currentAgent) {
@@ -453,23 +528,20 @@ export function ChatInput({ onSend, onStop, disabled = false, sending = false, i
         const textarea = textareaRef.current;
         const selectionStart = textarea?.selectionStart ?? 0;
         const selectionEnd = textarea?.selectionEnd ?? 0;
-        const tokenRange = selectedSkill ? findSkillTokenRange(input, selectedSkill.name) : null;
+        const tokenRange = skillTokenRanges.find((range) =>
+          selectionStart === selectionEnd
+          && selectionStart > range.start
+          && selectionStart <= range.end,
+        );
 
         if (
-          selectedSkill
-          && tokenRange
-          && selectionStart === selectionEnd
-          && selectionStart > tokenRange.start
-          && selectionStart <= tokenRange.end
+          tokenRange
         ) {
           e.preventDefault();
           const valueWithoutToken = `${input.slice(0, tokenRange.start)}${input.slice(tokenRange.end)}`;
           setInput(valueWithoutToken);
           setSelectedSkill(null);
-          requestAnimationFrame(() => {
-            textareaRef.current?.focus();
-            textareaRef.current?.setSelectionRange(tokenRange.start, tokenRange.start);
-          });
+          moveCaretTo(tokenRange.start);
           return;
         }
 
@@ -479,6 +551,28 @@ export function ChatInput({ onSend, onStop, disabled = false, sending = false, i
             return;
           }
           setTargetAgentId(null);
+          return;
+        }
+      }
+      if (e.key === 'ArrowLeft' && skillTokenRanges.length > 0) {
+        const textarea = textareaRef.current;
+        const selectionStart = textarea?.selectionStart ?? 0;
+        const selectionEnd = textarea?.selectionEnd ?? 0;
+        const tokenRange = skillTokenRanges.find((range) => selectionStart === selectionEnd && selectionStart === range.end);
+        if (tokenRange) {
+          e.preventDefault();
+          moveCaretTo(tokenRange.start);
+          return;
+        }
+      }
+      if (e.key === 'ArrowRight' && skillTokenRanges.length > 0) {
+        const textarea = textareaRef.current;
+        const selectionStart = textarea?.selectionStart ?? 0;
+        const selectionEnd = textarea?.selectionEnd ?? 0;
+        const tokenRange = skillTokenRanges.find((range) => selectionStart === selectionEnd && selectionStart === range.start);
+        if (tokenRange) {
+          e.preventDefault();
+          moveCaretTo(tokenRange.end);
           return;
         }
       }
@@ -496,7 +590,7 @@ export function ChatInput({ onSend, onStop, disabled = false, sending = false, i
         handleSend();
       }
     },
-    [handleSend, input, selectedSkill],
+    [handleSend, input, moveCaretTo, skillTokenRanges],
   );
 
   // Handle paste (Ctrl/Cmd+V with files)
@@ -588,24 +682,39 @@ export function ChatInput({ onSend, onStop, disabled = false, sending = false, i
           )}
 
           {/* Text Row — flush-left */}
-          <Textarea
-            ref={textareaRef}
-            value={input}
-            onChange={(e) => handleInputChange(e.target.value)}
-            onKeyDown={handleKeyDown}
-            onCompositionStart={() => {
-              isComposingRef.current = true;
-            }}
-            onCompositionEnd={() => {
-              isComposingRef.current = false;
-            }}
-            onPaste={handlePaste}
-            placeholder={disabled ? t('composer.gatewayDisconnectedPlaceholder') : ''}
-            disabled={disabled}
-            data-testid="chat-composer-input"
-            className="min-h-[48px] max-h-[240px] resize-none border-0 focus-visible:ring-0 focus-visible:ring-offset-0 shadow-none bg-transparent p-0 text-[15px] placeholder:text-muted-foreground/60 leading-relaxed"
-            rows={1}
-          />
+          <div className="relative min-h-[48px]">
+            {skillTokenRanges.length > 0 && (
+              <div
+                aria-hidden="true"
+                className="pointer-events-none absolute inset-0 overflow-hidden whitespace-pre-wrap break-words text-sm leading-relaxed text-foreground"
+              >
+                {renderHighlightedComposerText(input, skillTokenRanges)}
+              </div>
+            )}
+            <Textarea
+              ref={textareaRef}
+              value={input}
+              onChange={(e) => handleInputChange(e.target.value)}
+              onKeyDown={handleKeyDown}
+              onSelect={normalizeSelectionAroundSkill}
+              onClick={normalizeSelectionAroundSkill}
+              onCompositionStart={() => {
+                isComposingRef.current = true;
+              }}
+              onCompositionEnd={() => {
+                isComposingRef.current = false;
+              }}
+              onPaste={handlePaste}
+              placeholder={disabled ? t('composer.gatewayDisconnectedPlaceholder') : ''}
+              disabled={disabled}
+              data-testid="chat-composer-input"
+              className={cn(
+                "relative z-10 min-h-[48px] max-h-[240px] resize-none border-0 focus-visible:ring-0 focus-visible:ring-offset-0 shadow-none bg-transparent p-0 text-sm leading-relaxed placeholder:text-muted-foreground/60",
+                skillTokenRanges.length > 0 && "text-transparent caret-foreground selection:bg-primary/20",
+              )}
+              rows={1}
+            />
+          </div>
 
           {/* Action Row — icons on their own line */}
           <div className="mt-1.5 flex items-center gap-1">
@@ -715,7 +824,7 @@ export function ChatInput({ onSend, onStop, disabled = false, sending = false, i
                         <SkillPickerItem
                           key={`${skill.source}:${skill.name}`}
                           skill={skill}
-                          selected={skill.name === selectedSkill?.name}
+                          selected={false}
                           onSelect={() => {
                             const textarea = textareaRef.current;
                             const nextToken = getSkillPrefix(skill.name);
@@ -725,27 +834,15 @@ export function ChatInput({ onSend, onStop, disabled = false, sending = false, i
                             let adjustedStart = selectionStart;
                             let adjustedEnd = selectionEnd;
 
-                            if (selectedSkill) {
-                              const existingRange = findSkillTokenRange(nextValue, selectedSkill.name);
-                              if (existingRange) {
-                                nextValue = `${nextValue.slice(0, existingRange.start)}${nextValue.slice(existingRange.end)}`;
-                                if (existingRange.start < adjustedStart) {
-                                  adjustedStart = Math.max(existingRange.start, adjustedStart - (existingRange.end - existingRange.start));
-                                }
-                                if (existingRange.start < adjustedEnd) {
-                                  adjustedEnd = Math.max(existingRange.start, adjustedEnd - (existingRange.end - existingRange.start));
-                                }
-                              }
-                            }
-
-                            nextValue = `${nextValue.slice(0, adjustedStart)}${nextToken}${nextValue.slice(adjustedEnd)}`;
-                            setSelectedSkill(skill);
+                            const leadingSpace = needsLeadingSkillSpace(nextValue, adjustedStart) ? ' ' : '';
+                            nextValue = `${nextValue.slice(0, adjustedStart)}${leadingSpace}${nextToken}${nextValue.slice(adjustedEnd)}`;
+                            setSelectedSkill(null);
                             setInput(nextValue);
                             setSkillPickerOpen(false);
                             setSkillQuery('');
                             requestAnimationFrame(() => {
                               textareaRef.current?.focus();
-                              const cursorPosition = adjustedStart + nextToken.length;
+                              const cursorPosition = adjustedStart + leadingSpace.length + nextToken.length;
                               textareaRef.current?.setSelectionRange(cursorPosition, cursorPosition);
                             });
                           }}
@@ -914,6 +1011,7 @@ function SkillPickerItem({
       <TooltipTrigger asChild>
         <button
           type="button"
+          data-testid={`chat-composer-skill-option-${skill.name}`}
           onClick={onSelect}
           className={cn(
             'flex w-full items-center justify-between gap-3 rounded-xl px-3 py-2 text-left transition-colors',

@@ -119,6 +119,31 @@ describe('ChatInput agent targeting', () => {
     expect(screen.queryByTitle('Choose agent')).not.toBeInTheDocument();
   });
 
+  it('uses native textarea rendering when no skill token is present', () => {
+    agentsState.agents = [
+      {
+        id: 'main',
+        name: 'Main',
+        isDefault: true,
+        modelDisplay: 'MiniMax',
+        inheritedModel: true,
+        workspace: '~/.openclaw/workspace',
+        agentDir: '~/.openclaw/agents/main/agent',
+        mainSessionKey: 'agent:main:main',
+        channelTypes: [],
+      },
+    ];
+
+    renderChatInput();
+
+    const textbox = screen.getByRole('textbox') as HTMLTextAreaElement;
+    fireEvent.change(textbox, { target: { value: '我没有填写Skill' } });
+
+    expect(textbox).toHaveValue('我没有填写Skill');
+    expect(screen.queryByTestId('chat-composer-skill-token')).not.toBeInTheDocument();
+    expect(textbox.className).not.toContain('text-transparent');
+  });
+
   it('lets the user select an agent target and sends it with the message', () => {
     const onSend = vi.fn();
     agentsState.agents = [
@@ -235,11 +260,12 @@ describe('ChatInput agent targeting', () => {
 
     fireEvent.click(screen.getByText('/create-skill'));
     expect(screen.getByTestId('chat-composer-skill')).toHaveTextContent('Skill');
-    expect(textbox).toHaveValue('Draft /create-skill a new helper');
+    expect(textbox).toHaveValue('Draft /create-skill  a new helper');
+    expect(screen.getByTestId('chat-composer-skill-token')).toHaveTextContent('/create-skill');
 
     fireEvent.click(screen.getByTitle('Send'));
 
-    expect(onSend).toHaveBeenCalledWith('Draft /create-skill a new helper', undefined, null);
+    expect(onSend).toHaveBeenCalledWith('Draft /create-skill  a new helper', undefined, null);
     expect(hostApiFetch).toHaveBeenCalledWith(
       '/api/skills/quick-access',
       expect.objectContaining({
@@ -287,10 +313,141 @@ describe('ChatInput agent targeting', () => {
     fireEvent.click(screen.getByTitle('Choose skill'));
     fireEvent.click(await screen.findByText('/create-skill'));
 
-    expect(textbox).toHaveValue('Draft /create-skill a new helper');
-    textbox.setSelectionRange('Draft /create-skill '.length, 'Draft /create-skill '.length);
+    expect(textbox).toHaveValue('Draft /create-skill  a new helper');
+    textbox.setSelectionRange('Draft /create-skill  '.length, 'Draft /create-skill  '.length);
     fireEvent.keyDown(textbox, { key: 'Backspace' });
 
     expect(textbox).toHaveValue('Draft a new helper');
+  });
+
+  it('skips across the inline skill block with arrow keys', async () => {
+    agentsState.agents = [
+      {
+        id: 'main',
+        name: 'Main',
+        isDefault: true,
+        modelDisplay: 'MiniMax',
+        inheritedModel: true,
+        workspace: '~/.openclaw/workspace',
+        agentDir: '~/.openclaw/agents/main/agent',
+        mainSessionKey: 'agent:main:main',
+        channelTypes: [],
+      },
+    ];
+    vi.mocked(hostApiFetch).mockResolvedValue({
+      success: true,
+      skills: [
+        {
+          name: 'create-skill',
+          description: 'Create and refine reusable skills.',
+          source: 'workspace',
+          sourceLabel: 'Workspace',
+          manifestPath: '/tmp/workspace/skill/create-skill/SKILL.md',
+          baseDir: '/tmp/workspace/skill/create-skill',
+        },
+      ],
+    });
+
+    renderChatInput();
+
+    const textbox = screen.getByRole('textbox') as HTMLTextAreaElement;
+    fireEvent.change(textbox, { target: { value: 'Draft a new helper' } });
+    textbox.focus();
+    textbox.setSelectionRange('Draft '.length, 'Draft '.length);
+
+    fireEvent.click(screen.getByTitle('Choose skill'));
+    fireEvent.click(await screen.findByText('/create-skill'));
+
+    textbox.setSelectionRange('Draft '.length, 'Draft '.length);
+    fireEvent.keyDown(textbox, { key: 'ArrowRight' });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(textbox.selectionStart).toBe('Draft /create-skill  '.length);
+
+    fireEvent.keyDown(textbox, { key: 'ArrowLeft' });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(textbox.selectionStart).toBe('Draft '.length);
+  });
+
+  it('adds left spacing when inserting a skill after adjacent text', async () => {
+    agentsState.agents = [
+      {
+        id: 'main',
+        name: 'Main',
+        isDefault: true,
+        modelDisplay: 'MiniMax',
+        inheritedModel: true,
+        workspace: '~/.openclaw/workspace',
+        agentDir: '~/.openclaw/agents/main/agent',
+        mainSessionKey: 'agent:main:main',
+        channelTypes: [],
+      },
+    ];
+    vi.mocked(hostApiFetch).mockResolvedValue({
+      success: true,
+      skills: [
+        {
+          name: 'docx',
+          description: 'Work with Word documents.',
+          source: 'legacy',
+          sourceLabel: 'Legacy',
+          manifestPath: '/tmp/openclaw/skills/docx/SKILL.md',
+          baseDir: '/tmp/openclaw/skills/docx',
+        },
+      ],
+    });
+
+    renderChatInput();
+
+    const textbox = screen.getByRole('textbox') as HTMLTextAreaElement;
+    fireEvent.change(textbox, { target: { value: '哈哈哈哈你好' } });
+    textbox.focus();
+    textbox.setSelectionRange('哈哈哈哈'.length, '哈哈哈哈'.length);
+
+    fireEvent.click(screen.getByTitle('Choose skill'));
+    fireEvent.click(await screen.findByText('/docx'));
+
+    expect(textbox).toHaveValue('哈哈哈哈 /docx  你好');
+  });
+
+  it('allows inserting the same skill multiple times as separate blocks', async () => {
+    agentsState.agents = [
+      {
+        id: 'main',
+        name: 'Main',
+        isDefault: true,
+        modelDisplay: 'MiniMax',
+        inheritedModel: true,
+        workspace: '~/.openclaw/workspace',
+        agentDir: '~/.openclaw/agents/main/agent',
+        mainSessionKey: 'agent:main:main',
+        channelTypes: [],
+      },
+    ];
+    vi.mocked(hostApiFetch).mockResolvedValue({
+      success: true,
+      skills: [
+        {
+          name: 'create-rule',
+          description: 'Create Cursor rules.',
+          source: 'workspace',
+          sourceLabel: 'Workspace',
+          manifestPath: '/tmp/workspace/skill/create-rule/SKILL.md',
+          baseDir: '/tmp/workspace/skill/create-rule',
+        },
+      ],
+    });
+
+    renderChatInput();
+
+    const textbox = screen.getByRole('textbox') as HTMLTextAreaElement;
+    fireEvent.click(screen.getByTitle('Choose skill'));
+    fireEvent.click(await screen.findByTestId('chat-composer-skill-option-create-rule'));
+
+    textbox.setSelectionRange(textbox.value.length, textbox.value.length);
+    fireEvent.click(screen.getByTitle('Choose skill'));
+    fireEvent.click(await screen.findByTestId('chat-composer-skill-option-create-rule'));
+
+    expect(textbox).toHaveValue('/create-rule  /create-rule  ');
+    expect(screen.getAllByTestId('chat-composer-skill-token')).toHaveLength(2);
   });
 });

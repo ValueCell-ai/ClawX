@@ -259,7 +259,7 @@ export function ProvidersSettings() {
       ) : displayProviders.length === 0 ? (
         <div data-testid="providers-empty-state" className="flex flex-col items-center justify-center py-20 text-muted-foreground bg-black/5 dark:bg-white/5 rounded-3xl border border-transparent border-dashed">
           <Key className="h-12 w-12 mb-4 opacity-50" />
-          <h3 className="text-[15px] font-medium mb-1 text-foreground">{t('aiProviders.empty.title')}</h3>
+          <h3 className="text-sm font-medium mb-1 text-foreground">{t('aiProviders.empty.title')}</h3>
           <p className="text-[13px] text-center mb-6 max-w-sm">
             {t('aiProviders.empty.desc')}
           </p>
@@ -526,7 +526,7 @@ function ProviderCard({
           </div>
           <div>
             <div className="flex items-center gap-2">
-              <span className="font-semibold text-[15px]">{account.label}</span>
+              <span className="font-semibold text-sm">{account.label}</span>
               {isDefault && (
                 <span className="flex items-center gap-1 font-mono text-[10px] font-medium px-2 py-0.5 rounded-full bg-black/[0.04] dark:bg-white/[0.08] border-0 shadow-none text-foreground/70">
                   <Check className="h-3 w-3" />
@@ -1219,7 +1219,7 @@ function AddProviderDialog({
       <Card className="w-full max-w-2xl max-h-[90vh] flex flex-col rounded-3xl border-0 shadow-2xl bg-[#f3f1e9] dark:bg-card overflow-hidden">
         <CardHeader className="relative pb-2 shrink-0">
           <CardTitle className="text-2xl font-serif font-normal">{t('aiProviders.dialog.title')}</CardTitle>
-          <CardDescription className="text-[15px] mt-1 text-foreground/70">
+          <CardDescription className="text-sm mt-1 text-foreground/70">
             {t('aiProviders.dialog.desc')}
           </CardDescription>
           <Button
@@ -1272,7 +1272,7 @@ function AddProviderDialog({
                   )}
                 </div>
                 <div>
-                  <p className="font-semibold text-[15px]">{typeInfo?.id === 'custom' ? t('aiProviders.custom') : typeInfo?.name}</p>
+                  <p className="font-semibold text-sm">{typeInfo?.id === 'custom' ? t('aiProviders.custom') : typeInfo?.name}</p>
                   <button
                   onClick={() => {
                     setSelectedType(null);
@@ -1552,7 +1552,7 @@ function AddProviderDialog({
                           {oauthError ? (
                             <div className="text-red-500 space-y-3">
                               <XCircle className="h-10 w-10 mx-auto" />
-                              <p className="font-semibold text-[15px]">{t('aiProviders.oauth.authFailed')}</p>
+                              <p className="font-semibold text-sm">{t('aiProviders.oauth.authFailed')}</p>
                               <p className="text-[13px] opacity-80">{oauthError}</p>
                               <Button variant="outline" size="sm" onClick={handleCancelOAuth} className="mt-2 rounded-full px-6 h-9">
                                 Try Again

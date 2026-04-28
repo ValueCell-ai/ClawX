@@ -437,7 +437,7 @@ function AddAgentDialog({
           <CardTitle className="text-2xl font-serif font-normal tracking-tight">
             {t('createDialog.title')}
           </CardTitle>
-          <CardDescription className="text-[15px] mt-1 text-foreground/70">
+          <CardDescription className="text-sm mt-1 text-foreground/70">
             {t('createDialog.description')}
           </CardDescription>
         </CardHeader>
@@ -557,7 +557,7 @@ function AgentSettingsModal({
             <CardTitle className="text-2xl font-serif font-normal tracking-tight">
               {t('settingsDialog.title', { name: agent.name })}
             </CardTitle>
-            <CardDescription className="text-[15px] mt-1 text-foreground/70">
+            <CardDescription className="text-sm mt-1 text-foreground/70">
               {t('settingsDialog.description')}
             </CardDescription>
           </div>
@@ -648,7 +648,7 @@ function AgentSettingsModal({
                         <ChannelLogo type={channel.channelType} />
                       </div>
                       <div className="min-w-0">
-                        <p className="text-[15px] font-semibold text-foreground">{channel.name}</p>
+                        <p className="text-sm font-semibold text-foreground">{channel.name}</p>
                         <p className="text-[13.5px] text-muted-foreground">
                           {CHANNEL_NAMES[channel.channelType]} · {channel.accountId === 'default' ? t('settingsDialog.mainAccount') : channel.accountId}
                         </p>
@@ -832,7 +832,7 @@ function AgentModelModal({
             <CardTitle className="text-2xl font-serif font-normal tracking-tight">
               {t('settingsDialog.modelLabel')}
             </CardTitle>
-            <CardDescription className="text-[15px] mt-1 text-foreground/70">
+            <CardDescription className="text-sm mt-1 text-foreground/70">
               {t('settingsDialog.modelOverrideDescription', { defaultModel: defaultModelRef || '-' })}
             </CardDescription>
           </div>

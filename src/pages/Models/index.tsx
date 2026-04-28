@@ -400,7 +400,7 @@ export function Models() {
                       >
                         <div className="flex items-start justify-between gap-3">
                           <div className="min-w-0">
-                            <p className="font-semibold text-[15px] text-foreground truncate">
+                            <p className="font-semibold text-sm text-foreground truncate">
                               {entry.model || t('dashboard:recentTokenHistory.unknownModel')}
                             </p>
                             <p className="text-[13px] text-muted-foreground truncate mt-0.5">
@@ -515,9 +515,9 @@ function formatTokenCount(value: number): string {
 }
 
 function getUsageTotalClass(entry: UsageHistoryEntry): string {
-  if (entry.usageStatus === 'error') return 'font-bold text-[15px] text-red-500 dark:text-red-400';
-  if (entry.usageStatus === 'missing') return 'font-bold text-[15px] text-muted-foreground';
-  return 'font-bold text-[15px]';
+  if (entry.usageStatus === 'error') return 'font-bold text-sm text-red-500 dark:text-red-400';
+  if (entry.usageStatus === 'missing') return 'font-bold text-sm text-muted-foreground';
+  return 'font-bold text-sm';
 }
 
 function formatUsageTotal(entry: UsageHistoryEntry): string {

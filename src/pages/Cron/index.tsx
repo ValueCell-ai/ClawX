@@ -427,7 +427,7 @@ function TaskDialog({ job, configuredChannels, onClose, onSave }: TaskDialogProp
         <CardHeader className="flex flex-row items-start justify-between pb-2 shrink-0">
           <div>
             <CardTitle className="text-2xl font-serif font-normal">{job ? t('dialog.editTitle') : t('dialog.createTitle')}</CardTitle>
-            <CardDescription className="text-[15px] mt-1 text-foreground/70">{t('dialog.description')}</CardDescription>
+            <CardDescription className="text-sm mt-1 text-foreground/70">{t('dialog.description')}</CardDescription>
           </div>
           <Button variant="ghost" size="icon" onClick={onClose} className="rounded-full h-8 w-8 -mr-2 -mt-2 text-muted-foreground hover:text-foreground hover:bg-black/5 dark:hover:bg-white/5">
             <X className="h-4 w-4" />

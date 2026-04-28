@@ -773,7 +773,7 @@ export function Skills() {
                     </div>
                     <div className="flex flex-col overflow-hidden">
                       <div className="flex items-center gap-2 mb-1">
-                        <h3 className="text-[15px] font-semibold text-foreground truncate">{skill.name}</h3>
+                        <h3 className="text-sm font-semibold text-foreground truncate">{skill.name}</h3>
                         {skill.isCore ? (
                           <Lock className="h-3 w-3 text-muted-foreground" />
                         ) : skill.isBundled ? (
@@ -891,7 +891,7 @@ export function Skills() {
                         </div>
                         <div className="flex flex-col overflow-hidden">
                           <div className="flex items-center gap-2 mb-1">
-                            <h3 className="text-[15px] font-semibold text-foreground truncate">{skill.name}</h3>
+                            <h3 className="text-sm font-semibold text-foreground truncate">{skill.name}</h3>
                             {skill.author && (
                               <span className="text-xs text-muted-foreground">• {skill.author}</span>
                             )}

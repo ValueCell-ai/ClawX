@@ -497,7 +497,7 @@ export function Settings() {
             </h2>
             <div className="space-y-6">
               <div className="space-y-3">
-                <Label className="text-[15px] font-medium text-foreground/80">{t('appearance.theme')}</Label>
+                <Label className="text-sm font-medium text-foreground/80">{t('appearance.theme')}</Label>
                 <div className="flex flex-wrap gap-2">
                   <Button
                     variant={theme === 'light' ? 'secondary' : 'outline'}
@@ -526,7 +526,7 @@ export function Settings() {
                 </div>
               </div>
               <div className="space-y-3">
-                <Label className="text-[15px] font-medium text-foreground/80">{t('appearance.language')}</Label>
+                <Label className="text-sm font-medium text-foreground/80">{t('appearance.language')}</Label>
                 <div className="flex flex-wrap gap-2">
                   {SUPPORTED_LANGUAGES.map((lang) => (
                     <Button
@@ -542,7 +542,7 @@ export function Settings() {
               </div>
               <div className="flex items-center justify-between">
                 <div>
-                  <Label className="text-[15px] font-medium text-foreground/80">{t('appearance.launchAtStartup')}</Label>
+                  <Label className="text-sm font-medium text-foreground/80">{t('appearance.launchAtStartup')}</Label>
                   <p className="text-[13px] text-muted-foreground mt-1">
                     {t('appearance.launchAtStartupDesc')}
                   </p>
@@ -565,7 +565,7 @@ export function Settings() {
             <div className="space-y-6">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                 <div>
-                  <Label className="text-[15px] font-medium text-foreground">{t('gateway.status')}</Label>
+                  <Label className="text-sm font-medium text-foreground">{t('gateway.status')}</Label>
                   <p className="text-[13px] text-muted-foreground mt-1">
                     {t('gateway.port')}: {gatewayStatus.port}
                   </p>
@@ -616,7 +616,7 @@ export function Settings() {
 
               <div className="flex items-center justify-between">
                 <div>
-                  <Label className="text-[15px] font-medium text-foreground">{t('gateway.autoStart')}</Label>
+                  <Label className="text-sm font-medium text-foreground">{t('gateway.autoStart')}</Label>
                   <p className="text-[13px] text-muted-foreground mt-1">
                     {t('gateway.autoStartDesc')}
                   </p>
@@ -630,7 +630,7 @@ export function Settings() {
 
               <div className="flex items-center justify-between">
                 <div>
-                  <Label className="text-[15px] font-medium text-foreground">{t('advanced.devMode')}</Label>
+                  <Label className="text-sm font-medium text-foreground">{t('advanced.devMode')}</Label>
                   <p className="text-[13px] text-muted-foreground mt-1">
                     {t('advanced.devModeDesc')}
                   </p>
@@ -644,7 +644,7 @@ export function Settings() {
 
               <div className="flex items-center justify-between">
                 <div>
-                  <Label className="text-[15px] font-medium text-foreground">{t('advanced.telemetry')}</Label>
+                  <Label className="text-sm font-medium text-foreground">{t('advanced.telemetry')}</Label>
                   <p className="text-[13px] text-muted-foreground mt-1">
                     {t('advanced.telemetryDesc')}
                   </p>
@@ -815,7 +815,7 @@ export function Settings() {
 
                   {showCliTools && (
                     <div className="space-y-3">
-                      <Label className="text-[15px] font-medium text-foreground">{t('developer.cli')}</Label>
+                      <Label className="text-sm font-medium text-foreground">{t('developer.cli')}</Label>
                       <p className="text-[13px] text-muted-foreground">
                         {t('developer.cliDesc')}
                       </p>
@@ -1045,7 +1045,7 @@ export function Settings() {
 
               <div className="flex items-center justify-between">
                 <div>
-                  <Label className="text-[15px] font-medium text-foreground">{t('updates.autoCheck')}</Label>
+                  <Label className="text-sm font-medium text-foreground">{t('updates.autoCheck')}</Label>
                   <p className="text-[13px] text-muted-foreground mt-1">
                     {t('updates.autoCheckDesc')}
                   </p>
@@ -1058,7 +1058,7 @@ export function Settings() {
 
               <div className="flex items-center justify-between">
                 <div>
-                  <Label className="text-[15px] font-medium text-foreground">{t('updates.autoDownload')}</Label>
+                  <Label className="text-sm font-medium text-foreground">{t('updates.autoDownload')}</Label>
                   <p className="text-[13px] text-muted-foreground mt-1">
                     {t('updates.autoDownloadDesc')}
                   </p>
