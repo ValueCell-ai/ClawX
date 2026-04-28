@@ -4,8 +4,10 @@ import {
 } from '../../shared/providers/registry';
 import type {
   ProviderAccount,
+  ProviderAuthMode,
   ProviderConfig,
   ProviderDefinition,
+  ProviderProfile,
   ProviderType,
 } from '../../shared/providers/types';
 import { BUILTIN_PROVIDER_TYPES } from '../../shared/providers/types';
@@ -32,6 +34,13 @@ import { getActiveOpenClawProviders, getOpenClawProvidersConfig } from '../../ut
 import { getAliasSourceTypes, getOpenClawProviderKeyForType } from '../../utils/provider-keys';
 import type { ProviderWithKeyInfo } from '../../shared/providers/types';
 import { logger } from '../../utils/logger';
+import {
+  listProfilesForProvider,
+  removeProfileById,
+  reorderProviderProfiles,
+  saveOAuthTokenToOpenClaw,
+  saveProviderKeyToOpenClaw,
+} from '../../utils/openclaw-auth';
 
 function maskApiKey(apiKey: string | null): string | null {
   if (!apiKey) return null;
@@ -68,6 +77,19 @@ function inferProviderVendorIdFromOpenClawEntry(
 }
 
 export class ProviderService {
+  private static slugifyProfileLabel(label: string): string {
+    return label.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '') || 'profile';
+  }
+
+  private static profileLabelFromId(profileId: string): string {
+    const maybeLabel = profileId.split(':').slice(1).join(':') || 'default';
+    return maybeLabel
+      .split('-')
+      .filter(Boolean)
+      .map((chunk) => chunk.charAt(0).toUpperCase() + chunk.slice(1))
+      .join(' ');
+  }
+
   async listVendors(): Promise<ProviderDefinition[]> {
     return PROVIDER_DEFINITIONS;
   }
@@ -394,6 +416,93 @@ export class ProviderService {
 
   getVendorDefinition(vendorId: string): ProviderDefinition | undefined {
     return getProviderDefinition(vendorId);
+  }
+
+  async listProfilesForAccount(accountId: string): Promise<ProviderProfile[]> {
+    const account = await this.getAccount(accountId);
+    if (!account || account.authMode === 'local') {
+      return [];
+    }
+    const profiles = await listProfilesForProvider(account.id);
+    return profiles.map((entry, index) => ({
+      id: entry.id,
+      label: ProviderService.profileLabelFromId(entry.id),
+      authMode: account.authMode,
+      hasCredential: entry.profile.type === 'api_key' ? Boolean(entry.profile.key) : Boolean(entry.profile.access),
+      isDefault: index === 0,
+      order: index,
+    }));
+  }
+
+  async addProfileToAccount(
+    accountId: string,
+    profileLabel: string,
+    apiKey: string | undefined,
+    authMode: ProviderAuthMode = 'api_key',
+    oauthToken?: { access: string; refresh: string; expires: number; email?: string; projectId?: string },
+  ): Promise<ProviderProfile> {
+    const account = await this.getAccount(accountId);
+    if (!account) {
+      throw new Error('Provider account not found');
+    }
+    const effectiveAuthMode = authMode || account.authMode;
+    if (effectiveAuthMode === 'local') {
+      throw new Error('Local providers do not support fallback profiles');
+    }
+    const slug = ProviderService.slugifyProfileLabel(profileLabel);
+    let profileId = `${account.id}:${slug}`;
+    if (effectiveAuthMode === 'api_key') {
+      const trimmedApiKey = apiKey?.trim();
+      if (!trimmedApiKey) {
+        throw new Error('API key is required for api_key profiles');
+      }
+      await saveProviderKeyToOpenClaw(account.id, trimmedApiKey, profileId, true);
+    } else if (effectiveAuthMode === 'oauth_device' || effectiveAuthMode === 'oauth_browser') {
+      if (!oauthToken?.access || !oauthToken.refresh || !oauthToken.expires) {
+        throw new Error('OAuth token is required for oauth profiles');
+      }
+      let appendToOrder = true;
+      if (oauthToken.email) {
+        const existingProfiles = await listProfilesForProvider(account.id);
+        const matchedByEmail = existingProfiles.find(
+          (entry) => entry.profile.type === 'oauth' && entry.profile.email === oauthToken.email,
+        );
+        if (matchedByEmail) {
+          profileId = matchedByEmail.id;
+          appendToOrder = false;
+        }
+      }
+      await saveOAuthTokenToOpenClaw(account.id, oauthToken, profileId, appendToOrder);
+    }
+    const profiles = await this.listProfilesForAccount(accountId);
+    return profiles.find((profile) => profile.id === profileId) ?? {
+      id: profileId,
+      label: ProviderService.profileLabelFromId(profileId),
+      authMode: effectiveAuthMode,
+      hasCredential: true,
+      isDefault: false,
+      order: profiles.length,
+    };
+  }
+
+  async removeProfileFromAccount(accountId: string, profileId: string): Promise<void> {
+    const account = await this.getAccount(accountId);
+    if (!account) throw new Error('Provider account not found');
+    await removeProfileById(account.id, profileId);
+  }
+
+  async setProfileFallbackOrder(accountId: string, orderedProfileIds: string[]): Promise<void> {
+    const account = await this.getAccount(accountId);
+    if (!account) throw new Error('Provider account not found');
+    await reorderProviderProfiles(account.id, orderedProfileIds);
+  }
+
+  async setPrimaryProfile(accountId: string, profileId: string): Promise<void> {
+    const account = await this.getAccount(accountId);
+    if (!account) throw new Error('Provider account not found');
+    const profiles = await listProfilesForProvider(account.id);
+    const reordered = [profileId, ...profiles.map((entry) => entry.id).filter((id) => id !== profileId)];
+    await reorderProviderProfiles(account.id, reordered);
   }
 }
 

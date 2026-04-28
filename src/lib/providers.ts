@@ -130,6 +130,16 @@ export interface ProviderAccount {
   updatedAt: string;
 }
 
+export interface ProviderProfile {
+  id: string;
+  label: string;
+  authMode: ProviderAuthMode;
+  hasCredential: boolean;
+  isDefault: boolean;
+  order: number;
+}
+
+
 import { providerIcons } from '@/assets/providers';
 
 /** All supported provider types with UI metadata */

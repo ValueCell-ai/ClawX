@@ -133,6 +133,81 @@ describe('saveProviderKeyToOpenClaw', () => {
   });
 });
 
+describe('saveOAuthTokenToOpenClaw', () => {
+  beforeEach(async () => {
+    vi.resetModules();
+    vi.restoreAllMocks();
+    await rm(testHome, { recursive: true, force: true });
+    await rm(testUserData, { recursive: true, force: true });
+  });
+
+  it('supports writing multiple oauth profiles and preserving fallback order', async () => {
+    const { saveOAuthTokenToOpenClaw, listProfilesForProvider } = await import('@electron/utils/openclaw-auth');
+
+    await saveOAuthTokenToOpenClaw('openai-codex', {
+      access: 'acc-primary',
+      refresh: 'ref-primary',
+      expires: 1000,
+    }, 'openai-codex:default', false, 'main');
+
+    await saveOAuthTokenToOpenClaw('openai-codex', {
+      access: 'acc-backup',
+      refresh: 'ref-backup',
+      expires: 2000,
+    }, 'openai-codex:work', true, 'main');
+
+    const profiles = await listProfilesForProvider('openai-codex', 'main');
+    expect(profiles.map((profile) => profile.id)).toEqual(['openai-codex:default', 'openai-codex:work']);
+    expect((profiles[1].profile as { access: string }).access).toBe('acc-backup');
+  });
+
+  it('updates existing oauth profile without changing its position in order', async () => {
+    const { saveOAuthTokenToOpenClaw } = await import('@electron/utils/openclaw-auth');
+
+    await writeAgentAuthProfiles('main', {
+      version: 2,
+      profiles: {
+        'openai-codex:default': {
+          type: 'oauth',
+          provider: 'openai-codex',
+          access: 'acc-default',
+          refresh: 'ref-default',
+          expires: 100,
+          email: 'primary@example.com',
+        },
+        'openai-codex:work': {
+          type: 'oauth',
+          provider: 'openai-codex',
+          access: 'acc-work-old',
+          refresh: 'ref-work-old',
+          expires: 200,
+          email: 'work@example.com',
+        },
+      },
+      order: {
+        'openai-codex': ['openai-codex:default', 'openai-codex:work'],
+      },
+      lastGood: {
+        'openai-codex': 'openai-codex:default',
+      },
+    });
+
+    await saveOAuthTokenToOpenClaw('openai-codex', {
+      access: 'acc-work-new',
+      refresh: 'ref-work-new',
+      expires: 300,
+      email: 'work@example.com',
+    }, 'openai-codex:work', false, 'main');
+
+    const updated = await readAuthProfiles('main');
+    expect((updated.order as Record<string, string[]>)['openai-codex']).toEqual([
+      'openai-codex:default',
+      'openai-codex:work',
+    ]);
+    expect(((updated.profiles as Record<string, { access: string }>)['openai-codex:work']).access).toBe('acc-work-new');
+  });
+});
+
 describe('removeProviderKeyFromOpenClaw', () => {
   beforeEach(async () => {
     vi.resetModules();
@@ -312,6 +387,46 @@ describe('removeProviderKeyFromOpenClaw', () => {
       'minimax-portal': ['minimax-portal:oauth-backup'],
     });
     expect(mainProfiles.lastGood).toEqual({});
+  });
+});
+
+describe('multi-profile auth store helpers', () => {
+  beforeEach(async () => {
+    vi.resetModules();
+    vi.restoreAllMocks();
+    await rm(testHome, { recursive: true, force: true });
+    await rm(testUserData, { recursive: true, force: true });
+  });
+
+  it('adds, lists, reorders, and deletes provider profiles', async () => {
+    const {
+      addProfileToProvider,
+      listProfilesForProvider,
+      removeProfileById,
+      reorderProviderProfiles,
+    } = await import('@electron/utils/openclaw-auth');
+
+    await addProfileToProvider('openai', 'openai:default', {
+      type: 'api_key',
+      provider: 'openai',
+      key: 'sk-primary',
+    }, 'main');
+    await addProfileToProvider('openai', 'openai:backup', {
+      type: 'api_key',
+      provider: 'openai',
+      key: 'sk-backup',
+    }, 'main');
+
+    const initial = await listProfilesForProvider('openai', 'main');
+    expect(initial.map((profile) => profile.id)).toEqual(['openai:default', 'openai:backup']);
+
+    await reorderProviderProfiles('openai', ['openai:backup', 'openai:default'], 'main');
+    const reordered = await listProfilesForProvider('openai', 'main');
+    expect(reordered.map((profile) => profile.id)).toEqual(['openai:backup', 'openai:default']);
+
+    await removeProfileById('openai', 'openai:backup', 'main');
+    const afterDelete = await listProfilesForProvider('openai', 'main');
+    expect(afterDelete.map((profile) => profile.id)).toEqual(['openai:default']);
   });
 });
 
