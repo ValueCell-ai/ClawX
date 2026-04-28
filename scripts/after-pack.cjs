@@ -19,8 +19,10 @@
  *      @mariozechner/clipboard).
  */
 
-const { cpSync, existsSync, readdirSync, rmSync, statSync, mkdirSync, realpathSync } = require('fs');
+const { cpSync, existsSync, readdirSync, rmSync, statSync, mkdirSync, realpathSync, readFileSync } = require('fs');
 const { join, dirname, basename, relative } = require('path');
+
+const RUNTIME_DEPS_MANIFEST = 'clawx-runtime-deps.json';
 
 // On Windows, paths in pnpm's virtual store can exceed the default MAX_PATH
 // limit (260 chars). Node.js 18.17+ respects the system LongPathsEnabled
@@ -538,6 +540,37 @@ function bundlePlugin(nodeModulesRoot, npmName, destDir) {
   return true;
 }
 
+function validateRuntimeDepsManifest(openclawRoot) {
+  const manifestPath = join(openclawRoot, RUNTIME_DEPS_MANIFEST);
+  if (!existsSync(normWin(manifestPath))) {
+    throw new Error(`[after-pack] Missing ${RUNTIME_DEPS_MANIFEST} in packaged OpenClaw resources`);
+  }
+
+  const manifest = JSON.parse(readFileSync(normWin(manifestPath), 'utf8'));
+  const plugins = manifest && typeof manifest === 'object' ? manifest.plugins : null;
+  if (!plugins || typeof plugins !== 'object' || Array.isArray(plugins)) {
+    throw new Error(`[after-pack] Invalid ${RUNTIME_DEPS_MANIFEST}: missing plugins object`);
+  }
+
+  const missing = [];
+  for (const [pluginId, deps] of Object.entries(plugins)) {
+    if (!Array.isArray(deps)) continue;
+    for (const dep of deps) {
+      if (!dep || typeof dep.name !== 'string') continue;
+      const depPackageJson = join(openclawRoot, 'node_modules', ...dep.name.split('/'), 'package.json');
+      if (!existsSync(normWin(depPackageJson))) {
+        missing.push(`${pluginId}:${dep.name}`);
+      }
+    }
+  }
+
+  if (missing.length > 0) {
+    throw new Error(`[after-pack] Missing packaged OpenClaw runtime deps: ${missing.join(', ')}`);
+  }
+
+  console.log(`[after-pack] ✅ Verified ${RUNTIME_DEPS_MANIFEST}.`);
+}
+
 // ── Main hook ────────────────────────────────────────────────────────────────
 
 exports.default = async function afterPack(context) {
@@ -575,6 +608,7 @@ exports.default = async function afterPack(context) {
   console.log(`[after-pack] Copying ${depCount} openclaw dependencies to ${dest} ...`);
   cpSync(src, dest, { recursive: true });
   console.log('[after-pack] ✅ openclaw node_modules copied.');
+  validateRuntimeDepsManifest(openclawRoot);
 
   // Patch broken modules whose CJS transpiled output sets module.exports = undefined,
   // causing TypeError in Node.js 22+ ESM interop.

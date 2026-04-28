@@ -23,6 +23,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '..');
 const OUTPUT = path.join(ROOT, 'build', 'openclaw');
 const NODE_MODULES = path.join(ROOT, 'node_modules');
+const RUNTIME_DEPS_MANIFEST = 'clawx-runtime-deps.json';
 
 // On Windows, pnpm virtual store paths can exceed MAX_PATH (260 chars).
 function normWin(p) {
@@ -235,20 +236,79 @@ function readJsonFile(filePath) {
   }
 }
 
-function collectBundledExtensionRuntimePackages(extensionsRoot) {
-  const packages = [];
+function collectBundledExtensionRuntimeDeps(extensionsRoot) {
+  const depsByPlugin = {};
   for (const pluginId of BUNDLED_EXTENSION_RUNTIME_DEP_PLUGIN_IDS) {
     const packageJson = readJsonFile(path.join(extensionsRoot, pluginId, 'package.json'));
-    if (!packageJson || typeof packageJson !== 'object') continue;
+    if (!packageJson || typeof packageJson !== 'object') {
+      echo`❌ Bundled extension package.json not found for ${pluginId}`;
+      process.exit(1);
+    }
+    const depsByName = {};
     for (const deps of [packageJson.dependencies, packageJson.optionalDependencies]) {
       if (!deps || typeof deps !== 'object' || Array.isArray(deps)) continue;
-      packages.push(...Object.keys(deps));
+      for (const [name, version] of Object.entries(deps)) {
+        depsByName[name] = String(version);
+      }
     }
+    depsByPlugin[pluginId] = Object.entries(depsByName)
+      .map(([name, version]) => ({ name, version }))
+      .sort((left, right) => left.name.localeCompare(right.name));
   }
-  return [...new Set(packages)].sort((a, b) => a.localeCompare(b));
+  return depsByPlugin;
 }
 
-const bundledExtensionRuntimePackages = collectBundledExtensionRuntimePackages(extensionsDir);
+function flattenRuntimeDeps(depsByPlugin) {
+  return [...new Set(Object.values(depsByPlugin).flat().map(dep => dep.name))]
+    .sort((a, b) => a.localeCompare(b));
+}
+
+function readBundledPackageVersion(nodeModulesDir, pkgName) {
+  const packageJson = readJsonFile(path.join(nodeModulesDir, ...pkgName.split('/'), 'package.json'));
+  return typeof packageJson?.version === 'string' ? packageJson.version : null;
+}
+
+function writeRuntimeDepsManifest(outputDir, depsByPlugin) {
+  const nodeModulesDir = path.join(outputDir, 'node_modules');
+  const manifest = {
+    generatedBy: 'scripts/bundle-openclaw.mjs',
+    packageRoot: '.',
+    nodeModulesRoot: 'node_modules',
+    plugins: {},
+  };
+  const missing = [];
+
+  for (const [pluginId, deps] of Object.entries(depsByPlugin)) {
+    manifest.plugins[pluginId] = deps.map((dep) => {
+      const installedVersion = readBundledPackageVersion(nodeModulesDir, dep.name);
+      const present = Boolean(installedVersion);
+      if (!present) {
+        missing.push(`${pluginId}:${dep.name}@${dep.version}`);
+      }
+      return {
+        name: dep.name,
+        version: dep.version,
+        installedVersion,
+        present,
+      };
+    });
+  }
+
+  if (missing.length > 0) {
+    echo`❌ Missing bundled extension runtime deps: ${missing.join(', ')}`;
+    process.exit(1);
+  }
+
+  fs.writeFileSync(
+    path.join(outputDir, RUNTIME_DEPS_MANIFEST),
+    `${JSON.stringify(manifest, null, 2)}\n`,
+    'utf8',
+  );
+  echo`   Wrote ${RUNTIME_DEPS_MANIFEST} for ${Object.keys(manifest.plugins).length} bundled extension(s)`;
+}
+
+const bundledExtensionRuntimeDeps = collectBundledExtensionRuntimeDeps(extensionsDir);
+const bundledExtensionRuntimePackages = flattenRuntimeDeps(bundledExtensionRuntimeDeps);
 for (const pkgName of bundledExtensionRuntimePackages) {
   if (!EXTRA_BUNDLED_PACKAGES.includes(pkgName)) {
     EXTRA_BUNDLED_PACKAGES.push(pkgName);
@@ -409,6 +469,8 @@ if (fs.existsSync(extensionsDir)) {
 if (mergedExtCount > 0) {
   echo`   Merged ${mergedExtCount} extension packages into top-level node_modules`;
 }
+
+writeRuntimeDepsManifest(OUTPUT, bundledExtensionRuntimeDeps);
 
 // 6. Clean up the bundle to reduce package size
 //
@@ -765,6 +827,7 @@ function patchBundledRuntime(outputDir) {
   const replacePatches = [
     {
       label: 'packaged bundled runtime deps lookup',
+      required: true,
       target: () => findFirstFileByName(path.join(outputDir, 'dist'), /^bundled-runtime-deps-.*\.js$/),
       search: `\t\tconst missingSpecs = deps.filter((dep) => !hasDependencySentinel([installRoot], dep)).map((dep) => \`\${dep.name}@\${dep.version}\`).toSorted((left, right) => left.localeCompare(right));`,
       replace: `\t\tconst packageRoot = resolveBundledPluginPackageRoot(params.pluginRoot);
@@ -772,10 +835,59 @@ function patchBundledRuntime(outputDir) {
 \t\tconst missingSpecs = deps.filter((dep) => !hasDependencySentinel(dependencySearchRoots, dep)).map((dep) => \`\${dep.name}@\${dep.version}\`).toSorted((left, right) => left.localeCompare(right));`,
     },
     {
+      label: 'packaged bundled runtime deps lock bypass',
+      required: true,
+      target: () => findFirstFileByName(path.join(outputDir, 'dist'), /^bundled-runtime-deps-.*\.js$/),
+      search: `\tconst installRoot = resolveBundledRuntimeDependencyInstallRoot(params.pluginRoot, { env: params.env });
+\treturn withBundledRuntimeDepsInstallRootLock(installRoot, () => {`,
+      replace: `\tconst packageRoot = resolveBundledPluginPackageRoot(params.pluginRoot);
+\tconst clawxRuntimeDepsManifest = packageRoot ? readJsonObject(path.join(packageRoot, "${RUNTIME_DEPS_MANIFEST}")) : null;
+\tconst clawxRuntimeDeps = clawxRuntimeDepsManifest && typeof clawxRuntimeDepsManifest === "object" && clawxRuntimeDepsManifest.plugins && typeof clawxRuntimeDepsManifest.plugins === "object" ? clawxRuntimeDepsManifest.plugins[params.pluginId] : null;
+\tif (packageRoot && Array.isArray(clawxRuntimeDeps) && deps.every((dep) => clawxRuntimeDeps.some((entry) => entry && entry.name === dep.name && entry.present !== false) && fs.existsSync(path.join(packageRoot, "node_modules", ...dep.name.split("/"), "package.json")))) return {
+\t\tinstalledSpecs: [],
+\t\tretainSpecs: []
+\t};
+\tconst installRoot = resolveBundledRuntimeDependencyInstallRoot(params.pluginRoot, { env: params.env });
+\treturn withBundledRuntimeDepsInstallRootLock(installRoot, () => {`,
+    },
+    {
       label: 'packaged scan bundled runtime deps lookup',
+      required: true,
       target: () => findFirstFileByName(path.join(outputDir, 'dist'), /^bundled-runtime-deps-.*\.js$/),
       search: `\tconst packageSearchRoots = [resolveBundledRuntimeDependencyPackageInstallRoot(params.packageRoot, { env: params.env })];`,
       replace: `\tconst packageSearchRoots = [resolveBundledRuntimeDependencyPackageInstallRoot(params.packageRoot, { env: params.env }), params.packageRoot];`,
+    },
+    {
+      label: 'packaged bundled runtime root mirror bypass',
+      required: true,
+      target: () => findFirstFileByName(path.join(outputDir, 'dist'), /^bundled-runtime-root-.*\.js$/),
+      search: `\tconst env = params.env ?? process.env;
+\tconst installRoot = resolveBundledRuntimeDependencyInstallRoot(params.pluginRoot, { env });`,
+      replace: `\tconst env = params.env ?? process.env;
+\tconst packageRoot = resolveBundledRuntimeDependencyPackageRoot(params.pluginRoot);
+\tif (packageRoot) {
+\t\tlet clawxRuntimeDeps = null;
+\t\ttry {
+\t\t\tconst clawxRuntimeDepsManifest = JSON.parse(fs.readFileSync(path.join(packageRoot, "${RUNTIME_DEPS_MANIFEST}"), "utf8"));
+\t\t\tclawxRuntimeDeps = clawxRuntimeDepsManifest && typeof clawxRuntimeDepsManifest === "object" && clawxRuntimeDepsManifest.plugins && typeof clawxRuntimeDepsManifest.plugins === "object" ? clawxRuntimeDepsManifest.plugins[params.pluginId] : null;
+\t\t} catch {}
+\t\tif (Array.isArray(clawxRuntimeDeps) && clawxRuntimeDeps.every((entry) => entry && typeof entry.name === "string" && entry.present !== false && fs.existsSync(path.join(packageRoot, "node_modules", ...entry.name.split("/"), "package.json")))) {
+\t\t\tregisterBundledRuntimeDependencyNodePath(packageRoot);
+\t\t\treturn {
+\t\t\t\tpluginRoot: params.pluginRoot,
+\t\t\t\tmodulePath: params.modulePath
+\t\t\t};
+\t\t}
+\t}
+\tconst installRoot = resolveBundledRuntimeDependencyInstallRoot(params.pluginRoot, { env });`,
+    },
+    {
+      label: 'packaged bundled runtime root package reuse',
+      required: true,
+      target: () => findFirstFileByName(path.join(outputDir, 'dist'), /^bundled-runtime-root-.*\.js$/),
+      search: `\tconst packageRoot = resolveBundledRuntimeDependencyPackageRoot(params.pluginRoot);
+\tif (packageRoot) registerBundledRuntimeDependencyNodePath(packageRoot);`,
+      replace: `\tif (packageRoot) registerBundledRuntimeDependencyNodePath(packageRoot);`,
     },
     {
       label: 'workspace command runner',
@@ -811,12 +923,20 @@ function patchBundledRuntime(outputDir) {
   for (const patch of replacePatches) {
     const target = patch.target();
     if (!target || !fs.existsSync(target)) {
+      if (patch.required) {
+        echo`❌ Required patch failed for ${patch.label}: target file not found`;
+        process.exit(1);
+      }
       echo`   ⚠️  Skipped patch for ${patch.label}: target file not found`;
       continue;
     }
 
     const current = fs.readFileSync(target, 'utf8');
     if (!current.includes(patch.search)) {
+      if (patch.required) {
+        echo`❌ Required patch failed for ${patch.label}: expected source snippet not found`;
+        process.exit(1);
+      }
       echo`   ⚠️  Skipped patch for ${patch.label}: expected source snippet not found`;
       continue;
     }
