@@ -4,15 +4,23 @@ import { ChatInput } from '@/pages/Chat/ChatInput';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { hostApiFetch } from '@/lib/host-api';
 
-const { agentsState, chatState, gatewayState } = vi.hoisted(() => ({
+const { agentsState, chatState, gatewayState, providersState } = vi.hoisted(() => ({
   agentsState: {
     agents: [] as Array<Record<string, unknown>>,
+    defaultModelRef: null as string | null,
+    updateAgentModel: vi.fn(),
   },
   chatState: {
     currentAgentId: 'main',
   },
   gatewayState: {
     status: { state: 'running', port: 18789 },
+  },
+  providersState: {
+    accounts: [] as Array<Record<string, unknown>>,
+    statuses: [] as Array<Record<string, unknown>>,
+    defaultAccountId: null as string | null,
+    refreshProviderSnapshot: vi.fn(),
   },
 }));
 
@@ -26,6 +34,10 @@ vi.mock('@/stores/chat', () => ({
 
 vi.mock('@/stores/gateway', () => ({
   useGatewayStore: (selector: (state: typeof gatewayState) => unknown) => selector(gatewayState),
+}));
+
+vi.mock('@/stores/providers', () => ({
+  useProviderStore: (selector: (state: typeof providersState) => unknown) => selector(providersState),
 }));
 
 vi.mock('@/lib/host-api', () => ({
@@ -94,8 +106,14 @@ function renderChatInput(onSend = vi.fn()) {
 describe('ChatInput agent targeting', () => {
   beforeEach(() => {
     agentsState.agents = [];
+    agentsState.defaultModelRef = null;
+    agentsState.updateAgentModel.mockReset();
     chatState.currentAgentId = 'main';
     gatewayState.status = { state: 'running', port: 18789 };
+    providersState.accounts = [];
+    providersState.statuses = [];
+    providersState.defaultAccountId = null;
+    providersState.refreshProviderSnapshot.mockReset();
     vi.mocked(hostApiFetch).mockReset();
   });
 

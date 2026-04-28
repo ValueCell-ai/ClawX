@@ -83,4 +83,14 @@ describe('model option helpers', () => {
     expect(options[0].modelRef).toBe('custom-gamma901/model-gamma');
     expect(options[0].label).toBe('model-gamma');
   });
+
+  it('treats malformed provider snapshots as empty options', () => {
+    expect(
+      buildConfiguredModelOptions(
+        {} as ProviderAccount[],
+        {} as ProviderWithKeyInfo[],
+        null,
+      ),
+    ).toEqual([]);
+  });
 });

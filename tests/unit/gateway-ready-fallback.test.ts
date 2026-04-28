@@ -21,6 +21,12 @@ vi.mock('@electron/utils/config', () => ({
   PORTS: { OPENCLAW_GATEWAY: 18789 },
 }));
 
+vi.mock('@electron/gateway/startup-orchestrator', () => ({
+  runGatewayStartupSequence: vi.fn(async () => {
+    throw new Error('startup unavailable in unit test');
+  }),
+}));
+
 describe('GatewayManager gatewayReady fallback', () => {
   beforeEach(() => {
     vi.useFakeTimers();
