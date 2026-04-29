@@ -160,6 +160,7 @@ interface ChangesTabProps {
  */
 function ChangesTab({ files, focusedFile, onFocus }: ChangesTabProps) {
   const { t } = useTranslation('chat');
+  const showChangesFileList = useArtifactPanel((s) => s.showChangesFileList);
 
   // De-dup files by path, keep the latest entry (highest lastSeenIndex).
   const uniqueFiles = useMemo(() => {
@@ -192,60 +193,62 @@ function ChangesTab({ files, focusedFile, onFocus }: ChangesTabProps) {
 
   return (
     <div className="flex h-full min-h-0">
-      {/* Left: file list (git-style sidebar). */}
-      <aside className="flex w-[240px] shrink-0 flex-col border-r border-black/5 dark:border-white/10">
-        <div className="shrink-0 px-3 py-2 text-2xs font-semibold uppercase tracking-wide text-muted-foreground">
-          {t('artifactPanel.changes.heading', {
-            count: uniqueFiles.length,
-            defaultValue: '文件变更（{{count}} 个）',
-          })}
-        </div>
-        <ul className="min-h-0 flex-1 space-y-0.5 overflow-y-auto px-2 pb-2">
-          {uniqueFiles.map((file) => {
-            const editCount = file.edits?.length ?? 0;
-            const selected = focusedFile?.filePath === file.filePath;
-            return (
-              <li key={file.filePath}>
-                <button
-                  type="button"
-                  onClick={() => onFocus(generatedFileToTarget(file))}
-                  className={cn(
-                    'group flex w-full items-center gap-2 rounded-md border px-2 py-1.5 text-left transition-colors',
-                    selected
-                      ? 'border-foreground/15 bg-foreground/[0.06]'
-                      : 'border-transparent hover:border-black/10 hover:bg-black/[0.03] dark:hover:border-white/10 dark:hover:bg-white/5',
-                  )}
-                  title={file.filePath}
-                >
-                  <FilePreviewIcon
-                    contentType={file.contentType}
-                    mimeType={file.mimeType}
-                    ext={file.ext}
-                    className="h-3.5 w-3.5 shrink-0 text-muted-foreground"
-                  />
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate text-xs font-medium text-foreground">{file.fileName}</p>
-                    <p className="truncate text-2xs text-muted-foreground">{file.filePath}</p>
-                  </div>
-                  <div className="flex shrink-0 items-center gap-1">
-                    <Badge
-                      variant={file.action === 'created' ? 'default' : 'secondary'}
-                      className="text-2xs px-1 py-0"
-                    >
-                      {file.action === 'created'
-                        ? t('generatedFiles.created', '新增')
-                        : t('generatedFiles.modified', '修改')}
-                    </Badge>
-                    {editCount > 0 && (
-                      <span className="text-2xs font-mono text-muted-foreground">×{editCount}</span>
+      {/* Left: file list — hidden when the user opened Changes from a single file card. */}
+      {showChangesFileList && (
+        <aside className="flex w-[240px] shrink-0 flex-col border-r border-black/5 dark:border-white/10">
+          <div className="shrink-0 px-3 py-2 text-2xs font-semibold uppercase tracking-wide text-muted-foreground">
+            {t('artifactPanel.changes.heading', {
+              count: uniqueFiles.length,
+              defaultValue: '文件变更（{{count}} 个）',
+            })}
+          </div>
+          <ul className="min-h-0 flex-1 space-y-0.5 overflow-y-auto px-2 pb-2">
+            {uniqueFiles.map((file) => {
+              const editCount = file.edits?.length ?? 0;
+              const selected = focusedFile?.filePath === file.filePath;
+              return (
+                <li key={file.filePath}>
+                  <button
+                    type="button"
+                    onClick={() => onFocus(generatedFileToTarget(file))}
+                    className={cn(
+                      'group flex w-full items-center gap-2 rounded-md border px-2 py-1.5 text-left transition-colors',
+                      selected
+                        ? 'border-foreground/15 bg-foreground/[0.06]'
+                        : 'border-transparent hover:border-black/10 hover:bg-black/[0.03] dark:hover:border-white/10 dark:hover:bg-white/5',
                     )}
-                  </div>
-                </button>
-              </li>
-            );
-          })}
-        </ul>
-      </aside>
+                    title={file.filePath}
+                  >
+                    <FilePreviewIcon
+                      contentType={file.contentType}
+                      mimeType={file.mimeType}
+                      ext={file.ext}
+                      className="h-3.5 w-3.5 shrink-0 text-muted-foreground"
+                    />
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-xs font-medium text-foreground">{file.fileName}</p>
+                      <p className="truncate text-2xs text-muted-foreground">{file.filePath}</p>
+                    </div>
+                    <div className="flex shrink-0 items-center gap-1">
+                      <Badge
+                        variant={file.action === 'created' ? 'default' : 'secondary'}
+                        className="text-2xs px-1 py-0"
+                      >
+                        {file.action === 'created'
+                          ? t('generatedFiles.created', '新增')
+                          : t('generatedFiles.modified', '修改')}
+                      </Badge>
+                      {editCount > 0 && (
+                        <span className="text-2xs font-mono text-muted-foreground">×{editCount}</span>
+                      )}
+                    </div>
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+        </aside>
+      )}
 
       {/* Right: diff for the selected file. */}
       <div className="flex min-w-0 flex-1 flex-col">

@@ -46,6 +46,19 @@ export interface GeneratedFile {
   lastSeenIndex: number;
 }
 
+/**
+ * True when the chat extraction captured enough tool payload to render a
+ * diff (Write `fullContent` and/or non-empty Edit ops).  Entries without
+ * this should not appear in generated-file UIs.
+ */
+export function generatedFileHasDiffPayload(file: Pick<GeneratedFile, 'fullContent' | 'edits'>): boolean {
+  if (file.fullContent != null) return true;
+  if (file.edits?.length) {
+    return file.edits.some((op) => (op.old ?? '') !== '' || (op.new ?? '') !== '');
+  }
+  return false;
+}
+
 const WRITE_TOOLS = new Set([
   'Write',
   'write_file',

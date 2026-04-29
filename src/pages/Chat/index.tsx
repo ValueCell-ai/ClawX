@@ -22,7 +22,7 @@ import { useTranslation } from 'react-i18next';
 import { cn } from '@/lib/utils';
 import { useStickToBottomInstant } from '@/hooks/use-stick-to-bottom-instant';
 import { useMinLoading } from '@/hooks/use-min-loading';
-import { extractGeneratedFiles, type GeneratedFile } from '@/lib/generated-files';
+import { extractGeneratedFiles, generatedFileHasDiffPayload, type GeneratedFile } from '@/lib/generated-files';
 import { GeneratedFilesPanel } from '@/components/file-preview/GeneratedFilesPanel';
 import type { FilePreviewTarget } from '@/components/file-preview/types';
 
@@ -551,7 +551,8 @@ export function Chat() {
   const filesByRun = useMemo(() => {
     const map = new Map<number, GeneratedFile[]>();
     for (const card of userRunCards) {
-      map.set(card.triggerIndex, extractGeneratedFiles(messages, card.triggerIndex, card.segmentEnd));
+      const raw = extractGeneratedFiles(messages, card.triggerIndex, card.segmentEnd);
+      map.set(card.triggerIndex, raw.filter(generatedFileHasDiffPayload));
     }
     return map;
   }, [userRunCards, messages]);
