@@ -345,15 +345,15 @@ export async function syncGatewayConfigBeforeLaunch(
     logger.warn('Failed to clean stale built-in extensions:', err);
   }
 
-  // Remove stray symlinks under ~/.openclaw/skills whose realpath escapes
-  // into ~/.agents.  OpenClaw's hardened skill loader rejects these on every
-  // launch (reason=symlink-escape) and the underlying skills are still
-  // discovered via the agents-skills-personal source, so the symlinks are
-  // pure log noise.  Tracked upstream in openclaw/openclaw#59219.
+  // Remove stray symlinks under ~/.openclaw/skills whose realpath resolves
+  // inside ~/.agents/skills.  OpenClaw's hardened skill loader rejects these
+  // on every launch (reason=symlink-escape) and the underlying skills are
+  // still discovered via the agents-skills-personal source, so the symlinks
+  // are pure log noise.  Transitional workaround for openclaw/openclaw#59219.
   try {
     cleanupAgentsSymlinkedSkills();
   } catch (err) {
-    logger.warn('Failed to clean .agents-targeted skill symlinks:', err);
+    logger.warn('Failed to clean .agents/skills-targeted skill symlinks:', err);
   }
 
   // Auto-upgrade installed plugins before Gateway starts so that
