@@ -73,8 +73,10 @@
     "dependencies": {
         "@monaco-editor/react": "^4.7.0",
         "@sinclair/typebox": "^0.34.48",
+        "@types/diff": "^8.0.0",
         "chokidar": "^5.0.0",
         "clawhub": "^0.5.0",
+        "diff": "^9.0.0",
         "electron-store": "^11.0.2",
         "electron-updater": "^6.8.3",
         "katex": "^0.16.45",
@@ -84,6 +86,7 @@
         "node-machine-id": "^1.1.12",
         "posthog-node": "^5.28.0",
         "rehype-katex": "^7.0.1",
+        "remark-frontmatter": "^5.0.0",
         "remark-math": "^6.0.0",
         "tar": "^6.2.1",
         "ws": "^8.19.0"

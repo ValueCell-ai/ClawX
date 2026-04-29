@@ -14,7 +14,7 @@ import { ChevronRight, FolderOpen, RefreshCw, X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
-import { Sheet, SheetContent } from '@/components/ui/sheet';
+import { Sheet, SheetClose, SheetContent } from '@/components/ui/sheet';
 import { Badge } from '@/components/ui/badge';
 import { LoadingSpinner } from '@/components/common/LoadingSpinner';
 import { cn } from '@/lib/utils';
@@ -335,17 +335,26 @@ export function WorkspaceBrowserOverlay({
               <RefreshCw className={cn('h-4 w-4', state.status === 'loading' && 'animate-spin')} />
             </Button>
             <Button
+              type="button"
               variant="ghost"
               size="icon"
               className="h-8 w-8"
               onClick={handleOpenWorkspaceInFinder}
               title={t('workspace.actions.openRootInFinder', '在 Finder 中显示根目录')}
             >
-              <FolderOpen className="h-4 w-4" />
+              <FolderOpen className="h-4 w-4 pointer-events-none" />
             </Button>
-            <Button variant="ghost" size="icon" className="h-8 w-8" onClick={onClose}>
-              <X className="h-4 w-4" />
-            </Button>
+            <SheetClose asChild>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                className="h-8 w-8"
+                aria-label={t('filePreview.actions.close', '关闭')}
+              >
+                <X className="h-4 w-4 pointer-events-none" />
+              </Button>
+            </SheetClose>
           </div>
         </header>
         <div className="grid min-h-0 flex-1 grid-cols-[280px_1fr]">

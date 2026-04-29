@@ -17,6 +17,12 @@ export type FileContentType =
   | 'audio'
   | 'other';
 
+/** A single (old_string -> new_string) replacement extracted from an edit tool. */
+export interface FileEditOp {
+  old: string;
+  new: string;
+}
+
 export interface GeneratedFile {
   filePath: string;
   fileName: string;
@@ -24,10 +30,18 @@ export interface GeneratedFile {
   mimeType: string;
   contentType: FileContentType;
   action: 'created' | 'modified';
-  /** Original content before the edit (set for Edit/MultiEdit/StrReplace). */
-  oldContent?: string;
-  /** New content after the edit (set when known). */
-  newContent?: string;
+  /**
+   * Full new content of the file when known (only set by `Write`-family
+   * tools that provide the whole document in their input).
+   */
+  fullContent?: string;
+  /**
+   * Ordered list of edits applied to this file during the run (Edit /
+   * StrReplace / MultiEdit).  Used by the diff view to reconstruct the
+   * pre-edit content by reverse-applying each op against the current
+   * on-disk content.
+   */
+  edits?: FileEditOp[];
   /** Index of the latest tool call that touched this file (for stable ordering). */
   lastSeenIndex: number;
 }
@@ -170,32 +184,31 @@ function pickWriteContent(input: unknown): string | undefined {
   return undefined;
 }
 
-function pickEditPair(input: unknown): { oldContent?: string; newContent?: string } | null {
+function pickEditOps(input: unknown): FileEditOp[] {
   const rec = asRecord(input);
-  if (!rec) return null;
-  // Single-edit shape: { old_string, new_string }
-  const oldStr = typeof rec.old_string === 'string'
+  if (!rec) return [];
+  const ops: FileEditOp[] = [];
+  // Single-edit shape: { old_string, new_string } (and aliases)
+  const singleOld = typeof rec.old_string === 'string'
     ? rec.old_string
     : typeof rec.oldString === 'string'
       ? rec.oldString
       : typeof rec.find === 'string'
         ? rec.find
         : undefined;
-  const newStr = typeof rec.new_string === 'string'
+  const singleNew = typeof rec.new_string === 'string'
     ? rec.new_string
     : typeof rec.newString === 'string'
       ? rec.newString
       : typeof rec.replace === 'string'
         ? rec.replace
         : undefined;
-  if (oldStr !== undefined || newStr !== undefined) {
-    return { oldContent: oldStr, newContent: newStr };
+  if (singleOld !== undefined || singleNew !== undefined) {
+    ops.push({ old: singleOld ?? '', new: singleNew ?? '' });
   }
   // MultiEdit shape: { edits: [{ old_string, new_string }, ...] }
   const edits = rec.edits;
-  if (Array.isArray(edits) && edits.length > 0) {
-    const olds: string[] = [];
-    const news: string[] = [];
+  if (Array.isArray(edits)) {
     for (const edit of edits as Array<Record<string, unknown>>) {
       const o = typeof edit.old_string === 'string'
         ? edit.old_string
@@ -207,21 +220,16 @@ function pickEditPair(input: unknown): { oldContent?: string; newContent?: strin
         : typeof edit.newString === 'string'
           ? edit.newString
           : '';
-      olds.push(o);
-      news.push(n);
+      if (o !== '' || n !== '') ops.push({ old: o, new: n });
     }
-    return {
-      oldContent: olds.length > 0 ? olds.join('\n--- next edit ---\n') : undefined,
-      newContent: news.length > 0 ? news.join('\n--- next edit ---\n') : undefined,
-    };
   }
-  return null;
+  return ops;
 }
 
 function buildGeneratedFile(
   filePath: string,
   action: 'created' | 'modified',
-  pair: { oldContent?: string; newContent?: string } | undefined,
+  parts: { fullContent?: string; edits?: FileEditOp[] } | undefined,
   index: number,
 ): GeneratedFile {
   const fileName = basenameOf(filePath);
@@ -233,8 +241,8 @@ function buildGeneratedFile(
     mimeType: getMimeTypeForExt(ext),
     contentType: classifyFileExt(ext),
     action,
-    oldContent: pair?.oldContent,
-    newContent: pair?.newContent,
+    fullContent: parts?.fullContent,
+    edits: parts?.edits,
     lastSeenIndex: index,
   };
 }
@@ -278,10 +286,12 @@ export function extractGeneratedFiles(
 
       if (isWrite) {
         const newContent = pickWriteContent(input);
+        // Write replaces the whole document — drop any earlier edits we
+        // accumulated and use the snapshot directly.
         const next = buildGeneratedFile(
           filePath,
-          existing?.action === 'modified' ? 'modified' : 'created',
-          { oldContent: existing?.oldContent, newContent },
+          existing ? 'modified' : 'created',
+          { fullContent: newContent, edits: undefined },
           i,
         );
         map.set(filePath, next);
@@ -289,13 +299,13 @@ export function extractGeneratedFiles(
       }
 
       if (isEdit) {
-        const pair = pickEditPair(input) ?? undefined;
+        const newOps = pickEditOps(input);
         const next = buildGeneratedFile(
           filePath,
           'modified',
           {
-            oldContent: pair?.oldContent ?? existing?.oldContent,
-            newContent: pair?.newContent ?? existing?.newContent,
+            fullContent: existing?.fullContent,
+            edits: [...(existing?.edits ?? []), ...newOps],
           },
           i,
         );

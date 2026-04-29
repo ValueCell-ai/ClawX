@@ -75,8 +75,8 @@ function generatedFileToTarget(file: GeneratedFile): FilePreviewTarget {
     ext: file.ext,
     mimeType: file.mimeType,
     contentType: file.contentType,
-    oldContent: file.oldContent,
-    newContent: file.newContent,
+    fullContent: file.fullContent,
+    edits: file.edits,
   };
 }
 

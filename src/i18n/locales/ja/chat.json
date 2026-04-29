@@ -32,7 +32,8 @@
             "save": "保存",
             "saving": "保存中...",
             "revert": "元に戻す",
-            "openInFinder": "Finder で表示"
+            "openInFinder": "Finder で表示",
+            "close": "閉じる"
         },
         "info": {
             "path": "パス",
@@ -53,7 +54,8 @@
         },
         "diff": {
             "noChanges": "表示する変更はありません",
-            "newFile": "新規ファイルのため比較対象がありません"
+            "newFile": "新規ファイルのため比較対象がありません",
+            "tooLarge": "ファイルが大きすぎるため diff ビューは無効化されました。完全な内容は「ソース」タブで確認してください"
         }
     },
     "workspace": {

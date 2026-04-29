@@ -32,7 +32,8 @@
             "save": "Save",
             "saving": "Saving...",
             "revert": "Revert",
-            "openInFinder": "Reveal in Finder"
+            "openInFinder": "Reveal in Finder",
+            "close": "Close"
         },
         "info": {
             "path": "Path",
@@ -53,7 +54,8 @@
         },
         "diff": {
             "noChanges": "No changes to display",
-            "newFile": "New file — no original to compare"
+            "newFile": "New file — no original to compare",
+            "tooLarge": "File too large — diff view disabled, switch to the Source tab to view the full content"
         }
     },
     "workspace": {

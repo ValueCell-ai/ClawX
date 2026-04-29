@@ -12,7 +12,7 @@ import { ClawHubService, ClawHubSearchParams, ClawHubInstallParams, ClawHubUnins
 import {
   type ProviderConfig,
 } from '../utils/secure-storage';
-import { getOpenClawStatus, getOpenClawDir, getOpenClawConfigDir, getOpenClawSkillsDir, ensureDir } from '../utils/paths';
+import { getOpenClawStatus, getOpenClawDir, getOpenClawConfigDir, getOpenClawSkillsDir, ensureDir, expandPath } from '../utils/paths';
 import { getOpenClawCliCommand } from '../utils/openclaw-cli';
 import { getAllSettings, getSetting, resetSettings, setSetting, type AppSettings } from '../utils/store';
 import {
@@ -2674,6 +2674,17 @@ interface FilePreviewTreeNode {
 function isPathInside(child: string, parent: string): boolean {
   const c = resolve(child);
   const p = resolve(parent);
+  // Windows file systems are case-insensitive: realpath() returns the
+  // on-disk casing while `homedir()` / `resolve()` may preserve whatever
+  // casing the OS reported, leading to false `outsideSandbox` rejections
+  // (e.g. `C:\Users\Foo\.openclaw\…` vs `c:\users\foo\.openclaw\…`).
+  // Compare case-insensitively on Windows; keep strict comparison on
+  // POSIX so we don't accidentally widen the sandbox there.
+  if (process.platform === 'win32') {
+    const cl = c.toLowerCase();
+    const pl = p.toLowerCase();
+    return cl === pl || cl.startsWith(pl + sep);
+  }
   return c === p || c.startsWith(p + sep);
 }
 
@@ -2694,14 +2705,18 @@ async function resolveSandboxedPath(input: string): Promise<string> {
   if (typeof input !== 'string' || !input.trim()) {
     throw new Error('outsideSandbox');
   }
+  // OpenClaw stores agent.workspace / agentDir paths as `~/.openclaw/...`
+  // literals; expand the tilde before realpath so sandbox resolution
+  // matches what the user actually sees on disk.
+  const expanded = expandPath(input);
   const fsP = await import('fs/promises');
   let real: string;
   try {
-    real = await fsP.realpath(input);
+    real = await fsP.realpath(expanded);
   } catch {
     // Path may not exist yet (e.g. write that should fail later);
     // resolve without realpath fallback so the sandbox check is still applied.
-    real = resolve(input);
+    real = resolve(expanded);
   }
   const allowedRoots = getFilePreviewAllowedRoots();
   if (!allowedRoots.some((root) => isPathInside(real, root))) {
@@ -2895,9 +2910,14 @@ function registerFilePreviewHandlers(): void {
           }
           nodeCount += 1;
           const abs = join(absDir, entry.name);
+          // Normalise relPath to forward slashes for renderer use — the
+          // renderer derives the same value cross-platform when looking
+          // up a node by path, and Windows backslashes look out of place
+          // in URLs / display strings.
+          const rel = relative(real, abs).split(sep).join('/');
           const node: FilePreviewTreeNode = {
             name: entry.name,
-            relPath: relative(real, abs),
+            relPath: rel,
             absPath: abs,
             isDir,
           };

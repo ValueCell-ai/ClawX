@@ -11,23 +11,22 @@
  * - Save flow: edits update local state, "保存" calls `file:writeText`.
  */
 import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from 'react';
-import { FolderOpen, Save, Undo2, X } from 'lucide-react';
+import { FolderOpen, Save, Undo2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Sheet, SheetContent } from '@/components/ui/sheet';
 import { LoadingSpinner } from '@/components/common/LoadingSpinner';
-import { cn } from '@/lib/utils';
 import { invokeIpc, readTextFile, writeTextFile } from '@/lib/api-client';
-import type { FileContentType } from '@/lib/generated-files';
+import type { FileContentType, FileEditOp } from '@/lib/generated-files';
 import { FilePreviewIcon } from './file-card-utils';
 import { formatFileSize } from './format';
 import MarkdownPreview from './MarkdownPreview';
 import ImageViewer from './ImageViewer';
 
 const MonacoViewerLazy = lazy(() => import('./MonacoViewer'));
-const MonacoDiffViewerLazy = lazy(() => import('./MonacoDiffViewer'));
+const SplitDiffViewerLazy = lazy(() => import('./SplitDiffViewer'));
 
 export interface FilePreviewTarget {
   filePath: string;
@@ -35,9 +34,17 @@ export interface FilePreviewTarget {
   ext: string;
   mimeType: string;
   contentType: FileContentType;
-  /** When known (Chat generated files), enables the Diff tab. */
-  oldContent?: string;
-  newContent?: string;
+  /**
+   * Full new content of the file at the time of the edit (set by `Write`-
+   * family tools).  When present we can show a "before vs after" diff
+   * even if the file no longer exists on disk.
+   */
+  fullContent?: string;
+  /**
+   * Edit ops applied during the current run, used to reconstruct the
+   * pre-edit content via reverse-application against the on-disk content.
+   */
+  edits?: FileEditOp[];
 }
 
 export interface FilePreviewOverlayProps {
@@ -70,7 +77,7 @@ function tabsForFile(file: FilePreviewTarget, readOnly: boolean): Tab[] {
     // Try opening as text by default unless we know it's binary.
     tabs.push('source');
   }
-  if (!readOnly && (file.oldContent != null || file.newContent != null)) {
+  if (!readOnly && (file.fullContent != null || (file.edits != null && file.edits.length > 0))) {
     tabs.push('diff');
   }
   tabs.push('info');
@@ -80,6 +87,59 @@ function tabsForFile(file: FilePreviewTarget, readOnly: boolean): Tab[] {
 function pickInitialTab(tabs: Tab[], file: FilePreviewTarget): Tab {
   if (file.contentType === 'document' && tabs.includes('preview')) return 'preview';
   return tabs[0];
+}
+
+/**
+ * Compute (oldContent, newContent) for the Diff tab.
+ *
+ * Strategy:
+ *   - `Write` snapshots the whole new file in `fullContent`; we treat the
+ *     edit as a "create" against an empty base, which the diff viewer
+ *     renders as a `new` file with no left column.
+ *   - `Edit` / `MultiEdit` only give us snippets, so we reverse-apply
+ *     each (new -> old) replacement against the current on-disk content
+ *     to reconstruct the pre-edit text.  If a `new_string` is no longer
+ *     present (manual save, subsequent AI edit, …), we abort the reverse
+ *     so the diff falls back to "no changes".
+ *
+ * Cross-platform note (Windows):
+ *   On Windows the on-disk file usually has CRLF line endings while the
+ *   AI's `old_string` / `new_string` snippets use LF.  A naive
+ *   `indexOf(op.new)` would never match.  We normalise everything to LF
+ *   before searching (the diff viewer already splits on `\r?\n`, so the
+ *   resulting lines align identically regardless of the original endings).
+ */
+function normaliseEol(s: string): string {
+  return s.replace(/\r\n/g, '\n');
+}
+
+function computeDiffPair(
+  file: FilePreviewTarget,
+  diskContent: string,
+): { oldContent: string | null; newContent: string } {
+  const diskLF = normaliseEol(diskContent);
+  if (file.fullContent != null) {
+    return { oldContent: null, newContent: normaliseEol(file.fullContent) };
+  }
+  if (file.edits && file.edits.length > 0) {
+    let reconstructed = diskLF;
+    for (let i = file.edits.length - 1; i >= 0; i -= 1) {
+      const op = file.edits[i];
+      const oldLF = normaliseEol(op.old);
+      const newLF = normaliseEol(op.new);
+      // Empty `new` string can't be located; assume the op was a pure
+      // insertion at the matching point and skip reverse-apply.
+      if (!newLF) continue;
+      const idx = reconstructed.indexOf(newLF);
+      if (idx < 0) {
+        // Reverse-apply broke down — give up gracefully.
+        return { oldContent: diskLF, newContent: diskLF };
+      }
+      reconstructed = reconstructed.slice(0, idx) + oldLF + reconstructed.slice(idx + newLF.length);
+    }
+    return { oldContent: reconstructed, newContent: diskLF };
+  }
+  return { oldContent: diskLF, newContent: diskLF };
 }
 
 export function FilePreviewOverlay({ file, readOnly = false, onClose }: FilePreviewOverlayProps) {
@@ -266,11 +326,17 @@ export function FilePreviewOverlay({ file, readOnly = false, onClose }: FilePrev
           {tabs.includes('diff') && (
             <TabsContent value="diff" className="m-0 h-full">
               <Suspense fallback={<div className="flex h-full items-center justify-center"><LoadingSpinner /></div>}>
-                <MonacoDiffViewerLazy
-                  filePath={file.filePath}
-                  original={file.oldContent ?? null}
-                  modified={file.newContent ?? state.content}
-                />
+                {(() => {
+                  const { oldContent, newContent } = computeDiffPair(file, state.content);
+                  return (
+                    <SplitDiffViewerLazy
+                      filePath={file.filePath}
+                      fileName={file.fileName}
+                      original={oldContent}
+                      modified={newContent}
+                    />
+                  );
+                })()}
               </Suspense>
             </TabsContent>
           )}
@@ -312,41 +378,27 @@ export function FilePreviewOverlay({ file, readOnly = false, onClose }: FilePrev
                   <p className="truncate text-2xs text-muted-foreground">{file.filePath}</p>
                 </div>
               </div>
-              <div className="flex shrink-0 items-center gap-2">
-                {!readOnly && (
-                  <>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={handleRevert}
-                      disabled={!dirty || saving}
-                    >
-                      <Undo2 className="mr-1 h-3.5 w-3.5" />
-                      {t('filePreview.actions.revert', '撤销')}
-                    </Button>
-                    <Button
-                      size="sm"
-                      onClick={handleSave}
-                      disabled={!dirty || saving}
-                    >
-                      <Save className="mr-1 h-3.5 w-3.5" />
-                      {saving ? t('filePreview.actions.saving', '保存中...') : t('filePreview.actions.save', '保存')}
-                    </Button>
-                  </>
-                )}
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className={cn('h-8 w-8')}
-                  onClick={handleOpenInFinder}
-                  title={t('filePreview.actions.openInFinder', '在 Finder 中显示')}
-                >
-                  <FolderOpen className="h-4 w-4" />
-                </Button>
-                <Button variant="ghost" size="icon" className="h-8 w-8" onClick={onClose}>
-                  <X className="h-4 w-4" />
-                </Button>
-              </div>
+              {!readOnly && (
+                <div className="flex shrink-0 items-center gap-2">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={handleRevert}
+                    disabled={!dirty || saving}
+                  >
+                    <Undo2 className="mr-1 h-3.5 w-3.5" />
+                    {t('filePreview.actions.revert', '撤销')}
+                  </Button>
+                  <Button
+                    size="sm"
+                    onClick={handleSave}
+                    disabled={!dirty || saving}
+                  >
+                    <Save className="mr-1 h-3.5 w-3.5" />
+                    {saving ? t('filePreview.actions.saving', '保存中...') : t('filePreview.actions.save', '保存')}
+                  </Button>
+                </div>
+              )}
             </header>
             <div className="min-h-0 flex-1">{renderBody()}</div>
           </>
