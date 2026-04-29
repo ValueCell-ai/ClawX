@@ -70,6 +70,7 @@ test.describe('ClawX provider lifecycle', () => {
       const { ipcMain } = process.mainModule!.require('electron') as typeof import('electron');
 
       let accounts: Array<Record<string, unknown>> = [];
+      let keyInfo: Array<{ accountId: string; hasKey: boolean; keyMasked: string | null }> = [];
       let statuses: Array<Record<string, unknown>> = [];
       let defaultAccountId: string | null = null;
 
@@ -88,12 +89,13 @@ test.describe('ClawX provider lifecycle', () => {
         const method = request?.method ?? 'GET';
         const body = request?.body ? JSON.parse(request.body) : null;
 
+        // New account-based endpoints (preferred path).
         if (path === '/api/provider-accounts' && method === 'GET') return respond(accounts);
-        if (path === '/api/providers' && method === 'GET') return respond(statuses);
+        if (path === '/api/provider-accounts/key-info' && method === 'GET') return respond(keyInfo);
         if (path === '/api/provider-vendors' && method === 'GET') return respond([]);
         if (path === '/api/provider-accounts/default' && method === 'GET') return respond({ accountId: defaultAccountId });
 
-        if (path === '/api/providers/validate' && method === 'POST') {
+        if (path === '/api/provider-accounts/validate' && method === 'POST') {
           if (body?.apiKey !== 'sk-lm-test') {
             return respond({ valid: false, error: `unexpected key: ${String(body?.apiKey)}` }, 400);
           }
@@ -102,6 +104,12 @@ test.describe('ClawX provider lifecycle', () => {
 
         if (path === '/api/provider-accounts' && method === 'POST') {
           accounts = [body.account];
+          keyInfo = [{
+            accountId: body.account.id,
+            hasKey: Boolean(body.apiKey),
+            keyMasked: body.apiKey ? 'sk-***' : null,
+          }];
+          // Keep statuses populated for any consumer still on the legacy path.
           statuses = [{
             id: body.account.id,
             name: body.account.label,
@@ -120,6 +128,19 @@ test.describe('ClawX provider lifecycle', () => {
         if (path === '/api/provider-accounts/default' && method === 'PUT') {
           defaultAccountId = body?.accountId ?? null;
           return respond({ success: true });
+        }
+
+        // ── Legacy compatibility shims ─────────────────────────────
+        // Older renderer builds still reach for these. Keeping them
+        // wired up here exercises the backward-compat path in the
+        // route layer (it returns the same data, just without the
+        // newer key-info payload structure).
+        if (path === '/api/providers' && method === 'GET') return respond(statuses);
+        if (path === '/api/providers/validate' && method === 'POST') {
+          if (body?.apiKey !== 'sk-lm-test') {
+            return respond({ valid: false, error: `unexpected key: ${String(body?.apiKey)}` }, 400);
+          }
+          return respond({ valid: true });
         }
 
         return respond({});
