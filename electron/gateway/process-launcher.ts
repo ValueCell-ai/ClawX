@@ -118,6 +118,25 @@ export async function launchGatewayProcess(options: {
   const lastSpawnSummary = `mode=${mode}, entry="${entryScript}", args="${options.sanitizeSpawnArgs(gatewayArgs).join(' ')}", cwd="${openclawDir}", stage="${pluginStageDir || '-'}"`;
 
   const runtimeEnv = { ...forkEnv };
+
+  // Disable OpenClaw's mDNS/Bonjour gateway advertiser unconditionally.
+  //
+  // The OpenClaw gateway advertises `_openclaw-gw._tcp.local` on every
+  // active network interface using a hardcoded `openclaw.local` hostname,
+  // which causes:
+  //   - cross-machine name collisions when multiple OpenClaw/ClawX peers
+  //     share a LAN (each falls back to "<name> (OpenClaw) (2)")
+  //   - self-collisions on multi-homed hosts (Wi-Fi + Tailscale + utun ...)
+  //   - "ghost" record collisions after an unclean ClawX exit, because
+  //     SIGKILL prevents ciao from emitting the mDNS goodbye record.
+  //
+  // ClawX has no UI for LAN gateway discovery today, so the advertiser is
+  // pure log noise.  `OPENCLAW_DISABLE_BONJOUR=1` short-circuits
+  // `startGatewayBonjourAdvertiser()` (openclaw `src/infra/bonjour.ts`,
+  // `isDisabledByEnv()`).  Set after the `forkEnv` spread so any
+  // pre-existing value inherited from the user shell cannot re-enable it.
+  runtimeEnv.OPENCLAW_DISABLE_BONJOUR = '1';
+
   // Only apply the fetch/child_process preload in dev mode.
   // In packaged builds Electron's UtilityProcess rejects NODE_OPTIONS
   // with --require, logging "Most NODE_OPTIONs are not supported in
