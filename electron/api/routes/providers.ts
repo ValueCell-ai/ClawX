@@ -108,15 +108,20 @@ export async function handleProviderRoutes(
 
   if (url.pathname === '/api/provider-accounts/validate' && req.method === 'POST') {
     try {
+      // Accept legacy `providerId` as a fallback so external clients that
+      // migrate by URL alone (without renaming their request body) continue
+      // to work. The renderer always sends all three fields; older callers
+      // may send only `providerId`.
       const body = await parseJsonBody<{
         accountId?: string;
         vendorId?: string;
+        providerId?: string;
         apiKey: string;
         options?: { baseUrl?: string; apiProtocol?: string };
       }>(req);
-      const accountId = body.accountId || body.vendorId || '';
+      const accountId = body.accountId || body.vendorId || body.providerId || '';
       const account = accountId ? await providerService.getAccount(accountId) : null;
-      const providerType = account?.vendorId || body.vendorId || accountId;
+      const providerType = account?.vendorId || body.vendorId || body.providerId || accountId;
       const registryBaseUrl = getProviderConfig(providerType)?.baseUrl;
       const resolvedBaseUrl = body.options?.baseUrl || account?.baseUrl || registryBaseUrl;
       const resolvedProtocol = body.options?.apiProtocol || account?.apiProtocol;

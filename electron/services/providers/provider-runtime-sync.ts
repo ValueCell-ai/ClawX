@@ -266,6 +266,12 @@ async function syncProviderSecretToRuntime(
     const trimmedKey = apiKey.trim();
     if (trimmedKey) {
       await saveProviderKeyToOpenClaw(runtimeProviderKey, trimmedKey);
+    } else {
+      // An explicit empty string means the caller wants to clear the key.
+      // Mirror that intent into OpenClaw auth-profiles so the gateway no
+      // longer authenticates with the stale value (matches the explicit
+      // delete branch in the legacy /api/providers/:id PUT handler).
+      await removeProviderKeyFromOpenClaw(runtimeProviderKey);
     }
     return;
   }

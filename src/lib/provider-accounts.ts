@@ -102,11 +102,48 @@ export function isHostApiRouteMissing(value: unknown): boolean {
   return isRouteNotFoundBody(value);
 }
 
+/**
+ * Detects thrown errors that look like a missing-route response (currently
+ * only emitted by the browser-fallback path in `host-api.ts`, which DOES
+ * throw on non-2xx). Returns true so callers can collapse that case into
+ * the same "use the legacy route" code path as the body-shape detection.
+ */
+function isRouteNotFoundError(error: unknown): boolean {
+  if (!(error instanceof Error)) return false;
+  return /no\s+route\s+for|404|not\s+found/i.test(error.message);
+}
+
+/**
+ * Wrap `hostApiFetch` so that a missing route (either a thrown 404 or the
+ * `{ success: false, error: "No route ..." }` body) resolves to `null` and
+ * any *other* error propagates. Avoids the previous `.catch(() => null)`
+ * pattern which masked real failures (network outages, IPC unavailability,
+ * malformed payloads) and left the user staring at an empty list.
+ */
+async function fetchAllowingMissingRoute<T>(path: string): Promise<T | null> {
+  try {
+    const result = await hostApiFetch<T | { success: false; error: string }>(path);
+    if (isRouteNotFoundBody(result)) {
+      return null;
+    }
+    return result as T;
+  } catch (error) {
+    if (isRouteNotFoundError(error)) {
+      return null;
+    }
+    throw error;
+  }
+}
+
 export async function fetchProviderSnapshot(): Promise<ProviderSnapshot> {
   // Primary path: read everything from the new /api/provider-accounts surface.
+  // Only the key-info call tolerates a missing route (older Host API builds
+  // predate it). All other endpoints have shipped for a while; if they fail,
+  // the snapshot fails and the store surfaces the error to the UI rather
+  // than presenting an empty/inconsistent provider list.
   const [accountsResult, keyInfoResult, vendors, defaultInfo] = await Promise.all([
     hostApiFetch<ProviderAccount[]>('/api/provider-accounts'),
-    hostApiFetch<ProviderAccountKeyInfo[] | { success: false; error: string }>('/api/provider-accounts/key-info').catch(() => null),
+    fetchAllowingMissingRoute<ProviderAccountKeyInfo[]>('/api/provider-accounts/key-info'),
     hostApiFetch<ProviderVendorInfo[]>('/api/provider-vendors'),
     hostApiFetch<{ accountId: string | null }>('/api/provider-accounts/default'),
   ]);
@@ -114,12 +151,7 @@ export async function fetchProviderSnapshot(): Promise<ProviderSnapshot> {
   let accounts = accountsResult ?? [];
   let statuses: ProviderWithKeyInfo[];
 
-  // Treat a missing-route response body the same as a thrown error so
-  // older Host API builds without the key-info endpoint still degrade
-  // gracefully via the legacy /api/providers fallback below.
-  const newKeyInfoAvailable = Array.isArray(keyInfoResult);
-
-  if (newKeyInfoAvailable) {
+  if (Array.isArray(keyInfoResult)) {
     const keyInfoMap = new Map(
       keyInfoResult.map((entry) => [entry.accountId, entry] as const),
     );
@@ -129,8 +161,14 @@ export async function fetchProviderSnapshot(): Promise<ProviderSnapshot> {
     // Talking to an older Host API (no /api/provider-accounts/key-info
     // route). Use the legacy /api/providers payload as the status source
     // and synthesise accounts from it when the accounts list is empty
-    // (e.g. pre-migration installs).
-    const legacyStatusesRaw = await hostApiFetch<ProviderWithKeyInfo[] | { success: false; error: string }>('/api/providers').catch(() => null);
+    // (e.g. pre-migration installs). Any non-route-missing error here
+    // (network, IPC, parse) propagates so the UI can show it.
+    const legacyStatusesRaw = await fetchAllowingMissingRoute<ProviderWithKeyInfo[]>('/api/providers');
+    if (legacyStatusesRaw === null) {
+      // Even the legacy route is missing — emit a single warn so the empty
+      // list isn't silently misattributed to "no providers configured".
+      console.warn('[provider-accounts] Both /api/provider-accounts/key-info and /api/providers are missing on this Host API; statuses will be empty.');
+    }
     const legacyStatuses = Array.isArray(legacyStatusesRaw) ? legacyStatusesRaw : [];
     statuses = legacyStatuses;
     if (accounts.length === 0 && legacyStatuses.length > 0) {
@@ -142,7 +180,7 @@ export async function fetchProviderSnapshot(): Promise<ProviderSnapshot> {
     accounts,
     statuses,
     vendors,
-    defaultAccountId: defaultInfo.accountId,
+    defaultAccountId: defaultInfo?.accountId ?? null,
   };
 }
 
