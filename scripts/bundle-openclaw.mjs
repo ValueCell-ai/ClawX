@@ -17,13 +17,10 @@
  */
 
 import 'zx/globals';
-import { fileURLToPath } from 'node:url';
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '..');
 const OUTPUT = path.join(ROOT, 'build', 'openclaw');
 const NODE_MODULES = path.join(ROOT, 'node_modules');
-const RUNTIME_DEPS_MANIFEST = 'clawx-runtime-deps.json';
 
 // On Windows, pnpm virtual store paths can exceed MAX_PATH (260 chars).
 function normWin(p) {
@@ -43,27 +40,6 @@ if (!fs.existsSync(openclawLink)) {
 
 const openclawReal = fs.realpathSync(openclawLink);
 echo`   openclaw resolved: ${openclawReal}`;
-const extensionsDir = path.join(openclawReal, 'dist', 'extensions');
-
-function shouldCopyOpenClawPackageEntry(src) {
-  const rel = path.relative(openclawReal, src);
-  if (!rel || rel.startsWith('..')) return true;
-  const parts = rel.split(path.sep);
-
-  if (parts[0] === 'dist' && parts[1] === 'extensions') {
-    const nodeModulesIndex = parts.indexOf('node_modules');
-    if (nodeModulesIndex >= 0) {
-      return false;
-    }
-  }
-
-  for (let i = 0; i < parts.length - 1; i++) {
-    if (parts[i] === 'node_modules' && parts[i + 1] === '.bin') {
-      return false;
-    }
-  }
-  return true;
-}
 
 // 2. Clean and create output directory
 if (fs.existsSync(OUTPUT)) {
@@ -73,11 +49,7 @@ fs.mkdirSync(OUTPUT, { recursive: true });
 
 // 3. Copy openclaw package itself to OUTPUT root
 echo`   Copying openclaw package...`;
-fs.cpSync(openclawReal, OUTPUT, {
-  recursive: true,
-  dereference: true,
-  filter: shouldCopyOpenClawPackageEntry,
-});
+fs.cpSync(openclawReal, OUTPUT, { recursive: true, dereference: true });
 
 // 4. Recursively collect ALL transitive dependencies via pnpm virtual store BFS
 //
@@ -216,110 +188,9 @@ echo`   Skipped ${skippedDevCount} dev-only package references`;
 //     then BFS its transitive deps exactly like we did for openclaw above.
 const EXTRA_BUNDLED_PACKAGES = [
   '@whiskeysockets/baileys',   // WhatsApp channel (was a dep of old clawdbot, not openclaw)
-  '@larksuiteoapi/node-sdk',   // Fallback for Feishu plugin setup/doctor module resolution
-  'qrcode-terminal',           // QR rendering used by WhatsApp/WeChat login helpers
 ];
-
-const BUNDLED_EXTENSION_RUNTIME_DEP_PLUGIN_IDS = [
-  'acpx',
-  'bonjour',
-  'browser',
-  'discord',
-  'memory-core',
-  'qqbot',
-  'telegram',
-];
-
-function readJsonFile(filePath) {
-  try {
-    return JSON.parse(fs.readFileSync(filePath, 'utf8'));
-  } catch {
-    return null;
-  }
-}
-
-function collectBundledExtensionRuntimeDeps(extensionsRoot) {
-  const depsByPlugin = {};
-  for (const pluginId of BUNDLED_EXTENSION_RUNTIME_DEP_PLUGIN_IDS) {
-    const packageJson = readJsonFile(path.join(extensionsRoot, pluginId, 'package.json'));
-    if (!packageJson || typeof packageJson !== 'object') {
-      echo`❌ Bundled extension package.json not found for ${pluginId}`;
-      process.exit(1);
-    }
-    const depsByName = {};
-    for (const deps of [packageJson.dependencies, packageJson.optionalDependencies]) {
-      if (!deps || typeof deps !== 'object' || Array.isArray(deps)) continue;
-      for (const [name, version] of Object.entries(deps)) {
-        depsByName[name] = String(version);
-      }
-    }
-    depsByPlugin[pluginId] = Object.entries(depsByName)
-      .map(([name, version]) => ({ name, version }))
-      .sort((left, right) => left.name.localeCompare(right.name));
-  }
-  return depsByPlugin;
-}
-
-function flattenRuntimeDeps(depsByPlugin) {
-  return [...new Set(Object.values(depsByPlugin).flat().map(dep => dep.name))]
-    .sort((a, b) => a.localeCompare(b));
-}
-
-function readBundledPackageVersion(nodeModulesDir, pkgName) {
-  const packageJson = readJsonFile(path.join(nodeModulesDir, ...pkgName.split('/'), 'package.json'));
-  return typeof packageJson?.version === 'string' ? packageJson.version : null;
-}
-
-function writeRuntimeDepsManifest(outputDir, depsByPlugin) {
-  const nodeModulesDir = path.join(outputDir, 'node_modules');
-  const manifest = {
-    generatedBy: 'scripts/bundle-openclaw.mjs',
-    packageRoot: '.',
-    nodeModulesRoot: 'node_modules',
-    plugins: {},
-  };
-  const missing = [];
-
-  for (const [pluginId, deps] of Object.entries(depsByPlugin)) {
-    manifest.plugins[pluginId] = deps.map((dep) => {
-      const installedVersion = readBundledPackageVersion(nodeModulesDir, dep.name);
-      const present = Boolean(installedVersion);
-      if (!present) {
-        missing.push(`${pluginId}:${dep.name}@${dep.version}`);
-      }
-      return {
-        name: dep.name,
-        version: dep.version,
-        installedVersion,
-        present,
-      };
-    });
-  }
-
-  if (missing.length > 0) {
-    echo`❌ Missing bundled extension runtime deps: ${missing.join(', ')}`;
-    process.exit(1);
-  }
-
-  fs.writeFileSync(
-    path.join(outputDir, RUNTIME_DEPS_MANIFEST),
-    `${JSON.stringify(manifest, null, 2)}\n`,
-    'utf8',
-  );
-  echo`   Wrote ${RUNTIME_DEPS_MANIFEST} for ${Object.keys(manifest.plugins).length} bundled extension(s)`;
-}
-
-const bundledExtensionRuntimeDeps = collectBundledExtensionRuntimeDeps(extensionsDir);
-const bundledExtensionRuntimePackages = flattenRuntimeDeps(bundledExtensionRuntimeDeps);
-for (const pkgName of bundledExtensionRuntimePackages) {
-  if (!EXTRA_BUNDLED_PACKAGES.includes(pkgName)) {
-    EXTRA_BUNDLED_PACKAGES.push(pkgName);
-  }
-}
-const preferredBundledPackages = new Set(EXTRA_BUNDLED_PACKAGES);
 
 let extraCount = 0;
-const preferredBundledPackageRealPaths = new Set();
 for (const pkgName of EXTRA_BUNDLED_PACKAGES) {
   const pkgLink = path.join(NODE_MODULES, ...pkgName.split('/'));
   if (!fs.existsSync(pkgLink)) {
@@ -329,7 +200,6 @@ for (const pkgName of EXTRA_BUNDLED_PACKAGES) {
 
   let pkgReal;
   try { pkgReal = fs.realpathSync(pkgLink); } catch { continue; }
-  preferredBundledPackageRealPaths.add(pkgReal);
 
   if (!collected.has(pkgReal)) {
     collected.set(pkgReal, pkgName);
@@ -377,22 +247,8 @@ fs.mkdirSync(outputNodeModules, { recursive: true });
 const copiedNames = new Set(); // Track package names already copied
 let copiedCount = 0;
 let skippedDupes = 0;
-const collectedEntries = [...collected].sort(([leftRealPath, leftName], [rightRealPath, rightName]) => {
-  const leftPreferredRealPath = preferredBundledPackageRealPaths.has(leftRealPath);
-  const rightPreferredRealPath = preferredBundledPackageRealPaths.has(rightRealPath);
-  if (leftPreferredRealPath !== rightPreferredRealPath) return leftPreferredRealPath ? -1 : 1;
-  const leftPreferred = preferredBundledPackages.has(leftName);
-  const rightPreferred = preferredBundledPackages.has(rightName);
-  if (leftPreferred === rightPreferred) return 0;
-  return leftPreferred ? -1 : 1;
-});
 
-function shouldCopyNodePackageEntry(src) {
-  const base = path.basename(src);
-  return base !== '.vscode' && base !== '.idea';
-}
-
-for (const [realPath, pkgName] of collectedEntries) {
+for (const [realPath, pkgName] of collected) {
   if (copiedNames.has(pkgName)) {
     skippedDupes++;
     continue; // Keep the first version (closer to openclaw in dep tree)
@@ -403,11 +259,7 @@ for (const [realPath, pkgName] of collectedEntries) {
 
   try {
     fs.mkdirSync(normWin(path.dirname(dest)), { recursive: true });
-    fs.cpSync(normWin(realPath), normWin(dest), {
-      recursive: true,
-      dereference: true,
-      filter: shouldCopyNodePackageEntry,
-    });
+    fs.cpSync(normWin(realPath), normWin(dest), { recursive: true, dereference: true });
     copiedCount++;
   } catch (err) {
     echo`   ⚠️  Skipped ${pkgName}: ${err.message}`;
@@ -427,6 +279,7 @@ for (const [realPath, pkgName] of collectedEntries) {
 // Fix: copy extension deps into the top-level node_modules/ so they are
 // resolvable from shared chunks.  Skip-if-exists preserves version priority
 // (openclaw's own deps take precedence over extension deps).
+const extensionsDir = path.join(OUTPUT, 'dist', 'extensions');
 let mergedExtCount = 0;
 if (fs.existsSync(extensionsDir)) {
   for (const extEntry of fs.readdirSync(extensionsDir, { withFileTypes: true })) {
@@ -471,8 +324,6 @@ if (fs.existsSync(extensionsDir)) {
 if (mergedExtCount > 0) {
   echo`   Merged ${mergedExtCount} extension packages into top-level node_modules`;
 }
-
-writeRuntimeDepsManifest(OUTPUT, bundledExtensionRuntimeDeps);
 
 // 6. Clean up the bundle to reduce package size
 //
@@ -619,7 +470,7 @@ function cleanupBundle(outputDir) {
     'node_modules/koffi/src',
     'node_modules/koffi/vendor',
     'node_modules/koffi/doc',
-    'dist/extensions/feishu', // Removed in favor of official @larksuite/openclaw-lark plugin
+    'extensions/feishu', // Removed in favor of official @larksuite/openclaw-lark plugin
   ];
   for (const rel of LARGE_REMOVALS) {
     if (rmSafe(path.join(outputDir, rel))) removedCount++;
@@ -861,20 +712,12 @@ function patchBundledRuntime(outputDir) {
   for (const patch of replacePatches) {
     const target = patch.target();
     if (!target || !fs.existsSync(target)) {
-      if (patch.required) {
-        echo`❌ Required patch failed for ${patch.label}: target file not found`;
-        process.exit(1);
-      }
       echo`   ⚠️  Skipped patch for ${patch.label}: target file not found`;
       continue;
     }
 
     const current = fs.readFileSync(target, 'utf8');
     if (!current.includes(patch.search)) {
-      if (patch.required) {
-        echo`❌ Required patch failed for ${patch.label}: expected source snippet not found`;
-        process.exit(1);
-      }
       echo`   ⚠️  Skipped patch for ${patch.label}: expected source snippet not found`;
       continue;
     }

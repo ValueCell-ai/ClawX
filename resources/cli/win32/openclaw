@@ -15,20 +15,7 @@ esac
 
 export OPENCLAW_EMBEDDED_IN="ClawX"
 NODE_EXE="$INSTALL_DIR/resources/bin/node.exe"
-OPENCLAW_RUNTIME_ROOT="$INSTALL_DIR/resources/openclaw-runtime"
-OPENCLAW_DIR=""
-for dir in "$OPENCLAW_RUNTIME_ROOT"/openclaw-*; do
-  if [ -d "$dir" ]; then
-    OPENCLAW_DIR="$dir"
-    break
-  fi
-done
-if [ -z "$OPENCLAW_DIR" ]; then
-  OPENCLAW_DIR="$INSTALL_DIR/resources/openclaw"
-else
-  export OPENCLAW_PLUGIN_STAGE_DIR="$OPENCLAW_RUNTIME_ROOT"
-fi
-OPENCLAW_ENTRY="$OPENCLAW_DIR/openclaw.mjs"
+OPENCLAW_ENTRY="$INSTALL_DIR/resources/openclaw/openclaw.mjs"
 
 if [ -f "$NODE_EXE" ]; then
   if "$NODE_EXE" -e 'const [maj,min]=process.versions.node.split(".").map(Number);process.exit((maj>22||maj===22&&min>=16)?0:1)' >/dev/null 2>&1; then

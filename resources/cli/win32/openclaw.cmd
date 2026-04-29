@@ -17,12 +17,7 @@ chcp 65001 >nul 2>&1
 
 set OPENCLAW_EMBEDDED_IN=ClawX
 set "NODE_EXE=%~dp0..\bin\node.exe"
-set "OPENCLAW_RUNTIME_ROOT=%~dp0..\openclaw-runtime"
-set "OPENCLAW_DIR="
-for /d %%d in ("%OPENCLAW_RUNTIME_ROOT%\openclaw-*") do if not defined OPENCLAW_DIR set "OPENCLAW_DIR=%%~fd"
-if not defined OPENCLAW_DIR set "OPENCLAW_DIR=%~dp0..\openclaw"
-set "OPENCLAW_ENTRY=%OPENCLAW_DIR%\openclaw.mjs"
-if exist "%OPENCLAW_RUNTIME_ROOT%" set "OPENCLAW_PLUGIN_STAGE_DIR=%OPENCLAW_RUNTIME_ROOT%"
+set "OPENCLAW_ENTRY=%~dp0..\openclaw\openclaw.mjs"
 
 set "_USE_BUNDLED_NODE=0"
 if exist "%NODE_EXE%" (

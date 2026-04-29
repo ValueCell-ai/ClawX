@@ -32,7 +32,6 @@ const AUTH_STORE_VERSION = 1;
 const AUTH_PROFILE_FILENAME = 'auth-profiles.json';
 const LEGACY_MINIMAX_OAUTH_PLUGIN_ID = 'minimax-portal-auth';
 const MERGED_MINIMAX_PLUGIN_ID = 'minimax';
-const PACKAGED_CONTROL_UI_ALLOWED_ORIGINS = ['file://', 'null'] as const;
 
 interface BundledPluginManifest {
   id: string;
@@ -66,24 +65,6 @@ function getOpenClawExtensionsRoots(): string[] {
     join(openClawDir, 'dist', 'extensions'),
     join(openClawDir, 'extensions'),
   ];
-}
-
-function ensurePackagedControlUiAllowedOrigins(controlUi: Record<string, unknown>): Record<string, unknown> {
-  const allowedOrigins = Array.isArray(controlUi.allowedOrigins)
-    ? (controlUi.allowedOrigins as unknown[]).filter((value): value is string => typeof value === 'string')
-    : [];
-  const nextAllowedOrigins = [...allowedOrigins];
-
-  for (const origin of PACKAGED_CONTROL_UI_ALLOWED_ORIGINS) {
-    if (!nextAllowedOrigins.includes(origin)) {
-      nextAllowedOrigins.push(origin);
-    }
-  }
-
-  return {
-    ...controlUi,
-    allowedOrigins: nextAllowedOrigins,
-  };
 }
 
 function discoverBundledPluginManifests(): BundledPluginManifest[] {
@@ -1341,14 +1322,20 @@ export async function syncGatewayTokenToConfig(token: string): Promise<void> {
     auth.token = token;
     gateway.auth = auth;
 
-    // Packaged ClawX loads the renderer from file://. OpenClaw's URL origin
-    // normalization maps that to "null", so keep both forms allowlisted.
+    // Packaged ClawX loads the renderer from file://, so the gateway must allow
+    // that origin for the chat WebSocket handshake.
     const controlUi = (
       gateway.controlUi && typeof gateway.controlUi === 'object'
         ? { ...(gateway.controlUi as Record<string, unknown>) }
         : {}
     ) as Record<string, unknown>;
-    gateway.controlUi = ensurePackagedControlUiAllowedOrigins(controlUi);
+    const allowedOrigins = Array.isArray(controlUi.allowedOrigins)
+      ? (controlUi.allowedOrigins as unknown[]).filter((value): value is string => typeof value === 'string')
+      : [];
+    if (!allowedOrigins.includes('file://')) {
+      controlUi.allowedOrigins = [...allowedOrigins, 'file://'];
+    }
+    gateway.controlUi = controlUi;
 
     if (!gateway.mode) gateway.mode = 'local';
     config.gateway = gateway;
@@ -1475,7 +1462,13 @@ export async function batchSyncConfigFields(token: string): Promise<void> {
         ? { ...(gateway.controlUi as Record<string, unknown>) }
         : {}
     ) as Record<string, unknown>;
-    gateway.controlUi = ensurePackagedControlUiAllowedOrigins(controlUi);
+    const allowedOrigins = Array.isArray(controlUi.allowedOrigins)
+      ? (controlUi.allowedOrigins as unknown[]).filter((v): v is string => typeof v === 'string')
+      : [];
+    if (!allowedOrigins.includes('file://')) {
+      controlUi.allowedOrigins = [...allowedOrigins, 'file://'];
+    }
+    gateway.controlUi = controlUi;
     if (!gateway.mode) gateway.mode = 'local';
     config.gateway = gateway;
 
