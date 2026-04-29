@@ -46,9 +46,13 @@
         },
         "errors": {
             "outsideSandbox": "サンドボックス外のパスのため拒否しました",
+            "outsideSandboxTitle": "このファイルはサンドボックス外にあります",
+            "outsideSandboxHint": "安全のため、ClawX は ~/.openclaw、アプリ内リソース、内蔵スキルのディレクトリにあるファイルだけをプレビューします。Finder では引き続き開けます。",
+            "readOnlyRoot": "このファイルは読み取り専用領域（内蔵スキルなど）にあり、変更できません",
             "tooLarge": "ファイルが大きすぎます（{{size}}）。プレビューを無効化しました",
             "binary": "バイナリファイルのためテキストプレビューはできません",
             "notFound": "ファイルが見つかりません",
+            "loadFailed": "読み込みに失敗しました: {{error}}",
             "noPreview": "このファイルにはプレビューがありません",
             "openInFinderFailed": "Finder で表示できません"
         },

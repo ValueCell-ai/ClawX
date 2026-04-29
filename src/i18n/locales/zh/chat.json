@@ -46,9 +46,13 @@
         },
         "errors": {
             "outsideSandbox": "路径越界，已拒绝访问",
+            "outsideSandboxTitle": "此文件位于沙盒外",
+            "outsideSandboxHint": "出于安全考虑，ClawX 仅允许预览 ~/.openclaw、应用资源以及内置技能目录中的文件。可在 Finder 中查看。",
+            "readOnlyRoot": "该文件位于只读位置（如内置技能），无法修改",
             "tooLarge": "文件过大（{{size}}），已禁用预览",
             "binary": "二进制文件不支持文本预览",
             "notFound": "文件不存在",
+            "loadFailed": "加载失败：{{error}}",
             "noPreview": "该文件没有预览",
             "openInFinderFailed": "无法在 Finder 中显示"
         },

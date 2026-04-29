@@ -46,9 +46,13 @@
         },
         "errors": {
             "outsideSandbox": "Path outside sandbox — access denied",
+            "outsideSandboxTitle": "This file lives outside the sandbox",
+            "outsideSandboxHint": "For safety, ClawX only previews files in ~/.openclaw, app resources, and bundled skill directories. You can still open it in Finder.",
+            "readOnlyRoot": "File lives in a read-only location (e.g. bundled skill) and cannot be modified",
             "tooLarge": "File too large ({{size}}); preview disabled",
             "binary": "Binary file — text preview unavailable",
             "notFound": "File not found",
+            "loadFailed": "Load failed: {{error}}",
             "noPreview": "No preview available for this file",
             "openInFinderFailed": "Could not reveal file"
         },

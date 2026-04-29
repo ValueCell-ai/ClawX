@@ -10,13 +10,9 @@ import {
   Package,
   X,
   AlertCircle,
-  Plus,
-  Key,
   Trash2,
   RefreshCw,
   FolderOpen,
-  FileCode,
-  Globe,
   Copy,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -87,57 +83,8 @@ function resolveSkillSourceLabel(skill: Skill, t: TFunction<'skills'>): string {
 
 function SkillDetailDialog({ skill, isOpen, onClose, onToggle, onUninstall, onOpenFolder }: SkillDetailDialogProps) {
   const { t } = useTranslation('skills');
-  const { fetchSkills } = useSkillsStore();
-  const [envVars, setEnvVars] = useState<Array<{ key: string; value: string }>>([]);
-  const [apiKey, setApiKey] = useState('');
-  const [isSaving, setIsSaving] = useState(false);
   const [openedSkillFile, setOpenedSkillFile] = useState<FilePreviewTarget | null>(null);
   const detailMetaComponents = rendererExtensionRegistry.getSkillDetailMetaComponents();
-
-  // Initialize config from skill
-  useEffect(() => {
-    if (!skill) return;
-
-    // API Key
-    if (skill.config?.apiKey) {
-      setApiKey(String(skill.config.apiKey));
-    } else {
-      setApiKey('');
-    }
-
-    // Env Vars
-    if (skill.config?.env) {
-      const vars = Object.entries(skill.config.env).map(([key, value]) => ({
-        key,
-        value: String(value),
-      }));
-      setEnvVars(vars);
-    } else {
-      setEnvVars([]);
-    }
-  }, [skill]);
-
-  const handleOpenClawhub = async () => {
-    if (!skill?.slug) return;
-    await invokeIpc('shell:openExternal', `https://clawhub.ai/s/${skill.slug}`);
-  };
-
-  const handleOpenEditor = async () => {
-    if (!skill?.id) return;
-    try {
-      const result = await hostApiFetch<{ success: boolean; error?: string }>('/api/clawhub/open-readme', {
-        method: 'POST',
-        body: JSON.stringify({ skillKey: skill.id, slug: skill.slug, baseDir: skill.baseDir }),
-      });
-      if (result.success) {
-        toast.success(t('toast.openedEditor'));
-      } else {
-        toast.error(result.error || t('toast.failedEditor'));
-      }
-    } catch (err) {
-      toast.error(t('toast.failedEditor') + ': ' + String(err));
-    }
-  };
 
   const handleCopyPath = async () => {
     if (!skill?.baseDir) return;
@@ -146,61 +93,6 @@ function SkillDetailDialog({ skill, isOpen, onClose, onToggle, onUninstall, onOp
       toast.success(t('toast.copiedPath'));
     } catch (err) {
       toast.error(t('toast.failedCopyPath') + ': ' + String(err));
-    }
-  };
-
-  const handleAddEnv = () => {
-    setEnvVars([...envVars, { key: '', value: '' }]);
-  };
-
-  const handleUpdateEnv = (index: number, field: 'key' | 'value', value: string) => {
-    const newVars = [...envVars];
-    newVars[index] = { ...newVars[index], [field]: value };
-    setEnvVars(newVars);
-  };
-
-  const handleRemoveEnv = (index: number) => {
-    const newVars = [...envVars];
-    newVars.splice(index, 1);
-    setEnvVars(newVars);
-  };
-
-  const handleSaveConfig = async () => {
-    if (isSaving || !skill) return;
-    setIsSaving(true);
-    try {
-      // Build env object, filtering out empty keys
-      const envObj = envVars.reduce((acc, curr) => {
-        const key = curr.key.trim();
-        const value = curr.value.trim();
-        if (key) {
-          acc[key] = value;
-        }
-        return acc;
-      }, {} as Record<string, string>);
-
-      // Use direct file access instead of Gateway RPC for reliability
-      const result = await invokeIpc<{ success: boolean; error?: string }>(
-        'skill:updateConfig',
-        {
-          skillKey: skill.id,
-          apiKey: apiKey || '', // Empty string will delete the key
-          env: envObj // Empty object will clear all env vars
-        }
-      ) as { success: boolean; error?: string };
-
-      if (!result.success) {
-        throw new Error(result.error || 'Unknown error');
-      }
-
-      // Refresh skills from gateway to get updated config
-      await fetchSkills();
-
-      toast.success(t('detail.configSaved'));
-    } catch (err) {
-      toast.error(t('toast.failedSave') + ': ' + String(err));
-    } finally {
-      setIsSaving(false);
     }
   };
 
@@ -302,120 +194,14 @@ function SkillDetailDialog({ skill, isOpen, onClose, onToggle, onUninstall, onOp
               </div>
             )}
 
-            {/* API Key Section */}
-            {!skill.isCore && (
-              <div className="space-y-2">
-                <h3 className="text-meta font-bold flex items-center gap-2 text-foreground/80">
-                  <Key className="h-3.5 w-3.5 text-blue-500" />
-                  {t('detail.apiKey')}
-                </h3>
-                <Input
-                  placeholder={t('detail.apiKeyPlaceholder', 'Enter API Key (optional)')}
-                  value={apiKey}
-                  onChange={(e) => setApiKey(e.target.value)}
-                  type="password"
-                  className="h-[44px] font-mono text-meta bg-surface-input border-black/10 dark:border-white/10 rounded-xl focus-visible:ring-2 focus-visible:ring-blue-500/50 focus-visible:border-blue-500 shadow-sm transition-all text-foreground placeholder:text-foreground/40"
-                />
-                <p className="text-xs text-foreground/50 mt-2 font-medium">
-                  {t('detail.apiKeyDesc', 'The primary API key for this skill. Leave blank if not required or configured elsewhere.')}
-                </p>
-              </div>
-            )}
-
-            {/* Environment Variables Section */}
-            {!skill.isCore && (
-              <div className="space-y-3">
-                <div className="flex items-center justify-between w-full">
-                  <div className="flex items-center gap-2">
-                    <h3 className="text-meta font-bold text-foreground/80">
-                      {t('detail.envVars')}
-                      {envVars.length > 0 && (
-                        <Badge variant="secondary" className="ml-2 px-1.5 py-0 text-2xs h-5 bg-black/10 dark:bg-white/10 text-foreground">
-                          {envVars.length}
-                        </Badge>
-                      )}
-                    </h3>
-                  </div>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="h-7 text-xs font-semibold text-foreground/80 gap-1.5 px-2.5 hover:bg-black/5 dark:hover:bg-white/5"
-                    onClick={handleAddEnv}
-                  >
-                    <Plus className="h-3 w-3" strokeWidth={3} />
-                    {t('detail.addVariable', 'Add Variable')}
-                  </Button>
-                </div>
-
-                <div className="space-y-2">
-                  {envVars.length === 0 && (
-                    <div className="text-meta text-foreground/50 font-medium italic flex items-center bg-surface-input border border-black/5 dark:border-white/5 rounded-xl px-4 py-3 shadow-sm">
-                      {t('detail.noEnvVars', 'No environment variables configured.')}
-                    </div>
-                  )}
-
-                  {envVars.map((env, index) => (
-                    <div className="flex items-center gap-3" key={index}>
-                      <Input
-                        value={env.key}
-                        onChange={(e) => handleUpdateEnv(index, 'key', e.target.value)}
-                        className="flex-1 h-[40px] font-mono text-meta bg-surface-input border-black/10 dark:border-white/10 rounded-xl focus-visible:ring-2 focus-visible:ring-blue-500/50 shadow-sm text-foreground"
-                        placeholder={t('detail.keyPlaceholder', 'Key')}
-                      />
-                      <Input
-                        value={env.value}
-                        onChange={(e) => handleUpdateEnv(index, 'value', e.target.value)}
-                        className="flex-1 h-[40px] font-mono text-meta bg-surface-input border-black/10 dark:border-white/10 rounded-xl focus-visible:ring-2 focus-visible:ring-blue-500/50 shadow-sm text-foreground"
-                        placeholder={t('detail.valuePlaceholder', 'Value')}
-                      />
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-10 w-10 text-destructive/70 hover:text-destructive hover:bg-destructive/10 shrink-0 rounded-xl transition-colors"
-                        onClick={() => handleRemoveEnv(index)}
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* External Links */}
-            {skill.slug && !skill.isBundled && !skill.isCore && (
-              <div className="flex gap-2 justify-center pt-8">
-                <Button variant="outline" size="sm" className="h-[28px] text-tiny font-medium px-3 gap-1.5 rounded-full border-black/10 dark:border-white/10 bg-transparent hover:bg-black/5 dark:hover:bg-white/5 shadow-none text-foreground/70" onClick={handleOpenClawhub}>
-                  <Globe className="h-[12px] w-[12px]" />
-                  ClawHub
-                </Button>
-                <Button variant="outline" size="sm" className="h-[28px] text-tiny font-medium px-3 gap-1.5 rounded-full border-black/10 dark:border-white/10 bg-transparent hover:bg-black/5 dark:hover:bg-white/5 shadow-none text-foreground/70" onClick={handleOpenEditor}>
-                  <FileCode className="h-[12px] w-[12px]" />
-                  {t('detail.openManual')}
-                </Button>
-              </div>
-            )}
           </div>
 
-          {/* Centered Footer Buttons */}
-          <div className="pt-8 pb-4 flex items-center justify-center gap-4 w-full px-2 max-w-[340px] mx-auto">
-            {!skill.isCore && (
-              <Button
-                onClick={handleSaveConfig}
-                className={cn(
-                  "flex-1 h-[42px] text-meta rounded-full font-semibold shadow-sm border border-transparent transition-all",
-                  "bg-brand hover:bg-brand-hover text-white"
-                )}
-                disabled={isSaving}
-              >
-                {isSaving ? t('detail.saving') : t('detail.saveConfig')}
-              </Button>
-            )}
-
-            {!skill.isCore && (
+          {/* Centered Footer Button — uninstall / disable / enable */}
+          {!skill.isCore && (
+            <div className="pt-8 pb-4 flex items-center justify-center w-full px-2 max-w-[340px] mx-auto">
               <Button
                 variant="outline"
-                className="flex-1 h-[42px] text-meta rounded-full font-semibold shadow-sm bg-transparent border-black/20 dark:border-white/20 hover:bg-black/5 dark:hover:bg-white/5 transition-colors text-foreground/80 hover:text-foreground"
+                className="w-full h-[42px] text-meta rounded-full font-semibold shadow-sm bg-transparent border-black/20 dark:border-white/20 hover:bg-black/5 dark:hover:bg-white/5 transition-colors text-foreground/80 hover:text-foreground"
                 onClick={() => {
                   if (!skill.isBundled && onUninstall && skill.slug) {
                     onUninstall(skill.slug);
@@ -429,8 +215,8 @@ function SkillDetailDialog({ skill, isOpen, onClose, onToggle, onUninstall, onOp
                   ? t('detail.uninstall')
                   : (skill.enabled ? t('detail.disable') : t('detail.enable'))}
               </Button>
-            )}
-          </div>
+            </div>
+          )}
         </div>
       </SheetContent>
     </Sheet>

@@ -1070,6 +1070,7 @@ export async function invokeIpcWithRetry<T>(
 
 export type FilePreviewError =
   | 'outsideSandbox'
+  | 'readOnlyRoot'
   | 'tooLarge'
   | 'binary'
   | 'notFound'
@@ -1082,6 +1083,13 @@ export interface ReadTextFileResult {
   content?: string;
   mimeType?: string;
   size?: number;
+  /**
+   * Set by the main process when the resolved path lives in a read-only
+   * root (bundled skill, app resources, …).  The renderer should disable
+   * editing affordances when this is true even if the caller passes
+   * `readOnly={false}`.
+   */
+  readOnly?: boolean;
   error?: FilePreviewError;
 }
 
@@ -1096,6 +1104,7 @@ export interface StatFileResult {
   mtime?: number;
   isFile?: boolean;
   isDir?: boolean;
+  readOnly?: boolean;
   error?: FilePreviewError;
 }
 

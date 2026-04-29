@@ -11,7 +11,7 @@
  * - Save flow: edits update local state, "保存" calls `file:writeText`.
  */
 import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from 'react';
-import { FolderOpen, Save, Undo2 } from 'lucide-react';
+import { FolderOpen, Save, ShieldAlert, Undo2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/ui/button';
@@ -56,9 +56,10 @@ export interface FilePreviewOverlayProps {
 type LoadState =
   | { status: 'idle' }
   | { status: 'loading' }
-  | { status: 'ready'; content: string; size?: number }
+  | { status: 'ready'; content: string; size?: number; readOnly: boolean }
   | { status: 'tooLarge'; size?: number }
   | { status: 'binary' }
+  | { status: 'outsideSandbox' }
   | { status: 'error'; message: string };
 
 type Tab = 'source' | 'preview' | 'diff' | 'info';
@@ -150,6 +151,9 @@ export function FilePreviewOverlay({ file, readOnly = false, onClose }: FilePrev
   const [tab, setTab] = useState<Tab>('source');
   const [size, setSize] = useState<number | undefined>(undefined);
 
+  // We don't know the IPC-side readOnly until the file loads, so the tab
+  // list briefly assumes the prop value.  That's fine because the diff tab
+  // only matters for editable Chat-side cards anyway.
   const tabs = useMemo(() => (file ? tabsForFile(file, readOnly) : []), [file, readOnly]);
 
   // Re-load when target file changes.
@@ -163,8 +167,9 @@ export function FilePreviewOverlay({ file, readOnly = false, onClose }: FilePrev
     setTab(pickInitialTab(tabs, file));
 
     if (file.contentType === 'snapshot' || file.contentType === 'video' || file.contentType === 'audio') {
-      // Media — no text content needed.
-      setState({ status: 'ready', content: '' });
+      // Media — no text content needed; assume writable until proven otherwise
+      // (these are previewed via file:// URLs and never edited from the overlay).
+      setState({ status: 'ready', content: '', readOnly: readOnly });
       setDraft(null);
       return;
     }
@@ -183,10 +188,19 @@ export function FilePreviewOverlay({ file, readOnly = false, onClose }: FilePrev
             setState({ status: 'binary' });
             return;
           }
+          if (res.error === 'outsideSandbox') {
+            setState({ status: 'outsideSandbox' });
+            return;
+          }
           setState({ status: 'error', message: String(res.error ?? 'unknown') });
           return;
         }
-        setState({ status: 'ready', content: res.content ?? '', size: res.size });
+        setState({
+          status: 'ready',
+          content: res.content ?? '',
+          size: res.size,
+          readOnly: readOnly || !!res.readOnly,
+        });
         setDraft(res.content ?? '');
         setSize(res.size);
       })
@@ -197,9 +211,10 @@ export function FilePreviewOverlay({ file, readOnly = false, onClose }: FilePrev
     return () => {
       cancelled = true;
     };
-  }, [file, tabs]);
+  }, [file, readOnly, tabs]);
 
-  const dirty = state.status === 'ready' && draft != null && draft !== state.content;
+  const effectiveReadOnly = state.status === 'ready' ? state.readOnly : true;
+  const dirty = state.status === 'ready' && !state.readOnly && draft != null && draft !== state.content;
 
   const handleSave = useCallback(async () => {
     if (!file || !dirty || draft == null) return;
@@ -209,13 +224,15 @@ export function FilePreviewOverlay({ file, readOnly = false, onClose }: FilePrev
       if (!res.ok) {
         throw new Error(res.error ?? 'unknown');
       }
-      setState({ status: 'ready', content: draft, size });
+      setState({ status: 'ready', content: draft, size, readOnly: false });
       toast.success(t('filePreview.toast.saved', '已保存到磁盘'));
     } catch (err) {
       const code = err instanceof Error ? err.message : String(err);
       const localized = code === 'outsideSandbox'
         ? t('filePreview.errors.outsideSandbox', '路径越界，已拒绝写入')
-        : t('filePreview.toast.saveFailed', { defaultValue: '保存失败：{{error}}', error: code });
+        : code === 'readOnlyRoot'
+          ? t('filePreview.errors.readOnlyRoot', '该文件位于只读位置（如内置技能），无法修改')
+          : t('filePreview.toast.saveFailed', { defaultValue: '保存失败：{{error}}', error: code });
       toast.error(localized);
     } finally {
       setSaving(false);
@@ -265,16 +282,42 @@ export function FilePreviewOverlay({ file, readOnly = false, onClose }: FilePrev
         </div>
       );
     }
+    if (state.status === 'outsideSandbox') {
+      return (
+        <div className="flex h-full flex-col items-center justify-center gap-4 px-8 text-center">
+          <div className="flex h-12 w-12 items-center justify-center rounded-full bg-amber-500/10 text-amber-500">
+            <ShieldAlert className="h-6 w-6" />
+          </div>
+          <div className="space-y-1.5">
+            <p className="text-sm font-medium text-foreground">
+              {t('filePreview.errors.outsideSandboxTitle', '此文件位于沙盒外')}
+            </p>
+            <p className="max-w-md text-xs leading-relaxed text-muted-foreground">
+              {t(
+                'filePreview.errors.outsideSandboxHint',
+                '出于安全考虑，ClawX 仅允许预览 ~/.openclaw、应用资源以及内置技能目录中的文件。可在 Finder 中查看。',
+              )}
+            </p>
+          </div>
+          <Button variant="outline" size="sm" onClick={handleOpenInFinder}>
+            <FolderOpen className="mr-2 h-4 w-4" />
+            {t('filePreview.actions.openInFinder', '在 Finder 中显示')}
+          </Button>
+        </div>
+      );
+    }
     if (state.status === 'error') {
       const errMsg = state.message;
-      const hint = errMsg === 'outsideSandbox'
-        ? t('filePreview.errors.outsideSandbox', '路径越界，已拒绝读取')
-        : errMsg === 'notFound'
-          ? t('filePreview.errors.notFound', '文件不存在')
-          : errMsg;
+      const hint = errMsg === 'notFound'
+        ? t('filePreview.errors.notFound', '文件不存在')
+        : t('filePreview.errors.loadFailed', { defaultValue: '加载失败：{{error}}', error: errMsg });
       return (
-        <div className="flex h-full items-center justify-center px-6 text-center text-sm text-destructive">
-          {hint}
+        <div className="flex h-full flex-col items-center justify-center gap-3 px-6 text-center text-sm text-muted-foreground">
+          <p>{hint}</p>
+          <Button variant="outline" size="sm" onClick={handleOpenInFinder}>
+            <FolderOpen className="mr-2 h-4 w-4" />
+            {t('filePreview.actions.openInFinder', '在 Finder 中显示')}
+          </Button>
         </div>
       );
     }
@@ -305,8 +348,8 @@ export function FilePreviewOverlay({ file, readOnly = false, onClose }: FilePrev
                   <MonacoViewerLazy
                     filePath={file.filePath}
                     value={draft ?? ''}
-                    readOnly={readOnly}
-                    onChange={readOnly ? undefined : (next) => setDraft(next)}
+                    readOnly={effectiveReadOnly}
+                    onChange={effectiveReadOnly ? undefined : (next) => setDraft(next)}
                   />
                 </Suspense>
               )}
@@ -378,7 +421,7 @@ export function FilePreviewOverlay({ file, readOnly = false, onClose }: FilePrev
                   <p className="truncate text-2xs text-muted-foreground">{file.filePath}</p>
                 </div>
               </div>
-              {!readOnly && (
+              {!effectiveReadOnly && state.status === 'ready' && (
                 <div className="flex shrink-0 items-center gap-2">
                   <Button
                     variant="ghost"

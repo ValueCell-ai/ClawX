@@ -2688,7 +2688,11 @@ function isPathInside(child: string, parent: string): boolean {
   return c === p || c.startsWith(p + sep);
 }
 
-function getFilePreviewAllowedRoots(): string[] {
+/**
+ * Roots inside which the file preview pipeline can READ AND WRITE.
+ * These are the user's own data directories — modifying them is safe.
+ */
+function getFilePreviewWriteRoots(): string[] {
   const roots: string[] = [];
   const openclawDir = join(homedir(), '.openclaw');
   roots.push(resolve(openclawDir));
@@ -2701,7 +2705,37 @@ function getFilePreviewAllowedRoots(): string[] {
   return roots;
 }
 
-async function resolveSandboxedPath(input: string): Promise<string> {
+/**
+ * Additional roots inside which the file preview pipeline can READ ONLY.
+ * Bundled skills, app resources and the dev-mode project root live here:
+ * the user has a legitimate reason to peek at SKILL.md / scripts shipped
+ * with the app, but writing to them would corrupt the install.
+ */
+function getFilePreviewReadOnlyRoots(): string[] {
+  const roots: string[] = [];
+  try {
+    // In dev this is the project root (covers `node_modules/.pnpm/...`),
+    // in prod it points at the asar / app dir.
+    roots.push(resolve(app.getAppPath()));
+  } catch {
+    // app.getAppPath() can throw before the app is ready; ignore.
+  }
+  if (typeof process.resourcesPath === 'string' && process.resourcesPath) {
+    roots.push(resolve(process.resourcesPath));
+  }
+  return roots;
+}
+
+interface ResolvedSandboxedPath {
+  realPath: string;
+  /** True when the resolved path lives in a read-only-only root (e.g. bundled skill). */
+  readOnly: boolean;
+}
+
+async function resolveSandboxedPath(
+  input: string,
+  mode: 'read' | 'write' = 'read',
+): Promise<ResolvedSandboxedPath> {
   if (typeof input !== 'string' || !input.trim()) {
     throw new Error('outsideSandbox');
   }
@@ -2718,11 +2752,24 @@ async function resolveSandboxedPath(input: string): Promise<string> {
     // resolve without realpath fallback so the sandbox check is still applied.
     real = resolve(expanded);
   }
-  const allowedRoots = getFilePreviewAllowedRoots();
-  if (!allowedRoots.some((root) => isPathInside(real, root))) {
+  const writeRoots = getFilePreviewWriteRoots();
+  if (writeRoots.some((root) => isPathInside(real, root))) {
+    return { realPath: real, readOnly: false };
+  }
+  if (mode === 'write') {
+    // Caller wants to mutate. If the path is inside a read-only root we can
+    // surface a more informative error; otherwise it's a true sandbox miss.
+    const roRoots = getFilePreviewReadOnlyRoots();
+    if (roRoots.some((root) => isPathInside(real, root))) {
+      throw new Error('readOnlyRoot');
+    }
     throw new Error('outsideSandbox');
   }
-  return real;
+  const roRoots = getFilePreviewReadOnlyRoots();
+  if (roRoots.some((root) => isPathInside(real, root))) {
+    return { realPath: real, readOnly: true };
+  }
+  throw new Error('outsideSandbox');
 }
 
 function looksLikeBinary(buf: Buffer): boolean {
@@ -2749,7 +2796,7 @@ function shouldSkipFileEntry(name: string, includeHidden: boolean): boolean {
 function registerFilePreviewHandlers(): void {
   ipcMain.handle('file:readText', async (_, inputPath: string) => {
     try {
-      const real = await resolveSandboxedPath(inputPath);
+      const { realPath: real, readOnly } = await resolveSandboxedPath(inputPath, 'read');
       const fsP = await import('fs/promises');
       const stat = await fsP.stat(real);
       if (!stat.isFile()) {
@@ -2767,6 +2814,7 @@ function registerFilePreviewHandlers(): void {
         content: buf.toString('utf8'),
         mimeType: getMimeType(extname(real)),
         size: stat.size,
+        readOnly,
       };
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
@@ -2788,7 +2836,7 @@ function registerFilePreviewHandlers(): void {
       if (Buffer.byteLength(content, 'utf8') > FILE_PREVIEW_MAX_TEXT_BYTES) {
         return { ok: false, error: 'tooLarge' };
       }
-      const real = await resolveSandboxedPath(inputPath);
+      const { realPath: real } = await resolveSandboxedPath(inputPath, 'write');
       const fsP = await import('fs/promises');
       // Only allow writing existing files to avoid surprise creation.
       let stat;
@@ -2807,13 +2855,16 @@ function registerFilePreviewHandlers(): void {
       if (message === 'outsideSandbox') {
         return { ok: false, error: 'outsideSandbox' };
       }
+      if (message === 'readOnlyRoot') {
+        return { ok: false, error: 'readOnlyRoot' };
+      }
       return { ok: false, error: message };
     }
   });
 
   ipcMain.handle('file:stat', async (_, inputPath: string) => {
     try {
-      const real = await resolveSandboxedPath(inputPath);
+      const { realPath: real, readOnly } = await resolveSandboxedPath(inputPath, 'read');
       const fsP = await import('fs/promises');
       const stat = await fsP.stat(real);
       return {
@@ -2822,6 +2873,7 @@ function registerFilePreviewHandlers(): void {
         mtime: stat.mtimeMs,
         isFile: stat.isFile(),
         isDir: stat.isDirectory(),
+        readOnly,
       };
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
@@ -2837,7 +2889,7 @@ function registerFilePreviewHandlers(): void {
 
   ipcMain.handle('file:listDir', async (_, inputPath: string) => {
     try {
-      const real = await resolveSandboxedPath(inputPath);
+      const { realPath: real } = await resolveSandboxedPath(inputPath, 'read');
       const fsP = await import('fs/promises');
       const dirents = await fsP.readdir(real, { withFileTypes: true });
       const entries = await Promise.all(dirents.map(async (entry) => {
@@ -2872,7 +2924,7 @@ function registerFilePreviewHandlers(): void {
 
   ipcMain.handle('file:listTree', async (_, inputPath: string, opts?: FilePreviewTreeOptions) => {
     try {
-      const real = await resolveSandboxedPath(inputPath);
+      const { realPath: real } = await resolveSandboxedPath(inputPath, 'read');
       const fsP = await import('fs/promises');
       const stat = await fsP.stat(real);
       if (!stat.isDirectory()) {
