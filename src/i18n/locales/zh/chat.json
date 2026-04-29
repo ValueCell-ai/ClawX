@@ -79,7 +79,9 @@
         "diff": {
             "noChanges": "没有可显示的变更",
             "newFile": "这是新增文件，无对比内容",
-            "tooLarge": "文件过大，已禁用 diff 视图，请到「源码」标签查看完整内容"
+            "tooLarge": "文件过大，已禁用 diff 视图，请到「源码」标签查看完整内容",
+            "unavailable": "本会话没有抓到这个文件的写入/编辑 payload，无法生成 diff。",
+            "unavailableHint": "可点击顶部「预览」查看当前文件内容；若需精确差异，请在 Git 等工具中对比版本。"
         }
     },
     "workspace": {

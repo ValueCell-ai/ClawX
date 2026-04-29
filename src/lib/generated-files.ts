@@ -37,9 +37,9 @@ export interface GeneratedFile {
   fullContent?: string;
   /**
    * Ordered list of edits applied to this file during the run (Edit /
-   * StrReplace / MultiEdit).  Used by the diff view to reconstruct the
-   * pre-edit content by reverse-applying each op against the current
-   * on-disk content.
+   * StrReplace / MultiEdit).  The diff view renders these directly as a
+   * snippet diff (joined `old` vs joined `new`), matching WorkBuddy /
+   * Codex behaviour.
    */
   edits?: FileEditOp[];
   /** Index of the latest tool call that touched this file (for stable ordering). */
@@ -177,9 +177,41 @@ function pickFilePath(input: unknown): string | null {
 function pickWriteContent(input: unknown): string | undefined {
   const rec = asRecord(input);
   if (!rec) return undefined;
-  for (const key of ['content', 'contents', 'text', 'body', 'data', 'new_content']) {
+  for (const key of [
+    'content',
+    'contents',
+    'text',
+    'body',
+    'data',
+    'new_content',
+    'new_string',
+    'newString',
+    'string',
+    'source',
+  ]) {
     const value = rec[key];
     if (typeof value === 'string') return value;
+  }
+  return undefined;
+}
+
+// Aliases mirror WorkBuddy's tool-arg normaliser so we accept whichever
+// naming convention the agent emits (Codex, Claude, Cursor, Cline …).
+const OLD_KEYS = [
+  'old_string', 'oldString', 'old_str', 'oldStr',
+  'old_text', 'oldText',
+  'old', 'oldContent', 'before', 'find', 'search',
+];
+const NEW_KEYS = [
+  'new_string', 'newString', 'new_str', 'newStr',
+  'new_text', 'newText',
+  'new', 'newContent', 'after', 'replace', 'replacement',
+];
+
+function pickStringByKeys(rec: Record<string, unknown>, keys: string[]): string | undefined {
+  for (const k of keys) {
+    const v = rec[k];
+    if (typeof v === 'string') return v;
   }
   return undefined;
 }
@@ -188,38 +220,16 @@ function pickEditOps(input: unknown): FileEditOp[] {
   const rec = asRecord(input);
   if (!rec) return [];
   const ops: FileEditOp[] = [];
-  // Single-edit shape: { old_string, new_string } (and aliases)
-  const singleOld = typeof rec.old_string === 'string'
-    ? rec.old_string
-    : typeof rec.oldString === 'string'
-      ? rec.oldString
-      : typeof rec.find === 'string'
-        ? rec.find
-        : undefined;
-  const singleNew = typeof rec.new_string === 'string'
-    ? rec.new_string
-    : typeof rec.newString === 'string'
-      ? rec.newString
-      : typeof rec.replace === 'string'
-        ? rec.replace
-        : undefined;
+  const singleOld = pickStringByKeys(rec, OLD_KEYS);
+  const singleNew = pickStringByKeys(rec, NEW_KEYS);
   if (singleOld !== undefined || singleNew !== undefined) {
     ops.push({ old: singleOld ?? '', new: singleNew ?? '' });
   }
-  // MultiEdit shape: { edits: [{ old_string, new_string }, ...] }
   const edits = rec.edits;
   if (Array.isArray(edits)) {
     for (const edit of edits as Array<Record<string, unknown>>) {
-      const o = typeof edit.old_string === 'string'
-        ? edit.old_string
-        : typeof edit.oldString === 'string'
-          ? edit.oldString
-          : '';
-      const n = typeof edit.new_string === 'string'
-        ? edit.new_string
-        : typeof edit.newString === 'string'
-          ? edit.newString
-          : '';
+      const o = pickStringByKeys(edit, OLD_KEYS) ?? '';
+      const n = pickStringByKeys(edit, NEW_KEYS) ?? '';
       if (o !== '' || n !== '') ops.push({ old: o, new: n });
     }
   }
@@ -325,3 +335,4 @@ export function extractGeneratedFiles(
 
   return Array.from(map.values()).sort((a, b) => a.lastSeenIndex - b.lastSeenIndex);
 }
+

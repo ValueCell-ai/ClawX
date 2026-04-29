@@ -140,6 +140,7 @@ function generatedFileToTarget(file: GeneratedFile): FilePreviewTarget {
     ext: file.ext,
     mimeType: file.mimeType,
     contentType: file.contentType,
+    action: file.action,
     fullContent: file.fullContent,
     edits: file.edits,
   };

@@ -79,6 +79,7 @@ function generatedFileToTarget(file: GeneratedFile): FilePreviewTarget {
     ext: file.ext,
     mimeType: file.mimeType,
     contentType: file.contentType,
+    action: file.action,
     fullContent: file.fullContent,
     edits: file.edits,
   };
@@ -559,6 +560,7 @@ export function Chat() {
     for (const files of filesByRun.values()) all.push(...files);
     return all;
   }, [filesByRun]);
+
   const refreshSignal = useMemo(() => {
     if (sending) return undefined;
     return lastUserMessageAt ?? 0;

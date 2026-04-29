@@ -35,7 +35,7 @@ import MarkdownPreview from './MarkdownPreview';
 import ImageViewer from './ImageViewer';
 
 const MonacoViewerLazy = lazy(() => import('./MonacoViewer'));
-const SplitDiffViewerLazy = lazy(() => import('./SplitDiffViewer'));
+const MonacoDiffViewerLazy = lazy(() => import('./MonacoDiffViewer'));
 
 /**
  * Tab set for the body.
@@ -73,7 +73,7 @@ type LoadState =
 
 type Tab = 'source' | 'preview' | 'diff';
 
-function tabsForFile(file: FilePreviewTarget, readOnly: boolean, mode: FilePreviewBodyMode): Tab[] {
+function tabsForFile(file: FilePreviewTarget, mode: FilePreviewBodyMode): Tab[] {
   // Diff-only mode short-circuits.  Callers (e.g. the 变更 tab's right
   // pane) want a pure git-style diff with no tab strip.
   if (mode === 'diff') return ['diff'];
@@ -93,10 +93,10 @@ function tabsForFile(file: FilePreviewTarget, readOnly: boolean, mode: FilePrevi
   } else {
     tabs.push('source');
   }
-  // Diff tab only appears in 'full' mode for editable files with edits.
+  // Diff tab appears in 'full' mode whenever we captured a Write/Edit
+  // payload — read-only is fine, the diff is informational only.
   if (
     mode === 'full' &&
-    !readOnly &&
     (file.fullContent != null || (file.edits != null && file.edits.length > 0))
   ) {
     tabs.push('diff');
@@ -116,30 +116,45 @@ function normaliseEol(s: string): string {
   return s.replace(/\r\n/g, '\n');
 }
 
-function computeDiffPair(
-  file: FilePreviewTarget,
-  diskContent: string,
-): { oldContent: string | null; newContent: string } {
-  const diskLF = normaliseEol(diskContent);
-  if (file.fullContent != null) {
-    return { oldContent: null, newContent: normaliseEol(file.fullContent) };
-  }
+type DiffPair = {
+  /** Left pane.  `null` makes Monaco render the side as empty (new-file). */
+  oldContent: string | null;
+  /** Right pane. */
+  newContent: string;
+  /**
+   * - `whole`       – right pane is the full file (Write tool).
+   * - `snippet`     – left/right are the joined Edit op old/new strings.
+   * - `unavailable` – the chat captured no payload to diff against.
+   */
+  kind: 'whole' | 'snippet' | 'unavailable';
+};
+
+/** Visual separator between MultiEdit hunks. */
+const SNIPPET_SEPARATOR = '\n\n';
+
+/**
+ * Build a diff pair purely from the captured tool payload — never reads
+ * disk.  This mirrors WorkBuddy / Codex behaviour: Write shows
+ * "empty → full", Edit shows the exact old → new snippet swap.
+ */
+function computeDiffPair(file: FilePreviewTarget): DiffPair {
+  // Edit / StrReplace / MultiEdit — show the snippet swap directly.
   if (file.edits && file.edits.length > 0) {
-    let reconstructed = diskLF;
-    for (let i = file.edits.length - 1; i >= 0; i -= 1) {
-      const op = file.edits[i];
-      const oldLF = normaliseEol(op.old);
-      const newLF = normaliseEol(op.new);
-      if (!newLF) continue;
-      const idx = reconstructed.indexOf(newLF);
-      if (idx < 0) {
-        return { oldContent: diskLF, newContent: diskLF };
-      }
-      reconstructed = reconstructed.slice(0, idx) + oldLF + reconstructed.slice(idx + newLF.length);
+    const lefts = file.edits.map((op) => normaliseEol(op.old ?? ''));
+    const rights = file.edits.map((op) => normaliseEol(op.new ?? ''));
+    const left = lefts.join(SNIPPET_SEPARATOR);
+    const right = rights.join(SNIPPET_SEPARATOR);
+    if (left || right) {
+      return { oldContent: left, newContent: right, kind: 'snippet' };
     }
-    return { oldContent: reconstructed, newContent: diskLF };
   }
-  return { oldContent: diskLF, newContent: diskLF };
+  // Write family — empty vs new content (treat as new file from the
+  // diff's perspective; the badge still reads "modified" if the file
+  // existed before).
+  if (file.fullContent != null) {
+    return { oldContent: null, newContent: normaliseEol(file.fullContent), kind: 'whole' };
+  }
+  return { oldContent: null, newContent: '', kind: 'unavailable' };
 }
 
 export function FilePreviewBody({
@@ -161,13 +176,18 @@ export function FilePreviewBody({
   // Preview / diff modes are read-only by definition — those views are
   // for inspecting content, not editing it.
   const enforcedReadOnly = readOnly || mode === 'preview' || mode === 'diff';
-  const tabs = useMemo(
-    () => tabsForFile(file, enforcedReadOnly, mode),
-    [file, enforcedReadOnly, mode],
-  );
+  const tabs = useMemo(() => tabsForFile(file, mode), [file, mode]);
 
   useEffect(() => {
     setTab(pickInitialTab(tabs, file));
+
+    // Diff-only mode renders entirely from the captured tool payload —
+    // no disk read needed, so we can mark the body "ready" immediately.
+    if (mode === 'diff') {
+      setState({ status: 'ready', content: '', readOnly: enforcedReadOnly });
+      setDraft(null);
+      return;
+    }
 
     if (file.contentType === 'snapshot' || file.contentType === 'video' || file.contentType === 'audio') {
       setState({ status: 'ready', content: '', readOnly: enforcedReadOnly });
@@ -212,7 +232,7 @@ export function FilePreviewBody({
     return () => {
       cancelled = true;
     };
-  }, [file, enforcedReadOnly, tabs]);
+  }, [file, enforcedReadOnly, mode, tabs]);
 
   const effectiveReadOnly = state.status === 'ready' ? state.readOnly : true;
   const dirty =
@@ -393,13 +413,30 @@ export function FilePreviewBody({
                 }
               >
                 {(() => {
-                  const { oldContent, newContent } = computeDiffPair(file, state.content);
+                  const pair = computeDiffPair(file);
+                  if (pair.kind === 'unavailable') {
+                    return (
+                      <div className="flex h-full flex-col items-center justify-center gap-2 px-6 text-center">
+                        <p className="max-w-md text-sm text-muted-foreground">
+                          {t(
+                            'filePreview.diff.unavailable',
+                            '本会话没有抓到这个文件的写入/编辑 payload，无法生成 diff。',
+                          )}
+                        </p>
+                        <p className="max-w-md text-2xs text-muted-foreground/90">
+                          {t(
+                            'filePreview.diff.unavailableHint',
+                            '可点击顶部「预览」查看当前文件内容；若需精确差异，请在 Git 等工具中对比版本。',
+                          )}
+                        </p>
+                      </div>
+                    );
+                  }
                   return (
-                    <SplitDiffViewerLazy
+                    <MonacoDiffViewerLazy
                       filePath={file.filePath}
-                      fileName={file.fileName}
-                      original={oldContent}
-                      modified={newContent}
+                      original={pair.oldContent}
+                      modified={pair.newContent}
                     />
                   );
                 })()}

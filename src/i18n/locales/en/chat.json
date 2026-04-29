@@ -79,7 +79,9 @@
         "diff": {
             "noChanges": "No changes to display",
             "newFile": "New file — no original to compare",
-            "tooLarge": "File too large — diff view disabled, switch to the Source tab to view the full content"
+            "tooLarge": "File too large — diff view disabled, switch to the Source tab to view the full content",
+            "unavailable": "No write/edit payload was captured for this file in the current chat — no diff is available.",
+            "unavailableHint": "Use the Preview tab for the current file; use Git or another VCS for an exact diff."
         }
     },
     "workspace": {

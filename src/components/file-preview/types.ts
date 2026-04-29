@@ -14,14 +14,22 @@ export interface FilePreviewTarget {
   mimeType: string;
   contentType: FileContentType;
   /**
-   * Full new content of the file at the time of the edit (set by `Write`-
-   * family tools).  When present we can show a "before vs after" diff
-   * even if the file no longer exists on disk.
+   * From chat extraction only.  Drives the badge in the changes list and is
+   * not used by the diff view itself (which derives "before/after" from
+   * `fullContent` / `edits` directly, WorkBuddy-style).
+   */
+  action?: 'created' | 'modified';
+  /**
+   * Full new content of the file when the tool payload provides it (Write
+   * family).  The diff view renders this as `null vs fullContent`, i.e. a
+   * "new file" diff with an empty left pane.
    */
   fullContent?: string;
   /**
-   * Edit ops applied during the current run, used to reconstruct the
-   * pre-edit content via reverse-application against the on-disk content.
+   * Edit operations from Edit / StrReplace / MultiEdit.  The diff view
+   * renders these directly as a snippet diff (left = joined `op.old`,
+   * right = joined `op.new`) — exactly what the AI changed, no disk
+   * reads, no reverse-application.
    */
   edits?: FileEditOp[];
 }
