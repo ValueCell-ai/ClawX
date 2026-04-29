@@ -34,11 +34,11 @@
         "changes": {
             "heading": "File changes ({{count}})",
             "empty": "No file changes in this conversation yet",
-            "selectFileHint": "Pick a file on the left to view its changes"
+            "selectFileHint": "Click a file card in the chat or “View changes” to open a diff."
         },
         "preview": {
             "emptyTitle": "No file selected",
-            "emptyHint": "Pick a file from \"Changes\" to preview it here."
+            "emptyHint": "Click a file card in the chat first; the selected file will preview here."
         }
     },
     "filePreview": {

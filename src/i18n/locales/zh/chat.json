@@ -34,11 +34,11 @@
         "changes": {
             "heading": "文件变更（{{count}} 个）",
             "empty": "本会话尚无文件变更",
-            "selectFileHint": "在左侧选择一个文件以查看变更"
+            "selectFileHint": "请点击对话中的文件卡片，或「查看文件变更」打开 diff。"
         },
         "preview": {
             "emptyTitle": "尚未选择文件",
-            "emptyHint": "在左侧 “变更” 中选择一个文件，即可在此预览。"
+            "emptyHint": "请先点击对话里的文件卡片，侧栏会选中该文件后在此预览。"
         }
     },
     "filePreview": {

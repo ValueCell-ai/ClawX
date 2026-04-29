@@ -2,11 +2,9 @@
  * Right-side artifact panel — the WorkBuddy-style split-pane sidebar
  * shown next to the Chat conversation.  Hosts three top-level tabs:
  *
- *   - 变更 (changes): a git-style split — left column lists every file
- *     touched in the conversation; the right pane renders the diff for
- *     the currently selected file (auto-selected to the first entry on
- *     entry).  Clicking another file in the left column swaps the diff
- *     without leaving the tab.
+ *   - 变更 (changes): side-by-side diff for the focused file only (no
+ *     in-panel file list — open a file from the run’s file cards below
+ *     the graph, or “查看文件变更” picks the latest change).
  *   - 预览 (preview): rendered preview of whichever file is currently
  *     focused (Markdown → rendered, code → syntax-highlighted).  Shares
  *     `focusedFile` with the changes tab so switching tabs keeps
@@ -18,10 +16,9 @@
  * `useArtifactPanel` zustand store so any part of the page (file cards,
  * toolbar buttons, "查看文件变更 →" links) can drive it.
  */
-import { useEffect, useMemo } from 'react';
+import { useLayoutEffect, useMemo } from 'react';
 import { Eye, FileEdit, FolderTree, X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import type { GeneratedFile } from '@/lib/generated-files';
@@ -29,7 +26,6 @@ import type { AgentSummary } from '@/types/agent';
 import { useArtifactPanel } from '@/stores/artifact-panel';
 import type { FilePreviewTarget } from './types';
 import { FilePreviewBody } from './FilePreviewBody';
-import { FilePreviewIcon } from './file-card-utils';
 import { WorkspaceBrowserBody } from './WorkspaceBrowserBody';
 
 export interface ArtifactPanelProps {
@@ -153,14 +149,12 @@ interface ChangesTabProps {
 }
 
 /**
- * Git-style split: left = file list, right = diff for the selected file.
- *
- * The selected file is mirrored into the global `focusedFile` so the
- * 预览 tab can show the same target without re-selection.
+ * Full-width diff for the focused file.  Which file is focused comes from
+ * the run’s file cards or “查看文件变更 →” (auto-first); switching workspace
+ * tabs does not bring back a sidebar list.
  */
 function ChangesTab({ files, focusedFile, onFocus }: ChangesTabProps) {
   const { t } = useTranslation('chat');
-  const showChangesFileList = useArtifactPanel((s) => s.showChangesFileList);
 
   // De-dup files by path, keep the latest entry (highest lastSeenIndex).
   const uniqueFiles = useMemo(() => {
@@ -174,7 +168,7 @@ function ChangesTab({ files, focusedFile, onFocus }: ChangesTabProps) {
 
   // Auto-select the first file when entering this tab without one in
   // focus (or when the focused file disappears, e.g. session reset).
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (uniqueFiles.length === 0) return;
     const stillExists =
       focusedFile && uniqueFiles.some((f) => f.filePath === focusedFile.filePath);
@@ -191,75 +185,13 @@ function ChangesTab({ files, focusedFile, onFocus }: ChangesTabProps) {
     );
   }
 
-  return (
-    <div className="flex h-full min-h-0">
-      {/* Left: file list — hidden when the user opened Changes from a single file card. */}
-      {showChangesFileList && (
-        <aside className="flex w-[240px] shrink-0 flex-col border-r border-black/5 dark:border-white/10">
-          <div className="shrink-0 px-3 py-2 text-2xs font-semibold uppercase tracking-wide text-muted-foreground">
-            {t('artifactPanel.changes.heading', {
-              count: uniqueFiles.length,
-              defaultValue: '文件变更（{{count}} 个）',
-            })}
-          </div>
-          <ul className="min-h-0 flex-1 space-y-0.5 overflow-y-auto px-2 pb-2">
-            {uniqueFiles.map((file) => {
-              const editCount = file.edits?.length ?? 0;
-              const selected = focusedFile?.filePath === file.filePath;
-              return (
-                <li key={file.filePath}>
-                  <button
-                    type="button"
-                    onClick={() => onFocus(generatedFileToTarget(file))}
-                    className={cn(
-                      'group flex w-full items-center gap-2 rounded-md border px-2 py-1.5 text-left transition-colors',
-                      selected
-                        ? 'border-foreground/15 bg-foreground/[0.06]'
-                        : 'border-transparent hover:border-black/10 hover:bg-black/[0.03] dark:hover:border-white/10 dark:hover:bg-white/5',
-                    )}
-                    title={file.filePath}
-                  >
-                    <FilePreviewIcon
-                      contentType={file.contentType}
-                      mimeType={file.mimeType}
-                      ext={file.ext}
-                      className="h-3.5 w-3.5 shrink-0 text-muted-foreground"
-                    />
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate text-xs font-medium text-foreground">{file.fileName}</p>
-                      <p className="truncate text-2xs text-muted-foreground">{file.filePath}</p>
-                    </div>
-                    <div className="flex shrink-0 items-center gap-1">
-                      <Badge
-                        variant={file.action === 'created' ? 'default' : 'secondary'}
-                        className="text-2xs px-1 py-0"
-                      >
-                        {file.action === 'created'
-                          ? t('generatedFiles.created', '新增')
-                          : t('generatedFiles.modified', '修改')}
-                      </Badge>
-                      {editCount > 0 && (
-                        <span className="text-2xs font-mono text-muted-foreground">×{editCount}</span>
-                      )}
-                    </div>
-                  </button>
-                </li>
-              );
-            })}
-          </ul>
-        </aside>
-      )}
-
-      {/* Right: diff for the selected file. */}
-      <div className="flex min-w-0 flex-1 flex-col">
-        {focusedFile ? (
-          <FilePreviewBody key={focusedFile.filePath} file={focusedFile} compact mode="diff" />
-        ) : (
-          <div className="flex h-full items-center justify-center px-6 text-center text-sm text-muted-foreground">
-            {t('artifactPanel.changes.selectFileHint', '在左侧选择一个文件以查看变更')}
-          </div>
-        )}
-      </div>
+  return focusedFile ? (
+    <div className="flex h-full min-h-0 flex-col">
+      <FilePreviewBody key={focusedFile.filePath} file={focusedFile} compact mode="diff" />
+    </div>
+  ) : (
+    <div className="flex h-full items-center justify-center px-6 text-center text-sm text-muted-foreground">
+      {t('artifactPanel.changes.selectFileHint', '请点击对话中的文件卡片，或「查看文件变更」')}
     </div>
   );
 }
@@ -279,7 +211,7 @@ function PreviewTab({ focusedFile }: PreviewTabProps) {
         <p className="max-w-md text-xs text-muted-foreground">
           {t(
             'artifactPanel.preview.emptyHint',
-            '在左侧 “变更” 中选择一个文件，即可在此预览。',
+            '请先点击对话里的文件卡片打开侧栏并选中文件。',
           )}
         </p>
       </div>

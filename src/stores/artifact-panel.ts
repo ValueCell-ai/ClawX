@@ -34,13 +34,6 @@ interface ArtifactPanelState {
    * may auto-select the first file in that case.
    */
   focusedFile: FilePreviewTarget | null;
-  /**
-   * When `openChanges(file)` is called with a specific file (e.g. from a
-   * run card), the Changes tab hides the left file list and shows only that
-   * file's diff.  `openChanges(null)` / workspace / session reset restores
-   * the full list.
-   */
-  showChangesFileList: boolean;
   /** Persisted panel width as a % of the chat container (clamped on read). */
   widthPct: number;
   setTab: (tab: ArtifactTab) => void;
@@ -70,36 +63,23 @@ export const useArtifactPanel = create<ArtifactPanelState>()(
       open: false,
       tab: 'changes',
       focusedFile: null,
-      showChangesFileList: true,
       widthPct: ARTIFACT_PANEL_DEFAULT_WIDTH,
       setTab: (tab) => {
         // The browser tab has its own internal selection (workspace tree)
         // and should not inherit a chat-side focused file.  The changes
         // and preview tabs share `focusedFile`.
         if (tab === 'browser') {
-          set({ tab, focusedFile: null, showChangesFileList: true });
-          return;
+          set({ tab, focusedFile: null });
+        } else {
+          set({ tab, focusedFile: get().focusedFile });
         }
-        const st = get();
-        if (tab === 'changes' && !st.focusedFile) {
-          set({ tab, showChangesFileList: true });
-          return;
-        }
-        set({ tab, focusedFile: st.focusedFile });
       },
       setFocusedFile: (focusedFile) => set({ focusedFile }),
-      openChanges: (file = null) =>
-        set({
-          open: true,
-          tab: 'changes',
-          focusedFile: file ?? null,
-          showChangesFileList: file == null,
-        }),
+      openChanges: (file = null) => set({ open: true, tab: 'changes', focusedFile: file ?? null }),
       openPreview: (file = null) => set({ open: true, tab: 'preview', focusedFile: file ?? null }),
-      openBrowser: () =>
-        set({ open: true, tab: 'browser', focusedFile: null, showChangesFileList: true }),
+      openBrowser: () => set({ open: true, tab: 'browser', focusedFile: null }),
       toggle: () => set((s) => ({ open: !s.open })),
-      close: () => set({ open: false, focusedFile: null, showChangesFileList: true }),
+      close: () => set({ open: false, focusedFile: null }),
       setWidthPct: (pct) => set({ widthPct: clampWidth(pct) }),
     }),
     {
