@@ -25,17 +25,20 @@
     "artifactPanel": {
         "tabs": {
             "changes": "变更",
-            "allFiles": "全部文件",
-            "browser": "浏览器",
-            "artifacts": "产物"
+            "preview": "预览",
+            "browser": "工作空间"
         },
-        "comingSoon": "敬请期待",
         "actions": {
             "back": "返回列表"
         },
         "changes": {
             "heading": "文件变更（{{count}} 个）",
-            "empty": "本会话尚无文件变更"
+            "empty": "本会话尚无文件变更",
+            "selectFileHint": "在左侧选择一个文件以查看变更"
+        },
+        "preview": {
+            "emptyTitle": "尚未选择文件",
+            "emptyHint": "在左侧 “变更” 中选择一个文件，即可在此预览。"
         }
     },
     "filePreview": {

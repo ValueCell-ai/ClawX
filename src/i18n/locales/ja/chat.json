@@ -25,17 +25,20 @@
     "artifactPanel": {
         "tabs": {
             "changes": "変更",
-            "allFiles": "すべてのファイル",
-            "browser": "ブラウザ",
-            "artifacts": "成果物"
+            "preview": "プレビュー",
+            "browser": "ワークスペース"
         },
-        "comingSoon": "近日公開",
         "actions": {
             "back": "一覧に戻る"
         },
         "changes": {
             "heading": "ファイルの変更（{{count}} 件）",
-            "empty": "この会話にはまだファイルの変更がありません"
+            "empty": "この会話にはまだファイルの変更がありません",
+            "selectFileHint": "左側でファイルを選択すると変更が表示されます"
+        },
+        "preview": {
+            "emptyTitle": "ファイルが選択されていません",
+            "emptyHint": "「変更」からファイルを選ぶとここでプレビューできます。"
         }
     },
     "filePreview": {

@@ -25,17 +25,20 @@
     "artifactPanel": {
         "tabs": {
             "changes": "Changes",
-            "allFiles": "All files",
-            "browser": "Browser",
-            "artifacts": "Artifacts"
+            "preview": "Preview",
+            "browser": "Workspace"
         },
-        "comingSoon": "Coming soon",
         "actions": {
             "back": "Back to list"
         },
         "changes": {
             "heading": "File changes ({{count}})",
-            "empty": "No file changes in this conversation yet"
+            "empty": "No file changes in this conversation yet",
+            "selectFileHint": "Pick a file on the left to view its changes"
+        },
+        "preview": {
+            "emptyTitle": "No file selected",
+            "emptyHint": "Pick a file from \"Changes\" to preview it here."
         }
     },
     "filePreview": {

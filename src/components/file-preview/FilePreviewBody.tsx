@@ -1,11 +1,20 @@
 /**
  * Inline file preview body.
  *
- * Renders the icon header (file name / path / save / revert) and a tabbed
- * source / preview / diff / info view for a single file.  Used by:
+ * Renders the icon header (file name / path / save / revert) and a
+ * minimal tabbed view for a single file.  Documents (Markdown) render
+ * only their `preview` tab; code / other text files render `source`.
+ * A `diff` tab is added when the file is editable AND there are
+ * AI-applied edits to display.  The metadata `info` tab has been
+ * intentionally removed — path / size are visible in the header bar.
  *
+ * The `mode` prop narrows the tab set for callers that want a single,
+ * fixed view (e.g. the artifact panel's 预览 tab forces `preview`, and
+ * the 变更 tab's right pane forces `diff`).
+ *
+ * Used by:
  *   - `FilePreviewOverlay` for the Skills detail Sheet (read-only).
- *   - `ArtifactPanel`'s ChangesTab in detail view (editable).
+ *   - `ArtifactPanel`'s ChangesTab and PreviewTab.
  *
  * All sandbox / read-only / large-file / binary edge cases are handled
  * here so callers only pass a `FilePreviewTarget` and a `readOnly` flag.
@@ -17,6 +26,7 @@ import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { LoadingSpinner } from '@/components/common/LoadingSpinner';
+import { cn } from '@/lib/utils';
 import { invokeIpc, readTextFile, writeTextFile } from '@/lib/api-client';
 import type { FilePreviewTarget } from './types';
 import { FilePreviewIcon } from './file-card-utils';
@@ -27,6 +37,16 @@ import ImageViewer from './ImageViewer';
 const MonacoViewerLazy = lazy(() => import('./MonacoViewer'));
 const SplitDiffViewerLazy = lazy(() => import('./SplitDiffViewer'));
 
+/**
+ * Tab set for the body.
+ *
+ *   - 'full'    – default: preview / source / diff as appropriate.
+ *   - 'preview' – render-only; hides the diff tab and forces read-only.
+ *   - 'diff'    – diff-only; the body collapses to a single diff view
+ *                 with no tab strip, save/revert, or source toggle.
+ */
+export type FilePreviewBodyMode = 'full' | 'preview' | 'diff';
+
 export interface FilePreviewBodyProps {
   file: FilePreviewTarget;
   readOnly?: boolean;
@@ -36,6 +56,10 @@ export interface FilePreviewBodyProps {
   leadingHeader?: React.ReactNode;
   /** Optional slot rendered to the RIGHT of the header (extra actions). */
   trailingHeader?: React.ReactNode;
+  /** Limit the visible tabs.  Default: 'full'. */
+  mode?: FilePreviewBodyMode;
+  /** When true, hide the file header (name / path / actions). */
+  hideHeader?: boolean;
 }
 
 type LoadState =
@@ -47,12 +71,19 @@ type LoadState =
   | { status: 'outsideSandbox' }
   | { status: 'error'; message: string };
 
-type Tab = 'source' | 'preview' | 'diff' | 'info';
+type Tab = 'source' | 'preview' | 'diff';
 
-function tabsForFile(file: FilePreviewTarget, readOnly: boolean): Tab[] {
+function tabsForFile(file: FilePreviewTarget, readOnly: boolean, mode: FilePreviewBodyMode): Tab[] {
+  // Diff-only mode short-circuits.  Callers (e.g. the 变更 tab's right
+  // pane) want a pure git-style diff with no tab strip.
+  if (mode === 'diff') return ['diff'];
+
   const tabs: Tab[] = [];
   if (file.contentType === 'document') {
-    tabs.push('source', 'preview');
+    // Markdown-style files: rendered preview only.  We deliberately drop
+    // the source tab here since the rendered view is what users want by
+    // default and the source can still be inspected in editor tools.
+    tabs.push('preview');
   } else if (file.contentType === 'snapshot') {
     tabs.push('preview');
   } else if (file.contentType === 'video' || file.contentType === 'audio') {
@@ -62,17 +93,21 @@ function tabsForFile(file: FilePreviewTarget, readOnly: boolean): Tab[] {
   } else {
     tabs.push('source');
   }
-  if (!readOnly && (file.fullContent != null || (file.edits != null && file.edits.length > 0))) {
+  // Diff tab only appears in 'full' mode for editable files with edits.
+  if (
+    mode === 'full' &&
+    !readOnly &&
+    (file.fullContent != null || (file.edits != null && file.edits.length > 0))
+  ) {
     tabs.push('diff');
   }
-  tabs.push('info');
   return tabs;
 }
 
 function pickInitialTab(tabs: Tab[], file: FilePreviewTarget): Tab {
   if (file.contentType === 'document' && tabs.includes('preview')) return 'preview';
-  // For changes view (edited code without document tab), prefer the diff
-  // tab if present so the user sees the change immediately on click.
+  // For changes view (edited code), prefer the diff tab if present so
+  // the user sees the change immediately on click.
   if (tabs.includes('diff') && file.contentType !== 'document') return 'diff';
   return tabs[0];
 }
@@ -113,6 +148,8 @@ export function FilePreviewBody({
   compact = false,
   leadingHeader,
   trailingHeader,
+  mode = 'full',
+  hideHeader = false,
 }: FilePreviewBodyProps) {
   const { t } = useTranslation('chat');
   const [state, setState] = useState<LoadState>({ status: 'idle' });
@@ -121,13 +158,19 @@ export function FilePreviewBody({
   const [tab, setTab] = useState<Tab>('source');
   const [size, setSize] = useState<number | undefined>(undefined);
 
-  const tabs = useMemo(() => tabsForFile(file, readOnly), [file, readOnly]);
+  // Preview / diff modes are read-only by definition — those views are
+  // for inspecting content, not editing it.
+  const enforcedReadOnly = readOnly || mode === 'preview' || mode === 'diff';
+  const tabs = useMemo(
+    () => tabsForFile(file, enforcedReadOnly, mode),
+    [file, enforcedReadOnly, mode],
+  );
 
   useEffect(() => {
     setTab(pickInitialTab(tabs, file));
 
     if (file.contentType === 'snapshot' || file.contentType === 'video' || file.contentType === 'audio') {
-      setState({ status: 'ready', content: '', readOnly });
+      setState({ status: 'ready', content: '', readOnly: enforcedReadOnly });
       setDraft(null);
       return;
     }
@@ -157,7 +200,7 @@ export function FilePreviewBody({
           status: 'ready',
           content: res.content ?? '',
           size: res.size,
-          readOnly: readOnly || !!res.readOnly,
+          readOnly: enforcedReadOnly || !!res.readOnly,
         });
         setDraft(res.content ?? '');
         setSize(res.size);
@@ -169,7 +212,7 @@ export function FilePreviewBody({
     return () => {
       cancelled = true;
     };
-  }, [file, readOnly, tabs]);
+  }, [file, enforcedReadOnly, tabs]);
 
   const effectiveReadOnly = state.status === 'ready' ? state.readOnly : true;
   const dirty =
@@ -286,17 +329,25 @@ export function FilePreviewBody({
 
     return (
       <Tabs value={tab} onValueChange={(next) => setTab(next as Tab)} className="flex h-full flex-col">
-        <TabsList className="m-3 self-start">
-          {tabs.map((id) => (
-            <TabsTrigger key={id} value={id}>
-              {id === 'source' && t('filePreview.tabs.source', '源码')}
-              {id === 'preview' && t('filePreview.tabs.preview', '预览')}
-              {id === 'diff' && t('filePreview.tabs.changes', '变更')}
-              {id === 'info' && t('filePreview.tabs.info', '信息')}
-            </TabsTrigger>
-          ))}
-        </TabsList>
-        <div className="min-h-0 flex-1 border-t border-black/5 dark:border-white/10">
+        {/* Hide the tab strip when there's only one tab — keeps the UI
+            quiet for the common case (just preview / just source). */}
+        {tabs.length > 1 && (
+          <TabsList className="m-3 self-start">
+            {tabs.map((id) => (
+              <TabsTrigger key={id} value={id}>
+                {id === 'source' && t('filePreview.tabs.source', '源码')}
+                {id === 'preview' && t('filePreview.tabs.preview', '预览')}
+                {id === 'diff' && t('filePreview.tabs.changes', '变更')}
+              </TabsTrigger>
+            ))}
+          </TabsList>
+        )}
+        <div
+          className={cn(
+            'min-h-0 flex-1',
+            tabs.length > 1 && 'border-t border-black/5 dark:border-white/10',
+          )}
+        >
           {tabs.includes('source') && (
             <TabsContent value="source" className="m-0 h-full">
               {file.contentType === 'snapshot' ? (
@@ -355,18 +406,6 @@ export function FilePreviewBody({
               </Suspense>
             </TabsContent>
           )}
-          {tabs.includes('info') && (
-            <TabsContent value="info" className="m-0 h-full overflow-auto p-6">
-              <dl className="grid grid-cols-[120px_1fr] gap-y-2 text-xs">
-                <dt className="text-muted-foreground">{t('filePreview.info.path', '路径')}</dt>
-                <dd className="break-all font-mono">{file.filePath}</dd>
-                <dt className="text-muted-foreground">{t('filePreview.info.size', '大小')}</dt>
-                <dd>{formatFileSize(state.size ?? size ?? 0) || '—'}</dd>
-                <dt className="text-muted-foreground">{t('filePreview.info.type', '类型')}</dt>
-                <dd>{file.mimeType || file.ext || file.contentType}</dd>
-              </dl>
-            </TabsContent>
-          )}
         </div>
       </Tabs>
     );
@@ -374,6 +413,7 @@ export function FilePreviewBody({
 
   return (
     <div className="flex h-full min-h-0 flex-col">
+      {!hideHeader && (
       <header
         className={
           compact
@@ -410,6 +450,7 @@ export function FilePreviewBody({
           {trailingHeader}
         </div>
       </header>
+      )}
       <div className="min-h-0 flex-1">{renderBody()}</div>
     </div>
   );
