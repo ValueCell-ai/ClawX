@@ -13,7 +13,62 @@
     "noLogs": "(No logs available yet)",
     "toolbar": {
         "refresh": "Refresh chat",
-        "currentAgent": "Talking to {{agent}}"
+        "currentAgent": "Talking to {{agent}}",
+        "workspace": "Workspace"
+    },
+    "generatedFiles": {
+        "title": "File changes ({{count}})",
+        "created": "Created",
+        "modified": "Modified"
+    },
+    "filePreview": {
+        "tabs": {
+            "source": "Source",
+            "preview": "Preview",
+            "changes": "Changes",
+            "info": "Info"
+        },
+        "actions": {
+            "save": "Save",
+            "saving": "Saving...",
+            "revert": "Revert",
+            "openInFinder": "Reveal in Finder"
+        },
+        "info": {
+            "path": "Path",
+            "size": "Size",
+            "type": "Type"
+        },
+        "toast": {
+            "saved": "Saved to disk",
+            "saveFailed": "Save failed: {{error}}"
+        },
+        "errors": {
+            "outsideSandbox": "Path outside sandbox — access denied",
+            "tooLarge": "File too large ({{size}}); preview disabled",
+            "binary": "Binary file — text preview unavailable",
+            "notFound": "File not found",
+            "noPreview": "No preview available for this file",
+            "openInFinderFailed": "Could not reveal file"
+        },
+        "diff": {
+            "noChanges": "No changes to display",
+            "newFile": "New file — no original to compare"
+        }
+    },
+    "workspace": {
+        "title": "Workspace",
+        "freshBadge": "Updated this run",
+        "pickFile": "Select a file from the left to preview",
+        "empty": "Workspace is empty or inaccessible",
+        "truncated": "Directory truncated — only the first 5000 entries shown",
+        "actions": {
+            "refresh": "Refresh",
+            "openRootInFinder": "Reveal workspace in Finder",
+            "toggleHidden": "Toggle hidden files",
+            "showHidden": "Show hidden files",
+            "hideHidden": "Hide hidden files"
+        }
     },
     "taskPanel": {
         "eyebrow": "Run View",

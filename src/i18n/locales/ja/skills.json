@@ -55,7 +55,20 @@
         "configurable": "設定可能",
         "uninstall": "アンインストール",
         "enable": "有効化",
-        "disable": "無効化"
+        "disable": "無効化",
+        "sections": {
+            "title": "コンテンツ",
+            "docs": "ドキュメント",
+            "docsDesc": "SKILL.md と関連ドキュメント",
+            "scripts": "スクリプト",
+            "scriptsDesc": "実行可能なスクリプトとコマンド",
+            "hooks": "Hooks",
+            "hooksDesc": "OpenClaw のライフサイクルに注入されるフック",
+            "assets": "アセット",
+            "assetsDesc": "テンプレート、参考資料、静的ファイル",
+            "empty": "このスキルにはプレビュー可能なファイルがありません。",
+            "scanFailed": "スキルディレクトリのスキャンに失敗しました"
+        }
     },
     "source": {
         "badge": {

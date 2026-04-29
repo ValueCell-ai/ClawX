@@ -4,7 +4,7 @@
  * via gateway:rpc IPC. Session selector, thinking toggle, and refresh
  * are in the toolbar; messages render with markdown + streaming.
  */
-import { useEffect, useMemo, useState } from 'react';
+import { Suspense, lazy, useEffect, useMemo, useState } from 'react';
 import { AlertCircle, Loader2, Sparkles } from 'lucide-react';
 import { useChatStore, type RawMessage } from '@/stores/chat';
 import { useGatewayStore } from '@/stores/gateway';
@@ -21,6 +21,13 @@ import { useTranslation } from 'react-i18next';
 import { cn } from '@/lib/utils';
 import { useStickToBottomInstant } from '@/hooks/use-stick-to-bottom-instant';
 import { useMinLoading } from '@/hooks/use-min-loading';
+import { extractGeneratedFiles, type GeneratedFile } from '@/lib/generated-files';
+import { GeneratedFilesPanel } from '@/components/file-preview/GeneratedFilesPanel';
+import type { FilePreviewTarget } from '@/components/file-preview/FilePreviewOverlay';
+
+const FilePreviewOverlayLazy = lazy(() =>
+  import('@/components/file-preview/FilePreviewOverlay').then((m) => ({ default: m.FilePreviewOverlay })),
+);
 
 type GraphStepCacheEntry = {
   steps: ReturnType<typeof deriveTaskSteps>;
@@ -61,6 +68,18 @@ function getPrimaryMessageStepTexts(steps: TaskStep[]): string[] {
     .map((step) => step.detail!);
 }
 
+function generatedFileToTarget(file: GeneratedFile): FilePreviewTarget {
+  return {
+    filePath: file.filePath,
+    fileName: file.fileName,
+    ext: file.ext,
+    mimeType: file.mimeType,
+    contentType: file.contentType,
+    oldContent: file.oldContent,
+    newContent: file.newContent,
+  };
+}
+
 // Keep the last non-empty execution-graph snapshot per session/run outside
 // React state so `loadHistory` refreshes can still fall back to the previous
 // steps without tripping React's set-state-in-effect lint rule.
@@ -99,6 +118,7 @@ export function Chat() {
   // remount and reset. `undefined` values mean "user hasn't toggled, let the
   // card pick a default from its own `active` prop."
   const [graphExpandedOverrides, setGraphExpandedOverrides] = useState<Record<string, boolean>>({});
+  const [openedFile, setOpenedFile] = useState<FilePreviewTarget | null>(null);
   const graphStepCache: Record<string, GraphStepCacheEntry> = graphStepCacheStore.get(currentSessionKey) ?? {};
   const minLoading = useMinLoading(loading && messages.length > 0);
   const { contentRef, scrollRef } = useStickToBottomInstant(currentSessionKey);
@@ -629,18 +649,31 @@ export function Chat() {
                           const expanded = userOverride != null
                             ? userOverride
                             : !autoCollapsedRunKeys.has(runKey);
+                          const generatedFiles = extractGeneratedFiles(
+                            messages,
+                            card.triggerIndex,
+                            card.segmentEnd,
+                          );
                           return (
-                            <ExecutionGraphCard
-                              key={`graph-${currentSessionKey}:${card.triggerIndex}`}
-                              agentLabel={card.agentLabel}
-                              steps={card.steps}
-                              active={card.active}
-                              suppressThinking={card.suppressThinking}
-                              expanded={expanded}
-                              onExpandedChange={(next) =>
-                                setGraphExpandedOverrides((prev) => ({ ...prev, [runKey]: next }))
-                              }
-                            />
+                            <div key={`run-${currentSessionKey}:${card.triggerIndex}`} className="space-y-3">
+                              <ExecutionGraphCard
+                                key={`graph-${currentSessionKey}:${card.triggerIndex}`}
+                                agentLabel={card.agentLabel}
+                                steps={card.steps}
+                                active={card.active}
+                                suppressThinking={card.suppressThinking}
+                                expanded={expanded}
+                                onExpandedChange={(next) =>
+                                  setGraphExpandedOverrides((prev) => ({ ...prev, [runKey]: next }))
+                                }
+                              />
+                              {generatedFiles.length > 0 && (
+                                <GeneratedFilesPanel
+                                  files={generatedFiles}
+                                  onOpen={(file) => setOpenedFile(generatedFileToTarget(file))}
+                                />
+                              )}
+                            </div>
                           );
                         })}
                     </div>
@@ -751,6 +784,14 @@ export function Chat() {
           </div>
         </div>
       )}
+
+      {/* File preview overlay — shared across generated-file panels */}
+      <Suspense fallback={null}>
+        <FilePreviewOverlayLazy
+          file={openedFile}
+          onClose={() => setOpenedFile(null)}
+        />
+      </Suspense>
     </div>
   );
 }

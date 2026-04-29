@@ -1061,3 +1061,91 @@ export async function invokeIpcWithRetry<T>(
 
   throw normalizeAppError(lastError);
 }
+
+// ── File preview wrappers ─────────────────────────────────────────────
+//
+// Thin typed wrappers over the sandboxed file:* IPC channels exposed by
+// the main process. Callers stay free of `invokeIpc('file:readText', ...)`
+// boilerplate and get exhaustive error codes.
+
+export type FilePreviewError =
+  | 'outsideSandbox'
+  | 'tooLarge'
+  | 'binary'
+  | 'notFound'
+  | 'notDirectory'
+  | 'invalidContent'
+  | string;
+
+export interface ReadTextFileResult {
+  ok: boolean;
+  content?: string;
+  mimeType?: string;
+  size?: number;
+  error?: FilePreviewError;
+}
+
+export interface WriteTextFileResult {
+  ok: boolean;
+  error?: FilePreviewError;
+}
+
+export interface StatFileResult {
+  ok: boolean;
+  size?: number;
+  mtime?: number;
+  isFile?: boolean;
+  isDir?: boolean;
+  error?: FilePreviewError;
+}
+
+export interface ListDirEntry {
+  name: string;
+  path: string;
+  isDir: boolean;
+  size: number;
+}
+
+export interface ListDirResult {
+  ok: boolean;
+  entries?: ListDirEntry[];
+  error?: FilePreviewError;
+}
+
+export interface TreeNode {
+  name: string;
+  relPath: string;
+  absPath: string;
+  isDir: boolean;
+  size?: number;
+  mtime?: number;
+  children?: TreeNode[];
+}
+
+export interface ListTreeOptions {
+  maxDepth?: number;
+  maxNodes?: number;
+  includeHidden?: boolean;
+}
+
+export interface ListTreeResult {
+  ok: boolean;
+  root?: TreeNode;
+  truncated?: boolean;
+  error?: FilePreviewError;
+}
+
+export const readTextFile = (path: string): Promise<ReadTextFileResult> =>
+  invokeIpc<ReadTextFileResult>('file:readText', path);
+
+export const writeTextFile = (path: string, content: string): Promise<WriteTextFileResult> =>
+  invokeIpc<WriteTextFileResult>('file:writeText', path, content);
+
+export const statFile = (path: string): Promise<StatFileResult> =>
+  invokeIpc<StatFileResult>('file:stat', path);
+
+export const listDir = (path: string): Promise<ListDirResult> =>
+  invokeIpc<ListDirResult>('file:listDir', path);
+
+export const listTree = (path: string, opts?: ListTreeOptions): Promise<ListTreeResult> =>
+  invokeIpc<ListTreeResult>('file:listTree', path, opts);

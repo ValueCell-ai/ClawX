@@ -2,7 +2,7 @@
  * Skills Page
  * Browse and manage AI skills
  */
-import { useEffect, useState, useCallback } from 'react';
+import { Suspense, lazy, useEffect, useState, useCallback } from 'react';
 import {
   Search,
   Puzzle,
@@ -36,6 +36,23 @@ import type { Skill } from '@/types/skill';
 import { rendererExtensionRegistry } from '@/extensions/registry';
 import { useTranslation } from 'react-i18next';
 import type { TFunction } from 'i18next';
+import { SkillFileSections } from '@/components/file-preview/SkillFileSections';
+import type { FilePreviewTarget } from '@/components/file-preview/FilePreviewOverlay';
+import type { SkillFile } from '@/lib/skill-files';
+
+const FilePreviewOverlayLazy = lazy(() =>
+  import('@/components/file-preview/FilePreviewOverlay').then((m) => ({ default: m.FilePreviewOverlay })),
+);
+
+function skillFileToTarget(file: SkillFile): FilePreviewTarget {
+  return {
+    filePath: file.filePath,
+    fileName: file.fileName,
+    ext: file.ext,
+    mimeType: file.mimeType,
+    contentType: file.contentType,
+  };
+}
 
 const INSTALL_ERROR_CODES = new Set(['installTimeoutError', 'installRateLimitError']);
 const FETCH_ERROR_CODES = new Set(['fetchTimeoutError', 'fetchRateLimitError', 'timeoutError', 'rateLimitError']);
@@ -74,6 +91,7 @@ function SkillDetailDialog({ skill, isOpen, onClose, onToggle, onUninstall, onOp
   const [envVars, setEnvVars] = useState<Array<{ key: string; value: string }>>([]);
   const [apiKey, setApiKey] = useState('');
   const [isSaving, setIsSaving] = useState(false);
+  const [openedSkillFile, setOpenedSkillFile] = useState<FilePreviewTarget | null>(null);
   const detailMetaComponents = rendererExtensionRegistry.getSkillDetailMetaComponents();
 
   // Initialize config from skill
@@ -190,6 +208,13 @@ function SkillDetailDialog({ skill, isOpen, onClose, onToggle, onUninstall, onOp
 
   return (
     <Sheet open={isOpen} onOpenChange={(open) => !open && onClose()}>
+      <Suspense fallback={null}>
+        <FilePreviewOverlayLazy
+          file={openedSkillFile}
+          readOnly
+          onClose={() => setOpenedSkillFile(null)}
+        />
+      </Suspense>
       <SheetContent
         className="w-full sm:max-w-[450px] p-0 flex flex-col border-l border-black/10 dark:border-white/10 bg-surface-modal shadow-[0_0_40px_rgba(0,0,0,0.2)]"
         side="right"
@@ -263,6 +288,19 @@ function SkillDetailDialog({ skill, isOpen, onClose, onToggle, onUninstall, onOp
                 </Button>
               </div>
             </div>
+
+            {/* File Sections — read-only preview of skill content */}
+            {skill.baseDir && (
+              <div className="space-y-3">
+                <h3 className="text-meta font-bold text-foreground/80">
+                  {t('detail.sections.title', { defaultValue: '内容' })}
+                </h3>
+                <SkillFileSections
+                  baseDir={skill.baseDir}
+                  onOpen={(file) => setOpenedSkillFile(skillFileToTarget(file))}
+                />
+              </div>
+            )}
 
             {/* API Key Section */}
             {!skill.isCore && (

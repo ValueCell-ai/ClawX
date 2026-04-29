@@ -55,7 +55,20 @@
         "configurable": "可配置",
         "uninstall": "卸载",
         "enable": "启用",
-        "disable": "禁用"
+        "disable": "禁用",
+        "sections": {
+            "title": "内容",
+            "docs": "文档",
+            "docsDesc": "SKILL.md 与说明文档",
+            "scripts": "脚本",
+            "scriptsDesc": "可执行的脚本与命令",
+            "hooks": "Hooks",
+            "hooksDesc": "注入到 OpenClaw 生命周期的钩子",
+            "assets": "资源",
+            "assetsDesc": "模板、参考资料与静态资源",
+            "empty": "此技能未包含可预览的文件。",
+            "scanFailed": "扫描技能目录失败"
+        }
     },
     "source": {
         "badge": {

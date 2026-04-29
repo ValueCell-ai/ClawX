@@ -13,7 +13,62 @@
     "noLogs": "（ログはまだありません）",
     "toolbar": {
         "refresh": "チャットを更新",
-        "currentAgent": "現在の会話相手: {{agent}}"
+        "currentAgent": "現在の会話相手: {{agent}}",
+        "workspace": "ワークスペース"
+    },
+    "generatedFiles": {
+        "title": "ファイルの変更（{{count}} 件）",
+        "created": "新規",
+        "modified": "更新"
+    },
+    "filePreview": {
+        "tabs": {
+            "source": "ソース",
+            "preview": "プレビュー",
+            "changes": "変更",
+            "info": "情報"
+        },
+        "actions": {
+            "save": "保存",
+            "saving": "保存中...",
+            "revert": "元に戻す",
+            "openInFinder": "Finder で表示"
+        },
+        "info": {
+            "path": "パス",
+            "size": "サイズ",
+            "type": "種類"
+        },
+        "toast": {
+            "saved": "ディスクに保存しました",
+            "saveFailed": "保存に失敗しました: {{error}}"
+        },
+        "errors": {
+            "outsideSandbox": "サンドボックス外のパスのため拒否しました",
+            "tooLarge": "ファイルが大きすぎます（{{size}}）。プレビューを無効化しました",
+            "binary": "バイナリファイルのためテキストプレビューはできません",
+            "notFound": "ファイルが見つかりません",
+            "noPreview": "このファイルにはプレビューがありません",
+            "openInFinderFailed": "Finder で表示できません"
+        },
+        "diff": {
+            "noChanges": "表示する変更はありません",
+            "newFile": "新規ファイルのため比較対象がありません"
+        }
+    },
+    "workspace": {
+        "title": "ワークスペース",
+        "freshBadge": "今回の実行で更新",
+        "pickFile": "左側のファイルを選択してプレビュー",
+        "empty": "ワークスペースが空、またはアクセスできません",
+        "truncated": "ディレクトリが大きいため、5000 件までで切り詰めました",
+        "actions": {
+            "refresh": "更新",
+            "openRootInFinder": "ルートを Finder で表示",
+            "toggleHidden": "隠しファイル表示切替",
+            "showHidden": "隠しファイルを表示",
+            "hideHidden": "隠しファイルを隠す"
+        }
     },
     "taskPanel": {
         "eyebrow": "実行ビュー",

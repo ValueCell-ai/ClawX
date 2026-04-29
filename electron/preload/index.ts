@@ -128,6 +128,12 @@ const electronAPI = {
         'file:stageBuffer',
         'media:getThumbnails',
         'media:saveImage',
+        // File preview (sandboxed read/write/list/tree)
+        'file:readText',
+        'file:writeText',
+        'file:stat',
+        'file:listDir',
+        'file:listTree',
         // Chat send with media (reads staged files in main process)
         'chat:sendWithMedia',
         // Session management

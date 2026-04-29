@@ -55,7 +55,20 @@
         "configurable": "Configurable",
         "uninstall": "Uninstall",
         "enable": "Enable",
-        "disable": "Disable"
+        "disable": "Disable",
+        "sections": {
+            "title": "Contents",
+            "docs": "Docs",
+            "docsDesc": "SKILL.md and supporting docs",
+            "scripts": "Scripts",
+            "scriptsDesc": "Executable scripts and commands",
+            "hooks": "Hooks",
+            "hooksDesc": "Lifecycle hooks injected into OpenClaw",
+            "assets": "Assets",
+            "assetsDesc": "Templates, references and static files",
+            "empty": "This skill has no previewable files.",
+            "scanFailed": "Failed to scan the skill directory"
+        }
     },
     "source": {
         "badge": {

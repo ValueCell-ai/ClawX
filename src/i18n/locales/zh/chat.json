@@ -13,7 +13,62 @@
     "noLogs": "（暂无日志）",
     "toolbar": {
         "refresh": "刷新聊天",
-        "currentAgent": "当前对话对象：{{agent}}"
+        "currentAgent": "当前对话对象：{{agent}}",
+        "workspace": "工作空间"
+    },
+    "generatedFiles": {
+        "title": "文件变更（{{count}} 个）",
+        "created": "新增",
+        "modified": "修改"
+    },
+    "filePreview": {
+        "tabs": {
+            "source": "源码",
+            "preview": "预览",
+            "changes": "变更",
+            "info": "信息"
+        },
+        "actions": {
+            "save": "保存",
+            "saving": "保存中...",
+            "revert": "撤销",
+            "openInFinder": "在 Finder 中显示"
+        },
+        "info": {
+            "path": "路径",
+            "size": "大小",
+            "type": "类型"
+        },
+        "toast": {
+            "saved": "已保存到磁盘",
+            "saveFailed": "保存失败：{{error}}"
+        },
+        "errors": {
+            "outsideSandbox": "路径越界，已拒绝访问",
+            "tooLarge": "文件过大（{{size}}），已禁用预览",
+            "binary": "二进制文件不支持文本预览",
+            "notFound": "文件不存在",
+            "noPreview": "该文件没有预览",
+            "openInFinderFailed": "无法在 Finder 中显示"
+        },
+        "diff": {
+            "noChanges": "没有可显示的变更",
+            "newFile": "这是新增文件，无对比内容"
+        }
+    },
+    "workspace": {
+        "title": "工作空间",
+        "freshBadge": "本轮新增",
+        "pickFile": "从左侧选择一个文件预览",
+        "empty": "工作空间为空或无法访问",
+        "truncated": "目录过大，已截断显示前 5000 个节点",
+        "actions": {
+            "refresh": "刷新",
+            "openRootInFinder": "在 Finder 中显示根目录",
+            "toggleHidden": "显示/隐藏隐藏文件",
+            "showHidden": "显示隐藏文件",
+            "hideHidden": "隐藏隐藏文件"
+        }
     },
     "taskPanel": {
         "eyebrow": "运行视图",
