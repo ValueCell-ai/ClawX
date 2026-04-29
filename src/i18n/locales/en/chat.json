@@ -19,7 +19,24 @@
     "generatedFiles": {
         "title": "File changes ({{count}})",
         "created": "Created",
-        "modified": "Modified"
+        "modified": "Modified",
+        "viewAll": "View all changes"
+    },
+    "artifactPanel": {
+        "tabs": {
+            "changes": "Changes",
+            "allFiles": "All files",
+            "browser": "Browser",
+            "artifacts": "Artifacts"
+        },
+        "comingSoon": "Coming soon",
+        "actions": {
+            "back": "Back to list"
+        },
+        "changes": {
+            "heading": "File changes ({{count}})",
+            "empty": "No file changes in this conversation yet"
+        }
     },
     "filePreview": {
         "tabs": {

@@ -3,6 +3,7 @@
  * Lives directly under the ExecutionGraphCard for each user trigger
  * (see Chat/index.tsx).
  */
+import { ArrowRight } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
@@ -12,10 +13,16 @@ import { FilePreviewIcon } from './file-card-utils';
 export interface GeneratedFilesPanelProps {
   files: GeneratedFile[];
   onOpen: (file: GeneratedFile) => void;
+  /**
+   * Optional handler for the "查看文件变更 →" link rendered next to the
+   * card row.  When provided, ClawX shows the link so users can pop the
+   * artifact panel open in list view (vs. drilling into a single file).
+   */
+  onShowAll?: () => void;
   className?: string;
 }
 
-export function GeneratedFilesPanel({ files, onOpen, className }: GeneratedFilesPanelProps) {
+export function GeneratedFilesPanel({ files, onOpen, onShowAll, className }: GeneratedFilesPanelProps) {
   const { t } = useTranslation('chat');
 
   if (!files.length) return null;
@@ -26,6 +33,16 @@ export function GeneratedFilesPanel({ files, onOpen, className }: GeneratedFiles
         <p className="text-xs font-semibold text-foreground/80">
           {t('generatedFiles.title', { count: files.length, defaultValue: '文件变更（{{count}} 个）' })}
         </p>
+        {onShowAll && (
+          <button
+            type="button"
+            onClick={onShowAll}
+            className="inline-flex items-center gap-1 text-2xs font-medium text-primary transition-colors hover:text-primary/80"
+          >
+            {t('generatedFiles.viewAll', '查看文件变更')}
+            <ArrowRight className="h-3 w-3" />
+          </button>
+        )}
       </div>
       <div className="flex flex-wrap gap-2">
         {files.map((file) => (

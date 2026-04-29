@@ -19,7 +19,24 @@
     "generatedFiles": {
         "title": "文件变更（{{count}} 个）",
         "created": "新增",
-        "modified": "修改"
+        "modified": "修改",
+        "viewAll": "查看文件变更"
+    },
+    "artifactPanel": {
+        "tabs": {
+            "changes": "变更",
+            "allFiles": "全部文件",
+            "browser": "浏览器",
+            "artifacts": "产物"
+        },
+        "comingSoon": "敬请期待",
+        "actions": {
+            "back": "返回列表"
+        },
+        "changes": {
+            "heading": "文件变更（{{count}} 个）",
+            "empty": "本会话尚无文件变更"
+        }
     },
     "filePreview": {
         "tabs": {

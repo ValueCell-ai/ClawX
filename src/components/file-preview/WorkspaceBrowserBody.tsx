@@ -1,20 +1,14 @@
 /**
- * Workspace browser overlay (read-only).
+ * Inline workspace browser body — left tree + right preview.
  *
- * Mirrors WorkBuddy's `全部文件` tab: a left-side directory tree rooted
- * at the *current agent's* `agent.workspace` directory, and a right
- * preview pane that swaps between Monaco / Markdown / image renderers
- * depending on the file type.
- *
- * Strictly scoped to `agent.workspace` — does NOT walk siblings under
- * `~/.openclaw` such as `runs/` or `agents/`.
+ * Strictly scoped to the current agent's `agent.workspace` directory.
+ * Used by `ArtifactPanel`'s 浏览器 tab (split-pane on the chat page).
  */
 import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from 'react';
-import { ChevronRight, FolderOpen, RefreshCw, X } from 'lucide-react';
+import { ChevronRight, FolderOpen, RefreshCw } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
-import { Sheet, SheetClose, SheetContent } from '@/components/ui/sheet';
 import { Badge } from '@/components/ui/badge';
 import { LoadingSpinner } from '@/components/common/LoadingSpinner';
 import { cn } from '@/lib/utils';
@@ -33,14 +27,18 @@ import ImageViewer from './ImageViewer';
 
 const MonacoViewerLazy = lazy(() => import('./MonacoViewer'));
 
-export interface WorkspaceBrowserOverlayProps {
-  open: boolean;
+export interface WorkspaceBrowserBodyProps {
   agent: AgentSummary | null;
-  onClose: () => void;
   /** Used to mark "本轮新增" badges on the tree. */
   runStartedAt?: number | null;
-  /** Triggers a debounced auto-refresh of the tree when this number changes. */
+  /** Bumping this number triggers a tree reload (e.g. after AI run idles). */
   refreshSignal?: number;
+  /** Compact mode used inside the side panel (smaller fonts/paddings). */
+  compact?: boolean;
+  /** Left tree column width in px. */
+  treeWidth?: number;
+  /** Optional slot rendered in the toolbar (e.g. close button when used in a Sheet). */
+  toolbarTrailing?: React.ReactNode;
 }
 
 type LoadState =
@@ -57,13 +55,14 @@ type FileState =
   | { status: 'binary' }
   | { status: 'error'; message: string };
 
-export function WorkspaceBrowserOverlay({
-  open,
+export function WorkspaceBrowserBody({
   agent,
-  onClose,
   runStartedAt,
   refreshSignal,
-}: WorkspaceBrowserOverlayProps) {
+  compact = false,
+  treeWidth,
+  toolbarTrailing,
+}: WorkspaceBrowserBodyProps) {
   const { t } = useTranslation('chat');
   const [state, setState] = useState<LoadState>({ status: 'idle' });
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set());
@@ -74,25 +73,20 @@ export function WorkspaceBrowserOverlay({
 
   const workspace = agent?.workspace ?? '';
 
-  const reload = useCallback(() => {
-    setRefreshTick((v) => v + 1);
-  }, []);
+  const reload = useCallback(() => setRefreshTick((v) => v + 1), []);
 
-  // Reset on open / agent change.
+  // Reset selection when the agent changes.
   useEffect(() => {
-    if (!open) return;
-    /* eslint-disable react-hooks/set-state-in-effect -- intentional reset when overlay re-opens or agent switches */
+    /* eslint-disable react-hooks/set-state-in-effect -- intentional reset on agent switch */
     setSelectedRel(null);
     setFileState({ status: 'idle' });
     /* eslint-enable react-hooks/set-state-in-effect */
-  }, [open, agent?.id]);
+  }, [agent?.id]);
 
-  // Load tree.  Re-runs on manual refresh, hidden-toggle, agent switch,
-  // or whenever the parent bumps `refreshSignal` (e.g. chat run idled).
   useEffect(() => {
-    if (!open || !workspace) return;
+    if (!workspace) return;
     let cancelled = false;
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- loading flag for async tree fetch
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- async tree fetch
     setState({ status: 'loading' });
     loadWorkspaceTree(workspace, {
       runStartedAt: runStartedAt ?? null,
@@ -105,10 +99,7 @@ export function WorkspaceBrowserOverlay({
           return;
         }
         setState({ status: 'ready', root: res.root, truncated: res.truncated });
-        setExpanded((prev) => {
-          if (prev.size > 0) return prev;
-          return collectInitialExpanded(res.root, 1);
-        });
+        setExpanded((prev) => (prev.size > 0 ? prev : collectInitialExpanded(res.root, 1)));
       })
       .catch((err) => {
         if (cancelled) return;
@@ -117,16 +108,15 @@ export function WorkspaceBrowserOverlay({
     return () => {
       cancelled = true;
     };
-  }, [open, workspace, runStartedAt, refreshTick, showHidden, refreshSignal]);
+  }, [workspace, runStartedAt, refreshTick, showHidden, refreshSignal]);
 
   const selectedNode = useMemo(() => {
     if (!selectedRel || state.status !== 'ready') return null;
     return findNode(state.root, selectedRel);
   }, [selectedRel, state]);
 
-  // Load selected file.
   useEffect(() => {
-    /* eslint-disable react-hooks/set-state-in-effect -- selection-driven loader; lint can't see the IO boundary */
+    /* eslint-disable react-hooks/set-state-in-effect -- selection-driven loader */
     if (!selectedNode || selectedNode.isDir) {
       setFileState({ status: 'idle' });
       return;
@@ -175,11 +165,8 @@ export function WorkspaceBrowserOverlay({
   const toggleNode = useCallback((relPath: string) => {
     setExpanded((prev) => {
       const next = new Set(prev);
-      if (next.has(relPath)) {
-        next.delete(relPath);
-      } else {
-        next.add(relPath);
-      }
+      if (next.has(relPath)) next.delete(relPath);
+      else next.add(relPath);
       return next;
     });
   }, []);
@@ -246,7 +233,11 @@ export function WorkspaceBrowserOverlay({
       return (
         <div className="flex h-full flex-col items-center justify-center gap-3 px-6 text-center text-sm text-muted-foreground">
           <p>{t('filePreview.errors.tooLarge', '文件过大，已禁用预览')}</p>
-          <Button variant="outline" size="sm" onClick={() => invokeIpc('shell:showItemInFolder', selectedNode.absPath)}>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => invokeIpc('shell:showItemInFolder', selectedNode.absPath)}
+          >
             <FolderOpen className="mr-2 h-4 w-4" />
             {t('filePreview.actions.openInFinder', '在 Finder 中显示')}
           </Button>
@@ -257,7 +248,11 @@ export function WorkspaceBrowserOverlay({
       return (
         <div className="flex h-full flex-col items-center justify-center gap-3 px-6 text-center text-sm text-muted-foreground">
           <p>{t('filePreview.errors.binary', '二进制文件不支持文本预览')}</p>
-          <Button variant="outline" size="sm" onClick={() => invokeIpc('shell:showItemInFolder', selectedNode.absPath)}>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => invokeIpc('shell:showItemInFolder', selectedNode.absPath)}
+          >
             <FolderOpen className="mr-2 h-4 w-4" />
             {t('filePreview.actions.openInFinder', '在 Finder 中显示')}
           </Button>
@@ -287,109 +282,103 @@ export function WorkspaceBrowserOverlay({
     }
 
     return (
-      <Suspense fallback={<div className="flex h-full items-center justify-center"><LoadingSpinner /></div>}>
-        <MonacoViewerLazy
-          filePath={selectedNode.absPath}
-          value={fileState.content}
-          readOnly
-        />
+      <Suspense
+        fallback={
+          <div className="flex h-full items-center justify-center">
+            <LoadingSpinner />
+          </div>
+        }
+      >
+        <MonacoViewerLazy filePath={selectedNode.absPath} value={fileState.content} readOnly />
       </Suspense>
     );
   };
 
   return (
-    <Sheet open={open} onOpenChange={(next) => { if (!next) onClose(); }}>
-      <SheetContent
-        side="right"
-        className="w-[80vw] max-w-[1280px] sm:max-w-[1280px] p-0 flex flex-col"
+    <div className="flex h-full min-h-0 flex-col">
+      <header
+        className={cn(
+          'flex items-center justify-between gap-3 border-b border-black/5 dark:border-white/10',
+          compact ? 'px-3 py-1.5' : 'px-4 py-2',
+        )}
       >
-        <header className="flex items-center justify-between gap-3 border-b border-black/5 px-5 py-3 dark:border-white/10">
-          <div className="flex min-w-0 items-center gap-3">
-            <h2 className="truncate text-sm font-semibold">
-              {t('workspace.title', '工作空间')}
-              {agent?.name ? <span className="ml-2 font-normal text-foreground/70">· {agent.name}</span> : null}
-            </h2>
-            {workspace ? (
-              <code className="hidden truncate rounded bg-black/5 px-2 py-0.5 text-2xs text-muted-foreground dark:bg-white/10 sm:inline">
-                {workspace}
-              </code>
-            ) : null}
-          </div>
-          <div className="flex shrink-0 items-center gap-2">
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => setShowHidden((v) => !v)}
-              title={t('workspace.actions.toggleHidden', '显示/隐藏隐藏文件')}
-            >
-              {showHidden ? t('workspace.actions.hideHidden', '隐藏隐藏文件') : t('workspace.actions.showHidden', '显示隐藏文件')}
-            </Button>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-8 w-8"
-              onClick={reload}
-              disabled={state.status === 'loading'}
-              title={t('workspace.actions.refresh', '刷新')}
-            >
-              <RefreshCw className={cn('h-4 w-4', state.status === 'loading' && 'animate-spin')} />
-            </Button>
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon"
-              className="h-8 w-8"
-              onClick={handleOpenWorkspaceInFinder}
-              title={t('workspace.actions.openRootInFinder', '在 Finder 中显示根目录')}
-            >
-              <FolderOpen className="h-4 w-4 pointer-events-none" />
-            </Button>
-            <SheetClose asChild>
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon"
-                className="h-8 w-8"
-                aria-label={t('filePreview.actions.close', '关闭')}
-              >
-                <X className="h-4 w-4 pointer-events-none" />
-              </Button>
-            </SheetClose>
-          </div>
-        </header>
-        <div className="grid min-h-0 flex-1 grid-cols-[280px_1fr]">
-          <aside className="min-h-0 overflow-hidden border-r border-black/5 dark:border-white/10">
-            <div className="h-full overflow-y-auto py-2 text-sm">
-              {renderTree()}
-            </div>
-          </aside>
-          <section className="min-h-0 overflow-hidden">
-            {selectedNode && !selectedNode.isDir && (
-              <div className="flex items-center justify-between gap-3 border-b border-black/5 px-5 py-2 text-xs text-muted-foreground dark:border-white/10">
-                <div className="flex min-w-0 items-center gap-2">
-                  <FilePreviewIcon
-                    contentType={selectedNode.contentType}
-                    mimeType={selectedNode.mimeType}
-                    ext={selectedNode.ext}
-                    className="h-4 w-4 shrink-0"
-                  />
-                  <span className="truncate font-mono">{selectedNode.relPath || selectedNode.name}</span>
-                  {selectedNode.isFresh && (
-                    <Badge variant="default" className="ml-1 text-2xs px-1.5 py-0">
-                      {t('workspace.freshBadge', '本轮新增')}
-                    </Badge>
-                  )}
-                </div>
-                <span className="shrink-0">{formatFileSize(selectedNode.size ?? 0)}</span>
-              </div>
-            )}
-            <div className="h-[calc(100%-2rem)] min-h-0">
-              {renderBody()}
-            </div>
-          </section>
+        <div className="flex min-w-0 items-center gap-3">
+          <h2 className="truncate text-sm font-semibold">
+            {t('workspace.title', '工作空间')}
+            {agent?.name ? <span className="ml-2 font-normal text-foreground/70">· {agent.name}</span> : null}
+          </h2>
+          {workspace && !compact ? (
+            <code className="hidden truncate rounded bg-black/5 px-2 py-0.5 text-2xs text-muted-foreground dark:bg-white/10 sm:inline">
+              {workspace}
+            </code>
+          ) : null}
         </div>
-      </SheetContent>
-    </Sheet>
+        <div className="flex shrink-0 items-center gap-1">
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-7 px-2 text-xs"
+            onClick={() => setShowHidden((v) => !v)}
+            title={t('workspace.actions.toggleHidden', '显示/隐藏隐藏文件')}
+          >
+            {showHidden
+              ? t('workspace.actions.hideHidden', '隐藏隐藏文件')
+              : t('workspace.actions.showHidden', '显示隐藏文件')}
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-7 w-7"
+            onClick={reload}
+            disabled={state.status === 'loading'}
+            title={t('workspace.actions.refresh', '刷新')}
+          >
+            <RefreshCw className={cn('h-3.5 w-3.5', state.status === 'loading' && 'animate-spin')} />
+          </Button>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            className="h-7 w-7"
+            onClick={handleOpenWorkspaceInFinder}
+            title={t('workspace.actions.openRootInFinder', '在 Finder 中显示根目录')}
+          >
+            <FolderOpen className="h-3.5 w-3.5 pointer-events-none" />
+          </Button>
+          {toolbarTrailing}
+        </div>
+      </header>
+      <div
+        className="grid min-h-0 flex-1"
+        style={{ gridTemplateColumns: `${treeWidth ?? (compact ? 220 : 280)}px 1fr` }}
+      >
+        <aside className="min-h-0 overflow-hidden border-r border-black/5 dark:border-white/10">
+          <div className="h-full overflow-y-auto py-2 text-sm">{renderTree()}</div>
+        </aside>
+        <section className="min-h-0 overflow-hidden">
+          {selectedNode && !selectedNode.isDir && (
+            <div className="flex items-center justify-between gap-3 border-b border-black/5 px-4 py-1.5 text-xs text-muted-foreground dark:border-white/10">
+              <div className="flex min-w-0 items-center gap-2">
+                <FilePreviewIcon
+                  contentType={selectedNode.contentType}
+                  mimeType={selectedNode.mimeType}
+                  ext={selectedNode.ext}
+                  className="h-4 w-4 shrink-0"
+                />
+                <span className="truncate font-mono">{selectedNode.relPath || selectedNode.name}</span>
+                {selectedNode.isFresh && (
+                  <Badge variant="default" className="ml-1 text-2xs px-1.5 py-0">
+                    {t('workspace.freshBadge', '本轮新增')}
+                  </Badge>
+                )}
+              </div>
+              <span className="shrink-0">{formatFileSize(selectedNode.size ?? 0)}</span>
+            </div>
+          )}
+          <div className="h-[calc(100%-2rem)] min-h-0">{renderBody()}</div>
+        </section>
+      </div>
+    </div>
   );
 }
 
@@ -493,4 +482,4 @@ function FileTreeNodeRow({ node, depth, expanded, selectedRel, onToggle, onSelec
   );
 }
 
-export default WorkspaceBrowserOverlay;
+export default WorkspaceBrowserBody;

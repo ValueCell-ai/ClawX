@@ -19,7 +19,24 @@
     "generatedFiles": {
         "title": "Изменения файлов ({{count}})",
         "created": "Создано",
-        "modified": "Изменено"
+        "modified": "Изменено",
+        "viewAll": "Все изменения"
+    },
+    "artifactPanel": {
+        "tabs": {
+            "changes": "Изменения",
+            "allFiles": "Все файлы",
+            "browser": "Обозреватель",
+            "artifacts": "Артефакты"
+        },
+        "comingSoon": "Скоро будет",
+        "actions": {
+            "back": "Назад к списку"
+        },
+        "changes": {
+            "heading": "Изменения файлов ({{count}})",
+            "empty": "В этом разговоре пока нет изменений файлов"
+        }
     },
     "filePreview": {
         "tabs": {

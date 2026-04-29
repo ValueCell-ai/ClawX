@@ -4,11 +4,12 @@
  * via gateway:rpc IPC. Session selector, thinking toggle, and refresh
  * are in the toolbar; messages render with markdown + streaming.
  */
-import { Suspense, lazy, useEffect, useMemo, useState } from 'react';
+import { Suspense, lazy, useEffect, useMemo, useRef, useState } from 'react';
 import { AlertCircle, Loader2, Sparkles } from 'lucide-react';
 import { useChatStore, type RawMessage } from '@/stores/chat';
 import { useGatewayStore } from '@/stores/gateway';
 import { useAgentsStore } from '@/stores/agents';
+import { useArtifactPanel } from '@/stores/artifact-panel';
 import { hostApiFetch } from '@/lib/host-api';
 import { LoadingSpinner } from '@/components/common/LoadingSpinner';
 import { ChatMessage } from './ChatMessage';
@@ -23,10 +24,13 @@ import { useStickToBottomInstant } from '@/hooks/use-stick-to-bottom-instant';
 import { useMinLoading } from '@/hooks/use-min-loading';
 import { extractGeneratedFiles, type GeneratedFile } from '@/lib/generated-files';
 import { GeneratedFilesPanel } from '@/components/file-preview/GeneratedFilesPanel';
-import type { FilePreviewTarget } from '@/components/file-preview/FilePreviewOverlay';
+import type { FilePreviewTarget } from '@/components/file-preview/types';
 
-const FilePreviewOverlayLazy = lazy(() =>
-  import('@/components/file-preview/FilePreviewOverlay').then((m) => ({ default: m.FilePreviewOverlay })),
+const ArtifactPanelLazy = lazy(() =>
+  import('@/components/file-preview/ArtifactPanel').then((m) => ({ default: m.ArtifactPanel })),
+);
+const PanelResizeDividerLazy = lazy(() =>
+  import('@/components/file-preview/PanelResizeDivider').then((m) => ({ default: m.PanelResizeDivider })),
 );
 
 type GraphStepCacheEntry = {
@@ -110,6 +114,22 @@ export function Chat() {
   const agents = useAgentsStore((s) => s.agents);
 
   const cleanupEmptySession = useChatStore((s) => s.cleanupEmptySession);
+  const lastUserMessageAt = useChatStore((s) => s.lastUserMessageAt);
+  const agentsList = useAgentsStore((s) => s.agents);
+  const currentAgent = useMemo(
+    () => (agentsList ?? []).find((a) => a.id === currentAgentId) ?? null,
+    [agentsList, currentAgentId],
+  );
+  const panelOpen = useArtifactPanel((s) => s.open);
+  const panelWidthPct = useArtifactPanel((s) => s.widthPct);
+  const openChanges = useArtifactPanel((s) => s.openChanges);
+  const closeArtifactPanel = useArtifactPanel((s) => s.close);
+  const splitContainerRef = useRef<HTMLDivElement | null>(null);
+  // Close the panel when the session changes — its contents would otherwise
+  // be stale (file list belongs to the previous chat).
+  useEffect(() => {
+    closeArtifactPanel();
+  }, [currentSessionKey, closeArtifactPanel]);
   const [childTranscripts, setChildTranscripts] = useState<Record<string, RawMessage[]>>({});
   // Persistent per-run override for the Execution Graph's expanded/collapsed
   // state. Keyed by a stable run id (trigger message id, or a fallback of
@@ -118,7 +138,6 @@ export function Chat() {
   // remount and reset. `undefined` values mean "user hasn't toggled, let the
   // card pick a default from its own `active` prop."
   const [graphExpandedOverrides, setGraphExpandedOverrides] = useState<Record<string, boolean>>({});
-  const [openedFile, setOpenedFile] = useState<FilePreviewTarget | null>(null);
   const graphStepCache: Record<string, GraphStepCacheEntry> = graphStepCacheStore.get(currentSessionKey) ?? {};
   const minLoading = useMinLoading(loading && messages.length > 0);
   const { contentRef, scrollRef } = useStickToBottomInstant(currentSessionKey);
@@ -525,6 +544,26 @@ export function Chat() {
   // streaming or has a reply override) during render instead of in an effect,
   // so we don't violate react-hooks/set-state-in-effect. Explicit user toggles
   // still win via `graphExpandedOverrides` and are merged in at the call site.
+  // Pre-compute generated files per run (memoised so the cards and the
+  // ArtifactPanel can both read them without re-parsing tool calls every
+  // render).
+  const filesByRun = useMemo(() => {
+    const map = new Map<number, GeneratedFile[]>();
+    for (const card of userRunCards) {
+      map.set(card.triggerIndex, extractGeneratedFiles(messages, card.triggerIndex, card.segmentEnd));
+    }
+    return map;
+  }, [userRunCards, messages]);
+  const allGeneratedFiles = useMemo(() => {
+    const all: GeneratedFile[] = [];
+    for (const files of filesByRun.values()) all.push(...files);
+    return all;
+  }, [filesByRun]);
+  const refreshSignal = useMemo(() => {
+    if (sending) return undefined;
+    return lastUserMessageAt ?? 0;
+  }, [sending, lastUserMessageAt]);
+
   const autoCollapsedRunKeys = useMemo(() => {
     const keys = new Set<string>();
     for (const card of userRunCards) {
@@ -593,7 +632,13 @@ export function Chat() {
   }, [userRunCards, messages, currentSessionKey]);
 
   return (
-    <div className={cn("relative flex min-h-0 flex-col -m-6 transition-colors duration-500 dark:bg-background")} style={{ height: 'calc(100vh - 2.5rem)' }}>
+    <div
+      ref={splitContainerRef}
+      className={cn('relative flex min-h-0 -m-6 transition-colors duration-500 dark:bg-background')}
+      style={{ height: 'calc(100vh - 2.5rem)' }}
+    >
+      {/* Left column: chat */}
+      <div className="flex min-w-0 flex-1 flex-col">
       {/* Toolbar */}
       <div className="flex shrink-0 items-center justify-end px-4 py-2">
         <ChatToolbar />
@@ -649,11 +694,7 @@ export function Chat() {
                           const expanded = userOverride != null
                             ? userOverride
                             : !autoCollapsedRunKeys.has(runKey);
-                          const generatedFiles = extractGeneratedFiles(
-                            messages,
-                            card.triggerIndex,
-                            card.segmentEnd,
-                          );
+                          const generatedFiles = filesByRun.get(card.triggerIndex) ?? [];
                           return (
                             <div key={`run-${currentSessionKey}:${card.triggerIndex}`} className="space-y-3">
                               <ExecutionGraphCard
@@ -670,7 +711,8 @@ export function Chat() {
                               {generatedFiles.length > 0 && (
                                 <GeneratedFilesPanel
                                   files={generatedFiles}
-                                  onOpen={(file) => setOpenedFile(generatedFileToTarget(file))}
+                                  onOpen={(file) => openChanges(generatedFileToTarget(file))}
+                                  onShowAll={() => openChanges(null)}
                                 />
                               )}
                             </div>
@@ -775,6 +817,35 @@ export function Chat() {
         sending={sending || hasActiveExecutionGraph}
         isEmpty={isEmpty}
       />
+      </div>
+
+      {/* Right column: artifact / file preview panel (WorkBuddy-style) */}
+      {panelOpen && (
+        <>
+          <Suspense fallback={null}>
+            <PanelResizeDividerLazy containerRef={splitContainerRef} />
+          </Suspense>
+          <aside
+            className="hidden shrink-0 border-l border-black/5 dark:border-white/10 lg:flex lg:flex-col"
+            style={{ width: `${panelWidthPct}%` }}
+          >
+            <Suspense
+              fallback={
+                <div className="flex h-full items-center justify-center">
+                  <LoadingSpinner size="md" />
+                </div>
+              }
+            >
+              <ArtifactPanelLazy
+                files={allGeneratedFiles}
+                agent={currentAgent}
+                runStartedAt={lastUserMessageAt ?? null}
+                refreshSignal={refreshSignal}
+              />
+            </Suspense>
+          </aside>
+        </>
+      )}
 
       {/* Transparent loading overlay */}
       {minLoading && !sending && (
@@ -784,14 +855,6 @@ export function Chat() {
           </div>
         </div>
       )}
-
-      {/* File preview overlay — shared across generated-file panels */}
-      <Suspense fallback={null}>
-        <FilePreviewOverlayLazy
-          file={openedFile}
-          onClose={() => setOpenedFile(null)}
-        />
-      </Suspense>
     </div>
   );
 }
