@@ -1,4 +1,7 @@
 {
+    "runError": {
+        "title": "Model API call error"
+    },
     "gatewayNotRunning": "Gateway Not Running",
     "gatewayRequired": "The OpenClaw Gateway needs to be running to use chat. It will start automatically, or you can start it from Settings.",
     "welcome": {

@@ -1,4 +1,7 @@
 {
+    "runError": {
+        "title": "模型API调用错误"
+    },
     "gatewayNotRunning": "网关未运行",
     "gatewayRequired": "OpenClaw 网关需要运行才能使用聊天。它将自动启动，或者您可以从设置中启动。",
     "welcome": {

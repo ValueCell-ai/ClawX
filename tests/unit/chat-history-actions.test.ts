@@ -308,6 +308,37 @@ describe('chat history actions', () => {
     ]);
   });
 
+  it('does not set runError from an older assistant failure when a later turn succeeded', async () => {
+    const { createHistoryActions } = await import('@/stores/chat/history-actions');
+    const h = makeHarness({
+      currentSessionKey: 'agent:main:main',
+      runError: 'stale',
+    });
+    const actions = createHistoryActions(h.set as never, h.get as never);
+
+    invokeIpcMock.mockResolvedValueOnce({
+      success: true,
+      result: {
+        messages: [
+          { role: 'user', content: 'first', timestamp: 1773281730 },
+          {
+            role: 'assistant',
+            content: 'fail',
+            timestamp: 1773281731,
+            stopReason: 'error',
+            errorMessage: '400 bad model',
+          },
+          { role: 'user', content: 'retry', timestamp: 1773281732 },
+          { role: 'assistant', content: 'ok now', timestamp: 1773281733 },
+        ],
+      },
+    });
+
+    await actions.loadHistory(true);
+
+    expect(h.read().runError).toBeNull();
+  });
+
   it('retries the first foreground startup history load after a timeout and then succeeds', async () => {
     vi.useFakeTimers();
     const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});

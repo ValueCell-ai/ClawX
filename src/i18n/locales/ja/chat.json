@@ -1,4 +1,7 @@
 {
+    "runError": {
+        "title": "モデルAPI呼び出しエラー"
+    },
     "gatewayNotRunning": "ゲートウェイが停止中",
     "gatewayRequired": "チャットを利用するには OpenClaw ゲートウェイが実行されている必要があります。自動的に起動するか、設定から起動できます。",
     "welcome": {
