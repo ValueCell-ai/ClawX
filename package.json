@@ -47,7 +47,7 @@
         "test:e2e": "pnpm run build:vite && playwright test",
         "test:e2e:headed": "pnpm run build:vite && playwright test --headed",
         "harness": "pnpm --filter @clawx/harness start --",
-        "harness:ci": "pnpm harness list && pnpm harness validate --spec harness/specs/scenarios/gateway-backend-communication.md && pnpm harness validate --spec harness/specs/tasks/fix-chat-history-gateway-timeout.example.md --no-diff && pnpm harness run --spec harness/specs/scenarios/gateway-backend-communication.md --dry-run && pnpm exec vitest run tests/unit/harness-specs.test.ts",
+        "harness:ci": "pnpm harness list && pnpm harness validate --spec harness/specs/scenarios/gateway-backend-communication.md && pnpm harness validate --spec harness/specs/tasks/fix-chat-history-gateway-timeout.example.md --no-diff && pnpm harness run --spec harness/specs/scenarios/gateway-backend-communication.md --dry-run && pnpm exec vitest run tests/unit/harness-specs.test.ts tests/unit/harness-git.test.ts",
         "comms:replay": "node scripts/comms/replay.mjs",
         "comms:baseline": "node scripts/comms/baseline.mjs",
         "comms:compare": "node scripts/comms/compare.mjs",
