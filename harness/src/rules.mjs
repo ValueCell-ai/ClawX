@@ -4,6 +4,11 @@ import { ROOT, pathMatchesAny, toArray } from './specs.mjs';
 
 const DIRECT_IPC_PATTERN = /window\.electron\.ipcRenderer\.invoke\s*\(/;
 const DIRECT_GATEWAY_HTTP_PATTERN = /fetch\s*\(\s*['"`]http:\/\/(?:127\.0\.0\.1|localhost):18789/;
+const HOST_API_LOCAL_HTTP_PATTERN = /fetch\s*\(\s*['"`]http:\/\/(?:127\.0\.0\.1|localhost):13210|HOST_API_BASE\s*=\s*`?http:\/\/127\.0\.0\.1:\$\{HOST_API_PORT\}`?/;
+const LOCALHOST_FALLBACK_FLAG = 'clawx:allow-localhost-fallback';
+const SSE_FALLBACK_FLAG = 'clawx:allow-sse-fallback';
+const WS_DIAGNOSTIC_FLAG = 'clawx:gateway-ws-diagnostic';
+const GATEWAY_READY_MUTATION_PATTERN = /gatewayReady\s*[:=]\s*(?:true|false)|setStatus\s*\([^)]*gatewayReady|setState\s*\([^)]*gatewayReady/s;
 const COMMUNICATION_PATHS = [
   'src/lib/api-client.ts',
   'src/lib/host-api.ts',
@@ -48,6 +53,28 @@ export async function scanBackendCommunicationBoundary(files) {
 
     if (DIRECT_GATEWAY_HTTP_PATTERN.test(text)) {
       failures.push(`${file}: renderer must not fetch Gateway HTTP directly`);
+    }
+
+    const isTest = file.startsWith('tests/');
+    if (!isTest && text.includes(LOCALHOST_FALLBACK_FLAG) && file !== 'src/lib/host-api.ts') {
+      failures.push(`${file}: ${LOCALHOST_FALLBACK_FLAG} is only allowed in src/lib/host-api.ts`);
+    }
+
+    if (!isTest && HOST_API_LOCAL_HTTP_PATTERN.test(text) && file !== 'src/lib/host-api.ts') {
+      failures.push(`${file}: direct Host API localhost fallback is only allowed in src/lib/host-api.ts`);
+    }
+
+    if (!isTest && text.includes(SSE_FALLBACK_FLAG) && file !== 'src/lib/host-events.ts') {
+      failures.push(`${file}: ${SSE_FALLBACK_FLAG} is only allowed in src/lib/host-events.ts`);
+    }
+
+    if (!isTest && text.includes(WS_DIAGNOSTIC_FLAG) && file !== 'src/lib/api-client.ts') {
+      failures.push(`${file}: ${WS_DIAGNOSTIC_FLAG} is only allowed in src/lib/api-client.ts`);
+    }
+
+    const isPageOrComponentFile = file.startsWith('src/pages/') || file.startsWith('src/components/');
+    if (isPageOrComponentFile && GATEWAY_READY_MUTATION_PATTERN.test(text)) {
+      failures.push(`${file}: gatewayReady mutation and refresh gating must stay in stores/main lifecycle code`);
     }
   }
 

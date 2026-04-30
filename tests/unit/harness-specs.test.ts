@@ -71,4 +71,18 @@ Body`);
     const failures = await scanBackendCommunicationBoundary(['src/pages/Chat/index.tsx']);
     expect(failures).toEqual([]);
   });
+
+  it('allows fallback flags only in their boundary modules', async () => {
+    const failures = await scanBackendCommunicationBoundary([
+      'src/lib/api-client.ts',
+      'src/lib/host-api.ts',
+      'src/lib/host-events.ts',
+    ]);
+    expect(failures).toEqual([]);
+  });
+
+  it('allows pages and components to display gatewayReady state', async () => {
+    const failures = await scanBackendCommunicationBoundary(['src/components/layout/Sidebar.tsx']);
+    expect(failures).toEqual([]);
+  });
 });
