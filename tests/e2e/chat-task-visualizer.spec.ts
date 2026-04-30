@@ -416,7 +416,7 @@ test.describe('ClawX chat execution graph', () => {
 
       await expect(page.getByTestId('main-layout')).toBeVisible();
       await expect(page.getByText('404 Resource not found')).toBeVisible({ timeout: 30_000 });
-      await expect(page.getByText('runError.title')).toBeVisible();
+      await expect(page.getByText('模型调用失败')).toBeVisible();
       await expect(page.getByTestId('chat-execution-graph')).toHaveCount(0);
       await expect(page.getByTestId('chat-execution-step-thinking-trailing')).toHaveCount(0);
       await expect(page.getByText('404 Resource not found')).toHaveCount(1);

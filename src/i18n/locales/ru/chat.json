@@ -22,6 +22,9 @@
         "modified": "Изменено",
         "viewAll": "Все изменения"
     },
+    "runError": {
+        "title": "Ошибка вызова модели"
+    },
     "artifactPanel": {
         "tabs": {
             "changes": "Изменения",

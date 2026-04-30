@@ -22,6 +22,9 @@
         "modified": "更新",
         "viewAll": "ファイル変更を見る"
     },
+    "runError": {
+        "title": "モデル呼び出しに失敗しました"
+    },
     "artifactPanel": {
         "tabs": {
             "changes": "変更",

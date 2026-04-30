@@ -250,6 +250,37 @@ describe('chat history actions', () => {
     expect(h.read().lastUserMessageAt).toBeNull();
   });
 
+  it('does not surface an earlier assistant error when a later assistant reply succeeded', async () => {
+    const { createHistoryActions } = await import('@/stores/chat/history-actions');
+    const h = makeHarness({
+      currentSessionKey: 'agent:main:main',
+      runError: 'Connection error.',
+    });
+    const actions = createHistoryActions(h.set as never, h.get as never);
+
+    invokeIpcMock.mockResolvedValueOnce({
+      success: true,
+      result: {
+        messages: [
+          { role: 'user', content: 'First question', timestamp: 1000 },
+          { role: 'assistant', content: [], timestamp: 1001, stopReason: 'error', errorMessage: 'Connection error.' },
+          { role: 'user', content: 'Second question', timestamp: 1002 },
+          { role: 'assistant', content: 'Recovered answer', timestamp: 1003 },
+        ],
+      },
+    });
+
+    await actions.loadHistory(true);
+
+    expect(h.read().runError).toBeNull();
+    expect(h.read().messages.map((message) => message.content)).toEqual([
+      'First question',
+      [],
+      'Second question',
+      'Recovered answer',
+    ]);
+  });
+
   it('clears stale runError when refreshed history no longer contains a terminal assistant error', async () => {
     const { createHistoryActions } = await import('@/stores/chat/history-actions');
     const h = makeHarness({

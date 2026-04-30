@@ -119,13 +119,26 @@ export function createHistoryActions(
           if (!userMsTs || !msg.timestamp) return true;
           return toMs(msg.timestamp) >= userMsTs;
         };
-        const latestTerminalAssistantError = [...filteredMessages].reverse().find((msg) => (
-          msg.role === 'assistant'
-          && getMessageStopReason(msg) === 'error'
-          && isAfterUserMsg(msg)
-        ));
-        const latestTerminalAssistantErrorMessage = latestTerminalAssistantError
-          ? getMessageErrorMessage(latestTerminalAssistantError)
+        const isRealUserBoundary = (msg: RawMessage): boolean => {
+          if (msg.role !== 'user') return false;
+          if (!Array.isArray(msg.content)) return true;
+          const blocks = msg.content as Array<{ type?: string }>;
+          return blocks.length === 0 || !blocks.every((block) => block.type === 'tool_result' || block.type === 'toolResult');
+        };
+        const postBoundaryMessages = userMsTs
+          ? filteredMessages.filter((msg) => isAfterUserMsg(msg))
+          : (() => {
+              for (let i = filteredMessages.length - 1; i >= 0; i -= 1) {
+                if (isRealUserBoundary(filteredMessages[i])) {
+                  return filteredMessages.slice(i + 1);
+                }
+              }
+              return filteredMessages;
+            })();
+        const lastAssistantAfterBoundary = [...postBoundaryMessages].reverse().find((msg) => msg.role === 'assistant');
+        const latestTerminalAssistantErrorMessage = lastAssistantAfterBoundary
+          && getMessageStopReason(lastAssistantAfterBoundary) === 'error'
+          ? getMessageErrorMessage(lastAssistantAfterBoundary)
           : null;
 
         set({

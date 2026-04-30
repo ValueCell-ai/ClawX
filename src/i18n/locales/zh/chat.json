@@ -22,6 +22,9 @@
         "modified": "修改",
         "viewAll": "查看文件变更"
     },
+    "runError": {
+        "title": "模型调用失败"
+    },
     "artifactPanel": {
         "tabs": {
             "changes": "变更",

@@ -22,6 +22,9 @@
         "modified": "Modified",
         "viewAll": "View all changes"
     },
+    "runError": {
+        "title": "Model call failed"
+    },
     "artifactPanel": {
         "tabs": {
             "changes": "Changes",
