@@ -805,7 +805,7 @@ export function Chat() {
 
       {/* Run error callout */}
       {runError && (
-        <div className="px-4 pt-2">
+        <div className="px-4 pt-2" data-testid="chat-run-error">
           <div className="max-w-4xl mx-auto rounded-xl border border-destructive/20 bg-destructive/10 px-4 py-3">
             <p className="text-sm font-medium text-destructive flex items-center gap-2">
               <AlertCircle className="h-4 w-4" />
