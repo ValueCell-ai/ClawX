@@ -310,6 +310,8 @@ importers:
         specifier: ^8.8.5
         version: 8.8.5
 
+  harness: {}
+
 packages:
 
   7zip-bin@5.2.0:
