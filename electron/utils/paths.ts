@@ -3,30 +3,11 @@
  * Cross-platform path resolution helpers
  */
 import { createRequire } from 'node:module';
-import { createHash } from 'node:crypto';
-import { dirname, join } from 'path';
+import { join } from 'path';
 import { homedir } from 'os';
-import {
-  cpSync,
-  accessSync,
-  constants,
-  existsSync,
-  mkdirSync,
-  readFileSync,
-  realpathSync,
-  readdirSync,
-  renameSync,
-  rmSync,
-  statSync,
-  writeFileSync,
-} from 'fs';
+import { existsSync, mkdirSync, readFileSync, realpathSync } from 'fs';
 
 const require = createRequire(import.meta.url);
-const OPENCLAW_RUNTIME_MANIFEST = 'clawx-runtime-deps.json';
-const OPENCLAW_RUNTIME_READY_MARKER = '.clawx-runtime-ready.json';
-const OPENCLAW_RUNTIME_KEEP_COUNT = 2;
-
-let materializedOpenClawDir: string | null = null;
 
 type ElectronAppLike = Pick<typeof import('electron').app, 'isPackaged' | 'getPath' | 'getAppPath'>;
 
@@ -110,185 +91,6 @@ export function ensureDir(dir: string): void {
   }
 }
 
-function toFsPath(filePath: string): string {
-  if (process.platform !== 'win32') return filePath;
-  if (!filePath || filePath.startsWith('\\\\?\\')) return filePath;
-  const windowsPath = filePath.replace(/\//g, '\\');
-  if (!windowsPath.match(/^[a-zA-Z]:\\/u) && !windowsPath.startsWith('\\\\')) return windowsPath;
-  if (windowsPath.startsWith('\\\\')) return `\\\\?\\UNC\\${windowsPath.slice(2)}`;
-  return `\\\\?\\${windowsPath}`;
-}
-
-function readJsonFile<T extends Record<string, unknown>>(filePath: string): T | null {
-  try {
-    return JSON.parse(readFileSync(toFsPath(filePath), 'utf-8')) as T;
-  } catch {
-    return null;
-  }
-}
-
-function hashOpenClawRuntime(sourceDir: string): { key: string; version: string; manifestHash: string } {
-  const packageJsonPath = join(sourceDir, 'package.json');
-  const manifestPath = join(sourceDir, OPENCLAW_RUNTIME_MANIFEST);
-  const packageJsonRaw = existsSync(toFsPath(packageJsonPath)) ? readFileSync(toFsPath(packageJsonPath), 'utf-8') : '{}';
-  const manifestRaw = existsSync(toFsPath(manifestPath)) ? readFileSync(toFsPath(manifestPath), 'utf-8') : '';
-  const packageJson = JSON.parse(packageJsonRaw) as { version?: string };
-  const version = packageJson.version || 'unknown';
-  const manifestHash = createHash('sha256')
-    .update(packageJsonRaw)
-    .update('\0')
-    .update(manifestRaw)
-    .digest('hex')
-    .slice(0, 12);
-  const safeVersion = version.replace(/[^a-zA-Z0-9._-]/gu, '_');
-  return {
-    key: `openclaw-${safeVersion}-${manifestHash}`,
-    version,
-    manifestHash,
-  };
-}
-
-function isMaterializedRuntimeReady(targetDir: string, version: string, manifestHash: string): boolean {
-  const marker = readJsonFile<{ version?: unknown; manifestHash?: unknown }>(
-    join(targetDir, OPENCLAW_RUNTIME_READY_MARKER),
-  );
-  if (marker?.version !== version || marker?.manifestHash !== manifestHash) return false;
-  return existsSync(toFsPath(join(targetDir, 'openclaw.mjs')))
-    && existsSync(toFsPath(join(targetDir, 'package.json')))
-    && existsSync(toFsPath(join(targetDir, 'dist')))
-    && existsSync(toFsPath(join(targetDir, 'node_modules')));
-}
-
-function isPackagedRuntimeReady(targetDir: string): boolean {
-  const marker = readJsonFile<{ version?: unknown; manifestHash?: unknown }>(
-    join(targetDir, OPENCLAW_RUNTIME_READY_MARKER),
-  );
-  if (typeof marker?.version !== 'string' || typeof marker?.manifestHash !== 'string') return false;
-  return existsSync(toFsPath(join(targetDir, 'openclaw.mjs')))
-    && existsSync(toFsPath(join(targetDir, 'package.json')))
-    && existsSync(toFsPath(join(targetDir, 'dist')))
-    && existsSync(toFsPath(join(targetDir, 'node_modules')));
-}
-
-function isOpenClawRuntimeWritable(runtimeDir: string): boolean {
-  try {
-    accessSync(toFsPath(runtimeDir), constants.W_OK);
-    accessSync(toFsPath(join(runtimeDir, 'dist', 'extensions')), constants.W_OK);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-function cleanupOldOpenClawRuntimes(runtimeRoot: string, keepKey: string): void {
-  let entries;
-  try {
-    entries = readdirSync(toFsPath(runtimeRoot), { withFileTypes: true })
-      .filter((entry) => entry.isDirectory() && entry.name.startsWith('openclaw-'))
-      .map((entry) => {
-        const fullPath = join(runtimeRoot, entry.name);
-        let mtimeMs = 0;
-        try {
-          mtimeMs = statSync(toFsPath(fullPath)).mtimeMs;
-        } catch {
-          // Keep unknown entries until a later cleanup pass.
-        }
-        return { name: entry.name, fullPath, mtimeMs };
-      })
-      .sort((left, right) => right.mtimeMs - left.mtimeMs);
-  } catch {
-    return;
-  }
-
-  const keep = new Set(entries.slice(0, OPENCLAW_RUNTIME_KEEP_COUNT).map((entry) => entry.name));
-  keep.add(keepKey);
-  for (const entry of entries) {
-    if (keep.has(entry.name)) continue;
-    try {
-      rmSync(toFsPath(entry.fullPath), { recursive: true, force: true });
-    } catch {
-      // Cleanup is best-effort; stale runtimes are harmless.
-    }
-  }
-}
-
-function getPackagedOpenClawSourceDir(): string {
-  return join(process.resourcesPath, 'openclaw');
-}
-
-function getPackagedOpenClawRuntimeRoot(): string {
-  return join(process.resourcesPath, 'openclaw-runtime');
-}
-
-function findPackagedOpenClawRuntimeDir(): string | null {
-  const runtimeRoot = getPackagedOpenClawRuntimeRoot();
-  let entries;
-  try {
-    entries = readdirSync(toFsPath(runtimeRoot), { withFileTypes: true });
-  } catch {
-    return null;
-  }
-
-  const candidates = entries
-    .filter((entry) => entry.isDirectory() && entry.name.startsWith('openclaw-'))
-    .map((entry) => join(runtimeRoot, entry.name))
-    .filter((candidate) => isPackagedRuntimeReady(candidate))
-    .sort((left, right) => right.localeCompare(left));
-  return candidates[0] ?? null;
-}
-
-function getPackagedOpenClawFallbackSourceDir(): string {
-  return findPackagedOpenClawRuntimeDir() ?? getPackagedOpenClawSourceDir();
-}
-
-function materializePackagedOpenClawRuntime(): string {
-  if (materializedOpenClawDir) return materializedOpenClawDir;
-
-  const sourceDir = getPackagedOpenClawFallbackSourceDir();
-  if (!existsSync(toFsPath(sourceDir)) || !existsSync(toFsPath(join(sourceDir, 'package.json')))) {
-    return sourceDir;
-  }
-  const { key, version, manifestHash } = hashOpenClawRuntime(sourceDir);
-  const runtimeRoot = join(getElectronApp().getPath('userData'), 'openclaw-runtime');
-  const targetDir = join(runtimeRoot, key);
-
-  if (isMaterializedRuntimeReady(targetDir, version, manifestHash)) {
-    materializedOpenClawDir = targetDir;
-    cleanupOldOpenClawRuntimes(runtimeRoot, key);
-    return targetDir;
-  }
-
-  mkdirSync(toFsPath(runtimeRoot), { recursive: true });
-  const tempDir = join(runtimeRoot, `.tmp-${key}-${process.pid}-${Date.now()}`);
-  rmSync(toFsPath(tempDir), { recursive: true, force: true });
-  try {
-    cpSync(toFsPath(sourceDir), toFsPath(tempDir), {
-      recursive: true,
-      dereference: true,
-      force: true,
-    });
-    writeFileSync(
-      toFsPath(join(tempDir, OPENCLAW_RUNTIME_READY_MARKER)),
-      `${JSON.stringify({
-        version,
-        manifestHash,
-        source: sourceDir,
-        createdAt: new Date().toISOString(),
-      }, null, 2)}\n`,
-      'utf-8',
-    );
-    rmSync(toFsPath(targetDir), { recursive: true, force: true });
-    renameSync(toFsPath(tempDir), toFsPath(targetDir));
-  } catch (error) {
-    rmSync(toFsPath(tempDir), { recursive: true, force: true });
-    throw error;
-  }
-
-  materializedOpenClawDir = targetDir;
-  cleanupOldOpenClawRuntimes(runtimeRoot, key);
-  return targetDir;
-}
-
 /**
  * Get resources directory (for bundled assets)
  */
@@ -308,33 +110,15 @@ export function getPreloadPath(): string {
 
 /**
  * Get OpenClaw package directory
- * - Production (packaged): from resources/openclaw-runtime/openclaw-* (staged by afterPack)
+ * - Production (packaged): from resources/openclaw (copied by electron-builder extraResources)
  * - Development: from node_modules/openclaw
  */
 export function getOpenClawDir(): string {
   if (getElectronApp().isPackaged) {
-    return getPackagedOpenClawFallbackSourceDir();
+    return join(process.resourcesPath, 'openclaw');
   }
   // Development: use node_modules/openclaw
   return join(__dirname, '../../node_modules/openclaw');
-}
-
-/**
- * Get the OpenClaw runtime directory used for spawned OpenClaw processes.
- *
- * In packaged builds, this prefers the afterPack-staged resources/openclaw-runtime
- * directory. If the app was installed somewhere non-writable, it falls back to a
- * userData copy so OpenClaw's runtime-deps checks can still create lock files.
- */
-export function getOpenClawRuntimeDir(): string {
-  if (getElectronApp().isPackaged) {
-    const packagedRuntimeDir = findPackagedOpenClawRuntimeDir();
-    if (packagedRuntimeDir && isOpenClawRuntimeWritable(packagedRuntimeDir)) {
-      return packagedRuntimeDir;
-    }
-    return materializePackagedOpenClawRuntime();
-  }
-  return getOpenClawDir();
 }
 
 /**
@@ -358,26 +142,6 @@ export function getOpenClawResolvedDir(): string {
  */
 export function getOpenClawEntryPath(): string {
   return join(getOpenClawDir(), 'openclaw.mjs');
-}
-
-/**
- * Get OpenClaw entry script path for spawned OpenClaw processes.
- */
-export function getOpenClawRuntimeEntryPath(): string {
-  return join(getOpenClawRuntimeDir(), 'openclaw.mjs');
-}
-
-/**
- * Get the external runtime dependency staging directory for OpenClaw.
- *
- * In packaged mode this intentionally points at the parent of the materialized
- * runtime directory. OpenClaw recognizes an existing openclaw-* package root
- * under OPENCLAW_PLUGIN_STAGE_DIR and reuses its node_modules instead of
- * running npm install into ~/.openclaw/plugin-runtime-deps.
- */
-export function getOpenClawPluginStageDir(openclawDir = getOpenClawRuntimeDir()): string | null {
-  if (!getElectronApp().isPackaged) return null;
-  return dirname(openclawDir);
 }
 
 /**
