@@ -109,9 +109,14 @@ export const ChatMessage = memo(function ChatMessage({
   const images = extractImages(message);
   const tools = extractToolUse(message);
   const visibleTools = suppressToolCards ? [] : tools;
-  const attachedFiles = suppressProcessAttachments
-    ? (message._attachedFiles || []).filter((file) => file.source !== 'tool-result' && file.source !== 'message-ref')
-    : (message._attachedFiles || []);
+  const rawAttachedFiles = message._attachedFiles || [];
+  const filteredProcessAttachments = rawAttachedFiles.filter((file) => file.source !== 'tool-result' && file.source !== 'message-ref');
+  // When a message is attachment-only, keep those attachments visible even if
+  // process attachments are generally suppressed for this run segment —
+  // otherwise the reply disappears entirely.
+  const attachedFiles = suppressProcessAttachments && (hasText || images.length > 0 || visibleTools.length > 0)
+    ? filteredProcessAttachments
+    : rawAttachedFiles;
   const [lightboxImg, setLightboxImg] = useState<{ src: string; fileName: string; filePath?: string; base64?: string; mimeType?: string } | null>(null);
 
   // Never render tool result messages in chat UI
