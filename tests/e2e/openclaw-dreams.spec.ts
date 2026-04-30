@@ -70,6 +70,18 @@ test.describe('OpenClaw Dreams', () => {
       success: true,
       result: { written: 2 },
     },
+    [stableStringify(['doctor.memory.dedupeDreamDiary', {}])]: {
+      success: true,
+      result: { removedEntries: 2, keptEntries: 5 },
+    },
+    [stableStringify(['doctor.memory.resetDreamDiary', {}])]: {
+      success: true,
+      result: { removedEntries: 4 },
+    },
+    [stableStringify(['doctor.memory.resetGroundedShortTerm', {}])]: {
+      success: true,
+      result: { removedShortTermEntries: 3 },
+    },
   };
 
   test('renders the native Dreams page and runs a maintenance action', async ({ electronApp, page }) => {
@@ -100,6 +112,18 @@ test.describe('OpenClaw Dreams', () => {
 
     await page.getByTestId('dreams-action-backfill').click();
     await expect(page.getByTestId('dreams-action-message')).toContainText('Backfilled 2 dream diary entries.');
+
+    await page.getByTestId('dreams-action-dedupe').click();
+    await page.getByRole('button', { name: 'Confirm' }).click();
+    await expect(page.getByTestId('dreams-action-message')).toContainText('Removed 2 duplicate dream entries and kept 5.');
+
+    await page.getByTestId('dreams-action-reset-grounded').click();
+    await page.getByRole('button', { name: 'Confirm' }).click();
+    await expect(page.getByTestId('dreams-action-message')).toContainText('Cleared 3 replayed short-term entries.');
+
+    await page.getByTestId('dreams-action-reset-diary').click();
+    await page.getByRole('button', { name: 'Confirm' }).click();
+    await expect(page.getByTestId('dreams-action-message')).toContainText('Removed 4 backfilled dream diary entries.');
   });
 
   test('waits for gateway readiness before loading Dreams data', async ({ electronApp, page }) => {

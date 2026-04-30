@@ -238,18 +238,18 @@ export function Dreams() {
       return t('actions.backfillSuccess', { count: count ?? 0 });
     }
     if (action === 'dedupe') {
-      const removed = firstNumber(result, ['removed', 'removedCount', 'duplicatesRemoved']);
-      const kept = firstNumber(result, ['kept', 'keptCount']);
+      const removed = firstNumber(result, ['removedEntries', 'removed', 'removedCount', 'duplicatesRemoved']);
+      const kept = firstNumber(result, ['keptEntries', 'kept', 'keptCount']);
       return t('actions.dedupeSuccess', { removed: removed ?? 0, kept: kept ?? 0 });
     }
     if (action === 'repair') {
       return t('actions.repairSuccess');
     }
     if (action === 'resetDiary') {
-      const count = firstNumber(result, ['removed', 'removedCount', 'count']);
+      const count = firstNumber(result, ['removedEntries', 'removed', 'removedCount', 'count']);
       return t('actions.resetDiarySuccess', { count: count ?? 0 });
     }
-    const count = firstNumber(result, ['cleared', 'removed', 'count']);
+    const count = firstNumber(result, ['removedShortTermEntries', 'cleared', 'removed', 'count']);
     return t('actions.resetGroundedSuccess', { count: count ?? 0 });
   }, [t]);
 
