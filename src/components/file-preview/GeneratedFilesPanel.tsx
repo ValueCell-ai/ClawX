@@ -3,46 +3,28 @@
  * Lives directly under the ExecutionGraphCard for each user trigger
  * (see Chat/index.tsx).
  */
-import { ArrowRight } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import { computeLineStats, type GeneratedFile } from '@/lib/generated-files';
-import { FilePreviewIcon } from './file-card-utils';
 
 export interface GeneratedFilesPanelProps {
   files: GeneratedFile[];
   onOpen: (file: GeneratedFile) => void;
-  /**
-   * Optional handler for the "查看文件变更 →" link rendered next to the
-   * card row.  When provided, ClawX shows the link so users can pop the
-   * artifact panel open in list view (vs. drilling into a single file).
-   */
-  onShowAll?: () => void;
   className?: string;
 }
 
-export function GeneratedFilesPanel({ files, onOpen, onShowAll, className }: GeneratedFilesPanelProps) {
+export function GeneratedFilesPanel({ files, onOpen, className }: GeneratedFilesPanelProps) {
   const { t } = useTranslation('chat');
 
   if (!files.length) return null;
 
   return (
-    <div className={cn('rounded-2xl border border-black/10 bg-white/70 p-3 backdrop-blur-sm dark:border-white/10 dark:bg-white/5', className)}>
-      <div className="mb-2 flex items-center justify-between px-1">
-        <p className="text-xs font-semibold text-foreground/80">
+    <div className={cn('space-y-2', className)}>
+      <div className="px-1">
+        <p className="text-xs font-semibold text-foreground/75">
           {t('generatedFiles.title', { count: files.length, defaultValue: '文件变更（{{count}} 个）' })}
         </p>
-        {onShowAll && (
-          <button
-            type="button"
-            onClick={onShowAll}
-            className="inline-flex items-center gap-1 text-2xs font-medium text-primary transition-colors hover:text-primary/80"
-          >
-            {t('generatedFiles.viewAll', '查看文件变更')}
-            <ArrowRight className="h-3 w-3" />
-          </button>
-        )}
       </div>
       <div className="flex flex-wrap gap-2">
         {files.map((file) => {
@@ -53,40 +35,33 @@ export function GeneratedFilesPanel({ files, onOpen, onShowAll, className }: Gen
               type="button"
               onClick={() => onOpen(file)}
               className={cn(
-                'group flex max-w-[320px] items-center gap-2 rounded-xl border border-black/10 bg-black/5 px-3 py-2 text-left transition-colors',
-                'hover:border-primary/40 hover:bg-primary/5',
-                'dark:border-white/10 dark:bg-white/5 dark:hover:bg-white/10',
+                'group inline-flex min-w-0 max-w-full items-center gap-2 rounded-full border border-black/8 bg-black/[0.035] px-3.5 py-2 text-left transition-colors',
+                'hover:border-black/12 hover:bg-black/[0.055]',
+                'dark:border-white/10 dark:bg-white/[0.04] dark:hover:bg-white/[0.07]',
               )}
               title={file.filePath}
             >
-              <FilePreviewIcon
-                contentType={file.contentType}
-                mimeType={file.mimeType}
-                ext={file.ext}
-                className="h-4 w-4 shrink-0 text-muted-foreground"
-              />
-              <div className="min-w-0 flex-1">
-                <p className="truncate text-xs font-medium text-foreground">{file.fileName}</p>
-                <p className="truncate text-2xs text-muted-foreground">
-                  {file.filePath}
-                </p>
+              <div className="min-w-0 flex items-center gap-2 overflow-hidden whitespace-nowrap text-[13px] leading-none">
+                <span className="shrink-0 font-medium text-foreground">{file.fileName}</span>
+                <span className="truncate text-muted-foreground">{file.filePath}</span>
               </div>
-              <div className="flex shrink-0 items-center gap-2">
-                {lineStats && (
-                  <div className="flex items-center gap-1 text-2xs tabular-nums">
-                    <span className="text-emerald-600 dark:text-emerald-400">+{lineStats.added}</span>
-                    <span className="text-rose-600 dark:text-rose-400">-{lineStats.removed}</span>
-                  </div>
+              {lineStats && (
+                <div className="flex shrink-0 items-center gap-1 whitespace-nowrap text-xs leading-none tabular-nums">
+                  <span className="text-emerald-600 dark:text-emerald-400">+{lineStats.added}</span>
+                  <span className="text-rose-600 dark:text-rose-400">-{lineStats.removed}</span>
+                </div>
+              )}
+              <Badge
+                variant={file.action === 'created' ? 'default' : 'secondary'}
+                className={cn(
+                  'shrink-0 rounded-full px-1.5 py-0.5 text-2xs',
+                  file.action !== 'created' && 'border border-black/8 bg-black/[0.045] text-foreground/70 dark:border-white/10 dark:bg-white/[0.06] dark:text-foreground/75',
                 )}
-                <Badge
-                  variant={file.action === 'created' ? 'default' : 'secondary'}
-                  className="shrink-0 px-1.5 py-0 text-2xs"
-                >
-                  {file.action === 'created'
-                    ? t('generatedFiles.created', '新增')
-                    : t('generatedFiles.modified', '修改')}
-                </Badge>
-              </div>
+              >
+                {file.action === 'created'
+                  ? t('generatedFiles.created', '新增')
+                  : t('generatedFiles.modified', '修改')}
+              </Badge>
             </button>
           );
         })}

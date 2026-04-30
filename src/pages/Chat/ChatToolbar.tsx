@@ -12,6 +12,7 @@ import { useAgentsStore } from '@/stores/agents';
 import { useArtifactPanel } from '@/stores/artifact-panel';
 import { cn } from '@/lib/utils';
 import { useTranslation } from 'react-i18next';
+import { WORKSPACE_BROWSER_ENABLED } from '@/components/file-preview/workspace-browser-config';
 
 export function ChatToolbar() {
   const refresh = useChatStore((s) => s.refresh);
@@ -29,7 +30,7 @@ export function ChatToolbar() {
   );
   const currentAgentName = currentAgent?.name ?? currentAgentId;
 
-  const browserActive = panelOpen && panelTab === 'browser';
+  const browserActive = WORKSPACE_BROWSER_ENABLED && panelOpen && panelTab === 'browser';
 
   return (
     <div className="flex items-center gap-2">
@@ -37,23 +38,25 @@ export function ChatToolbar() {
         <Bot className="h-3.5 w-3.5 text-primary" />
         <span>{t('toolbar.currentAgent', { agent: currentAgentName })}</span>
       </div>
-      {/* Workspace browser → opens the artifact panel's 浏览器 tab */}
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <Button
-            variant="ghost"
-            size="icon"
-            className={cn('h-8 w-8', browserActive && 'bg-foreground/10 text-foreground')}
-            onClick={() => (browserActive ? closePanel() : openBrowser())}
-            disabled={!currentAgent?.workspace}
-          >
-            <FolderTree className="h-4 w-4" />
-          </Button>
-        </TooltipTrigger>
-        <TooltipContent>
-          <p>{t('toolbar.workspace', '工作空间')}</p>
-        </TooltipContent>
-      </Tooltip>
+      {WORKSPACE_BROWSER_ENABLED && (
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon"
+              className={cn('h-8 w-8', browserActive && 'bg-foreground/10 text-foreground')}
+              onClick={() => (browserActive ? closePanel() : openBrowser())}
+              disabled={!currentAgent?.workspace}
+              aria-label={t('toolbar.workspace', '工作空间')}
+            >
+              <FolderTree className="h-4 w-4" />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>
+            <p>{t('toolbar.workspace', '工作空间')}</p>
+          </TooltipContent>
+        </Tooltip>
+      )}
       {/* Refresh */}
       <Tooltip>
         <TooltipTrigger asChild>
@@ -63,6 +66,7 @@ export function ChatToolbar() {
             className="h-8 w-8"
             onClick={() => refresh()}
             disabled={loading}
+            aria-label={t('toolbar.refresh')}
           >
             <RefreshCw className={cn('h-4 w-4', loading && 'animate-spin')} />
           </Button>

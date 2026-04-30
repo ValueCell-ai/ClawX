@@ -739,7 +739,6 @@ export function Chat() {
                                 <GeneratedFilesPanel
                                   files={generatedFiles}
                                   onOpen={(file) => openChanges(generatedFileToTarget(file))}
-                                  onShowAll={() => openChanges(null)}
                                 />
                               )}
                             </div>

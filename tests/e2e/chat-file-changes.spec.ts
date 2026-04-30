@@ -97,12 +97,16 @@ test.describe('ClawX chat file changes', () => {
       }
 
       await expect(page.getByTestId('main-layout')).toBeVisible();
+      await expect(page.getByRole('button', { name: '工作空间' })).toHaveCount(0);
+      await expect(page.getByText('查看文件变更')).toHaveCount(0);
+
       const fileCard = page.getByRole('button', { name: /demo\.ts/ }).first();
       await expect(fileCard).toBeVisible({ timeout: 30_000 });
       await expect(fileCard).toContainText('+1');
       await expect(fileCard).toContainText('-1');
 
       await fileCard.click();
+      await expect(page.locator('aside').getByRole('button', { name: '工作空间' })).toHaveCount(0);
       await expect(fileCard).toContainText('demo.ts');
     } finally {
       await closeElectronApp(app);
