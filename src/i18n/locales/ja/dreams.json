@@ -1,0 +1,67 @@
+{
+    "title": "Dreams",
+    "subtitle": "OpenClaw の記憶シグナル、夢日記、メンテナンス操作を ClawX 内で確認します。",
+    "openFullUi": "完全版 Dreams を開く",
+    "gatewayNotReady": "OpenClaw Gateway は起動中または未接続です。接続後に Dreams データを読み込みます。",
+    "metrics": {
+        "shortTerm": "短期エントリ",
+        "grounded": "固定済みシグナル",
+        "signals": "シグナル合計",
+        "promotedToday": "今日の昇格"
+    },
+    "diary": {
+        "title": "Dream Diary",
+        "notFound": "DREAMS.md はまだ作成されていません。",
+        "empty": "夢日記のエントリはまだありません。",
+        "undated": "日付なし"
+    },
+    "actions": {
+        "title": "メンテナンス",
+        "backfill": "日記をバックフィル",
+        "dedupe": "日記を重複排除",
+        "repair": "キャッシュを修復",
+        "resetGrounded": "再生済みを消去",
+        "resetDiary": "バックフィル日記をリセット",
+        "backfillSuccess": "{{count}} 件の夢日記をバックフィルしました。",
+        "dedupeSuccess": "{{removed}} 件の重複夢エントリを削除し、{{kept}} 件を保持しました。",
+        "repairSuccess": "夢キャッシュの修復が完了しました。",
+        "resetDiarySuccess": "{{count}} 件のバックフィル夢日記を削除しました。",
+        "resetGroundedSuccess": "{{count}} 件の再生済み短期エントリを消去しました。"
+    },
+    "confirmations": {
+        "dedupe": {
+            "title": "夢日記を重複排除しますか？",
+            "message": "DREAMS.md を書き換え、完全に重複した日記エントリだけを削除します。"
+        },
+        "repair": {
+            "title": "夢キャッシュを修復しますか？",
+            "message": "派生した夢キャッシュファイルをアーカイブし、クリーンな入力から再構築します。夢日記は変更されません。"
+        },
+        "resetDiary": {
+            "title": "バックフィル日記をリセットしますか？",
+            "message": "DREAMS.md からバックフィルされた日記エントリを削除します。手書きの内容は対象ではありません。"
+        },
+        "resetGrounded": {
+            "title": "再生済み短期エントリを消去しますか？",
+            "message": "固定済み記憶シグナルへ再生された短期エントリを消去します。"
+        }
+    },
+    "phases": {
+        "title": "Dream Phases",
+        "light": "Light",
+        "rem": "REM",
+        "deep": "Deep",
+        "noSchedule": "管理スケジュールなし"
+    },
+    "signals": {
+        "title": "最近のシグナル",
+        "storageMode": "ストレージ: {{mode}}",
+        "noStorageMode": "ストレージモードは利用できません",
+        "empty": "最近の短期または昇格済み夢シグナルはありません。",
+        "unknownSource": "不明なソース",
+        "noSnippet": "スニペットはありません。"
+    },
+    "errors": {
+        "openFullUi": "完全版 OpenClaw Dreams UI を開けません。"
+    }
+}

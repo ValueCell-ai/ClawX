@@ -1,0 +1,67 @@
+{
+    "title": "梦境",
+    "subtitle": "在 ClawX 内查看 OpenClaw 的记忆信号、梦境日记和维护操作。",
+    "openFullUi": "打开完整 Dreams",
+    "gatewayNotReady": "OpenClaw 网关仍在启动或已断开。网关可用后会加载 Dreams 数据。",
+    "metrics": {
+        "shortTerm": "短期条目",
+        "grounded": "已落地信号",
+        "signals": "信号总数",
+        "promotedToday": "今日提升"
+    },
+    "diary": {
+        "title": "梦境日记",
+        "notFound": "DREAMS.md 尚未创建。",
+        "empty": "还没有找到梦境日记条目。",
+        "undated": "无日期"
+    },
+    "actions": {
+        "title": "维护",
+        "backfill": "回填日记",
+        "dedupe": "去重日记",
+        "repair": "修复缓存",
+        "resetGrounded": "清除已回放",
+        "resetDiary": "重置回填日记",
+        "backfillSuccess": "已回填 {{count}} 条梦境日记。",
+        "dedupeSuccess": "已移除 {{removed}} 条重复梦境，并保留 {{kept}} 条。",
+        "repairSuccess": "梦境缓存修复完成。",
+        "resetDiarySuccess": "已移除 {{count}} 条回填梦境日记。",
+        "resetGroundedSuccess": "已清除 {{count}} 条已回放短期条目。"
+    },
+    "confirmations": {
+        "dedupe": {
+            "title": "去重梦境日记？",
+            "message": "这会重写 DREAMS.md，并只移除完全重复的日记条目。"
+        },
+        "repair": {
+            "title": "修复梦境缓存？",
+            "message": "这会归档派生的梦境缓存文件，并从干净输入重建。梦境日记不会被改动。"
+        },
+        "resetDiary": {
+            "title": "重置回填日记？",
+            "message": "这会从 DREAMS.md 移除回填日记条目，目标不是手写内容。"
+        },
+        "resetGrounded": {
+            "title": "清除已回放短期条目？",
+            "message": "这会清除已经回放为落地记忆信号的短期条目。"
+        }
+    },
+    "phases": {
+        "title": "梦境阶段",
+        "light": "浅梦",
+        "rem": "REM",
+        "deep": "深梦",
+        "noSchedule": "无托管计划"
+    },
+    "signals": {
+        "title": "近期信号",
+        "storageMode": "存储：{{mode}}",
+        "noStorageMode": "存储模式不可用",
+        "empty": "暂无近期短期或已提升的梦境信号。",
+        "unknownSource": "未知来源",
+        "noSnippet": "暂无片段。"
+    },
+    "errors": {
+        "openFullUi": "无法打开完整 OpenClaw Dreams UI。"
+    }
+}
