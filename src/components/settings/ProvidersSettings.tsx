@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Providers Settings Component
  * Manage AI provider configurations and API keys
  */
@@ -46,6 +46,10 @@ import {
   hasConfiguredCredentials,
   type ProviderListItem,
 } from '@/lib/provider-accounts';
+import {
+  runProviderModelCheck,
+  type ProviderModelCheckResult,
+} from '@/lib/provider-model-check';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 import { useTranslation } from 'react-i18next';
@@ -145,6 +149,39 @@ function getAuthModeLabel(
       return t('aiProviders.authModes.local');
     default:
       return authMode;
+  }
+}
+
+function getModelCheckTone(result: ProviderModelCheckResult | null): 'success' | 'warning' | 'error' | 'idle' {
+  if (!result) return 'idle';
+  if (result.success && result.status === 'operational') return 'success';
+  if (result.success && result.status === 'degraded') return 'warning';
+  return 'error';
+}
+
+function getModelCheckText(result: ProviderModelCheckResult | null): string {
+  if (!result) return '';
+  const suffix = result.responseTimeMs ? ` · ${result.responseTimeMs} ms` : '';
+  if (result.success && result.status === 'operational') return `检测成功${suffix}`;
+  if (result.success && result.status === 'degraded') return `模型可用，但响应较慢${suffix}`;
+  if (result.errorCategory === 'modelNotFound') return `模型不存在或当前供应商不支持该模型${suffix}`;
+  if (result.errorCategory === 'auth') return `鉴权失败：${result.message}${suffix}`;
+  if (result.errorCategory === 'timeout') return `请求超时：${result.message}${suffix}`;
+  if (result.errorCategory === 'unsupported') return `${result.message}${suffix}`;
+  return `检测失败：${result.message}${suffix}`;
+}
+
+function modelCheckHintClassName(result: ProviderModelCheckResult | null): string {
+  const tone = getModelCheckTone(result);
+  switch (tone) {
+    case 'success':
+      return 'text-[12px] text-green-600 dark:text-green-500';
+    case 'warning':
+      return 'text-[12px] text-amber-600 dark:text-amber-500';
+    case 'error':
+      return 'text-[12px] text-red-500';
+    default:
+      return 'text-[12px] text-muted-foreground';
   }
 }
 
@@ -371,6 +408,8 @@ function ProviderCard({
   const [showFallback, setShowFallback] = useState(false);
   const [validating, setValidating] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [checkingModel, setCheckingModel] = useState(false);
+  const [modelCheckResult, setModelCheckResult] = useState<ProviderModelCheckResult | null>(null);
   const [arkMode, setArkMode] = useState<ArkMode>('apikey');
 
   const typeInfo = PROVIDER_TYPE_INFO.find((t) => t.id === account.vendorId);
@@ -396,6 +435,7 @@ function ProviderCard({
       setApiProtocol(account.apiProtocol || 'openai-completions');
       setUserAgent(getUserAgentHeader(account.headers));
       setModelId(account.model || '');
+      setModelCheckResult(null);
       setFallbackModelsText(normalizeFallbackModels(account.fallbackModels).join('\n'));
       setFallbackProviderIds(normalizeFallbackProviderIds(account.fallbackAccountIds));
       setArkMode(
@@ -498,6 +538,50 @@ function ProviderCard({
     }
   };
 
+  const handleModelCheck = async () => {
+    const effectiveModel = (modelId.trim() || account.model || '').trim();
+    if (!effectiveModel) {
+      toast.error(t('aiProviders.toast.modelRequired'));
+      return;
+    }
+
+    const effectiveApiKey = normalizeProviderApiKeyInput(newKey);
+    if ((typeInfo?.requiresApiKey ?? account.vendorId !== 'ollama') && !effectiveApiKey && !status?.hasKey) {
+      toast.error(t('aiProviders.dialog.apiKeyMissing'));
+      return;
+    }
+
+    setCheckingModel(true);
+    try {
+      const result = await runProviderModelCheck({
+        accountId: account.id,
+        vendorId: account.vendorId,
+        apiKey: effectiveApiKey || undefined,
+        baseUrl: baseUrl.trim() || undefined,
+        apiProtocol: (account.vendorId === 'custom' || account.vendorId === 'ollama') ? apiProtocol : undefined,
+        headers: showUserAgentField ? mergeHeadersWithUserAgent(account.headers, userAgent.trim()) : undefined,
+        model: effectiveModel,
+      });
+      setModelCheckResult(result);
+      if (result.success) {
+        toast.success(getModelCheckText(result));
+      } else {
+        toast.error(getModelCheckText(result));
+      }
+    } catch (error) {
+      const failedResult: ProviderModelCheckResult = {
+        success: false,
+        status: 'failed',
+        message: String(error),
+        modelUsed: effectiveModel,
+      };
+      setModelCheckResult(failedResult);
+      toast.error(getModelCheckText(failedResult));
+    } finally {
+      setCheckingModel(false);
+    }
+  };
+
   const currentInputClasses = isDefault
     ? "h-[40px] rounded-xl font-mono text-[13px] bg-white dark:bg-card border-black/10 dark:border-white/10 focus-visible:ring-2 focus-visible:ring-blue-500/50 shadow-sm"
     : inputClasses;
@@ -521,7 +605,7 @@ function ProviderCard({
             {getProviderIconUrl(account.vendorId) ? (
               <img src={getProviderIconUrl(account.vendorId)} alt={typeInfo?.name || account.vendorId} className={cn('h-5 w-5', shouldInvertInDark(account.vendorId) && 'dark:invert')} />
             ) : (
-              <span className="text-xl">{vendor?.icon || typeInfo?.icon || '⚙️'}</span>
+              <span className="text-xl">{vendor?.icon || typeInfo?.icon || 'ΓÜÖ∩╕Å'}</span>
             )}
           </div>
           <div>
@@ -788,6 +872,34 @@ function ProviderCard({
             )}
           </div>
           <div className="space-y-3">
+            <div className="rounded-xl border border-black/10 dark:border-white/10 p-3 bg-white/60 dark:bg-white/[0.03] space-y-2">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <p className={currentSectionLabelClasses}>模型检测</p>
+                  <p className="text-[12px] text-muted-foreground">用当前配置发起一次真实流式请求，只要首包返回即判定通过。</p>
+                </div>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={handleModelCheck}
+                  className={cn(
+                    "rounded-xl px-4 border-black/10 dark:border-white/10",
+                    isDefault
+                      ? "h-[40px] bg-white dark:bg-card hover:bg-black/5 dark:hover:bg-white/10"
+                      : "h-[44px] bg-[#eeece3] dark:bg-muted hover:bg-black/5 dark:hover:bg-white/10 shadow-sm"
+                  )}
+                  disabled={checkingModel || Boolean(showModelIdField && !modelId.trim())}
+                >
+                  {checkingModel ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+                  检测模型
+                </Button>
+              </div>
+              {modelCheckResult ? (
+                <p className={modelCheckHintClassName(modelCheckResult)}>{getModelCheckText(modelCheckResult)}</p>
+              ) : (
+                <p className="text-[12px] text-muted-foreground">保存前可先检查模型是否存在、Key 是否有效、端点是否可用。</p>
+              )}
+            </div>
             <div className="flex items-center justify-between gap-3">
               <div className="space-y-0.5">
                 <Label className={currentSectionLabelClasses}>{t('aiProviders.dialog.apiKey')}</Label>
@@ -934,6 +1046,8 @@ function AddProviderDialog({
   const [showKey, setShowKey] = useState(false);
   const [saving, setSaving] = useState(false);
   const [validationError, setValidationError] = useState<string | null>(null);
+  const [checkingModel, setCheckingModel] = useState(false);
+  const [modelCheckResult, setModelCheckResult] = useState<ProviderModelCheckResult | null>(null);
 
   // OAuth Flow State
   const [oauthFlowing, setOauthFlowing] = useState(false);
@@ -1139,7 +1253,7 @@ function AddProviderDialog({
     // Skip providers that are temporarily hidden from the UI.
     if (type.hidden) return false;
 
-    // MiniMax portal variants are mutually exclusive — hide BOTH variants
+    // MiniMax portal variants are mutually exclusive ΓÇö hide BOTH variants
     // when either one already exists (account may have vendorId of either variant).
     const hasMinimax = existingVendorIds.has('minimax-portal') || existingVendorIds.has('minimax-portal-cn');
     if ((type.id === 'minimax-portal' || type.id === 'minimax-portal-cn') && hasMinimax) return false;
@@ -1214,6 +1328,52 @@ function AddProviderDialog({
     }
   };
 
+  const handleModelCheck = async () => {
+    if (!selectedType || !typeInfo) return;
+
+    const effectiveModel = (modelId.trim() || typeInfo.defaultModelId || '').trim();
+    if (!effectiveModel) {
+      setValidationError(t('aiProviders.toast.modelRequired'));
+      return;
+    }
+
+    const effectiveApiKey = normalizeProviderApiKeyInput(apiKey);
+    if ((typeInfo.requiresApiKey ?? selectedType !== 'ollama') && !effectiveApiKey) {
+      setValidationError(t('aiProviders.dialog.apiKeyMissing'));
+      return;
+    }
+
+    setCheckingModel(true);
+    setValidationError(null);
+    try {
+      const result = await runProviderModelCheck({
+        vendorId: selectedType,
+        apiKey: effectiveApiKey || undefined,
+        baseUrl: baseUrl.trim() || undefined,
+        apiProtocol: (selectedType === 'custom' || selectedType === 'ollama') ? apiProtocol : undefined,
+        headers: userAgent.trim() ? { 'User-Agent': userAgent.trim() } : undefined,
+        model: effectiveModel,
+      });
+      setModelCheckResult(result);
+      if (result.success) {
+        toast.success(getModelCheckText(result));
+      } else {
+        toast.error(getModelCheckText(result));
+      }
+    } catch (error) {
+      const failedResult: ProviderModelCheckResult = {
+        success: false,
+        status: 'failed',
+        message: String(error),
+        modelUsed: effectiveModel,
+      };
+      setModelCheckResult(failedResult);
+      toast.error(getModelCheckText(failedResult));
+    } finally {
+      setCheckingModel(false);
+    }
+  };
+
   return (
     <div data-testid="add-provider-dialog" className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
       <Card className="w-full max-w-2xl max-h-[90vh] flex flex-col rounded-3xl border-0 shadow-2xl bg-[#f3f1e9] dark:bg-card overflow-hidden">
@@ -1245,6 +1405,7 @@ function AddProviderDialog({
                     setBaseUrl(type.defaultBaseUrl || '');
                     setModelId(type.defaultModelId || '');
                     setUserAgent('');
+                    setModelCheckResult(null);
                     setShowAdvancedConfig(false);
                     setArkMode('apikey');
                   }}
@@ -1280,6 +1441,7 @@ function AddProviderDialog({
                     setBaseUrl('');
                     setModelId('');
                     setUserAgent('');
+                    setModelCheckResult(null);
                     setShowAdvancedConfig(false);
                     setArkMode('apikey');
                   }}
@@ -1341,7 +1503,7 @@ function AddProviderDialog({
                   </div>
                 )}
 
-                {/* API Key input — shown for non-OAuth providers or when apikey mode is selected */}
+                {/* API Key input ΓÇö shown for non-OAuth providers or when apikey mode is selected */}
                 {(!isOAuth || (supportsApiKey && authMode === 'apikey')) && (
                   <div className="space-y-2.5">
                     <div className="flex items-center justify-between">
@@ -1519,6 +1681,31 @@ function AddProviderDialog({
                           className={inputClasses}
                         />
                       </div>
+                    )}
+                  </div>
+                )}
+                {(typeInfo?.showBaseUrl || showModelIdField || selectedType === 'custom' || selectedType === 'ollama' || (!isOAuth || (supportsApiKey && authMode === 'apikey'))) && (
+                  <div className="rounded-xl border border-black/10 dark:border-white/10 p-4 bg-white/60 dark:bg-white/[0.03] space-y-2">
+                    <div className="flex items-center justify-between gap-3">
+                      <div>
+                        <p className={labelClasses}>模型检测</p>
+                        <p className="text-[12px] text-muted-foreground">用当前配置发起一次真实流式请求，只要首包返回即判定通过。</p>
+                      </div>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={handleModelCheck}
+                        className="rounded-xl px-4 h-[44px] bg-[#eeece3] dark:bg-muted hover:bg-black/5 dark:hover:bg-white/10 shadow-sm border-black/10 dark:border-white/10"
+                        disabled={checkingModel || Boolean(showModelIdField && !modelId.trim())}
+                      >
+                        {checkingModel ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+                        检测模型
+                      </Button>
+                    </div>
+                    {modelCheckResult ? (
+                      <p className={modelCheckHintClassName(modelCheckResult)}>{getModelCheckText(modelCheckResult)}</p>
+                    ) : (
+                      <p className="text-[12px] text-muted-foreground">保存前可先检查模型是否存在、Key 是否有效、端点是否可用。</p>
                     )}
                   </div>
                 )}
