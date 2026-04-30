@@ -66,6 +66,8 @@
         "version:patch": "pnpm version patch",
         "version:minor": "pnpm version minor",
         "version:major": "pnpm version major",
+        "version:premajor-alpha": "pnpm version premajor --preid=alpha",
+        "version:prerelease-alpha": "pnpm version prerelease --preid=alpha",
         "version:prerelease-beta": "pnpm version prerelease --preid=beta",
         "release:validate": "node scripts/assert-tag-matches-package.mjs",
         "postversion": "git push && git push --tags"
