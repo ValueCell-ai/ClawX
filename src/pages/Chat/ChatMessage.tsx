@@ -39,6 +39,12 @@ interface ChatMessageProps {
     durationMs?: number;
     summary?: string;
   }>;
+  /**
+   * Optional callback invoked when a non-image file card is clicked.
+   * When provided, the file opens in the in-app preview panel instead of
+   * the system default editor.
+   */
+  onOpenFile?: (file: AttachedFileMeta) => void;
 }
 
 interface ExtractedImage { url?: string; data?: string; mimeType: string; }
@@ -88,6 +94,7 @@ export const ChatMessage = memo(function ChatMessage({
   suppressAssistantText = false,
   isStreaming = false,
   streamingTools = [],
+  onOpenFile,
 }: ChatMessageProps) {
   const isUser = message.role === 'user';
   const role = typeof message.role === 'string' ? message.role.toLowerCase() : '';
@@ -102,11 +109,8 @@ export const ChatMessage = memo(function ChatMessage({
   const images = extractImages(message);
   const tools = extractToolUse(message);
   const visibleTools = suppressToolCards ? [] : tools;
-  const shouldHideProcessAttachments = suppressProcessAttachments
-    && (hasText || images.length > 0 || visibleTools.length > 0);
-
-  const attachedFiles = shouldHideProcessAttachments
-    ? (message._attachedFiles || []).filter((file) => file.source !== 'tool-result')
+  const attachedFiles = suppressProcessAttachments
+    ? (message._attachedFiles || []).filter((file) => file.source !== 'tool-result' && file.source !== 'message-ref')
     : (message._attachedFiles || []);
   const [lightboxImg, setLightboxImg] = useState<{ src: string; fileName: string; filePath?: string; base64?: string; mimeType?: string } | null>(null);
 
@@ -198,7 +202,7 @@ export const ChatMessage = memo(function ChatMessage({
                 );
               }
               // Non-image files → file card
-              return <FileCard key={`local-${i}`} file={file} />;
+              return <FileCard key={`local-${i}`} file={file} onOpen={onOpenFile} />;
             })}
           </div>
         )}
@@ -257,7 +261,7 @@ export const ChatMessage = memo(function ChatMessage({
                   </div>
                 );
               }
-              return <FileCard key={`local-${i}`} file={file} />;
+              return <FileCard key={`local-${i}`} file={file} onOpen={onOpenFile} />;
             })}
           </div>
         )}
@@ -454,12 +458,15 @@ function FileIcon({ mimeType, className }: { mimeType: string; className?: strin
   return <File className={className} />;
 }
 
-function FileCard({ file }: { file: AttachedFileMeta }) {
+function FileCard({ file, onOpen }: { file: AttachedFileMeta; onOpen?: (file: AttachedFileMeta) => void }) {
   const handleOpen = useCallback(() => {
-    if (file.filePath) {
+    if (!file.filePath) return;
+    if (onOpen) {
+      onOpen(file);
+    } else {
       invokeIpc('shell:openPath', file.filePath);
     }
-  }, [file.filePath]);
+  }, [file, onOpen]);
 
   return (
     <div 

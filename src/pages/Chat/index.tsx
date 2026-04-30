@@ -4,7 +4,7 @@
  * via gateway:rpc IPC. Session selector, thinking toggle, and refresh
  * are in the toolbar; messages render with markdown + streaming.
  */
-import { Suspense, lazy, useEffect, useMemo, useRef, useState } from 'react';
+import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AlertCircle, Loader2, Sparkles } from 'lucide-react';
 import { useChatStore, type RawMessage } from '@/stores/chat';
 import { useGatewayStore } from '@/stores/gateway';
@@ -25,6 +25,8 @@ import { useMinLoading } from '@/hooks/use-min-loading';
 import { extractGeneratedFiles, generatedFileHasDiffPayload, type GeneratedFile } from '@/lib/generated-files';
 import { GeneratedFilesPanel } from '@/components/file-preview/GeneratedFilesPanel';
 import type { FilePreviewTarget } from '@/components/file-preview/types';
+import { buildPreviewTarget } from '@/components/file-preview/build-preview-target';
+import type { AttachedFileMeta } from '@/stores/chat/types';
 
 const ArtifactPanelLazy = lazy(() =>
   import('@/components/file-preview/ArtifactPanel').then((m) => ({ default: m.ArtifactPanel })),
@@ -124,6 +126,7 @@ export function Chat() {
   const panelOpen = useArtifactPanel((s) => s.open);
   const panelWidthPct = useArtifactPanel((s) => s.widthPct);
   const openChanges = useArtifactPanel((s) => s.openChanges);
+  const openPreview = useArtifactPanel((s) => s.openPreview);
   const closeArtifactPanel = useArtifactPanel((s) => s.close);
   const splitContainerRef = useRef<HTMLDivElement | null>(null);
   // Close the panel when the session changes — its contents would otherwise
@@ -132,6 +135,14 @@ export function Chat() {
     closeArtifactPanel();
   }, [currentSessionKey, closeArtifactPanel]);
   const [childTranscripts, setChildTranscripts] = useState<Record<string, RawMessage[]>>({});
+
+  // Callback for file cards in chat messages — opens the in-app preview
+  // panel instead of the system default editor.
+  const handleOpenAttachedFile = useCallback((file: AttachedFileMeta) => {
+    if (!file.filePath) return;
+    const target = buildPreviewTarget(file.filePath, file.fileName);
+    openPreview(target);
+  }, [openPreview]);
   // Persistent per-run override for the Execution Graph's expanded/collapsed
   // state. Keyed by a stable run id (trigger message id, or a fallback of
   // `${sessionKey}:${triggerIdx}`) so user toggles survive the `loadHistory`
@@ -679,6 +690,7 @@ export function Chat() {
                         textOverride={replyTextOverrides.get(idx)}
                         suppressToolCards={suppressToolCards}
                         suppressProcessAttachments={suppressToolCards}
+                        onOpenFile={handleOpenAttachedFile}
                       />
                       {userRunCards
                         .filter((card) => card.triggerIndex === idx)
@@ -759,6 +771,7 @@ export function Chat() {
                       textOverride={streamingReplyText ?? undefined}
                       isStreaming
                       streamingTools={streamingReplyText != null ? [] : streamingTools}
+                      onOpenFile={handleOpenAttachedFile}
                     />
                   )}
 
