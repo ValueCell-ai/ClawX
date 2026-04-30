@@ -28,7 +28,7 @@ export async function handleSkillRoutes(
         env: body.env,
       }));
     } catch (error) {
-      sendJson(res, 500, { success: false, error: String(error) });
+      sendJson(res, 500, { success: false, error: error instanceof Error ? error.message : String(error) });
     }
     return true;
   }
@@ -58,7 +58,7 @@ export async function handleSkillRoutes(
         skills: filterEnabledQuickAccessSkills(scannedSkills, runtimeSkills, configs),
       });
     } catch (error) {
-      sendJson(res, 500, { success: false, error: String(error) });
+      sendJson(res, 500, { success: false, error: error instanceof Error ? error.message : String(error) });
     }
     return true;
   }
@@ -70,7 +70,7 @@ export async function handleSkillRoutes(
         capability: await ctx.clawHubService.getMarketplaceCapability(),
       });
     } catch (error) {
-      sendJson(res, 500, { success: false, error: String(error) });
+      sendJson(res, 500, { success: false, error: error instanceof Error ? error.message : String(error) });
     }
     return true;
   }
@@ -83,7 +83,7 @@ export async function handleSkillRoutes(
         results: await ctx.clawHubService.search(body),
       });
     } catch (error) {
-      sendJson(res, 500, { success: false, error: String(error) });
+      sendJson(res, 500, { success: false, error: error instanceof Error ? error.message : String(error) });
     }
     return true;
   }
@@ -94,7 +94,7 @@ export async function handleSkillRoutes(
       await ctx.clawHubService.install(body);
       sendJson(res, 200, { success: true });
     } catch (error) {
-      sendJson(res, 500, { success: false, error: String(error) });
+      sendJson(res, 500, { success: false, error: error instanceof Error ? error.message : String(error) });
     }
     return true;
   }
@@ -105,7 +105,7 @@ export async function handleSkillRoutes(
       await ctx.clawHubService.uninstall(body);
       sendJson(res, 200, { success: true });
     } catch (error) {
-      sendJson(res, 500, { success: false, error: String(error) });
+      sendJson(res, 500, { success: false, error: error instanceof Error ? error.message : String(error) });
     }
     return true;
   }
@@ -114,7 +114,7 @@ export async function handleSkillRoutes(
     try {
       sendJson(res, 200, { success: true, results: await ctx.clawHubService.listInstalled() });
     } catch (error) {
-      sendJson(res, 500, { success: false, error: String(error) });
+      sendJson(res, 500, { success: false, error: error instanceof Error ? error.message : String(error) });
     }
     return true;
   }
@@ -125,7 +125,7 @@ export async function handleSkillRoutes(
       await ctx.clawHubService.openSkillReadme(body.skillKey || body.slug || '', body.slug, body.baseDir);
       sendJson(res, 200, { success: true });
     } catch (error) {
-      sendJson(res, 500, { success: false, error: String(error) });
+      sendJson(res, 500, { success: false, error: error instanceof Error ? error.message : String(error) });
     }
     return true;
   }
@@ -136,7 +136,7 @@ export async function handleSkillRoutes(
       await ctx.clawHubService.openSkillPath(body.skillKey || body.slug || '', body.slug, body.baseDir);
       sendJson(res, 200, { success: true });
     } catch (error) {
-      sendJson(res, 500, { success: false, error: String(error) });
+      sendJson(res, 500, { success: false, error: error instanceof Error ? error.message : String(error) });
     }
     return true;
   }

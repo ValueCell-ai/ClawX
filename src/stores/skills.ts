@@ -39,7 +39,7 @@ type ClawHubListResult = {
 function mapErrorCodeToSkillErrorKey(
   code: AppError['code'],
   operation: 'fetch' | 'search' | 'install',
-): string {
+): string | null {
   if (code === 'TIMEOUT') {
     return operation === 'search'
       ? 'searchTimeoutError'
@@ -54,7 +54,7 @@ function mapErrorCodeToSkillErrorKey(
         ? 'installRateLimitError'
         : 'fetchRateLimitError';
   }
-  return 'rateLimitError';
+  return null;
 }
 
 interface SkillsState {
@@ -172,8 +172,9 @@ export const useSkillsStore = create<SkillsState>((set, get) => ({
     } catch (error) {
       console.error('Failed to fetch skills:', error);
       const appError = normalizeAppError(error, { module: 'skills', operation: 'fetch' });
+      const errorKey = mapErrorCodeToSkillErrorKey(appError.code, 'fetch');
       // Preserve previous skills on error (stale-while-revalidate).
-      set((prev) => ({ loading: false, error: mapErrorCodeToSkillErrorKey(appError.code, 'fetch'), skills: prev.skills }));
+      set((prev) => ({ loading: false, error: errorKey ?? appError.message, skills: prev.skills }));
     }
   },
 
@@ -194,7 +195,8 @@ export const useSkillsStore = create<SkillsState>((set, get) => ({
       }
     } catch (error) {
       const appError = normalizeAppError(error, { module: 'skills', operation: 'search' });
-      set({ searchError: mapErrorCodeToSkillErrorKey(appError.code, 'search') });
+      const errorKey = mapErrorCodeToSkillErrorKey(appError.code, 'search');
+      set({ searchError: errorKey ?? appError.message });
     } finally {
       set({ searching: false });
     }
@@ -212,7 +214,8 @@ export const useSkillsStore = create<SkillsState>((set, get) => ({
           module: 'skills',
           operation: 'install',
         });
-        throw new Error(mapErrorCodeToSkillErrorKey(appError.code, 'install'));
+        const errorKey = mapErrorCodeToSkillErrorKey(appError.code, 'install');
+        throw new Error(errorKey ?? appError.message);
       }
       // Refresh skills after install
       await get().fetchSkills();

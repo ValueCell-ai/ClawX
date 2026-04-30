@@ -2082,7 +2082,7 @@ function registerClawHubHandlers(clawHubService: ClawHubService): void {
       const results = await clawHubService.search(params);
       return { success: true, results };
     } catch (error) {
-      return { success: false, error: String(error) };
+      return { success: false, error: error instanceof Error ? error.message : String(error) };
     }
   });
 
@@ -2092,7 +2092,7 @@ function registerClawHubHandlers(clawHubService: ClawHubService): void {
       await clawHubService.install(params);
       return { success: true };
     } catch (error) {
-      return { success: false, error: String(error) };
+      return { success: false, error: error instanceof Error ? error.message : String(error) };
     }
   });
 
@@ -2102,7 +2102,7 @@ function registerClawHubHandlers(clawHubService: ClawHubService): void {
       await clawHubService.uninstall(params);
       return { success: true };
     } catch (error) {
-      return { success: false, error: String(error) };
+      return { success: false, error: error instanceof Error ? error.message : String(error) };
     }
   });
 
@@ -2112,7 +2112,7 @@ function registerClawHubHandlers(clawHubService: ClawHubService): void {
       const results = await clawHubService.listInstalled();
       return { success: true, results };
     } catch (error) {
-      return { success: false, error: String(error) };
+      return { success: false, error: error instanceof Error ? error.message : String(error) };
     }
   });
 
