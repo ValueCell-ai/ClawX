@@ -7,6 +7,7 @@ import { create } from 'zustand';
 import { hostApiFetch } from '@/lib/host-api';
 import { useGatewayStore } from './gateway';
 import { useAgentsStore } from './agents';
+import { buildBaselineRunKey, captureBaseline, clearBaselines } from './baseline-cache';
 import { buildCronSessionHistoryPath, isCronSessionKey } from './chat/cron-session-utils';
 import {
   CHAT_HISTORY_STARTUP_RETRY_DELAYS_MS,
@@ -1026,6 +1027,71 @@ function isRuntimeSystemInjection(text: string): boolean {
   return false;
 }
 
+// ── Write tool_use baseline capture ─────────────────────────────
+//
+// Tool name sets mirror generated-files.ts so we detect the same tools.
+const BASELINE_WRITE_TOOLS = new Set([
+  'Write', 'write_file', 'create_file', 'WriteFile', 'createFile', 'write',
+]);
+const BASELINE_EDIT_TOOLS = new Set([
+  'Edit', 'edit', 'edit_file', 'EditFile',
+  'StrReplace', 'str_replace', 'str_replace_editor',
+  'MultiEdit', 'multi_edit', 'multiEdit',
+]);
+const BASELINE_FILE_PATH_KEYS = ['file_path', 'filepath', 'path', 'fileName', 'file_name', 'target_path'];
+
+function pickFilePathFromInput(input: unknown): string | null {
+  if (!input || typeof input !== 'object') return null;
+  const rec = input as Record<string, unknown>;
+  for (const key of BASELINE_FILE_PATH_KEYS) {
+    const value = rec[key];
+    if (typeof value === 'string' && value.trim()) return value.trim();
+  }
+  return null;
+}
+
+/**
+ * Scan a streaming message for Write/Edit tool_use blocks and trigger
+ * async baseline reads from disk for each target file.  Called on every
+ * `delta` event; `captureBaseline` is idempotent — duplicate calls for
+ * the same path are no-ops.
+ */
+function isBaselineRealUserMessage(message: RawMessage | undefined): boolean {
+  if (!message || message.role !== 'user') return false;
+  const content = message.content;
+  if (!Array.isArray(content)) return true;
+  const blocks = content as Array<{ type?: string }>;
+  return blocks.length === 0 || !blocks.every((block) => block.type === 'tool_result' || block.type === 'toolResult');
+}
+
+function countBaselineRealUserMessages(messages: RawMessage[]): number {
+  let count = 0;
+  for (const message of messages) {
+    if (isBaselineRealUserMessage(message)) count += 1;
+  }
+  return count;
+}
+
+function getBaselineRunKeyForMessages(sessionKey: string, messages: RawMessage[]): string | null {
+  const userTurnOrdinal = countBaselineRealUserMessages(messages);
+  return buildBaselineRunKey(sessionKey, userTurnOrdinal);
+}
+
+function captureBaselinesFromMessage(message: unknown, runKey: string | null): void {
+  if (!runKey || !message || typeof message !== 'object') return;
+  const content = (message as Record<string, unknown>).content;
+  if (!Array.isArray(content)) return;
+  for (const block of content as ContentBlock[]) {
+    if (block.type !== 'tool_use' && block.type !== 'toolCall') continue;
+    const name = typeof block.name === 'string' ? block.name : '';
+    if (!name) continue;
+    if (!BASELINE_WRITE_TOOLS.has(name) && !BASELINE_EDIT_TOOLS.has(name)) continue;
+    const input = block.input ?? block.arguments;
+    const filePath = pickFilePathFromInput(input);
+    if (filePath) captureBaseline(runKey, filePath);
+  }
+}
+
 function extractTextFromContent(content: unknown): string {
   if (typeof content === 'string') return content;
   if (!Array.isArray(content)) return '';
@@ -1415,6 +1481,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
     // This prevents the poll timer from firing after the switch and loading
     // the wrong session's history into the new session's view.
     clearHistoryPoll();
+    clearBaselines();
     set((s) => buildSessionSwitchPatch(s, key));
     get().loadHistory();
   },
@@ -2127,6 +2194,12 @@ export const useChatStore = create<ChatState>((set, get) => ({
           set({ error: null, runError: null });
         }
         const updates = collectToolUpdates(event.message, resolvedState);
+        // Capture baseline file content from disk before the runtime
+        // executes Write tool calls — enables proper before/after diff.
+        captureBaselinesFromMessage(
+          event.message,
+          getBaselineRunKeyForMessages(currentSessionKey, get().messages),
+        );
         set((s) => ({
           streamingMessage: (() => {
             if (event.message && typeof event.message === 'object') {

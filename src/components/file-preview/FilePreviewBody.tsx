@@ -134,8 +134,9 @@ const SNIPPET_SEPARATOR = '\n\n';
 
 /**
  * Build a diff pair purely from the captured tool payload — never reads
- * disk.  This mirrors WorkBuddy / Codex behaviour: Write shows
- * "empty → full", Edit shows the exact old → new snippet swap.
+ * disk. Edit tools show the exact old → new snippet swap. Write-family
+ * tools prefer the captured baseline when available, so modified files
+ * render a true before/after diff instead of a misleading all-green view.
  */
 function computeDiffPair(file: FilePreviewTarget): DiffPair {
   // Edit / StrReplace / MultiEdit — show the snippet swap directly.
@@ -148,12 +149,27 @@ function computeDiffPair(file: FilePreviewTarget): DiffPair {
       return { oldContent: left, newContent: right, kind: 'snippet' };
     }
   }
-  // Write family — empty vs new content (treat as new file from the
-  // diff's perspective; the badge still reads "modified" if the file
-  // existed before).
+
   if (file.fullContent != null) {
-    return { oldContent: null, newContent: normaliseEol(file.fullContent), kind: 'whole' };
+    if (file.baseline?.status === 'ok') {
+      return {
+        oldContent: normaliseEol(file.baseline.content),
+        newContent: normaliseEol(file.fullContent),
+        kind: 'whole',
+      };
+    }
+    if (file.baseline?.status === 'missing') {
+      return { oldContent: null, newContent: normaliseEol(file.fullContent), kind: 'whole' };
+    }
+    if (file.baseline?.status === 'unavailable') {
+      return { oldContent: null, newContent: '', kind: 'unavailable' };
+    }
+    if (file.action === 'created') {
+      return { oldContent: null, newContent: normaliseEol(file.fullContent), kind: 'whole' };
+    }
+    return { oldContent: null, newContent: '', kind: 'unavailable' };
   }
+
   return { oldContent: null, newContent: '', kind: 'unavailable' };
 }
 
@@ -420,7 +436,7 @@ export function FilePreviewBody({
                         <p className="max-w-md text-sm text-muted-foreground">
                           {t(
                             'filePreview.diff.unavailable',
-                            '本会话没有抓到这个文件的写入/编辑 payload，无法生成 diff。',
+                            '本会话没有抓到这个文件的精确变更基线，无法生成 diff。',
                           )}
                         </p>
                         <p className="max-w-md text-2xs text-muted-foreground/90">

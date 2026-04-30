@@ -197,6 +197,67 @@ describe('Chat execution graph lifecycle', () => {
     expect(screen.getAllByText('Thinking').length).toBeGreaterThan(0);
   });
 
+  it('renders generated file cards with line stats for edit tools', async () => {
+    const { useChatStore } = await import('@/stores/chat');
+    useChatStore.setState({
+      messages: [
+        {
+          role: 'user',
+          content: 'Patch the workspace file',
+        },
+        {
+          role: 'assistant',
+          id: 'edit-turn',
+          content: [
+            {
+              type: 'tool_use',
+              id: 'edit-1',
+              name: 'Edit',
+              input: {
+                file_path: '/workspace/demo.ts',
+                old_string: 'const value = 1\n',
+                new_string: 'const value = 2\n',
+              },
+            },
+          ],
+        },
+        {
+          role: 'assistant',
+          id: 'reply-turn',
+          content: [{ type: 'text', text: 'Updated the file.' }],
+        },
+      ],
+      loading: false,
+      error: null,
+      runError: null,
+      sending: false,
+      activeRunId: null,
+      streamingText: '',
+      streamingMessage: null,
+      streamingTools: [],
+      pendingFinal: false,
+      lastUserMessageAt: Date.now(),
+      pendingToolImages: [],
+      sessions: [{ key: 'agent:main:main' }],
+      currentSessionKey: 'agent:main:main',
+      currentAgentId: 'main',
+      sessionLabels: {},
+      sessionLastActivity: {},
+      thinkingLevel: null,
+    });
+
+    const { Chat } = await import('@/pages/Chat/index');
+
+    render(<Chat />);
+
+    await waitFor(() => {
+      expect(screen.getByText('demo.ts')).toBeInTheDocument();
+    });
+
+    expect(screen.getByText('+1')).toBeInTheDocument();
+    expect(screen.getByText('-1')).toBeInTheDocument();
+  });
+
   it('stops showing trailing thinking and renders run error callout after terminal model error', async () => {
     const { useChatStore } = await import('@/stores/chat');
     useChatStore.setState({

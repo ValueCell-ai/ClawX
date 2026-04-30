@@ -138,6 +138,7 @@ function generatedFileToTarget(file: GeneratedFile): FilePreviewTarget {
     contentType: file.contentType,
     action: file.action,
     fullContent: file.fullContent,
+    baseline: file.baseline,
     edits: file.edits,
   };
 }

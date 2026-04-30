@@ -7,7 +7,7 @@ import { ArrowRight } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
-import type { GeneratedFile } from '@/lib/generated-files';
+import { computeLineStats, type GeneratedFile } from '@/lib/generated-files';
 import { FilePreviewIcon } from './file-card-utils';
 
 export interface GeneratedFilesPanelProps {
@@ -45,40 +45,51 @@ export function GeneratedFilesPanel({ files, onOpen, onShowAll, className }: Gen
         )}
       </div>
       <div className="flex flex-wrap gap-2">
-        {files.map((file) => (
-          <button
-            key={`${file.filePath}-${file.lastSeenIndex}`}
-            type="button"
-            onClick={() => onOpen(file)}
-            className={cn(
-              'group flex max-w-[260px] items-center gap-2 rounded-xl border border-black/10 bg-black/5 px-3 py-2 text-left transition-colors',
-              'hover:border-primary/40 hover:bg-primary/5',
-              'dark:border-white/10 dark:bg-white/5 dark:hover:bg-white/10',
-            )}
-            title={file.filePath}
-          >
-            <FilePreviewIcon
-              contentType={file.contentType}
-              mimeType={file.mimeType}
-              ext={file.ext}
-              className="h-4 w-4 shrink-0 text-muted-foreground"
-            />
-            <div className="min-w-0 flex-1">
-              <p className="truncate text-xs font-medium text-foreground">{file.fileName}</p>
-              <p className="truncate text-2xs text-muted-foreground">
-                {file.filePath}
-              </p>
-            </div>
-            <Badge
-              variant={file.action === 'created' ? 'default' : 'secondary'}
-              className="shrink-0 text-2xs px-1.5 py-0"
+        {files.map((file) => {
+          const lineStats = computeLineStats(file);
+          return (
+            <button
+              key={`${file.filePath}-${file.lastSeenIndex}`}
+              type="button"
+              onClick={() => onOpen(file)}
+              className={cn(
+                'group flex max-w-[320px] items-center gap-2 rounded-xl border border-black/10 bg-black/5 px-3 py-2 text-left transition-colors',
+                'hover:border-primary/40 hover:bg-primary/5',
+                'dark:border-white/10 dark:bg-white/5 dark:hover:bg-white/10',
+              )}
+              title={file.filePath}
             >
-              {file.action === 'created'
-                ? t('generatedFiles.created', '新增')
-                : t('generatedFiles.modified', '修改')}
-            </Badge>
-          </button>
-        ))}
+              <FilePreviewIcon
+                contentType={file.contentType}
+                mimeType={file.mimeType}
+                ext={file.ext}
+                className="h-4 w-4 shrink-0 text-muted-foreground"
+              />
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-xs font-medium text-foreground">{file.fileName}</p>
+                <p className="truncate text-2xs text-muted-foreground">
+                  {file.filePath}
+                </p>
+              </div>
+              <div className="flex shrink-0 items-center gap-2">
+                {lineStats && (
+                  <div className="flex items-center gap-1 text-2xs tabular-nums">
+                    <span className="text-emerald-600 dark:text-emerald-400">+{lineStats.added}</span>
+                    <span className="text-rose-600 dark:text-rose-400">-{lineStats.removed}</span>
+                  </div>
+                )}
+                <Badge
+                  variant={file.action === 'created' ? 'default' : 'secondary'}
+                  className="shrink-0 px-1.5 py-0 text-2xs"
+                >
+                  {file.action === 'created'
+                    ? t('generatedFiles.created', '新增')
+                    : t('generatedFiles.modified', '修改')}
+                </Badge>
+              </div>
+            </button>
+          );
+        })}
       </div>
     </div>
   );

@@ -3,10 +3,11 @@
  *
  * Inspects a run segment of chat messages (the slice from a user trigger
  * to its terminating assistant reply) and surfaces files the AI wrote /
- * edited via tool calls.  Used by `GeneratedFilesPanel` to render
- * inline file cards under each run, and by `FilePreviewOverlay` to
- * power the diff view.
+ * edited via tool calls. Used by `GeneratedFilesPanel` to render inline
+ * file cards under each run, and by `FilePreviewBody` / `ArtifactPanel`
+ * to power the diff view.
  */
+import { diffLines } from 'diff';
 import type { ContentBlock, RawMessage } from '@/stores/chat';
 
 export type FileContentType =
@@ -23,6 +24,16 @@ export interface FileEditOp {
   new: string;
 }
 
+export type GeneratedFileBaseline =
+  | { status: 'ok'; content: string }
+  | { status: 'missing' }
+  | { status: 'unavailable'; reason: string };
+
+export interface FileLineStats {
+  added: number;
+  removed: number;
+}
+
 export interface GeneratedFile {
   filePath: string;
   fileName: string;
@@ -37,18 +48,28 @@ export interface GeneratedFile {
   fullContent?: string;
   /**
    * Ordered list of edits applied to this file during the run (Edit /
-   * StrReplace / MultiEdit).  The diff view renders these directly as a
+   * StrReplace / MultiEdit). The diff view renders these directly as a
    * snippet diff (joined `old` vs joined `new`), matching WorkBuddy /
    * Codex behaviour.
    */
   edits?: FileEditOp[];
+  /**
+   * File content captured immediately before a Write-family tool executed.
+   * `missing` means the file did not exist yet. `unavailable` means the
+   * renderer could not read the existing file precisely enough to build a
+   * trustworthy before/after diff (outside sandbox, binary, too large, ...).
+   */
+  baseline?: GeneratedFileBaseline;
   /** Index of the latest tool call that touched this file (for stable ordering). */
   lastSeenIndex: number;
 }
 
+/** Visual separator between multiple edit hunks. */
+const SNIPPET_SEPARATOR = '\n\n';
+
 /**
  * True when the chat extraction captured enough tool payload to render a
- * diff (Write `fullContent` and/or non-empty Edit ops).  Entries without
+ * diff (Write `fullContent` and/or non-empty Edit ops). Entries without
  * this should not appear in generated-file UIs.
  */
 export function generatedFileHasDiffPayload(file: Pick<GeneratedFile, 'fullContent' | 'edits'>): boolean {
@@ -249,10 +270,19 @@ function pickEditOps(input: unknown): FileEditOp[] {
   return ops;
 }
 
+function determineWriteAction(
+  existing: GeneratedFile | undefined,
+  baseline: GeneratedFileBaseline | undefined,
+): 'created' | 'modified' {
+  if (existing?.action === 'created') return 'created';
+  if (!baseline) return existing ? 'modified' : 'created';
+  return baseline.status === 'missing' ? 'created' : 'modified';
+}
+
 function buildGeneratedFile(
   filePath: string,
   action: 'created' | 'modified',
-  parts: { fullContent?: string; edits?: FileEditOp[] } | undefined,
+  parts: { fullContent?: string; edits?: FileEditOp[]; baseline?: GeneratedFileBaseline } | undefined,
   index: number,
 ): GeneratedFile {
   const fileName = basenameOf(filePath);
@@ -266,14 +296,68 @@ function buildGeneratedFile(
     action,
     fullContent: parts?.fullContent,
     edits: parts?.edits,
+    baseline: parts?.baseline,
     lastSeenIndex: index,
   };
+}
+
+function normaliseEol(text: string): string {
+  return text.replace(/\r\n/g, '\n');
+}
+
+function joinEditText(edits: FileEditOp[], side: 'old' | 'new'): string {
+  return edits.map((op) => normaliseEol(op[side] ?? '')).join(SNIPPET_SEPARATOR);
+}
+
+function countLogicalLines(text: string): number {
+  const normalized = normaliseEol(text);
+  if (!normalized) return 0;
+  const parts = normalized.split('\n');
+  return normalized.endsWith('\n') ? Math.max(1, parts.length - 1) : parts.length;
+}
+
+function diffLineStats(oldText: string, newText: string): FileLineStats {
+  const pieces = diffLines(normaliseEol(oldText), normaliseEol(newText));
+  let added = 0;
+  let removed = 0;
+  for (const piece of pieces) {
+    const count = typeof piece.count === 'number' ? piece.count : countLogicalLines(piece.value);
+    if (piece.added) added += count;
+    if (piece.removed) removed += count;
+  }
+  return { added, removed };
+}
+
+export function computeLineStats(file: GeneratedFile): FileLineStats | null {
+  if (file.edits?.length) {
+    return diffLineStats(joinEditText(file.edits, 'old'), joinEditText(file.edits, 'new'));
+  }
+
+  if (file.fullContent == null) return null;
+
+  if (file.baseline?.status === 'ok') {
+    return diffLineStats(file.baseline.content, file.fullContent);
+  }
+
+  if (file.baseline?.status === 'missing') {
+    return { added: countLogicalLines(file.fullContent), removed: 0 };
+  }
+
+  if (file.baseline?.status === 'unavailable') {
+    return null;
+  }
+
+  if (file.action === 'created') {
+    return { added: countLogicalLines(file.fullContent), removed: 0 };
+  }
+
+  return null;
 }
 
 /**
  * Walk the messages in `[triggerIndex, segmentEnd]` (inclusive) and
  * collect the unique files written or edited by tool calls in that
- * window.  Deduplicates by `filePath`; if the file is touched by both
+ * window. Deduplicates by `filePath`; if the file is touched by both
  * a `Write` and a later `Edit`, the action is upgraded to `'modified'`
  * but the diff content is kept from the last edit.
  */
@@ -281,6 +365,7 @@ export function extractGeneratedFiles(
   messages: RawMessage[],
   triggerIndex: number,
   segmentEnd: number,
+  baselineGetter?: (filePath: string) => GeneratedFileBaseline | undefined,
 ): GeneratedFile[] {
   const map = new Map<string, GeneratedFile>();
   const start = Math.max(0, Math.min(triggerIndex + 1, messages.length));
@@ -309,12 +394,11 @@ export function extractGeneratedFiles(
 
       if (isWrite) {
         const newContent = pickWriteContent(input);
-        // Write replaces the whole document — drop any earlier edits we
-        // accumulated and use the snapshot directly.
+        const baseline = baselineGetter?.(filePath);
         const next = buildGeneratedFile(
           filePath,
-          existing ? 'modified' : 'created',
-          { fullContent: newContent, edits: undefined },
+          determineWriteAction(existing, baseline),
+          { fullContent: newContent, edits: undefined, baseline },
           i,
         );
         map.set(filePath, next);
@@ -329,6 +413,7 @@ export function extractGeneratedFiles(
           {
             fullContent: existing?.fullContent,
             edits: [...(existing?.edits ?? []), ...newOps],
+            baseline: existing?.baseline,
           },
           i,
         );
@@ -348,4 +433,3 @@ export function extractGeneratedFiles(
 
   return Array.from(map.values()).sort((a, b) => a.lastSeenIndex - b.lastSeenIndex);
 }
-

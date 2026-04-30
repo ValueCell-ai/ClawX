@@ -7,6 +7,7 @@
 import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AlertCircle, Loader2, Sparkles } from 'lucide-react';
 import { useChatStore, type RawMessage } from '@/stores/chat';
+import { buildBaselineRunKey, getBaseline } from '@/stores/baseline-cache';
 import { useGatewayStore } from '@/stores/gateway';
 import { useAgentsStore } from '@/stores/agents';
 import { useArtifactPanel } from '@/stores/artifact-panel';
@@ -83,6 +84,7 @@ function generatedFileToTarget(file: GeneratedFile): FilePreviewTarget {
     contentType: file.contentType,
     action: file.action,
     fullContent: file.fullContent,
+    baseline: file.baseline,
     edits: file.edits,
   };
 }
@@ -562,11 +564,21 @@ export function Chat() {
   const filesByRun = useMemo(() => {
     const map = new Map<number, GeneratedFile[]>();
     for (const card of userRunCards) {
-      const raw = extractGeneratedFiles(messages, card.triggerIndex, card.segmentEnd);
+      const userTurnOrdinal = messages
+        .slice(0, card.triggerIndex + 1)
+        .filter((msg) => msg.role === 'user' && (!Array.isArray(msg.content) || !(msg.content as Array<{ type?: string }>).every((b) => b.type === 'tool_result' || b.type === 'toolResult')))
+        .length;
+      const runKey = buildBaselineRunKey(currentSessionKey, userTurnOrdinal);
+      const raw = extractGeneratedFiles(
+        messages,
+        card.triggerIndex,
+        card.segmentEnd,
+        runKey ? (filePath) => getBaseline(runKey, filePath) : undefined,
+      );
       map.set(card.triggerIndex, raw.filter(generatedFileHasDiffPayload));
     }
     return map;
-  }, [userRunCards, messages]);
+  }, [currentSessionKey, userRunCards, messages]);
   const allGeneratedFiles = useMemo(() => {
     const all: GeneratedFile[] = [];
     for (const files of filesByRun.values()) all.push(...files);
