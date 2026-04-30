@@ -7,6 +7,7 @@ import path from 'path';
 import { EventEmitter } from 'events';
 import WebSocket from 'ws';
 import { PORTS } from '../utils/config';
+import { getSetting } from '../utils/store';
 import { JsonRpcNotification, isNotification, isResponse } from './protocol';
 import { logger } from '../utils/logger';
 import { captureTelemetryEvent, trackMetric } from '../utils/telemetry';
@@ -258,6 +259,13 @@ export class GatewayManager extends EventEmitter {
     if (this.status.state === 'running') {
       logger.debug('Gateway already running, skipping start');
       return;
+    }
+
+    // Read port from user settings
+    const configuredPort = await getSetting('gatewayPort');
+    if (configuredPort && configuredPort !== this.status.port) {
+      logger.info(`Using configured gateway port: ${configuredPort}`);
+      this.status.port = configuredPort;
     }
 
     this.startLock = true;
