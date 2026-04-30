@@ -74,6 +74,8 @@
             "notFound": "ファイルが見つかりません",
             "loadFailed": "読み込みに失敗しました: {{error}}",
             "noPreview": "このファイルにはプレビューがありません",
+            "unsupportedFormatTitle": "このファイル形式は内蔵プレビューまたは差分表示に未対応です",
+            "unsupportedFormatHint": "現在、内蔵プレビューと差分表示は直接読み取れるテキスト/Markdown 系ファイルのみ対応しています。Finder で開いてください。",
             "openInFinderFailed": "Finder で表示できません"
         },
         "diff": {

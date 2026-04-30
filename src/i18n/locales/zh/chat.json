@@ -74,6 +74,8 @@
             "notFound": "文件不存在",
             "loadFailed": "加载失败：{{error}}",
             "noPreview": "该文件没有预览",
+            "unsupportedFormatTitle": "此文件格式暂不支持内置预览或变更",
+            "unsupportedFormatHint": "当前仅支持文本/Markdown 等可直接读取的文件进行内置预览与变更对比。请在 Finder 中打开该文件。",
             "openInFinderFailed": "无法在 Finder 中显示"
         },
         "diff": {

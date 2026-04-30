@@ -74,6 +74,8 @@
             "notFound": "File not found",
             "loadFailed": "Load failed: {{error}}",
             "noPreview": "No preview available for this file",
+            "unsupportedFormatTitle": "This file format is not supported for built-in preview or diff",
+            "unsupportedFormatHint": "Built-in preview and diff currently support directly readable text/Markdown-style files only. Open the file in Finder instead.",
             "openInFinderFailed": "Could not reveal file"
         },
         "diff": {

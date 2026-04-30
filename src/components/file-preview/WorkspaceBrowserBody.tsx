@@ -13,6 +13,7 @@ import { Badge } from '@/components/ui/badge';
 import { LoadingSpinner } from '@/components/common/LoadingSpinner';
 import { cn } from '@/lib/utils';
 import { invokeIpc, readTextFile } from '@/lib/api-client';
+import { supportsInlineDocumentPreview } from '@/lib/generated-files';
 import {
   collectInitialExpanded,
   findNode,
@@ -53,6 +54,7 @@ type FileState =
   | { status: 'ready'; content: string }
   | { status: 'tooLarge' }
   | { status: 'binary' }
+  | { status: 'unsupported' }
   | { status: 'error'; message: string };
 
 export function WorkspaceBrowserBody({
@@ -122,6 +124,10 @@ export function WorkspaceBrowserBody({
       return;
     }
     const node = selectedNode;
+    if (node.contentType === 'document' && !supportsInlineDocumentPreview(node.ext ?? '')) {
+      setFileState({ status: 'unsupported' });
+      return;
+    }
     if (node.contentType === 'snapshot' || node.contentType === 'video' || node.contentType === 'audio') {
       setFileState({ status: 'ready', content: '' });
       return;
@@ -269,6 +275,31 @@ export function WorkspaceBrowserBody({
       return (
         <div className="flex h-full items-center justify-center px-6 text-center text-sm text-destructive">
           {hint}
+        </div>
+      );
+    }
+    if (fileState.status === 'unsupported') {
+      return (
+        <div className="flex h-full flex-col items-center justify-center gap-4 px-8 text-center">
+          <div className="space-y-1.5">
+            <p className="text-sm font-medium text-foreground">
+              {t('filePreview.errors.unsupportedFormatTitle', '此文件格式暂不支持内置预览或变更')}
+            </p>
+            <p className="max-w-md text-xs leading-relaxed text-muted-foreground">
+              {t(
+                'filePreview.errors.unsupportedFormatHint',
+                '当前仅支持文本/Markdown 等可直接读取的文件进行内置预览与变更对比。请在 Finder 中打开该文件。',
+              )}
+            </p>
+          </div>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => invokeIpc('shell:showItemInFolder', selectedNode.absPath)}
+          >
+            <FolderOpen className="mr-2 h-4 w-4" />
+            {t('filePreview.actions.openInFinder', '在 Finder 中显示')}
+          </Button>
         </div>
       );
     }

@@ -6,7 +6,7 @@
 import { useTranslation } from 'react-i18next';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
-import { computeLineStats, type GeneratedFile } from '@/lib/generated-files';
+import { computeLineStats, supportsInlineDiff, type GeneratedFile } from '@/lib/generated-files';
 
 export interface GeneratedFilesPanelProps {
   files: GeneratedFile[];
@@ -29,15 +29,20 @@ export function GeneratedFilesPanel({ files, onOpen, className }: GeneratedFiles
       <div className="flex flex-wrap gap-2">
         {files.map((file) => {
           const lineStats = computeLineStats(file);
+          const clickable = supportsInlineDiff(file);
           return (
             <button
               key={`${file.filePath}-${file.lastSeenIndex}`}
               type="button"
-              onClick={() => onOpen(file)}
+              disabled={!clickable}
+              onClick={() => {
+                if (clickable) onOpen(file);
+              }}
               className={cn(
-                'group inline-flex min-w-0 max-w-full items-center gap-2 rounded-full border border-black/8 bg-black/[0.035] px-3.5 py-2 text-left transition-colors',
-                'hover:border-black/12 hover:bg-black/[0.055]',
-                'dark:border-white/10 dark:bg-white/[0.04] dark:hover:bg-white/[0.07]',
+                'group inline-flex min-w-0 max-w-full items-center gap-2 rounded-full border border-black/8 bg-black/[0.035] px-3.5 py-2 text-left transition-colors disabled:opacity-100',
+                clickable && 'hover:border-black/12 hover:bg-black/[0.055] dark:hover:bg-white/[0.07]',
+                !clickable && 'cursor-default',
+                'dark:border-white/10 dark:bg-white/[0.04]',
               )}
               title={file.filePath}
             >
@@ -52,11 +57,8 @@ export function GeneratedFilesPanel({ files, onOpen, className }: GeneratedFiles
                 </div>
               )}
               <Badge
-                variant={file.action === 'created' ? 'default' : 'secondary'}
-                className={cn(
-                  'shrink-0 rounded-full px-1.5 py-0.5 text-2xs',
-                  file.action !== 'created' && 'border border-black/8 bg-black/[0.045] text-foreground/70 dark:border-white/10 dark:bg-white/[0.06] dark:text-foreground/75',
-                )}
+                variant="secondary"
+                className="shrink-0 rounded-full border border-black/8 bg-black/[0.045] px-1.5 py-0.5 text-2xs text-foreground/70 dark:border-white/10 dark:bg-white/[0.06] dark:text-foreground/75"
               >
                 {file.action === 'created'
                   ? t('generatedFiles.created', '新增')

@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 import {
   computeLineStats,
   extractGeneratedFiles,
+  supportsInlineDiff,
+  supportsInlineDocumentPreview,
   type GeneratedFile,
   type GeneratedFileBaseline,
 } from '@/lib/generated-files';
@@ -50,6 +52,26 @@ describe('generated-files utilities', () => {
         baseline: { status: 'unavailable', reason: 'outsideSandbox' },
       }),
     );
+
+    expect(stats).toBeNull();
+  });
+
+  it('treats pdf/office style documents as unsupported for inline preview and diff', () => {
+    expect(supportsInlineDocumentPreview('.md')).toBe(true);
+    expect(supportsInlineDocumentPreview('.pdf')).toBe(false);
+    expect(supportsInlineDiff({ ext: '.docx', contentType: 'document' })).toBe(false);
+
+    const stats = computeLineStats({
+      filePath: '/tmp/report.pdf',
+      fileName: 'report.pdf',
+      ext: '.pdf',
+      mimeType: 'application/pdf',
+      contentType: 'document',
+      action: 'modified',
+      fullContent: 'pretend text payload',
+      baseline: { status: 'ok', content: 'older pretend text payload' },
+      lastSeenIndex: 1,
+    });
 
     expect(stats).toBeNull();
   });

@@ -114,6 +114,9 @@ const DOCUMENT_EXTS = new Set([
   '.md', '.markdown', '.txt', '.rst', '.adoc',
   '.pdf', '.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx',
 ]);
+const TEXT_DOCUMENT_EXTS = new Set([
+  '.md', '.markdown', '.txt', '.rst', '.adoc',
+]);
 const CODE_EXTS = new Set([
   '.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs',
   '.py', '.rb', '.go', '.rs', '.java', '.kt', '.swift',
@@ -175,6 +178,16 @@ export function classifyFileExt(ext: string): FileContentType {
   if (DOCUMENT_EXTS.has(lower)) return 'document';
   if (CODE_EXTS.has(lower)) return 'code';
   return 'other';
+}
+
+export function supportsInlineDocumentPreview(ext: string): boolean {
+  return TEXT_DOCUMENT_EXTS.has(ext.toLowerCase());
+}
+
+export function supportsInlineDiff(file: Pick<GeneratedFile, 'ext' | 'contentType'>): boolean {
+  if (file.contentType === 'document') return supportsInlineDocumentPreview(file.ext);
+  if (file.contentType === 'snapshot' || file.contentType === 'video' || file.contentType === 'audio') return false;
+  return true;
 }
 
 export function basenameOf(path: string): string {
@@ -329,6 +342,8 @@ function diffLineStats(oldText: string, newText: string): FileLineStats {
 }
 
 export function computeLineStats(file: GeneratedFile): FileLineStats | null {
+  if (!supportsInlineDiff(file)) return null;
+
   if (file.edits?.length) {
     return diffLineStats(joinEditText(file.edits, 'old'), joinEditText(file.edits, 'new'));
   }

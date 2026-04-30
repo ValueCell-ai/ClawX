@@ -29,6 +29,7 @@ import { LoadingSpinner } from '@/components/common/LoadingSpinner';
 import { cn } from '@/lib/utils';
 import { invokeIpc, readTextFile, writeTextFile } from '@/lib/api-client';
 import type { FilePreviewTarget } from './types';
+import { supportsInlineDiff, supportsInlineDocumentPreview } from '@/lib/generated-files';
 import { FilePreviewIcon } from './file-card-utils';
 import { formatFileSize } from './format';
 import MarkdownPreview from './MarkdownPreview';
@@ -74,15 +75,17 @@ type LoadState =
 type Tab = 'source' | 'preview' | 'diff';
 
 function tabsForFile(file: FilePreviewTarget, mode: FilePreviewBodyMode): Tab[] {
-  // Diff-only mode short-circuits.  Callers (e.g. the 变更 tab's right
-  // pane) want a pure git-style diff with no tab strip.
-  if (mode === 'diff') return ['diff'];
+  // Diff-only mode short-circuits. Callers (e.g. the 变更 tab's right
+  // pane) want a pure git-style diff with no tab strip — but only for
+  // formats where inline diff is actually supported.
+  if (mode === 'diff') return supportsInlineDiff(file) ? ['diff'] : [];
 
   const tabs: Tab[] = [];
   if (file.contentType === 'document') {
-    // Markdown-style files: rendered preview only.  We deliberately drop
-    // the source tab here since the rendered view is what users want by
-    // default and the source can still be inspected in editor tools.
+    if (!supportsInlineDocumentPreview(file.ext)) {
+      return [];
+    }
+    // Markdown / plain-text style documents: rendered preview only.
     tabs.push('preview');
   } else if (file.contentType === 'snapshot') {
     tabs.push('preview');
@@ -97,6 +100,7 @@ function tabsForFile(file: FilePreviewTarget, mode: FilePreviewBodyMode): Tab[] 
   // payload — read-only is fine, the diff is informational only.
   if (
     mode === 'full' &&
+    supportsInlineDiff(file) &&
     (file.fullContent != null || (file.edits != null && file.edits.length > 0))
   ) {
     tabs.push('diff');
@@ -109,7 +113,7 @@ function pickInitialTab(tabs: Tab[], file: FilePreviewTarget): Tab {
   // For changes view (edited code), prefer the diff tab if present so
   // the user sees the change immediately on click.
   if (tabs.includes('diff') && file.contentType !== 'document') return 'diff';
-  return tabs[0];
+  return tabs[0] ?? 'source';
 }
 
 function normaliseEol(s: string): string {
@@ -193,6 +197,8 @@ export function FilePreviewBody({
   // for inspecting content, not editing it.
   const enforcedReadOnly = readOnly || mode === 'preview' || mode === 'diff';
   const tabs = useMemo(() => tabsForFile(file, mode), [file, mode]);
+  const unsupportedPreviewFormat = file.contentType === 'document' && !supportsInlineDocumentPreview(file.ext);
+  const unsupportedDiffFormat = mode === 'diff' && !supportsInlineDiff(file);
 
   useEffect(() => {
     setTab(pickInitialTab(tabs, file));
@@ -200,6 +206,12 @@ export function FilePreviewBody({
     // Diff-only mode renders entirely from the captured tool payload —
     // no disk read needed, so we can mark the body "ready" immediately.
     if (mode === 'diff') {
+      setState({ status: 'ready', content: '', readOnly: enforcedReadOnly });
+      setDraft(null);
+      return;
+    }
+
+    if (unsupportedPreviewFormat) {
       setState({ status: 'ready', content: '', readOnly: enforcedReadOnly });
       setDraft(null);
       return;
@@ -248,7 +260,7 @@ export function FilePreviewBody({
     return () => {
       cancelled = true;
     };
-  }, [file, enforcedReadOnly, mode, tabs]);
+  }, [file, enforcedReadOnly, mode, tabs, unsupportedPreviewFormat]);
 
   const effectiveReadOnly = state.status === 'ready' ? state.readOnly : true;
   const dirty =
@@ -287,7 +299,30 @@ export function FilePreviewBody({
     });
   }, [file, t]);
 
+  const renderUnsupportedFormat = () => (
+    <div className="flex h-full flex-col items-center justify-center gap-4 px-8 text-center">
+      <div className="space-y-1.5">
+        <p className="text-sm font-medium text-foreground">
+          {t('filePreview.errors.unsupportedFormatTitle', '此文件格式暂不支持内置预览或变更')}
+        </p>
+        <p className="max-w-md text-xs leading-relaxed text-muted-foreground">
+          {t(
+            'filePreview.errors.unsupportedFormatHint',
+            '当前仅支持文本/Markdown 等可直接读取的文件进行内置预览与变更对比。请在 Finder 中打开该文件。',
+          )}
+        </p>
+      </div>
+      <Button variant="outline" size="sm" onClick={handleOpenInFinder}>
+        <FolderOpen className="mr-2 h-4 w-4" />
+        {t('filePreview.actions.openInFinder', '在 Finder 中显示')}
+      </Button>
+    </div>
+  );
+
   const renderBody = () => {
+    if (unsupportedPreviewFormat || unsupportedDiffFormat) {
+      return renderUnsupportedFormat();
+    }
     if (state.status === 'loading' || state.status === 'idle') {
       return (
         <div className="flex h-full items-center justify-center">
