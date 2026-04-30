@@ -276,21 +276,22 @@ export class ProviderService {
     return deleteProvider(accountId);
   }
 
-  /**
-   * @deprecated Use listAccounts() and map account data in callers.
-   */
-  async listLegacyProviders(): Promise<ProviderConfig[]> {
-    logLegacyProviderApiUsage('listLegacyProviders', 'listAccounts');
+  // ── Internal silent variants ─────────────────────────────────────
+  // These mirror the legacy public API but never emit deprecation
+  // warnings, so internal callers (HTTP routes, IPC handlers, the new
+  // /api/provider-accounts surface) can reuse the same logic without
+  // contributing to the migration noise. Public legacy methods below
+  // delegate here after logging exactly once per process.
+
+  /** Internal: list providers in the legacy ProviderConfig shape. */
+  async _listProvidersFromAccountsInternal(): Promise<ProviderConfig[]> {
     const accounts = await this.listAccounts();
     return accounts.map(providerAccountToConfig);
   }
 
-  /**
-   * @deprecated Use listAccounts() + secret-store based key summary.
-   */
-  async listLegacyProvidersWithKeyInfo(): Promise<ProviderWithKeyInfo[]> {
-    logLegacyProviderApiUsage('listLegacyProvidersWithKeyInfo', 'listAccounts');
-    const providers = await this.listLegacyProviders();
+  /** Internal: list providers with hasKey/keyMasked metadata. */
+  async _listProvidersWithKeyInfoInternal(): Promise<ProviderWithKeyInfo[]> {
+    const providers = await this._listProvidersFromAccountsInternal();
     const results: ProviderWithKeyInfo[] = [];
     for (const provider of providers) {
       const apiKey = await getApiKey(provider.id);
@@ -303,21 +304,15 @@ export class ProviderService {
     return results;
   }
 
-  /**
-   * @deprecated Use getAccount(accountId).
-   */
-  async getLegacyProvider(providerId: string): Promise<ProviderConfig | null> {
-    logLegacyProviderApiUsage('getLegacyProvider', 'getAccount');
+  /** Internal: resolve a single provider in the legacy ProviderConfig shape. */
+  async _getProviderInternal(providerId: string): Promise<ProviderConfig | null> {
     await ensureProviderStoreMigrated();
     const account = await getProviderAccount(providerId);
     return account ? providerAccountToConfig(account) : null;
   }
 
-  /**
-   * @deprecated Use createAccount()/updateAccount().
-   */
-  async saveLegacyProvider(config: ProviderConfig): Promise<void> {
-    logLegacyProviderApiUsage('saveLegacyProvider', 'createAccount/updateAccount');
+  /** Internal: upsert a legacy provider config (creates or updates the account). */
+  async _saveProviderInternal(config: ProviderConfig): Promise<void> {
     await ensureProviderStoreMigrated();
     const account = providerConfigToAccount(config);
     const existing = await getProviderAccount(config.id);
@@ -328,14 +323,116 @@ export class ProviderService {
     await this.createAccount(account);
   }
 
+  /** Internal: delete a provider account by id. */
+  async _deleteProviderInternal(providerId: string): Promise<boolean> {
+    await ensureProviderStoreMigrated();
+    await this.deleteAccount(providerId);
+    return true;
+  }
+
+  /** Internal: set default account without warning. */
+  async _setDefaultProviderInternal(providerId: string): Promise<void> {
+    await this.setDefaultAccount(providerId);
+  }
+
+  /** Internal: read default account id without warning. */
+  async _getDefaultProviderInternal(): Promise<string | undefined> {
+    return this.getDefaultAccountId();
+  }
+
+  /** Internal: store an account's api key without warning. */
+  async _setProviderApiKeyInternal(providerId: string, apiKey: string): Promise<boolean> {
+    return storeApiKey(providerId, apiKey);
+  }
+
+  /** Internal: read an account's api key without warning. */
+  async _getProviderApiKeyInternal(providerId: string): Promise<string | null> {
+    return getApiKey(providerId);
+  }
+
+  /** Internal: delete an account's api key without warning. */
+  async _deleteProviderApiKeyInternal(providerId: string): Promise<boolean> {
+    return deleteApiKey(providerId);
+  }
+
+  /** Internal: check if an account has a stored api key. */
+  async _hasProviderApiKeyInternal(providerId: string): Promise<boolean> {
+    return hasApiKey(providerId);
+  }
+
+  // ── New clean account-based public API ───────────────────────────
+  // These never log deprecation warnings — they operate purely in
+  // the account namespace and are the preferred surface for the
+  // /api/provider-accounts/* HTTP routes and modern renderer code.
+
+  /** Return per-account API key status for the new account API surface. */
+  async listAccountsKeyInfo(): Promise<Array<{ accountId: string; hasKey: boolean; keyMasked: string | null }>> {
+    const accounts = await this.listAccounts();
+    const results: Array<{ accountId: string; hasKey: boolean; keyMasked: string | null }> = [];
+    for (const account of accounts) {
+      const apiKey = await getApiKey(account.id);
+      results.push({
+        accountId: account.id,
+        hasKey: !!apiKey,
+        keyMasked: maskApiKey(apiKey),
+      });
+    }
+    return results;
+  }
+
+  /** Read an account's API key (clean alternative to getLegacyProviderApiKey). */
+  async getAccountApiKey(accountId: string): Promise<string | null> {
+    return this._getProviderApiKeyInternal(accountId);
+  }
+
+  /** Check whether an account has an API key stored. */
+  async hasAccountApiKey(accountId: string): Promise<boolean> {
+    return this._hasProviderApiKeyInternal(accountId);
+  }
+
+  // ── Legacy public API (logs deprecation warning once per method) ─
+  // These exist solely for backward compatibility with external clients
+  // (older Gateway code, third-party tooling, in-flight tests). Internal
+  // ClawX callers should use the internal/clean methods above.
+
+  /**
+   * @deprecated Use listAccounts() and map account data in callers.
+   */
+  async listLegacyProviders(): Promise<ProviderConfig[]> {
+    logLegacyProviderApiUsage('listLegacyProviders', 'listAccounts');
+    return this._listProvidersFromAccountsInternal();
+  }
+
+  /**
+   * @deprecated Use listAccountsKeyInfo() + the account snapshot API.
+   */
+  async listLegacyProvidersWithKeyInfo(): Promise<ProviderWithKeyInfo[]> {
+    logLegacyProviderApiUsage('listLegacyProvidersWithKeyInfo', 'listAccountsKeyInfo');
+    return this._listProvidersWithKeyInfoInternal();
+  }
+
+  /**
+   * @deprecated Use getAccount(accountId).
+   */
+  async getLegacyProvider(providerId: string): Promise<ProviderConfig | null> {
+    logLegacyProviderApiUsage('getLegacyProvider', 'getAccount');
+    return this._getProviderInternal(providerId);
+  }
+
+  /**
+   * @deprecated Use createAccount()/updateAccount().
+   */
+  async saveLegacyProvider(config: ProviderConfig): Promise<void> {
+    logLegacyProviderApiUsage('saveLegacyProvider', 'createAccount/updateAccount');
+    return this._saveProviderInternal(config);
+  }
+
   /**
    * @deprecated Use deleteAccount(accountId).
    */
   async deleteLegacyProvider(providerId: string): Promise<boolean> {
     logLegacyProviderApiUsage('deleteLegacyProvider', 'deleteAccount');
-    await ensureProviderStoreMigrated();
-    await this.deleteAccount(providerId);
-    return true;
+    return this._deleteProviderInternal(providerId);
   }
 
   /**
@@ -343,7 +440,7 @@ export class ProviderService {
    */
   async setDefaultLegacyProvider(providerId: string): Promise<void> {
     logLegacyProviderApiUsage('setDefaultLegacyProvider', 'setDefaultAccount');
-    await this.setDefaultAccount(providerId);
+    return this._setDefaultProviderInternal(providerId);
   }
 
   /**
@@ -351,7 +448,7 @@ export class ProviderService {
    */
   async getDefaultLegacyProvider(): Promise<string | undefined> {
     logLegacyProviderApiUsage('getDefaultLegacyProvider', 'getDefaultAccountId');
-    return this.getDefaultAccountId();
+    return this._getDefaultProviderInternal();
   }
 
   /**
@@ -359,15 +456,15 @@ export class ProviderService {
    */
   async setLegacyProviderApiKey(providerId: string, apiKey: string): Promise<boolean> {
     logLegacyProviderApiUsage('setLegacyProviderApiKey', 'setProviderSecret(accountId, api_key)');
-    return storeApiKey(providerId, apiKey);
+    return this._setProviderApiKeyInternal(providerId, apiKey);
   }
 
   /**
-   * @deprecated Use secret-store APIs by accountId.
+   * @deprecated Use getAccountApiKey(accountId).
    */
   async getLegacyProviderApiKey(providerId: string): Promise<string | null> {
-    logLegacyProviderApiUsage('getLegacyProviderApiKey', 'getProviderSecret(accountId)');
-    return getApiKey(providerId);
+    logLegacyProviderApiUsage('getLegacyProviderApiKey', 'getAccountApiKey');
+    return this._getProviderApiKeyInternal(providerId);
   }
 
   /**
@@ -375,15 +472,15 @@ export class ProviderService {
    */
   async deleteLegacyProviderApiKey(providerId: string): Promise<boolean> {
     logLegacyProviderApiUsage('deleteLegacyProviderApiKey', 'deleteProviderSecret(accountId)');
-    return deleteApiKey(providerId);
+    return this._deleteProviderApiKeyInternal(providerId);
   }
 
   /**
-   * @deprecated Use secret-store APIs by accountId.
+   * @deprecated Use hasAccountApiKey(accountId).
    */
   async hasLegacyProviderApiKey(providerId: string): Promise<boolean> {
-    logLegacyProviderApiUsage('hasLegacyProviderApiKey', 'getProviderSecret(accountId)');
-    return hasApiKey(providerId);
+    logLegacyProviderApiUsage('hasLegacyProviderApiKey', 'hasAccountApiKey');
+    return this._hasProviderApiKeyInternal(providerId);
   }
 
   async setDefaultAccount(accountId: string): Promise<void> {

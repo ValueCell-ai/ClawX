@@ -44,6 +44,7 @@ import {
   buildProviderAccountId,
   buildProviderListItems,
   hasConfiguredCredentials,
+  isHostApiRouteMissing,
   type ProviderListItem,
 } from '@/lib/provider-accounts';
 import { cn } from '@/lib/utils';
@@ -95,6 +96,34 @@ function getUserAgentHeader(headers?: Record<string, string>): string {
     }
   }
   return '';
+}
+
+/**
+ * Wrap `hostApiFetch` for OAuth provider routes so we always try the new
+ * `/api/provider-accounts/oauth/...` endpoints first and fall back to the
+ * legacy `/api/providers/oauth/...` paths when running against an older
+ * Host API build that returns a "no route for" body for the new routes.
+ *
+ * This keeps the renderer compatible with both:
+ *   - Newer Host APIs that have migrated OAuth under provider-accounts.
+ *   - Older Host APIs that only expose the legacy provider-namespace OAuth.
+ */
+async function hostApiFetchOAuth<T = unknown>(path: string, init?: RequestInit): Promise<T> {
+  const legacyPath = path.replace('/api/provider-accounts/oauth/', '/api/providers/oauth/');
+  let result: T;
+  try {
+    result = await hostApiFetch<T>(path, init);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (!/404|not\s+found/i.test(message) || legacyPath === path) {
+      throw error;
+    }
+    return await hostApiFetch<T>(legacyPath, init);
+  }
+  if (isHostApiRouteMissing(result) && legacyPath !== path) {
+    return await hostApiFetch<T>(legacyPath, init);
+  }
+  return result;
 }
 
 function mergeHeadersWithUserAgent(
@@ -1099,7 +1128,7 @@ function AddProviderDialog({
       const accountId = supportsMultipleAccounts ? `${selectedType}-${crypto.randomUUID()}` : selectedType;
       const label = name || (typeInfo?.id === 'custom' ? t('aiProviders.custom') : typeInfo?.name) || selectedType;
       pendingOAuthRef.current = { accountId, label };
-      await hostApiFetch('/api/providers/oauth/start', {
+      await hostApiFetchOAuth('/api/provider-accounts/oauth/start', {
         method: 'POST',
         body: JSON.stringify({ provider: selectedType, accountId, label }),
       });
@@ -1116,7 +1145,7 @@ function AddProviderDialog({
     setManualCodeInput('');
     setOauthError(null);
     pendingOAuthRef.current = null;
-    await hostApiFetch('/api/providers/oauth/cancel', {
+    await hostApiFetchOAuth('/api/provider-accounts/oauth/cancel', {
       method: 'POST',
     });
   };
@@ -1125,7 +1154,7 @@ function AddProviderDialog({
     const value = manualCodeInput.trim();
     if (!value) return;
     try {
-      await hostApiFetch('/api/providers/oauth/submit', {
+      await hostApiFetchOAuth('/api/provider-accounts/oauth/submit', {
         method: 'POST',
         body: JSON.stringify({ code: value }),
       });

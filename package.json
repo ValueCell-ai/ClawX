@@ -1,6 +1,6 @@
 {
     "name": "clawx",
-    "version": "0.3.12-beta.2",
+    "version": "0.3.11",
     "pnpm": {
         "onlyBuiltDependencies": [
             "@discordjs/opus",
@@ -145,7 +145,7 @@
         "jsdom": "^28.1.0",
         "lucide-react": "^0.563.0",
         "mpg123-decoder": "^1.0.3",
-        "openclaw": "2026.4.24",
+        "openclaw": "2026.4.23",
         "opusscript": "^0.1.1",
         "playwright-core": "1.59.1",
         "png2icons": "^2.0.1",

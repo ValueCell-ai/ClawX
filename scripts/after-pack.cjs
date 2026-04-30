@@ -19,12 +19,8 @@
  *      @mariozechner/clipboard).
  */
 
-const { createHash } = require('crypto');
-const { cpSync, existsSync, readdirSync, rmSync, statSync, mkdirSync, realpathSync, readFileSync, renameSync, writeFileSync } = require('fs');
+const { cpSync, existsSync, readdirSync, rmSync, statSync, mkdirSync, realpathSync } = require('fs');
 const { join, dirname, basename, relative } = require('path');
-
-const RUNTIME_DEPS_MANIFEST = 'clawx-runtime-deps.json';
-const OPENCLAW_RUNTIME_READY_MARKER = '.clawx-runtime-ready.json';
 
 // On Windows, paths in pnpm's virtual store can exceed the default MAX_PATH
 // limit (260 chars). Node.js 18.17+ respects the system LongPathsEnabled
@@ -463,19 +459,10 @@ function bundlePlugin(nodeModulesRoot, npmName, destDir) {
   let realPluginPath;
   try { realPluginPath = realpathSync(pkgPath); } catch { realPluginPath = pkgPath; }
 
-  function shouldCopyNodePackageEntry(src) {
-    const base = basename(src);
-    return base !== '.vscode' && base !== '.idea';
-  }
-
   // Copy plugin package itself
   if (existsSync(normWin(destDir))) rmSync(normWin(destDir), { recursive: true, force: true });
   mkdirSync(normWin(destDir), { recursive: true });
-  cpSync(normWin(realPluginPath), normWin(destDir), {
-    recursive: true,
-    dereference: true,
-    filter: shouldCopyNodePackageEntry,
-  });
+  cpSync(normWin(realPluginPath), normWin(destDir), { recursive: true, dereference: true });
 
   // Collect transitive deps via pnpm virtual store BFS
   const collected = new Map();
@@ -528,11 +515,7 @@ function bundlePlugin(nodeModulesRoot, npmName, destDir) {
     const d = join(destNM, pkgName);
     try {
       mkdirSync(normWin(dirname(d)), { recursive: true });
-      cpSync(normWin(rp), normWin(d), {
-        recursive: true,
-        dereference: true,
-        filter: shouldCopyNodePackageEntry,
-      });
+      cpSync(normWin(rp), normWin(d), { recursive: true, dereference: true });
       count++;
     } catch (e) {
       console.warn(`[after-pack]   Skipped dep ${pkgName}: ${e.message}`);
@@ -540,132 +523,6 @@ function bundlePlugin(nodeModulesRoot, npmName, destDir) {
   }
   console.log(`[after-pack] ✅ Plugin ${npmName}: copied ${count} deps to ${destDir}`);
   return true;
-}
-
-function hasPluginRuntimeDeps(pluginDestDir) {
-  const pluginNM = join(pluginDestDir, 'node_modules');
-  if (!existsSync(normWin(pluginNM))) return false;
-  try {
-    return readdirSync(normWin(pluginNM)).some((entry) => entry !== '.bin');
-  } catch {
-    return false;
-  }
-}
-
-function collectPluginRuntimeDeps(pluginDestDir) {
-  try {
-    const pkg = JSON.parse(readFileSync(normWin(join(pluginDestDir, 'package.json')), 'utf8'));
-    return Object.keys({
-      ...pkg.dependencies,
-      ...pkg.optionalDependencies,
-    });
-  } catch {
-    return [];
-  }
-}
-
-function missingPluginRuntimeDeps(pluginDestDir) {
-  return collectPluginRuntimeDeps(pluginDestDir).filter((depName) => {
-    const depPackageJson = join(pluginDestDir, 'node_modules', ...depName.split('/'), 'package.json');
-    return !existsSync(normWin(depPackageJson));
-  });
-}
-
-function preparePackagedPluginMirror(nodeModulesRoot, npmName, pluginId, pluginDestDir, platform, arch) {
-  const manifestPath = join(pluginDestDir, 'openclaw.plugin.json');
-  if (!existsSync(normWin(manifestPath)) || !hasPluginRuntimeDeps(pluginDestDir) || missingPluginRuntimeDeps(pluginDestDir).length > 0) {
-    console.log(`[after-pack] Bundling plugin ${npmName} -> ${pluginDestDir}`);
-    const ok = bundlePlugin(nodeModulesRoot, npmName, pluginDestDir);
-    if (!ok) return;
-  } else {
-    console.log(`[after-pack] ✅ Plugin mirror already present: ${pluginDestDir}`);
-  }
-
-  const pluginNM = join(pluginDestDir, 'node_modules');
-  cleanupUnnecessaryFiles(pluginDestDir);
-  if (existsSync(normWin(pluginNM))) {
-    cleanupKoffi(pluginNM, platform, arch);
-    cleanupNativePlatformPackages(pluginNM, platform, arch);
-  }
-  patchPluginIds(pluginDestDir, pluginId);
-}
-
-function validateRuntimeDepsManifest(openclawRoot) {
-  const manifestPath = join(openclawRoot, RUNTIME_DEPS_MANIFEST);
-  if (!existsSync(normWin(manifestPath))) {
-    throw new Error(`[after-pack] Missing ${RUNTIME_DEPS_MANIFEST} in packaged OpenClaw resources`);
-  }
-
-  const manifest = JSON.parse(readFileSync(normWin(manifestPath), 'utf8'));
-  const plugins = manifest && typeof manifest === 'object' ? manifest.plugins : null;
-  if (!plugins || typeof plugins !== 'object' || Array.isArray(plugins)) {
-    throw new Error(`[after-pack] Invalid ${RUNTIME_DEPS_MANIFEST}: missing plugins object`);
-  }
-
-  const missing = [];
-  for (const [pluginId, deps] of Object.entries(plugins)) {
-    if (!Array.isArray(deps)) continue;
-    for (const dep of deps) {
-      if (!dep || typeof dep.name !== 'string') continue;
-      const depPackageJson = join(openclawRoot, 'node_modules', ...dep.name.split('/'), 'package.json');
-      if (!existsSync(normWin(depPackageJson))) {
-        missing.push(`${pluginId}:${dep.name}`);
-      }
-    }
-  }
-
-  if (missing.length > 0) {
-    throw new Error(`[after-pack] Missing packaged OpenClaw runtime deps: ${missing.join(', ')}`);
-  }
-
-  console.log(`[after-pack] ✅ Verified ${RUNTIME_DEPS_MANIFEST}.`);
-}
-
-function hashOpenClawRuntime(openclawRoot) {
-  const packageJsonPath = join(openclawRoot, 'package.json');
-  const manifestPath = join(openclawRoot, RUNTIME_DEPS_MANIFEST);
-  const packageJsonRaw = readFileSync(normWin(packageJsonPath), 'utf8');
-  const manifestRaw = existsSync(normWin(manifestPath)) ? readFileSync(normWin(manifestPath), 'utf8') : '';
-  const packageJson = JSON.parse(packageJsonRaw);
-  const version = packageJson.version || 'unknown';
-  const manifestHash = createHash('sha256')
-    .update(packageJsonRaw)
-    .update('\0')
-    .update(manifestRaw)
-    .digest('hex')
-    .slice(0, 12);
-  const safeVersion = String(version).replace(/[^a-zA-Z0-9._-]/g, '_');
-  return {
-    key: `openclaw-${safeVersion}-${manifestHash}`,
-    version,
-    manifestHash,
-  };
-}
-
-function stageOpenClawRuntimeForPackagedApp(resourcesDir, openclawRoot) {
-  if (!existsSync(normWin(openclawRoot))) {
-    throw new Error(`[after-pack] Cannot stage OpenClaw runtime; missing ${openclawRoot}`);
-  }
-
-  const { key, version, manifestHash } = hashOpenClawRuntime(openclawRoot);
-  const runtimeRoot = join(resourcesDir, 'openclaw-runtime');
-  const targetDir = join(runtimeRoot, key);
-  mkdirSync(normWin(runtimeRoot), { recursive: true });
-  rmSync(normWin(targetDir), { recursive: true, force: true });
-  renameSync(normWin(openclawRoot), normWin(targetDir));
-  writeFileSync(
-    normWin(join(targetDir, OPENCLAW_RUNTIME_READY_MARKER)),
-    `${JSON.stringify({
-      version,
-      manifestHash,
-      source: 'after-pack',
-      createdAt: new Date().toISOString(),
-    }, null, 2)}\n`,
-    'utf8',
-  );
-  validateRuntimeDepsManifest(targetDir);
-  console.log(`[after-pack] ✅ Staged OpenClaw runtime at ${targetDir}`);
-  return targetDir;
 }
 
 // ── Main hook ────────────────────────────────────────────────────────────────
@@ -705,7 +562,6 @@ exports.default = async function afterPack(context) {
   console.log(`[after-pack] Copying ${depCount} openclaw dependencies to ${dest} ...`);
   cpSync(src, dest, { recursive: true });
   console.log('[after-pack] ✅ openclaw node_modules copied.');
-  validateRuntimeDepsManifest(openclawRoot);
 
   // Patch broken modules whose CJS transpiled output sets module.exports = undefined,
   // causing TypeError in Node.js 22+ ESM interop.
@@ -726,22 +582,29 @@ exports.default = async function afterPack(context) {
   mkdirSync(pluginsDestRoot, { recursive: true });
   for (const { npmName, pluginId } of BUNDLED_PLUGINS) {
     const pluginDestDir = join(pluginsDestRoot, pluginId);
-    preparePackagedPluginMirror(nodeModulesRoot, npmName, pluginId, pluginDestDir, platform, arch);
-    const manifestPath = join(pluginDestDir, 'openclaw.plugin.json');
-    if (!existsSync(normWin(manifestPath))) {
-      throw new Error(`[after-pack] Missing packaged plugin mirror: ${pluginId} (${npmName})`);
-    }
-    const missingRuntimeDeps = missingPluginRuntimeDeps(pluginDestDir);
-    if (missingRuntimeDeps.length > 0) {
-      throw new Error(`[after-pack] Missing packaged plugin runtime deps for ${pluginId}: ${missingRuntimeDeps.join(', ')}`);
+    console.log(`[after-pack] Bundling plugin ${npmName} -> ${pluginDestDir}`);
+    const ok = bundlePlugin(nodeModulesRoot, npmName, pluginDestDir);
+    if (ok) {
+      const pluginNM = join(pluginDestDir, 'node_modules');
+      cleanupUnnecessaryFiles(pluginDestDir);
+      if (existsSync(pluginNM)) {
+        cleanupKoffi(pluginNM, platform, arch);
+        cleanupNativePlatformPackages(pluginNM, platform, arch);
+      }
+      // Fix hardcoded plugin ID mismatches in compiled JS
+      patchPluginIds(pluginDestDir, pluginId);
     }
   }
 
-  // 1.2 Legacy safety net for build/openclaw bundles that still contain nested
-  //     built-in extension node_modules. The current bundle-openclaw.mjs skips
-  //     these nested directories and merges their packages into the top-level
-  //     OpenClaw node_modules instead, which is where shared dist chunks resolve
-  //     bare imports from at runtime.
+  // 1.2 Copy built-in extension node_modules that electron-builder skipped.
+  //     OpenClaw 3.31+ ships built-in extensions (discord, qqbot, etc.) under
+  //     dist/extensions/<ext>/node_modules/. These are skipped by extraResources
+  //     because .gitignore contains "node_modules/".
+  //
+  //     Extension code is loaded via shared chunks in dist/ (e.g. outbound-*.js)
+  //     which resolve modules from the top-level openclaw/node_modules/, NOT from
+  //     the extension's own node_modules/. So we must merge extension deps into
+  //     the top-level node_modules/ as well.
   const buildExtDir = join(__dirname, '..', 'build', 'openclaw', 'dist', 'extensions');
   const packExtDir = join(openclawRoot, 'dist', 'extensions');
   if (existsSync(buildExtDir)) {
@@ -806,15 +669,6 @@ exports.default = async function afterPack(context) {
   if (nativeRemoved > 0) {
     console.log(`[after-pack] ✅ Removed ${nativeRemoved} non-target native platform packages.`);
   }
-
-  // 4.1 Move the finalized OpenClaw tree into the shape OpenClaw already
-  // recognizes as an external runtime root:
-  //   resources/openclaw-runtime/openclaw-<version>-<hash>
-  //
-  // At runtime ClawX sets OPENCLAW_PLUGIN_STAGE_DIR to resources/openclaw-runtime
-  // and launches from the staged openclaw-* directory. This avoids a first-run
-  // copy while still preventing OpenClaw from running npm install.
-  stageOpenClawRuntimeForPackagedApp(resourcesDir, openclawRoot);
 
   // 5. Patch lru-cache in app.asar.unpacked
   //
