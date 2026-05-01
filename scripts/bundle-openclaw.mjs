@@ -17,6 +17,7 @@
  */
 
 import 'zx/globals';
+import { EXTRA_BUNDLED_PACKAGES } from './openclaw-bundle-config.mjs';
 
 const ROOT = path.resolve(__dirname, '..');
 const OUTPUT = path.join(ROOT, 'build', 'openclaw');
@@ -41,6 +42,20 @@ if (!fs.existsSync(openclawLink)) {
 const openclawReal = fs.realpathSync(openclawLink);
 echo`   openclaw resolved: ${openclawReal}`;
 
+function shouldCopyOpenClawPackageEntry(src) {
+  const rel = path.relative(openclawReal, src);
+  if (!rel || rel.startsWith('..')) return true;
+  const parts = rel.split(path.sep);
+
+  for (let i = 0; i < parts.length - 1; i += 1) {
+    if (parts[i] === 'node_modules' && parts[i + 1] === '.bin') {
+      return false;
+    }
+  }
+
+  return true;
+}
+
 // 2. Clean and create output directory
 if (fs.existsSync(OUTPUT)) {
   fs.rmSync(OUTPUT, { recursive: true });
@@ -49,7 +64,11 @@ fs.mkdirSync(OUTPUT, { recursive: true });
 
 // 3. Copy openclaw package itself to OUTPUT root
 echo`   Copying openclaw package...`;
-fs.cpSync(openclawReal, OUTPUT, { recursive: true, dereference: true });
+fs.cpSync(openclawReal, OUTPUT, {
+  recursive: true,
+  dereference: true,
+  filter: shouldCopyOpenClawPackageEntry,
+});
 
 // 4. Recursively collect ALL transitive dependencies via pnpm virtual store BFS
 //
@@ -186,10 +205,6 @@ echo`   Skipped ${skippedDevCount} dev-only package references`;
 //
 //     For each package we resolve it from the workspace's own node_modules,
 //     then BFS its transitive deps exactly like we did for openclaw above.
-const EXTRA_BUNDLED_PACKAGES = [
-  '@whiskeysockets/baileys',   // WhatsApp channel (was a dep of old clawdbot, not openclaw)
-];
-
 let extraCount = 0;
 for (const pkgName of EXTRA_BUNDLED_PACKAGES) {
   const pkgLink = path.join(NODE_MODULES, ...pkgName.split('/'));
