@@ -7,6 +7,7 @@ import {
   ExternalLink,
   Loader2,
   Moon,
+  Power,
   RefreshCw,
   RotateCcw,
   Sparkles,
@@ -84,7 +85,12 @@ interface DreamDiaryEntry {
   summary: string;
 }
 
+interface ConfigSnapshot {
+  hash?: string;
+}
+
 type DreamActionKey = 'backfill' | 'dedupe' | 'repair' | 'resetDiary' | 'resetGrounded';
+type DreamToggleKey = 'enable' | 'disable';
 
 interface PendingConfirmation {
   action: DreamActionKey;
@@ -103,6 +109,22 @@ const DREAM_ACTION_METHODS: Record<DreamActionKey, string> = {
 
 const DIARY_START_MARKER = '<!-- openclaw:dreaming:diary:start -->';
 const DIARY_END_MARKER = '<!-- openclaw:dreaming:diary:end -->';
+
+function buildDreamingEnabledPatchRaw(enabled: boolean): string {
+  return JSON.stringify({
+    plugins: {
+      entries: {
+        'memory-core': {
+          config: {
+            dreaming: {
+              enabled,
+            },
+          },
+        },
+      },
+    },
+  });
+}
 const PANEL_CLASS = 'border-black/10 bg-surface-modal shadow-sm dark:border-white/10';
 const INSET_CLASS = 'border-black/10 bg-surface-input dark:border-white/10';
 const QUIET_BUTTON_CLASS = 'border-black/10 bg-surface-input text-foreground/80 shadow-none hover:bg-black/5 hover:text-foreground dark:border-white/10 dark:hover:bg-white/5';
@@ -190,12 +212,14 @@ export function Dreams() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [runningAction, setRunningAction] = useState<DreamActionKey | null>(null);
+  const [runningToggle, setRunningToggle] = useState<DreamToggleKey | null>(null);
   const [lastActionMessage, setLastActionMessage] = useState<string | null>(null);
   const [pendingConfirmation, setPendingConfirmation] = useState<PendingConfirmation | null>(null);
   const [openingFullUi, setOpeningFullUi] = useState(false);
 
   const gatewayReady = gatewayStatus.state === 'running' && gatewayStatus.gatewayReady !== false;
-  const actionsDisabled = !gatewayReady || runningAction != null;
+  const busy = runningAction != null || runningToggle != null;
+  const actionsDisabled = !gatewayReady || busy;
 
   const diaryEntries = useMemo(() => parseDreamDiary(diary?.content).slice(0, 4), [diary?.content]);
   const recentSignals = useMemo(() => {
@@ -273,6 +297,34 @@ export function Dreams() {
     }
   }, [buildActionMessage, refreshAll, rpc]);
 
+  const setDreamingEnabled = useCallback(async (enabled: boolean) => {
+    const toggleKey: DreamToggleKey = enabled ? 'enable' : 'disable';
+    setRunningToggle(toggleKey);
+    setError(null);
+    setLastActionMessage(null);
+    try {
+      const snapshot = await rpc<ConfigSnapshot>('config.get', {}, 12_000);
+      if (!snapshot.hash) {
+        throw new Error(t('errors.configHashMissing'));
+      }
+      await rpc<unknown>('config.patch', {
+        raw: buildDreamingEnabledPatchRaw(enabled),
+        baseHash: snapshot.hash,
+        note: enabled ? 'Enable memory dreaming from ClawX Dreams.' : 'Disable memory dreaming from ClawX Dreams.',
+      }, 30_000);
+      const message = enabled ? t('actions.enableSuccess') : t('actions.disableSuccess');
+      setDreaming((current) => ({ ...(current ?? {}), enabled }));
+      setLastActionMessage(message);
+      toast.success(message);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      setError(message);
+      toast.error(message);
+    } finally {
+      setRunningToggle(null);
+    }
+  }, [rpc, t]);
+
   const requestConfirmation = useCallback((action: DreamActionKey) => {
     setPendingConfirmation({
       action,
@@ -332,6 +384,17 @@ export function Dreams() {
           <p className="mt-2 text-subtitle font-medium text-foreground/60">{t('subtitle')}</p>
         </div>
         <div className="flex shrink-0 items-center gap-2">
+          <Button
+            data-testid={dreaming?.enabled ? 'dreams-disable' : 'dreams-enable'}
+            variant={dreaming?.enabled ? 'outline' : 'default'}
+            size="sm"
+            onClick={() => void setDreamingEnabled(!dreaming?.enabled)}
+            disabled={!gatewayReady || busy || loading}
+            className={dreaming?.enabled ? QUIET_BUTTON_CLASS : undefined}
+          >
+            {runningToggle ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Power className="mr-2 h-4 w-4" />}
+            {dreaming?.enabled ? t('actions.disable') : t('actions.enable')}
+          </Button>
           <Button
             data-testid="dreams-refresh"
             variant="outline"

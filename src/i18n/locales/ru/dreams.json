@@ -17,11 +17,15 @@
     },
     "actions": {
         "title": "Обслуживание",
+        "enable": "Запустить Dreams",
+        "disable": "Остановить Dreams",
         "backfill": "Backfill Diary",
         "dedupe": "Dedupe Diary",
         "repair": "Repair Cache",
         "resetGrounded": "Очистить replay",
         "resetDiary": "Сбросить backfill",
+        "enableSuccess": "Dreams запущен. Gateway может перезапуститься, чтобы применить управляемое расписание.",
+        "disableSuccess": "Dreams остановлен. Gateway может перезапуститься, чтобы удалить управляемое расписание.",
         "backfillSuccess": "Добавлено {{count}} записей дневника снов.",
         "dedupeSuccess": "Удалено {{removed}} дубликатов записей снов, оставлено {{kept}}.",
         "repairSuccess": "Восстановление кэша снов завершено.",
@@ -62,6 +66,7 @@
         "noSnippet": "Фрагмент недоступен."
     },
     "errors": {
-        "openFullUi": "Не удалось открыть полный OpenClaw Dreams UI."
+        "openFullUi": "Не удалось открыть полный OpenClaw Dreams UI.",
+        "configHashMissing": "Не удалось обновить Dreams: недоступен config base hash."
     }
 }

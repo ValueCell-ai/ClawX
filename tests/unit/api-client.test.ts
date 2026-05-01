@@ -260,8 +260,32 @@ describe('api-client', () => {
     const invoker = createGatewayHttpTransportInvoker();
 
     await expect(invoker('gateway:rpc', ['config.patch', { patch: 'abc' }])).rejects.toThrow(
-      'gateway:rpc config.patch requires object patch',
+      'gateway:rpc config.patch requires raw string or object patch',
     );
     expect(invoke).not.toHaveBeenCalled();
+  });
+
+  it('allows raw config.patch params for gateway-compatible merge patches', async () => {
+    const invoke = vi.mocked(window.electron.ipcRenderer.invoke);
+    invoke.mockResolvedValueOnce({
+      ok: true,
+      data: {
+        status: 200,
+        ok: true,
+        json: { type: 'res', ok: true, payload: { ok: true } },
+      },
+    });
+    const invoker = createGatewayHttpTransportInvoker();
+
+    await expect(invoker('gateway:rpc', ['config.patch', { raw: '{"plugins":{}}', baseHash: 'abc' }])).resolves.toEqual({
+      success: true,
+      result: { ok: true },
+    });
+    expect(invoke).toHaveBeenCalledWith('gateway:httpProxy', expect.objectContaining({
+      body: expect.objectContaining({
+        method: 'config.patch',
+        params: { raw: '{"plugins":{}}', baseHash: 'abc' },
+      }),
+    }));
   });
 });

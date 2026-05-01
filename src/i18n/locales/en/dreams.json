@@ -17,11 +17,15 @@
     },
     "actions": {
         "title": "Maintenance",
+        "enable": "Start Dreams",
+        "disable": "Stop Dreams",
         "backfill": "Backfill Diary",
         "dedupe": "Dedupe Diary",
         "repair": "Repair Cache",
         "resetGrounded": "Clear Replayed",
         "resetDiary": "Reset Backfilled Diary",
+        "enableSuccess": "Dreams started. Gateway may restart to apply the managed schedule.",
+        "disableSuccess": "Dreams stopped. Gateway may restart to remove the managed schedule.",
         "backfillSuccess": "Backfilled {{count}} dream diary entries.",
         "dedupeSuccess": "Removed {{removed}} duplicate dream entries and kept {{kept}}.",
         "repairSuccess": "Dream cache repair completed.",
@@ -62,6 +66,7 @@
         "noSnippet": "No snippet available."
     },
     "errors": {
-        "openFullUi": "Unable to open the full OpenClaw Dreams UI."
+        "openFullUi": "Unable to open the full OpenClaw Dreams UI.",
+        "configHashMissing": "Unable to update Dreams because the config base hash is unavailable."
     }
 }

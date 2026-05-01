@@ -17,11 +17,15 @@
     },
     "actions": {
         "title": "メンテナンス",
+        "enable": "Dreams を開始",
+        "disable": "Dreams を停止",
         "backfill": "日記をバックフィル",
         "dedupe": "日記を重複排除",
         "repair": "キャッシュを修復",
         "resetGrounded": "再生済みを消去",
         "resetDiary": "バックフィル日記をリセット",
+        "enableSuccess": "Dreams を開始しました。管理スケジュールを適用するため Gateway が再起動する場合があります。",
+        "disableSuccess": "Dreams を停止しました。管理スケジュールを削除するため Gateway が再起動する場合があります。",
         "backfillSuccess": "{{count}} 件の夢日記をバックフィルしました。",
         "dedupeSuccess": "{{removed}} 件の重複夢エントリを削除し、{{kept}} 件を保持しました。",
         "repairSuccess": "夢キャッシュの修復が完了しました。",
@@ -62,6 +66,7 @@
         "noSnippet": "スニペットはありません。"
     },
     "errors": {
-        "openFullUi": "完全版 OpenClaw Dreams UI を開けません。"
+        "openFullUi": "完全版 OpenClaw Dreams UI を開けません。",
+        "configHashMissing": "config base hash が利用できないため Dreams を更新できません。"
     }
 }

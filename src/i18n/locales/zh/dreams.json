@@ -17,11 +17,15 @@
     },
     "actions": {
         "title": "维护",
+        "enable": "启动梦境",
+        "disable": "停止梦境",
         "backfill": "回填日记",
         "dedupe": "去重日记",
         "repair": "修复缓存",
         "resetGrounded": "清除已回放",
         "resetDiary": "重置回填日记",
+        "enableSuccess": "梦境已启动。网关可能会重启以应用托管计划。",
+        "disableSuccess": "梦境已停止。网关可能会重启以移除托管计划。",
         "backfillSuccess": "已回填 {{count}} 条梦境日记。",
         "dedupeSuccess": "已移除 {{removed}} 条重复梦境，并保留 {{kept}} 条。",
         "repairSuccess": "梦境缓存修复完成。",
@@ -62,6 +66,7 @@
         "noSnippet": "暂无片段。"
     },
     "errors": {
-        "openFullUi": "无法打开完整 OpenClaw Dreams UI。"
+        "openFullUi": "无法打开完整 OpenClaw Dreams UI。",
+        "configHashMissing": "无法更新梦境，因为配置 base hash 不可用。"
     }
 }
