@@ -29,7 +29,9 @@ export async function handleGatewayRoutes(
   }
 
   if (url.pathname === '/api/gateway/health' && req.method === 'GET') {
-    const health = await ctx.gatewayManager.checkHealth();
+    const health = await ctx.gatewayManager.checkHealth({
+      probe: url.searchParams.get('probe') === '1' || url.searchParams.get('probe') === 'true',
+    });
     sendJson(res, 200, health);
     return true;
   }

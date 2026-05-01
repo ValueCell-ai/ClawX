@@ -22,6 +22,17 @@ requiredRules:
 
 Use this spec when ClawX shows the Gateway as starting/running but UI data does not refresh, Dreams cannot load, or Gateway RPC calls time out after a restart.
 
+ClawX should prefer OpenClaw-native signals over stderr string matching:
+
+- `system-presence` proves the core RPC router is serving requests.
+- `health` provides the Gateway health snapshot; use cached `probe:false` first.
+- `status` provides presence, health, stateVersion, uptime, and session defaults.
+- `channels.status` is the channel capability signal.
+- `doctor.memory.status` is the memory/dreams capability signal.
+- `gateway.ready`, `health`, and `presence` events should update ClawX's main-process capability cache.
+
+stderr is supporting evidence only. It should not be the primary source for deciding whether the Gateway is ready, blocked, or should be restarted.
+
 ## Failure Shape
 
 Treat these as the same incident family until proven otherwise:
@@ -41,6 +52,12 @@ Important distinction:
 
 UI features that depend on Gateway runtime data must prefer RPC-ready evidence over port-ready evidence.
 
+Capability failures are not Gateway core failures:
+
+- `doctor.memory.status` timeout means memory capability degraded until `system-presence` also fails.
+- `channels.status` timeout means channel capability degraded until `system-presence` also fails.
+- dreams cron unavailable, missing memory files, stale session keys, or provider credential errors do not trigger Gateway restart by themselves.
+
 ## Fast Triage
 
 1. Confirm the process and ports:
@@ -56,15 +73,18 @@ lsof -nP -iTCP:5173 -sTCP:LISTEN || true
 tail -n 160 "$HOME/Library/Application Support/clawx/logs/clawx-$(date +%F).log"
 ```
 
-3. Probe a low-cost RPC. Redirect output for memory-related calls because successful responses may contain user data:
+3. Probe OpenClaw-native signals in this order. Redirect output for memory-related calls because successful responses may contain user data:
 
 ```bash
 pnpm exec openclaw gateway call system-presence >/tmp/clawx-system-presence.json
+pnpm exec openclaw gateway call health --params '{"probe":false}' >/tmp/clawx-health.json
+pnpm exec openclaw gateway call status >/tmp/clawx-status.json
+pnpm exec openclaw gateway call channels.status --params '{"probe":false}' >/tmp/clawx-channels-status.json
 pnpm exec openclaw gateway call doctor.memory.status >/tmp/clawx-memory-status.json
 pnpm exec openclaw gateway call doctor.memory.dreamDiary >/tmp/clawx-dream-diary.json
 ```
 
-4. If port is listening but RPC times out, agree on the sampling scope, then sample the Gateway process on macOS:
+4. Only if port is listening and the core RPC probe (`system-presence`) times out, agree on the sampling scope, then sample the Gateway process on macOS:
 
 ```bash
 sample <gateway-pid> 3 -mayDie >/tmp/clawx-gateway.sample.txt
@@ -168,6 +188,21 @@ Expected behavior:
 - The fallback must probe `system-presence` before emitting ready.
 - Heartbeat recovery may defer restart during the initial grace window, but it should not loop restart while the Gateway is still performing startup work.
 
+### Capability Degraded But Core Alive
+
+Symptoms:
+
+- `system-presence`, `health`, or `status` succeeds.
+- `doctor.memory.status`, `doctor.memory.dreamDiary`, or `channels.status` times out.
+- stderr may mention dreams cron unavailable, missing memory files, stale session keys, or credentials provider errors.
+
+Expected behavior:
+
+- Keep global Gateway state based on process, transport, and core RPC readiness.
+- Mark only the relevant capability as degraded.
+- Do not restart Gateway automatically.
+- Let the user retry the capability probe or fix provider/channel credentials.
+
 ### Restart Deferral By Active Work
 
 Symptoms:
@@ -201,21 +236,30 @@ pnpm exec tsx -e "import { sanitizeOpenClawConfig } from './electron/utils/openc
 }
 ```
 
-5. Confirm RPC readiness:
+5. Confirm core RPC readiness:
 
 ```bash
 pnpm exec openclaw gateway call system-presence >/tmp/clawx-system-presence.json
 ```
 
-6. Only after `system-presence` succeeds, verify feature-specific RPCs such as Dreams or memory doctor calls.
+6. Confirm cached OpenClaw health before deeper probes:
+
+```bash
+pnpm exec openclaw gateway call health --params '{"probe":false}' >/tmp/clawx-health.json
+pnpm exec openclaw gateway call status >/tmp/clawx-status.json
+```
+
+7. Only after `system-presence` succeeds, verify feature-specific RPCs such as Dreams, memory doctor calls, or channel probes.
 
 ## Acceptance Criteria
 
 - Gateway starts without restart loops.
 - `configSyncMs` stays small relative to total startup time.
 - `system-presence` succeeds after startup settles.
+- `health` and `status` are captured in Gateway diagnostics when available.
 - Dreams page can refresh once the Gateway process is running and RPC-ready.
 - `doctor.memory.status` and `doctor.memory.dreamDiary` return when Dreams is enabled.
+- `doctor.memory.*` and `channels.status` failures degrade their capability only and do not trigger Gateway restart.
 - Logs no longer repeat stale runtime cache or escaped managed-skill symlink warnings for entries ClawX can safely clean.
 
 ## Required Regression Coverage

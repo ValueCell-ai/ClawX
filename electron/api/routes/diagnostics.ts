@@ -48,7 +48,10 @@ export async function handleDiagnosticsRoutes(
   url: URL,
   ctx: HostApiContext,
 ): Promise<boolean> {
-  if (url.pathname === '/api/diagnostics/gateway-snapshot' && req.method === 'GET') {
+  if (
+    (url.pathname === '/api/diagnostics/gateway-snapshot' || url.pathname === '/api/gateway/diagnostics')
+    && req.method === 'GET'
+  ) {
     try {
       const { channels } = await buildChannelAccountsView(ctx, { probe: false });
       const diagnostics = ctx.gatewayManager.getDiagnostics?.() ?? {
@@ -56,15 +59,18 @@ export async function handleDiagnosticsRoutes(
         consecutiveRpcFailures: 0,
       };
       const channelStatusDiagnostics = getChannelStatusDiagnostics();
+      const gatewayStatus = ctx.gatewayManager.getStatus();
+      const gatewaySummary = buildGatewayHealthSummary({
+        status: gatewayStatus,
+        diagnostics,
+        lastChannelsStatusOkAt: channelStatusDiagnostics.lastChannelsStatusOkAt,
+        lastChannelsStatusFailureAt: channelStatusDiagnostics.lastChannelsStatusFailureAt,
+        platform: process.platform,
+      });
       const gateway = {
-        ...ctx.gatewayManager.getStatus(),
-        ...buildGatewayHealthSummary({
-          status: ctx.gatewayManager.getStatus(),
-          diagnostics,
-          lastChannelsStatusOkAt: channelStatusDiagnostics.lastChannelsStatusOkAt,
-          lastChannelsStatusFailureAt: channelStatusDiagnostics.lastChannelsStatusFailureAt,
-          platform: process.platform,
-        }),
+        ...gatewayStatus,
+        ...gatewaySummary,
+        capabilities: ctx.gatewayManager.getCapabilitySnapshot(gatewaySummary),
       };
       const openClawDir = getOpenClawConfigDir();
       sendJson(res, 200, {
