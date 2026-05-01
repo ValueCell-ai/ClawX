@@ -64,13 +64,54 @@ pnpm exec openclaw gateway call doctor.memory.status >/tmp/clawx-memory-status.j
 pnpm exec openclaw gateway call doctor.memory.dreamDiary >/tmp/clawx-dream-diary.json
 ```
 
-4. If port is listening but RPC times out, sample the Gateway process on macOS:
+4. If port is listening but RPC times out, agree on the sampling scope, then sample the Gateway process on macOS:
 
 ```bash
 sample <gateway-pid> 3 -mayDie >/tmp/clawx-gateway.sample.txt
 ```
 
 Look for heavy main-thread stacks around `uv_fs_open`, `uv_fs_scandir`, `open`, `read`, `write`, `mkdir`, or repeated plugin/skill initialization frames. This usually means the Gateway event loop is busy with synchronous file work and cannot service RPCs yet.
+
+## Sampling Coordination Protocol
+
+Sampling is diagnostic work against a live local process. Coordinate it explicitly when the user is depending on the current Gateway for active work.
+
+Before sampling, state:
+
+- Which process will be sampled, including PID and why it is believed to be the Gateway.
+- The sampling command and duration. Default to `sample <pid> 3 -mayDie`; increase duration only after explaining why.
+- Expected impact. A short macOS sample is read-only and usually low impact, but it can produce a large file and may briefly add system load.
+- Where the artifact will be written, usually `/tmp/clawx-gateway.sample.txt`.
+- What will be inspected and what will not be shared verbatim.
+
+Do not proceed without explicit user agreement when:
+
+- Sampling a process that is not clearly the ClawX-owned Gateway child.
+- Increasing sample duration above 5 seconds or repeating samples many times.
+- Collecting process environment, open files, memory dumps, trace archives, or any artifact likely to contain secrets.
+- Killing, restarting, or force-cleaning Gateway while active tasks, cron jobs, or user-visible work may be running.
+
+Safe-by-default commands:
+
+```bash
+lsof -nP -iTCP:18789 -sTCP:LISTEN || true
+ps -axo pid,ppid,etime,command | rg -i "openclaw-gateway|Electron|vite" | rg -v "rg -i"
+sample <gateway-pid> 3 -mayDie >/tmp/clawx-gateway.sample.txt
+```
+
+Avoid by default:
+
+- `env`, `/proc/<pid>/environ`, or full process command dumps that include tokens.
+- Full memory dumps.
+- Pasting raw `doctor.memory.*` output.
+- Pasting complete sample files when only top stack signatures are needed.
+
+When analyzing a sample, report a compact summary:
+
+- Main-thread state: idle, synchronous fs I/O, network connect, CPU-bound JS, or unknown.
+- Dominant stack signature, such as `uv_fs_open` under plugin runtime setup.
+- Whether the finding points to ClawX-owned prelaunch cleanup, OpenClaw runtime startup cost, active user work, or inconclusive data.
+- Recommended next action and whether it requires another user approval.
 
 ## Known Causes
 
