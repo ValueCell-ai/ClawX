@@ -295,49 +295,82 @@ for (const [realPath, pkgName] of collected) {
 // resolvable from shared chunks.  Skip-if-exists preserves version priority
 // (openclaw's own deps take precedence over extension deps).
 const extensionsDir = path.join(OUTPUT, 'dist', 'extensions');
+function readJsonSafe(filePath) {
+  try {
+    return JSON.parse(fs.readFileSync(filePath, 'utf8'));
+  } catch {
+    return null;
+  }
+}
+
+function listPackageDeps(pkgJson) {
+  return Object.keys({
+    ...(pkgJson?.dependencies && typeof pkgJson.dependencies === 'object' ? pkgJson.dependencies : {}),
+    ...(pkgJson?.optionalDependencies && typeof pkgJson.optionalDependencies === 'object' ? pkgJson.optionalDependencies : {}),
+  }).sort((a, b) => a.localeCompare(b));
+}
+
 let mergedExtCount = 0;
+let mirroredExtRuntimeDeps = 0;
 if (fs.existsSync(extensionsDir)) {
   for (const extEntry of fs.readdirSync(extensionsDir, { withFileTypes: true })) {
     if (!extEntry.isDirectory()) continue;
-    const extNM = path.join(extensionsDir, extEntry.name, 'node_modules');
-    if (!fs.existsSync(extNM)) continue;
+    const extRoot = path.join(extensionsDir, extEntry.name);
+    const extNM = path.join(extRoot, 'node_modules');
 
-    for (const pkgEntry of fs.readdirSync(extNM, { withFileTypes: true })) {
-      if (!pkgEntry.isDirectory() || pkgEntry.name === '.bin') continue;
-      const srcPkg = path.join(extNM, pkgEntry.name);
+    if (fs.existsSync(extNM)) {
+      for (const pkgEntry of fs.readdirSync(extNM, { withFileTypes: true })) {
+        if (!pkgEntry.isDirectory() || pkgEntry.name === '.bin') continue;
+        const srcPkg = path.join(extNM, pkgEntry.name);
 
-      if (pkgEntry.name.startsWith('@')) {
-        // Scoped package — iterate sub-entries
-        let scopeEntries;
-        try { scopeEntries = fs.readdirSync(srcPkg, { withFileTypes: true }); } catch { continue; }
-        for (const scopeEntry of scopeEntries) {
-          if (!scopeEntry.isDirectory()) continue;
-          const scopedName = `${pkgEntry.name}/${scopeEntry.name}`;
-          if (copiedNames.has(scopedName)) continue;
-          const srcScoped = path.join(srcPkg, scopeEntry.name);
-          const destScoped = path.join(outputNodeModules, pkgEntry.name, scopeEntry.name);
+        if (pkgEntry.name.startsWith('@')) {
+          // Scoped package — iterate sub-entries
+          let scopeEntries;
+          try { scopeEntries = fs.readdirSync(srcPkg, { withFileTypes: true }); } catch { continue; }
+          for (const scopeEntry of scopeEntries) {
+            if (!scopeEntry.isDirectory()) continue;
+            const scopedName = `${pkgEntry.name}/${scopeEntry.name}`;
+            if (copiedNames.has(scopedName)) continue;
+            const srcScoped = path.join(srcPkg, scopeEntry.name);
+            const destScoped = path.join(outputNodeModules, pkgEntry.name, scopeEntry.name);
+            try {
+              fs.mkdirSync(normWin(path.dirname(destScoped)), { recursive: true });
+              fs.cpSync(normWin(srcScoped), normWin(destScoped), { recursive: true, dereference: true });
+              copiedNames.add(scopedName);
+              mergedExtCount++;
+            } catch { /* skip on copy error */ }
+          }
+        } else {
+          if (copiedNames.has(pkgEntry.name)) continue;
+          const destPkg = path.join(outputNodeModules, pkgEntry.name);
           try {
-            fs.mkdirSync(normWin(path.dirname(destScoped)), { recursive: true });
-            fs.cpSync(normWin(srcScoped), normWin(destScoped), { recursive: true, dereference: true });
-            copiedNames.add(scopedName);
+            fs.cpSync(normWin(srcPkg), normWin(destPkg), { recursive: true, dereference: true });
+            copiedNames.add(pkgEntry.name);
             mergedExtCount++;
           } catch { /* skip on copy error */ }
         }
-      } else {
-        if (copiedNames.has(pkgEntry.name)) continue;
-        const destPkg = path.join(outputNodeModules, pkgEntry.name);
-        try {
-          fs.cpSync(normWin(srcPkg), normWin(destPkg), { recursive: true, dereference: true });
-          copiedNames.add(pkgEntry.name);
-          mergedExtCount++;
-        } catch { /* skip on copy error */ }
       }
+    }
+
+    const extPkg = readJsonSafe(path.join(extRoot, 'package.json'));
+    for (const depName of listPackageDeps(extPkg)) {
+      const srcPkg = path.join(outputNodeModules, ...depName.split('/'));
+      const destPkg = path.join(extNM, ...depName.split('/'));
+      if (!fs.existsSync(srcPkg) || fs.existsSync(destPkg)) continue;
+      try {
+        fs.mkdirSync(normWin(path.dirname(destPkg)), { recursive: true });
+        fs.cpSync(normWin(srcPkg), normWin(destPkg), { recursive: true, dereference: true });
+        mirroredExtRuntimeDeps++;
+      } catch { /* skip on copy error */ }
     }
   }
 }
 
 if (mergedExtCount > 0) {
   echo`   Merged ${mergedExtCount} extension packages into top-level node_modules`;
+}
+if (mirroredExtRuntimeDeps > 0) {
+  echo`   Mirrored ${mirroredExtRuntimeDeps} extension runtime deps into dist/extensions/*/node_modules`;
 }
 
 // 6. Clean up the bundle to reduce package size
