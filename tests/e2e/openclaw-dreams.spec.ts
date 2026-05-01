@@ -1,3 +1,4 @@
+import type { Page } from '@playwright/test';
 import { completeSetup, expect, installIpcMocks, test } from './fixtures/electron';
 
 function stableStringify(value: unknown): string {
@@ -7,6 +8,16 @@ function stableStringify(value: unknown): string {
     .sort(([left], [right]) => left.localeCompare(right))
     .map(([key, entryValue]) => `${JSON.stringify(key)}:${stableStringify(entryValue)}`);
   return `{${entries.join(',')}}`;
+}
+
+async function enableDeveloperMode(page: Page): Promise<void> {
+  await page.getByTestId('sidebar-nav-settings').click();
+  await expect(page.getByTestId('settings-page')).toBeVisible();
+  const devModeToggle = page.getByTestId('settings-dev-mode-switch');
+  if ((await devModeToggle.getAttribute('data-state')) !== 'checked') {
+    await devModeToggle.click();
+  }
+  await expect(devModeToggle).toHaveAttribute('data-state', 'checked');
 }
 
 test.describe('OpenClaw Dreams', () => {
@@ -101,6 +112,7 @@ test.describe('OpenClaw Dreams', () => {
     });
 
     await completeSetup(page);
+    await enableDeveloperMode(page);
     await expect(page.getByTestId('sidebar-nav-dreams')).toBeVisible();
     await page.getByTestId('sidebar-nav-dreams').click();
 
@@ -143,6 +155,7 @@ test.describe('OpenClaw Dreams', () => {
     });
 
     await completeSetup(page);
+    await enableDeveloperMode(page);
     await page.getByTestId('sidebar-nav-dreams').click();
 
     await expect(page.getByTestId('dreams-page')).toBeVisible();
