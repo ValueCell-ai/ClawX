@@ -1,5 +1,5 @@
 /**
- * Pre-launch cleanup for stray skill symlinks under ~/.openclaw/skills.
+ * Pre-launch cleanup for stray skill symlinks under OpenClaw skill roots.
  *
  * Background: since openclaw commit 253e159700 ("fix: harden workspace skill
  * path containment"), the Gateway rejects any candidate under a skills root
@@ -8,23 +8,24 @@
  *    reason=symlink-escape source=openclaw-managed ...`
  * warning per offending entry on every start.
  *
- * A common offender is one-shot install scripts that drop symlinks into
- * ~/.openclaw/skills/<name> pointing at ~/.agents/skills/<name>.  The skills
- * still load via the separate `agents-skills-personal` source (which scans
- * ~/.agents/skills directly), so the symlinks under ~/.openclaw/skills are
- * pure log noise — and a duplicate entry that the loader can never accept.
+ * Common offenders are one-shot install scripts that drop symlinks into:
+ *   - ~/.openclaw/skills/<name> -> ~/.agents/skills/<name>
+ *   - ~/.openclaw/workspace/skills/<name> -> ~/.openclaw/workspace/.agents/skills/<name>
+ * The skills still load via their agents-skills sources, so these symlinks
+ * are pure log noise — and duplicate entries that the loader can never accept.
  *
  * This helper is invoked before each Gateway launch to remove those
  * specific symlinks.  Scope is intentionally narrow:
- *   - source dir: ~/.openclaw/skills (resolved via getOpenClawSkillsDir())
- *   - target dir: ~/.agents/skills only (NOT the broader ~/.agents tree)
- * Symlinks whose realpath resolves anywhere else under ~/.agents (e.g.
+ *   - source dirs: ~/.openclaw/skills and ~/.openclaw/workspace/skills
+ *   - target dirs: the matching agents/skills roots only
+ * Symlinks whose realpath resolves anywhere else under an agents tree (e.g.
  * ~/.agents/tools/foo) or to unrelated locations are left untouched.
  *
- * Removal uses fs.rmSync({ force: true }) rather than fs.unlinkSync so that
- * Windows directory symlinks and junctions (the form that non-admin Windows
- * installs end up creating) are deleted correctly.  unlinkSync raises EPERM
- * on those on Windows.
+ * Removal uses fs.rmSync({ force: true, recursive: true }) rather than
+ * fs.unlinkSync so that directory symlinks and Windows junctions (the form
+ * that non-admin Windows installs end up creating) are deleted correctly.
+ * unlinkSync raises EPERM on those on Windows, and rmSync without recursive
+ * can reject directory symlinks on some platforms.
  *
  * This is a transitional workaround.  Once openclaw/openclaw#59219 lands and
  * the loader stops rejecting managed-source symlinks whose realpath escapes
@@ -40,7 +41,7 @@ import {
 } from 'node:fs';
 import { homedir } from 'node:os';
 import path from 'node:path';
-import { getOpenClawSkillsDir } from '../utils/paths';
+import { getOpenClawConfigDir, getOpenClawSkillsDir } from '../utils/paths';
 import { logger } from '../utils/logger';
 
 export interface CleanupOptions {
@@ -48,6 +49,10 @@ export interface CleanupOptions {
   skillsDir?: string;
   /** Override for ~/.agents/skills (mainly for tests). */
   agentsDir?: string;
+  /** Override for ~/.openclaw/workspace/skills (mainly for tests). */
+  workspaceSkillsDir?: string;
+  /** Override for ~/.openclaw/workspace/.agents/skills (mainly for tests). */
+  workspaceAgentsDir?: string;
 }
 
 export interface CleanupResult {
@@ -63,6 +68,14 @@ function defaultSkillsDir(): string {
 
 function defaultAgentsDir(): string {
   return path.join(homedir(), '.agents', 'skills');
+}
+
+function defaultWorkspaceSkillsDir(): string {
+  return path.join(getOpenClawConfigDir(), 'workspace', 'skills');
+}
+
+function defaultWorkspaceAgentsDir(): string {
+  return path.join(getOpenClawConfigDir(), 'workspace', '.agents', 'skills');
 }
 
 /**
@@ -107,10 +120,41 @@ function isInside(parent: string, child: string): boolean {
 }
 
 export function cleanupAgentsSymlinkedSkills(opts: CleanupOptions = {}): CleanupResult {
-  const skillsDir = opts.skillsDir ?? defaultSkillsDir();
-  const agentsDir = opts.agentsDir ?? defaultAgentsDir();
-  const result: CleanupResult = { removed: [], examined: 0 };
+  const hasMainOverrides = opts.skillsDir !== undefined || opts.agentsDir !== undefined;
+  const hasWorkspaceOverrides =
+    opts.workspaceSkillsDir !== undefined || opts.workspaceAgentsDir !== undefined;
+  const roots = [
+    {
+      skillsDir: opts.skillsDir ?? defaultSkillsDir(),
+      agentsDir: opts.agentsDir ?? defaultAgentsDir(),
+    },
+  ];
 
+  if (!hasMainOverrides || hasWorkspaceOverrides) {
+    roots.push({
+      skillsDir: opts.workspaceSkillsDir ?? defaultWorkspaceSkillsDir(),
+      agentsDir: opts.workspaceAgentsDir ?? defaultWorkspaceAgentsDir(),
+    });
+  }
+
+  const result: CleanupResult = { removed: [], examined: 0 };
+  const seenRoots = new Set<string>();
+
+  for (const root of roots) {
+    const rootKey = `${path.resolve(root.skillsDir)}\0${path.resolve(root.agentsDir)}`;
+    if (seenRoots.has(rootKey)) continue;
+    seenRoots.add(rootKey);
+
+    const rootResult = cleanupSkillsDir(root.skillsDir, root.agentsDir);
+    result.removed.push(...rootResult.removed);
+    result.examined += rootResult.examined;
+  }
+
+  return result;
+}
+
+function cleanupSkillsDir(skillsDir: string, agentsDir: string): CleanupResult {
+  const result: CleanupResult = { removed: [], examined: 0 };
   if (!existsSync(skillsDir)) {
     return result;
   }
@@ -150,10 +194,10 @@ export function cleanupAgentsSymlinkedSkills(opts: CleanupOptions = {}): Cleanup
     if (!isInside(agentsRealRoot, realTarget)) continue;
 
     try {
-      // rmSync({ force: true }) handles file symlinks, directory symlinks,
-      // and Windows junctions uniformly.  unlinkSync would raise EPERM on
-      // directory symlinks/junctions on Windows.
-      rmSync(entryPath, { force: true });
+      // rmSync handles file symlinks, directory symlinks, and Windows
+      // junctions uniformly.  unlinkSync would raise EPERM on directory
+      // symlinks/junctions on Windows.
+      rmSync(entryPath, { force: true, recursive: true });
       result.removed.push(entry.name);
     } catch (err) {
       logger.warn(`[skills-cleanup] Failed to remove ${entryPath}:`, err);

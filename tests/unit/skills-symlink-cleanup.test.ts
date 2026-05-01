@@ -45,14 +45,20 @@ describe('cleanupAgentsSymlinkedSkills', () => {
   let skillsDir: string;
   let agentsRootDir: string;
   let agentsSkillsDir: string;
+  let workspaceSkillsDir: string;
+  let workspaceAgentsSkillsDir: string;
 
   beforeEach(() => {
     root = mkdtempSync(path.join(tmpdir(), 'clawx-skills-cleanup-'));
     skillsDir = path.join(root, 'openclaw', 'skills');
     agentsRootDir = path.join(root, 'agents');
     agentsSkillsDir = path.join(agentsRootDir, 'skills');
+    workspaceSkillsDir = path.join(root, 'openclaw', 'workspace', 'skills');
+    workspaceAgentsSkillsDir = path.join(root, 'openclaw', 'workspace', '.agents', 'skills');
     mkdirSync(skillsDir, { recursive: true });
     mkdirSync(agentsSkillsDir, { recursive: true });
+    mkdirSync(workspaceSkillsDir, { recursive: true });
+    mkdirSync(workspaceAgentsSkillsDir, { recursive: true });
   });
 
   afterEach(() => {
@@ -61,6 +67,13 @@ describe('cleanupAgentsSymlinkedSkills', () => {
 
   function makeAgentSkill(name: string): string {
     const dir = path.join(agentsSkillsDir, name);
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(path.join(dir, 'SKILL.md'), '# test\n');
+    return dir;
+  }
+
+  function makeWorkspaceAgentSkill(name: string): string {
+    const dir = path.join(workspaceAgentsSkillsDir, name);
     mkdirSync(dir, { recursive: true });
     writeFileSync(path.join(dir, 'SKILL.md'), '# test\n');
     return dir;
@@ -89,6 +102,39 @@ describe('cleanupAgentsSymlinkedSkills', () => {
 
     expect(res.removed.sort()).toEqual(['lark-base', 'lark-doc', 'lark-im']);
     expect(res.examined).toBe(3);
+  });
+
+  it('also removes workspace skill symlinks that resolve into workspace .agents/skills', () => {
+    const personalTarget = makeAgentSkill('personal-skill');
+    symlinkSync(personalTarget, path.join(skillsDir, 'personal-skill'), SYMLINK_TYPE);
+
+    const workspaceTarget = makeWorkspaceAgentSkill('bytedcli');
+    const workspaceLink = path.join(workspaceSkillsDir, 'bytedcli');
+    symlinkSync(workspaceTarget, workspaceLink, SYMLINK_TYPE);
+
+    const res = cleanupAgentsSymlinkedSkills({
+      skillsDir,
+      agentsDir: agentsSkillsDir,
+      workspaceSkillsDir,
+      workspaceAgentsDir: workspaceAgentsSkillsDir,
+    });
+
+    expect(res.removed.sort()).toEqual(['bytedcli', 'personal-skill']);
+    expect(res.examined).toBe(2);
+    expect(existsSync(path.join(skillsDir, 'personal-skill'))).toBe(false);
+    expect(existsSync(workspaceLink)).toBe(false);
+    expect(existsSync(workspaceTarget)).toBe(true);
+  });
+
+  it('does not scan the default workspace root when only the main root is overridden', () => {
+    const workspaceTarget = makeWorkspaceAgentSkill('bytedcli');
+    const workspaceLink = path.join(workspaceSkillsDir, 'bytedcli');
+    symlinkSync(workspaceTarget, workspaceLink, SYMLINK_TYPE);
+
+    const res = cleanupAgentsSymlinkedSkills({ skillsDir, agentsDir: agentsSkillsDir });
+
+    expect(res).toEqual({ removed: [], examined: 0 });
+    expect(lstatSync(workspaceLink).isSymbolicLink()).toBe(true);
   });
 
   it('keeps in-tree symlinks and regular directories', () => {
@@ -220,7 +266,7 @@ describe('cleanupAgentsSymlinkedSkills', () => {
     expect(lstatSync(link).isSymbolicLink()).toBe(true);
   });
 
-  it('uses fs.rmSync({ force: true }) so directory symlinks/junctions delete on Windows', () => {
+  it('uses recursive fs.rmSync so directory symlinks/junctions delete reliably', () => {
     const target = makeAgentSkill('lark-rm');
     const link = path.join(skillsDir, 'lark-rm');
     symlinkSync(target, link, SYMLINK_TYPE);
@@ -232,7 +278,7 @@ describe('cleanupAgentsSymlinkedSkills', () => {
 
     const linkRmCall = rmSyncMock.mock.calls.find((args) => args[0] === link);
     expect(linkRmCall).toBeDefined();
-    expect(linkRmCall?.[1]).toEqual({ force: true });
+    expect(linkRmCall?.[1]).toEqual({ force: true, recursive: true });
   });
 
   it('matches paths case-insensitively when running on Win32', () => {

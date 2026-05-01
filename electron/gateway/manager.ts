@@ -138,6 +138,7 @@ export class GatewayManager extends EventEmitter {
   private readonly restartController = new GatewayRestartController();
   private readonly restartGovernor = new GatewayRestartGovernor();
   private reloadDebounceTimer: NodeJS.Timeout | null = null;
+  private initialReadyHeartbeatRecoveryTimer: NodeJS.Timeout | null = null;
   private reloadPolicy: GatewayReloadPolicy = { ...DEFAULT_GATEWAY_RELOAD_POLICY };
   private reloadPolicyLoadedAt = 0;
   private reloadPolicyRefreshPromise: Promise<void> | null = null;
@@ -156,6 +157,7 @@ export class GatewayManager extends EventEmitter {
   private static readonly HEARTBEAT_MAX_MISSES_WIN = 5;
   public static readonly RESTART_COOLDOWN_MS = 5_000;
   private static readonly GATEWAY_READY_FALLBACK_MS = 30_000;
+  private static readonly INITIAL_READY_HEARTBEAT_RECOVERY_GRACE_MS = 5 * 60_000;
   private lastRestartAt = 0;
   /** Set by scheduleReconnect() before calling start() to signal auto-reconnect. */
   private isAutoReconnectStart = false;
@@ -197,6 +199,7 @@ export class GatewayManager extends EventEmitter {
 
     this.on('gateway:ready', () => {
       this.clearGatewayReadyFallback();
+      this.clearInitialReadyHeartbeatRecoveryTimer();
       if (this.status.state === 'running' && !this.status.gatewayReady) {
         logger.info('Gateway subsystems ready (event received)');
         this.setStatus({ gatewayReady: true });
@@ -730,6 +733,7 @@ export class GatewayManager extends EventEmitter {
       this.reloadDebounceTimer = null;
     }
     this.clearGatewayReadyFallback();
+    this.clearInitialReadyHeartbeatRecoveryTimer();
   }
 
   private clearGatewayReadyFallback(): void {
@@ -851,6 +855,7 @@ export class GatewayManager extends EventEmitter {
   }
 
   private recordGatewayAlive(): void {
+    this.clearInitialReadyHeartbeatRecoveryTimer();
     this.diagnostics.lastAliveAt = Date.now();
     this.diagnostics.consecutiveHeartbeatMisses = 0;
   }
@@ -1100,12 +1105,52 @@ export class GatewayManager extends EventEmitter {
           logger.warn(`Gateway heartbeat recovery skipped (${reason})`);
           return;
         }
+        const initialReadyRecoveryDelayMs = this.getInitialReadyHeartbeatRecoveryDelayMs();
+        if (initialReadyRecoveryDelayMs > 0) {
+          logger.warn(
+            `Gateway heartbeat recovery deferred while waiting for initial gateway.ready ` +
+            `(retryAfterMs=${initialReadyRecoveryDelayMs})`,
+          );
+          this.scheduleInitialReadyHeartbeatRecovery(initialReadyRecoveryDelayMs);
+          return;
+        }
         logger.warn('Gateway heartbeat recovery: restarting unresponsive gateway process');
         void this.restart().catch((error) => {
           logger.warn('Gateway heartbeat recovery failed:', error);
         });
       },
     });
+  }
+
+  private getInitialReadyHeartbeatRecoveryDelayMs(now = Date.now()): number {
+    if (this.status.gatewayReady || !this.status.connectedAt) return 0;
+    const connectedForMs = Math.max(0, now - this.status.connectedAt);
+    return Math.max(0, GatewayManager.INITIAL_READY_HEARTBEAT_RECOVERY_GRACE_MS - connectedForMs);
+  }
+
+  private scheduleInitialReadyHeartbeatRecovery(delayMs: number): void {
+    if (this.initialReadyHeartbeatRecoveryTimer) return;
+    this.initialReadyHeartbeatRecoveryTimer = setTimeout(() => {
+      this.initialReadyHeartbeatRecoveryTimer = null;
+      if (
+        process.platform === 'win32'
+        || !this.shouldReconnect
+        || this.status.state !== 'running'
+        || this.status.gatewayReady
+      ) {
+        return;
+      }
+      logger.warn('Gateway heartbeat recovery: initial gateway.ready grace expired, restarting unresponsive gateway process');
+      void this.restart().catch((error) => {
+        logger.warn('Gateway heartbeat recovery failed:', error);
+      });
+    }, delayMs);
+  }
+
+  private clearInitialReadyHeartbeatRecoveryTimer(): void {
+    if (!this.initialReadyHeartbeatRecoveryTimer) return;
+    clearTimeout(this.initialReadyHeartbeatRecoveryTimer);
+    this.initialReadyHeartbeatRecoveryTimer = null;
   }
 
   /**

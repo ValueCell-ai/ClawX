@@ -556,6 +556,117 @@ describe('sanitizeOpenClawConfig', () => {
     expect(entries['minimax-portal-auth']).toBeUndefined();
     expect(entries['custom-plugin']).toEqual({ enabled: true });
   });
+
+  it('removes stale bundled OpenClaw dist extension paths from plugins.load.paths', async () => {
+    const staleAcpxPath = join(
+      testHome,
+      'old-workspace',
+      'node_modules',
+      '.pnpm',
+      'openclaw@2026.4.11_hash',
+      'node_modules',
+      'openclaw',
+      'dist',
+      'extensions',
+      'acpx',
+    );
+    await mkdir(staleAcpxPath, { recursive: true });
+    await writeOpenClawJson({
+      plugins: {
+        load: {
+          paths: [staleAcpxPath],
+        },
+        entries: {
+          acpx: {
+            enabled: true,
+          },
+        },
+      },
+    });
+
+    const { sanitizeOpenClawConfig } = await import('@electron/utils/openclaw-auth');
+    await sanitizeOpenClawConfig();
+
+    const result = await readOpenClawJson();
+    const plugins = result.plugins as Record<string, unknown>;
+    expect(plugins.load).toBeUndefined();
+    expect((plugins.entries as Record<string, unknown>).acpx).toEqual({ enabled: true });
+  });
+
+  it('removes missing external plugin ids from plugins.allow while preserving installed and configured plugins', async () => {
+    const installedPluginDir = join(testHome, '.openclaw', 'extensions', 'custom-installed');
+    await mkdir(installedPluginDir, { recursive: true });
+    await writeFile(
+      join(installedPluginDir, 'openclaw.plugin.json'),
+      JSON.stringify({ id: 'custom-installed' }, null, 2),
+      'utf8',
+    );
+    await writeOpenClawJson({
+      plugins: {
+        allow: ['custom-installed', 'configured-plugin', 'missing-plugin'],
+        entries: {
+          'configured-plugin': { enabled: true },
+        },
+      },
+    });
+
+    const { sanitizeOpenClawConfig } = await import('@electron/utils/openclaw-auth');
+    await sanitizeOpenClawConfig();
+
+    const result = await readOpenClawJson();
+    const plugins = result.plugins as Record<string, unknown>;
+    const allow = plugins.allow as string[];
+
+    expect(allow).toEqual(['custom-installed', 'configured-plugin']);
+    expect((plugins.entries as Record<string, unknown>)['configured-plugin']).toEqual({ enabled: true });
+  });
+
+  it('limits enabled-by-default provider plugins in plugins.allow to active providers', async () => {
+    const openclawDir = join(testHome, '.openclaw-package-allowlist');
+    const extensionsRoot = join(openclawDir, 'dist', 'extensions');
+    for (const manifest of [
+      { dir: 'browser', id: 'browser', enabledByDefault: true },
+      { dir: 'openrouter', id: 'openrouter', enabledByDefault: true, providers: ['openrouter'] },
+      { dir: 'anthropic', id: 'anthropic', enabledByDefault: true, providers: ['anthropic'] },
+    ]) {
+      const pluginDir = join(extensionsRoot, manifest.dir);
+      await mkdir(pluginDir, { recursive: true });
+      await writeFile(join(pluginDir, 'openclaw.plugin.json'), JSON.stringify(manifest, null, 2), 'utf8');
+    }
+    await writeOpenClawJson({
+      plugins: {
+        allow: ['custom-plugin', 'browser', 'openrouter', 'anthropic'],
+        entries: {
+          'custom-plugin': { enabled: true },
+        },
+      },
+      models: {
+        providers: {
+          openrouter: {},
+        },
+      },
+    });
+    vi.doMock('@electron/utils/paths', async () => {
+      const actual = await vi.importActual<typeof import('@electron/utils/paths')>('@electron/utils/paths');
+      return {
+        ...actual,
+        getOpenClawResolvedDir: () => openclawDir,
+        getOpenClawDir: () => openclawDir,
+      };
+    });
+
+    const { sanitizeOpenClawConfig } = await import('@electron/utils/openclaw-auth');
+    await sanitizeOpenClawConfig();
+
+    const result = await readOpenClawJson();
+    const plugins = result.plugins as Record<string, unknown>;
+    const allow = plugins.allow as string[];
+
+    expect(allow).toContain('custom-plugin');
+    expect(allow).toContain('browser');
+    expect(allow).toContain('openrouter');
+    expect(allow).not.toContain('anthropic');
+  });
 });
 
 describe('syncProviderConfigToOpenClaw', () => {
