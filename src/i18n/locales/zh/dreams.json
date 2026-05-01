@@ -67,6 +67,7 @@
     },
     "errors": {
         "openFullUi": "无法打开完整 OpenClaw Dreams UI。",
-        "configHashMissing": "无法更新梦境，因为配置 base hash 不可用。"
+        "configHashMissing": "无法更新梦境，因为配置 base hash 不可用。",
+        "memoryInitializing": "梦境记忆仍在初始化。请在网关完成启动后重试。"
     }
 }

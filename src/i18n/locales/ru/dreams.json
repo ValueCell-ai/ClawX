@@ -67,6 +67,7 @@
     },
     "errors": {
         "openFullUi": "Не удалось открыть полный OpenClaw Dreams UI.",
-        "configHashMissing": "Не удалось обновить Dreams: недоступен config base hash."
+        "configHashMissing": "Не удалось обновить Dreams: недоступен config base hash.",
+        "memoryInitializing": "Память Dreams еще инициализируется. Повторите попытку после завершения запуска Gateway."
     }
 }

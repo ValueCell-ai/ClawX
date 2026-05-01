@@ -206,6 +206,14 @@ function firstNumber(result: unknown, keys: string[]): number | undefined {
   return undefined;
 }
 
+function isMemoryDoctorStartupError(message: string): boolean {
+  const lower = message.toLowerCase();
+  return lower.includes('rpc timeout: doctor.memory.')
+    || lower.includes('service not initialized')
+    || lower.includes('not yet ready')
+    || lower.includes('unavailable during gateway startup');
+}
+
 export function Dreams() {
   const { t } = useTranslation(['dreams', 'common']);
   const gatewayStatus = useGatewayStore((state) => state.status);
@@ -223,8 +231,10 @@ export function Dreams() {
   const refreshInFlightRef = useRef<Promise<void> | null>(null);
 
   const gatewayRunning = gatewayStatus.state === 'running';
+  const gatewayReady = gatewayStatus.gatewayReady !== false;
+  const dreamsReady = gatewayRunning && gatewayReady;
   const busy = runningAction != null || runningToggle != null;
-  const actionsDisabled = !gatewayRunning || busy;
+  const actionsDisabled = !dreamsReady || busy;
 
   const diaryEntries = useMemo(() => parseDreamDiary(diary?.content).slice(0, 4), [diary?.content]);
   const recentSignals = useMemo(() => {
@@ -238,7 +248,7 @@ export function Dreams() {
       return refreshInFlightRef.current;
     }
 
-    if (!gatewayRunning) {
+    if (!dreamsReady) {
       setLoading(false);
       setError(null);
       return;
@@ -257,7 +267,7 @@ export function Dreams() {
         setDiary(diaryResponse);
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
-        setError(message);
+        setError(isMemoryDoctorStartupError(message) ? t('errors.memoryInitializing') : message);
       } finally {
         setLoading(false);
         if (refreshInFlightRef.current === refreshPromise) {
@@ -268,7 +278,7 @@ export function Dreams() {
 
     refreshInFlightRef.current = refreshPromise;
     return refreshPromise;
-  }, [gatewayRunning, rpc]);
+  }, [dreamsReady, rpc, t]);
 
   useEffect(() => {
     void refreshAll();
@@ -407,7 +417,7 @@ export function Dreams() {
             variant={dreaming?.enabled ? 'outline' : 'default'}
             size="sm"
             onClick={() => void setDreamingEnabled(!dreaming?.enabled)}
-            disabled={!gatewayRunning || busy || loading}
+            disabled={!dreamsReady || busy || loading}
             className={dreaming?.enabled ? QUIET_BUTTON_CLASS : undefined}
           >
             {runningToggle ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Power className="mr-2 h-4 w-4" />}
@@ -418,7 +428,7 @@ export function Dreams() {
             variant="outline"
             size="sm"
             onClick={() => void refreshAll({ force: true })}
-            disabled={!gatewayRunning}
+            disabled={!dreamsReady}
             className={QUIET_BUTTON_CLASS}
           >
             {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-2 h-4 w-4" />}
@@ -439,7 +449,7 @@ export function Dreams() {
       </header>
 
       <main className="min-h-0 flex-1 overflow-auto px-10 pb-10">
-        {!gatewayRunning && (
+        {!dreamsReady && (
           <div className="mb-4 rounded-lg border border-black/10 bg-surface-input px-4 py-3 text-sm text-foreground/70 dark:border-white/10">
             {t('gatewayNotReady')}
           </div>
