@@ -743,11 +743,28 @@ export class GatewayManager extends EventEmitter {
     this.clearGatewayReadyFallback();
     this.gatewayReadyFallbackTimer = setTimeout(() => {
       this.gatewayReadyFallbackTimer = null;
+      void this.probeGatewayReadyFallback();
+    }, GatewayManager.GATEWAY_READY_FALLBACK_MS);
+  }
+
+  private async probeGatewayReadyFallback(): Promise<void> {
+    if (this.status.state !== 'running' || this.status.gatewayReady) {
+      return;
+    }
+
+    logger.info('Gateway ready fallback triggered; probing health before marking ready');
+    try {
+      await this.rpc('health', {}, 5_000);
       if (this.status.state === 'running' && !this.status.gatewayReady) {
-        logger.info('Gateway ready fallback triggered (no gateway.ready event within timeout)');
+        logger.info('Gateway ready fallback health probe succeeded');
         this.setStatus({ gatewayReady: true });
       }
-    }, GatewayManager.GATEWAY_READY_FALLBACK_MS);
+    } catch (error) {
+      logger.warn('Gateway ready fallback health probe failed; waiting for gateway.ready event or heartbeat recovery:', error);
+      if (this.status.state === 'running' && !this.status.gatewayReady) {
+        this.scheduleGatewayReadyFallback();
+      }
+    }
   }
 
   /**

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Archive,
   BookOpen,
@@ -216,6 +216,7 @@ export function Dreams() {
   const [lastActionMessage, setLastActionMessage] = useState<string | null>(null);
   const [pendingConfirmation, setPendingConfirmation] = useState<PendingConfirmation | null>(null);
   const [openingFullUi, setOpeningFullUi] = useState(false);
+  const refreshInFlightRef = useRef<Promise<void> | null>(null);
 
   const gatewayReady = gatewayStatus.state === 'running' && gatewayStatus.gatewayReady !== false;
   const busy = runningAction != null || runningToggle != null;
@@ -229,27 +230,37 @@ export function Dreams() {
   }, [dreaming?.promotedEntries, dreaming?.shortTermEntries]);
 
   const refreshAll = useCallback(async () => {
+    if (refreshInFlightRef.current) {
+      return refreshInFlightRef.current;
+    }
+
     if (!gatewayReady) {
       setLoading(false);
       setError(null);
       return;
     }
 
-    setLoading(true);
-    setError(null);
-    try {
-      const [statusResponse, diaryResponse] = await Promise.all([
-        rpc<unknown>('doctor.memory.status', {}, 12_000),
-        rpc<DreamDiaryResponse>('doctor.memory.dreamDiary', {}, 12_000),
-      ]);
-      setDreaming(normalizeDreamingStatus(statusResponse));
-      setDiary(diaryResponse);
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      setError(message);
-    } finally {
-      setLoading(false);
-    }
+    const refreshPromise = (async () => {
+      setLoading(true);
+      setError(null);
+      try {
+        const [statusResponse, diaryResponse] = await Promise.all([
+          rpc<unknown>('doctor.memory.status', {}, 12_000),
+          rpc<DreamDiaryResponse>('doctor.memory.dreamDiary', {}, 12_000),
+        ]);
+        setDreaming(normalizeDreamingStatus(statusResponse));
+        setDiary(diaryResponse);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        setError(message);
+      } finally {
+        setLoading(false);
+        refreshInFlightRef.current = null;
+      }
+    })();
+
+    refreshInFlightRef.current = refreshPromise;
+    return refreshPromise;
   }, [gatewayReady, rpc]);
 
   useEffect(() => {

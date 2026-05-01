@@ -72,10 +72,12 @@ describe('GatewayManager gatewayReady fallback', () => {
     expect(readyUpdate).toBeDefined();
   });
 
-  it('auto-sets gatewayReady=true after fallback timeout if no event received', async () => {
+  it('auto-sets gatewayReady=true after fallback health probe succeeds', async () => {
     vi.resetModules();
     const { GatewayManager } = await import('@electron/gateway/manager');
     const manager = new GatewayManager();
+    vi.spyOn(manager as unknown as { rpc: (method: string, params?: unknown, timeoutMs?: number) => Promise<unknown> }, 'rpc')
+      .mockResolvedValue({ ok: true });
 
     // Force internal state to 'running' without gatewayReady
     const stateController = (manager as unknown as { stateController: { setStatus: (u: Record<string, unknown>) => void } }).stateController;
@@ -90,13 +92,34 @@ describe('GatewayManager gatewayReady fallback', () => {
     (manager as unknown as { scheduleGatewayReadyFallback: () => void }).scheduleGatewayReadyFallback();
 
     // Before timeout, no gatewayReady update
-    vi.advanceTimersByTime(29_000);
+    await vi.advanceTimersByTimeAsync(29_000);
     expect(statusUpdates.find((u) => u.gatewayReady === true)).toBeUndefined();
 
-    // After 30s fallback timeout
-    vi.advanceTimersByTime(2_000);
+    // After 30s fallback timeout, a successful health probe marks the gateway ready.
+    await vi.advanceTimersByTimeAsync(2_000);
     const readyUpdate = statusUpdates.find((u) => u.gatewayReady === true);
     expect(readyUpdate).toBeDefined();
+  });
+
+  it('keeps gatewayReady=false when fallback health probe fails', async () => {
+    vi.resetModules();
+    const { GatewayManager } = await import('@electron/gateway/manager');
+    const manager = new GatewayManager();
+    vi.spyOn(manager as unknown as { rpc: (method: string, params?: unknown, timeoutMs?: number) => Promise<unknown> }, 'rpc')
+      .mockRejectedValue(new Error('RPC timeout: health'));
+
+    const stateController = (manager as unknown as { stateController: { setStatus: (u: Record<string, unknown>) => void } }).stateController;
+    stateController.setStatus({ state: 'running', connectedAt: Date.now() });
+
+    const statusUpdates: Array<{ gatewayReady?: boolean }> = [];
+    manager.on('status', (status: { gatewayReady?: boolean }) => {
+      statusUpdates.push({ gatewayReady: status.gatewayReady });
+    });
+
+    (manager as unknown as { scheduleGatewayReadyFallback: () => void }).scheduleGatewayReadyFallback();
+
+    await vi.advanceTimersByTimeAsync(31_000);
+    expect(statusUpdates.find((u) => u.gatewayReady === true)).toBeUndefined();
   });
 
   it('cancels fallback timer when gateway:ready event arrives first', async () => {
@@ -116,12 +139,12 @@ describe('GatewayManager gatewayReady fallback', () => {
     (manager as unknown as { scheduleGatewayReadyFallback: () => void }).scheduleGatewayReadyFallback();
 
     // gateway:ready event arrives at 5s
-    vi.advanceTimersByTime(5_000);
+    await vi.advanceTimersByTimeAsync(5_000);
     manager.emit('gateway:ready', {});
     expect(statusUpdates.filter((u) => u.gatewayReady === true)).toHaveLength(1);
 
     // After 30s, no duplicate gatewayReady=true
-    vi.advanceTimersByTime(30_000);
+    await vi.advanceTimersByTimeAsync(30_000);
     expect(statusUpdates.filter((u) => u.gatewayReady === true)).toHaveLength(1);
   });
 });
