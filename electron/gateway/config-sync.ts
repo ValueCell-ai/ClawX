@@ -28,7 +28,7 @@ import { logger } from '../utils/logger';
 import { prependPathEntry } from '../utils/env-path';
 import { copyPluginFromNodeModules, fixupPluginManifest, cpSyncSafe } from '../utils/plugin-install';
 import { stripSystemdSupervisorEnv } from './config-sync-env';
-import { cleanupAgentsSymlinkedSkills } from './skills-symlink-cleanup';
+import { cleanupAgentsSymlinkedSkills, cleanupStalePluginRuntimeDeps } from './skills-symlink-cleanup';
 
 
 export interface GatewayLaunchContext {
@@ -313,6 +313,16 @@ export async function syncGatewayConfigBeforeLaunch(
     cleanupAgentsSymlinkedSkills();
   } catch (err) {
     logger.warn('Failed to clean .agents/skills-targeted skill symlinks:', err);
+  }
+
+  // Remove stale OpenClaw runtime-deps cache roots that point at an older
+  // worktree/package.  Those symlink trees can make Gateway plugin setup spend
+  // a long time in synchronous fs.open/copy calls before the RPC router is
+  // responsive.
+  try {
+    cleanupStalePluginRuntimeDeps();
+  } catch (err) {
+    logger.warn('Failed to clean stale OpenClaw plugin runtime deps:', err);
   }
 
   // Auto-upgrade installed plugins before Gateway starts so that

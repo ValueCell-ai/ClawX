@@ -621,11 +621,43 @@ describe('sanitizeOpenClawConfig', () => {
     expect((plugins.entries as Record<string, unknown>)['configured-plugin']).toEqual({ enabled: true });
   });
 
+  it('preserves allowlisted plugins loaded from local plugin paths', async () => {
+    const loadedPluginDir = join(testHome, 'local-plugins', 'custom-loaded');
+    await mkdir(loadedPluginDir, { recursive: true });
+    await writeFile(
+      join(loadedPluginDir, 'openclaw.plugin.json'),
+      JSON.stringify({ id: 'custom-loaded' }, null, 2),
+      'utf8',
+    );
+    await writeOpenClawJson({
+      plugins: {
+        allow: ['custom-loaded', 'missing-plugin'],
+        load: {
+          paths: [loadedPluginDir],
+        },
+      },
+    });
+
+    const { sanitizeOpenClawConfig } = await import('@electron/utils/openclaw-auth');
+    await sanitizeOpenClawConfig();
+
+    const result = await readOpenClawJson();
+    const plugins = result.plugins as Record<string, unknown>;
+    const allow = plugins.allow as string[];
+    const load = plugins.load as Record<string, unknown>;
+
+    expect(allow).toEqual(['custom-loaded']);
+    expect(load.paths).toEqual([loadedPluginDir]);
+  });
+
   it('limits enabled-by-default provider plugins in plugins.allow to active providers', async () => {
     const openclawDir = join(testHome, '.openclaw-package-allowlist');
     const extensionsRoot = join(openclawDir, 'dist', 'extensions');
     for (const manifest of [
       { dir: 'browser', id: 'browser', enabledByDefault: true },
+      { dir: 'groq', id: 'groq', enabledByDefault: true },
+      { dir: 'alibaba', id: 'alibaba', enabledByDefault: true },
+      { dir: 'memory-core', id: 'memory-core' },
       { dir: 'openrouter', id: 'openrouter', enabledByDefault: true, providers: ['openrouter'] },
       { dir: 'anthropic', id: 'anthropic', enabledByDefault: true, providers: ['anthropic'] },
     ]) {
@@ -638,10 +670,12 @@ describe('sanitizeOpenClawConfig', () => {
         allow: ['custom-plugin', 'browser', 'openrouter', 'anthropic'],
         entries: {
           'custom-plugin': { enabled: true },
+          'memory-core': { config: { dreaming: { enabled: true } } },
         },
       },
       models: {
         providers: {
+          alibaba: {},
           openrouter: {},
         },
       },
@@ -664,6 +698,9 @@ describe('sanitizeOpenClawConfig', () => {
 
     expect(allow).toContain('custom-plugin');
     expect(allow).toContain('browser');
+    expect(allow).toContain('memory-core');
+    expect(allow).toContain('alibaba');
+    expect(allow).not.toContain('groq');
     expect(allow).toContain('openrouter');
     expect(allow).not.toContain('anthropic');
   });

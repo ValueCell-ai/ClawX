@@ -10,7 +10,7 @@
  */
 import { access, mkdir, readFile, readdir, writeFile } from 'fs/promises';
 import { constants, readdirSync, readFileSync, existsSync } from 'fs';
-import { join } from 'path';
+import { dirname, join } from 'path';
 import { homedir } from 'os';
 import { listConfiguredAgentIds } from './agent-config';
 import { getOpenClawResolvedDir } from './paths';
@@ -449,6 +449,17 @@ const BUILTIN_CHANNEL_IDS = new Set([
   'mattermost',
   'qqbot',
 ]);
+const OPTIONAL_PROVIDER_LIKE_BUNDLED_PLUGIN_IDS = new Set([
+  'alibaba',
+  'deepgram',
+  'elevenlabs',
+  'groq',
+  'microsoft',
+  'phone-control',
+  'runway',
+  'talk-voice',
+  'voyage',
+]);
 const AUTH_PROFILE_PROVIDER_KEY_MAP: Record<string, string> = {
   'openai-codex': 'openai',
   'google-gemini-cli': 'google',
@@ -635,6 +646,63 @@ async function discoverInstalledExtensionPluginIds(): Promise<Set<string>> {
     const manifest = await readJsonFile<{ id?: unknown }>(manifestPath);
     if (typeof manifest?.id === 'string' && manifest.id.trim()) {
       ids.add(manifest.id.trim());
+    }
+  }
+
+  return ids;
+}
+
+function collectPluginLoadPathsFromConfig(plugins: unknown): string[] {
+  const paths: string[] = [];
+  const pushPath = (value: unknown): void => {
+    if (typeof value === 'string' && value.trim()) {
+      paths.push(value);
+    }
+  };
+
+  if (Array.isArray(plugins)) {
+    for (const value of plugins) pushPath(value);
+    return paths;
+  }
+
+  if (!isPlainRecord(plugins)) {
+    return paths;
+  }
+
+  const load = plugins.load;
+  if (Array.isArray(load)) {
+    for (const value of load) pushPath(value);
+  } else if (isPlainRecord(load) && Array.isArray(load.paths)) {
+    for (const value of load.paths) pushPath(value);
+  }
+
+  return paths;
+}
+
+async function readPluginManifestIdFromPath(pluginPath: string): Promise<string | null> {
+  const candidates = [
+    join(pluginPath, 'openclaw.plugin.json'),
+    join(dirname(pluginPath), 'openclaw.plugin.json'),
+  ];
+
+  for (const manifestPath of candidates) {
+    const manifest = await readJsonFile<{ id?: unknown }>(manifestPath);
+    if (typeof manifest?.id === 'string' && manifest.id.trim()) {
+      return manifest.id.trim();
+    }
+  }
+
+  return null;
+}
+
+async function discoverLoadedPluginIdsFromConfig(config: Record<string, unknown>): Promise<Set<string>> {
+  const ids = new Set<string>();
+  const pluginPaths = collectPluginLoadPathsFromConfig(config.plugins);
+
+  for (const pluginPath of pluginPaths) {
+    const pluginId = await readPluginManifestIdFromPath(pluginPath);
+    if (pluginId) {
+      ids.add(pluginId);
     }
   }
 
@@ -2213,6 +2281,7 @@ export async function sanitizeOpenClawConfig(): Promise<void> {
       // configured, or needed by the active provider config.
       const bundled = discoverBundledPlugins();
       const installedExtensionIds = await discoverInstalledExtensionPluginIds();
+      const loadedPluginIds = await discoverLoadedPluginIdsFromConfig(config);
       const activeProviderIds = await collectActiveProviderIdsFromConfig(config);
 
       const externalPluginIds: string[] = [];
@@ -2220,7 +2289,8 @@ export async function sanitizeOpenClawConfig(): Promise<void> {
         if (BUILTIN_CHANNEL_IDS.has(pluginId) || bundled.all.has(pluginId)) continue;
         const isConfiguredExternal = Boolean(pEntries[pluginId]);
         const isInstalledExternal = installedExtensionIds.has(pluginId);
-        if (!isConfiguredExternal && !isInstalledExternal) {
+        const isLoadedExternal = loadedPluginIds.has(pluginId);
+        if (!isConfiguredExternal && !isInstalledExternal && !isLoadedExternal) {
           console.log(`[sanitize] Removed missing external plugin from plugins.allow: ${pluginId}`);
           modified = true;
           continue;
@@ -2247,6 +2317,18 @@ export async function sanitizeOpenClawConfig(): Promise<void> {
       // out.  Keep always-on non-provider plugins plus provider plugins that
       // the current config/auth profile actually uses.
       if (nextAllow.length > 0) {
+        for (const pluginId of Object.keys(pEntries)) {
+          if (!bundled.all.has(pluginId)) continue;
+          const entry = isPlainRecord(pEntries[pluginId]) ? pEntries[pluginId] as Record<string, unknown> : {};
+          if (entry.enabled === false) continue;
+          if (pluginId === 'feishu' && (!isFeishuConfigured || canonicalFeishuId !== 'feishu')) {
+            continue;
+          }
+          if (!nextAllow.includes(pluginId)) {
+            nextAllow.push(pluginId);
+          }
+        }
+
         for (const pluginId of bundled.enabledByDefault) {
           // When feishu is not configured at all, or the official
           // openclaw-lark plugin replaces the built-in 'feishu' extension,
@@ -2258,9 +2340,11 @@ export async function sanitizeOpenClawConfig(): Promise<void> {
           }
           const manifest = bundled.manifestsById.get(pluginId);
           const providerIds = manifest?.providers ?? [];
-          const isProviderPlugin = providerIds.length > 0;
           const isConfiguredPlugin = Boolean(pEntries[pluginId]);
-          const isActiveProviderPlugin = providerIds.some((providerId) => activeProviderIds.has(providerId));
+          const isProviderPlugin = providerIds.length > 0
+            || OPTIONAL_PROVIDER_LIKE_BUNDLED_PLUGIN_IDS.has(pluginId);
+          const isActiveProviderPlugin = providerIds.some((providerId) => activeProviderIds.has(providerId))
+            || activeProviderIds.has(pluginId);
           if (isProviderPlugin && !isConfiguredPlugin && !isActiveProviderPlugin) {
             continue;
           }
