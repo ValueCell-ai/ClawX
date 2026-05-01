@@ -752,15 +752,15 @@ export class GatewayManager extends EventEmitter {
       return;
     }
 
-    logger.info('Gateway ready fallback triggered; probing health before marking ready');
+    logger.info('Gateway ready fallback triggered; probing RPC router before marking ready');
     try {
-      await this.rpc('health', {}, 5_000);
+      await this.rpc('system-presence', {}, 5_000);
       if (this.status.state === 'running' && !this.status.gatewayReady) {
-        logger.info('Gateway ready fallback health probe succeeded');
+        logger.info('Gateway ready fallback RPC router probe succeeded');
         this.setStatus({ gatewayReady: true });
       }
     } catch (error) {
-      logger.warn('Gateway ready fallback health probe failed; waiting for gateway.ready event or heartbeat recovery:', error);
+      logger.warn('Gateway ready fallback RPC router probe failed; waiting for gateway.ready event or heartbeat recovery:', error);
       if (this.status.state === 'running' && !this.status.gatewayReady) {
         this.scheduleGatewayReadyFallback();
       }

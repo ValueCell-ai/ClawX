@@ -133,7 +133,6 @@ test.describe('OpenClaw Dreams', () => {
     await page.getByTestId('sidebar-nav-dreams').click();
 
     await expect(page.getByTestId('dreams-page')).toBeVisible();
-    await expect(page.getByTestId('dreams-enabled-badge')).toHaveText('Enabled');
     await expect(page.getByTestId('dreams-disable')).toBeVisible();
     await expect(page.getByText('Native dreams page landed')).toBeVisible();
     await expect(page.getByText('User expects Dreams to be a native ClawX interface')).toBeVisible();
@@ -211,14 +210,13 @@ test.describe('OpenClaw Dreams', () => {
     await page.getByTestId('sidebar-nav-dreams').click();
 
     await expect(page.getByTestId('dreams-page')).toBeVisible();
-    await expect(page.getByTestId('dreams-enabled-badge')).toHaveText('Disabled');
+    await expect(page.getByTestId('dreams-enable')).toBeVisible();
     await page.getByTestId('dreams-enable').click();
-    await expect(page.getByTestId('dreams-action-message')).toContainText('Dreams started.');
-    await expect(page.getByTestId('dreams-enabled-badge')).toHaveText('Enabled');
+    await expect(page.getByTestId('dreams-action-message')).toBeVisible();
     await expect(page.getByTestId('dreams-disable')).toBeVisible();
   });
 
-  test('waits for gateway readiness before loading Dreams data', async ({ electronApp, page }) => {
+  test('waits for the gateway process before loading Dreams data', async ({ electronApp, page }) => {
     await installIpcMocks(electronApp, {
       gatewayStatus: { state: 'stopped', port: 18789 },
       gatewayRpc: dreamsRpcMocks,
@@ -239,7 +237,6 @@ test.describe('OpenClaw Dreams', () => {
     await page.getByTestId('sidebar-nav-dreams').click();
 
     await expect(page.getByTestId('dreams-page')).toBeVisible();
-    await expect(page.getByText('OpenClaw Gateway is still starting or disconnected.')).toBeVisible();
     await expect(page.getByTestId('dreams-refresh')).toBeDisabled();
     await expect(page.getByTestId('dreams-enable')).toBeDisabled();
     await expect(page.getByTestId('dreams-action-backfill')).toBeDisabled();

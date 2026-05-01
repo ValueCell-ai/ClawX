@@ -92,6 +92,10 @@ interface ConfigSnapshot {
 type DreamActionKey = 'backfill' | 'dedupe' | 'repair' | 'resetDiary' | 'resetGrounded';
 type DreamToggleKey = 'enable' | 'disable';
 
+interface RefreshOptions {
+  force?: boolean;
+}
+
 interface PendingConfirmation {
   action: DreamActionKey;
   title: string;
@@ -218,9 +222,9 @@ export function Dreams() {
   const [openingFullUi, setOpeningFullUi] = useState(false);
   const refreshInFlightRef = useRef<Promise<void> | null>(null);
 
-  const gatewayReady = gatewayStatus.state === 'running' && gatewayStatus.gatewayReady !== false;
+  const gatewayRunning = gatewayStatus.state === 'running';
   const busy = runningAction != null || runningToggle != null;
-  const actionsDisabled = !gatewayReady || busy;
+  const actionsDisabled = !gatewayRunning || busy;
 
   const diaryEntries = useMemo(() => parseDreamDiary(diary?.content).slice(0, 4), [diary?.content]);
   const recentSignals = useMemo(() => {
@@ -229,18 +233,19 @@ export function Dreams() {
     return [...shortTerm, ...promoted].slice(0, 6);
   }, [dreaming?.promotedEntries, dreaming?.shortTermEntries]);
 
-  const refreshAll = useCallback(async () => {
-    if (refreshInFlightRef.current) {
+  const refreshAll = useCallback(async (options?: RefreshOptions) => {
+    if (refreshInFlightRef.current && !options?.force) {
       return refreshInFlightRef.current;
     }
 
-    if (!gatewayReady) {
+    if (!gatewayRunning) {
       setLoading(false);
       setError(null);
       return;
     }
 
-    const refreshPromise = (async () => {
+    let refreshPromise!: Promise<void>;
+    refreshPromise = (async () => {
       setLoading(true);
       setError(null);
       try {
@@ -255,13 +260,15 @@ export function Dreams() {
         setError(message);
       } finally {
         setLoading(false);
-        refreshInFlightRef.current = null;
+        if (refreshInFlightRef.current === refreshPromise) {
+          refreshInFlightRef.current = null;
+        }
       }
     })();
 
     refreshInFlightRef.current = refreshPromise;
     return refreshPromise;
-  }, [gatewayReady, rpc]);
+  }, [gatewayRunning, rpc]);
 
   useEffect(() => {
     void refreshAll();
@@ -400,7 +407,7 @@ export function Dreams() {
             variant={dreaming?.enabled ? 'outline' : 'default'}
             size="sm"
             onClick={() => void setDreamingEnabled(!dreaming?.enabled)}
-            disabled={!gatewayReady || busy || loading}
+            disabled={!gatewayRunning || busy || loading}
             className={dreaming?.enabled ? QUIET_BUTTON_CLASS : undefined}
           >
             {runningToggle ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Power className="mr-2 h-4 w-4" />}
@@ -410,8 +417,8 @@ export function Dreams() {
             data-testid="dreams-refresh"
             variant="outline"
             size="sm"
-            onClick={() => void refreshAll()}
-            disabled={loading || !gatewayReady}
+            onClick={() => void refreshAll({ force: true })}
+            disabled={!gatewayRunning}
             className={QUIET_BUTTON_CLASS}
           >
             {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-2 h-4 w-4" />}
@@ -422,7 +429,7 @@ export function Dreams() {
             variant="secondary"
             size="sm"
             onClick={() => void openFullDreams()}
-            disabled={openingFullUi || !gatewayReady}
+            disabled={openingFullUi || !gatewayRunning}
             className="border border-black/10 bg-card text-foreground shadow-sm hover:bg-black/5 dark:border-white/10 dark:bg-card dark:hover:bg-white/5"
           >
             {openingFullUi ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <ExternalLink className="mr-2 h-4 w-4" />}
@@ -432,7 +439,7 @@ export function Dreams() {
       </header>
 
       <main className="min-h-0 flex-1 overflow-auto px-10 pb-10">
-        {!gatewayReady && (
+        {!gatewayRunning && (
           <div className="mb-4 rounded-lg border border-black/10 bg-surface-input px-4 py-3 text-sm text-foreground/70 dark:border-white/10">
             {t('gatewayNotReady')}
           </div>
