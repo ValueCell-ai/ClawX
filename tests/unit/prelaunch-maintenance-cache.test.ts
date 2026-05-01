@@ -76,6 +76,33 @@ describe('prelaunch maintenance cache', () => {
     expect(task).toHaveBeenCalledTimes(1);
   });
 
+  it('does not cache a task that reports maintenance failure', () => {
+    const cacheKey = buildPrelaunchMaintenanceCacheKey({
+      task: 'plugin-maintenance',
+      appVersion: '1.0.0',
+      configuredChannels: ['feishu'],
+    });
+    const task = vi.fn()
+      .mockReturnValueOnce(false)
+      .mockReturnValueOnce(true);
+
+    expect(runCachedPrelaunchMaintenanceTask(
+      'plugin-maintenance',
+      cacheKey,
+      task,
+      { cachePath },
+    )).toEqual({ executed: true, reason: 'task-failed' });
+    expect(task).toHaveBeenCalledTimes(1);
+
+    expect(runCachedPrelaunchMaintenanceTask(
+      'plugin-maintenance',
+      cacheKey,
+      task,
+      { cachePath },
+    )).toEqual({ executed: true, reason: 'cache-miss' });
+    expect(task).toHaveBeenCalledTimes(2);
+  });
+
   it('reruns a task when the cache key changes', () => {
     const task = vi.fn();
     const firstKey = buildPrelaunchMaintenanceCacheKey({

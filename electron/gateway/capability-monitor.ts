@@ -109,10 +109,10 @@ export class GatewayCapabilityMonitor {
       core: {
         process: params.status.state,
         transport: params.transportConnected ? 'connected' : 'disconnected',
-        rpcRouter: params.status.gatewayReady === true || this.lastCoreProbe?.ok === true
-          ? 'ready'
-          : this.lastCoreProbe?.ok === false
-            ? 'blocked'
+        rpcRouter: this.lastCoreProbe?.ok === false
+          ? 'blocked'
+          : params.status.gatewayReady === true || this.lastCoreProbe?.ok === true
+            ? 'ready'
             : 'unknown',
         lastProbe: this.lastCoreProbe,
       },

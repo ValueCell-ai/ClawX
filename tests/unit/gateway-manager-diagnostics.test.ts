@@ -189,6 +189,32 @@ describe('GatewayManager diagnostics', () => {
     expect(summary.reasons).not.toContain('rpc_timeout');
   });
 
+  it('reports rpc router blocked when a fresh core probe fails after gateway was ready', async () => {
+    const { GatewayCapabilityMonitor } = await import('@electron/gateway/capability-monitor');
+    const monitor = new GatewayCapabilityMonitor();
+
+    monitor.recordCoreProbe({
+      ok: false,
+      checkedAt: Date.now(),
+      error: 'RPC timeout: system-presence',
+    });
+
+    const snapshot = monitor.buildSnapshot({
+      status: {
+        state: 'running',
+        port: 18789,
+        gatewayReady: true,
+      },
+      transportConnected: true,
+      diagnostics: {
+        consecutiveHeartbeatMisses: 0,
+        consecutiveRpcFailures: 1,
+      },
+    });
+
+    expect(snapshot.core.rpcRouter).toBe('blocked');
+  });
+
   it('keeps windows heartbeat recovery disabled while diagnostics degrade', async () => {
     Object.defineProperty(process, 'platform', { value: 'win32' });
 

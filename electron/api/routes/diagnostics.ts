@@ -70,7 +70,9 @@ export async function handleDiagnosticsRoutes(
       const gateway = {
         ...gatewayStatus,
         ...gatewaySummary,
-        capabilities: ctx.gatewayManager.getCapabilitySnapshot(gatewaySummary),
+        capabilities: typeof ctx.gatewayManager.getCapabilitySnapshot === 'function'
+          ? ctx.gatewayManager.getCapabilitySnapshot(gatewaySummary)
+          : undefined,
       };
       const openClawDir = getOpenClawConfigDir();
       sendJson(res, 200, {

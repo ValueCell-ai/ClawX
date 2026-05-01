@@ -19,10 +19,11 @@ export type PrelaunchMaintenanceTaskName =
 
 export interface PrelaunchMaintenanceRunResult {
   executed: boolean;
-  reason: 'cache-hit' | 'cache-miss' | 'cache-unavailable';
+  reason: 'cache-hit' | 'cache-miss' | 'cache-unavailable' | 'task-failed';
 }
 
 type CacheKeyInput = string | (() => string);
+type MaintenanceTask = () => void | boolean;
 
 interface CacheEntry {
   key: string;
@@ -117,7 +118,7 @@ export function buildPrelaunchMaintenanceCacheKey(parts: Record<string, unknown>
 export function runCachedPrelaunchMaintenanceTask(
   taskName: PrelaunchMaintenanceTaskName,
   cacheKey: CacheKeyInput,
-  task: () => void,
+  task: MaintenanceTask,
   options: { cachePath?: string } = {},
 ): PrelaunchMaintenanceRunResult {
   const readCacheKey = (): string => (typeof cacheKey === 'function' ? cacheKey() : cacheKey);
@@ -140,7 +141,10 @@ export function runCachedPrelaunchMaintenanceTask(
     return { executed: false, reason: 'cache-hit' };
   }
 
-  task();
+  const taskResult = task();
+  if (taskResult === false) {
+    return { executed: true, reason: 'task-failed' };
+  }
   let finalCacheKey: string;
   try {
     finalCacheKey = readCacheKey();

@@ -151,7 +151,8 @@ function appVersionForCache(): string {
  * - Packaged mode: uses bundled plugins from resources/ (includes deps)
  * - Dev mode: falls back to node_modules/ with pnpm-aware dep collection
  */
-function ensureConfiguredPluginsUpgraded(configuredChannels: string[]): void {
+function ensureConfiguredPluginsUpgraded(configuredChannels: string[]): boolean {
+  let succeeded = true;
   for (const channelType of configuredChannels) {
     const pluginInfo = CHANNEL_PLUGIN_MAP[channelType];
     if (!pluginInfo) continue;
@@ -178,6 +179,7 @@ function ensureConfiguredPluginsUpgraded(configuredChannels: string[]): void {
           fixupPluginManifest(targetDir);
         } catch (err) {
           logger.warn(`[plugin] Failed to ${isInstalled ? 'auto-upgrade' : 'install'} ${channelType} plugin:`, err);
+          succeeded = false;
         }
       } else if (isInstalled) {
         // Same version already installed — still patch manifest ID in case it was
@@ -207,9 +209,11 @@ function ensureConfiguredPluginsUpgraded(configuredChannels: string[]): void {
         fixupPluginManifest(targetDir);
       } catch (err) {
         logger.warn(`[plugin] Failed to ${isInstalled ? 'auto-upgrade' : 'install'} ${channelType} plugin from node_modules:`, err);
+        succeeded = false;
       }
     }
   }
+  return succeeded;
 }
 
 /**
@@ -218,7 +222,8 @@ function ensureConfiguredPluginsUpgraded(configuredChannels: string[]): void {
  * from scanning residual plugin manifests that were installed by a previous
  * configuration but are no longer needed.
  */
-function cleanupUnconfiguredChannelPlugins(configuredChannels: string[]): void {
+function cleanupUnconfiguredChannelPlugins(configuredChannels: string[]): boolean {
+  let succeeded = true;
   const configuredSet = new Set(configuredChannels);
 
   for (const [channelType, pluginInfo] of Object.entries(CHANNEL_PLUGIN_MAP)) {
@@ -233,8 +238,10 @@ function cleanupUnconfiguredChannelPlugins(configuredChannels: string[]): void {
       rmSync(fsPath(targetDir), { recursive: true, force: true });
     } catch (err) {
       logger.warn(`[plugin] Failed to remove unconfigured channel plugin ${channelType}:`, err);
+      succeeded = false;
     }
   }
+  return succeeded;
 }
 
 function buildPluginSourceSignatures(configuredChannels: string[]): Record<string, unknown> {
@@ -424,7 +431,7 @@ export async function syncGatewayConfigBeforeLaunch(
     const result = measureSync(timingsMs, 'skillsCleanupMs', () => runCachedPrelaunchMaintenanceTask(
       'skills-symlink-cleanup',
       () => buildSkillsSymlinkCleanupCacheKey(openclawDir),
-      cleanupAgentsSymlinkedSkills,
+      () => (cleanupAgentsSymlinkedSkills().failed ?? 0) === 0,
     ));
     maintenance['skills-symlink-cleanup'] = result;
   } catch (err) {
@@ -439,7 +446,7 @@ export async function syncGatewayConfigBeforeLaunch(
     const result = measureSync(timingsMs, 'runtimeDepsCleanupMs', () => runCachedPrelaunchMaintenanceTask(
       'runtime-deps-cleanup',
       () => buildRuntimeDepsCleanupCacheKey(openclawDir),
-      cleanupStalePluginRuntimeDeps,
+      () => (cleanupStalePluginRuntimeDeps().failed ?? 0) === 0,
     ));
     maintenance['runtime-deps-cleanup'] = result;
   } catch (err) {
@@ -460,8 +467,9 @@ export async function syncGatewayConfigBeforeLaunch(
       'plugin-maintenance',
       () => buildPluginMaintenanceCacheKey(openclawDir, configuredChannels),
       () => {
-        ensureConfiguredPluginsUpgraded(configuredChannels);
-        cleanupUnconfiguredChannelPlugins(configuredChannels);
+        const upgradeOk = ensureConfiguredPluginsUpgraded(configuredChannels);
+        const cleanupOk = cleanupUnconfiguredChannelPlugins(configuredChannels);
+        return upgradeOk && cleanupOk;
       },
     ));
     maintenance['plugin-maintenance'] = result;

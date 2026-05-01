@@ -63,6 +63,8 @@ export interface CleanupResult {
   removed: string[];
   /** Total number of symlink entries that were inspected. */
   examined: number;
+  /** Cleanup operations that could not be completed and should be retried later. */
+  failed?: number;
 }
 
 export interface PluginRuntimeDepsCleanupOptions {
@@ -74,6 +76,10 @@ export interface PluginRuntimeDepsCleanupOptions {
 
 function defaultSkillsDir(): string {
   return getOpenClawSkillsDir();
+}
+
+function recordCleanupFailure(result: CleanupResult): void {
+  result.failed = (result.failed ?? 0) + 1;
 }
 
 function defaultAgentsDir(): string {
@@ -186,6 +192,9 @@ export function cleanupAgentsSymlinkedSkills(opts: CleanupOptions = {}): Cleanup
     const rootResult = cleanupSkillsDir(root.skillsDir, root.agentsDir);
     result.removed.push(...rootResult.removed);
     result.examined += rootResult.examined;
+    if (rootResult.failed) {
+      result.failed = (result.failed ?? 0) + rootResult.failed;
+    }
   }
 
   return result;
@@ -221,6 +230,7 @@ export function cleanupStalePluginRuntimeDeps(
     entries = readdirSync(runtimeDepsDir, { withFileTypes: true, encoding: 'utf8' });
   } catch (err) {
     logger.warn(`[plugin-runtime-deps-cleanup] Failed to list ${runtimeDepsDir}:`, err);
+    recordCleanupFailure(result);
     return result;
   }
 
@@ -241,6 +251,7 @@ export function cleanupStalePluginRuntimeDeps(
       result.removed.push(entry.name);
     } catch (err) {
       logger.warn(`[plugin-runtime-deps-cleanup] Failed to remove ${cacheRoot}:`, err);
+      recordCleanupFailure(result);
     }
   }
 
@@ -316,6 +327,7 @@ function cleanupSkillsDir(skillsDir: string, agentsDir: string): CleanupResult {
     entries = readdirSync(skillsDir, { withFileTypes: true, encoding: 'utf8' });
   } catch (err) {
     logger.warn(`[skills-cleanup] Failed to list ${skillsDir}:`, err);
+    recordCleanupFailure(result);
     return result;
   }
 
@@ -354,6 +366,7 @@ function cleanupSkillsDir(skillsDir: string, agentsDir: string): CleanupResult {
       result.removed.push(entry.name);
     } catch (err) {
       logger.warn(`[skills-cleanup] Failed to remove ${entryPath}:`, err);
+      recordCleanupFailure(result);
     }
   }
 
