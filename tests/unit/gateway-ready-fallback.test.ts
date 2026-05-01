@@ -90,10 +90,10 @@ describe('GatewayManager gatewayReady fallback', () => {
     (manager as unknown as { scheduleGatewayReadyFallback: () => void }).scheduleGatewayReadyFallback();
 
     // Before timeout, no gatewayReady update
-    vi.advanceTimersByTime(29_000);
+    vi.advanceTimersByTime(4_000);
     expect(statusUpdates.find((u) => u.gatewayReady === true)).toBeUndefined();
 
-    // After 30s fallback timeout
+    // After fallback timeout (5s)
     vi.advanceTimersByTime(2_000);
     const readyUpdate = statusUpdates.find((u) => u.gatewayReady === true);
     expect(readyUpdate).toBeDefined();
@@ -115,13 +115,13 @@ describe('GatewayManager gatewayReady fallback', () => {
     // Schedule fallback
     (manager as unknown as { scheduleGatewayReadyFallback: () => void }).scheduleGatewayReadyFallback();
 
-    // gateway:ready event arrives at 5s
-    vi.advanceTimersByTime(5_000);
+    // gateway:ready event arrives before fallback (at 1s, well under 5s)
+    vi.advanceTimersByTime(1_000);
     manager.emit('gateway:ready', {});
     expect(statusUpdates.filter((u) => u.gatewayReady === true)).toHaveLength(1);
 
-    // After 30s, no duplicate gatewayReady=true
-    vi.advanceTimersByTime(30_000);
+    // Well past the fallback window, no duplicate gatewayReady=true
+    vi.advanceTimersByTime(10_000);
     expect(statusUpdates.filter((u) => u.gatewayReady === true)).toHaveLength(1);
   });
 });

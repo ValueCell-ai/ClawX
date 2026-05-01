@@ -1,20 +1,9 @@
 import { app } from 'electron';
 import path from 'path';
-import { existsSync, readFileSync, mkdirSync, readdirSync, rmSync, symlinkSync } from 'fs';
+import { existsSync, readFileSync, mkdirSync, readdirSync, rmSync } from 'fs';
 import { homedir } from 'os';
 import { join } from 'path';
-
-function fsPath(filePath: string): string {
-  if (process.platform !== 'win32') return filePath;
-  if (!filePath) return filePath;
-  if (filePath.startsWith('\\\\?\\')) return filePath;
-  const windowsPath = filePath.replace(/\//g, '\\');
-  if (!path.win32.isAbsolute(windowsPath)) return windowsPath;
-  if (windowsPath.startsWith('\\\\')) {
-    return `\\\\?\\UNC\\${windowsPath.slice(2)}`;
-  }
-  return `\\\\?\\${windowsPath}`;
-}
+import { linkDirSafe, normalizeFsPath as fsPath } from './fs-link';
 import { getAllSettings } from '../utils/store';
 import { getApiKey, getDefaultProvider, getProvider } from '../utils/secure-storage';
 import { getProviderEnvVar, getKeyableProviderTypes } from '../utils/provider-registry';
@@ -246,7 +235,7 @@ function ensureExtensionDepsResolvable(openclawDir: string): void {
             if (existsSync(dest)) continue;
             try {
               mkdirSync(join(topNM, pkg.name), { recursive: true });
-              symlinkSync(join(scopeDir, sub.name), dest);
+              linkDirSafe(join(scopeDir, sub.name), dest);
               linkedCount++;
             } catch { /* skip on error — non-fatal */ }
           }
@@ -255,7 +244,7 @@ function ensureExtensionDepsResolvable(openclawDir: string): void {
           if (existsSync(dest)) continue;
           try {
             mkdirSync(topNM, { recursive: true });
-            symlinkSync(join(extNM, pkg.name), dest);
+            linkDirSafe(join(extNM, pkg.name), dest);
             linkedCount++;
           } catch { /* skip on error — non-fatal */ }
         }
