@@ -11,7 +11,8 @@
         "devConsole": "Консоль разработчика",
         "models": "Модели",
         "deleteSessionConfirm": "Вы уверены, что хотите удалить сессию \"{{label}}\"?",
-        "openClawPage": "Страница OpenClaw"
+        "openClawPage": "Страница OpenClaw",
+        "openClawDreams": "Dreams"
     },
     "actions": {
         "save": "Сохранить",

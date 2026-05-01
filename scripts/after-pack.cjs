@@ -615,11 +615,12 @@ exports.default = async function afterPack(context) {
       const srcNM = join(buildExtDir, extEntry.name, 'node_modules');
       if (!existsSync(srcNM)) continue;
 
-      // Copy to extension's own node_modules (for direct requires from extension code)
+      // Copy to extension's own node_modules (for direct requires from extension code).
+      // electron-builder may leave behind an empty destination directory when it
+      // skips node_modules content via .gitignore filtering, so always replace it.
       const destExtNM = join(packExtDir, extEntry.name, 'node_modules');
-      if (!existsSync(destExtNM)) {
-        cpSync(srcNM, destExtNM, { recursive: true });
-      }
+      rmSync(destExtNM, { recursive: true, force: true });
+      cpSync(srcNM, destExtNM, { recursive: true });
       extNMCount++;
 
       // Merge into top-level openclaw/node_modules/ (for shared chunks in dist/)

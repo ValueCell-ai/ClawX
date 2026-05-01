@@ -18,6 +18,7 @@ import {
   ExternalLink,
   Trash2,
   Cpu,
+  Moon,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { rendererExtensionRegistry } from '@/extensions/registry';
@@ -156,21 +157,25 @@ export function Sidebar() {
   const getSessionLabel = (key: string, displayName?: string, label?: string) =>
     sessionLabels[key] ?? label ?? displayName ?? key;
 
-  const openDevConsole = async () => {
+  const openControlUi = async (path: string, label: string) => {
     try {
       const result = await hostApiFetch<{
         success: boolean;
         url?: string;
         error?: string;
-      }>('/api/gateway/control-ui');
+      }>(path);
       if (result.success && result.url) {
-        window.electron.openExternal(result.url);
+        await window.electron.openExternal(result.url);
       } else {
-        console.error('Failed to get Dev Console URL:', result.error);
+        console.error(`Failed to get ${label} URL:`, result.error);
       }
     } catch (err) {
-      console.error('Error opening Dev Console:', err);
+      console.error(`Error opening ${label}:`, err);
     }
+  };
+
+  const openDevConsole = async () => {
+    await openControlUi('/api/gateway/control-ui', 'OpenClaw Page');
   };
 
   const { t } = useTranslation(['common', 'chat']);
@@ -221,6 +226,7 @@ export function Sidebar() {
     { to: '/channels', icon: <Network className="h-[18px] w-[18px]" strokeWidth={2} />, label: t('sidebar.channels'), testId: 'sidebar-nav-channels' },
     { to: '/skills', icon: <Puzzle className="h-[18px] w-[18px]" strokeWidth={2} />, label: t('sidebar.skills'), testId: 'sidebar-nav-skills' },
     { to: '/cron', icon: <Clock className="h-[18px] w-[18px]" strokeWidth={2} />, label: t('sidebar.cronTasks'), testId: 'sidebar-nav-cron' },
+    { to: '/dreams', icon: <Moon className="h-[18px] w-[18px]" strokeWidth={2} />, label: t('common:sidebar.openClawDreams'), testId: 'sidebar-nav-dreams' },
   ];
 
   const navItems = [

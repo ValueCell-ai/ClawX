@@ -1,0 +1,67 @@
+{
+    "title": "Dreams",
+    "subtitle": "Просматривайте сигналы памяти OpenClaw, дневник снов и простое обслуживание прямо в ClawX.",
+    "openFullUi": "Открыть полный Dreams",
+    "gatewayNotReady": "OpenClaw Gateway еще запускается или отключен. Данные Dreams загрузятся, когда gateway станет доступен.",
+    "metrics": {
+        "shortTerm": "Краткосрочные записи",
+        "grounded": "Закрепленные сигналы",
+        "signals": "Всего сигналов",
+        "promotedToday": "Продвинуто сегодня"
+    },
+    "diary": {
+        "title": "Dream Diary",
+        "notFound": "DREAMS.md еще не создан.",
+        "empty": "Записей дневника снов пока нет.",
+        "undated": "Без даты"
+    },
+    "actions": {
+        "title": "Обслуживание",
+        "backfill": "Backfill Diary",
+        "dedupe": "Dedupe Diary",
+        "repair": "Repair Cache",
+        "resetGrounded": "Очистить replay",
+        "resetDiary": "Сбросить backfill",
+        "backfillSuccess": "Добавлено {{count}} записей дневника снов.",
+        "dedupeSuccess": "Удалено {{removed}} дубликатов записей снов, оставлено {{kept}}.",
+        "repairSuccess": "Восстановление кэша снов завершено.",
+        "resetDiarySuccess": "Удалено {{count}} backfilled-записей дневника снов.",
+        "resetGroundedSuccess": "Очищено {{count}} replayed краткосрочных записей."
+    },
+    "confirmations": {
+        "dedupe": {
+            "title": "Удалить дубликаты Dream Diary?",
+            "message": "Это перезапишет DREAMS.md и удалит только точные дубликаты записей дневника."
+        },
+        "repair": {
+            "title": "Восстановить кэш снов?",
+            "message": "Это архивирует производные файлы кэша снов и пересоберет их из чистых входных данных. Дневник снов не изменится."
+        },
+        "resetDiary": {
+            "title": "Сбросить backfilled-дневник?",
+            "message": "Это удалит backfilled-записи из DREAMS.md. Ручной текст не является целью операции."
+        },
+        "resetGrounded": {
+            "title": "Очистить replayed краткосрочные записи?",
+            "message": "Это очистит краткосрочные записи, уже воспроизведенные в закрепленные сигналы памяти."
+        }
+    },
+    "phases": {
+        "title": "Фазы Dreams",
+        "light": "Light",
+        "rem": "REM",
+        "deep": "Deep",
+        "noSchedule": "Нет управляемого расписания"
+    },
+    "signals": {
+        "title": "Недавние сигналы",
+        "storageMode": "Хранилище: {{mode}}",
+        "noStorageMode": "Режим хранилища недоступен",
+        "empty": "Недавних краткосрочных или продвинутых сигналов снов нет.",
+        "unknownSource": "Неизвестный источник",
+        "noSnippet": "Фрагмент недоступен."
+    },
+    "errors": {
+        "openFullUi": "Не удалось открыть полный OpenClaw Dreams UI."
+    }
+}

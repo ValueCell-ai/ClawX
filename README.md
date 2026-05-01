@@ -90,6 +90,8 @@ ClawX is built directly upon the official **OpenClaw** core. Instead of requirin
 
 We are committed to maintaining strict alignment with the upstream OpenClaw project, ensuring that you always have access to the latest capabilities, stability improvements, and ecosystem compatibility provided by the official releases.
 
+The sidebar also provides a native Dreams page for OpenClaw memory review, dream diary inspection, and basic maintenance actions. The full upstream OpenClaw Dreams UI remains available from that page when deeper diagnostics are needed.
+
 ---
 
 ## Features

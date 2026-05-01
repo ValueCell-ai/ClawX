@@ -69,7 +69,8 @@ export async function handleGatewayRoutes(
       const status = ctx.gatewayManager.getStatus();
       const token = await getSetting('gatewayToken');
       const port = status.port || PORTS.OPENCLAW_GATEWAY;
-      const urlValue = buildOpenClawControlUiUrl(port, token);
+      const view = url.searchParams.get('view') === 'dreams' ? 'dreams' : undefined;
+      const urlValue = buildOpenClawControlUiUrl(port, token, { view });
       sendJson(res, 200, { success: true, url: urlValue, token, port });
     } catch (error) {
       sendJson(res, 500, { success: false, error: String(error) });

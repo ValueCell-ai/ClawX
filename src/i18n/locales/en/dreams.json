@@ -1,0 +1,67 @@
+{
+    "title": "Dreams",
+    "subtitle": "Review OpenClaw memory signals, diary entries, and dreaming maintenance from ClawX.",
+    "openFullUi": "Open Full Dreams",
+    "gatewayNotReady": "OpenClaw Gateway is still starting or disconnected. Dreams data will load once the gateway is reachable.",
+    "metrics": {
+        "shortTerm": "Short-term entries",
+        "grounded": "Grounded signals",
+        "signals": "Total signals",
+        "promotedToday": "Promoted today"
+    },
+    "diary": {
+        "title": "Dream Diary",
+        "notFound": "DREAMS.md has not been created yet.",
+        "empty": "No dream diary entries found yet.",
+        "undated": "Undated"
+    },
+    "actions": {
+        "title": "Maintenance",
+        "backfill": "Backfill Diary",
+        "dedupe": "Dedupe Diary",
+        "repair": "Repair Cache",
+        "resetGrounded": "Clear Replayed",
+        "resetDiary": "Reset Backfilled Diary",
+        "backfillSuccess": "Backfilled {{count}} dream diary entries.",
+        "dedupeSuccess": "Removed {{removed}} duplicate dream entries and kept {{kept}}.",
+        "repairSuccess": "Dream cache repair completed.",
+        "resetDiarySuccess": "Removed {{count}} backfilled dream diary entries.",
+        "resetGroundedSuccess": "Cleared {{count}} replayed short-term entries."
+    },
+    "confirmations": {
+        "dedupe": {
+            "title": "Dedupe Dream Diary?",
+            "message": "This rewrites DREAMS.md and removes only exact duplicate diary entries."
+        },
+        "repair": {
+            "title": "Repair Dream Cache?",
+            "message": "This archives derived dream cache files and rebuilds them from clean inputs. Your dream diary stays untouched."
+        },
+        "resetDiary": {
+            "title": "Reset Backfilled Diary?",
+            "message": "This removes backfilled diary entries from DREAMS.md. Manually written content is not the target."
+        },
+        "resetGrounded": {
+            "title": "Clear Replayed Short-Term Entries?",
+            "message": "This clears short-term entries that were already replayed into grounded memory signals."
+        }
+    },
+    "phases": {
+        "title": "Dream Phases",
+        "light": "Light",
+        "rem": "REM",
+        "deep": "Deep",
+        "noSchedule": "No managed schedule"
+    },
+    "signals": {
+        "title": "Recent Signals",
+        "storageMode": "Storage: {{mode}}",
+        "noStorageMode": "Storage mode unavailable",
+        "empty": "No recent short-term or promoted dream signals.",
+        "unknownSource": "Unknown source",
+        "noSnippet": "No snippet available."
+    },
+    "errors": {
+        "openFullUi": "Unable to open the full OpenClaw Dreams UI."
+    }
+}

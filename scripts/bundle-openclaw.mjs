@@ -17,6 +17,7 @@
  */
 
 import 'zx/globals';
+import { EXTRA_BUNDLED_PACKAGES } from './openclaw-bundle-config.mjs';
 
 const ROOT = path.resolve(__dirname, '..');
 const OUTPUT = path.join(ROOT, 'build', 'openclaw');
@@ -41,6 +42,20 @@ if (!fs.existsSync(openclawLink)) {
 const openclawReal = fs.realpathSync(openclawLink);
 echo`   openclaw resolved: ${openclawReal}`;
 
+function shouldCopyOpenClawPackageEntry(src) {
+  const rel = path.relative(openclawReal, src);
+  if (!rel || rel.startsWith('..')) return true;
+  const parts = rel.split(path.sep);
+
+  for (let i = 0; i < parts.length - 1; i += 1) {
+    if (parts[i] === 'node_modules' && parts[i + 1] === '.bin') {
+      return false;
+    }
+  }
+
+  return true;
+}
+
 // 2. Clean and create output directory
 if (fs.existsSync(OUTPUT)) {
   fs.rmSync(OUTPUT, { recursive: true });
@@ -49,7 +64,11 @@ fs.mkdirSync(OUTPUT, { recursive: true });
 
 // 3. Copy openclaw package itself to OUTPUT root
 echo`   Copying openclaw package...`;
-fs.cpSync(openclawReal, OUTPUT, { recursive: true, dereference: true });
+fs.cpSync(openclawReal, OUTPUT, {
+  recursive: true,
+  dereference: true,
+  filter: shouldCopyOpenClawPackageEntry,
+});
 
 // 4. Recursively collect ALL transitive dependencies via pnpm virtual store BFS
 //
@@ -186,10 +205,6 @@ echo`   Skipped ${skippedDevCount} dev-only package references`;
 //
 //     For each package we resolve it from the workspace's own node_modules,
 //     then BFS its transitive deps exactly like we did for openclaw above.
-const EXTRA_BUNDLED_PACKAGES = [
-  '@whiskeysockets/baileys',   // WhatsApp channel (was a dep of old clawdbot, not openclaw)
-];
-
 let extraCount = 0;
 for (const pkgName of EXTRA_BUNDLED_PACKAGES) {
   const pkgLink = path.join(NODE_MODULES, ...pkgName.split('/'));
@@ -248,7 +263,31 @@ const copiedNames = new Set(); // Track package names already copied
 let copiedCount = 0;
 let skippedDupes = 0;
 
-for (const [realPath, pkgName] of collected) {
+const preferredBundledPackages = new Set(EXTRA_BUNDLED_PACKAGES);
+const preferredBundledPackageRealPaths = new Set();
+for (const pkgName of EXTRA_BUNDLED_PACKAGES) {
+  const pkgLink = path.join(NODE_MODULES, ...pkgName.split('/'));
+  if (!fs.existsSync(pkgLink)) continue;
+  try {
+    preferredBundledPackageRealPaths.add(fs.realpathSync(pkgLink));
+  } catch {
+    // ignore
+  }
+}
+
+const collectedEntries = [...collected].sort(([leftRealPath, leftName], [rightRealPath, rightName]) => {
+  const leftPreferredRealPath = preferredBundledPackageRealPaths.has(leftRealPath);
+  const rightPreferredRealPath = preferredBundledPackageRealPaths.has(rightRealPath);
+  if (leftPreferredRealPath !== rightPreferredRealPath) return leftPreferredRealPath ? -1 : 1;
+
+  const leftPreferred = preferredBundledPackages.has(leftName);
+  const rightPreferred = preferredBundledPackages.has(rightName);
+  if (leftPreferred !== rightPreferred) return leftPreferred ? -1 : 1;
+
+  return 0;
+});
+
+for (const [realPath, pkgName] of collectedEntries) {
   if (copiedNames.has(pkgName)) {
     skippedDupes++;
     continue; // Keep the first version (closer to openclaw in dep tree)
@@ -280,43 +319,73 @@ for (const [realPath, pkgName] of collected) {
 // resolvable from shared chunks.  Skip-if-exists preserves version priority
 // (openclaw's own deps take precedence over extension deps).
 const extensionsDir = path.join(OUTPUT, 'dist', 'extensions');
+function readJsonSafe(filePath) {
+  try {
+    return JSON.parse(fs.readFileSync(filePath, 'utf8'));
+  } catch {
+    return null;
+  }
+}
+
+function listPackageDeps(pkgJson) {
+  return Object.keys({
+    ...(pkgJson?.dependencies && typeof pkgJson.dependencies === 'object' ? pkgJson.dependencies : {}),
+    ...(pkgJson?.optionalDependencies && typeof pkgJson.optionalDependencies === 'object' ? pkgJson.optionalDependencies : {}),
+  }).sort((a, b) => a.localeCompare(b));
+}
+
 let mergedExtCount = 0;
+let mirroredExtRuntimeDeps = 0;
 if (fs.existsSync(extensionsDir)) {
   for (const extEntry of fs.readdirSync(extensionsDir, { withFileTypes: true })) {
     if (!extEntry.isDirectory()) continue;
-    const extNM = path.join(extensionsDir, extEntry.name, 'node_modules');
-    if (!fs.existsSync(extNM)) continue;
+    const extRoot = path.join(extensionsDir, extEntry.name);
+    const extNM = path.join(extRoot, 'node_modules');
 
-    for (const pkgEntry of fs.readdirSync(extNM, { withFileTypes: true })) {
-      if (!pkgEntry.isDirectory() || pkgEntry.name === '.bin') continue;
-      const srcPkg = path.join(extNM, pkgEntry.name);
+    if (fs.existsSync(extNM)) {
+      for (const pkgEntry of fs.readdirSync(extNM, { withFileTypes: true })) {
+        if (!pkgEntry.isDirectory() || pkgEntry.name === '.bin') continue;
+        const srcPkg = path.join(extNM, pkgEntry.name);
 
-      if (pkgEntry.name.startsWith('@')) {
-        // Scoped package — iterate sub-entries
-        let scopeEntries;
-        try { scopeEntries = fs.readdirSync(srcPkg, { withFileTypes: true }); } catch { continue; }
-        for (const scopeEntry of scopeEntries) {
-          if (!scopeEntry.isDirectory()) continue;
-          const scopedName = `${pkgEntry.name}/${scopeEntry.name}`;
-          if (copiedNames.has(scopedName)) continue;
-          const srcScoped = path.join(srcPkg, scopeEntry.name);
-          const destScoped = path.join(outputNodeModules, pkgEntry.name, scopeEntry.name);
+        if (pkgEntry.name.startsWith('@')) {
+          // Scoped package — iterate sub-entries
+          let scopeEntries;
+          try { scopeEntries = fs.readdirSync(srcPkg, { withFileTypes: true }); } catch { continue; }
+          for (const scopeEntry of scopeEntries) {
+            if (!scopeEntry.isDirectory()) continue;
+            const scopedName = `${pkgEntry.name}/${scopeEntry.name}`;
+            if (copiedNames.has(scopedName)) continue;
+            const srcScoped = path.join(srcPkg, scopeEntry.name);
+            const destScoped = path.join(outputNodeModules, pkgEntry.name, scopeEntry.name);
+            try {
+              fs.mkdirSync(normWin(path.dirname(destScoped)), { recursive: true });
+              fs.cpSync(normWin(srcScoped), normWin(destScoped), { recursive: true, dereference: true });
+              copiedNames.add(scopedName);
+              mergedExtCount++;
+            } catch { /* skip on copy error */ }
+          }
+        } else {
+          if (copiedNames.has(pkgEntry.name)) continue;
+          const destPkg = path.join(outputNodeModules, pkgEntry.name);
           try {
-            fs.mkdirSync(normWin(path.dirname(destScoped)), { recursive: true });
-            fs.cpSync(normWin(srcScoped), normWin(destScoped), { recursive: true, dereference: true });
-            copiedNames.add(scopedName);
+            fs.cpSync(normWin(srcPkg), normWin(destPkg), { recursive: true, dereference: true });
+            copiedNames.add(pkgEntry.name);
             mergedExtCount++;
           } catch { /* skip on copy error */ }
         }
-      } else {
-        if (copiedNames.has(pkgEntry.name)) continue;
-        const destPkg = path.join(outputNodeModules, pkgEntry.name);
-        try {
-          fs.cpSync(normWin(srcPkg), normWin(destPkg), { recursive: true, dereference: true });
-          copiedNames.add(pkgEntry.name);
-          mergedExtCount++;
-        } catch { /* skip on copy error */ }
       }
+    }
+
+    const extPkg = readJsonSafe(path.join(extRoot, 'package.json'));
+    for (const depName of listPackageDeps(extPkg)) {
+      const srcPkg = path.join(outputNodeModules, ...depName.split('/'));
+      const destPkg = path.join(extNM, ...depName.split('/'));
+      if (!fs.existsSync(srcPkg) || fs.existsSync(destPkg)) continue;
+      try {
+        fs.mkdirSync(normWin(path.dirname(destPkg)), { recursive: true });
+        fs.cpSync(normWin(srcPkg), normWin(destPkg), { recursive: true, dereference: true });
+        mirroredExtRuntimeDeps++;
+      } catch { /* skip on copy error */ }
     }
   }
 }
@@ -324,6 +393,32 @@ if (fs.existsSync(extensionsDir)) {
 if (mergedExtCount > 0) {
   echo`   Merged ${mergedExtCount} extension packages into top-level node_modules`;
 }
+if (mirroredExtRuntimeDeps > 0) {
+  echo`   Mirrored ${mirroredExtRuntimeDeps} extension runtime deps into dist/extensions/*/node_modules`;
+}
+
+function patchBundledExtensionPackageJsons(extensionsRoot) {
+  let patchedCount = 0;
+
+  const discordPkgPath = path.join(extensionsRoot, 'discord', 'package.json');
+  if (fs.existsSync(discordPkgPath)) {
+    try {
+      const pkg = JSON.parse(fs.readFileSync(discordPkgPath, 'utf8'));
+      if (pkg?.dependencies?.opusscript === '^0.0.8') {
+        pkg.dependencies.opusscript = '^0.1.1';
+        fs.writeFileSync(discordPkgPath, JSON.stringify(pkg, null, 2) + '\n', 'utf8');
+        patchedCount++;
+        echo`   🩹 Patched discord bundled runtime dep range: opusscript ^0.0.8 -> ^0.1.1`;
+      }
+    } catch {
+      // ignore
+    }
+  }
+
+  return patchedCount;
+}
+
+patchBundledExtensionPackageJsons(extensionsDir);
 
 // 6. Clean up the bundle to reduce package size
 //
