@@ -105,7 +105,7 @@ export interface GatewayDiagnosticsSnapshot {
 }
 
 function isCoreRpcMethod(method: string): boolean {
-  return method === 'system-presence' || method === 'health' || method === 'status';
+  return method === 'system-presence';
 }
 
 function isTransportRpcFailure(method: string, error: unknown): boolean {

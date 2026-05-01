@@ -152,6 +152,43 @@ describe('GatewayManager diagnostics', () => {
     expect(manager.getCapabilitySnapshot().memory.error).toContain('doctor.memory.status');
   });
 
+  it('does not let health polling mark core rpc degraded when OpenClaw health/status are slow', async () => {
+    const { GatewayManager } = await import('@electron/gateway/manager');
+    const { buildGatewayHealthSummary } = await import('@electron/utils/gateway-health');
+    const manager = new GatewayManager();
+
+    const ws = {
+      readyState: 1,
+      send: vi.fn(),
+      ping: vi.fn(),
+      terminate: vi.fn(),
+      on: vi.fn(),
+    };
+
+    (manager as unknown as { ws: typeof ws }).ws = ws;
+    (manager as unknown as { status: { state: string; port: number; gatewayReady: boolean } }).status = {
+      state: 'running',
+      port: 18789,
+      gatewayReady: true,
+    };
+
+    const healthPromise = manager.checkHealth();
+    await vi.advanceTimersByTimeAsync(3001);
+    const health = await healthPromise;
+
+    expect(health.ok).toBe(true);
+    expect(manager.getDiagnostics().consecutiveRpcFailures).toBe(0);
+    expect(manager.getCapabilitySnapshot().openclawHealth.state).toBe('degraded');
+    expect(manager.getCapabilitySnapshot().openclawStatus.state).toBe('degraded');
+
+    const summary = buildGatewayHealthSummary({
+      status: manager.getStatus(),
+      diagnostics: manager.getDiagnostics(),
+      platform: process.platform,
+    });
+    expect(summary.reasons).not.toContain('rpc_timeout');
+  });
+
   it('keeps windows heartbeat recovery disabled while diagnostics degrade', async () => {
     Object.defineProperty(process, 'platform', { value: 'win32' });
 

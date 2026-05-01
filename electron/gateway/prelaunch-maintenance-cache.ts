@@ -22,6 +22,8 @@ export interface PrelaunchMaintenanceRunResult {
   reason: 'cache-hit' | 'cache-miss' | 'cache-unavailable';
 }
 
+type CacheKeyInput = string | (() => string);
+
 interface CacheEntry {
   key: string;
   updatedAt: string;
@@ -114,10 +116,11 @@ export function buildPrelaunchMaintenanceCacheKey(parts: Record<string, unknown>
 
 export function runCachedPrelaunchMaintenanceTask(
   taskName: PrelaunchMaintenanceTaskName,
-  cacheKey: string,
+  cacheKey: CacheKeyInput,
   task: () => void,
   options: { cachePath?: string } = {},
 ): PrelaunchMaintenanceRunResult {
+  const readCacheKey = (): string => (typeof cacheKey === 'function' ? cacheKey() : cacheKey);
   const cachePath = options.cachePath ?? getDefaultCachePath();
   const cache = readCache(cachePath);
   if (!cache) {
@@ -125,13 +128,27 @@ export function runCachedPrelaunchMaintenanceTask(
     return { executed: true, reason: 'cache-unavailable' };
   }
 
-  if (cache.tasks[taskName]?.key === cacheKey) {
+  let initialCacheKey: string;
+  try {
+    initialCacheKey = readCacheKey();
+  } catch {
+    task();
+    return { executed: true, reason: 'cache-unavailable' };
+  }
+
+  if (cache.tasks[taskName]?.key === initialCacheKey) {
     return { executed: false, reason: 'cache-hit' };
   }
 
   task();
+  let finalCacheKey: string;
+  try {
+    finalCacheKey = readCacheKey();
+  } catch {
+    return { executed: true, reason: 'cache-unavailable' };
+  }
   cache.tasks[taskName] = {
-    key: cacheKey,
+    key: finalCacheKey,
     updatedAt: new Date().toISOString(),
   };
   writeCache(cachePath, cache);

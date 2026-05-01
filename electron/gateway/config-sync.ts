@@ -423,7 +423,7 @@ export async function syncGatewayConfigBeforeLaunch(
   try {
     const result = measureSync(timingsMs, 'skillsCleanupMs', () => runCachedPrelaunchMaintenanceTask(
       'skills-symlink-cleanup',
-      buildSkillsSymlinkCleanupCacheKey(openclawDir),
+      () => buildSkillsSymlinkCleanupCacheKey(openclawDir),
       cleanupAgentsSymlinkedSkills,
     ));
     maintenance['skills-symlink-cleanup'] = result;
@@ -438,7 +438,7 @@ export async function syncGatewayConfigBeforeLaunch(
   try {
     const result = measureSync(timingsMs, 'runtimeDepsCleanupMs', () => runCachedPrelaunchMaintenanceTask(
       'runtime-deps-cleanup',
-      buildRuntimeDepsCleanupCacheKey(openclawDir),
+      () => buildRuntimeDepsCleanupCacheKey(openclawDir),
       cleanupStalePluginRuntimeDeps,
     ));
     maintenance['runtime-deps-cleanup'] = result;
@@ -458,7 +458,7 @@ export async function syncGatewayConfigBeforeLaunch(
 
     const result = measureSync(timingsMs, 'pluginMaintenanceMs', () => runCachedPrelaunchMaintenanceTask(
       'plugin-maintenance',
-      buildPluginMaintenanceCacheKey(openclawDir, configuredChannels),
+      () => buildPluginMaintenanceCacheKey(openclawDir, configuredChannels),
       () => {
         ensureConfiguredPluginsUpgraded(configuredChannels);
         cleanupUnconfiguredChannelPlugins(configuredChannels);

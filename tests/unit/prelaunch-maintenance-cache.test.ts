@@ -45,6 +45,37 @@ describe('prelaunch maintenance cache', () => {
     expect(task).toHaveBeenCalledTimes(1);
   });
 
+  it('stores the post-task cache key when the task mutates signed inputs', () => {
+    let rootSignature = 'dirty';
+    const cacheKey = () => buildPrelaunchMaintenanceCacheKey({
+      task: 'skills-symlink-cleanup',
+      appVersion: '1.0.0',
+      rootSignature,
+    });
+    const task = vi.fn(() => {
+      rootSignature = 'clean';
+    });
+
+    expect(runCachedPrelaunchMaintenanceTask(
+      'skills-symlink-cleanup',
+      cacheKey,
+      task,
+      { cachePath },
+    )).toEqual({ executed: true, reason: 'cache-miss' });
+    expect(task).toHaveBeenCalledTimes(1);
+
+    const writtenCache = JSON.parse(readFileSync(cachePath, 'utf-8'));
+    expect(writtenCache.tasks['skills-symlink-cleanup'].key).toBe(cacheKey());
+
+    expect(runCachedPrelaunchMaintenanceTask(
+      'skills-symlink-cleanup',
+      cacheKey,
+      task,
+      { cachePath },
+    )).toEqual({ executed: false, reason: 'cache-hit' });
+    expect(task).toHaveBeenCalledTimes(1);
+  });
+
   it('reruns a task when the cache key changes', () => {
     const task = vi.fn();
     const firstKey = buildPrelaunchMaintenanceCacheKey({
