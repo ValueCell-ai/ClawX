@@ -6,6 +6,7 @@ describe('openclaw bundle config', () => {
     const { EXTRA_BUNDLED_PACKAGES } = await import('../../scripts/openclaw-bundle-config.mjs');
 
     expect(EXTRA_BUNDLED_PACKAGES).toContain('@whiskeysockets/baileys');
+    expect(EXTRA_BUNDLED_PACKAGES).toContain('@larksuiteoapi/node-sdk');
     expect(EXTRA_BUNDLED_PACKAGES).toContain('qrcode-terminal');
   });
 });
