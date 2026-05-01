@@ -11,6 +11,33 @@ import { logger } from '../utils/logger';
 export const GATEWAY_CHALLENGE_TIMEOUT_MS = 10_000;
 export const GATEWAY_CONNECT_HANDSHAKE_TIMEOUT_MS = 20_000;
 
+/**
+ * Windows-specific handshake/challenge ceilings.
+ *
+ * Gateway cold-start on Windows is dominated by Defender scans, npx/plugin
+ * unpacking, and bonjour probing — all of which can stretch the interval
+ * between `WebSocket open` and `connect.challenge` well past 10 s.  The
+ * old defaults fired a false "handshake timeout" during normal cold-starts,
+ * which `startup-orchestrator` then treated as a transient error and
+ * retried up to 3×, stacking >1 min of additional cold-start delay on top
+ * of the real boot time.
+ *
+ * We keep the stricter defaults on macOS/Linux and only relax them on
+ * win32 to avoid changing well-behaved platforms.
+ */
+export const GATEWAY_CHALLENGE_TIMEOUT_MS_WIN = 30_000;
+export const GATEWAY_CONNECT_HANDSHAKE_TIMEOUT_MS_WIN = 45_000;
+
+export function getPlatformChallengeTimeoutMs(platform: NodeJS.Platform | string): number {
+  return platform === 'win32' ? GATEWAY_CHALLENGE_TIMEOUT_MS_WIN : GATEWAY_CHALLENGE_TIMEOUT_MS;
+}
+
+export function getPlatformConnectHandshakeTimeoutMs(platform: NodeJS.Platform | string): number {
+  return platform === 'win32'
+    ? GATEWAY_CONNECT_HANDSHAKE_TIMEOUT_MS_WIN
+    : GATEWAY_CONNECT_HANDSHAKE_TIMEOUT_MS;
+}
+
 export async function probeGatewayReady(
   port: number,
   timeoutMs = 1500,
@@ -179,8 +206,10 @@ export async function connectGatewaySocket(options: {
   connectTimeoutMs?: number;
 }): Promise<WebSocket> {
   logger.debug(`Connecting Gateway WebSocket (ws://localhost:${options.port}/ws)`);
-  const challengeTimeoutMs = options.challengeTimeoutMs ?? GATEWAY_CHALLENGE_TIMEOUT_MS;
-  const connectTimeoutMs = options.connectTimeoutMs ?? GATEWAY_CONNECT_HANDSHAKE_TIMEOUT_MS;
+  const challengeTimeoutMs =
+    options.challengeTimeoutMs ?? getPlatformChallengeTimeoutMs(options.platform);
+  const connectTimeoutMs =
+    options.connectTimeoutMs ?? getPlatformConnectHandshakeTimeoutMs(options.platform);
 
   return await new Promise<WebSocket>((resolve, reject) => {
     const wsUrl = `ws://localhost:${options.port}/ws`;

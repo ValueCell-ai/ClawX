@@ -130,6 +130,7 @@ export function Channels() {
   const { t } = useTranslation('channels');
   const gatewayStatus = useGatewayStore((state) => state.status);
   const lastGatewayStateRef = useRef(gatewayStatus.state);
+  const lastGatewayReadyRef = useRef(gatewayStatus.gatewayReady === true);
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -286,6 +287,12 @@ export function Channels() {
     // Channel adapters can take time to reconnect after gateway restart.
     // First few rounds use probe=true to force runtime connectivity checks,
     // then fall back to cached pulls to reduce load.
+    //
+    // We still schedule all five timers up-front, but each invocation now
+    // re-reads the latest gatewayStatus before firing.  If the gateway is
+    // not yet running+ready (which is the common case on Windows cold-start),
+    // fetchPageData is skipped for this tick so we don't flood the main
+    // process with channels.status RPCs that are guaranteed to be no-ops.
     [
       { delay: 1200, probe: true },
       { delay: 2600, probe: false },
@@ -294,6 +301,13 @@ export function Channels() {
       { delay: 10500, probe: false },
     ].forEach(({ delay, probe }) => {
       const timerId = window.setTimeout(() => {
+        const status = useGatewayStore.getState().status;
+        if (status.state !== 'running' || status.gatewayReady !== true) {
+          console.info(
+            `[channels-ui] convergence tick skipped (state=${status.state}, gatewayReady=${status.gatewayReady === true ? '1' : '0'})`,
+          );
+          return;
+        }
         void fetchPageData({ probe });
       }, delay);
       convergenceRefreshTimersRef.current.push(timerId);
@@ -342,13 +356,30 @@ export function Channels() {
 
   useEffect(() => {
     const previousGatewayState = lastGatewayStateRef.current;
+    const previousGatewayReady = lastGatewayReadyRef.current;
+    const currentGatewayReady = gatewayStatus.gatewayReady === true;
     lastGatewayStateRef.current = gatewayStatus.state;
+    lastGatewayReadyRef.current = currentGatewayReady;
 
-    if (previousGatewayState !== 'running' && gatewayStatus.state === 'running') {
+    const stateJustTransitionedToRunning =
+      previousGatewayState !== 'running' && gatewayStatus.state === 'running';
+    // Also re-sync when the gateway was already running but only just
+    // finished booting its subsystems.  Without this, a page that loaded
+    // during `starting` and then transitioned via `gateway.ready` (without
+    // ever changing status.state) would never refresh runtime data.
+    const readyJustFlippedOnWhileRunning =
+      gatewayStatus.state === 'running' && !previousGatewayReady && currentGatewayReady;
+
+    if (stateJustTransitionedToRunning || readyJustFlippedOnWhileRunning) {
       void fetchPageData();
       scheduleConvergenceRefresh();
     }
-  }, [fetchPageData, gatewayStatus.state, scheduleConvergenceRefresh]);
+  }, [
+    fetchPageData,
+    gatewayStatus.state,
+    gatewayStatus.gatewayReady,
+    scheduleConvergenceRefresh,
+  ]);
 
   const configuredTypes = useMemo(
     () => visibleChannelGroups.map((group) => group.channelType),

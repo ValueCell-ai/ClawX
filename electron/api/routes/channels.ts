@@ -258,6 +258,13 @@ const FORCE_RESTART_CHANNELS = new Set([
   'discord', 'telegram', 'signal', 'imessage', 'matrix', 'line', 'msteams', 'googlechat', 'mattermost',
 ]);
 
+// Increased from 150ms to 2000ms to coalesce typical setup flows where the UI
+// saves a provider, sets a default, binds an account, and saves a channel
+// config within ~1s of each other.  Before this change every step could
+// trigger a separate full Gateway restart on Windows (where reload=restart),
+// stacking cold-start latency and producing cascading "RPC timeout" banners.
+const CHANNEL_SAVE_RESTART_DEBOUNCE_MS = 2000;
+
 function scheduleGatewayChannelSaveRefresh(
   ctx: HostApiContext,
   channelType: string,
@@ -268,11 +275,11 @@ function scheduleGatewayChannelSaveRefresh(
     return;
   }
   if (FORCE_RESTART_CHANNELS.has(storedChannelType)) {
-    ctx.gatewayManager.debouncedRestart(150);
+    ctx.gatewayManager.debouncedRestart(CHANNEL_SAVE_RESTART_DEBOUNCE_MS);
     void reason;
     return;
   }
-  ctx.gatewayManager.debouncedReload(150);
+  ctx.gatewayManager.debouncedReload(CHANNEL_SAVE_RESTART_DEBOUNCE_MS);
   void reason;
 }
 
@@ -528,7 +535,18 @@ export async function buildChannelAccountsView(
   ]);
 
   let gatewayStatus: GatewayChannelStatusPayload | null = null;
-  if (!skipRuntime) {
+  // Skip the runtime RPC entirely while the gateway is still booting or
+  // reconnecting.  The old behaviour fired `channels.status` anyway, which
+  // — especially on Windows where cold-start can take 30s to 2min —
+  // immediately rejected with "Gateway not connected" or timed out.  Those
+  // failures then polluted the health summary and surfaced as the
+  // "网关状态异常 · 最近的网关 RPC 调用发生超时" red banner during normal
+  // startup.  The config-only path provides a complete view for the UI in
+  // the meantime.
+  const gatewayLifecycle = ctx.gatewayManager.getStatus();
+  const gatewayReadyForRpc =
+    gatewayLifecycle.state === 'running' && gatewayLifecycle.gatewayReady === true;
+  if (!skipRuntime && gatewayReadyForRpc) {
     try {
       // probe=false uses cached runtime state (lighter); probe=true forces
       // adapter-level connectivity checks for faster post-restart convergence.
@@ -552,6 +570,10 @@ export async function buildChannelAccountsView(
       );
       gatewayStatus = null;
     }
+  } else if (!skipRuntime) {
+    logger.info(
+      `[channels.accounts] channels.status skipped (state=${gatewayLifecycle.state}, gatewayReady=${gatewayLifecycle.gatewayReady === true ? '1' : '0'})`
+    );
   }
 
   const gatewayDiagnostics = ctx.gatewayManager.getDiagnostics?.() ?? {

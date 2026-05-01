@@ -91,12 +91,24 @@ export interface GatewayDiagnosticsSnapshot {
   consecutiveRpcFailures: number;
 }
 
+/**
+ * Classify whether an RPC failure is a "transport" failure that should count
+ * against the gateway health summary's `consecutiveRpcFailures`.
+ *
+ * Historically this treated `Gateway not connected` and `Gateway stopped` as
+ * transport failures, but those are *expected* while the gateway is booting
+ * or being restarted — counting them caused the "最近的网关 RPC 调用发生超时"
+ * red banner to flash on Windows every time the gateway cold-started or the
+ * user saved a provider/channel config (which forces a full Windows restart).
+ *
+ * Only true RPC timeouts (WS is OPEN, request sent, gateway did not respond
+ * within `timeoutMs`) genuinely indicate the gateway is degraded.  The other
+ * cases are handled by the existing `status.state` lifecycle reasons
+ * (`gateway_not_running` / `gateway_error`).
+ */
 function isTransportRpcFailure(error: unknown): boolean {
   const message = error instanceof Error ? error.message : String(error);
-  return message.includes('RPC timeout:')
-    || message.includes('Gateway not connected')
-    || message.includes('Gateway stopped')
-    || message.includes('Failed to send RPC request:');
+  return message.includes('RPC timeout:');
 }
 
 /**
@@ -154,6 +166,12 @@ export class GatewayManager extends EventEmitter {
   private static readonly HEARTBEAT_INTERVAL_MS_WIN = 60_000;
   private static readonly HEARTBEAT_TIMEOUT_MS_WIN = 25_000;
   private static readonly HEARTBEAT_MAX_MISSES_WIN = 5;
+  // Minimum silence (no heartbeat pong AND no inbound message) before we are
+  // willing to restart the Gateway on Windows from a heartbeat-only signal.
+  // Short Defender / system stalls recover within a few minutes; genuine
+  // dead-locks never emit another message.  5 * 60s heartbeat interval ==
+  // 5 minutes of silence before we take action on Windows.
+  private static readonly WINDOWS_RECOVERY_SILENCE_MS = 5 * 60_000;
   public static readonly RESTART_COOLDOWN_MS = 5_000;
   private static readonly GATEWAY_READY_FALLBACK_MS = 30_000;
   private lastRestartAt = 0;
@@ -841,11 +859,51 @@ export class GatewayManager extends EventEmitter {
   private recordRpcSuccess(): void {
     this.diagnostics.lastRpcSuccessAt = Date.now();
     this.diagnostics.consecutiveRpcFailures = 0;
+    // A successful RPC is the strongest positive signal that the gateway's
+    // subsystems (plugins, channels, skills) are reachable.  Some gateway
+    // builds either never emit the `gateway.ready` event or emit it before
+    // handlers are actually registered, which the 30s fallback masked with
+    // a false "ready" flip.  Promoting the first RPC success to the source
+    // of truth avoids that gap.
+    if (this.status.state === 'running' && !this.status.gatewayReady) {
+      this.clearGatewayReadyFallback();
+      logger.info('Gateway subsystems ready (inferred from first successful RPC)');
+      this.setStatus({ gatewayReady: true });
+    }
   }
+
+  /**
+   * Grace window after WebSocket becomes connected during which we don't
+   * count RPC timeouts against gateway health.  Gateway cold-start on
+   * Windows can push subsystem readiness tens of seconds past the WS
+   * handshake, so early-bird RPCs timing out is expected behavior and
+   * should not surface as a "degraded" banner in the Channels page.
+   *
+   * Value chosen > CHAT_HISTORY_RPC_TIMEOUT_MS (35s) in the renderer so
+   * that the initial `chat.history` startup-retry wave does not poison
+   * the counter even in worst-case cold starts.
+   */
+  private static readonly RPC_FAILURE_STARTUP_GRACE_MS = 45_000;
 
   private recordRpcFailure(method: string): void {
     this.diagnostics.lastRpcFailureAt = Date.now();
     this.diagnostics.lastRpcFailureMethod = method;
+
+    // Only count the failure against the health summary if the gateway is
+    // supposed to be fully running.  While the gateway is starting, stopping,
+    // reconnecting, or in its startup grace window, timeouts are expected
+    // side-effects of the lifecycle — not a degraded signal.
+    if (this.status.state !== 'running') {
+      return;
+    }
+    if (!this.status.gatewayReady) {
+      return;
+    }
+    const connectedAt = this.status.connectedAt;
+    if (connectedAt != null && Date.now() - connectedAt < GatewayManager.RPC_FAILURE_STARTUP_GRACE_MS) {
+      return;
+    }
+
     this.diagnostics.consecutiveRpcFailures += 1;
   }
 
@@ -1071,17 +1129,35 @@ export class GatewayManager extends EventEmitter {
         this.recordHeartbeatTimeout(consecutiveMisses);
         const pid = this.process?.pid ?? 'unknown';
         const isWindows = process.platform === 'win32';
-        const shouldAttemptRecovery = !isWindows && this.shouldReconnect && this.status.state === 'running';
         logger.warn(
           `Gateway heartbeat: ${consecutiveMisses} consecutive pong misses ` +
             `(timeout=${timeoutMs}ms, pid=${pid}, state=${this.status.state}, autoReconnect=${this.shouldReconnect}).`,
         );
-        if (!shouldAttemptRecovery) {
-          const reason = isWindows
-            ? 'platform=win32'
-            : 'lifecycle is not in auto-recoverable running state';
-          logger.warn(`Gateway heartbeat recovery skipped (${reason})`);
+        const lifecycleRecoverable = this.shouldReconnect && this.status.state === 'running';
+        if (!lifecycleRecoverable) {
+          logger.warn('Gateway heartbeat recovery skipped (lifecycle is not in auto-recoverable running state)');
           return;
+        }
+        // On Windows we previously disabled heartbeat-driven recovery entirely
+        // because Defender scans and transient OS stalls would produce false
+        // positives.  That left users with a permanently hung Gateway whenever
+        // the process actually deadlocked (see issue: 网关 RPC 调用超时 on
+        // Windows/0.3.10).  We now re-enable recovery but require an
+        // additional "truly silent" guard: no successful alive signal for
+        // at least WINDOWS_RECOVERY_SILENCE_MS so short scan-induced blips
+        // still do not trigger a restart.
+        if (isWindows) {
+          const lastAliveAt = this.diagnostics.lastAliveAt ?? 0;
+          const silenceMs = lastAliveAt === 0
+            ? Number.POSITIVE_INFINITY
+            : Date.now() - lastAliveAt;
+          if (silenceMs < GatewayManager.WINDOWS_RECOVERY_SILENCE_MS) {
+            logger.warn(
+              `Gateway heartbeat recovery deferred on Windows: alive signal seen ${silenceMs}ms ago ` +
+                `(require >= ${GatewayManager.WINDOWS_RECOVERY_SILENCE_MS}ms of silence).`,
+            );
+            return;
+          }
         }
         logger.warn('Gateway heartbeat recovery: restarting unresponsive gateway process');
         void this.restart().catch((error) => {
