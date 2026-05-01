@@ -263,7 +263,31 @@ const copiedNames = new Set(); // Track package names already copied
 let copiedCount = 0;
 let skippedDupes = 0;
 
-for (const [realPath, pkgName] of collected) {
+const preferredBundledPackages = new Set(EXTRA_BUNDLED_PACKAGES);
+const preferredBundledPackageRealPaths = new Set();
+for (const pkgName of EXTRA_BUNDLED_PACKAGES) {
+  const pkgLink = path.join(NODE_MODULES, ...pkgName.split('/'));
+  if (!fs.existsSync(pkgLink)) continue;
+  try {
+    preferredBundledPackageRealPaths.add(fs.realpathSync(pkgLink));
+  } catch {
+    // ignore
+  }
+}
+
+const collectedEntries = [...collected].sort(([leftRealPath, leftName], [rightRealPath, rightName]) => {
+  const leftPreferredRealPath = preferredBundledPackageRealPaths.has(leftRealPath);
+  const rightPreferredRealPath = preferredBundledPackageRealPaths.has(rightRealPath);
+  if (leftPreferredRealPath !== rightPreferredRealPath) return leftPreferredRealPath ? -1 : 1;
+
+  const leftPreferred = preferredBundledPackages.has(leftName);
+  const rightPreferred = preferredBundledPackages.has(rightName);
+  if (leftPreferred !== rightPreferred) return leftPreferred ? -1 : 1;
+
+  return 0;
+});
+
+for (const [realPath, pkgName] of collectedEntries) {
   if (copiedNames.has(pkgName)) {
     skippedDupes++;
     continue; // Keep the first version (closer to openclaw in dep tree)
@@ -372,6 +396,29 @@ if (mergedExtCount > 0) {
 if (mirroredExtRuntimeDeps > 0) {
   echo`   Mirrored ${mirroredExtRuntimeDeps} extension runtime deps into dist/extensions/*/node_modules`;
 }
+
+function patchBundledExtensionPackageJsons(extensionsRoot) {
+  let patchedCount = 0;
+
+  const discordPkgPath = path.join(extensionsRoot, 'discord', 'package.json');
+  if (fs.existsSync(discordPkgPath)) {
+    try {
+      const pkg = JSON.parse(fs.readFileSync(discordPkgPath, 'utf8'));
+      if (pkg?.dependencies?.opusscript === '^0.0.8') {
+        pkg.dependencies.opusscript = '^0.1.1';
+        fs.writeFileSync(discordPkgPath, JSON.stringify(pkg, null, 2) + '\n', 'utf8');
+        patchedCount++;
+        echo`   🩹 Patched discord bundled runtime dep range: opusscript ^0.0.8 -> ^0.1.1`;
+      }
+    } catch {
+      // ignore
+    }
+  }
+
+  return patchedCount;
+}
+
+patchBundledExtensionPackageJsons(extensionsDir);
 
 // 6. Clean up the bundle to reduce package size
 //
