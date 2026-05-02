@@ -46,6 +46,8 @@ export interface MarketplaceProvider {
     install(params: ClawHubInstallParams): Promise<void>;
 }
 
+const CLAWHUB_OFFICIAL_API = 'https://clawhub.ai';
+
 export class ClawHubService {
     private workDir: string;
     private cliPath: string;
@@ -212,6 +214,30 @@ export class ClawHubService {
     }
 
     /**
+     * Try fetching search/explore results directly from the official ClawHub API.
+     * Returns null on any failure so callers can fall back to CLI.
+     */
+    private async httpFetchResults(endpoint: string): Promise<ClawHubSkillResult[] | null> {
+        try {
+            const url = `${CLAWHUB_OFFICIAL_API}${endpoint}`;
+            const res = await fetch(url);
+            if (!res.ok) return null;
+            const contentType = res.headers.get('content-type') || '';
+            if (!contentType.includes('application/json')) return null;
+            const data = await res.json();
+            if (!Array.isArray(data.results)) return null;
+            return data.results.map((r: Record<string, unknown>) => ({
+                slug: r.slug as string,
+                name: (r.displayName as string) || (r.slug as string),
+                description: (r.summary as string) || '',
+                version: (r.version as string) || 'latest',
+            }));
+        } catch {
+            return null;
+        }
+    }
+
+    /**
      * Search for skills. Delegates to the marketplace provider if one is set,
      * otherwise falls back to the local ClawHub CLI.
      */
@@ -224,6 +250,11 @@ export class ClawHubService {
             if (!params.query || params.query.trim() === '') {
                 return this.explore({ limit: params.limit });
             }
+
+            // Try HTTP-first from the official registry
+            const limit = params.limit ? `&limit=${params.limit}` : '';
+            const httpResults = await this.httpFetchResults(`/api/search?q=${encodeURIComponent(params.query)}${limit}`);
+            if (httpResults) return httpResults;
 
             const args = ['search', params.query];
             if (params.limit) {
@@ -288,6 +319,11 @@ export class ClawHubService {
      */
     async explore(params: { limit?: number } = {}): Promise<ClawHubSkillResult[]> {
         try {
+            // Try HTTP-first from the official registry
+            const limit = params.limit ? `?limit=${params.limit}` : '';
+            const httpResults = await this.httpFetchResults(`/api/explore${limit}`);
+            if (httpResults) return httpResults;
+
             const args = ['explore'];
             if (params.limit) {
                 args.push('--limit', String(params.limit));
