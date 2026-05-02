@@ -105,6 +105,19 @@ describe('ClawHub HTTP-first search/explore fallback', () => {
             expect(results[0].slug).toBe('my-skill');
         });
 
+        it('falls back to CLI on abort/timeout', async () => {
+            fetchMock.mockRejectedValueOnce(new DOMException('The operation was aborted', 'AbortError'));
+
+            mockSpawnResult('my-skill v1.0.0 A great skill');
+
+            const service = new ClawHubService();
+            const results = await service.search({ query: 'test' });
+
+            expect(fetchMock).toHaveBeenCalledTimes(1);
+            expect(results.length).toBeGreaterThan(0);
+            expect(results[0].slug).toBe('my-skill');
+        });
+
         it('falls back to CLI on network error', async () => {
             fetchMock.mockRejectedValueOnce(new Error('ECONNREFUSED'));
 

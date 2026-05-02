@@ -220,7 +220,10 @@ export class ClawHubService {
     private async httpFetchResults(endpoint: string): Promise<ClawHubSkillResult[] | null> {
         try {
             const url = `${CLAWHUB_OFFICIAL_API}${endpoint}`;
-            const res = await fetch(url);
+            const controller = new AbortController();
+            const timer = setTimeout(() => controller.abort(), 5000);
+            const res = await fetch(url, { signal: controller.signal });
+            clearTimeout(timer);
             if (!res.ok) return null;
             const contentType = res.headers.get('content-type') || '';
             if (!contentType.includes('application/json')) return null;
