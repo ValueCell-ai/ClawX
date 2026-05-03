@@ -302,6 +302,11 @@ ClawX 采用 **双进程 + Host API 统一接入架构**。渲染进程只调用
 
 - **Node.js**：22+（推荐 LTS 版本）
 - **包管理器**：pnpm 9+（推荐）或 npm
+- **Linux（Ubuntu/Debian）**：运行 Electron 前，请先安装所需系统库：
+  ```bash
+  sudo apt-get install -y libnss3 libgtk-3-0 libxss1 libxtst6 libatspi2.0-0 libnotify4 xdg-utils
+  ```
+  在 Ubuntu 24.04+ 上，部分软件包使用 `t64` 后缀，运行上述命令后 `apt` 会自动选择正确版本。
 
 ### 项目结构
 
