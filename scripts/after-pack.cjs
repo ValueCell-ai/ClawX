@@ -19,7 +19,7 @@
  *      @mariozechner/clipboard).
  */
 
-const { cpSync, existsSync, readdirSync, rmSync, statSync, mkdirSync, realpathSync } = require('fs');
+const { cpSync, existsSync, readdirSync, rmSync, statSync, mkdirSync, realpathSync, symlinkSync } = require('fs');
 const { join, dirname, basename, relative } = require('path');
 
 // On Windows, paths in pnpm's virtual store can exceed the default MAX_PATH
@@ -610,17 +610,20 @@ exports.default = async function afterPack(context) {
   if (existsSync(buildExtDir)) {
     let extNMCount = 0;
     let mergedPkgCount = 0;
+    let linkedPkgCount = 0;
     for (const extEntry of readdirSync(buildExtDir, { withFileTypes: true })) {
       if (!extEntry.isDirectory()) continue;
       const srcNM = join(buildExtDir, extEntry.name, 'node_modules');
       if (!existsSync(srcNM)) continue;
 
       // Copy to extension's own node_modules (for direct requires from extension code).
-      // electron-builder may leave behind an empty destination directory when it
-      // skips node_modules content via .gitignore filtering, so always replace it.
+      // On macOS, duplicate trees under dozens of bundled extensions can push
+      // codesign past the per-process open-file limit (EMFILE). To keep the app
+      // bundle small enough to sign, link each direct dependency back to the
+      // top-level openclaw/node_modules when possible instead of copying it.
       const destExtNM = join(packExtDir, extEntry.name, 'node_modules');
       rmSync(destExtNM, { recursive: true, force: true });
-      cpSync(srcNM, destExtNM, { recursive: true });
+      mkdirSync(destExtNM, { recursive: true });
       extNMCount++;
 
       // Merge into top-level openclaw/node_modules/ (for shared chunks in dist/)
@@ -640,17 +643,44 @@ exports.default = async function afterPack(context) {
               cpSync(srcScoped, destScoped, { recursive: true });
               mergedPkgCount++;
             }
+
+            const extScoped = join(destExtNM, pkgEntry.name, scopeEntry.name);
+            mkdirSync(dirname(extScoped), { recursive: true });
+            if (platform === 'darwin' && existsSync(destScoped)) {
+              const target = relative(dirname(extScoped), destScoped) || '.';
+              try {
+                symlinkSync(target, extScoped, 'dir');
+                linkedPkgCount++;
+              } catch {
+                cpSync(srcScoped, extScoped, { recursive: true });
+              }
+            } else {
+              cpSync(srcScoped, extScoped, { recursive: true });
+            }
           }
         } else {
           if (!existsSync(destPkg)) {
             cpSync(srcPkg, destPkg, { recursive: true });
             mergedPkgCount++;
           }
+
+          const extPkg = join(destExtNM, pkgEntry.name);
+          if (platform === 'darwin' && existsSync(destPkg)) {
+            const target = relative(dirname(extPkg), destPkg) || '.';
+            try {
+              symlinkSync(target, extPkg, 'dir');
+              linkedPkgCount++;
+            } catch {
+              cpSync(srcPkg, extPkg, { recursive: true });
+            }
+          } else {
+            cpSync(srcPkg, extPkg, { recursive: true });
+          }
         }
       }
     }
     if (extNMCount > 0) {
-      console.log(`[after-pack] ✅ Copied node_modules for ${extNMCount} built-in extension(s), merged ${mergedPkgCount} packages into top-level.`);
+      console.log(`[after-pack] ✅ Prepared node_modules for ${extNMCount} built-in extension(s), merged ${mergedPkgCount} packages into top-level${linkedPkgCount > 0 ? `, linked ${linkedPkgCount} extension deps` : ''}.`);
     }
   }
 
