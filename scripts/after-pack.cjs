@@ -19,7 +19,7 @@
  *      @mariozechner/clipboard).
  */
 
-const { cpSync, existsSync, readdirSync, rmSync, statSync, mkdirSync, realpathSync } = require('fs');
+const { cpSync, existsSync, readdirSync, rmSync, statSync, mkdirSync, realpathSync, readFileSync, writeFileSync } = require('fs');
 const { join, dirname, basename, relative } = require('path');
 
 // On Windows, paths in pnpm's virtual store can exceed the default MAX_PATH
@@ -40,6 +40,26 @@ function resolveArch(archEnum) {
   return ARCH_MAP[archEnum] || 'x64';
 }
 
+function readJsonSafe(filePath) {
+  try {
+    return JSON.parse(readFileSync(normWin(filePath), 'utf8'));
+  } catch {
+    return null;
+  }
+}
+
+function listPackageDeps(pkgJson) {
+  return Object.keys({
+    ...(pkgJson?.dependencies && typeof pkgJson.dependencies === 'object' ? pkgJson.dependencies : {}),
+    ...(pkgJson?.optionalDependencies && typeof pkgJson.optionalDependencies === 'object' ? pkgJson.optionalDependencies : {}),
+  }).sort((a, b) => a.localeCompare(b));
+}
+
+function readInstalledPackageVersion(packageDir) {
+  const pkg = readJsonSafe(join(packageDir, 'package.json'));
+  return typeof pkg?.version === 'string' ? pkg.version.trim() : null;
+}
+
 // ── General cleanup ──────────────────────────────────────────────────────────
 
 function cleanupUnnecessaryFiles(dir) {
@@ -48,7 +68,17 @@ function cleanupUnnecessaryFiles(dir) {
   const REMOVE_DIRS = new Set([
     'test', 'tests', '__tests__', '.github', 'examples', 'example',
   ]);
-  const REMOVE_FILE_EXTS = ['.d.ts', '.d.ts.map', '.js.map', '.mjs.map', '.ts.map', '.markdown'];
+  // .d.mts / .d.cts are TypeScript declaration files for ESM/CJS dual-package
+  // builds. They are useless at runtime but show up in huge volumes from
+  // typed packages (e.g. typebox), and inflate the per-process file count
+  // that codesign opens during macOS signing → EMFILE.
+  const REMOVE_FILE_EXTS = [
+    '.d.ts', '.d.ts.map',
+    '.d.mts', '.d.mts.map',
+    '.d.cts', '.d.cts.map',
+    '.js.map', '.mjs.map', '.cjs.map', '.ts.map',
+    '.markdown',
+  ];
   const REMOVE_FILE_NAMES = new Set([
     '.DS_Store', 'README.md', 'CHANGELOG.md', 'LICENSE.md', 'CONTRIBUTING.md',
     'tsconfig.json', '.npmignore', '.eslintrc', '.prettierrc', '.editorconfig',
@@ -607,50 +637,121 @@ exports.default = async function afterPack(context) {
   //     the top-level node_modules/ as well.
   const buildExtDir = join(__dirname, '..', 'build', 'openclaw', 'dist', 'extensions');
   const packExtDir = join(openclawRoot, 'dist', 'extensions');
+  // ClawX always uses the official @larksuite/openclaw-lark plugin for Feishu.
+  // The built-in openclaw dist/extensions/feishu tree is redundant, and on macOS
+  // its mirrored runtime deps significantly increase codesign file pressure.
+  rmSync(join(packExtDir, 'feishu'), { recursive: true, force: true });
   if (existsSync(buildExtDir)) {
     let extNMCount = 0;
     let mergedPkgCount = 0;
+    let prunedSharedDepCount = 0;
     for (const extEntry of readdirSync(buildExtDir, { withFileTypes: true })) {
       if (!extEntry.isDirectory()) continue;
+      if (extEntry.name === 'feishu') continue;
+
       const srcNM = join(buildExtDir, extEntry.name, 'node_modules');
       if (!existsSync(srcNM)) continue;
 
-      // Copy to extension's own node_modules (for direct requires from extension code).
-      // electron-builder may leave behind an empty destination directory when it
-      // skips node_modules content via .gitignore filtering, so always replace it.
-      const destExtNM = join(packExtDir, extEntry.name, 'node_modules');
+      const destExtRoot = join(packExtDir, extEntry.name);
+      const destExtNM = join(destExtRoot, 'node_modules');
       rmSync(destExtNM, { recursive: true, force: true });
-      cpSync(srcNM, destExtNM, { recursive: true });
+      mkdirSync(destExtNM, { recursive: true });
       extNMCount++;
 
-      // Merge into top-level openclaw/node_modules/ (for shared chunks in dist/)
-      for (const pkgEntry of readdirSync(srcNM, { withFileTypes: true })) {
-        if (!pkgEntry.isDirectory() || pkgEntry.name === '.bin') continue;
-        const srcPkg = join(srcNM, pkgEntry.name);
-        const destPkg = join(dest, pkgEntry.name);
+      if (platform === 'darwin') {
+        const buildPkgPath = join(buildExtDir, extEntry.name, 'package.json');
+        const packPkgPath = join(destExtRoot, 'package.json');
+        const buildPkgJson = readJsonSafe(buildPkgPath) || {};
+        // Deep copy the fallback so mutations to packPkgJson don't bleed back
+        // into buildPkgJson (which we still iterate via listPackageDeps below).
+        const packPkgJson = readJsonSafe(packPkgPath) || JSON.parse(JSON.stringify(buildPkgJson));
 
-        if (pkgEntry.name.startsWith('@')) {
-          // Scoped package — iterate sub-entries
-          for (const scopeEntry of readdirSync(srcPkg, { withFileTypes: true })) {
-            if (!scopeEntry.isDirectory()) continue;
-            const srcScoped = join(srcPkg, scopeEntry.name);
-            const destScoped = join(destPkg, scopeEntry.name);
-            if (!existsSync(destScoped)) {
-              mkdirSync(dirname(destScoped), { recursive: true });
-              cpSync(srcScoped, destScoped, { recursive: true });
+        for (const depName of listPackageDeps(buildPkgJson)) {
+          const srcDepPkg = join(srcNM, ...depName.split('/'));
+          const destDepPkg = join(dest, ...depName.split('/'));
+          if (!existsSync(destDepPkg) && existsSync(srcDepPkg)) {
+            mkdirSync(dirname(destDepPkg), { recursive: true });
+            cpSync(srcDepPkg, destDepPkg, { recursive: true });
+            mergedPkgCount++;
+          }
+
+          // Reuse the top-level openclaw/node_modules copy whenever possible:
+          //   - if src is missing, we have no reference version → trust top-level
+          //     (Node's module resolution will walk up from
+          //     dist/extensions/<ext>/<file>.js to openclaw/node_modules/ anyway).
+          //   - if src exists and matches top-level version, we can safely share.
+          // Only force a per-extension local copy when we actually have a
+          // version conflict between the extension's pinned dep and the
+          // top-level shared dep.
+          const srcVersion = existsSync(srcDepPkg) ? readInstalledPackageVersion(srcDepPkg) : null;
+          const destVersion = existsSync(destDepPkg) ? readInstalledPackageVersion(destDepPkg) : null;
+          const canReuseTopLevel = existsSync(destDepPkg) && (
+            !srcVersion || (destVersion && srcVersion === destVersion)
+          );
+          if (canReuseTopLevel) {
+            if (packPkgJson.dependencies && depName in packPkgJson.dependencies) {
+              delete packPkgJson.dependencies[depName];
+              prunedSharedDepCount++;
+            }
+            if (packPkgJson.optionalDependencies && depName in packPkgJson.optionalDependencies) {
+              delete packPkgJson.optionalDependencies[depName];
+              prunedSharedDepCount++;
+            }
+            continue;
+          }
+
+          const extDepPkg = join(destExtNM, ...depName.split('/'));
+          mkdirSync(dirname(extDepPkg), { recursive: true });
+          if (existsSync(srcDepPkg)) {
+            cpSync(srcDepPkg, extDepPkg, { recursive: true });
+          } else if (existsSync(destDepPkg)) {
+            cpSync(destDepPkg, extDepPkg, { recursive: true });
+          }
+        }
+
+        if (packPkgJson.dependencies && Object.keys(packPkgJson.dependencies).length === 0) {
+          delete packPkgJson.dependencies;
+        }
+        if (packPkgJson.optionalDependencies && Object.keys(packPkgJson.optionalDependencies).length === 0) {
+          delete packPkgJson.optionalDependencies;
+        }
+        writeFileSync(packPkgPath, JSON.stringify(packPkgJson, null, 2) + '\n', 'utf8');
+      } else {
+        for (const pkgEntry of readdirSync(srcNM, { withFileTypes: true })) {
+          if (!pkgEntry.isDirectory() || pkgEntry.name === '.bin') continue;
+          const srcPkg = join(srcNM, pkgEntry.name);
+          const destPkg = join(dest, pkgEntry.name);
+
+          if (pkgEntry.name.startsWith('@')) {
+            // Scoped package — iterate sub-entries
+            for (const scopeEntry of readdirSync(srcPkg, { withFileTypes: true })) {
+              if (!scopeEntry.isDirectory()) continue;
+              const srcScoped = join(srcPkg, scopeEntry.name);
+              const destScoped = join(destPkg, scopeEntry.name);
+              if (!existsSync(destScoped)) {
+                mkdirSync(dirname(destScoped), { recursive: true });
+                cpSync(srcScoped, destScoped, { recursive: true });
+                mergedPkgCount++;
+              }
+
+              const extScoped = join(destExtNM, pkgEntry.name, scopeEntry.name);
+              mkdirSync(dirname(extScoped), { recursive: true });
+              cpSync(srcScoped, extScoped, { recursive: true });
+            }
+          } else {
+            if (!existsSync(destPkg)) {
+              cpSync(srcPkg, destPkg, { recursive: true });
               mergedPkgCount++;
             }
-          }
-        } else {
-          if (!existsSync(destPkg)) {
-            cpSync(srcPkg, destPkg, { recursive: true });
-            mergedPkgCount++;
+
+            const extPkg = join(destExtNM, pkgEntry.name);
+            cpSync(srcPkg, extPkg, { recursive: true });
           }
         }
       }
     }
     if (extNMCount > 0) {
-      console.log(`[after-pack] ✅ Copied node_modules for ${extNMCount} built-in extension(s), merged ${mergedPkgCount} packages into top-level.`);
+      console.log(`[after-pack] ✅ Prepared node_modules for ${extNMCount} built-in extension(s), merged ${mergedPkgCount} packages into top-level${prunedSharedDepCount > 0 ? `, pruned ${prunedSharedDepCount} redundant direct deps on macOS` : ''}.`);
     }
   }
 

@@ -56,10 +56,36 @@ function shouldCopyOpenClawPackageEntry(src) {
   return true;
 }
 
-// 2. Clean and create output directory
-if (fs.existsSync(OUTPUT)) {
-  fs.rmSync(OUTPUT, { recursive: true });
+function removeDirRobust(targetDir) {
+  if (!fs.existsSync(targetDir)) return;
+
+  try {
+    fs.rmSync(targetDir, {
+      recursive: true,
+      force: true,
+      maxRetries: 10,
+      retryDelay: 100,
+    });
+  } catch (error) {
+    const code = error && typeof error === 'object' && 'code' in error ? error.code : undefined;
+    if (fs.existsSync(targetDir) && (code === 'EACCES' || code === 'ENOTEMPTY' || code === 'EPERM')) {
+      try {
+        fs.removeSync(targetDir);
+      } catch {
+        // fall through to final existence check below
+      }
+    } else {
+      throw error;
+    }
+  }
+
+  if (fs.existsSync(targetDir)) {
+    throw new Error(`Failed to remove directory: ${targetDir}`);
+  }
 }
+
+// 2. Clean and create output directory
+removeDirRobust(OUTPUT);
 fs.mkdirSync(OUTPUT, { recursive: true });
 
 // 3. Copy openclaw package itself to OUTPUT root
@@ -458,7 +484,13 @@ function rmSafe(target) {
 function cleanupBundle(outputDir) {
   let removedCount = 0;
   const nm = path.join(outputDir, 'node_modules');
-  const ext = path.join(outputDir, 'extensions');
+  // OpenClaw 3.x ships built-in extensions under dist/extensions/<ext>/, not
+  // extensions/. The previous `path.join(outputDir, 'extensions')` silently
+  // resolved to a non-existent directory so the entire walkExt() pass below
+  // (which is what cleans .d.ts / .d.mts / source maps inside per-extension
+  // node_modules) was a no-op. That left ~28k .d.mts files in the bundle and
+  // contributed to the macOS codesign EMFILE blow-up.
+  const ext = path.join(outputDir, 'dist', 'extensions');
 
   // --- openclaw root junk ---
   for (const name of ['CHANGELOG.md', 'README.md']) {
@@ -475,7 +507,17 @@ function cleanupBundle(outputDir) {
     const NM_REMOVE_DIRS = new Set([
       'test', 'tests', '__tests__', '.github', 'docs', 'examples', 'example',
     ]);
-    const NM_REMOVE_FILE_EXTS = ['.d.ts', '.d.ts.map', '.js.map', '.mjs.map', '.ts.map', '.markdown'];
+    // .d.mts / .d.cts are TypeScript declaration files for ESM/CJS dual-package
+    // builds. They are useless at runtime but show up in huge volumes from
+    // typed packages (e.g. typebox), and inflate the per-process file count
+    // that codesign opens during macOS signing → EMFILE.
+    const NM_REMOVE_FILE_EXTS = [
+      '.d.ts', '.d.ts.map',
+      '.d.mts', '.d.mts.map',
+      '.d.cts', '.d.cts.map',
+      '.js.map', '.mjs.map', '.cjs.map', '.ts.map',
+      '.markdown',
+    ];
     const NM_REMOVE_FILE_NAMES = new Set([
       '.DS_Store', 'README.md', 'CHANGELOG.md', 'LICENSE.md', 'CONTRIBUTING.md',
       'tsconfig.json', '.npmignore', '.eslintrc', '.prettierrc', '.editorconfig',
@@ -529,7 +571,13 @@ function cleanupBundle(outputDir) {
     const REMOVE_DIRS = new Set([
       'test', 'tests', '__tests__', '.github', 'docs', 'examples', 'example',
     ]);
-    const REMOVE_FILE_EXTS = ['.d.ts', '.d.ts.map', '.js.map', '.mjs.map', '.ts.map', '.markdown'];
+    const REMOVE_FILE_EXTS = [
+      '.d.ts', '.d.ts.map',
+      '.d.mts', '.d.mts.map',
+      '.d.cts', '.d.cts.map',
+      '.js.map', '.mjs.map', '.cjs.map', '.ts.map',
+      '.markdown',
+    ];
     const REMOVE_FILE_NAMES = new Set([
       '.DS_Store', 'README.md', 'CHANGELOG.md', 'LICENSE.md', 'CONTRIBUTING.md',
       'tsconfig.json', '.npmignore', '.eslintrc', '.prettierrc', '.editorconfig',
@@ -565,7 +613,7 @@ function cleanupBundle(outputDir) {
     'node_modules/koffi/src',
     'node_modules/koffi/vendor',
     'node_modules/koffi/doc',
-    'extensions/feishu', // Removed in favor of official @larksuite/openclaw-lark plugin
+    'dist/extensions/feishu', // Removed in favor of official @larksuite/openclaw-lark plugin
   ];
   for (const rel of LARGE_REMOVALS) {
     if (rmSafe(path.join(outputDir, rel))) removedCount++;
