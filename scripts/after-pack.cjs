@@ -19,7 +19,7 @@
  *      @mariozechner/clipboard).
  */
 
-const { cpSync, existsSync, readdirSync, rmSync, statSync, mkdirSync, realpathSync, symlinkSync } = require('fs');
+const { cpSync, existsSync, readdirSync, rmSync, statSync, mkdirSync, realpathSync, symlinkSync, readFileSync } = require('fs');
 const { join, dirname, basename, relative } = require('path');
 
 // On Windows, paths in pnpm's virtual store can exceed the default MAX_PATH
@@ -38,6 +38,26 @@ const ARCH_MAP = { 0: 'ia32', 1: 'x64', 2: 'armv7l', 3: 'arm64', 4: 'universal' 
 
 function resolveArch(archEnum) {
   return ARCH_MAP[archEnum] || 'x64';
+}
+
+function readJsonSafe(filePath) {
+  try {
+    return JSON.parse(readFileSync(normWin(filePath), 'utf8'));
+  } catch {
+    return null;
+  }
+}
+
+function listPackageDeps(pkgJson) {
+  return Object.keys({
+    ...(pkgJson?.dependencies && typeof pkgJson.dependencies === 'object' ? pkgJson.dependencies : {}),
+    ...(pkgJson?.optionalDependencies && typeof pkgJson.optionalDependencies === 'object' ? pkgJson.optionalDependencies : {}),
+  }).sort((a, b) => a.localeCompare(b));
+}
+
+function readInstalledPackageVersion(packageDir) {
+  const pkg = readJsonSafe(join(packageDir, 'package.json'));
+  return typeof pkg?.version === 'string' ? pkg.version.trim() : null;
 }
 
 // ── General cleanup ──────────────────────────────────────────────────────────
@@ -627,53 +647,76 @@ exports.default = async function afterPack(context) {
       extNMCount++;
 
       // Merge into top-level openclaw/node_modules/ (for shared chunks in dist/)
-      for (const pkgEntry of readdirSync(srcNM, { withFileTypes: true })) {
-        if (!pkgEntry.isDirectory() || pkgEntry.name === '.bin') continue;
-        const srcPkg = join(srcNM, pkgEntry.name);
-        const destPkg = join(dest, pkgEntry.name);
-
-        if (pkgEntry.name.startsWith('@')) {
-          // Scoped package — iterate sub-entries
-          for (const scopeEntry of readdirSync(srcPkg, { withFileTypes: true })) {
-            if (!scopeEntry.isDirectory()) continue;
-            const srcScoped = join(srcPkg, scopeEntry.name);
-            const destScoped = join(destPkg, scopeEntry.name);
-            if (!existsSync(destScoped)) {
-              mkdirSync(dirname(destScoped), { recursive: true });
-              cpSync(srcScoped, destScoped, { recursive: true });
-              mergedPkgCount++;
-            }
-
-            const extScoped = join(destExtNM, pkgEntry.name, scopeEntry.name);
-            mkdirSync(dirname(extScoped), { recursive: true });
-            if (platform === 'darwin' && existsSync(destScoped)) {
-              const target = relative(dirname(extScoped), destScoped) || '.';
-              try {
-                symlinkSync(target, extScoped, 'dir');
-                linkedPkgCount++;
-              } catch {
-                cpSync(srcScoped, extScoped, { recursive: true });
-              }
-            } else {
-              cpSync(srcScoped, extScoped, { recursive: true });
-            }
-          }
-        } else {
-          if (!existsSync(destPkg)) {
-            cpSync(srcPkg, destPkg, { recursive: true });
+      // and prepare per-extension node_modules entries.
+      //
+      // On macOS we intentionally keep extension-local node_modules minimal:
+      // only direct deps declared in the extension package.json get materialized.
+      // If the top-level bundled package version exactly matches the extension's
+      // packaged version, we symlink to the top-level copy instead of duplicating
+      // the whole tree. This dramatically reduces redundant files inside the
+      // signed .app bundle and avoids codesign EMFILE failures.
+      if (platform === 'darwin') {
+        const extPkgJson = readJsonSafe(join(buildExtDir, extEntry.name, 'package.json'));
+        for (const depName of listPackageDeps(extPkgJson)) {
+          const srcDepPkg = join(srcNM, ...depName.split('/'));
+          const destDepPkg = join(dest, ...depName.split('/'));
+          if (!existsSync(destDepPkg) && existsSync(srcDepPkg)) {
+            mkdirSync(dirname(destDepPkg), { recursive: true });
+            cpSync(srcDepPkg, destDepPkg, { recursive: true });
             mergedPkgCount++;
           }
 
-          const extPkg = join(destExtNM, pkgEntry.name);
-          if (platform === 'darwin' && existsSync(destPkg)) {
-            const target = relative(dirname(extPkg), destPkg) || '.';
+          const extDepPkg = join(destExtNM, ...depName.split('/'));
+          mkdirSync(dirname(extDepPkg), { recursive: true });
+
+          const srcVersion = existsSync(srcDepPkg) ? readInstalledPackageVersion(srcDepPkg) : null;
+          const destVersion = existsSync(destDepPkg) ? readInstalledPackageVersion(destDepPkg) : null;
+          if (existsSync(destDepPkg) && srcVersion && destVersion && srcVersion === destVersion) {
+            const target = relative(dirname(extDepPkg), destDepPkg) || '.';
             try {
-              symlinkSync(target, extPkg, 'dir');
+              symlinkSync(target, extDepPkg, 'dir');
               linkedPkgCount++;
+              continue;
             } catch {
-              cpSync(srcPkg, extPkg, { recursive: true });
+              // fall back to copy below
+            }
+          }
+
+          if (existsSync(srcDepPkg)) {
+            cpSync(srcDepPkg, extDepPkg, { recursive: true });
+          } else if (existsSync(destDepPkg)) {
+            cpSync(destDepPkg, extDepPkg, { recursive: true });
+          }
+        }
+      } else {
+        for (const pkgEntry of readdirSync(srcNM, { withFileTypes: true })) {
+          if (!pkgEntry.isDirectory() || pkgEntry.name === '.bin') continue;
+          const srcPkg = join(srcNM, pkgEntry.name);
+          const destPkg = join(dest, pkgEntry.name);
+
+          if (pkgEntry.name.startsWith('@')) {
+            // Scoped package — iterate sub-entries
+            for (const scopeEntry of readdirSync(srcPkg, { withFileTypes: true })) {
+              if (!scopeEntry.isDirectory()) continue;
+              const srcScoped = join(srcPkg, scopeEntry.name);
+              const destScoped = join(destPkg, scopeEntry.name);
+              if (!existsSync(destScoped)) {
+                mkdirSync(dirname(destScoped), { recursive: true });
+                cpSync(srcScoped, destScoped, { recursive: true });
+                mergedPkgCount++;
+              }
+
+              const extScoped = join(destExtNM, pkgEntry.name, scopeEntry.name);
+              mkdirSync(dirname(extScoped), { recursive: true });
+              cpSync(srcScoped, extScoped, { recursive: true });
             }
           } else {
+            if (!existsSync(destPkg)) {
+              cpSync(srcPkg, destPkg, { recursive: true });
+              mergedPkgCount++;
+            }
+
+            const extPkg = join(destExtNM, pkgEntry.name);
             cpSync(srcPkg, extPkg, { recursive: true });
           }
         }
