@@ -8,11 +8,12 @@
  * equivalents could stall for 500 ms – 2 s+ per call, causing "Not
  * Responding" hangs.
  */
-import { access, mkdir, readFile, readdir, writeFile } from 'fs/promises';
+import { access, mkdir, readFile, readdir } from 'fs/promises';
 import { constants, readdirSync, readFileSync, existsSync } from 'fs';
 import { dirname, join } from 'path';
 import { homedir } from 'os';
 import { listConfiguredAgentIds } from './agent-config';
+import { writeFileAtomic } from './atomic-write';
 import { getOpenClawResolvedDir } from './paths';
 import {
   getProviderEnvVar,
@@ -288,10 +289,18 @@ async function readJsonFile<T>(filePath: string): Promise<T | null> {
   }
 }
 
-/** Write a JSON file, creating parent directories if needed. */
+/** Write a JSON file, creating parent directories if needed.
+ *
+ * Uses atomic write (tmp file + rename) so concurrent readers — which
+ * happen routinely during gateway startup (sanitize, listAccounts,
+ * channel routes, etc.) — never observe a half-written file. Without
+ * atomicity the readers would crash with "Unexpected end of JSON input"
+ * when a writer interleaves with their JSON.parse. Especially important
+ * on Windows portable installs running off USB drives where the OS is
+ * slower to flush. */
 async function writeJsonFile(filePath: string, data: unknown): Promise<void> {
   await ensureDir(join(filePath, '..'));
-  await writeFile(filePath, JSON.stringify(data, null, 2), 'utf-8');
+  await writeFileAtomic(filePath, JSON.stringify(data, null, 2), 'utf-8');
 }
 
 // ── Types ────────────────────────────────────────────────────────
@@ -915,7 +924,7 @@ export async function removeProviderFromOpenClaw(provider: string): Promise<void
         const providers = data.providers as Record<string, unknown> | undefined;
         if (providers && providers[provider]) {
           delete providers[provider];
-          await writeFile(modelsPath, JSON.stringify(data, null, 2), 'utf-8');
+          await writeFileAtomic(modelsPath, JSON.stringify(data, null, 2), 'utf-8');
           console.log(`Removed models.json entry for provider "${provider}" (agent "${id}")`);
         }
       }
