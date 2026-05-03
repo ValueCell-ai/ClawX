@@ -24,20 +24,41 @@ export function warmupManagedPythonReadiness(): void {
 export async function terminateOwnedGatewayProcess(child: Electron.UtilityProcess): Promise<void> {
   const terminateWindowsProcessTree = async (pid: number): Promise<void> => {
     const cp = await import('child_process');
+    // Wait for taskkill to complete (await its callback, not just spawn it).
+    // Previously fire-and-forget; if Windows queued the kill behind a
+    // ProcessProtection / antivirus hook the parent could fall through to
+    // listening on the same port before the OS released the socket — which
+    // is the deadlock seen in customer logs (force-kill fired, but the old
+    // gateway PID kept LISTENING for tens of seconds).
     await new Promise<void>((resolve) => {
-      cp.exec(`taskkill /F /PID ${pid} /T`, { timeout: 5000, windowsHide: true }, () => resolve());
+      cp.exec(`taskkill /F /PID ${pid} /T`, { timeout: 10000, windowsHide: true }, () => resolve());
     });
   };
 
+  // After a forced kill, give the OS a moment to reclaim the listening
+  // socket.  Without this, the next start's port-free probe races the
+  // kernel and reports "still occupied" even though the parent process
+  // is already gone.
+  const postKillSettleMs = process.platform === 'win32' ? 2000 : 500;
+
   await new Promise<void>((resolve) => {
     let exited = false;
+    let resolved = false;
+    const finish = () => {
+      if (resolved) return;
+      resolved = true;
+      resolve();
+    };
 
     // Register a single exit listener before any kill attempt to avoid
     // the race where exit fires between two separate `once('exit')` calls.
-    child.once('exit', () => {
+    child.once('exit', async () => {
       exited = true;
       clearTimeout(timeout);
-      resolve();
+      // Even on a graceful exit, briefly settle so Windows reclaims the
+      // socket before the next start probes the port.
+      await new Promise((r) => setTimeout(r, postKillSettleMs));
+      finish();
     });
 
     const pid = child.pid;
@@ -55,25 +76,43 @@ export async function terminateOwnedGatewayProcess(child: Electron.UtilityProces
       }
     }
 
+    // Graceful shutdown timeout.  Bumped from 5s to 15s after seeing
+    // OpenClaw with several extensions loaded (dingtalk + feishu + wecom +
+    // openclaw-weixin) routinely take 6-10 seconds to close all ws
+    // connections + http server cleanly.  Premature force-kill leaves
+    // the listening socket in TIME_WAIT and deadlocks the next start.
     const timeout = setTimeout(() => {
       if (!exited) {
         logger.warn(`Gateway did not exit in time, force-killing (pid=${pid ?? 'unknown'})`);
         if (pid) {
           if (process.platform === 'win32') {
-            void terminateWindowsProcessTree(pid).catch((err) => {
-              logger.warn(`Forced Windows process-tree kill failed for Gateway pid=${pid}:`, err);
-            });
-          } else {
-            try {
-              process.kill(pid, 'SIGKILL');
-            } catch {
-              // ignore
-            }
+            // Wait for the forced kill to complete before resolving.
+            // The critical change: the old code spawned taskkill and
+            // fell through immediately, so the next gateway start would
+            // race the kill and find the port still occupied.
+            void terminateWindowsProcessTree(pid)
+              .catch((err) => {
+                logger.warn(`Forced Windows process-tree kill failed for Gateway pid=${pid}:`, err);
+              })
+              .finally(async () => {
+                await new Promise((r) => setTimeout(r, postKillSettleMs));
+                finish();
+              });
+            return;
+          }
+          try {
+            process.kill(pid, 'SIGKILL');
+          } catch {
+            // ignore
           }
         }
       }
-      resolve();
-    }, 5000);
+      // Non-Windows or no pid path: settle then resolve.
+      void (async () => {
+        await new Promise((r) => setTimeout(r, postKillSettleMs));
+        finish();
+      })();
+    }, 15000);
   });
 }
 
@@ -125,11 +164,12 @@ export async function unloadLaunchctlGatewayService(): Promise<void> {
   }
 }
 
-export async function waitForPortFree(port: number, timeoutMs = 30000): Promise<void> {
+export async function waitForPortFree(port: number, timeoutMs = 60000): Promise<void> {
   const net = await import('net');
   const start = Date.now();
   const pollInterval = 500;
   let logged = false;
+  let attemptedRescue = false;
 
   while (Date.now() - start < timeoutMs) {
     const available = await new Promise<boolean>((resolve) => {
@@ -138,7 +178,13 @@ export async function waitForPortFree(port: number, timeoutMs = 30000): Promise<
       server.once('listening', () => {
         server.close(() => resolve(true));
       });
-      server.listen(port, '127.0.0.1');
+      // exclusive: false → SO_REUSEADDR on Linux/macOS, and on Windows
+      // bypasses SO_EXCLUSIVEADDRUSE so the probe can succeed during the
+      // 120-second TCP TIME_WAIT window left by a force-killed gateway.
+      // Without this, on Windows we sit in TIME_WAIT for the full timeout
+      // and abort startup, deadlocking the gateway after every restart
+      // until the user reboots.
+      server.listen({ port, host: '127.0.0.1', exclusive: false });
     });
 
     if (available) {
@@ -153,6 +199,26 @@ export async function waitForPortFree(port: number, timeoutMs = 30000): Promise<
       logger.info(`Waiting for port ${port} to become available (Windows TCP TIME_WAIT)...`);
       logged = true;
     }
+
+    // Halfway through the wait, if the port is still taken, attempt a
+    // rescue: identify whatever process is holding the listener and
+    // force-kill it.  This handles the case where a previous gateway
+    // shutdown's force-kill failed (e.g. blocked by antivirus) and the
+    // orphaned process is keeping the socket alive.  We only try this
+    // once per call to avoid loops.
+    if (!attemptedRescue && Date.now() - start > timeoutMs / 2) {
+      attemptedRescue = true;
+      try {
+        const pids = await getListeningProcessIds(port);
+        if (pids.length > 0) {
+          logger.warn(`Port ${port} still occupied after ${Date.now() - start}ms; rescuing by killing PIDs ${pids.join(', ')}`);
+          await terminateOrphanedProcessIds(port, pids);
+        }
+      } catch (err) {
+        logger.warn(`Rescue kill on port ${port} failed:`, err);
+      }
+    }
+
     await new Promise((resolve) => setTimeout(resolve, pollInterval));
   }
 
@@ -247,7 +313,7 @@ export async function findExistingGatewayProcess(options: {
       if (pids.length > 0 && (!ownedPid || !pids.includes(String(ownedPid)))) {
         await terminateOrphanedProcessIds(port, pids);
         if (process.platform === 'win32') {
-          await waitForPortFree(port, 10000);
+          await waitForPortFree(port, 60000);
         }
         return null;
       }
@@ -292,6 +358,7 @@ export async function runOpenClawDoctorRepair(): Promise<boolean> {
     const forkEnv: Record<string, string | undefined> = {
       ...baseEnvPatched,
       ...uvEnv,
+      OPENCLAW_EMBEDDED_IN: 'U-Claw',
       OPENCLAW_NO_RESPAWN: '1',
     };
 
