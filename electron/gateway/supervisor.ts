@@ -138,7 +138,19 @@ export async function waitForPortFree(port: number, timeoutMs = 30000): Promise<
       server.once('listening', () => {
         server.close(() => resolve(true));
       });
-      server.listen(port, '127.0.0.1');
+      // exclusive: false → SO_REUSEADDR on Linux/macOS, and on Windows
+      // bypasses SO_EXCLUSIVEADDRUSE so the probe can bind during the
+      // ~120-second TCP TIME_WAIT window left by a force-killed gateway.
+      // Without this, the probe falsely reports the port as occupied for
+      // the full timeoutMs after every gateway restart on Windows, and
+      // startup aborts. This deadlocks the gateway after every channel
+      // config change (which triggers a full restart) until the user
+      // reboots Windows.
+      //
+      // OpenClaw's actual gateway listen() is unaffected — this probe's
+      // role is only to confirm the port is bindable; the real bind that
+      // follows succeeds whether or not the OS is still in TIME_WAIT.
+      server.listen({ port, host: '127.0.0.1', exclusive: false });
     });
 
     if (available) {
