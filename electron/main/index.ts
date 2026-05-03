@@ -413,6 +413,14 @@ async function initialize(): Promise<void> {
     hostEventBus.emit('gateway:notification', notification);
   });
 
+  gatewayManager.on('gateway:health', (data) => {
+    hostEventBus.emit('gateway:health', data);
+  });
+
+  gatewayManager.on('gateway:presence', (data) => {
+    hostEventBus.emit('gateway:presence', data);
+  });
+
   gatewayManager.on('chat:message', (data) => {
     hostEventBus.emit('gateway:chat-message', data);
   });

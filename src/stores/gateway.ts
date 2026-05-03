@@ -6,7 +6,7 @@ import { create } from 'zustand';
 import { hostApiFetch } from '@/lib/host-api';
 import { invokeIpc } from '@/lib/api-client';
 import { subscribeHostEvent } from '@/lib/host-events';
-import type { GatewayStatus } from '../types/gateway';
+import type { GatewayHealth, GatewayStatus } from '../types/gateway';
 
 let gatewayInitPromise: Promise<void> | null = null;
 let gatewayEventUnsubscribers: Array<() => void> | null = null;
@@ -18,12 +18,6 @@ const LOAD_HISTORY_MIN_INTERVAL_MS = 800;
 let lastLoadSessionsAt = 0;
 let lastLoadHistoryAt = 0;
 let cronRepairTriggeredThisSession = false;
-
-interface GatewayHealth {
-  ok: boolean;
-  error?: string;
-  uptime?: number;
-}
 
 interface GatewayState {
   status: GatewayStatus;
@@ -287,6 +281,14 @@ export const useGatewayStore = create<GatewayState>((set, get) => ({
               handleGatewayNotification(payload);
             },
           ));
+          unsubscribers.push(subscribeHostEvent('gateway:health', (payload) => {
+            const current = get().health;
+            set({ health: { ...(current ?? { ok: true }), ok: true, openclawHealth: payload } });
+          }));
+          unsubscribers.push(subscribeHostEvent('gateway:presence', (payload) => {
+            const current = get().health;
+            set({ health: { ...(current ?? { ok: true }), presence: payload } });
+          }));
           unsubscribers.push(subscribeHostEvent('gateway:chat-message', (payload) => {
             handleGatewayChatMessage(payload);
           }));

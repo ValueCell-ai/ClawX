@@ -70,13 +70,13 @@ describe('GatewayManager diagnostics', () => {
     expect(manager.getDiagnostics().lastRpcSuccessAt).toBe(Date.now());
     expect(manager.getDiagnostics().consecutiveRpcFailures).toBe(0);
 
-    const failurePromise = manager.rpc('chat.history', {}, 1000);
+    const failurePromise = manager.rpc('system-presence', {}, 1000);
     vi.advanceTimersByTime(1001);
-    await expect(failurePromise).rejects.toThrow('RPC timeout: chat.history');
+    await expect(failurePromise).rejects.toThrow('RPC timeout: system-presence');
 
     const diagnostics = manager.getDiagnostics();
     expect(diagnostics.lastRpcFailureAt).toBe(Date.now());
-    expect(diagnostics.lastRpcFailureMethod).toBe('chat.history');
+    expect(diagnostics.lastRpcFailureMethod).toBe('system-presence');
     expect(diagnostics.consecutiveRpcFailures).toBe(1);
 
     (manager as unknown as { recordSocketClose: (code: number) => void }).recordSocketClose(1006);
@@ -123,6 +123,96 @@ describe('GatewayManager diagnostics', () => {
       platform: process.platform,
     });
     expect(health.reasons).not.toContain('rpc_timeout');
+  });
+
+  it('records capability timeouts without counting them as core transport failures', async () => {
+    const { GatewayManager } = await import('@electron/gateway/manager');
+    const manager = new GatewayManager();
+
+    const ws = {
+      readyState: 1,
+      send: vi.fn(),
+      ping: vi.fn(),
+      terminate: vi.fn(),
+      on: vi.fn(),
+    };
+
+    (manager as unknown as { ws: typeof ws }).ws = ws;
+    (manager as unknown as { status: { state: string; port: number } }).status = {
+      state: 'running',
+      port: 18789,
+    };
+
+    const memoryPromise = manager.rpc('doctor.memory.status', {}, 1000);
+    vi.advanceTimersByTime(1001);
+    await expect(memoryPromise).rejects.toThrow('RPC timeout: doctor.memory.status');
+
+    expect(manager.getDiagnostics().consecutiveRpcFailures).toBe(0);
+    expect(manager.getCapabilitySnapshot().memory.state).toBe('degraded');
+    expect(manager.getCapabilitySnapshot().memory.error).toContain('doctor.memory.status');
+  });
+
+  it('does not let health polling mark core rpc degraded when OpenClaw health/status are slow', async () => {
+    const { GatewayManager } = await import('@electron/gateway/manager');
+    const { buildGatewayHealthSummary } = await import('@electron/utils/gateway-health');
+    const manager = new GatewayManager();
+
+    const ws = {
+      readyState: 1,
+      send: vi.fn(),
+      ping: vi.fn(),
+      terminate: vi.fn(),
+      on: vi.fn(),
+    };
+
+    (manager as unknown as { ws: typeof ws }).ws = ws;
+    (manager as unknown as { status: { state: string; port: number; gatewayReady: boolean } }).status = {
+      state: 'running',
+      port: 18789,
+      gatewayReady: true,
+    };
+
+    const healthPromise = manager.checkHealth();
+    await vi.advanceTimersByTimeAsync(3001);
+    const health = await healthPromise;
+
+    expect(health.ok).toBe(true);
+    expect(manager.getDiagnostics().consecutiveRpcFailures).toBe(0);
+    expect(manager.getCapabilitySnapshot().openclawHealth.state).toBe('degraded');
+    expect(manager.getCapabilitySnapshot().openclawStatus.state).toBe('degraded');
+
+    const summary = buildGatewayHealthSummary({
+      status: manager.getStatus(),
+      diagnostics: manager.getDiagnostics(),
+      platform: process.platform,
+    });
+    expect(summary.reasons).not.toContain('rpc_timeout');
+  });
+
+  it('reports rpc router blocked when a fresh core probe fails after gateway was ready', async () => {
+    const { GatewayCapabilityMonitor } = await import('@electron/gateway/capability-monitor');
+    const monitor = new GatewayCapabilityMonitor();
+
+    monitor.recordCoreProbe({
+      ok: false,
+      checkedAt: Date.now(),
+      error: 'RPC timeout: system-presence',
+    });
+
+    const snapshot = monitor.buildSnapshot({
+      status: {
+        state: 'running',
+        port: 18789,
+        gatewayReady: true,
+      },
+      transportConnected: true,
+      diagnostics: {
+        consecutiveHeartbeatMisses: 0,
+        consecutiveRpcFailures: 1,
+      },
+    });
+
+    expect(snapshot.core.rpcRouter).toBe('blocked');
   });
 
   it('keeps windows heartbeat recovery disabled while diagnostics degrade', async () => {

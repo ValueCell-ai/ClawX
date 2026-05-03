@@ -31,11 +31,52 @@ export interface GatewayRpcResponse<T = unknown> {
 /**
  * Gateway health check response
  */
+export interface GatewayCapabilityProbe {
+  state: 'unknown' | 'healthy' | 'degraded';
+  checkedAt?: number;
+  durationMs?: number;
+  error?: string;
+  payload?: unknown;
+}
+
+export interface GatewayCapabilitySnapshot {
+  core: {
+    process: GatewayStatus['state'];
+    transport: 'connected' | 'disconnected';
+    rpcRouter: 'unknown' | 'ready' | 'blocked';
+    lastProbe?: {
+      ok: boolean;
+      checkedAt: number;
+      durationMs?: number;
+      error?: string;
+    };
+  };
+  openclawHealth: GatewayCapabilityProbe;
+  openclawStatus: GatewayCapabilityProbe;
+  presence: GatewayCapabilityProbe;
+  channels: GatewayCapabilityProbe;
+  memory: GatewayCapabilityProbe;
+  diagnostics: {
+    lastAliveAt?: number;
+    lastRpcSuccessAt?: number;
+    lastRpcFailureAt?: number;
+    lastRpcFailureMethod?: string;
+    lastHeartbeatTimeoutAt?: number;
+    consecutiveHeartbeatMisses: number;
+    lastSocketCloseAt?: number;
+    lastSocketCloseCode?: number;
+    consecutiveRpcFailures: number;
+  };
+}
+
 export interface GatewayHealth {
   ok: boolean;
   error?: string;
   uptime?: number;
   version?: string;
+  capabilities?: GatewayCapabilitySnapshot;
+  openclawHealth?: unknown;
+  presence?: unknown;
 }
 
 /**

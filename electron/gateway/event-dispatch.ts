@@ -30,6 +30,12 @@ export function dispatchProtocolEvent(
     case 'ready':
       emitter.emit('gateway:ready', payload);
       break;
+    case 'health':
+      emitter.emit('gateway:health', payload);
+      break;
+    case 'presence':
+      emitter.emit('gateway:presence', payload);
+      break;
     default:
       emitter.emit('notification', { method: event, params: payload });
   }

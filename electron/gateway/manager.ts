@@ -51,6 +51,11 @@ import {
 } from './reload-policy';
 import { classifyGatewayStderrMessage, recordGatewayStartupStderrLine } from './startup-stderr';
 import { runGatewayStartupSequence } from './startup-orchestrator';
+import {
+  GatewayCapabilityMonitor,
+  type GatewayCapabilityName,
+  type GatewayCapabilitySnapshot,
+} from './capability-monitor';
 
 export interface GatewayStatus {
   state: GatewayLifecycleState;
@@ -79,6 +84,14 @@ export interface GatewayHealthSummary {
   lastChannelsStatusFailureAt?: number;
 }
 
+export interface GatewayHealthReport {
+  ok: boolean;
+  error?: string;
+  uptime?: number;
+  version?: string;
+  capabilities: GatewayCapabilitySnapshot;
+}
+
 export interface GatewayDiagnosticsSnapshot {
   lastAliveAt?: number;
   lastRpcSuccessAt?: number;
@@ -91,12 +104,25 @@ export interface GatewayDiagnosticsSnapshot {
   consecutiveRpcFailures: number;
 }
 
-function isTransportRpcFailure(error: unknown): boolean {
+function isCoreRpcMethod(method: string): boolean {
+  return method === 'system-presence';
+}
+
+function isTransportRpcFailure(method: string, error: unknown): boolean {
   const message = error instanceof Error ? error.message : String(error);
   return message.includes('RPC timeout:')
-    || message.includes('Gateway not connected')
+    ? isCoreRpcMethod(method)
+    : message.includes('Gateway not connected')
     || message.includes('Gateway stopped')
     || message.includes('Failed to send RPC request:');
+}
+
+function classifyCapabilityMethod(method: string): GatewayCapabilityName | null {
+  if (method === 'health') return 'openclawHealth';
+  if (method === 'status') return 'openclawStatus';
+  if (method === 'channels.status') return 'channels';
+  if (method.startsWith('doctor.memory.')) return 'memory';
+  return null;
 }
 
 /**
@@ -108,6 +134,8 @@ export interface GatewayManagerEvents {
   notification: (notification: JsonRpcNotification) => void;
   exit: (code: number | null) => void;
   error: (error: Error) => void;
+  'gateway:health': (data: unknown) => void;
+  'gateway:presence': (data: unknown) => void;
   'channel:status': (data: { channelId: string; status: string }) => void;
   'chat:message': (data: { message: unknown }) => void;
 }
@@ -138,6 +166,7 @@ export class GatewayManager extends EventEmitter {
   private readonly restartController = new GatewayRestartController();
   private readonly restartGovernor = new GatewayRestartGovernor();
   private reloadDebounceTimer: NodeJS.Timeout | null = null;
+  private initialReadyHeartbeatRecoveryTimer: NodeJS.Timeout | null = null;
   private reloadPolicy: GatewayReloadPolicy = { ...DEFAULT_GATEWAY_RELOAD_POLICY };
   private reloadPolicyLoadedAt = 0;
   private reloadPolicyRefreshPromise: Promise<void> | null = null;
@@ -156,10 +185,12 @@ export class GatewayManager extends EventEmitter {
   private static readonly HEARTBEAT_MAX_MISSES_WIN = 5;
   public static readonly RESTART_COOLDOWN_MS = 5_000;
   private static readonly GATEWAY_READY_FALLBACK_MS = 30_000;
+  private static readonly INITIAL_READY_HEARTBEAT_RECOVERY_GRACE_MS = 5 * 60_000;
   private lastRestartAt = 0;
   /** Set by scheduleReconnect() before calling start() to signal auto-reconnect. */
   private isAutoReconnectStart = false;
   private gatewayReadyFallbackTimer: NodeJS.Timeout | null = null;
+  private readonly capabilityMonitor = new GatewayCapabilityMonitor();
   private diagnostics: GatewayDiagnosticsSnapshot = {
     consecutiveHeartbeatMisses: 0,
     consecutiveRpcFailures: 0,
@@ -197,10 +228,17 @@ export class GatewayManager extends EventEmitter {
 
     this.on('gateway:ready', () => {
       this.clearGatewayReadyFallback();
+      this.clearInitialReadyHeartbeatRecoveryTimer();
       if (this.status.state === 'running' && !this.status.gatewayReady) {
         logger.info('Gateway subsystems ready (event received)');
         this.setStatus({ gatewayReady: true });
       }
+    });
+    this.on('gateway:health', (payload) => {
+      this.capabilityMonitor.recordOpenClawHealth(payload);
+    });
+    this.on('gateway:presence', (payload) => {
+      this.capabilityMonitor.recordPresence(payload);
     });
   }
 
@@ -237,6 +275,19 @@ export class GatewayManager extends EventEmitter {
 
   getDiagnostics(): GatewayDiagnosticsSnapshot {
     return { ...this.diagnostics };
+  }
+
+  getCapabilitySnapshot(summary?: GatewayHealthSummary): GatewayCapabilitySnapshot {
+    return this.capabilityMonitor.buildSnapshot({
+      status: this.status,
+      transportConnected: this.ws?.readyState === WebSocket.OPEN,
+      diagnostics: this.getDiagnostics(),
+      summary,
+    });
+  }
+
+  recordCapabilityFailure(name: GatewayCapabilityName, error: unknown, durationMs?: number): void {
+    this.capabilityMonitor.recordCapabilityFailure(name, error, durationMs);
   }
 
   /**
@@ -730,6 +781,7 @@ export class GatewayManager extends EventEmitter {
       this.reloadDebounceTimer = null;
     }
     this.clearGatewayReadyFallback();
+    this.clearInitialReadyHeartbeatRecoveryTimer();
   }
 
   private clearGatewayReadyFallback(): void {
@@ -743,11 +795,40 @@ export class GatewayManager extends EventEmitter {
     this.clearGatewayReadyFallback();
     this.gatewayReadyFallbackTimer = setTimeout(() => {
       this.gatewayReadyFallbackTimer = null;
+      void this.probeGatewayReadyFallback();
+    }, GatewayManager.GATEWAY_READY_FALLBACK_MS);
+  }
+
+  private async probeGatewayReadyFallback(): Promise<void> {
+    if (this.status.state !== 'running' || this.status.gatewayReady) {
+      return;
+    }
+
+    logger.info('Gateway ready fallback triggered; probing RPC router before marking ready');
+    const startedAt = Date.now();
+    try {
+      await this.rpc('system-presence', {}, 5_000);
+      this.capabilityMonitor.recordCoreProbe({
+        ok: true,
+        checkedAt: Date.now(),
+        durationMs: Date.now() - startedAt,
+      });
       if (this.status.state === 'running' && !this.status.gatewayReady) {
-        logger.info('Gateway ready fallback triggered (no gateway.ready event within timeout)');
+        logger.info('Gateway ready fallback RPC router probe succeeded');
         this.setStatus({ gatewayReady: true });
       }
-    }, GatewayManager.GATEWAY_READY_FALLBACK_MS);
+    } catch (error) {
+      this.capabilityMonitor.recordCoreProbe({
+        ok: false,
+        checkedAt: Date.now(),
+        durationMs: Date.now() - startedAt,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      logger.warn('Gateway ready fallback RPC router probe failed; waiting for gateway.ready event or heartbeat recovery:', error);
+      if (this.status.state === 'running' && !this.status.gatewayReady) {
+        this.scheduleGatewayReadyFallback();
+      }
+    }
   }
 
   /**
@@ -755,6 +836,7 @@ export class GatewayManager extends EventEmitter {
    * Uses OpenClaw protocol format: { type: "req", id: "...", method: "...", params: {...} }
    */
   async rpc<T>(method: string, params?: unknown, timeoutMs = 30000): Promise<T> {
+    const startedAt = Date.now();
     return await new Promise<T>((resolve, reject) => {
       if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
         reject(new Error('Gateway not connected'));
@@ -790,9 +872,30 @@ export class GatewayManager extends EventEmitter {
       }
     }).then((result) => {
       this.recordRpcSuccess();
+      if (isCoreRpcMethod(method)) {
+        this.capabilityMonitor.recordCoreProbe({
+          ok: true,
+          checkedAt: Date.now(),
+          durationMs: Date.now() - startedAt,
+        });
+      }
+      const capability = classifyCapabilityMethod(method);
+      if (capability) {
+        this.capabilityMonitor.recordCapabilitySuccess(capability, result, Date.now() - startedAt);
+      }
       return result;
     }).catch((error) => {
-      if (isTransportRpcFailure(error)) {
+      const capability = classifyCapabilityMethod(method);
+      if (capability) {
+        this.capabilityMonitor.recordCapabilityFailure(capability, error, Date.now() - startedAt);
+      }
+      if (isTransportRpcFailure(method, error)) {
+        this.capabilityMonitor.recordCoreProbe({
+          ok: false,
+          checkedAt: Date.now(),
+          durationMs: Date.now() - startedAt,
+          error: error instanceof Error ? error.message : String(error),
+        });
         this.recordRpcFailure(method);
       }
       throw error;
@@ -805,7 +908,7 @@ export class GatewayManager extends EventEmitter {
   private startHealthCheck(): void {
     this.connectionMonitor.startHealthCheck({
       shouldCheck: () => this.status.state === 'running',
-      checkHealth: () => this.checkHealth(),
+      checkHealth: () => this.checkTransportHealth(),
       onUnhealthy: (errorMessage) => {
         this.emit('error', new Error(errorMessage));
       },
@@ -819,7 +922,7 @@ export class GatewayManager extends EventEmitter {
    * Check Gateway health via WebSocket ping
    * OpenClaw Gateway doesn't have an HTTP /health endpoint
    */
-  async checkHealth(): Promise<{ ok: boolean; error?: string; uptime?: number }> {
+  private async checkTransportHealth(): Promise<{ ok: boolean; error?: string; uptime?: number }> {
     try {
       if (this.ws && this.ws.readyState === WebSocket.OPEN) {
         const uptime = this.status.connectedAt
@@ -833,7 +936,31 @@ export class GatewayManager extends EventEmitter {
     }
   }
 
+  async checkHealth(options?: { probe?: boolean }): Promise<GatewayHealthReport> {
+    const transport = await this.checkTransportHealth();
+    if (transport.ok && this.status.state === 'running' && this.status.gatewayReady !== false) {
+      const timeoutMs = options?.probe ? 8_000 : 3_000;
+      const [healthResult, statusResult] = await Promise.allSettled([
+        this.rpc('health', { probe: options?.probe === true }, timeoutMs),
+        this.rpc('status', {}, timeoutMs),
+      ]);
+
+      if (healthResult.status === 'fulfilled') {
+        this.capabilityMonitor.recordOpenClawHealth(healthResult.value);
+      }
+      if (statusResult.status === 'fulfilled') {
+        this.capabilityMonitor.recordOpenClawStatus(statusResult.value);
+      }
+    }
+
+    return {
+      ...transport,
+      capabilities: this.getCapabilitySnapshot(),
+    };
+  }
+
   private recordGatewayAlive(): void {
+    this.clearInitialReadyHeartbeatRecoveryTimer();
     this.diagnostics.lastAliveAt = Date.now();
     this.diagnostics.consecutiveHeartbeatMisses = 0;
   }
@@ -1083,12 +1210,52 @@ export class GatewayManager extends EventEmitter {
           logger.warn(`Gateway heartbeat recovery skipped (${reason})`);
           return;
         }
+        const initialReadyRecoveryDelayMs = this.getInitialReadyHeartbeatRecoveryDelayMs();
+        if (initialReadyRecoveryDelayMs > 0) {
+          logger.warn(
+            `Gateway heartbeat recovery deferred while waiting for initial gateway.ready ` +
+            `(retryAfterMs=${initialReadyRecoveryDelayMs})`,
+          );
+          this.scheduleInitialReadyHeartbeatRecovery(initialReadyRecoveryDelayMs);
+          return;
+        }
         logger.warn('Gateway heartbeat recovery: restarting unresponsive gateway process');
         void this.restart().catch((error) => {
           logger.warn('Gateway heartbeat recovery failed:', error);
         });
       },
     });
+  }
+
+  private getInitialReadyHeartbeatRecoveryDelayMs(now = Date.now()): number {
+    if (this.status.gatewayReady || !this.status.connectedAt) return 0;
+    const connectedForMs = Math.max(0, now - this.status.connectedAt);
+    return Math.max(0, GatewayManager.INITIAL_READY_HEARTBEAT_RECOVERY_GRACE_MS - connectedForMs);
+  }
+
+  private scheduleInitialReadyHeartbeatRecovery(delayMs: number): void {
+    if (this.initialReadyHeartbeatRecoveryTimer) return;
+    this.initialReadyHeartbeatRecoveryTimer = setTimeout(() => {
+      this.initialReadyHeartbeatRecoveryTimer = null;
+      if (
+        process.platform === 'win32'
+        || !this.shouldReconnect
+        || this.status.state !== 'running'
+        || this.status.gatewayReady
+      ) {
+        return;
+      }
+      logger.warn('Gateway heartbeat recovery: initial gateway.ready grace expired, restarting unresponsive gateway process');
+      void this.restart().catch((error) => {
+        logger.warn('Gateway heartbeat recovery failed:', error);
+      });
+    }, delayMs);
+  }
+
+  private clearInitialReadyHeartbeatRecoveryTimer(): void {
+    if (!this.initialReadyHeartbeatRecoveryTimer) return;
+    clearTimeout(this.initialReadyHeartbeatRecoveryTimer);
+    this.initialReadyHeartbeatRecoveryTimer = null;
   }
 
   /**

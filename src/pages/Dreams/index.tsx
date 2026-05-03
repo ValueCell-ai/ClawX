@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Archive,
   BookOpen,
@@ -7,6 +7,7 @@ import {
   ExternalLink,
   Loader2,
   Moon,
+  Power,
   RefreshCw,
   RotateCcw,
   Sparkles,
@@ -84,7 +85,16 @@ interface DreamDiaryEntry {
   summary: string;
 }
 
+interface ConfigSnapshot {
+  hash?: string;
+}
+
 type DreamActionKey = 'backfill' | 'dedupe' | 'repair' | 'resetDiary' | 'resetGrounded';
+type DreamToggleKey = 'enable' | 'disable';
+
+interface RefreshOptions {
+  force?: boolean;
+}
 
 interface PendingConfirmation {
   action: DreamActionKey;
@@ -103,6 +113,22 @@ const DREAM_ACTION_METHODS: Record<DreamActionKey, string> = {
 
 const DIARY_START_MARKER = '<!-- openclaw:dreaming:diary:start -->';
 const DIARY_END_MARKER = '<!-- openclaw:dreaming:diary:end -->';
+
+function buildDreamingEnabledPatchRaw(enabled: boolean): string {
+  return JSON.stringify({
+    plugins: {
+      entries: {
+        'memory-core': {
+          config: {
+            dreaming: {
+              enabled,
+            },
+          },
+        },
+      },
+    },
+  });
+}
 const PANEL_CLASS = 'border-black/10 bg-surface-modal shadow-sm dark:border-white/10';
 const INSET_CLASS = 'border-black/10 bg-surface-input dark:border-white/10';
 const QUIET_BUTTON_CLASS = 'border-black/10 bg-surface-input text-foreground/80 shadow-none hover:bg-black/5 hover:text-foreground dark:border-white/10 dark:hover:bg-white/5';
@@ -180,6 +206,14 @@ function firstNumber(result: unknown, keys: string[]): number | undefined {
   return undefined;
 }
 
+function isMemoryDoctorStartupError(message: string): boolean {
+  const lower = message.toLowerCase();
+  return lower.includes('rpc timeout: doctor.memory.')
+    || lower.includes('service not initialized')
+    || lower.includes('not yet ready')
+    || lower.includes('unavailable during gateway startup');
+}
+
 export function Dreams() {
   const { t } = useTranslation(['dreams', 'common']);
   const gatewayStatus = useGatewayStore((state) => state.status);
@@ -190,12 +224,17 @@ export function Dreams() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [runningAction, setRunningAction] = useState<DreamActionKey | null>(null);
+  const [runningToggle, setRunningToggle] = useState<DreamToggleKey | null>(null);
   const [lastActionMessage, setLastActionMessage] = useState<string | null>(null);
   const [pendingConfirmation, setPendingConfirmation] = useState<PendingConfirmation | null>(null);
   const [openingFullUi, setOpeningFullUi] = useState(false);
+  const refreshInFlightRef = useRef<Promise<void> | null>(null);
 
-  const gatewayReady = gatewayStatus.state === 'running' && gatewayStatus.gatewayReady !== false;
-  const actionsDisabled = !gatewayReady || runningAction != null;
+  const gatewayRunning = gatewayStatus.state === 'running';
+  const gatewayReady = gatewayStatus.gatewayReady !== false;
+  const dreamsReady = gatewayRunning && gatewayReady;
+  const busy = runningAction != null || runningToggle != null;
+  const actionsDisabled = !dreamsReady || busy;
 
   const diaryEntries = useMemo(() => parseDreamDiary(diary?.content).slice(0, 4), [diary?.content]);
   const recentSignals = useMemo(() => {
@@ -204,29 +243,42 @@ export function Dreams() {
     return [...shortTerm, ...promoted].slice(0, 6);
   }, [dreaming?.promotedEntries, dreaming?.shortTermEntries]);
 
-  const refreshAll = useCallback(async () => {
-    if (!gatewayReady) {
+  const refreshAll = useCallback(async (options?: RefreshOptions) => {
+    if (refreshInFlightRef.current && !options?.force) {
+      return refreshInFlightRef.current;
+    }
+
+    if (!dreamsReady) {
       setLoading(false);
       setError(null);
       return;
     }
 
-    setLoading(true);
-    setError(null);
-    try {
-      const [statusResponse, diaryResponse] = await Promise.all([
-        rpc<unknown>('doctor.memory.status', {}, 12_000),
-        rpc<DreamDiaryResponse>('doctor.memory.dreamDiary', {}, 12_000),
-      ]);
-      setDreaming(normalizeDreamingStatus(statusResponse));
-      setDiary(diaryResponse);
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      setError(message);
-    } finally {
-      setLoading(false);
-    }
-  }, [gatewayReady, rpc]);
+    let refreshPromise!: Promise<void>;
+    refreshPromise = (async () => {
+      setLoading(true);
+      setError(null);
+      try {
+        const [statusResponse, diaryResponse] = await Promise.all([
+          rpc<unknown>('doctor.memory.status', {}, 12_000),
+          rpc<DreamDiaryResponse>('doctor.memory.dreamDiary', {}, 12_000),
+        ]);
+        setDreaming(normalizeDreamingStatus(statusResponse));
+        setDiary(diaryResponse);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        setError(isMemoryDoctorStartupError(message) ? t('errors.memoryInitializing') : message);
+      } finally {
+        setLoading(false);
+        if (refreshInFlightRef.current === refreshPromise) {
+          refreshInFlightRef.current = null;
+        }
+      }
+    })();
+
+    refreshInFlightRef.current = refreshPromise;
+    return refreshPromise;
+  }, [dreamsReady, rpc, t]);
 
   useEffect(() => {
     void refreshAll();
@@ -272,6 +324,34 @@ export function Dreams() {
       setPendingConfirmation(null);
     }
   }, [buildActionMessage, refreshAll, rpc]);
+
+  const setDreamingEnabled = useCallback(async (enabled: boolean) => {
+    const toggleKey: DreamToggleKey = enabled ? 'enable' : 'disable';
+    setRunningToggle(toggleKey);
+    setError(null);
+    setLastActionMessage(null);
+    try {
+      const snapshot = await rpc<ConfigSnapshot>('config.get', {}, 12_000);
+      if (!snapshot.hash) {
+        throw new Error(t('errors.configHashMissing'));
+      }
+      await rpc<unknown>('config.patch', {
+        raw: buildDreamingEnabledPatchRaw(enabled),
+        baseHash: snapshot.hash,
+        note: enabled ? 'Enable memory dreaming from ClawX Dreams.' : 'Disable memory dreaming from ClawX Dreams.',
+      }, 30_000);
+      const message = enabled ? t('actions.enableSuccess') : t('actions.disableSuccess');
+      setDreaming((current) => ({ ...(current ?? {}), enabled }));
+      setLastActionMessage(message);
+      toast.success(message);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      setError(message);
+      toast.error(message);
+    } finally {
+      setRunningToggle(null);
+    }
+  }, [rpc, t]);
 
   const requestConfirmation = useCallback((action: DreamActionKey) => {
     setPendingConfirmation({
@@ -333,11 +413,22 @@ export function Dreams() {
         </div>
         <div className="flex shrink-0 items-center gap-2">
           <Button
+            data-testid={dreaming?.enabled ? 'dreams-disable' : 'dreams-enable'}
+            variant={dreaming?.enabled ? 'outline' : 'default'}
+            size="sm"
+            onClick={() => void setDreamingEnabled(!dreaming?.enabled)}
+            disabled={!dreamsReady || busy || loading}
+            className={dreaming?.enabled ? QUIET_BUTTON_CLASS : undefined}
+          >
+            {runningToggle ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Power className="mr-2 h-4 w-4" />}
+            {dreaming?.enabled ? t('actions.disable') : t('actions.enable')}
+          </Button>
+          <Button
             data-testid="dreams-refresh"
             variant="outline"
             size="sm"
-            onClick={() => void refreshAll()}
-            disabled={loading || !gatewayReady}
+            onClick={() => void refreshAll({ force: true })}
+            disabled={!dreamsReady}
             className={QUIET_BUTTON_CLASS}
           >
             {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-2 h-4 w-4" />}
@@ -348,7 +439,7 @@ export function Dreams() {
             variant="secondary"
             size="sm"
             onClick={() => void openFullDreams()}
-            disabled={openingFullUi || !gatewayReady}
+            disabled={openingFullUi || !gatewayRunning}
             className="border border-black/10 bg-card text-foreground shadow-sm hover:bg-black/5 dark:border-white/10 dark:bg-card dark:hover:bg-white/5"
           >
             {openingFullUi ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <ExternalLink className="mr-2 h-4 w-4" />}
@@ -358,7 +449,7 @@ export function Dreams() {
       </header>
 
       <main className="min-h-0 flex-1 overflow-auto px-10 pb-10">
-        {!gatewayReady && (
+        {!dreamsReady && (
           <div className="mb-4 rounded-lg border border-black/10 bg-surface-input px-4 py-3 text-sm text-foreground/70 dark:border-white/10">
             {t('gatewayNotReady')}
           </div>

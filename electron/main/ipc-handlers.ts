@@ -1417,6 +1417,18 @@ function registerGatewayHandlers(
     }
   });
 
+  gatewayManager.on('gateway:health', (data) => {
+    if (!mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('gateway:health-changed', data);
+    }
+  });
+
+  gatewayManager.on('gateway:presence', (data) => {
+    if (!mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('gateway:presence-changed', data);
+    }
+  });
+
   gatewayManager.on('channel:status', (data) => {
     if (!mainWindow.isDestroyed()) {
       mainWindow.webContents.send('gateway:channel-status', data);

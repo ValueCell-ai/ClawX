@@ -8,9 +8,9 @@
  * equivalents could stall for 500 ms – 2 s+ per call, causing "Not
  * Responding" hangs.
  */
-import { access, mkdir, readFile, writeFile } from 'fs/promises';
+import { access, mkdir, readFile, readdir, writeFile } from 'fs/promises';
 import { constants, readdirSync, readFileSync, existsSync } from 'fs';
-import { join } from 'path';
+import { dirname, join } from 'path';
 import { homedir } from 'os';
 import { listConfiguredAgentIds } from './agent-config';
 import { getOpenClawResolvedDir } from './paths';
@@ -50,7 +50,11 @@ interface MiniMaxPluginRegistration extends OAuthPluginRegistration {
 }
 
 let _bundledPluginManifestCache: BundledPluginManifest[] | null = null;
-let _bundledPluginCache: { all: Set<string>; enabledByDefault: string[] } | null = null;
+let _bundledPluginCache: {
+  all: Set<string>;
+  enabledByDefault: string[];
+  manifestsById: Map<string, BundledPluginManifest>;
+} | null = null;
 let _miniMaxPluginRegistrationCache: MiniMaxPluginRegistration | null = null;
 
 export function resetOpenClawPluginDiscoveryCaches(): void {
@@ -445,6 +449,22 @@ const BUILTIN_CHANNEL_IDS = new Set([
   'mattermost',
   'qqbot',
 ]);
+const OPTIONAL_PROVIDER_LIKE_BUNDLED_PLUGIN_IDS = new Set([
+  'alibaba',
+  'deepgram',
+  'elevenlabs',
+  'groq',
+  'microsoft',
+  'phone-control',
+  'runway',
+  'talk-voice',
+  'voyage',
+]);
+const BUNDLED_ALLOWLIST_PRESERVE_IDS = new Set([
+  'browser',
+  'acpx',
+  'memory-core',
+]);
 const AUTH_PROFILE_PROVIDER_KEY_MAP: Record<string, string> = {
   'openai-codex': 'openai',
   'google-gemini-cli': 'google',
@@ -472,6 +492,31 @@ function expandProviderKeysForDeletion(provider: string): string[] {
   return [provider, ...(AUTH_PROFILE_PROVIDER_KEY_REVERSE_MAP[provider] ?? [])];
 }
 
+function normalizePluginPathForCompare(pluginPath: string): string {
+  return pluginPath.replace(/\\/g, '/').replace(/\/+$/, '');
+}
+
+function isBundledOpenClawPluginPath(pluginPath: string): boolean {
+  const normalized = normalizePluginPathForCompare(pluginPath);
+  const currentDistExtensions = normalizePluginPathForCompare(
+    join(getOpenClawResolvedDir(), 'dist', 'extensions'),
+  );
+  const currentLegacyExtensions = normalizePluginPathForCompare(
+    join(getOpenClawResolvedDir(), 'extensions'),
+  );
+
+  if (
+    normalized === currentDistExtensions
+    || normalized.startsWith(`${currentDistExtensions}/`)
+    || normalized === currentLegacyExtensions
+    || normalized.startsWith(`${currentLegacyExtensions}/`)
+  ) {
+    return true;
+  }
+
+  return /\/node_modules(?:\/\.pnpm\/[^/]+\/node_modules)?\/openclaw\/(?:dist\/)?extensions(?:\/|$)/.test(normalized);
+}
+
 /**
  * Scan OpenClaw's bundled extensions directory to find all plugins that have
  * `enabledByDefault: true` in their `openclaw.plugin.json` manifest.
@@ -484,23 +529,28 @@ function expandProviderKeysForDeletion(provider: string): string[] {
  * Results are cached for the lifetime of the process since bundled
  * extensions don't change at runtime.
  */
-function discoverBundledPlugins(): { all: Set<string>; enabledByDefault: string[] } {
+function discoverBundledPlugins(): {
+  all: Set<string>;
+  enabledByDefault: string[];
+  manifestsById: Map<string, BundledPluginManifest>;
+} {
   if (_bundledPluginCache) return _bundledPluginCache;
 
   const all = new Set<string>();
   const enabledByDefault: string[] = [];
+  const manifestsById = new Map<string, BundledPluginManifest>();
 
   for (const manifest of discoverBundledPluginManifests()) {
     all.add(manifest.id);
+    manifestsById.set(manifest.id, manifest);
     if (manifest.enabledByDefault) {
       enabledByDefault.push(manifest.id);
     }
   }
 
-  _bundledPluginCache = { all, enabledByDefault };
+  _bundledPluginCache = { all, enabledByDefault, manifestsById };
   return _bundledPluginCache;
 }
-
 
 function normalizeAuthProfileProviderKey(provider: string): string {
   return AUTH_PROFILE_PROVIDER_KEY_MAP[provider] ?? provider;
@@ -535,6 +585,47 @@ async function getProvidersFromAuthProfileStores(): Promise<Set<string>> {
   return providers;
 }
 
+async function collectActiveProviderIdsFromConfig(config: Record<string, unknown>): Promise<Set<string>> {
+  const activeProviders = new Set<string>();
+  const providers = (config.models as Record<string, unknown> | undefined)?.providers;
+  if (providers && typeof providers === 'object') {
+    for (const key of Object.keys(providers as Record<string, unknown>)) {
+      activeProviders.add(key);
+    }
+  }
+
+  const plugins = (config.plugins as Record<string, unknown> | undefined)?.entries;
+  if (plugins && typeof plugins === 'object') {
+    for (const [pluginId, meta] of Object.entries(plugins as Record<string, unknown>)) {
+      if (pluginId.endsWith('-auth') && (meta as Record<string, unknown>).enabled) {
+        activeProviders.add(pluginId.replace(/-auth$/, ''));
+      }
+    }
+  }
+
+  const agents = config.agents as Record<string, unknown> | undefined;
+  const defaults = agents?.defaults as Record<string, unknown> | undefined;
+  const modelConfig = defaults?.model as Record<string, unknown> | undefined;
+  const primaryModel = typeof modelConfig?.primary === 'string' ? modelConfig.primary : undefined;
+  if (primaryModel?.includes('/')) {
+    activeProviders.add(primaryModel.split('/')[0]);
+  }
+
+  const auth = config.auth as Record<string, unknown> | undefined;
+  addProvidersFromProfileEntries(auth?.profiles as Record<string, unknown> | undefined, activeProviders);
+
+  const authProfileProviders = await getProvidersFromAuthProfileStores();
+  for (const provider of authProfileProviders) {
+    activeProviders.add(provider);
+  }
+
+  for (const deprecated of DEPRECATED_PROVIDER_IDS) {
+    activeProviders.delete(deprecated);
+  }
+
+  return activeProviders;
+}
+
 async function readOpenClawJson(): Promise<Record<string, unknown>> {
   return (await readJsonFile<Record<string, unknown>>(OPENCLAW_CONFIG_PATH)) ?? {};
 }
@@ -549,6 +640,86 @@ async function resolveInstalledFeishuPluginId(): Promise<string | null> {
     }
   }
   return null;
+}
+
+async function discoverInstalledExtensionPluginIds(): Promise<Set<string>> {
+  const ids = new Set<string>();
+  const extensionRoot = join(homedir(), '.openclaw', 'extensions');
+
+  let entries: Awaited<ReturnType<typeof readdir>>;
+  try {
+    entries = await readdir(extensionRoot, { withFileTypes: true });
+  } catch {
+    return ids;
+  }
+
+  for (const entry of entries) {
+    if (!entry.isDirectory()) continue;
+    const manifestPath = join(extensionRoot, entry.name, 'openclaw.plugin.json');
+    const manifest = await readJsonFile<{ id?: unknown }>(manifestPath);
+    if (typeof manifest?.id === 'string' && manifest.id.trim()) {
+      ids.add(manifest.id.trim());
+    }
+  }
+
+  return ids;
+}
+
+function collectPluginLoadPathsFromConfig(plugins: unknown): string[] {
+  const paths: string[] = [];
+  const pushPath = (value: unknown): void => {
+    if (typeof value === 'string' && value.trim()) {
+      paths.push(value);
+    }
+  };
+
+  if (Array.isArray(plugins)) {
+    for (const value of plugins) pushPath(value);
+    return paths;
+  }
+
+  if (!isPlainRecord(plugins)) {
+    return paths;
+  }
+
+  const load = plugins.load;
+  if (Array.isArray(load)) {
+    for (const value of load) pushPath(value);
+  } else if (isPlainRecord(load) && Array.isArray(load.paths)) {
+    for (const value of load.paths) pushPath(value);
+  }
+
+  return paths;
+}
+
+async function readPluginManifestIdFromPath(pluginPath: string): Promise<string | null> {
+  const candidates = [
+    join(pluginPath, 'openclaw.plugin.json'),
+    join(dirname(pluginPath), 'openclaw.plugin.json'),
+  ];
+
+  for (const manifestPath of candidates) {
+    const manifest = await readJsonFile<{ id?: unknown }>(manifestPath);
+    if (typeof manifest?.id === 'string' && manifest.id.trim()) {
+      return manifest.id.trim();
+    }
+  }
+
+  return null;
+}
+
+async function discoverLoadedPluginIdsFromConfig(config: Record<string, unknown>): Promise<Set<string>> {
+  const ids = new Set<string>();
+  const pluginPaths = collectPluginLoadPathsFromConfig(config.plugins);
+
+  for (const pluginPath of pluginPaths) {
+    const pluginId = await readPluginManifestIdFromPath(pluginPath);
+    if (pluginId) {
+      ids.add(pluginId);
+    }
+  }
+
+  return ids;
 }
 
 function normalizeAgentsDefaultsCompactionMode(config: Record<string, unknown>): void {
@@ -1674,7 +1845,7 @@ export async function sanitizeOpenClawConfig(): Promise<void> {
         const validPlugins: unknown[] = [];
         for (const p of plugins) {
           if (typeof p === 'string' && p.startsWith('/')) {
-            if (p.includes('node_modules/openclaw/extensions') || !(await fileExists(p))) {
+            if (isBundledOpenClawPluginPath(p) || !(await fileExists(p))) {
               console.log(`[sanitize] Removing stale/bundled plugin path "${p}" from openclaw.json`);
               modified = true;
             } else {
@@ -1691,7 +1862,7 @@ export async function sanitizeOpenClawConfig(): Promise<void> {
           const validLoad: unknown[] = [];
           for (const p of pluginsObj.load) {
             if (typeof p === 'string' && p.startsWith('/')) {
-              if (p.includes('node_modules/openclaw/extensions') || !(await fileExists(p))) {
+              if (isBundledOpenClawPluginPath(p) || !(await fileExists(p))) {
                 console.log(`[sanitize] Removing stale/bundled plugin path "${p}" from openclaw.json`);
                 modified = true;
               } else {
@@ -1710,7 +1881,7 @@ export async function sanitizeOpenClawConfig(): Promise<void> {
             const countBefore = loadObj.paths.length;
             for (const p of loadObj.paths) {
               if (typeof p === 'string' && p.startsWith('/')) {
-                if (p.includes('node_modules/openclaw/extensions') || !(await fileExists(p))) {
+                if (isBundledOpenClawPluginPath(p) || !(await fileExists(p))) {
                   console.log(`[sanitize] Removing stale/bundled plugin path "${p}" from plugins.load.paths`);
                   modified = true;
                 } else {
@@ -1721,7 +1892,14 @@ export async function sanitizeOpenClawConfig(): Promise<void> {
               }
             }
             if (validPaths.length !== countBefore) {
-              loadObj.paths = validPaths;
+              if (validPaths.length > 0) {
+                loadObj.paths = validPaths;
+              } else {
+                delete loadObj.paths;
+              }
+              if (Object.keys(loadObj).length === 0) {
+                delete pluginsObj.load;
+              }
             }
           }
         }
@@ -2109,17 +2287,62 @@ export async function sanitizeOpenClawConfig(): Promise<void> {
         modified = true;
       }
 
-      // Discover all bundled extension IDs and which ones are enabledByDefault
-      // so we can (a) exclude them from the "external" set (prevents stale
-      // entries surviving across OpenClaw upgrades) and (b) re-add the
-      // enabledByDefault ones to prevent the allowlist from blocking them.
+      // Discover all bundled extension IDs so we can clean stale bundled
+      // allowlist entries from older OpenClaw versions. Re-add only the
+      // ClawX-critical bundled plugins, active provider plugins, and explicitly
+      // enabled bundled plugins — not every enabledByDefault provider plugin.
       const bundled = discoverBundledPlugins();
+      const installedExtensionIds = await discoverInstalledExtensionPluginIds();
+      const loadedPluginIds = await discoverLoadedPluginIdsFromConfig(config);
+      const activeProviderIds = await collectActiveProviderIdsFromConfig(config);
 
-      const externalPluginIds = allowArr2.filter(
-        (pluginId) => !BUILTIN_CHANNEL_IDS.has(pluginId) && !bundled.all.has(pluginId),
-      );
-      let nextAllow = [...externalPluginIds];
-      if (externalPluginIds.length > 0) {
+      const explicitlyEnabledBundledPluginIds = Object.keys(pEntries)
+        .filter((pluginId) => {
+          if (!bundled.all.has(pluginId)) return false;
+          const entry = isPlainRecord(pEntries[pluginId]) ? pEntries[pluginId] as Record<string, unknown> : {};
+          if (entry.enabled === false) return false;
+          if (pluginId === 'feishu' && (!isFeishuConfigured || canonicalFeishuId !== 'feishu')) {
+            return false;
+          }
+          return entry.enabled === true;
+        });
+
+      const activeBundledProviderPluginIds = bundled.enabledByDefault.filter((pluginId) => {
+        if (pluginId === 'feishu' && (!isFeishuConfigured || canonicalFeishuId !== 'feishu')) {
+          return false;
+        }
+        const manifest = bundled.manifestsById.get(pluginId);
+        const providerIds = manifest?.providers ?? [];
+        const isProviderPlugin = providerIds.length > 0
+          || OPTIONAL_PROVIDER_LIKE_BUNDLED_PLUGIN_IDS.has(pluginId);
+        if (!isProviderPlugin) return false;
+        return providerIds.some((providerId) => activeProviderIds.has(providerId))
+          || activeProviderIds.has(pluginId);
+      });
+
+      const requiredBundledPluginIds = Array.from(new Set([
+        ...BUNDLED_ALLOWLIST_PRESERVE_IDS,
+        ...activeBundledProviderPluginIds,
+        ...explicitlyEnabledBundledPluginIds,
+      ])).filter((pluginId) => bundled.all.has(pluginId));
+
+      const externalPluginIds: string[] = [];
+      for (const pluginId of allowArr2) {
+        if (BUILTIN_CHANNEL_IDS.has(pluginId) || bundled.all.has(pluginId)) continue;
+        const isConfiguredExternal = Boolean(pEntries[pluginId]);
+        const isInstalledExternal = installedExtensionIds.has(pluginId);
+        const isLoadedExternal = loadedPluginIds.has(pluginId);
+        if (!isConfiguredExternal && !isInstalledExternal && !isLoadedExternal) {
+          console.log(`[sanitize] Removed missing external plugin from plugins.allow: ${pluginId}`);
+          modified = true;
+          continue;
+        }
+        externalPluginIds.push(pluginId);
+      }
+
+      const retainedBundledPluginIds = allowArr2.filter((pluginId) => requiredBundledPluginIds.includes(pluginId));
+      let nextAllow = [...new Set([...externalPluginIds, ...retainedBundledPluginIds])];
+      if (nextAllow.length > 0) {
         for (const channelId of configuredBuiltIns) {
           if (!nextAllow.includes(channelId)) {
             nextAllow.push(channelId);
@@ -2127,26 +2350,11 @@ export async function sanitizeOpenClawConfig(): Promise<void> {
             console.log(`[sanitize] Added configured built-in channel "${channelId}" to plugins.allow`);
           }
         }
-      }
-
-      // ── Ensure enabledByDefault built-in plugins survive restrictive allowlists ──
-      // OpenClaw's plugin enable logic checks the allowlist BEFORE enabledByDefault,
-      // so any bundled plugin with enabledByDefault: true (e.g. browser, diffs, etc.)
-      // gets blocked when plugins.allow is non-empty.  We add them back here.
-      // On upgrade, plugins removed from enabledByDefault are also removed from the
-      // allowlist because they were excluded from externalPluginIds above.
-      if (nextAllow.length > 0) {
-        for (const pluginId of bundled.enabledByDefault) {
-          // When feishu is not configured at all, or the official
-          // openclaw-lark plugin replaces the built-in 'feishu' extension,
-          // skip re-adding 'feishu' here — otherwise the enabledByDefault
-          // logic undoes the cleanup performed above and the built-in
-          // extension keeps reappearing in plugins.allow.
-          if (pluginId === 'feishu' && (!isFeishuConfigured || canonicalFeishuId !== 'feishu')) {
-            continue;
-          }
+        for (const pluginId of requiredBundledPluginIds) {
           if (!nextAllow.includes(pluginId)) {
             nextAllow.push(pluginId);
+            modified = true;
+            console.log(`[sanitize] Preserved required bundled plugin "${pluginId}" in plugins.allow`);
           }
         }
       }

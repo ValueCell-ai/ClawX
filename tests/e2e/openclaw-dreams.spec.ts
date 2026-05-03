@@ -1,3 +1,4 @@
+import type { Page } from '@playwright/test';
 import { completeSetup, expect, installIpcMocks, test } from './fixtures/electron';
 
 function stableStringify(value: unknown): string {
@@ -7,6 +8,32 @@ function stableStringify(value: unknown): string {
     .sort(([left], [right]) => left.localeCompare(right))
     .map(([key, entryValue]) => `${JSON.stringify(key)}:${stableStringify(entryValue)}`);
   return `{${entries.join(',')}}`;
+}
+
+function buildDreamingEnabledPatchRaw(enabled: boolean): string {
+  return JSON.stringify({
+    plugins: {
+      entries: {
+        'memory-core': {
+          config: {
+            dreaming: {
+              enabled,
+            },
+          },
+        },
+      },
+    },
+  });
+}
+
+async function enableDeveloperMode(page: Page): Promise<void> {
+  await page.getByTestId('sidebar-nav-settings').click();
+  await expect(page.getByTestId('settings-page')).toBeVisible();
+  const devModeToggle = page.getByTestId('settings-dev-mode-switch');
+  if ((await devModeToggle.getAttribute('data-state')) !== 'checked') {
+    await devModeToggle.click();
+  }
+  await expect(devModeToggle).toHaveAttribute('data-state', 'checked');
 }
 
 test.describe('OpenClaw Dreams', () => {
@@ -101,32 +128,95 @@ test.describe('OpenClaw Dreams', () => {
     });
 
     await completeSetup(page);
+    await enableDeveloperMode(page);
     await expect(page.getByTestId('sidebar-nav-dreams')).toBeVisible();
     await page.getByTestId('sidebar-nav-dreams').click();
 
     await expect(page.getByTestId('dreams-page')).toBeVisible();
-    await expect(page.getByRole('heading', { name: 'Dreams' })).toBeVisible();
-    await expect(page.getByTestId('dreams-enabled-badge')).toHaveText('Enabled');
+    await expect(page.getByTestId('dreams-disable')).toBeVisible();
     await expect(page.getByText('Native dreams page landed')).toBeVisible();
     await expect(page.getByText('User expects Dreams to be a native ClawX interface')).toBeVisible();
 
     await page.getByTestId('dreams-action-backfill').click();
-    await expect(page.getByTestId('dreams-action-message')).toContainText('Backfilled 2 dream diary entries.');
+    await expect(page.getByTestId('dreams-action-message')).toContainText(/Backfilled 2 dream diary entries\.|已回填 2 条梦境日记。/);
 
     await page.getByTestId('dreams-action-dedupe').click();
     await page.getByRole('button', { name: 'Confirm' }).click();
-    await expect(page.getByTestId('dreams-action-message')).toContainText('Removed 2 duplicate dream entries and kept 5.');
+    await expect(page.getByTestId('dreams-action-message')).toContainText(/Removed 2 duplicate dream entries and kept 5\.|已移除 2 条重复梦境，保留 5 条。/);
 
     await page.getByTestId('dreams-action-reset-grounded').click();
     await page.getByRole('button', { name: 'Confirm' }).click();
-    await expect(page.getByTestId('dreams-action-message')).toContainText('Cleared 3 replayed short-term entries.');
+    await expect(page.getByTestId('dreams-action-message')).toContainText(/Cleared 3 replayed short-term entries\.|已清理 3 条回放短期记忆。/);
 
     await page.getByTestId('dreams-action-reset-diary').click();
     await page.getByRole('button', { name: 'Confirm' }).click();
-    await expect(page.getByTestId('dreams-action-message')).toContainText('Removed 4 backfilled dream diary entries.');
+    await expect(page.getByTestId('dreams-action-message')).toContainText(/Removed 4 backfilled dream diary entries\.|已移除 4 条回填梦境日记。/);
   });
 
-  test('waits for gateway readiness before loading Dreams data', async ({ electronApp, page }) => {
+  test('starts Dreams from the native page when dreaming is disabled', async ({ electronApp, page }) => {
+    const configHash = 'dreams-config-hash';
+    await installIpcMocks(electronApp, {
+      gatewayStatus: { state: 'running', port: 18789, pid: 12345, gatewayReady: true },
+      gatewayRpc: {
+        ...dreamsRpcMocks,
+        [stableStringify(['doctor.memory.status', {}])]: {
+          success: true,
+          result: {
+            dreaming: {
+              enabled: false,
+              timezone: 'Asia/Shanghai',
+              storageMode: 'inline',
+              shortTermCount: 0,
+              groundedSignalCount: 0,
+              totalSignalCount: 0,
+              promotedToday: 0,
+              phases: {
+                light: { enabled: false },
+                rem: { enabled: false },
+                deep: { enabled: false },
+              },
+              shortTermEntries: [],
+              promotedEntries: [],
+            },
+          },
+        },
+        [stableStringify(['config.get', {}])]: {
+          success: true,
+          result: { hash: configHash },
+        },
+        [stableStringify(['config.patch', {
+          raw: buildDreamingEnabledPatchRaw(true),
+          baseHash: configHash,
+          note: 'Enable memory dreaming from ClawX Dreams.',
+        }])]: {
+          success: true,
+          result: { ok: true },
+        },
+      },
+      hostApi: {
+        [stableStringify(['/api/gateway/status', 'GET'])]: {
+          ok: true,
+          data: {
+            status: 200,
+            ok: true,
+            json: { state: 'running', port: 18789, pid: 12345, gatewayReady: true },
+          },
+        },
+      },
+    });
+
+    await completeSetup(page);
+    await enableDeveloperMode(page);
+    await page.getByTestId('sidebar-nav-dreams').click();
+
+    await expect(page.getByTestId('dreams-page')).toBeVisible();
+    await expect(page.getByTestId('dreams-enable')).toBeVisible();
+    await page.getByTestId('dreams-enable').click();
+    await expect(page.getByTestId('dreams-action-message')).toBeVisible();
+    await expect(page.getByTestId('dreams-disable')).toBeVisible();
+  });
+
+  test('waits for the gateway process before loading Dreams data', async ({ electronApp, page }) => {
     await installIpcMocks(electronApp, {
       gatewayStatus: { state: 'stopped', port: 18789 },
       gatewayRpc: dreamsRpcMocks,
@@ -143,11 +233,12 @@ test.describe('OpenClaw Dreams', () => {
     });
 
     await completeSetup(page);
+    await enableDeveloperMode(page);
     await page.getByTestId('sidebar-nav-dreams').click();
 
     await expect(page.getByTestId('dreams-page')).toBeVisible();
-    await expect(page.getByText('OpenClaw Gateway is still starting or disconnected.')).toBeVisible();
     await expect(page.getByTestId('dreams-refresh')).toBeDisabled();
+    await expect(page.getByTestId('dreams-enable')).toBeDisabled();
     await expect(page.getByTestId('dreams-action-backfill')).toBeDisabled();
     await expect(page.getByTestId('dreams-error')).toHaveCount(0);
 

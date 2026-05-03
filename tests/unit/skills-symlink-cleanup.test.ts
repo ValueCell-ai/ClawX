@@ -35,7 +35,10 @@ import {
   symlinkSync,
   writeFileSync,
 } from 'node:fs';
-import { cleanupAgentsSymlinkedSkills } from '@electron/gateway/skills-symlink-cleanup';
+import {
+  cleanupAgentsSymlinkedSkills,
+  cleanupStalePluginRuntimeDeps,
+} from '@electron/gateway/skills-symlink-cleanup';
 import { logger } from '@electron/utils/logger';
 
 const SYMLINK_TYPE: 'dir' | 'junction' = process.platform === 'win32' ? 'junction' : 'dir';
@@ -45,14 +48,20 @@ describe('cleanupAgentsSymlinkedSkills', () => {
   let skillsDir: string;
   let agentsRootDir: string;
   let agentsSkillsDir: string;
+  let workspaceSkillsDir: string;
+  let workspaceAgentsSkillsDir: string;
 
   beforeEach(() => {
     root = mkdtempSync(path.join(tmpdir(), 'clawx-skills-cleanup-'));
     skillsDir = path.join(root, 'openclaw', 'skills');
     agentsRootDir = path.join(root, 'agents');
     agentsSkillsDir = path.join(agentsRootDir, 'skills');
+    workspaceSkillsDir = path.join(root, 'openclaw', 'workspace', 'skills');
+    workspaceAgentsSkillsDir = path.join(root, 'openclaw', 'workspace', '.agents', 'skills');
     mkdirSync(skillsDir, { recursive: true });
     mkdirSync(agentsSkillsDir, { recursive: true });
+    mkdirSync(workspaceSkillsDir, { recursive: true });
+    mkdirSync(workspaceAgentsSkillsDir, { recursive: true });
   });
 
   afterEach(() => {
@@ -61,6 +70,13 @@ describe('cleanupAgentsSymlinkedSkills', () => {
 
   function makeAgentSkill(name: string): string {
     const dir = path.join(agentsSkillsDir, name);
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(path.join(dir, 'SKILL.md'), '# test\n');
+    return dir;
+  }
+
+  function makeWorkspaceAgentSkill(name: string): string {
+    const dir = path.join(workspaceAgentsSkillsDir, name);
     mkdirSync(dir, { recursive: true });
     writeFileSync(path.join(dir, 'SKILL.md'), '# test\n');
     return dir;
@@ -91,6 +107,39 @@ describe('cleanupAgentsSymlinkedSkills', () => {
     expect(res.examined).toBe(3);
   });
 
+  it('also removes workspace skill symlinks that resolve into workspace .agents/skills', () => {
+    const personalTarget = makeAgentSkill('personal-skill');
+    symlinkSync(personalTarget, path.join(skillsDir, 'personal-skill'), SYMLINK_TYPE);
+
+    const workspaceTarget = makeWorkspaceAgentSkill('bytedcli');
+    const workspaceLink = path.join(workspaceSkillsDir, 'bytedcli');
+    symlinkSync(workspaceTarget, workspaceLink, SYMLINK_TYPE);
+
+    const res = cleanupAgentsSymlinkedSkills({
+      skillsDir,
+      agentsDir: agentsSkillsDir,
+      workspaceSkillsDir,
+      workspaceAgentsDir: workspaceAgentsSkillsDir,
+    });
+
+    expect(res.removed.sort()).toEqual(['bytedcli', 'personal-skill']);
+    expect(res.examined).toBe(2);
+    expect(existsSync(path.join(skillsDir, 'personal-skill'))).toBe(false);
+    expect(existsSync(workspaceLink)).toBe(false);
+    expect(existsSync(workspaceTarget)).toBe(true);
+  });
+
+  it('does not scan the default workspace root when only the main root is overridden', () => {
+    const workspaceTarget = makeWorkspaceAgentSkill('bytedcli');
+    const workspaceLink = path.join(workspaceSkillsDir, 'bytedcli');
+    symlinkSync(workspaceTarget, workspaceLink, SYMLINK_TYPE);
+
+    const res = cleanupAgentsSymlinkedSkills({ skillsDir, agentsDir: agentsSkillsDir });
+
+    expect(res).toEqual({ removed: [], examined: 0 });
+    expect(lstatSync(workspaceLink).isSymbolicLink()).toBe(true);
+  });
+
   it('keeps in-tree symlinks and regular directories', () => {
     const realSkillDir = path.join(skillsDir, 'real-skill');
     mkdirSync(realSkillDir);
@@ -110,7 +159,7 @@ describe('cleanupAgentsSymlinkedSkills', () => {
     expect(lstatSync(plainDir).isDirectory()).toBe(true);
   });
 
-  it('keeps symlinks pointing at unrelated locations', () => {
+  it('removes symlinks that escape the managed skills root', () => {
     const elsewhere = path.join(root, 'elsewhere', 'foo');
     mkdirSync(elsewhere, { recursive: true });
     const link = path.join(skillsDir, 'foo');
@@ -118,12 +167,12 @@ describe('cleanupAgentsSymlinkedSkills', () => {
 
     const res = cleanupAgentsSymlinkedSkills({ skillsDir, agentsDir: agentsSkillsDir });
 
-    expect(res.removed).toEqual([]);
+    expect(res.removed).toEqual(['foo']);
     expect(res.examined).toBe(1);
-    expect(lstatSync(link).isSymbolicLink()).toBe(true);
+    expect(existsSync(link)).toBe(false);
   });
 
-  it('keeps symlinks pointing under .agents but outside .agents/skills', () => {
+  it('removes symlinks pointing under .agents but outside the managed skills root', () => {
     const tools = path.join(agentsRootDir, 'tools', 'foo');
     mkdirSync(tools, { recursive: true });
     writeFileSync(path.join(tools, 'README.md'), '');
@@ -132,9 +181,9 @@ describe('cleanupAgentsSymlinkedSkills', () => {
 
     const res = cleanupAgentsSymlinkedSkills({ skillsDir, agentsDir: agentsSkillsDir });
 
-    expect(res.removed).toEqual([]);
+    expect(res.removed).toEqual(['foo']);
     expect(res.examined).toBe(1);
-    expect(lstatSync(link).isSymbolicLink()).toBe(true);
+    expect(existsSync(link)).toBe(false);
   });
 
   it('removes file-type symlinks targeting a file inside .agents/skills', () => {
@@ -212,15 +261,13 @@ describe('cleanupAgentsSymlinkedSkills', () => {
     const link = path.join(skillsDir, 'lark-foo');
     symlinkSync(target, link, SYMLINK_TYPE);
 
-    // agentsRootDir exists, agentsSkillsDir does not: parent fallback should
-    // not falsely report containment for this unrelated target.
     const res = cleanupAgentsSymlinkedSkills({ skillsDir, agentsDir: agentsSkillsDir });
 
-    expect(res.removed).toEqual([]);
-    expect(lstatSync(link).isSymbolicLink()).toBe(true);
+    expect(res.removed).toEqual(['lark-foo']);
+    expect(existsSync(link)).toBe(false);
   });
 
-  it('uses fs.rmSync({ force: true }) so directory symlinks/junctions delete on Windows', () => {
+  it('uses recursive fs.rmSync so directory symlinks/junctions delete reliably', () => {
     const target = makeAgentSkill('lark-rm');
     const link = path.join(skillsDir, 'lark-rm');
     symlinkSync(target, link, SYMLINK_TYPE);
@@ -232,7 +279,7 @@ describe('cleanupAgentsSymlinkedSkills', () => {
 
     const linkRmCall = rmSyncMock.mock.calls.find((args) => args[0] === link);
     expect(linkRmCall).toBeDefined();
-    expect(linkRmCall?.[1]).toEqual({ force: true });
+    expect(linkRmCall?.[1]).toEqual({ force: true, recursive: true });
   });
 
   it('matches paths case-insensitively when running on Win32', () => {
@@ -282,5 +329,71 @@ describe('cleanupAgentsSymlinkedSkills', () => {
     const second = cleanupAgentsSymlinkedSkills({ skillsDir, agentsDir: agentsSkillsDir });
     expect(second).toEqual({ removed: [], examined: 0 });
     expect(infoMock).not.toHaveBeenCalled();
+  });
+});
+
+describe('cleanupStalePluginRuntimeDeps', () => {
+  let root: string;
+  let runtimeDepsDir: string;
+  let currentOpenClawDir: string;
+  let oldOpenClawDir: string;
+
+  beforeEach(() => {
+    root = mkdtempSync(path.join(tmpdir(), 'clawx-runtime-deps-cleanup-'));
+    runtimeDepsDir = path.join(root, 'openclaw', 'plugin-runtime-deps');
+    currentOpenClawDir = path.join(root, 'current-worktree', 'node_modules', 'openclaw');
+    oldOpenClawDir = path.join(root, 'old-worktree', 'node_modules', 'openclaw');
+    mkdirSync(path.join(currentOpenClawDir, 'dist'), { recursive: true });
+    mkdirSync(path.join(oldOpenClawDir, 'dist'), { recursive: true });
+    mkdirSync(runtimeDepsDir, { recursive: true });
+  });
+
+  afterEach(() => {
+    rmSync(root, { recursive: true, force: true });
+  });
+
+  function writeOpenClawDistFile(openClawDir: string, name: string): string {
+    const filePath = path.join(openClawDir, 'dist', name);
+    writeFileSync(filePath, 'export {}\n');
+    return filePath;
+  }
+
+  it('removes OpenClaw runtime cache roots that symlink to an old worktree package', () => {
+    const oldDistFile = writeOpenClawDistFile(oldOpenClawDir, 'runtime.js');
+    const currentDistFile = writeOpenClawDistFile(currentOpenClawDir, 'runtime.js');
+    const staleRoot = path.join(runtimeDepsDir, 'openclaw-2026.4.26-old');
+    const currentRoot = path.join(runtimeDepsDir, 'openclaw-2026.5.1-current');
+    mkdirSync(path.join(staleRoot, 'dist'), { recursive: true });
+    mkdirSync(path.join(currentRoot, 'dist'), { recursive: true });
+    symlinkSync(oldDistFile, path.join(staleRoot, 'dist', 'runtime.js'), 'file');
+    symlinkSync(currentDistFile, path.join(currentRoot, 'dist', 'runtime.js'), 'file');
+
+    const res = cleanupStalePluginRuntimeDeps({ runtimeDepsDir, currentOpenClawDir });
+
+    expect(res.removed).toEqual(['openclaw-2026.4.26-old']);
+    expect(res.examined).toBe(2);
+    expect(existsSync(staleRoot)).toBe(false);
+    expect(existsSync(currentRoot)).toBe(true);
+    expect(existsSync(oldDistFile)).toBe(true);
+  });
+
+  it('keeps non-OpenClaw runtime cache roots and non-OpenClaw symlinks', () => {
+    const externalPackageFile = path.join(root, 'external-plugin', 'dist', 'runtime.js');
+    mkdirSync(path.dirname(externalPackageFile), { recursive: true });
+    writeFileSync(externalPackageFile, 'export {}\n');
+
+    const openClawNamedRoot = path.join(runtimeDepsDir, 'openclaw-2026.5.1-current');
+    const externalNamedRoot = path.join(runtimeDepsDir, 'external-plugin-cache');
+    mkdirSync(path.join(openClawNamedRoot, 'dist'), { recursive: true });
+    mkdirSync(path.join(externalNamedRoot, 'dist'), { recursive: true });
+    symlinkSync(externalPackageFile, path.join(openClawNamedRoot, 'dist', 'runtime.js'), 'file');
+    symlinkSync(externalPackageFile, path.join(externalNamedRoot, 'dist', 'runtime.js'), 'file');
+
+    const res = cleanupStalePluginRuntimeDeps({ runtimeDepsDir, currentOpenClawDir });
+
+    expect(res.removed).toEqual([]);
+    expect(res.examined).toBe(1);
+    expect(existsSync(openClawNamedRoot)).toBe(true);
+    expect(existsSync(externalNamedRoot)).toBe(true);
   });
 });

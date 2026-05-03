@@ -894,9 +894,11 @@ function validateGatewayRpcParams(method: string, params: unknown): void {
   if (!params || typeof params !== 'object' || Array.isArray(params)) {
     throw new Error('gateway:rpc config.patch requires object params');
   }
+  const raw = (params as Record<string, unknown>).raw;
+  if (typeof raw === 'string' && raw.trim()) return;
   const patch = (params as Record<string, unknown>).patch;
   if (!patch || typeof patch !== 'object' || Array.isArray(patch)) {
-    throw new Error('gateway:rpc config.patch requires object patch');
+    throw new Error('gateway:rpc config.patch requires raw string or object patch');
   }
 }
 
