@@ -18,7 +18,7 @@ function shellQuote(value) {
 function spawnElectronBuilder() {
   if (process.platform === 'darwin') {
     const command = [
-      'ulimit -n 8192 >/dev/null 2>&1 || true',
+      'ulimit -n 65536 >/dev/null 2>&1 || ulimit -n 32768 >/dev/null 2>&1 || ulimit -n 16384 >/dev/null 2>&1 || true',
       `exec ${shellQuote(ELECTRON_BUILDER_BIN)}${args.length > 0 ? ` ${args.map(shellQuote).join(' ')}` : ''}`,
     ].join('; ');
 
