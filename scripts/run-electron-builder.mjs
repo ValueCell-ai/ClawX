@@ -6,12 +6,9 @@ import { fileURLToPath } from 'node:url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '..');
-const ELECTRON_BUILDER_BIN = path.join(
-  ROOT,
-  'node_modules',
-  '.bin',
-  process.platform === 'win32' ? 'electron-builder.cmd' : 'electron-builder',
-);
+const ELECTRON_BUILDER_BIN = process.platform === 'win32'
+  ? path.join(ROOT, 'node_modules', '.bin', 'electron-builder.cmd')
+  : path.join(ROOT, 'node_modules', '.bin', 'electron-builder');
 const args = process.argv.slice(2);
 
 function shellQuote(value) {
@@ -36,6 +33,7 @@ function spawnElectronBuilder() {
     cwd: ROOT,
     stdio: 'inherit',
     env: process.env,
+    shell: process.platform === 'win32',
   });
 }
 
