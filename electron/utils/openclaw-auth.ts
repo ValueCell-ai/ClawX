@@ -460,6 +460,11 @@ const OPTIONAL_PROVIDER_LIKE_BUNDLED_PLUGIN_IDS = new Set([
   'talk-voice',
   'voyage',
 ]);
+const BUNDLED_ALLOWLIST_PRESERVE_IDS = new Set([
+  'browser',
+  'acpx',
+  'memory-core',
+]);
 const AUTH_PROFILE_PROVIDER_KEY_MAP: Record<string, string> = {
   'openai-codex': 'openai',
   'google-gemini-cli': 'google',
@@ -547,7 +552,6 @@ function discoverBundledPlugins(): {
   return _bundledPluginCache;
 }
 
-
 function normalizeAuthProfileProviderKey(provider: string): string {
   return AUTH_PROFILE_PROVIDER_KEY_MAP[provider] ?? provider;
 }
@@ -587,6 +591,15 @@ async function collectActiveProviderIdsFromConfig(config: Record<string, unknown
   if (providers && typeof providers === 'object') {
     for (const key of Object.keys(providers as Record<string, unknown>)) {
       activeProviders.add(key);
+    }
+  }
+
+  const plugins = (config.plugins as Record<string, unknown> | undefined)?.entries;
+  if (plugins && typeof plugins === 'object') {
+    for (const [pluginId, meta] of Object.entries(plugins as Record<string, unknown>)) {
+      if (pluginId.endsWith('-auth') && (meta as Record<string, unknown>).enabled) {
+        activeProviders.add(pluginId.replace(/-auth$/, ''));
+      }
     }
   }
 
@@ -2274,15 +2287,44 @@ export async function sanitizeOpenClawConfig(): Promise<void> {
         modified = true;
       }
 
-      // Discover all bundled extension IDs and which ones are enabledByDefault
-      // so we can (a) exclude them from the "external" set (prevents stale
-      // entries surviving across OpenClaw upgrades) and (b) re-add the
-      // enabledByDefault ones that are non-provider plugins, explicitly
-      // configured, or needed by the active provider config.
+      // Discover all bundled extension IDs so we can clean stale bundled
+      // allowlist entries from older OpenClaw versions. Re-add only the
+      // ClawX-critical bundled plugins, active provider plugins, and explicitly
+      // enabled bundled plugins — not every enabledByDefault provider plugin.
       const bundled = discoverBundledPlugins();
       const installedExtensionIds = await discoverInstalledExtensionPluginIds();
       const loadedPluginIds = await discoverLoadedPluginIdsFromConfig(config);
       const activeProviderIds = await collectActiveProviderIdsFromConfig(config);
+
+      const explicitlyEnabledBundledPluginIds = Object.keys(pEntries)
+        .filter((pluginId) => {
+          if (!bundled.all.has(pluginId)) return false;
+          const entry = isPlainRecord(pEntries[pluginId]) ? pEntries[pluginId] as Record<string, unknown> : {};
+          if (entry.enabled === false) return false;
+          if (pluginId === 'feishu' && (!isFeishuConfigured || canonicalFeishuId !== 'feishu')) {
+            return false;
+          }
+          return entry.enabled === true;
+        });
+
+      const activeBundledProviderPluginIds = bundled.enabledByDefault.filter((pluginId) => {
+        if (pluginId === 'feishu' && (!isFeishuConfigured || canonicalFeishuId !== 'feishu')) {
+          return false;
+        }
+        const manifest = bundled.manifestsById.get(pluginId);
+        const providerIds = manifest?.providers ?? [];
+        const isProviderPlugin = providerIds.length > 0
+          || OPTIONAL_PROVIDER_LIKE_BUNDLED_PLUGIN_IDS.has(pluginId);
+        if (!isProviderPlugin) return false;
+        return providerIds.some((providerId) => activeProviderIds.has(providerId))
+          || activeProviderIds.has(pluginId);
+      });
+
+      const requiredBundledPluginIds = Array.from(new Set([
+        ...BUNDLED_ALLOWLIST_PRESERVE_IDS,
+        ...activeBundledProviderPluginIds,
+        ...explicitlyEnabledBundledPluginIds,
+      ])).filter((pluginId) => bundled.all.has(pluginId));
 
       const externalPluginIds: string[] = [];
       for (const pluginId of allowArr2) {
@@ -2297,8 +2339,10 @@ export async function sanitizeOpenClawConfig(): Promise<void> {
         }
         externalPluginIds.push(pluginId);
       }
-      let nextAllow = [...externalPluginIds];
-      if (externalPluginIds.length > 0) {
+
+      const retainedBundledPluginIds = allowArr2.filter((pluginId) => requiredBundledPluginIds.includes(pluginId));
+      let nextAllow = [...new Set([...externalPluginIds, ...retainedBundledPluginIds])];
+      if (nextAllow.length > 0) {
         for (const channelId of configuredBuiltIns) {
           if (!nextAllow.includes(channelId)) {
             nextAllow.push(channelId);
@@ -2306,50 +2350,11 @@ export async function sanitizeOpenClawConfig(): Promise<void> {
             console.log(`[sanitize] Added configured built-in channel "${channelId}" to plugins.allow`);
           }
         }
-      }
-
-      // ── Ensure enabledByDefault built-in plugins survive restrictive allowlists ──
-      // OpenClaw's plugin enable logic checks the allowlist BEFORE enabledByDefault,
-      // so any bundled plugin with enabledByDefault: true can get blocked when
-      // plugins.allow is non-empty.  Re-adding every provider plugin makes
-      // Gateway startup mirror/copy many plugin runtime roots, which can block
-      // the Gateway event loop long enough for Dreams and health RPCs to time
-      // out.  Keep always-on non-provider plugins plus provider plugins that
-      // the current config/auth profile actually uses.
-      if (nextAllow.length > 0) {
-        for (const pluginId of Object.keys(pEntries)) {
-          if (!bundled.all.has(pluginId)) continue;
-          const entry = isPlainRecord(pEntries[pluginId]) ? pEntries[pluginId] as Record<string, unknown> : {};
-          if (entry.enabled === false) continue;
-          if (pluginId === 'feishu' && (!isFeishuConfigured || canonicalFeishuId !== 'feishu')) {
-            continue;
-          }
+        for (const pluginId of requiredBundledPluginIds) {
           if (!nextAllow.includes(pluginId)) {
             nextAllow.push(pluginId);
-          }
-        }
-
-        for (const pluginId of bundled.enabledByDefault) {
-          // When feishu is not configured at all, or the official
-          // openclaw-lark plugin replaces the built-in 'feishu' extension,
-          // skip re-adding 'feishu' here — otherwise the enabledByDefault
-          // logic undoes the cleanup performed above and the built-in
-          // extension keeps reappearing in plugins.allow.
-          if (pluginId === 'feishu' && (!isFeishuConfigured || canonicalFeishuId !== 'feishu')) {
-            continue;
-          }
-          const manifest = bundled.manifestsById.get(pluginId);
-          const providerIds = manifest?.providers ?? [];
-          const isConfiguredPlugin = Boolean(pEntries[pluginId]);
-          const isProviderPlugin = providerIds.length > 0
-            || OPTIONAL_PROVIDER_LIKE_BUNDLED_PLUGIN_IDS.has(pluginId);
-          const isActiveProviderPlugin = providerIds.some((providerId) => activeProviderIds.has(providerId))
-            || activeProviderIds.has(pluginId);
-          if (isProviderPlugin && !isConfiguredPlugin && !isActiveProviderPlugin) {
-            continue;
-          }
-          if (!nextAllow.includes(pluginId)) {
-            nextAllow.push(pluginId);
+            modified = true;
+            console.log(`[sanitize] Preserved required bundled plugin "${pluginId}" in plugins.allow`);
           }
         }
       }

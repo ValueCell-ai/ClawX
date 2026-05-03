@@ -680,6 +680,7 @@ describe('sanitizeOpenClawConfig', () => {
         },
       },
     });
+
     vi.doMock('@electron/utils/paths', async () => {
       const actual = await vi.importActual<typeof import('@electron/utils/paths')>('@electron/utils/paths');
       return {
@@ -703,6 +704,70 @@ describe('sanitizeOpenClawConfig', () => {
     expect(allow).not.toContain('groq');
     expect(allow).toContain('openrouter');
     expect(allow).not.toContain('anthropic');
+  });
+
+  it('preserves active bundled provider plugins discovered from per-agent auth profile stores', async () => {
+    await writeOpenClawJson({
+      agents: {
+        list: [
+          {
+            id: 'work',
+            name: 'Work',
+            workspace: '~/.openclaw/workspace-work',
+            agentDir: '~/.openclaw/agents/work/agent',
+          },
+        ],
+      },
+      plugins: {
+        allow: ['custom-plugin'],
+        entries: {
+          'custom-plugin': { enabled: true },
+        },
+      },
+    });
+
+    await writeAgentAuthProfiles('work', {
+      version: 1,
+      profiles: {
+        'openai-codex:default': {
+          type: 'oauth',
+          provider: 'openai-codex',
+          access: 'acc',
+          refresh: 'ref',
+          expires: 1,
+        },
+      },
+    });
+
+    const openclawDir = join(testHome, '.openclaw-package-sanitize-providers');
+    await mkdir(join(openclawDir, 'dist', 'extensions', 'openai'), { recursive: true });
+    await writeFile(
+      join(openclawDir, 'dist', 'extensions', 'openai', 'openclaw.plugin.json'),
+      JSON.stringify({
+        id: 'openai',
+        enabledByDefault: true,
+        providers: ['openai', 'openai-codex'],
+      }, null, 2),
+      'utf8',
+    );
+
+    vi.doMock('@electron/utils/paths', async () => {
+      const actual = await vi.importActual<typeof import('@electron/utils/paths')>('@electron/utils/paths');
+      return {
+        ...actual,
+        getOpenClawResolvedDir: () => openclawDir,
+      };
+    });
+
+    const { sanitizeOpenClawConfig } = await import('@electron/utils/openclaw-auth');
+    await sanitizeOpenClawConfig();
+
+    const result = await readOpenClawJson();
+    const plugins = result.plugins as Record<string, unknown>;
+    const allow = plugins.allow as string[];
+
+    expect(allow).toContain('custom-plugin');
+    expect(allow).toContain('openai');
   });
 });
 
