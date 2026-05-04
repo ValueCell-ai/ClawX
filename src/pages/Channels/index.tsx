@@ -301,9 +301,12 @@ export function Channels() {
   }, [clearConvergenceRefreshTimers, fetchPageData]);
 
   useEffect(() => {
+    if (gatewayStatus.state === 'running') {
+      void fetchPageData();
+      return;
+    }
     void fetchPageData({ configOnly: true });
-    void fetchPageData();
-  }, [fetchPageData]);
+  }, [fetchPageData, gatewayStatus.state]);
 
   useEffect(() => {
     return () => {
