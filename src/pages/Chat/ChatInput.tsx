@@ -17,6 +17,8 @@ import { cn } from '@/lib/utils';
 import { useGatewayStore } from '@/stores/gateway';
 import { useAgentsStore } from '@/stores/agents';
 import { useChatStore } from '@/stores/chat';
+import { useProviderStore } from '@/stores/providers';
+import { buildConfiguredModelOptions, formatModelRefLabel } from '@/lib/model-options';
 import type { AgentSummary } from '@/types/agent';
 import type { QuickAccessSkill } from '@/types/skill';
 import { useTranslation } from 'react-i18next';
@@ -168,17 +170,27 @@ export function ChatInput({ onSend, onStop, disabled = false, sending = false, i
   const [targetAgentId, setTargetAgentId] = useState<string | null>(null);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [skillPickerOpen, setSkillPickerOpen] = useState(false);
+  const [modelPickerOpen, setModelPickerOpen] = useState(false);
   const [skillQuery, setSkillQuery] = useState('');
   const [quickSkills, setQuickSkills] = useState<QuickAccessSkill[]>([]);
   const [skillsLoading, setSkillsLoading] = useState(false);
   const [skillsError, setSkillsError] = useState<string | null>(null);
   const [selectedSkill, setSelectedSkill] = useState<QuickAccessSkill | null>(null);
+  const [switchingModelRef, setSwitchingModelRef] = useState<string | null>(null);
+  const [optimisticModelRef, setOptimisticModelRef] = useState<string | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const pickerRef = useRef<HTMLDivElement>(null);
   const skillPickerRef = useRef<HTMLDivElement>(null);
+  const modelPickerRef = useRef<HTMLDivElement>(null);
   const isComposingRef = useRef(false);
   const gatewayStatus = useGatewayStore((s) => s.status);
   const agents = useAgentsStore((s) => s.agents);
+  const updateAgentModel = useAgentsStore((s) => s.updateAgentModel);
+  const defaultModelRef = useAgentsStore((s) => s.defaultModelRef);
+  const providerAccounts = useProviderStore((s) => s.accounts);
+  const providerStatuses = useProviderStore((s) => s.statuses);
+  const providerDefaultAccountId = useProviderStore((s) => s.defaultAccountId);
+  const refreshProviderSnapshot = useProviderStore((s) => s.refreshProviderSnapshot);
   const currentAgentId = useChatStore((s) => s.currentAgentId);
   const currentAgent = useMemo(
     () => (agents ?? []).find((agent) => agent.id === currentAgentId) ?? null,
@@ -188,6 +200,12 @@ export function ChatInput({ onSend, onStop, disabled = false, sending = false, i
     () => currentAgent?.name ?? currentAgentId,
     [currentAgent, currentAgentId],
   );
+  const modelOptions = useMemo(
+    () => buildConfiguredModelOptions(providerAccounts, providerStatuses, providerDefaultAccountId),
+    [providerAccounts, providerDefaultAccountId, providerStatuses],
+  );
+  const effectiveModelRef = optimisticModelRef || currentAgent?.modelRef || defaultModelRef || modelOptions[0]?.modelRef || null;
+  const currentModelLabel = formatModelRefLabel(effectiveModelRef);
   const mentionableAgents = useMemo(
     () => (agents ?? []).filter((agent) => agent.id !== currentAgentId),
     [agents, currentAgentId],
@@ -206,8 +224,34 @@ export function ChatInput({ onSend, onStop, disabled = false, sending = false, i
     );
   }, [quickSkills, skillQuery]);
   const showAgentPicker = mentionableAgents.length > 0;
+  const showModelPicker = modelOptions.length > 1;
   const chatComposerStatusComponents = rendererExtensionRegistry.getChatComposerStatusComponents();
   const skillTokenRanges = useMemo(() => findSkillTokenRanges(input), [input]);
+
+  useEffect(() => {
+    void refreshProviderSnapshot();
+  }, [refreshProviderSnapshot]);
+
+  useEffect(() => {
+    if (gatewayStatus.state === 'running') return;
+    let cancelled = false;
+    invokeIpc('gateway:status')
+      .then((status: unknown) => {
+        if (cancelled) return;
+        const latest = status as { state?: string };
+        if (latest?.state === 'running') {
+          void refreshProviderSnapshot();
+        }
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [gatewayStatus.state, refreshProviderSnapshot]);
+
+  useEffect(() => {
+    setOptimisticModelRef(null);
+  }, [currentAgent?.modelRef, currentAgentId]);
 
   // Auto-resize textarea
   useEffect(() => {
@@ -238,21 +282,23 @@ export function ChatInput({ onSend, onStop, disabled = false, sending = false, i
   }, [agents, currentAgentId, targetAgentId]);
 
   useEffect(() => {
-    if (!pickerOpen && !skillPickerOpen) return;
+    if (!pickerOpen && !skillPickerOpen && !modelPickerOpen) return;
     const handlePointerDown = (event: MouseEvent) => {
       const target = event.target as Node;
       const insideAgentPicker = pickerRef.current?.contains(target);
       const insideSkillPicker = skillPickerRef.current?.contains(target);
-      if (!insideAgentPicker && !insideSkillPicker) {
+      const insideModelPicker = modelPickerRef.current?.contains(target);
+      if (!insideAgentPicker && !insideSkillPicker && !insideModelPicker) {
         setPickerOpen(false);
         setSkillPickerOpen(false);
+        setModelPickerOpen(false);
       }
     };
     document.addEventListener('mousedown', handlePointerDown);
     return () => {
       document.removeEventListener('mousedown', handlePointerDown);
     };
-  }, [pickerOpen, skillPickerOpen]);
+  }, [modelPickerOpen, pickerOpen, skillPickerOpen]);
 
   useEffect(() => {
     setSelectedSkill((prev) => {
@@ -337,6 +383,30 @@ export function ChatInput({ onSend, onStop, disabled = false, sending = false, i
     if (!skillPickerOpen) return;
     void loadQuickSkills();
   }, [skillPickerOpen, loadQuickSkills]);
+
+  const handleSelectModel = useCallback(async (modelRef: string) => {
+    if (!currentAgent || switchingModelRef) return;
+    if (modelRef === effectiveModelRef) {
+      setModelPickerOpen(false);
+      textareaRef.current?.focus();
+      return;
+    }
+
+    const previousModelRef = effectiveModelRef;
+    const desiredOverride = modelRef === (defaultModelRef || '').trim() ? null : modelRef;
+    setSwitchingModelRef(modelRef);
+    setOptimisticModelRef(modelRef);
+    setModelPickerOpen(false);
+    try {
+      await updateAgentModel(currentAgent.id, desiredOverride);
+    } catch (error) {
+      setOptimisticModelRef(previousModelRef);
+      toast.error(t('composer.modelSwitchFailed', { error: String(error) }));
+    } finally {
+      setSwitchingModelRef(null);
+      textareaRef.current?.focus();
+    }
+  }, [currentAgent, defaultModelRef, effectiveModelRef, switchingModelRef, t, updateAgentModel]);
 
   // ── File staging via native dialog ─────────────────────────────
 
@@ -590,7 +660,7 @@ export function ChatInput({ onSend, onStop, disabled = false, sending = false, i
         handleSend();
       }
     },
-    [handleSend, input, moveCaretTo, skillTokenRanges],
+    [handleSend, input, moveCaretTo, selectedSkill, skillTokenRanges],
   );
 
   // Handle paste (Ctrl/Cmd+V with files)
@@ -853,6 +923,62 @@ export function ChatInput({ onSend, onStop, disabled = false, sending = false, i
                 </div>
               )}
             </div>
+
+            {showModelPicker && (
+              <div ref={modelPickerRef} className="relative shrink-0">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className={cn(
+                    'h-8 max-w-[220px] rounded-lg px-2.5 text-meta font-medium text-muted-foreground hover:bg-black/5 dark:hover:bg-white/10 hover:text-foreground transition-colors',
+                    (modelPickerOpen || switchingModelRef) && 'bg-primary/10 text-primary hover:bg-primary/20'
+                  )}
+                  onClick={() => {
+                    setPickerOpen(false);
+                    setSkillPickerOpen(false);
+                    setModelPickerOpen((open) => !open);
+                  }}
+                  disabled={sending || !currentAgent || !!switchingModelRef}
+                  title={t('composer.pickModel')}
+                  data-testid="chat-model-picker-button"
+                >
+                  {switchingModelRef ? (
+                    <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                  ) : null}
+                  <span className="truncate">{currentModelLabel}</span>
+                  <ChevronDown className="ml-1 h-3.5 w-3.5 shrink-0" />
+                </Button>
+                {modelPickerOpen && (
+                  <div
+                    className="absolute left-0 bottom-full z-20 mb-2 w-72 overflow-hidden rounded-2xl border border-black/10 bg-white p-1.5 shadow-xl dark:border-white/10 dark:bg-card"
+                    data-testid="chat-model-picker-menu"
+                  >
+                    <div className="px-3 py-2 text-tiny font-medium text-muted-foreground/80">
+                      {t('composer.modelPickerTitle')}
+                    </div>
+                    <div className="max-h-64 overflow-y-auto">
+                      {modelOptions.map((option) => (
+                        <button
+                          key={option.modelRef}
+                          type="button"
+                          onClick={() => void handleSelectModel(option.modelRef)}
+                          className={cn(
+                            'flex w-full items-center justify-between gap-3 rounded-xl px-3 py-2 text-left text-sm font-medium transition-colors',
+                            option.modelRef === effectiveModelRef ? 'bg-primary/10 text-foreground' : 'hover:bg-black/5 dark:hover:bg-white/5'
+                          )}
+                          data-testid={`chat-model-picker-option-${option.label}`}
+                        >
+                          <span className="truncate">{option.label}</span>
+                          {option.modelRef === effectiveModelRef && (
+                            <span className="h-1.5 w-1.5 rounded-full bg-primary" />
+                          )}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
 
             {/* Send Button — pushed to the right */}
             <Button
