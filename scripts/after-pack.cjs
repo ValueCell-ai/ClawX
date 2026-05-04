@@ -901,4 +901,89 @@ exports.default = async function afterPack(context) {
       }
     }
   }
+
+  // ── Final integrity summary ────────────────────────────────────────────────
+  // Log file count and total size of the Resources directory so CI can detect
+  // unexpected growth or shrinkage between releases.  Also verify that
+  // critical patched files contain the expected content (catch silent write
+  // failures or encoding corruption).
+
+  function countFilesRecursive(dir) {
+    let count = 0;
+    let entries;
+    try { entries = readdirSync(normWin(dir), { withFileTypes: true }); } catch { return 0; }
+    for (const entry of entries) {
+      const full = join(dir, entry.name);
+      if (entry.isDirectory() || (entry.isSymbolicLink?.() && (() => { try { return statSync(normWin(full)).isDirectory(); } catch { return false; } })())) {
+        count += countFilesRecursive(full);
+      } else {
+        count++;
+      }
+    }
+    return count;
+  }
+
+  function getDirSizeRecursive(dir) {
+    let total = 0;
+    let entries;
+    try { entries = readdirSync(normWin(dir), { withFileTypes: true }); } catch { return 0; }
+    for (const entry of entries) {
+      const full = join(dir, entry.name);
+      if (entry.isDirectory()) {
+        total += getDirSizeRecursive(full);
+      } else if (entry.isFile()) {
+        try { total += statSync(normWin(full)).size; } catch { /* skip */ }
+      }
+    }
+    return total;
+  }
+
+  function formatSizeHuman(bytes) {
+    if (bytes >= 1024 * 1024 * 1024) return `${(bytes / 1024 / 1024 / 1024).toFixed(1)}G`;
+    if (bytes >= 1024 * 1024) return `${(bytes / 1024 / 1024).toFixed(1)}M`;
+    if (bytes >= 1024) return `${(bytes / 1024).toFixed(1)}K`;
+    return `${bytes}B`;
+  }
+
+  const totalFiles = countFilesRecursive(resourcesDir);
+  const totalSize = getDirSizeRecursive(resourcesDir);
+  console.log(`[after-pack] 📊 Final Resources: ${totalFiles} files, ${formatSizeHuman(totalSize)} in ${resourcesDir}`);
+
+  // Verify critical patched modules contain the expected marker strings.
+  // If a write was silently truncated or encoding-corrupted, this catches it
+  // before the app is signed and shipped.
+  const { readFileSync: verifyReadFS } = require('fs');
+  const criticalChecks = [
+    { path: join(dest, 'node-domexception', 'index.js'), marker: 'module.exports = dom', label: 'node-domexception' },
+  ];
+
+  // Check lru-cache patches if the dest exists
+  const lruCacheIndex = join(dest, 'lru-cache', 'index.js');
+  if (existsSync(normWin(lruCacheIndex))) {
+    criticalChecks.push({ path: lruCacheIndex, marker: 'exports.LRUCache', label: 'lru-cache (top-level)' });
+  }
+
+  let integrityOk = true;
+  for (const check of criticalChecks) {
+    if (!existsSync(normWin(check.path))) continue;
+    try {
+      const content = verifyReadFS(normWin(check.path), 'utf8');
+      if (!content.includes(check.marker)) {
+        console.error(`[after-pack] ❌ Integrity check FAILED for ${check.label}: marker "${check.marker}" not found in ${check.path}`);
+        integrityOk = false;
+      }
+    } catch (err) {
+      console.error(`[after-pack] ❌ Integrity check FAILED for ${check.label}: ${err.message}`);
+      integrityOk = false;
+    }
+  }
+
+  if (integrityOk) {
+    console.log(`[after-pack] ✅ Integrity checks passed for ${criticalChecks.length} patched module(s)`);
+  } else {
+    console.error('[after-pack] ❌ One or more integrity checks FAILED — the build may produce a broken app');
+    process.exit(1);
+  }
+
+  console.log(`[after-pack] ✅ afterPack completed for ${platform}/${arch}`);
 };

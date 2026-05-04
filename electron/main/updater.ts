@@ -226,6 +226,15 @@ export class AppUpdater extends EventEmitter {
    */
   quitAndInstall(): void {
     logger.info('[Updater] quitAndInstall called');
+
+    // Log update details so post-mortem debugging is possible if the update
+    // produces a corrupted install ("已不能再打开" / "can't be opened").
+    const updateVersion = this.status.info?.version ?? 'unknown';
+    logger.info(`[Updater] Installing update: ${app.getVersion()} → ${updateVersion}`);
+    if (process.platform === 'darwin') {
+      logger.info('[Updater] macOS: delegating to Squirrel.Mac (ShipIt) for atomic app replacement');
+    }
+
     setQuitting();
     autoUpdater.quitAndInstall();
   }

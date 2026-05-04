@@ -107,6 +107,73 @@ jobs:
           echo "File descriptor limit: $(ulimit -n)"
           pnpm run package:mac
 
+      # Verify macOS code signature, notarization staple, and Gatekeeper acceptance.
+      # This catches silently broken signatures BEFORE artifacts are published.
+      # Modelled after VSCode's post-build verification (build/darwin/sign.ts).
+      - name: Verify macOS code signature and notarization
+        if: matrix.platform == 'mac'
+        run: |
+          set -euo pipefail
+
+          verify_app() {
+            local APP_PATH="$1"
+            local LABEL="$2"
+
+            if [ ! -d "$APP_PATH" ]; then
+              echo "⚠️  ${APP_PATH} not found, skipping verification for ${LABEL}"
+              return 0
+            fi
+
+            echo ""
+            echo "🔍 Verifying ${LABEL}: ${APP_PATH}"
+
+            # 1. Deep code signature verification (same flags as VSCode CI)
+            echo "  [1/4] Checking code signature (--deep --strict)..."
+            codesign --verify --deep --strict --verbose=2 "$APP_PATH"
+            echo "        ✅ Code signature valid"
+
+            # 2. Verify secure timestamp exists (prevents expiry-based rejection)
+            echo "  [2/4] Checking for secure timestamp..."
+            CODESIGN_DISPLAY=$(codesign -dvvv "$APP_PATH" 2>&1 || true)
+            if echo "$CODESIGN_DISPLAY" | grep -q "Timestamp="; then
+              TIMESTAMP=$(echo "$CODESIGN_DISPLAY" | grep "Timestamp=" | head -1)
+              echo "        ✅ ${TIMESTAMP}"
+            else
+              echo "        ❌ ERROR: No secure timestamp found in signature!"
+              echo "$CODESIGN_DISPLAY"
+              exit 1
+            fi
+
+            # 3. Gatekeeper assessment (will the OS allow this app to launch?)
+            echo "  [3/4] Assessing Gatekeeper acceptance..."
+            spctl --assess --type execute --verbose "$APP_PATH" 2>&1
+            echo "        ✅ Gatekeeper accepted"
+
+            # 4. Verify notarization ticket is stapled
+            echo "  [4/4] Verifying notarization staple..."
+            xcrun stapler validate "$APP_PATH" 2>&1
+            echo "        ✅ Notarization staple valid"
+
+            echo "  ✅ All checks passed for ${LABEL}"
+          }
+
+          # Verify both architecture builds
+          verify_app "release/mac/ClawX.app" "macOS x64"
+          verify_app "release/mac-arm64/ClawX.app" "macOS arm64"
+
+          # Verify DMG files (informational — DMGs themselves are often unsigned)
+          echo ""
+          echo "🔍 Checking DMG artifacts..."
+          for dmg in release/*.dmg; do
+            if [ -f "$dmg" ]; then
+              echo "  DMG: $(basename "$dmg")"
+              xcrun stapler validate "$dmg" 2>&1 && echo "    ✅ DMG stapled" || echo "    ℹ️  DMG not stapled (expected if only .app is stapled)"
+            fi
+          done
+
+          echo ""
+          echo "✅ All macOS verification checks passed"
+
       # Windows specific steps
       - name: Build Windows
         if: matrix.platform == 'win'
@@ -348,10 +415,28 @@ jobs:
             
             ### ⚠️ Installation Notes
             
-            - **macOS**: On first launch, you may see "cannot verify developer". Go to System Preferences → Security & Privacy to allow the app to run
-            - **Windows**: SmartScreen may block the app. Click "More info" → "Run anyway" to proceed
-            - **Linux AppImage**: First run `chmod +x ClawX-*.AppImage` to add execute permission. On Ubuntu 22.04 you may also need `sudo apt install libfuse2`; on Ubuntu 24.04 use `sudo apt install libfuse2t64`
-            - **Linux .deb (Ubuntu 24.04)**: If installation fails due to missing dependencies, use `sudo apt install libgtk-3-0t64 libnotify4t64 libxss1t64` before installing
+            #### macOS 安装说明
+            
+            - **首次启动**: 如果看到"无法验证开发者"提示，请前往 系统设置 → 隐私与安全性，点击"仍要打开"
+            - **首次启动 (备选方法)**: 右键点击 ClawX.app → 选择"打开"（而非双击），可绕过 Gatekeeper 首次检查
+            - **"已损坏，无法打开" / "File is damaged"**: 这通常是 macOS 隔离属性导致的。请在终端运行：
+              ```
+              xattr -cr /Applications/ClawX.app
+              ```
+              然后重新打开应用
+            - **"已不能再打开" / "Can't be opened"**: 这通常是应用文件损坏（可能由更新失败导致）。请：
+              1. 从"应用程序"文件夹删除 ClawX.app
+              2. 从本页面重新下载对应架构的 DMG
+              3. 重新拖入"应用程序"文件夹并打开
+            
+            #### Windows
+            
+            - **SmartScreen may block the app**: Click "More info" → "Run anyway" to proceed
+            
+            #### Linux
+            
+            - **AppImage**: First run `chmod +x ClawX-*.AppImage` to add execute permission. On Ubuntu 22.04 you may also need `sudo apt install libfuse2`; on Ubuntu 24.04 use `sudo apt install libfuse2t64`
+            - **.deb (Ubuntu 24.04)**: If installation fails due to missing dependencies, use `sudo apt install libgtk-3-0t64 libnotify4t64 libxss1t64` before installing
             
             ---
             

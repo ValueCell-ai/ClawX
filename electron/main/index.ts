@@ -286,6 +286,32 @@ async function initialize(): Promise<void> {
     `Runtime: platform=${process.platform}/${process.arch}, electron=${process.versions.electron}, node=${process.versions.node}, packaged=${app.isPackaged}, pid=${process.pid}, ppid=${process.ppid}`
   );
 
+  // macOS-only: verify the running app bundle's code signature at startup.
+  // A broken signature (e.g. from a failed auto-update or manual tampering)
+  // causes macOS to show "应用程序已不能再打开" on the *next* launch.
+  // This early diagnostic logs a warning so the issue is captured in logs
+  // before Gatekeeper kills the process on a subsequent launch.
+  if (process.platform === 'darwin' && app.isPackaged) {
+    try {
+      const { execSync } = await import('node:child_process');
+      const appPath = app.getAppPath(); // .../ClawX.app/Contents/Resources/app.asar
+      const appBundlePath = appPath.replace(/\/Contents\/Resources\/app(\.asar)?$/, '');
+      if (appBundlePath.endsWith('.app')) {
+        execSync(`codesign --verify --quiet "${appBundlePath}"`, { timeout: 10_000 });
+        logger.debug('[Startup] macOS code signature verification passed');
+      }
+    } catch (error) {
+      // Log but don't block — the app is already running, and the user should
+      // see the UI. The warning helps diagnose "can't be opened" reports.
+      logger.warn(
+        '[Startup] ⚠️  macOS code signature verification FAILED. ' +
+        'The app may have been corrupted by a partial update or external modification. ' +
+        'If you see "应用程序已不能再打开" on next launch, please reinstall ClawX.',
+        error,
+      );
+    }
+  }
+
   if (!isE2EMode) {
     // Warm up network optimization (non-blocking)
     void warmupNetworkOptimization();
