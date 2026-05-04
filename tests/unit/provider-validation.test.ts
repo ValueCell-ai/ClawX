@@ -373,6 +373,111 @@ describe('validateApiKeyWithProvider', () => {
     );
   });
 
+  it('falls back to /chat/completions for custom provider when /models returns 401', async () => {
+    proxyAwareFetch
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ error: { message: 'Unauthorized' } }), {
+          status: 401,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ error: { message: 'Unknown model: validation-probe' } }), {
+          status: 400,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      );
+
+    const { validateApiKeyWithProvider } = await import('@electron/services/providers/provider-validation');
+    const result = await validateApiKeyWithProvider('custom', 'sk-custom-valid', {
+      baseUrl: 'https://custom.example.com/v1',
+      apiProtocol: 'openai-completions',
+    });
+
+    expect(result).toMatchObject({ valid: true });
+    expect(proxyAwareFetch).toHaveBeenCalledTimes(2);
+    expect(proxyAwareFetch).toHaveBeenNthCalledWith(
+      1,
+      'https://custom.example.com/v1/models?limit=1',
+      expect.anything(),
+    );
+    expect(proxyAwareFetch).toHaveBeenNthCalledWith(
+      2,
+      'https://custom.example.com/v1/chat/completions',
+      expect.objectContaining({ method: 'POST' }),
+    );
+  });
+
+  it('falls back to /responses for custom provider when /models returns 403', async () => {
+    proxyAwareFetch
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ error: { message: 'Forbidden' } }), {
+          status: 403,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ error: { message: 'Unknown model: validation-probe' } }), {
+          status: 400,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      );
+
+    const { validateApiKeyWithProvider } = await import('@electron/services/providers/provider-validation');
+    const result = await validateApiKeyWithProvider('custom', 'sk-custom-valid-responses', {
+      baseUrl: 'https://custom.example.com/v1',
+      apiProtocol: 'openai-responses',
+    });
+
+    expect(result).toMatchObject({ valid: true });
+    expect(proxyAwareFetch).toHaveBeenCalledTimes(2);
+    expect(proxyAwareFetch).toHaveBeenNthCalledWith(
+      2,
+      'https://custom.example.com/v1/responses',
+      expect.objectContaining({ method: 'POST' }),
+    );
+  });
+
+  it('reports invalid key for custom provider when /models returns 401 and probe also returns auth failure', async () => {
+    proxyAwareFetch
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ error: { message: 'Unauthorized' } }), {
+          status: 401,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ error: { message: 'Invalid API key' } }), {
+          status: 401,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      );
+
+    const { validateApiKeyWithProvider } = await import('@electron/services/providers/provider-validation');
+    const result = await validateApiKeyWithProvider('custom', 'sk-custom-bad-key', {
+      baseUrl: 'https://custom.example.com/v1',
+      apiProtocol: 'openai-completions',
+    });
+
+    expect(result).toMatchObject({ valid: false });
+    expect(proxyAwareFetch).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not apply auth-probe fallback for non-custom provider types returning 401 on /models', async () => {
+    proxyAwareFetch.mockResolvedValueOnce(
+      new Response(JSON.stringify({ error: { message: 'Unauthorized' } }), {
+        status: 401,
+        headers: { 'Content-Type': 'application/json' },
+      })
+    );
+
+    const { validateApiKeyWithProvider } = await import('@electron/services/providers/provider-validation');
+    const result = await validateApiKeyWithProvider('openai', 'sk-bad-openai-key');
+
+    expect(result).toMatchObject({ valid: false, error: 'Invalid API key' });
+    expect(proxyAwareFetch).toHaveBeenCalledTimes(1);
+  });
+
   it('treats localized auth-like 400 probe responses as invalid after fallback', async () => {
     proxyAwareFetch
       .mockResolvedValueOnce(
