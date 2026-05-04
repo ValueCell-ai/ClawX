@@ -22,6 +22,14 @@ const TRANSIENT_START_ERROR_PATTERNS: RegExp[] = [
   /Port \d+ still occupied after \d+ms/i,
 ];
 
+/**
+ * Patterns that indicate the gateway is already managed by systemd and cannot
+ * be started as a child process.  Retrying is pointless in this scenario.
+ */
+const SYSTEMD_CONFLICT_PATTERNS: RegExp[] = [
+  /already running under systemd/i,
+];
+
 function normalizeLogLine(value: string): string {
   return value.trim();
 }
@@ -75,6 +83,24 @@ export function isTransientGatewayStartError(error: unknown): boolean {
   return TRANSIENT_START_ERROR_PATTERNS.some((pattern) => pattern.test(errorText));
 }
 
+/**
+ * Returns true when the gateway stderr indicates it is already supervised by
+ * systemd.  In that case ClawX cannot own the process and retrying startup
+ * will only produce the same result.
+ */
+export function isSystemdConflictSignal(text: string): boolean {
+  const normalized = text.trim();
+  if (!normalized) return false;
+  return SYSTEMD_CONFLICT_PATTERNS.some((pattern) => pattern.test(normalized));
+}
+
+/**
+ * Returns true when any startup stderr line signals a systemd conflict.
+ */
+export function hasSystemdConflictSignal(startupStderrLines: string[]): boolean {
+  return startupStderrLines.some(isSystemdConflictSignal);
+}
+
 export type GatewayStartupRecoveryAction = 'repair' | 'retry' | 'fail';
 
 export function getGatewayStartupRecoveryAction(options: {
@@ -84,6 +110,13 @@ export function getGatewayStartupRecoveryAction(options: {
   attempt: number;
   maxAttempts: number;
 }): GatewayStartupRecoveryAction {
+  // If the gateway reports it's already managed by systemd, retrying will not
+  // help.  Fail immediately so the user gets a clear error state instead of
+  // a long retry loop.
+  if (hasSystemdConflictSignal(options.startupStderrLines)) {
+    return 'fail';
+  }
+
   if (shouldAttemptConfigAutoRepair(
     options.startupError,
     options.startupStderrLines,
