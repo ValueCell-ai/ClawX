@@ -213,49 +213,50 @@ Notes:
 
 ClawX employs a **dual-process architecture** with a unified host API layer. The renderer talks to a single client abstraction, while Electron Main owns protocol selection and process lifecycle:
 
-```┌─────────────────────────────────────────────────────────────────┐
+```
+┌──────────────────────────────────────────────────────────────────┐
 │                        ClawX Desktop App                         │
 │                                                                  │
 │  ┌────────────────────────────────────────────────────────────┐  │
-│  │              Electron Main Process                          │  │
+│  │              Electron Main Process                         │  │
 │  │  • Window & application lifecycle management               │  │
-│  │  • Gateway process supervision                              │  │
-│  │  • System integration (tray, notifications, keychain)       │  │
-│  │  • Auto-update orchestration                                │  │
+│  │  • Gateway process supervision                             │  │
+│  │  • System integration (tray, notifications, keychain)      │  │
+│  │  • Auto-update orchestration                               │  │
 │  └────────────────────────────────────────────────────────────┘  │
-│                              │                                    │
-│                              │ IPC (authoritative control plane)  │
-│                              ▼                                    │
+│                              │                                   │
+│                              │ IPC (authoritative control plane) │
+│                              ▼                                   │
 │  ┌────────────────────────────────────────────────────────────┐  │
-│  │              React Renderer Process                         │  │
-│  │  • Modern component-based UI (React 19)                     │  │
-│  │  • State management with Zustand                            │  │
-│  │  • Unified host-api/api-client calls                        │  │
-│  │  • Rich Markdown rendering                                  │  │
+│  │              React Renderer Process                        │  │
+│  │  • Modern component-based UI (React 19)                    │  │
+│  │  • State management with Zustand                           │  │
+│  │  • Unified host-api/api-client calls                       │  │
+│  │  • Rich Markdown rendering                                 │  │
 │  └────────────────────────────────────────────────────────────┘  │
-└──────────────────────────────┬──────────────────────────────────┘
+└──────────────────────────────┬───────────────────────────────────┘
                                │
                                │ Main-owned transport strategy
                                │ (WS first, HTTP then IPC fallback)
                                ▼
-┌─────────────────────────────────────────────────────────────────┐
-│                Host API & Main Process Proxies                  │
+┌──────────────────────────────────────────────────────────────────┐
+│                Host API & Main Process Proxies                   │
 │                                                                  │
-│  • hostapi:fetch (Main proxy, avoids CORS in dev/prod)          │
+│  • hostapi:fetch (Main proxy, avoids CORS in dev/prod)           │
 │  • gateway:httpProxy (Renderer never calls Gateway HTTP direct)  │
 │  • Unified error mapping & retry/backoff                         │
-└──────────────────────────────┬──────────────────────────────────┘
+└──────────────────────────────┬───────────────────────────────────┘
                                │
                                │ WS / HTTP / IPC fallback
                                ▼
-┌─────────────────────────────────────────────────────────────────┐
+┌──────────────────────────────────────────────────────────────────┐
 │                     OpenClaw Gateway                             │
 │                                                                  │
-│  • AI agent runtime and orchestration                           │
+│  • AI agent runtime and orchestration                            │
 │  • Message channel management                                    │
-│  • Skill/plugin execution environment                           │
+│  • Skill/plugin execution environment                            │
 │  • Provider abstraction layer                                    │
-└─────────────────────────────────────────────────────────────────┘
+└──────────────────────────────────────────────────────────────────┘
 ```
 ### Design Principles
 
