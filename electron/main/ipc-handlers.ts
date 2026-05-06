@@ -2723,27 +2723,6 @@ function getFilePreviewWriteRoots(): string[] {
   return roots;
 }
 
-/**
- * Additional roots inside which the file preview pipeline can READ ONLY.
- * Bundled skills, app resources and the dev-mode project root live here:
- * the user has a legitimate reason to peek at SKILL.md / scripts shipped
- * with the app, but writing to them would corrupt the install.
- */
-function getFilePreviewReadOnlyRoots(): string[] {
-  const roots: string[] = [];
-  try {
-    // In dev this is the project root (covers `node_modules/.pnpm/...`),
-    // in prod it points at the asar / app dir.
-    roots.push(resolve(app.getAppPath()));
-  } catch {
-    // app.getAppPath() can throw before the app is ready; ignore.
-  }
-  if (typeof process.resourcesPath === 'string' && process.resourcesPath) {
-    roots.push(resolve(process.resourcesPath));
-  }
-  return roots;
-}
-
 interface ResolvedSandboxedPath {
   realPath: string;
   /** True when the resolved path lives in a read-only-only root (e.g. bundled skill). */
@@ -2775,19 +2754,19 @@ async function resolveSandboxedPath(
     return { realPath: real, readOnly: false };
   }
   if (mode === 'write') {
-    // Caller wants to mutate. If the path is inside a read-only root we can
-    // surface a more informative error; otherwise it's a true sandbox miss.
-    const roRoots = getFilePreviewReadOnlyRoots();
-    if (roRoots.some((root) => isPathInside(real, root))) {
-      throw new Error('readOnlyRoot');
-    }
-    throw new Error('outsideSandbox');
+    // Preview is broadly read-only, but mutations stay confined to the
+    // app-owned write roots. This avoids path-specific allowlists (which
+    // are fragile on Windows, OneDrive, localized folders, Chinese user
+    // names, etc.) while preserving a strict write boundary.
+    throw new Error('readOnlyRoot');
   }
-  const roRoots = getFilePreviewReadOnlyRoots();
-  if (roRoots.some((root) => isPathInside(real, root))) {
-    return { realPath: real, readOnly: true };
-  }
-  throw new Error('outsideSandbox');
+
+  // Read-only preview should work for any real local path surfaced by the
+  // desktop app/runtime. `realpath()` above canonicalizes Windows casing,
+  // Unicode path segments and symlinks; individual handlers still enforce
+  // file-vs-directory checks, size caps, hidden directory skips and binary
+  // detection where appropriate.
+  return { realPath: real, readOnly: true };
 }
 
 function looksLikeBinary(buf: Buffer): boolean {

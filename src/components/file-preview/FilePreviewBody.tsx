@@ -359,7 +359,7 @@ export function FilePreviewBody({
 
   const handleOpenInFinder = useCallback(() => {
     invokeIpc('shell:showItemInFolder', file.filePath).catch(() => {
-      toast.error(t('filePreview.errors.openInFinderFailed', '无法在 Finder 中显示'));
+      toast.error(t('filePreview.errors.openInFinderFailed', '无法在文件管理器中显示'));
     });
   }, [file, t]);
 
@@ -390,7 +390,7 @@ export function FilePreviewBody({
             })
             : t(
               'filePreview.errors.unsupportedFormatHint',
-              '当前仅支持文本/Markdown 等可直接读取的文件进行内置预览与变更对比。请在 Finder 中打开该文件。',
+              '当前仅支持文本/Markdown 等可直接读取的文件进行内置预览与变更对比。请在文件管理器中打开该文件。',
             )}
         </p>
       </div>
@@ -402,7 +402,7 @@ export function FilePreviewBody({
         )}
         <Button variant="outline" size="sm" onClick={handleOpenInFinder}>
           <FolderOpen className="mr-2 h-4 w-4" />
-          {t('filePreview.actions.openInFinder', '在 Finder 中显示')}
+          {t('filePreview.actions.openInFinder', '在文件管理器中显示')}
         </Button>
       </div>
     </div>
@@ -443,7 +443,7 @@ export function FilePreviewBody({
             )}
             <Button variant="outline" size="sm" onClick={handleOpenInFinder}>
               <FolderOpen className="mr-2 h-4 w-4" />
-              {t('filePreview.actions.openInFinder', '在 Finder 中显示')}
+              {t('filePreview.actions.openInFinder', '在文件管理器中显示')}
             </Button>
           </div>
         </div>
@@ -455,7 +455,7 @@ export function FilePreviewBody({
           <p>{t('filePreview.errors.binary', '二进制文件不支持文本预览')}</p>
           <Button variant="outline" size="sm" onClick={handleOpenInFinder}>
             <FolderOpen className="mr-2 h-4 w-4" />
-            {t('filePreview.actions.openInFinder', '在 Finder 中显示')}
+            {t('filePreview.actions.openInFinder', '在文件管理器中显示')}
           </Button>
         </div>
       );
@@ -468,18 +468,18 @@ export function FilePreviewBody({
           </div>
           <div className="space-y-1.5">
             <p className="text-sm font-medium text-foreground">
-              {t('filePreview.errors.outsideSandboxTitle', '此文件位于沙盒外')}
+              {t('filePreview.errors.outsideSandboxTitle', '无法读取此文件')}
             </p>
             <p className="max-w-md text-xs leading-relaxed text-muted-foreground">
               {t(
                 'filePreview.errors.outsideSandboxHint',
-                '出于安全考虑，ClawX 仅允许预览 ~/.openclaw、应用资源以及内置技能目录中的文件。可在 Finder 中查看。',
+                'ClawX 无法读取这个路径。文件可能已被移动、删除，或当前账户没有访问权限。可在文件管理器中查看。',
               )}
             </p>
           </div>
           <Button variant="outline" size="sm" onClick={handleOpenInFinder}>
             <FolderOpen className="mr-2 h-4 w-4" />
-            {t('filePreview.actions.openInFinder', '在 Finder 中显示')}
+            {t('filePreview.actions.openInFinder', '在文件管理器中显示')}
           </Button>
         </div>
       );
@@ -495,7 +495,7 @@ export function FilePreviewBody({
           <p>{hint}</p>
           <Button variant="outline" size="sm" onClick={handleOpenInFinder}>
             <FolderOpen className="mr-2 h-4 w-4" />
-            {t('filePreview.actions.openInFinder', '在 Finder 中显示')}
+            {t('filePreview.actions.openInFinder', '在文件管理器中显示')}
           </Button>
         </div>
       );

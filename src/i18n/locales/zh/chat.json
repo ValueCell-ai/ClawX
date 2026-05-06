@@ -58,7 +58,7 @@
             "save": "保存",
             "saving": "保存中...",
             "revert": "撤销",
-            "openInFinder": "在 Finder 中显示",
+            "openInFinder": "在文件管理器中显示",
             "openDirectly": "直接打开",
             "close": "关闭"
         },
@@ -73,8 +73,8 @@
         },
         "errors": {
             "outsideSandbox": "路径越界，已拒绝访问",
-            "outsideSandboxTitle": "此文件位于沙盒外",
-            "outsideSandboxHint": "出于安全考虑，ClawX 仅允许预览 ~/.openclaw、应用资源以及内置技能目录中的文件。可在 Finder 中查看。",
+            "outsideSandboxTitle": "无法读取此文件",
+            "outsideSandboxHint": "ClawX 无法读取这个路径。文件可能已被移动、删除，或当前账户没有访问权限。可在文件管理器中查看。",
             "readOnlyRoot": "该文件位于只读位置（如内置技能），无法修改",
             "tooLarge": "文件过大（{{size}}），已禁用预览",
             "binary": "二进制文件不支持文本预览",
@@ -82,10 +82,10 @@
             "loadFailed": "加载失败：{{error}}",
             "noPreview": "该文件没有预览",
             "unsupportedFormatTitle": "此文件格式暂不支持内置预览或变更",
-            "unsupportedFormatHint": "当前仅支持文本/Markdown 等可直接读取的文件进行内置预览与变更对比。请在 Finder 中打开该文件。",
+            "unsupportedFormatHint": "当前仅支持文本/Markdown 等可直接读取的文件进行内置预览与变更对比。请在文件管理器中打开该文件。",
             "largeBinaryOpenTitle": "该文件较大，暂不支持内置预览",
             "largeBinaryOpenHint": "当前文件为 {{size}}，ClawX 不提供内置预览。你可以确认后直接使用系统默认应用打开。",
-            "openInFinderFailed": "无法在 Finder 中显示",
+            "openInFinderFailed": "无法在文件管理器中显示",
             "openFailed": "打开失败：{{error}}"
         },
         "diff": {
@@ -130,7 +130,7 @@
         "truncated": "目录过大，已截断显示前 5000 个节点",
         "actions": {
             "refresh": "刷新",
-            "openRootInFinder": "在 Finder 中显示根目录",
+            "openRootInFinder": "在文件管理器中显示根目录",
             "toggleHidden": "显示/隐藏隐藏文件",
             "showHidden": "显示隐藏文件",
             "hideHidden": "隐藏隐藏文件"

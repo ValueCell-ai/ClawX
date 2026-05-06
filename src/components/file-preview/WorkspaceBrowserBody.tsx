@@ -212,14 +212,14 @@ export function WorkspaceBrowserBody({
   const handleOpenWorkspaceInFinder = useCallback(() => {
     if (!workspace) return;
     invokeIpc('shell:openPath', workspace).catch(() => {
-      toast.error(t('filePreview.errors.openInFinderFailed', '无法在 Finder 中显示'));
+      toast.error(t('filePreview.errors.openInFinderFailed', '无法在文件管理器中显示'));
     });
   }, [workspace, t]);
 
   const handleOpenSelectedInFinder = useCallback(() => {
     if (!selectedNode || selectedNode.isDir) return;
     invokeIpc('shell:showItemInFolder', selectedNode.absPath).catch(() => {
-      toast.error(t('filePreview.errors.openInFinderFailed', '无法在 Finder 中显示'));
+      toast.error(t('filePreview.errors.openInFinderFailed', '无法在文件管理器中显示'));
     });
   }, [selectedNode, t]);
 
@@ -355,7 +355,7 @@ export function WorkspaceBrowserBody({
             )}
             <Button variant="outline" size="sm" onClick={handleOpenSelectedInFinder}>
               <FolderOpen className="mr-2 h-4 w-4" />
-              {t('filePreview.actions.openInFinder', '在 Finder 中显示')}
+              {t('filePreview.actions.openInFinder', '在文件管理器中显示')}
             </Button>
           </div>
         </div>
@@ -381,7 +381,7 @@ export function WorkspaceBrowserBody({
             )}
             <Button variant="outline" size="sm" onClick={handleOpenSelectedInFinder}>
               <FolderOpen className="mr-2 h-4 w-4" />
-              {t('filePreview.actions.openInFinder', '在 Finder 中显示')}
+              {t('filePreview.actions.openInFinder', '在文件管理器中显示')}
             </Button>
           </div>
         </div>
@@ -418,7 +418,7 @@ export function WorkspaceBrowserBody({
                 })
                 : t(
                   'filePreview.errors.unsupportedFormatHint',
-                  '当前仅支持文本/Markdown 等可直接读取的文件进行内置预览与变更对比。请在 Finder 中打开该文件。',
+                  '当前仅支持文本/Markdown 等可直接读取的文件进行内置预览与变更对比。请在文件管理器中打开该文件。',
                 )}
             </p>
           </div>
@@ -430,7 +430,7 @@ export function WorkspaceBrowserBody({
             )}
             <Button variant="outline" size="sm" onClick={handleOpenSelectedInFinder}>
               <FolderOpen className="mr-2 h-4 w-4" />
-              {t('filePreview.actions.openInFinder', '在 Finder 中显示')}
+              {t('filePreview.actions.openInFinder', '在文件管理器中显示')}
             </Button>
           </div>
         </div>
@@ -505,7 +505,7 @@ export function WorkspaceBrowserBody({
             size="icon"
             className="h-7 w-7"
             onClick={handleOpenWorkspaceInFinder}
-            title={t('workspace.actions.openRootInFinder', '在 Finder 中显示根目录')}
+            title={t('workspace.actions.openRootInFinder', '在文件管理器中显示根目录')}
           >
             <FolderOpen className="h-3.5 w-3.5 pointer-events-none" />
           </Button>

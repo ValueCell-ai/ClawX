@@ -58,7 +58,7 @@
             "save": "Save",
             "saving": "Saving...",
             "revert": "Revert",
-            "openInFinder": "Reveal in Finder",
+            "openInFinder": "Reveal in file manager",
             "openDirectly": "Open directly",
             "close": "Close"
         },
@@ -73,8 +73,8 @@
         },
         "errors": {
             "outsideSandbox": "Path outside sandbox — access denied",
-            "outsideSandboxTitle": "This file lives outside the sandbox",
-            "outsideSandboxHint": "For safety, ClawX only previews files in ~/.openclaw, app resources, and bundled skill directories. You can still open it in Finder.",
+            "outsideSandboxTitle": "Could not read this file",
+            "outsideSandboxHint": "ClawX could not read this path. The file may have been moved or deleted, or the current account may not have permission. You can still reveal it in the file manager.",
             "readOnlyRoot": "File lives in a read-only location (e.g. bundled skill) and cannot be modified",
             "tooLarge": "File too large ({{size}}); preview disabled",
             "binary": "Binary file — text preview unavailable",
@@ -82,7 +82,7 @@
             "loadFailed": "Load failed: {{error}}",
             "noPreview": "No preview available for this file",
             "unsupportedFormatTitle": "This file format is not supported for built-in preview or diff",
-            "unsupportedFormatHint": "Built-in preview and diff currently support directly readable text/Markdown-style files only. Open the file in Finder instead.",
+            "unsupportedFormatHint": "Built-in preview and diff currently support directly readable text/Markdown-style files only. Open the file in the file manager instead.",
             "largeBinaryOpenTitle": "This file is too large for built-in preview",
             "largeBinaryOpenHint": "This file is {{size}}. ClawX cannot preview it inline, but you can confirm and open it with the system default app.",
             "openInFinderFailed": "Could not reveal file",
@@ -130,7 +130,7 @@
         "truncated": "Directory truncated — only the first 5000 entries shown",
         "actions": {
             "refresh": "Refresh",
-            "openRootInFinder": "Reveal workspace in Finder",
+            "openRootInFinder": "Reveal workspace in file manager",
             "toggleHidden": "Toggle hidden files",
             "showHidden": "Show hidden files",
             "hideHidden": "Hide hidden files"
