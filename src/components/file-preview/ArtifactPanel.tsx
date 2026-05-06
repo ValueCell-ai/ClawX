@@ -191,18 +191,17 @@ function ChangesTab({ files, focusedFile, onFocus }: ChangesTabProps) {
     return Array.from(map.values()).sort((a, b) => b.lastSeenIndex - a.lastSeenIndex);
   }, [files]);
 
-  // Auto-select the first file when entering this tab without one in
-  // focus (or when the focused file disappears, e.g. session reset).
+  // Auto-select the first generated file only when entering this tab without
+  // any focus. Files opened from chat cards (for example `SKILL.md`) may not
+  // be present in `files`; keep that focus instead of jumping to an unrelated
+  // generated file.
   useLayoutEffect(() => {
+    if (focusedFile) return;
     if (uniqueFiles.length === 0) return;
-    const stillExists =
-      focusedFile && uniqueFiles.some((f) => f.filePath === focusedFile.filePath);
-    if (!stillExists) {
-      onFocus(generatedFileToTarget(uniqueFiles[0]));
-    }
+    onFocus(generatedFileToTarget(uniqueFiles[0]));
   }, [focusedFile, uniqueFiles, onFocus]);
 
-  if (uniqueFiles.length === 0) {
+  if (!focusedFile && uniqueFiles.length === 0) {
     return (
       <div className="flex h-full items-center justify-center px-6 text-center text-sm text-muted-foreground">
         {t('artifactPanel.changes.empty', '本会话尚无文件变更')}

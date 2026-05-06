@@ -360,7 +360,7 @@ function extractRawFilePaths(text: string): Array<{ filePath: string; mimeType: 
   // normally look like a URL scheme.  After matching we punch the entire
   // `MEDIA:<path>` span out of the working text so the generic unix
   // regex below doesn't double-count the bare `/path` suffix.
-  const taggedRegex = new RegExp(`(?:^|[\\s(\\[{>])(?:MEDIA|media):((?:\\/|~\\/)[^\\s\\n"'()\\[\\],<>]*?\\.(?:${exts}))`, 'g');
+  const taggedRegex = new RegExp(`(?:^|[\\s(\\[{>])(?:MEDIA|media):((?:\\/|~\\/)[^\\s\\n"'()\\[\\],<>` + '`' + `]*?\\.(?:${exts}))`, 'g');
   let workingText = text;
   let taggedMatch: RegExpExecArray | null;
   while ((taggedMatch = taggedRegex.exec(text)) !== null) {
@@ -377,12 +377,12 @@ function extractRawFilePaths(text: string): Array<{ filePath: string; mimeType: 
   }
   // Unix absolute paths (/... or ~/...) — lookbehind rejects mid-token slashes
   // (e.g. "path/to/file.mp4", "https://example.com/file.mp4")
-  const unixRegex = new RegExp(`(?<![\\w./:])((?:\\/|~\\/)[^\\s\\n"'()\\[\\],<>]*?\\.(?:${exts}))`, 'gi');
+  const unixRegex = new RegExp(`(?<![\\w./:])((?:\\/|~\\/)[^\\s\\n"'()\`\\[\\],<>]*?\\.(?:${exts}))`, 'gi');
   // Windows absolute paths (C:\... D:\...) — lookbehind rejects drive letter glued to a word
-  const winRegex = new RegExp(`(?<![\\w])([A-Za-z]:\\\\[^\\s\\n"'()\\[\\],<>]*?\\.(?:${exts}))`, 'gi');
+  const winRegex = new RegExp(`(?<![\\w])([A-Za-z]:\\\\[^\\s\\n"'()\`\\[\\],<>]*?\\.(?:${exts}))`, 'gi');
   // OpenClaw skill directories do not have file extensions, but they are
   // user-facing artifacts that should render as clickable folder cards.
-  const skillDirRegex = /(?<![\w./:])((?:~[\\/]\.openclaw[\\/]skills[\\/][^\s\n"'`()\[\],<>]+)|(?:(?:\/|[A-Za-z]:\\)[^\s\n"'`()\[\],<>]*?[\\/]\.openclaw[\\/]skills[\\/][^\s\n"'`()\[\],<>]+))/gi;
+  const skillDirRegex = /(?<![\w./:])((?:~[\\/]\.openclaw[\\/]skills[\\/][^\\/\s\n"'`()\[\],<>]+)|(?:(?:\/|[A-Za-z]:\\)[^\s\n"'`()\[\],<>]*?[\\/]\.openclaw[\\/]skills[\\/][^\\/\s\n"'`()\[\],<>]+))(?=$|[\s\n"'`()\[\],<>，。；;,.!?])/gi;
   for (const regex of [unixRegex, winRegex, skillDirRegex]) {
     let match;
     while ((match = regex.exec(workingText)) !== null) {

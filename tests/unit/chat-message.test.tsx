@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { ChatMessage } from '@/pages/Chat/ChatMessage';
 import type { RawMessage } from '@/stores/chat';
 
@@ -98,6 +98,27 @@ describe('ChatMessage attachment dedupe', () => {
 
     expect(screen.getByText('打开东方财富')).toBeInTheDocument();
     expect(screen.getByText('文件夹')).toBeInTheDocument();
+  });
+
+  it('shows SKILL.md as a previewable file card instead of a folder', () => {
+    const onOpenFile = vi.fn();
+    const message: RawMessage = {
+      role: 'assistant',
+      content: '位置： ~/.openclaw/skills/open-baidu\nMarkdown 文件： ~/.openclaw/skills/open-baidu/SKILL.md',
+    };
+
+    render(<ChatMessage message={message} suppressProcessAttachments onOpenFile={onOpenFile} />);
+
+    expect(screen.getByText('open-baidu')).toBeInTheDocument();
+    expect(screen.getByText('SKILL.md')).toBeInTheDocument();
+    expect(screen.getAllByText('文件夹')).toHaveLength(1);
+
+    fireEvent.click(screen.getByText('SKILL.md'));
+    expect(onOpenFile).toHaveBeenCalledWith(expect.objectContaining({
+      fileName: 'SKILL.md',
+      filePath: '~/.openclaw/skills/open-baidu/SKILL.md',
+      mimeType: 'text/markdown',
+    }));
   });
 
   it('continues hiding non-preview process attachments when process attachments are suppressed', () => {

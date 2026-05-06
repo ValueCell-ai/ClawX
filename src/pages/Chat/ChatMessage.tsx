@@ -68,8 +68,14 @@ function isDirectoryAttachment(file: AttachedFileMeta): boolean {
   return file.mimeType === DIRECTORY_MIME_TYPE;
 }
 
+function isSkillFileAttachment(file: AttachedFileMeta): boolean {
+  const path = file.filePath ?? '';
+  return /(?:^|[\\/])\.openclaw[\\/]skills[\\/][^\\/]+[\\/].+\.[A-Za-z0-9]+$/i.test(path);
+}
+
 function previewMimeFromPath(filePath: string): string | null {
   const lower = filePath.toLowerCase();
+  if (lower.endsWith('.md') || lower.endsWith('.markdown')) return 'text/markdown';
   if (lower.endsWith('.pdf')) return 'application/pdf';
   if (lower.endsWith('.xls')) return 'application/vnd.ms-excel';
   if (lower.endsWith('.xlsx')) return 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
@@ -108,7 +114,8 @@ function extractPreviewDocumentPaths(text: string): AttachedFileMeta[] {
   const exts = 'pdf|xlsx?|PDF|XLSX?';
   const taggedRegex = new RegExp(`(?:^|[\\s(\\[{>])(?:MEDIA|media):((?:\\/|~\\/)[^\\s\\n"'()\\[\\],<>]*?\\.(?:${exts}))`, 'g');
   const unixRegex = new RegExp('(?<![\\w./:])((?:\\/|~\\/)[^\\s\\n"\'`()\\[\\],<>]*?\\.(?:' + exts + '))', 'g');
-  const skillDirRegex = /(?<![\w./:])((?:~[\\/]\.openclaw[\\/]skills[\\/][^\s\n"'`()\[\],<>]+)|(?:(?:\/|[A-Za-z]:\\)[^\s\n"'`()\[\],<>]*?[\\/]\.openclaw[\\/]skills[\\/][^\s\n"'`()\[\],<>]+))/gi;
+  const skillDirRegex = /(?<![\w./:])((?:~[\\/]\.openclaw[\\/]skills[\\/][^\\/\s\n"'`()\[\],<>]+)|(?:(?:\/|[A-Za-z]:\\)[^\s\n"'`()\[\],<>]*?[\\/]\.openclaw[\\/]skills[\\/][^\\/\s\n"'`()\[\],<>]+))(?=$|[\s\n"'`()\[\],<>，。；;,.!?])/gi;
+  const skillMarkdownRegex = /(?<![\w./:])((?:~[\\/]\.openclaw[\\/]skills[\\/][^\s\n"'`()\[\],<>]*?\.md)|(?:(?:\/|[A-Za-z]:\\)[^\s\n"'`()\[\],<>]*?[\\/]\.openclaw[\\/]skills[\\/][^\s\n"'`()\[\],<>]*?\.md))(?=$|[\s\n"'`()\[\],<>，。；;,.!?])/gi;
 
   let workingText = text;
   let taggedMatch: RegExpExecArray | null;
@@ -121,7 +128,7 @@ function extractPreviewDocumentPaths(text: string): AttachedFileMeta[] {
     workingText = workingText.slice(0, start) + ' '.repeat(end - start) + workingText.slice(end);
   }
 
-  for (const regex of [unixRegex, skillDirRegex]) {
+  for (const regex of [unixRegex, skillMarkdownRegex, skillDirRegex]) {
     let match: RegExpExecArray | null;
     while ((match = regex.exec(workingText)) !== null) {
       const filePath = match[1];
@@ -205,7 +212,7 @@ export const ChatMessage = memo(function ChatMessage({
     // Runtime-produced PDF / spreadsheet artifacts should remain visible
     // in the chat even when generic process attachments are folded into
     // the execution graph; they are the user-facing output to click.
-    return isChatPreviewDocument(file) || isDirectoryAttachment(file);
+    return isChatPreviewDocument(file) || isDirectoryAttachment(file) || isSkillFileAttachment(file);
   });
   // When a message is attachment-only, keep those attachments visible even if
   // process attachments are generally suppressed for this run segment —

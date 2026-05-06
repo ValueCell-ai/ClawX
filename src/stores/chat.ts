@@ -441,10 +441,10 @@ function extractRawFilePaths(text: string): Array<{ filePath: string; mimeType: 
   const exts = 'png|jpe?g|gif|webp|bmp|avif|svg|pdf|docx?|xlsx?|pptx?|txt|csv|md|rtf|epub|zip|tar|gz|rar|7z|mp3|wav|ogg|aac|flac|m4a|mp4|mov|avi|mkv|webm|m4v';
   // Unix absolute paths (/... or ~/...) — lookbehind rejects mid-token slashes
   // (e.g. "path/to/file.mp4", "https://example.com/file.mp4")
-  const unixRegex = new RegExp(`(?<![\\w./:])((?:\\/|~\\/)[^\\s\\n"'()\\[\\],<>]*?\\.(?:${exts}))`, 'gi');
+  const unixRegex = new RegExp(`(?<![\\w./:])((?:\\/|~\\/)[^\\s\\n"'()\`\\[\\],<>]*?\\.(?:${exts}))`, 'gi');
   // Windows absolute paths (C:\... D:\...) — lookbehind rejects drive letter glued to a word
-  const winRegex = new RegExp(`(?<![\\w])([A-Za-z]:\\\\[^\\s\\n"'()\\[\\],<>]*?\\.(?:${exts}))`, 'gi');
-  const skillDirRegex = /(?<![\w./:])((?:~[\\/]\.openclaw[\\/]skills[\\/][^\s\n"'`()\[\],<>]+)|(?:(?:\/|[A-Za-z]:\\)[^\s\n"'`()\[\],<>]*?[\\/]\.openclaw[\\/]skills[\\/][^\s\n"'`()\[\],<>]+))/gi;
+  const winRegex = new RegExp(`(?<![\\w])([A-Za-z]:\\\\[^\\s\\n"'()\`\\[\\],<>]*?\\.(?:${exts}))`, 'gi');
+  const skillDirRegex = /(?<![\w./:])((?:~[\\/]\.openclaw[\\/]skills[\\/][^\\/\s\n"'`()\[\],<>]+)|(?:(?:\/|[A-Za-z]:\\)[^\s\n"'`()\[\],<>]*?[\\/]\.openclaw[\\/]skills[\\/][^\\/\s\n"'`()\[\],<>]+))(?=$|[\s\n"'`()\[\],<>，。；;,.!?])/gi;
   for (const regex of [unixRegex, winRegex, skillDirRegex]) {
     let match;
     while ((match = regex.exec(text)) !== null) {
