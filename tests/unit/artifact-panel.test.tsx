@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { ArtifactPanel } from '@/components/file-preview/ArtifactPanel';
 import { ARTIFACT_PANEL_DEFAULT_WIDTH, useArtifactPanel } from '@/stores/artifact-panel';
 import type { GeneratedFile } from '@/lib/generated-files';
@@ -72,5 +72,36 @@ describe('ArtifactPanel', () => {
     expect(screen.getByTestId('file-preview-body')).toHaveTextContent('SKILL.md');
     expect(screen.getByTestId('file-preview-body')).toHaveTextContent('~/.openclaw/skills/open-baidu/SKILL.md');
     expect(screen.queryByText('test_example.py')).not.toBeInTheDocument();
+  });
+
+  it('keeps the selected preview file after visiting the workspace tab', () => {
+    useArtifactPanel.setState({
+      open: true,
+      tab: 'preview',
+      focusedFile: {
+        filePath: '~/.openclaw/skills/open-xueqiu/SKILL.md',
+        fileName: 'SKILL.md',
+        ext: '.md',
+        mimeType: 'text/markdown',
+        contentType: 'document',
+      },
+      widthPct: ARTIFACT_PANEL_DEFAULT_WIDTH,
+    });
+
+    render(
+      <ArtifactPanel
+        files={[makeGeneratedFile()]}
+        agent={null}
+      />,
+    );
+
+    expect(screen.getByTestId('file-preview-body')).toHaveTextContent('SKILL.md');
+
+    fireEvent.click(screen.getByRole('button', { name: '工作空间' }));
+    expect(screen.getByTestId('workspace-browser')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: '预览' }));
+    expect(screen.getByTestId('file-preview-body')).toHaveTextContent('SKILL.md');
+    expect(screen.queryByText('尚未选择文件')).not.toBeInTheDocument();
   });
 });

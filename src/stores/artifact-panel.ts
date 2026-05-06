@@ -65,19 +65,14 @@ export const useArtifactPanel = create<ArtifactPanelState>()(
       focusedFile: null,
       widthPct: ARTIFACT_PANEL_DEFAULT_WIDTH,
       setTab: (tab) => {
-        // The browser tab has its own internal selection (workspace tree)
-        // and should not inherit a chat-side focused file.  The changes
-        // and preview tabs share `focusedFile`.
-        if (tab === 'browser') {
-          set({ tab, focusedFile: null });
-        } else {
-          set({ tab, focusedFile: get().focusedFile });
-        }
+        // The browser tab has its own internal workspace-tree selection, so
+        // keep the chat-side focused file available for preview/changes.
+        set({ tab, focusedFile: get().focusedFile });
       },
       setFocusedFile: (focusedFile) => set({ focusedFile }),
       openChanges: (file = null) => set({ open: true, tab: 'changes', focusedFile: file ?? null }),
       openPreview: (file = null) => set({ open: true, tab: 'preview', focusedFile: file ?? null }),
-      openBrowser: () => set({ open: true, tab: 'browser', focusedFile: null }),
+      openBrowser: () => set({ open: true, tab: 'browser', focusedFile: get().focusedFile }),
       toggle: () => set((s) => ({ open: !s.open })),
       close: () => set({ open: false, focusedFile: null }),
       setWidthPct: (pct) => set({ widthPct: clampWidth(pct) }),
