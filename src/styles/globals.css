@@ -154,6 +154,16 @@
   @apply bg-muted-foreground/30;
 }
 
+/* Monaco's default light diff theme is pure white; keep it aligned with ClawX's cream app background. */
+:root:not(.dark) .clawx-diff-editor .monaco-diff-editor,
+:root:not(.dark) .clawx-diff-editor .monaco-editor,
+:root:not(.dark) .clawx-diff-editor .monaco-editor-background,
+:root:not(.dark) .clawx-diff-editor .monaco-editor .margin,
+:root:not(.dark) .clawx-diff-editor .monaco-editor .gutter,
+:root:not(.dark) .clawx-diff-editor .diffOverview {
+  background-color: hsl(var(--background)) !important;
+}
+
 /* macOS traffic light spacing */
 .drag-region {
   -webkit-app-region: drag;
