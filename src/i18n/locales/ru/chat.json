@@ -23,6 +23,7 @@
         "title": "Изменения файлов ({{count}})",
         "created": "Создано",
         "modified": "Изменено",
+        "openFolder": "Открыть папку",
         "viewAll": "Все изменения"
     },
     "runError": {

@@ -49,6 +49,8 @@ interface ChatMessageProps {
 
 interface ExtractedImage { url?: string; data?: string; mimeType: string; }
 
+const DIRECTORY_MIME_TYPE = 'application/x-directory';
+
 function isChatPreviewDocument(file: AttachedFileMeta): boolean {
   const name = file.fileName.toLowerCase();
   const mime = file.mimeType.toLowerCase();
@@ -60,6 +62,10 @@ function isChatPreviewDocument(file: AttachedFileMeta): boolean {
     || name.endsWith('.xls')
     || name.endsWith('.xlsx')
   );
+}
+
+function isDirectoryAttachment(file: AttachedFileMeta): boolean {
+  return file.mimeType === DIRECTORY_MIME_TYPE;
 }
 
 function previewMimeFromPath(filePath: string): string | null {
@@ -74,55 +80,53 @@ function fileNameFromPath(filePath: string): string {
   return filePath.split(/[\\/]/).pop() || 'file';
 }
 
+function trimPathTerminators(filePath: string): string {
+  return filePath.replace(/[，。；;,.!?]+$/u, '');
+}
+
 function extractPreviewDocumentPaths(text: string): AttachedFileMeta[] {
   if (!text) return [];
   const refs: AttachedFileMeta[] = [];
   const seen = new Set<string>();
-  // Deliberately narrow this render-layer fallback to PDF / spreadsheet
-  // previews. The store-level extractor still handles all file categories;
-  // this just guarantees user-facing document outputs show as cards even
-  // when message history enrichment has not run yet.
+  const pushRef = (filePath: string, mimeType: string) => {
+    const normalizedPath = trimPathTerminators(filePath);
+    if (!normalizedPath || seen.has(normalizedPath)) return;
+    seen.add(normalizedPath);
+    refs.push({
+      fileName: fileNameFromPath(normalizedPath),
+      mimeType,
+      fileSize: 0,
+      preview: null,
+      filePath: normalizedPath,
+      source: 'message-ref',
+    });
+  };
+  // Deliberately narrow this render-layer fallback to user-facing artifacts:
+  // PDF / spreadsheet previews and OpenClaw skill directories. The store-level
+  // extractor still handles broad file categories; this keeps visible outputs
+  // clickable even before history enrichment runs.
   const exts = 'pdf|xlsx?|PDF|XLSX?';
   const taggedRegex = new RegExp(`(?:^|[\\s(\\[{>])(?:MEDIA|media):((?:\\/|~\\/)[^\\s\\n"'()\\[\\],<>]*?\\.(?:${exts}))`, 'g');
-  const unixRegex = new RegExp(`(?<![\\w./:])((?:\\/|~\\/)[^\\s\\n"'()\\[\\],<>]*?\\.(?:${exts}))`, 'g');
+  const unixRegex = new RegExp('(?<![\\w./:])((?:\\/|~\\/)[^\\s\\n"\'`()\\[\\],<>]*?\\.(?:' + exts + '))', 'g');
+  const skillDirRegex = /(?<![\w./:])((?:~[\\/]\.openclaw[\\/]skills[\\/][^\s\n"'`()\[\],<>]+)|(?:(?:\/|[A-Za-z]:\\)[^\s\n"'`()\[\],<>]*?[\\/]\.openclaw[\\/]skills[\\/][^\s\n"'`()\[\],<>]+))/gi;
 
   let workingText = text;
   let taggedMatch: RegExpExecArray | null;
   while ((taggedMatch = taggedRegex.exec(text)) !== null) {
     const filePath = taggedMatch[1];
     const mimeType = previewMimeFromPath(filePath);
-    if (mimeType && !seen.has(filePath)) {
-      seen.add(filePath);
-      refs.push({
-        fileName: fileNameFromPath(filePath),
-        mimeType,
-        fileSize: 0,
-        preview: null,
-        filePath,
-        source: 'message-ref',
-      });
-    }
+    if (mimeType) pushRef(filePath, mimeType);
     const start = taggedMatch.index;
     const end = start + taggedMatch[0].length;
     workingText = workingText.slice(0, start) + ' '.repeat(end - start) + workingText.slice(end);
   }
 
-  for (const regex of [unixRegex]) {
+  for (const regex of [unixRegex, skillDirRegex]) {
     let match: RegExpExecArray | null;
     while ((match = regex.exec(workingText)) !== null) {
       const filePath = match[1];
-      const mimeType = previewMimeFromPath(filePath);
-      if (mimeType && !seen.has(filePath)) {
-        seen.add(filePath);
-        refs.push({
-          fileName: fileNameFromPath(filePath),
-          mimeType,
-          fileSize: 0,
-          preview: null,
-          filePath,
-          source: 'message-ref',
-        });
-      }
+      const mimeType = regex === skillDirRegex ? DIRECTORY_MIME_TYPE : previewMimeFromPath(filePath);
+      if (mimeType) pushRef(filePath, mimeType);
     }
   }
 
@@ -201,7 +205,7 @@ export const ChatMessage = memo(function ChatMessage({
     // Runtime-produced PDF / spreadsheet artifacts should remain visible
     // in the chat even when generic process attachments are folded into
     // the execution graph; they are the user-facing output to click.
-    return isChatPreviewDocument(file);
+    return isChatPreviewDocument(file) || isDirectoryAttachment(file);
   });
   // When a message is attachment-only, keep those attachments visible even if
   // process attachments are generally suppressed for this run segment —
@@ -547,6 +551,7 @@ function formatFileSize(bytes: number): string {
 }
 
 function FileIcon({ mimeType, className }: { mimeType: string; className?: string }) {
+  if (mimeType === DIRECTORY_MIME_TYPE) return <FolderOpen className={className} />;
   if (mimeType.startsWith('video/')) return <Film className={className} />;
   if (mimeType.startsWith('audio/')) return <Music className={className} />;
   if (mimeType.startsWith('text/') || mimeType === 'application/json' || mimeType === 'application/xml') return <FileText className={className} />;
@@ -578,7 +583,7 @@ function FileCard({ file, onOpen }: { file: AttachedFileMeta; onOpen?: (file: At
       <div className="min-w-0 overflow-hidden">
         <p className="text-xs font-medium truncate">{file.fileName}</p>
         <p className="text-2xs text-muted-foreground">
-          {file.fileSize > 0 ? formatFileSize(file.fileSize) : 'File'}
+          {file.mimeType === DIRECTORY_MIME_TYPE ? '文件夹' : file.fileSize > 0 ? formatFileSize(file.fileSize) : 'File'}
         </p>
       </div>
     </div>

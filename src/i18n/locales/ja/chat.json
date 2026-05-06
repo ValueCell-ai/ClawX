@@ -23,6 +23,7 @@
         "title": "ファイルの変更（{{count}} 件）",
         "created": "新規",
         "modified": "更新",
+        "openFolder": "フォルダーを開く",
         "viewAll": "ファイル変更を見る"
     },
     "runError": {

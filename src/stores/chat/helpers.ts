@@ -334,6 +334,12 @@ function mimeFromExtension(filePath: string): string {
   return map[ext] || 'application/octet-stream';
 }
 
+const DIRECTORY_MIME_TYPE = 'application/x-directory';
+
+function trimPathTerminators(filePath: string): string {
+  return filePath.replace(/[，。；;,.!?]+$/u, '');
+}
+
 /**
  * Extract raw file paths from message text.
  * Detects absolute paths (Unix: / or ~/, Windows: C:\ etc.) ending with common file extensions.
@@ -374,13 +380,19 @@ function extractRawFilePaths(text: string): Array<{ filePath: string; mimeType: 
   const unixRegex = new RegExp(`(?<![\\w./:])((?:\\/|~\\/)[^\\s\\n"'()\\[\\],<>]*?\\.(?:${exts}))`, 'gi');
   // Windows absolute paths (C:\... D:\...) — lookbehind rejects drive letter glued to a word
   const winRegex = new RegExp(`(?<![\\w])([A-Za-z]:\\\\[^\\s\\n"'()\\[\\],<>]*?\\.(?:${exts}))`, 'gi');
-  for (const regex of [unixRegex, winRegex]) {
+  // OpenClaw skill directories do not have file extensions, but they are
+  // user-facing artifacts that should render as clickable folder cards.
+  const skillDirRegex = /(?<![\w./:])((?:~[\\/]\.openclaw[\\/]skills[\\/][^\s\n"'`()\[\],<>]+)|(?:(?:\/|[A-Za-z]:\\)[^\s\n"'`()\[\],<>]*?[\\/]\.openclaw[\\/]skills[\\/][^\s\n"'`()\[\],<>]+))/gi;
+  for (const regex of [unixRegex, winRegex, skillDirRegex]) {
     let match;
     while ((match = regex.exec(workingText)) !== null) {
-      const p = match[1];
+      const p = trimPathTerminators(match[1]);
       if (p && !seen.has(p)) {
         seen.add(p);
-        refs.push({ filePath: p, mimeType: mimeFromExtension(p) });
+        refs.push({
+          filePath: p,
+          mimeType: regex === skillDirRegex ? DIRECTORY_MIME_TYPE : mimeFromExtension(p),
+        });
       }
     }
   }

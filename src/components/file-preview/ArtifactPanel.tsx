@@ -17,11 +17,13 @@
  * toolbar buttons, "查看文件变更 →" links) can drive it.
  */
 import { useLayoutEffect, useMemo } from 'react';
-import { Eye, FileEdit, FolderTree, X } from 'lucide-react';
+import { Eye, FileEdit, FolderOpen, FolderTree, X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
-import type { GeneratedFile } from '@/lib/generated-files';
+import { supportsRichDocumentPreview, type GeneratedFile } from '@/lib/generated-files';
+import { invokeIpc } from '@/lib/api-client';
 import type { AgentSummary } from '@/types/agent';
 import { useArtifactPanel } from '@/stores/artifact-panel';
 import type { FilePreviewTarget } from './types';
@@ -43,22 +45,40 @@ export interface ArtifactPanelProps {
 export function ArtifactPanel({ files, agent, runStartedAt, refreshSignal }: ArtifactPanelProps) {
   const { t } = useTranslation('chat');
   const tab = useArtifactPanel((s) => s.tab);
-  const visibleTab = !WORKSPACE_BROWSER_ENABLED && tab === 'browser' ? 'changes' : tab;
   const setTab = useArtifactPanel((s) => s.setTab);
   const focusedFile = useArtifactPanel((s) => s.focusedFile);
   const setFocusedFile = useArtifactPanel((s) => s.setFocusedFile);
   const close = useArtifactPanel((s) => s.close);
+  const richFocusedFile = !!focusedFile && supportsRichDocumentPreview(focusedFile.ext);
+  const requestedTab = !WORKSPACE_BROWSER_ENABLED && tab === 'browser' ? 'changes' : tab;
+  const visibleTab = richFocusedFile && requestedTab === 'changes' ? 'preview' : requestedTab;
+
+  const handleRevealFocusedFile = () => {
+    if (!focusedFile) return;
+    invokeIpc('shell:showItemInFolder', focusedFile.filePath).catch(() => {
+      toast.error(t('filePreview.errors.openInFinderFailed', '无法在文件管理器中显示'));
+    });
+  };
 
   return (
     <div className="flex h-full min-h-0 flex-col bg-background">
       <div className="flex shrink-0 items-center justify-between gap-2 border-b border-black/5 px-3 py-2 dark:border-white/10">
         <div className="flex min-w-0 items-center gap-1">
-          <PanelTabButton
-            icon={<FileEdit className="h-3.5 w-3.5" />}
-            label={t('artifactPanel.tabs.changes', '变更')}
-            active={visibleTab === 'changes'}
-            onClick={() => setTab('changes')}
-          />
+          {richFocusedFile ? (
+            <PanelTabButton
+              icon={<FolderOpen className="h-3.5 w-3.5" />}
+              label={t('generatedFiles.openFolder', '打开文件夹')}
+              active={false}
+              onClick={handleRevealFocusedFile}
+            />
+          ) : (
+            <PanelTabButton
+              icon={<FileEdit className="h-3.5 w-3.5" />}
+              label={t('artifactPanel.tabs.changes', '变更')}
+              active={visibleTab === 'changes'}
+              onClick={() => setTab('changes')}
+            />
+          )}
           <PanelTabButton
             icon={<Eye className="h-3.5 w-3.5" />}
             label={t('artifactPanel.tabs.preview', '预览')}

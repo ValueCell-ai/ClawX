@@ -2070,6 +2070,14 @@ function registerProviderHandlers(gatewayManager: GatewayManager): void {
 /**
  * Shell-related IPC handlers
  */
+function expandShellPath(input: string): string {
+  if (input === '~') return homedir();
+  if (input.startsWith(`~${sep}`) || input.startsWith('~/') || input.startsWith('~\\')) {
+    return join(homedir(), input.slice(2));
+  }
+  return input;
+}
+
 function registerShellHandlers(): void {
   // Open external URL
   ipcMain.handle('shell:openExternal', async (_, url: string) => {
@@ -2078,12 +2086,12 @@ function registerShellHandlers(): void {
 
   // Open path in file explorer
   ipcMain.handle('shell:showItemInFolder', async (_, path: string) => {
-    shell.showItemInFolder(path);
+    shell.showItemInFolder(expandShellPath(path));
   });
 
   // Open path
   ipcMain.handle('shell:openPath', async (_, path: string) => {
-    return await shell.openPath(path);
+    return await shell.openPath(expandShellPath(path));
   });
 }
 

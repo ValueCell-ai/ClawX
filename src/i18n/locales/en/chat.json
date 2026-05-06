@@ -23,6 +23,7 @@
         "title": "File changes ({{count}})",
         "created": "Created",
         "modified": "Modified",
+        "openFolder": "Open folder",
         "viewAll": "View all changes"
     },
     "runError": {

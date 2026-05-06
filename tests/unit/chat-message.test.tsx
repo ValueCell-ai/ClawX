@@ -76,6 +76,30 @@ describe('ChatMessage attachment dedupe', () => {
     expect(screen.getByText('测试PDF文件.pdf')).toBeInTheDocument();
   });
 
+  it('derives skill directory cards from assistant text paths', () => {
+    const message: RawMessage = {
+      role: 'assistant',
+      content: '名称： open-eastmoney\n位置： ~/.openclaw/skills/open-eastmoney\n校验结果：通过',
+    };
+
+    render(<ChatMessage message={message} suppressProcessAttachments />);
+
+    expect(screen.getByText('open-eastmoney')).toBeInTheDocument();
+    expect(screen.getByText('文件夹')).toBeInTheDocument();
+  });
+
+  it('keeps unicode Windows skill directory paths as cards', () => {
+    const message: RawMessage = {
+      role: 'assistant',
+      content: String.raw`位置： C:\Users\张三\.openclaw\skills\打开东方财富`,
+    };
+
+    render(<ChatMessage message={message} suppressProcessAttachments />);
+
+    expect(screen.getByText('打开东方财富')).toBeInTheDocument();
+    expect(screen.getByText('文件夹')).toBeInTheDocument();
+  });
+
   it('continues hiding non-preview process attachments when process attachments are suppressed', () => {
     const message: RawMessage = {
       role: 'assistant',

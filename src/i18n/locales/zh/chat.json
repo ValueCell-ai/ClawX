@@ -23,6 +23,7 @@
         "title": "文件变更（{{count}} 个）",
         "created": "新增",
         "modified": "修改",
+        "openFolder": "打开文件夹",
         "viewAll": "查看文件变更"
     },
     "runError": {

@@ -39,4 +39,18 @@ describe('extractRawFilePaths', () => {
       { filePath: '/tmp/out.pdf', mimeType: 'application/pdf' },
     ]);
   });
+
+  it('detects OpenClaw skill directories without file extensions', () => {
+    const refs = extractRawFilePaths('位置： ~/.openclaw/skills/open-eastmoney');
+    expect(refs).toEqual([
+      { filePath: '~/.openclaw/skills/open-eastmoney', mimeType: 'application/x-directory' },
+    ]);
+  });
+
+  it('preserves unicode Windows skill directory paths', () => {
+    const refs = extractRawFilePaths(String.raw`位置： C:\Users\张三\.openclaw\skills\打开东方财富。`);
+    expect(refs).toEqual([
+      { filePath: String.raw`C:\Users\张三\.openclaw\skills\打开东方财富`, mimeType: 'application/x-directory' },
+    ]);
+  });
 });

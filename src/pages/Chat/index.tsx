@@ -12,6 +12,7 @@ import { useGatewayStore } from '@/stores/gateway';
 import { useAgentsStore } from '@/stores/agents';
 import { useArtifactPanel } from '@/stores/artifact-panel';
 import { hostApiFetch } from '@/lib/host-api';
+import { invokeIpc } from '@/lib/api-client';
 import { LoadingSpinner } from '@/components/common/LoadingSpinner';
 import { ChatMessage } from './ChatMessage';
 import { ChatInput } from './ChatInput';
@@ -28,6 +29,7 @@ import { GeneratedFilesPanel } from '@/components/file-preview/GeneratedFilesPan
 import type { FilePreviewTarget } from '@/components/file-preview/types';
 import { buildPreviewTarget } from '@/components/file-preview/build-preview-target';
 import type { AttachedFileMeta } from '@/stores/chat/types';
+import { toast } from 'sonner';
 
 const ArtifactPanelLazy = lazy(() =>
   import('@/components/file-preview/ArtifactPanel').then((m) => ({ default: m.ArtifactPanel })),
@@ -142,9 +144,21 @@ export function Chat() {
   // panel instead of the system default editor.
   const handleOpenAttachedFile = useCallback((file: AttachedFileMeta) => {
     if (!file.filePath) return;
+    if (file.mimeType === 'application/x-directory') {
+      void invokeIpc('shell:openPath', file.filePath)
+        .then((error) => {
+          if (typeof error === 'string' && error) {
+            toast.error(error);
+          }
+        })
+        .catch(() => {
+          toast.error(t('filePreview.errors.openInFinderFailed', '无法在文件管理器中显示'));
+        });
+      return;
+    }
     const target = buildPreviewTarget(file.filePath, file.fileName);
     openPreview(target);
-  }, [openPreview]);
+  }, [openPreview, t]);
   // Persistent per-run override for the Execution Graph's expanded/collapsed
   // state. Keyed by a stable run id (trigger message id, or a fallback of
   // `${sessionKey}:${triggerIdx}`) so user toggles survive the `loadHistory`
