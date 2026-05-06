@@ -13,7 +13,7 @@ import rehypeKatex from 'rehype-katex';
 import { createPortal } from 'react-dom';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
-import { invokeIpc } from '@/lib/api-client';
+import { invokeIpc, statFile } from '@/lib/api-client';
 import type { RawMessage, AttachedFileMeta } from '@/stores/chat';
 import { extractText, extractImages, extractToolUse, formatTimestamp } from './message-utils';
 
@@ -73,6 +73,16 @@ function isSkillFileAttachment(file: AttachedFileMeta): boolean {
   return /(?:^|[\\/])\.openclaw[\\/]skills[\\/][^\\/]+[\\/].+\.[A-Za-z0-9]+$/i.test(path);
 }
 
+function validationKindForAttachment(file: AttachedFileMeta): 'file' | 'dir' | null {
+  if (!file.filePath) return null;
+  // User-selected uploads and already enriched attachments are trusted enough
+  // for immediate display. Regex-derived message refs start at size 0/null and
+  // are validated through main-process stat before becoming clickable cards.
+  if (file.source !== 'message-ref' && file.source !== 'tool-result') return null;
+  if (file.fileSize > 0 || file.preview) return null;
+  return isDirectoryAttachment(file) ? 'dir' : 'file';
+}
+
 function previewMimeFromPath(filePath: string): string | null {
   const lower = filePath.toLowerCase();
   if (lower.endsWith('.md') || lower.endsWith('.markdown')) return 'text/markdown';
@@ -114,8 +124,17 @@ function extractPreviewDocumentPaths(text: string): AttachedFileMeta[] {
   const exts = 'pdf|xlsx?|PDF|XLSX?';
   const taggedRegex = new RegExp(`(?:^|[\\s(\\[{>])(?:MEDIA|media):((?:\\/|~\\/)[^\\s\\n"'()\\[\\],<>]*?\\.(?:${exts}))`, 'g');
   const unixRegex = new RegExp('(?<![\\w./:])((?:\\/|~\\/)[^\\s\\n"\'`()\\[\\],<>]*?\\.(?:' + exts + '))', 'g');
-  const skillDirRegex = /(?<![\w./:])((?:~[\\/]\.openclaw[\\/]skills[\\/][^\\/\s\n"'`()\[\],<>]+)|(?:(?:\/|[A-Za-z]:\\)[^\s\n"'`()\[\],<>]*?[\\/]\.openclaw[\\/]skills[\\/][^\\/\s\n"'`()\[\],<>]+))(?=$|[\s\n"'`()\[\],<>，。；;,.!?])/gi;
-  const skillMarkdownRegex = /(?<![\w./:])((?:~[\\/]\.openclaw[\\/]skills[\\/][^\s\n"'`()\[\],<>]*?\.md)|(?:(?:\/|[A-Za-z]:\\)[^\s\n"'`()\[\],<>]*?[\\/]\.openclaw[\\/]skills[\\/][^\s\n"'`()\[\],<>]*?\.md))(?=$|[\s\n"'`()\[\],<>，。；;,.!?])/gi;
+  const skillPathBoundary = '(?=$|\\s|[\\x5b\\x5d"\'`(),<>，。；;,.!?])';
+  const skillPathPart = '[^\\\\/\\s\\n"\'`()\\x5b\\x5d,<>]+';
+  const skillPathTail = '[^\\s\\n"\'`()\\x5b\\x5d,<>]*?';
+  const skillDirRegex = new RegExp(
+    `(?<![\\w./:])((?:~[\\\\/]\\.openclaw[\\\\/]skills[\\\\/]${skillPathPart})|(?:(?:\\/|[A-Za-z]:\\\\)${skillPathTail}[\\\\/]\\.openclaw[\\\\/]skills[\\\\/]${skillPathPart}))${skillPathBoundary}`,
+    'gi',
+  );
+  const skillMarkdownRegex = new RegExp(
+    `(?<![\\w./:])((?:~[\\\\/]\\.openclaw[\\\\/]skills[\\\\/]${skillPathTail}\\.md)|(?:(?:\\/|[A-Za-z]:\\\\)${skillPathTail}[\\\\/]\\.openclaw[\\\\/]skills[\\\\/]${skillPathTail}\\.md))${skillPathBoundary}`,
+    'gi',
+  );
 
   let workingText = text;
   let taggedMatch: RegExpExecArray | null;
@@ -200,6 +219,7 @@ export const ChatMessage = memo(function ChatMessage({
   const images = extractImages(message);
   const tools = extractToolUse(message);
   const visibleTools = suppressToolCards ? [] : tools;
+  const [validatedPaths, setValidatedPaths] = useState<Record<string, boolean>>({});
   const rawAttachedFiles = message._attachedFiles || [];
   const textPreviewFiles = isUser ? [] : extractPreviewDocumentPaths(text);
   const rawAttachedPaths = new Set(rawAttachedFiles.map((file) => file.filePath).filter(Boolean));
@@ -207,6 +227,52 @@ export const ChatMessage = memo(function ChatMessage({
     ...rawAttachedFiles,
     ...textPreviewFiles.filter((file) => !file.filePath || !rawAttachedPaths.has(file.filePath)),
   ];
+  const validationTargets = derivedAttachedFiles
+    .map((file) => {
+      const kind = validationKindForAttachment(file);
+      return kind && file.filePath ? { filePath: file.filePath, kind } : null;
+    })
+    .filter((target): target is { filePath: string; kind: 'file' | 'dir' } => !!target);
+  const validationKey = validationTargets
+    .map((target) => `${target.kind}:${target.filePath}`)
+    .sort()
+    .join('\n');
+  useEffect(() => {
+    if (!validationKey) return;
+    const pendingTargets = validationTargets.filter((target) => validatedPaths[target.filePath] === undefined);
+    if (pendingTargets.length === 0) return;
+
+    let cancelled = false;
+    void Promise.all(
+      pendingTargets.map(async (target) => {
+        try {
+          const stat = await statFile(target.filePath);
+          return {
+            filePath: target.filePath,
+            exists: !!stat.ok && (target.kind === 'dir' ? !!stat.isDir : !!stat.isFile),
+          };
+        } catch {
+          return { filePath: target.filePath, exists: false };
+        }
+      }),
+    ).then((results) => {
+      if (cancelled) return;
+      setValidatedPaths((current) => {
+        const next = { ...current };
+        for (const result of results) next[result.filePath] = result.exists;
+        return next;
+      });
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [validationKey, validationTargets, validatedPaths]);
+  const existingDerivedAttachedFiles = derivedAttachedFiles.filter((file) => {
+    const kind = validationKindForAttachment(file);
+    if (!kind || !file.filePath) return true;
+    return validatedPaths[file.filePath] === true;
+  });
   const filteredProcessAttachments = derivedAttachedFiles.filter((file) => {
     if (file.source !== 'tool-result' && file.source !== 'message-ref') return true;
     // Runtime-produced PDF / spreadsheet artifacts should remain visible
@@ -217,9 +283,14 @@ export const ChatMessage = memo(function ChatMessage({
   // When a message is attachment-only, keep those attachments visible even if
   // process attachments are generally suppressed for this run segment —
   // otherwise the reply disappears entirely.
+  const processVisibleAttachments = filteredProcessAttachments.filter((file) => {
+    const kind = validationKindForAttachment(file);
+    if (!kind || !file.filePath) return true;
+    return validatedPaths[file.filePath] === true;
+  });
   const attachedFiles = suppressProcessAttachments && (hasText || images.length > 0 || visibleTools.length > 0)
-    ? filteredProcessAttachments
-    : derivedAttachedFiles;
+    ? processVisibleAttachments
+    : existingDerivedAttachedFiles;
   const [lightboxImg, setLightboxImg] = useState<{ src: string; fileName: string; filePath?: string; base64?: string; mimeType?: string } | null>(null);
 
   // Never render tool result messages in chat UI

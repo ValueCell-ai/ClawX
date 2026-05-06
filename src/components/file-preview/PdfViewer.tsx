@@ -27,11 +27,16 @@ export interface PdfViewerProps {
 }
 
 type LoadState =
-  | { status: 'idle' }
-  | { status: 'loading' }
-  | { status: 'tooLarge'; size?: number }
-  | { status: 'error'; message: string }
-  | { status: 'ready'; url: string };
+  | { filePath: string; status: 'loading' }
+  | { filePath: string; status: 'tooLarge'; size?: number }
+  | { filePath: string; status: 'error'; message: string }
+  | { filePath: string; status: 'ready'; url: string };
+
+type IframeState = {
+  url: string | null;
+  loaded: boolean;
+  revealed: boolean;
+};
 
 function withViewerParams(url: string): string {
   // Chromium's built-in PDF viewer understands the common PDF fragment
@@ -42,16 +47,21 @@ function withViewerParams(url: string): string {
 
 export default function PdfViewer({ filePath, fileName, className }: PdfViewerProps) {
   const { t } = useTranslation('chat');
-  const [state, setState] = useState<LoadState>({ status: 'idle' });
-  const [iframeLoaded, setIframeLoaded] = useState(false);
-  const [iframeRevealed, setIframeRevealed] = useState(false);
+  const [state, setState] = useState<LoadState>({ filePath, status: 'loading' });
+  const [iframeState, setIframeState] = useState<IframeState>({
+    url: null,
+    loaded: false,
+    revealed: false,
+  });
+  const currentState: LoadState = state.filePath === filePath
+    ? state
+    : { filePath, status: 'loading' };
+  const currentUrl = currentState.status === 'ready' ? currentState.url : null;
+  const iframeRevealed = !!currentUrl && iframeState.url === currentUrl && iframeState.revealed;
 
   useEffect(() => {
     let cancelled = false;
     let objectUrl: string | null = null;
-    setState({ status: 'loading' });
-    setIframeLoaded(false);
-    setIframeRevealed(false);
 
     void (async () => {
       try {
@@ -59,10 +69,10 @@ export default function PdfViewer({ filePath, fileName, className }: PdfViewerPr
         if (cancelled) return;
         if (!res.ok || !res.data) {
           if (res.error === 'tooLarge') {
-            setState({ status: 'tooLarge', size: res.size });
+            setState({ filePath, status: 'tooLarge', size: res.size });
             return;
           }
-          setState({ status: 'error', message: String(res.error ?? 'unknown') });
+          setState({ filePath, status: 'error', message: String(res.error ?? 'unknown') });
           return;
         }
         const cloned = new Uint8Array(res.data.byteLength);
@@ -72,10 +82,11 @@ export default function PdfViewer({ filePath, fileName, className }: PdfViewerPr
           URL.revokeObjectURL(objectUrl);
           return;
         }
-        setState({ status: 'ready', url: objectUrl });
+        setState({ filePath, status: 'ready', url: objectUrl });
       } catch (err) {
         if (cancelled) return;
         setState({
+          filePath,
           status: 'error',
           message: err instanceof Error ? err.message : String(err),
         });
@@ -91,32 +102,36 @@ export default function PdfViewer({ filePath, fileName, className }: PdfViewerPr
   }, [filePath]);
 
   useEffect(() => {
-    if (!iframeLoaded) return;
+    if (!iframeState.loaded || !iframeState.url) return;
     const timer = window.setTimeout(() => {
-      setIframeRevealed(true);
+      setIframeState((current) => (
+        current.url === iframeState.url
+          ? { ...current, revealed: true }
+          : current
+      ));
     }, PDF_NATIVE_VIEWER_REVEAL_DELAY_MS);
     return () => window.clearTimeout(timer);
-  }, [iframeLoaded]);
+  }, [iframeState.loaded, iframeState.url]);
 
-  if (state.status === 'idle' || state.status === 'loading') {
+  if (currentState.status === 'loading') {
     return (
       <div className={cn('flex h-full items-center justify-center', className)}>
         <LoadingSpinner />
       </div>
     );
   }
-  if (state.status === 'tooLarge') {
+  if (currentState.status === 'tooLarge') {
     return (
       <div className={cn('flex h-full items-center justify-center px-6 text-center text-sm text-muted-foreground', className)}>
         {t('filePreview.errors.tooLarge', '文件过大，已禁用预览')}
       </div>
     );
   }
-  if (state.status === 'error') {
+  if (currentState.status === 'error') {
     return (
       <div className={cn('flex h-full flex-col items-center justify-center gap-2 px-6 text-center text-sm text-destructive', className)}>
         <p>
-          {t('filePreview.pdf.loadFailed', { defaultValue: 'PDF 加载失败：{{error}}', error: state.message })}
+          {t('filePreview.pdf.loadFailed', { defaultValue: 'PDF 加载失败：{{error}}', error: currentState.message })}
         </p>
       </div>
     );
@@ -130,13 +145,19 @@ export default function PdfViewer({ filePath, fileName, className }: PdfViewerPr
         </div>
       )}
       <iframe
-        src={withViewerParams(state.url)}
+        src={withViewerParams(currentState.url)}
         title={fileName ?? t('filePreview.pdf.title', 'PDF 预览')}
         className={cn(
           'h-full w-full border-0 bg-white transition-opacity duration-200',
           iframeRevealed ? 'opacity-100' : 'opacity-0',
         )}
-        onLoad={() => setIframeLoaded(true)}
+        onLoad={() => {
+          setIframeState({
+            url: currentState.url,
+            loaded: true,
+            revealed: false,
+          });
+        }}
       />
     </div>
   );

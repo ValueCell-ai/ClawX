@@ -590,7 +590,7 @@ export function ChatInput({ onSend, onStop, disabled = false, sending = false, i
         handleSend();
       }
     },
-    [handleSend, input, moveCaretTo, skillTokenRanges],
+    [handleSend, input, moveCaretTo, selectedSkill, skillTokenRanges],
   );
 
   // Handle paste (Ctrl/Cmd+V with files)
