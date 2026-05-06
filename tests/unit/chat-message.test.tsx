@@ -53,7 +53,7 @@ describe('ChatMessage attachment dedupe', () => {
     // had no carve-out for images, so the file card never rendered.
     const message: RawMessage = {
       role: 'assistant',
-      content: '截图已经截好了，我把它作为附件发给你看。',
+      content: 'Screenshot taken, sending it to you as an attachment.',
       _attachedFiles: [
         {
           fileName: 'desktop_screenshot.png',
@@ -79,7 +79,7 @@ describe('ChatMessage attachment dedupe', () => {
   it('keeps message-ref image artifacts visible alongside reply text when process attachments are suppressed', () => {
     const message: RawMessage = {
       role: 'assistant',
-      content: '已经压缩好，发给你：',
+      content: 'Compressed, sending it to you:',
       _attachedFiles: [
         {
           fileName: 'desktop_screenshot.jpg',

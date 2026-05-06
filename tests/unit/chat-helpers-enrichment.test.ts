@@ -35,7 +35,7 @@ describe('enrichWithToolResultFiles', () => {
       {
         role: 'assistant',
         id: 'a2',
-        content: [{ type: 'text', text: '截图我看了。' }],
+        content: [{ type: 'text', text: 'I had a look at the screenshot.' }],
       },
     ];
 
@@ -68,7 +68,7 @@ describe('enrichWithToolResultFiles', () => {
       {
         role: 'assistant',
         id: 'a2',
-        content: [{ type: 'text', text: '压到 837KB 了，再发一次。' }],
+        content: [{ type: 'text', text: 'Compressed to 837KB, sending again.' }],
       },
     ];
 
@@ -96,7 +96,7 @@ describe('enrichWithToolResultFiles', () => {
       {
         role: 'assistant',
         id: 'a2',
-        content: [{ type: 'text', text: '已生成。' }],
+        content: [{ type: 'text', text: 'Generated.' }],
       },
     ];
 
@@ -148,7 +148,7 @@ describe('enrichWithCachedImages — Gateway media bubble dedup', () => {
       {
         role: 'assistant',
         id: 'reply',
-        content: [{ type: 'text', text: '压到 837KB 了：\n\nMEDIA:/tmp/desktop_screenshot.jpg' }],
+        content: [{ type: 'text', text: 'Compressed to 837KB:\n\nMEDIA:/tmp/desktop_screenshot.jpg' }],
       },
       {
         role: 'assistant',
@@ -186,7 +186,7 @@ describe('enrichWithCachedImages — Gateway media bubble dedup', () => {
         id: 'reply',
         content: [{
           type: 'text',
-          text: '已生成报告：\n\nMEDIA:/tmp/report.pdf\n\nMEDIA:/tmp/cover.png',
+          text: 'Report generated:\n\nMEDIA:/tmp/report.pdf\n\nMEDIA:/tmp/cover.png',
         }],
       },
       {
@@ -215,7 +215,7 @@ describe('enrichWithCachedImages — Gateway media bubble dedup', () => {
       {
         role: 'assistant',
         id: 'reply',
-        content: [{ type: 'text', text: '截图发给你：\n\nMEDIA:/tmp/foo.png' }],
+        content: [{ type: 'text', text: 'Here is the screenshot:\n\nMEDIA:/tmp/foo.png' }],
       },
     ];
 

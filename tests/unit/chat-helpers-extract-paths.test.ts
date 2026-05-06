@@ -41,16 +41,32 @@ describe('extractRawFilePaths', () => {
   });
 
   it('captures MEDIA: paths that contain ASCII spaces (macOS screenshot default name)', () => {
-    // Regression: macOS' default screenshot filename is "截屏 YYYY-MM-DD HH.MM.SS.png"
-    // and the agent typically emits it verbatim via `MEDIA:` after `ls ~/Desktop`.
-    // The previous regex excluded ASCII spaces from the captured path which made
-    // the extractor stop at "/Users/.../截屏2026-05-06" and never find a `.png`,
-    // so the screenshot silently failed to surface as an attachment.
-    const sample = '找到了，桌面上有一张截屏，发给你：\n\nMEDIA:/Users/guoyuliang/Desktop/截屏 2026-05-06 17.46.51.png';
+    // Regression: macOS' default screenshot filename is
+    //   "Screenshot YYYY-MM-DD at HH.MM.SS.png" (en locale) or
+    //   "截屏 YYYY-MM-DD HH.MM.SS.png" (zh locale)
+    // and the agent typically emits it verbatim via `MEDIA:` after
+    // `ls ~/Desktop`. The previous regex excluded ASCII spaces from the
+    // captured path, which made the extractor stop at "Screenshot" and
+    // never reach the `.png`, so the screenshot silently failed to
+    // surface as an attachment.
+    const sample = 'Found it on the desktop, sending now:\n\nMEDIA:/Users/alice/Desktop/Screenshot 2026-05-06 at 17.46.51.png';
     const refs = extractRawFilePaths(sample);
     expect(refs).toEqual([
       {
-        filePath: '/Users/guoyuliang/Desktop/截屏 2026-05-06 17.46.51.png',
+        filePath: '/Users/alice/Desktop/Screenshot 2026-05-06 at 17.46.51.png',
+        mimeType: 'image/png',
+      },
+    ]);
+  });
+
+  it('captures MEDIA: paths whose filename is non-ASCII (zh-locale macOS screenshot)', () => {
+    // Companion to the previous case — make sure paths whose filename
+    // is full-Unicode (the zh-locale macOS default) are also captured.
+    const sample = 'Sending the screenshot now:\n\nMEDIA:/Users/alice/Desktop/截屏 2026-05-06 17.46.51.png';
+    const refs = extractRawFilePaths(sample);
+    expect(refs).toEqual([
+      {
+        filePath: '/Users/alice/Desktop/截屏 2026-05-06 17.46.51.png',
         mimeType: 'image/png',
       },
     ]);
@@ -59,9 +75,9 @@ describe('extractRawFilePaths', () => {
   it('keeps non-MEDIA prose after a space-bearing path out of the captured filename', () => {
     // The lookahead must terminate the match at the first non-path character
     // (newline, quote, paren, comma, full-stop, ...). Otherwise a long line
-    // like "MEDIA:/p with spaces.png 然后说点什么" would gobble the trailing
-    // narration into the "filename".
-    const sample = 'MEDIA:/tmp/my shot.png 然后说点什么';
+    // like "MEDIA:/p with spaces.png and then more prose" would gobble the
+    // trailing narration into the "filename".
+    const sample = 'MEDIA:/tmp/my shot.png and then more prose';
     const refs = extractRawFilePaths(sample);
     expect(refs.map((r) => r.filePath)).toEqual(['/tmp/my shot.png']);
   });
