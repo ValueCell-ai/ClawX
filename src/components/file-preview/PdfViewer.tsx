@@ -23,6 +23,7 @@ export interface PdfViewerProps {
   filePath: string;
   /** Optional file name shown in screen-reader labels and titles. */
   fileName?: string;
+  surface?: 'default' | 'workspace';
   className?: string;
 }
 
@@ -45,7 +46,12 @@ function withViewerParams(url: string): string {
   return `${url}#${PDF_VIEWER_PARAMS}`;
 }
 
-export default function PdfViewer({ filePath, fileName, className }: PdfViewerProps) {
+export default function PdfViewer({
+  filePath,
+  fileName,
+  surface = 'default',
+  className,
+}: PdfViewerProps) {
   const { t } = useTranslation('chat');
   const [state, setState] = useState<LoadState>({ filePath, status: 'loading' });
   const [iframeState, setIframeState] = useState<IframeState>({
@@ -137,28 +143,52 @@ export default function PdfViewer({ filePath, fileName, className }: PdfViewerPr
     );
   }
 
+  const workspaceSurface = surface === 'workspace';
+
   return (
-    <div className={cn('relative h-full min-h-0 overflow-hidden bg-white', className)}>
+    <div
+      className={cn(
+        'relative h-full min-h-0 overflow-hidden',
+        workspaceSurface
+          ? 'overflow-auto bg-[hsl(var(--muted)/0.35)] p-4 dark:bg-background'
+          : 'bg-white',
+        className,
+      )}
+    >
       {!iframeRevealed && (
-        <div className="absolute inset-0 z-10 flex items-center justify-center bg-white">
+        <div
+          className={cn(
+            'absolute inset-0 z-10 flex items-center justify-center',
+            workspaceSurface ? 'bg-[hsl(var(--muted)/0.35)] dark:bg-background' : 'bg-white',
+          )}
+        >
           <LoadingSpinner />
         </div>
       )}
-      <iframe
-        src={withViewerParams(currentState.url)}
-        title={fileName ?? t('filePreview.pdf.title', 'PDF 预览')}
+      <div
         className={cn(
-          'h-full w-full border-0 bg-white transition-opacity duration-200',
-          iframeRevealed ? 'opacity-100' : 'opacity-0',
+          'mx-auto min-h-0',
+          workspaceSurface ? 'w-full max-w-[820px]' : 'h-full w-full',
         )}
-        onLoad={() => {
-          setIframeState({
-            url: currentState.url,
-            loaded: true,
-            revealed: false,
-          });
-        }}
-      />
+        style={workspaceSurface ? { aspectRatio: '1 / 1.414' } : undefined}
+      >
+        <iframe
+          src={withViewerParams(currentState.url)}
+          title={fileName ?? t('filePreview.pdf.title', 'PDF 预览')}
+          className={cn(
+            'h-full w-full border-0 bg-white transition-opacity duration-200',
+            workspaceSurface && 'rounded-lg shadow-sm ring-1 ring-black/10 dark:ring-white/10',
+            iframeRevealed ? 'opacity-100' : 'opacity-0',
+          )}
+          onLoad={() => {
+            setIframeState({
+              url: currentState.url,
+              loaded: true,
+              revealed: false,
+            });
+          }}
+        />
+      </div>
     </div>
   );
 }

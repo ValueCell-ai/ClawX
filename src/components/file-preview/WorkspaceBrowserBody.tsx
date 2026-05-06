@@ -311,7 +311,7 @@ export function WorkspaceBrowserBody({
             </div>
           }
         >
-          <PdfViewerLazy filePath={selectedNode.absPath} fileName={selectedNode.name} />
+          <PdfViewerLazy filePath={selectedNode.absPath} fileName={selectedNode.name} surface="workspace" />
         </Suspense>
       );
     }
