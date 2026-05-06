@@ -7,6 +7,7 @@ import { useMemo } from 'react';
 import { DiffEditor, languageForPath } from '@/lib/monaco/loader';
 import { useSettingsStore } from '@/stores/settings';
 import { LoadingSpinner } from '@/components/common/LoadingSpinner';
+import { cn } from '@/lib/utils';
 
 export interface MonacoDiffViewerProps {
   filePath: string;
@@ -45,7 +46,10 @@ export default function MonacoDiffViewer({
   const left = original ?? '';
 
   return (
-    <div className={className ?? 'h-full w-full min-h-0'}>
+    <div
+      data-testid="monaco-diff-viewer"
+      className={cn('clawx-diff-editor h-full w-full min-h-0', className)}
+    >
       <DiffEditor
         height="100%"
         language={language}

@@ -123,7 +123,16 @@
   }
 }
 
-/* Custom scrollbar */
+/* Custom scrollbar: keep scrollbars visually quiet until the user hovers a scroll area. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: transparent transparent;
+}
+
+*:hover {
+  scrollbar-color: hsl(var(--border)) transparent;
+}
+
 ::-webkit-scrollbar {
   width: 8px;
   height: 8px;
@@ -134,11 +143,25 @@
 }
 
 ::-webkit-scrollbar-thumb {
-  @apply bg-border rounded-full;
+  @apply bg-transparent rounded-full;
 }
 
-::-webkit-scrollbar-thumb:hover {
+*:hover::-webkit-scrollbar-thumb {
+  @apply bg-border;
+}
+
+*:hover::-webkit-scrollbar-thumb:hover {
   @apply bg-muted-foreground/30;
+}
+
+/* Monaco's default light diff theme is pure white; keep it aligned with ClawX's cream app background. */
+:root:not(.dark) .clawx-diff-editor .monaco-diff-editor,
+:root:not(.dark) .clawx-diff-editor .monaco-editor,
+:root:not(.dark) .clawx-diff-editor .monaco-editor-background,
+:root:not(.dark) .clawx-diff-editor .monaco-editor .margin,
+:root:not(.dark) .clawx-diff-editor .monaco-editor .gutter,
+:root:not(.dark) .clawx-diff-editor .diffOverview {
+  background-color: hsl(var(--background)) !important;
 }
 
 /* macOS traffic light spacing */

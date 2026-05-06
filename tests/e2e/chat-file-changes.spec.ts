@@ -97,6 +97,11 @@ test.describe('ClawX chat file changes', () => {
       }
 
       await expect(page.getByTestId('main-layout')).toBeVisible();
+      await page.evaluate(() => {
+        const root = document.documentElement;
+        root.classList.remove('dark');
+        root.classList.add('light');
+      });
       await expect(page.getByRole('button', { name: '工作空间' })).toHaveCount(0);
       await expect(page.getByText('查看文件变更')).toHaveCount(0);
 
@@ -108,6 +113,19 @@ test.describe('ClawX chat file changes', () => {
       await fileCard.click();
       await expect(page.locator('aside').getByRole('button', { name: '工作空间' })).toHaveCount(0);
       await expect(fileCard).toContainText('demo.ts');
+
+      const diffBackground = page.getByTestId('monaco-diff-viewer').locator('.monaco-editor-background').first();
+      await expect(diffBackground).toBeVisible({ timeout: 30_000 });
+
+      const colors = await diffBackground.evaluate((element) => {
+        return {
+          diffBackground: window.getComputedStyle(element).backgroundColor,
+          appBackground: window.getComputedStyle(document.body).backgroundColor,
+        };
+      });
+
+      expect(colors.diffBackground).toBe(colors.appBackground);
+      expect(colors.diffBackground).not.toBe('rgb(255, 255, 255)');
     } finally {
       await closeElectronApp(app);
     }
