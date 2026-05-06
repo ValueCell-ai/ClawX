@@ -275,9 +275,12 @@ export const ChatMessage = memo(function ChatMessage({
   });
   const filteredProcessAttachments = derivedAttachedFiles.filter((file) => {
     if (file.source !== 'tool-result' && file.source !== 'message-ref') return true;
-    // Runtime-produced PDF / spreadsheet artifacts should remain visible
-    // in the chat even when generic process attachments are folded into
-    // the execution graph; they are the user-facing output to click.
+    // Runtime-produced user-facing artifacts (images, PDFs, spreadsheets,
+    // skill directories, ...) must remain visible in the reply bubble even
+    // when generic process attachments are folded into the execution graph.
+    // The graph card itself does not render `_attachedFiles`, so dropping
+    // images here would leave the user with no way to see them at all.
+    if (file.mimeType.startsWith('image/')) return true;
     return isChatPreviewDocument(file) || isDirectoryAttachment(file) || isSkillFileAttachment(file);
   });
   // When a message is attachment-only, keep those attachments visible even if

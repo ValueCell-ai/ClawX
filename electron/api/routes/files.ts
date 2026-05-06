@@ -75,6 +75,38 @@ async function generateImagePreview(filePath: string, mimeType: string): Promise
   }
 }
 
+/**
+ * Resolve a Gateway-emitted outgoing-media URL to the original file on disk.
+ * Mirror of `electron/main/ipc-handlers.ts::resolveOutgoingMediaUrl` — kept
+ * in sync so the host-api HTTP path serves the same data as the IPC path.
+ */
+async function resolveOutgoingMediaUrl(
+  gatewayUrl: string,
+): Promise<{ path: string; mimeType: string } | null> {
+  try {
+    const m = gatewayUrl.match(/\/api\/chat\/media\/outgoing\/[^/]+\/([^/]+)\//);
+    if (!m) return null;
+    const attachmentId = decodeURIComponent(m[1]);
+    if (!/^[A-Za-z0-9._-]+$/.test(attachmentId)) return null;
+    const recordPath = join(homedir(), '.openclaw', 'media', 'outgoing', 'records', `${attachmentId}.json`);
+    const fsP = await import('node:fs/promises');
+    const raw = await fsP.readFile(recordPath, 'utf8');
+    const record = JSON.parse(raw) as {
+      original?: { path?: string; contentType?: string };
+    };
+    const original = record?.original;
+    if (!original?.path) return null;
+    return {
+      path: original.path,
+      mimeType: typeof original.contentType === 'string' && original.contentType
+        ? original.contentType
+        : 'application/octet-stream',
+    };
+  } catch {
+    return null;
+  }
+}
+
 export async function handleFileRoutes(
   req: IncomingMessage,
   res: ServerResponse,
@@ -137,18 +169,39 @@ export async function handleFileRoutes(
 
   if (url.pathname === '/api/files/thumbnails' && req.method === 'POST') {
     try {
-      const body = await parseJsonBody<{ paths: Array<{ filePath: string; mimeType: string }> }>(req);
+      const body = await parseJsonBody<{
+        paths: Array<{ filePath?: string; gatewayUrl?: string; mimeType: string }>;
+      }>(req);
       const fsP = await import('node:fs/promises');
       const results: Record<string, { preview: string | null; fileSize: number }> = {};
-      for (const { filePath, mimeType } of body.paths) {
-        try {
-          const s = await fsP.stat(filePath);
-          const preview = mimeType.startsWith('image/')
-            ? await generateImagePreview(filePath, mimeType)
-            : null;
-          results[filePath] = { preview, fileSize: s.size };
-        } catch {
-          results[filePath] = { preview: null, fileSize: 0 };
+      for (const entry of body.paths) {
+        if (entry.filePath) {
+          try {
+            const s = await fsP.stat(entry.filePath);
+            const preview = entry.mimeType.startsWith('image/')
+              ? await generateImagePreview(entry.filePath, entry.mimeType)
+              : null;
+            results[entry.filePath] = { preview, fileSize: s.size };
+          } catch {
+            results[entry.filePath] = { preview: null, fileSize: 0 };
+          }
+          continue;
+        }
+        if (entry.gatewayUrl) {
+          const resolved = await resolveOutgoingMediaUrl(entry.gatewayUrl);
+          if (!resolved) {
+            results[entry.gatewayUrl] = { preview: null, fileSize: 0 };
+            continue;
+          }
+          try {
+            const s = await fsP.stat(resolved.path);
+            const preview = resolved.mimeType.startsWith('image/')
+              ? await generateImagePreview(resolved.path, resolved.mimeType)
+              : null;
+            results[entry.gatewayUrl] = { preview, fileSize: s.size };
+          } catch {
+            results[entry.gatewayUrl] = { preview: null, fileSize: 0 };
+          }
         }
       }
       sendJson(res, 200, results);

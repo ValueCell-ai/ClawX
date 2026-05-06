@@ -2496,23 +2496,91 @@ function registerFileHandlers(): void {
     }
   });
 
-  ipcMain.handle('media:getThumbnails', async (_, paths: Array<{ filePath: string; mimeType: string }>) => {
+  ipcMain.handle('media:getThumbnails', async (
+    _,
+    paths: Array<{ filePath?: string; gatewayUrl?: string; mimeType: string }>,
+  ) => {
     const fsP = await import('fs/promises');
     const results: Record<string, { preview: string | null; fileSize: number }> = {};
-    for (const { filePath, mimeType } of paths) {
-      try {
-        const s = await fsP.stat(filePath);
-        let preview: string | null = null;
-        if (mimeType.startsWith('image/')) {
-          preview = await generateImagePreview(filePath, mimeType);
+    for (const entry of paths) {
+      // Local on-disk file (the original code path).
+      if (entry.filePath) {
+        try {
+          const s = await fsP.stat(entry.filePath);
+          let preview: string | null = null;
+          if (entry.mimeType.startsWith('image/')) {
+            preview = await generateImagePreview(entry.filePath, entry.mimeType);
+          }
+          results[entry.filePath] = { preview, fileSize: s.size };
+        } catch {
+          results[entry.filePath] = { preview: null, fileSize: 0 };
         }
-        results[filePath] = { preview, fileSize: s.size };
-      } catch {
-        results[filePath] = { preview: null, fileSize: 0 };
+        continue;
+      }
+      // Gateway-injected outgoing media URL. The renderer cannot reach the
+      // Gateway HTTP server directly (CORS / env drift), so we resolve it
+      // here against OpenClaw's local outgoing media records and load the
+      // original file off disk. The URL shape is fixed by OpenClaw:
+      //   /api/chat/media/outgoing/<urlEncodedSessionKey>/<attachmentId>/full
+      if (entry.gatewayUrl) {
+        const resolved = await resolveOutgoingMediaUrl(entry.gatewayUrl);
+        if (!resolved) {
+          results[entry.gatewayUrl] = { preview: null, fileSize: 0 };
+          continue;
+        }
+        try {
+          const s = await fsP.stat(resolved.path);
+          let preview: string | null = null;
+          if (resolved.mimeType.startsWith('image/')) {
+            preview = await generateImagePreview(resolved.path, resolved.mimeType);
+          }
+          results[entry.gatewayUrl] = { preview, fileSize: s.size };
+        } catch {
+          results[entry.gatewayUrl] = { preview: null, fileSize: 0 };
+        }
       }
     }
     return results;
   });
+}
+
+/**
+ * Resolve a Gateway-emitted outgoing-media URL to the original file on disk.
+ *
+ * OpenClaw's runtime stages every assistant `MEDIA:/path` artifact under
+ * `~/.openclaw/media/outgoing/`:
+ *   - `originals/<uuid>.<ext>`   — the source bytes copied verbatim
+ *   - `records/<attachmentId>.json` — `{ original: { path, contentType, ... }, ... }`
+ *
+ * The Gateway then injects an `assistant-media` content block with
+ * `url:'/api/chat/media/outgoing/<urlEncodedSessionKey>/<attachmentId>/full'`.
+ * We only need the `<attachmentId>` segment to look up the record.
+ */
+async function resolveOutgoingMediaUrl(
+  gatewayUrl: string,
+): Promise<{ path: string; mimeType: string } | null> {
+  try {
+    const m = gatewayUrl.match(/\/api\/chat\/media\/outgoing\/[^/]+\/([^/]+)\//);
+    if (!m) return null;
+    const attachmentId = decodeURIComponent(m[1]);
+    if (!/^[A-Za-z0-9._-]+$/.test(attachmentId)) return null;
+    const recordPath = join(homedir(), '.openclaw', 'media', 'outgoing', 'records', `${attachmentId}.json`);
+    const fsP = await import('fs/promises');
+    const raw = await fsP.readFile(recordPath, 'utf8');
+    const record = JSON.parse(raw) as {
+      original?: { path?: string; contentType?: string };
+    };
+    const original = record?.original;
+    if (!original?.path) return null;
+    return {
+      path: original.path,
+      mimeType: typeof original.contentType === 'string' && original.contentType
+        ? original.contentType
+        : 'application/octet-stream',
+    };
+  } catch {
+    return null;
+  }
 }
 
 /**

@@ -46,6 +46,62 @@ describe('ChatMessage attachment dedupe', () => {
     expect(screen.getByAltText('artifact.png')).toBeInTheDocument();
   });
 
+  it('keeps image artifacts visible alongside reply text when process attachments are suppressed', () => {
+    // Regression for media outgoing being silently dropped when the agent
+    // accompanies a `MEDIA:/path.png` artifact with any narration text:
+    // process-attachment filtering used to require PDF/XLSX/dir/skill but
+    // had no carve-out for images, so the file card never rendered.
+    const message: RawMessage = {
+      role: 'assistant',
+      content: '截图已经截好了，我把它作为附件发给你看。',
+      _attachedFiles: [
+        {
+          fileName: 'desktop_screenshot.png',
+          mimeType: 'image/png',
+          fileSize: 1234,
+          preview: 'data:image/png;base64,abc',
+          filePath: '/tmp/desktop_screenshot.png',
+          source: 'tool-result',
+        },
+      ],
+    };
+
+    render(
+      <ChatMessage
+        message={message}
+        suppressProcessAttachments
+      />,
+    );
+
+    expect(screen.getByAltText('desktop_screenshot.png')).toBeInTheDocument();
+  });
+
+  it('keeps message-ref image artifacts visible alongside reply text when process attachments are suppressed', () => {
+    const message: RawMessage = {
+      role: 'assistant',
+      content: '已经压缩好，发给你：',
+      _attachedFiles: [
+        {
+          fileName: 'desktop_screenshot.jpg',
+          mimeType: 'image/jpeg',
+          fileSize: 837_000,
+          preview: 'data:image/jpeg;base64,xyz',
+          filePath: '/tmp/desktop_screenshot.jpg',
+          source: 'message-ref',
+        },
+      ],
+    };
+
+    render(
+      <ChatMessage
+        message={message}
+        suppressProcessAttachments
+      />,
+    );
+
+    expect(screen.getByAltText('desktop_screenshot.jpg')).toBeInTheDocument();
+  });
+
   it('keeps pdf and spreadsheet artifacts visible when process attachments are suppressed', () => {
     const message: RawMessage = {
       role: 'assistant',

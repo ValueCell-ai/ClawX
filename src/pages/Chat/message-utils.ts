@@ -37,7 +37,12 @@ function cleanUserText(text: string): string {
 function stripAssistantMediaTags(text: string): string {
   if (!text) return text;
   const exts = 'png|jpe?g|gif|webp|bmp|avif|svg|pdf|docx?|xlsx?|pptx?|txt|csv|md|rtf|epub|zip|tar|gz|rar|7z|mp3|wav|ogg|aac|flac|m4a|mp4|mov|avi|mkv|webm|m4v';
-  const tagged = new RegExp(`(^|[\\s(\\[{>])(?:MEDIA|media):(?:\\/|~\\/)[^\\s\\n"'()\\[\\],<>]*?\\.(?:${exts})`, 'g');
+  // Mirror the relaxed character class in `chat/helpers.ts::extractRawFilePaths`
+  // so paths with ASCII spaces (e.g. macOS' "截屏 2026-05-06 17.46.51.png")
+  // are also stripped from the visible bubble. Without this, the bubble
+  // would still leak the literal `MEDIA:/.../截屏 2026-05-06 17.46.51.png`
+  // to the user when the underlying path detection succeeds.
+  const tagged = new RegExp(`(^|[\\s(\\[{>])(?:MEDIA|media):(?:\\/|~\\/)[^\\n"'()\\[\\],<>]*?\\.(?:${exts})(?=$|[\\s\\n"'()\\[\\],<>]|[，。；;,.!?])`, 'g');
   return text
     .replace(tagged, (_, lead: string) => lead)
     // Collapse the empty lines / orphan whitespace the strip leaves behind.
@@ -302,31 +307,50 @@ export function extractMediaRefs(message: RawMessage | unknown): Array<{ filePat
 }
 
 /**
- * Extract image attachments from a message.
- * Returns array of { mimeType, data } for base64 images.
+ * Extract inline image attachments from a message.
+ *
+ * Returns either:
+ *   - `{ mimeType, data }`   — base64 bytes inline (Anthropic / Gateway tool-result)
+ *   - `{ mimeType, url }`    — Anthropic source-wrapped remote URL form
+ *
+ * Note: the Gateway-injected `assistant-media` shape — flat
+ * `{ type:'image', url:'/api/chat/media/outgoing/...', mimeType, ... }` —
+ * is intentionally NOT extracted here because the URL is a Gateway-relative
+ * path the renderer cannot fetch directly (CORS / env drift). That shape
+ * is surfaced through `_attachedFiles` instead (see
+ * `extractImagesAsAttachedFiles` and `enrichWithGatewayMediaBlocks` in
+ * `src/stores/chat/helpers.ts`), and resolved to a local preview by
+ * `loadMissingPreviews` -> Main `media:getThumbnails`.
  */
-export function extractImages(message: RawMessage | unknown): Array<{ mimeType: string; data: string }> {
+export function extractImages(
+  message: RawMessage | unknown,
+): Array<{ mimeType: string; data?: string; url?: string }> {
   if (!message || typeof message !== 'object') return [];
   const msg = message as Record<string, unknown>;
   const content = msg.content;
 
   if (!Array.isArray(content)) return [];
 
-  const images: Array<{ mimeType: string; data: string }> = [];
+  const images: Array<{ mimeType: string; data?: string; url?: string }> = [];
   for (const block of content as ContentBlock[]) {
-    if (block.type === 'image') {
-      // Path 1: Anthropic source-wrapped format
-      if (block.source) {
-        const src = block.source;
-        if (src.type === 'base64' && src.media_type && src.data) {
-          images.push({ mimeType: src.media_type, data: src.data });
-        }
+    if (block.type !== 'image') continue;
+
+    // Path 1: Anthropic source-wrapped format
+    if (block.source) {
+      const src = block.source;
+      if (src.type === 'base64' && src.media_type && src.data) {
+        images.push({ mimeType: src.media_type, data: src.data });
+      } else if (src.type === 'url' && src.url) {
+        images.push({ mimeType: src.media_type || 'image/jpeg', url: src.url });
       }
-      // Path 2: Flat format from Gateway tool results {data, mimeType}
-      else if (block.data) {
-        images.push({ mimeType: block.mimeType || 'image/jpeg', data: block.data });
-      }
+      continue;
     }
+
+    // Path 2: Flat format from Gateway tool results {data, mimeType}
+    if (block.data) {
+      images.push({ mimeType: block.mimeType || 'image/jpeg', data: block.data });
+    }
+    // Flat `block.url` is intentionally NOT handled here; see comment above.
   }
 
   return images;

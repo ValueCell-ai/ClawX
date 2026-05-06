@@ -508,6 +508,22 @@ function extractImagesAsAttachedFiles(content: unknown): AttachedFileMeta[] {
           preview: `data:${mimeType};base64,${block.data}`,
         });
       }
+      // Path 3: Flat URL form from Gateway-injected assistant-media messages.
+      // See `src/stores/chat/helpers.ts` for the canonical implementation.
+      else if (block.url) {
+        const mimeType = block.mimeType || 'image/jpeg';
+        const fileName = typeof block.alt === 'string' && block.alt
+          ? block.alt
+          : 'image';
+        files.push({
+          fileName,
+          mimeType,
+          fileSize: 0,
+          preview: null,
+          gatewayUrl: block.url,
+          source: 'gateway-media',
+        });
+      }
     }
     // Recurse into tool_result content blocks
     if ((block.type === 'tool_result' || block.type === 'toolResult') && block.content) {
@@ -689,8 +705,20 @@ function enrichWithToolResultFiles(messages: RawMessage[]): RawMessage[] {
 function enrichWithCachedImages(messages: RawMessage[]): RawMessage[] {
   return messages.map((msg, idx) => {
     // Only process user and assistant messages; skip if already enriched
-    if ((msg.role !== 'user' && msg.role !== 'assistant') || msg._attachedFiles) return msg;
+    // (a previously enriched message keeps its `_attachedFiles` because the
+    // session JSONL never persists them — they're a renderer-only adornment).
+    if ((msg.role !== 'user' && msg.role !== 'assistant') || msg._attachedFiles) {
+      return msg;
+    }
     const text = getMessageText(msg.content);
+
+    // Path 0: Gateway-injected outgoing media (image content blocks with a
+    // flat `url` field). Surface them as `_attachedFiles` entries so the
+    // renderer can resolve the URL through the Main process. Mirror of the
+    // logic in `src/stores/chat/helpers.ts::enrichWithCachedImages`.
+    const gatewayMediaFiles: AttachedFileMeta[] = msg.role === 'assistant'
+      ? extractImagesAsAttachedFiles(msg.content).filter(file => file.gatewayUrl)
+      : [];
 
     // Path 1: [media attached: path (mime) | path] — guaranteed format from attachment button
     const mediaRefs = extractMediaRefs(text);
@@ -726,7 +754,7 @@ function enrichWithCachedImages(messages: RawMessage[]): RawMessage[] {
     }
 
     const allRefs = [...mediaRefs, ...rawRefs];
-    if (allRefs.length === 0) return msg;
+    if (allRefs.length === 0 && gatewayMediaFiles.length === 0) return msg;
 
     const files: AttachedFileMeta[] = allRefs.map(ref => {
       const cached = _imageCache.get(ref.filePath);
@@ -734,7 +762,7 @@ function enrichWithCachedImages(messages: RawMessage[]): RawMessage[] {
       const fileName = ref.filePath.split(/[\\/]/).pop() || 'file';
       return { fileName, mimeType: ref.mimeType, fileSize: 0, preview: null, filePath: ref.filePath, source: 'message-ref' as const };
     });
-    return { ...msg, _attachedFiles: files };
+    return { ...msg, _attachedFiles: [...files, ...gatewayMediaFiles] };
   });
 }
 
@@ -744,24 +772,29 @@ function enrichWithCachedImages(messages: RawMessage[]): RawMessage[] {
  * Handles both [media attached: ...] patterns and raw filePath entries.
  */
 async function loadMissingPreviews(messages: RawMessage[]): Promise<boolean> {
-  // Collect all image paths that need previews
-  const needPreview: Array<{ filePath: string; mimeType: string }> = [];
-  const seenPaths = new Set<string>();
+  // See helpers.ts loadMissingPreviews for the canonical comment block —
+  // this monolithic copy is kept in sync so legacy chat.ts callers also
+  // resolve Gateway-injected outgoing media URLs into local previews.
+  type PreviewRef = { filePath?: string; gatewayUrl?: string; mimeType: string };
+  const needPreview: PreviewRef[] = [];
+  const seenKeys = new Set<string>();
 
   for (const msg of messages) {
     if (!msg._attachedFiles) continue;
 
-    // Path 1: files with explicit filePath field (raw path detection or enriched refs)
+    // Path 1: files with explicit filePath OR gatewayUrl
     for (const file of msg._attachedFiles) {
-      const fp = file.filePath;
-      if (!fp || seenPaths.has(fp)) continue;
-      // Images: need preview. Non-images: need file size (for FileCard display).
+      const key = file.filePath || file.gatewayUrl;
+      if (!key || seenKeys.has(key)) continue;
       const needsLoad = file.mimeType.startsWith('image/')
         ? !file.preview
         : file.fileSize === 0;
-      if (needsLoad) {
-        seenPaths.add(fp);
-        needPreview.push({ filePath: fp, mimeType: file.mimeType });
+      if (!needsLoad) continue;
+      seenKeys.add(key);
+      if (file.filePath) {
+        needPreview.push({ filePath: file.filePath, mimeType: file.mimeType });
+      } else if (file.gatewayUrl) {
+        needPreview.push({ gatewayUrl: file.gatewayUrl, mimeType: file.mimeType });
       }
     }
 
@@ -772,11 +805,11 @@ async function loadMissingPreviews(messages: RawMessage[]): Promise<boolean> {
       for (let i = 0; i < refs.length; i++) {
         const file = msg._attachedFiles[i];
         const ref = refs[i];
-        if (!file || !ref || seenPaths.has(ref.filePath)) continue;
+        if (!file || !ref || seenKeys.has(ref.filePath)) continue;
         const needsLoad = ref.mimeType.startsWith('image/') ? !file.preview : file.fileSize === 0;
         if (needsLoad) {
-          seenPaths.add(ref.filePath);
-          needPreview.push(ref);
+          seenKeys.add(ref.filePath);
+          needPreview.push({ filePath: ref.filePath, mimeType: ref.mimeType });
         }
       }
     }
@@ -797,15 +830,17 @@ async function loadMissingPreviews(messages: RawMessage[]): Promise<boolean> {
     for (const msg of messages) {
       if (!msg._attachedFiles) continue;
 
-      // Update files that have filePath
+      // Update files that have filePath OR gatewayUrl
       for (const file of msg._attachedFiles) {
-        const fp = file.filePath;
-        if (!fp) continue;
-        const thumb = thumbnails[fp];
+        const key = file.filePath || file.gatewayUrl;
+        if (!key) continue;
+        const thumb = thumbnails[key];
         if (thumb && (thumb.preview || thumb.fileSize)) {
           if (thumb.preview) file.preview = thumb.preview;
           if (thumb.fileSize) file.fileSize = thumb.fileSize;
-          _imageCache.set(fp, { ...file });
+          if (file.filePath) {
+            _imageCache.set(file.filePath, { ...file });
+          }
           updated = true;
         }
       }

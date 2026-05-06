@@ -40,6 +40,32 @@ describe('extractRawFilePaths', () => {
     ]);
   });
 
+  it('captures MEDIA: paths that contain ASCII spaces (macOS screenshot default name)', () => {
+    // Regression: macOS' default screenshot filename is "截屏 YYYY-MM-DD HH.MM.SS.png"
+    // and the agent typically emits it verbatim via `MEDIA:` after `ls ~/Desktop`.
+    // The previous regex excluded ASCII spaces from the captured path which made
+    // the extractor stop at "/Users/.../截屏2026-05-06" and never find a `.png`,
+    // so the screenshot silently failed to surface as an attachment.
+    const sample = '找到了，桌面上有一张截屏，发给你：\n\nMEDIA:/Users/guoyuliang/Desktop/截屏 2026-05-06 17.46.51.png';
+    const refs = extractRawFilePaths(sample);
+    expect(refs).toEqual([
+      {
+        filePath: '/Users/guoyuliang/Desktop/截屏 2026-05-06 17.46.51.png',
+        mimeType: 'image/png',
+      },
+    ]);
+  });
+
+  it('keeps non-MEDIA prose after a space-bearing path out of the captured filename', () => {
+    // The lookahead must terminate the match at the first non-path character
+    // (newline, quote, paren, comma, full-stop, ...). Otherwise a long line
+    // like "MEDIA:/p with spaces.png 然后说点什么" would gobble the trailing
+    // narration into the "filename".
+    const sample = 'MEDIA:/tmp/my shot.png 然后说点什么';
+    const refs = extractRawFilePaths(sample);
+    expect(refs.map((r) => r.filePath)).toEqual(['/tmp/my shot.png']);
+  });
+
   it('detects OpenClaw skill directories without file extensions', () => {
     const refs = extractRawFilePaths('位置： ~/.openclaw/skills/open-eastmoney');
     expect(refs).toEqual([
