@@ -595,8 +595,14 @@ function enrichWithToolResultFiles(messages: RawMessage[]): RawMessage[] {
       // Resolve file path from the matching tool call
       const matchedPath = msg.toolCallId ? toolCallPaths.get(msg.toolCallId) : undefined;
 
-      // 1. Image/file content blocks in the structured content array
-      const imageFiles = extractImagesAsAttachedFiles(msg.content);
+      // 1. Image/file content blocks in the structured content array.
+      //    Images embedded inside a tool result are the model's vision data
+      //    (e.g. `read /tmp/foo.png` re-encoded as JPEG so the model can
+      //    "see" the file) — they are NOT user-facing artifacts. The agent
+      //    surfaces user-facing images through `MEDIA:/path` text + the
+      //    Gateway's `assistant-media` injection.
+      const imageFiles = extractImagesAsAttachedFiles(msg.content)
+        .filter(file => !file.mimeType.startsWith('image/'));
       if (matchedPath) {
         for (const f of imageFiles) {
           if (!f.filePath) {
@@ -615,11 +621,14 @@ function enrichWithToolResultFiles(messages: RawMessage[]): RawMessage[] {
         for (const ref of mediaRefs) {
           pending.push(makeAttachedFile(ref, 'tool-result'));
         }
-        // 3. Raw file paths in tool result text (documents, audio, video, etc.)
+        // 3. Raw NON-image file paths in tool result text (documents,
+        //    audio, video, ...). Image paths from intermediate tool stdout
+        //    (`ls -la *.png`, `sips ... && ls`, `file /tmp/x.png`, etc.)
+        //    are deliberately ignored — see comment on Path 1.
         for (const ref of extractRawFilePaths(text)) {
-          if (!mediaRefPaths.has(ref.filePath)) {
-            pending.push(makeAttachedFile(ref, 'tool-result'));
-          }
+          if (mediaRefPaths.has(ref.filePath)) continue;
+          if (ref.mimeType.startsWith('image/')) continue;
+          pending.push(makeAttachedFile(ref, 'tool-result'));
         }
       }
 
@@ -652,6 +661,19 @@ function enrichWithToolResultFiles(messages: RawMessage[]): RawMessage[] {
  * Uses local cache for previews when available; missing previews are loaded async.
  */
 function enrichWithCachedImages(messages: RawMessage[]): RawMessage[] {
+  // Pre-compute, per index, whether the *next* assistant message is a
+  // Gateway-injected `assistant-media` bubble (i.e. has at least one
+  // `image` content block carrying a flat URL). When that bubble exists,
+  // the canonical user-facing rendering of the artifact is the bubble
+  // itself — anything the agent emitted via `MEDIA:/path` in its prior
+  // text turn would just duplicate the same image, so image-typed raw
+  // refs on that prior message are dropped here.
+  const nextHasGatewayMediaBubble = messages.map((_, idx) => {
+    const next = messages[idx + 1];
+    if (!next || next.role !== 'assistant') return false;
+    return extractImagesAsAttachedFiles(next.content).some(f => f.gatewayUrl);
+  });
+
   return messages.map((msg, idx) => {
     // Only process user and assistant messages. Messages may already carry
     // attachments from tool-result enrichment; still merge in raw paths from
@@ -700,6 +722,13 @@ function enrichWithCachedImages(messages: RawMessage[]): RawMessage[] {
           break; // only use the nearest user message
         }
       }
+    }
+
+    // Dedup vs Gateway-injected bubble: when the very next assistant
+    // message is an `assistant-media` bubble, drop image-typed raw refs
+    // on *this* message — the bubble already covers the artifact.
+    if (msg.role === 'assistant' && nextHasGatewayMediaBubble[idx]) {
+      rawRefs = rawRefs.filter(r => !r.mimeType.startsWith('image/'));
     }
 
     const allRefs = [...mediaRefs, ...rawRefs];
