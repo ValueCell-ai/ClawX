@@ -62,6 +62,73 @@ function isChatPreviewDocument(file: AttachedFileMeta): boolean {
   );
 }
 
+function previewMimeFromPath(filePath: string): string | null {
+  const lower = filePath.toLowerCase();
+  if (lower.endsWith('.pdf')) return 'application/pdf';
+  if (lower.endsWith('.xls')) return 'application/vnd.ms-excel';
+  if (lower.endsWith('.xlsx')) return 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+  return null;
+}
+
+function fileNameFromPath(filePath: string): string {
+  return filePath.split(/[\\/]/).pop() || 'file';
+}
+
+function extractPreviewDocumentPaths(text: string): AttachedFileMeta[] {
+  if (!text) return [];
+  const refs: AttachedFileMeta[] = [];
+  const seen = new Set<string>();
+  // Deliberately narrow this render-layer fallback to PDF / spreadsheet
+  // previews. The store-level extractor still handles all file categories;
+  // this just guarantees user-facing document outputs show as cards even
+  // when message history enrichment has not run yet.
+  const exts = 'pdf|xlsx?|PDF|XLSX?';
+  const taggedRegex = new RegExp(`(?:^|[\\s(\\[{>])(?:MEDIA|media):((?:\\/|~\\/)[^\\s\\n"'()\\[\\],<>]*?\\.(?:${exts}))`, 'g');
+  const unixRegex = new RegExp(`(?<![\\w./:])((?:\\/|~\\/)[^\\s\\n"'()\\[\\],<>]*?\\.(?:${exts}))`, 'g');
+
+  let workingText = text;
+  let taggedMatch: RegExpExecArray | null;
+  while ((taggedMatch = taggedRegex.exec(text)) !== null) {
+    const filePath = taggedMatch[1];
+    const mimeType = previewMimeFromPath(filePath);
+    if (mimeType && !seen.has(filePath)) {
+      seen.add(filePath);
+      refs.push({
+        fileName: fileNameFromPath(filePath),
+        mimeType,
+        fileSize: 0,
+        preview: null,
+        filePath,
+        source: 'message-ref',
+      });
+    }
+    const start = taggedMatch.index;
+    const end = start + taggedMatch[0].length;
+    workingText = workingText.slice(0, start) + ' '.repeat(end - start) + workingText.slice(end);
+  }
+
+  for (const regex of [unixRegex]) {
+    let match: RegExpExecArray | null;
+    while ((match = regex.exec(workingText)) !== null) {
+      const filePath = match[1];
+      const mimeType = previewMimeFromPath(filePath);
+      if (mimeType && !seen.has(filePath)) {
+        seen.add(filePath);
+        refs.push({
+          fileName: fileNameFromPath(filePath),
+          mimeType,
+          fileSize: 0,
+          preview: null,
+          filePath,
+          source: 'message-ref',
+        });
+      }
+    }
+  }
+
+  return refs;
+}
+
 /**
  * Normalize LaTeX delimiters so `remark-math` can detect them.
  *
@@ -123,7 +190,13 @@ export const ChatMessage = memo(function ChatMessage({
   const tools = extractToolUse(message);
   const visibleTools = suppressToolCards ? [] : tools;
   const rawAttachedFiles = message._attachedFiles || [];
-  const filteredProcessAttachments = rawAttachedFiles.filter((file) => {
+  const textPreviewFiles = isUser ? [] : extractPreviewDocumentPaths(text);
+  const rawAttachedPaths = new Set(rawAttachedFiles.map((file) => file.filePath).filter(Boolean));
+  const derivedAttachedFiles = [
+    ...rawAttachedFiles,
+    ...textPreviewFiles.filter((file) => !file.filePath || !rawAttachedPaths.has(file.filePath)),
+  ];
+  const filteredProcessAttachments = derivedAttachedFiles.filter((file) => {
     if (file.source !== 'tool-result' && file.source !== 'message-ref') return true;
     // Runtime-produced PDF / spreadsheet artifacts should remain visible
     // in the chat even when generic process attachments are folded into
@@ -135,7 +208,7 @@ export const ChatMessage = memo(function ChatMessage({
   // otherwise the reply disappears entirely.
   const attachedFiles = suppressProcessAttachments && (hasText || images.length > 0 || visibleTools.length > 0)
     ? filteredProcessAttachments
-    : rawAttachedFiles;
+    : derivedAttachedFiles;
   const [lightboxImg, setLightboxImg] = useState<{ src: string; fileName: string; filePath?: string; base64?: string; mimeType?: string } | null>(null);
 
   // Never render tool result messages in chat UI

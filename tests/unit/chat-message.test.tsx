@@ -65,6 +65,17 @@ describe('ChatMessage attachment dedupe', () => {
     expect(screen.getByText('report.pdf')).toBeInTheDocument();
   });
 
+  it('derives preview cards from assistant text paths when attachments are missing', () => {
+    const message: RawMessage = {
+      role: 'assistant',
+      content: '已生成测试 PDF 文件： 测试PDF文件.pdf 位置： `/Users/zhonghaolu/.openclaw/workspace/测试PDF文件.pdf`',
+    };
+
+    render(<ChatMessage message={message} suppressProcessAttachments />);
+
+    expect(screen.getByText('测试PDF文件.pdf')).toBeInTheDocument();
+  });
+
   it('continues hiding non-preview process attachments when process attachments are suppressed', () => {
     const message: RawMessage = {
       role: 'assistant',
