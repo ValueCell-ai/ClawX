@@ -156,7 +156,7 @@ export function Chat() {
         });
       return;
     }
-    const target = buildPreviewTarget(file.filePath, file.fileName);
+    const target = buildPreviewTarget(file.filePath, file.fileName, file.fileSize);
     openPreview(target);
   }, [openPreview, t]);
   // Persistent per-run override for the Execution Graph's expanded/collapsed

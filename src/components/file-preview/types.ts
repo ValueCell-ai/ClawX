@@ -13,6 +13,8 @@ export interface FilePreviewTarget {
   ext: string;
   mimeType: string;
   contentType: FileContentType;
+  /** Known file size from chat attachment metadata, when available. */
+  size?: number;
   /**
    * From chat extraction only.  Drives the badge in the changes list and is
    * not used by the diff view itself (which derives "before/after" from

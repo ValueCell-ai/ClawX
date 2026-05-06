@@ -7,7 +7,7 @@
 import { classifyFileExt, extnameOf, getMimeTypeForExt } from '@/lib/generated-files';
 import type { FilePreviewTarget } from './FilePreviewOverlay';
 
-export function buildPreviewTarget(filePath: string, fileName?: string): FilePreviewTarget {
+export function buildPreviewTarget(filePath: string, fileName?: string, size?: number): FilePreviewTarget {
   const ext = extnameOf(filePath);
   const name = fileName || (filePath.replace(/\\/g, '/').split('/').pop() ?? filePath);
   return {
@@ -16,5 +16,6 @@ export function buildPreviewTarget(filePath: string, fileName?: string): FilePre
     ext,
     mimeType: getMimeTypeForExt(ext),
     contentType: classifyFileExt(ext),
+    size,
   };
 }

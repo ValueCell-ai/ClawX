@@ -160,6 +160,7 @@ function generatedFileToTarget(file: GeneratedFile): FilePreviewTarget {
     ext: file.ext,
     mimeType: file.mimeType,
     contentType: file.contentType,
+    size: file.size,
     action: file.action,
     fullContent: file.fullContent,
     baseline: file.baseline,

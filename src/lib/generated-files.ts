@@ -40,6 +40,7 @@ export interface GeneratedFile {
   ext: string;
   mimeType: string;
   contentType: FileContentType;
+  size?: number;
   action: 'created' | 'modified';
   /**
    * Full new content of the file when known (only set by `Write`-family

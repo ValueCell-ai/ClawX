@@ -209,7 +209,7 @@ export function FilePreviewBody({
   const [draft, setDraft] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [tab, setTab] = useState<Tab>('source');
-  const [size, setSize] = useState<number | undefined>(undefined);
+  const [size, setSize] = useState<number | undefined>(file.size);
 
   // Preview / diff modes are read-only by definition — those views are
   // for inspecting content, not editing it.
@@ -225,7 +225,7 @@ export function FilePreviewBody({
   useEffect(() => {
     let cancelled = false;
     setTab(pickInitialTab(tabs, file));
-    setSize(undefined);
+    setSize(file.size);
 
     // Diff-only mode renders entirely from the captured tool payload —
     // no disk read needed, so we can mark the body "ready" immediately.
@@ -258,6 +258,14 @@ export function FilePreviewBody({
       // IPC channel; the body just needs to hand off control. For files
       // beyond the inline-preview ceiling we keep the existing
       // "direct open" fallback so users still have a way out.
+      if (typeof file.size === 'number' && file.size > RICH_PREVIEW_MAX_BYTES) {
+        setSize(file.size);
+        setState({ status: 'tooLarge', size: file.size });
+        setDraft(null);
+        return () => {
+          cancelled = true;
+        };
+      }
       setState({ status: 'loading' });
       setDraft(null);
       void statFile(file.filePath)
