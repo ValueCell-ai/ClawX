@@ -89,12 +89,14 @@
         "monaco-editor": "^0.55.1",
         "ms": "^2.1.3",
         "node-machine-id": "^1.1.12",
+        "pdfjs-dist": "^5.7.284",
         "posthog-node": "^5.28.0",
         "rehype-katex": "^7.0.1",
         "remark-frontmatter": "^5.0.0",
         "remark-math": "^6.0.0",
         "tar": "^6.2.1",
-        "ws": "^8.19.0"
+        "ws": "^8.19.0",
+        "xlsx": "^0.18.5"
     },
     "devDependencies": {
         "@buape/carbon": "0.16.0",

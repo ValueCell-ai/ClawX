@@ -12,8 +12,13 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { LoadingSpinner } from '@/components/common/LoadingSpinner';
 import { cn } from '@/lib/utils';
-import { invokeIpc, readTextFile } from '@/lib/api-client';
-import { supportsInlineDocumentPreview } from '@/lib/generated-files';
+import { invokeIpc, readTextFile, statFile } from '@/lib/api-client';
+import {
+  isPdfPreviewExt,
+  isSheetPreviewExt,
+  supportsInlineDocumentPreview,
+  supportsRichDocumentPreview,
+} from '@/lib/generated-files';
 import {
   collectInitialExpanded,
   findNode,
@@ -23,10 +28,19 @@ import {
 import type { AgentSummary } from '@/types/agent';
 import { FilePreviewIcon } from './file-card-utils';
 import { formatFileSize } from './format';
+import {
+  confirmAndOpenFile,
+  shouldOfferDirectOpenFallback,
+} from './open-file-utils';
 import MarkdownPreview from './MarkdownPreview';
 import ImageViewer from './ImageViewer';
 
 const MonacoViewerLazy = lazy(() => import('./MonacoViewer'));
+const PdfViewerLazy = lazy(() => import('./PdfViewer'));
+const SheetViewerLazy = lazy(() => import('./SheetViewer'));
+
+/** Inline rich-doc viewers tap out past this — falls back to direct open. */
+const RICH_PREVIEW_MAX_BYTES = 50 * 1024 * 1024;
 
 export interface WorkspaceBrowserBodyProps {
   agent: AgentSummary | null;
@@ -52,9 +66,9 @@ type FileState =
   | { status: 'idle' }
   | { status: 'loading' }
   | { status: 'ready'; content: string }
-  | { status: 'tooLarge' }
-  | { status: 'binary' }
-  | { status: 'unsupported' }
+  | { status: 'tooLarge'; size?: number }
+  | { status: 'binary'; size?: number }
+  | { status: 'unsupported'; size?: number }
   | { status: 'error'; message: string };
 
 export function WorkspaceBrowserBody({
@@ -124,15 +138,49 @@ export function WorkspaceBrowserBody({
       return;
     }
     const node = selectedNode;
+    let cancelled = false;
     if (node.contentType === 'document' && !supportsInlineDocumentPreview(node.ext ?? '')) {
-      setFileState({ status: 'unsupported' });
-      return;
+      setFileState({ status: 'loading' });
+      void statFile(node.absPath)
+        .then((res) => {
+          if (cancelled) return;
+          setFileState({ status: 'unsupported', size: res.ok ? res.size : undefined });
+        })
+        .catch(() => {
+          if (cancelled) return;
+          setFileState({ status: 'unsupported' });
+        });
+      return () => {
+        cancelled = true;
+      };
+    }
+    if (supportsRichDocumentPreview(node.ext ?? '')) {
+      // PDF / spreadsheet viewers handle their own loading; we only need
+      // a stat for the badge / direct-open fallbacks.  Files that exceed
+      // the inline cap fall back to the existing tooLarge UI so users
+      // can still open them with the system default app.
+      setFileState({ status: 'loading' });
+      void statFile(node.absPath)
+        .then((res) => {
+          if (cancelled) return;
+          if (res.ok && typeof res.size === 'number' && res.size > RICH_PREVIEW_MAX_BYTES) {
+            setFileState({ status: 'tooLarge', size: res.size });
+            return;
+          }
+          setFileState({ status: 'ready', content: '' });
+        })
+        .catch(() => {
+          if (cancelled) return;
+          setFileState({ status: 'ready', content: '' });
+        });
+      return () => {
+        cancelled = true;
+      };
     }
     if (node.contentType === 'snapshot' || node.contentType === 'video' || node.contentType === 'audio') {
       setFileState({ status: 'ready', content: '' });
       return;
     }
-    let cancelled = false;
     setFileState({ status: 'loading' });
     /* eslint-enable react-hooks/set-state-in-effect */
     readTextFile(node.absPath)
@@ -140,11 +188,11 @@ export function WorkspaceBrowserBody({
         if (cancelled) return;
         if (!res.ok) {
           if (res.error === 'tooLarge') {
-            setFileState({ status: 'tooLarge' });
+            setFileState({ status: 'tooLarge', size: res.size });
             return;
           }
           if (res.error === 'binary') {
-            setFileState({ status: 'binary' });
+            setFileState({ status: 'binary', size: res.size });
             return;
           }
           setFileState({ status: 'error', message: String(res.error ?? 'unknown') });
@@ -167,6 +215,32 @@ export function WorkspaceBrowserBody({
       toast.error(t('filePreview.errors.openInFinderFailed', '无法在 Finder 中显示'));
     });
   }, [workspace, t]);
+
+  const handleOpenSelectedInFinder = useCallback(() => {
+    if (!selectedNode || selectedNode.isDir) return;
+    invokeIpc('shell:showItemInFolder', selectedNode.absPath).catch(() => {
+      toast.error(t('filePreview.errors.openInFinderFailed', '无法在 Finder 中显示'));
+    });
+  }, [selectedNode, t]);
+
+  const handleOpenSelectedDirectly = useCallback(async () => {
+    if (!selectedNode || selectedNode.isDir) return;
+    const currentSize =
+      fileState.status === 'tooLarge' || fileState.status === 'binary' || fileState.status === 'unsupported'
+        ? fileState.size
+        : undefined;
+    try {
+      await confirmAndOpenFile({
+        filePath: selectedNode.absPath,
+        fileName: selectedNode.name,
+        size: currentSize,
+        t,
+      });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      toast.error(t('filePreview.errors.openFailed', { defaultValue: '打开失败：{{error}}', error: message }));
+    }
+  }, [selectedNode, fileState, t]);
 
   const toggleNode = useCallback((relPath: string) => {
     setExpanded((prev) => {
@@ -228,6 +302,32 @@ export function WorkspaceBrowserBody({
     if (selectedNode.contentType === 'snapshot') {
       return <ImageViewer filePath={selectedNode.absPath} fileName={selectedNode.name} />;
     }
+    if (isPdfPreviewExt(selectedNode.ext)) {
+      return (
+        <Suspense
+          fallback={
+            <div className="flex h-full items-center justify-center">
+              <LoadingSpinner />
+            </div>
+          }
+        >
+          <PdfViewerLazy filePath={selectedNode.absPath} fileName={selectedNode.name} />
+        </Suspense>
+      );
+    }
+    if (isSheetPreviewExt(selectedNode.ext)) {
+      return (
+        <Suspense
+          fallback={
+            <div className="flex h-full items-center justify-center">
+              <LoadingSpinner />
+            </div>
+          }
+        >
+          <SheetViewerLazy filePath={selectedNode.absPath} fileName={selectedNode.name} />
+        </Suspense>
+      );
+    }
     if (fileState.status === 'loading' || fileState.status === 'idle') {
       return (
         <div className="flex h-full items-center justify-center">
@@ -236,32 +336,54 @@ export function WorkspaceBrowserBody({
       );
     }
     if (fileState.status === 'tooLarge') {
+      const directOpen = shouldOfferDirectOpenFallback(selectedNode.ext, fileState.size);
       return (
         <div className="flex h-full flex-col items-center justify-center gap-3 px-6 text-center text-sm text-muted-foreground">
-          <p>{t('filePreview.errors.tooLarge', '文件过大，已禁用预览')}</p>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => invokeIpc('shell:showItemInFolder', selectedNode.absPath)}
-          >
-            <FolderOpen className="mr-2 h-4 w-4" />
-            {t('filePreview.actions.openInFinder', '在 Finder 中显示')}
-          </Button>
+          <p>
+            {directOpen
+              ? t('filePreview.errors.largeBinaryOpenHint', {
+                defaultValue: '当前文件为 {{size}}，ClawX 不提供内置预览。你可以确认后直接使用系统默认应用打开。',
+                size: formatFileSize(fileState.size ?? 0) || '> 2MB',
+              })
+              : t('filePreview.errors.tooLarge', '文件过大，已禁用预览')}
+          </p>
+          <div className="flex flex-wrap items-center justify-center gap-2">
+            {directOpen && (
+              <Button size="sm" onClick={handleOpenSelectedDirectly}>
+                {t('filePreview.actions.openDirectly', '直接打开')}
+              </Button>
+            )}
+            <Button variant="outline" size="sm" onClick={handleOpenSelectedInFinder}>
+              <FolderOpen className="mr-2 h-4 w-4" />
+              {t('filePreview.actions.openInFinder', '在 Finder 中显示')}
+            </Button>
+          </div>
         </div>
       );
     }
     if (fileState.status === 'binary') {
+      const directOpen = shouldOfferDirectOpenFallback(selectedNode.ext, fileState.size);
       return (
         <div className="flex h-full flex-col items-center justify-center gap-3 px-6 text-center text-sm text-muted-foreground">
-          <p>{t('filePreview.errors.binary', '二进制文件不支持文本预览')}</p>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => invokeIpc('shell:showItemInFolder', selectedNode.absPath)}
-          >
-            <FolderOpen className="mr-2 h-4 w-4" />
-            {t('filePreview.actions.openInFinder', '在 Finder 中显示')}
-          </Button>
+          <p>
+            {directOpen
+              ? t('filePreview.errors.largeBinaryOpenHint', {
+                defaultValue: '当前文件为 {{size}}，ClawX 不提供内置预览。你可以确认后直接使用系统默认应用打开。',
+                size: formatFileSize(fileState.size ?? 0) || '> 2MB',
+              })
+              : t('filePreview.errors.binary', '二进制文件不支持文本预览')}
+          </p>
+          <div className="flex flex-wrap items-center justify-center gap-2">
+            {directOpen && (
+              <Button size="sm" onClick={handleOpenSelectedDirectly}>
+                {t('filePreview.actions.openDirectly', '直接打开')}
+              </Button>
+            )}
+            <Button variant="outline" size="sm" onClick={handleOpenSelectedInFinder}>
+              <FolderOpen className="mr-2 h-4 w-4" />
+              {t('filePreview.actions.openInFinder', '在 Finder 中显示')}
+            </Button>
+          </div>
         </div>
       );
     }
@@ -279,27 +401,38 @@ export function WorkspaceBrowserBody({
       );
     }
     if (fileState.status === 'unsupported') {
+      const directOpen = shouldOfferDirectOpenFallback(selectedNode.ext, fileState.size);
       return (
         <div className="flex h-full flex-col items-center justify-center gap-4 px-8 text-center">
           <div className="space-y-1.5">
             <p className="text-sm font-medium text-foreground">
-              {t('filePreview.errors.unsupportedFormatTitle', '此文件格式暂不支持内置预览或变更')}
+              {directOpen
+                ? t('filePreview.errors.largeBinaryOpenTitle', '该文件较大，暂不支持内置预览')
+                : t('filePreview.errors.unsupportedFormatTitle', '此文件格式暂不支持内置预览或变更')}
             </p>
             <p className="max-w-md text-xs leading-relaxed text-muted-foreground">
-              {t(
-                'filePreview.errors.unsupportedFormatHint',
-                '当前仅支持文本/Markdown 等可直接读取的文件进行内置预览与变更对比。请在 Finder 中打开该文件。',
-              )}
+              {directOpen
+                ? t('filePreview.errors.largeBinaryOpenHint', {
+                  defaultValue: '当前文件为 {{size}}，ClawX 不提供内置预览。你可以确认后直接使用系统默认应用打开。',
+                  size: formatFileSize(fileState.size ?? 0) || '> 2MB',
+                })
+                : t(
+                  'filePreview.errors.unsupportedFormatHint',
+                  '当前仅支持文本/Markdown 等可直接读取的文件进行内置预览与变更对比。请在 Finder 中打开该文件。',
+                )}
             </p>
           </div>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => invokeIpc('shell:showItemInFolder', selectedNode.absPath)}
-          >
-            <FolderOpen className="mr-2 h-4 w-4" />
-            {t('filePreview.actions.openInFinder', '在 Finder 中显示')}
-          </Button>
+          <div className="flex flex-wrap items-center justify-center gap-2">
+            {directOpen && (
+              <Button size="sm" onClick={handleOpenSelectedDirectly}>
+                {t('filePreview.actions.openDirectly', '直接打开')}
+              </Button>
+            )}
+            <Button variant="outline" size="sm" onClick={handleOpenSelectedInFinder}>
+              <FolderOpen className="mr-2 h-4 w-4" />
+              {t('filePreview.actions.openInFinder', '在 Finder 中显示')}
+            </Button>
+          </div>
         </div>
       );
     }

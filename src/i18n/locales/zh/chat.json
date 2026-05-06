@@ -59,6 +59,7 @@
             "saving": "保存中...",
             "revert": "撤销",
             "openInFinder": "在 Finder 中显示",
+            "openDirectly": "直接打开",
             "close": "关闭"
         },
         "info": {
@@ -82,7 +83,10 @@
             "noPreview": "该文件没有预览",
             "unsupportedFormatTitle": "此文件格式暂不支持内置预览或变更",
             "unsupportedFormatHint": "当前仅支持文本/Markdown 等可直接读取的文件进行内置预览与变更对比。请在 Finder 中打开该文件。",
-            "openInFinderFailed": "无法在 Finder 中显示"
+            "largeBinaryOpenTitle": "该文件较大，暂不支持内置预览",
+            "largeBinaryOpenHint": "当前文件为 {{size}}，ClawX 不提供内置预览。你可以确认后直接使用系统默认应用打开。",
+            "openInFinderFailed": "无法在 Finder 中显示",
+            "openFailed": "打开失败：{{error}}"
         },
         "diff": {
             "noChanges": "没有可显示的变更",
@@ -90,6 +94,32 @@
             "tooLarge": "文件过大，已禁用 diff 视图，请到「源码」标签查看完整内容",
             "unavailable": "本会话没有抓到这个文件的精确变更基线，无法生成 diff。",
             "unavailableHint": "可点击顶部「预览」查看当前文件内容；若需精确差异，请在 Git 等工具中对比版本。"
+        },
+        "confirmOpen": {
+            "title": "打开文件",
+            "message": "确认直接打开「{{fileName}}」？",
+            "detail": "该文件将使用系统默认应用打开。",
+            "size": "文件大小：{{size}}",
+            "cancel": "取消"
+        },
+        "pdf": {
+            "loadFailed": "PDF 加载失败：{{error}}",
+            "prev": "上一页",
+            "next": "下一页",
+            "zoomIn": "放大",
+            "zoomOut": "缩小",
+            "zoomReset": "适配宽度",
+            "pageInputAria": "当前页",
+            "singlePageHint": "使用工具栏在 {{total}} 页之间切换"
+        },
+        "sheet": {
+            "loadFailed": "表格加载失败：{{error}}",
+            "empty": "该文件没有可展示的工作表",
+            "emptySheet": "当前工作表为空",
+            "unnamedSheet": "工作表 {{idx}}",
+            "rowRange": "行 {{from}}-{{to}} / {{total}}",
+            "prevPage": "上一页",
+            "nextPage": "下一页"
         }
     },
     "workspace": {

@@ -1095,6 +1095,20 @@ export interface ReadTextFileResult {
   error?: FilePreviewError;
 }
 
+export interface ReadBinaryFileResult {
+  ok: boolean;
+  data?: Uint8Array;
+  mimeType?: string;
+  size?: number;
+  readOnly?: boolean;
+  error?: FilePreviewError;
+}
+
+export interface ReadBinaryFileOptions {
+  /** Optional override for the per-call ceiling (capped by the main-process limit). */
+  maxBytes?: number;
+}
+
 export interface WriteTextFileResult {
   ok: boolean;
   error?: FilePreviewError;
@@ -1148,6 +1162,12 @@ export interface ListTreeResult {
 
 export const readTextFile = (path: string): Promise<ReadTextFileResult> =>
   invokeIpc<ReadTextFileResult>('file:readText', path);
+
+export const readBinaryFile = (
+  path: string,
+  opts?: ReadBinaryFileOptions,
+): Promise<ReadBinaryFileResult> =>
+  invokeIpc<ReadBinaryFileResult>('file:readBinary', path, opts);
 
 export const writeTextFile = (path: string, content: string): Promise<WriteTextFileResult> =>
   invokeIpc<WriteTextFileResult>('file:writeText', path, content);

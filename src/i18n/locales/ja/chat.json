@@ -59,6 +59,7 @@
             "saving": "保存中...",
             "revert": "元に戻す",
             "openInFinder": "Finder で表示",
+            "openDirectly": "直接開く",
             "close": "閉じる"
         },
         "info": {
@@ -82,7 +83,10 @@
             "noPreview": "このファイルにはプレビューがありません",
             "unsupportedFormatTitle": "このファイル形式は内蔵プレビューまたは差分表示に未対応です",
             "unsupportedFormatHint": "現在、内蔵プレビューと差分表示は直接読み取れるテキスト/Markdown 系ファイルのみ対応しています。Finder で開いてください。",
-            "openInFinderFailed": "Finder で表示できません"
+            "largeBinaryOpenTitle": "このファイルは大きいため内蔵プレビューできません",
+            "largeBinaryOpenHint": "このファイルは {{size}} です。ClawX では内蔵プレビューできませんが、確認後にシステム既定のアプリで開けます。",
+            "openInFinderFailed": "Finder で表示できません",
+            "openFailed": "開けませんでした: {{error}}"
         },
         "diff": {
             "noChanges": "表示する変更はありません",
@@ -90,6 +94,32 @@
             "tooLarge": "ファイルが大きすぎるため diff ビューは無効化されました。完全な内容は「ソース」タブで確認してください",
             "unavailable": "この会話ではこのファイルの正確な変更ベースラインを取得できなかったため、差分を生成できません。", 
             "unavailableHint": "「プレビュー」で現在の内容を確認するか、Git などで正確な差分を参照してください。"
+        },
+        "confirmOpen": {
+            "title": "ファイルを開く",
+            "message": "「{{fileName}}」をシステム既定のアプリで開きますか？",
+            "detail": "このファイルはシステム既定のアプリで開かれます。",
+            "size": "ファイルサイズ: {{size}}",
+            "cancel": "キャンセル"
+        },
+        "pdf": {
+            "loadFailed": "PDF の読み込みに失敗しました: {{error}}",
+            "prev": "前のページ",
+            "next": "次のページ",
+            "zoomIn": "拡大",
+            "zoomOut": "縮小",
+            "zoomReset": "幅に合わせる",
+            "pageInputAria": "現在のページ",
+            "singlePageHint": "ツールバーから {{total}} ページを切り替えできます"
+        },
+        "sheet": {
+            "loadFailed": "スプレッドシートの読み込みに失敗しました: {{error}}",
+            "empty": "表示できるワークシートがありません",
+            "emptySheet": "このワークシートは空です",
+            "unnamedSheet": "シート {{idx}}",
+            "rowRange": "行 {{from}}-{{to}} / {{total}}",
+            "prevPage": "前のページ",
+            "nextPage": "次のページ"
         }
     },
     "workspace": {

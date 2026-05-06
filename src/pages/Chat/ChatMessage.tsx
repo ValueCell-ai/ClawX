@@ -49,6 +49,19 @@ interface ChatMessageProps {
 
 interface ExtractedImage { url?: string; data?: string; mimeType: string; }
 
+function isChatPreviewDocument(file: AttachedFileMeta): boolean {
+  const name = file.fileName.toLowerCase();
+  const mime = file.mimeType.toLowerCase();
+  return (
+    mime === 'application/pdf'
+    || mime === 'application/vnd.ms-excel'
+    || mime === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    || name.endsWith('.pdf')
+    || name.endsWith('.xls')
+    || name.endsWith('.xlsx')
+  );
+}
+
 /**
  * Normalize LaTeX delimiters so `remark-math` can detect them.
  *
@@ -110,7 +123,13 @@ export const ChatMessage = memo(function ChatMessage({
   const tools = extractToolUse(message);
   const visibleTools = suppressToolCards ? [] : tools;
   const rawAttachedFiles = message._attachedFiles || [];
-  const filteredProcessAttachments = rawAttachedFiles.filter((file) => file.source !== 'tool-result' && file.source !== 'message-ref');
+  const filteredProcessAttachments = rawAttachedFiles.filter((file) => {
+    if (file.source !== 'tool-result' && file.source !== 'message-ref') return true;
+    // Runtime-produced PDF / spreadsheet artifacts should remain visible
+    // in the chat even when generic process attachments are folded into
+    // the execution graph; they are the user-facing output to click.
+    return isChatPreviewDocument(file);
+  });
   // When a message is attachment-only, keep those attachments visible even if
   // process attachments are generally suppressed for this run segment —
   // otherwise the reply disappears entirely.

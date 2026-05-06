@@ -338,11 +338,37 @@ function mimeFromExtension(filePath: string): string {
  * Extract raw file paths from message text.
  * Detects absolute paths (Unix: / or ~/, Windows: C:\ etc.) ending with common file extensions.
  * Handles both image and non-image files, consistent with channel push message behavior.
+ *
+ * Also recognises the `MEDIA:` / `media:` prefix the OpenClaw runtime
+ * emits for produced artifacts (e.g.
+ * `MEDIA:/Users/me/.openclaw/media/outbound/report.xlsx`) — without this
+ * the leading colon trips the URL guard below and the file goes unsurfaced.
  */
 function extractRawFilePaths(text: string): Array<{ filePath: string; mimeType: string }> {
   const refs: Array<{ filePath: string; mimeType: string }> = [];
   const seen = new Set<string>();
   const exts = 'png|jpe?g|gif|webp|bmp|avif|svg|pdf|docx?|xlsx?|pptx?|txt|csv|md|rtf|epub|zip|tar|gz|rar|7z|mp3|wav|ogg|aac|flac|m4a|mp4|mov|avi|mkv|webm|m4v';
+  // Tagged media references (MEDIA:/path, media:~/path, ...).  The agent
+  // runtime uses this prefix as an explicit "this is an artifact" marker,
+  // so we want them recognised even though the leading colon would
+  // normally look like a URL scheme.  After matching we punch the entire
+  // `MEDIA:<path>` span out of the working text so the generic unix
+  // regex below doesn't double-count the bare `/path` suffix.
+  const taggedRegex = new RegExp(`(?:^|[\\s(\\[{>])(?:MEDIA|media):((?:\\/|~\\/)[^\\s\\n"'()\\[\\],<>]*?\\.(?:${exts}))`, 'g');
+  let workingText = text;
+  let taggedMatch: RegExpExecArray | null;
+  while ((taggedMatch = taggedRegex.exec(text)) !== null) {
+    const p = taggedMatch[1];
+    if (p && !seen.has(p)) {
+      seen.add(p);
+      refs.push({ filePath: p, mimeType: mimeFromExtension(p) });
+    }
+    // Mask the matched span so subsequent regexes can't re-discover the
+    // same path (e.g. `/two.xlsx` from `MEDIA:~/two.xlsx`).
+    const start = taggedMatch.index;
+    const end = start + taggedMatch[0].length;
+    workingText = workingText.slice(0, start) + ' '.repeat(end - start) + workingText.slice(end);
+  }
   // Unix absolute paths (/... or ~/...) — lookbehind rejects mid-token slashes
   // (e.g. "path/to/file.mp4", "https://example.com/file.mp4")
   const unixRegex = new RegExp(`(?<![\\w./:])((?:\\/|~\\/)[^\\s\\n"'()\\[\\],<>]*?\\.(?:${exts}))`, 'gi');
@@ -350,7 +376,7 @@ function extractRawFilePaths(text: string): Array<{ filePath: string; mimeType: 
   const winRegex = new RegExp(`(?<![\\w])([A-Za-z]:\\\\[^\\s\\n"'()\\[\\],<>]*?\\.(?:${exts}))`, 'gi');
   for (const regex of [unixRegex, winRegex]) {
     let match;
-    while ((match = regex.exec(text)) !== null) {
+    while ((match = regex.exec(workingText)) !== null) {
       const p = match[1];
       if (p && !seen.has(p)) {
         seen.add(p);
@@ -582,8 +608,10 @@ function enrichWithToolResultFiles(messages: RawMessage[]): RawMessage[] {
  */
 function enrichWithCachedImages(messages: RawMessage[]): RawMessage[] {
   return messages.map((msg, idx) => {
-    // Only process user and assistant messages; skip if already enriched
-    if ((msg.role !== 'user' && msg.role !== 'assistant') || msg._attachedFiles) return msg;
+    // Only process user and assistant messages. Messages may already carry
+    // attachments from tool-result enrichment; still merge in raw paths from
+    // the visible assistant text so `/path/to/report.xlsx` becomes a card.
+    if (msg.role !== 'user' && msg.role !== 'assistant') return msg;
     const text = getMessageText(msg.content);
 
     // Path 1: [media attached: path (mime) | path] — guaranteed format from attachment button
@@ -622,13 +650,18 @@ function enrichWithCachedImages(messages: RawMessage[]): RawMessage[] {
     const allRefs = [...mediaRefs, ...rawRefs];
     if (allRefs.length === 0) return msg;
 
-    const files: AttachedFileMeta[] = allRefs.map(ref => {
+    const existingFiles = msg._attachedFiles || [];
+    const existingPaths = new Set(existingFiles.map(file => file.filePath).filter(Boolean));
+    const files: AttachedFileMeta[] = allRefs
+      .filter(ref => !existingPaths.has(ref.filePath))
+      .map(ref => {
       const cached = _imageCache.get(ref.filePath);
       if (cached) return { ...cached, filePath: ref.filePath, source: 'message-ref' };
       const fileName = ref.filePath.split(/[\\/]/).pop() || 'file';
       return { fileName, mimeType: ref.mimeType, fileSize: 0, preview: null, filePath: ref.filePath, source: 'message-ref' };
     });
-    return { ...msg, _attachedFiles: files };
+    if (files.length === 0) return msg;
+    return { ...msg, _attachedFiles: [...existingFiles, ...files] };
   });
 }
 

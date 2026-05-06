@@ -25,6 +25,27 @@ function cleanUserText(text: string): string {
     .trim();
 }
 
+/**
+ * Strip `MEDIA:/path/to/file.ext` artifact markers from assistant text so
+ * the chat bubble doesn't duplicate the file already surfaced as a card.
+ *
+ * Mirrors the regex in `chat/helpers.ts::extractRawFilePaths` (tagged
+ * variant) so anything we promote to `_attachedFiles` is also removed
+ * from the visible bubble.  Whitespace around the marker is normalised
+ * so the bubble doesn't end with a dangling blank line.
+ */
+function stripAssistantMediaTags(text: string): string {
+  if (!text) return text;
+  const exts = 'png|jpe?g|gif|webp|bmp|avif|svg|pdf|docx?|xlsx?|pptx?|txt|csv|md|rtf|epub|zip|tar|gz|rar|7z|mp3|wav|ogg|aac|flac|m4a|mp4|mov|avi|mkv|webm|m4v';
+  const tagged = new RegExp(`(^|[\\s(\\[{>])(?:MEDIA|media):(?:\\/|~\\/)[^\\s\\n"'()\\[\\],<>]*?\\.(?:${exts})`, 'g');
+  return text
+    .replace(tagged, (_, lead: string) => lead)
+    // Collapse the empty lines / orphan whitespace the strip leaves behind.
+    .replace(/[ \t]+\n/g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
 function normalizeProgressiveText(text: string | undefined): string {
   return typeof text === 'string' ? text.replace(/\r\n/g, '\n').trim() : '';
 }
@@ -143,6 +164,12 @@ export function extractText(message: RawMessage | unknown): string {
   // Strip Gateway metadata from user messages for clean display
   if (isUser && result) {
     result = cleanUserText(result);
+  } else if (!isUser && result) {
+    // Assistant-side cleanup: keep the bubble free of `MEDIA:/path` tags
+    // that the runtime emits to point at produced artifacts.  The same
+    // path is surfaced as a clickable file card via `_attachedFiles`,
+    // so leaving it inline would duplicate the artifact.
+    result = stripAssistantMediaTags(result);
   }
 
   return result;
@@ -172,7 +199,11 @@ export function extractTextSegments(message: RawMessage | unknown): string[] {
     segments = cleaned ? [cleaned] : [];
   }
 
-  if (!isUser) return segments;
+  if (!isUser) {
+    return segments
+      .map((segment) => stripAssistantMediaTags(segment))
+      .filter((segment) => segment.length > 0);
+  }
 
   return segments
     .map((segment) => cleanUserText(segment))

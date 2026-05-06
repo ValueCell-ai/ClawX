@@ -29,6 +29,67 @@ describe('ChatMessage attachment dedupe', () => {
 
     expect(screen.getByAltText('artifact.png')).toBeInTheDocument();
   });
+
+  it('keeps pdf and spreadsheet artifacts visible when process attachments are suppressed', () => {
+    const message: RawMessage = {
+      role: 'assistant',
+      content: 'Here are the generated files.',
+      _attachedFiles: [
+        {
+          fileName: 'sales.xlsx',
+          mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+          fileSize: 1024,
+          preview: null,
+          filePath: '/tmp/sales.xlsx',
+          source: 'message-ref',
+        },
+        {
+          fileName: 'report.pdf',
+          mimeType: 'application/pdf',
+          fileSize: 2048,
+          preview: null,
+          filePath: '/tmp/report.pdf',
+          source: 'tool-result',
+        },
+      ],
+    };
+
+    render(
+      <ChatMessage
+        message={message}
+        suppressProcessAttachments
+      />,
+    );
+
+    expect(screen.getByText('sales.xlsx')).toBeInTheDocument();
+    expect(screen.getByText('report.pdf')).toBeInTheDocument();
+  });
+
+  it('continues hiding non-preview process attachments when process attachments are suppressed', () => {
+    const message: RawMessage = {
+      role: 'assistant',
+      content: 'I also used a temporary file.',
+      _attachedFiles: [
+        {
+          fileName: 'debug.log',
+          mimeType: 'text/plain',
+          fileSize: 1024,
+          preview: null,
+          filePath: '/tmp/debug.log',
+          source: 'message-ref',
+        },
+      ],
+    };
+
+    render(
+      <ChatMessage
+        message={message}
+        suppressProcessAttachments
+      />,
+    );
+
+    expect(screen.queryByText('debug.log')).not.toBeInTheDocument();
+  });
 });
 
 describe('ChatMessage LaTeX rendering', () => {

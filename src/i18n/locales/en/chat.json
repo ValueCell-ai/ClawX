@@ -59,6 +59,7 @@
             "saving": "Saving...",
             "revert": "Revert",
             "openInFinder": "Reveal in Finder",
+            "openDirectly": "Open directly",
             "close": "Close"
         },
         "info": {
@@ -82,7 +83,10 @@
             "noPreview": "No preview available for this file",
             "unsupportedFormatTitle": "This file format is not supported for built-in preview or diff",
             "unsupportedFormatHint": "Built-in preview and diff currently support directly readable text/Markdown-style files only. Open the file in Finder instead.",
-            "openInFinderFailed": "Could not reveal file"
+            "largeBinaryOpenTitle": "This file is too large for built-in preview",
+            "largeBinaryOpenHint": "This file is {{size}}. ClawX cannot preview it inline, but you can confirm and open it with the system default app.",
+            "openInFinderFailed": "Could not reveal file",
+            "openFailed": "Open failed: {{error}}"
         },
         "diff": {
             "noChanges": "No changes to display",
@@ -90,6 +94,32 @@
             "tooLarge": "File too large — diff view disabled, switch to the Source tab to view the full content",
             "unavailable": "The current chat did not capture a precise baseline for this file, so no diff is available.",
             "unavailableHint": "Use the Preview tab for the current file; use Git or another VCS for an exact diff."
+        },
+        "confirmOpen": {
+            "title": "Open file",
+            "message": "Open “{{fileName}}” with the system default app?",
+            "detail": "This file will be opened with the system default application.",
+            "size": "File size: {{size}}",
+            "cancel": "Cancel"
+        },
+        "pdf": {
+            "loadFailed": "Failed to load PDF: {{error}}",
+            "prev": "Previous page",
+            "next": "Next page",
+            "zoomIn": "Zoom in",
+            "zoomOut": "Zoom out",
+            "zoomReset": "Fit to width",
+            "pageInputAria": "Current page",
+            "singlePageHint": "Use the toolbar to switch between {{total}} pages"
+        },
+        "sheet": {
+            "loadFailed": "Failed to load spreadsheet: {{error}}",
+            "empty": "This file has no displayable worksheets",
+            "emptySheet": "This worksheet is empty",
+            "unnamedSheet": "Sheet {{idx}}",
+            "rowRange": "Rows {{from}}-{{to}} / {{total}}",
+            "prevPage": "Previous rows",
+            "nextPage": "Next rows"
         }
     },
     "workspace": {

@@ -27,16 +27,34 @@ import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { LoadingSpinner } from '@/components/common/LoadingSpinner';
 import { cn } from '@/lib/utils';
-import { invokeIpc, readTextFile, writeTextFile } from '@/lib/api-client';
+import { invokeIpc, readTextFile, statFile, writeTextFile } from '@/lib/api-client';
 import type { FilePreviewTarget } from './types';
-import { supportsInlineDiff, supportsInlineDocumentPreview } from '@/lib/generated-files';
+import {
+  isPdfPreviewExt,
+  isSheetPreviewExt,
+  supportsInlineDiff,
+  supportsInlineDocumentPreview,
+  supportsRichDocumentPreview,
+} from '@/lib/generated-files';
 import { FilePreviewIcon } from './file-card-utils';
 import { formatFileSize } from './format';
+import {
+  confirmAndOpenFile,
+  shouldOfferDirectOpenFallback,
+} from './open-file-utils';
 import MarkdownPreview from './MarkdownPreview';
 import ImageViewer from './ImageViewer';
 
 const MonacoViewerLazy = lazy(() => import('./MonacoViewer'));
 const MonacoDiffViewerLazy = lazy(() => import('./MonacoDiffViewer'));
+const PdfViewerLazy = lazy(() => import('./PdfViewer'));
+const SheetViewerLazy = lazy(() => import('./SheetViewer'));
+
+/**
+ * Files past this ceiling get the direct-open fallback instead of the
+ * inline PDF / spreadsheet viewer.  Mirrors the main-process binary cap.
+ */
+const RICH_PREVIEW_MAX_BYTES = 50 * 1024 * 1024;
 
 /**
  * Tab set for the body.
@@ -199,31 +217,77 @@ export function FilePreviewBody({
   const tabs = useMemo(() => tabsForFile(file, mode), [file, mode]);
   const unsupportedPreviewFormat = file.contentType === 'document' && !supportsInlineDocumentPreview(file.ext);
   const unsupportedDiffFormat = mode === 'diff' && !supportsInlineDiff(file);
+  // Binary document previews (PDF, spreadsheet) own their own loading
+  // pipeline — we must not pipe them through `readTextFile` (which would
+  // reject them as binary) and the diff tab is intentionally hidden.
+  const isRichDocumentPreview = file.contentType === 'document' && supportsRichDocumentPreview(file.ext);
 
   useEffect(() => {
+    let cancelled = false;
     setTab(pickInitialTab(tabs, file));
+    setSize(undefined);
 
     // Diff-only mode renders entirely from the captured tool payload —
     // no disk read needed, so we can mark the body "ready" immediately.
     if (mode === 'diff') {
       setState({ status: 'ready', content: '', readOnly: enforcedReadOnly });
       setDraft(null);
-      return;
+      return () => {
+        cancelled = true;
+      };
     }
 
     if (unsupportedPreviewFormat) {
       setState({ status: 'ready', content: '', readOnly: enforcedReadOnly });
       setDraft(null);
-      return;
+      void statFile(file.filePath)
+        .then((res) => {
+          if (cancelled || !res.ok) return;
+          setSize(res.size);
+        })
+        .catch(() => {
+          // Ignore stat failures — unsupported preview still renders.
+        });
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    if (isRichDocumentPreview) {
+      // PdfViewer / SheetViewer load bytes themselves through the binary
+      // IPC channel; the body just needs to hand off control. For files
+      // beyond the inline-preview ceiling we keep the existing
+      // "direct open" fallback so users still have a way out.
+      setState({ status: 'loading' });
+      setDraft(null);
+      void statFile(file.filePath)
+        .then((res) => {
+          if (cancelled) return;
+          if (res.ok && typeof res.size === 'number' && res.size > RICH_PREVIEW_MAX_BYTES) {
+            setSize(res.size);
+            setState({ status: 'tooLarge', size: res.size });
+            return;
+          }
+          if (res.ok) setSize(res.size);
+          setState({ status: 'ready', content: '', readOnly: enforcedReadOnly });
+        })
+        .catch(() => {
+          if (cancelled) return;
+          setState({ status: 'ready', content: '', readOnly: enforcedReadOnly });
+        });
+      return () => {
+        cancelled = true;
+      };
     }
 
     if (file.contentType === 'snapshot' || file.contentType === 'video' || file.contentType === 'audio') {
       setState({ status: 'ready', content: '', readOnly: enforcedReadOnly });
       setDraft(null);
-      return;
+      return () => {
+        cancelled = true;
+      };
     }
 
-    let cancelled = false;
     setState({ status: 'loading' });
     readTextFile(file.filePath)
       .then((res) => {
@@ -260,7 +324,7 @@ export function FilePreviewBody({
     return () => {
       cancelled = true;
     };
-  }, [file, enforcedReadOnly, mode, tabs, unsupportedPreviewFormat]);
+  }, [file, enforcedReadOnly, mode, tabs, unsupportedPreviewFormat, isRichDocumentPreview]);
 
   const effectiveReadOnly = state.status === 'ready' ? state.readOnly : true;
   const dirty =
@@ -299,25 +363,51 @@ export function FilePreviewBody({
     });
   }, [file, t]);
 
-  const renderUnsupportedFormat = () => (
+  const handleOpenDirectly = useCallback(async () => {
+    try {
+      await confirmAndOpenFile({ filePath: file.filePath, fileName: file.fileName, size, t });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      toast.error(t('filePreview.errors.openFailed', { defaultValue: '打开失败：{{error}}', error: message }));
+    }
+  }, [file, size, t]);
+
+  const renderUnsupportedFormat = () => {
+    const directOpen = shouldOfferDirectOpenFallback(file.ext, size);
+    return (
     <div className="flex h-full flex-col items-center justify-center gap-4 px-8 text-center">
       <div className="space-y-1.5">
         <p className="text-sm font-medium text-foreground">
-          {t('filePreview.errors.unsupportedFormatTitle', '此文件格式暂不支持内置预览或变更')}
+          {directOpen
+            ? t('filePreview.errors.largeBinaryOpenTitle', '该文件较大，暂不支持内置预览')
+            : t('filePreview.errors.unsupportedFormatTitle', '此文件格式暂不支持内置预览或变更')}
         </p>
         <p className="max-w-md text-xs leading-relaxed text-muted-foreground">
-          {t(
-            'filePreview.errors.unsupportedFormatHint',
-            '当前仅支持文本/Markdown 等可直接读取的文件进行内置预览与变更对比。请在 Finder 中打开该文件。',
-          )}
+          {directOpen
+            ? t('filePreview.errors.largeBinaryOpenHint', {
+              defaultValue: '当前文件为 {{size}}，ClawX 不提供内置预览。你可以确认后直接使用系统默认应用打开。',
+              size: formatFileSize(size ?? 0) || '> 2MB',
+            })
+            : t(
+              'filePreview.errors.unsupportedFormatHint',
+              '当前仅支持文本/Markdown 等可直接读取的文件进行内置预览与变更对比。请在 Finder 中打开该文件。',
+            )}
         </p>
       </div>
-      <Button variant="outline" size="sm" onClick={handleOpenInFinder}>
-        <FolderOpen className="mr-2 h-4 w-4" />
-        {t('filePreview.actions.openInFinder', '在 Finder 中显示')}
-      </Button>
+      <div className="flex flex-wrap items-center justify-center gap-2">
+        {directOpen && (
+          <Button size="sm" onClick={handleOpenDirectly}>
+            {t('filePreview.actions.openDirectly', '直接打开')}
+          </Button>
+        )}
+        <Button variant="outline" size="sm" onClick={handleOpenInFinder}>
+          <FolderOpen className="mr-2 h-4 w-4" />
+          {t('filePreview.actions.openInFinder', '在 Finder 中显示')}
+        </Button>
+      </div>
     </div>
   );
+  };
 
   const renderBody = () => {
     if (unsupportedPreviewFormat || unsupportedDiffFormat) {
@@ -331,18 +421,31 @@ export function FilePreviewBody({
       );
     }
     if (state.status === 'tooLarge') {
+      const directOpen = shouldOfferDirectOpenFallback(file.ext, state.size ?? size);
       return (
         <div className="flex h-full flex-col items-center justify-center gap-3 px-6 text-center text-sm text-muted-foreground">
           <p>
-            {t('filePreview.errors.tooLarge', {
-              defaultValue: '文件过大（{{size}}），已禁用预览',
-              size: formatFileSize(state.size ?? 0) || '> 2MB',
-            })}
+            {directOpen
+              ? t('filePreview.errors.largeBinaryOpenHint', {
+                defaultValue: '当前文件为 {{size}}，ClawX 不提供内置预览。你可以确认后直接使用系统默认应用打开。',
+                size: formatFileSize(state.size ?? size ?? 0) || '> 2MB',
+              })
+              : t('filePreview.errors.tooLarge', {
+                defaultValue: '文件过大（{{size}}），已禁用预览',
+                size: formatFileSize(state.size ?? 0) || '> 2MB',
+              })}
           </p>
-          <Button variant="outline" size="sm" onClick={handleOpenInFinder}>
-            <FolderOpen className="mr-2 h-4 w-4" />
-            {t('filePreview.actions.openInFinder', '在 Finder 中显示')}
-          </Button>
+          <div className="flex flex-wrap items-center justify-center gap-2">
+            {directOpen && (
+              <Button size="sm" onClick={handleOpenDirectly}>
+                {t('filePreview.actions.openDirectly', '直接打开')}
+              </Button>
+            )}
+            <Button variant="outline" size="sm" onClick={handleOpenInFinder}>
+              <FolderOpen className="mr-2 h-4 w-4" />
+              {t('filePreview.actions.openInFinder', '在 Finder 中显示')}
+            </Button>
+          </div>
         </div>
       );
     }
@@ -445,6 +548,26 @@ export function FilePreviewBody({
             <TabsContent value="preview" className="m-0 h-full overflow-auto">
               {file.contentType === 'snapshot' ? (
                 <ImageViewer filePath={file.filePath} fileName={file.fileName} />
+              ) : isPdfPreviewExt(file.ext) ? (
+                <Suspense
+                  fallback={
+                    <div className="flex h-full items-center justify-center">
+                      <LoadingSpinner />
+                    </div>
+                  }
+                >
+                  <PdfViewerLazy filePath={file.filePath} fileName={file.fileName} />
+                </Suspense>
+              ) : isSheetPreviewExt(file.ext) ? (
+                <Suspense
+                  fallback={
+                    <div className="flex h-full items-center justify-center">
+                      <LoadingSpinner />
+                    </div>
+                  }
+                >
+                  <SheetViewerLazy filePath={file.filePath} fileName={file.fileName} />
+                </Suspense>
               ) : file.contentType === 'document' ? (
                 <MarkdownPreview source={draft ?? state.content} />
               ) : (

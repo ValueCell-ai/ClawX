@@ -130,6 +130,7 @@ const electronAPI = {
         'media:saveImage',
         // File preview (sandboxed read/write/list/tree)
         'file:readText',
+        'file:readBinary',
         'file:writeText',
         'file:stat',
         'file:listDir',
