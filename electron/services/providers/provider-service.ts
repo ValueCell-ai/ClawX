@@ -28,7 +28,11 @@ import {
   setDefaultProvider,
   storeApiKey,
 } from '../../utils/secure-storage';
-import { getActiveOpenClawProviders, getOpenClawProvidersConfig } from '../../utils/openclaw-auth';
+import {
+  getActiveOpenClawProviders,
+  getOpenClawProvidersConfig,
+  getProviderApiKeyFromOpenClaw,
+} from '../../utils/openclaw-auth';
 import { getAliasSourceTypes, getOpenClawProviderKeyForType } from '../../utils/provider-keys';
 import type { ProviderWithKeyInfo } from '../../shared/providers/types';
 import { logger } from '../../utils/logger';
@@ -370,7 +374,10 @@ export class ProviderService {
     const accounts = await this.listAccounts();
     const results: Array<{ accountId: string; hasKey: boolean; keyMasked: string | null }> = [];
     for (const account of accounts) {
-      const apiKey = await getApiKey(account.id);
+      const runtimeProviderKey = getOpenClawProviderKeyForType(account.vendorId, account.id);
+      const apiKey = (await getProviderApiKeyFromOpenClaw(runtimeProviderKey))
+        ?? (await getApiKey(account.id))
+        ?? (runtimeProviderKey !== account.id ? await getApiKey(runtimeProviderKey) : null);
       results.push({
         accountId: account.id,
         hasKey: !!apiKey,
@@ -387,6 +394,16 @@ export class ProviderService {
 
   /** Check whether an account has an API key stored. */
   async hasAccountApiKey(accountId: string): Promise<boolean> {
+    const account = await this.getAccount(accountId);
+    const runtimeProviderKey = account
+      ? getOpenClawProviderKeyForType(account.vendorId, account.id)
+      : accountId;
+    if (await getProviderApiKeyFromOpenClaw(runtimeProviderKey)) {
+      return true;
+    }
+    if (runtimeProviderKey !== accountId && (await hasApiKey(runtimeProviderKey))) {
+      return true;
+    }
     return this._hasProviderApiKeyInternal(accountId);
   }
 

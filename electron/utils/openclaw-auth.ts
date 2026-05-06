@@ -418,6 +418,57 @@ async function writeAuthProfiles(store: AuthProfilesStore, agentId = 'main'): Pr
   await writeJsonFile(getAuthProfilesPath(agentId), store);
 }
 
+function getApiKeyFromAuthProfilesStore(
+  store: AuthProfilesStore,
+  provider: string,
+): string | null {
+  const profileIds = [
+    store.lastGood?.[provider],
+    ...(store.order?.[provider] ?? []),
+    `${provider}:default`,
+  ].filter((id): id is string => Boolean(id));
+
+  for (const profileId of profileIds) {
+    const profile = store.profiles[profileId];
+    if (profile?.type === 'api_key' && profile.provider === provider && profile.key) {
+      return profile.key;
+    }
+  }
+
+  for (const profile of Object.values(store.profiles)) {
+    if (profile.type === 'api_key' && profile.provider === provider && profile.key) {
+      return profile.key;
+    }
+  }
+
+  return null;
+}
+
+/**
+ * Read the API key OpenClaw will use for a runtime provider key.
+ *
+ * This intentionally reads auth-profiles.json rather than ClawX's provider
+ * cache, so UI status can reflect providers imported or preserved by the
+ * OpenClaw runtime across overwrite installs.
+ */
+export async function getProviderApiKeyFromOpenClaw(
+  provider: string,
+  agentId?: string,
+): Promise<string | null> {
+  const agentIds = agentId ? [agentId] : await discoverAgentIds();
+  if (agentIds.length === 0) agentIds.push('main');
+
+  for (const id of agentIds) {
+    const store = await readAuthProfiles(id);
+    const apiKey = getApiKeyFromAuthProfilesStore(store, provider);
+    if (apiKey) {
+      return apiKey;
+    }
+  }
+
+  return null;
+}
+
 // ── Agent Discovery ──────────────────────────────────────────────
 
 async function discoverAgentIds(): Promise<string[]> {
