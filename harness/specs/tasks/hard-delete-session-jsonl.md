@@ -11,6 +11,7 @@ touchedAreas:
   - src/stores/chat.ts
   - tests/unit/session-delete-route.test.ts
   - harness/specs/tasks/hard-delete-session-jsonl.md
+  - AGENTS.md
 expectedUserBehavior:
   - Confirming "Delete" in the sidebar conversation menu removes <id>.jsonl, <id>.deleted.jsonl and any <id>.jsonl.reset.* siblings from the agent's sessions folder.
   - The session entry is removed from sessions.json so OpenClaw sessions.list stops returning it.
