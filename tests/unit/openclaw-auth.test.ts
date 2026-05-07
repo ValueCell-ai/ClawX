@@ -465,6 +465,86 @@ describe('sanitizeOpenClawConfig', () => {
     expect(telegram.botToken).toBe('telegram-token');
   });
 
+  it('normalizes legacy feishu plugin state to a single external plugin and disables built-in feishu', async () => {
+    await writeOpenClawJson({
+      channels: {
+        feishu: {
+          enabled: true,
+          appId: 'cli-feishu-app',
+          appSecret: 'cli-feishu-secret',
+        },
+      },
+      plugins: {
+        enabled: true,
+        allow: ['custom-plugin', 'feishu', 'openclaw-lark'],
+        entries: {
+          'custom-plugin': { enabled: true },
+          feishu: { enabled: true },
+          'openclaw-lark': { enabled: true, config: { preserved: true } },
+        },
+      },
+    });
+
+    const legacyPluginDir = join(testHome, '.openclaw', 'extensions', 'openclaw-lark');
+    await mkdir(legacyPluginDir, { recursive: true });
+    await writeFile(
+      join(legacyPluginDir, 'openclaw.plugin.json'),
+      JSON.stringify({ id: 'openclaw-lark' }, null, 2),
+      'utf8',
+    );
+
+    const { sanitizeOpenClawConfig } = await import('@electron/utils/openclaw-auth');
+    await sanitizeOpenClawConfig();
+
+    const result = await readOpenClawJson();
+    const plugins = result.plugins as Record<string, unknown>;
+    const allow = plugins.allow as string[];
+    const entries = plugins.entries as Record<string, Record<string, unknown>>;
+
+    expect(allow).toContain('openclaw-lark');
+    expect(allow).not.toContain('feishu');
+    expect(entries['openclaw-lark']).toEqual({
+      enabled: true,
+      config: { preserved: true },
+    });
+    expect(entries.feishu).toEqual({ enabled: false });
+  });
+
+  it('removes residual feishu plugin registrations when feishu channel is not configured', async () => {
+    await writeOpenClawJson({
+      channels: {
+        telegram: {
+          enabled: true,
+          botToken: 'telegram-token',
+        },
+      },
+      plugins: {
+        enabled: true,
+        allow: ['custom-plugin', 'feishu', 'openclaw-lark'],
+        entries: {
+          'custom-plugin': { enabled: true },
+          feishu: { enabled: false },
+          'openclaw-lark': { enabled: true },
+        },
+      },
+    });
+
+    const { sanitizeOpenClawConfig } = await import('@electron/utils/openclaw-auth');
+    await sanitizeOpenClawConfig();
+
+    const result = await readOpenClawJson();
+    const plugins = result.plugins as Record<string, unknown>;
+    const allow = plugins.allow as string[];
+    const entries = plugins.entries as Record<string, Record<string, unknown>>;
+
+    expect(allow).toContain('custom-plugin');
+    expect(allow).not.toContain('feishu');
+    expect(allow).not.toContain('openclaw-lark');
+    expect(entries['custom-plugin']).toEqual({ enabled: true });
+    expect(entries.feishu).toBeUndefined();
+    expect(entries['openclaw-lark']).toBeUndefined();
+  });
+
   it('strips defaultAccount (but preserves accounts) from dingtalk during sanitize', async () => {
     await writeOpenClawJson({
       channels: {

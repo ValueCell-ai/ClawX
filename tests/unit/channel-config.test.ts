@@ -159,6 +159,35 @@ describe('WeCom plugin configuration', () => {
     expect(plugins.entries['wecom'].enabled).toBe(true);
   });
 
+  it('normalizes feishu plugin registration to openclaw-lark and disables built-in feishu on save', async () => {
+    const { saveChannelConfig, writeOpenClawConfig } = await import('@electron/utils/channel-config');
+
+    await writeOpenClawConfig({
+      plugins: {
+        enabled: true,
+        allow: ['custom-plugin', 'feishu', 'feishu-openclaw-plugin'],
+        entries: {
+          'custom-plugin': { enabled: true },
+          feishu: { enabled: true },
+          'feishu-openclaw-plugin': { enabled: true },
+        },
+      },
+    });
+
+    await saveChannelConfig('feishu', { appId: 'test-app', appSecret: 'test-secret' }, 'default');
+
+    const config = await readOpenClawJson();
+    const plugins = config.plugins as { allow: string[]; entries: Record<string, { enabled?: boolean }> };
+
+    expect(plugins.allow).toContain('custom-plugin');
+    expect(plugins.allow).toContain('openclaw-lark');
+    expect(plugins.allow).not.toContain('feishu');
+    expect(plugins.allow).not.toContain('feishu-openclaw-plugin');
+    expect(plugins.entries['openclaw-lark']).toEqual({ enabled: true });
+    expect(plugins.entries.feishu).toEqual({ enabled: false });
+    expect(plugins.entries['feishu-openclaw-plugin']).toBeUndefined();
+  });
+
   it('saves whatsapp as a built-in channel instead of a plugin', async () => {
     const { saveChannelConfig } = await import('@electron/utils/channel-config');
 
