@@ -159,7 +159,7 @@ describe('Channels page status refresh', () => {
     });
 
     fireEvent.change(screen.getByLabelText('account.customIdLabel'), {
-      target: { value: '测试账号' },
+      target: { value: 'Test Account' },
     });
     const appIdInput = document.getElementById('appId') as HTMLInputElement | null;
     const appSecretInput = document.getElementById('appSecret') as HTMLInputElement | null;

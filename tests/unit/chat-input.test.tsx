@@ -137,9 +137,9 @@ describe('ChatInput agent targeting', () => {
     renderChatInput();
 
     const textbox = screen.getByRole('textbox') as HTMLTextAreaElement;
-    fireEvent.change(textbox, { target: { value: '我没有填写Skill' } });
+    fireEvent.change(textbox, { target: { value: 'I did not type Skill' } });
 
-    expect(textbox).toHaveValue('我没有填写Skill');
+    expect(textbox).toHaveValue('I did not type Skill');
     expect(screen.queryByTestId('chat-composer-skill-token')).not.toBeInTheDocument();
     expect(textbox.className).not.toContain('text-transparent');
   });
@@ -399,14 +399,14 @@ describe('ChatInput agent targeting', () => {
     renderChatInput();
 
     const textbox = screen.getByRole('textbox') as HTMLTextAreaElement;
-    fireEvent.change(textbox, { target: { value: '哈哈哈哈你好' } });
+    fireEvent.change(textbox, { target: { value: 'hellothere' } });
     textbox.focus();
-    textbox.setSelectionRange('哈哈哈哈'.length, '哈哈哈哈'.length);
+    textbox.setSelectionRange('hello'.length, 'hello'.length);
 
     fireEvent.click(screen.getByTitle('Choose skill'));
     fireEvent.click(await screen.findByText('/docx'));
 
-    expect(textbox).toHaveValue('哈哈哈哈 /docx  你好');
+    expect(textbox).toHaveValue('hello /docx  there');
   });
 
   it('allows inserting the same skill multiple times as separate blocks', async () => {

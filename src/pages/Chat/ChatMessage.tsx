@@ -664,7 +664,7 @@ function FileCard({ file, onOpen }: { file: AttachedFileMeta; onOpen?: (file: At
       <div className="min-w-0 overflow-hidden">
         <p className="text-xs font-medium truncate">{file.fileName}</p>
         <p className="text-2xs text-muted-foreground">
-          {file.mimeType === DIRECTORY_MIME_TYPE ? '文件夹' : file.fileSize > 0 ? formatFileSize(file.fileSize) : 'File'}
+          {file.mimeType === DIRECTORY_MIME_TYPE ? 'Folder' : file.fileSize > 0 ? formatFileSize(file.fileSize) : 'File'}
         </p>
       </div>
     </div>
@@ -790,7 +790,7 @@ function ImageLightbox({
               size="icon"
               className="h-8 w-8 bg-white/10 hover:bg-white/20 text-white"
               onClick={handleShowInFolder}
-              title="在文件夹中显示"
+              title="Reveal in file manager"
             >
               <FolderOpen className="h-4 w-4" />
             </Button>
@@ -800,7 +800,7 @@ function ImageLightbox({
             size="icon"
             className="h-8 w-8 bg-white/10 hover:bg-white/20 text-white"
             onClick={onClose}
-            title="关闭"
+            title="Close"
           >
             <X className="h-4 w-4" />
           </Button>

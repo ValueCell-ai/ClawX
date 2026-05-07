@@ -498,8 +498,8 @@ describe('agent config lifecycle', () => {
 
     const { createAgent, listAgentsSnapshot } = await import('@electron/utils/agent-config');
 
-    await createAgent('测试2');
-    await createAgent('测试1');
+    await createAgent('テスト2');
+    await createAgent('テスト1');
 
     const snapshot = await listAgentsSnapshot();
     const agentIds = snapshot.agents.map((agent) => agent.id);

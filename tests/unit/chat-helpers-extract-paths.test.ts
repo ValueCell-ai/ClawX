@@ -41,9 +41,8 @@ describe('extractRawFilePaths', () => {
   });
 
   it('captures MEDIA: paths that contain ASCII spaces (macOS screenshot default name)', () => {
-    // Regression: macOS' default screenshot filename is
-    //   "Screenshot YYYY-MM-DD at HH.MM.SS.png" (en locale) or
-    //   "截屏 YYYY-MM-DD HH.MM.SS.png" (zh locale)
+    // Regression: macOS' default screenshot filename may contain
+    // spaces, regardless of locale-specific naming conventions.
     // and the agent typically emits it verbatim via `MEDIA:` after
     // `ls ~/Desktop`. The previous regex excluded ASCII spaces from the
     // captured path, which made the extractor stop at "Screenshot" and
@@ -59,14 +58,14 @@ describe('extractRawFilePaths', () => {
     ]);
   });
 
-  it('captures MEDIA: paths whose filename is non-ASCII (zh-locale macOS screenshot)', () => {
-    // Companion to the previous case — make sure paths whose filename
-    // is full-Unicode (the zh-locale macOS default) are also captured.
-    const sample = 'Sending the screenshot now:\n\nMEDIA:/Users/alice/Desktop/截屏 2026-05-06 17.46.51.png';
+  it('captures MEDIA: paths whose filename is non-ASCII', () => {
+    // Companion to the previous case — make sure fully Unicode
+    // filenames are also captured.
+    const sample = 'Sending the screenshot now:\n\nMEDIA:/Users/alice/Desktop/스크린샷 2026-05-06 17.46.51.png';
     const refs = extractRawFilePaths(sample);
     expect(refs).toEqual([
       {
-        filePath: '/Users/alice/Desktop/截屏 2026-05-06 17.46.51.png',
+        filePath: '/Users/alice/Desktop/스크린샷 2026-05-06 17.46.51.png',
         mimeType: 'image/png',
       },
     ]);
@@ -83,16 +82,16 @@ describe('extractRawFilePaths', () => {
   });
 
   it('detects OpenClaw skill directories without file extensions', () => {
-    const refs = extractRawFilePaths('位置： ~/.openclaw/skills/open-eastmoney');
+    const refs = extractRawFilePaths('Location: ~/.openclaw/skills/open-eastmoney');
     expect(refs).toEqual([
       { filePath: '~/.openclaw/skills/open-eastmoney', mimeType: 'application/x-directory' },
     ]);
   });
 
   it('preserves unicode Windows skill directory paths', () => {
-    const refs = extractRawFilePaths(String.raw`位置： C:\Users\张三\.openclaw\skills\打开东方财富。`);
+    const refs = extractRawFilePaths(String.raw`Location: C:\Users\Åsa\.openclaw\skills\röst-skill.`);
     expect(refs).toEqual([
-      { filePath: String.raw`C:\Users\张三\.openclaw\skills\打开东方财富`, mimeType: 'application/x-directory' },
+      { filePath: String.raw`C:\Users\Åsa\.openclaw\skills\röst-skill`, mimeType: 'application/x-directory' },
     ]);
   });
 });

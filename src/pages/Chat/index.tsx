@@ -152,7 +152,7 @@ export function Chat() {
           }
         })
         .catch(() => {
-          toast.error(t('filePreview.errors.openInFinderFailed', '无法在文件管理器中显示'));
+          toast.error(t('filePreview.errors.openInFinderFailed', 'Could not reveal file'));
         });
       return;
     }

@@ -361,7 +361,7 @@ function extractRawFilePaths(text: string): Array<{ filePath: string; mimeType: 
   // `MEDIA:<path>` span out of the working text so the generic unix
   // regex below doesn't double-count the bare `/path` suffix.
   // The character class deliberately allows ASCII spaces inside the path so
-  // that macOS' default screenshot filename ("截屏 2026-05-06 17.46.51.png")
+  // that macOS' default screenshot filename ("Screenshot 2026-05-06 at 17.46.51.png")
   // and other space-containing paths the agent emits with the explicit
   // `MEDIA:` marker still resolve. Newline and quote characters remain
   // path terminators so we don't accidentally swallow trailing prose.

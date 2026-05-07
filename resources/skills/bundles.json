@@ -3,9 +3,9 @@
     {
       "id": "productivity",
       "name": "Productivity",
-      "nameZh": "效率办公",
+      "nameZh": "\u6548\u7387\u529e\u516c",
       "description": "Calendar, reminders, notes, email management",
-      "descriptionZh": "日历、提醒、笔记、邮件管理",
+      "descriptionZh": "\u65e5\u5386\u3001\u63d0\u9192\u3001\u7b14\u8bb0\u3001\u90ae\u4ef6\u7ba1\u7406",
       "icon": "📋",
       "skills": [
         "apple-reminders",
@@ -20,9 +20,9 @@
     {
       "id": "developer",
       "name": "Developer Tools",
-      "nameZh": "开发者工具",
+      "nameZh": "\u5f00\u53d1\u8005\u5de5\u5177",
       "description": "GitHub, coding assistant, terminal management",
-      "descriptionZh": "GitHub、代码助手、终端管理",
+      "descriptionZh": "GitHub\u3001\u4ee3\u7801\u52a9\u624b\u3001\u7ec8\u7aef\u7ba1\u7406",
       "icon": "💻",
       "skills": [
         "github",
@@ -34,9 +34,9 @@
     {
       "id": "smart-home",
       "name": "Smart Home",
-      "nameZh": "智能家居",
+      "nameZh": "\u667a\u80fd\u5bb6\u5c45",
       "description": "Lights, music, device control",
-      "descriptionZh": "灯光、音乐、设备控制",
+      "descriptionZh": "\u706f\u5149\u3001\u97f3\u4e50\u3001\u8bbe\u5907\u63a7\u5236",
       "icon": "🏠",
       "skills": [
         "openhue",
@@ -47,9 +47,9 @@
     {
       "id": "media",
       "name": "Media & Creative",
-      "nameZh": "多媒体创作",
+      "nameZh": "\u591a\u5a92\u4f53\u521b\u4f5c",
       "description": "Image generation, video processing, audio transcription",
-      "descriptionZh": "图片生成、视频处理、音频转写",
+      "descriptionZh": "\u56fe\u7247\u751f\u6210\u3001\u89c6\u9891\u5904\u7406\u3001\u97f3\u9891\u8f6c\u5199",
       "icon": "🎨",
       "skills": [
         "openai-image-gen",
@@ -61,9 +61,9 @@
     {
       "id": "communication",
       "name": "Communication",
-      "nameZh": "通讯增强",
+      "nameZh": "\u901a\u8baf\u589e\u5f3a",
       "description": "Messaging, voice calls, notifications",
-      "descriptionZh": "消息管理、语音通话、通知",
+      "descriptionZh": "\u6d88\u606f\u7ba1\u7406\u3001\u8bed\u97f3\u901a\u8bdd\u3001\u901a\u77e5",
       "icon": "💬",
       "skills": [
         "discord",
@@ -75,9 +75,9 @@
     {
       "id": "security",
       "name": "Security & Privacy",
-      "nameZh": "安全隐私",
+      "nameZh": "\u5b89\u5168\u9690\u79c1",
       "description": "Password management, secrets",
-      "descriptionZh": "密码管理、密钥存储",
+      "descriptionZh": "\u5bc6\u7801\u7ba1\u7406\u3001\u5bc6\u94a5\u5b58\u50a8",
       "icon": "🔐",
       "skills": [
         "1password"
@@ -86,9 +86,9 @@
     {
       "id": "information",
       "name": "Information",
-      "nameZh": "信息获取",
+      "nameZh": "\u4fe1\u606f\u83b7\u53d6",
       "description": "Weather, news, web browsing",
-      "descriptionZh": "天气、新闻、网页浏览",
+      "descriptionZh": "\u5929\u6c14\u3001\u65b0\u95fb\u3001\u7f51\u9875\u6d4f\u89c8",
       "icon": "🌐",
       "skills": [
         "weather",
