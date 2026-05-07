@@ -127,8 +127,8 @@ test.describe('ClawX chat file changes', () => {
         root.classList.remove('dark');
         root.classList.add('light');
       });
-      await expect(page.getByRole('button', { name: '工作空间' })).toHaveCount(0);
-      await expect(page.getByText('查看文件变更')).toHaveCount(0);
+      await expect(page.getByRole('button', { name: 'Workspace' })).toHaveCount(0);
+      await expect(page.getByText('View file changes')).toHaveCount(0);
 
       const fileCard = page.getByRole('button', { name: /demo\.ts/ }).first();
       await expect(fileCard).toBeVisible({ timeout: 30_000 });
@@ -136,7 +136,7 @@ test.describe('ClawX chat file changes', () => {
       await expect(fileCard).toContainText('-1');
 
       await fileCard.click();
-      await expect(page.locator('aside').getByRole('button', { name: '工作空间' })).toHaveCount(0);
+      await expect(page.locator('aside').getByRole('button', { name: 'Workspace' })).toHaveCount(0);
       await expect(fileCard).toContainText('demo.ts');
 
       const diffBackground = page.getByTestId('monaco-diff-viewer').locator('.monaco-editor-background').first();
@@ -221,7 +221,7 @@ test.describe('ClawX chat file changes', () => {
       await sidePanel.getByTestId('artifact-panel-tab-browser').click();
       await sidePanel.getByTestId('artifact-panel-tab-preview').click();
       await expect(sidePanel.getByRole('heading', { name: 'SKILL.md' })).toBeVisible();
-      await expect(sidePanel.getByText('尚未选择文件')).toHaveCount(0);
+      await expect(sidePanel.getByText('No file selected')).toHaveCount(0);
     } finally {
       await closeElectronApp(app);
     }

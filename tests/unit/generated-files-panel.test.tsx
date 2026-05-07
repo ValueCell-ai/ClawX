@@ -6,7 +6,7 @@ import type { GeneratedFile } from '@/lib/generated-files';
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
     t: (_key: string, params?: Record<string, unknown>) => {
-      if (typeof params?.count === 'number') return `文件变更（${params.count} 个）`;
+      if (typeof params?.count === 'number') return `File changes (${params.count})`;
       return '';
     },
   }),

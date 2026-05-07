@@ -45,14 +45,14 @@ describe('FilePreviewBody', () => {
       />,
     );
 
-    const openButton = await screen.findByRole('button', { name: '直接打开' });
+    const openButton = await screen.findByRole('button', { name: 'Open directly' });
     expect(openButton).toBeVisible();
 
     fireEvent.click(openButton);
 
     await waitFor(() => {
       expect(invokeIpc).toHaveBeenCalledWith('dialog:message', expect.objectContaining({
-        buttons: expect.arrayContaining(['直接打开']),
+        buttons: expect.arrayContaining(['Open directly']),
       }));
       expect(invokeIpc).toHaveBeenCalledWith('shell:openPath', '/tmp/large-report.pdf');
     });
