@@ -8,6 +8,20 @@ async function getZoomLevel(app: ElectronApplication): Promise<number> {
   });
 }
 
+async function sendZoomShortcut(app: ElectronApplication, action: 'in' | 'out'): Promise<void> {
+  await app.evaluate(({ BrowserWindow }, zoomAction) => {
+    const win = BrowserWindow.getAllWindows()[0];
+    const contents = win?.webContents;
+    if (!contents) return;
+
+    const input = zoomAction === 'out'
+      ? { key: '-', code: 'Minus', control: true, meta: false, alt: false }
+      : { key: '=', code: 'Equal', control: true, meta: false, alt: false };
+
+    contents.emit('before-input-event', { preventDefault() {} }, input);
+  }, action);
+}
+
 test.describe('ClawX window zoom shortcuts', () => {
   test('can zoom back in after zooming out with keyboard shortcuts', async ({ launchElectronApp }) => {
     const app = await launchElectronApp({ skipSetup: true });
@@ -20,10 +34,10 @@ test.describe('ClawX window zoom shortcuts', () => {
         BrowserWindow.getAllWindows()[0]?.webContents.setZoomLevel(0);
       });
 
-      await page.keyboard.press('Control+-');
+      await sendZoomShortcut(app, 'out');
       await expect.poll(async () => await getZoomLevel(app)).toBe(-1);
 
-      await page.keyboard.press('Control+Shift+=');
+      await sendZoomShortcut(app, 'in');
       await expect.poll(async () => await getZoomLevel(app)).toBe(0);
     } finally {
       await closeElectronApp(app);

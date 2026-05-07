@@ -61,11 +61,12 @@ export function ArtifactPanel({ files, agent, runStartedAt, refreshSignal }: Art
   };
 
   return (
-    <div className="flex h-full min-h-0 flex-col bg-background">
+    <div data-testid="artifact-panel" className="flex h-full min-h-0 flex-col bg-background">
       <div className="flex shrink-0 items-center justify-between gap-2 border-b border-black/5 px-3 py-2 dark:border-white/10">
         <div className="flex min-w-0 items-center gap-1">
           {richFocusedFile ? (
             <PanelTabButton
+              testId="artifact-panel-action-open-folder"
               icon={<FolderOpen className="h-3.5 w-3.5" />}
               label={t('generatedFiles.openFolder', '打开文件夹')}
               active={false}
@@ -73,6 +74,7 @@ export function ArtifactPanel({ files, agent, runStartedAt, refreshSignal }: Art
             />
           ) : (
             <PanelTabButton
+              testId="artifact-panel-tab-changes"
               icon={<FileEdit className="h-3.5 w-3.5" />}
               label={t('artifactPanel.tabs.changes', '变更')}
               active={visibleTab === 'changes'}
@@ -80,6 +82,7 @@ export function ArtifactPanel({ files, agent, runStartedAt, refreshSignal }: Art
             />
           )}
           <PanelTabButton
+            testId="artifact-panel-tab-preview"
             icon={<Eye className="h-3.5 w-3.5" />}
             label={t('artifactPanel.tabs.preview', '预览')}
             active={visibleTab === 'preview'}
@@ -87,6 +90,7 @@ export function ArtifactPanel({ files, agent, runStartedAt, refreshSignal }: Art
           />
           {WORKSPACE_BROWSER_ENABLED && (
             <PanelTabButton
+              testId="artifact-panel-tab-browser"
               icon={<FolderTree className="h-3.5 w-3.5" />}
               label={t('artifactPanel.tabs.browser', '工作空间')}
               active={visibleTab === 'browser'}
@@ -129,15 +133,17 @@ export function ArtifactPanel({ files, agent, runStartedAt, refreshSignal }: Art
 }
 
 interface PanelTabButtonProps {
+  testId?: string;
   icon: React.ReactNode;
   label: string;
   active: boolean;
   onClick: () => void;
 }
 
-function PanelTabButton({ icon, label, active, onClick }: PanelTabButtonProps) {
+function PanelTabButton({ testId, icon, label, active, onClick }: PanelTabButtonProps) {
   return (
     <button
+      data-testid={testId}
       type="button"
       onClick={onClick}
       className={cn(

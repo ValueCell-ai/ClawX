@@ -211,16 +211,16 @@ test.describe('ClawX chat file changes', () => {
       }
 
       await expect(page.getByTestId('main-layout')).toBeVisible();
-      await page.getByText('SKILL.md').first().click();
+      const skillFileCard = page.locator('[title="Open file"]').filter({ hasText: 'SKILL.md' }).first();
+      await expect(skillFileCard).toBeVisible({ timeout: 30_000 });
+      await skillFileCard.click();
 
-      const sidePanel = page.locator('aside');
-      await expect(sidePanel.getByText('SKILL.md')).toBeVisible({ timeout: 30_000 });
+      const sidePanel = page.getByTestId('artifact-panel');
+      await expect(sidePanel.getByRole('heading', { name: 'SKILL.md' })).toBeVisible({ timeout: 30_000 });
 
-      await sidePanel.getByRole('button', { name: '工作空间' }).click();
-      await expect(sidePanel.getByText('工作空间')).toBeVisible();
-
-      await sidePanel.getByRole('button', { name: '预览' }).click();
-      await expect(sidePanel.getByText('SKILL.md')).toBeVisible();
+      await sidePanel.getByTestId('artifact-panel-tab-browser').click();
+      await sidePanel.getByTestId('artifact-panel-tab-preview').click();
+      await expect(sidePanel.getByRole('heading', { name: 'SKILL.md' })).toBeVisible();
       await expect(sidePanel.getByText('尚未选择文件')).toHaveCount(0);
     } finally {
       await closeElectronApp(app);
