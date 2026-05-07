@@ -34,7 +34,7 @@ export default function ImageViewer({ filePath, fileName, className }: ImageView
           size="icon"
           className="h-8 w-8 rounded-full shadow-md"
           onClick={() => setZoomed((v) => !v)}
-          title={zoomed ? 'Zoom out' : 'Actual size'}
+          title={zoomed ? '缩小' : '原始尺寸'}
         >
           {zoomed ? <ZoomOut className="h-4 w-4" /> : <ZoomIn className="h-4 w-4" />}
         </Button>
