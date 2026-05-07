@@ -176,7 +176,7 @@ export function handleRuntimeEventState(
 
               // Attach any files collected from preceding tool results,
               // plus file paths mentioned directly in the final assistant
-              // text (e.g. `/Users/.../sample-1000-rows.xlsx`). The latter is
+              // text (e.g. `/Users/.../1000行示例.xlsx`). The latter is
               // what turns a plain path in the bubble into a clickable card
               // immediately, before the quiet history reload finishes.
               const pendingImgs = s.pendingToolImages;

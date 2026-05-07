@@ -38,9 +38,9 @@ function stripAssistantMediaTags(text: string): string {
   if (!text) return text;
   const exts = 'png|jpe?g|gif|webp|bmp|avif|svg|pdf|docx?|xlsx?|pptx?|txt|csv|md|rtf|epub|zip|tar|gz|rar|7z|mp3|wav|ogg|aac|flac|m4a|mp4|mov|avi|mkv|webm|m4v';
   // Mirror the relaxed character class in `chat/helpers.ts::extractRawFilePaths`
-  // so paths with ASCII spaces (e.g. macOS' "Screenshot 2026-05-06 at 17.46.51.png")
+  // so paths with ASCII spaces (e.g. macOS' "截屏 2026-05-06 17.46.51.png")
   // are also stripped from the visible bubble. Without this, the bubble
-  // would still leak the literal `MEDIA:/.../Screenshot 2026-05-06 at 17.46.51.png`
+  // would still leak the literal `MEDIA:/.../截屏 2026-05-06 17.46.51.png`
   // to the user when the underlying path detection succeeds.
   const tagged = new RegExp(`(^|[\\s(\\[{>])(?:MEDIA|media):(?:\\/|~\\/)[^\\n"'()\\[\\],<>]*?\\.(?:${exts})(?=$|[\\s\\n"'()\\[\\],<>]|[，。；;,.!?])`, 'g');
   return text

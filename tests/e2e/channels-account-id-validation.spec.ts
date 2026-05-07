@@ -77,7 +77,7 @@ test.describe('Channels account ID validation', () => {
     await page.getByRole('button', { name: /Add Account|account\.add/i }).click();
     await expect(page.getByText(/Configure Feishu \/ Lark|dialog\.configureTitle/)).toBeVisible();
 
-    await page.locator('#account-id').fill('Test Account');
+    await page.locator('#account-id').fill('测试账号');
     await page.locator('#appId').fill('cli_test');
     await page.locator('#appSecret').fill('secret_test');
 

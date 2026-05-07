@@ -97,11 +97,11 @@ describe('ArtifactPanel', () => {
 
     expect(screen.getByTestId('file-preview-body')).toHaveTextContent('SKILL.md');
 
-    fireEvent.click(screen.getByRole('button', { name: 'Workspace' }));
+    fireEvent.click(screen.getByRole('button', { name: '工作空间' }));
     expect(screen.getByTestId('workspace-browser')).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole('button', { name: 'Preview' }));
+    fireEvent.click(screen.getByRole('button', { name: '预览' }));
     expect(screen.getByTestId('file-preview-body')).toHaveTextContent('SKILL.md');
-    expect(screen.queryByText('No file selected')).not.toBeInTheDocument();
+    expect(screen.queryByText('尚未选择文件')).not.toBeInTheDocument();
   });
 });

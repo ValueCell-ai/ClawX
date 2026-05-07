@@ -12,7 +12,7 @@ type ValidationProfile =
 type ValidationResult = { valid: boolean; error?: string; status?: number };
 type ClassifiedValidationResult = ValidationResult & { authFailure?: boolean };
 
-const AUTH_ERROR_PATTERN = /\b(unauthorized|forbidden|access denied|invalid api key|api key invalid|incorrect api key|api key incorrect|authentication failed|auth failed|invalid credential|credential invalid|invalid signature|signature invalid|invalid access token|access token invalid|invalid bearer token|bearer token invalid|access token expired)\b|\u9274\u6743\u5931\u8d25|\u8a8d\u8a3c\u5931\u6557|\u8ba4\u8bc1\u5931\u8d25|\u7121\u6548\u5bc6\u9470|\u65e0\u6548\u5bc6\u94a5|\u5bc6\u94a5\u65e0\u6548|\u5bc6\u9470\u7121\u6548|\u6191\u8b49\u7121\u6548|\u51ed\u8bc1\u65e0\u6548/i;
+const AUTH_ERROR_PATTERN = /\b(unauthorized|forbidden|access denied|invalid api key|api key invalid|incorrect api key|api key incorrect|authentication failed|auth failed|invalid credential|credential invalid|invalid signature|signature invalid|invalid access token|access token invalid|invalid bearer token|bearer token invalid|access token expired)\b|鉴权失败|認証失敗|认证失败|無效密鑰|无效密钥|密钥无效|密鑰無效|憑證無效|凭证无效/i;
 const AUTH_ERROR_CODE_PATTERN = /\b(unauthorized|forbidden|access[_-]?denied|invalid[_-]?api[_-]?key|api[_-]?key[_-]?invalid|incorrect[_-]?api[_-]?key|api[_-]?key[_-]?incorrect|authentication[_-]?failed|auth[_-]?failed|invalid[_-]?credential|credential[_-]?invalid|invalid[_-]?signature|signature[_-]?invalid|invalid[_-]?access[_-]?token|access[_-]?token[_-]?invalid|invalid[_-]?bearer[_-]?token|bearer[_-]?token[_-]?invalid|access[_-]?token[_-]?expired|invalid[_-]?token|token[_-]?invalid|token[_-]?expired)\b/i;
 
 function logValidationStatus(provider: string, status: number): void {

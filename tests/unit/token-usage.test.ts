@@ -256,7 +256,7 @@ describe('parseUsageEntriesFromJsonl', () => {
           role: 'assistant',
           model: 'kimi-k2.6',
           provider: 'moonshot',
-          content: [{ type: 'text', text: 'This is a test reply.' }],
+          content: [{ type: 'text', text: '这是一条测试回复内容。' }],
           usage: {
             totalTokens: 100,
           },
@@ -272,7 +272,7 @@ describe('parseUsageEntriesFromJsonl', () => {
         model: 'kimi-k2.6',
         provider: 'moonshot',
         usageStatus: 'available',
-        content: 'This is a test reply.',
+        content: '这是一条测试回复内容。',
         inputTokens: 0,
         outputTokens: 0,
         cacheReadTokens: 0,
@@ -293,7 +293,7 @@ describe('parseUsageEntriesFromJsonl', () => {
           details: {
             provider: 'kimi',
             model: 'moonshot-v1-128k',
-            content: 'Original external search content',
+            content: '外部搜索原文内容',
             usage: {
               totalTokens: 50,
             },
@@ -310,7 +310,7 @@ describe('parseUsageEntriesFromJsonl', () => {
         model: 'moonshot-v1-128k',
         provider: 'kimi',
         usageStatus: 'available',
-        content: 'Original external search content',
+        content: '外部搜索原文内容',
         inputTokens: 0,
         outputTokens: 0,
         cacheReadTokens: 0,

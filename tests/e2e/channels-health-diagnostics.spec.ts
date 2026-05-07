@@ -137,8 +137,8 @@ test.describe('Channels health diagnostics', () => {
     await page.getByTestId('sidebar-nav-channels').click();
     await expect(page.getByTestId('channels-page')).toBeVisible();
     await expect(page.getByTestId('channels-health-banner')).toBeVisible();
-    await expect(page.getByText(/Gateway degraded|\u30b2\u30fc\u30c8\u30a6\u30a7\u30a4\u52a3\u5316/)).toBeVisible();
-    await expect(page.locator('div.rounded-2xl').getByText(/Degraded|\u52a3\u5316\u4e2d/).first()).toBeVisible();
+    await expect(page.getByText(/Gateway degraded|网关状态异常|ゲートウェイ劣化/)).toBeVisible();
+    await expect(page.locator('div.rounded-2xl').getByText(/Degraded|异常降级|劣化中/).first()).toBeVisible();
 
     await page.getByTestId('channels-restart-gateway').click();
     await page.getByTestId('channels-copy-diagnostics').click();

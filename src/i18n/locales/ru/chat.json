@@ -179,7 +179,9 @@
         "stop": "Остановить",
         "gatewayConnected": "подключён",
         "gatewayStatus": "шлюз {{state}} | порт: {{port}} {{pid}}",
-        "retryFailedAttachments": "Повторить неудавшиеся вложения"
+        "retryFailedAttachments": "Повторить неудавшиеся вложения",
+        "skillPreviewTooltip": "Предпросмотр SKILL.md",
+        "skillPreviewNotFound": "Skill не найден. Откройте список Skill, чтобы обновить его."
     },
     "historyBuckets": {
         "today": "Сегодня",

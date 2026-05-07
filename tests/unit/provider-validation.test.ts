@@ -292,7 +292,7 @@ describe('validateApiKeyWithProvider', () => {
 
   it('does not mask localized auth-like 400 errors behind a fallback probe', async () => {
     proxyAwareFetch.mockResolvedValueOnce(
-      new Response(JSON.stringify({ error: { message: '\u65e0\u6548\u5bc6\u94a5' } }), {
+      new Response(JSON.stringify({ error: { message: '无效密钥' } }), {
         status: 400,
         headers: { 'Content-Type': 'application/json' },
       })
@@ -304,7 +304,7 @@ describe('validateApiKeyWithProvider', () => {
       apiProtocol: 'openai-completions',
     });
 
-    expect(result).toMatchObject({ valid: false, error: '\u65e0\u6548\u5bc6\u94a5', status: 400 });
+    expect(result).toMatchObject({ valid: false, error: '无效密钥', status: 400 });
     expect(proxyAwareFetch).toHaveBeenCalledTimes(1);
   });
 
@@ -382,7 +382,7 @@ describe('validateApiKeyWithProvider', () => {
         })
       )
       .mockResolvedValueOnce(
-        new Response(JSON.stringify({ error: { message: '\u9274\u6743\u5931\u8d25' } }), {
+        new Response(JSON.stringify({ error: { message: '鉴权失败' } }), {
           status: 400,
           headers: { 'Content-Type': 'application/json' },
         })
@@ -394,7 +394,7 @@ describe('validateApiKeyWithProvider', () => {
       apiProtocol: 'openai-responses',
     });
 
-    expect(result).toMatchObject({ valid: false, error: '\u9274\u6743\u5931\u8d25', status: 400 });
+    expect(result).toMatchObject({ valid: false, error: '鉴权失败', status: 400 });
     expect(proxyAwareFetch).toHaveBeenNthCalledWith(
       2,
       'https://responses.example.com/v1/responses',

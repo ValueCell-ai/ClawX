@@ -206,7 +206,7 @@ describe('handleChannelRoutes', () => {
   it('rejects non-canonical account ID on channel config save', async () => {
     parseJsonBodyMock.mockResolvedValue({
       channelType: 'feishu',
-      accountId: 'Test Account',
+      accountId: '测试账号',
       config: { appId: 'cli_xxx', appSecret: 'secret' },
     });
 

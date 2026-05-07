@@ -179,7 +179,9 @@
         "stop": "Stop",
         "gatewayConnected": "connected",
         "gatewayStatus": "gateway {{state}} | port: {{port}} {{pid}}",
-        "retryFailedAttachments": "Retry failed attachments"
+        "retryFailedAttachments": "Retry failed attachments",
+        "skillPreviewTooltip": "Preview SKILL.md",
+        "skillPreviewNotFound": "Could not find this skill. Open the skill picker to refresh the list."
     },
     "historyBuckets": {
         "today": "Today",

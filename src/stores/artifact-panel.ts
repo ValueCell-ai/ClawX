@@ -2,13 +2,13 @@
  * Artifact panel state.
  *
  * Drives the right-side split panel on the Chat page: which tab is
- * active (Changes / Preview / Workspace), the focused file shared across the
- * Changes and Preview tabs, and the open/close state.
+ * active (变更 / 预览 / 工作空间), the focused file shared across the
+ * 变更 and 预览 tabs, and the open/close state.
  *
  * The actual content (file lists, workspace tree, etc.) is provided by
  * the chat page as props — we only track UI state here so the panel can
  * be opened/closed/focused from anywhere (file cards, toolbar buttons,
- * "View changes →" links, …).
+ * "查看文件变更 →" links, …).
  *
  * `widthPct` is persisted via `zustand/middleware`'s `persist` so the
  * user's preferred split survives reloads.
@@ -28,8 +28,8 @@ interface ArtifactPanelState {
   open: boolean;
   tab: ArtifactTab;
   /**
-   * The currently selected file inside the panel. Shared between the
-   * Changes tab (drives the right-pane diff) and the Preview tab (drives the
+   * The currently selected file inside the panel.  Shared between the
+   * 变更 tab (drives the right-pane diff) and the 预览 tab (drives the
    * rendered preview).  `null` means "no selection" — the changes tab
    * may auto-select the first file in that case.
    */

@@ -17,6 +17,8 @@ import { cn } from '@/lib/utils';
 import { useGatewayStore } from '@/stores/gateway';
 import { useAgentsStore } from '@/stores/agents';
 import { useChatStore } from '@/stores/chat';
+import { useArtifactPanel } from '@/stores/artifact-panel';
+import { buildPreviewTarget } from '@/components/file-preview/build-preview-target';
 import type { AgentSummary } from '@/types/agent';
 import type { QuickAccessSkill } from '@/types/skill';
 import { useTranslation } from 'react-i18next';
@@ -86,9 +88,13 @@ function removeSkillToken(value: string, skillName: string): string {
   return `${value.slice(0, range.start)}${value.slice(range.end)}`;
 }
 
+const SKILL_TOKEN_BUTTON_CLASS =
+  'rounded-md bg-skill-bg/14 text-skill-fg [-webkit-box-decoration-break:clone] [box-decoration-break:clone] [text-shadow:0_0_10px_rgba(47,107,255,0.38)] dark:bg-skill-bg/18 dark:text-skill-fg-dark dark:[text-shadow:0_0_12px_rgba(37,99,235,0.42)]';
+
 function renderHighlightedComposerText(
   value: string,
   tokenRanges: SkillTokenRange[],
+  options: { onPreviewSkill: (skillName: string) => void; previewTooltip: string },
 ) {
   if (tokenRanges.length === 0) {
     return <>{value}{value.endsWith('\n') ? '\n' : '\u200b'}</>;
@@ -101,18 +107,37 @@ function renderHighlightedComposerText(
     const token = value.slice(tokenRange.start, tokenRange.end);
     const tokenLabel = token.trimEnd();
     const tokenTrailingSpace = token.slice(tokenLabel.length);
+    const skillName = tokenLabel.startsWith('/') ? tokenLabel.slice(1) : tokenLabel;
 
     if (tokenRange.start > cursor) {
       chunks.push(value.slice(cursor, tokenRange.start));
     }
     chunks.push(
-      <span
+      <button
         key={`skill-token-${tokenRange.start}`}
+        type="button"
         data-testid="chat-composer-skill-token"
-        className="rounded-md bg-skill-bg/14 text-skill-fg [-webkit-box-decoration-break:clone] [box-decoration-break:clone] [text-shadow:0_0_10px_rgba(47,107,255,0.38)] dark:bg-skill-bg/18 dark:text-skill-fg-dark dark:[text-shadow:0_0_12px_rgba(37,99,235,0.42)]"
+        data-skill-name={skillName}
+        title={options.previewTooltip}
+        className={cn(
+          'inline h-auto border-0 p-0 font-inherit leading-inherit',
+          'pointer-events-auto cursor-pointer underline-offset-2 hover:underline',
+          'text-left align-baseline shadow-none transition-colors',
+          'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 focus-visible:ring-offset-0',
+          SKILL_TOKEN_BUTTON_CLASS,
+        )}
+        onMouseDown={(event) => {
+          // Keep focus in the textarea while still receiving the click.
+          event.preventDefault();
+        }}
+        onClick={(event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          options.onPreviewSkill(skillName);
+        }}
       >
         {tokenLabel}
-      </span>,
+      </button>,
       tokenTrailingSpace,
     );
     cursor = tokenRange.end;
@@ -208,6 +233,7 @@ export function ChatInput({ onSend, onStop, disabled = false, sending = false, i
   const showAgentPicker = mentionableAgents.length > 0;
   const chatComposerStatusComponents = rendererExtensionRegistry.getChatComposerStatusComponents();
   const skillTokenRanges = useMemo(() => findSkillTokenRanges(input), [input]);
+  const openArtifactPreview = useArtifactPanel((s) => s.openPreview);
 
   // Auto-resize textarea
   useEffect(() => {
@@ -301,11 +327,11 @@ export function ChatInput({ onSend, onStop, disabled = false, sending = false, i
     }
   }, [moveCaretTo, skillTokenRanges]);
 
-  const loadQuickSkills = useCallback(async () => {
+  const loadQuickSkills = useCallback(async (): Promise<QuickAccessSkill[]> => {
     if (!currentAgent) {
       setQuickSkills([]);
       setSkillsError(null);
-      return;
+      return [];
     }
     setSkillsLoading(true);
     setSkillsError(null);
@@ -324,14 +350,32 @@ export function ChatInput({ onSend, onStop, disabled = false, sending = false, i
       if (!result.success) {
         throw new Error(result.error || 'Failed to load skills');
       }
-      setQuickSkills(result.skills || []);
+      const list = result.skills || [];
+      setQuickSkills(list);
+      return list;
     } catch (error) {
       setQuickSkills([]);
       setSkillsError(String(error));
+      return [];
     } finally {
       setSkillsLoading(false);
     }
   }, [currentAgent]);
+
+  const handleSkillTokenPreview = useCallback(async (skillName: string) => {
+    let list = quickSkills;
+    if (list.length === 0 && currentAgent) {
+      list = await loadQuickSkills();
+    }
+    const skill = list.find((entry) => entry.name === skillName);
+    if (!skill) {
+      toast.error(
+        t('composer.skillPreviewNotFound', 'Could not find this skill. Open the skill picker to refresh the list.'),
+      );
+      return;
+    }
+    openArtifactPreview(buildPreviewTarget(skill.manifestPath));
+  }, [quickSkills, currentAgent, loadQuickSkills, openArtifactPreview, t]);
 
   useEffect(() => {
     if (!skillPickerOpen) return;
@@ -686,9 +730,14 @@ export function ChatInput({ onSend, onStop, disabled = false, sending = false, i
             {skillTokenRanges.length > 0 && (
               <div
                 aria-hidden="true"
-                className="pointer-events-none absolute inset-0 overflow-hidden whitespace-pre-wrap break-words text-sm leading-relaxed text-foreground"
+                className="pointer-events-none absolute inset-0 z-20 overflow-hidden whitespace-pre-wrap break-words text-sm leading-relaxed text-foreground"
               >
-                {renderHighlightedComposerText(input, skillTokenRanges)}
+                {renderHighlightedComposerText(input, skillTokenRanges, {
+                  onPreviewSkill: (name) => {
+                    void handleSkillTokenPreview(name);
+                  },
+                  previewTooltip: t('composer.skillPreviewTooltip', 'Preview SKILL.md'),
+                })}
               </div>
             )}
             <Textarea
@@ -709,8 +758,8 @@ export function ChatInput({ onSend, onStop, disabled = false, sending = false, i
               disabled={disabled}
               data-testid="chat-composer-input"
               className={cn(
-                "relative z-10 min-h-[48px] max-h-[240px] resize-none border-0 focus-visible:ring-0 focus-visible:ring-offset-0 shadow-none bg-transparent p-0 text-sm leading-relaxed placeholder:text-muted-foreground/60",
-                skillTokenRanges.length > 0 && "text-transparent caret-foreground selection:bg-primary/20",
+                'relative min-h-[48px] max-h-[240px] resize-none border-0 focus-visible:ring-0 focus-visible:ring-offset-0 shadow-none bg-transparent p-0 text-sm leading-relaxed placeholder:text-muted-foreground/60',
+                skillTokenRanges.length > 0 ? 'z-0 text-transparent caret-foreground selection:bg-primary/20' : 'z-10',
               )}
               rows={1}
             />
