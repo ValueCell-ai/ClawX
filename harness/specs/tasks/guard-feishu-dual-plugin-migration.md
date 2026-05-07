@@ -11,8 +11,14 @@ touchedAreas:
   - tests/unit/openclaw-auth.test.ts
   - tests/unit/channel-config.test.ts
   - harness/specs/tasks/guard-feishu-dual-plugin-migration.md
+  - harness/specs/tasks/guard-plugin-resolution.md
+  - harness/specs/tasks/plugin-validation.md
+  - harness/specs/tasks/plugin-recovery-and-rollback.md
   - harness/specs/scenarios/gateway-backend-communication.md
+  - harness/specs/scenarios/plugin-lifecycle-management.md
   - harness/specs/rules/channel-plugin-migration-guards.md
+  - harness/specs/rules/capability-owner-resolution.md
+  - harness/specs/rules/active-config-guards.md
 expectedUserBehavior:
   - Migrated Feishu/Lark users do not end up with duplicate message handling because only one Feishu plugin remains active.
   - Saving Feishu channel settings rewrites stale plugin registration state to a single canonical external plugin and disables the bundled plugin when required.

@@ -30,6 +30,8 @@ requiredRules:
   - host-events-fallback-policy
   - gateway-readiness-policy
   - channel-plugin-migration-guards
+  - capability-owner-resolution
+  - active-config-guards
   - comms-regression
   - docs-sync
 forbiddenPatterns:
