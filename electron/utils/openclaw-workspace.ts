@@ -214,26 +214,6 @@ export async function repairClawXOnlyBootstrapFiles(): Promise<void> {
   }
 }
 
-/**
- * ClawX ships a default desktop identity and does not need OpenClaw's
- * chat-first personalization script. Once the Gateway has seeded the regular
- * workspace files, remove BOOTSTRAP.md so sessions start normally.
- */
-export async function removeChatFirstBootstrapFiles(): Promise<void> {
-  const workspaceDirs = await resolveAllWorkspaceDirs();
-  for (const { dir: workspaceDir } of workspaceDirs) {
-    const bootstrapPath = join(workspaceDir, 'BOOTSTRAP.md');
-    if (!(await fileExists(bootstrapPath))) continue;
-
-    try {
-      await unlink(bootstrapPath);
-      logger.info(`Removed chat-first bootstrap file from ClawX workspace (${workspaceDir})`);
-    } catch {
-      logger.warn(`Failed to remove chat-first bootstrap file: ${bootstrapPath}`);
-    }
-  }
-}
-
 // ── Context merging ──────────────────────────────────────────────
 
 /**
@@ -352,7 +332,6 @@ export async function ensureClawXContext(options: EnsureClawXContextOptions = {}
 async function runEnsureClawXContext(options: EnsureClawXContextOptions): Promise<void> {
   let result = await mergeClawXContextOnce(options);
   if (result.retryableMissing === 0) {
-    await removeChatFirstBootstrapFiles();
     if (result.missing > 0) {
       logger.debug(`ClawX context merge skipped ${result.missing} non-ready file(s)`);
     }
@@ -363,7 +342,6 @@ async function runEnsureClawXContext(options: EnsureClawXContextOptions): Promis
     await new Promise((r) => setTimeout(r, RETRY_INTERVAL_MS));
     result = await mergeClawXContextOnce(options);
     if (result.retryableMissing === 0) {
-      await removeChatFirstBootstrapFiles();
       logger.info(`ClawX context merge completed after ${attempt} retry(ies)`);
       return;
     }
@@ -371,5 +349,4 @@ async function runEnsureClawXContext(options: EnsureClawXContextOptions): Promis
   }
 
   logger.warn(`ClawX context merge: ${result.retryableMissing} startup file(s) still missing after ${MAX_RETRIES} retries`);
-  await removeChatFirstBootstrapFiles();
 }
