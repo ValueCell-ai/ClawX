@@ -975,12 +975,12 @@ export function ChatInput({ onSend, onStop, disabled = false, sending = false, i
 
             {showModelPicker && (
               <div ref={modelPickerRef} className="relative shrink-0">
-                <Button
-                  variant="ghost"
-                  size="sm"
+                <button
+                  type="button"
+                  data-testid="chat-model-picker-button"
                   className={cn(
-                    'h-8 max-w-[220px] rounded-lg px-2.5 text-meta font-medium text-muted-foreground hover:bg-black/5 dark:hover:bg-white/10 hover:text-foreground transition-colors',
-                    (modelPickerOpen || switchingModelRef) && 'bg-primary/10 text-primary hover:bg-primary/20'
+                    'inline-flex h-8 max-w-[220px] items-center gap-1 rounded-lg px-1.5 text-meta font-medium text-muted-foreground transition-colors hover:bg-transparent hover:text-foreground focus-visible:outline-none focus-visible:ring-0 disabled:pointer-events-none disabled:opacity-50',
+                    (modelPickerOpen || switchingModelRef) && 'text-foreground',
                   )}
                   onClick={() => {
                     setPickerOpen(false);
@@ -989,14 +989,13 @@ export function ChatInput({ onSend, onStop, disabled = false, sending = false, i
                   }}
                   disabled={sending || !currentAgent || !!switchingModelRef}
                   title={t('composer.pickModel')}
-                  data-testid="chat-model-picker-button"
                 >
                   {switchingModelRef ? (
-                    <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                    <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin" />
                   ) : null}
                   <span className="truncate">{currentModelLabel}</span>
-                  <ChevronDown className="ml-1 h-3.5 w-3.5 shrink-0" />
-                </Button>
+                  <ChevronDown className={cn('h-3.5 w-3.5 shrink-0 transition-transform', modelPickerOpen && 'rotate-180')} />
+                </button>
                 {modelPickerOpen && (
                   <div
                     className="absolute left-0 bottom-full z-20 mb-2 w-72 overflow-hidden rounded-2xl border border-black/10 bg-white p-1.5 shadow-xl dark:border-white/10 dark:bg-card"
