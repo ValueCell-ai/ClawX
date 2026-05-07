@@ -29,6 +29,7 @@ requiredRules:
   - host-api-fallback-policy
   - host-events-fallback-policy
   - gateway-readiness-policy
+  - channel-plugin-migration-guards
   - comms-regression
   - docs-sync
 forbiddenPatterns:
@@ -52,3 +53,5 @@ Renderer code must not own transport selection, direct IPC channels, direct Gate
 
 Explicit local fallback flags are narrow exceptions:
 `clawx:allow-localhost-fallback` belongs to Host API browser fallback only, `clawx:allow-sse-fallback` belongs to host event SSE fallback only, and `clawx:gateway-ws-diagnostic` belongs to API client transport diagnostics only.
+
+Channel/plugin migration behavior is also part of this scenario when ClawX rewrites OpenClaw config before Gateway launch. Upgrades must preserve single-owner channel registration for migrated plugin-backed channels such as Feishu/Lark.
