@@ -208,6 +208,55 @@ describe('enrichWithCachedImages — Gateway media bubble dedup', () => {
     expect(replyPaths.find((p) => p?.endsWith('.png'))).toBeUndefined();
   });
 
+  it('attaches a gateway-media entry to the assistant-media bubble itself (text reply + injected bubble)', () => {
+    // Reproduces the exact shape of session
+    //   ~/.openclaw/agents/main/sessions/5fb6925e-...jsonl
+    //   - msg 12: assistant reply "...MEDIA:/tmp/openclaw/desktop_*.png"
+    //   - msg 13: assistant `image` block with flat `url`
+    // After enrichment, msg 13 must carry exactly one `_attachedFiles`
+    // entry sourced from the Gateway URL — otherwise ChatMessage's early
+    // return swallows the bubble (no text, no tools, no extracted images,
+    // no attachments → returns null → user sees nothing).
+    const messages: RawMessage[] = [
+      {
+        role: 'user',
+        id: 'u1',
+        content: [{ type: 'text', text: 'Send me a desktop screenshot.' }],
+      },
+      {
+        role: 'assistant',
+        id: 'reply',
+        content: [{ type: 'text', text: 'Done, here it is:\n\nMEDIA:/tmp/openclaw/desktop_20260506_193407.png' }],
+      },
+      {
+        role: 'assistant',
+        id: 'gateway-media',
+        content: [{
+          type: 'image',
+          url: '/api/chat/media/outgoing/agent%3Amain%3As-1/e024afb9-2bc2-4a64-bf43-1c26fc779b6b/full',
+          openUrl: '/api/chat/media/outgoing/agent%3Amain%3As-1/e024afb9-2bc2-4a64-bf43-1c26fc779b6b/full',
+          mimeType: 'image/png',
+          width: 1536,
+          height: 998,
+          alt: 'desktop_20260506_193407.png',
+        }],
+      },
+    ];
+
+    const enriched = enrichWithCachedImages(messages);
+    const reply = enriched.find((m) => m.id === 'reply')!;
+    expect((reply._attachedFiles ?? []).map((f) => f.filePath)).toEqual([]);
+
+    const bubble = enriched.find((m) => m.id === 'gateway-media')!;
+    const bubbleEntries = bubble._attachedFiles ?? [];
+    expect(bubbleEntries).toHaveLength(1);
+    expect(bubbleEntries[0]).toMatchObject({
+      gatewayUrl: '/api/chat/media/outgoing/agent%3Amain%3As-1/e024afb9-2bc2-4a64-bf43-1c26fc779b6b/full',
+      mimeType: 'image/png',
+      source: 'gateway-media',
+    });
+  });
+
   it('keeps image-typed MEDIA: refs when there is no Gateway bubble after the reply', () => {
     // If the Gateway is disabled / hasn't injected a bubble, the agent's
     // own `MEDIA:` marker is the only signal and must still surface.

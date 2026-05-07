@@ -434,11 +434,43 @@ function trimPathTerminators(filePath: string): string {
  * Extract raw file paths from message text.
  * Detects absolute paths (Unix: / or ~/, Windows: C:\ etc.) ending with common file extensions.
  * Handles both image and non-image files, consistent with channel push message behavior.
+ *
+ * Also recognises the `MEDIA:` / `media:` prefix the OpenClaw runtime
+ * emits for produced artifacts (e.g.
+ * `MEDIA:/tmp/desktop_screenshot.png`) — without this the leading colon
+ * trips the URL guard on the unix regex below and the artifact never
+ * surfaces as an attachment. Mirrors `chat/helpers.ts::extractRawFilePaths`.
  */
 function extractRawFilePaths(text: string): Array<{ filePath: string; mimeType: string }> {
   const refs: Array<{ filePath: string; mimeType: string }> = [];
   const seen = new Set<string>();
   const exts = 'png|jpe?g|gif|webp|bmp|avif|svg|pdf|docx?|xlsx?|pptx?|txt|csv|md|rtf|epub|zip|tar|gz|rar|7z|mp3|wav|ogg|aac|flac|m4a|mp4|mov|avi|mkv|webm|m4v';
+  // Tagged media references (MEDIA:/path, media:~/path, ...). The agent
+  // runtime uses this prefix as an explicit "this is an artifact" marker,
+  // so we want them recognised even though the leading colon would
+  // normally look like a URL scheme. After matching we punch the entire
+  // `MEDIA:<path>` span out of the working text so the generic unix
+  // regex below doesn't double-count the bare `/path` suffix.
+  // The character class deliberately allows ASCII spaces inside the path so
+  // that macOS' default screenshot filename ("截屏 2026-05-06 17.46.51.png")
+  // and other space-containing paths the agent emits with the explicit
+  // `MEDIA:` marker still resolve. Newline and quote characters remain
+  // path terminators so we don't accidentally swallow trailing prose.
+  const taggedRegex = new RegExp(`(?:^|[\\s(\\[{>])(?:MEDIA|media):((?:\\/|~\\/)[^\\n"'()\\[\\],<>` + '`' + `]*?\\.(?:${exts}))(?=$|[\\s\\n"'()\\[\\],<>` + '`' + `]|[，。；;,.!?])`, 'g');
+  let workingText = text;
+  let taggedMatch: RegExpExecArray | null;
+  while ((taggedMatch = taggedRegex.exec(text)) !== null) {
+    const p = taggedMatch[1];
+    if (p && !seen.has(p)) {
+      seen.add(p);
+      refs.push({ filePath: p, mimeType: mimeFromExtension(p) });
+    }
+    // Mask the matched span so subsequent regexes can't re-discover the
+    // same path (e.g. `/two.xlsx` from `MEDIA:~/two.xlsx`).
+    const start = taggedMatch.index;
+    const end = start + taggedMatch[0].length;
+    workingText = workingText.slice(0, start) + ' '.repeat(end - start) + workingText.slice(end);
+  }
   // Unix absolute paths (/... or ~/...) — lookbehind rejects mid-token slashes
   // (e.g. "path/to/file.mp4", "https://example.com/file.mp4")
   const unixRegex = new RegExp(`(?<![\\w./:])((?:\\/|~\\/)[^\\s\\n"'()\`\\[\\],<>]*?\\.(?:${exts}))`, 'gi');
@@ -453,7 +485,7 @@ function extractRawFilePaths(text: string): Array<{ filePath: string; mimeType: 
   );
   for (const regex of [unixRegex, winRegex, skillDirRegex]) {
     let match;
-    while ((match = regex.exec(text)) !== null) {
+    while ((match = regex.exec(workingText)) !== null) {
       const p = trimPathTerminators(match[1]);
       if (p && !seen.has(p)) {
         seen.add(p);
@@ -855,7 +887,9 @@ async function loadMissingPreviews(messages: RawMessage[]): Promise<boolean> {
     }
   }
 
-  if (needPreview.length === 0) return false;
+  if (needPreview.length === 0) {
+    return false;
+  }
 
   try {
     const thumbnails = await hostApiFetch<Record<string, { preview: string | null; fileSize: number }>>(
@@ -1079,11 +1113,35 @@ function isToolResultRole(role: unknown): boolean {
 }
 
 /** True for internal plumbing messages that should never be shown in the UI. */
-function isInternalMessage(msg: { role?: unknown; content?: unknown }): boolean {
+function isInternalMessage(msg: { role?: unknown; content?: unknown; idempotencyKey?: unknown; model?: unknown }): boolean {
   if (msg.role === 'system') return true;
   const text = getMessageText(msg.content);
   if (msg.role === 'assistant') {
     if (/^(HEARTBEAT_OK|NO_REPLY)\s*$/.test(text)) return true;
+    // OpenClaw's gateway writes a fallback `assistant-media` transcript
+    // message when its `createManagedOutgoingImageBlocks` pipeline fails
+    // ("could not be prepared" warning in stderr). The fallback has:
+    //   - model: 'gateway-injected'
+    //   - idempotencyKey: '<runId>:assistant-media'
+    //   - content: text-only `MEDIA:<staging path>` (NOT an image-url block)
+    // The staging path lives in `~/.openclaw/media/outbound/` which has a
+    // 120s TTL — the file is gone by the time the user reads the chat.
+    // The original `MEDIA:/tmp/...` path is already on the previous
+    // assistant message (the agent's actual reply), so the fallback is
+    // pure duplicate noise. Hide it in the UI so it neither shows a
+    // broken card nor competes with the real reply for layout space.
+    const idempotencyKey = typeof msg.idempotencyKey === 'string' ? msg.idempotencyKey : '';
+    const isGatewayInjectedFallback = msg.model === 'gateway-injected'
+      && idempotencyKey.endsWith(':assistant-media');
+    if (isGatewayInjectedFallback) {
+      const hasImageUrlBlock = Array.isArray(msg.content)
+        && (msg.content as ContentBlock[]).some(
+          (block) => block.type === 'image' && typeof block.url === 'string' && !!block.url,
+        );
+      // Real gateway-media bubbles (with an image-url block) ARE the
+      // canonical render — keep them. Only hide the text-only fallback.
+      if (!hasImageUrlBlock) return true;
+    }
   }
   // Runtime system injections: these arrive as user or assistant-role messages
   // but are internal plumbing (exec results, async-command notices, time pings, etc.)
@@ -2241,12 +2299,18 @@ export const useChatStore = create<ChatState>((set, get) => ({
     const { activeRunId, currentSessionKey } = get();
 
     // Only process events for the current session (when sessionKey is present)
-    if (eventSessionKey != null && eventSessionKey !== currentSessionKey) return;
+    if (eventSessionKey != null && eventSessionKey !== currentSessionKey) {
+      return;
+    }
 
     // Only process events for the active run (or if no active run set)
-    if (activeRunId && runId && runId !== activeRunId) return;
+    if (activeRunId && runId && runId !== activeRunId) {
+      return;
+    }
 
-    if (isDuplicateChatEvent(eventState, event)) return;
+    if (isDuplicateChatEvent(eventState, event)) {
+      return;
+    }
 
     _lastChatEventAt = Date.now();
 
@@ -2418,7 +2482,17 @@ export const useChatStore = create<ChatState>((set, get) => ({
             const nextTools = updates.length > 0 ? upsertToolStatuses(s.streamingTools, updates) : s.streamingTools;
             const streamingTools = hasOutput ? [] : nextTools;
 
-            // Attach any images collected from preceding tool results
+            // Note: it would be tempting to also surface `MEDIA:/path`
+            // markers from `normalizedFinalMessage.content`'s text here, so
+            // the agent's reply could attach the original file directly
+            // (`/tmp/...png`) without waiting for the post-final history
+            // reload. However, OpenClaw's `splitTrailingDirective`
+            // (selection-D8_ELZa7.js ~line 904) strips `MEDIA:/...` lines
+            // out of the streaming text BEFORE it reaches the client, so
+            // the `final` event we get here never contains the marker.
+            // Image surfacing is fully handled by the post-final reload
+            // below + `enrichWithCachedImages` (which dereferences the
+            // assistant-media bubble's `block.url`).
             const pendingImgs = s.pendingToolImages;
             const msgWithImages: RawMessage = pendingImgs.length > 0
               ? {
@@ -2472,6 +2546,52 @@ export const useChatStore = create<ChatState>((set, get) => ({
           if (hasOutput && !toolOnly) {
             clearHistoryPoll();
             void get().loadHistory(true);
+
+            // OpenClaw's gateway processes `MEDIA:/path` markers in the
+            // assistant reply asynchronously, in the `dispatch.deliver` of
+            // the `final` payload (see openclaw/dist/chat-DM9hSaNV.js's
+            // `appendWebchatAgentMediaTranscriptIfNeeded`):
+            //   1. copy the original file under
+            //      `~/.openclaw/media/outgoing/originals/<uuid>`
+            //   2. write the record JSON under
+            //      `~/.openclaw/media/outgoing/records/<id>.json`
+            //   3. `appendAssistantTranscriptMessage` writes a follow-up
+            //      `assistant-media` message to the session JSONL, with
+            //      `idempotencyKey: "<runId>:assistant-media"`.
+            // That follow-up message is **only persisted** — it is NOT
+            // re-broadcast as a streaming event. The streaming `final`
+            // we just consumed only contains the agent's text. The
+            // assistant-media bubble can only be retrieved via
+            // `chat.history`, and the persistence runs on the order of
+            // ~400-500ms after the streaming final.
+            //
+            // The immediate `loadHistory(true)` above therefore races the
+            // gateway's write and almost always misses the bubble.
+            //
+            // CRITICAL: we cannot detect from the streaming final alone
+            // whether the agent emitted a `MEDIA:/path` marker — OpenClaw's
+            // `splitTrailingDirective` (selection-D8_ELZa7.js line ~904)
+            // strips `MEDIA:/...` lines from the broadcast text BEFORE it
+            // reaches the client, so the streaming `final` text is always
+            // the user-facing prose without the marker. The MEDIA: marker
+            // only appears in the persisted JSONL transcript (msg N) and
+            // its companion `assistant-media` bubble (msg N+1).
+            //
+            // We therefore unconditionally schedule ONE follow-up quiet
+            // reload ~1500ms after every assistant `final`. The cost is
+            // a single extra in-process RPC per assistant turn (cheap);
+            // when there's no media the second reload returns the same
+            // history snapshot and is a no-op for the UI.
+            // `forceNextHistoryLoad` bypasses `HISTORY_LOAD_MIN_INTERVAL_MS`
+            // so the call is not suppressed by the throttle.
+            const sessionKeyAtFinal = get().currentSessionKey;
+            setTimeout(() => {
+              if (get().currentSessionKey !== sessionKeyAtFinal) {
+                return;
+              }
+              forceNextHistoryLoad(sessionKeyAtFinal);
+              void get().loadHistory(true);
+            }, 1500);
           }
         } else {
           // No message in final event - reload history to get complete data
