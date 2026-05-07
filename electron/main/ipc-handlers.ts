@@ -5,7 +5,7 @@
 import { ipcMain, BrowserWindow, shell, dialog, app, nativeImage } from 'electron';
 import { existsSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { join, extname, basename, dirname, resolve, sep, relative } from 'node:path';
+import { join, extname, basename, resolve, sep, relative } from 'node:path';
 import crypto from 'node:crypto';
 import { GatewayManager } from '../gateway/manager';
 import { ClawHubService, ClawHubSearchParams, ClawHubInstallParams, ClawHubUninstallParams } from '../gateway/clawhub';
@@ -24,6 +24,11 @@ import { buildOpenClawControlUiUrl } from '../utils/openclaw-control-ui';
 import { logger } from '../utils/logger';
 import { resolveAgentIdFromChannel } from '../utils/agent-config';
 import { resolveAccountIdFromSessionHistory } from '../utils/session-util';
+import {
+  removeSessionEntry,
+  resolveSessionTranscriptPath,
+  sweepSessionArtefacts,
+} from '../utils/session-files';
 import {
   saveChannelConfig,
   getChannelConfig,
@@ -2592,14 +2597,25 @@ async function resolveOutgoingMediaUrl(
  * (where <id> is typically a UUID resolved via sessions.json).
  *
  * For each deleted session we unlink every file that belongs to its on-disk id:
- *   - <id>.jsonl              — the live transcript
- *   - <id>.deleted.jsonl      — leftovers from earlier soft-delete releases
- *   - <id>.jsonl.reset.*      — historical snapshots produced by sessions.reset
+ *   - <id>.jsonl                — the live transcript
+ *   - <id>.deleted.jsonl        — leftovers from earlier soft-delete releases
+ *   - <id>.jsonl.reset.*        — historical snapshots produced by sessions.reset
+ *   - <id>.trajectory.jsonl     — OpenClaw runtime "flight recorder" sidecar
+ *   - <id>.trajectory-path.json — pointer to the runtime trajectory; if it
+ *                                 points outside the sessions/ folder
+ *                                 (OPENCLAW_TRAJECTORY_DIR override) the
+ *                                 referenced file is unlinked too.
  *
  * The session entry is also removed from sessions.json so sessions.list stops
  * surfacing it. Token-usage history reported by the Dashboard reads the same
  * transcripts, so deleted conversations stop contributing to the chart.
+ *
+ * Path resolution and the sibling sweep are shared with the HTTP mirror at
+ * `electron/api/routes/sessions.ts` via `electron/utils/session-files.ts`,
+ * so both surfaces unlink the same set of files for a given session id.
  */
+const SAFE_AGENT_ID = /^[A-Za-z0-9][A-Za-z0-9_-]*$/;
+
 function registerSessionHandlers(): void {
   ipcMain.handle('session:delete', async (_, sessionKey: string) => {
     try {
@@ -2613,6 +2629,13 @@ function registerSessionHandlers(): void {
       }
 
       const agentId = parts[1];
+      // Defence-in-depth: agentId becomes a path segment under
+      // ~/.openclaw/agents/.  Reject anything that could escape that root
+      // (".." segments, slashes, NULs, etc.) before touching the FS.
+      if (!SAFE_AGENT_ID.test(agentId)) {
+        return { success: false, error: `Invalid agentId: ${agentId}` };
+      }
+
       const openclawConfigDir = getOpenClawConfigDir();
       const sessionsDir = join(openclawConfigDir, 'agents', agentId, 'sessions');
       const sessionsJsonPath = join(sessionsDir, 'sessions.json');
@@ -2632,118 +2655,36 @@ function registerSessionHandlers(): void {
         return { success: false, error: `Could not read sessions.json: ${String(e)}` };
       }
 
-      // sessions.json structure: try common shapes used by OpenClaw Gateway:
-      //   Shape A (array):  { sessions: [{ key, file, ... }] }
-      //   Shape B (object): { [sessionKey]: { file, ... } }
-      //   Shape C (array):  { sessions: [{ key, id, ... }] }  — id is the UUID
-      let uuidFileName: string | undefined;
-
-      // Shape A / C — array under "sessions" key
-      if (Array.isArray(sessionsJson.sessions)) {
-        const entry = (sessionsJson.sessions as Array<Record<string, unknown>>)
-          .find((s) => s.key === sessionKey || s.sessionKey === sessionKey);
-        if (entry) {
-          // Could be "file", "fileName", "id" + ".jsonl", or "path"
-          uuidFileName = (entry.file ?? entry.fileName ?? entry.path) as string | undefined;
-          if (!uuidFileName && typeof entry.id === 'string') {
-            uuidFileName = `${entry.id}.jsonl`;
-          }
+      const resolution = resolveSessionTranscriptPath(sessionsJson, sessionsDir, sessionKey);
+      if (!resolution.ok) {
+        if (resolution.failure.kind === 'not-found') {
+          const rawVal = sessionsJson[sessionKey];
+          logger.warn(`[session:delete] Cannot resolve file for "${sessionKey}". Raw value: ${JSON.stringify(rawVal)}`);
+          return { success: false, error: `Cannot resolve file for session: ${sessionKey}` };
         }
+        logger.warn(`[session:delete] Refusing to delete out-of-scope path for "${sessionKey}": ${resolution.failure.resolvedPath}`);
+        return { success: false, error: `Resolved session path is outside the agent sessions dir: ${resolution.failure.resolvedPath}` };
       }
 
-      // Shape B — flat object keyed by sessionKey; value may be a string or an object.
-      // Actual Gateway format: { sessionFile: "/abs/path/uuid.jsonl", sessionId: "uuid", ... }
-      let resolvedSrcPath: string | undefined;
-
-      if (!uuidFileName && sessionsJson[sessionKey] != null) {
-        const val = sessionsJson[sessionKey];
-        if (typeof val === 'string') {
-          uuidFileName = val;
-        } else if (typeof val === 'object' && val !== null) {
-          const entry = val as Record<string, unknown>;
-          // Priority: absolute sessionFile path > relative file/fileName/path > id/sessionId as UUID
-          const absFile = (entry.sessionFile ?? entry.file ?? entry.fileName ?? entry.path) as string | undefined;
-          if (absFile) {
-            if (absFile.startsWith('/') || absFile.match(/^[A-Za-z]:\\/)) {
-              // Absolute path — use directly
-              resolvedSrcPath = absFile;
-            } else {
-              uuidFileName = absFile;
-            }
-          } else {
-            // Fall back to UUID fields
-            const uuidVal = (entry.id ?? entry.sessionId) as string | undefined;
-            if (uuidVal) uuidFileName = uuidVal.endsWith('.jsonl') ? uuidVal : `${uuidVal}.jsonl`;
-          }
-        }
-      }
-
-      if (!uuidFileName && !resolvedSrcPath) {
-        const rawVal = sessionsJson[sessionKey];
-        logger.warn(`[session:delete] Cannot resolve file for "${sessionKey}". Raw value: ${JSON.stringify(rawVal)}`);
-        return { success: false, error: `Cannot resolve file for session: ${sessionKey}` };
-      }
-
-      // Normalise: if we got a relative filename, resolve it against sessionsDir
-      if (!resolvedSrcPath) {
-        if (!uuidFileName!.endsWith('.jsonl')) uuidFileName = `${uuidFileName}.jsonl`;
-        resolvedSrcPath = join(sessionsDir, uuidFileName!);
-      }
-
+      const { resolvedSrcPath, sessionsDirAbs, baseId } = resolution;
       logger.info(`[session:delete] file: ${resolvedSrcPath}`);
 
       // ── Step 2: hard-delete the JSONL transcript and its siblings ──
-      // For a given <baseId> we remove:
-      //   - <baseId>.jsonl              (live transcript)
-      //   - <baseId>.deleted.jsonl      (legacy soft-delete leftover)
-      //   - <baseId>.jsonl.reset.*      (reset snapshots from sessions.reset)
-      // All variants share the same logical session id, so when the user
-      // explicitly deletes a conversation we clean up every artefact on disk.
-      const baseId = basename(resolvedSrcPath).replace(/\.jsonl$/, '');
-      const sessionsDirAbs = dirname(resolvedSrcPath);
-      let removedCount = 0;
-      try {
-        const dirEntries = await fsP.readdir(sessionsDirAbs);
-        const targets = dirEntries.filter((name) =>
-          name === `${baseId}.jsonl`
-          || name === `${baseId}.deleted.jsonl`
-          || name.startsWith(`${baseId}.jsonl.reset.`),
-        );
-        for (const name of targets) {
-          const target = join(sessionsDirAbs, name);
-          try {
-            await fsP.unlink(target);
-            removedCount += 1;
-            logger.info(`[session:delete] Unlinked ${target}`);
-          } catch (e) {
-            // Tolerate ENOENT (already gone); log everything else.
-            const code = (e as NodeJS.ErrnoException).code;
-            if (code !== 'ENOENT') {
-              logger.warn(`[session:delete] Failed to unlink ${target}: ${String(e)}`);
-            }
-          }
-        }
-        logger.info(`[session:delete] Hard-deleted ${removedCount} file(s) for ${baseId}`);
-      } catch (e) {
-        const code = (e as NodeJS.ErrnoException).code;
-        if (code !== 'ENOENT') {
-          logger.warn(`[session:delete] Could not enumerate ${sessionsDirAbs}: ${String(e)}`);
-        }
+      const sweep = await sweepSessionArtefacts(sessionsDirAbs, baseId);
+      for (const removedPath of sweep.removed) {
+        logger.info(`[session:delete] Unlinked ${removedPath}`);
       }
+      for (const { path: failedPath, error } of sweep.errors) {
+        logger.warn(`[session:delete] Failed to unlink ${failedPath}: ${String(error)}`);
+      }
+      logger.info(`[session:delete] Hard-deleted ${sweep.removed.length} file(s) for ${baseId}`);
 
       // ── Step 3: remove the entry from sessions.json ──
       try {
         // Re-read to avoid race conditions
         const raw2 = await fsP.readFile(sessionsJsonPath, 'utf8');
         const json2 = JSON.parse(raw2) as Record<string, unknown>;
-
-        if (Array.isArray(json2.sessions)) {
-          json2.sessions = (json2.sessions as Array<Record<string, unknown>>)
-            .filter((s) => s.key !== sessionKey && s.sessionKey !== sessionKey);
-        } else if (json2[sessionKey]) {
-          delete json2[sessionKey];
-        }
-
+        removeSessionEntry(json2, sessionKey);
         await fsP.writeFile(sessionsJsonPath, JSON.stringify(json2, null, 2), 'utf8');
         logger.info(`[session:delete] Removed "${sessionKey}" from sessions.json`);
       } catch (e) {

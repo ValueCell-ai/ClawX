@@ -1,6 +1,12 @@
 import type { IncomingMessage, ServerResponse } from 'http';
-import { basename, dirname, join } from 'node:path';
+import { join } from 'node:path';
 import { getOpenClawConfigDir } from '../../utils/paths';
+import {
+  removeSessionEntry,
+  resolveSessionTranscriptPath,
+  sweepSessionArtefacts,
+} from '../../utils/session-files';
+import { logger } from '../../utils/logger';
 import type { HostApiContext } from '../context';
 import { parseJsonBody, sendJson } from '../route-utils';
 
@@ -49,6 +55,13 @@ export async function handleSessionRoutes(
     return true;
   }
 
+  // POST /api/sessions/delete — HTTP mirror of the `session:delete` IPC.
+  // Both surfaces share electron/utils/session-files.ts so they sweep the
+  // same set of artefacts: the live transcript, legacy `.deleted.jsonl`,
+  // `.jsonl.reset.*` snapshots, the trajectory sidecar pair
+  // (`<id>.trajectory.jsonl` + `<id>.trajectory-path.json`) and — when the
+  // pointer points outside sessions/ (the OPENCLAW_TRAJECTORY_DIR case) —
+  // the off-disk runtime trajectory it references.
   if (url.pathname === '/api/sessions/delete' && req.method === 'POST') {
     try {
       const body = await parseJsonBody<{ sessionKey: string }>(req);
@@ -63,85 +76,39 @@ export async function handleSessionRoutes(
         return true;
       }
       const agentId = parts[1];
+      // Defence-in-depth: agentId becomes a path segment under
+      // ~/.openclaw/agents/. The sibling /api/sessions/transcript route
+      // applies the same check to its sessionId; mirror it here so a
+      // malformed key can never steer the unlink loop into another folder.
+      if (!SAFE_SESSION_SEGMENT.test(agentId)) {
+        sendJson(res, 400, { success: false, error: `Invalid agentId: ${agentId}` });
+        return true;
+      }
       const sessionsDir = join(getOpenClawConfigDir(), 'agents', agentId, 'sessions');
       const sessionsJsonPath = join(sessionsDir, 'sessions.json');
       const fsP = await import('node:fs/promises');
       const raw = await fsP.readFile(sessionsJsonPath, 'utf8');
       const sessionsJson = JSON.parse(raw) as Record<string, unknown>;
 
-      let uuidFileName: string | undefined;
-      let resolvedSrcPath: string | undefined;
-      if (Array.isArray(sessionsJson.sessions)) {
-        const entry = (sessionsJson.sessions as Array<Record<string, unknown>>)
-          .find((s) => s.key === sessionKey || s.sessionKey === sessionKey);
-        if (entry) {
-          uuidFileName = (entry.file ?? entry.fileName ?? entry.path) as string | undefined;
-          if (!uuidFileName && typeof entry.id === 'string') {
-            uuidFileName = `${entry.id}.jsonl`;
-          }
+      const resolution = resolveSessionTranscriptPath(sessionsJson, sessionsDir, sessionKey);
+      if (!resolution.ok) {
+        if (resolution.failure.kind === 'not-found') {
+          sendJson(res, 404, { success: false, error: `Cannot resolve file for session: ${sessionKey}` });
+        } else {
+          logger.warn(`[api/sessions/delete] Refusing out-of-scope path for "${sessionKey}": ${resolution.failure.resolvedPath}`);
+          sendJson(res, 400, { success: false, error: `Resolved session path is outside the agent sessions dir: ${resolution.failure.resolvedPath}` });
         }
-      }
-      if (!uuidFileName && sessionsJson[sessionKey] != null) {
-        const val = sessionsJson[sessionKey];
-        if (typeof val === 'string') {
-          uuidFileName = val;
-        } else if (typeof val === 'object' && val !== null) {
-          const entry = val as Record<string, unknown>;
-          const absFile = (entry.sessionFile ?? entry.file ?? entry.fileName ?? entry.path) as string | undefined;
-          if (absFile) {
-            if (absFile.startsWith('/') || absFile.match(/^[A-Za-z]:\\/)) {
-              resolvedSrcPath = absFile;
-            } else {
-              uuidFileName = absFile;
-            }
-          } else {
-            const uuidVal = (entry.id ?? entry.sessionId) as string | undefined;
-            if (uuidVal) uuidFileName = uuidVal.endsWith('.jsonl') ? uuidVal : `${uuidVal}.jsonl`;
-          }
-        }
-      }
-      if (!uuidFileName && !resolvedSrcPath) {
-        sendJson(res, 404, { success: false, error: `Cannot resolve file for session: ${sessionKey}` });
         return true;
       }
-      if (!resolvedSrcPath) {
-        if (!uuidFileName!.endsWith('.jsonl')) uuidFileName = `${uuidFileName}.jsonl`;
-        resolvedSrcPath = join(sessionsDir, uuidFileName!);
+
+      const sweep = await sweepSessionArtefacts(resolution.sessionsDirAbs, resolution.baseId);
+      for (const { path: failedPath, error } of sweep.errors) {
+        logger.warn(`[api/sessions/delete] Failed to unlink ${failedPath}: ${String(error)}`);
       }
 
-      // Hard-delete the JSONL transcript and its siblings for this session id:
-      //   - <baseId>.jsonl              (live transcript)
-      //   - <baseId>.deleted.jsonl      (legacy soft-delete leftover)
-      //   - <baseId>.jsonl.reset.*      (reset snapshots from sessions.reset)
-      const baseId = basename(resolvedSrcPath).replace(/\.jsonl$/, '');
-      const sessionsDirAbs = dirname(resolvedSrcPath);
-      try {
-        const dirEntries = await fsP.readdir(sessionsDirAbs);
-        const targets = dirEntries.filter((name) =>
-          name === `${baseId}.jsonl`
-          || name === `${baseId}.deleted.jsonl`
-          || name.startsWith(`${baseId}.jsonl.reset.`),
-        );
-        await Promise.all(targets.map(async (name) => {
-          try {
-            await fsP.unlink(join(sessionsDirAbs, name));
-          } catch (err) {
-            const code = (err as NodeJS.ErrnoException).code;
-            if (code !== 'ENOENT') throw err;
-          }
-        }));
-      } catch {
-        // Non-fatal; still try to update sessions.json so the entry stops
-        // showing up in the sidebar even if the directory is unreadable.
-      }
       const raw2 = await fsP.readFile(sessionsJsonPath, 'utf8');
       const json2 = JSON.parse(raw2) as Record<string, unknown>;
-      if (Array.isArray(json2.sessions)) {
-        json2.sessions = (json2.sessions as Array<Record<string, unknown>>)
-          .filter((s) => s.key !== sessionKey && s.sessionKey !== sessionKey);
-      } else if (json2[sessionKey]) {
-        delete json2[sessionKey];
-      }
+      removeSessionEntry(json2, sessionKey);
       await fsP.writeFile(sessionsJsonPath, JSON.stringify(json2, null, 2), 'utf8');
       sendJson(res, 200, { success: true });
     } catch (error) {

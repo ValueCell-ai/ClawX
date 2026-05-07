@@ -158,6 +158,250 @@ describe('handleSessionRoutes — POST /api/sessions/delete', () => {
     );
   });
 
+  it('rejects agentIds that contain path-traversal segments with 400', async () => {
+    // Even if the caller manages to put `..` into the agent slot, the route
+    // must refuse before any FS access happens — otherwise sessionsDir would
+    // resolve outside ~/.openclaw/agents/.
+    parseJsonBodyMock.mockResolvedValueOnce({ sessionKey: 'agent:..:foo' });
+
+    const { handleSessionRoutes } = await import('@electron/api/routes/sessions');
+    await handleSessionRoutes(makeReq(), makeRes(), DELETE_URL, ctx);
+
+    expect(sendJsonMock).toHaveBeenCalledWith(
+      expect.anything(),
+      400,
+      expect.objectContaining({ success: false }),
+    );
+  });
+
+  it('refuses to unlink files when sessionFile points outside the agent sessions dir', async () => {
+    // Defence-in-depth: if a corrupt sessions.json claims the transcript
+    // lives in /tmp (or anywhere outside the agent sessions folder), the
+    // sweep must not run there and existing files must survive untouched.
+    const sessionKey = 'agent:main:session-escape';
+    const escapeDir = join(testOpenClawConfigDir, 'unrelated-dir');
+    mkdirSync(escapeDir, { recursive: true });
+    const escapeFile = join(escapeDir, 'escape-uuid.jsonl');
+    writeFileSync(escapeFile, 'must-not-be-deleted', 'utf8');
+    writeSessionsJson({
+      [sessionKey]: { sessionFile: escapeFile, sessionId: 'escape-uuid' },
+    });
+    parseJsonBodyMock.mockResolvedValueOnce({ sessionKey });
+
+    const { handleSessionRoutes } = await import('@electron/api/routes/sessions');
+    await handleSessionRoutes(makeReq(), makeRes(), DELETE_URL, ctx);
+
+    expect(sendJsonMock).toHaveBeenCalledWith(
+      expect.anything(),
+      400,
+      expect.objectContaining({ success: false }),
+    );
+    expect(existsSync(escapeFile)).toBe(true);
+    expect(readFileSync(escapeFile, 'utf8')).toBe('must-not-be-deleted');
+    // sessions.json is left intact when the resolution fails — the entry
+    // stays so a follow-up fix can be applied without losing track of it.
+    const updated = JSON.parse(readFileSync(SESSIONS_JSON, 'utf8'));
+    expect(updated[sessionKey]).toBeDefined();
+  });
+
+  it("also sweeps OpenClaw's trajectory sidecars (<id>.trajectory.jsonl + <id>.trajectory-path.json)", async () => {
+    // OpenClaw writes `<base>.trajectory.jsonl` (flight recorder) and
+    // `<base>.trajectory-path.json` (pointer) next to the session file.
+    // Hard-deleting the conversation must leave neither behind, otherwise
+    // the next `sessions.list` is clean but the agent's sessions/ folder
+    // accumulates orphaned trajectory data.
+    const sessionKey = 'agent:main:session-traj';
+    const baseId = 'traj-uuid';
+    const liveFile = join(SESSIONS_DIR, `${baseId}.jsonl`);
+    const trajFile = join(SESSIONS_DIR, `${baseId}.trajectory.jsonl`);
+    const pointerFile = join(SESSIONS_DIR, `${baseId}.trajectory-path.json`);
+    writeFileSync(liveFile, '', 'utf8');
+    writeFileSync(trajFile, '{"event":"session.started"}\n', 'utf8');
+    writeFileSync(
+      pointerFile,
+      JSON.stringify({
+        traceSchema: 'openclaw-trajectory-pointer',
+        schemaVersion: 1,
+        sessionId: baseId,
+        runtimeFile: trajFile,
+      }),
+      'utf8',
+    );
+    writeSessionsJson({
+      [sessionKey]: { sessionFile: liveFile, sessionId: baseId },
+    });
+    parseJsonBodyMock.mockResolvedValueOnce({ sessionKey });
+
+    const { handleSessionRoutes } = await import('@electron/api/routes/sessions');
+    await handleSessionRoutes(makeReq(), makeRes(), DELETE_URL, ctx);
+
+    expect(existsSync(liveFile)).toBe(false);
+    expect(existsSync(trajFile)).toBe(false);
+    expect(existsSync(pointerFile)).toBe(false);
+  });
+
+  it('follows the trajectory pointer to unlink an OPENCLAW_TRAJECTORY_DIR-style off-sessions runtime file', async () => {
+    // When OPENCLAW_TRAJECTORY_DIR is set, the pointer's `runtimeFile`
+    // resolves outside sessions/. Without the pointer-follow, that file
+    // would be orphaned forever after deletion.
+    const sessionKey = 'agent:main:session-trajdir';
+    const baseId = 'trajdir-uuid';
+    const liveFile = join(SESSIONS_DIR, `${baseId}.jsonl`);
+    const pointerFile = join(SESSIONS_DIR, `${baseId}.trajectory-path.json`);
+    const trajectoryDir = join(testOpenClawConfigDir, 'trajectory-dir');
+    mkdirSync(trajectoryDir, { recursive: true });
+    const offDiskRuntime = join(trajectoryDir, `${baseId}.jsonl`);
+    writeFileSync(liveFile, '', 'utf8');
+    writeFileSync(offDiskRuntime, '{"event":"prompt.submitted"}\n', 'utf8');
+    writeFileSync(
+      pointerFile,
+      JSON.stringify({
+        traceSchema: 'openclaw-trajectory-pointer',
+        schemaVersion: 1,
+        sessionId: baseId,
+        runtimeFile: offDiskRuntime,
+      }),
+      'utf8',
+    );
+    writeSessionsJson({
+      [sessionKey]: { sessionFile: liveFile, sessionId: baseId },
+    });
+    parseJsonBodyMock.mockResolvedValueOnce({ sessionKey });
+
+    const { handleSessionRoutes } = await import('@electron/api/routes/sessions');
+    await handleSessionRoutes(makeReq(), makeRes(), DELETE_URL, ctx);
+
+    expect(existsSync(liveFile)).toBe(false);
+    expect(existsSync(pointerFile)).toBe(false);
+    expect(existsSync(offDiskRuntime)).toBe(false);
+  });
+
+  it('refuses to follow a pointer whose runtimeFile is not an absolute .jsonl path', async () => {
+    // Defence-in-depth: a malformed/hostile pointer must NOT get us to
+    // unlink arbitrary files (e.g. /etc/passwd or relative paths).
+    const sessionKey = 'agent:main:session-evilpointer';
+    const baseId = 'evilpointer-uuid';
+    const liveFile = join(SESSIONS_DIR, `${baseId}.jsonl`);
+    const pointerFile = join(SESSIONS_DIR, `${baseId}.trajectory-path.json`);
+    const bystander = join(testOpenClawConfigDir, 'bystander-dir', 'must-not-touch.txt');
+    mkdirSync(join(testOpenClawConfigDir, 'bystander-dir'), { recursive: true });
+    writeFileSync(bystander, 'kept', 'utf8');
+    writeFileSync(liveFile, '', 'utf8');
+    writeFileSync(
+      pointerFile,
+      JSON.stringify({
+        traceSchema: 'openclaw-trajectory-pointer',
+        schemaVersion: 1,
+        sessionId: baseId,
+        // Wrong extension on purpose — not a `.jsonl`.
+        runtimeFile: bystander,
+      }),
+      'utf8',
+    );
+    writeSessionsJson({
+      [sessionKey]: { sessionFile: liveFile, sessionId: baseId },
+    });
+    parseJsonBodyMock.mockResolvedValueOnce({ sessionKey });
+
+    const { handleSessionRoutes } = await import('@electron/api/routes/sessions');
+    await handleSessionRoutes(makeReq(), makeRes(), DELETE_URL, ctx);
+
+    // The session and the (correctly-detected) pointer are gone, but the
+    // bystander file the pointer tried to escape to is untouched.
+    expect(existsSync(liveFile)).toBe(false);
+    expect(existsSync(pointerFile)).toBe(false);
+    expect(existsSync(bystander)).toBe(true);
+    expect(readFileSync(bystander, 'utf8')).toBe('kept');
+  });
+
+  it("tolerates a malformed pointer (still cleans local sidecars, doesn't fail the whole delete)", async () => {
+    const sessionKey = 'agent:main:session-malformedptr';
+    const baseId = 'malformedptr-uuid';
+    const liveFile = join(SESSIONS_DIR, `${baseId}.jsonl`);
+    const trajFile = join(SESSIONS_DIR, `${baseId}.trajectory.jsonl`);
+    const pointerFile = join(SESSIONS_DIR, `${baseId}.trajectory-path.json`);
+    writeFileSync(liveFile, '', 'utf8');
+    writeFileSync(trajFile, '', 'utf8');
+    // Garbage JSON — the sweep must not blow up.
+    writeFileSync(pointerFile, '{ not-json', 'utf8');
+    writeSessionsJson({
+      [sessionKey]: { sessionFile: liveFile, sessionId: baseId },
+    });
+    parseJsonBodyMock.mockResolvedValueOnce({ sessionKey });
+
+    const { handleSessionRoutes } = await import('@electron/api/routes/sessions');
+    await handleSessionRoutes(makeReq(), makeRes(), DELETE_URL, ctx);
+
+    expect(sendJsonMock).toHaveBeenCalledWith(expect.anything(), 200, { success: true });
+    expect(existsSync(liveFile)).toBe(false);
+    expect(existsSync(trajFile)).toBe(false);
+    expect(existsSync(pointerFile)).toBe(false);
+  });
+
+  it("does not touch another session's trajectory sidecars during the sweep", async () => {
+    const targetKey = 'agent:main:session-trajiso-target';
+    const survivorKey = 'agent:main:session-trajiso-keep';
+    const targetBase = 'trajiso-target';
+    const survivorBase = 'trajiso-keep';
+    const targetFile = join(SESSIONS_DIR, `${targetBase}.jsonl`);
+    const targetTraj = join(SESSIONS_DIR, `${targetBase}.trajectory.jsonl`);
+    const survivorFile = join(SESSIONS_DIR, `${survivorBase}.jsonl`);
+    const survivorTraj = join(SESSIONS_DIR, `${survivorBase}.trajectory.jsonl`);
+    const survivorPointer = join(SESSIONS_DIR, `${survivorBase}.trajectory-path.json`);
+    writeFileSync(targetFile, '', 'utf8');
+    writeFileSync(targetTraj, '', 'utf8');
+    writeFileSync(survivorFile, 'kept', 'utf8');
+    writeFileSync(survivorTraj, 'kept', 'utf8');
+    writeFileSync(survivorPointer, JSON.stringify({
+      traceSchema: 'openclaw-trajectory-pointer',
+      schemaVersion: 1,
+      sessionId: survivorBase,
+      runtimeFile: survivorTraj,
+    }), 'utf8');
+    writeSessionsJson({
+      [targetKey]: { sessionFile: targetFile, sessionId: targetBase },
+      [survivorKey]: { sessionFile: survivorFile, sessionId: survivorBase },
+    });
+    parseJsonBodyMock.mockResolvedValueOnce({ sessionKey: targetKey });
+
+    const { handleSessionRoutes } = await import('@electron/api/routes/sessions');
+    await handleSessionRoutes(makeReq(), makeRes(), DELETE_URL, ctx);
+
+    expect(existsSync(targetFile)).toBe(false);
+    expect(existsSync(targetTraj)).toBe(false);
+    expect(existsSync(survivorFile)).toBe(true);
+    expect(existsSync(survivorTraj)).toBe(true);
+    expect(existsSync(survivorPointer)).toBe(true);
+  });
+
+  it('treats Windows forward-slash absolute paths as absolute (cross-platform)', async () => {
+    // OpenClaw on Windows can write `sessionFile` as either `C:\…` (back-
+    // slash) or `C:/…` (forward-slash). Node's `path.win32.isAbsolute`
+    // accepts both; the resolver must too. We can't actually create a
+    // `C:/…` path on POSIX, so we cover the same code path with a Windows-
+    // style absolute that points back into our temp sessions dir using
+    // mixed slashes. The detector should still treat it as absolute and
+    // route through the in-scope sibling sweep.
+    const sessionKey = 'agent:main:session-win';
+    const baseId = 'win-uuid';
+    const liveFile = join(SESSIONS_DIR, `${baseId}.jsonl`);
+    writeFileSync(liveFile, '', 'utf8');
+    // Force forward slashes — historically this would have been classed as
+    // a *relative* filename on POSIX and `join`ed onto sessionsDir, which
+    // produced a junk path that no `readdir` could find.
+    const forwardSlashAbs = liveFile.replace(/\\/g, '/');
+    writeSessionsJson({
+      [sessionKey]: { sessionFile: forwardSlashAbs, sessionId: baseId },
+    });
+    parseJsonBodyMock.mockResolvedValueOnce({ sessionKey });
+
+    const { handleSessionRoutes } = await import('@electron/api/routes/sessions');
+    await handleSessionRoutes(makeReq(), makeRes(), DELETE_URL, ctx);
+
+    expect(sendJsonMock).toHaveBeenCalledWith(expect.anything(), 200, { success: true });
+    expect(existsSync(liveFile)).toBe(false);
+  });
+
   it('does not touch other sessions in the same directory', async () => {
     const targetKey = 'agent:main:session-eee';
     const survivorKey = 'agent:main:session-fff';
