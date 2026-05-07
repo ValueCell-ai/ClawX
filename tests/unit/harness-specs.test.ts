@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  isPluginLifecycleTask,
   parseFrontmatter,
   pathMatchesAny,
 } from '../../harness/src/specs.mjs';
@@ -8,6 +9,7 @@ import {
   scanBackendCommunicationBoundary,
   touchesCommunicationPath,
   validateGatewayTaskSpec,
+  validatePluginLifecycleTaskSpec,
 } from '../../harness/src/rules.mjs';
 
 describe('harness specs', () => {
@@ -59,6 +61,79 @@ Body`);
 
     expect(validateGatewayTaskSpec(taskSpec, scenarioSpec)).toContain(
       'harness/specs/tasks/example.md: requiredProfiles must include "comms"',
+    );
+  });
+
+  it('detects plugin lifecycle task specs for strict validation', () => {
+    expect(isPluginLifecycleTask({
+      data: {
+        scenario: 'plugin-lifecycle-management',
+      },
+    })).toBe(true);
+    expect(isPluginLifecycleTask({
+      data: {
+        scenarios: ['plugin-lifecycle-management'],
+      },
+    })).toBe(true);
+    expect(isPluginLifecycleTask({
+      data: {
+        scenario: 'gateway-backend-communication',
+      },
+    })).toBe(false);
+  });
+
+  it('requires plugin lifecycle tasks to declare strict task fields', () => {
+    const taskSpec = {
+      path: 'harness/specs/tasks/plugin-example.md',
+      data: {
+        id: 'plugin-example',
+        title: 'Plugin Example',
+        scenario: 'plugin-lifecycle-management',
+        taskType: 'plugin-lifecycle',
+        intent: 'Adjust plugin lifecycle behavior.',
+        requiredProfiles: [],
+        docs: { required: false },
+      },
+    };
+    const scenarioSpec = {
+      data: {
+        requiredProfiles: ['fast'],
+        ownedPaths: ['electron/utils/plugin-install.ts'],
+      },
+    };
+
+    expect(validatePluginLifecycleTaskSpec(taskSpec, scenarioSpec)).toEqual(
+      expect.arrayContaining([
+        'harness/specs/tasks/plugin-example.md: requiredProfiles must include "fast"',
+        'harness/specs/tasks/plugin-example.md: touchedAreas must declare affected paths',
+        'harness/specs/tasks/plugin-example.md: expectedUserBehavior must declare visible behavior',
+        'harness/specs/tasks/plugin-example.md: acceptance must declare completion criteria',
+      ]),
+    );
+  });
+
+  it('rejects plugin lifecycle tasks with the wrong scenario or task type', () => {
+    const taskSpec = {
+      path: 'harness/specs/tasks/plugin-example.md',
+      data: {
+        id: 'plugin-example',
+        title: 'Plugin Example',
+        scenario: 'gateway-backend-communication',
+        taskType: 'runtime-bridge',
+        intent: 'Adjust plugin lifecycle behavior.',
+        touchedAreas: ['electron/utils/plugin-install.ts'],
+        expectedUserBehavior: ['Plugin remains usable.'],
+        requiredProfiles: ['fast'],
+        acceptance: ['Validation passes.'],
+        docs: { required: false },
+      },
+    };
+
+    expect(validatePluginLifecycleTaskSpec(taskSpec, null)).toEqual(
+      expect.arrayContaining([
+        'harness/specs/tasks/plugin-example.md: plugin lifecycle tasks must set scenario: plugin-lifecycle-management',
+        'harness/specs/tasks/plugin-example.md: plugin lifecycle tasks must set taskType: plugin-lifecycle',
+      ]),
     );
   });
 

@@ -6,6 +6,7 @@ import { writeReport } from './report.mjs';
 import { runStep } from './runner.mjs';
 import {
   isGatewayBackendCommunicationTask,
+  isPluginLifecycleTask,
   loadRuleSpecs,
   loadScenarioSpecs,
   loadSpec,
@@ -15,6 +16,7 @@ import {
   scanBackendCommunicationBoundary,
   touchesCommunicationPath,
   validateGatewayTaskSpec,
+  validatePluginLifecycleTaskSpec,
 } from './rules.mjs';
 
 function parseArgs(argv) {
@@ -86,6 +88,8 @@ async function validate(specPath, options = {}) {
     }
   } else if (isGatewayBackendCommunicationTask(spec)) {
     failures.push(...validateGatewayTaskSpec(spec, scenario, changedFiles));
+  } else if (isPluginLifecycleTask(spec)) {
+    failures.push(...validatePluginLifecycleTaskSpec(spec, scenario, changedFiles));
   } else if (!spec.data.id || !spec.data.title) {
     failures.push(`${spec.path}: spec must include id and title`);
   }

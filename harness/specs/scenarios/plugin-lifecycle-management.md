@@ -14,6 +14,11 @@ ownedPaths:
   - tests/unit/openclaw-auth.test.ts
   - tests/unit/channel-config.test.ts
   - tests/unit/plugin-install.test.ts
+  - tests/unit/harness-specs.test.ts
+  - harness/src/cli.mjs
+  - harness/src/rules.mjs
+  - harness/src/specs.mjs
+  - harness/specs/scenarios/gateway-backend-communication.md
   - harness/specs/scenarios/plugin-lifecycle-management.md
   - harness/specs/rules/**
   - harness/specs/tasks/**

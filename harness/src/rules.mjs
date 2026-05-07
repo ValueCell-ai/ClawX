@@ -82,6 +82,24 @@ export async function scanBackendCommunicationBoundary(files) {
 }
 
 export function validateGatewayTaskSpec(taskSpec, scenarioSpec, changedFiles = []) {
+  return validateTaskSpec(taskSpec, scenarioSpec, changedFiles, {
+    scenarioId: 'gateway-backend-communication',
+    taskType: 'runtime-bridge',
+    label: 'gateway backend communication',
+    requiredProfiles: ['fast', 'comms'],
+  });
+}
+
+export function validatePluginLifecycleTaskSpec(taskSpec, scenarioSpec, changedFiles = []) {
+  return validateTaskSpec(taskSpec, scenarioSpec, changedFiles, {
+    scenarioId: 'plugin-lifecycle-management',
+    taskType: 'plugin-lifecycle',
+    label: 'plugin lifecycle',
+    requiredProfiles: ['fast'],
+  });
+}
+
+function validateTaskSpec(taskSpec, scenarioSpec, changedFiles, options) {
   const failures = [];
   const data = taskSpec.data ?? {};
   const requiredProfiles = toArray(data.requiredProfiles);
@@ -93,15 +111,15 @@ export function validateGatewayTaskSpec(taskSpec, scenarioSpec, changedFiles = [
     if (!data[field]) failures.push(`${taskSpec.path}: missing required field "${field}"`);
   }
 
-  if (data.scenario !== 'gateway-backend-communication') {
-    failures.push(`${taskSpec.path}: gateway backend communication tasks must set scenario: gateway-backend-communication`);
+  if (data.scenario !== options.scenarioId) {
+    failures.push(`${taskSpec.path}: ${options.label} tasks must set scenario: ${options.scenarioId}`);
   }
 
-  if (data.taskType !== 'runtime-bridge') {
-    failures.push(`${taskSpec.path}: gateway backend communication tasks must set taskType: runtime-bridge`);
+  if (data.taskType !== options.taskType) {
+    failures.push(`${taskSpec.path}: ${options.label} tasks must set taskType: ${options.taskType}`);
   }
 
-  for (const profile of ['fast', 'comms']) {
+  for (const profile of options.requiredProfiles) {
     if (!requiredProfiles.includes(profile)) {
       failures.push(`${taskSpec.path}: requiredProfiles must include "${profile}"`);
     }

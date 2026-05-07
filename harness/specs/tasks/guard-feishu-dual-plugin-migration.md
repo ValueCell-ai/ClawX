@@ -10,6 +10,10 @@ touchedAreas:
   - electron/gateway/config-sync.ts
   - tests/unit/openclaw-auth.test.ts
   - tests/unit/channel-config.test.ts
+  - tests/unit/harness-specs.test.ts
+  - harness/src/cli.mjs
+  - harness/src/rules.mjs
+  - harness/src/specs.mjs
   - harness/specs/tasks/guard-feishu-dual-plugin-migration.md
   - harness/specs/tasks/guard-plugin-resolution.md
   - harness/specs/tasks/plugin-validation.md

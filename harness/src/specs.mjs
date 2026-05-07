@@ -122,6 +122,11 @@ export function isGatewayBackendCommunicationTask(spec) {
     || toArray(spec.data?.scenarios).includes('gateway-backend-communication');
 }
 
+export function isPluginLifecycleTask(spec) {
+  return spec.data?.scenario === 'plugin-lifecycle-management'
+    || toArray(spec.data?.scenarios).includes('plugin-lifecycle-management');
+}
+
 export function globToRegExp(glob) {
   const escaped = glob
     .replace(/[.+^${}()|[\]\\]/g, '\\$&')
