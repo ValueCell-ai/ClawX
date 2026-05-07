@@ -1676,16 +1676,17 @@ export const useChatStore = create<ChatState>((set, get) => ({
   //
   // NOTE: The OpenClaw Gateway does NOT expose a sessions.delete (or equivalent)
   // RPC — confirmed by inspecting client.ts, protocol.ts and the full codebase.
-  // Deletion is therefore a local-only UI operation: the session is removed from
-  // the sidebar list and its labels/activity maps are cleared.  The underlying
-  // JSONL history file on disk is intentionally left intact, consistent with the
-  // newSession() design that avoids sessions.reset to preserve history.
+  // Deletion is therefore performed locally: the renderer drops the session
+  // from the sidebar / labels / activity maps and the Main process hard-deletes
+  // the on-disk transcript so it stops appearing in sessions.list and stops
+  // contributing to the Dashboard token-usage history.
 
   deleteSession: async (key: string) => {
     clearCachedSessionHistory(key);
-    // Soft-delete the session's JSONL transcript on disk.
-    // The main process renames <suffix>.jsonl → <suffix>.deleted.jsonl so that
-    // sessions.list skips it automatically.
+    // Hard-delete the session's JSONL transcript on disk.
+    // The main process unlinks <id>.jsonl plus any leftover
+    // <id>.deleted.jsonl and <id>.jsonl.reset.* siblings, then removes the
+    // entry from sessions.json so sessions.list stops surfacing it.
     try {
       const result = await hostApiFetch<{
         success: boolean;
