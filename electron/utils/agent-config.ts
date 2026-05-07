@@ -7,6 +7,7 @@ import { withConfigLock } from './config-mutex';
 import { expandPath, getOpenClawConfigDir } from './paths';
 import * as logger from './logger';
 import { toUiChannelType } from './channel-alias';
+import { ensureClawXIdentityFile } from './openclaw-workspace';
 
 const MAIN_AGENT_ID = 'main';
 const MAIN_AGENT_NAME = 'Main Agent';
@@ -421,11 +422,13 @@ async function provisionAgentFilesystem(
 
   // When inheritWorkspace is true, copy the main agent's workspace bootstrap
   // files (SOUL.md, AGENTS.md, etc.) so the new agent inherits the same
-  // personality / instructions. When false (default), leave the workspace
-  // empty and let OpenClaw Gateway seed the default bootstrap files on startup.
+  // personality / instructions. Otherwise OpenClaw will seed the missing files
+  // on first use, but ClawX still pre-seeds IDENTITY.md so desktop workspaces
+  // skip the chat-first bootstrap flow.
   if (options?.inheritWorkspace && targetWorkspace !== sourceWorkspace) {
     await copyBootstrapFiles(sourceWorkspace, targetWorkspace);
   }
+  await ensureClawXIdentityFile(targetWorkspace, { createDir: true });
   if (targetAgentDir !== sourceAgentDir) {
     await copyRuntimeFiles(sourceAgentDir, targetAgentDir);
   }

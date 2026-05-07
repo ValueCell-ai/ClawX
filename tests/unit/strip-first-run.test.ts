@@ -20,6 +20,8 @@ vi.mock('os', async () => {
 
 import {
   ensureClawXContext,
+  ensureClawXDefaultIdentity,
+  ensureClawXIdentityFile,
   mergeClawXSection,
   stripFirstRunSection,
 } from '../../electron/utils/openclaw-workspace';
@@ -162,6 +164,68 @@ describe('stripFirstRunSection', () => {
     expect(merged).toContain('## Session Startup');
     expect(merged).toContain('<!-- clawx:begin -->');
     expect(merged).toContain('<!-- clawx:end -->');
+  });
+});
+
+describe('ensureClawXIdentityFile', () => {
+  it('writes a default ClawX identity when the workspace has none', async () => {
+    const workspaceDir = join(testHome, '.openclaw', 'workspace');
+    await mkdir(workspaceDir, { recursive: true });
+
+    await ensureClawXIdentityFile(workspaceDir);
+
+    await expect(readFile(join(workspaceDir, 'IDENTITY.md'), 'utf-8')).resolves.toContain('ClawX');
+  });
+
+  it('replaces the untouched OpenClaw identity template but preserves custom identities', async () => {
+    const workspaceDir = join(testHome, '.openclaw', 'workspace');
+    await mkdir(workspaceDir, { recursive: true });
+
+    await writeFile(
+      join(workspaceDir, 'IDENTITY.md'),
+      [
+        '# IDENTITY.md - Who Am I?',
+        '',
+        '_Fill this in during your first conversation. Make it yours._',
+        '',
+        '- **Name:**',
+        '  _(pick something you like)_',
+        '- **Creature:**',
+        '  _(AI? robot? familiar? ghost in the machine? something weirder?)_',
+        '- **Vibe:**',
+        '  _(how do you come across? sharp? warm? chaotic? calm?)_',
+        '- **Emoji:**',
+        '  _(your signature — pick one that feels right)_',
+      ].join('\n'),
+      'utf-8',
+    );
+
+    await ensureClawXIdentityFile(workspaceDir);
+    await expect(readFile(join(workspaceDir, 'IDENTITY.md'), 'utf-8')).resolves.toContain('ClawX');
+    await expect(readFile(join(workspaceDir, 'IDENTITY.md'), 'utf-8')).resolves.not.toContain('pick something you like');
+
+    await writeFile(join(workspaceDir, 'IDENTITY.md'), '# IDENTITY.md\n\n- **Name:** Paisley\n', 'utf-8');
+    await ensureClawXIdentityFile(workspaceDir);
+    await expect(readFile(join(workspaceDir, 'IDENTITY.md'), 'utf-8')).resolves.toBe('# IDENTITY.md\n\n- **Name:** Paisley\n');
+  });
+
+  it('removes a lingering BOOTSTRAP.md after identity seeding', async () => {
+    const workspaceDir = join(testHome, '.openclaw', 'workspace');
+    await mkdir(workspaceDir, { recursive: true });
+    await writeFile(join(workspaceDir, 'BOOTSTRAP.md'), 'chat-first bootstrap', 'utf-8');
+
+    await ensureClawXIdentityFile(workspaceDir);
+
+    await expect(access(join(workspaceDir, 'BOOTSTRAP.md'))).rejects.toThrow();
+    await expect(readFile(join(workspaceDir, 'IDENTITY.md'), 'utf-8')).resolves.toContain('ClawX');
+  });
+});
+
+describe('ensureClawXDefaultIdentity', () => {
+  it('creates the default workspace and seeds IDENTITY.md for startup-owned workspaces', async () => {
+    await ensureClawXDefaultIdentity();
+
+    await expect(readFile(join(testHome, '.openclaw', 'workspace', 'IDENTITY.md'), 'utf-8')).resolves.toContain('ClawX');
   });
 });
 

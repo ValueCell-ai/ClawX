@@ -509,4 +509,18 @@ describe('agent config lifecycle', () => {
     expect(agentIds).not.toContain('2');
     expect(agentIds).not.toContain('1');
   });
+
+  it('seeds a default ClawX IDENTITY.md for newly created agent workspaces', async () => {
+    await writeOpenClawJson({
+      agents: {
+        list: [{ id: 'main', name: 'Main', default: true }],
+      },
+    });
+
+    const { createAgent } = await import('@electron/utils/agent-config');
+
+    await createAgent('Research');
+
+    await expect(readFile(join(testHome, '.openclaw', 'workspace-research', 'IDENTITY.md'), 'utf8')).resolves.toContain('ClawX');
+  });
 });

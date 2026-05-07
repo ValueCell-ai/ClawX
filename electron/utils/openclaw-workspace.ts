@@ -4,7 +4,7 @@
  * All file I/O is async (fs/promises) to avoid blocking the Electron
  * main thread.
  */
-import { access, readFile, writeFile, readdir, unlink } from 'fs/promises';
+import { access, mkdir, readFile, writeFile, readdir, unlink } from 'fs/promises';
 import { constants } from 'fs';
 import { join, resolve, sep } from 'path';
 import { homedir } from 'os';
@@ -13,6 +13,8 @@ import { getResourcesDir } from './paths';
 
 const CLAWX_BEGIN = '<!-- clawx:begin -->';
 const CLAWX_END = '<!-- clawx:end -->';
+const DEFAULT_BOOTSTRAP_FILENAME = 'BOOTSTRAP.md';
+const DEFAULT_IDENTITY_FILENAME = 'IDENTITY.md';
 
 // ── Helpers ──────────────────────────────────────────────────────
 
@@ -24,6 +26,94 @@ function isCurrentOpenClawPath(p: string): boolean {
   const openclawDir = resolve(join(homedir(), '.openclaw'));
   const workspaceDir = resolve(p);
   return workspaceDir === openclawDir || workspaceDir.startsWith(openclawDir + sep);
+}
+
+export function buildDefaultClawXIdentityContent(): string {
+  return [
+    '# IDENTITY.md - ClawX',
+    '',
+    '- **Name:** ClawX',
+    '- **Creature:** desktop AI assistant',
+    '- **Vibe:** concise, capable, and practical',
+    '- **Emoji:** 🐾',
+    '- **Avatar:**',
+    '',
+    'ClawX uses a default desktop identity instead of chat-first bootstrap.',
+    '',
+  ].join('\n');
+}
+
+export function isOpenClawIdentityTemplate(content: string): boolean {
+  const normalized = content.replace(/\r\n/g, '\n');
+  return normalized.includes('# IDENTITY.md - Who Am I?')
+    && normalized.includes('_(pick something you like)_')
+    && normalized.includes('- **Name:**')
+    && normalized.includes('- **Emoji:**');
+}
+
+async function writeFileIfMissing(path: string, content: string): Promise<boolean> {
+  try {
+    await writeFile(path, content, { encoding: 'utf-8', flag: 'wx' });
+    return true;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'EEXIST') {
+      return false;
+    }
+    throw error;
+  }
+}
+
+/**
+ * Ensure ClawX-managed workspaces have a non-template IDENTITY.md before the
+ * Gateway initializes them. Existing custom identities are preserved.
+ */
+export async function ensureClawXIdentityFile(
+  workspaceDir: string,
+  options: { createDir?: boolean } = {},
+): Promise<void> {
+  const resolvedWorkspaceDir = resolve(workspaceDir);
+  if (options.createDir) {
+    await mkdir(resolvedWorkspaceDir, { recursive: true });
+  } else if (!(await fileExists(resolvedWorkspaceDir))) {
+    return;
+  }
+
+  const identityPath = join(resolvedWorkspaceDir, DEFAULT_IDENTITY_FILENAME);
+  const defaultIdentity = buildDefaultClawXIdentityContent();
+  let wroteIdentity = await writeFileIfMissing(identityPath, defaultIdentity);
+
+  if (!wroteIdentity) {
+    let existing = '';
+    try {
+      existing = await readFile(identityPath, 'utf-8');
+    } catch {
+      return;
+    }
+
+    if (isOpenClawIdentityTemplate(existing) && existing !== defaultIdentity) {
+      await writeFile(identityPath, defaultIdentity, 'utf-8');
+      wroteIdentity = true;
+    }
+  }
+
+  const bootstrapPath = join(resolvedWorkspaceDir, DEFAULT_BOOTSTRAP_FILENAME);
+  if (await fileExists(bootstrapPath)) {
+    try {
+      await unlink(bootstrapPath);
+      logger.info(`Removed chat-first bootstrap file from ClawX workspace (${resolvedWorkspaceDir})`);
+    } catch {
+      logger.warn(`Failed to remove chat-first bootstrap file: ${bootstrapPath}`);
+    }
+  } else if (wroteIdentity) {
+    logger.info(`Seeded default ClawX identity for workspace (${resolvedWorkspaceDir})`);
+  }
+}
+
+export async function ensureClawXDefaultIdentity(): Promise<void> {
+  const workspaceDirs = await resolveAllWorkspaceDirs();
+  for (const { dir: workspaceDir, waitForGatewaySeed } of workspaceDirs) {
+    await ensureClawXIdentityFile(workspaceDir, { createDir: waitForGatewaySeed });
+  }
 }
 
 // ── Pure helpers (no I/O) ────────────────────────────────────────
