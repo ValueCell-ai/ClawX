@@ -72,7 +72,10 @@
       "add": "プロバイダーを追加",
       "save": "保存",
       "customDoc": "ドキュメント",
-      "validate": "検証"
+      "validate": "検証",
+      "test": "テスト",
+      "verified": "検証済み",
+      "failed": "失敗"
     },
     "card": {
       "default": "デフォルト",

@@ -72,7 +72,10 @@
       "add": "Add Provider",
       "save": "Save",
       "customDoc": "Documentation",
-      "validate": "Validate"
+      "validate": "Validate",
+      "test": "Test",
+      "verified": "Verified",
+      "failed": "Failed"
     },
     "card": {
       "default": "Default",

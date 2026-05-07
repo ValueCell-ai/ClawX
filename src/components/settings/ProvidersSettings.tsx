@@ -401,6 +401,8 @@ function ProviderCard({
   const [validating, setValidating] = useState(false);
   const [saving, setSaving] = useState(false);
   const [arkMode, setArkMode] = useState<ArkMode>('apikey');
+  const [testStatus, setTestStatus] = useState<'idle' | 'testing' | 'success' | 'error'>('idle');
+  const [testError, setTestError] = useState<string>('');
 
   const typeInfo = PROVIDER_TYPE_INFO.find((t) => t.id === account.vendorId);
   const providerDocsUrl = getProviderDocsUrl(typeInfo, i18n.language);
@@ -447,6 +449,48 @@ function ProviderCard({
         ? current.filter((id) => id !== providerId)
         : [...current, providerId]
     ));
+  };
+
+  const handleTest = async () => {
+    const normalizedNewKey = normalizeProviderApiKeyInput(newKey);
+    // Need either a new key to test, or an existing configured key
+    if (!normalizedNewKey && !status?.hasKey) {
+      setTestError(t('aiProviders.toast.invalidKey'));
+      setTestStatus('error');
+      return;
+    }
+
+    setTestStatus('testing');
+    setTestError('');
+
+    try {
+      // If no new key entered, fetch the existing API key
+      const keyToTest = normalizedNewKey || await useProviderStore.getState().getAccountApiKey(account.id);
+      if (!keyToTest) {
+        setTestError(t('aiProviders.toast.invalidKey'));
+        setTestStatus('error');
+        return;
+      }
+
+      const result = await onValidateKey(keyToTest, {
+        baseUrl: baseUrl.trim() || undefined,
+        apiProtocol: (account.vendorId === 'custom' || account.vendorId === 'ollama') ? apiProtocol : undefined,
+      });
+
+      if (result.valid) {
+        setTestStatus('success');
+        // Reset to idle after 2 seconds
+        setTimeout(() => {
+          setTestStatus('idle');
+        }, 2000);
+      } else {
+        setTestStatus('error');
+        setTestError(result.error || t('aiProviders.toast.invalidKey'));
+      }
+    } catch {
+      setTestStatus('error');
+      setTestError(t('aiProviders.toast.invalidKey'));
+    }
   };
 
   const handleSaveEdits = async () => {
@@ -518,6 +562,7 @@ function ProviderCard({
 
       await onSaveEdits(payload);
       setNewKey('');
+      setTestStatus('idle');
       toast.success(t('aiProviders.toast.updated'));
     } catch (error) {
       toast.error(`${t('aiProviders.toast.failedUpdate')}: ${error}`);
@@ -865,6 +910,30 @@ function ProviderCard({
                     {showKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                   </button>
                 </div>
+                {/* Test Button */}
+                <Button
+                  variant="outline"
+                  onClick={handleTest}
+                  disabled={testStatus === 'testing' || validating || saving}
+                  className={cn(
+                    "rounded-xl px-3 h-[40px] border-black/10 dark:border-white/10",
+                    isDefault
+                      ? "bg-white dark:bg-card hover:bg-black/5 dark:hover:bg-white/10"
+                      : "bg-surface-input hover:bg-black/5 dark:hover:bg-white/10 shadow-sm",
+                    testStatus === 'success' && "text-green-600 border-green-500/30 bg-green-500/10 hover:bg-green-500/10"
+                  )}
+                >
+                  {testStatus === 'testing' ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : testStatus === 'success' ? (
+                    <>
+                      <Check className="h-4 w-4 text-green-500 mr-1.5" />
+                      <span className="text-xs font-medium text-green-600">{t('aiProviders.dialog.verified')}</span>
+                    </>
+                  ) : (
+                    <span className="text-xs font-medium">{t('aiProviders.dialog.test')}</span>
+                  )}
+                </Button>
                 <Button
                   variant="outline"
                   onClick={handleSaveEdits}
@@ -907,6 +976,13 @@ function ProviderCard({
                   <X className="h-4 w-4" />
                 </Button>
               </div>
+              {testStatus === 'error' && testError && (
+                <p className="text-xs text-red-500 flex items-center gap-1 mt-1">
+                  <XCircle className="h-3 w-3 shrink-0" />
+                  <span className="font-medium">{t('aiProviders.dialog.failed')}:</span>
+                  <span>{testError}</span>
+                </p>
+              )}
               <p className="text-xs text-muted-foreground">
                 {t('aiProviders.dialog.replaceApiKeyHelp')}
               </p>
