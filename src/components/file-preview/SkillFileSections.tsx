@@ -70,7 +70,7 @@ export function SkillFileSections({ baseDir, onOpen, className }: SkillFileSecti
   if (error) {
     return (
       <div className={cn('rounded-xl border border-destructive/20 bg-destructive/10 px-4 py-3 text-xs text-destructive', className)}>
-        {t('detail.sections.scanFailed', { defaultValue: '扫描技能目录失败' })}
+        {t('detail.sections.scanFailed', { defaultValue: 'Failed to scan skill directory' })}
       </div>
     );
   }
@@ -78,7 +78,7 @@ export function SkillFileSections({ baseDir, onOpen, className }: SkillFileSecti
   if (isSkillFileGroupsEmpty(groups)) {
     return (
       <div className={cn('rounded-xl border border-black/10 bg-black/5 px-4 py-3 text-xs text-muted-foreground dark:border-white/10 dark:bg-white/5', className)}>
-        {t('detail.sections.empty', { defaultValue: '此技能未包含可预览的文件。' })}
+        {t('detail.sections.empty', { defaultValue: 'This skill does not contain any previewable files.' })}
       </div>
     );
   }
@@ -86,26 +86,26 @@ export function SkillFileSections({ baseDir, onOpen, className }: SkillFileSecti
   return (
     <div className={cn('space-y-5', className)}>
       <SkillFileSection
-        title={t('detail.sections.docs', { defaultValue: '文档' })}
-        description={t('detail.sections.docsDesc', { defaultValue: 'SKILL.md 与说明文档' })}
+        title={t('detail.sections.docs', { defaultValue: 'Docs' })}
+        description={t('detail.sections.docsDesc', { defaultValue: 'SKILL.md and documentation' })}
         files={groups.docs}
         onOpen={onOpen}
       />
       <SkillFileSection
-        title={t('detail.sections.scripts', { defaultValue: '脚本' })}
-        description={t('detail.sections.scriptsDesc', { defaultValue: '可执行的脚本与命令' })}
+        title={t('detail.sections.scripts', { defaultValue: 'Scripts' })}
+        description={t('detail.sections.scriptsDesc', { defaultValue: 'Executable scripts and commands' })}
         files={groups.scripts}
         onOpen={onOpen}
       />
       <SkillFileSection
         title={t('detail.sections.hooks', { defaultValue: 'Hooks' })}
-        description={t('detail.sections.hooksDesc', { defaultValue: '注入到 OpenClaw 生命周期的钩子' })}
+        description={t('detail.sections.hooksDesc', { defaultValue: 'Hooks injected into the OpenClaw lifecycle' })}
         files={groups.hooks}
         onOpen={onOpen}
       />
       <SkillFileSection
-        title={t('detail.sections.assets', { defaultValue: '资源' })}
-        description={t('detail.sections.assetsDesc', { defaultValue: '模板、参考资料与静态资源' })}
+        title={t('detail.sections.assets', { defaultValue: 'Assets' })}
+        description={t('detail.sections.assetsDesc', { defaultValue: 'Templates, references, and static assets' })}
         files={groups.assets}
         onOpen={onOpen}
       />

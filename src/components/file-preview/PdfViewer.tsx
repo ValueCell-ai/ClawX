@@ -129,7 +129,7 @@ export default function PdfViewer({
   if (currentState.status === 'tooLarge') {
     return (
       <div className={cn('flex h-full items-center justify-center px-6 text-center text-sm text-muted-foreground', className)}>
-        {t('filePreview.errors.tooLarge', '文件过大，已禁用预览')}
+        {t('filePreview.errors.tooLarge', 'File too large; preview disabled')}
       </div>
     );
   }
@@ -137,7 +137,7 @@ export default function PdfViewer({
     return (
       <div className={cn('flex h-full flex-col items-center justify-center gap-2 px-6 text-center text-sm text-destructive', className)}>
         <p>
-          {t('filePreview.pdf.loadFailed', { defaultValue: 'PDF 加载失败：{{error}}', error: currentState.message })}
+          {t('filePreview.pdf.loadFailed', { defaultValue: 'PDF failed to load: {{error}}', error: currentState.message })}
         </p>
       </div>
     );
@@ -174,7 +174,7 @@ export default function PdfViewer({
       >
         <iframe
           src={withViewerParams(currentState.url)}
-          title={fileName ?? t('filePreview.pdf.title', 'PDF 预览')}
+          title={fileName ?? t('filePreview.pdf.title', 'PDF preview')}
           className={cn(
             'h-full w-full border-0 bg-white transition-opacity duration-200',
             workspaceSurface && 'rounded-lg shadow-sm ring-1 ring-black/10 dark:ring-white/10',

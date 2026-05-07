@@ -88,7 +88,7 @@ export function PanelResizeDivider({ containerRef, className }: PanelResizeDivid
         'group relative z-10 hidden w-1.5 shrink-0 cursor-col-resize select-none lg:block',
         className,
       )}
-      title="拖动调整宽度"
+      title="Drag to resize width"
     >
       {/* Hairline (visible all the time) */}
       <span

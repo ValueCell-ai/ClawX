@@ -44,7 +44,7 @@ export function GeneratedFilesPanel({
     <div className={cn('space-y-2', className)}>
       <div className="px-1">
         <p className="text-xs font-semibold text-foreground/75">
-          {t('generatedFiles.title', { count: files.length, defaultValue: '文件变更（{{count}} 个）' })}
+          {t('generatedFiles.title', { count: files.length, defaultValue: 'File changes ({{count}})' })}
         </p>
       </div>
       <div className="flex flex-wrap gap-2">
@@ -74,7 +74,7 @@ export function GeneratedFilesPanel({
                   className="shrink-0 rounded-full border border-black/8 bg-black/[0.045] px-1.5 py-0.5 text-2xs text-foreground/70 dark:border-white/10 dark:bg-white/[0.06] dark:text-foreground/75"
                 >
                   <FolderOpen className="mr-1 h-3 w-3" />
-                  {t('generatedFiles.openFolder', '打开文件夹')}
+                  {t('generatedFiles.openFolder', 'Open folder')}
                 </Badge>
               </button>
             );
@@ -110,8 +110,8 @@ export function GeneratedFilesPanel({
                 className="shrink-0 rounded-full border border-black/8 bg-black/[0.045] px-1.5 py-0.5 text-2xs text-foreground/70 dark:border-white/10 dark:bg-white/[0.06] dark:text-foreground/75"
               >
                 {file.action === 'created'
-                  ? t('generatedFiles.created', '新增')
-                  : t('generatedFiles.modified', '修改')}
+                  ? t('generatedFiles.created', 'Created')
+                  : t('generatedFiles.modified', 'Modified')}
               </Badge>
             </button>
           );

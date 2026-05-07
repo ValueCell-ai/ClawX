@@ -173,7 +173,7 @@ export default function SheetViewer({ filePath, fileName, className }: SheetView
         title={sheet.name}
         style={{ maxWidth: 220 }}
       >
-        {sheet.name || t('filePreview.sheet.unnamedSheet', { defaultValue: '工作表 {{idx}}', idx: idx + 1 })}
+        {sheet.name || t('filePreview.sheet.unnamedSheet', { defaultValue: 'Sheet {{idx}}', idx: idx + 1 })}
       </button>
     ));
   }, [state, sheetIndex, handleSelectSheet, t]);
@@ -188,14 +188,14 @@ export default function SheetViewer({ filePath, fileName, className }: SheetView
   if (state.status === 'tooLarge') {
     return (
       <div className={cn('flex h-full items-center justify-center px-6 text-center text-sm text-muted-foreground', className)}>
-        {t('filePreview.errors.tooLarge', '文件过大，已禁用预览')}
+        {t('filePreview.errors.tooLarge', 'File too large; preview disabled')}
       </div>
     );
   }
   if (state.status === 'error') {
     return (
       <div className={cn('flex h-full flex-col items-center justify-center gap-2 px-6 text-center text-sm text-destructive', className)}>
-        <p>{t('filePreview.sheet.loadFailed', { defaultValue: '表格加载失败：{{error}}', error: state.message })}</p>
+        <p>{t('filePreview.sheet.loadFailed', { defaultValue: 'Spreadsheet failed to load: {{error}}', error: state.message })}</p>
       </div>
     );
   }
@@ -203,7 +203,7 @@ export default function SheetViewer({ filePath, fileName, className }: SheetView
   if (!activeSheet) {
     return (
       <div className={cn('flex h-full items-center justify-center text-sm text-muted-foreground', className)}>
-        {t('filePreview.sheet.empty', { defaultValue: '该文件没有可展示的工作表' })}
+        {t('filePreview.sheet.empty', { defaultValue: 'This file has no sheets to display' })}
       </div>
     );
   }
@@ -215,7 +215,7 @@ export default function SheetViewer({ filePath, fileName, className }: SheetView
       <div ref={scrollerRef} className="min-h-0 flex-1 overflow-auto">
         {isEmpty ? (
           <div className="flex h-full items-center justify-center px-6 text-center text-sm text-muted-foreground">
-            {t('filePreview.sheet.emptySheet', { defaultValue: '当前工作表为空' })}
+            {t('filePreview.sheet.emptySheet', { defaultValue: 'This sheet is empty' })}
           </div>
         ) : (
           <table className="w-max min-w-full border-collapse text-xs">
@@ -274,13 +274,13 @@ export default function SheetViewer({ filePath, fileName, className }: SheetView
               className="h-6 w-6"
               onClick={handlePrev}
               disabled={page <= 0}
-              title={t('filePreview.sheet.prevPage', '上一页')}
+              title={t('filePreview.sheet.prevPage', 'Previous page')}
             >
               <ChevronLeft className="h-3.5 w-3.5" />
             </Button>
             <span className="tabular-nums">
               {t('filePreview.sheet.rowRange', {
-                defaultValue: '行 {{from}}-{{to}} / {{total}}',
+                defaultValue: 'Rows {{from}}-{{to}} / {{total}}',
                 from: startRow + 1,
                 to: Math.min(totalRows, startRow + ROWS_PER_PAGE),
                 total: totalRows,
@@ -292,7 +292,7 @@ export default function SheetViewer({ filePath, fileName, className }: SheetView
               className="h-6 w-6"
               onClick={handleNext}
               disabled={page >= totalPages - 1}
-              title={t('filePreview.sheet.nextPage', '下一页')}
+              title={t('filePreview.sheet.nextPage', 'Next page')}
             >
               <ChevronRight className="h-3.5 w-3.5" />
             </Button>
