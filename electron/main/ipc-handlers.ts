@@ -5,7 +5,7 @@
 import { ipcMain, BrowserWindow, shell, dialog, app, nativeImage } from 'electron';
 import { existsSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { join, extname, basename, resolve, sep, relative } from 'node:path';
+import { join, extname, basename, dirname, resolve, sep, relative } from 'node:path';
 import crypto from 'node:crypto';
 import { GatewayManager } from '../gateway/manager';
 import { ClawHubService, ClawHubSearchParams, ClawHubInstallParams, ClawHubUninstallParams } from '../gateway/clawhub';
@@ -2586,10 +2586,19 @@ async function resolveOutgoingMediaUrl(
 /**
  * Session IPC handlers
  *
- * Performs a soft-delete of a session's JSONL transcript on disk.
+ * Performs a HARD delete of a session's JSONL transcript on disk.
  * sessionKey format: "agent:<agentId>:<suffix>" — e.g. "agent:main:session-1234567890".
- * The JSONL file lives at: ~/.openclaw/agents/<agentId>/sessions/<suffix>.jsonl
- * Renaming to <suffix>.deleted.jsonl hides it from sessions.list.
+ * The JSONL file lives at: ~/.openclaw/agents/<agentId>/sessions/<id>.jsonl
+ * (where <id> is typically a UUID resolved via sessions.json).
+ *
+ * For each deleted session we unlink every file that belongs to its on-disk id:
+ *   - <id>.jsonl              — the live transcript
+ *   - <id>.deleted.jsonl      — leftovers from earlier soft-delete releases
+ *   - <id>.jsonl.reset.*      — historical snapshots produced by sessions.reset
+ *
+ * The session entry is also removed from sessions.json so sessions.list stops
+ * surfacing it. Token-usage history reported by the Dashboard reads the same
+ * transcripts, so deleted conversations stop contributing to the chart.
  */
 function registerSessionHandlers(): void {
   ipcMain.handle('session:delete', async (_, sessionKey: string) => {
@@ -2681,16 +2690,45 @@ function registerSessionHandlers(): void {
         resolvedSrcPath = join(sessionsDir, uuidFileName!);
       }
 
-      const dstPath = resolvedSrcPath.replace(/\.jsonl$/, '.deleted.jsonl');
       logger.info(`[session:delete] file: ${resolvedSrcPath}`);
 
-      // ── Step 2: rename the JSONL file ──
+      // ── Step 2: hard-delete the JSONL transcript and its siblings ──
+      // For a given <baseId> we remove:
+      //   - <baseId>.jsonl              (live transcript)
+      //   - <baseId>.deleted.jsonl      (legacy soft-delete leftover)
+      //   - <baseId>.jsonl.reset.*      (reset snapshots from sessions.reset)
+      // All variants share the same logical session id, so when the user
+      // explicitly deletes a conversation we clean up every artefact on disk.
+      const baseId = basename(resolvedSrcPath).replace(/\.jsonl$/, '');
+      const sessionsDirAbs = dirname(resolvedSrcPath);
+      let removedCount = 0;
       try {
-        await fsP.access(resolvedSrcPath);
-        await fsP.rename(resolvedSrcPath, dstPath);
-        logger.info(`[session:delete] Renamed ${resolvedSrcPath} → ${dstPath}`);
+        const dirEntries = await fsP.readdir(sessionsDirAbs);
+        const targets = dirEntries.filter((name) =>
+          name === `${baseId}.jsonl`
+          || name === `${baseId}.deleted.jsonl`
+          || name.startsWith(`${baseId}.jsonl.reset.`),
+        );
+        for (const name of targets) {
+          const target = join(sessionsDirAbs, name);
+          try {
+            await fsP.unlink(target);
+            removedCount += 1;
+            logger.info(`[session:delete] Unlinked ${target}`);
+          } catch (e) {
+            // Tolerate ENOENT (already gone); log everything else.
+            const code = (e as NodeJS.ErrnoException).code;
+            if (code !== 'ENOENT') {
+              logger.warn(`[session:delete] Failed to unlink ${target}: ${String(e)}`);
+            }
+          }
+        }
+        logger.info(`[session:delete] Hard-deleted ${removedCount} file(s) for ${baseId}`);
       } catch (e) {
-        logger.warn(`[session:delete] Could not rename file: ${String(e)}`);
+        const code = (e as NodeJS.ErrnoException).code;
+        if (code !== 'ENOENT') {
+          logger.warn(`[session:delete] Could not enumerate ${sessionsDirAbs}: ${String(e)}`);
+        }
       }
 
       // ── Step 3: remove the entry from sessions.json ──
@@ -2710,7 +2748,7 @@ function registerSessionHandlers(): void {
         logger.info(`[session:delete] Removed "${sessionKey}" from sessions.json`);
       } catch (e) {
         logger.warn(`[session:delete] Could not update sessions.json: ${String(e)}`);
-        // Non-fatal — JSONL rename already done
+        // Non-fatal — transcript files were already unlinked.
       }
 
       return { success: true };
