@@ -1,5 +1,5 @@
 import type { IncomingMessage, ServerResponse } from 'http';
-import { join } from 'node:path';
+import { basename, dirname, join } from 'node:path';
 import { getOpenClawConfigDir } from '../../utils/paths';
 import type { HostApiContext } from '../context';
 import { parseJsonBody, sendJson } from '../route-utils';
@@ -108,12 +108,31 @@ export async function handleSessionRoutes(
         if (!uuidFileName!.endsWith('.jsonl')) uuidFileName = `${uuidFileName}.jsonl`;
         resolvedSrcPath = join(sessionsDir, uuidFileName!);
       }
-      const dstPath = resolvedSrcPath.replace(/\.jsonl$/, '.deleted.jsonl');
+
+      // Hard-delete the JSONL transcript and its siblings for this session id:
+      //   - <baseId>.jsonl              (live transcript)
+      //   - <baseId>.deleted.jsonl      (legacy soft-delete leftover)
+      //   - <baseId>.jsonl.reset.*      (reset snapshots from sessions.reset)
+      const baseId = basename(resolvedSrcPath).replace(/\.jsonl$/, '');
+      const sessionsDirAbs = dirname(resolvedSrcPath);
       try {
-        await fsP.access(resolvedSrcPath);
-        await fsP.rename(resolvedSrcPath, dstPath);
+        const dirEntries = await fsP.readdir(sessionsDirAbs);
+        const targets = dirEntries.filter((name) =>
+          name === `${baseId}.jsonl`
+          || name === `${baseId}.deleted.jsonl`
+          || name.startsWith(`${baseId}.jsonl.reset.`),
+        );
+        await Promise.all(targets.map(async (name) => {
+          try {
+            await fsP.unlink(join(sessionsDirAbs, name));
+          } catch (err) {
+            const code = (err as NodeJS.ErrnoException).code;
+            if (code !== 'ENOENT') throw err;
+          }
+        }));
       } catch {
-        // Non-fatal; still try to update sessions.json.
+        // Non-fatal; still try to update sessions.json so the entry stops
+        // showing up in the sidebar even if the directory is unreadable.
       }
       const raw2 = await fsP.readFile(sessionsJsonPath, 'utf8');
       const json2 = JSON.parse(raw2) as Record<string, unknown>;
