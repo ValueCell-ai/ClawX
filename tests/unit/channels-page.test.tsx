@@ -214,13 +214,28 @@ describe('Channels page status refresh', () => {
     });
   });
 
+  it('skips config-only prefetch on mount when gateway is already running', async () => {
+    subscribeHostEventMock.mockImplementation(() => vi.fn());
+
+    render(<Channels />);
+
+    await waitFor(() => {
+      expect(screen.getByText('Feishu / Lark')).toBeInTheDocument();
+    });
+
+    const configFetchCalls = hostApiFetchMock.mock.calls.filter(([path]) => path === '/api/channels/accounts?mode=config');
+    const runtimeFetchCalls = hostApiFetchMock.mock.calls.filter(([path]) => path === '/api/channels/accounts');
+    expect(configFetchCalls).toHaveLength(0);
+    expect(runtimeFetchCalls).toHaveLength(1);
+  });
+
   it('refetches when the gateway transitions to running after mount', async () => {
     gatewayState.status = { state: 'starting', port: 18789 };
 
     const { rerender } = render(<Channels />);
 
     await waitFor(() => {
-      expect(hostApiFetchMock).toHaveBeenCalledWith('/api/channels/accounts');
+      expect(hostApiFetchMock).toHaveBeenCalledWith('/api/channels/accounts?mode=config');
       expect(hostApiFetchMock).toHaveBeenCalledWith('/api/agents');
     });
 

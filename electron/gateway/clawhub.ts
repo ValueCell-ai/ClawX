@@ -53,6 +53,11 @@ export class ClawHubService {
     private useNodeRunner: boolean;
     private ansiRegex: RegExp;
     private marketplaceProvider: MarketplaceProvider | null = null;
+    private listInstalledCache:
+        | { expiresAt: number; results: ClawHubInstalledSkillResult[] }
+        | null = null;
+    private listInstalledInFlight: Promise<ClawHubInstalledSkillResult[]> | null = null;
+    private readonly listInstalledCacheTtlMs = 15_000;
 
     setMarketplaceProvider(provider: MarketplaceProvider): void {
         this.marketplaceProvider = provider;
@@ -338,6 +343,7 @@ export class ClawHubService {
         }
 
         await this.runCommand(args);
+        this.invalidateInstalledListCache();
     }
 
     /**
@@ -367,20 +373,28 @@ export class ClawHubService {
                 console.error('Failed to update ClawHub lock file:', err);
             }
         }
+        this.invalidateInstalledListCache();
     }
 
     /**
      * List installed skills
      */
     async listInstalled(): Promise<ClawHubInstalledSkillResult[]> {
+        const now = Date.now();
+        if (this.listInstalledCache && this.listInstalledCache.expiresAt > now) {
+            return this.listInstalledCache.results;
+        }
+        if (this.listInstalledInFlight) {
+            return await this.listInstalledInFlight;
+        }
+
+        this.listInstalledInFlight = (async () => {
         try {
             const output = await this.runCommand(['list']);
-            if (!output || output.includes('No installed skills')) {
-                return [];
-            }
-
-            const lines = output.split('\n').filter(l => l.trim());
-            return lines.map(line => {
+            let results: ClawHubInstalledSkillResult[] = [];
+            if (output && !output.includes('No installed skills')) {
+                const lines = output.split('\n').filter(l => l.trim());
+                results = lines.map(line => {
                 const cleanLine = this.stripAnsi(line);
                 const match = cleanLine.match(/^(\S+)\s+v?(\d+\.\S+)/);
                 if (match) {
@@ -394,10 +408,26 @@ export class ClawHubService {
                 }
                 return null;
             }).filter((s): s is ClawHubInstalledSkillResult => s !== null);
+            }
+            this.listInstalledCache = {
+                expiresAt: Date.now() + this.listInstalledCacheTtlMs,
+                results,
+            };
+            return results;
         } catch (error) {
             console.error('ClawHub list error:', error);
             return [];
+        } finally {
+            this.listInstalledInFlight = null;
         }
+        })();
+
+        return await this.listInstalledInFlight;
+    }
+
+    private invalidateInstalledListCache(): void {
+        this.listInstalledCache = null;
+        this.listInstalledInFlight = null;
     }
 
     private resolveSkillDir(skillKeyOrSlug: string, fallbackSlug?: string, preferredBaseDir?: string): string | null {
