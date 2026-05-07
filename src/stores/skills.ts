@@ -67,7 +67,7 @@ interface SkillsState {
   error: string | null;
 
   // Actions
-  fetchSkills: () => Promise<void>;
+  fetchSkills: () => Promise<boolean>;
   searchSkills: (query: string) => Promise<void>;
   installSkill: (slug: string, version?: string) => Promise<void>;
   uninstallSkill: (slug: string) => Promise<void>;
@@ -96,11 +96,21 @@ export const useSkillsStore = create<SkillsState>((set, get) => ({
       const gatewayDataPromise = useGatewayStore.getState().rpc<GatewaySkillsStatusResult>('skills.status');
       const clawhubResultPromise = hostApiFetch<{ success: boolean; results?: ClawHubListResult[]; error?: string }>('/api/clawhub/list');
       const configResultPromise = hostApiFetch<Record<string, { apiKey?: string; env?: Record<string, string> }>>('/api/skills/configs');
-      const [gatewayData, clawhubResult, configResult] = await Promise.all([
+      const [gatewayDataResult, clawhubResult, configResult] = await Promise.allSettled([
         gatewayDataPromise,
         clawhubResultPromise,
         configResultPromise,
       ]);
+
+      if (gatewayDataResult.status !== 'fulfilled') {
+        throw gatewayDataResult.reason;
+      }
+
+      const gatewayData = gatewayDataResult.value;
+      const clawhubData = clawhubResult.status === 'fulfilled' ? clawhubResult.value : undefined;
+      const configData = configResult.status === 'fulfilled' && configResult.value && typeof configResult.value === 'object'
+        ? configResult.value
+        : {};
 
       let combinedSkills: Skill[] = [];
       const currentSkills = get().skills;
@@ -109,7 +119,7 @@ export const useSkillsStore = create<SkillsState>((set, get) => ({
       if (gatewayData.skills) {
         combinedSkills = gatewayData.skills.map((s: GatewaySkillStatus) => {
           // Merge with direct config if available
-          const directConfig = configResult[s.skillKey] || {};
+          const directConfig = configData[s.skillKey] || {};
 
           return {
             id: s.skillKey,
@@ -137,8 +147,8 @@ export const useSkillsStore = create<SkillsState>((set, get) => ({
       }
 
       // Merge with ClawHub results
-      if (clawhubResult.success && clawhubResult.results) {
-        clawhubResult.results.forEach((cs: ClawHubListResult) => {
+      if (clawhubData?.success && clawhubData.results) {
+        clawhubData.results.forEach((cs: ClawHubListResult) => {
           const existing = combinedSkills.find(s => s.id === cs.slug);
           if (existing) {
             if (!existing.baseDir && cs.baseDir) {
@@ -149,7 +159,7 @@ export const useSkillsStore = create<SkillsState>((set, get) => ({
             }
             return;
           }
-          const directConfig = configResult[cs.slug] || {};
+          const directConfig = configData[cs.slug] || {};
           combinedSkills.push({
             id: cs.slug,
             slug: cs.slug,
@@ -168,13 +178,30 @@ export const useSkillsStore = create<SkillsState>((set, get) => ({
         });
       }
 
-      set({ skills: combinedSkills, loading: false });
+      const partialError = clawhubResult.status === 'rejected'
+        ? clawhubResult.reason
+        : configResult.status === 'rejected'
+          ? configResult.reason
+          : clawhubData?.success === false
+            ? new Error(clawhubData.error || 'Failed to fetch marketplace skills')
+            : null;
+
+      if (partialError) {
+        const appError = normalizeAppError(partialError, { module: 'skills', operation: 'fetch' });
+        const errorKey = mapErrorCodeToSkillErrorKey(appError.code, 'fetch');
+        set({ skills: combinedSkills, loading: false, error: errorKey ?? appError.message });
+      } else {
+        set({ skills: combinedSkills, loading: false, error: null });
+      }
+
+      return true;
     } catch (error) {
       console.error('Failed to fetch skills:', error);
       const appError = normalizeAppError(error, { module: 'skills', operation: 'fetch' });
       const errorKey = mapErrorCodeToSkillErrorKey(appError.code, 'fetch');
       // Preserve previous skills on error (stale-while-revalidate).
       set((prev) => ({ loading: false, error: errorKey ?? appError.message, skills: prev.skills }));
+      return false;
     }
   },
 

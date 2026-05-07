@@ -4,6 +4,7 @@
     "refresh": "Refresh",
     "openFolder": "Open Skills Folder",
     "gatewayWarning": "Gateway is not running. Skills cannot be loaded without an active Gateway.",
+    "gatewayStarting": "Gateway is starting. Skills will load automatically once it is ready.",
     "tabs": {
         "installed": "Installed",
         "marketplace": "Marketplace"

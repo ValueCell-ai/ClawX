@@ -4,6 +4,7 @@
     "refresh": "刷新",
     "openFolder": "打开技能文件夹",
     "gatewayWarning": "网关未运行。没有活跃的网关，无法加载技能。",
+    "gatewayStarting": "网关正在启动。待其就绪后会自动加载技能。",
     "tabs": {
         "installed": "已安装",
         "marketplace": "市场"

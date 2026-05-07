@@ -29,6 +29,7 @@ import { hostApiFetch } from '@/lib/host-api';
 import { trackUiEvent } from '@/lib/telemetry';
 import { toast } from 'sonner';
 import type { Skill } from '@/types/skill';
+import type { GatewayStatus } from '@/types/gateway';
 import { rendererExtensionRegistry } from '@/extensions/registry';
 import { useTranslation } from 'react-i18next';
 import type { TFunction } from 'i18next';
@@ -54,7 +55,27 @@ const INSTALL_ERROR_CODES = new Set(['installTimeoutError', 'installRateLimitErr
 const FETCH_ERROR_CODES = new Set(['fetchTimeoutError', 'fetchRateLimitError', 'timeoutError', 'rateLimitError']);
 const SEARCH_ERROR_CODES = new Set(['searchTimeoutError', 'searchRateLimitError', 'timeoutError', 'rateLimitError']);
 
+type SkillsGatewayBannerState = 'none' | 'starting' | 'stopped';
 
+function isSkillsGatewayReady(status: GatewayStatus, skillsFeatureReady: boolean): boolean {
+  return status.state === 'running' && (status.gatewayReady !== false || skillsFeatureReady);
+}
+
+function getSkillsGatewayBannerState(
+  status: GatewayStatus,
+  skillsFeatureReady: boolean,
+): SkillsGatewayBannerState {
+  if (status.state === 'starting' || status.state === 'reconnecting') {
+    return 'starting';
+  }
+  if (status.state === 'running' && !isSkillsGatewayReady(status, skillsFeatureReady)) {
+    return 'starting';
+  }
+  if (status.state === 'stopped' || status.state === 'error') {
+    return 'stopped';
+  }
+  return 'none';
+}
 
 // Skill detail dialog component
 interface SkillDetailDialogProps {
@@ -247,28 +268,63 @@ export function Skills() {
   const [selectedSkill, setSelectedSkill] = useState<Skill | null>(null);
   const [selectedSource, setSelectedSource] = useState<'all' | 'built-in' | 'marketplace'>('all');
 
-  const isGatewayRunning = gatewayStatus.state === 'running';
-  const [showGatewayWarning, setShowGatewayWarning] = useState(false);
+  const gatewayRunning = gatewayStatus.state === 'running';
+  const gatewayReportedReady = gatewayStatus.gatewayReady !== false;
+  const gatewayRuntimeKey = `${gatewayStatus.pid ?? 'none'}:${gatewayStatus.connectedAt ?? 'none'}:${gatewayStatus.port}`;
+  const [skillsFeatureReady, setSkillsFeatureReady] = useState(false);
+  const gatewayBannerState = getSkillsGatewayBannerState(gatewayStatus, skillsFeatureReady);
+  const [showGatewayBanner, setShowGatewayBanner] = useState(false);
 
   useEffect(() => {
     let timer: NodeJS.Timeout;
-    if (!isGatewayRunning) {
+    if (gatewayBannerState === 'none') {
       timer = setTimeout(() => {
-        setShowGatewayWarning(true);
-      }, 1500);
+        setShowGatewayBanner(false);
+      }, 0);
     } else {
       timer = setTimeout(() => {
-        setShowGatewayWarning(false);
-      }, 0);
+        setShowGatewayBanner(true);
+      }, 1500);
     }
     return () => clearTimeout(timer);
-  }, [isGatewayRunning]);
+  }, [gatewayBannerState]);
 
   useEffect(() => {
-    if (isGatewayRunning) {
-      fetchSkills();
+    if (!gatewayRunning) {
+      setSkillsFeatureReady(false);
+      return;
     }
-  }, [fetchSkills, isGatewayRunning]);
+
+    setSkillsFeatureReady(gatewayReportedReady);
+
+    let cancelled = false;
+    let retryTimer: ReturnType<typeof setInterval> | null = null;
+
+    const attemptFetch = async () => {
+      const ok = await fetchSkills();
+      if (cancelled || !ok) return;
+      setSkillsFeatureReady(true);
+      if (retryTimer) {
+        clearInterval(retryTimer);
+        retryTimer = null;
+      }
+    };
+
+    void attemptFetch();
+
+    if (!gatewayReportedReady) {
+      retryTimer = setInterval(() => {
+        void attemptFetch();
+      }, 5_000);
+    }
+
+    return () => {
+      cancelled = true;
+      if (retryTimer) {
+        clearInterval(retryTimer);
+      }
+    };
+  }, [fetchSkills, gatewayReportedReady, gatewayRunning, gatewayRuntimeKey]);
 
   const safeSkills = Array.isArray(skills) ? skills : [];
   const filteredSkills = safeSkills.filter((skill) => {
@@ -443,7 +499,7 @@ export function Skills() {
   }
 
   return (
-    <div className="flex flex-col -m-6 dark:bg-background h-[calc(100vh-2.5rem)] overflow-hidden">
+    <div data-testid="skills-page" className="flex flex-col -m-6 dark:bg-background h-[calc(100vh-2.5rem)] overflow-hidden">
       <div className="w-full max-w-5xl mx-auto flex flex-col h-full p-10 pt-16">
 
         {/* Header */}
@@ -470,12 +526,31 @@ export function Skills() {
           </div>
         </div>
 
-        {/* Gateway Warning */}
-        {showGatewayWarning && (
-          <div className="mb-6 p-4 rounded-xl border border-yellow-500/50 bg-yellow-500/10 flex items-center gap-3">
-            <AlertCircle className="h-5 w-5 text-yellow-600 dark:text-yellow-400" />
-            <span className="text-yellow-700 dark:text-yellow-400 text-sm font-medium">
-              {t('gatewayWarning')}
+        {/* Gateway Status Banner */}
+        {showGatewayBanner && gatewayBannerState !== 'none' && (
+          <div
+            data-testid="skills-gateway-banner"
+            data-state={gatewayBannerState}
+            className={cn(
+              "mb-6 p-4 rounded-xl border flex items-center gap-3",
+              gatewayBannerState === 'starting'
+                ? "border-blue-500/40 bg-blue-500/10"
+                : "border-yellow-500/50 bg-yellow-500/10",
+            )}
+          >
+            <AlertCircle className={cn(
+              "h-5 w-5",
+              gatewayBannerState === 'starting'
+                ? "text-blue-600 dark:text-blue-400"
+                : "text-yellow-600 dark:text-yellow-400",
+            )} />
+            <span className={cn(
+              "text-sm font-medium",
+              gatewayBannerState === 'starting'
+                ? "text-blue-700 dark:text-blue-400"
+                : "text-yellow-700 dark:text-yellow-400",
+            )}>
+              {gatewayBannerState === 'starting' ? t('gatewayStarting') : t('gatewayWarning')}
             </span>
           </div>
         )}
@@ -555,8 +630,10 @@ export function Skills() {
             <Button
               variant="outline"
               size="icon"
-              onClick={fetchSkills}
-              disabled={!isGatewayRunning}
+              onClick={() => {
+                void fetchSkills();
+              }}
+              disabled={!gatewayRunning}
               className="h-8 w-8 ml-1 rounded-md border-black/10 dark:border-white/10 bg-transparent hover:bg-black/5 dark:hover:bg-white/5 shadow-none text-muted-foreground hover:text-foreground"
               title={t('refresh')}
             >

@@ -4,6 +4,7 @@
     "refresh": "更新",
     "openFolder": "スキルフォルダを開く",
     "gatewayWarning": "ゲートウェイが稼働していません。アクティブなゲートウェイがないとスキルを読み込めません。",
+    "gatewayStarting": "ゲートウェイを起動中です。準備ができしだいスキルを自動で読み込みます。",
     "tabs": {
         "installed": "インストール済み",
         "marketplace": "マーケットプレイス"
