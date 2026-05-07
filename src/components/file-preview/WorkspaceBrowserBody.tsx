@@ -2,7 +2,7 @@
  * Inline workspace browser body — left tree + right preview.
  *
  * Strictly scoped to the current agent's `agent.workspace` directory.
- * Used by `ArtifactPanel`'s Workspace tab (split-pane on the chat page).
+ * Used by `ArtifactPanel`'s 浏览器 tab (split-pane on the chat page).
  */
 import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from 'react';
 import { ChevronRight, FolderOpen, RefreshCw } from 'lucide-react';
@@ -44,7 +44,7 @@ const RICH_PREVIEW_MAX_BYTES = 50 * 1024 * 1024;
 
 export interface WorkspaceBrowserBodyProps {
   agent: AgentSummary | null;
-  /** Used to mark "Updated this run" badges on the tree. */
+  /** Used to mark "本轮新增" badges on the tree. */
   runStartedAt?: number | null;
   /** Bumping this number triggers a tree reload (e.g. after AI run idles). */
   refreshSignal?: number;
@@ -212,14 +212,14 @@ export function WorkspaceBrowserBody({
   const handleOpenWorkspaceInFinder = useCallback(() => {
     if (!workspace) return;
     invokeIpc('shell:openPath', workspace).catch(() => {
-      toast.error(t('filePreview.errors.openInFinderFailed', 'Could not reveal file'));
+      toast.error(t('filePreview.errors.openInFinderFailed', '无法在文件管理器中显示'));
     });
   }, [workspace, t]);
 
   const handleOpenSelectedInFinder = useCallback(() => {
     if (!selectedNode || selectedNode.isDir) return;
     invokeIpc('shell:showItemInFolder', selectedNode.absPath).catch(() => {
-      toast.error(t('filePreview.errors.openInFinderFailed', 'Could not reveal file'));
+      toast.error(t('filePreview.errors.openInFinderFailed', '无法在文件管理器中显示'));
     });
   }, [selectedNode, t]);
 
@@ -238,7 +238,7 @@ export function WorkspaceBrowserBody({
       });
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
-      toast.error(t('filePreview.errors.openFailed', { defaultValue: 'Open failed: {{error}}', error: message }));
+      toast.error(t('filePreview.errors.openFailed', { defaultValue: '打开失败：{{error}}', error: message }));
     }
   }, [selectedNode, fileState, t]);
 
@@ -263,15 +263,15 @@ export function WorkspaceBrowserBody({
       return (
         <div className="px-4 py-6 text-xs text-destructive">
           {state.message === 'outsideSandbox'
-            ? t('filePreview.errors.outsideSandbox', 'Path outside sandbox — read denied')
-            : t('workspace.empty', 'Workspace is empty or inaccessible')}
+            ? t('filePreview.errors.outsideSandbox', '路径越界，已拒绝读取')
+            : t('workspace.empty', '工作空间为空或无法访问')}
         </div>
       );
     }
     return (
       <div className="space-y-1 overflow-y-auto">
         <div className="px-3 py-2 text-2xs uppercase tracking-wide text-muted-foreground">
-          {t('workspace.title', 'Workspace')}
+          {t('workspace.title', '工作空间')}
           {agent?.name ? <span className="ml-1 text-foreground/60">· {agent.name}</span> : null}
         </div>
         <FileTreeNodeList
@@ -284,7 +284,7 @@ export function WorkspaceBrowserBody({
         />
         {state.truncated && (
           <div className="mt-2 px-3 py-2 text-2xs text-muted-foreground/80">
-            {t('workspace.truncated', 'Directory truncated — only the first 5000 entries shown')}
+            {t('workspace.truncated', '目录过大，已截断显示 5000 个节点')}
           </div>
         )}
       </div>
@@ -295,7 +295,7 @@ export function WorkspaceBrowserBody({
     if (!selectedNode || selectedNode.isDir) {
       return (
         <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
-          {t('workspace.pickFile', 'Select a file from the left to preview')}
+          {t('workspace.pickFile', '从左侧选择一个文件预览')}
         </div>
       );
     }
@@ -342,20 +342,20 @@ export function WorkspaceBrowserBody({
           <p>
             {directOpen
               ? t('filePreview.errors.largeBinaryOpenHint', {
-                defaultValue: 'This file is {{size}}. ClawX cannot preview it inline, but you can confirm and open it with the system default app.',
+                defaultValue: '当前文件为 {{size}}，ClawX 不提供内置预览。你可以确认后直接使用系统默认应用打开。',
                 size: formatFileSize(fileState.size ?? 0) || '> 2MB',
               })
-              : t('filePreview.errors.tooLarge', 'File too large; preview disabled')}
+              : t('filePreview.errors.tooLarge', '文件过大，已禁用预览')}
           </p>
           <div className="flex flex-wrap items-center justify-center gap-2">
             {directOpen && (
               <Button size="sm" onClick={handleOpenSelectedDirectly}>
-                {t('filePreview.actions.openDirectly', 'Open directly')}
+                {t('filePreview.actions.openDirectly', '直接打开')}
               </Button>
             )}
             <Button variant="outline" size="sm" onClick={handleOpenSelectedInFinder}>
               <FolderOpen className="mr-2 h-4 w-4" />
-              {t('filePreview.actions.openInFinder', 'Reveal in file manager')}
+              {t('filePreview.actions.openInFinder', '在文件管理器中显示')}
             </Button>
           </div>
         </div>
@@ -368,20 +368,20 @@ export function WorkspaceBrowserBody({
           <p>
             {directOpen
               ? t('filePreview.errors.largeBinaryOpenHint', {
-                defaultValue: 'This file is {{size}}. ClawX cannot preview it inline, but you can confirm and open it with the system default app.',
+                defaultValue: '当前文件为 {{size}}，ClawX 不提供内置预览。你可以确认后直接使用系统默认应用打开。',
                 size: formatFileSize(fileState.size ?? 0) || '> 2MB',
               })
-              : t('filePreview.errors.binary', 'Binary file — text preview unavailable')}
+              : t('filePreview.errors.binary', '二进制文件不支持文本预览')}
           </p>
           <div className="flex flex-wrap items-center justify-center gap-2">
             {directOpen && (
               <Button size="sm" onClick={handleOpenSelectedDirectly}>
-                {t('filePreview.actions.openDirectly', 'Open directly')}
+                {t('filePreview.actions.openDirectly', '直接打开')}
               </Button>
             )}
             <Button variant="outline" size="sm" onClick={handleOpenSelectedInFinder}>
               <FolderOpen className="mr-2 h-4 w-4" />
-              {t('filePreview.actions.openInFinder', 'Reveal in file manager')}
+              {t('filePreview.actions.openInFinder', '在文件管理器中显示')}
             </Button>
           </div>
         </div>
@@ -390,9 +390,9 @@ export function WorkspaceBrowserBody({
     if (fileState.status === 'error') {
       const errMsg = fileState.message;
       const hint = errMsg === 'outsideSandbox'
-        ? t('filePreview.errors.outsideSandbox', 'Path outside sandbox — read denied')
+        ? t('filePreview.errors.outsideSandbox', '路径越界，已拒绝读取')
         : errMsg === 'notFound'
-          ? t('filePreview.errors.notFound', 'File not found')
+          ? t('filePreview.errors.notFound', '文件不存在')
           : errMsg;
       return (
         <div className="flex h-full items-center justify-center px-6 text-center text-sm text-destructive">
@@ -407,30 +407,30 @@ export function WorkspaceBrowserBody({
           <div className="space-y-1.5">
             <p className="text-sm font-medium text-foreground">
               {directOpen
-                ? t('filePreview.errors.largeBinaryOpenTitle', 'This file is too large for built-in preview')
-                : t('filePreview.errors.unsupportedFormatTitle', 'This file format is not supported for built-in preview or diff')}
+                ? t('filePreview.errors.largeBinaryOpenTitle', '该文件较大，暂不支持内置预览')
+                : t('filePreview.errors.unsupportedFormatTitle', '此文件格式暂不支持内置预览或变更')}
             </p>
             <p className="max-w-md text-xs leading-relaxed text-muted-foreground">
               {directOpen
                 ? t('filePreview.errors.largeBinaryOpenHint', {
-                  defaultValue: 'This file is {{size}}. ClawX cannot preview it inline, but you can confirm and open it with the system default app.',
+                  defaultValue: '当前文件为 {{size}}，ClawX 不提供内置预览。你可以确认后直接使用系统默认应用打开。',
                   size: formatFileSize(fileState.size ?? 0) || '> 2MB',
                 })
                 : t(
                   'filePreview.errors.unsupportedFormatHint',
-                  'Built-in preview and diff currently support directly readable text and Markdown-style files only. Open the file in the file manager instead.',
+                  '当前仅支持文本/Markdown 等可直接读取的文件进行内置预览与变更对比。请在文件管理器中打开该文件。',
                 )}
             </p>
           </div>
           <div className="flex flex-wrap items-center justify-center gap-2">
             {directOpen && (
               <Button size="sm" onClick={handleOpenSelectedDirectly}>
-                {t('filePreview.actions.openDirectly', 'Open directly')}
+                {t('filePreview.actions.openDirectly', '直接打开')}
               </Button>
             )}
             <Button variant="outline" size="sm" onClick={handleOpenSelectedInFinder}>
               <FolderOpen className="mr-2 h-4 w-4" />
-              {t('filePreview.actions.openInFinder', 'Reveal in file manager')}
+              {t('filePreview.actions.openInFinder', '在文件管理器中显示')}
             </Button>
           </div>
         </div>
@@ -468,7 +468,7 @@ export function WorkspaceBrowserBody({
       >
         <div className="flex min-w-0 items-center gap-3">
           <h2 className="truncate text-sm font-semibold">
-            {t('workspace.title', 'Workspace')}
+            {t('workspace.title', '工作空间')}
             {agent?.name ? <span className="ml-2 font-normal text-foreground/70">· {agent.name}</span> : null}
           </h2>
           {workspace && !compact ? (
@@ -483,11 +483,11 @@ export function WorkspaceBrowserBody({
             size="sm"
             className="h-7 px-2 text-xs"
             onClick={() => setShowHidden((v) => !v)}
-            title={t('workspace.actions.toggleHidden', 'Toggle hidden files')}
+            title={t('workspace.actions.toggleHidden', '显示/隐藏隐藏文件')}
           >
             {showHidden
-              ? t('workspace.actions.hideHidden', 'Hide hidden files')
-              : t('workspace.actions.showHidden', 'Show hidden files')}
+              ? t('workspace.actions.hideHidden', '隐藏隐藏文件')
+              : t('workspace.actions.showHidden', '显示隐藏文件')}
           </Button>
           <Button
             variant="ghost"
@@ -495,7 +495,7 @@ export function WorkspaceBrowserBody({
             className="h-7 w-7"
             onClick={reload}
             disabled={state.status === 'loading'}
-            title={t('workspace.actions.refresh', 'Refresh')}
+            title={t('workspace.actions.refresh', '刷新')}
           >
             <RefreshCw className={cn('h-3.5 w-3.5', state.status === 'loading' && 'animate-spin')} />
           </Button>
@@ -505,7 +505,7 @@ export function WorkspaceBrowserBody({
             size="icon"
             className="h-7 w-7"
             onClick={handleOpenWorkspaceInFinder}
-            title={t('workspace.actions.openRootInFinder', 'Reveal workspace in file manager')}
+            title={t('workspace.actions.openRootInFinder', '在文件管理器中显示根目录')}
           >
             <FolderOpen className="h-3.5 w-3.5 pointer-events-none" />
           </Button>
@@ -532,7 +532,7 @@ export function WorkspaceBrowserBody({
                 <span className="truncate font-mono">{selectedNode.relPath || selectedNode.name}</span>
                 {selectedNode.isFresh && (
                   <Badge variant="default" className="ml-1 text-2xs px-1.5 py-0">
-                    {t('workspace.freshBadge', 'Updated this run')}
+                    {t('workspace.freshBadge', '本轮新增')}
                   </Badge>
                 )}
               </div>
