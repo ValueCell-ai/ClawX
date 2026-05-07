@@ -138,19 +138,19 @@ test.describe('OpenClaw Dreams', () => {
     await expect(page.getByText('User expects Dreams to be a native ClawX interface')).toBeVisible();
 
     await page.getByTestId('dreams-action-backfill').click();
-    await expect(page.getByTestId('dreams-action-message')).toContainText(/Backfilled 2 dream diary entries\.|已回填 2 条梦境日记。/);
+    await expect(page.getByTestId('dreams-action-message')).toContainText(/Backfilled 2 dream diary entries\.|\u5df2\u56de\u586b 2 \u6761\u68a6\u5883\u65e5\u8bb0\u3002/);
 
     await page.getByTestId('dreams-action-dedupe').click();
     await page.getByRole('button', { name: 'Confirm' }).click();
-    await expect(page.getByTestId('dreams-action-message')).toContainText(/Removed 2 duplicate dream entries and kept 5\.|已移除 2 条重复梦境，保留 5 条。/);
+    await expect(page.getByTestId('dreams-action-message')).toContainText(/Removed 2 duplicate dream entries and kept 5\.|\u5df2\u79fb\u9664 2 \u6761\u91cd\u590d\u68a6\u5883\uff0c\u4fdd\u7559 5 \u6761\u3002/);
 
     await page.getByTestId('dreams-action-reset-grounded').click();
     await page.getByRole('button', { name: 'Confirm' }).click();
-    await expect(page.getByTestId('dreams-action-message')).toContainText(/Cleared 3 replayed short-term entries\.|已清理 3 条回放短期记忆。/);
+    await expect(page.getByTestId('dreams-action-message')).toContainText(/Cleared 3 replayed short-term entries\.|\u5df2\u6e05\u7406 3 \u6761\u56de\u653e\u77ed\u671f\u8bb0\u5fc6\u3002/);
 
     await page.getByTestId('dreams-action-reset-diary').click();
     await page.getByRole('button', { name: 'Confirm' }).click();
-    await expect(page.getByTestId('dreams-action-message')).toContainText(/Removed 4 backfilled dream diary entries\.|已移除 4 条回填梦境日记。/);
+    await expect(page.getByTestId('dreams-action-message')).toContainText(/Removed 4 backfilled dream diary entries\.|\u5df2\u79fb\u9664 4 \u6761\u56de\u586b\u68a6\u5883\u65e5\u8bb0\u3002/);
   });
 
   test('starts Dreams from the native page when dreaming is disabled', async ({ electronApp, page }) => {

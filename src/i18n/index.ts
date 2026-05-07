@@ -56,8 +56,8 @@ import ruSetup from './locales/ru/setup.json';
 
 export const SUPPORTED_LANGUAGES = [
     { code: 'en', label: 'English' },
-    { code: 'zh', label: '中文' },
-    { code: 'ja', label: '日本語' },
+    { code: 'zh', label: 'Chinese' },
+    { code: 'ja', label: 'Japanese' },
     { code: 'ru', label: 'Русский' },
 ] as const satisfies ReadonlyArray<{ code: LanguageCode; label: string }>;
 

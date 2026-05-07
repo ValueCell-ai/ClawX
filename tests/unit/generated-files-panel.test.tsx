@@ -6,7 +6,7 @@ import type { GeneratedFile } from '@/lib/generated-files';
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
     t: (_key: string, params?: Record<string, unknown>) => {
-      if (typeof params?.count === 'number') return `文件变更（${params.count} 个）`;
+      if (typeof params?.count === 'number') return `File changes (${params.count})`;
       return '';
     },
   }),
@@ -30,10 +30,10 @@ describe('GeneratedFilesPanel', () => {
   it('shows pdf and spreadsheet outputs as open-folder actions', () => {
     const onOpen = vi.fn();
     const onRevealInFileManager = vi.fn();
-    const windowsPath = String.raw`C:\Users\张三\Downloads\测试PDF文件-有内容.pdf`;
+    const windowsPath = String.raw`C:\Users\Åsa\Downloads\report-with-content.pdf`;
     const file = makeFile({
       filePath: windowsPath,
-      fileName: '测试PDF文件-有内容.pdf',
+      fileName: 'report-with-content.pdf',
       ext: '.pdf',
       mimeType: 'application/pdf',
       contentType: 'document',
@@ -47,7 +47,7 @@ describe('GeneratedFilesPanel', () => {
       />,
     );
 
-    const button = screen.getByRole('button', { name: /测试PDF文件-有内容\.pdf/ });
+    const button = screen.getByRole('button', { name: /report-with-content\.pdf/ });
     expect(button).toBeEnabled();
     fireEvent.click(button);
     expect(onOpen).not.toHaveBeenCalled();
@@ -59,15 +59,15 @@ describe('GeneratedFilesPanel', () => {
     const onRevealInFileManager = vi.fn();
     const files = [
       makeFile({
-        filePath: String.raw`C:\Users\张三\Documents\销售报表.xls`,
-        fileName: '销售报表.xls',
+        filePath: String.raw`C:\Users\Åsa\Documents\sales-report.xls`,
+        fileName: 'sales-report.xls',
         ext: '.xls',
         mimeType: 'application/vnd.ms-excel',
         contentType: 'document',
       }),
       makeFile({
-        filePath: String.raw`C:\Users\张三\Documents\财务明细.xlsx`,
-        fileName: '财务明细.xlsx',
+        filePath: String.raw`C:\Users\Åsa\Documents\financial-details.xlsx`,
+        fileName: 'financial-details.xlsx',
         ext: '.xlsx',
         mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
         contentType: 'document',
@@ -83,8 +83,8 @@ describe('GeneratedFilesPanel', () => {
       />,
     );
 
-    fireEvent.click(screen.getByRole('button', { name: /销售报表\.xls/ }));
-    fireEvent.click(screen.getByRole('button', { name: /财务明细\.xlsx/ }));
+    fireEvent.click(screen.getByRole('button', { name: /sales-report\.xls/ }));
+    fireEvent.click(screen.getByRole('button', { name: /financial-details\.xlsx/ }));
 
     expect(onOpen).not.toHaveBeenCalled();
     expect(onRevealInFileManager).toHaveBeenNthCalledWith(1, expect.objectContaining({ filePath: files[0].filePath }));

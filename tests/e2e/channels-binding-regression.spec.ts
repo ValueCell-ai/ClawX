@@ -99,9 +99,9 @@ test.describe('Channels binding regression', () => {
     await expect(page.getByText('Feishu / Lark')).toBeVisible();
 
     const feishuGroupHeader = page.locator('div.rounded-2xl').filter({ hasText: 'Feishu / Lark' }).first();
-    await expect(feishuGroupHeader).toContainText(/Connected|已连接|接続済み|Подключён/);
+    await expect(feishuGroupHeader).toContainText(/Connected|\u63a5\u7d9a\u6e08\u307f|Подключён/);
 
-    await page.getByRole('button', { name: /Add Account|添加账号|アカウントを追加/ }).click();
+    await page.getByRole('button', { name: /Add Account|\u30a2\u30ab\u30a6\u30f3\u30c8\u3092\u8ffd\u52a0/ }).click();
     await expect(page.getByText(/Configure Feishu \/ Lark|dialog\.configureTitle/)).toBeVisible();
 
     const accountIdInput = page.locator('#account-id');

@@ -118,7 +118,7 @@
   ; locked files.  electron-builder's extractUsing7za macro extracts to a
   ; temp folder first, then uses `CopyFiles /SILENT` to copy into $INSTDIR.
   ; If ANY file in $INSTDIR is still locked, CopyFiles fails and triggers a
-  ; "Can't modify ClawX's files" retry loop -> "ClawX 无法关闭" dialog.
+  ; "Can't modify ClawX's files" retry loop -> "ClawX could not be closed" dialog.
   ;
   ; Strategy: rename (move) the old $INSTDIR out of the way.  Rename works
   ; even when AV/indexer have files open for reading (they use
@@ -160,7 +160,7 @@
   ;
   ; Why: uninstallOldVersion has a hardcoded 5-retry loop that runs the old
   ; uninstaller repeatedly.  The old uninstaller's atomicRMDir fails on locked
-  ; files (antivirus, indexing) causing a blocking "ClawX 无法关闭" dialog.
+  ; files (antivirus, indexing) causing a blocking "ClawX could not be closed" dialog.
   ; Deleting UninstallString makes uninstallOldVersion return immediately.
   ; The new installer will overwrite / extract all files on top of the old dir.
   ; registryAddInstallInfo will write the correct new entries afterwards.
@@ -179,7 +179,7 @@
 !macroend
 
 ; Override electron-builder's handleUninstallResult to prevent the
-; "ClawX 无法关闭" retry dialog when the old uninstaller fails.
+; "ClawX could not be closed" retry dialog when the old uninstaller fails.
 ;
 ; During upgrades, electron-builder copies the old uninstaller to a temp dir
 ; and runs it silently.  The old uninstaller uses atomicRMDir to rename every

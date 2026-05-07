@@ -206,7 +206,7 @@ function SkillDetailDialog({ skill, isOpen, onClose, onToggle, onUninstall, onOp
             {skill.baseDir && (
               <div className="space-y-3">
                 <h3 className="text-meta font-bold text-foreground/80">
-                  {t('detail.sections.title', { defaultValue: '内容' })}
+                  {t('detail.sections.title', { defaultValue: 'Contents' })}
                 </h3>
                 <SkillFileSections
                   baseDir={skill.baseDir}

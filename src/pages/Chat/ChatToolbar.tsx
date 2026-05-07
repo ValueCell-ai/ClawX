@@ -47,13 +47,13 @@ export function ChatToolbar() {
               className={cn('h-8 w-8', browserActive && 'bg-foreground/10 text-foreground')}
               onClick={() => (browserActive ? closePanel() : openBrowser())}
               disabled={!currentAgent?.workspace}
-              aria-label={t('toolbar.workspace', '工作空间')}
+              aria-label={t('toolbar.workspace', 'Workspace')}
             >
               <FolderTree className="h-4 w-4" />
             </Button>
           </TooltipTrigger>
           <TooltipContent>
-            <p>{t('toolbar.workspace', '工作空间')}</p>
+            <p>{t('toolbar.workspace', 'Workspace')}</p>
           </TooltipContent>
         </Tooltip>
       )}

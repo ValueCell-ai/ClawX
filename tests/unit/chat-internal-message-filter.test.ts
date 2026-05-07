@@ -19,7 +19,7 @@ describe('chat internal message filter', () => {
   });
 
   it('does not filter normal user message that starts with current time', () => {
-    const content = 'Current time: 北京现在几点？';
+    const content = 'Current time: what time is it in Beijing?';
 
     expect(isInternalMessage({ role: 'user', content })).toBe(false);
   });

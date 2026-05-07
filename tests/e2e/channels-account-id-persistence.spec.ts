@@ -59,7 +59,7 @@ test.describe('Channels account editor behavior', () => {
     await expect(page.getByTestId('channels-page')).toBeVisible();
 
     const addAccountButton = page.locator('button').filter({
-      hasText: /Add Account|添加账号|アカウントを追加/,
+      hasText: /Add Account|\u30a2\u30ab\u30a6\u30f3\u30c8\u3092\u8ffd\u52a0/,
     }).first();
     await expect(addAccountButton).toBeVisible();
     await addAccountButton.click();

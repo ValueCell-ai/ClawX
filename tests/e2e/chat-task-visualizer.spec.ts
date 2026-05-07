@@ -172,7 +172,7 @@ const longRunHistory = [
   },
 ];
 
-const errorRunPrompt = '你是什么模型？';
+const errorRunPrompt = 'What model are you?';
 const errorRunHistory = [
   {
     role: 'user',
