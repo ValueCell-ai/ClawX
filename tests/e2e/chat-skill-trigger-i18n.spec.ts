@@ -124,4 +124,104 @@ test.describe('ClawX chat skill trigger', () => {
       await closeElectronApp(app);
     }
   });
+
+  test('clicking the composer skill token opens the preview sidebar', async ({ launchElectronApp }) => {
+    const app = await launchElectronApp({ skipSetup: true });
+
+    try {
+      await installIpcMocks(app, {
+        gatewayStatus: { state: 'running', port: 18789, pid: 12345 },
+        gatewayRpc: {
+          [stableStringify(['sessions.list', {}])]: {
+            success: true,
+            result: {
+              sessions: [{ key: SESSION_KEY, displayName: 'main' }],
+            },
+          },
+          [stableStringify(['chat.history', { sessionKey: SESSION_KEY, limit: 200 }])]: {
+            success: true,
+            result: { messages: [] },
+          },
+          [stableStringify(['chat.history', { sessionKey: SESSION_KEY, limit: 1000 }])]: {
+            success: true,
+            result: { messages: [] },
+          },
+        },
+        hostApi: {
+          [stableStringify(['/api/gateway/status', 'GET'])]: {
+            ok: true,
+            data: {
+              status: 200,
+              ok: true,
+              json: { state: 'running', port: 18789, pid: 12345 },
+            },
+          },
+          [stableStringify(['/api/settings', 'GET'])]: {
+            ok: true,
+            data: {
+              status: 200,
+              ok: true,
+              json: {
+                language: 'en',
+                setupComplete: true,
+              },
+            },
+          },
+          [stableStringify(['/api/agents', 'GET'])]: {
+            ok: true,
+            data: {
+              status: 200,
+              ok: true,
+              json: {
+                success: true,
+                agents: [
+                  {
+                    id: 'main',
+                    name: 'main',
+                    workspace: '/tmp/workspace',
+                    agentDir: '/tmp/agent',
+                  },
+                ],
+              },
+            },
+          },
+          [stableStringify(['/api/skills/quick-access', 'POST'])]: {
+            ok: true,
+            data: {
+              status: 200,
+              ok: true,
+              json: {
+                success: true,
+                skills: [
+                  {
+                    name: 'create-skill',
+                    description: 'Create and refine reusable skills.',
+                    source: 'workspace',
+                    sourceLabel: 'Workspace',
+                    manifestPath: '/tmp/workspace/skill/create-skill/SKILL.md',
+                    baseDir: '/tmp/workspace/skill/create-skill',
+                  },
+                ],
+              },
+            },
+          },
+        },
+      });
+
+      const page = await getStableWindow(app);
+
+      await expect(page.getByTestId('chat-composer-input')).toBeVisible({ timeout: 30_000 });
+      await page.getByTestId('chat-composer-input').fill('Hello ');
+      await page.getByTestId('chat-composer-skill').click();
+      await page.getByText('/create-skill', { exact: true }).click();
+      await expect(page.getByTestId('chat-composer-skill-token')).toHaveText('/create-skill');
+
+      await page.getByTestId('chat-composer-skill-token').click();
+
+      await expect(page.getByTestId('artifact-panel')).toBeVisible({ timeout: 15_000 });
+      await expect(page.getByTestId('artifact-panel-tab-preview')).toBeVisible();
+    } finally {
+      await closeElectronApp(app);
+    }
+  });
 });

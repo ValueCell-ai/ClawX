@@ -179,7 +179,9 @@
         "stop": "停止",
         "gatewayConnected": "已连接",
         "gatewayStatus": "gateway {{state}} | port: {{port}} {{pid}}",
-        "retryFailedAttachments": "重试失败的附件"
+        "retryFailedAttachments": "重试失败的附件",
+        "skillPreviewTooltip": "预览 SKILL.md",
+        "skillPreviewNotFound": "找不到该技能。请打开技能列表以刷新。"
     },
     "historyBuckets": {
         "today": "今天",
