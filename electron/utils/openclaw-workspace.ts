@@ -83,7 +83,7 @@ export async function ensureClawXIdentityFile(
   let wroteIdentity = await writeFileIfMissing(identityPath, defaultIdentity);
 
   if (!wroteIdentity) {
-    let existing = '';
+    let existing: string;
     try {
       existing = await readFile(identityPath, 'utf-8');
     } catch {
