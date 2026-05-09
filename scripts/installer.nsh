@@ -155,6 +155,19 @@
     CreateDirectory "$INSTDIR"
   _instdir_clean:
 
+  ; During overwrite installs, stale files can still survive if the old
+  ; installation directory was only partially removed after a locked-file
+  ; fallback. Explicitly remove the bundled skills subtree so old skills
+  ; (apple-notes, discord, etc.) do not remain under resources\openclaw\skills.
+  IfFileExists "$INSTDIR\resources\openclaw\skills\" 0 _openclaw_skills_clean
+    DetailPrint "Removing stale bundled OpenClaw skills from previous install..."
+    RMDir /r "$INSTDIR\resources\openclaw\skills"
+    IfFileExists "$INSTDIR\resources\openclaw\skills\" 0 _openclaw_skills_clean
+      nsExec::ExecToStack 'cmd.exe /c rd /s /q "$INSTDIR\resources\openclaw\skills"'
+      Pop $0
+      Pop $1
+  _openclaw_skills_clean:
+
   ; Pre-emptively remove the old uninstall registry entry so that
   ; electron-builder's uninstallOldVersion skips the old uninstaller entirely.
   ;
