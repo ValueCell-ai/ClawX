@@ -96,7 +96,7 @@ function StepDetailCard({ step }: { step: TaskStep }) {
                 </p>
               )}
               {!hideStatusText && !showRunningDots && (
-                <span className="rounded-full bg-black/5 px-2 py-0.5 text-2xs font-medium uppercase tracking-wide text-muted-foreground dark:bg-white/10">
+                <span className="shrink-0 whitespace-nowrap rounded-full bg-black/5 px-2 py-0.5 text-2xs font-medium uppercase tracking-wide text-muted-foreground dark:bg-white/10">
                   {t(`taskPanel.stepStatus.${step.status}`)}
                 </span>
               )}
@@ -104,7 +104,7 @@ function StepDetailCard({ step }: { step: TaskStep }) {
                 <AnimatedDots className="text-sm" />
               )}
               {step.depth > 1 && (
-                <span className="rounded-full bg-black/5 px-2 py-0.5 text-2xs font-medium uppercase tracking-wide text-muted-foreground dark:bg-white/10">
+                <span className="shrink-0 whitespace-nowrap rounded-full bg-black/5 px-2 py-0.5 text-2xs font-medium uppercase tracking-wide text-muted-foreground dark:bg-white/10">
                   {t('executionGraph.branchLabel')}
                 </span>
               )}
