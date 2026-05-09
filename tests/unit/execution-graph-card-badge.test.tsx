@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 
 import { ExecutionGraphCard } from '@/pages/Chat/ExecutionGraphCard';
 import type { TaskStep } from '@/pages/Chat/task-visualization';
@@ -82,5 +82,91 @@ describe('ExecutionGraphCard branch badge', () => {
     const statusPill = screen.getByText('error');
     expect(statusPill.className).toContain('whitespace-nowrap');
     expect(statusPill.className).toContain('shrink-0');
+  });
+});
+
+describe('ExecutionGraphCard subagent (system) row', () => {
+  // Subagent branch root produced by Chat/index.tsx:
+  // { kind: 'system', label: '<agent> subagent', detail: '<sessionKey>' }.
+  // It must render with the same flat row style as a tool call, NOT the old
+  // bordered-card layout that put the session key on a second visible line.
+  const subagentStep: TaskStep = {
+    id: 'subagent:08efe821',
+    label: 'main subagent',
+    kind: 'system',
+    status: 'completed',
+    detail: 'agent:main:subagent:08efe821-2717-4395-b3d7-a8f50928155f',
+    depth: 1,
+    parentId: 'agent-run',
+  };
+
+  it('uses the flat tool-style container without the rounded-card chrome', () => {
+    const { container } = render(
+      <ExecutionGraphCard
+        agentLabel="main"
+        steps={[subagentStep]}
+        active={false}
+        expanded
+      />,
+    );
+
+    const stepRow = container.querySelector('[data-testid="chat-execution-step"]');
+    expect(stepRow).not.toBeNull();
+    const detailContainer = stepRow!.querySelector(':scope > div:nth-of-type(2)');
+    expect(detailContainer).not.toBeNull();
+    const className = detailContainer!.className;
+    expect(className).toContain('px-0');
+    expect(className).toContain('py-0');
+    expect(className).not.toContain('rounded-xl');
+    expect(className).not.toContain('border-black/10');
+  });
+
+  it('renders the subagent session key inline as a single truncated preview', () => {
+    render(
+      <ExecutionGraphCard
+        agentLabel="main"
+        steps={[subagentStep]}
+        active={false}
+        expanded
+      />,
+    );
+
+    const preview = screen.getByText(subagentStep.detail!);
+    expect(preview.tagName.toLowerCase()).toBe('p');
+    expect(preview.className).toContain('truncate');
+    // The label is the bold title sibling of the preview.
+    const titleNode = screen.getByText('main subagent');
+    expect(titleNode.className).toContain('font-medium');
+    expect(preview.parentElement).toBe(titleNode.parentElement);
+  });
+
+  it('omits the redundant "completed" status pill for finished subagent rows', () => {
+    render(
+      <ExecutionGraphCard
+        agentLabel="main"
+        steps={[subagentStep]}
+        active={false}
+        expanded
+      />,
+    );
+
+    expect(screen.queryByText('completed')).toBeNull();
+  });
+
+  it('expands to a code block when the row is clicked', () => {
+    const { container } = render(
+      <ExecutionGraphCard
+        agentLabel="main"
+        steps={[subagentStep]}
+        active={false}
+        expanded
+      />,
+    );
+
+    expect(container.querySelector('pre')).toBeNull();
+    fireEvent.click(screen.getByText('main subagent'));
+    const pre = container.querySelector('pre');
+    expect(pre).not.toBeNull();
+    expect(pre!.textContent).toBe(subagentStep.detail);
   });
 });

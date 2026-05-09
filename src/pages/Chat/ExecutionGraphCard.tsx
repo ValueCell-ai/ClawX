@@ -47,8 +47,13 @@ function StepDetailCard({ step }: { step: TaskStep }) {
   const isNarration = step.kind === 'message';
   const isTool = step.kind === 'tool';
   const isThinking = step.kind === 'thinking';
+  // System steps (subagent branch roots etc.) share the tool row layout:
+  // bold label + truncated single-line detail preview + click-to-expand,
+  // i.e. no rounded card / no separate detail line below the title.
+  const isSystem = step.kind === 'system';
+  const isFlatRow = isTool || isSystem;
   const showRunningDots = (isTool || isThinking) && step.status === 'running';
-  const hideStatusText = isTool && step.status === 'completed';
+  const hideStatusText = (isTool || isSystem) && step.status === 'completed';
   const detailPreview = step.detail?.replace(/\s+/g, ' ').trim();
   const canExpand = hasDetail;
     const displayLabel = isThinking ? t('executionGraph.thinkingLabel') : step.label;
@@ -57,7 +62,7 @@ function StepDetailCard({ step }: { step: TaskStep }) {
     <div
       className={cn(
         'min-w-0 flex-1 text-muted-foreground',
-        isTool || isNarration || isThinking
+        isFlatRow || isNarration || isThinking
           ? 'px-0 py-0'
           : 'rounded-xl border border-black/10 bg-white/40 px-3 py-2 dark:border-white/10 dark:bg-white/[0.03]',
       )}
@@ -66,7 +71,7 @@ function StepDetailCard({ step }: { step: TaskStep }) {
         type="button"
         className={cn(
           'flex w-full gap-2 text-left',
-          isTool ? 'items-center' : 'items-start',
+          isFlatRow ? 'items-center' : 'items-start',
           canExpand ? 'cursor-pointer' : 'cursor-default',
         )}
         onClick={() => {
@@ -90,7 +95,7 @@ function StepDetailCard({ step }: { step: TaskStep }) {
                   <Link className="h-3.5 w-3.5" />
                 </a>
               )}
-              {isTool && detailPreview && !expanded && (
+              {isFlatRow && detailPreview && !expanded && (
                 <p className="min-w-0 truncate text-xs leading-4 text-muted-foreground/80">
                   {detailPreview}
                 </p>
@@ -110,7 +115,7 @@ function StepDetailCard({ step }: { step: TaskStep }) {
               )}
             </div>
           )}
-          {step.detail && !expanded && !isTool && (
+          {step.detail && !expanded && !isFlatRow && (
             <p
               className={cn(
                 'text-muted-foreground',
@@ -129,7 +134,11 @@ function StepDetailCard({ step }: { step: TaskStep }) {
           </span>
         )}
       </button>
-      {step.detail && expanded && canExpand && isTool && (() => {
+      {step.detail && expanded && canExpand && isFlatRow && (() => {
+            // Tool inputs are typically JSON; system payloads (e.g. subagent
+            // session keys) are usually plain strings. Pretty-print if the
+            // detail parses as JSON, otherwise fall back to the raw text so
+            // session keys render unchanged.
             let formatted = step.detail;
             try {
               formatted = JSON.stringify(JSON.parse(step.detail), null, 2);
@@ -137,7 +146,7 @@ function StepDetailCard({ step }: { step: TaskStep }) {
             return (
               <div className="mt-3 rounded-lg border border-black/10 bg-black/[0.03] px-3 py-2 dark:border-white/10 dark:bg-white/[0.03]">
                 <pre
-                  className="whitespace-pre-wrap text-xs leading-5 text-muted-foreground"
+                  className="whitespace-pre-wrap break-words text-xs leading-5 text-muted-foreground"
                 >
                   {formatted}
                 </pre>
