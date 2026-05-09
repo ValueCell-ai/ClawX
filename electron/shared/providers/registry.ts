@@ -80,7 +80,7 @@ export const PROVIDER_DEFINITIONS: ProviderDefinition[] = [
     supportsMultipleAccounts: true,
     providerConfig: {
       baseUrl: 'https://openrouter.ai/api/v1',
-      api: 'openai-completions',
+      api: 'openrouter',
       apiKeyEnv: 'OPENROUTER_API_KEY',
       headers: {
         'HTTP-Referer': 'https://claw-x.com',
