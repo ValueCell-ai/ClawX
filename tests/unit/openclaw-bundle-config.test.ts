@@ -18,6 +18,8 @@ describe('openclaw bundle config', () => {
       '@tencent-connect/qqbot-connector',
       'mpg123-decoder',
       'silk-wasm',
+      '@agentclientprotocol/sdk',
+      'playwright-core',
       'qrcode-terminal',
     ]));
   });

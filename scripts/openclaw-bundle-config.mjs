@@ -17,6 +17,18 @@ export const EXTRA_BUNDLED_PACKAGES = [
   'mpg123-decoder',
   'silk-wasm',
 
+  // The built-in acpx extension already ships its direct "acpx" package under
+  // dist/extensions/acpx/node_modules, but its runtime path reaches
+  // "acpx/runtime", whose reachable bare runtime dependency is
+  // @agentclientprotocol/sdk. Package it explicitly to keep packaged builds
+  // self-contained even when the extension dep graph is flattened.
+  '@agentclientprotocol/sdk',
+
+  // OpenClaw's built-in browser extension resolves playwright-core at runtime.
+  // Package it explicitly because it is not always present in openclaw's own
+  // transitive dependency graph from the app bundle context.
+  'playwright-core',
+
   // Electron main process QR login flows resolve these files from the
   // bundled OpenClaw runtime context in packaged builds.
   'qrcode-terminal',
