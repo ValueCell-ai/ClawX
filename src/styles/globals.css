@@ -123,6 +123,12 @@
   }
 }
 
+@layer components {
+  .sidebar-nav-text.sidebar-nav-text {
+    @apply text-sm font-normal leading-4;
+  }
+}
+
 /* Custom scrollbar: keep scrollbars visually quiet until the user hovers a scroll area. */
 * {
   scrollbar-width: thin;

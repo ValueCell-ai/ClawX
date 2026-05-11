@@ -52,7 +52,7 @@ function NavItem({ to, icon, label, badge, collapsed, onClick, testId }: NavItem
       data-testid={testId}
       className={({ isActive }) =>
         cn(
-          'flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm font-medium transition-colors',
+          'sidebar-nav-text flex items-center gap-2 rounded-lg px-2.5 py-1.5 transition-colors',
           'hover:bg-black/5 dark:hover:bg-white/5 text-foreground/80',
           isActive
             ? 'bg-black/5 dark:bg-white/10 text-foreground'
@@ -61,23 +61,21 @@ function NavItem({ to, icon, label, badge, collapsed, onClick, testId }: NavItem
         )
       }
     >
-      {({ isActive }) => (
-        <>
-          <div className={cn("flex shrink-0 items-center justify-center", isActive ? "text-foreground" : "text-muted-foreground")}>
-            {icon}
-          </div>
-          {!collapsed && (
-            <>
-              <span className="flex-1 overflow-hidden text-ellipsis whitespace-nowrap">{label}</span>
-              {badge && (
-                <Badge variant="secondary" className="ml-auto shrink-0">
-                  {badge}
-                </Badge>
-              )}
-            </>
-          )}
-        </>
-      )}
+      <>
+        <div className="flex shrink-0 items-center justify-center text-current [&_svg]:size-4">
+          {icon}
+        </div>
+        {!collapsed && (
+          <>
+            <span className="flex-1 overflow-hidden text-ellipsis whitespace-nowrap">{label}</span>
+            {badge && (
+              <Badge variant="secondary" className="ml-auto shrink-0">
+                {badge}
+              </Badge>
+            )}
+          </>
+        )}
+      </>
     </NavLink>
   );
 }
@@ -200,13 +198,13 @@ export function Sidebar() {
   const extraNavItems = rendererExtensionRegistry.getExtraNavItems();
 
   const coreNavItems = [
-    { to: '/models', icon: <Cpu className="h-[18px] w-[18px]" strokeWidth={2} />, label: t('sidebar.models'), testId: 'sidebar-nav-models' },
-    { to: '/agents', icon: <Bot className="h-[18px] w-[18px]" strokeWidth={2} />, label: t('sidebar.agents'), testId: 'sidebar-nav-agents' },
-    { to: '/channels', icon: <Network className="h-[18px] w-[18px]" strokeWidth={2} />, label: t('sidebar.channels'), testId: 'sidebar-nav-channels' },
-    { to: '/skills', icon: <Puzzle className="h-[18px] w-[18px]" strokeWidth={2} />, label: t('sidebar.skills'), testId: 'sidebar-nav-skills' },
-    { to: '/cron', icon: <Clock className="h-[18px] w-[18px]" strokeWidth={2} />, label: t('sidebar.cronTasks'), testId: 'sidebar-nav-cron' },
+    { to: '/models', icon: <Cpu className="h-4 w-4" strokeWidth={2} />, label: t('sidebar.models'), testId: 'sidebar-nav-models' },
+    { to: '/agents', icon: <Bot className="h-4 w-4" strokeWidth={2} />, label: t('sidebar.agents'), testId: 'sidebar-nav-agents' },
+    { to: '/channels', icon: <Network className="h-4 w-4" strokeWidth={2} />, label: t('sidebar.channels'), testId: 'sidebar-nav-channels' },
+    { to: '/skills', icon: <Puzzle className="h-4 w-4" strokeWidth={2} />, label: t('sidebar.skills'), testId: 'sidebar-nav-skills' },
+    { to: '/cron', icon: <Clock className="h-4 w-4" strokeWidth={2} />, label: t('sidebar.cronTasks'), testId: 'sidebar-nav-cron' },
     ...(devModeUnlocked
-      ? [{ to: '/dreams', icon: <Moon className="h-[18px] w-[18px]" strokeWidth={2} />, label: t('common:sidebar.openClawDreams'), testId: 'sidebar-nav-dreams' }]
+      ? [{ to: '/dreams', icon: <Moon className="h-4 w-4" strokeWidth={2} />, label: t('common:sidebar.openClawDreams'), testId: 'sidebar-nav-dreams' }]
       : []),
   ];
 
@@ -214,7 +212,7 @@ export function Sidebar() {
     ...coreNavItems.filter((item) => !hiddenRoutes.has(item.to)),
     ...extraNavItems.map((item) => ({
       to: item.to,
-      icon: <item.icon className="h-[18px] w-[18px]" strokeWidth={2} />,
+      icon: <item.icon className="h-4 w-4" strokeWidth={2} />,
       label: item.labelI18nKey ? t(item.labelI18nKey) : item.label,
       testId: item.testId,
     })),
@@ -253,7 +251,7 @@ export function Sidebar() {
       </div>
 
       {/* Navigation */}
-      <nav className="flex flex-col px-2 gap-0.5">
+      <nav className="flex flex-col gap-0 px-2">
         <button
           data-testid="sidebar-new-chat"
           onClick={() => {
@@ -262,13 +260,13 @@ export function Sidebar() {
             navigate('/');
           }}
           className={cn(
-            'flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm font-medium transition-colors mb-2',
+            'sidebar-nav-text mb-1 flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 transition-colors',
             'bg-black/5 dark:bg-accent shadow-none border border-transparent text-foreground',
             sidebarCollapsed && 'justify-center px-0',
           )}
         >
-          <div className="flex shrink-0 items-center justify-center text-foreground/80">
-            <Plus className="h-[18px] w-[18px]" strokeWidth={2} />
+          <div className="flex shrink-0 items-center justify-center text-current [&_svg]:size-4">
+            <Plus className="h-4 w-4" strokeWidth={2} />
           </div>
           {!sidebarCollapsed && <span className="flex-1 text-left overflow-hidden text-ellipsis whitespace-nowrap">{t('sidebar.newChat')}</span>}
         </button>
@@ -353,21 +351,19 @@ export function Sidebar() {
             data-testid="sidebar-nav-settings"
             className={({ isActive }) =>
               cn(
-                'flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm font-medium transition-colors',
+                'sidebar-nav-text flex items-center gap-2 rounded-lg px-2.5 py-1.5 transition-colors',
                 'hover:bg-black/5 dark:hover:bg-white/5 text-foreground/80',
                 isActive && 'bg-black/5 dark:bg-white/10 text-foreground',
                 sidebarCollapsed ? 'justify-center px-0' : ''
               )
             }
           >
-          {({ isActive }) => (
-            <>
-              <div className={cn("flex shrink-0 items-center justify-center", isActive ? "text-foreground" : "text-muted-foreground")}>
-                <SettingsIcon className="h-[18px] w-[18px]" strokeWidth={2} />
-              </div>
-              {!sidebarCollapsed && <span className="flex-1 overflow-hidden text-ellipsis whitespace-nowrap">{t('sidebar.settings')}</span>}
-            </>
-          )}
+          <>
+            <div className="flex shrink-0 items-center justify-center text-current [&_svg]:size-4">
+              <SettingsIcon className="h-4 w-4" strokeWidth={2} />
+            </div>
+            {!sidebarCollapsed && <span className="flex-1 overflow-hidden text-ellipsis whitespace-nowrap">{t('sidebar.settings')}</span>}
+          </>
         </NavLink>
 
         {devModeUnlocked && (
@@ -375,19 +371,19 @@ export function Sidebar() {
             data-testid="sidebar-open-dev-console"
             variant="ghost"
             className={cn(
-              'flex items-center gap-2.5 rounded-lg px-2.5 py-2 h-auto text-sm font-medium transition-colors w-full mt-1',
+              'sidebar-nav-text mt-0.5 flex h-auto w-full items-center gap-2 rounded-lg px-2.5 py-1.5 transition-colors',
               'hover:bg-black/5 dark:hover:bg-white/5 text-foreground/80',
               sidebarCollapsed ? 'justify-center px-0' : 'justify-start'
             )}
             onClick={openDevConsole}
           >
-            <div className="flex shrink-0 items-center justify-center text-muted-foreground">
-              <Terminal className="h-[18px] w-[18px]" strokeWidth={2} />
+            <div className="flex shrink-0 items-center justify-center text-current [&_svg]:size-4">
+              <Terminal className="h-4 w-4" strokeWidth={2} />
             </div>
             {!sidebarCollapsed && (
               <>
                 <span className="flex-1 text-left overflow-hidden text-ellipsis whitespace-nowrap">{t('common:sidebar.openClawPage')}</span>
-                <ExternalLink className="h-3 w-3 shrink-0 ml-auto opacity-50 text-muted-foreground" />
+                <ExternalLink className="ml-auto h-3 w-3 shrink-0 opacity-50 text-current" />
               </>
             )}
           </Button>
