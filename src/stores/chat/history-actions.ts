@@ -48,7 +48,9 @@ export function createHistoryActions(
   return {
     loadHistory: async (quiet = false) => {
       const { currentSessionKey } = get();
-      const foregroundLoadKey = `${useGatewayStore.getState().status.pid ?? 'none'}:${useGatewayStore.getState().status.connectedAt ?? 'none'}:${useGatewayStore.getState().status.port}|${currentSessionKey}`;
+      const gatewayState = useGatewayStore.getState?.() as { status?: { pid?: number; connectedAt?: number; port?: number } } | undefined;
+      const gatewayStatus = gatewayState?.status;
+      const foregroundLoadKey = `${gatewayStatus?.pid ?? 'none'}:${gatewayStatus?.connectedAt ?? 'none'}:${gatewayStatus?.port ?? 'none'}|${currentSessionKey}`;
       const isInitialForegroundLoad = !quiet && !foregroundHistoryLoadSeen.has(foregroundLoadKey);
       const historyTimeoutOverride = getStartupHistoryTimeoutOverride(isInitialForegroundLoad);
       if (!quiet) set({ loading: true, error: null });

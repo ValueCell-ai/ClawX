@@ -116,8 +116,9 @@ function clearCachedSessionHistory(sessionKey: string): void {
 }
 
 function getHistoryForegroundLoadKey(sessionKey: string): string {
-  const gatewayStatus = useGatewayStore.getState().status;
-  const gatewayRuntimeKey = `${gatewayStatus.pid ?? 'none'}:${gatewayStatus.connectedAt ?? 'none'}:${gatewayStatus.port}`;
+  const gatewayState = useGatewayStore.getState?.() as { status?: { pid?: number; connectedAt?: number; port?: number } } | undefined;
+  const gatewayStatus = gatewayState?.status;
+  const gatewayRuntimeKey = `${gatewayStatus?.pid ?? 'none'}:${gatewayStatus?.connectedAt ?? 'none'}:${gatewayStatus?.port ?? 'none'}`;
   return `${gatewayRuntimeKey}|${sessionKey}`;
 }
 
