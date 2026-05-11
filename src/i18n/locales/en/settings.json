@@ -73,8 +73,6 @@
       "save": "Save",
       "customDoc": "Documentation",
       "validate": "Validate",
-      "test": "Test",
-      "verified": "Verified",
       "failed": "Failed"
     },
     "card": {

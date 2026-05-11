@@ -401,8 +401,7 @@ function ProviderCard({
   const [validating, setValidating] = useState(false);
   const [saving, setSaving] = useState(false);
   const [arkMode, setArkMode] = useState<ArkMode>('apikey');
-  const [testStatus, setTestStatus] = useState<'idle' | 'testing' | 'success' | 'error'>('idle');
-  const [testError, setTestError] = useState<string>('');
+  const [validationError, setValidationError] = useState<string | null>(null);
 
   const typeInfo = PROVIDER_TYPE_INFO.find((t) => t.id === account.vendorId);
   const providerDocsUrl = getProviderDocsUrl(typeInfo, i18n.language);
@@ -429,6 +428,7 @@ function ProviderCard({
       setModelId(account.model || '');
       setFallbackModelsText(normalizeFallbackModels(account.fallbackModels).join('\n'));
       setFallbackProviderIds(normalizeFallbackProviderIds(account.fallbackAccountIds));
+      setValidationError(null);
       setArkMode(
         isArkCodePlanMode(
           account.vendorId,
@@ -451,50 +451,9 @@ function ProviderCard({
     ));
   };
 
-  const handleTest = async () => {
-    const normalizedNewKey = normalizeProviderApiKeyInput(newKey);
-    // Need either a new key to test, or an existing configured key
-    if (!normalizedNewKey && !status?.hasKey) {
-      setTestError(t('aiProviders.toast.invalidKey'));
-      setTestStatus('error');
-      return;
-    }
-
-    setTestStatus('testing');
-    setTestError('');
-
-    try {
-      // If no new key entered, fetch the existing API key
-      const keyToTest = normalizedNewKey || await useProviderStore.getState().getAccountApiKey(account.id);
-      if (!keyToTest) {
-        setTestError(t('aiProviders.toast.invalidKey'));
-        setTestStatus('error');
-        return;
-      }
-
-      const result = await onValidateKey(keyToTest, {
-        baseUrl: baseUrl.trim() || undefined,
-        apiProtocol: (account.vendorId === 'custom' || account.vendorId === 'ollama') ? apiProtocol : undefined,
-      });
-
-      if (result.valid) {
-        setTestStatus('success');
-        // Reset to idle after 2 seconds
-        setTimeout(() => {
-          setTestStatus('idle');
-        }, 2000);
-      } else {
-        setTestStatus('error');
-        setTestError(result.error || t('aiProviders.toast.invalidKey'));
-      }
-    } catch {
-      setTestStatus('error');
-      setTestError(t('aiProviders.toast.invalidKey'));
-    }
-  };
-
   const handleSaveEdits = async () => {
     setSaving(true);
+    setValidationError(null);
     try {
       const payload: { newApiKey?: string; updates?: Partial<ProviderConfig> } = {};
       const normalizedFallbackModels = normalizeFallbackModels(fallbackModelsText.split('\n'));
@@ -508,7 +467,7 @@ function ProviderCard({
         });
         setValidating(false);
         if (!result.valid) {
-          toast.error(result.error || t('aiProviders.toast.invalidKey'));
+          setValidationError(result.error || t('aiProviders.toast.invalidKey'));
           setSaving(false);
           return;
         }
@@ -517,7 +476,7 @@ function ProviderCard({
 
       {
         if (showModelIdField && !modelId.trim()) {
-          toast.error(t('aiProviders.toast.modelRequired'));
+          setValidationError(t('aiProviders.toast.modelRequired'));
           setSaving(false);
           return;
         }
@@ -562,7 +521,6 @@ function ProviderCard({
 
       await onSaveEdits(payload);
       setNewKey('');
-      setTestStatus('idle');
       toast.success(t('aiProviders.toast.updated'));
     } catch (error) {
       toast.error(`${t('aiProviders.toast.failedUpdate')}: ${error}`);
@@ -715,7 +673,10 @@ function ProviderCard({
                   <Label className={currentLabelClasses}>{t('aiProviders.dialog.modelId')}</Label>
                   <Input
                     value={modelId}
-                    onChange={(e) => setModelId(e.target.value)}
+                    onChange={(e) => {
+                      setModelId(e.target.value);
+                      setValidationError(null);
+                    }}
                     placeholder={typeInfo?.modelIdPlaceholder || 'provider/model-id'}
                     className={currentInputClasses}
                   />
@@ -896,10 +857,14 @@ function ProviderCard({
               <div className="flex gap-2">
                 <div className="relative flex-1">
                   <Input
+                    data-testid={`provider-edit-key-input-${account.id}`}
                     type={showKey ? 'text' : 'password'}
                     placeholder={typeInfo?.requiresApiKey ? typeInfo?.placeholder : (typeInfo?.id === 'ollama' ? t('aiProviders.notRequired') : t('aiProviders.card.editKey'))}
                     value={newKey}
-                    onChange={(e) => setNewKey(e.target.value)}
+                    onChange={(e) => {
+                      setNewKey(e.target.value);
+                      setValidationError(null);
+                    }}
                     className={cn(currentInputClasses, 'pr-10')}
                   />
                   <button
@@ -910,31 +875,8 @@ function ProviderCard({
                     {showKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                   </button>
                 </div>
-                {/* Test Button */}
                 <Button
-                  variant="outline"
-                  onClick={handleTest}
-                  disabled={testStatus === 'testing' || validating || saving}
-                  className={cn(
-                    "rounded-xl px-3 h-[40px] border-black/10 dark:border-white/10",
-                    isDefault
-                      ? "bg-white dark:bg-card hover:bg-black/5 dark:hover:bg-white/10"
-                      : "bg-surface-input hover:bg-black/5 dark:hover:bg-white/10 shadow-sm",
-                    testStatus === 'success' && "text-green-600 border-green-500/30 bg-green-500/10 hover:bg-green-500/10"
-                  )}
-                >
-                  {testStatus === 'testing' ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : testStatus === 'success' ? (
-                    <>
-                      <Check className="h-4 w-4 text-green-500 mr-1.5" />
-                      <span className="text-xs font-medium text-green-600">{t('aiProviders.dialog.verified')}</span>
-                    </>
-                  ) : (
-                    <span className="text-xs font-medium">{t('aiProviders.dialog.test')}</span>
-                  )}
-                </Button>
-                <Button
+                  data-testid={`provider-edit-save-${account.id}`}
                   variant="outline"
                   onClick={handleSaveEdits}
                   className={cn(
@@ -964,6 +906,7 @@ function ProviderCard({
                   )}
                 </Button>
                 <Button
+                  data-testid={`provider-edit-cancel-${account.id}`}
                   variant="ghost"
                   onClick={onCancelEdit}
                   className={cn(
@@ -976,11 +919,14 @@ function ProviderCard({
                   <X className="h-4 w-4" />
                 </Button>
               </div>
-              {testStatus === 'error' && testError && (
-                <p className="text-xs text-red-500 flex items-center gap-1 mt-1">
+              {validationError && (
+                <p
+                  data-testid={`provider-edit-validation-error-${account.id}`}
+                  className="text-xs text-red-500 flex items-center gap-1 mt-1"
+                >
                   <XCircle className="h-3 w-3 shrink-0" />
                   <span className="font-medium">{t('aiProviders.dialog.failed')}:</span>
-                  <span>{testError}</span>
+                  <span>{validationError}</span>
                 </p>
               )}
               <p className="text-xs text-muted-foreground">

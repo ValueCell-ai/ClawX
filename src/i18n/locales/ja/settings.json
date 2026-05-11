@@ -73,8 +73,6 @@
       "save": "保存",
       "customDoc": "ドキュメント",
       "validate": "検証",
-      "test": "テスト",
-      "verified": "検証済み",
       "failed": "失敗"
     },
     "card": {
