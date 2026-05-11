@@ -63,8 +63,10 @@ const _historyLoadInFlight = new Map<string, Promise<void>>();
 const _lastHistoryLoadAtBySession = new Map<string, number>();
 const _forceNextHistoryLoadBySession = new Set<string>();
 const _foregroundHistoryLoadSeen = new Set<string>();
+const _sessionHistoryCache = new Map<string, { messages: RawMessage[]; thinkingLevel: string | null }>();
 const SESSION_LOAD_MIN_INTERVAL_MS = 1_200;
 const HISTORY_LOAD_MIN_INTERVAL_MS = 800;
+const LABEL_FETCH_CONCURRENCY = 3;
 const HISTORY_POLL_SILENCE_WINDOW_MS = 2_500;
 const CHAT_EVENT_DEDUPE_TTL_MS = 30_000;
 const _chatEventDedupe = new Map<string, number>();
@@ -85,6 +87,39 @@ function clearHistoryPoll(): void {
 
 function forceNextHistoryLoad(sessionKey: string): void {
   _forceNextHistoryLoadBySession.add(sessionKey);
+}
+
+function cloneHistoryMessages(messages: RawMessage[]): RawMessage[] {
+  return messages.map((message) => ({
+    ...message,
+    _attachedFiles: message._attachedFiles?.map((file) => ({ ...file })),
+  }));
+}
+
+function cacheSessionHistory(sessionKey: string, messages: RawMessage[], thinkingLevel: string | null): void {
+  _sessionHistoryCache.set(sessionKey, {
+    messages: cloneHistoryMessages(messages),
+    thinkingLevel,
+  });
+}
+
+function getCachedSessionHistory(sessionKey: string): { messages: RawMessage[]; thinkingLevel: string | null } | null {
+  const cached = _sessionHistoryCache.get(sessionKey);
+  if (!cached) return null;
+  return {
+    messages: cloneHistoryMessages(cached.messages),
+    thinkingLevel: cached.thinkingLevel,
+  };
+}
+
+function clearCachedSessionHistory(sessionKey: string): void {
+  _sessionHistoryCache.delete(sessionKey);
+}
+
+function getHistoryForegroundLoadKey(sessionKey: string): string {
+  const gatewayStatus = useGatewayStore.getState().status;
+  const gatewayRuntimeKey = `${gatewayStatus.pid ?? 'none'}:${gatewayStatus.connectedAt ?? 'none'}:${gatewayStatus.port}`;
+  return `${gatewayRuntimeKey}|${sessionKey}`;
 }
 
 function pruneChatEventDedupe(now: number): void {
@@ -1014,7 +1049,7 @@ function clearSessionEntryFromMap<T extends Record<string, unknown>>(entries: T,
 function buildSessionSwitchPatch(
   state: Pick<
     ChatState,
-    'currentSessionKey' | 'messages' | 'sessions' | 'sessionLabels' | 'sessionLastActivity'
+    'currentSessionKey' | 'messages' | 'sessions' | 'sessionLabels' | 'sessionLastActivity' | 'thinkingLevel'
   >,
   nextSessionKey: string,
 ): Partial<ChatState> {
@@ -1030,6 +1065,7 @@ function buildSessionSwitchPatch(
   const nextSessions = leavingEmpty
     ? state.sessions.filter((session) => session.key !== state.currentSessionKey)
     : state.sessions;
+  const cachedNextSession = getCachedSessionHistory(nextSessionKey);
 
   return {
     currentSessionKey: nextSessionKey,
@@ -1041,7 +1077,8 @@ function buildSessionSwitchPatch(
     sessionLastActivity: leavingEmpty
       ? clearSessionEntryFromMap(state.sessionLastActivity, state.currentSessionKey)
       : state.sessionLastActivity,
-    messages: [],
+    messages: cachedNextSession?.messages ?? [],
+    thinkingLevel: cachedNextSession?.thinkingLevel ?? state.thinkingLevel ?? null,
     streamingText: '',
     streamingMessage: null,
     streamingTools: [],
@@ -1645,6 +1682,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
   // newSession() design that avoids sessions.reset to preserve history.
 
   deleteSession: async (key: string) => {
+    clearCachedSessionHistory(key);
     // Soft-delete the session's JSONL transcript on disk.
     // The main process renames <suffix>.jsonl → <suffix>.deleted.jsonl so that
     // sessions.list skips it automatically.
@@ -1772,10 +1810,12 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
   loadHistory: async (quiet = false) => {
     const { currentSessionKey } = get();
-    const isInitialForegroundLoad = !quiet && !_foregroundHistoryLoadSeen.has(currentSessionKey);
+    const foregroundLoadKey = getHistoryForegroundLoadKey(currentSessionKey);
+    const isInitialForegroundLoad = !quiet && !_foregroundHistoryLoadSeen.has(foregroundLoadKey);
     const historyTimeoutOverride = getStartupHistoryTimeoutOverride(isInitialForegroundLoad);
     const forceLoad = _forceNextHistoryLoadBySession.delete(currentSessionKey);
     const existingLoad = _historyLoadInFlight.get(currentSessionKey);
+    const shouldShowForegroundLoading = !quiet && get().messages.length === 0;
     if (existingLoad) {
       await existingLoad;
       if (!forceLoad) {
@@ -1791,15 +1831,15 @@ export const useChatStore = create<ChatState>((set, get) => ({
       return;
     }
 
-      if (!quiet) set({ loading: true, error: null, runError: null });
+    if (shouldShowForegroundLoading) set({ loading: true, error: null, runError: null });
 
     // Safety guard: if history loading takes too long, force loading to false
     // to prevent the UI from being stuck in a spinner forever.
     let loadingTimedOut = false;
-    const loadingSafetyTimer = quiet ? null : setTimeout(() => {
+    const loadingSafetyTimer = shouldShowForegroundLoading ? setTimeout(() => {
       loadingTimedOut = true;
       set({ loading: false });
-    }, getHistoryLoadingSafetyTimeout(isInitialForegroundLoad));
+    }, getHistoryLoadingSafetyTimeout(isInitialForegroundLoad)) : null;
 
     const loadPromise = (async () => {
       const isCurrentSession = () => get().currentSessionKey === currentSessionKey;
@@ -1833,7 +1873,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
           const hasMessages = state.messages.length > 0;
           return {
             loading: false,
-            error: !quiet && errorMessage ? errorMessage : state.error,
+            error: shouldShowForegroundLoading && errorMessage ? errorMessage : state.error,
             ...(hasMessages ? {} : { messages: [] as RawMessage[] }),
           };
         });
@@ -1901,6 +1941,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
         loading: false,
         runError: latestTerminalAssistantErrorMessage,
       });
+      cacheSessionHistory(currentSessionKey, finalMessages, thinkingLevel);
 
       // Extract first user message text as a session label for display in the toolbar.
       // Skip main sessions (key ends with ":main") — they rely on the Gateway-provided
@@ -2027,7 +2068,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
           const applied = applyLoadedMessages(rawMessages, thinkingLevel);
           if (applied && isInitialForegroundLoad) {
-            _foregroundHistoryLoadSeen.add(currentSessionKey);
+            _foregroundHistoryLoadSeen.add(foregroundLoadKey);
           }
         } else {
           if (isCurrentSession() && isInitialForegroundLoad && classifyHistoryStartupRetryError(lastError)) {
@@ -2042,7 +2083,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
           if (fallbackMessages.length > 0) {
             const applied = applyLoadedMessages(fallbackMessages, null);
             if (applied && isInitialForegroundLoad) {
-              _foregroundHistoryLoadSeen.add(currentSessionKey);
+              _foregroundHistoryLoadSeen.add(foregroundLoadKey);
             }
           } else {
             applyLoadFailure(
@@ -2057,7 +2098,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
         if (fallbackMessages.length > 0) {
           const applied = applyLoadedMessages(fallbackMessages, null);
           if (applied && isInitialForegroundLoad) {
-            _foregroundHistoryLoadSeen.add(currentSessionKey);
+            _foregroundHistoryLoadSeen.add(foregroundLoadKey);
           }
         } else {
           applyLoadFailure(String(err));

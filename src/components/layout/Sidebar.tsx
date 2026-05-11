@@ -108,22 +108,22 @@ export function Sidebar() {
   const gatewayStatus = useGatewayStore((s) => s.status);
   const isGatewayRunning = gatewayStatus.state === 'running';
   const isGatewayReady = isGatewayRunning && gatewayStatus.gatewayReady !== false;
+  const gatewayRuntimeKey = `${gatewayStatus.pid ?? 'none'}:${gatewayStatus.connectedAt ?? 'none'}:${gatewayStatus.port}`;
 
   useEffect(() => {
     if (!isGatewayReady) return;
     let cancelled = false;
-    const hasExistingMessages = useChatStore.getState().messages.length > 0;
     (async () => {
       await Promise.allSettled([
         loadSessions(),
-        loadHistory(hasExistingMessages),
+        loadHistory(false),
       ]);
       if (cancelled) return;
     })();
     return () => {
       cancelled = true;
     };
-  }, [isGatewayReady, loadHistory, loadSessions]);
+  }, [gatewayRuntimeKey, isGatewayReady, loadHistory, loadSessions]);
   const agents = useAgentsStore((s) => s.agents);
   const fetchAgents = useAgentsStore((s) => s.fetchAgents);
 
@@ -297,7 +297,14 @@ export function Sidebar() {
                   return (
                     <div key={s.key} className="group relative flex items-center">
                       <button
-                        onClick={() => { switchSession(s.key); navigate('/'); }}
+                        onClick={() => {
+                          if (currentSessionKey === s.key) {
+                            void loadHistory(false);
+                          } else {
+                            switchSession(s.key);
+                          }
+                          navigate('/');
+                        }}
                         className={cn(
                           'w-full text-left rounded-lg px-2.5 py-1.5 text-meta transition-colors pr-7',
                           'hover:bg-black/5 dark:hover:bg-white/5',

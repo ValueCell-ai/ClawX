@@ -1,5 +1,14 @@
 import { completeSetup, expect, installIpcMocks, test } from './fixtures/electron';
 
+function stableStringify(value: unknown): string {
+  if (value == null || typeof value !== 'object') return JSON.stringify(value);
+  if (Array.isArray(value)) return `[${value.map((item) => stableStringify(item)).join(',')}]`;
+  const entries = Object.entries(value as Record<string, unknown>)
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([key, entryValue]) => `${JSON.stringify(key)}:${stableStringify(entryValue)}`);
+  return `{${entries.join(',')}}`;
+}
+
 test.describe('ClawX gateway lifecycle resilience', () => {
   test('app remains fully navigable while gateway is disconnected', async ({ page }) => {
     // In E2E mode, gateway auto-start is skipped, so the app starts
@@ -109,38 +118,63 @@ test.describe('ClawX gateway lifecycle resilience', () => {
     await expect(page.getByTestId('main-layout')).toBeVisible();
   });
 
-  test('app handles rapid gateway status transitions without crashing', async ({ electronApp, page }) => {
+  test('chat sidebar history reloads when gateway becomes ready after restart', async ({ electronApp, page }) => {
+    await installIpcMocks(electronApp, {
+      gatewayStatus: { state: 'running', port: 18789, pid: 100, connectedAt: 1, gatewayReady: false },
+      hostApi: {
+        [stableStringify(['/api/gateway/status', 'GET'])]: {
+          ok: true,
+          data: {
+            status: 200,
+            ok: true,
+            json: { state: 'running', port: 18789, pid: 100, connectedAt: 1, gatewayReady: false },
+          },
+        },
+        [stableStringify(['/api/agents', 'GET'])]: {
+          ok: true,
+          data: {
+            status: 200,
+            ok: true,
+            json: { success: true, agents: [{ id: 'main', name: 'main' }] },
+          },
+        },
+      },
+      gatewayRpc: {
+        [stableStringify(['sessions.list', {}])]: {
+          success: true,
+          result: {
+            sessions: [{ key: 'agent:main:main', displayName: 'main' }],
+          },
+        },
+        [stableStringify(['chat.history', { sessionKey: 'agent:main:main', limit: 200 }])]: {
+          success: true,
+          result: {
+            messages: [
+              { role: 'user', content: 'hello', timestamp: 1000 },
+              { role: 'assistant', content: 'history after ready', timestamp: 1001 },
+            ],
+          },
+        },
+      },
+    });
+
     await completeSetup(page);
+    await page.getByTestId('sidebar-new-chat').click();
+    await expect(page.getByText(/gateway starting \| port: 18789/i)).toBeVisible();
+    await expect(page.getByText('history after ready')).toHaveCount(0);
 
-    // Simulate rapid status transitions like those seen in the bug log:
-    // running → stopped → starting → error → reconnecting → running
-    const states = [
-      { state: 'running', port: 18789, pid: 100 },
-      { state: 'stopped', port: 18789 },
-      { state: 'starting', port: 18789 },
-      { state: 'error', port: 18789, error: 'Port 18789 still occupied after 30000ms' },
-      { state: 'reconnecting', port: 18789, reconnectAttempts: 1 },
-      { state: 'starting', port: 18789 },
-      { state: 'running', port: 18789, pid: 200, connectedAt: Date.now() },
-    ];
+    await electronApp.evaluate(({ BrowserWindow }) => {
+      const win = BrowserWindow.getAllWindows()[0];
+      win?.webContents.send('gateway:status-changed', {
+        state: 'running',
+        port: 18789,
+        pid: 200,
+        connectedAt: 2,
+        gatewayReady: true,
+      });
+    });
 
-    for (const status of states) {
-      await electronApp.evaluate(({ BrowserWindow }, s) => {
-        const win = BrowserWindow.getAllWindows()[0];
-        win?.webContents.send('gateway:status-changed', s);
-      }, status);
-      // Small delay between transitions to be more realistic
-      await page.waitForTimeout(100);
-    }
-
-    // Verify the app is still stable after rapid transitions
-    await expect(page.getByTestId('main-layout')).toBeVisible();
-
-    // Navigate to verify no page is in a broken state
-    await page.getByTestId('sidebar-nav-models').click();
-    await expect(page.getByTestId('models-page')).toBeVisible();
-
-    await page.getByTestId('sidebar-nav-channels').click();
-    await expect(page.getByTestId('channels-page')).toBeVisible();
+    await expect(page.getByText('history after ready')).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByText(/gateway connected \| port: 18789/i)).toBeVisible();
   });
 });

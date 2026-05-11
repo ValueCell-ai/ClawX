@@ -854,8 +854,12 @@ function CompleteContent({ installedSkills }: CompleteContentProps) {
         </div>
         <div className="flex items-center justify-between p-3 rounded-lg bg-muted/50">
           <span>{t('complete.gateway')}</span>
-          <span className={gatewayStatus.state === 'running' ? 'text-green-400' : 'text-yellow-400'}>
-            {gatewayStatus.state === 'running' ? `✓ ${t('complete.running')}` : gatewayStatus.state}
+          <span className={gatewayStatus.state === 'running' && gatewayStatus.gatewayReady !== false ? 'text-green-400' : gatewayStatus.state === 'running' ? 'text-red-400' : 'text-yellow-400'}>
+            {gatewayStatus.state === 'running'
+              ? gatewayStatus.gatewayReady !== false
+                ? `✓ ${t('complete.running')}`
+                : 'starting'
+              : gatewayStatus.state}
           </span>
         </div>
       </div>

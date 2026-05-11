@@ -214,6 +214,48 @@ describe('ChatInput agent targeting', () => {
     expect(onSend).toHaveBeenCalledWith('Hello direct agent', undefined, 'research');
   });
 
+  it('disables the input while gateway is running but not yet ready', () => {
+    gatewayState.status = { state: 'running', port: 18789, gatewayReady: false };
+    agentsState.agents = [
+      {
+        id: 'main',
+        name: 'Main',
+        isDefault: true,
+        modelDisplay: 'MiniMax',
+        inheritedModel: true,
+        workspace: '~/.openclaw/workspace',
+        agentDir: '~/.openclaw/agents/main/agent',
+        mainSessionKey: 'agent:main:main',
+        channelTypes: [],
+      },
+    ];
+
+    renderChatInput();
+
+    expect(screen.getByTestId('chat-composer-input')).toBeDisabled();
+  });
+
+  it('shows starting status while gateway is running but not yet ready', () => {
+    gatewayState.status = { state: 'running', port: 18789, gatewayReady: false };
+    agentsState.agents = [
+      {
+        id: 'main',
+        name: 'Main',
+        isDefault: true,
+        modelDisplay: 'MiniMax',
+        inheritedModel: true,
+        workspace: '~/.openclaw/workspace',
+        agentDir: '~/.openclaw/agents/main/agent',
+        mainSessionKey: 'agent:main:main',
+        channelTypes: [],
+      },
+    ];
+
+    renderChatInput();
+
+    expect(screen.getByText(/gateway starting \| port: 18789/i)).toBeInTheDocument();
+  });
+
   it('renders the skill trigger after the @ agent picker', () => {
     agentsState.agents = [
       {

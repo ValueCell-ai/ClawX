@@ -251,6 +251,8 @@ export function ChatInput({ onSend, onStop, disabled = false, sending = false, i
   const showAgentPicker = mentionableAgents.length > 0;
   const showModelPicker = modelOptions.length > 1;
   const chatComposerStatusComponents = rendererExtensionRegistry.getChatComposerStatusComponents();
+  const isGatewayUsable = gatewayStatus.state === 'running' && gatewayStatus.gatewayReady !== false;
+  const inputDisabled = disabled || !isGatewayUsable;
   const skillTokenRanges = useMemo(() => findSkillTokenRanges(input), [input]);
   const openArtifactPreview = useArtifactPanel((s) => s.openPreview);
 
@@ -289,10 +291,10 @@ export function ChatInput({ onSend, onStop, disabled = false, sending = false, i
 
   // Focus textarea on mount (avoids Windows focus loss after session delete + native dialog)
   useEffect(() => {
-    if (!disabled && textareaRef.current) {
+    if (!inputDisabled && textareaRef.current) {
       textareaRef.current.focus();
     }
-  }, [disabled]);
+  }, [inputDisabled]);
 
   useEffect(() => {
     if (!targetAgentId) return;
@@ -586,8 +588,8 @@ export function ChatInput({ onSend, onStop, disabled = false, sending = false, i
 
   const allReady = attachments.length === 0 || attachments.every(a => a.status === 'ready');
   const hasFailedAttachments = attachments.some((a) => a.status === 'error');
-  const canSend = (input.trim() || attachments.length > 0) && allReady && !disabled && !sending;
-  const canStop = sending && !disabled && !!onStop;
+  const canSend = (input.trim() || attachments.length > 0) && allReady && !inputDisabled && !sending;
+  const canStop = sending && !inputDisabled && !!onStop;
 
   const handleSend = useCallback(async () => {
     if (!canSend) return;
@@ -824,8 +826,8 @@ export function ChatInput({ onSend, onStop, disabled = false, sending = false, i
                 isComposingRef.current = false;
               }}
               onPaste={handlePaste}
-              placeholder={disabled ? t('composer.gatewayDisconnectedPlaceholder') : ''}
-              disabled={disabled}
+              placeholder={inputDisabled ? t('composer.gatewayDisconnectedPlaceholder') : ''}
+              disabled={inputDisabled}
               data-testid="chat-composer-input"
               className={cn(
                 'relative min-h-[48px] max-h-[240px] resize-none border-0 focus-visible:ring-0 focus-visible:ring-offset-0 shadow-none bg-transparent p-0 text-sm leading-relaxed placeholder:text-muted-foreground/60',
@@ -843,7 +845,7 @@ export function ChatInput({ onSend, onStop, disabled = false, sending = false, i
               size="icon"
               className="shrink-0 h-8 w-8 rounded-lg text-muted-foreground hover:bg-black/5 dark:hover:bg-white/10 hover:text-foreground transition-colors"
               onClick={pickFiles}
-              disabled={disabled || sending}
+              disabled={inputDisabled || sending}
               title={t('composer.attachFiles')}
             >
               <Paperclip className="h-3.5 w-3.5" />
@@ -863,7 +865,7 @@ export function ChatInput({ onSend, onStop, disabled = false, sending = false, i
                     setSkillPickerOpen(false);
                     setPickerOpen((open) => !open);
                   }}
-                  disabled={disabled || sending}
+                  disabled={inputDisabled || sending}
                   title={t('composer.pickAgent')}
                 >
                   <AtSign className="h-3.5 w-3.5" />
@@ -904,7 +906,7 @@ export function ChatInput({ onSend, onStop, disabled = false, sending = false, i
                   setPickerOpen(false);
                   setSkillPickerOpen((open) => !open);
                 }}
-                disabled={disabled || sending}
+                disabled={inputDisabled || sending}
                 title={t('composer.pickSkill')}
               >
                 <span>{t('composer.skillButton')}</span>
@@ -1052,12 +1054,17 @@ export function ChatInput({ onSend, onStop, disabled = false, sending = false, i
         </div>
         <div className="mt-2.5 flex items-center justify-between gap-2 text-tiny text-muted-foreground/60 px-4">
           <div className="flex items-center gap-1.5">
-            <div className={cn("w-1.5 h-1.5 rounded-full", gatewayStatus.state === 'running' ? "bg-green-500/80" : "bg-red-500/80")} />
+            <div className={cn(
+              "w-1.5 h-1.5 rounded-full",
+              isGatewayUsable ? "bg-green-500/80" : "bg-red-500/80",
+            )} />
             <span>
               {t('composer.gatewayStatus', {
-                state: gatewayStatus.state === 'running'
+                state: isGatewayUsable
                   ? t('composer.gatewayConnected')
-                  : gatewayStatus.state,
+                  : gatewayStatus.state === 'running'
+                    ? 'starting'
+                    : gatewayStatus.state,
                 port: gatewayStatus.port,
                 pid: gatewayStatus.pid ? `| pid: ${gatewayStatus.pid}` : '',
               })}

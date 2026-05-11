@@ -93,12 +93,11 @@ describe('GatewayManager gatewayReady fallback', () => {
     // Call the private scheduleGatewayReadyFallback method
     (manager as unknown as { scheduleGatewayReadyFallback: () => void }).scheduleGatewayReadyFallback();
 
-    // Before timeout, no gatewayReady update
-    await vi.advanceTimersByTimeAsync(29_000);
+    // The first readiness probe happens quickly after handshake, not after 30s.
+    await vi.advanceTimersByTimeAsync(1_000);
     expect(statusUpdates.find((u) => u.gatewayReady === true)).toBeUndefined();
 
-    // After 30s fallback timeout, a successful lightweight RPC marks the gateway ready.
-    await vi.advanceTimersByTimeAsync(2_000);
+    await vi.advanceTimersByTimeAsync(1_000);
     const readyUpdate = statusUpdates.find((u) => u.gatewayReady === true);
     expect(readyUpdate).toBeDefined();
     expect(rpcSpy).toHaveBeenCalledWith('system-presence', {}, 5_000);
@@ -121,7 +120,7 @@ describe('GatewayManager gatewayReady fallback', () => {
 
     (manager as unknown as { scheduleGatewayReadyFallback: () => void }).scheduleGatewayReadyFallback();
 
-    await vi.advanceTimersByTimeAsync(31_000);
+    await vi.advanceTimersByTimeAsync(2_000);
     expect(statusUpdates.find((u) => u.gatewayReady === true)).toBeUndefined();
   });
 
@@ -146,7 +145,7 @@ describe('GatewayManager gatewayReady fallback', () => {
     manager.emit('gateway:ready', {});
     expect(statusUpdates.filter((u) => u.gatewayReady === true)).toHaveLength(1);
 
-    // After 30s, no duplicate gatewayReady=true
+    // After enough time, no duplicate gatewayReady=true
     await vi.advanceTimersByTimeAsync(30_000);
     expect(statusUpdates.filter((u) => u.gatewayReady === true)).toHaveLength(1);
   });

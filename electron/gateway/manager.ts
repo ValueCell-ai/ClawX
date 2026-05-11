@@ -184,12 +184,13 @@ export class GatewayManager extends EventEmitter {
   private static readonly HEARTBEAT_TIMEOUT_MS_WIN = 25_000;
   private static readonly HEARTBEAT_MAX_MISSES_WIN = 5;
   public static readonly RESTART_COOLDOWN_MS = 5_000;
-  private static readonly GATEWAY_READY_FALLBACK_MS = 30_000;
+  private static readonly GATEWAY_READY_FALLBACK_PROBE_DELAYS_MS = [1_500, 3_000, 5_000, 8_000, 12_000, 30_000] as const;
   private static readonly INITIAL_READY_HEARTBEAT_RECOVERY_GRACE_MS = 5 * 60_000;
   private lastRestartAt = 0;
   /** Set by scheduleReconnect() before calling start() to signal auto-reconnect. */
   private isAutoReconnectStart = false;
   private gatewayReadyFallbackTimer: NodeJS.Timeout | null = null;
+  private gatewayReadyFallbackAttempt = 0;
   private readonly capabilityMonitor = new GatewayCapabilityMonitor();
   private diagnostics: GatewayDiagnosticsSnapshot = {
     consecutiveHeartbeatMisses: 0,
@@ -227,7 +228,7 @@ export class GatewayManager extends EventEmitter {
     // so that async file I/O and key generation don't block module loading.
 
     this.on('gateway:ready', () => {
-      this.clearGatewayReadyFallback();
+      this.resetGatewayReadyFallback();
       this.clearInitialReadyHeartbeatRecoveryTimer();
       if (this.status.state === 'running' && !this.status.gatewayReady) {
         logger.info('Gateway subsystems ready (event received)');
@@ -337,6 +338,7 @@ export class GatewayManager extends EventEmitter {
     }
     this.isAutoReconnectStart = false; // consume the flag
     this.setStatus({ state: 'starting', reconnectAttempts: this.reconnectAttempts, gatewayReady: false });
+    this.resetGatewayReadyFallback();
 
     // Check if Python environment is ready (self-healing) asynchronously.
     // Fire-and-forget: only needs to run once, not on every retry.
@@ -780,23 +782,40 @@ export class GatewayManager extends EventEmitter {
       clearTimeout(this.reloadDebounceTimer);
       this.reloadDebounceTimer = null;
     }
-    this.clearGatewayReadyFallback();
+    this.resetGatewayReadyFallback();
     this.clearInitialReadyHeartbeatRecoveryTimer();
   }
 
-  private clearGatewayReadyFallback(): void {
+  private clearGatewayReadyFallbackTimer(): void {
     if (this.gatewayReadyFallbackTimer) {
       clearTimeout(this.gatewayReadyFallbackTimer);
       this.gatewayReadyFallbackTimer = null;
     }
   }
 
-  private scheduleGatewayReadyFallback(): void {
-    this.clearGatewayReadyFallback();
+  private resetGatewayReadyFallback(): void {
+    this.clearGatewayReadyFallbackTimer();
+    this.gatewayReadyFallbackAttempt = 0;
+  }
+
+  private getNextGatewayReadyFallbackDelayMs(): number {
+    const delays = GatewayManager.GATEWAY_READY_FALLBACK_PROBE_DELAYS_MS;
+    const index = Math.min(this.gatewayReadyFallbackAttempt, delays.length - 1);
+    const delayMs = delays[index]!;
+    this.gatewayReadyFallbackAttempt += 1;
+    return delayMs;
+  }
+
+  private scheduleGatewayReadyFallback(delayMs?: number): void {
+    if (this.status.state !== 'running' || this.status.gatewayReady) {
+      return;
+    }
+    this.clearGatewayReadyFallbackTimer();
+    const effectiveDelayMs = delayMs ?? this.getNextGatewayReadyFallbackDelayMs();
     this.gatewayReadyFallbackTimer = setTimeout(() => {
       this.gatewayReadyFallbackTimer = null;
       void this.probeGatewayReadyFallback();
-    }, GatewayManager.GATEWAY_READY_FALLBACK_MS);
+    }, effectiveDelayMs);
   }
 
   private async probeGatewayReadyFallback(): Promise<void> {
@@ -815,6 +834,7 @@ export class GatewayManager extends EventEmitter {
       });
       if (this.status.state === 'running' && !this.status.gatewayReady) {
         logger.info('Gateway ready fallback RPC router probe succeeded');
+        this.resetGatewayReadyFallback();
         this.setStatus({ gatewayReady: true });
       }
     } catch (error) {
