@@ -2159,11 +2159,38 @@ export const useChatStore = create<ChatState>((set, get) => ({
       };
 
       try {
-        const shouldPrefetchLocalFallback = isInitialForegroundLoad && !currentSessionKey.endsWith(':main');
+        const shouldPrefetchLocalFallback = isInitialForegroundLoad;
         const fallbackMessages = shouldPrefetchLocalFallback
           ? await loadLocalHistoryFallback(currentSessionKey, 200)
           : [];
-        const shouldRaceLocalFallback = fallbackMessages.length > 0;
+
+        // If we already have the selected historical session on disk, render it
+        // immediately and do not also fire a Gateway chat.history RPC.  A
+        // Promise.race here would leave the Gateway RPC in flight; when the
+        // router is still catching up during restart that orphaned request logs
+        // an avoidable "RPC timeout: chat.history" in the main process.
+        if (fallbackMessages.length > 0) {
+          const applied = applyLoadedMessages(fallbackMessages, null);
+          if (applied && isInitialForegroundLoad) {
+            _foregroundHistoryLoadSeen.add(foregroundLoadKey);
+            void refreshVisibleSessionSummaries(set, get);
+          }
+          return;
+        }
+
+        if (
+          shouldPrefetchLocalFallback
+          && shouldRetryStartupHistoryLoad(useGatewayStore.getState().status, 'timeout')
+        ) {
+          // During the first seconds after Gateway reports running, avoid a
+          // foreground chat.history probe if the local transcript has nothing
+          // to show.  The router can still be initializing and this request is
+          // the source of the remaining startup timeout warning.  User actions
+          // and later quiet refreshes can still ask Gateway once it settles.
+          set({ loading: false });
+          return;
+        }
+
         let data: Record<string, unknown> | null = null;
         let lastError: unknown = null;
 
@@ -2173,17 +2200,11 @@ export const useChatStore = create<ChatState>((set, get) => ({
           }
 
           try {
-            const rpcPromise = useGatewayStore.getState().rpc<Record<string, unknown>>(
+            data = await useGatewayStore.getState().rpc<Record<string, unknown>>(
               'chat.history',
               { sessionKey: currentSessionKey, limit: 200 },
               historyTimeoutOverride,
             );
-            data = shouldRaceLocalFallback
-              ? await Promise.race([
-                rpcPromise,
-                sleep(600).then(() => ({ messages: fallbackMessages } as Record<string, unknown>)),
-              ])
-              : await rpcPromise;
             lastError = null;
             break;
           } catch (error) {
