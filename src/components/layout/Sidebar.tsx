@@ -3,7 +3,7 @@
  * Navigation sidebar with menu items.
  * No longer fixed - sits inside the flex layout below the title bar.
  */
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { NavLink, useLocation, useNavigate } from 'react-router-dom';
 import {
   Network,
@@ -89,9 +89,14 @@ function getAgentIdFromSessionKey(sessionKey: string): string {
 }
 
 export function Sidebar() {
+  const isMac = window.electron?.platform === 'darwin';
   const sidebarCollapsed = useSettingsStore((state) => state.sidebarCollapsed);
   const setSidebarCollapsed = useSettingsStore((state) => state.setSidebarCollapsed);
+  const sidebarWidth = useSettingsStore((state) => state.sidebarWidth);
+  const setSidebarWidth = useSettingsStore((state) => state.setSidebarWidth);
   const devModeUnlocked = useSettingsStore((state) => state.devModeUnlocked);
+  const [isResizing, setIsResizing] = useState(false);
+  const stopResizeRef = useRef<(() => void) | null>(null);
 
   const sessions = useChatStore((s) => s.sessions);
   const currentSessionKey = useChatStore((s) => s.currentSessionKey);
@@ -167,6 +172,45 @@ export function Sidebar() {
     void fetchAgents();
   }, [fetchAgents]);
 
+  const stopResizing = useCallback(() => {
+    stopResizeRef.current?.();
+    stopResizeRef.current = null;
+    setIsResizing(false);
+    document.body.style.cursor = '';
+    document.body.style.userSelect = '';
+  }, []);
+
+  const handleResizePointerDown = useCallback(
+    (event: React.PointerEvent<HTMLDivElement>) => {
+      if (sidebarCollapsed) return;
+      event.preventDefault();
+      event.stopPropagation();
+      try {
+        event.currentTarget.setPointerCapture(event.pointerId);
+      } catch {
+        // Window listeners below keep dragging reliable even if capture is unavailable.
+      }
+
+      const onMove = (moveEvent: PointerEvent) => {
+        setSidebarWidth(moveEvent.clientX);
+      };
+      const onUp = () => stopResizing();
+
+      stopResizeRef.current = () => {
+        window.removeEventListener('pointermove', onMove);
+        window.removeEventListener('pointerup', onUp);
+      };
+      window.addEventListener('pointermove', onMove);
+      window.addEventListener('pointerup', onUp);
+      setIsResizing(true);
+      document.body.style.cursor = 'col-resize';
+      document.body.style.userSelect = 'none';
+    },
+    [setSidebarWidth, sidebarCollapsed, stopResizing],
+  );
+
+  useEffect(() => stopResizing, [stopResizing]);
+
   const agentNameById = useMemo(
     () => Object.fromEntries((agents ?? []).map((agent) => [agent.id, agent.name])),
     [agents],
@@ -222,12 +266,19 @@ export function Sidebar() {
     <aside
       data-testid="sidebar"
       className={cn(
-        'flex min-h-0 shrink-0 flex-col overflow-hidden border-r bg-surface-sidebar/60 transition-all duration-300',
-        sidebarCollapsed ? 'w-16' : 'w-64'
+        'relative flex min-h-0 shrink-0 flex-col overflow-hidden bg-surface-sidebar/60',
+        isResizing ? 'transition-none' : 'transition-[width] duration-300',
       )}
+      style={{ width: sidebarCollapsed ? 64 : sidebarWidth }}
     >
       {/* Top Header Toggle */}
-      <div className={cn("flex items-center p-2 h-12", sidebarCollapsed ? "justify-center" : "justify-between")}>
+      <div
+        className={cn(
+          'flex items-center p-2 h-12',
+          isMac && 'drag-region h-[4.75rem] items-end pt-10',
+          sidebarCollapsed ? 'justify-center' : 'justify-between',
+        )}
+      >
         {!sidebarCollapsed && (
           <div className="flex items-center gap-2 px-2 overflow-hidden">
             <img src={logoSvg} alt="ClawX" className="h-5 w-auto shrink-0" />
@@ -239,7 +290,7 @@ export function Sidebar() {
         <Button
           variant="ghost"
           size="icon"
-          className="h-8 w-8 shrink-0 text-muted-foreground hover:bg-black/5 dark:hover:bg-white/10"
+          className="no-drag h-8 w-8 shrink-0 text-muted-foreground hover:bg-black/5 dark:hover:bg-white/10"
           onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
         >
           {sidebarCollapsed ? (
@@ -389,6 +440,25 @@ export function Sidebar() {
           </Button>
         )}
       </div>
+
+      {!sidebarCollapsed && (
+        <div
+          data-testid="sidebar-resize-handle"
+          role="separator"
+          aria-orientation="vertical"
+          aria-valuemin={220}
+          aria-valuemax={420}
+          aria-valuenow={sidebarWidth}
+          title="Drag to resize sidebar"
+          onPointerDown={handleResizePointerDown}
+          className="no-drag group absolute inset-y-0 right-0 z-20 w-2 translate-x-1/2 cursor-col-resize select-none"
+        >
+          <span
+            aria-hidden
+            className="pointer-events-none absolute inset-y-0 left-1/2 w-px -translate-x-1/2 bg-transparent transition-colors group-hover:bg-primary/40"
+          />
+        </div>
+      )}
 
       <ConfirmDialog
         open={!!sessionToDelete}

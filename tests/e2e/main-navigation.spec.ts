@@ -8,6 +8,10 @@ test.describe('ClawX main navigation without setup flow', () => {
       const page = await getStableWindow(app);
 
       await expect(page.getByTestId('main-layout')).toBeVisible();
+      await expect(page.getByTestId('chat-page')).toBeVisible();
+      await expect(page.getByTestId('main-content')).toBeVisible();
+      await expect(page.getByTestId('sidebar-resize-handle')).toBeVisible();
+      await expect(page.getByTestId('main-content')).toHaveCSS('border-top-left-radius', '16px');
 
       await page.getByTestId('sidebar-nav-models').click();
       await expect(page.getByTestId('models-page')).toBeVisible();

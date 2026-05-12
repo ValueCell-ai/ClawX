@@ -36,6 +36,7 @@ interface SettingsState {
 
   // UI State
   sidebarCollapsed: boolean;
+  sidebarWidth: number;
   devModeUnlocked: boolean;
 
   // Setup
@@ -60,6 +61,7 @@ interface SettingsState {
   setAutoCheckUpdate: (value: boolean) => void;
   setAutoDownloadUpdate: (value: boolean) => void;
   setSidebarCollapsed: (value: boolean) => void;
+  setSidebarWidth: (value: number) => void;
   setDevModeUnlocked: (value: boolean) => void;
   markSetupComplete: () => void;
   resetSettings: () => void;
@@ -83,9 +85,12 @@ const defaultSettings = {
   autoCheckUpdate: true,
   autoDownloadUpdate: false,
   sidebarCollapsed: false,
+  sidebarWidth: 280,
   devModeUnlocked: false,
   setupComplete: false,
 };
+
+const clampSidebarWidth = (value: number) => Math.min(420, Math.max(220, Math.round(value)));
 
 export const useSettingsStore = create<SettingsState>()(
   persist(
@@ -102,6 +107,9 @@ export const useSettingsStore = create<SettingsState>()(
             ...state,
             ...settings,
             ...(resolvedLanguage ? { language: resolvedLanguage } : {}),
+            ...(typeof settings.sidebarWidth === 'number'
+              ? { sidebarWidth: clampSidebarWidth(settings.sidebarWidth) }
+              : {}),
           }));
           if (resolvedLanguage) {
             i18n.changeLanguage(resolvedLanguage);
@@ -167,6 +175,7 @@ export const useSettingsStore = create<SettingsState>()(
       setAutoCheckUpdate: (autoCheckUpdate) => set({ autoCheckUpdate }),
       setAutoDownloadUpdate: (autoDownloadUpdate) => set({ autoDownloadUpdate }),
       setSidebarCollapsed: (sidebarCollapsed) => set({ sidebarCollapsed }),
+      setSidebarWidth: (sidebarWidth) => set({ sidebarWidth: clampSidebarWidth(sidebarWidth) }),
       setDevModeUnlocked: (devModeUnlocked) => {
         set({ devModeUnlocked });
         void hostApiFetch('/api/settings/devModeUnlocked', {
