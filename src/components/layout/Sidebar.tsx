@@ -266,7 +266,7 @@ export function Sidebar() {
     <aside
       data-testid="sidebar"
       className={cn(
-        'relative flex min-h-0 shrink-0 flex-col overflow-hidden bg-surface-sidebar/60',
+        'relative flex min-h-0 shrink-0 flex-col overflow-hidden bg-surface-sidebar',
         isResizing ? 'transition-none' : 'transition-[width] duration-300',
       )}
       style={{ width: sidebarCollapsed ? 64 : sidebarWidth }}

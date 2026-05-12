@@ -22,11 +22,11 @@ export function MainLayout() {
     >
       <TitleBar />
 
-      <div className="flex min-h-0 flex-1 overflow-hidden">
+      <div className="flex min-h-0 flex-1 overflow-hidden bg-surface-sidebar">
         <Sidebar />
         <main
           data-testid="main-content"
-          className="min-h-0 flex-1 overflow-auto rounded-tl-2xl border-l border-t border-border/60 bg-card p-6"
+          className="min-h-0 flex-1 overflow-auto rounded-tl-2xl border-l border-t border-border/60 bg-background p-6"
         >
           <Outlet />
         </main>

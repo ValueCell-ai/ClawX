@@ -681,7 +681,7 @@ export function Chat() {
       data-testid="chat-page"
       className={cn(
         'relative flex min-h-0 -m-6 overflow-hidden transition-colors duration-500',
-        'bg-card',
+        'bg-background',
         isMac && 'rounded-tl-2xl shadow-[inset_1px_1px_0_hsl(var(--border)/0.55)]',
         isWindows && 'rounded-tl-2xl',
       )}
