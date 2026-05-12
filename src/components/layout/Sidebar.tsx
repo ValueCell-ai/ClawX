@@ -290,7 +290,10 @@ export function Sidebar() {
         <Button
           variant="ghost"
           size="icon"
-          className="no-drag h-8 w-8 shrink-0 text-muted-foreground hover:bg-black/5 dark:hover:bg-white/10"
+          className={cn(
+            'no-drag h-8 w-8 shrink-0 rounded-lg text-foreground/80',
+            'hover:bg-black/5 hover:text-foreground/80 dark:hover:bg-white/5',
+          )}
           onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
         >
           {sidebarCollapsed ? (
@@ -304,6 +307,7 @@ export function Sidebar() {
       {/* Navigation */}
       <nav className="flex flex-col gap-0 px-2">
         <button
+          type="button"
           data-testid="sidebar-new-chat"
           onClick={() => {
             const { messages } = useChatStore.getState();
@@ -311,8 +315,8 @@ export function Sidebar() {
             navigate('/');
           }}
           className={cn(
-            'sidebar-nav-text mb-1 flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 transition-colors',
-            'border border-transparent text-foreground/80 shadow-none hover:bg-black/5 hover:text-foreground dark:hover:bg-white/5',
+            'sidebar-nav-text flex items-center gap-2 rounded-lg px-2.5 py-1.5 transition-colors',
+            'hover:bg-black/5 dark:hover:bg-white/5 text-foreground/80',
             sidebarCollapsed && 'justify-center px-0',
           )}
         >
