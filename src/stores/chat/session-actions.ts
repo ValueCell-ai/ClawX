@@ -3,7 +3,15 @@ import { getCanonicalPrefixFromSessions, getMessageText, toMs } from './helpers'
 import { DEFAULT_CANONICAL_PREFIX, DEFAULT_SESSION_KEY, type ChatSession, type RawMessage } from './types';
 import type { ChatGet, ChatSet, SessionHistoryActions } from './store-api';
 
-const LABEL_FETCH_CONCURRENCY = 5;
+import {
+  LABEL_FETCH_CONCURRENCY,
+  beginSessionLabelHydration,
+  clearSessionLabelHydrationTracking,
+  finishSessionLabelHydration,
+  getSessionLabelHydrationCandidate,
+  getSessionLabelHydrationRuntimeKey,
+  isSessionLabelHydrationReady,
+} from './session-label-hydration';
 
 function getAgentIdFromSessionKey(sessionKey: string): string {
   if (!sessionKey.startsWith('agent:')) return 'main';
@@ -108,6 +116,9 @@ export function createSessionActions(
             },
           }));
 
+          const gatewayRuntimeKey = getSessionLabelHydrationRuntimeKey(undefined);
+          const shouldHydrateSessionLabels = isSessionLabelHydrationReady(gatewayRuntimeKey, true);
+
           if (currentSessionKey !== nextSessionKey) {
             get().loadHistory();
           }
@@ -116,38 +127,55 @@ export function createSessionActions(
           // Concurrency-limited to avoid flooding the gateway with parallel RPCs.
           // By the time this runs, the gateway should already be fully ready (Sidebar
           // gates on gatewayReady), so no startup-retry loop is needed.
-          const sessionsToLabel = sessionsWithCurrent.filter((s) => !s.key.endsWith(':main'));
+          const sessionsToLabel = shouldHydrateSessionLabels
+            ? sessionsWithCurrent
+              .map((session) => ({
+                session,
+                candidate: getSessionLabelHydrationCandidate(
+                  session,
+                  get().sessionLabels,
+                  get().sessionLastActivity,
+                ),
+              }))
+              .filter((entry) => entry.candidate != null)
+              .map((entry) => ({ session: entry.session, version: entry.candidate!.version }))
+            : [];
           if (sessionsToLabel.length > 0) {
             void (async () => {
               for (let i = 0; i < sessionsToLabel.length; i += LABEL_FETCH_CONCURRENCY) {
-                const batch = sessionsToLabel.slice(i, i + LABEL_FETCH_CONCURRENCY);
+                const batch = sessionsToLabel.slice(i, i + LABEL_FETCH_CONCURRENCY)
+                  .filter(({ session, version }) => beginSessionLabelHydration(session.key, version));
                 await Promise.all(
-                  batch.map(async (session) => {
+                  batch.map(async ({ session, version }) => {
                     try {
                       const r = await invokeIpc(
                         'gateway:rpc',
                         'chat.history',
                         { sessionKey: session.key, limit: 1000 },
                       ) as { success: boolean; result?: Record<string, unknown>; error?: string };
-                      if (!r.success || !r.result) return;
+                      if (!r.success || !r.result) {
+                        finishSessionLabelHydration(session.key, version, 'error');
+                        return;
+                      }
                       const msgs = Array.isArray(r.result.messages) ? r.result.messages as RawMessage[] : [];
                       const firstUser = msgs.find((m) => m.role === 'user');
                       const lastMsg = msgs[msgs.length - 1];
+                      const labelText = firstUser ? getMessageText(firstUser.content).trim() : '';
                       set((s) => {
                         const next: Partial<typeof s> = {};
-                        if (firstUser) {
-                          const labelText = getMessageText(firstUser.content).trim();
-                          if (labelText) {
-                            const truncated = labelText.length > 50 ? `${labelText.slice(0, 50)}…` : labelText;
-                            next.sessionLabels = { ...s.sessionLabels, [session.key]: truncated };
-                          }
+                        if (labelText) {
+                          const truncated = labelText.length > 50 ? `${labelText.slice(0, 50)}…` : labelText;
+                          next.sessionLabels = { ...s.sessionLabels, [session.key]: truncated };
                         }
                         if (lastMsg?.timestamp) {
                           next.sessionLastActivity = { ...s.sessionLastActivity, [session.key]: toMs(lastMsg.timestamp) };
                         }
                         return next;
                       });
-                    } catch { /* ignore per-session errors */ }
+                      finishSessionLabelHydration(session.key, version, labelText ? 'labeled' : 'empty');
+                    } catch {
+                      finishSessionLabelHydration(session.key, version, 'error');
+                    }
                   }),
                 );
               }
@@ -206,6 +234,7 @@ export function createSessionActions(
     // newSession() design that avoids sessions.reset to preserve history.
 
     deleteSession: async (key: string) => {
+      clearSessionLabelHydrationTracking(key);
       // Soft-delete the session's JSONL transcript on disk.
       // The main process renames <suffix>.jsonl → <suffix>.deleted.jsonl so that
       // sessions.list skips it automatically.

@@ -17,33 +17,72 @@ describe('session label fetch concurrency', () => {
     vi.clearAllMocks();
   });
 
-  it('limits concurrent chat.history RPCs during label fetches', async () => {
-    // Track max concurrent RPCs
-    let currentConcurrency = 0;
-    let maxConcurrency = 0;
-    const resolvers: Array<() => void> = [];
-
-    invokeIpcMock.mockImplementation(async (channel: string, method: string) => {
+  it('skips sessions with existing frontend or backend labels', async () => {
+    invokeIpcMock.mockImplementation(async (_channel: string, method: string) => {
       if (method === 'sessions.list') {
         return {
           success: true,
           result: {
-            sessions: Array.from({ length: 12 }, (_, i) => ({
-              key: `agent:main:session-${i}`,
-              label: `Session ${i}`,
-            })),
+            sessions: [
+              { key: 'agent:main:session-a', label: 'Backend label', updatedAt: 1000 },
+              { key: 'agent:main:session-b', displayName: 'Session B', updatedAt: 1001 },
+              { key: 'agent:main:main', displayName: 'Main', updatedAt: 1002 },
+            ],
           },
         };
       }
       if (method === 'chat.history') {
-        currentConcurrency++;
-        maxConcurrency = Math.max(maxConcurrency, currentConcurrency);
-        await new Promise<void>((resolve) => resolvers.push(resolve));
-        currentConcurrency--;
         return {
           success: true,
           result: {
             messages: [{ role: 'user', content: 'hello', timestamp: Date.now() }],
+          },
+        };
+      }
+      return { success: false };
+    });
+
+    vi.resetModules();
+    const { createSessionActions } = await import('@/stores/chat/session-actions');
+    const state = {
+      currentSessionKey: 'agent:main:main',
+      messages: [],
+      sessions: [],
+      sessionLabels: { 'agent:main:session-b': 'Already labeled' },
+      sessionLastActivity: {},
+    };
+    const set = vi.fn();
+    const get = vi.fn().mockReturnValue({
+      ...state,
+      loadHistory: vi.fn(),
+    });
+
+    const actions = createSessionActions(set as never, get as never);
+    await actions.loadSessions();
+    await new Promise((resolve) => setTimeout(resolve, 10));
+
+    const chatHistoryCalls = invokeIpcMock.mock.calls.filter(([, method]) => method === 'chat.history');
+    expect(chatHistoryCalls).toHaveLength(0);
+  });
+
+  it('does not re-request unchanged sessions after an empty hydration result', async () => {
+    invokeIpcMock.mockImplementation(async (_channel: string, method: string) => {
+      if (method === 'sessions.list') {
+        return {
+          success: true,
+          result: {
+            sessions: [
+              { key: 'agent:main:session-a', displayName: 'Session A', updatedAt: 1000 },
+              { key: 'agent:main:main', displayName: 'Main', updatedAt: 1001 },
+            ],
+          },
+        };
+      }
+      if (method === 'chat.history') {
+        return {
+          success: true,
+          result: {
+            messages: [],
           },
         };
       }
@@ -67,23 +106,62 @@ describe('session label fetch concurrency', () => {
 
     const actions = createSessionActions(set as never, get as never);
     await actions.loadSessions();
-
-    // Wait for the label-fetch loop to start its batches
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    await actions.loadSessions();
     await new Promise((resolve) => setTimeout(resolve, 10));
 
-    // Resolve first batch (up to 5 concurrent)
-    while (resolvers.length > 0 && resolvers.length <= 5) {
-      resolvers.shift()?.();
-      await new Promise((resolve) => setTimeout(resolve, 0));
-    }
+    const chatHistoryCalls = invokeIpcMock.mock.calls.filter(([, method]) => method === 'chat.history');
+    expect(chatHistoryCalls).toHaveLength(1);
+  });
 
-    // Resolve remaining
-    while (resolvers.length > 0) {
-      resolvers.shift()?.();
-      await new Promise((resolve) => setTimeout(resolve, 0));
-    }
+  it('re-requests a session when updatedAt changes after an empty result', async () => {
+    let updatedAt = 1000;
+    invokeIpcMock.mockImplementation(async (_channel: string, method: string) => {
+      if (method === 'sessions.list') {
+        return {
+          success: true,
+          result: {
+            sessions: [
+              { key: 'agent:main:session-a', displayName: 'Session A', updatedAt },
+              { key: 'agent:main:main', displayName: 'Main', updatedAt: 1001 },
+            ],
+          },
+        };
+      }
+      if (method === 'chat.history') {
+        return {
+          success: true,
+          result: {
+            messages: [],
+          },
+        };
+      }
+      return { success: false };
+    });
 
-    // maxConcurrency should be capped at 5 (LABEL_FETCH_CONCURRENCY)
-    expect(maxConcurrency).toBeLessThanOrEqual(5);
+    vi.resetModules();
+    const { createSessionActions } = await import('@/stores/chat/session-actions');
+    const state = {
+      currentSessionKey: 'agent:main:main',
+      messages: [],
+      sessions: [],
+      sessionLabels: {},
+      sessionLastActivity: {},
+    };
+    const set = vi.fn();
+    const get = vi.fn().mockReturnValue({
+      ...state,
+      loadHistory: vi.fn(),
+    });
+
+    const actions = createSessionActions(set as never, get as never);
+    await actions.loadSessions();
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    updatedAt = 2000;
+    await actions.loadSessions();
+    await new Promise((resolve) => setTimeout(resolve, 10));
+
+    const chatHistoryCalls = invokeIpcMock.mock.calls.filter(([, method]) => method === 'chat.history');
+    expect(chatHistoryCalls).toHaveLength(2);
   });
 });

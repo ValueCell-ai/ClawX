@@ -3,7 +3,7 @@
  * Navigation sidebar with menu items.
  * No longer fixed - sits inside the flex layout below the title bar.
  */
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { NavLink, useLocation, useNavigate } from 'react-router-dom';
 import {
   Network,
@@ -110,15 +110,21 @@ export function Sidebar() {
   const isGatewayReady = isGatewayRunning && gatewayStatus.gatewayReady !== false;
   const gatewayRuntimeKey = `${gatewayStatus.pid ?? 'none'}:${gatewayStatus.connectedAt ?? 'none'}:${gatewayStatus.port}`;
 
+  const hasLoadedCurrentRuntimeRef = useRef(false);
+
+  useEffect(() => {
+    hasLoadedCurrentRuntimeRef.current = false;
+  }, [gatewayRuntimeKey]);
+
   useEffect(() => {
     if (!isGatewayReady) return;
     let cancelled = false;
     (async () => {
-      await Promise.allSettled([
-        loadSessions(),
-        loadHistory(false),
-      ]);
+      await loadSessions();
       if (cancelled) return;
+      if (hasLoadedCurrentRuntimeRef.current) return;
+      hasLoadedCurrentRuntimeRef.current = true;
+      await loadHistory(false);
     })();
     return () => {
       cancelled = true;
