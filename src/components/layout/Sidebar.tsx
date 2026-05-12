@@ -312,7 +312,7 @@ export function Sidebar() {
           }}
           className={cn(
             'sidebar-nav-text mb-1 flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 transition-colors',
-            'bg-black/5 dark:bg-accent shadow-none border border-transparent text-foreground',
+            'border border-transparent text-foreground/80 shadow-none hover:bg-black/5 hover:text-foreground dark:hover:bg-white/5',
             sidebarCollapsed && 'justify-center px-0',
           )}
         >
