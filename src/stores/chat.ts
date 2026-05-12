@@ -78,6 +78,8 @@ const SESSION_LOAD_MIN_INTERVAL_MS = 1_200;
 const HISTORY_LOAD_MIN_INTERVAL_MS = 800;
 const HISTORY_POLL_SILENCE_WINDOW_MS = 2_500;
 const CHAT_EVENT_DEDUPE_TTL_MS = 30_000;
+const HISTORY_PAGE_SIZE = 20;
+const HISTORY_MAX_RENDERED_MESSAGES = 1_000;
 const _chatEventDedupe = new Map<string, number>();
 
 type SessionLabelSummary = {
@@ -109,14 +111,13 @@ function applySessionLabelSummaries(
     let changed = false;
 
     for (const summary of summaries) {
-      const labelText = summary.firstUserText?.trim() || '';
+      const labelText = toSessionLabel(summary.firstUserText || '');
       if (labelText) {
-        const truncated = labelText.length > 50 ? `${labelText.slice(0, 50)}…` : labelText;
-        if (nextLabels[summary.sessionKey] !== truncated) {
+        if (nextLabels[summary.sessionKey] !== labelText) {
           if (nextLabels === state.sessionLabels) {
             nextLabels = { ...state.sessionLabels };
           }
-          nextLabels[summary.sessionKey] = truncated;
+          nextLabels[summary.sessionKey] = labelText;
           changed = true;
         }
       }
@@ -161,6 +162,30 @@ async function refreshVisibleSessionSummaries(
   } catch (error) {
     console.warn('[session summaries] refresh failed:', error);
   }
+}
+
+function cleanSessionLabelText(text: string): string {
+  return text
+    .replace(/^Sender\s*\([^)]*\)\s*:\s*```[a-z]*\n[\s\S]*?```\s*/i, '')
+    .replace(/^Sender\s*\([^)]*\)\s*:\s*\{[\s\S]*?\}\s*/i, '')
+    .replace(/^Sender\s*\([^)]*\)\s*:\s*[^\n]*(?:\n\s*)*/i, '')
+    .replace(/^Sender\s*:\s*```[a-z]*\n[\s\S]*?```\s*/i, '')
+    .replace(/^Sender\s*:\s*\{[\s\S]*?\}\s*/i, '')
+    .replace(/^Sender\s*:\s*[^\n]*(?:\n\s*)*/i, '')
+    .replace(/^```json\n[\s\S]*?```\s*/i, '')
+    .replace(/^\{[\s\S]*?\}\s*/i, '')
+    .replace(/\s*\[media attached:[^\]]*\]/g, '')
+    .replace(/\s*\[message_id:\s*[^\]]+\]/g, '')
+    .replace(/^Conversation info\s*\([^)]*\):\s*```[a-z]*\n[\s\S]*?```\s*/i, '')
+    .replace(/^Conversation info\s*\([^)]*\):\s*\{[\s\S]*?\}\s*/i, '')
+    .replace(/^\[(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun)\s+\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}\s+[^\]]+\]\s*/i, '')
+    .trim();
+}
+
+function toSessionLabel(text: string, maxLength = 50): string {
+  const cleaned = cleanSessionLabelText(text).trim();
+  if (!cleaned) return '';
+  return cleaned.length > maxLength ? `${cleaned.slice(0, maxLength)}…` : cleaned;
 }
 
 async function loadSessionTranscriptFallback(sessionKey: string, limit = 200): Promise<RawMessage[]> {
@@ -404,6 +429,7 @@ function normalizeStreamingMessage(message: unknown): unknown {
 /**
  * Strip Gateway-injected metadata that does NOT exist on the renderer's
  * optimistic user message but is echoed back when the Gateway persists it:
+ *   - leading sender metadata `Sender (untrusted metadata): ...`
  *   - leading timestamp `[Wed 2026-04-22 10:30 GMT+8] `
  *   - `[message_id: uuid]` tags sprinkled throughout the text
  *   - `[media attached: path (mime) | path]` references appended when the
@@ -417,6 +443,12 @@ function normalizeStreamingMessage(message: unknown): unknown {
  */
 function stripGatewayUserMetadata(text: string): string {
   return text
+    .replace(/^Sender\s*\([^)]*\)\s*:\s*```[a-z]*\n[\s\S]*?```\s*/i, '')
+    .replace(/^Sender\s*\([^)]*\)\s*:\s*\{[\s\S]*?\}\s*/i, '')
+    .replace(/^Sender\s*\([^)]*\)\s*:\s*[^\n]*(?:\n\s*)*/i, '')
+    .replace(/^Sender\s*:\s*```[a-z]*\n[\s\S]*?```\s*/i, '')
+    .replace(/^Sender\s*:\s*\{[\s\S]*?\}\s*/i, '')
+    .replace(/^Sender\s*:\s*[^\n]*(?:\n\s*)*/i, '')
     .replace(/^\s*\[(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun)\s+\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}\s+[^\]]+\]\s*/i, '')
     .replace(/\s*\[media attached:[^\]]*\]/g, '')
     .replace(/\s*\[message_id:\s*[^\]]+\]/g, '')
@@ -1208,6 +1240,8 @@ function buildSessionSwitchPatch(
       ? clearSessionEntryFromMap(state.sessionLastActivity, state.currentSessionKey)
       : state.sessionLastActivity,
     messages: cachedNextSession?.messages ?? [],
+    hasMoreHistory: cachedNextSession ? cachedNextSession.messages.length >= HISTORY_PAGE_SIZE : false,
+    loadingMoreHistory: false,
     thinkingLevel: cachedNextSession?.thinkingLevel ?? state.thinkingLevel ?? null,
     streamingText: '',
     streamingMessage: null,
@@ -1618,6 +1652,8 @@ function hasNonToolAssistantContent(message: RawMessage | undefined): boolean {
 export const useChatStore = create<ChatState>((set, get) => ({
   messages: [],
   loading: false,
+  loadingMoreHistory: false,
+  hasMoreHistory: false,
   error: null,
   runError: null,
 
@@ -1759,7 +1795,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
                   for (const { session, version } of pending) {
                     const summary = summaryBySessionKey.get(session.key);
-                    const labelText = summary?.firstUserText?.trim() || '';
+                    const labelText = toSessionLabel(summary?.firstUserText || '');
                     finishSessionLabelHydration(session.key, version, labelText ? 'labeled' : 'empty');
                   }
                   break;
@@ -2086,19 +2122,21 @@ export const useChatStore = create<ChatState>((set, get) => ({
       });
       cacheSessionHistory(currentSessionKey, finalMessages, thinkingLevel);
 
-      // Extract first user message text as a session label for display in the toolbar.
-      // Skip main sessions (key ends with ":main") — they rely on the Gateway-provided
-      // displayName (e.g. the configured agent name "ClawX") instead.
+      // Seed a missing label from immutable history only. Once a label exists
+      // for a session, do not rewrite it during later history refreshes; users
+      // perceive the sidebar title as a stable conversation identifier, not a
+      // live summary of the latest turn.
       const isMainSession = currentSessionKey.endsWith(':main');
-      if (!isMainSession) {
+      if (!isMainSession && !get().sessionLabels[currentSessionKey]) {
         const firstUserMsg = finalMessages.find((m) => m.role === 'user');
         if (firstUserMsg) {
-          const labelText = getMessageText(firstUserMsg.content).trim();
+          const labelText = toSessionLabel(getMessageText(firstUserMsg.content));
           if (labelText) {
-            const truncated = labelText.length > 50 ? `${labelText.slice(0, 50)}…` : labelText;
-            set((s) => ({
-              sessionLabels: { ...s.sessionLabels, [currentSessionKey]: truncated },
-            }));
+            set((s) => (
+              s.sessionLabels[currentSessionKey]
+                ? {}
+                : { sessionLabels: { ...s.sessionLabels, [currentSessionKey]: labelText } }
+            ));
           }
         }
       }
@@ -2171,6 +2209,9 @@ export const useChatStore = create<ChatState>((set, get) => ({
         // an avoidable "RPC timeout: chat.history" in the main process.
         if (fallbackMessages.length > 0) {
           const applied = applyLoadedMessages(fallbackMessages, null);
+          if (applied) {
+            set({ hasMoreHistory: fallbackMessages.length >= HISTORY_PAGE_SIZE });
+          }
           if (applied && isInitialForegroundLoad) {
             _foregroundHistoryLoadSeen.add(foregroundLoadKey);
             void refreshVisibleSessionSummaries(set, get);
@@ -2202,7 +2243,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
           try {
             data = await useGatewayStore.getState().rpc<Record<string, unknown>>(
               'chat.history',
-              { sessionKey: currentSessionKey, limit: 200 },
+              { sessionKey: currentSessionKey, limit: HISTORY_PAGE_SIZE },
               historyTimeoutOverride,
             );
             lastError = null;
@@ -2244,6 +2285,9 @@ export const useChatStore = create<ChatState>((set, get) => ({
           }
 
           const applied = applyLoadedMessages(rawMessages, thinkingLevel);
+          if (applied) {
+            set({ hasMoreHistory: rawMessages.length >= HISTORY_PAGE_SIZE });
+          }
           if (applied && isInitialForegroundLoad) {
             _foregroundHistoryLoadSeen.add(foregroundLoadKey);
             void refreshVisibleSessionSummaries(set, get);
@@ -2263,6 +2307,9 @@ export const useChatStore = create<ChatState>((set, get) => ({
             : await loadLocalHistoryFallback(currentSessionKey, 200);
           if (lateFallbackMessages.length > 0) {
             const applied = applyLoadedMessages(lateFallbackMessages, null);
+            if (applied) {
+              set({ hasMoreHistory: lateFallbackMessages.length >= HISTORY_PAGE_SIZE });
+            }
             if (applied && isInitialForegroundLoad) {
               _foregroundHistoryLoadSeen.add(foregroundLoadKey);
               void refreshVisibleSessionSummaries(set, get);
@@ -2284,6 +2331,9 @@ export const useChatStore = create<ChatState>((set, get) => ({
         const fallbackMessages = await loadLocalHistoryFallback(currentSessionKey, 200);
         if (fallbackMessages.length > 0) {
           const applied = applyLoadedMessages(fallbackMessages, null);
+          if (applied) {
+            set({ hasMoreHistory: fallbackMessages.length >= HISTORY_PAGE_SIZE });
+          }
           if (applied && isInitialForegroundLoad) {
             _foregroundHistoryLoadSeen.add(foregroundLoadKey);
             void refreshVisibleSessionSummaries(set, get);
@@ -2308,6 +2358,54 @@ export const useChatStore = create<ChatState>((set, get) => ({
       const active = _historyLoadInFlight.get(currentSessionKey);
       if (active === loadPromise) {
         _historyLoadInFlight.delete(currentSessionKey);
+      }
+    }
+  },
+
+  loadMoreHistory: async () => {
+    const { currentSessionKey, messages, loadingMoreHistory, hasMoreHistory } = get();
+    if (loadingMoreHistory || !hasMoreHistory || messages.length === 0) return;
+
+    set({ loadingMoreHistory: true, error: null });
+    try {
+      const nextLimit = Math.min(messages.length + HISTORY_PAGE_SIZE, HISTORY_MAX_RENDERED_MESSAGES);
+      const rawMessages = await loadLocalHistoryFallback(currentSessionKey, nextLimit);
+      if (get().currentSessionKey !== currentSessionKey) return;
+      if (rawMessages.length === 0) {
+        set({ hasMoreHistory: false, loadingMoreHistory: false });
+        return;
+      }
+
+      // Reuse the normal history application path by replacing the visible
+      // window with a larger suffix from the transcript.  This keeps render
+      // cost bounded while allowing long conversations to page backwards.
+      const messagesWithToolImages = enrichWithToolResultFiles(rawMessages);
+      const filteredMessages = messagesWithToolImages.filter((msg) => !isToolResultRole(msg.role) && !isInternalMessage(msg));
+      const enrichedMessages = enrichWithCachedImages(filteredMessages);
+      set({
+        messages: enrichedMessages,
+        loadingMoreHistory: false,
+        hasMoreHistory: rawMessages.length >= nextLimit && nextLimit < HISTORY_MAX_RENDERED_MESSAGES,
+      });
+      cacheSessionHistory(currentSessionKey, enrichedMessages, get().thinkingLevel);
+      void loadMissingPreviews(enrichedMessages).then((updated) => {
+        if (!updated || get().currentSessionKey !== currentSessionKey) return;
+        set((state) => ({
+          messages: state.messages.map((message) => {
+            const match = enrichedMessages.find((candidate) => (
+              `${candidate.id ?? ''}|${candidate.role}|${candidate.timestamp ?? ''}|${getMessageText(candidate.content)}`
+              === `${message.id ?? ''}|${message.role}|${message.timestamp ?? ''}|${getMessageText(message.content)}`
+            ));
+            return match?._attachedFiles?.length ? { ...message, _attachedFiles: match._attachedFiles } : message;
+          }),
+        }));
+      });
+    } catch (error) {
+      console.warn('Failed to load more history:', error);
+      set({ loadingMoreHistory: false, error: String(error) });
+    } finally {
+      if (get().currentSessionKey === currentSessionKey) {
+        set({ loadingMoreHistory: false });
       }
     }
   },
@@ -2362,8 +2460,10 @@ export const useChatStore = create<ChatState>((set, get) => ({
     const { sessionLabels, messages } = get();
     const isFirstMessage = !messages.slice(0, -1).some((m) => m.role === 'user');
     if (!currentSessionKey.endsWith(':main') && isFirstMessage && !sessionLabels[currentSessionKey] && trimmed) {
-      const truncated = trimmed.length > 50 ? `${trimmed.slice(0, 50)}…` : trimmed;
-      set((s) => ({ sessionLabels: { ...s.sessionLabels, [currentSessionKey]: truncated } }));
+      const labelText = toSessionLabel(trimmed);
+      if (labelText) {
+        set((s) => ({ sessionLabels: { ...s.sessionLabels, [currentSessionKey]: labelText } }));
+      }
     }
 
     // Mark this session as most recently active

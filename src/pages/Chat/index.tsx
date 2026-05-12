@@ -107,6 +107,9 @@ export function Chat() {
   const currentAgentId = useChatStore((s) => s.currentAgentId);
   const sessionLabels = useChatStore((s) => s.sessionLabels);
   const loading = useChatStore((s) => s.loading);
+  const loadingMoreHistory = useChatStore((s) => s.loadingMoreHistory);
+  const hasMoreHistory = useChatStore((s) => s.hasMoreHistory);
+  const loadMoreHistory = useChatStore((s) => s.loadMoreHistory);
   const sending = useChatStore((s) => s.sending);
   const error = useChatStore((s) => s.error);
   const runError = useChatStore((s) => s.runError);
@@ -699,6 +702,20 @@ export function Chat() {
                 <WelcomeScreen />
               ) : (
                 <>
+                  {hasMoreHistory && (
+                    <div className="flex justify-center pt-2">
+                      <button
+                        type="button"
+                        onClick={() => void loadMoreHistory()}
+                        disabled={loadingMoreHistory}
+                        className="inline-flex items-center gap-2 rounded-full border border-border bg-background/80 px-3 py-1.5 text-xs text-muted-foreground shadow-sm transition-colors hover:bg-muted disabled:cursor-not-allowed disabled:opacity-60"
+                        data-testid="chat-load-more-history"
+                      >
+                        {loadingMoreHistory && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+                        {loadingMoreHistory ? t('loadingMoreHistory', '加载更多中...') : t('loadMoreHistory', '加载更早的消息')}
+                      </button>
+                    </div>
+                  )}
                   {messages.map((msg, idx) => {
                     if (foldedNarrationIndices.has(idx)) return null;
                     const suppressToolCards = userRunCards.some((card) =>

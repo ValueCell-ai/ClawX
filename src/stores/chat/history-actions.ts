@@ -44,8 +44,14 @@ async function loadCronFallbackMessages(sessionKey: string, limit = 200): Promis
 export function createHistoryActions(
   set: ChatSet,
   get: ChatGet,
-): Pick<SessionHistoryActions, 'loadHistory'> {
+): Pick<SessionHistoryActions, 'loadHistory' | 'loadMoreHistory'> {
   return {
+    loadMoreHistory: async () => {
+      // The legacy split-store path is not active in the Electron app. Keep a
+      // conservative implementation for type safety; the monolithic store in
+      // src/stores/chat.ts provides paginated transcript loading.
+      await get().loadHistory(true);
+    },
     loadHistory: async (quiet = false) => {
       const { currentSessionKey } = get();
       const gatewayState = useGatewayStore.getState?.() as { status?: { pid?: number; connectedAt?: number; port?: number } } | undefined;

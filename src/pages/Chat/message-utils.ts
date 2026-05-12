@@ -16,6 +16,14 @@ function cleanUserText(text: string): string {
     .replace(/\s*\[media attached:[^\]]*\]/g, '')
     // Remove [message_id: uuid]
     .replace(/\s*\[message_id:\s*[^\]]+\]/g, '')
+    // Remove Gateway-injected sender metadata block.  Some transcripts use
+    // "Sender (untrusted metadata):" instead of the older "Sender (untrusted):".
+    .replace(/^Sender\s*\([^)]*\)\s*:\s*```[a-z]*\n[\s\S]*?```\s*/i, '')
+    .replace(/^Sender\s*\([^)]*\)\s*:\s*\{[\s\S]*?\}\s*/i, '')
+    .replace(/^Sender\s*\([^)]*\)\s*:\s*[^\n]*(?:\n\s*)*/i, '')
+    .replace(/^Sender\s*:\s*```[a-z]*\n[\s\S]*?```\s*/i, '')
+    .replace(/^Sender\s*:\s*\{[\s\S]*?\}\s*/i, '')
+    .replace(/^Sender\s*:\s*[^\n]*(?:\n\s*)*/i, '')
     // Remove Gateway-injected "Conversation info (untrusted metadata): ```json...```" block
     .replace(/^Conversation info\s*\([^)]*\):\s*```[a-z]*\n[\s\S]*?```\s*/i, '')
     // Fallback: remove "Conversation info (...): {...}" without code block wrapper

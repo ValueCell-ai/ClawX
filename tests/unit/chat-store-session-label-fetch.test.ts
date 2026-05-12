@@ -206,15 +206,23 @@ describe('chat store session label summary hydration', () => {
       throw new Error(`Unexpected gateway RPC: ${method}`);
     });
 
-    hostApiFetchMock.mockResolvedValueOnce({
-      success: true,
-      summaries: [
-        {
-          sessionKey: 'agent:main:session-c',
-          firstUserText: 'needs label',
-          lastTimestamp: 1_700_000_000_123,
-        },
-      ],
+    hostApiFetchMock.mockImplementation(async (path: string) => {
+      if (path.startsWith('/api/sessions/transcript')) {
+        return { success: true, messages: [] };
+      }
+      if (path === '/api/sessions/summaries') {
+        return {
+          success: true,
+          summaries: [
+            {
+              sessionKey: 'agent:main:session-c',
+              firstUserText: 'needs label',
+              lastTimestamp: 1_700_000_000_123,
+            },
+          ],
+        };
+      }
+      return { success: true, summaries: [] };
     });
 
     const { useChatStore } = await import('@/stores/chat');
@@ -240,6 +248,7 @@ describe('chat store session label summary hydration', () => {
     });
 
     await useChatStore.getState().loadHistory(false);
+    hostApiFetchMock.mockClear();
     gatewayRpcMock.mockClear();
 
     vi.advanceTimersByTime(1_500);
@@ -308,7 +317,6 @@ describe('chat store session label summary hydration', () => {
       runError: null,
     });
 
-    await useChatStore.getState().loadHistory(false);
     vi.advanceTimersByTime(1_500);
     await useChatStore.getState().loadSessions();
     await Promise.resolve();
@@ -380,7 +388,6 @@ describe('chat store session label summary hydration', () => {
       runError: null,
     });
 
-    await useChatStore.getState().loadHistory(false);
     vi.advanceTimersByTime(1_500);
     await useChatStore.getState().loadSessions();
     await Promise.resolve();
