@@ -2159,6 +2159,11 @@ export const useChatStore = create<ChatState>((set, get) => ({
       };
 
       try {
+        const shouldPrefetchLocalFallback = isInitialForegroundLoad && !currentSessionKey.endsWith(':main');
+        const fallbackMessages = shouldPrefetchLocalFallback
+          ? await loadLocalHistoryFallback(currentSessionKey, 200)
+          : [];
+        const shouldRaceLocalFallback = fallbackMessages.length > 0;
         let data: Record<string, unknown> | null = null;
         let lastError: unknown = null;
 
@@ -2168,11 +2173,17 @@ export const useChatStore = create<ChatState>((set, get) => ({
           }
 
           try {
-            data = await useGatewayStore.getState().rpc<Record<string, unknown>>(
+            const rpcPromise = useGatewayStore.getState().rpc<Record<string, unknown>>(
               'chat.history',
               { sessionKey: currentSessionKey, limit: 200 },
               historyTimeoutOverride,
             );
+            data = shouldRaceLocalFallback
+              ? await Promise.race([
+                rpcPromise,
+                sleep(600).then(() => ({ messages: fallbackMessages } as Record<string, unknown>)),
+              ])
+              : await rpcPromise;
             lastError = null;
             break;
           } catch (error) {
@@ -2206,7 +2217,9 @@ export const useChatStore = create<ChatState>((set, get) => ({
           let rawMessages = Array.isArray(data.messages) ? data.messages as RawMessage[] : [];
           const thinkingLevel = data.thinkingLevel ? String(data.thinkingLevel) : null;
           if (rawMessages.length === 0 && isCronSessionKey(currentSessionKey)) {
-            rawMessages = await loadLocalHistoryFallback(currentSessionKey, 200);
+            rawMessages = fallbackMessages.length > 0
+              ? fallbackMessages
+              : await loadLocalHistoryFallback(currentSessionKey, 200);
           }
 
           const applied = applyLoadedMessages(rawMessages, thinkingLevel);
@@ -2224,9 +2237,11 @@ export const useChatStore = create<ChatState>((set, get) => ({
             });
           }
 
-          const fallbackMessages = await loadLocalHistoryFallback(currentSessionKey, 200);
-          if (fallbackMessages.length > 0) {
-            const applied = applyLoadedMessages(fallbackMessages, null);
+          const lateFallbackMessages = fallbackMessages.length > 0
+            ? fallbackMessages
+            : await loadLocalHistoryFallback(currentSessionKey, 200);
+          if (lateFallbackMessages.length > 0) {
+            const applied = applyLoadedMessages(lateFallbackMessages, null);
             if (applied && isInitialForegroundLoad) {
               _foregroundHistoryLoadSeen.add(foregroundLoadKey);
               void refreshVisibleSessionSummaries(set, get);
