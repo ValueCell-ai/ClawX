@@ -75,6 +75,26 @@
     --surface-modal: 45 30% 97.6%;
     --surface-input: 45 22% 94%;
     --surface-sidebar: 45 16% 94%;
+
+    /* ── ClawX usage accents (light) ─────────────────────────────
+     *
+     * Three semantic accents reused everywhere that we visualise
+     * token usage / activity. Mirrors the Cron page convention so
+     * the Models bar chart, legend dots, and any future "input /
+     * output / cache" indicator pulls from the same palette:
+     *
+     *   --usage-input  = blue   (matches Cron "Total" tile / primary)
+     *   --usage-output = green  (matches Cron "Active" tile / `bg-green-500`)
+     *   --usage-cache  = yellow (matches Cron "Paused" tile)
+     *
+     * Anchored to Tailwind's *-500 shades so chart bars read at the
+     * same brightness as the `bg-green-500` "configured" status dot
+     * and the Cron stat-tile icon halos. Going darker (*-600/*-700)
+     * makes the bars look duller than the dots they sit next to.
+     * ─────────────────────────────────────────────────────────── */
+    --usage-input: 217 91% 60%;
+    --usage-output: 142 71% 45%;
+    --usage-cache: 48 96% 53%;
   }
 
   /* Neutral deep-gray dark palette */
@@ -110,6 +130,13 @@
     --surface-modal: 240 3% 14%;
     --surface-input: 240 3% 18%;
     --surface-sidebar: 240 4% 11%;
+
+    /* Usage accents — lifted *-400-ish shades so bars stay vivid
+     * against the deep-gray dark surfaces (see light block above
+     * for semantic mapping). */
+    --usage-input: 217 91% 65%;
+    --usage-output: 142 71% 52%;
+    --usage-cache: 48 96% 60%;
   }
 }
 

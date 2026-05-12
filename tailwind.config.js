@@ -254,6 +254,17 @@ module.exports = {
           input: 'hsl(var(--surface-input) / <alpha-value>)',
           sidebar: 'hsl(var(--surface-sidebar) / <alpha-value>)',
         },
+
+        // ── D. ClawX usage accents ──────────────────────────────────
+        // Semantic chart palette shared by the Models token-usage
+        // visualisation and any future input/output/cache indicator.
+        // Mirrors Cron's stat-tile palette (blue / green / yellow).
+        // Values live in globals.css; dark mode brightens each one.
+        usage: {
+          input: 'hsl(var(--usage-input) / <alpha-value>)',
+          output: 'hsl(var(--usage-output) / <alpha-value>)',
+          cache: 'hsl(var(--usage-cache) / <alpha-value>)',
+        },
       },
       borderRadius: {
         lg: 'var(--radius)',
