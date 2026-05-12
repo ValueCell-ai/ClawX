@@ -130,8 +130,8 @@ function buildDreamingEnabledPatchRaw(enabled: boolean): string {
   });
 }
 const PANEL_CLASS = 'rounded-2xl border-black/10 bg-surface-modal shadow-sm dark:border-white/10';
-const INSET_CLASS = 'rounded-xl border-black/10 bg-surface-input dark:border-white/10';
-const QUIET_BUTTON_CLASS = 'border-black/10 bg-surface-input text-foreground/80 shadow-none hover:bg-black/5 hover:text-foreground dark:border-white/10 dark:hover:bg-white/5';
+const INSET_CLASS = 'rounded-xl border-black/10 bg-transparent dark:border-white/10';
+const QUIET_BUTTON_CLASS = 'border-black/10 bg-transparent text-foreground/80 shadow-none hover:bg-black/5 hover:text-foreground dark:border-white/10 dark:hover:bg-white/5';
 const STATUS_BADGE_CLASS = 'border-black/10 bg-black/5 text-foreground/80 dark:border-white/10 dark:bg-white/10 dark:text-foreground/80';
 const SUCCESS_NOTICE_CLASS = 'border-black/10 bg-black/5 text-foreground/80 dark:border-white/10 dark:bg-white/10';
 
@@ -454,7 +454,7 @@ export function Dreams() {
 
       <main className="min-h-0 flex-1 overflow-auto px-10 pb-10">
         {!dreamsReady && (
-          <div className="mb-4 rounded-xl border border-black/10 bg-surface-input px-4 py-3 text-sm text-foreground/70 dark:border-white/10">
+          <div className="mb-4 rounded-xl border border-black/10 bg-transparent px-4 py-3 text-sm text-foreground/70 dark:border-white/10">
             {t('gatewayNotReady')}
           </div>
         )}
@@ -477,7 +477,7 @@ export function Dreams() {
             return (
               <Card key={metric.label} className={PANEL_CLASS}>
                 <CardContent className="flex items-center gap-3 p-4">
-                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-surface-input">
+                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-transparent">
                     <Icon className="h-4 w-4 text-muted-foreground" />
                   </div>
                   <div className="min-w-0">

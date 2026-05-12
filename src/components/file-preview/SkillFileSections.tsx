@@ -138,7 +138,7 @@ function SkillFileSection({ title, description, files, onOpen }: SkillFileSectio
             type="button"
             onClick={() => onOpen(file)}
             className={cn(
-              'flex items-center gap-2 rounded-xl border border-black/5 bg-surface-input px-3 py-2 text-left transition-colors',
+              'flex items-center gap-2 rounded-xl border border-black/5 bg-transparent px-3 py-2 text-left transition-colors',
               'hover:border-primary/40 hover:bg-primary/5',
               'dark:border-white/5 dark:hover:bg-white/10',
             )}
