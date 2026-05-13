@@ -192,7 +192,7 @@ async function readSessionsJson(agentId: string): Promise<Record<string, unknown
   return JSON.parse(raw) as Record<string, unknown>;
 }
 
-function resolveSessionTranscriptPath(
+function resolveSessionTranscriptPathByKey(
   sessionKey: string,
   sessionsDir: string,
   sessionsJson: Record<string, unknown>,
@@ -249,10 +249,9 @@ async function loadSessionSummary(sessionKey: string): Promise<SessionSummary> {
   }
 
   try {
-    const fsP = await import('node:fs/promises');
     const sessionsDir = join(getOpenClawConfigDir(), 'agents', parsed.agentId, 'sessions');
     const sessionsJson = await readSessionsJson(parsed.agentId);
-    const transcriptPath = resolveSessionTranscriptPath(sessionKey, sessionsDir, sessionsJson);
+    const transcriptPath = resolveSessionTranscriptPathByKey(sessionKey, sessionsDir, sessionsJson);
     if (!transcriptPath) {
       return { sessionKey, firstUserText: null, lastTimestamp: null };
     }
@@ -271,7 +270,7 @@ async function loadSessionTranscriptByKey(sessionKey: string, limit: number): Pr
   try {
     const sessionsDir = join(getOpenClawConfigDir(), 'agents', parsed.agentId, 'sessions');
     const sessionsJson = await readSessionsJson(parsed.agentId);
-    const transcriptPath = resolveSessionTranscriptPath(sessionKey, sessionsDir, sessionsJson);
+    const transcriptPath = resolveSessionTranscriptPathByKey(sessionKey, sessionsDir, sessionsJson);
     if (!transcriptPath) return null;
 
     return readRecentTranscriptMessages(transcriptPath, limit);
