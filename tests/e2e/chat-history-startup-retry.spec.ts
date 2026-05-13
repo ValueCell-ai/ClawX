@@ -53,7 +53,10 @@ test.describe('ClawX startup chat history recovery', () => {
           };
 
           const key = stableStringify([method, payload ?? null]);
-          if (key === stableStringify(['sessions.list', {}])) {
+          if (
+            key === stableStringify(['sessions.list', {}])
+            || key === stableStringify(['sessions.list', { includeDerivedTitles: true, includeLastMessage: true }])
+          ) {
             return {
               success: true,
               result: {

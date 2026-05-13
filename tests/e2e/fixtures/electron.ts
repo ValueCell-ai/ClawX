@@ -231,6 +231,12 @@ export async function installIpcMocks(
           if (fallbackKey in mockConfig.gatewayRpc!) {
             return mockConfig.gatewayRpc![fallbackKey];
           }
+          if (method === 'sessions.list') {
+            const legacySessionsListKey = stableStringify(['sessions.list', {}]);
+            if (legacySessionsListKey in mockConfig.gatewayRpc!) {
+              return mockConfig.gatewayRpc![legacySessionsListKey];
+            }
+          }
           return { success: true, result: {} };
         });
       }
