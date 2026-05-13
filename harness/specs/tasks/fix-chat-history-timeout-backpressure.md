@@ -13,8 +13,11 @@ touchedAreas:
   - electron/main/ipc-handlers.ts
   - src/stores/chat.ts
   - tests/unit/chat-store-history-retry.test.ts
+  - tests/unit/gateway-manager-diagnostics.test.ts
   - tests/unit/gateway-manager-heartbeat.test.ts
   - tests/unit/gateway-rpc-backpressure.test.ts
+  - tests/e2e/fixtures/electron.ts
+  - tests/e2e/chat-history-startup-retry.spec.ts
   - tests/e2e/chat-history-timeout-backpressure.spec.ts
 expectedUserBehavior:
   - ClawX remains responsive when the user has many sidebar sessions and large chat transcripts.
