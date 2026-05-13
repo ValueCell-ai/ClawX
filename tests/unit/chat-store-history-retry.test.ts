@@ -202,7 +202,7 @@ describe('useChatStore startup history retry', () => {
     const { useChatStore } = await import('@/stores/chat');
 
     useChatStore.setState({
-      currentSessionKey: 'agent:main:main',
+      currentSessionKey: 'agent:main:session-0',
       currentAgentId: 'main',
       sessions: [{ key: 'agent:main:main' }, { key: 'agent:main:other' }],
       messages: [],
@@ -360,6 +360,109 @@ describe('useChatStore startup history retry', () => {
     );
     expect(setTimeoutSpy).toHaveBeenCalledWith(expect.any(Function), 191_800);
     setTimeoutSpy.mockRestore();
+  });
+
+  it('loads derived session titles from sessions.list without chat.history fan-out', async () => {
+    const { useChatStore } = await import('@/stores/chat');
+    useChatStore.setState({
+      currentSessionKey: 'agent:main:session-1',
+      currentAgentId: 'main',
+      sessions: [],
+      messages: [],
+      sessionLabels: {},
+      sessionLastActivity: {},
+      sending: false,
+      activeRunId: null,
+      streamingText: '',
+      streamingMessage: null,
+      streamingTools: [],
+      pendingFinal: false,
+      lastUserMessageAt: null,
+      pendingToolImages: [],
+      error: null,
+      loading: false,
+      thinkingLevel: null,
+    });
+
+    gatewayRpcMock.mockResolvedValueOnce({
+      sessions: [
+        {
+          key: 'agent:main:session-1',
+          derivedTitle: 'First useful user request',
+          updatedAt: 1000,
+        },
+      ],
+    });
+
+    await useChatStore.getState().loadSessions();
+
+    expect(gatewayRpcMock).toHaveBeenCalledTimes(1);
+    expect(gatewayRpcMock).toHaveBeenCalledWith('sessions.list', {
+      includeDerivedTitles: true,
+      includeLastMessage: true,
+    });
+    expect(gatewayRpcMock).not.toHaveBeenCalledWith(
+      'chat.history',
+      expect.anything(),
+      expect.anything(),
+    );
+    expect(useChatStore.getState().sessions[0]?.label).toBe('First useful user request');
+  });
+
+  it('uses batched sessions.preview rather than chat.history for missing sidebar labels', async () => {
+    const { useChatStore } = await import('@/stores/chat');
+    useChatStore.setState({
+      currentSessionKey: 'agent:main:session-0',
+      currentAgentId: 'main',
+      sessions: [],
+      messages: [],
+      sessionLabels: {},
+      sessionLastActivity: {},
+      sending: false,
+      activeRunId: null,
+      streamingText: '',
+      streamingMessage: null,
+      streamingTools: [],
+      pendingFinal: false,
+      lastUserMessageAt: null,
+      pendingToolImages: [],
+      error: null,
+      loading: false,
+      thinkingLevel: null,
+    });
+
+    gatewayRpcMock.mockImplementation(async (method: string, params?: Record<string, unknown>) => {
+      if (method === 'sessions.list') {
+        return {
+          sessions: Array.from({ length: 70 }, (_, index) => ({
+            key: `agent:main:session-${index}`,
+            updatedAt: 1000 + index,
+          })),
+        };
+      }
+      if (method === 'sessions.preview') {
+        const keys = Array.isArray(params?.keys) ? params.keys as string[] : [];
+        return {
+          previews: keys.map((key) => ({
+            key,
+            status: 'ok',
+            items: [{ role: 'user', text: `Preview for ${key}` }],
+          })),
+        };
+      }
+      throw new Error(`unexpected method ${method}`);
+    });
+
+    await useChatStore.getState().loadSessions();
+    for (let i = 0; i < 10; i += 1) {
+      await Promise.resolve();
+    }
+
+    const previewCalls = gatewayRpcMock.mock.calls.filter(([method]) => method === 'sessions.preview');
+    expect(previewCalls).toHaveLength(3);
+    expect(previewCalls.map(([, params]) => (params as { keys: string[] }).keys.length)).toEqual([32, 32, 6]);
+    expect(gatewayRpcMock.mock.calls.some(([method]) => method === 'chat.history')).toBe(false);
+    expect(useChatStore.getState().sessionLabels['agent:main:session-0']).toBe('Preview for agent:main:session-0');
   });
 
   it('does not burn the first-load retry path when the first attempt becomes stale', async () => {

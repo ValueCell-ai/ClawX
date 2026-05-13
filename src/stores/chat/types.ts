@@ -72,6 +72,8 @@ export interface ChatSession {
   key: string;
   label?: string;
   displayName?: string;
+  derivedTitle?: string;
+  lastMessagePreview?: string;
   thinkingLevel?: string;
   model?: string;
   updatedAt?: number;

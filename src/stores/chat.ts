@@ -59,6 +59,7 @@ let _historyPollTimer: ReturnType<typeof setTimeout> | null = null;
 let _errorRecoveryTimer: ReturnType<typeof setTimeout> | null = null;
 let _loadSessionsInFlight: Promise<void> | null = null;
 let _lastLoadSessionsAt = 0;
+let _sessionLabelFetchGeneration = 0;
 const _historyLoadInFlight = new Map<string, Promise<void>>();
 const _lastHistoryLoadAtBySession = new Map<string, number>();
 const _forceNextHistoryLoadBySession = new Set<string>();
@@ -67,6 +68,8 @@ const _sessionHistoryCache = new Map<string, { messages: RawMessage[]; thinkingL
 const SESSION_LOAD_MIN_INTERVAL_MS = 1_200;
 const HISTORY_LOAD_MIN_INTERVAL_MS = 800;
 const HISTORY_POLL_SILENCE_WINDOW_MS = 2_500;
+const SESSION_LABEL_PREVIEW_BATCH_SIZE = 32;
+const SESSION_LABEL_PREVIEW_TIMEOUT_MS = 8_000;
 const CHAT_EVENT_DEDUPE_TTL_MS = 30_000;
 const _chatEventDedupe = new Map<string, number>();
 
@@ -1007,6 +1010,48 @@ function parseSessionUpdatedAtMs(value: unknown): number | undefined {
   return undefined;
 }
 
+type SessionPreviewItem = {
+  role?: string;
+  text?: string;
+};
+
+type SessionPreviewResult = {
+  key?: string;
+  status?: string;
+  items?: SessionPreviewItem[];
+};
+
+function readOptionalString(value: unknown): string | undefined {
+  return typeof value === 'string' && value.trim() ? value.trim() : undefined;
+}
+
+function resolveSessionLabelFromRow(row: Record<string, unknown>): string | undefined {
+  return readOptionalString(row.label)
+    ?? readOptionalString(row.derivedTitle)
+    ?? readOptionalString(row.subject);
+}
+
+function hasUsableSessionDisplayName(session: ChatSession): boolean {
+  const displayName = session.displayName?.trim();
+  return Boolean(displayName && displayName !== session.key);
+}
+
+function needsBackgroundSessionPreview(session: ChatSession, sessionLabels: Record<string, string>): boolean {
+  if (session.key.endsWith(':main')) return false;
+  if (sessionLabels[session.key]?.trim()) return false;
+  if (session.label?.trim()) return false;
+  return !hasUsableSessionDisplayName(session);
+}
+
+function resolveSessionPreviewLabel(preview: SessionPreviewResult): string | null {
+  const items = Array.isArray(preview.items) ? preview.items : [];
+  const userItem = items.find((item) => item.role === 'user' && item.text?.trim());
+  const fallbackItem = items.find((item) => item.text?.trim());
+  const text = (userItem ?? fallbackItem)?.text?.trim();
+  if (!text) return null;
+  return text.length > 50 ? `${text.slice(0, 50)}…` : text;
+}
+
 async function loadCronFallbackMessages(sessionKey: string, limit = 200): Promise<RawMessage[]> {
   if (!isCronSessionKey(sessionKey)) return [];
   try {
@@ -1522,17 +1567,25 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
     _loadSessionsInFlight = (async () => {
       try {
-        const data = await useGatewayStore.getState().rpc<Record<string, unknown>>('sessions.list', {});
+        const data = await useGatewayStore.getState().rpc<Record<string, unknown>>('sessions.list', {
+          includeDerivedTitles: true,
+          includeLastMessage: true,
+        });
         if (data) {
           const rawSessions = Array.isArray(data.sessions) ? data.sessions : [];
-          const sessions: ChatSession[] = rawSessions.map((s: Record<string, unknown>) => ({
-            key: String(s.key || ''),
-            label: s.label ? String(s.label) : undefined,
-            displayName: s.displayName ? String(s.displayName) : undefined,
-            thinkingLevel: s.thinkingLevel ? String(s.thinkingLevel) : undefined,
-            model: s.model ? String(s.model) : undefined,
-            updatedAt: parseSessionUpdatedAtMs(s.updatedAt),
-          })).filter((s: ChatSession) => s.key);
+          const sessions: ChatSession[] = rawSessions.map((s: Record<string, unknown>) => {
+            const key = String(s.key || '');
+            return {
+              key,
+              label: resolveSessionLabelFromRow(s),
+              displayName: s.displayName ? String(s.displayName) : undefined,
+              derivedTitle: s.derivedTitle ? String(s.derivedTitle) : undefined,
+              lastMessagePreview: s.lastMessagePreview ? String(s.lastMessagePreview) : undefined,
+              thinkingLevel: s.thinkingLevel ? String(s.thinkingLevel) : undefined,
+              model: s.model ? String(s.model) : undefined,
+              updatedAt: parseSessionUpdatedAtMs(s.updatedAt),
+            };
+          }).filter((s: ChatSession) => s.key);
 
           const canonicalBySuffix = new Map<string, string>();
           for (const session of sessions) {
@@ -1598,52 +1651,58 @@ export const useChatStore = create<ChatState>((set, get) => ({
             void get().loadHistory();
           }
 
-          // Background: fetch first user message for every non-main session to populate labels upfront.
-          // Retries on "gateway startup" errors since the gateway may still be initializing.
-          const sessionsToLabel = sessionsWithCurrent.filter((s) => !s.key.endsWith(':main'));
-          if (sessionsToLabel.length > 0) {
-            const LABEL_RETRY_DELAYS = [2_000, 5_000, 10_000];
+          // Background: fill any remaining unlabeled sessions with the cheap
+          // sessions.preview RPC. This intentionally avoids chat.history: large
+          // transcripts make chat.history expensive, and firing one request per
+          // sidebar row can starve the Gateway event loop.
+          const labelFetchGeneration = ++_sessionLabelFetchGeneration;
+          const sessionsToPreview = sessionsWithCurrent.filter((session) => (
+            needsBackgroundSessionPreview(session, get().sessionLabels)
+          ));
+          if (sessionsToPreview.length > 0) {
             void (async () => {
-              let pending = sessionsToLabel;
-              for (let attempt = 0; attempt <= LABEL_RETRY_DELAYS.length; attempt += 1) {
-                const failed: typeof pending = [];
-                await Promise.all(
-                  pending.map(async (session) => {
-                    try {
-                      const r = await useGatewayStore.getState().rpc<Record<string, unknown>>(
-                        'chat.history',
-                        { sessionKey: session.key, limit: 1000 },
-                      );
-                      const msgs = Array.isArray(r.messages) ? r.messages as RawMessage[] : [];
-                      const firstUser = msgs.find((m) => m.role === 'user');
-                      const lastMsg = msgs[msgs.length - 1];
-                      set((s) => {
-                        const next: Partial<typeof s> = {};
-                        if (firstUser) {
-                          const labelText = getMessageText(firstUser.content).trim();
-                          if (labelText) {
-                            const truncated = labelText.length > 50 ? `${labelText.slice(0, 50)}…` : labelText;
-                            next.sessionLabels = { ...s.sessionLabels, [session.key]: truncated };
-                          }
-                        }
-                        if (lastMsg?.timestamp) {
-                          next.sessionLastActivity = { ...s.sessionLastActivity, [session.key]: toMs(lastMsg.timestamp) };
-                        }
-                        return next;
-                      });
-                    } catch (err) {
-                      if (classifyHistoryStartupRetryError(err) === 'gateway_startup') {
-                        failed.push(session);
-                      }
-                    }
-                  }),
-                );
-                if (failed.length === 0 || attempt >= LABEL_RETRY_DELAYS.length) break;
-                await sleep(LABEL_RETRY_DELAYS[attempt]!);
-                pending = failed;
+              for (let i = 0; i < sessionsToPreview.length; i += SESSION_LABEL_PREVIEW_BATCH_SIZE) {
+                if (labelFetchGeneration !== _sessionLabelFetchGeneration) break;
+                const batch = sessionsToPreview.slice(i, i + SESSION_LABEL_PREVIEW_BATCH_SIZE);
+                try {
+                  const response = await useGatewayStore.getState().rpc<Record<string, unknown>>(
+                    'sessions.preview',
+                    {
+                      keys: batch.map((session) => session.key),
+                      limit: 6,
+                      maxChars: 80,
+                    },
+                    SESSION_LABEL_PREVIEW_TIMEOUT_MS,
+                  );
+                  if (labelFetchGeneration !== _sessionLabelFetchGeneration) break;
+                  const previews = Array.isArray(response.previews)
+                    ? response.previews as SessionPreviewResult[]
+                    : [];
+                  const labels = Object.fromEntries(
+                    previews
+                      .map((preview) => [preview.key, resolveSessionPreviewLabel(preview)] as const)
+                      .filter((entry): entry is [string, string] => Boolean(entry[0] && entry[1])),
+                  );
+                  if (Object.keys(labels).length === 0) continue;
+                  set((state) => ({
+                    sessionLabels: {
+                      ...state.sessionLabels,
+                      ...Object.fromEntries(
+                        Object.entries(labels).filter(([key]) => !state.sessionLabels[key]),
+                      ),
+                    },
+                  }));
+                } catch (err) {
+                  if (classifyHistoryStartupRetryError(err) === 'gateway_startup') {
+                    await sleep(2_000);
+                    i -= SESSION_LABEL_PREVIEW_BATCH_SIZE;
+                  }
+                }
               }
             })();
           }
+        } else {
+          _sessionLabelFetchGeneration += 1;
         }
       } catch (err) {
         console.warn('Failed to load sessions:', err);
