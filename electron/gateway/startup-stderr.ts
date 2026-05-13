@@ -38,6 +38,14 @@ export function classifyGatewayStderrMessage(message: string): GatewayStderrClas
     return { level: 'debug', normalized: msg };
   }
 
+  // The gateway binary reports this when it detects a systemd supervisor.
+  // ClawX will fail fast rather than retry, so downgrade to debug to avoid
+  // flooding the log with repeated identical lines during the (brief) window
+  // before the process exits.
+  if (msg.includes('already running under systemd')) {
+    return { level: 'debug', normalized: msg };
+  }
+
   return { level: 'warn', normalized: msg };
 }
 
