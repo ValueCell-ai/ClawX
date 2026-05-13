@@ -674,11 +674,21 @@ export function Chat() {
     }
   }, [userRunCards, messages, currentSessionKey]);
 
+  const platform = window.electron?.platform;
+  const isMac = platform === 'darwin';
+  const isWindows = platform === 'win32';
+
   return (
     <div
       ref={splitContainerRef}
-      className={cn('relative flex min-h-0 -m-6 transition-colors duration-500 dark:bg-background')}
-      style={{ height: 'calc(100vh - 2.5rem)' }}
+      data-testid="chat-page"
+      className={cn(
+        'relative flex min-h-0 -m-6 overflow-hidden transition-colors duration-500',
+        'bg-background',
+        isMac && 'rounded-tl-2xl shadow-[inset_1px_1px_0_hsl(var(--border)/0.55)]',
+        isWindows && 'rounded-tl-2xl',
+      )}
+      style={{ height: isMac ? '100vh' : 'calc(100vh - 2.5rem)' }}
     >
       {/* Left column: chat */}
       <div className="flex min-w-0 flex-1 flex-col">

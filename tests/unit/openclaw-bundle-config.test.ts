@@ -1,4 +1,6 @@
 // @vitest-environment node
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 describe('openclaw bundle config', () => {
@@ -18,9 +20,14 @@ describe('openclaw bundle config', () => {
       '@tencent-connect/qqbot-connector',
       'mpg123-decoder',
       'silk-wasm',
-      '@agentclientprotocol/sdk',
+      'acpx',
       'playwright-core',
       'qrcode-terminal',
     ]));
+    const packageJson = JSON.parse(readFileSync(resolve(process.cwd(), 'package.json'), 'utf8')) as {
+      dependencies?: Record<string, string>;
+      devDependencies?: Record<string, string>;
+    };
+    expect(packageJson.devDependencies?.acpx ?? packageJson.dependencies?.acpx).toBe('0.5.3');
   });
 });

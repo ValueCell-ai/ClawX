@@ -129,11 +129,18 @@ function buildDreamingEnabledPatchRaw(enabled: boolean): string {
     },
   });
 }
-const PANEL_CLASS = 'border-black/10 bg-surface-modal shadow-sm dark:border-white/10';
-const INSET_CLASS = 'border-black/10 bg-surface-input dark:border-white/10';
-const QUIET_BUTTON_CLASS = 'border-black/10 bg-surface-input text-foreground/80 shadow-none hover:bg-black/5 hover:text-foreground dark:border-white/10 dark:hover:bg-white/5';
+const PANEL_CLASS = 'rounded-2xl border-black/10 bg-surface-modal shadow-sm dark:border-white/10';
+const INSET_CLASS = 'rounded-xl border-black/10 bg-transparent dark:border-white/10';
+const QUIET_BUTTON_CLASS = 'border-black/10 bg-transparent text-foreground/80 shadow-none hover:bg-black/5 hover:text-foreground dark:border-white/10 dark:hover:bg-white/5';
 const STATUS_BADGE_CLASS = 'border-black/10 bg-black/5 text-foreground/80 dark:border-white/10 dark:bg-white/10 dark:text-foreground/80';
 const SUCCESS_NOTICE_CLASS = 'border-black/10 bg-black/5 text-foreground/80 dark:border-white/10 dark:bg-white/10';
+
+// Header pill buttons — mirrors the Agents/Cron page header style so
+// the top-right action cluster looks consistent across pages. Outline
+// is used for secondary actions (refresh, disable, open-full-UI); the
+// primary is the brand-filled pill (enable / new task / add agent).
+const HEADER_PILL_OUTLINE_CLASS = 'h-9 rounded-full px-4 text-meta font-medium border-black/10 dark:border-white/10 bg-transparent hover:bg-black/5 dark:hover:bg-white/5 shadow-none text-foreground/80 hover:text-foreground transition-colors';
+const HEADER_PILL_PRIMARY_CLASS = 'h-9 rounded-full px-4 text-meta font-medium shadow-none';
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return value != null && typeof value === 'object' && !Array.isArray(value);
@@ -411,38 +418,35 @@ export function Dreams() {
           </div>
           <p className="mt-2 text-subtitle font-medium text-foreground/60">{t('subtitle')}</p>
         </div>
-        <div className="flex shrink-0 items-center gap-2">
+        <div className="flex shrink-0 items-center gap-3">
           <Button
             data-testid={dreaming?.enabled ? 'dreams-disable' : 'dreams-enable'}
             variant={dreaming?.enabled ? 'outline' : 'default'}
-            size="sm"
             onClick={() => void setDreamingEnabled(!dreaming?.enabled)}
             disabled={!dreamsReady || busy || loading}
-            className={dreaming?.enabled ? QUIET_BUTTON_CLASS : undefined}
+            className={dreaming?.enabled ? HEADER_PILL_OUTLINE_CLASS : HEADER_PILL_PRIMARY_CLASS}
           >
-            {runningToggle ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Power className="mr-2 h-4 w-4" />}
+            {runningToggle ? <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" /> : <Power className="mr-2 h-3.5 w-3.5" />}
             {dreaming?.enabled ? t('actions.disable') : t('actions.enable')}
           </Button>
           <Button
             data-testid="dreams-refresh"
             variant="outline"
-            size="sm"
             onClick={() => void refreshAll({ force: true })}
             disabled={!dreamsReady}
-            className={QUIET_BUTTON_CLASS}
+            className={HEADER_PILL_OUTLINE_CLASS}
           >
-            {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-2 h-4 w-4" />}
+            {loading ? <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="mr-2 h-3.5 w-3.5" />}
             {t('common:actions.refresh')}
           </Button>
           <Button
             data-testid="dreams-open-full-ui"
-            variant="secondary"
-            size="sm"
+            variant="outline"
             onClick={() => void openFullDreams()}
             disabled={openingFullUi || !gatewayRunning}
-            className="border border-black/10 bg-card text-foreground shadow-sm hover:bg-black/5 dark:border-white/10 dark:bg-card dark:hover:bg-white/5"
+            className={HEADER_PILL_OUTLINE_CLASS}
           >
-            {openingFullUi ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <ExternalLink className="mr-2 h-4 w-4" />}
+            {openingFullUi ? <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" /> : <ExternalLink className="mr-2 h-3.5 w-3.5" />}
             {t('openFullUi')}
           </Button>
         </div>
@@ -450,19 +454,19 @@ export function Dreams() {
 
       <main className="min-h-0 flex-1 overflow-auto px-10 pb-10">
         {!dreamsReady && (
-          <div className="mb-4 rounded-lg border border-black/10 bg-surface-input px-4 py-3 text-sm text-foreground/70 dark:border-white/10">
+          <div className="mb-4 rounded-xl border border-black/10 bg-transparent px-4 py-3 text-sm text-foreground/70 dark:border-white/10">
             {t('gatewayNotReady')}
           </div>
         )}
 
         {error && (
-          <div data-testid="dreams-error" className="mb-4 rounded-lg border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive">
+          <div data-testid="dreams-error" className="mb-4 rounded-xl border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive">
             {error}
           </div>
         )}
 
         {lastActionMessage && (
-          <div data-testid="dreams-action-message" className={cn('mb-4 rounded-lg border px-4 py-3 text-sm', SUCCESS_NOTICE_CLASS)}>
+          <div data-testid="dreams-action-message" className={cn('mb-4 rounded-xl border px-4 py-3 text-sm', SUCCESS_NOTICE_CLASS)}>
             {lastActionMessage}
           </div>
         )}
@@ -473,7 +477,7 @@ export function Dreams() {
             return (
               <Card key={metric.label} className={PANEL_CLASS}>
                 <CardContent className="flex items-center gap-3 p-4">
-                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-surface-input">
+                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-transparent">
                     <Icon className="h-4 w-4 text-muted-foreground" />
                   </div>
                   <div className="min-w-0">
@@ -499,12 +503,12 @@ export function Dreams() {
             </CardHeader>
             <CardContent className="space-y-3 p-4 pt-0">
               {diaryEntries.length === 0 ? (
-                <div data-testid="dreams-empty-diary" className="rounded-md border border-dashed p-6 text-center text-sm text-muted-foreground">
+                <div data-testid="dreams-empty-diary" className="rounded-xl border border-dashed p-6 text-center text-sm text-muted-foreground">
                   {t('diary.empty')}
                 </div>
               ) : (
                 diaryEntries.map((entry) => (
-                  <article key={entry.id} className={cn('rounded-md border p-3', INSET_CLASS)}>
+                  <article key={entry.id} className={cn('border p-3', INSET_CLASS)}>
                     <div className="mb-1 flex items-center gap-2 text-xs text-muted-foreground">
                       <Clock className="h-3.5 w-3.5" />
                       <span>{entry.date || t('diary.undated')}</span>
@@ -586,7 +590,7 @@ export function Dreams() {
               {phases.map((phase) => {
                 const value = dreaming?.phases?.[phase.key];
                 return (
-                  <div key={phase.key} className={cn('flex items-center justify-between gap-3 rounded-md border px-3 py-2', INSET_CLASS)}>
+                  <div key={phase.key} className={cn('flex items-center justify-between gap-3 border px-3 py-2', INSET_CLASS)}>
                     <div className="min-w-0">
                       <div className="text-sm font-medium">{phase.label}</div>
                       <div className="truncate text-xs text-muted-foreground">{value?.cron || t('phases.noSchedule')}</div>
@@ -613,17 +617,17 @@ export function Dreams() {
             </CardHeader>
             <CardContent className="space-y-2 p-4 pt-0">
               {(dreaming?.storeError || dreaming?.phaseSignalError) && (
-                <div className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+                <div className="rounded-xl border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
                   {dreaming.storeError || dreaming.phaseSignalError}
                 </div>
               )}
               {recentSignals.length === 0 ? (
-                <div className="rounded-md border border-dashed p-6 text-center text-sm text-muted-foreground">
+                <div className="rounded-xl border border-dashed p-6 text-center text-sm text-muted-foreground">
                   {t('signals.empty')}
                 </div>
               ) : (
                 recentSignals.map((entry, index) => (
-                  <div key={`${entry.key || entry.path || 'signal'}-${index}`} className={cn('rounded-md border p-3', INSET_CLASS)}>
+                  <div key={`${entry.key || entry.path || 'signal'}-${index}`} className={cn('border p-3', INSET_CLASS)}>
                     <div className="flex items-center justify-between gap-2">
                       <div className="min-w-0 truncate text-xs text-muted-foreground">
                         {entry.path || entry.key || t('signals.unknownSource')}

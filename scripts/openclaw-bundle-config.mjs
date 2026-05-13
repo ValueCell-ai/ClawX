@@ -17,12 +17,11 @@ export const EXTRA_BUNDLED_PACKAGES = [
   'mpg123-decoder',
   'silk-wasm',
 
-  // The built-in acpx extension already ships its direct "acpx" package under
-  // dist/extensions/acpx/node_modules, but its runtime path reaches
-  // "acpx/runtime", whose reachable bare runtime dependency is
-  // @agentclientprotocol/sdk. Package it explicitly to keep packaged builds
-  // self-contained even when the extension dep graph is flattened.
-  '@agentclientprotocol/sdk',
+  // The built-in acpx extension resolves the npm "acpx" runtime from the
+  // bundled OpenClaw context in packaged builds. Package it explicitly so
+  // the packaged runtime has acpx@0.5.3 available even when extension
+  // node_modules are flattened or skipped by electron-builder.
+  'acpx',
 
   // OpenClaw's built-in browser extension resolves playwright-core at runtime.
   // Package it explicitly because it is not always present in openclaw's own

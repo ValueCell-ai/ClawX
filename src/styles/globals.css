@@ -33,9 +33,9 @@
 @layer base {
   :root {
     /* ── shadcn semantic tokens (light) ─────────────────────────── */
-    /* #f1ede1 — ClawX cream page background; gentler than pure white
+    /* Lightened ClawX cream page background; gentler than pure white
      *           for long sessions in front of the editor. */
-    --background: 45 36.4% 91.4%;
+    --background: 45 30% 96.6%;
     --foreground: 222.2 84% 4.9%;
     --card: 0 0% 100%;
     --card-foreground: 222.2 84% 4.9%;
@@ -64,16 +64,37 @@
      * heavy shadows. Pixel values are extracted from the hex literals
      * that used to be sprinkled across components.
      *
-     *   --surface-modal   = #f3f1e9   large rounded modal panels (top)
-     *                                 was: bg-[#f3f1e9] dark:bg-card
-     *   --surface-input   = #eeece3   inputs / selects / code panes
-     *                                 was: bg-[#eeece3] dark:bg-muted
-     *   --surface-sidebar = #eae8e1   left navigation rail (often /60)
-     *                                 was: bg-[#eae8e1]/60 dark:bg-background
+     *   --surface-modal   = lifted cream   large rounded modal panels (top);
+     *                                      slightly lighter than --background
+     *                                      so dialogs feel raised
+     *   --surface-input   = recessed cream inputs / selects / code panes;
+     *                                      slightly darker than --background
+     *                                      so fields feel inset
+     *   --surface-sidebar = sidebar cream  left navigation rail (often /60)
      * ─────────────────────────────────────────────────────────── */
-    --surface-modal: 48 29% 93%;
-    --surface-input: 49 24% 91%;
-    --surface-sidebar: 47 18% 90%;
+    --surface-modal: 45 30% 97.6%;
+    --surface-input: 45 22% 94%;
+    --surface-sidebar: 45 16% 94%;
+
+    /* ── ClawX usage accents (light) ─────────────────────────────
+     *
+     * Three semantic accents reused everywhere that we visualise
+     * token usage / activity. Mirrors the Cron page convention so
+     * the Models bar chart, legend dots, and any future "input /
+     * output / cache" indicator pulls from the same palette:
+     *
+     *   --usage-input  = blue   (matches Cron "Total" tile / primary)
+     *   --usage-output = green  (matches Cron "Active" tile / `bg-green-500`)
+     *   --usage-cache  = yellow (matches Cron "Paused" tile)
+     *
+     * Anchored to Tailwind's *-500 shades so chart bars read at the
+     * same brightness as the `bg-green-500` "configured" status dot
+     * and the Cron stat-tile icon halos. Going darker (*-600/*-700)
+     * makes the bars look duller than the dots they sit next to.
+     * ─────────────────────────────────────────────────────────── */
+    --usage-input: 217 91% 60%;
+    --usage-output: 142 71% 45%;
+    --usage-cache: 48 96% 53%;
   }
 
   /* Neutral deep-gray dark palette */
@@ -109,6 +130,13 @@
     --surface-modal: 240 3% 14%;
     --surface-input: 240 3% 18%;
     --surface-sidebar: 240 4% 11%;
+
+    /* Usage accents — lifted *-400-ish shades so bars stay vivid
+     * against the deep-gray dark surfaces (see light block above
+     * for semantic mapping). */
+    --usage-input: 217 91% 65%;
+    --usage-output: 142 71% 52%;
+    --usage-cache: 48 96% 60%;
   }
 }
 
@@ -120,6 +148,12 @@
   body {
     @apply bg-background text-foreground;
     font-feature-settings: "rlig" 1, "calt" 1;
+  }
+}
+
+@layer components {
+  .sidebar-nav-text.sidebar-nav-text {
+    @apply text-sm font-normal leading-4;
   }
 }
 

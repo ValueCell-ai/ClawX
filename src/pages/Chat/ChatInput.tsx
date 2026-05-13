@@ -989,7 +989,7 @@ export function ChatInput({ onSend, onStop, disabled = false, sending = false, i
                     setSkillPickerOpen(false);
                     setModelPickerOpen((open) => !open);
                   }}
-                  disabled={sending || !currentAgent || !!switchingModelRef}
+                  disabled={inputDisabled || sending || !currentAgent || !!switchingModelRef}
                   title={t('composer.pickModel')}
                 >
                   {switchingModelRef ? (

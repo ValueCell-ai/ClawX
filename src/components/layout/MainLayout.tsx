@@ -1,21 +1,33 @@
 /**
  * Main Layout Component
- * TitleBar at top, then sidebar + content below.
+ * Platform-aware application shell.
  */
 import { Outlet } from 'react-router-dom';
 import { Sidebar } from './Sidebar';
 import { TitleBar } from './TitleBar';
+import { cn } from '@/lib/utils';
 
 export function MainLayout() {
+  const platform = window.electron?.platform;
+  const isMac = platform === 'darwin';
+
   return (
-    <div data-testid="main-layout" className="flex h-screen flex-col overflow-hidden bg-background">
-      {/* Title bar: drag region on macOS, icon + controls on Windows */}
+    <div
+      data-testid="main-layout"
+      data-platform={platform}
+      className={cn(
+        'flex h-screen overflow-hidden bg-background',
+        isMac ? 'flex-row' : 'flex-col',
+      )}
+    >
       <TitleBar />
 
-      {/* Below the title bar: sidebar + content */}
-      <div className="flex min-h-0 flex-1 overflow-hidden">
+      <div className="flex min-h-0 flex-1 overflow-hidden bg-surface-sidebar">
         <Sidebar />
-        <main data-testid="main-content" className="min-h-0 flex-1 overflow-auto p-6">
+        <main
+          data-testid="main-content"
+          className="min-h-0 flex-1 overflow-auto rounded-tl-2xl border-l border-t border-border/60 bg-background p-6"
+        >
           <Outlet />
         </main>
       </div>

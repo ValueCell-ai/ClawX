@@ -25,6 +25,11 @@ import { logger } from '../utils/logger';
 import { resolveAgentIdFromChannel } from '../utils/agent-config';
 import { resolveAccountIdFromSessionHistory } from '../utils/session-util';
 import {
+  removeSessionEntry,
+  resolveSessionTranscriptPath,
+  sweepSessionArtefacts,
+} from '../utils/session-files';
+import {
   saveChannelConfig,
   getChannelConfig,
   getChannelFormValues,
@@ -2586,11 +2591,31 @@ async function resolveOutgoingMediaUrl(
 /**
  * Session IPC handlers
  *
- * Performs a soft-delete of a session's JSONL transcript on disk.
+ * Performs a HARD delete of a session's JSONL transcript on disk.
  * sessionKey format: "agent:<agentId>:<suffix>" — e.g. "agent:main:session-1234567890".
- * The JSONL file lives at: ~/.openclaw/agents/<agentId>/sessions/<suffix>.jsonl
- * Renaming to <suffix>.deleted.jsonl hides it from sessions.list.
+ * The JSONL file lives at: ~/.openclaw/agents/<agentId>/sessions/<id>.jsonl
+ * (where <id> is typically a UUID resolved via sessions.json).
+ *
+ * For each deleted session we unlink every file that belongs to its on-disk id:
+ *   - <id>.jsonl                — the live transcript
+ *   - <id>.deleted.jsonl        — leftovers from earlier soft-delete releases
+ *   - <id>.jsonl.reset.*        — historical snapshots produced by sessions.reset
+ *   - <id>.trajectory.jsonl     — OpenClaw runtime "flight recorder" sidecar
+ *   - <id>.trajectory-path.json — pointer to the runtime trajectory; if it
+ *                                 points outside the sessions/ folder
+ *                                 (OPENCLAW_TRAJECTORY_DIR override) the
+ *                                 referenced file is unlinked too.
+ *
+ * The session entry is also removed from sessions.json so sessions.list stops
+ * surfacing it. Token-usage history reported by the Dashboard reads the same
+ * transcripts, so deleted conversations stop contributing to the chart.
+ *
+ * Path resolution and the sibling sweep are shared with the HTTP mirror at
+ * `electron/api/routes/sessions.ts` via `electron/utils/session-files.ts`,
+ * so both surfaces unlink the same set of files for a given session id.
  */
+const SAFE_AGENT_ID = /^[A-Za-z0-9][A-Za-z0-9_-]*$/;
+
 function registerSessionHandlers(): void {
   ipcMain.handle('session:delete', async (_, sessionKey: string) => {
     try {
@@ -2604,6 +2629,13 @@ function registerSessionHandlers(): void {
       }
 
       const agentId = parts[1];
+      // Defence-in-depth: agentId becomes a path segment under
+      // ~/.openclaw/agents/.  Reject anything that could escape that root
+      // (".." segments, slashes, NULs, etc.) before touching the FS.
+      if (!SAFE_AGENT_ID.test(agentId)) {
+        return { success: false, error: `Invalid agentId: ${agentId}` };
+      }
+
       const openclawConfigDir = getOpenClawConfigDir();
       const sessionsDir = join(openclawConfigDir, 'agents', agentId, 'sessions');
       const sessionsJsonPath = join(sessionsDir, 'sessions.json');
@@ -2623,94 +2655,41 @@ function registerSessionHandlers(): void {
         return { success: false, error: `Could not read sessions.json: ${String(e)}` };
       }
 
-      // sessions.json structure: try common shapes used by OpenClaw Gateway:
-      //   Shape A (array):  { sessions: [{ key, file, ... }] }
-      //   Shape B (object): { [sessionKey]: { file, ... } }
-      //   Shape C (array):  { sessions: [{ key, id, ... }] }  — id is the UUID
-      let uuidFileName: string | undefined;
-
-      // Shape A / C — array under "sessions" key
-      if (Array.isArray(sessionsJson.sessions)) {
-        const entry = (sessionsJson.sessions as Array<Record<string, unknown>>)
-          .find((s) => s.key === sessionKey || s.sessionKey === sessionKey);
-        if (entry) {
-          // Could be "file", "fileName", "id" + ".jsonl", or "path"
-          uuidFileName = (entry.file ?? entry.fileName ?? entry.path) as string | undefined;
-          if (!uuidFileName && typeof entry.id === 'string') {
-            uuidFileName = `${entry.id}.jsonl`;
-          }
+      const resolution = resolveSessionTranscriptPath(sessionsJson, sessionsDir, sessionKey);
+      if (!resolution.ok) {
+        if (resolution.failure.kind === 'not-found') {
+          const rawVal = sessionsJson[sessionKey];
+          logger.warn(`[session:delete] Cannot resolve file for "${sessionKey}". Raw value: ${JSON.stringify(rawVal)}`);
+          return { success: false, error: `Cannot resolve file for session: ${sessionKey}` };
         }
+        logger.warn(`[session:delete] Refusing to delete out-of-scope path for "${sessionKey}": ${resolution.failure.resolvedPath}`);
+        return { success: false, error: `Resolved session path is outside the agent sessions dir: ${resolution.failure.resolvedPath}` };
       }
 
-      // Shape B — flat object keyed by sessionKey; value may be a string or an object.
-      // Actual Gateway format: { sessionFile: "/abs/path/uuid.jsonl", sessionId: "uuid", ... }
-      let resolvedSrcPath: string | undefined;
-
-      if (!uuidFileName && sessionsJson[sessionKey] != null) {
-        const val = sessionsJson[sessionKey];
-        if (typeof val === 'string') {
-          uuidFileName = val;
-        } else if (typeof val === 'object' && val !== null) {
-          const entry = val as Record<string, unknown>;
-          // Priority: absolute sessionFile path > relative file/fileName/path > id/sessionId as UUID
-          const absFile = (entry.sessionFile ?? entry.file ?? entry.fileName ?? entry.path) as string | undefined;
-          if (absFile) {
-            if (absFile.startsWith('/') || absFile.match(/^[A-Za-z]:\\/)) {
-              // Absolute path — use directly
-              resolvedSrcPath = absFile;
-            } else {
-              uuidFileName = absFile;
-            }
-          } else {
-            // Fall back to UUID fields
-            const uuidVal = (entry.id ?? entry.sessionId) as string | undefined;
-            if (uuidVal) uuidFileName = uuidVal.endsWith('.jsonl') ? uuidVal : `${uuidVal}.jsonl`;
-          }
-        }
-      }
-
-      if (!uuidFileName && !resolvedSrcPath) {
-        const rawVal = sessionsJson[sessionKey];
-        logger.warn(`[session:delete] Cannot resolve file for "${sessionKey}". Raw value: ${JSON.stringify(rawVal)}`);
-        return { success: false, error: `Cannot resolve file for session: ${sessionKey}` };
-      }
-
-      // Normalise: if we got a relative filename, resolve it against sessionsDir
-      if (!resolvedSrcPath) {
-        if (!uuidFileName!.endsWith('.jsonl')) uuidFileName = `${uuidFileName}.jsonl`;
-        resolvedSrcPath = join(sessionsDir, uuidFileName!);
-      }
-
-      const dstPath = resolvedSrcPath.replace(/\.jsonl$/, '.deleted.jsonl');
+      const { resolvedSrcPath, sessionsDirAbs, baseId } = resolution;
       logger.info(`[session:delete] file: ${resolvedSrcPath}`);
 
-      // ── Step 2: rename the JSONL file ──
-      try {
-        await fsP.access(resolvedSrcPath);
-        await fsP.rename(resolvedSrcPath, dstPath);
-        logger.info(`[session:delete] Renamed ${resolvedSrcPath} → ${dstPath}`);
-      } catch (e) {
-        logger.warn(`[session:delete] Could not rename file: ${String(e)}`);
+      // ── Step 2: hard-delete the JSONL transcript and its siblings ──
+      const sweep = await sweepSessionArtefacts(sessionsDirAbs, baseId);
+      for (const removedPath of sweep.removed) {
+        logger.info(`[session:delete] Unlinked ${removedPath}`);
       }
+      for (const { path: failedPath, error } of sweep.errors) {
+        logger.warn(`[session:delete] Failed to unlink ${failedPath}: ${String(error)}`);
+      }
+      logger.info(`[session:delete] Hard-deleted ${sweep.removed.length} file(s) for ${baseId}`);
 
       // ── Step 3: remove the entry from sessions.json ──
       try {
         // Re-read to avoid race conditions
         const raw2 = await fsP.readFile(sessionsJsonPath, 'utf8');
         const json2 = JSON.parse(raw2) as Record<string, unknown>;
-
-        if (Array.isArray(json2.sessions)) {
-          json2.sessions = (json2.sessions as Array<Record<string, unknown>>)
-            .filter((s) => s.key !== sessionKey && s.sessionKey !== sessionKey);
-        } else if (json2[sessionKey]) {
-          delete json2[sessionKey];
-        }
-
+        removeSessionEntry(json2, sessionKey);
         await fsP.writeFile(sessionsJsonPath, JSON.stringify(json2, null, 2), 'utf8');
         logger.info(`[session:delete] Removed "${sessionKey}" from sessions.json`);
       } catch (e) {
         logger.warn(`[session:delete] Could not update sessions.json: ${String(e)}`);
-        // Non-fatal — JSONL rename already done
+        // Non-fatal — transcript files were already unlinked.
       }
 
       return { success: true };

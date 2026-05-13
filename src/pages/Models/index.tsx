@@ -429,13 +429,13 @@ export function Models() {
                         <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1.5 text-meta font-medium text-muted-foreground">
                           {entry.usageStatus === 'available' || entry.usageStatus === undefined ? (
                             <>
-                              <span className="flex items-center gap-1.5"><div className="w-2 h-2 rounded-full bg-sky-500"></div>{t('dashboard:recentTokenHistory.input', { value: formatTokenCount(entry.inputTokens) })}</span>
-                              <span className="flex items-center gap-1.5"><div className="w-2 h-2 rounded-full bg-violet-500"></div>{t('dashboard:recentTokenHistory.output', { value: formatTokenCount(entry.outputTokens) })}</span>
+                              <span className="flex items-center gap-1.5"><div className="w-2 h-2 rounded-full bg-usage-input"></div>{t('dashboard:recentTokenHistory.input', { value: formatTokenCount(entry.inputTokens) })}</span>
+                              <span className="flex items-center gap-1.5"><div className="w-2 h-2 rounded-full bg-usage-output"></div>{t('dashboard:recentTokenHistory.output', { value: formatTokenCount(entry.outputTokens) })}</span>
                               {entry.cacheReadTokens > 0 && (
-                                <span className="flex items-center gap-1.5"><div className="w-2 h-2 rounded-full bg-amber-500"></div>{t('dashboard:recentTokenHistory.cacheRead', { value: formatTokenCount(entry.cacheReadTokens) })}</span>
+                                <span className="flex items-center gap-1.5"><div className="w-2 h-2 rounded-full bg-usage-cache"></div>{t('dashboard:recentTokenHistory.cacheRead', { value: formatTokenCount(entry.cacheReadTokens) })}</span>
                               )}
                               {entry.cacheWriteTokens > 0 && (
-                                <span className="flex items-center gap-1.5"><div className="w-2 h-2 rounded-full bg-amber-500"></div>{t('dashboard:recentTokenHistory.cacheWrite', { value: formatTokenCount(entry.cacheWriteTokens) })}</span>
+                                <span className="flex items-center gap-1.5"><div className="w-2 h-2 rounded-full bg-usage-cache"></div>{t('dashboard:recentTokenHistory.cacheWrite', { value: formatTokenCount(entry.cacheWriteTokens) })}</span>
                               )}
                             </>
                           ) : (
@@ -572,15 +572,15 @@ function UsageBarChart({
     <div className="space-y-4 bg-transparent p-5 rounded-2xl border border-black/10 dark:border-white/10">
       <div className="flex flex-wrap gap-4 text-meta font-medium text-muted-foreground mb-2">
         <span className="inline-flex items-center gap-2">
-          <span className="h-2.5 w-2.5 rounded-full bg-sky-500" />
+          <span className="h-2.5 w-2.5 rounded-full bg-usage-input" />
           {inputLabel}
         </span>
         <span className="inline-flex items-center gap-2">
-          <span className="h-2.5 w-2.5 rounded-full bg-violet-500" />
+          <span className="h-2.5 w-2.5 rounded-full bg-usage-output" />
           {outputLabel}
         </span>
         <span className="inline-flex items-center gap-2">
-          <span className="h-2.5 w-2.5 rounded-full bg-amber-500" />
+          <span className="h-2.5 w-2.5 rounded-full bg-usage-cache" />
           {cacheLabel}
         </span>
       </div>
@@ -603,19 +603,19 @@ function UsageBarChart({
             >
               {group.inputTokens > 0 && (
                 <div
-                  className="h-full bg-sky-500"
+                  className="h-full bg-usage-input"
                   style={{ width: `${(group.inputTokens / group.totalTokens) * 100}%` }}
                 />
               )}
               {group.outputTokens > 0 && (
                 <div
-                  className="h-full bg-violet-500"
+                  className="h-full bg-usage-output"
                   style={{ width: `${(group.outputTokens / group.totalTokens) * 100}%` }}
                 />
               )}
               {group.cacheTokens > 0 && (
                 <div
-                  className="h-full bg-amber-500"
+                  className="h-full bg-usage-cache"
                   style={{ width: `${(group.cacheTokens / group.totalTokens) * 100}%` }}
                 />
               )}

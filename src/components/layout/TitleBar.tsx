@@ -12,8 +12,8 @@ export function TitleBar() {
   const platform = window.electron?.platform;
 
   if (platform === 'darwin') {
-    // macOS: just a drag region, traffic lights are native
-    return <div className="drag-region h-10 shrink-0 border-b bg-background" />;
+    // macOS traffic lights live inside the sidebar area; keep the shell left/right.
+    return null;
   }
 
   // Linux keeps the native frame/title bar for better IME compatibility.
@@ -51,7 +51,10 @@ function WindowsTitleBar() {
   };
 
   return (
-    <div className="drag-region flex h-10 shrink-0 items-center justify-end border-b bg-background">
+    <div
+      data-testid="windows-titlebar"
+      className="drag-region flex h-10 shrink-0 items-center justify-end bg-background"
+    >
 
       {/* Right: Window Controls */}
       <div className="no-drag flex h-full">
