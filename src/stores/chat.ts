@@ -237,12 +237,22 @@ async function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T
   }
 }
 
-async function loadLocalHistoryFallback(sessionKey: string, limit = 200): Promise<RawMessage[]> {
+async function loadLocalHistoryFallback(
+  sessionKey: string,
+  limit = 200,
+  options: { timeoutMs?: number; logTimeout?: boolean } = {},
+): Promise<RawMessage[]> {
   const fallbackPromise = isCronSessionKey(sessionKey)
     ? loadCronFallbackMessages(sessionKey, limit)
     : loadSessionTranscriptFallback(sessionKey, limit);
-  return withTimeout(fallbackPromise, CHAT_HISTORY_DISK_FALLBACK_TIMEOUT_MS).catch((error) => {
-    console.warn('[chat.history] local fallback timed out:', error);
+  const timeoutMs = options.timeoutMs ?? CHAT_HISTORY_DISK_FALLBACK_TIMEOUT_MS;
+  if (timeoutMs <= 0) {
+    return [];
+  }
+  return withTimeout(fallbackPromise, timeoutMs).catch((error) => {
+    if (options.logTimeout !== false) {
+      console.warn('[chat.history] local fallback timed out:', error);
+    }
     return [];
   });
 }
@@ -2226,40 +2236,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       };
 
       try {
-        const shouldPrefetchLocalFallback = isInitialForegroundLoad;
-        const fallbackMessages = shouldPrefetchLocalFallback
-          ? await loadLocalHistoryFallback(currentSessionKey, 200)
-          : [];
-
-        // If we already have the selected historical session on disk, render it
-        // immediately and do not also fire a Gateway chat.history RPC.  A
-        // Promise.race here would leave the Gateway RPC in flight; when the
-        // router is still catching up during restart that orphaned request logs
-        // an avoidable "RPC timeout: chat.history" in the main process.
-        if (fallbackMessages.length > 0) {
-          const applied = applyLoadedMessages(fallbackMessages, null);
-          if (applied) {
-            set({ hasMoreHistory: fallbackMessages.length >= HISTORY_PAGE_SIZE });
-          }
-          if (applied && isInitialForegroundLoad) {
-            _foregroundHistoryLoadSeen.add(foregroundLoadKey);
-            void refreshVisibleSessionSummaries(set, get);
-          }
-          return;
-        }
-
-        if (
-          shouldPrefetchLocalFallback
-          && shouldRetryStartupHistoryLoad(useGatewayStore.getState().status, 'timeout')
-        ) {
-          // During the first seconds after Gateway reports running, avoid a
-          // foreground chat.history probe if the local transcript has nothing
-          // to show.  The router can still be initializing and this request is
-          // the source of the remaining startup timeout warning.  User actions
-          // and later quiet refreshes can still ask Gateway once it settles.
-          set({ loading: false });
-          return;
-        }
+        const fallbackMessages: RawMessage[] = [];
 
         let data: Record<string, unknown> | null = null;
         let lastError: unknown = null;
@@ -2380,8 +2357,13 @@ export const useChatStore = create<ChatState>((set, get) => ({
       // Clear the safety timer on normal completion
       if (loadingSafetyTimer) clearTimeout(loadingSafetyTimer);
       if (!loadingTimedOut) {
-        // Only update load time if we actually didn't time out
-        _lastHistoryLoadAtBySession.set(currentSessionKey, Date.now());
+        // Only update load time if we actually didn't time out and the
+        // completed request still belongs to the selected session.  Stale
+        // loads from a session switch must not debounce the next foreground
+        // startup attempt for that same session.
+        if (get().currentSessionKey === currentSessionKey) {
+          _lastHistoryLoadAtBySession.set(currentSessionKey, Date.now());
+        }
       }
       
       const active = _historyLoadInFlight.get(currentSessionKey);
