@@ -88,6 +88,28 @@ type SessionLabelSummary = {
   lastTimestamp: number | null;
 };
 
+function getSessionBackendLabel(session: ChatSession): string {
+  return toSessionLabel(session.label || session.derivedTitle || '');
+}
+
+function applySessionBackendLabels(set: ChatSet, sessions: ChatSession[]): void {
+  const labels = Object.fromEntries(
+    sessions
+      .filter((session) => !session.key.endsWith(':main'))
+      .map((session) => [session.key, getSessionBackendLabel(session)] as const)
+      .filter((entry): entry is [string, string] => Boolean(entry[1])),
+  );
+  if (Object.keys(labels).length === 0) return;
+  set((state) => ({
+    sessionLabels: {
+      ...state.sessionLabels,
+      ...Object.fromEntries(
+        Object.entries(labels).filter(([key]) => !state.sessionLabels[key]),
+      ),
+    },
+  }));
+}
+
 async function fetchSessionLabelSummaries(sessionKeys: string[]): Promise<SessionLabelSummary[]> {
   if (sessionKeys.length === 0) return [];
   const response = await hostApiFetch<{
@@ -1688,13 +1710,18 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
     _loadSessionsInFlight = (async () => {
       try {
-        const data = await useGatewayStore.getState().rpc<Record<string, unknown>>('sessions.list', {});
+        const data = await useGatewayStore.getState().rpc<Record<string, unknown>>('sessions.list', {
+          includeDerivedTitles: true,
+          includeLastMessage: true,
+        });
         if (data) {
           const rawSessions = Array.isArray(data.sessions) ? data.sessions : [];
           const sessions: ChatSession[] = rawSessions.map((s: Record<string, unknown>) => ({
             key: String(s.key || ''),
             label: s.label ? String(s.label) : undefined,
             displayName: s.displayName ? String(s.displayName) : undefined,
+            derivedTitle: s.derivedTitle ? String(s.derivedTitle) : undefined,
+            lastMessagePreview: s.lastMessagePreview ? String(s.lastMessagePreview) : undefined,
             thinkingLevel: s.thinkingLevel ? String(s.thinkingLevel) : undefined,
             model: s.model ? String(s.model) : undefined,
             updatedAt: parseSessionUpdatedAtMs(s.updatedAt),
@@ -1759,6 +1786,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
               ...discoveredActivity,
             },
           }));
+          applySessionBackendLabels(set, sessionsWithCurrent);
 
           // Background: fetch first user message for every non-main session to populate labels upfront.
           // This uses the Host API local transcript summary route, not Gateway

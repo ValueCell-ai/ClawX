@@ -19,6 +19,30 @@ function getAgentIdFromSessionKey(sessionKey: string): string {
   return agentId || 'main';
 }
 
+function toSessionLabel(text: string, maxLength = 50): string {
+  const trimmed = text.trim();
+  if (!trimmed) return '';
+  return trimmed.length > maxLength ? `${trimmed.slice(0, maxLength)}…` : trimmed;
+}
+
+function applySessionBackendLabels(set: ChatSet, sessions: ChatSession[]): void {
+  const labels = Object.fromEntries(
+    sessions
+      .filter((session) => !session.key.endsWith(':main'))
+      .map((session) => [session.key, toSessionLabel(session.label || session.derivedTitle || '')] as const)
+      .filter((entry): entry is [string, string] => Boolean(entry[1])),
+  );
+  if (Object.keys(labels).length === 0) return;
+  set((state) => ({
+    sessionLabels: {
+      ...state.sessionLabels,
+      ...Object.fromEntries(
+        Object.entries(labels).filter(([key]) => !state.sessionLabels[key]),
+      ),
+    },
+  }));
+}
+
 function parseSessionUpdatedAtMs(value: unknown): number | undefined {
   if (typeof value === 'number' && Number.isFinite(value)) {
     return toMs(value);
@@ -42,7 +66,10 @@ export function createSessionActions(
         const result = await invokeIpc(
           'gateway:rpc',
           'sessions.list',
-          {}
+          {
+            includeDerivedTitles: true,
+            includeLastMessage: true,
+          }
         ) as { success: boolean; result?: Record<string, unknown>; error?: string };
 
         if (result.success && result.result) {
@@ -52,6 +79,8 @@ export function createSessionActions(
             key: String(s.key || ''),
             label: s.label ? String(s.label) : undefined,
             displayName: s.displayName ? String(s.displayName) : undefined,
+            derivedTitle: s.derivedTitle ? String(s.derivedTitle) : undefined,
+            lastMessagePreview: s.lastMessagePreview ? String(s.lastMessagePreview) : undefined,
             thinkingLevel: s.thinkingLevel ? String(s.thinkingLevel) : undefined,
             model: s.model ? String(s.model) : undefined,
             updatedAt: parseSessionUpdatedAtMs(s.updatedAt),
@@ -115,6 +144,7 @@ export function createSessionActions(
               ...discoveredActivity,
             },
           }));
+          applySessionBackendLabels(set, sessionsWithCurrent);
 
           const gatewayRuntimeKey = getSessionLabelHydrationRuntimeKey(undefined);
           const shouldHydrateSessionLabels = isSessionLabelHydrationReady(gatewayRuntimeKey, true);

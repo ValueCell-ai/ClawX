@@ -1,4 +1,5 @@
 import type { IncomingMessage, ServerResponse } from 'http';
+import { openSync, closeSync, fstatSync, readSync } from 'node:fs';
 import { join } from 'node:path';
 import { getOpenClawConfigDir } from '../../utils/paths';
 import {
@@ -11,6 +12,9 @@ import type { HostApiContext } from '../context';
 import { parseJsonBody, sendJson } from '../route-utils';
 
 const SAFE_SESSION_SEGMENT = /^[A-Za-z0-9][A-Za-z0-9_-]*$/;
+const RECENT_TRANSCRIPT_INITIAL_READ_BYTES = 256 * 1024;
+const RECENT_TRANSCRIPT_MAX_READ_BYTES = 8 * 1024 * 1024;
+const RECENT_TRANSCRIPT_MAX_SCAN_LINES = 5_000;
 
 type SessionSummary = {
   sessionKey: string;
@@ -22,6 +26,11 @@ type TranscriptMessage = {
   role?: unknown;
   content?: unknown;
   timestamp?: unknown;
+};
+
+type ParsedTranscriptLine = {
+  type?: string;
+  message?: TranscriptMessage;
 };
 
 function extractMessageText(content: unknown): string {
@@ -73,6 +82,97 @@ function isInternalSummaryText(text: string): boolean {
 function normalizeTimestamp(value: unknown): number | null {
   if (typeof value !== 'number' || !Number.isFinite(value)) return null;
   return value < 1e12 ? value * 1000 : value;
+}
+
+function parseMessageLine(line: string): TranscriptMessage | null {
+  try {
+    const entry = JSON.parse(line) as ParsedTranscriptLine;
+    if (entry.type !== 'message' || !entry.message || typeof entry.message !== 'object') {
+      return null;
+    }
+    return entry.message;
+  } catch {
+    return null;
+  }
+}
+
+function parseRecentMessagesFromTailChunk(chunk: string, readStart: number, limit: number): TranscriptMessage[] {
+  const lines = chunk.split(/\r?\n/);
+  if (readStart > 0) lines.shift();
+
+  const collected: TranscriptMessage[] = [];
+  let scanned = 0;
+  for (let index = lines.length - 1; index >= 0; index -= 1) {
+    const line = lines[index];
+    if (!line?.trim()) continue;
+    scanned += 1;
+    if (scanned > RECENT_TRANSCRIPT_MAX_SCAN_LINES) break;
+    const message = parseMessageLine(line);
+    if (message) {
+      collected.push(message);
+      if (collected.length >= limit) break;
+    }
+  }
+  return collected.reverse();
+}
+
+function readRecentTranscriptMessages(transcriptPath: string, limit: number): TranscriptMessage[] {
+  const boundedLimit = Math.max(1, Math.min(Math.floor(limit), 1000));
+  let fd: number | null = null;
+  try {
+    fd = openSync(transcriptPath, 'r');
+    const size = fstatSync(fd).size;
+    if (size === 0) return [];
+
+    let readBytes = Math.min(size, Math.max(RECENT_TRANSCRIPT_INITIAL_READ_BYTES, boundedLimit * 2048));
+    while (readBytes <= size) {
+      const readStart = Math.max(0, size - readBytes);
+      const readLen = size - readStart;
+      const buffer = Buffer.allocUnsafe(readLen);
+      readSync(fd, buffer, 0, readLen, readStart);
+      const messages = parseRecentMessagesFromTailChunk(buffer.toString('utf8'), readStart, boundedLimit);
+      if (
+        messages.length >= boundedLimit
+        || readStart === 0
+        || readBytes >= RECENT_TRANSCRIPT_MAX_READ_BYTES
+      ) {
+        return messages;
+      }
+      readBytes = Math.min(size, readBytes * 2);
+    }
+    return [];
+  } finally {
+    if (fd !== null) closeSync(fd);
+  }
+}
+
+async function readAllTranscriptMessages(transcriptPath: string): Promise<TranscriptMessage[]> {
+  const fsP = await import('node:fs/promises');
+  const raw = await fsP.readFile(transcriptPath, 'utf8');
+  return raw.split(/\r?\n/).filter(Boolean).flatMap((line) => {
+    const message = parseMessageLine(line);
+    return message ? [message] : [];
+  });
+}
+
+function summarizeTranscriptMessages(sessionKey: string, messages: TranscriptMessage[]): SessionSummary {
+  let firstUserText: string | null = null;
+  let lastTimestamp: number | null = null;
+
+  for (const message of messages) {
+    const normalizedTs = normalizeTimestamp(message.timestamp);
+    if (normalizedTs != null) {
+      lastTimestamp = normalizedTs;
+    }
+    if (firstUserText == null && message.role === 'user') {
+      const text = cleanSummaryUserText(extractMessageText(message.content));
+      if (text && !isInternalSummaryText(text)) {
+        firstUserText = text;
+      }
+    }
+  }
+
+  return { sessionKey, firstUserText, lastTimestamp };
 }
 
 function parseSessionKey(sessionKey: string): { agentId: string; suffix: string } | null {
@@ -157,32 +257,8 @@ async function loadSessionSummary(sessionKey: string): Promise<SessionSummary> {
       return { sessionKey, firstUserText: null, lastTimestamp: null };
     }
 
-    const raw = await fsP.readFile(transcriptPath, 'utf8');
-    const lines = raw.split(/\r?\n/).filter(Boolean);
-    let firstUserText: string | null = null;
-    let lastTimestamp: number | null = null;
-
-    for (const line of lines) {
-      try {
-        const entry = JSON.parse(line) as { type?: string; message?: TranscriptMessage };
-        if (entry.type !== 'message' || !entry.message || typeof entry.message !== 'object') continue;
-        const message = entry.message;
-        const normalizedTs = normalizeTimestamp(message.timestamp);
-        if (normalizedTs != null) {
-          lastTimestamp = normalizedTs;
-        }
-        if (firstUserText == null && message.role === 'user') {
-          const text = cleanSummaryUserText(extractMessageText(message.content));
-          if (text && !isInternalSummaryText(text)) {
-            firstUserText = text;
-          }
-        }
-      } catch {
-        // ignore malformed jsonl rows
-      }
-    }
-
-    return { sessionKey, firstUserText, lastTimestamp };
+    const messages = await readAllTranscriptMessages(transcriptPath);
+    return summarizeTranscriptMessages(sessionKey, messages);
   } catch {
     return { sessionKey, firstUserText: null, lastTimestamp: null };
   }
@@ -193,23 +269,12 @@ async function loadSessionTranscriptByKey(sessionKey: string, limit: number): Pr
   if (!parsed) return null;
 
   try {
-    const fsP = await import('node:fs/promises');
     const sessionsDir = join(getOpenClawConfigDir(), 'agents', parsed.agentId, 'sessions');
     const sessionsJson = await readSessionsJson(parsed.agentId);
     const transcriptPath = resolveSessionTranscriptPath(sessionKey, sessionsDir, sessionsJson);
     if (!transcriptPath) return null;
 
-    const raw = await fsP.readFile(transcriptPath, 'utf8');
-    const messages = raw.split(/\r?\n/).filter(Boolean).flatMap((line) => {
-      try {
-        const entry = JSON.parse(line) as { type?: string; message?: unknown };
-        return entry.type === 'message' && entry.message ? [entry.message] : [];
-      } catch {
-        return [];
-      }
-    });
-
-    return limit > 0 ? messages.slice(-limit) : messages;
+    return readRecentTranscriptMessages(transcriptPath, limit);
   } catch {
     return null;
   }
@@ -268,19 +333,9 @@ export async function handleSessionRoutes(
       }
 
       const transcriptPath = join(getOpenClawConfigDir(), 'agents', agentId, 'sessions', `${sessionId}.jsonl`);
-      const fsP = await import('node:fs/promises');
-      const raw = await fsP.readFile(transcriptPath, 'utf8');
-      const lines = raw.split(/\r?\n/).filter(Boolean);
-      const messages = lines.flatMap((line) => {
-        try {
-          const entry = JSON.parse(line) as { type?: string; message?: unknown };
-          return entry.type === 'message' && entry.message ? [entry.message] : [];
-        } catch {
-          return [];
-        }
-      });
+      const messages = readRecentTranscriptMessages(transcriptPath, limit);
 
-      sendJson(res, 200, { success: true, messages: limit > 0 ? messages.slice(-limit) : messages });
+      sendJson(res, 200, { success: true, messages });
     } catch (error) {
       if (typeof error === 'object' && error !== null && 'code' in error && error.code === 'ENOENT') {
         sendJson(res, 404, { success: false, error: 'Transcript not found' });

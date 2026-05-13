@@ -39,16 +39,16 @@ export function isSessionLabelHydrationReady(runtimeKey: string, fallbackReady =
 }
 
 export function getSessionLabelHydrationVersion(
-  session: Pick<ChatSession, 'key' | 'updatedAt' | 'label' | 'displayName'>,
+  session: Pick<ChatSession, 'key' | 'updatedAt' | 'label' | 'displayName' | 'derivedTitle'>,
   sessionLastActivity: Record<string, number>,
 ): string {
   const activityVersion = session.updatedAt ?? sessionLastActivity[session.key] ?? 'none';
-  const backendLabel = normalizeLabelValue(session.label) ?? '';
+  const backendLabel = normalizeLabelValue(session.label) ?? normalizeLabelValue(session.derivedTitle) ?? '';
   return `${activityVersion}|${backendLabel}`;
 }
 
 export function getSessionLabelHydrationCandidate(
-  session: Pick<ChatSession, 'key' | 'updatedAt' | 'label' | 'displayName'>,
+  session: Pick<ChatSession, 'key' | 'updatedAt' | 'label' | 'displayName' | 'derivedTitle'>,
   sessionLabels: Record<string, string>,
   sessionLastActivity: Record<string, number>,
 ): { sessionKey: string; version: string } | null {
@@ -56,7 +56,7 @@ export function getSessionLabelHydrationCandidate(
   if (normalizeLabelValue(sessionLabels[session.key])) return null;
 
   const version = getSessionLabelHydrationVersion(session, sessionLastActivity);
-  const backendLabel = normalizeLabelValue(session.label);
+  const backendLabel = normalizeLabelValue(session.label) ?? normalizeLabelValue(session.derivedTitle);
   if (backendLabel) {
     sessionLabelHydrationHandled.set(session.key, { version, outcome: 'backend-label' });
     return null;

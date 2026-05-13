@@ -7,11 +7,20 @@ intent: Reduce startup chat.history contention so foreground history loads do no
 touchedAreas:
   - harness/specs/tasks/fix-chat-history-gateway-timeout.md
   - electron/api/routes/sessions.ts
+  - electron/gateway/rpc-backpressure.ts
+  - electron/main/ipc-handlers.ts
   - src/components/layout/Sidebar.tsx
+  - src/pages/Chat/index.tsx
+  - src/pages/Chat/message-utils.ts
   - src/stores/chat.ts
+  - src/stores/chat/history-actions.ts
+  - src/stores/chat/history-startup-retry.ts
   - src/stores/chat/session-actions.ts
   - src/stores/chat/session-label-hydration.ts
+  - src/stores/chat/store-api.ts
+  - src/stores/chat/types.ts
   - tests/unit/chat-store-session-label-fetch.test.ts
+  - tests/unit/gateway-rpc-backpressure.test.ts
   - tests/unit/session-label-fetch.test.ts
   - tests/unit/session-summaries-route.test.ts
 expectedUserBehavior:
@@ -30,6 +39,7 @@ requiredRules:
 requiredTests:
   - pnpm run typecheck
   - tests/unit/chat-store-session-label-fetch.test.ts
+  - tests/unit/gateway-rpc-backpressure.test.ts
   - tests/unit/session-label-fetch.test.ts
   - tests/unit/session-summaries-route.test.ts
 acceptance:
@@ -38,6 +48,7 @@ acceptance:
   - Startup/restart no longer fans out sidebar label chat.history calls before the visible session history finishes loading.
   - Sidebar label hydration no longer depends on gateway chat.history full-session scans.
   - Foreground history uses a bounded startup RPC wait and falls back to local transcript reads instead of surfacing transient RPC timeout errors.
+  - Main-process chat.history RPCs are single-flighted/backpressured before reaching the Gateway.
 docs:
   required: false
 ---
