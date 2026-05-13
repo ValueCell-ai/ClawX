@@ -305,7 +305,7 @@ export function Sidebar() {
       </div>
 
       {/* Navigation */}
-      <nav className="flex flex-col gap-0 px-2">
+      <nav className="flex flex-col gap-1 px-2">
         <button
           type="button"
           data-testid="sidebar-new-chat"
@@ -315,7 +315,7 @@ export function Sidebar() {
             navigate('/');
           }}
           className={cn(
-            'sidebar-nav-text flex items-center gap-2 rounded-lg px-2.5 py-1.5 transition-colors',
+            'sidebar-nav-text flex items-center gap-2 rounded-lg px-2.5 py-2 transition-colors',
             'hover:bg-black/5 dark:hover:bg-white/5 text-foreground/80',
             sidebarCollapsed && 'justify-center px-0',
           )}
@@ -337,7 +337,7 @@ export function Sidebar() {
 
       {/* Session list — below Settings, only when expanded */}
       {!sidebarCollapsed && sessions.length > 0 && (
-        <div className="mt-4 flex-1 overflow-y-auto overflow-x-hidden px-2 pb-2 space-y-0.5">
+        <div className="mt-4 flex-1 overflow-y-auto overflow-x-hidden px-2 pb-2 space-y-1">
           {sessionBuckets.map((bucket) => (
             bucket.sessions.length > 0 ? (
               <div key={bucket.key} data-testid={`session-bucket-${bucket.key}`} className="pt-2">
@@ -400,7 +400,7 @@ export function Sidebar() {
       )}
 
       {/* Footer */}
-      <div className="p-2 mt-auto">
+      <div className="mt-auto flex flex-col gap-1 p-2">
         <NavLink
             to="/settings"
             data-testid="sidebar-nav-settings"
@@ -426,7 +426,7 @@ export function Sidebar() {
             data-testid="sidebar-open-dev-console"
             variant="ghost"
             className={cn(
-              'sidebar-nav-text mt-0.5 flex h-auto w-full items-center gap-2 rounded-lg px-2.5 py-1.5 transition-colors',
+              'sidebar-nav-text flex h-auto w-full items-center gap-2 rounded-lg px-2.5 py-1.5 transition-colors',
               'hover:bg-black/5 dark:hover:bg-white/5 text-foreground/80',
               sidebarCollapsed ? 'justify-center px-0' : 'justify-start'
             )}
