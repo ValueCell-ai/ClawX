@@ -1,7 +1,8 @@
 /**
  * TitleBar Component
  * macOS: empty drag region (native traffic lights handled by hiddenInset).
- * Windows: drag region with custom minimize/maximize/close controls.
+ * Windows: drag region with custom minimize/maximize/close controls; uses
+ * `bg-surface-sidebar` so the frameless strip matches the sidebar rail.
  * Linux: use native window chrome (no custom title bar).
  */
 import { useState, useEffect } from 'react';
@@ -53,9 +54,8 @@ function WindowsTitleBar() {
   return (
     <div
       data-testid="windows-titlebar"
-      className="drag-region flex h-10 shrink-0 items-center justify-end bg-background"
+      className="drag-region flex h-10 shrink-0 items-center justify-end bg-surface-sidebar"
     >
-
       {/* Right: Window Controls */}
       <div className="no-drag flex h-full">
         <button

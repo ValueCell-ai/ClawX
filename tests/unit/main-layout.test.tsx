@@ -24,6 +24,9 @@ describe('MainLayout platform layout', () => {
 
     render(<MainLayout />);
 
-    expect(screen.getByTestId('main-layout')).toHaveClass('flex-col');
+    const layout = screen.getByTestId('main-layout');
+    expect(layout).toHaveClass('flex-col');
+    expect(layout).toHaveClass('bg-surface-sidebar');
+    expect(screen.getByTestId('main-content')).not.toHaveClass('border-t');
   });
 });

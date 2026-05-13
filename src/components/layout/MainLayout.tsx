@@ -10,13 +10,15 @@ import { cn } from '@/lib/utils';
 export function MainLayout() {
   const platform = window.electron?.platform;
   const isMac = platform === 'darwin';
+  const isWin = platform === 'win32';
 
   return (
     <div
       data-testid="main-layout"
       data-platform={platform}
       className={cn(
-        'flex h-screen overflow-hidden bg-background',
+        'flex h-screen overflow-hidden',
+        isWin ? 'bg-surface-sidebar' : 'bg-background',
         isMac ? 'flex-row' : 'flex-col',
       )}
     >
@@ -26,7 +28,10 @@ export function MainLayout() {
         <Sidebar />
         <main
           data-testid="main-content"
-          className="min-h-0 flex-1 overflow-auto rounded-tl-2xl border-l border-t border-border/60 bg-background p-6"
+          className={cn(
+            'min-h-0 flex-1 overflow-auto rounded-tl-2xl border-l border-border/60 bg-background p-6',
+            !isWin && 'border-t border-border/60',
+          )}
         >
           <Outlet />
         </main>
