@@ -215,7 +215,7 @@ describe('GatewayManager diagnostics', () => {
     expect(snapshot.core.rpcRouter).toBe('blocked');
   });
 
-  it('keeps windows heartbeat recovery disabled while diagnostics degrade', async () => {
+  it('keeps windows heartbeat recovery skipped without recent RPC failures while diagnostics degrade', async () => {
     Object.defineProperty(process, 'platform', { value: 'win32' });
 
     const { GatewayManager } = await import('@electron/gateway/manager');

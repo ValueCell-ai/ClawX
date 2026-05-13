@@ -111,7 +111,7 @@ function isCoreRpcMethod(method: string): boolean {
 function isTransportRpcFailure(method: string, error: unknown): boolean {
   const message = error instanceof Error ? error.message : String(error);
   return message.includes('RPC timeout:')
-    ? isCoreRpcMethod(method)
+    ? isCoreRpcMethod(method) || method === 'chat.history' || method === 'chat.send'
     : message.includes('Gateway not connected')
     || message.includes('Gateway stopped')
     || message.includes('Failed to send RPC request:');
@@ -183,6 +183,7 @@ export class GatewayManager extends EventEmitter {
   private static readonly HEARTBEAT_INTERVAL_MS_WIN = 60_000;
   private static readonly HEARTBEAT_TIMEOUT_MS_WIN = 25_000;
   private static readonly HEARTBEAT_MAX_MISSES_WIN = 5;
+  private static readonly WINDOWS_HEARTBEAT_RECOVERY_RPC_WINDOW_MS = 10 * 60_000;
   public static readonly RESTART_COOLDOWN_MS = 5_000;
   private static readonly GATEWAY_READY_FALLBACK_PROBE_DELAYS_MS = [1_500, 3_000, 5_000, 8_000, 12_000, 30_000] as const;
   private static readonly INITIAL_READY_HEARTBEAT_RECOVERY_GRACE_MS = 5 * 60_000;
@@ -1218,14 +1219,16 @@ export class GatewayManager extends EventEmitter {
         this.recordHeartbeatTimeout(consecutiveMisses);
         const pid = this.process?.pid ?? 'unknown';
         const isWindows = process.platform === 'win32';
-        const shouldAttemptRecovery = !isWindows && this.shouldReconnect && this.status.state === 'running';
+        const shouldAttemptRecovery = isWindows
+          ? this.shouldAttemptWindowsHeartbeatRecovery()
+          : this.shouldReconnect && this.status.state === 'running';
         logger.warn(
           `Gateway heartbeat: ${consecutiveMisses} consecutive pong misses ` +
             `(timeout=${timeoutMs}ms, pid=${pid}, state=${this.status.state}, autoReconnect=${this.shouldReconnect}).`,
         );
         if (!shouldAttemptRecovery) {
           const reason = isWindows
-            ? 'platform=win32'
+            ? 'platform=win32, no sustained RPC/heartbeat failure evidence'
             : 'lifecycle is not in auto-recoverable running state';
           logger.warn(`Gateway heartbeat recovery skipped (${reason})`);
           return;
@@ -1258,10 +1261,10 @@ export class GatewayManager extends EventEmitter {
     this.initialReadyHeartbeatRecoveryTimer = setTimeout(() => {
       this.initialReadyHeartbeatRecoveryTimer = null;
       if (
-        process.platform === 'win32'
-        || !this.shouldReconnect
+        !this.shouldReconnect
         || this.status.state !== 'running'
         || this.status.gatewayReady
+        || (process.platform === 'win32' && !this.shouldAttemptWindowsHeartbeatRecovery())
       ) {
         return;
       }
@@ -1270,6 +1273,26 @@ export class GatewayManager extends EventEmitter {
         logger.warn('Gateway heartbeat recovery failed:', error);
       });
     }, delayMs);
+  }
+
+  private shouldAttemptWindowsHeartbeatRecovery(now = Date.now()): boolean {
+    if (process.platform !== 'win32') return false;
+    if (!this.shouldReconnect || this.status.state !== 'running') return false;
+
+    const lastRpcFailureAt = this.diagnostics.lastRpcFailureAt;
+    const hasRecentRpcFailure = typeof lastRpcFailureAt === 'number'
+      && now - lastRpcFailureAt <= GatewayManager.WINDOWS_HEARTBEAT_RECOVERY_RPC_WINDOW_MS;
+    if (!hasRecentRpcFailure) return false;
+
+    const lastRpcSuccessAt = this.diagnostics.lastRpcSuccessAt;
+    const hasRecentRpcSuccess = typeof lastRpcSuccessAt === 'number'
+      && now - lastRpcSuccessAt <= GatewayManager.HEARTBEAT_INTERVAL_MS_WIN * 2;
+    if (hasRecentRpcSuccess) return false;
+
+    const lastAliveAt = this.diagnostics.lastAliveAt;
+    const hasRecentAliveSignal = typeof lastAliveAt === 'number'
+      && now - lastAliveAt <= GatewayManager.HEARTBEAT_INTERVAL_MS_WIN * 2;
+    return !hasRecentAliveSignal;
   }
 
   private clearInitialReadyHeartbeatRecoveryTimer(): void {
