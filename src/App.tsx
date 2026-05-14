@@ -19,11 +19,13 @@ import { Dreams } from './pages/Dreams';
 import { Settings } from './pages/Settings';
 import { Setup } from './pages/Setup';
 import { useSettingsStore } from './stores/settings';
+import { useUpdateStore } from './stores/update';
 import { useGatewayStore } from './stores/gateway';
 import { useProviderStore } from './stores/providers';
 import { applyGatewayTransportPreference } from './lib/api-client';
 import { rendererExtensionRegistry } from './extensions/registry';
 import { loadExternalRendererExtensions } from './extensions/_ext-bridge.generated';
+import { UpdateNotifier } from './components/update/UpdateNotifier';
 
 
 /**
@@ -101,6 +103,7 @@ function App() {
   const setupComplete = useSettingsStore((state) => state.setupComplete);
   const devModeUnlocked = useSettingsStore((state) => state.devModeUnlocked);
   const initGateway = useGatewayStore((state) => state.init);
+  const initUpdate = useUpdateStore((state) => state.init);
   const initProviders = useProviderStore((state) => state.init);
 
   useEffect(() => {
@@ -118,6 +121,11 @@ function App() {
   useEffect(() => {
     initGateway();
   }, [initGateway]);
+
+  // Initialize update checks/listeners on mount so update prompts appear from anywhere.
+  useEffect(() => {
+    initUpdate();
+  }, [initUpdate]);
 
   // Initialize provider snapshot on mount
   useEffect(() => {
@@ -200,6 +208,8 @@ function App() {
             ))}
           </Route>
         </Routes>
+
+        <UpdateNotifier />
 
         {/* Global toast notifications */}
         <Toaster

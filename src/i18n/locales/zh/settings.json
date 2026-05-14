@@ -159,8 +159,8 @@
     "description": "保持 ClawX 最新",
     "autoCheck": "自动检查更新",
     "autoCheckDesc": "启动时检查更新",
-    "autoDownload": "自动更新",
-    "autoDownloadDesc": "自动下载并安装更新",
+    "autoDownload": "更新提示",
+    "autoDownloadDesc": "发现新版本时显示通知；仅在您选择更新后才下载",
     "status": {
       "checking": "正在检查更新...",
       "downloading": "正在下载更新...",
@@ -183,7 +183,14 @@
     "currentVersion": "当前版本",
     "whatsNew": "更新内容：",
     "errorDetails": "错误详情：",
-    "help": "开启自动更新后，更新将自动下载并安装。"
+    "toast": {
+      "availableTitle": "ClawX 有新版本可用",
+      "availableDescription": "v{{version}} 已可下载。准备好后可开始下载。",
+      "downloadedTitle": "ClawX 更新已就绪",
+      "downloadedDescription": "v{{version}} 已下载完成。重启即可安装。",
+      "unknownVersion": "新版本"
+    },
+    "help": "ClawX 会自动检查更新，并在下载或安装前提示您确认。"
   },
   "advanced": {
     "title": "高级",

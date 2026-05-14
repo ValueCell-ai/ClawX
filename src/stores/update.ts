@@ -111,17 +111,14 @@ export const useUpdateStore = create<UpdateState>((set, get) => ({
       set({ autoInstallCountdown: cancelled ? null : seconds });
     });
 
+    // New default is prompt-first: never auto-download/install unless the
+    // user explicitly chooses Download from the notification or Settings.
+    void invokeIpc('update:setAutoDownload', false).catch(() => {});
+
     set({ isInitialized: true });
 
-    // Apply persisted settings from the settings store
-    const { autoCheckUpdate, autoDownloadUpdate } = useSettingsStore.getState();
-
-    // Sync auto-download preference to the main process
-    if (autoDownloadUpdate) {
-      invokeIpc('update:setAutoDownload', true).catch(() => {});
-    }
-
     // Auto-check for updates on startup (respects user toggle)
+    const autoCheckUpdate = useSettingsStore.getState().autoCheckUpdate;
     if (autoCheckUpdate) {
       setTimeout(() => {
         get().checkForUpdates().catch(() => {});
@@ -208,7 +205,13 @@ export const useUpdateStore = create<UpdateState>((set, get) => ({
 
   setAutoDownload: async (enable) => {
     try {
-      await invokeIpc('update:setAutoDownload', enable);
+      // Compatibility shim for older UI paths: the updater is now prompt-first,
+      // so we keep electron-updater.autoDownload disabled even if a stale
+      // persisted setting says otherwise.
+      await invokeIpc('update:setAutoDownload', false);
+      if (enable) {
+        console.info('[Update] Auto-download preference ignored; update prompts are shown instead.');
+      }
     } catch (error) {
       console.error('Failed to set auto-download:', error);
     }

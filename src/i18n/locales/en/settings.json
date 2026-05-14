@@ -159,8 +159,8 @@
     "description": "Keep ClawX up to date",
     "autoCheck": "Auto-check for updates",
     "autoCheckDesc": "Check for updates on startup",
-    "autoDownload": "Auto-update",
-    "autoDownloadDesc": "Automatically download and install updates",
+    "autoDownload": "Update prompts",
+    "autoDownloadDesc": "Show a notification when a new version is available; download only after you choose to update",
     "status": {
       "checking": "Checking for updates...",
       "downloading": "Downloading update...",
@@ -183,7 +183,14 @@
     "currentVersion": "Current Version",
     "whatsNew": "What's New:",
     "errorDetails": "Error Details:",
-    "help": "When auto-update is enabled, updates are downloaded and installed automatically."
+    "toast": {
+      "availableTitle": "ClawX update available",
+      "availableDescription": "Version v{{version}} is available. Download it when you're ready.",
+      "downloadedTitle": "ClawX update ready",
+      "downloadedDescription": "Version v{{version}} has been downloaded. Restart to install it.",
+      "unknownVersion": "new"
+    },
+    "help": "ClawX checks for updates automatically and prompts you before downloading or installing."
   },
   "advanced": {
     "title": "Advanced",

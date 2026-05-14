@@ -158,8 +158,8 @@
     "description": "ClawX を最新に保つ",
     "autoCheck": "自動更新チェック",
     "autoCheckDesc": "起動時に更新を確認",
-    "autoDownload": "自動アップデート",
-    "autoDownloadDesc": "更新を自動的にダウンロードしてインストール",
+    "autoDownload": "更新通知",
+    "autoDownloadDesc": "新しいバージョンが見つかったら通知し、選択後にのみダウンロードします",
     "status": {
       "checking": "更新を確認中...",
       "downloading": "更新をダウンロード中...",
@@ -182,7 +182,14 @@
     "currentVersion": "現在のバージョン",
     "whatsNew": "更新内容：",
     "errorDetails": "エラー詳細：",
-    "help": "自動アップデートが有効な場合、更新は自動的にダウンロードされインストールされます。"
+    "toast": {
+      "availableTitle": "ClawX の更新があります",
+      "availableDescription": "バージョン v{{version}} を利用できます。準備ができたらダウンロードしてください。",
+      "downloadedTitle": "ClawX の更新準備ができました",
+      "downloadedDescription": "バージョン v{{version}} のダウンロードが完了しました。再起動してインストールしてください。",
+      "unknownVersion": "新しい"
+    },
+    "help": "ClawX は自動的に更新を確認し、ダウンロードやインストールの前に通知します。"
   },
   "advanced": {
     "title": "詳細設定",

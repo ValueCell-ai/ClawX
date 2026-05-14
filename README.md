@@ -83,6 +83,7 @@ Building AI agents shouldn't require mastering the command line. ClawX was desig
 | Complex CLI setup | One-click installation with guided setup wizard |
 | Configuration files | Visual settings with real-time validation |
 | Process management | Automatic gateway lifecycle management |
+| App updates | Startup update checks with a prompt before downloading or installing |
 | Multiple AI providers | Unified provider configuration panel |
 | Skill/plugin installation | Built-in skill marketplace and management |
 
@@ -137,6 +138,9 @@ Light mode, dark mode, or system-synchronized themes. ClawX adapts to your prefe
 
 ### 🚀 Startup Launch Control
 In **Settings → General**, you can enable **Launch at system startup** so ClawX starts automatically after login.
+
+### 🔔 Update Prompts
+ClawX can automatically check for new versions on startup. When an update is available, it shows an in-app prompt; downloading and installing only happen after you choose the action.
 
 ---
 

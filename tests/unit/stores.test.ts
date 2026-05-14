@@ -17,7 +17,6 @@ describe('Settings Store', () => {
       gatewayAutoStart: true,
       gatewayPort: 18789,
       autoCheckUpdate: true,
-      autoDownloadUpdate: false,
       startMinimized: false,
       launchAtStartup: false,
       updateChannel: 'stable',
