@@ -17,6 +17,9 @@ import {
   Terminal,
   ExternalLink,
   Trash2,
+  Pencil,
+  Check,
+  X,
   Cpu,
   Moon,
 } from 'lucide-react';
@@ -28,6 +31,7 @@ import { useGatewayStore } from '@/stores/gateway';
 import { useAgentsStore } from '@/stores/agents';
 import { getSessionActivityMs, getSessionBucket, type SessionBucketKey } from './session-buckets';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { hostApiFetch } from '@/lib/host-api';
@@ -105,6 +109,7 @@ export function Sidebar() {
   const switchSession = useChatStore((s) => s.switchSession);
   const newSession = useChatStore((s) => s.newSession);
   const deleteSession = useChatStore((s) => s.deleteSession);
+  const renameSession = useChatStore((s) => s.renameSession);
   const loadSessions = useChatStore((s) => s.loadSessions);
   const loadHistory = useChatStore((s) => s.loadHistory);
 
@@ -165,6 +170,8 @@ export function Sidebar() {
 
   const { t } = useTranslation(['common', 'chat']);
   const [sessionToDelete, setSessionToDelete] = useState<{ key: string; label: string } | null>(null);
+  const [editingSessionKey, setEditingSessionKey] = useState<string | null>(null);
+  const [editingLabel, setEditingLabel] = useState('');
   const [nowMs, setNowMs] = useState(INITIAL_NOW_MS);
 
   useEffect(() => {
@@ -177,6 +184,37 @@ export function Sidebar() {
   useEffect(() => {
     void fetchAgents();
   }, [fetchAgents]);
+
+  const handleStartRename = (key: string, currentLabel: string) => {
+    setEditingSessionKey(key);
+    setEditingLabel(currentLabel);
+  };
+
+  const handleRenameSubmit = async () => {
+    if (!editingSessionKey || !editingLabel.trim()) {
+      setEditingSessionKey(null);
+      return;
+    }
+    try {
+      await renameSession(editingSessionKey, editingLabel.trim());
+    } catch (err) {
+      console.error('Failed to rename session:', err);
+    }
+    setEditingSessionKey(null);
+  };
+
+  const handleRenameCancel = () => {
+    setEditingSessionKey(null);
+  };
+
+  const handleRenameKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      void handleRenameSubmit();
+    } else if (e.key === 'Escape') {
+      handleRenameCancel();
+    }
+  };
 
   const stopResizing = useCallback(() => {
     stopResizeRef.current?.();
@@ -353,49 +391,93 @@ export function Sidebar() {
                 {bucket.sessions.map((s) => {
                   const agentId = getAgentIdFromSessionKey(s.key);
                   const agentName = agentNameById[agentId] || agentId;
+                  const isEditing = editingSessionKey === s.key;
+                  const sessionLabel = getSessionLabel(s.key, s.displayName, s.label);
                   return (
                     <div key={s.key} className="group relative flex items-center">
-                      <button
-                        onClick={() => {
-                          if (currentSessionKey === s.key) {
-                            void loadHistory(false);
-                          } else {
-                            switchSession(s.key);
-                          }
-                          navigate('/');
-                        }}
-                        className={cn(
-                          'w-full text-left rounded-lg px-2.5 py-1.5 text-meta transition-colors pr-7',
-                          'hover:bg-black/5 dark:hover:bg-white/5',
-                          isOnChat && currentSessionKey === s.key
-                            ? 'bg-black/5 dark:bg-white/10 text-foreground font-medium'
-                            : 'text-foreground/75',
-                        )}
-                      >
-                        <div className="flex min-w-0 items-center gap-2">
-                          <span className="shrink-0 rounded-full bg-black/[0.04] px-2 py-0.5 text-2xs font-medium text-foreground/70 dark:bg-white/[0.08]">
-                            {agentName}
-                          </span>
-                          <span className="truncate">{getSessionLabel(s.key, s.displayName, s.label)}</span>
+                      {isEditing ? (
+                        <div className="flex w-full items-center gap-1 px-1.5 py-1">
+                          <Input
+                            autoFocus
+                            value={editingLabel}
+                            onChange={(e) => setEditingLabel(e.target.value)}
+                            onKeyDown={handleRenameKeyDown}
+                            onBlur={() => void handleRenameSubmit()}
+                            className="h-7 min-w-0 flex-1 text-meta"
+                            aria-label={t('common:sidebar.renameSessionPlaceholder')}
+                          />
+                          <button
+                            aria-label={t('common:sidebar.saveSessionRename')}
+                            onMouseDown={(e) => { e.preventDefault(); void handleRenameSubmit(); }}
+                            className="flex shrink-0 items-center justify-center rounded p-0.5 text-muted-foreground hover:text-foreground"
+                          >
+                            <Check className="h-3.5 w-3.5" />
+                          </button>
+                          <button
+                            aria-label={t('common:sidebar.cancelSessionRename')}
+                            onMouseDown={(e) => { e.preventDefault(); handleRenameCancel(); }}
+                            className="flex shrink-0 items-center justify-center rounded p-0.5 text-muted-foreground hover:text-destructive"
+                          >
+                            <X className="h-3.5 w-3.5" />
+                          </button>
                         </div>
-                      </button>
-                      <button
-                        aria-label="Delete session"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setSessionToDelete({
-                            key: s.key,
-                            label: getSessionLabel(s.key, s.displayName, s.label),
-                          });
-                        }}
-                        className={cn(
-                          'absolute right-1 flex items-center justify-center rounded p-0.5 transition-opacity',
-                          'opacity-0 group-hover:opacity-100',
-                          'text-muted-foreground hover:text-destructive hover:bg-destructive/10',
-                        )}
-                      >
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </button>
+                      ) : (
+                        <>
+                          <button
+                            onClick={() => {
+                              if (currentSessionKey === s.key) {
+                                void loadHistory(false);
+                              } else {
+                                switchSession(s.key);
+                              }
+                              navigate('/');
+                            }}
+                            onDoubleClick={() => handleStartRename(s.key, sessionLabel)}
+                            className={cn(
+                              'w-full text-left rounded-lg px-2.5 py-1.5 text-meta transition-colors pr-16',
+                              'hover:bg-black/5 dark:hover:bg-white/5',
+                              isOnChat && currentSessionKey === s.key
+                                ? 'bg-black/5 dark:bg-white/10 text-foreground font-medium'
+                                : 'text-foreground/75',
+                            )}
+                          >
+                            <div className="flex min-w-0 items-center gap-2">
+                              <span className="shrink-0 rounded-full bg-black/[0.04] px-2 py-0.5 text-2xs font-medium text-foreground/70 dark:bg-white/[0.08]">
+                                {agentName}
+                              </span>
+                              <span className="truncate">{sessionLabel}</span>
+                            </div>
+                          </button>
+                          <div className={cn(
+                            'absolute right-1 flex items-center gap-0.5 transition-opacity',
+                            'opacity-0 group-hover:opacity-100',
+                          )}>
+                            <button
+                              aria-label={t('common:sidebar.renameSession')}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleStartRename(s.key, sessionLabel);
+                              }}
+                              className="flex items-center justify-center rounded p-0.5 text-muted-foreground hover:text-foreground hover:bg-black/5 dark:hover:bg-white/10"
+                            >
+                              <Pencil className="h-3.5 w-3.5" />
+                            </button>
+                            <button
+                              aria-label={t('common:sidebar.deleteSession')}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setSessionToDelete({
+                                  key: s.key,
+                                  label: sessionLabel,
+                                });
+                              }}
+                              className="flex items-center justify-center rounded p-0.5 text-muted-foreground hover:text-destructive hover:bg-destructive/10"
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </button>
+                          </div>
+                        </>
+                      )}
                     </div>
                   );
                 })}

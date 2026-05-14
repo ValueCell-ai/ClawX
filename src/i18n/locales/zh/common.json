@@ -10,9 +10,14 @@
         "settings": "设置",
         "devConsole": "开发者控制台",
         "models": "模型",
-        "deleteSessionConfirm": "确定要删除对话 \"{{label}}\" 吗？",
+        "deleteSessionConfirm": "删除「{{label}}」？",
         "openClawPage": "OpenClaw 页面",
-        "openClawDreams": "梦境"
+        "openClawDreams": "梦境",
+        "renameSession": "重命名",
+        "deleteSession": "删除",
+        "renameSessionPlaceholder": "会话标题",
+        "saveSessionRename": "保存会话标题",
+        "cancelSessionRename": "取消重命名"
     },
     "actions": {
         "save": "保存",

@@ -59,7 +59,7 @@ function parseSessionUpdatedAtMs(value: unknown): number | undefined {
 export function createSessionActions(
   set: ChatSet,
   get: ChatGet,
-): Pick<SessionHistoryActions, 'loadSessions' | 'switchSession' | 'newSession' | 'deleteSession' | 'cleanupEmptySession'> {
+): Pick<SessionHistoryActions, 'loadSessions' | 'switchSession' | 'newSession' | 'deleteSession' | 'renameSession' | 'cleanupEmptySession'> {
   return {
     loadSessions: async () => {
       try {
@@ -353,6 +353,37 @@ export function createSessionActions(
         pendingFinal: false,
         lastUserMessageAt: null,
         pendingToolImages: [],
+      }));
+    },
+
+    // ── Rename session ──
+
+    renameSession: async (key: string, label: string) => {
+      const normalized = label.trim();
+      if (!normalized) {
+        throw new Error('Session label cannot be empty');
+      }
+
+      // Persist the new label to sessions.json via IPC
+      try {
+        const result = await invokeIpc('session:rename', key, normalized) as {
+          success: boolean;
+          error?: string;
+        };
+        if (!result.success) {
+          throw new Error(result.error || 'Failed to rename session');
+        }
+      } catch (err) {
+        console.error(`[renameSession] IPC call failed for ${key}:`, err);
+        throw err;
+      }
+
+      // Update local state: both sessions array and sessionLabels
+      set((s) => ({
+        sessions: s.sessions.map((session) =>
+          session.key === key ? { ...session, label: normalized } : session,
+        ),
+        sessionLabels: { ...s.sessionLabels, [key]: normalized },
       }));
     },
 

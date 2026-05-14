@@ -2706,6 +2706,63 @@ function registerSessionHandlers(): void {
       return { success: false, error: String(err) };
     }
   });
+
+  ipcMain.handle('session:rename', async (_, sessionKey: string, label: string) => {
+    try {
+      if (!sessionKey || !sessionKey.startsWith('agent:')) {
+        return { success: false, error: `Invalid sessionKey: ${sessionKey}` };
+      }
+      if (!label || typeof label !== 'string' || !label.trim()) {
+        return { success: false, error: 'Label cannot be empty' };
+      }
+
+      const parts = sessionKey.split(':');
+      if (parts.length < 3) {
+        return { success: false, error: `Malformed sessionKey: ${sessionKey}` };
+      }
+      const agentId = parts[1];
+      if (!SAFE_AGENT_ID.test(agentId)) {
+        return { success: false, error: `Invalid agentId in sessionKey: ${agentId}` };
+      }
+
+      const sessionsJsonPath = join(
+        getOpenClawConfigDir(),
+        'agents',
+        agentId,
+        'sessions',
+        'sessions.json',
+      );
+
+      const raw = await fsP.readFile(sessionsJsonPath, 'utf8');
+      const json = JSON.parse(raw) as Record<string, unknown>;
+
+      // Update label in sessions.json — supports both object-keyed and array formats
+      let found = false;
+      if (json[sessionKey] && typeof json[sessionKey] === 'object') {
+        (json[sessionKey] as Record<string, unknown>).label = label.trim();
+        found = true;
+      }
+      if (Array.isArray(json.sessions)) {
+        for (const entry of json.sessions as Array<Record<string, unknown>>) {
+          if (entry.key === sessionKey || entry.sessionKey === sessionKey) {
+            entry.label = label.trim();
+            found = true;
+          }
+        }
+      }
+
+      if (!found) {
+        return { success: false, error: `Session not found in sessions.json: ${sessionKey}` };
+      }
+
+      await fsP.writeFile(sessionsJsonPath, JSON.stringify(json, null, 2), 'utf8');
+      logger.info(`[session:rename] key=${sessionKey} label=${label.trim()}`);
+      return { success: true };
+    } catch (err) {
+      logger.error(`[session:rename] Unexpected error for ${sessionKey}:`, err);
+      return { success: false, error: String(err) };
+    }
+  });
 }
 
 // ── File preview (sandboxed) ──────────────────────────────────────────

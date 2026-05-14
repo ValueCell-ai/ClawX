@@ -56,6 +56,7 @@ export function createChatActions(
   | 'switchSession'
   | 'newSession'
   | 'deleteSession'
+  | 'renameSession'
   | 'cleanupEmptySession'
   | 'loadHistory'
   | 'sendMessage'

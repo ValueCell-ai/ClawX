@@ -10,9 +10,14 @@
         "settings": "Settings",
         "devConsole": "Developer Console",
         "models": "Models",
-        "deleteSessionConfirm": "Are you sure you want to delete session \"{{label}}\"?",
+        "deleteSessionConfirm": "Delete \"{{label}}\"?",
         "openClawPage": "OpenClaw Page",
-        "openClawDreams": "Dreams"
+        "openClawDreams": "Dreams",
+        "renameSession": "Rename",
+        "deleteSession": "Delete",
+        "renameSessionPlaceholder": "Session title",
+        "saveSessionRename": "Save session title",
+        "cancelSessionRename": "Cancel renaming"
     },
     "actions": {
         "save": "Save",

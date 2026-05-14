@@ -10,9 +10,14 @@
         "settings": "設定",
         "devConsole": "開発者コンソール",
         "models": "モデル",
-        "deleteSessionConfirm": "セッション \"{{label}}\" を削除してもよろしいですか？",
+        "deleteSessionConfirm": "「{{label}}」を削除しますか？",
         "openClawPage": "OpenClaw ページ",
-        "openClawDreams": "夢"
+        "openClawDreams": "夢",
+        "renameSession": "名前を変更",
+        "deleteSession": "削除",
+        "renameSessionPlaceholder": "セッションタイトル",
+        "saveSessionRename": "セッションタイトルを保存",
+        "cancelSessionRename": "名前変更をキャンセル"
     },
     "actions": {
         "save": "保存",

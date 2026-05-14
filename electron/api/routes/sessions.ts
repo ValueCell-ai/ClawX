@@ -407,5 +407,66 @@ export async function handleSessionRoutes(
     return true;
   }
 
+  // POST /api/sessions/rename — update session label in sessions.json.
+  if (url.pathname === '/api/sessions/rename' && req.method === 'POST') {
+    try {
+      const body = await parseJsonBody<{ sessionKey: string; label: string }>(req);
+      const { sessionKey, label } = body;
+      if (!sessionKey || !sessionKey.startsWith('agent:')) {
+        sendJson(res, 400, { success: false, error: `Invalid sessionKey: ${sessionKey}` });
+        return true;
+      }
+      if (!label || typeof label !== 'string' || !label.trim()) {
+        sendJson(res, 400, { success: false, error: 'Label cannot be empty' });
+        return true;
+      }
+      const parts = sessionKey.split(':');
+      if (parts.length < 3) {
+        sendJson(res, 400, { success: false, error: `sessionKey has too few parts: ${sessionKey}` });
+        return true;
+      }
+      const agentId = parts[1];
+      if (!SAFE_SESSION_SEGMENT.test(agentId)) {
+        sendJson(res, 400, { success: false, error: `Invalid agentId: ${agentId}` });
+        return true;
+      }
+      const sessionsDir = join(getOpenClawConfigDir(), 'agents', agentId, 'sessions');
+      const sessionsJsonPath = join(sessionsDir, 'sessions.json');
+      const fsP = await import('node:fs/promises');
+      const raw = await fsP.readFile(sessionsJsonPath, 'utf8');
+      const sessionsJson = JSON.parse(raw) as Record<string, unknown>;
+
+      const trimmedLabel = label.trim();
+      let found = false;
+
+      // Object-keyed format
+      if (sessionsJson[sessionKey] && typeof sessionsJson[sessionKey] === 'object') {
+        (sessionsJson[sessionKey] as Record<string, unknown>).label = trimmedLabel;
+        found = true;
+      }
+      // Array format
+      if (Array.isArray(sessionsJson.sessions)) {
+        for (const entry of sessionsJson.sessions as Array<Record<string, unknown>>) {
+          if (entry.key === sessionKey || entry.sessionKey === sessionKey) {
+            entry.label = trimmedLabel;
+            found = true;
+          }
+        }
+      }
+
+      if (!found) {
+        sendJson(res, 404, { success: false, error: `Session not found: ${sessionKey}` });
+        return true;
+      }
+
+      await fsP.writeFile(sessionsJsonPath, JSON.stringify(sessionsJson, null, 2), 'utf8');
+      logger.info(`[api/sessions/rename] key=${sessionKey} label=${trimmedLabel}`);
+      sendJson(res, 200, { success: true });
+    } catch (error) {
+      sendJson(res, 500, { success: false, error: String(error) });
+    }
+    return true;
+  }
+
   return false;
 }
