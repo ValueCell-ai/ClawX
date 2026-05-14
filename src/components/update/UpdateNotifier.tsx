@@ -44,6 +44,7 @@ export function UpdateNotifier() {
           label: t('updates.action.download'),
           onClick: () => {
             toast.dismiss(AVAILABLE_TOAST_ID);
+            lastAvailableVersionRef.current = null;
             void downloadUpdate();
           },
         },
@@ -63,6 +64,7 @@ export function UpdateNotifier() {
           label: t('updates.action.install'),
           onClick: () => {
             toast.dismiss(DOWNLOADED_TOAST_ID);
+            lastDownloadedVersionRef.current = null;
             installUpdate();
           },
         },

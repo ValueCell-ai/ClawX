@@ -107,8 +107,18 @@ function App() {
   const initProviders = useProviderStore((state) => state.init);
 
   useEffect(() => {
-    initSettings();
-  }, [initSettings]);
+    let cancelled = false;
+
+    void initSettings().finally(() => {
+      if (!cancelled) {
+        void initUpdate();
+      }
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [initSettings, initUpdate]);
 
   // Sync i18n language with persisted settings on mount
   useEffect(() => {
@@ -121,11 +131,6 @@ function App() {
   useEffect(() => {
     initGateway();
   }, [initGateway]);
-
-  // Initialize update checks/listeners on mount so update prompts appear from anywhere.
-  useEffect(() => {
-    initUpdate();
-  }, [initUpdate]);
 
   // Initialize provider snapshot on mount
   useEffect(() => {
