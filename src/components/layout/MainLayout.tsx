@@ -29,10 +29,17 @@ export function MainLayout() {
         <main
           data-testid="main-content"
           className={cn(
-            'min-h-0 flex-1 overflow-auto rounded-tl-2xl border-l border-border/60 bg-background p-6',
+            'relative min-h-0 flex-1 overflow-auto rounded-tl-2xl border-l border-border/60 bg-background p-6',
             !isWin && 'border-t border-border/60',
           )}
         >
+          {isMac && (
+            <div
+              data-testid="mac-main-drag-region"
+              aria-hidden="true"
+              className="drag-region absolute inset-x-0 top-0 z-10 h-7"
+            />
+          )}
           <Outlet />
         </main>
       </div>

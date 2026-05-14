@@ -16,6 +16,7 @@ test.describe('Windows frameless chrome', () => {
     const titleBar = page.getByTestId('windows-titlebar');
     await expect(titleBar).toBeVisible();
     await expect(titleBar).toHaveClass(/bg-surface-sidebar/);
+    await expect(titleBar).toHaveCSS('-webkit-app-region', 'drag');
 
     const main = page.getByTestId('main-content');
     await expect(main).not.toHaveClass(/border-t/);

@@ -11,12 +11,14 @@ vi.mock('@/components/layout/TitleBar', () => ({
 }));
 
 describe('MainLayout platform layout', () => {
-  it('uses a left/right shell on macOS', () => {
+  it('uses a left/right shell on macOS with a top drag strip over content', () => {
     window.electron.platform = 'darwin';
 
     render(<MainLayout />);
 
     expect(screen.getByTestId('main-layout')).toHaveClass('flex-row');
+    expect(screen.getByTestId('main-content')).toHaveClass('relative');
+    expect(screen.getByTestId('mac-main-drag-region')).toHaveClass('drag-region');
   });
 
   it('keeps a top titlebar column shell on Windows', () => {
@@ -28,5 +30,6 @@ describe('MainLayout platform layout', () => {
     expect(layout).toHaveClass('flex-col');
     expect(layout).toHaveClass('bg-surface-sidebar');
     expect(screen.getByTestId('main-content')).not.toHaveClass('border-t');
+    expect(screen.queryByTestId('mac-main-drag-region')).not.toBeInTheDocument();
   });
 });
