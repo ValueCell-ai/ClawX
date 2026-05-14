@@ -894,7 +894,7 @@ export function Chat() {
             <PanelResizeDividerLazy containerRef={splitContainerRef} />
           </Suspense>
           <aside
-            className="hidden shrink-0 border-l border-black/5 dark:border-white/10 lg:flex lg:flex-col"
+            className="relative z-20 hidden shrink-0 border-l border-black/5 dark:border-white/10 lg:flex lg:flex-col"
             style={{ width: `${panelWidthPct}%` }}
           >
             <Suspense
