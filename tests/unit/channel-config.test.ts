@@ -188,21 +188,24 @@ describe('WeCom plugin configuration', () => {
     expect(plugins.entries['feishu-openclaw-plugin']).toBeUndefined();
   });
 
-  it('saves whatsapp as a built-in channel instead of a plugin', async () => {
+  it('saves whatsapp as an external plugin-backed channel', async () => {
     const { saveChannelConfig } = await import('@electron/utils/channel-config');
 
     await saveChannelConfig('whatsapp', { enabled: true }, 'default');
 
     const config = await readOpenClawJson();
     const channels = config.channels as Record<string, { enabled?: boolean; defaultAccount?: string; accounts?: Record<string, { enabled?: boolean }> }>;
+    const plugins = config.plugins as { allow: string[]; entries: Record<string, { enabled?: boolean; defaultAccount?: string; accounts?: Record<string, { enabled?: boolean }> }> };
 
     expect(channels.whatsapp.enabled).toBe(true);
     expect(channels.whatsapp.defaultAccount).toBe('default');
     expect(channels.whatsapp.accounts?.default?.enabled).toBe(true);
-    expect(config.plugins).toBeUndefined();
+    expect(plugins.allow).toContain('whatsapp');
+    expect(plugins.entries.whatsapp.enabled).toBe(true);
+    expect(plugins.entries.whatsapp.accounts?.default?.enabled).toBe(true);
   });
 
-  it('cleans up stale whatsapp plugin registration when saving built-in config', async () => {
+  it('keeps whatsapp plugin registration when saving plugin-backed config', async () => {
     const { saveChannelConfig, writeOpenClawConfig } = await import('@electron/utils/channel-config');
 
     await writeOpenClawConfig({
@@ -218,12 +221,15 @@ describe('WeCom plugin configuration', () => {
     await saveChannelConfig('whatsapp', { enabled: true }, 'default');
 
     const config = await readOpenClawJson();
-    expect(config.plugins).toBeUndefined();
     const channels = config.channels as Record<string, { enabled?: boolean }>;
+    const plugins = config.plugins as { allow?: string[]; entries?: Record<string, { enabled?: boolean }> };
+
     expect(channels.whatsapp.enabled).toBe(true);
+    expect(plugins.allow).toContain('whatsapp');
+    expect(plugins.entries?.whatsapp?.enabled).toBe(true);
   });
 
-  it('saves qqbot as a built-in channel without plugin registration (OpenClaw 3.31+)', async () => {
+  it('saves qqbot and discord as external plugin-backed channels', async () => {
     const { saveChannelConfig } = await import('@electron/utils/channel-config');
 
     await saveChannelConfig('discord', { token: 'discord-token' }, 'default');
@@ -232,16 +238,12 @@ describe('WeCom plugin configuration', () => {
 
     const config = await readOpenClawJson();
     const channels = config.channels as Record<string, { accounts?: Record<string, unknown> }>;
+    const plugins = config.plugins as { entries?: Record<string, { accounts?: Record<string, unknown> }> };
 
-    // QQBot config should be saved under channels.qqbot
     expect(channels.qqbot.accounts?.default).toBeDefined();
-
-    // QQBot should NOT appear in plugins.entries (built-in channel)
-    const plugins = config.plugins as { entries?: Record<string, unknown> } | undefined;
-    if (plugins?.entries) {
-      expect(plugins.entries['openclaw-qqbot']).toBeUndefined();
-      expect(plugins.entries['qqbot']).toBeUndefined();
-    }
+    expect(plugins.entries?.discord?.accounts?.default).toBeDefined();
+    expect(plugins.entries?.qqbot?.accounts?.default).toBeDefined();
+    expect(plugins.entries?.whatsapp?.accounts?.default).toBeDefined();
   });
 
   it('saves discord guild channel allowlist without schema-invalid allow flags', async () => {

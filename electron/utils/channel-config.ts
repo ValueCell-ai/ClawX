@@ -62,8 +62,8 @@ const LEGACY_WECHAT_CREDENTIALS_DIR = join(OPENCLAW_DIR, 'credentials', WECHAT_P
 const LEGACY_WECHAT_SYNC_DIR = join(OPENCLAW_DIR, 'agents', 'default', 'sessions', '.openclaw-weixin-sync');
 
 // Channels that are managed as plugins (config goes under plugins.entries, not channels)
-const PLUGIN_CHANNELS: string[] = [];
-const LEGACY_BUILTIN_CHANNEL_PLUGIN_IDS = new Set(['whatsapp']);
+const PLUGIN_CHANNELS: string[] = ['discord', 'qqbot', 'whatsapp'];
+const LEGACY_BUILTIN_CHANNEL_PLUGIN_IDS = new Set<string>();
 const BUILTIN_CHANNEL_IDS = new Set([
     'discord',
     'telegram',
@@ -505,6 +505,10 @@ async function ensurePluginAllowlist(currentConfig: OpenClawConfig, channelType:
         ensurePluginRegistration(currentConfig, channelType);
     }
 
+    if (channelType === 'discord' || channelType === 'qqbot' || channelType === 'whatsapp') {
+        ensurePluginRegistration(currentConfig, channelType);
+    }
+
     if (channelType === 'feishu') {
         const feishuPluginId = await resolveFeishuPluginId();
         if (!currentConfig.plugins) {
@@ -707,6 +711,16 @@ function transformChannelConfig(
         transformedConfig.allowFrom = allowFrom;
     }
 
+    if (channelType === 'whatsapp') {
+        // The WhatsApp plugin stores QR/session state on disk and does not
+        // require static credentials, but the runtime still needs an enabled
+        // plugin config entry for the channel account to appear in status.
+        transformedConfig = {
+            ...transformedConfig,
+            enabled: transformedConfig.enabled ?? true,
+        };
+    }
+
     if (channelType === 'dingtalk') {
         // The per-account schema uses additionalProperties:false and does
         // NOT include these legacy/obsolete fields.  Strip them before
@@ -834,22 +848,8 @@ export async function saveChannelConfig(
         await ensurePluginAllowlist(currentConfig, resolvedChannelType);
         syncBuiltinChannelsWithPluginAllowlist(currentConfig, [resolvedChannelType]);
 
-        // Plugin-based channels (e.g. WhatsApp) go under plugins.entries, not channels
-        if (PLUGIN_CHANNELS.includes(resolvedChannelType)) {
-            ensurePluginRegistration(currentConfig, resolvedChannelType);
-            currentConfig.plugins!.entries![resolvedChannelType] = {
-                ...currentConfig.plugins!.entries![resolvedChannelType],
-                enabled: config.enabled ?? true,
-            };
-            await writeOpenClawConfig(currentConfig);
-            logger.info('Plugin channel config saved', {
-                channelType: resolvedChannelType,
-                configFile: CONFIG_FILE,
-                path: `plugins.entries.${resolvedChannelType}`,
-            });
-            console.log(`Saved plugin channel config for ${resolvedChannelType}`);
-            return;
-        }
+        // Plugin-based channels are mirrored into plugins.entries.<id> below,
+        // but ClawX still keeps channels.<id> as the local account-list source.
 
         if (!currentConfig.channels) {
             currentConfig.channels = {};
@@ -895,6 +895,21 @@ export async function saveChannelConfig(
         // Keep channel-level enabled explicit so callers/tests that
         // read channels.<type>.enabled still work.
         channelSection.enabled = transformedConfig.enabled ?? channelSection.enabled ?? true;
+
+        // Plugin-backed channel packages read their activation/config from
+        // plugins.entries.<id>. Mirror the enabled flag and account map there
+        // while preserving channels.<id> for ClawX's account list UI.
+        if (PLUGIN_CHANNELS.includes(resolvedChannelType)) {
+            ensurePluginRegistration(currentConfig, resolvedChannelType);
+            const pluginEntry = currentConfig.plugins!.entries![resolvedChannelType];
+            const pluginAccounts = ensureChannelAccountsMap(pluginEntry);
+            pluginEntry.defaultAccount = channelSection.defaultAccount;
+            pluginEntry.enabled = channelSection.enabled;
+            pluginAccounts[resolvedAccountId] = {
+                ...pluginAccounts[resolvedAccountId],
+                ...accounts[resolvedAccountId],
+            };
+        }
 
         // Most OpenClaw channel plugins/built-ins also read the default
         // account's credentials from the top level of `channels.<type>`

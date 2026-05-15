@@ -99,6 +99,15 @@ importers:
       '@larksuiteoapi/node-sdk':
         specifier: ^1.61.1
         version: 1.62.0
+      '@openclaw/discord':
+        specifier: 2026.5.7
+        version: 2026.5.7(@emnapi/core@1.10.0)(@emnapi/runtime@1.9.1)(openclaw@2026.5.7(@types/express@5.0.6)(encoding@0.1.13))
+      '@openclaw/qqbot':
+        specifier: 2026.5.7
+        version: 2026.5.7(openclaw@2026.5.7(@types/express@5.0.6)(encoding@0.1.13))
+      '@openclaw/whatsapp':
+        specifier: 2026.5.7
+        version: 2026.5.7(audio-decode@2.2.3)(openclaw@2026.5.7(@types/express@5.0.6)(encoding@0.1.13))(sharp@0.34.5)
       '@playwright/test':
         specifier: ^1.56.1
         version: 1.59.0
@@ -179,7 +188,7 @@ importers:
         version: 2026.5.14(openclaw@2026.5.7(@types/express@5.0.6)(encoding@0.1.13))
       '@whiskeysockets/baileys':
         specifier: 7.0.0-rc.9
-        version: 7.0.0-rc.9(jimp@1.6.1)(sharp@0.34.5)
+        version: 7.0.0-rc.9(audio-decode@2.2.3)(jimp@1.6.1)(sharp@0.34.5)
       acpx:
         specifier: 0.5.3
         version: 0.5.3
@@ -1719,6 +1728,30 @@ packages:
     resolution: {integrity: sha512-/xGlezI6xfGO9NwuJlnwz/K14qD1kCSAGtacBHnGzeAIuJGazcp45KP5NuyARXoKb7cwulAGWVsbeSxdG/cb0Q==}
     engines: {node: ^18.17.0 || >=20.5.0}
 
+  '@openclaw/discord@2026.5.7':
+    resolution: {integrity: sha512-rcgGdKVDMSm7iHaO2F55id8IECs21Oli/E70DjMT6CRUuj6G2llQxWgw5Y9FN15q662fBsBciWeVn6d3fiwFMg==}
+    peerDependencies:
+      openclaw: '>=2026.5.7'
+    peerDependenciesMeta:
+      openclaw:
+        optional: true
+
+  '@openclaw/qqbot@2026.5.7':
+    resolution: {integrity: sha512-T5mofVxRR45IaEn8rfmn5TqDXI1yyNtvoXGAMI+6xXmm7We9sHEjGz/r0EZ8kklM78jh+yeqx6Xr3GUZAC+Oog==}
+    peerDependencies:
+      openclaw: '>=2026.5.7'
+    peerDependenciesMeta:
+      openclaw:
+        optional: true
+
+  '@openclaw/whatsapp@2026.5.7':
+    resolution: {integrity: sha512-tt8QDB3G/dweIE0HsWHwlAXhzwn3vza5nzDGtfZS1QgCSOqRUUenQ/62tua6jzRRfZNku0KI9IwR5siOe9x9rQ==}
+    peerDependencies:
+      openclaw: '>=2026.5.7'
+    peerDependenciesMeta:
+      openclaw:
+        optional: true
+
   '@pinojs/redact@0.4.0':
     resolution: {integrity: sha512-k2ENnmBugE/rzQfEcdWHcCY+/FM3VLzH9cYEsbdsoqrvzAKRhUZeRNhAZvB8OitQJ1TBed3yqWtdjzS6wJKBwg==}
 
@@ -2736,6 +2769,14 @@ packages:
       '@types/react-dom':
         optional: true
 
+  '@thi.ng/bitstream@2.4.49':
+    resolution: {integrity: sha512-Cy4xOdJlhk80pZEBdkw44incZJWUhjIQZntgLEZ/VcrC18MW11KX18JDxUHdNhZ+82vIRJTlJOeOQlUjVVSnNw==}
+    engines: {node: '>=18'}
+
+  '@thi.ng/errors@2.6.11':
+    resolution: {integrity: sha512-l5eXCzZuHKyz2Lcf/i0JfgQeZ1kL6rTQ2oHfivNG5GxBqRrLfDT1ZJyj3DZx37gm6tGUDIOTSg4kF3ZXhqjxyA==}
+    engines: {node: '>=18'}
+
   '@tokenizer/inflate@0.4.1':
     resolution: {integrity: sha512-2mAv+8pkG6GIZiF1kNg1jAjh27IDxEPKwdGul3snfztFerfPGI1LjDezZp3i7BElXompqEtPmoPx6c2wgtWsOA==}
     engines: {node: '>=18'}
@@ -2996,6 +3037,15 @@ packages:
   '@wasm-audio-decoders/common@9.0.7':
     resolution: {integrity: sha512-WRaUuWSKV7pkttBygml/a6dIEpatq2nnZGFIoPTc5yPLkxL6Wk4YaslPM98OPQvWacvNZ+Py9xROGDtrFBDzag==}
 
+  '@wasm-audio-decoders/flac@0.2.10':
+    resolution: {integrity: sha512-YfcyoD2rYRBa6ffawZKNi5qvV5HArJmNmuMVUPoutuZ2hhGi6WNSWIzgvbROGmPbFivLL764Am7xxJENWJDhjw==}
+
+  '@wasm-audio-decoders/ogg-vorbis@0.1.20':
+    resolution: {integrity: sha512-zaQPasU5usRjUDXtXOHYED5tfkR4QMXd+EH3Nrz1+4+M5pCsdD+s9YxJqb0oqnTyRu/KUujOmu5Z/m/NT47vwg==}
+
+  '@wasm-audio-decoders/opus-ml@0.0.2':
+    resolution: {integrity: sha512-58rWEqDGg+CKCyEeKm2KoxxSwTWtHh/NLTW9ObR4K8CGF6VwuuGudEI1CtniS/oSRmL1nJq/eh8MKARiluw4DQ==}
+
   '@wecom/aibot-node-sdk@1.0.6':
     resolution: {integrity: sha512-WZJN3Q+s+94Qjc0VW8d5W1cVkA3emYxiqf+mNRO9UEHoF40puHvizreNMtudjFhm7mmkYiK5ue/QzNiCk+xwLA==}
 
@@ -3200,6 +3250,16 @@ packages:
 
   atomically@2.1.1:
     resolution: {integrity: sha512-P4w9o2dqARji6P7MHprklbfiArZAWvo07yW7qs3pdljb3BWr12FIB7W+p0zJiuiVsUpRO0iZn1kFFcpPegg0tQ==}
+
+  audio-buffer@5.0.0:
+    resolution: {integrity: sha512-gsDyj1wwUp8u7NBB+eW6yhLb9ICf+0eBmDX8NGaAS00w8/fLqFdxUlL5Ge/U8kB64DlQhdonxYC59dXy1J7H/w==}
+
+  audio-decode@2.2.3:
+    resolution: {integrity: sha512-Z0lHvMayR/Pad9+O9ddzaBJE0DrhZkQlStrC1RwcAHF3AhQAsdwKHeLGK8fYKyp2DDU6xHxzGb4CLMui12yVrg==}
+
+  audio-type@2.4.1:
+    resolution: {integrity: sha512-dK9Z/P83C/rBfTrXXgPD3jZ+aXxx2o/P4rq8+H1JqxbXklitEeJw4CrcwMC5CkON3CX3yy2gaWnIEVYejYh0zQ==}
+    engines: {node: '>=14'}
 
   autoprefixer@10.4.27:
     resolution: {integrity: sha512-NP9APE+tO+LuJGn7/9+cohklunJsXWiaWEfV3si4Gi/XHDwVNgkwr1J3RQYFIvPy76GmJ9/bW8vyoU1LcxwKHA==}
@@ -3528,6 +3588,9 @@ packages:
   clsx@2.1.1:
     resolution: {integrity: sha512-eYm0QWBtUrBWZWG0d386OGAw16Z995PiOVo2B7bjWSbHedGl5e0ZWaq65kOGgUSNesEIDkB9ISbTg/JK9dhCZA==}
     engines: {node: '>=6'}
+
+  codec-parser@2.5.0:
+    resolution: {integrity: sha512-Ru9t80fV8B0ZiixQl8xhMTLru+dzuis/KQld32/x5T/+3LwZb0/YvQdSKytX9JqCnRdiupvAvyYJINKrXieziQ==}
 
   codepage@1.15.0:
     resolution: {integrity: sha512-3g6NUTPd/YtuuGrhMnOMRjFc+LJw/bnMp3+0r/Wcz3IXUuCosKRJvMphm5+Q+bvTVGcJJuRvVLuYba+WojaFaA==}
@@ -4853,8 +4916,8 @@ packages:
     resolution: {integrity: sha512-+bT2uH4E5LGE7h/n3evcS/sQlJXCpIp6ym8OWJ5eV6+67Dsql/LaaT7qJBAt2rzfoa/5QBGBhxDix1dMt2kQKQ==}
     engines: {node: '>= 0.8.0'}
 
-  libsignal@git+https://github.com/whiskeysockets/libsignal-node.git#bcea72df9ec34d9d9140ab30619cf479c7c144c7:
-    resolution: {commit: bcea72df9ec34d9d9140ab30619cf479c7c144c7, repo: https://github.com/whiskeysockets/libsignal-node.git, type: git}
+  libsignal@https://codeload.github.com/whiskeysockets/libsignal-node/tar.gz/bcea72df9ec34d9d9140ab30619cf479c7c144c7:
+    resolution: {gitHosted: true, tarball: https://codeload.github.com/whiskeysockets/libsignal-node/tar.gz/bcea72df9ec34d9d9140ab30619cf479c7c144c7}
     version: 6.0.0
 
   lie@3.3.0:
@@ -5397,6 +5460,10 @@ packages:
   node-releases@2.0.36:
     resolution: {integrity: sha512-TdC8FSgHz8Mwtw9g5L4gR/Sh9XhSP/0DEkQxfEFXOpiul5IiHgHan2VhYYb6agDSfp4KuvltmGApc8HMgUrIkA==}
 
+  node-wav@0.0.2:
+    resolution: {integrity: sha512-M6Rm/bbG6De/gKGxOpeOobx/dnGuP0dz40adqx38boqHhlWssBJZgLCPBNtb9NkrmnKYiV04xELq+R6PFOnoLA==}
+    engines: {node: '>=4.4.0'}
+
   nopt@8.1.0:
     resolution: {integrity: sha512-ieGu42u/Qsa4TFktmaKEwM6MQH0pOWnaB3htzh0JRtx84+Mebc0cbZYN5bC+6WTZ4+77xrL9Pn5m7CV6VIkV7A==}
     engines: {node: ^18.17.0 || >=20.5.0}
@@ -5431,6 +5498,9 @@ packages:
 
   obug@2.1.1:
     resolution: {integrity: sha512-uTqF9MuPraAQ+IsnPf366RG4cP9RtUi7MLO1N3KEc+wb0a6yKpeL0lmk2IB1jY5KHPAlTc6T/JRdC/YqxHNwkQ==}
+
+  ogg-opus-decoder@1.7.3:
+    resolution: {integrity: sha512-w47tiZpkLgdkpa+34VzYD8mHUj8I9kfWVZa82mBbNwDvB1byfLXSSzW/HxA4fI3e9kVlICSpXGFwMLV1LPdjwg==}
 
   omggif@1.0.10:
     resolution: {integrity: sha512-LMJTtvgc/nugXj0Vcrrs68Mn2D1r0zf630VNtqtpI1FEO7e+O9FP4gqs9AcnBaSEeoHIPm28u6qgPR0oyEpGSw==}
@@ -5494,6 +5564,9 @@ packages:
   optionator@0.9.4:
     resolution: {integrity: sha512-6IpQ7mKUxRcZNLIObR0hz7lxsapSSIYNZJwXPGeF0mTVqGKFIXj1DQcMoT22S3ROcLyY/rz0PWaWZ9ayWmad9g==}
     engines: {node: '>= 0.8.0'}
+
+  opus-decoder@0.7.11:
+    resolution: {integrity: sha512-+e+Jz3vGQLxRTBHs8YJQPRPc1Tr+/aC6coV/DlZylriA29BdHQAYXhvNRKtjftof17OFng0+P4wsFIqQu3a48A==}
 
   opusscript@0.1.1:
     resolution: {integrity: sha512-mL0fZZOUnXdZ78woRXp18lApwpp0lF5tozJOD1Wut0dgrA9WuQTgSels/CSmFleaAZrJi/nci5KOVtbuxeWoQA==}
@@ -5904,6 +5977,9 @@ packages:
   qified@0.9.0:
     resolution: {integrity: sha512-4q61YgkHbY6gmwkqm0BsxyLDO3UYdrdiJTJ7JiaZb3xpW1duxn135SB7KqUEkCiuu5O4W+TtwEWP2VjmSRanvA==}
     engines: {node: '>=20'}
+
+  qoa-format@1.0.1:
+    resolution: {integrity: sha512-dMB0Z6XQjdpz/Cw4Rf6RiBpQvUSPCfYlQMWvmuWlWkAT7nDQD29cVZ1SwDUB6DYJSitHENwbt90lqfI+7bvMcw==}
 
   qrcode-terminal@0.12.0:
     resolution: {integrity: sha512-EXtzRZmC+YGmGlDFbXKxQiMZNwCLEO6BANKXG4iCtSIM0yqc/pappSx3RIKr4r0uh5JsBckOXeKrB3Iz7mdQpQ==}
@@ -8420,7 +8496,6 @@ snapshots:
       mime: 3.0.0
     transitivePeerDependencies:
       - supports-color
-    optional: true
 
   '@jimp/diff@1.6.1':
     dependencies:
@@ -8430,10 +8505,8 @@ snapshots:
       pixelmatch: 5.3.0
     transitivePeerDependencies:
       - supports-color
-    optional: true
 
-  '@jimp/file-ops@1.6.1':
-    optional: true
+  '@jimp/file-ops@1.6.1': {}
 
   '@jimp/js-bmp@1.6.1':
     dependencies:
@@ -8443,7 +8516,6 @@ snapshots:
       bmp-ts: 1.0.9
     transitivePeerDependencies:
       - supports-color
-    optional: true
 
   '@jimp/js-gif@1.6.1':
     dependencies:
@@ -8453,7 +8525,6 @@ snapshots:
       omggif: 1.0.10
     transitivePeerDependencies:
       - supports-color
-    optional: true
 
   '@jimp/js-jpeg@1.6.1':
     dependencies:
@@ -8462,7 +8533,6 @@ snapshots:
       jpeg-js: 0.4.4
     transitivePeerDependencies:
       - supports-color
-    optional: true
 
   '@jimp/js-png@1.6.1':
     dependencies:
@@ -8471,7 +8541,6 @@ snapshots:
       pngjs: 7.0.0
     transitivePeerDependencies:
       - supports-color
-    optional: true
 
   '@jimp/js-tiff@1.6.1':
     dependencies:
@@ -8480,14 +8549,12 @@ snapshots:
       utif2: 4.1.0
     transitivePeerDependencies:
       - supports-color
-    optional: true
 
   '@jimp/plugin-blit@1.6.1':
     dependencies:
       '@jimp/types': 1.6.1
       '@jimp/utils': 1.6.1
       zod: 3.25.76
-    optional: true
 
   '@jimp/plugin-blur@1.6.1':
     dependencies:
@@ -8495,13 +8562,11 @@ snapshots:
       '@jimp/utils': 1.6.1
     transitivePeerDependencies:
       - supports-color
-    optional: true
 
   '@jimp/plugin-circle@1.6.1':
     dependencies:
       '@jimp/types': 1.6.1
       zod: 3.25.76
-    optional: true
 
   '@jimp/plugin-color@1.6.1':
     dependencies:
@@ -8512,7 +8577,6 @@ snapshots:
       zod: 3.25.76
     transitivePeerDependencies:
       - supports-color
-    optional: true
 
   '@jimp/plugin-contain@1.6.1':
     dependencies:
@@ -8524,7 +8588,6 @@ snapshots:
       zod: 3.25.76
     transitivePeerDependencies:
       - supports-color
-    optional: true
 
   '@jimp/plugin-cover@1.6.1':
     dependencies:
@@ -8535,7 +8598,6 @@ snapshots:
       zod: 3.25.76
     transitivePeerDependencies:
       - supports-color
-    optional: true
 
   '@jimp/plugin-crop@1.6.1':
     dependencies:
@@ -8545,32 +8607,27 @@ snapshots:
       zod: 3.25.76
     transitivePeerDependencies:
       - supports-color
-    optional: true
 
   '@jimp/plugin-displace@1.6.1':
     dependencies:
       '@jimp/types': 1.6.1
       '@jimp/utils': 1.6.1
       zod: 3.25.76
-    optional: true
 
   '@jimp/plugin-dither@1.6.1':
     dependencies:
       '@jimp/types': 1.6.1
-    optional: true
 
   '@jimp/plugin-fisheye@1.6.1':
     dependencies:
       '@jimp/types': 1.6.1
       '@jimp/utils': 1.6.1
       zod: 3.25.76
-    optional: true
 
   '@jimp/plugin-flip@1.6.1':
     dependencies:
       '@jimp/types': 1.6.1
       zod: 3.25.76
-    optional: true
 
   '@jimp/plugin-hash@1.6.1':
     dependencies:
@@ -8586,13 +8643,11 @@ snapshots:
       any-base: 1.1.0
     transitivePeerDependencies:
       - supports-color
-    optional: true
 
   '@jimp/plugin-mask@1.6.1':
     dependencies:
       '@jimp/types': 1.6.1
       zod: 3.25.76
-    optional: true
 
   '@jimp/plugin-print@1.6.1':
     dependencies:
@@ -8608,13 +8663,11 @@ snapshots:
       zod: 3.25.76
     transitivePeerDependencies:
       - supports-color
-    optional: true
 
   '@jimp/plugin-quantize@1.6.1':
     dependencies:
       image-q: 4.0.0
       zod: 3.25.76
-    optional: true
 
   '@jimp/plugin-resize@1.6.1':
     dependencies:
@@ -8623,7 +8676,6 @@ snapshots:
       zod: 3.25.76
     transitivePeerDependencies:
       - supports-color
-    optional: true
 
   '@jimp/plugin-rotate@1.6.1':
     dependencies:
@@ -8635,7 +8687,6 @@ snapshots:
       zod: 3.25.76
     transitivePeerDependencies:
       - supports-color
-    optional: true
 
   '@jimp/plugin-threshold@1.6.1':
     dependencies:
@@ -8647,18 +8698,15 @@ snapshots:
       zod: 3.25.76
     transitivePeerDependencies:
       - supports-color
-    optional: true
 
   '@jimp/types@1.6.1':
     dependencies:
       zod: 3.25.76
-    optional: true
 
   '@jimp/utils@1.6.1':
     dependencies:
       '@jimp/types': 1.6.1
       tinycolor2: 1.6.0
-    optional: true
 
   '@jridgewell/gen-mapping@0.3.13':
     dependencies:
@@ -9055,6 +9103,57 @@ snapshots:
   '@npmcli/fs@4.0.0':
     dependencies:
       semver: 7.7.4
+
+  '@openclaw/discord@2026.5.7(@emnapi/core@1.10.0)(@emnapi/runtime@1.9.1)(openclaw@2026.5.7(@types/express@5.0.6)(encoding@0.1.13))':
+    dependencies:
+      '@discordjs/voice': 0.19.2(@emnapi/core@1.10.0)(@emnapi/runtime@1.9.1)(opusscript@0.1.1)
+      discord-api-types: 0.38.47
+      https-proxy-agent: 9.0.0
+      opusscript: 0.1.1
+      typebox: 1.1.37
+      undici: 8.2.0
+      ws: 8.20.0
+    optionalDependencies:
+      openclaw: 2026.5.7(@types/express@5.0.6)(encoding@0.1.13)
+    transitivePeerDependencies:
+      - '@discordjs/opus'
+      - '@emnapi/core'
+      - '@emnapi/runtime'
+      - bufferutil
+      - ffmpeg-static
+      - node-opus
+      - supports-color
+      - utf-8-validate
+
+  '@openclaw/qqbot@2026.5.7(openclaw@2026.5.7(@types/express@5.0.6)(encoding@0.1.13))':
+    dependencies:
+      '@tencent-connect/qqbot-connector': 1.1.0
+      mpg123-decoder: 1.0.3
+      silk-wasm: 3.7.1
+      ws: 8.20.0
+      zod: 4.4.3
+    optionalDependencies:
+      openclaw: 2026.5.7(@types/express@5.0.6)(encoding@0.1.13)
+    transitivePeerDependencies:
+      - bufferutil
+      - utf-8-validate
+
+  '@openclaw/whatsapp@2026.5.7(audio-decode@2.2.3)(openclaw@2026.5.7(@types/express@5.0.6)(encoding@0.1.13))(sharp@0.34.5)':
+    dependencies:
+      '@whiskeysockets/baileys': 7.0.0-rc.9(audio-decode@2.2.3)(jimp@1.6.1)(sharp@0.34.5)
+      https-proxy-agent: 9.0.0
+      jimp: 1.6.1
+      typebox: 1.1.37
+      undici: 8.2.0
+    optionalDependencies:
+      openclaw: 2026.5.7(@types/express@5.0.6)(encoding@0.1.13)
+    transitivePeerDependencies:
+      - audio-decode
+      - bufferutil
+      - link-preview-js
+      - sharp
+      - supports-color
+      - utf-8-validate
 
   '@pinojs/redact@0.4.0': {}
 
@@ -10095,6 +10194,14 @@ snapshots:
       '@types/react': 19.2.14
       '@types/react-dom': 19.2.3(@types/react@19.2.14)
 
+  '@thi.ng/bitstream@2.4.49':
+    dependencies:
+      '@thi.ng/errors': 2.6.11
+    optional: true
+
+  '@thi.ng/errors@2.6.11':
+    optional: true
+
   '@tokenizer/inflate@0.4.1':
     dependencies:
       debug: 4.4.3
@@ -10224,8 +10331,7 @@ snapshots:
 
   '@types/ms@2.1.0': {}
 
-  '@types/node@16.9.1':
-    optional: true
+  '@types/node@16.9.1': {}
 
   '@types/node@24.12.0':
     dependencies:
@@ -10442,6 +10548,23 @@ snapshots:
       '@eshaz/web-worker': 1.2.2
       simple-yenc: 1.0.4
 
+  '@wasm-audio-decoders/flac@0.2.10':
+    dependencies:
+      '@wasm-audio-decoders/common': 9.0.7
+      codec-parser: 2.5.0
+    optional: true
+
+  '@wasm-audio-decoders/ogg-vorbis@0.1.20':
+    dependencies:
+      '@wasm-audio-decoders/common': 9.0.7
+      codec-parser: 2.5.0
+    optional: true
+
+  '@wasm-audio-decoders/opus-ml@0.0.2':
+    dependencies:
+      '@wasm-audio-decoders/common': 9.0.7
+    optional: true
+
   '@wecom/aibot-node-sdk@1.0.6':
     dependencies:
       axios: 1.13.6(debug@4.4.3)
@@ -10467,12 +10590,12 @@ snapshots:
       - supports-color
       - utf-8-validate
 
-  '@whiskeysockets/baileys@7.0.0-rc.9(jimp@1.6.1)(sharp@0.34.5)':
+  '@whiskeysockets/baileys@7.0.0-rc.9(audio-decode@2.2.3)(jimp@1.6.1)(sharp@0.34.5)':
     dependencies:
       '@cacheable/node-cache': 1.7.6
       '@hapi/boom': 9.1.4
       async-mutex: 0.5.0
-      libsignal: git+https://github.com/whiskeysockets/libsignal-node.git#bcea72df9ec34d9d9140ab30619cf479c7c144c7
+      libsignal: https://codeload.github.com/whiskeysockets/libsignal-node/tar.gz/bcea72df9ec34d9d9140ab30619cf479c7c144c7
       lru-cache: 11.2.7
       music-metadata: 11.12.3
       p-queue: 9.1.0
@@ -10481,6 +10604,7 @@ snapshots:
       sharp: 0.34.5
       ws: 8.20.0
     optionalDependencies:
+      audio-decode: 2.2.3
       jimp: 1.6.1
     transitivePeerDependencies:
       - bufferutil
@@ -10575,8 +10699,7 @@ snapshots:
 
   ansi-styles@6.2.3: {}
 
-  any-base@1.1.0:
-    optional: true
+  any-base@1.1.0: {}
 
   any-promise@1.3.0: {}
 
@@ -10696,6 +10819,24 @@ snapshots:
       stubborn-fs: 2.0.0
       when-exit: 2.1.5
 
+  audio-buffer@5.0.0:
+    optional: true
+
+  audio-decode@2.2.3:
+    dependencies:
+      '@wasm-audio-decoders/flac': 0.2.10
+      '@wasm-audio-decoders/ogg-vorbis': 0.1.20
+      audio-buffer: 5.0.0
+      audio-type: 2.4.1
+      mpg123-decoder: 1.0.3
+      node-wav: 0.0.2
+      ogg-opus-decoder: 1.7.3
+      qoa-format: 1.0.1
+    optional: true
+
+  audio-type@2.4.1:
+    optional: true
+
   autoprefixer@10.4.27(postcss@8.5.8):
     dependencies:
       browserslist: 4.28.1
@@ -10705,8 +10846,7 @@ snapshots:
       postcss: 8.5.8
       postcss-value-parser: 4.2.0
 
-  await-to-js@3.0.0:
-    optional: true
+  await-to-js@3.0.0: {}
 
   axios@1.13.6(debug@4.4.3):
     dependencies:
@@ -10788,8 +10928,7 @@ snapshots:
 
   bluebird@3.4.7: {}
 
-  bmp-ts@1.0.9:
-    optional: true
+  bmp-ts@1.0.9: {}
 
   bn.js@4.12.3: {}
 
@@ -11067,6 +11206,9 @@ snapshots:
   clone@1.0.4: {}
 
   clsx@2.1.1: {}
+
+  codec-parser@2.5.0:
+    optional: true
 
   codepage@1.15.0: {}
 
@@ -11659,8 +11801,7 @@ snapshots:
     dependencies:
       eventsource-parser: 3.0.6
 
-  exif-parser@0.1.12:
-    optional: true
+  exif-parser@0.1.12: {}
 
   expect-type@1.3.0: {}
 
@@ -12041,7 +12182,6 @@ snapshots:
     dependencies:
       image-q: 4.0.0
       omggif: 1.0.10
-    optional: true
 
   glob-parent@5.1.2:
     dependencies:
@@ -12386,7 +12526,6 @@ snapshots:
   image-q@4.0.0:
     dependencies:
       '@types/node': 16.9.1
-    optional: true
 
   image-size@2.0.2: {}
 
@@ -12511,7 +12650,6 @@ snapshots:
       '@jimp/utils': 1.6.1
     transitivePeerDependencies:
       - supports-color
-    optional: true
 
   jiti@1.21.7: {}
 
@@ -12519,8 +12657,7 @@ snapshots:
 
   jose@6.2.2: {}
 
-  jpeg-js@0.4.4:
-    optional: true
+  jpeg-js@0.4.4: {}
 
   js-tokens@4.0.0: {}
 
@@ -12644,7 +12781,7 @@ snapshots:
       prelude-ls: 1.2.1
       type-check: 0.4.0
 
-  libsignal@git+https://github.com/whiskeysockets/libsignal-node.git#bcea72df9ec34d9d9140ab30619cf479c7c144c7:
+  libsignal@https://codeload.github.com/whiskeysockets/libsignal-node/tar.gz/bcea72df9ec34d9d9140ab30619cf479c7c144c7:
     dependencies:
       curve25519-js: 0.0.4
       protobufjs: 7.5.8
@@ -13217,8 +13354,7 @@ snapshots:
 
   mime@2.6.0: {}
 
-  mime@3.0.0:
-    optional: true
+  mime@3.0.0: {}
 
   mime@4.1.0: {}
 
@@ -13409,6 +13545,9 @@ snapshots:
 
   node-releases@2.0.36: {}
 
+  node-wav@0.0.2:
+    optional: true
+
   nopt@8.1.0:
     dependencies:
       abbrev: 3.0.1
@@ -13431,8 +13570,15 @@ snapshots:
 
   obug@2.1.1: {}
 
-  omggif@1.0.10:
+  ogg-opus-decoder@1.7.3:
+    dependencies:
+      '@wasm-audio-decoders/common': 9.0.7
+      '@wasm-audio-decoders/opus-ml': 0.0.2
+      codec-parser: 2.5.0
+      opus-decoder: 0.7.11
     optional: true
+
+  omggif@1.0.10: {}
 
   on-exit-leak-free@2.1.2: {}
 
@@ -13555,6 +13701,11 @@ snapshots:
       type-check: 0.4.0
       word-wrap: 1.2.5
 
+  opus-decoder@0.7.11:
+    dependencies:
+      '@wasm-audio-decoders/common': 9.0.7
+    optional: true
+
   opusscript@0.1.1: {}
 
   ora@5.4.1:
@@ -13672,17 +13823,14 @@ snapshots:
 
   pako@1.0.11: {}
 
-  parse-bmfont-ascii@1.0.6:
-    optional: true
+  parse-bmfont-ascii@1.0.6: {}
 
-  parse-bmfont-binary@1.0.6:
-    optional: true
+  parse-bmfont-binary@1.0.6: {}
 
   parse-bmfont-xml@1.1.6:
     dependencies:
       xml-parse-from-string: 1.0.1
       xml2js: 0.5.0
-    optional: true
 
   parse-entities@4.0.2:
     dependencies:
@@ -13790,7 +13938,6 @@ snapshots:
   pixelmatch@5.3.0:
     dependencies:
       pngjs: 6.0.0
-    optional: true
 
   pkce-challenge@5.0.1: {}
 
@@ -13814,11 +13961,9 @@ snapshots:
 
   pngjs@5.0.0: {}
 
-  pngjs@6.0.0:
-    optional: true
+  pngjs@6.0.0: {}
 
-  pngjs@7.0.0:
-    optional: true
+  pngjs@7.0.0: {}
 
   postcss-import@15.1.0(postcss@8.5.8):
     dependencies:
@@ -13978,6 +14123,11 @@ snapshots:
   qified@0.9.0:
     dependencies:
       hookified: 2.1.0
+
+  qoa-format@1.0.1:
+    dependencies:
+      '@thi.ng/bitstream': 2.4.49
+    optional: true
 
   qrcode-terminal@0.12.0: {}
 
@@ -14443,8 +14593,7 @@ snapshots:
     dependencies:
       semver: 7.7.4
 
-  simple-xml-to-json@1.2.7:
-    optional: true
+  simple-xml-to-json@1.2.7: {}
 
   simple-yenc@1.0.4: {}
 
@@ -14780,8 +14929,7 @@ snapshots:
 
   tinybench@2.9.0: {}
 
-  tinycolor2@1.6.0:
-    optional: true
+  tinycolor2@1.6.0: {}
 
   tinyexec@1.0.4: {}
 
@@ -15002,7 +15150,6 @@ snapshots:
   utif2@4.1.0:
     dependencies:
       pako: 1.0.11
-    optional: true
 
   util-deprecate@1.0.2: {}
 
@@ -15189,19 +15336,16 @@ snapshots:
 
   xml-naming@0.1.0: {}
 
-  xml-parse-from-string@1.0.1:
-    optional: true
+  xml-parse-from-string@1.0.1: {}
 
   xml2js@0.5.0:
     dependencies:
       sax: 1.6.0
       xmlbuilder: 11.0.1
-    optional: true
 
   xmlbuilder@10.1.1: {}
 
-  xmlbuilder@11.0.1:
-    optional: true
+  xmlbuilder@11.0.1: {}
 
   xmlbuilder@15.1.1: {}
 
@@ -15279,8 +15423,7 @@ snapshots:
     dependencies:
       zod: 4.3.6
 
-  zod@3.25.76:
-    optional: true
+  zod@3.25.76: {}
 
   zod@4.3.6: {}
 

@@ -33,7 +33,7 @@ import { buildProxyEnv, resolveProxySettings } from '../utils/proxy';
 import { syncProxyConfigToOpenClaw } from '../utils/openclaw-proxy';
 import { logger } from '../utils/logger';
 import { prependPathEntry } from '../utils/env-path';
-import { copyPluginFromNodeModules, fixupPluginManifest, cpSyncSafe } from '../utils/plugin-install';
+import { copyPluginFromNodeModules, fixupPluginManifest, cpSyncSafe, buildCandidateSources } from '../utils/plugin-install';
 import { stripSystemdSupervisorEnv } from './config-sync-env';
 import { cleanupAgentsSymlinkedSkills, cleanupStalePluginRuntimeDeps } from './skills-symlink-cleanup';
 import {
@@ -71,6 +71,9 @@ const CHANNEL_PLUGIN_MAP: Record<string, { dirName: string; npmName: string }> =
   dingtalk: { dirName: 'dingtalk', npmName: '@soimy/dingtalk' },
   wecom: { dirName: 'wecom', npmName: '@wecom/wecom-openclaw-plugin' },
   feishu: { dirName: 'feishu-openclaw-plugin', npmName: '@larksuite/openclaw-lark' },
+  discord: { dirName: 'discord', npmName: '@openclaw/discord' },
+  qqbot: { dirName: 'qqbot', npmName: '@openclaw/qqbot' },
+  whatsapp: { dirName: 'whatsapp', npmName: '@openclaw/whatsapp' },
 
   'openclaw-weixin': { dirName: 'openclaw-weixin', npmName: '@tencent-weixin/openclaw-weixin' },
 };
@@ -105,19 +108,6 @@ function readPluginVersion(pkgJsonPath: string): string | null {
   } catch {
     return null;
   }
-}
-
-function buildBundledPluginSources(pluginDirName: string): string[] {
-  return app.isPackaged
-    ? [
-      join(process.resourcesPath, 'openclaw-plugins', pluginDirName),
-      join(process.resourcesPath, 'app.asar.unpacked', 'build', 'openclaw-plugins', pluginDirName),
-      join(process.resourcesPath, 'app.asar.unpacked', 'openclaw-plugins', pluginDirName),
-    ]
-    : [
-      join(app.getAppPath(), 'build', 'openclaw-plugins', pluginDirName),
-      join(process.cwd(), 'build', 'openclaw-plugins', pluginDirName),
-    ];
 }
 
 function measureSync<T>(timings: Record<string, number>, key: string, fn: () => T): T {
@@ -164,7 +154,7 @@ function ensureConfiguredPluginsUpgraded(configuredChannels: string[]): boolean 
     const installedVersion = isInstalled ? readPluginVersion(join(targetDir, 'package.json')) : null;
 
     // Try bundled sources first (packaged mode or if bundle-plugins was run)
-    const bundledSources = buildBundledPluginSources(dirName);
+    const bundledSources = buildCandidateSources(dirName);
     const bundledDir = bundledSources.find((dir) => existsSync(fsPath(join(dir, 'openclaw.plugin.json'))));
 
     if (bundledDir) {
@@ -249,7 +239,7 @@ function buildPluginSourceSignatures(configuredChannels: string[]): Record<strin
   for (const channelType of [...configuredChannels].sort()) {
     const pluginInfo = CHANNEL_PLUGIN_MAP[channelType];
     if (!pluginInfo) continue;
-    const bundledSources = buildBundledPluginSources(pluginInfo.dirName);
+    const bundledSources = buildCandidateSources(pluginInfo.dirName);
     const bundledDir = bundledSources.find((dir) => existsSync(fsPath(join(dir, 'openclaw.plugin.json'))));
     const devPkgPath = join(process.cwd(), 'node_modules', ...pluginInfo.npmName.split('/'));
     const sourceDir = bundledDir || (!app.isPackaged ? devPkgPath : '');

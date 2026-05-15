@@ -606,6 +606,9 @@ exports.default = async function afterPack(context) {
     { npmName: '@soimy/dingtalk', pluginId: 'dingtalk' },
     { npmName: '@wecom/wecom-openclaw-plugin', pluginId: 'wecom' },
     { npmName: '@larksuite/openclaw-lark', pluginId: 'feishu-openclaw-plugin' },
+    { npmName: '@openclaw/discord', pluginId: 'discord' },
+    { npmName: '@openclaw/qqbot', pluginId: 'qqbot' },
+    { npmName: '@openclaw/whatsapp', pluginId: 'whatsapp' },
     { npmName: '@tencent-weixin/openclaw-weixin', pluginId: 'openclaw-weixin' },
   ];
 

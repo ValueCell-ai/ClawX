@@ -44,10 +44,13 @@ vi.mock('@electron/utils/agent-config', () => ({
 }));
 
 vi.mock('@electron/utils/plugin-install', () => ({
+  ensureDiscordPluginInstalled: vi.fn(),
   ensureDingTalkPluginInstalled: vi.fn(),
   ensureFeishuPluginInstalled: vi.fn(),
+  ensureQQBotPluginInstalled: vi.fn(),
   ensureWeChatPluginInstalled: vi.fn(),
   ensureWeComPluginInstalled: vi.fn(),
+  ensureWhatsAppPluginInstalled: vi.fn(),
 }));
 
 vi.mock('@electron/utils/wechat-login', () => ({
@@ -1394,13 +1397,13 @@ describe('handleChannelRoutes', () => {
 
   it('restarts gateway after a no-change channel config save', async () => {
     parseJsonBodyMock.mockResolvedValue({
-      channelType: 'discord',
+      channelType: 'telegram',
       accountId: 'default',
-      config: { token: 'discord-token' },
+      config: { botToken: 'telegram-token', allowedUsers: '123456' },
     });
-    getChannelFormValuesMock.mockResolvedValue({ token: 'discord-token' });
+    getChannelFormValuesMock.mockResolvedValue({ botToken: 'telegram-token', allowedUsers: '123456' });
     listConfiguredChannelAccountsMock.mockReturnValue({
-      discord: {
+      telegram: {
         defaultAccountId: 'default',
         accountIds: ['default'],
       },
