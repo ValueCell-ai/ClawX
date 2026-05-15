@@ -131,6 +131,10 @@ describe('connectGatewaySocket', () => {
     expect(socket.sentFrames).toHaveLength(1);
     const connectFrame = JSON.parse(socket.sentFrames[0]) as { id: string; method: string };
     expect(connectFrame.method).toBe('connect');
+    expect((connectFrame as { params?: { minProtocol?: number; maxProtocol?: number } }).params).toMatchObject({
+      minProtocol: 4,
+      maxProtocol: 4,
+    });
     expect(pendingRequests.size).toBe(1);
 
     await vi.advanceTimersByTimeAsync(GATEWAY_CONNECT_HANDSHAKE_TIMEOUT_MS - 1_000);

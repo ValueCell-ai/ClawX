@@ -102,6 +102,8 @@ export async function waitForGatewayReady(options: {
   throw new Error(`Gateway failed to start after ${retries} retries (port ${options.port})`);
 }
 
+const GATEWAY_PROTOCOL_VERSION = 4;
+
 export function buildGatewayConnectFrame(options: {
   challengeNonce: string;
   token: string;
@@ -145,8 +147,8 @@ export function buildGatewayConnectFrame(options: {
       id: connectId,
       method: 'connect',
       params: {
-        minProtocol: 3,
-        maxProtocol: 3,
+        minProtocol: GATEWAY_PROTOCOL_VERSION,
+        maxProtocol: GATEWAY_PROTOCOL_VERSION,
         client: {
           id: clientId,
           displayName: 'ClawX',
