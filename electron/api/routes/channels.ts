@@ -1489,6 +1489,7 @@ export async function handleChannelRoutes(
       const existingValues = await getChannelFormValues(body.channelType, body.accountId);
       if (isSameConfigValues(existingValues, body.config)) {
         await ensureScopedChannelBinding(body.channelType, body.accountId);
+        scheduleGatewayChannelSaveRefresh(ctx, storedChannelType, `channel:saveConfigNoChange:${storedChannelType}`);
         sendJson(res, 200, { success: true, noChange: true });
         return true;
       }

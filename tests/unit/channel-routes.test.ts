@@ -11,6 +11,7 @@ const listAgentsSnapshotMock = vi.fn();
 const sendJsonMock = vi.fn();
 const proxyAwareFetchMock = vi.fn();
 const saveChannelConfigMock = vi.fn();
+const getChannelFormValuesMock = vi.fn();
 const setChannelDefaultAccountMock = vi.fn();
 const assignChannelAccountToAgentMock = vi.fn();
 const clearChannelBindingMock = vi.fn();
@@ -21,7 +22,7 @@ vi.mock('@electron/utils/channel-config', () => ({
   cleanupDanglingWeChatPluginState: vi.fn(),
   deleteChannelAccountConfig: vi.fn(),
   deleteChannelConfig: vi.fn(),
-  getChannelFormValues: vi.fn(),
+  getChannelFormValues: (...args: unknown[]) => getChannelFormValuesMock(...args),
   listConfiguredChannelAccounts: (...args: unknown[]) => listConfiguredChannelAccountsMock(...args),
   listConfiguredChannelAccountsFromConfig: (...args: unknown[]) => listConfiguredChannelAccountsMock(...args),
   listConfiguredChannels: (...args: unknown[]) => listConfiguredChannelsMock(...args),
@@ -99,6 +100,7 @@ describe('handleChannelRoutes', () => {
     rmSync(testOpenClawConfigDir, { recursive: true, force: true });
     proxyAwareFetchMock.mockReset();
     parseJsonBodyMock.mockResolvedValue({});
+    getChannelFormValuesMock.mockResolvedValue(undefined);
     listConfiguredChannelAccountsMock.mockReturnValue({});
     listAgentsSnapshotMock.mockResolvedValue({
       agents: [],
@@ -1387,6 +1389,46 @@ describe('handleChannelRoutes', () => {
           }),
         ],
       }),
+    );
+  });
+
+  it('restarts gateway after a no-change channel config save', async () => {
+    parseJsonBodyMock.mockResolvedValue({
+      channelType: 'discord',
+      accountId: 'default',
+      config: { token: 'discord-token' },
+    });
+    getChannelFormValuesMock.mockResolvedValue({ token: 'discord-token' });
+    listConfiguredChannelAccountsMock.mockReturnValue({
+      discord: {
+        defaultAccountId: 'default',
+        accountIds: ['default'],
+      },
+    });
+    const debouncedRestart = vi.fn();
+
+    const { handleChannelRoutes } = await import('@electron/api/routes/channels');
+    const handled = await handleChannelRoutes(
+      { method: 'POST' } as IncomingMessage,
+      {} as ServerResponse,
+      new URL('http://127.0.0.1:13210/api/channels/config'),
+      {
+        gatewayManager: {
+          rpc: vi.fn(),
+          getStatus: () => ({ state: 'running' }),
+          debouncedReload: vi.fn(),
+          debouncedRestart,
+        },
+      } as never,
+    );
+
+    expect(handled).toBe(true);
+    expect(saveChannelConfigMock).not.toHaveBeenCalled();
+    expect(debouncedRestart).toHaveBeenCalledWith(150);
+    expect(sendJsonMock).toHaveBeenCalledWith(
+      expect.anything(),
+      200,
+      expect.objectContaining({ success: true, noChange: true }),
     );
   });
 });

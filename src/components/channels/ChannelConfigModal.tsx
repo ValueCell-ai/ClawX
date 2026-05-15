@@ -81,7 +81,7 @@ export function ChannelConfigModal({
   onChannelSaved,
 }: ChannelConfigModalProps) {
   const { t } = useTranslation('channels');
-  const { channels, addChannel, fetchChannels } = useChannelsStore();
+  const { fetchChannels } = useChannelsStore();
   const [selectedType, setSelectedType] = useState<ChannelType | null>(initialSelectedType);
   const [configValues, setConfigValues] = useState<Record<string, string>>({});
   const [channelName, setChannelName] = useState('');
@@ -192,23 +192,9 @@ export function ChannelConfigModal({
   }, [selectedType, loadingConfig, showChannelName]);
 
   const finishSave = useCallback(async (channelType: ChannelType) => {
-    const displayName = showChannelName && channelName.trim()
-      ? channelName.trim()
-      : CHANNEL_NAMES[channelType];
-    const existingChannel = channels.find((channel) => channel.type === channelType);
-
-    if (!existingChannel) {
-      await addChannel({
-        type: channelType,
-        name: displayName,
-        token: meta?.configFields[0]?.key ? configValues[meta.configFields[0].key] : undefined,
-      });
-    } else {
-      await fetchChannels();
-    }
-
+    await fetchChannels();
     await onChannelSaved?.(channelType);
-  }, [addChannel, channelName, channels, configValues, fetchChannels, meta?.configFields, onChannelSaved, showChannelName]);
+  }, [fetchChannels, onChannelSaved]);
 
   const finishSaveRef = useRef(finishSave);
   const onCloseRef = useRef(onClose);

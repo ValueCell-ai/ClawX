@@ -32,6 +32,28 @@ const DEFAULT_ACCOUNT_ID = 'default';
 // schema validation errors.  ClawX falls back to DEFAULT_ACCOUNT_ID
 // when `defaultAccount` is absent.
 const CHANNELS_OMIT_DEFAULT_ACCOUNT_KEY = new Set(['dingtalk']);
+
+// Channels whose schema accepts a top-level default account and account map,
+// but whose account payload contains nested strict-schema objects that ClawX
+// can accidentally make invalid by adding UI convenience fields.  Keep this
+// sanitization narrowly scoped to known nested maps so local config remains
+// OpenClaw-compatible after a save.
+const DISCORD_GUILD_CHANNEL_KEYS_TO_KEEP = new Set([
+    'autoArchiveDuration',
+    'autoThread',
+    'autoThreadName',
+    'enabled',
+    'ignoreOtherMentions',
+    'includeThreadStarter',
+    'requireMention',
+    'roles',
+    'skills',
+    'systemPrompt',
+    'tools',
+    'toolsBySender',
+    'users',
+]);
+const DISCORD_CHANNEL_ALLOW_FLAG_KEYS = new Set(['allow']);
 const CHANNEL_TOP_LEVEL_KEYS_TO_KEEP = new Set(['accounts', 'defaultAccount', 'enabled']);
 const WECHAT_STATE_DIR = join(OPENCLAW_DIR, WECHAT_PLUGIN_ID);
 const WECHAT_ACCOUNT_INDEX_FILE = join(WECHAT_STATE_DIR, 'accounts.json');
@@ -78,6 +100,57 @@ const CHANNEL_UNIQUE_CREDENTIAL_KEY: Record<string, string> = {
 
 // ── Helpers ──────────────────────────────────────────────────────
 
+function sanitizeDiscordGuildChannelConfig(channelConfig: unknown): void {
+    if (!channelConfig || typeof channelConfig !== 'object' || Array.isArray(channelConfig)) {
+        return;
+    }
+
+    const record = channelConfig as Record<string, unknown>;
+
+    // Backward compatibility for the older ClawX-generated shape:
+    //   channels: { "123": { allow: true, requireMention: true } }
+    // OpenClaw's current DiscordGuildChannelConfig does not include `allow`;
+    // represent deny/allow using `enabled` instead.
+    if (record.allow === false && record.enabled === undefined) {
+        record.enabled = false;
+    }
+
+    for (const key of Object.keys(record)) {
+        if (DISCORD_CHANNEL_ALLOW_FLAG_KEYS.has(key)) {
+            delete record[key];
+            continue;
+        }
+        if (!DISCORD_GUILD_CHANNEL_KEYS_TO_KEEP.has(key)) {
+            delete record[key];
+        }
+    }
+}
+
+function sanitizeDiscordGuilds(config: unknown): void {
+    if (!config || typeof config !== 'object' || Array.isArray(config)) {
+        return;
+    }
+
+    const record = config as Record<string, unknown>;
+    const guilds = record.guilds;
+    if (!guilds || typeof guilds !== 'object' || Array.isArray(guilds)) {
+        return;
+    }
+
+    for (const guildConfig of Object.values(guilds as Record<string, unknown>)) {
+        if (!guildConfig || typeof guildConfig !== 'object' || Array.isArray(guildConfig)) {
+            continue;
+        }
+        const channels = (guildConfig as Record<string, unknown>).channels;
+        if (!channels || typeof channels !== 'object' || Array.isArray(channels)) {
+            continue;
+        }
+        for (const channelConfig of Object.values(channels as Record<string, unknown>)) {
+            sanitizeDiscordGuildChannelConfig(channelConfig);
+        }
+    }
+}
+
 /**
  * Strip `defaultAccount` from channel sections whose plugin schema
  * declares additionalProperties:false without listing `defaultAccount`.
@@ -90,6 +163,17 @@ function sanitizeChannelSectionsBeforeWrite(config: OpenClawConfig): void {
         const section = config.channels[channelType];
         if (section) {
             delete section.defaultAccount;
+        }
+    }
+
+    const discordSection = config.channels.discord;
+    if (discordSection) {
+        sanitizeDiscordGuilds(discordSection);
+        const accounts = getChannelAccountsMap(discordSection);
+        if (accounts) {
+            for (const accountConfig of Object.values(accounts)) {
+                sanitizeDiscordGuilds(accountConfig);
+            }
         }
     }
 }
@@ -578,11 +662,11 @@ function transformChannelConfig(
 
             if (channelId && typeof channelId === 'string' && channelId.trim()) {
                 guildConfig.channels = {
-                    [channelId.trim()]: { allow: true, requireMention: true }
+                    [channelId.trim()]: { requireMention: true }
                 };
             } else {
                 guildConfig.channels = {
-                    '*': { allow: true, requireMention: true }
+                    '*': { requireMention: true }
                 };
             }
 

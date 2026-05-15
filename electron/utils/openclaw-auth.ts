@@ -2485,6 +2485,48 @@ export async function sanitizeOpenClawConfig(): Promise<void> {
           modified = true;
           console.log(`[sanitize] Mirrored ${channelType} default account credentials to top-level channels.${channelType}`);
         }
+
+        if (channelType === 'discord') {
+          const sanitizeDiscordGuildChannelConfig = (channelConfig: unknown): boolean => {
+            if (!channelConfig || typeof channelConfig !== 'object' || Array.isArray(channelConfig)) return false;
+            const channelRecord = channelConfig as Record<string, unknown>;
+            let channelModified = false;
+            if (channelRecord.allow === false && channelRecord.enabled === undefined) {
+              channelRecord.enabled = false;
+              channelModified = true;
+            }
+            for (const key of ['allow']) {
+              if (key in channelRecord) {
+                delete channelRecord[key];
+                channelModified = true;
+              }
+            }
+            return channelModified;
+          };
+          const sanitizeDiscordGuilds = (target: Record<string, unknown>): boolean => {
+            const guilds = target.guilds;
+            if (!guilds || typeof guilds !== 'object' || Array.isArray(guilds)) return false;
+            let guildsModified = false;
+            for (const guildConfig of Object.values(guilds as Record<string, unknown>)) {
+              if (!guildConfig || typeof guildConfig !== 'object' || Array.isArray(guildConfig)) continue;
+              const channels = (guildConfig as Record<string, unknown>).channels;
+              if (!channels || typeof channels !== 'object' || Array.isArray(channels)) continue;
+              for (const channelConfig of Object.values(channels as Record<string, unknown>)) {
+                guildsModified = sanitizeDiscordGuildChannelConfig(channelConfig) || guildsModified;
+              }
+            }
+            return guildsModified;
+          };
+
+          const sanitizedTopLevel = sanitizeDiscordGuilds(section);
+          const sanitizedAccounts = Object.values(accounts ?? {}).some((accountConfig) => (
+            accountConfig && typeof accountConfig === 'object' && sanitizeDiscordGuilds(accountConfig)
+          ));
+          if (sanitizedTopLevel || sanitizedAccounts) {
+            modified = true;
+            console.log('[sanitize] Removed incompatible Discord channel allow flags');
+          }
+        }
       }
     }
 

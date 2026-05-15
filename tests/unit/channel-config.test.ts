@@ -243,6 +243,76 @@ describe('WeCom plugin configuration', () => {
       expect(plugins.entries['qqbot']).toBeUndefined();
     }
   });
+
+  it('saves discord guild channel allowlist without schema-invalid allow flags', async () => {
+    const { saveChannelConfig } = await import('@electron/utils/channel-config');
+
+    await saveChannelConfig(
+      'discord',
+      { token: 'discord-token', guildId: '1438451181474287618', channelId: '1438452657525100686' },
+      'default',
+    );
+
+    const config = await readOpenClawJson();
+    const channels = config.channels as Record<string, {
+      guilds?: Record<string, { channels?: Record<string, Record<string, unknown>> }>;
+      accounts?: Record<string, {
+        guilds?: Record<string, { channels?: Record<string, Record<string, unknown>> }>;
+      }>;
+    }>;
+
+    const topLevelChannel = channels.discord.guilds?.['1438451181474287618'].channels?.['1438452657525100686'];
+    const accountChannel = channels.discord.accounts?.default.guilds?.['1438451181474287618'].channels?.['1438452657525100686'];
+
+    expect(topLevelChannel).toEqual({ requireMention: true });
+    expect(accountChannel).toEqual({ requireMention: true });
+  });
+
+  it('sanitizes legacy discord guild channel allow flags before writing', async () => {
+    const { saveChannelConfig, writeOpenClawConfig } = await import('@electron/utils/channel-config');
+
+    await writeOpenClawConfig({
+      channels: {
+        discord: {
+          enabled: true,
+          defaultAccount: 'default',
+          token: 'discord-token',
+          guilds: {
+            '1438451181474287618': {
+              channels: {
+                '*': { allow: true, requireMention: true },
+              },
+            },
+          },
+          accounts: {
+            default: {
+              token: 'discord-token',
+              guilds: {
+                '1438451181474287618': {
+                  channels: {
+                    '*': { allow: true, requireMention: true },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+    });
+
+    await saveChannelConfig('discord', { token: 'discord-token', guildId: '1438451181474287618' }, 'default');
+
+    const config = await readOpenClawJson();
+    const channels = config.channels as Record<string, {
+      guilds?: Record<string, { channels?: Record<string, Record<string, unknown>> }>;
+      accounts?: Record<string, {
+        guilds?: Record<string, { channels?: Record<string, Record<string, unknown>> }>;
+      }>;
+    }>;
+
+    expect(channels.discord.guilds?.['1438451181474287618'].channels?.['*']).not.toHaveProperty('allow');
+    expect(channels.discord.accounts?.default.guilds?.['1438451181474287618'].channels?.['*']).not.toHaveProperty('allow');
+  });
 });
 
 describe('WeChat dangling plugin cleanup', () => {
