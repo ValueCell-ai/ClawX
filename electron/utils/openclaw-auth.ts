@@ -1234,6 +1234,43 @@ function mergeProviderModels(
   return merged;
 }
 
+/**
+ * Map of OpenClaw `models.providers.*` keys that must be pinned to a specific
+ * embedded agent harness so that OpenClaw's auto-routing policy does not
+ * dispatch the chat to an externally-bundled harness plugin that may not be
+ * installed.
+ *
+ * Currently only the API-key OpenAI provider needs this: OpenClaw 2026.5+
+ * routes any `provider="openai"` entry on the official `api.openai.com`
+ * baseUrl through the `codex` agent harness (which expects a separate
+ * `codex-app-server` plugin to be installed). The bundled OpenClaw
+ * distribution we ship does not register a harness with id `"codex"`, so
+ * without this pin every API-key OpenAI chat fails with
+ * `Requested agent harness "codex" is not registered.` — see
+ * `node_modules/openclaw/dist/policy-AKMwD9k5.js` and
+ * `node_modules/openclaw/dist/selection-61FIEezO.js`.
+ *
+ * The OAuth flow writes to `models.providers.openai-codex` (a different key)
+ * and intentionally wants the codex routing, so it is not pinned here.
+ */
+const OPENCLAW_PROVIDER_PINNED_AGENT_RUNTIME: Record<string, string> = {
+  openai: 'pi',
+};
+
+function applyPinnedAgentRuntime(
+  provider: string,
+  nextProvider: Record<string, unknown>,
+): void {
+  const pinnedRuntimeId = OPENCLAW_PROVIDER_PINNED_AGENT_RUNTIME[provider];
+  if (!pinnedRuntimeId) return;
+
+  const existing = nextProvider.agentRuntime;
+  if (isPlainRecord(existing) && typeof existing.id === 'string' && existing.id.trim()) {
+    return;
+  }
+  nextProvider.agentRuntime = { id: pinnedRuntimeId };
+}
+
 function upsertOpenClawProviderEntry(
   config: Record<string, unknown>,
   provider: string,
@@ -1276,6 +1313,7 @@ function upsertOpenClawProviderEntry(
   } else {
     delete nextProvider.authHeader;
   }
+  applyPinnedAgentRuntime(provider, nextProvider);
 
   providers[provider] = nextProvider;
   models.providers = providers;
@@ -1284,6 +1322,51 @@ function upsertOpenClawProviderEntry(
   if (removedLegacyMoonshot) {
     console.log('Removed legacy models.providers.moonshot alias entry');
   }
+}
+
+/**
+ * Self-heal helper: walk `models.providers.*` in openclaw.json and, for any
+ * entry whose key is in {@link OPENCLAW_PROVIDER_PINNED_AGENT_RUNTIME} but
+ * lacks an `agentRuntime.id`, write the pinned runtime id in place.
+ *
+ * Mirrors {@link pruneInvalidApiProviderEntries} — invoked opportunistically
+ * before a default-provider switch so that pre-existing on-disk entries
+ * (written by earlier ClawX builds that did not pin the runtime) get
+ * repaired before the next Gateway reload picks them up. Without this, users
+ * who upgrade ClawX while still pointing at an OpenAI provider would keep
+ * hitting `Requested agent harness "codex" is not registered.` until they
+ * re-saved the provider manually.
+ *
+ * Returns the list of provider keys that received a runtime pin, for logging.
+ */
+export async function ensureOpenClawProviderAgentRuntimePins(): Promise<string[]> {
+  const pinned: string[] = [];
+  await withConfigLock(async () => {
+    const config = await readOpenClawJson();
+    const models = (config.models || {}) as Record<string, unknown>;
+    const providers = (models.providers || {}) as Record<string, unknown>;
+    let modified = false;
+
+    for (const [provider, runtimeId] of Object.entries(OPENCLAW_PROVIDER_PINNED_AGENT_RUNTIME)) {
+      const entry = providers[provider];
+      if (!isPlainRecord(entry)) continue;
+      const existing = (entry as Record<string, unknown>).agentRuntime;
+      if (isPlainRecord(existing) && typeof existing.id === 'string' && existing.id.trim()) {
+        continue;
+      }
+      (entry as Record<string, unknown>).agentRuntime = { id: runtimeId };
+      providers[provider] = entry;
+      pinned.push(provider);
+      modified = true;
+    }
+
+    if (modified) {
+      models.providers = providers;
+      config.models = models;
+      await writeOpenClawJson(config);
+    }
+  });
+  return pinned;
 }
 
 function removeLegacyMoonshotProviderEntry(
