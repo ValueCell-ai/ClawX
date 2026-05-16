@@ -28,6 +28,11 @@ export const EXTRA_BUNDLED_PACKAGES = [
   // transitive dependency graph from the app bundle context.
   'playwright-core',
 
+  // The Codex agent harness is published as an OpenClaw extension package.
+  // Bundle it with the runtime so openai-codex models can register the codex
+  // harness in packaged builds.
+  '@openclaw/codex',
+
   // Electron main process QR login flows resolve these files from the
   // bundled OpenClaw runtime context in packaged builds.
   'qrcode-terminal',

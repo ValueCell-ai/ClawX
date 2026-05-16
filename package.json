@@ -94,6 +94,7 @@
         "@larksuite/openclaw-lark": "2026.5.12",
         "@larksuiteoapi/node-sdk": "^1.61.1",
         "@monaco-editor/react": "^4.7.0",
+        "@openclaw/codex": "2026.5.12",
         "@openclaw/discord": "2026.5.12",
         "@openclaw/qqbot": "2026.5.12",
         "@openclaw/whatsapp": "2026.5.12",

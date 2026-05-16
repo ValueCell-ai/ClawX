@@ -447,6 +447,25 @@ function patchBundledExtensionPackageJsons(extensionsRoot) {
 
 patchBundledExtensionPackageJsons(extensionsDir);
 
+function bundleExternalExtension(pkgName, extensionId) {
+  const pkgLink = path.join(NODE_MODULES, ...pkgName.split('/'));
+  if (!fs.existsSync(pkgLink)) {
+    throw new Error(`Missing extension package "${pkgName}". Run pnpm install first.`);
+  }
+
+  const realPath = fs.realpathSync(pkgLink);
+  const dest = path.join(extensionsDir, extensionId);
+  fs.rmSync(normWin(dest), { recursive: true, force: true });
+  fs.mkdirSync(normWin(path.dirname(dest)), { recursive: true });
+  fs.cpSync(normWin(realPath), normWin(dest), {
+    recursive: true,
+    dereference: true,
+  });
+  echo`   Bundled external extension ${pkgName} -> dist/extensions/${extensionId}`;
+}
+
+bundleExternalExtension('@openclaw/codex', 'codex');
+
 // 6. Clean up the bundle to reduce package size
 //
 // This removes platform-agnostic waste: dev artifacts, docs, source maps,
