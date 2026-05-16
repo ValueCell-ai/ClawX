@@ -11,69 +11,24 @@ importers:
 
   .:
     dependencies:
-      '@monaco-editor/react':
-        specifier: ^4.7.0
-        version: 4.7.0(monaco-editor@0.55.1)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)
-      '@sinclair/typebox':
-        specifier: ^0.34.48
-        version: 0.34.48
-      '@types/diff':
-        specifier: ^8.0.0
-        version: 8.0.0
-      chokidar:
-        specifier: ^5.0.0
-        version: 5.0.0
       clawhub:
         specifier: ^0.5.0
         version: 0.5.0
-      diff:
-        specifier: ^9.0.0
-        version: 9.0.0
       electron-store:
         specifier: ^11.0.2
         version: 11.0.2
       electron-updater:
         specifier: ^6.8.3
         version: 6.8.3
-      katex:
-        specifier: ^0.16.45
-        version: 0.16.45
-      lru-cache:
-        specifier: ^11.2.6
-        version: 11.2.7
-      monaco-editor:
-        specifier: ^0.55.1
-        version: 0.55.1
-      ms:
-        specifier: ^2.1.3
-        version: 2.1.3
       node-machine-id:
         specifier: ^1.1.12
         version: 1.1.12
-      pdfjs-dist:
-        specifier: ^5.7.284
-        version: 5.7.284
       posthog-node:
         specifier: ^5.28.0
         version: 5.28.5
-      rehype-katex:
-        specifier: ^7.0.1
-        version: 7.0.1
-      remark-frontmatter:
-        specifier: ^5.0.0
-        version: 5.0.0
-      remark-math:
-        specifier: ^6.0.0
-        version: 6.0.0
-      tar:
-        specifier: ^6.2.1
-        version: 6.2.1
       ws:
         specifier: ^8.19.0
         version: 8.20.0
-      xlsx:
-        specifier: ^0.18.5
-        version: 0.18.5
     devDependencies:
       '@buape/carbon':
         specifier: 0.16.0
@@ -99,6 +54,9 @@ importers:
       '@larksuiteoapi/node-sdk':
         specifier: ^1.61.1
         version: 1.62.0
+      '@monaco-editor/react':
+        specifier: ^4.7.0
+        version: 4.7.0(monaco-editor@0.55.1)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)
       '@openclaw/discord':
         specifier: 2026.5.12
         version: 2026.5.12(@emnapi/core@1.10.0)(@emnapi/runtime@1.9.1)(openclaw@2026.5.12(encoding@0.1.13))
@@ -147,6 +105,9 @@ importers:
       '@radix-ui/react-tooltip':
         specifier: ^1.2.8
         version: 1.2.8(@types/react-dom@19.2.3(@types/react@19.2.14))(@types/react@19.2.14)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)
+      '@sinclair/typebox':
+        specifier: ^0.34.48
+        version: 0.34.48
       '@soimy/dingtalk':
         specifier: ^3.6.2
         version: 3.6.2(openclaw@2026.5.12(encoding@0.1.13))
@@ -162,6 +123,9 @@ importers:
       '@testing-library/react':
         specifier: ^16.3.2
         version: 16.3.2(@testing-library/dom@10.4.1)(@types/react-dom@19.2.3(@types/react@19.2.14))(@types/react@19.2.14)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)
+      '@types/diff':
+        specifier: ^8.0.0
+        version: 8.0.0
       '@types/node':
         specifier: ^25.3.0
         version: 25.5.0
@@ -195,12 +159,18 @@ importers:
       autoprefixer:
         specifier: ^10.4.24
         version: 10.4.27(postcss@8.5.8)
+      chokidar:
+        specifier: ^5.0.0
+        version: 5.0.0
       class-variance-authority:
         specifier: ^0.7.1
         version: 0.7.1
       clsx:
         specifier: ^2.1.1
         version: 2.1.1
+      diff:
+        specifier: ^9.0.0
+        version: 9.0.0
       discord-api-types:
         specifier: ^0.38.47
         version: 0.38.47
@@ -237,18 +207,33 @@ importers:
       jsdom:
         specifier: ^28.1.0
         version: 28.1.0(@noble/hashes@2.0.1)
+      katex:
+        specifier: ^0.16.45
+        version: 0.16.45
+      lru-cache:
+        specifier: ^11.2.6
+        version: 11.2.7
       lucide-react:
         specifier: ^0.563.0
         version: 0.563.0(react@19.2.4)
+      monaco-editor:
+        specifier: ^0.55.1
+        version: 0.55.1
       mpg123-decoder:
         specifier: ^1.0.3
         version: 1.0.3
+      ms:
+        specifier: ^2.1.3
+        version: 2.1.3
       openclaw:
         specifier: 2026.5.12
         version: 2026.5.12(encoding@0.1.13)
       opusscript:
         specifier: ^0.1.1
         version: 0.1.1
+      pdfjs-dist:
+        specifier: ^5.7.284
+        version: 5.7.284
       playwright-core:
         specifier: 1.59.1
         version: 1.59.1
@@ -276,9 +261,18 @@ importers:
       react-router-dom:
         specifier: ^7.13.0
         version: 7.13.2(react-dom@19.2.4(react@19.2.4))(react@19.2.4)
+      rehype-katex:
+        specifier: ^7.0.1
+        version: 7.0.1
+      remark-frontmatter:
+        specifier: ^5.0.0
+        version: 5.0.0
       remark-gfm:
         specifier: ^4.0.1
         version: 4.0.1
+      remark-math:
+        specifier: ^6.0.0
+        version: 6.0.0
       sharp:
         specifier: ^0.34.5
         version: 0.34.5
@@ -297,6 +291,9 @@ importers:
       tailwindcss-animate:
         specifier: ^1.0.7
         version: 1.0.7(tailwindcss@3.4.19(tsx@4.21.0)(yaml@2.9.0))
+      tar:
+        specifier: ^6.2.1
+        version: 6.2.1
       typescript:
         specifier: ^5.9.3
         version: 5.9.3
@@ -318,6 +315,9 @@ importers:
       vitest:
         specifier: ^4.0.18
         version: 4.1.1(@types/node@25.5.0)(jsdom@28.1.0(@noble/hashes@2.0.1))(vite@7.3.1(@types/node@25.5.0)(jiti@1.21.7)(tsx@4.21.0)(yaml@2.9.0))
+      xlsx:
+        specifier: ^0.18.5
+        version: 0.18.5
       zustand:
         specifier: ^5.0.11
         version: 5.0.12(@types/react@19.2.14)(react@19.2.4)(use-sync-external-store@1.6.0(react@19.2.4))

@@ -482,6 +482,47 @@ function rmSafe(target) {
   } catch { return false; }
 }
 
+function cleanupNodeModulesRuntimeJunk(nodeModulesDir) {
+  let removedCount = 0;
+
+  const nodeWavDir = path.join(nodeModulesDir, 'node-wav');
+  for (const name of ['x.json', 'x.js', 'x.js~', 'file.wav']) {
+    if (rmSafe(path.join(nodeWavDir, name))) removedCount++;
+  }
+
+  // tree-sitter-bash ships C sources for rebuilding its native addon. Packaged
+  // builds use the prebuilt addon/wasm; keep node-types.json because the CJS
+  // entry exposes it as optional runtime metadata.
+  const treeSitterSrc = path.join(nodeModulesDir, 'tree-sitter-bash', 'src');
+  for (const name of ['parser.c', 'scanner.c', 'grammar.json', 'tree_sitter']) {
+    if (rmSafe(path.join(treeSitterSrc, name))) removedCount++;
+  }
+
+  return removedCount;
+}
+
+function cleanupKnownRuntimeJunk(rootDir) {
+  let removedCount = 0;
+  const stack = [rootDir];
+
+  while (stack.length > 0) {
+    const dir = stack.pop();
+    let entries;
+    try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch { continue; }
+
+    if (path.basename(dir) === 'node_modules') {
+      removedCount += cleanupNodeModulesRuntimeJunk(dir);
+    }
+
+    for (const entry of entries) {
+      if (!entry.isDirectory()) continue;
+      stack.push(path.join(dir, entry.name));
+    }
+  }
+
+  return removedCount;
+}
+
 function cleanupBundle(outputDir) {
   let removedCount = 0;
   const nm = path.join(outputDir, 'node_modules');
@@ -619,6 +660,8 @@ function cleanupBundle(outputDir) {
   for (const rel of LARGE_REMOVALS) {
     if (rmSafe(path.join(outputDir, rel))) removedCount++;
   }
+
+  removedCount += cleanupKnownRuntimeJunk(outputDir);
 
   return removedCount;
 }
