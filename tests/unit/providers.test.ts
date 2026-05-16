@@ -101,73 +101,99 @@ describe('provider metadata', () => {
     );
   });
 
-  it('exposes OpenRouter model overrides by default and gates SiliconFlow behind dev mode', () => {
+  it('exposes editable model id with default for built-in providers, mirroring OpenRouter', () => {
+    const anthropic = PROVIDER_TYPE_INFO.find((provider) => provider.id === 'anthropic');
     const openrouter = PROVIDER_TYPE_INFO.find((provider) => provider.id === 'openrouter');
     const siliconflow = PROVIDER_TYPE_INFO.find((provider) => provider.id === 'siliconflow');
+    const deepseek = PROVIDER_TYPE_INFO.find((provider) => provider.id === 'deepseek');
+    const moonshot = PROVIDER_TYPE_INFO.find((provider) => provider.id === 'moonshot');
+    const moonshotGlobal = PROVIDER_TYPE_INFO.find((provider) => provider.id === 'moonshot-global');
 
+    expect(anthropic).toMatchObject({
+      showModelId: true,
+      defaultModelId: 'claude-opus-4-6',
+      modelIdPlaceholder: 'claude-opus-4-6',
+    });
     expect(openrouter).toMatchObject({
       showModelId: true,
-      defaultModelId: 'openai/gpt-5.4',
+      defaultModelId: 'openai/gpt-5.5',
     });
     expect(siliconflow).toMatchObject({
       showModelId: true,
-      showModelIdInDevModeOnly: true,
       defaultModelId: 'deepseek-ai/DeepSeek-V3',
     });
+    expect(deepseek).toMatchObject({
+      showModelId: true,
+      defaultModelId: 'deepseek-v4-pro',
+    });
+    expect(moonshot).toMatchObject({
+      showModelId: true,
+      defaultModelId: 'kimi-k2.6',
+      modelIdPlaceholder: 'kimi-k2.6',
+    });
+    expect(moonshotGlobal).toMatchObject({
+      showModelId: true,
+      defaultModelId: 'kimi-k2.6',
+      modelIdPlaceholder: 'kimi-k2.6',
+    });
 
-    expect(shouldShowProviderModelId(openrouter, false)).toBe(true);
-    expect(shouldShowProviderModelId(siliconflow, false)).toBe(false);
-    expect(shouldShowProviderModelId(openrouter, true)).toBe(true);
-    expect(shouldShowProviderModelId(siliconflow, true)).toBe(true);
+    for (const provider of [anthropic, openrouter, siliconflow, deepseek, moonshot, moonshotGlobal]) {
+      expect(provider?.showModelIdInDevModeOnly).toBeUndefined();
+      expect(shouldShowProviderModelId(provider, false)).toBe(true);
+      expect(shouldShowProviderModelId(provider, true)).toBe(true);
+    }
   });
 
-  it('shows OAuth model overrides only in dev mode and preserves defaults', () => {
+  it('shows OAuth-capable provider model overrides regardless of dev mode and preserves defaults', () => {
     const openai = PROVIDER_TYPE_INFO.find((provider) => provider.id === 'openai');
     const google = PROVIDER_TYPE_INFO.find((provider) => provider.id === 'google');
     const minimax = PROVIDER_TYPE_INFO.find((provider) => provider.id === 'minimax-portal');
     const minimaxCn = PROVIDER_TYPE_INFO.find((provider) => provider.id === 'minimax-portal-cn');
-    const qwen = PROVIDER_TYPE_INFO.find((provider) => provider.id === 'modelstudio');
 
-    expect(openai).toMatchObject({ showModelId: true, showModelIdInDevModeOnly: true, defaultModelId: 'gpt-5.4' });
-    expect(google).toMatchObject({ showModelId: true, showModelIdInDevModeOnly: true, defaultModelId: 'gemini-3-pro-preview' });
-    expect(minimax).toMatchObject({ showModelId: true, showModelIdInDevModeOnly: true, defaultModelId: 'MiniMax-M2.7' });
-    expect(minimaxCn).toMatchObject({ showModelId: true, showModelIdInDevModeOnly: true, defaultModelId: 'MiniMax-M2.7' });
-    expect(qwen).toMatchObject({ showModelId: true, showModelIdInDevModeOnly: true, defaultModelId: 'qwen3.5-plus' });
+    expect(openai).toMatchObject({ showModelId: true, defaultModelId: 'gpt-5.5' });
+    expect(google).toMatchObject({ showModelId: true, defaultModelId: 'gemini-3.1-pro-preview' });
+    expect(minimax).toMatchObject({ showModelId: true, defaultModelId: 'MiniMax-M2.7' });
+    expect(minimaxCn).toMatchObject({ showModelId: true, defaultModelId: 'MiniMax-M2.7' });
 
-    expect(shouldShowProviderModelId(openai, false)).toBe(false);
-    expect(shouldShowProviderModelId(google, false)).toBe(false);
-    expect(shouldShowProviderModelId(minimax, false)).toBe(false);
-    expect(shouldShowProviderModelId(minimaxCn, false)).toBe(false);
-    expect(shouldShowProviderModelId(qwen, false)).toBe(false);
+    for (const provider of [openai, google, minimax, minimaxCn]) {
+      expect(provider?.showModelIdInDevModeOnly).toBeUndefined();
+      expect(shouldShowProviderModelId(provider, false)).toBe(true);
+      expect(shouldShowProviderModelId(provider, true)).toBe(true);
+    }
 
-    expect(shouldShowProviderModelId(openai, true)).toBe(true);
-    expect(shouldShowProviderModelId(google, true)).toBe(true);
-    expect(shouldShowProviderModelId(minimax, true)).toBe(true);
-    expect(shouldShowProviderModelId(minimaxCn, true)).toBe(true);
-    expect(shouldShowProviderModelId(qwen, true)).toBe(true);
-
-    expect(resolveProviderModelForSave(openai, '   ', true)).toBe('gpt-5.4');
-    expect(resolveProviderModelForSave(google, '   ', true)).toBe('gemini-3-pro-preview');
-    expect(resolveProviderModelForSave(minimax, '   ', true)).toBe('MiniMax-M2.7');
-    expect(resolveProviderModelForSave(minimaxCn, '   ', true)).toBe('MiniMax-M2.7');
-    expect(resolveProviderModelForSave(qwen, '   ', true)).toBe('qwen3.5-plus');
+    expect(resolveProviderModelForSave(openai, '   ', false)).toBe('gpt-5.5');
+    expect(resolveProviderModelForSave(google, '   ', false)).toBe('gemini-3.1-pro-preview');
+    expect(resolveProviderModelForSave(minimax, '   ', false)).toBe('MiniMax-M2.7');
+    expect(resolveProviderModelForSave(minimaxCn, '   ', false)).toBe('MiniMax-M2.7');
   });
 
-  it('saves OpenRouter model overrides by default and SiliconFlow only in dev mode', () => {
+  it('keeps hidden Model Studio gated behind dev mode (legacy hidden provider)', () => {
+    const qwen = PROVIDER_TYPE_INFO.find((provider) => provider.id === 'modelstudio');
+
+    expect(qwen).toMatchObject({
+      hidden: true,
+      showModelId: true,
+      showModelIdInDevModeOnly: true,
+      defaultModelId: 'qwen3.6-plus',
+    });
+    expect(shouldShowProviderModelId(qwen, false)).toBe(false);
+    expect(shouldShowProviderModelId(qwen, true)).toBe(true);
+  });
+
+  it('saves user-entered or default model overrides for built-in providers without dev mode', () => {
     const openrouter = PROVIDER_TYPE_INFO.find((provider) => provider.id === 'openrouter');
     const siliconflow = PROVIDER_TYPE_INFO.find((provider) => provider.id === 'siliconflow');
+    const anthropic = PROVIDER_TYPE_INFO.find((provider) => provider.id === 'anthropic');
     const ark = PROVIDER_TYPE_INFO.find((provider) => provider.id === 'ark');
 
     expect(resolveProviderModelForSave(openrouter, 'openai/gpt-5', false)).toBe('openai/gpt-5');
-    expect(resolveProviderModelForSave(siliconflow, 'Qwen/Qwen3-Coder-480B-A35B-Instruct', false)).toBeUndefined();
+    expect(resolveProviderModelForSave(siliconflow, 'Qwen/Qwen3-Coder-480B-A35B-Instruct', false))
+      .toBe('Qwen/Qwen3-Coder-480B-A35B-Instruct');
+    expect(resolveProviderModelForSave(anthropic, 'claude-sonnet-4-5', false)).toBe('claude-sonnet-4-5');
 
-    expect(resolveProviderModelForSave(openrouter, 'openai/gpt-5', true)).toBe('openai/gpt-5');
-    expect(resolveProviderModelForSave(siliconflow, 'Qwen/Qwen3-Coder-480B-A35B-Instruct', true)).toBe('Qwen/Qwen3-Coder-480B-A35B-Instruct');
-
-    expect(resolveProviderModelForSave(openrouter, '   ', false)).toBe('openai/gpt-5.4');
-    expect(resolveProviderModelForSave(openrouter, '   ', true)).toBe('openai/gpt-5.4');
-    expect(resolveProviderModelForSave(siliconflow, '   ', false)).toBeUndefined();
-    expect(resolveProviderModelForSave(siliconflow, '   ', true)).toBe('deepseek-ai/DeepSeek-V3');
+    expect(resolveProviderModelForSave(openrouter, '   ', false)).toBe('openai/gpt-5.5');
+    expect(resolveProviderModelForSave(siliconflow, '   ', false)).toBe('deepseek-ai/DeepSeek-V3');
+    expect(resolveProviderModelForSave(anthropic, '   ', false)).toBe('claude-opus-4-6');
     expect(resolveProviderModelForSave(ark, '  ep-custom-model  ', false)).toBe('ep-custom-model');
   });
 

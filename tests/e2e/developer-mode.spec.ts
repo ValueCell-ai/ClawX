@@ -21,7 +21,9 @@ test.describe('ClawX developer-mode gated UI', () => {
     await page.getByTestId('providers-add-button').click();
     await expect(page.getByTestId('add-provider-dialog')).toBeVisible();
     await page.getByTestId('add-provider-type-siliconflow').click();
-    await expect(page.getByTestId('add-provider-model-id-input')).toHaveCount(0);
+    const preDevModelInput = page.getByTestId('add-provider-model-id-input');
+    await expect(preDevModelInput).toBeVisible();
+    await expect(preDevModelInput).toHaveValue('deepseek-ai/DeepSeek-V3');
     await page.getByTestId('add-provider-close-button').click();
     await expect(page.getByTestId('add-provider-dialog')).toHaveCount(0);
 
@@ -37,6 +39,8 @@ test.describe('ClawX developer-mode gated UI', () => {
     await page.getByTestId('providers-add-button').click();
     await expect(page.getByTestId('add-provider-dialog')).toBeVisible();
     await page.getByTestId('add-provider-type-siliconflow').click();
-    await expect(page.getByTestId('add-provider-model-id-input')).toBeVisible();
+    const postDevModelInput = page.getByTestId('add-provider-model-id-input');
+    await expect(postDevModelInput).toBeVisible();
+    await expect(postDevModelInput).toHaveValue('deepseek-ai/DeepSeek-V3');
   });
 });

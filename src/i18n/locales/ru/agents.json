@@ -37,7 +37,7 @@
         "modelIdLabel": "ID модели",
         "modelIdPlaceholder": "model-id",
         "modelPreview": "Предпросмотр",
-        "modelOverridePlaceholder": "провайдер/модель (например: openrouter/openai/gpt-5.4)",
+        "modelOverridePlaceholder": "провайдер/модель (например: openrouter/openai/gpt-5.5)",
         "modelOverrideDescription": "Выберите провайдера и ID модели для этого агента.",
         "unsavedChangesTitle": "Несохранённые изменения",
         "unsavedChangesMessage": "У вас есть несохранённые изменения. Если закроете сейчас, изменения будут потеряны.",

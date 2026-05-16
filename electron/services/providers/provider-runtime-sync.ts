@@ -5,6 +5,7 @@ import type { ProviderConfig } from '../../utils/secure-storage';
 import { getAllProviders, getApiKey, getDefaultProvider, getProvider } from '../../utils/secure-storage';
 import { getProviderConfig, getProviderDefaultModel } from '../../utils/provider-registry';
 import {
+  pruneInvalidApiProviderEntries,
   removeProviderFromOpenClaw,
   removeProviderKeyFromOpenClaw,
   saveOAuthTokenToOpenClaw,
@@ -23,9 +24,9 @@ import { logger } from '../../utils/logger';
 import { listAgentsSnapshot } from '../../utils/agent-config';
 
 const GOOGLE_OAUTH_RUNTIME_PROVIDER = 'google-gemini-cli';
-const GOOGLE_OAUTH_DEFAULT_MODEL_REF = `${GOOGLE_OAUTH_RUNTIME_PROVIDER}/gemini-3-pro-preview`;
+const GOOGLE_OAUTH_DEFAULT_MODEL_REF = `${GOOGLE_OAUTH_RUNTIME_PROVIDER}/gemini-3.1-pro-preview`;
 const OPENAI_OAUTH_RUNTIME_PROVIDER = 'openai-codex';
-const OPENAI_OAUTH_DEFAULT_MODEL_REF = `${OPENAI_OAUTH_RUNTIME_PROVIDER}/gpt-5.4`;
+const OPENAI_OAUTH_DEFAULT_MODEL_REF = `${OPENAI_OAUTH_RUNTIME_PROVIDER}/gpt-5.5`;
 
 /**
  * Provider types that are not in the built-in provider registry (no `providerConfig.api`).
@@ -597,6 +598,22 @@ export async function syncDefaultProviderToRuntime(
   const provider = await getProvider(providerId);
   if (!provider) {
     return;
+  }
+
+  // Self-heal: opportunistically remove any pre-existing models.providers
+  // entries with an invalid `api` field so a switch to a healthy provider
+  // can rescue the user from a previously broken config (e.g. the historical
+  // openrouter `api: 'openrouter'` bug).  Covers both OAuth and non-OAuth
+  // branches below.
+  try {
+    const removed = await pruneInvalidApiProviderEntries();
+    if (removed.length > 0) {
+      logger.warn(
+        `[provider-runtime] Pruned invalid models.providers entries before switch: ${removed.join(', ')}`,
+      );
+    }
+  } catch (err) {
+    logger.warn('[provider-runtime] Failed to prune invalid provider entries before switch:', err);
   }
 
   const ock = await resolveRuntimeProviderKey(provider);

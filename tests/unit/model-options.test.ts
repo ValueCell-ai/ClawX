@@ -38,7 +38,7 @@ function status(id: string, hasKey = true): ProviderWithKeyInfo {
 
 describe('model option helpers', () => {
   it('formats model refs using only the text after the provider prefix', () => {
-    expect(formatModelRefLabel('openrouter/openai/gpt-5.4')).toBe('openai/gpt-5.4');
+    expect(formatModelRefLabel('openrouter/openai/gpt-5.5')).toBe('openai/gpt-5.5');
     expect(formatModelRefLabel('custom-alpha1234/model-alpha')).toBe('model-alpha');
   });
 

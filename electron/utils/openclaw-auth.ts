@@ -28,6 +28,10 @@ import {
 } from './provider-keys';
 import { normalizePiAiModelCost, type PiAiModelCostRates } from '../shared/pi-ai-model-cost';
 import { withConfigLock } from './config-mutex';
+import {
+  OPENCLAW_API_PROTOCOLS,
+  assertValidApiProtocol,
+} from '../shared/providers/types';
 
 const AUTH_STORE_VERSION = 1;
 const AUTH_PROFILE_FILENAME = 'auth-profiles.json';
@@ -1059,6 +1063,43 @@ export async function removeProviderFromOpenClaw(provider: string): Promise<void
 }
 
 /**
+ * Self-heal helper: walk `models.providers.*` in openclaw.json and remove
+ * any entry whose `api` field is not in the OpenClaw allow-list.
+ *
+ * Used opportunistically when the user switches default provider, so that
+ * a legacy invalid entry (e.g. the historical `models.providers.openrouter
+ * = { api: 'openrouter', ... }` bug) cannot keep the Gateway in
+ * Invalid-config -> restart-loop hell on the next reload/restart.
+ *
+ * Returns the list of pruned provider keys for logging.
+ */
+export async function pruneInvalidApiProviderEntries(): Promise<string[]> {
+  const removed: string[] = [];
+  await withConfigLock(async () => {
+    const config = await readOpenClawJson();
+    const models = (config.models || {}) as Record<string, unknown>;
+    const providers = (models.providers || {}) as Record<string, unknown>;
+    let modified = false;
+
+    for (const [key, entry] of Object.entries(providers)) {
+      const api = isPlainRecord(entry) ? (entry as Record<string, unknown>).api : undefined;
+      if (typeof api !== 'string' || !(OPENCLAW_API_PROTOCOLS as readonly string[]).includes(api)) {
+        delete providers[key];
+        removed.push(key);
+        modified = true;
+      }
+    }
+
+    if (modified) {
+      models.providers = providers;
+      config.models = models;
+      await writeOpenClawJson(config);
+    }
+  });
+  return removed;
+}
+
+/**
  * Build environment variables object with all stored API keys
  * for passing to the Gateway process
  */
@@ -1108,6 +1149,7 @@ export async function setOpenClawDefaultModel(
     // Configure models.providers for providers that need explicit registration.
     const providerCfg = getProviderConfig(provider);
     if (providerCfg) {
+      assertValidApiProtocol(providerCfg.api, provider);
       upsertOpenClawProviderEntry(config, provider, {
         baseUrl: providerCfg.baseUrl,
         api: providerCfg.api,
@@ -1197,6 +1239,7 @@ function upsertOpenClawProviderEntry(
   provider: string,
   options: ProviderEntryBuildOptions,
 ): void {
+  assertValidApiProtocol(options.api, provider);
   const models = (config.models || {}) as Record<string, unknown>;
   const providers = (models.providers || {}) as Record<string, unknown>;
   const removedLegacyMoonshot = removeLegacyMoonshotProviderEntry(provider, providers);
@@ -1330,6 +1373,7 @@ export async function syncProviderConfigToOpenClaw(
     ensureMoonshotKimiWebSearchCnBaseUrl(config, provider);
 
     if (override.baseUrl && override.api) {
+      assertValidApiProtocol(override.api, provider);
       upsertOpenClawProviderEntry(config, provider, {
         baseUrl: override.baseUrl,
         api: override.api,
@@ -1380,6 +1424,7 @@ export async function setOpenClawDefaultModelWithOverride(
     config.agents = agents;
 
     if (override.baseUrl && override.api) {
+      assertValidApiProtocol(override.api, provider);
       upsertOpenClawProviderEntry(config, provider, {
         baseUrl: override.baseUrl,
         api: override.api,
@@ -1439,7 +1484,7 @@ export async function getActiveOpenClawProviders(): Promise<Set<string>> {
     }
 
     // 3. agents.defaults.model.primary — the default model reference encodes
-    //    the provider prefix (e.g. "modelstudio/qwen3.5-plus" → "modelstudio").
+    //    the provider prefix (e.g. "modelstudio/qwen3.6-plus" → "modelstudio").
     //    This covers providers that are active via OAuth or env-key but don't
     //    have an explicit models.providers entry.
     const agents = config.agents as Record<string, unknown> | undefined;

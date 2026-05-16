@@ -1055,7 +1055,7 @@ describe('auth-backed provider discovery', () => {
         ],
         defaults: {
           model: {
-            primary: 'openai/gpt-5.4',
+            primary: 'openai/gpt-5.5',
           },
         },
       },
@@ -1080,7 +1080,7 @@ describe('auth-backed provider discovery', () => {
     const { getOpenClawProvidersConfig } = await import('@electron/utils/openclaw-auth');
     const result = await getOpenClawProvidersConfig();
 
-    expect(result.defaultModel).toBe('openai/gpt-5.4');
+    expect(result.defaultModel).toBe('openai/gpt-5.5');
     expect(result.providers).toMatchObject({
       openai: {},
       anthropic: {},
@@ -1267,5 +1267,131 @@ describe('auth-backed provider discovery', () => {
     expect(allow).toEqual(['custom-plugin']);
     expect(entries['minimax-portal-auth']).toBeUndefined();
     expect(entries['custom-plugin']).toEqual({ enabled: true });
+  });
+});
+
+describe('assertValidApiProtocol guard at write sites', () => {
+  beforeEach(async () => {
+    vi.resetModules();
+    vi.restoreAllMocks();
+    await rm(testHome, { recursive: true, force: true });
+    await rm(testUserData, { recursive: true, force: true });
+  });
+
+  it('setOpenClawDefaultModel throws InvalidApiProtocolError and leaves openclaw.json untouched when registry api is invalid', async () => {
+    const initialConfig = {
+      agents: {
+        list: [
+          {
+            id: 'main',
+            name: 'Main',
+            default: true,
+            workspace: '~/.openclaw/workspace',
+            agentDir: '~/.openclaw/agents/main/agent',
+          },
+        ],
+      },
+      models: {
+        providers: {
+          'minimax-portal': {
+            baseUrl: 'https://api.minimax.io/anthropic',
+            api: 'anthropic-messages',
+          },
+        },
+      },
+    };
+    await writeOpenClawJson(initialConfig);
+    const before = await readOpenClawJson();
+
+    vi.doMock('@electron/utils/provider-registry', async () => {
+      const actual = await vi.importActual<typeof import('@electron/utils/provider-registry')>(
+        '@electron/utils/provider-registry',
+      );
+      return {
+        ...actual,
+        getProviderConfig: () => ({
+          baseUrl: 'https://example.invalid/v1',
+          api: 'totally-bogus-protocol',
+          apiKeyEnv: 'EXAMPLE_API_KEY',
+        }),
+        getProviderDefaultModel: () => 'some-model',
+      };
+    });
+
+    const { setOpenClawDefaultModel } = await import('@electron/utils/openclaw-auth');
+    const { InvalidApiProtocolError } = await import('@electron/shared/providers/types');
+
+    await expect(setOpenClawDefaultModel('bogus-provider')).rejects.toBeInstanceOf(InvalidApiProtocolError);
+
+    const after = await readOpenClawJson();
+    expect(after).toEqual(before);
+  });
+});
+
+describe('pruneInvalidApiProviderEntries', () => {
+  beforeEach(async () => {
+    vi.resetModules();
+    vi.restoreAllMocks();
+    await rm(testHome, { recursive: true, force: true });
+    await rm(testUserData, { recursive: true, force: true });
+  });
+
+  it('removes only the entries whose api field is not in the OpenClaw allowlist', async () => {
+    await writeOpenClawJson({
+      agents: { list: [{ id: 'main', name: 'Main', default: true, workspace: '~/.openclaw/workspace', agentDir: '~/.openclaw/agents/main/agent' }] },
+      models: {
+        providers: {
+          openrouter: {
+            baseUrl: 'https://openrouter.ai/api/v1',
+            api: 'openrouter',
+            apiKey: 'OPENROUTER_API_KEY',
+          },
+          'minimax-portal': {
+            baseUrl: 'https://api.minimax.io/anthropic',
+            api: 'anthropic-messages',
+          },
+          ark: {
+            baseUrl: 'https://ark.cn-beijing.volces.com/api/v3',
+            api: 'openai-completions',
+          },
+          someBroken: {
+            baseUrl: 'https://example.invalid/v1',
+            api: 'no-such-protocol',
+          },
+        },
+      },
+    });
+
+    const { pruneInvalidApiProviderEntries } = await import('@electron/utils/openclaw-auth');
+
+    const removed = await pruneInvalidApiProviderEntries();
+    expect(new Set(removed)).toEqual(new Set(['openrouter', 'someBroken']));
+
+    const result = await readOpenClawJson();
+    const providers = (result.models as Record<string, unknown>).providers as Record<string, unknown>;
+    expect(Object.keys(providers).sort()).toEqual(['ark', 'minimax-portal']);
+    expect((providers['minimax-portal'] as { api: string }).api).toBe('anthropic-messages');
+    expect((providers.ark as { api: string }).api).toBe('openai-completions');
+  });
+
+  it('returns an empty array and leaves the file untouched when all entries are valid', async () => {
+    await writeOpenClawJson({
+      models: {
+        providers: {
+          'minimax-portal': {
+            baseUrl: 'https://api.minimax.io/anthropic',
+            api: 'anthropic-messages',
+          },
+        },
+      },
+    });
+    const before = await readOpenClawJson();
+
+    const { pruneInvalidApiProviderEntries } = await import('@electron/utils/openclaw-auth');
+    const removed = await pruneInvalidApiProviderEntries();
+
+    expect(removed).toEqual([]);
+    const after = await readOpenClawJson();
+    expect(after).toEqual(before);
   });
 });

@@ -186,7 +186,7 @@ describe('provider-runtime-sync refresh strategy', () => {
     expect(gateway.debouncedRestart).not.toHaveBeenCalled();
   });
 
-  it('uses gpt-5.4 as the browser OAuth default model for OpenAI', async () => {
+  it('uses gpt-5.5 as the browser OAuth default model for OpenAI', async () => {
     mocks.getProvider.mockResolvedValue(
       createProvider({
         id: 'openai-personal',
@@ -209,7 +209,7 @@ describe('provider-runtime-sync refresh strategy', () => {
 
     expect(mocks.setOpenClawDefaultModel).toHaveBeenCalledWith(
       'openai-codex',
-      'openai-codex/gpt-5.4',
+      'openai-codex/gpt-5.5',
       expect.any(Array),
     );
   });
