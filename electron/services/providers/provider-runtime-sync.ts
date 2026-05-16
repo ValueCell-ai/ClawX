@@ -24,8 +24,6 @@ import {
 import { logger } from '../../utils/logger';
 import { listAgentsSnapshot } from '../../utils/agent-config';
 
-const GOOGLE_OAUTH_RUNTIME_PROVIDER = 'google-gemini-cli';
-const GOOGLE_OAUTH_DEFAULT_MODEL_REF = `${GOOGLE_OAUTH_RUNTIME_PROVIDER}/gemini-3.1-pro-preview`;
 const OPENAI_OAUTH_RUNTIME_PROVIDER = 'openai-codex';
 const OPENAI_OAUTH_DEFAULT_MODEL_REF = `${OPENAI_OAUTH_RUNTIME_PROVIDER}/gpt-5.5`;
 
@@ -100,13 +98,8 @@ export function getOpenClawProviderKey(type: string, providerId: string): string
 
 async function resolveRuntimeProviderKey(config: ProviderConfig): Promise<string> {
   const account = await getProviderAccount(config.id);
-  if (account?.authMode === 'oauth_browser') {
-    if (config.type === 'google') {
-      return GOOGLE_OAUTH_RUNTIME_PROVIDER;
-    }
-    if (config.type === 'openai') {
-      return OPENAI_OAUTH_RUNTIME_PROVIDER;
-    }
+  if (account?.authMode === 'oauth_browser' && config.type === 'openai') {
+    return OPENAI_OAUTH_RUNTIME_PROVIDER;
   }
   return getOpenClawProviderKey(config.type, config.id);
 }
@@ -122,9 +115,6 @@ async function getBrowserOAuthRuntimeProvider(config: ProviderConfig): Promise<s
     return null;
   }
 
-  if (config.type === 'google') {
-    return GOOGLE_OAUTH_RUNTIME_PROVIDER;
-  }
   if (config.type === 'openai') {
     return OPENAI_OAUTH_RUNTIME_PROVIDER;
   }
@@ -685,9 +675,7 @@ export async function syncDefaultProviderToRuntime(
         });
       }
 
-      const defaultModelRef = browserOAuthRuntimeProvider === GOOGLE_OAUTH_RUNTIME_PROVIDER
-        ? GOOGLE_OAUTH_DEFAULT_MODEL_REF
-        : OPENAI_OAUTH_DEFAULT_MODEL_REF;
+      const defaultModelRef = OPENAI_OAUTH_DEFAULT_MODEL_REF;
       const modelOverride = provider.model
         ? (provider.model.startsWith(`${browserOAuthRuntimeProvider}/`)
           ? provider.model

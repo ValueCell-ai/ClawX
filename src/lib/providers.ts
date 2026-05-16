@@ -167,8 +167,6 @@ export const PROVIDER_TYPE_INFO: ProviderTypeInfo[] = [
     placeholder: 'AIza...',
     model: 'Gemini',
     requiresApiKey: true,
-    isOAuth: true,
-    supportsApiKey: true,
     defaultModelId: 'gemini-3.1-pro-preview',
     showModelId: true,
     modelIdPlaceholder: 'gemini-3.1-pro-preview',
