@@ -465,7 +465,7 @@ describe('sanitizeOpenClawConfig', () => {
     expect(telegram.botToken).toBe('telegram-token');
   });
 
-  it('normalizes legacy feishu plugin state to a single external plugin and disables built-in feishu', async () => {
+  it('normalizes legacy feishu plugin state to a single external plugin and removes built-in feishu', async () => {
     await writeOpenClawJson({
       channels: {
         feishu: {
@@ -507,7 +507,7 @@ describe('sanitizeOpenClawConfig', () => {
       enabled: true,
       config: { preserved: true },
     });
-    expect(entries.feishu).toEqual({ enabled: false });
+    expect(entries.feishu).toBeUndefined();
   });
 
   it('removes residual feishu plugin registrations when feishu channel is not configured', async () => {

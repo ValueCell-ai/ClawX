@@ -517,8 +517,6 @@ async function ensurePluginAllowlist(currentConfig: OpenClawConfig, channelType:
                 enabled: true,
                 entries: {
                     [feishuPluginId]: { enabled: true },
-                    // Disable the built-in feishu plugin when using openclaw-lark
-                    ...(feishuPluginId !== 'feishu' ? { feishu: { enabled: false } } : {}),
                 }
             };
         } else {
@@ -539,15 +537,10 @@ async function ensurePluginAllowlist(currentConfig: OpenClawConfig, channelType:
             if (!currentConfig.plugins.entries) {
                 currentConfig.plugins.entries = {};
             }
-            // Remove conflicting feishu plugin entries; keep only the resolved plugin id.
-            // When the resolved plugin id is NOT 'feishu', explicitly disable the
-            // built-in feishu plugin (OpenClaw ships one in dist/extensions/feishu/)
-            // to prevent it from conflicting with the official openclaw-lark plugin.
-            if (feishuPluginId !== 'feishu') {
-                currentConfig.plugins.entries['feishu'] = { enabled: false };
-            } else {
-                delete currentConfig.plugins.entries['feishu'];
-            }
+            // Remove conflicting feishu plugin entries; keep only the resolved
+            // external plugin id. A disabled plugins.entries.feishu record
+            // blocks openclaw-lark in OpenClaw's gateway startup planner.
+            delete currentConfig.plugins.entries['feishu'];
             for (const candidateId of FEISHU_PLUGIN_ID_CANDIDATES) {
                 if (candidateId !== feishuPluginId) {
                     delete currentConfig.plugins.entries[candidateId];
