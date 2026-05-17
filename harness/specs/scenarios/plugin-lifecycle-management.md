@@ -36,6 +36,7 @@ requiredRules:
   - channel-plugin-migration-guards
   - capability-owner-resolution
   - active-config-guards
+  - packaged-runtime-pruning-guards
 ---
 
 Plugin lifecycle management covers bundled and external plugins as one system with different source types. The core model has two layers:
@@ -52,5 +53,6 @@ Lifecycle stages:
 - Validate: ClawX verifies package manifests, dependencies, capability config, ownership uniqueness, and startup requirements.
 - Activate: only resolved and validated capabilities enter final OpenClaw runtime config.
 - Recover: failed upgrades, stale registrations, conflicts, and removed channels converge to a single diagnosable state with rollback or cleanup paths.
+- Package: cleanup and pruning keep packaged artifacts small without deleting target runtime assets; macOS universal packages keep both x64 and arm64 native payloads.
 
 First-stage priority is integration safety: single-owner capability resolution, active config guards, direct regression tests for migration cases, and explicit task specs for resolution, validation, and recovery work.

@@ -555,4 +555,61 @@ describe('useChatStore startup history retry', () => {
     resolveSend?.({ runId: 'run-1' });
     await sendPromise;
   });
+
+  it('does not restore a pending optimistic message after deleting the session', async () => {
+    const { useChatStore } = await import('@/stores/chat');
+    let resolveSend: ((value: { runId: string }) => void) | null = null;
+
+    gatewayRpcMock.mockImplementation((method: string) => {
+      if (method === 'chat.send') {
+        return new Promise((resolve) => {
+          resolveSend = resolve as (value: { runId: string }) => void;
+        });
+      }
+      if (method === 'chat.history') {
+        return Promise.resolve({ messages: [] });
+      }
+      return Promise.resolve({});
+    });
+    hostApiFetchMock.mockImplementation((url: string) => {
+      if (url === '/api/sessions/delete') {
+        return Promise.resolve({ success: true });
+      }
+      return Promise.resolve({ messages: [] });
+    });
+
+    useChatStore.setState({
+      currentSessionKey: 'agent:main:main',
+      currentAgentId: 'main',
+      sessions: [{ key: 'agent:main:main' }],
+      messages: [],
+      sessionLabels: {},
+      sessionLastActivity: {},
+      sending: false,
+      activeRunId: null,
+      streamingText: '',
+      streamingMessage: null,
+      streamingTools: [],
+      pendingFinal: false,
+      lastUserMessageAt: null,
+      pendingToolImages: [],
+      error: null,
+      loading: false,
+      thinkingLevel: null,
+    });
+
+    const sendPromise = useChatStore.getState().sendMessage('message that will be deleted');
+    expect(useChatStore.getState().messages.map((message) => message.content)).toEqual([
+      'message that will be deleted',
+    ]);
+
+    await useChatStore.getState().deleteSession('agent:main:main');
+    expect(useChatStore.getState().messages).toEqual([]);
+
+    await useChatStore.getState().loadHistory(true);
+    expect(useChatStore.getState().messages).toEqual([]);
+
+    resolveSend?.({ runId: 'run-deleted' });
+    await sendPromise;
+  });
 });

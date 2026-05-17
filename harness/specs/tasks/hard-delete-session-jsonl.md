@@ -19,6 +19,7 @@ expectedUserBehavior:
   - When the pointer's runtimeFile points outside the sessions/ folder (the OPENCLAW_TRAJECTORY_DIR override), that off-disk runtime file is also unlinked so no orphan trajectory remains anywhere on disk.
   - The session entry is removed from sessions.json so OpenClaw sessions.list stops returning it.
   - The sidebar list, sessionLabels and sessionLastActivity for the deleted key are cleared in the renderer store.
+  - Any pending optimistic user message cache for the deleted session key is cleared so a later history reload cannot resurrect deleted chat bubbles.
   - Token usage history reported by the Dashboard stops including the deleted session.
 requiredProfiles:
   - fast
@@ -31,6 +32,7 @@ acceptance:
   - IPC channel name session:delete and HTTP route POST /api/sessions/delete are unchanged in shape.
   - Both the IPC handler in electron/main/ipc-handlers.ts and the HTTP mirror in electron/api/routes/sessions.ts unlink the same set of files for a given session id, sharing electron/utils/session-files.ts so the disk contract cannot drift.
   - The handler tolerates ENOENT (file already gone) and still updates sessions.json so the sidebar stops listing the entry.
+  - Renderer delete-session paths clear any in-memory pending optimistic user messages for the deleted key before subsequent history loads run.
   - agentId from the sessionKey is validated against /^[A-Za-z0-9][A-Za-z0-9_-]*$/ in both surfaces and any sessionFile resolved to a path outside the agent sessions/ directory is refused (defence-in-depth against a corrupt sessions.json).
   - Absolute-path detection accepts POSIX paths, Windows backslash paths (C:\...) and Windows forward-slash paths (C:/...) so the sweep works on every supported OS.
   - The sweep also unlinks <id>.trajectory.jsonl and <id>.trajectory-path.json sidecars produced by OpenClaw's runtime trajectory writer.
@@ -68,4 +70,7 @@ Renderer surface is untouched: the confirm dialog in `Sidebar.tsx`, the
 `useChatStore.deleteSession` API, and the host-api/api-client boundary all
 continue to work without changes. The only user-visible effect is that
 deleted conversations no longer leave hidden `.deleted.jsonl` files behind
-and no longer contribute to Dashboard token-usage history.
+and no longer contribute to Dashboard token-usage history. Deletion also
+clears renderer-only pending optimistic user messages keyed by the deleted
+session so the UI cannot rehydrate a locally staged message after the
+transcript and sidebar entry have been removed.

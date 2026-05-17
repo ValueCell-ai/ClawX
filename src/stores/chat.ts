@@ -546,6 +546,10 @@ function rememberPendingOptimisticUserMessage(sessionKey: string, message: RawMe
   _pendingOptimisticUserMessages.set(sessionKey, existing);
 }
 
+function clearPendingOptimisticUserMessages(sessionKey: string): void {
+  _pendingOptimisticUserMessages.delete(sessionKey);
+}
+
 function mergePendingOptimisticUserMessages(sessionKey: string, loadedMessages: RawMessage[]): RawMessage[] {
   const pending = _pendingOptimisticUserMessages.get(sessionKey);
   if (!pending || pending.length === 0) return loadedMessages;
@@ -1961,6 +1965,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
   deleteSession: async (key: string) => {
     clearCachedSessionHistory(key);
     clearSessionLabelHydrationTracking(key);
+    clearPendingOptimisticUserMessages(key);
     // Hard-delete the session's JSONL transcript on disk.
     // The main process unlinks <id>.jsonl plus any leftover
     // <id>.deleted.jsonl and <id>.jsonl.reset.* siblings, then removes the

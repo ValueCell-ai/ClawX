@@ -215,6 +215,10 @@ function rememberPendingOptimisticUserMessage(sessionKey: string, message: RawMe
   _pendingOptimisticUserMessages.set(sessionKey, existing);
 }
 
+function clearPendingOptimisticUserMessages(sessionKey: string): void {
+  _pendingOptimisticUserMessages.delete(sessionKey);
+}
+
 function mergePendingOptimisticUserMessages(sessionKey: string, loadedMessages: RawMessage[]): RawMessage[] {
   const pending = _pendingOptimisticUserMessages.get(sessionKey);
   if (!pending || pending.length === 0) return loadedMessages;
@@ -1297,6 +1301,7 @@ export {
   normalizeStreamingMessage,
   matchesOptimisticUserMessage,
   rememberPendingOptimisticUserMessage,
+  clearPendingOptimisticUserMessages,
   mergePendingOptimisticUserMessages,
   snapshotStreamingAssistantMessage,
   getLatestOptimisticUserMessage,

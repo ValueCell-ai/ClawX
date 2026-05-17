@@ -1,5 +1,5 @@
 import { invokeIpc } from '@/lib/api-client';
-import { getCanonicalPrefixFromSessions, getMessageText, toMs } from './helpers';
+import { clearPendingOptimisticUserMessages, getCanonicalPrefixFromSessions, getMessageText, toMs } from './helpers';
 import { DEFAULT_CANONICAL_PREFIX, DEFAULT_SESSION_KEY, type ChatSession, type RawMessage } from './types';
 import type { ChatGet, ChatSet, SessionHistoryActions } from './store-api';
 
@@ -265,6 +265,7 @@ export function createSessionActions(
 
     deleteSession: async (key: string) => {
       clearSessionLabelHydrationTracking(key);
+      clearPendingOptimisticUserMessages(key);
       // Hard-delete the session's JSONL transcript on disk.
       // The main process unlinks <id>.jsonl plus any leftover
       // <id>.deleted.jsonl and <id>.jsonl.reset.* siblings, then removes the

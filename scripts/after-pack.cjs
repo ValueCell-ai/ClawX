@@ -174,6 +174,13 @@ function baseArch(rawArch) {
   return dash > 0 ? rawArch.slice(0, dash) : rawArch;
 }
 
+function matchesTargetArch(pkgArch, targetArch) {
+  if (targetArch === 'universal') {
+    return pkgArch === 'x64' || pkgArch === 'arm64' || pkgArch === 'universal';
+  }
+  return pkgArch === targetArch || pkgArch === 'universal';
+}
+
 function cleanupNativePlatformPackages(nodeModulesDir, platform, arch) {
   let removed = 0;
 
@@ -191,7 +198,7 @@ function cleanupNativePlatformPackages(nodeModulesDir, platform, arch) {
 
       const isMatch =
         pkgPlatform === platform &&
-        (pkgArch === arch || pkgArch === 'universal');
+        matchesTargetArch(pkgArch, arch);
 
       if (!isMatch) {
         try {
@@ -216,7 +223,7 @@ function cleanupNativePlatformPackages(nodeModulesDir, platform, arch) {
 
       const isMatch =
         pkgPlatform === platform &&
-        (pkgArch === arch || pkgArch === 'universal');
+        matchesTargetArch(pkgArch, arch);
 
       if (!isMatch) {
         try {
@@ -258,9 +265,10 @@ function cleanupNodeModulesRuntimeJunk(nodeModulesDir, platform, arch) {
 
   const prebuildsDir = join(treeSitterBashDir, 'prebuilds');
   if (existsSync(prebuildsDir)) {
-    const keep = `${platform}-${arch}`;
     for (const entry of readdirSync(prebuildsDir)) {
-      if (entry === keep) continue;
+      const [entryPlatform, ...entryArchParts] = entry.split('-');
+      const entryArch = baseArch(entryArchParts.join('-'));
+      if (entryPlatform === platform && matchesTargetArch(entryArch, arch)) continue;
       try {
         rmSync(join(prebuildsDir, entry), { recursive: true, force: true });
         removed++;
@@ -292,6 +300,11 @@ function cleanupKnownRuntimeJunk(rootDir, platform, arch) {
 
   return removed;
 }
+
+exports.__test = {
+  cleanupNativePlatformPackages,
+  cleanupNodeModulesRuntimeJunk,
+};
 
 // ── Broken module patcher ─────────────────────────────────────────────────────
 // Some bundled packages have transpiled CJS that sets `module.exports = exports.default`
