@@ -177,6 +177,10 @@ echo`   Virtual store root: ${openclawVirtualNM}`;
 queue.push({ nodeModulesDir: openclawVirtualNM, skipPkg: 'openclaw' });
 
 const SKIP_PACKAGES = new Set([
+  // Extra bundled extensions such as @openclaw/codex can declare openclaw as a
+  // peer/optional dependency. The bundle already copies openclaw to OUTPUT root,
+  // so do not also copy a duplicate into OUTPUT/node_modules/openclaw.
+  'openclaw',
   'typescript',
   '@playwright/test',
   // @discordjs/opus is a native .node addon compiled for the system Node.js

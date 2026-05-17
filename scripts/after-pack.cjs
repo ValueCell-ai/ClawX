@@ -155,6 +155,7 @@ const PLATFORM_NATIVE_SCOPES = {
   '@reflink': /^reflink-(darwin|linux|win32)-(x64|arm64|x64-gnu|x64-musl|arm64-gnu|arm64-musl|x64-msvc|arm64-msvc)/,
   '@node-llama-cpp': /^(mac|linux|win)-(arm64|x64|armv7l)(-metal|-cuda|-cuda-ext|-vulkan)?$/,
   '@esbuild': /^(darwin|linux|win32|android|freebsd|netbsd|openbsd|sunos|aix|openharmony)-(x64|arm64|arm|ia32|loong64|mips64el|ppc64|riscv64|s390x)/,
+  '@openai': /^codex-(darwin|linux|win32)-(x64|arm64)$/,
 };
 
 // Unscoped packages that follow a <name>-<platform>-<arch> convention.
