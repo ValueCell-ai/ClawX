@@ -63,6 +63,7 @@ resources/bin
 
 build/
 artifacts/
+.delivery/
 docs/pr-session-notes-*.md
 
 .cursor/

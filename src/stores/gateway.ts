@@ -47,6 +47,9 @@ function buildGatewayEventDedupeKey(event: Record<string, unknown>): string | nu
   const sessionKey = event.sessionKey != null ? String(event.sessionKey) : '';
   const seq = event.seq != null ? String(event.seq) : '';
   const state = event.state != null ? String(event.state) : '';
+  if (state === 'delta' && !seq) {
+    return null;
+  }
   if (runId || sessionKey || seq || state) {
     return [runId, sessionKey, seq, state].join('|');
   }
@@ -142,6 +145,8 @@ function handleGatewayNotification(notification: { method?: string; params?: Rec
 
   const runId = p.runId ?? data.runId;
   const sessionKey = p.sessionKey ?? data.sessionKey;
+  const isTerminalPhase = phase === 'completed' || phase === 'done' || phase === 'finished';
+  const isHistoryRefreshPhase = isTerminalPhase || phase === 'end';
   if (phase === 'started' && runId != null && sessionKey != null) {
     import('./chat')
       .then(({ useChatStore }) => {
@@ -163,7 +168,7 @@ function handleGatewayNotification(notification: { method?: string; params?: Rec
       .catch(() => {});
   }
 
-  if (phase === 'completed' || phase === 'done' || phase === 'finished' || phase === 'end') {
+  if (isHistoryRefreshPhase) {
     import('./chat')
       .then(({ useChatStore }) => {
         const state = useChatStore.getState();
@@ -182,7 +187,7 @@ function handleGatewayNotification(notification: { method?: string; params?: Rec
         if (matchesCurrentSession || matchesActiveRun) {
           maybeLoadHistory(state);
         }
-        if ((matchesCurrentSession || matchesActiveRun) && state.sending) {
+        if (isTerminalPhase && (matchesCurrentSession || matchesActiveRun) && state.sending) {
           useChatStore.setState({
             sending: false,
             activeRunId: null,
