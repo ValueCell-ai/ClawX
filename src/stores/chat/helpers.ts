@@ -28,6 +28,15 @@ let _errorRecoveryTimer: ReturnType<typeof setTimeout> | null = null;
 // the sending state after abortRun clears it.
 let _lastAbortedRunId: string | null = null;
 const _blockedRunEvents = new Map<string, Record<string, unknown>[]>();
+const OPTIMISTIC_USER_MESSAGE_TTL_MS = 30 * 60 * 1000;
+
+type PendingOptimisticUserMessage = {
+  message: RawMessage;
+  timestampMs: number;
+  createdAtMs: number;
+};
+
+const _pendingOptimisticUserMessages = new Map<string, PendingOptimisticUserMessage[]>();
 
 function clearErrorRecoveryTimer(): void {
   if (_errorRecoveryTimer) {
@@ -196,6 +205,58 @@ function matchesOptimisticUserMessage(
   if (sameText && (!optimisticAttachments || !candidateAttachments) && (timestampMatches || !hasCandidateTimestamp)) return true;
   if (sameAttachments && (!optimisticText || !candidateText) && (timestampMatches || !hasCandidateTimestamp)) return true;
   return false;
+}
+
+function rememberPendingOptimisticUserMessage(sessionKey: string, message: RawMessage, timestampMs: number): void {
+  const now = Date.now();
+  const existing = (_pendingOptimisticUserMessages.get(sessionKey) || [])
+    .filter((entry) => now - entry.createdAtMs <= OPTIMISTIC_USER_MESSAGE_TTL_MS);
+  existing.push({ message, timestampMs, createdAtMs: now });
+  _pendingOptimisticUserMessages.set(sessionKey, existing);
+}
+
+function mergePendingOptimisticUserMessages(sessionKey: string, loadedMessages: RawMessage[]): RawMessage[] {
+  const pending = _pendingOptimisticUserMessages.get(sessionKey);
+  if (!pending || pending.length === 0) return loadedMessages;
+
+  const now = Date.now();
+  let merged = loadedMessages;
+  const stillPending: PendingOptimisticUserMessage[] = [];
+
+  for (const entry of pending) {
+    if (now - entry.createdAtMs > OPTIMISTIC_USER_MESSAGE_TTL_MS) {
+      continue;
+    }
+
+    const hasServerEcho = loadedMessages.some((message) =>
+      matchesOptimisticUserMessage(message, entry.message, entry.timestampMs),
+    );
+    if (hasServerEcho) {
+      continue;
+    }
+
+    const alreadyRendered = merged.some((message) =>
+      message.id === entry.message.id || matchesOptimisticUserMessage(message, entry.message, entry.timestampMs),
+    );
+    if (!alreadyRendered) {
+      const insertAt = merged.findIndex((message) =>
+        typeof message.timestamp === 'number' && toMs(message.timestamp) > entry.timestampMs,
+      );
+      merged = insertAt === -1
+        ? [...merged, entry.message]
+        : [...merged.slice(0, insertAt), entry.message, ...merged.slice(insertAt)];
+    }
+
+    stillPending.push(entry);
+  }
+
+  if (stillPending.length > 0) {
+    _pendingOptimisticUserMessages.set(sessionKey, stillPending);
+  } else {
+    _pendingOptimisticUserMessages.delete(sessionKey);
+  }
+
+  return merged;
 }
 
 function snapshotStreamingAssistantMessage(
@@ -1235,6 +1296,8 @@ export {
   isToolOnlyMessage,
   normalizeStreamingMessage,
   matchesOptimisticUserMessage,
+  rememberPendingOptimisticUserMessage,
+  mergePendingOptimisticUserMessages,
   snapshotStreamingAssistantMessage,
   getLatestOptimisticUserMessage,
   setHistoryPollTimer,

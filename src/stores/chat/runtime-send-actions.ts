@@ -8,6 +8,7 @@ import {
   setHistoryPollTimer,
   setLastChatEventAt,
   setLastAbortedRunId,
+  rememberPendingOptimisticUserMessage,
   takeBlockedRunEvents,
   upsertImageCacheEntry,
 } from './helpers';
@@ -103,6 +104,7 @@ export function createRuntimeSendActions(set: ChatSet, get: ChatGet): Pick<Runti
           source: 'user-upload',
         })),
       };
+      rememberPendingOptimisticUserMessage(currentSessionKey, userMsg, nowMs);
       set((s) => ({
         messages: [...s.messages, userMsg],
         sending: true,

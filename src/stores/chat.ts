@@ -81,6 +81,15 @@ const CHAT_EVENT_DEDUPE_TTL_MS = 30_000;
 const HISTORY_PAGE_SIZE = 200;
 const HISTORY_MAX_RENDERED_MESSAGES = 1_000;
 const _chatEventDedupe = new Map<string, number>();
+const OPTIMISTIC_USER_MESSAGE_TTL_MS = 30 * 60 * 1000;
+
+type PendingOptimisticUserMessage = {
+  message: RawMessage;
+  timestampMs: number;
+  createdAtMs: number;
+};
+
+const _pendingOptimisticUserMessages = new Map<string, PendingOptimisticUserMessage[]>();
 
 type SessionLabelSummary = {
   sessionKey: string;
@@ -527,6 +536,58 @@ function matchesOptimisticUserMessage(
   if (sameText && (!optimisticAttachments || !candidateAttachments) && (timestampMatches || !hasCandidateTimestamp)) return true;
   if (sameAttachments && (!optimisticText || !candidateText) && (timestampMatches || !hasCandidateTimestamp)) return true;
   return false;
+}
+
+function rememberPendingOptimisticUserMessage(sessionKey: string, message: RawMessage, timestampMs: number): void {
+  const now = Date.now();
+  const existing = (_pendingOptimisticUserMessages.get(sessionKey) || [])
+    .filter((entry) => now - entry.createdAtMs <= OPTIMISTIC_USER_MESSAGE_TTL_MS);
+  existing.push({ message, timestampMs, createdAtMs: now });
+  _pendingOptimisticUserMessages.set(sessionKey, existing);
+}
+
+function mergePendingOptimisticUserMessages(sessionKey: string, loadedMessages: RawMessage[]): RawMessage[] {
+  const pending = _pendingOptimisticUserMessages.get(sessionKey);
+  if (!pending || pending.length === 0) return loadedMessages;
+
+  const now = Date.now();
+  let merged = loadedMessages;
+  const stillPending: PendingOptimisticUserMessage[] = [];
+
+  for (const entry of pending) {
+    if (now - entry.createdAtMs > OPTIMISTIC_USER_MESSAGE_TTL_MS) {
+      continue;
+    }
+
+    const hasServerEcho = loadedMessages.some((message) =>
+      matchesOptimisticUserMessage(message, entry.message, entry.timestampMs),
+    );
+    if (hasServerEcho) {
+      continue;
+    }
+
+    const alreadyRendered = merged.some((message) =>
+      message.id === entry.message.id || matchesOptimisticUserMessage(message, entry.message, entry.timestampMs),
+    );
+    if (!alreadyRendered) {
+      const insertAt = merged.findIndex((message) =>
+        typeof message.timestamp === 'number' && toMs(message.timestamp) > entry.timestampMs,
+      );
+      merged = insertAt === -1
+        ? [...merged, entry.message]
+        : [...merged.slice(0, insertAt), entry.message, ...merged.slice(insertAt)];
+    }
+
+    stillPending.push(entry);
+  }
+
+  if (stillPending.length > 0) {
+    _pendingOptimisticUserMessages.set(sessionKey, stillPending);
+  } else {
+    _pendingOptimisticUserMessages.delete(sessionKey);
+  }
+
+  return merged;
 }
 
 function snapshotStreamingAssistantMessage(
@@ -2141,19 +2202,19 @@ export const useChatStore = create<ChatState>((set, get) => ({
       // Restore file attachments for user/assistant messages (from cache + text patterns)
       const enrichedMessages = enrichWithCachedImages(filteredMessages);
 
-      // Preserve the optimistic user message during an active send.
-      // The Gateway may not include the user's message in chat.history
-      // until the run completes, causing it to flash out of the UI.
-      let finalMessages = enrichedMessages;
+      // Preserve optimistic user messages independently from sending state.
+      // Gateway phase=end can clear sending before chat.history has persisted
+      // the user turn; without this, an early quiet reload briefly removes it.
+      let finalMessages = mergePendingOptimisticUserMessages(currentSessionKey, enrichedMessages);
       const userMsgAt = get().lastUserMessageAt;
       if (get().sending && userMsgAt) {
         const userMsMs = toMs(userMsgAt);
         const optimistic = getLatestOptimisticUserMessage(get().messages, userMsMs);
         const hasMatchingUser = optimistic
-          ? enrichedMessages.some((message) => matchesOptimisticUserMessage(message, optimistic, userMsMs))
+          ? finalMessages.some((message) => matchesOptimisticUserMessage(message, optimistic, userMsMs))
           : false;
         if (optimistic && !hasMatchingUser) {
-          finalMessages = [...enrichedMessages, optimistic];
+          finalMessages = [...finalMessages, optimistic];
         }
       }
 
@@ -2487,6 +2548,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
         filePath: a.stagedPath,
       })),
     };
+    rememberPendingOptimisticUserMessage(currentSessionKey, userMsg, nowMs);
     set((s) => ({
       messages: [...s.messages, userMsg],
       sending: true,

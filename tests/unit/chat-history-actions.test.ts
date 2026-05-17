@@ -59,6 +59,7 @@ vi.mock('@/stores/chat/helpers', () => ({
   isInternalMessage: (...args: unknown[]) => isInternalMessage(...args),
   isToolResultRole: (...args: unknown[]) => isToolResultRole(...args),
   loadMissingPreviews: (...args: unknown[]) => loadMissingPreviews(...args),
+  mergePendingOptimisticUserMessages: (_sessionKey: string, messages: unknown[]) => messages,
   matchesOptimisticUserMessage: (
     candidate: { role: string; timestamp?: number; content?: unknown; _attachedFiles?: Array<{ filePath?: string; fileName?: string; mimeType?: string; fileSize?: number }> },
     optimistic: { role: string; timestamp?: number; content?: unknown; _attachedFiles?: Array<{ filePath?: string; fileName?: string; mimeType?: string; fileSize?: number }> },

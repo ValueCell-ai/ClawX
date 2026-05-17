@@ -13,6 +13,7 @@ import {
   isToolResultRole,
   loadMissingPreviews,
   matchesOptimisticUserMessage,
+  mergePendingOptimisticUserMessages,
   toMs,
 } from './helpers';
 import { buildCronSessionHistoryPath, isCronSessionKey } from './cron-session-utils';
@@ -106,19 +107,19 @@ export function createHistoryActions(
         // Restore file attachments for user/assistant messages (from cache + text patterns)
         const enrichedMessages = enrichWithCachedImages(filteredMessages);
 
-        // Preserve the optimistic user message during an active send.
-        // The Gateway may not include the user's message in chat.history
-        // until the run completes, causing it to flash out of the UI.
-        let finalMessages = enrichedMessages;
+        // Preserve optimistic user messages independently from sending state.
+        // Gateway phase=end can clear sending before chat.history has persisted
+        // the user turn; without this, an early quiet reload briefly removes it.
+        let finalMessages = mergePendingOptimisticUserMessages(currentSessionKey, enrichedMessages);
         const userMsgAt = get().lastUserMessageAt;
         if (get().sending && userMsgAt) {
           const userMsMs = toMs(userMsgAt);
           const optimistic = getLatestOptimisticUserMessage(get().messages, userMsMs);
           const hasMatchingUser = optimistic
-            ? enrichedMessages.some((message) => matchesOptimisticUserMessage(message, optimistic, userMsMs))
+            ? finalMessages.some((message) => matchesOptimisticUserMessage(message, optimistic, userMsMs))
             : false;
           if (optimistic && !hasMatchingUser) {
-            finalMessages = [...enrichedMessages, optimistic];
+            finalMessages = [...finalMessages, optimistic];
           }
         }
 

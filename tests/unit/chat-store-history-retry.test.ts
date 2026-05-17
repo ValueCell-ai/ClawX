@@ -483,4 +483,76 @@ describe('useChatStore startup history retry', () => {
     expect(warnSpy).not.toHaveBeenCalled();
     warnSpy.mockRestore();
   });
+
+  it('keeps the optimistic user message when completion refresh wins the transcript write race', async () => {
+    const { useChatStore } = await import('@/stores/chat');
+    let historyMessages: Array<Record<string, unknown>> = [];
+    let resolveSend: ((value: { runId: string }) => void) | null = null;
+
+    gatewayRpcMock.mockImplementation((method: string) => {
+      if (method === 'chat.send') {
+        return new Promise((resolve) => {
+          resolveSend = resolve as (value: { runId: string }) => void;
+        });
+      }
+      if (method === 'chat.history') {
+        return Promise.resolve({ messages: historyMessages });
+      }
+      return Promise.resolve({});
+    });
+
+    useChatStore.setState({
+      currentSessionKey: 'agent:main:main',
+      currentAgentId: 'main',
+      sessions: [{ key: 'agent:main:main' }],
+      messages: [],
+      sessionLabels: {},
+      sessionLastActivity: {},
+      sending: false,
+      activeRunId: null,
+      streamingText: '',
+      streamingMessage: null,
+      streamingTools: [],
+      pendingFinal: false,
+      lastUserMessageAt: null,
+      pendingToolImages: [],
+      error: null,
+      loading: false,
+      thinkingLevel: null,
+    });
+
+    const sendPromise = useChatStore.getState().sendMessage('hello from app');
+    expect(useChatStore.getState().messages.map((message) => message.content)).toEqual(['hello from app']);
+
+    // Simulate Gateway phase=end clearing send state before chat.history has
+    // persisted the user turn.
+    useChatStore.setState({
+      sending: false,
+      activeRunId: null,
+      pendingFinal: false,
+      lastUserMessageAt: null,
+    });
+
+    await useChatStore.getState().loadHistory(true);
+    expect(useChatStore.getState().messages.map((message) => message.content)).toEqual(['hello from app']);
+
+    historyMessages = [{
+      role: 'user',
+      content: 'hello from app',
+      timestamp: Date.now() / 1000,
+      id: 'server-user',
+    }];
+    vi.advanceTimersByTime(1_000);
+    await useChatStore.getState().loadHistory(true);
+
+    expect(useChatStore.getState().messages).toHaveLength(1);
+    expect(useChatStore.getState().messages[0]).toMatchObject({
+      id: 'server-user',
+      role: 'user',
+      content: 'hello from app',
+    });
+
+    resolveSend?.({ runId: 'run-1' });
+    await sendPromise;
+  });
 });
