@@ -85,6 +85,10 @@ mac:
   entitlements: entitlements.mac.plist
   entitlementsInherit: entitlements.mac.plist
   notarize: true
+  # Explicit Apple TSA ensures a secure timestamp is embedded in the signature.
+  # Without it, CI network issues can silently omit the timestamp, causing
+  # Gatekeeper to reject the app with "damaged" after the signing cert expires.
+  timestamp: "http://timestamp.apple.com/ts01"
   extendInfo:
     NSMicrophoneUsageDescription: ClawX requires microphone access for voice features
     NSCameraUsageDescription: ClawX requires camera access for video features
