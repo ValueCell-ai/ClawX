@@ -5,7 +5,7 @@
  * are in the toolbar; messages render with markdown + streaming.
  */
 import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { AlertCircle, Loader2, Sparkles } from 'lucide-react';
+import { AlertCircle, ArrowDownToLine, Loader2, Sparkles } from 'lucide-react';
 import { useChatStore, type RawMessage } from '@/stores/chat';
 import { buildBaselineRunKey, getBaseline } from '@/stores/baseline-cache';
 import { useGatewayStore } from '@/stores/gateway';
@@ -171,7 +171,7 @@ export function Chat() {
   const [graphExpandedOverrides, setGraphExpandedOverrides] = useState<Record<string, boolean>>({});
   const graphStepCache: Record<string, GraphStepCacheEntry> = graphStepCacheStore.get(currentSessionKey) ?? {};
   const minLoading = useMinLoading(loading && messages.length > 0);
-  const { contentRef, scrollRef } = useStickToBottomInstant(currentSessionKey);
+  const { contentRef, scrollRef, scrollToBottom, isAtBottom } = useStickToBottomInstant(currentSessionKey);
 
   // Load data when gateway is running.
   // When the store already holds messages for this session (i.e. the user
@@ -277,6 +277,7 @@ export function Chat() {
   const hasAnyStreamContent = hasStreamText || hasStreamThinking || hasStreamTools || hasStreamImages || hasStreamToolStatus;
 
   const isEmpty = messages.length === 0 && !sending;
+  const showScrollToLatest = !isEmpty && !isAtBottom;
   const subagentCompletionInfos = messages.map((message) => parseSubagentCompletionInfo(message));
   // Build an index of the *next* real user message after each position.
   // Gateway history may contain `role: 'user'` messages that are actually
@@ -698,9 +699,9 @@ export function Chat() {
       </div>
 
       {/* Messages Area */}
-      <div className="min-h-0 flex-1 overflow-hidden px-4 py-4">
+      <div className="relative min-h-0 flex-1 overflow-hidden px-4 py-4">
         <div className="mx-auto flex h-full min-h-0 max-w-6xl flex-col gap-4 lg:flex-row lg:items-stretch">
-          <div ref={scrollRef} className="min-h-0 min-w-0 flex-1 overflow-y-auto">
+          <div ref={scrollRef} className="min-h-0 min-w-0 flex-1 overflow-y-auto" data-testid="chat-scroll-container">
             <div
               ref={contentRef}
               className={cn(
@@ -847,6 +848,19 @@ export function Chat() {
               )}
             </div>
           </div>
+          {showScrollToLatest && (
+            <button
+              type="button"
+              onClick={() => void scrollToBottom({ animation: 'smooth', ignoreEscapes: true })}
+              className="absolute bottom-4 right-4 z-20 inline-flex items-center gap-2 rounded-full border border-border bg-background/95 px-3 py-1.5 text-xs font-medium text-foreground shadow-lg shadow-black/10 backdrop-blur transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 dark:shadow-black/30"
+              aria-label={t('scrollToLatest', '跳转到最新对话')}
+              title={t('scrollToLatest', '跳转到最新对话')}
+              data-testid="chat-scroll-to-latest"
+            >
+              <ArrowDownToLine className="h-3.5 w-3.5" />
+              <span>{t('scrollToLatest', '跳转到最新对话')}</span>
+            </button>
+          )}
 
         </div>
       </div>

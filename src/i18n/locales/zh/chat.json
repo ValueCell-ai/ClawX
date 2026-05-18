@@ -14,6 +14,7 @@
         "brainstorming": "多智能体并行"
     },
     "noLogs": "（暂无日志）",
+    "scrollToLatest": "跳转到最新对话",
     "toolbar": {
         "refresh": "刷新聊天",
         "currentAgent": "当前对话对象：{{agent}}",

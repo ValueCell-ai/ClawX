@@ -27,7 +27,8 @@ vi.mock('@/lib/host-api', () => ({
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
-    t: (key: string, params?: Record<string, unknown>) => {
+    t: (key: string, params?: Record<string, unknown> | string) => {
+      if (typeof params === 'string') return params;
       if (key === 'executionGraph.collapsedSummary') {
         return `collapsed ${String(params?.toolCount ?? '')} ${String(params?.processCount ?? '')}`.trim();
       }
@@ -52,10 +53,12 @@ vi.mock('react-i18next', () => ({
 }));
 
 vi.mock('@/hooks/use-stick-to-bottom-instant', () => ({
-  useStickToBottomInstant: () => ({
+  useStickToBottomInstant: vi.fn(() => ({
     contentRef: { current: null },
     scrollRef: { current: null },
-  }),
+    scrollToBottom: vi.fn(),
+    isAtBottom: true,
+  })),
 }));
 
 vi.mock('@/hooks/use-min-loading', () => ({
@@ -256,6 +259,49 @@ describe('Chat execution graph lifecycle', () => {
 
     expect(screen.getByText('+1')).toBeInTheDocument();
     expect(screen.getByText('-1')).toBeInTheDocument();
+  });
+
+  it('shows a scroll-to-latest button when the chat is scrolled away from the bottom', async () => {
+    const { useChatStore } = await import('@/stores/chat');
+    useChatStore.setState({
+      messages: Array.from({ length: 24 }, (_, idx) => ({
+        role: idx % 2 === 0 ? 'user' : 'assistant',
+        content: `Message ${idx + 1}`,
+        timestamp: Date.now() + idx,
+      })),
+      loading: false,
+      error: null,
+      runError: null,
+      sending: false,
+      activeRunId: null,
+      streamingText: '',
+      streamingMessage: null,
+      streamingTools: [],
+      pendingFinal: false,
+      lastUserMessageAt: Date.now(),
+      pendingToolImages: [],
+      sessions: [{ key: 'agent:main:main' }],
+      currentSessionKey: 'agent:main:main',
+      currentAgentId: 'main',
+      sessionLabels: {},
+      sessionLastActivity: {},
+      thinkingLevel: null,
+    });
+
+    const { useStickToBottomInstant } = await import('@/hooks/use-stick-to-bottom-instant');
+    vi.mocked(useStickToBottomInstant).mockReturnValue({
+      contentRef: { current: null },
+      scrollRef: { current: null },
+      scrollToBottom: vi.fn(),
+      isAtBottom: false,
+    } as ReturnType<typeof useStickToBottomInstant>);
+
+    const { Chat } = await import('@/pages/Chat/index');
+
+    render(<Chat />);
+
+    expect(await screen.findByTestId('chat-scroll-to-latest')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '跳转到最新对话' })).toBeInTheDocument();
   });
 
   it('stops showing trailing thinking and renders run error callout after terminal model error', async () => {

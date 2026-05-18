@@ -14,6 +14,7 @@
         "brainstorming": "Multi-Agent Parallel"
     },
     "noLogs": "(No logs available yet)",
+    "scrollToLatest": "Jump to latest",
     "toolbar": {
         "refresh": "Refresh chat",
         "currentAgent": "Talking to {{agent}}",
