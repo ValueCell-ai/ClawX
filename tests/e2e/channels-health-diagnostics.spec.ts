@@ -1,6 +1,85 @@
 import { completeSetup, expect, test } from './fixtures/electron';
 
 test.describe('Channels health diagnostics', () => {
+  test('does not flash a stale gateway-not-running banner while status is running', async ({ electronApp, page }) => {
+    await electronApp.evaluate(({ ipcMain }) => {
+      ipcMain.removeHandler('hostapi:fetch');
+      ipcMain.handle('hostapi:fetch', async (_event, request: { path?: string; method?: string }) => {
+        const method = request?.method ?? 'GET';
+        const path = request?.path ?? '';
+
+        if (path.startsWith('/api/channels/accounts') && method === 'GET') {
+          return {
+            ok: true,
+            data: {
+              status: 200,
+              ok: true,
+              json: {
+                success: true,
+                gatewayHealth: {
+                  state: 'degraded',
+                  reasons: ['gateway_not_running'],
+                  consecutiveHeartbeatMisses: 0,
+                },
+                channels: [
+                  {
+                    channelType: 'feishu',
+                    defaultAccountId: 'default',
+                    status: 'connected',
+                    accounts: [
+                      {
+                        accountId: 'default',
+                        name: 'Primary Account',
+                        configured: true,
+                        status: 'connected',
+                        isDefault: true,
+                      },
+                    ],
+                  },
+                ],
+              },
+            },
+          };
+        }
+
+        if (path === '/api/gateway/status' && method === 'GET') {
+          return {
+            ok: true,
+            data: {
+              status: 200,
+              ok: true,
+              json: { state: 'running', port: 18789 },
+            },
+          };
+        }
+
+        if (path === '/api/agents' && method === 'GET') {
+          return {
+            ok: true,
+            data: {
+              status: 200,
+              ok: true,
+              json: { success: true, agents: [] },
+            },
+          };
+        }
+
+        return {
+          ok: false,
+          error: { message: `Unexpected hostapi:fetch request: ${method} ${path}` },
+        };
+      });
+    });
+
+    await completeSetup(page);
+    await page.getByTestId('sidebar-nav-channels').click();
+    await expect(page.getByTestId('channels-page')).toBeVisible();
+    await expect(page.getByText('Feishu / Lark')).toBeVisible();
+    await expect(page.getByTestId('channels-health-banner')).toHaveCount(0);
+    await expect(page.getByText(/Gateway degraded|状态波动|ゲートウェイ劣化/)).toHaveCount(0);
+    await expect(page.getByText(/Gateway is not running|网关当前未运行|ゲートウェイは起動していません/)).toHaveCount(0);
+  });
+
   test('shows degraded banner, restarts gateway, and copies diagnostics', async ({ electronApp, page }) => {
     await electronApp.evaluate(({ ipcMain }) => {
       const state = {
@@ -18,7 +97,7 @@ test.describe('Channels health diagnostics', () => {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const current = (globalThis as any).__clawxE2eChannelHealth as typeof state;
 
-        if (path === '/api/channels/accounts' && method === 'GET') {
+        if (path.startsWith('/api/channels/accounts') && method === 'GET') {
           return {
             ok: true,
             data: {
@@ -137,8 +216,8 @@ test.describe('Channels health diagnostics', () => {
     await page.getByTestId('sidebar-nav-channels').click();
     await expect(page.getByTestId('channels-page')).toBeVisible();
     await expect(page.getByTestId('channels-health-banner')).toBeVisible();
-    await expect(page.getByText(/Gateway degraded|网关状态异常|ゲートウェイ劣化/)).toBeVisible();
-    await expect(page.locator('div.rounded-2xl').getByText(/Degraded|异常降级|劣化中/).first()).toBeVisible();
+    await expect(page.getByText(/Gateway degraded|状态波动|ゲートウェイ劣化/)).toBeVisible();
+    await expect(page.locator('div.rounded-2xl').getByText(/Degraded|状态波动|劣化中/).first()).toBeVisible();
 
     await page.getByTestId('channels-restart-gateway').click();
     await page.getByTestId('channels-copy-diagnostics').click();

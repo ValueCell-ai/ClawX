@@ -518,6 +518,51 @@ describe('Channels page status refresh', () => {
     });
   });
 
+  it('suppresses stale gateway-not-running health while gateway status is running', async () => {
+    subscribeHostEventMock.mockImplementation(() => vi.fn());
+
+    hostApiFetchMock.mockImplementation(async (path: string) => {
+      if (path.startsWith('/api/channels/accounts')) {
+        return {
+          success: true,
+          gatewayHealth: {
+            state: 'degraded',
+            reasons: ['gateway_not_running'],
+            consecutiveHeartbeatMisses: 0,
+          },
+          channels: [
+            {
+              channelType: 'feishu',
+              defaultAccountId: 'default',
+              status: 'connected',
+              accounts: [
+                {
+                  accountId: 'default',
+                  name: 'Primary Account',
+                  configured: true,
+                  status: 'connected',
+                  isDefault: true,
+                },
+              ],
+            },
+          ],
+        };
+      }
+
+      if (path === '/api/agents') {
+        return { success: true, agents: [] };
+      }
+
+      throw new Error(`Unexpected host API path: ${path}`);
+    });
+
+    render(<Channels />);
+
+    expect(await screen.findByText('Feishu / Lark')).toBeInTheDocument();
+    expect(screen.queryByTestId('channels-health-banner')).not.toBeInTheDocument();
+    expect(screen.queryByText('health.reasons.gateway_not_running')).not.toBeInTheDocument();
+  });
+
   it('surfaces diagnostics fetch failure payloads instead of caching them as snapshots', async () => {
     subscribeHostEventMock.mockImplementation(() => vi.fn());
 

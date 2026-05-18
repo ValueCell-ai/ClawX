@@ -126,6 +126,17 @@ const DEFAULT_GATEWAY_HEALTH: GatewayHealthSummary = {
   consecutiveHeartbeatMisses: 0,
 };
 
+function isStaleNotRunningHealthForRunningGateway(
+  gatewayHealth: GatewayHealthSummary,
+  gatewayState: string,
+): boolean {
+  return (
+    gatewayState === 'running'
+    && gatewayHealth.state === 'degraded'
+    && gatewayHealth.reasons.includes('gateway_not_running')
+  );
+}
+
 export function Channels() {
   const { t } = useTranslation('channels');
   const gatewayStatus = useGatewayStore((state) => state.status);
@@ -154,6 +165,9 @@ export function Channels() {
   const hasLoadedAgentsRef = useRef(false);
 
   const displayedChannelTypes = getPrimaryChannels();
+  const displayedGatewayHealth = isStaleNotRunningHealthForRunningGateway(gatewayHealth, gatewayStatus.state)
+    ? DEFAULT_GATEWAY_HEALTH
+    : gatewayHealth;
   const visibleChannelGroups = channelGroups;
   const visibleAgents = agents;
   const hasStableValue = visibleChannelGroups.length > 0 || visibleAgents.length > 0;
@@ -438,10 +452,10 @@ export function Channels() {
   };
 
   const healthReasonLabel = useMemo(() => {
-    const primaryReason = gatewayHealth.reasons[0];
+    const primaryReason = displayedGatewayHealth.reasons[0];
     if (!primaryReason) return '';
     return t(`health.reasons.${primaryReason}`);
-  }, [gatewayHealth.reasons, t]);
+  }, [displayedGatewayHealth.reasons, t]);
 
   const diagnosticsText = useMemo(
     () => diagnosticsSnapshot ? JSON.stringify(diagnosticsSnapshot, null, 2) : '',
@@ -551,12 +565,12 @@ export function Channels() {
             </div>
           )}
 
-          {gatewayStatus.state === 'running' && gatewayHealth.state !== 'healthy' && (
+          {gatewayStatus.state === 'running' && displayedGatewayHealth.state !== 'healthy' && (
             <div
               data-testid="channels-health-banner"
               className={cn(
                 'mb-8 rounded-xl border p-4',
-                gatewayHealth.state === 'unresponsive'
+                displayedGatewayHealth.state === 'unresponsive'
                   ? 'border-destructive/50 bg-destructive/10'
                   : 'border-yellow-500/50 bg-yellow-500/10',
               )}
@@ -566,14 +580,14 @@ export function Channels() {
                   <AlertCircle
                     className={cn(
                       'mt-0.5 h-5 w-5 shrink-0',
-                      gatewayHealth.state === 'unresponsive'
+                      displayedGatewayHealth.state === 'unresponsive'
                         ? 'text-destructive'
                         : 'text-yellow-600 dark:text-yellow-400',
                     )}
                   />
                   <div>
                     <p className="text-sm font-semibold text-foreground">
-                      {t(`health.state.${gatewayHealth.state}`)}
+                      {t(`health.state.${displayedGatewayHealth.state}`)}
                     </p>
                     {healthReasonLabel && (
                       <p className="mt-1 text-sm text-foreground/75">{healthReasonLabel}</p>
