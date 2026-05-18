@@ -42,13 +42,23 @@ function pruneGatewayEventDedupe(now: number): void {
   }
 }
 
+function stableGatewayEventValue(value: unknown): string {
+  if (value === undefined) return 'undefined';
+  if (value === null || typeof value !== 'object') return JSON.stringify(value);
+  if (Array.isArray(value)) return `[${value.map((item) => stableGatewayEventValue(item)).join(',')}]`;
+  const entries = Object.entries(value as Record<string, unknown>)
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([key, entryValue]) => `${JSON.stringify(key)}:${stableGatewayEventValue(entryValue)}`);
+  return `{${entries.join(',')}}`;
+}
+
 function buildGatewayEventDedupeKey(event: Record<string, unknown>): string | null {
   const runId = event.runId != null ? String(event.runId) : '';
   const sessionKey = event.sessionKey != null ? String(event.sessionKey) : '';
   const seq = event.seq != null ? String(event.seq) : '';
   const state = event.state != null ? String(event.state) : '';
   if (state === 'delta' && !seq) {
-    return null;
+    return ['delta-nosq', runId, sessionKey, stableGatewayEventValue(event.message ?? event)].join('|');
   }
   if (runId || sessionKey || seq || state) {
     return [runId, sessionKey, seq, state].join('|');
@@ -185,7 +195,7 @@ function handleGatewayNotification(notification: { method?: string; params?: Rec
         const matchesActiveRun = runId != null && state.activeRunId != null && String(runId) === state.activeRunId;
 
         if (matchesCurrentSession || matchesActiveRun) {
-          maybeLoadHistory(state);
+          maybeLoadHistory(state, isTerminalPhase);
         }
         if (isTerminalPhase && (matchesCurrentSession || matchesActiveRun) && state.sending) {
           useChatStore.setState({

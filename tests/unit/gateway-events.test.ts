@@ -166,6 +166,46 @@ describe('gateway store event wiring', () => {
     expect(useChatStore.getState().lastUserMessageAt).toBeNull();
   });
 
+  it('forces terminal history reload even when non-terminal phase end just refreshed history', async () => {
+    const handlers = new Map<string, (payload: unknown) => void>();
+    subscribeHostEventMock.mockImplementation((eventName: string, handler: (payload: unknown) => void) => {
+      handlers.set(eventName, handler);
+      return () => {};
+    });
+    const { useChatStore } = await import('@/stores/chat');
+    const loadHistory = vi.fn(async () => {});
+    useChatStore.setState({
+      currentSessionKey: 'agent:main:main',
+      sessions: [{ key: 'agent:main:main' }],
+      sending: true,
+      activeRunId: 'run-terminal-refresh',
+      pendingFinal: true,
+      lastUserMessageAt: 1773281731000,
+      loadHistory,
+    });
+
+    const { useGatewayStore } = await import('@/stores/gateway');
+    await useGatewayStore.getState().init();
+
+    const notifyPhase = (phase: string) => handlers.get('gateway:notification')?.({
+      method: 'agent',
+      params: {
+        runId: 'run-terminal-refresh',
+        sessionKey: 'agent:main:main',
+        data: { phase },
+      },
+    });
+
+    notifyPhase('end');
+    await flushAsyncImports();
+    notifyPhase('completed');
+    await flushAsyncImports();
+
+    expect(loadHistory).toHaveBeenCalledTimes(2);
+    expect(useChatStore.getState().sending).toBe(false);
+    expect(useChatStore.getState().activeRunId).toBeNull();
+  });
+
   it('passes progressive delta notifications without seq through to chat store', async () => {
     const handlers = new Map<string, (payload: unknown) => void>();
     subscribeHostEventMock.mockImplementation((eventName: string, handler: (payload: unknown) => void) => {
@@ -215,5 +255,40 @@ describe('gateway store event wiring', () => {
       state: 'delta',
       message: { content: [{ text: 'first second' }] },
     });
+  });
+
+  it('dedupes exact replayed delta notifications without seq', async () => {
+    const handlers = new Map<string, (payload: unknown) => void>();
+    subscribeHostEventMock.mockImplementation((eventName: string, handler: (payload: unknown) => void) => {
+      handlers.set(eventName, handler);
+      return () => {};
+    });
+
+    const { useChatStore } = await import('@/stores/chat');
+    const handleChatEvent = vi.fn();
+    useChatStore.setState({
+      currentSessionKey: 'agent:main:main',
+      sessions: [{ key: 'agent:main:main' }],
+      handleChatEvent,
+    });
+
+    const { useGatewayStore } = await import('@/stores/gateway');
+    await useGatewayStore.getState().init();
+
+    const replayedDelta = {
+      method: 'agent',
+      params: {
+        runId: 'run-no-seq-replay',
+        sessionKey: 'agent:main:main',
+        state: 'delta',
+        message: { role: 'assistant', content: [{ type: 'text', text: 'same' }] },
+      },
+    };
+
+    handlers.get('gateway:notification')?.(replayedDelta);
+    handlers.get('gateway:notification')?.(replayedDelta);
+    await flushAsyncImports();
+
+    expect(handleChatEvent).toHaveBeenCalledTimes(1);
   });
 });

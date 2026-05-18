@@ -19,7 +19,7 @@ test.describe('ClawX chat run state events', () => {
       await installIpcMocks(app, {
         gatewayStatus: { state: 'running', port: 18789, pid: 12345, gatewayReady: true },
         gatewayRpc: {
-          [stableStringify(['sessions.list', {}])]: {
+          [stableStringify(['sessions.list', { includeDerivedTitles: true, includeLastMessage: true }])]: {
             success: true,
             result: {
               sessions: [{ key: MAIN_SESSION_KEY, displayName: 'main' }],
@@ -29,9 +29,9 @@ test.describe('ClawX chat run state events', () => {
             success: true,
             result: { messages: [] },
           },
-          [stableStringify(['chat.send', { sessionKey: MAIN_SESSION_KEY, message: 'run long task', deliver: false }])]: {
+          [stableStringify(['chat.send', null])]: {
             success: true,
-            result: {},
+            result: { runId: 'run-e2e' },
           },
         },
         hostApi: {
