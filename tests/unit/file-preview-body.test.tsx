@@ -16,12 +16,15 @@ const invokeIpc = vi.fn(async (channel: string) => {
   if (channel === 'shell:openPath') return '';
   return {};
 });
+const readTextFile = vi.fn();
+const statFile = vi.fn();
+const writeTextFile = vi.fn();
 
 vi.mock('@/lib/api-client', () => ({
   invokeIpc: (...args: unknown[]) => invokeIpc(...args),
-  readTextFile: vi.fn(),
-  statFile: vi.fn(),
-  writeTextFile: vi.fn(),
+  readTextFile: (...args: unknown[]) => readTextFile(...args),
+  statFile: (...args: unknown[]) => statFile(...args),
+  writeTextFile: (...args: unknown[]) => writeTextFile(...args),
 }));
 
 function makePreviewTarget(overrides: Partial<FilePreviewTarget> = {}): FilePreviewTarget {
@@ -37,6 +40,37 @@ function makePreviewTarget(overrides: Partial<FilePreviewTarget> = {}): FilePrev
 }
 
 describe('FilePreviewBody', () => {
+  it('renders html files as sandboxed HTML preview instead of raw source by default', async () => {
+    readTextFile.mockResolvedValueOnce({
+      ok: true,
+      content: '<!doctype html><html><body><h1>Rendered HTML</h1><script>document.body.dataset.scriptRan = "yes";</script></body></html>',
+      size: 121,
+      readOnly: true,
+    });
+
+    render(
+      <FilePreviewBody
+        file={makePreviewTarget({
+          filePath: '/tmp/demo.html',
+          fileName: 'demo.html',
+          ext: '.html',
+          mimeType: 'text/html',
+          contentType: 'document',
+          size: 121,
+        })}
+        mode="preview"
+      />,
+    );
+
+    const frame = await screen.findByTestId('html-preview-frame');
+    expect(frame).toBeVisible();
+    expect(frame).toHaveAttribute(
+      'sandbox',
+      'allow-scripts allow-forms allow-popups allow-popups-to-escape-sandbox allow-presentation allow-downloads',
+    );
+    expect(screen.queryByText('<!doctype html>')).not.toBeInTheDocument();
+  });
+
   it('uses known attachment size to show direct-open fallback for large PDFs', async () => {
     render(
       <FilePreviewBody

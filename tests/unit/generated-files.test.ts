@@ -56,6 +56,12 @@ describe('generated-files utilities', () => {
     expect(stats).toBeNull();
   });
 
+  it('routes html documents to rendered inline preview and text diff support', () => {
+    expect(supportsInlineDocumentPreview('.html')).toBe(true);
+    expect(supportsInlineDocumentPreview('.htm')).toBe(true);
+    expect(supportsInlineDiff({ ext: '.html', contentType: 'document' })).toBe(true);
+  });
+
   it('routes pdf/spreadsheet to rich-doc preview but never to text diff', () => {
     expect(supportsInlineDocumentPreview('.md')).toBe(true);
     // PDFs and spreadsheets now render through dedicated viewers, so they

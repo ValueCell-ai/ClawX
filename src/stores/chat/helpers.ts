@@ -372,6 +372,8 @@ function mimeFromExtension(filePath: string): string {
     'pptx': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
     'txt': 'text/plain',
     'csv': 'text/csv',
+    'html': 'text/html',
+    'htm': 'text/html',
     'md': 'text/markdown',
     'rtf': 'application/rtf',
     'epub': 'application/epub+zip',
@@ -418,7 +420,7 @@ function trimPathTerminators(filePath: string): string {
 function extractRawFilePaths(text: string): Array<{ filePath: string; mimeType: string }> {
   const refs: Array<{ filePath: string; mimeType: string }> = [];
   const seen = new Set<string>();
-  const exts = 'png|jpe?g|gif|webp|bmp|avif|svg|pdf|docx?|xlsx?|pptx?|txt|csv|md|rtf|epub|zip|tar|gz|rar|7z|mp3|wav|ogg|aac|flac|m4a|mp4|mov|avi|mkv|webm|m4v';
+  const exts = 'png|jpe?g|gif|webp|bmp|avif|svg|pdf|docx?|xlsx?|pptx?|html?|txt|csv|md|rtf|epub|zip|tar|gz|rar|7z|mp3|wav|ogg|aac|flac|m4a|mp4|mov|avi|mkv|webm|m4v';
   // Tagged media references (MEDIA:/path, media:~/path, ...).  The agent
   // runtime uses this prefix as an explicit "this is an artifact" marker,
   // so we want them recognised even though the leading colon would

@@ -66,6 +66,20 @@ const attachedFileHistory = [
   },
 ];
 
+const htmlFileHistory = [
+  {
+    role: 'user',
+    id: 'user-html-1',
+    content: [{ type: 'text', text: '预览 HTML 页面' }],
+    timestamp: Date.now(),
+  },
+  {
+    role: 'assistant',
+    id: 'assistant-html-1',
+    content: [{ type: 'text', text: '已生成 /workspace/demo.html' }],
+    timestamp: Date.now(),
+  },
+];
 test.describe('ClawX chat file changes', () => {
   test('shows line stats on generated file cards', async ({ launchElectronApp }) => {
     const app = await launchElectronApp({ skipSetup: true });
@@ -152,6 +166,100 @@ test.describe('ClawX chat file changes', () => {
 
       expect(colors.diffBackground).toBe(colors.appBackground);
       expect(colors.diffBackground).not.toBe('rgb(255, 255, 255)');
+    } finally {
+      await closeElectronApp(app);
+    }
+  });
+
+  test('opens html files from chat as rendered previews', async ({ launchElectronApp }) => {
+    const app = await launchElectronApp({ skipSetup: true });
+
+    try {
+      await installIpcMocks(app, {
+        gatewayStatus: { state: 'running', port: 18789, pid: 12345 },
+        gatewayRpc: {
+          [stableStringify(['sessions.list', {}])]: {
+            success: true,
+            result: {
+              sessions: [{ key: SESSION_KEY, displayName: 'main' }],
+            },
+          },
+          [stableStringify(['chat.history', { sessionKey: SESSION_KEY, limit: 200 }])]: {
+            success: true,
+            result: { messages: htmlFileHistory },
+          },
+          [stableStringify(['chat.history', { sessionKey: SESSION_KEY, limit: 1000 }])]: {
+            success: true,
+            result: { messages: htmlFileHistory },
+          },
+        },
+        hostApi: {
+          [stableStringify(['/api/gateway/status', 'GET'])]: {
+            ok: true,
+            data: {
+              status: 200,
+              ok: true,
+              json: { state: 'running', port: 18789, pid: 12345 },
+            },
+          },
+          [stableStringify(['/api/agents', 'GET'])]: {
+            ok: true,
+            data: {
+              status: 200,
+              ok: true,
+              json: {
+                success: true,
+                agents: [{ id: 'main', name: 'main', workspace: '/workspace' }],
+              },
+            },
+          },
+        },
+      });
+
+      await app.evaluate(async () => {
+        const { ipcMain } = process.mainModule!.require('electron') as typeof import('electron');
+        ipcMain.removeHandler('file:stat');
+        ipcMain.handle('file:stat', async (_event: unknown, inputPath: string) => ({
+          ok: inputPath === '/workspace/demo.html',
+          size: 154,
+          isFile: inputPath === '/workspace/demo.html',
+          isDir: false,
+          readOnly: true,
+        }));
+        ipcMain.removeHandler('file:readText');
+        ipcMain.handle('file:readText', async (_event: unknown, inputPath: string) => {
+          if (inputPath !== '/workspace/demo.html') return { ok: false, error: 'notFound' };
+          return {
+            ok: true,
+            content: '<!doctype html><html><body><h1 id="title">HTML Rendered Preview</h1><script>document.body.dataset.htmlPreview = "ok";</script></body></html>',
+            size: 154,
+            mimeType: 'text/html',
+            readOnly: true,
+          };
+        });
+      });
+
+      const page = await getStableWindow(app);
+      try {
+        await page.reload();
+      } catch (error) {
+        if (!String(error).includes('ERR_FILE_NOT_FOUND')) {
+          throw error;
+        }
+      }
+
+      await expect(page.getByTestId('main-layout')).toBeVisible();
+      const htmlFileCard = page.locator('[title="Open file"]').filter({ hasText: 'demo.html' }).first();
+      await expect(htmlFileCard).toBeVisible({ timeout: 30_000 });
+      await htmlFileCard.click();
+
+      const sidePanel = page.getByTestId('artifact-panel');
+      const frame = sidePanel.getByTestId('html-preview-frame');
+      await expect(frame).toBeVisible({ timeout: 30_000 });
+      await expect(sidePanel.getByText('<!doctype html>')).toHaveCount(0);
+      const htmlFrame = frame.contentFrame();
+      await expect(htmlFrame.locator('#title')).toHaveText('HTML Rendered Preview');
+      await expect(htmlFrame.locator('body')).toHaveAttribute('data-html-preview', 'ok');
     } finally {
       await closeElectronApp(app);
     }

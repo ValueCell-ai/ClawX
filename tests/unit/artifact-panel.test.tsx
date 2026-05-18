@@ -104,4 +104,39 @@ describe('ArtifactPanel', () => {
     expect(screen.getByTestId('file-preview-body')).toHaveTextContent('SKILL.md');
     expect(screen.queryByText('No file selected')).not.toBeInTheDocument();
   });
+
+  it('keeps panel tab buttons above iframe previews so changes stays clickable', () => {
+    useArtifactPanel.setState({
+      open: true,
+      tab: 'preview',
+      focusedFile: {
+        filePath: '/tmp/demo.html',
+        fileName: 'demo.html',
+        ext: '.html',
+        mimeType: 'text/html',
+        contentType: 'document',
+      },
+      widthPct: ARTIFACT_PANEL_DEFAULT_WIDTH,
+    });
+
+    render(
+      <ArtifactPanel
+        files={[makeGeneratedFile({
+          filePath: '/tmp/demo.html',
+          fileName: 'demo.html',
+          ext: '.html',
+          mimeType: 'text/html',
+          contentType: 'document',
+        })]}
+        agent={null}
+      />,
+    );
+
+    const changesButton = screen.getByTestId('artifact-panel-tab-changes');
+    expect(changesButton.className).toContain('z-40');
+    expect(changesButton.parentElement?.parentElement?.className).toContain('z-30');
+
+    fireEvent.pointerDown(changesButton, { button: 0 });
+    expect(screen.getAllByTestId('file-preview-body')[0]).toHaveTextContent('diff');
+  });
 });

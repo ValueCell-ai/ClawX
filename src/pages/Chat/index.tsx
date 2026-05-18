@@ -24,7 +24,7 @@ import { useTranslation } from 'react-i18next';
 import { cn } from '@/lib/utils';
 import { useStickToBottomInstant } from '@/hooks/use-stick-to-bottom-instant';
 import { useMinLoading } from '@/hooks/use-min-loading';
-import { extractGeneratedFiles, generatedFileHasDiffPayload, type GeneratedFile } from '@/lib/generated-files';
+import { extractGeneratedFiles, generatedFileHasDiffPayload, isHtmlPreviewExt, type GeneratedFile } from '@/lib/generated-files';
 import { GeneratedFilesPanel } from '@/components/file-preview/GeneratedFilesPanel';
 import type { FilePreviewTarget } from '@/components/file-preview/types';
 import { buildPreviewTarget } from '@/components/file-preview/build-preview-target';
@@ -779,7 +779,14 @@ export function Chat() {
                               {generatedFiles.length > 0 && (
                                 <GeneratedFilesPanel
                                   files={generatedFiles}
-                                  onOpen={(file) => openChanges(generatedFileToTarget(file))}
+                                  onOpen={(file) => {
+                                    const target = generatedFileToTarget(file);
+                                    if (isHtmlPreviewExt(file.ext)) {
+                                      openPreview(target);
+                                      return;
+                                    }
+                                    openChanges(target);
+                                  }}
                                 />
                               )}
                             </div>
