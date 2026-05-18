@@ -163,7 +163,15 @@ function handleGatewayNotification(notification: { method?: string; params?: Rec
       .catch(() => {});
   }
 
-  if (phase === 'completed' || phase === 'done' || phase === 'finished' || phase === 'end') {
+  // `phase: 'end'` fires per streaming message (including intermediate tool
+  // rounds), NOT per-run, so it must not clear lifecycle state — otherwise the
+  // first `[thinking, toolCall]` round tears down `sending` / `activeRunId` /
+  // `pendingFinal` and the Thinking… indicator vanishes mid-chain. Only
+  // `completed` / `done` / `finished` are actual run terminators. We still
+  // honour `'end'` as a hint to refresh history opportunistically.
+  const isPerMessageEnd = phase === 'end';
+  const isRunCompletion = phase === 'completed' || phase === 'done' || phase === 'finished';
+  if (isPerMessageEnd || isRunCompletion) {
     import('./chat')
       .then(({ useChatStore }) => {
         const state = useChatStore.getState();
@@ -182,7 +190,7 @@ function handleGatewayNotification(notification: { method?: string; params?: Rec
         if (matchesCurrentSession || matchesActiveRun) {
           maybeLoadHistory(state);
         }
-        if ((matchesCurrentSession || matchesActiveRun) && state.sending) {
+        if (isRunCompletion && (matchesCurrentSession || matchesActiveRun) && state.sending) {
           useChatStore.setState({
             sending: false,
             activeRunId: null,

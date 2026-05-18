@@ -9,6 +9,7 @@ import {
   getMessageText,
   getToolCallFilePath,
   hasNonToolAssistantContent,
+  hasPendingToolUse,
   isInternalMessage,
   isTerminalAssistantErrorMessage,
   isToolOnlyMessage,
@@ -167,8 +168,14 @@ export function handleRuntimeEventState(
               });
               break;
             }
-            const toolOnly = isToolOnlyMessage(normalizedFinalMessage);
-            const hasOutput = hasNonToolAssistantContent(normalizedFinalMessage);
+            // Mixed `[thinking, text, toolCall]` messages with stop_reason="tool_use"
+            // (some MiniMax / gpt-5.5 variants emit these) are still intermediate
+            // turns even though they carry user-visible text. Treat them as
+            // tool-only for lifecycle purposes so the run stays "open" until the
+            // truly final reply (without a pending tool call) arrives.
+            const pendingTool = hasPendingToolUse(normalizedFinalMessage);
+            const toolOnly = isToolOnlyMessage(normalizedFinalMessage) || pendingTool;
+            const hasOutput = !pendingTool && hasNonToolAssistantContent(normalizedFinalMessage);
             const msgId = normalizedFinalMessage.id || (toolOnly ? `run-${runId}-tool-${Date.now()}` : `run-${runId}`);
             set((s) => {
               const nextTools = updates.length > 0 ? upsertToolStatuses(s.streamingTools, updates) : s.streamingTools;

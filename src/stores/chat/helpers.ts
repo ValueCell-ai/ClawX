@@ -1230,6 +1230,16 @@ function collectToolUpdates(message: unknown, eventState: string): ToolStatus[] 
   return updates;
 }
 
+/**
+ * True when an assistant message carries user-visible final output (text or
+ * image). NOTE: `thinking` blocks are intentionally excluded — they are the
+ * model's internal monologue and frequently precede tool calls in models like
+ * MiniMax-M2.7 and gpt-5.5. Treating thinking as "final content" causes the
+ * history-poll closer in applyLoadedMessages and the runtime final handler to
+ * misclassify intermediate `[thinking, toolCall]` turns as completed replies,
+ * which prematurely tears down the `sending` / `activeRunId` / `pendingFinal`
+ * lifecycle flags and makes the Thinking… indicator vanish mid-tool-chain.
+ */
 function hasNonToolAssistantContent(message: RawMessage | undefined): boolean {
   if (!message) return false;
   if (typeof message.content === 'string' && message.content.trim()) return true;
@@ -1238,13 +1248,41 @@ function hasNonToolAssistantContent(message: RawMessage | undefined): boolean {
   if (Array.isArray(content)) {
     for (const block of content as ContentBlock[]) {
       if (block.type === 'text' && block.text && block.text.trim()) return true;
-      if (block.type === 'thinking' && block.thinking && block.thinking.trim()) return true;
       if (block.type === 'image') return true;
     }
   }
 
   const msg = message as unknown as Record<string, unknown>;
   if (typeof msg.text === 'string' && msg.text.trim()) return true;
+
+  return false;
+}
+
+/**
+ * True when an assistant message is still waiting on a tool result, i.e. it
+ * represents an intermediate tool-use turn rather than a finished reply.
+ * Detected via:
+ *   - explicit stop_reason = "tool_use" / "toolUse"
+ *   - any tool_use / toolCall block in `content`
+ *   - OpenAI-format `tool_calls` array
+ * Used by applyLoadedMessages and the runtime `final` handler to keep the
+ * `sending` / `activeRunId` / `pendingFinal` flags armed across tool rounds.
+ */
+function hasPendingToolUse(message: RawMessage | undefined): boolean {
+  if (!message) return false;
+  const reason = getMessageStopReason(message);
+  if (reason === 'tool_use' || reason === 'tooluse') return true;
+
+  const content = message.content;
+  if (Array.isArray(content)) {
+    for (const block of content as ContentBlock[]) {
+      if (block.type === 'tool_use' || block.type === 'toolCall') return true;
+    }
+  }
+
+  const msg = message as unknown as Record<string, unknown>;
+  const toolCalls = msg.tool_calls ?? msg.toolCalls;
+  if (Array.isArray(toolCalls) && toolCalls.length > 0) return true;
 
   return false;
 }
@@ -1313,6 +1351,7 @@ export {
   collectToolUpdates,
   upsertToolStatuses,
   hasNonToolAssistantContent,
+  hasPendingToolUse,
   isToolOnlyMessage,
   normalizeStreamingMessage,
   matchesOptimisticUserMessage,
