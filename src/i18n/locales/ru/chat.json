@@ -192,5 +192,10 @@
         "withinWeek": "За последние 7 дней",
         "withinMonth": "За последние 30 дней",
         "older": "Ранее"
+    },
+    "questionDirectory": {
+        "title": "Список вопросов",
+        "fallback": "Вопрос {{number}}",
+        "moreHint": "Ещё {{count}} вопросов не показано"
     }
 }

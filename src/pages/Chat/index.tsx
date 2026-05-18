@@ -71,10 +71,34 @@ type UserRunCard = {
   suppressThinking: boolean;
 };
 
+type QuestionDirectoryItem = {
+  index: number;
+  ordinal: number;
+  title: string;
+};
+
+const QUESTION_DIRECTORY_RENDER_LIMIT = 300;
+
 function getPrimaryMessageStepTexts(steps: TaskStep[]): string[] {
   return steps
     .filter((step) => step.kind === 'message' && step.parentId === 'agent-run' && !!step.detail)
     .map((step) => step.detail!);
+}
+
+function buildQuestionDirectoryTitle(message: RawMessage, fallback: string): string {
+  const normalized = extractText(message).replace(/\s+/g, ' ').trim();
+  if (!normalized) return fallback;
+  return normalized.length > 64 ? `${normalized.slice(0, 64)}…` : normalized;
+}
+
+function isRealUserMessage(msg: RawMessage): boolean {
+  if (msg.role !== 'user') return false;
+  const content = msg.content;
+  if (!Array.isArray(content)) return true;
+  // If every block in the content is a tool_result, this is a Gateway
+  // tool-result wrapper, not a real user message.
+  const blocks = content as Array<{ type?: string }>;
+  return blocks.length === 0 || !blocks.every((b) => b.type === 'tool_result');
 }
 
 function generatedFileToTarget(file: GeneratedFile): FilePreviewTarget {
@@ -142,6 +166,7 @@ export function Chat() {
     closeArtifactPanel();
   }, [currentSessionKey, closeArtifactPanel]);
   const [childTranscripts, setChildTranscripts] = useState<Record<string, RawMessage[]>>({});
+  const [questionDirectoryOpenSessionKey, setQuestionDirectoryOpenSessionKey] = useState<string | null>(null);
 
   // Callback for file cards in chat messages — opens the in-app preview
   // panel instead of the system default editor.
@@ -278,21 +303,15 @@ export function Chat() {
 
   const isEmpty = messages.length === 0 && !sending;
   const showScrollToLatest = !isEmpty && !isAtBottom;
-  const subagentCompletionInfos = messages.map((message) => parseSubagentCompletionInfo(message));
+  const subagentCompletionInfos = useMemo(
+    () => messages.map((message) => parseSubagentCompletionInfo(message)),
+    [messages],
+  );
   // Build an index of the *next* real user message after each position.
   // Gateway history may contain `role: 'user'` messages that are actually
   // tool-result wrappers (Anthropic API format).  These must NOT split
   // the run into multiple segments — only genuine user-authored messages
   // should act as run boundaries.
-  const isRealUserMessage = (msg: RawMessage): boolean => {
-    if (msg.role !== 'user') return false;
-    const content = msg.content;
-    if (!Array.isArray(content)) return true;
-    // If every block in the content is a tool_result, this is a Gateway
-    // tool-result wrapper, not a real user message.
-    const blocks = content as Array<{ type?: string }>;
-    return blocks.length === 0 || !blocks.every((b) => b.type === 'tool_result');
-  };
   const nextUserMessageIndexes = new Array<number>(messages.length).fill(-1);
   let nextUserMessageIndex = -1;
   for (let idx = messages.length - 1; idx >= 0; idx -= 1) {
@@ -301,6 +320,23 @@ export function Chat() {
       nextUserMessageIndex = idx;
     }
   }
+
+  const questionDirectoryItems = useMemo<QuestionDirectoryItem[]>(() => {
+    const items: QuestionDirectoryItem[] = [];
+    let questionOrdinal = 0;
+    messages.forEach((message, index) => {
+      if (!isRealUserMessage(message) || subagentCompletionInfos[index]) return;
+      questionOrdinal += 1;
+      items.push({
+        index,
+        ordinal: questionOrdinal,
+        title: buildQuestionDirectoryTitle(message, t('questionDirectory.fallback', { number: questionOrdinal })),
+      });
+    });
+    return items;
+  }, [messages, subagentCompletionInfos, t]);
+
+  const questionDirectoryVisible = questionDirectoryOpenSessionKey === currentSessionKey && questionDirectoryItems.length > 1;
 
   // Indices of intermediate assistant process messages that are represented
   // in the ExecutionGraphCard (narration text and/or thinking). We suppress
@@ -694,13 +730,21 @@ export function Chat() {
       {/* Left column: chat */}
       <div className="flex min-w-0 flex-1 flex-col">
       {/* Toolbar */}
-      <div className="flex shrink-0 items-center justify-end px-4 py-2">
-        <ChatToolbar />
+      <div className="no-drag relative z-20 flex shrink-0 items-center justify-end px-4 py-2">
+        <ChatToolbar
+          questionDirectoryOpen={questionDirectoryVisible}
+          questionDirectoryCount={questionDirectoryItems.length}
+          onToggleQuestionDirectory={() =>
+            setQuestionDirectoryOpenSessionKey((openSessionKey) =>
+              openSessionKey === currentSessionKey ? null : currentSessionKey,
+            )
+          }
+        />
       </div>
 
       {/* Messages Area */}
       <div className="relative min-h-0 flex-1 overflow-hidden px-4 py-4">
-        <div className="mx-auto flex h-full min-h-0 max-w-6xl flex-col gap-4 lg:flex-row lg:items-stretch">
+        <div className="mx-auto flex h-full min-h-0 w-full max-w-7xl flex-col gap-4 lg:flex-row lg:items-stretch">
           <div ref={scrollRef} className="min-h-0 min-w-0 flex-1 overflow-y-auto" data-testid="chat-scroll-container">
             <div
               ref={contentRef}
@@ -862,6 +906,10 @@ export function Chat() {
             </button>
           )}
 
+          {!isEmpty && questionDirectoryVisible && (
+            <QuestionDirectory items={questionDirectoryItems} />
+          )}
+
         </div>
       </div>
 
@@ -945,6 +993,71 @@ export function Chat() {
         </div>
       )}
     </div>
+  );
+}
+
+// ── Question Directory ─────────────────────────────────────────
+
+function QuestionDirectory({ items }: { items: QuestionDirectoryItem[] }) {
+  const { t } = useTranslation('chat');
+  const scrollRef = useRef<HTMLElement | null>(null);
+  const visibleItems = items.slice(0, QUESTION_DIRECTORY_RENDER_LIMIT);
+  const hiddenCount = Math.max(0, items.length - visibleItems.length);
+
+  useEffect(() => {
+    const scrollEl = scrollRef.current;
+    if (!scrollEl) return;
+    scrollEl.scrollTop = scrollEl.scrollHeight;
+  }, [visibleItems.length]);
+
+  const handleJumpToMessage = (index: number) => {
+    document.getElementById(`chat-message-${index}`)?.scrollIntoView({
+      behavior: 'smooth',
+      block: 'start',
+    });
+  };
+
+  return (
+    <aside
+      data-testid="chat-question-directory"
+      className="w-full shrink-0 lg:w-64 xl:w-72"
+      aria-label={t('questionDirectory.title')}
+    >
+      <div className="sticky top-2 max-h-full overflow-hidden rounded-2xl border border-black/5 bg-black/[0.02] p-3 shadow-sm dark:border-white/10 dark:bg-white/[0.03]">
+        <div className="mb-2 flex items-center justify-between gap-2 px-1">
+          <h2 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            {t('questionDirectory.title')}
+          </h2>
+          <span className="rounded-full bg-black/5 px-2 py-0.5 text-2xs font-medium text-muted-foreground dark:bg-white/10">
+            {items.length}
+          </span>
+        </div>
+        <nav ref={scrollRef} className="max-h-[calc(100vh-13rem)] space-y-1 overflow-y-auto pr-1">
+          {visibleItems.map((item) => (
+            <button
+              key={item.index}
+              type="button"
+              data-testid={`chat-question-directory-item-${item.index}`}
+              onClick={() => handleJumpToMessage(item.index)}
+              className={cn(
+                'group flex w-full items-start gap-2 rounded-xl px-2 py-2 text-left transition-colors',
+                'text-foreground/70 hover:bg-black/5 hover:text-foreground dark:hover:bg-white/10',
+              )}
+              title={item.title}
+            >
+              <span className="line-clamp-2 min-w-0 text-xs leading-5">
+                {item.title}
+              </span>
+            </button>
+          ))}
+          {hiddenCount > 0 && (
+            <div className="px-2 py-2 text-xs leading-5 text-muted-foreground">
+              {t('questionDirectory.moreHint', { count: hiddenCount })}
+            </div>
+          )}
+        </nav>
+      </div>
+    </aside>
   );
 }
 

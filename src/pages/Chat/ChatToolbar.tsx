@@ -4,7 +4,7 @@
  * entry point.  Rendered in the Header when on the Chat page.
  */
 import { useMemo } from 'react';
-import { RefreshCw, Bot, FolderTree } from 'lucide-react';
+import { RefreshCw, Bot, FolderTree, ListTree } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { useChatStore } from '@/stores/chat';
@@ -14,7 +14,17 @@ import { cn } from '@/lib/utils';
 import { useTranslation } from 'react-i18next';
 import { WORKSPACE_BROWSER_ENABLED } from '@/components/file-preview/workspace-browser-config';
 
-export function ChatToolbar() {
+type ChatToolbarProps = {
+  questionDirectoryOpen?: boolean;
+  questionDirectoryCount?: number;
+  onToggleQuestionDirectory?: () => void;
+};
+
+export function ChatToolbar({
+  questionDirectoryOpen = false,
+  questionDirectoryCount = 0,
+  onToggleQuestionDirectory,
+}: ChatToolbarProps = {}) {
   const refresh = useChatStore((s) => s.refresh);
   const loading = useChatStore((s) => s.loading);
   const currentAgentId = useChatStore((s) => s.currentAgentId);
@@ -31,6 +41,7 @@ export function ChatToolbar() {
   const currentAgentName = currentAgent?.name ?? currentAgentId;
 
   const browserActive = WORKSPACE_BROWSER_ENABLED && panelOpen && panelTab === 'browser';
+  const questionDirectoryAvailable = questionDirectoryCount > 1 && !!onToggleQuestionDirectory;
 
   return (
     <div className="flex items-center gap-2">
@@ -57,6 +68,24 @@ export function ChatToolbar() {
           </TooltipContent>
         </Tooltip>
       )}
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Button
+            data-testid="chat-question-directory-toggle"
+            variant="ghost"
+            size="icon"
+            className={cn('h-8 w-8', questionDirectoryOpen && 'bg-foreground/10 text-foreground')}
+            onClick={onToggleQuestionDirectory}
+            disabled={!questionDirectoryAvailable}
+            aria-label={t('questionDirectory.title')}
+          >
+            <ListTree className="h-4 w-4" />
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent>
+          <p>{t('questionDirectory.title')}</p>
+        </TooltipContent>
+      </Tooltip>
       {/* Refresh */}
       <Tooltip>
         <TooltipTrigger asChild>

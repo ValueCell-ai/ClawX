@@ -192,5 +192,10 @@
         "withinWeek": "Last 7 days",
         "withinMonth": "Last 30 days",
         "older": "Older"
+    },
+    "questionDirectory": {
+        "title": "Question directory",
+        "fallback": "Question {{number}}",
+        "moreHint": "{{count}} more questions not shown"
     }
 }

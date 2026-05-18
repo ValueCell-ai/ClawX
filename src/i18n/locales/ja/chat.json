@@ -192,5 +192,10 @@
         "withinWeek": "過去7日間",
         "withinMonth": "過去30日間",
         "older": "それ以前"
+    },
+    "questionDirectory": {
+        "title": "質問目次",
+        "fallback": "質問 {{number}}",
+        "moreHint": "さらに {{count}} 件の質問は表示されていません"
     }
 }

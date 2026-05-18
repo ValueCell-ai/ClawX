@@ -42,11 +42,54 @@ function pruneGatewayEventDedupe(now: number): void {
   }
 }
 
+function stableGatewayEventFingerprint(value: unknown): string {
+  let hash = 2166136261;
+  let length = 0;
+
+  const add = (part: string): void => {
+    length += part.length;
+    for (let i = 0; i < part.length; i += 1) {
+      hash ^= part.charCodeAt(i);
+      hash = Math.imul(hash, 16777619) >>> 0;
+    }
+  };
+
+  const visit = (entry: unknown): void => {
+    if (entry === undefined) {
+      add('u:');
+      return;
+    }
+    if (entry === null || typeof entry !== 'object') {
+      add(`${typeof entry}:${JSON.stringify(entry)};`);
+      return;
+    }
+    if (Array.isArray(entry)) {
+      add('[');
+      for (const item of entry) visit(item);
+      add(']');
+      return;
+    }
+
+    add('{');
+    for (const [key, child] of Object.entries(entry as Record<string, unknown>).sort(([left], [right]) => left.localeCompare(right))) {
+      add(`${JSON.stringify(key)}:`);
+      visit(child);
+    }
+    add('}');
+  };
+
+  visit(value);
+  return `${hash.toString(36)}:${length.toString(36)}`;
+}
+
 function buildGatewayEventDedupeKey(event: Record<string, unknown>): string | null {
   const runId = event.runId != null ? String(event.runId) : '';
   const sessionKey = event.sessionKey != null ? String(event.sessionKey) : '';
   const seq = event.seq != null ? String(event.seq) : '';
   const state = event.state != null ? String(event.state) : '';
+  if (state === 'delta' && !seq) {
+    return ['delta-nosq', runId, sessionKey, stableGatewayEventFingerprint(event.message ?? event)].join('|');
+  }
   if (runId || sessionKey || seq || state) {
     return [runId, sessionKey, seq, state].join('|');
   }
@@ -188,7 +231,7 @@ function handleGatewayNotification(notification: { method?: string; params?: Rec
         const matchesActiveRun = runId != null && state.activeRunId != null && String(runId) === state.activeRunId;
 
         if (matchesCurrentSession || matchesActiveRun) {
-          maybeLoadHistory(state);
+          maybeLoadHistory(state, isRunCompletion);
         }
         if (isRunCompletion && (matchesCurrentSession || matchesActiveRun) && state.sending) {
           useChatStore.setState({

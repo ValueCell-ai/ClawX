@@ -390,13 +390,13 @@ export const ChatMessage = memo(function ChatMessage({
           </div>
         )}
 
-        {/* Main text bubble */}
+        {/* Main text */}
         {hasText && (
-          <MessageBubble
-            text={text}
-            isUser={isUser}
-            isStreaming={isStreaming}
-          />
+          isUser ? (
+            <UserMessageBubble text={text} />
+          ) : (
+            <AssistantMarkdown text={text} isStreaming={isStreaming} />
+          )
         )}
 
         {/* Images from content blocks — assistant messages (below text) */}
@@ -555,70 +555,67 @@ function AssistantHoverBar({ text, timestamp }: { text: string; timestamp?: numb
   );
 }
 
-// ── Message Bubble ──────────────────────────────────────────────
+// ── User Message Bubble ─────────────────────────────────────────
 
-function MessageBubble({
+function UserMessageBubble({
   text,
-  isUser,
+}: {
+  text: string;
+}) {
+  return (
+    <div className="relative rounded-2xl px-4 py-3 bg-brand text-white shadow-sm">
+      <p className="whitespace-pre-wrap break-words text-sm">{text}</p>
+    </div>
+  );
+}
+
+// ── Assistant Markdown ──────────────────────────────────────────
+
+function AssistantMarkdown({
+  text,
   isStreaming,
 }: {
   text: string;
-  isUser: boolean;
   isStreaming: boolean;
 }) {
   return (
-    <div
-      className={cn(
-        'relative rounded-2xl px-4 py-3',
-        !isUser && 'w-full',
-        isUser
-          ? 'bg-brand text-white shadow-sm'
-          : 'bg-black/5 dark:bg-white/5 text-foreground',
+    <div className="prose prose-sm dark:prose-invert w-full max-w-none break-words text-foreground">
+      <ReactMarkdown
+        remarkPlugins={[remarkGfm, remarkMath]}
+        rehypePlugins={[[rehypeKatex, { strict: false, throwOnError: false, output: 'html' }]]}
+        components={{
+          code({ className, children, ...props }) {
+            const match = /language-(\w+)/.exec(className || '');
+            const isInline = !match && !className;
+            if (isInline) {
+              return (
+                <code className="bg-muted px-1.5 py-0.5 rounded text-sm font-mono break-words break-all" {...props}>
+                  {children}
+                </code>
+              );
+            }
+            return (
+              <pre className="bg-muted rounded-lg p-4 overflow-x-auto">
+                <code className={cn('text-sm font-mono', className)} {...props}>
+                  {children}
+                </code>
+              </pre>
+            );
+          },
+          a({ href, children }) {
+            return (
+              <a href={href} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline break-words break-all">
+                {children}
+              </a>
+            );
+          },
+        }}
+      >
+        {normalizeLatexDelimiters(text)}
+      </ReactMarkdown>
+      {isStreaming && (
+        <span className="inline-block w-2 h-4 bg-foreground/50 animate-pulse ml-0.5" />
       )}
-    >
-      {isUser ? (
-        <p className="whitespace-pre-wrap break-words text-sm">{text}</p>
-      ) : (
-        <div className="prose prose-sm dark:prose-invert max-w-none break-words">
-          <ReactMarkdown
-            remarkPlugins={[remarkGfm, remarkMath]}
-            rehypePlugins={[[rehypeKatex, { strict: false, throwOnError: false, output: 'html' }]]}
-            components={{
-              code({ className, children, ...props }) {
-                const match = /language-(\w+)/.exec(className || '');
-                const isInline = !match && !className;
-                if (isInline) {
-                  return (
-                    <code className="bg-background/50 px-1.5 py-0.5 rounded text-sm font-mono break-words break-all" {...props}>
-                      {children}
-                    </code>
-                  );
-                }
-                return (
-                  <pre className="bg-background/50 rounded-lg p-4 overflow-x-auto">
-                    <code className={cn('text-sm font-mono', className)} {...props}>
-                      {children}
-                    </code>
-                  </pre>
-                );
-              },
-              a({ href, children }) {
-                return (
-                  <a href={href} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline break-words break-all">
-                    {children}
-                  </a>
-                );
-              },
-            }}
-          >
-            {normalizeLatexDelimiters(text)}
-          </ReactMarkdown>
-          {isStreaming && (
-            <span className="inline-block w-2 h-4 bg-foreground/50 animate-pulse ml-0.5" />
-          )}
-        </div>
-      )}
-
     </div>
   );
 }
