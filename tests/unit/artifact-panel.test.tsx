@@ -69,8 +69,9 @@ describe('ArtifactPanel', () => {
       />,
     );
 
-    expect(screen.getByTestId('file-preview-body')).toHaveTextContent('SKILL.md');
-    expect(screen.getByTestId('file-preview-body')).toHaveTextContent('~/.openclaw/skills/open-baidu/SKILL.md');
+    const previewBodies = screen.getAllByTestId('file-preview-body');
+    expect(previewBodies[0]).toHaveTextContent('SKILL.md');
+    expect(previewBodies[0]).toHaveTextContent('~/.openclaw/skills/open-baidu/SKILL.md');
     expect(screen.queryByText('test_example.py')).not.toBeInTheDocument();
   });
 
@@ -95,13 +96,13 @@ describe('ArtifactPanel', () => {
       />,
     );
 
-    expect(screen.getByTestId('file-preview-body')).toHaveTextContent('SKILL.md');
+    expect(screen.getAllByTestId('file-preview-body')[1]).toHaveTextContent('SKILL.md');
 
     fireEvent.click(screen.getByRole('button', { name: 'Workspace' }));
     expect(screen.getByTestId('workspace-browser')).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: 'Preview' }));
-    expect(screen.getByTestId('file-preview-body')).toHaveTextContent('SKILL.md');
+    expect(screen.getAllByTestId('file-preview-body')[1]).toHaveTextContent('SKILL.md');
     expect(screen.queryByText('No file selected')).not.toBeInTheDocument();
   });
 

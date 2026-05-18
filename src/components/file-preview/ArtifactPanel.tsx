@@ -16,7 +16,7 @@
  * `useArtifactPanel` zustand store so any part of the page (file cards,
  * toolbar buttons, "View file changes →" links) can drive it.
  */
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useLayoutEffect, useMemo, useRef } from 'react';
 import { Eye, FileEdit, FolderOpen, FolderTree, X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
@@ -52,16 +52,6 @@ export function ArtifactPanel({ files, agent, runStartedAt, refreshSignal }: Art
   const richFocusedFile = !!focusedFile && supportsRichDocumentPreview(focusedFile.ext);
   const requestedTab = !WORKSPACE_BROWSER_ENABLED && tab === 'browser' ? 'changes' : tab;
   const visibleTab = richFocusedFile && requestedTab === 'changes' ? 'preview' : requestedTab;
-  const [mountedTabs, setMountedTabs] = useState<Set<typeof visibleTab>>(() => new Set([visibleTab]));
-
-  useEffect(() => {
-    setMountedTabs((current) => {
-      if (current.has(visibleTab)) return current;
-      const next = new Set(current);
-      next.add(visibleTab);
-      return next;
-    });
-  }, [visibleTab]);
 
   const handleRevealFocusedFile = () => {
     if (!focusedFile) return;
@@ -121,22 +111,18 @@ export function ArtifactPanel({ files, agent, runStartedAt, refreshSignal }: Art
       </div>
 
       <div className="relative z-0 min-h-0 flex-1 overflow-hidden">
-        {mountedTabs.has('changes') && (
-          <div className={cn('h-full min-h-0', visibleTab !== 'changes' && 'hidden')}>
-            <ChangesTab
-              files={files}
-              focusedFile={focusedFile}
-              onFocus={(f) => setFocusedFile(f)}
-              active={visibleTab === 'changes'}
-            />
-          </div>
-        )}
-        {mountedTabs.has('preview') && (
-          <div className={cn('h-full min-h-0', visibleTab !== 'preview' && 'hidden')}>
-            <PreviewTab focusedFile={focusedFile} />
-          </div>
-        )}
-        {WORKSPACE_BROWSER_ENABLED && mountedTabs.has('browser') && (
+        <div className={cn('h-full min-h-0', visibleTab !== 'changes' && 'hidden')}>
+          <ChangesTab
+            files={files}
+            focusedFile={focusedFile}
+            onFocus={(f) => setFocusedFile(f)}
+            active={visibleTab === 'changes'}
+          />
+        </div>
+        <div className={cn('h-full min-h-0', visibleTab !== 'preview' && 'hidden')}>
+          <PreviewTab focusedFile={focusedFile} />
+        </div>
+        {WORKSPACE_BROWSER_ENABLED && (
           <div className={cn('h-full min-h-0', visibleTab !== 'browser' && 'hidden')}>
             <WorkspaceBrowserBody
               agent={agent}
