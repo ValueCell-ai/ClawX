@@ -95,6 +95,7 @@ test.describe('ClawX chat question directory', () => {
       await expect(directory).toContainText('Question directory');
       await expect(directory).toContainText('First question: summarize the market opening.');
       await expect(directory).toContainText('Fourth question: prepare the final action plan.');
+      await expect(directory.locator('button')).toHaveCount(4);
 
       await page.getByTestId('chat-question-directory-item-6').click();
       await expect(page.getByTestId('chat-message-6')).toBeInViewport();
