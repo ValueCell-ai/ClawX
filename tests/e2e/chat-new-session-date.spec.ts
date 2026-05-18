@@ -2,6 +2,10 @@ import { closeElectronApp, expect, getStableWindow, installIpcMocks, test } from
 
 const MAIN_SESSION_KEY = 'agent:main:main';
 const DAY_MS = 24 * 60 * 60 * 1000;
+const SESSIONS_LIST_PAYLOAD = {
+  includeDerivedTitles: true,
+  includeLastMessage: true,
+};
 
 function stableStringify(value: unknown): string {
   if (value == null || typeof value !== 'object') return JSON.stringify(value);
@@ -27,7 +31,7 @@ test.describe('ClawX chat session date grouping', () => {
       await installIpcMocks(app, {
         gatewayStatus: { state: 'running', port: 18789, pid: 12345, connectedAt: nowMs },
         gatewayRpc: {
-          [stableStringify(['sessions.list', {}])]: {
+          [stableStringify(['sessions.list', SESSIONS_LIST_PAYLOAD])]: {
             success: true,
             result: { sessions },
           },
@@ -100,7 +104,7 @@ test.describe('ClawX chat session date grouping', () => {
       await installIpcMocks(app, {
         gatewayStatus: { state: 'running', port: 18789, pid: 12345 },
         gatewayRpc: {
-          [stableStringify(['sessions.list', {}])]: {
+          [stableStringify(['sessions.list', SESSIONS_LIST_PAYLOAD])]: {
             success: true,
             result: {
               sessions: [{
