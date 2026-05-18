@@ -189,10 +189,8 @@
     },
     "historyBuckets": {
         "today": "今日",
-        "yesterday": "昨日",
-        "withinWeek": "1週間以内",
-        "withinTwoWeeks": "2週間以内",
-        "withinMonth": "1か月以内",
-        "older": "1か月より前"
+        "withinWeek": "過去7日間",
+        "withinMonth": "過去30日間",
+        "older": "それ以前"
     }
 }

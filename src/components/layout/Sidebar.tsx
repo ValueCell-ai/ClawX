@@ -22,6 +22,7 @@ import {
   X,
   Cpu,
   Moon,
+  ChevronRight,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { rendererExtensionRegistry } from '@/extensions/registry';
@@ -85,6 +86,12 @@ function NavItem({ to, icon, label, badge, collapsed, onClick, testId }: NavItem
 }
 
 const INITIAL_NOW_MS = Date.now();
+const DEFAULT_EXPANDED_SESSION_BUCKETS: Record<SessionBucketKey, boolean> = {
+  today: true,
+  withinWeek: true,
+  withinMonth: false,
+  older: false,
+};
 
 function getAgentIdFromSessionKey(sessionKey: string): string {
   if (!sessionKey.startsWith('agent:')) return 'main';
@@ -173,6 +180,9 @@ export function Sidebar() {
   const [editingSessionKey, setEditingSessionKey] = useState<string | null>(null);
   const [editingLabel, setEditingLabel] = useState('');
   const [nowMs, setNowMs] = useState(INITIAL_NOW_MS);
+  const [expandedSessionBuckets, setExpandedSessionBuckets] = useState<Record<SessionBucketKey, boolean>>(
+    () => ({ ...DEFAULT_EXPANDED_SESSION_BUCKETS }),
+  );
 
   useEffect(() => {
     const timer = window.setInterval(() => {
@@ -214,6 +224,13 @@ export function Sidebar() {
     } else if (e.key === 'Escape') {
       handleRenameCancel();
     }
+  };
+
+  const toggleSessionBucket = (bucketKey: SessionBucketKey) => {
+    setExpandedSessionBuckets((current) => ({
+      ...current,
+      [bucketKey]: !current[bucketKey],
+    }));
   };
 
   const stopResizing = useCallback(() => {
@@ -261,9 +278,7 @@ export function Sidebar() {
   );
   const sessionBuckets: Array<{ key: SessionBucketKey; label: string; sessions: typeof sessions }> = [
     { key: 'today', label: t('chat:historyBuckets.today'), sessions: [] },
-    { key: 'yesterday', label: t('chat:historyBuckets.yesterday'), sessions: [] },
     { key: 'withinWeek', label: t('chat:historyBuckets.withinWeek'), sessions: [] },
-    { key: 'withinTwoWeeks', label: t('chat:historyBuckets.withinTwoWeeks'), sessions: [] },
     { key: 'withinMonth', label: t('chat:historyBuckets.withinMonth'), sessions: [] },
     { key: 'older', label: t('chat:historyBuckets.older'), sessions: [] },
   ];
@@ -382,13 +397,30 @@ export function Sidebar() {
       {/* Session list — below Settings, only when expanded */}
       {!sidebarCollapsed && sessions.length > 0 && (
         <div className="mt-4 flex-1 overflow-y-auto overflow-x-hidden px-2 pb-2 space-y-1">
-          {sessionBuckets.map((bucket) => (
-            bucket.sessions.length > 0 ? (
+          {sessionBuckets.map((bucket) => {
+            const isBucketExpanded = expandedSessionBuckets[bucket.key] ?? false;
+            return (
               <div key={bucket.key} data-testid={`session-bucket-${bucket.key}`} className="pt-2">
-                <div className="px-2.5 pb-1 text-tiny font-medium text-muted-foreground/60 tracking-tight">
-                  {bucket.label}
-                </div>
-                {bucket.sessions.map((s) => {
+                <button
+                  type="button"
+                  data-testid={`session-bucket-toggle-${bucket.key}`}
+                  aria-expanded={isBucketExpanded}
+                  onClick={() => toggleSessionBucket(bucket.key)}
+                  className={cn(
+                    'flex w-full items-center gap-1 rounded-md px-2.5 py-1 text-left text-tiny font-medium',
+                    'text-muted-foreground/60 tracking-tight transition-colors',
+                    'hover:bg-black/5 hover:text-muted-foreground dark:hover:bg-white/5',
+                  )}
+                >
+                  <ChevronRight
+                    className={cn(
+                      'h-3 w-3 shrink-0 transition-transform',
+                      isBucketExpanded && 'rotate-90',
+                    )}
+                  />
+                  <span>{bucket.label}</span>
+                </button>
+                {isBucketExpanded && bucket.sessions.map((s) => {
                   const agentId = getAgentIdFromSessionKey(s.key);
                   const agentName = agentNameById[agentId] || agentId;
                   const isEditing = editingSessionKey === s.key;
@@ -482,8 +514,8 @@ export function Sidebar() {
                   );
                 })}
               </div>
-            ) : null
-          ))}
+            );
+          })}
         </div>
       )}
 

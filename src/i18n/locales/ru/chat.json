@@ -189,10 +189,8 @@
     },
     "historyBuckets": {
         "today": "Сегодня",
-        "yesterday": "Вчера",
-        "withinWeek": "В течение недели",
-        "withinTwoWeeks": "В течение 2 недель",
-        "withinMonth": "В течение месяца",
-        "older": "Старее месяца"
+        "withinWeek": "За последние 7 дней",
+        "withinMonth": "За последние 30 дней",
+        "older": "Ранее"
     }
 }

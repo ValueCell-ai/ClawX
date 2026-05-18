@@ -189,10 +189,8 @@
     },
     "historyBuckets": {
         "today": "Today",
-        "yesterday": "Yesterday",
-        "withinWeek": "Within 1 Week",
-        "withinTwoWeeks": "Within 2 Weeks",
-        "withinMonth": "Within 1 Month",
-        "older": "Older than 1 Month"
+        "withinWeek": "Last 7 days",
+        "withinMonth": "Last 30 days",
+        "older": "Older"
     }
 }
