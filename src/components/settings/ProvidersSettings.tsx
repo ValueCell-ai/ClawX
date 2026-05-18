@@ -1025,7 +1025,7 @@ function AddProviderDialog({
     ? 'oauth_browser'
     : (selectedVendor?.supportedAuthModes.includes('oauth_device')
       ? 'oauth_device'
-      : (selectedType === 'google' ? 'oauth_browser' : null));
+      : null);
   // Effective OAuth mode: pure OAuth providers, or dual-mode with oauth selected
   const useOAuthFlow = isOAuth && (!supportsApiKey || authMode === 'oauth');
 

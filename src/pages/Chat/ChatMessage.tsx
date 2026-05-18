@@ -86,6 +86,7 @@ function validationKindForAttachment(file: AttachedFileMeta): 'file' | 'dir' | n
 function previewMimeFromPath(filePath: string): string | null {
   const lower = filePath.toLowerCase();
   if (lower.endsWith('.md') || lower.endsWith('.markdown')) return 'text/markdown';
+  if (lower.endsWith('.html') || lower.endsWith('.htm')) return 'text/html';
   if (lower.endsWith('.pdf')) return 'application/pdf';
   if (lower.endsWith('.xls')) return 'application/vnd.ms-excel';
   if (lower.endsWith('.xlsx')) return 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
@@ -118,10 +119,10 @@ function extractPreviewDocumentPaths(text: string): AttachedFileMeta[] {
     });
   };
   // Deliberately narrow this render-layer fallback to user-facing artifacts:
-  // PDF / spreadsheet previews and OpenClaw skill directories. The store-level
-  // extractor still handles broad file categories; this keeps visible outputs
-  // clickable even before history enrichment runs.
-  const exts = 'pdf|xlsx?|PDF|XLSX?';
+  // HTML / Markdown / PDF / spreadsheet previews and OpenClaw skill directories.
+  // The store-level extractor still handles broad file categories; this keeps
+  // visible outputs clickable even before history enrichment runs.
+  const exts = 'html?|md|markdown|pdf|xlsx?|HTML?|MD|MARKDOWN|PDF|XLSX?';
   const taggedRegex = new RegExp(`(?:^|[\\s(\\[{>])(?:MEDIA|media):((?:\\/|~\\/)[^\\s\\n"'()\\[\\],<>]*?\\.(?:${exts}))`, 'g');
   const unixRegex = new RegExp('(?<![\\w./:])((?:\\/|~\\/)[^\\s\\n"\'`()\\[\\],<>]*?\\.(?:' + exts + '))', 'g');
   const skillPathBoundary = '(?=$|\\s|[\\x5b\\x5d"\'`(),<>，。；;,.!?])';

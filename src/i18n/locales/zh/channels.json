@@ -62,9 +62,9 @@
         "connectionStatus": {
             "connected": "已连接",
             "connecting": "连接中",
-            "degraded": "异常降级",
+            "degraded": "状态波动",
             "disconnected": "未连接",
-            "error": "异常"
+            "error": "连接失败"
         },
         "accountIdPrompt": "请输入该频道的新账号 ID",
         "accountIdExists": "账号 ID {{accountId}} 已存在"
@@ -102,11 +102,11 @@
     },
     "health": {
         "state": {
-            "degraded": "网关状态异常",
+            "degraded": "状态波动",
             "unresponsive": "网关无响应"
         },
         "reasons": {
-            "gateway_degraded": "网关心跳近期出现异常。",
+            "gateway_degraded": "网关心跳近期不稳定。",
             "gateway_unresponsive": "网关控制面看起来已经无响应。",
             "channels_status_timeout": "频道运行时状态探测超时。",
             "rpc_timeout": "最近的网关 RPC 调用发生超时。",

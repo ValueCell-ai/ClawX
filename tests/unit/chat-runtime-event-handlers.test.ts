@@ -12,6 +12,7 @@ const getMessageErrorMessage = vi.fn((message: { errorMessage?: string; error_me
 const getToolCallFilePath = vi.fn(() => undefined);
 const hasErrorRecoveryTimer = vi.fn(() => false);
 const hasNonToolAssistantContent = vi.fn(() => true);
+const hasPendingToolUse = vi.fn(() => false);
 const isInternalMessage = vi.fn(() => false);
 const isTerminalAssistantErrorMessage = vi.fn((message: { role?: string; stopReason?: string; stop_reason?: string } | undefined) => {
   const stopReason = message?.stopReason ?? message?.stop_reason;
@@ -44,6 +45,7 @@ vi.mock('@/stores/chat/helpers', () => ({
   getToolCallFilePath: (...args: unknown[]) => getToolCallFilePath(...args),
   hasErrorRecoveryTimer: (...args: unknown[]) => hasErrorRecoveryTimer(...args),
   hasNonToolAssistantContent: (...args: unknown[]) => hasNonToolAssistantContent(...args),
+  hasPendingToolUse: (...args: unknown[]) => hasPendingToolUse(...args),
   isInternalMessage: (...args: unknown[]) => isInternalMessage(...args),
   isTerminalAssistantErrorMessage: (...args: unknown[]) => isTerminalAssistantErrorMessage(...args),
   isToolOnlyMessage: (...args: unknown[]) => isToolOnlyMessage(...args),

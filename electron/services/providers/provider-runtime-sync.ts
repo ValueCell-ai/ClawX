@@ -5,6 +5,8 @@ import type { ProviderConfig } from '../../utils/secure-storage';
 import { getAllProviders, getApiKey, getDefaultProvider, getProvider } from '../../utils/secure-storage';
 import { getProviderConfig, getProviderDefaultModel } from '../../utils/provider-registry';
 import {
+  ensureOpenClawProviderAgentRuntimePins,
+  pruneInvalidApiProviderEntries,
   removeProviderFromOpenClaw,
   removeProviderKeyFromOpenClaw,
   saveOAuthTokenToOpenClaw,
@@ -22,8 +24,6 @@ import {
 import { logger } from '../../utils/logger';
 import { listAgentsSnapshot } from '../../utils/agent-config';
 
-const GOOGLE_OAUTH_RUNTIME_PROVIDER = 'google-gemini-cli';
-const GOOGLE_OAUTH_DEFAULT_MODEL_REF = `${GOOGLE_OAUTH_RUNTIME_PROVIDER}/gemini-3-pro-preview`;
 const OPENAI_OAUTH_RUNTIME_PROVIDER = 'openai-codex';
 const OPENAI_OAUTH_DEFAULT_MODEL_REF = `${OPENAI_OAUTH_RUNTIME_PROVIDER}/gpt-5.5`;
 
@@ -98,13 +98,8 @@ export function getOpenClawProviderKey(type: string, providerId: string): string
 
 async function resolveRuntimeProviderKey(config: ProviderConfig): Promise<string> {
   const account = await getProviderAccount(config.id);
-  if (account?.authMode === 'oauth_browser') {
-    if (config.type === 'google') {
-      return GOOGLE_OAUTH_RUNTIME_PROVIDER;
-    }
-    if (config.type === 'openai') {
-      return OPENAI_OAUTH_RUNTIME_PROVIDER;
-    }
+  if (account?.authMode === 'oauth_browser' && config.type === 'openai') {
+    return OPENAI_OAUTH_RUNTIME_PROVIDER;
   }
   return getOpenClawProviderKey(config.type, config.id);
 }
@@ -120,9 +115,6 @@ async function getBrowserOAuthRuntimeProvider(config: ProviderConfig): Promise<s
     return null;
   }
 
-  if (config.type === 'google') {
-    return GOOGLE_OAUTH_RUNTIME_PROVIDER;
-  }
   if (config.type === 'openai') {
     return OPENAI_OAUTH_RUNTIME_PROVIDER;
   }
@@ -599,6 +591,41 @@ export async function syncDefaultProviderToRuntime(
     return;
   }
 
+  // Self-heal: opportunistically remove any pre-existing models.providers
+  // entries with an invalid `api` field so a switch to a healthy provider
+  // can rescue the user from a previously broken config (e.g. the historical
+  // openrouter `api: 'openrouter'` bug).  Covers both OAuth and non-OAuth
+  // branches below.
+  try {
+    const removed = await pruneInvalidApiProviderEntries();
+    if (removed.length > 0) {
+      logger.warn(
+        `[provider-runtime] Pruned invalid models.providers entries before switch: ${removed.join(', ')}`,
+      );
+    }
+  } catch (err) {
+    logger.warn('[provider-runtime] Failed to prune invalid provider entries before switch:', err);
+  }
+
+  // Self-heal: pin the embedded agent runtime for any legacy provider entry
+  // that needs it (currently only `openai`, which would otherwise be auto-
+  // routed by OpenClaw to the unbundled `codex` harness when configured with
+  // the official api.openai.com baseUrl). Earlier ClawX builds wrote the
+  // provider entry without `agentRuntime`, so upgrading users would keep
+  // hitting `Requested agent harness "codex" is not registered.` until they
+  // re-saved the provider manually. Running this before every default-
+  // provider switch repairs the on-disk config on the next save.
+  try {
+    const pinned = await ensureOpenClawProviderAgentRuntimePins();
+    if (pinned.length > 0) {
+      logger.warn(
+        `[provider-runtime] Pinned embedded agent runtime for models.providers entries before switch: ${pinned.join(', ')}`,
+      );
+    }
+  } catch (err) {
+    logger.warn('[provider-runtime] Failed to pin embedded agent runtime for provider entries before switch:', err);
+  }
+
   const ock = await resolveRuntimeProviderKey(provider);
   const providerKey = await getApiKey(providerId);
   const fallbackModels = await getProviderFallbackModelRefs(provider);
@@ -648,9 +675,7 @@ export async function syncDefaultProviderToRuntime(
         });
       }
 
-      const defaultModelRef = browserOAuthRuntimeProvider === GOOGLE_OAUTH_RUNTIME_PROVIDER
-        ? GOOGLE_OAUTH_DEFAULT_MODEL_REF
-        : OPENAI_OAUTH_DEFAULT_MODEL_REF;
+      const defaultModelRef = OPENAI_OAUTH_DEFAULT_MODEL_REF;
       const modelOverride = provider.model
         ? (provider.model.startsWith(`${browserOAuthRuntimeProvider}/`)
           ? provider.model

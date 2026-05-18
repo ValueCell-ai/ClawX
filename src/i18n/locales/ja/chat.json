@@ -14,6 +14,7 @@
         "brainstorming": "マルチエージェント並列実行"
     },
     "noLogs": "（ログはまだありません）",
+    "scrollToLatest": "最新の会話へ移動",
     "toolbar": {
         "refresh": "チャットを更新",
         "currentAgent": "現在の会話相手: {{agent}}",

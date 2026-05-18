@@ -69,8 +69,9 @@ describe('ArtifactPanel', () => {
       />,
     );
 
-    expect(screen.getByTestId('file-preview-body')).toHaveTextContent('SKILL.md');
-    expect(screen.getByTestId('file-preview-body')).toHaveTextContent('~/.openclaw/skills/open-baidu/SKILL.md');
+    const previewBodies = screen.getAllByTestId('file-preview-body');
+    expect(previewBodies[0]).toHaveTextContent('SKILL.md');
+    expect(previewBodies[0]).toHaveTextContent('~/.openclaw/skills/open-baidu/SKILL.md');
     expect(screen.queryByText('test_example.py')).not.toBeInTheDocument();
   });
 
@@ -95,13 +96,48 @@ describe('ArtifactPanel', () => {
       />,
     );
 
-    expect(screen.getByTestId('file-preview-body')).toHaveTextContent('SKILL.md');
+    expect(screen.getAllByTestId('file-preview-body')[1]).toHaveTextContent('SKILL.md');
 
     fireEvent.click(screen.getByRole('button', { name: 'Workspace' }));
     expect(screen.getByTestId('workspace-browser')).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: 'Preview' }));
-    expect(screen.getByTestId('file-preview-body')).toHaveTextContent('SKILL.md');
+    expect(screen.getAllByTestId('file-preview-body')[1]).toHaveTextContent('SKILL.md');
     expect(screen.queryByText('No file selected')).not.toBeInTheDocument();
+  });
+
+  it('keeps panel tab buttons above iframe previews so changes stays clickable', () => {
+    useArtifactPanel.setState({
+      open: true,
+      tab: 'preview',
+      focusedFile: {
+        filePath: '/tmp/demo.html',
+        fileName: 'demo.html',
+        ext: '.html',
+        mimeType: 'text/html',
+        contentType: 'document',
+      },
+      widthPct: ARTIFACT_PANEL_DEFAULT_WIDTH,
+    });
+
+    render(
+      <ArtifactPanel
+        files={[makeGeneratedFile({
+          filePath: '/tmp/demo.html',
+          fileName: 'demo.html',
+          ext: '.html',
+          mimeType: 'text/html',
+          contentType: 'document',
+        })]}
+        agent={null}
+      />,
+    );
+
+    const changesButton = screen.getByTestId('artifact-panel-tab-changes');
+    expect(changesButton.className).toContain('z-40');
+    expect(changesButton.parentElement?.parentElement?.className).toContain('z-30');
+
+    fireEvent.pointerDown(changesButton, { button: 0 });
+    expect(screen.getAllByTestId('file-preview-body')[0]).toHaveTextContent('diff');
   });
 });

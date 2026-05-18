@@ -66,7 +66,7 @@ describe('provider-model-sync', () => {
       buildNonOAuthAgentProviderUpdate(
         providerConfig({ type: 'modelstudio', id: 'modelstudio' }),
         'modelstudio',
-        'modelstudio/qwen3.5-plus',
+        'modelstudio/qwen3.6-plus',
       ),
     ).toEqual({
       providerKey: 'modelstudio',
@@ -74,7 +74,7 @@ describe('provider-model-sync', () => {
         baseUrl: 'https://coding.dashscope.aliyuncs.com/v1',
         api: 'openai-completions',
         apiKey: 'MODELSTUDIO_API_KEY',
-        models: [{ id: 'qwen3.5-plus', name: 'qwen3.5-plus', cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 } }],
+        models: [{ id: 'qwen3.6-plus', name: 'qwen3.6-plus', cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 } }],
       },
     });
 

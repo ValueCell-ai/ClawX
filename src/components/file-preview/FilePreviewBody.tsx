@@ -30,6 +30,7 @@ import { cn } from '@/lib/utils';
 import { invokeIpc, readTextFile, statFile, writeTextFile } from '@/lib/api-client';
 import type { FilePreviewTarget } from './types';
 import {
+  isHtmlPreviewExt,
   isPdfPreviewExt,
   isSheetPreviewExt,
   supportsInlineDiff,
@@ -43,6 +44,7 @@ import {
   shouldOfferDirectOpenFallback,
 } from './open-file-utils';
 import MarkdownPreview from './MarkdownPreview';
+import HtmlPreview from './HtmlPreview';
 import ImageViewer from './ImageViewer';
 
 const MonacoViewerLazy = lazy(() => import('./MonacoViewer'));
@@ -103,8 +105,11 @@ function tabsForFile(file: FilePreviewTarget, mode: FilePreviewBodyMode): Tab[] 
     if (!supportsInlineDocumentPreview(file.ext)) {
       return [];
     }
-    // Markdown / plain-text style documents: rendered preview only.
+    // Markdown / HTML / rich documents: rendered preview first.
     tabs.push('preview');
+    if (isHtmlPreviewExt(file.ext)) {
+      tabs.push('source');
+    }
   } else if (file.contentType === 'snapshot') {
     tabs.push('preview');
   } else if (file.contentType === 'video' || file.contentType === 'audio') {
@@ -577,7 +582,15 @@ export function FilePreviewBody({
                   <SheetViewerLazy filePath={file.filePath} fileName={file.fileName} />
                 </Suspense>
               ) : file.contentType === 'document' ? (
-                <MarkdownPreview source={draft ?? state.content} />
+                isHtmlPreviewExt(file.ext) ? (
+                  <HtmlPreview
+                    source={draft ?? state.content}
+                    filePath={file.filePath}
+                    fileName={file.fileName}
+                  />
+                ) : (
+                  <MarkdownPreview source={draft ?? state.content} />
+                )
               ) : (
                 <div className="p-4 text-sm text-muted-foreground">
                   {t('filePreview.errors.noPreview', 'No preview available for this file')}

@@ -112,11 +112,11 @@ const SNAPSHOT_EXTS = new Set([
 const VIDEO_EXTS = new Set(['.mp4', '.webm', '.mov', '.avi', '.mkv']);
 const AUDIO_EXTS = new Set(['.mp3', '.wav', '.ogg', '.flac', '.m4a']);
 const DOCUMENT_EXTS = new Set([
-  '.md', '.markdown', '.txt', '.rst', '.adoc',
+  '.md', '.markdown', '.txt', '.rst', '.adoc', '.html', '.htm',
   '.pdf', '.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx',
 ]);
 const TEXT_DOCUMENT_EXTS = new Set([
-  '.md', '.markdown', '.txt', '.rst', '.adoc',
+  '.md', '.markdown', '.txt', '.rst', '.adoc', '.html', '.htm',
 ]);
 const PDF_PREVIEW_EXTS = new Set(['.pdf']);
 const SHEET_PREVIEW_EXTS = new Set(['.xlsx', '.xls']);
@@ -196,6 +196,12 @@ export function supportsInlineDocumentPreview(ext: string): boolean {
 export function supportsRichDocumentPreview(ext: string): boolean {
   const lower = ext.toLowerCase();
   return PDF_PREVIEW_EXTS.has(lower) || SHEET_PREVIEW_EXTS.has(lower);
+}
+
+export function isHtmlPreviewExt(ext: string | null | undefined): boolean {
+  if (!ext) return false;
+  const lower = ext.toLowerCase();
+  return lower === '.html' || lower === '.htm';
 }
 
 export function isPdfPreviewExt(ext: string | null | undefined): boolean {

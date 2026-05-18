@@ -481,20 +481,27 @@ function normalizeStreamingMessage(message: unknown): unknown {
  * is important: the user bubble renders the cleaned text, so the comparison
  * used to dedupe optimistic vs server echoes must operate on the same
  * cleaned form — otherwise the same visible message renders twice.
+ *
+ * Order matters: the `[media attached: ...]` lines are commonly emitted
+ * BETWEEN the Sender block and the `[Mon ... GMT+8]` timestamp prefix.
+ * If we strip the timestamp before the media-attached lines, the timestamp
+ * regex (`^\s*\[(?:Mon|...)]`) can never match because the leading `[` is
+ * `[media attached:` instead — leaving the timestamp in the normalized
+ * comparison text and breaking optimistic-vs-echo dedupe.
  */
 function stripGatewayUserMetadata(text: string): string {
   return text
+    .replace(/\s*\[media attached:[^\]]*\]/g, '')
+    .replace(/\s*\[message_id:\s*[^\]]+\]/g, '')
     .replace(/^Sender\s*\([^)]*\)\s*:\s*```[a-z]*\n[\s\S]*?```\s*/i, '')
     .replace(/^Sender\s*\([^)]*\)\s*:\s*\{[\s\S]*?\}\s*/i, '')
     .replace(/^Sender\s*\([^)]*\)\s*:\s*[^\n]*(?:\n\s*)*/i, '')
     .replace(/^Sender\s*:\s*```[a-z]*\n[\s\S]*?```\s*/i, '')
     .replace(/^Sender\s*:\s*\{[\s\S]*?\}\s*/i, '')
     .replace(/^Sender\s*:\s*[^\n]*(?:\n\s*)*/i, '')
-    .replace(/^\s*\[(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun)\s+\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}\s+[^\]]+\]\s*/i, '')
-    .replace(/\s*\[media attached:[^\]]*\]/g, '')
-    .replace(/\s*\[message_id:\s*[^\]]+\]/g, '')
     .replace(/^Conversation info\s*\([^)]*\):\s*```[a-z]*\n[\s\S]*?```\s*/i, '')
-    .replace(/^Conversation info\s*\([^)]*\):\s*\{[\s\S]*?\}\s*/i, '');
+    .replace(/^Conversation info\s*\([^)]*\):\s*\{[\s\S]*?\}\s*/i, '')
+    .replace(/^\s*\[(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun)\s+\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}\s+[^\]]+\]\s*/i, '');
 }
 
 function normalizeComparableUserText(content: unknown): string {
@@ -1725,6 +1732,16 @@ function collectToolUpdates(message: unknown, eventState: string): ToolStatus[] 
   return updates;
 }
 
+/**
+ * True when an assistant message carries user-visible final output (text or
+ * image). NOTE: `thinking` blocks are intentionally excluded — they are the
+ * model's internal monologue and frequently precede tool calls in models like
+ * MiniMax-M2.7 and gpt-5.5. Treating thinking as "final content" causes the
+ * history-poll closer in applyLoadedMessages and the runtime final handler to
+ * misclassify intermediate `[thinking, toolCall]` turns as completed replies,
+ * which prematurely tears down the `sending` / `activeRunId` / `pendingFinal`
+ * lifecycle flags and makes the Thinking… indicator vanish mid-tool-chain.
+ */
 function hasNonToolAssistantContent(message: RawMessage | undefined): boolean {
   if (!message) return false;
   if (typeof message.content === 'string' && message.content.trim()) return true;
@@ -1733,13 +1750,41 @@ function hasNonToolAssistantContent(message: RawMessage | undefined): boolean {
   if (Array.isArray(content)) {
     for (const block of content as ContentBlock[]) {
       if (block.type === 'text' && block.text && block.text.trim()) return true;
-      if (block.type === 'thinking' && block.thinking && block.thinking.trim()) return true;
       if (block.type === 'image') return true;
     }
   }
 
   const msg = message as unknown as Record<string, unknown>;
   if (typeof msg.text === 'string' && msg.text.trim()) return true;
+
+  return false;
+}
+
+/**
+ * True when an assistant message is still waiting on a tool result, i.e. it
+ * represents an intermediate tool-use turn rather than a finished reply.
+ * Detected via:
+ *   - explicit stop_reason = "tool_use" / "toolUse"
+ *   - any tool_use / toolCall block in `content`
+ *   - OpenAI-format `tool_calls` array
+ * Used by applyLoadedMessages and the runtime `final` handler to keep the
+ * `sending` / `activeRunId` / `pendingFinal` flags armed across tool rounds.
+ */
+function hasPendingToolUse(message: RawMessage | undefined): boolean {
+  if (!message) return false;
+  const reason = getMessageStopReason(message);
+  if (reason === 'tool_use' || reason === 'tooluse') return true;
+
+  const content = message.content;
+  if (Array.isArray(content)) {
+    for (const block of content as ContentBlock[]) {
+      if (block.type === 'tool_use' || block.type === 'toolCall') return true;
+    }
+  }
+
+  const msg = message as unknown as Record<string, unknown>;
+  const toolCalls = msg.tool_calls ?? msg.toolCalls;
+  if (Array.isArray(toolCalls) && toolCalls.length > 0) return true;
 
   return false;
 }
@@ -2308,22 +2353,37 @@ export const useChatStore = create<ChatState>((set, get) => ({
         return true;
       }
 
+      // Promote pendingFinal only when there's a *final-looking* assistant
+      // message after the user — i.e. one that has actual user-visible output
+      // (text/image) AND is not still waiting on a tool result. This used to
+      // promote on *any* assistant message after the user, which fired on the
+      // very first `[thinking, toolCall]` intermediate turn and then paired
+      // with the closer below to clobber the entire run state.
       if (isSendingNow && !pendingFinal) {
-        const hasRecentAssistantActivity = [...filteredMessages].reverse().some((msg) => {
+        const hasFinalLikeAssistant = [...filteredMessages].reverse().some((msg) => {
           if (msg.role !== 'assistant') return false;
-          return isAfterUserMsg(msg);
+          if (!isAfterUserMsg(msg)) return false;
+          if (hasPendingToolUse(msg)) return false;
+          return hasNonToolAssistantContent(msg);
         });
-        if (hasRecentAssistantActivity) {
+        if (hasFinalLikeAssistant) {
           set({ pendingFinal: true });
         }
       }
 
       // If pendingFinal, check whether the AI produced a final text response.
+      // CRITICAL: reject intermediate tool turns (thinking+tool_use, mixed
+      // thinking+text+tool_use, etc.) so the run stays "open" across all tool
+      // rounds. Without `hasPendingToolUse` the closer matches the first
+      // `[thinking, toolCall]` intermediate turn (because thinking *used to*
+      // count as non-tool content), clears `sending` / `activeRunId` /
+      // `pendingFinal`, and makes the Thinking… indicator vanish mid-chain.
       if (pendingFinal || get().pendingFinal) {
         const recentAssistant = [...filteredMessages].reverse().find((msg) => {
           if (msg.role !== 'assistant') return false;
-          if (!hasNonToolAssistantContent(msg)) return false;
-          return isAfterUserMsg(msg);
+          if (!isAfterUserMsg(msg)) return false;
+          if (hasPendingToolUse(msg)) return false;
+          return hasNonToolAssistantContent(msg);
         });
         if (recentAssistant) {
           clearHistoryPoll();
@@ -2914,8 +2974,14 @@ export const useChatStore = create<ChatState>((set, get) => ({
             });
             break;
           }
-          const toolOnly = isToolOnlyMessage(normalizedFinalMessage);
-          const hasOutput = hasNonToolAssistantContent(normalizedFinalMessage);
+          // Mixed `[thinking, text, toolCall]` messages with stop_reason="tool_use"
+          // (some MiniMax / gpt-5.5 variants emit these) are still intermediate
+          // turns even though they carry user-visible text. Treat them as
+          // tool-only for lifecycle purposes so the run stays "open" until the
+          // truly final reply (without a pending tool call) arrives.
+          const pendingTool = hasPendingToolUse(normalizedFinalMessage);
+          const toolOnly = isToolOnlyMessage(normalizedFinalMessage) || pendingTool;
+          const hasOutput = !pendingTool && hasNonToolAssistantContent(normalizedFinalMessage);
           const msgId = normalizedFinalMessage.id || (toolOnly ? `run-${runId}-tool-${Date.now()}` : `run-${runId}`);
           set((s) => {
             const nextTools = updates.length > 0 ? upsertToolStatuses(s.streamingTools, updates) : s.streamingTools;

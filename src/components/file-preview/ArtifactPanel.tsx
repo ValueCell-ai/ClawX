@@ -16,7 +16,7 @@
  * `useArtifactPanel` zustand store so any part of the page (file cards,
  * toolbar buttons, "View file changes →" links) can drive it.
  */
-import { useLayoutEffect, useMemo } from 'react';
+import { useLayoutEffect, useMemo, useRef } from 'react';
 import { Eye, FileEdit, FolderOpen, FolderTree, X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
@@ -62,7 +62,7 @@ export function ArtifactPanel({ files, agent, runStartedAt, refreshSignal }: Art
 
   return (
     <div data-testid="artifact-panel" className="flex h-full min-h-0 flex-col bg-background">
-      <div className="flex shrink-0 items-center justify-between gap-2 border-b border-black/5 px-3 py-2 dark:border-white/10">
+      <div className="relative z-30 flex shrink-0 items-center justify-between gap-2 border-b border-black/5 bg-background px-3 py-2 dark:border-white/10">
         <div className="flex min-w-0 items-center gap-1">
           {richFocusedFile ? (
             <PanelTabButton
@@ -110,22 +110,27 @@ export function ArtifactPanel({ files, agent, runStartedAt, refreshSignal }: Art
         </Button>
       </div>
 
-      <div className="min-h-0 flex-1">
-        {visibleTab === 'changes' && (
+      <div className="relative z-0 min-h-0 flex-1 overflow-hidden">
+        <div className={cn('h-full min-h-0', visibleTab !== 'changes' && 'hidden')}>
           <ChangesTab
             files={files}
             focusedFile={focusedFile}
             onFocus={(f) => setFocusedFile(f)}
+            active={visibleTab === 'changes'}
           />
-        )}
-        {visibleTab === 'preview' && <PreviewTab focusedFile={focusedFile} />}
-        {WORKSPACE_BROWSER_ENABLED && visibleTab === 'browser' && (
-          <WorkspaceBrowserBody
-            agent={agent}
-            runStartedAt={runStartedAt}
-            refreshSignal={refreshSignal}
-            compact
-          />
+        </div>
+        <div className={cn('h-full min-h-0', visibleTab !== 'preview' && 'hidden')}>
+          <PreviewTab focusedFile={focusedFile} />
+        </div>
+        {WORKSPACE_BROWSER_ENABLED && (
+          <div className={cn('h-full min-h-0', visibleTab !== 'browser' && 'hidden')}>
+            <WorkspaceBrowserBody
+              agent={agent}
+              runStartedAt={runStartedAt}
+              refreshSignal={refreshSignal}
+              compact
+            />
+          </div>
         )}
       </div>
     </div>
@@ -141,13 +146,27 @@ interface PanelTabButtonProps {
 }
 
 function PanelTabButton({ testId, icon, label, active, onClick }: PanelTabButtonProps) {
+  const pointerActivated = useRef(false);
+
   return (
     <button
       data-testid={testId}
       type="button"
-      onClick={onClick}
+      onPointerDown={(event) => {
+        if (event.button !== 0) return;
+        pointerActivated.current = true;
+        event.preventDefault();
+        onClick();
+      }}
+      onClick={() => {
+        if (pointerActivated.current) {
+          pointerActivated.current = false;
+          return;
+        }
+        onClick();
+      }}
       className={cn(
-        'flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-medium transition-colors',
+        'relative z-40 flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-medium transition-colors',
         active
           ? 'bg-foreground/10 text-foreground'
           : 'text-muted-foreground hover:bg-black/5 hover:text-foreground dark:hover:bg-white/10',
@@ -178,6 +197,7 @@ interface ChangesTabProps {
   files: GeneratedFile[];
   focusedFile: FilePreviewTarget | null;
   onFocus: (file: FilePreviewTarget) => void;
+  active: boolean;
 }
 
 /**
@@ -185,7 +205,7 @@ interface ChangesTabProps {
  * the run’s file cards or “View file changes →” (auto-first); switching workspace
  * tabs does not bring back a sidebar list.
  */
-function ChangesTab({ files, focusedFile, onFocus }: ChangesTabProps) {
+function ChangesTab({ files, focusedFile, onFocus, active }: ChangesTabProps) {
   const { t } = useTranslation('chat');
 
   // De-dup files by path, keep the latest entry (highest lastSeenIndex).
@@ -203,10 +223,11 @@ function ChangesTab({ files, focusedFile, onFocus }: ChangesTabProps) {
   // be present in `files`; keep that focus instead of jumping to an unrelated
   // generated file.
   useLayoutEffect(() => {
+    if (!active) return;
     if (focusedFile) return;
     if (uniqueFiles.length === 0) return;
     onFocus(generatedFileToTarget(uniqueFiles[0]));
-  }, [focusedFile, uniqueFiles, onFocus]);
+  }, [active, focusedFile, uniqueFiles, onFocus]);
 
   if (!focusedFile && uniqueFiles.length === 0) {
     return (

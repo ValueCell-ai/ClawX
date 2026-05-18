@@ -612,4 +612,316 @@ describe('useChatStore startup history retry', () => {
     resolveSend?.({ runId: 'run-deleted' });
     await sendPromise;
   });
+
+  // Regression for the "thinking disappears mid-tool-chain" bug:
+  // when the history-poll loads an intermediate `[thinking, toolCall]` assistant
+  // message (stop_reason=tool_use) the closer half of applyLoadedMessages used
+  // to match it as a "final reply" — because `hasNonToolAssistantContent` once
+  // counted thinking blocks as user-visible content — and clear sending /
+  // activeRunId / pendingFinal. That caused the Execution Graph card to flip to
+  // inactive, the Thinking… dot to vanish, and ChatInput's stop button to
+  // revert to a send button while the agent was still running tools.
+  it('keeps the run open across intermediate [thinking, toolCall] history snapshots', async () => {
+    const { useChatStore } = await import('@/stores/chat');
+    useChatStore.setState({
+      currentSessionKey: 'agent:main:session-1',
+      currentAgentId: 'main',
+      sessions: [{ key: 'agent:main:session-1' }],
+      messages: [
+        { id: 'user-1', role: 'user', content: '帮我查一下昆明未来七天的天气', timestamp: 1000 },
+      ],
+      sessionLabels: {},
+      sessionLastActivity: {},
+      sending: true,
+      activeRunId: 'run-keep-open',
+      streamingText: '',
+      streamingMessage: null,
+      streamingTools: [],
+      pendingFinal: false,
+      lastUserMessageAt: 1000,
+      pendingToolImages: [],
+      error: null,
+      loading: false,
+      thinkingLevel: null,
+    });
+
+    gatewayRpcMock.mockResolvedValueOnce({
+      messages: [
+        { id: 'user-1', role: 'user', content: '帮我查一下昆明未来七天的天气', timestamp: 1000 },
+        {
+          id: 'assistant-tool-1',
+          role: 'assistant',
+          content: [
+            { type: 'thinking', thinking: 'Let me search for the weather.' },
+            { type: 'toolCall', id: 'tool-1', name: 'web_search', input: { query: 'Kunming weather' } },
+          ],
+          stopReason: 'toolUse',
+          timestamp: 1500,
+        },
+      ],
+    });
+
+    await useChatStore.getState().loadHistory(true);
+
+    const state = useChatStore.getState();
+    expect(state.sending).toBe(true);
+    expect(state.activeRunId).toBe('run-keep-open');
+    expect(state.pendingFinal).toBe(false);
+  });
+
+  // Regression for the mixed `[thinking, text, toolCall]` shape some models
+  // emit. Even though it carries user-visible text, stop_reason=tool_use means
+  // the assistant is still pending a tool result and the lifecycle must stay
+  // armed. Without `hasPendingToolUse`, the closer would match this on the
+  // text block and clear sending.
+  it('keeps the run open for mixed [thinking, text, toolCall] turns with stopReason=toolUse', async () => {
+    const { useChatStore } = await import('@/stores/chat');
+    useChatStore.setState({
+      currentSessionKey: 'agent:main:session-2',
+      currentAgentId: 'main',
+      sessions: [{ key: 'agent:main:session-2' }],
+      messages: [
+        { id: 'user-2', role: 'user', content: 'mixed turn test', timestamp: 2000 },
+      ],
+      sessionLabels: {},
+      sessionLastActivity: {},
+      sending: true,
+      activeRunId: 'run-mixed',
+      streamingText: '',
+      streamingMessage: null,
+      streamingTools: [],
+      pendingFinal: true,
+      lastUserMessageAt: 2000,
+      pendingToolImages: [],
+      error: null,
+      loading: false,
+      thinkingLevel: null,
+    });
+
+    gatewayRpcMock.mockResolvedValueOnce({
+      messages: [
+        { id: 'user-2', role: 'user', content: 'mixed turn test', timestamp: 2000 },
+        {
+          id: 'assistant-mixed-1',
+          role: 'assistant',
+          content: [
+            { type: 'thinking', thinking: 'I should search before answering.' },
+            { type: 'text', text: 'Let me search for that.' },
+            { type: 'toolCall', id: 'tool-2', name: 'web_search', input: { query: 'foo' } },
+          ],
+          stopReason: 'toolUse',
+          timestamp: 2500,
+        },
+      ],
+    });
+
+    await useChatStore.getState().loadHistory(true);
+
+    const state = useChatStore.getState();
+    expect(state.sending).toBe(true);
+    expect(state.activeRunId).toBe('run-mixed');
+    expect(state.pendingFinal).toBe(true);
+  });
+
+  // Positive case: a real final reply (text/image, no pending tool) SHOULD
+  // close the run when applyLoadedMessages observes it via history poll.
+  it('closes the run when a final assistant reply (text, stopReason=endTurn) appears', async () => {
+    const { useChatStore } = await import('@/stores/chat');
+    useChatStore.setState({
+      currentSessionKey: 'agent:main:session-3',
+      currentAgentId: 'main',
+      sessions: [{ key: 'agent:main:session-3' }],
+      messages: [
+        { id: 'user-3', role: 'user', content: 'final reply test', timestamp: 3000 },
+      ],
+      sessionLabels: {},
+      sessionLastActivity: {},
+      sending: true,
+      activeRunId: 'run-final',
+      streamingText: '',
+      streamingMessage: null,
+      streamingTools: [],
+      pendingFinal: true,
+      lastUserMessageAt: 3000,
+      pendingToolImages: [],
+      error: null,
+      loading: false,
+      thinkingLevel: null,
+    });
+
+    gatewayRpcMock.mockResolvedValueOnce({
+      messages: [
+        { id: 'user-3', role: 'user', content: 'final reply test', timestamp: 3000 },
+        {
+          id: 'assistant-final-1',
+          role: 'assistant',
+          content: [
+            { type: 'thinking', thinking: 'I have all the info.' },
+            { type: 'text', text: 'Here is the answer.' },
+          ],
+          stopReason: 'endTurn',
+          timestamp: 3500,
+        },
+      ],
+    });
+
+    await useChatStore.getState().loadHistory(true);
+
+    const state = useChatStore.getState();
+    expect(state.sending).toBe(false);
+    expect(state.activeRunId).toBeNull();
+    expect(state.pendingFinal).toBe(false);
+  });
+
+  // Cross-protocol coverage: Anthropic Messages API native shape (snake_case).
+  // OpenClaw's gateway normally normalizes to camelCase, but some paths can
+  // pass Anthropic responses through unchanged. `hasPendingToolUse` must still
+  // detect the intermediate turn via `stop_reason: "tool_use"` plus
+  // `content[].type === "tool_use"`.
+  it('keeps the run open for Anthropic-native [thinking, tool_use] (snake_case stop_reason)', async () => {
+    const { useChatStore } = await import('@/stores/chat');
+    useChatStore.setState({
+      currentSessionKey: 'agent:main:session-anthropic',
+      currentAgentId: 'main',
+      sessions: [{ key: 'agent:main:session-anthropic' }],
+      messages: [
+        { id: 'user-a', role: 'user', content: 'anthropic protocol', timestamp: 4000 },
+      ],
+      sessionLabels: {},
+      sessionLastActivity: {},
+      sending: true,
+      activeRunId: 'run-anthropic',
+      streamingText: '',
+      streamingMessage: null,
+      streamingTools: [],
+      pendingFinal: false,
+      lastUserMessageAt: 4000,
+      pendingToolImages: [],
+      error: null,
+      loading: false,
+      thinkingLevel: null,
+    });
+
+    gatewayRpcMock.mockResolvedValueOnce({
+      messages: [
+        { id: 'user-a', role: 'user', content: 'anthropic protocol', timestamp: 4000 },
+        {
+          id: 'assistant-anthropic-1',
+          role: 'assistant',
+          content: [
+            { type: 'thinking', thinking: 'Should I use a tool?' },
+            { type: 'tool_use', id: 'toolu_01', name: 'web_search', input: { query: 'foo' } },
+          ],
+          stop_reason: 'tool_use',
+          timestamp: 4500,
+        },
+      ],
+    });
+
+    await useChatStore.getState().loadHistory(true);
+
+    const state = useChatStore.getState();
+    expect(state.sending).toBe(true);
+    expect(state.activeRunId).toBe('run-anthropic');
+  });
+
+  // Cross-protocol coverage: OpenAI Chat Completions native shape. The
+  // tool-call signal is the top-level `tool_calls` array on the message, with
+  // no `stop_reason` / `stopReason` field (OpenAI uses `finish_reason` at the
+  // choice level which doesn't reach the message object). `hasPendingToolUse`
+  // must still flag this via the `tool_calls` array check.
+  it('keeps the run open for OpenAI ChatCompletions message with tool_calls array', async () => {
+    const { useChatStore } = await import('@/stores/chat');
+    useChatStore.setState({
+      currentSessionKey: 'agent:main:session-openai-cc',
+      currentAgentId: 'main',
+      sessions: [{ key: 'agent:main:session-openai-cc' }],
+      messages: [
+        { id: 'user-occ', role: 'user', content: 'openai chat completions', timestamp: 5000 },
+      ],
+      sessionLabels: {},
+      sessionLastActivity: {},
+      sending: true,
+      activeRunId: 'run-openai-cc',
+      streamingText: '',
+      streamingMessage: null,
+      streamingTools: [],
+      pendingFinal: false,
+      lastUserMessageAt: 5000,
+      pendingToolImages: [],
+      error: null,
+      loading: false,
+      thinkingLevel: null,
+    });
+
+    gatewayRpcMock.mockResolvedValueOnce({
+      messages: [
+        { id: 'user-occ', role: 'user', content: 'openai chat completions', timestamp: 5000 },
+        {
+          id: 'assistant-openai-cc-1',
+          role: 'assistant',
+          content: '',
+          tool_calls: [
+            {
+              id: 'call_abc123',
+              type: 'function',
+              function: { name: 'web_search', arguments: '{"query":"foo"}' },
+            },
+          ],
+          timestamp: 5500,
+        },
+      ],
+    });
+
+    await useChatStore.getState().loadHistory(true);
+
+    const state = useChatStore.getState();
+    expect(state.sending).toBe(true);
+    expect(state.activeRunId).toBe('run-openai-cc');
+  });
+
+  // Cross-protocol coverage: OpenAI Chat Completions FINAL reply. No
+  // tool_calls, plain text content. Must close the run normally.
+  it('closes the run for OpenAI ChatCompletions plain-text final reply', async () => {
+    const { useChatStore } = await import('@/stores/chat');
+    useChatStore.setState({
+      currentSessionKey: 'agent:main:session-openai-cc-final',
+      currentAgentId: 'main',
+      sessions: [{ key: 'agent:main:session-openai-cc-final' }],
+      messages: [
+        { id: 'user-occf', role: 'user', content: 'openai final', timestamp: 6000 },
+      ],
+      sessionLabels: {},
+      sessionLastActivity: {},
+      sending: true,
+      activeRunId: 'run-openai-cc-final',
+      streamingText: '',
+      streamingMessage: null,
+      streamingTools: [],
+      pendingFinal: true,
+      lastUserMessageAt: 6000,
+      pendingToolImages: [],
+      error: null,
+      loading: false,
+      thinkingLevel: null,
+    });
+
+    gatewayRpcMock.mockResolvedValueOnce({
+      messages: [
+        { id: 'user-occf', role: 'user', content: 'openai final', timestamp: 6000 },
+        {
+          id: 'assistant-openai-cc-final-1',
+          role: 'assistant',
+          content: 'Here is the final answer.',
+          timestamp: 6500,
+        },
+      ],
+    });
+
+    await useChatStore.getState().loadHistory(true);
+
+    const state = useChatStore.getState();
+    expect(state.sending).toBe(false);
+    expect(state.activeRunId).toBeNull();
+  });
 });

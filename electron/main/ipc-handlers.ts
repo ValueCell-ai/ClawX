@@ -1761,7 +1761,7 @@ function registerDeviceOAuthHandlers(mainWindow: BrowserWindow): void {
     ) => {
       try {
         logger.info(`provider:requestOAuth for ${provider}`);
-        if (provider === 'google' || provider === 'openai') {
+        if (provider === 'openai') {
           await browserOAuthManager.startFlow(provider, options);
         } else {
           await deviceOAuthManager.startFlow(provider, region, options);
@@ -2356,6 +2356,7 @@ const EXT_MIME_MAP: Record<string, string> = {
   '.txt': 'text/plain',
   '.md': 'text/markdown',
   '.html': 'text/html',
+  '.htm': 'text/html',
   '.css': 'text/css',
   '.js': 'text/javascript',
   '.ts': 'text/typescript',

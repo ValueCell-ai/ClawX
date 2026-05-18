@@ -34,11 +34,58 @@ export type BuiltinProviderType = (typeof BUILTIN_PROVIDER_TYPES)[number];
 
 export const OLLAMA_PLACEHOLDER_API_KEY = 'ollama-local';
 
+/**
+ * Authoritative set of `models.providers.*.api` values accepted by the
+ * OpenClaw Gateway config schema.  Keep in sync with OpenClaw's
+ * `assertValidGatewayStartupConfigSnapshot`.
+ *
+ * Writing any other value into `~/.openclaw/openclaw.json` triggers
+ * `Invalid config` rejection on next reload/restart and tears down all
+ * channels.  Use `assertValidApiProtocol` at every write site.
+ */
+export const OPENCLAW_API_PROTOCOLS = [
+  'openai-completions',
+  'openai-responses',
+  'openai-codex-responses',
+  'anthropic-messages',
+  'google-generative-ai',
+  'github-copilot',
+  'bedrock-converse-stream',
+  'ollama',
+  'azure-openai-responses',
+] as const;
+
+export type OpenClawApiProtocol = (typeof OPENCLAW_API_PROTOCOLS)[number];
+
+export class InvalidApiProtocolError extends Error {
+  constructor(public readonly api: unknown, public readonly providerKey?: string) {
+    super(
+      `Invalid OpenClaw api protocol${providerKey ? ` for provider "${providerKey}"` : ''}: ` +
+      `${JSON.stringify(api)}. Expected one of: ${OPENCLAW_API_PROTOCOLS.join(', ')}.`,
+    );
+    this.name = 'InvalidApiProtocolError';
+  }
+}
+
+export function assertValidApiProtocol(
+  api: unknown,
+  providerKey?: string,
+): asserts api is OpenClawApiProtocol {
+  if (typeof api !== 'string' || !(OPENCLAW_API_PROTOCOLS as readonly string[]).includes(api)) {
+    throw new InvalidApiProtocolError(api, providerKey);
+  }
+}
+
+/**
+ * UI-selectable subset of api protocols offered to users when configuring
+ * custom or Ollama providers in Settings.  Tightly scoped on purpose so the
+ * UI dropdown stays simple; built-in providers use the broader
+ * {@link OpenClawApiProtocol} via {@link ProviderBackendConfig.api}.
+ */
 export type ProviderProtocol =
   | 'openai-completions'
   | 'openai-responses'
-  | 'anthropic-messages'
-  | 'openrouter';
+  | 'anthropic-messages';
 
 export type ProviderAuthMode =
   | 'api_key'
@@ -100,7 +147,7 @@ export interface ProviderModelEntry extends Record<string, unknown> {
 
 export interface ProviderBackendConfig {
   baseUrl: string;
-  api: ProviderProtocol;
+  api: OpenClawApiProtocol;
   apiKeyEnv: string;
   models?: ProviderModelEntry[];
   headers?: Record<string, string>;
