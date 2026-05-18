@@ -85,6 +85,8 @@ export interface ProviderTypeInfo {
   codePlanDocsUrl?: string;
   /** If true, this provider is not shown in the "Add Provider" dialog. */
   hidden?: boolean;
+  /** If true, hide OAuth sign-in controls in the add-provider UI (logic remains enabled). */
+  hideOAuthUi?: boolean;
 }
 
 export type ProviderAuthMode =
@@ -155,6 +157,7 @@ export const PROVIDER_TYPE_INFO: ProviderTypeInfo[] = [
     requiresApiKey: true,
     isOAuth: true,
     supportsApiKey: true,
+    hideOAuthUi: true,
     defaultModelId: 'gpt-5.5',
     showModelId: true,
     modelIdPlaceholder: 'gpt-5.5',

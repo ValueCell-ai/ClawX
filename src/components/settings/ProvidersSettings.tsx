@@ -1018,6 +1018,7 @@ function AddProviderDialog({
     : providerDocsUrl;
   const isOAuth = typeInfo?.isOAuth ?? false;
   const supportsApiKey = typeInfo?.supportsApiKey ?? false;
+  const oauthUiHidden = typeInfo?.hideOAuthUi ?? false;
   const vendorMap = new Map(vendors.map((vendor) => [vendor.id, vendor]));
   const selectedVendor = selectedType ? vendorMap.get(selectedType) : undefined;
   const showUserAgentInAddDialog = shouldShowUserAgentFieldForNewProvider(selectedType);
@@ -1027,14 +1028,18 @@ function AddProviderDialog({
       ? 'oauth_device'
       : null);
   // Effective OAuth mode: pure OAuth providers, or dual-mode with oauth selected
-  const useOAuthFlow = isOAuth && (!supportsApiKey || authMode === 'oauth');
+  const useOAuthFlow = isOAuth && !oauthUiHidden && (!supportsApiKey || authMode === 'oauth');
 
   useEffect(() => {
     if (!selectedVendor || !isOAuth || !supportsApiKey) {
       return;
     }
+    if (oauthUiHidden) {
+      setAuthMode('apikey');
+      return;
+    }
     setAuthMode(selectedVendor.defaultAuthMode === 'api_key' ? 'apikey' : 'oauth');
-  }, [selectedVendor, isOAuth, supportsApiKey]);
+  }, [selectedVendor, isOAuth, supportsApiKey, oauthUiHidden]);
 
   useEffect(() => {
     if (selectedType !== 'ark') {
@@ -1369,7 +1374,7 @@ function AddProviderDialog({
                 </div>
 
                 {/* Auth mode toggle for providers supporting both */}
-                {isOAuth && supportsApiKey && (
+                {isOAuth && supportsApiKey && !oauthUiHidden && (
                   <div className="flex rounded-xl border border-black/10 dark:border-white/10 overflow-hidden text-meta font-medium shadow-sm bg-transparent p-1 gap-1">
                     <button
                       onClick={() => setAuthMode('oauth')}
