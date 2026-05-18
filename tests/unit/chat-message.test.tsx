@@ -322,3 +322,32 @@ describe('ChatMessage word wrapping', () => {
     expect(inlineCode?.classList.contains('break-all')).toBe(true);
   });
 });
+
+describe('ChatMessage reply styling', () => {
+  it('renders assistant replies as plain Markdown without a rounded bubble wrapper', () => {
+    const message: RawMessage = {
+      role: 'assistant',
+      content: 'Direct Markdown reply with **bold** text.',
+    };
+
+    const { container } = render(<ChatMessage message={message} />);
+    const prose = container.querySelector('.prose');
+    expect(prose).not.toBeNull();
+    expect(prose?.classList.contains('rounded-2xl')).toBe(false);
+    expect(prose?.classList.contains('bg-black/5')).toBe(false);
+    expect(prose?.classList.contains('dark:bg-white/5')).toBe(false);
+    expect(prose?.parentElement?.classList.contains('rounded-2xl')).toBe(false);
+  });
+
+  it('keeps user messages in the blue rounded bubble', () => {
+    const message: RawMessage = {
+      role: 'user',
+      content: 'Keep the prompt bubble.',
+    };
+
+    const { container } = render(<ChatMessage message={message} />);
+    const bubble = container.querySelector('.rounded-2xl.bg-brand');
+    expect(bubble).not.toBeNull();
+    expect(bubble).toHaveTextContent('Keep the prompt bubble.');
+  });
+});
