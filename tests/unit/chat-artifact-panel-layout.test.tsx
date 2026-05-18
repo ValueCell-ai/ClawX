@@ -72,6 +72,8 @@ vi.mock('@/hooks/use-stick-to-bottom-instant', () => ({
   useStickToBottomInstant: () => ({
     contentRef: { current: null },
     scrollRef: { current: null },
+    scrollToBottom: vi.fn(),
+    isAtBottom: true,
   }),
 }));
 
@@ -88,6 +90,18 @@ vi.mock('@/pages/Chat/ChatToolbar', () => ({
 }));
 
 describe('Chat artifact panel layout', () => {
+  it('keeps the chat toolbar background draggable while actions remain clickable', async () => {
+    window.electron.platform = 'darwin';
+
+    render(<Chat />);
+
+    const dragRegion = await screen.findByTestId('chat-toolbar-drag-region');
+    const actions = await screen.findByTestId('chat-toolbar-actions');
+
+    expect(dragRegion).toHaveClass('drag-region');
+    expect(actions).toHaveClass('no-drag');
+  });
+
   it('layers the right artifact panel above the macOS drag strip', async () => {
     window.electron.platform = 'darwin';
 

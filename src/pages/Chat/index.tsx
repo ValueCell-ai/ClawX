@@ -730,16 +730,19 @@ export function Chat() {
       {/* Left column: chat */}
       <div className="flex min-w-0 flex-1 flex-col">
       {/* Toolbar */}
-      <div className="no-drag relative z-20 flex shrink-0 items-center justify-end px-4 py-2">
-        <ChatToolbar
-          questionDirectoryOpen={questionDirectoryVisible}
-          questionDirectoryCount={questionDirectoryItems.length}
-          onToggleQuestionDirectory={() =>
-            setQuestionDirectoryOpenSessionKey((openSessionKey) =>
-              openSessionKey === currentSessionKey ? null : currentSessionKey,
-            )
-          }
-        />
+      <div className="relative flex shrink-0 items-center justify-end px-4 py-2">
+        <div data-testid="chat-toolbar-drag-region" className="drag-region absolute inset-0 z-0" aria-hidden="true" />
+        <div data-testid="chat-toolbar-actions" className="no-drag relative z-10">
+          <ChatToolbar
+            questionDirectoryOpen={questionDirectoryVisible}
+            questionDirectoryCount={questionDirectoryItems.length}
+            onToggleQuestionDirectory={() =>
+              setQuestionDirectoryOpenSessionKey((openSessionKey) =>
+                openSessionKey === currentSessionKey ? null : currentSessionKey,
+              )
+            }
+          />
+        </div>
       </div>
 
       {/* Messages Area */}
