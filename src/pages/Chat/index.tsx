@@ -986,8 +986,15 @@ export function Chat() {
 
 function QuestionDirectory({ items }: { items: QuestionDirectoryItem[] }) {
   const { t } = useTranslation('chat');
+  const scrollRef = useRef<HTMLElement | null>(null);
   const visibleItems = items.slice(0, QUESTION_DIRECTORY_RENDER_LIMIT);
   const hiddenCount = Math.max(0, items.length - visibleItems.length);
+
+  useEffect(() => {
+    const scrollEl = scrollRef.current;
+    if (!scrollEl) return;
+    scrollEl.scrollTop = scrollEl.scrollHeight;
+  }, [visibleItems.length]);
 
   const handleJumpToMessage = (index: number) => {
     document.getElementById(`chat-message-${index}`)?.scrollIntoView({
@@ -1011,7 +1018,7 @@ function QuestionDirectory({ items }: { items: QuestionDirectoryItem[] }) {
             {items.length}
           </span>
         </div>
-        <nav className="max-h-[calc(100vh-13rem)] space-y-1 overflow-y-auto pr-1">
+        <nav ref={scrollRef} className="max-h-[calc(100vh-13rem)] space-y-1 overflow-y-auto pr-1">
           {visibleItems.map((item) => (
             <button
               key={item.index}
