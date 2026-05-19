@@ -43,6 +43,67 @@ export function findReplyMessageIndex(messages: RawMessage[], hasStreamingReply:
   return -1;
 }
 
+/**
+ * Message indices that belong to an agent run segment (strictly after a run
+ * trigger user message up to the next real user message). Used to fold tool
+ * cards and process attachments into ExecutionGraphCard without depending on
+ * whether a graph card was successfully materialized (e.g. after history
+ * reload when the step cache is empty).
+ */
+export function buildRunSegmentMessageIndices(
+  messages: RawMessage[],
+  nextUserMessageIndexes: number[],
+  isRunTrigger: (message: RawMessage, index: number) => boolean,
+): Set<number> {
+  const indices = new Set<number>();
+  messages.forEach((message, triggerIndex) => {
+    if (!isRunTrigger(message, triggerIndex)) return;
+    const nextUserIndex = nextUserMessageIndexes[triggerIndex];
+    const segmentEnd = nextUserIndex === -1 ? messages.length - 1 : nextUserIndex - 1;
+    for (let idx = triggerIndex + 1; idx <= segmentEnd; idx += 1) {
+      indices.add(idx);
+    }
+  });
+
+  // History pagination loads a suffix of the transcript. When the triggering
+  // user turn fell off the window, assistant tool steps remain at the top of
+  // `messages[]` without a preceding user row — fold them into the first run.
+  let firstTriggerIndex = -1;
+  for (let idx = 0; idx < messages.length; idx += 1) {
+    if (isRunTrigger(messages[idx], idx)) {
+      firstTriggerIndex = idx;
+      break;
+    }
+  }
+  if (firstTriggerIndex > 0) {
+    for (let idx = 0; idx < firstTriggerIndex; idx += 1) {
+      if (messages[idx]?.role === 'assistant') {
+        indices.add(idx);
+      }
+    }
+  }
+
+  return indices;
+}
+
+/**
+ * Slice messages for a user-triggered run, including leading assistant orphans
+ * that belong to the same run but were separated by paginated history.
+ */
+export function getRunSegmentMessages(
+  messages: RawMessage[],
+  triggerIndex: number,
+  nextUserIndex: number,
+  isRunTrigger: (message: RawMessage, index: number) => boolean,
+): RawMessage[] {
+  const segmentEnd = nextUserIndex === -1 ? messages.length : nextUserIndex;
+  const core = messages.slice(triggerIndex + 1, segmentEnd);
+  const hasEarlierUser = messages.some((message, index) => index < triggerIndex && isRunTrigger(message, index));
+  if (hasEarlierUser || triggerIndex === 0) return core;
+  const orphans = messages.slice(0, triggerIndex).filter((message) => message.role === 'assistant');
+  return [...orphans, ...core];
+}
+
 interface DeriveTaskStepsInput {
   messages: RawMessage[];
   streamingMessage: unknown | null;

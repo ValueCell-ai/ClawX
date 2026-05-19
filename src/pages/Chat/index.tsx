@@ -18,8 +18,8 @@ import { ChatMessage } from './ChatMessage';
 import { ChatInput } from './ChatInput';
 import { ExecutionGraphCard } from './ExecutionGraphCard';
 import { ChatToolbar } from './ChatToolbar';
-import { extractImages, extractText, extractThinking, extractToolUse, stripProcessMessagePrefix } from './message-utils';
-import { deriveTaskSteps, findReplyMessageIndex, parseSubagentCompletionInfo, type TaskStep } from './task-visualization';
+import { extractImages, extractText, extractThinking, extractToolUse, normalizeMessageRole, stripProcessMessagePrefix } from './message-utils';
+import { buildRunSegmentMessageIndices, deriveTaskSteps, findReplyMessageIndex, getRunSegmentMessages, parseSubagentCompletionInfo, type TaskStep } from './task-visualization';
 import { useTranslation } from 'react-i18next';
 import { cn } from '@/lib/utils';
 import { useStickToBottomInstant } from '@/hooks/use-stick-to-bottom-instant';
@@ -92,13 +92,13 @@ function buildQuestionDirectoryTitle(message: RawMessage, fallback: string): str
 }
 
 function isRealUserMessage(msg: RawMessage): boolean {
-  if (msg.role !== 'user') return false;
+  if (normalizeMessageRole(msg.role) !== 'user') return false;
   const content = msg.content;
   if (!Array.isArray(content)) return true;
   // If every block in the content is a tool_result, this is a Gateway
   // tool-result wrapper, not a real user message.
   const blocks = content as Array<{ type?: string }>;
-  return blocks.length === 0 || !blocks.every((b) => b.type === 'tool_result');
+  return blocks.length === 0 || !blocks.every((b) => b.type === 'tool_result' || b.type === 'toolResult');
 }
 
 function generatedFileToTarget(file: GeneratedFile): FilePreviewTarget {
@@ -338,6 +338,16 @@ export function Chat() {
 
   const questionDirectoryVisible = questionDirectoryOpenSessionKey === currentSessionKey && questionDirectoryItems.length > 1;
 
+  const isRunTrigger = useCallback(
+    (message: RawMessage, index: number) => isRealUserMessage(message) && !subagentCompletionInfos[index],
+    [subagentCompletionInfos],
+  );
+
+  const runSegmentMessageIndices = useMemo(
+    () => buildRunSegmentMessageIndices(messages, nextUserMessageIndexes, isRunTrigger),
+    [messages, nextUserMessageIndexes, isRunTrigger],
+  );
+
   // Indices of intermediate assistant process messages that are represented
   // in the ExecutionGraphCard (narration text and/or thinking). We suppress
   // them from the chat stream so they don't appear duplicated below the graph.
@@ -351,7 +361,7 @@ export function Chat() {
       : `${currentSessionKey}:trigger-${idx}`;
     const nextUserIndex = nextUserMessageIndexes[idx];
     const segmentEnd = nextUserIndex === -1 ? messages.length : nextUserIndex;
-    const segmentMessages = messages.slice(idx + 1, segmentEnd);
+    const segmentMessages = getRunSegmentMessages(messages, idx, nextUserIndex, isRunTrigger);
     const completionInfos = subagentCompletionInfos
       .slice(idx + 1, segmentEnd)
       .filter((value): value is NonNullable<typeof value> => value != null);
@@ -590,7 +600,7 @@ export function Chat() {
       streamingReplyText,
       suppressThinking,
     }];
-  }, [messages, subagentCompletionInfos, currentSessionKey, streamingMessage, streamingTools, pendingFinal, sending, hasAnyStreamContent, hasStreamText, hasStreamImages, streamText, streamTools.length, hasRunningStreamToolStatus, childTranscripts, currentAgentId, agents, sessionLabels, graphStepCache, runError]);
+  }, [messages, subagentCompletionInfos, currentSessionKey, streamingMessage, streamingTools, pendingFinal, sending, hasAnyStreamContent, hasStreamText, hasStreamImages, streamText, streamTools.length, hasRunningStreamToolStatus, childTranscripts, currentAgentId, agents, sessionLabels, graphStepCache, runError, isRunTrigger]);
   const hasActiveExecutionGraph = userRunCards.some((card) => card.active);
   const replyTextOverrides = useMemo(() => {
     const map = new Map<number, string>();
@@ -776,9 +786,14 @@ export function Chat() {
                   )}
                   {messages.map((msg, idx) => {
                     if (foldedNarrationIndices.has(idx)) return null;
-                    const suppressToolCards = userRunCards.some((card) =>
-                      idx > card.triggerIndex && idx <= card.segmentEnd,
-                    );
+                    const suppressToolCards = runSegmentMessageIndices.has(idx);
+                    const isToolOnlyAssistant = normalizeMessageRole(msg.role) === 'assistant'
+                      && extractToolUse(msg).length > 0
+                      && extractText(msg).trim().length === 0
+                      && !extractThinking(msg);
+                    if (suppressToolCards && isToolOnlyAssistant && !(msg._attachedFiles?.length)) {
+                      return null;
+                    }
                     return (
                     <div
                       key={msg.id || `msg-${idx}`}
@@ -848,6 +863,7 @@ export function Chat() {
                       OR when there's streaming content without an active graph */}
                   {shouldRenderStreaming && (streamingReplyText != null || !hasActiveExecutionGraph) && (
                     <ChatMessage
+                      suppressToolCards={hasActiveExecutionGraph || runSegmentMessageIndices.size > 0}
                       message={(() => {
                         const base = streamMsg
                           ? {
