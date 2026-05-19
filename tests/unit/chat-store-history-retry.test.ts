@@ -287,6 +287,51 @@ describe('useChatStore startup history retry', () => {
     expect(useChatStore.getState().messages.map((message) => message.content)).toEqual(['cached history']);
   });
 
+  it('switchSession restores in-flight run state so Thinking indicator survives navigation', async () => {
+    const { useChatStore } = await import('@/stores/chat');
+    useChatStore.setState({
+      currentSessionKey: 'agent:main:session-run',
+      currentAgentId: 'main',
+      sessions: [{ key: 'agent:main:session-run' }, { key: 'agent:main:other' }],
+      messages: [
+        { id: 'user-run', role: 'user', content: 'browse the page', timestamp: 1000 },
+        {
+          id: 'assistant-tool-run',
+          role: 'assistant',
+          content: [
+            { type: 'toolCall', id: 'tool-run', name: 'browser', input: { action: 'snapshot' } },
+          ],
+          stopReason: 'toolUse',
+          timestamp: 1500,
+        },
+      ],
+      sessionLabels: {},
+      sessionLastActivity: {},
+      sending: true,
+      activeRunId: 'run-nav-test',
+      streamingText: '',
+      streamingMessage: null,
+      streamingTools: [],
+      pendingFinal: true,
+      lastUserMessageAt: 1000,
+      pendingToolImages: [],
+      error: null,
+      loading: false,
+      thinkingLevel: null,
+    });
+
+    useChatStore.getState().switchSession('agent:main:other');
+    expect(useChatStore.getState().sending).toBe(false);
+
+    useChatStore.getState().switchSession('agent:main:session-run');
+
+    const state = useChatStore.getState();
+    expect(state.sending).toBe(true);
+    expect(state.activeRunId).toBe('run-nav-test');
+    expect(state.pendingFinal).toBe(true);
+    expect(state.lastUserMessageAt).toBe(1000);
+  });
+
   it('treats the same session as a fresh foreground load after gateway runtime changes', async () => {
     const setTimeoutSpy = vi.spyOn(globalThis, 'setTimeout');
     const { useChatStore } = await import('@/stores/chat');
@@ -923,5 +968,118 @@ describe('useChatStore startup history retry', () => {
     const state = useChatStore.getState();
     expect(state.sending).toBe(false);
     expect(state.activeRunId).toBeNull();
+  });
+
+  // Regression: the 90s safety timeout used to fire "No response received"
+  // while the model was still working via tool chains. Gateway streaming can be
+  // absent (WS drop, long tool execution) but chat.history still surfaces
+  // intermediate assistant turns — those must count as progress.
+  it('clears a stale no-response error when history poll shows tool progress', async () => {
+    const { useChatStore } = await import('@/stores/chat');
+    useChatStore.setState({
+      currentSessionKey: 'agent:main:session-stuck',
+      currentAgentId: 'main',
+      sessions: [{ key: 'agent:main:session-stuck' }],
+      messages: [{ id: 'user-stuck', role: 'user', content: 'weather check' }],
+      sessionLabels: {},
+      sessionLastActivity: {},
+      sending: true,
+      activeRunId: 'run-stuck-test',
+      streamingText: '',
+      streamingMessage: null,
+      streamingTools: [],
+      pendingFinal: false,
+      lastUserMessageAt: Date.now(),
+      pendingToolImages: [],
+      error: 'No response received from the model. The provider may be unavailable or the API key may have insufficient quota. Please check your provider settings.',
+      loading: false,
+      thinkingLevel: null,
+    });
+
+    gatewayRpcMock.mockResolvedValueOnce({
+      messages: [
+        { id: 'user-stuck', role: 'user', content: 'weather check', timestamp: 1000 },
+        {
+          id: 'assistant-tool-stuck',
+          role: 'assistant',
+          content: [
+            { type: 'thinking', thinking: 'Searching...' },
+            { type: 'toolCall', id: 'tool-stuck', name: 'web_search', input: { q: 'weather' } },
+          ],
+          stopReason: 'toolUse',
+          timestamp: 1500,
+        },
+      ],
+    });
+
+    await vi.advanceTimersByTimeAsync(1_000);
+    await useChatStore.getState().loadHistory(true);
+
+    expect(useChatStore.getState().error).toBeNull();
+    expect(useChatStore.getState().sending).toBe(true);
+    expect(useChatStore.getState().messages.some((msg) => msg.role === 'assistant')).toBe(true);
+  });
+
+  it('does not emit a false no-response error when history poll shows tool progress', async () => {
+    let resolveSend: ((value: { runId: string }) => void) | undefined;
+    gatewayRpcMock.mockImplementation((method: string) => {
+      if (method === 'chat.send') {
+        return new Promise((resolve) => {
+          resolveSend = resolve;
+        });
+      }
+      if (method === 'chat.history') {
+        return {
+          messages: [
+            { id: 'user-stuck', role: 'user', content: 'weather check', timestamp: 1000 },
+            {
+              id: 'assistant-tool-stuck',
+              role: 'assistant',
+              content: [
+                { type: 'thinking', thinking: 'Searching...' },
+                { type: 'toolCall', id: 'tool-stuck', name: 'web_search', input: { q: 'weather' } },
+              ],
+              stopReason: 'toolUse',
+              timestamp: 1500,
+            },
+          ],
+        };
+      }
+      return { messages: [] };
+    });
+
+    const { useChatStore } = await import('@/stores/chat');
+    useChatStore.setState({
+      currentSessionKey: 'agent:main:session-stuck',
+      currentAgentId: 'main',
+      sessions: [{ key: 'agent:main:session-stuck' }],
+      messages: [],
+      sessionLabels: {},
+      sessionLastActivity: {},
+      sending: false,
+      activeRunId: null,
+      streamingText: '',
+      streamingMessage: null,
+      streamingTools: [],
+      pendingFinal: false,
+      lastUserMessageAt: null,
+      pendingToolImages: [],
+      error: null,
+      loading: false,
+      thinkingLevel: null,
+    });
+
+    const sendPromise = useChatStore.getState().sendMessage('weather check');
+
+    await vi.advanceTimersByTimeAsync(7_000);
+    await useChatStore.getState().loadHistory(true);
+    await vi.advanceTimersByTimeAsync(100_000);
+
+    expect(useChatStore.getState().error).toBeNull();
+    expect(useChatStore.getState().sending).toBe(true);
+    expect(useChatStore.getState().messages.some((msg) => msg.role === 'assistant')).toBe(true);
+
+    resolveSend?.({ runId: 'run-stuck-test' });
+    await sendPromise;
   });
 });

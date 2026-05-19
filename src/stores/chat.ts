@@ -74,6 +74,31 @@ const _lastHistoryLoadAtBySession = new Map<string, number>();
 const _forceNextHistoryLoadBySession = new Set<string>();
 const _foregroundHistoryLoadSeen = new Set<string>();
 const _sessionHistoryCache = new Map<string, { messages: RawMessage[]; thinkingLevel: string | null }>();
+
+type SessionRunState = Pick<
+  ChatState,
+  | 'sending'
+  | 'activeRunId'
+  | 'pendingFinal'
+  | 'lastUserMessageAt'
+  | 'streamingText'
+  | 'streamingMessage'
+  | 'streamingTools'
+  | 'pendingToolImages'
+>;
+
+const DEFAULT_SESSION_RUN_STATE: SessionRunState = {
+  sending: false,
+  activeRunId: null,
+  pendingFinal: false,
+  lastUserMessageAt: null,
+  streamingText: '',
+  streamingMessage: null,
+  streamingTools: [],
+  pendingToolImages: [],
+};
+
+const _sessionRunStateCache = new Map<string, SessionRunState>();
 const SESSION_LOAD_MIN_INTERVAL_MS = 1_200;
 const HISTORY_LOAD_MIN_INTERVAL_MS = 800;
 const HISTORY_POLL_SILENCE_WINDOW_MS = 2_500;
@@ -330,6 +355,38 @@ function getCachedSessionHistory(sessionKey: string): { messages: RawMessage[]; 
 
 function clearCachedSessionHistory(sessionKey: string): void {
   _sessionHistoryCache.delete(sessionKey);
+}
+
+function captureSessionRunState(sessionKey: string, state: SessionRunState): void {
+  _sessionRunStateCache.set(sessionKey, {
+    sending: state.sending,
+    activeRunId: state.activeRunId,
+    pendingFinal: state.pendingFinal,
+    lastUserMessageAt: state.lastUserMessageAt,
+    streamingText: state.streamingText,
+    streamingMessage: state.streamingMessage,
+    streamingTools: [...state.streamingTools],
+    pendingToolImages: state.pendingToolImages.map((file) => ({ ...file })),
+  });
+}
+
+function getCachedSessionRunState(sessionKey: string): SessionRunState {
+  const cached = _sessionRunStateCache.get(sessionKey);
+  if (!cached) return DEFAULT_SESSION_RUN_STATE;
+  return {
+    sending: cached.sending,
+    activeRunId: cached.activeRunId,
+    pendingFinal: cached.pendingFinal,
+    lastUserMessageAt: cached.lastUserMessageAt,
+    streamingText: cached.streamingText,
+    streamingMessage: cached.streamingMessage,
+    streamingTools: [...cached.streamingTools],
+    pendingToolImages: cached.pendingToolImages.map((file) => ({ ...file })),
+  };
+}
+
+function clearCachedSessionRunState(sessionKey: string): void {
+  _sessionRunStateCache.delete(sessionKey);
 }
 
 function getHistoryForegroundLoadKey(sessionKey: string): string {
@@ -1386,10 +1443,24 @@ function clearSessionEntryFromMap<T extends Record<string, unknown>>(entries: T,
 function buildSessionSwitchPatch(
   state: Pick<
     ChatState,
-    'currentSessionKey' | 'messages' | 'sessions' | 'sessionLabels' | 'sessionLastActivity' | 'thinkingLevel'
+    | 'currentSessionKey'
+    | 'messages'
+    | 'sessions'
+    | 'sessionLabels'
+    | 'sessionLastActivity'
+    | 'thinkingLevel'
+    | 'sending'
+    | 'activeRunId'
+    | 'pendingFinal'
+    | 'lastUserMessageAt'
+    | 'streamingText'
+    | 'streamingMessage'
+    | 'streamingTools'
+    | 'pendingToolImages'
   >,
   nextSessionKey: string,
 ): Partial<ChatState> {
+  captureSessionRunState(state.currentSessionKey, state);
   // Only treat sessions with no history records and no activity timestamp as empty.
   // Relying solely on messages.length is unreliable because switchSession clears
   // the current messages before loadHistory runs, creating a race condition that
@@ -1403,6 +1474,7 @@ function buildSessionSwitchPatch(
     ? state.sessions.filter((session) => session.key !== state.currentSessionKey)
     : state.sessions;
   const cachedNextSession = getCachedSessionHistory(nextSessionKey);
+  const cachedRunState = getCachedSessionRunState(nextSessionKey);
 
   return {
     currentSessionKey: nextSessionKey,
@@ -1418,14 +1490,9 @@ function buildSessionSwitchPatch(
     hasMoreHistory: cachedNextSession ? cachedNextSession.messages.length >= HISTORY_PAGE_SIZE : false,
     loadingMoreHistory: false,
     thinkingLevel: cachedNextSession?.thinkingLevel ?? state.thinkingLevel ?? null,
-    streamingText: '',
-    streamingMessage: null,
-    streamingTools: [],
-    activeRunId: null,
+    ...cachedRunState,
     error: null,
-    pendingFinal: false,
-    lastUserMessageAt: null,
-    pendingToolImages: [],
+    runError: null,
   };
 }
 
@@ -1860,6 +1927,78 @@ function hasPendingToolUse(message: RawMessage | undefined): boolean {
   return false;
 }
 
+function isRealUserBoundaryMessage(msg: RawMessage): boolean {
+  if (msg.role !== 'user') return false;
+  if (!Array.isArray(msg.content)) return true;
+  const blocks = msg.content as Array<{ type?: string }>;
+  return blocks.length === 0 || !blocks.every((block) => block.type === 'tool_result' || block.type === 'toolResult');
+}
+
+function hasAssistantAfterLastRealUser(messages: RawMessage[]): boolean {
+  for (let i = messages.length - 1; i >= 0; i -= 1) {
+    if (isRealUserBoundaryMessage(messages[i])) {
+      return messages.slice(i + 1).some((m) => m.role === 'assistant');
+    }
+  }
+  return false;
+}
+
+function hasAssistantProgressSinceSend(messages: RawMessage[], lastUserMessageAt: number | null): boolean {
+  if (!lastUserMessageAt) return false;
+  const normalized = [...messages];
+  while (normalized.length > 0) {
+    const last = normalized[normalized.length - 1];
+    if (last.role === 'user' && !last.timestamp) {
+      normalized.pop();
+      continue;
+    }
+    break;
+  }
+  return hasAssistantAfterLastRealUser(normalized);
+}
+
+function postUserSegmentMessages(filteredMessages: RawMessage[]): RawMessage[] {
+  for (let i = filteredMessages.length - 1; i >= 0; i -= 1) {
+    if (isRealUserBoundaryMessage(filteredMessages[i])) {
+      return filteredMessages.slice(i + 1);
+    }
+  }
+  return [];
+}
+
+function segmentHasOpenToolRun(segmentMessages: RawMessage[]): boolean {
+  if (segmentMessages.length === 0) return false;
+  const hasToolActivity = segmentMessages.some(
+    (message) => message.role === 'assistant' && (hasPendingToolUse(message) || isToolOnlyMessage(message)),
+  );
+  if (!hasToolActivity) return false;
+
+  let lastToolUseOffset = -1;
+  for (let i = segmentMessages.length - 1; i >= 0; i -= 1) {
+    const message = segmentMessages[i];
+    if (message.role === 'assistant' && (hasPendingToolUse(message) || isToolOnlyMessage(message))) {
+      lastToolUseOffset = i;
+      break;
+    }
+  }
+
+  return !segmentMessages.some((message, index) => {
+    if (index <= lastToolUseOffset) return false;
+    if (message.role !== 'assistant') return false;
+    if (hasPendingToolUse(message)) return false;
+    return hasNonToolAssistantContent(message);
+  });
+}
+
+function findLastRealUserMessage(messages: RawMessage[]): RawMessage | null {
+  for (let i = messages.length - 1; i >= 0; i -= 1) {
+    if (isRealUserBoundaryMessage(messages[i])) {
+      return messages[i];
+    }
+  }
+  return null;
+}
+
 // ── Store ────────────────────────────────────────────────────────
 
 export const useChatStore = create<ChatState>((set, get) => ({
@@ -2080,6 +2219,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
   deleteSession: async (key: string) => {
     clearCachedSessionHistory(key);
+    clearCachedSessionRunState(key);
     clearSessionLabelHydrationTracking(key);
     clearPendingOptimisticUserMessages(key);
     // Hard-delete the session's JSONL transcript on disk.
@@ -2430,6 +2570,17 @@ export const useChatStore = create<ChatState>((set, get) => ({
         return true;
       }
 
+      // History poll is the fallback when Gateway streaming events are missing
+      // (WS disconnect, console-only runs, etc.). Any assistant turn after the
+      // user's message counts as progress so the safety timeout does not emit a
+      // false "No response received" error while tool chains are still running.
+      if (isSendingNow && hasAssistantAfterLastRealUser(filteredMessages)) {
+        _lastChatEventAt = Date.now();
+        if (get().error) {
+          set({ error: null });
+        }
+      }
+
       // Promote pendingFinal only when there's a *final-looking* assistant
       // message after the user — i.e. one that has actual user-visible output
       // (text/image) AND is not still waiting on a tool result. This used to
@@ -2465,6 +2616,24 @@ export const useChatStore = create<ChatState>((set, get) => ({
         if (recentAssistant) {
           clearHistoryPoll();
           set({ sending: false, activeRunId: null, pendingFinal: false });
+        }
+      }
+
+      // After session switch (or cold load) the renderer may have reset run
+      // lifecycle flags even though the Gateway is still executing tools.
+      // Re-arm from authoritative history when the latest user turn has tool
+      // activity but no final reply yet.
+      if (!get().sending && !latestTerminalAssistantErrorMessage) {
+        const openSegment = postUserSegmentMessages(filteredMessages);
+        if (segmentHasOpenToolRun(openSegment)) {
+          const lastUser = findLastRealUserMessage(filteredMessages);
+          const inferredUserAt = lastUser?.timestamp ? toMs(lastUser.timestamp) : Date.now();
+          set({
+            sending: true,
+            pendingFinal: true,
+            lastUserMessageAt: inferredUserAt,
+          });
+          captureSessionRunState(currentSessionKey, get());
         }
       }
       return true;
@@ -2752,6 +2921,14 @@ export const useChatStore = create<ChatState>((set, get) => ({
       if (!state.sending) return;
       if (state.streamingMessage || state.streamingText) return;
       if (state.pendingFinal) {
+        setTimeout(checkStuck, 10_000);
+        return;
+      }
+      if (hasAssistantProgressSinceSend(state.messages, state.lastUserMessageAt)) {
+        _lastChatEventAt = Date.now();
+        if (state.error) {
+          set({ error: null });
+        }
         setTimeout(checkStuck, 10_000);
         return;
       }
@@ -3286,3 +3463,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
   clearError: () => set({ error: null, runError: null }),
 }));
+
+export function syncCachedSessionRunIdle(sessionKey: string): void {
+  captureSessionRunState(sessionKey, DEFAULT_SESSION_RUN_STATE);
+}

@@ -1389,6 +1389,36 @@ function queueBlockedRunEvent(runId: string, event: Record<string, unknown>): vo
   _blockedRunEvents.set(runId, events);
 }
 
+function isRealUserBoundaryMessage(msg: RawMessage): boolean {
+  if (msg.role !== 'user') return false;
+  if (!Array.isArray(msg.content)) return true;
+  const blocks = msg.content as ContentBlock[];
+  return blocks.length === 0 || !blocks.every((block) => block.type === 'tool_result' || block.type === 'toolResult');
+}
+
+function hasAssistantAfterLastRealUser(messages: RawMessage[]): boolean {
+  for (let i = messages.length - 1; i >= 0; i -= 1) {
+    if (isRealUserBoundaryMessage(messages[i])) {
+      return messages.slice(i + 1).some((m) => m.role === 'assistant');
+    }
+  }
+  return false;
+}
+
+function hasAssistantProgressSinceSend(messages: RawMessage[], lastUserMessageAt: number | null): boolean {
+  if (!lastUserMessageAt) return false;
+  const normalized = [...messages];
+  while (normalized.length > 0) {
+    const last = normalized[normalized.length - 1];
+    if (last.role === 'user' && !last.timestamp) {
+      normalized.pop();
+      continue;
+    }
+    break;
+  }
+  return hasAssistantAfterLastRealUser(normalized);
+}
+
 function takeBlockedRunEvents(runId: string): Record<string, unknown>[] {
   const events = _blockedRunEvents.get(runId) ?? [];
   _blockedRunEvents.delete(runId);
@@ -1419,6 +1449,8 @@ export {
   upsertToolStatuses,
   hasNonToolAssistantContent,
   hasPendingToolUse,
+  hasAssistantAfterLastRealUser,
+  hasAssistantProgressSinceSend,
   isToolOnlyMessage,
   normalizeStreamingMessage,
   matchesOptimisticUserMessage,
