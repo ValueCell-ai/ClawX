@@ -1860,6 +1860,36 @@ function hasPendingToolUse(message: RawMessage | undefined): boolean {
   return false;
 }
 
+function isRealUserBoundaryMessage(msg: RawMessage): boolean {
+  if (msg.role !== 'user') return false;
+  if (!Array.isArray(msg.content)) return true;
+  const blocks = msg.content as Array<{ type?: string }>;
+  return blocks.length === 0 || !blocks.every((block) => block.type === 'tool_result' || block.type === 'toolResult');
+}
+
+function hasAssistantAfterLastRealUser(messages: RawMessage[]): boolean {
+  for (let i = messages.length - 1; i >= 0; i -= 1) {
+    if (isRealUserBoundaryMessage(messages[i])) {
+      return messages.slice(i + 1).some((m) => m.role === 'assistant');
+    }
+  }
+  return false;
+}
+
+function hasAssistantProgressSinceSend(messages: RawMessage[], lastUserMessageAt: number | null): boolean {
+  if (!lastUserMessageAt) return false;
+  const normalized = [...messages];
+  while (normalized.length > 0) {
+    const last = normalized[normalized.length - 1];
+    if (last.role === 'user' && !last.timestamp) {
+      normalized.pop();
+      continue;
+    }
+    break;
+  }
+  return hasAssistantAfterLastRealUser(normalized);
+}
+
 // ── Store ────────────────────────────────────────────────────────
 
 export const useChatStore = create<ChatState>((set, get) => ({
@@ -2430,6 +2460,17 @@ export const useChatStore = create<ChatState>((set, get) => ({
         return true;
       }
 
+      // History poll is the fallback when Gateway streaming events are missing
+      // (WS disconnect, console-only runs, etc.). Any assistant turn after the
+      // user's message counts as progress so the safety timeout does not emit a
+      // false "No response received" error while tool chains are still running.
+      if (isSendingNow && hasAssistantAfterLastRealUser(filteredMessages)) {
+        _lastChatEventAt = Date.now();
+        if (get().error) {
+          set({ error: null });
+        }
+      }
+
       // Promote pendingFinal only when there's a *final-looking* assistant
       // message after the user — i.e. one that has actual user-visible output
       // (text/image) AND is not still waiting on a tool result. This used to
@@ -2752,6 +2793,14 @@ export const useChatStore = create<ChatState>((set, get) => ({
       if (!state.sending) return;
       if (state.streamingMessage || state.streamingText) return;
       if (state.pendingFinal) {
+        setTimeout(checkStuck, 10_000);
+        return;
+      }
+      if (hasAssistantProgressSinceSend(state.messages, state.lastUserMessageAt)) {
+        _lastChatEventAt = Date.now();
+        if (state.error) {
+          set({ error: null });
+        }
         setTimeout(checkStuck, 10_000);
         return;
       }
