@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { matchesOptimisticUserMessage } from '@/stores/chat/helpers';
+import {
+  dropRedundantOptimisticUserMessages,
+  hasOptimisticServerEcho,
+  matchesOptimisticUserMessage,
+  mergePendingOptimisticUserMessages,
+  rememberPendingOptimisticUserMessage,
+} from '@/stores/chat/helpers';
 
 describe('matchesOptimisticUserMessage', () => {
   it('matches when text is identical', () => {
@@ -53,6 +59,28 @@ describe('matchesOptimisticUserMessage', () => {
     } as const;
 
     expect(matchesOptimisticUserMessage(candidate, optimistic, 1_700_000_000_000)).toBe(true);
+  });
+
+  it('matches when Gateway echo timestamp skews within the optimistic window', () => {
+    const optimistic = { role: 'user', content: '你好，你是什么模型', timestamp: 1_700_000_000 } as const;
+    const candidate = {
+      role: 'user',
+      content: '你好，你是什么模型',
+      timestamp: 1_700_000_030,
+    } as const;
+
+    expect(matchesOptimisticUserMessage(candidate, optimistic, 1_700_000_000_000)).toBe(true);
+  });
+
+  it('rejects unrelated user messages when timestamp skew is too large', () => {
+    const optimistic = { role: 'user', content: '你好，你是什么模型', timestamp: 1_700_000_000 } as const;
+    const candidate = {
+      role: 'user',
+      content: '你好，你是什么模型',
+      timestamp: 1_700_030_000,
+    } as const;
+
+    expect(matchesOptimisticUserMessage(candidate, optimistic, 1_700_000_000_000)).toBe(false);
   });
 
   it('still rejects unrelated user messages', () => {
@@ -113,5 +141,32 @@ describe('matchesOptimisticUserMessage', () => {
     } as const;
 
     expect(matchesOptimisticUserMessage(candidate, optimistic, 1_700_000_000_000)).toBe(true);
+  });
+});
+
+describe('optimistic user message merge', () => {
+  it('drops redundant optimistic bubbles when history already contains the echoed user turn', () => {
+    const sessionKey = 'agent:main:main';
+    const optimistic = {
+      id: 'local-optimistic',
+      role: 'user' as const,
+      content: '你好，你是什么模型',
+      timestamp: 1_700_000_000,
+    };
+    rememberPendingOptimisticUserMessage(sessionKey, optimistic, 1_700_000_000_000);
+
+    const merged = mergePendingOptimisticUserMessages(sessionKey, [
+      {
+        id: 'server-echo',
+        role: 'user',
+        content: '[Wed 2026-04-22 10:30 GMT+8] 你好，你是什么模型',
+        timestamp: 1_700_000_015,
+      },
+    ]);
+    const deduped = dropRedundantOptimisticUserMessages(sessionKey, merged);
+
+    expect(deduped).toHaveLength(1);
+    expect(deduped[0]?.id).toBe('server-echo');
+    expect(hasOptimisticServerEcho(deduped, optimistic, 1_700_000_000_000)).toBe(true);
   });
 });

@@ -82,6 +82,10 @@ const HISTORY_PAGE_SIZE = 200;
 const HISTORY_MAX_RENDERED_MESSAGES = 1_000;
 const _chatEventDedupe = new Map<string, number>();
 const OPTIMISTIC_USER_MESSAGE_TTL_MS = 30 * 60 * 1000;
+/** Max skew between the renderer optimistic send time and Gateway transcript timestamps. */
+const OPTIMISTIC_USER_TIMESTAMP_MATCH_MS = 120_000;
+/** Grace period before surfacing mid-run Gateway errors that often self-recover. */
+const ERROR_RECOVERY_DELAY_MS = 12_000;
 
 type PendingOptimisticUserMessage = {
   message: RawMessage;
@@ -271,6 +275,23 @@ function clearErrorRecoveryTimer(): void {
     clearTimeout(_errorRecoveryTimer);
     _errorRecoveryTimer = null;
   }
+}
+
+function isRecoverableRuntimeError(errorMessage: string): boolean {
+  const normalized = errorMessage.trim().toLowerCase();
+  if (!normalized) return false;
+  return /\bterminated\b/.test(normalized)
+    || /\baborted\b/.test(normalized)
+    || normalized.includes('econnreset')
+    || normalized.includes('connection reset');
+}
+
+function scheduleRecoverableRuntimeError(commit: () => void): void {
+  clearErrorRecoveryTimer();
+  _errorRecoveryTimer = setTimeout(() => {
+    _errorRecoveryTimer = null;
+    commit();
+  }, ERROR_RECOVERY_DELAY_MS);
 }
 
 function clearHistoryPoll(): void {
@@ -536,7 +557,7 @@ function matchesOptimisticUserMessage(
   const hasOptimisticTimestamp = Number.isFinite(optimisticTimestampMs) && optimisticTimestampMs > 0;
   const hasCandidateTimestamp = candidate.timestamp != null;
   const timestampMatches = hasOptimisticTimestamp && hasCandidateTimestamp
-    ? Math.abs(toMs(candidate.timestamp as number) - optimisticTimestampMs) < 5000
+    ? Math.abs(toMs(candidate.timestamp as number) - optimisticTimestampMs) < OPTIMISTIC_USER_TIMESTAMP_MATCH_MS
     : false;
 
   if (sameText && sameAttachments) return true;
@@ -570,9 +591,7 @@ function mergePendingOptimisticUserMessages(sessionKey: string, loadedMessages: 
       continue;
     }
 
-    const hasServerEcho = loadedMessages.some((message) =>
-      matchesOptimisticUserMessage(message, entry.message, entry.timestampMs),
-    );
+    const hasServerEcho = hasOptimisticServerEcho(loadedMessages, entry.message, entry.timestampMs);
     if (hasServerEcho) {
       continue;
     }
@@ -624,8 +643,60 @@ function snapshotStreamingAssistantMessage(
 
 function getLatestOptimisticUserMessage(messages: RawMessage[], userTimestampMs: number): RawMessage | undefined {
   return [...messages].reverse().find(
-    (message) => message.role === 'user' && (!message.timestamp || Math.abs(toMs(message.timestamp) - userTimestampMs) < 5000),
+    (message) => message.role === 'user'
+      && (!message.timestamp || Math.abs(toMs(message.timestamp) - userTimestampMs) < OPTIMISTIC_USER_TIMESTAMP_MATCH_MS),
   );
+}
+
+function hasOptimisticServerEcho(
+  loadedMessages: RawMessage[],
+  optimistic: RawMessage,
+  optimisticTimestampMs: number,
+): boolean {
+  if (loadedMessages.some((message) =>
+    matchesOptimisticUserMessage(message, optimistic, optimisticTimestampMs),
+  )) {
+    return true;
+  }
+
+  const optimisticText = normalizeComparableUserText(optimistic.content);
+  if (!optimisticText) return false;
+
+  const matchingUsers = loadedMessages.filter(
+    (message) => message.role === 'user'
+      && normalizeComparableUserText(message.content) === optimisticText,
+  );
+  if (matchingUsers.length !== 1) return false;
+
+  const candidate = matchingUsers[0]!;
+  if (candidate.timestamp == null) return true;
+
+  return Math.abs(toMs(candidate.timestamp as number) - optimisticTimestampMs) < OPTIMISTIC_USER_TIMESTAMP_MATCH_MS;
+}
+
+function dropRedundantOptimisticUserMessages(sessionKey: string, messages: RawMessage[]): RawMessage[] {
+  const pending = _pendingOptimisticUserMessages.get(sessionKey);
+  if (!pending?.length) return messages;
+
+  const pendingIds = new Set(
+    pending
+      .map((entry) => entry.message.id)
+      .filter((id): id is string => typeof id === 'string' && id.length > 0),
+  );
+  if (pendingIds.size === 0) return messages;
+
+  return messages.filter((message) => {
+    if (message.role !== 'user' || !message.id || !pendingIds.has(message.id)) {
+      return true;
+    }
+    const entry = pending.find((candidate) => candidate.message.id === message.id);
+    if (!entry) return true;
+    return !hasOptimisticServerEcho(
+      messages.filter((candidate) => candidate !== message),
+      entry.message,
+      entry.timestampMs,
+    );
+  });
 }
 
 /** Extract plain text from message content (string or content blocks) */
@@ -2261,12 +2332,13 @@ export const useChatStore = create<ChatState>((set, get) => ({
         const userMsMs = toMs(userMsgAt);
         const optimistic = getLatestOptimisticUserMessage(get().messages, userMsMs);
         const hasMatchingUser = optimistic
-          ? finalMessages.some((message) => matchesOptimisticUserMessage(message, optimistic, userMsMs))
+          ? hasOptimisticServerEcho(finalMessages, optimistic, userMsMs)
           : false;
         if (optimistic && !hasMatchingUser) {
           finalMessages = [...finalMessages, optimistic];
         }
       }
+      finalMessages = dropRedundantOptimisticUserMessages(currentSessionKey, finalMessages);
 
       const { pendingFinal, lastUserMessageAt, sending: isSendingNow } = get();
       const userMsTs = lastUserMessageAt ? toMs(lastUserMessageAt) : 0;
@@ -2295,12 +2367,17 @@ export const useChatStore = create<ChatState>((set, get) => ({
         && getMessageStopReason(lastAssistantAfterBoundary) === 'error'
         ? getMessageErrorMessage(lastAssistantAfterBoundary)
         : null;
+      const historyErrorIsTransient = Boolean(
+        latestTerminalAssistantErrorMessage
+        && isSendingNow
+        && isRecoverableRuntimeError(latestTerminalAssistantErrorMessage),
+      );
 
       set({
         messages: finalMessages,
         thinkingLevel,
         loading: false,
-        runError: latestTerminalAssistantErrorMessage,
+        runError: historyErrorIsTransient ? null : latestTerminalAssistantErrorMessage,
       });
       cacheSessionHistory(currentSessionKey, finalMessages, thinkingLevel);
 
@@ -2342,7 +2419,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
         }
       });
 
-      if (latestTerminalAssistantErrorMessage) {
+      if (latestTerminalAssistantErrorMessage && !historyErrorIsTransient) {
         clearHistoryPoll();
         set({
           sending: false,
@@ -2590,6 +2667,11 @@ export const useChatStore = create<ChatState>((set, get) => ({
     if (!trimmed && (!attachments || attachments.length === 0)) return;
 
     const targetSessionKey = resolveMainSessionKeyForAgent(targetAgentId) ?? get().currentSessionKey;
+
+    // Guard against double-submit before React re-renders with sending=true.
+    if (get().sending && targetSessionKey === get().currentSessionKey) {
+      return;
+    }
 
     if (targetSessionKey !== get().currentSessionKey) {
       set((s) => buildSessionSwitchPatch(s, targetSessionKey));
@@ -3113,40 +3195,53 @@ export const useChatStore = create<ChatState>((set, get) => ({
         );
         const terminalAssistantError = isTerminalAssistantErrorMessage(event.message);
         const wasSending = get().sending;
+        const sessionKeyAtError = get().currentSessionKey;
+        const recoverable = wasSending && isRecoverableRuntimeError(errorMsg);
 
-        // Snapshot the current streaming message into messages[] so partial
-        // content ("Let me get that written down...") is preserved in the UI
-        // rather than being silently discarded.
-        const currentStream = get().streamingMessage as RawMessage | null;
-        const errorSnapshot = snapshotStreamingAssistantMessage(
-          currentStream,
-          get().messages,
-          `error-${runId || Date.now()}`,
-        );
-        if (errorSnapshot.length > 0) {
-          set((s) => ({
-            messages: [...s.messages, ...errorSnapshot],
-          }));
+        const commitRuntimeError = () => {
+          const currentStream = get().streamingMessage as RawMessage | null;
+          const errorSnapshot = snapshotStreamingAssistantMessage(
+            currentStream,
+            get().messages,
+            `error-${runId || Date.now()}`,
+          );
+          if (errorSnapshot.length > 0) {
+            set((s) => ({
+              messages: [...s.messages, ...errorSnapshot],
+            }));
+          }
+
+          set({
+            error: terminalAssistantError ? null : errorMsg,
+            runError: terminalAssistantError ? errorMsg : null,
+            sending: false,
+            activeRunId: null,
+            streamingText: '',
+            streamingMessage: null,
+            streamingTools: [],
+            pendingFinal: false,
+            lastUserMessageAt: null,
+            pendingToolImages: [],
+          });
+
+          clearHistoryPoll();
+          clearErrorRecoveryTimer();
+          if (wasSending) {
+            void get().loadHistory(true);
+          }
+        };
+
+        if (recoverable) {
+          scheduleRecoverableRuntimeError(() => {
+            if (get().currentSessionKey !== sessionKeyAtError) return;
+            if (runId && get().activeRunId && get().activeRunId !== runId) return;
+            if (!get().sending && !get().error && !get().runError) return;
+            commitRuntimeError();
+          });
+          break;
         }
 
-        set({
-          error: terminalAssistantError ? null : errorMsg,
-          runError: terminalAssistantError ? errorMsg : null,
-          sending: false,
-          activeRunId: null,
-          streamingText: '',
-          streamingMessage: null,
-          streamingTools: [],
-          pendingFinal: false,
-          lastUserMessageAt: null,
-          pendingToolImages: [],
-        });
-
-        clearHistoryPoll();
-        clearErrorRecoveryTimer();
-        if (wasSending) {
-          void get().loadHistory(true);
-        }
+        commitRuntimeError();
         break;
       }
       case 'aborted': {

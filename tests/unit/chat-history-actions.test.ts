@@ -52,7 +52,7 @@ vi.mock('@/stores/chat/helpers', () => ({
   getLatestOptimisticUserMessage: (messages: Array<{ role: string; timestamp?: number }>, userTimestampMs: number) =>
     [...messages].reverse().find(
       (message) => message.role === 'user'
-        && (!message.timestamp || Math.abs(toMs(message.timestamp) - userTimestampMs) < 5000),
+        && (!message.timestamp || Math.abs(toMs(message.timestamp) - userTimestampMs) < 120_000),
     ),
   getMessageText: (...args: unknown[]) => getMessageText(...args),
   hasNonToolAssistantContent: (...args: unknown[]) => hasNonToolAssistantContent(...args),
@@ -60,6 +60,32 @@ vi.mock('@/stores/chat/helpers', () => ({
   isToolResultRole: (...args: unknown[]) => isToolResultRole(...args),
   loadMissingPreviews: (...args: unknown[]) => loadMissingPreviews(...args),
   mergePendingOptimisticUserMessages: (_sessionKey: string, messages: unknown[]) => messages,
+  hasOptimisticServerEcho: (
+    loadedMessages: Array<{ role: string; timestamp?: number; content?: unknown; _attachedFiles?: Array<{ filePath?: string; fileName?: string; mimeType?: string; fileSize?: number }> }>,
+    optimistic: { role: string; timestamp?: number; content?: unknown; _attachedFiles?: Array<{ filePath?: string; fileName?: string; mimeType?: string; fileSize?: number }> },
+    optimisticTimestampMs: number,
+  ) => loadedMessages.some((candidate) => {
+    if (candidate.role !== 'user') return false;
+    const normalizeText = (content: unknown) => (typeof content === 'string' ? content : '')
+      .replace(/^\[(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun)\s+\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}\s+[^\]]+\]\s*/i, '')
+      .replace(/\s+/g, ' ')
+      .trim();
+    const candidateText = normalizeText(candidate.content);
+    const optimisticText = normalizeText(optimistic.content);
+    const candidateAttachments = (candidate._attachedFiles || []).map((file) => file.filePath || `${file.fileName}|${file.mimeType}|${file.fileSize}`).sort().join('::');
+    const optimisticAttachments = (optimistic._attachedFiles || []).map((file) => file.filePath || `${file.fileName}|${file.mimeType}|${file.fileSize}`).sort().join('::');
+    const hasCandidateTimestamp = candidate.timestamp != null;
+    const timestampMatches = hasCandidateTimestamp
+      ? Math.abs(toMs(candidate.timestamp as number) - optimisticTimestampMs) < 120_000
+      : false;
+
+    if (candidateText && optimisticText && candidateText === optimisticText && candidateAttachments === optimisticAttachments) return true;
+    if (candidateText && optimisticText && candidateText === optimisticText && (!hasCandidateTimestamp || timestampMatches)) return true;
+    if (candidateAttachments && optimisticAttachments && candidateAttachments === optimisticAttachments && (!hasCandidateTimestamp || timestampMatches)) return true;
+    return false;
+  }),
+  dropRedundantOptimisticUserMessages: (_sessionKey: string, messages: unknown[]) => messages,
+  isRecoverableRuntimeError: (message: string) => /\bterminated\b/i.test(message),
   matchesOptimisticUserMessage: (
     candidate: { role: string; timestamp?: number; content?: unknown; _attachedFiles?: Array<{ filePath?: string; fileName?: string; mimeType?: string; fileSize?: number }> },
     optimistic: { role: string; timestamp?: number; content?: unknown; _attachedFiles?: Array<{ filePath?: string; fileName?: string; mimeType?: string; fileSize?: number }> },
@@ -76,7 +102,7 @@ vi.mock('@/stores/chat/helpers', () => ({
     const optimisticAttachments = (optimistic._attachedFiles || []).map((file) => file.filePath || `${file.fileName}|${file.mimeType}|${file.fileSize}`).sort().join('::');
     const hasCandidateTimestamp = candidate.timestamp != null;
     const timestampMatches = hasCandidateTimestamp
-      ? Math.abs(toMs(candidate.timestamp as number) - optimisticTimestampMs) < 5000
+      ? Math.abs(toMs(candidate.timestamp as number) - optimisticTimestampMs) < 120_000
       : false;
 
     if (candidateText && optimisticText && candidateText === optimisticText && candidateAttachments === optimisticAttachments) return true;

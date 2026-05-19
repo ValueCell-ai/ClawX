@@ -11,11 +11,13 @@ import {
   hasNonToolAssistantContent,
   hasPendingToolUse,
   isInternalMessage,
+  isRecoverableRuntimeError,
   isTerminalAssistantErrorMessage,
   isToolOnlyMessage,
   isToolResultRole,
   makeAttachedFile,
   normalizeStreamingMessage,
+  scheduleRecoverableRuntimeError,
   snapshotStreamingAssistantMessage,
   upsertToolStatuses,
 } from './helpers';
@@ -280,39 +282,52 @@ export function handleRuntimeEventState(
           );
           const terminalAssistantError = isTerminalAssistantErrorMessage(event.message);
           const wasSending = get().sending;
+          const sessionKeyAtError = get().currentSessionKey;
+          const recoverable = wasSending && isRecoverableRuntimeError(errorMsg);
 
-          // Snapshot the current streaming message into messages[] so partial
-          // content ("Let me get that written down...") is preserved in the UI
-          // rather than being silently discarded.
-          const currentStream = get().streamingMessage as RawMessage | null;
-          const errorSnapshot = snapshotStreamingAssistantMessage(
-            currentStream,
-            get().messages,
-            `error-${runId || Date.now()}`,
-          );
-          if (errorSnapshot.length > 0) {
-            set((s) => ({
-              messages: [...s.messages, ...errorSnapshot],
-            }));
+          const commitRuntimeError = () => {
+            const currentStream = get().streamingMessage as RawMessage | null;
+            const errorSnapshot = snapshotStreamingAssistantMessage(
+              currentStream,
+              get().messages,
+              `error-${runId || Date.now()}`,
+            );
+            if (errorSnapshot.length > 0) {
+              set((s) => ({
+                messages: [...s.messages, ...errorSnapshot],
+              }));
+            }
+
+            set({
+              error: terminalAssistantError ? null : errorMsg,
+              runError: terminalAssistantError ? errorMsg : null,
+              sending: false,
+              activeRunId: null,
+              streamingText: '',
+              streamingMessage: null,
+              streamingTools: [],
+              pendingFinal: false,
+              lastUserMessageAt: null,
+              pendingToolImages: [],
+            });
+            clearHistoryPoll();
+            clearErrorRecoveryTimer();
+            if (wasSending) {
+              void get().loadHistory(true);
+            }
+          };
+
+          if (recoverable) {
+            scheduleRecoverableRuntimeError(() => {
+              if (get().currentSessionKey !== sessionKeyAtError) return;
+              if (runId && get().activeRunId && get().activeRunId !== runId) return;
+              if (!get().sending && !get().error && !get().runError) return;
+              commitRuntimeError();
+            });
+            break;
           }
 
-          set({
-            error: terminalAssistantError ? null : errorMsg,
-            runError: terminalAssistantError ? errorMsg : null,
-            sending: false,
-            activeRunId: null,
-            streamingText: '',
-            streamingMessage: null,
-            streamingTools: [],
-            pendingFinal: false,
-            lastUserMessageAt: null,
-            pendingToolImages: [],
-          });
-          clearHistoryPoll();
-          clearErrorRecoveryTimer();
-          if (wasSending) {
-            void get().loadHistory(true);
-          }
+          commitRuntimeError();
           break;
         }
         case 'aborted': {

@@ -29,6 +29,10 @@ let _errorRecoveryTimer: ReturnType<typeof setTimeout> | null = null;
 let _lastAbortedRunId: string | null = null;
 const _blockedRunEvents = new Map<string, Record<string, unknown>[]>();
 const OPTIMISTIC_USER_MESSAGE_TTL_MS = 30 * 60 * 1000;
+/** Max skew between the renderer optimistic send time and Gateway transcript timestamps. */
+const OPTIMISTIC_USER_TIMESTAMP_MATCH_MS = 120_000;
+/** Grace period before surfacing mid-run Gateway errors that often self-recover. */
+const ERROR_RECOVERY_DELAY_MS = 12_000;
 
 type PendingOptimisticUserMessage = {
   message: RawMessage;
@@ -43,6 +47,23 @@ function clearErrorRecoveryTimer(): void {
     clearTimeout(_errorRecoveryTimer);
     _errorRecoveryTimer = null;
   }
+}
+
+function isRecoverableRuntimeError(errorMessage: string): boolean {
+  const normalized = errorMessage.trim().toLowerCase();
+  if (!normalized) return false;
+  return /\bterminated\b/.test(normalized)
+    || /\baborted\b/.test(normalized)
+    || normalized.includes('econnreset')
+    || normalized.includes('connection reset');
+}
+
+function scheduleRecoverableRuntimeError(commit: () => void): void {
+  clearErrorRecoveryTimer();
+  _errorRecoveryTimer = setTimeout(() => {
+    _errorRecoveryTimer = null;
+    commit();
+  }, ERROR_RECOVERY_DELAY_MS);
 }
 
 function clearHistoryPoll(): void {
@@ -212,7 +233,7 @@ function matchesOptimisticUserMessage(
   const hasOptimisticTimestamp = Number.isFinite(optimisticTimestampMs) && optimisticTimestampMs > 0;
   const hasCandidateTimestamp = candidate.timestamp != null;
   const timestampMatches = hasOptimisticTimestamp && hasCandidateTimestamp
-    ? Math.abs(toMs(candidate.timestamp as number) - optimisticTimestampMs) < 5000
+    ? Math.abs(toMs(candidate.timestamp as number) - optimisticTimestampMs) < OPTIMISTIC_USER_TIMESTAMP_MATCH_MS
     : false;
 
   if (sameText && sameAttachments) return true;
@@ -246,9 +267,7 @@ function mergePendingOptimisticUserMessages(sessionKey: string, loadedMessages: 
       continue;
     }
 
-    const hasServerEcho = loadedMessages.some((message) =>
-      matchesOptimisticUserMessage(message, entry.message, entry.timestampMs),
-    );
+    const hasServerEcho = hasOptimisticServerEcho(loadedMessages, entry.message, entry.timestampMs);
     if (hasServerEcho) {
       continue;
     }
@@ -300,8 +319,60 @@ function snapshotStreamingAssistantMessage(
 
 function getLatestOptimisticUserMessage(messages: RawMessage[], userTimestampMs: number): RawMessage | undefined {
   return [...messages].reverse().find(
-    (message) => message.role === 'user' && (!message.timestamp || Math.abs(toMs(message.timestamp) - userTimestampMs) < 5000),
+    (message) => message.role === 'user'
+      && (!message.timestamp || Math.abs(toMs(message.timestamp) - userTimestampMs) < OPTIMISTIC_USER_TIMESTAMP_MATCH_MS),
   );
+}
+
+function hasOptimisticServerEcho(
+  loadedMessages: RawMessage[],
+  optimistic: RawMessage,
+  optimisticTimestampMs: number,
+): boolean {
+  if (loadedMessages.some((message) =>
+    matchesOptimisticUserMessage(message, optimistic, optimisticTimestampMs),
+  )) {
+    return true;
+  }
+
+  const optimisticText = normalizeComparableUserText(optimistic.content);
+  if (!optimisticText) return false;
+
+  const matchingUsers = loadedMessages.filter(
+    (message) => message.role === 'user'
+      && normalizeComparableUserText(message.content) === optimisticText,
+  );
+  if (matchingUsers.length !== 1) return false;
+
+  const candidate = matchingUsers[0]!;
+  if (candidate.timestamp == null) return true;
+
+  return Math.abs(toMs(candidate.timestamp as number) - optimisticTimestampMs) < OPTIMISTIC_USER_TIMESTAMP_MATCH_MS;
+}
+
+function dropRedundantOptimisticUserMessages(sessionKey: string, messages: RawMessage[]): RawMessage[] {
+  const pending = _pendingOptimisticUserMessages.get(sessionKey);
+  if (!pending?.length) return messages;
+
+  const pendingIds = new Set(
+    pending
+      .map((entry) => entry.message.id)
+      .filter((id): id is string => typeof id === 'string' && id.length > 0),
+  );
+  if (pendingIds.size === 0) return messages;
+
+  return messages.filter((message) => {
+    if (message.role !== 'user' || !message.id || !pendingIds.has(message.id)) {
+      return true;
+    }
+    const entry = pending.find((candidate) => candidate.message.id === message.id);
+    if (!entry) return true;
+    return !hasOptimisticServerEcho(
+      messages.filter((candidate) => candidate !== message),
+      entry.message,
+      entry.timestampMs,
+    );
+  });
 }
 
 function upsertImageCacheEntry(filePath: string, file: Omit<AttachedFileMeta, 'filePath'>): void {
@@ -1360,9 +1431,12 @@ export {
   mergePendingOptimisticUserMessages,
   snapshotStreamingAssistantMessage,
   getLatestOptimisticUserMessage,
+  hasOptimisticServerEcho,
+  dropRedundantOptimisticUserMessages,
   setHistoryPollTimer,
   hasErrorRecoveryTimer,
-  setErrorRecoveryTimer,
+  scheduleRecoverableRuntimeError,
+  isRecoverableRuntimeError,
   setLastChatEventAt,
   getLastChatEventAt,
   setLastAbortedRunId,
