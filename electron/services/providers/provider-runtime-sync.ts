@@ -5,6 +5,7 @@ import type { ProviderConfig } from '../../utils/secure-storage';
 import { getAllProviders, getApiKey, getDefaultProvider, getProvider } from '../../utils/secure-storage';
 import { getProviderConfig, getProviderDefaultModel } from '../../utils/provider-registry';
 import {
+  ensureAnthropicMessagesModelMaxTokens,
   ensureOpenClawProviderAgentRuntimePins,
   pruneInvalidApiProviderEntries,
   removeProviderFromOpenClaw,
@@ -624,6 +625,17 @@ export async function syncDefaultProviderToRuntime(
     }
   } catch (err) {
     logger.warn('[provider-runtime] Failed to pin embedded agent runtime for provider entries before switch:', err);
+  }
+
+  try {
+    const healed = await ensureAnthropicMessagesModelMaxTokens();
+    if (healed.length > 0) {
+      logger.warn(
+        `[provider-runtime] Ensured anthropic-messages maxTokens for models.providers entries before switch: ${healed.join(', ')}`,
+      );
+    }
+  } catch (err) {
+    logger.warn('[provider-runtime] Failed to ensure anthropic-messages maxTokens before switch:', err);
   }
 
   const ock = await resolveRuntimeProviderKey(provider);

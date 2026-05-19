@@ -244,6 +244,17 @@ export const PROVIDER_DEFINITIONS: ProviderDefinition[] = [
       baseUrl: 'https://api.minimax.io/anthropic',
       api: 'anthropic-messages',
       apiKeyEnv: 'MINIMAX_API_KEY',
+      models: [
+        {
+          id: 'MiniMax-M2.7',
+          name: 'MiniMax M2.7',
+          reasoning: false,
+          input: ['text'],
+          cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+          contextWindow: 204800,
+          maxTokens: 131072,
+        },
+      ],
     },
   },
   {
@@ -268,6 +279,17 @@ export const PROVIDER_DEFINITIONS: ProviderDefinition[] = [
       baseUrl: 'https://api.minimaxi.com/anthropic',
       api: 'anthropic-messages',
       apiKeyEnv: 'MINIMAX_CN_API_KEY',
+      models: [
+        {
+          id: 'MiniMax-M2.7',
+          name: 'MiniMax M2.7',
+          reasoning: false,
+          input: ['text'],
+          cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+          contextWindow: 204800,
+          maxTokens: 131072,
+        },
+      ],
     },
   },
   {

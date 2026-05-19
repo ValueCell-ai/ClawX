@@ -1236,6 +1236,182 @@ function mergeProviderModels(
 }
 
 /**
+ * OpenClaw 2026.5+ requires a positive `maxTokens` on each model (and can
+ * fall back to provider-level `maxTokens`) when `api` is `anthropic-messages`.
+ * ClawX-written entries historically only included `{ id, name }`.
+ *
+ * Generic Anthropic-compatible providers should not be capped at 8k by
+ * default: OpenClaw's native Anthropic transport caps default requests at 32k
+ * (`min(model.maxTokens, 32000)`), while high-output providers such as MiniMax
+ * M2.7 advertise a larger catalog limit.
+ */
+export const ANTHROPIC_MESSAGES_DEFAULT_MAX_TOKENS = 32768;
+export const MINIMAX_M27_MAX_TOKENS = 131072;
+
+function resolvePositiveMaxTokens(value: unknown): number | undefined {
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    return undefined;
+  }
+  const floored = Math.floor(value);
+  return floored > 0 ? floored : undefined;
+}
+
+function isMiniMaxM27AnthropicEntry(
+  providerKey: string | undefined,
+  entry: Record<string, unknown> | undefined,
+  model: Record<string, unknown> | undefined,
+): boolean {
+  const normalizedProvider = (providerKey || '').toLowerCase();
+  if (normalizedProvider === 'minimax' || normalizedProvider.startsWith('minimax-portal')) {
+    return true;
+  }
+
+  const baseUrl = typeof entry?.baseUrl === 'string' ? entry.baseUrl.toLowerCase() : '';
+  if (baseUrl.includes('api.minimax.io') || baseUrl.includes('api.minimaxi.com')) {
+    return true;
+  }
+
+  const modelId = typeof model?.id === 'string' ? model.id.toLowerCase() : '';
+  return modelId === 'minimax-m2.7' || modelId === 'minimax-m2.7-highspeed';
+}
+
+function resolveAnthropicMessagesDefaultMaxTokens(
+  providerKey?: string,
+  entry?: Record<string, unknown>,
+  model?: Record<string, unknown>,
+): number {
+  if (isMiniMaxM27AnthropicEntry(providerKey, entry, model)) {
+    return MINIMAX_M27_MAX_TOKENS;
+  }
+  return ANTHROPIC_MESSAGES_DEFAULT_MAX_TOKENS;
+}
+
+function ensureAnthropicMessagesModelEntry(
+  model: Record<string, unknown>,
+  providerKey?: string,
+  entry?: Record<string, unknown>,
+): Record<string, unknown> {
+  const resolved = resolvePositiveMaxTokens(model.maxTokens);
+  if (resolved !== undefined) {
+    if (model.maxTokens === resolved) {
+      return model;
+    }
+    return { ...model, maxTokens: resolved };
+  }
+  return { ...model, maxTokens: resolveAnthropicMessagesDefaultMaxTokens(providerKey, entry, model) };
+}
+
+function resolveAnthropicMessagesProviderDefaultMaxTokens(
+  providerKey: string | undefined,
+  entry: Record<string, unknown>,
+): number {
+  if (Array.isArray(entry.models)) {
+    const modelDefaults = entry.models
+      .filter(isPlainRecord)
+      .map((model) => resolveAnthropicMessagesDefaultMaxTokens(providerKey, entry, model));
+    if (modelDefaults.length > 0) {
+      return Math.max(...modelDefaults);
+    }
+  }
+  return resolveAnthropicMessagesDefaultMaxTokens(providerKey, entry);
+}
+
+/**
+ * Ensure `models.providers.*` entries using `anthropic-messages` include the
+ * token limits OpenClaw's transport layer requires. Returns whether `entry`
+ * was modified.
+ */
+function ensureAnthropicMessagesProviderDefaults(
+  entry: Record<string, unknown>,
+  providerKey?: string,
+): boolean {
+  if (entry.api !== 'anthropic-messages') {
+    return false;
+  }
+
+  let modified = false;
+
+  if (resolvePositiveMaxTokens(entry.maxTokens) === undefined) {
+    entry.maxTokens = resolveAnthropicMessagesProviderDefaultMaxTokens(providerKey, entry);
+    modified = true;
+  }
+
+  if (Array.isArray(entry.models)) {
+    const nextModels = (entry.models as Array<Record<string, unknown>>).map((model) => {
+      if (!isPlainRecord(model)) {
+        return model;
+      }
+      const next = ensureAnthropicMessagesModelEntry(model, providerKey, entry);
+      if (next !== model) {
+        modified = true;
+      }
+      return next;
+    });
+    entry.models = nextModels;
+  }
+
+  return modified;
+}
+
+function healAnthropicMessagesMaxTokensInConfig(config: Record<string, unknown>): boolean {
+  const models = (config.models || {}) as Record<string, unknown>;
+  const providers = (models.providers || {}) as Record<string, unknown>;
+  let modified = false;
+
+  for (const [providerKey, entry] of Object.entries(providers)) {
+    if (!isPlainRecord(entry)) {
+      continue;
+    }
+    if (ensureAnthropicMessagesProviderDefaults(entry, providerKey)) {
+      providers[providerKey] = entry;
+      modified = true;
+      console.log(
+        `[openclaw-auth] Ensured anthropic-messages maxTokens defaults for models.providers.${providerKey}`,
+      );
+    }
+  }
+
+  if (modified) {
+    models.providers = providers;
+    config.models = models;
+  }
+
+  return modified;
+}
+
+/**
+ * Self-heal helper: walk `models.providers.*` and ensure every
+ * `anthropic-messages` entry (and its model rows) has a positive `maxTokens`.
+ */
+export async function ensureAnthropicMessagesModelMaxTokens(): Promise<string[]> {
+  const healed: string[] = [];
+  await withConfigLock(async () => {
+    const config = await readOpenClawJson();
+    const models = (config.models || {}) as Record<string, unknown>;
+    const providers = (models.providers || {}) as Record<string, unknown>;
+    let modified = false;
+
+    for (const [providerKey, entry] of Object.entries(providers)) {
+      if (!isPlainRecord(entry)) {
+        continue;
+      }
+      if (ensureAnthropicMessagesProviderDefaults(entry, providerKey)) {
+        providers[providerKey] = entry;
+        healed.push(providerKey);
+        modified = true;
+      }
+    }
+
+    if (modified) {
+      models.providers = providers;
+      config.models = models;
+      await writeOpenClawJson(config);
+    }
+  });
+  return healed;
+}
+
+/**
  * Map of OpenClaw `models.providers.*` keys that must be pinned to a specific
  * embedded agent harness so that OpenClaw's auto-routing policy does not
  * dispatch the chat to an externally-bundled harness plugin that may not be
@@ -1294,13 +1470,20 @@ function upsertOpenClawProviderEntry(
     ? ((getProviderConfig(provider)?.models ?? []).map((m) => ({ ...m })) as Array<Record<string, unknown>>)
     : [];
   const runtimeModels = (options.modelIds ?? []).map((id) => ({ id, name: id }));
+  let mergedModels = mergeProviderModels(registryModels, existingModels, runtimeModels);
+  if (options.api === 'anthropic-messages') {
+    mergedModels = mergedModels.map((model) => ensureAnthropicMessagesModelEntry(model, provider, existingProvider));
+  }
 
   const nextProvider: Record<string, unknown> = {
     ...existingProvider,
     baseUrl: options.baseUrl,
     api: options.api,
-    models: mergeProviderModels(registryModels, existingModels, runtimeModels),
+    models: mergedModels,
   };
+  if (options.api === 'anthropic-messages') {
+    ensureAnthropicMessagesProviderDefaults(nextProvider, provider);
+  }
   if (options.apiKeyEnv) nextProvider.apiKey = options.apiKeyEnv;
   if (options.headers !== undefined) {
     if (Object.keys(options.headers).length > 0) {
@@ -1883,7 +2066,13 @@ export async function batchSyncConfigFields(token: string): Promise<void> {
 type AgentModelProviderEntry = {
   baseUrl?: string;
   api?: string;
-  models?: Array<{ id: string; name: string; cost?: PiAiModelCostRates }>;
+  models?: Array<{
+    id: string;
+    name: string;
+    cost?: PiAiModelCostRates;
+    maxTokens?: number;
+    [key: string]: unknown;
+  }>;
   apiKey?: string;
   /** When true, pi-ai sends Authorization: Bearer instead of x-api-key */
   authHeader?: boolean;
@@ -1930,6 +2119,7 @@ async function updateModelsJsonProviderEntriesForAgents(
     if (mergedModels.length > 0) existing.models = mergedModels;
     if (entry.apiKey !== undefined) existing.apiKey = entry.apiKey;
     if (entry.authHeader !== undefined) existing.authHeader = entry.authHeader;
+    ensureAnthropicMessagesProviderDefaults(existing, providerType);
 
     providers[providerType] = existing;
     data.providers = providers;
@@ -2650,6 +2840,10 @@ export async function sanitizeOpenClawConfig(): Promise<void> {
           }
         }
       }
+    }
+
+    if (healAnthropicMessagesMaxTokensInConfig(config)) {
+      modified = true;
     }
 
     if (modified) {
