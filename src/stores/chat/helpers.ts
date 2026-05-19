@@ -1366,10 +1366,6 @@ function hasErrorRecoveryTimer(): boolean {
   return _errorRecoveryTimer != null;
 }
 
-function setErrorRecoveryTimer(timer: ReturnType<typeof setTimeout> | null): void {
-  _errorRecoveryTimer = timer;
-}
-
 function setLastChatEventAt(value: number): void {
   _lastChatEventAt = value;
 }
