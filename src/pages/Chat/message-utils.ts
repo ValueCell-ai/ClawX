@@ -364,6 +364,11 @@ export function extractImages(
   return images;
 }
 
+/** Normalize Gateway/OpenClaw message roles for comparisons. */
+export function normalizeMessageRole(role: unknown): string {
+  return typeof role === 'string' ? role.trim().toLowerCase() : '';
+}
+
 /**
  * Extract tool use blocks from a message.
  * Handles both Anthropic format (tool_use in content array) and
