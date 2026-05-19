@@ -150,7 +150,13 @@ describe('provider metadata', () => {
     const minimax = PROVIDER_TYPE_INFO.find((provider) => provider.id === 'minimax-portal');
     const minimaxCn = PROVIDER_TYPE_INFO.find((provider) => provider.id === 'minimax-portal-cn');
 
-    expect(openai).toMatchObject({ showModelId: true, defaultModelId: 'gpt-5.5' });
+    expect(openai).toMatchObject({
+      showModelId: true,
+      defaultModelId: 'gpt-5.5',
+      isOAuth: true,
+      supportsApiKey: true,
+    });
+    expect(openai?.hideOAuthUi).toBeUndefined();
     expect(google).toMatchObject({ showModelId: true, defaultModelId: 'gemini-3.1-pro-preview' });
     expect(minimax).toMatchObject({ showModelId: true, defaultModelId: 'MiniMax-M2.7' });
     expect(minimaxCn).toMatchObject({ showModelId: true, defaultModelId: 'MiniMax-M2.7' });

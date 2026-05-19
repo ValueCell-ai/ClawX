@@ -115,16 +115,21 @@ function decodeJwtPayload(token: string): Record<string, unknown> | null {
 function getAccountIdFromAccessToken(accessToken: string): string | null {
   const payload = decodeJwtPayload(accessToken);
   const authClaims = payload?.[JWT_CLAIM_PATH];
-  if (!authClaims || typeof authClaims !== 'object') {
-    return null;
+  if (authClaims && typeof authClaims === 'object') {
+    const claims = authClaims as Record<string, unknown>;
+    for (const key of ['chatgpt_account_id', 'account_id', 'user_id', 'sub']) {
+      const value = claims[key];
+      if (typeof value === 'string' && value.trim()) {
+        return value.trim();
+      }
+    }
   }
 
-  const accountId = (authClaims as Record<string, unknown>).chatgpt_account_id;
-  if (typeof accountId !== 'string' || !accountId.trim()) {
-    return null;
+  if (typeof payload?.sub === 'string' && payload.sub.trim()) {
+    return payload.sub.trim();
   }
 
-  return accountId;
+  return null;
 }
 
 async function createAuthorizationFlow(): Promise<OpenAICodexAuthorizationFlow> {
@@ -181,8 +186,9 @@ function startLocalOAuthServer(state: string): Promise<OpenAICodexLocalServer | 
   });
 
   return new Promise((resolve) => {
+    // Bind dual-stack loopback so both `localhost` and `127.0.0.1` redirects work.
     server
-      .listen(1455, 'localhost', () => {
+      .listen(1455, () => {
         resolve({
           close: () => server.close(),
           waitForCode: async () => {
@@ -288,10 +294,7 @@ export async function loginOpenAICodexOAuth(options: {
     }
 
     const token = await exchangeAuthorizationCode(code, verifier);
-    const accountId = getAccountIdFromAccessToken(token.access);
-    if (!accountId) {
-      throw new Error('Failed to extract OpenAI accountId from token');
-    }
+    const accountId = getAccountIdFromAccessToken(token.access) ?? 'default';
 
     return {
       access: token.access,

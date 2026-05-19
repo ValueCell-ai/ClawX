@@ -1161,6 +1161,21 @@ export async function setOpenClawDefaultModel(
         mergeExistingModels: true,
       });
       console.log(`Configured models.providers.${provider} with baseUrl=${providerCfg.baseUrl}, model=${modelId}`);
+    } else if (provider === 'openai-codex') {
+      // OAuth Codex is not in the UI registry but still needs an explicit provider
+      // entry with a pinned embedded runtime (see OPENCLAW_PROVIDER_PINNED_AGENT_RUNTIME).
+      upsertOpenClawProviderEntry(config, provider, {
+        baseUrl: OPENAI_CODEX_OAUTH_PROVIDER_CONFIG.baseUrl,
+        api: OPENAI_CODEX_OAUTH_PROVIDER_CONFIG.api,
+        modelIds: [modelId, ...fallbackModelIds],
+        mergeExistingModels: true,
+      });
+      if (isOpenClawOAuthPluginProviderKey(provider)) {
+        ensureOAuthPluginEnabled(config, provider);
+      }
+      console.log(
+        `Configured models.providers.${provider} for OAuth (api=${OPENAI_CODEX_OAUTH_PROVIDER_CONFIG.api})`,
+      );
     } else {
       // Built-in provider: remove any stale models.providers entry
       const models = (config.models || {}) as Record<string, unknown>;
@@ -1241,21 +1256,21 @@ function mergeProviderModels(
  * dispatch the chat to an externally-bundled harness plugin that may not be
  * installed.
  *
- * Currently only the API-key OpenAI provider needs this: OpenClaw 2026.5+
- * routes any `provider="openai"` entry on the official `api.openai.com`
- * baseUrl through the `codex` agent harness (which expects a separate
- * `codex-app-server` plugin to be installed). The bundled OpenClaw
- * distribution we ship does not register a harness with id `"codex"`, so
- * without this pin every API-key OpenAI chat fails with
- * `Requested agent harness "codex" is not registered.` — see
- * `node_modules/openclaw/dist/policy-AKMwD9k5.js` and
- * `node_modules/openclaw/dist/selection-61FIEezO.js`.
- *
- * The OAuth flow writes to `models.providers.openai-codex` (a different key)
- * and intentionally wants the codex routing, so it is not pinned here.
+ * OpenClaw 2026.5+ auto-routes OpenAI providers (`openai`, `openai-codex`) to the
+ * external `codex` agent harness, which expects a separate codex plugin install.
+ * The bundled OpenClaw distribution ClawX ships does not register that harness,
+ * so without pinning both keys chat fails with
+ * `Requested agent harness "codex" is not registered.`
  */
 const OPENCLAW_PROVIDER_PINNED_AGENT_RUNTIME: Record<string, string> = {
   openai: 'pi',
+  'openai-codex': 'pi',
+};
+
+/** Runtime models.providers entry for OpenAI Codex OAuth accounts. */
+export const OPENAI_CODEX_OAUTH_PROVIDER_CONFIG = {
+  baseUrl: 'https://api.openai.com/v1',
+  api: 'openai-codex-responses' as const,
 };
 
 function applyPinnedAgentRuntime(

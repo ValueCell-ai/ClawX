@@ -33,7 +33,13 @@ import {
   getOpenClawProvidersConfig,
   getProviderApiKeyFromOpenClaw,
 } from '../../utils/openclaw-auth';
-import { getAliasSourceTypes, getOpenClawProviderKeyForType } from '../../utils/provider-keys';
+import {
+  filterActiveProviderKeysForUi,
+  getAliasSourceTypes,
+  getOpenClawProviderKeyForType,
+  OPENAI_CODEX_RUNTIME_PROVIDER_KEY,
+  resolveOpenClawProviderKey,
+} from '../../utils/provider-keys';
 import type { ProviderWithKeyInfo } from '../../shared/providers/types';
 import { logger } from '../../utils/logger';
 
@@ -96,7 +102,7 @@ export class ProviderService {
     // Index store accounts by their openclaw runtime key for fast lookup.
     const storeByKey = new Map<string, ProviderAccount[]>();
     for (const account of allStoreAccounts) {
-      const ock = getOpenClawProviderKeyForType(account.vendorId, account.id);
+      const ock = resolveOpenClawProviderKey(account);
       const group = storeByKey.get(ock) ?? [];
       group.push(account);
       storeByKey.set(ock, group);
@@ -105,8 +111,27 @@ export class ProviderService {
     const result: ProviderAccount[] = [];
     const processedKeys = new Set<string>();
 
+    let hasConfiguredOpenAiApiKey = false;
+    if (activeProviders.has('openai')) {
+      for (const account of storeByKey.get('openai') ?? []) {
+        if (account.authMode === 'oauth_browser') {
+          continue;
+        }
+        const apiKey = await getApiKey(account.id);
+        const openClawKey = await getProviderApiKeyFromOpenClaw('openai');
+        if (apiKey || openClawKey) {
+          hasConfiguredOpenAiApiKey = true;
+          break;
+        }
+      }
+    }
+
+    const activeKeysForUi = filterActiveProviderKeysForUi(activeProviders, {
+      hasConfiguredOpenAiApiKey,
+    });
+
     // For each active provider in openclaw.json, produce exactly ONE account.
-    for (const key of activeProviders) {
+    for (const key of activeKeysForUi) {
       if (processedKeys.has(key)) continue;
       processedKeys.add(key);
 
@@ -146,6 +171,23 @@ export class ProviderService {
             result.push(account);
             logger.info(`[provider-sync] Seeded provider account "${account.id}" from openclaw.json`);
           }
+        }
+      }
+    }
+
+    if (activeProviders.has(OPENAI_CODEX_RUNTIME_PROVIDER_KEY)) {
+      const openaiStoreAccounts = storeByKey.get('openai') ?? [];
+      for (const account of openaiStoreAccounts) {
+        if (account.authMode !== 'api_key' && account.authMode !== undefined) {
+          continue;
+        }
+        const apiKey = await getApiKey(account.id);
+        const openClawKey = await getProviderApiKeyFromOpenClaw('openai');
+        if (!apiKey && !openClawKey) {
+          logger.info(
+            `[provider-sync] Removing unconfigured OpenAI API key account "${account.id}" (OAuth uses ${OPENAI_CODEX_RUNTIME_PROVIDER_KEY})`,
+          );
+          await deleteProviderAccount(account.id);
         }
       }
     }
@@ -374,7 +416,7 @@ export class ProviderService {
     const accounts = await this.listAccounts();
     const results: Array<{ accountId: string; hasKey: boolean; keyMasked: string | null }> = [];
     for (const account of accounts) {
-      const runtimeProviderKey = getOpenClawProviderKeyForType(account.vendorId, account.id);
+      const runtimeProviderKey = resolveOpenClawProviderKey(account);
       const apiKey = (await getProviderApiKeyFromOpenClaw(runtimeProviderKey))
         ?? (await getApiKey(account.id))
         ?? (runtimeProviderKey !== account.id ? await getApiKey(runtimeProviderKey) : null);
@@ -396,7 +438,7 @@ export class ProviderService {
   async hasAccountApiKey(accountId: string): Promise<boolean> {
     const account = await this.getAccount(accountId);
     const runtimeProviderKey = account
-      ? getOpenClawProviderKeyForType(account.vendorId, account.id)
+      ? resolveOpenClawProviderKey(account)
       : accountId;
     if (await getProviderApiKeyFromOpenClaw(runtimeProviderKey)) {
       return true;

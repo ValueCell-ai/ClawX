@@ -157,7 +157,6 @@ export const PROVIDER_TYPE_INFO: ProviderTypeInfo[] = [
     requiresApiKey: true,
     isOAuth: true,
     supportsApiKey: true,
-    hideOAuthUi: true,
     defaultModelId: 'gpt-5.5',
     showModelId: true,
     modelIdPlaceholder: 'gpt-5.5',

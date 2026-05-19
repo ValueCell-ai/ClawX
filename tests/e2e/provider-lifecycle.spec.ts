@@ -63,6 +63,24 @@ test.describe('ClawX provider lifecycle', () => {
     }
   });
 
+  test('shows OpenAI OAuth and API key auth mode toggle in add-provider dialog', async ({ page }) => {
+    await completeSetup(page);
+
+    await page.getByTestId('sidebar-nav-models').click();
+    await expect(page.getByTestId('providers-settings')).toBeVisible();
+
+    await page.getByTestId('providers-add-button').click();
+    await expect(page.getByTestId('add-provider-dialog')).toBeVisible();
+
+    await page.getByTestId('add-provider-type-openai').click();
+    await expect(page.getByRole('button', { name: 'OAuth Login' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'API Key' })).toBeVisible();
+
+    await page.getByRole('button', { name: 'OAuth Login' }).click();
+    await expect(page.getByRole('button', { name: 'Login with Browser' })).toBeVisible();
+    await expect(page.getByTestId('add-provider-api-key-input')).toHaveCount(0);
+  });
+
   test('trims whitespace before validating and saving a custom provider key', async ({ electronApp, page }) => {
     await completeSetup(page);
 

@@ -38,10 +38,20 @@ vi.mock('@electron/utils/openclaw-auth', () => ({
   getProviderApiKeyFromOpenClaw: mocks.getProviderApiKeyFromOpenClaw,
 }));
 
-vi.mock('@electron/utils/provider-keys', () => ({
-  getOpenClawProviderKeyForType: mocks.getOpenClawProviderKeyForType,
-  getAliasSourceTypes: mocks.getAliasSourceTypes,
-}));
+vi.mock('@electron/utils/provider-keys', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@electron/utils/provider-keys')>();
+  return {
+    ...actual,
+    getOpenClawProviderKeyForType: mocks.getOpenClawProviderKeyForType,
+    resolveOpenClawProviderKey: (account: { vendorId: string; id: string; authMode?: string }) => {
+      if (account.authMode === 'oauth_browser' && account.vendorId === 'openai') {
+        return 'openai-codex';
+      }
+      return mocks.getOpenClawProviderKeyForType(account.vendorId, account.id);
+    },
+    getAliasSourceTypes: mocks.getAliasSourceTypes,
+  };
+});
 
 vi.mock('@electron/utils/secure-storage', () => ({
   deleteApiKey: vi.fn(),
@@ -172,6 +182,62 @@ describe('ProviderService.listAccounts (openclaw.json as sole source of truth)',
     expect(mocks.saveProviderAccount).not.toHaveBeenCalled();
     expect(result).toHaveLength(1);
     expect(result[0].label).toBe('My Moonshot');
+  });
+
+  it('hides the bare openai slot when only openai-codex OAuth is configured', async () => {
+    mocks.listProviderAccounts.mockResolvedValue([
+      makeAccount({
+        id: 'openai-oauth-1',
+        vendorId: 'openai' as ProviderAccount['vendorId'],
+        authMode: 'oauth_browser',
+        label: 'OpenAI Codex',
+      }),
+      makeAccount({
+        id: 'openai',
+        vendorId: 'openai' as ProviderAccount['vendorId'],
+        authMode: 'api_key',
+        label: 'OpenAI',
+      }),
+    ]);
+    mocks.getApiKey.mockResolvedValue(null);
+    mocks.getProviderApiKeyFromOpenClaw.mockResolvedValue(null);
+    mocks.getActiveOpenClawProviders.mockResolvedValue(new Set(['openai', 'openai-codex']));
+    mocks.getOpenClawProvidersConfig.mockResolvedValue({
+      providers: {
+        openai: { baseUrl: 'https://api.openai.com/v1', api: 'openai-responses' },
+        'openai-codex': { baseUrl: 'https://api.openai.com/v1', api: 'openai-codex-responses' },
+      },
+      defaultModel: 'openai-codex/gpt-5.5',
+    });
+
+    const result = await service.listAccounts();
+
+    expect(result).toHaveLength(1);
+    expect(result[0].id).toBe('openai-oauth-1');
+    expect(mocks.deleteProviderAccount).toHaveBeenCalledWith('openai');
+  });
+
+  it('matches OpenAI browser OAuth accounts to the openai-codex runtime key', async () => {
+    mocks.listProviderAccounts.mockResolvedValue([
+      makeAccount({
+        id: 'openai-oauth-1',
+        vendorId: 'openai' as ProviderAccount['vendorId'],
+        authMode: 'oauth_browser',
+        label: 'OpenAI Codex',
+      }),
+    ]);
+    mocks.getActiveOpenClawProviders.mockResolvedValue(new Set(['openai-codex']));
+    mocks.getOpenClawProvidersConfig.mockResolvedValue({
+      providers: {},
+      defaultModel: 'openai-codex/gpt-5.5',
+    });
+
+    const result = await service.listAccounts();
+
+    expect(mocks.saveProviderAccount).not.toHaveBeenCalled();
+    expect(result).toHaveLength(1);
+    expect(result[0].id).toBe('openai-oauth-1');
+    expect(result[0].authMode).toBe('oauth_browser');
   });
 
   it('matches UUID-based store account to openclaw key via getOpenClawProviderKeyForType', async () => {
