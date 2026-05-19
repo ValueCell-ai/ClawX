@@ -287,6 +287,51 @@ describe('useChatStore startup history retry', () => {
     expect(useChatStore.getState().messages.map((message) => message.content)).toEqual(['cached history']);
   });
 
+  it('switchSession restores in-flight run state so Thinking indicator survives navigation', async () => {
+    const { useChatStore } = await import('@/stores/chat');
+    useChatStore.setState({
+      currentSessionKey: 'agent:main:session-run',
+      currentAgentId: 'main',
+      sessions: [{ key: 'agent:main:session-run' }, { key: 'agent:main:other' }],
+      messages: [
+        { id: 'user-run', role: 'user', content: 'browse the page', timestamp: 1000 },
+        {
+          id: 'assistant-tool-run',
+          role: 'assistant',
+          content: [
+            { type: 'toolCall', id: 'tool-run', name: 'browser', input: { action: 'snapshot' } },
+          ],
+          stopReason: 'toolUse',
+          timestamp: 1500,
+        },
+      ],
+      sessionLabels: {},
+      sessionLastActivity: {},
+      sending: true,
+      activeRunId: 'run-nav-test',
+      streamingText: '',
+      streamingMessage: null,
+      streamingTools: [],
+      pendingFinal: true,
+      lastUserMessageAt: 1000,
+      pendingToolImages: [],
+      error: null,
+      loading: false,
+      thinkingLevel: null,
+    });
+
+    useChatStore.getState().switchSession('agent:main:other');
+    expect(useChatStore.getState().sending).toBe(false);
+
+    useChatStore.getState().switchSession('agent:main:session-run');
+
+    const state = useChatStore.getState();
+    expect(state.sending).toBe(true);
+    expect(state.activeRunId).toBe('run-nav-test');
+    expect(state.pendingFinal).toBe(true);
+    expect(state.lastUserMessageAt).toBe(1000);
+  });
+
   it('treats the same session as a fresh foreground load after gateway runtime changes', async () => {
     const setTimeoutSpy = vi.spyOn(globalThis, 'setTimeout');
     const { useChatStore } = await import('@/stores/chat');
