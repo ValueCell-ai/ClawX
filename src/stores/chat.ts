@@ -25,6 +25,7 @@ import {
   clearSessionLabelHydrationTracking,
   finishSessionLabelHydration,
   getSessionLabelHydrationCandidate,
+  getSessionLabelHydrationVersion,
 } from './chat/session-label-hydration';
 import {
   DEFAULT_CANONICAL_PREFIX,
@@ -147,14 +148,15 @@ function applySessionLabelSummaries(
 
     for (const summary of summaries) {
       const labelText = toSessionLabel(summary.firstUserText || '');
-      if (labelText) {
-        if (nextLabels[summary.sessionKey] !== labelText) {
-          if (nextLabels === state.sessionLabels) {
-            nextLabels = { ...state.sessionLabels };
-          }
-          nextLabels[summary.sessionKey] = labelText;
-          changed = true;
+      // Only auto-hydrate missing labels. Existing entries include user renames
+      // and must not be overwritten by transcript-derived titles.
+      const existingLabel = nextLabels[summary.sessionKey]?.trim();
+      if (labelText && !existingLabel) {
+        if (nextLabels === state.sessionLabels) {
+          nextLabels = { ...state.sessionLabels };
         }
+        nextLabels[summary.sessionKey] = labelText;
+        changed = true;
       }
 
       if (typeof summary.lastTimestamp === 'number' && Number.isFinite(summary.lastTimestamp)) {
@@ -2204,9 +2206,18 @@ export const useChatStore = create<ChatState>((set, get) => ({
       throw err;
     }
 
+    const session = get().sessions.find((entry) => entry.key === key);
+    if (session) {
+      finishSessionLabelHydration(
+        key,
+        getSessionLabelHydrationVersion(session, get().sessionLastActivity),
+        'backend-label',
+      );
+    }
+
     set((s) => ({
-      sessions: s.sessions.map((session) =>
-        session.key === key ? { ...session, label: normalized } : session,
+      sessions: s.sessions.map((entry) =>
+        entry.key === key ? { ...entry, label: normalized } : entry,
       ),
       sessionLabels: { ...s.sessionLabels, [key]: normalized },
     }));

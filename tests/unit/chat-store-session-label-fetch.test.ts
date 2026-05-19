@@ -409,4 +409,72 @@ describe('chat store session label summary hydration', () => {
     });
     expect(useChatStore.getState().sessionLabels['agent:main:session-a']).toBe('new label');
   });
+
+  it('preserves user-renamed labels when visible session summaries refresh', async () => {
+    gatewayRpcMock.mockImplementation(async (method: string, params?: Record<string, unknown>) => {
+      if (method === 'sessions.list') {
+        return {
+          sessions: [
+            { key: 'agent:main:session-a', displayName: 'Session A', updatedAt: 1000 },
+            { key: 'agent:main:main', displayName: 'Main', updatedAt: 1001 },
+          ],
+        };
+      }
+
+      if (method === 'chat.history') {
+        return {
+          messages: [{ role: 'user', content: 'visible chat', timestamp: Date.now() }],
+        };
+      }
+
+      throw new Error(`Unexpected gateway RPC: ${method} ${JSON.stringify(params)}`);
+    });
+
+    hostApiFetchMock.mockImplementation(async (path: string) => {
+      if (path === '/api/sessions/summaries') {
+        return {
+          success: true,
+          summaries: [
+            {
+              sessionKey: 'agent:main:session-a',
+              firstUserText: 'original first message',
+              lastTimestamp: 1_700_000_000_000,
+            },
+          ],
+        };
+      }
+      return { success: true, summaries: [] };
+    });
+
+    const { useChatStore } = await import('@/stores/chat');
+    useChatStore.setState({
+      currentSessionKey: 'agent:main:main',
+      currentAgentId: 'main',
+      sessions: [
+        { key: 'agent:main:session-a', displayName: 'Session A', updatedAt: 1000 },
+        { key: 'agent:main:main', displayName: 'Main', updatedAt: 1001 },
+      ],
+      messages: [],
+      sessionLabels: { 'agent:main:session-a': 'Custom name' },
+      sessionLastActivity: {},
+      sending: false,
+      activeRunId: null,
+      streamingText: '',
+      streamingMessage: null,
+      streamingTools: [],
+      pendingFinal: false,
+      lastUserMessageAt: null,
+      pendingToolImages: [],
+      error: null,
+      loading: false,
+      thinkingLevel: null,
+      runError: null,
+    });
+
+    await useChatStore.getState().loadHistory(false);
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(useChatStore.getState().sessionLabels['agent:main:session-a']).toBe('Custom name');
+  });
 });
