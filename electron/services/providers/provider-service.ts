@@ -36,7 +36,6 @@ import {
 import {
   filterActiveProviderKeysForUi,
   getAliasSourceTypes,
-  getOpenClawProviderKeyForType,
   OPENAI_CODEX_RUNTIME_PROVIDER_KEY,
   resolveOpenClawProviderKey,
 } from '../../utils/provider-keys';
