@@ -1280,6 +1280,10 @@ describe('assertValidApiProtocol guard at write sites', () => {
     await rm(testUserData, { recursive: true, force: true });
   });
 
+  afterEach(() => {
+    vi.doUnmock('@electron/utils/provider-registry');
+  });
+
   it('setOpenClawDefaultModel throws InvalidApiProtocolError and leaves openclaw.json untouched when registry api is invalid', async () => {
     const initialConfig = {
       agents: {
@@ -1483,6 +1487,7 @@ describe('openai agentRuntime pin', () => {
 
 describe('setOpenClawDefaultModel for openai-codex OAuth', () => {
   beforeEach(async () => {
+    vi.doUnmock('@electron/utils/provider-registry');
     vi.resetModules();
     vi.restoreAllMocks();
     await rm(testHome, { recursive: true, force: true });
