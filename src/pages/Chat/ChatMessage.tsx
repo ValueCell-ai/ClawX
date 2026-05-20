@@ -71,7 +71,10 @@ function isDirectoryAttachment(file: AttachedFileMeta): boolean {
 
 function isSkillFileAttachment(file: AttachedFileMeta): boolean {
   const path = file.filePath ?? '';
-  return /(?:^|[\\/])\.openclaw[\\/]skills[\\/][^\\/]+[\\/].+\.[A-Za-z0-9]+$/i.test(path);
+  return (
+    /(?:^|[\\/])\.openclaw[\\/]skills[\\/][^\\/]+[\\/].+\.[A-Za-z0-9]+$/i.test(path)
+    || /(?:^|[\\/])skills[\\/][^\\/]+[\\/]SKILL\.md$/i.test(path)
+  );
 }
 
 function isHtmlOrMarkdownPreview(file: AttachedFileMeta): boolean {
@@ -93,7 +96,11 @@ function isUserFacingAttachmentWhenFolded(file: AttachedFileMeta): boolean {
   if (isDirectoryAttachment(file)) return true;
   if (isSkillFileAttachment(file)) return true;
   if (isChatPreviewDocument(file)) return true;
-  return isHtmlOrMarkdownPreview(file);
+  // Paths parsed from the assistant reply (e.g. "/workspace/demo.html") are
+  // intentional user-facing links. Generic tool-result markdown attachments
+  // (e.g. CHECKLIST.md emitted mid-run) stay folded into the execution graph.
+  if (file.source === 'message-ref' && isHtmlOrMarkdownPreview(file)) return true;
+  return false;
 }
 
 function validationKindForAttachment(file: AttachedFileMeta): 'file' | 'dir' | null {
