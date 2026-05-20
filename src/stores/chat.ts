@@ -1936,15 +1936,6 @@ function isRealUserBoundaryMessage(msg: RawMessage): boolean {
   return blocks.length === 0 || !blocks.every((block) => block.type === 'tool_result' || block.type === 'toolResult');
 }
 
-function hasAssistantAfterLastRealUser(messages: RawMessage[]): boolean {
-  for (let i = messages.length - 1; i >= 0; i -= 1) {
-    if (isRealUserBoundaryMessage(messages[i])) {
-      return messages.slice(i + 1).some((m) => m.role === 'assistant');
-    }
-  }
-  return false;
-}
-
 /** True when the post-user segment has real run output (not a thinking-only stub). */
 function hasMeaningfulAssistantProgressAfterLastUser(messages: RawMessage[]): boolean {
   const segment = postUserSegmentMessages(messages);
