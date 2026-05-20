@@ -74,6 +74,28 @@ function isSkillFileAttachment(file: AttachedFileMeta): boolean {
   return /(?:^|[\\/])\.openclaw[\\/]skills[\\/][^\\/]+[\\/].+\.[A-Za-z0-9]+$/i.test(path);
 }
 
+function isHtmlOrMarkdownPreview(file: AttachedFileMeta): boolean {
+  const name = file.fileName.toLowerCase();
+  const mime = file.mimeType.toLowerCase();
+  return (
+    mime === 'text/html'
+    || mime === 'text/markdown'
+    || name.endsWith('.html')
+    || name.endsWith('.htm')
+    || name.endsWith('.md')
+    || name.endsWith('.markdown')
+  );
+}
+
+/** User-facing artifacts that must stay visible when process output is folded into the graph. */
+function isUserFacingAttachmentWhenFolded(file: AttachedFileMeta): boolean {
+  if (file.mimeType.startsWith('image/')) return true;
+  if (isDirectoryAttachment(file)) return true;
+  if (isSkillFileAttachment(file)) return true;
+  if (isChatPreviewDocument(file)) return true;
+  return isHtmlOrMarkdownPreview(file);
+}
+
 function validationKindForAttachment(file: AttachedFileMeta): 'file' | 'dir' | null {
   if (!file.filePath) return null;
   // User-selected uploads and already enriched attachments are trusted enough
@@ -277,13 +299,12 @@ export const ChatMessage = memo(function ChatMessage({
   });
   const filteredProcessAttachments = derivedAttachedFiles.filter((file) => {
     if (file.source !== 'tool-result' && file.source !== 'message-ref') return true;
-    // Runtime-produced user-facing artifacts (images, PDFs, spreadsheets,
+    // Runtime-produced user-facing artifacts (images, HTML/Markdown/PDF/XLSX,
     // skill directories, ...) must remain visible in the reply bubble even
     // when generic process attachments are folded into the execution graph.
     // The graph card itself does not render `_attachedFiles`, so dropping
-    // images here would leave the user with no way to see them at all.
-    if (file.mimeType.startsWith('image/')) return true;
-    return isChatPreviewDocument(file) || isDirectoryAttachment(file) || isSkillFileAttachment(file);
+    // them here would leave the user with no way to open previews from chat.
+    return isUserFacingAttachmentWhenFolded(file);
   });
   // When a message is attachment-only, keep those attachments visible even if
   // process attachments are generally suppressed for this run segment —
