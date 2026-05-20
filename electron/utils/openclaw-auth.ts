@@ -520,7 +520,6 @@ const BUNDLED_ALLOWLIST_PRESERVE_IDS = new Set([
   'browser',
   'acpx',
   'memory-core',
-  'codex',
 ]);
 const AUTH_PROFILE_PROVIDER_KEY_MAP: Record<string, string> = {
   'openai-codex': 'openai',

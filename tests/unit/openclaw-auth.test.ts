@@ -738,7 +738,6 @@ describe('sanitizeOpenClawConfig', () => {
       { dir: 'groq', id: 'groq', enabledByDefault: true },
       { dir: 'alibaba', id: 'alibaba', enabledByDefault: true },
       { dir: 'memory-core', id: 'memory-core' },
-      { dir: 'codex', id: 'codex', providers: ['codex'] },
       { dir: 'openrouter', id: 'openrouter', enabledByDefault: true, providers: ['openrouter'] },
       { dir: 'anthropic', id: 'anthropic', enabledByDefault: true, providers: ['anthropic'] },
     ]) {
@@ -781,7 +780,6 @@ describe('sanitizeOpenClawConfig', () => {
     expect(allow).toContain('custom-plugin');
     expect(allow).toContain('browser');
     expect(allow).toContain('memory-core');
-    expect(allow).toContain('codex');
     expect(allow).toContain('alibaba');
     expect(allow).not.toContain('groq');
     expect(allow).toContain('openrouter');

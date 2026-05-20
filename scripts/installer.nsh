@@ -40,11 +40,6 @@
       ${endIf}
       # App didn't exit in time; fall through to force-kill
     ${endIf}
-    ${if} ${isUpdated} ; skip the dialog for auto-updates
-    ${else}
-      MessageBox MB_OKCANCEL|MB_ICONEXCLAMATION "$(appRunning)" /SD IDOK IDOK doStopProcess
-      Quit
-    ${endIf}
 
     doStopProcess:
     DetailPrint `Closing running "${PRODUCT_NAME}"...`
@@ -129,6 +124,7 @@
   ; (IfFileExists "$INSTDIR\*.*" only matches files containing a dot and
   ;  would fail for extensionless files or pure-subdirectory layouts.)
   IfFileExists "$INSTDIR\" 0 _instdir_clean
+    DetailPrint "Moving previous installation out of the way..."
     ; Find the first available stale directory name (e.g. $INSTDIR._stale_0)
     ; This ensures we NEVER have to synchronously delete old leftovers before
     ; renaming the current $INSTDIR. We just move it out of the way instantly.
@@ -142,9 +138,16 @@
     ClearErrors
     Rename "$INSTDIR" "$INSTDIR._stale_$R8"
     IfErrors 0 _stale_moved
-      ; Rename still failed — a process reopened a file or holds CWD in $INSTDIR.
-      ; We must delete forcibly and synchronously to make room for CopyFiles.
-      ; This can be slow (~1-3 minutes) if there are 10,000+ files and AV is active.
+      ; Rename still failed — retry process termination, then delete synchronously.
+      ; Large openclaw bundles (#1026+) can make rd /s /q take several minutes.
+      DetailPrint "Waiting for file locks to clear, then removing old files..."
+      nsExec::ExecToStack 'taskkill /F /T /IM "${APP_EXECUTABLE_FILENAME}"'
+      Pop $0
+      Pop $1
+      nsExec::ExecToStack 'taskkill /F /IM openclaw-gateway.exe'
+      Pop $0
+      Pop $1
+      Sleep 3000
       nsExec::ExecToStack 'cmd.exe /c rd /s /q "$INSTDIR"'
       Pop $0
       Pop $1

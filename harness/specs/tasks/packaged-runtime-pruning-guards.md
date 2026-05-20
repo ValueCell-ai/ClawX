@@ -13,7 +13,6 @@ touchedAreas:
   - harness/specs/rules/packaged-runtime-pruning-guards.md
   - harness/specs/tasks/packaged-runtime-pruning-guards.md
 expectedUserBehavior:
-  - Packaged OpenAI Codex support works in macOS arm64, x64 and universal artifacts.
   - Packaged tree-sitter-bash runtime loading keeps a usable native prebuild for every architecture in the target artifact.
   - Size cleanup still removes non-target platform packages and known runtime junk for single-architecture builds.
 requiredProfiles:
@@ -25,7 +24,7 @@ acceptance:
   - `cleanupNativePlatformPackages` keeps same-platform x64 and arm64 native packages when the electron-builder arch resolves to `universal`.
   - `cleanupNodeModulesRuntimeJunk` keeps same-platform x64 and arm64 `tree-sitter-bash/prebuilds` directories when the target arch is `universal`.
   - Non-target platforms are still pruned from scoped native packages and tree-sitter-bash prebuilds.
-  - Extra bundled OpenClaw packages still include `@openclaw/codex`, and the bundle script still skips a duplicate nested `openclaw` package.
+  - The bundle script still skips a duplicate nested `openclaw` package.
 docs:
   required: false
 ---

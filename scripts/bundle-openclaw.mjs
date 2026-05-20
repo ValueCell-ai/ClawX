@@ -17,7 +17,7 @@
  */
 
 import 'zx/globals';
-import { EXTRA_BUNDLED_PACKAGES } from './openclaw-bundle-config.mjs';
+import { ELECTRON_MAIN_RUNTIME_PACKAGES, EXTRA_BUNDLED_PACKAGES } from './openclaw-bundle-config.mjs';
 import { patchExtensionOpenClawSelfImports } from './openclaw-self-import-patch.mjs';
 
 const ROOT = path.resolve(__dirname, '..');
@@ -177,8 +177,8 @@ echo`   Virtual store root: ${openclawVirtualNM}`;
 queue.push({ nodeModulesDir: openclawVirtualNM, skipPkg: 'openclaw' });
 
 const SKIP_PACKAGES = new Set([
-  // Extra bundled extensions such as @openclaw/codex can declare openclaw as a
-  // peer/optional dependency. The bundle already copies openclaw to OUTPUT root,
+  // Extra bundled extensions can declare openclaw as a peer/optional dependency.
+  // The bundle already copies openclaw to OUTPUT root,
   // so do not also copy a duplicate into OUTPUT/node_modules/openclaw.
   'openclaw',
   'typescript',
@@ -450,25 +450,6 @@ function patchBundledExtensionPackageJsons(extensionsRoot) {
 }
 
 patchBundledExtensionPackageJsons(extensionsDir);
-
-function bundleExternalExtension(pkgName, extensionId) {
-  const pkgLink = path.join(NODE_MODULES, ...pkgName.split('/'));
-  if (!fs.existsSync(pkgLink)) {
-    throw new Error(`Missing extension package "${pkgName}". Run pnpm install first.`);
-  }
-
-  const realPath = fs.realpathSync(pkgLink);
-  const dest = path.join(extensionsDir, extensionId);
-  fs.rmSync(normWin(dest), { recursive: true, force: true });
-  fs.mkdirSync(normWin(path.dirname(dest)), { recursive: true });
-  fs.cpSync(normWin(realPath), normWin(dest), {
-    recursive: true,
-    dereference: true,
-  });
-  echo`   Bundled external extension ${pkgName} -> dist/extensions/${extensionId}`;
-}
-
-bundleExternalExtension('@openclaw/codex', 'codex');
 
 // 6. Clean up the bundle to reduce package size
 //
@@ -1060,5 +1041,18 @@ echo`   dist/entry.js: ${distExists ? '✓' : '✗'}`;
 
 if (!entryExists || !distExists) {
   echo`❌ Bundle verification failed!`;
+  process.exit(1);
+}
+
+const missingRuntimePackages = ELECTRON_MAIN_RUNTIME_PACKAGES.filter((pkgName) => {
+  const pkgJson = path.join(outputNodeModules, ...pkgName.split('/'), 'package.json');
+  return !fs.existsSync(pkgJson);
+});
+
+if (missingRuntimePackages.length > 0) {
+  echo`❌ Bundle verification failed: missing Electron main runtime packages:`;
+  for (const pkgName of missingRuntimePackages) {
+    echo`   - ${pkgName}`;
+  }
   process.exit(1);
 }

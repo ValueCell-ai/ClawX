@@ -57,9 +57,6 @@ importers:
       '@monaco-editor/react':
         specifier: ^4.7.0
         version: 4.7.0(monaco-editor@0.55.1)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)
-      '@openclaw/codex':
-        specifier: 2026.5.12
-        version: 2026.5.12(@modelcontextprotocol/sdk@1.29.0(zod@4.4.3))(openclaw@2026.5.12(encoding@0.1.13))
       '@openclaw/discord':
         specifier: 2026.5.12
         version: 2026.5.12(@emnapi/core@1.10.0)(@emnapi/runtime@1.9.1)(openclaw@2026.5.12(encoding@0.1.13))
@@ -1676,55 +1673,6 @@ packages:
   '@npmcli/fs@4.0.0':
     resolution: {integrity: sha512-/xGlezI6xfGO9NwuJlnwz/K14qD1kCSAGtacBHnGzeAIuJGazcp45KP5NuyARXoKb7cwulAGWVsbeSxdG/cb0Q==}
     engines: {node: ^18.17.0 || >=20.5.0}
-
-  '@openai/codex@0.130.0':
-    resolution: {integrity: sha512-WGDj+RZ3TXWC/7MlwprgLWOqzpwatPIINPhP3IRzHA0ni+o3QZ4i4xrS2uWwGmHUJ395J5JHwoZAAZYyfJyz6w==}
-    engines: {node: '>=16'}
-    hasBin: true
-
-  '@openai/codex@0.130.0-darwin-arm64':
-    resolution: {integrity: sha512-R9pkGC7kwC8yQ8el5hvBlmugQlcsG/pHMEFgZluu03X9fD2TezGxdq3KqRDRCZuMYl07ILamVEoqknuJ0cq7MA==}
-    engines: {node: '>=16'}
-    cpu: [arm64]
-    os: [darwin]
-
-  '@openai/codex@0.130.0-darwin-x64':
-    resolution: {integrity: sha512-gJ+7J8djevgtdra+NgDAiQQPW+O3KTsgGfE3E5dpDfww3zS5OCeV0V2dhxqnJdlOjOSDw99o0P2LqBv19mhpRw==}
-    engines: {node: '>=16'}
-    cpu: [x64]
-    os: [darwin]
-
-  '@openai/codex@0.130.0-linux-arm64':
-    resolution: {integrity: sha512-tFtH0V9/hEI3d9y7zP92BXI9FM4Z3+STNQaOR52Czv18TRtCFUp7CbIUYaToopuq6UBfnE1VKr8RLhwT5FcbmA==}
-    engines: {node: '>=16'}
-    cpu: [arm64]
-    os: [linux]
-
-  '@openai/codex@0.130.0-linux-x64':
-    resolution: {integrity: sha512-3VcNlez99xdnEf+kB1IOpWv9fICYV9PiGj4sLCO4TCcShLnyxe+YBGa3poknkvXLnMG0qiN9SMnYS2FGrMxQcA==}
-    engines: {node: '>=16'}
-    cpu: [x64]
-    os: [linux]
-
-  '@openai/codex@0.130.0-win32-arm64':
-    resolution: {integrity: sha512-vdpmiNp57L/arZabltLXn8TyEtNa7W1meOEkr+3R6W/8ZyBt++wuqz1Orv134OT2grrcFJsIVCAIPiqUxCvBkA==}
-    engines: {node: '>=16'}
-    cpu: [arm64]
-    os: [win32]
-
-  '@openai/codex@0.130.0-win32-x64':
-    resolution: {integrity: sha512-FzMznm7fr5/nbjZgOujZ9Y9AbdGm7ji1FOoWiY3U+srqauvZaTgn6o6aCheSL7kuymu7nTLOO/cAyWV6NuesqQ==}
-    engines: {node: '>=16'}
-    cpu: [x64]
-    os: [win32]
-
-  '@openclaw/codex@2026.5.12':
-    resolution: {integrity: sha512-T2kaIg4+vS8AE0Jr7HgLzHSdhlUvCg0VbNqBto3g7frATj05gG/nX6gx2UEj4Y5f8DEKXHrLKwc+vyywVQemgw==}
-    peerDependencies:
-      openclaw: '>=2026.5.12'
-    peerDependenciesMeta:
-      openclaw:
-        optional: true
 
   '@openclaw/discord@2026.5.12':
     resolution: {integrity: sha512-nyB2wDpSyHcXbDwWnGQ+KjnPXcbAOj8MiLe8YS6IJbZUjcqjtObuUn5vh72Srcixupugu1PzNZT0WntO8J4n0A==}
@@ -4811,8 +4759,8 @@ packages:
   libsignal@6.0.0:
     resolution: {integrity: sha512-d/5V3YFtDljbFMufz4ncyUYGYhJl+vzAe+c2EFFBQ6bz1h8Q3IOMEGXYMzlibU60I+e8GagMMpji18iez3P1hA==}
 
-  libsignal@https://codeload.github.com/whiskeysockets/libsignal-node/tar.gz/bcea72df9ec34d9d9140ab30619cf479c7c144c7:
-    resolution: {gitHosted: true, tarball: https://codeload.github.com/whiskeysockets/libsignal-node/tar.gz/bcea72df9ec34d9d9140ab30619cf479c7c144c7}
+  libsignal@git+https://git@github.com:whiskeysockets/libsignal-node.git#bcea72df9ec34d9d9140ab30619cf479c7c144c7:
+    resolution: {commit: bcea72df9ec34d9d9140ab30619cf479c7c144c7, repo: git@github.com:whiskeysockets/libsignal-node.git, type: git}
     version: 6.0.0
 
   lie@3.3.0:
@@ -8765,49 +8713,6 @@ snapshots:
     dependencies:
       semver: 7.7.4
 
-  '@openai/codex@0.130.0':
-    optionalDependencies:
-      '@openai/codex-darwin-arm64': '@openai/codex@0.130.0-darwin-arm64'
-      '@openai/codex-darwin-x64': '@openai/codex@0.130.0-darwin-x64'
-      '@openai/codex-linux-arm64': '@openai/codex@0.130.0-linux-arm64'
-      '@openai/codex-linux-x64': '@openai/codex@0.130.0-linux-x64'
-      '@openai/codex-win32-arm64': '@openai/codex@0.130.0-win32-arm64'
-      '@openai/codex-win32-x64': '@openai/codex@0.130.0-win32-x64'
-
-  '@openai/codex@0.130.0-darwin-arm64':
-    optional: true
-
-  '@openai/codex@0.130.0-darwin-x64':
-    optional: true
-
-  '@openai/codex@0.130.0-linux-arm64':
-    optional: true
-
-  '@openai/codex@0.130.0-linux-x64':
-    optional: true
-
-  '@openai/codex@0.130.0-win32-arm64':
-    optional: true
-
-  '@openai/codex@0.130.0-win32-x64':
-    optional: true
-
-  '@openclaw/codex@2026.5.12(@modelcontextprotocol/sdk@1.29.0(zod@4.4.3))(openclaw@2026.5.12(encoding@0.1.13))':
-    dependencies:
-      '@earendil-works/pi-coding-agent': 0.74.0(@modelcontextprotocol/sdk@1.29.0(zod@4.4.3))(ws@8.20.0)(zod@4.4.3)
-      '@openai/codex': 0.130.0
-      ajv: 8.20.0
-      ws: 8.20.0
-      zod: 4.4.3
-    optionalDependencies:
-      openclaw: 2026.5.12(encoding@0.1.13)
-    transitivePeerDependencies:
-      - '@modelcontextprotocol/sdk'
-      - aws-crt
-      - bufferutil
-      - supports-color
-      - utf-8-validate
-
   '@openclaw/discord@2026.5.12(@emnapi/core@1.10.0)(@emnapi/runtime@1.9.1)(openclaw@2026.5.12(encoding@0.1.13))':
     dependencies:
       '@discordjs/voice': 0.19.2(@emnapi/core@1.10.0)(@emnapi/runtime@1.9.1)(opusscript@0.1.1)
@@ -10160,7 +10065,7 @@ snapshots:
       '@cacheable/node-cache': 1.7.6
       '@hapi/boom': 9.1.4
       async-mutex: 0.5.0
-      libsignal: https://codeload.github.com/whiskeysockets/libsignal-node/tar.gz/bcea72df9ec34d9d9140ab30619cf479c7c144c7
+      libsignal: git+https://git@github.com:whiskeysockets/libsignal-node.git#bcea72df9ec34d9d9140ab30619cf479c7c144c7
       lru-cache: 11.2.7
       music-metadata: 11.12.3
       p-queue: 9.1.0
@@ -12278,7 +12183,7 @@ snapshots:
       curve25519-js: 0.0.4
       protobufjs: 7.5.8
 
-  libsignal@https://codeload.github.com/whiskeysockets/libsignal-node/tar.gz/bcea72df9ec34d9d9140ab30619cf479c7c144c7:
+  libsignal@git+https://git@github.com:whiskeysockets/libsignal-node.git#bcea72df9ec34d9d9140ab30619cf479c7c144c7:
     dependencies:
       curve25519-js: 0.0.4
       protobufjs: 7.5.8
