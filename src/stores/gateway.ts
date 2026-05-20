@@ -214,7 +214,9 @@ function handleGatewayNotification(notification: { method?: string; params?: Rec
   // honour `'end'` as a hint to refresh history opportunistically.
   const isPerMessageEnd = phase === 'end';
   const isRunCompletion = phase === 'completed' || phase === 'done' || phase === 'finished';
-  if (isPerMessageEnd || isRunCompletion) {
+  const isRunFailure = phase === 'error' || phase === 'failed' || phase === 'aborted' || phase === 'cancelled';
+  const isRunTerminal = isRunCompletion || isRunFailure;
+  if (isPerMessageEnd || isRunTerminal) {
     import('./chat')
       .then(({ useChatStore, syncCachedSessionRunIdle }) => {
         const state = useChatStore.getState();
@@ -231,18 +233,33 @@ function handleGatewayNotification(notification: { method?: string; params?: Rec
         const matchesActiveRun = runId != null && state.activeRunId != null && String(runId) === state.activeRunId;
 
         if (matchesCurrentSession || matchesActiveRun) {
-          maybeLoadHistory(state, isRunCompletion);
+          maybeLoadHistory(state, isRunTerminal);
         }
-        if (isRunCompletion && resolvedSessionKey && !matchesCurrentSession) {
+        if (isRunTerminal && resolvedSessionKey && !matchesCurrentSession) {
           syncCachedSessionRunIdle(resolvedSessionKey);
         }
-        if (isRunCompletion && (matchesCurrentSession || matchesActiveRun) && state.sending) {
+
+        if (isRunFailure && (matchesCurrentSession || matchesActiveRun)) {
+          const errorMessage = String(
+            data.errorMessage ?? p.errorMessage ?? data.error ?? p.error ?? '',
+          ).trim();
+          if (errorMessage) {
+            state.handleChatEvent({
+              state: 'error',
+              errorMessage,
+              runId,
+              sessionKey: resolvedSessionKey ?? undefined,
+            });
+          }
+        }
+
+        if (isRunTerminal && (matchesCurrentSession || matchesActiveRun) && state.sending) {
           useChatStore.setState({
             sending: false,
             activeRunId: null,
             pendingFinal: false,
             lastUserMessageAt: null,
-            error: null,
+            error: isRunFailure ? state.error : null,
           });
           if (resolvedSessionKey) {
             syncCachedSessionRunIdle(resolvedSessionKey);

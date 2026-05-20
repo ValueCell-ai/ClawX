@@ -1945,6 +1945,17 @@ function hasAssistantAfterLastRealUser(messages: RawMessage[]): boolean {
   return false;
 }
 
+/** True when the post-user segment has real run output (not a thinking-only stub). */
+function hasMeaningfulAssistantProgressAfterLastUser(messages: RawMessage[]): boolean {
+  const segment = postUserSegmentMessages(messages);
+  return segment.some((msg) => {
+    if (msg.role !== 'assistant') return false;
+    if (isTerminalAssistantErrorMessage(msg)) return true;
+    if (hasPendingToolUse(msg) || isToolOnlyMessage(msg)) return true;
+    return hasNonToolAssistantContent(msg);
+  });
+}
+
 function hasAssistantProgressSinceSend(messages: RawMessage[], lastUserMessageAt: number | null): boolean {
   if (!lastUserMessageAt) return false;
   const normalized = [...messages];
@@ -1956,7 +1967,7 @@ function hasAssistantProgressSinceSend(messages: RawMessage[], lastUserMessageAt
     }
     break;
   }
-  return hasAssistantAfterLastRealUser(normalized);
+  return hasMeaningfulAssistantProgressAfterLastUser(normalized);
 }
 
 function postUserSegmentMessages(filteredMessages: RawMessage[]): RawMessage[] {
@@ -2585,7 +2596,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       // (WS disconnect, console-only runs, etc.). Any assistant turn after the
       // user's message counts as progress so the safety timeout does not emit a
       // false "No response received" error while tool chains are still running.
-      if (isSendingNow && hasAssistantAfterLastRealUser(filteredMessages)) {
+      if (isSendingNow && hasMeaningfulAssistantProgressAfterLastUser(filteredMessages)) {
         _lastChatEventAt = Date.now();
         if (get().error) {
           set({ error: null });

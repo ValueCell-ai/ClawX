@@ -14,6 +14,7 @@ import { LoadingSpinner } from '@/components/common/LoadingSpinner';
 import { cn } from '@/lib/utils';
 import { invokeIpc, readTextFile, statFile } from '@/lib/api-client';
 import {
+  isHtmlPreviewExt,
   isPdfPreviewExt,
   isSheetPreviewExt,
   supportsInlineDocumentPreview,
@@ -33,6 +34,7 @@ import {
   shouldOfferDirectOpenFallback,
 } from './open-file-utils';
 import MarkdownPreview from './MarkdownPreview';
+import HtmlPreview from './HtmlPreview';
 import ImageViewer from './ImageViewer';
 
 const MonacoViewerLazy = lazy(() => import('./MonacoViewer'));
@@ -434,6 +436,16 @@ export function WorkspaceBrowserBody({
             </Button>
           </div>
         </div>
+      );
+    }
+
+    if (isHtmlPreviewExt(selectedNode.ext)) {
+      return (
+        <HtmlPreview
+          source={fileState.content}
+          filePath={selectedNode.absPath}
+          fileName={selectedNode.name}
+        />
       );
     }
 

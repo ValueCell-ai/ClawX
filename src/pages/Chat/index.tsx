@@ -19,7 +19,16 @@ import { ChatInput } from './ChatInput';
 import { ExecutionGraphCard } from './ExecutionGraphCard';
 import { ChatToolbar } from './ChatToolbar';
 import { extractImages, extractText, extractThinking, extractToolUse, normalizeMessageRole, stripProcessMessagePrefix } from './message-utils';
-import { buildRunSegmentMessageIndices, deriveTaskSteps, findReplyMessageIndex, getRunSegmentMessages, parseSubagentCompletionInfo, type TaskStep } from './task-visualization';
+import {
+  buildRunSegmentMessageIndices,
+  deriveTaskSteps,
+  findReplyMessageIndex,
+  getPostTriggerSegmentMessages,
+  getRunSegmentMessages,
+  hasActiveStreamingReplyInRun,
+  parseSubagentCompletionInfo,
+  type TaskStep,
+} from './task-visualization';
 import { useTranslation } from 'react-i18next';
 import { cn } from '@/lib/utils';
 import { useStickToBottomInstant } from '@/hooks/use-stick-to-bottom-instant';
@@ -361,6 +370,10 @@ export function Chat() {
       : `${currentSessionKey}:trigger-${idx}`;
     const nextUserIndex = nextUserMessageIndexes[idx];
     const segmentEnd = nextUserIndex === -1 ? messages.length : nextUserIndex;
+    // Orphans from paginated history are folded into the graph only — they must
+    // not participate in run lifecycle (hasFinalReply / replyIndex) or a prior
+    // turn's assistant reply is mistaken for the current run's answer (#1048).
+    const postTriggerMessages = getPostTriggerSegmentMessages(messages, idx, nextUserIndex);
     const segmentMessages = getRunSegmentMessages(messages, idx, nextUserIndex, isRunTrigger);
     const completionInfos = subagentCompletionInfos
       .slice(idx + 1, segmentEnd)
@@ -371,7 +384,7 @@ export function Chat() {
     //  - segment has tool calls but no pure-text final reply yet (server-side
     //    tool execution — Gateway fires phase "end" per tool round which
     //    briefly clears sending, but the run is still in progress)
-    const hasToolActivity = segmentMessages.some((m) =>
+    const hasToolActivity = postTriggerMessages.some((m) =>
       m.role === 'assistant' && extractToolUse(m).length > 0,
     );
     // Locate the last tool-use message so we only count text messages that
@@ -381,14 +394,14 @@ export function Chat() {
     // flips to false between tool rounds, collapsing the trailing
     // "Thinking..." indicator during the brief gap before the next stream chunk.
     let lastToolUseOffset = -1;
-    for (let i = segmentMessages.length - 1; i >= 0; i -= 1) {
-      const m = segmentMessages[i];
+    for (let i = postTriggerMessages.length - 1; i >= 0; i -= 1) {
+      const m = postTriggerMessages[i];
       if (m.role === 'assistant' && extractToolUse(m).length > 0) {
         lastToolUseOffset = i;
         break;
       }
     }
-    const hasFinalReply = segmentMessages.some((m, i) => {
+    const hasFinalReply = postTriggerMessages.some((m, i) => {
       if (i <= lastToolUseOffset) return false;
       if (m.role !== 'assistant') return false;
       if (extractText(m).trim().length === 0) return false;
@@ -408,8 +421,6 @@ export function Chat() {
     const isLatestOpenRun = isLatestRunSegment
       && !runError
       && (sending || pendingFinal || hasAnyStreamContent || (runStillExecutingTools && !!activeRunId));
-    const replyIndexOffset = findReplyMessageIndex(segmentMessages, isLatestOpenRun);
-    const replyIndex = replyIndexOffset === -1 ? null : idx + 1 + replyIndexOffset;
 
     const buildSteps = (omitLastStreamingMessageSegment: boolean): TaskStep[] => {
       let builtSteps = deriveTaskSteps({
@@ -467,6 +478,7 @@ export function Chat() {
     //      `completed` state.
     //   3. `hasToolActivity`    — at least one prior tool_use exists in the
     //      segment, i.e. we're past the first tool round.
+    //   4. No tool activity yet — plain Q&A; any stream text is the reply.
     //
     // Demotion happens the moment a tool_use block appears in the streaming
     // message (`streamTools.length > 0`) OR a tool transitions back to
@@ -481,8 +493,12 @@ export function Chat() {
     // fixed, the three-signal gate gives the correct bubble placement for
     // both narration and final reply.
     const allToolsCompleted = streamingTools.length > 0 && !hasRunningStreamToolStatus;
+    const canPromoteStreamToBubble = pendingFinal
+      || allToolsCompleted
+      || hasToolActivity
+      || (!hasToolActivity && (hasStreamText || hasStreamImages));
     const rawStreamingReplyCandidate = isLatestOpenRun
-      && (pendingFinal || allToolsCompleted || hasToolActivity)
+      && canPromoteStreamToBubble
       && (hasStreamText || hasStreamImages)
       && streamTools.length === 0
       && !hasRunningStreamToolStatus;
@@ -499,12 +515,27 @@ export function Chat() {
       }
     }
 
+    const hasActiveStreamingReply = hasActiveStreamingReplyInRun(
+      isLatestOpenRun,
+      hasAnyStreamContent,
+      streamingReplyText,
+    );
+    const replyIndexOffset = findReplyMessageIndex(postTriggerMessages, hasActiveStreamingReply);
+    const replyIndex = replyIndexOffset === -1 ? null : idx + 1 + replyIndexOffset;
+
     const segmentAgentId = currentAgentId;
     const segmentAgentLabel = agents.find((agent) => agent.id === segmentAgentId)?.name || segmentAgentId;
     const segmentSessionLabel = sessionLabels[currentSessionKey] || currentSessionKey;
 
     if (steps.length === 0) {
       if (isLatestOpenRun && streamingReplyText == null) {
+        const historyReplyOffset = findReplyMessageIndex(postTriggerMessages, false);
+        // History can contain the final answer while `sending` is still true
+        // (blocked chat.send RPC, slow provider). Do not show an empty graph
+        // that hides the reply behind "Thinking..." (#1048).
+        if (historyReplyOffset >= 0 && !hasActiveStreamingReply) {
+          return [];
+        }
         return [{
           triggerIndex: idx,
           replyIndex,
@@ -548,15 +579,13 @@ export function Chat() {
     // tool call). This prevents orphan narration bubbles from leaking into
     // the chat stream once the graph is collapsed.
     //
-    // When the run is still streaming (`isLatestOpenRun`) the final reply is
-    // not yet part of `segmentMessages`, so every assistant message in the
-    // segment counts as intermediate. For completed runs, we preserve the
-    // final reply bubble by skipping the message that `findReplyMessageIndex`
-    // identifies as the answer.
-    const segmentReplyOffset = findReplyMessageIndex(segmentMessages, isLatestOpenRun);
-    for (let offset = 0; offset < segmentMessages.length; offset += 1) {
+    // While the live stream carries the answer, fold assistant history into the
+    // graph. If the reply is already in history but not streaming, keep it in
+    // the chat stream (do not pass `isLatestOpenRun` alone — that folds all).
+    const segmentReplyOffset = findReplyMessageIndex(postTriggerMessages, hasActiveStreamingReply);
+    for (let offset = 0; offset < postTriggerMessages.length; offset += 1) {
       if (offset === segmentReplyOffset) continue;
-      const candidate = segmentMessages[offset];
+      const candidate = postTriggerMessages[offset];
       if (!candidate || candidate.role !== 'assistant') continue;
       const hasNarrationText = extractText(candidate).trim().length > 0;
       const hasThinking = !!extractThinking(candidate);
@@ -861,7 +890,11 @@ export function Chat() {
 
                   {/* Streaming message — render when reply text is separated from graph,
                       OR when there's streaming content without an active graph */}
-                  {shouldRenderStreaming && (streamingReplyText != null || !hasActiveExecutionGraph) && (
+                  {shouldRenderStreaming && (
+                    streamingReplyText != null
+                    || !hasActiveExecutionGraph
+                    || (hasStreamText && streamTools.length === 0)
+                  ) && (
                     <ChatMessage
                       suppressToolCards={hasActiveExecutionGraph || runSegmentMessageIndices.size > 0}
                       message={(() => {

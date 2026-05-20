@@ -44,6 +44,20 @@ export function findReplyMessageIndex(messages: RawMessage[], hasStreamingReply:
 }
 
 /**
+ * When true, assistant history in the run segment should be folded into the
+ * execution graph because the live answer is (or will be) shown via streaming.
+ * When false but the run is still open, a final reply already in history must
+ * stay visible in the chat stream (history poll can beat stream teardown).
+ */
+export function hasActiveStreamingReplyInRun(
+  isLatestOpenRun: boolean,
+  hasAnyStreamContent: boolean,
+  streamingReplyText: string | null,
+): boolean {
+  return isLatestOpenRun && (hasAnyStreamContent || streamingReplyText != null);
+}
+
+/**
  * Message indices that belong to an agent run segment (strictly after a run
  * trigger user message up to the next real user message). Used to fold tool
  * cards and process attachments into ExecutionGraphCard without depending on
@@ -84,6 +98,20 @@ export function buildRunSegmentMessageIndices(
   }
 
   return indices;
+}
+
+/**
+ * Messages strictly after the triggering user turn up to the next user.
+ * Use this for run lifecycle (final reply detection, reply index, open-run
+ * state) — never count paginated orphan assistants from a prior turn.
+ */
+export function getPostTriggerSegmentMessages(
+  messages: RawMessage[],
+  triggerIndex: number,
+  nextUserIndex: number,
+): RawMessage[] {
+  const segmentEnd = nextUserIndex === -1 ? messages.length : nextUserIndex;
+  return messages.slice(triggerIndex + 1, segmentEnd);
 }
 
 /**

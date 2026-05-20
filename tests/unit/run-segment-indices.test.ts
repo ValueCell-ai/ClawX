@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { buildRunSegmentMessageIndices } from '@/pages/Chat/task-visualization';
+import {
+  buildRunSegmentMessageIndices,
+  findReplyMessageIndex,
+  getPostTriggerSegmentMessages,
+  getRunSegmentMessages,
+  hasActiveStreamingReplyInRun,
+} from '@/pages/Chat/task-visualization';
 import type { RawMessage } from '@/stores/chat';
 
 describe('buildRunSegmentMessageIndices', () => {
@@ -45,5 +51,53 @@ describe('buildRunSegmentMessageIndices', () => {
     expect(indices.has(1)).toBe(true);
     expect(indices.has(3)).toBe(true);
     expect(indices.has(2)).toBe(false);
+  });
+});
+
+describe('getPostTriggerSegmentMessages vs getRunSegmentMessages', () => {
+  const isUser = (message: RawMessage) => message.role === 'user';
+
+  it('keeps lifecycle segment empty while graph segment includes paginated orphans', () => {
+    const messages: RawMessage[] = [
+      { role: 'assistant', content: [{ type: 'text', text: 'prior answer' }] },
+      { role: 'user', content: 'follow up' },
+    ];
+
+    expect(getPostTriggerSegmentMessages(messages, 1, -1)).toEqual([]);
+    expect(getRunSegmentMessages(messages, 1, -1, isUser)).toEqual([
+      { role: 'assistant', content: [{ type: 'text', text: 'prior answer' }] },
+    ]);
+  });
+
+  it('does not attach a prior turn assistant when an earlier user exists in the window', () => {
+    const messages: RawMessage[] = [
+      { role: 'user', content: 'first' },
+      { role: 'assistant', content: [{ type: 'text', text: 'first answer' }] },
+      { role: 'user', content: 'second' },
+    ];
+
+    expect(getPostTriggerSegmentMessages(messages, 2, -1)).toEqual([]);
+    expect(getRunSegmentMessages(messages, 2, -1, isUser)).toEqual([]);
+  });
+});
+
+describe('findReplyMessageIndex / hasActiveStreamingReplyInRun', () => {
+  it('protects a history reply from fold when the run is open but not streaming', () => {
+    const postTrigger: RawMessage[] = [
+      { role: 'assistant', content: [{ type: 'text', text: '你好，我在。' }] },
+    ];
+
+    expect(hasActiveStreamingReplyInRun(true, false, null)).toBe(false);
+    expect(findReplyMessageIndex(postTrigger, false)).toBe(0);
+    expect(findReplyMessageIndex(postTrigger, true)).toBe(-1);
+  });
+
+  it('folds history when a stream bubble is active', () => {
+    const postTrigger: RawMessage[] = [
+      { role: 'assistant', content: [{ type: 'text', text: 'partial' }] },
+    ];
+
+    expect(hasActiveStreamingReplyInRun(true, true, null)).toBe(true);
+    expect(findReplyMessageIndex(postTrigger, true)).toBe(-1);
   });
 });
