@@ -32,6 +32,8 @@
 
 @layer base {
   :root {
+    color-scheme: light;
+
     /* ── shadcn semantic tokens (light) ─────────────────────────── */
     /* Lightened ClawX cream page background; gentler than pure white
      *           for long sessions in front of the editor. */
@@ -99,6 +101,8 @@
 
   /* Neutral deep-gray dark palette */
   .dark {
+    color-scheme: dark;
+
     --background: 240 4% 11%;
     --foreground: 210 20% 96%;
     --card: 240 3% 14%;
