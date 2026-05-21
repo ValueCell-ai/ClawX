@@ -184,6 +184,8 @@
         "gatewayConnected": "已连接",
         "gatewayStatus": "gateway {{state}} | port: {{port}} {{pid}}",
         "retryFailedAttachments": "重试失败的附件",
+        "folderDropUnsupported": "无法添加此文件夹。请重新拖入，或在消息中粘贴文件夹路径。",
+        "folderAttachment": "文件夹",
         "skillPreviewTooltip": "预览 SKILL.md",
         "skillPreviewNotFound": "找不到该技能。请打开技能列表以刷新。"
     },

@@ -1,7 +1,7 @@
 import type { IncomingMessage, ServerResponse } from 'http';
 import { dialog, nativeImage } from 'electron';
 import crypto from 'node:crypto';
-import { extname, join } from 'node:path';
+import { basename, extname, join } from 'node:path';
 import { homedir } from 'node:os';
 import type { HostApiContext } from '../context';
 import { parseJsonBody, sendJson } from '../route-utils';
@@ -54,6 +54,7 @@ function mimeToExt(mimeType: string): string {
 }
 
 const OUTBOUND_DIR = join(homedir(), '.openclaw', 'media', 'outbound');
+const DIRECTORY_MIME_TYPE = 'application/x-directory';
 
 async function generateImagePreview(filePath: string, mimeType: string): Promise<string | null> {
   try {
@@ -121,12 +122,25 @@ export async function handleFileRoutes(
       const results = [];
       for (const filePath of body.filePaths) {
         const id = crypto.randomUUID();
+        const fileName = basename(filePath);
+        const sourceStat = await fsP.stat(filePath);
+        if (sourceStat.isDirectory()) {
+          results.push({
+            id,
+            fileName,
+            mimeType: DIRECTORY_MIME_TYPE,
+            fileSize: 0,
+            stagedPath: filePath,
+            preview: null,
+          });
+          continue;
+        }
+
         const ext = extname(filePath);
         const stagedPath = join(OUTBOUND_DIR, `${id}${ext}`);
         await fsP.copyFile(filePath, stagedPath);
         const s = await fsP.stat(stagedPath);
         const mimeType = getMimeType(ext);
-        const fileName = filePath.split(/[\\/]/).pop() || 'file';
         const preview = mimeType.startsWith('image/')
           ? await generateImagePreview(stagedPath, mimeType)
           : null;

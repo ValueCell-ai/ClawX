@@ -38,6 +38,7 @@ const mockElectron = {
     off: vi.fn(),
   },
   openExternal: vi.fn(),
+  getPathForFile: vi.fn((file: File) => (file as File & { path?: string }).path ?? ''),
   platform: 'darwin',
   isDev: true,
 };

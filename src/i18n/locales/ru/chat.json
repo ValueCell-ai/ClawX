@@ -184,6 +184,8 @@
         "gatewayConnected": "подключён",
         "gatewayStatus": "шлюз {{state}} | порт: {{port}} {{pid}}",
         "retryFailedAttachments": "Повторить неудавшиеся вложения",
+        "folderDropUnsupported": "Не удалось прикрепить эту папку. Перетащите её снова или вставьте путь к папке в сообщение.",
+        "folderAttachment": "Папка",
         "skillPreviewTooltip": "Предпросмотр SKILL.md",
         "skillPreviewNotFound": "Skill не найден. Откройте список Skill, чтобы обновить его."
     },

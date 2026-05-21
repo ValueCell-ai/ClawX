@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { ChatInput } from '@/pages/Chat/ChatInput';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { hostApiFetch } from '@/lib/host-api';
@@ -604,5 +604,39 @@ describe('ChatInput agent targeting', () => {
         fileName: 'SKILL.md',
       }),
     );
+  });
+
+  it('stages dropped folders via disk path instead of buffer upload', async () => {
+    vi.mocked(hostApiFetch).mockResolvedValueOnce([{
+      id: 'folder-id',
+      fileName: 'Archive',
+      mimeType: 'application/x-directory',
+      fileSize: 0,
+      stagedPath: '/tmp/project-folder',
+      preview: null,
+    }]);
+
+    const folderFile = new File([new Uint8Array(192)], 'Archive', { type: 'application/zip' });
+    Object.defineProperty(folderFile, 'path', { value: '/tmp/project-folder' });
+
+    const { container } = renderChatInput();
+    fireEvent.drop(container.firstElementChild as Element, {
+      dataTransfer: {
+        items: [{
+          kind: 'file',
+          getAsFile: () => folderFile,
+          webkitGetAsEntry: () => ({ isDirectory: true, isFile: false }),
+        }],
+        files: [folderFile],
+      },
+    });
+
+    await waitFor(() => {
+      expect(hostApiFetch).toHaveBeenCalledWith('/api/files/stage-paths', {
+        method: 'POST',
+        body: JSON.stringify({ filePaths: ['/tmp/project-folder'] }),
+      });
+    });
+    expect(await screen.findByText('Archive')).toBeInTheDocument();
   });
 });

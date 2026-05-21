@@ -2381,6 +2381,7 @@ function mimeToExt(mimeType: string): string {
 }
 
 const OUTBOUND_DIR = join(homedir(), '.openclaw', 'media', 'outbound');
+const DIRECTORY_MIME_TYPE = 'application/x-directory';
 
 /**
  * Generate a preview data URL for image files.
@@ -2423,15 +2424,26 @@ function registerFileHandlers(): void {
     const results = [];
     for (const filePath of filePaths) {
       const id = crypto.randomUUID();
+      const fileName = basename(filePath);
+      const sourceStat = await fsP.stat(filePath);
+      if (sourceStat.isDirectory()) {
+        results.push({
+          id,
+          fileName,
+          mimeType: DIRECTORY_MIME_TYPE,
+          fileSize: 0,
+          stagedPath: filePath,
+          preview: null,
+        });
+        continue;
+      }
+
       const ext = extname(filePath);
       const stagedPath = join(OUTBOUND_DIR, `${id}${ext}`);
       await fsP.copyFile(filePath, stagedPath);
 
       const s = await fsP.stat(stagedPath);
       const mimeType = getMimeType(ext);
-      const fileName = basename(filePath);
-
-      // Generate preview for images
       let preview: string | null = null;
       if (mimeType.startsWith('image/')) {
         preview = await generateImagePreview(stagedPath, mimeType);
