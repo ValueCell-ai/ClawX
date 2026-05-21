@@ -9,6 +9,7 @@ import { useGatewayStore } from './gateway';
 import { useAgentsStore } from './agents';
 import { buildBaselineRunKey, captureBaseline, clearBaselines } from './baseline-cache';
 import { buildCronSessionHistoryPath, isCronSessionKey } from './chat/cron-session-utils';
+import { pickStartupSessionFallback } from './chat/session-selection';
 import {
   CHAT_HISTORY_DISK_FALLBACK_TIMEOUT_MS,
   CHAT_HISTORY_STARTUP_RETRY_DELAYS_MS,
@@ -1463,6 +1464,13 @@ function buildSessionSwitchPatch(
   nextSessionKey: string,
 ): Partial<ChatState> {
   captureSessionRunState(state.currentSessionKey, state);
+  if (state.messages.length > 0) {
+    cacheSessionHistory(
+      state.currentSessionKey,
+      cloneHistoryMessages(state.messages),
+      state.thinkingLevel ?? null,
+    );
+  }
   // Only treat sessions with no history records and no activity timestamp as empty.
   // Relying solely on messages.length is unreliable because switchSession clears
   // the current messages before loadHistory runs, creating a race condition that
@@ -1970,6 +1978,31 @@ function postUserSegmentMessages(filteredMessages: RawMessage[]): RawMessage[] {
   return [];
 }
 
+/** Only treat inbound runs as user-visible for this long after the last user send. */
+const USER_INITIATED_RUN_MAX_AGE_MS = 10 * 60 * 1000;
+
+function hasCachedActiveUserRun(sessionKey: string): boolean {
+  const cached = getCachedSessionRunState(sessionKey);
+  return cached.sending || cached.activeRunId != null || cached.pendingFinal;
+}
+
+function shouldTrackInboundRunLifecycle(
+  state: Pick<ChatState, 'lastUserMessageAt' | 'sending' | 'activeRunId' | 'pendingFinal'>,
+  sessionKey?: string,
+): boolean {
+  if (state.sending || state.activeRunId != null || state.pendingFinal) return true;
+  if (sessionKey && hasCachedActiveUserRun(sessionKey)) return true;
+  if (!state.lastUserMessageAt) return false;
+  return Date.now() - toMs(state.lastUserMessageAt) <= USER_INITIATED_RUN_MAX_AGE_MS;
+}
+
+function isFailedAssistantTurnMessage(message: RawMessage | unknown): boolean {
+  if (!message || typeof message !== 'object') return false;
+  const msg = message as RawMessage;
+  if (msg.role !== 'assistant') return false;
+  return /\[assistant turn failed/i.test(getMessageText(msg.content));
+}
+
 function segmentHasOpenToolRun(segmentMessages: RawMessage[]): boolean {
   if (segmentMessages.length === 0) return false;
   const hasToolActivity = segmentMessages.some(
@@ -2094,7 +2127,10 @@ export const useChatStore = create<ChatState>((set, get) => ({
             // default ghost key (`agent:main:main`) should yield to real history.
             const hasLocalPendingSession = localSessions.some((session) => session.key === nextSessionKey);
             if (!hasLocalPendingSession) {
-              nextSessionKey = dedupedSessions[0].key;
+              const fallbackKey = pickStartupSessionFallback(nextSessionKey, dedupedSessions);
+              if (fallbackKey) {
+                nextSessionKey = fallbackKey;
+              }
             }
           }
 
@@ -2111,15 +2147,33 @@ export const useChatStore = create<ChatState>((set, get) => ({
               .map((session) => [session.key, session.updatedAt!]),
           );
 
-          set((state) => ({
-            sessions: sessionsWithCurrent,
-            currentSessionKey: nextSessionKey,
-            currentAgentId: getAgentIdFromSessionKey(nextSessionKey),
-            sessionLastActivity: {
-              ...state.sessionLastActivity,
-              ...discoveredActivity,
-            },
-          }));
+          const previousSessionKey = currentSessionKey;
+          if (previousSessionKey !== nextSessionKey) {
+            // Mirror switchSession: stop in-flight history polls and swap cached
+            // history/run state immediately. Without this, a background loadSessions
+            // can retarget currentSessionKey (e.g. to a cron heartbeat session)
+            // while messages[] still holds the prior conversation until
+            // chat.history returns — which looks like cross-session contamination.
+            clearHistoryPoll();
+            set((state) => ({
+              ...buildSessionSwitchPatch(state, nextSessionKey),
+              sessions: sessionsWithCurrent,
+              sessionLastActivity: {
+                ...state.sessionLastActivity,
+                ...discoveredActivity,
+              },
+            }));
+          } else {
+            set((state) => ({
+              sessions: sessionsWithCurrent,
+              currentSessionKey: nextSessionKey,
+              currentAgentId: getAgentIdFromSessionKey(nextSessionKey),
+              sessionLastActivity: {
+                ...state.sessionLastActivity,
+                ...discoveredActivity,
+              },
+            }));
+          }
           applySessionBackendLabels(set, sessionsWithCurrent);
 
           // Background: fetch first user message for every non-main session to populate labels upfront.
@@ -2181,7 +2235,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
             })();
           }
 
-          if (currentSessionKey !== nextSessionKey) {
+          if (previousSessionKey !== nextSessionKey) {
             void get().loadHistory();
           }
         }
@@ -2455,11 +2509,11 @@ export const useChatStore = create<ChatState>((set, get) => ({
       const applyLoadFailure = (errorMessage: string | null) => {
         if (!isCurrentSession()) return;
         set((state) => {
-          const hasMessages = state.messages.length > 0;
+          const mergedMessages = mergePendingOptimisticUserMessages(currentSessionKey, state.messages);
           return {
             loading: false,
             error: shouldShowForegroundLoading && errorMessage ? errorMessage : state.error,
-            ...(hasMessages ? {} : { messages: [] as RawMessage[] }),
+            ...(mergedMessages.length > 0 ? { messages: mergedMessages } : { messages: [] as RawMessage[] }),
           };
         });
       };
@@ -2515,11 +2569,15 @@ export const useChatStore = create<ChatState>((set, get) => ({
             }
             return filteredMessages;
           })();
-      const lastAssistantAfterBoundary = [...postBoundaryMessages].reverse().find((msg) => msg.role === 'assistant');
-      const latestTerminalAssistantErrorMessage = lastAssistantAfterBoundary
-        && getMessageStopReason(lastAssistantAfterBoundary) === 'error'
-        ? getMessageErrorMessage(lastAssistantAfterBoundary)
-        : null;
+        const lastAssistantAfterBoundary = [...postBoundaryMessages].reverse().find((msg) => msg.role === 'assistant');
+        const latestTerminalAssistantErrorMessage = lastAssistantAfterBoundary
+          && (getMessageStopReason(lastAssistantAfterBoundary) === 'error'
+            || isFailedAssistantTurnMessage(lastAssistantAfterBoundary))
+          ? (getMessageErrorMessage(lastAssistantAfterBoundary)
+            ?? (isFailedAssistantTurnMessage(lastAssistantAfterBoundary)
+              ? getMessageText(lastAssistantAfterBoundary.content)
+              : null))
+          : null;
       const historyErrorIsTransient = Boolean(
         latestTerminalAssistantErrorMessage
         && isSendingNow
@@ -2632,11 +2690,11 @@ export const useChatStore = create<ChatState>((set, get) => ({
         }
       }
 
-      // After session switch (or cold load) the renderer may have reset run
-      // lifecycle flags even though the Gateway is still executing tools.
-      // Re-arm from authoritative history when the latest user turn has tool
-      // activity but no final reply yet.
-      if (!get().sending && !latestTerminalAssistantErrorMessage) {
+      // After session switch the renderer may have reset run lifecycle flags even
+      // though the Gateway is still executing a user-initiated turn. Re-arm only
+      // when this session had an active cached run (e.g. user switched away
+      // mid-send). Do not re-arm from stale :main heartbeat/tool history alone.
+      if (!get().sending && !latestTerminalAssistantErrorMessage && hasCachedActiveUserRun(currentSessionKey)) {
         const openSegment = postUserSegmentMessages(filteredMessages);
         if (segmentHasOpenToolRun(openSegment)) {
           const lastUser = findLastRealUserMessage(filteredMessages);
@@ -2648,6 +2706,20 @@ export const useChatStore = create<ChatState>((set, get) => ({
           });
           captureSessionRunState(currentSessionKey, get());
         }
+      }
+
+      if (
+        get().sending
+        && !latestTerminalAssistantErrorMessage
+        && !shouldTrackInboundRunLifecycle(get(), currentSessionKey)
+      ) {
+        clearHistoryPoll();
+        set({
+          sending: false,
+          activeRunId: null,
+          pendingFinal: false,
+          lastUserMessageAt: null,
+        });
       }
       return true;
       };
@@ -3107,19 +3179,18 @@ export const useChatStore = create<ChatState>((set, get) => ({
       || resolvedState === 'error' || resolvedState === 'aborted';
     if (hasUsefulData) {
       clearHistoryPoll();
-      // Adopt run started from another client (e.g. console at 127.0.0.1:18789):
-      // show loading/streaming in the app when this session has an active run.
+      // Adopt run started from another client only for user-initiated turns.
+      // Background :main heartbeat runs must not surface "Thinking..." in the UI.
       const { sending } = get();
-      if (!sending && runId) {
-          set({ sending: true, activeRunId: runId, error: null, runError: null });
+      if (!sending && runId && shouldTrackInboundRunLifecycle(get(), currentSessionKey)) {
+        set({ sending: true, activeRunId: runId, error: null, runError: null });
       }
     }
 
     switch (resolvedState) {
       case 'started': {
-        // Run just started (e.g. from console); show loading immediately.
         const { sending: currentSending } = get();
-        if (!currentSending && runId) {
+        if (!currentSending && runId && shouldTrackInboundRunLifecycle(get(), currentSessionKey)) {
           set({ sending: true, activeRunId: runId, error: null, runError: null });
         }
         break;
