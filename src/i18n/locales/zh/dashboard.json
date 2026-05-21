@@ -61,5 +61,39 @@
         "close": "关闭",
         "noUsage": "无用量数据",
         "usageParseError": "用量解析失败"
+    },
+    "imageGeneration": {
+        "title": "图像生成",
+        "description": "为 image_generate 工具配置全局图像模型。各 Agent 在各自目录下使用独立的 API 密钥。",
+        "autoSync": "随默认提供商自动同步",
+        "autoSyncDesc": "开启后，切换默认 AI 提供商会自动更新主图像模型，直到您在此手动保存自定义设置。",
+        "primaryModel": "主模型",
+        "fallbacks": "备用模型",
+        "fallbacksHint": "每行一个 provider/model，主模型失败时按顺序尝试。",
+        "timeout": "超时（毫秒）",
+        "agentAuthTitle": "各 Agent 鉴权",
+        "agentAuthDesc": "图像生成使用主模型对应提供商在各 Agent 的 auth-profiles.json 中的凭据。",
+        "agentColumn": "Agent",
+        "authColumn": "主模型提供商鉴权",
+        "defaultAgent": "默认",
+        "authConfigured": "已配置",
+        "authMissing": "缺少密钥",
+        "authReady": "已设密钥",
+        "testAgent": "测试使用的 Agent",
+        "testButton": "测试生成",
+        "testing": "生成中…",
+        "save": "保存",
+        "saving": "保存中…",
+        "testPrompt": "白色背景上的小红圆，极简扁平插画。",
+        "toast": {
+            "saved": "图像生成设置已保存",
+            "saveBeforeTest": "请先保存设置再运行测试",
+            "testSuccess": "测试图像已生成（{{ms}} ms）",
+            "testSuccessWithPath": "测试图像已生成（{{ms}} ms）：{{path}}",
+            "testFailed": "图像生成测试失败"
+        },
+        "errors": {
+            "invalidTimeout": "超时必须为正数"
+        }
     }
 }

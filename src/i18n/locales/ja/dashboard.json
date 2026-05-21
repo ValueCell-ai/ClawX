@@ -61,5 +61,39 @@
         "close": "閉じる",
         "noUsage": "使用量なし",
         "usageParseError": "使用量解析エラー"
+    },
+    "imageGeneration": {
+        "title": "画像生成",
+        "description": "image_generate ツール用のグローバル画像モデル。API キーは各エージェントのディレクトリごとに設定します。",
+        "autoSync": "デフォルトプロバイダーと自動同期",
+        "autoSyncDesc": "有効時、デフォルト AI プロバイダーの変更で主画像モデルが更新されます（ここで手動保存するまで）。",
+        "primaryModel": "プライマリモデル",
+        "fallbacks": "フォールバックモデル",
+        "fallbacksHint": "1 行に 1 つの provider/model。プライマリ失敗後に順に試行します。",
+        "timeout": "タイムアウト（ms）",
+        "agentAuthTitle": "エージェントごとの認証",
+        "agentAuthDesc": "主モデルのプロバイダーに対応する各エージェントの auth-profiles.json を使用します。",
+        "agentColumn": "エージェント",
+        "authColumn": "主プロバイダーの認証",
+        "defaultAgent": "デフォルト",
+        "authConfigured": "準備完了",
+        "authMissing": "キー未設定",
+        "authReady": "キーあり",
+        "testAgent": "テスト用エージェント",
+        "testButton": "テスト生成",
+        "testing": "生成中…",
+        "save": "保存",
+        "saving": "保存中…",
+        "testPrompt": "白背景に小さな赤い円、ミニマルなフラットイラスト。",
+        "toast": {
+            "saved": "画像生成設定を保存しました",
+            "saveBeforeTest": "テスト前に設定を保存してください",
+            "testSuccess": "テスト画像を生成しました（{{ms}} ms）",
+            "testSuccessWithPath": "テスト画像を生成しました（{{ms}} ms）：{{path}}",
+            "testFailed": "画像生成テストに失敗しました"
+        },
+        "errors": {
+            "invalidTimeout": "タイムアウトは正の数である必要があります"
+        }
     }
 }

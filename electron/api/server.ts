@@ -17,6 +17,7 @@ import { handleFileRoutes } from './routes/files';
 import { handleSessionRoutes } from './routes/sessions';
 import { handleCronRoutes } from './routes/cron';
 import { handleDiagnosticsRoutes } from './routes/diagnostics';
+import { handleMediaRoutes } from './routes/media';
 import { sendJson, setCorsHeaders, requireJsonContentType } from './route-utils';
 
 type RouteHandler = (
@@ -40,6 +41,7 @@ const coreRouteHandlers: RouteHandler[] = [
   handleDiagnosticsRoutes,
   handleLogRoutes,
   handleUsageRoutes,
+  handleMediaRoutes,
 ];
 
 function buildRouteHandlers(): RouteHandler[] {

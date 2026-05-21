@@ -52,6 +52,11 @@ export interface AppSettings {
   sidebarCollapsed: boolean;
   devModeUnlocked: boolean;
 
+  /** Auto-update agents.defaults.imageGenerationModel when default provider changes. */
+  imageGenAutoSyncEnabled: boolean;
+  /** User manually edited image generation settings in Models page. */
+  imageGenUserEdited: boolean;
+
   // Presets
   selectedBundles: string[];
   enabledSkills: string[];
@@ -102,6 +107,8 @@ function createDefaultSettings(): AppSettings {
     // UI State
     sidebarCollapsed: false,
     devModeUnlocked: false,
+    imageGenAutoSyncEnabled: true,
+    imageGenUserEdited: false,
 
     // Presets
     selectedBundles: ['productivity', 'developer'],

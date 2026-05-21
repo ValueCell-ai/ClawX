@@ -61,5 +61,39 @@
         "close": "Close",
         "noUsage": "No usage",
         "usageParseError": "Usage parse error"
+    },
+    "imageGeneration": {
+        "title": "Image Generation",
+        "description": "Global image model for the image_generate tool. API keys are per-agent under each agent directory.",
+        "autoSync": "Auto-sync with default provider",
+        "autoSyncDesc": "When enabled, changing the default AI provider updates the primary image model until you save custom settings here.",
+        "primaryModel": "Primary model",
+        "fallbacks": "Fallback models",
+        "fallbacksHint": "One provider/model per line, tried in order after the primary.",
+        "timeout": "Timeout (ms)",
+        "agentAuthTitle": "Per-agent authentication",
+        "agentAuthDesc": "Image generation uses credentials from each agent's auth-profiles.json for the provider in the primary model.",
+        "agentColumn": "Agent",
+        "authColumn": "Auth for primary provider",
+        "defaultAgent": "default",
+        "authConfigured": "Ready",
+        "authMissing": "Missing key",
+        "authReady": "key set",
+        "testAgent": "Test as agent",
+        "testButton": "Test generate",
+        "testing": "Generating…",
+        "save": "Save",
+        "saving": "Saving…",
+        "testPrompt": "A small red circle on a white background, minimal flat illustration.",
+        "toast": {
+            "saved": "Image generation settings saved",
+            "saveBeforeTest": "Save settings before running a test",
+            "testSuccess": "Test image generated ({{ms}} ms)",
+            "testSuccessWithPath": "Test image generated ({{ms}} ms): {{path}}",
+            "testFailed": "Image generation test failed"
+        },
+        "errors": {
+            "invalidTimeout": "Timeout must be a positive number"
+        }
     }
 }

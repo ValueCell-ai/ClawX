@@ -1,0 +1,456 @@
+/**
+ * Read/write agents.defaults.imageGenerationModel and per-agent auth readiness.
+ */
+import { readOpenClawConfig, writeOpenClawConfig } from './channel-config';
+import { withConfigLock } from './config-mutex';
+import { getOAuthTokenFromOpenClaw, getProviderApiKeyFromOpenClaw } from './openclaw-auth';
+import { listAgentsSnapshot, type AgentsSnapshot } from './agent-config';
+import { expandPath } from './paths';
+import { getSetting, setSetting } from './store';
+import {
+  generateImageInProcess,
+  listImageGenerationProvidersInProcess,
+} from './openclaw-image-generation-runtime';
+import { OPENAI_CODEX_RUNTIME_PROVIDER_KEY, resolveOpenClawProviderKey } from './provider-keys';
+import { getProviderService } from '../services/providers/provider-service';
+
+export interface ImageGenerationModelConfig {
+  primary: string | null;
+  fallbacks: string[];
+  timeoutMs: number | null;
+}
+
+export interface ImageGenerationProviderRow {
+  id: string;
+  label: string;
+  defaultModel: string;
+  configured: boolean;
+  available: boolean;
+  selected: boolean;
+  models: string[];
+}
+
+export interface ImageGenerationAgentAuthRow {
+  id: string;
+  name: string;
+  isDefault: boolean;
+  provider: string | null;
+  configured: boolean;
+}
+
+export interface ImageGenerationSettingsSnapshot {
+  config: ImageGenerationModelConfig;
+  autoProviderFallback: boolean;
+  autoSyncEnabled: boolean;
+  userEdited: boolean;
+  defaultAgentId: string;
+  agents: ImageGenerationAgentAuthRow[];
+  suggestions: Array<{
+    providerId: string;
+    label: string;
+    defaultRef: string;
+    configured: boolean;
+  }>;
+}
+
+export interface ImageGenerationTestResult {
+  success: boolean;
+  agentId: string;
+  command: string;
+  durationMs: number;
+  error?: string;
+  stdout?: string;
+  stderr?: string;
+  result?: unknown;
+}
+
+/** Runtime provider key → default image model ref for ClawX auto-sync. */
+export const IMAGE_GENERATION_DEFAULT_REFS: Record<string, string> = {
+  openai: 'openai/gpt-image-2',
+  [OPENAI_CODEX_RUNTIME_PROVIDER_KEY]: 'openai/gpt-image-2',
+  google: 'google/gemini-3.1-flash-image-preview',
+  openrouter: 'openrouter/google/gemini-3.1-flash-image-preview',
+  minimax: 'minimax/image-01',
+  'minimax-portal': 'minimax-portal/image-01',
+  'minimax-portal-cn': 'minimax-portal/image-01',
+};
+
+const DEFAULT_TEST_PROMPT = 'A small red circle on a white background, minimal flat illustration.';
+const DEFAULT_TEST_TIMEOUT_MS = 120_000;
+/** Cap UI test duration so Models page does not wait on multi-minute config timeouts. */
+export const IMAGE_GEN_UI_TEST_MAX_TIMEOUT_MS = 90_000;
+
+type AgentModelConfigShape = {
+  primary?: string;
+  fallbacks?: string[];
+  timeoutMs?: number;
+};
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+}
+
+function normalizeModelRef(raw: unknown): string | null {
+  if (typeof raw === 'string' && raw.trim()) {
+    return raw.trim();
+  }
+  return null;
+}
+
+function parseImageGenerationModelConfig(raw: unknown): ImageGenerationModelConfig {
+  if (typeof raw === 'string') {
+    const primary = normalizeModelRef(raw);
+    return { primary, fallbacks: [], timeoutMs: null };
+  }
+
+  if (!isRecord(raw)) {
+    return { primary: null, fallbacks: [], timeoutMs: null };
+  }
+
+  const primary = normalizeModelRef(raw.primary);
+  const fallbacks = Array.isArray(raw.fallbacks)
+    ? raw.fallbacks
+      .map((entry) => normalizeModelRef(entry))
+      .filter((entry): entry is string => Boolean(entry))
+    : [];
+
+  const timeoutMs = typeof raw.timeoutMs === 'number' && Number.isFinite(raw.timeoutMs) && raw.timeoutMs > 0
+    ? Math.floor(raw.timeoutMs)
+    : null;
+
+  return { primary, fallbacks: [...new Set(fallbacks)], timeoutMs };
+}
+
+function buildImageGenerationModelConfigWrite(
+  config: ImageGenerationModelConfig,
+): AgentModelConfigShape | undefined {
+  if (!config.primary && config.fallbacks.length === 0 && config.timeoutMs === null) {
+    return undefined;
+  }
+
+  const next: AgentModelConfigShape = {};
+  if (config.primary) {
+    next.primary = config.primary;
+  }
+  if (config.fallbacks.length > 0) {
+    next.fallbacks = config.fallbacks;
+  }
+  if (config.timeoutMs !== null) {
+    next.timeoutMs = config.timeoutMs;
+  }
+  return next;
+}
+
+export function parseProviderFromModelRef(modelRef: string): string | null {
+  const trimmed = modelRef.trim();
+  const slash = trimmed.indexOf('/');
+  if (slash <= 0 || slash >= trimmed.length - 1) {
+    return null;
+  }
+  return trimmed.slice(0, slash).trim().toLowerCase();
+}
+
+export function isValidImageModelRef(modelRef: string): boolean {
+  return parseProviderFromModelRef(modelRef) !== null;
+}
+
+export function suggestImageGenerationRef(runtimeProviderKey: string): string | null {
+  const normalized = runtimeProviderKey.trim().toLowerCase();
+  return IMAGE_GENERATION_DEFAULT_REFS[normalized] ?? null;
+}
+
+function authProviderCandidates(providerKey: string): string[] {
+  const normalized = providerKey.trim().toLowerCase();
+  if (normalized === 'openai') {
+    return ['openai', OPENAI_CODEX_RUNTIME_PROVIDER_KEY];
+  }
+  return [normalized];
+}
+
+export async function isImageProviderAuthenticated(
+  providerKey: string,
+  agentId: string,
+): Promise<boolean> {
+  for (const candidate of authProviderCandidates(providerKey)) {
+    const apiKey = await getProviderApiKeyFromOpenClaw(candidate, agentId);
+    if (apiKey) {
+      return true;
+    }
+    const oauth = await getOAuthTokenFromOpenClaw(candidate, agentId);
+    if (oauth) {
+      return true;
+    }
+  }
+  return false;
+}
+
+export async function readImageGenerationConfig(): Promise<ImageGenerationModelConfig> {
+  const config = await readOpenClawConfig();
+  const defaults = config.agents?.defaults;
+  if (!defaults || typeof defaults !== 'object') {
+    return { primary: null, fallbacks: [], timeoutMs: null };
+  }
+  return parseImageGenerationModelConfig(
+    (defaults as Record<string, unknown>).imageGenerationModel,
+  );
+}
+
+export async function setImageGenerationConfig(
+  next: ImageGenerationModelConfig,
+  options?: { markUserEdited?: boolean },
+): Promise<ImageGenerationModelConfig> {
+  if (next.primary && !isValidImageModelRef(next.primary)) {
+    throw new Error('primary must be in "provider/model" format');
+  }
+  for (const fallback of next.fallbacks) {
+    if (!isValidImageModelRef(fallback)) {
+      throw new Error(`Invalid fallback model ref "${fallback}"`);
+    }
+  }
+
+  return withConfigLock(async () => {
+    const config = await readOpenClawConfig();
+    const agents = (config.agents && typeof config.agents === 'object'
+      ? { ...(config.agents as Record<string, unknown>) }
+      : {}) as Record<string, unknown>;
+    const defaults = (agents.defaults && typeof agents.defaults === 'object'
+      ? { ...(agents.defaults as Record<string, unknown>) }
+      : {}) as Record<string, unknown>;
+
+    const writeValue = buildImageGenerationModelConfigWrite({
+      primary: next.primary,
+      fallbacks: [...new Set(next.fallbacks.map((ref) => ref.trim()).filter(Boolean))],
+      timeoutMs: next.timeoutMs,
+    });
+
+    if (writeValue) {
+      defaults.imageGenerationModel = writeValue;
+    } else {
+      delete defaults.imageGenerationModel;
+    }
+
+    agents.defaults = defaults;
+    config.agents = agents;
+    await writeOpenClawConfig(config);
+
+    if (options?.markUserEdited) {
+      await setSetting('imageGenUserEdited', true);
+    }
+
+    return readImageGenerationConfig();
+  });
+}
+
+export async function getImageGenAutoSyncEnabled(): Promise<boolean> {
+  const value = await getSetting('imageGenAutoSyncEnabled');
+  return value !== false;
+}
+
+export async function setImageGenAutoSyncEnabled(enabled: boolean): Promise<void> {
+  await setSetting('imageGenAutoSyncEnabled', enabled);
+}
+
+export async function getImageGenUserEdited(): Promise<boolean> {
+  return (await getSetting('imageGenUserEdited')) === true;
+}
+
+export async function maybeSyncImageGenerationOnProviderChange(params: {
+  runtimeProviderKey: string;
+  vendorLabel?: string;
+}): Promise<boolean> {
+  const autoSync = await getImageGenAutoSyncEnabled();
+  if (!autoSync) {
+    return false;
+  }
+  const userEdited = await getImageGenUserEdited();
+  if (userEdited) {
+    return false;
+  }
+
+  const suggestedRef = suggestImageGenerationRef(params.runtimeProviderKey);
+  if (!suggestedRef) {
+    return false;
+  }
+
+  const current = await readImageGenerationConfig();
+  if (current.primary === suggestedRef) {
+    return false;
+  }
+
+  await setImageGenerationConfig({
+    primary: suggestedRef,
+    fallbacks: current.fallbacks,
+    timeoutMs: current.timeoutMs ?? 180_000,
+  });
+  return true;
+}
+
+async function buildAgentAuthRows(
+  snapshot: AgentsSnapshot,
+  providerKey: string | null,
+): Promise<ImageGenerationAgentAuthRow[]> {
+  if (!providerKey) {
+    return snapshot.agents.map((agent) => ({
+      id: agent.id,
+      name: agent.name,
+      isDefault: agent.isDefault,
+      provider: null,
+      configured: false,
+    }));
+  }
+
+  const rows: ImageGenerationAgentAuthRow[] = [];
+  for (const agent of snapshot.agents) {
+    const configured = await isImageProviderAuthenticated(providerKey, agent.id);
+    rows.push({
+      id: agent.id,
+      name: agent.name,
+      isDefault: agent.isDefault,
+      provider: providerKey,
+      configured,
+    });
+  }
+  return rows;
+}
+
+async function buildSuggestions(snapshot: AgentsSnapshot): Promise<ImageGenerationSettingsSnapshot['suggestions']> {
+  const service = getProviderService();
+  const accounts = await service.listAccounts();
+  const suggestions: ImageGenerationSettingsSnapshot['suggestions'] = [];
+  const seen = new Set<string>();
+
+  for (const account of accounts) {
+    const runtimeKey = resolveOpenClawProviderKey(account);
+    if (seen.has(runtimeKey)) {
+      continue;
+    }
+    seen.add(runtimeKey);
+    const defaultRef = suggestImageGenerationRef(runtimeKey);
+    if (!defaultRef) {
+      continue;
+    }
+    const providerKey = parseProviderFromModelRef(defaultRef);
+    const configured = providerKey
+      ? await isImageProviderAuthenticated(providerKey, snapshot.defaultAgentId)
+      : false;
+    suggestions.push({
+      providerId: runtimeKey,
+      label: account.name || account.vendorId,
+      defaultRef,
+      configured,
+    });
+  }
+
+  return suggestions;
+}
+
+export async function getImageGenerationSettingsSnapshot(): Promise<ImageGenerationSettingsSnapshot> {
+  const config = await readImageGenerationConfig();
+  const snapshot = await listAgentsSnapshot();
+  const openclawConfig = await readOpenClawConfig();
+  const defaults = openclawConfig.agents?.defaults;
+  const autoProviderFallback = !(
+    defaults
+    && typeof defaults === 'object'
+    && (defaults as Record<string, unknown>).mediaGenerationAutoProviderFallback === false
+  );
+
+  const providerKey = config.primary ? parseProviderFromModelRef(config.primary) : null;
+
+  return {
+    config,
+    autoProviderFallback,
+    autoSyncEnabled: await getImageGenAutoSyncEnabled(),
+    userEdited: await getImageGenUserEdited(),
+    defaultAgentId: snapshot.defaultAgentId,
+    agents: await buildAgentAuthRows(snapshot, providerKey),
+    suggestions: await buildSuggestions(snapshot),
+  };
+}
+
+export async function listImageGenerationProvidersFromRuntime(): Promise<ImageGenerationProviderRow[]> {
+  const cfg = await readOpenClawConfig();
+  const snapshot = await listAgentsSnapshot();
+  const rows = await listImageGenerationProvidersInProcess({
+    config: cfg,
+    isProviderConfigured: (providerId) => isImageProviderAuthenticated(providerId, snapshot.defaultAgentId),
+  });
+  return rows.filter((row) => row.id.length > 0);
+}
+
+function resolveAgentDirForTest(agentId: string, snapshot: AgentsSnapshot): string {
+  const entry = snapshot.agents.find((agent) => agent.id === agentId);
+  const agentDir = entry?.agentDir || `~/.openclaw/agents/${agentId}/agent`;
+  return expandPath(agentDir);
+}
+
+export async function runImageGenerationTest(params: {
+  agentId?: string;
+  prompt?: string;
+  model?: string;
+}): Promise<ImageGenerationTestResult> {
+  const snapshot = await listAgentsSnapshot();
+  const agentId = params.agentId?.trim() || snapshot.defaultAgentId;
+  const agent = snapshot.agents.find((entry) => entry.id === agentId);
+  if (!agent) {
+    throw new Error(`Agent "${agentId}" not found`);
+  }
+
+  const config = await readImageGenerationConfig();
+  const model = params.model?.trim() || config.primary;
+  if (!model) {
+    throw new Error('No image generation model configured. Set a primary model first.');
+  }
+
+  const providerKey = parseProviderFromModelRef(model);
+  if (!providerKey) {
+    throw new Error('Invalid image model ref');
+  }
+
+  const authenticated = await isImageProviderAuthenticated(providerKey, agentId);
+  if (!authenticated) {
+    throw new Error(
+      `Agent "${agent.name}" is not authenticated for image provider "${providerKey}". `
+      + 'Add an API key or OAuth for this provider.',
+    );
+  }
+
+  const agentDir = resolveAgentDirForTest(agentId, snapshot);
+  const prompt = params.prompt?.trim() || DEFAULT_TEST_PROMPT;
+  const generateTimeoutMs = Math.min(
+    config.timeoutMs ?? DEFAULT_TEST_TIMEOUT_MS,
+    IMAGE_GEN_UI_TEST_MAX_TIMEOUT_MS,
+  );
+  const startedAt = Date.now();
+  const command = `runtime:generateImage model=${model} agentDir=${agentDir}`;
+
+  try {
+    const openclawConfig = await readOpenClawConfig();
+    const result = await generateImageInProcess({
+      config: openclawConfig,
+      agentDir,
+      prompt,
+      model,
+      timeoutMs: generateTimeoutMs,
+      size: '512x512',
+    });
+
+    return {
+      success: true,
+      agentId,
+      command,
+      durationMs: Date.now() - startedAt,
+      result,
+    };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    return {
+      success: false,
+      agentId,
+      command,
+      durationMs: Date.now() - startedAt,
+      error: message,
+      result: undefined,
+    };
+  }
+}

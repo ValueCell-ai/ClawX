@@ -11,6 +11,7 @@ import { useSettingsStore } from '@/stores/settings';
 import { hostApiFetch } from '@/lib/host-api';
 import { trackUiEvent } from '@/lib/telemetry';
 import { ProvidersSettings } from '@/components/settings/ProvidersSettings';
+import { ImageGenerationSettings } from '@/components/settings/ImageGenerationSettings';
 import { FeedbackState } from '@/components/common/FeedbackState';
 import {
   filterUsageHistoryByWindow,
@@ -292,6 +293,9 @@ export function Models() {
           
           {/* AI Providers Section */}
           <ProvidersSettings />
+
+          {/* Image Generation Section */}
+          <ImageGenerationSettings />
 
           {/* Token Usage History Section */}
           <div>
