@@ -1464,6 +1464,13 @@ function buildSessionSwitchPatch(
   nextSessionKey: string,
 ): Partial<ChatState> {
   captureSessionRunState(state.currentSessionKey, state);
+  if (state.messages.length > 0) {
+    cacheSessionHistory(
+      state.currentSessionKey,
+      cloneHistoryMessages(state.messages),
+      state.thinkingLevel ?? null,
+    );
+  }
   // Only treat sessions with no history records and no activity timestamp as empty.
   // Relying solely on messages.length is unreliable because switchSession clears
   // the current messages before loadHistory runs, creating a race condition that
@@ -2117,11 +2124,12 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
           const previousSessionKey = currentSessionKey;
           if (previousSessionKey !== nextSessionKey) {
-            // Mirror switchSession: swap cached history/run state and clear the
-            // outgoing view immediately. Without this, a background loadSessions
+            // Mirror switchSession: stop in-flight history polls and swap cached
+            // history/run state immediately. Without this, a background loadSessions
             // can retarget currentSessionKey (e.g. to a cron heartbeat session)
             // while messages[] still holds the prior conversation until
             // chat.history returns — which looks like cross-session contamination.
+            clearHistoryPoll();
             set((state) => ({
               ...buildSessionSwitchPatch(state, nextSessionKey),
               sessions: sessionsWithCurrent,
@@ -2476,13 +2484,11 @@ export const useChatStore = create<ChatState>((set, get) => ({
       const applyLoadFailure = (errorMessage: string | null) => {
         if (!isCurrentSession()) return;
         set((state) => {
-          // After loadSessions retargets currentSessionKey, a failed chat.history
-          // must not preserve another session's messages in this view.
-          const keepExistingMessages = !shouldShowForegroundLoading && state.messages.length > 0;
+          const mergedMessages = mergePendingOptimisticUserMessages(currentSessionKey, state.messages);
           return {
             loading: false,
             error: shouldShowForegroundLoading && errorMessage ? errorMessage : state.error,
-            ...(keepExistingMessages ? {} : { messages: [] as RawMessage[] }),
+            ...(mergedMessages.length > 0 ? { messages: mergedMessages } : { messages: [] as RawMessage[] }),
           };
         });
       };

@@ -287,6 +287,43 @@ describe('useChatStore startup history retry', () => {
     expect(useChatStore.getState().messages.map((message) => message.content)).toEqual(['cached history']);
   });
 
+  it('switchSession preserves unsynced optimistic user messages when switching back', async () => {
+    const { useChatStore } = await import('@/stores/chat');
+    const optimisticHello = {
+      id: 'user-hello-opt',
+      role: 'user' as const,
+      content: '你好',
+      timestamp: 1_700_000_000,
+    };
+
+    useChatStore.setState({
+      currentSessionKey: 'agent:main:session-a',
+      currentAgentId: 'main',
+      sessions: [{ key: 'agent:main:session-a' }, { key: 'agent:main:other' }],
+      messages: [optimisticHello],
+      sessionLabels: {},
+      sessionLastActivity: { 'agent:main:session-a': Date.now() },
+      sending: true,
+      activeRunId: 'run-hello',
+      streamingText: '',
+      streamingMessage: null,
+      streamingTools: [],
+      pendingFinal: false,
+      lastUserMessageAt: Date.now(),
+      pendingToolImages: [],
+      error: null,
+      loading: false,
+      thinkingLevel: null,
+    });
+
+    gatewayRpcMock.mockResolvedValue({ messages: [] });
+
+    useChatStore.getState().switchSession('agent:main:other');
+    useChatStore.getState().switchSession('agent:main:session-a');
+
+    expect(useChatStore.getState().messages.map((message) => message.content)).toEqual(['你好']);
+  });
+
   it('switchSession restores in-flight run state so Thinking indicator survives navigation', async () => {
     const { useChatStore } = await import('@/stores/chat');
     useChatStore.setState({
