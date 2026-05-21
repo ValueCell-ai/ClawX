@@ -287,6 +287,48 @@ describe('useChatStore startup history retry', () => {
     expect(useChatStore.getState().messages.map((message) => message.content)).toEqual(['cached history']);
   });
 
+  it('does not re-arm Thinking state for stale main-session heartbeat tool history', async () => {
+    const { useChatStore } = await import('@/stores/chat');
+
+    gatewayRpcMock.mockResolvedValue({
+      messages: [
+        { id: 'user-old', role: 'user', content: 'old question', timestamp: 1_000 },
+        {
+          id: 'assistant-tool',
+          role: 'assistant',
+          content: [{ type: 'toolCall', id: 'tool-1', name: 'read', arguments: { path: '~/.openclaw/workspace/HEARTBEAT.md' } }],
+          stopReason: 'toolUse',
+          timestamp: 1_100,
+        },
+      ],
+    });
+
+    useChatStore.setState({
+      currentSessionKey: 'agent:main:main',
+      currentAgentId: 'main',
+      sessions: [{ key: 'agent:main:main' }],
+      messages: [],
+      sessionLabels: {},
+      sessionLastActivity: {},
+      sending: false,
+      activeRunId: null,
+      streamingText: '',
+      streamingMessage: null,
+      streamingTools: [],
+      pendingFinal: false,
+      lastUserMessageAt: null,
+      pendingToolImages: [],
+      error: null,
+      loading: false,
+      thinkingLevel: null,
+    });
+
+    await useChatStore.getState().loadHistory(false);
+
+    expect(useChatStore.getState().sending).toBe(false);
+    expect(useChatStore.getState().activeRunId).toBeNull();
+  });
+
   it('switchSession preserves unsynced optimistic user messages when switching back', async () => {
     const { useChatStore } = await import('@/stores/chat');
     const optimisticHello = {

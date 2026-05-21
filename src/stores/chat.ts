@@ -1978,6 +1978,31 @@ function postUserSegmentMessages(filteredMessages: RawMessage[]): RawMessage[] {
   return [];
 }
 
+/** Only treat inbound runs as user-visible for this long after the last user send. */
+const USER_INITIATED_RUN_MAX_AGE_MS = 10 * 60 * 1000;
+
+function hasCachedActiveUserRun(sessionKey: string): boolean {
+  const cached = getCachedSessionRunState(sessionKey);
+  return cached.sending || cached.activeRunId != null || cached.pendingFinal;
+}
+
+function shouldTrackInboundRunLifecycle(
+  state: Pick<ChatState, 'lastUserMessageAt' | 'sending' | 'activeRunId' | 'pendingFinal'>,
+  sessionKey?: string,
+): boolean {
+  if (state.sending || state.activeRunId != null || state.pendingFinal) return true;
+  if (sessionKey && hasCachedActiveUserRun(sessionKey)) return true;
+  if (!state.lastUserMessageAt) return false;
+  return Date.now() - toMs(state.lastUserMessageAt) <= USER_INITIATED_RUN_MAX_AGE_MS;
+}
+
+function isFailedAssistantTurnMessage(message: RawMessage | unknown): boolean {
+  if (!message || typeof message !== 'object') return false;
+  const msg = message as RawMessage;
+  if (msg.role !== 'assistant') return false;
+  return /\[assistant turn failed/i.test(getMessageText(msg.content));
+}
+
 function segmentHasOpenToolRun(segmentMessages: RawMessage[]): boolean {
   if (segmentMessages.length === 0) return false;
   const hasToolActivity = segmentMessages.some(
@@ -2544,11 +2569,15 @@ export const useChatStore = create<ChatState>((set, get) => ({
             }
             return filteredMessages;
           })();
-      const lastAssistantAfterBoundary = [...postBoundaryMessages].reverse().find((msg) => msg.role === 'assistant');
-      const latestTerminalAssistantErrorMessage = lastAssistantAfterBoundary
-        && getMessageStopReason(lastAssistantAfterBoundary) === 'error'
-        ? getMessageErrorMessage(lastAssistantAfterBoundary)
-        : null;
+        const lastAssistantAfterBoundary = [...postBoundaryMessages].reverse().find((msg) => msg.role === 'assistant');
+        const latestTerminalAssistantErrorMessage = lastAssistantAfterBoundary
+          && (getMessageStopReason(lastAssistantAfterBoundary) === 'error'
+            || isFailedAssistantTurnMessage(lastAssistantAfterBoundary))
+          ? (getMessageErrorMessage(lastAssistantAfterBoundary)
+            ?? (isFailedAssistantTurnMessage(lastAssistantAfterBoundary)
+              ? getMessageText(lastAssistantAfterBoundary.content)
+              : null))
+          : null;
       const historyErrorIsTransient = Boolean(
         latestTerminalAssistantErrorMessage
         && isSendingNow
@@ -2661,11 +2690,11 @@ export const useChatStore = create<ChatState>((set, get) => ({
         }
       }
 
-      // After session switch (or cold load) the renderer may have reset run
-      // lifecycle flags even though the Gateway is still executing tools.
-      // Re-arm from authoritative history when the latest user turn has tool
-      // activity but no final reply yet.
-      if (!get().sending && !latestTerminalAssistantErrorMessage) {
+      // After session switch the renderer may have reset run lifecycle flags even
+      // though the Gateway is still executing a user-initiated turn. Re-arm only
+      // when this session had an active cached run (e.g. user switched away
+      // mid-send). Do not re-arm from stale :main heartbeat/tool history alone.
+      if (!get().sending && !latestTerminalAssistantErrorMessage && hasCachedActiveUserRun(currentSessionKey)) {
         const openSegment = postUserSegmentMessages(filteredMessages);
         if (segmentHasOpenToolRun(openSegment)) {
           const lastUser = findLastRealUserMessage(filteredMessages);
@@ -2677,6 +2706,20 @@ export const useChatStore = create<ChatState>((set, get) => ({
           });
           captureSessionRunState(currentSessionKey, get());
         }
+      }
+
+      if (
+        get().sending
+        && !latestTerminalAssistantErrorMessage
+        && !shouldTrackInboundRunLifecycle(get(), currentSessionKey)
+      ) {
+        clearHistoryPoll();
+        set({
+          sending: false,
+          activeRunId: null,
+          pendingFinal: false,
+          lastUserMessageAt: null,
+        });
       }
       return true;
       };
@@ -3136,19 +3179,18 @@ export const useChatStore = create<ChatState>((set, get) => ({
       || resolvedState === 'error' || resolvedState === 'aborted';
     if (hasUsefulData) {
       clearHistoryPoll();
-      // Adopt run started from another client (e.g. console at 127.0.0.1:18789):
-      // show loading/streaming in the app when this session has an active run.
+      // Adopt run started from another client only for user-initiated turns.
+      // Background :main heartbeat runs must not surface "Thinking..." in the UI.
       const { sending } = get();
-      if (!sending && runId) {
-          set({ sending: true, activeRunId: runId, error: null, runError: null });
+      if (!sending && runId && shouldTrackInboundRunLifecycle(get(), currentSessionKey)) {
+        set({ sending: true, activeRunId: runId, error: null, runError: null });
       }
     }
 
     switch (resolvedState) {
       case 'started': {
-        // Run just started (e.g. from console); show loading immediately.
         const { sending: currentSending } = get();
-        if (!currentSending && runId) {
+        if (!currentSending && runId && shouldTrackInboundRunLifecycle(get(), currentSessionKey)) {
           set({ sending: true, activeRunId: runId, error: null, runError: null });
         }
         break;
