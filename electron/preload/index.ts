@@ -2,7 +2,7 @@
  * Preload Script
  * Exposes safe APIs to the renderer process via contextBridge
  */
-import { contextBridge, ipcRenderer } from 'electron';
+import { contextBridge, ipcRenderer, webUtils } from 'electron';
 
 /**
  * IPC renderer methods exposed to the renderer process
@@ -266,6 +266,11 @@ const electronAPI = {
   openExternal: (url: string) => {
     return ipcRenderer.invoke('shell:openExternal', url);
   },
+
+  /**
+   * Resolve the on-disk path for a native drag/drop or <input type="file"> File.
+   */
+  getPathForFile: (file: File) => webUtils.getPathForFile(file),
 
   /**
    * Get current platform
