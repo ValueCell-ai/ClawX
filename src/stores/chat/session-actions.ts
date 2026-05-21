@@ -1,5 +1,6 @@
 import { invokeIpc } from '@/lib/api-client';
 import { clearPendingOptimisticUserMessages, getCanonicalPrefixFromSessions, getMessageText, toMs } from './helpers';
+import { pickStartupSessionFallback } from './session-selection';
 import { DEFAULT_CANONICAL_PREFIX, DEFAULT_SESSION_KEY, type ChatSession, type RawMessage } from './types';
 import type { ChatGet, ChatSet, SessionHistoryActions } from './store-api';
 
@@ -115,10 +116,12 @@ export function createSessionActions(
             }
           }
           if (!dedupedSessions.find((s) => s.key === nextSessionKey) && dedupedSessions.length > 0) {
-            // Current session not found in the backend list
             const isNewEmptySession = get().messages.length === 0;
             if (!isNewEmptySession) {
-              nextSessionKey = dedupedSessions[0].key;
+              const fallbackKey = pickStartupSessionFallback(nextSessionKey, dedupedSessions);
+              if (fallbackKey) {
+                nextSessionKey = fallbackKey;
+              }
             }
           }
 

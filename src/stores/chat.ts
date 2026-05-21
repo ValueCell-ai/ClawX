@@ -9,6 +9,7 @@ import { useGatewayStore } from './gateway';
 import { useAgentsStore } from './agents';
 import { buildBaselineRunKey, captureBaseline, clearBaselines } from './baseline-cache';
 import { buildCronSessionHistoryPath, isCronSessionKey } from './chat/cron-session-utils';
+import { pickStartupSessionFallback } from './chat/session-selection';
 import {
   CHAT_HISTORY_DISK_FALLBACK_TIMEOUT_MS,
   CHAT_HISTORY_STARTUP_RETRY_DELAYS_MS,
@@ -2094,7 +2095,10 @@ export const useChatStore = create<ChatState>((set, get) => ({
             // default ghost key (`agent:main:main`) should yield to real history.
             const hasLocalPendingSession = localSessions.some((session) => session.key === nextSessionKey);
             if (!hasLocalPendingSession) {
-              nextSessionKey = dedupedSessions[0].key;
+              const fallbackKey = pickStartupSessionFallback(nextSessionKey, dedupedSessions);
+              if (fallbackKey) {
+                nextSessionKey = fallbackKey;
+              }
             }
           }
 
@@ -2111,15 +2115,32 @@ export const useChatStore = create<ChatState>((set, get) => ({
               .map((session) => [session.key, session.updatedAt!]),
           );
 
-          set((state) => ({
-            sessions: sessionsWithCurrent,
-            currentSessionKey: nextSessionKey,
-            currentAgentId: getAgentIdFromSessionKey(nextSessionKey),
-            sessionLastActivity: {
-              ...state.sessionLastActivity,
-              ...discoveredActivity,
-            },
-          }));
+          const previousSessionKey = currentSessionKey;
+          if (previousSessionKey !== nextSessionKey) {
+            // Mirror switchSession: swap cached history/run state and clear the
+            // outgoing view immediately. Without this, a background loadSessions
+            // can retarget currentSessionKey (e.g. to a cron heartbeat session)
+            // while messages[] still holds the prior conversation until
+            // chat.history returns — which looks like cross-session contamination.
+            set((state) => ({
+              ...buildSessionSwitchPatch(state, nextSessionKey),
+              sessions: sessionsWithCurrent,
+              sessionLastActivity: {
+                ...state.sessionLastActivity,
+                ...discoveredActivity,
+              },
+            }));
+          } else {
+            set((state) => ({
+              sessions: sessionsWithCurrent,
+              currentSessionKey: nextSessionKey,
+              currentAgentId: getAgentIdFromSessionKey(nextSessionKey),
+              sessionLastActivity: {
+                ...state.sessionLastActivity,
+                ...discoveredActivity,
+              },
+            }));
+          }
           applySessionBackendLabels(set, sessionsWithCurrent);
 
           // Background: fetch first user message for every non-main session to populate labels upfront.
@@ -2181,7 +2202,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
             })();
           }
 
-          if (currentSessionKey !== nextSessionKey) {
+          if (previousSessionKey !== nextSessionKey) {
             void get().loadHistory();
           }
         }
@@ -2455,11 +2476,13 @@ export const useChatStore = create<ChatState>((set, get) => ({
       const applyLoadFailure = (errorMessage: string | null) => {
         if (!isCurrentSession()) return;
         set((state) => {
-          const hasMessages = state.messages.length > 0;
+          // After loadSessions retargets currentSessionKey, a failed chat.history
+          // must not preserve another session's messages in this view.
+          const keepExistingMessages = !shouldShowForegroundLoading && state.messages.length > 0;
           return {
             loading: false,
             error: shouldShowForegroundLoading && errorMessage ? errorMessage : state.error,
-            ...(hasMessages ? {} : { messages: [] as RawMessage[] }),
+            ...(keepExistingMessages ? {} : { messages: [] as RawMessage[] }),
           };
         });
       };
