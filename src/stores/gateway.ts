@@ -153,6 +153,21 @@ function maybeLoadHistory(
   void state.loadHistory(true);
 }
 
+/** Bump sidebar ordering when any session receives gateway traffic (e.g. Feishu DM). */
+function touchSessionActivity(sessionKey: string | null | undefined, activityMs = Date.now()): void {
+  if (!sessionKey) return;
+  import('./chat')
+    .then(({ useChatStore }) => {
+      useChatStore.setState((state) => ({
+        sessionLastActivity: {
+          ...state.sessionLastActivity,
+          [sessionKey]: Math.max(state.sessionLastActivity[sessionKey] ?? 0, activityMs),
+        },
+      }));
+    })
+    .catch(() => {});
+}
+
 function handleGatewayNotification(notification: { method?: string; params?: Record<string, unknown> } | undefined): void {
   const payload = notification;
   if (!payload || payload.method !== 'agent' || !payload.params || typeof payload.params !== 'object') {
@@ -185,6 +200,10 @@ function handleGatewayNotification(notification: { method?: string; params?: Rec
 
   const runId = p.runId ?? data.runId;
   const sessionKey = p.sessionKey ?? data.sessionKey;
+  const resolvedSessionKeyForActivity = sessionKey != null ? String(sessionKey) : null;
+  if (resolvedSessionKeyForActivity) {
+    touchSessionActivity(resolvedSessionKeyForActivity);
+  }
   if (phase === 'started' && runId != null && sessionKey != null) {
     import('./chat')
       .then(({ useChatStore }) => {

@@ -1596,6 +1596,7 @@ function isInternalMessage(msg: { role?: unknown; content?: unknown; idempotency
       if (!hasImageUrlBlock) return true;
     }
   }
+  if (msg.role === 'user' && /^\[OpenClaw heartbeat poll\]\s*$/i.test(text.trim())) return true;
   // Runtime system injections: these arrive as user or assistant-role messages
   // but are internal plumbing (exec results, async-command notices, time pings, etc.)
   if ((msg.role === 'user' || msg.role === 'assistant') && isRuntimeSystemInjection(text)) return true;
@@ -3146,8 +3147,17 @@ export const useChatStore = create<ChatState>((set, get) => ({
       return;
     }
 
-    // Only process events for the active run (or if no active run set)
+    // Only process events for the active run (or if no active run set).
+    // Inbound channel traffic (Feishu/Telegram/etc.) on the current session uses a
+    // different runId than a stale desktop activeRunId — still refresh history on finals.
     if (activeRunId && runId && runId !== activeRunId) {
+      const isCurrentSession = eventSessionKey == null || eventSessionKey === currentSessionKey;
+      const inboundTerminal = eventState === 'final' || eventState === 'error'
+        || (event.message && typeof event.message === 'object'
+          && getMessageStopReason(event.message as Record<string, unknown>) != null);
+      if (isCurrentSession && inboundTerminal) {
+        void get().loadHistory(true);
+      }
       return;
     }
 

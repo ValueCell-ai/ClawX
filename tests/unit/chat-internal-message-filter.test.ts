@@ -29,4 +29,8 @@ describe('chat internal message filter', () => {
 
     expect(isInternalMessage({ role: 'assistant', content })).toBe(false);
   });
+
+  it('filters OpenClaw heartbeat poll user turns', () => {
+    expect(isInternalMessage({ role: 'user', content: '[OpenClaw heartbeat poll]' })).toBe(true);
+  });
 });

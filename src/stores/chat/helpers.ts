@@ -1084,6 +1084,7 @@ function isInternalMessage(msg: { role?: unknown; content?: unknown }): boolean 
   if (msg.role === 'assistant') {
     if (/^(HEARTBEAT_OK|NO_REPLY)\s*$/.test(text)) return true;
   }
+  if (msg.role === 'user' && /^\[OpenClaw heartbeat poll\]\s*$/i.test(text.trim())) return true;
   // Runtime system injections: these arrive as user or assistant-role messages
   // but are internal plumbing (exec results, async-command notices, time pings, etc.)
   if ((msg.role === 'user' || msg.role === 'assistant') && isRuntimeSystemInjection(text)) return true;
