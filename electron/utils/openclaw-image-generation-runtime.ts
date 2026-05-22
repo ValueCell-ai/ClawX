@@ -175,7 +175,7 @@ export async function generateImageInProcess(params: {
     prompt: params.prompt,
     modelOverride: params.model,
     count: 1,
-    size: params.size ?? '512x512',
+    size: params.size ?? '1024x1024',
     timeoutMs: params.timeoutMs,
   });
 

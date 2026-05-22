@@ -3,7 +3,12 @@
  */
 import { readOpenClawConfig, writeOpenClawConfig } from './channel-config';
 import { withConfigLock } from './config-mutex';
-import { getOAuthTokenFromOpenClaw, getProviderApiKeyFromOpenClaw } from './openclaw-auth';
+import {
+  getOAuthTokenFromOpenClaw,
+  getProviderApiKeyFromOpenClaw,
+  readOpenAiCompatibleImageRelayState,
+  syncOpenAiCompatibleImageRelay,
+} from './openclaw-auth';
 import { listAgentsSnapshot, type AgentsSnapshot } from './agent-config';
 import { expandPath } from './paths';
 import { getSetting, setSetting } from './store';
@@ -38,6 +43,12 @@ export interface ImageGenerationAgentAuthRow {
   configured: boolean;
 }
 
+export interface OpenAiImageRelayConfig {
+  enabled: boolean;
+  baseUrl: string;
+  apiKeyConfigured: boolean;
+}
+
 export interface ImageGenerationSettingsSnapshot {
   config: ImageGenerationModelConfig;
   autoProviderFallback: boolean;
@@ -45,6 +56,7 @@ export interface ImageGenerationSettingsSnapshot {
   userEdited: boolean;
   defaultAgentId: string;
   agents: ImageGenerationAgentAuthRow[];
+  openAiRelay: OpenAiImageRelayConfig;
   suggestions: Array<{
     providerId: string;
     label: string;
@@ -76,6 +88,8 @@ export const IMAGE_GENERATION_DEFAULT_REFS: Record<string, string> = {
 };
 
 const DEFAULT_TEST_PROMPT = 'A small red circle on a white background, minimal flat illustration.';
+/** Some relays (e.g. gpt-image-2) reject 512×512 as below minimum pixel budget. */
+const DEFAULT_TEST_IMAGE_SIZE = '1024x1024';
 const DEFAULT_TEST_TIMEOUT_MS = 120_000;
 /** Cap UI test duration so Models page does not wait on multi-minute config timeouts. */
 export const IMAGE_GEN_UI_TEST_MAX_TIMEOUT_MS = 90_000;
@@ -356,6 +370,8 @@ export async function getImageGenerationSettingsSnapshot(): Promise<ImageGenerat
   );
 
   const providerKey = config.primary ? parseProviderFromModelRef(config.primary) : null;
+  const relayState = readOpenAiCompatibleImageRelayState(openclawConfig as Record<string, unknown>);
+  const openaiKeyConfigured = await isImageProviderAuthenticated('openai', snapshot.defaultAgentId);
 
   return {
     config,
@@ -364,8 +380,38 @@ export async function getImageGenerationSettingsSnapshot(): Promise<ImageGenerat
     userEdited: await getImageGenUserEdited(),
     defaultAgentId: snapshot.defaultAgentId,
     agents: await buildAgentAuthRows(snapshot, providerKey),
+    openAiRelay: {
+      enabled: relayState.enabled,
+      baseUrl: relayState.baseUrl,
+      apiKeyConfigured: openaiKeyConfigured,
+    },
     suggestions: await buildSuggestions(snapshot),
   };
+}
+
+export async function applyOpenAiImageRelaySettings(params: {
+  enabled: boolean;
+  baseUrl?: string | null;
+  apiKey?: string;
+  primaryModel?: string | null;
+}): Promise<void> {
+  const imageModelIds: string[] = [];
+  if (params.primaryModel) {
+    const provider = parseProviderFromModelRef(params.primaryModel);
+    if (provider === 'openai') {
+      const slash = params.primaryModel.indexOf('/');
+      if (slash > 0 && slash < params.primaryModel.length - 1) {
+        imageModelIds.push(params.primaryModel.slice(slash + 1).trim());
+      }
+    }
+  }
+
+  await syncOpenAiCompatibleImageRelay({
+    enabled: params.enabled,
+    baseUrl: params.enabled ? (params.baseUrl ?? '') : null,
+    apiKey: params.apiKey,
+    imageModelIds,
+  });
 }
 
 export async function listImageGenerationProvidersFromRuntime(): Promise<ImageGenerationProviderRow[]> {
@@ -432,7 +478,7 @@ export async function runImageGenerationTest(params: {
       prompt,
       model,
       timeoutMs: generateTimeoutMs,
-      size: '512x512',
+      size: DEFAULT_TEST_IMAGE_SIZE,
     });
 
     return {

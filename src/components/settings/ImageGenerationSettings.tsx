@@ -49,6 +49,9 @@ export function ImageGenerationSettings() {
   const [fallbackText, setFallbackText] = useState('');
   const [timeoutMs, setTimeoutMs] = useState('180000');
   const [autoSyncEnabled, setAutoSyncEnabled] = useState(true);
+  const [relayEnabled, setRelayEnabled] = useState(false);
+  const [relayBaseUrl, setRelayBaseUrl] = useState('');
+  const [relayApiKey, setRelayApiKey] = useState('');
   const [testAgentId, setTestAgentId] = useState('');
 
   const load = useCallback(async () => {
@@ -63,6 +66,9 @@ export function ImageGenerationSettings() {
       setFallbackText((settings.config.fallbacks ?? []).join('\n'));
       setTimeoutMs(settings.config.timeoutMs ? String(settings.config.timeoutMs) : '180000');
       setAutoSyncEnabled(settings.autoSyncEnabled);
+      setRelayEnabled(settings.openAiRelay?.enabled ?? false);
+      setRelayBaseUrl(settings.openAiRelay?.baseUrl ?? '');
+      setRelayApiKey('');
       setTestAgentId(settings.defaultAgentId);
       setProviderOptions(
         providers.map((row) => ({
@@ -92,8 +98,13 @@ export function ImageGenerationSettings() {
       || JSON.stringify(fallbacks) !== JSON.stringify(snapshot.config.fallbacks ?? [])
       || timeoutParsed !== savedTimeout
       || autoSyncEnabled !== snapshot.autoSyncEnabled
+      || relayEnabled !== (snapshot.openAiRelay?.enabled ?? false)
+      || relayBaseUrl.trim() !== (snapshot.openAiRelay?.baseUrl ?? '').trim()
+      || relayApiKey.trim().length > 0
     );
-  }, [snapshot, primary, fallbackText, timeoutMs, autoSyncEnabled]);
+  }, [snapshot, primary, fallbackText, timeoutMs, autoSyncEnabled, relayEnabled, relayBaseUrl, relayApiKey]);
+
+  const primaryUsesOpenAi = primary.trim().toLowerCase().startsWith('openai/');
 
   const modelSuggestions = useMemo(() => {
     const refs = new Set<string>();
@@ -120,15 +131,30 @@ export function ImageGenerationSettings() {
       if (timeoutParsed !== null && (!Number.isFinite(timeoutParsed) || timeoutParsed <= 0)) {
         throw new Error(t('imageGeneration.errors.invalidTimeout'));
       }
+      if (relayEnabled && !relayBaseUrl.trim()) {
+        throw new Error(t('imageGeneration.errors.relayBaseUrlRequired'));
+      }
+      if (relayEnabled && !primaryUsesOpenAi) {
+        throw new Error(t('imageGeneration.errors.relayRequiresOpenAiModel'));
+      }
+      if (relayEnabled && !relayApiKey.trim() && !snapshot?.openAiRelay?.apiKeyConfigured) {
+        throw new Error(t('imageGeneration.errors.relayApiKeyRequired'));
+      }
       const next = await saveImageGenerationSettings({
         primary: primary.trim() || null,
         fallbacks: normalizeFallbacks(fallbackText.split('\n')),
         timeoutMs: timeoutParsed,
         autoSyncEnabled,
+        openAiRelayEnabled: relayEnabled,
+        openAiRelayBaseUrl: relayEnabled ? relayBaseUrl.trim() : null,
+        openAiRelayApiKey: relayApiKey.trim() || undefined,
       });
       setSnapshot(next);
       setPrimary(next.config.primary ?? '');
       setFallbackText((next.config.fallbacks ?? []).join('\n'));
+      setRelayEnabled(next.openAiRelay?.enabled ?? false);
+      setRelayBaseUrl(next.openAiRelay?.baseUrl ?? '');
+      setRelayApiKey('');
       toast.success(t('imageGeneration.toast.saved'));
     } catch (error) {
       toast.error(error instanceof Error ? error.message : String(error));
@@ -259,6 +285,75 @@ export function ImageGenerationSettings() {
             )}
           </div>
 
+          <div
+            className="space-y-4 rounded-2xl border border-black/10 dark:border-white/10 p-5"
+            data-testid="image-generation-openai-relay"
+          >
+            <div className="flex items-center justify-between gap-4">
+              <div>
+                <Label className={labelClasses}>{t('imageGeneration.openAiRelay.title')}</Label>
+                <p className="text-meta text-muted-foreground mt-1">
+                  {t('imageGeneration.openAiRelay.description')}
+                </p>
+              </div>
+              <Switch
+                checked={relayEnabled}
+                onCheckedChange={(checked) => {
+                  setRelayEnabled(checked);
+                  if (checked && !primary.trim()) {
+                    setPrimary('openai/gpt-image-2');
+                  }
+                }}
+                data-testid="image-generation-relay-enabled"
+              />
+            </div>
+
+            {relayEnabled ? (
+              <div className="space-y-4 pt-1">
+                <div className="space-y-2">
+                  <Label htmlFor="image-gen-relay-base-url" className={labelClasses}>
+                    {t('imageGeneration.openAiRelay.baseUrl')}
+                  </Label>
+                  <Input
+                    id="image-gen-relay-base-url"
+                    value={relayBaseUrl}
+                    onChange={(e) => setRelayBaseUrl(e.target.value)}
+                    placeholder="https://api.example.com/v1"
+                    className={inputClasses}
+                    data-testid="image-generation-relay-base-url"
+                  />
+                  <p className="text-tiny text-muted-foreground">
+                    {t('imageGeneration.openAiRelay.baseUrlHint')}
+                  </p>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="image-gen-relay-api-key" className={labelClasses}>
+                    {t('imageGeneration.openAiRelay.apiKey')}
+                  </Label>
+                  <Input
+                    id="image-gen-relay-api-key"
+                    type="password"
+                    value={relayApiKey}
+                    onChange={(e) => setRelayApiKey(e.target.value)}
+                    placeholder={
+                      snapshot?.openAiRelay?.apiKeyConfigured
+                        ? t('imageGeneration.openAiRelay.apiKeyPlaceholderConfigured')
+                        : t('imageGeneration.openAiRelay.apiKeyPlaceholder')
+                    }
+                    className={inputClasses}
+                    autoComplete="off"
+                    data-testid="image-generation-relay-api-key"
+                  />
+                </div>
+                {!primaryUsesOpenAi ? (
+                  <p className="text-tiny text-amber-600 dark:text-amber-400">
+                    {t('imageGeneration.openAiRelay.primaryMustBeOpenAi')}
+                  </p>
+                ) : null}
+              </div>
+            ) : null}
+          </div>
+
           <div className="space-y-2">
             <Label htmlFor="image-gen-fallbacks" className={labelClasses}>
               {t('imageGeneration.fallbacks')}
@@ -269,7 +364,12 @@ export function ImageGenerationSettings() {
               onChange={(e) => setFallbackText(e.target.value)}
               placeholder={'google/gemini-3.1-flash-image-preview\nopenrouter/google/gemini-3.1-flash-image-preview'}
               rows={3}
-              className={cn(inputClasses, 'h-auto min-h-[88px] py-3 resize-y')}
+              wrap="off"
+              spellCheck={false}
+              className={cn(
+                inputClasses,
+                'h-auto min-h-[88px] w-full py-3 resize-y whitespace-pre overflow-x-auto',
+              )}
               data-testid="image-generation-fallbacks"
             />
             <p className="text-tiny text-muted-foreground">{t('imageGeneration.fallbacksHint')}</p>

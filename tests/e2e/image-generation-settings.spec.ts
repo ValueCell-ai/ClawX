@@ -13,6 +13,7 @@ test.describe('Image generation settings on Models page', () => {
     await expect(page.getByTestId('image-generation-settings')).toBeVisible();
     await expect(page.getByTestId('image-generation-settings-title')).toBeVisible();
     await expect(page.getByTestId('image-generation-primary')).toBeVisible();
+    await expect(page.getByTestId('image-generation-openai-relay')).toBeVisible();
     await expect(page.getByTestId('image-generation-save')).toBeVisible();
   });
 });

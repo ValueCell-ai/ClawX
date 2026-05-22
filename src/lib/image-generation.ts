@@ -14,6 +14,12 @@ export interface ImageGenerationAgentAuthRow {
   configured: boolean;
 }
 
+export interface OpenAiImageRelayConfig {
+  enabled: boolean;
+  baseUrl: string;
+  apiKeyConfigured: boolean;
+}
+
 export interface ImageGenerationSettingsSnapshot {
   config: ImageGenerationModelConfig;
   autoProviderFallback: boolean;
@@ -21,6 +27,7 @@ export interface ImageGenerationSettingsSnapshot {
   userEdited: boolean;
   defaultAgentId: string;
   agents: ImageGenerationAgentAuthRow[];
+  openAiRelay: OpenAiImageRelayConfig;
   suggestions: Array<{
     providerId: string;
     label: string;
@@ -65,6 +72,9 @@ export async function saveImageGenerationSettings(payload: {
   fallbacks?: string[];
   timeoutMs?: number | null;
   autoSyncEnabled?: boolean;
+  openAiRelayEnabled?: boolean;
+  openAiRelayBaseUrl?: string | null;
+  openAiRelayApiKey?: string;
 }): Promise<ImageGenerationSettingsSnapshot> {
   const response = await hostApiFetch<{ success: boolean } & ImageGenerationSettingsSnapshot>(
     '/api/media/image-generation',

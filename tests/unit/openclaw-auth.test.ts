@@ -1685,6 +1685,53 @@ describe('openai agentRuntime pin', () => {
   });
 });
 
+describe('syncOpenAiCompatibleImageRelay', () => {
+  beforeEach(async () => {
+    vi.resetModules();
+    vi.restoreAllMocks();
+    await rm(testHome, { recursive: true, force: true });
+    await rm(testUserData, { recursive: true, force: true });
+  });
+
+  it('writes models.providers.openai with a custom relay base URL', async () => {
+    await writeOpenClawJson({ models: { providers: {} } });
+
+    const { syncOpenAiCompatibleImageRelay } = await import('@electron/utils/openclaw-auth');
+    await syncOpenAiCompatibleImageRelay({
+      enabled: true,
+      baseUrl: 'https://relay.example.com',
+      apiKey: 'sk-relay-test',
+      imageModelIds: ['gpt-image-2'],
+    });
+
+    const result = await readOpenClawJson();
+    const openai = ((result.models as Record<string, unknown>).providers as Record<string, unknown>)
+      .openai as Record<string, unknown>;
+    expect(openai.baseUrl).toBe('https://relay.example.com/v1');
+    expect(openai.api).toBe('openai-completions');
+
+    const auth = await readAuthProfiles('main');
+    expect((auth.profiles['openai:default'] as Record<string, unknown>).key).toBe('sk-relay-test');
+  });
+
+  it('removes models.providers.openai when relay is disabled', async () => {
+    await writeOpenClawJson({
+      models: {
+        providers: {
+          openai: { baseUrl: 'https://relay.example.com/v1', api: 'openai-completions', models: [] },
+        },
+      },
+    });
+
+    const { syncOpenAiCompatibleImageRelay } = await import('@electron/utils/openclaw-auth');
+    await syncOpenAiCompatibleImageRelay({ enabled: false });
+
+    const result = await readOpenClawJson();
+    const providers = (result.models as Record<string, unknown>).providers as Record<string, unknown>;
+    expect(providers.openai).toBeUndefined();
+  });
+});
+
 describe('setOpenClawDefaultModel for openai-codex OAuth', () => {
   beforeEach(async () => {
     vi.doUnmock('@electron/utils/provider-registry');

@@ -1673,6 +1673,91 @@ export async function syncProviderConfigToOpenClaw(
   });
 }
 
+export const OFFICIAL_OPENAI_API_BASE_URL = 'https://api.openai.com/v1';
+
+function normalizeOpenAiRelayBaseUrl(raw: string): string {
+  const trimmed = raw.trim().replace(/\/+$/, '');
+  if (!trimmed) {
+    throw new Error('OpenAI-compatible relay base URL is required');
+  }
+  if (trimmed.endsWith('/v1')) {
+    return trimmed;
+  }
+  return `${trimmed}/v1`;
+}
+
+function readModelsProvidersOpenAi(config: Record<string, unknown>): Record<string, unknown> | null {
+  const models = config.models;
+  if (!models || typeof models !== 'object') {
+    return null;
+  }
+  const providers = (models as Record<string, unknown>).providers;
+  if (!providers || typeof providers !== 'object') {
+    return null;
+  }
+  const openai = (providers as Record<string, unknown>).openai;
+  if (!openai || typeof openai !== 'object') {
+    return null;
+  }
+  return openai as Record<string, unknown>;
+}
+
+/**
+ * Configure models.providers.openai for OpenAI-compatible image relay endpoints.
+ * When disabled, removes the explicit openai provider entry so built-in routing applies.
+ */
+export async function syncOpenAiCompatibleImageRelay(params: {
+  enabled: boolean;
+  baseUrl?: string | null;
+  apiKey?: string;
+  imageModelIds?: string[];
+}): Promise<void> {
+  return withConfigLock(async () => {
+    const config = await readOpenClawJson();
+
+    if (!params.enabled) {
+      const models = (config.models || {}) as Record<string, unknown>;
+      const providers = (models.providers || {}) as Record<string, unknown>;
+      if (providers.openai) {
+        delete providers.openai;
+        models.providers = providers;
+        config.models = models;
+        await writeOpenClawJson(config);
+      }
+      if (params.apiKey?.trim()) {
+        await saveProviderKeyToOpenClaw('openai', params.apiKey.trim());
+      }
+      return;
+    }
+
+    const baseUrl = normalizeOpenAiRelayBaseUrl(params.baseUrl ?? '');
+    const modelIds = [...new Set((params.imageModelIds ?? []).map((id) => id.trim()).filter(Boolean))];
+    upsertOpenClawProviderEntry(config, 'openai', {
+      baseUrl,
+      api: 'openai-completions',
+      apiKeyEnv: 'OPENAI_API_KEY',
+      modelIds,
+      mergeExistingModels: true,
+    });
+    await writeOpenClawJson(config);
+
+    if (params.apiKey?.trim()) {
+      await saveProviderKeyToOpenClaw('openai', params.apiKey.trim());
+    }
+  });
+}
+
+export function readOpenAiCompatibleImageRelayState(
+  config: Record<string, unknown>,
+): { enabled: boolean; baseUrl: string } {
+  const openai = readModelsProvidersOpenAi(config);
+  const baseUrl = typeof openai?.baseUrl === 'string' ? openai.baseUrl.trim() : '';
+  if (!baseUrl || baseUrl === OFFICIAL_OPENAI_API_BASE_URL) {
+    return { enabled: false, baseUrl: '' };
+  }
+  return { enabled: true, baseUrl };
+}
+
 /**
  * Update OpenClaw model + provider config using runtime config values.
  */

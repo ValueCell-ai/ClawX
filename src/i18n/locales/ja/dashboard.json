@@ -92,8 +92,21 @@
             "testSuccessWithPath": "テスト画像を生成しました（{{ms}} ms）：{{path}}",
             "testFailed": "画像生成テストに失敗しました"
         },
+        "openAiRelay": {
+            "title": "OpenAI 互換リレー（画像）",
+            "description": "OpenAI Images 互換プロキシ（/v1/images/generations）へ送る設定。openclaw.json の手編集は不要です。",
+            "baseUrl": "リレー Base URL",
+            "baseUrlHint": "例: https://api.example.com/v1 — /v1 が無い場合は自動付与します。",
+            "apiKey": "リレー API キー",
+            "apiKeyPlaceholder": "sk-...",
+            "apiKeyPlaceholderConfigured": "設定済み — 空欄のままなら変更しません",
+            "primaryMustBeOpenAi": "リレー有効時は主モデルが openai/ で始まる必要があります。"
+        },
         "errors": {
-            "invalidTimeout": "タイムアウトは正の数である必要があります"
+            "invalidTimeout": "タイムアウトは正の数である必要があります",
+            "relayBaseUrlRequired": "リレーの Base URL を入力してください",
+            "relayApiKeyRequired": "リレーの API キーを入力してください",
+            "relayRequiresOpenAiModel": "リレーには openai/ 形式の主モデルが必要です"
         }
     }
 }

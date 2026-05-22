@@ -92,8 +92,21 @@
             "testSuccessWithPath": "Test image generated ({{ms}} ms): {{path}}",
             "testFailed": "Image generation test failed"
         },
+        "openAiRelay": {
+            "title": "OpenAI-compatible relay (images)",
+            "description": "Send image generation to an OpenAI Images-compatible proxy (/v1/images/generations) without editing openclaw.json.",
+            "baseUrl": "Relay base URL",
+            "baseUrlHint": "e.g. https://api.example.com/v1 — /v1 is appended automatically when omitted.",
+            "apiKey": "Relay API key",
+            "apiKeyPlaceholder": "sk-...",
+            "apiKeyPlaceholderConfigured": "Already configured — leave blank to keep",
+            "primaryMustBeOpenAi": "When relay is on, the primary model must start with openai/ (e.g. openai/gpt-image-2 or your relay model id)."
+        },
         "errors": {
-            "invalidTimeout": "Timeout must be a positive number"
+            "invalidTimeout": "Timeout must be a positive number",
+            "relayBaseUrlRequired": "Relay base URL is required",
+            "relayApiKeyRequired": "Relay API key is required",
+            "relayRequiresOpenAiModel": "Relay requires a primary model in openai/model format"
         }
     }
 }

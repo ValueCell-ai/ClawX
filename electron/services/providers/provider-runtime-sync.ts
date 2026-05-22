@@ -1,3 +1,4 @@
+import { readOpenClawConfig } from '../../utils/channel-config';
 import type { GatewayManager } from '../../gateway/manager';
 import { getProviderAccount, listProviderAccounts } from './provider-store';
 import { getProviderSecret } from '../secrets/secret-store';
@@ -8,6 +9,7 @@ import {
   ensureAnthropicMessagesModelMaxTokens,
   ensureOpenClawProviderAgentRuntimePins,
   pruneInvalidApiProviderEntries,
+  readOpenAiCompatibleImageRelayState,
   removeProviderFromOpenClaw,
   removeProviderKeyFromOpenClaw,
   saveOAuthTokenToOpenClaw,
@@ -212,6 +214,10 @@ export async function syncProviderApiKeyToRuntime(
 
 export async function syncAllProviderAuthToRuntime(): Promise<void> {
   const accounts = await listProviderAccounts();
+  const openclawConfig = await readOpenClawConfig();
+  const skipOpenAiKeySync = readOpenAiCompatibleImageRelayState(
+    openclawConfig as Record<string, unknown>,
+  ).enabled;
 
   for (const account of accounts) {
     const runtimeProviderKey = await resolveRuntimeProviderKey({
@@ -226,6 +232,10 @@ export async function syncAllProviderAuthToRuntime(): Promise<void> {
       createdAt: account.createdAt,
       updatedAt: account.updatedAt,
     });
+
+    if (skipOpenAiKeySync && runtimeProviderKey === 'openai') {
+      continue;
+    }
 
     const secret = await getProviderSecret(account.id);
     if (!secret) {

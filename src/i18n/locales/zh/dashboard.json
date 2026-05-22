@@ -92,8 +92,21 @@
             "testSuccessWithPath": "测试图像已生成（{{ms}} ms）：{{path}}",
             "testFailed": "图像生成测试失败"
         },
+        "openAiRelay": {
+            "title": "OpenAI 兼容中转（生图）",
+            "description": "将生图请求发往 OpenAI Images 兼容的中转站（/v1/images/generations），无需手改 openclaw.json。",
+            "baseUrl": "中转 Base URL",
+            "baseUrlHint": "例如 https://api.example.com/v1；未带 /v1 时会自动补全。",
+            "apiKey": "中转 API Key",
+            "apiKeyPlaceholder": "sk-...",
+            "apiKeyPlaceholderConfigured": "已配置，留空则不修改",
+            "primaryMustBeOpenAi": "启用中转时，主模型须为 openai/ 开头（如 openai/gpt-image-2 或中转站提供的模型名）。"
+        },
         "errors": {
-            "invalidTimeout": "超时必须为正数"
+            "invalidTimeout": "超时必须为正数",
+            "relayBaseUrlRequired": "请填写中转 Base URL",
+            "relayApiKeyRequired": "请填写中转 API Key",
+            "relayRequiresOpenAiModel": "启用中转时，主模型须使用 openai/模型名 格式"
         }
     }
 }

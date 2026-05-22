@@ -92,8 +92,21 @@
             "testSuccessWithPath": "Тестовое изображение создано ({{ms}} мс): {{path}}",
             "testFailed": "Тест генерации изображения не удался"
         },
+        "openAiRelay": {
+            "title": "OpenAI-совместимый релей (изображения)",
+            "description": "Отправка генерации изображений на прокси с OpenAI Images API (/v1/images/generations) без правки openclaw.json.",
+            "baseUrl": "Base URL релея",
+            "baseUrlHint": "например https://api.example.com/v1 — /v1 добавится автоматически.",
+            "apiKey": "API-ключ релея",
+            "apiKeyPlaceholder": "sk-...",
+            "apiKeyPlaceholderConfigured": "Уже настроен — оставьте пустым, чтобы не менять",
+            "primaryMustBeOpenAi": "При включённом релее основная модель должна начинаться с openai/."
+        },
         "errors": {
-            "invalidTimeout": "Таймаут должен быть положительным числом"
+            "invalidTimeout": "Таймаут должен быть положительным числом",
+            "relayBaseUrlRequired": "Укажите Base URL релея",
+            "relayApiKeyRequired": "Укажите API-ключ релея",
+            "relayRequiresOpenAiModel": "Для релея нужна основная модель в формате openai/имя"
         }
     }
 }
