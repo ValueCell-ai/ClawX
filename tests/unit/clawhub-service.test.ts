@@ -5,6 +5,7 @@ describe('ClawHubService marketplace HTTP lookup', () => {
   beforeEach(() => {
     vi.restoreAllMocks();
     vi.stubGlobal('fetch', vi.fn());
+    vi.spyOn(console, 'warn').mockImplementation(() => undefined);
   });
 
   afterEach(() => {
@@ -98,5 +99,68 @@ describe('ClawHubService marketplace HTTP lookup', () => {
       description: 'PDF toolkit',
       version: '1.0.0',
     }]);
+  });
+
+  it('falls back to the CLI when the HTTP marketplace request fails', async () => {
+    const service = new ClawHubService();
+    const runCommand = vi
+      .spyOn(service as unknown as { runCommand(args: string[]): Promise<string> }, 'runCommand')
+      .mockResolvedValueOnce('pdf v1.0.0 PDF toolkit');
+    const fetchMock = vi.mocked(fetch);
+
+    fetchMock.mockRejectedValueOnce(new Error('ECONNRESET'));
+
+    const result = await service.search({ query: 'pdf' });
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(runCommand).toHaveBeenCalledWith(['search', 'pdf']);
+    expect(result[0]).toMatchObject({
+      slug: 'pdf',
+      description: 'PDF toolkit',
+      version: '1.0.0',
+    });
+  });
+
+  it('falls back to the CLI when the HTTP marketplace request is aborted', async () => {
+    const service = new ClawHubService();
+    const runCommand = vi
+      .spyOn(service as unknown as { runCommand(args: string[]): Promise<string> }, 'runCommand')
+      .mockResolvedValueOnce('pdf v1.0.0 PDF toolkit');
+    const fetchMock = vi.mocked(fetch);
+
+    fetchMock.mockRejectedValueOnce(new DOMException('The operation was aborted', 'AbortError'));
+
+    const result = await service.search({ query: 'pdf' });
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(runCommand).toHaveBeenCalledWith(['search', 'pdf']);
+    expect(result[0]).toMatchObject({
+      slug: 'pdf',
+      description: 'PDF toolkit',
+      version: '1.0.0',
+    });
+  });
+
+  it('falls back to the CLI when the HTTP marketplace returns a server error', async () => {
+    const service = new ClawHubService();
+    const runCommand = vi
+      .spyOn(service as unknown as { runCommand(args: string[]): Promise<string> }, 'runCommand')
+      .mockResolvedValueOnce('pdf v1.0.0 PDF toolkit');
+    const fetchMock = vi.mocked(fetch);
+
+    fetchMock.mockResolvedValueOnce(new Response('temporary failure', {
+      status: 503,
+      headers: { 'content-type': 'text/plain' },
+    }));
+
+    const result = await service.search({ query: 'pdf' });
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(runCommand).toHaveBeenCalledWith(['search', 'pdf']);
+    expect(result[0]).toMatchObject({
+      slug: 'pdf',
+      description: 'PDF toolkit',
+      version: '1.0.0',
+    });
   });
 });

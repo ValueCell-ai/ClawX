@@ -65,7 +65,7 @@ export interface MarketplaceProvider {
 }
 
 const CLAWHUB_MARKETPLACE_API_BASE_URL = 'https://clawhub.ai';
-const CLAWHUB_MARKETPLACE_TIMEOUT_MS = 15_000;
+const CLAWHUB_MARKETPLACE_TIMEOUT_MS = 5_000;
 
 export class ClawHubService {
     private workDir: string;
