@@ -322,14 +322,17 @@ export function Chat() {
   // tool-result wrappers (Anthropic API format).  These must NOT split
   // the run into multiple segments — only genuine user-authored messages
   // should act as run boundaries.
-  const nextUserMessageIndexes = new Array<number>(messages.length).fill(-1);
-  let nextUserMessageIndex = -1;
-  for (let idx = messages.length - 1; idx >= 0; idx -= 1) {
-    nextUserMessageIndexes[idx] = nextUserMessageIndex;
-    if (isRealUserMessage(messages[idx]) && !subagentCompletionInfos[idx]) {
-      nextUserMessageIndex = idx;
+  const nextUserMessageIndexes = useMemo(() => {
+    const indexes = new Array<number>(messages.length).fill(-1);
+    let nextUserMessageIndex = -1;
+    for (let idx = messages.length - 1; idx >= 0; idx -= 1) {
+      indexes[idx] = nextUserMessageIndex;
+      if (isRealUserMessage(messages[idx]) && !subagentCompletionInfos[idx]) {
+        nextUserMessageIndex = idx;
+      }
     }
-  }
+    return indexes;
+  }, [messages, subagentCompletionInfos]);
 
   const questionDirectoryItems = useMemo<QuestionDirectoryItem[]>(() => {
     const items: QuestionDirectoryItem[] = [];
@@ -618,20 +621,19 @@ export function Chat() {
     }];
   }, [messages, subagentCompletionInfos, currentSessionKey, streamingMessage, streamingTools, pendingFinal, sending, hasAnyStreamContent, hasStreamText, hasStreamImages, streamText, streamTools.length, hasRunningStreamToolStatus, childTranscripts, currentAgentId, agents, sessionLabels, graphStepCache, runError, isRunTrigger]);
   const hasActiveExecutionGraph = userRunCards.some((card) => card.active);
-  const latestRunSegmentCompletion = useMemo(() => {
-    for (let idx = messages.length - 1; idx >= 0; idx -= 1) {
-      if (!isRealUserMessage(messages[idx]) || subagentCompletionInfos[idx]) continue;
-      const nextUserIndex = nextUserMessageIndexes[idx];
-      const postTrigger = getPostTriggerSegmentMessages(messages, idx, nextUserIndex);
-      return {
-        hasFinalReply: segmentHasFinalReply(postTrigger),
-        hasToolActivity: postTrigger.some((m) =>
-          m.role === 'assistant' && extractToolUse(m).length > 0,
-        ),
-      };
-    }
-    return { hasFinalReply: false, hasToolActivity: false };
-  }, [messages, subagentCompletionInfos, nextUserMessageIndexes]);
+  let latestRunSegmentCompletion = { hasFinalReply: false, hasToolActivity: false };
+  for (let idx = messages.length - 1; idx >= 0; idx -= 1) {
+    if (!isRealUserMessage(messages[idx]) || subagentCompletionInfos[idx]) continue;
+    const nextUserIndex = nextUserMessageIndexes[idx];
+    const postTrigger = getPostTriggerSegmentMessages(messages, idx, nextUserIndex);
+    latestRunSegmentCompletion = {
+      hasFinalReply: segmentHasFinalReply(postTrigger),
+      hasToolActivity: postTrigger.some((m) =>
+        m.role === 'assistant' && extractToolUse(m).length > 0,
+      ),
+    };
+    break;
+  }
   const runSettledInHistory = latestRunSegmentCompletion.hasFinalReply
     && !hasAnyStreamContent
     && (latestRunSegmentCompletion.hasToolActivity || !sending);
