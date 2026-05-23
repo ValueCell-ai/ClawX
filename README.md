@@ -128,6 +128,9 @@ Environment variables for bundled search skills:
 - `TAVILY_API_KEY` for `tavily-search` (OAuth may also be supported by upstream skill runtime)
 - `find-skills` and `self-improving-agent` do not require API keys
 
+### Optional X/Twitter Automation With TweetClaw
+Teams that need OpenClaw agents for public social research or account-backed X/Twitter workflows can install the separate [TweetClaw](https://github.com/Xquik-dev/tweetclaw) plugin in the ClawX-managed runtime. The [workflow guide](docs/tweetclaw-x-twitter-workflow.md) covers install, credential handling, `explore`/`tweetclaw` tool allow-listing, ClawX verification, Cron recipes, and approval checks for post tweets, post tweet replies, direct messages, media uploads, webhooks, and giveaway draws.
+
 ### 🔐 Secure Provider Integration
 Connect to multiple AI providers (OpenAI, Anthropic, and more) with credentials stored securely in your system's native keychain. OpenAI supports both API key and browser OAuth (Codex subscription) sign-in.
 For **Custom** providers used with OpenAI-compatible gateways, you can set a custom `User-Agent` in **Settings → AI Providers → Edit Provider** for compatibility-sensitive endpoints.

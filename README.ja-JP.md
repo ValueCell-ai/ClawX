@@ -127,6 +127,9 @@ Skills ページでは OpenClaw の複数ソース（管理ディレクトリ、
 主な検索スキルで必要な環境変数:
 - `TAVILY_API_KEY`: `tavily-search` 用（上流ランタイムで OAuth 対応の場合あり）
 
+### TweetClaw による任意の X/Twitter 自動化
+公開ソーシャル調査やアカウント連携型の X/Twitter ワークフローを OpenClaw Agent で扱うチームは、ClawX が管理するランタイムに別個の [TweetClaw](https://github.com/Xquik-dev/tweetclaw) プラグインをインストールできます。英語の [ワークフローガイド](docs/tweetclaw-x-twitter-workflow.md) では、インストール、資格情報の扱い、`explore`/`tweetclaw` ツールの allow-list、ClawX での検証、Cron レシピ、投稿、返信、DM、メディアアップロード、webhook、抽選の承認チェックを説明しています。
+
 ### 🔐 セキュアなプロバイダー統合
 複数のAIプロバイダー（OpenAI、Anthropicなど）に接続でき、資格情報はシステムのネイティブキーチェーンに安全に保存されます。OpenAI は API キーとブラウザ OAuth（Codex サブスクリプション）の両方に対応しています。
 OpenAI-compatible ゲートウェイを **Custom プロバイダー** で使う場合、**設定 → AI Providers → Provider 編集** でカスタム `User-Agent` を設定でき、互換性が必要なエンドポイントで有効です。
