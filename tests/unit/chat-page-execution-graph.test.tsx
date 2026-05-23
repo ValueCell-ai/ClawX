@@ -351,4 +351,108 @@ describe('Chat execution graph lifecycle', () => {
     expect(screen.queryByTestId('chat-execution-step-thinking-trailing')).not.toBeInTheDocument();
     expect(screen.getAllByText('404 Resource not found').length).toBeGreaterThan(0);
   });
+
+  it('stops trailing thinking when history already contains the final reply but sending is stuck', async () => {
+    const { useChatStore } = await import('@/stores/chat');
+    useChatStore.setState({
+      messages: [
+        {
+          role: 'user',
+          content: '执行一下github1',
+        },
+        {
+          role: 'assistant',
+          id: 'tool-turn',
+          content: [
+            { type: 'text', text: 'Fetching GitHub trending data.' },
+            { type: 'tool_use', id: 'fetch-1', name: 'web_fetch', input: { url: 'https://example.com' } },
+          ],
+        },
+        {
+          role: 'assistant',
+          id: 'final-turn',
+          content: [{ type: 'text', text: '执行完成 ✅ 今天的 github1 已写入飞书文档。' }],
+        },
+      ],
+      loading: false,
+      error: null,
+      runError: null,
+      sending: true,
+      activeRunId: 'run-stuck',
+      streamingText: '',
+      streamingMessage: null,
+      streamingTools: [],
+      pendingFinal: false,
+      lastUserMessageAt: Date.now() - 60 * 60 * 1000,
+      pendingToolImages: [],
+      sessions: [{ key: 'agent:main:main' }],
+      currentSessionKey: 'agent:main:main',
+      currentAgentId: 'main',
+      sessionLabels: {},
+      sessionLastActivity: {},
+      thinkingLevel: null,
+    });
+
+    const { Chat } = await import('@/pages/Chat/index');
+
+    render(<Chat />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('chat-execution-graph')).toBeInTheDocument();
+    });
+
+    expect(screen.queryByTestId('chat-execution-step-thinking-trailing')).not.toBeInTheDocument();
+    expect(screen.getByText('执行完成 ✅ 今天的 github1 已写入飞书文档。')).toBeInTheDocument();
+    expect(screen.queryByTestId('chat-typing-indicator')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('chat-activity-indicator')).not.toBeInTheDocument();
+  });
+
+  it('keeps the run active when narration landed in history before tools finished', async () => {
+    const { useChatStore } = await import('@/stores/chat');
+    useChatStore.setState({
+      messages: [
+        {
+          role: 'user',
+          content: 'Check semiconductor chatter',
+        },
+        {
+          role: 'assistant',
+          id: 'narration-turn',
+          content: [{ type: 'text', text: 'Let me search for that first.' }],
+        },
+        {
+          role: 'assistant',
+          id: 'tool-turn',
+          content: [
+            { type: 'tool_use', id: 'browser-search', name: 'browser', input: { action: 'search', query: 'semiconductor' } },
+          ],
+        },
+      ],
+      loading: false,
+      error: null,
+      runError: null,
+      sending: true,
+      activeRunId: 'run-narration',
+      streamingText: '',
+      streamingMessage: null,
+      streamingTools: [],
+      pendingFinal: false,
+      lastUserMessageAt: Date.now(),
+      pendingToolImages: [],
+      sessions: [{ key: 'agent:main:main' }],
+      currentSessionKey: 'agent:main:main',
+      currentAgentId: 'main',
+      sessionLabels: {},
+      sessionLastActivity: {},
+      thinkingLevel: null,
+    });
+
+    const { Chat } = await import('@/pages/Chat/index');
+
+    render(<Chat />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('chat-execution-step-thinking-trailing')).toBeInTheDocument();
+    });
+  });
 });

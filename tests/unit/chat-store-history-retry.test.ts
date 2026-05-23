@@ -897,6 +897,60 @@ describe('useChatStore startup history retry', () => {
     expect(state.pendingFinal).toBe(false);
   });
 
+  it('unsticks sending when history has a final reply after tools without pendingFinal', async () => {
+    const { useChatStore } = await import('@/stores/chat');
+    useChatStore.setState({
+      currentSessionKey: 'agent:main:session-stuck',
+      currentAgentId: 'main',
+      sessions: [{ key: 'agent:main:session-stuck' }],
+      messages: [
+        { id: 'user-stuck', role: 'user', content: '执行一下github1', timestamp: 1000 },
+      ],
+      sessionLabels: {},
+      sessionLastActivity: {},
+      sending: true,
+      activeRunId: 'run-stuck',
+      streamingText: '',
+      streamingMessage: null,
+      streamingTools: [],
+      pendingFinal: false,
+      lastUserMessageAt: 1000,
+      pendingToolImages: [],
+      error: null,
+      loading: false,
+      thinkingLevel: null,
+    });
+
+    gatewayRpcMock.mockResolvedValueOnce({
+      messages: [
+        { id: 'user-stuck', role: 'user', content: '执行一下github1', timestamp: 1000 },
+        {
+          id: 'assistant-tool',
+          role: 'assistant',
+          content: [
+            { type: 'text', text: 'Fetching data.' },
+            { type: 'tool_use', id: 'tool-1', name: 'web_fetch', input: { url: 'https://example.com' } },
+          ],
+          timestamp: 1500,
+        },
+        {
+          id: 'assistant-final',
+          role: 'assistant',
+          content: [{ type: 'text', text: '执行完成 ✅' }],
+          stopReason: 'endTurn',
+          timestamp: 2000,
+        },
+      ],
+    });
+
+    await useChatStore.getState().loadHistory(true);
+
+    const state = useChatStore.getState();
+    expect(state.sending).toBe(false);
+    expect(state.activeRunId).toBeNull();
+    expect(state.pendingFinal).toBe(false);
+  });
+
   // Cross-protocol coverage: Anthropic Messages API native shape (snake_case).
   // OpenClaw's gateway normally normalizes to camelCase, but some paths can
   // pass Anthropic responses through unchanged. `hasPendingToolUse` must still

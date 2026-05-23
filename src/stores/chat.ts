@@ -2691,6 +2691,26 @@ export const useChatStore = create<ChatState>((set, get) => ({
         }
       }
 
+      // Unstick lifecycle when history already has a conclusive reply but the
+      // Gateway never emitted a terminal phase event (WS drop, console run, etc.).
+      if (isSendingNow && !get().streamingMessage && get().streamingTools.length === 0) {
+        const openSegment = postUserSegmentMessages(filteredMessages);
+        const hasConclusiveReply = openSegment.some((message) => {
+          if (message.role !== 'assistant') return false;
+          if (hasPendingToolUse(message)) return false;
+          return hasNonToolAssistantContent(message);
+        });
+        if (hasConclusiveReply && !segmentHasOpenToolRun(openSegment)) {
+          clearHistoryPoll();
+          set({
+            sending: false,
+            activeRunId: null,
+            pendingFinal: false,
+            lastUserMessageAt: null,
+          });
+        }
+      }
+
       // After session switch the renderer may have reset run lifecycle flags even
       // though the Gateway is still executing a user-initiated turn. Re-arm only
       // when this session had an active cached run (e.g. user switched away
