@@ -99,8 +99,8 @@
         },
         "errors": {
             "invalidTimeout": "タイムアウトは正の数である必要があります",
-            "relayBaseUrlRequired": "リレーの Base URL を入力してください",
-            "relayApiKeyRequired": "リレーの API キーを入力してください",
+            "relayBaseUrlRequired": "画像生成 Base URL を入力してください",
+            "relayApiKeyRequired": "API キーを入力してください",
             "relayModelRequired": "モデル名が必要です",
             "relayModelInvalid": "gpt-image-2 のようなモデル名のみを入力してください。provider/model は入力しないでください。"
         }

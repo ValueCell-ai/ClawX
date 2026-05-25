@@ -99,8 +99,8 @@
         },
         "errors": {
             "invalidTimeout": "Таймаут должен быть положительным числом",
-            "relayBaseUrlRequired": "Укажите Base URL релея",
-            "relayApiKeyRequired": "Укажите API-ключ релея",
+            "relayBaseUrlRequired": "Укажите Base URL для изображений",
+            "relayApiKeyRequired": "Укажите API key",
             "relayModelRequired": "Укажите имя модели",
             "relayModelInvalid": "Введите только имя модели, например gpt-image-2. Не используйте provider/model."
         }

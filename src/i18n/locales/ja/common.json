@@ -17,7 +17,8 @@
         "deleteSession": "削除",
         "renameSessionPlaceholder": "セッションタイトル",
         "saveSessionRename": "セッションタイトルを保存",
-        "cancelSessionRename": "名前変更をキャンセル"
+        "cancelSessionRename": "名前変更をキャンセル",
+        "imageGeneration": "画像生成"
     },
     "actions": {
         "save": "保存",

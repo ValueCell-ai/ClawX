@@ -99,8 +99,8 @@
         },
         "errors": {
             "invalidTimeout": "超时必须为正数",
-            "relayBaseUrlRequired": "请填写中转 Base URL",
-            "relayApiKeyRequired": "请填写中转 API Key",
+            "relayBaseUrlRequired": "请填写生图 Base URL",
+            "relayApiKeyRequired": "请填写 API Key",
             "relayModelRequired": "请填写模型名",
             "relayModelInvalid": "请只填写模型名，例如 gpt-image-2；不要填写 provider/model。"
         }

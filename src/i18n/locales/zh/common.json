@@ -17,7 +17,8 @@
         "deleteSession": "删除",
         "renameSessionPlaceholder": "会话标题",
         "saveSessionRename": "保存会话标题",
-        "cancelSessionRename": "取消重命名"
+        "cancelSessionRename": "取消重命名",
+        "imageGeneration": "图像生成"
     },
     "actions": {
         "save": "保存",

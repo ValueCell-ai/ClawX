@@ -99,8 +99,8 @@
         },
         "errors": {
             "invalidTimeout": "Timeout must be a positive number",
-            "relayBaseUrlRequired": "Relay base URL is required",
-            "relayApiKeyRequired": "Relay API key is required",
+            "relayBaseUrlRequired": "Image Base URL is required",
+            "relayApiKeyRequired": "API key is required",
             "relayModelRequired": "Model name is required",
             "relayModelInvalid": "Enter only the model name, for example gpt-image-2. Do not include provider/model."
         }
