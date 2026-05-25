@@ -1,6 +1,3 @@
-import path from 'node:path';
-import fs from 'node:fs';
-import { fileURLToPath } from 'node:url';
 import { describe, expect, it, vi } from 'vitest';
 import { hydrateGatewayHistoryFromTranscript } from '@/stores/chat/history-transcript-hydrate';
 import {
@@ -17,12 +14,28 @@ vi.mock('@/lib/host-api', () => ({
   hostApiFetch: (...args: unknown[]) => hostApiFetchMock(...args),
 }));
 
-const TRANSCRIPT_PATH = path.join(
-  path.dirname(fileURLToPath(import.meta.url)),
-  '../fixtures/transcripts/fa3ccd85-397b-48d4-a465-200aefaa8bbe.jsonl',
-);
-const SESSION_KEY = 'agent:main:session-fa3ccd85';
+const SESSION_KEY = 'agent:main:session-long-reply';
 const OPENCLAW_DEFAULT_HISTORY_TEXT_MAX_CHARS = 8_000;
+const LONG_REPLY_HEAD = 'Cooper，我先给一个直接判断：**你们现在最有价值的不是“AI Agent 客户端”，而是“企业无人办公转型的落地系统”**。';
+const LONG_REPLY_TAIL = '这句话我觉得挺稳，也适合放进商业计划书。';
+const LONG_REPLY_LENGTH = 8360;
+
+function buildLongAssistantText(): string {
+  const fillerLength = Math.max(0, LONG_REPLY_LENGTH - LONG_REPLY_HEAD.length - LONG_REPLY_TAIL.length);
+  return `${LONG_REPLY_HEAD}${'x'.repeat(fillerLength)}${LONG_REPLY_TAIL}`;
+}
+
+function buildLongAssistantMessage(): RawMessage {
+  return {
+    id: 'assistant-long-reply',
+    role: 'assistant',
+    content: [
+      { type: 'thinking', thinking: '' },
+      { type: 'text', text: buildLongAssistantText() },
+    ],
+    timestamp: 1779695766656,
+  };
+}
 
 function extractText(content: unknown): string {
   if (typeof content === 'string') return content;
@@ -31,14 +44,6 @@ function extractText(content: unknown): string {
     .filter((block) => block.type === 'text' && typeof block.text === 'string')
     .map((block) => block.text!)
     .join('\n');
-}
-
-function loadTranscriptMessages(path: string): RawMessage[] {
-  const lines = fs.readFileSync(path, 'utf8').trim().split(/\r?\n/);
-  return lines.flatMap((line) => {
-    const entry = JSON.parse(line) as { type?: string; message?: RawMessage };
-    return entry.type === 'message' && entry.message ? [entry.message] : [];
-  });
 }
 
 function simulateGatewayHistoryTruncation(text: string, maxChars = OPENCLAW_DEFAULT_HISTORY_TEXT_MAX_CHARS): string {
@@ -63,21 +68,20 @@ function simulateGatewayHistoryTruncationContent(
   });
 }
 
-describe('fa3ccd85 transcript hydration fixture', () => {
-  it('restores the long assistant reply from the real fa3ccd85 session transcript', () => {
-    const transcriptMessages = loadTranscriptMessages(TRANSCRIPT_PATH);
-    const assistant = transcriptMessages.filter((message) => message.role === 'assistant')
-      .map((message) => ({ message, text: extractText(message.content) }))
-      .sort((left, right) => right.text.length - left.text.length)[0];
+describe('long assistant transcript hydration regression', () => {
+  it('restores a long assistant reply truncated by the default chat.history limit', () => {
+    const assistant = buildLongAssistantMessage();
+    const fullText = extractText(assistant.content);
 
-    expect(assistant).toBeDefined();
-    expect(assistant!.text.length).toBeGreaterThan(OPENCLAW_DEFAULT_HISTORY_TEXT_MAX_CHARS);
-    expect(assistant!.text).toContain('企业无人办公转型的落地系统');
-    expect(assistant!.text).toContain('这句话我觉得挺稳，也适合放进商业计划书。');
+    expect(fullText.length).toBe(LONG_REPLY_LENGTH);
+    expect(fullText.length).toBeGreaterThan(OPENCLAW_DEFAULT_HISTORY_TEXT_MAX_CHARS);
+    expect(fullText).toContain('企业无人办公转型的落地系统');
+    expect(fullText).toContain(LONG_REPLY_TAIL);
 
+    const transcriptMessages: RawMessage[] = [assistant];
     const gatewayMessages: RawMessage[] = [{
-      ...assistant!.message,
-      content: simulateGatewayHistoryTruncationContent(assistant!.message.content),
+      ...assistant,
+      content: simulateGatewayHistoryTruncationContent(assistant.content),
     }];
 
     expect(gatewayHistoryNeedsTranscriptHydration(gatewayMessages)).toBe(true);
@@ -85,22 +89,21 @@ describe('fa3ccd85 transcript hydration fixture', () => {
     const merged = mergeGatewayHistoryWithTranscript(gatewayMessages, transcriptMessages);
     const mergedText = extractText(merged[0]?.content);
 
-    expect(mergedText).toBe(assistant!.text);
+    expect(mergedText).toBe(fullText);
     expect(mergedText).not.toContain('...(truncated)...');
-    expect(mergedText.length).toBe(8360);
+    expect(mergedText.length).toBe(LONG_REPLY_LENGTH);
   });
 
   it('hydrates truncated gateway history through the transcript fallback path', async () => {
-    const transcriptMessages = loadTranscriptMessages(TRANSCRIPT_PATH);
+    const assistant = buildLongAssistantMessage();
+    const fullText = extractText(assistant.content);
+    const transcriptMessages: RawMessage[] = [assistant];
+
     hostApiFetchMock.mockResolvedValueOnce({ messages: transcriptMessages });
 
-    const assistant = transcriptMessages.filter((message) => message.role === 'assistant')
-      .map((message) => ({ message, text: extractText(message.content) }))
-      .sort((left, right) => right.text.length - left.text.length)[0];
-
     const gatewayMessages: RawMessage[] = [{
-      ...assistant!.message,
-      content: simulateGatewayHistoryTruncationContent(assistant!.message.content),
+      ...assistant,
+      content: simulateGatewayHistoryTruncationContent(assistant.content),
     }];
 
     const hydrated = await hydrateGatewayHistoryFromTranscript(
@@ -112,7 +115,7 @@ describe('fa3ccd85 transcript hydration fixture', () => {
     expect(hostApiFetchMock).toHaveBeenCalledWith(
       `/api/sessions/transcript?sessionKey=${encodeURIComponent(SESSION_KEY)}&limit=200`,
     );
-    expect(extractText(hydrated[0]?.content)).toBe(assistant!.text);
+    expect(extractText(hydrated[0]?.content)).toBe(fullText);
     expect(gatewayHistoryNeedsTranscriptHydration(hydrated)).toBe(false);
   });
 });
