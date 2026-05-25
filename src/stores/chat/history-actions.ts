@@ -28,6 +28,11 @@ import {
   shouldRetryStartupHistoryLoad,
   sleep,
 } from './history-startup-retry';
+import {
+  buildChatHistoryRpcParams,
+  getChatHistoryMaxChars,
+} from './history-rpc-params';
+import { hydrateGatewayHistoryFromTranscript } from './history-transcript-hydrate';
 import type { RawMessage } from './types';
 import type { ChatGet, ChatSet, SessionHistoryActions } from './store-api';
 
@@ -237,6 +242,28 @@ export function createHistoryActions(
       };
 
       try {
+        const gatewayRpc = async <T>(
+          method: string,
+          params?: unknown,
+          timeoutMs?: number,
+        ): Promise<T> => {
+          const result = await invokeIpc(
+            'gateway:rpc',
+            method,
+            params,
+            ...(timeoutMs != null ? [timeoutMs] as const : []),
+          ) as { success: boolean; result?: T; error?: string };
+          if (!result.success) {
+            throw new Error(result.error || `RPC ${method} failed`);
+          }
+          return result.result as T;
+        };
+        const chatHistoryParams = buildChatHistoryRpcParams(
+          currentSessionKey,
+          200,
+          getChatHistoryMaxChars(gatewayRpc),
+        );
+
         let result: { success: boolean; result?: Record<string, unknown>; error?: string } | null = null;
         let lastError: unknown = null;
 
@@ -249,7 +276,7 @@ export function createHistoryActions(
             result = await invokeIpc(
               'gateway:rpc',
               'chat.history',
-              { sessionKey: currentSessionKey, limit: 200 },
+              chatHistoryParams,
               ...(historyTimeoutOverride != null ? [historyTimeoutOverride] as const : []),
             ) as { success: boolean; result?: Record<string, unknown>; error?: string };
 
@@ -293,6 +320,13 @@ export function createHistoryActions(
           const thinkingLevel = data.thinkingLevel ? String(data.thinkingLevel) : null;
           if (rawMessages.length === 0 && isCronSessionKey(currentSessionKey)) {
             rawMessages = await loadCronFallbackMessages(currentSessionKey, 200);
+          } else if (rawMessages.length > 0) {
+            rawMessages = await hydrateGatewayHistoryFromTranscript(
+              currentSessionKey,
+              rawMessages,
+              200,
+              get().messages,
+            );
           }
           const applied = applyLoadedMessages(rawMessages, thinkingLevel);
           if (applied && isInitialForegroundLoad) {

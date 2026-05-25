@@ -35,11 +35,11 @@ test.describe('ClawX chat session date grouping', () => {
             success: true,
             result: { sessions },
           },
-          [stableStringify(['chat.history', { sessionKey: MAIN_SESSION_KEY, limit: 200 }])]: {
+          [stableStringify(['chat.history', { sessionKey: MAIN_SESSION_KEY, limit: 200, maxChars: 500000 }])]: {
             success: true,
             result: { messages: [] },
           },
-          [stableStringify(['chat.history', { sessionKey: MAIN_SESSION_KEY, limit: 1000 }])]: {
+          [stableStringify(['chat.history', { sessionKey: MAIN_SESSION_KEY, limit: 1000, maxChars: 500000 }])]: {
             success: true,
             result: { messages: [] },
           },
@@ -114,11 +114,11 @@ test.describe('ClawX chat session date grouping', () => {
               }],
             },
           },
-          [stableStringify(['chat.history', { sessionKey: MAIN_SESSION_KEY, limit: 200 }])]: {
+          [stableStringify(['chat.history', { sessionKey: MAIN_SESSION_KEY, limit: 200, maxChars: 500000 }])]: {
             success: true,
             result: { messages: seededHistory },
           },
-          [stableStringify(['chat.history', { sessionKey: MAIN_SESSION_KEY, limit: 1000 }])]: {
+          [stableStringify(['chat.history', { sessionKey: MAIN_SESSION_KEY, limit: 1000, maxChars: 500000 }])]: {
             success: true,
             result: { messages: seededHistory },
           },

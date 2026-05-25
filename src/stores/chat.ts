@@ -20,6 +20,12 @@ import {
   sleep,
 } from './chat/history-startup-retry';
 import {
+  buildChatHistoryRpcParams,
+  getChatHistoryMaxChars,
+} from './chat/history-rpc-params';
+import { loadSessionTranscriptFallback } from './chat/history-transcript-fallback';
+import { hydrateGatewayHistoryFromTranscript } from './chat/history-transcript-hydrate';
+import {
   LABEL_FETCH_RETRY_DELAYS_MS,
   abandonSessionLabelHydration,
   beginSessionLabelHydration,
@@ -113,6 +119,10 @@ const OPTIMISTIC_USER_MESSAGE_TTL_MS = 30 * 60 * 1000;
 const OPTIMISTIC_USER_TIMESTAMP_MATCH_MS = 120_000;
 /** Grace period before surfacing mid-run Gateway errors that often self-recover. */
 const ERROR_RECOVERY_DELAY_MS = 12_000;
+/** OpenClaw LLM idle timeout before an internal retry. */
+const LLM_IDLE_HINT_MS = 120_000;
+/** Wait past one LLM idle window before declaring a hard no-response failure. */
+const NO_RESPONSE_SAFETY_TIMEOUT_MS = 130_000;
 
 type PendingOptimisticUserMessage = {
   message: RawMessage;
@@ -249,19 +259,6 @@ function toSessionLabel(text: string, maxLength = 50): string {
   const cleaned = cleanSessionLabelText(text).trim();
   if (!cleaned) return '';
   return cleaned.length > maxLength ? `${cleaned.slice(0, maxLength)}…` : cleaned;
-}
-
-async function loadSessionTranscriptFallback(sessionKey: string, limit = 200): Promise<RawMessage[]> {
-  try {
-    const params = new URLSearchParams({ sessionKey, limit: String(limit) });
-    const response = await hostApiFetch<{ messages?: RawMessage[] }>(
-      `/api/sessions/transcript?${params.toString()}`,
-    );
-    return Array.isArray(response.messages) ? response.messages : [];
-  } catch (error) {
-    console.warn('[chat.history] transcript fallback failed:', error);
-    return [];
-  }
 }
 
 async function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
@@ -1945,15 +1942,47 @@ function isRealUserBoundaryMessage(msg: RawMessage): boolean {
   return blocks.length === 0 || !blocks.every((block) => block.type === 'tool_result' || block.type === 'toolResult');
 }
 
-/** True when the post-user segment has real run output (not a thinking-only stub). */
-function hasMeaningfulAssistantProgressAfterLastUser(messages: RawMessage[]): boolean {
-  const segment = postUserSegmentMessages(messages);
+function segmentHasMeaningfulAssistantProgress(segment: RawMessage[]): boolean {
   return segment.some((msg) => {
     if (msg.role !== 'assistant') return false;
     if (isTerminalAssistantErrorMessage(msg)) return true;
     if (hasPendingToolUse(msg) || isToolOnlyMessage(msg)) return true;
     return hasNonToolAssistantContent(msg);
   });
+}
+
+/** True when the post-user segment has real run output (not a thinking-only stub). */
+function hasMeaningfulAssistantProgressAfterLastUser(messages: RawMessage[]): boolean {
+  return segmentHasMeaningfulAssistantProgress(postUserSegmentMessages(messages));
+}
+
+/** True when streaming state carries visible progress (not a role-only placeholder). */
+function hasMeaningfulStreamingActivity(
+  streamingMessage: unknown | null,
+  streamingText: string,
+  streamingTools: ToolStatus[],
+): boolean {
+  if (streamingText.trim()) return true;
+  if (streamingTools.length > 0) return true;
+  if (!streamingMessage || typeof streamingMessage !== 'object') return false;
+
+  const msg = streamingMessage as RawMessage;
+  if (typeof msg.content === 'string' && msg.content.trim()) return true;
+
+  const content = msg.content;
+  if (Array.isArray(content)) {
+    for (const block of content as ContentBlock[]) {
+      if (block.type === 'text' && block.text?.trim()) return true;
+      if (block.type === 'thinking' && block.thinking?.trim()) return true;
+      if (block.type === 'tool_use' || block.type === 'toolCall') return true;
+      if (block.type === 'image') return true;
+    }
+  }
+
+  const raw = msg as unknown as Record<string, unknown>;
+  if (typeof raw.text === 'string' && raw.text.trim()) return true;
+  const toolCalls = raw.tool_calls ?? raw.toolCalls;
+  return Array.isArray(toolCalls) && toolCalls.length > 0;
 }
 
 function hasAssistantProgressSinceSend(messages: RawMessage[], lastUserMessageAt: number | null): boolean {
@@ -1973,6 +2002,28 @@ function hasAssistantProgressSinceSend(messages: RawMessage[], lastUserMessageAt
 function postUserSegmentMessages(filteredMessages: RawMessage[]): RawMessage[] {
   for (let i = filteredMessages.length - 1; i >= 0; i -= 1) {
     if (isRealUserBoundaryMessage(filteredMessages[i])) {
+      return filteredMessages.slice(i + 1);
+    }
+  }
+  return [];
+}
+
+/** Segment after the user turn that matches the in-flight send (not prior history). */
+function getOpenRunSegmentFromHistory(
+  filteredMessages: RawMessage[],
+  lastUserMessageAt: number | null,
+): RawMessage[] {
+  if (lastUserMessageAt == null) {
+    return postUserSegmentMessages(filteredMessages);
+  }
+  const userMsTs = toMs(lastUserMessageAt);
+  const CLOCK_SKEW_MS = 5_000;
+  for (let i = filteredMessages.length - 1; i >= 0; i -= 1) {
+    const message = filteredMessages[i];
+    if (!isRealUserBoundaryMessage(message)) continue;
+    const ts = message.timestamp ? toMs(message.timestamp as number) : null;
+    if (ts == null) continue;
+    if (ts + CLOCK_SKEW_MS >= userMsTs && ts <= userMsTs + OPTIMISTIC_USER_TIMESTAMP_MATCH_MS) {
       return filteredMessages.slice(i + 1);
     }
   }
@@ -2549,9 +2600,10 @@ export const useChatStore = create<ChatState>((set, get) => ({
       finalMessages = dropRedundantOptimisticUserMessages(currentSessionKey, finalMessages);
 
       const { pendingFinal, lastUserMessageAt, sending: isSendingNow } = get();
-      const userMsTs = lastUserMessageAt ? toMs(lastUserMessageAt) : 0;
+      const userMsTs = lastUserMessageAt != null ? toMs(lastUserMessageAt) : 0;
       const isAfterUserMsg = (msg: RawMessage): boolean => {
-        if (!userMsTs || !msg.timestamp) return true;
+        if (lastUserMessageAt == null) return true;
+        if (!msg.timestamp) return false;
         return toMs(msg.timestamp) >= userMsTs;
       };
       const isRealUserBoundary = (msg: RawMessage): boolean => {
@@ -2560,16 +2612,21 @@ export const useChatStore = create<ChatState>((set, get) => ({
         const blocks = msg.content as Array<{ type?: string }>;
         return blocks.length === 0 || !blocks.every((block) => block.type === 'tool_result' || block.type === 'toolResult');
       };
-      const postBoundaryMessages = userMsTs
-        ? filteredMessages.filter((msg) => isAfterUserMsg(msg))
-        : (() => {
-            for (let i = filteredMessages.length - 1; i >= 0; i -= 1) {
-              if (isRealUserBoundary(filteredMessages[i])) {
-                return filteredMessages.slice(i + 1);
+      const openRunSegment = isSendingNow && lastUserMessageAt != null
+        ? getOpenRunSegmentFromHistory(filteredMessages, lastUserMessageAt)
+        : postUserSegmentMessages(filteredMessages);
+      const postBoundaryMessages = isSendingNow && lastUserMessageAt != null
+        ? openRunSegment
+        : (lastUserMessageAt != null
+          ? filteredMessages.filter((msg) => isAfterUserMsg(msg))
+          : (() => {
+              for (let i = filteredMessages.length - 1; i >= 0; i -= 1) {
+                if (isRealUserBoundary(filteredMessages[i])) {
+                  return filteredMessages.slice(i + 1);
+                }
               }
-            }
-            return filteredMessages;
-          })();
+              return filteredMessages;
+            })());
         const lastAssistantAfterBoundary = [...postBoundaryMessages].reverse().find((msg) => msg.role === 'assistant');
         const latestTerminalAssistantErrorMessage = lastAssistantAfterBoundary
           && (getMessageStopReason(lastAssistantAfterBoundary) === 'error'
@@ -2646,10 +2703,11 @@ export const useChatStore = create<ChatState>((set, get) => ({
       // (WS disconnect, console-only runs, etc.). Any assistant turn after the
       // user's message counts as progress so the safety timeout does not emit a
       // false "No response received" error while tool chains are still running.
-      if (isSendingNow && hasMeaningfulAssistantProgressAfterLastUser(filteredMessages)) {
+      const progressSegment = openRunSegment;
+      if (isSendingNow && segmentHasMeaningfulAssistantProgress(progressSegment)) {
         _lastChatEventAt = Date.now();
-        if (get().error) {
-          set({ error: null });
+        if (get().error || get().runError) {
+          set({ error: null, runError: null });
         }
       }
 
@@ -2660,9 +2718,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
       // very first `[thinking, toolCall]` intermediate turn and then paired
       // with the closer below to clobber the entire run state.
       if (isSendingNow && !pendingFinal) {
-        const hasFinalLikeAssistant = [...filteredMessages].reverse().some((msg) => {
+        const hasFinalLikeAssistant = openRunSegment.some((msg) => {
           if (msg.role !== 'assistant') return false;
-          if (!isAfterUserMsg(msg)) return false;
           if (hasPendingToolUse(msg)) return false;
           return hasNonToolAssistantContent(msg);
         });
@@ -2679,22 +2736,21 @@ export const useChatStore = create<ChatState>((set, get) => ({
       // count as non-tool content), clears `sending` / `activeRunId` /
       // `pendingFinal`, and makes the Thinking… indicator vanish mid-chain.
       if (pendingFinal || get().pendingFinal) {
-        const recentAssistant = [...filteredMessages].reverse().find((msg) => {
+        const recentAssistant = [...openRunSegment].reverse().find((msg) => {
           if (msg.role !== 'assistant') return false;
-          if (!isAfterUserMsg(msg)) return false;
           if (hasPendingToolUse(msg)) return false;
           return hasNonToolAssistantContent(msg);
         });
         if (recentAssistant) {
           clearHistoryPoll();
-          set({ sending: false, activeRunId: null, pendingFinal: false });
+          set({ sending: false, activeRunId: null, pendingFinal: false, runError: null });
         }
       }
 
       // Unstick lifecycle when history already has a conclusive reply but the
       // Gateway never emitted a terminal phase event (WS drop, console run, etc.).
       if (isSendingNow && !get().streamingMessage && get().streamingTools.length === 0) {
-        const openSegment = postUserSegmentMessages(filteredMessages);
+        const openSegment = openRunSegment;
         const hasConclusiveReply = openSegment.some((message) => {
           if (message.role !== 'assistant') return false;
           if (hasPendingToolUse(message)) return false;
@@ -2707,6 +2763,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
             activeRunId: null,
             pendingFinal: false,
             lastUserMessageAt: null,
+            runError: null,
           });
         }
       }
@@ -2747,6 +2804,12 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
       try {
         const fallbackMessages: RawMessage[] = [];
+        const gatewayRpc = useGatewayStore.getState().rpc.bind(useGatewayStore.getState());
+        const chatHistoryParams = buildChatHistoryRpcParams(
+          currentSessionKey,
+          HISTORY_PAGE_SIZE,
+          getChatHistoryMaxChars(gatewayRpc),
+        );
 
         let data: Record<string, unknown> | null = null;
         let lastError: unknown = null;
@@ -2757,9 +2820,9 @@ export const useChatStore = create<ChatState>((set, get) => ({
           }
 
           try {
-            data = await useGatewayStore.getState().rpc<Record<string, unknown>>(
+            data = await gatewayRpc<Record<string, unknown>>(
               'chat.history',
-              { sessionKey: currentSessionKey, limit: HISTORY_PAGE_SIZE },
+              chatHistoryParams,
               historyTimeoutOverride,
             );
             lastError = null;
@@ -2798,6 +2861,13 @@ export const useChatStore = create<ChatState>((set, get) => ({
             rawMessages = fallbackMessages.length > 0
               ? fallbackMessages
               : await loadLocalHistoryFallback(currentSessionKey, 200);
+          } else if (rawMessages.length > 0) {
+            rawMessages = await hydrateGatewayHistoryFromTranscript(
+              currentSessionKey,
+              rawMessages,
+              HISTORY_PAGE_SIZE,
+              get().messages,
+            );
           }
 
           const applied = applyLoadedMessages(rawMessages, thinkingLevel);
@@ -3021,33 +3091,68 @@ export const useChatStore = create<ChatState>((set, get) => ({
     };
     _historyPollTimer = setTimeout(pollHistory, POLL_START_DELAY);
 
-    const SAFETY_TIMEOUT_MS = 90_000;
     const checkStuck = () => {
       const state = get();
       if (!state.sending) return;
-      if (state.streamingMessage || state.streamingText) return;
-      if (state.pendingFinal) {
+
+      const hasStream = hasMeaningfulStreamingActivity(
+        state.streamingMessage,
+        state.streamingText,
+        state.streamingTools,
+      );
+      if (hasStream) {
         setTimeout(checkStuck, 10_000);
         return;
       }
-      if (hasAssistantProgressSinceSend(state.messages, state.lastUserMessageAt)) {
+
+      // Gateway run-start / model-switch deltas can set `{ role: 'assistant' }`
+      // with no payload. That placeholder must not block the safety timeout.
+      if (state.streamingMessage || state.streamingText) {
+        set({ streamingMessage: null, streamingText: '' });
+      }
+
+      const sendAgeMs = state.lastUserMessageAt
+        ? Date.now() - toMs(state.lastUserMessageAt)
+        : 0;
+      const hasProgress = hasAssistantProgressSinceSend(state.messages, state.lastUserMessageAt);
+
+      if (sendAgeMs >= LLM_IDLE_HINT_MS && !state.runError && !hasProgress) {
+        set({
+          runError: 'The model did not respond within 120 seconds. Retrying…',
+        });
+      }
+
+      if (state.pendingFinal) {
+        if (hasProgress) {
+          setTimeout(checkStuck, 10_000);
+          return;
+        }
+        set({ pendingFinal: false });
+      }
+
+      if (hasProgress) {
         _lastChatEventAt = Date.now();
-        if (state.error) {
-          set({ error: null });
+        if (state.error || state.runError) {
+          set({ error: null, runError: null });
         }
         setTimeout(checkStuck, 10_000);
         return;
       }
-      if (Date.now() - _lastChatEventAt < SAFETY_TIMEOUT_MS) {
+
+      if (Date.now() - _lastChatEventAt < NO_RESPONSE_SAFETY_TIMEOUT_MS) {
         setTimeout(checkStuck, 10_000);
         return;
       }
+
       clearHistoryPoll();
       set({
         error: 'No response received from the model. The provider may be unavailable or the API key may have insufficient quota. Please check your provider settings.',
         sending: false,
         activeRunId: null,
         lastUserMessageAt: null,
+        pendingFinal: false,
+        streamingMessage: null,
+        streamingText: '',
       });
     };
     setTimeout(checkStuck, 30_000);

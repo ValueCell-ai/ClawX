@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { chatHistoryRpcParams } from './gateway-rpc-test-utils';
 
 const { gatewayRpcMock, agentsState, hostApiFetchMock } = vi.hoisted(() => ({
   gatewayRpcMock: vi.fn(),
@@ -28,7 +29,7 @@ vi.mock('@/lib/host-api', () => ({
 }));
 
 describe('useChatStore startup history retry', () => {
-  beforeEach(() => {
+  beforeEach(async () => {
     vi.resetModules();
     vi.useFakeTimers();
     window.localStorage.clear();
@@ -36,6 +37,9 @@ describe('useChatStore startup history retry', () => {
     gatewayRpcMock.mockReset();
     hostApiFetchMock.mockReset();
     hostApiFetchMock.mockResolvedValue({ messages: [] });
+    const { resetChatHistoryMaxCharsCache, resolveChatHistoryMaxChars } = await import('@/stores/chat/history-rpc-params');
+    resetChatHistoryMaxCharsCache();
+    await resolveChatHistoryMaxChars();
   });
 
   afterEach(() => {
@@ -80,13 +84,13 @@ describe('useChatStore startup history retry', () => {
     expect(gatewayRpcMock).toHaveBeenNthCalledWith(
       1,
       'chat.history',
-      { sessionKey: 'agent:main:main', limit: 200 },
+      chatHistoryRpcParams('agent:main:main', 200),
       35_000,
     );
     expect(gatewayRpcMock).toHaveBeenNthCalledWith(
       2,
       'chat.history',
-      { sessionKey: 'agent:main:main', limit: 200 },
+      chatHistoryRpcParams('agent:main:main', 200),
       undefined,
     );
     expect(setTimeoutSpy).toHaveBeenCalledWith(expect.any(Function), 191_800);
@@ -141,10 +145,15 @@ describe('useChatStore startup history retry', () => {
       message: { role: 'assistant', content: 'NO_REPLY', id: 'a1' },
     });
 
-    await Promise.resolve();
-    await Promise.resolve();
+    await vi.waitFor(() => {
+      expect(useChatStore.getState().messages.map((message) => message.content)).toEqual([
+        'hello',
+        'Real answer',
+      ]);
+    });
 
-    expect(gatewayRpcMock).toHaveBeenCalledTimes(2);
+    const historyCalls = gatewayRpcMock.mock.calls.filter(([method]) => method === 'chat.history');
+    expect(historyCalls).toHaveLength(2);
     expect(useChatStore.getState().messages.map((message) => message.content)).toEqual([
       'hello',
       'Real answer',
@@ -191,7 +200,7 @@ describe('useChatStore startup history retry', () => {
     expect(gatewayRpcMock).toHaveBeenNthCalledWith(
       2,
       'chat.history',
-      { sessionKey: 'agent:main:main', limit: 200 },
+      chatHistoryRpcParams('agent:main:main', 200),
       undefined,
     );
     expect(setTimeoutSpy).not.toHaveBeenCalledWith(expect.any(Function), 15_000);
@@ -479,7 +488,7 @@ describe('useChatStore startup history retry', () => {
 
     expect(gatewayRpcMock).toHaveBeenLastCalledWith(
       'chat.history',
-      { sessionKey: 'agent:main:main', limit: 200 },
+      chatHistoryRpcParams('agent:main:main', 200),
       35_000,
     );
     expect(setTimeoutSpy).toHaveBeenCalledWith(expect.any(Function), 191_800);
@@ -487,6 +496,7 @@ describe('useChatStore startup history retry', () => {
   });
 
   it('does not burn the first-load retry path when the first attempt becomes stale', async () => {
+    vi.useRealTimers();
     const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
     const { useChatStore } = await import('@/stores/chat');
 
@@ -511,14 +521,25 @@ describe('useChatStore startup history retry', () => {
     });
 
     let resolveFirstAttempt: ((value: { messages: Array<{ role: string; content: string; timestamp: number }> }) => void) | null = null;
-    gatewayRpcMock
-      .mockImplementationOnce(() => new Promise((resolve) => {
-        resolveFirstAttempt = resolve;
-      }))
-      .mockRejectedValueOnce(new Error('RPC timeout: chat.history'))
-      .mockResolvedValueOnce({
+    let historyAttempt = 0;
+    gatewayRpcMock.mockImplementation(async (method: string) => {
+      if (method === 'config.get') return {};
+      if (method !== 'chat.history') {
+        throw new Error(`Unexpected gateway RPC: ${method}`);
+      }
+      historyAttempt += 1;
+      if (historyAttempt === 1) {
+        return await new Promise<{ messages: Array<{ role: string; content: string; timestamp: number }> }>((resolve) => {
+          resolveFirstAttempt = resolve;
+        });
+      }
+      if (historyAttempt === 2) {
+        throw new Error('RPC timeout: chat.history');
+      }
+      return {
         messages: [{ role: 'assistant', content: 'restored after retry', timestamp: 1002 }],
-      });
+      };
+    });
 
     const firstLoad = useChatStore.getState().loadHistory(false);
     useChatStore.setState({
@@ -535,23 +556,25 @@ describe('useChatStore startup history retry', () => {
       messages: [],
     });
     const secondLoad = useChatStore.getState().loadHistory(false);
-    await vi.runAllTimersAsync();
+    await new Promise((resolve) => setTimeout(resolve, 900));
     await secondLoad;
+    vi.useFakeTimers();
 
-    expect(gatewayRpcMock).toHaveBeenCalledTimes(3);
-    expect(gatewayRpcMock.mock.calls[0]).toEqual([
+    const historyCalls = gatewayRpcMock.mock.calls.filter(([method]) => method === 'chat.history');
+    expect(historyCalls).toHaveLength(3);
+    expect(historyCalls[0]).toEqual([
       'chat.history',
-      { sessionKey: 'agent:main:main', limit: 200 },
+      chatHistoryRpcParams('agent:main:main', 200),
       35_000,
     ]);
-    expect(gatewayRpcMock.mock.calls[1]).toEqual([
+    expect(historyCalls[1]).toEqual([
       'chat.history',
-      { sessionKey: 'agent:main:main', limit: 200 },
+      chatHistoryRpcParams('agent:main:main', 200),
       35_000,
     ]);
-    expect(gatewayRpcMock.mock.calls[2]).toEqual([
+    expect(historyCalls[2]).toEqual([
       'chat.history',
-      { sessionKey: 'agent:main:main', limit: 200 },
+      chatHistoryRpcParams('agent:main:main', 200),
       35_000,
     ]);
     expect(useChatStore.getState().messages.map((message) => message.content)).toEqual(['restored after retry']);
@@ -600,7 +623,7 @@ describe('useChatStore startup history retry', () => {
 
     await useChatStore.getState().loadHistory(false);
 
-    expect(gatewayRpcMock).toHaveBeenCalledTimes(1);
+    expect(gatewayRpcMock.mock.calls.filter(([method]) => method === 'chat.history')).toHaveLength(1);
     expect(useChatStore.getState().currentSessionKey).toBe('agent:main:other');
     expect(useChatStore.getState().messages.map((message) => message.content)).toEqual(['other session']);
     expect(useChatStore.getState().error).toBeNull();
@@ -1108,6 +1131,7 @@ describe('useChatStore startup history retry', () => {
   // absent (WS drop, long tool execution) but chat.history still surfaces
   // intermediate assistant turns — those must count as progress.
   it('clears a stale no-response error when history poll shows tool progress', async () => {
+    const sendAtMs = 1_700_000_000_000;
     const { useChatStore } = await import('@/stores/chat');
     useChatStore.setState({
       currentSessionKey: 'agent:main:session-stuck',
@@ -1122,7 +1146,7 @@ describe('useChatStore startup history retry', () => {
       streamingMessage: null,
       streamingTools: [],
       pendingFinal: false,
-      lastUserMessageAt: Date.now(),
+      lastUserMessageAt: sendAtMs,
       pendingToolImages: [],
       error: 'No response received from the model. The provider may be unavailable or the API key may have insufficient quota. Please check your provider settings.',
       loading: false,
@@ -1131,7 +1155,7 @@ describe('useChatStore startup history retry', () => {
 
     gatewayRpcMock.mockResolvedValueOnce({
       messages: [
-        { id: 'user-stuck', role: 'user', content: 'weather check', timestamp: 1000 },
+        { id: 'user-stuck', role: 'user', content: 'weather check', timestamp: sendAtMs },
         {
           id: 'assistant-tool-stuck',
           role: 'assistant',
@@ -1140,7 +1164,7 @@ describe('useChatStore startup history retry', () => {
             { type: 'toolCall', id: 'tool-stuck', name: 'web_search', input: { q: 'weather' } },
           ],
           stopReason: 'toolUse',
-          timestamp: 1500,
+          timestamp: sendAtMs + 500,
         },
       ],
     });
@@ -1213,6 +1237,119 @@ describe('useChatStore startup history retry', () => {
     expect(useChatStore.getState().messages.some((msg) => msg.role === 'assistant')).toBe(true);
 
     resolveSend?.({ runId: 'run-stuck-test' });
+    await sendPromise;
+  });
+
+  it('surfaces an idle-timeout hint when a role-only stream placeholder stalls the run', async () => {
+    let resolveSend: ((value: { runId: string }) => void) | undefined;
+    gatewayRpcMock.mockImplementation((method: string) => {
+      if (method === 'chat.send') {
+        return new Promise((resolve) => {
+          resolveSend = resolve;
+        });
+      }
+      if (method === 'chat.history') {
+        return {
+          messages: [
+            { id: 'user-old', role: 'user', content: 'hello', timestamp: 1000 },
+            { id: 'assistant-old', role: 'assistant', content: 'hi there', timestamp: 1500 },
+          ],
+        };
+      }
+      return { messages: [] };
+    });
+
+    const { useChatStore } = await import('@/stores/chat');
+    useChatStore.setState({
+      currentSessionKey: 'agent:main:session-idle',
+      currentAgentId: 'main',
+      sessions: [{ key: 'agent:main:session-idle' }],
+      messages: [],
+      sessionLabels: {},
+      sessionLastActivity: {},
+      sending: false,
+      activeRunId: null,
+      streamingText: '',
+      streamingMessage: null,
+      streamingTools: [],
+      pendingFinal: false,
+      lastUserMessageAt: null,
+      pendingToolImages: [],
+      error: null,
+      runError: null,
+      loading: false,
+      thinkingLevel: null,
+    });
+
+    const sendPromise = useChatStore.getState().sendMessage('long question');
+    useChatStore.setState({
+      streamingMessage: { role: 'assistant' },
+    });
+
+    await vi.advanceTimersByTimeAsync(121_000);
+
+    expect(useChatStore.getState().runError).toContain('120 seconds');
+    expect(useChatStore.getState().sending).toBe(true);
+    expect(useChatStore.getState().streamingMessage).toBeNull();
+
+    await vi.advanceTimersByTimeAsync(20_000);
+
+    expect(useChatStore.getState().sending).toBe(false);
+    expect(useChatStore.getState().error).toContain('No response received');
+
+    resolveSend?.({ runId: 'run-idle-test' });
+    await sendPromise;
+  });
+
+  it('does not treat prior-turn assistant history as progress for a new send', async () => {
+    let resolveSend: ((value: { runId: string }) => void) | undefined;
+    gatewayRpcMock.mockImplementation((method: string) => {
+      if (method === 'chat.send') {
+        return new Promise((resolve) => {
+          resolveSend = resolve;
+        });
+      }
+      if (method === 'chat.history') {
+        return {
+          messages: [
+            { id: 'user-old', role: 'user', content: 'hello', timestamp: 1000 },
+            { id: 'assistant-old', role: 'assistant', content: 'hi there', timestamp: 1500 },
+          ],
+        };
+      }
+      return { messages: [] };
+    });
+
+    const { useChatStore } = await import('@/stores/chat');
+    useChatStore.setState({
+      currentSessionKey: 'agent:main:session-idle',
+      currentAgentId: 'main',
+      sessions: [{ key: 'agent:main:session-idle' }],
+      messages: [],
+      sessionLabels: {},
+      sessionLastActivity: {},
+      sending: false,
+      activeRunId: null,
+      streamingText: '',
+      streamingMessage: null,
+      streamingTools: [],
+      pendingFinal: false,
+      lastUserMessageAt: null,
+      pendingToolImages: [],
+      error: null,
+      runError: null,
+      loading: false,
+      thinkingLevel: null,
+    });
+
+    const sendPromise = useChatStore.getState().sendMessage('new question');
+    await vi.advanceTimersByTimeAsync(121_000);
+
+    expect(useChatStore.getState().runError).toContain('120 seconds');
+    expect(useChatStore.getState().error).toBeNull();
+    expect(useChatStore.getState().sending).toBe(true);
+
+    resolveSend?.({ runId: 'run-idle-test-2' });
     await sendPromise;
   });
 });

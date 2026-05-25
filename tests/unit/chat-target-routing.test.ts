@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { chatHistoryRpcParams } from './gateway-rpc-test-utils';
 
 const { gatewayRpcMock, hostApiFetchMock, agentsState } = vi.hoisted(() => ({
   gatewayRpcMock: vi.fn(),
@@ -60,6 +61,9 @@ describe('chat target routing', () => {
 
     gatewayRpcMock.mockReset();
     gatewayRpcMock.mockImplementation(async (method: string) => {
+      if (method === 'config.get') {
+        return { messages: [] };
+      }
       if (method === 'chat.history') {
         return { messages: [] };
       }
@@ -115,7 +119,7 @@ describe('chat target routing', () => {
     expect(state.messages.at(-1)?.content).toBe('Hello direct agent');
 
     const historyCall = gatewayRpcMock.mock.calls.find(([method]) => method === 'chat.history');
-    expect(historyCall?.[1]).toEqual({ sessionKey: 'agent:research:desk', limit: 200 });
+    expect(historyCall?.[1]).toEqual(chatHistoryRpcParams('agent:research:desk', 200));
 
     const sendCall = gatewayRpcMock.mock.calls.find(([method]) => method === 'chat.send');
     expect(sendCall?.[1]).toMatchObject({

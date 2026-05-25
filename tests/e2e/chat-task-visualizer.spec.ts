@@ -203,13 +203,13 @@ test.describe('ClawX chat execution graph', () => {
               sessions: [{ key: PROJECT_MANAGER_SESSION_KEY, displayName: 'main' }],
             },
           },
-          [stableStringify(['chat.history', { sessionKey: PROJECT_MANAGER_SESSION_KEY, limit: 200 }])]: {
+          [stableStringify(['chat.history', { sessionKey: PROJECT_MANAGER_SESSION_KEY, limit: 200, maxChars: 500000 }])]: {
             success: true,
             result: {
               messages: seededHistory,
             },
           },
-          [stableStringify(['chat.history', { sessionKey: PROJECT_MANAGER_SESSION_KEY, limit: 1000 }])]: {
+          [stableStringify(['chat.history', { sessionKey: PROJECT_MANAGER_SESSION_KEY, limit: 1000, maxChars: 500000 }])]: {
             success: true,
             result: {
               messages: seededHistory,
@@ -299,13 +299,13 @@ test.describe('ClawX chat execution graph', () => {
               sessions: [{ key: PROJECT_MANAGER_SESSION_KEY, displayName: 'main' }],
             },
           },
-          [stableStringify(['chat.history', { sessionKey: PROJECT_MANAGER_SESSION_KEY, limit: 200 }])]: {
+          [stableStringify(['chat.history', { sessionKey: PROJECT_MANAGER_SESSION_KEY, limit: 200, maxChars: 500000 }])]: {
             success: true,
             result: {
               messages: longRunHistory,
             },
           },
-          [stableStringify(['chat.history', { sessionKey: PROJECT_MANAGER_SESSION_KEY, limit: 1000 }])]: {
+          [stableStringify(['chat.history', { sessionKey: PROJECT_MANAGER_SESSION_KEY, limit: 1000, maxChars: 500000 }])]: {
             success: true,
             result: {
               messages: longRunHistory,
@@ -369,13 +369,13 @@ test.describe('ClawX chat execution graph', () => {
               sessions: [{ key: PROJECT_MANAGER_SESSION_KEY, displayName: 'main' }],
             },
           },
-          [stableStringify(['chat.history', { sessionKey: PROJECT_MANAGER_SESSION_KEY, limit: 200 }])]: {
+          [stableStringify(['chat.history', { sessionKey: PROJECT_MANAGER_SESSION_KEY, limit: 200, maxChars: 500000 }])]: {
             success: true,
             result: {
               messages: errorRunHistory,
             },
           },
-          [stableStringify(['chat.history', { sessionKey: PROJECT_MANAGER_SESSION_KEY, limit: 1000 }])]: {
+          [stableStringify(['chat.history', { sessionKey: PROJECT_MANAGER_SESSION_KEY, limit: 1000, maxChars: 500000 }])]: {
             success: true,
             result: {
               messages: errorRunHistory,
