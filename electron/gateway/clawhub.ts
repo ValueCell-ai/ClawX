@@ -40,11 +40,32 @@ export interface ClawHubInstalledSkillResult {
     baseDir?: string;
 }
 
+interface ClawHubApiSearchEntry {
+    slug?: string;
+    displayName?: string;
+    summary?: string | null;
+    version?: string | null;
+    latestVersion?: {
+        version?: string | null;
+    } | null;
+}
+
+interface ClawHubApiSearchResponse {
+    results?: ClawHubApiSearchEntry[];
+}
+
+interface ClawHubApiListResponse {
+    items?: ClawHubApiSearchEntry[];
+}
+
 export interface MarketplaceProvider {
     getCapability(): Promise<{ mode: string; canSearch: boolean; canInstall: boolean; reason?: string }>;
     search(params: ClawHubSearchParams): Promise<ClawHubSkillResult[]>;
     install(params: ClawHubInstallParams): Promise<void>;
 }
+
+const CLAWHUB_MARKETPLACE_API_BASE_URL = 'https://clawhub.ai';
+const CLAWHUB_MARKETPLACE_TIMEOUT_MS = 5_000;
 
 export class ClawHubService {
     private workDir: string;
@@ -90,6 +111,73 @@ export class ClawHubService {
 
     private stripAnsi(line: string): string {
         return line.replace(this.ansiRegex, '').trim();
+    }
+
+    private mapMarketplaceEntry(entry: ClawHubApiSearchEntry): ClawHubSkillResult | null {
+        const slug = entry.slug?.trim();
+        if (!slug) return null;
+
+        const name = entry.displayName?.trim() || slug;
+        const description = entry.summary?.trim() || name;
+        const version = entry.version?.trim() || entry.latestVersion?.version?.trim() || 'latest';
+
+        return {
+            slug,
+            name,
+            description,
+            version,
+        };
+    }
+
+    private async fetchMarketplaceJson<T>(url: URL): Promise<T> {
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), CLAWHUB_MARKETPLACE_TIMEOUT_MS);
+
+        try {
+            const response = await fetch(url.toString(), {
+                method: 'GET',
+                headers: { Accept: 'application/json' },
+                signal: controller.signal,
+            });
+
+            if (!response.ok) {
+                throw new Error(`ClawHub marketplace HTTP ${response.status}`);
+            }
+
+            const contentType = response.headers.get('content-type')?.toLowerCase() || '';
+            if (!contentType.includes('application/json')) {
+                throw new Error(`ClawHub marketplace returned non-JSON content: ${contentType || 'unknown'}`);
+            }
+
+            return await response.json() as T;
+        } finally {
+            clearTimeout(timeout);
+        }
+    }
+
+    private async searchMarketplaceHttp(params: ClawHubSearchParams): Promise<ClawHubSkillResult[]> {
+        const url = new URL('/api/v1/search', CLAWHUB_MARKETPLACE_API_BASE_URL);
+        url.searchParams.set('q', params.query);
+        if (params.limit) {
+            url.searchParams.set('limit', String(params.limit));
+        }
+
+        const response = await this.fetchMarketplaceJson<ClawHubApiSearchResponse>(url);
+        return (response.results || [])
+            .map((entry) => this.mapMarketplaceEntry(entry))
+            .filter((entry): entry is ClawHubSkillResult => entry !== null);
+    }
+
+    private async exploreMarketplaceHttp(params: { limit?: number } = {}): Promise<ClawHubSkillResult[]> {
+        const url = new URL('/api/v1/skills', CLAWHUB_MARKETPLACE_API_BASE_URL);
+        if (params.limit) {
+            url.searchParams.set('limit', String(params.limit));
+        }
+
+        const response = await this.fetchMarketplaceJson<ClawHubApiListResponse>(url);
+        return (response.items || [])
+            .map((entry) => this.mapMarketplaceEntry(entry))
+            .filter((entry): entry is ClawHubSkillResult => entry !== null);
     }
 
     private extractFrontmatterName(skillManifestPath: string): string | null {
@@ -225,6 +313,12 @@ export class ClawHubService {
                 return this.explore({ limit: params.limit });
             }
 
+            try {
+                return await this.searchMarketplaceHttp(params);
+            } catch (httpError) {
+                console.warn('ClawHub HTTP search failed, falling back to CLI:', httpError);
+            }
+
             const args = ['search', params.query];
             if (params.limit) {
                 args.push('--limit', String(params.limit));
@@ -288,6 +382,12 @@ export class ClawHubService {
      */
     async explore(params: { limit?: number } = {}): Promise<ClawHubSkillResult[]> {
         try {
+            try {
+                return await this.exploreMarketplaceHttp(params);
+            } catch (httpError) {
+                console.warn('ClawHub HTTP explore failed, falling back to CLI:', httpError);
+            }
+
             const args = ['explore'];
             if (params.limit) {
                 args.push('--limit', String(params.limit));

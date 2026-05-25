@@ -132,6 +132,32 @@ export function getRunSegmentMessages(
   return [...orphans, ...core];
 }
 
+/**
+ * True when a run segment already contains a conclusive assistant reply: the
+ * last assistant message with user-visible text that appears after all tool
+ * calls (if any). Intermediate narration before tools does not count.
+ */
+export function segmentHasFinalReply(segmentMessages: RawMessage[]): boolean {
+  let lastToolUseOffset = -1;
+  for (let i = segmentMessages.length - 1; i >= 0; i -= 1) {
+    const message = segmentMessages[i];
+    if (message.role === 'assistant' && extractToolUse(message).length > 0) {
+      lastToolUseOffset = i;
+      break;
+    }
+  }
+  return segmentMessages.some((message, index) => {
+    if (index <= lastToolUseOffset) return false;
+    if (message.role !== 'assistant') return false;
+    if (extractText(message).trim().length === 0) return false;
+    const content = message.content;
+    if (!Array.isArray(content)) return true;
+    return !(content as Array<{ type?: string }>).some(
+      (block) => block.type === 'tool_use' || block.type === 'toolCall',
+    );
+  });
+}
+
 interface DeriveTaskStepsInput {
   messages: RawMessage[];
   streamingMessage: unknown | null;

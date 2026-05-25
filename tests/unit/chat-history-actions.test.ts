@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { chatHistoryRpcParams } from './gateway-rpc-test-utils';
 
 const invokeIpcMock = vi.fn();
 const hostApiFetchMock = vi.fn();
@@ -156,12 +157,15 @@ function makeHarness(initial?: Partial<ChatLikeState>) {
 }
 
 describe('chat history actions', () => {
-  beforeEach(() => {
+  beforeEach(async () => {
     vi.resetAllMocks();
     vi.resetModules();
     vi.useRealTimers();
     invokeIpcMock.mockResolvedValue({ success: true, result: { messages: [] } });
     hostApiFetchMock.mockResolvedValue({ messages: [] });
+    const { resetChatHistoryMaxCharsCache, resolveChatHistoryMaxChars } = await import('@/stores/chat/history-rpc-params');
+    resetChatHistoryMaxCharsCache();
+    await resolveChatHistoryMaxChars();
     gatewayStoreGetStateMock.mockReturnValue({
       status: { state: 'running', port: 18789, connectedAt: Date.now() },
     });
@@ -397,14 +401,14 @@ describe('chat history actions', () => {
       1,
       'gateway:rpc',
       'chat.history',
-      { sessionKey: 'agent:main:main', limit: 200 },
+      chatHistoryRpcParams('agent:main:main', 200),
       35_000,
     );
     expect(invokeIpcMock).toHaveBeenNthCalledWith(
       2,
       'gateway:rpc',
       'chat.history',
-      { sessionKey: 'agent:main:main', limit: 200 },
+      chatHistoryRpcParams('agent:main:main', 200),
       35_000,
     );
     expect(h.read().messages.map((message) => message.content)).toEqual(['restored after retry']);

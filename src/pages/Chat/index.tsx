@@ -27,6 +27,7 @@ import {
   getRunSegmentMessages,
   hasActiveStreamingReplyInRun,
   parseSubagentCompletionInfo,
+  segmentHasFinalReply,
   type TaskStep,
 } from './task-visualization';
 import { useTranslation } from 'react-i18next';
@@ -321,14 +322,17 @@ export function Chat() {
   // tool-result wrappers (Anthropic API format).  These must NOT split
   // the run into multiple segments — only genuine user-authored messages
   // should act as run boundaries.
-  const nextUserMessageIndexes = new Array<number>(messages.length).fill(-1);
-  let nextUserMessageIndex = -1;
-  for (let idx = messages.length - 1; idx >= 0; idx -= 1) {
-    nextUserMessageIndexes[idx] = nextUserMessageIndex;
-    if (isRealUserMessage(messages[idx]) && !subagentCompletionInfos[idx]) {
-      nextUserMessageIndex = idx;
+  const nextUserMessageIndexes = useMemo(() => {
+    const indexes = new Array<number>(messages.length).fill(-1);
+    let nextUserMessageIndex = -1;
+    for (let idx = messages.length - 1; idx >= 0; idx -= 1) {
+      indexes[idx] = nextUserMessageIndex;
+      if (isRealUserMessage(messages[idx]) && !subagentCompletionInfos[idx]) {
+        nextUserMessageIndex = idx;
+      }
     }
-  }
+    return indexes;
+  }, [messages, subagentCompletionInfos]);
 
   const questionDirectoryItems = useMemo<QuestionDirectoryItem[]>(() => {
     const items: QuestionDirectoryItem[] = [];
@@ -387,30 +391,7 @@ export function Chat() {
     const hasToolActivity = postTriggerMessages.some((m) =>
       m.role === 'assistant' && extractToolUse(m).length > 0,
     );
-    // Locate the last tool-use message so we only count text messages that
-    // come AFTER all tool calls as "final reply".  Intermediate narration
-    // messages (pure text, no tool_use) sit BEFORE tool calls and must not
-    // be misread as the concluding reply — otherwise `runStillExecutingTools`
-    // flips to false between tool rounds, collapsing the trailing
-    // "Thinking..." indicator during the brief gap before the next stream chunk.
-    let lastToolUseOffset = -1;
-    for (let i = postTriggerMessages.length - 1; i >= 0; i -= 1) {
-      const m = postTriggerMessages[i];
-      if (m.role === 'assistant' && extractToolUse(m).length > 0) {
-        lastToolUseOffset = i;
-        break;
-      }
-    }
-    const hasFinalReply = postTriggerMessages.some((m, i) => {
-      if (i <= lastToolUseOffset) return false;
-      if (m.role !== 'assistant') return false;
-      if (extractText(m).trim().length === 0) return false;
-      const content = m.content;
-      if (!Array.isArray(content)) return true;
-      return !(content as Array<{ type?: string }>).some(
-        (b) => b.type === 'tool_use' || b.type === 'toolCall',
-      );
-    });
+    const hasFinalReply = segmentHasFinalReply(postTriggerMessages);
     const runStillExecutingTools = hasToolActivity && !hasFinalReply;
     // runStillExecutingTools bridges the brief gap between tool rounds when
     // Gateway temporarily clears sending.  However, after an explicit abort
@@ -418,8 +399,17 @@ export function Chat() {
     // gate it on activeRunId being present. We also bail out as soon as a
     // terminal model error has been surfaced so the run doesn't appear active.
     const isLatestRunSegment = nextUserIndex === -1;
+    // History may already contain the final answer while lifecycle flags are
+    // still armed (missing Gateway terminal phase, blocked chat.send RPC, etc.).
+    // Treat the run as closed for graph/input UI when the transcript is done
+    // and nothing is actively streaming. Require prior tool activity so an early
+    // narration-only history snapshot does not collapse the graph mid-chain.
+    const runCompletedInHistory = hasFinalReply
+      && !hasAnyStreamContent
+      && (hasToolActivity || !sending);
     const isLatestOpenRun = isLatestRunSegment
       && !runError
+      && !runCompletedInHistory
       && (sending || pendingFinal || hasAnyStreamContent || (runStillExecutingTools && !!activeRunId));
 
     const buildSteps = (omitLastStreamingMessageSegment: boolean): TaskStep[] => {
@@ -631,6 +621,23 @@ export function Chat() {
     }];
   }, [messages, subagentCompletionInfos, currentSessionKey, streamingMessage, streamingTools, pendingFinal, sending, hasAnyStreamContent, hasStreamText, hasStreamImages, streamText, streamTools.length, hasRunningStreamToolStatus, childTranscripts, currentAgentId, agents, sessionLabels, graphStepCache, runError, isRunTrigger]);
   const hasActiveExecutionGraph = userRunCards.some((card) => card.active);
+  let latestRunSegmentCompletion = { hasFinalReply: false, hasToolActivity: false };
+  for (let idx = messages.length - 1; idx >= 0; idx -= 1) {
+    if (!isRealUserMessage(messages[idx]) || subagentCompletionInfos[idx]) continue;
+    const nextUserIndex = nextUserMessageIndexes[idx];
+    const postTrigger = getPostTriggerSegmentMessages(messages, idx, nextUserIndex);
+    latestRunSegmentCompletion = {
+      hasFinalReply: segmentHasFinalReply(postTrigger),
+      hasToolActivity: postTrigger.some((m) =>
+        m.role === 'assistant' && extractToolUse(m).length > 0,
+      ),
+    };
+    break;
+  }
+  const runSettledInHistory = latestRunSegmentCompletion.hasFinalReply
+    && !hasAnyStreamContent
+    && (latestRunSegmentCompletion.hasToolActivity || !sending);
+  const inputRunActive = (sending || hasActiveExecutionGraph) && !runSettledInHistory;
   const replyTextOverrides = useMemo(() => {
     const map = new Map<number, string>();
     for (const card of userRunCards) {
@@ -932,12 +939,12 @@ export function Chat() {
                   )}
 
                   {/* Activity indicator: waiting for next AI turn after tool execution */}
-                  {sending && pendingFinal && !shouldRenderStreaming && !hasActiveExecutionGraph && (
+                  {inputRunActive && pendingFinal && !shouldRenderStreaming && !hasActiveExecutionGraph && (
                     <ActivityIndicator phase="tool_processing" />
                   )}
 
                   {/* Typing indicator when sending but no stream content yet */}
-                  {sending && !pendingFinal && !hasAnyStreamContent && !hasActiveExecutionGraph && (
+                  {inputRunActive && !pendingFinal && !hasAnyStreamContent && !hasActiveExecutionGraph && (
                     <TypingIndicator />
                   )}
                 </>
@@ -1003,7 +1010,7 @@ export function Chat() {
         onSend={sendMessage}
         onStop={abortRun}
         disabled={!isGatewayRunning}
-        sending={sending || hasActiveExecutionGraph}
+        sending={inputRunActive}
         isEmpty={isEmpty}
       />
       </div>
@@ -1147,7 +1154,7 @@ function WelcomeScreen() {
 
 function TypingIndicator() {
   return (
-    <div className="flex gap-3">
+    <div className="flex gap-3" data-testid="chat-typing-indicator">
       <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full mt-1 bg-black/5 dark:bg-white/5 text-foreground">
         <Sparkles className="h-4 w-4" />
       </div>
@@ -1167,7 +1174,7 @@ function TypingIndicator() {
 function ActivityIndicator({ phase }: { phase: 'tool_processing' }) {
   void phase;
   return (
-    <div className="flex gap-3">
+    <div className="flex gap-3" data-testid="chat-activity-indicator">
       <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full mt-1 bg-black/5 dark:bg-white/5 text-foreground">
         <Sparkles className="h-4 w-4" />
       </div>

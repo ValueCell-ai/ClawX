@@ -8,10 +8,11 @@ vi.mock('@/lib/api-client', () => ({
 
 type ChatLikeState = {
   currentSessionKey: string;
-  sessions: Array<{ key: string; displayName?: string; updatedAt?: number }>;
+  sessions: Array<{ key: string; displayName?: string; updatedAt?: number; status?: string; hasActiveRun?: boolean }>;
   messages: Array<{ role: string; timestamp?: number; content?: unknown }>;
   sessionLabels: Record<string, string>;
   sessionLastActivity: Record<string, number>;
+  sending: boolean;
   streamingText: string;
   streamingMessage: unknown | null;
   streamingTools: unknown[];
@@ -30,6 +31,7 @@ function makeHarness(initial?: Partial<ChatLikeState>) {
     messages: [],
     sessionLabels: {},
     sessionLastActivity: {},
+    sending: false,
     streamingText: '',
     streamingMessage: null,
     streamingTools: [],
@@ -172,6 +174,80 @@ describe('chat session actions', () => {
     expect(h.read().sessionLastActivity['agent:main:main']).toBe(1773281700000);
     expect(h.read().sessionLastActivity['agent:main:cron:job-1']).toBe(1773281731621);
     expect(h.read().sessions.find((session) => session.key === 'agent:main:cron:job-1')?.updatedAt).toBe(1773281731621);
+  });
+
+  it('clears stale current-run state when sessions.list reports the current session is idle', async () => {
+    const { createSessionActions } = await import('@/stores/chat/session-actions');
+    const h = makeHarness({
+      currentSessionKey: 'agent:main:main',
+      sessions: [{ key: 'agent:main:main' }],
+      sending: true,
+      activeRunId: 'run-stale',
+      pendingFinal: true,
+      lastUserMessageAt: 1779693769991,
+      streamingText: 'partial',
+      streamingMessage: { role: 'assistant', content: 'partial' },
+      streamingTools: [{ name: 'browser', status: 'completed' }],
+      pendingToolImages: [{ fileName: 'x.png' }],
+    });
+    const actions = createSessionActions(h.set as never, h.get as never);
+
+    invokeIpcMock.mockResolvedValueOnce({
+      success: true,
+      result: {
+        sessions: [{
+          key: 'agent:main:main',
+          displayName: 'Main',
+          updatedAt: 1779694521057,
+          status: 'done',
+          hasActiveRun: false,
+        }],
+      },
+    });
+
+    await actions.loadSessions();
+
+    const next = h.read();
+    expect(next.sending).toBe(false);
+    expect(next.activeRunId).toBeNull();
+    expect(next.pendingFinal).toBe(false);
+    expect(next.lastUserMessageAt).toBeNull();
+    expect(next.streamingText).toBe('');
+    expect(next.streamingMessage).toBeNull();
+    expect(next.streamingTools).toEqual([]);
+    expect(next.pendingToolImages).toEqual([]);
+  });
+
+  it('does not clear current-run state from stale sessions.list metadata older than the send', async () => {
+    const { createSessionActions } = await import('@/stores/chat/session-actions');
+    const h = makeHarness({
+      currentSessionKey: 'agent:main:main',
+      sending: true,
+      activeRunId: 'run-current',
+      pendingFinal: true,
+      lastUserMessageAt: 2000,
+    });
+    const actions = createSessionActions(h.set as never, h.get as never);
+
+    invokeIpcMock.mockResolvedValueOnce({
+      success: true,
+      result: {
+        sessions: [{
+          key: 'agent:main:main',
+          updatedAt: 1000,
+          status: 'done',
+          hasActiveRun: false,
+        }],
+      },
+    });
+
+    await actions.loadSessions();
+
+    const next = h.read();
+    expect(next.sending).toBe(true);
+    expect(next.activeRunId).toBe('run-current');
+    expect(next.pendingFinal).toBe(true);
+    expect(next.lastUserMessageAt).toBe(2000);
   });
 });
 

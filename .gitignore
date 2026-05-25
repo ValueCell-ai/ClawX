@@ -42,6 +42,9 @@ coverage/
 playwright-report/
 test-results/
 
+# Local session transcript fixtures (may contain private conversation data)
+tests/fixtures/transcripts/
+
 # Cache
 .cache/
 .turbo/

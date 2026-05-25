@@ -42,11 +42,11 @@ test.describe('ClawX chat question directory', () => {
               sessions: [{ key: SESSION_KEY, displayName: 'main' }],
             },
           },
-          [stableStringify(['chat.history', { sessionKey: SESSION_KEY, limit: 200 }])]: {
+          [stableStringify(['chat.history', { sessionKey: SESSION_KEY, limit: 200, maxChars: 500000 }])]: {
             success: true,
             result: { messages: seededHistory },
           },
-          [stableStringify(['chat.history', { sessionKey: SESSION_KEY, limit: 1000 }])]: {
+          [stableStringify(['chat.history', { sessionKey: SESSION_KEY, limit: 1000, maxChars: 500000 }])]: {
             success: true,
             result: { messages: seededHistory },
           },

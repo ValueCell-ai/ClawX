@@ -25,7 +25,7 @@ test.describe('ClawX chat run state events', () => {
               sessions: [{ key: MAIN_SESSION_KEY, displayName: 'main' }],
             },
           },
-          [stableStringify(['chat.history', { sessionKey: MAIN_SESSION_KEY, limit: 200 }])]: {
+          [stableStringify(['chat.history', { sessionKey: MAIN_SESSION_KEY, limit: 200, maxChars: 500000 }])]: {
             success: true,
             result: { messages: [] },
           },

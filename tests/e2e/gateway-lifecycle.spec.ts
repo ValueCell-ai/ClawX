@@ -146,7 +146,7 @@ test.describe('ClawX gateway lifecycle resilience', () => {
             sessions: [{ key: 'agent:main:main', displayName: 'main' }],
           },
         },
-        [stableStringify(['chat.history', { sessionKey: 'agent:main:main', limit: 200 }])]: {
+        [stableStringify(['chat.history', { sessionKey: 'agent:main:main', limit: 200, maxChars: 500000 }])]: {
           success: true,
           result: {
             messages: [
