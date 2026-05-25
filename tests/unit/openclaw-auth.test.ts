@@ -1820,3 +1820,50 @@ describe('ensureOpenClawProviderAgentRuntimePins', () => {
     expect(after).toEqual(before);
   });
 });
+
+describe('batchSyncConfigFields', () => {
+  beforeEach(async () => {
+    vi.resetModules();
+    vi.restoreAllMocks();
+    await rm(testHome, { recursive: true, force: true });
+    await rm(testUserData, { recursive: true, force: true });
+  });
+
+  it('seeds web_fetch SSRF policy for fake-IP proxy environments', async () => {
+    await writeOpenClawJson({ gateway: { auth: { mode: 'token', token: 'old' } } });
+
+    const { batchSyncConfigFields } = await import('@electron/utils/openclaw-auth');
+    await batchSyncConfigFields('new-token');
+
+    const config = await readOpenClawJson();
+    const fetch = (config.tools as Record<string, unknown>).web as Record<string, unknown>;
+    const ssrfPolicy = (fetch.fetch as Record<string, unknown>).ssrfPolicy as Record<string, unknown>;
+    expect(ssrfPolicy.allowRfc2544BenchmarkRange).toBe(true);
+    expect(ssrfPolicy.allowIpv6UniqueLocalRange).toBe(true);
+  });
+
+  it('does not override explicit web_fetch SSRF policy opt-outs', async () => {
+    await writeOpenClawJson({
+      gateway: { auth: { mode: 'token', token: 'old' } },
+      tools: {
+        web: {
+          fetch: {
+            ssrfPolicy: {
+              allowRfc2544BenchmarkRange: false,
+              allowIpv6UniqueLocalRange: false,
+            },
+          },
+        },
+      },
+    });
+
+    const { batchSyncConfigFields } = await import('@electron/utils/openclaw-auth');
+    await batchSyncConfigFields('new-token');
+
+    const config = await readOpenClawJson();
+    const fetch = (config.tools as Record<string, unknown>).web as Record<string, unknown>;
+    const ssrfPolicy = (fetch.fetch as Record<string, unknown>).ssrfPolicy as Record<string, unknown>;
+    expect(ssrfPolicy.allowRfc2544BenchmarkRange).toBe(false);
+    expect(ssrfPolicy.allowIpv6UniqueLocalRange).toBe(false);
+  });
+});

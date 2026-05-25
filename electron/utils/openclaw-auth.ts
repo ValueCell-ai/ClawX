@@ -1895,6 +1895,53 @@ export async function syncGatewayTokenToConfig(token: string): Promise<void> {
 }
 
 /**
+ * Default web_fetch SSRF policy for fake-IP / transparent-proxy environments
+ * (e.g. Clash/Surge resolving public hostnames into 198.18.0.0/15). OpenClaw's
+ * web_fetch tool does not read browser.ssrfPolicy — it uses tools.web.fetch only.
+ */
+function ensureWebFetchSsrfPolicyInConfig(config: Record<string, unknown>): boolean {
+  const tools = (
+    config.tools && typeof config.tools === 'object'
+      ? { ...(config.tools as Record<string, unknown>) }
+      : {}
+  ) as Record<string, unknown>;
+  const web = (
+    tools.web && typeof tools.web === 'object'
+      ? { ...(tools.web as Record<string, unknown>) }
+      : {}
+  ) as Record<string, unknown>;
+  const fetch = (
+    web.fetch && typeof web.fetch === 'object'
+      ? { ...(web.fetch as Record<string, unknown>) }
+      : {}
+  ) as Record<string, unknown>;
+
+  const ssrfPolicy = (
+    fetch.ssrfPolicy && typeof fetch.ssrfPolicy === 'object'
+      ? { ...(fetch.ssrfPolicy as Record<string, unknown>) }
+      : {}
+  ) as Record<string, unknown>;
+
+  let changed = false;
+  if (ssrfPolicy.allowRfc2544BenchmarkRange === undefined) {
+    ssrfPolicy.allowRfc2544BenchmarkRange = true;
+    changed = true;
+  }
+  if (ssrfPolicy.allowIpv6UniqueLocalRange === undefined) {
+    ssrfPolicy.allowIpv6UniqueLocalRange = true;
+    changed = true;
+  }
+
+  if (!changed) return false;
+
+  fetch.ssrfPolicy = ssrfPolicy;
+  web.fetch = fetch;
+  tools.web = web;
+  config.tools = tools;
+  return true;
+}
+
+/**
  * Ensure browser automation is enabled in ~/.openclaw/openclaw.json.
  */
 export async function syncBrowserConfigToOpenClaw(): Promise<void> {
@@ -1931,11 +1978,13 @@ export async function syncBrowserConfigToOpenClaw(): Promise<void> {
       changed = true;
     }
 
+    changed = ensureWebFetchSsrfPolicyInConfig(config) || changed;
+
     if (!changed) return;
 
     config.browser = browser;
     await writeOpenClawJson(config);
-    console.log('Synced browser config to openclaw.json');
+    console.log('Synced browser and web_fetch config to openclaw.json');
   });
 }
 
@@ -2051,6 +2100,11 @@ export async function batchSyncConfigFields(token: string): Promise<void> {
       modified = true;
     }
 
+    // ── web_fetch SSRF policy (fake-IP / transparent-proxy environments) ──
+    if (ensureWebFetchSsrfPolicyInConfig(config)) {
+      modified = true;
+    }
+
     // ── Session idle minutes ──
     const session = (
       config.session && typeof config.session === 'object'
@@ -2069,7 +2123,7 @@ export async function batchSyncConfigFields(token: string): Promise<void> {
 
     if (modified) {
       await writeOpenClawJson(config);
-      console.log('Synced gateway token, browser config, and session idle to openclaw.json');
+      console.log('Synced gateway token, browser config, web_fetch SSRF policy, and session idle to openclaw.json');
     }
   });
 }
