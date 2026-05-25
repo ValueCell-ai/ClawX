@@ -4,6 +4,7 @@ export const OPENCLAW_PROVIDER_KEY_MINIMAX = 'minimax-portal';
 export const OPENCLAW_PROVIDER_KEY_MOONSHOT = 'moonshot';
 export const OPENCLAW_PROVIDER_KEY_MOONSHOT_GLOBAL = 'moonshot-global';
 export const OPENAI_CODEX_RUNTIME_PROVIDER_KEY = 'openai-codex';
+export const CLAWX_OPENAI_IMAGE_PROVIDER_KEY = 'clawx-openai-image';
 export const OAUTH_PROVIDER_TYPES = ['minimax-portal', 'minimax-portal-cn'] as const;
 export const OPENCLAW_OAUTH_PLUGIN_PROVIDER_KEYS = [
   OPENCLAW_PROVIDER_KEY_MINIMAX,
@@ -12,6 +13,9 @@ export const OPENCLAW_OAUTH_PLUGIN_PROVIDER_KEYS = [
 
 const OAUTH_PROVIDER_TYPE_SET = new Set<string>(OAUTH_PROVIDER_TYPES);
 const OPENCLAW_OAUTH_PLUGIN_PROVIDER_KEY_SET = new Set<string>(OPENCLAW_OAUTH_PLUGIN_PROVIDER_KEYS);
+const HIDDEN_PROVIDER_KEYS_FOR_UI = new Set<string>([
+  CLAWX_OPENAI_IMAGE_PROVIDER_KEY,
+]);
 
 const PROVIDER_KEY_ALIASES: Record<string, string> = {
   'minimax-portal-cn': OPENCLAW_PROVIDER_KEY_MINIMAX,
@@ -69,7 +73,7 @@ export function filterActiveProviderKeysForUi(
   activeKeys: Iterable<string>,
   options?: { hasConfiguredOpenAiApiKey?: boolean },
 ): string[] {
-  const keys = Array.from(activeKeys);
+  const keys = Array.from(activeKeys).filter((key) => !HIDDEN_PROVIDER_KEYS_FOR_UI.has(key));
   const active = new Set(keys);
   if (!active.has('openai') || !active.has(OPENAI_CODEX_RUNTIME_PROVIDER_KEY)) {
     return keys;

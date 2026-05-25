@@ -103,6 +103,7 @@ describe('openclaw-image-generation helpers', () => {
       fallbacks: ['google/gemini-3.1-flash-image-preview'],
       timeoutMs: 120_000,
     });
+    expect(defaults.mediaGenerationAutoProviderFallback).toBe(false);
 
     expect(await readImageGenerationConfig()).toEqual({
       primary: 'openai/gpt-image-2',

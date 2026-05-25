@@ -222,6 +222,10 @@ export async function setImageGenerationConfig(
     } else {
       delete defaults.imageGenerationModel;
     }
+    // ClawX image generation is configured as one explicit custom endpoint.
+    // Keep OpenClaw from appending other authenticated image providers such as
+    // minimax-portal/image-01 after the configured ClawX image provider.
+    defaults.mediaGenerationAutoProviderFallback = false;
 
     agents.defaults = defaults;
     config.agents = agents;
