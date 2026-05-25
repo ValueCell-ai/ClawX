@@ -77,6 +77,8 @@ export interface ChatSession {
   thinkingLevel?: string;
   model?: string;
   updatedAt?: number;
+  status?: string;
+  hasActiveRun?: boolean;
 }
 
 export interface ToolStatus {
