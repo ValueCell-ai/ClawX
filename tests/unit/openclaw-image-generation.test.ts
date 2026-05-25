@@ -2,27 +2,13 @@ import { mkdir, readFile, rm, writeFile } from 'fs/promises';
 import { join } from 'path';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { testHome, testUserData, storeState, getSettingMock, setSettingMock } = vi.hoisted(() => {
+const { testHome, testUserData } = vi.hoisted(() => {
   const suffix = Math.random().toString(36).slice(2);
-  const state = {
-    imageGenAutoSyncEnabled: true,
-    imageGenUserEdited: false,
-  };
   return {
     testHome: `/tmp/clawx-openclaw-image-gen-${suffix}`,
     testUserData: `/tmp/clawx-openclaw-image-gen-user-data-${suffix}`,
-    storeState: state,
-    getSettingMock: vi.fn(async (key: keyof typeof state) => state[key]),
-    setSettingMock: vi.fn(async (key: keyof typeof state, value: boolean) => {
-      state[key] = value;
-    }),
   };
 });
-
-vi.mock('@electron/utils/store', () => ({
-  getSetting: getSettingMock,
-  setSetting: setSettingMock,
-}));
 
 vi.mock('os', async () => {
   const actual = await vi.importActual<typeof import('os')>('os');
@@ -68,10 +54,6 @@ async function readOpenClawJson(): Promise<Record<string, unknown>> {
 describe('openclaw-image-generation helpers', () => {
   beforeEach(async () => {
     vi.resetModules();
-    storeState.imageGenAutoSyncEnabled = true;
-    storeState.imageGenUserEdited = false;
-    getSettingMock.mockClear();
-    setSettingMock.mockClear();
     await rm(testHome, { recursive: true, force: true });
     await rm(testUserData, { recursive: true, force: true });
   });
@@ -80,15 +62,12 @@ describe('openclaw-image-generation helpers', () => {
     const {
       parseProviderFromModelRef,
       isValidImageModelRef,
-      suggestImageGenerationRef,
     } = await import('@electron/utils/openclaw-image-generation');
 
     expect(parseProviderFromModelRef('openai/gpt-image-2')).toBe('openai');
     expect(parseProviderFromModelRef('invalid')).toBeNull();
     expect(isValidImageModelRef('google/gemini-3.1-flash-image-preview')).toBe(true);
     expect(isValidImageModelRef('no-slash')).toBe(false);
-    expect(suggestImageGenerationRef('openai')).toBe('openai/gpt-image-2');
-    expect(suggestImageGenerationRef('unknown-vendor')).toBeNull();
   });
 
   it('reads and writes agents.defaults.imageGenerationModel', async () => {
@@ -132,40 +111,4 @@ describe('openclaw-image-generation helpers', () => {
     });
   });
 
-  it('auto-syncs primary model when enabled and not user-edited', async () => {
-    await writeOpenClawJson({ agents: { defaults: {} } });
-
-    const {
-      maybeSyncImageGenerationOnProviderChange,
-      readImageGenerationConfig,
-    } = await import('@electron/utils/openclaw-image-generation');
-
-    const synced = await maybeSyncImageGenerationOnProviderChange({
-      runtimeProviderKey: 'google',
-    });
-    expect(synced).toBe(true);
-    expect((await readImageGenerationConfig()).primary).toBe('google/gemini-3.1-flash-image-preview');
-
-    const again = await maybeSyncImageGenerationOnProviderChange({
-      runtimeProviderKey: 'google',
-    });
-    expect(again).toBe(false);
-  });
-
-  it('skips auto-sync when user edited settings', async () => {
-    await writeOpenClawJson({ agents: { defaults: {} } });
-
-    storeState.imageGenUserEdited = true;
-
-    const {
-      maybeSyncImageGenerationOnProviderChange,
-      readImageGenerationConfig,
-    } = await import('@electron/utils/openclaw-image-generation');
-
-    const synced = await maybeSyncImageGenerationOnProviderChange({
-      runtimeProviderKey: 'openai',
-    });
-    expect(synced).toBe(false);
-    expect((await readImageGenerationConfig()).primary).toBeNull();
-  });
 });

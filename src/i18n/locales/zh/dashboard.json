@@ -64,21 +64,15 @@
     },
     "imageGeneration": {
         "title": "图像生成",
-        "description": "为 image_generate 工具配置全局图像模型。各 Agent 在各自目录下使用独立的 API 密钥。",
-        "autoSync": "随默认提供商自动同步",
-        "autoSyncDesc": "开启后，切换默认 AI 提供商会自动更新主图像模型，直到您在此手动保存自定义设置。",
-        "primaryModel": "主模型",
-        "fallbacks": "备用模型",
-        "fallbacksHint": "每行一个 provider/model，主模型失败时按顺序尝试。",
+        "description": "为 image_generate 工具配置一个自定义 OpenAI Images 兼容端点。它与聊天 Provider 完全独立。",
         "timeout": "超时（毫秒）",
         "agentAuthTitle": "各 Agent 鉴权",
-        "agentAuthDesc": "图像生成使用主模型对应提供商在各 Agent 的 auth-profiles.json 中的凭据。",
+        "agentAuthDesc": "图像生成使用各 Agent 的 auth-profiles.json 中为此自定义生图端点保存的 API Key。",
         "agentColumn": "Agent",
-        "authColumn": "主模型提供商鉴权",
+        "authColumn": "自定义生图端点鉴权",
         "defaultAgent": "默认",
         "authConfigured": "已配置",
         "authMissing": "缺少密钥",
-        "authReady": "已设密钥",
         "testAgent": "测试使用的 Agent",
         "testButton": "测试生成",
         "testing": "生成中…",
@@ -93,20 +87,22 @@
             "testFailed": "图像生成测试失败"
         },
         "openAiRelay": {
-            "title": "OpenAI 兼容中转（生图）",
-            "description": "将生图请求发往 OpenAI Images 兼容的中转站（/v1/images/generations），无需手改 openclaw.json。",
-            "baseUrl": "中转 Base URL",
-            "baseUrlHint": "例如 https://api.example.com/v1；未带 /v1 时会自动补全。",
-            "apiKey": "中转 API Key",
+            "title": "自定义生图端点",
+            "description": "将生图请求发往独立的 OpenAI Images 兼容端点（/v1/images/generations），不会改变任何聊天 Provider。",
+            "baseUrl": "生图 Base URL",
+            "baseUrlHint": "例如 https://taolat.com/v1；未带 /v1 时会自动补全。",
+            "apiKey": "API Key",
             "apiKeyPlaceholder": "sk-...",
             "apiKeyPlaceholderConfigured": "已配置，留空则不修改",
-            "primaryMustBeOpenAi": "启用中转时，主模型须为 openai/ 开头（如 openai/gpt-image-2 或中转站提供的模型名）。"
+            "model": "模型名",
+            "modelHint": "只填写模型 ID，例如 gpt-image-2；不要填写 provider/model。"
         },
         "errors": {
             "invalidTimeout": "超时必须为正数",
             "relayBaseUrlRequired": "请填写中转 Base URL",
             "relayApiKeyRequired": "请填写中转 API Key",
-            "relayRequiresOpenAiModel": "启用中转时，主模型须使用 openai/模型名 格式"
+            "relayModelRequired": "请填写模型名",
+            "relayModelInvalid": "请只填写模型名，例如 gpt-image-2；不要填写 provider/model。"
         }
     }
 }

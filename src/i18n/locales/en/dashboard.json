@@ -64,21 +64,15 @@
     },
     "imageGeneration": {
         "title": "Image Generation",
-        "description": "Global image model for the image_generate tool. API keys are per-agent under each agent directory.",
-        "autoSync": "Auto-sync with default provider",
-        "autoSyncDesc": "When enabled, changing the default AI provider updates the primary image model until you save custom settings here.",
-        "primaryModel": "Primary model",
-        "fallbacks": "Fallback models",
-        "fallbacksHint": "One provider/model per line, tried in order after the primary.",
+        "description": "Configure one custom OpenAI Images-compatible endpoint for the image_generate tool. It is independent from chat providers.",
         "timeout": "Timeout (ms)",
         "agentAuthTitle": "Per-agent authentication",
-        "agentAuthDesc": "Image generation uses credentials from each agent's auth-profiles.json for the provider in the primary model.",
+        "agentAuthDesc": "Image generation uses the API key saved for this custom image endpoint in each agent's auth-profiles.json.",
         "agentColumn": "Agent",
-        "authColumn": "Auth for primary provider",
+        "authColumn": "Custom image endpoint auth",
         "defaultAgent": "default",
         "authConfigured": "Ready",
         "authMissing": "Missing key",
-        "authReady": "key set",
         "testAgent": "Test as agent",
         "testButton": "Test generate",
         "testing": "Generating…",
@@ -93,20 +87,22 @@
             "testFailed": "Image generation test failed"
         },
         "openAiRelay": {
-            "title": "OpenAI-compatible relay (images)",
-            "description": "Send image generation to an OpenAI Images-compatible proxy (/v1/images/generations) without editing openclaw.json.",
-            "baseUrl": "Relay base URL",
-            "baseUrlHint": "e.g. https://api.example.com/v1 — /v1 is appended automatically when omitted.",
-            "apiKey": "Relay API key",
+            "title": "Custom image endpoint",
+            "description": "Send image generation to a dedicated OpenAI Images-compatible endpoint (/v1/images/generations). This does not change any chat provider.",
+            "baseUrl": "Image Base URL",
+            "baseUrlHint": "e.g. https://taolat.com/v1 — /v1 is appended automatically when omitted.",
+            "apiKey": "API key",
             "apiKeyPlaceholder": "sk-...",
             "apiKeyPlaceholderConfigured": "Already configured — leave blank to keep",
-            "primaryMustBeOpenAi": "When relay is on, the primary model must start with openai/ (e.g. openai/gpt-image-2 or your relay model id)."
+            "model": "Model name",
+            "modelHint": "Enter only the model id, for example gpt-image-2. Do not include provider/model."
         },
         "errors": {
             "invalidTimeout": "Timeout must be a positive number",
             "relayBaseUrlRequired": "Relay base URL is required",
             "relayApiKeyRequired": "Relay API key is required",
-            "relayRequiresOpenAiModel": "Relay requires a primary model in openai/model format"
+            "relayModelRequired": "Model name is required",
+            "relayModelInvalid": "Enter only the model name, for example gpt-image-2. Do not include provider/model."
         }
     }
 }

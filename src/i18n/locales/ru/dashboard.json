@@ -64,21 +64,15 @@
     },
     "imageGeneration": {
         "title": "Генерация изображений",
-        "description": "Глобальная модель для инструмента image_generate. Ключи API настраиваются отдельно для каждого агента.",
-        "autoSync": "Автосинхронизация с провайдером по умолчанию",
-        "autoSyncDesc": "При включении смена провайдера по умолчанию обновляет основную модель изображений, пока вы не сохраните свои настройки здесь.",
-        "primaryModel": "Основная модель",
-        "fallbacks": "Резервные модели",
-        "fallbacksHint": "Одна строка provider/model; используются по порядку после основной.",
+        "description": "Настройте один пользовательский OpenAI Images-совместимый endpoint для image_generate. Он независим от чат-провайдеров.",
         "timeout": "Таймаут (мс)",
         "agentAuthTitle": "Аутентификация по агентам",
-        "agentAuthDesc": "Используются учётные данные из auth-profiles.json каждого агента для провайдера основной модели.",
+        "agentAuthDesc": "Генерация изображений использует API-ключ этого пользовательского endpoint из auth-profiles.json каждого агента.",
         "agentColumn": "Агент",
-        "authColumn": "Ключ для основного провайдера",
+        "authColumn": "Авторизация endpoint изображений",
         "defaultAgent": "по умолчанию",
         "authConfigured": "Готово",
         "authMissing": "Нет ключа",
-        "authReady": "ключ есть",
         "testAgent": "Агент для теста",
         "testButton": "Тестовая генерация",
         "testing": "Генерация…",
@@ -93,20 +87,22 @@
             "testFailed": "Тест генерации изображения не удался"
         },
         "openAiRelay": {
-            "title": "OpenAI-совместимый релей (изображения)",
-            "description": "Отправка генерации изображений на прокси с OpenAI Images API (/v1/images/generations) без правки openclaw.json.",
-            "baseUrl": "Base URL релея",
-            "baseUrlHint": "например https://api.example.com/v1 — /v1 добавится автоматически.",
-            "apiKey": "API-ключ релея",
+            "title": "Пользовательский endpoint изображений",
+            "description": "Отправлять генерацию изображений на отдельный OpenAI Images-совместимый endpoint (/v1/images/generations), не меняя чат-провайдеры.",
+            "baseUrl": "Base URL изображений",
+            "baseUrlHint": "например https://taolat.com/v1 — /v1 добавится автоматически.",
+            "apiKey": "API key",
             "apiKeyPlaceholder": "sk-...",
             "apiKeyPlaceholderConfigured": "Уже настроен — оставьте пустым, чтобы не менять",
-            "primaryMustBeOpenAi": "При включённом релее основная модель должна начинаться с openai/."
+            "model": "Имя модели",
+            "modelHint": "Введите только id модели, например gpt-image-2. Не используйте provider/model."
         },
         "errors": {
             "invalidTimeout": "Таймаут должен быть положительным числом",
             "relayBaseUrlRequired": "Укажите Base URL релея",
             "relayApiKeyRequired": "Укажите API-ключ релея",
-            "relayRequiresOpenAiModel": "Для релея нужна основная модель в формате openai/имя"
+            "relayModelRequired": "Укажите имя модели",
+            "relayModelInvalid": "Введите только имя модели, например gpt-image-2. Не используйте provider/model."
         }
     }
 }

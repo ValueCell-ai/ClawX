@@ -1,0 +1,28 @@
+{
+  "id": "clawx-openai-image",
+  "name": "ClawX OpenAI Image",
+  "description": "Independent OpenAI-compatible image generation provider managed by ClawX.",
+  "version": "0.1.0",
+  "entry": "index.mjs",
+  "enabledByDefault": false,
+  "contracts": {
+    "imageGenerationProviders": [
+      "clawx-openai-image"
+    ]
+  },
+  "imageGenerationProviderMetadata": {
+    "clawx-openai-image": {
+      "capabilities": [
+        "image"
+      ],
+      "defaultModels": {
+        "image": "gpt-image-2"
+      }
+    }
+  },
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {}
+  }
+}

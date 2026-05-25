@@ -1,5 +1,9 @@
 import type { IncomingMessage, ServerResponse } from 'http';
 import type { HostApiContext } from '../context';
+import {
+  CLAWX_OPENAI_IMAGE_DEFAULT_MODEL,
+  CLAWX_OPENAI_IMAGE_PROVIDER_KEY,
+} from '../../utils/openclaw-image-relay-constants';
 import { parseJsonBody, sendJson } from '../route-utils';
 import {
   applyOpenAiImageRelaySettings,
@@ -7,7 +11,6 @@ import {
   listImageGenerationProvidersFromRuntime,
   runImageGenerationTest,
   setImageGenerationConfig,
-  setImageGenAutoSyncEnabled,
   type ImageGenerationModelConfig,
 } from '../../utils/openclaw-image-generation';
 
@@ -29,26 +32,31 @@ export async function handleMediaRoutes(
   if (url.pathname === '/api/media/image-generation' && req.method === 'PUT') {
     try {
       const body = await parseJsonBody<{
-        primary?: string | null;
-        fallbacks?: string[];
         timeoutMs?: number | null;
-        autoSyncEnabled?: boolean;
         openAiRelayEnabled?: boolean;
         openAiRelayBaseUrl?: string | null;
+        openAiRelayModel?: string | null;
         openAiRelayApiKey?: string;
       }>(req);
 
-      if (typeof body.autoSyncEnabled === 'boolean') {
-        await setImageGenAutoSyncEnabled(body.autoSyncEnabled);
-      }
-
       const current = await getImageGenerationSettingsSnapshot();
-      const nextPrimary = body.primary !== undefined
-        ? (typeof body.primary === 'string' && body.primary.trim() ? body.primary.trim() : null)
-        : current.config.primary;
+      const normalizeRelayModel = (value: unknown): string => {
+        const raw = typeof value === 'string' && value.trim()
+          ? value.trim()
+          : (current.openAiRelay.model || CLAWX_OPENAI_IMAGE_DEFAULT_MODEL);
+        const slash = raw.indexOf('/');
+        return (slash > 0 ? raw.slice(slash + 1) : raw).trim() || CLAWX_OPENAI_IMAGE_DEFAULT_MODEL;
+      };
+      const relayModel = normalizeRelayModel(body.openAiRelayModel);
+      let nextPrimary = current.config.primary;
+      if (body.openAiRelayEnabled === true) {
+        nextPrimary = `${CLAWX_OPENAI_IMAGE_PROVIDER_KEY}/${relayModel}`;
+      } else if (body.openAiRelayEnabled === false) {
+        nextPrimary = null;
+      }
       const next: ImageGenerationModelConfig = {
         primary: nextPrimary,
-        fallbacks: body.fallbacks !== undefined ? body.fallbacks : current.config.fallbacks,
+        fallbacks: [],
         timeoutMs: body.timeoutMs !== undefined
           ? (typeof body.timeoutMs === 'number' && body.timeoutMs > 0 ? Math.floor(body.timeoutMs) : null)
           : current.config.timeoutMs,
@@ -59,11 +67,11 @@ export async function handleMediaRoutes(
           enabled: body.openAiRelayEnabled,
           baseUrl: body.openAiRelayBaseUrl,
           apiKey: body.openAiRelayApiKey,
-          primaryModel: nextPrimary,
+          model: relayModel,
         });
       }
 
-      const config = await setImageGenerationConfig(next, { markUserEdited: true });
+      const config = await setImageGenerationConfig(next);
       sendJson(res, 200, {
         success: true,
         config,

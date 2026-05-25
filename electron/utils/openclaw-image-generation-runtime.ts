@@ -100,10 +100,10 @@ export async function resolveImageGenerationPrimaryFromConfig(
 
 async function getModelInputHelpers(): Promise<ModelInputModule> {
   if (!modelInputModule) {
-    const mod = await importRuntimeModule<{ n: ModelInputModule['resolveAgentModelPrimaryValue'] }>(
+    const mod = await importRuntimeModule<{ i: ModelInputModule['resolveAgentModelPrimaryValue'] }>(
       './dist/model-input-B9p-bobB.js',
     );
-    modelInputModule = { resolveAgentModelPrimaryValue: mod.n };
+    modelInputModule = { resolveAgentModelPrimaryValue: mod.i };
   }
   return modelInputModule;
 }

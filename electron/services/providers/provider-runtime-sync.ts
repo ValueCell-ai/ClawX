@@ -1,4 +1,3 @@
-import { readOpenClawConfig } from '../../utils/channel-config';
 import type { GatewayManager } from '../../gateway/manager';
 import { getProviderAccount, listProviderAccounts } from './provider-store';
 import { getProviderSecret } from '../secrets/secret-store';
@@ -9,7 +8,6 @@ import {
   ensureAnthropicMessagesModelMaxTokens,
   ensureOpenClawProviderAgentRuntimePins,
   pruneInvalidApiProviderEntries,
-  readOpenAiCompatibleImageRelayState,
   removeProviderFromOpenClaw,
   removeProviderKeyFromOpenClaw,
   saveOAuthTokenToOpenClaw,
@@ -26,7 +24,6 @@ import {
 } from '../../shared/pi-ai-model-cost';
 import { logger } from '../../utils/logger';
 import { listAgentsSnapshot } from '../../utils/agent-config';
-import { maybeSyncImageGenerationOnProviderChange } from '../../utils/openclaw-image-generation';
 
 const OPENAI_OAUTH_RUNTIME_PROVIDER = 'openai-codex';
 const OPENAI_OAUTH_DEFAULT_MODEL_REF = `${OPENAI_OAUTH_RUNTIME_PROVIDER}/gpt-5.5`;
@@ -214,11 +211,6 @@ export async function syncProviderApiKeyToRuntime(
 
 export async function syncAllProviderAuthToRuntime(): Promise<void> {
   const accounts = await listProviderAccounts();
-  const openclawConfig = await readOpenClawConfig();
-  const skipOpenAiKeySync = readOpenAiCompatibleImageRelayState(
-    openclawConfig as Record<string, unknown>,
-  ).enabled;
-
   for (const account of accounts) {
     const runtimeProviderKey = await resolveRuntimeProviderKey({
       id: account.id,
@@ -232,10 +224,6 @@ export async function syncAllProviderAuthToRuntime(): Promise<void> {
       createdAt: account.createdAt,
       updatedAt: account.updatedAt,
     });
-
-    if (skipOpenAiKeySync && runtimeProviderKey === 'openai') {
-      continue;
-    }
 
     const secret = await getProviderSecret(account.id);
     if (!secret) {
@@ -370,19 +358,6 @@ async function syncProviderToRuntime(
   return context;
 }
 
-async function maybeSyncImageGenerationForRuntime(runtimeProviderKey: string): Promise<void> {
-  try {
-    const synced = await maybeSyncImageGenerationOnProviderChange({ runtimeProviderKey });
-    if (synced) {
-      logger.info(
-        `[provider-runtime] Auto-synced agents.defaults.imageGenerationModel for "${runtimeProviderKey}"`,
-      );
-    }
-  } catch (err) {
-    logger.warn('[provider-runtime] Failed to auto-sync image generation model:', err);
-  }
-}
-
 async function removeDeletedProviderFromOpenClaw(
   provider: ProviderConfig,
   providerId: string,
@@ -514,8 +489,6 @@ export async function syncSavedProviderToRuntime(
     return;
   }
 
-  await maybeSyncImageGenerationForRuntime(context.runtimeProviderKey);
-
   try {
     await syncAgentModelsToRuntime();
   } catch (err) {
@@ -563,7 +536,6 @@ export async function syncUpdatedProviderToRuntime(
         headers: config.headers,
       }, fallbackModels);
     }
-    await maybeSyncImageGenerationForRuntime(ock);
   }
 
   try {
@@ -720,7 +692,6 @@ export async function syncDefaultProviderToRuntime(
 
       await setOpenClawDefaultModel(browserOAuthRuntimeProvider, modelOverride, fallbackModels);
       logger.info(`Configured openclaw.json for browser OAuth provider "${provider.id}"`);
-      await maybeSyncImageGenerationForRuntime(browserOAuthRuntimeProvider);
       try {
         await syncAgentModelsToRuntime();
       } catch (err) {
@@ -781,8 +752,6 @@ export async function syncDefaultProviderToRuntime(
       apiKey: providerKey,
     });
   }
-
-  await maybeSyncImageGenerationForRuntime(ock);
 
   try {
     await syncAgentModelsToRuntime();

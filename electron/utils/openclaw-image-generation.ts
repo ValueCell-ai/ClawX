@@ -9,15 +9,18 @@ import {
   readOpenAiCompatibleImageRelayState,
   syncOpenAiCompatibleImageRelay,
 } from './openclaw-auth';
+import { ensureClawXOpenAiImagePluginInstalled } from './plugin-install';
 import { listAgentsSnapshot, type AgentsSnapshot } from './agent-config';
 import { expandPath } from './paths';
-import { getSetting, setSetting } from './store';
 import {
   generateImageInProcess,
   listImageGenerationProvidersInProcess,
 } from './openclaw-image-generation-runtime';
-import { OPENAI_CODEX_RUNTIME_PROVIDER_KEY, resolveOpenClawProviderKey } from './provider-keys';
-import { getProviderService } from '../services/providers/provider-service';
+import { OPENAI_CODEX_RUNTIME_PROVIDER_KEY } from './provider-keys';
+import {
+  CLAWX_OPENAI_IMAGE_DEFAULT_MODEL,
+  CLAWX_OPENAI_IMAGE_PROVIDER_KEY,
+} from './openclaw-image-relay-constants';
 
 export interface ImageGenerationModelConfig {
   primary: string | null;
@@ -46,23 +49,17 @@ export interface ImageGenerationAgentAuthRow {
 export interface OpenAiImageRelayConfig {
   enabled: boolean;
   baseUrl: string;
+  model: string;
+  providerKey?: string;
   apiKeyConfigured: boolean;
 }
 
 export interface ImageGenerationSettingsSnapshot {
   config: ImageGenerationModelConfig;
   autoProviderFallback: boolean;
-  autoSyncEnabled: boolean;
-  userEdited: boolean;
   defaultAgentId: string;
   agents: ImageGenerationAgentAuthRow[];
   openAiRelay: OpenAiImageRelayConfig;
-  suggestions: Array<{
-    providerId: string;
-    label: string;
-    defaultRef: string;
-    configured: boolean;
-  }>;
 }
 
 export interface ImageGenerationTestResult {
@@ -75,17 +72,6 @@ export interface ImageGenerationTestResult {
   stderr?: string;
   result?: unknown;
 }
-
-/** Runtime provider key → default image model ref for ClawX auto-sync. */
-export const IMAGE_GENERATION_DEFAULT_REFS: Record<string, string> = {
-  openai: 'openai/gpt-image-2',
-  [OPENAI_CODEX_RUNTIME_PROVIDER_KEY]: 'openai/gpt-image-2',
-  google: 'google/gemini-3.1-flash-image-preview',
-  openrouter: 'openrouter/google/gemini-3.1-flash-image-preview',
-  minimax: 'minimax/image-01',
-  'minimax-portal': 'minimax-portal/image-01',
-  'minimax-portal-cn': 'minimax-portal/image-01',
-};
 
 const DEFAULT_TEST_PROMPT = 'A small red circle on a white background, minimal flat illustration.';
 /** Some relays (e.g. gpt-image-2) reject 512×512 as below minimum pixel budget. */
@@ -168,11 +154,6 @@ export function isValidImageModelRef(modelRef: string): boolean {
   return parseProviderFromModelRef(modelRef) !== null;
 }
 
-export function suggestImageGenerationRef(runtimeProviderKey: string): string | null {
-  const normalized = runtimeProviderKey.trim().toLowerCase();
-  return IMAGE_GENERATION_DEFAULT_REFS[normalized] ?? null;
-}
-
 function authProviderCandidates(providerKey: string): string[] {
   const normalized = providerKey.trim().toLowerCase();
   if (normalized === 'openai') {
@@ -211,7 +192,6 @@ export async function readImageGenerationConfig(): Promise<ImageGenerationModelC
 
 export async function setImageGenerationConfig(
   next: ImageGenerationModelConfig,
-  options?: { markUserEdited?: boolean },
 ): Promise<ImageGenerationModelConfig> {
   if (next.primary && !isValidImageModelRef(next.primary)) {
     throw new Error('primary must be in "provider/model" format');
@@ -247,56 +227,8 @@ export async function setImageGenerationConfig(
     config.agents = agents;
     await writeOpenClawConfig(config);
 
-    if (options?.markUserEdited) {
-      await setSetting('imageGenUserEdited', true);
-    }
-
     return readImageGenerationConfig();
   });
-}
-
-export async function getImageGenAutoSyncEnabled(): Promise<boolean> {
-  const value = await getSetting('imageGenAutoSyncEnabled');
-  return value !== false;
-}
-
-export async function setImageGenAutoSyncEnabled(enabled: boolean): Promise<void> {
-  await setSetting('imageGenAutoSyncEnabled', enabled);
-}
-
-export async function getImageGenUserEdited(): Promise<boolean> {
-  return (await getSetting('imageGenUserEdited')) === true;
-}
-
-export async function maybeSyncImageGenerationOnProviderChange(params: {
-  runtimeProviderKey: string;
-  vendorLabel?: string;
-}): Promise<boolean> {
-  const autoSync = await getImageGenAutoSyncEnabled();
-  if (!autoSync) {
-    return false;
-  }
-  const userEdited = await getImageGenUserEdited();
-  if (userEdited) {
-    return false;
-  }
-
-  const suggestedRef = suggestImageGenerationRef(params.runtimeProviderKey);
-  if (!suggestedRef) {
-    return false;
-  }
-
-  const current = await readImageGenerationConfig();
-  if (current.primary === suggestedRef) {
-    return false;
-  }
-
-  await setImageGenerationConfig({
-    primary: suggestedRef,
-    fallbacks: current.fallbacks,
-    timeoutMs: current.timeoutMs ?? 180_000,
-  });
-  return true;
 }
 
 async function buildAgentAuthRows(
@@ -327,35 +259,51 @@ async function buildAgentAuthRows(
   return rows;
 }
 
-async function buildSuggestions(snapshot: AgentsSnapshot): Promise<ImageGenerationSettingsSnapshot['suggestions']> {
-  const service = getProviderService();
-  const accounts = await service.listAccounts();
-  const suggestions: ImageGenerationSettingsSnapshot['suggestions'] = [];
-  const seen = new Set<string>();
+function extractModelIdFromProviderEntry(provider: unknown): string | null {
+  if (!provider || typeof provider !== 'object') {
+    return null;
+  }
+  const models = (provider as Record<string, unknown>).models;
+  if (!Array.isArray(models)) {
+    return null;
+  }
+  for (const model of models) {
+    if (typeof model === 'string' && model.trim()) {
+      return model.trim();
+    }
+    if (model && typeof model === 'object') {
+      const id = (model as Record<string, unknown>).id;
+      if (typeof id === 'string' && id.trim()) {
+        return id.trim();
+      }
+    }
+  }
+  return null;
+}
 
-  for (const account of accounts) {
-    const runtimeKey = resolveOpenClawProviderKey(account);
-    if (seen.has(runtimeKey)) {
-      continue;
+function resolveOpenAiImageRelayModelId(
+  config: ImageGenerationModelConfig,
+  openclawConfig: Record<string, unknown>,
+): string {
+  const primary = config.primary?.trim();
+  if (primary) {
+    const slash = primary.indexOf('/');
+    if (slash > 0 && slash < primary.length - 1) {
+      const provider = primary.slice(0, slash).toLowerCase();
+      if (provider === CLAWX_OPENAI_IMAGE_PROVIDER_KEY || provider === 'openai') {
+        return primary.slice(slash + 1).trim() || CLAWX_OPENAI_IMAGE_DEFAULT_MODEL;
+      }
     }
-    seen.add(runtimeKey);
-    const defaultRef = suggestImageGenerationRef(runtimeKey);
-    if (!defaultRef) {
-      continue;
-    }
-    const providerKey = parseProviderFromModelRef(defaultRef);
-    const configured = providerKey
-      ? await isImageProviderAuthenticated(providerKey, snapshot.defaultAgentId)
-      : false;
-    suggestions.push({
-      providerId: runtimeKey,
-      label: account.name || account.vendorId,
-      defaultRef,
-      configured,
-    });
   }
 
-  return suggestions;
+  const models = openclawConfig.models;
+  const providers = models && typeof models === 'object'
+    ? (models as Record<string, unknown>).providers
+    : null;
+  const providerEntry = providers && typeof providers === 'object'
+    ? (providers as Record<string, unknown>)[CLAWX_OPENAI_IMAGE_PROVIDER_KEY]
+    : null;
+  return extractModelIdFromProviderEntry(providerEntry) ?? CLAWX_OPENAI_IMAGE_DEFAULT_MODEL;
 }
 
 export async function getImageGenerationSettingsSnapshot(): Promise<ImageGenerationSettingsSnapshot> {
@@ -371,21 +319,21 @@ export async function getImageGenerationSettingsSnapshot(): Promise<ImageGenerat
 
   const providerKey = config.primary ? parseProviderFromModelRef(config.primary) : null;
   const relayState = readOpenAiCompatibleImageRelayState(openclawConfig as Record<string, unknown>);
-  const openaiKeyConfigured = await isImageProviderAuthenticated('openai', snapshot.defaultAgentId);
+  const relayAuthProvider = relayState.providerKey === 'openai' ? 'openai' : CLAWX_OPENAI_IMAGE_PROVIDER_KEY;
+  const relayKeyConfigured = await isImageProviderAuthenticated(relayAuthProvider, snapshot.defaultAgentId);
 
   return {
     config,
     autoProviderFallback,
-    autoSyncEnabled: await getImageGenAutoSyncEnabled(),
-    userEdited: await getImageGenUserEdited(),
     defaultAgentId: snapshot.defaultAgentId,
     agents: await buildAgentAuthRows(snapshot, providerKey),
     openAiRelay: {
       enabled: relayState.enabled,
       baseUrl: relayState.baseUrl,
-      apiKeyConfigured: openaiKeyConfigured,
+      model: resolveOpenAiImageRelayModelId(config, openclawConfig as Record<string, unknown>),
+      providerKey: relayState.providerKey,
+      apiKeyConfigured: relayKeyConfigured,
     },
-    suggestions: await buildSuggestions(snapshot),
   };
 }
 
@@ -393,17 +341,16 @@ export async function applyOpenAiImageRelaySettings(params: {
   enabled: boolean;
   baseUrl?: string | null;
   apiKey?: string;
-  primaryModel?: string | null;
+  model?: string | null;
 }): Promise<void> {
   const imageModelIds: string[] = [];
-  if (params.primaryModel) {
-    const provider = parseProviderFromModelRef(params.primaryModel);
-    if (provider === 'openai') {
-      const slash = params.primaryModel.indexOf('/');
-      if (slash > 0 && slash < params.primaryModel.length - 1) {
-        imageModelIds.push(params.primaryModel.slice(slash + 1).trim());
-      }
-    }
+  const explicitModel = params.model?.trim();
+  if (explicitModel) {
+    const slash = explicitModel.indexOf('/');
+    imageModelIds.push(slash > 0 ? explicitModel.slice(slash + 1).trim() : explicitModel);
+  }
+  if (imageModelIds.length === 0) {
+    imageModelIds.push(CLAWX_OPENAI_IMAGE_DEFAULT_MODEL);
   }
 
   await syncOpenAiCompatibleImageRelay({
@@ -412,6 +359,9 @@ export async function applyOpenAiImageRelaySettings(params: {
     apiKey: params.apiKey,
     imageModelIds,
   });
+  if (params.enabled) {
+    ensureClawXOpenAiImagePluginInstalled();
+  }
 }
 
 export async function listImageGenerationProvidersFromRuntime(): Promise<ImageGenerationProviderRow[]> {
@@ -421,7 +371,7 @@ export async function listImageGenerationProvidersFromRuntime(): Promise<ImageGe
     config: cfg,
     isProviderConfigured: (providerId) => isImageProviderAuthenticated(providerId, snapshot.defaultAgentId),
   });
-  return rows.filter((row) => row.id.length > 0);
+  return rows.filter((row) => row.id === CLAWX_OPENAI_IMAGE_PROVIDER_KEY);
 }
 
 function resolveAgentDirForTest(agentId: string, snapshot: AgentsSnapshot): string {

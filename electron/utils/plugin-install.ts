@@ -483,13 +483,18 @@ export function buildCandidateSources(pluginDirName: string): string[] {
   return app.isPackaged
     ? [
       join(process.resourcesPath, 'openclaw-plugins', pluginDirName),
+      join(process.resourcesPath, 'resources', 'openclaw-plugins', pluginDirName),
       join(process.resourcesPath, 'app.asar.unpacked', 'build', 'openclaw-plugins', pluginDirName),
+      join(process.resourcesPath, 'app.asar.unpacked', 'resources', 'openclaw-plugins', pluginDirName),
       join(process.resourcesPath, 'app.asar.unpacked', 'openclaw-plugins', pluginDirName),
     ]
     : [
       join(app.getAppPath(), 'build', 'openclaw-plugins', pluginDirName),
+      join(app.getAppPath(), 'resources', 'openclaw-plugins', pluginDirName),
       join(process.cwd(), 'build', 'openclaw-plugins', pluginDirName),
+      join(process.cwd(), 'resources', 'openclaw-plugins', pluginDirName),
       join(__dirname, '../../build/openclaw-plugins', pluginDirName),
+      join(__dirname, '../../resources/openclaw-plugins', pluginDirName),
     ];
 }
 
@@ -529,6 +534,14 @@ export function ensureWhatsAppPluginInstalled(): { installed: boolean; warning?:
   return ensurePluginInstalled('whatsapp', buildCandidateSources('whatsapp'), 'WhatsApp');
 }
 
+export function ensureClawXOpenAiImagePluginInstalled(): { installed: boolean; warning?: string } {
+  return ensurePluginInstalled(
+    'clawx-openai-image',
+    buildCandidateSources('clawx-openai-image'),
+    'ClawX OpenAI Image',
+  );
+}
+
 // ── Bulk startup installer ───────────────────────────────────────────────────
 
 /**
@@ -543,6 +556,7 @@ const ALL_BUNDLED_PLUGINS = [
   { fn: ensureDiscordPluginInstalled, label: 'Discord' },
   { fn: ensureQQBotPluginInstalled, label: 'QQBot' },
   { fn: ensureWhatsAppPluginInstalled, label: 'WhatsApp' },
+  { fn: ensureClawXOpenAiImagePluginInstalled, label: 'ClawX OpenAI Image' },
 ] as const;
 
 /**

@@ -1,0 +1,16 @@
+{
+  "name": "clawx-openai-image-plugin",
+  "version": "0.1.1",
+  "description": "ClawX independent OpenAI-compatible image generation provider for OpenClaw",
+  "private": true,
+  "type": "module",
+  "main": "index.mjs",
+  "openclaw": {
+    "extensions": [
+      "./index.mjs"
+    ]
+  },
+  "peerDependencies": {
+    "openclaw": "*"
+  }
+}

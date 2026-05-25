@@ -64,21 +64,15 @@
     },
     "imageGeneration": {
         "title": "画像生成",
-        "description": "image_generate ツール用のグローバル画像モデル。API キーは各エージェントのディレクトリごとに設定します。",
-        "autoSync": "デフォルトプロバイダーと自動同期",
-        "autoSyncDesc": "有効時、デフォルト AI プロバイダーの変更で主画像モデルが更新されます（ここで手動保存するまで）。",
-        "primaryModel": "プライマリモデル",
-        "fallbacks": "フォールバックモデル",
-        "fallbacksHint": "1 行に 1 つの provider/model。プライマリ失敗後に順に試行します。",
+        "description": "image_generate ツール用に、チャットプロバイダーとは独立した OpenAI Images 互換エンドポイントを 1 つ設定します。",
         "timeout": "タイムアウト（ms）",
         "agentAuthTitle": "エージェントごとの認証",
-        "agentAuthDesc": "主モデルのプロバイダーに対応する各エージェントの auth-profiles.json を使用します。",
+        "agentAuthDesc": "画像生成は、各エージェントの auth-profiles.json に保存されたこのカスタム画像エンドポイント用 API キーを使用します。",
         "agentColumn": "エージェント",
-        "authColumn": "主プロバイダーの認証",
+        "authColumn": "カスタム画像エンドポイント認証",
         "defaultAgent": "デフォルト",
         "authConfigured": "準備完了",
         "authMissing": "キー未設定",
-        "authReady": "キーあり",
         "testAgent": "テスト用エージェント",
         "testButton": "テスト生成",
         "testing": "生成中…",
@@ -93,20 +87,22 @@
             "testFailed": "画像生成テストに失敗しました"
         },
         "openAiRelay": {
-            "title": "OpenAI 互換リレー（画像）",
-            "description": "OpenAI Images 互換プロキシ（/v1/images/generations）へ送る設定。openclaw.json の手編集は不要です。",
-            "baseUrl": "リレー Base URL",
-            "baseUrlHint": "例: https://api.example.com/v1 — /v1 が無い場合は自動付与します。",
-            "apiKey": "リレー API キー",
+            "title": "カスタム画像エンドポイント",
+            "description": "画像生成を専用の OpenAI Images 互換エンドポイント（/v1/images/generations）へ送ります。チャットプロバイダーは変更しません。",
+            "baseUrl": "画像 Base URL",
+            "baseUrlHint": "例: https://taolat.com/v1 — /v1 が無い場合は自動付与します。",
+            "apiKey": "API キー",
             "apiKeyPlaceholder": "sk-...",
             "apiKeyPlaceholderConfigured": "設定済み — 空欄のままなら変更しません",
-            "primaryMustBeOpenAi": "リレー有効時は主モデルが openai/ で始まる必要があります。"
+            "model": "モデル名",
+            "modelHint": "gpt-image-2 のようなモデル ID のみを入力してください。provider/model は入力しないでください。"
         },
         "errors": {
             "invalidTimeout": "タイムアウトは正の数である必要があります",
             "relayBaseUrlRequired": "リレーの Base URL を入力してください",
             "relayApiKeyRequired": "リレーの API キーを入力してください",
-            "relayRequiresOpenAiModel": "リレーには openai/ 形式の主モデルが必要です"
+            "relayModelRequired": "モデル名が必要です",
+            "relayModelInvalid": "gpt-image-2 のようなモデル名のみを入力してください。provider/model は入力しないでください。"
         }
     }
 }
