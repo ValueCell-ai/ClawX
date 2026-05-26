@@ -768,7 +768,10 @@ export function Chat() {
       className={cn(
         'relative flex min-h-0 -m-6 overflow-hidden transition-colors duration-500',
         'bg-background',
-        isMac && 'rounded-tl-2xl shadow-[inset_1px_1px_0_hsl(var(--border)/0.55)]',
+        // Stack above MainLayout's mac-main-drag-region (z-10) so the right-hand
+        // artifact/preview pane stays clickable; window drag is handled by the
+        // sidebar + chat-toolbar drag strips instead.
+        isMac && 'z-20 rounded-tl-2xl shadow-[inset_1px_1px_0_hsl(var(--border)/0.55)]',
         isWindows && 'rounded-tl-2xl',
       )}
       style={{ height: isMac ? '100vh' : 'calc(100vh - 2.5rem)' }}
@@ -1022,7 +1025,11 @@ export function Chat() {
             <PanelResizeDividerLazy containerRef={splitContainerRef} />
           </Suspense>
           <aside
-            className="relative z-20 hidden shrink-0 border-l border-black/5 dark:border-white/10 lg:flex lg:flex-col"
+            data-testid="artifact-panel-aside"
+            className={cn(
+              'relative z-20 hidden shrink-0 border-l border-black/5 dark:border-white/10 lg:flex lg:flex-col',
+              isMac && 'no-drag',
+            )}
             style={{ width: `${panelWidthPct}%` }}
           >
             <Suspense

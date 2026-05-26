@@ -140,4 +140,32 @@ describe('ArtifactPanel', () => {
     fireEvent.pointerDown(changesButton, { button: 0 });
     expect(screen.getAllByTestId('file-preview-body')[0]).toHaveTextContent('diff');
   });
+
+  it('marks macOS chrome so preview tabs and content stay clickable', () => {
+    window.electron.platform = 'darwin';
+
+    useArtifactPanel.setState({
+      open: true,
+      tab: 'preview',
+      focusedFile: {
+        filePath: '/tmp/demo.md',
+        fileName: 'demo.md',
+        ext: '.md',
+        mimeType: 'text/markdown',
+        contentType: 'document',
+      },
+      widthPct: ARTIFACT_PANEL_DEFAULT_WIDTH,
+    });
+
+    render(
+      <ArtifactPanel
+        files={[makeGeneratedFile()]}
+        agent={null}
+      />,
+    );
+
+    expect(screen.getByTestId('artifact-panel')).toHaveClass('no-drag');
+    expect(screen.getByTestId('artifact-panel-drag-region')).toHaveClass('drag-region');
+    expect(screen.getByTestId('artifact-panel-tab-preview').parentElement).toHaveClass('no-drag');
+  });
 });

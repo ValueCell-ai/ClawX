@@ -102,6 +102,15 @@ describe('Chat artifact panel layout', () => {
     expect(actions).toHaveClass('no-drag');
   });
 
+  it('stacks the chat page above the macOS main drag strip', async () => {
+    window.electron.platform = 'darwin';
+
+    render(<Chat />);
+
+    const chatPage = await screen.findByTestId('chat-page');
+    expect(chatPage).toHaveClass('z-20');
+  });
+
   it('layers the right artifact panel above the macOS drag strip', async () => {
     window.electron.platform = 'darwin';
 
@@ -112,5 +121,6 @@ describe('Chat artifact panel layout', () => {
 
     expect(aside).toHaveClass('relative');
     expect(aside).toHaveClass('z-20');
+    expect(aside).toHaveClass('no-drag');
   });
 });

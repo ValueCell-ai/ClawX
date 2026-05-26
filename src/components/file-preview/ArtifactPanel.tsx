@@ -17,11 +17,11 @@
  * toolbar buttons, "View file changes →" links) can drive it.
  */
 import { useLayoutEffect, useMemo, useRef } from 'react';
+import { cn } from '@/lib/utils';
 import { Eye, FileEdit, FolderOpen, FolderTree, X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
-import { cn } from '@/lib/utils';
 import { supportsRichDocumentPreview, type GeneratedFile } from '@/lib/generated-files';
 import { invokeIpc } from '@/lib/api-client';
 import type { AgentSummary } from '@/types/agent';
@@ -44,6 +44,7 @@ export interface ArtifactPanelProps {
 
 export function ArtifactPanel({ files, agent, runStartedAt, refreshSignal }: ArtifactPanelProps) {
   const { t } = useTranslation('chat');
+  const isMac = window.electron?.platform === 'darwin';
   const tab = useArtifactPanel((s) => s.tab);
   const setTab = useArtifactPanel((s) => s.setTab);
   const focusedFile = useArtifactPanel((s) => s.focusedFile);
@@ -61,9 +62,16 @@ export function ArtifactPanel({ files, agent, runStartedAt, refreshSignal }: Art
   };
 
   return (
-    <div data-testid="artifact-panel" className="flex h-full min-h-0 flex-col bg-background">
+    <div data-testid="artifact-panel" className={cn('flex h-full min-h-0 flex-col bg-background', isMac && 'no-drag')}>
       <div className="relative z-30 flex shrink-0 items-center justify-between gap-2 border-b border-black/5 bg-background px-3 py-2 dark:border-white/10">
-        <div className="flex min-w-0 items-center gap-1">
+        {isMac && (
+          <div
+            data-testid="artifact-panel-drag-region"
+            className="drag-region absolute inset-0 z-0"
+            aria-hidden="true"
+          />
+        )}
+        <div className={cn('flex min-w-0 items-center gap-1', isMac && 'no-drag relative z-10')}>
           {richFocusedFile ? (
             <PanelTabButton
               testId="artifact-panel-action-open-folder"
@@ -102,7 +110,7 @@ export function ArtifactPanel({ files, agent, runStartedAt, refreshSignal }: Art
           type="button"
           variant="ghost"
           size="icon"
-          className="h-7 w-7 shrink-0"
+          className={cn('h-7 w-7 shrink-0', isMac && 'no-drag relative z-10')}
           onClick={close}
           aria-label={t('filePreview.actions.close', 'Close')}
         >
@@ -110,7 +118,7 @@ export function ArtifactPanel({ files, agent, runStartedAt, refreshSignal }: Art
         </Button>
       </div>
 
-      <div className="relative z-0 min-h-0 flex-1 overflow-hidden">
+      <div className={cn('relative z-0 min-h-0 flex-1 overflow-hidden', isMac && 'no-drag')}>
         <div className={cn('h-full min-h-0', visibleTab !== 'changes' && 'hidden')}>
           <ChangesTab
             files={files}

@@ -3,7 +3,7 @@ import { expect, test } from './fixtures/electron';
 test.describe('macOS frameless chrome', () => {
   test.skip(process.platform !== 'darwin', 'macOS drag-region chrome only');
 
-  test('keeps a draggable strip above the right content pane', async ({ page }) => {
+  test('keeps a draggable strip above non-chat pages and stacks chat above it', async ({ page }) => {
     await expect(page.getByTestId('setup-page')).toBeVisible();
     await page.getByTestId('setup-skip-button').click();
 
@@ -18,5 +18,9 @@ test.describe('macOS frameless chrome', () => {
     expect(box).not.toBeNull();
     expect(box!.width).toBeGreaterThan(200);
     expect(box!.height).toBeGreaterThanOrEqual(24);
+
+    const chatPage = page.getByTestId('chat-page');
+    await expect(chatPage).toBeVisible();
+    await expect(chatPage).toHaveCSS('z-index', '20');
   });
 });
