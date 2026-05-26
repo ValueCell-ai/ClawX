@@ -143,6 +143,11 @@ function consumeLeadingSegment(text: string, segment: string): number {
   return match ? match[0].length : 0;
 }
 
+/** True for OpenClaw internal assistant tokens that must never appear in the chat UI. */
+export function isInternalAssistantReplyText(text: string): boolean {
+  return /^(HEARTBEAT_OK|NO_REPLY)\s*$/i.test(text.trim());
+}
+
 /**
  * Extract displayable text from a message's content field.
  * Handles both string content and array-of-blocks content.
@@ -178,6 +183,7 @@ export function extractText(message: RawMessage | unknown): string {
   if (isUser && result) {
     result = cleanUserText(result);
   } else if (!isUser && result) {
+    if (isInternalAssistantReplyText(result)) return '';
     // Assistant-side cleanup: keep the bubble free of `MEDIA:/path` tags
     // that the runtime emits to point at produced artifacts.  The same
     // path is surfaced as a clickable file card via `_attachedFiles`,

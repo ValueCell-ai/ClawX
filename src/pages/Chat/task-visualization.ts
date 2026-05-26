@@ -1,4 +1,4 @@
-import { extractText, extractTextSegments, extractThinkingSegments, extractToolUse } from './message-utils';
+import { extractText, extractTextSegments, extractThinkingSegments, extractToolUse, isInternalAssistantReplyText } from './message-utils';
 import type { RawMessage, ToolStatus } from '@/stores/chat';
 
 export type TaskStepStatus = 'running' | 'completed' | 'error';
@@ -149,7 +149,8 @@ export function segmentHasFinalReply(segmentMessages: RawMessage[]): boolean {
   return segmentMessages.some((message, index) => {
     if (index <= lastToolUseOffset) return false;
     if (message.role !== 'assistant') return false;
-    if (extractText(message).trim().length === 0) return false;
+    const replyText = extractText(message).trim();
+    if (replyText.length === 0 || isInternalAssistantReplyText(replyText)) return false;
     const content = message.content;
     if (!Array.isArray(content)) return true;
     return !(content as Array<{ type?: string }>).some(

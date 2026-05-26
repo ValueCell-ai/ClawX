@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
   enrichWithToolResultFiles,
+  enrichWithToolCallAttachments,
   enrichWithCachedImages,
 } from '@/stores/chat/helpers';
 import type { RawMessage } from '@/stores/chat';
@@ -272,5 +273,31 @@ describe('enrichWithCachedImages — Gateway media bubble dedup', () => {
     const reply = enriched[0]!;
     const replyPaths = (reply._attachedFiles ?? []).map((f) => f.filePath);
     expect(replyPaths).toEqual(['/tmp/foo.png']);
+  });
+});
+
+describe('enrichWithToolCallAttachments', () => {
+  it('attaches image paths from message tool attachments array', () => {
+    const messages: RawMessage[] = [
+      {
+        role: 'assistant',
+        id: 'send-image',
+        content: [{
+          type: 'tool_use',
+          id: 'tool-1',
+          name: 'message',
+          input: {
+            action: 'send',
+            attachments: [{ filePath: '/Users/me/.openclaw/media/tool-image-generation/cat.png' }],
+          },
+        }],
+      },
+    ];
+
+    const enriched = enrichWithToolCallAttachments(messages);
+    expect(enriched[0]?._attachedFiles?.map((file) => file.filePath)).toEqual([
+      '/Users/me/.openclaw/media/tool-image-generation/cat.png',
+    ]);
+    expect(enriched[0]?._attachedFiles?.[0]?.mimeType).toBe('image/png');
   });
 });

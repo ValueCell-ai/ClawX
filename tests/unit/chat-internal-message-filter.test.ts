@@ -33,4 +33,11 @@ describe('chat internal message filter', () => {
   it('filters OpenClaw heartbeat poll user turns', () => {
     expect(isInternalMessage({ role: 'user', content: '[OpenClaw heartbeat poll]' })).toBe(true);
   });
+
+  it('filters inter-session routing payloads', () => {
+    expect(isInternalMessage({
+      role: 'user',
+      content: '[Inter-session message] sourceSession=image_generate:abc sourceTool=image_generate',
+    })).toBe(true);
+  });
 });

@@ -486,6 +486,83 @@ function mimeFromExtension(filePath: string): string {
   return map[ext] || 'application/octet-stream';
 }
 
+/** Extract local file paths declared in tool call arguments. */
+function extractFilePathsFromToolArgs(args: Record<string, unknown>): string[] {
+  const paths: string[] = [];
+  const direct = args.file_path ?? args.filePath ?? args.path ?? args.file;
+  if (typeof direct === 'string' && direct.trim()) paths.push(direct.trim());
+
+  const attachments = args.attachments;
+  if (Array.isArray(attachments)) {
+    for (const item of attachments) {
+      if (!item || typeof item !== 'object') continue;
+      const att = item as Record<string, unknown>;
+      const filePath = att.filePath ?? att.file_path ?? att.path ?? att.file;
+      if (typeof filePath === 'string' && filePath.trim()) {
+        paths.push(filePath.trim());
+      }
+    }
+  }
+
+  return paths;
+}
+
+/**
+ * Surface user-facing attachments declared in assistant tool calls (e.g.
+ * `message` tool `attachments: [{ filePath }]`) on the calling turn itself.
+ */
+function enrichWithToolCallAttachments(messages: RawMessage[]): RawMessage[] {
+  return messages.map((msg) => {
+    if (msg.role !== 'assistant') return msg;
+
+    const attachmentPaths = new Set<string>();
+    const content = msg.content;
+    if (Array.isArray(content)) {
+      for (const block of content as ContentBlock[]) {
+        if (block.type !== 'tool_use' && block.type !== 'toolCall') continue;
+        const args = (block.input ?? block.arguments) as Record<string, unknown> | undefined;
+        if (!args) continue;
+        for (const filePath of extractFilePathsFromToolArgs(args)) {
+          attachmentPaths.add(filePath);
+        }
+      }
+    }
+
+    const msgAny = msg as unknown as Record<string, unknown>;
+    const toolCalls = msgAny.tool_calls ?? msgAny.toolCalls;
+    if (Array.isArray(toolCalls)) {
+      for (const tc of toolCalls as Array<Record<string, unknown>>) {
+        const fn = (tc.function ?? tc) as Record<string, unknown>;
+        let args: Record<string, unknown> | undefined;
+        try {
+          args = typeof fn.arguments === 'string'
+            ? JSON.parse(fn.arguments)
+            : (fn.arguments ?? fn.input) as Record<string, unknown>;
+        } catch { /* ignore */ }
+        if (!args) continue;
+        for (const filePath of extractFilePathsFromToolArgs(args)) {
+          attachmentPaths.add(filePath);
+        }
+      }
+    }
+
+    if (attachmentPaths.size === 0) return msg;
+
+    const existingPaths = new Set(
+      (msg._attachedFiles || []).map((file) => file.filePath).filter(Boolean),
+    );
+    const newFiles = [...attachmentPaths]
+      .filter((filePath) => !existingPaths.has(filePath))
+      .map((filePath) => makeAttachedFile({ filePath, mimeType: mimeFromExtension(filePath) }, 'tool-result'));
+
+    if (newFiles.length === 0) return msg;
+    return {
+      ...msg,
+      _attachedFiles: [...(msg._attachedFiles || []), ...newFiles],
+    };
+  });
+}
+
 const DIRECTORY_MIME_TYPE = 'application/x-directory';
 
 function trimPathTerminators(filePath: string): string {
@@ -661,8 +738,8 @@ function getToolCallFilePath(msg: RawMessage, toolCallId: string): string | unde
       if ((block.type === 'tool_use' || block.type === 'toolCall') && block.id === toolCallId) {
         const args = (block.input ?? block.arguments) as Record<string, unknown> | undefined;
         if (args) {
-          const fp = args.file_path ?? args.filePath ?? args.path ?? args.file;
-          if (typeof fp === 'string') return fp;
+          const paths = extractFilePathsFromToolArgs(args);
+          if (paths[0]) return paths[0];
         }
       }
     }
@@ -680,8 +757,8 @@ function getToolCallFilePath(msg: RawMessage, toolCallId: string): string | unde
         args = typeof fn.arguments === 'string' ? JSON.parse(fn.arguments) : (fn.arguments ?? fn.input) as Record<string, unknown>;
       } catch { /* ignore */ }
       if (args) {
-        const fp = args.file_path ?? args.filePath ?? args.path ?? args.file;
-        if (typeof fp === 'string') return fp;
+        const paths = extractFilePathsFromToolArgs(args);
+        if (paths[0]) return paths[0];
       }
     }
   }
@@ -699,8 +776,8 @@ function collectToolCallPaths(msg: RawMessage, paths: Map<string, string>): void
       if ((block.type === 'tool_use' || block.type === 'toolCall') && block.id) {
         const args = (block.input ?? block.arguments) as Record<string, unknown> | undefined;
         if (args) {
-          const fp = args.file_path ?? args.filePath ?? args.path ?? args.file;
-          if (typeof fp === 'string') paths.set(block.id, fp);
+          const filePaths = extractFilePathsFromToolArgs(args);
+          if (filePaths[0]) paths.set(block.id, filePaths[0]);
         }
       }
     }
@@ -717,8 +794,8 @@ function collectToolCallPaths(msg: RawMessage, paths: Map<string, string>): void
         args = typeof fn.arguments === 'string' ? JSON.parse(fn.arguments) : (fn.arguments ?? fn.input) as Record<string, unknown>;
       } catch { /* ignore */ }
       if (args) {
-        const fp = args.file_path ?? args.filePath ?? args.path ?? args.file;
-        if (typeof fp === 'string') paths.set(id, fp);
+        const filePaths = extractFilePathsFromToolArgs(args);
+        if (filePaths[0]) paths.set(id, filePaths[0]);
       }
     }
   }
@@ -1114,6 +1191,8 @@ function isRuntimeSystemInjection(text: string): boolean {
     return true;
   }
 
+  if (/^\[Inter-session message\]/i.test(normalized)) return true;
+
   // Standalone time injection (e.g. "Current time: Wednesday, April 22nd, 2026 - 10:06 (Asia/Shanghai) / 2026-04-22 02:06 UTC")
   // Only match when the full message is the time announcement.
   if (
@@ -1439,6 +1518,7 @@ export {
   extractRawFilePaths,
   makeAttachedFile,
   enrichWithToolResultFiles,
+  enrichWithToolCallAttachments,
   isInternalMessage,
   isToolResultRole,
   enrichWithCachedImages,

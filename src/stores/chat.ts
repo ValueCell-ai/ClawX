@@ -45,6 +45,7 @@ import {
   type ToolStatus,
 } from './chat/types';
 import type { ChatGet, ChatSet } from './chat/store-api';
+import { enrichWithToolCallAttachments } from './chat/helpers';
 
 export type {
   AttachedFileMeta,
@@ -853,6 +854,26 @@ function mimeFromExtension(filePath: string): string {
   return map[ext] || 'application/octet-stream';
 }
 
+function extractFilePathsFromToolArgs(args: Record<string, unknown>): string[] {
+  const paths: string[] = [];
+  const direct = args.file_path ?? args.filePath ?? args.path ?? args.file;
+  if (typeof direct === 'string' && direct.trim()) paths.push(direct.trim());
+
+  const attachments = args.attachments;
+  if (Array.isArray(attachments)) {
+    for (const item of attachments) {
+      if (!item || typeof item !== 'object') continue;
+      const att = item as Record<string, unknown>;
+      const filePath = att.filePath ?? att.file_path ?? att.path ?? att.file;
+      if (typeof filePath === 'string' && filePath.trim()) {
+        paths.push(filePath.trim());
+      }
+    }
+  }
+
+  return paths;
+}
+
 const DIRECTORY_MIME_TYPE = 'application/x-directory';
 
 function trimPathTerminators(filePath: string): string {
@@ -1018,8 +1039,8 @@ function getToolCallFilePath(msg: RawMessage, toolCallId: string): string | unde
       if ((block.type === 'tool_use' || block.type === 'toolCall') && block.id === toolCallId) {
         const args = (block.input ?? block.arguments) as Record<string, unknown> | undefined;
         if (args) {
-          const fp = args.file_path ?? args.filePath ?? args.path ?? args.file;
-          if (typeof fp === 'string') return fp;
+          const paths = extractFilePathsFromToolArgs(args);
+          if (paths[0]) return paths[0];
         }
       }
     }
@@ -1037,8 +1058,8 @@ function getToolCallFilePath(msg: RawMessage, toolCallId: string): string | unde
         args = typeof fn.arguments === 'string' ? JSON.parse(fn.arguments) : (fn.arguments ?? fn.input) as Record<string, unknown>;
       } catch { /* ignore */ }
       if (args) {
-        const fp = args.file_path ?? args.filePath ?? args.path ?? args.file;
-        if (typeof fp === 'string') return fp;
+        const paths = extractFilePathsFromToolArgs(args);
+        if (paths[0]) return paths[0];
       }
     }
   }
@@ -1056,8 +1077,8 @@ function collectToolCallPaths(msg: RawMessage, paths: Map<string, string>): void
       if ((block.type === 'tool_use' || block.type === 'toolCall') && block.id) {
         const args = (block.input ?? block.arguments) as Record<string, unknown> | undefined;
         if (args) {
-          const fp = args.file_path ?? args.filePath ?? args.path ?? args.file;
-          if (typeof fp === 'string') paths.set(block.id, fp);
+          const filePaths = extractFilePathsFromToolArgs(args);
+          if (filePaths[0]) paths.set(block.id, filePaths[0]);
         }
       }
     }
@@ -1074,8 +1095,8 @@ function collectToolCallPaths(msg: RawMessage, paths: Map<string, string>): void
         args = typeof fn.arguments === 'string' ? JSON.parse(fn.arguments) : (fn.arguments ?? fn.input) as Record<string, unknown>;
       } catch { /* ignore */ }
       if (args) {
-        const fp = args.file_path ?? args.filePath ?? args.path ?? args.file;
-        if (typeof fp === 'string') paths.set(id, fp);
+        const filePaths = extractFilePathsFromToolArgs(args);
+        if (filePaths[0]) paths.set(id, filePaths[0]);
       }
     }
   }
@@ -1668,6 +1689,8 @@ function isRuntimeSystemInjection(text: string): boolean {
   ) {
     return true;
   }
+  if (/^\[Inter-session message\]/i.test(normalized)) return true;
+
   if (
     /^\s*Current time\s*:/i.test(normalized)
     && /^\s*Current time\s*:[^\n]*\/\s*\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}\s+UTC\s*$/i.test(normalized)
@@ -2631,7 +2654,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
       // Before filtering: attach images/files from tool_result messages to the next assistant message
       const messagesWithToolImages = enrichWithToolResultFiles(rawMessages);
-      const filteredMessages = messagesWithToolImages.filter((msg) => !isToolResultRole(msg.role) && !isInternalMessage(msg));
+      const messagesWithToolAttachments = enrichWithToolCallAttachments(messagesWithToolImages);
+      const filteredMessages = messagesWithToolAttachments.filter((msg) => !isToolResultRole(msg.role) && !isInternalMessage(msg));
       // Restore file attachments for user/assistant messages (from cache + text patterns)
       const enrichedMessages = enrichWithCachedImages(filteredMessages);
 
@@ -3024,7 +3048,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
       // window with a larger suffix from the transcript.  This keeps render
       // cost bounded while allowing long conversations to page backwards.
       const messagesWithToolImages = enrichWithToolResultFiles(rawMessages);
-      const filteredMessages = messagesWithToolImages.filter((msg) => !isToolResultRole(msg.role) && !isInternalMessage(msg));
+      const messagesWithToolAttachments = enrichWithToolCallAttachments(messagesWithToolImages);
+      const filteredMessages = messagesWithToolAttachments.filter((msg) => !isToolResultRole(msg.role) && !isInternalMessage(msg));
       const enrichedMessages = enrichWithCachedImages(filteredMessages);
       set({
         messages: enrichedMessages,

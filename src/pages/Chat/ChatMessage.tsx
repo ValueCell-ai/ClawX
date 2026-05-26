@@ -17,6 +17,7 @@ import { cn } from '@/lib/utils';
 import { invokeIpc, statFile } from '@/lib/api-client';
 import type { RawMessage, AttachedFileMeta } from '@/stores/chat';
 import { extractText, extractImages, extractToolUse, formatTimestamp } from './message-utils';
+import { copyImageToClipboard, type ImageCopyTarget } from './copy-image';
 
 interface ChatMessageProps {
   message: RawMessage;
@@ -324,6 +325,8 @@ export const ChatMessage = memo(function ChatMessage({
   const attachedFiles = suppressProcessAttachments && (hasText || images.length > 0 || visibleTools.length > 0)
     ? processVisibleAttachments
     : existingDerivedAttachedFiles;
+  const imageCopyTarget = resolvePrimaryImageCopyTarget(images, attachedFiles);
+  const showAssistantHoverBar = !isUser && (hasText || imageCopyTarget != null);
   const [lightboxImg, setLightboxImg] = useState<{ src: string; fileName: string; filePath?: string; base64?: string; mimeType?: string } | null>(null);
 
   // Never render tool result messages in chat UI
@@ -476,9 +479,9 @@ export const ChatMessage = memo(function ChatMessage({
           </span>
         )}
 
-        {/* Hover row for assistant messages — only when there is real text content */}
-        {!isUser && hasText && (
-          <AssistantHoverBar text={text} timestamp={message.timestamp} />
+        {/* Hover row for assistant messages */}
+        {showAssistantHoverBar && (
+          <AssistantHoverBar text={text} timestamp={message.timestamp} imageCopyTarget={imageCopyTarget} />
         )}
       </div>
 
@@ -547,16 +550,60 @@ function ToolStatusBar({
   );
 }
 
+function resolvePrimaryImageCopyTarget(
+  images: Array<{ mimeType: string; data?: string; url?: string }>,
+  attachedFiles: AttachedFileMeta[],
+): ImageCopyTarget | null {
+  for (const file of attachedFiles) {
+    if (!file.mimeType.startsWith('image/')) continue;
+    if (file.filePath || file.preview?.startsWith('data:')) {
+      return {
+        filePath: file.filePath,
+        preview: file.preview,
+        mimeType: file.mimeType,
+      };
+    }
+  }
+
+  for (const image of images) {
+    if (image.data) {
+      return { base64: image.data, mimeType: image.mimeType };
+    }
+    if (image.url?.startsWith('data:')) {
+      return { preview: image.url, mimeType: image.mimeType };
+    }
+  }
+
+  return null;
+}
+
 // ── Assistant hover bar (timestamp + copy, shown on group hover) ─
 
-function AssistantHoverBar({ text, timestamp }: { text: string; timestamp?: number }) {
+function AssistantHoverBar({
+  text,
+  timestamp,
+  imageCopyTarget,
+}: {
+  text: string;
+  timestamp?: number;
+  imageCopyTarget?: ImageCopyTarget | null;
+}) {
   const [copied, setCopied] = useState(false);
 
-  const copyContent = useCallback(() => {
-    navigator.clipboard.writeText(text);
+  const copyContent = useCallback(async () => {
+    if (imageCopyTarget) {
+      const copiedImage = await copyImageToClipboard(imageCopyTarget);
+      if (copiedImage) {
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
+        return;
+      }
+    }
+    if (!text.trim()) return;
+    await navigator.clipboard.writeText(text);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
-  }, [text]);
+  }, [text, imageCopyTarget]);
 
   return (
     <div className="flex items-center justify-between w-full opacity-0 group-hover:opacity-100 transition-opacity duration-200 select-none px-1">

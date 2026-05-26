@@ -5,6 +5,7 @@ import type { RawMessage } from '@/stores/chat';
 
 vi.mock('@/lib/api-client', () => ({
   invokeIpc: vi.fn(),
+  readBinaryFile: vi.fn(),
   statFile: vi.fn(async (path: string) => {
     if (path.includes('missing') || path.includes('不存在')) {
       return { ok: false, error: 'notFound' };
@@ -403,5 +404,52 @@ describe('ChatMessage reply styling', () => {
     const bubble = container.querySelector('.rounded-2xl.bg-brand');
     expect(bubble).not.toBeNull();
     expect(bubble).toHaveTextContent('Keep the prompt bubble.');
+  });
+});
+
+describe('ChatMessage image copy', () => {
+  beforeEach(() => {
+    class MockClipboardItem {
+      constructor(public items: Record<string, Blob>) {}
+    }
+    Object.assign(globalThis, { ClipboardItem: MockClipboardItem });
+    Object.assign(navigator, {
+      clipboard: {
+        write: vi.fn(async () => undefined),
+        writeText: vi.fn(async () => undefined),
+      },
+    });
+  });
+
+  it('copies image bytes instead of the media URL text when an image attachment is present', async () => {
+    const { readBinaryFile } = await import('@/lib/api-client');
+    vi.mocked(readBinaryFile).mockResolvedValueOnce({
+      ok: true,
+      data: Uint8Array.from([137, 80, 78, 71]),
+      mimeType: 'image/png',
+    });
+
+    const message: RawMessage = {
+      role: 'assistant',
+      content: 'http://127.0.0.1:18789/api/chat/media/outgoing/agent/main/full',
+      _attachedFiles: [
+        {
+          fileName: 'cat.png',
+          mimeType: 'image/png',
+          fileSize: 1234,
+          preview: null,
+          filePath: '/tmp/cat.png',
+          source: 'tool-result',
+        },
+      ],
+    };
+
+    render(<ChatMessage message={message} />);
+
+    fireEvent.click(screen.getByRole('button'));
+    await vi.waitFor(() => {
+      expect(navigator.clipboard.write).toHaveBeenCalledTimes(1);
+    });
+    expect(navigator.clipboard.writeText).not.toHaveBeenCalled();
   });
 });

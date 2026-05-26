@@ -18,7 +18,7 @@ import { ChatMessage } from './ChatMessage';
 import { ChatInput } from './ChatInput';
 import { ExecutionGraphCard } from './ExecutionGraphCard';
 import { ChatToolbar } from './ChatToolbar';
-import { extractImages, extractText, extractThinking, extractToolUse, normalizeMessageRole, stripProcessMessagePrefix } from './message-utils';
+import { extractImages, extractText, extractThinking, extractToolUse, isInternalAssistantReplyText, normalizeMessageRole, stripProcessMessagePrefix } from './message-utils';
 import {
   buildRunSegmentMessageIndices,
   deriveTaskSteps,
@@ -109,6 +109,10 @@ function isRealUserMessage(msg: RawMessage): boolean {
   // tool-result wrapper, not a real user message.
   const blocks = content as Array<{ type?: string }>;
   return blocks.length === 0 || !blocks.every((b) => b.type === 'tool_result' || b.type === 'toolResult');
+}
+
+function hasUserFacingImageAttachments(msg: RawMessage): boolean {
+  return (msg._attachedFiles ?? []).some((file) => file.mimeType.startsWith('image/'));
 }
 
 function generatedFileToTarget(file: GeneratedFile): FilePreviewTarget {
@@ -497,9 +501,10 @@ export function Chat() {
     let streamingReplyText: string | null = null;
     if (rawStreamingReplyCandidate) {
       const trimmedReplyText = stripProcessMessagePrefix(streamText, getPrimaryMessageStepTexts(steps));
-      const hasReplyText = trimmedReplyText.trim().length > 0;
+      const hasReplyText = trimmedReplyText.trim().length > 0
+        && !isInternalAssistantReplyText(trimmedReplyText);
       if (hasReplyText || hasStreamImages) {
-        streamingReplyText = trimmedReplyText;
+        streamingReplyText = hasReplyText ? trimmedReplyText : '';
       } else {
         steps = buildSteps(false);
       }
@@ -824,7 +829,8 @@ export function Chat() {
                     </div>
                   )}
                   {messages.map((msg, idx) => {
-                    if (foldedNarrationIndices.has(idx)) return null;
+                    const isFoldedNarration = foldedNarrationIndices.has(idx);
+                    if (isFoldedNarration && !hasUserFacingImageAttachments(msg)) return null;
                     const suppressToolCards = runSegmentMessageIndices.has(idx);
                     const isToolOnlyAssistant = normalizeMessageRole(msg.role) === 'assistant'
                       && extractToolUse(msg).length > 0
@@ -843,6 +849,7 @@ export function Chat() {
                       <ChatMessage
                         message={msg}
                         textOverride={replyTextOverrides.get(idx)}
+                        suppressAssistantText={isFoldedNarration}
                         suppressToolCards={suppressToolCards}
                         suppressProcessAttachments={suppressToolCards}
                         onOpenFile={handleOpenAttachedFile}
