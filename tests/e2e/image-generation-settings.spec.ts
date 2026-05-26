@@ -172,8 +172,9 @@ test.describe('Image generation settings page', () => {
     await expect(page.getByTestId('image-generation-clear')).toBeEnabled();
 
     await page.getByTestId('image-generation-clear').click();
-    await expect(page.getByRole('dialog')).toBeVisible();
-    await page.getByRole('button', { name: 'Clear' }).click();
+    const confirmDialog = page.getByRole('dialog');
+    await expect(confirmDialog).toBeVisible();
+    await confirmDialog.getByRole('button', { name: 'Clear', exact: true }).click();
 
     await expect(page.getByTestId('image-generation-relay-base-url')).toHaveValue('');
     await expect(page.getByTestId('image-generation-clear')).toBeDisabled();
