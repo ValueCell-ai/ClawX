@@ -638,6 +638,7 @@ export function Chat() {
   }, [messages, subagentCompletionInfos, currentSessionKey, streamingMessage, streamingTools, pendingFinal, sending, hasAnyStreamContent, hasStreamText, hasStreamImages, streamText, streamTools.length, hasRunningStreamToolStatus, childTranscripts, currentAgentId, agents, sessionLabels, graphStepCache, runError, isRunTrigger]);
   const hasActiveExecutionGraph = userRunCards.some((card) => card.active);
   let latestRunSegmentCompletion = { hasFinalReply: false, hasToolActivity: false };
+  let pendingImageGeneration = false;
   for (let idx = messages.length - 1; idx >= 0; idx -= 1) {
     if (!isRealUserMessage(messages[idx]) || subagentCompletionInfos[idx]) continue;
     const nextUserIndex = nextUserMessageIndexes[idx];
@@ -648,24 +649,16 @@ export function Chat() {
         m.role === 'assistant' && extractToolUse(m).length > 0,
       ),
     };
+    pendingImageGeneration = isImageGenerationPending(
+      postTrigger,
+      nextUserIndex === -1 ? streamingTools : [],
+    );
     break;
   }
   const runSettledInHistory = latestRunSegmentCompletion.hasFinalReply
     && !hasAnyStreamContent
     && (latestRunSegmentCompletion.hasToolActivity || !sending);
   const inputRunActive = (sending || hasActiveExecutionGraph) && !runSettledInHistory;
-  const pendingImageGeneration = useMemo(() => {
-    for (let idx = messages.length - 1; idx >= 0; idx -= 1) {
-      if (!isRealUserMessage(messages[idx]) || subagentCompletionInfos[idx]) continue;
-      const nextUserIndex = nextUserMessageIndexes[idx];
-      const postTrigger = getPostTriggerSegmentMessages(messages, idx, nextUserIndex);
-      return isImageGenerationPending(
-        postTrigger,
-        nextUserIndex === -1 ? streamingTools : [],
-      );
-    }
-    return false;
-  }, [messages, subagentCompletionInfos, nextUserMessageIndexes, streamingTools]);
   const replyTextOverrides = useMemo(() => {
     const map = new Map<number, string>();
     for (const card of userRunCards) {
