@@ -3,9 +3,14 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { HostApiContext } from '@electron/api/context';
 import { handleGatewayRoutes } from '@electron/api/routes/gateway';
+import { scheduleControlUiDeviceAutoApproval } from '@electron/utils/control-ui-device-pairing';
 
 vi.mock('@electron/utils/store', () => ({
   getSetting: vi.fn(async () => 'clawx-route-token'),
+}));
+
+vi.mock('@electron/utils/control-ui-device-pairing', () => ({
+  scheduleControlUiDeviceAutoApproval: vi.fn(),
 }));
 
 function createResponse() {
@@ -66,6 +71,7 @@ describe('GET /api/gateway/control-ui', () => {
       token: 'clawx-route-token',
       port: 19001,
     });
+    expect(scheduleControlUiDeviceAutoApproval).toHaveBeenCalledOnce();
   });
 
   it('returns the Dreams Control UI URL', async () => {
