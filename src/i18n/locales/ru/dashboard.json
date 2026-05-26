@@ -90,7 +90,7 @@
             "title": "Пользовательский endpoint изображений",
             "description": "Отправлять генерацию изображений на отдельный OpenAI Images-совместимый endpoint (/v1/images/generations), не меняя чат-провайдеры.",
             "baseUrl": "Base URL изображений",
-            "baseUrlHint": "например https://taolat.com/v1 — /v1 добавится автоматически.",
+            "baseUrlHint": "например https://api.example.com/v1 — /v1 добавится автоматически.",
             "apiKey": "API key",
             "apiKeyPlaceholder": "sk-...",
             "apiKeyPlaceholderConfigured": "Уже настроен — оставьте пустым, чтобы не менять",

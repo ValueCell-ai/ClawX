@@ -47,25 +47,30 @@ type ModelInputModule = {
   resolveAgentModelPrimaryValue: (model?: unknown) => string | undefined;
 };
 
+const OPENCLAW_IMAGE_GENERATION_RUNTIME = 'openclaw/plugin-sdk/image-generation-runtime';
+const OPENCLAW_MEDIA_STORE = 'openclaw/plugin-sdk/media-store';
+const OPENCLAW_MEDIA_RUNTIME = 'openclaw/plugin-sdk/media-runtime';
+const OPENCLAW_IMAGE_GENERATION_CORE = 'openclaw/plugin-sdk/image-generation-core';
+
 let imageRuntimeModule: ImageGenerationRuntimeModule | null = null;
 let mediaStoreModule: MediaStoreModule | null = null;
 let imageOpsModule: ImageOpsModule | null = null;
 let modelInputModule: ModelInputModule | null = null;
 
-async function importRuntimeModule<T>(relativePath: string): Promise<T> {
-  const modulePath = resolveOpenClawRuntimeModulePath(relativePath);
+async function importOpenClawSdkModule<T>(specifier: string): Promise<T> {
+  const modulePath = resolveOpenClawRuntimeModulePath(specifier);
   return import(pathToFileURL(modulePath).href) as Promise<T>;
 }
 
 async function getImageGenerationRuntime(): Promise<ImageGenerationRuntimeModule> {
   if (!imageRuntimeModule) {
-    const mod = await importRuntimeModule<{
-      t: ImageGenerationRuntimeModule['generateImage'];
-      n: ImageGenerationRuntimeModule['listRuntimeImageGenerationProviders'];
-    }>('./dist/runtime-Oyct10ZH.js');
+    const mod = await importOpenClawSdkModule<{
+      generateImage: ImageGenerationRuntimeModule['generateImage'];
+      listRuntimeImageGenerationProviders: ImageGenerationRuntimeModule['listRuntimeImageGenerationProviders'];
+    }>(OPENCLAW_IMAGE_GENERATION_RUNTIME);
     imageRuntimeModule = {
-      generateImage: mod.t,
-      listRuntimeImageGenerationProviders: mod.n,
+      generateImage: mod.generateImage,
+      listRuntimeImageGenerationProviders: mod.listRuntimeImageGenerationProviders,
     };
   }
   return imageRuntimeModule;
@@ -73,20 +78,20 @@ async function getImageGenerationRuntime(): Promise<ImageGenerationRuntimeModule
 
 async function getMediaStore(): Promise<MediaStoreModule> {
   if (!mediaStoreModule) {
-    const mod = await importRuntimeModule<{ u: MediaStoreModule['saveMediaBuffer'] }>(
-      './dist/store-b792nN7l.js',
+    const mod = await importOpenClawSdkModule<{ saveMediaBuffer: MediaStoreModule['saveMediaBuffer'] }>(
+      OPENCLAW_MEDIA_STORE,
     );
-    mediaStoreModule = { saveMediaBuffer: mod.u };
+    mediaStoreModule = { saveMediaBuffer: mod.saveMediaBuffer };
   }
   return mediaStoreModule;
 }
 
 async function getImageOps(): Promise<ImageOpsModule> {
   if (!imageOpsModule) {
-    const mod = await importRuntimeModule<{ a: ImageOpsModule['getImageMetadata'] }>(
-      './dist/image-ops-CL9ZQP7k.js',
+    const mod = await importOpenClawSdkModule<{ getImageMetadata: ImageOpsModule['getImageMetadata'] }>(
+      OPENCLAW_MEDIA_RUNTIME,
     );
-    imageOpsModule = { getImageMetadata: mod.a };
+    imageOpsModule = { getImageMetadata: mod.getImageMetadata };
   }
   return imageOpsModule;
 }
@@ -100,10 +105,10 @@ export async function resolveImageGenerationPrimaryFromConfig(
 
 async function getModelInputHelpers(): Promise<ModelInputModule> {
   if (!modelInputModule) {
-    const mod = await importRuntimeModule<{ i: ModelInputModule['resolveAgentModelPrimaryValue'] }>(
-      './dist/model-input-B9p-bobB.js',
+    const mod = await importOpenClawSdkModule<{ resolveAgentModelPrimaryValue: ModelInputModule['resolveAgentModelPrimaryValue'] }>(
+      OPENCLAW_IMAGE_GENERATION_CORE,
     );
-    modelInputModule = { resolveAgentModelPrimaryValue: mod.i };
+    modelInputModule = { resolveAgentModelPrimaryValue: mod.resolveAgentModelPrimaryValue };
   }
   return modelInputModule;
 }

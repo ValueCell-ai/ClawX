@@ -1773,6 +1773,7 @@ export async function syncOpenAiCompatibleImageRelay(params: {
       }
       removePluginRegistrations(config, [CLAWX_OPENAI_IMAGE_PROVIDER_KEY]);
       await writeOpenClawJson(config);
+      await removeProviderKeyFromOpenClaw(CLAWX_OPENAI_IMAGE_PROVIDER_KEY);
       if (params.apiKey?.trim()) {
         await saveProviderKeyToOpenClaw(CLAWX_OPENAI_IMAGE_PROVIDER_KEY, params.apiKey.trim());
       }

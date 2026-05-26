@@ -61,6 +61,10 @@ export async function fetchImageGenerationSettings(): Promise<ImageGenerationSet
   return response;
 }
 
+export async function clearImageGenerationSettings(): Promise<ImageGenerationSettingsSnapshot> {
+  return saveImageGenerationSettings({ openAiRelayEnabled: false });
+}
+
 export async function saveImageGenerationSettings(payload: {
   primary?: string | null;
   fallbacks?: string[];

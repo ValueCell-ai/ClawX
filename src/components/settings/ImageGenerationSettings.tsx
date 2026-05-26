@@ -2,14 +2,16 @@
  * Global image generation settings (agents.defaults.imageGenerationModel).
  */
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Eye, EyeOff, ImagePlus, Loader2, Play, RefreshCw } from 'lucide-react';
+import { Eye, EyeOff, ImagePlus, Loader2, Play, RefreshCw, Trash2 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
+import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import {
+  clearImageGenerationSettings,
   fetchImageGenerationSettings,
   runImageGenerationTest,
   saveImageGenerationSettings,
@@ -32,10 +34,12 @@ function extractTestOutputPath(result: unknown): string | null {
 }
 
 export function ImageGenerationSettings() {
-  const { t } = useTranslation(['dashboard', 'settings']);
+  const { t } = useTranslation(['dashboard', 'settings', 'common']);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [clearing, setClearing] = useState(false);
   const [testing, setTesting] = useState(false);
+  const [clearConfirmOpen, setClearConfirmOpen] = useState(false);
   const [snapshot, setSnapshot] = useState<ImageGenerationSettingsSnapshot | null>(null);
 
   const [timeoutMs, setTimeoutMs] = useState('180000');
@@ -79,6 +83,15 @@ export function ImageGenerationSettings() {
     );
   }, [snapshot, timeoutMs, relayBaseUrl, relayModel, relayApiKey]);
 
+  const hasConfiguredRelay = useMemo(() => {
+    if (!snapshot) return false;
+    return Boolean(
+      snapshot.openAiRelay?.enabled
+      || snapshot.openAiRelay?.baseUrl?.trim()
+      || snapshot.config.primary?.trim(),
+    );
+  }, [snapshot]);
+
   const handleSave = async () => {
     setSaving(true);
     try {
@@ -120,9 +133,30 @@ export function ImageGenerationSettings() {
     }
   };
 
+  const handleClear = async () => {
+    setClearing(true);
+    try {
+      const next = await clearImageGenerationSettings();
+      setSnapshot(next);
+      setRelayBaseUrl('');
+      setRelayModel('gpt-image-2');
+      setRelayApiKey('');
+      setShowRelayApiKey(false);
+      setClearConfirmOpen(false);
+      toast.success(t('imageGeneration.toast.cleared'));
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : String(error));
+    } finally {
+      setClearing(false);
+    }
+  };
+
   const handleTest = async () => {
     if (dirty) {
       toast.message(t('imageGeneration.toast.saveBeforeTest'));
+      return;
+    }
+    if (!hasConfiguredRelay) {
       return;
     }
     setTesting(true);
@@ -368,7 +402,7 @@ export function ImageGenerationSettings() {
               variant="outline"
               className="rounded-full h-10"
               onClick={() => void handleTest()}
-              disabled={testing || !relayModel.trim()}
+              disabled={testing || !hasConfiguredRelay || dirty}
               data-testid="image-generation-test-button"
             >
               {testing ? (
@@ -387,9 +421,34 @@ export function ImageGenerationSettings() {
               {saving ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
               {saving ? t('imageGeneration.saving') : t('imageGeneration.save')}
             </Button>
+            <Button
+              variant="outline"
+              className="rounded-full h-10 text-destructive hover:text-destructive"
+              onClick={() => setClearConfirmOpen(true)}
+              disabled={clearing || !hasConfiguredRelay}
+              data-testid="image-generation-clear"
+            >
+              {clearing ? (
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+              ) : (
+                <Trash2 className="h-4 w-4 mr-2" />
+              )}
+              {clearing ? t('imageGeneration.clearing') : t('imageGeneration.clear')}
+            </Button>
           </div>
         </div>
       )}
+
+      <ConfirmDialog
+        open={clearConfirmOpen}
+        title={t('imageGeneration.clearConfirmTitle')}
+        message={t('imageGeneration.clearConfirmMessage')}
+        confirmLabel={t('imageGeneration.clearConfirmAction')}
+        cancelLabel={t('common:actions.cancel')}
+        variant="destructive"
+        onConfirm={handleClear}
+        onCancel={() => setClearConfirmOpen(false)}
+      />
     </div>
   );
 }

@@ -33,6 +33,7 @@ test.describe('Image generation settings page', () => {
     await expect(page.getByTestId('image-generation-primary')).toHaveCount(0);
     await expect(page.getByTestId('image-generation-fallbacks')).toHaveCount(0);
     await expect(page.getByTestId('image-generation-save')).toBeVisible();
+    await expect(page.getByTestId('image-generation-clear')).toBeDisabled();
   });
 
   test('configures an independent OpenAI-compatible image endpoint', async ({ page }) => {
@@ -45,7 +46,7 @@ test.describe('Image generation settings page', () => {
 
     await expect(page.getByTestId('image-generation-settings')).toBeVisible();
     await expect(page.getByTestId('image-generation-relay-base-url')).toBeVisible();
-    await page.getByTestId('image-generation-relay-base-url').fill('https://taolat.com/v1');
+    await page.getByTestId('image-generation-relay-base-url').fill('https://api.example.com/v1');
     await page.getByTestId('image-generation-relay-model').fill('gpt-image-2');
     await page.getByTestId('image-generation-relay-api-key').fill('sk-test-image');
 
@@ -81,7 +82,7 @@ test.describe('Image generation settings page', () => {
               ],
               openAiRelay: {
                 enabled: true,
-                baseUrl: 'https://taolat.com/v1',
+                baseUrl: 'https://api.example.com/v1',
                 model: 'gpt-image-2',
                 providerKey: 'clawx-openai-image',
                 apiKeyConfigured: true,
@@ -102,5 +103,79 @@ test.describe('Image generation settings page', () => {
     await expect(page.getByTestId('image-generation-relay-api-key')).toHaveValue('');
     await expect(page.getByTestId('image-generation-api-key-status')).not.toBeEmpty();
     await expect(page.getByTestId('image-generation-relay-api-key')).toHaveAttribute('placeholder', /.+/);
+  });
+
+  test('clears configured image generation settings after confirmation', async ({ electronApp, page }) => {
+    const configuredResponse = {
+      success: true,
+      config: {
+        primary: 'clawx-openai-image/gpt-image-2',
+        fallbacks: [],
+        timeoutMs: 180000,
+      },
+      autoProviderFallback: false,
+      defaultAgentId: 'default',
+      agents: [
+        {
+          id: 'default',
+          name: 'Default',
+          isDefault: true,
+          provider: null,
+          configured: false,
+        },
+      ],
+      openAiRelay: {
+        enabled: true,
+        baseUrl: 'https://api.example.com/v1',
+        model: 'gpt-image-2',
+        providerKey: 'clawx-openai-image',
+        apiKeyConfigured: true,
+      },
+    };
+    const clearedResponse = {
+      ...configuredResponse,
+      config: {
+        primary: null,
+        fallbacks: [],
+        timeoutMs: 180000,
+      },
+      openAiRelay: {
+        enabled: false,
+        baseUrl: '',
+        model: 'gpt-image-2',
+        providerKey: undefined,
+        apiKeyConfigured: false,
+      },
+    };
+
+    await installIpcMocks(electronApp, {
+      hostApi: {
+        '["/api/media/image-generation","GET"]': {
+          ok: true,
+          data: { status: 200, ok: true, json: configuredResponse },
+        },
+        '["/api/media/image-generation","PUT"]': {
+          ok: true,
+          data: { status: 200, ok: true, json: { success: true, ...clearedResponse } },
+        },
+      },
+    });
+
+    await expect(page.getByTestId('setup-page')).toBeVisible();
+    await page.getByTestId('setup-skip-button').click();
+
+    await expect(page.getByTestId('main-layout')).toBeVisible();
+    await unlockDeveloperMode(page);
+    await page.getByTestId('sidebar-nav-image-generation').click();
+
+    await expect(page.getByTestId('image-generation-relay-base-url')).toHaveValue('https://api.example.com/v1');
+    await expect(page.getByTestId('image-generation-clear')).toBeEnabled();
+
+    await page.getByTestId('image-generation-clear').click();
+    await expect(page.getByRole('dialog')).toBeVisible();
+    await page.getByRole('button', { name: 'Clear' }).click();
+
+    await expect(page.getByTestId('image-generation-relay-base-url')).toHaveValue('');
+    await expect(page.getByTestId('image-generation-clear')).toBeDisabled();
   });
 });
