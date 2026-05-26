@@ -7,6 +7,7 @@ const gatewayStoreGetStateMock = vi.fn();
 const clearHistoryPoll = vi.fn();
 const enrichWithCachedImages = vi.fn((messages) => messages);
 const enrichWithToolResultFiles = vi.fn((messages) => messages);
+const enrichWithToolCallAttachments = vi.fn((messages) => messages);
 const getMessageErrorMessage = vi.fn((message: { errorMessage?: string; error_message?: string } | undefined) => {
   if (!message) return null;
   return message.errorMessage ?? message.error_message ?? null;
@@ -29,6 +30,23 @@ const isInternalMessage = vi.fn((msg: { role?: unknown; content?: unknown }) => 
   }
   return false;
 });
+const messageHasToolUse = (msg: { role?: unknown; content?: unknown; tool_calls?: unknown; toolCalls?: unknown }) => {
+  if (msg.role !== 'assistant') return false;
+  if (Array.isArray(msg.content)) {
+    return (msg.content as Array<{ type?: string }>).some(
+      (block) => block.type === 'tool_use' || block.type === 'toolCall',
+    );
+  }
+  const toolCalls = (msg as { tool_calls?: unknown; toolCalls?: unknown }).tool_calls
+    ?? (msg as { toolCalls?: unknown }).toolCalls;
+  return Array.isArray(toolCalls) && toolCalls.length > 0;
+};
+const shouldDropMessageFromHistory = vi.fn((msg: { role?: unknown; content?: unknown; tool_calls?: unknown; toolCalls?: unknown }) => {
+  if (isToolResultRole(msg.role)) return true;
+  if (messageHasToolUse(msg)) return false;
+  return isInternalMessage(msg);
+});
+const setLastChatEventAt = vi.fn();
 const loadMissingPreviews = vi.fn(async () => false);
 const toMs = vi.fn((ts: number) => ts < 1e12 ? ts * 1000 : ts);
 
@@ -50,6 +68,7 @@ vi.mock('@/stores/chat/helpers', () => ({
   clearHistoryPoll: (...args: unknown[]) => clearHistoryPoll(...args),
   enrichWithCachedImages: (...args: unknown[]) => enrichWithCachedImages(...args),
   enrichWithToolResultFiles: (...args: unknown[]) => enrichWithToolResultFiles(...args),
+  enrichWithToolCallAttachments: (...args: unknown[]) => enrichWithToolCallAttachments(...args),
   getLatestOptimisticUserMessage: (messages: Array<{ role: string; timestamp?: number }>, userTimestampMs: number) =>
     [...messages].reverse().find(
       (message) => message.role === 'user'
@@ -57,9 +76,13 @@ vi.mock('@/stores/chat/helpers', () => ({
     ),
   getMessageText: (...args: unknown[]) => getMessageText(...args),
   hasNonToolAssistantContent: (...args: unknown[]) => hasNonToolAssistantContent(...args),
+  hasAssistantAfterLastRealUser: (messages: Array<{ role?: string }>) =>
+    messages.some((message) => message.role === 'assistant'),
   isInternalMessage: (...args: unknown[]) => isInternalMessage(...args),
+  shouldDropMessageFromHistory: (...args: unknown[]) => shouldDropMessageFromHistory(...args),
   isToolResultRole: (...args: unknown[]) => isToolResultRole(...args),
   loadMissingPreviews: (...args: unknown[]) => loadMissingPreviews(...args),
+  setLastChatEventAt: (...args: unknown[]) => setLastChatEventAt(...args),
   mergePendingOptimisticUserMessages: (_sessionKey: string, messages: unknown[]) => messages,
   hasOptimisticServerEcho: (
     loadedMessages: Array<{ role: string; timestamp?: number; content?: unknown; _attachedFiles?: Array<{ filePath?: string; fileName?: string; mimeType?: string; fileSize?: number }> }>,
