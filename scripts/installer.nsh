@@ -15,6 +15,7 @@
   ShowUninstDetails show
 !macroend
 
+!ifndef BUILD_UNINSTALLER
 Function ClawXMoveLegacyInstallDir
   Exch $R6
 
@@ -69,6 +70,7 @@ FunctionEnd
   Push $R6
   Call ClawXMoveLegacyInstallDir
 !macroend
+!endif
 
 
 !macro customCheckAppRunning
@@ -161,18 +163,19 @@ FunctionEnd
   ; Brief wait for handle release (main wait was already done above if app was running)
   Sleep 2000
 
-  ; Release NSIS's CWD on $INSTDIR BEFORE the rename check.
-  ; NSIS sets CWD to $INSTDIR in .onInit; Windows refuses to rename a directory
-  ; that any process (including NSIS itself) has as its CWD.
-  SetOutPath $TEMP
+  !ifndef BUILD_UNINSTALLER
+    ; Release NSIS's CWD on $INSTDIR BEFORE the rename check.
+    ; NSIS sets CWD to $INSTDIR in .onInit; Windows refuses to rename a directory
+    ; that any process (including NSIS itself) has as its CWD.
+    SetOutPath $TEMP
 
-  ; Move legacy installs discovered in both registry hives before handling the
-  ; current $INSTDIR.  This covers per-user <-> per-machine migrations and
-  ; custom install directories where the new $INSTDIR is not the old location.
-  !insertmacro clawxMoveLegacyInstallDir HKCU
-  !insertmacro clawxMoveLegacyInstallDir HKLM
+    ; Move legacy installs discovered in both registry hives before handling the
+    ; current $INSTDIR.  This covers per-user <-> per-machine migrations and
+    ; custom install directories where the new $INSTDIR is not the old location.
+    !insertmacro clawxMoveLegacyInstallDir HKCU
+    !insertmacro clawxMoveLegacyInstallDir HKLM
 
-  ; Pre-emptively clear the old installation directory so that the 7z
+    ; Pre-emptively clear the old installation directory so that the 7z
   ; extraction `CopyFiles` step in extractAppPackage.nsh won't fail on
   ; locked files.  electron-builder's extractUsing7za macro extracts to a
   ; temp folder first, then uses `CopyFiles /SILENT` to copy into $INSTDIR.
@@ -250,6 +253,7 @@ FunctionEnd
     DeleteRegKey HKLM "${UNINSTALL_REGISTRY_KEY_2}"
   !endif
   ClearErrors
+  !endif
 !macroend
 
 ; Override electron-builder's handleUninstallResult to prevent the
