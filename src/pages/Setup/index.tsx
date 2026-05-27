@@ -283,7 +283,12 @@ function WelcomeContent() {
             variant={language === lang.code ? 'secondary' : 'ghost'}
             size="sm"
             onClick={() => setLanguage(lang.code)}
-            className="h-7 text-xs"
+            className={cn(
+              'h-7 text-xs',
+              language === lang.code
+                ? 'bg-black/5 dark:bg-white/10 text-foreground'
+                : 'text-muted-foreground hover:bg-black/5 dark:hover:bg-white/5',
+            )}
           >
             {lang.label}
           </Button>
@@ -567,13 +572,13 @@ function RuntimeContent({ onStatusChange }: RuntimeContentProps) {
         </div>
       </div>
       <div className="space-y-3">
-        <div className="grid grid-cols-[1fr_auto] items-center gap-4 p-3 rounded-lg bg-muted/50">
+        <div className="grid grid-cols-[1fr_auto] items-center gap-4 p-3 rounded-lg bg-surface-input/50">
           <span className="text-left">{t('runtime.nodejs')}</span>
           <div className="flex justify-end">
             {renderStatus(checks.nodejs.status, checks.nodejs.message)}
           </div>
         </div>
-        <div className="grid grid-cols-[1fr_auto] items-center gap-4 p-3 rounded-lg bg-muted/50">
+        <div className="grid grid-cols-[1fr_auto] items-center gap-4 p-3 rounded-lg bg-surface-input/50">
           <div className="text-left min-w-0">
             <span>{t('runtime.openclaw')}</span>
             {openclawDir && (
@@ -586,7 +591,7 @@ function RuntimeContent({ onStatusChange }: RuntimeContentProps) {
             {renderStatus(checks.openclaw.status, checks.openclaw.message)}
           </div>
         </div>
-        <div className="grid grid-cols-[1fr_auto] items-center gap-4 p-3 rounded-lg bg-muted/50">
+        <div className="grid grid-cols-[1fr_auto] items-center gap-4 p-3 rounded-lg bg-surface-input/50">
           <div className="flex items-center gap-2 text-left">
             <span>{t('runtime.gateway')}</span>
             {checks.gateway.status === 'error' && (
@@ -766,7 +771,7 @@ function InstallingContent({ skills, onComplete, onSkip }: InstallingContentProp
             animate={{ opacity: 1, y: 0 }}
             className={cn(
               'flex items-center justify-between p-3 rounded-lg',
-              skill.status === 'installing' ? 'bg-muted' : 'bg-muted/50'
+              skill.status === 'installing' ? 'bg-surface-input' : 'bg-surface-input/50'
             )}
           >
             <div className="flex items-center gap-3">
@@ -846,13 +851,13 @@ function CompleteContent({ installedSkills }: CompleteContentProps) {
       </p>
 
       <div className="space-y-3 text-left max-w-md mx-auto">
-        <div className="flex items-center justify-between p-3 rounded-lg bg-muted/50">
+        <div className="flex items-center justify-between p-3 rounded-lg bg-surface-input/50">
           <span>{t('complete.components')}</span>
           <span className="text-green-400">
             {installedSkillNames || `${installedSkills.length} ${t('installing.status.installed')}`}
           </span>
         </div>
-        <div className="flex items-center justify-between p-3 rounded-lg bg-muted/50">
+        <div className="flex items-center justify-between p-3 rounded-lg bg-surface-input/50">
           <span>{t('complete.gateway')}</span>
           <span className={gatewayStatus.state === 'running' && gatewayStatus.gatewayReady !== false ? 'text-green-400' : gatewayStatus.state === 'running' ? 'text-red-400' : 'text-yellow-400'}>
             {gatewayStatus.state === 'running'

@@ -219,16 +219,16 @@ export default function SheetViewer({ filePath, fileName, className }: SheetView
           </div>
         ) : (
           <table className="w-max min-w-full border-collapse text-xs">
-            <thead className="sticky top-0 z-10 bg-muted/80 backdrop-blur">
+            <thead className="sticky top-0 z-10 bg-surface-input/80 backdrop-blur">
               <tr>
                 <th
-                  className="sticky left-0 z-20 border-b border-r border-black/10 bg-muted/80 px-2 py-1 text-center text-2xs text-muted-foreground dark:border-white/10"
+                  className="sticky left-0 z-20 border-b border-r border-black/10 bg-surface-input/80 px-2 py-1 text-center text-2xs text-muted-foreground dark:border-white/10"
                   style={{ width: 48, minWidth: 48 }}
                 />
                 {activeSheet.columnLetters.map((letter, idx) => (
                   <th
                     key={letter + idx}
-                    className="border-b border-r border-black/10 bg-muted/80 px-2 py-1 text-center text-2xs font-medium text-muted-foreground dark:border-white/10"
+                    className="border-b border-r border-black/10 bg-surface-input/80 px-2 py-1 text-center text-2xs font-medium text-muted-foreground dark:border-white/10"
                     style={{ minWidth: 96 }}
                   >
                     {letter}
@@ -264,7 +264,7 @@ export default function SheetViewer({ filePath, fileName, className }: SheetView
           </table>
         )}
       </div>
-      <div className="flex shrink-0 items-stretch justify-between gap-2 border-t border-black/10 bg-muted/40 dark:border-white/10">
+      <div className="flex shrink-0 items-stretch justify-between gap-2 border-t border-black/10 bg-surface-input/40 dark:border-white/10">
         <div className="flex min-w-0 items-stretch overflow-x-auto">{sheetTabs}</div>
         {totalPages > 1 && (
           <div className="flex shrink-0 items-center gap-1 border-l border-black/10 px-2 text-xs text-muted-foreground dark:border-white/10">
