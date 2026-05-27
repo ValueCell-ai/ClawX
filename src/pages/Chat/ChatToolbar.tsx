@@ -55,7 +55,10 @@ export function ChatToolbar({
             <Button
               variant="ghost"
               size="icon"
-              className={cn('h-8 w-8', browserActive && 'bg-foreground/10 text-foreground')}
+              className={cn(
+                'h-8 w-8 hover:bg-black/5 hover:text-foreground dark:hover:bg-white/10',
+                browserActive && 'bg-foreground/10 text-foreground',
+              )}
               onClick={() => (browserActive ? closePanel() : openBrowser())}
               disabled={!currentAgent?.workspace}
               aria-label={t('toolbar.workspace', '工作空间')}
@@ -74,7 +77,10 @@ export function ChatToolbar({
             data-testid="chat-question-directory-toggle"
             variant="ghost"
             size="icon"
-            className={cn('h-8 w-8', questionDirectoryOpen && 'bg-foreground/10 text-foreground')}
+            className={cn(
+              'h-8 w-8 hover:bg-black/5 hover:text-foreground dark:hover:bg-white/10',
+              questionDirectoryOpen && 'bg-foreground/10 text-foreground',
+            )}
             onClick={onToggleQuestionDirectory}
             disabled={!questionDirectoryAvailable}
             aria-label={t('questionDirectory.title')}
@@ -92,7 +98,7 @@ export function ChatToolbar({
           <Button
             variant="ghost"
             size="icon"
-            className="h-8 w-8"
+            className="h-8 w-8 hover:bg-black/5 hover:text-foreground dark:hover:bg-white/10"
             onClick={() => refresh()}
             disabled={loading}
             aria-label={t('toolbar.refresh')}
