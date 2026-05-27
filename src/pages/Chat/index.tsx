@@ -822,7 +822,7 @@ export function Chat() {
             <div
               ref={contentRef}
               className={cn(
-                "mx-auto space-y-4 transition-all duration-300",
+                "mx-auto space-y-4",
                 isEmpty ? "w-full max-w-3xl" : "max-w-4xl",
               )}
             >
@@ -1042,7 +1042,6 @@ export function Chat() {
         onStop={abortRun}
         disabled={!isGatewayRunning}
         sending={inputRunActive}
-        isEmpty={isEmpty}
       />
       </div>
 
