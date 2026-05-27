@@ -27,7 +27,10 @@ export const EXTRACT_APP_PACKAGE_NSH = join(
   'extractAppPackage.nsh',
 );
 
-const PATCH_MARKER = 'ClawX-patched: extract directly to $INSTDIR';
+const PATCH_MARKER = 'ClawX-patched-v2: extract directly to $INSTDIR and fail closed';
+const LEGACY_PATCH_MARKER = 'ClawX-patched: extract directly to $INSTDIR';
+const LEGACY_CONTINUE_ON_EXTRACT_FAILURE = 'continuing overwrite install anyway';
+const FATAL_EXTRACT_FAILURE_DETAIL = 'Failed to extract ClawX files after multiple attempts.';
 
 const PATCHED_EXTRACT_MACRO = [
   '!macro extractUsing7za FILE',
@@ -82,7 +85,17 @@ function countExtractMacros(content) {
 function isTemplateHealthy(content) {
   return content.includes(PATCH_MARKER)
     && countExtractMacros(content) === 1
-    && !content.includes('$(appCannotBeClosed)');
+    && content.includes(FATAL_EXTRACT_FAILURE_DETAIL)
+    && content.includes('$(decompressionFailed)')
+    && content.includes('Quit')
+    && !content.includes('$(appCannotBeClosed)')
+    && !content.includes(LEGACY_CONTINUE_ON_EXTRACT_FAILURE);
+}
+
+function hasStaleExtractPatch(content) {
+  return content.includes(LEGACY_PATCH_MARKER)
+    || content.includes(LEGACY_CONTINUE_ON_EXTRACT_FAILURE)
+    || content.includes('$(appCannotBeClosed)');
 }
 
 /**
@@ -118,8 +131,8 @@ export function patchNsisExtractTemplate(targetPath = EXTRACT_APP_PACKAGE_NSH) {
     return true;
   }
 
-  if (countExtractMacros(original) !== 1 || original.includes('$(appCannotBeClosed)')) {
-    console.warn('[patch-nsis-extract] Corrupted or stale template detected; restoring tail section.');
+  if (countExtractMacros(original) !== 1) {
+    console.warn('[patch-nsis-extract] Corrupted template detected; restoring tail section.');
     original = restoreExtractAppPackageTemplate(original);
     writeFileSync(targetPath, original, 'utf8');
     if (isTemplateHealthy(original)) {
@@ -128,7 +141,9 @@ export function patchNsisExtractTemplate(targetPath = EXTRACT_APP_PACKAGE_NSH) {
     }
   }
 
-  if (!original.includes('CopyFiles')) {
+  if (hasStaleExtractPatch(original)) {
+    console.warn('[patch-nsis-extract] Stale ClawX extract patch detected; replacing with fail-closed patch.');
+  } else if (!original.includes('CopyFiles')) {
     console.warn('[patch-nsis-extract] CopyFiles not found — NSIS template may have changed.');
     return false;
   }

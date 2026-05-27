@@ -954,7 +954,9 @@ exports.default = async function afterPack(context) {
   }
   // 6. [Windows only] Ensure NSIS templates are patched (also done pre-build in package:win).
   if (platform === 'win32') {
-    if (patchNsisExtractTemplate() && patchNsisUninstallTemplate()) {
+    const extractOk = patchNsisExtractTemplate();
+    const uninstallOk = patchNsisUninstallTemplate();
+    if (extractOk && uninstallOk) {
       console.log('[after-pack] ⚡ NSIS install templates ready (overwrite upgrade).');
     }
   }

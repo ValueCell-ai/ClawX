@@ -3,6 +3,8 @@
 ; Install: enables long paths, adds resources\cli to user PATH for openclaw CLI.
 ; Uninstall: removes the PATH entry and optionally deletes user data.
 
+!include "LogicLib.nsh"
+
 !ifndef nsProcess::FindProcess
   !include "nsProcess.nsh"
 !endif
@@ -12,6 +14,62 @@
   ShowInstDetails show
   ShowUninstDetails show
 !macroend
+
+Function ClawXMoveLegacyInstallDir
+  Exch $R6
+
+  ${if} $R6 == ""
+    Goto _clawx_legacy_move_done
+  ${endIf}
+  ${if} $R6 == $INSTDIR
+    Goto _clawx_legacy_move_done
+  ${endIf}
+
+  IfFileExists "$R6\" 0 _clawx_legacy_move_done
+    DetailPrint "Moving previous ClawX installation at $R6 out of the way..."
+    SetOutPath $TEMP
+    nsExec::ExecToStack `"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command "Get-CimInstance -ClassName Win32_Process | Where-Object { $$_.ExecutablePath -and $$_.ExecutablePath.StartsWith('$R6', [System.StringComparison]::OrdinalIgnoreCase) } | ForEach-Object { Stop-Process -Id $$_.ProcessId -Force -ErrorAction SilentlyContinue }"`
+    Pop $0
+    Pop $1
+    Sleep 1000
+    StrCpy $R8 0
+
+  _clawx_legacy_find_free_stale:
+    IfFileExists "$R6._stale_$R8\" 0 _clawx_legacy_found_free_stale
+    IntOp $R8 $R8 + 1
+    Goto _clawx_legacy_find_free_stale
+
+  _clawx_legacy_found_free_stale:
+    ClearErrors
+    Rename "$R6" "$R6._stale_$R8"
+    IfErrors 0 _clawx_legacy_stale_moved
+      DetailPrint "Waiting for file locks at $R6 to clear..."
+      nsExec::ExecToStack `"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command "Get-CimInstance -ClassName Win32_Process | Where-Object { $$_.ExecutablePath -and $$_.ExecutablePath.StartsWith('$R6', [System.StringComparison]::OrdinalIgnoreCase) } | ForEach-Object { Stop-Process -Id $$_.ProcessId -Force -ErrorAction SilentlyContinue }"`
+      Pop $0
+      Pop $1
+      Sleep 2000
+      ClearErrors
+      Rename "$R6" "$R6._stale_$R8"
+      IfErrors 0 _clawx_legacy_stale_moved
+      DetailPrint "Removing previous ClawX installation at $R6..."
+      nsExec::ExecToStack 'cmd.exe /c rd /s /q "$R6"'
+      Pop $0
+      Pop $1
+      Goto _clawx_legacy_move_done
+  _clawx_legacy_stale_moved:
+    ExecShell "" "cmd.exe" `/c ping -n 61 127.0.0.1 >nul & rd /s /q "$R6._stale_$R8"` SW_HIDE
+
+  _clawx_legacy_move_done:
+    ClearErrors
+    Pop $R6
+FunctionEnd
+
+!macro clawxMoveLegacyInstallDir ROOT_KEY
+  ReadRegStr $R6 ${ROOT_KEY} "${INSTALL_REGISTRY_KEY}" InstallLocation
+  Push $R6
+  Call ClawXMoveLegacyInstallDir
+!macroend
+
 
 !macro customCheckAppRunning
   ; Make stage logs visible on assisted installers (defaults to hidden).
@@ -108,6 +166,12 @@
   ; that any process (including NSIS itself) has as its CWD.
   SetOutPath $TEMP
 
+  ; Move legacy installs discovered in both registry hives before handling the
+  ; current $INSTDIR.  This covers per-user <-> per-machine migrations and
+  ; custom install directories where the new $INSTDIR is not the old location.
+  !insertmacro clawxMoveLegacyInstallDir HKCU
+  !insertmacro clawxMoveLegacyInstallDir HKLM
+
   ; Pre-emptively clear the old installation directory so that the 7z
   ; extraction `CopyFiles` step in extractAppPackage.nsh won't fail on
   ; locked files.  electron-builder's extractUsing7za macro extracts to a
@@ -171,32 +235,21 @@
       Pop $1
   _openclaw_skills_clean:
 
-  ; Pre-emptively remove the old uninstall registry entry so that
-  ; electron-builder's uninstallOldVersion skips the old uninstaller entirely.
-  ;
-  ; Why: uninstallOldVersion has a hardcoded 5-retry loop that runs the old
-  ; uninstaller repeatedly.  The old uninstaller's atomicRMDir fails on locked
-  ; files (antivirus, indexing) causing a blocking "ClawX 无法关闭" dialog.
-  ; Deleting UninstallString makes uninstallOldVersion return immediately.
-  ; The new installer will overwrite / extract all files on top of the old dir.
-  ; registryAddInstallInfo will write the correct new entries afterwards.
-  ; Clean SHELL_CONTEXT, HKCU, and HKLM to cover cross-hive upgrades
-  ; (e.g. old install was per-user, new install is per-machine or vice versa).
-  DetailPrint "Clearing legacy uninstall registry entries for overwrite install..."
-  DeleteRegValue SHELL_CONTEXT "${UNINSTALL_REGISTRY_KEY}" UninstallString
-  DeleteRegValue SHELL_CONTEXT "${UNINSTALL_REGISTRY_KEY}" QuietUninstallString
-  DeleteRegValue HKCU "${UNINSTALL_REGISTRY_KEY}" UninstallString
-  DeleteRegValue HKCU "${UNINSTALL_REGISTRY_KEY}" QuietUninstallString
-  DeleteRegValue HKLM "${UNINSTALL_REGISTRY_KEY}" UninstallString
-  DeleteRegValue HKLM "${UNINSTALL_REGISTRY_KEY}" QuietUninstallString
+  ; Pre-emptively remove old app/uninstall registry keys so electron-builder's
+  ; uninstallOldVersion cannot launch a legacy uninstaller.  registryAddInstallInfo
+  ; recreates the correct current-hive entries after the new files are extracted.
+  ; Delete whole keys instead of only UninstallString: otherwise Apps & Features
+  ; can keep showing an obsolete DisplayVersion from the opposite hive.
+  DetailPrint "Clearing legacy ClawX registry entries for overwrite install..."
+  DeleteRegKey HKCU "${UNINSTALL_REGISTRY_KEY}"
+  DeleteRegKey HKLM "${UNINSTALL_REGISTRY_KEY}"
+  DeleteRegKey HKCU "${INSTALL_REGISTRY_KEY}"
+  DeleteRegKey HKLM "${INSTALL_REGISTRY_KEY}"
   !ifdef UNINSTALL_REGISTRY_KEY_2
-    DeleteRegValue SHELL_CONTEXT "${UNINSTALL_REGISTRY_KEY_2}" UninstallString
-    DeleteRegValue SHELL_CONTEXT "${UNINSTALL_REGISTRY_KEY_2}" QuietUninstallString
-    DeleteRegValue HKCU "${UNINSTALL_REGISTRY_KEY_2}" UninstallString
-    DeleteRegValue HKCU "${UNINSTALL_REGISTRY_KEY_2}" QuietUninstallString
-    DeleteRegValue HKLM "${UNINSTALL_REGISTRY_KEY_2}" UninstallString
-    DeleteRegValue HKLM "${UNINSTALL_REGISTRY_KEY_2}" QuietUninstallString
+    DeleteRegKey HKCU "${UNINSTALL_REGISTRY_KEY_2}"
+    DeleteRegKey HKLM "${UNINSTALL_REGISTRY_KEY_2}"
   !endif
+  ClearErrors
 !macroend
 
 ; Override electron-builder's handleUninstallResult to prevent the
