@@ -657,13 +657,13 @@ function AssistantMarkdown({
             const isInline = !match && !className;
             if (isInline) {
               return (
-                <code className="bg-muted px-1.5 py-0.5 rounded text-sm font-mono break-words break-all" {...props}>
+                <code className="bg-black/5 dark:bg-white/5 px-1.5 py-0.5 rounded text-sm font-mono break-words break-all" {...props}>
                   {children}
                 </code>
               );
             }
             return (
-              <pre className="bg-muted rounded-lg p-4 overflow-x-auto">
+              <pre className="bg-black/5 dark:bg-white/5 rounded-lg p-4 overflow-x-auto">
                 <code className={cn('text-sm font-mono', className)} {...props}>
                   {children}
                 </code>
