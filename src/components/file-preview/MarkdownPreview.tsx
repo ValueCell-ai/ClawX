@@ -108,7 +108,7 @@ export default function MarkdownPreview({ source, className }: MarkdownPreviewPr
             );
           },
           pre: ({ children }) => (
-            <pre className="overflow-x-auto rounded-lg bg-black/5 p-3 text-xs leading-relaxed dark:bg-white/10">
+            <pre className="overflow-x-auto whitespace-pre-wrap break-words rounded-lg bg-black/5 p-3 text-xs leading-relaxed dark:bg-white/10">
               {children}
             </pre>
           ),

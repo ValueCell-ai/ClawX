@@ -663,10 +663,18 @@ function AssistantMarkdown({
               );
             }
             return (
-              <pre className="bg-black/5 dark:bg-white/5 rounded-lg p-4 overflow-x-auto">
-                <code className={cn('text-sm font-mono', className)} {...props}>
-                  {children}
-                </code>
+              <code className={cn('text-sm font-mono', className)} {...props}>
+                {children}
+              </code>
+            );
+          },
+          pre({ children, ...props }) {
+            return (
+              <pre
+                className="bg-black/5 dark:bg-white/5 rounded-lg p-4 overflow-x-auto whitespace-pre-wrap break-words"
+                {...props}
+              >
+                {children}
               </pre>
             );
           },
