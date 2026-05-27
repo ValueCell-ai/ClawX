@@ -376,6 +376,22 @@ describe('ChatMessage word wrapping', () => {
     expect(inlineCode).not.toBeNull();
     expect(inlineCode?.classList.contains('break-all')).toBe(true);
   });
+
+  // Regression: fenced code blocks used to set only `overflow-x-auto`, which
+  // hid long log lines / paths behind a horizontal scroll that the chat
+  // viewport often clipped. Long lines must now wrap inside the bubble.
+  it('wraps fenced code block contents instead of overflowing horizontally', () => {
+    const longLine = 'config change requires channel reload (wecom) — deferring until 2 operation(s), 1 reply(ies), 1 embedded run(s) complete';
+    const message: RawMessage = {
+      role: 'assistant',
+      content: ['Gateway log:', '', '```', longLine, '```'].join('\n'),
+    };
+    const { container } = render(<ChatMessage message={message} />);
+    const codeBlock = container.querySelector('.prose pre');
+    expect(codeBlock).not.toBeNull();
+    expect(codeBlock?.classList.contains('whitespace-pre-wrap')).toBe(true);
+    expect(codeBlock?.classList.contains('break-words')).toBe(true);
+  });
 });
 
 describe('ChatMessage reply styling', () => {

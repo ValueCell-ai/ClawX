@@ -343,10 +343,17 @@ export const ChatMessage = memo(function ChatMessage({
         isUser ? 'flex-row-reverse' : 'flex-row',
       )}
     >
-      {/* Avatar */}
+      {/* Avatar — vertical center aligned with the first line of the reply.
+          The outer slot is sized to one prose-sm line (h-6 = 24px) so its
+          midpoint coincides with the first text line's midpoint; the 32px
+          avatar inside is centered within that slot and intentionally
+          overflows ±4px above/below the line, which mirrors how chat avatars
+          sit alongside a single line of text. */}
       {!isUser && (
-        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full mt-1 bg-black/5 dark:bg-white/5 text-foreground">
-          <Sparkles className="h-4 w-4" />
+        <div className="flex h-6 shrink-0 items-center">
+          <div className="flex h-8 w-8 items-center justify-center rounded-full bg-black/5 dark:bg-white/5 text-foreground">
+            <Sparkles className="h-4 w-4" />
+          </div>
         </div>
       )}
 
@@ -657,16 +664,24 @@ function AssistantMarkdown({
             const isInline = !match && !className;
             if (isInline) {
               return (
-                <code className="bg-muted px-1.5 py-0.5 rounded text-sm font-mono break-words break-all" {...props}>
+                <code className="bg-black/5 dark:bg-white/5 px-1.5 py-0.5 rounded text-sm font-mono break-words break-all" {...props}>
                   {children}
                 </code>
               );
             }
             return (
-              <pre className="bg-muted rounded-lg p-4 overflow-x-auto">
-                <code className={cn('text-sm font-mono', className)} {...props}>
-                  {children}
-                </code>
+              <code className={cn('text-sm font-mono', className)} {...props}>
+                {children}
+              </code>
+            );
+          },
+          pre({ children, ...props }) {
+            return (
+              <pre
+                className="bg-black/5 dark:bg-white/5 rounded-lg p-4 overflow-x-auto whitespace-pre-wrap break-words"
+                {...props}
+              >
+                {children}
               </pre>
             );
           },

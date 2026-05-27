@@ -822,7 +822,7 @@ export function Chat() {
             <div
               ref={contentRef}
               className={cn(
-                "mx-auto space-y-4 transition-all duration-300",
+                "mx-auto space-y-4",
                 isEmpty ? "w-full max-w-3xl" : "max-w-4xl",
               )}
             >
@@ -836,7 +836,7 @@ export function Chat() {
                         type="button"
                         onClick={() => void loadMoreHistory()}
                         disabled={loadingMoreHistory}
-                        className="inline-flex items-center gap-2 rounded-full border border-border bg-background/80 px-3 py-1.5 text-xs text-muted-foreground shadow-sm transition-colors hover:bg-muted disabled:cursor-not-allowed disabled:opacity-60"
+                        className="inline-flex items-center gap-2 rounded-full border border-border bg-background/80 px-3 py-1.5 text-xs text-muted-foreground shadow-sm transition-colors hover:bg-black/5 hover:text-foreground dark:hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-60"
                         data-testid="chat-load-more-history"
                       >
                         {loadingMoreHistory && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
@@ -986,7 +986,7 @@ export function Chat() {
             <button
               type="button"
               onClick={() => void scrollToBottom({ animation: 'smooth', ignoreEscapes: true })}
-              className="absolute bottom-4 right-4 z-20 inline-flex items-center gap-2 rounded-full border border-border bg-background/95 px-3 py-1.5 text-xs font-medium text-foreground shadow-lg shadow-black/10 backdrop-blur transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 dark:shadow-black/30"
+              className="absolute bottom-4 right-4 z-20 inline-flex items-center gap-2 rounded-full border border-border bg-background/95 px-3 py-1.5 text-xs font-medium text-foreground shadow-lg shadow-black/10 backdrop-blur transition-colors hover:bg-black/5 dark:hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 dark:shadow-black/30"
               aria-label={t('scrollToLatest', '跳转到最新对话')}
               title={t('scrollToLatest', '跳转到最新对话')}
               data-testid="chat-scroll-to-latest"
@@ -1042,7 +1042,6 @@ export function Chat() {
         onStop={abortRun}
         disabled={!isGatewayRunning}
         sending={inputRunActive}
-        isEmpty={isEmpty}
       />
       </div>
 
