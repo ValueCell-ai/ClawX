@@ -180,17 +180,22 @@
   ; Deleting UninstallString makes uninstallOldVersion return immediately.
   ; The new installer will overwrite / extract all files on top of the old dir.
   ; registryAddInstallInfo will write the correct new entries afterwards.
-  ; Clean both SHELL_CONTEXT and HKCU to cover cross-hive upgrades
+  ; Clean SHELL_CONTEXT, HKCU, and HKLM to cover cross-hive upgrades
   ; (e.g. old install was per-user, new install is per-machine or vice versa).
+  DetailPrint "Clearing legacy uninstall registry entries for overwrite install..."
   DeleteRegValue SHELL_CONTEXT "${UNINSTALL_REGISTRY_KEY}" UninstallString
   DeleteRegValue SHELL_CONTEXT "${UNINSTALL_REGISTRY_KEY}" QuietUninstallString
   DeleteRegValue HKCU "${UNINSTALL_REGISTRY_KEY}" UninstallString
   DeleteRegValue HKCU "${UNINSTALL_REGISTRY_KEY}" QuietUninstallString
+  DeleteRegValue HKLM "${UNINSTALL_REGISTRY_KEY}" UninstallString
+  DeleteRegValue HKLM "${UNINSTALL_REGISTRY_KEY}" QuietUninstallString
   !ifdef UNINSTALL_REGISTRY_KEY_2
     DeleteRegValue SHELL_CONTEXT "${UNINSTALL_REGISTRY_KEY_2}" UninstallString
     DeleteRegValue SHELL_CONTEXT "${UNINSTALL_REGISTRY_KEY_2}" QuietUninstallString
     DeleteRegValue HKCU "${UNINSTALL_REGISTRY_KEY_2}" UninstallString
     DeleteRegValue HKCU "${UNINSTALL_REGISTRY_KEY_2}" QuietUninstallString
+    DeleteRegValue HKLM "${UNINSTALL_REGISTRY_KEY_2}" UninstallString
+    DeleteRegValue HKLM "${UNINSTALL_REGISTRY_KEY_2}" QuietUninstallString
   !endif
 !macroend
 

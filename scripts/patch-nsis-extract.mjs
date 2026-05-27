@@ -27,9 +27,11 @@ export const EXTRACT_APP_PACKAGE_NSH = join(
   'extractAppPackage.nsh',
 );
 
-const PATCHED_MACRO = [
+const PATCH_MARKER = 'ClawX-patched: extract directly to $INSTDIR';
+
+const PATCHED_EXTRACT_MACRO = [
   '!macro extractUsing7za FILE',
-  '  ; ClawX-patched: extract directly to $INSTDIR (skip temp + CopyFiles).',
+  `  ; ${PATCH_MARKER}.`,
   '  StrCpy $R9 0',
   '  clawx_extract_attempt:',
   '    IntOp $R9 $R9 + 1',
@@ -38,7 +40,7 @@ const PATCHED_MACRO = [
   '    ClearErrors',
   '    Nsis7z::Extract "${FILE}"',
   '    IfErrors 0 clawx_extract_done',
-  '    ${if} $R9 < 3',
+  '    ${if} $R9 < 5',
   '      DetailPrint "Releasing file locks before retry..."',
   '      nsExec::ExecToStack \'taskkill /F /T /IM "${APP_EXECUTABLE_FILENAME}"\'',
   '      Pop $0',
@@ -49,12 +51,56 @@ const PATCHED_MACRO = [
   '      Sleep 3000',
   '      Goto clawx_extract_attempt',
   '    ${endIf}',
-  '    MessageBox MB_RETRYCANCEL|MB_ICONEXCLAMATION "$(appCannotBeClosed)" /SD IDRETRY IDRETRY clawx_extract_attempt IDCANCEL clawx_extract_abort',
-  '  clawx_extract_abort:',
+  '    DetailPrint "Failed to extract ClawX files after multiple attempts."',
+  '    MessageBox MB_OK|MB_ICONEXCLAMATION "$(decompressionFailed)" /SD IDOK',
   '    Quit',
   '  clawx_extract_done:',
   '!macroend',
 ].join('\n');
+
+const DECOMPRESS_MACRO = [
+  '!macro decompress',
+  '  !ifdef ZIP_COMPRESSION',
+  '    nsisunz::Unzip "$PLUGINSDIR\\app-$packageArch.zip" "$INSTDIR"',
+  '    Pop $R0',
+  '    StrCmp $R0 "success" +3',
+  '      MessageBox MB_OK|MB_ICONEXCLAMATION "$(decompressionFailed)$\\n$R0"',
+  '      Quit',
+  '  !else',
+  '    !insertmacro extractUsing7za "$PLUGINSDIR\\app-$packageArch.7z"',
+  '  !endif',
+  '!macroend',
+  '',
+].join('\n');
+
+const EXTRACT_MACRO_PATTERN = /!macro extractUsing7za FILE[\s\S]*?!macroend/;
+
+function countExtractMacros(content) {
+  return (content.match(/!macro extractUsing7za FILE/g) || []).length;
+}
+
+function isTemplateHealthy(content) {
+  return content.includes(PATCH_MARKER)
+    && countExtractMacros(content) === 1
+    && !content.includes('$(appCannotBeClosed)');
+}
+
+/**
+ * @param {string} content
+ * @returns {string}
+ */
+export function restoreExtractAppPackageTemplate(content) {
+  const extractIdx = content.indexOf('!macro extractUsing7za FILE');
+  const decompressIdx = content.indexOf('!macro decompress');
+  const cutIdx = Math.min(
+    extractIdx === -1 ? Number.POSITIVE_INFINITY : extractIdx,
+    decompressIdx === -1 ? Number.POSITIVE_INFINITY : decompressIdx,
+  );
+  if (!Number.isFinite(cutIdx)) {
+    return content;
+  }
+  return `${content.slice(0, cutIdx)}${PATCHED_EXTRACT_MACRO}\n\n${DECOMPRESS_MACRO}`;
+}
 
 /**
  * @param {string} [targetPath]
@@ -66,9 +112,20 @@ export function patchNsisExtractTemplate(targetPath = EXTRACT_APP_PACKAGE_NSH) {
     return false;
   }
 
-  const original = readFileSync(targetPath, 'utf8');
-  if (original.includes('ClawX-patched')) {
+  let original = readFileSync(targetPath, 'utf8');
+
+  if (isTemplateHealthy(original)) {
     return true;
+  }
+
+  if (countExtractMacros(original) !== 1 || original.includes('$(appCannotBeClosed)')) {
+    console.warn('[patch-nsis-extract] Corrupted or stale template detected; restoring tail section.');
+    original = restoreExtractAppPackageTemplate(original);
+    writeFileSync(targetPath, original, 'utf8');
+    if (isTemplateHealthy(original)) {
+      console.log('[patch-nsis-extract] Restored extractAppPackage.nsh (overwrite upgrade extract).');
+      return true;
+    }
   }
 
   if (!original.includes('CopyFiles')) {
@@ -76,10 +133,9 @@ export function patchNsisExtractTemplate(targetPath = EXTRACT_APP_PACKAGE_NSH) {
     return false;
   }
 
-  // Use a replacer function so NSIS `${if}` tokens are not treated as replace groups.
   const patched = original.replace(
-    /(!macro extractUsing7za FILE[\s\S]*?!macroend)/,
-    () => PATCHED_MACRO,
+    EXTRACT_MACRO_PATTERN,
+    () => PATCHED_EXTRACT_MACRO,
   );
 
   if (patched === original) {

@@ -23,6 +23,7 @@ const { cpSync, existsSync, readdirSync, rmSync, statSync, mkdirSync, realpathSy
 const { join, dirname, basename, relative } = require('path');
 const { ELECTRON_MAIN_RUNTIME_PACKAGES } = require('./openclaw-bundle-config.mjs');
 const { patchNsisExtractTemplate } = require('./patch-nsis-extract.mjs');
+const { patchNsisUninstallTemplate } = require('./patch-nsis-uninstall.mjs');
 
 // On Windows, paths in pnpm's virtual store can exceed the default MAX_PATH
 // limit (260 chars). Node.js 18.17+ respects the system LongPathsEnabled
@@ -951,10 +952,10 @@ exports.default = async function afterPack(context) {
       console.log(`[after-pack] 🩹 Patched ${asarLruCount} lru-cache instance(s) in app.asar.unpacked`);
     }
   }
-  // 6. [Windows only] Ensure NSIS uses direct 7z extraction (also patched pre-build in package:win).
+  // 6. [Windows only] Ensure NSIS templates are patched (also done pre-build in package:win).
   if (platform === 'win32') {
-    if (patchNsisExtractTemplate()) {
-      console.log('[after-pack] ⚡ NSIS extract template ready (direct 7z to $INSTDIR).');
+    if (patchNsisExtractTemplate() && patchNsisUninstallTemplate()) {
+      console.log('[after-pack] ⚡ NSIS install templates ready (overwrite upgrade).');
     }
   }
 };
