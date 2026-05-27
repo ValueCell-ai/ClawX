@@ -113,7 +113,7 @@ function getBundledBinPath(): string {
  * Run `openclaw devices approve` in-process (not shown to the user).
  * OpenClaw falls back to local pending.json on loopback when RPC is unavailable.
  */
-async function approveViaOpenClawCli(requestId: string, port: number): Promise<boolean> {
+async function approveViaOpenClawCli(requestId: string, _port: number): Promise<boolean> {
   const entryScript = getOpenClawEntryPath();
   const openclawDir = getOpenClawDir();
   if (!existsSync(entryScript)) {
