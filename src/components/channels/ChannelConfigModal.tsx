@@ -568,8 +568,8 @@ export function ChannelConfigModal({
                 {qrCode.startsWith('data:image') || qrCode.startsWith('http://') || qrCode.startsWith('https://') ? (
                   <img src={qrCode} alt="Scan QR Code" className="w-64 h-64 object-contain rounded-2xl" />
                 ) : (
-                  <div className="w-64 h-64 bg-white dark:bg-background rounded-2xl flex items-center justify-center">
-                    <QrCode className="h-32 w-32 text-gray-400" />
+                  <div className="w-64 h-64 bg-surface-modal rounded-2xl flex items-center justify-center">
+                    <QrCode className="h-32 w-32 text-muted-foreground" />
                   </div>
                 )}
               </div>

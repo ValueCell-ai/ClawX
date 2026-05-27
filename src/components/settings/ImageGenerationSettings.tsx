@@ -350,7 +350,7 @@ export function ImageGenerationSettings() {
                       <td className="px-4 py-3">
                         <span className="font-medium">{agent.name}</span>
                         {agent.isDefault ? (
-                          <Badge variant="outline" className="ml-2 rounded-full text-[10px]">
+                          <Badge variant="outline" className="ml-2 rounded-full text-2xs">
                             {t('imageGeneration.defaultAgent')}
                           </Badge>
                         ) : null}

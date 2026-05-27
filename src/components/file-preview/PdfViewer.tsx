@@ -150,8 +150,8 @@ export default function PdfViewer({
       className={cn(
         'relative h-full min-h-0 overflow-hidden',
         workspaceSurface
-          ? 'overflow-auto bg-[hsl(var(--muted)/0.35)] p-4 dark:bg-background'
-          : 'bg-white',
+          ? 'overflow-auto bg-surface-input/35 p-4'
+          : 'bg-surface-modal',
         className,
       )}
     >
@@ -159,7 +159,7 @@ export default function PdfViewer({
         <div
           className={cn(
             'absolute inset-0 z-10 flex items-center justify-center',
-            workspaceSurface ? 'bg-[hsl(var(--muted)/0.35)] dark:bg-background' : 'bg-white',
+            workspaceSurface ? 'bg-surface-input/35' : 'bg-surface-modal',
           )}
         >
           <LoadingSpinner />

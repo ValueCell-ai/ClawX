@@ -66,7 +66,7 @@ export function GeneratedFilesPanel({
                 )}
                 title={file.filePath}
               >
-                <div className="min-w-0 flex items-center gap-2 overflow-hidden whitespace-nowrap text-[13px] leading-none">
+                <div className="min-w-0 flex items-center gap-2 overflow-hidden whitespace-nowrap text-meta leading-none">
                   <span className="shrink-0 font-medium text-foreground">{file.fileName}</span>
                   <span className="truncate text-muted-foreground">{file.filePath}</span>
                 </div>
@@ -96,7 +96,7 @@ export function GeneratedFilesPanel({
               )}
               title={file.filePath}
             >
-              <div className="min-w-0 flex items-center gap-2 overflow-hidden whitespace-nowrap text-[13px] leading-none">
+              <div className="min-w-0 flex items-center gap-2 overflow-hidden whitespace-nowrap text-meta leading-none">
                 <span className="shrink-0 font-medium text-foreground">{file.fileName}</span>
                 <span className="truncate text-muted-foreground">{file.filePath}</span>
               </div>
