@@ -20,6 +20,7 @@ import {
   removeProviderFromOpenClaw,
 } from '../utils/openclaw-auth';
 import { syncProxyConfigToOpenClaw } from '../utils/openclaw-proxy';
+import { scheduleControlUiDeviceAutoApproval } from '../utils/control-ui-device-pairing';
 import { buildOpenClawControlUiUrl } from '../utils/openclaw-control-ui';
 import { logger } from '../utils/logger';
 import { resolveAgentIdFromChannel } from '../utils/agent-config';
@@ -1395,6 +1396,7 @@ function registerGatewayHandlers(
       const token = await getSetting('gatewayToken');
       const port = status.port || 18789;
       const url = buildOpenClawControlUiUrl(port, token);
+      scheduleControlUiDeviceAutoApproval(gatewayManager);
       return { success: true, url, port, token };
     } catch (error) {
       return { success: false, error: String(error) };

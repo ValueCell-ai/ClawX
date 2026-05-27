@@ -28,6 +28,8 @@ import {
 } from './provider-keys';
 import { normalizePiAiModelCost, type PiAiModelCostRates } from '../shared/pi-ai-model-cost';
 import { withConfigLock } from './config-mutex';
+import { PORTS } from './config';
+import { getSetting } from './store';
 import {
   OPENCLAW_API_PROTOCOLS,
   assertValidApiProtocol,
@@ -1997,6 +1999,17 @@ export async function getOpenClawProvidersConfig(): Promise<{
   }
 }
 
+function applyControlUiAllowedOrigins(controlUi: Record<string, unknown>, port: number): void {
+  const allowedOrigins = Array.isArray(controlUi.allowedOrigins)
+    ? (controlUi.allowedOrigins as unknown[]).filter((value): value is string => typeof value === 'string')
+    : [];
+  const next = new Set(allowedOrigins);
+  next.add('file://');
+  next.add(`http://127.0.0.1:${port}`);
+  next.add(`http://localhost:${port}`);
+  controlUi.allowedOrigins = [...next];
+}
+
 /**
  * Write the ClawX gateway token into ~/.openclaw/openclaw.json.
  */
@@ -2020,19 +2033,13 @@ export async function syncGatewayTokenToConfig(token: string): Promise<void> {
     auth.token = token;
     gateway.auth = auth;
 
-    // Packaged ClawX loads the renderer from file://, so the gateway must allow
-    // that origin for the chat WebSocket handshake.
     const controlUi = (
       gateway.controlUi && typeof gateway.controlUi === 'object'
         ? { ...(gateway.controlUi as Record<string, unknown>) }
         : {}
     ) as Record<string, unknown>;
-    const allowedOrigins = Array.isArray(controlUi.allowedOrigins)
-      ? (controlUi.allowedOrigins as unknown[]).filter((value): value is string => typeof value === 'string')
-      : [];
-    if (!allowedOrigins.includes('file://')) {
-      controlUi.allowedOrigins = [...allowedOrigins, 'file://'];
-    }
+    const gatewayPort = (await getSetting('gatewayPort')) || PORTS.OPENCLAW_GATEWAY;
+    applyControlUiAllowedOrigins(controlUi, gatewayPort);
     gateway.controlUi = controlUi;
 
     if (!gateway.mode) gateway.mode = 'local';
@@ -2209,12 +2216,8 @@ export async function batchSyncConfigFields(token: string): Promise<void> {
         ? { ...(gateway.controlUi as Record<string, unknown>) }
         : {}
     ) as Record<string, unknown>;
-    const allowedOrigins = Array.isArray(controlUi.allowedOrigins)
-      ? (controlUi.allowedOrigins as unknown[]).filter((v): v is string => typeof v === 'string')
-      : [];
-    if (!allowedOrigins.includes('file://')) {
-      controlUi.allowedOrigins = [...allowedOrigins, 'file://'];
-    }
+    const gatewayPort = (await getSetting('gatewayPort')) || PORTS.OPENCLAW_GATEWAY;
+    applyControlUiAllowedOrigins(controlUi, gatewayPort);
     gateway.controlUi = controlUi;
     if (!gateway.mode) gateway.mode = 'local';
     config.gateway = gateway;

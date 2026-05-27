@@ -1,5 +1,6 @@
 import type { IncomingMessage, ServerResponse } from 'http';
 import { PORTS } from '../../utils/config';
+import { scheduleControlUiDeviceAutoApproval } from '../../utils/control-ui-device-pairing';
 import { buildOpenClawControlUiUrl } from '../../utils/openclaw-control-ui';
 import { getSetting } from '../../utils/store';
 import type { HostApiContext } from '../context';
@@ -73,6 +74,7 @@ export async function handleGatewayRoutes(
       const port = status.port || PORTS.OPENCLAW_GATEWAY;
       const view = url.searchParams.get('view') === 'dreams' ? 'dreams' : undefined;
       const urlValue = buildOpenClawControlUiUrl(port, token, { view });
+      scheduleControlUiDeviceAutoApproval(ctx.gatewayManager);
       sendJson(res, 200, { success: true, url: urlValue, token, port });
     } catch (error) {
       sendJson(res, 500, { success: false, error: String(error) });

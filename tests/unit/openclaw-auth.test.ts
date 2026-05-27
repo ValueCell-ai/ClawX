@@ -2,11 +2,12 @@ import { mkdir, readFile, rm, writeFile } from 'fs/promises';
 import { join } from 'path';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { testHome, testUserData } = vi.hoisted(() => {
+const { testHome, testUserData, getSettingMock } = vi.hoisted(() => {
   const suffix = Math.random().toString(36).slice(2);
   return {
     testHome: `/tmp/clawx-openclaw-auth-${suffix}`,
     testUserData: `/tmp/clawx-openclaw-auth-user-data-${suffix}`,
+    getSettingMock: vi.fn(),
   };
 });
 
@@ -28,6 +29,10 @@ vi.mock('electron', () => ({
     getPath: () => testUserData,
     getVersion: () => '0.0.0-test',
   },
+}));
+
+vi.mock('@electron/utils/store', () => ({
+  getSetting: getSettingMock,
 }));
 
 vi.mock('@electron/utils/paths', async () => {
@@ -1901,6 +1906,10 @@ describe('batchSyncConfigFields', () => {
   beforeEach(async () => {
     vi.resetModules();
     vi.restoreAllMocks();
+    getSettingMock.mockImplementation(async (key: string) => {
+      if (key === 'gatewayPort') return 18789;
+      return undefined;
+    });
     await rm(testHome, { recursive: true, force: true });
     await rm(testUserData, { recursive: true, force: true });
   });
