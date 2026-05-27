@@ -60,14 +60,14 @@ function WindowsTitleBar() {
       <div className="no-drag flex h-full">
         <button
           onClick={handleMinimize}
-          className="flex h-full w-11 items-center justify-center text-muted-foreground hover:bg-accent transition-colors"
+          className="flex h-full w-11 items-center justify-center text-muted-foreground hover:bg-black/5 hover:text-foreground dark:hover:bg-white/10 transition-colors"
           title="Minimize"
         >
           <Minus className="h-4 w-4" />
         </button>
         <button
           onClick={handleMaximize}
-          className="flex h-full w-11 items-center justify-center text-muted-foreground hover:bg-accent transition-colors"
+          className="flex h-full w-11 items-center justify-center text-muted-foreground hover:bg-black/5 hover:text-foreground dark:hover:bg-white/10 transition-colors"
           title={maximized ? 'Restore' : 'Maximize'}
         >
           {maximized ? <Copy className="h-3.5 w-3.5" /> : <Square className="h-3.5 w-3.5" />}
