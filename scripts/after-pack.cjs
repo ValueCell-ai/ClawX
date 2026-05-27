@@ -23,6 +23,7 @@ const { cpSync, existsSync, readdirSync, rmSync, statSync, mkdirSync, realpathSy
 const { join, dirname, basename, relative } = require('path');
 const { ELECTRON_MAIN_RUNTIME_PACKAGES } = require('./openclaw-bundle-config.mjs');
 const { patchNsisExtractTemplate } = require('./patch-nsis-extract.mjs');
+const { patchNsisInstallSectionTemplate } = require('./patch-nsis-install-section.mjs');
 const { patchNsisUninstallTemplate } = require('./patch-nsis-uninstall.mjs');
 
 // On Windows, paths in pnpm's virtual store can exceed the default MAX_PATH
@@ -955,8 +956,9 @@ exports.default = async function afterPack(context) {
   // 6. [Windows only] Ensure NSIS templates are patched (also done pre-build in package:win).
   if (platform === 'win32') {
     const extractOk = patchNsisExtractTemplate();
+    const installSectionOk = patchNsisInstallSectionTemplate();
     const uninstallOk = patchNsisUninstallTemplate();
-    if (extractOk && uninstallOk) {
+    if (extractOk && installSectionOk && uninstallOk) {
       console.log('[after-pack] ⚡ NSIS install templates ready (overwrite upgrade).');
     }
   }
