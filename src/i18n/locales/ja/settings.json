@@ -177,6 +177,7 @@
       "download": "更新をダウンロード",
       "install": "インストールして再起動",
       "cancelAutoInstall": "キャンセル",
+      "later": "後で",
       "retry": "再試行",
       "check": "更新を確認"
     },

@@ -177,6 +177,7 @@
       "download": "下载更新",
       "install": "安装并重启",
       "cancelAutoInstall": "取消",
+      "later": "稍后",
       "retry": "重试",
       "check": "检查更新"
     },

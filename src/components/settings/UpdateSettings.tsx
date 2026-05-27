@@ -182,7 +182,7 @@ export function UpdateSettings() {
 
       {/* Update Info */}
       {updateInfo && (status === 'available' || status === 'downloaded') && (
-        <div className="rounded-lg bg-muted p-4 space-y-2">
+        <div className="rounded-lg bg-surface-input p-4 space-y-2">
           <div className="flex items-center justify-between">
             <p className="font-medium">Version {updateInfo.version}</p>
             {updateInfo.releaseDate && (

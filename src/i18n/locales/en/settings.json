@@ -177,6 +177,7 @@
       "download": "Download Update",
       "install": "Install & Restart",
       "cancelAutoInstall": "Cancel",
+      "later": "Later",
       "retry": "Retry",
       "check": "Check for Updates"
     },

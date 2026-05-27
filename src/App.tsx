@@ -223,6 +223,7 @@ function App() {
           position="bottom-right"
           richColors
           closeButton
+          theme={theme}
           style={{ zIndex: 99999 }}
         />
       </TooltipProvider>
