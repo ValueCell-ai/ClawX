@@ -11,7 +11,9 @@
         "brainstorming": "Параллельные агенты"
     },
     "noLogs": "(Журналы ещё недоступны)",
-    "scrollToLatest": "К последним сообщениям",
+    "scrollToLatest": "Вернуться вниз",
+    "loadMoreHistory": "Загрузить предыдущие сообщения",
+    "loadingMoreHistory": "Загрузка…",
     "toolbar": {
         "refresh": "Обновить чат",
         "currentAgent": "Общение с {{agent}}",

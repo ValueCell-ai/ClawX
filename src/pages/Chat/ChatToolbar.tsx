@@ -61,13 +61,13 @@ export function ChatToolbar({
               )}
               onClick={() => (browserActive ? closePanel() : openBrowser())}
               disabled={!currentAgent?.workspace}
-              aria-label={t('toolbar.workspace', '工作空间')}
+              aria-label={t('toolbar.workspace')}
             >
               <FolderTree className="h-4 w-4" />
             </Button>
           </TooltipTrigger>
           <TooltipContent>
-            <p>{t('toolbar.workspace', '工作空间')}</p>
+            <p>{t('toolbar.workspace')}</p>
           </TooltipContent>
         </Tooltip>
       )}

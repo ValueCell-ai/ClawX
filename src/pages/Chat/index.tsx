@@ -205,7 +205,7 @@ export function Chat() {
           }
         })
         .catch(() => {
-          toast.error(t('filePreview.errors.openInFinderFailed', '无法在文件管理器中显示'));
+          toast.error(t('filePreview.errors.openInFinderFailed'));
         });
       return;
     }
@@ -840,7 +840,7 @@ export function Chat() {
                         data-testid="chat-load-more-history"
                       >
                         {loadingMoreHistory && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-                        {loadingMoreHistory ? t('loadingMoreHistory', '加载更多中...') : t('loadMoreHistory', '加载更早的消息')}
+                        {loadingMoreHistory ? t('loadingMoreHistory') : t('loadMoreHistory')}
                       </button>
                     </div>
                   )}
@@ -987,12 +987,12 @@ export function Chat() {
               type="button"
               onClick={() => void scrollToBottom({ animation: 'smooth', ignoreEscapes: true })}
               className="absolute bottom-4 right-4 z-20 inline-flex items-center gap-2 rounded-full border border-border bg-background/95 px-3 py-1.5 text-xs font-medium text-foreground shadow-lg shadow-black/10 backdrop-blur transition-colors hover:bg-black/5 dark:hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 dark:shadow-black/30"
-              aria-label={t('scrollToLatest', '跳转到最新对话')}
-              title={t('scrollToLatest', '跳转到最新对话')}
+              aria-label={t('scrollToLatest')}
+              title={t('scrollToLatest')}
               data-testid="chat-scroll-to-latest"
             >
               <ArrowDownToLine className="h-3.5 w-3.5" />
-              <span>{t('scrollToLatest', '跳转到最新对话')}</span>
+              <span>{t('scrollToLatest')}</span>
             </button>
           )}
 
