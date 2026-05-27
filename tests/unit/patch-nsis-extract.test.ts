@@ -60,6 +60,8 @@ describe('patch-nsis-extract', () => {
     expect(result).not.toContain('$(appCannotBeClosed)');
     expect(result).toContain('$(decompressionFailed)');
     expect(result).toContain('Quit');
+    expect(result).toContain('SetErrorLevel 2');
+    expect(result).toContain('Restoring previous ClawX installation after failed update');
     expect(result).not.toContain('continuing overwrite install anyway');
     expect(patchNsisExtractTemplate(target)).toBe(true);
   });
@@ -88,6 +90,8 @@ describe('patch-nsis-extract', () => {
     expect(result).toContain('Failed to extract ClawX files after multiple attempts.');
     expect(result).toContain('$(decompressionFailed)');
     expect(result).toContain('Quit');
+    expect(result).toContain('SetErrorLevel 2');
+    expect(result).toContain('Restoring previous ClawX installation after failed update');
     expect(result).not.toContain('continuing overwrite install anyway');
   });
 

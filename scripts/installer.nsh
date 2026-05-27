@@ -9,6 +9,8 @@
   !include "nsProcess.nsh"
 !endif
 
+Var /GLOBAL clawxRollbackDir
+
 !macro customHeader
   ; Show install details by default so users can see what stage is running.
   ShowInstDetails show
@@ -163,7 +165,31 @@ FunctionEnd
   ; Brief wait for handle release (main wait was already done above if app was running)
   Sleep 2000
 
+  ; Do not continue while the old UI process is still alive. Continuing in that
+  ; state can leave the running old process/window in place, making the user see
+  ; the old version after an otherwise successful extract.
+  StrCpy $R7 0
+  _clawx_verify_closed:
+    ${nsProcess::FindProcess} "${APP_EXECUTABLE_FILENAME}" $R0
+    ${if} $R0 == 0
+      IntOp $R7 $R7 + 1
+      DetailPrint `Waiting for "${PRODUCT_NAME}" to close (attempt $R7)...`
+      nsExec::ExecToStack 'taskkill /F /T /IM "${APP_EXECUTABLE_FILENAME}"'
+      Pop $0
+      Pop $1
+      Sleep 2000
+      ${if} $R7 < 5
+        Goto _clawx_verify_closed
+      ${endIf}
+      MessageBox MB_RETRYCANCEL|MB_ICONEXCLAMATION "ClawX is still running and cannot be replaced safely. Please close ClawX and retry installation." /SD IDCANCEL IDRETRY _clawx_verify_closed
+      SetErrorLevel 2
+      Quit
+    ${endIf}
+    ${nsProcess::Unload}
+
   !ifndef BUILD_UNINSTALLER
+    StrCpy $clawxRollbackDir ""
+
     ; Release NSIS's CWD on $INSTDIR BEFORE the rename check.
     ; NSIS sets CWD to $INSTDIR in .onInit; Windows refuses to rename a directory
     ; that any process (including NSIS itself) has as its CWD.
@@ -219,9 +245,17 @@ FunctionEnd
       Pop $0
       Pop $1
       Sleep 2000
+      RMDir "$INSTDIR"
+      IfFileExists "$INSTDIR\" 0 _recreate_clean_instdir
+        DetailPrint "Failed to remove previous installation directory; aborting to avoid leaving the old version installed."
+        MessageBox MB_OK|MB_ICONEXCLAMATION "Unable to replace the previous ClawX installation because files are still locked. Please close ClawX and retry installation." /SD IDOK
+        SetErrorLevel 2
+        Quit
+      _recreate_clean_instdir:
       CreateDirectory "$INSTDIR"
       Goto _instdir_clean
   _stale_moved:
+    StrCpy $clawxRollbackDir "$INSTDIR._stale_$R8"
     CreateDirectory "$INSTDIR"
   _instdir_clean:
 
@@ -238,21 +272,9 @@ FunctionEnd
       Pop $1
   _openclaw_skills_clean:
 
-  ; Pre-emptively remove old app/uninstall registry keys so electron-builder's
-  ; uninstallOldVersion cannot launch a legacy uninstaller.  registryAddInstallInfo
-  ; recreates the correct current-hive entries after the new files are extracted.
-  ; Delete whole keys instead of only UninstallString: otherwise Apps & Features
-  ; can keep showing an obsolete DisplayVersion from the opposite hive.
-  DetailPrint "Clearing legacy ClawX registry entries for overwrite install..."
-  DeleteRegKey HKCU "${UNINSTALL_REGISTRY_KEY}"
-  DeleteRegKey HKLM "${UNINSTALL_REGISTRY_KEY}"
-  DeleteRegKey HKCU "${INSTALL_REGISTRY_KEY}"
-  DeleteRegKey HKLM "${INSTALL_REGISTRY_KEY}"
-  !ifdef UNINSTALL_REGISTRY_KEY_2
-    DeleteRegKey HKCU "${UNINSTALL_REGISTRY_KEY_2}"
-    DeleteRegKey HKLM "${UNINSTALL_REGISTRY_KEY_2}"
-  !endif
-  ClearErrors
+  ; Opposite-hive registry cleanup is intentionally done in customInstall after
+  ; successful extraction, so a failed update can still roll back to the old app
+  ; with its existing uninstall entries intact.
   !endif
 !macroend
 
@@ -289,6 +311,25 @@ FunctionEnd
 !macroend
 
 !macro customInstall
+  ; Now that the new files and current-hive registry entries have been written,
+  ; remove stale entries from the opposite hive so Windows Apps & Features does
+  ; not continue showing the old version after cross-hive upgrades.
+  DetailPrint "Clearing stale ClawX registry entries from the opposite install scope..."
+  ${if} $installMode == "all"
+    DeleteRegKey HKCU "${UNINSTALL_REGISTRY_KEY}"
+    DeleteRegKey HKCU "${INSTALL_REGISTRY_KEY}"
+    !ifdef UNINSTALL_REGISTRY_KEY_2
+      DeleteRegKey HKCU "${UNINSTALL_REGISTRY_KEY_2}"
+    !endif
+  ${else}
+    DeleteRegKey HKLM "${UNINSTALL_REGISTRY_KEY}"
+    DeleteRegKey HKLM "${INSTALL_REGISTRY_KEY}"
+    !ifdef UNINSTALL_REGISTRY_KEY_2
+      DeleteRegKey HKLM "${UNINSTALL_REGISTRY_KEY_2}"
+    !endif
+  ${endIf}
+  ClearErrors
+
   ; Async cleanup of old dirs left by the rename loop in customCheckAppRunning.
   ; Wait 60s before starting deletion to avoid I/O contention with ClawX's
   ; first launch (Windows Defender scan, ASAR mapping, etc.).

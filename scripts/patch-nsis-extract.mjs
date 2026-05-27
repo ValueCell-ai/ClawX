@@ -31,6 +31,7 @@ const PATCH_MARKER = 'ClawX-patched-v2: extract directly to $INSTDIR and fail cl
 const LEGACY_PATCH_MARKER = 'ClawX-patched: extract directly to $INSTDIR';
 const LEGACY_CONTINUE_ON_EXTRACT_FAILURE = 'continuing overwrite install anyway';
 const FATAL_EXTRACT_FAILURE_DETAIL = 'Failed to extract ClawX files after multiple attempts.';
+const ROLLBACK_EXTRACT_FAILURE_DETAIL = 'Restoring previous ClawX installation after failed update';
 
 const PATCHED_EXTRACT_MACRO = [
   '!macro extractUsing7za FILE',
@@ -55,7 +56,16 @@ const PATCHED_EXTRACT_MACRO = [
   '      Goto clawx_extract_attempt',
   '    ${endIf}',
   '    DetailPrint "Failed to extract ClawX files after multiple attempts."',
+  '    ${if} $clawxRollbackDir != ""',
+  '      IfFileExists "$clawxRollbackDir\\" 0 clawx_extract_show_error',
+  '      DetailPrint "Restoring previous ClawX installation after failed update..."',
+  '      SetOutPath $TEMP',
+  '      RMDir /r "$INSTDIR"',
+  '      Rename "$clawxRollbackDir" "$INSTDIR"',
+  '    ${endIf}',
+  '  clawx_extract_show_error:',
   '    MessageBox MB_OK|MB_ICONEXCLAMATION "$(decompressionFailed)" /SD IDOK',
+  '    SetErrorLevel 2',
   '    Quit',
   '  clawx_extract_done:',
   '!macroend',
@@ -86,14 +96,17 @@ function isTemplateHealthy(content) {
   return content.includes(PATCH_MARKER)
     && countExtractMacros(content) === 1
     && content.includes(FATAL_EXTRACT_FAILURE_DETAIL)
+    && content.includes(ROLLBACK_EXTRACT_FAILURE_DETAIL)
     && content.includes('$(decompressionFailed)')
+    && content.includes('SetErrorLevel 2')
     && content.includes('Quit')
     && !content.includes('$(appCannotBeClosed)')
     && !content.includes(LEGACY_CONTINUE_ON_EXTRACT_FAILURE);
 }
 
 function hasStaleExtractPatch(content) {
-  return content.includes(LEGACY_PATCH_MARKER)
+  return content.includes(PATCH_MARKER)
+    || content.includes(LEGACY_PATCH_MARKER)
     || content.includes(LEGACY_CONTINUE_ON_EXTRACT_FAILURE)
     || content.includes('$(appCannotBeClosed)');
 }
