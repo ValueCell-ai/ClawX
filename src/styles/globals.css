@@ -28,6 +28,90 @@
  *     Do NOT hand-write `var(--xxx)` or `hsl(var(--xxx))` in components.
  *   - Adding a new color: define the CSS variable here → map it to a
  *     utility token in tailwind.config.js → use the utility in code.
+ *   - For component-level idioms (selected state, status colours, modal
+ *     scrims, page headings, etc.) see the *Component conventions* block
+ *     directly below.
+ * ────────────────────────────────────────────────────────────────────────── */
+
+/* ──────────────────────────────────────────────────────────────────────────
+ * Component conventions — substitution table
+ * ──────────────────────────────────────────────────────────────────────────
+ *
+ * Idioms captured from the global normalisation pass. When writing or
+ * reviewing a component, prefer the *replacement* over the *antipattern*.
+ * Reference implementations are noted in parentheses.
+ *
+ *   PANEL SURFACES
+ *   ─────────────────────────────────────────────────────────────────────
+ *     bg-white dark:bg-card           →  bg-surface-modal
+ *     bg-white dark:bg-background     →  bg-surface-modal
+ *     hover:bg-white dark:hover:bg-card → hover:bg-surface-modal
+ *     bg-muted   (when used as a panel) →  bg-surface-input
+ *     bg-[hsl(var(--xxx))] / arbitrary  →  bg-<named-token>
+ *
+ *     bg-surface-modal = raised cream  panels, popovers, inputs, cards
+ *     bg-surface-input = recessed cream  code/log <pre>, segmented track
+ *
+ *     Never write `dark:bg-card` / `dark:bg-muted` companion classes —
+ *     the surface tokens already redirect in dark mode.
+ *
+ *   SELECTED / ACTIVE STATE  (sidebar nav, theme & language picker,
+ *                             segmented controls, composer chips)
+ *   ─────────────────────────────────────────────────────────────────────
+ *     selected   :  bg-black/5 dark:bg-white/10 text-foreground
+ *     hover      :  hover:bg-black/5 dark:hover:bg-white/5
+ *     idle text  :  text-muted-foreground (or text-foreground/80 / 70)
+ *
+ *     Reference: components/layout/Sidebar.tsx, pages/Settings/index.tsx
+ *     (theme + language picker).
+ *
+ *   MODAL / SCRIM BACKDROPS
+ *   ─────────────────────────────────────────────────────────────────────
+ *     bg-black/30 dark:bg-black/60      (canonical: components/ui/sheet.tsx)
+ *
+ *     Image lightbox may use bg-black/80 when a darker scrim is intentional
+ *     (see pages/Chat/ChatMessage.tsx).
+ *
+ *   STATUS COLOURS  (success / warning / error)
+ *   ─────────────────────────────────────────────────────────────────────
+ *     icon + inline text  :  text-{green|yellow|red}-700  dark:text-…-400
+ *     lighter accent text :  text-{…}-600                 dark:text-…-500
+ *                            (welcome feature checks, secondary captions)
+ *     panel surface       :  bg-{…}-500/10  border border-{…}-500/20
+ *     status dot          :  bg-{green|yellow|red}-500    (no dark variant)
+ *
+ *     Avoid `text-X-400` alone — that shade is tuned for dark mode and
+ *     washes out against the cream light theme. Same for `bg-red-900/20`
+ *     panel backgrounds (a dark-only relic).
+ *
+ *   NEUTRAL GREYS  (escape hatches → semantic tokens)
+ *   ─────────────────────────────────────────────────────────────────────
+ *     bg-slate-600 / bg-gray-400        →  bg-muted-foreground/30
+ *                                          (inactive dots, dividers)
+ *     text-slate-300 / 400              →  text-muted-foreground
+ *     text-gray-400                     →  text-muted-foreground
+ *     border-slate-600                  →  border-border
+ *
+ *   TYPOGRAPHY
+ *   ─────────────────────────────────────────────────────────────────────
+ *     page H1 / H2     :  font-serif font-normal tracking-tight
+ *                         · hero pages   text-5xl md:text-6xl  (Settings,
+ *                                                               Cron, Models)
+ *                         · wizard steps text-3xl / section H2 text-xl
+ *                                                              (Setup)
+ *     monospace        :  font-mono     (NOT `font-monospace` — dead class)
+ *     pixel text       :  text-[13px] → text-meta
+ *                         text-[10px] → text-2xs
+ *                         Full named scale (2xs / tiny / meta / subtitle /
+ *                         stat) defined in tailwind.config.js.
+ *
+ *   PRIMARY CTA
+ *   ─────────────────────────────────────────────────────────────────────
+ *     Use the default <Button> styling (variant="default", which renders
+ *     `bg-primary`). Do not hand-apply `bg-brand` to action buttons —
+ *     `bg-brand` / `bg-brand-hover` are reserved for branded surfaces
+ *     where a divergent Apple-blue is explicitly desired (rare).
+ *     Reference: pages/Models "+ Add Provider" trigger.
  * ────────────────────────────────────────────────────────────────────────── */
 
 @layer base {
