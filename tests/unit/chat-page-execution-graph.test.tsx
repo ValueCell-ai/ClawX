@@ -301,7 +301,7 @@ describe('Chat execution graph lifecycle', () => {
     render(<Chat />);
 
     expect(await screen.findByTestId('chat-scroll-to-latest')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '跳转到最新对话' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'scrollToLatest' })).toBeInTheDocument();
   });
 
   it('stops showing trailing thinking and renders run error callout after terminal model error', async () => {
