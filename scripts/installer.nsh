@@ -167,14 +167,27 @@ FunctionEnd
 
   ; Do not continue while the old UI process is still alive. Continuing in that
   ; state can leave the running old process/window in place, making the user see
-  ; the old version after an otherwise successful extract.
+  ; the old version after an otherwise successful extract.  Use process-list
+  ; commands instead of nsProcess here: field diagnostics showed ClawX.exe can
+  ; remain alive while the old installer still reports success; this check must
+  ; fail closed even when taskkill or the nsProcess plugin misses/elevates poorly.
   StrCpy $R7 0
   _clawx_verify_closed:
-    ${nsProcess::FindProcess} "${APP_EXECUTABLE_FILENAME}" $R0
+    nsExec::ExecToStack `"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command "if (Get-CimInstance -ClassName Win32_Process | Where-Object { $$_.Name -ieq '${APP_EXECUTABLE_FILENAME}' }) { exit 0 } else { exit 1 }"`
+    Pop $R0
+    Pop $R1
+    ${if} $R0 != 0
+      nsExec::ExecToStack 'cmd.exe /c tasklist /FI "IMAGENAME eq ${APP_EXECUTABLE_FILENAME}" | find /I "${APP_EXECUTABLE_FILENAME}" >nul'
+      Pop $R0
+      Pop $R1
+    ${endIf}
     ${if} $R0 == 0
       IntOp $R7 $R7 + 1
       DetailPrint `Waiting for "${PRODUCT_NAME}" to close (attempt $R7)...`
       nsExec::ExecToStack 'taskkill /F /T /IM "${APP_EXECUTABLE_FILENAME}"'
+      Pop $0
+      Pop $1
+      nsExec::ExecToStack `cmd.exe /c wmic process where "name='${APP_EXECUTABLE_FILENAME}'" call terminate`
       Pop $0
       Pop $1
       Sleep 2000
@@ -185,7 +198,6 @@ FunctionEnd
       SetErrorLevel 2
       Quit
     ${endIf}
-    ${nsProcess::Unload}
 
   !ifndef BUILD_UNINSTALLER
     StrCpy $clawxRollbackDir ""
