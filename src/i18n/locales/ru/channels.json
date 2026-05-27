@@ -62,6 +62,7 @@
         "connectionStatus": {
             "connected": "Подключён",
             "connecting": "Подключение",
+            "degraded": "Деградировано",
             "disconnected": "Отключён",
             "error": "Ошибка"
         },
@@ -98,6 +99,30 @@
         "updateAndReconnect": "Обновить и переподключить",
         "saveAndConnect": "Сохранить и подключить",
         "envVar": "Переменная окружения: {{var}}"
+    },
+    "health": {
+        "state": {
+            "degraded": "Шлюз деградировал",
+            "unresponsive": "Шлюз не отвечает"
+        },
+        "reasons": {
+            "gateway_degraded": "Сердцебиение шлюза недавно деградировало.",
+            "gateway_unresponsive": "Управляющая плоскость шлюза не отвечает.",
+            "channels_status_timeout": "Истёк таймаут проверки статуса канала.",
+            "rpc_timeout": "Недавние RPC-вызовы шлюза завершились по таймауту.",
+            "gateway_not_running": "Шлюз не запущен.",
+            "gateway_error": "Шлюз находится в состоянии ошибки.",
+            "runtime_error": "Среда выполнения канала сообщила об ошибке."
+        },
+        "restartGateway": "Перезапустить шлюз",
+        "copyDiagnostics": "Скопировать диагностику",
+        "viewDiagnostics": "Показать диагностику",
+        "hideDiagnostics": "Скрыть диагностику",
+        "diagnosticsTitle": "Снимок диагностики шлюза",
+        "diagnosticsCopied": "Диагностика скопирована в буфер обмена",
+        "diagnosticsCopyFailed": "Не удалось собрать диагностику: {{error}}",
+        "restartTriggered": "Запрошен перезапуск шлюза",
+        "restartFailed": "Не удалось перезапустить шлюз: {{error}}"
     },
     "meta": {
         "telegram": {

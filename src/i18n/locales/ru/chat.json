@@ -1,7 +1,4 @@
 {
-    "runError": {
-        "title": "Ошибка вызова API модели"
-    },
     "gatewayNotRunning": "Шлюз не запущен",
     "gatewayRequired": "Для использования чата требуется запущенный шлюз OpenClaw. Он запустится автоматически, или вы можете запустить его в Настройках.",
     "welcome": {
@@ -158,7 +155,7 @@
         "title": "Граф выполнения",
         "branchLabel": "ветвь",
         "thinkingLabel": "Думаю",
-        "runErrorLabel": "Ошибка модели",
+        "errorLabel": "Ошибка модели",
         "imageGenerateLabel": "Генерация изображения",
         "agentRun": "Выполнение {{agent}}",
         "collapsedSummary": "Вызовов инструментов: {{toolCount}} · Промежуточных сообщений: {{processCount}}",
