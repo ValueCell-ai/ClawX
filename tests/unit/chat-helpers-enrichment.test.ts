@@ -3,7 +3,9 @@ import {
   enrichWithToolResultFiles,
   enrichWithToolCallAttachments,
   enrichWithCachedImages,
+  loadMissingPreviews,
 } from '@/stores/chat/helpers';
+import { invokeIpc } from '@/lib/api-client';
 import type { RawMessage } from '@/stores/chat';
 
 vi.mock('@/lib/api-client', () => ({
@@ -369,5 +371,79 @@ describe('enrichWithToolCallAttachments', () => {
       '/Users/me/.openclaw/media/tool-image-generation/cat.png',
     ]);
     expect(enriched[0]?._attachedFiles?.[0]?.mimeType).toBe('image/png');
+  });
+});
+
+describe('loadMissingPreviews', () => {
+  it('retries image preview hydration when Gateway media records are not ready yet', async () => {
+    vi.useFakeTimers();
+    try {
+      const gatewayUrl = '/api/chat/media/outgoing/agent%3Amain%3As-1/generated/full';
+      const messages: RawMessage[] = [
+        {
+          role: 'assistant',
+          content: [],
+          _attachedFiles: [{
+            fileName: 'generated.png',
+            mimeType: 'image/png',
+            fileSize: 0,
+            preview: null,
+            gatewayUrl,
+            source: 'gateway-media',
+          }],
+        },
+      ];
+
+      vi.mocked(invokeIpc)
+        .mockResolvedValueOnce({ [gatewayUrl]: { preview: null, fileSize: 0 } })
+        .mockResolvedValueOnce({ [gatewayUrl]: { preview: 'data:image/png;base64,ok', fileSize: 42 } });
+
+      const result = loadMissingPreviews(messages);
+      expect(invokeIpc).toHaveBeenCalledTimes(1);
+
+      await vi.advanceTimersByTimeAsync(300);
+      await expect(result).resolves.toBe(true);
+
+      expect(invokeIpc).toHaveBeenCalledTimes(2);
+      expect(messages[0]?._attachedFiles?.[0]).toMatchObject({
+        preview: 'data:image/png;base64,ok',
+        fileSize: 42,
+      });
+      expect(messages[0]?._attachedFiles?.[0]?.previewStatus).toBeUndefined();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('marks image previews unavailable after retry exhaustion', async () => {
+    vi.useFakeTimers();
+    try {
+      const gatewayUrl = '/api/chat/media/outgoing/agent%3Amain%3As-1/missing/full';
+      const messages: RawMessage[] = [
+        {
+          role: 'assistant',
+          content: [],
+          _attachedFiles: [{
+            fileName: 'missing.png',
+            mimeType: 'image/png',
+            fileSize: 0,
+            preview: null,
+            gatewayUrl,
+            source: 'gateway-media',
+          }],
+        },
+      ];
+
+      vi.mocked(invokeIpc).mockResolvedValue({ [gatewayUrl]: { preview: null, fileSize: 0 } });
+
+      const result = loadMissingPreviews(messages);
+      await vi.advanceTimersByTimeAsync(300 + 900 + 1800);
+      await expect(result).resolves.toBe(true);
+
+      expect(invokeIpc).toHaveBeenCalledTimes(4);
+      expect(messages[0]?._attachedFiles?.[0]?.previewStatus).toBe('unavailable');
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

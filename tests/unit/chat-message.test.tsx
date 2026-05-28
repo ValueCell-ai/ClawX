@@ -77,6 +77,51 @@ describe('ChatMessage attachment dedupe', () => {
     expect(screen.getByAltText('desktop_screenshot.png')).toBeInTheDocument();
   });
 
+  it('shows an explicit loading state for image artifacts before preview hydration finishes', () => {
+    const message: RawMessage = {
+      role: 'assistant',
+      content: 'Image generated.',
+      _attachedFiles: [
+        {
+          fileName: 'generated.png',
+          mimeType: 'image/png',
+          fileSize: 0,
+          preview: null,
+          gatewayUrl: '/api/chat/media/outgoing/agent%3Amain%3As-1/generated/full',
+          source: 'gateway-media',
+        },
+      ],
+    };
+
+    render(<ChatMessage message={message} />);
+
+    expect(screen.getByTestId('image-preview-loading')).toBeInTheDocument();
+    expect(screen.queryByTestId('image-preview-unavailable')).not.toBeInTheDocument();
+  });
+
+  it('shows an unavailable state after image preview hydration gives up', () => {
+    const message: RawMessage = {
+      role: 'assistant',
+      content: 'Image generated.',
+      _attachedFiles: [
+        {
+          fileName: 'generated.png',
+          mimeType: 'image/png',
+          fileSize: 0,
+          preview: null,
+          previewStatus: 'unavailable',
+          gatewayUrl: '/api/chat/media/outgoing/agent%3Amain%3As-1/generated/full',
+          source: 'gateway-media',
+        },
+      ],
+    };
+
+    render(<ChatMessage message={message} />);
+
+    expect(screen.getByTestId('image-preview-unavailable')).toBeInTheDocument();
+    expect(screen.queryByTestId('image-preview-loading')).not.toBeInTheDocument();
+  });
+
   it('keeps message-ref image artifacts visible alongside reply text when process attachments are suppressed', () => {
     const message: RawMessage = {
       role: 'assistant',

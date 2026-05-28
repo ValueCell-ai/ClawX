@@ -164,7 +164,9 @@
         "collapseAction": "実行グラフを折りたたむ"
     },
     "imageGeneration": {
-        "generating": "画像を生成しています。少々お待ちください…"
+        "generating": "画像を生成しています。少々お待ちください…",
+        "previewLoading": "画像プレビューを読み込んでいます…",
+        "previewUnavailable": "画像プレビューを一時的に表示できません"
     },
     "composer": {
         "attachFiles": "ファイルを添付",

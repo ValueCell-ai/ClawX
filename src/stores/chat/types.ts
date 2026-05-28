@@ -4,6 +4,7 @@ export interface AttachedFileMeta {
   mimeType: string;
   fileSize: number;
   preview: string | null;
+  previewStatus?: 'unavailable';
   filePath?: string;
   source?: 'user-upload' | 'tool-result' | 'message-ref' | 'gateway-media';
   /**

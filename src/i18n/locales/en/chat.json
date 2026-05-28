@@ -164,7 +164,9 @@
         "collapseAction": "Collapse execution graph"
     },
     "imageGeneration": {
-        "generating": "Generating image, please wait…"
+        "generating": "Generating image, please wait…",
+        "previewLoading": "Loading image preview…",
+        "previewUnavailable": "Image preview is temporarily unavailable"
     },
     "composer": {
         "attachFiles": "Attach files",

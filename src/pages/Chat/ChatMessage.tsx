@@ -7,6 +7,7 @@
  */
 import { useState, useCallback, useEffect, memo } from 'react';
 import { Sparkles, Copy, Check, Wrench, FileText, Film, Music, FileArchive, File, X, FolderOpen, ZoomIn, Loader2, CheckCircle2, AlertCircle } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
@@ -407,12 +408,7 @@ export const ChatMessage = memo(function ChatMessage({
                     onPreview={() => setLightboxImg({ src: file.preview!, fileName: file.fileName, filePath: file.filePath, mimeType: file.mimeType })}
                   />
                 ) : (
-                  <div
-                    key={`local-${i}`}
-                    className="w-36 h-36 rounded-xl border border-black/10 dark:border-white/10 bg-black/5 dark:bg-white/5 flex items-center justify-center text-muted-foreground"
-                  >
-                    <File className="h-8 w-8" />
-                  </div>
+                  <ImagePreviewPlaceholder key={`local-${i}`} file={file} />
                 );
               }
               // Non-image files → file card
@@ -469,11 +465,7 @@ export const ChatMessage = memo(function ChatMessage({
                 );
               }
               if (isImage && !file.preview) {
-                return (
-                  <div key={`local-${i}`} className="w-36 h-36 rounded-xl border border-black/10 dark:border-white/10 bg-black/5 dark:bg-white/5 flex items-center justify-center text-muted-foreground">
-                    <File className="h-8 w-8" />
-                  </div>
-                );
+                return <ImagePreviewPlaceholder key={`local-${i}`} file={file} />;
               }
               return <FileCard key={`local-${i}`} file={file} onOpen={onOpenFile} />;
             })}
@@ -754,6 +746,32 @@ function FileCard({ file, onOpen }: { file: AttachedFileMeta; onOpen?: (file: At
           {file.mimeType === DIRECTORY_MIME_TYPE ? '文件夹' : file.fileSize > 0 ? formatFileSize(file.fileSize) : 'File'}
         </p>
       </div>
+    </div>
+  );
+}
+
+function ImagePreviewPlaceholder({ file }: { file: AttachedFileMeta }) {
+  const { t } = useTranslation('chat');
+  const unavailable = file.previewStatus === 'unavailable';
+  const label = unavailable
+    ? t('imageGeneration.previewUnavailable')
+    : t('imageGeneration.previewLoading');
+
+  return (
+    <div
+      className={cn(
+        'flex h-36 w-36 flex-col items-center justify-center gap-2 rounded-xl border border-black/10 bg-black/5 px-3 text-center text-muted-foreground dark:border-white/10 dark:bg-white/5',
+        unavailable && 'border-amber-500/30 bg-amber-500/5 text-amber-700 dark:text-amber-400',
+      )}
+      data-testid={unavailable ? 'image-preview-unavailable' : 'image-preview-loading'}
+      title={file.fileName}
+    >
+      {unavailable ? (
+        <AlertCircle className="h-5 w-5 shrink-0" />
+      ) : (
+        <Loader2 className="h-5 w-5 shrink-0 animate-spin text-primary" />
+      )}
+      <span className="text-xs leading-4">{label}</span>
     </div>
   );
 }

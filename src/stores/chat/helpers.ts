@@ -1096,20 +1096,22 @@ function enrichWithCachedImages(messages: RawMessage[]): RawMessage[] {
   });
 }
 
-/**
- * Async: load missing previews from disk via IPC for messages that have
- * _attachedFiles with null previews. Updates messages in-place and triggers re-render.
- * Handles both [media attached: ...] patterns and raw filePath entries.
- */
-async function loadMissingPreviews(messages: RawMessage[]): Promise<boolean> {
-  // Collect all image refs that need previews. The IPC handler accepts:
-  //   - { filePath, mimeType }   — local on-disk files
-  //   - { gatewayUrl, mimeType } — Gateway-injected outgoing media; the
-  //                                handler resolves the URL to a local file
-  //                                via `~/.openclaw/media/outgoing/records/`.
-  // We use `filePath || gatewayUrl` as the dedupe / lookup key on the way
-  // back; a file always carries at most one of the two.
-  type PreviewRef = { filePath?: string; gatewayUrl?: string; mimeType: string };
+type PreviewRef = { filePath?: string; gatewayUrl?: string; mimeType: string };
+
+const IMAGE_PREVIEW_RETRY_DELAYS_MS = [300, 900, 1800];
+
+function waitForPreviewRetry(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+// Collect all image refs that need previews. The IPC handler accepts:
+//   - { filePath, mimeType }   — local on-disk files
+//   - { gatewayUrl, mimeType } — Gateway-injected outgoing media; the
+//                                handler resolves the URL to a local file
+//                                via `~/.openclaw/media/outgoing/records/`.
+// We use `filePath || gatewayUrl` as the dedupe / lookup key on the way
+// back; a file always carries at most one of the two.
+function collectMissingPreviewRefs(messages: RawMessage[]): PreviewRef[] {
   const needPreview: PreviewRef[] = [];
   const seenKeys = new Set<string>();
 
@@ -1122,7 +1124,7 @@ async function loadMissingPreviews(messages: RawMessage[]): Promise<boolean> {
       if (!key || seenKeys.has(key)) continue;
       // Images: need preview. Non-images: need file size (for FileCard display).
       const needsLoad = file.mimeType.startsWith('image/')
-        ? !file.preview
+        ? !file.preview && file.previewStatus !== 'unavailable'
         : file.fileSize === 0;
       if (!needsLoad) continue;
       seenKeys.add(key);
@@ -1141,7 +1143,9 @@ async function loadMissingPreviews(messages: RawMessage[]): Promise<boolean> {
         const file = msg._attachedFiles[i];
         const ref = refs[i];
         if (!file || !ref || seenKeys.has(ref.filePath)) continue;
-        const needsLoad = ref.mimeType.startsWith('image/') ? !file.preview : file.fileSize === 0;
+        const needsLoad = ref.mimeType.startsWith('image/')
+          ? !file.preview && file.previewStatus !== 'unavailable'
+          : file.fileSize === 0;
         if (needsLoad) {
           seenKeys.add(ref.filePath);
           needPreview.push({ filePath: ref.filePath, mimeType: ref.mimeType });
@@ -1150,59 +1154,113 @@ async function loadMissingPreviews(messages: RawMessage[]): Promise<boolean> {
     }
   }
 
-  if (needPreview.length === 0) return false;
+  return needPreview;
+}
 
-  try {
-    const thumbnails = await invokeIpc(
-      'media:getThumbnails',
-      needPreview,
-    ) as Record<string, { preview: string | null; fileSize: number }>;
+function applyPreviewResults(
+  messages: RawMessage[],
+  thumbnails: Record<string, { preview: string | null; fileSize: number }>,
+): boolean {
+  let updated = false;
 
-    let updated = false;
-    for (const msg of messages) {
-      if (!msg._attachedFiles) continue;
+  for (const msg of messages) {
+    if (!msg._attachedFiles) continue;
 
-      // Update files that have filePath OR gatewayUrl
-      for (const file of msg._attachedFiles) {
-        const key = file.filePath || file.gatewayUrl;
-        if (!key) continue;
-        const thumb = thumbnails[key];
+    // Update files that have filePath OR gatewayUrl
+    for (const file of msg._attachedFiles) {
+      const key = file.filePath || file.gatewayUrl;
+      if (!key) continue;
+      const thumb = thumbnails[key];
+      if (thumb && (thumb.preview || thumb.fileSize)) {
+        if (thumb.preview) file.preview = thumb.preview;
+        if (thumb.fileSize) file.fileSize = thumb.fileSize;
+        delete file.previewStatus;
+        // Only persist local-path entries to the localStorage cache.
+        // Gateway outgoing URLs are tied to a specific session/attachment
+        // id and can be stale across runs, so caching is harmful.
+        if (file.filePath) {
+          _imageCache.set(file.filePath, { ...file });
+        }
+        updated = true;
+      }
+    }
+
+    // Legacy: update by index for [media attached: ...] refs
+    if (msg.role === 'user') {
+      const text = getMessageText(msg.content);
+      const refs = extractMediaRefs(text);
+      for (let i = 0; i < refs.length; i++) {
+        const file = msg._attachedFiles[i];
+        const ref = refs[i];
+        if (!file || !ref || file.filePath) continue; // skip if already handled via filePath
+        const thumb = thumbnails[ref.filePath];
         if (thumb && (thumb.preview || thumb.fileSize)) {
           if (thumb.preview) file.preview = thumb.preview;
           if (thumb.fileSize) file.fileSize = thumb.fileSize;
-          // Only persist local-path entries to the localStorage cache.
-          // Gateway outgoing URLs are tied to a specific session/attachment
-          // id and can be stale across runs, so caching is harmful.
-          if (file.filePath) {
-            _imageCache.set(file.filePath, { ...file });
-          }
+          delete file.previewStatus;
+          _imageCache.set(ref.filePath, { ...file });
           updated = true;
         }
       }
-
-      // Legacy: update by index for [media attached: ...] refs
-      if (msg.role === 'user') {
-        const text = getMessageText(msg.content);
-        const refs = extractMediaRefs(text);
-        for (let i = 0; i < refs.length; i++) {
-          const file = msg._attachedFiles[i];
-          const ref = refs[i];
-          if (!file || !ref || file.filePath) continue; // skip if already handled via filePath
-          const thumb = thumbnails[ref.filePath];
-          if (thumb && (thumb.preview || thumb.fileSize)) {
-            if (thumb.preview) file.preview = thumb.preview;
-            if (thumb.fileSize) file.fileSize = thumb.fileSize;
-            _imageCache.set(ref.filePath, { ...file });
-            updated = true;
-          }
-        }
-      }
     }
-    if (updated) saveImageCache(_imageCache);
-    return updated;
-  } catch (err) {
-    console.warn('[loadMissingPreviews] Failed:', err);
-    return false;
+  }
+
+  if (updated) saveImageCache(_imageCache);
+  return updated;
+}
+
+function markMissingImagePreviewsUnavailable(messages: RawMessage[]): boolean {
+  let updated = false;
+  for (const msg of messages) {
+    if (!msg._attachedFiles) continue;
+    for (const file of msg._attachedFiles) {
+      if (!file.mimeType.startsWith('image/')) continue;
+      if (file.preview || file.previewStatus === 'unavailable') continue;
+      if (!file.filePath && !file.gatewayUrl) continue;
+      file.previewStatus = 'unavailable';
+      updated = true;
+    }
+  }
+  return updated;
+}
+
+/**
+ * Async: load missing previews from disk via IPC for messages that have
+ * _attachedFiles with null previews. Updates messages in-place and triggers re-render.
+ * Handles both [media attached: ...] patterns and raw filePath entries.
+ */
+async function loadMissingPreviews(messages: RawMessage[]): Promise<boolean> {
+  let updatedAny = false;
+  let attempt = 0;
+
+  while (true) {
+    const needPreview = collectMissingPreviewRefs(messages);
+    if (needPreview.length === 0) return updatedAny;
+    if (attempt > 0) {
+      const delayMs = IMAGE_PREVIEW_RETRY_DELAYS_MS[attempt - 1];
+      if (delayMs) await waitForPreviewRetry(delayMs);
+    }
+
+    try {
+      const thumbnails = await invokeIpc(
+        'media:getThumbnails',
+        needPreview,
+      ) as Record<string, { preview: string | null; fileSize: number }>;
+      if (applyPreviewResults(messages, thumbnails)) {
+        updatedAny = true;
+      }
+    } catch (err) {
+      console.warn('[loadMissingPreviews] Failed:', err);
+      return updatedAny;
+    }
+
+    if (!collectMissingPreviewRefs(messages).some((ref) => ref.mimeType.startsWith('image/'))) {
+      return updatedAny;
+    }
+    if (attempt >= IMAGE_PREVIEW_RETRY_DELAYS_MS.length) {
+      return markMissingImagePreviewsUnavailable(messages) || updatedAny;
+    }
+    attempt += 1;
   }
 }
 

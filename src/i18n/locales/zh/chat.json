@@ -164,7 +164,9 @@
         "collapseAction": "收起执行关系图"
     },
     "imageGeneration": {
-        "generating": "图片生成中，请稍候…"
+        "generating": "图片生成中，请稍候…",
+        "previewLoading": "正在载入图片预览…",
+        "previewUnavailable": "图片预览暂时不可用"
     },
     "composer": {
         "attachFiles": "添加文件",
