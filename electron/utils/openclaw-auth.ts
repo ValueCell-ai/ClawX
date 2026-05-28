@@ -1469,6 +1469,31 @@ function applyPinnedAgentRuntime(
   nextProvider.agentRuntime = { id: pinnedRuntimeId };
 }
 
+function applyOpenClawProviderAgentRuntimePinsToConfig(config: Record<string, unknown>): string[] {
+  const models = (config.models || {}) as Record<string, unknown>;
+  const providers = (models.providers || {}) as Record<string, unknown>;
+  const pinned: string[] = [];
+
+  for (const provider of Object.keys(OPENCLAW_PROVIDER_PINNED_AGENT_RUNTIME)) {
+    const entry = providers[provider];
+    if (!isPlainRecord(entry)) continue;
+    const before = entry.agentRuntime;
+    applyPinnedAgentRuntime(provider, entry);
+    const after = entry.agentRuntime;
+    if (before !== after) {
+      providers[provider] = entry;
+      pinned.push(provider);
+    }
+  }
+
+  if (pinned.length > 0) {
+    models.providers = providers;
+    config.models = models;
+  }
+
+  return pinned;
+}
+
 function upsertOpenClawProviderEntry(
   config: Record<string, unknown>,
   provider: string,
@@ -1552,29 +1577,12 @@ function upsertOpenClawProviderEntry(
  * Returns the list of provider keys that received a runtime pin, for logging.
  */
 export async function ensureOpenClawProviderAgentRuntimePins(): Promise<string[]> {
-  const pinned: string[] = [];
+  let pinned: string[] = [];
   await withConfigLock(async () => {
     const config = await readOpenClawJson();
-    const models = (config.models || {}) as Record<string, unknown>;
-    const providers = (models.providers || {}) as Record<string, unknown>;
-    let modified = false;
+    pinned = applyOpenClawProviderAgentRuntimePinsToConfig(config);
 
-    for (const [provider, runtimeId] of Object.entries(OPENCLAW_PROVIDER_PINNED_AGENT_RUNTIME)) {
-      const entry = providers[provider];
-      if (!isPlainRecord(entry)) continue;
-      const existing = (entry as Record<string, unknown>).agentRuntime;
-      if (isPlainRecord(existing) && typeof existing.id === 'string' && existing.id.trim()) {
-        continue;
-      }
-      (entry as Record<string, unknown>).agentRuntime = { id: runtimeId };
-      providers[provider] = entry;
-      pinned.push(provider);
-      modified = true;
-    }
-
-    if (modified) {
-      models.providers = providers;
-      config.models = models;
+    if (pinned.length > 0) {
       await writeOpenClawJson(config);
     }
   });
@@ -2255,6 +2263,12 @@ export async function batchSyncConfigFields(token: string): Promise<void> {
     // ── web_fetch SSRF policy (fake-IP / transparent-proxy environments) ──
     if (ensureWebFetchSsrfPolicyInConfig(config)) {
       modified = true;
+    }
+
+    const pinnedProviderRuntimes = applyOpenClawProviderAgentRuntimePinsToConfig(config);
+    if (pinnedProviderRuntimes.length > 0) {
+      modified = true;
+      console.log(`[batch-sync] Pinned embedded agent runtime for models.providers entries: ${pinnedProviderRuntimes.join(', ')}`);
     }
 
     // ── Session idle minutes ──
@@ -3060,6 +3074,12 @@ export async function sanitizeOpenClawConfig(): Promise<void> {
           }
         }
       }
+    }
+
+    const pinnedProviderRuntimes = applyOpenClawProviderAgentRuntimePinsToConfig(config);
+    if (pinnedProviderRuntimes.length > 0) {
+      modified = true;
+      console.log(`[sanitize] Pinned embedded agent runtime for models.providers entries: ${pinnedProviderRuntimes.join(', ')}`);
     }
 
     if (healAnthropicMessagesMaxTokensInConfig(config)) {

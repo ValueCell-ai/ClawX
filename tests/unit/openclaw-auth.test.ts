@@ -1850,6 +1850,33 @@ describe('ensureOpenClawProviderAgentRuntimePins', () => {
     expect(codex.agentRuntime).toEqual({ id: 'pi' });
   });
 
+  it('pins legacy OpenAI entries during sanitizeOpenClawConfig before Gateway launch', async () => {
+    await writeOpenClawJson({
+      models: {
+        providers: {
+          openai: {
+            baseUrl: 'https://api.openai.com/v1',
+            api: 'openai-responses',
+            models: [{ id: 'gpt-5.5', name: 'gpt-5.5' }],
+          },
+          'openai-codex': {
+            baseUrl: 'https://api.openai.com/v1',
+            api: 'openai-codex-responses',
+            models: [{ id: 'gpt-5.5', name: 'gpt-5.5' }],
+          },
+        },
+      },
+    });
+
+    const { sanitizeOpenClawConfig } = await import('@electron/utils/openclaw-auth');
+    await sanitizeOpenClawConfig();
+
+    const result = await readOpenClawJson();
+    const providers = (result.models as Record<string, unknown>).providers as Record<string, unknown>;
+    expect((providers.openai as Record<string, unknown>).agentRuntime).toEqual({ id: 'pi' });
+    expect((providers['openai-codex'] as Record<string, unknown>).agentRuntime).toEqual({ id: 'pi' });
+  });
+
   it('leaves entries untouched when the openai entry already has any agentRuntime.id', async () => {
     const initial = {
       models: {
