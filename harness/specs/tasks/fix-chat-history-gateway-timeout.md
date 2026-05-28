@@ -19,8 +19,11 @@ touchedAreas:
   - src/stores/chat/session-label-hydration.ts
   - src/stores/chat/store-api.ts
   - src/stores/chat/types.ts
+  - tests/setup.ts
+  - tests/unit/chat-store-history-retry.test.ts
   - tests/unit/chat-store-session-label-fetch.test.ts
   - tests/unit/gateway-rpc-backpressure.test.ts
+  - tests/unit/history-startup-retry.test.ts
   - tests/unit/session-label-fetch.test.ts
   - tests/unit/session-summaries-route.test.ts
 expectedUserBehavior:
