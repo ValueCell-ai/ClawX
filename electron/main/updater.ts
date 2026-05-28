@@ -47,6 +47,9 @@ export class AppUpdater extends EventEmitter {
   private autoInstallTimer: NodeJS.Timeout | null = null;
   private autoInstallCountdown = 0;
 
+  /** Tracks whether init() has been called. */
+  private initialized = false;
+
   /** Delay (in seconds) before auto-installing a downloaded update. */
   private static readonly AUTO_INSTALL_DELAY_SECONDS = 5;
 
@@ -58,10 +61,32 @@ export class AppUpdater extends EventEmitter {
     this.on('error', (error: Error) => {
       logger.error('[Updater] AppUpdater emitted error:', error);
     });
-    
+
+    // IMPORTANT: Do NOT touch the `autoUpdater` import here in the constructor.
+    // electron-updater's `autoUpdater` is a lazy getter — accessing ANY property
+    // (including `.autoDownload`, `.logger`, `.on()`) triggers instantiation of the
+    // platform-specific updater (AppImageUpdater on Linux), which calls
+    // `app.getVersion()` via ElectronAppAdapter. In dev mode (unpackaged),
+    // app.getVersion() returns undefined before app.whenReady(), crashing the app.
+    //
+    // All autoUpdater configuration is deferred to init().
+  }
+
+  /**
+   * Initialize the updater with the app version, feed URL, event listeners,
+   * and default settings.
+   * Must be called after app.whenReady().
+   *
+   * Calling init() more than once is a no-op.
+   */
+  init(): void {
+    if (this.initialized) return;
+    this.initialized = true;
+
+    // --- Configure defaults (safe now — app.whenReady() has resolved) ---
     autoUpdater.autoDownload = false;
     autoUpdater.autoInstallOnAppQuit = false;
-    
+
     autoUpdater.logger = {
       info: (msg: string) => logger.info('[Updater]', msg),
       warn: (msg: string) => logger.warn('[Updater]', msg),
@@ -69,7 +94,10 @@ export class AppUpdater extends EventEmitter {
       debug: (msg: string) => logger.debug('[Updater]', msg),
     };
 
-    // Override feed URL for prerelease channels so that
+    // --- Register event listeners ---
+    this.setupListeners();
+
+    // --- Override feed URL for prerelease channels ---
     // alpha -> /alpha/alpha-mac.yml, beta -> /beta/beta-mac.yml, etc.
     const version = app.getVersion();
     const channel = detectChannel(version);
@@ -86,8 +114,6 @@ export class AppUpdater extends EventEmitter {
       url: feedUrl,
       useMultipleRangeRequest: false,
     });
-
-    this.setupListeners();
   }
 
   /**

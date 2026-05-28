@@ -95,7 +95,7 @@ if (!gotElectronLock) {
   console.info('[ClawX] Another instance already holds the single-instance lock; exiting duplicate process');
   app.exit(0);
 }
-let releaseProcessInstanceFileLock: () => void = () => {};
+let releaseProcessInstanceFileLock: () => void = () => { };
 let gotFileLock = true;
 if (gotElectronLock && !isE2EMode) {
   try {
@@ -363,6 +363,9 @@ async function initialize(): Promise<void> {
   if (marketplaceProvider) {
     clawHubService.setMarketplaceProvider(marketplaceProvider);
   }
+
+  // Initialize updater (requires app.whenReady() for app.getVersion())
+  appUpdater.init();
 
   // Register update handlers
   registerUpdateHandlers(appUpdater, window);
