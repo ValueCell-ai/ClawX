@@ -1,4 +1,5 @@
 import {
+  extractImages,
   extractText,
   extractTextSegments,
   extractToolUse,
@@ -46,11 +47,19 @@ export function findReplyMessageIndex(messages: RawMessage[], hasStreamingReply:
     const message = messages[idx];
     if (!message || message.role !== 'assistant') continue;
     const replyText = extractText(message).trim();
+    if (messageHasUserVisibleImage(message)) return idx;
     if (replyText.length === 0 || isInternalAssistantReplyText(replyText)) continue;
     if (isGeneratingStatusNarration(replyText)) continue;
     return idx;
   }
   return -1;
+}
+
+function messageHasUserVisibleImage(message: RawMessage): boolean {
+  if ((message._attachedFiles ?? []).some((file) => file.mimeType.startsWith('image/'))) {
+    return true;
+  }
+  return extractImages(message).length > 0;
 }
 
 /**
@@ -159,6 +168,7 @@ export function segmentHasFinalReply(segmentMessages: RawMessage[]): boolean {
   return segmentMessages.some((message, index) => {
     if (index <= lastToolUseOffset) return false;
     if (message.role !== 'assistant') return false;
+    if (messageHasUserVisibleImage(message)) return true;
     const replyText = extractText(message).trim();
     if (replyText.length === 0 || isInternalAssistantReplyText(replyText)) return false;
     if (isGeneratingStatusNarration(replyText)) return false;

@@ -417,10 +417,15 @@ export function Chat() {
     // History may already contain the final answer while lifecycle flags are
     // still armed (missing Gateway terminal phase, blocked chat.send RPC, etc.).
     // Treat the run as closed for graph/input UI when the transcript is done
-    // and nothing is actively streaming. Require prior tool activity so an early
-    // narration-only history snapshot does not collapse the graph mid-chain.
+    // and no new tool call is actively streaming. Require prior tool activity
+    // so an early narration-only history snapshot does not collapse the graph
+    // mid-chain. Do not require `hasAnyStreamContent === false`: image
+    // generation can complete via a history-only assistant-media bubble after
+    // the Gateway fails to wake the requester session, leaving stale thinking
+    // content in the stream state.
     const runCompletedInHistory = hasFinalReply
-      && !hasAnyStreamContent
+      && !hasRunningStreamToolStatus
+      && streamTools.length === 0
       && (hasToolActivity || !sending);
     const isLatestOpenRun = isLatestRunSegment
       && !runError

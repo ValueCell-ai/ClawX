@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { deriveTaskSteps, parseSubagentCompletionInfo } from '@/pages/Chat/task-visualization';
+import {
+  deriveTaskSteps,
+  findReplyMessageIndex,
+  parseSubagentCompletionInfo,
+  segmentHasFinalReply,
+} from '@/pages/Chat/task-visualization';
 import { stripProcessMessagePrefix } from '@/pages/Chat/message-utils';
 import type { RawMessage, ToolStatus } from '@/stores/chat';
 
@@ -364,5 +369,53 @@ status: completed successfully`,
       sessionId: 'child-session-id',
       agentId: 'coder',
     });
+  });
+});
+
+describe('run completion detection', () => {
+  it('treats delivered image attachments as a final reply after image generation tools', () => {
+    const messages: RawMessage[] = [
+      {
+        role: 'assistant',
+        content: [{
+          type: 'toolCall',
+          id: 'tool-image',
+          name: 'image_generate',
+          arguments: { prompt: 'wheat' },
+        }],
+      },
+      {
+        role: 'assistant',
+        content: [{
+          type: 'toolCall',
+          id: 'tool-message',
+          name: 'message',
+          arguments: {
+            action: 'send',
+            attachments: [{ path: '/tmp/wheat.png' }],
+          },
+        }],
+      },
+      {
+        role: 'assistant',
+        content: [{
+          type: 'image',
+          url: '/api/chat/media/outgoing/agent%3Amain%3As-1/image-1/full',
+          mimeType: 'image/png',
+          alt: 'wheat.png',
+        }],
+        _attachedFiles: [{
+          fileName: 'wheat.png',
+          mimeType: 'image/png',
+          fileSize: 42,
+          preview: 'data:image/png;base64,ok',
+          gatewayUrl: '/api/chat/media/outgoing/agent%3Amain%3As-1/image-1/full',
+          source: 'gateway-media',
+        }],
+      },
+    ];
+
+    expect(segmentHasFinalReply(messages)).toBe(true);
+    expect(findReplyMessageIndex(messages, false)).toBe(2);
   });
 });

@@ -21,6 +21,19 @@ vi.mock('@/stores/agents', () => ({
   useAgentsStore: (selector: (state: typeof agentsState) => unknown) => selector(agentsState),
 }));
 
+vi.mock('@/stores/artifact-panel', () => {
+  const state = {
+    open: false,
+    widthPct: 45,
+    openChanges: vi.fn(),
+    openPreview: vi.fn(),
+    close: vi.fn(),
+  };
+  return {
+    useArtifactPanel: (selector: (value: typeof state) => unknown) => selector(state),
+  };
+});
+
 vi.mock('@/lib/host-api', () => ({
   hostApiFetch: (...args: unknown[]) => hostApiFetchMock(...args),
 }));
@@ -403,6 +416,95 @@ describe('Chat execution graph lifecycle', () => {
 
     expect(screen.queryByTestId('chat-execution-step-thinking-trailing')).not.toBeInTheDocument();
     expect(screen.getByText('执行完成 ✅ 今天的 github1 已写入飞书文档。')).toBeInTheDocument();
+    expect(screen.queryByTestId('chat-typing-indicator')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('chat-activity-indicator')).not.toBeInTheDocument();
+  });
+
+  it('stops trailing thinking when generated image media arrives but session wake is missed', async () => {
+    const { useChatStore } = await import('@/stores/chat');
+    useChatStore.setState({
+      messages: [
+        {
+          role: 'user',
+          content: '生成一个小麦',
+        },
+        {
+          role: 'assistant',
+          id: 'image-tool-turn',
+          content: [
+            {
+              type: 'toolCall',
+              id: 'image-1',
+              name: 'image_generate',
+              arguments: { prompt: 'golden wheat' },
+            },
+          ],
+        },
+        {
+          role: 'assistant',
+          id: 'message-tool-turn',
+          content: [
+            {
+              type: 'toolCall',
+              id: 'message-1',
+              name: 'message',
+              arguments: {
+                action: 'send',
+                attachments: [{ path: '/tmp/wheat.png' }],
+              },
+            },
+          ],
+        },
+        {
+          role: 'assistant',
+          id: 'generated-image',
+          content: [{
+            type: 'image',
+            url: '/api/chat/media/outgoing/agent%3Amain%3As-1/image-1/full',
+            mimeType: 'image/png',
+            alt: 'wheat.png',
+          }],
+          _attachedFiles: [{
+            fileName: 'wheat.png',
+            mimeType: 'image/png',
+            fileSize: 42,
+            preview: 'data:image/png;base64,ok',
+            gatewayUrl: '/api/chat/media/outgoing/agent%3Amain%3As-1/image-1/full',
+            source: 'gateway-media',
+          }],
+        },
+      ],
+      loading: false,
+      error: null,
+      runError: null,
+      sending: true,
+      activeRunId: 'run-stuck-image',
+      streamingText: '',
+      streamingMessage: {
+        role: 'assistant',
+        content: [{ type: 'thinking', thinking: '等待图片生成完成。' }],
+      },
+      streamingTools: [],
+      pendingFinal: false,
+      lastUserMessageAt: Date.now(),
+      pendingToolImages: [],
+      sessions: [{ key: 'agent:main:main' }],
+      currentSessionKey: 'agent:main:main',
+      currentAgentId: 'main',
+      sessionLabels: {},
+      sessionLastActivity: {},
+      thinkingLevel: null,
+    });
+
+    const { Chat } = await import('@/pages/Chat/index');
+
+    render(<Chat />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('chat-execution-graph')).toBeInTheDocument();
+    });
+
+    expect(screen.queryByTestId('chat-execution-step-thinking-trailing')).not.toBeInTheDocument();
     expect(screen.queryByTestId('chat-typing-indicator')).not.toBeInTheDocument();
     expect(screen.queryByTestId('chat-activity-indicator')).not.toBeInTheDocument();
   });
