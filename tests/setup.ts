@@ -54,7 +54,7 @@ if (typeof window !== 'undefined') {
 // The renderer stores use it for small UI caches, so provide the browser shape
 // expected by unit tests when the environment does not.
 if (typeof window !== 'undefined') {
-  let needsLocalStorageMock = false;
+  let needsLocalStorageMock: boolean;
   try {
     needsLocalStorageMock = !window.localStorage;
   } catch {
