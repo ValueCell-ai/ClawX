@@ -87,7 +87,17 @@ vi.mock('@/pages/Chat/ChatInput', () => ({
 }));
 
 vi.mock('@/pages/Chat/ChatMessage', () => ({
-  ChatMessage: ({ message, textOverride }: { message: { content?: unknown }; textOverride?: string }) => {
+  ChatMessage: ({
+    message,
+    textOverride,
+    isStreaming,
+    suppressAssistantText,
+  }: {
+    message: { content?: unknown };
+    textOverride?: string;
+    isStreaming?: boolean;
+    suppressAssistantText?: boolean;
+  }) => {
     const text = typeof textOverride === 'string'
       ? textOverride
       : typeof message?.content === 'string'
@@ -99,7 +109,11 @@ vi.mock('@/pages/Chat/ChatMessage', () => ({
             .map((block) => block.text)
             .join(' ')
           : '';
-    return <div>{text}</div>;
+    return (
+      <div data-testid={isStreaming ? 'mock-streaming-message' : 'mock-chat-message'}>
+        {suppressAssistantText ? '' : text}
+      </div>
+    );
   },
 }));
 
@@ -363,6 +377,66 @@ describe('Chat execution graph lifecycle', () => {
 
     expect(screen.queryByTestId('chat-execution-step-thinking-trailing')).not.toBeInTheDocument();
     expect(screen.getAllByText('404 Resource not found').length).toBeGreaterThan(0);
+  });
+
+  it('keeps history final reply folded while matching streamed text is still active', async () => {
+    const finalText = 'History final answer is already recorded.';
+    const { useChatStore } = await import('@/stores/chat');
+    useChatStore.setState({
+      messages: [
+        {
+          role: 'user',
+          content: 'Summarize the run',
+        },
+        {
+          role: 'assistant',
+          id: 'tool-turn',
+          content: [
+            { type: 'text', text: 'Reading the source data.' },
+            { type: 'tool_use', id: 'read-1', name: 'read_file', input: { path: '/tmp/source.txt' } },
+          ],
+        },
+        {
+          role: 'assistant',
+          id: 'final-turn',
+          content: [{ type: 'text', text: finalText }],
+        },
+      ],
+      loading: false,
+      error: null,
+      runError: null,
+      sending: true,
+      activeRunId: 'run-history-stream-race',
+      streamingText: '',
+      streamingMessage: {
+        role: 'assistant',
+        content: [{ type: 'text', text: finalText }],
+      },
+      streamingTools: [],
+      pendingFinal: false,
+      lastUserMessageAt: Date.now(),
+      pendingToolImages: [],
+      sessions: [{ key: 'agent:main:main' }],
+      currentSessionKey: 'agent:main:main',
+      currentAgentId: 'main',
+      sessionLabels: {},
+      sessionLastActivity: {},
+      thinkingLevel: null,
+    });
+
+    const { Chat } = await import('@/pages/Chat/index');
+
+    render(<Chat />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('chat-execution-graph')).toHaveAttribute('data-collapsed', 'false');
+    });
+
+    expect(screen.getByTestId('mock-streaming-message')).toHaveTextContent(finalText);
+    expect(
+      screen.getAllByTestId('mock-chat-message')
+        .filter((element) => element.textContent === finalText),
+    ).toHaveLength(0);
   });
 
   it('stops trailing thinking when history already contains the final reply but sending is stuck', async () => {
