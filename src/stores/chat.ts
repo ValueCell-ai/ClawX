@@ -3007,7 +3007,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
           const errorKind = classifyHistoryStartupRetryError(lastError);
           const shouldRetry = isInitialForegroundLoad
-            && !localFallbackApplied
             && attempt < CHAT_HISTORY_STARTUP_RETRY_DELAYS_MS.length
             && shouldRetryStartupHistoryLoad(useGatewayStore.getState().status, errorKind);
 
@@ -3039,6 +3038,11 @@ export const useChatStore = create<ChatState>((set, get) => ({
               HISTORY_PAGE_SIZE,
               get().messages,
             );
+          }
+
+          if (rawMessages.length === 0 && localFallbackApplied && !isCronSessionKey(currentSessionKey)) {
+            set({ loading: false });
+            return;
           }
 
           const applied = applyLoadedMessages(rawMessages, thinkingLevel);
@@ -3087,19 +3091,10 @@ export const useChatStore = create<ChatState>((set, get) => ({
         }
       } catch (err) {
         console.warn('Failed to load chat history:', err);
-        const fallbackMessages = await loadLocalHistoryFallback(currentSessionKey, 200);
-        if (fallbackMessages.length > 0) {
-          const applied = applyLoadedMessages(fallbackMessages, null);
-          if (applied) {
-            set({ hasMoreHistory: fallbackMessages.length >= HISTORY_PAGE_SIZE });
-          }
-          if (applied && isInitialForegroundLoad) {
-            _foregroundHistoryLoadSeen.add(foregroundLoadKey);
-            void refreshVisibleSessionSummaries(set, get);
-          }
-        } else if (localFallbackApplied) {
+        const applied = await applyLocalFallbackMessages();
+        if (!applied && localFallbackApplied) {
           set({ loading: false });
-        } else {
+        } else if (!applied) {
           applyLoadFailure(String(err));
         }
       } finally {
