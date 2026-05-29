@@ -42,6 +42,9 @@ jobs:
       - name: Download uv binaries for Windows
         run: pnpm run uv:download:win
 
+      - name: Download agent-browser binaries for Windows
+        run: pnpm run agent-browser:download:win
+
       - name: Build Windows
         run: pnpm run package:win
 

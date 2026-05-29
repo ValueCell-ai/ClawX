@@ -349,7 +349,7 @@ ClawX 采用 **双进程 + Host API 统一接入架构**。渲染进程只调用
 
 ```bash
 # 开发
-pnpm run init             # 安装依赖并下载 uv
+pnpm run init             # 安装依赖并下载捆绑二进制（uv、agent-browser）
 pnpm dev                  # 以热重载模式启动（若缺失会自动准备预装技能包）
 
 # 代码质量

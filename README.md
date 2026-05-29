@@ -349,7 +349,7 @@ Chain multiple skills together to create sophisticated automation pipelines. Pro
 
 ```bash
 # Development
-pnpm run init             # Install dependencies + download uv
+pnpm run init             # Install dependencies + download bundled binaries (uv, agent-browser)
 pnpm dev                  # Start with hot reload (auto-prepares bundled skills if missing)
 
 # Quality

@@ -77,6 +77,18 @@ jobs:
         if: matrix.platform == 'linux'
         run: pnpm run uv:download:linux
 
+      - name: Download agent-browser binaries for macOS
+        if: matrix.platform == 'mac'
+        run: pnpm run agent-browser:download:mac
+
+      - name: Download agent-browser binaries for Windows
+        if: matrix.platform == 'win'
+        run: pnpm run agent-browser:download:win
+
+      - name: Download agent-browser binaries for Linux
+        if: matrix.platform == 'linux'
+        run: pnpm run agent-browser:download:linux
+
 
       # macOS specific steps
       - name: Free disk space (macOS)
