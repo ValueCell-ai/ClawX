@@ -180,6 +180,21 @@ export function isInternalAssistantReplyText(text: string): boolean {
   return /^(HEARTBEAT_OK|NO_REPLY)\s*$/i.test(text.trim());
 }
 
+/**
+ * Remove standalone internal sentinel lines (`NO_REPLY` / `HEARTBEAT_OK`) that
+ * the model sometimes appends *after* a real reply. The whole-message form is
+ * caught by `isInternalAssistantReplyText`; this covers the mixed case so the
+ * sentinel never leaks into the rendered chat bubble.
+ */
+export function stripInternalSentinelLines(text: string): string {
+  if (!text) return text;
+  return text
+    .replace(/(^|\n)[ \t]*(?:HEARTBEAT_OK|NO_REPLY)[ \t]*(?=\n|$)/gi, '$1')
+    .replace(/[ \t]+\n/g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
 /** Interim image-generation status the user should not see as a final answer. */
 export function isGeneratingStatusNarration(text: string): boolean {
   const trimmed = text.trim();
@@ -268,6 +283,9 @@ export function extractText(message: RawMessage | unknown): string {
     // path is surfaced as a clickable file card via `_attachedFiles`,
     // so leaving it inline would duplicate the artifact.
     result = stripAssistantMediaTags(result);
+    // Drop a trailing `NO_REPLY` / `HEARTBEAT_OK` the model may append after
+    // an otherwise-real answer.
+    result = stripInternalSentinelLines(result);
   }
 
   return result;
@@ -299,7 +317,7 @@ export function extractTextSegments(message: RawMessage | unknown): string[] {
 
   if (!isUser) {
     return segments
-      .map((segment) => stripAssistantMediaTags(segment))
+      .map((segment) => stripInternalSentinelLines(stripAssistantMediaTags(segment)))
       .filter((segment) => segment.length > 0);
   }
 

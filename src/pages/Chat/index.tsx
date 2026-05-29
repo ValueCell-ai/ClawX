@@ -221,7 +221,7 @@ export function Chat() {
   const [graphExpandedOverrides, setGraphExpandedOverrides] = useState<Record<string, boolean>>({});
   const graphStepCache: Record<string, GraphStepCacheEntry> = graphStepCacheStore.get(currentSessionKey) ?? {};
   const minLoading = useMinLoading(loading && messages.length > 0);
-  const { contentRef, scrollRef, scrollToBottom, isAtBottom } = useStickToBottomInstant(currentSessionKey);
+  const { contentRef, scrollRef, scrollToBottom, isAtBottom } = useStickToBottomInstant(currentSessionKey, sending);
 
   // Load data when gateway is running.
   // When the store already holds messages for this session (i.e. the user

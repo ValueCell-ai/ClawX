@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import { useStickToBottom } from "use-stick-to-bottom";
 
 /**
@@ -7,17 +7,74 @@ import { useStickToBottom } from "use-stick-to-bottom";
  *
  * @param resetKey - When this key changes, the scroll position will be reset to bottom instantly.
  *                   Typically this should be the conversation ID.
+ * @param active   - When true (e.g. an AI run is streaming), the scroll position is pinned to the
+ *                   very bottom instantly on every layout change — both growth and shrink — so
+ *                   tool-heavy runs that churn the layout don't produce erratic up/down jitter.
+ *                   Pinning is suppressed once the user manually scrolls up (`escapedFromLock`),
+ *                   so it never fights a user reading earlier history.
  */
-export function useStickToBottomInstant(resetKey?: string) {
+export function useStickToBottomInstant(resetKey?: string, active = false) {
   const lastKeyRef = useRef(resetKey);
   const hasInitializedRef = useRef(false);
 
   const result = useStickToBottom({
     initial: "instant",
-    resize: "smooth",
+    resize: "instant",
   });
 
-  const { scrollRef } = result;
+  const { scrollRef, contentRef, escapedFromLock } = result;
+
+  // Keep the latest "should we pin?" inputs available inside the ResizeObserver
+  // callback without re-creating the observer on every render.
+  const activeRef = useRef(active);
+  const escapedRef = useRef(escapedFromLock);
+  useEffect(() => {
+    activeRef.current = active;
+    escapedRef.current = escapedFromLock;
+  }, [active, escapedFromLock]);
+
+  // Instantly glue the scrollbar to the bottom. The library only animates on
+  // *positive* resizes and ignores *negative* ones; this covers both so the
+  // bar stays at the very bottom through promotion/demotion, graph collapse,
+  // and indicator swaps during a run.
+  const pinToBottom = useCallback(() => {
+    const scrollElement = scrollRef.current;
+    if (!scrollElement) return;
+    if (!activeRef.current || escapedRef.current) return;
+    scrollElement.scrollTop = scrollElement.scrollHeight;
+  }, [scrollRef]);
+
+  // Combine the library's content ref with our own ResizeObserver so we can
+  // react to every layout change (the library's observer only scrolls on
+  // growth).
+  const pinObserverRef = useRef<ResizeObserver | null>(null);
+  const combinedContentRef = useCallback(
+    (element: HTMLElement | null) => {
+      contentRef(element);
+
+      pinObserverRef.current?.disconnect();
+      pinObserverRef.current = null;
+
+      if (!element) return;
+
+      const observer = new ResizeObserver(() => {
+        pinToBottom();
+        // A trailing frame lets the library's own scroll settle first so our
+        // instant pin wins the final position.
+        requestAnimationFrame(() => pinToBottom());
+      });
+      observer.observe(element);
+      pinObserverRef.current = observer;
+    },
+    [contentRef, pinToBottom],
+  );
+
+  useEffect(() => {
+    return () => {
+      pinObserverRef.current?.disconnect();
+      pinObserverRef.current = null;
+    };
+  }, []);
 
   // Reset initialization when key changes
   useEffect(() => {
@@ -54,5 +111,5 @@ export function useStickToBottomInstant(resetKey?: string) {
     return () => cancelAnimationFrame(frame1);
   }, [scrollRef, resetKey]);
 
-  return result;
+  return { ...result, contentRef: combinedContentRef };
 }
