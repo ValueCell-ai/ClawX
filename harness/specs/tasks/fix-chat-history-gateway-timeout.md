@@ -19,8 +19,12 @@ touchedAreas:
   - src/stores/chat/session-label-hydration.ts
   - src/stores/chat/store-api.ts
   - src/stores/chat/types.ts
+  - tests/setup.ts
+  - tests/e2e/chat-history-startup-retry.spec.ts
+  - tests/unit/chat-store-history-retry.test.ts
   - tests/unit/chat-store-session-label-fetch.test.ts
   - tests/unit/gateway-rpc-backpressure.test.ts
+  - tests/unit/history-startup-retry.test.ts
   - tests/unit/session-label-fetch.test.ts
   - tests/unit/session-summaries-route.test.ts
 expectedUserBehavior:
@@ -38,6 +42,9 @@ requiredRules:
   - api-client-transport-policy
 requiredTests:
   - pnpm run typecheck
+  - tests/e2e/chat-history-startup-retry.spec.ts
+  - tests/unit/chat-store-history-retry.test.ts
+  - tests/unit/history-startup-retry.test.ts
   - tests/unit/chat-store-session-label-fetch.test.ts
   - tests/unit/gateway-rpc-backpressure.test.ts
   - tests/unit/session-label-fetch.test.ts
@@ -48,6 +55,7 @@ acceptance:
   - Startup/restart no longer fans out sidebar label chat.history calls before the visible session history finishes loading.
   - Sidebar label hydration no longer depends on gateway chat.history full-session scans.
   - Foreground history uses a bounded startup RPC wait and falls back to local transcript reads instead of surfacing transient RPC timeout errors.
+  - Foreground startup history can show local transcript data while chat.history is pending, then replace it with Gateway history without disabling startup retry.
   - Main-process chat.history RPCs are single-flighted/backpressured before reaching the Gateway.
 docs:
   required: false

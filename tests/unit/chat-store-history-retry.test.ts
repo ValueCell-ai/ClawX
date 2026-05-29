@@ -97,6 +97,199 @@ describe('useChatStore startup history retry', () => {
     setTimeoutSpy.mockRestore();
   });
 
+  it('renders local transcript fallback while the initial gateway history request is still pending', async () => {
+    const { useChatStore } = await import('@/stores/chat');
+    useChatStore.setState({
+      currentSessionKey: 'agent:main:main',
+      currentAgentId: 'main',
+      sessions: [{ key: 'agent:main:main' }],
+      messages: [],
+      sessionLabels: {},
+      sessionLastActivity: {},
+      sending: false,
+      activeRunId: null,
+      streamingText: '',
+      streamingMessage: null,
+      streamingTools: [],
+      pendingFinal: false,
+      lastUserMessageAt: null,
+      pendingToolImages: [],
+      error: null,
+      loading: false,
+      thinkingLevel: null,
+    });
+
+    let resolveGatewayHistory: ((value: { messages: Array<{ role: string; content: string; timestamp: number }> }) => void) | null = null;
+    gatewayRpcMock.mockImplementation(async (method: string) => {
+      if (method === 'config.get') return {};
+      if (method !== 'chat.history') {
+        throw new Error(`Unexpected gateway RPC: ${method}`);
+      }
+      return await new Promise<{ messages: Array<{ role: string; content: string; timestamp: number }> }>((resolve) => {
+        resolveGatewayHistory = resolve;
+      });
+    });
+    hostApiFetchMock.mockImplementation(async (url: string) => {
+      if (url.startsWith('/api/sessions/transcript')) {
+        return {
+          messages: [{ role: 'assistant', content: 'local transcript first', timestamp: 1000 }],
+        };
+      }
+      return { messages: [] };
+    });
+
+    const loadPromise = useChatStore.getState().loadHistory(false);
+    await vi.advanceTimersByTimeAsync(1_500);
+
+    expect(useChatStore.getState().loading).toBe(false);
+    expect(useChatStore.getState().messages.map((message) => message.content)).toEqual([
+      'local transcript first',
+    ]);
+    expect(gatewayRpcMock).toHaveBeenCalledWith(
+      'chat.history',
+      chatHistoryRpcParams('agent:main:main', 200),
+      35_000,
+    );
+
+    const quietReloadWhileGatewayPending = useChatStore.getState().loadHistory(true);
+    await Promise.resolve();
+    expect(gatewayRpcMock.mock.calls.filter(([method]) => method === 'chat.history')).toHaveLength(1);
+
+    resolveGatewayHistory?.({
+      messages: [{ role: 'assistant', content: 'gateway authoritative history', timestamp: 1001 }],
+    });
+    await loadPromise;
+    await quietReloadWhileGatewayPending;
+    await vi.waitFor(() => {
+      expect(useChatStore.getState().messages.map((message) => message.content)).toEqual([
+        'gateway authoritative history',
+      ]);
+    });
+  });
+
+  it('keeps startup retry active after rendering local transcript fallback', async () => {
+    const { useChatStore } = await import('@/stores/chat');
+    useChatStore.setState({
+      currentSessionKey: 'agent:main:main',
+      currentAgentId: 'main',
+      sessions: [{ key: 'agent:main:main' }],
+      messages: [],
+      sessionLabels: {},
+      sessionLastActivity: {},
+      sending: false,
+      activeRunId: null,
+      streamingText: '',
+      streamingMessage: null,
+      streamingTools: [],
+      pendingFinal: false,
+      lastUserMessageAt: null,
+      pendingToolImages: [],
+      error: null,
+      loading: false,
+      thinkingLevel: null,
+    });
+
+    let rejectFirstGatewayHistory: ((reason?: unknown) => void) | null = null;
+    let chatHistoryCalls = 0;
+    gatewayRpcMock.mockImplementation(async (method: string) => {
+      if (method === 'config.get') return {};
+      if (method !== 'chat.history') {
+        throw new Error(`Unexpected gateway RPC: ${method}`);
+      }
+      chatHistoryCalls += 1;
+      if (chatHistoryCalls === 1) {
+        return await new Promise((_resolve, reject) => {
+          rejectFirstGatewayHistory = reject;
+        });
+      }
+      return {
+        messages: [{ role: 'assistant', content: 'gateway history after retry', timestamp: 1001 }],
+      };
+    });
+    hostApiFetchMock.mockImplementation(async (url: string) => {
+      if (url.startsWith('/api/sessions/transcript')) {
+        return {
+          messages: [{ role: 'assistant', content: 'local transcript first', timestamp: 1000 }],
+        };
+      }
+      return { messages: [] };
+    });
+
+    const loadPromise = useChatStore.getState().loadHistory(false);
+    await vi.advanceTimersByTimeAsync(1_500);
+
+    expect(useChatStore.getState().messages.map((message) => message.content)).toEqual([
+      'local transcript first',
+    ]);
+
+    rejectFirstGatewayHistory?.(new Error('RPC timeout: chat.history'));
+    await Promise.resolve();
+    await vi.advanceTimersByTimeAsync(800);
+    await loadPromise;
+
+    expect(gatewayRpcMock.mock.calls.filter(([method]) => method === 'chat.history')).toHaveLength(2);
+    expect(useChatStore.getState().messages.map((message) => message.content)).toEqual([
+      'gateway history after retry',
+    ]);
+  });
+
+  it('keeps local transcript fallback when gateway returns empty history', async () => {
+    const { useChatStore } = await import('@/stores/chat');
+    useChatStore.setState({
+      currentSessionKey: 'agent:main:main',
+      currentAgentId: 'main',
+      sessions: [{ key: 'agent:main:main' }],
+      messages: [],
+      sessionLabels: {},
+      sessionLastActivity: {},
+      sending: false,
+      activeRunId: null,
+      streamingText: '',
+      streamingMessage: null,
+      streamingTools: [],
+      pendingFinal: false,
+      lastUserMessageAt: null,
+      pendingToolImages: [],
+      error: null,
+      loading: false,
+      thinkingLevel: null,
+    });
+
+    let resolveGatewayHistory: ((value: { messages: Array<unknown> }) => void) | null = null;
+    gatewayRpcMock.mockImplementation(async (method: string) => {
+      if (method === 'config.get') return {};
+      if (method !== 'chat.history') {
+        throw new Error(`Unexpected gateway RPC: ${method}`);
+      }
+      return await new Promise<{ messages: Array<unknown> }>((resolve) => {
+        resolveGatewayHistory = resolve;
+      });
+    });
+    hostApiFetchMock.mockImplementation(async (url: string) => {
+      if (url.startsWith('/api/sessions/transcript')) {
+        return {
+          messages: [{ role: 'assistant', content: 'local transcript remains', timestamp: 1000 }],
+        };
+      }
+      return { messages: [] };
+    });
+
+    const loadPromise = useChatStore.getState().loadHistory(false);
+    await vi.advanceTimersByTimeAsync(1_500);
+
+    expect(useChatStore.getState().messages.map((message) => message.content)).toEqual([
+      'local transcript remains',
+    ]);
+
+    resolveGatewayHistory?.({ messages: [] });
+    await loadPromise;
+
+    expect(useChatStore.getState().loading).toBe(false);
+    expect(useChatStore.getState().messages.map((message) => message.content)).toEqual([
+      'local transcript remains',
+    ]);
+  });
+
   it('forces the internal final-message reload through the quiet history cooldown', async () => {
     const { useChatStore } = await import('@/stores/chat');
     useChatStore.setState({

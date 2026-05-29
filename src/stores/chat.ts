@@ -12,6 +12,7 @@ import { buildCronSessionHistoryPath, isCronSessionKey } from './chat/cron-sessi
 import { pickStartupSessionFallback } from './chat/session-selection';
 import {
   CHAT_HISTORY_DISK_FALLBACK_TIMEOUT_MS,
+  CHAT_HISTORY_STARTUP_FALLBACK_RACE_MS,
   CHAT_HISTORY_STARTUP_RETRY_DELAYS_MS,
   classifyHistoryStartupRetryError,
   getHistoryLoadingSafetyTimeout,
@@ -2981,6 +2982,51 @@ export const useChatStore = create<ChatState>((set, get) => ({
       return true;
       };
 
+      let localFallbackApplied = false;
+      let gatewayHistorySettled = false;
+
+      const applyLocalFallbackMessages = async (
+        options: { onlyWhileGatewayPending?: boolean; logTimeout?: boolean } = {},
+      ): Promise<boolean> => {
+        const fallbackMessages = await loadLocalHistoryFallback(currentSessionKey, 200, {
+          logTimeout: options.logTimeout,
+        });
+        if (
+          fallbackMessages.length === 0
+          || !isCurrentSession()
+          || (options.onlyWhileGatewayPending && gatewayHistorySettled)
+        ) {
+          return false;
+        }
+
+        const applied = applyLoadedMessages(fallbackMessages, null);
+        if (!applied) return false;
+
+        localFallbackApplied = true;
+        set({ hasMoreHistory: fallbackMessages.length >= HISTORY_PAGE_SIZE });
+        if (isInitialForegroundLoad) {
+          _foregroundHistoryLoadSeen.add(foregroundLoadKey);
+          void refreshVisibleSessionSummaries(set, get);
+        }
+        return true;
+      };
+
+      const applyStartupFallbackAfterGrace = async (): Promise<'fallback' | 'none'> => {
+        if (!isInitialForegroundLoad || !shouldShowForegroundLoading) {
+          return 'none';
+        }
+        await sleep(CHAT_HISTORY_STARTUP_FALLBACK_RACE_MS);
+        if (!isCurrentSession() || gatewayHistorySettled) {
+          return 'none';
+        }
+        const applied = await applyLocalFallbackMessages({
+          onlyWhileGatewayPending: true,
+          logTimeout: false,
+        });
+        return applied ? 'fallback' : 'none';
+      };
+
+      const loadGatewayHistory = async (): Promise<void> => {
       try {
         const fallbackMessages: RawMessage[] = [];
         const gatewayRpc = useGatewayStore.getState().rpc.bind(useGatewayStore.getState());
@@ -3049,6 +3095,11 @@ export const useChatStore = create<ChatState>((set, get) => ({
             );
           }
 
+          if (rawMessages.length === 0 && localFallbackApplied && !isCronSessionKey(currentSessionKey)) {
+            set({ loading: false });
+            return;
+          }
+
           const applied = applyLoadedMessages(rawMessages, thinkingLevel);
           if (applied) {
             set({ hasMoreHistory: rawMessages.length >= HISTORY_PAGE_SIZE });
@@ -3067,18 +3118,20 @@ export const useChatStore = create<ChatState>((set, get) => ({
             });
           }
 
-          const lateFallbackMessages = fallbackMessages.length > 0
-            ? fallbackMessages
-            : await loadLocalHistoryFallback(currentSessionKey, 200);
-          if (lateFallbackMessages.length > 0) {
-            const applied = applyLoadedMessages(lateFallbackMessages, null);
-            if (applied) {
-              set({ hasMoreHistory: lateFallbackMessages.length >= HISTORY_PAGE_SIZE });
+          const appliedLateFallback = fallbackMessages.length > 0
+            ? applyLoadedMessages(fallbackMessages, null)
+            : await applyLocalFallbackMessages();
+          if (appliedLateFallback) {
+            if (fallbackMessages.length > 0) {
+              localFallbackApplied = true;
+              set({ hasMoreHistory: fallbackMessages.length >= HISTORY_PAGE_SIZE });
+              if (isInitialForegroundLoad) {
+                _foregroundHistoryLoadSeen.add(foregroundLoadKey);
+                void refreshVisibleSessionSummaries(set, get);
+              }
             }
-            if (applied && isInitialForegroundLoad) {
-              _foregroundHistoryLoadSeen.add(foregroundLoadKey);
-              void refreshVisibleSessionSummaries(set, get);
-            }
+          } else if (localFallbackApplied) {
+            set({ loading: false });
           } else if (errorKind === 'timeout' && isInitialForegroundLoad) {
             // Keep startup usable while Gateway RPC routing catches up.  The
             // Sidebar/gateway event refreshes will retry quietly instead of
@@ -3093,20 +3146,25 @@ export const useChatStore = create<ChatState>((set, get) => ({
         }
       } catch (err) {
         console.warn('Failed to load chat history:', err);
-        const fallbackMessages = await loadLocalHistoryFallback(currentSessionKey, 200);
-        if (fallbackMessages.length > 0) {
-          const applied = applyLoadedMessages(fallbackMessages, null);
-          if (applied) {
-            set({ hasMoreHistory: fallbackMessages.length >= HISTORY_PAGE_SIZE });
-          }
-          if (applied && isInitialForegroundLoad) {
-            _foregroundHistoryLoadSeen.add(foregroundLoadKey);
-            void refreshVisibleSessionSummaries(set, get);
-          }
-        } else {
+        const applied = await applyLocalFallbackMessages();
+        if (!applied && localFallbackApplied) {
+          set({ loading: false });
+        } else if (!applied) {
           applyLoadFailure(String(err));
         }
+      } finally {
+        gatewayHistorySettled = true;
       }
+      };
+
+      const gatewayLoadPromise = loadGatewayHistory();
+      if (isInitialForegroundLoad && shouldShowForegroundLoading) {
+        await Promise.race([
+          gatewayLoadPromise.then(() => 'gateway' as const),
+          applyStartupFallbackAfterGrace(),
+        ]);
+      }
+      await gatewayLoadPromise;
     })();
 
     _historyLoadInFlight.set(currentSessionKey, loadPromise);

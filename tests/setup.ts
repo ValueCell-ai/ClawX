@@ -50,6 +50,44 @@ if (typeof window !== 'undefined') {
   });
 }
 
+// Vitest/jsdom can expose an opaque-origin window where localStorage is absent.
+// The renderer stores use it for small UI caches, so provide the browser shape
+// expected by unit tests when the environment does not.
+if (typeof window !== 'undefined') {
+  let needsLocalStorageMock: boolean;
+  try {
+    needsLocalStorageMock = !window.localStorage;
+  } catch {
+    needsLocalStorageMock = true;
+  }
+
+  if (needsLocalStorageMock) {
+    const storage = new Map<string, string>();
+    const localStorageMock: Storage = {
+      get length() {
+        return storage.size;
+      },
+      clear: vi.fn(() => storage.clear()),
+      getItem: vi.fn((key: string) => storage.get(key) ?? null),
+      key: vi.fn((index: number) => Array.from(storage.keys())[index] ?? null),
+      removeItem: vi.fn((key: string) => {
+        storage.delete(key);
+      }),
+      setItem: vi.fn((key: string, value: string) => {
+        storage.set(key, String(value));
+      }),
+    };
+    Object.defineProperty(window, 'localStorage', {
+      value: localStorageMock,
+      configurable: true,
+    });
+    Object.defineProperty(globalThis, 'localStorage', {
+      value: localStorageMock,
+      configurable: true,
+    });
+  }
+}
+
 // Mock matchMedia
 if (typeof window !== 'undefined') {
   Object.defineProperty(window, 'matchMedia', {

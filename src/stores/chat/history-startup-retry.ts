@@ -5,6 +5,7 @@ export const CHAT_HISTORY_STARTUP_RETRY_DELAYS_MS = [800, 2_000, 4_000, 8_000] a
 export const CHAT_HISTORY_STARTUP_CONNECTION_GRACE_MS = 30_000;
 export const CHAT_HISTORY_STARTUP_RUNNING_WINDOW_MS =
   CHAT_HISTORY_RPC_TIMEOUT_MS + CHAT_HISTORY_STARTUP_CONNECTION_GRACE_MS;
+export const CHAT_HISTORY_STARTUP_FALLBACK_RACE_MS = 1_500;
 export const CHAT_HISTORY_DISK_FALLBACK_TIMEOUT_MS = 4_000;
 export const CHAT_HISTORY_DEFAULT_LOADING_SAFETY_TIMEOUT_MS = 15_000;
 export const CHAT_HISTORY_LOADING_SAFETY_TIMEOUT_MS =
@@ -28,8 +29,11 @@ export function classifyHistoryStartupRetryError(error: unknown): HistoryRetryEr
 
   if (
     message.includes('rpc timeout: chat.history')
+    || message.includes('rpc timeout: chat:history')
     || message.includes('gateway rpc timeout: chat.history')
+    || message.includes('gateway rpc timeout: chat:history')
     || message.includes('gateway ws timeout: chat.history')
+    || message.includes('gateway ws timeout: chat:history')
     || message.includes('request timed out')
   ) {
     return 'timeout';
