@@ -20,10 +20,6 @@ const electronAPI = {
         'gateway:start',
         'gateway:stop',
         'gateway:restart',
-        'gateway:rpc',
-        'gateway:httpProxy',
-        'hostapi:fetch',
-        'hostapi:token',
         'gateway:health',
         'gateway:getControlUiUrl',
         // OpenClaw
@@ -283,8 +279,13 @@ const electronAPI = {
   isDev: process.env.NODE_ENV === 'development' || !!process.env.VITE_DEV_SERVER_URL,
 };
 
+const clawxAPI = {
+  hostInvoke: (request: unknown) => ipcRenderer.invoke('host:invoke', request),
+};
+
 // Expose the API to the renderer process
 contextBridge.exposeInMainWorld('electron', electronAPI);
+contextBridge.exposeInMainWorld('clawx', clawxAPI);
 
 // Type declarations for the renderer process
 export type ElectronAPI = typeof electronAPI;

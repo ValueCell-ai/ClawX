@@ -1,11 +1,10 @@
 /**
  * Gateway State Store
- * Uses Host API + SSE for lifecycle/status and a direct renderer WebSocket for runtime RPC.
+ * Uses typed Host API IPC for lifecycle/status and runtime RPC.
  */
 import { create } from 'zustand';
-import { hostApiFetch } from '@/lib/host-api';
-import { invokeIpc } from '@/lib/api-client';
-import { subscribeHostEvent } from '@/lib/host-events';
+import { hostApi } from '@/lib/host-api';
+import { hostEvents } from '@/lib/host-events';
 import type { GatewayHealth, GatewayStatus } from '../types/gateway';
 
 let gatewayInitPromise: Promise<void> | null = null;
@@ -346,12 +345,12 @@ export const useGatewayStore = create<GatewayState>((set, get) => ({
 
     gatewayInitPromise = (async () => {
       try {
-        const status = await hostApiFetch<GatewayStatus>('/api/gateway/status');
+        const status = await hostApi.gateway.status();
         set({ status, isInitialized: true });
 
         if (!gatewayEventUnsubscribers) {
           const unsubscribers: Array<() => void> = [];
-          unsubscribers.push(subscribeHostEvent<GatewayStatus>('gateway:status', (payload) => {
+          unsubscribers.push(hostEvents.onGatewayStatus<GatewayStatus>((payload) => {
             set({ status: payload });
 
             // Trigger cron repair when gateway becomes ready
@@ -365,28 +364,26 @@ export const useGatewayStore = create<GatewayState>((set, get) => ({
                 .catch(() => {});
             }
           }));
-          unsubscribers.push(subscribeHostEvent<{ message?: string }>('gateway:error', (payload) => {
+          unsubscribers.push(hostEvents.onGatewayError<{ message?: string }>((payload) => {
             set({ lastError: payload.message || 'Gateway error' });
           }));
-          unsubscribers.push(subscribeHostEvent<{ method?: string; params?: Record<string, unknown> }>(
-            'gateway:notification',
+          unsubscribers.push(hostEvents.onGatewayNotification<{ method?: string; params?: Record<string, unknown> }>(
             (payload) => {
               handleGatewayNotification(payload);
             },
           ));
-          unsubscribers.push(subscribeHostEvent('gateway:health', (payload) => {
+          unsubscribers.push(hostEvents.onGatewayHealth((payload) => {
             const current = get().health;
             set({ health: { ...(current ?? { ok: true }), ok: true, openclawHealth: payload } });
           }));
-          unsubscribers.push(subscribeHostEvent('gateway:presence', (payload) => {
+          unsubscribers.push(hostEvents.onGatewayPresence((payload) => {
             const current = get().health;
             set({ health: { ...(current ?? { ok: true }), presence: payload } });
           }));
-          unsubscribers.push(subscribeHostEvent('gateway:chat-message', (payload) => {
+          unsubscribers.push(hostEvents.onGatewayChatMessage((payload) => {
             handleGatewayChatMessage(payload);
           }));
-          unsubscribers.push(subscribeHostEvent<{ channelId?: string; status?: string }>(
-            'gateway:channel-status',
+          unsubscribers.push(hostEvents.onGatewayChannelStatus<{ channelId?: string; status?: string }>(
             (update) => {
               import('./channels')
                 .then(({ useChannelsStore }) => {
@@ -411,18 +408,15 @@ export const useGatewayStore = create<GatewayState>((set, get) => ({
 
           // Periodic reconciliation safety net: every 30 seconds, check if the
           // renderer's view of gateway state has drifted from main process truth.
-          // This catches any future one-off IPC delivery failures without adding
-          // a constant polling load (single lightweight IPC invoke per interval).
+          // This catches any future one-off event delivery failures without adding
+          // a constant polling load (single lightweight Host API status call per interval).
           // Clear any previous timer first to avoid leaks during HMR reloads.
           if (gatewayReconcileTimer !== null) {
             clearInterval(gatewayReconcileTimer);
           }
           gatewayReconcileTimer = setInterval(() => {
-            const ipc = window.electron?.ipcRenderer;
-            if (!ipc) return;
-            ipc.invoke('gateway:status')
-              .then((result: unknown) => {
-                const latest = result as GatewayStatus;
+            hostApi.gateway.status()
+              .then((latest) => {
                 const current = get().status;
                 if (latest.state !== current.state) {
                   console.info(
@@ -440,7 +434,7 @@ export const useGatewayStore = create<GatewayState>((set, get) => ({
         // the initial fetch and the IPC listener setup, that event was lost.
         // A second fetch guarantees we pick up the latest state.
         try {
-          const refreshed = await hostApiFetch<GatewayStatus>('/api/gateway/status');
+          const refreshed = await hostApi.gateway.status();
           const current = get().status;
           if (refreshed.state !== current.state) {
             set({ status: refreshed });
@@ -462,9 +456,7 @@ export const useGatewayStore = create<GatewayState>((set, get) => ({
   start: async () => {
     try {
       set({ status: { ...get().status, state: 'starting' }, lastError: null });
-      const result = await hostApiFetch<{ success: boolean; error?: string }>('/api/gateway/start', {
-        method: 'POST',
-      });
+      const result = await hostApi.gateway.start();
       if (!result.success) {
         set({
           status: { ...get().status, state: 'error', error: result.error },
@@ -481,7 +473,7 @@ export const useGatewayStore = create<GatewayState>((set, get) => ({
 
   stop: async () => {
     try {
-      await hostApiFetch('/api/gateway/stop', { method: 'POST' });
+      await hostApi.gateway.stop();
       set({ status: { ...get().status, state: 'stopped' }, lastError: null });
     } catch (error) {
       console.error('Failed to stop Gateway:', error);
@@ -492,9 +484,7 @@ export const useGatewayStore = create<GatewayState>((set, get) => ({
   restart: async () => {
     try {
       set({ status: { ...get().status, state: 'starting' }, lastError: null });
-      const result = await hostApiFetch<{ success: boolean; error?: string }>('/api/gateway/restart', {
-        method: 'POST',
-      });
+      const result = await hostApi.gateway.restart();
       if (!result.success) {
         set({
           status: { ...get().status, state: 'error', error: result.error },
@@ -511,7 +501,7 @@ export const useGatewayStore = create<GatewayState>((set, get) => ({
 
   checkHealth: async () => {
     try {
-      const result = await hostApiFetch<GatewayHealth>('/api/gateway/health');
+      const result = await hostApi.gateway.health();
       set({ health: result });
       return result;
     } catch (error) {
@@ -522,15 +512,7 @@ export const useGatewayStore = create<GatewayState>((set, get) => ({
   },
 
   rpc: async <T>(method: string, params?: unknown, timeoutMs?: number): Promise<T> => {
-    const response = await invokeIpc<{
-      success: boolean;
-      result?: T;
-      error?: string;
-    }>('gateway:rpc', method, params, timeoutMs);
-    if (!response.success) {
-      throw new Error(response.error || `Gateway RPC failed: ${method}`);
-    }
-    return response.result as T;
+    return await hostApi.gateway.rpc<T>(method, params, timeoutMs);
   },
 
   setStatus: (status) => set({ status }),

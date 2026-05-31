@@ -1,7 +1,7 @@
 /**
  * Chat Page
  * Native React implementation communicating with OpenClaw Gateway
- * via gateway:rpc IPC. Session selector, thinking toggle, and refresh
+ * via the Main-owned host API. Session selector, thinking toggle, and refresh
  * are in the toolbar; messages render with markdown + streaming.
  */
 import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -12,7 +12,7 @@ import { buildBaselineRunKey, getBaseline } from '@/stores/baseline-cache';
 import { useGatewayStore } from '@/stores/gateway';
 import { useAgentsStore } from '@/stores/agents';
 import { useArtifactPanel } from '@/stores/artifact-panel';
-import { hostApiFetch } from '@/lib/host-api';
+import { hostApi } from '@/lib/host-api';
 import { invokeIpc } from '@/lib/api-client';
 import { LoadingSpinner } from '@/components/common/LoadingSpinner';
 import { ChatMessage } from './ChatMessage';
@@ -251,9 +251,10 @@ export function Chat() {
     void Promise.all(
       missing.map(async (completion) => {
         try {
-          const result = await hostApiFetch<{ success: boolean; messages?: RawMessage[] }>(
-            `/api/sessions/transcript?agentId=${encodeURIComponent(completion.agentId)}&sessionId=${encodeURIComponent(completion.sessionId)}`,
-          );
+          const result = await hostApi.sessions.history({
+            agentId: completion.agentId,
+            sessionId: completion.sessionId,
+          });
           if (!result.success) {
             console.warn('Failed to load child transcript:', {
               agentId: completion.agentId,

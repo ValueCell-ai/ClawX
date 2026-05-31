@@ -20,7 +20,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
-import { hostApiFetch } from '@/lib/host-api';
+import { hostApi } from '@/lib/host-api';
 import { cn } from '@/lib/utils';
 import { useGatewayStore } from '@/stores/gateway';
 
@@ -373,7 +373,7 @@ export function Dreams() {
     setOpeningFullUi(true);
     setError(null);
     try {
-      const result = await hostApiFetch<{ success: boolean; url?: string; error?: string }>('/api/gateway/control-ui?view=dreams');
+      const result = await hostApi.gateway.controlUi('dreams');
       if (result.success && result.url) {
         await window.electron.openExternal(result.url);
       } else {

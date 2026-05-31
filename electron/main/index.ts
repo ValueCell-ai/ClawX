@@ -3,7 +3,6 @@
  * Manages window creation, system tray, and IPC handlers
  */
 import { app, BrowserWindow, nativeImage, session, shell } from 'electron';
-import type { Server } from 'node:http';
 import { join } from 'path';
 import { GatewayManager } from '../gateway/manager';
 import { registerIpcHandlers } from './ipc-handlers';
@@ -46,8 +45,6 @@ import { acquireProcessInstanceFileLock } from './process-instance-lock';
 import { getSetting } from '../utils/store';
 import { ensureBuiltinSkillsInstalled, ensurePreinstalledSkillsInstalled } from '../utils/skill-config';
 
-import { startHostApiServer } from '../api/server';
-import { HostEventBus } from '../api/event-bus';
 import { deviceOAuthManager } from '../utils/device-oauth';
 import { browserOAuthManager } from '../utils/browser-oauth';
 import { whatsAppLoginManager } from '../utils/whatsapp-login';
@@ -127,10 +124,14 @@ const gotTheLock = gotElectronLock && gotFileLock;
 let mainWindow: BrowserWindow | null = null;
 let gatewayManager!: GatewayManager;
 let clawHubService!: ClawHubService;
-let hostEventBus!: HostEventBus;
-let hostApiServer: Server | null = null;
 const mainWindowFocusState = createMainWindowFocusState();
 const quitLifecycleState = createQuitLifecycleState();
+
+function sendMainWindowEvent(channel: string, payload: unknown): void {
+  const win = mainWindow;
+  if (!win || win.isDestroyed()) return;
+  win.webContents.send(channel, payload);
+}
 
 /**
  * Resolve the icons directory path (works in both dev and packaged mode)
@@ -344,17 +345,9 @@ async function initialize(): Promise<void> {
   // Register IPC handlers
   registerIpcHandlers(gatewayManager, clawHubService, window);
 
-  hostApiServer = startHostApiServer({
-    gatewayManager,
-    clawHubService,
-    eventBus: hostEventBus,
-    mainWindow: window,
-  });
-
   // Initialize extension system
   await extensionRegistry.initialize({
     gatewayManager,
-    eventBus: hostEventBus,
     getMainWindow: () => mainWindow,
   });
 
@@ -412,7 +405,7 @@ async function initialize(): Promise<void> {
   // Bridge gateway and host-side events before any auto-start logic runs, so
   // renderer subscribers observe the full startup lifecycle.
   gatewayManager.on('status', (status: { state: string }) => {
-    hostEventBus.emit('gateway:status', status);
+    sendMainWindowEvent('gateway:status-changed', status);
     if (status.state === 'running' && !isE2EMode) {
       void ensureClawXContext().catch((error) => {
         logger.warn('Failed to re-merge ClawX context after gateway reconnect:', error);
@@ -421,75 +414,67 @@ async function initialize(): Promise<void> {
   });
 
   gatewayManager.on('error', (error) => {
-    hostEventBus.emit('gateway:error', { message: error.message });
+    sendMainWindowEvent('gateway:error', { message: error.message });
   });
 
   gatewayManager.on('notification', (notification) => {
-    hostEventBus.emit('gateway:notification', notification);
+    sendMainWindowEvent('gateway:notification', notification);
   });
 
   gatewayManager.on('gateway:health', (data) => {
-    hostEventBus.emit('gateway:health', data);
+    sendMainWindowEvent('gateway:health-changed', data);
   });
 
   gatewayManager.on('gateway:presence', (data) => {
-    hostEventBus.emit('gateway:presence', data);
+    sendMainWindowEvent('gateway:presence-changed', data);
   });
 
   gatewayManager.on('chat:message', (data) => {
-    hostEventBus.emit('gateway:chat-message', data);
+    sendMainWindowEvent('gateway:chat-message', data);
   });
 
   gatewayManager.on('channel:status', (data) => {
-    hostEventBus.emit('gateway:channel-status', data);
+    sendMainWindowEvent('gateway:channel-status', data);
   });
 
   gatewayManager.on('exit', (code) => {
-    hostEventBus.emit('gateway:exit', { code });
+    sendMainWindowEvent('gateway:exit', { code });
   });
 
   deviceOAuthManager.on('oauth:code', (payload) => {
-    hostEventBus.emit('oauth:code', payload);
-  });
-
-  deviceOAuthManager.on('oauth:start', (payload) => {
-    hostEventBus.emit('oauth:start', payload);
+    sendMainWindowEvent('oauth:code', payload);
   });
 
   deviceOAuthManager.on('oauth:success', (payload) => {
-    hostEventBus.emit('oauth:success', { ...payload, success: true });
+    sendMainWindowEvent('oauth:success', { ...payload, success: true });
   });
 
   deviceOAuthManager.on('oauth:error', (error) => {
-    hostEventBus.emit('oauth:error', error);
-  });
-
-  browserOAuthManager.on('oauth:start', (payload) => {
-    hostEventBus.emit('oauth:start', payload);
+    sendMainWindowEvent('oauth:error', error);
   });
 
   browserOAuthManager.on('oauth:code', (payload) => {
-    hostEventBus.emit('oauth:code', payload);
+    sendMainWindowEvent('oauth:code', payload);
   });
 
   browserOAuthManager.on('oauth:success', (payload) => {
-    hostEventBus.emit('oauth:success', { ...payload, success: true });
+    sendMainWindowEvent('oauth:success', { ...payload, success: true });
   });
 
   browserOAuthManager.on('oauth:error', (error) => {
-    hostEventBus.emit('oauth:error', error);
+    sendMainWindowEvent('oauth:error', error);
   });
 
   whatsAppLoginManager.on('qr', (data) => {
-    hostEventBus.emit('channel:whatsapp-qr', data);
+    sendMainWindowEvent('channel:whatsapp-qr', data);
   });
 
   whatsAppLoginManager.on('success', (data) => {
-    hostEventBus.emit('channel:whatsapp-success', data);
+    sendMainWindowEvent('channel:whatsapp-success', data);
   });
 
   whatsAppLoginManager.on('error', (error) => {
-    hostEventBus.emit('channel:whatsapp-error', error);
+    sendMainWindowEvent('channel:whatsapp-error', error);
   });
 
   // Start Gateway automatically (this seeds missing bootstrap files with full templates)
@@ -555,7 +540,6 @@ if (gotTheLock) {
 
   gatewayManager = new GatewayManager();
   clawHubService = new ClawHubService();
-  hostEventBus = new HostEventBus();
 
   // Register builtin extensions and load manifest
   registerAllBuiltinExtensions();
@@ -619,8 +603,6 @@ if (gotTheLock) {
       return;
     }
 
-    hostEventBus.closeAll();
-    hostApiServer?.close();
     void extensionRegistry.teardownAll();
 
     const stopPromise = gatewayManager.stop().catch((err) => {

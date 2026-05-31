@@ -36,7 +36,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
-import { hostApiFetch } from '@/lib/host-api';
+import { hostApi } from '@/lib/host-api';
 import { useTranslation } from 'react-i18next';
 import logoSvg from '@/assets/logo.svg';
 
@@ -155,13 +155,9 @@ export function Sidebar() {
   const getSessionLabel = (key: string, displayName?: string, label?: string) =>
     sessionLabels[key] ?? label ?? displayName ?? key;
 
-  const openControlUi = async (path: string, label: string) => {
+  const openControlUi = async (view?: 'dreams', label = 'OpenClaw Page') => {
     try {
-      const result = await hostApiFetch<{
-        success: boolean;
-        url?: string;
-        error?: string;
-      }>(path);
+      const result = await hostApi.gateway.controlUi(view);
       if (result.success && result.url) {
         await window.electron.openExternal(result.url);
       } else {
@@ -173,7 +169,7 @@ export function Sidebar() {
   };
 
   const openDevConsole = async () => {
-    await openControlUi('/api/gateway/control-ui', 'OpenClaw Page');
+    await openControlUi(undefined, 'OpenClaw Page');
   };
 
   const { t } = useTranslation(['common', 'chat']);

@@ -30,7 +30,12 @@ import { Label } from '@/components/ui/label';
 import { Select } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
-import { hostApiFetch } from '@/lib/host-api';
+import {
+  hostApi,
+  type ChannelTargetOption,
+  type DeliveryChannelAccount,
+  type DeliveryChannelGroup,
+} from '@/lib/host-api';
 import { useCronStore } from '@/stores/cron';
 import { useGatewayStore } from '@/stores/gateway';
 import { useAgentsStore } from '@/stores/agents';
@@ -176,24 +181,6 @@ function estimateNextRun(scheduleExpr: string): string | null {
   return null;
 }
 
-interface DeliveryChannelAccount {
-  accountId: string;
-  name: string;
-  isDefault: boolean;
-}
-
-interface DeliveryChannelGroup {
-  channelType: string;
-  defaultAccountId: string;
-  accounts: DeliveryChannelAccount[];
-}
-
-interface ChannelTargetOption {
-  value: string;
-  label: string;
-  kind: 'user' | 'group' | 'channel';
-}
-
 function isKnownChannelType(value: string): value is ChannelType {
   return value in CHANNEL_NAMES;
 }
@@ -332,13 +319,10 @@ function TaskDialog({ job, configuredChannels, onClose, onSave }: TaskDialogProp
 
     let cancelled = false;
     setLoadingChannelTargets(true);
-    const params = new URLSearchParams({ channelType: effectiveDeliveryChannel });
-    if (selectedResolvedAccountId) {
-      params.set('accountId', selectedResolvedAccountId);
-    }
-    void hostApiFetch<{ success: boolean; targets?: ChannelTargetOption[]; error?: string }>(
-      `/api/channels/targets?${params.toString()}`,
-    ).then((result) => {
+    void hostApi.channels.targets({
+      channelType: effectiveDeliveryChannel,
+      accountId: selectedResolvedAccountId,
+    }).then((result) => {
       if (cancelled) return;
       if (!result.success) {
         throw new Error(result.error || 'Failed to load channel targets');
@@ -874,9 +858,7 @@ export function Cron() {
 
   const fetchConfiguredChannels = useCallback(async () => {
     try {
-      const response = await hostApiFetch<{ success: boolean; channels?: DeliveryChannelGroup[]; error?: string }>(
-        '/api/channels/accounts',
-      );
+      const response = await hostApi.channels.accounts();
       if (!response.success) {
         throw new Error(response.error || 'Failed to load delivery channels');
       }

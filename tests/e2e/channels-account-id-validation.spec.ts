@@ -39,32 +39,36 @@ test.describe('Channels account ID validation', () => {
     await electronApp.evaluate(({ ipcMain }, responses) => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       (globalThis as any).__clawxE2eChannelConfigSaveCount = 0;
-      ipcMain.removeHandler('hostapi:fetch');
-      ipcMain.handle('hostapi:fetch', async (_event, request: { path?: string; method?: string }) => {
-        const method = request?.method ?? 'GET';
-        const path = request?.path ?? '';
+      const originalHostInvoke = (ipcMain as unknown as {
+        _invokeHandlers?: Map<string, (event: unknown, request: unknown) => Promise<unknown>>;
+      })._invokeHandlers?.get('host:invoke');
+      const respond = (id: unknown, data: unknown) => ({ id: typeof id === 'string' ? id : undefined, ok: true, data });
 
-        if (path === '/api/channels/accounts' && method === 'GET') {
-          return { ok: true, data: { status: 200, ok: true, json: responses.channelsAccounts } };
+      ipcMain.removeHandler('host:invoke');
+      ipcMain.handle('host:invoke', async (event, request: {
+        id?: string;
+        module?: string;
+        action?: string;
+      }) => {
+
+        if (request?.module === 'channels' && request.action === 'accounts') {
+          return respond(request.id, responses.channelsAccounts);
         }
-        if (path === '/api/agents' && method === 'GET') {
-          return { ok: true, data: { status: 200, ok: true, json: responses.agents } };
+        if (request?.module === 'agents' && request.action === 'list') {
+          return respond(request.id, responses.agents);
         }
-        if (path === '/api/channels/credentials/validate' && method === 'POST') {
-          return { ok: true, data: { status: 200, ok: true, json: responses.credentialsValidate } };
+        if (request?.module === 'channels' && request.action === 'validateCredentials') {
+          return respond(request.id, responses.credentialsValidate);
         }
-        if (path === '/api/channels/config' && method === 'POST') {
+        if (request?.module === 'channels' && request.action === 'saveConfig') {
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           (globalThis as any).__clawxE2eChannelConfigSaveCount += 1;
-          return { ok: true, data: { status: 200, ok: true, json: responses.channelConfig } };
+          return respond(request.id, responses.channelConfig);
         }
-        if (path.startsWith('/api/channels/config/') && method === 'GET') {
-          return { ok: true, data: { status: 200, ok: true, json: { success: true, values: {} } } };
+        if (request?.module === 'channels' && request.action === 'formValues') {
+          return respond(request.id, { success: true, values: {} });
         }
-        return {
-          ok: false,
-          error: { message: `Unexpected hostapi:fetch request: ${method} ${path}` },
-        };
+        return originalHostInvoke?.(event, request) ?? respond(request?.id, {});
       });
     }, testConfigResponses);
 

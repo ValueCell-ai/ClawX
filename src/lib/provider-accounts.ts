@@ -1,4 +1,4 @@
-import { hostApiFetch } from '@/lib/host-api';
+import { hostApi } from '@/lib/host-api';
 import type {
   ProviderAccount,
   ProviderType,
@@ -35,7 +35,7 @@ export interface ProviderAccountKeyInfo {
  *
  * Equivalent to the backend's `providerAccountToConfig` + `hasKey/keyMasked`
  * augmentation, kept in lockstep so renderer-side derivation matches the
- * legacy `/api/providers` payload.
+ * legacy provider payload.
  */
 export function accountToProviderWithKeyInfo(
   account: ProviderAccount,
@@ -61,8 +61,7 @@ export function accountToProviderWithKeyInfo(
 
 /**
  * Backward-compat helper for older fixtures and any external callers still
- * publishing `ProviderWithKeyInfo[]` payloads via the legacy `/api/providers`
- * route.
+ * publishing `ProviderWithKeyInfo[]` payloads.
  */
 function fallbackStatusToAccount(status: ProviderWithKeyInfo): ProviderAccount {
   return {
@@ -83,97 +82,24 @@ function fallbackStatusToAccount(status: ProviderWithKeyInfo): ProviderAccount {
   };
 }
 
-/**
- * `hostApiFetch` returns the response body even on non-2xx HTTP status, so
- * a 404 from the Host API surfaces as `{ success: false, error: "No route
- * for GET ..." }` rather than a thrown error. Detect that shape so we can
- * trigger the legacy fallback path when an older Host API build is missing
- * the new account-companion routes (key-info, validate, oauth, api-key).
- */
-function isRouteNotFoundBody(value: unknown): boolean {
-  if (!value || typeof value !== 'object') return false;
-  const record = value as Record<string, unknown>;
-  if (record.success !== false) return false;
-  const error = record.error;
-  return typeof error === 'string' && /no\s+route\s+for/i.test(error);
-}
-
-export function isHostApiRouteMissing(value: unknown): boolean {
-  return isRouteNotFoundBody(value);
-}
-
-/**
- * Detects thrown errors that look like a missing-route response (currently
- * only emitted by the browser-fallback path in `host-api.ts`, which DOES
- * throw on non-2xx). Returns true so callers can collapse that case into
- * the same "use the legacy route" code path as the body-shape detection.
- */
-function isRouteNotFoundError(error: unknown): boolean {
-  if (!(error instanceof Error)) return false;
-  return /no\s+route\s+for|404|not\s+found/i.test(error.message);
-}
-
-/**
- * Wrap `hostApiFetch` so that a missing route (either a thrown 404 or the
- * `{ success: false, error: "No route ..." }` body) resolves to `null` and
- * any *other* error propagates. Avoids the previous `.catch(() => null)`
- * pattern which masked real failures (network outages, IPC unavailability,
- * malformed payloads) and left the user staring at an empty list.
- */
-async function fetchAllowingMissingRoute<T>(path: string): Promise<T | null> {
-  try {
-    const result = await hostApiFetch<T | { success: false; error: string }>(path);
-    if (isRouteNotFoundBody(result)) {
-      return null;
-    }
-    return result as T;
-  } catch (error) {
-    if (isRouteNotFoundError(error)) {
-      return null;
-    }
-    throw error;
-  }
-}
-
 export async function fetchProviderSnapshot(): Promise<ProviderSnapshot> {
-  // Primary path: read everything from the new /api/provider-accounts surface.
-  // Only the key-info call tolerates a missing route (older Host API builds
-  // predate it). All other endpoints have shipped for a while; if they fail,
-  // the snapshot fails and the store surfaces the error to the UI rather
-  // than presenting an empty/inconsistent provider list.
   const [accountsResult, keyInfoResult, vendors, defaultInfo] = await Promise.all([
-    hostApiFetch<ProviderAccount[]>('/api/provider-accounts'),
-    fetchAllowingMissingRoute<ProviderAccountKeyInfo[]>('/api/provider-accounts/key-info'),
-    hostApiFetch<ProviderVendorInfo[]>('/api/provider-vendors'),
-    hostApiFetch<{ accountId: string | null }>('/api/provider-accounts/default'),
+    hostApi.providers.accounts(),
+    hostApi.providers.accountKeyInfo(),
+    hostApi.providers.vendors(),
+    hostApi.providers.getDefaultAccount(),
   ]);
 
   let accounts = accountsResult ?? [];
-  let statuses: ProviderWithKeyInfo[];
+  const keyInfoMap = new Map(
+    (keyInfoResult ?? []).map((entry) => [entry.accountId, entry] as const),
+  );
+  let statuses = accounts.map((account) => accountToProviderWithKeyInfo(account, keyInfoMap.get(account.id)));
 
-  if (Array.isArray(keyInfoResult)) {
-    const keyInfoMap = new Map(
-      keyInfoResult.map((entry) => [entry.accountId, entry] as const),
-    );
-    statuses = accounts.map((account) => accountToProviderWithKeyInfo(account, keyInfoMap.get(account.id)));
-  } else {
-    // ── Backward-compat fallback ────────────────────────────────────
-    // Talking to an older Host API (no /api/provider-accounts/key-info
-    // route). Use the legacy /api/providers payload as the status source
-    // and synthesise accounts from it when the accounts list is empty
-    // (e.g. pre-migration installs). Any non-route-missing error here
-    // (network, IPC, parse) propagates so the UI can show it.
-    const legacyStatusesRaw = await fetchAllowingMissingRoute<ProviderWithKeyInfo[]>('/api/providers');
-    if (legacyStatusesRaw === null) {
-      // Even the legacy route is missing — emit a single warn so the empty
-      // list isn't silently misattributed to "no providers configured".
-      console.warn('[provider-accounts] Both /api/provider-accounts/key-info and /api/providers are missing on this Host API; statuses will be empty.');
-    }
-    const legacyStatuses = Array.isArray(legacyStatusesRaw) ? legacyStatusesRaw : [];
-    statuses = legacyStatuses;
-    if (accounts.length === 0 && legacyStatuses.length > 0) {
-      accounts = legacyStatuses.map(fallbackStatusToAccount);
-    }
+  if (accounts.length === 0) {
+    const legacyStatuses = await hostApi.providers.list();
+    statuses = legacyStatuses ?? [];
+    accounts = statuses.map(fallbackStatusToAccount);
   }
 
   return {
@@ -223,21 +149,21 @@ export function buildProviderAccountId(
   return vendor?.supportsMultipleAccounts ? `${vendorId}-${crypto.randomUUID()}` : vendorId;
 }
 
-export function legacyProviderToAccount(provider: ProviderWithKeyInfo): ProviderAccount {
+export function legacyProviderToAccount(status: ProviderWithKeyInfo): ProviderAccount {
   return {
-    id: provider.id,
-    vendorId: provider.type,
-    label: provider.name,
-    authMode: provider.type === 'ollama' ? 'local' : 'api_key',
-    baseUrl: provider.baseUrl,
-    headers: provider.headers,
-    model: provider.model,
-    fallbackModels: provider.fallbackModels,
-    fallbackAccountIds: provider.fallbackProviderIds,
-    enabled: provider.enabled,
+    id: status.id,
+    vendorId: status.type,
+    label: status.name,
+    authMode: status.type === 'ollama' ? 'local' : 'api_key',
+    baseUrl: status.baseUrl,
+    headers: status.headers,
+    model: status.model,
+    fallbackModels: status.fallbackModels,
+    fallbackAccountIds: status.fallbackProviderIds,
+    enabled: status.enabled,
     isDefault: false,
-    createdAt: provider.createdAt,
-    updatedAt: provider.updatedAt,
+    createdAt: status.createdAt,
+    updatedAt: status.updatedAt,
   };
 }
 

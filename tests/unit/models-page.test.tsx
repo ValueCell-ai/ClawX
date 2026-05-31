@@ -24,6 +24,11 @@ vi.mock('@/stores/settings', () => ({
 
 vi.mock('@/lib/host-api', () => ({
   hostApiFetch: (...args: unknown[]) => hostApiFetchMock(...args),
+  hostApi: {
+    usage: {
+      recentTokenHistory: () => hostApiFetchMock('/api/usage/recent-token-history'),
+    },
+  },
 }));
 
 vi.mock('@/lib/telemetry', () => ({

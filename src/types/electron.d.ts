@@ -18,9 +18,29 @@ export interface ElectronAPI {
   isDev: boolean;
 }
 
+export type HostInvokeRequest = {
+  id: string;
+  module: string;
+  action: string;
+  payload?: unknown;
+};
+
+export type HostInvokeErrorCode = 'VALIDATION' | 'UNSUPPORTED' | 'INTERNAL';
+
+export type HostInvokeResponse<T = unknown> =
+  | { id?: string; ok: true; data: T }
+  | {
+    id?: string;
+    ok: false;
+    error: { code: HostInvokeErrorCode; message: string; details?: unknown };
+  };
+
 declare global {
   interface Window {
     electron: ElectronAPI;
+    clawx?: {
+      hostInvoke: <T = unknown>(request: HostInvokeRequest) => Promise<HostInvokeResponse<T>>;
+    };
   }
 }
 

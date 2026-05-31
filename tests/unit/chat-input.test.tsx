@@ -2,8 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { ChatInput } from '@/pages/Chat/ChatInput';
 import { TooltipProvider } from '@/components/ui/tooltip';
-import { hostApiFetch } from '@/lib/host-api';
-
+const hostApiFetchMock = vi.hoisted(() => vi.fn());
 const { agentsState, chatState, gatewayState, providersState, artifactPanelMocks } = vi.hoisted(() => ({
   agentsState: {
     agents: [] as Array<Record<string, unknown>>,
@@ -48,7 +47,25 @@ vi.mock('@/stores/artifact-panel', () => ({
 }));
 
 vi.mock('@/lib/host-api', () => ({
-  hostApiFetch: vi.fn(),
+  hostApiFetch: hostApiFetchMock,
+  hostApi: {
+    files: {
+      stagePaths: (input: unknown) => hostApiFetchMock('/api/files/stage-paths', {
+        method: 'POST',
+        body: JSON.stringify(input),
+      }),
+      stageBuffer: (input: unknown) => hostApiFetchMock('/api/files/stage-buffer', {
+        method: 'POST',
+        body: JSON.stringify(input),
+      }),
+    },
+    skills: {
+      quickAccess: (input: unknown) => hostApiFetchMock('/api/skills/quick-access', {
+        method: 'POST',
+        body: JSON.stringify(input),
+      }),
+    },
+  },
 }));
 
 vi.mock('@/lib/api-client', () => ({
@@ -125,7 +142,7 @@ describe('ChatInput agent targeting', () => {
     providersState.statuses = [];
     providersState.defaultAccountId = null;
     providersState.refreshProviderSnapshot.mockReset();
-    vi.mocked(hostApiFetch).mockReset();
+    vi.mocked(hostApiFetchMock).mockReset();
     artifactPanelMocks.openPreview.mockReset();
   });
 
@@ -341,7 +358,7 @@ describe('ChatInput agent targeting', () => {
         channelTypes: [],
       },
     ];
-    vi.mocked(hostApiFetch).mockResolvedValue({
+    vi.mocked(hostApiFetchMock).mockResolvedValue({
       success: true,
       skills: [
         {
@@ -373,7 +390,7 @@ describe('ChatInput agent targeting', () => {
     fireEvent.click(screen.getByTitle('Send'));
 
     expect(onSend).toHaveBeenCalledWith('Draft /create-skill  a new helper', undefined, null);
-    expect(hostApiFetch).toHaveBeenCalledWith(
+    expect(hostApiFetchMock).toHaveBeenCalledWith(
       '/api/skills/quick-access',
       expect.objectContaining({
         method: 'POST',
@@ -396,7 +413,7 @@ describe('ChatInput agent targeting', () => {
         channelTypes: [],
       },
     ];
-    vi.mocked(hostApiFetch).mockResolvedValue({
+    vi.mocked(hostApiFetchMock).mockResolvedValue({
       success: true,
       skills: [
         {
@@ -441,7 +458,7 @@ describe('ChatInput agent targeting', () => {
         channelTypes: [],
       },
     ];
-    vi.mocked(hostApiFetch).mockResolvedValue({
+    vi.mocked(hostApiFetchMock).mockResolvedValue({
       success: true,
       skills: [
         {
@@ -489,7 +506,7 @@ describe('ChatInput agent targeting', () => {
         channelTypes: [],
       },
     ];
-    vi.mocked(hostApiFetch).mockResolvedValue({
+    vi.mocked(hostApiFetchMock).mockResolvedValue({
       success: true,
       skills: [
         {
@@ -530,7 +547,7 @@ describe('ChatInput agent targeting', () => {
         channelTypes: [],
       },
     ];
-    vi.mocked(hostApiFetch).mockResolvedValue({
+    vi.mocked(hostApiFetchMock).mockResolvedValue({
       success: true,
       skills: [
         {
@@ -572,7 +589,7 @@ describe('ChatInput agent targeting', () => {
         channelTypes: [],
       },
     ];
-    vi.mocked(hostApiFetch).mockResolvedValue({
+    vi.mocked(hostApiFetchMock).mockResolvedValue({
       success: true,
       skills: [
         {
@@ -607,7 +624,7 @@ describe('ChatInput agent targeting', () => {
   });
 
   it('stages dropped folders via disk path instead of buffer upload', async () => {
-    vi.mocked(hostApiFetch).mockResolvedValueOnce([{
+    vi.mocked(hostApiFetchMock).mockResolvedValueOnce([{
       id: 'folder-id',
       fileName: 'Archive',
       mimeType: 'application/x-directory',
@@ -632,7 +649,7 @@ describe('ChatInput agent targeting', () => {
     });
 
     await waitFor(() => {
-      expect(hostApiFetch).toHaveBeenCalledWith('/api/files/stage-paths', {
+      expect(hostApiFetchMock).toHaveBeenCalledWith('/api/files/stage-paths', {
         method: 'POST',
         body: JSON.stringify({ filePaths: ['/tmp/project-folder'] }),
       });

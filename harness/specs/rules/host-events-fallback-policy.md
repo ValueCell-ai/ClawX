@@ -10,6 +10,6 @@ requiredTests:
 
 Host event subscriptions must use IPC mappings by default.
 
-Unknown host events must not fall back to SSE unless `clawx:allow-sse-fallback` is explicitly enabled inside `src/lib/host-events.ts`.
+Unknown host events must not fall back to SSE/EventSource.
 
 New user-visible gateway, channel, OAuth, or QR events should be added to the host event IPC mapping instead of relying on EventSource fallback.

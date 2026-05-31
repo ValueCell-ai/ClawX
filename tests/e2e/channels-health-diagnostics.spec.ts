@@ -3,71 +3,49 @@ import { completeSetup, expect, test } from './fixtures/electron';
 test.describe('Channels health diagnostics', () => {
   test('does not flash a stale gateway-not-running banner while status is running', async ({ electronApp, page }) => {
     await electronApp.evaluate(({ ipcMain }) => {
-      ipcMain.removeHandler('hostapi:fetch');
-      ipcMain.handle('hostapi:fetch', async (_event, request: { path?: string; method?: string }) => {
-        const method = request?.method ?? 'GET';
-        const path = request?.path ?? '';
+      const originalHostInvoke = (ipcMain as unknown as {
+        _invokeHandlers?: Map<string, (event: unknown, request: unknown) => Promise<unknown>>;
+      })._invokeHandlers?.get('host:invoke');
+      const respond = (id: unknown, data: unknown) => ({ id: typeof id === 'string' ? id : undefined, ok: true, data });
 
-        if (path.startsWith('/api/channels/accounts') && method === 'GET') {
-          return {
-            ok: true,
-            data: {
-              status: 200,
-              ok: true,
-              json: {
-                success: true,
-                gatewayHealth: {
-                  state: 'degraded',
-                  reasons: ['gateway_not_running'],
-                  consecutiveHeartbeatMisses: 0,
-                },
-                channels: [
+      ipcMain.removeHandler('host:invoke');
+      ipcMain.handle('host:invoke', async (event, request: { id?: string; module?: string; action?: string }) => {
+        if (request?.module === 'channels' && request.action === 'accounts') {
+          return respond(request.id, {
+            success: true,
+            gatewayHealth: {
+              state: 'degraded',
+              reasons: ['gateway_not_running'],
+              consecutiveHeartbeatMisses: 0,
+            },
+            channels: [
+              {
+                channelType: 'feishu',
+                defaultAccountId: 'default',
+                status: 'connected',
+                accounts: [
                   {
-                    channelType: 'feishu',
-                    defaultAccountId: 'default',
+                    accountId: 'default',
+                    name: 'Primary Account',
+                    configured: true,
                     status: 'connected',
-                    accounts: [
-                      {
-                        accountId: 'default',
-                        name: 'Primary Account',
-                        configured: true,
-                        status: 'connected',
-                        isDefault: true,
-                      },
-                    ],
+                    isDefault: true,
                   },
                 ],
               },
-            },
-          };
+            ],
+          });
         }
 
-        if (path === '/api/gateway/status' && method === 'GET') {
-          return {
-            ok: true,
-            data: {
-              status: 200,
-              ok: true,
-              json: { state: 'running', port: 18789 },
-            },
-          };
+        if (request?.module === 'gateway' && request.action === 'status') {
+          return respond(request.id, { state: 'running', port: 18789 });
         }
 
-        if (path === '/api/agents' && method === 'GET') {
-          return {
-            ok: true,
-            data: {
-              status: 200,
-              ok: true,
-              json: { success: true, agents: [] },
-            },
-          };
+        if (request?.module === 'agents' && request.action === 'list') {
+          return respond(request.id, { success: true, agents: [] });
         }
 
-        return {
-          ok: false,
-          error: { message: `Unexpected hostapi:fetch request: ${method} ${path}` },
-        };
+        return originalHostInvoke?.(event, request) ?? respond(request?.id, {});
       });
     });
 
@@ -90,111 +68,76 @@ test.describe('Channels health diagnostics', () => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       (globalThis as any).__clawxE2eChannelHealth = state;
 
-      ipcMain.removeHandler('hostapi:fetch');
-      ipcMain.handle('hostapi:fetch', async (_event, request: { path?: string; method?: string }) => {
-        const method = request?.method ?? 'GET';
-        const path = request?.path ?? '';
+      const originalHostInvoke = (ipcMain as unknown as {
+        _invokeHandlers?: Map<string, (event: unknown, request: unknown) => Promise<unknown>>;
+      })._invokeHandlers?.get('host:invoke');
+      const respond = (id: unknown, data: unknown) => ({ id: typeof id === 'string' ? id : undefined, ok: true, data });
+
+      ipcMain.removeHandler('host:invoke');
+      ipcMain.handle('host:invoke', async (event, request: { id?: string; module?: string; action?: string }) => {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const current = (globalThis as any).__clawxE2eChannelHealth as typeof state;
 
-        if (path.startsWith('/api/channels/accounts') && method === 'GET') {
-          return {
-            ok: true,
-            data: {
-              status: 200,
-              ok: true,
-              json: {
-                success: true,
-                gatewayHealth: {
-                  state: 'degraded',
-                  reasons: ['channels_status_timeout'],
-                  consecutiveHeartbeatMisses: 1,
-                },
-                channels: [
+        if (request?.module === 'channels' && request.action === 'accounts') {
+          return respond(request.id, {
+            success: true,
+            gatewayHealth: {
+              state: 'degraded',
+              reasons: ['channels_status_timeout'],
+              consecutiveHeartbeatMisses: 1,
+            },
+            channels: [
+              {
+                channelType: 'feishu',
+                defaultAccountId: 'default',
+                status: 'degraded',
+                statusReason: 'channels_status_timeout',
+                accounts: [
                   {
-                    channelType: 'feishu',
-                    defaultAccountId: 'default',
+                    accountId: 'default',
+                    name: 'Primary Account',
+                    configured: true,
                     status: 'degraded',
                     statusReason: 'channels_status_timeout',
-                    accounts: [
-                      {
-                        accountId: 'default',
-                        name: 'Primary Account',
-                        configured: true,
-                        status: 'degraded',
-                        statusReason: 'channels_status_timeout',
-                        isDefault: true,
-                      },
-                    ],
+                    isDefault: true,
                   },
                 ],
               },
-            },
-          };
+            ],
+          });
         }
 
-        if (path === '/api/gateway/status' && method === 'GET') {
-          return {
-            ok: true,
-            data: {
-              status: 200,
-              ok: true,
-              json: { state: 'running', port: 18789 },
-            },
-          };
+        if (request?.module === 'gateway' && request.action === 'status') {
+          return respond(request.id, { state: 'running', port: 18789 });
         }
 
-        if (path === '/api/agents' && method === 'GET') {
-          return {
-            ok: true,
-            data: {
-              status: 200,
-              ok: true,
-              json: { success: true, agents: [] },
-            },
-          };
+        if (request?.module === 'agents' && request.action === 'list') {
+          return respond(request.id, { success: true, agents: [] });
         }
 
-        if (path === '/api/gateway/restart' && method === 'POST') {
+        if (request?.module === 'gateway' && request.action === 'restart') {
           current.restartCount += 1;
-          return {
-            ok: true,
-            data: {
-              status: 200,
-              ok: true,
-              json: { success: true },
-            },
-          };
+          return respond(request.id, { success: true });
         }
 
-        if (path === '/api/diagnostics/gateway-snapshot' && method === 'GET') {
+        if (request?.module === 'diagnostics' && request.action === 'gatewaySnapshot') {
           current.diagnosticsCount += 1;
-          return {
-            ok: true,
-            data: {
-              status: 200,
-              ok: true,
-              json: {
-                capturedAt: 123,
-                platform: 'darwin',
-                gateway: {
-                  state: 'degraded',
-                  reasons: ['channels_status_timeout'],
-                  consecutiveHeartbeatMisses: 1,
-                },
-                channels: [],
-                clawxLogTail: 'clawx-log',
-                gatewayLogTail: 'gateway-log',
-                gatewayErrLogTail: '',
+          return respond(request.id, {
+            capturedAt: 123,
+            platform: 'darwin',
+            gateway: {
+              state: 'degraded',
+              reasons: ['channels_status_timeout'],
+              consecutiveHeartbeatMisses: 1,
               },
-            },
-          };
+            channels: [],
+            clawxLogTail: 'clawx-log',
+            gatewayLogTail: 'gateway-log',
+            gatewayErrLogTail: '',
+          });
         }
 
-        return {
-          ok: false,
-          error: { message: `Unexpected hostapi:fetch request: ${method} ${path}` },
-        };
+        return originalHostInvoke?.(event, request) ?? respond(request?.id, {});
       });
     });
 

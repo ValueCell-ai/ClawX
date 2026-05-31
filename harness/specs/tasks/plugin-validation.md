@@ -9,7 +9,7 @@ touchedAreas:
   - electron/utils/openclaw-auth.ts
   - electron/utils/channel-config.ts
   - electron/utils/plugin-install.ts
-  - electron/api/routes/skills.ts
+  - electron/services/skills-api.ts
   - tests/unit/openclaw-auth.test.ts
   - tests/unit/channel-config.test.ts
   - tests/unit/plugin-install.test.ts

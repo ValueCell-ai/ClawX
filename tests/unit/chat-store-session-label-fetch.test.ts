@@ -31,6 +31,23 @@ vi.mock('@/stores/agents', () => ({
 
 vi.mock('@/lib/host-api', () => ({
   hostApiFetch: (...args: unknown[]) => hostApiFetchMock(...args),
+  hostApi: {
+    media: {
+      thumbnails: vi.fn(async () => ({})),
+    },
+    sessions: {
+      summaries: (input: unknown) => hostApiFetchMock('/api/sessions/summaries', {
+        method: 'POST',
+        body: JSON.stringify(input),
+      }),
+      history: vi.fn(async () => ({ messages: [] })),
+      delete: vi.fn(async () => ({ success: true })),
+      rename: vi.fn(async () => ({ success: true })),
+    },
+    chat: {
+      sendWithMedia: vi.fn(async () => ({ success: true, result: { runId: 'run-media' } })),
+    },
+  },
 }));
 
 describe('chat store session label summary hydration', () => {

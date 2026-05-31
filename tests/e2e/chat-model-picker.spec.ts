@@ -14,13 +14,13 @@ test.describe('ClawX chat model picker', () => {
         let currentModelRef = refs.alphaModelRef;
         const hostRequests: Array<{ path: string; method: string; body: unknown }> = [];
         const now = new Date().toISOString();
-        const makeResponse = (json: unknown, status = 200) => ({
+        const originalHostInvoke = (ipcMain as unknown as {
+          _invokeHandlers?: Map<string, (event: unknown, request: unknown) => Promise<unknown>>;
+        })._invokeHandlers?.get('host:invoke');
+        const makeResponse = (id: unknown, data: unknown) => ({
+          id: typeof id === 'string' ? id : undefined,
           ok: true,
-          data: {
-            status,
-            ok: status >= 200 && status < 300,
-            json,
-          },
+          data,
         });
 
         const agentsSnapshot = () => ({
@@ -60,25 +60,49 @@ test.describe('ClawX chat model picker', () => {
           return { success: true, result: {} };
         });
 
-        ipcMain.removeHandler('hostapi:fetch');
-        ipcMain.handle('hostapi:fetch', async (_event: unknown, request: { path?: string; method?: string; body?: string | null }) => {
-          const path = request?.path ?? '';
-          const method = request?.method ?? 'GET';
-          const body = request?.body ? JSON.parse(request.body) : null;
-          hostRequests.push({ path, method, body });
+        ipcMain.removeHandler('host:invoke');
+        ipcMain.handle('host:invoke', async (event: unknown, request: {
+          id?: string;
+          module?: string;
+          action?: string;
+          payload?: Record<string, unknown>;
+        }) => {
+          const body = request?.payload ?? null;
+          hostRequests.push({
+            path: `${request?.module ?? ''}:${request?.action ?? ''}`,
+            method: 'HOST',
+            body,
+          });
 
-          if (path === '/api/gateway/status' && method === 'GET') {
-            return makeResponse({ state: 'running', port: 18789, pid: 12345, gatewayReady: true });
+          if (request?.module === 'gateway' && request.action === 'status') {
+            return makeResponse(request.id, { state: 'running', port: 18789, pid: 12345, gatewayReady: true });
           }
-          if (path === '/api/agents' && method === 'GET') {
-            return makeResponse(agentsSnapshot());
+          if (request?.module === 'gateway' && request.action === 'rpc') {
+            const method = typeof body?.method === 'string' ? body.method : '';
+            const params = body?.params ?? null;
+            hostRequests.push({ path: `gateway:${method}`, method: 'RPC', body: params });
+            if (method === 'sessions.list') {
+              return makeResponse(request.id, { success: true, result: { sessions: [{ key: 'agent:main:main', displayName: 'main' }] } });
+            }
+            if (method === 'chat.history') {
+              return makeResponse(request.id, { success: true, result: { messages: [] } });
+            }
+            return makeResponse(request.id, { success: true, result: {} });
           }
-          if (path === '/api/agents/main/model' && method === 'PUT') {
-            currentModelRef = body?.modelRef ?? refs.alphaModelRef;
-            return makeResponse(agentsSnapshot());
+          if (request?.module === 'agents' && request.action === 'list') {
+            return makeResponse(request.id, agentsSnapshot());
           }
-          if (path === '/api/provider-accounts' && method === 'GET') {
-            return makeResponse([
+          if (request?.module === 'agents' && request.action === 'updateModel') {
+            currentModelRef = typeof body?.modelRef === 'string' ? body.modelRef : refs.alphaModelRef;
+            hostRequests.push({
+              path: '/api/agents/main/model',
+              method: 'PUT',
+              body: { modelRef: currentModelRef },
+            });
+            return makeResponse(request.id, agentsSnapshot());
+          }
+          if (request?.module === 'providers' && request.action === 'accounts') {
+            return makeResponse(request.id, [
               {
                 id: 'alpha1234',
                 vendorId: 'custom',
@@ -105,20 +129,26 @@ test.describe('ClawX chat model picker', () => {
               },
             ]);
           }
-          if (path === '/api/providers' && method === 'GET') {
-            return makeResponse([
+          if (request?.module === 'providers' && request.action === 'list') {
+            return makeResponse(request.id, [
               { id: 'alpha1234', type: 'custom', name: 'Alpha', enabled: true, hasKey: true, keyMasked: 'sk-***', createdAt: now, updatedAt: now },
               { id: 'beta5678', type: 'custom', name: 'Beta', enabled: true, hasKey: true, keyMasked: 'sk-***', createdAt: now, updatedAt: now },
             ]);
           }
-          if (path === '/api/provider-vendors' && method === 'GET') {
-            return makeResponse([]);
+          if (request?.module === 'providers' && request.action === 'accountKeyInfo') {
+            return makeResponse(request.id, [
+              { accountId: 'alpha1234', hasKey: true, keyMasked: 'sk-***' },
+              { accountId: 'beta5678', hasKey: true, keyMasked: 'sk-***' },
+            ]);
           }
-          if (path === '/api/provider-accounts/default' && method === 'GET') {
-            return makeResponse({ accountId: 'alpha1234' });
+          if (request?.module === 'providers' && request.action === 'vendors') {
+            return makeResponse(request.id, []);
+          }
+          if (request?.module === 'providers' && request.action === 'getDefaultAccount') {
+            return makeResponse(request.id, { accountId: 'alpha1234' });
           }
 
-          return makeResponse({});
+          return originalHostInvoke?.(event, request) ?? makeResponse(request?.id, {});
         });
 
         (globalThis as typeof globalThis & { __chatModelPickerRequests?: typeof hostRequests }).__chatModelPickerRequests = hostRequests;
@@ -150,6 +180,8 @@ test.describe('ClawX chat model picker', () => {
       expect(requests.some((request) =>
         request.path === '/api/gateway/restart'
         || request.path === '/api/gateway/start'
+        || request.path === 'gateway:restart'
+        || request.path === 'gateway:start'
         || request.path === 'gateway:config.patch'
       )).toBe(false);
     } finally {

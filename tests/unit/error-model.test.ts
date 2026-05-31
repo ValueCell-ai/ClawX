@@ -12,7 +12,7 @@ describe('error-model', () => {
   });
 
   it('normalizes ipc channel errors into CHANNEL_UNAVAILABLE', () => {
-    const error = normalizeAppError(new Error('Invalid IPC channel: hostapi:fetch'));
+    const error = normalizeAppError(new Error('Invalid IPC channel: unsupported:channel'));
     expect(error.code).toBe('CHANNEL_UNAVAILABLE');
   });
 
@@ -23,4 +23,3 @@ describe('error-model', () => {
     expect(normalized.details).toEqual({ a: 1, b: 2 });
   });
 });
-

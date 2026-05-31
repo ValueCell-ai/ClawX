@@ -1,4 +1,4 @@
-import { invokeIpc } from '@/lib/api-client';
+import { hostApi } from '@/lib/host-api';
 import {
   isGeneratingStatusNarration,
   isInternalAssistantReplyText,
@@ -1242,10 +1242,9 @@ async function loadMissingPreviews(messages: RawMessage[]): Promise<boolean> {
     }
 
     try {
-      const thumbnails = await invokeIpc(
-        'media:getThumbnails',
-        needPreview,
-      ) as Record<string, { preview: string | null; fileSize: number }>;
+      const thumbnails = await hostApi.media.thumbnails({
+        paths: needPreview,
+      });
       if (applyPreviewResults(messages, thumbnails)) {
         updatedAny = true;
       }

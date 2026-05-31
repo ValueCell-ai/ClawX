@@ -1,231 +1,426 @@
-import { invokeIpc } from '@/lib/api-client';
-import { trackUiEvent } from './telemetry';
-import { normalizeAppError } from './error-model';
+import type { AgentsSnapshot } from '@/types/agent';
+import type { CronJob } from '@/types/cron';
+import type { GatewayHealth, GatewayStatus } from '@/types/gateway';
+import type { RawMessage } from '@/stores/chat/types';
+import type {
+  ImageGenerationProviderRow,
+  ImageGenerationSettingsSnapshot,
+  ImageGenerationTestResult,
+} from '@/lib/image-generation';
+import type { UsageHistoryEntry } from '@/pages/Models/usage-history';
+import type { MarketplaceSkill, QuickAccessSkill } from '@/types/skill';
+import type { ProviderAccount, ProviderVendorInfo, ProviderWithKeyInfo } from './providers';
+import { invokeHost } from './host-api-client';
 
-const HOST_API_PORT = 13210;
-const HOST_API_BASE = `http://127.0.0.1:${HOST_API_PORT}`;
+type JsonRecord = Record<string, unknown>;
+type HostSuccess = { success: boolean; error?: string };
+type OptionalHostSuccess = { success?: boolean; error?: string };
+type ChannelRuntimeStatus = 'connected' | 'connecting' | 'degraded' | 'disconnected' | 'error';
 
-/** Cached Host API auth token, fetched once from the main process via IPC. */
-let cachedHostApiToken: string | null = null;
+export type OpenClawDoctorResult = HostSuccess & {
+  mode: 'diagnose' | 'fix';
+  exitCode: number | null;
+  stdout: string;
+  stderr: string;
+  command: string;
+  cwd: string;
+  durationMs: number;
+  timedOut?: boolean;
+};
 
-async function getHostApiToken(): Promise<string> {
-  if (cachedHostApiToken) return cachedHostApiToken;
-  try {
-    cachedHostApiToken = await invokeIpc<string>('hostapi:token');
-  } catch {
-    cachedHostApiToken = '';
-  }
-  return cachedHostApiToken ?? '';
-}
+export type SettingsSnapshot = Partial<{
+  theme: 'light' | 'dark' | 'system';
+  language: string;
+  startMinimized: boolean;
+  launchAtStartup: boolean;
+  telemetryEnabled: boolean;
+  gatewayAutoStart: boolean;
+  gatewayPort: number;
+  proxyEnabled: boolean;
+  proxyServer: string;
+  proxyHttpServer: string;
+  proxyHttpsServer: string;
+  proxyAllServer: string;
+  proxyBypassRules: string;
+  updateChannel: 'stable' | 'beta' | 'dev';
+  autoCheckUpdate: boolean;
+  sidebarCollapsed: boolean;
+  sidebarWidth: number;
+  devModeUnlocked: boolean;
+  setupComplete: boolean;
+}>;
+export type SettingsResetResult = HostSuccess & { settings: SettingsSnapshot };
 
-type HostApiProxyResponse = {
-  ok?: boolean;
-  data?: {
-    status?: number;
-    ok?: boolean;
-    json?: unknown;
-    text?: string;
+export type GatewayControlUiResult = HostSuccess & {
+  url?: string;
+  token?: string;
+  port?: number;
+};
+
+export type LogContentResult = { content: string };
+export type LogDirResult = { dir: string | null };
+
+export type GatewayHealthSummary = {
+  state: 'healthy' | 'degraded' | 'unresponsive';
+  reasons: string[];
+  consecutiveHeartbeatMisses: number;
+  lastAliveAt?: number;
+  lastRpcSuccessAt?: number;
+  lastRpcFailureAt?: number;
+  lastRpcFailureMethod?: string;
+  lastChannelsStatusOkAt?: number;
+  lastChannelsStatusFailureAt?: number;
+};
+
+export type ChannelAccountItem = {
+  accountId: string;
+  name: string;
+  configured: boolean;
+  status: ChannelRuntimeStatus;
+  statusReason?: string;
+  lastError?: string;
+  isDefault: boolean;
+  agentId?: string;
+};
+
+export type ChannelGroupItem = {
+  channelType: string;
+  defaultAccountId: string;
+  status: ChannelRuntimeStatus;
+  statusReason?: string;
+  accounts: ChannelAccountItem[];
+};
+
+export type ChannelTargetOption = {
+  value: string;
+  label: string;
+  kind: 'user' | 'group' | 'channel';
+};
+
+export type ChannelAccountsResult = HostSuccess & {
+  channels?: ChannelGroupItem[];
+  gatewayHealth?: GatewayHealthSummary;
+};
+export type ChannelTargetsResult = HostSuccess & {
+  channelType?: string;
+  accountId?: string;
+  targets?: ChannelTargetOption[];
+};
+export type ChannelFormValuesResult = HostSuccess & {
+  values?: Record<string, string>;
+};
+export type ChannelCredentialValidationResult = HostSuccess & {
+  valid: boolean;
+  errors?: string[];
+  warnings?: string[];
+  details?: {
+    botUsername?: string;
+    guildName?: string;
+    channelName?: string;
   };
-  error?: { message?: string } | string;
-  // backward compatibility fields
-  success: boolean;
-  status?: number;
-  json?: unknown;
-  text?: string;
+};
+export type ChannelSaveConfigResult = HostSuccess & {
+  noChange?: boolean;
+  warning?: string;
 };
 
-type HostApiProxyData = {
-  status?: number;
-  ok?: boolean;
-  json?: unknown;
-  text?: string;
+export type ProviderAccountKeyInfo = {
+  accountId: string;
+  hasKey: boolean;
+  keyMasked: string | null;
+};
+export type ProviderDefaultAccountResult = { accountId: string | null };
+export type ProviderValidationResult = { valid: boolean; error?: string };
+
+export type StagedFileResult = {
+  id: string;
+  fileName: string;
+  mimeType: string;
+  fileSize: number;
+  stagedPath: string;
+  preview: string | null;
+  filePath?: string;
+};
+export type MediaThumbnailResult = Record<string, { preview: string | null; fileSize: number }>;
+export type ImageGenerationSettingsResult = OptionalHostSuccess & ImageGenerationSettingsSnapshot;
+export type ImageGenerationProvidersResult = OptionalHostSuccess & {
+  providers?: ImageGenerationProviderRow[];
 };
 
-function headersToRecord(headers?: HeadersInit): Record<string, string> {
-  if (!headers) return {};
-  if (headers instanceof Headers) return Object.fromEntries(headers.entries());
-  if (Array.isArray(headers)) return Object.fromEntries(headers);
-  return { ...headers };
-}
+export type SessionHistoryResult = OptionalHostSuccess & {
+  messages?: RawMessage[];
+};
+export type SessionLabelSummary = {
+  sessionKey: string;
+  firstUserText: string | null;
+  lastTimestamp: number | null;
+};
+export type SessionSummariesResult = HostSuccess & {
+  summaries?: SessionLabelSummary[];
+};
 
-async function parseResponse<T>(response: Response): Promise<T> {
-  if (!response.ok) {
-    let message = `${response.status} ${response.statusText}`;
-    try {
-      const payload = await response.json() as { error?: string };
-      if (payload?.error) {
-        message = payload.error;
-      }
-    } catch {
-      // ignore body parse failure
-    }
-    throw normalizeAppError(new Error(message), {
-      source: 'browser-fallback',
-      status: response.status,
-    });
-  }
+export type ChatSendWithMediaResult = HostSuccess & {
+  result?: { runId?: string };
+};
 
-  if (response.status === 204) {
-    return undefined as T;
-  }
+export type CronSessionHistoryResult = {
+  messages?: RawMessage[];
+};
 
-  return await response.json() as T;
-}
+export type SkillsStatusResult = {
+  skills?: {
+    skillKey: string;
+    slug?: string;
+    name?: string;
+    description?: string;
+    disabled?: boolean;
+    emoji?: string;
+    version?: string;
+    author?: string;
+    config?: Record<string, unknown>;
+    bundled?: boolean;
+    always?: boolean;
+    source?: string;
+    baseDir?: string;
+    filePath?: string;
+  }[];
+};
+export type ClawHubInstalledSkill = {
+  slug: string;
+  version?: string;
+  source?: string;
+  baseDir?: string;
+};
+export type ClawHubListResult = HostSuccess & {
+  results?: ClawHubInstalledSkill[];
+};
+export type ClawHubSearchResult = HostSuccess & {
+  results?: MarketplaceSkill[];
+};
+export type SkillConfigsResult = Record<string, { apiKey?: string; env?: Record<string, string> }>;
 
-function resolveProxyErrorMessage(error: HostApiProxyResponse['error']): string {
-  return typeof error === 'string'
-    ? error
-    : (error?.message || 'Host API proxy request failed');
-}
+export type DeliveryChannelAccount = {
+  accountId: string;
+  name: string;
+  isDefault: boolean;
+};
 
-function parseUnifiedProxyResponse<T>(
-  response: HostApiProxyResponse,
-  path: string,
-  method: string,
-  startedAt: number,
-): T {
-  if (!response.ok) {
-    throw new Error(resolveProxyErrorMessage(response.error));
-  }
+export type DeliveryChannelGroup = {
+  channelType: string;
+  defaultAccountId: string;
+  accounts: DeliveryChannelAccount[];
+};
 
-  const data: HostApiProxyData = response.data ?? {};
-  trackUiEvent('hostapi.fetch', {
-    path,
-    method,
-    source: 'ipc-proxy',
-    durationMs: Date.now() - startedAt,
-    status: data.status ?? 200,
-  });
+export const hostApi = {
+  app: {
+    openClawDoctor: async (mode: 'diagnose' | 'fix'): Promise<OpenClawDoctorResult> => ({
+      ...(await invokeHost<Omit<OpenClawDoctorResult, 'mode'>>('app', 'openClawDoctor', { mode })),
+      mode,
+    }),
+  },
+  settings: {
+    getAll: () => invokeHost<SettingsSnapshot>('settings', 'getAll'),
+    get: (key: string) => invokeHost<unknown>('settings', 'get', { key }),
+    set: (key: string, value: unknown) => invokeHost<HostSuccess>('settings', 'set', { key, value }),
+    setMany: (patch: Record<string, unknown>) => (
+      invokeHost<HostSuccess>('settings', 'setMany', { patch })
+    ),
+    reset: () => invokeHost<SettingsResetResult>('settings', 'reset'),
+  },
+  gateway: {
+    status: () => invokeHost<GatewayStatus>('gateway', 'status'),
+    start: () => invokeHost<HostSuccess>('gateway', 'start'),
+    stop: () => invokeHost<HostSuccess>('gateway', 'stop'),
+    restart: () => invokeHost<HostSuccess>('gateway', 'restart'),
+    health: (probe = false) => invokeHost<GatewayHealth>('gateway', 'health', { probe }),
+    controlUi: (view?: 'dreams') => invokeHost<GatewayControlUiResult>('gateway', 'controlUi', { view }),
+    rpc: <T = unknown>(method: string, params?: unknown, timeoutMs?: number) => (
+      invokeHost<T>('gateway', 'rpc', { method, params, timeoutMs })
+    ),
+  },
+  logs: {
+    recent: (tailLines = 100) => invokeHost<LogContentResult>('logs', 'recent', { tailLines }),
+    dir: () => invokeHost<LogDirResult>('logs', 'dir'),
+    listFiles: () => invokeHost<JsonRecord[]>('logs', 'listFiles'),
+    readFile: (path: string, tailLines?: number) => (
+      invokeHost<LogContentResult>('logs', 'readFile', { path, tailLines })
+    ),
+  },
+  channels: {
+    accounts: (options?: { mode?: 'config' | 'runtime'; configOnly?: boolean; probe?: boolean }) => (
+      invokeHost<ChannelAccountsResult>('channels', 'accounts', options)
+    ),
+    targets: (input: { channelType: string; accountId?: string; query?: string }) => (
+      invokeHost<ChannelTargetsResult>('channels', 'targets', input)
+    ),
+    configured: () => invokeHost<HostSuccess & { channels?: JsonRecord[] }>('channels', 'configured'),
+    formValues: (channelType: string, accountId?: string) => (
+      invokeHost<ChannelFormValuesResult>('channels', 'formValues', { channelType, accountId })
+    ),
+    saveConfig: (input: unknown) => invokeHost<ChannelSaveConfigResult>('channels', 'saveConfig', input),
+    deleteConfig: (channelType: string, accountId?: string) => (
+      invokeHost<HostSuccess>('channels', 'deleteConfig', { channelType, accountId })
+    ),
+    validateCredentials: (channelType: string, config: Record<string, unknown>) => (
+      invokeHost<ChannelCredentialValidationResult>('channels', 'validateCredentials', { channelType, config })
+    ),
+    saveBinding: (input: unknown) => invokeHost<HostSuccess>('channels', 'bindingSave', input),
+    deleteBinding: (input: unknown) => invokeHost<HostSuccess>('channels', 'bindingDelete', input),
+    startLogin: (channelType: string, input?: { accountId?: string }) => (
+      invokeHost<HostSuccess>('channels', 'startLogin', { channelType, ...input })
+    ),
+    cancelLogin: (channelType: string, input?: { accountId?: string }) => (
+      invokeHost<HostSuccess>('channels', 'cancelLogin', { channelType, ...input })
+    ),
+  },
+  agents: {
+    list: () => invokeHost<AgentsSnapshot & OptionalHostSuccess>('agents', 'list'),
+    create: (input: unknown) => invokeHost<AgentsSnapshot & OptionalHostSuccess>('agents', 'create', input),
+    update: (id: string, input: unknown) => (
+      invokeHost<AgentsSnapshot & OptionalHostSuccess>('agents', 'update', {
+        id,
+        ...(input && typeof input === 'object' && !Array.isArray(input) ? input as Record<string, unknown> : {}),
+      })
+    ),
+    updateModel: (id: string, modelRef: string | null) => (
+      invokeHost<AgentsSnapshot & OptionalHostSuccess>('agents', 'updateModel', { id, modelRef })
+    ),
+    delete: (id: string) => invokeHost<AgentsSnapshot & OptionalHostSuccess>('agents', 'delete', { id }),
+    assignChannel: (id: string, channelType: string) => (
+      invokeHost<AgentsSnapshot & OptionalHostSuccess>('agents', 'assignChannel', { id, channelType })
+    ),
+    removeChannel: (id: string, channelType: string) => (
+      invokeHost<AgentsSnapshot & OptionalHostSuccess>('agents', 'removeChannel', { id, channelType })
+    ),
+  },
+  diagnostics: {
+    gatewaySnapshot: () => invokeHost<JsonRecord>('diagnostics', 'gatewaySnapshot'),
+  },
+  providers: {
+    list: () => invokeHost<ProviderWithKeyInfo[]>('providers', 'list'),
+    get: (providerId: string) => invokeHost<JsonRecord>('providers', 'get', { providerId }),
+    getDefault: () => invokeHost<JsonRecord>('providers', 'getDefault'),
+    hasApiKey: (providerId: string) => (
+      invokeHost<JsonRecord>('providers', 'hasApiKey', { providerId })
+    ),
+    getApiKey: (providerId: string) => (
+      invokeHost<string | null>('providers', 'getApiKey', { providerId })
+    ),
+    validateKey: (input: unknown) => invokeHost<ProviderValidationResult>('providers', 'validateKey', input),
+    save: (input: unknown) => invokeHost<HostSuccess>('providers', 'save', input),
+    delete: (providerId: string) => invokeHost<HostSuccess>('providers', 'delete', { providerId }),
+    setApiKey: (providerId: string, apiKey: string) => (
+      invokeHost<HostSuccess>('providers', 'setApiKey', { providerId, apiKey })
+    ),
+    updateWithKey: (input: unknown) => invokeHost<HostSuccess>('providers', 'updateWithKey', input),
+    deleteApiKey: (providerId: string) => (
+      invokeHost<HostSuccess>('providers', 'deleteApiKey', { providerId })
+    ),
+    setDefault: (providerId: string) => (
+      invokeHost<HostSuccess>('providers', 'setDefault', { providerId })
+    ),
+    accounts: () => invokeHost<ProviderAccount[]>('providers', 'accounts'),
+    vendors: () => invokeHost<ProviderVendorInfo[]>('providers', 'vendors'),
+    accountKeyInfo: () => invokeHost<ProviderAccountKeyInfo[]>('providers', 'accountKeyInfo'),
+    getDefaultAccount: () => invokeHost<ProviderDefaultAccountResult>('providers', 'getDefaultAccount'),
+    getAccount: (accountId: string) => (
+      invokeHost<ProviderAccount>('providers', 'getAccount', { accountId })
+    ),
+    getAccountApiKey: (accountId: string) => (
+      invokeHost<string | null>('providers', 'getAccountApiKey', { accountId })
+    ),
+    hasAccountApiKey: (accountId: string) => (
+      invokeHost<{ hasKey: boolean }>('providers', 'hasAccountApiKey', { accountId })
+    ),
+    createAccount: (input: unknown) => invokeHost<HostSuccess>('providers', 'createAccount', input),
+    updateAccount: (accountId: string, updates: unknown, apiKey?: string) => (
+      invokeHost<HostSuccess>('providers', 'updateAccount', { accountId, updates, apiKey })
+    ),
+    deleteAccount: (accountId: string) => (
+      invokeHost<HostSuccess>('providers', 'deleteAccount', { accountId })
+    ),
+    deleteAccountApiKey: (accountId: string) => (
+      invokeHost<HostSuccess>('providers', 'deleteAccountApiKey', { accountId })
+    ),
+    setDefaultAccount: (accountId: string) => (
+      invokeHost<HostSuccess>('providers', 'setDefaultAccount', { accountId })
+    ),
+    requestOAuth: (input: unknown) => invokeHost<HostSuccess>('providers', 'requestOAuth', input),
+    cancelOAuth: () => invokeHost<HostSuccess>('providers', 'cancelOAuth'),
+    submitOAuth: (input: unknown) => invokeHost<HostSuccess>('providers', 'submitOAuth', input),
+  },
+  files: {
+    stagePaths: (input: unknown) => invokeHost<StagedFileResult[]>('files', 'stagePaths', input),
+    stageBuffer: (input: unknown) => invokeHost<StagedFileResult>('files', 'stageBuffer', input),
+    readText: (path: string) => invokeHost<JsonRecord>('files', 'readText', { path }),
+    readBinary: (path: string, opts?: unknown) => (
+      invokeHost<JsonRecord>('files', 'readBinary', { path, opts })
+    ),
+    writeText: (path: string, content: string) => (
+      invokeHost<JsonRecord>('files', 'writeText', { path, content })
+    ),
+    stat: (path: string) => invokeHost<JsonRecord>('files', 'stat', { path }),
+    listDir: (path: string) => invokeHost<JsonRecord[]>('files', 'listDir', { path }),
+    listTree: (path: string, opts?: unknown) => (
+      invokeHost<JsonRecord[]>('files', 'listTree', { path, opts })
+    ),
+  },
+  media: {
+    thumbnails: (input: unknown) => invokeHost<MediaThumbnailResult>('media', 'thumbnails', input),
+    saveImage: (input: unknown) => invokeHost<JsonRecord>('media', 'saveImage', input),
+    imageGenerationSettings: () => invokeHost<ImageGenerationSettingsResult>('media', 'imageGenerationSettings'),
+    saveImageGenerationSettings: (input: unknown) => (
+      invokeHost<ImageGenerationSettingsResult>('media', 'saveImageGenerationSettings', input)
+    ),
+    imageGenerationProviders: () => invokeHost<ImageGenerationProvidersResult>('media', 'imageGenerationProviders'),
+    testImageGeneration: (input: unknown) => invokeHost<ImageGenerationTestResult>('media', 'testImageGeneration', input),
+  },
+  sessions: {
+    delete: (id: string) => invokeHost<HostSuccess>('sessions', 'delete', { id }),
+    rename: (id: string, title: string) => (
+      invokeHost<HostSuccess>('sessions', 'rename', { id, title })
+    ),
+    summaries: (input?: unknown) => invokeHost<SessionSummariesResult>('sessions', 'summaries', input),
+    history: (input: unknown) => invokeHost<SessionHistoryResult>('sessions', 'history', input),
+  },
+  chat: {
+    sendWithMedia: (input: unknown) => invokeHost<ChatSendWithMediaResult>('chat', 'sendWithMedia', input),
+  },
+  cron: {
+    list: () => invokeHost<CronJob[]>('cron', 'list'),
+    create: (input: unknown) => invokeHost<CronJob>('cron', 'create', input),
+    update: (id: string, input: unknown) => invokeHost<CronJob>('cron', 'update', { id, input }),
+    delete: (id: string) => invokeHost<HostSuccess>('cron', 'delete', { id }),
+    toggle: (id: string, enabled: boolean) => invokeHost<HostSuccess>('cron', 'toggle', { id, enabled }),
+    trigger: (id: string) => invokeHost<HostSuccess>('cron', 'trigger', { id }),
+    sessionHistory: (input: unknown) => invokeHost<CronSessionHistoryResult>('cron', 'sessionHistory', input),
+    deliveryTargets: () => invokeHost<DeliveryChannelGroup[]>('cron', 'deliveryTargets'),
+  },
+  skills: {
+    configs: () => invokeHost<SkillConfigsResult>('skills', 'configs'),
+    allConfigs: () => invokeHost<SkillConfigsResult>('skills', 'allConfigs'),
+    getConfig: (skillKey: string) => invokeHost<JsonRecord>('skills', 'getConfig', { skillKey }),
+    updateConfig: (input: unknown) => invokeHost<HostSuccess>('skills', 'updateConfig', input),
+    status: () => invokeHost<SkillsStatusResult>('skills', 'status'),
+    update: (input: unknown) => invokeHost<HostSuccess>('skills', 'update', input),
+    quickAccess: (input: unknown) => invokeHost<HostSuccess & { skills?: QuickAccessSkill[] }>('skills', 'quickAccess', input),
+    clawhubCapability: () => invokeHost<JsonRecord>('skills', 'clawhubCapability'),
+    clawhubList: () => invokeHost<ClawHubListResult>('skills', 'clawhubList'),
+    clawhubSearch: (input: unknown) => invokeHost<ClawHubSearchResult>('skills', 'clawhubSearch', input),
+    clawhubInstall: (input: unknown) => invokeHost<HostSuccess>('skills', 'clawhubInstall', input),
+    clawhubUninstall: (input: unknown) => invokeHost<HostSuccess>('skills', 'clawhubUninstall', input),
+    clawhubOpenSkillReadme: (input: unknown) => (
+      invokeHost<HostSuccess>('skills', 'clawhubOpenSkillReadme', input)
+    ),
+    clawhubOpenSkillPath: (input: unknown) => (
+      invokeHost<HostSuccess>('skills', 'clawhubOpenSkillPath', input)
+    ),
+  },
+  usage: {
+    recentTokenHistory: (limit?: number) => (
+      invokeHost<UsageHistoryEntry[]>('usage', 'recentTokenHistory', { limit })
+    ),
+  },
+};
 
-  if (data.status === 204) return undefined as T;
-  if (data.json !== undefined) return data.json as T;
-  return data.text as T;
-}
-
-function parseLegacyProxyResponse<T>(
-  response: HostApiProxyResponse,
-  path: string,
-  method: string,
-  startedAt: number,
-): T {
-  if (!response.success) {
-    throw new Error(resolveProxyErrorMessage(response.error));
-  }
-
-  if (!response.ok) {
-    const message = response.text
-      || (typeof response.json === 'object' && response.json != null && 'error' in (response.json as Record<string, unknown>)
-        ? String((response.json as Record<string, unknown>).error)
-        : `HTTP ${response.status ?? 'unknown'}`);
-    throw new Error(message);
-  }
-
-  trackUiEvent('hostapi.fetch', {
-    path,
-    method,
-    source: 'ipc-proxy-legacy',
-    durationMs: Date.now() - startedAt,
-    status: response.status ?? 200,
-  });
-
-  if (response.status === 204) return undefined as T;
-  if (response.json !== undefined) return response.json as T;
-  return response.text as T;
-}
-
-function shouldFallbackToBrowser(message: string): boolean {
-  const normalized = message.toLowerCase();
-  return normalized.includes('invalid ipc channel: hostapi:fetch')
-    || normalized.includes("no handler registered for 'hostapi:fetch'")
-    || normalized.includes('no handler registered for "hostapi:fetch"')
-    || normalized.includes('no handler registered for hostapi:fetch')
-    || normalized.includes('window is not defined');
-}
-
-function allowLocalhostFallback(): boolean {
-  try {
-    return window.localStorage.getItem('clawx:allow-localhost-fallback') === '1';
-  } catch {
-    return false;
-  }
-}
-
-export async function hostApiFetch<T>(path: string, init?: RequestInit): Promise<T> {
-  const startedAt = Date.now();
-  const method = init?.method || 'GET';
-  // In Electron renderer, always proxy through main process to avoid CORS.
-  try {
-    const response = await invokeIpc<HostApiProxyResponse>('hostapi:fetch', {
-      path,
-      method,
-      headers: headersToRecord(init?.headers),
-      body: init?.body ?? null,
-    });
-
-    if (typeof response?.ok === 'boolean' && 'data' in response) {
-      return parseUnifiedProxyResponse<T>(response, path, method, startedAt);
-    }
-
-    return parseLegacyProxyResponse<T>(response, path, method, startedAt);
-  } catch (error) {
-    const normalized = normalizeAppError(error, { source: 'ipc-proxy', path, method });
-    const message = normalized.message;
-    trackUiEvent('hostapi.fetch_error', {
-      path,
-      method,
-      source: 'ipc-proxy',
-      durationMs: Date.now() - startedAt,
-      message,
-      code: normalized.code,
-    });
-    if (!shouldFallbackToBrowser(message)) {
-      throw normalized;
-    }
-    if (!allowLocalhostFallback()) {
-      trackUiEvent('hostapi.fetch_error', {
-        path,
-        method,
-        source: 'ipc-proxy',
-        durationMs: Date.now() - startedAt,
-        message: 'localhost fallback blocked by policy',
-        code: 'CHANNEL_UNAVAILABLE',
-      });
-      throw normalized;
-    }
-  }
-
-  // Browser-only fallback (non-Electron environments).
-  const token = await getHostApiToken();
-  const response = await fetch(`${HOST_API_BASE}${path}`, {
-    ...init,
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${token}`,
-      ...(init?.headers || {}),
-    },
-  });
-  trackUiEvent('hostapi.fetch', {
-    path,
-    method,
-    source: 'browser-fallback',
-    durationMs: Date.now() - startedAt,
-    status: response.status,
-  });
-  try {
-    return await parseResponse<T>(response);
-  } catch (error) {
-    throw normalizeAppError(error, { source: 'browser-fallback', path, method });
-  }
-}
-
-export function createHostEventSource(path = '/api/events'): EventSource {
-  // EventSource does not support custom headers, so pass the auth token
-  // as a query parameter. The server accepts both mechanisms.
-  const separator = path.includes('?') ? '&' : '?';
-  const tokenParam = `token=${encodeURIComponent(cachedHostApiToken ?? '')}`;
-  return new EventSource(`${HOST_API_BASE}${path}${separator}${tokenParam}`);
-}
-
-export function getHostApiBase(): string {
-  return HOST_API_BASE;
-}
+export type HostApi = typeof hostApi;

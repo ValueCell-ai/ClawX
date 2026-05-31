@@ -11,8 +11,8 @@ import { LoadingSpinner } from '@/components/common/LoadingSpinner';
 import { useAgentsStore } from '@/stores/agents';
 import { useGatewayStore } from '@/stores/gateway';
 import { useProviderStore } from '@/stores/providers';
-import { hostApiFetch } from '@/lib/host-api';
-import { subscribeHostEvent } from '@/lib/host-events';
+import { hostApi, type ChannelGroupItem } from '@/lib/host-api';
+import { hostEvents } from '@/lib/host-events';
 import { CHANNEL_ICONS, CHANNEL_NAMES, type ChannelType } from '@/types/channel';
 import type { AgentSummary } from '@/types/agent';
 import {
@@ -31,23 +31,6 @@ import dingtalkIcon from '@/assets/channels/dingtalk.svg';
 import feishuIcon from '@/assets/channels/feishu.svg';
 import wecomIcon from '@/assets/channels/wecom.svg';
 import qqIcon from '@/assets/channels/qq.svg';
-
-interface ChannelAccountItem {
-  accountId: string;
-  name: string;
-  configured: boolean;
-  status: 'connected' | 'connecting' | 'disconnected' | 'error';
-  lastError?: string;
-  isDefault: boolean;
-  agentId?: string;
-}
-
-interface ChannelGroupItem {
-  channelType: string;
-  defaultAccountId: string;
-  status: 'connected' | 'connecting' | 'disconnected' | 'error';
-  accounts: ChannelAccountItem[];
-}
 
 export function Agents() {
   const { t } = useTranslation('agents');
@@ -71,7 +54,7 @@ export function Agents() {
 
   const fetchChannelAccounts = useCallback(async () => {
     try {
-      const response = await hostApiFetch<{ success: boolean; channels?: ChannelGroupItem[] }>('/api/channels/accounts');
+      const response = await hostApi.channels.accounts();
       setChannelGroups(response.channels || []);
     } catch {
       // Keep the last rendered snapshot when channel account refresh fails.
@@ -92,7 +75,7 @@ export function Agents() {
   }, [fetchAgents, fetchChannelAccounts, refreshProviderSnapshot]);
 
   useEffect(() => {
-    const unsubscribe = subscribeHostEvent('gateway:channel-status', () => {
+    const unsubscribe = hostEvents.onGatewayChannelStatus(() => {
       void fetchChannelAccounts();
     });
     return () => {

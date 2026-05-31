@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { Agents } from '../../src/pages/Agents/index';
 
-const hostApiFetchMock = vi.fn();
+const channelsAccountsMock = vi.fn();
 const subscribeHostEventMock = vi.fn();
 const fetchAgentsMock = vi.fn();
 const updateAgentMock = vi.fn();
@@ -65,11 +65,17 @@ vi.mock('@/stores/providers', () => ({
 }));
 
 vi.mock('@/lib/host-api', () => ({
-  hostApiFetch: (...args: unknown[]) => hostApiFetchMock(...args),
+  hostApi: {
+    channels: {
+      accounts: (...args: unknown[]) => channelsAccountsMock(...args),
+    },
+  },
 }));
 
 vi.mock('@/lib/host-events', () => ({
-  subscribeHostEvent: (...args: unknown[]) => subscribeHostEventMock(...args),
+  hostEvents: {
+    onGatewayChannelStatus: (handler: unknown) => subscribeHostEventMock('gateway:channel-status', handler),
+  },
 }));
 
 vi.mock('react-i18next', () => ({
@@ -100,7 +106,7 @@ describe('Agents page status refresh', () => {
     updateAgentMock.mockResolvedValue(undefined);
     updateAgentModelMock.mockResolvedValue(undefined);
     refreshProviderSnapshotMock.mockResolvedValue(undefined);
-    hostApiFetchMock.mockResolvedValue({
+    channelsAccountsMock.mockResolvedValue({
       success: true,
       channels: [],
     });
@@ -119,7 +125,7 @@ describe('Agents page status refresh', () => {
 
     await waitFor(() => {
       expect(fetchAgentsMock).toHaveBeenCalledTimes(1);
-      expect(hostApiFetchMock).toHaveBeenCalledWith('/api/channels/accounts');
+      expect(channelsAccountsMock).toHaveBeenCalledWith();
     });
     expect(subscribeHostEventMock).toHaveBeenCalledWith('gateway:channel-status', expect.any(Function));
 
@@ -128,8 +134,7 @@ describe('Agents page status refresh', () => {
     });
 
     await waitFor(() => {
-      const channelFetchCalls = hostApiFetchMock.mock.calls.filter(([path]) => path === '/api/channels/accounts');
-      expect(channelFetchCalls).toHaveLength(2);
+      expect(channelsAccountsMock).toHaveBeenCalledTimes(2);
     });
   });
 
@@ -140,7 +145,7 @@ describe('Agents page status refresh', () => {
 
     await waitFor(() => {
       expect(fetchAgentsMock).toHaveBeenCalledTimes(1);
-      expect(hostApiFetchMock).toHaveBeenCalledWith('/api/channels/accounts');
+      expect(channelsAccountsMock).toHaveBeenCalledWith();
     });
 
     gatewayState.status = { state: 'running', port: 18789 };
@@ -149,8 +154,7 @@ describe('Agents page status refresh', () => {
     });
 
     await waitFor(() => {
-      const channelFetchCalls = hostApiFetchMock.mock.calls.filter(([path]) => path === '/api/channels/accounts');
-      expect(channelFetchCalls).toHaveLength(2);
+      expect(channelsAccountsMock).toHaveBeenCalledTimes(2);
     });
   });
 
@@ -249,7 +253,7 @@ describe('Agents page status refresh', () => {
     agentsState.loading = true;
     fetchAgentsMock.mockImplementation(() => new Promise(() => {}));
     refreshProviderSnapshotMock.mockImplementation(() => new Promise(() => {}));
-    hostApiFetchMock.mockImplementation(() => new Promise(() => {}));
+    channelsAccountsMock.mockImplementation(() => new Promise(() => {}));
 
     const { container } = render(<Agents />);
 

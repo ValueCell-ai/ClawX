@@ -1,76 +1,36 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const addEventListenerMock = vi.fn();
-const removeEventListenerMock = vi.fn();
-const eventSourceMock = {
-  addEventListener: addEventListenerMock,
-  removeEventListener: removeEventListenerMock,
-} as unknown as EventSource;
+const on = vi.fn();
+const off = vi.fn();
 
-const createHostEventSourceMock = vi.fn(() => eventSourceMock);
-
-vi.mock('@/lib/host-api', () => ({
-  createHostEventSource: () => createHostEventSourceMock(),
-}));
-
-describe('host-events', () => {
-  beforeEach(() => {
-    vi.resetAllMocks();
-    window.localStorage.clear();
-  });
-
-  it('subscribes through IPC for mapped host events', async () => {
-    const onMock = vi.mocked(window.electron.ipcRenderer.on);
-    const captured: Array<(...args: unknown[]) => void> = [];
-    const cleanupSpy = vi.fn();
-    onMock.mockImplementation((_, cb: (...args: unknown[]) => void) => {
-      captured.push(cb);
-      return cleanupSpy;
-    });
-
-    const { subscribeHostEvent } = await import('@/lib/host-events');
-    const handler = vi.fn();
-    const unsubscribe = subscribeHostEvent('gateway:status', handler);
-
-    expect(onMock).toHaveBeenCalledWith('gateway:status-changed', expect.any(Function));
-    expect(createHostEventSourceMock).not.toHaveBeenCalled();
-
-    captured[0]({ state: 'running' });
-    expect(handler).toHaveBeenCalledWith({ state: 'running' });
-
-    // unsubscribe should use the cleanup returned by ipc.on() — NOT ipc.off()
-    // which would pass the wrong function reference (see preload wrapper mismatch)
-    unsubscribe();
-    expect(cleanupSpy).toHaveBeenCalledTimes(1);
-  });
-
-  it('does not use SSE fallback by default for unknown events', async () => {
-    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
-    const { subscribeHostEvent } = await import('@/lib/host-events');
-    const unsubscribe = subscribeHostEvent('unknown:event', vi.fn());
-    expect(createHostEventSourceMock).not.toHaveBeenCalled();
-    expect(warnSpy).toHaveBeenCalledWith(
-      '[host-events] no IPC mapping for event "unknown:event", SSE fallback disabled',
-    );
-    unsubscribe();
-    warnSpy.mockRestore();
-  });
-
-  it('uses SSE fallback only when explicitly enabled', async () => {
-    window.localStorage.setItem('clawx:allow-sse-fallback', '1');
-    const { subscribeHostEvent } = await import('@/lib/host-events');
-    const handler = vi.fn();
-    const unsubscribe = subscribeHostEvent('unknown:event', handler);
-
-    expect(createHostEventSourceMock).toHaveBeenCalledTimes(1);
-    expect(addEventListenerMock).toHaveBeenCalledWith('unknown:event', expect.any(Function));
-
-    const listener = addEventListenerMock.mock.calls[0][1] as (event: Event) => void;
-    listener({ data: JSON.stringify({ x: 1 }) } as unknown as Event);
-    expect(handler).toHaveBeenCalledWith({ x: 1 });
-
-    unsubscribe();
-    expect(removeEventListenerMock).toHaveBeenCalledWith('unknown:event', expect.any(Function));
+beforeEach(() => {
+  on.mockReset();
+  off.mockReset();
+  vi.resetModules();
+  vi.stubGlobal('window', {
+    electron: { ipcRenderer: { on, off } },
   });
 });
 
+describe('hostEvents', () => {
+  it('subscribes to gateway status over IPC', async () => {
+    on.mockReturnValueOnce(() => undefined);
+    const { hostEvents } = await import('@/lib/host-events');
+    const handler = vi.fn();
+
+    hostEvents.onGatewayStatus(handler);
+
+    expect(on).toHaveBeenCalledWith('gateway:status-changed', expect.any(Function));
+  });
+
+  it('does not create EventSource fallback', async () => {
+    const eventSource = vi.fn();
+    vi.stubGlobal('EventSource', eventSource);
+    on.mockReturnValueOnce(() => undefined);
+    const { hostEvents } = await import('@/lib/host-events');
+
+    hostEvents.onGatewayNotification(vi.fn());
+
+    expect(eventSource).not.toHaveBeenCalled();
+  });
+});

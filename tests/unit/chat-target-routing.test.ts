@@ -25,6 +25,26 @@ vi.mock('@/stores/agents', () => ({
 
 vi.mock('@/lib/host-api', () => ({
   hostApiFetch: (...args: unknown[]) => hostApiFetchMock(...args),
+  hostApi: {
+    gateway: {
+      rpc: (...args: unknown[]) => gatewayRpcMock(...args),
+    },
+    media: {
+      thumbnails: vi.fn(async () => ({})),
+    },
+    sessions: {
+      history: vi.fn(async () => ({ messages: [] })),
+      summaries: vi.fn(async () => ({ success: true, summaries: [] })),
+      delete: vi.fn(async () => ({ success: true })),
+      rename: vi.fn(async () => ({ success: true })),
+    },
+    chat: {
+      sendWithMedia: async (input: unknown) => hostApiFetchMock('/api/chat/send-with-media', {
+        method: 'POST',
+        body: JSON.stringify(input),
+      }),
+    },
+  },
 }));
 
 describe('chat target routing', () => {

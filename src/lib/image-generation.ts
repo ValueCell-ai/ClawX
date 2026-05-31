@@ -1,4 +1,4 @@
-import { hostApiFetch } from '@/lib/host-api';
+import { hostApi } from '@/lib/host-api';
 
 export interface ImageGenerationModelConfig {
   primary: string | null;
@@ -52,9 +52,7 @@ export interface ImageGenerationTestResult {
 }
 
 export async function fetchImageGenerationSettings(): Promise<ImageGenerationSettingsSnapshot> {
-  const response = await hostApiFetch<{ success: boolean } & ImageGenerationSettingsSnapshot>(
-    '/api/media/image-generation',
-  );
+  const response = await hostApi.media.imageGenerationSettings();
   if (response.success === false) {
     throw new Error('Failed to load image generation settings');
   }
@@ -74,14 +72,7 @@ export async function saveImageGenerationSettings(payload: {
   openAiRelayModel?: string | null;
   openAiRelayApiKey?: string;
 }): Promise<ImageGenerationSettingsSnapshot> {
-  const response = await hostApiFetch<{ success: boolean } & ImageGenerationSettingsSnapshot>(
-    '/api/media/image-generation',
-    {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-    },
-  );
+  const response = await hostApi.media.saveImageGenerationSettings(payload);
   if (response.success === false) {
     throw new Error('Failed to save image generation settings');
   }
@@ -89,9 +80,7 @@ export async function saveImageGenerationSettings(payload: {
 }
 
 export async function fetchImageGenerationProviders(): Promise<ImageGenerationProviderRow[]> {
-  const response = await hostApiFetch<{ success: boolean; providers: ImageGenerationProviderRow[] }>(
-    '/api/media/image-generation/providers',
-  );
+  const response = await hostApi.media.imageGenerationProviders();
   if (response.success === false) {
     throw new Error('Failed to list image generation providers');
   }
@@ -115,11 +104,7 @@ export async function runImageGenerationTest(payload: {
 
   try {
     return await Promise.race([
-      hostApiFetch<ImageGenerationTestResult>('/api/media/image-generation/test', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      }),
+      hostApi.media.testImageGeneration(payload),
       timeoutPromise,
     ]);
   } finally {

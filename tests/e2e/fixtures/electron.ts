@@ -220,32 +220,108 @@ export async function installIpcMocks(
         return `{${entries.join(',')}}`;
       };
 
-      if (mockConfig.gatewayRpc) {
-        ipcMain.removeHandler('gateway:rpc');
-        ipcMain.handle('gateway:rpc', async (_event: unknown, method: string, payload: unknown) => {
-          const key = stableStringify([method, payload ?? null]);
-          if (key in mockConfig.gatewayRpc!) {
-            return mockConfig.gatewayRpc![key];
-          }
-          const fallbackKey = stableStringify([method, null]);
-          if (fallbackKey in mockConfig.gatewayRpc!) {
-            return mockConfig.gatewayRpc![fallbackKey];
-          }
-          return { success: true, result: {} };
-        });
-      }
+      const originalHostInvoke = (ipcMain as unknown as {
+        _invokeHandlers?: Map<string, (event: unknown, request: unknown) => Promise<unknown>>;
+      })._invokeHandlers?.get('host:invoke');
 
-      if (mockConfig.hostApi) {
-        ipcMain.removeHandler('hostapi:fetch');
-        ipcMain.handle('hostapi:fetch', async (_event: unknown, request: { path?: string; method?: string }) => {
-          const key = stableStringify([request?.path ?? '', request?.method ?? 'GET']);
-          if (key in mockConfig.hostApi!) {
-            return mockConfig.hostApi![key];
+      const respond = (id: unknown, data: unknown) => ({
+        id: typeof id === 'string' ? id : undefined,
+        ok: true,
+        data,
+      });
+
+      const unwrapLegacyResponse = (response: unknown): unknown => {
+        if (!response || typeof response !== 'object') return response;
+        const record = response as Record<string, unknown>;
+        const data = record.data;
+        if (data && typeof data === 'object' && 'json' in (data as Record<string, unknown>)) {
+          return (data as Record<string, unknown>).json;
+        }
+        return data ?? response;
+      };
+
+      const legacyPathForHostRequest = (request: {
+        module?: string;
+        action?: string;
+        payload?: Record<string, unknown>;
+      }): [string, string] | null => {
+        const payload = request.payload ?? {};
+        if (request.module === 'gateway') {
+          if (request.action === 'status') return ['/api/gateway/status', 'GET'];
+          if (request.action === 'start') return ['/api/gateway/start', 'POST'];
+          if (request.action === 'restart') return ['/api/gateway/restart', 'POST'];
+        }
+        if (request.module === 'agents' && request.action === 'list') return ['/api/agents', 'GET'];
+        if (request.module === 'settings' && request.action === 'getAll') return ['/api/settings', 'GET'];
+        if (request.module === 'channels') {
+          if (request.action === 'accounts') return ['/api/channels/accounts', 'GET'];
+          if (request.action === 'validateCredentials') return ['/api/channels/credentials/validate', 'POST'];
+          if (request.action === 'saveConfig') return ['/api/channels/config', 'POST'];
+          if (request.action === 'bindingSave') return ['/api/channels/binding', 'PUT'];
+          if (request.action === 'bindingDelete') return ['/api/channels/binding', 'DELETE'];
+          if (request.action === 'formValues') {
+            const channelType = encodeURIComponent(String(payload.channelType ?? ''));
+            return [`/api/channels/config/${channelType}`, 'GET'];
           }
-          return {
-            ok: true,
-            data: { status: 200, ok: true, json: {} },
-          };
+        }
+        if (request.module === 'diagnostics' && request.action === 'gatewaySnapshot') {
+          return ['/api/diagnostics/gateway-snapshot', 'GET'];
+        }
+        if (request.module === 'cron' && request.action === 'list') return ['/api/cron/jobs', 'GET'];
+        if (request.module === 'skills' && request.action === 'quickAccess') return ['/api/skills/quick-access', 'POST'];
+        if (request.module === 'files' && request.action === 'thumbnails') return ['/api/files/thumbnails', 'POST'];
+        if (request.module === 'media') {
+          if (request.action === 'imageGenerationSettings') return ['/api/media/image-generation', 'GET'];
+          if (request.action === 'saveImageGenerationSettings') return ['/api/media/image-generation', 'PUT'];
+        }
+        if (request.module === 'sessions') {
+          if (request.action === 'history') {
+            const params = new URLSearchParams();
+            if (typeof payload.sessionKey === 'string') params.set('sessionKey', payload.sessionKey);
+            if (typeof payload.agentId === 'string') params.set('agentId', payload.agentId);
+            if (typeof payload.sessionId === 'string') params.set('sessionId', payload.sessionId);
+            if (typeof payload.limit === 'number') params.set('limit', String(payload.limit));
+            return [`/api/sessions/transcript?${params.toString()}`, 'GET'];
+          }
+          if (request.action === 'summaries') return ['/api/sessions/summaries', 'POST'];
+        }
+        return null;
+      };
+
+      if (mockConfig.gatewayRpc || mockConfig.hostApi || mockConfig.gatewayStatus) {
+        ipcMain.removeHandler('host:invoke');
+        ipcMain.handle('host:invoke', async (event: unknown, request: {
+          id?: string;
+          module?: string;
+          action?: string;
+          payload?: Record<string, unknown>;
+        }) => {
+          if (mockConfig.gatewayStatus && request?.module === 'gateway' && request.action === 'status') {
+            return respond(request.id, mockConfig.gatewayStatus);
+          }
+
+          if (mockConfig.gatewayRpc && request?.module === 'gateway' && request.action === 'rpc') {
+            const payload = request.payload ?? {};
+            const method = typeof payload.method === 'string' ? payload.method : '';
+            const params = 'params' in payload ? payload.params : null;
+            const key = stableStringify([method, params ?? null]);
+            if (key in mockConfig.gatewayRpc) return respond(request.id, mockConfig.gatewayRpc[key]);
+            const fallbackKey = stableStringify([method, null]);
+            if (fallbackKey in mockConfig.gatewayRpc) return respond(request.id, mockConfig.gatewayRpc[fallbackKey]);
+            return respond(request.id, { success: true, result: {} });
+          }
+
+          if (mockConfig.hostApi) {
+            const legacyPath = legacyPathForHostRequest(request ?? {});
+            if (legacyPath) {
+              const key = stableStringify(legacyPath);
+              if (key in mockConfig.hostApi) {
+                return respond(request.id, unwrapLegacyResponse(mockConfig.hostApi[key]));
+              }
+            }
+          }
+
+          return originalHostInvoke?.(event, request) ?? respond(request?.id, {});
         });
       }
 

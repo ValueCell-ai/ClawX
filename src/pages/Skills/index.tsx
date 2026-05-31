@@ -25,7 +25,7 @@ import { useGatewayStore } from '@/stores/gateway';
 import { LoadingSpinner } from '@/components/common/LoadingSpinner';
 import { cn } from '@/lib/utils';
 import { invokeIpc } from '@/lib/api-client';
-import { hostApiFetch } from '@/lib/host-api';
+import { hostApi } from '@/lib/host-api';
 import { trackUiEvent } from '@/lib/telemetry';
 import { toast } from 'sonner';
 import type { Skill } from '@/types/skill';
@@ -425,13 +425,10 @@ export function Skills() {
 
   const handleOpenSkillFolder = useCallback(async (skill: Skill) => {
     try {
-      const result = await hostApiFetch<{ success: boolean; error?: string }>('/api/clawhub/open-path', {
-        method: 'POST',
-        body: JSON.stringify({
-          skillKey: skill.id,
-          slug: skill.slug,
-          baseDir: skill.baseDir,
-        }),
+      const result = await hostApi.skills.clawhubOpenSkillPath({
+        skillKey: skill.id,
+        slug: skill.slug,
+        baseDir: skill.baseDir,
       });
       if (!result.success) {
         throw new Error(result.error || 'Failed to open folder');

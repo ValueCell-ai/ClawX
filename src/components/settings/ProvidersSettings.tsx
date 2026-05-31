@@ -44,7 +44,6 @@ import {
   buildProviderAccountId,
   buildProviderListItems,
   hasConfiguredCredentials,
-  isHostApiRouteMissing,
   type ProviderListItem,
 } from '@/lib/provider-accounts';
 import { cn } from '@/lib/utils';
@@ -52,8 +51,8 @@ import { toast } from 'sonner';
 import { useTranslation } from 'react-i18next';
 import { invokeIpc } from '@/lib/api-client';
 import { useSettingsStore } from '@/stores/settings';
-import { hostApiFetch } from '@/lib/host-api';
-import { subscribeHostEvent } from '@/lib/host-events';
+import { hostApi } from '@/lib/host-api';
+import { hostEvents } from '@/lib/host-events';
 
 const inputClasses = 'h-[44px] rounded-xl font-mono text-meta bg-transparent border-black/10 dark:border-white/10 focus-visible:ring-2 focus-visible:ring-blue-500/50 focus-visible:border-blue-500 shadow-sm transition-all text-foreground placeholder:text-foreground/40';
 const labelClasses = 'text-sm text-foreground/80 font-bold';
@@ -96,34 +95,6 @@ function getUserAgentHeader(headers?: Record<string, string>): string {
     }
   }
   return '';
-}
-
-/**
- * Wrap `hostApiFetch` for OAuth provider routes so we always try the new
- * `/api/provider-accounts/oauth/...` endpoints first and fall back to the
- * legacy `/api/providers/oauth/...` paths when running against an older
- * Host API build that returns a "no route for" body for the new routes.
- *
- * This keeps the renderer compatible with both:
- *   - Newer Host APIs that have migrated OAuth under provider-accounts.
- *   - Older Host APIs that only expose the legacy provider-namespace OAuth.
- */
-async function hostApiFetchOAuth<T = unknown>(path: string, init?: RequestInit): Promise<T> {
-  const legacyPath = path.replace('/api/provider-accounts/oauth/', '/api/providers/oauth/');
-  let result: T;
-  try {
-    result = await hostApiFetch<T>(path, init);
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    if (!/404|not\s+found/i.test(message) || legacyPath === path) {
-      throw error;
-    }
-    return await hostApiFetch<T>(legacyPath, init);
-  }
-  if (isHostApiRouteMissing(result) && legacyPath !== path) {
-    return await hostApiFetch<T>(legacyPath, init);
-  }
-  return result;
 }
 
 function mergeHeadersWithUserAgent(
@@ -1124,9 +1095,9 @@ function AddProviderDialog({
       pendingOAuthRef.current = null;
     };
 
-    const offCode = subscribeHostEvent('oauth:code', handleCode);
-    const offSuccess = subscribeHostEvent('oauth:success', handleSuccess);
-    const offError = subscribeHostEvent('oauth:error', handleError);
+    const offCode = hostEvents.onOAuthCode(handleCode);
+    const offSuccess = hostEvents.onOAuthSuccess(handleSuccess);
+    const offError = hostEvents.onOAuthError(handleError);
 
     return () => {
       offCode();
@@ -1155,9 +1126,10 @@ function AddProviderDialog({
       const accountId = supportsMultipleAccounts ? `${selectedType}-${crypto.randomUUID()}` : selectedType;
       const label = name || (typeInfo?.id === 'custom' ? t('aiProviders.custom') : typeInfo?.name) || selectedType;
       pendingOAuthRef.current = { accountId, label };
-      await hostApiFetchOAuth('/api/provider-accounts/oauth/start', {
-        method: 'POST',
-        body: JSON.stringify({ provider: selectedType, accountId, label }),
+      await hostApi.providers.requestOAuth({
+        ['provider']: selectedType,
+        accountId,
+        label,
       });
     } catch (e) {
       setOauthError(String(e));
@@ -1172,19 +1144,14 @@ function AddProviderDialog({
     setManualCodeInput('');
     setOauthError(null);
     pendingOAuthRef.current = null;
-    await hostApiFetchOAuth('/api/provider-accounts/oauth/cancel', {
-      method: 'POST',
-    });
+    await hostApi.providers.cancelOAuth();
   };
 
   const handleSubmitManualOAuthCode = async () => {
     const value = manualCodeInput.trim();
     if (!value) return;
     try {
-      await hostApiFetchOAuth('/api/provider-accounts/oauth/submit', {
-        method: 'POST',
-        body: JSON.stringify({ code: value }),
-      });
+      await hostApi.providers.submitOAuth({ code: value });
       setOauthError(null);
     } catch (error) {
       setOauthError(String(error));
@@ -1377,6 +1344,7 @@ function AddProviderDialog({
                 {isOAuth && supportsApiKey && !oauthUiHidden && (
                   <div className="flex rounded-xl border border-black/10 dark:border-white/10 overflow-hidden text-meta font-medium shadow-sm bg-transparent p-1 gap-1">
                     <button
+                      data-testid="add-provider-auth-oauth-tab"
                       onClick={() => setAuthMode('oauth')}
                       className={cn(
                         'flex-1 py-2 px-3 rounded-lg transition-colors',
@@ -1386,6 +1354,7 @@ function AddProviderDialog({
                       {t('aiProviders.oauth.loginMode')}
                     </button>
                     <button
+                      data-testid="add-provider-auth-apikey-tab"
                       onClick={() => setAuthMode('apikey')}
                       className={cn(
                         'flex-1 py-2 px-3 rounded-lg transition-colors',
@@ -1586,6 +1555,7 @@ function AddProviderDialog({
                         {t('aiProviders.oauth.loginPrompt')}
                       </p>
                       <Button
+                        data-testid="add-provider-oauth-login-button"
                         onClick={handleStartOAuth}
                         disabled={oauthFlowing}
                         className="w-full rounded-full h-[42px] font-semibold bg-brand hover:bg-brand-hover text-white shadow-sm"

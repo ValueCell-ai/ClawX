@@ -244,18 +244,17 @@ ClawX employs a **dual-process architecture** with a unified host API layer. The
 │  └────────────────────────────────────────────────────────────┘  │
 └──────────────────────────────┬───────────────────────────────────┘
                                │
-                               │ Main-owned transport strategy
-                               │ (WS first, HTTP then IPC fallback)
+                               │ Typed IPC requests
                                ▼
 ┌──────────────────────────────────────────────────────────────────┐
-│                Host API & Main Process Proxies                   │
+│                Main Host Services & Gateway Manager              │
 │                                                                  │
-│  • hostapi:fetch (Main proxy, avoids CORS in dev/prod)           │
-│  • gateway:httpProxy (Renderer never calls Gateway HTTP direct)  │
-│  • Unified error mapping & retry/backoff                         │
+│  • host:invoke typed service dispatcher                          │
+│  • Settings, files, sessions, skills, providers, diagnostics     │
+│  • Main-owned Gateway WebSocket and process supervision          │
 └──────────────────────────────┬───────────────────────────────────┘
                                │
-                               │ WS / HTTP / IPC fallback
+                               │ Main-owned WebSocket
                                ▼
 ┌──────────────────────────────────────────────────────────────────┐
 │                     OpenClaw Gateway                             │
@@ -270,10 +269,10 @@ ClawX employs a **dual-process architecture** with a unified host API layer. The
 
 - **Process Isolation**: The AI runtime operates in a separate process, ensuring UI responsiveness even during heavy computation
 - **Single Entry for Frontend Calls**: Renderer requests go through host-api/api-client; protocol details are hidden behind a stable interface
-- **Main-Process Transport Ownership**: Electron Main controls WS/HTTP usage and fallback to IPC for reliability
+- **Main-Process Transport Ownership**: Electron Main owns the Gateway WebSocket; the renderer talks to Main over typed IPC
 - **Graceful Recovery**: Built-in reconnect, timeout, and backoff logic handles transient failures automatically
 - **Secure Storage**: API keys and sensitive data leverage the operating system's native secure storage mechanisms
-- **CORS-Safe by Design**: Local HTTP access is proxied by Main, preventing renderer-side CORS issues
+- **CORS-Safe by Design**: The renderer does not call local Gateway or Host API HTTP endpoints directly
 
 ### Process Model & Gateway Troubleshooting
 
@@ -321,9 +320,7 @@ Chain multiple skills together to create sophisticated automation pipelines. Pro
 
 ```ClawX/
 ├── electron/                 # Electron Main Process
-│   ├── api/                 # Main-side API router and handlers
-│   │   └── routes/          # RPC/HTTP proxy route modules
-│   ├── services/            # Provider, secrets and runtime services
+│   ├── services/            # Typed host APIs, provider, secrets and runtime services
 │   │   ├── providers/       # Provider/account model sync logic
 │   │   └── secrets/         # OS keychain and secret storage
 │   ├── shared/              # Shared provider schemas/constants

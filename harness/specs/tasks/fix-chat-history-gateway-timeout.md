@@ -6,7 +6,7 @@ taskType: runtime-bridge
 intent: Reduce startup chat.history contention so foreground history loads do not time out behind sidebar background hydration.
 touchedAreas:
   - harness/specs/tasks/fix-chat-history-gateway-timeout.md
-  - electron/api/routes/sessions.ts
+  - electron/services/sessions-api.ts
   - electron/gateway/rpc-backpressure.ts
   - electron/main/ipc-handlers.ts
   - src/components/layout/Sidebar.tsx
@@ -26,7 +26,7 @@ touchedAreas:
   - tests/unit/gateway-rpc-backpressure.test.ts
   - tests/unit/history-startup-retry.test.ts
   - tests/unit/session-label-fetch.test.ts
-  - tests/unit/session-summaries-route.test.ts
+  - tests/unit/host-services.test.ts
 expectedUserBehavior:
   - Foreground chat history loading is prioritized during gateway startup and restart.
   - Sidebar/session label hydration does not compete with the first visible history load.
@@ -48,7 +48,7 @@ requiredTests:
   - tests/unit/chat-store-session-label-fetch.test.ts
   - tests/unit/gateway-rpc-backpressure.test.ts
   - tests/unit/session-label-fetch.test.ts
-  - tests/unit/session-summaries-route.test.ts
+  - tests/unit/host-services.test.ts
 acceptance:
   - Renderer does not add direct IPC calls.
   - Renderer does not fetch Gateway HTTP directly.

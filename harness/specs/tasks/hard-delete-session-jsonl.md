@@ -6,11 +6,11 @@ taskType: runtime-bridge
 intent: Remove the on-disk session transcript (and its sibling artefacts) when the user deletes a conversation, instead of soft-deleting it via rename.
 touchedAreas:
   - electron/main/ipc-handlers.ts
-  - electron/api/routes/sessions.ts
+  - electron/services/sessions-api.ts
   - electron/utils/session-files.ts
   - src/stores/chat/session-actions.ts
   - src/stores/chat.ts
-  - tests/unit/session-delete-route.test.ts
+  - tests/unit/host-services.test.ts
   - harness/specs/tasks/hard-delete-session-jsonl.md
   - AGENTS.md
 expectedUserBehavior:
@@ -25,12 +25,11 @@ requiredProfiles:
   - fast
   - comms
 requiredTests:
-  - tests/unit/session-delete-route.test.ts
+  - tests/unit/host-services.test.ts
   - tests/unit/chat-session-actions.test.ts
 acceptance:
   - Renderer continues to use src/lib/host-api.ts and src/lib/api-client.ts; no new direct ipcRenderer or Gateway HTTP calls.
-  - IPC channel name session:delete and HTTP route POST /api/sessions/delete are unchanged in shape.
-  - Both the IPC handler in electron/main/ipc-handlers.ts and the HTTP mirror in electron/api/routes/sessions.ts unlink the same set of files for a given session id, sharing electron/utils/session-files.ts so the disk contract cannot drift.
+  - Typed host session deletion and the legacy session:delete IPC handler unlink the same set of files for a given session id, sharing electron/utils/session-files.ts so the disk contract cannot drift.
   - The handler tolerates ENOENT (file already gone) and still updates sessions.json so the sidebar stops listing the entry.
   - Renderer delete-session paths clear any in-memory pending optimistic user messages for the deleted key before subsequent history loads run.
   - agentId from the sessionKey is validated against /^[A-Za-z0-9][A-Za-z0-9_-]*$/ in both surfaces and any sessionFile resolved to a path outside the agent sessions/ directory is refused (defence-in-depth against a corrupt sessions.json).
@@ -49,9 +48,8 @@ that rename with a true `unlink` plus a sibling sweep that also removes
 `<id>.deleted.jsonl` (legacy soft-delete leftovers) and `<id>.jsonl.reset.*`
 (reset snapshots produced by `sessions.reset`).
 
-Both backends (the IPC handler used by the refactored chat store and the
-HTTP route used by the legacy chat store) share the same disk contract via
-`electron/utils/session-files.ts`, which centralises:
+Both Main surfaces (the typed host session service and the legacy IPC handler)
+share the same disk contract via `electron/utils/session-files.ts`, which centralises:
 
   - sessions.json entry resolution across the three observed shapes,
   - cross-platform absolute-path detection (POSIX, Windows `C:\...` and

@@ -10,11 +10,8 @@ import type {
   ProviderWithKeyInfo,
 } from '@/lib/providers';
 import { normalizeProviderApiKeyInput } from '@/lib/providers';
-import { hostApiFetch } from '@/lib/host-api';
-import {
-  fetchProviderSnapshot,
-  isHostApiRouteMissing,
-} from '@/lib/provider-accounts';
+import { hostApi } from '@/lib/host-api';
+import { fetchProviderSnapshot } from '@/lib/provider-accounts';
 
 // Re-export types for consumers that imported from here
 export type {
@@ -104,9 +101,7 @@ export const useProviderStore = create<ProviderState>((set, get) => ({
 
   // Legacy ProviderConfig-shaped alias kept for backward compatibility
   // with any stale caller. Internally projects the legacy config payload
-  // onto the new ProviderAccount surface and delegates to createAccount,
-  // so we hit /api/provider-accounts instead of the deprecated
-  // /api/providers POST route.
+  // onto the ProviderAccount surface and delegates to createAccount.
   addProvider: async (config, apiKey) => {
     try {
       const now = new Date().toISOString();
@@ -128,17 +123,14 @@ export const useProviderStore = create<ProviderState>((set, get) => ({
       };
       await get().createAccount(account, apiKey);
     } catch (error) {
-      console.error('Failed to add provider:', error);
+      console.error('Failed to add provider', error);
       throw error;
     }
   },
 
   createAccount: async (account, apiKey) => {
     try {
-      const result = await hostApiFetch<{ success: boolean; error?: string }>('/api/provider-accounts', {
-        method: 'POST',
-        body: JSON.stringify({ account, apiKey }),
-      });
+      const result = await hostApi.providers.createAccount({ account, apiKey });
 
       if (!result.success) {
         throw new Error(result.error || 'Failed to create provider account');
@@ -154,8 +146,7 @@ export const useProviderStore = create<ProviderState>((set, get) => ({
   addAccount: async (account, apiKey) => get().createAccount(account, apiKey),
 
   // Legacy ProviderConfig-shaped alias. Translates the partial ProviderConfig
-  // patch into a ProviderAccount patch and routes through updateAccount so we
-  // never hit the deprecated /api/providers/:id PUT route from the renderer.
+  // patch into a ProviderAccount patch and routes through updateAccount.
   updateProvider: async (providerId, updates, apiKey) => {
     try {
       const accountUpdates: Partial<ProviderAccount> = {};
@@ -170,17 +161,18 @@ export const useProviderStore = create<ProviderState>((set, get) => ({
       if (updates.enabled !== undefined) accountUpdates.enabled = updates.enabled;
       await get().updateAccount(providerId, accountUpdates, apiKey);
     } catch (error) {
-      console.error('Failed to update provider:', error);
+      console.error('Failed to update provider', error);
       throw error;
     }
   },
 
   updateAccount: async (accountId, updates, apiKey) => {
     try {
-      const result = await hostApiFetch<{ success: boolean; error?: string }>(`/api/provider-accounts/${encodeURIComponent(accountId)}`, {
-        method: 'PUT',
-        body: JSON.stringify({ updates, apiKey }),
-      });
+      const result = await hostApi.providers.updateAccount(
+        accountId,
+        updates,
+        apiKey,
+      );
 
       if (!result.success) {
         throw new Error(result.error || 'Failed to update provider account');
@@ -197,9 +189,7 @@ export const useProviderStore = create<ProviderState>((set, get) => ({
 
   removeAccount: async (accountId) => {
     try {
-      const result = await hostApiFetch<{ success: boolean; error?: string }>(`/api/provider-accounts/${encodeURIComponent(accountId)}`, {
-        method: 'DELETE',
-      });
+      const result = await hostApi.providers.deleteAccount(accountId);
 
       if (!result.success) {
         throw new Error(result.error || 'Failed to delete provider account');
@@ -214,9 +204,9 @@ export const useProviderStore = create<ProviderState>((set, get) => ({
 
   deleteAccount: async (accountId) => get().removeAccount(accountId),
 
-  // Legacy alias kept for in-flight callers; routes the call to the new
-  // /api/provider-accounts/:id PUT endpoint via updateAccount, which is
-  // semantically equivalent to "set API key without other changes".
+  // Legacy alias kept for in-flight callers; routes the call through
+  // updateAccount, which is semantically equivalent to "set API key without
+  // other changes".
   setApiKey: async (providerId, apiKey) => get().updateAccount(providerId, {}, apiKey),
 
   updateProviderWithKey: async (providerId, updates, apiKey) => {
@@ -238,14 +228,10 @@ export const useProviderStore = create<ProviderState>((set, get) => ({
     }
   },
 
-  // Legacy alias — the new account API exposes the same `apiKeyOnly=1`
-  // contract, so we just route through it.
+  // Legacy alias that clears only the stored key for an account.
   deleteApiKey: async (providerId) => {
     try {
-      const result = await hostApiFetch<{ success: boolean; error?: string }>(
-        `/api/provider-accounts/${encodeURIComponent(providerId)}?apiKeyOnly=1`,
-        { method: 'DELETE' },
-      );
+      const result = await hostApi.providers.deleteAccountApiKey(providerId);
 
       if (!result.success) {
         throw new Error(result.error || 'Failed to delete API key');
@@ -262,10 +248,7 @@ export const useProviderStore = create<ProviderState>((set, get) => ({
 
   setDefaultAccount: async (accountId) => {
     try {
-      const result = await hostApiFetch<{ success: boolean; error?: string }>('/api/provider-accounts/default', {
-        method: 'PUT',
-        body: JSON.stringify({ accountId }),
-      });
+      const result = await hostApi.providers.setDefaultAccount(accountId);
 
       if (!result.success) {
         throw new Error(result.error || 'Failed to set default provider account');
@@ -281,44 +264,16 @@ export const useProviderStore = create<ProviderState>((set, get) => ({
   validateAccountApiKey: async (providerId, apiKey, options) => {
     try {
       const normalizedApiKey = normalizeProviderApiKeyInput(apiKey);
-      // The new endpoint accepts both `accountId` (preferred) and a bare
-      // `vendorId` (used during the Add-Provider flow when no account
-      // exists yet). We always send `providerId` too so older Host API
-      // builds that still own the legacy contract keep working when we
-      // fall back to /api/providers/validate below.
-      const fetchNew = async () => hostApiFetch<{ valid: boolean; error?: string }>('/api/provider-accounts/validate', {
-        method: 'POST',
-        body: JSON.stringify({
+      const result = await hostApi.providers.validateKey({
           accountId: providerId,
           vendorId: providerId,
           providerId,
           apiKey: normalizedApiKey,
           options,
-        }),
       });
-      const fetchLegacy = async () => hostApiFetch<{ valid: boolean; error?: string }>('/api/providers/validate', {
-        method: 'POST',
-        body: JSON.stringify({ providerId, apiKey: normalizedApiKey, options }),
-      });
-
-      let result: { valid: boolean; error?: string } | { success: false; error: string };
-      try {
-        result = await fetchNew();
-      } catch (error) {
-        if (error instanceof Error && /404|not\s+found/i.test(error.message)) {
-          result = await fetchLegacy();
-        } else {
-          throw error;
-        }
-      }
-      // hostApiFetch returns the body even for non-2xx (e.g. 404), so a
-      // missing route surfaces as { success: false, error: "No route ..." }.
-      // Detect that and fall back to the legacy endpoint before reporting
-      // back to the caller.
-      if (isHostApiRouteMissing(result)) {
-        result = await fetchLegacy();
-      }
-      return result as { valid: boolean; error?: string };
+      return result?.valid === true
+        ? { valid: true }
+        : { valid: false, error: result?.error };
     } catch (error) {
       return { valid: false, error: String(error) };
     }
@@ -328,27 +283,7 @@ export const useProviderStore = create<ProviderState>((set, get) => ({
 
   getAccountApiKey: async (providerId) => {
     try {
-      const fetchNew = async () => hostApiFetch<{ apiKey: string | null } | { success: false; error: string }>(
-        `/api/provider-accounts/${encodeURIComponent(providerId)}/api-key`,
-      );
-      const fetchLegacy = async () => hostApiFetch<{ apiKey: string | null }>(
-        `/api/providers/${encodeURIComponent(providerId)}/api-key`,
-      );
-
-      let result: { apiKey: string | null } | { success: false; error: string };
-      try {
-        result = await fetchNew();
-      } catch (error) {
-        if (error instanceof Error && /404|not\s+found/i.test(error.message)) {
-          result = await fetchLegacy();
-        } else {
-          throw error;
-        }
-      }
-      if (isHostApiRouteMissing(result)) {
-        result = await fetchLegacy();
-      }
-      return (result as { apiKey: string | null }).apiKey ?? null;
+      return await hostApi.providers.getAccountApiKey(providerId);
     } catch {
       return null;
     }

@@ -8,9 +8,6 @@ import App from './App';
 import './i18n';
 import './styles/globals.css';
 import 'katex/dist/katex.min.css';
-import { initializeDefaultTransports } from './lib/api-client';
-
-initializeDefaultTransports();
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>

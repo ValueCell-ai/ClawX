@@ -3,38 +3,12 @@
  * Manages skill/plugin state
  */
 import { create } from 'zustand';
-import { hostApiFetch } from '@/lib/host-api';
+import { hostApi } from '@/lib/host-api';
+import type { ClawHubInstalledSkill, SkillsStatusResult } from '@/lib/host-api';
 import { AppError, normalizeAppError } from '@/lib/error-model';
-import { useGatewayStore } from './gateway';
 import type { Skill, MarketplaceSkill } from '../types/skill';
 
-type GatewaySkillStatus = {
-  skillKey: string;
-  slug?: string;
-  name?: string;
-  description?: string;
-  disabled?: boolean;
-  emoji?: string;
-  version?: string;
-  author?: string;
-  config?: Record<string, unknown>;
-  bundled?: boolean;
-  always?: boolean;
-  source?: string;
-  baseDir?: string;
-  filePath?: string;
-};
-
-type GatewaySkillsStatusResult = {
-  skills?: GatewaySkillStatus[];
-};
-
-type ClawHubListResult = {
-  slug: string;
-  version?: string;
-  source?: string;
-  baseDir?: string;
-};
+type GatewaySkillStatus = NonNullable<SkillsStatusResult['skills']>[number];
 
 function mapErrorCodeToSkillErrorKey(
   code: AppError['code'],
@@ -93,9 +67,9 @@ export const useSkillsStore = create<SkillsState>((set, get) => ({
     }
     try {
       // Fetch all skill sources in parallel to reduce first-load latency.
-      const gatewayDataPromise = useGatewayStore.getState().rpc<GatewaySkillsStatusResult>('skills.status');
-      const clawhubResultPromise = hostApiFetch<{ success: boolean; results?: ClawHubListResult[]; error?: string }>('/api/clawhub/list');
-      const configResultPromise = hostApiFetch<Record<string, { apiKey?: string; env?: Record<string, string> }>>('/api/skills/configs');
+      const gatewayDataPromise = hostApi.skills.status();
+      const clawhubResultPromise = hostApi.skills.clawhubList();
+      const configResultPromise = hostApi.skills.configs();
       const [gatewayDataResult, clawhubResult, configResult] = await Promise.allSettled([
         gatewayDataPromise,
         clawhubResultPromise,
@@ -148,7 +122,7 @@ export const useSkillsStore = create<SkillsState>((set, get) => ({
 
       // Merge with ClawHub results
       if (clawhubData?.success && clawhubData.results) {
-        clawhubData.results.forEach((cs: ClawHubListResult) => {
+        clawhubData.results.forEach((cs: ClawHubInstalledSkill) => {
           const existing = combinedSkills.find(s => s.id === cs.slug);
           if (existing) {
             if (!existing.baseDir && cs.baseDir) {
@@ -208,10 +182,7 @@ export const useSkillsStore = create<SkillsState>((set, get) => ({
   searchSkills: async (query: string) => {
     set({ searching: true, searchError: null });
     try {
-      const result = await hostApiFetch<{ success: boolean; results?: MarketplaceSkill[]; error?: string }>('/api/clawhub/search', {
-        method: 'POST',
-        body: JSON.stringify({ query }),
-      });
+      const result = await hostApi.skills.clawhubSearch({ query });
       if (result.success) {
         set({ searchResults: result.results || [] });
       } else {
@@ -232,10 +203,7 @@ export const useSkillsStore = create<SkillsState>((set, get) => ({
   installSkill: async (slug: string, version?: string) => {
     set((state) => ({ installing: { ...state.installing, [slug]: true } }));
     try {
-      const result = await hostApiFetch<{ success: boolean; error?: string }>('/api/clawhub/install', {
-        method: 'POST',
-        body: JSON.stringify({ slug, version }),
-      });
+      const result = await hostApi.skills.clawhubInstall({ slug, version });
       if (!result.success) {
         const appError = normalizeAppError(new Error(result.error || 'Install failed'), {
           module: 'skills',
@@ -261,10 +229,7 @@ export const useSkillsStore = create<SkillsState>((set, get) => ({
   uninstallSkill: async (slug: string) => {
     set((state) => ({ installing: { ...state.installing, [slug]: true } }));
     try {
-      const result = await hostApiFetch<{ success: boolean; error?: string }>('/api/clawhub/uninstall', {
-        method: 'POST',
-        body: JSON.stringify({ slug }),
-      });
+      const result = await hostApi.skills.clawhubUninstall({ slug });
       if (!result.success) {
         throw new Error(result.error || 'Uninstall failed');
       }
@@ -286,7 +251,7 @@ export const useSkillsStore = create<SkillsState>((set, get) => ({
     const { updateSkill } = get();
 
     try {
-      await useGatewayStore.getState().rpc('skills.update', { skillKey: skillId, enabled: true });
+      await hostApi.skills.update({ skillKey: skillId, enabled: true });
       updateSkill(skillId, { enabled: true });
     } catch (error) {
       console.error('Failed to enable skill:', error);
@@ -303,7 +268,7 @@ export const useSkillsStore = create<SkillsState>((set, get) => ({
     }
 
     try {
-      await useGatewayStore.getState().rpc('skills.update', { skillKey: skillId, enabled: false });
+      await hostApi.skills.update({ skillKey: skillId, enabled: false });
       updateSkill(skillId, { enabled: false });
     } catch (error) {
       console.error('Failed to disable skill:', error);

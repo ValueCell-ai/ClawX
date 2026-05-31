@@ -8,8 +8,8 @@ requiredTests:
   - tests/unit/api-client.test.ts
 ---
 
-Gateway RPC transport is IPC-only by default. Renderer code must not enable WebSocket or HTTP transport unless `src/lib/api-client.ts` explicitly gates it behind `clawx:gateway-ws-diagnostic`.
+Gateway RPC transport is IPC-only. Renderer code must not enable WebSocket or HTTP transports to OpenClaw Gateway.
 
-When diagnostics are enabled, the allowed order is `WS -> HTTP -> IPC`; otherwise the allowed order is `IPC`.
+The renderer must call Main through typed host-api or legacy IPC wrappers only; Main owns the Gateway WebSocket.
 
-Failed non-IPC transports must use backoff before retry. `gateway:httpProxy` remains a Main-owned proxy path and must not become direct renderer Gateway HTTP access.
+Gateway frame diagnostics belong in Main-process logging, not renderer direct Gateway connections.

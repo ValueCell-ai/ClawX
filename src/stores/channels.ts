@@ -3,7 +3,7 @@
  * Manages messaging channel state
  */
 import { create } from 'zustand';
-import { hostApiFetch } from '@/lib/host-api';
+import { hostApi } from '@/lib/host-api';
 import {
   isChannelRuntimeConnected,
   pickChannelRuntimeStatus,
@@ -184,9 +184,7 @@ export const useChannelsStore = create<ChannelsState>((set, get) => ({
 
     try {
       // Delete the channel configuration from openclaw.json
-      await hostApiFetch(`/api/channels/config/${encodeURIComponent(channelType)}`, {
-        method: 'DELETE',
-      });
+      await hostApi.channels.deleteConfig(channelType);
     } catch (error) {
       console.error('Failed to delete channel config:', error);
     }

@@ -56,6 +56,29 @@ vi.mock('@/lib/api-client', () => ({
 
 vi.mock('@/lib/host-api', () => ({
   hostApiFetch: (...args: unknown[]) => hostApiFetchMock(...args),
+  hostApi: {
+    gateway: {
+      rpc: async (method: string, params?: unknown, timeoutMs?: number) => {
+        const result = await invokeIpcMock(
+          'gateway:rpc',
+          method,
+          params,
+          ...(timeoutMs != null ? [timeoutMs] as const : []),
+        ) as { success?: boolean; result?: unknown; error?: string };
+        if (result?.success === false) {
+          throw new Error(result.error || `RPC ${method} failed`);
+        }
+        return result?.result;
+      },
+    },
+    cron: {
+      sessionHistory: async (input: { sessionKey: string; limit?: number }) => {
+        const params = new URLSearchParams({ sessionKey: input.sessionKey });
+        if (input.limit != null) params.set('limit', String(input.limit));
+        return hostApiFetchMock(`/api/cron/session-history?${params.toString()}`);
+      },
+    },
+  },
 }));
 
 vi.mock('@/stores/gateway', () => ({

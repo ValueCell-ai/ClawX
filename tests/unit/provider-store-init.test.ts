@@ -7,9 +7,10 @@ vi.mock('@/lib/provider-accounts', () => ({
   fetchProviderSnapshot: (...args: unknown[]) => mockFetchProviderSnapshot(...args),
 }));
 
-// Mock hostApiFetch (used by other store methods)
 vi.mock('@/lib/host-api', () => ({
-  hostApiFetch: vi.fn(),
+  hostApi: {
+    providers: {},
+  },
 }));
 
 // Import store after mocks are in place

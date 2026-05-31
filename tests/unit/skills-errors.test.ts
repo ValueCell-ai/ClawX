@@ -5,6 +5,21 @@ const rpcMock = vi.fn();
 
 vi.mock('@/lib/host-api', () => ({
   hostApiFetch: (...args: unknown[]) => hostApiFetchMock(...args),
+  hostApi: {
+    skills: {
+      status: () => rpcMock('skills.status'),
+      clawhubList: () => hostApiFetchMock('/api/clawhub/list'),
+      configs: () => hostApiFetchMock('/api/skills/configs'),
+      clawhubSearch: (input: unknown) => hostApiFetchMock('/api/clawhub/search', {
+        method: 'POST',
+        body: JSON.stringify(input),
+      }),
+      clawhubInstall: (input: unknown) => hostApiFetchMock('/api/clawhub/install', {
+        method: 'POST',
+        body: JSON.stringify(input),
+      }),
+    },
+  },
 }));
 
 vi.mock('@/stores/gateway', () => ({

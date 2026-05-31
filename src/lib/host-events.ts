@@ -1,79 +1,31 @@
-import { createHostEventSource } from './host-api';
+type Handler<T> = (payload: T) => void;
 
-let eventSource: EventSource | null = null;
-
-const HOST_EVENT_TO_IPC_CHANNEL: Record<string, string> = {
-  'gateway:status': 'gateway:status-changed',
-  'gateway:error': 'gateway:error',
-  'gateway:notification': 'gateway:notification',
-  'gateway:health': 'gateway:health-changed',
-  'gateway:presence': 'gateway:presence-changed',
-  'gateway:chat-message': 'gateway:chat-message',
-  'gateway:channel-status': 'gateway:channel-status',
-  'gateway:exit': 'gateway:exit',
-  'oauth:code': 'oauth:code',
-  'oauth:success': 'oauth:success',
-  'oauth:error': 'oauth:error',
-  'channel:whatsapp-qr': 'channel:whatsapp-qr',
-  'channel:whatsapp-success': 'channel:whatsapp-success',
-  'channel:whatsapp-error': 'channel:whatsapp-error',
-  'channel:wechat-qr': 'channel:wechat-qr',
-  'channel:wechat-success': 'channel:wechat-success',
-  'channel:wechat-error': 'channel:wechat-error',
-};
-
-function getEventSource(): EventSource {
-  if (!eventSource) {
-    eventSource = createHostEventSource();
-  }
-  return eventSource;
-}
-
-function allowSseFallback(): boolean {
-  try {
-    return window.localStorage.getItem('clawx:allow-sse-fallback') === '1';
-  } catch {
-    return false;
-  }
-}
-
-export function subscribeHostEvent<T = unknown>(
-  eventName: string,
-  handler: (payload: T) => void,
-): () => void {
+function onIpc<T>(channel: string, handler: Handler<T>): () => void {
   const ipc = window.electron?.ipcRenderer;
-  const ipcChannel = HOST_EVENT_TO_IPC_CHANNEL[eventName];
-  if (ipcChannel && ipc?.on && ipc?.off) {
-    const listener = (payload: unknown) => {
-      handler(payload as T);
-    };
-    // preload's `on()` wraps the callback in an internal subscription function
-    // and returns a cleanup function that removes that exact wrapper.  We MUST
-    // use the returned cleanup rather than calling `off(channel, listener)`,
-    // because `listener` !== the internal wrapper and removeListener would be
-    // a no-op, leaking the subscription.
-    const unsubscribe = ipc.on(ipcChannel, listener);
-    if (typeof unsubscribe === 'function') {
-      return unsubscribe;
-    }
-    // Fallback for environments where on() doesn't return cleanup
-    return () => {
-      ipc.off(ipcChannel, listener);
-    };
-  }
-
-  if (!allowSseFallback()) {
-    console.warn(`[host-events] no IPC mapping for event "${eventName}", SSE fallback disabled`);
+  if (!ipc?.on) {
+    console.warn(`[host-events] IPC unavailable for ${channel}`);
     return () => {};
   }
 
-  const source = getEventSource();
-  const listener = (event: Event) => {
-    const payload = JSON.parse((event as MessageEvent).data) as T;
-    handler(payload);
-  };
-  source.addEventListener(eventName, listener);
-  return () => {
-    source.removeEventListener(eventName, listener);
-  };
+  const unsubscribe = ipc.on(channel, (payload: unknown) => handler(payload as T));
+  return typeof unsubscribe === 'function'
+    ? unsubscribe
+    : () => ipc.off?.(channel);
 }
+
+export const hostEvents = {
+  onGatewayStatus: <T>(handler: Handler<T>) => onIpc('gateway:status-changed', handler),
+  onGatewayError: <T>(handler: Handler<T>) => onIpc('gateway:error', handler),
+  onGatewayNotification: <T>(handler: Handler<T>) => onIpc('gateway:notification', handler),
+  onGatewayHealth: <T>(handler: Handler<T>) => onIpc('gateway:health-changed', handler),
+  onGatewayPresence: <T>(handler: Handler<T>) => onIpc('gateway:presence-changed', handler),
+  onGatewayChatMessage: <T>(handler: Handler<T>) => onIpc('gateway:chat-message', handler),
+  onGatewayChannelStatus: <T>(handler: Handler<T>) => onIpc('gateway:channel-status', handler),
+  onGatewayExit: <T>(handler: Handler<T>) => onIpc('gateway:exit', handler),
+  onOAuthCode: <T>(handler: Handler<T>) => onIpc('oauth:code', handler),
+  onOAuthSuccess: <T>(handler: Handler<T>) => onIpc('oauth:success', handler),
+  onOAuthError: <T>(handler: Handler<T>) => onIpc('oauth:error', handler),
+  onChannelQr: <T>(channel: string, handler: Handler<T>) => onIpc(`channel:${channel}-qr`, handler),
+  onChannelSuccess: <T>(channel: string, handler: Handler<T>) => onIpc(`channel:${channel}-success`, handler),
+  onChannelError: <T>(channel: string, handler: Handler<T>) => onIpc(`channel:${channel}-error`, handler),
+};

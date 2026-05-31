@@ -2,12 +2,9 @@ import { logger } from '../utils/logger';
 import type {
   Extension,
   ExtensionContext,
-  HostApiRouteExtension,
   MarketplaceProviderExtension,
-  RouteHandler,
 } from './types';
 import {
-  isHostApiRouteExtension,
   isMarketplaceProviderExtension,
 } from './types';
 
@@ -48,12 +45,6 @@ class ExtensionRegistry {
 
   getAll(): Extension[] {
     return [...this.extensions.values()];
-  }
-
-  getRouteHandlers(): RouteHandler[] {
-    return this.getAll()
-      .filter(isHostApiRouteExtension)
-      .map((ext: HostApiRouteExtension) => ext.getRouteHandler());
   }
 
   getMarketplaceProvider(): MarketplaceProviderExtension | undefined {

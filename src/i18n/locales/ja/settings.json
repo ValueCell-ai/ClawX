@@ -196,25 +196,6 @@
   "advanced": {
     "title": "詳細設定",
     "description": "上級ユーザー向けオプション",
-    "transport": {
-      "label": "Gateway 転送優先度",
-      "desc": "レンダラープロセスから Gateway RPC を呼ぶ際の優先プロトコルを選択します。",
-      "saved": "Gateway 転送優先度を保存しました",
-      "options": {
-        "wsFirst": "WS 優先",
-        "httpFirst": "HTTP 優先",
-        "wsOnly": "WS のみ",
-        "httpOnly": "HTTP のみ",
-        "ipcOnly": "IPC のみ"
-      },
-      "descriptions": {
-        "wsFirst": "WS -> HTTP -> IPC",
-        "httpFirst": "HTTP -> WS -> IPC",
-        "wsOnly": "WS -> IPC",
-        "httpOnly": "HTTP -> IPC",
-        "ipcOnly": "IPC のみ"
-      }
-    },
     "devMode": "開発者モード",
     "devModeDesc": "開発者ツールとショートカットを表示",
     "telemetry": "匿名利用データ",
@@ -259,10 +240,6 @@
     "doctorStdout": "標準出力",
     "doctorStderr": "標準エラー",
     "doctorOutputEmpty": "（空）",
-    "wsDiagnostic": "WS 診断モード",
-    "wsDiagnosticDesc": "Gateway RPC デバッグのため一時的に WS/HTTP フォールバックを有効化します。",
-    "wsDiagnosticEnabled": "WS 診断モードを有効化しました",
-    "wsDiagnosticDisabled": "WS 診断モードを無効化しました",
     "telemetryViewer": "テレメトリビューア",
     "telemetryViewerDesc": "ローカル専用の UX/性能テレメトリ（最新 200 件）。",
     "telemetryAggregated": "イベント集計",

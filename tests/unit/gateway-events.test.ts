@@ -1,6 +1,29 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const hostApiFetchMock = vi.fn();
+const hostApiMock = vi.hoisted(() => ({
+  gateway: {
+    status: vi.fn(),
+    start: vi.fn(),
+    stop: vi.fn(),
+    restart: vi.fn(),
+    health: vi.fn(),
+    controlUi: vi.fn(),
+    rpc: vi.fn(),
+  },
+  settings: {
+    getAll: vi.fn(),
+    get: vi.fn(),
+    set: vi.fn(),
+    setMany: vi.fn(),
+    reset: vi.fn(),
+  },
+  logs: {
+    recent: vi.fn(),
+    dir: vi.fn(),
+    listFiles: vi.fn(),
+    readFile: vi.fn(),
+  },
+}));
 const subscribeHostEventMock = vi.fn();
 
 function flushAsyncImports(): Promise<void> {
@@ -8,22 +31,30 @@ function flushAsyncImports(): Promise<void> {
 }
 
 vi.mock('@/lib/host-api', () => ({
-  hostApiFetch: (...args: unknown[]) => hostApiFetchMock(...args),
+  hostApi: hostApiMock,
 }));
 
 vi.mock('@/lib/host-events', () => ({
-  subscribeHostEvent: (...args: unknown[]) => subscribeHostEventMock(...args),
+  hostEvents: {
+    onGatewayStatus: (handler: unknown) => subscribeHostEventMock('gateway:status', handler),
+    onGatewayError: (handler: unknown) => subscribeHostEventMock('gateway:error', handler),
+    onGatewayNotification: (handler: unknown) => subscribeHostEventMock('gateway:notification', handler),
+    onGatewayHealth: (handler: unknown) => subscribeHostEventMock('gateway:health', handler),
+    onGatewayPresence: (handler: unknown) => subscribeHostEventMock('gateway:presence', handler),
+    onGatewayChatMessage: (handler: unknown) => subscribeHostEventMock('gateway:chat-message', handler),
+    onGatewayChannelStatus: (handler: unknown) => subscribeHostEventMock('gateway:channel-status', handler),
+  },
 }));
 
 describe('gateway store event wiring', () => {
   beforeEach(() => {
     vi.resetModules();
     vi.clearAllMocks();
-    hostApiFetchMock.mockResolvedValue({ state: 'running', port: 18789 });
+    hostApiMock.gateway.status.mockResolvedValue({ state: 'running', port: 18789 });
   });
 
   it('subscribes to host events through subscribeHostEvent on init', async () => {
-    hostApiFetchMock.mockResolvedValueOnce({ state: 'running', port: 18789 });
+    hostApiMock.gateway.status.mockResolvedValueOnce({ state: 'running', port: 18789 });
 
     const handlers = new Map<string, (payload: unknown) => void>();
     subscribeHostEventMock.mockImplementation((eventName: string, handler: (payload: unknown) => void) => {
@@ -53,7 +84,7 @@ describe('gateway store event wiring', () => {
   });
 
   it('propagates gatewayReady field from status events', async () => {
-    hostApiFetchMock.mockResolvedValueOnce({ state: 'running', port: 18789, gatewayReady: false });
+    hostApiMock.gateway.status.mockResolvedValueOnce({ state: 'running', port: 18789, gatewayReady: false });
 
     const handlers = new Map<string, (payload: unknown) => void>();
     subscribeHostEventMock.mockImplementation((eventName: string, handler: (payload: unknown) => void) => {
@@ -73,7 +104,7 @@ describe('gateway store event wiring', () => {
   });
 
   it('treats undefined gatewayReady as ready for backwards compatibility', async () => {
-    hostApiFetchMock.mockResolvedValueOnce({ state: 'running', port: 18789 });
+    hostApiMock.gateway.status.mockResolvedValueOnce({ state: 'running', port: 18789 });
 
     const handlers = new Map<string, (payload: unknown) => void>();
     subscribeHostEventMock.mockImplementation((eventName: string, handler: (payload: unknown) => void) => {

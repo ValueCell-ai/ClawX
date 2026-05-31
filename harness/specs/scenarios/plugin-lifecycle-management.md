@@ -8,7 +8,7 @@ ownedPaths:
   - electron/utils/channel-config.ts
   - electron/utils/plugin-install.ts
   - electron/gateway/skills-symlink-cleanup.ts
-  - electron/api/routes/skills.ts
+  - electron/services/skills-api.ts
   - src/stores/skills.ts
   - resources/skills/**
   - tests/unit/openclaw-auth.test.ts

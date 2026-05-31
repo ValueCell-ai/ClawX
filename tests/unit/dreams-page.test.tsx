@@ -3,15 +3,38 @@ import { act, render, screen, waitFor } from '@testing-library/react';
 import { Dreams } from '@/pages/Dreams';
 
 const rpcMock = vi.fn();
-const hostApiFetchMock = vi.fn();
 const tMock = (key: string) => key;
 
-const { gatewayState } = vi.hoisted(() => ({
+const { gatewayState, hostApiMock } = vi.hoisted(() => ({
   gatewayState: {
     status: { state: 'running', port: 18789, gatewayReady: true } as {
       state: string;
       port: number;
       gatewayReady?: boolean;
+    },
+  },
+  hostApiMock: {
+    gateway: {
+      status: vi.fn(),
+      start: vi.fn(),
+      stop: vi.fn(),
+      restart: vi.fn(),
+      health: vi.fn(),
+      controlUi: vi.fn(),
+      rpc: vi.fn(),
+    },
+    settings: {
+      getAll: vi.fn(),
+      get: vi.fn(),
+      set: vi.fn(),
+      setMany: vi.fn(),
+      reset: vi.fn(),
+    },
+    logs: {
+      recent: vi.fn(),
+      dir: vi.fn(),
+      listFiles: vi.fn(),
+      readFile: vi.fn(),
     },
   },
 }));
@@ -24,7 +47,7 @@ vi.mock('@/stores/gateway', () => ({
 }));
 
 vi.mock('@/lib/host-api', () => ({
-  hostApiFetch: (...args: unknown[]) => hostApiFetchMock(...args),
+  hostApi: hostApiMock,
 }));
 
 vi.mock('react-i18next', () => ({

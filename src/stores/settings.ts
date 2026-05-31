@@ -5,7 +5,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import i18n from '@/i18n';
-import { hostApiFetch } from '@/lib/host-api';
+import { hostApi } from '@/lib/host-api';
 import { resolveSupportedLanguage } from '../../shared/language';
 
 type Theme = 'light' | 'dark' | 'system';
@@ -96,7 +96,7 @@ export const useSettingsStore = create<SettingsState>()(
 
       init: async () => {
         try {
-          const settings = await hostApiFetch<Partial<typeof defaultSettings>>('/api/settings');
+          const settings = await hostApi.settings.getAll();
           const resolvedLanguage = settings.language
             ? resolveSupportedLanguage(settings.language)
             : undefined;
@@ -119,48 +119,30 @@ export const useSettingsStore = create<SettingsState>()(
 
       setTheme: (theme) => {
         set({ theme });
-        void hostApiFetch('/api/settings/theme', {
-          method: 'PUT',
-          body: JSON.stringify({ value: theme }),
-        }).catch(() => { });
+        void hostApi.settings.set('theme', theme).catch(() => { });
       },
       setLanguage: (language) => {
         const resolvedLanguage = resolveSupportedLanguage(language);
         i18n.changeLanguage(resolvedLanguage);
         set({ language: resolvedLanguage });
-        void hostApiFetch('/api/settings/language', {
-          method: 'PUT',
-          body: JSON.stringify({ value: resolvedLanguage }),
-        }).catch(() => { });
+        void hostApi.settings.set('language', resolvedLanguage).catch(() => { });
       },
       setStartMinimized: (startMinimized) => set({ startMinimized }),
       setLaunchAtStartup: (launchAtStartup) => {
         set({ launchAtStartup });
-        void hostApiFetch('/api/settings/launchAtStartup', {
-          method: 'PUT',
-          body: JSON.stringify({ value: launchAtStartup }),
-        }).catch(() => { });
+        void hostApi.settings.set('launchAtStartup', launchAtStartup).catch(() => { });
       },
       setTelemetryEnabled: (telemetryEnabled) => {
         set({ telemetryEnabled });
-        void hostApiFetch('/api/settings/telemetryEnabled', {
-          method: 'PUT',
-          body: JSON.stringify({ value: telemetryEnabled }),
-        }).catch(() => { });
+        void hostApi.settings.set('telemetryEnabled', telemetryEnabled).catch(() => { });
       },
       setGatewayAutoStart: (gatewayAutoStart) => {
         set({ gatewayAutoStart });
-        void hostApiFetch('/api/settings/gatewayAutoStart', {
-          method: 'PUT',
-          body: JSON.stringify({ value: gatewayAutoStart }),
-        }).catch(() => { });
+        void hostApi.settings.set('gatewayAutoStart', gatewayAutoStart).catch(() => { });
       },
       setGatewayPort: (gatewayPort) => {
         set({ gatewayPort });
-        void hostApiFetch('/api/settings/gatewayPort', {
-          method: 'PUT',
-          body: JSON.stringify({ value: gatewayPort }),
-        }).catch(() => { });
+        void hostApi.settings.set('gatewayPort', gatewayPort).catch(() => { });
       },
       setProxyEnabled: (proxyEnabled) => set({ proxyEnabled }),
       setProxyServer: (proxyServer) => set({ proxyServer }),
@@ -171,20 +153,14 @@ export const useSettingsStore = create<SettingsState>()(
       setUpdateChannel: (updateChannel) => set({ updateChannel }),
       setAutoCheckUpdate: (autoCheckUpdate) => {
         set({ autoCheckUpdate });
-        void hostApiFetch('/api/settings/autoCheckUpdate', {
-          method: 'PUT',
-          body: JSON.stringify({ value: autoCheckUpdate }),
-        }).catch(() => { });
+        void hostApi.settings.set('autoCheckUpdate', autoCheckUpdate).catch(() => { });
       },
 
       setSidebarCollapsed: (sidebarCollapsed) => set({ sidebarCollapsed }),
       setSidebarWidth: (sidebarWidth) => set({ sidebarWidth: clampSidebarWidth(sidebarWidth) }),
       setDevModeUnlocked: (devModeUnlocked) => {
         set({ devModeUnlocked });
-        void hostApiFetch('/api/settings/devModeUnlocked', {
-          method: 'PUT',
-          body: JSON.stringify({ value: devModeUnlocked }),
-        }).catch(() => { });
+        void hostApi.settings.set('devModeUnlocked', devModeUnlocked).catch(() => { });
       },
       markSetupComplete: () => set({ setupComplete: true }),
       resetSettings: () => set(defaultSettings),

@@ -33,25 +33,33 @@ test.describe('Channels binding regression', () => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       (globalThis as any).__clawxE2eBindingRegression = state;
 
-      ipcMain.removeHandler('hostapi:fetch');
-      ipcMain.handle('hostapi:fetch', async (_event, request: { path?: string; method?: string; body?: string }) => {
-        const method = request?.method ?? 'GET';
-        const path = request?.path ?? '';
+      const originalHostInvoke = (ipcMain as unknown as {
+        _invokeHandlers?: Map<string, (event: unknown, request: unknown) => Promise<unknown>>;
+      })._invokeHandlers?.get('host:invoke');
+      const respond = (id: unknown, data: unknown) => ({ id: typeof id === 'string' ? id : undefined, ok: true, data });
+
+      ipcMain.removeHandler('host:invoke');
+      ipcMain.handle('host:invoke', async (event, request: {
+        id?: string;
+        module?: string;
+        action?: string;
+        payload?: Record<string, unknown>;
+      }) => {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const current = (globalThis as any).__clawxE2eBindingRegression as typeof state;
 
-        if (path === '/api/channels/accounts' && method === 'GET') {
-          return { ok: true, data: { status: 200, ok: true, json: { success: true, channels: current.channels } } };
+        if (request?.module === 'channels' && request.action === 'accounts') {
+          return respond(request.id, { success: true, channels: current.channels });
         }
-        if (path === '/api/agents' && method === 'GET') {
-          return { ok: true, data: { status: 200, ok: true, json: { success: true, agents: current.agents } } };
+        if (request?.module === 'agents' && request.action === 'list') {
+          return respond(request.id, { success: true, agents: current.agents });
         }
-        if (path === '/api/channels/credentials/validate' && method === 'POST') {
-          return { ok: true, data: { status: 200, ok: true, json: { success: true, valid: true, warnings: [] } } };
+        if (request?.module === 'channels' && request.action === 'validateCredentials') {
+          return respond(request.id, { success: true, valid: true, warnings: [] });
         }
-        if (path === '/api/channels/config' && method === 'POST') {
+        if (request?.module === 'channels' && request.action === 'saveConfig') {
           current.saveCount += 1;
-          const body = JSON.parse(request?.body ?? '{}') as { accountId?: string };
+          const body = request.payload ?? {};
           const accountId = body.accountId || current.nextAccountId;
           const feishu = current.channels[0];
           if (!feishu.accounts.some((account) => account.accountId === accountId)) {
@@ -63,11 +71,11 @@ test.describe('Channels binding regression', () => {
               isDefault: false,
             });
           }
-          return { ok: true, data: { status: 200, ok: true, json: { success: true } } };
+          return respond(request.id, { success: true });
         }
-        if (path === '/api/channels/binding' && method === 'PUT') {
+        if (request?.module === 'channels' && request.action === 'bindingSave') {
           current.bindingCount += 1;
-          const body = JSON.parse(request?.body ?? '{}') as { channelType?: string; accountId?: string; agentId?: string };
+          const body = request.payload ?? {};
           if (body.channelType === 'feishu' && body.accountId) {
             const feishu = current.channels[0];
             const account = feishu.accounts.find((entry) => entry.accountId === body.accountId);
@@ -75,20 +83,17 @@ test.describe('Channels binding regression', () => {
               account.agentId = body.agentId;
             }
           }
-          return { ok: true, data: { status: 200, ok: true, json: { success: true } } };
+          return respond(request.id, { success: true });
         }
-        if (path === '/api/channels/binding' && method === 'DELETE') {
+        if (request?.module === 'channels' && request.action === 'bindingDelete') {
           current.bindingCount += 1;
-          return { ok: true, data: { status: 200, ok: true, json: { success: true } } };
+          return respond(request.id, { success: true });
         }
-        if (path.startsWith('/api/channels/config/') && method === 'GET') {
-          return { ok: true, data: { status: 200, ok: true, json: { success: true, values: {} } } };
+        if (request?.module === 'channels' && request.action === 'formValues') {
+          return respond(request.id, { success: true, values: {} });
         }
 
-        return {
-          ok: false,
-          error: { message: `Unexpected hostapi:fetch request: ${method} ${path}` },
-        };
+        return originalHostInvoke?.(event, request) ?? respond(request?.id, {});
       });
     });
 

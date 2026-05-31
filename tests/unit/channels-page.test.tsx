@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { Channels } from '@/pages/Channels/index';
 
-const hostApiFetchMock = vi.fn();
+const hostApiCallMock = vi.fn();
 const subscribeHostEventMock = vi.fn();
 const toastSuccessMock = vi.fn();
 const toastErrorMock = vi.fn();
@@ -19,11 +19,43 @@ vi.mock('@/stores/gateway', () => ({
 }));
 
 vi.mock('@/lib/host-api', () => ({
-  hostApiFetch: (...args: unknown[]) => hostApiFetchMock(...args),
+  hostApi: {
+    agents: {
+      list: () => hostApiCallMock('agents.list'),
+    },
+    channels: {
+      accounts: (options?: { mode?: string; probe?: boolean }) => hostApiCallMock('channels.accounts', options),
+      formValues: (channelType: string, accountId?: string) => {
+        return hostApiCallMock('channels.formValues', { channelType, accountId });
+      },
+      saveConfig: (input: unknown) => hostApiCallMock('channels.saveConfig', input),
+      deleteConfig: (channelType: string, accountId?: string) => {
+        return hostApiCallMock('channels.deleteConfig', { channelType, accountId });
+      },
+      validateCredentials: (channelType: string, config: Record<string, unknown>) => (
+        hostApiCallMock('channels.validateCredentials', { channelType, config })
+      ),
+      saveBinding: (input: unknown) => hostApiCallMock('channels.saveBinding', input),
+      deleteBinding: (input: unknown) => hostApiCallMock('channels.deleteBinding', input),
+      startLogin: (channelType: string, input?: unknown) => hostApiCallMock('channels.startLogin', { channelType, input }),
+      cancelLogin: (channelType: string, input?: unknown) => hostApiCallMock('channels.cancelLogin', { channelType, input }),
+    },
+    diagnostics: {
+      gatewaySnapshot: () => hostApiCallMock('diagnostics.gatewaySnapshot'),
+    },
+    gateway: {
+      restart: () => hostApiCallMock('gateway.restart', { method: 'POST' }),
+    },
+  },
 }));
 
 vi.mock('@/lib/host-events', () => ({
-  subscribeHostEvent: (...args: unknown[]) => subscribeHostEventMock(...args),
+  hostEvents: {
+    onGatewayChannelStatus: (handler: unknown) => subscribeHostEventMock('gateway:channel-status', handler),
+    onChannelQr: (channel: string, handler: unknown) => subscribeHostEventMock(`channel:${channel}-qr`, handler),
+    onChannelSuccess: (channel: string, handler: unknown) => subscribeHostEventMock(`channel:${channel}-success`, handler),
+    onChannelError: (channel: string, handler: unknown) => subscribeHostEventMock(`channel:${channel}-error`, handler),
+  },
 }));
 
 vi.mock('react-i18next', () => ({
@@ -58,8 +90,8 @@ describe('Channels page status refresh', () => {
       configurable: true,
     });
     gatewayState.status = { state: 'running', port: 18789 };
-    hostApiFetchMock.mockImplementation(async (path: string) => {
-      if (path.startsWith('/api/channels/accounts')) {
+    hostApiCallMock.mockImplementation(async (path: string) => {
+      if (path === 'channels.accounts') {
         return {
           success: true,
           gatewayHealth: {
@@ -86,7 +118,7 @@ describe('Channels page status refresh', () => {
         };
       }
 
-      if (path === '/api/agents') {
+      if (path === 'agents.list') {
         return {
           success: true,
           agents: [],
@@ -99,8 +131,8 @@ describe('Channels page status refresh', () => {
 
   it('blocks saving when custom account ID is non-canonical', async () => {
     subscribeHostEventMock.mockImplementation(() => vi.fn());
-    hostApiFetchMock.mockImplementation(async (path: string) => {
-      if (path.startsWith('/api/channels/accounts')) {
+    hostApiCallMock.mockImplementation(async (path: string) => {
+      if (path === 'channels.accounts') {
         return {
           success: true,
           channels: [
@@ -122,14 +154,14 @@ describe('Channels page status refresh', () => {
         };
       }
 
-      if (path === '/api/agents') {
+      if (path === 'agents.list') {
         return {
           success: true,
           agents: [],
         };
       }
 
-      if (path === '/api/channels/credentials/validate') {
+      if (path === 'channels.validateCredentials') {
         return {
           success: true,
           valid: true,
@@ -137,7 +169,7 @@ describe('Channels page status refresh', () => {
         };
       }
 
-      if (path === '/api/channels/config') {
+      if (path === 'channels.saveConfig') {
         return {
           success: true,
         };
@@ -175,13 +207,7 @@ describe('Channels page status refresh', () => {
     });
     expect(toastErrorMock).toHaveBeenCalledWith('account.invalidCanonicalId');
 
-    const saveCalls = hostApiFetchMock.mock.calls.filter(([path, init]) => (
-      path === '/api/channels/config'
-      && typeof init === 'object'
-      && init != null
-      && 'method' in init
-      && (init as { method?: string }).method === 'POST'
-    ));
+    const saveCalls = hostApiCallMock.mock.calls.filter(([path]) => path === 'channels.saveConfig');
     expect(saveCalls).toHaveLength(0);
   });
 
@@ -197,8 +223,8 @@ describe('Channels page status refresh', () => {
     render(<Channels />);
 
     await waitFor(() => {
-      expect(hostApiFetchMock).toHaveBeenCalledWith('/api/channels/accounts');
-      expect(hostApiFetchMock).toHaveBeenCalledWith('/api/agents');
+      expect(hostApiCallMock).toHaveBeenCalledWith('channels.accounts', expect.objectContaining({ mode: 'runtime' }));
+      expect(hostApiCallMock).toHaveBeenCalledWith('agents.list');
     });
     expect(subscribeHostEventMock).toHaveBeenCalledWith('gateway:channel-status', expect.any(Function));
 
@@ -207,8 +233,10 @@ describe('Channels page status refresh', () => {
     });
 
     await waitFor(() => {
-      const channelFetchCalls = hostApiFetchMock.mock.calls.filter(([path]) => path === '/api/channels/accounts');
-      const agentFetchCalls = hostApiFetchMock.mock.calls.filter(([path]) => path === '/api/agents');
+      const channelFetchCalls = hostApiCallMock.mock.calls.filter(([path, options]) => (
+        path === 'channels.accounts' && (options as { mode?: string } | undefined)?.mode !== 'config'
+      ));
+      const agentFetchCalls = hostApiCallMock.mock.calls.filter(([path]) => path === 'agents.list');
       expect(channelFetchCalls).toHaveLength(2);
       expect(agentFetchCalls).toHaveLength(1);
     });
@@ -220,8 +248,8 @@ describe('Channels page status refresh', () => {
     const { rerender } = render(<Channels />);
 
     await waitFor(() => {
-      expect(hostApiFetchMock).toHaveBeenCalledWith('/api/channels/accounts');
-      expect(hostApiFetchMock).toHaveBeenCalledWith('/api/agents');
+      expect(hostApiCallMock).toHaveBeenCalledWith('channels.accounts', expect.objectContaining({ mode: 'runtime' }));
+      expect(hostApiCallMock).toHaveBeenCalledWith('agents.list');
     });
 
     gatewayState.status = { state: 'running', port: 18789 };
@@ -230,8 +258,10 @@ describe('Channels page status refresh', () => {
     });
 
     await waitFor(() => {
-      const channelFetchCalls = hostApiFetchMock.mock.calls.filter(([path]) => path === '/api/channels/accounts');
-      const agentFetchCalls = hostApiFetchMock.mock.calls.filter(([path]) => path === '/api/agents');
+      const channelFetchCalls = hostApiCallMock.mock.calls.filter(([path, options]) => (
+        path === 'channels.accounts' && (options as { mode?: string } | undefined)?.mode !== 'config'
+      ));
+      const agentFetchCalls = hostApiCallMock.mock.calls.filter(([path]) => path === 'agents.list');
       expect(channelFetchCalls).toHaveLength(2);
       expect(agentFetchCalls).toHaveLength(1);
     });
@@ -245,8 +275,8 @@ describe('Channels page status refresh', () => {
       agents: Array<Record<string, unknown>>;
     }>();
 
-    hostApiFetchMock.mockImplementation((path: string) => {
-      if (path.startsWith('/api/channels/accounts')) {
+    hostApiCallMock.mockImplementation((path: string) => {
+      if (path === 'channels.accounts') {
         return Promise.resolve({
           success: true,
           channels: [
@@ -267,7 +297,7 @@ describe('Channels page status refresh', () => {
           ],
         });
       }
-      if (path === '/api/agents') {
+      if (path === 'agents.list') {
         return agentsDeferred.promise;
       }
       throw new Error(`Unexpected host API path: ${path}`);
@@ -284,8 +314,8 @@ describe('Channels page status refresh', () => {
 
   it('treats WeChat accounts as plugin-managed QR accounts', async () => {
     subscribeHostEventMock.mockImplementation(() => vi.fn());
-    hostApiFetchMock.mockImplementation(async (path: string) => {
-      if (path.startsWith('/api/channels/accounts')) {
+    hostApiCallMock.mockImplementation(async (path: string) => {
+      if (path === 'channels.accounts') {
         return {
           success: true,
           channels: [
@@ -307,14 +337,14 @@ describe('Channels page status refresh', () => {
         };
       }
 
-      if (path === '/api/agents') {
+      if (path === 'agents.list') {
         return {
           success: true,
           agents: [],
         };
       }
 
-      if (path === '/api/channels/wechat/cancel') {
+      if (path === 'channels.cancelLogin') {
         return { success: true };
       }
 
@@ -349,8 +379,8 @@ describe('Channels page status refresh', () => {
     }>();
 
     let refreshCallCount = 0;
-    hostApiFetchMock.mockImplementation((path: string) => {
-      if (path.startsWith('/api/channels/accounts')) {
+    hostApiCallMock.mockImplementation((path: string) => {
+      if (path === 'channels.accounts') {
         if (refreshCallCount === 0) {
           refreshCallCount += 1;
           return Promise.resolve({
@@ -376,7 +406,7 @@ describe('Channels page status refresh', () => {
         return channelsDeferred.promise;
       }
 
-      if (path === '/api/agents') {
+      if (path === 'agents.list') {
         if (refreshCallCount === 1) {
           return Promise.resolve({ success: true, agents: [] });
         }
@@ -445,8 +475,8 @@ describe('Channels page status refresh', () => {
     subscribeHostEventMock.mockImplementation(() => vi.fn());
     const writeTextMock = vi.mocked(navigator.clipboard.writeText);
 
-    hostApiFetchMock.mockImplementation(async (path: string, init?: { method?: string }) => {
-      if (path.startsWith('/api/channels/accounts')) {
+    hostApiCallMock.mockImplementation(async (path: string, init?: { method?: string }) => {
+      if (path === 'channels.accounts') {
         return {
           success: true,
           gatewayHealth: {
@@ -475,14 +505,14 @@ describe('Channels page status refresh', () => {
         };
       }
 
-      if (path === '/api/agents') {
+      if (path === 'agents.list') {
         return {
           success: true,
           agents: [],
         };
       }
 
-      if (path === '/api/diagnostics/gateway-snapshot') {
+      if (path === 'diagnostics.gatewaySnapshot') {
         return {
           capturedAt: 123,
           platform: 'darwin',
@@ -498,7 +528,7 @@ describe('Channels page status refresh', () => {
         };
       }
 
-      if (path === '/api/gateway/restart' && init?.method === 'POST') {
+      if (path === 'gateway.restart' && init?.method === 'POST') {
         return { success: true };
       }
 
@@ -513,7 +543,7 @@ describe('Channels page status refresh', () => {
     fireEvent.click(screen.getByTestId('channels-copy-diagnostics'));
 
     await waitFor(() => {
-      expect(hostApiFetchMock).toHaveBeenCalledWith('/api/diagnostics/gateway-snapshot');
+      expect(hostApiCallMock).toHaveBeenCalledWith('diagnostics.gatewaySnapshot');
       expect(writeTextMock).toHaveBeenCalledWith(expect.stringContaining('"platform": "darwin"'));
     });
   });
@@ -521,8 +551,8 @@ describe('Channels page status refresh', () => {
   it('suppresses stale gateway-not-running health while gateway status is running', async () => {
     subscribeHostEventMock.mockImplementation(() => vi.fn());
 
-    hostApiFetchMock.mockImplementation(async (path: string) => {
-      if (path.startsWith('/api/channels/accounts')) {
+    hostApiCallMock.mockImplementation(async (path: string) => {
+      if (path === 'channels.accounts') {
         return {
           success: true,
           gatewayHealth: {
@@ -549,7 +579,7 @@ describe('Channels page status refresh', () => {
         };
       }
 
-      if (path === '/api/agents') {
+      if (path === 'agents.list') {
         return { success: true, agents: [] };
       }
 
@@ -566,8 +596,8 @@ describe('Channels page status refresh', () => {
   it('surfaces diagnostics fetch failure payloads instead of caching them as snapshots', async () => {
     subscribeHostEventMock.mockImplementation(() => vi.fn());
 
-    hostApiFetchMock.mockImplementation(async (path: string) => {
-      if (path.startsWith('/api/channels/accounts')) {
+    hostApiCallMock.mockImplementation(async (path: string) => {
+      if (path === 'channels.accounts') {
         return {
           success: true,
           gatewayHealth: {
@@ -595,10 +625,10 @@ describe('Channels page status refresh', () => {
           ],
         };
       }
-      if (path === '/api/agents') {
+      if (path === 'agents.list') {
         return { success: true, agents: [] };
       }
-      if (path === '/api/diagnostics/gateway-snapshot') {
+      if (path === 'diagnostics.gatewaySnapshot') {
         return { success: false, error: 'snapshot failed' };
       }
 
@@ -619,8 +649,8 @@ describe('Channels page status refresh', () => {
   it('shows restart failure when gateway restart returns success=false', async () => {
     subscribeHostEventMock.mockImplementation(() => vi.fn());
 
-    hostApiFetchMock.mockImplementation(async (path: string, init?: { method?: string }) => {
-      if (path.startsWith('/api/channels/accounts')) {
+    hostApiCallMock.mockImplementation(async (path: string, init?: { method?: string }) => {
+      if (path === 'channels.accounts') {
         return {
           success: true,
           gatewayHealth: {
@@ -648,10 +678,10 @@ describe('Channels page status refresh', () => {
           ],
         };
       }
-      if (path === '/api/agents') {
+      if (path === 'agents.list') {
         return { success: true, agents: [] };
       }
-      if (path === '/api/gateway/restart' && init?.method === 'POST') {
+      if (path === 'gateway.restart' && init?.method === 'POST') {
         return { success: false, error: 'restart failed' };
       }
 
@@ -673,8 +703,8 @@ describe('Channels page status refresh', () => {
     subscribeHostEventMock.mockImplementation(() => vi.fn());
 
     let diagnosticsFetchCount = 0;
-    hostApiFetchMock.mockImplementation(async (path: string) => {
-      if (path.startsWith('/api/channels/accounts')) {
+    hostApiCallMock.mockImplementation(async (path: string) => {
+      if (path === 'channels.accounts') {
         return {
           success: true,
           gatewayHealth: {
@@ -702,10 +732,10 @@ describe('Channels page status refresh', () => {
           ],
         };
       }
-      if (path === '/api/agents') {
+      if (path === 'agents.list') {
         return { success: true, agents: [] };
       }
-      if (path === '/api/diagnostics/gateway-snapshot') {
+      if (path === 'diagnostics.gatewaySnapshot') {
         diagnosticsFetchCount += 1;
         return {
           capturedAt: diagnosticsFetchCount,

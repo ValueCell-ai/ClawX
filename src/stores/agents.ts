@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { hostApiFetch } from '@/lib/host-api';
+import { hostApi } from '@/lib/host-api';
 import type { ChannelType } from '@/types/channel';
 import type { AgentSummary, AgentsSnapshot } from '@/types/agent';
 
@@ -46,7 +46,7 @@ export const useAgentsStore = create<AgentsState>((set) => ({
   fetchAgents: async () => {
     set({ loading: true, error: null });
     try {
-      const snapshot = await hostApiFetch<AgentsSnapshot & { success?: boolean }>('/api/agents');
+      const snapshot = await hostApi.agents.list();
       set({
         ...applySnapshot(snapshot),
         loading: false,
@@ -59,9 +59,9 @@ export const useAgentsStore = create<AgentsState>((set) => ({
   createAgent: async (name: string, options?: { inheritWorkspace?: boolean }) => {
     set({ error: null });
     try {
-      const snapshot = await hostApiFetch<AgentsSnapshot & { success?: boolean }>('/api/agents', {
-        method: 'POST',
-        body: JSON.stringify({ name, inheritWorkspace: options?.inheritWorkspace }),
+      const snapshot = await hostApi.agents.create({
+        name,
+        inheritWorkspace: options?.inheritWorkspace,
       });
       set(applySnapshot(snapshot));
     } catch (error) {
@@ -73,13 +73,7 @@ export const useAgentsStore = create<AgentsState>((set) => ({
   updateAgent: async (agentId: string, name: string) => {
     set({ error: null });
     try {
-      const snapshot = await hostApiFetch<AgentsSnapshot & { success?: boolean }>(
-        `/api/agents/${encodeURIComponent(agentId)}`,
-        {
-          method: 'PUT',
-          body: JSON.stringify({ name }),
-        }
-      );
+      const snapshot = await hostApi.agents.update(agentId, { name });
       set(applySnapshot(snapshot));
     } catch (error) {
       set({ error: String(error) });
@@ -90,13 +84,7 @@ export const useAgentsStore = create<AgentsState>((set) => ({
   updateAgentModel: async (agentId: string, modelRef: string | null) => {
     set({ error: null });
     try {
-      const snapshot = await hostApiFetch<AgentsSnapshot & { success?: boolean }>(
-        `/api/agents/${encodeURIComponent(agentId)}/model`,
-        {
-          method: 'PUT',
-          body: JSON.stringify({ modelRef }),
-        }
-      );
+      const snapshot = await hostApi.agents.updateModel(agentId, modelRef);
       set(applySnapshot(snapshot));
     } catch (error) {
       set({ error: String(error) });
@@ -107,10 +95,7 @@ export const useAgentsStore = create<AgentsState>((set) => ({
   deleteAgent: async (agentId: string) => {
     set({ error: null });
     try {
-      const snapshot = await hostApiFetch<AgentsSnapshot & { success?: boolean }>(
-        `/api/agents/${encodeURIComponent(agentId)}`,
-        { method: 'DELETE' }
-      );
+      const snapshot = await hostApi.agents.delete(agentId);
       set(applySnapshot(snapshot));
     } catch (error) {
       set({ error: String(error) });
@@ -121,10 +106,7 @@ export const useAgentsStore = create<AgentsState>((set) => ({
   assignChannel: async (agentId: string, channelType: ChannelType) => {
     set({ error: null });
     try {
-      const snapshot = await hostApiFetch<AgentsSnapshot & { success?: boolean }>(
-        `/api/agents/${encodeURIComponent(agentId)}/channels/${encodeURIComponent(channelType)}`,
-        { method: 'PUT' }
-      );
+      const snapshot = await hostApi.agents.assignChannel(agentId, channelType);
       set(applySnapshot(snapshot));
     } catch (error) {
       set({ error: String(error) });
@@ -135,10 +117,7 @@ export const useAgentsStore = create<AgentsState>((set) => ({
   removeChannel: async (agentId: string, channelType: ChannelType) => {
     set({ error: null });
     try {
-      const snapshot = await hostApiFetch<AgentsSnapshot & { success?: boolean }>(
-        `/api/agents/${encodeURIComponent(agentId)}/channels/${encodeURIComponent(channelType)}`,
-        { method: 'DELETE' }
-      );
+      const snapshot = await hostApi.agents.removeChannel(agentId, channelType);
       set(applySnapshot(snapshot));
     } catch (error) {
       set({ error: String(error) });

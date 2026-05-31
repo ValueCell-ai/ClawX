@@ -1,5 +1,5 @@
-import { invokeIpc } from '@/lib/api-client';
-import { hostApiFetch } from '@/lib/host-api';
+import { hostApi } from '@/lib/host-api';
+import { fetchCronSessionHistory } from '@/lib/cron-session-history';
 import { useGatewayStore } from '@/stores/gateway';
 import {
   clearHistoryPoll,
@@ -20,7 +20,7 @@ import {
   setLastChatEventAt,
   toMs,
 } from './helpers';
-import { buildCronSessionHistoryPath, isCronSessionKey } from './cron-session-utils';
+import { isCronSessionKey } from './cron-session-utils';
 import {
   CHAT_HISTORY_STARTUP_RETRY_DELAYS_MS,
   classifyHistoryStartupRetryError,
@@ -41,10 +41,7 @@ const foregroundHistoryLoadSeen = new Set<string>();
 async function loadCronFallbackMessages(sessionKey: string, limit = 200): Promise<RawMessage[]> {
   if (!isCronSessionKey(sessionKey)) return [];
   try {
-    const response = await hostApiFetch<{ messages?: RawMessage[] }>(
-      buildCronSessionHistoryPath(sessionKey, limit),
-    );
-    return Array.isArray(response.messages) ? response.messages : [];
+    return await fetchCronSessionHistory(sessionKey, limit);
   } catch (error) {
     console.warn('Failed to load cron fallback history:', error);
     return [];
@@ -248,16 +245,7 @@ export function createHistoryActions(
           params?: unknown,
           timeoutMs?: number,
         ): Promise<T> => {
-          const result = await invokeIpc(
-            'gateway:rpc',
-            method,
-            params,
-            ...(timeoutMs != null ? [timeoutMs] as const : []),
-          ) as { success: boolean; result?: T; error?: string };
-          if (!result.success) {
-            throw new Error(result.error || `RPC ${method} failed`);
-          }
-          return result.result as T;
+          return hostApi.gateway.rpc<T>(method, params, timeoutMs);
         };
         const chatHistoryParams = buildChatHistoryRpcParams(
           currentSessionKey,
@@ -274,19 +262,14 @@ export function createHistoryActions(
           }
 
           try {
-            result = await invokeIpc(
-              'gateway:rpc',
+            const data = await hostApi.gateway.rpc<Record<string, unknown>>(
               'chat.history',
               chatHistoryParams,
-              ...(historyTimeoutOverride != null ? [historyTimeoutOverride] as const : []),
-            ) as { success: boolean; result?: Record<string, unknown>; error?: string };
-
-            if (result.success) {
-              lastError = null;
-              break;
-            }
-
-            lastError = new Error(result.error || 'Failed to load chat history');
+              historyTimeoutOverride,
+            );
+            result = { success: true, result: data };
+            lastError = null;
+            break;
           } catch (error) {
             lastError = error;
           }

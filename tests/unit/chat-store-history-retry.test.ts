@@ -26,6 +26,35 @@ vi.mock('@/stores/agents', () => ({
 
 vi.mock('@/lib/host-api', () => ({
   hostApiFetch: (...args: unknown[]) => hostApiFetchMock(...args),
+  hostApi: {
+    media: {
+      thumbnails: vi.fn(async () => ({})),
+    },
+    sessions: {
+      history: async (input: { sessionKey?: string; agentId?: string; sessionId?: string; limit?: number }) => {
+        if (input?.sessionKey) {
+          const params = new URLSearchParams();
+          params.set('sessionKey', input.sessionKey);
+          params.set('limit', String(input.limit ?? 200));
+          return hostApiFetchMock(`/api/sessions/transcript?${params.toString()}`);
+        }
+        const params = new URLSearchParams();
+        if (input?.agentId) params.set('agentId', input.agentId);
+        if (input?.sessionId) params.set('sessionId', input.sessionId);
+        if (input?.limit) params.set('limit', String(input.limit));
+        return hostApiFetchMock(`/api/sessions/transcript?${params.toString()}`);
+      },
+      summaries: async (input: unknown) => hostApiFetchMock('/api/sessions/summaries', {
+        method: 'POST',
+        body: JSON.stringify(input),
+      }),
+      delete: vi.fn(async () => ({ success: true })),
+      rename: vi.fn(async () => ({ success: true })),
+    },
+    chat: {
+      sendWithMedia: vi.fn(async () => ({ success: true, result: { runId: 'run-media' } })),
+    },
+  },
 }));
 
 describe('useChatStore startup history retry', () => {

@@ -1,4 +1,4 @@
-import { invokeIpc } from '@/lib/api-client';
+import { hostApi } from '@/lib/host-api';
 import { clearPendingOptimisticUserMessages, getCanonicalPrefixFromSessions, getMessageText, toMs } from './helpers';
 import { pickStartupSessionFallback } from './session-selection';
 import { DEFAULT_CANONICAL_PREFIX, DEFAULT_SESSION_KEY, type ChatSession, type RawMessage } from './types';
@@ -110,17 +110,15 @@ export function createSessionActions(
   return {
     loadSessions: async () => {
       try {
-        const result = await invokeIpc(
-          'gateway:rpc',
+        const data = await hostApi.gateway.rpc<Record<string, unknown>>(
           'sessions.list',
           {
             includeDerivedTitles: true,
             includeLastMessage: true,
           }
-        ) as { success: boolean; result?: Record<string, unknown>; error?: string };
+        );
 
-        if (result.success && result.result) {
-          const data = result.result;
+        if (data) {
           const rawSessions = Array.isArray(data.sessions) ? data.sessions : [];
           const sessions: ChatSession[] = rawSessions.map((s: Record<string, unknown>) => ({
             key: String(s.key || ''),
@@ -230,16 +228,11 @@ export function createSessionActions(
                 await Promise.all(
                   batch.map(async ({ session, version }) => {
                     try {
-                      const r = await invokeIpc(
-                        'gateway:rpc',
+                      const result = await hostApi.gateway.rpc<Record<string, unknown>>(
                         'chat.history',
                         { sessionKey: session.key, limit: 1000 },
-                      ) as { success: boolean; result?: Record<string, unknown>; error?: string };
-                      if (!r.success || !r.result) {
-                        finishSessionLabelHydration(session.key, version, 'error');
-                        return;
-                      }
-                      const msgs = Array.isArray(r.result.messages) ? r.result.messages as RawMessage[] : [];
+                      );
+                      const msgs = Array.isArray(result.messages) ? result.messages as RawMessage[] : [];
                       const firstUser = msgs.find((m) => m.role === 'user');
                       const lastMsg = msgs[msgs.length - 1];
                       const labelText = firstUser ? getMessageText(firstUser.content).trim() : '';
@@ -323,10 +316,7 @@ export function createSessionActions(
       // <id>.deleted.jsonl and <id>.jsonl.reset.* siblings, then removes the
       // entry from sessions.json so sessions.list stops surfacing it.
       try {
-        const result = await invokeIpc('session:delete', key) as {
-          success: boolean;
-          error?: string;
-        };
+        const result = await hostApi.sessions.delete(key);
         if (!result.success) {
           console.warn(`[deleteSession] IPC reported failure for ${key}:`, result.error);
         }
@@ -419,10 +409,7 @@ export function createSessionActions(
 
       // Persist the new label to sessions.json via IPC
       try {
-        const result = await invokeIpc('session:rename', key, normalized) as {
-          success: boolean;
-          error?: string;
-        };
+        const result = await hostApi.sessions.rename(key, normalized);
         if (!result.success) {
           throw new Error(result.error || 'Failed to rename session');
         }

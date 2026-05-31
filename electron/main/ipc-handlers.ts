@@ -54,7 +54,6 @@ import { deviceOAuthManager, OAuthProviderType } from '../utils/device-oauth';
 import { browserOAuthManager, type BrowserOAuthProviderType } from '../utils/browser-oauth';
 import { applyProxySettings } from './proxy';
 import { syncLaunchAtStartupSettingFromStore } from './launch-at-startup';
-import { proxyAwareFetch } from '../utils/proxy-fetch';
 import { getRecentTokenUsageHistory } from '../utils/token-usage';
 import { getProviderService } from '../services/providers/provider-service';
 import {
@@ -69,7 +68,22 @@ import {
 import { validateApiKeyWithProvider } from '../services/providers/provider-validation';
 import { appUpdater } from './updater';
 import { GatewayRpcBackpressure } from '../gateway/rpc-backpressure';
-import { registerHostApiProxyHandlers } from './ipc/host-api-proxy';
+import { registerHostInvokeHandler } from './ipc/host-invoke';
+import { createAppApi } from '../services/app-api';
+import { createGatewayApi } from '../services/gateway-api';
+import { createLogsApi } from '../services/logs-api';
+import { createSettingsApi } from '../services/settings-api';
+import { createChannelsApi } from '../services/channels-api';
+import { createAgentsApi } from '../services/agents-api';
+import { createChatApi } from '../services/chat-api';
+import { createCronApi } from '../services/cron-api';
+import { createDiagnosticsApi } from '../services/diagnostics-api';
+import { createFilesApi } from '../services/files-api';
+import { createMediaApi } from '../services/media-api';
+import { createProvidersApi } from '../services/providers-api';
+import { createSessionsApi } from '../services/sessions-api';
+import { createSkillsApi } from '../services/skills-api';
+import { createUsageApi } from '../services/usage-api';
 import {
   isLaunchAtStartupKey,
   isProxyKey,
@@ -91,8 +105,8 @@ export function registerIpcHandlers(
   // Unified request protocol (non-breaking: legacy channels remain available)
   registerUnifiedRequestHandlers(gatewayManager);
 
-  // Host API proxy handlers
-  registerHostApiProxyHandlers();
+  // Typed host invoke handlers (new renderer facade; legacy channels remain available)
+  registerTypedHostHandlers(gatewayManager, clawHubService, mainWindow);
 
   // Gateway handlers
   registerGatewayHandlers(gatewayManager, mainWindow);
@@ -150,6 +164,30 @@ export function registerIpcHandlers(
 
   // File preview handlers (sandboxed read/write/list for inline viewer)
   registerFilePreviewHandlers();
+}
+
+function registerTypedHostHandlers(
+  gatewayManager: GatewayManager,
+  clawHubService: ClawHubService,
+  mainWindow: BrowserWindow,
+): void {
+  registerHostInvokeHandler({
+    app: createAppApi(),
+    settings: createSettingsApi(gatewayManager),
+    gateway: createGatewayApi(gatewayManager, gatewayRpcBackpressure),
+    logs: createLogsApi(),
+    channels: createChannelsApi({ gatewayManager, mainWindow }),
+    agents: createAgentsApi({ gatewayManager }),
+    diagnostics: createDiagnosticsApi({ gatewayManager }),
+    providers: createProvidersApi({ gatewayManager, mainWindow }),
+    files: createFilesApi(),
+    media: createMediaApi(),
+    sessions: createSessionsApi(),
+    chat: createChatApi({ gatewayManager }),
+    cron: createCronApi({ gatewayManager }),
+    skills: createSkillsApi({ clawHubService, gatewayManager }),
+    usage: createUsageApi(),
+  });
 }
 
 function registerUnifiedRequestHandlers(gatewayManager: GatewayManager): void {
@@ -1169,14 +1207,6 @@ function registerGatewayHandlers(
   gatewayManager: GatewayManager,
   mainWindow: BrowserWindow
 ): void {
-  type GatewayHttpProxyRequest = {
-    path?: string;
-    method?: string;
-    headers?: Record<string, string>;
-    body?: unknown;
-    timeoutMs?: number;
-  };
-
   // Get Gateway status
   ipcMain.handle('gateway:status', () => {
     return gatewayManager.getStatus();
@@ -1230,77 +1260,6 @@ function registerGatewayHandlers(
     } catch (error) {
       logger.warn(`[gateway:rpc] ${method} failed (timeoutMs=${timeoutMs ?? 30000}): ${String(error)}`);
       return { success: false, error: String(error) };
-    }
-  });
-
-  // Gateway HTTP proxy
-  // Renderer must not call gateway HTTP directly (CORS); all HTTP traffic
-  // should go through this main-process proxy.
-  ipcMain.handle('gateway:httpProxy', async (_, request: GatewayHttpProxyRequest) => {
-    try {
-      const status = gatewayManager.getStatus();
-      const port = status.port || 18789;
-      const path = request?.path && request.path.startsWith('/') ? request.path : '/';
-      const method = (request?.method || 'GET').toUpperCase();
-      const timeoutMs =
-        typeof request?.timeoutMs === 'number' && request.timeoutMs > 0
-          ? request.timeoutMs
-          : 15000;
-
-      const token = await getSetting('gatewayToken');
-      const headers: Record<string, string> = {
-        ...(request?.headers ?? {}),
-      };
-      if (!headers.Authorization && !headers.authorization && token) {
-        headers.Authorization = `Bearer ${token}`;
-      }
-
-      let body: string | undefined;
-      if (request?.body !== undefined && request?.body !== null) {
-        body = typeof request.body === 'string' ? request.body : JSON.stringify(request.body);
-        if (!headers['Content-Type'] && !headers['content-type']) {
-          headers['Content-Type'] = 'application/json';
-        }
-      }
-
-      const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), timeoutMs);
-      const response = await (async () => {
-        try {
-          return await proxyAwareFetch(`http://127.0.0.1:${port}${path}`, {
-            method,
-            headers,
-            body,
-            signal: controller.signal,
-          });
-        } finally {
-          clearTimeout(timer);
-        }
-      })();
-
-      const contentType = (response.headers.get('content-type') || '').toLowerCase();
-      if (contentType.includes('application/json')) {
-        const json = await response.json();
-        return {
-          success: true,
-          status: response.status,
-          ok: response.ok,
-          json,
-        };
-      }
-
-      const text = await response.text();
-      return {
-        success: true,
-        status: response.status,
-        ok: response.ok,
-        text,
-      };
-    } catch (error) {
-      return {
-        success: false,
-        error: String(error),
-      };
     }
   });
 
@@ -2633,9 +2592,9 @@ async function resolveOutgoingMediaUrl(
  * surfacing it. Token-usage history reported by the Dashboard reads the same
  * transcripts, so deleted conversations stop contributing to the chart.
  *
- * Path resolution and the sibling sweep are shared with the HTTP mirror at
- * `electron/api/routes/sessions.ts` via `electron/utils/session-files.ts`,
- * so both surfaces unlink the same set of files for a given session id.
+ * Path resolution and the sibling sweep are shared with the typed session API
+ * via `electron/utils/session-files.ts`, so every surface unlinks the same set
+ * of files for a given session id.
  */
 const SAFE_AGENT_ID = /^[A-Za-z0-9][A-Za-z0-9_-]*$/;
 

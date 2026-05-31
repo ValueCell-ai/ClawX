@@ -5,8 +5,13 @@ import { Badge } from '@/components/ui/badge';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { useGatewayStore } from '@/stores/gateway';
 import { LoadingSpinner } from '@/components/common/LoadingSpinner';
-import { hostApiFetch } from '@/lib/host-api';
-import { subscribeHostEvent } from '@/lib/host-events';
+import {
+  hostApi,
+  type ChannelAccountsResult,
+  type ChannelGroupItem,
+  type GatewayHealthSummary,
+} from '@/lib/host-api';
+import { hostEvents } from '@/lib/host-events';
 import { ChannelConfigModal } from '@/components/channels/ChannelConfigModal';
 import { cn } from '@/lib/utils';
 import {
@@ -28,37 +33,6 @@ import dingtalkIcon from '@/assets/channels/dingtalk.svg';
 import feishuIcon from '@/assets/channels/feishu.svg';
 import wecomIcon from '@/assets/channels/wecom.svg';
 import qqIcon from '@/assets/channels/qq.svg';
-
-interface ChannelAccountItem {
-  accountId: string;
-  name: string;
-  configured: boolean;
-  status: 'connected' | 'connecting' | 'degraded' | 'disconnected' | 'error';
-  statusReason?: string;
-  lastError?: string;
-  isDefault: boolean;
-  agentId?: string;
-}
-
-interface ChannelGroupItem {
-  channelType: string;
-  defaultAccountId: string;
-  status: 'connected' | 'connecting' | 'degraded' | 'disconnected' | 'error';
-  statusReason?: string;
-  accounts: ChannelAccountItem[];
-}
-
-interface GatewayHealthSummary {
-  state: 'healthy' | 'degraded' | 'unresponsive';
-  reasons: string[];
-  consecutiveHeartbeatMisses: number;
-  lastAliveAt?: number;
-  lastRpcSuccessAt?: number;
-  lastRpcFailureAt?: number;
-  lastRpcFailureMethod?: string;
-  lastChannelsStatusOkAt?: number;
-  lastChannelsStatusFailureAt?: number;
-}
 
 interface GatewayDiagnosticSnapshot {
   capturedAt: number;
@@ -190,7 +164,7 @@ export function Channels() {
 
     agentsFetchInFlightRef.current = (async () => {
       try {
-        const agentsRes = await hostApiFetch<{ success: boolean; agents?: AgentItem[]; error?: string }>('/api/agents');
+        const agentsRes = await hostApi.agents.list();
         if (!agentsRes.success) {
           throw new Error(agentsRes.error || 'Failed to load agents');
         }
@@ -241,22 +215,12 @@ export function Channels() {
     }
     void ensureAgentsLoaded();
     try {
-      const channelsPath = configOnly
-        ? '/api/channels/accounts?mode=config'
-        : options?.probe
-          ? '/api/channels/accounts?probe=1'
-          : '/api/channels/accounts';
-      const channelsRes = await hostApiFetch<{ success: boolean; channels?: ChannelGroupItem[]; error?: string }>(
-        channelsPath
-      );
+      const channelsRes = await hostApi.channels.accounts({
+        mode: configOnly ? 'config' : 'runtime',
+        probe,
+      });
 
-      type ChannelsResponse = {
-        success: boolean;
-        channels?: ChannelGroupItem[];
-        gatewayHealth?: GatewayHealthSummary;
-        error?: string;
-      };
-      const channelsPayload = channelsRes as ChannelsResponse;
+      const channelsPayload: ChannelAccountsResult = channelsRes;
 
       if (!channelsPayload.success) {
         throw new Error(channelsPayload.error || 'Failed to load channels');
@@ -330,7 +294,7 @@ export function Channels() {
     let throttleTimer: ReturnType<typeof setTimeout> | null = null;
     let pending = false;
 
-    const unsubscribe = subscribeHostEvent('gateway:channel-status', () => {
+    const unsubscribe = hostEvents.onGatewayChannelStatus(() => {
       if (throttleTimer) {
         pending = true;
         return;
@@ -388,7 +352,7 @@ export function Channels() {
   };
 
   const fetchDiagnosticsSnapshot = useCallback(async (): Promise<GatewayDiagnosticSnapshot> => {
-    const response = await hostApiFetch<unknown>('/api/diagnostics/gateway-snapshot');
+    const response = await hostApi.diagnostics.gatewaySnapshot();
     if (response && typeof response === 'object') {
       const payload = response as Record<string, unknown>;
       if (payload.success === false || typeof payload.error === 'string') {
@@ -405,11 +369,9 @@ export function Channels() {
 
   const handleRestartGateway = async () => {
     try {
-      const result = await hostApiFetch<{ success?: boolean; error?: string }>('/api/gateway/restart', {
-        method: 'POST',
-      });
+      const result = await hostApi.gateway.restart();
       if (result?.success !== true) {
-        throw new Error(result?.error || 'Failed to restart gateway');
+        throw new Error('Failed to restart gateway');
       }
       setDiagnosticsSnapshot(null);
       setShowDiagnostics(false);
@@ -472,15 +434,9 @@ export function Channels() {
   const handleBindAgent = async (channelType: string, accountId: string, agentId: string) => {
     try {
       if (!agentId) {
-        await hostApiFetch<{ success: boolean; error?: string }>('/api/channels/binding', {
-          method: 'DELETE',
-          body: JSON.stringify({ channelType, accountId }),
-        });
+        await hostApi.channels.deleteBinding({ channelType, accountId });
       } else {
-        await hostApiFetch<{ success: boolean; error?: string }>('/api/channels/binding', {
-          method: 'PUT',
-          body: JSON.stringify({ channelType, accountId, agentId }),
-        });
+        await hostApi.channels.saveBinding({ channelType, accountId, agentId });
       }
       await fetchPageData();
       toast.success(t('toast.bindingUpdated'));
@@ -492,12 +448,7 @@ export function Channels() {
   const handleDelete = async () => {
     if (!deleteTarget) return;
     try {
-      const suffix = deleteTarget.accountId
-        ? `?accountId=${encodeURIComponent(deleteTarget.accountId)}`
-        : '';
-      await hostApiFetch(`/api/channels/config/${encodeURIComponent(deleteTarget.channelType)}${suffix}`, {
-        method: 'DELETE',
-      });
+      await hostApi.channels.deleteConfig(deleteTarget.channelType, deleteTarget.accountId);
       setChannelGroups((prev) => removeDeletedTarget(prev, deleteTarget));
       toast.success(deleteTarget.accountId ? t('toast.accountDeleted') : t('toast.channelDeleted'));
       // Channel reload is debounced in main process; pull again shortly to
@@ -772,9 +723,9 @@ export function Channels() {
                                   onClick={() => {
                                     void (async () => {
                                       try {
-                                        const accountParam = `?accountId=${encodeURIComponent(account.accountId)}`;
-                                        const result = await hostApiFetch<{ success: boolean; values?: Record<string, string> }>(
-                                          `/api/channels/config/${encodeURIComponent(group.channelType)}${accountParam}`
+                                        const result = await hostApi.channels.formValues(
+                                          group.channelType,
+                                          account.accountId,
                                         );
                                         setInitialConfigValuesForModal(result.success ? (result.values || {}) : undefined);
                                       } catch {

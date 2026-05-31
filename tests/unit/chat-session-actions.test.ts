@@ -6,6 +6,29 @@ vi.mock('@/lib/api-client', () => ({
   invokeIpc: (...args: unknown[]) => invokeIpcMock(...args),
 }));
 
+vi.mock('@/lib/host-api', () => ({
+  hostApi: {
+    gateway: {
+      rpc: async (method: string, params?: unknown, timeoutMs?: number) => {
+        const result = await invokeIpcMock(
+          'gateway:rpc',
+          method,
+          params,
+          ...(timeoutMs != null ? [timeoutMs] as const : []),
+        ) as { success?: boolean; result?: unknown; error?: string };
+        if (result?.success === false) {
+          throw new Error(result.error || `RPC ${method} failed`);
+        }
+        return result?.result;
+      },
+    },
+    sessions: {
+      delete: (id: string) => invokeIpcMock('session:delete', id),
+      rename: (id: string, title: string) => invokeIpcMock('session:rename', id, title),
+    },
+  },
+}));
+
 type ChatLikeState = {
   currentSessionKey: string;
   sessions: Array<{ key: string; displayName?: string; updatedAt?: number; status?: string; hasActiveRun?: boolean }>;
@@ -250,4 +273,3 @@ describe('chat session actions', () => {
     expect(next.lastUserMessageAt).toBe(2000);
   });
 });
-

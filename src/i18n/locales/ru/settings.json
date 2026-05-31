@@ -196,25 +196,6 @@
   "advanced": {
     "title": "Дополнительные",
     "description": "Опции для продвинутых пользователей",
-    "transport": {
-      "label": "Предпочтение транспорта шлюза",
-      "desc": "Выберите, как рендерер запрашивает RPC шлюза: WebSocket, HTTP-прокси или IPC-резерв.",
-      "saved": "Предпочтение транспорта шлюза сохранено",
-      "options": {
-        "wsFirst": "WS сначала",
-        "httpFirst": "HTTP сначала",
-        "wsOnly": "Только WS",
-        "httpOnly": "Только HTTP",
-        "ipcOnly": "Только IPC"
-      },
-      "descriptions": {
-        "wsFirst": "WS -> HTTP -> IPC",
-        "httpFirst": "HTTP -> WS -> IPC",
-        "wsOnly": "WS -> IPC",
-        "httpOnly": "HTTP -> IPC",
-        "ipcOnly": "Только IPC"
-      }
-    },
     "devMode": "Режим разработчика",
     "devModeDesc": "Показывать инструменты и ярлыки разработчика",
     "telemetry": "Анонимные данные об использовании",
@@ -259,10 +240,6 @@
     "doctorStdout": "Стандартный вывод",
     "doctorStderr": "Стандартная ошибка",
     "doctorOutputEmpty": "(пусто)",
-    "wsDiagnostic": "Диагностический режим WS",
-    "wsDiagnosticDesc": "Временно включить цепочку WS/HTTP-резервов для отладки RPC шлюза.",
-    "wsDiagnosticEnabled": "Диагностический режим WS включён",
-    "wsDiagnosticDisabled": "Диагностический режим WS отключён",
     "telemetryViewer": "Просмотр телеметрии",
     "telemetryViewerDesc": "Локальная телеметрия UX/производительности, последние 200 записей.",
     "telemetryAggregated": "Топ событий",

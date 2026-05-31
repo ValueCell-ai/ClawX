@@ -27,7 +27,7 @@ import type { TFunction } from 'i18next';
 import { SUPPORTED_LANGUAGES } from '@/i18n';
 import { toast } from 'sonner';
 import { invokeIpc } from '@/lib/api-client';
-import { hostApiFetch } from '@/lib/host-api';
+import { hostApi } from '@/lib/host-api';
 
 interface SetupStep {
   id: string;
@@ -496,7 +496,7 @@ function RuntimeContent({ onStatusChange }: RuntimeContentProps) {
 
   const handleShowLogs = async () => {
     try {
-      const logs = await hostApiFetch<{ content: string }>('/api/logs?tailLines=100');
+      const logs = await hostApi.logs.recent(100);
       setLogContent(logs.content);
       setShowLogs(true);
     } catch {
@@ -507,7 +507,7 @@ function RuntimeContent({ onStatusChange }: RuntimeContentProps) {
 
   const handleOpenLogDir = async () => {
     try {
-      const { dir: logDir } = await hostApiFetch<{ dir: string | null }>('/api/logs/dir');
+      const { dir: logDir } = await hostApi.logs.dir();
       if (logDir) {
         await invokeIpc('shell:showItemInFolder', logDir);
       }

@@ -4,6 +4,11 @@ const hostApiFetchMock = vi.fn();
 
 vi.mock('@/lib/host-api', () => ({
   hostApiFetch: (...args: unknown[]) => hostApiFetchMock(...args),
+  hostApi: {
+    cron: {
+      list: () => hostApiFetchMock('/api/cron/jobs'),
+    },
+  },
 }));
 
 vi.mock('@/stores/chat', () => ({

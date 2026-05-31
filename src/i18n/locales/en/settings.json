@@ -196,25 +196,6 @@
   "advanced": {
     "title": "Advanced",
     "description": "Power-user options",
-    "transport": {
-      "label": "Gateway Transport Preference",
-      "desc": "Choose how renderer requests gateway RPC: WebSocket, HTTP proxy, or IPC fallback.",
-      "saved": "Gateway transport preference saved",
-      "options": {
-        "wsFirst": "WS First",
-        "httpFirst": "HTTP First",
-        "wsOnly": "WS Only",
-        "httpOnly": "HTTP Only",
-        "ipcOnly": "IPC Only"
-      },
-      "descriptions": {
-        "wsFirst": "WS -> HTTP -> IPC",
-        "httpFirst": "HTTP -> WS -> IPC",
-        "wsOnly": "WS -> IPC",
-        "httpOnly": "HTTP -> IPC",
-        "ipcOnly": "IPC only"
-      }
-    },
     "devMode": "Developer Mode",
     "devModeDesc": "Show developer tools and shortcuts",
     "telemetry": "Anonymous Usage Data",
@@ -259,10 +240,6 @@
     "doctorStdout": "Stdout",
     "doctorStderr": "Stderr",
     "doctorOutputEmpty": "(empty)",
-    "wsDiagnostic": "WS Diagnostic Mode",
-    "wsDiagnosticDesc": "Temporarily enable WS/HTTP fallback chain for gateway RPC debugging.",
-    "wsDiagnosticEnabled": "WS diagnostic mode enabled",
-    "wsDiagnosticDisabled": "WS diagnostic mode disabled",
     "telemetryViewer": "Telemetry Viewer",
     "telemetryViewerDesc": "Local-only UX/performance telemetry, latest 200 entries.",
     "telemetryAggregated": "Top Events",

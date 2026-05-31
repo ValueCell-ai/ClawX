@@ -73,11 +73,11 @@ test.describe('ClawX provider lifecycle', () => {
     await expect(page.getByTestId('add-provider-dialog')).toBeVisible();
 
     await page.getByTestId('add-provider-type-openai').click();
-    await expect(page.getByRole('button', { name: 'OAuth Login' })).toBeVisible();
-    await expect(page.getByRole('button', { name: 'API Key' })).toBeVisible();
+    await expect(page.getByTestId('add-provider-auth-oauth-tab')).toBeVisible();
+    await expect(page.getByTestId('add-provider-auth-apikey-tab')).toBeVisible();
 
-    await page.getByRole('button', { name: 'OAuth Login' }).click();
-    await expect(page.getByRole('button', { name: 'Login with Browser' })).toBeVisible();
+    await page.getByTestId('add-provider-auth-oauth-tab').click();
+    await expect(page.getByTestId('add-provider-oauth-login-button')).toBeVisible();
     await expect(page.getByTestId('add-provider-api-key-input')).toHaveCount(0);
   });
 
@@ -91,77 +91,70 @@ test.describe('ClawX provider lifecycle', () => {
       let keyInfo: Array<{ accountId: string; hasKey: boolean; keyMasked: string | null }> = [];
       let statuses: Array<Record<string, unknown>> = [];
       let defaultAccountId: string | null = null;
+      const originalHostInvoke = (ipcMain as unknown as {
+        _invokeHandlers?: Map<string, (event: unknown, request: unknown) => Promise<unknown>>;
+      })._invokeHandlers?.get('host:invoke');
 
-      const respond = (json: unknown, status = 200) => ({
+      const respond = (id: unknown, data: unknown) => ({
+        id: typeof id === 'string' ? id : undefined,
         ok: true,
-        data: {
-          status,
-          ok: status >= 200 && status < 300,
-          json,
-        },
+        data,
       });
 
-      ipcMain.removeHandler('hostapi:fetch');
-      ipcMain.handle('hostapi:fetch', async (_event: unknown, request: { path?: string; method?: string; body?: string | null }) => {
-        const path = request?.path ?? '';
-        const method = request?.method ?? 'GET';
-        const body = request?.body ? JSON.parse(request.body) : null;
-
-        // New account-based endpoints (preferred path).
-        if (path === '/api/provider-accounts' && method === 'GET') return respond(accounts);
-        if (path === '/api/provider-accounts/key-info' && method === 'GET') return respond(keyInfo);
-        if (path === '/api/provider-vendors' && method === 'GET') return respond([]);
-        if (path === '/api/provider-accounts/default' && method === 'GET') return respond({ accountId: defaultAccountId });
-
-        if (path === '/api/provider-accounts/validate' && method === 'POST') {
-          if (body?.apiKey !== 'sk-lm-test') {
-            return respond({ valid: false, error: `unexpected key: ${String(body?.apiKey)}` }, 400);
-          }
-          return respond({ valid: true });
+      ipcMain.removeHandler('host:invoke');
+      ipcMain.handle('host:invoke', async (event: unknown, request: {
+        id?: string;
+        module?: string;
+        action?: string;
+        payload?: Record<string, unknown>;
+      }) => {
+        if (request?.module !== 'providers') {
+          return originalHostInvoke?.(event, request) ?? respond(request?.id, undefined);
         }
 
-        if (path === '/api/provider-accounts' && method === 'POST') {
-          accounts = [body.account];
+        const body = request.payload ?? {};
+        if (request.action === 'accounts') return respond(request.id, accounts);
+        if (request.action === 'accountKeyInfo') return respond(request.id, keyInfo);
+        if (request.action === 'vendors') return respond(request.id, []);
+        if (request.action === 'getDefaultAccount') return respond(request.id, { accountId: defaultAccountId });
+        if (request.action === 'list') return respond(request.id, statuses);
+
+        if (request.action === 'validateKey') {
+          if (body.apiKey !== 'sk-lm-test') {
+            return respond(request.id, { valid: false, error: `unexpected key: ${String(body.apiKey)}` });
+          }
+          return respond(request.id, { valid: true });
+        }
+
+        if (request.action === 'createAccount') {
+          const account = body.account as Record<string, unknown>;
+          accounts = [account];
           keyInfo = [{
-            accountId: body.account.id,
+            accountId: String(account.id),
             hasKey: Boolean(body.apiKey),
             keyMasked: body.apiKey ? 'sk-***' : null,
           }];
-          // Keep statuses populated for any consumer still on the legacy path.
           statuses = [{
-            id: body.account.id,
-            name: body.account.label,
-            type: body.account.vendorId,
-            baseUrl: body.account.baseUrl,
-            model: body.account.model,
-            enabled: body.account.enabled,
-            createdAt: body.account.createdAt,
-            updatedAt: body.account.updatedAt,
+            id: account.id,
+            name: account.label,
+            type: account.vendorId,
+            baseUrl: account.baseUrl,
+            model: account.model,
+            enabled: account.enabled,
+            createdAt: account.createdAt,
+            updatedAt: account.updatedAt,
             hasKey: Boolean(body.apiKey),
             keyMasked: body.apiKey ? 'sk-***' : null,
           }];
-          return respond({ success: true });
+          return respond(request.id, { success: true, account });
         }
 
-        if (path === '/api/provider-accounts/default' && method === 'PUT') {
-          defaultAccountId = body?.accountId ?? null;
-          return respond({ success: true });
+        if (request.action === 'setDefaultAccount') {
+          defaultAccountId = typeof body.accountId === 'string' ? body.accountId : null;
+          return respond(request.id, { success: true });
         }
 
-        // ── Legacy compatibility shims ─────────────────────────────
-        // Older renderer builds still reach for these. Keeping them
-        // wired up here exercises the backward-compat path in the
-        // route layer (it returns the same data, just without the
-        // newer key-info payload structure).
-        if (path === '/api/providers' && method === 'GET') return respond(statuses);
-        if (path === '/api/providers/validate' && method === 'POST') {
-          if (body?.apiKey !== 'sk-lm-test') {
-            return respond({ valid: false, error: `unexpected key: ${String(body?.apiKey)}` }, 400);
-          }
-          return respond({ valid: true });
-        }
-
-        return respond({});
+        return respond(request.id, {});
       });
     });
 
@@ -187,7 +180,7 @@ test.describe('ClawX provider lifecycle', () => {
     await electronApp.evaluate(async ({ app: _app }) => {
       const { ipcMain } = process.mainModule!.require('electron') as typeof import('electron');
 
-      const provider = {
+      let provider = {
         id: 'moonshot-edit',
         vendorId: 'moonshot',
         label: 'Moonshot Edit',
@@ -201,43 +194,53 @@ test.describe('ClawX provider lifecycle', () => {
       };
       let storedKey = 'sk-existing';
       let keyInfo = [{ accountId: provider.id, hasKey: true, keyMasked: 'sk-***' }];
+      const originalHostInvoke = (ipcMain as unknown as {
+        _invokeHandlers?: Map<string, (event: unknown, request: unknown) => Promise<unknown>>;
+      })._invokeHandlers?.get('host:invoke');
 
-      const respond = (json: unknown, status = 200) => ({
+      const respond = (id: unknown, data: unknown) => ({
+        id: typeof id === 'string' ? id : undefined,
         ok: true,
-        data: {
-          status,
-          ok: status >= 200 && status < 300,
-          json,
-        },
+        data,
       });
 
-      ipcMain.removeHandler('hostapi:fetch');
-      ipcMain.handle('hostapi:fetch', async (_event: unknown, request: { path?: string; method?: string; body?: string | null }) => {
-        const path = request?.path ?? '';
-        const method = request?.method ?? 'GET';
-        const body = request?.body ? JSON.parse(request.body) : null;
+      ipcMain.removeHandler('host:invoke');
+      ipcMain.handle('host:invoke', async (event: unknown, request: {
+        id?: string;
+        module?: string;
+        action?: string;
+        payload?: Record<string, unknown>;
+      }) => {
+        if (request?.module !== 'providers') {
+          return originalHostInvoke?.(event, request) ?? respond(request?.id, undefined);
+        }
 
-        if (path === '/api/provider-accounts' && method === 'GET') return respond([provider]);
-        if (path === '/api/provider-accounts/key-info' && method === 'GET') return respond(keyInfo);
-        if (path === '/api/provider-vendors' && method === 'GET') return respond([]);
-        if (path === '/api/provider-accounts/default' && method === 'GET') return respond({ accountId: provider.id });
+        const body = request.payload ?? {};
+        if (request.action === 'accounts') return respond(request.id, [provider]);
+        if (request.action === 'accountKeyInfo') return respond(request.id, keyInfo);
+        if (request.action === 'vendors') return respond(request.id, []);
+        if (request.action === 'getDefaultAccount') return respond(request.id, { accountId: provider.id });
+        if (request.action === 'list') return respond(request.id, [provider]);
 
-        if (path === '/api/provider-accounts/validate' && method === 'POST') {
-          if (body?.apiKey === 'sk-good') {
-            return respond({ valid: true });
+        if (request.action === 'validateKey') {
+          if (body.apiKey === 'sk-good') {
+            return respond(request.id, { valid: true });
           }
-          return respond({ valid: false, error: 'Invalid API key' }, 400);
+          return respond(request.id, { valid: false, error: 'Invalid API key' });
         }
 
-        if (path.startsWith('/api/provider-accounts/') && method === 'PUT') {
-          if (body?.apiKey) storedKey = body.apiKey;
+        if (request.action === 'updateAccount') {
+          provider = {
+            ...provider,
+            ...(body.updates as Record<string, unknown> | undefined),
+            updatedAt: new Date().toISOString(),
+          };
+          if (body.apiKey) storedKey = String(body.apiKey);
           keyInfo = [{ accountId: provider.id, hasKey: Boolean(storedKey), keyMasked: 'sk-***' }];
-          return respond({ success: true });
+          return respond(request.id, { success: true, account: provider });
         }
 
-        if (path === '/api/providers' && method === 'GET') return respond([provider]);
-
-        return respond({});
+        return respond(request.id, {});
       });
     });
 

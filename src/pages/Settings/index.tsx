@@ -23,12 +23,7 @@ import { useSettingsStore } from '@/stores/settings';
 import { useGatewayStore } from '@/stores/gateway';
 import { useUpdateStore } from '@/stores/update';
 import { UpdateSettings } from '@/components/settings/UpdateSettings';
-import {
-  getGatewayWsDiagnosticEnabled,
-  invokeIpc,
-  setGatewayWsDiagnosticEnabled,
-  toUserMessage,
-} from '@/lib/api-client';
+import { invokeIpc, toUserMessage } from '@/lib/api-client';
 import {
   clearUiTelemetry,
   getUiTelemetrySnapshot,
@@ -38,7 +33,7 @@ import {
 } from '@/lib/telemetry';
 import { useTranslation } from 'react-i18next';
 import { SUPPORTED_LANGUAGES } from '@/i18n';
-import { hostApiFetch } from '@/lib/host-api';
+import { hostApi, type OpenClawDoctorResult } from '@/lib/host-api';
 import { cn } from '@/lib/utils';
 type ControlUiInfo = {
   url: string;
@@ -89,7 +84,6 @@ export function Settings() {
   const [proxyBypassRulesDraft, setProxyBypassRulesDraft] = useState('');
   const [proxyEnabledDraft, setProxyEnabledDraft] = useState(false);
   const [savingProxy, setSavingProxy] = useState(false);
-  const [wsDiagnosticEnabled, setWsDiagnosticEnabled] = useState(false);
   const [showTelemetryViewer, setShowTelemetryViewer] = useState(false);
   const [telemetryEntries, setTelemetryEntries] = useState<UiTelemetryEntry[]>([]);
 
@@ -98,22 +92,11 @@ export function Settings() {
   const [showLogs, setShowLogs] = useState(false);
   const [logContent, setLogContent] = useState('');
   const [doctorRunningMode, setDoctorRunningMode] = useState<'diagnose' | 'fix' | null>(null);
-  const [doctorResult, setDoctorResult] = useState<{
-    mode: 'diagnose' | 'fix';
-    success: boolean;
-    exitCode: number | null;
-    stdout: string;
-    stderr: string;
-    command: string;
-    cwd: string;
-    durationMs: number;
-    timedOut?: boolean;
-    error?: string;
-  } | null>(null);
+  const [doctorResult, setDoctorResult] = useState<OpenClawDoctorResult | null>(null);
 
   const handleShowLogs = async () => {
     try {
-      const logs = await hostApiFetch<{ content: string }>('/api/logs?tailLines=100');
+      const logs = await hostApi.logs.recent(100);
       setLogContent(logs.content);
       setShowLogs(true);
     } catch {
@@ -124,7 +107,7 @@ export function Settings() {
 
   const handleOpenLogDir = async () => {
     try {
-      const { dir: logDir } = await hostApiFetch<{ dir: string | null }>('/api/logs/dir');
+      const { dir: logDir } = await hostApi.logs.dir();
       if (logDir) {
         await invokeIpc('shell:showItemInFolder', logDir);
       }
@@ -136,21 +119,7 @@ export function Settings() {
   const handleRunOpenClawDoctor = async (mode: 'diagnose' | 'fix') => {
     setDoctorRunningMode(mode);
     try {
-      const result = await hostApiFetch<{
-        mode: 'diagnose' | 'fix';
-        success: boolean;
-        exitCode: number | null;
-        stdout: string;
-        stderr: string;
-        command: string;
-        cwd: string;
-        durationMs: number;
-        timedOut?: boolean;
-        error?: string;
-      }>('/api/app/openclaw-doctor', {
-        method: 'POST',
-        body: JSON.stringify({ mode }),
-      });
+      const result = await hostApi.app.openClawDoctor(mode);
       setDoctorResult(result);
       if (result.success) {
         toast.success(mode === 'fix' ? t('developer.doctorFixSucceeded') : t('developer.doctorSucceeded'));
@@ -203,12 +172,7 @@ export function Settings() {
 
   const refreshControlUiInfo = async () => {
     try {
-      const result = await hostApiFetch<{
-        success: boolean;
-        url?: string;
-        token?: string;
-        port?: number;
-      }>('/api/gateway/control-ui');
+      const result = await hostApi.gateway.controlUi();
       if (result.success && result.url && result.token && typeof result.port === 'number') {
         setControlUiInfo({ url: result.url, token: result.token, port: result.port });
       }
@@ -275,10 +239,6 @@ export function Settings() {
       },
     );
     return () => { unsubscribe?.(); };
-  }, []);
-
-  useEffect(() => {
-    setWsDiagnosticEnabled(getGatewayWsDiagnosticEnabled());
   }, []);
 
   useEffect(() => {
@@ -456,16 +416,6 @@ export function Settings() {
     clearUiTelemetry();
     setTelemetryEntries([]);
     toast.success(t('developer.telemetryCleared'));
-  };
-
-  const handleWsDiagnosticToggle = (enabled: boolean) => {
-    setGatewayWsDiagnosticEnabled(enabled);
-    setWsDiagnosticEnabled(enabled);
-    toast.success(
-      enabled
-        ? t('developer.wsDiagnosticEnabled')
-        : t('developer.wsDiagnosticDisabled'),
-    );
   };
 
   return (
@@ -925,19 +875,6 @@ export function Settings() {
                   </div>
 
                   <div className="space-y-4">
-                    <div className="flex items-center justify-between rounded-2xl border border-black/10 dark:border-white/10 p-5 bg-transparent">
-                      <div>
-                        <Label className="text-sm font-medium text-foreground">{t('developer.wsDiagnostic')}</Label>
-                        <p className="text-meta text-muted-foreground mt-1">
-                          {t('developer.wsDiagnosticDesc')}
-                        </p>
-                      </div>
-                      <Switch
-                        checked={wsDiagnosticEnabled}
-                        onCheckedChange={handleWsDiagnosticToggle}
-                      />
-                    </div>
-
                     <div className="flex items-center justify-between">
                       <div>
                         <Label className="text-sm font-medium text-foreground">{t('developer.telemetryViewer')}</Label>

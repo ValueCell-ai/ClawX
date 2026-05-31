@@ -56,6 +56,11 @@ import {
   type GatewayCapabilityName,
   type GatewayCapabilitySnapshot,
 } from './capability-monitor';
+import {
+  isGatewayWsTraceEnabled,
+  redactGatewayFrameForTrace,
+  summarizeGatewayFrameForTrace,
+} from './ws-trace';
 
 export interface GatewayStatus {
   state: GatewayLifecycleState;
@@ -886,6 +891,12 @@ export class GatewayManager extends EventEmitter {
       };
 
       try {
+        if (isGatewayWsTraceEnabled()) {
+          logger.debug('[gateway-ws-trace] send', {
+            summary: summarizeGatewayFrameForTrace(request),
+            frame: redactGatewayFrameForTrace(request),
+          });
+        }
         this.ws.send(JSON.stringify(request));
       } catch (error) {
         rejectPendingGatewayRequest(this.pendingRequests, id, new Error(`Failed to send RPC request: ${error}`));
@@ -1145,6 +1156,12 @@ export class GatewayManager extends EventEmitter {
   private handleMessage(message: unknown): void {
     this.connectionMonitor.markAlive('message');
     this.recordGatewayAlive();
+    if (isGatewayWsTraceEnabled()) {
+      logger.debug('[gateway-ws-trace] recv', {
+        summary: summarizeGatewayFrameForTrace(message),
+        frame: redactGatewayFrameForTrace(message),
+      });
+    }
 
     if (typeof message !== 'object' || message === null) {
       logger.debug('Received non-object Gateway message');

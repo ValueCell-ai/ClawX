@@ -12,6 +12,16 @@ const { hostApiFetchMock } = vi.hoisted(() => ({
 
 vi.mock('@/lib/host-api', () => ({
   hostApiFetch: (...args: unknown[]) => hostApiFetchMock(...args),
+  hostApi: {
+    sessions: {
+      history: (input: { sessionKey?: string; limit?: number }) => {
+        const params = new URLSearchParams();
+        if (input.sessionKey) params.set('sessionKey', input.sessionKey);
+        params.set('limit', String(input.limit ?? 200));
+        return hostApiFetchMock(`/api/sessions/transcript?${params.toString()}`);
+      },
+    },
+  },
 }));
 
 const SESSION_KEY = 'agent:main:session-long-reply';
