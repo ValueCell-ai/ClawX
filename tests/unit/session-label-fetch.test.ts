@@ -6,6 +6,25 @@ vi.mock('@/lib/api-client', () => ({
   invokeIpc: (...args: unknown[]) => invokeIpcMock(...args),
 }));
 
+vi.mock('@/lib/host-api', () => ({
+  hostApi: {
+    gateway: {
+      rpc: async (method: string, params?: unknown, timeoutMs?: number) => {
+        const result = await invokeIpcMock(
+          'gateway:rpc',
+          method,
+          params,
+          ...(timeoutMs != null ? [timeoutMs] as const : []),
+        ) as { success?: boolean; result?: unknown; error?: string };
+        if (result?.success === false) {
+          throw new Error(result.error || `RPC ${method} failed`);
+        }
+        return result?.result;
+      },
+    },
+  },
+}));
+
 vi.mock('@/stores/chat/helpers', () => ({
   getCanonicalPrefixFromSessions: () => 'agent:main',
   getMessageText: (content: unknown) => typeof content === 'string' ? content : '',

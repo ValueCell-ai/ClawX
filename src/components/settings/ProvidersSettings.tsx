@@ -22,6 +22,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog';
 import { Separator } from '@/components/ui/separator';
 import {
   useProviderStore,
@@ -308,16 +309,15 @@ export function ProvidersSettings() {
       )}
 
       {/* Add Provider Dialog */}
-      {showAddDialog && (
-        <AddProviderDialog
-          existingVendorIds={existingVendorIds}
-          vendors={vendors}
-          onClose={() => setShowAddDialog(false)}
-          onAdd={handleAddProvider}
-          onValidateKey={(type, key, options) => validateAccountApiKey(type, key, options)}
-          devModeUnlocked={devModeUnlocked}
-        />
-      )}
+      <AddProviderDialog
+        open={showAddDialog}
+        existingVendorIds={existingVendorIds}
+        vendors={vendors}
+        onClose={() => setShowAddDialog(false)}
+        onAdd={handleAddProvider}
+        onValidateKey={(type, key, options) => validateAccountApiKey(type, key, options)}
+        devModeUnlocked={devModeUnlocked}
+      />
     </div>
   );
 }
@@ -912,6 +912,7 @@ function ProviderCard({
 }
 
 interface AddProviderDialogProps {
+  open: boolean;
   existingVendorIds: Set<string>;
   vendors: ProviderVendorInfo[];
   onClose: () => void;
@@ -936,6 +937,7 @@ interface AddProviderDialogProps {
 }
 
 function AddProviderDialog({
+  open,
   existingVendorIds,
   vendors,
   onClose,
@@ -974,6 +976,32 @@ function AddProviderDialog({
   // For providers that support both OAuth and API key, let the user choose.
   // Default to the vendor's declared auth mode instead of hard-coding OAuth.
   const [authMode, setAuthMode] = useState<'oauth' | 'apikey'>('apikey');
+  const [prevOpen, setPrevOpen] = useState(open);
+  const pendingOAuthRef = React.useRef<{ accountId: string; label: string } | null>(null);
+
+  if (prevOpen !== open) {
+    setPrevOpen(open);
+    if (open) {
+      setSelectedType(null);
+      setName('');
+      setApiKey('');
+      setBaseUrl('');
+      setModelId('');
+      setApiProtocol('openai-completions');
+      setShowAdvancedConfig(false);
+      setUserAgent('');
+      setArkMode('apikey');
+      setShowKey(false);
+      setSaving(false);
+      setValidationError(null);
+      setOauthFlowing(false);
+      setOauthData(null);
+      setManualCodeInput('');
+      setOauthError(null);
+      setAuthMode('apikey');
+      pendingOAuthRef.current = null;
+    }
+  }
 
   const typeInfo = PROVIDER_TYPE_INFO.find((t) => t.id === selectedType);
   const providerDocsUrl = getProviderDocsUrl(typeInfo, i18n.language);
@@ -1031,13 +1059,16 @@ function AddProviderDialog({
 
   // Keep refs to the latest values so event handlers see the current dialog state.
   const latestRef = React.useRef({ selectedType, typeInfo, onAdd, onClose, t });
-  const pendingOAuthRef = React.useRef<{ accountId: string; label: string } | null>(null);
   useEffect(() => {
     latestRef.current = { selectedType, typeInfo, onAdd, onClose, t };
   });
 
   // Manage OAuth events
   useEffect(() => {
+    if (!open) {
+      return;
+    }
+
     const handleCode = (data: unknown) => {
       const payload = data as Record<string, unknown>;
       if (payload?.mode === 'manual') {
@@ -1104,7 +1135,7 @@ function AddProviderDialog({
       offSuccess();
       offError();
     };
-  }, []);
+  }, [open]);
 
   const handleStartOAuth = async () => {
     if (!selectedType) return;
@@ -1238,13 +1269,18 @@ function AddProviderDialog({
   };
 
   return (
-    <div data-testid="add-provider-dialog" className="fixed inset-0 z-50 bg-black/30 dark:bg-black/60 flex items-center justify-center p-4">
-      <Card className="w-full max-w-2xl max-h-[90vh] flex flex-col rounded-3xl border-0 shadow-2xl bg-surface-modal overflow-hidden">
+    <Dialog open={open} onOpenChange={(nextOpen) => !nextOpen && onClose()}>
+      <DialogContent asChild className="w-[calc(100%-2rem)] max-w-2xl max-h-[90vh] flex flex-col rounded-3xl border-0 shadow-2xl bg-surface-modal overflow-hidden">
+        <Card data-testid="add-provider-dialog">
         <CardHeader className="relative pb-2 shrink-0">
-          <CardTitle className="text-2xl font-serif font-normal">{t('aiProviders.dialog.title')}</CardTitle>
-          <CardDescription className="text-sm mt-1 text-foreground/70">
-            {t('aiProviders.dialog.desc')}
-          </CardDescription>
+          <DialogTitle asChild>
+            <CardTitle className="text-2xl font-serif font-normal">{t('aiProviders.dialog.title')}</CardTitle>
+          </DialogTitle>
+          <DialogDescription asChild>
+            <CardDescription className="text-sm mt-1 text-foreground/70">
+              {t('aiProviders.dialog.desc')}
+            </CardDescription>
+          </DialogDescription>
           <Button
             data-testid="add-provider-close-button"
             variant="ghost"
@@ -1699,6 +1735,7 @@ function AddProviderDialog({
           )}
         </CardContent>
       </Card>
-    </div>
+      </DialogContent>
+    </Dialog>
   );
 }

@@ -495,6 +495,7 @@ export function Sidebar() {
                               <Pencil className="h-3.5 w-3.5" />
                             </button>
                             <button
+                              data-testid={`sidebar-session-delete-${s.key}`}
                               aria-label={t('common:sidebar.deleteSession')}
                               onClick={(e) => {
                                 e.stopPropagation();

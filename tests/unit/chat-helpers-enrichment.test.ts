@@ -1,16 +1,25 @@
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   enrichWithToolResultFiles,
   enrichWithToolCallAttachments,
   enrichWithCachedImages,
   loadMissingPreviews,
 } from '@/stores/chat/helpers';
-import { invokeIpc } from '@/lib/api-client';
 import type { RawMessage } from '@/stores/chat';
 
-vi.mock('@/lib/api-client', () => ({
-  invokeIpc: vi.fn(),
+const thumbnailsMock = vi.hoisted(() => vi.fn());
+
+vi.mock('@/lib/host-api', () => ({
+  hostApi: {
+    media: {
+      thumbnails: (...args: unknown[]) => thumbnailsMock(...args),
+    },
+  },
 }));
+
+beforeEach(() => {
+  thumbnailsMock.mockReset();
+});
 
 describe('enrichWithToolResultFiles', () => {
   it('does not promote image content blocks emitted by `read` tool results', () => {
@@ -394,17 +403,17 @@ describe('loadMissingPreviews', () => {
         },
       ];
 
-      vi.mocked(invokeIpc)
+      thumbnailsMock
         .mockResolvedValueOnce({ [gatewayUrl]: { preview: null, fileSize: 0 } })
         .mockResolvedValueOnce({ [gatewayUrl]: { preview: 'data:image/png;base64,ok', fileSize: 42 } });
 
       const result = loadMissingPreviews(messages);
-      expect(invokeIpc).toHaveBeenCalledTimes(1);
+      expect(thumbnailsMock).toHaveBeenCalledTimes(1);
 
       await vi.advanceTimersByTimeAsync(300);
       await expect(result).resolves.toBe(true);
 
-      expect(invokeIpc).toHaveBeenCalledTimes(2);
+      expect(thumbnailsMock).toHaveBeenCalledTimes(2);
       expect(messages[0]?._attachedFiles?.[0]).toMatchObject({
         preview: 'data:image/png;base64,ok',
         fileSize: 42,
@@ -434,13 +443,13 @@ describe('loadMissingPreviews', () => {
         },
       ];
 
-      vi.mocked(invokeIpc).mockResolvedValue({ [gatewayUrl]: { preview: null, fileSize: 0 } });
+      thumbnailsMock.mockResolvedValue({ [gatewayUrl]: { preview: null, fileSize: 0 } });
 
       const result = loadMissingPreviews(messages);
       await vi.advanceTimersByTimeAsync(300 + 900 + 1800);
       await expect(result).resolves.toBe(true);
 
-      expect(invokeIpc).toHaveBeenCalledTimes(4);
+      expect(thumbnailsMock).toHaveBeenCalledTimes(4);
       expect(messages[0]?._attachedFiles?.[0]?.previewStatus).toBe('unavailable');
     } finally {
       vi.useRealTimers();

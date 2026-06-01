@@ -30,6 +30,7 @@ import { Label } from '@/components/ui/label';
 import { Select } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
+import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog';
 import {
   hostApi,
   type ChannelTargetOption,
@@ -224,13 +225,24 @@ function SelectField({ className, children, ...props }: SelectFieldProps) {
 
 // Create/Edit Task Dialog
 interface TaskDialogProps {
+  open: boolean;
   job?: CronJob;
   configuredChannels: DeliveryChannelGroup[];
   onClose: () => void;
   onSave: (input: CronJobCreateInput) => Promise<void>;
 }
 
-function TaskDialog({ job, configuredChannels, onClose, onSave }: TaskDialogProps) {
+function getInitialCronSchedule(job?: CronJob): string {
+  const schedule = job?.schedule;
+  if (!schedule) return '0 9 * * *';
+  if (typeof schedule === 'string') return schedule;
+  if (typeof schedule === 'object' && 'expr' in schedule && typeof (schedule as { expr: string }).expr === 'string') {
+    return (schedule as { expr: string }).expr;
+  }
+  return '0 9 * * *';
+}
+
+function TaskDialog({ open, job, configuredChannels, onClose, onSave }: TaskDialogProps) {
   const { t } = useTranslation('cron');
   const [saving, setSaving] = useState(false);
   const agents = useAgentsStore((s) => s.agents);
@@ -238,17 +250,7 @@ function TaskDialog({ job, configuredChannels, onClose, onSave }: TaskDialogProp
   const [name, setName] = useState(job?.name || '');
   const [message, setMessage] = useState(job?.message || '');
   const [selectedAgentId, setSelectedAgentId] = useState(job?.agentId || useChatStore.getState().currentAgentId);
-  // Extract cron expression string from CronSchedule object or use as-is if string
-  const initialSchedule = (() => {
-    const s = job?.schedule;
-    if (!s) return '0 9 * * *';
-    if (typeof s === 'string') return s;
-    if (typeof s === 'object' && 'expr' in s && typeof (s as { expr: string }).expr === 'string') {
-      return (s as { expr: string }).expr;
-    }
-    return '0 9 * * *';
-  })();
-  const [schedule, setSchedule] = useState(initialSchedule);
+  const [schedule, setSchedule] = useState(getInitialCronSchedule(job));
   const [customSchedule, setCustomSchedule] = useState('');
   const [useCustom, setUseCustom] = useState(false);
   const [enabled, setEnabled] = useState(job?.enabled ?? true);
@@ -258,6 +260,27 @@ function TaskDialog({ job, configuredChannels, onClose, onSave }: TaskDialogProp
   const [selectedDeliveryAccountId, setSelectedDeliveryAccountId] = useState(job?.delivery?.accountId || '');
   const [channelTargetOptions, setChannelTargetOptions] = useState<ChannelTargetOption[]>([]);
   const [loadingChannelTargets, setLoadingChannelTargets] = useState(false);
+  const [prevOpen, setPrevOpen] = useState(open);
+
+  if (prevOpen !== open) {
+    setPrevOpen(open);
+    if (open) {
+      setSaving(false);
+      setName(job?.name || '');
+      setMessage(job?.message || '');
+      setSelectedAgentId(job?.agentId || useChatStore.getState().currentAgentId);
+      setSchedule(getInitialCronSchedule(job));
+      setCustomSchedule('');
+      setUseCustom(false);
+      setEnabled(job?.enabled ?? true);
+      setDeliveryMode(job?.delivery?.mode === 'announce' ? 'announce' : 'none');
+      setDeliveryChannel(job?.delivery?.channel || '');
+      setDeliveryTarget(job?.delivery?.to || '');
+      setSelectedDeliveryAccountId(job?.delivery?.accountId || '');
+      setChannelTargetOptions([]);
+      setLoadingChannelTargets(false);
+    }
+  }
   const schedulePreview = estimateNextRun(useCustom ? customSchedule : schedule);
   const selectableChannels = configuredChannels.filter((group) => isSupportedCronDeliveryChannel(group.channelType));
   const availableChannels = selectableChannels.some((group) => group.channelType === deliveryChannel)
@@ -406,12 +429,17 @@ function TaskDialog({ job, configuredChannels, onClose, onSave }: TaskDialogProp
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/30 dark:bg-black/60 flex items-center justify-center p-4" onClick={onClose}>
-      <Card className="w-full max-w-lg max-h-[90vh] flex flex-col rounded-3xl border-0 shadow-2xl bg-surface-modal overflow-hidden" onClick={(e) => e.stopPropagation()}>
+    <Dialog open={open} onOpenChange={(nextOpen) => !nextOpen && onClose()}>
+      <DialogContent asChild className="w-[calc(100%-2rem)] max-w-lg max-h-[90vh] flex flex-col rounded-3xl border-0 shadow-2xl bg-surface-modal overflow-hidden">
+        <Card data-testid="cron-task-dialog">
         <CardHeader className="flex flex-row items-start justify-between pb-2 shrink-0">
           <div>
-            <CardTitle className="text-2xl font-serif font-normal">{job ? t('dialog.editTitle') : t('dialog.createTitle')}</CardTitle>
-            <CardDescription className="text-sm mt-1 text-foreground/70">{t('dialog.description')}</CardDescription>
+            <DialogTitle asChild>
+              <CardTitle className="text-2xl font-serif font-normal">{job ? t('dialog.editTitle') : t('dialog.createTitle')}</CardTitle>
+            </DialogTitle>
+            <DialogDescription asChild>
+              <CardDescription className="text-sm mt-1 text-foreground/70">{t('dialog.description')}</CardDescription>
+            </DialogDescription>
           </div>
           <Button variant="ghost" size="icon" onClick={onClose} className="rounded-full h-8 w-8 -mr-2 -mt-2 text-muted-foreground hover:text-foreground hover:bg-black/5 dark:hover:bg-white/5">
             <X className="h-4 w-4" />
@@ -677,7 +705,8 @@ function TaskDialog({ job, configuredChannels, onClose, onSave }: TaskDialogProp
           </div>
         </CardContent>
       </Card>
-    </div>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -940,6 +969,7 @@ export function Cron() {
               {t('refresh')}
             </Button>
             <Button
+              data-testid="cron-new-task-button"
               onClick={() => {
                 setEditingJob(undefined);
                 setShowDialog(true);
@@ -1074,17 +1104,15 @@ export function Cron() {
       </div>
 
       {/* Create/Edit Dialog */}
-      {showDialog && (
-        <TaskDialog
-          job={editingJob}
-          configuredChannels={configuredChannels}
-          onClose={() => {
-            setShowDialog(false);
-            setEditingJob(undefined);
-          }}
-          onSave={handleSave}
-        />
-      )}
+      <TaskDialog
+        open={showDialog}
+        job={editingJob}
+        configuredChannels={configuredChannels}
+        onClose={() => {
+          setShowDialog(false);
+        }}
+        onSave={handleSave}
+      />
 
       <ConfirmDialog
         open={!!jobToDelete}

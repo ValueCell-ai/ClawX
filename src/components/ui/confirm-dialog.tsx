@@ -2,9 +2,14 @@
  * ConfirmDialog - In-DOM confirmation dialog (replaces window.confirm)
  * Keeps focus within the renderer to avoid Windows focus loss after native dialogs.
  */
-import { useEffect, useRef, useState } from 'react';
-import { cn } from '@/lib/utils';
+import { useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogTitle,
+} from '@/components/ui/dialog';
 
 interface ConfirmDialogProps {
   open: boolean;
@@ -16,6 +21,22 @@ interface ConfirmDialogProps {
   onConfirm: () => void | Promise<void>;
   onCancel: () => void;
   onError?: (error: unknown) => void;
+}
+
+interface ConfirmDialogCopy {
+  title: string;
+  message: string;
+  confirmLabel: string;
+  cancelLabel: string;
+  variant: NonNullable<ConfirmDialogProps['variant']>;
+}
+
+function isSameCopy(left: ConfirmDialogCopy, right: ConfirmDialogCopy): boolean {
+  return left.title === right.title
+    && left.message === right.message
+    && left.confirmLabel === right.confirmLabel
+    && left.cancelLabel === right.cancelLabel
+    && left.variant === right.variant;
 }
 
 export function ConfirmDialog({
@@ -32,8 +53,16 @@ export function ConfirmDialog({
   const cancelRef = useRef<HTMLButtonElement>(null);
   const [confirming, setConfirming] = useState(false);
   const [prevOpen, setPrevOpen] = useState(open);
+  const currentCopy: ConfirmDialogCopy = {
+    title,
+    message,
+    confirmLabel,
+    cancelLabel,
+    variant,
+  };
+  const [lastOpenCopy, setLastOpenCopy] = useState<ConfirmDialogCopy>(currentCopy);
+  const renderedCopy = open ? currentCopy : lastOpenCopy;
 
-  // Reset confirming when dialog closes (during render to avoid setState-in-effect)
   if (prevOpen !== open) {
     setPrevOpen(open);
     if (!open) {
@@ -41,17 +70,12 @@ export function ConfirmDialog({
     }
   }
 
-  useEffect(() => {
-    if (open && cancelRef.current) {
-      cancelRef.current.focus();
-    }
-  }, [open]);
+  if (open && !isSameCopy(lastOpenCopy, currentCopy)) {
+    setLastOpenCopy(currentCopy);
+  }
 
-  if (!open) return null;
-
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Escape' && !confirming) {
-      e.preventDefault();
+  const handleOpenChange = (nextOpen: boolean) => {
+    if (!nextOpen && !confirming) {
       onCancel();
     }
   };
@@ -72,42 +96,50 @@ export function ConfirmDialog({
   };
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="confirm-dialog-title"
-      onKeyDown={handleKeyDown}
-    >
-      <div
-        className={cn(
-          'mx-4 max-w-md rounded-lg border bg-card p-6 shadow-lg',
-          'focus:outline-none'
-        )}
-        tabIndex={-1}
+    <Dialog open={open} onOpenChange={handleOpenChange}>
+      <DialogContent
+        className="w-[calc(100%-2rem)] max-w-md rounded-lg border bg-surface-modal p-6 shadow-lg"
+        onEscapeKeyDown={(event) => {
+          if (confirming) {
+            event.preventDefault();
+          }
+        }}
+        onPointerDownOutside={(event) => {
+          if (confirming) {
+            event.preventDefault();
+          }
+        }}
+        onOpenAutoFocus={(event) => {
+          event.preventDefault();
+          cancelRef.current?.focus();
+        }}
       >
-        <h2 id="confirm-dialog-title" className="text-lg font-semibold">
-          {title}
-        </h2>
-        <p className="mt-2 text-sm text-muted-foreground">{message}</p>
+        <DialogTitle className="text-lg font-semibold">
+          {renderedCopy.title}
+        </DialogTitle>
+        <DialogDescription className="mt-2 text-sm text-muted-foreground">
+          {renderedCopy.message}
+        </DialogDescription>
         <div className="mt-6 flex justify-end gap-2">
           <Button
+            data-testid="confirm-dialog-cancel-button"
             ref={cancelRef}
             variant="outline"
             onClick={onCancel}
             disabled={confirming}
           >
-            {cancelLabel}
+            {renderedCopy.cancelLabel}
           </Button>
           <Button
-            variant={variant === 'destructive' ? 'destructive' : 'default'}
+            data-testid="confirm-dialog-confirm-button"
+            variant={renderedCopy.variant === 'destructive' ? 'destructive' : 'default'}
             onClick={handleConfirm}
             disabled={confirming}
           >
-            {confirmLabel}
+            {renderedCopy.confirmLabel}
           </Button>
         </div>
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   );
 }

@@ -6,6 +6,7 @@ import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
+import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog';
 import { Switch } from '@/components/ui/switch';
 import { LoadingSpinner } from '@/components/common/LoadingSpinner';
 import { useAgentsStore } from '@/stores/agents';
@@ -50,6 +51,7 @@ export function Agents() {
 
   const [showAddDialog, setShowAddDialog] = useState(false);
   const [activeAgentId, setActiveAgentId] = useState<string | null>(null);
+  const [settingsModalAgent, setSettingsModalAgent] = useState<AgentSummary | null>(null);
   const [agentToDelete, setAgentToDelete] = useState<AgentSummary | null>(null);
 
   const fetchChannelAccounts = useCallback(async () => {
@@ -135,6 +137,7 @@ export function Agents() {
               {t('refresh')}
             </Button>
             <Button
+              data-testid="agents-add-button"
               onClick={() => setShowAddDialog(true)}
               className="h-9 text-meta font-medium rounded-full px-4 shadow-none"
             >
@@ -169,7 +172,10 @@ export function Agents() {
                 key={agent.id}
                 agent={agent}
                 channelGroups={visibleChannelGroups}
-                onOpenSettings={() => setActiveAgentId(agent.id)}
+                onOpenSettings={() => {
+                  setSettingsModalAgent(agent);
+                  setActiveAgentId(agent.id);
+                }}
                 onDelete={() => setAgentToDelete(agent)}
               />
             ))}
@@ -177,20 +183,20 @@ export function Agents() {
         </div>
       </div>
 
-      {showAddDialog && (
-        <AddAgentDialog
-          onClose={() => setShowAddDialog(false)}
-          onCreate={async (name, options) => {
-            await createAgent(name, options);
-            setShowAddDialog(false);
-            toast.success(t('toast.agentCreated'));
-          }}
-        />
-      )}
+      <AddAgentDialog
+        open={showAddDialog}
+        onClose={() => setShowAddDialog(false)}
+        onCreate={async (name, options) => {
+          await createAgent(name, options);
+          setShowAddDialog(false);
+          toast.success(t('toast.agentCreated'));
+        }}
+      />
 
-      {activeAgent && (
+      {(activeAgent || settingsModalAgent) && (
         <AgentSettingsModal
-          agent={activeAgent}
+          open={!!activeAgent}
+          agent={(activeAgent || settingsModalAgent)!}
           channelGroups={visibleChannelGroups}
           onClose={() => setActiveAgentId(null)}
         />
@@ -343,9 +349,11 @@ function ChannelLogo({ type }: { type: ChannelType }) {
 }
 
 function AddAgentDialog({
+  open,
   onClose,
   onCreate,
 }: {
+  open: boolean;
   onClose: () => void;
   onCreate: (name: string, options: { inheritWorkspace: boolean }) => Promise<void>;
 }) {
@@ -353,6 +361,16 @@ function AddAgentDialog({
   const [name, setName] = useState('');
   const [inheritWorkspace, setInheritWorkspace] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [prevOpen, setPrevOpen] = useState(open);
+
+  if (prevOpen !== open) {
+    setPrevOpen(open);
+    if (open) {
+      setName('');
+      setInheritWorkspace(false);
+      setSaving(false);
+    }
+  }
 
   const handleSubmit = async () => {
     if (!name.trim()) return;
@@ -368,15 +386,20 @@ function AddAgentDialog({
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
-      <Card className="w-full max-w-md rounded-3xl border-0 shadow-2xl bg-surface-modal overflow-hidden">
+    <Dialog open={open} onOpenChange={(nextOpen) => !nextOpen && onClose()}>
+      <DialogContent asChild className="w-[calc(100%-2rem)] max-w-md rounded-3xl border-0 shadow-2xl bg-surface-modal overflow-hidden">
+        <Card data-testid="add-agent-dialog">
         <CardHeader className="pb-2">
-          <CardTitle className="text-2xl font-serif font-normal tracking-tight">
-            {t('createDialog.title')}
-          </CardTitle>
-          <CardDescription className="text-sm mt-1 text-foreground/70">
-            {t('createDialog.description')}
-          </CardDescription>
+          <DialogTitle asChild>
+            <CardTitle className="text-2xl font-serif font-normal tracking-tight">
+              {t('createDialog.title')}
+            </CardTitle>
+          </DialogTitle>
+          <DialogDescription asChild>
+            <CardDescription className="text-sm mt-1 text-foreground/70">
+              {t('createDialog.description')}
+            </CardDescription>
+          </DialogDescription>
         </CardHeader>
         <CardContent className="space-y-6 pt-4 p-6">
           <div className="space-y-2.5">
@@ -425,15 +448,18 @@ function AddAgentDialog({
           </div>
         </CardContent>
       </Card>
-    </div>
+      </DialogContent>
+    </Dialog>
   );
 }
 
 function AgentSettingsModal({
+  open,
   agent,
   channelGroups,
   onClose,
 }: {
+  open: boolean;
   agent: AgentSummary;
   channelGroups: ChannelGroupItem[];
   onClose: () => void;
@@ -444,10 +470,20 @@ function AgentSettingsModal({
   const [savingName, setSavingName] = useState(false);
   const [showModelModal, setShowModelModal] = useState(false);
   const [showCloseConfirm, setShowCloseConfirm] = useState(false);
+  const [prevOpen, setPrevOpen] = useState(open);
 
   useEffect(() => {
     setName(agent.name);
   }, [agent.name]);
+
+  if (prevOpen !== open) {
+    setPrevOpen(open);
+    if (!open) {
+      setShowModelModal(false);
+      setShowCloseConfirm(false);
+      setName(agent.name);
+    }
+  }
 
   const hasNameChanges = name.trim() !== agent.name;
 
@@ -487,16 +523,21 @@ function AgentSettingsModal({
   );
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
-      <Card className="w-full max-w-2xl max-h-[90vh] flex flex-col rounded-3xl border-0 shadow-2xl bg-surface-modal overflow-hidden">
+    <Dialog open={open} onOpenChange={(nextOpen) => !nextOpen && handleRequestClose()}>
+      <DialogContent asChild className="w-[calc(100%-2rem)] max-w-2xl max-h-[90vh] flex flex-col rounded-3xl border-0 shadow-2xl bg-surface-modal overflow-hidden">
+        <Card>
         <CardHeader className="flex flex-row items-start justify-between pb-2 shrink-0">
           <div>
-            <CardTitle className="text-2xl font-serif font-normal tracking-tight">
-              {t('settingsDialog.title', { name: agent.name })}
-            </CardTitle>
-            <CardDescription className="text-sm mt-1 text-foreground/70">
-              {t('settingsDialog.description')}
-            </CardDescription>
+            <DialogTitle asChild>
+              <CardTitle className="text-2xl font-serif font-normal tracking-tight">
+                {t('settingsDialog.title', { name: agent.name })}
+              </CardTitle>
+            </DialogTitle>
+            <DialogDescription asChild>
+              <CardDescription className="text-sm mt-1 text-foreground/70">
+                {t('settingsDialog.description')}
+              </CardDescription>
+            </DialogDescription>
           </div>
           <Button
             variant="ghost"
@@ -607,12 +648,12 @@ function AgentSettingsModal({
           </div>
         </CardContent>
       </Card>
-      {showModelModal && (
-        <AgentModelModal
-          agent={agent}
-          onClose={() => setShowModelModal(false)}
-        />
-      )}
+      </DialogContent>
+      <AgentModelModal
+        open={showModelModal}
+        agent={agent}
+        onClose={() => setShowModelModal(false)}
+      />
       <ConfirmDialog
         open={showCloseConfirm}
         title={t('settingsDialog.unsavedChangesTitle')}
@@ -626,14 +667,16 @@ function AgentSettingsModal({
         }}
         onCancel={() => setShowCloseConfirm(false)}
       />
-    </div>
+    </Dialog>
   );
 }
 
 function AgentModelModal({
+  open,
   agent,
   onClose,
 }: {
+  open: boolean;
   agent: AgentSummary;
   onClose: () => void;
 }) {
@@ -647,6 +690,7 @@ function AgentModelModal({
   const [modelIdInput, setModelIdInput] = useState('');
   const [savingModel, setSavingModel] = useState(false);
   const [showCloseConfirm, setShowCloseConfirm] = useState(false);
+  const [prevOpen, setPrevOpen] = useState(open);
 
   const runtimeProviderOptions = useMemo<RuntimeProviderOption[]>(
     () => buildRuntimeProviderOptions(
@@ -676,6 +720,14 @@ function AgentModelModal({
     setSelectedRuntimeProviderKey(runtimeProviderOptions[0]?.runtimeProviderKey || '');
     setModelIdInput('');
   }, [agent.modelRef, agent.overrideModelRef, defaultModelRef, runtimeProviderOptions]);
+
+  if (prevOpen !== open) {
+    setPrevOpen(open);
+    if (!open) {
+      setSavingModel(false);
+      setShowCloseConfirm(false);
+    }
+  }
 
   const selectedProvider = runtimeProviderOptions.find((option) => option.runtimeProviderKey === selectedRuntimeProviderKey) || null;
   const trimmedModelId = modelIdInput.trim();
@@ -737,16 +789,21 @@ function AgentModelModal({
   };
 
   return (
-    <div className="fixed inset-0 z-[60] bg-black/50 flex items-center justify-center p-4">
-      <Card className="w-full max-w-xl rounded-3xl border-0 shadow-2xl bg-surface-modal overflow-hidden">
+    <Dialog open={open} onOpenChange={(nextOpen) => !nextOpen && handleRequestClose()}>
+      <DialogContent asChild className="z-[60] w-[calc(100%-2rem)] max-w-xl rounded-3xl border-0 shadow-2xl bg-surface-modal overflow-hidden">
+        <Card>
         <CardHeader className="flex flex-row items-start justify-between pb-2">
           <div>
-            <CardTitle className="text-2xl font-serif font-normal tracking-tight">
-              {t('settingsDialog.modelLabel')}
-            </CardTitle>
-            <CardDescription className="text-sm mt-1 text-foreground/70">
-              {t('settingsDialog.modelOverrideDescription', { defaultModel: defaultModelRef || '-' })}
-            </CardDescription>
+            <DialogTitle asChild>
+              <CardTitle className="text-2xl font-serif font-normal tracking-tight">
+                {t('settingsDialog.modelLabel')}
+              </CardTitle>
+            </DialogTitle>
+            <DialogDescription asChild>
+              <CardDescription className="text-sm mt-1 text-foreground/70">
+                {t('settingsDialog.modelOverrideDescription', { defaultModel: defaultModelRef || '-' })}
+              </CardDescription>
+            </DialogDescription>
           </div>
           <Button
             variant="ghost"
@@ -831,6 +888,7 @@ function AgentModelModal({
           </div>
         </CardContent>
       </Card>
+      </DialogContent>
       <ConfirmDialog
         open={showCloseConfirm}
         title={t('settingsDialog.unsavedChangesTitle')}
@@ -843,7 +901,7 @@ function AgentModelModal({
         }}
         onCancel={() => setShowCloseConfirm(false)}
       />
-    </div>
+    </Dialog>
   );
 }
 

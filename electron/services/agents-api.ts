@@ -1,5 +1,3 @@
-import { exec } from 'child_process';
-import { promisify } from 'util';
 import type { GatewayManager } from '../gateway/manager';
 import {
   assignChannelToAgent,
@@ -15,8 +13,6 @@ import {
 import { deleteChannelAccountConfig } from '../utils/channel-config';
 import { ensureClawXContext } from '../utils/openclaw-workspace';
 import { syncAgentModelOverrideToRuntime, syncAllProviderAuthToRuntime } from './providers/provider-runtime-sync';
-
-const execAsync = promisify(exec);
 
 type AgentsApiContext = {
   gatewayManager: GatewayManager;
@@ -43,54 +39,6 @@ function scheduleGatewayReload(ctx: AgentsApiContext, reason: string): void {
 
 async function restartGatewayForAgentDeletion(ctx: AgentsApiContext): Promise<void> {
   try {
-    const status = ctx.gatewayManager.getStatus();
-    const pid = status.pid;
-    const port = status.port;
-    console.log('[agents] Triggering Gateway restart (kill+respawn) after agent deletion', { pid, port });
-
-    if (pid) {
-      try {
-        if (process.platform === 'win32') {
-          await execAsync(`taskkill /F /PID ${pid} /T`);
-        } else {
-          process.kill(pid, 'SIGTERM');
-          await new Promise((resolve) => setTimeout(resolve, 500));
-          try { process.kill(pid, 0); process.kill(pid, 'SIGKILL'); } catch { /* already dead */ }
-        }
-      } catch {
-        // process already gone
-      }
-    } else if (port) {
-      try {
-        if (process.platform === 'darwin' || process.platform === 'linux') {
-          const { stdout } = await execAsync(`lsof -t -i :${port} -sTCP:LISTEN`);
-          const pids = stdout.trim().split('\n').filter(Boolean);
-          for (const p of pids) {
-            try { process.kill(parseInt(p, 10), 'SIGTERM'); } catch { /* ignore */ }
-          }
-          await new Promise((resolve) => setTimeout(resolve, 500));
-          for (const p of pids) {
-            try { process.kill(parseInt(p, 10), 'SIGKILL'); } catch { /* ignore */ }
-          }
-        } else if (process.platform === 'win32') {
-          const { stdout } = await execAsync(`netstat -ano | findstr :${port}`);
-          const lines = stdout.trim().split('\n');
-          const pids = new Set<string>();
-          for (const line of lines) {
-            const parts = line.trim().split(/\s+/);
-            if (parts.length >= 5 && parts[1].endsWith(`:${port}`) && parts[3] === 'LISTENING') {
-              pids.add(parts[4]);
-            }
-          }
-          for (const p of pids) {
-            try { await execAsync(`taskkill /F /PID ${p} /T`); } catch { /* ignore */ }
-          }
-        }
-      } catch {
-        // Port might not be bound or command failed; ignore.
-      }
-    }
-
     await ctx.gatewayManager.restart();
     console.log('[agents] Gateway restart completed after agent deletion');
   } catch (err) {
