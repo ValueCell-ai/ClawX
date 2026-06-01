@@ -26,6 +26,7 @@ import { LoadingSpinner } from '@/components/common/LoadingSpinner';
 import { cn } from '@/lib/utils';
 import { invokeIpc } from '@/lib/api-client';
 import { hostApi } from '@/lib/host-api';
+import { isGatewayStopped } from '@/lib/gateway-status';
 import { trackUiEvent } from '@/lib/telemetry';
 import { toast } from 'sonner';
 import type { Skill } from '@/types/skill';
@@ -55,23 +56,10 @@ const INSTALL_ERROR_CODES = new Set(['installTimeoutError', 'installRateLimitErr
 const FETCH_ERROR_CODES = new Set(['fetchTimeoutError', 'fetchRateLimitError', 'timeoutError', 'rateLimitError']);
 const SEARCH_ERROR_CODES = new Set(['searchTimeoutError', 'searchRateLimitError', 'timeoutError', 'rateLimitError']);
 
-type SkillsGatewayBannerState = 'none' | 'starting' | 'stopped';
+type SkillsGatewayBannerState = 'none' | 'stopped';
 
-function isSkillsGatewayReady(status: GatewayStatus, skillsFeatureReady: boolean): boolean {
-  return status.state === 'running' && (status.gatewayReady !== false || skillsFeatureReady);
-}
-
-function getSkillsGatewayBannerState(
-  status: GatewayStatus,
-  skillsFeatureReady: boolean,
-): SkillsGatewayBannerState {
-  if (status.state === 'starting' || status.state === 'reconnecting') {
-    return 'starting';
-  }
-  if (status.state === 'running' && !isSkillsGatewayReady(status, skillsFeatureReady)) {
-    return 'starting';
-  }
-  if (status.state === 'stopped' || status.state === 'error') {
+function getSkillsGatewayBannerState(status: GatewayStatus): SkillsGatewayBannerState {
+  if (isGatewayStopped(status)) {
     return 'stopped';
   }
   return 'none';
@@ -271,8 +259,7 @@ export function Skills() {
   const gatewayRunning = gatewayStatus.state === 'running';
   const gatewayReportedReady = gatewayStatus.gatewayReady !== false;
   const gatewayRuntimeKey = `${gatewayStatus.pid ?? 'none'}:${gatewayStatus.connectedAt ?? 'none'}:${gatewayStatus.port}`;
-  const [skillsFeatureReady, setSkillsFeatureReady] = useState(false);
-  const gatewayBannerState = getSkillsGatewayBannerState(gatewayStatus, skillsFeatureReady);
+  const gatewayBannerState = getSkillsGatewayBannerState(gatewayStatus);
   const [showGatewayBanner, setShowGatewayBanner] = useState(false);
 
   useEffect(() => {
@@ -291,11 +278,8 @@ export function Skills() {
 
   useEffect(() => {
     if (!gatewayRunning) {
-      setSkillsFeatureReady(false);
       return;
     }
-
-    setSkillsFeatureReady(gatewayReportedReady);
 
     let cancelled = false;
     let retryTimer: ReturnType<typeof setInterval> | null = null;
@@ -303,7 +287,6 @@ export function Skills() {
     const attemptFetch = async () => {
       const ok = await fetchSkills();
       if (cancelled || !ok) return;
-      setSkillsFeatureReady(true);
       if (retryTimer) {
         clearInterval(retryTimer);
         retryTimer = null;
@@ -528,26 +511,11 @@ export function Skills() {
           <div
             data-testid="skills-gateway-banner"
             data-state={gatewayBannerState}
-            className={cn(
-              "mb-6 p-4 rounded-xl border flex items-center gap-3",
-              gatewayBannerState === 'starting'
-                ? "border-blue-500/40 bg-blue-500/10"
-                : "border-yellow-500/50 bg-yellow-500/10",
-            )}
+            className="mb-6 p-4 rounded-xl border border-yellow-500/50 bg-yellow-500/10 flex items-center gap-3"
           >
-            <AlertCircle className={cn(
-              "h-5 w-5",
-              gatewayBannerState === 'starting'
-                ? "text-blue-600 dark:text-blue-400"
-                : "text-yellow-600 dark:text-yellow-400",
-            )} />
-            <span className={cn(
-              "text-sm font-medium",
-              gatewayBannerState === 'starting'
-                ? "text-blue-700 dark:text-blue-400"
-                : "text-yellow-700 dark:text-yellow-400",
-            )}>
-              {gatewayBannerState === 'starting' ? t('gatewayStarting') : t('gatewayWarning')}
+            <AlertCircle className="h-5 w-5 text-yellow-600 dark:text-yellow-400" />
+            <span className="text-sm font-medium text-yellow-700 dark:text-yellow-400">
+              {t('gatewayWarning')}
             </span>
           </div>
         )}

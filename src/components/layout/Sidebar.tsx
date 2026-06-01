@@ -24,8 +24,10 @@ import {
   ImagePlus,
   Moon,
   ChevronRight,
+  Loader2,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { isGatewayRestarting } from '@/lib/gateway-status';
 import { rendererExtensionRegistry } from '@/extensions/registry';
 import { useSettingsStore } from '@/stores/settings';
 import { useChatStore } from '@/stores/chat';
@@ -125,6 +127,7 @@ export function Sidebar() {
   const gatewayStatus = useGatewayStore((s) => s.status);
   const isGatewayRunning = gatewayStatus.state === 'running';
   const isGatewayReady = isGatewayRunning && gatewayStatus.gatewayReady !== false;
+  const gatewayRestarting = isGatewayRestarting(gatewayStatus);
   const gatewayRuntimeKey = `${gatewayStatus.pid ?? 'none'}:${gatewayStatus.connectedAt ?? 'none'}:${gatewayStatus.port}`;
 
   const hasLoadedCurrentRuntimeRef = useRef(false);
@@ -527,6 +530,34 @@ export function Sidebar() {
 
       {/* Footer */}
       <div className="mt-auto flex flex-col gap-1 p-2">
+        <div
+          data-testid="sidebar-gateway-restarting"
+          data-state={gatewayRestarting ? 'visible' : 'hidden'}
+          aria-hidden={!gatewayRestarting}
+          className={cn(
+            'overflow-hidden transition-[max-height,opacity,transform] duration-200 ease-out',
+            gatewayRestarting ? 'max-h-12 translate-y-0 opacity-100' : 'max-h-0 translate-y-1 opacity-0',
+          )}
+        >
+          <div
+            aria-live="polite"
+            aria-label={t('common:gateway.restarting')}
+            title={t('common:gateway.restarting')}
+            className={cn(
+              'sidebar-nav-text flex items-center gap-2 rounded-lg px-2.5 py-1.5',
+              'border border-yellow-500/20 bg-yellow-500/10 text-yellow-700 dark:text-yellow-400',
+              sidebarCollapsed && 'justify-center px-0',
+            )}
+          >
+            <Loader2 className="h-4 w-4 shrink-0 animate-spin" />
+            {!sidebarCollapsed && (
+              <span className="flex-1 overflow-hidden text-ellipsis whitespace-nowrap">
+                {t('common:gateway.restarting')}
+              </span>
+            )}
+          </div>
+        </div>
+
         <NavLink
             to="/settings"
             data-testid="sidebar-nav-settings"

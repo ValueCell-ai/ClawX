@@ -13,6 +13,7 @@ import {
 } from '@/lib/host-api';
 import { hostEvents } from '@/lib/host-events';
 import { ChannelConfigModal } from '@/components/channels/ChannelConfigModal';
+import { isGatewayStopped } from '@/lib/gateway-status';
 import { cn } from '@/lib/utils';
 import {
   CHANNEL_ICONS,
@@ -507,7 +508,7 @@ export function Channels() {
         </div>
 
         <div className="flex-1 overflow-y-auto pr-2 pb-10 min-h-0 -mr-2">
-          {gatewayStatus.state !== 'running' && (
+          {isGatewayStopped(gatewayStatus) && (
             <div className="mb-8 p-4 rounded-xl border border-yellow-500/50 bg-yellow-500/10 flex items-center gap-3">
               <AlertCircle className="h-5 w-5 text-yellow-600 dark:text-yellow-400" />
               <span className="text-yellow-700 dark:text-yellow-400 text-sm font-medium">

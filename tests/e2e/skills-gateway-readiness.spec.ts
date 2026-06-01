@@ -25,7 +25,8 @@ test.describe('Skills page gateway readiness', () => {
       });
     });
 
-    await expect(page.getByTestId('skills-gateway-banner')).toHaveAttribute('data-state', 'starting', { timeout: 3_500 });
+    await expect(page.getByTestId('sidebar-gateway-restarting')).toHaveAttribute('data-state', 'visible');
+    await expect(page.getByTestId('skills-gateway-banner')).toHaveCount(0, { timeout: 3_500 });
 
     await installIpcMocks(electronApp, {
       gatewayRpc: {

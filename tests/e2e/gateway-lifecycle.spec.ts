@@ -9,6 +9,11 @@ function stableStringify(value: unknown): string {
   return `{${entries.join(',')}}`;
 }
 
+const SESSIONS_LIST_PAYLOAD = {
+  includeDerivedTitles: true,
+  includeLastMessage: true,
+};
+
 test.describe('ClawX gateway lifecycle resilience', () => {
   test('app remains fully navigable while gateway is disconnected', async ({ page }) => {
     // In E2E mode, gateway auto-start is skipped, so the app starts
@@ -118,6 +123,95 @@ test.describe('ClawX gateway lifecycle resilience', () => {
     await expect(page.getByTestId('main-layout')).toBeVisible();
   });
 
+  test('shows gateway restart progress in the sidebar instead of page-level warnings', async ({ electronApp, page }) => {
+    await installIpcMocks(electronApp, {
+      gatewayStatus: { state: 'running', port: 18789, pid: 100, connectedAt: 1, gatewayReady: true },
+      hostApi: {
+        [stableStringify(['/api/gateway/status', 'GET'])]: {
+          ok: true,
+          data: {
+            status: 200,
+            ok: true,
+            json: { state: 'running', port: 18789, pid: 100, connectedAt: 1, gatewayReady: true },
+          },
+        },
+        [stableStringify(['/api/agents', 'GET'])]: {
+          ok: true,
+          data: {
+            status: 200,
+            ok: true,
+            json: { success: true, agents: [{ id: 'main', name: 'main' }] },
+          },
+        },
+        [stableStringify(['/api/channels/accounts', 'GET'])]: {
+          ok: true,
+          data: {
+            status: 200,
+            ok: true,
+            json: { success: true, channels: [] },
+          },
+        },
+        [stableStringify(['/api/cron/jobs', 'GET'])]: {
+          ok: true,
+          data: {
+            status: 200,
+            ok: true,
+            json: [],
+          },
+        },
+      },
+      gatewayRpc: {
+        [stableStringify(['skills.status', null])]: { success: false, error: 'Gateway not connected' },
+      },
+    });
+
+    await completeSetup(page);
+
+    await electronApp.evaluate(({ BrowserWindow }) => {
+      const win = BrowserWindow.getAllWindows()[0];
+      win?.webContents.send('gateway:status-changed', {
+        state: 'starting',
+        port: 18789,
+        gatewayReady: false,
+      });
+    });
+
+    const restartIndicator = page.getByTestId('sidebar-gateway-restarting');
+    await expect(restartIndicator).toHaveAttribute('data-state', 'visible');
+    await expect(restartIndicator).toContainText(/gateway.*restart|重启中/i);
+
+    const oldWarningCopy = /Gateway service is not running|Gateway is not running\.|Gateway 服务未运行|Agent 或频道变更|网关未运行。|没有活跃的网关|Scheduled tasks cannot be managed|无法管理定时任务|Channels cannot connect|无法管理频道/i;
+
+    await page.getByTestId('sidebar-nav-agents').click();
+    await expect(page.getByTestId('agents-page')).toBeVisible();
+    await expect(page.getByText(oldWarningCopy)).toHaveCount(0);
+
+    await page.getByTestId('sidebar-nav-channels').click();
+    await expect(page.getByTestId('channels-page')).toBeVisible();
+    await expect(page.getByText(oldWarningCopy)).toHaveCount(0);
+
+    await page.getByTestId('sidebar-nav-cron').click();
+    await expect(page.getByTestId('cron-page')).toBeVisible();
+    await expect(page.getByText(oldWarningCopy)).toHaveCount(0);
+
+    await page.getByTestId('sidebar-nav-skills').click();
+    await expect(page.getByTestId('skills-page')).toBeVisible();
+    await expect(page.getByTestId('skills-gateway-banner')).toHaveCount(0);
+
+    await electronApp.evaluate(({ BrowserWindow }) => {
+      const win = BrowserWindow.getAllWindows()[0];
+      win?.webContents.send('gateway:status-changed', {
+        state: 'running',
+        port: 18789,
+        pid: 200,
+        connectedAt: 2,
+        gatewayReady: true,
+      });
+    });
+
+    await expect(restartIndicator).toHaveAttribute('data-state', 'hidden');
+  });
+
   test('chat sidebar history reloads when gateway becomes ready after restart', async ({ electronApp, page }) => {
     await installIpcMocks(electronApp, {
       gatewayStatus: { state: 'running', port: 18789, pid: 100, connectedAt: 1, gatewayReady: false },
@@ -140,27 +234,21 @@ test.describe('ClawX gateway lifecycle resilience', () => {
         },
       },
       gatewayRpc: {
-        [stableStringify(['sessions.list', {}])]: {
-          success: true,
-          result: {
-            sessions: [{ key: 'agent:main:main', displayName: 'main' }],
-          },
+        [stableStringify(['sessions.list', SESSIONS_LIST_PAYLOAD])]: {
+          sessions: [{ key: 'agent:main:main', displayName: 'main' }],
         },
         [stableStringify(['chat.history', { sessionKey: 'agent:main:main', limit: 200, maxChars: 500000 }])]: {
-          success: true,
-          result: {
-            messages: [
-              { role: 'user', content: 'hello', timestamp: 1000 },
-              { role: 'assistant', content: 'history after ready', timestamp: 1001 },
-            ],
-          },
+          messages: [
+            { role: 'user', content: 'hello', timestamp: 1000 },
+            { role: 'assistant', content: 'history after ready', timestamp: 1001 },
+          ],
         },
       },
     });
 
     await completeSetup(page);
     await page.getByTestId('sidebar-new-chat').click();
-    await expect(page.getByText(/gateway starting \| port: 18789/i)).toBeVisible();
+    await expect(page.getByTestId('sidebar-gateway-restarting')).toHaveAttribute('data-state', 'visible');
     await expect(page.getByText('history after ready')).toHaveCount(0);
 
     await electronApp.evaluate(({ BrowserWindow }) => {
@@ -175,6 +263,6 @@ test.describe('ClawX gateway lifecycle resilience', () => {
     });
 
     await expect(page.getByText('history after ready')).toBeVisible({ timeout: 10_000 });
-    await expect(page.getByText(/gateway connected \| port: 18789/i)).toBeVisible();
+    await expect(page.getByTestId('sidebar-gateway-restarting')).toHaveAttribute('data-state', 'hidden');
   });
 });
