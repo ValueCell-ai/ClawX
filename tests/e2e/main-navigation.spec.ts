@@ -26,4 +26,28 @@ test.describe('ClawX main navigation without setup flow', () => {
       await closeElectronApp(app);
     }
   });
+
+  test('native New Chat menu opens the same chat route as the sidebar action', async ({ launchElectronApp }) => {
+    const app = await launchElectronApp({ skipSetup: true });
+
+    try {
+      const page = await getStableWindow(app);
+      await expect(page.getByTestId('chat-page')).toBeVisible();
+
+      await page.getByTestId('sidebar-nav-models').click();
+      await expect(page.getByTestId('models-page')).toBeVisible();
+
+      await app.evaluate(({ BrowserWindow, Menu }) => {
+        const menu = Menu.getApplicationMenu();
+        const fileMenu = menu?.items.find((item) => item.label === 'File');
+        const newChatItem = fileMenu?.submenu?.items.find((item) => item.label === 'New Chat');
+        newChatItem?.click(undefined, BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0], undefined);
+      });
+
+      await expect(page.getByTestId('chat-page')).toBeVisible();
+      await expect(page).toHaveURL(/#\/$/);
+    } finally {
+      await closeElectronApp(app);
+    }
+  });
 });

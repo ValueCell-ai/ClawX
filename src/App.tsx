@@ -26,6 +26,7 @@ import { useProviderStore } from './stores/providers';
 import { rendererExtensionRegistry } from './extensions/registry';
 import { loadExternalRendererExtensions } from './extensions/_ext-bridge.generated';
 import { UpdateNotifier } from './components/update/UpdateNotifier';
+import { useNewChatAction } from './components/layout/use-new-chat-action';
 
 
 /**
@@ -105,6 +106,7 @@ function App() {
   const initGateway = useGatewayStore((state) => state.init);
   const initUpdate = useUpdateStore((state) => state.init);
   const initProviders = useProviderStore((state) => state.init);
+  const handleNewChat = useNewChatAction();
 
   useEffect(() => {
     let cancelled = false;
@@ -161,6 +163,16 @@ function App() {
       }
     };
   }, [navigate]);
+
+  useEffect(() => {
+    const unsubscribe = window.electron.ipcRenderer.on('new-chat', handleNewChat);
+
+    return () => {
+      if (typeof unsubscribe === 'function') {
+        unsubscribe();
+      }
+    };
+  }, [handleNewChat]);
 
   // Apply theme
   useEffect(() => {

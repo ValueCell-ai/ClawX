@@ -39,6 +39,7 @@ import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { hostApi } from '@/lib/host-api';
 import { useTranslation } from 'react-i18next';
 import logoSvg from '@/assets/logo.svg';
+import { useNewChatAction } from './use-new-chat-action';
 
 interface NavItemProps {
   to: string;
@@ -115,11 +116,11 @@ export function Sidebar() {
   const sessionLabels = useChatStore((s) => s.sessionLabels);
   const sessionLastActivity = useChatStore((s) => s.sessionLastActivity);
   const switchSession = useChatStore((s) => s.switchSession);
-  const newSession = useChatStore((s) => s.newSession);
   const deleteSession = useChatStore((s) => s.deleteSession);
   const renameSession = useChatStore((s) => s.renameSession);
   const loadSessions = useChatStore((s) => s.loadSessions);
   const loadHistory = useChatStore((s) => s.loadHistory);
+  const handleNewChat = useNewChatAction();
 
   const gatewayStatus = useGatewayStore((s) => s.status);
   const isGatewayRunning = gatewayStatus.state === 'running';
@@ -368,11 +369,7 @@ export function Sidebar() {
         <button
           type="button"
           data-testid="sidebar-new-chat"
-          onClick={() => {
-            const { messages } = useChatStore.getState();
-            if (messages.length > 0) newSession();
-            navigate('/');
-          }}
+          onClick={handleNewChat}
           className={cn(
             'sidebar-nav-text flex items-center gap-2 rounded-lg px-2.5 py-2 transition-colors',
             'hover:bg-black/5 dark:hover:bg-white/5 text-foreground/80',
