@@ -202,6 +202,17 @@ test.describe('dialog transitions', () => {
       await expect(confirmDialog).toHaveAttribute('data-state', 'closed');
       await expect(confirmDialog).toContainText('Preserved session');
       await expect(confirmDialog).toHaveCount(0);
+
+      await expect(sessionRow).toBeVisible();
+      await sessionRow.hover();
+      await page.getByTestId(`sidebar-session-delete-${MAIN_SESSION_KEY}`).click();
+
+      await expect(confirmDialog).toContainText('Preserved session');
+
+      await page.getByTestId('confirm-dialog-confirm-button').click();
+      await expect(confirmDialog).toHaveAttribute('data-state', 'closed');
+      await expect(confirmDialog).toContainText('Preserved session');
+      await expect(confirmDialog).toHaveCount(0);
     } finally {
       await closeElectronApp(app);
     }

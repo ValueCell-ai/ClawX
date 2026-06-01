@@ -175,6 +175,7 @@ export function Sidebar() {
 
   const { t } = useTranslation(['common', 'chat']);
   const [sessionToDelete, setSessionToDelete] = useState<{ key: string; label: string } | null>(null);
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [editingSessionKey, setEditingSessionKey] = useState<string | null>(null);
   const [editingLabel, setEditingLabel] = useState('');
   const [nowMs, setNowMs] = useState(INITIAL_NOW_MS);
@@ -192,6 +193,12 @@ export function Sidebar() {
   useEffect(() => {
     void fetchAgents();
   }, [fetchAgents]);
+
+  useEffect(() => {
+    if (deleteDialogOpen || !sessionToDelete) return;
+    const timer = window.setTimeout(() => setSessionToDelete(null), 160);
+    return () => window.clearTimeout(timer);
+  }, [deleteDialogOpen, sessionToDelete]);
 
   const handleStartRename = (key: string, currentLabel: string) => {
     setEditingSessionKey(key);
@@ -500,6 +507,7 @@ export function Sidebar() {
                                   key: s.key,
                                   label: sessionLabel,
                                 });
+                                setDeleteDialogOpen(true);
                               }}
                               className="flex items-center justify-center rounded p-0.5 text-muted-foreground hover:text-destructive hover:bg-destructive/10"
                             >
@@ -583,19 +591,20 @@ export function Sidebar() {
       )}
 
       <ConfirmDialog
-        open={!!sessionToDelete}
+        open={deleteDialogOpen}
         title={t('common:actions.confirm')}
-        message={t('common:sidebar.deleteSessionConfirm', { label: sessionToDelete?.label })}
+        message={t('common:sidebar.deleteSessionConfirm', { label: sessionToDelete?.label ?? '' })}
         confirmLabel={t('common:actions.delete')}
         cancelLabel={t('common:actions.cancel')}
         variant="destructive"
         onConfirm={async () => {
-          if (!sessionToDelete) return;
-          await deleteSession(sessionToDelete.key);
-          if (currentSessionKey === sessionToDelete.key) navigate('/');
-          setSessionToDelete(null);
+          const targetSession = sessionToDelete;
+          if (!targetSession) return;
+          await deleteSession(targetSession.key);
+          if (currentSessionKey === targetSession.key) navigate('/');
+          setDeleteDialogOpen(false);
         }}
-        onCancel={() => setSessionToDelete(null)}
+        onCancel={() => setDeleteDialogOpen(false)}
       />
     </aside>
   );

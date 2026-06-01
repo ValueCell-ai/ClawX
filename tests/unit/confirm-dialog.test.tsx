@@ -1,4 +1,5 @@
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
+import { useState } from 'react';
 import { describe, expect, it, vi } from 'vitest';
 
 vi.mock('@/components/ui/dialog', async () => {
@@ -67,5 +68,65 @@ describe('ConfirmDialog', () => {
     );
 
     expect(screen.getByText('Delete "Important chat"?')).toBeInTheDocument();
+  });
+
+  it('keeps the active copy when cancel clears the owner state', () => {
+    function Harness() {
+      const [open, setOpen] = useState(true);
+      const [label, setLabel] = useState('Important chat');
+
+      return (
+        <ConfirmDialog
+          open={open}
+          title="Confirm"
+          message={`Delete "${label}"?`}
+          confirmLabel="Delete"
+          cancelLabel="Cancel"
+          variant="destructive"
+          onConfirm={vi.fn()}
+          onCancel={() => {
+            setOpen(false);
+            setLabel('');
+          }}
+        />
+      );
+    }
+
+    render(<Harness />);
+
+    fireEvent.click(screen.getByTestId('confirm-dialog-cancel-button'));
+
+    expect(screen.getByText('Delete "Important chat"?')).toBeInTheDocument();
+    expect(screen.queryByText('Delete ""?')).not.toBeInTheDocument();
+  });
+
+  it('keeps the active copy when confirm clears the owner state', () => {
+    function Harness() {
+      const [open, setOpen] = useState(true);
+      const [label, setLabel] = useState('Important chat');
+
+      return (
+        <ConfirmDialog
+          open={open}
+          title="Confirm"
+          message={`Delete "${label}"?`}
+          confirmLabel="Delete"
+          cancelLabel="Cancel"
+          variant="destructive"
+          onConfirm={() => {
+            setOpen(false);
+            setLabel('');
+          }}
+          onCancel={vi.fn()}
+        />
+      );
+    }
+
+    render(<Harness />);
+
+    fireEvent.click(screen.getByTestId('confirm-dialog-confirm-button'));
+
+    expect(screen.getByText('Delete "Important chat"?')).toBeInTheDocument();
+    expect(screen.queryByText('Delete ""?')).not.toBeInTheDocument();
   });
 });
