@@ -1,5 +1,6 @@
 import type { GatewayManager } from '../gateway/manager';
 import { syncLaunchAtStartupSettingFromStore } from '../main/launch-at-startup';
+import { createMenu } from '../main/menu';
 import { applyProxySettings } from '../main/proxy';
 import { syncProxyConfigToOpenClaw } from '../utils/openclaw-proxy';
 import {
@@ -71,6 +72,10 @@ function patchTouchesLaunchAtStartup(patch: Partial<AppSettings>): boolean {
   return Object.prototype.hasOwnProperty.call(patch, 'launchAtStartup');
 }
 
+function patchTouchesLanguage(patch: Partial<AppSettings>): boolean {
+  return Object.prototype.hasOwnProperty.call(patch, 'language');
+}
+
 async function handleProxySettingsChange(gatewayManager: GatewayManager): Promise<void> {
   const settings = await getAllSettings();
   await syncProxyConfigToOpenClaw(settings, { preserveExistingWhenDisabled: false });
@@ -89,6 +94,9 @@ async function runSettingsSideEffects(
   }
   if (patchTouchesLaunchAtStartup(patch)) {
     await syncLaunchAtStartupSettingFromStore();
+  }
+  if (patchTouchesLanguage(patch)) {
+    await createMenu(typeof patch.language === 'string' ? patch.language : undefined);
   }
 }
 
@@ -120,6 +128,7 @@ export function createSettingsApi(gatewayManager: GatewayManager) {
       await handleProxySettingsChange(gatewayManager);
       await syncLaunchAtStartupSettingFromStore();
       const settings = await getAllSettings();
+      await createMenu(settings.language);
       return { success: true, settings };
     },
   };

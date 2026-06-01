@@ -1,0 +1,59 @@
+{
+  "app": {
+    "about": "About {{appName}}",
+    "preferences": "Preferences...",
+    "services": "Services",
+    "hide": "Hide {{appName}}",
+    "hideOthers": "Hide Others",
+    "unhide": "Show All",
+    "quit": "Quit {{appName}}"
+  },
+  "file": {
+    "label": "File",
+    "newChat": "New Chat",
+    "close": "Close"
+  },
+  "edit": {
+    "label": "Edit",
+    "undo": "Undo",
+    "redo": "Redo",
+    "cut": "Cut",
+    "copy": "Copy",
+    "paste": "Paste",
+    "pasteAndMatchStyle": "Paste and Match Style",
+    "delete": "Delete",
+    "selectAll": "Select All"
+  },
+  "view": {
+    "label": "View",
+    "reload": "Reload",
+    "forceReload": "Force Reload",
+    "toggleDevTools": "Toggle Developer Tools",
+    "resetZoom": "Actual Size",
+    "zoomIn": "Zoom In",
+    "zoomOut": "Zoom Out",
+    "toggleFullscreen": "Toggle Full Screen"
+  },
+  "navigate": {
+    "label": "Navigate",
+    "dashboard": "Dashboard",
+    "chat": "Chat",
+    "channels": "Channels",
+    "skills": "Skills",
+    "cronTasks": "Cron Tasks",
+    "settings": "Settings"
+  },
+  "window": {
+    "label": "Window",
+    "minimize": "Minimize",
+    "zoom": "Zoom",
+    "front": "Bring All to Front",
+    "close": "Close"
+  },
+  "help": {
+    "label": "Help",
+    "documentation": "Documentation",
+    "reportIssue": "Report Issue",
+    "openClawDocumentation": "OpenClaw Documentation"
+  }
+}

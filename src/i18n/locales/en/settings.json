@@ -9,6 +9,7 @@
     "dark": "Dark",
     "system": "System",
     "language": "Language",
+    "menuLanguageUpdated": "Menu language updated",
     "launchAtStartup": "Launch at system startup",
     "launchAtStartupDesc": "Automatically launch ClawX when you log in"
   },

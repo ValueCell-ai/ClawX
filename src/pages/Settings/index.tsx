@@ -42,7 +42,7 @@ type ControlUiInfo = {
 };
 
 export function Settings() {
-  const { t } = useTranslation('settings');
+  const { t, i18n } = useTranslation('settings');
   const {
     theme,
     setTheme,
@@ -418,6 +418,13 @@ export function Settings() {
     toast.success(t('developer.telemetryCleared'));
   };
 
+  const handleLanguageChange = (nextLanguage: string) => {
+    if (nextLanguage === language) return;
+    const translateNext = i18n.getFixedT(nextLanguage, 'settings');
+    setLanguage(nextLanguage);
+    toast.success(translateNext('appearance.menuLanguageUpdated'));
+  };
+
   return (
     <div data-testid="settings-page" className="flex flex-col -m-6 dark:bg-background h-[calc(100vh-2.5rem)] overflow-hidden">
       <div className="w-full max-w-5xl mx-auto flex flex-col h-full p-10 pt-16">
@@ -480,7 +487,7 @@ export function Settings() {
                       key={lang.code}
                       variant={language === lang.code ? 'secondary' : 'outline'}
                       className={cn("rounded-full px-5 h-10 border-black/10 dark:border-white/10", language === lang.code ? "bg-black/5 dark:bg-white/10 text-foreground" : "bg-transparent text-muted-foreground hover:bg-black/5 dark:hover:bg-white/5")}
-                      onClick={() => setLanguage(lang.code)}
+                      onClick={() => handleLanguageChange(lang.code)}
                     >
                       {lang.label}
                     </Button>

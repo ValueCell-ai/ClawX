@@ -91,6 +91,7 @@ import {
   type AppRequest,
   type AppResponse,
 } from './ipc/request-helpers';
+import { createMenu } from './menu';
 
 const gatewayRpcBackpressure = new GatewayRpcBackpressure();
 
@@ -686,6 +687,9 @@ function registerUnifiedRequestHandlers(gatewayManager: GatewayManager): void {
             if (isLaunchAtStartupKey(key)) {
               await syncLaunchAtStartupSettingFromStore();
             }
+            if (key === 'language') {
+              await createMenu(typeof value === 'string' ? value : undefined);
+            }
             data = { success: true };
             break;
           }
@@ -701,6 +705,9 @@ function registerUnifiedRequestHandlers(gatewayManager: GatewayManager): void {
             if (entries.some(([key]) => isLaunchAtStartupKey(key))) {
               await syncLaunchAtStartupSettingFromStore();
             }
+            if (entries.some(([key]) => key === 'language')) {
+              await createMenu(typeof patch.language === 'string' ? patch.language : undefined);
+            }
             data = { success: true };
             break;
           }
@@ -709,6 +716,7 @@ function registerUnifiedRequestHandlers(gatewayManager: GatewayManager): void {
             const settings = await getAllSettings();
             await handleProxySettingsChange();
             await syncLaunchAtStartupSettingFromStore();
+            await createMenu(settings.language);
             data = { success: true, settings };
             break;
           }
@@ -2217,6 +2225,9 @@ function registerSettingsHandlers(gatewayManager: GatewayManager): void {
     if (key === 'launchAtStartup') {
       await syncLaunchAtStartupSettingFromStore();
     }
+    if (key === 'language') {
+      await createMenu(typeof value === 'string' ? value : undefined);
+    }
 
     return { success: true };
   });
@@ -2240,6 +2251,9 @@ function registerSettingsHandlers(gatewayManager: GatewayManager): void {
     if (entries.some(([key]) => key === 'launchAtStartup')) {
       await syncLaunchAtStartupSettingFromStore();
     }
+    if (entries.some(([key]) => key === 'language')) {
+      await createMenu(typeof patch.language === 'string' ? patch.language : undefined);
+    }
 
     return { success: true };
   });
@@ -2249,6 +2263,7 @@ function registerSettingsHandlers(gatewayManager: GatewayManager): void {
     const settings = await getAllSettings();
     await handleProxySettingsChange();
     await syncLaunchAtStartupSettingFromStore();
+    await createMenu(settings.language);
     return { success: true, settings };
   });
 }

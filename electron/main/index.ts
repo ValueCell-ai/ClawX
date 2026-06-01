@@ -309,7 +309,7 @@ async function initialize(): Promise<void> {
   }
 
   // Set application menu
-  createMenu();
+  await createMenu();
 
   // Create the main window
   const window = createMainWindow();

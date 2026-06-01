@@ -9,6 +9,7 @@
     "dark": "Тёмная",
     "system": "Системная",
     "language": "Язык",
+    "menuLanguageUpdated": "Язык меню обновлён",
     "launchAtStartup": "Запуск при старте системы",
     "launchAtStartupDesc": "Автоматически запускать ClawX при входе в систему"
   },

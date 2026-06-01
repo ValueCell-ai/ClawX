@@ -1,0 +1,59 @@
+{
+  "app": {
+    "about": "关于 {{appName}}",
+    "preferences": "偏好设置...",
+    "services": "服务",
+    "hide": "隐藏 {{appName}}",
+    "hideOthers": "隐藏其他",
+    "unhide": "全部显示",
+    "quit": "退出 {{appName}}"
+  },
+  "file": {
+    "label": "文件",
+    "newChat": "新对话",
+    "close": "关闭"
+  },
+  "edit": {
+    "label": "编辑",
+    "undo": "撤销",
+    "redo": "重做",
+    "cut": "剪切",
+    "copy": "复制",
+    "paste": "粘贴",
+    "pasteAndMatchStyle": "粘贴并匹配样式",
+    "delete": "删除",
+    "selectAll": "全选"
+  },
+  "view": {
+    "label": "显示",
+    "reload": "重新加载",
+    "forceReload": "强制重新加载",
+    "toggleDevTools": "切换开发者工具",
+    "resetZoom": "实际大小",
+    "zoomIn": "放大",
+    "zoomOut": "缩小",
+    "toggleFullscreen": "切换全屏"
+  },
+  "navigate": {
+    "label": "导航",
+    "dashboard": "仪表盘",
+    "chat": "聊天",
+    "channels": "频道",
+    "skills": "技能",
+    "cronTasks": "定时任务",
+    "settings": "设置"
+  },
+  "window": {
+    "label": "窗口",
+    "minimize": "最小化",
+    "zoom": "缩放",
+    "front": "全部置于前台",
+    "close": "关闭"
+  },
+  "help": {
+    "label": "帮助",
+    "documentation": "文档",
+    "reportIssue": "报告问题",
+    "openClawDocumentation": "OpenClaw 文档"
+  }
+}

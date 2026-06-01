@@ -9,6 +9,7 @@
     "dark": "深色",
     "system": "跟随系统",
     "language": "语言",
+    "menuLanguageUpdated": "菜单语言已更新",
     "launchAtStartup": "开机自动启动",
     "launchAtStartupDesc": "登录系统后自动启动 ClawX"
   },

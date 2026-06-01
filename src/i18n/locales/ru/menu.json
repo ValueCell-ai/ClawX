@@ -1,0 +1,59 @@
+{
+  "app": {
+    "about": "О {{appName}}",
+    "preferences": "Настройки...",
+    "services": "Службы",
+    "hide": "Скрыть {{appName}}",
+    "hideOthers": "Скрыть остальные",
+    "unhide": "Показать все",
+    "quit": "Выйти из {{appName}}"
+  },
+  "file": {
+    "label": "Файл",
+    "newChat": "Новый чат",
+    "close": "Закрыть"
+  },
+  "edit": {
+    "label": "Правка",
+    "undo": "Отменить",
+    "redo": "Повторить",
+    "cut": "Вырезать",
+    "copy": "Копировать",
+    "paste": "Вставить",
+    "pasteAndMatchStyle": "Вставить с сохранением стиля",
+    "delete": "Удалить",
+    "selectAll": "Выбрать все"
+  },
+  "view": {
+    "label": "Вид",
+    "reload": "Перезагрузить",
+    "forceReload": "Принудительно перезагрузить",
+    "toggleDevTools": "Переключить инструменты разработчика",
+    "resetZoom": "Фактический размер",
+    "zoomIn": "Увеличить",
+    "zoomOut": "Уменьшить",
+    "toggleFullscreen": "Переключить полноэкранный режим"
+  },
+  "navigate": {
+    "label": "Навигация",
+    "dashboard": "Панель",
+    "chat": "Чат",
+    "channels": "Каналы",
+    "skills": "Навыки",
+    "cronTasks": "Задачи Cron",
+    "settings": "Настройки"
+  },
+  "window": {
+    "label": "Окно",
+    "minimize": "Свернуть",
+    "zoom": "Масштаб",
+    "front": "На передний план",
+    "close": "Закрыть"
+  },
+  "help": {
+    "label": "Справка",
+    "documentation": "Документация",
+    "reportIssue": "Сообщить о проблеме",
+    "openClawDocumentation": "Документация OpenClaw"
+  }
+}

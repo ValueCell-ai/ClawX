@@ -1,0 +1,59 @@
+{
+  "app": {
+    "about": "{{appName}} について",
+    "preferences": "環境設定...",
+    "services": "サービス",
+    "hide": "{{appName}} を隠す",
+    "hideOthers": "ほかを隠す",
+    "unhide": "すべてを表示",
+    "quit": "{{appName}} を終了"
+  },
+  "file": {
+    "label": "ファイル",
+    "newChat": "新しいチャット",
+    "close": "閉じる"
+  },
+  "edit": {
+    "label": "編集",
+    "undo": "取り消す",
+    "redo": "やり直す",
+    "cut": "カット",
+    "copy": "コピー",
+    "paste": "ペースト",
+    "pasteAndMatchStyle": "ペーストしてスタイルを合わせる",
+    "delete": "削除",
+    "selectAll": "すべてを選択"
+  },
+  "view": {
+    "label": "表示",
+    "reload": "再読み込み",
+    "forceReload": "強制再読み込み",
+    "toggleDevTools": "開発者ツールを切り替え",
+    "resetZoom": "実際のサイズ",
+    "zoomIn": "拡大",
+    "zoomOut": "縮小",
+    "toggleFullscreen": "フルスクリーンを切り替え"
+  },
+  "navigate": {
+    "label": "移動",
+    "dashboard": "ダッシュボード",
+    "chat": "チャット",
+    "channels": "チャンネル",
+    "skills": "スキル",
+    "cronTasks": "定期タスク",
+    "settings": "設定"
+  },
+  "window": {
+    "label": "ウィンドウ",
+    "minimize": "最小化",
+    "zoom": "ズーム",
+    "front": "すべてを手前に移動",
+    "close": "閉じる"
+  },
+  "help": {
+    "label": "ヘルプ",
+    "documentation": "ドキュメント",
+    "reportIssue": "問題を報告",
+    "openClawDocumentation": "OpenClaw ドキュメント"
+  }
+}
