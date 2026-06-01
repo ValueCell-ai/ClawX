@@ -802,7 +802,7 @@ export function Chat() {
         isMac && 'z-20 rounded-tl-2xl shadow-[inset_1px_1px_0_hsl(var(--border)/0.55)]',
         isWindows && 'rounded-tl-2xl',
       )}
-      style={{ height: isMac ? '100vh' : 'calc(100vh - 2.5rem)' }}
+      style={{ height: isMac ? 'calc(100vh - 1px)' : 'calc(100vh - 2.5rem)' }}
     >
       {/* Left column: chat */}
       <div className="flex min-w-0 flex-1 flex-col">
