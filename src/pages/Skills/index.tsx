@@ -11,7 +11,6 @@ import {
   X,
   AlertCircle,
   Trash2,
-  RefreshCw,
   FolderOpen,
   Copy,
 } from 'lucide-react';
@@ -26,7 +25,6 @@ import { LoadingSpinner } from '@/components/common/LoadingSpinner';
 import { cn } from '@/lib/utils';
 import { invokeIpc } from '@/lib/api-client';
 import { hostApiFetch } from '@/lib/host-api';
-import { trackUiEvent } from '@/lib/telemetry';
 import { toast } from 'sonner';
 import type { Skill } from '@/types/skill';
 import type { GatewayStatus } from '@/types/gateway';
@@ -90,16 +88,21 @@ interface SkillDetailDialogProps {
 function resolveSkillSourceLabel(skill: Skill, t: TFunction<'skills'>): string {
   const source = (skill.source || '').trim().toLowerCase();
   if (!source) {
-    if (skill.isBundled) return t('source.badge.bundled', { defaultValue: 'Bundled' });
+    if (skill.isBundled) return t('source.badge.bundled', { defaultValue: 'Bundled dir' });
     return t('source.badge.unknown', { defaultValue: 'Unknown source' });
   }
-  if (source === 'openclaw-bundled') return t('source.badge.bundled', { defaultValue: 'Bundled' });
+  if (source === 'openclaw-bundled') return t('source.badge.bundled', { defaultValue: 'Bundled dir' });
   if (source === 'openclaw-managed') return t('source.badge.managed', { defaultValue: 'Managed' });
   if (source === 'openclaw-workspace') return t('source.badge.workspace', { defaultValue: 'Workspace' });
   if (source === 'openclaw-extra') return t('source.badge.extra', { defaultValue: 'Extra dirs' });
+  if (source === 'openclaw-plugin') return t('source.badge.plugin', { defaultValue: 'Plugin dir' });
   if (source === 'agents-skills-personal') return t('source.badge.agentsPersonal', { defaultValue: 'Personal .agents' });
   if (source === 'agents-skills-project') return t('source.badge.agentsProject', { defaultValue: 'Project .agents' });
   return source;
+}
+
+function canUninstallSkill(skill: Skill): boolean {
+  return (skill.source || '').trim().toLowerCase() === 'openclaw-managed';
 }
 
 function SkillDetailDialog({ skill, isOpen, onClose, onToggle, onUninstall, onOpenFolder }: SkillDetailDialogProps) {
@@ -118,6 +121,8 @@ function SkillDetailDialog({ skill, isOpen, onClose, onToggle, onUninstall, onOp
   };
 
   if (!skill) return null;
+
+  const uninstallable = canUninstallSkill(skill);
 
   return (
     <Sheet open={isOpen} onOpenChange={(open) => !open && onClose()}>
@@ -147,9 +152,11 @@ function SkillDetailDialog({ skill, isOpen, onClose, onToggle, onUninstall, onOp
               {skill.name}
             </h2>
             <div data-skill-detail-meta-row="1" className="flex items-center justify-center flex-wrap gap-2.5 mb-6 opacity-80">
-              <Badge variant="secondary" className="shrink-0 whitespace-nowrap font-mono text-tiny font-medium px-3 py-0.5 rounded-full bg-black/[0.04] dark:bg-white/[0.08] hover:bg-black/[0.08] dark:hover:bg-white/[0.12] border-0 shadow-none text-foreground/70 transition-colors">
-                v{skill.version}
-              </Badge>
+              {skill.version && (
+                <Badge variant="secondary" className="shrink-0 whitespace-nowrap font-mono text-tiny font-medium px-3 py-0.5 rounded-full bg-black/[0.04] dark:bg-white/[0.08] hover:bg-black/[0.08] dark:hover:bg-white/[0.12] border-0 shadow-none text-foreground/70 transition-colors">
+                  v{skill.version}
+                </Badge>
+              )}
               <Badge variant="secondary" className="shrink-0 whitespace-nowrap font-mono text-tiny font-medium px-3 py-0.5 rounded-full bg-black/[0.04] dark:bg-white/[0.08] hover:bg-black/[0.08] dark:hover:bg-white/[0.12] border-0 shadow-none text-foreground/70 transition-colors">
                 {skill.isCore ? t('detail.coreSystem') : skill.isBundled ? t('detail.bundled') : t('detail.userInstalled')}
               </Badge>
@@ -224,7 +231,7 @@ function SkillDetailDialog({ skill, isOpen, onClose, onToggle, onUninstall, onOp
                 variant="outline"
                 className="w-full h-[42px] text-meta rounded-full font-semibold shadow-sm bg-transparent border-black/20 dark:border-white/20 hover:bg-black/5 dark:hover:bg-white/5 transition-colors text-foreground/80 hover:text-foreground"
                 onClick={() => {
-                  if (!skill.isBundled && onUninstall && skill.slug) {
+                  if (uninstallable && onUninstall && skill.slug) {
                     onUninstall(skill.slug);
                     onClose();
                   } else {
@@ -232,7 +239,7 @@ function SkillDetailDialog({ skill, isOpen, onClose, onToggle, onUninstall, onOp
                   }
                 }}
               >
-                {!skill.isBundled && onUninstall
+                {uninstallable && onUninstall
                   ? t('detail.uninstall')
                   : (skill.enabled ? t('detail.disable') : t('detail.enable'))}
               </Button>
@@ -266,7 +273,8 @@ export function Skills() {
   const [installQuery, setInstallQuery] = useState('');
   const [installSheetOpen, setInstallSheetOpen] = useState(false);
   const [selectedSkill, setSelectedSkill] = useState<Skill | null>(null);
-  const [selectedSource, setSelectedSource] = useState<'all' | 'built-in' | 'marketplace'>('all');
+  const [statusFilter, setStatusFilter] = useState<'all' | 'enabled' | 'disabled'>('all');
+  const [marketplaceAvailable, setMarketplaceAvailable] = useState(false);
 
   const gatewayRunning = gatewayStatus.state === 'running';
   const gatewayReportedReady = gatewayStatus.gatewayReady !== false;
@@ -290,13 +298,6 @@ export function Skills() {
   }, [gatewayBannerState]);
 
   useEffect(() => {
-    if (!gatewayRunning) {
-      setSkillsFeatureReady(false);
-      return;
-    }
-
-    setSkillsFeatureReady(gatewayReportedReady);
-
     let cancelled = false;
     let retryTimer: ReturnType<typeof setInterval> | null = null;
 
@@ -310,9 +311,10 @@ export function Skills() {
       }
     };
 
+    setSkillsFeatureReady(false);
     void attemptFetch();
 
-    if (!gatewayReportedReady) {
+    if (gatewayRunning && !gatewayReportedReady) {
       retryTimer = setInterval(() => {
         void attemptFetch();
       }, 5_000);
@@ -326,25 +328,35 @@ export function Skills() {
     };
   }, [fetchSkills, gatewayReportedReady, gatewayRunning, gatewayRuntimeKey]);
 
+  useEffect(() => {
+    let cancelled = false;
+    void hostApiFetch<{ success: boolean; capability?: { canSearch?: boolean; canInstall?: boolean } }>('/api/skills/marketplace/capability')
+      .then((result) => {
+        if (cancelled) return;
+        setMarketplaceAvailable(Boolean(result.success && (result.capability?.canInstall || result.capability?.canSearch)));
+      })
+      .catch(() => {
+        if (!cancelled) setMarketplaceAvailable(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   const safeSkills = Array.isArray(skills) ? skills : [];
+  const enabledSkillsCount = safeSkills.filter((skill) => skill.enabled).length;
+  const disabledSkillsCount = safeSkills.filter((skill) => !skill.enabled).length;
   const filteredSkills = safeSkills.filter((skill) => {
     const q = searchQuery.toLowerCase().trim();
-    const matchesSearch =
-      q.length === 0 ||
-      skill.name.toLowerCase().includes(q) ||
-      skill.description.toLowerCase().includes(q) ||
-      skill.id.toLowerCase().includes(q) ||
-      (skill.slug || '').toLowerCase().includes(q) ||
-      (skill.author || '').toLowerCase().includes(q);
-
-    let matchesSource = true;
-    if (selectedSource === 'built-in') {
-      matchesSource = !!skill.isBundled;
-    } else if (selectedSource === 'marketplace') {
-      matchesSource = !skill.isBundled;
-    }
-
-    return matchesSearch && matchesSource;
+    const matchesSearch = q.length === 0
+      || skill.name.toLowerCase().includes(q)
+      || skill.description.toLowerCase().includes(q)
+      || skill.id.toLowerCase().includes(q)
+      || (skill.slug || '').toLowerCase().includes(q)
+      || (skill.author || '').toLowerCase().includes(q);
+    const matchesStatus = statusFilter === 'all'
+      || (statusFilter === 'enabled' ? skill.enabled : !skill.enabled);
+    return matchesSearch && matchesStatus;
   }).sort((a, b) => {
     if (a.enabled && !b.enabled) return -1;
     if (!a.enabled && b.enabled) return 1;
@@ -353,40 +365,6 @@ export function Skills() {
     return a.name.localeCompare(b.name);
   });
 
-  const sourceStats = {
-    all: safeSkills.length,
-    builtIn: safeSkills.filter(s => s.isBundled).length,
-    marketplace: safeSkills.filter(s => !s.isBundled).length,
-  };
-
-  const bulkToggleVisible = useCallback(async (enable: boolean) => {
-    const candidates = filteredSkills.filter((skill) => !skill.isCore && skill.enabled !== enable);
-    if (candidates.length === 0) {
-      toast.info(enable ? t('toast.noBatchEnableTargets') : t('toast.noBatchDisableTargets'));
-      return;
-    }
-
-    let succeeded = 0;
-    for (const skill of candidates) {
-      try {
-        if (enable) {
-          await enableSkill(skill.id);
-        } else {
-          await disableSkill(skill.id);
-        }
-        succeeded += 1;
-      } catch {
-        // Continue to next skill and report final summary.
-      }
-    }
-
-    trackUiEvent('skills.batch_toggle', { enable, total: candidates.length, succeeded });
-    if (succeeded === candidates.length) {
-      toast.success(enable ? t('toast.batchEnabled', { count: succeeded }) : t('toast.batchDisabled', { count: succeeded }));
-      return;
-    }
-    toast.warning(t('toast.batchPartial', { success: succeeded, total: candidates.length }));
-  }, [disableSkill, enableSkill, filteredSkills, t]);
 
   const handleToggle = useCallback(async (skillId: string, enable: boolean) => {
     try {
@@ -403,6 +381,10 @@ export function Skills() {
   }, [enableSkill, disableSkill, t]);
 
   const hasInstalledSkills = safeSkills.some(s => !s.isBundled);
+
+  const handleStatusFilterClick = useCallback((nextFilter: 'enabled' | 'disabled') => {
+    setStatusFilter((current) => (current === nextFilter ? 'all' : nextFilter));
+  }, []);
 
   const handleOpenSkillsFolder = useCallback(async () => {
     try {
@@ -469,7 +451,6 @@ export function Skills() {
   const handleInstall = useCallback(async (slug: string) => {
     try {
       await installSkill(slug);
-      await enableSkill(slug);
       toast.success(t('toast.installed'));
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : String(err);
@@ -479,8 +460,7 @@ export function Skills() {
         toast.error(t('toast.failedInstall') + ': ' + errorMessage);
       }
     }
-  }, [installSkill, enableSkill, t, skillsDirPath]);
-
+  }, [installSkill, t, skillsDirPath]);
   const handleUninstall = useCallback(async (slug: string) => {
     try {
       await uninstallSkill(slug);
@@ -557,7 +537,7 @@ export function Skills() {
 
         {/* Sub Navigation and Actions */}
         <div className="flex flex-col md:flex-row md:items-center justify-between border-b border-black/10 dark:border-white/10 pb-4 mb-4 shrink-0 gap-4">
-          <div className="flex items-center flex-wrap gap-4 text-sm">
+          <div className="flex items-center flex-wrap gap-2 text-sm">
             <div className="relative group flex items-center bg-black/5 dark:bg-white/5 rounded-full px-3 py-1.5 focus-within:bg-black/10 transition-colors border border-transparent focus-within:border-black/10 dark:focus-within:border-white/10 mr-2">
               <Search className="h-4 w-4 shrink-0 text-muted-foreground" />
               <input
@@ -576,69 +556,52 @@ export function Skills() {
                 </button>
               )}
             </div>
-
-            <div className="flex items-center gap-6">
-              <button
-                onClick={() => setSelectedSource('all')}
-                className={cn("font-medium transition-colors flex items-center gap-1.5", selectedSource === 'all' ? "text-foreground" : "text-muted-foreground hover:text-foreground")}
-              >
-                {t('filter.all', { count: sourceStats.all })}
-              </button>
-              <button
-                onClick={() => setSelectedSource('built-in')}
-                className={cn("font-medium transition-colors flex items-center gap-1.5", selectedSource === 'built-in' ? "text-foreground" : "text-muted-foreground hover:text-foreground")}
-              >
-                {t('filter.builtIn', { count: sourceStats.builtIn })}
-              </button>
-              <button
-                onClick={() => setSelectedSource('marketplace')}
-                className={cn("font-medium transition-colors flex items-center gap-1.5", selectedSource === 'marketplace' ? "text-foreground" : "text-muted-foreground hover:text-foreground")}
-              >
-                {t('filter.marketplace', { count: sourceStats.marketplace })}
-              </button>
-            </div>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              data-testid="skills-filter-enabled"
+              onClick={() => handleStatusFilterClick('enabled')}
+              className={cn(
+                'h-8 rounded-full px-3 text-meta font-medium border shadow-none',
+                statusFilter === 'enabled'
+                  ? 'bg-black/5 dark:bg-white/10 border-black/10 dark:border-white/10 text-foreground'
+                  : 'bg-transparent border-transparent text-muted-foreground hover:text-foreground hover:bg-black/5 dark:hover:bg-white/5',
+              )}
+            >
+              {t('filter.enabledList', { count: enabledSkillsCount })}
+            </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              data-testid="skills-filter-disabled"
+              onClick={() => handleStatusFilterClick('disabled')}
+              className={cn(
+                'h-8 rounded-full px-3 text-meta font-medium border shadow-none',
+                statusFilter === 'disabled'
+                  ? 'bg-black/5 dark:bg-white/10 border-black/10 dark:border-white/10 text-foreground'
+                  : 'bg-transparent border-transparent text-muted-foreground hover:text-foreground hover:bg-black/5 dark:hover:bg-white/5',
+              )}
+            >
+              {t('filter.disabledList', { count: disabledSkillsCount })}
+            </Button>
           </div>
 
           <div className="flex items-center gap-2 shrink-0">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => bulkToggleVisible(true)}
-              className="h-8 text-meta font-medium rounded-md px-3 border-black/10 dark:border-white/10 bg-transparent hover:bg-black/5 dark:hover:bg-white/5 shadow-none"
-            >
-              {t('actions.enableVisible')}
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => bulkToggleVisible(false)}
-              className="h-8 text-meta font-medium rounded-md px-3 border-black/10 dark:border-white/10 bg-transparent hover:bg-black/5 dark:hover:bg-white/5 shadow-none"
-            >
-              {t('actions.disableVisible')}
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => {
-                setInstallQuery('');
-                setInstallSheetOpen(true);
-              }}
-              className="h-8 text-meta font-medium rounded-md px-3 border-black/10 dark:border-white/10 bg-transparent hover:bg-black/5 dark:hover:bg-white/5 shadow-none"
-            >
-              {t('actions.installSkill')}
-            </Button>
-            <Button
-              variant="outline"
-              size="icon"
-              onClick={() => {
-                void fetchSkills();
-              }}
-              disabled={!gatewayRunning}
-              className="h-8 w-8 ml-1 rounded-md border-black/10 dark:border-white/10 bg-transparent hover:bg-black/5 dark:hover:bg-white/5 shadow-none text-muted-foreground hover:text-foreground"
-              title={t('refresh')}
-            >
-              <RefreshCw className={cn("h-4 w-4", loading && "animate-spin")} />
-            </Button>
+            {marketplaceAvailable && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  setInstallQuery('');
+                  setInstallSheetOpen(true);
+                }}
+                className="h-8 text-meta font-medium rounded-md px-3 border-black/10 dark:border-white/10 bg-transparent hover:bg-black/5 dark:hover:bg-white/5 shadow-none"
+              >
+                {t('actions.installSkill')}
+              </Button>
+            )}
           </div>
         </div>
 
@@ -677,13 +640,6 @@ export function Skills() {
                         <h3 className="text-sm font-semibold text-foreground truncate">{skill.name}</h3>
                         {skill.isCore ? (
                           <Lock className="h-3 w-3 text-muted-foreground" />
-                        ) : skill.isBundled ? (
-                          <Puzzle className="h-3 w-3 text-blue-500/70" />
-                        ) : null}
-                        {skill.slug && skill.slug !== skill.name ? (
-                          <span className="text-tiny font-mono px-1.5 py-0.5 rounded border border-black/10 dark:border-white/10 text-muted-foreground">
-                            {skill.slug}
-                          </span>
                         ) : null}
                       </div>
                       <p className="text-sm text-muted-foreground line-clamp-1 pr-6 leading-relaxed">
@@ -718,7 +674,7 @@ export function Skills() {
         </div>
       </div>
 
-      <Sheet open={installSheetOpen} onOpenChange={setInstallSheetOpen}>
+      <Sheet open={installSheetOpen && marketplaceAvailable} onOpenChange={setInstallSheetOpen}>
         <SheetContent
           className="w-full sm:max-w-[560px] p-0 flex flex-col border-l border-black/10 dark:border-white/10 bg-surface-modal shadow-[0_0_40px_rgba(0,0,0,0.2)]"
           side="right"

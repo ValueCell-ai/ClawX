@@ -3,8 +3,8 @@
     "subtitle": "浏览和管理 AI 能力",
     "refresh": "刷新",
     "openFolder": "打开技能文件夹",
-    "gatewayWarning": "网关未运行。没有活跃的网关，无法加载技能。",
-    "gatewayStarting": "网关正在启动。待其就绪后会自动加载技能。",
+    "gatewayWarning": "网关未运行。你仍可查看本地技能，但运行时状态暂不可用。",
+    "gatewayStarting": "网关正在启动。本地技能已可用，运行时状态会在就绪后自动补充。",
     "tabs": {
         "installed": "已安装",
         "marketplace": "市场"
@@ -12,7 +12,9 @@
     "filter": {
         "all": "全部 ({{count}})",
         "builtIn": "内置 ({{count}})",
-        "marketplace": "市场 ({{count}})"
+        "marketplace": "市场 ({{count}})",
+        "enabledList": "已开启 ({{count}})",
+        "disabledList": "已禁用 ({{count}})"
     },
     "search": "搜索技能...",
     "searchMarketplace": "搜索市场...",
@@ -73,10 +75,11 @@
     },
     "source": {
         "badge": {
-            "bundled": "内置",
+            "bundled": "内置目录",
             "managed": "托管目录",
             "workspace": "工作区",
             "extra": "额外目录",
+            "plugin": "插件目录",
             "agentsPersonal": "个人 .agents",
             "agentsProject": "项目 .agents",
             "unknown": "未知来源"

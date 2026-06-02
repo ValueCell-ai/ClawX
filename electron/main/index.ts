@@ -44,7 +44,7 @@ import {
 import { createSignalQuitHandler } from './signal-quit';
 import { acquireProcessInstanceFileLock } from './process-instance-lock';
 import { getSetting } from '../utils/store';
-import { ensureBuiltinSkillsInstalled, ensurePreinstalledSkillsInstalled } from '../utils/skill-config';
+import { ensureBuiltinSkillsInstalled, ensurePreinstalledSkillsInstalled, trimBundledOpenClawSkillsAndConfigs } from '../utils/skill-config';
 
 import { startHostApiServer } from '../api/server';
 import { HostEventBus } from '../api/event-bus';
@@ -56,6 +56,11 @@ import { syncAllProviderAuthToRuntime } from '../services/providers/provider-run
 const WINDOWS_APP_USER_MODEL_ID = 'app.clawx.desktop';
 const isE2EMode = process.env.CLAWX_E2E === '1';
 const requestedUserDataDir = process.env.CLAWX_USER_DATA_DIR?.trim();
+const requestedRemoteDebuggingPort = process.env.CLAWX_REMOTE_DEBUGGING_PORT?.trim();
+
+if (requestedRemoteDebuggingPort) {
+  app.commandLine.appendSwitch('remote-debugging-port', requestedRemoteDebuggingPort);
+}
 
 if (isE2EMode && requestedUserDataDir) {
   app.setPath('userData', requestedUserDataDir);
@@ -392,6 +397,21 @@ async function initialize(): Promise<void> {
   if (!isE2EMode) {
     void ensureBuiltinSkillsInstalled().catch((error) => {
       logger.warn('Failed to install built-in skills:', error);
+    });
+  }
+
+  // Keep community builds aligned with Clawx-biz by physically trimming
+  // bundled OpenClaw consumer skills on startup (dev + packaged), keeping only
+  // `skill-creator`. This also prunes stale openclaw.json entries for trimmed
+  // bundled skills so we do not keep `enabled: false` config for skills that no
+  // longer exist.
+  if (!isE2EMode) {
+    void trimBundledOpenClawSkillsAndConfigs().then(({ removed, removedConfigs, kept }) => {
+      if (removed > 0 || removedConfigs > 0) {
+        logger.info(
+          `Trimmed bundled OpenClaw skills: removed ${removed}, pruned configs ${removedConfigs}, kept ${kept.join(', ')}`,
+        );
+      }
     });
   }
 

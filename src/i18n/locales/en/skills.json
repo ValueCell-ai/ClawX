@@ -3,8 +3,8 @@
     "subtitle": "Browse and manage AI capabilities",
     "refresh": "Refresh",
     "openFolder": "Open Skills Folder",
-    "gatewayWarning": "Gateway is not running. Skills cannot be loaded without an active Gateway.",
-    "gatewayStarting": "Gateway is starting. Skills will load automatically once it is ready.",
+    "gatewayWarning": "Gateway is not running. Local skills are still available, but runtime status is unavailable.",
+    "gatewayStarting": "Gateway is starting. Local skills are available now; runtime status will appear once it is ready.",
     "tabs": {
         "installed": "Installed",
         "marketplace": "Marketplace"
@@ -12,7 +12,9 @@
     "filter": {
         "all": "All ({{count}})",
         "builtIn": "Built-in ({{count}})",
-        "marketplace": "Marketplace ({{count}})"
+        "marketplace": "Marketplace ({{count}})",
+        "enabledList": "Enabled ({{count}})",
+        "disabledList": "Disabled ({{count}})"
     },
     "search": "Search skills...",
     "searchMarketplace": "Search marketplace...",
@@ -73,10 +75,11 @@
     },
     "source": {
         "badge": {
-            "bundled": "Bundled",
+            "bundled": "Bundled dir",
             "managed": "Managed",
             "workspace": "Workspace",
             "extra": "Extra dirs",
+            "plugin": "Plugin dir",
             "agentsPersonal": "Personal .agents",
             "agentsProject": "Project .agents",
             "unknown": "Unknown source"

@@ -21,8 +21,8 @@ describe('skills store error mapping', () => {
     vi.clearAllMocks();
   });
 
-  it('maps fetchSkills rate-limit error by AppError code', async () => {
-    rpcMock.mockResolvedValueOnce({ skills: [] });
+  it('maps fetchSkills rate-limit error when both local and gateway loading fail', async () => {
+    rpcMock.mockRejectedValueOnce(new Error('gateway unavailable'));
     hostApiFetchMock.mockRejectedValueOnce(new Error('rate limit exceeded'));
 
     const { useSkillsStore } = await import('@/stores/skills');
@@ -37,6 +37,7 @@ describe('skills store error mapping', () => {
     const { useSkillsStore } = await import('@/stores/skills');
     await useSkillsStore.getState().searchSkills('git');
 
+    expect(hostApiFetchMock).toHaveBeenCalledWith('/api/skills/marketplace/search', expect.objectContaining({ method: 'POST' }));
     expect(useSkillsStore.getState().searchError).toBe('searchTimeoutError');
   });
 
@@ -45,5 +46,6 @@ describe('skills store error mapping', () => {
 
     const { useSkillsStore } = await import('@/stores/skills');
     await expect(useSkillsStore.getState().installSkill('demo-skill')).rejects.toThrow('installTimeoutError');
+    expect(hostApiFetchMock).toHaveBeenCalledWith('/api/skills/marketplace/install', expect.objectContaining({ method: 'POST' }));
   });
 });

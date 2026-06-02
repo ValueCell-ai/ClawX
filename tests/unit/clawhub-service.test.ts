@@ -1,166 +1,77 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { ClawHubService } from '@electron/gateway/clawhub';
+import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { tmpdir } from 'node:os';
 
-describe('ClawHubService marketplace HTTP lookup', () => {
+async function loadServiceForHome(homeDir: string) {
+  vi.resetModules();
+  const paths = await import('@electron/utils/paths');
+  vi.spyOn(paths, 'getOpenClawConfigDir').mockReturnValue(join(homeDir, '.openclaw'));
+  const mod = await import('@electron/gateway/clawhub');
+  return mod.ClawHubService;
+}
+
+describe('ClawHubService marketplace compatibility', () => {
   beforeEach(() => {
     vi.restoreAllMocks();
-    vi.stubGlobal('fetch', vi.fn());
-    vi.spyOn(console, 'warn').mockImplementation(() => undefined);
   });
 
   afterEach(() => {
-    vi.unstubAllGlobals();
+    vi.resetModules();
   });
 
-  it('uses the official ClawHub search API before the CLI fallback', async () => {
+  it('reports local-only capability when no marketplace provider is registered', async () => {
+    const homeDir = mkdtempSync(join(tmpdir(), 'clawx-clawhub-home-'));
+    const ClawHubService = await loadServiceForHome(homeDir);
     const service = new ClawHubService();
-    const runCommand = vi.spyOn(service as unknown as { runCommand(args: string[]): Promise<string> }, 'runCommand');
-    const fetchMock = vi.mocked(fetch);
 
-    fetchMock.mockResolvedValueOnce(new Response(JSON.stringify({
-      results: [{
+    await expect(service.getMarketplaceCapability()).resolves.toEqual({
+      mode: 'local-only',
+      canSearch: false,
+      canInstall: false,
+      reason: 'marketplace-disabled',
+    });
+  });
+
+  it('delegates search and install to a registered marketplace provider', async () => {
+    const homeDir = mkdtempSync(join(tmpdir(), 'clawx-clawhub-home-'));
+    const ClawHubService = await loadServiceForHome(homeDir);
+    const service = new ClawHubService();
+    const provider = {
+      getCapability: vi.fn().mockResolvedValue({ mode: 'enterprise-marketplace', canSearch: true, canInstall: true }),
+      search: vi.fn().mockResolvedValue([{ slug: 'pdf', name: 'PDF', description: 'Docs', version: '1.0.0' }]),
+      install: vi.fn().mockResolvedValue(undefined),
+    };
+
+    service.setMarketplaceProvider(provider);
+
+    await expect(service.search({ query: 'pdf' })).resolves.toEqual([
+      { slug: 'pdf', name: 'PDF', description: 'Docs', version: '1.0.0' },
+    ]);
+    await expect(service.install({ slug: 'pdf' })).resolves.toBeUndefined();
+    expect(provider.search).toHaveBeenCalledWith({ query: 'pdf' });
+    expect(provider.install).toHaveBeenCalledWith({ slug: 'pdf' });
+  });
+
+  it('lists installed managed skills from the filesystem without the clawhub CLI', async () => {
+    const homeDir = mkdtempSync(join(tmpdir(), 'clawx-clawhub-home-'));
+    const openclawDir = join(homeDir, '.openclaw');
+    const skillDir = join(openclawDir, 'skills', 'pdf');
+    mkdirSync(join(skillDir, '.clawhub'), { recursive: true });
+    writeFileSync(join(skillDir, 'SKILL.md'), '---\nname: PDF\n---\n');
+    writeFileSync(join(skillDir, 'manifest.json'), JSON.stringify({ version: '1.2.3' }));
+    writeFileSync(join(skillDir, '.clawhub', 'origin.json'), JSON.stringify({ installedVersion: '1.2.4' }));
+
+    const ClawHubService = await loadServiceForHome(homeDir);
+    const service = new ClawHubService();
+
+    await expect(service.listInstalled()).resolves.toEqual([
+      {
         slug: 'pdf',
-        displayName: 'PDF Tools',
-        summary: 'Read and transform PDFs',
-        version: '1.2.3',
-        score: 4.25,
-      }],
-    }), {
-      headers: { 'content-type': 'application/json' },
-    }));
-
-    const result = await service.search({ query: 'pdf', limit: 5 });
-
-    expect(fetchMock).toHaveBeenCalledTimes(1);
-    const requestedUrl = new URL(String(fetchMock.mock.calls[0][0]));
-    expect(requestedUrl.origin).toBe('https://clawhub.ai');
-    expect(requestedUrl.pathname).toBe('/api/v1/search');
-    expect(requestedUrl.searchParams.get('q')).toBe('pdf');
-    expect(requestedUrl.searchParams.get('limit')).toBe('5');
-    expect(runCommand).not.toHaveBeenCalled();
-    expect(result).toEqual([{
-      slug: 'pdf',
-      name: 'PDF Tools',
-      description: 'Read and transform PDFs',
-      version: '1.2.3',
-    }]);
-  });
-
-  it('uses the official ClawHub skills API for explore before the CLI fallback', async () => {
-    const service = new ClawHubService();
-    const runCommand = vi.spyOn(service as unknown as { runCommand(args: string[]): Promise<string> }, 'runCommand');
-    const fetchMock = vi.mocked(fetch);
-
-    fetchMock.mockResolvedValueOnce(new Response(JSON.stringify({
-      items: [{
-        slug: 'writer',
-        displayName: 'Writer',
-        summary: 'Draft structured documents',
-        latestVersion: { version: '2.0.0' },
-      }],
-    }), {
-      headers: { 'content-type': 'application/json' },
-    }));
-
-    const result = await service.explore({ limit: 3 });
-
-    expect(fetchMock).toHaveBeenCalledTimes(1);
-    const requestedUrl = new URL(String(fetchMock.mock.calls[0][0]));
-    expect(requestedUrl.origin).toBe('https://clawhub.ai');
-    expect(requestedUrl.pathname).toBe('/api/v1/skills');
-    expect(requestedUrl.searchParams.get('limit')).toBe('3');
-    expect(runCommand).not.toHaveBeenCalled();
-    expect(result).toEqual([{
-      slug: 'writer',
-      name: 'Writer',
-      description: 'Draft structured documents',
-      version: '2.0.0',
-    }]);
-  });
-
-  it('falls back to the CLI when the HTTP marketplace response is not JSON', async () => {
-    const service = new ClawHubService();
-    const runCommand = vi
-      .spyOn(service as unknown as { runCommand(args: string[]): Promise<string> }, 'runCommand')
-      .mockResolvedValueOnce('pdf v1.0.0 PDF toolkit (3.500)');
-    const fetchMock = vi.mocked(fetch);
-
-    fetchMock.mockResolvedValueOnce(new Response('<!doctype html><html></html>', {
-      headers: { 'content-type': 'text/html' },
-    }));
-
-    const result = await service.search({ query: 'pdf', limit: 1 });
-
-    expect(fetchMock).toHaveBeenCalledTimes(1);
-    expect(runCommand).toHaveBeenCalledWith(['search', 'pdf', '--limit', '1']);
-    expect(result).toEqual([{
-      slug: 'pdf',
-      name: 'pdf',
-      description: 'PDF toolkit',
-      version: '1.0.0',
-    }]);
-  });
-
-  it('falls back to the CLI when the HTTP marketplace request fails', async () => {
-    const service = new ClawHubService();
-    const runCommand = vi
-      .spyOn(service as unknown as { runCommand(args: string[]): Promise<string> }, 'runCommand')
-      .mockResolvedValueOnce('pdf v1.0.0 PDF toolkit');
-    const fetchMock = vi.mocked(fetch);
-
-    fetchMock.mockRejectedValueOnce(new Error('ECONNRESET'));
-
-    const result = await service.search({ query: 'pdf' });
-
-    expect(fetchMock).toHaveBeenCalledTimes(1);
-    expect(runCommand).toHaveBeenCalledWith(['search', 'pdf']);
-    expect(result[0]).toMatchObject({
-      slug: 'pdf',
-      description: 'PDF toolkit',
-      version: '1.0.0',
-    });
-  });
-
-  it('falls back to the CLI when the HTTP marketplace request is aborted', async () => {
-    const service = new ClawHubService();
-    const runCommand = vi
-      .spyOn(service as unknown as { runCommand(args: string[]): Promise<string> }, 'runCommand')
-      .mockResolvedValueOnce('pdf v1.0.0 PDF toolkit');
-    const fetchMock = vi.mocked(fetch);
-
-    fetchMock.mockRejectedValueOnce(new DOMException('The operation was aborted', 'AbortError'));
-
-    const result = await service.search({ query: 'pdf' });
-
-    expect(fetchMock).toHaveBeenCalledTimes(1);
-    expect(runCommand).toHaveBeenCalledWith(['search', 'pdf']);
-    expect(result[0]).toMatchObject({
-      slug: 'pdf',
-      description: 'PDF toolkit',
-      version: '1.0.0',
-    });
-  });
-
-  it('falls back to the CLI when the HTTP marketplace returns a server error', async () => {
-    const service = new ClawHubService();
-    const runCommand = vi
-      .spyOn(service as unknown as { runCommand(args: string[]): Promise<string> }, 'runCommand')
-      .mockResolvedValueOnce('pdf v1.0.0 PDF toolkit');
-    const fetchMock = vi.mocked(fetch);
-
-    fetchMock.mockResolvedValueOnce(new Response('temporary failure', {
-      status: 503,
-      headers: { 'content-type': 'text/plain' },
-    }));
-
-    const result = await service.search({ query: 'pdf' });
-
-    expect(fetchMock).toHaveBeenCalledTimes(1);
-    expect(runCommand).toHaveBeenCalledWith(['search', 'pdf']);
-    expect(result[0]).toMatchObject({
-      slug: 'pdf',
-      description: 'PDF toolkit',
-      version: '1.0.0',
-    });
+        version: '1.2.4',
+        source: 'openclaw-managed',
+        baseDir: skillDir,
+      },
+    ]);
   });
 });

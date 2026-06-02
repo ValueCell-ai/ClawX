@@ -23,6 +23,13 @@ export interface Skill {
   source?: string;
   baseDir?: string;
   filePath?: string;
+  marketplace?: {
+    provider: string;
+    slug?: string;
+    installedVersion?: string;
+    manifestPath?: string;
+    originPath?: string;
+  };
 }
 
 export interface QuickAccessSkill {
