@@ -1,5 +1,6 @@
 import { open } from 'node:fs/promises';
 import { join } from 'node:path';
+import type { HostApiContract } from '../../src/lib/host-api-contract';
 import type { GatewayManager } from '../gateway/manager';
 import { logger } from '../utils/logger';
 import { getOpenClawConfigDir } from '../utils/paths';
@@ -44,7 +45,7 @@ async function readTail(filePath: string, tailLines = DEFAULT_TAIL_LINES): Promi
   }
 }
 
-export function createDiagnosticsApi(ctx: DiagnosticsApiContext) {
+export function createDiagnosticsApi(ctx: DiagnosticsApiContext): HostApiContract['diagnostics'] {
   return {
     gatewaySnapshot: async () => {
       const { channels } = await buildChannelAccountsView(ctx, { probe: false });

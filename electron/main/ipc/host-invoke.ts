@@ -1,5 +1,6 @@
 import { ipcMain } from 'electron';
 import {
+  type CompleteHostServiceRegistry,
   type HostResponse,
   type HostServiceRegistry,
   isHostRequest,
@@ -8,6 +9,8 @@ import {
 function hasOwnProperty(record: object, key: string): boolean {
   return Object.prototype.hasOwnProperty.call(record, key);
 }
+
+type RuntimeHostAction = (payload?: unknown) => Promise<unknown> | unknown;
 
 export function createHostInvokeDispatcher(services: HostServiceRegistry) {
   return async function dispatchHostRequest(request: unknown): Promise<HostResponse> {
@@ -27,7 +30,7 @@ export function createHostInvokeDispatcher(services: HostServiceRegistry) {
       ? services[request.module]
       : undefined;
     const action = moduleActions && hasOwnProperty(moduleActions, request.action)
-      ? moduleActions[request.action]
+      ? (moduleActions as Record<string, RuntimeHostAction>)[request.action]
       : undefined;
     if (typeof action !== 'function') {
       return {
@@ -56,7 +59,7 @@ export function createHostInvokeDispatcher(services: HostServiceRegistry) {
   };
 }
 
-export function registerHostInvokeHandler(services: HostServiceRegistry): void {
+export function registerHostInvokeHandler(services: CompleteHostServiceRegistry): void {
   const dispatch = createHostInvokeDispatcher(services);
   ipcMain.handle('host:invoke', async (_event, request: unknown) => dispatch(request));
 }

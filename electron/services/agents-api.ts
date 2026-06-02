@@ -1,4 +1,5 @@
 import type { GatewayManager } from '../gateway/manager';
+import type { HostApiContract } from '../../src/lib/host-api-contract';
 import {
   assignChannelToAgent,
   clearChannelBinding,
@@ -12,15 +13,12 @@ import {
 } from '../utils/agent-config';
 import { deleteChannelAccountConfig } from '../utils/channel-config';
 import { ensureClawXContext } from '../utils/openclaw-workspace';
+import { isRecord } from './payload-utils';
 import { syncAgentModelOverrideToRuntime, syncAllProviderAuthToRuntime } from './providers/provider-runtime-sync';
 
 type AgentsApiContext = {
   gatewayManager: GatewayManager;
 };
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
 
 function requireString(payload: unknown, key: string): string {
   if (!isRecord(payload) || typeof payload[key] !== 'string' || !payload[key].trim()) {
@@ -46,10 +44,10 @@ async function restartGatewayForAgentDeletion(ctx: AgentsApiContext): Promise<vo
   }
 }
 
-export function createAgentsApi(ctx: AgentsApiContext) {
+export function createAgentsApi(ctx: AgentsApiContext): HostApiContract['agents'] {
   return {
     list: async () => ({ success: true, ...(await listAgentsSnapshot()) }),
-    create: async (payload?: unknown) => {
+    create: async (payload) => {
       const name = requireString(payload, 'name');
       const inheritWorkspace = isRecord(payload) ? payload.inheritWorkspace === true : undefined;
       const snapshot = await createAgent(name, { inheritWorkspace });
@@ -62,14 +60,14 @@ export function createAgentsApi(ctx: AgentsApiContext) {
       });
       return { success: true, ...snapshot };
     },
-    update: async (payload?: unknown) => {
+    update: async (payload) => {
       const agentId = requireString(payload, 'id');
       const name = requireString(payload, 'name');
       const snapshot = await updateAgentName(agentId, name);
       scheduleGatewayReload(ctx, 'update-agent');
       return { success: true, ...snapshot };
     },
-    updateModel: async (payload?: unknown) => {
+    updateModel: async (payload) => {
       const agentId = requireString(payload, 'id');
       const modelRef = isRecord(payload) && typeof payload.modelRef === 'string' ? payload.modelRef : null;
       const snapshot = await updateAgentModel(agentId, modelRef);
@@ -81,7 +79,7 @@ export function createAgentsApi(ctx: AgentsApiContext) {
       }
       return { success: true, ...snapshot };
     },
-    delete: async (payload?: unknown) => {
+    delete: async (payload) => {
       const agentId = requireString(payload, 'id');
       const { snapshot, removedEntry } = await deleteAgentConfig(agentId);
       await restartGatewayForAgentDeletion(ctx);
@@ -90,14 +88,14 @@ export function createAgentsApi(ctx: AgentsApiContext) {
       });
       return { success: true, ...snapshot };
     },
-    assignChannel: async (payload?: unknown) => {
+    assignChannel: async (payload) => {
       const agentId = requireString(payload, 'id');
       const channelType = requireString(payload, 'channelType');
       const snapshot = await assignChannelToAgent(agentId, channelType);
       scheduleGatewayReload(ctx, 'assign-channel');
       return { success: true, ...snapshot };
     },
-    removeChannel: async (payload?: unknown) => {
+    removeChannel: async (payload) => {
       const agentId = requireString(payload, 'id');
       const channelType = requireString(payload, 'channelType');
       const ownerId = agentId.trim().toLowerCase();

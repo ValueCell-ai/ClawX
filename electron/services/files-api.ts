@@ -2,7 +2,9 @@ import { app, nativeImage } from 'electron';
 import crypto from 'node:crypto';
 import { homedir } from 'node:os';
 import { basename, extname, join, relative, resolve, sep } from 'node:path';
+import type { HostApiContract } from '../../src/lib/host-api-contract';
 import { expandPath } from '../utils/paths';
+import { isRecord } from './payload-utils';
 
 const EXT_MIME_MAP: Record<string, string> = {
   '.png': 'image/png',
@@ -105,10 +107,6 @@ type ResolvedSandboxedPath = {
   realPath: string;
   readOnly: boolean;
 };
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
 
 function getMimeType(ext: string): string {
   return EXT_MIME_MAP[ext.toLowerCase()] || 'application/octet-stream';
@@ -224,9 +222,9 @@ function getBinaryOptions(opts: unknown): FileReadBinaryOptions {
   return isRecord(opts) ? opts as FileReadBinaryOptions : {};
 }
 
-export function createFilesApi() {
+export function createFilesApi(): HostApiContract['files'] {
   return {
-    stagePaths: async (payload?: unknown) => {
+    stagePaths: async (payload) => {
       const body = isRecord(payload) ? payload as StagePathsPayload : {};
       const filePaths = Array.isArray(body.filePaths)
         ? body.filePaths.filter((value): value is string => typeof value === 'string')
@@ -263,7 +261,7 @@ export function createFilesApi() {
       }
       return results;
     },
-    stageBuffer: async (payload?: unknown) => {
+    stageBuffer: async (payload) => {
       const body = isRecord(payload) ? payload as StageBufferPayload : {};
       if (typeof body.base64 !== 'string' || typeof body.fileName !== 'string') {
         throw new Error('Invalid staged buffer payload');
@@ -291,7 +289,7 @@ export function createFilesApi() {
         preview,
       };
     },
-    readText: async (payload?: unknown) => {
+    readText: async (payload) => {
       try {
         const { realPath: real, readOnly } = await resolveSandboxedPath(requirePath(payload), 'read');
         const fsP = await import('node:fs/promises');
@@ -314,7 +312,7 @@ export function createFilesApi() {
         return { ok: false, error: message };
       }
     },
-    readBinary: async (payload?: unknown) => {
+    readBinary: async (payload) => {
       try {
         const body = isRecord(payload) ? payload as PathPayload : {};
         const opts = getBinaryOptions(body.opts);
@@ -341,7 +339,7 @@ export function createFilesApi() {
         return { ok: false, error: message };
       }
     },
-    writeText: async (payload?: unknown) => {
+    writeText: async (payload) => {
       try {
         const body = isRecord(payload) ? payload as PathPayload : {};
         if (typeof body.content !== 'string') return { ok: false, error: 'invalidContent' };
@@ -366,7 +364,7 @@ export function createFilesApi() {
         return { ok: false, error: message };
       }
     },
-    stat: async (payload?: unknown) => {
+    stat: async (payload) => {
       try {
         const { realPath: real, readOnly } = await resolveSandboxedPath(requirePath(payload), 'read');
         const fsP = await import('node:fs/promises');
@@ -386,7 +384,7 @@ export function createFilesApi() {
         return { ok: false, error: message };
       }
     },
-    listDir: async (payload?: unknown) => {
+    listDir: async (payload) => {
       try {
         const { realPath: real } = await resolveSandboxedPath(requirePath(payload), 'read');
         const fsP = await import('node:fs/promises');
@@ -414,7 +412,7 @@ export function createFilesApi() {
         return { ok: false, error: message };
       }
     },
-    listTree: async (payload?: unknown) => {
+    listTree: async (payload) => {
       try {
         const body = isRecord(payload) ? payload as PathPayload : {};
         const opts = getTreeOptions(body.opts);

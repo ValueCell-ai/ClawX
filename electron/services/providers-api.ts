@@ -1,4 +1,5 @@
 import type { BrowserWindow } from 'electron';
+import type { HostApiContract } from '../../src/lib/host-api-contract';
 import type { GatewayManager } from '../gateway/manager';
 import type { ProviderConfig } from '../utils/secure-storage';
 import { browserOAuthManager, type BrowserOAuthProviderType } from '../utils/browser-oauth';
@@ -19,20 +20,20 @@ import {
 } from './providers/provider-runtime-sync';
 import { validateApiKeyWithProvider } from './providers/provider-validation';
 import type { ProviderAccount } from '../shared/providers/types';
+import { isRecord } from './payload-utils';
 
 type ProvidersApiContext = {
   gatewayManager: GatewayManager;
   mainWindow: BrowserWindow;
 };
 
+type ProviderPayload<Action extends keyof HostApiContract['providers']> =
+  Parameters<HostApiContract['providers'][Action]>[0];
+
 type ValidationOptions = {
   baseUrl?: string;
   apiProtocol?: string;
 };
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
 
 function hasObjectChanges<T extends Record<string, unknown>>(
   existing: T,
@@ -133,7 +134,7 @@ function getSavePayload(payload: unknown): { config: ProviderConfig; apiKey?: st
   };
 }
 
-async function validateKey(payload?: unknown): Promise<{ valid: boolean; error?: string }> {
+async function validateKey(payload: ProviderPayload<'validateKey'>): Promise<{ valid: boolean; error?: string }> {
   try {
     const body = getPayloadRecord(payload, 'validateKey');
     const accountId = typeof body.accountId === 'string' && body.accountId.trim()
@@ -172,7 +173,7 @@ async function validateKey(payload?: unknown): Promise<{ valid: boolean; error?:
   }
 }
 
-async function saveProvider(payload?: unknown, gatewayManager?: GatewayManager) {
+async function saveProvider(payload: ProviderPayload<'save'>, gatewayManager?: GatewayManager) {
   const providerService = getProviderService();
   const { config, apiKey } = getSavePayload(payload);
   try {
@@ -191,7 +192,7 @@ async function saveProvider(payload?: unknown, gatewayManager?: GatewayManager) 
   }
 }
 
-async function deleteProvider(payload?: unknown, gatewayManager?: GatewayManager) {
+async function deleteProvider(payload: ProviderPayload<'delete'>, gatewayManager?: GatewayManager) {
   const providerService = getProviderService();
   const providerId = getProviderId(payload, 'delete');
   try {
@@ -204,7 +205,7 @@ async function deleteProvider(payload?: unknown, gatewayManager?: GatewayManager
   }
 }
 
-async function setProviderApiKey(payload?: unknown) {
+async function setProviderApiKey(payload: ProviderPayload<'setApiKey'>) {
   const providerService = getProviderService();
   const { providerId, apiKey } = getApiKeyPayload(payload, 'setApiKey');
   try {
@@ -218,7 +219,7 @@ async function setProviderApiKey(payload?: unknown) {
   }
 }
 
-async function updateProviderWithKey(payload?: unknown, gatewayManager?: GatewayManager) {
+async function updateProviderWithKey(payload: ProviderPayload<'updateWithKey'>, gatewayManager?: GatewayManager) {
   const providerService = getProviderService();
   const { providerId, updates, apiKey } = getProviderUpdatePayload(payload);
   const existing = await providerService._getProviderInternal(providerId);
@@ -268,7 +269,7 @@ async function updateProviderWithKey(payload?: unknown, gatewayManager?: Gateway
   }
 }
 
-async function deleteProviderApiKey(payload?: unknown) {
+async function deleteProviderApiKey(payload: ProviderPayload<'deleteApiKey'>) {
   const providerService = getProviderService();
   const providerId = getProviderId(payload, 'deleteApiKey');
   try {
@@ -281,7 +282,7 @@ async function deleteProviderApiKey(payload?: unknown) {
   }
 }
 
-async function setDefaultProvider(payload?: unknown, gatewayManager?: GatewayManager) {
+async function setDefaultProvider(payload: ProviderPayload<'setDefault'>, gatewayManager?: GatewayManager) {
   const providerService = getProviderService();
   const providerId = getProviderId(payload, 'setDefault');
   try {
@@ -293,7 +294,7 @@ async function setDefaultProvider(payload?: unknown, gatewayManager?: GatewayMan
   }
 }
 
-async function createAccount(payload?: unknown, gatewayManager?: GatewayManager) {
+async function createAccount(payload: ProviderPayload<'createAccount'>, gatewayManager?: GatewayManager) {
   const providerService = getProviderService();
   const body = getPayloadRecord(payload, 'createAccount');
   if (!isRecord(body.account)) {
@@ -309,7 +310,7 @@ async function createAccount(payload?: unknown, gatewayManager?: GatewayManager)
   }
 }
 
-async function updateAccount(payload?: unknown, gatewayManager?: GatewayManager) {
+async function updateAccount(payload: ProviderPayload<'updateAccount'>, gatewayManager?: GatewayManager) {
   const providerService = getProviderService();
   const body = getPayloadRecord(payload, 'updateAccount');
   const accountId = typeof body.accountId === 'string' ? body.accountId.trim() : '';
@@ -335,7 +336,10 @@ async function updateAccount(payload?: unknown, gatewayManager?: GatewayManager)
   }
 }
 
-async function deleteAccount(payload?: unknown, gatewayManager?: GatewayManager) {
+async function deleteAccount(
+  payload: ProviderPayload<'deleteAccount'> & { apiKeyOnly?: boolean },
+  gatewayManager?: GatewayManager,
+) {
   const providerService = getProviderService();
   const body = getPayloadRecord(payload, 'deleteAccount');
   const accountId = typeof body.accountId === 'string' ? body.accountId.trim() : '';
@@ -370,7 +374,7 @@ async function deleteAccount(payload?: unknown, gatewayManager?: GatewayManager)
   }
 }
 
-async function setDefaultAccount(payload?: unknown, gatewayManager?: GatewayManager) {
+async function setDefaultAccount(payload: ProviderPayload<'setDefaultAccount'>, gatewayManager?: GatewayManager) {
   const providerService = getProviderService();
   const accountId = getAccountId(payload, 'setDefaultAccount');
   try {
@@ -386,7 +390,7 @@ async function setDefaultAccount(payload?: unknown, gatewayManager?: GatewayMana
   }
 }
 
-async function requestOAuth(payload?: unknown) {
+async function requestOAuth(payload: ProviderPayload<'requestOAuth'>) {
   const body = getPayloadRecord(payload, 'requestOAuth');
   const provider = typeof body.provider === 'string' ? body.provider : undefined;
   if (!provider) {
@@ -421,7 +425,7 @@ async function cancelOAuth() {
   }
 }
 
-async function submitOAuth(payload?: unknown) {
+async function submitOAuth(payload: ProviderPayload<'submitOAuth'>) {
   const body = getPayloadRecord(payload, 'submitOAuth');
   const code = typeof body.code === 'string' ? body.code : '';
   try {
@@ -435,36 +439,36 @@ async function submitOAuth(payload?: unknown) {
   }
 }
 
-export function createProvidersApi(ctx: ProvidersApiContext) {
+export function createProvidersApi(ctx: ProvidersApiContext): HostApiContract['providers'] {
   const providerService = getProviderService();
   deviceOAuthManager.setWindow(ctx.mainWindow);
   browserOAuthManager.setWindow(ctx.mainWindow);
 
   return {
     list: async () => providerService._listProvidersWithKeyInfoInternal(),
-    get: async (payload?: unknown) => providerService._getProviderInternal(getProviderId(payload, 'get')),
+    get: async (payload) => providerService._getProviderInternal(getProviderId(payload, 'get')),
     getDefault: async () => providerService._getDefaultProviderInternal(),
-    hasApiKey: async (payload?: unknown) => providerService._hasProviderApiKeyInternal(getProviderId(payload, 'hasApiKey')),
-    getApiKey: async (payload?: unknown) => providerService._getProviderApiKeyInternal(getProviderId(payload, 'getApiKey')),
+    hasApiKey: async (payload) => providerService._hasProviderApiKeyInternal(getProviderId(payload, 'hasApiKey')),
+    getApiKey: async (payload) => providerService._getProviderApiKeyInternal(getProviderId(payload, 'getApiKey')),
     validateKey,
-    save: async (payload?: unknown) => saveProvider(payload, ctx.gatewayManager),
-    delete: async (payload?: unknown) => deleteProvider(payload, ctx.gatewayManager),
+    save: async (payload) => saveProvider(payload, ctx.gatewayManager),
+    delete: async (payload) => deleteProvider(payload, ctx.gatewayManager),
     setApiKey: setProviderApiKey,
-    updateWithKey: async (payload?: unknown) => updateProviderWithKey(payload, ctx.gatewayManager),
+    updateWithKey: async (payload) => updateProviderWithKey(payload, ctx.gatewayManager),
     deleteApiKey: deleteProviderApiKey,
-    setDefault: async (payload?: unknown) => setDefaultProvider(payload, ctx.gatewayManager),
+    setDefault: async (payload) => setDefaultProvider(payload, ctx.gatewayManager),
     accounts: async () => providerService.listAccounts(),
     vendors: async () => providerService.listVendors(),
     accountKeyInfo: async () => providerService.listAccountsKeyInfo(),
     getDefaultAccount: async () => ({ accountId: await providerService.getDefaultAccountId() ?? null }),
-    getAccount: async (payload?: unknown) => providerService.getAccount(getAccountId(payload, 'getAccount')),
-    getAccountApiKey: async (payload?: unknown) => providerService.getAccountApiKey(getAccountId(payload, 'getAccountApiKey')),
-    hasAccountApiKey: async (payload?: unknown) => providerService.hasAccountApiKey(getAccountId(payload, 'hasAccountApiKey')),
-    createAccount: async (payload?: unknown) => createAccount(payload, ctx.gatewayManager),
-    updateAccount: async (payload?: unknown) => updateAccount(payload, ctx.gatewayManager),
-    deleteAccount: async (payload?: unknown) => deleteAccount(payload, ctx.gatewayManager),
-    deleteAccountApiKey: async (payload?: unknown) => deleteAccount({ accountId: getAccountId(payload, 'deleteAccountApiKey'), apiKeyOnly: true }, ctx.gatewayManager),
-    setDefaultAccount: async (payload?: unknown) => setDefaultAccount(payload, ctx.gatewayManager),
+    getAccount: async (payload) => providerService.getAccount(getAccountId(payload, 'getAccount')),
+    getAccountApiKey: async (payload) => providerService.getAccountApiKey(getAccountId(payload, 'getAccountApiKey')),
+    hasAccountApiKey: async (payload) => providerService.hasAccountApiKey(getAccountId(payload, 'hasAccountApiKey')),
+    createAccount: async (payload) => createAccount(payload, ctx.gatewayManager),
+    updateAccount: async (payload) => updateAccount(payload, ctx.gatewayManager),
+    deleteAccount: async (payload) => deleteAccount(payload, ctx.gatewayManager),
+    deleteAccountApiKey: async (payload) => deleteAccount({ accountId: getAccountId(payload, 'deleteAccountApiKey'), apiKeyOnly: true }, ctx.gatewayManager),
+    setDefaultAccount: async (payload) => setDefaultAccount(payload, ctx.gatewayManager),
     requestOAuth,
     cancelOAuth,
     submitOAuth,

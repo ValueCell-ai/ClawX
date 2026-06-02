@@ -1,12 +1,10 @@
 import { getRecentTokenUsageHistory } from '../utils/token-usage';
+import type { HostApiContract } from '../../src/lib/host-api-contract';
+import { isRecord } from './payload-utils';
 
 type RecentTokenHistoryPayload = {
   limit?: unknown;
 };
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
 
 function getSafeLimit(payload: unknown): number | undefined {
   const value = isRecord(payload) ? (payload as RecentTokenHistoryPayload).limit : payload;
@@ -22,8 +20,8 @@ function getSafeLimit(payload: unknown): number | undefined {
   return undefined;
 }
 
-export function createUsageApi() {
+export function createUsageApi(): HostApiContract['usage'] {
   return {
-    recentTokenHistory: async (payload?: unknown) => getRecentTokenUsageHistory(getSafeLimit(payload)),
+    recentTokenHistory: async (payload) => getRecentTokenUsageHistory(getSafeLimit(payload)),
   };
 }

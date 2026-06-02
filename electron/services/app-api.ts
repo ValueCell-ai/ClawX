@@ -1,16 +1,14 @@
+import type { HostApiContract } from '../../src/lib/host-api-contract';
 import { runOpenClawDoctor, runOpenClawDoctorFix } from '../utils/openclaw-doctor';
+import { isRecord } from './payload-utils';
 
 type OpenClawDoctorPayload = {
   mode?: unknown;
 };
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
-
-export function createAppApi() {
+export function createAppApi(): HostApiContract['app'] {
   return {
-    openClawDoctor: async (payload?: unknown) => {
+    openClawDoctor: async (payload) => {
       const body = isRecord(payload) ? payload as OpenClawDoctorPayload : {};
       return body.mode === 'fix' ? runOpenClawDoctorFix() : runOpenClawDoctor();
     },

@@ -3,6 +3,7 @@
  * Exposes safe APIs to the renderer process via contextBridge
  */
 import { contextBridge, ipcRenderer, webUtils } from 'electron';
+import type { HostRequest } from '../../src/lib/host-api-types';
 
 /**
  * IPC renderer methods exposed to the renderer process
@@ -282,7 +283,7 @@ const electronAPI = {
 };
 
 const clawxAPI = {
-  hostInvoke: (request: unknown) => ipcRenderer.invoke('host:invoke', request),
+  hostInvoke: (request: HostRequest) => ipcRenderer.invoke('host:invoke', request),
 };
 
 // Expose the API to the renderer process

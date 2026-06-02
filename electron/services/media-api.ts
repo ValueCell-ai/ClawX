@@ -1,6 +1,7 @@
 import { dialog, nativeImage } from 'electron';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
+import type { HostApiContract } from '../../src/lib/host-api-contract';
 import {
   CLAWX_OPENAI_IMAGE_DEFAULT_MODEL,
   CLAWX_OPENAI_IMAGE_PROVIDER_KEY,
@@ -13,6 +14,7 @@ import {
   setImageGenerationConfig,
   type ImageGenerationModelConfig,
 } from '../utils/openclaw-image-generation';
+import { isRecord } from './payload-utils';
 
 type ThumbnailEntry = {
   filePath?: unknown;
@@ -34,10 +36,6 @@ type ImageGenerationSettingsPayload = {
   openAiRelayModel?: unknown;
   openAiRelayApiKey?: unknown;
 };
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
 
 async function generateImagePreview(filePath: string, mimeType: string): Promise<string | null> {
   try {
@@ -91,9 +89,9 @@ function normalizeThumbnailEntries(payload: unknown): ThumbnailEntry[] {
   return Array.isArray(value) ? value as ThumbnailEntry[] : [];
 }
 
-export function createMediaApi() {
+export function createMediaApi(): HostApiContract['media'] {
   return {
-    thumbnails: async (payload?: unknown) => {
+    thumbnails: async (payload) => {
       const entries = normalizeThumbnailEntries(payload);
       const fsP = await import('node:fs/promises');
       const results: Record<string, { preview: string | null; fileSize: number }> = {};
@@ -131,7 +129,7 @@ export function createMediaApi() {
       }
       return results;
     },
-    saveImage: async (payload?: unknown) => {
+    saveImage: async (payload) => {
       const body = isRecord(payload) ? payload as SaveImagePayload : {};
       const defaultFileName = typeof body.defaultFileName === 'string' && body.defaultFileName
         ? body.defaultFileName
@@ -168,7 +166,7 @@ export function createMediaApi() {
       success: true,
       ...(await getImageGenerationSettingsSnapshot()),
     }),
-    saveImageGenerationSettings: async (payload?: unknown) => {
+    saveImageGenerationSettings: async (payload) => {
       const body = isRecord(payload) ? payload as ImageGenerationSettingsPayload : {};
       const current = await getImageGenerationSettingsSnapshot();
       const normalizeRelayModel = (value: unknown): string => {
@@ -213,6 +211,6 @@ export function createMediaApi() {
       success: true,
       providers: await listImageGenerationProvidersFromRuntime(),
     }),
-    testImageGeneration: async (payload?: unknown) => runImageGenerationTest(isRecord(payload) ? payload : {}),
+    testImageGeneration: async (payload) => runImageGenerationTest(isRecord(payload) ? payload : {}),
   };
 }

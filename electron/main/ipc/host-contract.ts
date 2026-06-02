@@ -1,3 +1,5 @@
+import type { HostApiContract } from '../../../src/lib/host-api-contract';
+
 export type HostRequest = {
   id: string;
   module: string;
@@ -11,8 +13,12 @@ export type HostResponse<T = unknown> =
   | { id?: string; ok: true; data: T }
   | { id?: string; ok: false; error: { code: HostErrorCode; message: string; details?: unknown } };
 
-export type HostServiceAction = (payload?: unknown) => Promise<unknown> | unknown;
-export type HostServiceRegistry = Record<string, Record<string, HostServiceAction>>;
+export type HostServiceRegistry = {
+  [M in keyof HostApiContract]?: Partial<HostApiContract[M]>;
+};
+export type CompleteHostServiceRegistry = {
+  [M in keyof HostApiContract]: HostApiContract[M];
+};
 
 export function isHostRequest(value: unknown): value is HostRequest {
   if (!value || typeof value !== 'object') return false;

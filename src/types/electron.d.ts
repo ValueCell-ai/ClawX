@@ -3,6 +3,8 @@
  * Types for the APIs exposed via contextBridge
  */
 
+import type { HostResponse, HostRequest } from '../lib/host-api-types';
+
 export interface IpcRenderer {
   invoke(channel: string, ...args: unknown[]): Promise<unknown>;
   on(channel: string, callback: (...args: unknown[]) => void): (() => void) | void;
@@ -18,22 +20,9 @@ export interface ElectronAPI {
   isDev: boolean;
 }
 
-export type HostInvokeRequest = {
-  id: string;
-  module: string;
-  action: string;
-  payload?: unknown;
-};
-
 export type HostInvokeErrorCode = 'VALIDATION' | 'UNSUPPORTED' | 'INTERNAL';
-
-export type HostInvokeResponse<T = unknown> =
-  | { id?: string; ok: true; data: T }
-  | {
-    id?: string;
-    ok: false;
-    error: { code: HostInvokeErrorCode; message: string; details?: unknown };
-  };
+export type HostInvokeRequest = HostRequest;
+export type HostInvokeResponse<T = unknown> = HostResponse<T>;
 
 declare global {
   interface Window {

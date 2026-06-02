@@ -1,5 +1,7 @@
 import type { GatewayManager } from '../gateway/manager';
+import type { HostApiContract } from '../../src/lib/host-api-contract';
 import { logger } from '../utils/logger';
+import { isRecord } from './payload-utils';
 
 const VISION_MIME_TYPES = new Set([
   'image/png',
@@ -22,10 +24,6 @@ type MediaPayload = {
   fileName?: unknown;
 };
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
-
 function normalizeMedia(media: unknown): Array<{ filePath: string; mimeType: string; fileName: string }> {
   if (!Array.isArray(media)) return [];
   return media.flatMap((entry): Array<{ filePath: string; mimeType: string; fileName: string }> => {
@@ -40,9 +38,9 @@ function normalizeMedia(media: unknown): Array<{ filePath: string; mimeType: str
   });
 }
 
-export function createChatApi({ gatewayManager }: { gatewayManager: GatewayManager }) {
+export function createChatApi({ gatewayManager }: { gatewayManager: GatewayManager }): HostApiContract['chat'] {
   return {
-    sendWithMedia: async (payload?: unknown) => {
+    sendWithMedia: async (payload) => {
       const body = isRecord(payload) ? payload as ChatSendWithMediaPayload : {};
       const sessionKey = typeof body.sessionKey === 'string' ? body.sessionKey : '';
       const idempotencyKey = typeof body.idempotencyKey === 'string' ? body.idempotencyKey : '';

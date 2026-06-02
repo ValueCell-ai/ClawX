@@ -1,5 +1,6 @@
 import { openSync, closeSync, fstatSync, readSync } from 'node:fs';
 import { join } from 'node:path';
+import type { HostApiContract } from '../../src/lib/host-api-contract';
 import { getOpenClawConfigDir } from '../utils/paths';
 import { logger } from '../utils/logger';
 import {
@@ -7,6 +8,7 @@ import {
   resolveSessionTranscriptPath,
   sweepSessionArtefacts,
 } from '../utils/session-files';
+import { isRecord } from './payload-utils';
 
 const SAFE_SESSION_SEGMENT = /^[A-Za-z0-9][A-Za-z0-9_-]*$/;
 const RECENT_TRANSCRIPT_INITIAL_READ_BYTES = 256 * 1024;
@@ -40,10 +42,6 @@ type SessionPayload = {
   limit?: unknown;
   sessionKeys?: unknown;
 };
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
 
 function extractMessageText(content: unknown): string {
   if (typeof content === 'string') return content;
@@ -416,10 +414,10 @@ async function renameSession(sessionKey: string, label: string): Promise<{ succe
   return { success: true };
 }
 
-export function createSessionsApi() {
+export function createSessionsApi(): HostApiContract['sessions'] {
   return {
-    delete: async (payload?: unknown) => deleteSession(getSessionKey(payload)),
-    rename: async (payload?: unknown) => {
+    delete: async (payload) => deleteSession(getSessionKey(payload)),
+    rename: async (payload) => {
       const body = isRecord(payload) ? payload as SessionPayload : {};
       const sessionKey = getSessionKey(payload);
       const label = body.label ?? body.title;
@@ -428,7 +426,7 @@ export function createSessionsApi() {
       }
       return renameSession(sessionKey, label);
     },
-    summaries: async (payload?: unknown) => {
+    summaries: async (payload) => {
       const body = isRecord(payload) ? payload as SessionPayload : {};
       const sessionKeys = Array.isArray(body.sessionKeys)
         ? body.sessionKeys.filter((value): value is string => typeof value === 'string' && value.startsWith('agent:'))
@@ -439,7 +437,7 @@ export function createSessionsApi() {
         summaries: await Promise.all(sessionKeys.map((sessionKey) => loadSessionSummary(sessionKey))),
       };
     },
-    history: async (payload?: unknown) => {
+    history: async (payload) => {
       const body = isRecord(payload) ? payload as SessionPayload : {};
       const limit = getLimit(payload);
 

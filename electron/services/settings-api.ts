@@ -1,3 +1,4 @@
+import type { HostApiContract } from '../../src/lib/host-api-contract';
 import type { GatewayManager } from '../gateway/manager';
 import { syncLaunchAtStartupSettingFromStore } from '../main/launch-at-startup';
 import { createMenu } from '../main/menu';
@@ -10,6 +11,7 @@ import {
   resetSettings,
   setSetting,
 } from '../utils/store';
+import { isRecord } from './payload-utils';
 
 type KeyPayload = {
   key?: unknown;
@@ -31,10 +33,6 @@ const PROXY_SETTING_KEYS = new Set<keyof AppSettings>([
   'proxyAllServer',
   'proxyBypassRules',
 ]);
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
 
 async function validateSettingKey(key: unknown): Promise<boolean> {
   if (typeof key !== 'string' || key.length === 0) return false;
@@ -100,21 +98,21 @@ async function runSettingsSideEffects(
   }
 }
 
-export function createSettingsApi(gatewayManager: GatewayManager) {
+export function createSettingsApi(gatewayManager: GatewayManager): HostApiContract['settings'] {
   return {
     getAll: () => getAllSettings(),
-    get: async (payload?: unknown) => {
+    get: async (payload) => {
       const key = await requireSettingKey(payload);
       return getSetting(key as never);
     },
-    set: async (payload?: unknown) => {
+    set: async (payload) => {
       const body = payload as SetPayload | undefined;
       const key = await requireSettingKey(body);
       await setSetting(key as never, body?.value as never);
       await runSettingsSideEffects(gatewayManager, { [key]: body?.value } as Partial<AppSettings>);
       return { success: true };
     },
-    setMany: async (payload?: unknown) => {
+    setMany: async (payload) => {
       const patch = await requireSettingsPatch(payload);
       const entries = Object.entries(patch) as Array<[keyof AppSettings, AppSettings[keyof AppSettings]]>;
       for (const [key, value] of entries) {

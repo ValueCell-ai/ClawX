@@ -1,424 +1,290 @@
-import type { AgentsSnapshot } from '@/types/agent';
-import type { CronJob } from '@/types/cron';
-import type { GatewayHealth, GatewayStatus } from '@/types/gateway';
-import type { RawMessage } from '@/stores/chat/types';
 import type {
-  ImageGenerationProviderRow,
-  ImageGenerationSettingsSnapshot,
-  ImageGenerationTestResult,
-} from '@/lib/image-generation';
-import type { UsageHistoryEntry } from '@/pages/Models/usage-history';
-import type { MarketplaceSkill, QuickAccessSkill } from '@/types/skill';
-import type { ProviderAccount, ProviderVendorInfo, ProviderWithKeyInfo } from './providers';
+  AgentCreatePayload,
+  AgentUpdatePayload,
+  ChannelAccountsPayload,
+  ChannelSaveConfigPayload,
+  ChannelTargetsPayload,
+  ChatSendWithMediaPayload,
+  ClawHubSearchPayload,
+  CronSessionHistoryPayload,
+  FilePreviewTreeOptions,
+  FileReadBinaryOptions,
+  ImageGenerationSettingsPayload,
+  MediaThumbnailEntry,
+  OpenClawDoctorMode,
+  OpenClawDoctorResult,
+  ProviderAccount,
+  ProviderConfig,
+  ProviderOAuthRequestPayload,
+  ProviderUpdateWithKeyPayload,
+  ProviderValidationPayload,
+  SaveImagePayload,
+  SettingsKey,
+  SettingsSnapshot,
+  SettingsValue,
+  SkillQuickAccessPayload,
+  SkillUpdateConfigPayload,
+  SkillUpdatePayload,
+} from './host-api-contract';
+import type { CronJobCreateInput, CronJobUpdateInput } from '@/types/cron';
 import { invokeHost } from './host-api-client';
 
-type JsonRecord = Record<string, unknown>;
-type HostSuccess = { success: boolean; error?: string };
-type OptionalHostSuccess = { success?: boolean; error?: string };
-type ChannelRuntimeStatus = 'connected' | 'connecting' | 'degraded' | 'disconnected' | 'error';
-
-export type OpenClawDoctorResult = HostSuccess & {
-  mode: 'diagnose' | 'fix';
-  exitCode: number | null;
-  stdout: string;
-  stderr: string;
-  command: string;
-  cwd: string;
-  durationMs: number;
-  timedOut?: boolean;
-};
-
-export type SettingsSnapshot = Partial<{
-  theme: 'light' | 'dark' | 'system';
-  language: string;
-  startMinimized: boolean;
-  launchAtStartup: boolean;
-  telemetryEnabled: boolean;
-  gatewayAutoStart: boolean;
-  gatewayPort: number;
-  proxyEnabled: boolean;
-  proxyServer: string;
-  proxyHttpServer: string;
-  proxyHttpsServer: string;
-  proxyAllServer: string;
-  proxyBypassRules: string;
-  updateChannel: 'stable' | 'beta' | 'dev';
-  autoCheckUpdate: boolean;
-  sidebarCollapsed: boolean;
-  sidebarWidth: number;
-  devModeUnlocked: boolean;
-  setupComplete: boolean;
-}>;
-export type SettingsResetResult = HostSuccess & { settings: SettingsSnapshot };
-
-export type GatewayControlUiResult = HostSuccess & {
-  url?: string;
-  token?: string;
-  port?: number;
-};
-
-export type LogContentResult = { content: string };
-export type LogDirResult = { dir: string | null };
-
-export type GatewayHealthSummary = {
-  state: 'healthy' | 'degraded' | 'unresponsive';
-  reasons: string[];
-  consecutiveHeartbeatMisses: number;
-  lastAliveAt?: number;
-  lastRpcSuccessAt?: number;
-  lastRpcFailureAt?: number;
-  lastRpcFailureMethod?: string;
-  lastChannelsStatusOkAt?: number;
-  lastChannelsStatusFailureAt?: number;
-};
-
-export type ChannelAccountItem = {
-  accountId: string;
-  name: string;
-  configured: boolean;
-  status: ChannelRuntimeStatus;
-  statusReason?: string;
-  lastError?: string;
-  isDefault: boolean;
-  agentId?: string;
-};
-
-export type ChannelGroupItem = {
-  channelType: string;
-  defaultAccountId: string;
-  status: ChannelRuntimeStatus;
-  statusReason?: string;
-  accounts: ChannelAccountItem[];
-};
-
-export type ChannelTargetOption = {
-  value: string;
-  label: string;
-  kind: 'user' | 'group' | 'channel';
-};
-
-export type ChannelAccountsResult = HostSuccess & {
-  channels?: ChannelGroupItem[];
-  gatewayHealth?: GatewayHealthSummary;
-};
-export type ChannelTargetsResult = HostSuccess & {
-  channelType?: string;
-  accountId?: string;
-  targets?: ChannelTargetOption[];
-};
-export type ChannelFormValuesResult = HostSuccess & {
-  values?: Record<string, string>;
-};
-export type ChannelCredentialValidationResult = HostSuccess & {
-  valid: boolean;
-  errors?: string[];
-  warnings?: string[];
-  details?: {
-    botUsername?: string;
-    guildName?: string;
-    channelName?: string;
-  };
-};
-export type ChannelSaveConfigResult = HostSuccess & {
-  noChange?: boolean;
-  warning?: string;
-};
-
-export type ProviderAccountKeyInfo = {
-  accountId: string;
-  hasKey: boolean;
-  keyMasked: string | null;
-};
-export type ProviderDefaultAccountResult = { accountId: string | null };
-export type ProviderValidationResult = { valid: boolean; error?: string };
-
-export type StagedFileResult = {
-  id: string;
-  fileName: string;
-  mimeType: string;
-  fileSize: number;
-  stagedPath: string;
-  preview: string | null;
-  filePath?: string;
-};
-export type MediaThumbnailResult = Record<string, { preview: string | null; fileSize: number }>;
-export type ImageGenerationSettingsResult = OptionalHostSuccess & ImageGenerationSettingsSnapshot;
-export type ImageGenerationProvidersResult = OptionalHostSuccess & {
-  providers?: ImageGenerationProviderRow[];
-};
-
-export type SessionHistoryResult = OptionalHostSuccess & {
-  messages?: RawMessage[];
-};
-export type SessionLabelSummary = {
-  sessionKey: string;
-  firstUserText: string | null;
-  lastTimestamp: number | null;
-};
-export type SessionSummariesResult = HostSuccess & {
-  summaries?: SessionLabelSummary[];
-};
-
-export type ChatSendWithMediaResult = HostSuccess & {
-  result?: { runId?: string };
-};
-
-export type CronSessionHistoryResult = {
-  messages?: RawMessage[];
-};
-
-export type SkillsStatusResult = {
-  skills?: {
-    skillKey: string;
-    slug?: string;
-    name?: string;
-    description?: string;
-    disabled?: boolean;
-    emoji?: string;
-    version?: string;
-    author?: string;
-    config?: Record<string, unknown>;
-    bundled?: boolean;
-    always?: boolean;
-    source?: string;
-    baseDir?: string;
-    filePath?: string;
-  }[];
-};
-export type ClawHubInstalledSkill = {
-  slug: string;
-  version?: string;
-  source?: string;
-  baseDir?: string;
-};
-export type ClawHubListResult = HostSuccess & {
-  results?: ClawHubInstalledSkill[];
-};
-export type ClawHubSearchResult = HostSuccess & {
-  results?: MarketplaceSkill[];
-};
-export type SkillConfigsResult = Record<string, { apiKey?: string; env?: Record<string, string> }>;
-
-export type DeliveryChannelAccount = {
-  accountId: string;
-  name: string;
-  isDefault: boolean;
-};
-
-export type DeliveryChannelGroup = {
-  channelType: string;
-  defaultAccountId: string;
-  accounts: DeliveryChannelAccount[];
-};
+export type {
+  ChannelAccountsResult,
+  ChannelCredentialValidationResult,
+  ChannelFormValuesResult,
+  ChannelGroupItem,
+  ChannelSaveConfigResult,
+  ChannelTargetOption,
+  ChannelTargetsResult,
+  ChatSendWithMediaResult,
+  ClawHubInstalledSkill,
+  ClawHubListResult,
+  ClawHubSearchResult,
+  CronSessionHistoryResult,
+  DeliveryChannelAccount,
+  DeliveryChannelGroup,
+  DeliveryTargetsResult,
+  GatewayHealthSummary,
+  ImageGenerationProvidersResult,
+  ImageGenerationSettingsResult,
+  LogContentResult,
+  LogDirResult,
+  OpenClawDoctorResult,
+  ProviderAccountKeyInfo,
+  ProviderDefaultAccountResult,
+  ProviderValidationResult,
+  SessionHistoryResult,
+  SessionLabelSummary,
+  SessionSummariesResult,
+  SettingsResetResult,
+  SettingsSnapshot,
+  SkillConfigsResult,
+  SkillsStatusResult,
+  StagedFileResult,
+  UsageHistoryEntry,
+} from './host-api-contract';
 
 export const hostApi = {
   app: {
-    openClawDoctor: async (mode: 'diagnose' | 'fix'): Promise<OpenClawDoctorResult> => ({
-      ...(await invokeHost<Omit<OpenClawDoctorResult, 'mode'>>('app', 'openClawDoctor', { mode })),
+    openClawDoctor: async (mode: OpenClawDoctorMode): Promise<OpenClawDoctorResult> => ({
+      ...(await invokeHost('app', 'openClawDoctor', { mode })),
       mode,
     }),
   },
   settings: {
-    getAll: () => invokeHost<SettingsSnapshot>('settings', 'getAll'),
-    get: (key: string) => invokeHost<unknown>('settings', 'get', { key }),
-    set: (key: string, value: unknown) => invokeHost<HostSuccess>('settings', 'set', { key, value }),
-    setMany: (patch: Record<string, unknown>) => (
-      invokeHost<HostSuccess>('settings', 'setMany', { patch })
+    getAll: () => invokeHost('settings', 'getAll'),
+    get: (key: SettingsKey) => invokeHost('settings', 'get', { key }),
+    set: (key: SettingsKey, value: SettingsValue) => invokeHost('settings', 'set', { key, value }),
+    setMany: (patch: Partial<SettingsSnapshot>) => (
+      invokeHost('settings', 'setMany', { patch })
     ),
-    reset: () => invokeHost<SettingsResetResult>('settings', 'reset'),
+    reset: () => invokeHost('settings', 'reset'),
   },
   gateway: {
-    status: () => invokeHost<GatewayStatus>('gateway', 'status'),
-    start: () => invokeHost<HostSuccess>('gateway', 'start'),
-    stop: () => invokeHost<HostSuccess>('gateway', 'stop'),
-    restart: () => invokeHost<HostSuccess>('gateway', 'restart'),
-    health: (probe = false) => invokeHost<GatewayHealth>('gateway', 'health', { probe }),
-    controlUi: (view?: 'dreams') => invokeHost<GatewayControlUiResult>('gateway', 'controlUi', { view }),
+    status: () => invokeHost('gateway', 'status'),
+    start: () => invokeHost('gateway', 'start'),
+    stop: () => invokeHost('gateway', 'stop'),
+    restart: () => invokeHost('gateway', 'restart'),
+    health: (probe = false) => invokeHost('gateway', 'health', { probe }),
+    controlUi: (view?: 'dreams') => invokeHost('gateway', 'controlUi', { view }),
     rpc: <T = unknown>(method: string, params?: unknown, timeoutMs?: number) => (
-      invokeHost<T>('gateway', 'rpc', { method, params, timeoutMs })
+      invokeHost('gateway', 'rpc', { method, params, timeoutMs }) as Promise<T>
     ),
   },
   logs: {
-    recent: (tailLines = 100) => invokeHost<LogContentResult>('logs', 'recent', { tailLines }),
-    dir: () => invokeHost<LogDirResult>('logs', 'dir'),
-    listFiles: () => invokeHost<JsonRecord[]>('logs', 'listFiles'),
+    recent: (tailLines = 100) => invokeHost('logs', 'recent', { tailLines }),
+    dir: () => invokeHost('logs', 'dir'),
+    listFiles: () => invokeHost('logs', 'listFiles'),
     readFile: (path: string, tailLines?: number) => (
-      invokeHost<LogContentResult>('logs', 'readFile', { path, tailLines })
+      invokeHost('logs', 'readFile', { path, tailLines })
     ),
   },
   channels: {
-    accounts: (options?: { mode?: 'config' | 'runtime'; configOnly?: boolean; probe?: boolean }) => (
-      invokeHost<ChannelAccountsResult>('channels', 'accounts', options)
+    accounts: (options?: ChannelAccountsPayload) => (
+      invokeHost('channels', 'accounts', options)
     ),
-    targets: (input: { channelType: string; accountId?: string; query?: string }) => (
-      invokeHost<ChannelTargetsResult>('channels', 'targets', input)
+    targets: (input: ChannelTargetsPayload) => (
+      invokeHost('channels', 'targets', input)
     ),
-    configured: () => invokeHost<HostSuccess & { channels?: JsonRecord[] }>('channels', 'configured'),
+    configured: () => invokeHost('channels', 'configured'),
     formValues: (channelType: string, accountId?: string) => (
-      invokeHost<ChannelFormValuesResult>('channels', 'formValues', { channelType, accountId })
+      invokeHost('channels', 'formValues', { channelType, accountId })
     ),
-    saveConfig: (input: unknown) => invokeHost<ChannelSaveConfigResult>('channels', 'saveConfig', input),
+    saveConfig: (input: ChannelSaveConfigPayload) => invokeHost('channels', 'saveConfig', input),
     deleteConfig: (channelType: string, accountId?: string) => (
-      invokeHost<HostSuccess>('channels', 'deleteConfig', { channelType, accountId })
+      invokeHost('channels', 'deleteConfig', { channelType, accountId })
     ),
     validateCredentials: (channelType: string, config: Record<string, unknown>) => (
-      invokeHost<ChannelCredentialValidationResult>('channels', 'validateCredentials', { channelType, config })
+      invokeHost('channels', 'validateCredentials', { channelType, config })
     ),
-    saveBinding: (input: unknown) => invokeHost<HostSuccess>('channels', 'bindingSave', input),
-    deleteBinding: (input: unknown) => invokeHost<HostSuccess>('channels', 'bindingDelete', input),
+    saveBinding: (input: { channelType: string; accountId: string; agentId: string }) => (
+      invokeHost('channels', 'bindingSave', input)
+    ),
+    deleteBinding: (input: { channelType: string; accountId?: string }) => (
+      invokeHost('channels', 'bindingDelete', input)
+    ),
     startLogin: (channelType: string, input?: { accountId?: string }) => (
-      invokeHost<HostSuccess>('channels', 'startLogin', { channelType, ...input })
+      invokeHost('channels', 'startLogin', { channelType, ...input })
     ),
     cancelLogin: (channelType: string, input?: { accountId?: string }) => (
-      invokeHost<HostSuccess>('channels', 'cancelLogin', { channelType, ...input })
+      invokeHost('channels', 'cancelLogin', { channelType, ...input })
     ),
   },
   agents: {
-    list: () => invokeHost<AgentsSnapshot & OptionalHostSuccess>('agents', 'list'),
-    create: (input: unknown) => invokeHost<AgentsSnapshot & OptionalHostSuccess>('agents', 'create', input),
-    update: (id: string, input: unknown) => (
-      invokeHost<AgentsSnapshot & OptionalHostSuccess>('agents', 'update', {
+    list: () => invokeHost('agents', 'list'),
+    create: (input: AgentCreatePayload) => invokeHost('agents', 'create', input),
+    update: (id: string, input: Omit<AgentUpdatePayload, 'id'>) => (
+      invokeHost('agents', 'update', {
         id,
-        ...(input && typeof input === 'object' && !Array.isArray(input) ? input as Record<string, unknown> : {}),
+        ...input,
       })
     ),
     updateModel: (id: string, modelRef: string | null) => (
-      invokeHost<AgentsSnapshot & OptionalHostSuccess>('agents', 'updateModel', { id, modelRef })
+      invokeHost('agents', 'updateModel', { id, modelRef })
     ),
-    delete: (id: string) => invokeHost<AgentsSnapshot & OptionalHostSuccess>('agents', 'delete', { id }),
+    delete: (id: string) => invokeHost('agents', 'delete', { id }),
     assignChannel: (id: string, channelType: string) => (
-      invokeHost<AgentsSnapshot & OptionalHostSuccess>('agents', 'assignChannel', { id, channelType })
+      invokeHost('agents', 'assignChannel', { id, channelType })
     ),
     removeChannel: (id: string, channelType: string) => (
-      invokeHost<AgentsSnapshot & OptionalHostSuccess>('agents', 'removeChannel', { id, channelType })
+      invokeHost('agents', 'removeChannel', { id, channelType })
     ),
   },
   diagnostics: {
-    gatewaySnapshot: () => invokeHost<JsonRecord>('diagnostics', 'gatewaySnapshot'),
+    gatewaySnapshot: () => invokeHost('diagnostics', 'gatewaySnapshot'),
   },
   providers: {
-    list: () => invokeHost<ProviderWithKeyInfo[]>('providers', 'list'),
-    get: (providerId: string) => invokeHost<JsonRecord>('providers', 'get', { providerId }),
-    getDefault: () => invokeHost<JsonRecord>('providers', 'getDefault'),
+    list: () => invokeHost('providers', 'list'),
+    get: (providerId: string) => invokeHost('providers', 'get', { providerId }),
+    getDefault: () => invokeHost('providers', 'getDefault'),
     hasApiKey: (providerId: string) => (
-      invokeHost<JsonRecord>('providers', 'hasApiKey', { providerId })
+      invokeHost('providers', 'hasApiKey', { providerId })
     ),
     getApiKey: (providerId: string) => (
-      invokeHost<string | null>('providers', 'getApiKey', { providerId })
+      invokeHost('providers', 'getApiKey', { providerId })
     ),
-    validateKey: (input: unknown) => invokeHost<ProviderValidationResult>('providers', 'validateKey', input),
-    save: (input: unknown) => invokeHost<HostSuccess>('providers', 'save', input),
-    delete: (providerId: string) => invokeHost<HostSuccess>('providers', 'delete', { providerId }),
+    validateKey: (input: ProviderValidationPayload) => invokeHost('providers', 'validateKey', input),
+    save: (input: { config: ProviderConfig; apiKey?: string }) => invokeHost('providers', 'save', input),
+    delete: (providerId: string) => invokeHost('providers', 'delete', { providerId }),
     setApiKey: (providerId: string, apiKey: string) => (
-      invokeHost<HostSuccess>('providers', 'setApiKey', { providerId, apiKey })
+      invokeHost('providers', 'setApiKey', { providerId, apiKey })
     ),
-    updateWithKey: (input: unknown) => invokeHost<HostSuccess>('providers', 'updateWithKey', input),
+    updateWithKey: (input: ProviderUpdateWithKeyPayload) => invokeHost('providers', 'updateWithKey', input),
     deleteApiKey: (providerId: string) => (
-      invokeHost<HostSuccess>('providers', 'deleteApiKey', { providerId })
+      invokeHost('providers', 'deleteApiKey', { providerId })
     ),
     setDefault: (providerId: string) => (
-      invokeHost<HostSuccess>('providers', 'setDefault', { providerId })
+      invokeHost('providers', 'setDefault', { providerId })
     ),
-    accounts: () => invokeHost<ProviderAccount[]>('providers', 'accounts'),
-    vendors: () => invokeHost<ProviderVendorInfo[]>('providers', 'vendors'),
-    accountKeyInfo: () => invokeHost<ProviderAccountKeyInfo[]>('providers', 'accountKeyInfo'),
-    getDefaultAccount: () => invokeHost<ProviderDefaultAccountResult>('providers', 'getDefaultAccount'),
+    accounts: () => invokeHost('providers', 'accounts'),
+    vendors: () => invokeHost('providers', 'vendors'),
+    accountKeyInfo: () => invokeHost('providers', 'accountKeyInfo'),
+    getDefaultAccount: () => invokeHost('providers', 'getDefaultAccount'),
     getAccount: (accountId: string) => (
-      invokeHost<ProviderAccount>('providers', 'getAccount', { accountId })
+      invokeHost('providers', 'getAccount', { accountId })
     ),
     getAccountApiKey: (accountId: string) => (
-      invokeHost<string | null>('providers', 'getAccountApiKey', { accountId })
+      invokeHost('providers', 'getAccountApiKey', { accountId })
     ),
     hasAccountApiKey: (accountId: string) => (
-      invokeHost<{ hasKey: boolean }>('providers', 'hasAccountApiKey', { accountId })
+      invokeHost('providers', 'hasAccountApiKey', { accountId })
     ),
-    createAccount: (input: unknown) => invokeHost<HostSuccess>('providers', 'createAccount', input),
-    updateAccount: (accountId: string, updates: unknown, apiKey?: string) => (
-      invokeHost<HostSuccess>('providers', 'updateAccount', { accountId, updates, apiKey })
+    createAccount: (input: { account: ProviderAccount; apiKey?: string }) => (
+      invokeHost('providers', 'createAccount', input)
+    ),
+    updateAccount: (accountId: string, updates: Partial<ProviderAccount>, apiKey?: string) => (
+      invokeHost('providers', 'updateAccount', { accountId, updates, apiKey })
     ),
     deleteAccount: (accountId: string) => (
-      invokeHost<HostSuccess>('providers', 'deleteAccount', { accountId })
+      invokeHost('providers', 'deleteAccount', { accountId })
     ),
     deleteAccountApiKey: (accountId: string) => (
-      invokeHost<HostSuccess>('providers', 'deleteAccountApiKey', { accountId })
+      invokeHost('providers', 'deleteAccountApiKey', { accountId })
     ),
     setDefaultAccount: (accountId: string) => (
-      invokeHost<HostSuccess>('providers', 'setDefaultAccount', { accountId })
+      invokeHost('providers', 'setDefaultAccount', { accountId })
     ),
-    requestOAuth: (input: unknown) => invokeHost<HostSuccess>('providers', 'requestOAuth', input),
-    cancelOAuth: () => invokeHost<HostSuccess>('providers', 'cancelOAuth'),
-    submitOAuth: (input: unknown) => invokeHost<HostSuccess>('providers', 'submitOAuth', input),
+    requestOAuth: (input: ProviderOAuthRequestPayload) => invokeHost('providers', 'requestOAuth', input),
+    cancelOAuth: () => invokeHost('providers', 'cancelOAuth'),
+    submitOAuth: (input: { code: string }) => invokeHost('providers', 'submitOAuth', input),
   },
   files: {
-    stagePaths: (input: unknown) => invokeHost<StagedFileResult[]>('files', 'stagePaths', input),
-    stageBuffer: (input: unknown) => invokeHost<StagedFileResult>('files', 'stageBuffer', input),
-    readText: (path: string) => invokeHost<JsonRecord>('files', 'readText', { path }),
-    readBinary: (path: string, opts?: unknown) => (
-      invokeHost<JsonRecord>('files', 'readBinary', { path, opts })
+    stagePaths: (input: { filePaths: string[] }) => invokeHost('files', 'stagePaths', input),
+    stageBuffer: (input: { base64: string; fileName: string; mimeType?: string }) => (
+      invokeHost('files', 'stageBuffer', input)
+    ),
+    readText: (path: string) => invokeHost('files', 'readText', { path }),
+    readBinary: (path: string, opts?: FileReadBinaryOptions) => (
+      invokeHost('files', 'readBinary', { path, opts })
     ),
     writeText: (path: string, content: string) => (
-      invokeHost<JsonRecord>('files', 'writeText', { path, content })
+      invokeHost('files', 'writeText', { path, content })
     ),
-    stat: (path: string) => invokeHost<JsonRecord>('files', 'stat', { path }),
-    listDir: (path: string) => invokeHost<JsonRecord[]>('files', 'listDir', { path }),
-    listTree: (path: string, opts?: unknown) => (
-      invokeHost<JsonRecord[]>('files', 'listTree', { path, opts })
+    stat: (path: string) => invokeHost('files', 'stat', { path }),
+    listDir: (path: string) => invokeHost('files', 'listDir', { path }),
+    listTree: (path: string, opts?: FilePreviewTreeOptions) => (
+      invokeHost('files', 'listTree', { path, opts })
     ),
   },
   media: {
-    thumbnails: (input: unknown) => invokeHost<MediaThumbnailResult>('media', 'thumbnails', input),
-    saveImage: (input: unknown) => invokeHost<JsonRecord>('media', 'saveImage', input),
-    imageGenerationSettings: () => invokeHost<ImageGenerationSettingsResult>('media', 'imageGenerationSettings'),
-    saveImageGenerationSettings: (input: unknown) => (
-      invokeHost<ImageGenerationSettingsResult>('media', 'saveImageGenerationSettings', input)
+    thumbnails: (input: { paths: MediaThumbnailEntry[] }) => invokeHost('media', 'thumbnails', input),
+    saveImage: (input: SaveImagePayload) => invokeHost('media', 'saveImage', input),
+    imageGenerationSettings: () => invokeHost('media', 'imageGenerationSettings'),
+    saveImageGenerationSettings: (input: ImageGenerationSettingsPayload) => (
+      invokeHost('media', 'saveImageGenerationSettings', input)
     ),
-    imageGenerationProviders: () => invokeHost<ImageGenerationProvidersResult>('media', 'imageGenerationProviders'),
-    testImageGeneration: (input: unknown) => invokeHost<ImageGenerationTestResult>('media', 'testImageGeneration', input),
+    imageGenerationProviders: () => invokeHost('media', 'imageGenerationProviders'),
+    testImageGeneration: (input: { agentId?: string; prompt?: string; model?: string }) => (
+      invokeHost('media', 'testImageGeneration', input)
+    ),
   },
   sessions: {
-    delete: (id: string) => invokeHost<HostSuccess>('sessions', 'delete', { id }),
+    delete: (id: string) => invokeHost('sessions', 'delete', { id }),
     rename: (id: string, title: string) => (
-      invokeHost<HostSuccess>('sessions', 'rename', { id, title })
+      invokeHost('sessions', 'rename', { id, title })
     ),
-    summaries: (input?: unknown) => invokeHost<SessionSummariesResult>('sessions', 'summaries', input),
-    history: (input: unknown) => invokeHost<SessionHistoryResult>('sessions', 'history', input),
+    summaries: (input?: { sessionKeys?: string[]; limit?: number }) => invokeHost('sessions', 'summaries', input),
+    history: (input: { sessionKey?: string; agentId?: string; sessionId?: string; limit?: number }) => (
+      invokeHost('sessions', 'history', input)
+    ),
   },
   chat: {
-    sendWithMedia: (input: unknown) => invokeHost<ChatSendWithMediaResult>('chat', 'sendWithMedia', input),
+    sendWithMedia: (input: ChatSendWithMediaPayload) => invokeHost('chat', 'sendWithMedia', input),
   },
   cron: {
-    list: () => invokeHost<CronJob[]>('cron', 'list'),
-    create: (input: unknown) => invokeHost<CronJob>('cron', 'create', input),
-    update: (id: string, input: unknown) => invokeHost<CronJob>('cron', 'update', { id, input }),
-    delete: (id: string) => invokeHost<HostSuccess>('cron', 'delete', { id }),
-    toggle: (id: string, enabled: boolean) => invokeHost<HostSuccess>('cron', 'toggle', { id, enabled }),
-    trigger: (id: string) => invokeHost<HostSuccess>('cron', 'trigger', { id }),
-    sessionHistory: (input: unknown) => invokeHost<CronSessionHistoryResult>('cron', 'sessionHistory', input),
-    deliveryTargets: () => invokeHost<DeliveryChannelGroup[]>('cron', 'deliveryTargets'),
+    list: () => invokeHost('cron', 'list'),
+    create: (input: CronJobCreateInput) => invokeHost('cron', 'create', input),
+    update: (id: string, input: CronJobUpdateInput) => invokeHost('cron', 'update', { id, input }),
+    delete: (id: string) => invokeHost('cron', 'delete', { id }),
+    toggle: (id: string, enabled: boolean) => invokeHost('cron', 'toggle', { id, enabled }),
+    trigger: (id: string) => invokeHost('cron', 'trigger', { id }),
+    sessionHistory: (input: CronSessionHistoryPayload) => invokeHost('cron', 'sessionHistory', input),
+    deliveryTargets: () => invokeHost('cron', 'deliveryTargets'),
   },
   skills: {
-    configs: () => invokeHost<SkillConfigsResult>('skills', 'configs'),
-    allConfigs: () => invokeHost<SkillConfigsResult>('skills', 'allConfigs'),
-    getConfig: (skillKey: string) => invokeHost<JsonRecord>('skills', 'getConfig', { skillKey }),
-    updateConfig: (input: unknown) => invokeHost<HostSuccess>('skills', 'updateConfig', input),
-    status: () => invokeHost<SkillsStatusResult>('skills', 'status'),
-    update: (input: unknown) => invokeHost<HostSuccess>('skills', 'update', input),
-    quickAccess: (input: unknown) => invokeHost<HostSuccess & { skills?: QuickAccessSkill[] }>('skills', 'quickAccess', input),
-    clawhubCapability: () => invokeHost<JsonRecord>('skills', 'clawhubCapability'),
-    clawhubList: () => invokeHost<ClawHubListResult>('skills', 'clawhubList'),
-    clawhubSearch: (input: unknown) => invokeHost<ClawHubSearchResult>('skills', 'clawhubSearch', input),
-    clawhubInstall: (input: unknown) => invokeHost<HostSuccess>('skills', 'clawhubInstall', input),
-    clawhubUninstall: (input: unknown) => invokeHost<HostSuccess>('skills', 'clawhubUninstall', input),
-    clawhubOpenSkillReadme: (input: unknown) => (
-      invokeHost<HostSuccess>('skills', 'clawhubOpenSkillReadme', input)
+    configs: () => invokeHost('skills', 'configs'),
+    allConfigs: () => invokeHost('skills', 'allConfigs'),
+    getConfig: (skillKey: string) => invokeHost('skills', 'getConfig', { skillKey }),
+    updateConfig: (input: SkillUpdateConfigPayload) => invokeHost('skills', 'updateConfig', input),
+    status: () => invokeHost('skills', 'status'),
+    update: (input: SkillUpdatePayload) => invokeHost('skills', 'update', input),
+    quickAccess: (input: SkillQuickAccessPayload) => invokeHost('skills', 'quickAccess', input),
+    clawhubCapability: () => invokeHost('skills', 'clawhubCapability'),
+    clawhubList: () => invokeHost('skills', 'clawhubList'),
+    clawhubSearch: (input: ClawHubSearchPayload) => invokeHost('skills', 'clawhubSearch', input),
+    clawhubInstall: (input: { slug: string; version?: string }) => invokeHost('skills', 'clawhubInstall', input),
+    clawhubUninstall: (input: { slug: string }) => invokeHost('skills', 'clawhubUninstall', input),
+    clawhubOpenSkillReadme: (input: { skillKey?: string; slug?: string; baseDir?: string }) => (
+      invokeHost('skills', 'clawhubOpenSkillReadme', input)
     ),
-    clawhubOpenSkillPath: (input: unknown) => (
-      invokeHost<HostSuccess>('skills', 'clawhubOpenSkillPath', input)
+    clawhubOpenSkillPath: (input: { skillKey?: string; slug?: string; baseDir?: string }) => (
+      invokeHost('skills', 'clawhubOpenSkillPath', input)
     ),
   },
   usage: {
     recentTokenHistory: (limit?: number) => (
-      invokeHost<UsageHistoryEntry[]>('usage', 'recentTokenHistory', { limit })
+      invokeHost('usage', 'recentTokenHistory', { limit })
     ),
   },
 };

@@ -1,6 +1,7 @@
 import { readFile, readdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { BrowserWindow } from 'electron';
+import type { HostApiContract } from '../../src/lib/host-api-contract';
 import { extractSessionRecords } from '../utils/session-util';
 import {
   cleanupDanglingWeChatPluginState,
@@ -72,6 +73,7 @@ import {
 import { buildGatewayHealthSummary } from '../utils/gateway-health';
 import { logger } from '../utils/logger';
 import type { GatewayManager, GatewayHealthSummary } from '../gateway/manager';
+import { isRecord } from './payload-utils';
 
 const WECHAT_QR_TIMEOUT_MS = 8 * 60 * 1000;
 const activeQrLogins = new Map<string, string>();
@@ -154,10 +156,6 @@ const FORCE_RESTART_CHANNELS = new Set([
   'dingtalk', 'wecom', 'whatsapp', 'feishu', 'qqbot', OPENCLAW_WECHAT_CHANNEL_TYPE,
   'discord', 'telegram', 'signal', 'imessage', 'matrix', 'line', 'msteams', 'googlechat', 'mattermost',
 ]);
-
-function isRecord(value: unknown): value is JsonRecord {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
 
 function requireString(payload: unknown, key: string): string {
   if (!isRecord(payload) || typeof payload[key] !== 'string' || !payload[key].trim()) {
@@ -1109,13 +1107,13 @@ async function ensureChannelPluginInstalled(storedChannelType: string): Promise<
   }
 }
 
-export function createChannelsApi(ctx: ChannelsApiContext) {
+export function createChannelsApi(ctx: ChannelsApiContext): HostApiContract['channels'] {
   return {
     configured: async () => {
       const channels = await listConfiguredChannels();
       return { success: true, channels: Array.from(new Set(channels.map((channel) => toUiChannelType(channel)))) };
     },
-    accounts: async (payload?: unknown) => {
+    accounts: async (payload) => {
       const mode = isRecord(payload) && (payload.mode === 'config' || payload.configOnly === true) ? 'config' : 'runtime';
       const probe = mode !== 'config' && isRecord(payload) && payload.probe === true;
       logger.info(`[channels.accounts] request mode=${mode} probe=${probe ? '1' : '0'}`);
@@ -1125,14 +1123,14 @@ export function createChannelsApi(ctx: ChannelsApiContext) {
       });
       return { success: true, channels, gatewayHealth };
     },
-    targets: async (payload?: unknown) => {
+    targets: async (payload) => {
       const channelType = requireString(payload, 'channelType');
       const accountId = optionalString(payload, 'accountId');
       const query = optionalString(payload, 'query');
       const targets = await listChannelTargetOptions({ channelType, accountId, query });
       return { success: true, channelType, accountId, targets };
     },
-    setDefaultAccount: async (payload?: unknown) => {
+    setDefaultAccount: async (payload) => {
       const channelType = requireString(payload, 'channelType');
       const accountId = requireString(payload, 'accountId');
       await validateCanonicalAccountId(channelType, accountId, { allowLegacyConfiguredId: true });
@@ -1140,7 +1138,7 @@ export function createChannelsApi(ctx: ChannelsApiContext) {
       scheduleGatewayChannelSaveRefresh(ctx, channelType, `channel:setDefaultAccount:${channelType}`);
       return { success: true };
     },
-    bindingSave: async (payload?: unknown) => {
+    bindingSave: async (payload) => {
       const channelType = requireString(payload, 'channelType');
       const accountId = requireString(payload, 'accountId');
       const agentId = requireString(payload, 'agentId');
@@ -1157,7 +1155,7 @@ export function createChannelsApi(ctx: ChannelsApiContext) {
       scheduleGatewayChannelSaveRefresh(ctx, channelType, `channel:setBinding:${channelType}`);
       return { success: true };
     },
-    bindingDelete: async (payload?: unknown) => {
+    bindingDelete: async (payload) => {
       const channelType = requireString(payload, 'channelType');
       const accountId = optionalString(payload, 'accountId');
       await validateCanonicalAccountId(channelType, accountId, { allowLegacyConfiguredId: true });
@@ -1165,16 +1163,16 @@ export function createChannelsApi(ctx: ChannelsApiContext) {
       scheduleGatewayChannelSaveRefresh(ctx, channelType, `channel:clearBinding:${channelType}`);
       return { success: true };
     },
-    validateConfig: async (payload?: unknown) => {
+    validateConfig: async (payload) => {
       const channelType = requireString(payload, 'channelType');
       return { success: true, ...(await validateChannelConfig(channelType)) };
     },
-    validateCredentials: async (payload?: unknown) => {
+    validateCredentials: async (payload) => {
       const channelType = requireString(payload, 'channelType');
       const config = isRecord(payload) && isRecord(payload.config) ? payload.config as Record<string, string> : {};
       return { success: true, ...(await validateChannelCredentials(channelType, config)) };
     },
-    saveConfig: async (payload?: unknown) => {
+    saveConfig: async (payload) => {
       const channelType = requireString(payload, 'channelType');
       const config = isRecord(payload) && isRecord(payload.config) ? payload.config : {};
       const accountId = optionalString(payload, 'accountId');
@@ -1192,19 +1190,19 @@ export function createChannelsApi(ctx: ChannelsApiContext) {
       scheduleGatewayChannelSaveRefresh(ctx, storedChannelType, `channel:saveConfig:${storedChannelType}`);
       return { success: true };
     },
-    setEnabled: async (payload?: unknown) => {
+    setEnabled: async (payload) => {
       const channelType = requireString(payload, 'channelType');
       const enabled = isRecord(payload) && payload.enabled === true;
       await setChannelEnabled(channelType, enabled);
       scheduleGatewayChannelRestart(ctx, `channel:setEnabled:${resolveStoredChannelType(channelType)}`);
       return { success: true };
     },
-    formValues: async (payload?: unknown) => {
+    formValues: async (payload) => {
       const channelType = requireString(payload, 'channelType');
       const accountId = optionalString(payload, 'accountId');
       return { success: true, values: await getChannelFormValues(channelType, accountId) };
     },
-    deleteConfig: async (payload?: unknown) => {
+    deleteConfig: async (payload) => {
       const channelType = requireString(payload, 'channelType');
       const accountId = optionalString(payload, 'accountId');
       const storedChannelType = resolveStoredChannelType(channelType);
@@ -1219,7 +1217,7 @@ export function createChannelsApi(ctx: ChannelsApiContext) {
       }
       return { success: true };
     },
-    startLogin: async (payload?: unknown) => {
+    startLogin: async (payload) => {
       const channelType = requireString(payload, 'channelType');
       const accountId = optionalString(payload, 'accountId');
       const storedChannelType = resolveStoredChannelType(channelType);
@@ -1249,7 +1247,7 @@ export function createChannelsApi(ctx: ChannelsApiContext) {
       void awaitWeChatQrLogin(ctx, startResult.sessionKey, loginKey);
       return { success: true };
     },
-    cancelLogin: async (payload?: unknown) => {
+    cancelLogin: async (payload) => {
       const channelType = requireString(payload, 'channelType');
       const accountId = optionalString(payload, 'accountId');
       const storedChannelType = resolveStoredChannelType(channelType);

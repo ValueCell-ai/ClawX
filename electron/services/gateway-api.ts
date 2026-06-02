@@ -1,9 +1,11 @@
 import type { GatewayManager } from '../gateway/manager';
 import type { GatewayRpcBackpressure } from '../gateway/rpc-backpressure';
+import type { HostApiContract } from '../../src/lib/host-api-contract';
 import { PORTS } from '../utils/config';
 import { scheduleControlUiDeviceAutoApproval } from '../utils/control-ui-device-pairing';
 import { buildOpenClawControlUiUrl } from '../utils/openclaw-control-ui';
 import { getSetting } from '../utils/store';
+import { isRecord } from './payload-utils';
 
 type HealthPayload = {
   probe?: unknown;
@@ -19,10 +21,6 @@ type RpcPayload = {
   timeoutMs?: unknown;
 };
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null;
-}
-
 function parseTimeoutMs(timeoutMs: unknown): number | undefined {
   if (timeoutMs === undefined) return undefined;
   if (typeof timeoutMs !== 'number' || !Number.isFinite(timeoutMs) || timeoutMs <= 0) {
@@ -34,7 +32,7 @@ function parseTimeoutMs(timeoutMs: unknown): number | undefined {
 export function createGatewayApi(
   gatewayManager: GatewayManager,
   gatewayRpcBackpressure: GatewayRpcBackpressure,
-) {
+): HostApiContract['gateway'] {
   return {
     status: () => gatewayManager.getStatus(),
     start: async () => {
@@ -49,11 +47,11 @@ export function createGatewayApi(
       await gatewayManager.restart();
       return { success: true };
     },
-    health: async (payload?: unknown) => {
+    health: async (payload) => {
       const body = isRecord(payload) ? payload as HealthPayload : {};
       return gatewayManager.checkHealth({ probe: body.probe === true });
     },
-    controlUi: async (payload?: unknown) => {
+    controlUi: async (payload) => {
       const body = isRecord(payload) ? payload as ControlUiPayload : {};
       const status = gatewayManager.getStatus();
       const token = await getSetting('gatewayToken');
@@ -63,7 +61,7 @@ export function createGatewayApi(
       scheduleControlUiDeviceAutoApproval(gatewayManager);
       return { success: true, url, token, port };
     },
-    rpc: async (payload?: unknown) => {
+    rpc: async (payload) => {
       const body = isRecord(payload) ? payload as RpcPayload : {};
       const method = typeof body.method === 'string' ? body.method.trim() : '';
       if (!method) {

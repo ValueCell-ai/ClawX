@@ -1,8 +1,24 @@
+import type {
+  HostApiAction,
+  HostApiModule,
+  HostApiPayload,
+} from './host-api-contract';
+
 export type HostRequest = {
   id: string;
   module: string;
   action: string;
   payload?: unknown;
+};
+
+export type TypedHostRequest<
+  M extends HostApiModule,
+  A extends HostApiAction<M>,
+> = {
+  id: string;
+  module: M;
+  action: A;
+  payload?: HostApiPayload<M, A>;
 };
 
 export type HostResponse<T = unknown> =

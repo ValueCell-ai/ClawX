@@ -1,6 +1,8 @@
 import { readFile } from 'node:fs/promises';
 import { extname, relative, resolve, sep } from 'node:path';
+import type { HostApiContract } from '../../src/lib/host-api-contract';
 import { logger } from '../utils/logger';
+import { isRecord } from './payload-utils';
 
 type RecentPayload = {
   tailLines?: unknown;
@@ -13,10 +15,6 @@ type ReadFilePayload = RecentPayload & {
 type MemoryPayload = {
   count?: unknown;
 };
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null;
-}
 
 function safePositiveInteger(value: unknown, fallback: number): number {
   if (typeof value !== 'number' || !Number.isFinite(value)) return fallback;
@@ -65,13 +63,13 @@ async function readLogFileTail(path: string, tailLines: number): Promise<string>
   return hasTrailingNewline ? `${tail}\n` : tail;
 }
 
-export function createLogsApi() {
+export function createLogsApi(): HostApiContract['logs'] {
   return {
-    recent: async (payload?: unknown) => {
+    recent: async (payload) => {
       const body = isRecord(payload) ? payload as RecentPayload : {};
       return { content: await logger.readLogFile(safePositiveInteger(body.tailLines, 100)) };
     },
-    memory: (payload?: unknown) => {
+    memory: (payload) => {
       const body = isRecord(payload) ? payload as MemoryPayload : {};
       return logger.getRecentLogs(
         body.count === undefined ? undefined : safePositiveInteger(body.count, 100),
@@ -80,7 +78,7 @@ export function createLogsApi() {
     dir: () => ({ dir: logger.getLogDir() }),
     filePath: () => ({ path: logger.getLogFilePath() }),
     listFiles: async () => ({ files: await logger.listLogFiles() }),
-    readFile: async (payload?: unknown) => {
+    readFile: async (payload) => {
       const body = isRecord(payload) ? payload as ReadFilePayload : {};
       const path = await validateLogFilePath(body.path);
       return { content: await readLogFileTail(path, safePositiveInteger(body.tailLines, 200)) };

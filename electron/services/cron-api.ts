@@ -1,10 +1,12 @@
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
+import type { HostApiContract } from '../../src/lib/host-api-contract';
 import type { GatewayManager } from '../gateway/manager';
 import { getOpenClawConfigDir } from '../utils/paths';
 import { resolveAgentIdFromChannel } from '../utils/agent-config';
 import { toOpenClawChannelType, toUiChannelType } from '../utils/channel-alias';
 import { resolveAccountIdFromSessionHistory } from '../utils/session-util';
+import { isRecord } from './payload-utils';
 
 interface GatewayCronJob {
   id: string;
@@ -58,10 +60,6 @@ interface CronSessionFallbackMessage {
 
 type GatewayCronDelivery = NonNullable<GatewayCronJob['delivery']>;
 type JsonRecord = Record<string, unknown>;
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
 
 function parseCronSessionKey(sessionKey: string): CronSessionKeyParts | null {
   if (!sessionKey.startsWith('agent:')) return null;
@@ -453,10 +451,10 @@ function getId(payload: unknown): string {
   return id.trim();
 }
 
-export function createCronApi({ gatewayManager }: { gatewayManager: GatewayManager }) {
+export function createCronApi({ gatewayManager }: { gatewayManager: GatewayManager }): HostApiContract['cron'] {
   return {
     list: async () => listCronJobs(gatewayManager),
-    create: async (payload?: unknown) => {
+    create: async (payload) => {
       const input = isRecord(payload) ? payload : {};
       const agentId = typeof input.agentId === 'string' && input.agentId.trim() ? input.agentId.trim() : 'main';
       const delivery = normalizeCronDelivery(input.delivery);
@@ -476,7 +474,7 @@ export function createCronApi({ gatewayManager }: { gatewayManager: GatewayManag
       });
       return result && typeof result === 'object' ? transformCronJob(result as GatewayCronJob) : result;
     },
-    update: async (payload?: unknown) => {
+    update: async (payload) => {
       const body = isRecord(payload) ? payload : {};
       const id = getId(body);
       const input = isRecord(body.input) ? body.input : body;
@@ -499,16 +497,16 @@ export function createCronApi({ gatewayManager }: { gatewayManager: GatewayManag
       const result = await gatewayManager.rpc('cron.update', { id, patch });
       return result && typeof result === 'object' ? transformCronJob(result as GatewayCronJob) : result;
     },
-    delete: async (payload?: unknown) => gatewayManager.rpc('cron.remove', { id: getId(payload) }),
-    toggle: async (payload?: unknown) => {
+    delete: async (payload) => gatewayManager.rpc('cron.remove', { id: getId(payload) }),
+    toggle: async (payload) => {
       const body = isRecord(payload) ? payload : {};
       return gatewayManager.rpc('cron.update', {
         id: getId(body),
         patch: { enabled: body.enabled === true },
       });
     },
-    trigger: async (payload?: unknown) => gatewayManager.rpc('cron.run', { id: getId(payload), mode: 'force' }),
-    sessionHistory: async (payload?: unknown) => {
+    trigger: async (payload) => gatewayManager.rpc('cron.run', { id: getId(payload), mode: 'force' }),
+    sessionHistory: async (payload) => {
       const body = isRecord(payload) ? payload : {};
       const sessionKey = typeof body.sessionKey === 'string' ? body.sessionKey.trim() : '';
       const parsedSession = parseCronSessionKey(sessionKey);

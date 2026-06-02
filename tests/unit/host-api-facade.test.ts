@@ -270,6 +270,40 @@ describe('hostApi facade', () => {
     expect(violations).toEqual([]);
   });
 
+  it('uses a function-shaped host API contract to type host invocations', () => {
+    const contract = readFileSync(join(process.cwd(), 'src/lib/host-api-contract.ts'), 'utf8');
+    const client = readFileSync(join(process.cwd(), 'src/lib/host-api-client.ts'), 'utf8');
+    const facade = readFileSync(join(process.cwd(), 'src/lib/host-api.ts'), 'utf8');
+    const mainContract = readFileSync(join(process.cwd(), 'electron/main/ipc/host-contract.ts'), 'utf8');
+
+    expect(contract).toContain('export type HostApiContract = {');
+    expect(contract).toMatch(/openClawDoctor:\s*\(payload:/);
+    expect(contract).not.toMatch(/\binput\s*:[^;]+;\s*output\s*:/s);
+
+    expect(client).not.toContain('export async function invokeHost<T>(');
+    expect(client).not.toContain('module: string,\n  action: string,\n  payload?: unknown,');
+    expect(facade).not.toContain('invokeHost<');
+    expect(mainContract).not.toContain('HostServiceAction = (payload?: unknown) => Promise<unknown> | unknown');
+  });
+
+  it('lets service handlers inherit payload types from the host API contract', () => {
+    const servicesRoot = join(process.cwd(), 'electron/services');
+    const files = readdirSync(servicesRoot)
+      .filter((entry) => /-api\.ts$/.test(entry))
+      .map((entry) => join(servicesRoot, entry));
+
+    const violations = files.flatMap((file) => {
+      const relative = file.replace(`${process.cwd()}/`, '');
+      const text = readFileSync(file, 'utf8');
+      const localIsRecord = text.match(/^function isRecord\(/m) ? [`${relative}: use shared payload-utils isRecord`] : [];
+      const unknownHandlers = [...text.matchAll(/^\s{4}[A-Za-z][A-Za-z0-9_]*:\s*(?:async\s*)?\(payload\?: unknown\)/gm)]
+        .map((match) => `${relative}: ${match[0].trim()}`);
+      return [...localIsRecord, ...unknownHandlers];
+    });
+
+    expect(violations).toEqual([]);
+  });
+
   it('keeps hostApi response shapes imported from the facade instead of redeclared by consumers', () => {
     const forbiddenDeclarations = [
       {
