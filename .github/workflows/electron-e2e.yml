@@ -48,8 +48,11 @@ jobs:
       - name: Generate extension bridge
         run: pnpm run ext:bridge
 
-      - name: Rebuild Electron binary
-        run: pnpm rebuild electron
+      - name: Ensure Electron binary is installed
+        run: node node_modules/electron/install.js
+
+      - name: Verify Electron binary
+        run: npx electron --version
 
       - name: Run Electron E2E on Linux
         if: runner.os == 'Linux'
