@@ -54,21 +54,33 @@ jobs:
           force_no_cache: 'true'
         run: |
           set -e
+          unset ELECTRON_SKIP_BINARY_DOWNLOAD
           ELECTRON_DIR="$(node -p "require('path').dirname(require.resolve('electron/package.json'))")"
           echo "Electron package dir: $ELECTRON_DIR"
-          rm -rf "$ELECTRON_DIR/dist" "$ELECTRON_DIR/path.txt"
+          echo "ELECTRON_SKIP_BINARY_DOWNLOAD=[${ELECTRON_SKIP_BINARY_DOWNLOAD:-<unset>}]"
+          echo "npm_config_platform=[${npm_config_platform:-<unset>}] npm_config_arch=[${npm_config_arch:-<unset>}]"
+
           for attempt in 1 2 3; do
-            echo "Electron binary download attempt $attempt"
-            if node "$ELECTRON_DIR/install.js"; then
+            echo "===== Electron binary download attempt $attempt ====="
+            rm -rf "$ELECTRON_DIR/dist" "$ELECTRON_DIR/path.txt"
+            set +e
+            node "$ELECTRON_DIR/install.js"
+            code=$?
+            set -e
+            echo "install.js exit code: $code"
+            echo "--- dist contents after attempt $attempt ---"
+            ls -la "$ELECTRON_DIR/dist" 2>/dev/null || echo "(no dist dir)"
+            if [ -f "$ELECTRON_DIR/path.txt" ]; then
+              echo "path.txt present: $(cat "$ELECTRON_DIR/path.txt")"
               break
             fi
-            echo "Attempt $attempt failed; retrying in 10s"
+            echo "Attempt $attempt did not produce path.txt; retrying in 10s"
             sleep 10
           done
+
           if [ ! -f "$ELECTRON_DIR/path.txt" ]; then
             echo "::error::Electron binary failed to install (path.txt missing after install)"
-            ls -la "$ELECTRON_DIR" || true
-            ls -la "$ELECTRON_DIR/dist" || true
+            ls -laR "$ELECTRON_DIR/dist" 2>/dev/null || true
             exit 1
           fi
 
