@@ -48,6 +48,30 @@ jobs:
           echo "side-effects-cache=false" >> .npmrc
           pnpm install --frozen-lockfile
 
+      - name: Install Electron binary
+        shell: bash
+        env:
+          force_no_cache: 'true'
+        run: |
+          set -e
+          ELECTRON_DIR="$(node -p "require('path').dirname(require.resolve('electron/package.json'))")"
+          echo "Electron package dir: $ELECTRON_DIR"
+          rm -rf "$ELECTRON_DIR/dist" "$ELECTRON_DIR/path.txt"
+          for attempt in 1 2 3; do
+            echo "Electron binary download attempt $attempt"
+            if node "$ELECTRON_DIR/install.js"; then
+              break
+            fi
+            echo "Attempt $attempt failed; retrying in 10s"
+            sleep 10
+          done
+          if [ ! -f "$ELECTRON_DIR/path.txt" ]; then
+            echo "::error::Electron binary failed to install (path.txt missing after install)"
+            ls -la "$ELECTRON_DIR" || true
+            ls -la "$ELECTRON_DIR/dist" || true
+            exit 1
+          fi
+
       - name: Verify Electron binary
         run: pnpm exec electron --version
 
