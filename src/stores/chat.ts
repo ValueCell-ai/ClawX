@@ -2247,11 +2247,15 @@ function segmentHasOpenToolRun(segmentMessages: RawMessage[]): boolean {
     }
   }
 
+  // The tool run is closed if any assistant message after the last tool call
+  // is a non-tool response — either with visible content or a thinking-only
+  // terminal turn (the model ended without producing more tool calls).
   return !segmentMessages.some((message, index) => {
     if (index <= lastToolUseOffset) return false;
     if (message.role !== 'assistant') return false;
     if (hasPendingToolUse(message)) return false;
-    return hasNonToolAssistantContent(message);
+    if (hasNonToolAssistantContent(message)) return true;
+    return !isToolOnlyMessage(message);
   });
 }
 
@@ -2924,12 +2928,16 @@ export const useChatStore = create<ChatState>((set, get) => ({
         if (recentAssistant) {
           clearHistoryPoll();
           set({ sending: false, activeRunId: null, pendingFinal: false, runError: null });
+          captureSessionRunState(currentSessionKey, DEFAULT_SESSION_RUN_STATE);
         }
       }
 
       // Unstick lifecycle when history already has a conclusive reply but the
       // Gateway never emitted a terminal phase event (WS drop, console run, etc.).
-      if (isSendingNow && !get().streamingMessage && get().streamingTools.length === 0) {
+      // Allow unsticking when streamingTools is empty OR all entries are completed
+      // (completed tool entries linger after tool rounds and must not block this).
+      const noRunningTools = !get().streamingTools.some((t) => t.status === 'running');
+      if (isSendingNow && !get().streamingMessage && noRunningTools) {
         const openSegment = openRunSegment;
         const hasConclusiveReply = openSegment.some((message) => {
           if (message.role !== 'assistant') return false;
@@ -2945,6 +2953,23 @@ export const useChatStore = create<ChatState>((set, get) => ({
             lastUserMessageAt: null,
             runError: null,
           });
+          captureSessionRunState(currentSessionKey, DEFAULT_SESSION_RUN_STATE);
+        }
+        // Also unstick when all tool calls are resolved but the model's
+        // terminal response was thinking-only (no visible content). The
+        // `segmentHasOpenToolRun` update above detects this, but we still
+        // need an explicit conclusive-reply fallback for the case where
+        // hasConclusiveReply is false (thinking-only terminal turn).
+        if (!hasConclusiveReply && !segmentHasOpenToolRun(openSegment) && openSegment.length > 0) {
+          clearHistoryPoll();
+          set({
+            sending: false,
+            activeRunId: null,
+            pendingFinal: false,
+            lastUserMessageAt: null,
+            runError: null,
+          });
+          captureSessionRunState(currentSessionKey, DEFAULT_SESSION_RUN_STATE);
         }
       }
 
@@ -3698,10 +3723,19 @@ export const useChatStore = create<ChatState>((set, get) => ({
           const pendingTool = hasPendingToolUse(normalizedFinalMessage);
           const toolOnly = isToolOnlyMessage(normalizedFinalMessage) || pendingTool;
           const hasOutput = !pendingTool && hasNonToolAssistantContent(normalizedFinalMessage);
+          // When the model ends its turn with only `thinking` blocks (no text,
+          // no images, no tool calls), `hasOutput` is false and `toolOnly` is
+          // false. This is a valid terminal state (the model decided not to
+          // produce user-visible content — common after image_generate +
+          // message-send tool chains on MiniMax-M2.7). Without this flag the
+          // lifecycle stays armed indefinitely, leaving the UI stuck on
+          // "Thinking…" even though the run is complete.
+          const isEmptyTerminalResponse = !toolOnly && !hasOutput && !pendingTool;
+          const clearLifecycle = hasOutput || isEmptyTerminalResponse;
           const msgId = normalizedFinalMessage.id || (toolOnly ? `run-${runId}-tool-${Date.now()}` : `run-${runId}`);
           set((s) => {
             const nextTools = updates.length > 0 ? upsertToolStatuses(s.streamingTools, updates) : s.streamingTools;
-            const streamingTools = hasOutput ? [] : nextTools;
+            const streamingTools = clearLifecycle ? [] : nextTools;
 
             // Note: it would be tempting to also surface `MEDIA:/path`
             // markers from `normalizedFinalMessage.content`'s text here, so
@@ -3724,7 +3758,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
               }
               : { ...normalizedFinalMessage, role: (normalizedFinalMessage.role || 'assistant') as RawMessage['role'], id: msgId };
             const clearPendingImages = { pendingToolImages: [] as AttachedFileMeta[] };
-
             // Check if message already exists (prevent duplicates)
             const alreadyExists = s.messages.some(m => m.id === msgId);
             if (alreadyExists) {
@@ -3737,9 +3770,9 @@ export const useChatStore = create<ChatState>((set, get) => ({
               } : {
                 streamingText: '',
                 streamingMessage: null,
-                sending: hasOutput ? false : s.sending,
-                activeRunId: hasOutput ? null : s.activeRunId,
-                pendingFinal: hasOutput ? false : true,
+                sending: clearLifecycle ? false : s.sending,
+                activeRunId: clearLifecycle ? null : s.activeRunId,
+                pendingFinal: clearLifecycle ? false : true,
                 streamingTools,
                 ...clearPendingImages,
               };
@@ -3755,17 +3788,21 @@ export const useChatStore = create<ChatState>((set, get) => ({
               messages: [...s.messages, msgWithImages],
               streamingText: '',
               streamingMessage: null,
-              sending: hasOutput ? false : s.sending,
-              activeRunId: hasOutput ? null : s.activeRunId,
-              pendingFinal: hasOutput ? false : true,
+              sending: clearLifecycle ? false : s.sending,
+              activeRunId: clearLifecycle ? null : s.activeRunId,
+              pendingFinal: clearLifecycle ? false : true,
               streamingTools,
               ...clearPendingImages,
             };
           });
           // After the final response, quietly reload history to surface all intermediate
           // tool-use turns (thinking + tool blocks) from the Gateway's authoritative record.
-          if (hasOutput && !toolOnly) {
+          // Also reload for empty terminal responses (thinking-only) so the
+          // delayed follow-up can pick up the Gateway's `assistant-media`
+          // bubble that may still be getting written.
+          if (clearLifecycle && !toolOnly) {
             clearHistoryPoll();
+            captureSessionRunState(get().currentSessionKey, DEFAULT_SESSION_RUN_STATE);
             void get().loadHistory(true);
 
             // OpenClaw's gateway processes `MEDIA:/path` markers in the
