@@ -52,31 +52,53 @@ jobs:
         shell: bash
         env:
           force_no_cache: 'true'
-          DEBUG: '@electron/get:*'
         run: |
           set -e
           unset ELECTRON_SKIP_BINARY_DOWNLOAD
           ELECTRON_DIR="$(node -p "require('path').dirname(require.resolve('electron/package.json'))")"
           echo "Electron package dir: $ELECTRON_DIR"
-
-          echo "--- clearing @electron/get cache ---"
-          rm -rf "$HOME/.cache/electron" "$HOME/.npm/_cacache" 2>/dev/null || true
-
           rm -rf "$ELECTRON_DIR/dist" "$ELECTRON_DIR/path.txt"
-          set +e
-          node "$ELECTRON_DIR/install.js"
-          code=$?
-          set -e
-          echo "install.js exit code: $code"
 
-          echo "--- @electron/get cache contents ---"
-          find "$HOME/.cache/electron" -type f -printf '%s\t%p\n' 2>/dev/null || echo "(no electron cache)"
+          # install.js uses a fire-and-forget promise chain that can let the Node
+          # process exit before extract-zip finishes (observed on CI: dist left
+          # half-extracted, path.txt never written, exit code still 0). Run an
+          # explicit, fully-awaited download + extract instead.
+          cat > "$ELECTRON_DIR/clawx-install-electron.cjs" <<'EOF'
+          const { downloadArtifact } = require('@electron/get');
+          const extract = require('extract-zip');
+          const fs = require('fs');
+          const path = require('path');
+          const { version } = require('./package.json');
+          const platformPath = process.platform === 'win32'
+            ? 'electron.exe'
+            : process.platform === 'darwin'
+              ? 'Electron.app/Contents/MacOS/Electron'
+              : 'electron';
+          (async () => {
+            const zipPath = await downloadArtifact({ version, artifactName: 'electron', force: true });
+            console.log('Downloaded zip:', zipPath, fs.statSync(zipPath).size, 'bytes');
+            const distPath = path.join(__dirname, 'dist');
+            fs.rmSync(distPath, { recursive: true, force: true });
+            await extract(zipPath, { dir: distPath });
+            console.log('Extracted entries in dist:', fs.readdirSync(distPath).length);
+            const srcTypeDef = path.join(distPath, 'electron.d.ts');
+            if (fs.existsSync(srcTypeDef)) {
+              fs.renameSync(srcTypeDef, path.join(__dirname, 'electron.d.ts'));
+            }
+            fs.writeFileSync(path.join(__dirname, 'path.txt'), platformPath);
+            console.log('Wrote path.txt:', platformPath);
+          })().catch((err) => {
+            console.error('Electron install failed:', err);
+            process.exit(1);
+          });
+          EOF
 
-          echo "--- dist contents ---"
-          ls -laR "$ELECTRON_DIR/dist" 2>/dev/null || echo "(no dist dir)"
+          ( cd "$ELECTRON_DIR" && node clawx-install-electron.cjs )
+          rm -f "$ELECTRON_DIR/clawx-install-electron.cjs"
 
           if [ ! -f "$ELECTRON_DIR/path.txt" ]; then
             echo "::error::Electron binary failed to install (path.txt missing after install)"
+            ls -laR "$ELECTRON_DIR/dist" 2>/dev/null || true
             exit 1
           fi
           echo "path.txt present: $(cat "$ELECTRON_DIR/path.txt")"
