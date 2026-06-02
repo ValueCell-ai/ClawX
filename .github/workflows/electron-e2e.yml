@@ -48,60 +48,87 @@ jobs:
           echo "side-effects-cache=false" >> .npmrc
           pnpm install --frozen-lockfile
 
-      - name: Install Electron binary
+      # electron/install.js and extract-zip both leave dist half-extracted on CI
+      # (114MB zip downloads OK; only LICENSE + LICENSES.chromium.html land in dist).
+      # Download with @electron/get, extract with the OS unzip tool instead.
+      - name: Install Electron binary (Unix)
+        if: runner.os != 'Windows'
         shell: bash
         env:
           force_no_cache: 'true'
         run: |
-          set -e
+          set -euo pipefail
           unset ELECTRON_SKIP_BINARY_DOWNLOAD
           ELECTRON_DIR="$(node -p "require('path').dirname(require.resolve('electron/package.json'))")"
           echo "Electron package dir: $ELECTRON_DIR"
           rm -rf "$ELECTRON_DIR/dist" "$ELECTRON_DIR/path.txt"
+          mkdir -p "$ELECTRON_DIR/dist"
 
-          # install.js uses a fire-and-forget promise chain that can let the Node
-          # process exit before extract-zip finishes (observed on CI: dist left
-          # half-extracted, path.txt never written, exit code still 0). Run an
-          # explicit, fully-awaited download + extract instead.
-          cat > "$ELECTRON_DIR/clawx-install-electron.cjs" <<'EOF'
-          const { downloadArtifact } = require('@electron/get');
-          const extract = require('extract-zip');
-          const fs = require('fs');
-          const path = require('path');
-          const { version } = require('./package.json');
-          const platformPath = process.platform === 'win32'
-            ? 'electron.exe'
-            : process.platform === 'darwin'
-              ? 'Electron.app/Contents/MacOS/Electron'
-              : 'electron';
-          (async () => {
-            const zipPath = await downloadArtifact({ version, artifactName: 'electron', force: true });
-            console.log('Downloaded zip:', zipPath, fs.statSync(zipPath).size, 'bytes');
-            const distPath = path.join(__dirname, 'dist');
-            fs.rmSync(distPath, { recursive: true, force: true });
-            await extract(zipPath, { dir: distPath });
-            console.log('Extracted entries in dist:', fs.readdirSync(distPath).length);
-            const srcTypeDef = path.join(distPath, 'electron.d.ts');
-            if (fs.existsSync(srcTypeDef)) {
-              fs.renameSync(srcTypeDef, path.join(__dirname, 'electron.d.ts'));
-            }
-            fs.writeFileSync(path.join(__dirname, 'path.txt'), platformPath);
-            console.log('Wrote path.txt:', platformPath);
-          })().catch((err) => {
-            console.error('Electron install failed:', err);
-            process.exit(1);
-          });
-          EOF
+          ZIP="$(cd "$ELECTRON_DIR" && node -e "
+            const { downloadArtifact } = require('@electron/get');
+            const { version } = require('./package.json');
+            downloadArtifact({ version, artifactName: 'electron', force: true })
+              .then((z) => { process.stdout.write(z); process.exit(0); })
+              .catch((e) => { console.error(e); process.exit(1); });
+          ")"
+          ZIP_SIZE="$(stat -c%s "$ZIP" 2>/dev/null || stat -f%z "$ZIP")"
+          echo "Downloaded zip: $ZIP ($ZIP_SIZE bytes)"
 
-          ( cd "$ELECTRON_DIR" && node clawx-install-electron.cjs )
-          rm -f "$ELECTRON_DIR/clawx-install-electron.cjs"
+          unzip -oq "$ZIP" -d "$ELECTRON_DIR/dist"
+          echo "Extracted top-level entries: $(ls -1 "$ELECTRON_DIR/dist" | wc -l | tr -d ' ')"
 
-          if [ ! -f "$ELECTRON_DIR/path.txt" ]; then
-            echo "::error::Electron binary failed to install (path.txt missing after install)"
-            ls -laR "$ELECTRON_DIR/dist" 2>/dev/null || true
-            exit 1
+          if [ -f "$ELECTRON_DIR/dist/electron.d.ts" ]; then
+            mv "$ELECTRON_DIR/dist/electron.d.ts" "$ELECTRON_DIR/electron.d.ts"
           fi
-          echo "path.txt present: $(cat "$ELECTRON_DIR/path.txt")"
+
+          if [ "$(uname -s)" = "Darwin" ]; then
+            PLATFORM_PATH='Electron.app/Contents/MacOS/Electron'
+            test -f "$ELECTRON_DIR/dist/Electron.app/Contents/MacOS/Electron"
+          else
+            PLATFORM_PATH='electron'
+            test -f "$ELECTRON_DIR/dist/electron"
+            chmod +x "$ELECTRON_DIR/dist/electron"
+          fi
+          printf '%s' "$PLATFORM_PATH" > "$ELECTRON_DIR/path.txt"
+          echo "path.txt: $(cat "$ELECTRON_DIR/path.txt")"
+
+      - name: Install Electron binary (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          force_no_cache: 'true'
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Remove-Item Env:ELECTRON_SKIP_BINARY_DOWNLOAD -ErrorAction SilentlyContinue
+          $electronDir = node -p "require('path').dirname(require.resolve('electron/package.json'))"
+          Write-Host "Electron package dir: $electronDir"
+          Remove-Item -Recurse -Force "$electronDir\dist", "$electronDir\path.txt" -ErrorAction SilentlyContinue
+          New-Item -ItemType Directory -Force -Path "$electronDir\dist" | Out-Null
+
+          Push-Location $electronDir
+          try {
+            $zip = node -e "const { downloadArtifact } = require('@electron/get'); const { version } = require('./package.json'); downloadArtifact({ version, artifactName: 'electron', force: true }).then((z) => { process.stdout.write(z); process.exit(0); }).catch((e) => { console.error(e); process.exit(1); });"
+          } finally {
+            Pop-Location
+          }
+          $zipSize = (Get-Item -LiteralPath $zip).Length
+          Write-Host "Downloaded zip: $zip ($zipSize bytes)"
+
+          Expand-Archive -LiteralPath $zip -DestinationPath "$electronDir\dist" -Force
+          $entryCount = (Get-ChildItem -LiteralPath "$electronDir\dist").Count
+          Write-Host "Extracted top-level entries: $entryCount"
+
+          $typeDef = Join-Path $electronDir 'dist\electron.d.ts'
+          if (Test-Path -LiteralPath $typeDef) {
+            Move-Item -LiteralPath $typeDef -Destination (Join-Path $electronDir 'electron.d.ts') -Force
+          }
+
+          $exe = Join-Path $electronDir 'dist\electron.exe'
+          if (-not (Test-Path -LiteralPath $exe)) {
+            throw "electron.exe missing after extract: $exe"
+          }
+          Set-Content -LiteralPath (Join-Path $electronDir 'path.txt') -Value 'electron.exe' -NoNewline
+          Write-Host "path.txt: electron.exe"
 
       - name: Verify Electron binary
         run: pnpm exec electron --version
