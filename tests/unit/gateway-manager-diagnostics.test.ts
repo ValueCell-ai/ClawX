@@ -120,7 +120,6 @@ describe('GatewayManager diagnostics', () => {
     const health = buildGatewayHealthSummary({
       status: manager.getStatus(),
       diagnostics: manager.getDiagnostics(),
-      platform: process.platform,
     });
     expect(health.reasons).not.toContain('rpc_timeout');
   });
@@ -184,7 +183,6 @@ describe('GatewayManager diagnostics', () => {
     const summary = buildGatewayHealthSummary({
       status: manager.getStatus(),
       diagnostics: manager.getDiagnostics(),
-      platform: process.platform,
     });
     expect(summary.reasons).not.toContain('rpc_timeout');
   });
@@ -215,7 +213,7 @@ describe('GatewayManager diagnostics', () => {
     expect(snapshot.core.rpcRouter).toBe('blocked');
   });
 
-  it('keeps windows heartbeat recovery disabled while diagnostics degrade', async () => {
+  it('restarts windows gateway on heartbeat misses and marks health unresponsive', async () => {
     Object.defineProperty(process, 'platform', { value: 'win32' });
 
     const { GatewayManager } = await import('@electron/gateway/manager');
@@ -239,16 +237,19 @@ describe('GatewayManager diagnostics', () => {
     const restartSpy = vi.spyOn(manager, 'restart').mockResolvedValue();
 
     (manager as unknown as { startPing: () => void }).startPing();
-    vi.advanceTimersByTime(400_000);
+    vi.advanceTimersByTime(300_000);
 
-    expect(restartSpy).not.toHaveBeenCalled();
+    expect(restartSpy).toHaveBeenCalledTimes(1);
 
     const health = buildGatewayHealthSummary({
-      status: manager.getStatus(),
-      diagnostics: manager.getDiagnostics(),
-      platform: 'win32',
+      status: { state: 'running', port: 18789 },
+      diagnostics: {
+        ...manager.getDiagnostics(),
+        consecutiveHeartbeatMisses: 4,
+      },
     });
-    expect(health.state).not.toBe('healthy');
+    expect(health.state).toBe('unresponsive');
+    expect(health.reasons).toContain('gateway_unresponsive');
 
     (manager as unknown as { connectionMonitor: { clear: () => void } }).connectionMonitor.clear();
   });

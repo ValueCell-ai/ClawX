@@ -47,9 +47,9 @@ describe('GatewayManager heartbeat recovery', () => {
 
     (manager as unknown as { startPing: () => void }).startPing();
 
-    vi.advanceTimersByTime(120_000);
+    vi.advanceTimersByTime(300_000);
 
-    expect(ws.ping).toHaveBeenCalledTimes(3);
+    expect(ws.ping).toHaveBeenCalledTimes(4);
     expect(ws.terminate).not.toHaveBeenCalled();
     expect(restartSpy).toHaveBeenCalledTimes(1);
 
@@ -113,13 +113,13 @@ describe('GatewayManager heartbeat recovery', () => {
 
     (manager as unknown as { startPing: () => void }).startPing();
 
-    vi.advanceTimersByTime(30_000); // ping #1
-    vi.advanceTimersByTime(30_000); // miss #1 + ping #2
+    vi.advanceTimersByTime(60_000); // ping #1
+    vi.advanceTimersByTime(60_000); // miss #1 + ping #2
     (manager as unknown as { handleMessage: (message: unknown) => void }).handleMessage('alive');
 
-    vi.advanceTimersByTime(30_000); // recovered, ping #3
-    vi.advanceTimersByTime(30_000); // miss #1 + ping #4
-    vi.advanceTimersByTime(30_000); // miss #2 + ping #5
+    vi.advanceTimersByTime(60_000); // recovered, ping #3
+    vi.advanceTimersByTime(60_000); // miss #1 + ping #4
+    vi.advanceTimersByTime(60_000); // miss #2 + ping #5
 
     expect(ws.terminate).not.toHaveBeenCalled();
     expect(restartSpy).not.toHaveBeenCalled();
@@ -148,14 +148,14 @@ describe('GatewayManager heartbeat recovery', () => {
 
     (manager as unknown as { startPing: () => void }).startPing();
 
-    vi.advanceTimersByTime(120_000);
+    vi.advanceTimersByTime(300_000);
 
     expect(restartSpy).not.toHaveBeenCalled();
 
     (manager as unknown as { connectionMonitor: { clear: () => void } }).connectionMonitor.clear();
   });
 
-  it('keeps heartbeat recovery disabled on windows', async () => {
+  it('restarts after consecutive heartbeat misses on windows', async () => {
     Object.defineProperty(process, 'platform', { value: 'win32' });
 
     const { GatewayManager } = await import('@electron/gateway/manager');
@@ -178,9 +178,10 @@ describe('GatewayManager heartbeat recovery', () => {
 
     (manager as unknown as { startPing: () => void }).startPing();
 
-    vi.advanceTimersByTime(400_000);
+    vi.advanceTimersByTime(300_000);
 
-    expect(restartSpy).not.toHaveBeenCalled();
+    expect(ws.ping).toHaveBeenCalledTimes(4);
+    expect(restartSpy).toHaveBeenCalledTimes(1);
 
     (manager as unknown as { connectionMonitor: { clear: () => void } }).connectionMonitor.clear();
   });

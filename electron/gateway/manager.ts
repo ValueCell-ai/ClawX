@@ -174,15 +174,9 @@ export class GatewayManager extends EventEmitter {
   private reconnectAttemptsTotal = 0;
   private reconnectSuccessTotal = 0;
   private static readonly RELOAD_POLICY_REFRESH_MS = 15_000;
-  private static readonly HEARTBEAT_INTERVAL_MS = 30_000;
-  private static readonly HEARTBEAT_TIMEOUT_MS = 12_000;
-  private static readonly HEARTBEAT_MAX_MISSES = 3;
-  // Windows-specific heartbeat parameters — more lenient to reduce log noise
-  // from false positives caused by Windows Defender scans, system updates,
-  // and synchronous event-loop blocking in the gateway.
-  private static readonly HEARTBEAT_INTERVAL_MS_WIN = 60_000;
-  private static readonly HEARTBEAT_TIMEOUT_MS_WIN = 25_000;
-  private static readonly HEARTBEAT_MAX_MISSES_WIN = 5;
+  private static readonly HEARTBEAT_INTERVAL_MS = 60_000;
+  private static readonly HEARTBEAT_TIMEOUT_MS = 30_000;
+  private static readonly HEARTBEAT_MAX_MISSES = 4;
   public static readonly RESTART_COOLDOWN_MS = 5_000;
   private static readonly GATEWAY_READY_FALLBACK_PROBE_DELAYS_MS = [1_500, 3_000, 5_000, 8_000, 12_000, 30_000] as const;
   private static readonly INITIAL_READY_HEARTBEAT_RECOVERY_GRACE_MS = 5 * 60_000;
@@ -1202,17 +1196,10 @@ export class GatewayManager extends EventEmitter {
    * Start ping interval to keep connection alive
    */
   private startPing(): void {
-    const isWindows = process.platform === 'win32';
     this.connectionMonitor.startPing({
-      intervalMs: isWindows
-        ? GatewayManager.HEARTBEAT_INTERVAL_MS_WIN
-        : GatewayManager.HEARTBEAT_INTERVAL_MS,
-      timeoutMs: isWindows
-        ? GatewayManager.HEARTBEAT_TIMEOUT_MS_WIN
-        : GatewayManager.HEARTBEAT_TIMEOUT_MS,
-      maxConsecutiveMisses: isWindows
-        ? GatewayManager.HEARTBEAT_MAX_MISSES_WIN
-        : GatewayManager.HEARTBEAT_MAX_MISSES,
+      intervalMs: GatewayManager.HEARTBEAT_INTERVAL_MS,
+      timeoutMs: GatewayManager.HEARTBEAT_TIMEOUT_MS,
+      maxConsecutiveMisses: GatewayManager.HEARTBEAT_MAX_MISSES,
       sendPing: () => {
         if (this.ws?.readyState === WebSocket.OPEN) {
           this.ws.ping();
@@ -1221,17 +1208,13 @@ export class GatewayManager extends EventEmitter {
       onHeartbeatTimeout: ({ consecutiveMisses, timeoutMs }) => {
         this.recordHeartbeatTimeout(consecutiveMisses);
         const pid = this.process?.pid ?? 'unknown';
-        const isWindows = process.platform === 'win32';
-        const shouldAttemptRecovery = !isWindows && this.shouldReconnect && this.status.state === 'running';
+        const shouldAttemptRecovery = this.shouldReconnect && this.status.state === 'running';
         logger.warn(
           `Gateway heartbeat: ${consecutiveMisses} consecutive pong misses ` +
             `(timeout=${timeoutMs}ms, pid=${pid}, state=${this.status.state}, autoReconnect=${this.shouldReconnect}).`,
         );
         if (!shouldAttemptRecovery) {
-          const reason = isWindows
-            ? 'platform=win32'
-            : 'lifecycle is not in auto-recoverable running state';
-          logger.warn(`Gateway heartbeat recovery skipped (${reason})`);
+          logger.warn('Gateway heartbeat recovery skipped (lifecycle is not in auto-recoverable running state)');
           return;
         }
         const initialReadyRecoveryDelayMs = this.getInitialReadyHeartbeatRecoveryDelayMs();
@@ -1262,8 +1245,7 @@ export class GatewayManager extends EventEmitter {
     this.initialReadyHeartbeatRecoveryTimer = setTimeout(() => {
       this.initialReadyHeartbeatRecoveryTimer = null;
       if (
-        process.platform === 'win32'
-        || !this.shouldReconnect
+        !this.shouldReconnect
         || this.status.state !== 'running'
         || this.status.gatewayReady
       ) {

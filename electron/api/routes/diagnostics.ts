@@ -65,7 +65,6 @@ export async function handleDiagnosticsRoutes(
         diagnostics,
         lastChannelsStatusOkAt: channelStatusDiagnostics.lastChannelsStatusOkAt,
         lastChannelsStatusFailureAt: channelStatusDiagnostics.lastChannelsStatusFailureAt,
-        platform: process.platform,
       });
       const gateway = {
         ...gatewayStatus,

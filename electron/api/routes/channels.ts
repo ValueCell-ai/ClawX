@@ -566,7 +566,6 @@ export async function buildChannelAccountsView(
     diagnostics: gatewayDiagnostics,
     lastChannelsStatusOkAt,
     lastChannelsStatusFailureAt,
-    platform: process.platform,
   });
   const gatewayHealthState = gatewayHealthStateForChannels(gatewayHealth.state);
   const effectiveGatewayHealthState = skipRuntime ? undefined : gatewayHealthState;
