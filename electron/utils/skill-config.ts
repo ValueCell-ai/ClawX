@@ -260,29 +260,6 @@ export async function getAllSkillConfigs(): Promise<Record<string, SkillEntry>> 
     return config.skills?.entries || {};
 }
 
-async function listBundledOpenClawSkillSlugs(bundledSkillsRoot = join(getOpenClawResolvedDir(), 'skills')): Promise<string[]> {
-    if (!existsSync(bundledSkillsRoot)) {
-        return [];
-    }
-
-    try {
-        const entries = await readdir(bundledSkillsRoot, { withFileTypes: true });
-        const skillSlugs: string[] = [];
-
-        for (const entry of entries) {
-            if (!entry.isDirectory()) continue;
-            if (entry.name.startsWith('.')) continue;
-            if (!existsSync(join(bundledSkillsRoot, entry.name, 'SKILL.md'))) continue;
-            skillSlugs.push(entry.name);
-        }
-
-        return skillSlugs.sort();
-    } catch (error) {
-        logger.warn('Failed to enumerate bundled OpenClaw skills:', error);
-        return [];
-    }
-}
-
 function getDisallowedBundledOpenClawSkillSlugs(bundledSkillSlugs: string[]): string[] {
     return bundledSkillSlugs.filter((slug) => !BUNDLED_OPENCLAW_SKILL_ALLOWLIST.has(slug));
 }
