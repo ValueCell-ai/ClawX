@@ -223,6 +223,13 @@ export async function connectGatewaySocket(options: {
       if (settled) return;
       settled = true;
       cleanupHandshakeRequest();
+      if (!handshakeComplete) {
+        try {
+          ws.terminate();
+        } catch {
+          // ignore cleanup errors during failed startup handshakes
+        }
+      }
       reject(error instanceof Error ? error : new Error(String(error)));
     };
 

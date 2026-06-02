@@ -75,7 +75,7 @@ describe('runGatewayStartupSequence', () => {
     expect(hooks.findExistingGateway).toHaveBeenCalledWith(18789);
     expect(hooks.hasOwnedProcess).toHaveBeenCalled();
     expect(hooks.waitForReady).toHaveBeenCalledWith(18789);
-    expect(hooks.connect).toHaveBeenCalledWith(18789);
+    expect(hooks.connect).toHaveBeenCalledWith(18789, undefined);
     expect(hooks.onConnectedToExistingGateway).toHaveBeenCalledTimes(1);
 
     // Must NOT start a new process or wait for port free
@@ -102,7 +102,7 @@ describe('runGatewayStartupSequence', () => {
     expect(hooks.waitForPortFree).toHaveBeenCalledWith(18789);
     expect(hooks.startProcess).toHaveBeenCalledTimes(1);
     expect(hooks.waitForReady).toHaveBeenCalledWith(18789);
-    expect(hooks.connect).toHaveBeenCalledWith(18789);
+    expect(hooks.connect).toHaveBeenCalledWith(18789, undefined);
     expect(hooks.onConnectedToManagedGateway).toHaveBeenCalledTimes(1);
     expect(hooks.onConnectedToExistingGateway).not.toHaveBeenCalled();
 
@@ -255,5 +255,32 @@ describe('runGatewayStartupSequence', () => {
 
     // resetStartupStderrLines should be called once per attempt
     expect(hooks.resetStartupStderrLines).toHaveBeenCalledTimes(2);
+  });
+
+  it('retries connect in-place when gateway is still starting', async () => {
+    let callCount = 0;
+    const hooks = createMockHooks({
+      findExistingGateway: vi.fn().mockResolvedValue(null),
+      hasOwnedProcess: vi.fn().mockReturnValue(false),
+      connect: vi.fn().mockImplementation(async () => {
+        callCount++;
+        if (callCount === 1) {
+          throw new Error('gateway starting; retry shortly');
+        }
+      }),
+      delay: vi.fn().mockImplementation(async (ms: number) => {
+        // Speed up inner connect retry delays in the test harness.
+        if (ms >= 500) {
+          await Promise.resolve();
+        }
+      }),
+      maxStartAttempts: 3,
+    });
+
+    await runGatewayStartupSequence(hooks);
+
+    expect(hooks.connect).toHaveBeenCalledTimes(2);
+    expect(hooks.startProcess).toHaveBeenCalledTimes(1);
+    expect(hooks.onConnectedToManagedGateway).toHaveBeenCalledTimes(1);
   });
 });

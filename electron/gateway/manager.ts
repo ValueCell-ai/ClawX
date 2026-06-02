@@ -435,6 +435,10 @@ export class GatewayManager extends EventEmitter {
         error
       );
       this.setStatus({ state: 'error', error: String(error) });
+      if (this.shouldReconnect) {
+        logger.warn('Gateway start failed; scheduling auto-reconnect recovery');
+        this.scheduleReconnect();
+      }
       throw error;
     } finally {
       this.startLock = false;
