@@ -87,7 +87,8 @@
         "node-machine-id": "^1.1.12",
         "posthog-node": "^5.28.0",
         "tar": "^6.2.1",
-        "ws": "^8.19.0"
+        "ws": "^8.19.0",
+        "yaml": "^2.9.0"
     },
     "devDependencies": {
         "@buape/carbon": "0.16.0",
