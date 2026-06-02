@@ -23,6 +23,8 @@ jobs:
           - windows-latest
     env:
       CI: 'true'
+      # Linux runners cannot use Electron's setuid chrome-sandbox; harmless on macOS/Windows.
+      ELECTRON_DISABLE_SANDBOX: '1'
 
     steps:
       - name: Checkout code
