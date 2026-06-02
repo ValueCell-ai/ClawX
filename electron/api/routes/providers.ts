@@ -20,6 +20,7 @@ import {
 import { validateApiKeyWithProvider } from '../../services/providers/provider-validation';
 import { getProviderService } from '../../services/providers/provider-service';
 import { providerAccountToConfig } from '../../services/providers/provider-store';
+import { checkProviderModel, type ModelCheckInput } from '../../services/providers/provider-model-check';
 import type { ProviderAccount } from '../../shared/providers/types';
 import { logger } from '../../utils/logger';
 
@@ -49,6 +50,21 @@ export async function handleProviderRoutes(
       `[provider-migration] Legacy HTTP route "${route}" is deprecated. Prefer /api/provider-accounts endpoints.`,
     );
   };
+
+  if (url.pathname === '/api/provider-model-check' && req.method === 'POST') {
+    try {
+      const body = await parseJsonBody<ModelCheckInput>(req);
+      sendJson(res, 200, await checkProviderModel(body));
+    } catch (error) {
+      sendJson(res, 500, {
+        success: false,
+        status: 'failed',
+        message: String(error),
+        modelUsed: '',
+      });
+    }
+    return true;
+  }
 
   if (url.pathname === '/api/provider-vendors' && req.method === 'GET') {
     sendJson(res, 200, await providerService.listVendors());
