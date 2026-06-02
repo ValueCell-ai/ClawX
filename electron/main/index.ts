@@ -28,6 +28,8 @@ import {
 } from '../utils/openclaw-workspace';
 import { autoInstallCliIfNeeded, generateCompletionCache, installCompletionToProfile } from '../utils/openclaw-cli';
 import { isQuitting, setQuitting } from './app-state';
+import { getMacTrafficLightPosition, syncMacTrafficLightPosition } from './traffic-light-layout';
+import { getSetting } from '../utils/store';
 import { applyProxySettings } from './proxy';
 import { syncLaunchAtStartupSettingFromStore } from './launch-at-startup';
 import {
@@ -43,7 +45,6 @@ import {
 } from './quit-lifecycle';
 import { createSignalQuitHandler } from './signal-quit';
 import { acquireProcessInstanceFileLock } from './process-instance-lock';
-import { getSetting } from '../utils/store';
 import { ensureBuiltinSkillsInstalled, ensurePreinstalledSkillsInstalled, trimBundledOpenClawSkillsAndConfigs } from '../utils/skill-config';
 
 import { startHostApiServer } from '../api/server';
@@ -187,7 +188,9 @@ function createWindow(): BrowserWindow {
       webviewTag: true, // Enable <webview> for embedding OpenClaw Control UI
     },
     titleBarStyle: isMac ? 'hiddenInset' : useCustomTitleBar ? 'hidden' : 'default',
-    trafficLightPosition: isMac ? { x: 16, y: 16 } : undefined,
+    trafficLightPosition: isMac
+      ? getMacTrafficLightPosition(false)
+      : undefined,
     frame: isMac || !useCustomTitleBar,
     show: false,
   });
@@ -259,6 +262,12 @@ function createMainWindow(): BrowserWindow {
   win.once('ready-to-show', () => {
     if (mainWindow !== win) {
       return;
+    }
+
+    if (process.platform === 'darwin') {
+      void getSetting('sidebarCollapsed').then((sidebarCollapsed) => {
+        syncMacTrafficLightPosition(win, sidebarCollapsed);
+      });
     }
 
     const action = consumeMainWindowReady(mainWindowFocusState);

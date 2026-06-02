@@ -37,6 +37,8 @@ import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { hostApiFetch } from '@/lib/host-api';
+import { invokeIpc } from '@/lib/api-client';
+import { SIDEBAR_COLLAPSED_WIDTH, MAC_SIDEBAR_CHROME_HEIGHT } from '../../../shared/sidebar-layout';
 import { useTranslation } from 'react-i18next';
 import logoSvg from '@/assets/logo.svg';
 
@@ -148,6 +150,11 @@ export function Sidebar() {
   }, [gatewayRuntimeKey, isGatewayReady, loadHistory, loadSessions]);
   const agents = useAgentsStore((s) => s.agents);
   const fetchAgents = useAgentsStore((s) => s.fetchAgents);
+
+  useEffect(() => {
+    if (!isMac) return;
+    void invokeIpc('window:syncTrafficLightPosition', sidebarCollapsed);
+  }, [isMac, sidebarCollapsed]);
 
   const navigate = useNavigate();
   const isOnChat = useLocation().pathname === '/';
@@ -332,13 +339,21 @@ export function Sidebar() {
         'relative flex min-h-0 shrink-0 flex-col overflow-hidden bg-surface-sidebar',
         isResizing ? 'transition-none' : 'transition-[width] duration-300',
       )}
-      style={{ width: sidebarCollapsed ? 64 : sidebarWidth }}
+      style={{ width: sidebarCollapsed ? SIDEBAR_COLLAPSED_WIDTH : sidebarWidth }}
     >
+      {isMac && (
+        <div
+          aria-hidden="true"
+          data-testid="mac-sidebar-chrome"
+          className="drag-region shrink-0"
+          style={{ height: MAC_SIDEBAR_CHROME_HEIGHT }}
+        />
+      )}
+
       {/* Top Header Toggle */}
       <div
         className={cn(
-          'flex items-center p-2 h-12',
-          isMac && 'drag-region h-[4.75rem] items-end pt-10',
+          'flex shrink-0 items-center p-2 h-8',
           sidebarCollapsed ? 'justify-center' : 'justify-between',
         )}
       >
@@ -351,6 +366,7 @@ export function Sidebar() {
           </div>
         )}
         <Button
+          data-testid="sidebar-collapse-toggle"
           variant="ghost"
           size="icon"
           className={cn(

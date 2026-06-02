@@ -50,6 +50,7 @@ const electronAPI = {
         'window:maximize',
         'window:close',
         'window:isMaximized',
+        'window:syncTrafficLightPosition',
         // Settings
         'settings:get',
         'settings:set',
