@@ -22,6 +22,10 @@ vi.mock('electron', () => ({
     whenReady: vi.fn().mockResolvedValue(undefined),
   },
   BrowserWindow: vi.fn(),
+  Menu: {
+    buildFromTemplate: vi.fn((template) => ({ template })),
+    setApplicationMenu: vi.fn(),
+  },
   ipcMain: { on: vi.fn(), handle: vi.fn(), removeHandler: vi.fn() },
   dialog: { showOpenDialog: vi.fn(), showMessageBox: vi.fn() },
   shell: { openExternal: vi.fn() },

@@ -101,7 +101,7 @@ describe('Skills page gateway readiness', () => {
     expect(screen.queryByTestId('skills-gateway-banner')).not.toBeInTheDocument();
   });
 
-  it('shows a starting banner while the running gateway still cannot serve skills data', async () => {
+  it('keeps startup readiness feedback out of the Skills page banner', async () => {
     fetchSkillsMock.mockResolvedValue(false);
     gatewayState.status = { state: 'running', port: 18789, gatewayReady: false };
     render(<Skills />);
@@ -112,7 +112,7 @@ describe('Skills page gateway readiness', () => {
     });
 
     expect(fetchSkillsMock).toHaveBeenCalledTimes(1);
-    expect(screen.getByTestId('skills-gateway-banner')).toHaveAttribute('data-state', 'starting');
+    expect(screen.queryByTestId('skills-gateway-banner')).not.toBeInTheDocument();
   });
 
   it('shows stopped banner copy when the gateway is stopped', async () => {
