@@ -14,7 +14,6 @@ import { useGatewayStore } from '@/stores/gateway';
 import { useProviderStore } from '@/stores/providers';
 import { hostApi, type ChannelGroupItem } from '@/lib/host-api';
 import { hostEvents } from '@/lib/host-events';
-import { isGatewayStopped } from '@/lib/gateway-status';
 import { CHANNEL_ICONS, CHANNEL_NAMES, type ChannelType } from '@/types/channel';
 import type { AgentSummary } from '@/types/agent';
 import {
@@ -149,15 +148,6 @@ export function Agents() {
         </div>
 
         <div className="flex-1 overflow-y-auto pr-2 pb-10 min-h-0 -mr-2">
-          {isGatewayStopped(gatewayStatus) && (
-            <div className="mb-8 p-4 rounded-xl border border-yellow-500/50 bg-yellow-500/10 flex items-center gap-3">
-              <AlertCircle className="h-5 w-5 text-yellow-600 dark:text-yellow-400" />
-              <span className="text-yellow-700 dark:text-yellow-400 text-sm font-medium">
-                {t('gatewayWarning')}
-              </span>
-            </div>
-          )}
-
           {error && (
             <div className="mb-8 p-4 rounded-xl border border-destructive/50 bg-destructive/10 flex items-center gap-3">
               <AlertCircle className="h-5 w-5 text-destructive" />

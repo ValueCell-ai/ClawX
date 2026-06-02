@@ -158,6 +158,18 @@ describe('Agents page status refresh', () => {
     });
   });
 
+  it('does not render the legacy gateway warning during transient stopped status', async () => {
+    gatewayState.status = { state: 'stopped', port: 18789 };
+
+    render(<Agents />);
+
+    await waitFor(() => {
+      expect(fetchAgentsMock).toHaveBeenCalledTimes(1);
+    });
+
+    expect(screen.queryByText('gatewayWarning')).not.toBeInTheDocument();
+  });
+
   it('uses "Use default model" as form fill only and disables it when already default', async () => {
     agentsState.agents = [
       {
