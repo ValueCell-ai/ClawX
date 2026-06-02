@@ -49,10 +49,15 @@ jobs:
         run: pnpm run ext:bridge
 
       - name: Ensure Electron binary is installed
-        run: node node_modules/electron/install.js
+        shell: bash
+        run: |
+          ELECTRON_DIR="$(node -e "process.stdout.write(require('path').dirname(require.resolve('electron/package.json')))")"
+          echo "Electron package at: $ELECTRON_DIR"
+          rm -rf "$ELECTRON_DIR/dist"
+          node "$ELECTRON_DIR/install.js"
 
       - name: Verify Electron binary
-        run: npx electron --version
+        run: pnpm exec electron --version
 
       - name: Run Electron E2E on Linux
         if: runner.os == 'Linux'
