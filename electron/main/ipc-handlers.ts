@@ -1456,6 +1456,12 @@ function registerGatewayHandlers(
     }
   });
 
+  gatewayManager.on('chat:runtime-event', (data) => {
+    if (!mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('chat:runtime-event', data);
+    }
+  });
+
   gatewayManager.on('exit', (code) => {
     if (!mainWindow.isDestroyed()) {
       mainWindow.webContents.send('gateway:exit', code);

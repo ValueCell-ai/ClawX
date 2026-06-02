@@ -9,6 +9,7 @@ import {
 } from './message-utils';
 import { isInternalMessage } from '@/stores/chat/helpers';
 import type { RawMessage, ToolStatus } from '@/stores/chat';
+import type { ChatRuntimeRunState } from '@/stores/chat/types';
 
 export type TaskStepStatus = 'running' | 'completed' | 'error';
 
@@ -345,6 +346,123 @@ function appendDetailSegments(
       depth: 1,
     });
   });
+}
+
+function runtimeDetail(value: unknown): string | undefined {
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    return trimmed || undefined;
+  }
+  if (value == null) return undefined;
+  try {
+    const rendered = JSON.stringify(value, null, 2);
+    return rendered.length > 4000 ? `${rendered.slice(0, 4000)}…` : rendered;
+  } catch {
+    return String(value);
+  }
+}
+
+export function deriveRuntimeTaskSteps(runState: ChatRuntimeRunState | null | undefined): TaskStep[] {
+  if (!runState) return [];
+
+  const steps: TaskStep[] = [];
+  const stepIndexById = new Map<string, number>();
+  const upsertStep = (step: TaskStep): void => {
+    const existingIndex = stepIndexById.get(step.id);
+    if (existingIndex == null) {
+      stepIndexById.set(step.id, steps.length);
+      steps.push(step);
+      return;
+    }
+    const existing = steps[existingIndex];
+    steps[existingIndex] = {
+      ...existing,
+      ...step,
+      detail: step.detail ?? existing.detail,
+      url: step.url ?? existing.url,
+    };
+  };
+
+  for (const event of runState.events) {
+    switch (event.type) {
+      case 'tool.started': {
+        const input = event.args as Record<string, unknown> | undefined;
+        const url = event.name === 'web_fetch' && typeof input?.url === 'string' ? input.url : undefined;
+        upsertStep({
+          id: event.toolCallId,
+          label: event.name,
+          status: 'running',
+          kind: 'tool',
+          detail: runtimeDetail(event.args),
+          depth: 1,
+          url,
+        });
+        break;
+      }
+      case 'tool.updated': {
+        upsertStep({
+          id: event.toolCallId,
+          label: event.name,
+          status: 'running',
+          kind: 'tool',
+          detail: runtimeDetail(event.partialResult),
+          depth: 1,
+        });
+        break;
+      }
+      case 'tool.completed': {
+        upsertStep({
+          id: event.toolCallId,
+          label: event.name,
+          status: event.isError ? 'error' : 'completed',
+          kind: 'tool',
+          detail: runtimeDetail(event.result),
+          depth: 1,
+        });
+        break;
+      }
+      case 'command.output': {
+        const id = event.itemId || `${event.toolCallId || event.name || 'command'}:output`;
+        upsertStep({
+          id,
+          label: event.title || `${event.name || 'Command'} output`,
+          status: event.status === 'failed' || event.status === 'error' ? 'error' : event.phase === 'end' ? 'completed' : 'running',
+          kind: 'message',
+          detail: runtimeDetail(event.output),
+          depth: 1,
+        });
+        break;
+      }
+      case 'patch.completed': {
+        const id = event.itemId || `${event.toolCallId || event.name || 'patch'}:patch`;
+        upsertStep({
+          id,
+          label: event.title || event.name || 'Patch',
+          status: 'completed',
+          kind: 'system',
+          detail: runtimeDetail(event.summary),
+          depth: 1,
+        });
+        break;
+      }
+      case 'approval.updated': {
+        const id = event.itemId || `${event.toolCallId || 'approval'}:approval`;
+        upsertStep({
+          id,
+          label: event.title || 'Approval',
+          status: event.status === 'denied' || event.status === 'failed' ? 'error' : event.phase === 'resolved' ? 'completed' : 'running',
+          kind: 'system',
+          detail: runtimeDetail(event.message),
+          depth: 1,
+        });
+        break;
+      }
+      default:
+        break;
+    }
+  }
+
+  return attachTopology(steps);
 }
 
 export function deriveTaskSteps({

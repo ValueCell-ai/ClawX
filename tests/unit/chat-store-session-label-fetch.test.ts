@@ -45,7 +45,12 @@ describe('chat store session label summary hydration', () => {
     agentsState.agents = [];
     gatewayRpcMock.mockReset();
     hostApiFetchMock.mockReset();
-    hostApiFetchMock.mockResolvedValue({ success: true, summaries: [] });
+    hostApiFetchMock.mockImplementation(async (path: string) => {
+      if (path === '/api/chat/sessions' || path === '/api/chat/history') {
+        throw new Error('No route for mocked chat host API');
+      }
+      return { success: true, summaries: [] };
+    });
   });
 
   afterEach(() => {
@@ -72,15 +77,31 @@ describe('chat store session label summary hydration', () => {
       throw new Error(`Unexpected gateway RPC: ${method}`);
     });
 
-    hostApiFetchMock.mockResolvedValueOnce({
-      success: true,
-      summaries: [
-        {
-          sessionKey: 'agent:main:session-a',
-          firstUserText: 'should hydrate immediately',
-          lastTimestamp: 1_700_000_000_000,
-        },
-      ],
+    hostApiFetchMock.mockImplementation(async (path: string) => {
+      if (path === '/api/chat/history') {
+        throw new Error('No route for mocked chat host API');
+      }
+      if (path === '/api/chat/sessions') {
+        return {
+          success: true,
+          result: {
+            sessions: [
+              { key: 'agent:main:session-a', displayName: 'Session A', updatedAt: 1000 },
+              { key: 'agent:main:main', displayName: 'Main', updatedAt: 1001 },
+            ],
+          },
+        };
+      }
+      return {
+        success: true,
+        summaries: [
+          {
+            sessionKey: 'agent:main:session-a',
+            firstUserText: 'should hydrate immediately',
+            lastTimestamp: 1_700_000_000_000,
+          },
+        ],
+      };
     });
 
     const { useChatStore } = await import('@/stores/chat');
@@ -142,12 +163,29 @@ describe('chat store session label summary hydration', () => {
       throw new Error(`Unexpected gateway RPC: ${method}`);
     });
 
-    hostApiFetchMock.mockResolvedValueOnce({
-      success: true,
-      summaries: [
-        { sessionKey: 'agent:main:session-a', firstUserText: 'Alpha title', lastTimestamp: 1_700_000_000_100 },
-        { sessionKey: 'agent:main:session-b', firstUserText: 'Beta title', lastTimestamp: 1_700_000_000_200 },
-      ],
+    hostApiFetchMock.mockImplementation(async (path: string) => {
+      if (path === '/api/chat/history') {
+        throw new Error('No route for mocked chat host API');
+      }
+      if (path === '/api/chat/sessions') {
+        return {
+          success: true,
+          result: {
+            sessions: [
+              { key: 'agent:main:session-a', displayName: 'ClawX', updatedAt: 1000 },
+              { key: 'agent:main:session-b', displayName: 'ClawX', updatedAt: 1001 },
+              { key: 'agent:main:main', displayName: 'ClawX', updatedAt: 1002 },
+            ],
+          },
+        };
+      }
+      return {
+        success: true,
+        summaries: [
+          { sessionKey: 'agent:main:session-a', firstUserText: 'Alpha title', lastTimestamp: 1_700_000_000_100 },
+          { sessionKey: 'agent:main:session-b', firstUserText: 'Beta title', lastTimestamp: 1_700_000_000_200 },
+        ],
+      };
     });
 
     const { useChatStore } = await import('@/stores/chat');
@@ -288,11 +326,27 @@ describe('chat store session label summary hydration', () => {
       throw new Error(`Unexpected gateway RPC: ${method}`);
     });
 
-    hostApiFetchMock.mockResolvedValueOnce({
-      success: true,
-      summaries: [
-        { sessionKey: 'agent:main:session-a', firstUserText: null, lastTimestamp: null },
-      ],
+    hostApiFetchMock.mockImplementation(async (path: string) => {
+      if (path === '/api/chat/history') {
+        throw new Error('No route for mocked chat host API');
+      }
+      if (path === '/api/chat/sessions') {
+        return {
+          success: true,
+          result: {
+            sessions: [
+              { key: 'agent:main:session-a', displayName: 'Session A', updatedAt: 1000 },
+              { key: 'agent:main:main', displayName: 'Main', updatedAt: 1001 },
+            ],
+          },
+        };
+      }
+      return {
+        success: true,
+        summaries: [
+          { sessionKey: 'agent:main:session-a', firstUserText: null, lastTimestamp: null },
+        ],
+      };
     });
 
     const { useChatStore } = await import('@/stores/chat');
@@ -327,7 +381,8 @@ describe('chat store session label summary hydration', () => {
     await Promise.resolve();
     await Promise.resolve();
 
-    expect(hostApiFetchMock).toHaveBeenCalledTimes(1);
+    const summaryCalls = hostApiFetchMock.mock.calls.filter(([path]) => path === '/api/sessions/summaries');
+    expect(summaryCalls).toHaveLength(1);
   });
 
   it('re-requests a session summary when updatedAt changes after an empty result', async () => {
@@ -352,19 +407,37 @@ describe('chat store session label summary hydration', () => {
       throw new Error(`Unexpected gateway RPC: ${method}`);
     });
 
-    hostApiFetchMock
-      .mockResolvedValueOnce({
-        success: true,
-        summaries: [
-          { sessionKey: 'agent:main:session-a', firstUserText: null, lastTimestamp: null },
-        ],
-      })
-      .mockResolvedValueOnce({
-        success: true,
-        summaries: [
-          { sessionKey: 'agent:main:session-a', firstUserText: 'new label', lastTimestamp: 1_700_000_000_999 },
-        ],
-      });
+    let summaryCall = 0;
+    hostApiFetchMock.mockImplementation(async (path: string) => {
+      if (path === '/api/chat/history') {
+        throw new Error('No route for mocked chat host API');
+      }
+      if (path === '/api/chat/sessions') {
+        return {
+          success: true,
+          result: {
+            sessions: [
+              { key: 'agent:main:session-a', displayName: 'Session A', updatedAt: sessionVersion },
+              { key: 'agent:main:main', displayName: 'Main', updatedAt: 1001 },
+            ],
+          },
+        };
+      }
+      summaryCall += 1;
+      return summaryCall === 1
+        ? {
+            success: true,
+            summaries: [
+              { sessionKey: 'agent:main:session-a', firstUserText: null, lastTimestamp: null },
+            ],
+          }
+        : {
+            success: true,
+            summaries: [
+              { sessionKey: 'agent:main:session-a', firstUserText: 'new label', lastTimestamp: 1_700_000_000_999 },
+            ],
+          };
+    });
 
     const { useChatStore } = await import('@/stores/chat');
     useChatStore.setState({
@@ -399,14 +472,21 @@ describe('chat store session label summary hydration', () => {
     await Promise.resolve();
     await Promise.resolve();
 
-    expect(hostApiFetchMock).toHaveBeenNthCalledWith(1, '/api/sessions/summaries', {
-      method: 'POST',
-      body: JSON.stringify({ sessionKeys: ['agent:main:session-a'] }),
-    });
-    expect(hostApiFetchMock).toHaveBeenNthCalledWith(2, '/api/sessions/summaries', {
-      method: 'POST',
-      body: JSON.stringify({ sessionKeys: ['agent:main:session-a'] }),
-    });
+    const summaryCalls = hostApiFetchMock.mock.calls.filter(([path]) => path === '/api/sessions/summaries');
+    expect(summaryCalls[0]).toEqual([
+      '/api/sessions/summaries',
+      {
+        method: 'POST',
+        body: JSON.stringify({ sessionKeys: ['agent:main:session-a'] }),
+      },
+    ]);
+    expect(summaryCalls[1]).toEqual([
+      '/api/sessions/summaries',
+      {
+        method: 'POST',
+        body: JSON.stringify({ sessionKeys: ['agent:main:session-a'] }),
+      },
+    ]);
     expect(useChatStore.getState().sessionLabels['agent:main:session-a']).toBe('new label');
   });
 

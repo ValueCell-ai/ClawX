@@ -6,6 +6,10 @@ import { getSetting } from '../../utils/store';
 import type { HostApiContext } from '../context';
 import { parseJsonBody, sendJson } from '../route-utils';
 
+async function runGatewayRpc<T>(ctx: HostApiContext, method: string, params?: unknown, timeoutMs?: number): Promise<T> {
+  return await ctx.gatewayManager.rpc<T>(method, params, timeoutMs);
+}
+
 export async function handleGatewayRoutes(
   req: IncomingMessage,
   res: ServerResponse,
@@ -82,6 +86,82 @@ export async function handleGatewayRoutes(
     return true;
   }
 
+  if (url.pathname === '/api/chat/sessions' && req.method === 'GET') {
+    try {
+      const result = await runGatewayRpc<Record<string, unknown>>(ctx, 'sessions.list', {
+        includeDerivedTitles: true,
+        includeLastMessage: true,
+      });
+      sendJson(res, 200, { success: true, result });
+    } catch (error) {
+      sendJson(res, 500, { success: false, error: String(error) });
+    }
+    return true;
+  }
+
+  if (url.pathname === '/api/chat/history' && req.method === 'POST') {
+    try {
+      const body = await parseJsonBody<{
+        sessionKey: string;
+        limit?: number;
+        maxChars?: number;
+        timeoutMs?: number;
+      }>(req);
+      const params: Record<string, unknown> = {
+        sessionKey: body.sessionKey,
+        ...(typeof body.limit === 'number' ? { limit: body.limit } : {}),
+        ...(typeof body.maxChars === 'number' ? { maxChars: body.maxChars } : {}),
+      };
+      const result = await runGatewayRpc<Record<string, unknown>>(
+        ctx,
+        'chat.history',
+        params,
+        typeof body.timeoutMs === 'number' ? body.timeoutMs : undefined,
+      );
+      sendJson(res, 200, { success: true, result });
+    } catch (error) {
+      sendJson(res, 500, { success: false, error: String(error) });
+    }
+    return true;
+  }
+
+  if (url.pathname === '/api/chat/send' && req.method === 'POST') {
+    try {
+      const body = await parseJsonBody<{
+        sessionKey: string;
+        message: string;
+        deliver?: boolean;
+        idempotencyKey: string;
+      }>(req);
+      const result = await runGatewayRpc<{ runId?: string }>(
+        ctx,
+        'chat.send',
+        {
+          sessionKey: body.sessionKey,
+          message: body.message,
+          deliver: body.deliver ?? false,
+          idempotencyKey: body.idempotencyKey,
+        },
+        120000,
+      );
+      sendJson(res, 200, { success: true, result });
+    } catch (error) {
+      sendJson(res, 500, { success: false, error: String(error) });
+    }
+    return true;
+  }
+
+  if (url.pathname === '/api/chat/abort' && req.method === 'POST') {
+    try {
+      const body = await parseJsonBody<{ sessionKey: string }>(req);
+      const result = await runGatewayRpc<Record<string, unknown>>(ctx, 'chat.abort', { sessionKey: body.sessionKey });
+      sendJson(res, 200, { success: true, result });
+    } catch (error) {
+      sendJson(res, 500, { success: false, error: String(error) });
+    }
+    return true;
+  }
+
   if (url.pathname === '/api/chat/send-with-media' && req.method === 'POST') {
     try {
       const body = await parseJsonBody<{
@@ -123,7 +203,7 @@ export async function handleGatewayRoutes(
       if (imageAttachments.length > 0) {
         rpcParams.attachments = imageAttachments;
       }
-      const result = await ctx.gatewayManager.rpc('chat.send', rpcParams, 120000);
+      const result = await runGatewayRpc(ctx, 'chat.send', rpcParams, 120000);
       sendJson(res, 200, { success: true, result });
     } catch (error) {
       sendJson(res, 500, { success: false, error: String(error) });

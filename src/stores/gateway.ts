@@ -1,12 +1,13 @@
 /**
  * Gateway State Store
- * Uses Host API + SSE for lifecycle/status and a direct renderer WebSocket for runtime RPC.
+ * Uses Host API + host events for lifecycle/status while Main owns runtime event transport.
  */
 import { create } from 'zustand';
 import { hostApiFetch } from '@/lib/host-api';
 import { invokeIpc } from '@/lib/api-client';
 import { subscribeHostEvent } from '@/lib/host-events';
 import type { GatewayHealth, GatewayStatus } from '../types/gateway';
+import type { ChatRuntimeEvent } from '../../shared/chat-runtime-events';
 
 let gatewayInitPromise: Promise<void> | null = null;
 let gatewayEventUnsubscribers: Array<() => void> | null = null;
@@ -170,123 +171,52 @@ function touchSessionActivity(sessionKey: string | null | undefined, activityMs 
 
 function handleGatewayNotification(notification: { method?: string; params?: Record<string, unknown> } | undefined): void {
   const payload = notification;
-  if (!payload || payload.method !== 'agent' || !payload.params || typeof payload.params !== 'object') {
+  if (!payload || payload.method === 'agent') {
     return;
   }
+}
 
-  const p = payload.params;
-  const data = (p.data && typeof p.data === 'object') ? (p.data as Record<string, unknown>) : {};
-  const phase = data.phase ?? p.phase;
-  const hasChatData = (p.state ?? data.state) || (p.message ?? data.message);
-
-  if (hasChatData) {
-    const normalizedEvent: Record<string, unknown> = {
-      ...data,
-      runId: p.runId ?? data.runId,
-      sessionKey: p.sessionKey ?? data.sessionKey,
-      stream: p.stream ?? data.stream,
-      seq: p.seq ?? data.seq,
-      state: p.state ?? data.state,
-      message: p.message ?? data.message,
-    };
-    if (shouldProcessGatewayEvent(normalizedEvent)) {
-      import('./chat')
-        .then(({ useChatStore }) => {
-          useChatStore.getState().handleChatEvent(normalizedEvent);
-        })
-        .catch(() => {});
-    }
+function handleChatRuntimeEvent(event: ChatRuntimeEvent): void {
+  const resolvedSessionKey = event.sessionKey ?? null;
+  if (resolvedSessionKey) {
+    touchSessionActivity(resolvedSessionKey, typeof event.ts === 'number' ? event.ts : Date.now());
   }
 
-  const runId = p.runId ?? data.runId;
-  const sessionKey = p.sessionKey ?? data.sessionKey;
-  const resolvedSessionKeyForActivity = sessionKey != null ? String(sessionKey) : null;
-  if (resolvedSessionKeyForActivity) {
-    touchSessionActivity(resolvedSessionKeyForActivity);
-  }
-  if (phase === 'started' && runId != null && sessionKey != null) {
-    import('./chat')
-      .then(({ useChatStore }) => {
-        const state = useChatStore.getState();
-        const resolvedSessionKey = String(sessionKey);
-        const shouldRefreshSessions =
-          resolvedSessionKey !== state.currentSessionKey
-          || !state.sessions.some((session) => session.key === resolvedSessionKey);
+  import('./chat')
+    .then(({ useChatStore, syncCachedSessionRunIdle }) => {
+      const state = useChatStore.getState();
+      state.handleRuntimeEvent(event);
+
+      const shouldRefreshSessions = resolvedSessionKey != null && (
+        resolvedSessionKey !== state.currentSessionKey
+        || !state.sessions.some((session) => session.key === resolvedSessionKey)
+      );
+
+      if (event.type === 'run.started') {
         if (shouldRefreshSessions) {
           maybeLoadSessions(state, true);
         }
+        return;
+      }
 
-        state.handleChatEvent({
-          state: 'started',
-          runId,
-          sessionKey: resolvedSessionKey,
-        });
-      })
-      .catch(() => {});
-  }
+      if (event.type !== 'run.ended') {
+        return;
+      }
 
-  // `phase: 'end'` fires per streaming message (including intermediate tool
-  // rounds), NOT per-run, so it must not clear lifecycle state — otherwise the
-  // first `[thinking, toolCall]` round tears down `sending` / `activeRunId` /
-  // `pendingFinal` and the Thinking… indicator vanishes mid-chain. Only
-  // `completed` / `done` / `finished` are actual run terminators. We still
-  // honour `'end'` as a hint to refresh history opportunistically.
-  const isPerMessageEnd = phase === 'end';
-  const isRunCompletion = phase === 'completed' || phase === 'done' || phase === 'finished';
-  const isRunFailure = phase === 'error' || phase === 'failed' || phase === 'aborted' || phase === 'cancelled';
-  const isRunTerminal = isRunCompletion || isRunFailure;
-  if (isPerMessageEnd || isRunTerminal) {
-    import('./chat')
-      .then(({ useChatStore, syncCachedSessionRunIdle }) => {
-        const state = useChatStore.getState();
-        const resolvedSessionKey = sessionKey != null ? String(sessionKey) : null;
-        const shouldRefreshSessions = resolvedSessionKey != null && (
-          resolvedSessionKey !== state.currentSessionKey
-          || !state.sessions.some((session) => session.key === resolvedSessionKey)
-        );
-        if (shouldRefreshSessions) {
-          maybeLoadSessions(state);
-        }
+      if (shouldRefreshSessions) {
+        maybeLoadSessions(state, true);
+      }
 
-        const matchesCurrentSession = resolvedSessionKey == null || resolvedSessionKey === state.currentSessionKey;
-        const matchesActiveRun = runId != null && state.activeRunId != null && String(runId) === state.activeRunId;
-
-        if (matchesCurrentSession || matchesActiveRun) {
-          maybeLoadHistory(state, isRunTerminal);
-        }
-        if (isRunTerminal && resolvedSessionKey && !matchesCurrentSession) {
-          syncCachedSessionRunIdle(resolvedSessionKey);
-        }
-
-        if (isRunFailure && (matchesCurrentSession || matchesActiveRun)) {
-          const errorMessage = String(
-            data.errorMessage ?? p.errorMessage ?? data.error ?? p.error ?? '',
-          ).trim();
-          if (errorMessage) {
-            state.handleChatEvent({
-              state: 'error',
-              errorMessage,
-              runId,
-              sessionKey: resolvedSessionKey ?? undefined,
-            });
-          }
-        }
-
-        if (isRunTerminal && (matchesCurrentSession || matchesActiveRun) && state.sending) {
-          useChatStore.setState({
-            sending: false,
-            activeRunId: null,
-            pendingFinal: false,
-            lastUserMessageAt: null,
-            error: isRunFailure ? state.error : null,
-          });
-          if (resolvedSessionKey) {
-            syncCachedSessionRunIdle(resolvedSessionKey);
-          }
-        }
-      })
-      .catch(() => {});
-  }
+      const matchesCurrentSession = resolvedSessionKey != null && resolvedSessionKey === state.currentSessionKey;
+      const matchesActiveRun = state.activeRunId != null && event.runId === state.activeRunId;
+      if (matchesCurrentSession || matchesActiveRun) {
+        maybeLoadHistory(state, true);
+      }
+      if (resolvedSessionKey && !matchesCurrentSession) {
+        syncCachedSessionRunIdle(resolvedSessionKey);
+      }
+    })
+    .catch(() => {});
 }
 
 function handleGatewayChatMessage(data: unknown): void {
@@ -384,6 +314,9 @@ export const useGatewayStore = create<GatewayState>((set, get) => ({
           }));
           unsubscribers.push(subscribeHostEvent('gateway:chat-message', (payload) => {
             handleGatewayChatMessage(payload);
+          }));
+          unsubscribers.push(subscribeHostEvent<ChatRuntimeEvent>('chat:runtime-event', (payload) => {
+            handleChatRuntimeEvent(payload);
           }));
           unsubscribers.push(subscribeHostEvent<{ channelId?: string; status?: string }>(
             'gateway:channel-status',

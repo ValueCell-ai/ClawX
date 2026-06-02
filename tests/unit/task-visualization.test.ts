@@ -1,14 +1,63 @@
 import { describe, expect, it } from 'vitest';
 import {
+  deriveRuntimeTaskSteps,
   deriveTaskSteps,
   findReplyMessageIndex,
   parseSubagentCompletionInfo,
   segmentHasFinalReply,
 } from '@/pages/Chat/task-visualization';
 import { stripProcessMessagePrefix } from '@/pages/Chat/message-utils';
+import { applyRuntimeEventToRuns } from '@/stores/chat/runtime-graph';
 import type { RawMessage, ToolStatus } from '@/stores/chat';
 
+describe('runtime graph state', () => {
+  it('does not drop full-text assistant deltas that do not extend the previous prefix', () => {
+    const first = applyRuntimeEventToRuns({}, {
+      type: 'assistant.delta',
+      runId: 'run-1',
+      text: 'hello',
+    });
+    const second = applyRuntimeEventToRuns(first, {
+      type: 'assistant.delta',
+      runId: 'run-1',
+      text: 'corrected',
+    });
+
+    expect(second['run-1'].assistantText).toBe('corrected');
+  });
+});
+
 describe('deriveTaskSteps', () => {
+  it('projects runtime tool events into active execution graph steps', () => {
+    const steps = deriveRuntimeTaskSteps({
+      runId: 'run-1',
+      status: 'running',
+      assistantText: '',
+      thinkingText: '',
+      events: [
+        { type: 'run.started', runId: 'run-1', sessionKey: 'agent:main:main' },
+        { type: 'tool.started', runId: 'run-1', sessionKey: 'agent:main:main', toolCallId: 'call-1', name: 'read', args: { filePath: '/tmp/demo.md' } },
+        { type: 'command.output', runId: 'run-1', sessionKey: 'agent:main:main', toolCallId: 'call-1', itemId: 'cmd-1', title: 'exec output', output: 'Scanning workspace', status: 'running', phase: 'update' },
+        { type: 'tool.completed', runId: 'run-1', sessionKey: 'agent:main:main', toolCallId: 'call-1', name: 'read', result: { summary: 'Done' }, isError: false },
+      ],
+    });
+
+    expect(steps).toEqual([
+      expect.objectContaining({
+        id: 'call-1',
+        label: 'read',
+        status: 'completed',
+        kind: 'tool',
+      }),
+      expect.objectContaining({
+        id: 'cmd-1',
+        label: 'exec output',
+        status: 'running',
+        kind: 'message',
+        detail: 'Scanning workspace',
+      }),
+    ]);
+  });
   it('builds running steps from streaming tool status without exposing chain-of-thought', () => {
     const streamingTools: ToolStatus[] = [
       {

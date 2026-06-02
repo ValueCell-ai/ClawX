@@ -10,6 +10,7 @@ const HOST_EVENT_TO_IPC_CHANNEL: Record<string, string> = {
   'gateway:presence': 'gateway:presence-changed',
   'gateway:chat-message': 'gateway:chat-message',
   'gateway:channel-status': 'gateway:channel-status',
+  'chat:runtime-event': 'chat:runtime-event',
   'gateway:exit': 'gateway:exit',
   'oauth:code': 'oauth:code',
   'oauth:success': 'oauth:success',

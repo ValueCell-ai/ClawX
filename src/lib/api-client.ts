@@ -713,7 +713,7 @@ export function createGatewayWsTransportInvoker(options: GatewayWsTransportOptio
           mode: 'webchat',
         },
         auth,
-        caps: ['tool-events'],
+        caps: [],
         role: 'operator',
         scopes: ['operator.admin'],
         userAgent: typeof navigator !== 'undefined' ? navigator.userAgent : 'unknown',

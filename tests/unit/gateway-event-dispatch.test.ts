@@ -48,6 +48,38 @@ describe('dispatchProtocolEvent', () => {
     expect(emitter.emit).toHaveBeenCalledWith('chat:message', { message: { text: 'hello' } });
   });
 
+  it('dispatches normalized agent runtime events alongside the legacy notification path', () => {
+    const emitter = createMockEmitter();
+    dispatchProtocolEvent(emitter, 'agent', {
+      runId: 'run-1',
+      sessionKey: 'agent:main:main',
+      stream: 'tool',
+      seq: 3,
+      ts: 10,
+      data: {
+        phase: 'start',
+        name: 'read',
+        toolCallId: 'call-1',
+        args: { filePath: '/tmp/demo.md' },
+      },
+    });
+
+    expect(emitter.emit).toHaveBeenCalledWith('chat:runtime-event', {
+      type: 'tool.started',
+      runId: 'run-1',
+      sessionKey: 'agent:main:main',
+      seq: 3,
+      ts: 10,
+      toolCallId: 'call-1',
+      name: 'read',
+      args: { filePath: '/tmp/demo.md' },
+    });
+    expect(emitter.emit).toHaveBeenCalledWith('notification', {
+      method: 'agent',
+      params: expect.objectContaining({ runId: 'run-1', stream: 'tool' }),
+    });
+  });
+
   it('suppresses tick events', () => {
     const emitter = createMockEmitter();
     dispatchProtocolEvent(emitter, 'tick', {});

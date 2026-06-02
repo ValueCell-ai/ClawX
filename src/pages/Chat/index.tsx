@@ -22,6 +22,7 @@ import { ChatToolbar } from './ChatToolbar';
 import { extractImages, extractText, extractThinking, extractToolUse, isInternalAssistantReplyText, isInternalProcessNarration, normalizeMessageRole, stripProcessMessagePrefix } from './message-utils';
 import {
   buildRunSegmentMessageIndices,
+  deriveRuntimeTaskSteps,
   deriveTaskSteps,
   findReplyMessageIndex,
   getPostTriggerSegmentMessages,
@@ -166,6 +167,7 @@ export function Chat() {
   const streamingTools = useChatStore((s) => s.streamingTools);
   const pendingFinal = useChatStore((s) => s.pendingFinal);
   const activeRunId = useChatStore((s) => s.activeRunId);
+  const runtimeRuns = useChatStore((s) => s.runtimeRuns ?? {});
   const sendMessage = useChatStore((s) => s.sendMessage);
   const abortRun = useChatStore((s) => s.abortRun);
   const clearError = useChatStore((s) => s.clearError);
@@ -407,7 +409,17 @@ export function Chat() {
     //  - segment has tool calls but no pure-text final reply yet (server-side
     //    tool execution — Gateway fires phase "end" per tool round which
     //    briefly clears sending, but the run is still in progress)
-    const hasToolActivity = postTriggerMessages.some((m) =>
+    const isLatestRunSegment = nextUserIndex === -1;
+    const activeRuntimeRun = isLatestRunSegment && activeRunId ? runtimeRuns[activeRunId] ?? null : null;
+    const runtimeHasToolActivity = Boolean(activeRuntimeRun?.events.some((event) =>
+      event.type === 'tool.started'
+      || event.type === 'tool.updated'
+      || event.type === 'tool.completed'
+      || event.type === 'command.output'
+      || event.type === 'patch.completed'
+      || event.type === 'approval.updated',
+    ));
+    const hasToolActivity = runtimeHasToolActivity || postTriggerMessages.some((m) =>
       m.role === 'assistant' && extractToolUse(m).length > 0,
     );
     const hasFinalReply = segmentHasFinalReply(postTriggerMessages);
@@ -417,7 +429,6 @@ export function Chat() {
     // (which clears activeRunId), we must NOT keep the run "open" — so we
     // gate it on activeRunId being present. We also bail out as soon as a
     // terminal model error has been surfaced so the run doesn't appear active.
-    const isLatestRunSegment = nextUserIndex === -1;
     // History may already contain the final answer while lifecycle flags are
     // still armed (missing Gateway terminal phase, blocked chat.send RPC, etc.).
     // Treat the run as closed for graph/input UI when the transcript is done
@@ -514,7 +525,9 @@ export function Chat() {
       && streamTools.length === 0
       && !hasRunningStreamToolStatus;
 
-    let steps = sanitizeGraphSteps(buildSteps(rawStreamingReplyCandidate));
+    let steps = activeRuntimeRun && runtimeHasToolActivity
+      ? sanitizeGraphSteps(deriveRuntimeTaskSteps(activeRuntimeRun))
+      : sanitizeGraphSteps(buildSteps(rawStreamingReplyCandidate));
     let streamingReplyText: string | null = null;
     if (rawStreamingReplyCandidate) {
       const trimmedReplyText = stripProcessMessagePrefix(streamText, getPrimaryMessageStepTexts(steps));
@@ -523,7 +536,9 @@ export function Chat() {
       if (hasReplyText || hasStreamImages) {
         streamingReplyText = hasReplyText ? trimmedReplyText : '';
       } else {
-        steps = sanitizeGraphSteps(buildSteps(false));
+        steps = activeRuntimeRun && runtimeHasToolActivity
+          ? sanitizeGraphSteps(deriveRuntimeTaskSteps(activeRuntimeRun))
+          : sanitizeGraphSteps(buildSteps(false));
       }
     }
 
@@ -641,7 +656,7 @@ export function Chat() {
       streamingReplyText,
       suppressThinking,
     }];
-  }, [messages, subagentCompletionInfos, currentSessionKey, streamingMessage, streamingTools, pendingFinal, sending, hasAnyStreamContent, hasStreamText, hasStreamImages, streamText, streamTools.length, hasRunningStreamToolStatus, hasHistoryCompletionBlockingStream, childTranscripts, currentAgentId, agents, sessionLabels, graphStepCache, runError, isRunTrigger]);
+  }, [messages, subagentCompletionInfos, currentSessionKey, streamingMessage, streamingTools, pendingFinal, sending, hasAnyStreamContent, hasStreamText, hasStreamImages, streamText, streamTools.length, hasRunningStreamToolStatus, hasHistoryCompletionBlockingStream, childTranscripts, currentAgentId, agents, sessionLabels, graphStepCache, runError, isRunTrigger, activeRunId, runtimeRuns]);
   const hasActiveExecutionGraph = userRunCards.some((card) => card.active);
   let latestRunSegmentCompletion = { hasFinalReply: false, hasToolActivity: false };
   let pendingImageGeneration = false;
