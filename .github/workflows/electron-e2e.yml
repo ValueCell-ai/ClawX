@@ -43,21 +43,16 @@ jobs:
           git config --global --add "url.https://github.com/.insteadOf" "ssh://git@github.com/"
 
       - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-
-      - name: Generate extension bridge
-        run: pnpm run ext:bridge
-
-      - name: Ensure Electron binary is installed
         shell: bash
         run: |
-          ELECTRON_DIR="$(node -e "process.stdout.write(require('path').dirname(require.resolve('electron/package.json')))")"
-          echo "Electron package at: $ELECTRON_DIR"
-          rm -rf "$ELECTRON_DIR/dist"
-          node "$ELECTRON_DIR/install.js"
+          echo "side-effects-cache=false" >> .npmrc
+          pnpm install --frozen-lockfile
 
       - name: Verify Electron binary
         run: pnpm exec electron --version
+
+      - name: Generate extension bridge
+        run: pnpm run ext:bridge
 
       - name: Run Electron E2E on Linux
         if: runner.os == 'Linux'
