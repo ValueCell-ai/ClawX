@@ -31,11 +31,36 @@ function getMessagePlainText(message: RawMessage): string {
   return parts.join('\n');
 }
 
+function looksLikeImagePath(value: unknown): boolean {
+  return typeof value === 'string' && /\.(?:png|jpe?g|gif|webp|bmp|avif|svg)(?:$|[?#])/i.test(value.trim());
+}
+
+function messageToolResultDeliveredImage(message: RawMessage): boolean {
+  const role = String(message.role ?? '').toLowerCase();
+  if (role !== 'toolresult' && role !== 'tool_result') return false;
+  if (message.toolName !== 'message') return false;
+
+  const details = (message as unknown as { details?: unknown }).details;
+  if (!details || typeof details !== 'object') return false;
+  const record = details as Record<string, unknown>;
+  const sourceReply = record.sourceReply && typeof record.sourceReply === 'object'
+    ? record.sourceReply as Record<string, unknown>
+    : null;
+  const mediaValues = [
+    record.mediaUrl,
+    ...(Array.isArray(record.mediaUrls) ? record.mediaUrls : []),
+    sourceReply?.mediaUrl,
+    ...(Array.isArray(sourceReply?.mediaUrls) ? sourceReply.mediaUrls : []),
+  ];
+  return mediaValues.some(looksLikeImagePath);
+}
+
 function messageHasDeliveredImage(message: RawMessage): boolean {
   if ((message._attachedFiles ?? []).some((file) => file.mimeType.startsWith('image/'))) {
     return true;
   }
-  return extractImages(message).length > 0;
+  if (extractImages(message).length > 0) return true;
+  return messageToolResultDeliveredImage(message);
 }
 
 function findLastImageGenerateToolCallIndex(segmentMessages: RawMessage[]): number {
@@ -87,9 +112,7 @@ function hasTimedOut(startedAtMs: number | null, now: number): boolean {
 
 function hasDeliveredImageAfter(segmentMessages: RawMessage[], fromIndex: number): boolean {
   for (let index = fromIndex + 1; index < segmentMessages.length; index += 1) {
-    const message = segmentMessages[index];
-    if (message.role !== 'assistant') continue;
-    if (messageHasDeliveredImage(message)) return true;
+    if (messageHasDeliveredImage(segmentMessages[index])) return true;
   }
   return false;
 }
@@ -157,16 +180,14 @@ export function isImageGenerationPending(
 
   if (hasDeliveredImageGenerationResult(segmentMessages)) return false;
 
-  if (toolCallIndex >= 0) {
-    if (hasTerminalReplyAfterToolCall(segmentMessages, toolCallIndex)) return false;
-  }
-
+  const hasOpenAsyncTask = asyncStarts.some((start) => !completedTaskIds.has(start.taskId));
   if (asyncStarts.length > 0) {
-    const hasOpenAsyncTask = asyncStarts.some((start) => !completedTaskIds.has(start.taskId));
     if (!hasOpenAsyncTask) return false;
+  } else if (toolCallIndex >= 0 && hasTerminalReplyAfterToolCall(segmentMessages, toolCallIndex)) {
+    return false;
   }
 
   return hasFreshRunningStreamingTool(streamingTools, now)
     || toolCallIndex >= 0
-    || asyncStarts.some((start) => !completedTaskIds.has(start.taskId));
+    || hasOpenAsyncTask;
 }

@@ -449,9 +449,11 @@ export function Chat() {
       m.role === 'assistant' && extractToolUse(m).length > 0,
     );
     const hasFinalReply = segmentHasFinalReply(postTriggerMessages);
+    const pendingImageGeneration = isLatestRunSegment
+      && isImageGenerationPending(postTriggerMessages, streamingTools);
     const imageGenerationSettledInHistory = isLatestRunSegment
       && hasDeliveredImageGenerationResult(postTriggerMessages)
-      && !isImageGenerationPending(postTriggerMessages, streamingTools);
+      && !pendingImageGeneration;
     const runStillExecutingTools = hasToolActivity && !hasFinalReply;
     // runStillExecutingTools bridges the brief gap between tool rounds when
     // Gateway temporarily clears sending.  However, after an explicit abort
@@ -466,13 +468,14 @@ export function Chat() {
     // mid-chain. Thinking-only stale stream content should not keep image
     // generation runs open after history already contains the final media.
     const streamBlocksHistoryCompletion = hasHistoryCompletionBlockingStream && !imageGenerationSettledInHistory;
-    const runCompletedInHistory = hasFinalReply
+    const runCompletedInHistory = imageGenerationSettledInHistory || (hasFinalReply
+      && !pendingImageGeneration
       && !streamBlocksHistoryCompletion
-      && (hasToolActivity || !sending);
+      && (hasToolActivity || !sending));
     const isLatestOpenRun = isLatestRunSegment
       && !runError
       && !runCompletedInHistory
-      && (sending || pendingFinal || hasAnyStreamContent || (runStillExecutingTools && !!activeRunId));
+      && (sending || pendingFinal || pendingImageGeneration || hasAnyStreamContent || (runStillExecutingTools && !!activeRunId));
 
     const buildSteps = (omitLastStreamingMessageSegment: boolean): TaskStep[] => {
       let builtSteps = deriveTaskSteps({
@@ -716,21 +719,21 @@ export function Chat() {
     break;
   }
   const streamBlocksHistoryCompletion = hasHistoryCompletionBlockingStream && !imageGenerationSettledInHistory;
-  const runSettledInHistory = latestRunSegmentCompletion.hasFinalReply
+  const runSettledInHistory = imageGenerationSettledInHistory || (latestRunSegmentCompletion.hasFinalReply
+    && !pendingImageGeneration
     && !streamBlocksHistoryCompletion
     && (
       latestRunSegmentCompletion.hasToolActivity
       || currentRuntimeHasToolActivity
-      || imageGenerationSettledInHistory
       || !sending
-    );
+    ));
   const shouldClearStoreLifecycleFromHistory = sending
     && runSettledInHistory
     && (
       imageGenerationSettledInHistory
       || (!hasRunningRuntimeToolStatus && !hasRunningStreamToolStatus)
     );
-  const inputRunActive = sending || (hasActiveExecutionGraph && !runSettledInHistory);
+  const inputRunActive = sending || pendingImageGeneration || (hasActiveExecutionGraph && !runSettledInHistory);
 
   useEffect(() => {
     if (!shouldClearStoreLifecycleFromHistory) return;

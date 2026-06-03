@@ -828,6 +828,133 @@ describe('Chat execution graph lifecycle', () => {
     });
   });
 
+  it('settles image generation runs after message tool delivers generated media', async () => {
+    const { useChatStore } = await import('@/stores/chat');
+    useChatStore.setState({
+      messages: [
+        {
+          role: 'user',
+          content: 'Generate a tomato image',
+        },
+        {
+          role: 'assistant',
+          id: 'image-tool-turn',
+          content: [{ type: 'tool_use', id: 'image-call', name: 'image_generate', input: { prompt: 'tomato' } }],
+        },
+        {
+          role: 'toolresult',
+          toolCallId: 'image-call',
+          toolName: 'image_generate',
+          timestamp: Date.now() / 1000,
+          content: [{
+            type: 'text',
+            text: 'Background task started for image generation (27443fdb-6cca-48e6-a3a7-ee34b0491aee).',
+          }],
+        },
+        {
+          role: 'user',
+          content: '[Inter-session message] sourceSession=image_generate:27443fdb-6cca-48e6-a3a7-ee34b0491aee sourceTool=image_generate',
+        },
+        {
+          role: 'toolresult',
+          toolName: 'message',
+          content: [{ type: 'text', text: '{ "status": "ok" }' }],
+          details: {
+            status: 'ok',
+            mediaUrl: '/Users/me/.openclaw/media/tool-image-generation/tomato.png',
+            sourceReply: {
+              mediaUrls: ['/Users/me/.openclaw/media/tool-image-generation/tomato.png'],
+            },
+          },
+        } as RawMessage,
+      ],
+      loading: false,
+      error: null,
+      runError: null,
+      sending: false,
+      activeRunId: null,
+      streamingText: '',
+      streamingMessage: null,
+      streamingTools: [],
+      pendingFinal: false,
+      lastUserMessageAt: Date.now(),
+      pendingToolImages: [],
+      sessions: [{ key: 'agent:main:main' }],
+      currentSessionKey: 'agent:main:main',
+      currentAgentId: 'main',
+      sessionLabels: {},
+      sessionLastActivity: {},
+      thinkingLevel: null,
+    });
+
+    const { Chat } = await import('@/pages/Chat/index');
+
+    render(<Chat />);
+
+    await waitFor(() => {
+      expect(screen.queryByTestId('chat-execution-step-thinking-trailing')).not.toBeInTheDocument();
+    });
+    expect(screen.getByTestId('mock-chat-input')).toHaveAttribute('data-sending', 'false');
+  });
+
+  it('keeps image generation runs active after async task status narration', async () => {
+    const { useChatStore } = await import('@/stores/chat');
+    useChatStore.setState({
+      messages: [
+        {
+          role: 'user',
+          content: 'Generate a cherry image',
+        },
+        {
+          role: 'assistant',
+          id: 'image-tool-turn',
+          content: [{ type: 'tool_use', id: 'image-call', name: 'image_generate', input: { prompt: 'cherry' } }],
+        },
+        {
+          role: 'toolresult',
+          toolCallId: 'image-call',
+          toolName: 'image_generate',
+          timestamp: Date.now() / 1000,
+          content: [{
+            type: 'text',
+            text: 'Background task started for image generation (27443fdb-6cca-48e6-a3a7-ee34b0491aee).',
+          }],
+        },
+        {
+          role: 'assistant',
+          id: 'image-status-turn',
+          content: [{ type: 'text', text: '图已经开始生成啦 🍒 完成后会直接发到这里。' }],
+        },
+      ],
+      loading: false,
+      error: null,
+      runError: null,
+      sending: false,
+      activeRunId: null,
+      streamingText: '',
+      streamingMessage: null,
+      streamingTools: [],
+      pendingFinal: false,
+      lastUserMessageAt: Date.now(),
+      pendingToolImages: [],
+      sessions: [{ key: 'agent:main:main' }],
+      currentSessionKey: 'agent:main:main',
+      currentAgentId: 'main',
+      sessionLabels: {},
+      sessionLastActivity: {},
+      thinkingLevel: null,
+    });
+
+    const { Chat } = await import('@/pages/Chat/index');
+
+    render(<Chat />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('chat-execution-step-thinking-trailing')).toBeInTheDocument();
+    });
+    expect(screen.getByTestId('mock-chat-input')).toHaveAttribute('data-sending', 'true');
+  });
+
   it('keeps the run active when narration landed in history before tools finished', async () => {
     const { useChatStore } = await import('@/stores/chat');
     useChatStore.setState({
