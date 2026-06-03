@@ -6,7 +6,7 @@
  */
 import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AlertCircle, ArrowDownToLine, Loader2, Sparkles } from 'lucide-react';
-import { useChatStore, type RawMessage } from '@/stores/chat';
+import { useChatStore, type ChatRuntimeRunState, type RawMessage } from '@/stores/chat';
 import { isInternalMessage } from '@/stores/chat/helpers';
 import { buildBaselineRunKey, getBaseline } from '@/stores/baseline-cache';
 import { useGatewayStore } from '@/stores/gateway';
@@ -139,6 +139,21 @@ function generatedFileToTarget(file: GeneratedFile): FilePreviewTarget {
     baseline: file.baseline,
     edits: file.edits,
   };
+}
+
+function hasRunningRuntimeTool(run: ChatRuntimeRunState | null): boolean {
+  if (!run) return false;
+  const toolStatuses = new Map<string, 'running' | 'completed' | 'error'>();
+  for (const event of run.events) {
+    if (event.type === 'tool.started' || event.type === 'tool.updated') {
+      toolStatuses.set(event.toolCallId, 'running');
+      continue;
+    }
+    if (event.type === 'tool.completed') {
+      toolStatuses.set(event.toolCallId, event.isError ? 'error' : 'completed');
+    }
+  }
+  return Array.from(toolStatuses.values()).some((status) => status === 'running');
 }
 
 // Keep the last non-empty execution-graph snapshot per session/run outside
@@ -325,6 +340,8 @@ export function Chat() {
   const hasStreamImages = streamImages.length > 0;
   const hasStreamToolStatus = streamingTools.length > 0;
   const hasRunningStreamToolStatus = streamingTools.some((tool) => tool.status === 'running');
+  const currentRuntimeRun = activeRunId ? runtimeRuns[activeRunId] ?? null : null;
+  const hasRunningRuntimeToolStatus = hasRunningRuntimeTool(currentRuntimeRun);
   const shouldRenderStreaming = sending && (hasStreamText || hasStreamTools || hasStreamImages || hasStreamToolStatus);
   const hasAnyStreamContent = hasStreamText || hasStreamThinking || hasStreamTools || hasStreamImages || hasStreamToolStatus;
   const hasHistoryCompletionBlockingStream = hasStreamText
@@ -419,6 +436,7 @@ export function Chat() {
       || event.type === 'patch.completed'
       || event.type === 'approval.updated',
     ));
+    const runtimeHasRunningTool = hasRunningRuntimeTool(activeRuntimeRun);
     const hasToolActivity = runtimeHasToolActivity || postTriggerMessages.some((m) =>
       m.role === 'assistant' && extractToolUse(m).length > 0,
     );
@@ -527,7 +545,8 @@ export function Chat() {
       && canPromoteStreamToBubble
       && (hasStreamText || hasStreamImages)
       && streamTools.length === 0
-      && !hasRunningStreamToolStatus;
+      && !hasRunningStreamToolStatus
+      && !runtimeHasRunningTool;
 
     let steps = activeRuntimeRun && runtimeHasToolActivity
       ? sanitizeGraphSteps(deriveRuntimeTaskSteps(activeRuntimeRun))
@@ -961,7 +980,7 @@ export function Chat() {
                   {shouldRenderStreaming && (
                     streamingReplyText != null
                     || !hasActiveExecutionGraph
-                    || (hasStreamText && streamTools.length === 0 && !hasRunningStreamToolStatus)
+                    || (hasStreamText && streamTools.length === 0 && !hasRunningStreamToolStatus && !hasRunningRuntimeToolStatus)
                   ) && (
                     <ChatMessage
                       suppressToolCards={hasActiveExecutionGraph || runSegmentMessageIndices.size > 0}

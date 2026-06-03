@@ -207,14 +207,26 @@ describe('Chat execution graph lifecycle', () => {
         id: 'tool-narration-stream',
         content: [{ type: 'text', text: 'I will read the file first.' }],
       },
-      streamingTools: [
-        {
-          toolCallId: 'read-1',
-          name: 'read',
+      streamingTools: [],
+      runtimeRuns: {
+        'run-tool-stream': {
+          runId: 'run-tool-stream',
+          sessionKey: 'agent:main:main',
           status: 'running',
-          updatedAt: Date.now(),
+          assistantText: '',
+          thinkingText: '',
+          events: [
+            {
+              type: 'tool.started',
+              runId: 'run-tool-stream',
+              sessionKey: 'agent:main:main',
+              toolCallId: 'read-1',
+              name: 'read',
+              args: { path: '/tmp/demo.md' },
+            },
+          ],
         },
-      ],
+      },
       pendingFinal: false,
       lastUserMessageAt: Date.now(),
       pendingToolImages: [],

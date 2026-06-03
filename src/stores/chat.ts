@@ -4101,12 +4101,9 @@ export const useChatStore = create<ChatState>((set, get) => ({
     }
 
     const toolStatus = runtimeToolEventToStatus(event);
-    if (toolStatus && appliesToActiveUi) {
-      nextPatch.streamingTools = upsertToolStatuses(initialState.streamingTools, [toolStatus]);
-      if (initialState.error || initialState.runError) {
-        nextPatch.error = null;
-        nextPatch.runError = null;
-      }
+    if (toolStatus && appliesToActiveUi && (initialState.error || initialState.runError)) {
+      nextPatch.error = null;
+      nextPatch.runError = null;
     }
 
     if (event.type === 'tool.completed' && appliesToActiveUi) {

@@ -128,6 +128,10 @@ describe('gateway store event wiring', () => {
     expect(useChatStore.getState().activeRunId).toBe('run-1');
     expect(useChatStore.getState().pendingFinal).toBe(true);
     expect(useChatStore.getState().lastUserMessageAt).toBe(1773281731000);
+    expect(useChatStore.getState().streamingTools).toEqual([]);
+    expect(useChatStore.getState().runtimeRuns['run-1']?.events).toEqual([
+      expect.objectContaining({ type: 'tool.completed', toolCallId: 'call-1', name: 'read' }),
+    ]);
   });
 
   it('clears chat sending state on terminal run.ended runtime event', async () => {
