@@ -2878,6 +2878,61 @@ export const useChatStore = create<ChatState>((set, get) => ({
             : message;
         });
       };
+      type AttachedFile = NonNullable<RawMessage['_attachedFiles']>[number];
+      const getAttachmentMergeKey = (file: AttachedFile): string | null => (
+        file.filePath || file.gatewayUrl || null
+      );
+      const preserveExistingAttachmentPreviews = (
+        currentMessages: RawMessage[],
+        nextMessages: RawMessage[],
+      ): RawMessage[] => {
+        const currentFilesByMessageKey = new Map<string, Map<string, AttachedFile>>();
+        for (const message of currentMessages) {
+          if (!message._attachedFiles?.length) continue;
+          const filesByKey = new Map<string, AttachedFile>();
+          for (const file of message._attachedFiles) {
+            const key = getAttachmentMergeKey(file);
+            if (!key) continue;
+            if (!file.preview && !file.fileSize && !file.previewStatus) continue;
+            filesByKey.set(key, file);
+          }
+          if (filesByKey.size > 0) {
+            currentFilesByMessageKey.set(getPreviewMergeKey(message), filesByKey);
+          }
+        }
+
+        if (currentFilesByMessageKey.size === 0) return nextMessages;
+
+        return nextMessages.map((message) => {
+          if (!message._attachedFiles?.length) return message;
+          const currentFiles = currentFilesByMessageKey.get(getPreviewMergeKey(message));
+          if (!currentFiles) return message;
+
+          let changed = false;
+          const attachedFiles = message._attachedFiles.map((file) => {
+            const key = getAttachmentMergeKey(file);
+            const currentFile = key ? currentFiles.get(key) : undefined;
+            if (!currentFile) return file;
+
+            let nextFile = file;
+            if (!nextFile.preview && currentFile.preview) {
+              nextFile = { ...nextFile, preview: currentFile.preview };
+              changed = true;
+            }
+            if (!nextFile.fileSize && currentFile.fileSize) {
+              nextFile = { ...nextFile, fileSize: currentFile.fileSize };
+              changed = true;
+            }
+            if (!nextFile.previewStatus && currentFile.previewStatus) {
+              nextFile = { ...nextFile, previewStatus: currentFile.previewStatus };
+              changed = true;
+            }
+            return nextFile;
+          });
+
+          return changed ? { ...message, _attachedFiles: attachedFiles } : message;
+        });
+      };
 
       const applyLoadFailure = (errorMessage: string | null) => {
         if (!isCurrentSession()) return;
@@ -2920,6 +2975,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
         }
       }
       finalMessages = dropRedundantOptimisticUserMessages(currentSessionKey, finalMessages);
+      finalMessages = preserveExistingAttachmentPreviews(get().messages, finalMessages);
 
       const { pendingFinal, lastUserMessageAt, sending: isSendingNow } = get();
       const userMsTs = lastUserMessageAt != null ? toMs(lastUserMessageAt) : 0;

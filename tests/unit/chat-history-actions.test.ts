@@ -749,6 +749,65 @@ describe('chat history actions', () => {
     expect(h.read().messages[0]?._attachedFiles?.[0]?.preview).toBe('data:image/png;base64,abc');
   });
 
+  it('preserves existing image previews when quiet history refresh rebuilds attachments', async () => {
+    const { createHistoryActions } = await import('@/stores/chat/history-actions');
+    const gatewayUrl = '/api/chat/media/outgoing/agent%3Amain%3As-1/image-1/full';
+    const h = makeHarness({
+      currentSessionKey: 'agent:main:main',
+      messages: [
+        {
+          id: 'generated-image',
+          role: 'assistant',
+          content: 'Generated image',
+          timestamp: 1000,
+          _attachedFiles: [
+            {
+              fileName: 'generated.png',
+              mimeType: 'image/png',
+              fileSize: 42,
+              preview: 'data:image/png;base64,already-loaded',
+              gatewayUrl,
+              source: 'gateway-media',
+            },
+          ],
+        },
+      ],
+    });
+    const actions = createHistoryActions(h.set as never, h.get as never);
+
+    invokeIpcMock.mockResolvedValueOnce({
+      success: true,
+      result: {
+        messages: [
+          {
+            id: 'generated-image',
+            role: 'assistant',
+            content: 'Generated image',
+            timestamp: 1000,
+            _attachedFiles: [
+              {
+                fileName: 'generated.png',
+                mimeType: 'image/png',
+                fileSize: 0,
+                preview: null,
+                gatewayUrl,
+                source: 'gateway-media',
+              },
+            ],
+          },
+        ],
+      },
+    });
+
+    await actions.loadHistory(true);
+
+    expect(h.read().messages[0]?._attachedFiles?.[0]).toMatchObject({
+      fileSize: 42,
+      preview: 'data:image/png;base64,already-loaded',
+      gatewayUrl,
+    });
+  });
+
   it('does not append an optimistic duplicate when history already includes the user message without timestamp', async () => {
     const { createHistoryActions } = await import('@/stores/chat/history-actions');
     const h = makeHarness({
