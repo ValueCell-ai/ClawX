@@ -927,7 +927,7 @@ function trimPathTerminators(filePath: string): string {
  *
  * Also recognises the `MEDIA:` / `media:` prefix the OpenClaw runtime
  * emits for produced artifacts (e.g.
- * `MEDIA:/tmp/desktop_screenshot.png`) — without this the leading colon
+ * `MEDIA:/tmp/desktop_screenshot.png`, `MEDIA:C:\Users\me\out.svg`) — without this the leading colon
  * trips the URL guard on the unix regex below and the artifact never
  * surfaces as an attachment. Mirrors `chat/helpers.ts::extractRawFilePaths`.
  */
@@ -935,7 +935,7 @@ function extractRawFilePaths(text: string): Array<{ filePath: string; mimeType: 
   const refs: Array<{ filePath: string; mimeType: string }> = [];
   const seen = new Set<string>();
   const exts = 'png|jpe?g|gif|webp|bmp|avif|svg|pdf|docx?|xlsx?|pptx?|txt|csv|md|rtf|epub|zip|tar|gz|rar|7z|mp3|wav|ogg|aac|flac|m4a|mp4|mov|avi|mkv|webm|m4v';
-  // Tagged media references (MEDIA:/path, media:~/path, ...). The agent
+  // Tagged media references (MEDIA:/path, media:~/path, MEDIA:C:\path, ...). The agent
   // runtime uses this prefix as an explicit "this is an artifact" marker,
   // so we want them recognised even though the leading colon would
   // normally look like a URL scheme. After matching we punch the entire
@@ -946,7 +946,7 @@ function extractRawFilePaths(text: string): Array<{ filePath: string; mimeType: 
   // and other space-containing paths the agent emits with the explicit
   // `MEDIA:` marker still resolve. Newline and quote characters remain
   // path terminators so we don't accidentally swallow trailing prose.
-  const taggedRegex = new RegExp(`(?:^|[\\s(\\[{>])(?:MEDIA|media):((?:\\/|~\\/)[^\\n"'()\\[\\],<>` + '`' + `]*?\\.(?:${exts}))(?=$|[\\s\\n"'()\\[\\],<>` + '`' + `]|[，。；;,.!?])`, 'g');
+  const taggedRegex = new RegExp(`(?:^|[\\s(\\[{>])(?:MEDIA|media):((?:\\/|~\\/|[A-Za-z]:\\\\)[^\\n"'()\\[\\],<>` + '`' + `]*?\\.(?:${exts}))(?=$|[\\s\\n"'()\\[\\],<>` + '`' + `]|[，。；;,.!?])`, 'g');
   let workingText = text;
   let taggedMatch: RegExpExecArray | null;
   while ((taggedMatch = taggedRegex.exec(text)) !== null) {
