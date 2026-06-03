@@ -20,6 +20,10 @@ async function resolveMenuLanguage(language?: string): Promise<LanguageCode> {
   }
 }
 
+function getMenuTargetWindow(): BrowserWindow | null {
+  return BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows().find((win) => !win.isDestroyed()) ?? null;
+}
+
 /**
  * Create application menu
  */
@@ -40,7 +44,7 @@ export async function createMenu(language?: string): Promise<void> {
                 label: labels.app.preferences,
                 accelerator: 'Cmd+,',
                 click: () => {
-                  const win = BrowserWindow.getFocusedWindow();
+                  const win = getMenuTargetWindow();
                   win?.webContents.send('navigate', '/settings');
                 },
               },
@@ -66,7 +70,7 @@ export async function createMenu(language?: string): Promise<void> {
           label: labels.file.newChat,
           accelerator: 'CmdOrCtrl+N',
           click: () => {
-            const win = BrowserWindow.getFocusedWindow();
+            const win = getMenuTargetWindow();
             win?.webContents.send('new-chat');
           },
         },
@@ -125,7 +129,7 @@ export async function createMenu(language?: string): Promise<void> {
           label: labels.navigate.dashboard,
           accelerator: 'CmdOrCtrl+1',
           click: () => {
-            const win = BrowserWindow.getFocusedWindow();
+            const win = getMenuTargetWindow();
             win?.webContents.send('navigate', '/');
           },
         },
@@ -133,7 +137,7 @@ export async function createMenu(language?: string): Promise<void> {
           label: labels.navigate.chat,
           accelerator: 'CmdOrCtrl+2',
           click: () => {
-            const win = BrowserWindow.getFocusedWindow();
+            const win = getMenuTargetWindow();
             win?.webContents.send('navigate', '/');
           },
         },
@@ -141,7 +145,7 @@ export async function createMenu(language?: string): Promise<void> {
           label: labels.navigate.channels,
           accelerator: 'CmdOrCtrl+3',
           click: () => {
-            const win = BrowserWindow.getFocusedWindow();
+            const win = getMenuTargetWindow();
             win?.webContents.send('navigate', '/channels');
           },
         },
@@ -149,7 +153,7 @@ export async function createMenu(language?: string): Promise<void> {
           label: labels.navigate.skills,
           accelerator: 'CmdOrCtrl+4',
           click: () => {
-            const win = BrowserWindow.getFocusedWindow();
+            const win = getMenuTargetWindow();
             win?.webContents.send('navigate', '/skills');
           },
         },
@@ -157,7 +161,7 @@ export async function createMenu(language?: string): Promise<void> {
           label: labels.navigate.cronTasks,
           accelerator: 'CmdOrCtrl+5',
           click: () => {
-            const win = BrowserWindow.getFocusedWindow();
+            const win = getMenuTargetWindow();
             win?.webContents.send('navigate', '/cron');
           },
         },
@@ -165,7 +169,7 @@ export async function createMenu(language?: string): Promise<void> {
           label: labels.navigate.settings,
           accelerator: isMac ? 'Cmd+,' : 'Ctrl+,',
           click: () => {
-            const win = BrowserWindow.getFocusedWindow();
+            const win = getMenuTargetWindow();
             win?.webContents.send('navigate', '/settings');
           },
         },
