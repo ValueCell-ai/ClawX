@@ -3,6 +3,17 @@
  * Types for Gateway communication and data structures
  */
 
+export type GatewayRuntimeJsonValue =
+  | string
+  | number
+  | boolean
+  | null
+  | GatewayRuntimeJsonValue[]
+  | { [key: string]: GatewayRuntimeJsonValue | undefined };
+
+export type GatewayRuntimePayload = GatewayRuntimeJsonValue | undefined;
+export type GatewayRuntimeRecord = { [key: string]: GatewayRuntimeJsonValue | undefined };
+
 /**
  * Gateway connection status
  */
@@ -36,7 +47,7 @@ export interface GatewayCapabilityProbe {
   checkedAt?: number;
   durationMs?: number;
   error?: string;
-  payload?: unknown;
+  payload?: GatewayRuntimePayload;
 }
 
 export interface GatewayCapabilitySnapshot {
@@ -75,8 +86,8 @@ export interface GatewayHealth {
   uptime?: number;
   version?: string;
   capabilities?: GatewayCapabilitySnapshot;
-  openclawHealth?: unknown;
-  presence?: unknown;
+  openclawHealth?: GatewayRuntimePayload;
+  presence?: GatewayRuntimePayload;
 }
 
 /**
@@ -84,7 +95,7 @@ export interface GatewayHealth {
  */
 export interface GatewayNotification {
   method: string;
-  params?: unknown;
+  params?: GatewayRuntimePayload;
 }
 
 /**

@@ -914,7 +914,11 @@ export class GatewayManager extends EventEmitter {
       }
       const capability = classifyCapabilityMethod(method);
       if (capability) {
-        this.capabilityMonitor.recordCapabilitySuccess(capability, result, Date.now() - startedAt);
+        this.capabilityMonitor.recordCapabilitySuccess(
+          capability,
+          result as GatewayRuntimePayload,
+          Date.now() - startedAt,
+        );
       }
       return result;
     }).catch((error) => {
@@ -979,10 +983,10 @@ export class GatewayManager extends EventEmitter {
       ]);
 
       if (healthResult.status === 'fulfilled') {
-        this.capabilityMonitor.recordOpenClawHealth(healthResult.value);
+        this.capabilityMonitor.recordOpenClawHealth(healthResult.value as GatewayRuntimePayload);
       }
       if (statusResult.status === 'fulfilled') {
-        this.capabilityMonitor.recordOpenClawStatus(statusResult.value);
+        this.capabilityMonitor.recordOpenClawStatus(statusResult.value as GatewayRuntimePayload);
       }
     }
 

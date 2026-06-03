@@ -1,13 +1,18 @@
 import type { UpdateStatusSnapshot } from '../host-api/contract';
-import type { GatewayNotification, GatewayStatus } from '../types/gateway';
+import type {
+  GatewayNotification,
+  GatewayRuntimePayload,
+  GatewayRuntimeRecord,
+  GatewayStatus,
+} from '../types/gateway';
+export type { GatewayRuntimePayload } from '../types/gateway';
 
 export type JsonRecord = Record<string, unknown>;
 
 export type GatewayErrorEvent = string | { message?: string };
-export type GatewayRuntimePayload = JsonRecord | unknown[] | string | number | boolean | null | undefined;
-export type GatewayChatMessageEvent = JsonRecord & {
-  message?: unknown;
-  runId?: unknown;
+export type GatewayChatMessageEvent = GatewayRuntimeRecord & {
+  message?: GatewayRuntimePayload;
+  runId?: GatewayRuntimePayload;
 };
 export type GatewayChannelStatusEvent = {
   channelId: string;

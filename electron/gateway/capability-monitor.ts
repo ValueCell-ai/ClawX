@@ -3,6 +3,7 @@ import type {
   GatewayHealthSummary,
   GatewayStatus,
 } from './manager';
+import type { GatewayRuntimePayload } from '@shared/types/gateway';
 
 export type GatewayCapabilityName = 'openclawHealth' | 'openclawStatus' | 'channels' | 'memory';
 
@@ -11,7 +12,7 @@ export interface GatewayCapabilityProbe {
   checkedAt?: number;
   durationMs?: number;
   error?: string;
-  payload?: unknown;
+  payload?: GatewayRuntimePayload;
 }
 
 export interface GatewayCoreProbe {
@@ -41,7 +42,7 @@ function formatError(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
-function capabilityFromPayload(payload: unknown, checkedAt = Date.now()): GatewayCapabilityProbe {
+function capabilityFromPayload(payload: GatewayRuntimePayload, checkedAt = Date.now()): GatewayCapabilityProbe {
   return {
     state: 'healthy',
     checkedAt,
@@ -67,15 +68,15 @@ export class GatewayCapabilityMonitor {
   private memory: GatewayCapabilityProbe = UNKNOWN_CAPABILITY;
   private lastCoreProbe: GatewayCoreProbe | undefined;
 
-  recordOpenClawHealth(payload: unknown): void {
+  recordOpenClawHealth(payload: GatewayRuntimePayload): void {
     this.openclawHealth = capabilityFromPayload(payload);
   }
 
-  recordOpenClawStatus(payload: unknown): void {
+  recordOpenClawStatus(payload: GatewayRuntimePayload): void {
     this.openclawStatus = capabilityFromPayload(payload);
   }
 
-  recordPresence(payload: unknown): void {
+  recordPresence(payload: GatewayRuntimePayload): void {
     this.presence = capabilityFromPayload(payload);
   }
 
@@ -83,7 +84,7 @@ export class GatewayCapabilityMonitor {
     this.lastCoreProbe = probe;
   }
 
-  recordCapabilitySuccess(name: GatewayCapabilityName, payload: unknown, durationMs?: number): void {
+  recordCapabilitySuccess(name: GatewayCapabilityName, payload: GatewayRuntimePayload, durationMs?: number): void {
     const probe: GatewayCapabilityProbe = {
       state: 'healthy',
       checkedAt: Date.now(),
