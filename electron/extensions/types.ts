@@ -1,5 +1,6 @@
 import type { BrowserWindow } from 'electron';
 import type { GatewayManager } from '../gateway/manager';
+import type { HostApiContribution, HostApiContributionRegistrar } from '../main/ipc/host-contract';
 import type {
   MarketplaceSearchParams,
   MarketplaceInstallParams,
@@ -12,6 +13,7 @@ import type {
 export interface ExtensionContext {
   gatewayManager: GatewayManager;
   getMainWindow: () => BrowserWindow | null;
+  hostApi: HostApiContributionRegistrar;
 }
 
 export interface Extension {
@@ -33,6 +35,10 @@ export interface MarketplaceProviderExtension extends Extension {
   install(params: MarketplaceInstallParams): Promise<void>;
 }
 
+export interface HostApiProviderExtension extends Extension {
+  getHostApiContributions(ctx: ExtensionContext): HostApiContribution[];
+}
+
 export type LegacyMarketplaceSearchParams = ClawHubSearchParams;
 export type LegacyMarketplaceInstallParams = ClawHubInstallParams;
 export type LegacyMarketplaceSkillResult = ClawHubSkillResult;
@@ -50,6 +56,11 @@ export interface AuthProviderExtension extends Extension {
 
 export function isMarketplaceProviderExtension(ext: Extension): ext is MarketplaceProviderExtension {
   return 'getCapability' in ext && 'search' in ext && 'install' in ext;
+}
+
+export function isHostApiProviderExtension(ext: Extension): ext is HostApiProviderExtension {
+  return 'getHostApiContributions' in ext
+    && typeof (ext as HostApiProviderExtension).getHostApiContributions === 'function';
 }
 
 export function isAuthProviderExtension(ext: Extension): ext is AuthProviderExtension {

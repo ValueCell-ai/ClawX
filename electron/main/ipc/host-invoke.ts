@@ -1,18 +1,92 @@
 import { ipcMain } from 'electron';
 import {
-  type CompleteHostServiceRegistry,
+  type HostApiContribution,
   type HostResponse,
   type HostServiceRegistry,
+  type RuntimeHostAction,
   isHostRequest,
 } from './host-contract';
 
-function hasOwnProperty(record: object, key: string): boolean {
-  return Object.prototype.hasOwnProperty.call(record, key);
+type RegisteredHostAction = {
+  action: RuntimeHostAction;
+  ownerId: string;
+};
+
+function assertValidContributionKey(kind: 'module' | 'action', value: string): void {
+  if (!/^[A-Za-z][A-Za-z0-9_-]*$/.test(value)) {
+    throw new Error(`Invalid host API ${kind}: ${value}`);
+  }
 }
 
-type RuntimeHostAction = (payload?: unknown) => Promise<unknown> | unknown;
+export class HostApiRegistry {
+  private modules = new Map<string, Map<string, RegisteredHostAction>>();
 
-export function createHostInvokeDispatcher(services: HostServiceRegistry) {
+  registerCoreServices(services: HostServiceRegistry): void {
+    for (const [moduleName, actions] of Object.entries(services)) {
+      if (!actions || typeof actions !== 'object') continue;
+      for (const [actionName, action] of Object.entries(actions)) {
+        if (typeof action !== 'function') continue;
+        this.registerAction(moduleName, actionName, action as RuntimeHostAction, 'core');
+      }
+    }
+  }
+
+  registerExtensionContributions(extensionId: string, contributions: HostApiContribution[]): () => void {
+    const registered: Array<{ module: string; action: string }> = [];
+
+    for (const contribution of contributions) {
+      assertValidContributionKey('module', contribution.module);
+      for (const [actionName, action] of Object.entries(contribution.actions)) {
+        assertValidContributionKey('action', actionName);
+        this.registerAction(contribution.module, actionName, action, extensionId);
+        registered.push({ module: contribution.module, action: actionName });
+      }
+    }
+
+    return () => {
+      for (const { module, action } of registered) {
+        const moduleActions = this.modules.get(module);
+        const registeredAction = moduleActions?.get(action);
+        if (registeredAction?.ownerId === extensionId) {
+          moduleActions?.delete(action);
+        }
+        if (moduleActions?.size === 0) {
+          this.modules.delete(module);
+        }
+      }
+    };
+  }
+
+  resolve(moduleName: string, actionName: string): RuntimeHostAction | undefined {
+    return this.modules.get(moduleName)?.get(actionName)?.action;
+  }
+
+  private registerAction(
+    moduleName: string,
+    actionName: string,
+    action: RuntimeHostAction,
+    ownerId: string,
+  ): void {
+    const moduleActions = this.modules.get(moduleName) ?? new Map<string, RegisteredHostAction>();
+    if (moduleActions.has(actionName)) {
+      throw new Error(`Host API action already registered: ${moduleName}.${actionName}`);
+    }
+    moduleActions.set(actionName, { action, ownerId });
+    this.modules.set(moduleName, moduleActions);
+  }
+}
+
+function toHostApiRegistry(registryOrServices: HostApiRegistry | HostServiceRegistry): HostApiRegistry {
+  if (registryOrServices instanceof HostApiRegistry) {
+    return registryOrServices;
+  }
+  const registry = new HostApiRegistry();
+  registry.registerCoreServices(registryOrServices);
+  return registry;
+}
+
+export function createHostInvokeDispatcher(registryOrServices: HostApiRegistry | HostServiceRegistry) {
+  const registry = toHostApiRegistry(registryOrServices);
   return async function dispatchHostRequest(request: unknown): Promise<HostResponse> {
     const requestId = request && typeof request === 'object'
       ? String((request as Record<string, unknown>).id ?? '')
@@ -26,12 +100,7 @@ export function createHostInvokeDispatcher(services: HostServiceRegistry) {
       };
     }
 
-    const moduleActions = hasOwnProperty(services, request.module)
-      ? services[request.module]
-      : undefined;
-    const action = moduleActions && hasOwnProperty(moduleActions, request.action)
-      ? (moduleActions as Record<string, RuntimeHostAction>)[request.action]
-      : undefined;
+    const action = registry.resolve(request.module, request.action);
     if (typeof action !== 'function') {
       return {
         id: request.id,
@@ -59,7 +128,7 @@ export function createHostInvokeDispatcher(services: HostServiceRegistry) {
   };
 }
 
-export function registerHostInvokeHandler(services: CompleteHostServiceRegistry): void {
-  const dispatch = createHostInvokeDispatcher(services);
+export function registerHostInvokeHandler(registry: HostApiRegistry): void {
+  const dispatch = createHostInvokeDispatcher(registry);
   ipcMain.handle('host:invoke', async (_event, request: unknown) => dispatch(request));
 }

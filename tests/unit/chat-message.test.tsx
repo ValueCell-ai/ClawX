@@ -4,7 +4,6 @@ import { ChatMessage } from '@/pages/Chat/ChatMessage';
 import type { RawMessage } from '@/stores/chat';
 
 vi.mock('@/lib/api-client', () => ({
-  invokeIpc: vi.fn(),
   readBinaryFile: vi.fn(),
   statFile: vi.fn(async (path: string) => {
     if (path.includes('missing') || path.includes('不存在')) {

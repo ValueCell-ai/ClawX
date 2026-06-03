@@ -113,6 +113,9 @@ export const hostApi = {
     setAutoDownload: (enable: boolean) => invokeHost('updates', 'setAutoDownload', { enable }),
     cancelAutoInstall: () => invokeHost('updates', 'cancelAutoInstall'),
   },
+  uv: {
+    installAll: () => invokeHost('uv', 'installAll'),
+  },
   settings: {
     getAll: () => invokeHost('settings', 'getAll'),
     get: (key: SettingsKey) => invokeHost('settings', 'get', { key }),

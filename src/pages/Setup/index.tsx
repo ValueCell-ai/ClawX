@@ -26,7 +26,6 @@ import { useTranslation } from 'react-i18next';
 import type { TFunction } from 'i18next';
 import { SUPPORTED_LANGUAGES } from '@/i18n';
 import { toast } from 'sonner';
-import { invokeIpc } from '@/lib/api-client';
 import { hostApi } from '@/lib/host-api';
 
 interface SetupStep {
@@ -679,10 +678,7 @@ function InstallingContent({ skills, onComplete, onSkip }: InstallingContentProp
         setOverallProgress(10);
 
         // Step 2: Call the backend to install uv and setup Python
-        const result = await invokeIpc('uv:install-all') as {
-          success: boolean;
-          error?: string
-        };
+        const result = await hostApi.uv.installAll();
 
         if (result.success) {
           setSkillStates(prev => prev.map(s => ({ ...s, status: 'completed' })));

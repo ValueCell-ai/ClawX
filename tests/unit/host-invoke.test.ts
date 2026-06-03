@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { createHostInvokeDispatcher } from '../../electron/main/ipc/host-invoke';
+import { createHostInvokeDispatcher, HostApiRegistry } from '../../electron/main/ipc/host-invoke';
 
 describe('host invoke dispatcher', () => {
   it('dispatches a typed request to the matching service action', async () => {
@@ -101,5 +101,53 @@ describe('host invoke dispatcher', () => {
       ok: false,
       error: { code: 'INTERNAL', message: 'settings unavailable' },
     });
+  });
+
+  it('dispatches extension-contributed actions registered after dispatcher creation', async () => {
+    const registry = new HostApiRegistry();
+    const dispatch = createHostInvokeDispatcher(registry);
+    const gatewaySnapshot = vi.fn(() => ({ capturedAt: 123 }));
+
+    const unregister = registry.registerExtensionContributions('builtin/diagnostics', [{
+      module: 'diagnostics',
+      actions: { gatewaySnapshot },
+    }]);
+
+    await expect(dispatch({
+      id: 'req-6',
+      module: 'diagnostics',
+      action: 'gatewaySnapshot',
+    })).resolves.toEqual({
+      id: 'req-6',
+      ok: true,
+      data: { capturedAt: 123 },
+    });
+    expect(gatewaySnapshot).toHaveBeenCalledWith(undefined);
+
+    unregister();
+
+    await expect(dispatch({
+      id: 'req-7',
+      module: 'diagnostics',
+      action: 'gatewaySnapshot',
+    })).resolves.toMatchObject({
+      id: 'req-7',
+      ok: false,
+      error: { code: 'UNSUPPORTED' },
+    });
+  });
+
+  it('prevents extension actions from overriding existing host actions', () => {
+    const registry = new HostApiRegistry();
+    registry.registerCoreServices({
+      settings: {
+        getAll: vi.fn(() => ({ theme: 'dark' })),
+      },
+    });
+
+    expect(() => registry.registerExtensionContributions('extension/conflict', [{
+      module: 'settings',
+      actions: { getAll: vi.fn() },
+    }])).toThrow('Host API action already registered: settings.getAll');
   });
 });

@@ -70,8 +70,6 @@ const electronAPI = {
         'provider:setDefault',
         'provider:getDefault',
         'provider:validateKey',
-        // UV
-        'uv:install-all',
         // File preview (sandboxed read/write/list/tree)
         'file:readText',
         'file:readBinary',

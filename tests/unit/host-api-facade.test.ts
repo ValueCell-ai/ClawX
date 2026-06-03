@@ -96,6 +96,17 @@ describe('hostApi facade', () => {
     }));
   });
 
+  it('routes uv installer setup through hostInvoke', async () => {
+    hostInvoke.mockResolvedValueOnce({ id: 'req', ok: true, data: { success: true } });
+    const { hostApi } = await import('@/lib/host-api');
+
+    await expect(hostApi.uv.installAll()).resolves.toEqual({ success: true });
+    expect(hostInvoke).toHaveBeenCalledWith(expect.objectContaining({
+      module: 'uv',
+      action: 'installAll',
+    }));
+  });
+
   it('passes log file path and tail lines through hostInvoke', async () => {
     hostInvoke.mockResolvedValueOnce({ id: 'req', ok: true, data: { content: 'tail' } });
     const { hostApi } = await import('@/lib/host-api');
@@ -464,7 +475,7 @@ describe('hostApi facade', () => {
     expect(violations).toEqual([]);
   });
 
-  it('keeps production invokeIpc channel literals behind typed facades except explicit legacy installers', () => {
+  it('does not keep legacy IPC helper exports or production call sites', () => {
     const srcRoot = join(process.cwd(), 'src');
     const files: string[] = [];
     const collect = (dir: string) => {
@@ -473,21 +484,23 @@ describe('hostApi facade', () => {
         const stat = statSync(fullPath);
         if (stat.isDirectory()) {
           collect(fullPath);
-        } else if (/\.(ts|tsx)$/.test(entry) && !fullPath.endsWith('src/lib/api-client.ts')) {
+        } else if (/\.(ts|tsx)$/.test(entry)) {
           files.push(fullPath);
         }
       }
     };
     collect(srcRoot);
 
-    const allowedChannels = new Set(['uv:install-all']);
     const violations = files.flatMap((file) => {
       const relative = file.replace(`${process.cwd()}/`, '');
       const text = readFileSync(file, 'utf8');
-      return [...text.matchAll(/invokeIpc(?:<[^>]+>)?\(\s*['"]([^'"]+)['"]/g)]
-        .map((match) => match[1])
-        .filter((channel) => !allowedChannels.has(channel))
-        .map((channel) => `${relative}: route ${channel} through hostApi`);
+      const legacyIpcHelper = `${'invoke'}${'Ipc'}`;
+      const legacyApiHelper = `${'invoke'}${'Api'}`;
+      const matches = text.match(new RegExp(
+        `\\b${legacyIpcHelper}(?:WithRetry)?\\b|\\b${legacyApiHelper}\\b`,
+        'g',
+      )) ?? [];
+      return matches.map((match) => `${relative}: remove ${match} and route through hostApi`);
     });
 
     expect(violations).toEqual([]);
@@ -543,5 +556,17 @@ describe('hostApi facade', () => {
     });
 
     expect(violations).toEqual([]);
+  });
+
+  it('keeps diagnostics on the extension-contributed host API path', () => {
+    const mainIpcHandlers = readFileSync(join(process.cwd(), 'electron/main/ipc-handlers.ts'), 'utf8');
+    const builtinIndex = readFileSync(join(process.cwd(), 'electron/extensions/builtin/index.ts'), 'utf8');
+    const diagnosticsExtension = readFileSync(join(process.cwd(), 'electron/extensions/builtin/diagnostics.ts'), 'utf8');
+
+    expect(mainIpcHandlers).not.toContain('diagnostics: createDiagnosticsApi');
+    expect(builtinIndex).toContain("import { createDiagnosticsExtension } from './diagnostics';");
+    expect(builtinIndex).toContain("registerBuiltinExtension('builtin/diagnostics', createDiagnosticsExtension);");
+    expect(diagnosticsExtension).toContain('getHostApiContributions');
+    expect(diagnosticsExtension).not.toContain('HostApiRouteExtension');
   });
 });

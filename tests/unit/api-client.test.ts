@@ -1,9 +1,29 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+
+const hostApiMock = vi.hoisted(() => ({
+  files: {
+    readText: vi.fn(),
+    readBinary: vi.fn(),
+    writeText: vi.fn(),
+    stat: vi.fn(),
+    listDir: vi.fn(),
+    listTree: vi.fn(),
+  },
+}));
+
+vi.mock('@/lib/host-api', () => ({
+  hostApi: hostApiMock,
+}));
+
 import {
-  invokeIpc,
-  invokeIpcWithRetry,
   AppError,
+  listDir,
+  listTree,
+  readBinaryFile,
+  readTextFile,
+  statFile,
   toUserMessage,
+  writeTextFile,
 } from '@/lib/api-client';
 
 describe('api-client', () => {
@@ -11,39 +31,33 @@ describe('api-client', () => {
     vi.resetAllMocks();
   });
 
-  it('forwards invoke arguments and returns result', async () => {
-    const invoke = vi.mocked(window.electron.ipcRenderer.invoke);
-    invoke.mockResolvedValueOnce({ ok: true, data: { ok: true } });
+  it('delegates file preview helpers through hostApi.files', async () => {
+    hostApiMock.files.readText.mockResolvedValueOnce({ ok: true, content: 'hello' });
+    hostApiMock.files.readBinary.mockResolvedValueOnce({ ok: true, data: new Uint8Array([1]) });
+    hostApiMock.files.writeText.mockResolvedValueOnce({ ok: true });
+    hostApiMock.files.stat.mockResolvedValueOnce({ ok: true, isFile: true, size: 5 });
+    hostApiMock.files.listDir.mockResolvedValueOnce({ ok: true, entries: [] });
+    hostApiMock.files.listTree.mockResolvedValueOnce({ ok: true, root: { name: 'root', relPath: '', absPath: '/tmp', isDir: true } });
 
-    const result = await invokeIpc<{ ok: boolean }>('settings:getAll', { a: 1 });
+    await expect(readTextFile('/tmp/a.txt')).resolves.toEqual({ ok: true, content: 'hello' });
+    await expect(readBinaryFile('/tmp/b.png', { maxBytes: 32 })).resolves.toEqual({
+      ok: true,
+      data: new Uint8Array([1]),
+    });
+    await expect(writeTextFile('/tmp/a.txt', 'updated')).resolves.toEqual({ ok: true });
+    await expect(statFile('/tmp/a.txt')).resolves.toEqual({ ok: true, isFile: true, size: 5 });
+    await expect(listDir('/tmp')).resolves.toEqual({ ok: true, entries: [] });
+    await expect(listTree('/tmp', { maxDepth: 2 })).resolves.toEqual({
+      ok: true,
+      root: { name: 'root', relPath: '', absPath: '/tmp', isDir: true },
+    });
 
-    expect(result.ok).toBe(true);
-    expect(invoke).toHaveBeenCalledWith(
-      'app:request',
-      expect.objectContaining({
-        module: 'settings',
-        action: 'getAll',
-      }),
-    );
-  });
-
-  it('normalizes timeout errors', async () => {
-    const invoke = vi.mocked(window.electron.ipcRenderer.invoke);
-    invoke.mockRejectedValueOnce(new Error('Gateway Timeout'));
-
-    await expect(invokeIpc('gateway:status')).rejects.toMatchObject({ code: 'TIMEOUT' });
-  });
-
-  it('retries once for retryable errors', async () => {
-    const invoke = vi.mocked(window.electron.ipcRenderer.invoke);
-    invoke
-      .mockResolvedValueOnce({ ok: false, error: { code: 'TIMEOUT', message: 'network timeout' } })
-      .mockResolvedValueOnce({ ok: true, data: { success: true } });
-
-    const result = await invokeIpcWithRetry<{ success: boolean }>('provider:list', [], 1);
-
-    expect(result.success).toBe(true);
-    expect(invoke).toHaveBeenCalledTimes(2);
+    expect(hostApiMock.files.readText).toHaveBeenCalledWith('/tmp/a.txt');
+    expect(hostApiMock.files.readBinary).toHaveBeenCalledWith('/tmp/b.png', { maxBytes: 32 });
+    expect(hostApiMock.files.writeText).toHaveBeenCalledWith('/tmp/a.txt', 'updated');
+    expect(hostApiMock.files.stat).toHaveBeenCalledWith('/tmp/a.txt');
+    expect(hostApiMock.files.listDir).toHaveBeenCalledWith('/tmp');
+    expect(hostApiMock.files.listTree).toHaveBeenCalledWith('/tmp', { maxDepth: 2 });
   });
 
   it('returns user-facing message for permission error', () => {
@@ -59,42 +73,5 @@ describe('api-client', () => {
   it('returns user-facing message for channel unavailable error', () => {
     const msg = toUserMessage(new AppError('CHANNEL_UNAVAILABLE', 'Invalid IPC channel'));
     expect(msg).toContain('Service channel unavailable');
-  });
-
-  it('falls back to legacy channel when unified route is unsupported', async () => {
-    const invoke = vi.mocked(window.electron.ipcRenderer.invoke);
-    invoke
-      .mockRejectedValueOnce(new Error('APP_REQUEST_UNSUPPORTED:settings.getAll'))
-      .mockResolvedValueOnce({ foo: 'bar' });
-
-    const result = await invokeIpc<{ foo: string }>('settings:getAll');
-    expect(result.foo).toBe('bar');
-    expect(invoke).toHaveBeenNthCalledWith(2, 'settings:getAll');
-  });
-
-  it('sends tuple payload for multi-arg unified requests', async () => {
-    const invoke = vi.mocked(window.electron.ipcRenderer.invoke);
-    invoke.mockResolvedValueOnce({ ok: true, data: { success: true } });
-
-    const result = await invokeIpc<{ success: boolean }>('settings:set', 'language', 'en');
-
-    expect(result.success).toBe(true);
-    expect(invoke).toHaveBeenCalledWith(
-      'app:request',
-      expect.objectContaining({
-        module: 'settings',
-        action: 'set',
-        payload: ['language', 'en'],
-      }),
-    );
-  });
-
-  it('uses ipc for gateway rpc', async () => {
-    const invoke = vi.mocked(window.electron.ipcRenderer.invoke);
-    invoke.mockResolvedValueOnce({ success: true, result: { ok: true } });
-
-    await expect(invokeIpc('gateway:rpc', 'chat.history', {}))
-      .resolves.toEqual({ success: true, result: { ok: true } });
-    expect(invoke).toHaveBeenCalledWith('gateway:rpc', 'chat.history', {});
   });
 });

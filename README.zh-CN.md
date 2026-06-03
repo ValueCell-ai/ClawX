@@ -270,6 +270,7 @@ ClawX 采用 **双进程 + Host API 统一接入架构**。渲染进程只调用
 - **进程隔离**：AI 运行时在独立进程中运行，确保即使在高负载计算期间 UI 也能保持响应
 - **前端调用单一入口**：渲染层统一走 host-api/api-client，不感知底层协议细节
 - **主进程掌控传输策略**：Gateway WebSocket 只由 Electron Main 持有，渲染进程通过类型化 IPC 调用 Main
+- **扩展 IPC 贡献点**：主进程扩展通过类型化 IPC 注册表贡献 host-api action，而不是挂载 HTTP route
 - **优雅恢复**：内置重连、超时、退避逻辑，自动处理瞬时故障
 - **安全存储**：API 密钥和敏感数据利用操作系统原生的安全存储机制
 - **CORS 安全**：渲染进程不直接请求本地 Gateway 或 Host API HTTP 端点

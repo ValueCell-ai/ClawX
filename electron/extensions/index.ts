@@ -3,15 +3,14 @@ export { registerBuiltinExtension, loadExtensionsFromManifest } from './loader';
 export type {
   Extension,
   ExtensionContext,
-  HostApiRouteExtension,
+  HostApiProviderExtension,
   MarketplaceProviderExtension,
   MarketplaceCapability,
   AuthProviderExtension,
   AuthStatus,
-  RouteHandler,
 } from './types';
 export {
-  isHostApiRouteExtension,
+  isHostApiProviderExtension,
   isMarketplaceProviderExtension,
   isAuthProviderExtension,
 } from './types';

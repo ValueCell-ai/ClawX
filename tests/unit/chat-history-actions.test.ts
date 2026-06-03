@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { chatHistoryRpcParams } from './gateway-rpc-test-utils';
 
-const invokeIpcMock = vi.fn();
+const gatewayRpcMock = vi.fn();
 const hostApiFetchMock = vi.fn();
 const gatewayStoreGetStateMock = vi.fn();
 const clearHistoryPoll = vi.fn();
@@ -50,21 +50,16 @@ const setLastChatEventAt = vi.fn();
 const loadMissingPreviews = vi.fn(async () => false);
 const toMs = vi.fn((ts: number) => ts < 1e12 ? ts * 1000 : ts);
 
-vi.mock('@/lib/api-client', () => ({
-  invokeIpc: (...args: unknown[]) => invokeIpcMock(...args),
-}));
-
 vi.mock('@/lib/host-api', () => ({
   hostApiFetch: (...args: unknown[]) => hostApiFetchMock(...args),
   hostApi: {
     gateway: {
       rpc: async (method: string, params?: unknown, timeoutMs?: number) => {
-        const result = await invokeIpcMock(
-          'gateway:rpc',
-          method,
-          params,
-          ...(timeoutMs != null ? [timeoutMs] as const : []),
-        ) as { success?: boolean; result?: unknown; error?: string };
+        const result = await gatewayRpcMock(method, params, timeoutMs) as {
+          success?: boolean;
+          result?: unknown;
+          error?: string;
+        };
         if (result?.success === false) {
           throw new Error(result.error || `RPC ${method} failed`);
         }
@@ -207,7 +202,7 @@ describe('chat history actions', () => {
     vi.resetAllMocks();
     vi.resetModules();
     vi.useRealTimers();
-    invokeIpcMock.mockResolvedValue({ success: true, result: { messages: [] } });
+    gatewayRpcMock.mockResolvedValue({ success: true, result: { messages: [] } });
     hostApiFetchMock.mockResolvedValue({ messages: [] });
     const { resetChatHistoryMaxCharsCache, resolveChatHistoryMaxChars } = await import('@/stores/chat/history-rpc-params');
     resetChatHistoryMaxCharsCache();
@@ -281,7 +276,7 @@ describe('chat history actions', () => {
     });
     const actions = createHistoryActions(h.set as never, h.get as never);
 
-    invokeIpcMock.mockRejectedValueOnce(new Error('Gateway unavailable'));
+    gatewayRpcMock.mockRejectedValueOnce(new Error('Gateway unavailable'));
 
     await actions.loadHistory();
 
@@ -301,7 +296,7 @@ describe('chat history actions', () => {
     });
     const actions = createHistoryActions(h.set as never, h.get as never);
 
-    invokeIpcMock.mockResolvedValueOnce({
+    gatewayRpcMock.mockResolvedValueOnce({
       success: true,
       result: {
         messages: [
@@ -335,7 +330,7 @@ describe('chat history actions', () => {
     });
     const actions = createHistoryActions(h.set as never, h.get as never);
 
-    invokeIpcMock.mockResolvedValueOnce({
+    gatewayRpcMock.mockResolvedValueOnce({
       success: true,
       result: {
         messages: [
@@ -366,7 +361,7 @@ describe('chat history actions', () => {
     });
     const actions = createHistoryActions(h.set as never, h.get as never);
 
-    invokeIpcMock.mockResolvedValueOnce({
+    gatewayRpcMock.mockResolvedValueOnce({
       success: true,
       result: {
         messages: [
@@ -393,7 +388,7 @@ describe('chat history actions', () => {
     });
     const actions = createHistoryActions(h.set as never, h.get as never);
 
-    invokeIpcMock.mockResolvedValueOnce({
+    gatewayRpcMock.mockResolvedValueOnce({
       success: true,
       result: {
         messages: [
@@ -428,7 +423,7 @@ describe('chat history actions', () => {
       status: { state: 'running', port: 18789, connectedAt: Date.now() - 40_000 },
     });
 
-    invokeIpcMock
+    gatewayRpcMock
       .mockResolvedValueOnce({ success: false, error: 'RPC timeout: chat.history' })
       .mockResolvedValueOnce({
         success: true,
@@ -443,16 +438,14 @@ describe('chat history actions', () => {
     await vi.runAllTimersAsync();
     await loadPromise;
 
-    expect(invokeIpcMock).toHaveBeenNthCalledWith(
+    expect(gatewayRpcMock).toHaveBeenNthCalledWith(
       1,
-      'gateway:rpc',
       'chat.history',
       chatHistoryRpcParams('agent:main:main', 200),
       35_000,
     );
-    expect(invokeIpcMock).toHaveBeenNthCalledWith(
+    expect(gatewayRpcMock).toHaveBeenNthCalledWith(
       2,
-      'gateway:rpc',
       'chat.history',
       chatHistoryRpcParams('agent:main:main', 200),
       35_000,
@@ -479,7 +472,7 @@ describe('chat history actions', () => {
     });
     const actions = createHistoryActions(h.set as never, h.get as never);
 
-    invokeIpcMock.mockImplementationOnce(async () => {
+    gatewayRpcMock.mockImplementationOnce(async () => {
       h.set({
         currentSessionKey: 'agent:main:other',
         loading: false,
@@ -490,7 +483,7 @@ describe('chat history actions', () => {
 
     await actions.loadHistory();
 
-    expect(invokeIpcMock).toHaveBeenCalledTimes(1);
+    expect(gatewayRpcMock).toHaveBeenCalledTimes(1);
     expect(h.read().currentSessionKey).toBe('agent:main:other');
     expect(h.read().messages.map((message) => message.content)).toEqual(['other session']);
     expect(h.read().error).toBeNull();
@@ -507,7 +500,7 @@ describe('chat history actions', () => {
     });
     const actions = createHistoryActions(h.set as never, h.get as never);
 
-    invokeIpcMock.mockResolvedValue({
+    gatewayRpcMock.mockResolvedValue({
       success: false,
       error: 'RPC timeout: chat.history',
     });
@@ -516,7 +509,7 @@ describe('chat history actions', () => {
     await vi.runAllTimersAsync();
     await loadPromise;
 
-    expect(invokeIpcMock).toHaveBeenCalledTimes(5);
+    expect(gatewayRpcMock).toHaveBeenCalledTimes(5);
     expect(h.read().messages).toEqual([]);
     expect(h.read().error).toBe('RPC timeout: chat.history');
     expect(warnSpy).toHaveBeenCalledWith(
@@ -535,14 +528,14 @@ describe('chat history actions', () => {
     });
     const actions = createHistoryActions(h.set as never, h.get as never);
 
-    invokeIpcMock.mockResolvedValue({
+    gatewayRpcMock.mockResolvedValue({
       success: false,
       error: 'RPC timeout: chat.history',
     });
 
     await actions.loadHistory(true);
 
-    expect(invokeIpcMock).toHaveBeenCalledTimes(1);
+    expect(gatewayRpcMock).toHaveBeenCalledTimes(1);
     expect(h.read().error).toBeNull();
   });
 
@@ -553,14 +546,14 @@ describe('chat history actions', () => {
     });
     const actions = createHistoryActions(h.set as never, h.get as never);
 
-    invokeIpcMock.mockResolvedValue({
+    gatewayRpcMock.mockResolvedValue({
       success: false,
       error: 'Validation failed: bad session key',
     });
 
     await actions.loadHistory();
 
-    expect(invokeIpcMock).toHaveBeenCalledTimes(1);
+    expect(gatewayRpcMock).toHaveBeenCalledTimes(1);
     expect(h.read().error).toBe('Validation failed: bad session key');
   });
 
@@ -569,7 +562,7 @@ describe('chat history actions', () => {
     const h = makeHarness();
     const actions = createHistoryActions(h.set as never, h.get as never);
 
-    invokeIpcMock.mockResolvedValueOnce({
+    gatewayRpcMock.mockResolvedValueOnce({
       success: true,
       result: {
         messages: [
@@ -593,7 +586,7 @@ describe('chat history actions', () => {
     const h = makeHarness();
     const actions = createHistoryActions(h.set as never, h.get as never);
 
-    invokeIpcMock.mockResolvedValueOnce({
+    gatewayRpcMock.mockResolvedValueOnce({
       success: true,
       result: {
         messages: [
@@ -617,7 +610,7 @@ describe('chat history actions', () => {
     const h = makeHarness();
     const actions = createHistoryActions(h.set as never, h.get as never);
 
-    invokeIpcMock.mockResolvedValueOnce({
+    gatewayRpcMock.mockResolvedValueOnce({
       success: true,
       result: {
         messages: [
@@ -641,7 +634,7 @@ describe('chat history actions', () => {
     const h = makeHarness();
     const actions = createHistoryActions(h.set as never, h.get as never);
 
-    invokeIpcMock.mockResolvedValueOnce({
+    gatewayRpcMock.mockResolvedValueOnce({
       success: true,
       result: {
         messages: [
@@ -662,7 +655,7 @@ describe('chat history actions', () => {
   it('drops stale history results after the user switches sessions', async () => {
     const { createHistoryActions } = await import('@/stores/chat/history-actions');
     let resolveHistory: ((value: unknown) => void) | null = null;
-    invokeIpcMock.mockImplementationOnce(() => new Promise((resolve) => {
+    gatewayRpcMock.mockImplementationOnce(() => new Promise((resolve) => {
       resolveHistory = resolve;
     }));
 
@@ -729,7 +722,7 @@ describe('chat history actions', () => {
       return true;
     });
 
-    invokeIpcMock.mockResolvedValueOnce({
+    gatewayRpcMock.mockResolvedValueOnce({
       success: true,
       result: {
         messages: [
@@ -788,7 +781,7 @@ describe('chat history actions', () => {
     });
     const actions = createHistoryActions(h.set as never, h.get as never);
 
-    invokeIpcMock.mockResolvedValueOnce({
+    gatewayRpcMock.mockResolvedValueOnce({
       success: true,
       result: {
         messages: [

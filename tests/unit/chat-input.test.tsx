@@ -68,10 +68,6 @@ vi.mock('@/lib/host-api', () => ({
   },
 }));
 
-vi.mock('@/lib/api-client', () => ({
-  invokeIpc: vi.fn(),
-}));
-
 function translate(key: string, vars?: Record<string, unknown>): string {
   switch (key) {
     case 'composer.attachFiles':

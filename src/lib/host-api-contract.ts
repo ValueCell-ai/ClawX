@@ -632,6 +632,9 @@ export type HostApiContract = {
     setAutoDownload: (payload: UpdateSetAutoDownloadPayload) => MaybePromise<HostSuccess>;
     cancelAutoInstall: () => MaybePromise<HostSuccess>;
   };
+  uv: {
+    installAll: () => MaybePromise<HostSuccess>;
+  };
   settings: {
     getAll: () => MaybePromise<SettingsSnapshot>;
     get: (payload: SettingsGetPayload) => MaybePromise<SettingsValue>;

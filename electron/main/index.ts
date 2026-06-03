@@ -6,6 +6,7 @@ import { app, BrowserWindow, nativeImage, session, shell } from 'electron';
 import { join } from 'path';
 import { GatewayManager } from '../gateway/manager';
 import { registerIpcHandlers } from './ipc-handlers';
+import { HostApiRegistry } from './ipc/host-invoke';
 import { createTray } from './tray';
 import { createMenu } from './menu';
 import { registerZoomShortcuts } from './zoom-shortcuts';
@@ -130,6 +131,7 @@ const gotTheLock = gotElectronLock && gotFileLock;
 let mainWindow: BrowserWindow | null = null;
 let gatewayManager!: GatewayManager;
 let clawHubService!: ClawHubService;
+const hostApiRegistry = new HostApiRegistry();
 const mainWindowFocusState = createMainWindowFocusState();
 const quitLifecycleState = createQuitLifecycleState();
 
@@ -357,12 +359,17 @@ async function initialize(): Promise<void> {
   );
 
   // Register IPC handlers
-  registerIpcHandlers(gatewayManager, clawHubService, window);
+  registerIpcHandlers(gatewayManager, clawHubService, window, hostApiRegistry);
 
   // Initialize extension system
   await extensionRegistry.initialize({
     gatewayManager,
     getMainWindow: () => mainWindow,
+    hostApi: {
+      register: (extensionId, contributions) => (
+        hostApiRegistry.registerExtensionContributions(extensionId, contributions)
+      ),
+    },
   });
 
   // Wire marketplace provider to ClawHubService if an extension provides one

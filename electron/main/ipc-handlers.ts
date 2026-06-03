@@ -23,7 +23,6 @@ import { syncProxyConfigToOpenClaw } from '../utils/openclaw-proxy';
 import { logger } from '../utils/logger';
 import { resolveAgentIdFromChannel } from '../utils/agent-config';
 import { resolveAccountIdFromSessionHistory } from '../utils/session-util';
-import { checkUvInstalled, installUv, setupManagedPython } from '../utils/uv-setup';
 import { whatsAppLoginManager } from '../utils/whatsapp-login';
 import { getProviderConfig } from '../utils/provider-registry';
 import { deviceOAuthManager } from '../utils/device-oauth';
@@ -44,13 +43,14 @@ import {
 import { validateApiKeyWithProvider } from '../services/providers/provider-validation';
 import { appUpdater } from './updater';
 import { GatewayRpcBackpressure } from '../gateway/rpc-backpressure';
-import { registerHostInvokeHandler } from './ipc/host-invoke';
+import { HostApiRegistry, registerHostInvokeHandler } from './ipc/host-invoke';
 import { createAppApi } from '../services/app-api';
 import { createOpenClawApi } from '../services/openclaw-api';
 import { createShellApi } from '../services/shell-api';
 import { createDialogApi } from '../services/dialog-api';
 import { createWindowApi } from '../services/window-api';
 import { createUpdatesApi } from '../services/updates-api';
+import { createUvApi } from '../services/uv-api';
 import { createGatewayApi } from '../services/gateway-api';
 import { createLogsApi } from '../services/logs-api';
 import { createSettingsApi } from '../services/settings-api';
@@ -58,7 +58,6 @@ import { createChannelsApi } from '../services/channels-api';
 import { createAgentsApi } from '../services/agents-api';
 import { createChatApi } from '../services/chat-api';
 import { createCronApi } from '../services/cron-api';
-import { createDiagnosticsApi } from '../services/diagnostics-api';
 import { createFilesApi } from '../services/files-api';
 import { createMediaApi } from '../services/media-api';
 import { createProvidersApi } from '../services/providers-api';
@@ -82,13 +81,14 @@ const gatewayRpcBackpressure = new GatewayRpcBackpressure();
 export function registerIpcHandlers(
   gatewayManager: GatewayManager,
   clawHubService: ClawHubService,
-  mainWindow: BrowserWindow
+  mainWindow: BrowserWindow,
+  hostApiRegistry: HostApiRegistry,
 ): void {
   // Unified request protocol (non-breaking: legacy channels remain available)
   registerUnifiedRequestHandlers(gatewayManager);
 
   // Typed host invoke handlers (new renderer facade; legacy channels remain available)
-  registerTypedHostHandlers(gatewayManager, clawHubService, mainWindow);
+  registerTypedHostHandlers(gatewayManager, clawHubService, mainWindow, hostApiRegistry);
 
   // Gateway handlers
   registerGatewayHandlers(gatewayManager, mainWindow);
@@ -111,9 +111,6 @@ export function registerIpcHandlers(
   // Settings handlers
   registerSettingsHandlers(gatewayManager);
 
-  // UV handlers
-  registerUvHandlers();
-
   // Usage handlers
   registerUsageHandlers();
 
@@ -134,20 +131,21 @@ function registerTypedHostHandlers(
   gatewayManager: GatewayManager,
   clawHubService: ClawHubService,
   mainWindow: BrowserWindow,
+  hostApiRegistry: HostApiRegistry,
 ): void {
-  registerHostInvokeHandler({
+  hostApiRegistry.registerCoreServices({
     app: createAppApi(),
     openclaw: createOpenClawApi(),
     shell: createShellApi(),
     dialog: createDialogApi(),
     window: createWindowApi(mainWindow),
     updates: createUpdatesApi(appUpdater),
+    uv: createUvApi(),
     settings: createSettingsApi(gatewayManager),
     gateway: createGatewayApi(gatewayManager, gatewayRpcBackpressure),
     logs: createLogsApi(),
     channels: createChannelsApi({ gatewayManager, mainWindow }),
     agents: createAgentsApi({ gatewayManager }),
-    diagnostics: createDiagnosticsApi({ gatewayManager }),
     providers: createProvidersApi({ gatewayManager, mainWindow }),
     files: createFilesApi(),
     media: createMediaApi(),
@@ -157,6 +155,7 @@ function registerTypedHostHandlers(
     skills: createSkillsApi({ clawHubService, gatewayManager }),
     usage: createUsageApi(),
   });
+  registerHostInvokeHandler(hostApiRegistry);
 }
 
 function registerUnifiedRequestHandlers(gatewayManager: GatewayManager): void {
@@ -682,27 +681,6 @@ function registerCronHandlers(gatewayManager: GatewayManager): void {
       }
     }
   }, CRON_AGENT_REPAIR_INTERVAL_MS);
-}
-
-/**
- * UV-related IPC handlers
- */
-function registerUvHandlers(): void {
-  // Install uv and setup managed Python
-  ipcMain.handle('uv:install-all', async () => {
-    try {
-      const isInstalled = await checkUvInstalled();
-      if (!isInstalled) {
-        await installUv();
-      }
-      // Always run python setup to ensure it exists in uv's cache
-      await setupManagedPython();
-      return { success: true };
-    } catch (error) {
-      console.error('Failed to setup uv/python:', error);
-      return { success: false, error: String(error) };
-    }
-  });
 }
 
 /**
