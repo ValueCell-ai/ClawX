@@ -644,8 +644,13 @@ export function Chat() {
     //     the indicator exists for.
     //   - stream IS in graph (e.g. tool_use is streaming): indicator is
     //     redundant → suppress.
+    const streamVisiblyActiveInGraph = hasStreamText
+      || hasStreamThinking
+      || hasStreamTools
+      || hasStreamImages
+      || hasRunningStreamToolStatus;
     const streamIsInGraph =
-      isLatestOpenRun && streamingReplyText == null && hasAnyStreamContent;
+      isLatestOpenRun && streamingReplyText == null && streamVisiblyActiveInGraph;
     const suppressThinking = streamIsInGraph;
 
     return [{
@@ -660,7 +665,7 @@ export function Chat() {
       streamingReplyText,
       suppressThinking,
     }];
-  }, [messages, subagentCompletionInfos, currentSessionKey, streamingMessage, streamingTools, pendingFinal, sending, hasAnyStreamContent, hasStreamText, hasStreamImages, streamText, streamTools.length, hasRunningStreamToolStatus, hasHistoryCompletionBlockingStream, childTranscripts, currentAgentId, agents, sessionLabels, graphStepCache, runError, isRunTrigger, activeRunId, runtimeRuns]);
+  }, [messages, subagentCompletionInfos, currentSessionKey, streamingMessage, streamingTools, pendingFinal, sending, hasAnyStreamContent, hasStreamText, hasStreamThinking, hasStreamImages, streamText, streamTools.length, hasRunningStreamToolStatus, hasHistoryCompletionBlockingStream, childTranscripts, currentAgentId, agents, sessionLabels, graphStepCache, runError, isRunTrigger, activeRunId, runtimeRuns]);
   const hasActiveExecutionGraph = userRunCards.some((card) => card.active);
   let latestRunSegmentCompletion = { hasFinalReply: false, hasToolActivity: false };
   let pendingImageGeneration = false;
