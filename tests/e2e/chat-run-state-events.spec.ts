@@ -12,7 +12,7 @@ function stableStringify(value: unknown): string {
 }
 
 test.describe('ClawX chat run state events', () => {
-  test('keeps stop control active across non-terminal gateway phase end', async ({ launchElectronApp }) => {
+  test('keeps stop control active across non-terminal runtime events and clears it on run.ended', async ({ launchElectronApp }) => {
     const app = await launchElectronApp({ skipSetup: true });
 
     try {
@@ -43,6 +43,41 @@ test.describe('ClawX chat run state events', () => {
               json: { state: 'running', port: 18789, pid: 12345, gatewayReady: true },
             },
           },
+          [stableStringify(['/api/chat/sessions', 'GET'])]: {
+            ok: true,
+            data: {
+              status: 200,
+              ok: true,
+              json: {
+                success: true,
+                result: {
+                  sessions: [{ key: MAIN_SESSION_KEY, displayName: 'main' }],
+                },
+              },
+            },
+          },
+          [stableStringify(['/api/chat/history', 'POST'])]: {
+            ok: true,
+            data: {
+              status: 200,
+              ok: true,
+              json: {
+                success: true,
+                result: { messages: [] },
+              },
+            },
+          },
+          [stableStringify(['/api/chat/send', 'POST'])]: {
+            ok: true,
+            data: {
+              status: 200,
+              ok: true,
+              json: {
+                success: true,
+                result: { runId: 'run-e2e' },
+              },
+            },
+          },
           [stableStringify(['/api/agents', 'GET'])]: {
             ok: true,
             data: {
@@ -63,36 +98,53 @@ test.describe('ClawX chat run state events', () => {
         }
       }
 
+      const sendButton = page.getByTestId('chat-composer-send');
       await expect(page.getByTestId('chat-composer-input')).toBeEnabled({ timeout: 30_000 });
       await page.getByTestId('chat-composer-input').fill('run long task');
-      await page.getByTestId('chat-composer-send').click();
-      await expect(page.getByTestId('chat-composer-send')).toHaveAttribute('title', 'Stop');
+      await sendButton.click();
+      await expect(sendButton).toHaveAttribute('title', /Stop|停止/);
 
       await app.evaluate(({ BrowserWindow }) => {
-        BrowserWindow.getAllWindows()[0]?.webContents.send('gateway:notification', {
-          method: 'agent',
-          params: {
+        for (const win of BrowserWindow.getAllWindows()) {
+          win.webContents.send('chat:runtime-event', {
+            type: 'tool.started',
             runId: 'run-e2e',
-            sessionKey: 'agent:main:main',
-            data: { phase: 'end' },
-          },
-        });
+            toolCallId: 'call-1',
+            name: 'read',
+            args: { filePath: '/tmp/demo.md' },
+          });
+        }
       });
 
-      await expect(page.getByTestId('chat-composer-send')).toHaveAttribute('title', 'Stop');
+      await expect(page.getByTestId('chat-execution-graph')).toBeVisible();
 
       await app.evaluate(({ BrowserWindow }) => {
-        BrowserWindow.getAllWindows()[0]?.webContents.send('gateway:notification', {
-          method: 'agent',
-          params: {
+        for (const win of BrowserWindow.getAllWindows()) {
+          win.webContents.send('chat:runtime-event', {
+            type: 'tool.completed',
             runId: 'run-e2e',
-            sessionKey: 'agent:main:main',
-            data: { phase: 'completed' },
-          },
-        });
+            toolCallId: 'call-1',
+            name: 'read',
+            result: { summary: 'done' },
+            isError: false,
+          });
+        }
       });
 
-      await expect(page.getByTestId('chat-composer-send')).toHaveAttribute('title', 'Send');
+      await expect(sendButton).toHaveAttribute('title', /Stop|停止/);
+
+      await app.evaluate(({ BrowserWindow }) => {
+        for (const win of BrowserWindow.getAllWindows()) {
+          win.webContents.send('chat:runtime-event', {
+            type: 'run.ended',
+            runId: 'run-e2e',
+            status: 'completed',
+            endedAt: Date.now(),
+          });
+        }
+      });
+
+      await expect(sendButton).toHaveAttribute('title', /Send|发送/);
     } finally {
       await closeElectronApp(app);
     }

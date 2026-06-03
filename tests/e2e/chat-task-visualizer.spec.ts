@@ -225,6 +225,32 @@ test.describe('ClawX chat execution graph', () => {
               json: { state: 'running', port: 18789, pid: 12345 },
             },
           },
+          [stableStringify(['/api/chat/sessions', 'GET'])]: {
+            ok: true,
+            data: {
+              status: 200,
+              ok: true,
+              json: {
+                success: true,
+                result: {
+                  sessions: [{ key: PROJECT_MANAGER_SESSION_KEY, displayName: 'main' }],
+                },
+              },
+            },
+          },
+          [stableStringify(['/api/chat/history', 'POST'])]: {
+            ok: true,
+            data: {
+              status: 200,
+              ok: true,
+              json: {
+                success: true,
+                result: {
+                  messages: seededHistory,
+                },
+              },
+            },
+          },
           [stableStringify(['/api/agents', 'GET'])]: {
             ok: true,
             data: {
@@ -321,6 +347,32 @@ test.describe('ClawX chat execution graph', () => {
               json: { state: 'running', port: 18789, pid: 12345 },
             },
           },
+          [stableStringify(['/api/chat/sessions', 'GET'])]: {
+            ok: true,
+            data: {
+              status: 200,
+              ok: true,
+              json: {
+                success: true,
+                result: {
+                  sessions: [{ key: PROJECT_MANAGER_SESSION_KEY, displayName: 'main' }],
+                },
+              },
+            },
+          },
+          [stableStringify(['/api/chat/history', 'POST'])]: {
+            ok: true,
+            data: {
+              status: 200,
+              ok: true,
+              json: {
+                success: true,
+                result: {
+                  messages: longRunHistory,
+                },
+              },
+            },
+          },
           [stableStringify(['/api/agents', 'GET'])]: {
             ok: true,
             data: {
@@ -347,8 +399,8 @@ test.describe('ClawX chat execution graph', () => {
       await expect(page.getByTestId('main-layout')).toBeVisible();
       await expect(page.getByTestId('chat-execution-graph')).toBeVisible({ timeout: 30_000 });
       await expect(page.getByTestId('chat-execution-graph')).toHaveAttribute('data-collapsed', 'true');
-      await expect(page.getByTestId('chat-execution-graph')).toContainText('0 tool calls');
-      await expect(page.getByTestId('chat-execution-graph')).toContainText('9 process messages');
+      await expect(page.getByTestId('chat-execution-graph')).toContainText(/0\s+(tool calls|个工具调用)/);
+      await expect(page.getByTestId('chat-execution-graph')).toContainText(/9\s+(process messages|条过程消息)/);
       await expect(page.getByText(longRunSummary, { exact: true })).toBeVisible();
       await expect(page.getByText(longRunReplyText, { exact: true })).toHaveCount(0);
     } finally {
@@ -389,6 +441,32 @@ test.describe('ClawX chat execution graph', () => {
               status: 200,
               ok: true,
               json: { state: 'running', port: 18789, pid: 12345 },
+            },
+          },
+          [stableStringify(['/api/chat/sessions', 'GET'])]: {
+            ok: true,
+            data: {
+              status: 200,
+              ok: true,
+              json: {
+                success: true,
+                result: {
+                  sessions: [{ key: PROJECT_MANAGER_SESSION_KEY, displayName: 'main' }],
+                },
+              },
+            },
+          },
+          [stableStringify(['/api/chat/history', 'POST'])]: {
+            ok: true,
+            data: {
+              status: 200,
+              ok: true,
+              json: {
+                success: true,
+                result: {
+                  messages: errorRunHistory,
+                },
+              },
             },
           },
           [stableStringify(['/api/agents', 'GET'])]: {

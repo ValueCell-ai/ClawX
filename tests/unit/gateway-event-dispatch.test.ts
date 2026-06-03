@@ -48,6 +48,92 @@ describe('dispatchProtocolEvent', () => {
     expect(emitter.emit).toHaveBeenCalledWith('chat:message', { message: { text: 'hello' } });
   });
 
+  it('does not normalize non-terminal lifecycle phase=end as run.ended', () => {
+    const emitter = createMockEmitter();
+    const payload = {
+      runId: 'run-1',
+      sessionKey: 'agent:main:main',
+      stream: 'lifecycle',
+      seq: 4,
+      ts: 10,
+      data: {
+        phase: 'end',
+        endedAt: 11,
+      },
+    };
+
+    dispatchProtocolEvent(emitter, 'agent', payload);
+
+    expect(emitter.emit).not.toHaveBeenCalledWith('chat:runtime-event', expect.objectContaining({
+      type: 'run.ended',
+      runId: 'run-1',
+    }));
+    expect(emitter.emit).toHaveBeenCalledWith('notification', {
+      method: 'agent',
+      params: payload,
+    });
+  });
+
+  it('normalizes terminal lifecycle phases as run.ended', () => {
+    const emitter = createMockEmitter();
+    dispatchProtocolEvent(emitter, 'agent', {
+      runId: 'run-1',
+      sessionKey: 'agent:main:main',
+      stream: 'lifecycle',
+      seq: 5,
+      ts: 12,
+      data: {
+        phase: 'completed',
+        endedAt: 13,
+      },
+    });
+
+    expect(emitter.emit).toHaveBeenCalledWith('chat:runtime-event', {
+      type: 'run.ended',
+      runId: 'run-1',
+      sessionKey: 'agent:main:main',
+      seq: 5,
+      ts: 12,
+      status: 'completed',
+      endedAt: 13,
+      livenessState: undefined,
+      replayInvalid: undefined,
+      stopReason: undefined,
+    });
+  });
+
+  it('dispatches normalized agent runtime events alongside the legacy notification path', () => {
+    const emitter = createMockEmitter();
+    dispatchProtocolEvent(emitter, 'agent', {
+      runId: 'run-1',
+      sessionKey: 'agent:main:main',
+      stream: 'tool',
+      seq: 3,
+      ts: 10,
+      data: {
+        phase: 'start',
+        name: 'read',
+        toolCallId: 'call-1',
+        args: { filePath: '/tmp/demo.md' },
+      },
+    });
+
+    expect(emitter.emit).toHaveBeenCalledWith('chat:runtime-event', {
+      type: 'tool.started',
+      runId: 'run-1',
+      sessionKey: 'agent:main:main',
+      seq: 3,
+      ts: 10,
+      toolCallId: 'call-1',
+      name: 'read',
+      args: { filePath: '/tmp/demo.md' },
+    });
+    expect(emitter.emit).toHaveBeenCalledWith('notification', {
+      method: 'agent',
+      params: expect.objectContaining({ runId: 'run-1', stream: 'tool' }),
+    });
+  });
+
   it('suppresses tick events', () => {
     const emitter = createMockEmitter();
     dispatchProtocolEvent(emitter, 'tick', {});

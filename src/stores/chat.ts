@@ -1,12 +1,13 @@
 /**
  * Chat State Store
  * Manages chat messages, sessions, and streaming state.
- * Communicates with OpenClaw Gateway via renderer WebSocket RPC.
+ * Chat RPC/control flows are Main-owned via Host API routes.
  */
 import { create } from 'zustand';
 import { hostApiFetch } from '@/lib/host-api';
 import { useGatewayStore } from './gateway';
 import { useAgentsStore } from './agents';
+import type { ChatRuntimeEvent } from '../../shared/chat-runtime-events';
 import { buildBaselineRunKey, captureBaseline, clearBaselines } from './baseline-cache';
 import { buildCronSessionHistoryPath, isCronSessionKey } from './chat/cron-session-utils';
 import { pickStartupSessionFallback } from './chat/session-selection';
@@ -46,6 +47,7 @@ import {
   type ToolStatus,
 } from './chat/types';
 import type { ChatGet, ChatSet } from './chat/store-api';
+import { applyRuntimeEventToRuns, extractToolCompletedFiles } from './chat/runtime-graph';
 import { enrichWithToolCallAttachments, shouldDropMessageFromHistory } from './chat/helpers';
 import {
   isGeneratingStatusNarration,
@@ -59,6 +61,7 @@ export type {
   ContentBlock,
   RawMessage,
   ToolStatus,
+  ChatRuntimeRunState,
 } from './chat/types';
 
 // Module-level timestamp tracking the last chat event received.
@@ -116,7 +119,6 @@ const DEFAULT_SESSION_RUN_STATE: SessionRunState = {
 const _sessionRunStateCache = new Map<string, SessionRunState>();
 const SESSION_LOAD_MIN_INTERVAL_MS = 1_200;
 const HISTORY_LOAD_MIN_INTERVAL_MS = 800;
-const HISTORY_POLL_SILENCE_WINDOW_MS = 2_500;
 const CHAT_EVENT_DEDUPE_TTL_MS = 30_000;
 const HISTORY_PAGE_SIZE = 200;
 const HISTORY_MAX_RENDERED_MESSAGES = 1_000;
@@ -1580,6 +1582,98 @@ async function loadCronFallbackMessages(sessionKey: string, limit = 200): Promis
   }
 }
 
+async function fetchChatSessionsList(): Promise<Record<string, unknown>> {
+  try {
+    const response = await hostApiFetch<{
+      success: boolean;
+      result?: Record<string, unknown>;
+      error?: string;
+    }>('/api/chat/sessions');
+    if (response.success && response.result) {
+      return response.result;
+    }
+    throw new Error(response.error || 'Failed to load chat sessions');
+  } catch {
+    return await useGatewayStore.getState().rpc<Record<string, unknown>>('sessions.list', {
+      includeDerivedTitles: true,
+      includeLastMessage: true,
+    });
+  }
+}
+
+async function fetchChatHistory(
+  sessionKey: string,
+  limit: number,
+  maxChars?: number,
+  timeoutMs?: number,
+): Promise<Record<string, unknown>> {
+  const params = {
+    sessionKey,
+    limit,
+    ...(typeof maxChars === 'number' ? { maxChars } : {}),
+  };
+  try {
+    const response = await hostApiFetch<{
+      success: boolean;
+      result?: Record<string, unknown>;
+      error?: string;
+    }>('/api/chat/history', {
+      method: 'POST',
+      body: JSON.stringify({
+        ...params,
+        ...(typeof timeoutMs === 'number' ? { timeoutMs } : {}),
+      }),
+    });
+    if (response.success && response.result) {
+      return response.result;
+    }
+    throw new Error(response.error || 'Failed to load chat history');
+  } catch {
+    return await useGatewayStore.getState().rpc<Record<string, unknown>>('chat.history', params, timeoutMs);
+  }
+}
+
+async function sendChatMessageViaHostApi(params: {
+  sessionKey: string;
+  message: string;
+  deliver?: boolean;
+  idempotencyKey: string;
+}): Promise<{ runId?: string }> {
+  try {
+    const response = await hostApiFetch<{
+      success: boolean;
+      result?: { runId?: string };
+      error?: string;
+    }>('/api/chat/send', {
+      method: 'POST',
+      body: JSON.stringify(params),
+    });
+    if (!response.success) {
+      throw new Error(response.error || 'Failed to send chat message');
+    }
+    return response.result ?? {};
+  } catch {
+    return await useGatewayStore.getState().rpc<{ runId?: string }>('chat.send', params, 120000);
+  }
+}
+
+async function abortChatRunViaHostApi(sessionKey: string): Promise<void> {
+  try {
+    const response = await hostApiFetch<{
+      success: boolean;
+      error?: string;
+    }>('/api/chat/abort', {
+      method: 'POST',
+      body: JSON.stringify({ sessionKey }),
+    });
+    if (!response.success) {
+      throw new Error(response.error || 'Failed to abort chat run');
+    }
+  } catch {
+    await useGatewayStore.getState().rpc('chat.abort', { sessionKey });
+  }
+}
+
 function normalizeAgentId(value: string | undefined | null): string {
   return (value ?? '').trim().toLowerCase() || 'main';
 }
@@ -2268,6 +2362,52 @@ function findLastRealUserMessage(messages: RawMessage[]): RawMessage | null {
   return null;
 }
 
+function dedupeAttachedFiles(files: AttachedFileMeta[]): AttachedFileMeta[] {
+  const seen = new Set<string>();
+  const next: AttachedFileMeta[] = [];
+  for (const file of files) {
+    const key = file.filePath || `${file.fileName}|${file.mimeType}|${file.preview || ''}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    next.push(file);
+  }
+  return next;
+}
+
+function runtimeToolEventToStatus(event: ChatRuntimeEvent): ToolStatus | null {
+  if (event.type === 'tool.started') {
+    return {
+      id: event.toolCallId,
+      toolCallId: event.toolCallId,
+      name: event.name,
+      status: 'running',
+      summary: typeof event.args === 'string' ? event.args : undefined,
+      updatedAt: event.ts ?? Date.now(),
+    };
+  }
+  if (event.type === 'tool.updated') {
+    return {
+      id: event.toolCallId,
+      toolCallId: event.toolCallId,
+      name: event.name,
+      status: 'running',
+      summary: typeof event.partialResult === 'string' ? event.partialResult : undefined,
+      updatedAt: event.ts ?? Date.now(),
+    };
+  }
+  if (event.type === 'tool.completed') {
+    return {
+      id: event.toolCallId,
+      toolCallId: event.toolCallId,
+      name: event.name,
+      status: event.isError ? 'error' : 'completed',
+      summary: typeof event.result === 'string' ? event.result : undefined,
+      updatedAt: event.ts ?? Date.now(),
+    };
+  }
+  return null;
+}
+
 // ── Store ────────────────────────────────────────────────────────
 
 export const useChatStore = create<ChatState>((set, get) => ({
@@ -2286,6 +2426,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
   pendingFinal: false,
   lastUserMessageAt: null,
   pendingToolImages: [],
+  runtimeRuns: {},
 
   sessions: [],
   currentSessionKey: DEFAULT_SESSION_KEY,
@@ -2309,10 +2450,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
     _loadSessionsInFlight = (async () => {
       try {
-        const data = await useGatewayStore.getState().rpc<Record<string, unknown>>('sessions.list', {
-          includeDerivedTitles: true,
-          includeLastMessage: true,
-        });
+        const data = await fetchChatSessionsList();
         if (data) {
           const rawSessions = Array.isArray(data.sessions) ? data.sessions : [];
           const sessions: ChatSession[] = rawSessions.map((s: Record<string, unknown>) => ({
@@ -3054,11 +3192,10 @@ export const useChatStore = create<ChatState>((set, get) => ({
       const loadGatewayHistory = async (): Promise<void> => {
       try {
         const fallbackMessages: RawMessage[] = [];
-        const gatewayRpc = useGatewayStore.getState().rpc.bind(useGatewayStore.getState());
         const chatHistoryParams = buildChatHistoryRpcParams(
           currentSessionKey,
           HISTORY_PAGE_SIZE,
-          getChatHistoryMaxChars(gatewayRpc),
+          getChatHistoryMaxChars(),
         );
 
         let data: Record<string, unknown> | null = null;
@@ -3070,9 +3207,10 @@ export const useChatStore = create<ChatState>((set, get) => ({
           }
 
           try {
-            data = await gatewayRpc<Record<string, unknown>>(
-              'chat.history',
-              chatHistoryParams,
+            data = await fetchChatHistory(
+              currentSessionKey,
+              HISTORY_PAGE_SIZE,
+              chatHistoryParams.maxChars,
               historyTimeoutOverride,
             );
             lastError = null;
@@ -3329,30 +3467,12 @@ export const useChatStore = create<ChatState>((set, get) => ({
     // Mark this session as most recently active
     set((s) => ({ sessionLastActivity: { ...s.sessionLastActivity, [currentSessionKey]: nowMs } }));
 
-    // Start the history poll and safety timeout IMMEDIATELY (before the
-    // RPC await) because the gateway's chat.send RPC may block until the
-    // entire agentic conversation finishes — the poll must run in parallel.
+    // Runtime progress now comes from Main-owned streamed events. We still
+    // keep the no-response safety timeout, but history polling is no longer
+    // the primary active-run path.
     _lastChatEventAt = Date.now();
     clearHistoryPoll();
     clearErrorRecoveryTimer();
-
-    const POLL_START_DELAY = 3_000;
-    const POLL_INTERVAL = 4_000;
-    const pollHistory = () => {
-      const state = get();
-      if (!state.sending) { clearHistoryPoll(); return; }
-      if (state.streamingMessage) {
-        _historyPollTimer = setTimeout(pollHistory, POLL_INTERVAL);
-        return;
-      }
-      if (Date.now() - _lastChatEventAt < HISTORY_POLL_SILENCE_WINDOW_MS) {
-        _historyPollTimer = setTimeout(pollHistory, POLL_INTERVAL);
-        return;
-      }
-      state.loadHistory(true);
-      _historyPollTimer = setTimeout(pollHistory, POLL_INTERVAL);
-    };
-    _historyPollTimer = setTimeout(pollHistory, POLL_START_DELAY);
 
     const checkStuck = () => {
       const state = get();
@@ -3444,9 +3564,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
       let result: { success: boolean; result?: { runId?: string }; error?: string };
 
-      // Longer timeout for chat sends to tolerate high-latency networks (avoids connect error)
-      const CHAT_SEND_TIMEOUT_MS = 120_000;
-
       if (hasMedia) {
         result = await hostApiFetch<{ success: boolean; result?: { runId?: string }; error?: string }>(
           '/api/chat/send-with-media',
@@ -3466,16 +3583,12 @@ export const useChatStore = create<ChatState>((set, get) => ({
           },
         );
       } else {
-        const rpcResult = await useGatewayStore.getState().rpc<{ runId?: string }>(
-          'chat.send',
-          {
-            sessionKey: currentSessionKey,
-            message: trimmed,
-            deliver: false,
-            idempotencyKey,
-          },
-          CHAT_SEND_TIMEOUT_MS,
-        );
+        const rpcResult = await sendChatMessageViaHostApi({
+          sessionKey: currentSessionKey,
+          message: trimmed,
+          deliver: false,
+          idempotencyKey,
+        });
         result = { success: true, result: rpcResult };
       }
 
@@ -3513,10 +3626,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
     set({ streamingTools: [] });
 
     try {
-      await useGatewayStore.getState().rpc(
-        'chat.abort',
-        { sessionKey: currentSessionKey },
-      );
+      await abortChatRunViaHostApi(currentSessionKey);
     } catch (err) {
       set({ error: String(err) });
     }
@@ -3695,11 +3805,11 @@ export const useChatStore = create<ChatState>((set, get) => ({
               }
             }
             set((s) => {
-              // Snapshot the current streaming assistant message (thinking + tool_use) into
-              // messages[] before clearing it. The Gateway does NOT send separate 'final'
-              // events for intermediate tool-use turns — it only sends deltas and then the
-              // tool result. Without snapshotting here, the intermediate thinking+tool steps
-              // would be overwritten by the next turn's deltas and never appear in the UI.
+              // Preserve the assistant turn that requested the tool before the
+              // tool result clears streaming state. Runtime events render the
+              // live execution graph, but the legacy chat-event path still
+              // needs this snapshot for providers/transports that do not emit
+              // complete runtime tool events.
               const currentStream = s.streamingMessage as RawMessage | null;
               const snapshotMsgs = snapshotStreamingAssistantMessage(currentStream, s.messages, runId);
               return {
@@ -3708,7 +3818,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
                 streamingMessage: null,
                 pendingFinal: true,
                 pendingToolImages: toolFiles.length > 0
-                  ? [...s.pendingToolImages, ...toolFiles]
+                  ? dedupeAttachedFiles([...s.pendingToolImages, ...toolFiles])
                   : s.pendingToolImages,
                 streamingTools: updates.length > 0 ? upsertToolStatuses(s.streamingTools, updates) : s.streamingTools,
               };
@@ -3946,6 +4056,98 @@ export const useChatStore = create<ChatState>((set, get) => ({
         break;
       }
     }
+  },
+
+  handleRuntimeEvent: (event: ChatRuntimeEvent) => {
+    const eventSessionKey = event.sessionKey ?? null;
+    const initialState = get();
+    const { activeRunId, currentSessionKey } = initialState;
+    const matchesCurrentSession = eventSessionKey != null && eventSessionKey === currentSessionKey;
+    const matchesActiveRun = activeRunId != null && event.runId === activeRunId;
+
+    // Session-less runtime events are only safe to apply when they match the
+    // active run. Treating them as "current session" lets stale/background run
+    // terminals clear the composer for an unrelated in-flight send.
+    if (!matchesCurrentSession && !matchesActiveRun) {
+      return;
+    }
+
+    _lastChatEventAt = Date.now();
+
+    const runtimeRuns = applyRuntimeEventToRuns(initialState.runtimeRuns, event);
+    const nextPatch: Partial<ChatState> = { runtimeRuns };
+    const appliesToActiveUi = matchesActiveRun || (activeRunId == null && matchesCurrentSession);
+
+    if (event.type === 'run.started') {
+      if (matchesCurrentSession && (activeRunId == null || matchesActiveRun)) {
+        nextPatch.activeRunId = event.runId;
+        nextPatch.error = null;
+        nextPatch.runError = null;
+        if (!initialState.sending && shouldTrackInboundRunLifecycle(initialState, currentSessionKey)) {
+          nextPatch.sending = true;
+        }
+      }
+      set(nextPatch);
+      return;
+    }
+
+    if (event.type === 'assistant.delta' || event.type === 'thinking.delta') {
+      if (appliesToActiveUi && (initialState.error || initialState.runError)) {
+        nextPatch.error = null;
+        nextPatch.runError = null;
+      }
+      set(nextPatch);
+      return;
+    }
+
+    const toolStatus = runtimeToolEventToStatus(event);
+    if (toolStatus && appliesToActiveUi && (initialState.error || initialState.runError)) {
+      nextPatch.error = null;
+      nextPatch.runError = null;
+    }
+
+    if (event.type === 'tool.completed' && appliesToActiveUi) {
+      const files = extractToolCompletedFiles(event);
+      if (files.length > 0) {
+        nextPatch.pendingToolImages = dedupeAttachedFiles([
+          ...initialState.pendingToolImages,
+          ...files,
+        ]);
+      }
+    }
+
+    if (event.type === 'run.ended') {
+      const latestState = get();
+      const terminalMatchesActiveRun = latestState.activeRunId != null && event.runId === latestState.activeRunId;
+      const terminalIsForCurrentUntrackedSend = latestState.activeRunId == null
+        && matchesCurrentSession
+        && latestState.sending
+        && (
+          typeof event.ts !== 'number'
+          || latestState.lastUserMessageAt == null
+          || event.ts >= latestState.lastUserMessageAt - 1_000
+        );
+      const shouldClearActiveRun = terminalMatchesActiveRun || terminalIsForCurrentUntrackedSend;
+
+      if (shouldClearActiveRun) {
+        nextPatch.sending = false;
+        nextPatch.activeRunId = null;
+        nextPatch.pendingFinal = false;
+        nextPatch.lastUserMessageAt = null;
+        nextPatch.streamingTools = [];
+        if (event.status === 'error' && event.error) {
+          nextPatch.error = null;
+          nextPatch.runError = event.error;
+        }
+        if (event.status === 'aborted') {
+          nextPatch.streamingMessage = null;
+          nextPatch.streamingText = '';
+          nextPatch.pendingToolImages = [];
+        }
+      }
+    }
+
+    set(nextPatch);
   },
 
   // ── Refresh: reload history + sessions ──

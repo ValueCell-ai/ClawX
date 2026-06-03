@@ -469,6 +469,10 @@ async function initialize(): Promise<void> {
     hostEventBus.emit('gateway:chat-message', data);
   });
 
+  gatewayManager.on('chat:runtime-event', (data) => {
+    hostEventBus.emit('chat:runtime-event', data);
+  });
+
   gatewayManager.on('channel:status', (data) => {
     hostEventBus.emit('gateway:channel-status', data);
   });

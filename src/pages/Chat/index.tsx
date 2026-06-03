@@ -6,7 +6,7 @@
  */
 import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AlertCircle, ArrowDownToLine, Loader2, Sparkles } from 'lucide-react';
-import { useChatStore, type RawMessage } from '@/stores/chat';
+import { useChatStore, type ChatRuntimeRunState, type RawMessage } from '@/stores/chat';
 import { isInternalMessage } from '@/stores/chat/helpers';
 import { buildBaselineRunKey, getBaseline } from '@/stores/baseline-cache';
 import { useGatewayStore } from '@/stores/gateway';
@@ -22,6 +22,7 @@ import { ChatToolbar } from './ChatToolbar';
 import { extractImages, extractText, extractThinking, extractToolUse, isInternalAssistantReplyText, isInternalProcessNarration, normalizeMessageRole, stripProcessMessagePrefix } from './message-utils';
 import {
   buildRunSegmentMessageIndices,
+  deriveRuntimeTaskSteps,
   deriveTaskSteps,
   findReplyMessageIndex,
   getPostTriggerSegmentMessages,
@@ -31,7 +32,7 @@ import {
   segmentHasFinalReply,
   type TaskStep,
 } from './task-visualization';
-import { isImageGenerationPending } from './image-generation-status';
+import { hasDeliveredImageGenerationResult, isImageGenerationPending } from './image-generation-status';
 import { useTranslation } from 'react-i18next';
 import { cn } from '@/lib/utils';
 import { useStickToBottomInstant } from '@/hooks/use-stick-to-bottom-instant';
@@ -140,6 +141,21 @@ function generatedFileToTarget(file: GeneratedFile): FilePreviewTarget {
   };
 }
 
+function hasRunningRuntimeTool(run: ChatRuntimeRunState | null): boolean {
+  if (!run) return false;
+  const toolStatuses = new Map<string, 'running' | 'completed' | 'error'>();
+  for (const event of run.events) {
+    if (event.type === 'tool.started' || event.type === 'tool.updated') {
+      toolStatuses.set(event.toolCallId, 'running');
+      continue;
+    }
+    if (event.type === 'tool.completed') {
+      toolStatuses.set(event.toolCallId, event.isError ? 'error' : 'completed');
+    }
+  }
+  return Array.from(toolStatuses.values()).some((status) => status === 'running');
+}
+
 // Keep the last non-empty execution-graph snapshot per session/run outside
 // React state so `loadHistory` refreshes can still fall back to the previous
 // steps without tripping React's set-state-in-effect lint rule.
@@ -166,6 +182,7 @@ export function Chat() {
   const streamingTools = useChatStore((s) => s.streamingTools);
   const pendingFinal = useChatStore((s) => s.pendingFinal);
   const activeRunId = useChatStore((s) => s.activeRunId);
+  const runtimeRuns = useChatStore((s) => s.runtimeRuns ?? {});
   const sendMessage = useChatStore((s) => s.sendMessage);
   const abortRun = useChatStore((s) => s.abortRun);
   const clearError = useChatStore((s) => s.clearError);
@@ -323,6 +340,8 @@ export function Chat() {
   const hasStreamImages = streamImages.length > 0;
   const hasStreamToolStatus = streamingTools.length > 0;
   const hasRunningStreamToolStatus = streamingTools.some((tool) => tool.status === 'running');
+  const currentRuntimeRun = activeRunId ? runtimeRuns[activeRunId] ?? null : null;
+  const hasRunningRuntimeToolStatus = hasRunningRuntimeTool(currentRuntimeRun);
   const shouldRenderStreaming = sending && (hasStreamText || hasStreamTools || hasStreamImages || hasStreamToolStatus);
   const hasAnyStreamContent = hasStreamText || hasStreamThinking || hasStreamTools || hasStreamImages || hasStreamToolStatus;
   const hasHistoryCompletionBlockingStream = hasStreamText
@@ -407,17 +426,30 @@ export function Chat() {
     //  - segment has tool calls but no pure-text final reply yet (server-side
     //    tool execution — Gateway fires phase "end" per tool round which
     //    briefly clears sending, but the run is still in progress)
-    const hasToolActivity = postTriggerMessages.some((m) =>
+    const isLatestRunSegment = nextUserIndex === -1;
+    const activeRuntimeRun = isLatestRunSegment && activeRunId ? runtimeRuns[activeRunId] ?? null : null;
+    const runtimeHasToolActivity = Boolean(activeRuntimeRun?.events.some((event) =>
+      event.type === 'tool.started'
+      || event.type === 'tool.updated'
+      || event.type === 'tool.completed'
+      || event.type === 'command.output'
+      || event.type === 'patch.completed'
+      || event.type === 'approval.updated',
+    ));
+    const runtimeHasRunningTool = hasRunningRuntimeTool(activeRuntimeRun);
+    const hasToolActivity = runtimeHasToolActivity || postTriggerMessages.some((m) =>
       m.role === 'assistant' && extractToolUse(m).length > 0,
     );
     const hasFinalReply = segmentHasFinalReply(postTriggerMessages);
+    const imageGenerationSettledInHistory = isLatestRunSegment
+      && hasDeliveredImageGenerationResult(postTriggerMessages)
+      && !isImageGenerationPending(postTriggerMessages, streamingTools);
     const runStillExecutingTools = hasToolActivity && !hasFinalReply;
     // runStillExecutingTools bridges the brief gap between tool rounds when
     // Gateway temporarily clears sending.  However, after an explicit abort
     // (which clears activeRunId), we must NOT keep the run "open" — so we
     // gate it on activeRunId being present. We also bail out as soon as a
     // terminal model error has been surfaced so the run doesn't appear active.
-    const isLatestRunSegment = nextUserIndex === -1;
     // History may already contain the final answer while lifecycle flags are
     // still armed (missing Gateway terminal phase, blocked chat.send RPC, etc.).
     // Treat the run as closed for graph/input UI when the transcript is done
@@ -425,8 +457,9 @@ export function Chat() {
     // so an early narration-only history snapshot does not collapse the graph
     // mid-chain. Thinking-only stale stream content should not keep image
     // generation runs open after history already contains the final media.
+    const streamBlocksHistoryCompletion = hasHistoryCompletionBlockingStream && !imageGenerationSettledInHistory;
     const runCompletedInHistory = hasFinalReply
-      && !hasHistoryCompletionBlockingStream
+      && !streamBlocksHistoryCompletion
       && (hasToolActivity || !sending);
     const isLatestOpenRun = isLatestRunSegment
       && !runError
@@ -512,9 +545,12 @@ export function Chat() {
       && canPromoteStreamToBubble
       && (hasStreamText || hasStreamImages)
       && streamTools.length === 0
-      && !hasRunningStreamToolStatus;
+      && !hasRunningStreamToolStatus
+      && !runtimeHasRunningTool;
 
-    let steps = sanitizeGraphSteps(buildSteps(rawStreamingReplyCandidate));
+    let steps = activeRuntimeRun && runtimeHasToolActivity
+      ? sanitizeGraphSteps(deriveRuntimeTaskSteps(activeRuntimeRun))
+      : sanitizeGraphSteps(buildSteps(rawStreamingReplyCandidate));
     let streamingReplyText: string | null = null;
     if (rawStreamingReplyCandidate) {
       const trimmedReplyText = stripProcessMessagePrefix(streamText, getPrimaryMessageStepTexts(steps));
@@ -523,7 +559,9 @@ export function Chat() {
       if (hasReplyText || hasStreamImages) {
         streamingReplyText = hasReplyText ? trimmedReplyText : '';
       } else {
-        steps = sanitizeGraphSteps(buildSteps(false));
+        steps = activeRuntimeRun && runtimeHasToolActivity
+          ? sanitizeGraphSteps(deriveRuntimeTaskSteps(activeRuntimeRun))
+          : sanitizeGraphSteps(buildSteps(false));
       }
     }
 
@@ -623,10 +661,14 @@ export function Chat() {
     //   - no stream content at all (the gap between tool rounds): graph also
     //     has no live step → DO show the indicator — this is the very case
     //     the indicator exists for.
-    //   - stream IS in graph (e.g. tool_use is streaming): indicator is
-    //     redundant → suppress.
+    //   - tool execution is visible in the graph: still show the trailing
+    //     indicator as a separate liveness signal so the user sees both
+    //     "tool is running" and "agent is still thinking".
+    const streamVisiblyActiveInGraph = hasStreamText
+      || hasStreamThinking
+      || hasStreamImages;
     const streamIsInGraph =
-      isLatestOpenRun && streamingReplyText == null && hasAnyStreamContent;
+      isLatestOpenRun && streamingReplyText == null && streamVisiblyActiveInGraph;
     const suppressThinking = streamIsInGraph;
 
     return [{
@@ -641,10 +683,11 @@ export function Chat() {
       streamingReplyText,
       suppressThinking,
     }];
-  }, [messages, subagentCompletionInfos, currentSessionKey, streamingMessage, streamingTools, pendingFinal, sending, hasAnyStreamContent, hasStreamText, hasStreamImages, streamText, streamTools.length, hasRunningStreamToolStatus, hasHistoryCompletionBlockingStream, childTranscripts, currentAgentId, agents, sessionLabels, graphStepCache, runError, isRunTrigger]);
+  }, [messages, subagentCompletionInfos, currentSessionKey, streamingMessage, streamingTools, pendingFinal, sending, hasAnyStreamContent, hasStreamText, hasStreamThinking, hasStreamImages, streamText, streamTools.length, hasRunningStreamToolStatus, hasHistoryCompletionBlockingStream, childTranscripts, currentAgentId, agents, sessionLabels, graphStepCache, runError, isRunTrigger, activeRunId, runtimeRuns]);
   const hasActiveExecutionGraph = userRunCards.some((card) => card.active);
   let latestRunSegmentCompletion = { hasFinalReply: false, hasToolActivity: false };
   let pendingImageGeneration = false;
+  let imageGenerationSettledInHistory = false;
   for (let idx = messages.length - 1; idx >= 0; idx -= 1) {
     if (!isRealUserMessage(messages[idx]) || subagentCompletionInfos[idx]) continue;
     const nextUserIndex = nextUserMessageIndexes[idx];
@@ -659,10 +702,14 @@ export function Chat() {
       postTrigger,
       nextUserIndex === -1 ? streamingTools : [],
     );
+    imageGenerationSettledInHistory = nextUserIndex === -1
+      && hasDeliveredImageGenerationResult(postTrigger)
+      && !pendingImageGeneration;
     break;
   }
+  const streamBlocksHistoryCompletion = hasHistoryCompletionBlockingStream && !imageGenerationSettledInHistory;
   const runSettledInHistory = latestRunSegmentCompletion.hasFinalReply
-    && !hasHistoryCompletionBlockingStream
+    && !streamBlocksHistoryCompletion
     && (latestRunSegmentCompletion.hasToolActivity || !sending);
   const inputRunActive = (sending || hasActiveExecutionGraph) && !runSettledInHistory;
   const replyTextOverrides = useMemo(() => {
@@ -933,7 +980,7 @@ export function Chat() {
                   {shouldRenderStreaming && (
                     streamingReplyText != null
                     || !hasActiveExecutionGraph
-                    || (hasStreamText && streamTools.length === 0)
+                    || (hasStreamText && streamTools.length === 0 && !hasRunningStreamToolStatus && !hasRunningRuntimeToolStatus)
                   ) && (
                     <ChatMessage
                       suppressToolCards={hasActiveExecutionGraph || runSegmentMessageIndices.size > 0}
@@ -966,7 +1013,7 @@ export function Chat() {
                       })()}
                       textOverride={streamingReplyText ?? undefined}
                       isStreaming
-                      streamingTools={streamingReplyText != null ? [] : streamingTools}
+                      streamingTools={streamingReplyText != null || hasActiveExecutionGraph ? [] : streamingTools}
                       onOpenFile={handleOpenAttachedFile}
                     />
                   )}

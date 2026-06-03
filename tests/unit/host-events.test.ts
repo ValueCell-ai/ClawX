@@ -44,6 +44,27 @@ describe('host-events', () => {
     expect(cleanupSpy).toHaveBeenCalledTimes(1);
   });
 
+  it('maps chat runtime events to the dedicated IPC channel', async () => {
+    const onMock = vi.mocked(window.electron.ipcRenderer.on);
+    const captured: Array<(...args: unknown[]) => void> = [];
+    const cleanupSpy = vi.fn();
+    onMock.mockImplementation((_, cb: (...args: unknown[]) => void) => {
+      captured.push(cb);
+      return cleanupSpy;
+    });
+
+    const { subscribeHostEvent } = await import('@/lib/host-events');
+    const handler = vi.fn();
+    const unsubscribe = subscribeHostEvent('chat:runtime-event', handler);
+
+    expect(onMock).toHaveBeenCalledWith('chat:runtime-event', expect.any(Function));
+    captured[0]({ type: 'run.started', runId: 'run-1' });
+    expect(handler).toHaveBeenCalledWith({ type: 'run.started', runId: 'run-1' });
+
+    unsubscribe();
+    expect(cleanupSpy).toHaveBeenCalledTimes(1);
+  });
+
   it('does not use SSE fallback by default for unknown events', async () => {
     const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
     const { subscribeHostEvent } = await import('@/lib/host-events');

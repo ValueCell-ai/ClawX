@@ -138,6 +138,7 @@ export interface GatewayManagerEvents {
   'gateway:presence': (data: unknown) => void;
   'channel:status': (data: { channelId: string; status: string }) => void;
   'chat:message': (data: { message: unknown }) => void;
+  'chat:runtime-event': (data: unknown) => void;
 }
 
 /**

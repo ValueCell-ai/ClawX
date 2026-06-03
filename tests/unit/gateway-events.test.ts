@@ -40,6 +40,7 @@ describe('gateway store event wiring', () => {
     expect(subscribeHostEventMock).toHaveBeenCalledWith('gateway:health', expect.any(Function));
     expect(subscribeHostEventMock).toHaveBeenCalledWith('gateway:presence', expect.any(Function));
     expect(subscribeHostEventMock).toHaveBeenCalledWith('gateway:chat-message', expect.any(Function));
+    expect(subscribeHostEventMock).toHaveBeenCalledWith('chat:runtime-event', expect.any(Function));
     expect(subscribeHostEventMock).toHaveBeenCalledWith('gateway:channel-status', expect.any(Function));
 
     handlers.get('gateway:status')?.({ state: 'stopped', port: 18789 });
@@ -90,7 +91,7 @@ describe('gateway store event wiring', () => {
     expect(status.state === 'running' && status.gatewayReady !== false).toBe(true);
   });
 
-  it('does not clear chat sending state on non-terminal agent phase end', async () => {
+  it('does not clear chat sending state on non-terminal runtime events', async () => {
     const handlers = new Map<string, (payload: unknown) => void>();
     subscribeHostEventMock.mockImplementation((eventName: string, handler: (payload: unknown) => void) => {
       handlers.set(eventName, handler);
@@ -111,24 +112,29 @@ describe('gateway store event wiring', () => {
     const { useGatewayStore } = await import('@/stores/gateway');
     await useGatewayStore.getState().init();
 
-    handlers.get('gateway:notification')?.({
-      method: 'agent',
-      params: {
-        runId: 'run-1',
-        sessionKey: 'agent:main:main',
-        data: { phase: 'end' },
-      },
+    handlers.get('chat:runtime-event')?.({
+      type: 'tool.completed',
+      runId: 'run-1',
+      sessionKey: 'agent:main:main',
+      toolCallId: 'call-1',
+      name: 'read',
+      result: { summary: 'done' },
+      isError: false,
     });
     await flushAsyncImports();
 
-    expect(loadHistory).toHaveBeenCalledTimes(1);
+    expect(loadHistory).not.toHaveBeenCalled();
     expect(useChatStore.getState().sending).toBe(true);
     expect(useChatStore.getState().activeRunId).toBe('run-1');
     expect(useChatStore.getState().pendingFinal).toBe(true);
     expect(useChatStore.getState().lastUserMessageAt).toBe(1773281731000);
+    expect(useChatStore.getState().streamingTools).toEqual([]);
+    expect(useChatStore.getState().runtimeRuns['run-1']?.events).toEqual([
+      expect.objectContaining({ type: 'tool.completed', toolCallId: 'call-1', name: 'read' }),
+    ]);
   });
 
-  it('clears chat sending state on terminal completed agent phase', async () => {
+  it('clears chat sending state on terminal run.ended runtime event', async () => {
     const handlers = new Map<string, (payload: unknown) => void>();
     subscribeHostEventMock.mockImplementation((eventName: string, handler: (payload: unknown) => void) => {
       handlers.set(eventName, handler);
@@ -149,13 +155,12 @@ describe('gateway store event wiring', () => {
     const { useGatewayStore } = await import('@/stores/gateway');
     await useGatewayStore.getState().init();
 
-    handlers.get('gateway:notification')?.({
-      method: 'agent',
-      params: {
-        runId: 'run-2',
-        sessionKey: 'agent:main:main',
-        data: { phase: 'completed' },
-      },
+    handlers.get('chat:runtime-event')?.({
+      type: 'run.ended',
+      runId: 'run-2',
+      sessionKey: 'agent:main:main',
+      status: 'completed',
+      endedAt: 123,
     });
     await flushAsyncImports();
 
@@ -166,7 +171,109 @@ describe('gateway store event wiring', () => {
     expect(useChatStore.getState().lastUserMessageAt).toBeNull();
   });
 
-  it('forces terminal history reload even when non-terminal phase end just refreshed history', async () => {
+  it('does not clear the active send when a stale run.ended arrives for the same session', async () => {
+    const handlers = new Map<string, (payload: unknown) => void>();
+    subscribeHostEventMock.mockImplementation((eventName: string, handler: (payload: unknown) => void) => {
+      handlers.set(eventName, handler);
+      return () => {};
+    });
+    const { useChatStore } = await import('@/stores/chat');
+    const loadHistory = vi.fn(async () => {});
+    useChatStore.setState({
+      currentSessionKey: 'agent:main:main',
+      sessions: [{ key: 'agent:main:main' }],
+      sending: true,
+      activeRunId: 'run-active',
+      pendingFinal: true,
+      lastUserMessageAt: 1773281731000,
+      loadHistory,
+    });
+
+    const { useGatewayStore } = await import('@/stores/gateway');
+    await useGatewayStore.getState().init();
+
+    handlers.get('chat:runtime-event')?.({
+      type: 'run.ended',
+      runId: 'run-stale',
+      sessionKey: 'agent:main:main',
+      status: 'completed',
+      endedAt: 123,
+    });
+    await flushAsyncImports();
+
+    expect(useChatStore.getState().sending).toBe(true);
+    expect(useChatStore.getState().activeRunId).toBe('run-active');
+    expect(useChatStore.getState().pendingFinal).toBe(true);
+    expect(useChatStore.getState().lastUserMessageAt).toBe(1773281731000);
+  });
+
+  it('ignores session-less runtime terminals that do not match the active run', async () => {
+    const handlers = new Map<string, (payload: unknown) => void>();
+    subscribeHostEventMock.mockImplementation((eventName: string, handler: (payload: unknown) => void) => {
+      handlers.set(eventName, handler);
+      return () => {};
+    });
+    const { useChatStore } = await import('@/stores/chat');
+    const loadHistory = vi.fn(async () => {});
+    useChatStore.setState({
+      currentSessionKey: 'agent:main:main',
+      sessions: [{ key: 'agent:main:main' }],
+      sending: true,
+      activeRunId: 'run-active',
+      pendingFinal: true,
+      lastUserMessageAt: 1773281731000,
+      loadHistory,
+    });
+
+    const { useGatewayStore } = await import('@/stores/gateway');
+    await useGatewayStore.getState().init();
+
+    handlers.get('chat:runtime-event')?.({
+      type: 'run.ended',
+      runId: 'run-background',
+      status: 'completed',
+      endedAt: 123,
+    });
+    await flushAsyncImports();
+
+    expect(loadHistory).not.toHaveBeenCalled();
+    expect(useChatStore.getState().sending).toBe(true);
+    expect(useChatStore.getState().activeRunId).toBe('run-active');
+    expect(useChatStore.getState().pendingFinal).toBe(true);
+  });
+
+  it('tracks a current-session run.started even when the optimistic send is already active', async () => {
+    const handlers = new Map<string, (payload: unknown) => void>();
+    subscribeHostEventMock.mockImplementation((eventName: string, handler: (payload: unknown) => void) => {
+      handlers.set(eventName, handler);
+      return () => {};
+    });
+    const { useChatStore } = await import('@/stores/chat');
+    useChatStore.setState({
+      currentSessionKey: 'agent:main:main',
+      sessions: [{ key: 'agent:main:main' }],
+      sending: true,
+      activeRunId: null,
+      pendingFinal: false,
+      lastUserMessageAt: 1773281731000,
+    });
+
+    const { useGatewayStore } = await import('@/stores/gateway');
+    await useGatewayStore.getState().init();
+
+    handlers.get('chat:runtime-event')?.({
+      type: 'run.started',
+      runId: 'run-started-before-rpc-return',
+      sessionKey: 'agent:main:main',
+      startedAt: 1773281731001,
+    });
+    await flushAsyncImports();
+
+    expect(useChatStore.getState().sending).toBe(true);
+    expect(useChatStore.getState().activeRunId).toBe('run-started-before-rpc-return');
+  });
+
+  it('forces a terminal history reload when the runtime emits run.ended', async () => {
     const handlers = new Map<string, (payload: unknown) => void>();
     subscribeHostEventMock.mockImplementation((eventName: string, handler: (payload: unknown) => void) => {
       handlers.set(eventName, handler);
@@ -187,23 +294,83 @@ describe('gateway store event wiring', () => {
     const { useGatewayStore } = await import('@/stores/gateway');
     await useGatewayStore.getState().init();
 
-    const notifyPhase = (phase: string) => handlers.get('gateway:notification')?.({
-      method: 'agent',
-      params: {
-        runId: 'run-terminal-refresh',
-        sessionKey: 'agent:main:main',
-        data: { phase },
-      },
+    handlers.get('chat:runtime-event')?.({
+      type: 'tool.completed',
+      runId: 'run-terminal-refresh',
+      sessionKey: 'agent:main:main',
+      toolCallId: 'call-2',
+      name: 'grep',
+      result: { summary: 'done' },
+      isError: false,
     });
-
-    notifyPhase('end');
     await flushAsyncImports();
-    notifyPhase('completed');
+    handlers.get('chat:runtime-event')?.({
+      type: 'run.ended',
+      runId: 'run-terminal-refresh',
+      sessionKey: 'agent:main:main',
+      status: 'completed',
+      endedAt: 456,
+    });
     await flushAsyncImports();
 
-    expect(loadHistory).toHaveBeenCalledTimes(2);
+    expect(loadHistory).toHaveBeenCalledTimes(1);
     expect(useChatStore.getState().sending).toBe(false);
     expect(useChatStore.getState().activeRunId).toBeNull();
+  });
+
+  it('forwards normalized chat runtime events through the dedicated host event channel', async () => {
+    const handlers = new Map<string, (payload: unknown) => void>();
+    subscribeHostEventMock.mockImplementation((eventName: string, handler: (payload: unknown) => void) => {
+      handlers.set(eventName, handler);
+      return () => {};
+    });
+
+    const { useChatStore } = await import('@/stores/chat');
+    const handleRuntimeEvent = vi.fn();
+    const loadHistory = vi.fn(async () => {});
+    useChatStore.setState({
+      currentSessionKey: 'agent:main:main',
+      sessions: [{ key: 'agent:main:main' }],
+      activeRunId: 'run-runtime',
+      handleRuntimeEvent,
+      loadHistory,
+    });
+
+    const { useGatewayStore } = await import('@/stores/gateway');
+    await useGatewayStore.getState().init();
+
+    handlers.get('chat:runtime-event')?.({
+      type: 'tool.started',
+      runId: 'run-runtime',
+      sessionKey: 'agent:main:main',
+      toolCallId: 'call-1',
+      name: 'read',
+      args: { filePath: '/tmp/demo.md' },
+    });
+    await flushAsyncImports();
+
+    expect(handleRuntimeEvent).toHaveBeenCalledWith(expect.objectContaining({
+      type: 'tool.started',
+      runId: 'run-runtime',
+      toolCallId: 'call-1',
+    }));
+    expect(loadHistory).not.toHaveBeenCalled();
+
+    handlers.get('chat:runtime-event')?.({
+      type: 'run.ended',
+      runId: 'run-runtime',
+      sessionKey: 'agent:main:main',
+      status: 'completed',
+      endedAt: 123,
+    });
+    await flushAsyncImports();
+
+    expect(handleRuntimeEvent).toHaveBeenCalledWith(expect.objectContaining({
+      type: 'run.ended',
+      runId: 'run-runtime',
+      status: 'completed',
+    }));
+    expect(loadHistory).toHaveBeenCalledTimes(1);
   });
 
   it('passes progressive delta notifications without seq through to chat store', async () => {
@@ -224,18 +391,16 @@ describe('gateway store event wiring', () => {
     const { useGatewayStore } = await import('@/stores/gateway');
     await useGatewayStore.getState().init();
 
-    handlers.get('gateway:notification')?.({
-      method: 'agent',
-      params: {
+    handlers.get('gateway:chat-message')?.({
+      message: {
         runId: 'run-no-seq',
         sessionKey: 'agent:main:main',
         state: 'delta',
         message: { role: 'assistant', content: [{ type: 'text', text: 'first' }] },
       },
     });
-    handlers.get('gateway:notification')?.({
-      method: 'agent',
-      params: {
+    handlers.get('gateway:chat-message')?.({
+      message: {
         runId: 'run-no-seq',
         sessionKey: 'agent:main:main',
         state: 'delta',
@@ -276,8 +441,7 @@ describe('gateway store event wiring', () => {
     await useGatewayStore.getState().init();
 
     const replayedDelta = {
-      method: 'agent',
-      params: {
+      message: {
         runId: 'run-no-seq-replay',
         sessionKey: 'agent:main:main',
         state: 'delta',
@@ -285,8 +449,8 @@ describe('gateway store event wiring', () => {
       },
     };
 
-    handlers.get('gateway:notification')?.(replayedDelta);
-    handlers.get('gateway:notification')?.(replayedDelta);
+    handlers.get('gateway:chat-message')?.(replayedDelta);
+    handlers.get('gateway:chat-message')?.(replayedDelta);
     await flushAsyncImports();
 
     expect(handleChatEvent).toHaveBeenCalledTimes(1);

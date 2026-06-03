@@ -187,6 +187,69 @@ describe('Chat execution graph lifecycle', () => {
     expect(screen.queryByText('Checked X. Here is the summary.')).not.toBeInTheDocument();
   });
 
+  it('keeps runtime tool status inside the execution graph while a tool is running', async () => {
+    const { useChatStore } = await import('@/stores/chat');
+    useChatStore.setState({
+      messages: [
+        {
+          role: 'user',
+          content: 'Read the file and summarize it',
+        },
+      ],
+      loading: false,
+      error: null,
+      runError: null,
+      sending: true,
+      activeRunId: 'run-tool-stream',
+      streamingText: '',
+      streamingMessage: {
+        role: 'assistant',
+        id: 'tool-narration-stream',
+        content: [{ type: 'text', text: 'I will read the file first.' }],
+      },
+      streamingTools: [],
+      runtimeRuns: {
+        'run-tool-stream': {
+          runId: 'run-tool-stream',
+          sessionKey: 'agent:main:main',
+          status: 'running',
+          assistantText: '',
+          thinkingText: '',
+          events: [
+            {
+              type: 'tool.started',
+              runId: 'run-tool-stream',
+              sessionKey: 'agent:main:main',
+              toolCallId: 'read-1',
+              name: 'read',
+              args: { path: '/tmp/demo.md' },
+            },
+          ],
+        },
+      },
+      pendingFinal: false,
+      lastUserMessageAt: Date.now(),
+      pendingToolImages: [],
+      sessions: [{ key: 'agent:main:main' }],
+      currentSessionKey: 'agent:main:main',
+      currentAgentId: 'main',
+      sessionLabels: {},
+      sessionLastActivity: {},
+      thinkingLevel: null,
+    });
+
+    const { Chat } = await import('@/pages/Chat/index');
+
+    render(<Chat />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('chat-execution-graph')).toHaveAttribute('data-collapsed', 'false');
+      expect(screen.getByText('read')).toBeInTheDocument();
+    });
+
+    expect(screen.queryByTestId('chat-streaming-tool-status-bar')).not.toBeInTheDocument();
+  });
+
   it('renders the execution graph immediately for an active run before any stream content arrives', async () => {
     const { useChatStore } = await import('@/stores/chat');
     useChatStore.setState({
@@ -558,7 +621,12 @@ describe('Chat execution graph lifecycle', () => {
         role: 'assistant',
         content: [{ type: 'thinking', thinking: '等待图片生成完成。' }],
       },
-      streamingTools: [],
+      streamingTools: [{
+        toolCallId: 'image-1',
+        name: 'image_generate',
+        status: 'running',
+        updatedAt: Date.now(),
+      }],
       pendingFinal: false,
       lastUserMessageAt: Date.now(),
       pendingToolImages: [],
@@ -581,6 +649,102 @@ describe('Chat execution graph lifecycle', () => {
     expect(screen.queryByTestId('chat-execution-step-thinking-trailing')).not.toBeInTheDocument();
     expect(screen.queryByTestId('chat-typing-indicator')).not.toBeInTheDocument();
     expect(screen.queryByTestId('chat-activity-indicator')).not.toBeInTheDocument();
+  });
+
+  it('shows trailing thinking together with a running tool status', async () => {
+    const { useChatStore } = await import('@/stores/chat');
+    useChatStore.setState({
+      messages: [
+        {
+          role: 'user',
+          content: 'Search the web and summarize',
+        },
+      ],
+      loading: false,
+      error: null,
+      runError: null,
+      sending: true,
+      activeRunId: 'run-tool-active',
+      streamingText: '',
+      streamingMessage: null,
+      streamingTools: [
+        {
+          toolCallId: 'browser-search',
+          name: 'browser',
+          status: 'running',
+          updatedAt: Date.now(),
+        },
+      ],
+      pendingFinal: false,
+      lastUserMessageAt: Date.now(),
+      pendingToolImages: [],
+      sessions: [{ key: 'agent:main:main' }],
+      currentSessionKey: 'agent:main:main',
+      currentAgentId: 'main',
+      sessionLabels: {},
+      sessionLastActivity: {},
+      thinkingLevel: null,
+    });
+
+    const { Chat } = await import('@/pages/Chat/index');
+
+    render(<Chat />);
+
+    await waitFor(() => {
+      expect(screen.getByText('browser')).toBeInTheDocument();
+      expect(screen.getByTestId('chat-execution-step-thinking-trailing')).toBeInTheDocument();
+    });
+  });
+
+  it('keeps trailing thinking visible while waiting for final history after completed tool status', async () => {
+    const { useChatStore } = await import('@/stores/chat');
+    useChatStore.setState({
+      messages: [
+        {
+          role: 'user',
+          content: 'Summarize after checking the page',
+        },
+        {
+          role: 'assistant',
+          id: 'tool-turn',
+          content: [
+            { type: 'tool_use', id: 'browser-search', name: 'browser', input: { action: 'search', query: 'semiconductor' } },
+          ],
+        },
+      ],
+      loading: false,
+      error: null,
+      runError: null,
+      sending: true,
+      activeRunId: 'run-waiting-final-history',
+      streamingText: '',
+      streamingMessage: null,
+      streamingTools: [
+        {
+          toolCallId: 'browser-search',
+          name: 'browser',
+          status: 'completed',
+          updatedAt: Date.now(),
+        },
+      ],
+      pendingFinal: true,
+      lastUserMessageAt: Date.now(),
+      pendingToolImages: [],
+      sessions: [{ key: 'agent:main:main' }],
+      currentSessionKey: 'agent:main:main',
+      currentAgentId: 'main',
+      sessionLabels: {},
+      sessionLastActivity: {},
+      thinkingLevel: null,
+    });
+
+    const { Chat } = await import('@/pages/Chat/index');
+
+    render(<Chat />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('chat-execution-step-thinking-trailing')).toBeInTheDocument();
+    });
   });
 
   it('keeps the run active when narration landed in history before tools finished', async () => {

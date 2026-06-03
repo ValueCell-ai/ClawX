@@ -115,22 +115,29 @@ function hasFreshRunningStreamingTool(streamingTools: ToolStatus[], now: number)
   });
 }
 
+export function hasDeliveredImageGenerationResult(segmentMessages: RawMessage[]): boolean {
+  const toolCallIndex = findLastImageGenerateToolCallIndex(segmentMessages);
+  if (toolCallIndex >= 0 && hasDeliveredImageAfter(segmentMessages, toolCallIndex)) {
+    return true;
+  }
+
+  const asyncStarts = collectAsyncImageTaskStarts(segmentMessages);
+  if (asyncStarts.length === 0) return false;
+  return segmentMessages.some((message) => message.role === 'assistant' && messageHasDeliveredImage(message));
+}
+
 /** True while an async `image_generate` task is in flight for this run segment. */
 export function isImageGenerationPending(
   segmentMessages: RawMessage[],
   streamingTools: ToolStatus[] = [],
   now = Date.now(),
 ): boolean {
-  if (hasFreshRunningStreamingTool(streamingTools, now)) {
-    return true;
-  }
-
   const toolCallIndex = findLastImageGenerateToolCallIndex(segmentMessages);
   const asyncStarts = collectAsyncImageTaskStarts(segmentMessages);
   const completedTaskIds = collectCompletedAsyncImageTaskIds(segmentMessages);
 
   if (toolCallIndex < 0 && asyncStarts.length === 0) {
-    return false;
+    return hasFreshRunningStreamingTool(streamingTools, now);
   }
 
   const toolCallStartedAt = toolCallIndex >= 0
@@ -148,8 +155,9 @@ export function isImageGenerationPending(
     return false;
   }
 
+  if (hasDeliveredImageGenerationResult(segmentMessages)) return false;
+
   if (toolCallIndex >= 0) {
-    if (hasDeliveredImageAfter(segmentMessages, toolCallIndex)) return false;
     if (hasTerminalReplyAfterToolCall(segmentMessages, toolCallIndex)) return false;
   }
 
@@ -158,5 +166,7 @@ export function isImageGenerationPending(
     if (!hasOpenAsyncTask) return false;
   }
 
-  return toolCallIndex >= 0 || asyncStarts.some((start) => !completedTaskIds.has(start.taskId));
+  return hasFreshRunningStreamingTool(streamingTools, now)
+    || toolCallIndex >= 0
+    || asyncStarts.some((start) => !completedTaskIds.has(start.taskId));
 }
