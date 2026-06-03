@@ -961,7 +961,7 @@ export function Chat() {
                   {shouldRenderStreaming && (
                     streamingReplyText != null
                     || !hasActiveExecutionGraph
-                    || (hasStreamText && streamTools.length === 0)
+                    || (hasStreamText && streamTools.length === 0 && !hasRunningStreamToolStatus)
                   ) && (
                     <ChatMessage
                       suppressToolCards={hasActiveExecutionGraph || runSegmentMessageIndices.size > 0}
@@ -994,7 +994,7 @@ export function Chat() {
                       })()}
                       textOverride={streamingReplyText ?? undefined}
                       isStreaming
-                      streamingTools={streamingReplyText != null ? [] : streamingTools}
+                      streamingTools={streamingReplyText != null || hasActiveExecutionGraph ? [] : streamingTools}
                       onOpenFile={handleOpenAttachedFile}
                     />
                   )}

@@ -519,7 +519,7 @@ function ToolStatusBar({
   }>;
 }) {
   return (
-    <div className="w-full space-y-1">
+    <div className="w-full space-y-1" data-testid="chat-streaming-tool-status-bar">
       {tools.map((tool) => {
         const duration = formatDuration(tool.durationMs);
         const isRunning = tool.status === 'running';

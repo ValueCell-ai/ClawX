@@ -187,6 +187,57 @@ describe('Chat execution graph lifecycle', () => {
     expect(screen.queryByText('Checked X. Here is the summary.')).not.toBeInTheDocument();
   });
 
+  it('keeps runtime tool status inside the execution graph while a tool is running', async () => {
+    const { useChatStore } = await import('@/stores/chat');
+    useChatStore.setState({
+      messages: [
+        {
+          role: 'user',
+          content: 'Read the file and summarize it',
+        },
+      ],
+      loading: false,
+      error: null,
+      runError: null,
+      sending: true,
+      activeRunId: 'run-tool-stream',
+      streamingText: '',
+      streamingMessage: {
+        role: 'assistant',
+        id: 'tool-narration-stream',
+        content: [{ type: 'text', text: 'I will read the file first.' }],
+      },
+      streamingTools: [
+        {
+          toolCallId: 'read-1',
+          name: 'read',
+          status: 'running',
+          updatedAt: Date.now(),
+        },
+      ],
+      pendingFinal: false,
+      lastUserMessageAt: Date.now(),
+      pendingToolImages: [],
+      sessions: [{ key: 'agent:main:main' }],
+      currentSessionKey: 'agent:main:main',
+      currentAgentId: 'main',
+      sessionLabels: {},
+      sessionLastActivity: {},
+      thinkingLevel: null,
+    });
+
+    const { Chat } = await import('@/pages/Chat/index');
+
+    render(<Chat />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('chat-execution-graph')).toHaveAttribute('data-collapsed', 'false');
+      expect(screen.getByText('read')).toBeInTheDocument();
+    });
+
+    expect(screen.queryByTestId('chat-streaming-tool-status-bar')).not.toBeInTheDocument();
+  });
+
   it('renders the execution graph immediately for an active run before any stream content arrives', async () => {
     const { useChatStore } = await import('@/stores/chat');
     useChatStore.setState({
