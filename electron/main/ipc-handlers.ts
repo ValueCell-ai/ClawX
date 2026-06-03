@@ -2401,6 +2401,12 @@ const DIRECTORY_MIME_TYPE = 'application/x-directory';
  */
 async function generateImagePreview(filePath: string, mimeType: string): Promise<string | null> {
   try {
+    const { readFile: readFileAsync } = await import('fs/promises');
+    if (mimeType === 'image/svg+xml') {
+      const buf = await readFileAsync(filePath);
+      return `data:${mimeType};base64,${buf.toString('base64')}`;
+    }
+
     const img = nativeImage.createFromPath(filePath);
     if (img.isEmpty()) return null;
     const size = img.getSize();
@@ -2413,7 +2419,6 @@ async function generateImagePreview(filePath: string, mimeType: string): Promise
       return `data:image/png;base64,${resized.toPNG().toString('base64')}`;
     }
     // Small image — use original (async read to avoid blocking)
-    const { readFile: readFileAsync } = await import('fs/promises');
     const buf = await readFileAsync(filePath);
     return `data:${mimeType};base64,${buf.toString('base64')}`;
   } catch {

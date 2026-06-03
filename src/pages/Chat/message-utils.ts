@@ -61,7 +61,7 @@ function cleanUserText(text: string): string {
 }
 
 /**
- * Strip `MEDIA:/path/to/file.ext` artifact markers from assistant text so
+ * Strip `MEDIA:/path/to/file.ext` / `MEDIA:C:\path\file.ext` artifact markers from assistant text so
  * the chat bubble doesn't duplicate the file already surfaced as a card.
  *
  * Mirrors the regex in `chat/helpers.ts::extractRawFilePaths` (tagged
@@ -77,10 +77,10 @@ function stripAssistantMediaTags(text: string): string {
   // are also stripped from the visible bubble. Without this, the bubble
   // would still leak the literal `MEDIA:/.../截屏 2026-05-06 17.46.51.png`
   // to the user when the underlying path detection succeeds.
-  const tagged = new RegExp(`(^|[\\s(\\[{>])(?:MEDIA|media):(?:\\/|~\\/)[^\\n"'()\\[\\],<>]*?\\.(?:${exts})(?=$|[\\s\\n"'()\\[\\],<>]|[，。；;,.!?])`, 'g');
+  const tagged = new RegExp(`(^|[\\s(\\[{>])(?:MEDIA|media):(?:\\/|~\\/|[A-Za-z]:\\\\)[^\\n"'()\\[\\],<>]*?\\.(?:${exts})(?=$|[\\s\\n"'()\\[\\],<>]|[，。；;,.!?])`, 'g');
   // Bare OpenClaw artifact paths emitted alongside `_attachedFiles` cards.
   // Scope to `.openclaw/media/` so normal absolute paths in prose stay visible.
-  const bareOpenClawMedia = new RegExp(`(^|[\\s(\\[{>])(?:(?:\\/|~\\/)[^\\n"'()\\[\\],<>]*?\\.openclaw\\/media\\/[^\\n"'()\\[\\],<>]*?\\.(?:${exts}))(?=$|[\\s\\n"'()\\[\\],<>]|[，。；;,.!?])`, 'g');
+  const bareOpenClawMedia = new RegExp(`(^|[\\s(\\[{>])(?:(?:\\/|~\\/|[A-Za-z]:\\\\)[^\\n"'()\\[\\],<>]*?\\.openclaw[\\\\/]media[\\\\/][^\\n"'()\\[\\],<>]*?\\.(?:${exts}))(?=$|[\\s\\n"'()\\[\\],<>]|[，。；;,.!?])`, 'g');
   return text
     .replace(tagged, (_, lead: string) => lead)
     .replace(bareOpenClawMedia, (_, lead: string) => lead)

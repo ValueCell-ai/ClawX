@@ -58,6 +58,12 @@ const DIRECTORY_MIME_TYPE = 'application/x-directory';
 
 async function generateImagePreview(filePath: string, mimeType: string): Promise<string | null> {
   try {
+    const { readFile } = await import('node:fs/promises');
+    if (mimeType === 'image/svg+xml') {
+      const buf = await readFile(filePath);
+      return `data:${mimeType};base64,${buf.toString('base64')}`;
+    }
+
     const img = nativeImage.createFromPath(filePath);
     if (img.isEmpty()) return null;
     const size = img.getSize();
@@ -68,7 +74,6 @@ async function generateImagePreview(filePath: string, mimeType: string): Promise
         : img.resize({ height: maxDim });
       return `data:image/png;base64,${resized.toPNG().toString('base64')}`;
     }
-    const { readFile } = await import('node:fs/promises');
     const buf = await readFile(filePath);
     return `data:${mimeType};base64,${buf.toString('base64')}`;
   } catch {
