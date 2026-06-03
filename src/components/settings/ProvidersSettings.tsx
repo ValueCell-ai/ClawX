@@ -53,6 +53,7 @@ import { useTranslation } from 'react-i18next';
 import { useSettingsStore } from '@/stores/settings';
 import { hostApi } from '@/lib/host-api';
 import { hostEvents } from '@/lib/host-events';
+import type { OAuthCodeEvent, OAuthErrorEvent, OAuthSuccessEvent } from '@shared/host-events/contract';
 
 const inputClasses = 'h-[44px] rounded-xl font-mono text-meta bg-transparent border-black/10 dark:border-white/10 focus-visible:ring-2 focus-visible:ring-blue-500/50 focus-visible:border-blue-500 shadow-sm transition-all text-foreground placeholder:text-foreground/40';
 const labelClasses = 'text-sm text-foreground/80 font-bold';
@@ -1068,33 +1069,31 @@ function AddProviderDialog({
       return;
     }
 
-    const handleCode = (data: unknown) => {
-      const payload = data as Record<string, unknown>;
-      if (payload?.mode === 'manual') {
+    const handleCode = (payload: OAuthCodeEvent) => {
+      if ('mode' in payload && payload.mode === 'manual') {
         setOauthData({
           mode: 'manual',
-          authorizationUrl: String(payload.authorizationUrl || ''),
-          message: typeof payload.message === 'string' ? payload.message : undefined,
+          authorizationUrl: payload.authorizationUrl,
+          message: payload.message,
         });
       } else {
         setOauthData({
           mode: 'device',
-          verificationUri: String(payload.verificationUri || ''),
-          userCode: String(payload.userCode || ''),
-          expiresIn: Number(payload.expiresIn || 300),
+          verificationUri: payload.verificationUri,
+          userCode: payload.userCode,
+          expiresIn: payload.expiresIn,
         });
       }
       setOauthError(null);
     };
 
-    const handleSuccess = async (data: unknown) => {
+    const handleSuccess = async (payload: OAuthSuccessEvent) => {
       setOauthFlowing(false);
       setOauthData(null);
       setManualCodeInput('');
       setValidationError(null);
 
       const { onClose: close, t: translate } = latestRef.current;
-      const payload = (data as { accountId?: string } | undefined) || undefined;
       const accountId = payload?.accountId || pendingOAuthRef.current?.accountId;
 
       // device-oauth.ts already saved the provider config to the backend,
@@ -1119,8 +1118,8 @@ function AddProviderDialog({
       toast.success(translate('aiProviders.toast.added'));
     };
 
-    const handleError = (data: unknown) => {
-      setOauthError((data as { message: string }).message);
+    const handleError = (data: OAuthErrorEvent) => {
+      setOauthError(data.message);
       setOauthData(null);
       pendingOAuthRef.current = null;
     };

@@ -5,7 +5,7 @@
 import { create } from 'zustand';
 import { hostApi } from '@/lib/host-api';
 import { hostEvents } from '@/lib/host-events';
-import type { GatewayHealth, GatewayStatus } from '../types/gateway';
+import type { GatewayNotification, GatewayHealth, GatewayStatus } from '../types/gateway';
 
 let gatewayInitPromise: Promise<void> | null = null;
 let gatewayEventUnsubscribers: Array<() => void> | null = null;
@@ -167,13 +167,18 @@ function touchSessionActivity(sessionKey: string | null | undefined, activityMs 
     .catch(() => {});
 }
 
-function handleGatewayNotification(notification: { method?: string; params?: Record<string, unknown> } | undefined): void {
+function getGatewayErrorMessage(payload: string | { message?: string }): string {
+  if (typeof payload === 'string') return payload || 'Gateway error';
+  return payload.message || 'Gateway error';
+}
+
+function handleGatewayNotification(notification: GatewayNotification | undefined): void {
   const payload = notification;
   if (!payload || payload.method !== 'agent' || !payload.params || typeof payload.params !== 'object') {
     return;
   }
 
-  const p = payload.params;
+  const p = payload.params as Record<string, unknown>;
   const data = (p.data && typeof p.data === 'object') ? (p.data as Record<string, unknown>) : {};
   const phase = data.phase ?? p.phase;
   const hasChatData = (p.state ?? data.state) || (p.message ?? data.message);
@@ -350,7 +355,7 @@ export const useGatewayStore = create<GatewayState>((set, get) => ({
 
         if (!gatewayEventUnsubscribers) {
           const unsubscribers: Array<() => void> = [];
-          unsubscribers.push(hostEvents.onGatewayStatus<GatewayStatus>((payload) => {
+          unsubscribers.push(hostEvents.onGatewayStatus((payload) => {
             set({ status: payload });
 
             // Trigger cron repair when gateway becomes ready
@@ -364,10 +369,10 @@ export const useGatewayStore = create<GatewayState>((set, get) => ({
                 .catch(() => {});
             }
           }));
-          unsubscribers.push(hostEvents.onGatewayError<{ message?: string }>((payload) => {
-            set({ lastError: payload.message || 'Gateway error' });
+          unsubscribers.push(hostEvents.onGatewayError((payload) => {
+            set({ lastError: getGatewayErrorMessage(payload) });
           }));
-          unsubscribers.push(hostEvents.onGatewayNotification<{ method?: string; params?: Record<string, unknown> }>(
+          unsubscribers.push(hostEvents.onGatewayNotification(
             (payload) => {
               handleGatewayNotification(payload);
             },
@@ -383,11 +388,10 @@ export const useGatewayStore = create<GatewayState>((set, get) => ({
           unsubscribers.push(hostEvents.onGatewayChatMessage((payload) => {
             handleGatewayChatMessage(payload);
           }));
-          unsubscribers.push(hostEvents.onGatewayChannelStatus<{ channelId?: string; status?: string }>(
+          unsubscribers.push(hostEvents.onGatewayChannelStatus(
             (update) => {
               import('./channels')
                 .then(({ useChannelsStore }) => {
-                  if (!update.channelId || !update.status) return;
                   const state = useChannelsStore.getState();
                   const channel = state.channels.find((item) => item.type === update.channelId);
                   if (channel) {

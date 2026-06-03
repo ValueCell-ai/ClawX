@@ -61,6 +61,11 @@ import {
   redactGatewayFrameForTrace,
   summarizeGatewayFrameForTrace,
 } from './ws-trace';
+import type {
+  GatewayChannelStatusEvent,
+  GatewayChatMessageEvent,
+  GatewayRuntimePayload,
+} from '@shared/host-events/contract';
 
 export interface GatewayStatus {
   state: GatewayLifecycleState;
@@ -139,10 +144,10 @@ export interface GatewayManagerEvents {
   notification: (notification: JsonRpcNotification) => void;
   exit: (code: number | null) => void;
   error: (error: Error) => void;
-  'gateway:health': (data: unknown) => void;
-  'gateway:presence': (data: unknown) => void;
-  'channel:status': (data: { channelId: string; status: string }) => void;
-  'chat:message': (data: { message: unknown }) => void;
+  'gateway:health': (data: GatewayRuntimePayload) => void;
+  'gateway:presence': (data: GatewayRuntimePayload) => void;
+  'channel:status': (data: GatewayChannelStatusEvent) => void;
+  'chat:message': (data: GatewayChatMessageEvent) => void;
 }
 
 /**

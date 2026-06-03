@@ -5,29 +5,17 @@
 import { create } from 'zustand';
 import { useSettingsStore } from './settings';
 import { hostApi } from '@/lib/host-api';
+import { hostEvents } from '@/lib/host-events';
+import type {
+  UpdateChannel,
+  UpdateInfoSnapshot,
+  UpdateProgressSnapshot,
+  UpdateStatusSnapshot,
+} from '@shared/host-api/contract';
 
-export interface UpdateInfo {
-  version: string;
-  releaseDate?: string;
-  releaseNotes?: string | null;
-}
-
-export interface ProgressInfo {
-  total: number;
-  delta: number;
-  transferred: number;
-  percent: number;
-  bytesPerSecond: number;
-}
-
-export type UpdateStatus = 
-  | 'idle'
-  | 'checking'
-  | 'available'
-  | 'not-available'
-  | 'downloading'
-  | 'downloaded'
-  | 'error';
+export type UpdateInfo = UpdateInfoSnapshot;
+export type ProgressInfo = UpdateProgressSnapshot;
+export type UpdateStatus = UpdateStatusSnapshot['status'];
 
 interface UpdateState {
   status: UpdateStatus;
@@ -45,7 +33,7 @@ interface UpdateState {
   downloadUpdate: () => Promise<void>;
   installUpdate: () => void;
   cancelAutoInstall: () => Promise<void>;
-  setChannel: (channel: 'stable' | 'beta' | 'dev') => Promise<void>;
+  setChannel: (channel: UpdateChannel) => Promise<void>;
   setAutoDownload: (enable: boolean) => Promise<void>;
   clearError: () => void;
 }
@@ -90,13 +78,7 @@ export const useUpdateStore = create<UpdateState>((set, get) => ({
       // Listen for update events
       // Single source of truth: listen only to update:status-changed
       // (sent by AppUpdater.updateStatus() in the main process)
-      window.electron.ipcRenderer.on('update:status-changed', (data) => {
-        const status = data as {
-          status: UpdateStatus;
-          info?: UpdateInfo;
-          progress?: ProgressInfo;
-          error?: string;
-        };
+      hostEvents.onUpdateStatusChanged((status) => {
         set({
           status: status.status,
           updateInfo: status.info || null,
@@ -105,8 +87,7 @@ export const useUpdateStore = create<UpdateState>((set, get) => ({
         });
       });
 
-      window.electron.ipcRenderer.on('update:auto-install-countdown', (data) => {
-        const { seconds, cancelled } = data as { seconds: number; cancelled?: boolean };
+      hostEvents.onUpdateAutoInstallCountdown(({ seconds, cancelled }) => {
         set({ autoInstallCountdown: cancelled ? null : seconds });
       });
 

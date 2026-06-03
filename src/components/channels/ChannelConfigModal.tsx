@@ -23,6 +23,7 @@ import { useChannelsStore } from '@/stores/channels';
 import { hostApi } from '@/lib/host-api';
 import { hostEvents } from '@/lib/host-events';
 import { cn } from '@/lib/utils';
+import type { ChannelErrorEvent, ChannelQrEvent, ChannelSuccessEvent } from '@shared/host-events/contract';
 import {
   CHANNEL_ICONS,
   CHANNEL_NAMES,
@@ -232,16 +233,14 @@ export function ChannelConfigModal({
     if (!selectedType || meta?.connectionType !== 'qr') return;
     const channelType = selectedType;
 
-    const onQr = (...args: unknown[]) => {
-      const data = args[0] as { qr?: string; raw?: string };
+    const onQr = (data: ChannelQrEvent) => {
       const nextQr = normalizeQrImageSource(data);
       if (!nextQr) return;
       setQrCode(nextQr);
       setConnecting(false);
     };
 
-    const onSuccess = async (...args: unknown[]) => {
-      const data = args[0] as { accountId?: string } | undefined;
+    const onSuccess = async (data: ChannelSuccessEvent) => {
       void data?.accountId;
       toast.success(translateRef.current('toast.qrConnected', { name: CHANNEL_NAMES[channelType] }));
       try {
@@ -269,10 +268,10 @@ export function ChannelConfigModal({
       }
     };
 
-    const onError = (...args: unknown[]) => {
-      const err = typeof args[0] === 'string'
-        ? args[0]
-        : String((args[0] as { message?: string } | undefined)?.message || args[0]);
+    const onError = (payload: ChannelErrorEvent) => {
+      const err = typeof payload === 'string'
+        ? payload
+        : String(payload.message || payload);
       toast.error(translateRef.current('toast.qrFailed', { name: CHANNEL_NAMES[channelType], error: err }));
       setQrCode(null);
       setConnecting(false);

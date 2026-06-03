@@ -4,6 +4,18 @@
  */
 import { contextBridge, ipcRenderer, webUtils } from 'electron';
 import type { HostRequest } from '@shared/host-api/types';
+import { HOST_EVENT_CHANNELS } from '@shared/host-events/contract';
+
+const validStaticEventChannels: Set<string> = new Set(
+  Object.values(HOST_EVENT_CHANNELS).flatMap((moduleChannels) => Object.values(moduleChannels)),
+);
+const DYNAMIC_CHANNEL_EVENT_RE = /^channel:[a-z0-9_-]+-(?:qr|success|error)$/i;
+
+function isValidEventChannel(channel: string): boolean {
+  return validStaticEventChannels.has(channel)
+    || DYNAMIC_CHANNEL_EVENT_RE.test(channel)
+    || channel.startsWith('ext:');
+}
 
 /**
  * IPC renderer methods exposed to the renderer process
@@ -93,40 +105,7 @@ const electronAPI = {
      * Listen for events from main process
      */
     on: (channel: string, callback: (...args: unknown[]) => void) => {
-      const validChannels = [
-        'gateway:status-changed',
-        'gateway:message',
-        'gateway:notification',
-        'gateway:health-changed',
-        'gateway:presence-changed',
-        'gateway:channel-status',
-        'gateway:chat-message',
-        'channel:whatsapp-qr',
-        'channel:whatsapp-success',
-        'channel:whatsapp-error',
-        'channel:wechat-qr',
-        'channel:wechat-success',
-        'channel:wechat-error',
-        'gateway:exit',
-        'gateway:error',
-        'navigate',
-        'new-chat',
-        'update:status-changed',
-        'update:checking',
-        'update:available',
-        'update:not-available',
-        'update:progress',
-        'update:downloaded',
-        'update:error',
-        'update:auto-install-countdown',
-        'cron:updated',
-        'oauth:code',
-        'oauth:success',
-        'oauth:error',
-        'openclaw:cli-installed',
-      ];
-
-      if (validChannels.includes(channel) || channel.startsWith('ext:')) {
+      if (isValidEventChannel(channel)) {
         const subscription = (_event: Electron.IpcRendererEvent, ...args: unknown[]) => {
           callback(...args);
         };
@@ -145,38 +124,7 @@ const electronAPI = {
      * Listen for a single event from main process
      */
     once: (channel: string, callback: (...args: unknown[]) => void) => {
-      const validChannels = [
-        'gateway:status-changed',
-        'gateway:message',
-        'gateway:notification',
-        'gateway:health-changed',
-        'gateway:presence-changed',
-        'gateway:channel-status',
-        'gateway:chat-message',
-        'channel:whatsapp-qr',
-        'channel:whatsapp-success',
-        'channel:whatsapp-error',
-        'channel:wechat-qr',
-        'channel:wechat-success',
-        'channel:wechat-error',
-        'gateway:exit',
-        'gateway:error',
-        'navigate',
-        'new-chat',
-        'update:status-changed',
-        'update:checking',
-        'update:available',
-        'update:not-available',
-        'update:progress',
-        'update:downloaded',
-        'update:error',
-        'update:auto-install-countdown',
-        'oauth:code',
-        'oauth:success',
-        'oauth:error',
-      ];
-
-      if (validChannels.includes(channel) || channel.startsWith('ext:')) {
+      if (isValidEventChannel(channel)) {
         ipcRenderer.once(channel, (_event, ...args) => callback(...args));
         return;
       }

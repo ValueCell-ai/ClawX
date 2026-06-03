@@ -27,6 +27,7 @@ import { rendererExtensionRegistry } from './extensions/registry';
 import { loadExternalRendererExtensions } from './extensions/_ext-bridge.generated';
 import { UpdateNotifier } from './components/update/UpdateNotifier';
 import { useNewChatAction } from './components/layout/use-new-chat-action';
+import { hostEvents } from './lib/host-events';
 
 
 /**
@@ -148,14 +149,9 @@ function App() {
 
   // Listen for navigation events from main process
   useEffect(() => {
-    const handleNavigate = (...args: unknown[]) => {
-      const path = args[0];
-      if (typeof path === 'string') {
-        navigate(path);
-      }
-    };
-
-    const unsubscribe = window.electron.ipcRenderer.on('navigate', handleNavigate);
+    const unsubscribe = hostEvents.onNavigate((path) => {
+      navigate(path);
+    });
 
     return () => {
       if (typeof unsubscribe === 'function') {
@@ -165,7 +161,7 @@ function App() {
   }, [navigate]);
 
   useEffect(() => {
-    const unsubscribe = window.electron.ipcRenderer.on('new-chat', handleNewChat);
+    const unsubscribe = hostEvents.onNewChat(handleNewChat);
 
     return () => {
       if (typeof unsubscribe === 'function') {

@@ -34,6 +34,7 @@ import {
 import { useTranslation } from 'react-i18next';
 import { SUPPORTED_LANGUAGES } from '@/i18n';
 import { hostApi, type OpenClawDoctorResult } from '@/lib/host-api';
+import { hostEvents } from '@/lib/host-events';
 import { cn } from '@/lib/utils';
 type ControlUiInfo = {
   url: string;
@@ -227,13 +228,9 @@ export function Settings() {
   };
 
   useEffect(() => {
-    const unsubscribe = window.electron.ipcRenderer.on(
-      'openclaw:cli-installed',
-      (...args: unknown[]) => {
-        const installedPath = typeof args[0] === 'string' ? args[0] : '';
-        toast.success(`openclaw CLI installed at ${installedPath}`);
-      },
-    );
+    const unsubscribe = hostEvents.onOpenClawCliInstalled((installedPath) => {
+      toast.success(`openclaw CLI installed at ${installedPath}`);
+    });
     return () => { unsubscribe?.(); };
   }, []);
 

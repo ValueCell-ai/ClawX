@@ -23,6 +23,27 @@ describe('hostEvents', () => {
     expect(on).toHaveBeenCalledWith('gateway:status-changed', expect.any(Function));
   });
 
+  it('passes typed payloads from IPC callbacks', async () => {
+    const { hostEvents } = await import('@/lib/host-events');
+    const handler = vi.fn();
+
+    hostEvents.onUpdateStatusChanged(handler);
+    const callback = on.mock.calls[0]?.[1] as ((payload: unknown) => void) | undefined;
+    callback?.({ status: 'available', info: { version: '1.2.3' } });
+
+    expect(on).toHaveBeenCalledWith('update:status-changed', expect.any(Function));
+    expect(handler).toHaveBeenCalledWith({ status: 'available', info: { version: '1.2.3' } });
+  });
+
+  it('subscribes to dynamic channel QR events', async () => {
+    const { hostEvents } = await import('@/lib/host-events');
+    const handler = vi.fn();
+
+    hostEvents.onChannelQr('wechat', handler);
+
+    expect(on).toHaveBeenCalledWith('channel:wechat-qr', expect.any(Function));
+  });
+
   it('does not create EventSource fallback', async () => {
     const eventSource = vi.fn();
     vi.stubGlobal('EventSource', eventSource);
