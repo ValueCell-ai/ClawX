@@ -158,8 +158,8 @@ describe('provider metadata', () => {
     });
     expect(openai?.hideOAuthUi).toBeUndefined();
     expect(google).toMatchObject({ showModelId: true, defaultModelId: 'gemini-3.1-pro-preview' });
-    expect(minimax).toMatchObject({ showModelId: true, defaultModelId: 'MiniMax-M2.7' });
-    expect(minimaxCn).toMatchObject({ showModelId: true, defaultModelId: 'MiniMax-M2.7' });
+    expect(minimax).toMatchObject({ showModelId: true, defaultModelId: 'MiniMax-M3' });
+    expect(minimaxCn).toMatchObject({ showModelId: true, defaultModelId: 'MiniMax-M3' });
 
     for (const provider of [openai, google, minimax, minimaxCn]) {
       expect(provider?.showModelIdInDevModeOnly).toBeUndefined();
@@ -169,8 +169,8 @@ describe('provider metadata', () => {
 
     expect(resolveProviderModelForSave(openai, '   ', false)).toBe('gpt-5.5');
     expect(resolveProviderModelForSave(google, '   ', false)).toBe('gemini-3.1-pro-preview');
-    expect(resolveProviderModelForSave(minimax, '   ', false)).toBe('MiniMax-M2.7');
-    expect(resolveProviderModelForSave(minimaxCn, '   ', false)).toBe('MiniMax-M2.7');
+    expect(resolveProviderModelForSave(minimax, '   ', false)).toBe('MiniMax-M3');
+    expect(resolveProviderModelForSave(minimaxCn, '   ', false)).toBe('MiniMax-M3');
   });
 
   it('keeps hidden Model Studio gated behind dev mode (legacy hidden provider)', () => {
