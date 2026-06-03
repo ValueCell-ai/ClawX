@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { RawMessage } from '@/stores/chat';
 import {
+  hasDeliveredImageGenerationResult,
   IMAGE_GENERATION_TIMEOUT_MS,
   isImageGenerationPending,
 } from '@/pages/Chat/image-generation-status';
@@ -132,5 +133,40 @@ describe('isImageGenerationPending', () => {
     ];
 
     expect(isImageGenerationPending(segmentMessages, [], NOW + 90_000)).toBe(false);
+    expect(hasDeliveredImageGenerationResult(segmentMessages)).toBe(true);
+  });
+
+  it('returns false after image delivery even if streaming tool status is still running', () => {
+    const segmentMessages: RawMessage[] = [
+      {
+        role: 'assistant',
+        timestamp: NOW / 1000,
+        content: [{ type: 'toolCall', id: 'call_1', name: 'image_generate', arguments: { prompt: 'narwhal' } }],
+      },
+      {
+        role: 'assistant',
+        timestamp: NOW / 1000 + 90,
+        content: [{
+          type: 'image',
+          url: '/api/chat/media/outgoing/agent%3Amain%3As-1/narwhal/full',
+          mimeType: 'image/png',
+          alt: 'narwhal.png',
+        }],
+        _attachedFiles: [{
+          fileName: 'narwhal.png',
+          mimeType: 'image/png',
+          fileSize: 123,
+          preview: null,
+          gatewayUrl: '/api/chat/media/outgoing/agent%3Amain%3As-1/narwhal/full',
+          source: 'gateway-media',
+        }],
+      },
+    ];
+
+    expect(isImageGenerationPending(segmentMessages, [{
+      name: 'image_generate',
+      status: 'running',
+      updatedAt: NOW + 90_000,
+    }], NOW + 90_000)).toBe(false);
   });
 });

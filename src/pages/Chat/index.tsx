@@ -32,7 +32,7 @@ import {
   segmentHasFinalReply,
   type TaskStep,
 } from './task-visualization';
-import { isImageGenerationPending } from './image-generation-status';
+import { hasDeliveredImageGenerationResult, isImageGenerationPending } from './image-generation-status';
 import { useTranslation } from 'react-i18next';
 import { cn } from '@/lib/utils';
 import { useStickToBottomInstant } from '@/hooks/use-stick-to-bottom-instant';
@@ -423,6 +423,9 @@ export function Chat() {
       m.role === 'assistant' && extractToolUse(m).length > 0,
     );
     const hasFinalReply = segmentHasFinalReply(postTriggerMessages);
+    const imageGenerationSettledInHistory = isLatestRunSegment
+      && hasDeliveredImageGenerationResult(postTriggerMessages)
+      && !isImageGenerationPending(postTriggerMessages, streamingTools);
     const runStillExecutingTools = hasToolActivity && !hasFinalReply;
     // runStillExecutingTools bridges the brief gap between tool rounds when
     // Gateway temporarily clears sending.  However, after an explicit abort
@@ -436,8 +439,9 @@ export function Chat() {
     // so an early narration-only history snapshot does not collapse the graph
     // mid-chain. Thinking-only stale stream content should not keep image
     // generation runs open after history already contains the final media.
+    const streamBlocksHistoryCompletion = hasHistoryCompletionBlockingStream && !imageGenerationSettledInHistory;
     const runCompletedInHistory = hasFinalReply
-      && !hasHistoryCompletionBlockingStream
+      && !streamBlocksHistoryCompletion
       && (hasToolActivity || !sending);
     const isLatestOpenRun = isLatestRunSegment
       && !runError
@@ -660,6 +664,7 @@ export function Chat() {
   const hasActiveExecutionGraph = userRunCards.some((card) => card.active);
   let latestRunSegmentCompletion = { hasFinalReply: false, hasToolActivity: false };
   let pendingImageGeneration = false;
+  let imageGenerationSettledInHistory = false;
   for (let idx = messages.length - 1; idx >= 0; idx -= 1) {
     if (!isRealUserMessage(messages[idx]) || subagentCompletionInfos[idx]) continue;
     const nextUserIndex = nextUserMessageIndexes[idx];
@@ -674,10 +679,14 @@ export function Chat() {
       postTrigger,
       nextUserIndex === -1 ? streamingTools : [],
     );
+    imageGenerationSettledInHistory = nextUserIndex === -1
+      && hasDeliveredImageGenerationResult(postTrigger)
+      && !pendingImageGeneration;
     break;
   }
+  const streamBlocksHistoryCompletion = hasHistoryCompletionBlockingStream && !imageGenerationSettledInHistory;
   const runSettledInHistory = latestRunSegmentCompletion.hasFinalReply
-    && !hasHistoryCompletionBlockingStream
+    && !streamBlocksHistoryCompletion
     && (latestRunSegmentCompletion.hasToolActivity || !sending);
   const inputRunActive = (sending || hasActiveExecutionGraph) && !runSettledInHistory;
   const replyTextOverrides = useMemo(() => {

@@ -16,6 +16,7 @@ touchedAreas:
   - shared/chat-runtime-events.ts
   - src/lib/host-events.ts
   - src/pages/Chat/index.tsx
+  - src/pages/Chat/image-generation-status.ts
   - src/pages/Chat/task-visualization.ts
   - src/stores/chat.ts
   - src/stores/chat/**
@@ -23,12 +24,14 @@ touchedAreas:
   - src/stores/gateway.ts
   - tests/e2e/chat-run-state-events.spec.ts
   - tests/e2e/chat-task-visualizer.spec.ts
+  - tests/unit/chat-page-execution-graph.test.tsx
   - tests/unit/chat-runtime-event-handlers.test.ts
   - tests/unit/chat-store-history-retry.test.ts
   - tests/unit/chat-store-session-label-fetch.test.ts
   - tests/unit/gateway-event-dispatch.test.ts
   - tests/unit/gateway-events.test.ts
   - tests/unit/host-events.test.ts
+  - tests/unit/image-generation-status.test.ts
   - tests/unit/task-visualization.test.ts
 expectedUserBehavior:
   - Chat send/history/abort flows no longer depend on renderer direct Gateway WebSocket transport.

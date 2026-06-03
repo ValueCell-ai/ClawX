@@ -558,7 +558,12 @@ describe('Chat execution graph lifecycle', () => {
         role: 'assistant',
         content: [{ type: 'thinking', thinking: '等待图片生成完成。' }],
       },
-      streamingTools: [],
+      streamingTools: [{
+        toolCallId: 'image-1',
+        name: 'image_generate',
+        status: 'running',
+        updatedAt: Date.now(),
+      }],
       pendingFinal: false,
       lastUserMessageAt: Date.now(),
       pendingToolImages: [],
