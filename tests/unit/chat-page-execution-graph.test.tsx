@@ -83,7 +83,9 @@ vi.mock('@/pages/Chat/ChatToolbar', () => ({
 }));
 
 vi.mock('@/pages/Chat/ChatInput', () => ({
-  ChatInput: () => null,
+  ChatInput: ({ sending }: { sending?: boolean }) => (
+    <div data-testid="mock-chat-input" data-sending={sending ? 'true' : 'false'} />
+  ),
 }));
 
 vi.mock('@/pages/Chat/ChatMessage', () => ({
@@ -553,6 +555,85 @@ describe('Chat execution graph lifecycle', () => {
 
     expect(screen.queryByTestId('chat-execution-step-thinking-trailing')).not.toBeInTheDocument();
     expect(screen.getByText('执行完成 ✅ 今天的 github1 已写入飞书文档。')).toBeInTheDocument();
+    expect(screen.queryByTestId('chat-typing-indicator')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('chat-activity-indicator')).not.toBeInTheDocument();
+  });
+
+  it('settles composer when generated image media arrives without transcript tool calls', async () => {
+    const { useChatStore } = await import('@/stores/chat');
+    useChatStore.setState({
+      messages: [
+        {
+          role: 'user',
+          content: '生成独角鲸图片',
+        },
+        {
+          role: 'assistant',
+          id: 'generated-image-only',
+          content: [{
+            type: 'image',
+            url: '/api/chat/media/outgoing/agent%3Amain%3As-1/image-1/full',
+            mimeType: 'image/png',
+            alt: 'narwhal.png',
+          }],
+          _attachedFiles: [{
+            fileName: 'narwhal.png',
+            mimeType: 'image/png',
+            fileSize: 42,
+            preview: 'data:image/png;base64,ok',
+            gatewayUrl: '/api/chat/media/outgoing/agent%3Amain%3As-1/image-1/full',
+            source: 'gateway-media',
+          }],
+        },
+      ],
+      loading: false,
+      error: null,
+      runError: null,
+      sending: true,
+      activeRunId: 'run-image-runtime-only',
+      runtimeRuns: {
+        'run-image-runtime-only': {
+          runId: 'run-image-runtime-only',
+          sessionKey: 'agent:main:main',
+          status: 'running',
+          assistantText: '',
+          thinkingText: '',
+          events: [
+            {
+              type: 'tool.completed',
+              runId: 'run-image-runtime-only',
+              sessionKey: 'agent:main:main',
+              toolCallId: 'image-1',
+              name: 'image_generate',
+              result: { summary: 'done' },
+              isError: false,
+            },
+          ],
+        },
+      },
+      streamingText: '',
+      streamingMessage: null,
+      streamingTools: [],
+      pendingFinal: false,
+      lastUserMessageAt: Date.now(),
+      pendingToolImages: [],
+      sessions: [{ key: 'agent:main:main' }],
+      currentSessionKey: 'agent:main:main',
+      currentAgentId: 'main',
+      sessionLabels: {},
+      sessionLastActivity: {},
+      thinkingLevel: null,
+    });
+
+    const { Chat } = await import('@/pages/Chat/index');
+
+    render(<Chat />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('mock-chat-input')).toHaveAttribute('data-sending', 'false');
+    });
+
+    expect(screen.queryByTestId('chat-execution-step-thinking-trailing')).not.toBeInTheDocument();
     expect(screen.queryByTestId('chat-typing-indicator')).not.toBeInTheDocument();
     expect(screen.queryByTestId('chat-activity-indicator')).not.toBeInTheDocument();
   });
