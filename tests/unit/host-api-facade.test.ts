@@ -336,6 +336,16 @@ describe('hostApi facade', () => {
     expect(mainContract).not.toContain('HostServiceAction = (payload?: unknown) => Promise<unknown> | unknown');
   });
 
+  it('keeps async handler flexibility out of the renderer-facing host API contract', () => {
+    const contract = readFileSync(join(process.cwd(), 'src/lib/host-api-contract.ts'), 'utf8');
+    const mainContract = readFileSync(join(process.cwd(), 'electron/main/ipc/host-contract.ts'), 'utf8');
+
+    expect(contract).not.toContain('MaybePromise');
+    expect(contract).toContain('version: () => string;');
+    expect(mainContract).toContain('type MaybePromise<T> = T | Promise<T>;');
+    expect(mainContract).toContain('MaybePromise<Awaited<Result>>');
+  });
+
   it('lets service handlers inherit payload types from the host API contract', () => {
     const servicesRoot = join(process.cwd(), 'electron/services');
     const files = readdirSync(servicesRoot)

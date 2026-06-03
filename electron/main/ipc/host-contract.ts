@@ -14,12 +14,21 @@ export type HostResponse<T = unknown> =
   | { id?: string; ok: false; error: { code: HostErrorCode; message: string; details?: unknown } };
 
 export type RuntimeHostAction = (payload?: unknown) => Promise<unknown> | unknown;
+type MaybePromise<T> = T | Promise<T>;
+
+type HostServiceFunction<TFunction> = TFunction extends (...args: infer Args) => infer Result
+  ? (...args: Args) => MaybePromise<Awaited<Result>>
+  : never;
+
+type HostServiceModule<TModule> = {
+  [A in keyof TModule]: HostServiceFunction<TModule[A]>;
+};
 
 export type HostServiceRegistry = {
-  [M in keyof HostApiContract]?: Partial<HostApiContract[M]>;
+  [M in keyof HostApiContract]?: Partial<HostServiceModule<HostApiContract[M]>>;
 };
 export type CompleteHostServiceRegistry = {
-  [M in keyof HostApiContract]: HostApiContract[M];
+  [M in keyof HostApiContract]: HostServiceModule<HostApiContract[M]>;
 };
 
 export type HostApiContribution = {
