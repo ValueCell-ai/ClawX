@@ -724,7 +724,29 @@ export function Chat() {
       || imageGenerationSettledInHistory
       || !sending
     );
-  const inputRunActive = (sending || hasActiveExecutionGraph) && !runSettledInHistory;
+  const shouldClearStoreLifecycleFromHistory = sending
+    && runSettledInHistory
+    && (
+      imageGenerationSettledInHistory
+      || (!hasRunningRuntimeToolStatus && !hasRunningStreamToolStatus)
+    );
+  const inputRunActive = sending || (hasActiveExecutionGraph && !runSettledInHistory);
+
+  useEffect(() => {
+    if (!shouldClearStoreLifecycleFromHistory) return;
+    useChatStore.setState({
+      sending: false,
+      activeRunId: null,
+      pendingFinal: false,
+      lastUserMessageAt: null,
+      streamingText: '',
+      streamingMessage: null,
+      streamingTools: [],
+      pendingToolImages: [],
+      runError: null,
+    });
+  }, [shouldClearStoreLifecycleFromHistory]);
+
   const replyTextOverrides = useMemo(() => {
     const map = new Map<number, string>();
     for (const card of userRunCards) {

@@ -134,6 +134,37 @@ describe('gateway store event wiring', () => {
     ]);
   });
 
+  it('preserves a running session lifecycle when creating a new chat and switching back', async () => {
+    const nowSpy = vi.spyOn(Date, 'now').mockReturnValue(1773281731555);
+    const { useChatStore } = await import('@/stores/chat');
+    const loadHistory = vi.fn(async () => {});
+    useChatStore.setState({
+      currentSessionKey: 'agent:main:a',
+      sessions: [{ key: 'agent:main:a' }],
+      messages: [{ role: 'user', content: 'run in a' }],
+      sending: true,
+      activeRunId: 'run-a',
+      pendingFinal: false,
+      lastUserMessageAt: 1773281731000,
+      streamingText: '',
+      streamingMessage: null,
+      streamingTools: [],
+      pendingToolImages: [],
+      loadHistory,
+    });
+
+    useChatStore.getState().newSession();
+    expect(useChatStore.getState().currentSessionKey).toBe('agent:main:session-1773281731555');
+    expect(useChatStore.getState().sending).toBe(false);
+
+    useChatStore.getState().switchSession('agent:main:a');
+
+    expect(useChatStore.getState().sending).toBe(true);
+    expect(useChatStore.getState().activeRunId).toBe('run-a');
+    expect(useChatStore.getState().messages).toEqual([{ role: 'user', content: 'run in a' }]);
+    nowSpy.mockRestore();
+  });
+
   it('retains inactive-session runtime events for graph reconstruction after switching back', async () => {
     const handlers = new Map<string, (payload: unknown) => void>();
     subscribeHostEventMock.mockImplementation((eventName: string, handler: (payload: unknown) => void) => {

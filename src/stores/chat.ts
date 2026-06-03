@@ -2201,6 +2201,13 @@ function collectToolUpdates(message: unknown, eventState: string): ToolStatus[] 
  * which prematurely tears down the `sending` / `activeRunId` / `pendingFinal`
  * lifecycle flags and makes the Thinking… indicator vanish mid-tool-chain.
  */
+function messageHasImageContent(message: RawMessage | undefined): boolean {
+  if (!message) return false;
+  if ((message._attachedFiles ?? []).some((file) => file.mimeType.startsWith('image/'))) return true;
+  const content = message.content;
+  return Array.isArray(content) && (content as ContentBlock[]).some((block) => block.type === 'image');
+}
+
 function hasNonToolAssistantContent(message: RawMessage | undefined): boolean {
   if (!message) return false;
   if (typeof message.content === 'string' && message.content.trim()) return true;
@@ -2212,6 +2219,7 @@ function hasNonToolAssistantContent(message: RawMessage | undefined): boolean {
       if (block.type === 'image') return true;
     }
   }
+  if (messageHasImageContent(message)) return true;
 
   const msg = message as unknown as Record<string, unknown>;
   if (typeof msg.text === 'string' && msg.text.trim()) return true;
@@ -2757,41 +2765,19 @@ export const useChatStore = create<ChatState>((set, get) => ({
     // NOTE: We intentionally do NOT call sessions.reset on the old session.
     // sessions.reset archives (renames) the session JSONL file, making old
     // conversation history inaccessible when the user switches back to it.
-    const { currentSessionKey, messages, sessions, sessionLastActivity, sessionLabels } = get();
-    // Only treat sessions with no history records and no activity timestamp as empty
-    const leavingEmpty = !currentSessionKey.endsWith(':main')
-      && messages.length === 0
-      && !sessionLastActivity[currentSessionKey]
-      && !sessionLabels[currentSessionKey];
+    const { currentSessionKey, sessions } = get();
     const prefix = getCanonicalPrefixFromSessionKey(currentSessionKey)
       ?? getCanonicalPrefixFromSessions(sessions)
       ?? DEFAULT_CANONICAL_PREFIX;
     const newKey = `${prefix}:session-${Date.now()}`;
-    const newSessionEntry: ChatSession = { key: newKey, displayName: newKey };
-    set((s) => ({
-      currentSessionKey: newKey,
-      currentAgentId: getAgentIdFromSessionKey(newKey),
-      sessions: [
-        ...(leavingEmpty ? s.sessions.filter((sess) => sess.key !== currentSessionKey) : s.sessions),
-        newSessionEntry,
-      ],
-      sessionLabels: leavingEmpty
-        ? Object.fromEntries(Object.entries(s.sessionLabels).filter(([k]) => k !== currentSessionKey))
-        : s.sessionLabels,
-      sessionLastActivity: leavingEmpty
-        ? Object.fromEntries(Object.entries(s.sessionLastActivity).filter(([k]) => k !== currentSessionKey))
-        : s.sessionLastActivity,
-      messages: [],
-      streamingText: '',
-      streamingMessage: null,
-      streamingTools: [],
-      activeRunId: null,
-      error: null,
-      runError: null,
-      pendingFinal: false,
-      lastUserMessageAt: null,
-      pendingToolImages: [],
-    }));
+
+    // Use the same switch patch as explicit sidebar switching so a running
+    // source session keeps its cached lifecycle. Without this, New Chat clears
+    // the active run globally; switching back to the still-running session then
+    // shows only the local transcript snapshot and loses the live execution UI.
+    clearHistoryPoll();
+    clearBaselines();
+    set((s) => buildSessionSwitchPatch(s, newKey));
   },
 
   // ── Rename session ──
@@ -3125,7 +3111,22 @@ export const useChatStore = create<ChatState>((set, get) => ({
           if (hasPendingToolUse(message)) return false;
           return hasNonToolAssistantContent(message);
         });
-        if (hasConclusiveReply && !segmentHasOpenToolRun(openSegment)) {
+        const hasDeliveredImageReply = openSegment.some((message) => message.role === 'assistant' && messageHasImageContent(message));
+        if (hasDeliveredImageReply && !segmentHasOpenToolRun(openSegment)) {
+          clearHistoryPoll();
+          set({
+            sending: false,
+            activeRunId: null,
+            pendingFinal: false,
+            lastUserMessageAt: null,
+            runError: null,
+            streamingMessage: null,
+            streamingText: '',
+            streamingTools: [],
+            pendingToolImages: [],
+          });
+          captureSessionRunState(currentSessionKey, DEFAULT_SESSION_RUN_STATE);
+        } else if (hasConclusiveReply && !segmentHasOpenToolRun(openSegment)) {
           clearHistoryPoll();
           set({
             sending: false,
