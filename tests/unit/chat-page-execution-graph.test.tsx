@@ -588,6 +588,51 @@ describe('Chat execution graph lifecycle', () => {
     expect(screen.queryByTestId('chat-activity-indicator')).not.toBeInTheDocument();
   });
 
+  it('shows trailing thinking together with a running tool status', async () => {
+    const { useChatStore } = await import('@/stores/chat');
+    useChatStore.setState({
+      messages: [
+        {
+          role: 'user',
+          content: 'Search the web and summarize',
+        },
+      ],
+      loading: false,
+      error: null,
+      runError: null,
+      sending: true,
+      activeRunId: 'run-tool-active',
+      streamingText: '',
+      streamingMessage: null,
+      streamingTools: [
+        {
+          toolCallId: 'browser-search',
+          name: 'browser',
+          status: 'running',
+          updatedAt: Date.now(),
+        },
+      ],
+      pendingFinal: false,
+      lastUserMessageAt: Date.now(),
+      pendingToolImages: [],
+      sessions: [{ key: 'agent:main:main' }],
+      currentSessionKey: 'agent:main:main',
+      currentAgentId: 'main',
+      sessionLabels: {},
+      sessionLastActivity: {},
+      thinkingLevel: null,
+    });
+
+    const { Chat } = await import('@/pages/Chat/index');
+
+    render(<Chat />);
+
+    await waitFor(() => {
+      expect(screen.getByText('browser')).toBeInTheDocument();
+      expect(screen.getByTestId('chat-execution-step-thinking-trailing')).toBeInTheDocument();
+    });
+  });
+
   it('keeps trailing thinking visible while waiting for final history after completed tool status', async () => {
     const { useChatStore } = await import('@/stores/chat');
     useChatStore.setState({

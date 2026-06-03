@@ -642,13 +642,12 @@ export function Chat() {
     //   - no stream content at all (the gap between tool rounds): graph also
     //     has no live step → DO show the indicator — this is the very case
     //     the indicator exists for.
-    //   - stream IS in graph (e.g. tool_use is streaming): indicator is
-    //     redundant → suppress.
+    //   - tool execution is visible in the graph: still show the trailing
+    //     indicator as a separate liveness signal so the user sees both
+    //     "tool is running" and "agent is still thinking".
     const streamVisiblyActiveInGraph = hasStreamText
       || hasStreamThinking
-      || hasStreamTools
-      || hasStreamImages
-      || hasRunningStreamToolStatus;
+      || hasStreamImages;
     const streamIsInGraph =
       isLatestOpenRun && streamingReplyText == null && streamVisiblyActiveInGraph;
     const suppressThinking = streamIsInGraph;
