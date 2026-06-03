@@ -5,6 +5,7 @@ export const PROVIDER_TYPES = [
   'openrouter',
   'ark',
   'moonshot',
+  'moonshot-global',
   'siliconflow',
   'deepseek',
   'minimax-portal',
@@ -21,6 +22,7 @@ export const BUILTIN_PROVIDER_TYPES = [
   'openrouter',
   'ark',
   'moonshot',
+  'moonshot-global',
   'siliconflow',
   'deepseek',
   'minimax-portal',
@@ -76,16 +78,7 @@ export function assertValidApiProtocol(
   }
 }
 
-/**
- * UI-selectable subset of api protocols offered to users when configuring
- * custom or Ollama providers in Settings.  Tightly scoped on purpose so the
- * UI dropdown stays simple; built-in providers use the broader
- * {@link OpenClawApiProtocol} via {@link ProviderBackendConfig.api}.
- */
-export type ProviderProtocol =
-  | 'openai-completions'
-  | 'openai-responses'
-  | 'anthropic-messages';
+export type ProviderProtocol = OpenClawApiProtocol;
 
 export type ProviderAuthMode =
   | 'api_key'

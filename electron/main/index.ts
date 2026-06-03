@@ -86,7 +86,8 @@ app.disableHardwareAcceleration();
 // on X11 it supplements the StartupWMClass matching.
 // Must be called before app.whenReady() / before any window is created.
 if (process.platform === 'linux') {
-  app.setDesktopName('clawx.desktop');
+  const linuxApp = app as typeof app & { setDesktopName?: (desktopName: string) => void };
+  linuxApp.setDesktopName?.('clawx.desktop');
 }
 
 // Prevent multiple instances of the app from running simultaneously.

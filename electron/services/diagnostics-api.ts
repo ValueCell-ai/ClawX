@@ -1,6 +1,6 @@
 import { open } from 'node:fs/promises';
 import { join } from 'node:path';
-import type { HostApiContract } from '@shared/host-api/contract';
+import type { CompleteHostServiceRegistry } from '../main/ipc/host-contract';
 import type { GatewayManager } from '../gateway/manager';
 import { logger } from '../utils/logger';
 import { getOpenClawConfigDir } from '../utils/paths';
@@ -45,7 +45,7 @@ async function readTail(filePath: string, tailLines = DEFAULT_TAIL_LINES): Promi
   }
 }
 
-export function createDiagnosticsApi(ctx: DiagnosticsApiContext): HostApiContract['diagnostics'] {
+export function createDiagnosticsApi(ctx: DiagnosticsApiContext): CompleteHostServiceRegistry['diagnostics'] {
   return {
     gatewaySnapshot: async () => {
       const { channels } = await buildChannelAccountsView(ctx, { probe: false });

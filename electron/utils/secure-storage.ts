@@ -5,7 +5,9 @@
  * account-based provider storage and a dedicated secret-store abstraction.
  */
 
-import { BUILTIN_PROVIDER_TYPES, type ProviderType } from './provider-registry';
+import { BUILTIN_PROVIDER_TYPES } from './provider-registry';
+import type { ProviderConfig } from '../shared/providers/types';
+export type { ProviderConfig } from '../shared/providers/types';
 import { getActiveOpenClawProviders } from './openclaw-auth';
 import {
   deleteProviderAccount,
@@ -24,24 +26,6 @@ import {
   setProviderSecret,
 } from '../services/secrets/secret-store';
 import { getOpenClawProviderKeyForType } from './provider-keys';
-
-/**
- * Provider configuration
- */
-export interface ProviderConfig {
-  id: string;
-  name: string;
-  type: ProviderType;
-  baseUrl?: string;
-  apiProtocol?: 'openai-completions' | 'openai-responses' | 'anthropic-messages';
-  headers?: Record<string, string>;
-  model?: string;
-  fallbackModels?: string[];
-  fallbackProviderIds?: string[];
-  enabled: boolean;
-  createdAt: string;
-  updatedAt: string;
-}
 
 // ==================== API Key Storage ====================
 

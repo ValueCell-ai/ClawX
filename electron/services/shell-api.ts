@@ -1,7 +1,7 @@
 import { shell } from 'electron';
 import { homedir } from 'node:os';
 import { join, sep } from 'node:path';
-import type { HostApiContract } from '@shared/host-api/contract';
+import type { CompleteHostServiceRegistry } from '../main/ipc/host-contract';
 
 function expandShellPath(input: string): string {
   if (input === '~') return homedir();
@@ -25,7 +25,7 @@ function requireUrl(url: unknown): string {
   return url;
 }
 
-export function createShellApi(): HostApiContract['shell'] {
+export function createShellApi(): CompleteHostServiceRegistry['shell'] {
   return {
     openExternal: async (payload) => {
       await shell.openExternal(requireUrl(payload.url));

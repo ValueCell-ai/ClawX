@@ -21,7 +21,6 @@ const OPENAI_RUNTIME_PROVIDER_ID = 'openai-codex';
 const OPENAI_OAUTH_DEFAULT_MODEL = 'gpt-5.5';
 
 class BrowserOAuthManager extends EventEmitter {
-  private activeProvider: BrowserOAuthProviderType | null = null;
   private activeAccountId: string | null = null;
   private activeLabel: string | null = null;
   private active = false;
@@ -42,7 +41,6 @@ class BrowserOAuthManager extends EventEmitter {
     }
 
     this.active = true;
-    this.activeProvider = provider;
     this.activeAccountId = options?.accountId || provider;
     this.activeLabel = options?.label || null;
     this.emit('oauth:start', { provider, accountId: this.activeAccountId });
@@ -90,7 +88,6 @@ class BrowserOAuthManager extends EventEmitter {
       logger.error(`[BrowserOAuth] Flow error for ${provider}:`, error);
       this.emitError(error instanceof Error ? error.message : String(error));
       this.active = false;
-      this.activeProvider = null;
       this.activeAccountId = null;
       this.activeLabel = null;
       this.pendingManualCodeResolve = null;
@@ -100,7 +97,6 @@ class BrowserOAuthManager extends EventEmitter {
 
   async stopFlow(): Promise<void> {
     this.active = false;
-    this.activeProvider = null;
     this.activeAccountId = null;
     this.activeLabel = null;
     if (this.pendingManualCodeReject) {
@@ -129,7 +125,6 @@ class BrowserOAuthManager extends EventEmitter {
     const accountId = this.activeAccountId || providerType;
     const accountLabel = this.activeLabel;
     this.active = false;
-    this.activeProvider = null;
     this.activeAccountId = null;
     this.activeLabel = null;
     this.pendingManualCodeResolve = null;

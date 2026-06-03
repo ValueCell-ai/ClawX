@@ -2,7 +2,7 @@ import { app, nativeImage } from 'electron';
 import crypto from 'node:crypto';
 import { homedir } from 'node:os';
 import { basename, extname, join, relative, resolve, sep } from 'node:path';
-import type { HostApiContract } from '@shared/host-api/contract';
+import type { CompleteHostServiceRegistry } from '../main/ipc/host-contract';
 import { expandPath } from '../utils/paths';
 import { isRecord } from './payload-utils';
 
@@ -222,7 +222,7 @@ function getBinaryOptions(opts: unknown): FileReadBinaryOptions {
   return isRecord(opts) ? opts as FileReadBinaryOptions : {};
 }
 
-export function createFilesApi(): HostApiContract['files'] {
+export function createFilesApi(): CompleteHostServiceRegistry['files'] {
   return {
     stagePaths: async (payload) => {
       const body = isRecord(payload) ? payload as StagePathsPayload : {};

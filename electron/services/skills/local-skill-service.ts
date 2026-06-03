@@ -25,7 +25,7 @@ export interface LocalSkillRecord {
   icon?: string;
   version?: string;
   author?: string;
-  config?: SkillConfigUpdates;
+  config?: Record<string, unknown>;
   isCore?: boolean;
   isBundled?: boolean;
   source?: string;
@@ -268,7 +268,8 @@ async function inspectSkillDir(
     ]);
 
     const skillKey = parsedManifest.id || manifestMeta?.slug || originMeta?.slug || fallbackId;
-    const config = configs[skillKey] || {};
+    const rawConfig = configs[skillKey] || {};
+    const config: Record<string, unknown> = { ...rawConfig };
     const version = manifestMeta?.version || parsedManifest.version || originMeta?.installedVersion;
     const source = descriptor.source;
     const isBundled = source === 'openclaw-bundled' || Boolean(preinstalledMeta);
@@ -287,7 +288,7 @@ async function inspectSkillDir(
       slug: originMeta?.slug || manifestMeta?.slug || preinstalledMeta?.slug || fallbackId,
       name: parsedManifest.name,
       description: parsedManifest.description,
-      enabled: config.enabled !== false,
+      enabled: rawConfig.enabled !== false,
       icon: parsedManifest.icon || (isBundled ? '🧩' : '📦'),
       version,
       author: manifestMeta?.author || parsedManifest.author,

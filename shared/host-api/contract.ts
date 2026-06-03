@@ -7,7 +7,6 @@ import type { MarketplaceSkill, QuickAccessSkill, Skill } from '../types/skill';
 export type JsonRecord = Record<string, unknown>;
 export type HostSuccess = { success: boolean; error?: string };
 export type OptionalHostSuccess = { success?: boolean; error?: string };
-export type MaybePromise<T> = T | Promise<T>;
 
 export type OpenClawDoctorMode = 'diagnose' | 'fix';
 export type OpenClawDoctorResult = HostSuccess & {
@@ -264,7 +263,16 @@ export type ProviderType =
   | 'custom';
 export type ProviderAuthMode = 'api_key' | 'oauth_device' | 'oauth_browser' | 'local';
 export type ProviderVendorCategory = 'official' | 'compatible' | 'local' | 'custom';
-export type ProviderProtocol = 'openai-completions' | 'openai-responses' | 'anthropic-messages';
+export type ProviderProtocol =
+  | 'openai-completions'
+  | 'openai-responses'
+  | 'openai-codex-responses'
+  | 'anthropic-messages'
+  | 'google-generative-ai'
+  | 'github-copilot'
+  | 'bedrock-converse-stream'
+  | 'ollama'
+  | 'azure-openai-responses';
 export type ProviderConfig = {
   id: string;
   name: string;
@@ -397,7 +405,32 @@ export type FileReadBinaryPayload = FilePathPayload & { opts?: FileReadBinaryOpt
 export type FileWriteTextPayload = FilePathPayload & { content: string };
 export type FileListTreePayload = FilePathPayload & { opts?: FilePreviewTreeOptions };
 export type FileResult = JsonRecord;
-export type FileListResult = JsonRecord[];
+export type FileListDirEntry = {
+  name: string;
+  path: string;
+  isDir: boolean;
+  size: number;
+};
+export type FileListDirResult = {
+  ok: boolean;
+  entries?: FileListDirEntry[];
+  error?: string;
+};
+export type FilePreviewTreeNode = {
+  name: string;
+  relPath: string;
+  absPath: string;
+  isDir: boolean;
+  size?: number;
+  mtime?: number;
+  children?: FilePreviewTreeNode[];
+};
+export type FileListTreeResult = {
+  ok: boolean;
+  root?: FilePreviewTreeNode;
+  truncated?: boolean;
+  error?: string;
+};
 
 export type MediaThumbnailEntry = {
   filePath?: string;
@@ -597,7 +630,7 @@ export type DeliveryChannelGroup = {
 };
 export type DeliveryTargetsResult = HostSuccess & { targets: DeliveryChannelGroup[] };
 
-type HostApiContractShape = {
+export type HostApiContract = {
   app: {
     openClawDoctor: (payload: OpenClawDoctorPayload) => Omit<OpenClawDoctorResult, 'mode'>;
   };
@@ -690,7 +723,7 @@ type HostApiContractShape = {
   providers: {
     list: () => ProviderWithKeyInfo[];
     get: (payload: ProviderIdPayload) => ProviderConfig | null;
-    getDefault: () => ProviderConfig | null;
+    getDefault: () => string | undefined;
     hasApiKey: (payload: ProviderIdPayload) => boolean;
     getApiKey: (payload: ProviderIdPayload) => string | null;
     validateKey: (payload: ProviderValidationPayload) => ProviderValidationResult;
@@ -706,7 +739,7 @@ type HostApiContractShape = {
     getDefaultAccount: () => ProviderDefaultAccountResult;
     getAccount: (payload: ProviderAccountIdPayload) => ProviderAccount | null;
     getAccountApiKey: (payload: ProviderAccountIdPayload) => string | null;
-    hasAccountApiKey: (payload: ProviderAccountIdPayload) => { hasKey: boolean };
+    hasAccountApiKey: (payload: ProviderAccountIdPayload) => boolean;
     createAccount: (payload: ProviderCreateAccountPayload) => HostSuccess;
     updateAccount: (payload: ProviderUpdateAccountPayload) => HostSuccess;
     deleteAccount: (payload: ProviderAccountIdPayload) => HostSuccess;
@@ -723,8 +756,8 @@ type HostApiContractShape = {
     readBinary: (payload: FileReadBinaryPayload) => FileResult;
     writeText: (payload: FileWriteTextPayload) => FileResult;
     stat: (payload: FilePathPayload) => FileResult;
-    listDir: (payload: FilePathPayload) => FileListResult;
-    listTree: (payload: FileListTreePayload) => FileListResult;
+    listDir: (payload: FilePathPayload) => FileListDirResult;
+    listTree: (payload: FileListTreePayload) => FileListTreeResult;
   };
   media: {
     thumbnails: (payload: MediaThumbnailsPayload) => MediaThumbnailResult;
@@ -757,7 +790,7 @@ type HostApiContractShape = {
     local: () => LocalSkillsResult;
     configs: () => SkillConfigsResult;
     allConfigs: () => SkillConfigsResult;
-    getConfig: (payload: SkillKeyPayload) => JsonRecord;
+    getConfig: (payload: SkillKeyPayload) => JsonRecord | undefined;
     updateConfig: (payload: SkillUpdateConfigPayload) => HostSuccess;
     updateConfigs: (payload: SkillUpdateConfigsPayload) => HostSuccess;
     status: () => SkillsStatusResult;
@@ -773,14 +806,6 @@ type HostApiContractShape = {
   };
   usage: {
     recentTokenHistory: (payload?: UsageHistoryPayload) => UsageHistoryEntry[];
-  };
-};
-
-export type HostApiContract = {
-  [M in keyof HostApiContractShape]: {
-    [A in keyof HostApiContractShape[M]]: HostApiContractShape[M][A] extends (...args: infer Args) => infer Result
-      ? (...args: Args) => MaybePromise<Awaited<Result>>
-      : HostApiContractShape[M][A];
   };
 };
 

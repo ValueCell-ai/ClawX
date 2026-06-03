@@ -1,6 +1,7 @@
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import type { HostApiContract } from '@shared/host-api/contract';
+import type { CompleteHostServiceRegistry } from '../main/ipc/host-contract';
+import type { CronJob, CronJobDelivery, CronSchedule } from '@shared/types/cron';
 import type { GatewayManager } from '../gateway/manager';
 import { getOpenClawConfigDir } from '../utils/paths';
 import { resolveAgentIdFromChannel } from '../utils/agent-config';
@@ -58,7 +59,6 @@ interface CronSessionFallbackMessage {
   isError?: boolean;
 }
 
-type GatewayCronDelivery = NonNullable<GatewayCronJob['delivery']>;
 type JsonRecord = Record<string, unknown>;
 
 function parseCronSessionKey(sessionKey: string): CronSessionKeyParts | null {
@@ -250,14 +250,12 @@ function getUnsupportedCronDeliveryError(_channel: string | undefined): string |
 
 function normalizeCronDelivery(
   rawDelivery: unknown,
-  fallbackMode: GatewayCronDelivery['mode'] = 'none',
-): GatewayCronDelivery {
+  fallbackMode: CronJobDelivery['mode'] = 'none',
+): CronJobDelivery {
   if (!rawDelivery || typeof rawDelivery !== 'object') return { mode: fallbackMode };
 
   const delivery = rawDelivery as JsonRecord;
-  const mode = typeof delivery.mode === 'string' && delivery.mode.trim()
-    ? delivery.mode.trim()
-    : fallbackMode;
+  const mode = delivery.mode === 'announce' ? 'announce' : fallbackMode;
   const channel = typeof delivery.channel === 'string' && delivery.channel.trim()
     ? toOpenClawChannelType(delivery.channel.trim())
     : undefined;
@@ -273,6 +271,25 @@ function normalizeCronDelivery(
     ...(to ? { to } : {}),
     ...(accountId ? { accountId } : {}),
   };
+}
+
+function normalizeCronSchedule(schedule: GatewayCronJob['schedule']): CronJob['schedule'] {
+  if (schedule.kind === 'at' && typeof schedule.at === 'string') {
+    return { kind: 'at', at: schedule.at };
+  }
+  if (schedule.kind === 'every' && typeof schedule.everyMs === 'number') {
+    return {
+      kind: 'every',
+      everyMs: schedule.everyMs,
+      ...(typeof (schedule as CronSchedule & { anchorMs?: unknown }).anchorMs === 'number'
+        ? { anchorMs: (schedule as CronSchedule & { anchorMs: number }).anchorMs }
+        : {}),
+    };
+  }
+  if (schedule.kind === 'cron' && typeof schedule.expr === 'string') {
+    return { kind: 'cron', expr: schedule.expr, ...(schedule.tz ? { tz: schedule.tz } : {}) };
+  }
+  return typeof schedule.expr === 'string' ? schedule.expr : '';
 }
 
 function normalizeCronDeliveryPatch(rawDelivery: unknown): Record<string, unknown> {
@@ -307,7 +324,7 @@ function buildCronUpdatePatch(input: Record<string, unknown>): Record<string, un
   return patch;
 }
 
-function transformCronJob(job: GatewayCronJob) {
+function transformCronJob(job: GatewayCronJob): CronJob {
   const message = job.payload?.message || job.payload?.text || '';
   const gatewayDelivery = normalizeCronDelivery(job.delivery);
   const channelType = gatewayDelivery.channel ? toUiChannelType(gatewayDelivery.channel) : undefined;
@@ -315,7 +332,7 @@ function transformCronJob(job: GatewayCronJob) {
   const target = channelType
     ? {
       channelType,
-      channelId: delivery.accountId || gatewayDelivery.channel,
+      channelId: delivery.accountId || gatewayDelivery.channel || channelType,
       channelName: channelType,
       recipient: delivery.to,
     }
@@ -335,7 +352,7 @@ function transformCronJob(job: GatewayCronJob) {
     id: job.id,
     name: job.name,
     message,
-    schedule: job.schedule,
+    schedule: normalizeCronSchedule(job.schedule),
     delivery,
     target,
     enabled: job.enabled,
@@ -347,7 +364,7 @@ function transformCronJob(job: GatewayCronJob) {
   };
 }
 
-async function listCronJobs(gatewayManager: GatewayManager) {
+async function listCronJobs(gatewayManager: GatewayManager): Promise<CronJob[]> {
   let jobs: GatewayCronJob[] = [];
   let usedFallback = false;
 
@@ -451,16 +468,16 @@ function getId(payload: unknown): string {
   return id.trim();
 }
 
-export function createCronApi({ gatewayManager }: { gatewayManager: GatewayManager }): HostApiContract['cron'] {
+export function createCronApi({ gatewayManager }: { gatewayManager: GatewayManager }): CompleteHostServiceRegistry['cron'] {
   return {
     list: async () => listCronJobs(gatewayManager),
     create: async (payload) => {
-      const input = isRecord(payload) ? payload : {};
+      const input = payload;
       const agentId = typeof input.agentId === 'string' && input.agentId.trim() ? input.agentId.trim() : 'main';
       const delivery = normalizeCronDelivery(input.delivery);
       const unsupportedDeliveryError = getUnsupportedCronDeliveryError(delivery.channel);
       if (delivery.mode === 'announce' && unsupportedDeliveryError) {
-        return { success: false, error: unsupportedDeliveryError };
+        throw new Error(unsupportedDeliveryError);
       }
       const result = await gatewayManager.rpc('cron.add', {
         name: input.name,
@@ -472,12 +489,15 @@ export function createCronApi({ gatewayManager }: { gatewayManager: GatewayManag
         agentId,
         delivery,
       });
-      return result && typeof result === 'object' ? transformCronJob(result as GatewayCronJob) : result;
+      if (!result || typeof result !== 'object') {
+        throw new Error('Cron create returned an invalid job');
+      }
+      return transformCronJob(result as GatewayCronJob);
     },
     update: async (payload) => {
-      const body = isRecord(payload) ? payload : {};
+      const body = payload;
       const id = getId(body);
-      const input = isRecord(body.input) ? body.input : body;
+      const input = isRecord(body.input) ? body.input : {};
       const patch = buildCronUpdatePatch(input);
       delete patch.id;
       delete patch.input;
@@ -492,14 +512,17 @@ export function createCronApi({ gatewayManager }: { gatewayManager: GatewayManag
         : undefined;
       const unsupportedDeliveryError = getUnsupportedCronDeliveryError(deliveryChannel);
       if (unsupportedDeliveryError && deliveryMode !== 'none') {
-        return { success: false, error: unsupportedDeliveryError };
+        throw new Error(unsupportedDeliveryError);
       }
       const result = await gatewayManager.rpc('cron.update', { id, patch });
-      return result && typeof result === 'object' ? transformCronJob(result as GatewayCronJob) : result;
+      if (!result || typeof result !== 'object') {
+        throw new Error('Cron update returned an invalid job');
+      }
+      return transformCronJob(result as GatewayCronJob);
     },
     delete: async (payload) => gatewayManager.rpc('cron.remove', { id: getId(payload) }),
     toggle: async (payload) => {
-      const body = isRecord(payload) ? payload : {};
+      const body = payload;
       return gatewayManager.rpc('cron.update', {
         id: getId(body),
         patch: { enabled: body.enabled === true },
@@ -507,7 +530,7 @@ export function createCronApi({ gatewayManager }: { gatewayManager: GatewayManag
     },
     trigger: async (payload) => gatewayManager.rpc('cron.run', { id: getId(payload), mode: 'force' }),
     sessionHistory: async (payload) => {
-      const body = isRecord(payload) ? payload : {};
+      const body = payload;
       const sessionKey = typeof body.sessionKey === 'string' ? body.sessionKey.trim() : '';
       const parsedSession = parseCronSessionKey(sessionKey);
       if (!parsedSession) return { success: false, error: `Invalid cron sessionKey: ${sessionKey}` };

@@ -1,5 +1,5 @@
 import type { GatewayManager } from '../gateway/manager';
-import type { HostApiContract } from '@shared/host-api/contract';
+import type { CompleteHostServiceRegistry } from '../main/ipc/host-contract';
 import { logger } from '../utils/logger';
 import { isRecord } from './payload-utils';
 
@@ -38,7 +38,7 @@ function normalizeMedia(media: unknown): Array<{ filePath: string; mimeType: str
   });
 }
 
-export function createChatApi({ gatewayManager }: { gatewayManager: GatewayManager }): HostApiContract['chat'] {
+export function createChatApi({ gatewayManager }: { gatewayManager: GatewayManager }): CompleteHostServiceRegistry['chat'] {
   return {
     sendWithMedia: async (payload) => {
       const body = isRecord(payload) ? payload as ChatSendWithMediaPayload : {};
@@ -99,7 +99,10 @@ export function createChatApi({ gatewayManager }: { gatewayManager: GatewayManag
         );
         const result = await gatewayManager.rpc('chat.send', rpcParams, 120000);
         logger.info(`[chat:sendWithMedia] RPC result: ${JSON.stringify(result)}`);
-        return { success: true, result };
+        const response = isRecord(result) && typeof result.runId === 'string'
+          ? { runId: result.runId }
+          : undefined;
+        return { success: true, ...(response ? { result: response } : {}) };
       } catch (error) {
         logger.error(`[chat:sendWithMedia] Error: ${String(error)}`);
         return { success: false, error: String(error) };

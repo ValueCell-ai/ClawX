@@ -1,9 +1,9 @@
 import type {
-  HostApiContract,
   UpdateInfoSnapshot,
   UpdateProgressSnapshot,
   UpdateStatusSnapshot,
 } from '@shared/host-api/contract';
+import type { CompleteHostServiceRegistry } from '../main/ipc/host-contract';
 import type { AppUpdater, UpdateStatus } from '../main/updater';
 
 function normalizeInfo(info: UpdateStatus['info']): UpdateInfoSnapshot | undefined {
@@ -35,7 +35,7 @@ function normalizeStatus(status: UpdateStatus): UpdateStatusSnapshot {
   };
 }
 
-export function createUpdatesApi(updater: AppUpdater): HostApiContract['updates'] {
+export function createUpdatesApi(updater: AppUpdater): CompleteHostServiceRegistry['updates'] {
   return {
     status: () => normalizeStatus(updater.getStatus()),
     version: () => updater.getCurrentVersion(),

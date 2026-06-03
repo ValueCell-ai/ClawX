@@ -1,5 +1,6 @@
 import type { BrowserWindow } from 'electron';
 import type { HostApiContract } from '@shared/host-api/contract';
+import type { CompleteHostServiceRegistry } from '../main/ipc/host-contract';
 import type { GatewayManager } from '../gateway/manager';
 import type { ProviderConfig } from '../utils/secure-storage';
 import { browserOAuthManager, type BrowserOAuthProviderType } from '../utils/browser-oauth';
@@ -439,7 +440,7 @@ async function submitOAuth(payload: ProviderPayload<'submitOAuth'>) {
   }
 }
 
-export function createProvidersApi(ctx: ProvidersApiContext): HostApiContract['providers'] {
+export function createProvidersApi(ctx: ProvidersApiContext): CompleteHostServiceRegistry['providers'] {
   const providerService = getProviderService();
   deviceOAuthManager.setWindow(ctx.mainWindow);
   browserOAuthManager.setWindow(ctx.mainWindow);

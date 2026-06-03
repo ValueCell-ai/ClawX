@@ -1,6 +1,6 @@
 import { readFile } from 'node:fs/promises';
 import { extname, relative, resolve, sep } from 'node:path';
-import type { HostApiContract } from '@shared/host-api/contract';
+import type { CompleteHostServiceRegistry } from '../main/ipc/host-contract';
 import { logger } from '../utils/logger';
 import { isRecord } from './payload-utils';
 
@@ -63,7 +63,7 @@ async function readLogFileTail(path: string, tailLines: number): Promise<string>
   return hasTrailingNewline ? `${tail}\n` : tail;
 }
 
-export function createLogsApi(): HostApiContract['logs'] {
+export function createLogsApi(): CompleteHostServiceRegistry['logs'] {
   return {
     recent: async (payload) => {
       const body = isRecord(payload) ? payload as RecentPayload : {};

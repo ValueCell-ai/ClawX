@@ -176,10 +176,11 @@ export async function launchGatewayProcess(options: {
       reject(error);
     };
 
-    child.on('error', (error) => {
+    child.on('error', (error: unknown) => {
+      const normalizedError = error instanceof Error ? error : new Error(String(error));
       logger.error('Gateway process spawn error:', error);
-      options.onError(error);
-      rejectOnce(error);
+      options.onError(normalizedError);
+      rejectOnce(normalizedError);
     });
 
     child.on('exit', (code: number) => {

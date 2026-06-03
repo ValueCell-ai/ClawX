@@ -1,5 +1,5 @@
 import { getRecentTokenUsageHistory } from '../utils/token-usage';
-import type { HostApiContract } from '@shared/host-api/contract';
+import type { CompleteHostServiceRegistry } from '../main/ipc/host-contract';
 import { isRecord } from './payload-utils';
 
 type RecentTokenHistoryPayload = {
@@ -20,7 +20,7 @@ function getSafeLimit(payload: unknown): number | undefined {
   return undefined;
 }
 
-export function createUsageApi(): HostApiContract['usage'] {
+export function createUsageApi(): CompleteHostServiceRegistry['usage'] {
   return {
     recentTokenHistory: async (payload) => getRecentTokenUsageHistory(getSafeLimit(payload)),
   };

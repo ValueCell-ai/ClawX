@@ -90,6 +90,13 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 }
 
+function getAgentsDefaults(config: unknown): Record<string, unknown> | undefined {
+  if (!isRecord(config) || !isRecord(config.agents) || !isRecord(config.agents.defaults)) {
+    return undefined;
+  }
+  return config.agents.defaults;
+}
+
 function normalizeModelRef(raw: unknown): string | null {
   if (typeof raw === 'string' && raw.trim()) {
     return raw.trim();
@@ -181,13 +188,11 @@ export async function isImageProviderAuthenticated(
 
 export async function readImageGenerationConfig(): Promise<ImageGenerationModelConfig> {
   const config = await readOpenClawConfig();
-  const defaults = config.agents?.defaults;
-  if (!defaults || typeof defaults !== 'object') {
+  const defaults = getAgentsDefaults(config);
+  if (!defaults) {
     return { primary: null, fallbacks: [], timeoutMs: null };
   }
-  return parseImageGenerationModelConfig(
-    (defaults as Record<string, unknown>).imageGenerationModel,
-  );
+  return parseImageGenerationModelConfig(defaults.imageGenerationModel);
 }
 
 export async function setImageGenerationConfig(
@@ -314,12 +319,8 @@ export async function getImageGenerationSettingsSnapshot(): Promise<ImageGenerat
   const config = await readImageGenerationConfig();
   const snapshot = await listAgentsSnapshot();
   const openclawConfig = await readOpenClawConfig();
-  const defaults = openclawConfig.agents?.defaults;
-  const autoProviderFallback = !(
-    defaults
-    && typeof defaults === 'object'
-    && (defaults as Record<string, unknown>).mediaGenerationAutoProviderFallback === false
-  );
+  const defaults = getAgentsDefaults(openclawConfig);
+  const autoProviderFallback = defaults?.mediaGenerationAutoProviderFallback !== false;
 
   const providerKey = config.primary ? parseProviderFromModelRef(config.primary) : null;
   const relayState = readOpenAiCompatibleImageRelayState(openclawConfig as Record<string, unknown>);

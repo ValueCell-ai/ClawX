@@ -754,7 +754,7 @@ function migrateLegacyChannelConfigToAccounts(
     const legacyPayload = getLegacyChannelPayload(channelSection);
     const legacyKeys = Object.keys(legacyPayload);
     const existingAccounts = getChannelAccountsMap(channelSection);
-    const hasAccounts = Boolean(existingAccounts) && Object.keys(existingAccounts).length > 0;
+    const hasAccounts = existingAccounts ? Object.keys(existingAccounts).length > 0 : false;
 
     if (legacyKeys.length === 0) {
         if (hasAccounts && typeof channelSection.defaultAccount !== 'string') {
@@ -1360,11 +1360,14 @@ export async function setChannelEnabled(channelType: string, enabled: boolean): 
             if (enabled) {
                 ensurePluginRegistration(currentConfig, resolvedChannelType);
             } else {
-                if (!currentConfig.plugins) currentConfig.plugins = {};
-                if (!currentConfig.plugins.entries) currentConfig.plugins.entries = {};
-                if (!currentConfig.plugins.entries[resolvedChannelType]) currentConfig.plugins.entries[resolvedChannelType] = {};
+                const plugins = currentConfig.plugins ?? (currentConfig.plugins = {});
+                const entries = plugins.entries ?? (plugins.entries = {});
+                entries[resolvedChannelType] ??= {};
             }
-            currentConfig.plugins.entries[resolvedChannelType].enabled = enabled;
+            const entries = currentConfig.plugins?.entries;
+            const pluginEntry = entries?.[resolvedChannelType];
+            if (!pluginEntry) throw new Error(`Plugin entry not initialized: ${resolvedChannelType}`);
+            pluginEntry.enabled = enabled;
             syncBuiltinChannelsWithPluginAllowlist(currentConfig);
             await writeOpenClawConfig(currentConfig);
             console.log(`Set plugin channel ${resolvedChannelType} enabled: ${enabled}`);

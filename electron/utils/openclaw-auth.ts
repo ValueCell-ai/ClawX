@@ -708,7 +708,7 @@ async function discoverInstalledExtensionPluginIds(): Promise<Set<string>> {
   const ids = new Set<string>();
   const extensionRoot = join(homedir(), '.openclaw', 'extensions');
 
-  let entries: Awaited<ReturnType<typeof readdir>>;
+  let entries: Array<{ isDirectory: () => boolean; name: string }>;
   try {
     entries = await readdir(extensionRoot, { withFileTypes: true });
   } catch {
@@ -1601,9 +1601,12 @@ function isPlainRecord(value: unknown): value is Record<string, unknown> {
 }
 
 function removeLegacyMoonshotKimiSearchConfig(config: Record<string, unknown>): boolean {
-  const tools = isPlainRecord(config.tools) ? config.tools : null;
-  const web = tools && isPlainRecord(tools.web) ? tools.web : null;
-  const search = web && isPlainRecord(web.search) ? web.search : null;
+  if (!isPlainRecord(config.tools) || !isPlainRecord(config.tools.web) || !isPlainRecord(config.tools.web.search)) {
+    return false;
+  }
+  const tools = config.tools as Record<string, unknown>;
+  const web = tools.web as Record<string, unknown>;
+  const search = web.search as Record<string, unknown>;
   if (!search || !('kimi' in search)) return false;
 
   delete search.kimi;
@@ -2677,9 +2680,9 @@ export async function sanitizeOpenClawConfig(): Promise<void> {
         }
       }
 
-      const installs = isPlainRecord(pluginsObj.installs) ? pluginsObj.installs as Record<string, unknown> : null;
-      const acpxInstall = installs && isPlainRecord(installs.acpx) ? installs.acpx as Record<string, unknown> : null;
-      if (acpxInstall) {
+      if (isPlainRecord(pluginsObj.installs) && isPlainRecord(pluginsObj.installs.acpx)) {
+        const installs = pluginsObj.installs;
+        const acpxInstall = installs.acpx as Record<string, unknown>;
         const currentBundledAcpxDir = join(getOpenClawResolvedDir(), 'dist', 'extensions', 'acpx').replace(/\\/g, '/');
         const sourcePath = typeof acpxInstall.sourcePath === 'string' ? acpxInstall.sourcePath : '';
         const installPath = typeof acpxInstall.installPath === 'string' ? acpxInstall.installPath : '';

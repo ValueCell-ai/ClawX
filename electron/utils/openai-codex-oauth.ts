@@ -28,6 +28,7 @@ export interface OpenAICodexOAuthCredentials {
   refresh: string;
   expires: number;
   accountId: string;
+  email?: string;
 }
 
 interface OpenAICodexAuthorizationFlow {
@@ -130,6 +131,12 @@ function getAccountIdFromAccessToken(accessToken: string): string | null {
   }
 
   return null;
+}
+
+function getEmailFromAccessToken(accessToken: string): string | undefined {
+  const payload = decodeJwtPayload(accessToken);
+  const email = payload?.email;
+  return typeof email === 'string' && email.trim() ? email.trim() : undefined;
 }
 
 async function createAuthorizationFlow(): Promise<OpenAICodexAuthorizationFlow> {
@@ -301,6 +308,7 @@ export async function loginOpenAICodexOAuth(options: {
       refresh: token.refresh,
       expires: token.expires,
       accountId,
+      email: getEmailFromAccessToken(token.access),
     };
   } finally {
     server?.close();

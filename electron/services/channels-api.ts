@@ -1,7 +1,7 @@
 import { readFile, readdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { BrowserWindow } from 'electron';
-import type { HostApiContract } from '@shared/host-api/contract';
+import type { CompleteHostServiceRegistry } from '../main/ipc/host-contract';
 import { extractSessionRecords } from '../utils/session-util';
 import {
   cleanupDanglingWeChatPluginState,
@@ -87,6 +87,7 @@ type ChannelsApiContext = {
 };
 
 type JsonRecord = Record<string, unknown>;
+type MaybePromise<T> = T | Promise<T>;
 type DirectoryEntry = {
   kind: 'user' | 'group' | 'channel';
   id: string;
@@ -1089,7 +1090,7 @@ async function awaitWeChatQrLogin(
 }
 
 async function ensureChannelPluginInstalled(storedChannelType: string): Promise<void> {
-  const installers: Record<string, () => Promise<{ installed: boolean; warning?: string }>> = {
+  const installers: Record<string, () => MaybePromise<{ installed: boolean; warning?: string }>> = {
     dingtalk: ensureDingTalkPluginInstalled,
     wecom: ensureWeComPluginInstalled,
     discord: ensureDiscordPluginInstalled,
@@ -1106,7 +1107,7 @@ async function ensureChannelPluginInstalled(storedChannelType: string): Promise<
   }
 }
 
-export function createChannelsApi(ctx: ChannelsApiContext): HostApiContract['channels'] {
+export function createChannelsApi(ctx: ChannelsApiContext): CompleteHostServiceRegistry['channels'] {
   return {
     configured: async () => {
       const channels = await listConfiguredChannels();

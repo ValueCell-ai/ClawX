@@ -1,7 +1,7 @@
 import { dialog, nativeImage } from 'electron';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
-import type { HostApiContract } from '@shared/host-api/contract';
+import type { CompleteHostServiceRegistry } from '../main/ipc/host-contract';
 import {
   CLAWX_OPENAI_IMAGE_DEFAULT_MODEL,
   CLAWX_OPENAI_IMAGE_PROVIDER_KEY,
@@ -89,7 +89,7 @@ function normalizeThumbnailEntries(payload: unknown): ThumbnailEntry[] {
   return Array.isArray(value) ? value as ThumbnailEntry[] : [];
 }
 
-export function createMediaApi(): HostApiContract['media'] {
+export function createMediaApi(): CompleteHostServiceRegistry['media'] {
   return {
     thumbnails: async (payload) => {
       const entries = normalizeThumbnailEntries(payload);
@@ -203,8 +203,8 @@ export function createMediaApi(): HostApiContract['media'] {
       const config = await setImageGenerationConfig(next);
       return {
         success: true,
-        config,
         ...(await getImageGenerationSettingsSnapshot()),
+        config,
       };
     },
     imageGenerationProviders: async () => ({

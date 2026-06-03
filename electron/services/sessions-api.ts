@@ -1,6 +1,7 @@
 import { openSync, closeSync, fstatSync, readSync } from 'node:fs';
 import { join } from 'node:path';
-import type { HostApiContract } from '@shared/host-api/contract';
+import type { CompleteHostServiceRegistry } from '../main/ipc/host-contract';
+import type { RawMessage } from '@shared/chat/types';
 import { getOpenClawConfigDir } from '../utils/paths';
 import { logger } from '../utils/logger';
 import {
@@ -21,11 +22,7 @@ type SessionSummary = {
   lastTimestamp: number | null;
 };
 
-type TranscriptMessage = {
-  role?: unknown;
-  content?: unknown;
-  timestamp?: unknown;
-};
+type TranscriptMessage = RawMessage;
 
 type ParsedTranscriptLine = {
   type?: string;
@@ -288,7 +285,7 @@ async function loadSessionSummary(sessionKey: string): Promise<SessionSummary> {
   }
 }
 
-async function loadSessionTranscriptByKey(sessionKey: string, limit: number): Promise<unknown[] | null> {
+async function loadSessionTranscriptByKey(sessionKey: string, limit: number): Promise<RawMessage[] | null> {
   const parsed = parseSessionKey(sessionKey);
   if (!parsed) return null;
 
@@ -414,7 +411,7 @@ async function renameSession(sessionKey: string, label: string): Promise<{ succe
   return { success: true };
 }
 
-export function createSessionsApi(): HostApiContract['sessions'] {
+export function createSessionsApi(): CompleteHostServiceRegistry['sessions'] {
   return {
     delete: async (payload) => deleteSession(getSessionKey(payload)),
     rename: async (payload) => {

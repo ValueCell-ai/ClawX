@@ -1,9 +1,9 @@
-import type { HostApiContract } from '@shared/host-api/contract';
+import type { CompleteHostServiceRegistry } from '../main/ipc/host-contract';
 import { getOpenClawCliCommand } from '../utils/openclaw-cli';
 import { ensureDir, getOpenClawSkillsDir, getOpenClawStatus } from '../utils/paths';
 import { existsSync } from 'node:fs';
 
-export function createOpenClawApi(): HostApiContract['openclaw'] {
+export function createOpenClawApi(): CompleteHostServiceRegistry['openclaw'] {
   return {
     status: () => getOpenClawStatus(),
     getSkillsDir: () => {

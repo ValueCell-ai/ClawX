@@ -183,7 +183,7 @@ export class ClawHubService {
                         baseDir: skillDir,
                     };
                 }));
-            return items.filter((item): item is ClawHubInstalledSkillResult => item !== null);
+            return items.filter((item): item is NonNullable<typeof item> => item !== null);
         } catch (error) {
             console.error('ClawHub list error:', error);
             return [];

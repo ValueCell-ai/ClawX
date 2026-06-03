@@ -230,7 +230,7 @@ export class AppUpdater extends EventEmitter {
    * Start a countdown that auto-installs the downloaded update.
    * Sends `update:auto-install-countdown` events to the renderer each second.
    */
-  private startAutoInstallCountdown(): void {
+  startAutoInstallCountdown(): void {
     this.clearAutoInstallTimer();
     this.autoInstallCountdown = AppUpdater.AUTO_INSTALL_DELAY_SECONDS;
     this.sendToRenderer('update:auto-install-countdown', { seconds: this.autoInstallCountdown });

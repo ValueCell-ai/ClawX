@@ -1,6 +1,6 @@
 import type { GatewayManager } from '../gateway/manager';
 import type { ClawHubService, ClawHubInstallParams, ClawHubSearchParams, ClawHubUninstallParams } from '../gateway/clawhub';
-import type { HostApiContract } from '@shared/host-api/contract';
+import type { CompleteHostServiceRegistry } from '../main/ipc/host-contract';
 import { getAllSkillConfigs, getSkillConfig, updateSkillConfig, updateSkillConfigs } from '../utils/skill-config';
 import {
   collectQuickAccessSkills,
@@ -89,12 +89,15 @@ export function createSkillsApi({
 }: {
   clawHubService: ClawHubService;
   gatewayManager: GatewayManager;
-}): HostApiContract['skills'] {
+}): CompleteHostServiceRegistry['skills'] {
   return {
     local: async () => ({ success: true, skills: await listLocalSkills() }),
     configs: async () => getAllSkillConfigs(),
     allConfigs: async () => getAllSkillConfigs(),
-    getConfig: async (payload) => getSkillConfig(getSkillKey(payload)),
+    getConfig: async (payload) => {
+      const config = await getSkillConfig(getSkillKey(payload));
+      return config ? { ...config } : undefined;
+    },
     updateConfig: async (payload) => {
       const { skillKey, ...updates } = getConfigUpdate(payload);
       return updateSkillConfig(skillKey, updates);

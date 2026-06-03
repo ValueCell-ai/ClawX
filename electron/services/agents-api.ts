@@ -1,5 +1,5 @@
 import type { GatewayManager } from '../gateway/manager';
-import type { HostApiContract } from '@shared/host-api/contract';
+import type { CompleteHostServiceRegistry } from '../main/ipc/host-contract';
 import {
   assignChannelToAgent,
   clearChannelBinding,
@@ -44,7 +44,7 @@ async function restartGatewayForAgentDeletion(ctx: AgentsApiContext): Promise<vo
   }
 }
 
-export function createAgentsApi(ctx: AgentsApiContext): HostApiContract['agents'] {
+export function createAgentsApi(ctx: AgentsApiContext): CompleteHostServiceRegistry['agents'] {
   return {
     list: async () => ({ success: true, ...(await listAgentsSnapshot()) }),
     create: async (payload) => {

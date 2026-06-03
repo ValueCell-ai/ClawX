@@ -1,4 +1,4 @@
-import type { HostApiContract } from '@shared/host-api/contract';
+import type { CompleteHostServiceRegistry } from '../main/ipc/host-contract';
 import type { GatewayManager } from '../gateway/manager';
 import { syncLaunchAtStartupSettingFromStore } from '../main/launch-at-startup';
 import { createMenu } from '../main/menu';
@@ -98,7 +98,7 @@ async function runSettingsSideEffects(
   }
 }
 
-export function createSettingsApi(gatewayManager: GatewayManager): HostApiContract['settings'] {
+export function createSettingsApi(gatewayManager: GatewayManager): CompleteHostServiceRegistry['settings'] {
   return {
     getAll: () => getAllSettings(),
     get: async (payload) => {

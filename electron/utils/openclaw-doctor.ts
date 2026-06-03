@@ -164,7 +164,7 @@ async function runDoctorCommandWithArgs(
       stderrTruncated = next.truncated;
     });
 
-    child.on('error', (error) => {
+    child.on('error', (error: unknown) => {
       clearTimeout(timeout);
       logger.error('Failed to spawn OpenClaw doctor process:', error);
       finish({

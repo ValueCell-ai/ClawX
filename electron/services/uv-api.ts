@@ -1,7 +1,7 @@
-import type { HostApiContract } from '@shared/host-api/contract';
+import type { CompleteHostServiceRegistry } from '../main/ipc/host-contract';
 import { checkUvInstalled, installUv, setupManagedPython } from '../utils/uv-setup';
 
-export function createUvApi(): HostApiContract['uv'] {
+export function createUvApi(): CompleteHostServiceRegistry['uv'] {
   return {
     installAll: async () => {
       try {

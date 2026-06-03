@@ -24,6 +24,17 @@ export const PROVIDER_TYPES = [
 ] as const;
 export type ProviderType = (typeof PROVIDER_TYPES)[number];
 
+export type ProviderProtocol =
+  | 'openai-completions'
+  | 'openai-responses'
+  | 'openai-codex-responses'
+  | 'anthropic-messages'
+  | 'google-generative-ai'
+  | 'github-copilot'
+  | 'bedrock-converse-stream'
+  | 'ollama'
+  | 'azure-openai-responses';
+
 export const BUILTIN_PROVIDER_TYPES = [
   'anthropic',
   'openai',
@@ -47,7 +58,7 @@ export interface ProviderConfig {
   name: string;
   type: ProviderType;
   baseUrl?: string;
-  apiProtocol?: 'openai-completions' | 'openai-responses' | 'anthropic-messages';
+  apiProtocol?: ProviderProtocol;
   headers?: Record<string, string>;
   model?: string;
   fallbackModels?: string[];
@@ -115,7 +126,7 @@ export interface ProviderAccount {
   label: string;
   authMode: ProviderAuthMode;
   baseUrl?: string;
-  apiProtocol?: 'openai-completions' | 'openai-responses' | 'anthropic-messages';
+  apiProtocol?: ProviderProtocol;
   headers?: Record<string, string>;
   model?: string;
   fallbackModels?: string[];
