@@ -7,6 +7,7 @@ import type { MarketplaceSkill, QuickAccessSkill, Skill } from '../types/skill';
 export type JsonRecord = Record<string, unknown>;
 export type HostSuccess = { success: boolean; error?: string };
 export type OptionalHostSuccess = { success?: boolean; error?: string };
+export type MaybePromise<T> = T | Promise<T>;
 
 export type OpenClawDoctorMode = 'diagnose' | 'fix';
 export type OpenClawDoctorResult = HostSuccess & {
@@ -596,7 +597,7 @@ export type DeliveryChannelGroup = {
 };
 export type DeliveryTargetsResult = HostSuccess & { targets: DeliveryChannelGroup[] };
 
-export type HostApiContract = {
+type HostApiContractShape = {
   app: {
     openClawDoctor: (payload: OpenClawDoctorPayload) => Omit<OpenClawDoctorResult, 'mode'>;
   };
@@ -772,6 +773,14 @@ export type HostApiContract = {
   };
   usage: {
     recentTokenHistory: (payload?: UsageHistoryPayload) => UsageHistoryEntry[];
+  };
+};
+
+export type HostApiContract = {
+  [M in keyof HostApiContractShape]: {
+    [A in keyof HostApiContractShape[M]]: HostApiContractShape[M][A] extends (...args: infer Args) => infer Result
+      ? (...args: Args) => MaybePromise<Awaited<Result>>
+      : HostApiContractShape[M][A];
   };
 };
 
