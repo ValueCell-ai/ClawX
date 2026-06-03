@@ -7,6 +7,7 @@ intent: Move Chat send/history/control and streamed runtime events to a Main-own
 touchedAreas:
   - harness/specs/tasks/chat-tool-events-runtime-pipeline.md
   - electron/api/routes/gateway.ts
+  - electron/gateway/chat-runtime-events.ts
   - electron/gateway/event-dispatch.ts
   - electron/gateway/manager.ts
   - electron/gateway/ws-client.ts

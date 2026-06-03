@@ -46,7 +46,7 @@ export function normalizeGatewayChatRuntimeEvent(payload: unknown): ChatRuntimeE
         : null;
     }
 
-    if (phase === 'end' || phase === 'completed' || phase === 'done' || phase === 'finished') {
+    if (phase === 'completed' || phase === 'done' || phase === 'finished') {
       const base = withBase('run.ended', raw);
       return base
         ? {
