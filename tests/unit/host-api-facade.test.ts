@@ -304,6 +304,127 @@ describe('hostApi facade', () => {
     expect(violations).toEqual([]);
   });
 
+  it('does not keep hostApi-covered legacy direct IPC channels registered', () => {
+    const mainIpcHandlers = readFileSync(join(process.cwd(), 'electron/main/ipc-handlers.ts'), 'utf8');
+    const preload = readFileSync(join(process.cwd(), 'electron/preload/index.ts'), 'utf8');
+    const hostApiCoveredLegacyChannels = [
+      'channel:saveConfig',
+      'channel:getConfig',
+      'channel:getFormValues',
+      'channel:deleteConfig',
+      'channel:listConfigured',
+      'channel:setEnabled',
+      'channel:validate',
+      'channel:validateCredentials',
+      'channel:requestWhatsAppQr',
+      'channel:cancelWhatsAppQr',
+      'chat:sendWithMedia',
+      'clawhub:search',
+      'clawhub:install',
+      'clawhub:uninstall',
+      'clawhub:list',
+      'clawhub:openSkillReadme',
+      'cron:list',
+      'cron:create',
+      'cron:update',
+      'cron:delete',
+      'cron:toggle',
+      'cron:trigger',
+      'file:stage',
+      'file:stageBuffer',
+      'log:getRecent',
+      'log:readFile',
+      'log:getFilePath',
+      'log:getDir',
+      'log:listFiles',
+      'media:getThumbnails',
+      'media:saveImage',
+      'provider:listVendors',
+      'provider:listAccounts',
+      'provider:getAccount',
+      'provider:requestOAuth',
+      'provider:cancelOAuth',
+      'session:delete',
+      'session:rename',
+      'skill:updateConfig',
+      'skill:getConfig',
+      'skill:getAllConfigs',
+    ];
+
+    const escapeRegExp = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const violations = hostApiCoveredLegacyChannels.flatMap((channel) => {
+      const mainRegistration = new RegExp(`ipcMain\\.handle\\(\\s*['"]${escapeRegExp(channel)}['"]`).test(mainIpcHandlers)
+        ? [`electron/main/ipc-handlers.ts: remove legacy ${channel} handler`]
+        : [];
+      const preloadAllowlist = preload.includes(`'${channel}'`)
+        ? [`electron/preload/index.ts: remove legacy ${channel} allowlist entry`]
+        : [];
+      return [...mainRegistration, ...preloadAllowlist];
+    });
+
+    expect(violations).toEqual([]);
+  });
+
+  it('does not keep uninvoked direct IPC channels registered', () => {
+    const mainIpcHandlers = readFileSync(join(process.cwd(), 'electron/main/ipc-handlers.ts'), 'utf8');
+    const preload = readFileSync(join(process.cwd(), 'electron/preload/index.ts'), 'utf8');
+    const uninvokedChannels = [
+      'app:getPath',
+      'app:quit',
+      'app:relaunch',
+      'dialog:save',
+      'gateway:isConnected',
+      'gateway:start',
+      'gateway:stop',
+      'gateway:restart',
+      'gateway:getControlUiUrl',
+      'gateway:health',
+      'openclaw:isReady',
+      'openclaw:getDir',
+      'openclaw:getConfigDir',
+      'uv:check',
+    ];
+
+    const escapeRegExp = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const violations = uninvokedChannels.flatMap((channel) => {
+      const mainRegistration = new RegExp(`ipcMain\\.handle\\(\\s*['"]${escapeRegExp(channel)}['"]`).test(mainIpcHandlers)
+        ? [`electron/main/ipc-handlers.ts: remove uninvoked ${channel} handler`]
+        : [];
+      const preloadAllowlist = preload.includes(`'${channel}'`)
+        ? [`electron/preload/index.ts: remove uninvoked ${channel} allowlist entry`]
+        : [];
+      return [...mainRegistration, ...preloadAllowlist];
+    });
+
+    expect(violations).toEqual([]);
+  });
+
+  it('does not keep cron on the legacy app:request path', () => {
+    const mainIpcHandlers = readFileSync(join(process.cwd(), 'electron/main/ipc-handlers.ts'), 'utf8');
+    const apiClient = readFileSync(join(process.cwd(), 'src/lib/api-client.ts'), 'utf8');
+    const cronChannels = [
+      'cron:list',
+      'cron:create',
+      'cron:update',
+      'cron:delete',
+      'cron:toggle',
+      'cron:trigger',
+    ];
+
+    const violations = [
+      ...cronChannels.flatMap((channel) => (
+        apiClient.includes(`'${channel}'`)
+          ? [`src/lib/api-client.ts: remove legacy ${channel} unified fallback`]
+          : []
+      )),
+      ...(mainIpcHandlers.includes("case 'cron':")
+        ? ['electron/main/ipc-handlers.ts: remove legacy app:request cron module']
+        : []),
+    ];
+
+    expect(violations).toEqual([]);
+  });
+
   it('keeps hostApi response shapes imported from the facade instead of redeclared by consumers', () => {
     const forbiddenDeclarations = [
       {

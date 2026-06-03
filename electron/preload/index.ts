@@ -17,30 +17,19 @@ const electronAPI = {
       const validChannels = [
         // Gateway
         'gateway:status',
-        'gateway:isConnected',
-        'gateway:start',
-        'gateway:stop',
-        'gateway:restart',
-        'gateway:health',
-        'gateway:getControlUiUrl',
         // OpenClaw
         'openclaw:status',
-        'openclaw:isReady',
         // Shell
         'shell:openExternal',
         'shell:showItemInFolder',
         'shell:openPath',
         // Dialog
         'dialog:open',
-        'dialog:save',
         'dialog:message',
         // App
         'app:version',
         'app:name',
-        'app:getPath',
         'app:platform',
-        'app:quit',
-        'app:relaunch',
         'app:request',
         // Window controls
         'window:minimize',
@@ -80,51 +69,8 @@ const electronAPI = {
         'provider:setDefault',
         'provider:getDefault',
         'provider:validateKey',
-        'provider:requestOAuth',
-        'provider:cancelOAuth',
-        // Cron
-        'cron:list',
-        'cron:create',
-        'cron:update',
-        'cron:delete',
-        'cron:toggle',
-        'cron:trigger',
-        // Channel Config
-        'channel:saveConfig',
-        'channel:getConfig',
-        'channel:getFormValues',
-        'channel:deleteConfig',
-        'channel:listConfigured',
-        'channel:setEnabled',
-        'channel:validate',
-        'channel:validateCredentials',
-        // WhatsApp
-        'channel:requestWhatsAppQr',
-        'channel:cancelWhatsAppQr',
-        // ClawHub
-        'clawhub:search',
-        'clawhub:install',
-        'clawhub:uninstall',
-        'clawhub:list',
-        'clawhub:openSkillReadme',
         // UV
-        'uv:check',
         'uv:install-all',
-        // Skill config (direct file access)
-        'skill:updateConfig',
-        'skill:getConfig',
-        'skill:getAllConfigs',
-        // Logs
-        'log:getRecent',
-        'log:readFile',
-        'log:getFilePath',
-        'log:getDir',
-        'log:listFiles',
-        // File staging & media
-        'file:stage',
-        'file:stageBuffer',
-        'media:getThumbnails',
-        'media:saveImage',
         // File preview (sandboxed read/write/list/tree)
         'file:readText',
         'file:readBinary',
@@ -132,14 +78,7 @@ const electronAPI = {
         'file:stat',
         'file:listDir',
         'file:listTree',
-        // Chat send with media (reads staged files in main process)
-        'chat:sendWithMedia',
-        // Session management
-        'session:delete',
-        'session:rename',
         // OpenClaw extras
-        'openclaw:getDir',
-        'openclaw:getConfigDir',
         'openclaw:getSkillsDir',
         'openclaw:getCliCommand',
       ];
