@@ -34,6 +34,7 @@ import { syncProxyConfigToOpenClaw } from '../utils/openclaw-proxy';
 import { logger } from '../utils/logger';
 import { prependPathEntry } from '../utils/env-path';
 import { copyPluginFromNodeModules, fixupPluginManifest, cpSyncSafe, buildCandidateSources } from '../utils/plugin-install';
+import { CLAWX_OPENAI_IMAGE_PROVIDER_KEY } from '../utils/openclaw-image-relay-constants';
 import { stripSystemdSupervisorEnv } from './config-sync-env';
 import { cleanupAgentsSymlinkedSkills, cleanupStalePluginRuntimeDeps } from './skills-symlink-cleanup';
 import {
@@ -76,6 +77,7 @@ const CHANNEL_PLUGIN_MAP: Record<string, { dirName: string; npmName: string }> =
   whatsapp: { dirName: 'whatsapp', npmName: '@openclaw/whatsapp' },
 
   'openclaw-weixin': { dirName: 'openclaw-weixin', npmName: '@tencent-weixin/openclaw-weixin' },
+  [CLAWX_OPENAI_IMAGE_PROVIDER_KEY]: { dirName: CLAWX_OPENAI_IMAGE_PROVIDER_KEY, npmName: 'clawx-openai-image-plugin' },
 };
 
 /**
@@ -232,6 +234,31 @@ function cleanupUnconfiguredChannelPlugins(configuredChannels: string[]): boolea
     }
   }
   return succeeded;
+}
+
+function resolveImageGenerationPrimary(config: unknown): string | null {
+  if (!config || typeof config !== 'object') return null;
+  const agents = (config as { agents?: unknown }).agents;
+  if (!agents || typeof agents !== 'object') return null;
+  const defaults = (agents as { defaults?: unknown }).defaults;
+  if (!defaults || typeof defaults !== 'object') return null;
+  const imageGenerationModel = (defaults as { imageGenerationModel?: unknown }).imageGenerationModel;
+  if (typeof imageGenerationModel === 'string') return imageGenerationModel.trim() || null;
+  if (imageGenerationModel && typeof imageGenerationModel === 'object') {
+    const primary = (imageGenerationModel as { primary?: unknown }).primary;
+    return typeof primary === 'string' && primary.trim() ? primary.trim() : null;
+  }
+  return null;
+}
+
+function withConfiguredImageGenerationPlugins(configuredChannels: string[], rawConfig: unknown): string[] {
+  const next = [...configuredChannels];
+  const primary = resolveImageGenerationPrimary(rawConfig);
+  const provider = primary?.includes('/') ? primary.slice(0, primary.indexOf('/')).trim() : primary;
+  if (provider === CLAWX_OPENAI_IMAGE_PROVIDER_KEY && !next.includes(CLAWX_OPENAI_IMAGE_PROVIDER_KEY)) {
+    next.push(CLAWX_OPENAI_IMAGE_PROVIDER_KEY);
+  }
+  return next;
 }
 
 function buildPluginSourceSignatures(configuredChannels: string[]): Record<string, unknown> {
@@ -450,7 +477,10 @@ export async function syncGatewayConfigBeforeLaunch(
   try {
     configuredChannels = await measureAsync(timingsMs, 'configuredChannelsMs', async () => {
       const rawCfg = await readOpenClawConfig();
-      return await listConfiguredChannelsFromConfig(rawCfg);
+      return withConfiguredImageGenerationPlugins(
+        await listConfiguredChannelsFromConfig(rawCfg),
+        rawCfg,
+      );
     });
 
     const result = measureSync(timingsMs, 'pluginMaintenanceMs', () => runCachedPrelaunchMaintenanceTask(

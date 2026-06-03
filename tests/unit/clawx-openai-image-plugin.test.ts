@@ -51,6 +51,17 @@ describe('ClawX OpenAI image plugin request shape', () => {
         provider: 'clawx-openai-image',
         model: 'gpt-image-2',
         prompt: 'paint a fox',
+        quality: 'high',
+        outputFormat: 'png',
+        background: 'opaque',
+        providerOptions: {
+          openai: {
+            background: 'opaque',
+            moderation: 'auto',
+            outputCompression: 90,
+            user: 'webchat-user',
+          },
+        },
         cfg: {
           models: {
             providers: {
