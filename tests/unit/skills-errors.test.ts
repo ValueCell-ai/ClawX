@@ -1,32 +1,20 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const hostApiFetchMock = vi.fn();
-const rpcMock = vi.fn();
+const statusMock = vi.fn();
+const localMock = vi.fn();
+const clawhubSearchMock = vi.fn();
+const clawhubInstallMock = vi.fn();
 
 vi.mock('@/lib/host-api', () => ({
-  hostApiFetch: (...args: unknown[]) => hostApiFetchMock(...args),
   hostApi: {
     skills: {
-      status: () => rpcMock('skills.status'),
-      clawhubList: () => hostApiFetchMock('/api/clawhub/list'),
-      configs: () => hostApiFetchMock('/api/skills/configs'),
-      clawhubSearch: (input: unknown) => hostApiFetchMock('/api/clawhub/search', {
-        method: 'POST',
-        body: JSON.stringify(input),
-      }),
-      clawhubInstall: (input: unknown) => hostApiFetchMock('/api/clawhub/install', {
-        method: 'POST',
-        body: JSON.stringify(input),
-      }),
+      status: () => statusMock(),
+      local: () => localMock(),
+      clawhubSearch: (input: unknown) => clawhubSearchMock(input),
+      clawhubInstall: (input: unknown) => clawhubInstallMock(input),
+      clawhubUninstall: vi.fn(),
+      updateConfigs: vi.fn(),
     },
-  },
-}));
-
-vi.mock('@/stores/gateway', () => ({
-  useGatewayStore: {
-    getState: () => ({
-      rpc: (...args: unknown[]) => rpcMock(...args),
-    }),
   },
 }));
 
@@ -36,9 +24,9 @@ describe('skills store error mapping', () => {
     vi.clearAllMocks();
   });
 
-  it('maps fetchSkills rate-limit error by AppError code', async () => {
-    rpcMock.mockResolvedValueOnce({ skills: [] });
-    hostApiFetchMock.mockRejectedValueOnce(new Error('rate limit exceeded'));
+  it('maps fetchSkills rate-limit error when both local and gateway loading fail', async () => {
+    statusMock.mockRejectedValueOnce(new Error('gateway unavailable'));
+    localMock.mockRejectedValueOnce(new Error('rate limit exceeded'));
 
     const { useSkillsStore } = await import('@/stores/skills');
     await useSkillsStore.getState().fetchSkills();
@@ -47,18 +35,20 @@ describe('skills store error mapping', () => {
   });
 
   it('maps searchSkills timeout error by AppError code', async () => {
-    hostApiFetchMock.mockRejectedValueOnce(new Error('request timeout'));
+    clawhubSearchMock.mockRejectedValueOnce(new Error('request timeout'));
 
     const { useSkillsStore } = await import('@/stores/skills');
     await useSkillsStore.getState().searchSkills('git');
 
+    expect(clawhubSearchMock).toHaveBeenCalledWith({ query: 'git' });
     expect(useSkillsStore.getState().searchError).toBe('searchTimeoutError');
   });
 
   it('maps installSkill timeout result into installTimeoutError', async () => {
-    hostApiFetchMock.mockResolvedValueOnce({ success: false, error: 'request timeout' });
+    clawhubInstallMock.mockResolvedValueOnce({ success: false, error: 'request timeout' });
 
     const { useSkillsStore } = await import('@/stores/skills');
     await expect(useSkillsStore.getState().installSkill('demo-skill')).rejects.toThrow('installTimeoutError');
+    expect(clawhubInstallMock).toHaveBeenCalledWith({ slug: 'demo-skill', version: undefined });
   });
 });

@@ -1,29 +1,29 @@
 /**
  * ClawHub Service
- * Manages interactions with the ClawHub CLI for skills management
+ * Maintains marketplace-provider compatibility and managed skill uninstall/open helpers.
  */
-import { spawn } from 'child_process';
 import fs from 'fs';
 import path from 'path';
-import { app, shell } from 'electron';
-import { getOpenClawConfigDir, ensureDir, getClawHubCliBinPath, getClawHubCliEntryPath, quoteForCmd } from '../utils/paths';
+import { shell } from 'electron';
+import { getOpenClawConfigDir, ensureDir } from '../utils/paths';
+import { removeSkillConfig } from '../utils/skill-config';
 
-export interface ClawHubSearchParams {
+export interface MarketplaceSearchParams {
     query: string;
     limit?: number;
 }
 
-export interface ClawHubInstallParams {
+export interface MarketplaceInstallParams {
     slug: string;
     version?: string;
     force?: boolean;
 }
 
-export interface ClawHubUninstallParams {
+export interface MarketplaceUninstallParams {
     slug: string;
 }
 
-export interface ClawHubSkillResult {
+export interface MarketplaceSkillResult {
     slug: string;
     name: string;
     description: string;
@@ -33,6 +33,11 @@ export interface ClawHubSkillResult {
     stars?: number;
 }
 
+export type ClawHubSearchParams = MarketplaceSearchParams;
+export type ClawHubInstallParams = MarketplaceInstallParams;
+export type ClawHubUninstallParams = MarketplaceUninstallParams;
+export type ClawHubSkillResult = MarketplaceSkillResult;
+
 export interface ClawHubInstalledSkillResult {
     slug: string;
     version: string;
@@ -40,40 +45,20 @@ export interface ClawHubInstalledSkillResult {
     baseDir?: string;
 }
 
-interface ClawHubApiSearchEntry {
-    slug?: string;
-    displayName?: string;
-    summary?: string | null;
-    version?: string | null;
-    latestVersion?: {
-        version?: string | null;
-    } | null;
-}
-
-interface ClawHubApiSearchResponse {
-    results?: ClawHubApiSearchEntry[];
-}
-
-interface ClawHubApiListResponse {
-    items?: ClawHubApiSearchEntry[];
-}
-
 export interface MarketplaceProvider {
     getCapability(): Promise<{ mode: string; canSearch: boolean; canInstall: boolean; reason?: string }>;
-    search(params: ClawHubSearchParams): Promise<ClawHubSkillResult[]>;
-    install(params: ClawHubInstallParams): Promise<void>;
+    search(params: MarketplaceSearchParams): Promise<MarketplaceSkillResult[]>;
+    install(params: MarketplaceInstallParams): Promise<void>;
 }
-
-const CLAWHUB_MARKETPLACE_API_BASE_URL = 'https://clawhub.ai';
-const CLAWHUB_MARKETPLACE_TIMEOUT_MS = 5_000;
 
 export class ClawHubService {
     private workDir: string;
-    private cliPath: string;
-    private cliEntryPath: string;
-    private useNodeRunner: boolean;
-    private ansiRegex: RegExp;
     private marketplaceProvider: MarketplaceProvider | null = null;
+
+    constructor() {
+        this.workDir = getOpenClawConfigDir();
+        ensureDir(this.workDir);
+    }
 
     setMarketplaceProvider(provider: MarketplaceProvider): void {
         this.marketplaceProvider = provider;
@@ -83,107 +68,131 @@ export class ClawHubService {
         if (this.marketplaceProvider) {
             return this.marketplaceProvider.getCapability();
         }
-        return { mode: 'clawhub', canSearch: true, canInstall: true };
-    }
-
-    constructor() {
-        // Use the user's OpenClaw config directory (~/.openclaw) for skill management
-        // This avoids installing skills into the project's openclaw submodule
-        this.workDir = getOpenClawConfigDir();
-        ensureDir(this.workDir);
-
-        const binPath = getClawHubCliBinPath();
-        const entryPath = getClawHubCliEntryPath();
-
-        this.cliEntryPath = entryPath;
-        if (!app.isPackaged && fs.existsSync(binPath)) {
-            this.cliPath = binPath;
-            this.useNodeRunner = false;
-        } else {
-            this.cliPath = process.execPath;
-            this.useNodeRunner = true;
-        }
-        const esc = String.fromCharCode(27);
-        const csi = String.fromCharCode(155);
-        const pattern = `(?:${esc}|${csi})[[()#;?]*(?:[0-9]{1,4}(?:;[0-9]{0,4})*)?[0-9A-ORZcf-nqry=><]`;
-        this.ansiRegex = new RegExp(pattern, 'g');
-    }
-
-    private stripAnsi(line: string): string {
-        return line.replace(this.ansiRegex, '').trim();
-    }
-
-    private mapMarketplaceEntry(entry: ClawHubApiSearchEntry): ClawHubSkillResult | null {
-        const slug = entry.slug?.trim();
-        if (!slug) return null;
-
-        const name = entry.displayName?.trim() || slug;
-        const description = entry.summary?.trim() || name;
-        const version = entry.version?.trim() || entry.latestVersion?.version?.trim() || 'latest';
-
         return {
-            slug,
-            name,
-            description,
-            version,
+            mode: 'local-only',
+            canSearch: false,
+            canInstall: false,
+            reason: 'marketplace-disabled',
         };
     }
 
-    private async fetchMarketplaceJson<T>(url: URL): Promise<T> {
-        const controller = new AbortController();
-        const timeout = setTimeout(() => controller.abort(), CLAWHUB_MARKETPLACE_TIMEOUT_MS);
+    /**
+     * Search for skills via an extension-provided marketplace.
+     */
+    async search(params: MarketplaceSearchParams): Promise<MarketplaceSkillResult[]> {
+        if (this.marketplaceProvider) {
+            return this.marketplaceProvider.search(params);
+        }
+        throw new Error('Marketplace search is disabled');
+    }
+
+    /**
+     * Explore marketplace skills via the registered marketplace provider.
+     */
+    async explore(params: { limit?: number } = {}): Promise<MarketplaceSkillResult[]> {
+        if (this.marketplaceProvider) {
+            return this.marketplaceProvider.search({ query: '', limit: params.limit });
+        }
+        throw new Error('Marketplace search is disabled');
+    }
+
+    /**
+     * Install a skill through an extension-provided marketplace.
+     */
+    async install(params: MarketplaceInstallParams): Promise<void> {
+        if (this.marketplaceProvider) {
+            return this.marketplaceProvider.install(params);
+        }
+        throw new Error('Marketplace install is disabled');
+    }
+
+    /**
+     * Uninstall a managed skill and remove its stored config.
+     */
+    async uninstall(params: ClawHubUninstallParams): Promise<void> {
+        const fsPromises = fs.promises;
+
+        const skillDir = path.join(this.workDir, 'skills', params.slug);
+        if (fs.existsSync(skillDir)) {
+            console.log(`Deleting skill directory: ${skillDir}`);
+            await fsPromises.rm(skillDir, { recursive: true, force: true });
+        }
+
+        const lockFile = path.join(this.workDir, '.clawhub', 'lock.json');
+        if (fs.existsSync(lockFile)) {
+            try {
+                const lockData = JSON.parse(fs.readFileSync(lockFile, 'utf8')) as {
+                    skills?: Record<string, unknown>;
+                };
+                if (lockData.skills && lockData.skills[params.slug]) {
+                    console.log(`Removing ${params.slug} from lock.json`);
+                    delete lockData.skills[params.slug];
+                    await fsPromises.writeFile(lockFile, JSON.stringify(lockData, null, 2));
+                }
+            } catch (err) {
+                console.error('Failed to update ClawHub lock file:', err);
+            }
+        }
+
+        await removeSkillConfig(params.slug);
+    }
+
+    /**
+     * List installed managed skills from the filesystem.
+     */
+    async listInstalled(): Promise<ClawHubInstalledSkillResult[]> {
+        const skillsRoot = path.join(this.workDir, 'skills');
+        if (!fs.existsSync(skillsRoot)) {
+            return [];
+        }
 
         try {
-            const response = await fetch(url.toString(), {
-                method: 'GET',
-                headers: { Accept: 'application/json' },
-                signal: controller.signal,
-            });
+            const entries = await fs.promises.readdir(skillsRoot, { withFileTypes: true });
+            const items = await Promise.all(entries
+                .filter((entry) => entry.isDirectory())
+                .map(async (entry) => {
+                    const skillDir = path.join(skillsRoot, entry.name);
+                    const manifestPath = path.join(skillDir, 'SKILL.md');
+                    if (!fs.existsSync(manifestPath)) return null;
 
-            if (!response.ok) {
-                throw new Error(`ClawHub marketplace HTTP ${response.status}`);
-            }
+                    let version = 'unknown';
+                    const manifestJsonPath = path.join(skillDir, 'manifest.json');
+                    if (fs.existsSync(manifestJsonPath)) {
+                        try {
+                            const manifestJson = JSON.parse(await fs.promises.readFile(manifestJsonPath, 'utf8')) as { version?: string };
+                            version = manifestJson.version?.trim() || version;
+                        } catch {
+                            // Ignore malformed manifest.json
+                        }
+                    }
 
-            const contentType = response.headers.get('content-type')?.toLowerCase() || '';
-            if (!contentType.includes('application/json')) {
-                throw new Error(`ClawHub marketplace returned non-JSON content: ${contentType || 'unknown'}`);
-            }
+                    const originJsonPath = path.join(skillDir, '.clawhub', 'origin.json');
+                    if (fs.existsSync(originJsonPath)) {
+                        try {
+                            const originJson = JSON.parse(await fs.promises.readFile(originJsonPath, 'utf8')) as { installedVersion?: string };
+                            version = originJson.installedVersion?.trim() || version;
+                        } catch {
+                            // Ignore malformed origin.json
+                        }
+                    }
 
-            return await response.json() as T;
-        } finally {
-            clearTimeout(timeout);
+                    return {
+                        slug: entry.name,
+                        version,
+                        source: 'openclaw-managed',
+                        baseDir: skillDir,
+                    };
+                }));
+            return items.filter((item): item is ClawHubInstalledSkillResult => item !== null);
+        } catch (error) {
+            console.error('ClawHub list error:', error);
+            return [];
         }
-    }
-
-    private async searchMarketplaceHttp(params: ClawHubSearchParams): Promise<ClawHubSkillResult[]> {
-        const url = new URL('/api/v1/search', CLAWHUB_MARKETPLACE_API_BASE_URL);
-        url.searchParams.set('q', params.query);
-        if (params.limit) {
-            url.searchParams.set('limit', String(params.limit));
-        }
-
-        const response = await this.fetchMarketplaceJson<ClawHubApiSearchResponse>(url);
-        return (response.results || [])
-            .map((entry) => this.mapMarketplaceEntry(entry))
-            .filter((entry): entry is ClawHubSkillResult => entry !== null);
-    }
-
-    private async exploreMarketplaceHttp(params: { limit?: number } = {}): Promise<ClawHubSkillResult[]> {
-        const url = new URL('/api/v1/skills', CLAWHUB_MARKETPLACE_API_BASE_URL);
-        if (params.limit) {
-            url.searchParams.set('limit', String(params.limit));
-        }
-
-        const response = await this.fetchMarketplaceJson<ClawHubApiListResponse>(url);
-        return (response.items || [])
-            .map((entry) => this.mapMarketplaceEntry(entry))
-            .filter((entry): entry is ClawHubSkillResult => entry !== null);
     }
 
     private extractFrontmatterName(skillManifestPath: string): string | null {
         try {
             const raw = fs.readFileSync(skillManifestPath, 'utf8');
-            // Match the first frontmatter block and read `name: ...`
             const frontmatterMatch = raw.match(/^---\s*\n([\s\S]*?)\n---/);
             if (!frontmatterMatch) return null;
             const body = frontmatterMatch[1];
@@ -229,277 +238,6 @@ export class ClawHubService {
         return null;
     }
 
-    /**
-     * Run a ClawHub CLI command
-     */
-    private async runCommand(args: string[]): Promise<string> {
-        return new Promise((resolve, reject) => {
-            if (this.useNodeRunner && !fs.existsSync(this.cliEntryPath)) {
-                reject(new Error(`ClawHub CLI entry not found at: ${this.cliEntryPath}`));
-                return;
-            }
-
-            if (!this.useNodeRunner && !fs.existsSync(this.cliPath)) {
-                reject(new Error(`ClawHub CLI not found at: ${this.cliPath}`));
-                return;
-            }
-
-            const commandArgs = this.useNodeRunner ? [this.cliEntryPath, ...args] : args;
-            const displayCommand = [this.cliPath, ...commandArgs].join(' ');
-            console.log(`Running ClawHub command: ${displayCommand}`);
-
-            const isWin = process.platform === 'win32';
-            const useShell = isWin && !this.useNodeRunner;
-            const { NODE_OPTIONS: _nodeOptions, ...baseEnv } = process.env;
-            const env = {
-                ...baseEnv,
-                CI: 'true',
-                FORCE_COLOR: '0',
-            };
-            if (this.useNodeRunner) {
-                env.ELECTRON_RUN_AS_NODE = '1';
-            }
-            const spawnCmd = useShell ? quoteForCmd(this.cliPath) : this.cliPath;
-            const spawnArgs = useShell ? commandArgs.map(a => quoteForCmd(a)) : commandArgs;
-            const child = spawn(spawnCmd, spawnArgs, {
-                cwd: this.workDir,
-                shell: useShell,
-                env: {
-                    ...env,
-                    CLAWHUB_WORKDIR: this.workDir,
-                },
-                windowsHide: true,
-            });
-
-            let stdout = '';
-            let stderr = '';
-
-            child.stdout.on('data', (data) => {
-                stdout += data.toString();
-            });
-
-            child.stderr.on('data', (data) => {
-                stderr += data.toString();
-            });
-
-            child.on('error', (error) => {
-                console.error('ClawHub process error:', error);
-                reject(error);
-            });
-
-            child.on('close', (code) => {
-                if (code !== 0 && code !== null) {
-                    console.error(`ClawHub command failed with code ${code}`);
-                    console.error('Stderr:', stderr);
-                    reject(new Error(`Command failed: ${stderr || stdout}`));
-                } else {
-                    resolve(stdout.trim());
-                }
-            });
-        });
-    }
-
-    /**
-     * Search for skills. Delegates to the marketplace provider if one is set,
-     * otherwise falls back to the local ClawHub CLI.
-     */
-    async search(params: ClawHubSearchParams): Promise<ClawHubSkillResult[]> {
-        if (this.marketplaceProvider) {
-            return this.marketplaceProvider.search(params);
-        }
-        try {
-            // If query is empty, use 'explore' to show trending skills
-            if (!params.query || params.query.trim() === '') {
-                return this.explore({ limit: params.limit });
-            }
-
-            try {
-                return await this.searchMarketplaceHttp(params);
-            } catch (httpError) {
-                console.warn('ClawHub HTTP search failed, falling back to CLI:', httpError);
-            }
-
-            const args = ['search', params.query];
-            if (params.limit) {
-                args.push('--limit', String(params.limit));
-            }
-
-            const output = await this.runCommand(args);
-            if (!output || output.includes('No skills found')) {
-                return [];
-            }
-
-            const lines = output.split('\n').filter(l => l.trim());
-            return lines.map(line => {
-                const cleanLine = this.stripAnsi(line);
-
-                // Format could be: slug vversion description (score)
-                // Or sometimes: slug  vversion  description
-                let match = cleanLine.match(/^(\S+)\s+v?(\d+\.\S+)\s+(.+)$/);
-                if (match) {
-                    const slug = match[1];
-                    const version = match[2];
-                    let description = match[3];
-
-                    // Clean up score if present at the end
-                    description = description.replace(/\(\d+\.\d+\)$/, '').trim();
-
-                    return {
-                        slug,
-                        name: slug,
-                        version,
-                        description,
-                    };
-                }
-
-                // Fallback for new clawhub search format without version:
-                // slug  name/description  (score)
-                match = cleanLine.match(/^(\S+)\s+(.+)$/);
-                if (match) {
-                    const slug = match[1];
-                    let description = match[2];
-
-                    // Clean up score if present at the end
-                    description = description.replace(/\(\d+\.\d+\)$/, '').trim();
-
-                    return {
-                        slug,
-                        name: slug,
-                        version: 'latest', // Fallback version since it's not provided
-                        description,
-                    };
-                }
-                return null;
-            }).filter((s): s is ClawHubSkillResult => s !== null);
-        } catch (error) {
-            console.error('ClawHub search error:', error);
-            throw error;
-        }
-    }
-
-    /**
-     * Explore trending skills
-     */
-    async explore(params: { limit?: number } = {}): Promise<ClawHubSkillResult[]> {
-        try {
-            try {
-                return await this.exploreMarketplaceHttp(params);
-            } catch (httpError) {
-                console.warn('ClawHub HTTP explore failed, falling back to CLI:', httpError);
-            }
-
-            const args = ['explore'];
-            if (params.limit) {
-                args.push('--limit', String(params.limit));
-            }
-
-            const output = await this.runCommand(args);
-            if (!output) return [];
-
-            const lines = output.split('\n').filter(l => l.trim());
-            return lines.map(line => {
-                const cleanLine = this.stripAnsi(line);
-
-                // Format: slug vversion time description
-                // Example: my-skill v1.0.0 2 hours ago A great skill
-                const match = cleanLine.match(/^(\S+)\s+v?(\d+\.\S+)\s+(.+? ago|just now|yesterday)\s+(.+)$/i);
-                if (match) {
-                    return {
-                        slug: match[1],
-                        name: match[1],
-                        version: match[2],
-                        description: match[4],
-                    };
-                }
-                return null;
-            }).filter((s): s is ClawHubSkillResult => s !== null);
-        } catch (error) {
-            console.error('ClawHub explore error:', error);
-            throw error;
-        }
-    }
-
-    /**
-     * Install a skill. Delegates to the marketplace provider if one is set,
-     * otherwise falls back to the local ClawHub CLI.
-     */
-    async install(params: ClawHubInstallParams): Promise<void> {
-        if (this.marketplaceProvider) {
-            return this.marketplaceProvider.install(params);
-        }
-        const args = ['install', params.slug];
-
-        if (params.version) {
-            args.push('--version', params.version);
-        }
-
-        if (params.force) {
-            args.push('--force');
-        }
-
-        await this.runCommand(args);
-    }
-
-    /**
-     * Uninstall a skill
-     */
-    async uninstall(params: ClawHubUninstallParams): Promise<void> {
-        const fsPromises = fs.promises;
-
-        // 1. Delete the skill directory
-        const skillDir = path.join(this.workDir, 'skills', params.slug);
-        if (fs.existsSync(skillDir)) {
-            console.log(`Deleting skill directory: ${skillDir}`);
-            await fsPromises.rm(skillDir, { recursive: true, force: true });
-        }
-
-        // 2. Remove from lock.json
-        const lockFile = path.join(this.workDir, '.clawhub', 'lock.json');
-        if (fs.existsSync(lockFile)) {
-            try {
-                const lockData = JSON.parse(fs.readFileSync(lockFile, 'utf8'));
-                if (lockData.skills && lockData.skills[params.slug]) {
-                    console.log(`Removing ${params.slug} from lock.json`);
-                    delete lockData.skills[params.slug];
-                    await fsPromises.writeFile(lockFile, JSON.stringify(lockData, null, 2));
-                }
-            } catch (err) {
-                console.error('Failed to update ClawHub lock file:', err);
-            }
-        }
-    }
-
-    /**
-     * List installed skills
-     */
-    async listInstalled(): Promise<ClawHubInstalledSkillResult[]> {
-        try {
-            const output = await this.runCommand(['list']);
-            if (!output || output.includes('No installed skills')) {
-                return [];
-            }
-
-            const lines = output.split('\n').filter(l => l.trim());
-            return lines.map(line => {
-                const cleanLine = this.stripAnsi(line);
-                const match = cleanLine.match(/^(\S+)\s+v?(\d+\.\S+)/);
-                if (match) {
-                    const slug = match[1];
-                    return {
-                        slug,
-                        version: match[2],
-                        source: 'openclaw-managed',
-                        baseDir: path.join(this.workDir, 'skills', slug),
-                    };
-                }
-                return null;
-            }).filter((s): s is ClawHubInstalledSkillResult => s !== null);
-        } catch (error) {
-            console.error('ClawHub list error:', error);
-            return [];
-        }
-    }
-
     private resolveSkillDir(skillKeyOrSlug: string, fallbackSlug?: string, preferredBaseDir?: string): string | null {
         const candidates = [skillKeyOrSlug, fallbackSlug]
             .filter((v): v is string => typeof v === 'string' && v.trim().length > 0)
@@ -514,13 +252,9 @@ export class ClawHubService {
         return directSkillDir || this.resolveSkillDirByManifestName(uniqueCandidates);
     }
 
-    /**
-     * Open skill README/manual in default editor
-     */
     async openSkillReadme(skillKeyOrSlug: string, fallbackSlug?: string, preferredBaseDir?: string): Promise<boolean> {
         const skillDir = this.resolveSkillDir(skillKeyOrSlug, fallbackSlug, preferredBaseDir);
 
-        // Try to find documentation file
         const possibleFiles = ['SKILL.md', 'README.md', 'skill.md', 'readme.md'];
         let targetFile = '';
 
@@ -535,7 +269,6 @@ export class ClawHubService {
         }
 
         if (!targetFile) {
-            // If no md file, just open the directory
             if (skillDir) {
                 targetFile = skillDir;
             } else {
@@ -544,7 +277,6 @@ export class ClawHubService {
         }
 
         try {
-            // Open file with default application
             await shell.openPath(targetFile);
             return true;
         } catch (error) {
@@ -553,9 +285,6 @@ export class ClawHubService {
         }
     }
 
-    /**
-     * Open skill path in file explorer
-     */
     async openSkillPath(skillKeyOrSlug: string, fallbackSlug?: string, preferredBaseDir?: string): Promise<boolean> {
         const skillDir = this.resolveSkillDir(skillKeyOrSlug, fallbackSlug, preferredBaseDir);
         if (!skillDir) {

@@ -1,6 +1,9 @@
 import type { BrowserWindow } from 'electron';
 import type { GatewayManager } from '../gateway/manager';
 import type {
+  MarketplaceSearchParams,
+  MarketplaceInstallParams,
+  MarketplaceSkillResult,
   ClawHubSearchParams,
   ClawHubInstallParams,
   ClawHubSkillResult,
@@ -26,9 +29,13 @@ export interface MarketplaceCapability {
 
 export interface MarketplaceProviderExtension extends Extension {
   getCapability(): Promise<MarketplaceCapability>;
-  search(params: ClawHubSearchParams): Promise<ClawHubSkillResult[]>;
-  install(params: ClawHubInstallParams): Promise<void>;
+  search(params: MarketplaceSearchParams): Promise<MarketplaceSkillResult[]>;
+  install(params: MarketplaceInstallParams): Promise<void>;
 }
+
+export type LegacyMarketplaceSearchParams = ClawHubSearchParams;
+export type LegacyMarketplaceInstallParams = ClawHubInstallParams;
+export type LegacyMarketplaceSkillResult = ClawHubSkillResult;
 
 export interface AuthStatus {
   authenticated: boolean;

@@ -189,6 +189,56 @@ describe('connectGatewaySocket', () => {
     expect(socket.close).toHaveBeenCalledTimes(1);
     expect(pendingRequests.size).toBe(0);
   });
+
+  it('terminates the pre-handshake socket when connect is rejected', async () => {
+    const pendingRequests = new Map();
+
+    const connectionPromise = connectGatewaySocket({
+      port: 18789,
+      deviceIdentity: null,
+      platform: 'win32',
+      pendingRequests,
+      getToken: vi.fn().mockResolvedValue('token-123'),
+      onHandshakeComplete: vi.fn(),
+      onMessage: (message) => {
+        if (typeof message !== 'object' || message === null) return;
+        const msg = message as { type?: string; id?: string; ok?: boolean; error?: { message?: string } };
+        if (msg.type !== 'res' || typeof msg.id !== 'string') return;
+        const pending = pendingRequests.get(msg.id);
+        if (!pending) return;
+        pending.reject(new Error(msg.error?.message ?? 'Gateway request failed'));
+      },
+      onCloseAfterHandshake: vi.fn(),
+    });
+    const connectionErrorPromise = connectionPromise.then(
+      () => null,
+      (error) => error,
+    );
+
+    const socket = getLatestSocket();
+    socket.emitOpen();
+    socket.emitJsonMessage({
+      type: 'event',
+      event: 'connect.challenge',
+      payload: { nonce: 'nonce-123' },
+    });
+
+    await flushMicrotasks();
+
+    const connectFrame = JSON.parse(socket.sentFrames[0]) as { id: string };
+    socket.emitJsonMessage({
+      type: 'res',
+      id: connectFrame.id,
+      ok: false,
+      error: { message: 'gateway starting; retry shortly' },
+    });
+
+    const connectionError = await connectionErrorPromise;
+    expect(connectionError).toBeInstanceOf(Error);
+    expect((connectionError as Error).message).toBe('gateway starting; retry shortly');
+    expect(socket.terminate).toHaveBeenCalledTimes(1);
+    expect(pendingRequests.size).toBe(0);
+  });
 });
 
 describe('probeGatewayReady', () => {

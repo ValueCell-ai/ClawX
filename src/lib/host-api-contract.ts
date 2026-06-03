@@ -2,7 +2,7 @@ import type { AgentsSnapshot } from '../types/agent';
 import type { CronJob, CronJobCreateInput, CronJobUpdateInput } from '../types/cron';
 import type { GatewayHealth, GatewayStatus } from '../types/gateway';
 import type { RawMessage } from '../stores/chat/types';
-import type { MarketplaceSkill, QuickAccessSkill } from '../types/skill';
+import type { MarketplaceSkill, QuickAccessSkill, Skill } from '../types/skill';
 
 export type MaybePromise<T> = T | Promise<T>;
 export type JsonRecord = Record<string, unknown>;
@@ -460,12 +460,15 @@ export type SkillsStatusResult = {
     filePath?: string;
   }[];
 };
-export type SkillConfigsResult = Record<string, { apiKey?: string; env?: Record<string, string> }>;
+export type LocalSkillsResult = HostSuccess & { skills?: Skill[] };
+export type SkillConfigsResult = Record<string, { enabled?: boolean; apiKey?: string; env?: Record<string, string> }>;
 export type SkillKeyPayload = { skillKey: string };
 export type SkillUpdateConfigPayload = SkillKeyPayload & {
+  enabled?: boolean;
   apiKey?: string;
   env?: Record<string, string>;
 };
+export type SkillUpdateConfigsPayload = { updates: SkillUpdateConfigPayload[] };
 export type SkillUpdatePayload = SkillKeyPayload & { enabled?: boolean };
 export type SkillQuickAccessPayload = { workspace?: string };
 export type ClawHubInstalledSkill = {
@@ -642,10 +645,12 @@ export type HostApiContract = {
     deliveryTargets: () => MaybePromise<DeliveryTargetsResult>;
   };
   skills: {
+    local: () => MaybePromise<LocalSkillsResult>;
     configs: () => MaybePromise<SkillConfigsResult>;
     allConfigs: () => MaybePromise<SkillConfigsResult>;
     getConfig: (payload: SkillKeyPayload) => MaybePromise<JsonRecord>;
     updateConfig: (payload: SkillUpdateConfigPayload) => MaybePromise<HostSuccess>;
+    updateConfigs: (payload: SkillUpdateConfigsPayload) => MaybePromise<HostSuccess>;
     status: () => MaybePromise<SkillsStatusResult>;
     update: (payload: SkillUpdatePayload) => MaybePromise<HostSuccess>;
     quickAccess: (payload: SkillQuickAccessPayload) => MaybePromise<HostSuccess & { skills?: QuickAccessSkill[] }>;

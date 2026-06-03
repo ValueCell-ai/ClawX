@@ -60,7 +60,6 @@ export function createDiagnosticsApi(ctx: DiagnosticsApiContext): HostApiContrac
         diagnostics,
         lastChannelsStatusOkAt: channelStatusDiagnostics.lastChannelsStatusOkAt,
         lastChannelsStatusFailureAt: channelStatusDiagnostics.lastChannelsStatusFailureAt,
-        platform: process.platform,
       });
       const gateway = {
         ...gatewayStatus,

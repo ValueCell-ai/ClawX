@@ -5,23 +5,26 @@
  *
  * All file I/O uses async fs/promises to avoid blocking the main thread.
  */
-import { readFile, writeFile, access, mkdir } from 'fs/promises';
+import { readFile, writeFile, access, mkdir, readdir, rm } from 'fs/promises';
 import { existsSync } from 'fs';
 import { constants } from 'fs';
 import { join } from 'path';
 import { homedir } from 'os';
-import { getOpenClawDir, getResourcesDir } from './paths';
+import { getOpenClawDir, getOpenClawResolvedDir, getResourcesDir } from './paths';
 import { logger } from './logger';
 import { cpAsyncSafe } from './plugin-install';
 import { withConfigLock } from './config-mutex';
 
 const OPENCLAW_CONFIG_PATH = join(homedir(), '.openclaw', 'openclaw.json');
+const BUNDLED_OPENCLAW_SKILL_ALLOWLIST = new Set(['skill-creator']);
 
-interface SkillEntry {
+export interface SkillConfigUpdates {
     enabled?: boolean;
     apiKey?: string;
     env?: Record<string, string>;
 }
+
+type SkillEntry = SkillConfigUpdates;
 
 interface OpenClawConfig {
     skills?: {
@@ -117,59 +120,98 @@ export async function getSkillConfig(skillKey: string): Promise<SkillEntry | und
 /**
  * Update skill config (apiKey and env)
  */
+function isEmptySkillEntry(entry: SkillEntry | undefined): boolean {
+    if (!entry) return true;
+    const hasEnabled = typeof entry.enabled === 'boolean';
+    const hasApiKey = typeof entry.apiKey === 'string' && entry.apiKey.trim().length > 0;
+    const hasEnv = !!entry.env && Object.keys(entry.env).length > 0;
+    return !hasEnabled && !hasApiKey && !hasEnv;
+}
+
+async function applySkillConfigUpdates(
+    config: OpenClawConfig,
+    updates: Array<{ skillKey: string; remove?: boolean } & SkillConfigUpdates>,
+): Promise<void> {
+    if (!config.skills) {
+        config.skills = {};
+    }
+    if (!config.skills.entries) {
+        config.skills.entries = {};
+    }
+
+    for (const update of updates) {
+        const skillKey = update.skillKey.trim();
+        if (!skillKey) continue;
+
+        if (update.remove) {
+            delete config.skills.entries[skillKey];
+            continue;
+        }
+
+        const entry = config.skills.entries[skillKey] || {};
+
+        if (update.enabled !== undefined) {
+            entry.enabled = update.enabled;
+        }
+
+        if (update.apiKey !== undefined) {
+            const trimmed = update.apiKey.trim();
+            if (trimmed) {
+                entry.apiKey = trimmed;
+            } else {
+                delete entry.apiKey;
+            }
+        }
+
+        if (update.env !== undefined) {
+            const newEnv: Record<string, string> = {};
+
+            for (const [key, value] of Object.entries(update.env)) {
+                const trimmedKey = key.trim();
+                if (!trimmedKey) continue;
+
+                const trimmedVal = value.trim();
+                if (trimmedVal) {
+                    newEnv[trimmedKey] = trimmedVal;
+                }
+            }
+
+            if (Object.keys(newEnv).length > 0) {
+                entry.env = newEnv;
+            } else {
+                delete entry.env;
+            }
+        }
+
+        if (isEmptySkillEntry(entry)) {
+            delete config.skills.entries[skillKey];
+        } else {
+            config.skills.entries[skillKey] = entry;
+        }
+    }
+
+    if (config.skills.entries && Object.keys(config.skills.entries).length === 0) {
+        delete config.skills.entries;
+    }
+    if (config.skills && Object.keys(config.skills).length === 0) {
+        delete config.skills;
+    }
+}
+
 export async function updateSkillConfig(
     skillKey: string,
-    updates: { apiKey?: string; env?: Record<string, string> }
+    updates: SkillConfigUpdates,
+): Promise<{ success: boolean; error?: string }> {
+    return updateSkillConfigs([{ skillKey, ...updates }]);
+}
+
+export async function updateSkillConfigs(
+    updates: Array<{ skillKey: string } & SkillConfigUpdates>,
 ): Promise<{ success: boolean; error?: string }> {
     try {
         return await withConfigLock(async () => {
             const config = await readConfig();
-
-            // Ensure skills.entries exists
-            if (!config.skills) {
-                config.skills = {};
-            }
-            if (!config.skills.entries) {
-                config.skills.entries = {};
-            }
-
-            // Get or create skill entry
-            const entry = config.skills.entries[skillKey] || {};
-
-            // Update apiKey
-            if (updates.apiKey !== undefined) {
-                const trimmed = updates.apiKey.trim();
-                if (trimmed) {
-                    entry.apiKey = trimmed;
-                } else {
-                    delete entry.apiKey;
-                }
-            }
-
-            // Update env
-            if (updates.env !== undefined) {
-                const newEnv: Record<string, string> = {};
-
-                for (const [key, value] of Object.entries(updates.env)) {
-                    const trimmedKey = key.trim();
-                    if (!trimmedKey) continue;
-
-                    const trimmedVal = value.trim();
-                    if (trimmedVal) {
-                        newEnv[trimmedKey] = trimmedVal;
-                    }
-                }
-
-                if (Object.keys(newEnv).length > 0) {
-                    entry.env = newEnv;
-                } else {
-                    delete entry.env;
-                }
-            }
-
-            // Save entry back
-            config.skills.entries[skillKey] = entry;
-
+            await applySkillConfigUpdates(config, updates);
             await writeConfig(config);
             return { success: true };
         });
@@ -179,12 +221,98 @@ export async function updateSkillConfig(
     }
 }
 
+export async function removeSkillConfig(skillKey: string): Promise<{ success: boolean; error?: string }> {
+    return removeSkillConfigs([skillKey]);
+}
+
+export async function removeSkillConfigs(skillKeys: string[]): Promise<{ success: boolean; removed: number; error?: string }> {
+    try {
+        return await withConfigLock(async () => {
+            const config = await readConfig();
+            const existingEntries = config.skills?.entries || {};
+            const normalizedSkillKeys = skillKeys
+                .map((skillKey) => skillKey.trim())
+                .filter(Boolean);
+            const removed = normalizedSkillKeys.filter((skillKey) => Object.prototype.hasOwnProperty.call(existingEntries, skillKey)).length;
+
+            if (removed === 0) {
+                return { success: true, removed: 0 };
+            }
+
+            await applySkillConfigUpdates(
+                config,
+                normalizedSkillKeys.map((skillKey) => ({ skillKey, remove: true })),
+            );
+            await writeConfig(config);
+            return { success: true, removed };
+        });
+    } catch (err) {
+        console.error('Failed to remove skill configs:', err);
+        return { success: false, removed: 0, error: String(err) };
+    }
+}
+
 /**
  * Get all skill configs (for syncing to frontend)
  */
 export async function getAllSkillConfigs(): Promise<Record<string, SkillEntry>> {
     const config = await readConfig();
     return config.skills?.entries || {};
+}
+
+function getDisallowedBundledOpenClawSkillSlugs(bundledSkillSlugs: string[]): string[] {
+    return bundledSkillSlugs.filter((slug) => !BUNDLED_OPENCLAW_SKILL_ALLOWLIST.has(slug));
+}
+
+export async function trimBundledOpenClawSkills(options?: { bundledSkillsRoot?: string }): Promise<{ removed: number; removedSlugs: string[]; kept: string[] }> {
+    const bundledSkillsRoot = options?.bundledSkillsRoot || join(getOpenClawResolvedDir(), 'skills');
+    if (!existsSync(bundledSkillsRoot)) {
+        return { removed: 0, removedSlugs: [], kept: Array.from(BUNDLED_OPENCLAW_SKILL_ALLOWLIST) };
+    }
+
+    try {
+        const entries = await readdir(bundledSkillsRoot, { withFileTypes: true });
+        const disallowed = getDisallowedBundledOpenClawSkillSlugs(
+            entries
+                .filter((entry) => entry.isDirectory())
+                .map((entry) => entry.name),
+        );
+
+        let removed = 0;
+        const removedSlugs: string[] = [];
+        for (const slug of disallowed) {
+            const skillDir = join(bundledSkillsRoot, slug);
+            if (!existsSync(join(skillDir, 'SKILL.md'))) {
+                continue;
+            }
+            await rm(skillDir, { recursive: true, force: true });
+            removed += 1;
+            removedSlugs.push(slug);
+        }
+
+        return { removed, removedSlugs, kept: Array.from(BUNDLED_OPENCLAW_SKILL_ALLOWLIST) };
+    } catch (error) {
+        logger.warn('Failed to trim bundled OpenClaw skills:', error);
+        return { removed: 0, removedSlugs: [], kept: Array.from(BUNDLED_OPENCLAW_SKILL_ALLOWLIST) };
+    }
+}
+
+export async function trimBundledOpenClawSkillsAndConfigs(
+    options?: { bundledSkillsRoot?: string },
+): Promise<{ removed: number; removedSlugs: string[]; removedConfigs: number; kept: string[] }> {
+    const trimResult = await trimBundledOpenClawSkills(options);
+    const removeResult = trimResult.removedSlugs.length > 0
+        ? await removeSkillConfigs(trimResult.removedSlugs)
+        : { success: true, removed: 0 };
+
+    if (!removeResult.success) {
+        logger.warn(`Failed to prune stale bundled skill configs: ${removeResult.error || 'unknown error'}`);
+    }
+
+    return {
+        ...trimResult,
+        removedConfigs: removeResult.removed,
+    };
 }
 
 /**

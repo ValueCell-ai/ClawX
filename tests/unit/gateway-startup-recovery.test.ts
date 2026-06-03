@@ -1,8 +1,11 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
+  connectGatewayWithStartupRetry,
   getGatewayStartupRecoveryAction,
   hasInvalidConfigFailureSignal,
+  isGatewayStillStartingError,
   isInvalidConfigSignal,
+  isTransientGatewayStartError,
   shouldAttemptConfigAutoRepair,
 } from '@electron/gateway/startup-recovery';
 
@@ -108,5 +111,79 @@ describe('getGatewayStartupRecoveryAction', () => {
       maxAttempts: 3,
     });
     expect(action).toBe('fail');
+  });
+
+  it('returns retry for gateway still starting handshake rejection', () => {
+    const action = getGatewayStartupRecoveryAction({
+      startupError: new Error('gateway starting; retry shortly'),
+      startupStderrLines: [],
+      configRepairAttempted: false,
+      attempt: 1,
+      maxAttempts: 3,
+    });
+    expect(action).toBe('retry');
+    expect(isTransientGatewayStartError(new Error('gateway starting; retry shortly'))).toBe(true);
+    expect(isGatewayStillStartingError(new Error('gateway starting; retry shortly'))).toBe(true);
+  });
+});
+
+describe('connectGatewayWithStartupRetry', () => {
+  it('retries connect when gateway is still starting', async () => {
+    const connect = vi.fn()
+      .mockRejectedValueOnce(new Error('gateway starting; retry shortly'))
+      .mockRejectedValueOnce(new Error('gateway starting; retry shortly'))
+      .mockResolvedValueOnce(undefined);
+    const delay = vi.fn().mockResolvedValue(undefined);
+
+    await connectGatewayWithStartupRetry({
+      connect,
+      port: 18789,
+      delay,
+      retryDelaysMs: [10, 20],
+    });
+
+    expect(connect).toHaveBeenCalledTimes(3);
+    expect(delay).toHaveBeenCalledTimes(2);
+    expect(delay).toHaveBeenNthCalledWith(1, 10);
+    expect(delay).toHaveBeenNthCalledWith(2, 20);
+  });
+
+  it('throws immediately for non-starting errors', async () => {
+    const connect = vi.fn().mockRejectedValue(new Error('token mismatch'));
+    const delay = vi.fn().mockResolvedValue(undefined);
+
+    await expect(connectGatewayWithStartupRetry({
+      connect,
+      port: 18789,
+      delay,
+      retryDelaysMs: [10],
+    })).rejects.toThrow('token mismatch');
+
+    expect(connect).toHaveBeenCalledTimes(1);
+    expect(delay).not.toHaveBeenCalled();
+  });
+
+  it('checks lifecycle before each retry attempt', async () => {
+    const connect = vi.fn()
+      .mockRejectedValueOnce(new Error('gateway starting; retry shortly'))
+      .mockResolvedValueOnce(undefined);
+    const delay = vi.fn().mockResolvedValue(undefined);
+    const beforeAttempt = vi.fn()
+      .mockImplementationOnce(() => {})
+      .mockImplementationOnce(() => {
+        throw new Error('Gateway start superseded');
+      });
+
+    await expect(connectGatewayWithStartupRetry({
+      connect,
+      port: 18789,
+      delay,
+      beforeAttempt,
+      retryDelaysMs: [10],
+    })).rejects.toThrow('Gateway start superseded');
+
+    expect(beforeAttempt).toHaveBeenCalledTimes(2);
+    expect(connect).toHaveBeenCalledTimes(1);
+    expect(delay).toHaveBeenCalledWith(10);
   });
 });

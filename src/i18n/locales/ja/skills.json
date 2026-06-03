@@ -3,8 +3,8 @@
     "subtitle": "AI機能の閲覧と管理",
     "refresh": "更新",
     "openFolder": "スキルフォルダを開く",
-    "gatewayWarning": "ゲートウェイが稼働していません。アクティブなゲートウェイがないとスキルを読み込めません。",
-    "gatewayStarting": "ゲートウェイを起動中です。準備ができしだいスキルを自動で読み込みます。",
+    "gatewayWarning": "ゲートウェイは停止しています。ローカルスキルは利用できますが、ランタイム状態は取得できません。",
+    "gatewayStarting": "ゲートウェイを起動しています。ローカルスキルはすでに利用でき、ランタイム状態は準備完了後に反映されます。",
     "tabs": {
         "installed": "インストール済み",
         "marketplace": "マーケットプレイス"
@@ -12,7 +12,9 @@
     "filter": {
         "all": "すべて ({{count}})",
         "builtIn": "内蔵 ({{count}})",
-        "marketplace": "マーケットプレイス ({{count}})"
+        "marketplace": "マーケットプレイス ({{count}})",
+        "enabledList": "有効 ({{count}})",
+        "disabledList": "無効 ({{count}})"
     },
     "search": "スキルを検索...",
     "searchMarketplace": "マーケットプレイスを検索...",
@@ -73,10 +75,11 @@
     },
     "source": {
         "badge": {
-            "bundled": "内蔵",
+            "bundled": "内蔵ディレクトリ",
             "managed": "管理ディレクトリ",
             "workspace": "ワークスペース",
             "extra": "追加ディレクトリ",
+            "plugin": "プラグインディレクトリ",
             "agentsPersonal": "個人 .agents",
             "agentsProject": "プロジェクト .agents",
             "unknown": "不明なソース"

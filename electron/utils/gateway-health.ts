@@ -9,22 +9,18 @@ type BuildGatewayHealthSummaryOptions = {
   diagnostics: GatewayDiagnosticsSnapshot;
   lastChannelsStatusOkAt?: number;
   lastChannelsStatusFailureAt?: number;
-  platform?: string;
   now?: number;
 };
 
 const CHANNEL_STATUS_FAILURE_WINDOW_MS = 2 * 60_000;
-const HEARTBEAT_MISS_THRESHOLD_DEFAULT = 3;
-const HEARTBEAT_MISS_THRESHOLD_WIN = 5;
+const HEARTBEAT_MISS_THRESHOLD = 4;
 
 export function buildGatewayHealthSummary(
   options: BuildGatewayHealthSummaryOptions,
 ): GatewayHealthSummary {
   const now = options.now ?? Date.now();
   const reasons = new Set<string>();
-  const heartbeatThreshold = options.platform === 'win32'
-    ? HEARTBEAT_MISS_THRESHOLD_WIN
-    : HEARTBEAT_MISS_THRESHOLD_DEFAULT;
+  const heartbeatThreshold = HEARTBEAT_MISS_THRESHOLD;
 
   const channelStatusFailureIsRecent =
     typeof options.lastChannelsStatusFailureAt === 'number'

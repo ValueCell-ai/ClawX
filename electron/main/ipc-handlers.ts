@@ -6,6 +6,7 @@ import { ipcMain, BrowserWindow, shell, dialog, app } from 'electron';
 import { existsSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join, extname, basename, resolve, sep, relative } from 'node:path';
+import { syncMacTrafficLightPosition } from './traffic-light-layout';
 import { GatewayManager } from '../gateway/manager';
 import { ClawHubService } from '../gateway/clawhub';
 import {
@@ -1274,6 +1275,13 @@ function registerUsageHandlers(): void {
  * Window control handlers (for custom title bar on Windows)
  */
 function registerWindowHandlers(mainWindow: BrowserWindow): void {
+  ipcMain.handle('window:syncTrafficLightPosition', (_, sidebarCollapsed: unknown) => {
+    if (typeof sidebarCollapsed !== 'boolean') {
+      return;
+    }
+    syncMacTrafficLightPosition(mainWindow, sidebarCollapsed);
+  });
+
   ipcMain.handle('window:minimize', () => {
     mainWindow.minimize();
   });

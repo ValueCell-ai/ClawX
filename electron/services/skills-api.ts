@@ -1,18 +1,31 @@
 import type { GatewayManager } from '../gateway/manager';
 import type { ClawHubService, ClawHubInstallParams, ClawHubSearchParams, ClawHubUninstallParams } from '../gateway/clawhub';
 import type { HostApiContract } from '../../src/lib/host-api-contract';
-import { getAllSkillConfigs, getSkillConfig, updateSkillConfig } from '../utils/skill-config';
+import { getAllSkillConfigs, getSkillConfig, updateSkillConfig, updateSkillConfigs } from '../utils/skill-config';
 import {
   collectQuickAccessSkills,
   filterEnabledQuickAccessSkills,
   type QuickAccessRuntimeSkillStatus,
 } from '../utils/skill-quick-access';
+import { listLocalSkills } from './skills/local-skill-service';
 import { isRecord } from './payload-utils';
 
 type SkillConfigPayload = {
   skillKey?: unknown;
+  enabled?: unknown;
   apiKey?: unknown;
   env?: unknown;
+};
+
+type SkillConfigsPayload = {
+  updates?: unknown;
+};
+
+type NormalizedSkillConfigUpdate = {
+  skillKey: string;
+  enabled?: boolean;
+  apiKey?: string;
+  env?: Record<string, string>;
 };
 
 type QuickAccessPayload = {
@@ -44,6 +57,32 @@ function getEnv(value: unknown): Record<string, string> | undefined {
   );
 }
 
+function getConfigUpdate(payload: unknown): NormalizedSkillConfigUpdate {
+  const body = isRecord(payload) ? payload as SkillConfigPayload : {};
+  return {
+    skillKey: getSkillKey(payload),
+    enabled: typeof body.enabled === 'boolean' ? body.enabled : undefined,
+    apiKey: typeof body.apiKey === 'string' ? body.apiKey : undefined,
+    env: getEnv(body.env),
+  };
+}
+
+function getConfigUpdates(payload: unknown): NormalizedSkillConfigUpdate[] {
+  const body = isRecord(payload) ? payload as SkillConfigsPayload : {};
+  if (!Array.isArray(body.updates)) return [];
+  return body.updates.flatMap((entry) => {
+    if (!isRecord(entry)) return [];
+    const skillKey = typeof entry.skillKey === 'string' ? entry.skillKey.trim() : '';
+    if (!skillKey) return [];
+    return [{
+      skillKey,
+      enabled: typeof entry.enabled === 'boolean' ? entry.enabled : undefined,
+      apiKey: typeof entry.apiKey === 'string' ? entry.apiKey : undefined,
+      env: getEnv(entry.env),
+    }];
+  });
+}
+
 export function createSkillsApi({
   clawHubService,
   gatewayManager,
@@ -52,16 +91,15 @@ export function createSkillsApi({
   gatewayManager: GatewayManager;
 }): HostApiContract['skills'] {
   return {
+    local: async () => ({ success: true, skills: await listLocalSkills() }),
     configs: async () => getAllSkillConfigs(),
     allConfigs: async () => getAllSkillConfigs(),
     getConfig: async (payload) => getSkillConfig(getSkillKey(payload)),
     updateConfig: async (payload) => {
-      const body = isRecord(payload) ? payload as SkillConfigPayload : {};
-      return updateSkillConfig(getSkillKey(payload), {
-        apiKey: typeof body.apiKey === 'string' ? body.apiKey : undefined,
-        env: getEnv(body.env),
-      });
+      const { skillKey, ...updates } = getConfigUpdate(payload);
+      return updateSkillConfig(skillKey, updates);
     },
+    updateConfigs: async (payload) => updateSkillConfigs(getConfigUpdates(payload)),
     status: async () => gatewayManager.rpc('skills.status'),
     update: async (payload) => gatewayManager.rpc('skills.update', isRecord(payload) ? payload : {}),
     quickAccess: async (payload) => {

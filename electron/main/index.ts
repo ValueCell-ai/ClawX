@@ -27,6 +27,8 @@ import {
 } from '../utils/openclaw-workspace';
 import { autoInstallCliIfNeeded, generateCompletionCache, installCompletionToProfile } from '../utils/openclaw-cli';
 import { isQuitting, setQuitting } from './app-state';
+import { getMacTrafficLightPosition, syncMacTrafficLightPosition } from './traffic-light-layout';
+import { getSetting } from '../utils/store';
 import { applyProxySettings } from './proxy';
 import { syncLaunchAtStartupSettingFromStore } from './launch-at-startup';
 import {
@@ -42,8 +44,7 @@ import {
 } from './quit-lifecycle';
 import { createSignalQuitHandler } from './signal-quit';
 import { acquireProcessInstanceFileLock } from './process-instance-lock';
-import { getSetting } from '../utils/store';
-import { ensureBuiltinSkillsInstalled, ensurePreinstalledSkillsInstalled } from '../utils/skill-config';
+import { ensureBuiltinSkillsInstalled, ensurePreinstalledSkillsInstalled, trimBundledOpenClawSkillsAndConfigs } from '../utils/skill-config';
 
 import { deviceOAuthManager } from '../utils/device-oauth';
 import { browserOAuthManager } from '../utils/browser-oauth';
@@ -53,6 +54,11 @@ import { syncAllProviderAuthToRuntime } from '../services/providers/provider-run
 const WINDOWS_APP_USER_MODEL_ID = 'app.clawx.desktop';
 const isE2EMode = process.env.CLAWX_E2E === '1';
 const requestedUserDataDir = process.env.CLAWX_USER_DATA_DIR?.trim();
+const requestedRemoteDebuggingPort = process.env.CLAWX_REMOTE_DEBUGGING_PORT?.trim();
+
+if (requestedRemoteDebuggingPort) {
+  app.commandLine.appendSwitch('remote-debugging-port', requestedRemoteDebuggingPort);
+}
 
 if (isE2EMode && requestedUserDataDir) {
   app.setPath('userData', requestedUserDataDir);
@@ -183,7 +189,9 @@ function createWindow(): BrowserWindow {
       webviewTag: true, // Enable <webview> for embedding OpenClaw Control UI
     },
     titleBarStyle: isMac ? 'hiddenInset' : useCustomTitleBar ? 'hidden' : 'default',
-    trafficLightPosition: isMac ? { x: 16, y: 16 } : undefined,
+    trafficLightPosition: isMac
+      ? getMacTrafficLightPosition(false)
+      : undefined,
     frame: isMac || !useCustomTitleBar,
     show: false,
   });
@@ -255,6 +263,12 @@ function createMainWindow(): BrowserWindow {
   win.once('ready-to-show', () => {
     if (mainWindow !== win) {
       return;
+    }
+
+    if (process.platform === 'darwin') {
+      void getSetting('sidebarCollapsed').then((sidebarCollapsed) => {
+        syncMacTrafficLightPosition(win, sidebarCollapsed);
+      });
     }
 
     const action = consumeMainWindowReady(mainWindowFocusState);
@@ -385,6 +399,21 @@ async function initialize(): Promise<void> {
   if (!isE2EMode) {
     void ensureBuiltinSkillsInstalled().catch((error) => {
       logger.warn('Failed to install built-in skills:', error);
+    });
+  }
+
+  // Keep community builds aligned with Clawx-biz by physically trimming
+  // bundled OpenClaw consumer skills on startup (dev + packaged), keeping only
+  // `skill-creator`. This also prunes stale openclaw.json entries for trimmed
+  // bundled skills so we do not keep `enabled: false` config for skills that no
+  // longer exist.
+  if (!isE2EMode) {
+    void trimBundledOpenClawSkillsAndConfigs().then(({ removed, removedConfigs, kept }) => {
+      if (removed > 0 || removedConfigs > 0) {
+        logger.info(
+          `Trimmed bundled OpenClaw skills: removed ${removed}, pruned configs ${removedConfigs}, kept ${kept.join(', ')}`,
+        );
+      }
     });
   }
 

@@ -5,36 +5,33 @@ import type {
   MarketplaceCapability,
 } from '../types';
 import type {
-  ClawHubSearchParams,
-  ClawHubInstallParams,
-  ClawHubSkillResult,
+  MarketplaceSearchParams,
+  MarketplaceInstallParams,
+  MarketplaceSkillResult,
 } from '../../gateway/clawhub';
 
 class ClawHubMarketplaceExtension implements MarketplaceProviderExtension {
   readonly id = 'builtin/clawhub-marketplace';
 
   setup(_ctx: ExtensionContext): void {
-    // No setup needed -- search/install delegates to the ClawHubService CLI runner
+    // Built-in public ClawHub marketplace is disabled in community builds.
   }
 
   async getCapability(): Promise<MarketplaceCapability> {
     return {
-      mode: 'clawhub',
-      canSearch: true,
-      canInstall: true,
+      mode: 'local-only',
+      canSearch: false,
+      canInstall: false,
+      reason: 'marketplace-disabled',
     };
   }
 
-  async search(params: ClawHubSearchParams): Promise<ClawHubSkillResult[]> {
-    const { ClawHubService } = await import('../../gateway/clawhub');
-    const svc = new ClawHubService();
-    return svc.search(params);
+  async search(_params: MarketplaceSearchParams): Promise<MarketplaceSkillResult[]> {
+    throw new Error('Marketplace search is disabled');
   }
 
-  async install(params: ClawHubInstallParams): Promise<void> {
-    const { ClawHubService } = await import('../../gateway/clawhub');
-    const svc = new ClawHubService();
-    return svc.install(params);
+  async install(_params: MarketplaceInstallParams): Promise<void> {
+    throw new Error('Marketplace install is disabled');
   }
 }
 

@@ -1,6 +1,6 @@
 import { logger } from '../utils/logger';
 import { LifecycleSupersededError } from './lifecycle-controller';
-import { getGatewayStartupRecoveryAction } from './startup-recovery';
+import { connectGatewayWithStartupRetry, getGatewayStartupRecoveryAction } from './startup-recovery';
 
 export interface ExistingGatewayInfo {
   port: number;
@@ -29,6 +29,22 @@ type StartupHooks = {
   delay: (ms: number) => Promise<void>;
 };
 
+async function connectWithStartupRetry(
+  hooks: StartupHooks,
+  port: number,
+  externalToken?: string,
+): Promise<void> {
+  await connectGatewayWithStartupRetry({
+    connect: hooks.connect,
+    port,
+    externalToken,
+    delay: hooks.delay,
+    beforeAttempt: () => hooks.assertLifecycle('start/connect-retry'),
+    logWarn: (message) => logger.warn(message),
+    logInfo: (message) => logger.info(message),
+  });
+}
+
 export async function runGatewayStartupSequence(hooks: StartupHooks): Promise<void> {
   let configRepairAttempted = false;
   let startAttempts = 0;
@@ -45,7 +61,7 @@ export async function runGatewayStartupSequence(hooks: StartupHooks): Promise<vo
       hooks.assertLifecycle('start/find-existing');
       if (existing) {
         logger.debug(`Found existing Gateway on port ${existing.port}`);
-        await hooks.connect(existing.port, existing.externalToken);
+        await connectWithStartupRetry(hooks, existing.port, existing.externalToken);
         hooks.assertLifecycle('start/connect-existing');
         hooks.onConnectedToExistingGateway();
         return;
@@ -61,7 +77,7 @@ export async function runGatewayStartupSequence(hooks: StartupHooks): Promise<vo
         logger.info('Owned Gateway process still alive (likely in-process restart); waiting for it to become ready');
         await hooks.waitForReady(hooks.port);
         hooks.assertLifecycle('start/wait-ready-owned');
-        await hooks.connect(hooks.port);
+        await connectWithStartupRetry(hooks, hooks.port);
         hooks.assertLifecycle('start/connect-owned');
         hooks.onConnectedToExistingGateway();
         return;
@@ -80,7 +96,7 @@ export async function runGatewayStartupSequence(hooks: StartupHooks): Promise<vo
       await hooks.waitForReady(hooks.port);
       hooks.assertLifecycle('start/wait-ready');
 
-      await hooks.connect(hooks.port);
+      await connectWithStartupRetry(hooks, hooks.port);
       hooks.assertLifecycle('start/connect');
 
       hooks.onConnectedToManagedGateway();

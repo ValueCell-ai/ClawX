@@ -312,6 +312,15 @@ export async function installIpcMocks(
           }
 
           if (mockConfig.hostApi) {
+            const typedKey = stableStringify([
+              request?.module ?? null,
+              request?.action ?? null,
+              request?.payload ?? null,
+            ]);
+            if (typedKey in mockConfig.hostApi) {
+              return respond(request.id, unwrapLegacyResponse(mockConfig.hostApi[typedKey]));
+            }
+
             const legacyPath = legacyPathForHostRequest(request ?? {});
             if (legacyPath) {
               const key = stableStringify(legacyPath);
