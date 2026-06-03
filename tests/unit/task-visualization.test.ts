@@ -11,6 +11,39 @@ import { applyRuntimeEventToRuns } from '@/stores/chat/runtime-graph';
 import type { RawMessage, ToolStatus } from '@/stores/chat';
 
 describe('runtime graph state', () => {
+  it('keeps distinct runtime tool updates for the same tool call', () => {
+    const started = applyRuntimeEventToRuns({}, {
+      type: 'tool.started',
+      runId: 'run-1',
+      toolCallId: 'call-1',
+      name: 'exec',
+    });
+    const firstUpdate = applyRuntimeEventToRuns(started, {
+      type: 'tool.updated',
+      runId: 'run-1',
+      toolCallId: 'call-1',
+      name: 'exec',
+      partialResult: 'step 1',
+    });
+    const secondUpdate = applyRuntimeEventToRuns(firstUpdate, {
+      type: 'tool.updated',
+      runId: 'run-1',
+      toolCallId: 'call-1',
+      name: 'exec',
+      partialResult: 'step 2',
+    });
+    const duplicateSecondUpdate = applyRuntimeEventToRuns(secondUpdate, {
+      type: 'tool.updated',
+      runId: 'run-1',
+      toolCallId: 'call-1',
+      name: 'exec',
+      partialResult: 'step 2',
+    });
+
+    expect(secondUpdate['run-1'].events).toHaveLength(3);
+    expect(duplicateSecondUpdate['run-1'].events).toHaveLength(3);
+  });
+
   it('does not drop full-text assistant deltas that do not extend the previous prefix', () => {
     const first = applyRuntimeEventToRuns({}, {
       type: 'assistant.delta',

@@ -25,14 +25,36 @@ function cloneRunState(runId: string, event: ChatRuntimeEvent): ChatRuntimeRunSt
   };
 }
 
+function stableRuntimeFingerprint(value: unknown): string {
+  if (value === undefined) return 'undefined';
+  if (value === null || typeof value !== 'object') return `${typeof value}:${String(value)}`;
+  if (Array.isArray(value)) return `[${value.map(stableRuntimeFingerprint).join(',')}]`;
+  return `{${Object.entries(value as Record<string, unknown>)
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([key, child]) => `${JSON.stringify(key)}:${stableRuntimeFingerprint(child)}`)
+    .join(',')}}`;
+}
+
 function sameRuntimeEvent(left: ChatRuntimeEvent | undefined, right: ChatRuntimeEvent): boolean {
   if (!left) return false;
   if (left.runId !== right.runId || left.type !== right.type) return false;
   if (typeof left.seq === 'number' && typeof right.seq === 'number') {
     return left.seq === right.seq;
   }
-  if (left.type === 'tool.started' || left.type === 'tool.updated' || left.type === 'tool.completed') {
+  if (left.type === 'tool.started') {
     return right.type === left.type && right.toolCallId === left.toolCallId;
+  }
+  if (left.type === 'tool.updated') {
+    return right.type === left.type
+      && right.toolCallId === left.toolCallId
+      && stableRuntimeFingerprint(right.partialResult) === stableRuntimeFingerprint(left.partialResult);
+  }
+  if (left.type === 'tool.completed') {
+    return right.type === left.type
+      && right.toolCallId === left.toolCallId
+      && right.isError === left.isError
+      && stableRuntimeFingerprint(right.result) === stableRuntimeFingerprint(left.result)
+      && stableRuntimeFingerprint(right.meta) === stableRuntimeFingerprint(left.meta);
   }
   if (left.type === 'command.output') {
     return right.type === left.type
