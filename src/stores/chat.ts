@@ -117,6 +117,8 @@ const DEFAULT_SESSION_RUN_STATE: SessionRunState = {
 };
 
 const _sessionRunStateCache = new Map<string, SessionRunState>();
+let _sendGenerationCounter = 0;
+const _activeSendGenerationBySession = new Map<string, number>();
 const SESSION_LOAD_MIN_INTERVAL_MS = 1_200;
 const HISTORY_LOAD_MIN_INTERVAL_MS = 800;
 const CHAT_EVENT_DEDUPE_TTL_MS = 30_000;
@@ -3469,6 +3471,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
     }
 
     const currentSessionKey = targetSessionKey;
+    const sendGeneration = ++_sendGenerationCounter;
+    _activeSendGenerationBySession.set(currentSessionKey, sendGeneration);
 
     // Add user message optimistically (with local file metadata for UI display)
     const nowMs = Date.now();
@@ -3584,6 +3588,40 @@ export const useChatStore = create<ChatState>((set, get) => ({
     };
     setTimeout(checkStuck, 30_000);
 
+    const clearSendGenerationIfCurrent = () => {
+      if (_activeSendGenerationBySession.get(currentSessionKey) === sendGeneration) {
+        _activeSendGenerationBySession.delete(currentSessionKey);
+      }
+    };
+
+    const applySendFailure = (errorMsg: string) => {
+      const latest = get();
+      const sendStillCurrent = _activeSendGenerationBySession.get(currentSessionKey) === sendGeneration;
+      const canApplyToCurrentSession = latest.currentSessionKey === currentSessionKey
+        && latest.lastUserMessageAt === nowMs;
+
+      if (sendStillCurrent && canApplyToCurrentSession) {
+        clearSendGenerationIfCurrent();
+        clearHistoryPoll();
+        set({ error: errorMsg, sending: false });
+        return;
+      }
+
+      if (sendStillCurrent && latest.currentSessionKey !== currentSessionKey) {
+        const cached = _sessionRunStateCache.get(currentSessionKey);
+        if (cached?.lastUserMessageAt === nowMs) {
+          clearSendGenerationIfCurrent();
+          _sessionRunStateCache.set(currentSessionKey, DEFAULT_SESSION_RUN_STATE);
+          return;
+        }
+      }
+
+      console.warn('[sendMessage] Ignoring stale chat.send failure', {
+        error: errorMsg,
+        sessionKey: currentSessionKey,
+      });
+    };
+
     try {
       const idempotencyKey = crypto.randomUUID();
       const hasMedia = attachments && attachments.length > 0;
@@ -3643,19 +3681,39 @@ export const useChatStore = create<ChatState>((set, get) => ({
         if (isRecoverableChatSendTimeout(errorMsg)) {
           console.warn(`[sendMessage] Recoverable chat.send timeout, keeping poll alive: ${errorMsg}`);
         } else {
-          clearHistoryPoll();
-          set({ error: errorMsg, sending: false });
+          applySendFailure(errorMsg);
         }
       } else if (result.result?.runId) {
-        set({ activeRunId: result.result.runId });
+        const returnedRunId = result.result.runId;
+        const latest = get();
+        const sendStillCurrent = _activeSendGenerationBySession.get(currentSessionKey) === sendGeneration;
+        const canAttachToCurrentSession = latest.currentSessionKey === currentSessionKey
+          && latest.sending
+          && latest.lastUserMessageAt === nowMs
+          && (latest.activeRunId == null || latest.activeRunId === returnedRunId);
+
+        if (sendStillCurrent && canAttachToCurrentSession) {
+          set({ activeRunId: returnedRunId });
+        } else if (sendStillCurrent && latest.currentSessionKey !== currentSessionKey) {
+          const cached = _sessionRunStateCache.get(currentSessionKey);
+          if (cached?.sending
+            && cached.lastUserMessageAt === nowMs
+            && (cached.activeRunId == null || cached.activeRunId === returnedRunId)) {
+            captureSessionRunState(currentSessionKey, { ...cached, activeRunId: returnedRunId });
+          }
+        } else {
+          console.warn('[sendMessage] Ignoring stale chat.send runId', {
+            runId: returnedRunId,
+            sessionKey: currentSessionKey,
+          });
+        }
       }
     } catch (err) {
       const errStr = String(err);
       if (isRecoverableChatSendTimeout(errStr)) {
         console.warn(`[sendMessage] Recoverable chat.send timeout, keeping poll alive: ${errStr}`);
       } else {
-        clearHistoryPoll();
-        set({ error: errStr, sending: false });
+        applySendFailure(errStr);
       }
     }
   },

@@ -7,6 +7,16 @@ function flushAsyncImports(): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, 0));
 }
 
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
+  return { promise, resolve, reject };
+}
+
 vi.mock('@/lib/host-api', () => ({
   hostApiFetch: (...args: unknown[]) => hostApiFetchMock(...args),
 }));
@@ -132,6 +142,62 @@ describe('gateway store event wiring', () => {
     expect(useChatStore.getState().runtimeRuns['run-1']?.events).toEqual([
       expect.objectContaining({ type: 'tool.completed', toolCallId: 'call-1', name: 'read' }),
     ]);
+  });
+
+  it('does not let a stale send RPC re-arm a completed run after a newer send starts', async () => {
+    let now = 1773281731000;
+    const nowSpy = vi.spyOn(Date, 'now').mockImplementation(() => now);
+    const firstSend = deferred<{ success: boolean; result?: { runId?: string } }>();
+    const secondSend = deferred<{ success: boolean; result?: { runId?: string } }>();
+    const sendPromises = [firstSend.promise, secondSend.promise];
+    hostApiFetchMock.mockImplementation((path: string) => {
+      if (path === '/api/chat/send') return sendPromises.shift();
+      return Promise.resolve({ success: true, result: {} });
+    });
+
+    const { useChatStore } = await import('@/stores/chat');
+    useChatStore.setState({
+      currentSessionKey: 'agent:main:main',
+      sessions: [{ key: 'agent:main:main' }],
+      messages: [],
+      sending: false,
+      activeRunId: null,
+      pendingFinal: false,
+      lastUserMessageAt: null,
+    });
+
+    const first = useChatStore.getState().sendMessage('first image request');
+    expect(useChatStore.getState().sending).toBe(true);
+    expect(useChatStore.getState().lastUserMessageAt).toBe(1773281731000);
+
+    // History/media delivery can prove the first run is complete before the
+    // blocking chat.send RPC returns. The composer is then allowed to send a
+    // second turn; the late first ack must not overwrite that newer lifecycle.
+    useChatStore.setState({
+      sending: false,
+      activeRunId: null,
+      pendingFinal: false,
+      lastUserMessageAt: null,
+      streamingText: '',
+      streamingMessage: null,
+      streamingTools: [],
+      pendingToolImages: [],
+    });
+    now = 1773281732000;
+    const second = useChatStore.getState().sendMessage('second prompt');
+    expect(useChatStore.getState().sending).toBe(true);
+    expect(useChatStore.getState().lastUserMessageAt).toBe(1773281732000);
+
+    firstSend.resolve({ success: true, result: { runId: 'run-first' } });
+    await first;
+    expect(useChatStore.getState().activeRunId).not.toBe('run-first');
+    expect(useChatStore.getState().lastUserMessageAt).toBe(1773281732000);
+
+    secondSend.resolve({ success: true, result: { runId: 'run-second' } });
+    await second;
+    expect(useChatStore.getState().activeRunId).toBe('run-second');
+
+    nowSpy.mockRestore();
   });
 
   it('preserves a running session lifecycle when creating a new chat and switching back', async () => {
