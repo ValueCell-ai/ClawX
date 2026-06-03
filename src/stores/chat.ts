@@ -398,6 +398,49 @@ function clearCachedSessionRunState(sessionKey: string): void {
   _sessionRunStateCache.delete(sessionKey);
 }
 
+function cloneSessionRunState(state: SessionRunState): SessionRunState {
+  return {
+    sending: state.sending,
+    activeRunId: state.activeRunId,
+    pendingFinal: state.pendingFinal,
+    lastUserMessageAt: state.lastUserMessageAt,
+    streamingText: state.streamingText,
+    streamingMessage: state.streamingMessage,
+    streamingTools: [...state.streamingTools],
+    pendingToolImages: state.pendingToolImages.map((file) => ({ ...file })),
+  };
+}
+
+function updateCachedSessionRunStateFromRuntimeEvent(event: ChatRuntimeEvent): void {
+  const sessionKey = event.sessionKey;
+  if (!sessionKey) return;
+  const cached = _sessionRunStateCache.get(sessionKey);
+  if (!cached) return;
+
+  const next = cloneSessionRunState(cached);
+  const matchesCachedRun = next.activeRunId != null && event.runId === next.activeRunId;
+  const isCurrentUntrackedSend = next.activeRunId == null
+    && next.sending
+    && (
+      typeof event.ts !== 'number'
+      || next.lastUserMessageAt == null
+      || event.ts >= next.lastUserMessageAt - 1_000
+    );
+
+  if (event.type === 'run.started') {
+    if (next.activeRunId == null || matchesCachedRun) {
+      next.activeRunId = event.runId;
+      next.sending = true;
+    }
+    _sessionRunStateCache.set(sessionKey, next);
+    return;
+  }
+
+  if (event.type === 'run.ended' && (matchesCachedRun || isCurrentUntrackedSend)) {
+    _sessionRunStateCache.set(sessionKey, DEFAULT_SESSION_RUN_STATE);
+  }
+}
+
 function getHistoryForegroundLoadKey(sessionKey: string): string {
   const gatewayState = useGatewayStore.getState?.() as { status?: { pid?: number; connectedAt?: number; port?: number } } | undefined;
   const gatewayStatus = gatewayState?.status;
@@ -4065,17 +4108,23 @@ export const useChatStore = create<ChatState>((set, get) => ({
     const matchesCurrentSession = eventSessionKey != null && eventSessionKey === currentSessionKey;
     const matchesActiveRun = activeRunId != null && event.runId === activeRunId;
 
-    // Session-less runtime events are only safe to apply when they match the
-    // active run. Treating them as "current session" lets stale/background run
-    // terminals clear the composer for an unrelated in-flight send.
+    const runtimeRuns = applyRuntimeEventToRuns(initialState.runtimeRuns, event);
+    const nextPatch: Partial<ChatState> = { runtimeRuns };
+
+    // Always retain structured runtime events, even for inactive sessions.
+    // When the user switches away during a run and returns later, the Chat page
+    // must be able to reconstruct the live execution graph from runtimeRuns
+    // instead of relying only on the on-disk transcript snapshot.
+    // Session-less runtime events are only safe to apply to active UI when they
+    // match the active run; otherwise they are stored but do not affect the
+    // current composer/graph state.
     if (!matchesCurrentSession && !matchesActiveRun) {
+      updateCachedSessionRunStateFromRuntimeEvent(event);
+      set(nextPatch);
       return;
     }
 
     _lastChatEventAt = Date.now();
-
-    const runtimeRuns = applyRuntimeEventToRuns(initialState.runtimeRuns, event);
-    const nextPatch: Partial<ChatState> = { runtimeRuns };
     const appliesToActiveUi = matchesActiveRun || (activeRunId == null && matchesCurrentSession);
 
     if (event.type === 'run.started') {

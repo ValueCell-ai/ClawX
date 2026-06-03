@@ -134,6 +134,100 @@ describe('gateway store event wiring', () => {
     ]);
   });
 
+  it('retains inactive-session runtime events for graph reconstruction after switching back', async () => {
+    const handlers = new Map<string, (payload: unknown) => void>();
+    subscribeHostEventMock.mockImplementation((eventName: string, handler: (payload: unknown) => void) => {
+      handlers.set(eventName, handler);
+      return () => {};
+    });
+    const { useChatStore } = await import('@/stores/chat');
+    const loadHistory = vi.fn(async () => {});
+    useChatStore.setState({
+      currentSessionKey: 'agent:main:a',
+      sessions: [{ key: 'agent:main:a' }, { key: 'agent:main:b' }],
+      messages: [{ role: 'user', content: 'run in a' }],
+      sending: true,
+      activeRunId: 'run-a',
+      pendingFinal: false,
+      lastUserMessageAt: 1773281731000,
+      streamingText: '',
+      streamingMessage: null,
+      streamingTools: [],
+      pendingToolImages: [],
+      loadHistory,
+    });
+    useChatStore.getState().switchSession('agent:main:b');
+
+    const { useGatewayStore } = await import('@/stores/gateway');
+    await useGatewayStore.getState().init();
+
+    handlers.get('chat:runtime-event')?.({
+      type: 'tool.started',
+      runId: 'run-a',
+      sessionKey: 'agent:main:a',
+      toolCallId: 'call-read',
+      name: 'read',
+      args: { path: '/tmp/input.txt' },
+    });
+    await flushAsyncImports();
+
+    expect(useChatStore.getState().currentSessionKey).toBe('agent:main:b');
+    expect(useChatStore.getState().runtimeRuns['run-a']?.events).toEqual([
+      expect.objectContaining({ type: 'tool.started', toolCallId: 'call-read', name: 'read' }),
+    ]);
+
+    useChatStore.getState().switchSession('agent:main:a');
+
+    expect(useChatStore.getState().activeRunId).toBe('run-a');
+    expect(useChatStore.getState().sending).toBe(true);
+    expect(useChatStore.getState().runtimeRuns['run-a']?.events).toEqual([
+      expect.objectContaining({ type: 'tool.started', toolCallId: 'call-read', name: 'read' }),
+    ]);
+  });
+
+  it('clears cached inactive-session run state when run.ended arrives while another session is selected', async () => {
+    const handlers = new Map<string, (payload: unknown) => void>();
+    subscribeHostEventMock.mockImplementation((eventName: string, handler: (payload: unknown) => void) => {
+      handlers.set(eventName, handler);
+      return () => {};
+    });
+    const { useChatStore } = await import('@/stores/chat');
+    const loadHistory = vi.fn(async () => {});
+    useChatStore.setState({
+      currentSessionKey: 'agent:main:a',
+      sessions: [{ key: 'agent:main:a' }, { key: 'agent:main:b' }],
+      messages: [{ role: 'user', content: 'run in a' }],
+      sending: true,
+      activeRunId: 'run-a',
+      pendingFinal: true,
+      lastUserMessageAt: 1773281731000,
+      streamingText: '',
+      streamingMessage: null,
+      streamingTools: [],
+      pendingToolImages: [],
+      loadHistory,
+    });
+    useChatStore.getState().switchSession('agent:main:b');
+
+    const { useGatewayStore } = await import('@/stores/gateway');
+    await useGatewayStore.getState().init();
+
+    handlers.get('chat:runtime-event')?.({
+      type: 'run.ended',
+      runId: 'run-a',
+      sessionKey: 'agent:main:a',
+      status: 'completed',
+      endedAt: 1773281732000,
+    });
+    await flushAsyncImports();
+
+    useChatStore.getState().switchSession('agent:main:a');
+
+    expect(useChatStore.getState().sending).toBe(false);
+    expect(useChatStore.getState().activeRunId).toBeNull();
+    expect(useChatStore.getState().runtimeRuns['run-a']?.status).toBe('completed');
+  });
+
   it('clears chat sending state on terminal run.ended runtime event', async () => {
     const handlers = new Map<string, (payload: unknown) => void>();
     subscribeHostEventMock.mockImplementation((eventName: string, handler: (payload: unknown) => void) => {
