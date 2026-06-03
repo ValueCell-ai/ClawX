@@ -50,7 +50,6 @@ import {
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 import { useTranslation } from 'react-i18next';
-import { invokeIpc } from '@/lib/api-client';
 import { useSettingsStore } from '@/stores/settings';
 import { hostApi } from '@/lib/host-api';
 import { hostEvents } from '@/lib/host-events';
@@ -1637,7 +1636,7 @@ function AddProviderDialog({
                               <Button
                                 variant="secondary"
                                 className="w-full rounded-full h-[42px] font-semibold"
-                                onClick={() => invokeIpc('shell:openExternal', oauthData.authorizationUrl)}
+                                onClick={() => hostApi.shell.openExternal(oauthData.authorizationUrl)}
                               >
                                 <ExternalLink className="h-4 w-4 mr-2" />
                                 Open Authorization Page
@@ -1693,7 +1692,7 @@ function AddProviderDialog({
                               <Button
                                 variant="secondary"
                                 className="w-full rounded-full h-[42px] font-semibold"
-                                onClick={() => invokeIpc('shell:openExternal', oauthData.verificationUri)}
+                                onClick={() => hostApi.shell.openExternal(oauthData.verificationUri)}
                               >
                                 <ExternalLink className="h-4 w-4 mr-2" />
                                 {t('aiProviders.oauth.openLoginPage')}

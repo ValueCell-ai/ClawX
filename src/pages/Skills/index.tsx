@@ -23,7 +23,6 @@ import { useSkillsStore } from '@/stores/skills';
 import { useGatewayStore } from '@/stores/gateway';
 import { LoadingSpinner } from '@/components/common/LoadingSpinner';
 import { cn } from '@/lib/utils';
-import { invokeIpc } from '@/lib/api-client';
 import { hostApi } from '@/lib/host-api';
 import { isGatewayStopped } from '@/lib/gateway-status';
 import { toast } from 'sonner';
@@ -373,11 +372,11 @@ export function Skills() {
 
   const handleOpenSkillsFolder = useCallback(async () => {
     try {
-      const skillsDir = await invokeIpc<string>('openclaw:getSkillsDir');
+      const skillsDir = await hostApi.openclaw.getSkillsDir();
       if (!skillsDir) {
         throw new Error('Skills directory not available');
       }
-      const result = await invokeIpc<string>('shell:openPath', skillsDir);
+      const result = await hostApi.shell.openPath(skillsDir);
       if (result) {
         if (result.toLowerCase().includes('no such file') || result.toLowerCase().includes('not found') || result.toLowerCase().includes('failed to open')) {
           toast.error(t('toast.failedFolderNotFound'));
@@ -408,8 +407,8 @@ export function Skills() {
   const [skillsDirPath, setSkillsDirPath] = useState('~/.openclaw/skills');
 
   useEffect(() => {
-    invokeIpc<string>('openclaw:getSkillsDir')
-      .then((dir) => setSkillsDirPath(dir as string))
+    hostApi.openclaw.getSkillsDir()
+      .then((dir) => setSkillsDirPath(dir))
       .catch(console.error);
   }, []);
 
@@ -707,7 +706,7 @@ export function Skills() {
                     <div
                       key={skill.slug}
                       className="group flex flex-row items-center justify-between py-3.5 px-3 rounded-xl hover:bg-black/5 dark:hover:bg-white/5 transition-colors cursor-pointer border-b border-black/5 dark:border-white/5 last:border-0"
-                      onClick={() => invokeIpc('shell:openExternal', `https://clawhub.ai/s/${skill.slug}`)}
+                      onClick={() => hostApi.shell.openExternal(`https://clawhub.ai/s/${skill.slug}`)}
                     >
                       <div className="flex items-start gap-4 flex-1 overflow-hidden pr-4">
                         <div className="h-10 w-10 shrink-0 flex items-center justify-center text-xl bg-black/5 dark:bg-white/5 border border-black/5 dark:border-white/10 rounded-xl overflow-hidden">

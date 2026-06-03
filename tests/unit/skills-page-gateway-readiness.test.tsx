@@ -9,9 +9,10 @@ const setSkillsEnabledMock = vi.fn();
 const searchSkillsMock = vi.fn();
 const installSkillMock = vi.fn();
 const uninstallSkillMock = vi.fn();
-const invokeIpcMock = vi.fn();
 const clawhubCapabilityMock = vi.fn();
 const clawhubOpenSkillPathMock = vi.fn();
+const openclawGetSkillsDirMock = vi.fn();
+const shellOpenExternalMock = vi.fn();
 
 const { gatewayState, skillsState } = vi.hoisted(() => ({
   gatewayState: {
@@ -49,12 +50,14 @@ vi.mock('@/stores/gateway', () => ({
   useGatewayStore: (selector: (state: typeof gatewayState) => unknown) => selector(gatewayState),
 }));
 
-vi.mock('@/lib/api-client', () => ({
-  invokeIpc: (...args: unknown[]) => invokeIpcMock(...args),
-}));
-
 vi.mock('@/lib/host-api', () => ({
   hostApi: {
+    openclaw: {
+      getSkillsDir: () => openclawGetSkillsDirMock(),
+    },
+    shell: {
+      openExternal: (...args: unknown[]) => shellOpenExternalMock(...args),
+    },
     skills: {
       clawhubCapability: () => clawhubCapabilityMock(),
       clawhubOpenSkillPath: (...args: unknown[]) => clawhubOpenSkillPathMock(...args),
@@ -93,7 +96,8 @@ describe('Skills page gateway readiness', () => {
     vi.clearAllMocks();
     gatewayState.status = { state: 'running', port: 18789, gatewayReady: true };
     skillsState.skills = [];
-    invokeIpcMock.mockResolvedValue('/tmp/.openclaw/skills');
+    openclawGetSkillsDirMock.mockResolvedValue('/tmp/.openclaw/skills');
+    shellOpenExternalMock.mockResolvedValue(undefined);
     clawhubCapabilityMock.mockResolvedValue({ success: true, capability: { canSearch: false, canInstall: false } });
     clawhubOpenSkillPathMock.mockResolvedValue({ success: true });
     fetchSkillsMock.mockResolvedValue(true);

@@ -7,7 +7,7 @@ import { useTranslation } from 'react-i18next';
 import { FolderOpen } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
-import { invokeIpc } from '@/lib/api-client';
+import { hostApi } from '@/lib/host-api';
 import {
   computeLineStats,
   supportsInlineDiff,
@@ -38,7 +38,7 @@ export function GeneratedFilesPanel({
       onRevealInFileManager(file);
       return;
     }
-    void invokeIpc('shell:showItemInFolder', file.filePath);
+    void hostApi.shell.showItemInFolder(file.filePath);
   };
 
   return (

@@ -11,20 +11,27 @@ vi.mock('react-i18next', () => ({
   }),
 }));
 
-const invokeIpc = vi.fn(async (channel: string) => {
-  if (channel === 'dialog:message') return { response: 1 };
-  if (channel === 'shell:openPath') return '';
-  return {};
-});
+const dialogMessageMock = vi.fn(async () => ({ response: 1 }));
+const shellOpenPathMock = vi.fn(async () => '');
 const readTextFile = vi.fn();
 const statFile = vi.fn();
 const writeTextFile = vi.fn();
 
 vi.mock('@/lib/api-client', () => ({
-  invokeIpc: (...args: unknown[]) => invokeIpc(...args),
   readTextFile: (...args: unknown[]) => readTextFile(...args),
   statFile: (...args: unknown[]) => statFile(...args),
   writeTextFile: (...args: unknown[]) => writeTextFile(...args),
+}));
+
+vi.mock('@/lib/host-api', () => ({
+  hostApi: {
+    dialog: {
+      message: (...args: unknown[]) => dialogMessageMock(...args),
+    },
+    shell: {
+      openPath: (...args: unknown[]) => shellOpenPathMock(...args),
+    },
+  },
 }));
 
 function makePreviewTarget(overrides: Partial<FilePreviewTarget> = {}): FilePreviewTarget {
@@ -85,10 +92,10 @@ describe('FilePreviewBody', () => {
     fireEvent.click(openButton);
 
     await waitFor(() => {
-      expect(invokeIpc).toHaveBeenCalledWith('dialog:message', expect.objectContaining({
+      expect(dialogMessageMock).toHaveBeenCalledWith(expect.objectContaining({
         buttons: expect.arrayContaining(['Open directly']),
       }));
-      expect(invokeIpc).toHaveBeenCalledWith('shell:openPath', '/tmp/large-report.pdf');
+      expect(shellOpenPathMock).toHaveBeenCalledWith('/tmp/large-report.pdf');
     });
   });
 });

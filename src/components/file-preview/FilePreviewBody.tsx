@@ -27,7 +27,8 @@ import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { LoadingSpinner } from '@/components/common/LoadingSpinner';
 import { cn } from '@/lib/utils';
-import { invokeIpc, readTextFile, statFile, writeTextFile } from '@/lib/api-client';
+import { readTextFile, statFile, writeTextFile } from '@/lib/api-client';
+import { hostApi } from '@/lib/host-api';
 import type { FilePreviewTarget } from './types';
 import {
   isHtmlPreviewExt,
@@ -371,7 +372,7 @@ export function FilePreviewBody({
   }, [state]);
 
   const handleOpenInFinder = useCallback(() => {
-    invokeIpc('shell:showItemInFolder', file.filePath).catch(() => {
+    hostApi.shell.showItemInFolder(file.filePath).catch(() => {
       toast.error(t('filePreview.errors.openInFinderFailed', 'Could not reveal in file manager'));
     });
   }, [file, t]);

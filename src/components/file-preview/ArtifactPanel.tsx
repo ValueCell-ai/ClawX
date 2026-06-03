@@ -23,7 +23,7 @@ import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { supportsRichDocumentPreview, type GeneratedFile } from '@/lib/generated-files';
-import { invokeIpc } from '@/lib/api-client';
+import { hostApi } from '@/lib/host-api';
 import type { AgentSummary } from '@/types/agent';
 import { useArtifactPanel } from '@/stores/artifact-panel';
 import type { FilePreviewTarget } from './types';
@@ -56,7 +56,7 @@ export function ArtifactPanel({ files, agent, runStartedAt, refreshSignal }: Art
 
   const handleRevealFocusedFile = () => {
     if (!focusedFile) return;
-    invokeIpc('shell:showItemInFolder', focusedFile.filePath).catch(() => {
+    hostApi.shell.showItemInFolder(focusedFile.filePath).catch(() => {
       toast.error(t('filePreview.errors.openInFinderFailed', 'Could not reveal in file manager'));
     });
   };

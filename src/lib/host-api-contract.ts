@@ -22,6 +22,81 @@ export type OpenClawDoctorResult = HostSuccess & {
 };
 export type OpenClawDoctorPayload = { mode: OpenClawDoctorMode };
 
+export type OpenClawStatusResult = {
+  packageExists: boolean;
+  isBuilt: boolean;
+  entryPath: string;
+  dir: string;
+  version?: string;
+};
+export type OpenClawCliCommandResult = HostSuccess & { command?: string };
+
+export type ShellPathPayload = { path: string };
+export type ShellOpenExternalPayload = { url: string };
+export type DialogOpenPayload = {
+  title?: string;
+  defaultPath?: string;
+  buttonLabel?: string;
+  filters?: Array<{ name: string; extensions: string[] }>;
+  properties?: Array<
+    | 'openFile'
+    | 'openDirectory'
+    | 'multiSelections'
+    | 'showHiddenFiles'
+    | 'createDirectory'
+    | 'promptToCreate'
+    | 'noResolveAliases'
+    | 'treatPackageAsDirectory'
+    | 'dontAddToRecent'
+  >;
+  message?: string;
+  securityScopedBookmarks?: boolean;
+};
+export type DialogOpenResult = {
+  canceled: boolean;
+  filePaths: string[];
+  bookmarks?: string[];
+};
+export type DialogMessagePayload = {
+  message: string;
+  type?: 'none' | 'info' | 'error' | 'question' | 'warning';
+  buttons?: string[];
+  defaultId?: number;
+  cancelId?: number;
+  detail?: string;
+  checkboxLabel?: string;
+  checkboxChecked?: boolean;
+  noLink?: boolean;
+  title?: string;
+};
+export type DialogMessageResult = {
+  response: number;
+  checkboxChecked?: boolean;
+};
+export type WindowSyncTrafficLightPayload = { sidebarCollapsed: boolean };
+export type UpdateChannel = 'stable' | 'beta' | 'dev';
+export type UpdateInfoSnapshot = {
+  version: string;
+  releaseDate?: string;
+  releaseNotes?: string | null;
+};
+export type UpdateProgressSnapshot = {
+  total: number;
+  delta: number;
+  transferred: number;
+  percent: number;
+  bytesPerSecond: number;
+};
+export type UpdateStatusSnapshot = {
+  status: 'idle' | 'checking' | 'available' | 'not-available' | 'downloading' | 'downloaded' | 'error';
+  info?: UpdateInfoSnapshot;
+  progress?: UpdateProgressSnapshot;
+  error?: string;
+};
+export type UpdateCheckResult = HostSuccess & { status?: UpdateStatusSnapshot };
+export type UpdateSetChannelPayload = { channel: UpdateChannel };
+export type UpdateSetAutoDownloadPayload = { enable: boolean };
+
 export type SettingsSnapshot = Partial<{
   theme: 'light' | 'dark' | 'system';
   language: string;
@@ -525,6 +600,37 @@ export type DeliveryTargetsResult = HostSuccess & { targets: DeliveryChannelGrou
 export type HostApiContract = {
   app: {
     openClawDoctor: (payload: OpenClawDoctorPayload) => MaybePromise<Omit<OpenClawDoctorResult, 'mode'>>;
+  };
+  openclaw: {
+    status: () => MaybePromise<OpenClawStatusResult>;
+    getSkillsDir: () => MaybePromise<string>;
+    getCliCommand: () => MaybePromise<OpenClawCliCommandResult>;
+  };
+  shell: {
+    openExternal: (payload: ShellOpenExternalPayload) => MaybePromise<void>;
+    showItemInFolder: (payload: ShellPathPayload) => MaybePromise<void>;
+    openPath: (payload: ShellPathPayload) => MaybePromise<string>;
+  };
+  dialog: {
+    open: (payload: DialogOpenPayload) => MaybePromise<DialogOpenResult>;
+    message: (payload: DialogMessagePayload) => MaybePromise<DialogMessageResult>;
+  };
+  window: {
+    syncTrafficLightPosition: (payload: WindowSyncTrafficLightPayload) => MaybePromise<void>;
+    minimize: () => MaybePromise<void>;
+    maximize: () => MaybePromise<void>;
+    close: () => MaybePromise<void>;
+    isMaximized: () => MaybePromise<boolean>;
+  };
+  updates: {
+    status: () => MaybePromise<UpdateStatusSnapshot>;
+    version: () => MaybePromise<string>;
+    check: () => MaybePromise<UpdateCheckResult>;
+    download: () => MaybePromise<HostSuccess>;
+    install: () => MaybePromise<HostSuccess>;
+    setChannel: (payload: UpdateSetChannelPayload) => MaybePromise<HostSuccess>;
+    setAutoDownload: (payload: UpdateSetAutoDownloadPayload) => MaybePromise<HostSuccess>;
+    cancelAutoInstall: () => MaybePromise<HostSuccess>;
   };
   settings: {
     getAll: () => MaybePromise<SettingsSnapshot>;

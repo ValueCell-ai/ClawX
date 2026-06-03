@@ -7,6 +7,8 @@ import type {
   ChatSendWithMediaPayload,
   ClawHubSearchPayload,
   CronSessionHistoryPayload,
+  DialogMessagePayload,
+  DialogOpenPayload,
   FilePreviewTreeOptions,
   FileReadBinaryOptions,
   ImageGenerationSettingsPayload,
@@ -22,9 +24,12 @@ import type {
   SettingsKey,
   SettingsSnapshot,
   SettingsValue,
+  ShellOpenExternalPayload,
+  ShellPathPayload,
   SkillQuickAccessPayload,
   SkillUpdateConfigPayload,
   SkillUpdatePayload,
+  UpdateChannel,
 } from './host-api-contract';
 import type { CronJobCreateInput, CronJobUpdateInput } from '@/types/cron';
 import { invokeHost } from './host-api-client';
@@ -51,7 +56,9 @@ export type {
   LocalSkillsResult,
   LogContentResult,
   LogDirResult,
+  OpenClawCliCommandResult,
   OpenClawDoctorResult,
+  OpenClawStatusResult,
   ProviderAccountKeyInfo,
   ProviderDefaultAccountResult,
   ProviderValidationResult,
@@ -72,6 +79,39 @@ export const hostApi = {
       ...(await invokeHost('app', 'openClawDoctor', { mode })),
       mode,
     }),
+  },
+  openclaw: {
+    status: () => invokeHost('openclaw', 'status'),
+    getSkillsDir: () => invokeHost('openclaw', 'getSkillsDir'),
+    getCliCommand: () => invokeHost('openclaw', 'getCliCommand'),
+  },
+  shell: {
+    openExternal: (url: string) => invokeHost('shell', 'openExternal', { url } satisfies ShellOpenExternalPayload),
+    showItemInFolder: (path: string) => invokeHost('shell', 'showItemInFolder', { path } satisfies ShellPathPayload),
+    openPath: (path: string) => invokeHost('shell', 'openPath', { path } satisfies ShellPathPayload),
+  },
+  dialog: {
+    open: (input: DialogOpenPayload) => invokeHost('dialog', 'open', input),
+    message: (input: DialogMessagePayload) => invokeHost('dialog', 'message', input),
+  },
+  window: {
+    syncTrafficLightPosition: (sidebarCollapsed: boolean) => (
+      invokeHost('window', 'syncTrafficLightPosition', { sidebarCollapsed })
+    ),
+    minimize: () => invokeHost('window', 'minimize'),
+    maximize: () => invokeHost('window', 'maximize'),
+    close: () => invokeHost('window', 'close'),
+    isMaximized: () => invokeHost('window', 'isMaximized'),
+  },
+  updates: {
+    status: () => invokeHost('updates', 'status'),
+    version: () => invokeHost('updates', 'version'),
+    check: () => invokeHost('updates', 'check'),
+    download: () => invokeHost('updates', 'download'),
+    install: () => invokeHost('updates', 'install'),
+    setChannel: (channel: UpdateChannel) => invokeHost('updates', 'setChannel', { channel }),
+    setAutoDownload: (enable: boolean) => invokeHost('updates', 'setAutoDownload', { enable }),
+    cancelAutoInstall: () => invokeHost('updates', 'cancelAutoInstall'),
   },
   settings: {
     getAll: () => invokeHost('settings', 'getAll'),

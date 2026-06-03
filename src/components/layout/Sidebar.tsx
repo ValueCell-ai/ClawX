@@ -39,7 +39,6 @@ import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { hostApi } from '@/lib/host-api';
-import { invokeIpc } from '@/lib/api-client';
 import { SIDEBAR_COLLAPSED_WIDTH, MAC_SIDEBAR_CHROME_HEIGHT } from '../../../shared/sidebar-layout';
 import { useTranslation } from 'react-i18next';
 import logoSvg from '@/assets/logo.svg';
@@ -157,7 +156,7 @@ export function Sidebar() {
 
   useEffect(() => {
     if (!isMac) return;
-    void invokeIpc('window:syncTrafficLightPosition', sidebarCollapsed);
+    void hostApi.window.syncTrafficLightPosition(sidebarCollapsed);
   }, [isMac, sidebarCollapsed]);
 
   const navigate = useNavigate();

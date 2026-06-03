@@ -46,6 +46,11 @@ import { appUpdater } from './updater';
 import { GatewayRpcBackpressure } from '../gateway/rpc-backpressure';
 import { registerHostInvokeHandler } from './ipc/host-invoke';
 import { createAppApi } from '../services/app-api';
+import { createOpenClawApi } from '../services/openclaw-api';
+import { createShellApi } from '../services/shell-api';
+import { createDialogApi } from '../services/dialog-api';
+import { createWindowApi } from '../services/window-api';
+import { createUpdatesApi } from '../services/updates-api';
 import { createGatewayApi } from '../services/gateway-api';
 import { createLogsApi } from '../services/logs-api';
 import { createSettingsApi } from '../services/settings-api';
@@ -132,6 +137,11 @@ function registerTypedHostHandlers(
 ): void {
   registerHostInvokeHandler({
     app: createAppApi(),
+    openclaw: createOpenClawApi(),
+    shell: createShellApi(),
+    dialog: createDialogApi(),
+    window: createWindowApi(mainWindow),
+    updates: createUpdatesApi(appUpdater),
     settings: createSettingsApi(gatewayManager),
     gateway: createGatewayApi(gatewayManager, gatewayRpcBackpressure),
     logs: createLogsApi(),

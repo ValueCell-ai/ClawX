@@ -12,7 +12,6 @@ import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { hostApi } from '@/lib/host-api';
-import { invokeIpc } from '@/lib/api-client';
 import { cn } from '@/lib/utils';
 import { useGatewayStore } from '@/stores/gateway';
 import { useAgentsStore } from '@/stores/agents';
@@ -267,11 +266,10 @@ export function ChatInput({ onSend, onStop, disabled = false, sending = false }:
   useEffect(() => {
     if (gatewayStatus.state === 'running') return;
     let cancelled = false;
-    invokeIpc('gateway:status')
-      .then((status: unknown) => {
+    hostApi.gateway.status()
+      .then((status) => {
         if (cancelled) return;
-        const latest = status as { state?: string };
-        if (latest?.state === 'running') {
+        if (status.state === 'running') {
           void refreshProviderSnapshot();
         }
       })
@@ -511,9 +509,9 @@ export function ChatInput({ onSend, onStop, disabled = false, sending = false }:
 
   const pickFiles = useCallback(async () => {
     try {
-      const result = await invokeIpc('dialog:open', {
+      const result = await hostApi.dialog.open({
         properties: ['openFile', 'multiSelections'],
-      }) as { canceled: boolean; filePaths?: string[] };
+      });
       if (result.canceled || !result.filePaths?.length) return;
       await stagePathFiles(result.filePaths);
     } catch (err) {

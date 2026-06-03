@@ -1,4 +1,4 @@
-import { invokeIpc } from '@/lib/api-client';
+import { hostApi } from '@/lib/host-api';
 import { formatFileSize } from './format';
 
 export const DIRECT_OPEN_FALLBACK_EXTS = new Set(['.pdf', '.xls', '.xlsx']);
@@ -33,7 +33,7 @@ export async function confirmAndOpenFile(params: {
     filePath,
   ].filter(Boolean).join('\n');
 
-  const result = await invokeIpc<{ response?: number }>('dialog:message', {
+  const result = await hostApi.dialog.message({
     type: 'question',
     buttons: [
       t('filePreview.confirmOpen.cancel', { defaultValue: 'Cancel' }),
@@ -52,7 +52,7 @@ export async function confirmAndOpenFile(params: {
 
   if (result?.response !== 1) return false;
 
-  const openResult = await invokeIpc<string>('shell:openPath', filePath);
+  const openResult = await hostApi.shell.openPath(filePath);
   if (openResult) {
     throw new Error(openResult);
   }

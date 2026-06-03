@@ -7,7 +7,7 @@
  */
 import { useState, useEffect } from 'react';
 import { Minus, Square, X, Copy } from 'lucide-react';
-import { invokeIpc } from '@/lib/api-client';
+import { hostApi } from '@/lib/host-api';
 
 export function TitleBar() {
   const platform = window.electron?.platform;
@@ -30,25 +30,25 @@ function WindowsTitleBar() {
 
   useEffect(() => {
     // Check initial state
-    invokeIpc('window:isMaximized').then((val) => {
-      setMaximized(val as boolean);
+    hostApi.window.isMaximized().then((val) => {
+      setMaximized(val);
     });
   }, []);
 
   const handleMinimize = () => {
-    invokeIpc('window:minimize');
+    void hostApi.window.minimize();
   };
 
   const handleMaximize = () => {
-    invokeIpc('window:maximize').then(() => {
-      invokeIpc('window:isMaximized').then((val) => {
-        setMaximized(val as boolean);
+    hostApi.window.maximize().then(() => {
+      hostApi.window.isMaximized().then((val) => {
+        setMaximized(val);
       });
     });
   };
 
   const handleClose = () => {
-    invokeIpc('window:close');
+    void hostApi.window.close();
   };
 
   return (

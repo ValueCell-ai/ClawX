@@ -13,7 +13,6 @@ import { useGatewayStore } from '@/stores/gateway';
 import { useAgentsStore } from '@/stores/agents';
 import { useArtifactPanel } from '@/stores/artifact-panel';
 import { hostApi } from '@/lib/host-api';
-import { invokeIpc } from '@/lib/api-client';
 import { LoadingSpinner } from '@/components/common/LoadingSpinner';
 import { ChatMessage } from './ChatMessage';
 import { ChatInput } from './ChatInput';
@@ -198,7 +197,7 @@ export function Chat() {
   const handleOpenAttachedFile = useCallback((file: AttachedFileMeta) => {
     if (!file.filePath) return;
     if (file.mimeType === 'application/x-directory') {
-      void invokeIpc('shell:openPath', file.filePath)
+      void hostApi.shell.openPath(file.filePath)
         .then((error) => {
           if (typeof error === 'string' && error) {
             toast.error(error);

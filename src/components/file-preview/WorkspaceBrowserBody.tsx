@@ -12,7 +12,8 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { LoadingSpinner } from '@/components/common/LoadingSpinner';
 import { cn } from '@/lib/utils';
-import { invokeIpc, readTextFile, statFile } from '@/lib/api-client';
+import { readTextFile, statFile } from '@/lib/api-client';
+import { hostApi } from '@/lib/host-api';
 import {
   isHtmlPreviewExt,
   isPdfPreviewExt,
@@ -213,14 +214,14 @@ export function WorkspaceBrowserBody({
 
   const handleOpenWorkspaceInFinder = useCallback(() => {
     if (!workspace) return;
-    invokeIpc('shell:openPath', workspace).catch(() => {
+    hostApi.shell.openPath(workspace).catch(() => {
       toast.error(t('filePreview.errors.openInFinderFailed', 'Could not reveal in file manager'));
     });
   }, [workspace, t]);
 
   const handleOpenSelectedInFinder = useCallback(() => {
     if (!selectedNode || selectedNode.isDir) return;
-    invokeIpc('shell:showItemInFolder', selectedNode.absPath).catch(() => {
+    hostApi.shell.showItemInFolder(selectedNode.absPath).catch(() => {
       toast.error(t('filePreview.errors.openInFinderFailed', 'Could not reveal in file manager'));
     });
   }, [selectedNode, t]);

@@ -57,6 +57,45 @@ describe('hostApi facade', () => {
     }));
   });
 
+  it('routes openclaw, shell, dialog, window, and updates methods through hostInvoke', async () => {
+    hostInvoke
+      .mockResolvedValueOnce({ id: 'req-1', ok: true, data: { packageExists: true, isBuilt: true, entryPath: '/openclaw/openclaw.mjs', dir: '/openclaw' } })
+      .mockResolvedValueOnce({ id: 'req-2', ok: true, data: '' })
+      .mockResolvedValueOnce({ id: 'req-3', ok: true, data: { canceled: false, filePaths: ['/tmp/a.txt'] } })
+      .mockResolvedValueOnce({ id: 'req-4', ok: true, data: undefined })
+      .mockResolvedValueOnce({ id: 'req-5', ok: true, data: { success: true, status: { status: 'not-available' } } });
+    const { hostApi } = await import('@/lib/host-api');
+
+    await hostApi.openclaw.status();
+    await hostApi.shell.openPath('/tmp/a.txt');
+    await hostApi.dialog.open({ properties: ['openFile'] });
+    await hostApi.window.maximize();
+    await hostApi.updates.check();
+
+    expect(hostInvoke).toHaveBeenNthCalledWith(1, expect.objectContaining({
+      module: 'openclaw',
+      action: 'status',
+    }));
+    expect(hostInvoke).toHaveBeenNthCalledWith(2, expect.objectContaining({
+      module: 'shell',
+      action: 'openPath',
+      payload: { path: '/tmp/a.txt' },
+    }));
+    expect(hostInvoke).toHaveBeenNthCalledWith(3, expect.objectContaining({
+      module: 'dialog',
+      action: 'open',
+      payload: { properties: ['openFile'] },
+    }));
+    expect(hostInvoke).toHaveBeenNthCalledWith(4, expect.objectContaining({
+      module: 'window',
+      action: 'maximize',
+    }));
+    expect(hostInvoke).toHaveBeenNthCalledWith(5, expect.objectContaining({
+      module: 'updates',
+      action: 'check',
+    }));
+  });
+
   it('passes log file path and tail lines through hostInvoke', async () => {
     hostInvoke.mockResolvedValueOnce({ id: 'req', ok: true, data: { content: 'tail' } });
     const { hostApi } = await import('@/lib/host-api');
@@ -254,7 +293,7 @@ describe('hostApi facade', () => {
         const stat = statSync(fullPath);
         if (stat.isDirectory()) {
           collect(fullPath);
-        } else if (/\.(ts|tsx)$/.test(entry)) {
+        } else if (/\.(ts|tsx)$/.test(entry) && !fullPath.endsWith('src/lib/api-client.ts')) {
           files.push(fullPath);
         }
       }
@@ -421,6 +460,35 @@ describe('hostApi facade', () => {
         ? ['electron/main/ipc-handlers.ts: remove legacy app:request cron module']
         : []),
     ];
+
+    expect(violations).toEqual([]);
+  });
+
+  it('keeps production invokeIpc channel literals behind typed facades except explicit legacy installers', () => {
+    const srcRoot = join(process.cwd(), 'src');
+    const files: string[] = [];
+    const collect = (dir: string) => {
+      for (const entry of readdirSync(dir)) {
+        const fullPath = join(dir, entry);
+        const stat = statSync(fullPath);
+        if (stat.isDirectory()) {
+          collect(fullPath);
+        } else if (/\.(ts|tsx)$/.test(entry) && !fullPath.endsWith('src/lib/api-client.ts')) {
+          files.push(fullPath);
+        }
+      }
+    };
+    collect(srcRoot);
+
+    const allowedChannels = new Set(['uv:install-all']);
+    const violations = files.flatMap((file) => {
+      const relative = file.replace(`${process.cwd()}/`, '');
+      const text = readFileSync(file, 'utf8');
+      return [...text.matchAll(/invokeIpc(?:<[^>]+>)?\(\s*['"]([^'"]+)['"]/g)]
+        .map((match) => match[1])
+        .filter((channel) => !allowedChannels.has(channel))
+        .map((channel) => `${relative}: route ${channel} through hostApi`);
+    });
 
     expect(violations).toEqual([]);
   });

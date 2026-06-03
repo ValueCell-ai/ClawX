@@ -12,12 +12,19 @@ vi.mock('react-i18next', () => ({
 }));
 
 const readTextFile = vi.fn();
-const invokeIpc = vi.fn(async () => ({}));
 
 vi.mock('@/lib/api-client', () => ({
-  invokeIpc: (...args: unknown[]) => invokeIpc(...args),
   readTextFile: (...args: unknown[]) => readTextFile(...args),
   statFile: vi.fn(),
+}));
+
+vi.mock('@/lib/host-api', () => ({
+  hostApi: {
+    shell: {
+      openPath: vi.fn(),
+      showItemInFolder: vi.fn(),
+    },
+  },
 }));
 
 const htmlNode: WorkspaceTreeNode = {

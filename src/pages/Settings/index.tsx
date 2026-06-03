@@ -23,7 +23,7 @@ import { useSettingsStore } from '@/stores/settings';
 import { useGatewayStore } from '@/stores/gateway';
 import { useUpdateStore } from '@/stores/update';
 import { UpdateSettings } from '@/components/settings/UpdateSettings';
-import { invokeIpc, toUserMessage } from '@/lib/api-client';
+import { toUserMessage } from '@/lib/api-client';
 import {
   clearUiTelemetry,
   getUiTelemetrySnapshot,
@@ -109,7 +109,7 @@ export function Settings() {
     try {
       const { dir: logDir } = await hostApi.logs.dir();
       if (logDir) {
-        await invokeIpc('shell:showItemInFolder', logDir);
+        await hostApi.shell.showItemInFolder(logDir);
       }
     } catch {
       // ignore
@@ -197,11 +197,7 @@ export function Settings() {
 
     (async () => {
       try {
-        const result = await invokeIpc<{
-          success: boolean;
-          command?: string;
-          error?: string;
-        }>('openclaw:getCliCommand');
+        const result = await hostApi.openclaw.getCliCommand();
         if (cancelled) return;
         if (result.success && result.command) {
           setOpenclawCliCommand(result.command);
@@ -312,7 +308,7 @@ export function Settings() {
       const normalizedHttpsServer = proxyHttpsServerDraft.trim();
       const normalizedAllServer = proxyAllServerDraft.trim();
       const normalizedBypassRules = proxyBypassRulesDraft.trim();
-      await invokeIpc('settings:setMany', {
+      await hostApi.settings.setMany({
         proxyEnabled: proxyEnabledDraft,
         proxyServer: normalizedProxyServer,
         proxyHttpServer: normalizedHttpServer,

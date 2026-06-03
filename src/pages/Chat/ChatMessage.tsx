@@ -15,7 +15,8 @@ import rehypeKatex from 'rehype-katex';
 import { createPortal } from 'react-dom';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
-import { invokeIpc, statFile } from '@/lib/api-client';
+import { statFile } from '@/lib/api-client';
+import { hostApi } from '@/lib/host-api';
 import type { RawMessage, AttachedFileMeta } from '@/stores/chat';
 import { extractText, extractImages, extractToolUse, formatTimestamp, isUnresolvableImageUrl } from './message-utils';
 import { copyImageToClipboard, type ImageCopyTarget } from './copy-image';
@@ -726,7 +727,7 @@ function FileCard({ file, onOpen }: { file: AttachedFileMeta; onOpen?: (file: At
     if (onOpen) {
       onOpen(file);
     } else {
-      invokeIpc('shell:openPath', file.filePath);
+      void hostApi.shell.openPath(file.filePath);
     }
   }, [file, onOpen]);
 
@@ -867,7 +868,7 @@ function ImageLightbox({
 
   const handleShowInFolder = useCallback(() => {
     if (filePath) {
-      invokeIpc('shell:showItemInFolder', filePath);
+      void hostApi.shell.showItemInFolder(filePath);
     }
   }, [filePath]);
 
@@ -915,4 +916,3 @@ function ImageLightbox({
     document.body,
   );
 }
-

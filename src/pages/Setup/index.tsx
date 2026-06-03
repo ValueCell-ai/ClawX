@@ -352,12 +352,7 @@ function RuntimeContent({ onStatusChange }: RuntimeContentProps) {
 
     // Check OpenClaw package status
     try {
-      const openclawStatus = await invokeIpc('openclaw:status') as {
-        packageExists: boolean;
-        isBuilt: boolean;
-        dir: string;
-        version?: string;
-      };
+      const openclawStatus = await hostApi.openclaw.status();
 
       setOpenclawDir(openclawStatus.dir);
 
@@ -509,7 +504,7 @@ function RuntimeContent({ onStatusChange }: RuntimeContentProps) {
     try {
       const { dir: logDir } = await hostApi.logs.dir();
       if (logDir) {
-        await invokeIpc('shell:showItemInFolder', logDir);
+        await hostApi.shell.showItemInFolder(logDir);
       }
     } catch {
       // ignore
