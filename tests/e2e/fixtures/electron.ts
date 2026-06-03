@@ -1,6 +1,6 @@
 import electronBinaryPath from 'electron';
 import { _electron as electron, expect, test as base, type ElectronApplication, type Page } from '@playwright/test';
-import { mkdir, mkdtemp, rm } from 'node:fs/promises';
+import { access, mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
@@ -114,11 +114,25 @@ async function closeElectronApp(app: ElectronApplication, timeoutMs = 5_000): Pr
   }
 }
 
+async function seedE2eSettings(userDataDir: string): Promise<void> {
+  const settingsPath = join(userDataDir, 'settings.json');
+  try {
+    await access(settingsPath);
+    return;
+  } catch {
+    // Seed only once per isolated profile. Tests that switch language should
+    // keep their persisted setting across relaunches in the same profile.
+  }
+
+  await writeFile(settingsPath, JSON.stringify({ language: 'en' }, null, 2), 'utf-8');
+}
+
 async function launchClawXElectron(
   homeDir: string,
   userDataDir: string,
   options: LaunchElectronOptions = {},
 ): Promise<ElectronApplication> {
+  await seedE2eSettings(userDataDir);
   const hostApiPort = await allocatePort();
   const electronEnv = process.platform === 'linux'
     ? {
@@ -128,7 +142,7 @@ async function launchClawXElectron(
     : {};
   return await electron.launch({
     executablePath: electronBinaryPath,
-    args: [electronEntry],
+    args: ['--lang=en-US', electronEntry],
     env: {
       ...process.env,
       ...electronEnv,
@@ -137,6 +151,9 @@ async function launchClawXElectron(
       APPDATA: join(homeDir, 'AppData', 'Roaming'),
       LOCALAPPDATA: join(homeDir, 'AppData', 'Local'),
       XDG_CONFIG_HOME: join(homeDir, '.config'),
+      LANG: 'en_US.UTF-8',
+      LC_ALL: 'en_US.UTF-8',
+      LANGUAGE: 'en',
       CLAWX_E2E: '1',
       CLAWX_USER_DATA_DIR: userDataDir,
       ...(options.skipSetup ? { CLAWX_E2E_SKIP_SETUP: '1' } : {}),
@@ -223,11 +240,22 @@ export async function installIpcMocks(
       const originalHostInvoke = (ipcMain as unknown as {
         _invokeHandlers?: Map<string, (event: unknown, request: unknown) => Promise<unknown>>;
       })._invokeHandlers?.get('host:invoke');
+      type IpcInvokeHandler = (event: unknown, ...args: unknown[]) => Promise<unknown>;
+      const getInvokeHandler = (channel: string): IpcInvokeHandler | undefined => {
+        return (ipcMain as unknown as {
+          _invokeHandlers?: Map<string, IpcInvokeHandler>;
+        })._invokeHandlers?.get(channel);
+      };
 
       const respond = (id: unknown, data: unknown) => ({
         id: typeof id === 'string' ? id : undefined,
         ok: true,
         data,
+      });
+      const fail = (id: unknown, message: string) => ({
+        id: typeof id === 'string' ? id : undefined,
+        ok: false,
+        error: { code: 'INTERNAL', message },
       });
 
       const unwrapLegacyResponse = (response: unknown): unknown => {
@@ -238,6 +266,25 @@ export async function installIpcMocks(
           return (data as Record<string, unknown>).json;
         }
         return data ?? response;
+      };
+      const respondGatewayRpc = (id: unknown, response: unknown) => {
+        if (response && typeof response === 'object') {
+          const record = response as Record<string, unknown>;
+          if (record.success === false) {
+            return fail(id, String(record.error || 'Gateway RPC failed'));
+          }
+          if (record.success === true && 'result' in record) {
+            return respond(id, record.result);
+          }
+        }
+        return respond(id, response);
+      };
+      const originalLegacyGatewayRpc = getInvokeHandler('gateway:rpc');
+      const originalLegacyFileStat = getInvokeHandler('file:stat');
+      const originalLegacyFileReadText = getInvokeHandler('file:readText');
+      const getLegacyOverride = (channel: string, original?: IpcInvokeHandler) => {
+        const current = getInvokeHandler(channel);
+        return current && current !== original ? current : null;
       };
 
       const legacyPathForHostRequest = (request: {
@@ -305,10 +352,23 @@ export async function installIpcMocks(
             const method = typeof payload.method === 'string' ? payload.method : '';
             const params = 'params' in payload ? payload.params : null;
             const key = stableStringify([method, params ?? null]);
-            if (key in mockConfig.gatewayRpc) return respond(request.id, mockConfig.gatewayRpc[key]);
+            if (key in mockConfig.gatewayRpc) return respondGatewayRpc(request.id, mockConfig.gatewayRpc[key]);
+            if (method === 'sessions.list') {
+              const emptySessionsListKey = stableStringify([method, {}]);
+              if (emptySessionsListKey in mockConfig.gatewayRpc) {
+                return respondGatewayRpc(request.id, mockConfig.gatewayRpc[emptySessionsListKey]);
+              }
+            }
             const fallbackKey = stableStringify([method, null]);
-            if (fallbackKey in mockConfig.gatewayRpc) return respond(request.id, mockConfig.gatewayRpc[fallbackKey]);
-            return respond(request.id, { success: true, result: {} });
+            if (fallbackKey in mockConfig.gatewayRpc) return respondGatewayRpc(request.id, mockConfig.gatewayRpc[fallbackKey]);
+            const legacyGatewayRpc = getLegacyOverride('gateway:rpc', originalLegacyGatewayRpc);
+            if (legacyGatewayRpc) {
+              return respondGatewayRpc(
+                request.id,
+                await legacyGatewayRpc(event, method, params, payload.timeoutMs),
+              );
+            }
+            return respond(request.id, {});
           }
 
           if (mockConfig.hostApi) {
@@ -326,6 +386,23 @@ export async function installIpcMocks(
               const key = stableStringify(legacyPath);
               if (key in mockConfig.hostApi) {
                 return respond(request.id, unwrapLegacyResponse(mockConfig.hostApi[key]));
+              }
+            }
+          }
+
+          if (request?.module === 'files') {
+            const payload = request.payload ?? {};
+            const path = typeof payload.path === 'string' ? payload.path : '';
+            if (request.action === 'stat') {
+              const legacyFileStat = getLegacyOverride('file:stat', originalLegacyFileStat);
+              if (legacyFileStat) {
+                return respond(request.id, await legacyFileStat(event, path));
+              }
+            }
+            if (request.action === 'readText') {
+              const legacyFileReadText = getLegacyOverride('file:readText', originalLegacyFileReadText);
+              if (legacyFileReadText) {
+                return respond(request.id, await legacyFileReadText(event, path));
               }
             }
           }
