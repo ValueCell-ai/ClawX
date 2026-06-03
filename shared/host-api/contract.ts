@@ -1,7 +1,7 @@
+import type { RawMessage } from '../chat/types';
 import type { AgentsSnapshot } from '../types/agent';
 import type { CronJob, CronJobCreateInput, CronJobUpdateInput } from '../types/cron';
 import type { GatewayHealth, GatewayStatus } from '../types/gateway';
-import type { RawMessage } from '../stores/chat/types';
 import type { MarketplaceSkill, QuickAccessSkill, Skill } from '../types/skill';
 
 export type JsonRecord = Record<string, unknown>;

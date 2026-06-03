@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { readdirSync, readFileSync, statSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 
 const hostInvoke = vi.fn();
@@ -321,7 +321,7 @@ describe('hostApi facade', () => {
   });
 
   it('uses a function-shaped host API contract to type host invocations', () => {
-    const contract = readFileSync(join(process.cwd(), 'src/lib/host-api-contract.ts'), 'utf8');
+    const contract = readFileSync(join(process.cwd(), 'shared/host-api/contract.ts'), 'utf8');
     const client = readFileSync(join(process.cwd(), 'src/lib/host-api-client.ts'), 'utf8');
     const facade = readFileSync(join(process.cwd(), 'src/lib/host-api.ts'), 'utf8');
     const mainContract = readFileSync(join(process.cwd(), 'electron/main/ipc/host-contract.ts'), 'utf8');
@@ -337,13 +337,76 @@ describe('hostApi facade', () => {
   });
 
   it('keeps async handler flexibility out of the renderer-facing host API contract', () => {
-    const contract = readFileSync(join(process.cwd(), 'src/lib/host-api-contract.ts'), 'utf8');
+    const contract = readFileSync(join(process.cwd(), 'shared/host-api/contract.ts'), 'utf8');
     const mainContract = readFileSync(join(process.cwd(), 'electron/main/ipc/host-contract.ts'), 'utf8');
 
     expect(contract).not.toContain('MaybePromise');
     expect(contract).toContain('version: () => string;');
     expect(mainContract).toContain('type MaybePromise<T> = T | Promise<T>;');
     expect(mainContract).toContain('MaybePromise<Awaited<Result>>');
+  });
+
+  it('keeps production main, preload, renderer, and shared imports on their side of the boundary', () => {
+    const collectFiles = (root: string): string[] => {
+      const files: string[] = [];
+      const collect = (dir: string) => {
+        for (const entry of readdirSync(dir)) {
+          const fullPath = join(dir, entry);
+          const stat = statSync(fullPath);
+          if (stat.isDirectory()) {
+            collect(fullPath);
+          } else if (/\.(ts|tsx)$/.test(entry)) {
+            files.push(fullPath);
+          }
+        }
+      };
+      collect(join(process.cwd(), root));
+      return files;
+    };
+
+    const findViolations = (root: string, patterns: RegExp[]): string[] => collectFiles(root).flatMap((file) => {
+      const relative = file.replace(`${process.cwd()}/`, '');
+      const text = readFileSync(file, 'utf8');
+      return patterns.flatMap((pattern) => (
+        [...text.matchAll(pattern)].map((match) => `${relative}: ${match[0]}`)
+      ));
+    });
+
+    const electronToRenderer = findViolations('electron', [
+      /\bfrom\s+['"][^'"]*src\//g,
+      /\bimport\(\s*['"][^'"]*src\//g,
+      /\brequire\(\s*['"][^'"]*src\//g,
+    ]);
+    const rendererToElectron = findViolations('src', [
+      /\bfrom\s+['"]electron['"]/g,
+      /\bfrom\s+['"]@electron\//g,
+      /\bfrom\s+['"][^'"]*(?:electron\/|dist-electron|preload|ipc-handlers|host-contract)/g,
+      /\bimport\(\s*['"][^'"]*(?:@electron\/|electron\/|dist-electron|preload|ipc-handlers|host-contract)/g,
+      /\brequire\(\s*['"][^'"]*(?:@electron\/|electron\/|dist-electron|preload|ipc-handlers|host-contract)/g,
+    ]);
+    const sharedToAppLayer = findViolations('shared', [
+      /\bfrom\s+['"]@\//g,
+      /\bfrom\s+['"]@electron\//g,
+      /\bfrom\s+['"][^'"]*(?:src\/|electron\/|dist-electron|preload|ipc-handlers|host-contract)/g,
+      /\bimport\(\s*['"][^'"]*(?:@\/|@electron\/|src\/|electron\/|dist-electron|preload|ipc-handlers|host-contract)/g,
+      /\brequire\(\s*['"][^'"]*(?:@\/|@electron\/|src\/|electron\/|dist-electron|preload|ipc-handlers|host-contract)/g,
+    ]);
+
+    expect({
+      electronToRenderer,
+      rendererToElectron,
+      sharedToAppLayer,
+      oldHostApiContractPathExists: existsSync(join(process.cwd(), 'src/lib/host-api-contract.ts')),
+      oldHostApiTypesPathExists: existsSync(join(process.cwd(), 'src/lib/host-api-types.ts')),
+      oldI18nLocalesPathExists: existsSync(join(process.cwd(), 'src/i18n/locales')),
+    }).toEqual({
+      electronToRenderer: [],
+      rendererToElectron: [],
+      sharedToAppLayer: [],
+      oldHostApiContractPathExists: false,
+      oldHostApiTypesPathExists: false,
+      oldI18nLocalesPathExists: false,
+    });
   });
 
   it('lets service handlers inherit payload types from the host API contract', () => {

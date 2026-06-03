@@ -3,8 +3,8 @@ import type {
   HostApiModule,
   HostApiPayloadArgs,
   HostApiResult,
-} from './host-api-contract';
-import type { TypedHostRequest } from './host-api-types';
+} from '@shared/host-api/contract';
+import type { TypedHostRequest } from '@shared/host-api/types';
 
 function createRequestId(): string {
   return crypto.randomUUID();

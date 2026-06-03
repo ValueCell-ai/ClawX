@@ -1,5 +1,5 @@
 import type { BrowserWindow } from 'electron';
-import type { HostApiContract } from '../../src/lib/host-api-contract';
+import type { HostApiContract } from '@shared/host-api/contract';
 import type { GatewayManager } from '../gateway/manager';
 import type { ProviderConfig } from '../utils/secure-storage';
 import { browserOAuthManager, type BrowserOAuthProviderType } from '../utils/browser-oauth';

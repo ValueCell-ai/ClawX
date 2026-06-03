@@ -24,7 +24,8 @@
     "baseUrl": ".",
     "paths": {
       "@/*": ["src/*"],
-      "@electron/*": ["electron/*"]
+      "@electron/*": ["electron/*"],
+      "@shared/*": ["shared/*"]
     }
   },
   "include": ["src"],

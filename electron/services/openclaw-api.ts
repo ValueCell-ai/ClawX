@@ -1,4 +1,4 @@
-import type { HostApiContract } from '../../src/lib/host-api-contract';
+import type { HostApiContract } from '@shared/host-api/contract';
 import { getOpenClawCliCommand } from '../utils/openclaw-cli';
 import { ensureDir, getOpenClawSkillsDir, getOpenClawStatus } from '../utils/paths';
 import { existsSync } from 'node:fs';

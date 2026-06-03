@@ -1,7 +1,7 @@
 import { dialog, nativeImage } from 'electron';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
-import type { HostApiContract } from '../../src/lib/host-api-contract';
+import type { HostApiContract } from '@shared/host-api/contract';
 import {
   CLAWX_OPENAI_IMAGE_DEFAULT_MODEL,
   CLAWX_OPENAI_IMAGE_PROVIDER_KEY,

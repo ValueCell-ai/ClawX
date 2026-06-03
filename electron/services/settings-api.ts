@@ -1,4 +1,4 @@
-import type { HostApiContract } from '../../src/lib/host-api-contract';
+import type { HostApiContract } from '@shared/host-api/contract';
 import type { GatewayManager } from '../gateway/manager';
 import { syncLaunchAtStartupSettingFromStore } from '../main/launch-at-startup';
 import { createMenu } from '../main/menu';

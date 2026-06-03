@@ -1,5 +1,5 @@
 import { getRecentTokenUsageHistory } from '../utils/token-usage';
-import type { HostApiContract } from '../../src/lib/host-api-contract';
+import type { HostApiContract } from '@shared/host-api/contract';
 import { isRecord } from './payload-utils';
 
 type RecentTokenHistoryPayload = {

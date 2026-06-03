@@ -24,8 +24,9 @@
     /* Paths */
     "baseUrl": ".",
     "paths": {
-      "@electron/*": ["electron/*"]
+      "@electron/*": ["electron/*"],
+      "@shared/*": ["shared/*"]
     }
   },
-  "include": ["electron", "vite.config.ts"]
+  "include": ["electron", "shared", "shared/**/*.json", "vite.config.ts"]
 }

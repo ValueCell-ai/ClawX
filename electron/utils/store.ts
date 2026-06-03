@@ -5,7 +5,7 @@
 
 import { randomBytes } from 'crypto';
 import { app } from 'electron';
-import { resolveSupportedLanguage } from '../../shared/language';
+import { resolveSupportedLanguage } from '@shared/language';
 
 // Lazy-load electron-store (ESM module)
 // eslint-disable-next-line @typescript-eslint/no-explicit-any

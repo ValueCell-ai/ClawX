@@ -26,10 +26,10 @@ touchedAreas:
   - src/pages/Skills/index.tsx
   - src/stores/skills.ts
   - src/types/skill.ts
-  - src/i18n/locales/en/skills.json
-  - src/i18n/locales/zh/skills.json
-  - src/i18n/locales/ja/skills.json
-  - src/i18n/locales/ru/skills.json
+  - shared/i18n/locales/en/skills.json
+  - shared/i18n/locales/zh/skills.json
+  - shared/i18n/locales/ja/skills.json
+  - shared/i18n/locales/ru/skills.json
   - scripts/agent-browser/skills-local-first-smoke.sh
   - scripts/bundle-openclaw.mjs
   - tests/e2e/skills-gateway-readiness.spec.ts

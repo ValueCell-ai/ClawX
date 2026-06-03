@@ -14,9 +14,9 @@ touchedAreas:
   - src/**
   - tests/**
   - harness/specs/tasks/tighten-host-api-contract-types.md
-  - src/lib/host-api-contract.ts
+  - shared/host-api/contract.ts
   - src/lib/host-api-client.ts
-  - src/lib/host-api-types.ts
+  - shared/host-api/types.ts
   - src/lib/host-api.ts
   - src/types/electron.d.ts
   - electron/preload/index.ts

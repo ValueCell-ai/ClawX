@@ -3,21 +3,9 @@
  * Creates the native application menu for macOS/Windows/Linux
  */
 import { Menu, app, shell, BrowserWindow } from 'electron';
-import { resolveSupportedLanguage, type LanguageCode } from '../../shared/language';
-import enMenu from '../../src/i18n/locales/en/menu.json';
-import zhMenu from '../../src/i18n/locales/zh/menu.json';
-import jaMenu from '../../src/i18n/locales/ja/menu.json';
-import ruMenu from '../../src/i18n/locales/ru/menu.json';
+import { MENU_LABELS } from '@shared/i18n/resources';
+import { resolveSupportedLanguage, type LanguageCode } from '@shared/language';
 import { getSetting } from '../utils/store';
-
-type MenuLabels = typeof enMenu;
-
-const MENU_LABELS: Record<LanguageCode, MenuLabels> = {
-  en: enMenu,
-  zh: zhMenu,
-  ja: jaMenu,
-  ru: ruMenu,
-};
 
 function applyAppName(label: string): string {
   return label.replaceAll('{{appName}}', app.name);

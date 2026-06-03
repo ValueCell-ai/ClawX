@@ -1,5 +1,5 @@
 import type { BrowserWindow } from 'electron';
-import type { HostApiContract } from '../../src/lib/host-api-contract';
+import type { HostApiContract } from '@shared/host-api/contract';
 import { syncMacTrafficLightPosition } from '../main/traffic-light-layout';
 
 export function createWindowApi(mainWindow: BrowserWindow): HostApiContract['window'] {

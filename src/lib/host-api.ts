@@ -30,8 +30,8 @@ import type {
   SkillUpdateConfigPayload,
   SkillUpdatePayload,
   UpdateChannel,
-} from './host-api-contract';
-import type { CronJobCreateInput, CronJobUpdateInput } from '@/types/cron';
+} from '@shared/host-api/contract';
+import type { CronJobCreateInput, CronJobUpdateInput } from '@shared/types/cron';
 import { invokeHost } from './host-api-client';
 
 export type {
@@ -71,7 +71,7 @@ export type {
   SkillsStatusResult,
   StagedFileResult,
   UsageHistoryEntry,
-} from './host-api-contract';
+} from '@shared/host-api/contract';
 
 export const hostApi = {
   app: {

@@ -1,6 +1,6 @@
 import type { GatewayManager } from '../gateway/manager';
 import type { GatewayRpcBackpressure } from '../gateway/rpc-backpressure';
-import type { HostApiContract } from '../../src/lib/host-api-contract';
+import type { HostApiContract } from '@shared/host-api/contract';
 import { PORTS } from '../utils/config';
 import { scheduleControlUiDeviceAutoApproval } from '../utils/control-ui-device-pairing';
 import { buildOpenClawControlUiUrl } from '../utils/openclaw-control-ui';

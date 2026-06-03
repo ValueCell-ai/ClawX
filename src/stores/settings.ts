@@ -6,7 +6,7 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import i18n from '@/i18n';
 import { hostApi } from '@/lib/host-api';
-import { resolveSupportedLanguage } from '../../shared/language';
+import { resolveSupportedLanguage } from '@shared/language';
 
 type Theme = 'light' | 'dark' | 'system';
 type UpdateChannel = 'stable' | 'beta' | 'dev';

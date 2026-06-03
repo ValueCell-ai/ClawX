@@ -1,6 +1,6 @@
 import { readFile } from 'node:fs/promises';
 import { extname, relative, resolve, sep } from 'node:path';
-import type { HostApiContract } from '../../src/lib/host-api-contract';
+import type { HostApiContract } from '@shared/host-api/contract';
 import { logger } from '../utils/logger';
 import { isRecord } from './payload-utils';
 

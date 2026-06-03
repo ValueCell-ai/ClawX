@@ -2,7 +2,7 @@ import type {
   HostApiAction,
   HostApiModule,
   HostApiPayload,
-} from './host-api-contract';
+} from './contract';
 
 export type HostRequest = {
   id: string;

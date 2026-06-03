@@ -1,6 +1,6 @@
 import { openSync, closeSync, fstatSync, readSync } from 'node:fs';
 import { join } from 'node:path';
-import type { HostApiContract } from '../../src/lib/host-api-contract';
+import type { HostApiContract } from '@shared/host-api/contract';
 import { getOpenClawConfigDir } from '../utils/paths';
 import { logger } from '../utils/logger';
 import {

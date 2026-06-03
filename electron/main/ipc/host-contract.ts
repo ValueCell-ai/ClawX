@@ -1,4 +1,4 @@
-import type { HostApiContract } from '../../../src/lib/host-api-contract';
+import type { HostApiContract } from '@shared/host-api/contract';
 
 export type HostRequest = {
   id: string;

@@ -1,6 +1,6 @@
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import type { HostApiContract } from '../../src/lib/host-api-contract';
+import type { HostApiContract } from '@shared/host-api/contract';
 import type { GatewayManager } from '../gateway/manager';
 import { getOpenClawConfigDir } from '../utils/paths';
 import { resolveAgentIdFromChannel } from '../utils/agent-config';

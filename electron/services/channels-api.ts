@@ -1,7 +1,7 @@
 import { readFile, readdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { BrowserWindow } from 'electron';
-import type { HostApiContract } from '../../src/lib/host-api-contract';
+import type { HostApiContract } from '@shared/host-api/contract';
 import { extractSessionRecords } from '../utils/session-util';
 import {
   cleanupDanglingWeChatPluginState,

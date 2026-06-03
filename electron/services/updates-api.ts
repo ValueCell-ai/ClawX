@@ -3,7 +3,7 @@ import type {
   UpdateInfoSnapshot,
   UpdateProgressSnapshot,
   UpdateStatusSnapshot,
-} from '../../src/lib/host-api-contract';
+} from '@shared/host-api/contract';
 import type { AppUpdater, UpdateStatus } from '../main/updater';
 
 function normalizeInfo(info: UpdateStatus['info']): UpdateInfoSnapshot | undefined {

@@ -1,7 +1,7 @@
 /**
  * i18n locale parity test
  *
- * Verifies that every locale under `src/i18n/locales/` exposes the same
+ * Verifies that every locale under `shared/i18n/locales/` exposes the same
  * namespace files and the same set of leaf keys. Also checks that
  * `{{interpolation}}` tokens used in the reference locale (English) are
  * preserved in every other locale, so we don't silently drop variables
@@ -15,7 +15,7 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 const REFERENCE_LOCALE = 'en';
-const LOCALES_DIR = path.resolve(__dirname, '../../src/i18n/locales');
+const LOCALES_DIR = path.resolve(__dirname, '../../shared/i18n/locales');
 
 type JsonValue = string | number | boolean | null | JsonObject | JsonValue[];
 interface JsonObject {

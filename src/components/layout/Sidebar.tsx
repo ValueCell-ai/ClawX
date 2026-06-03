@@ -39,7 +39,7 @@ import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { hostApi } from '@/lib/host-api';
-import { SIDEBAR_COLLAPSED_WIDTH, MAC_SIDEBAR_CHROME_HEIGHT } from '../../../shared/sidebar-layout';
+import { SIDEBAR_COLLAPSED_WIDTH, MAC_SIDEBAR_CHROME_HEIGHT } from '@shared/sidebar-layout';
 import { useTranslation } from 'react-i18next';
 import logoSvg from '@/assets/logo.svg';
 import { useNewChatAction } from './use-new-chat-action';

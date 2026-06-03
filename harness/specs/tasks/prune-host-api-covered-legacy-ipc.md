@@ -16,7 +16,7 @@ touchedAreas:
   - electron/main/ipc-handlers.ts
   - electron/preload/index.ts
   - src/lib/host-api.ts
-  - src/lib/host-api-contract.ts
+  - shared/host-api/contract.ts
   - tests/unit/host-api-facade.test.ts
   - harness/specs/tasks/prune-host-api-covered-legacy-ipc.md
 expectedUserBehavior:

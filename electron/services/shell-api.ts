@@ -1,7 +1,7 @@
 import { shell } from 'electron';
 import { homedir } from 'node:os';
 import { join, sep } from 'node:path';
-import type { HostApiContract } from '../../src/lib/host-api-contract';
+import type { HostApiContract } from '@shared/host-api/contract';
 
 function expandShellPath(input: string): string {
   if (input === '~') return homedir();

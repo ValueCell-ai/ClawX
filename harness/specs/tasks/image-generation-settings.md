@@ -26,8 +26,8 @@ touchedAreas:
   - src/components/settings/ImageGenerationSettings.tsx
   - src/pages/ImageGeneration/index.tsx
   - src/pages/Models/index.tsx
-  - src/i18n/locales/*/common.json
-  - src/i18n/locales/*/dashboard.json
+  - shared/i18n/locales/*/common.json
+  - shared/i18n/locales/*/dashboard.json
   - tests/unit/openclaw-image-generation.test.ts
   - tests/unit/openclaw-auth.test.ts
   - tests/e2e/image-generation-settings.spec.ts

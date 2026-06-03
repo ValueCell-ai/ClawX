@@ -3,7 +3,7 @@
  * Exposes safe APIs to the renderer process via contextBridge
  */
 import { contextBridge, ipcRenderer, webUtils } from 'electron';
-import type { HostRequest } from '../../src/lib/host-api-types';
+import type { HostRequest } from '@shared/host-api/types';
 
 /**
  * IPC renderer methods exposed to the renderer process

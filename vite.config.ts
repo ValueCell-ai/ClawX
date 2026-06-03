@@ -27,11 +27,16 @@ function getExtensionPackages(): Set<string> {
 }
 
 const extensionPackages = getExtensionPackages();
+const alias = {
+  '@': resolve(__dirname, 'src'),
+  '@electron': resolve(__dirname, 'electron'),
+  '@shared': resolve(__dirname, 'shared'),
+};
 
 function isMainProcessExternal(id: string): boolean {
   if (!id || id.startsWith('\0')) return false;
   if (id.startsWith('.') || id.startsWith('/') || /^[A-Za-z]:[\\/]/.test(id)) return false;
-  if (id.startsWith('@/') || id.startsWith('@electron/')) return false;
+  if (id.startsWith('@/') || id.startsWith('@electron/') || id.startsWith('@shared/')) return false;
   for (const pkg of extensionPackages) {
     if (id === pkg || id.startsWith(pkg + '/')) return false;
   }
@@ -55,6 +60,7 @@ export default defineConfig({
           options.startup();
         },
         vite: {
+          resolve: { alias },
           build: {
             outDir: 'dist-electron/main',
             rollupOptions: {
@@ -70,6 +76,7 @@ export default defineConfig({
           options.reload();
         },
         vite: {
+          resolve: { alias },
           build: {
             outDir: 'dist-electron/preload',
             rollupOptions: {
@@ -82,10 +89,7 @@ export default defineConfig({
     renderer(),
   ],
   resolve: {
-    alias: {
-      '@': resolve(__dirname, 'src'),
-      '@electron': resolve(__dirname, 'electron'),
-    },
+    alias,
     dedupe: ['react', 'react-dom', 'react-i18next', 'zustand', 'sonner', 'lucide-react'],
   },
   server: {
