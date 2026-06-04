@@ -1,5 +1,6 @@
 import { GatewayEventType, type JsonRpcNotification } from './protocol';
 import { logger } from '../utils/logger';
+import { normalizeGatewayChatRuntimeEvent } from './chat-runtime-events';
 import type {
   GatewayChannelStatusEvent,
   GatewayChatMessageEvent,
@@ -22,8 +23,10 @@ export function dispatchProtocolEvent(
       emitter.emit('chat:message', { message: payload });
       break;
     case 'agent': {
-      // Keep "agent" on the canonical notification path to avoid double
-      // handling in renderer when both notification and chat-message are wired.
+      const normalized = normalizeGatewayChatRuntimeEvent(payload);
+      if (normalized) {
+        emitter.emit('chat:runtime-event', normalized);
+      }
       emitter.emit('notification', { method: event, params: payload });
       break;
     }
@@ -51,6 +54,12 @@ export function dispatchJsonRpcNotification(
   notification: JsonRpcNotification,
 ): void {
   emitter.emit('notification', notification);
+  if (notification.method === 'agent') {
+    const normalized = normalizeGatewayChatRuntimeEvent(notification.params);
+    if (normalized) {
+      emitter.emit('chat:runtime-event', normalized);
+    }
+  }
   switch (notification.method) {
     case GatewayEventType.CHANNEL_STATUS_CHANGED:
       emitter.emit('channel:status', notification.params as GatewayChannelStatusEvent);

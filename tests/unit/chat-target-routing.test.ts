@@ -100,7 +100,18 @@ describe('chat target routing', () => {
     });
 
     hostApiFetchMock.mockReset();
-    hostApiFetchMock.mockResolvedValue({ success: true, result: { runId: 'run-media' } });
+    hostApiFetchMock.mockImplementation(async (url: string) => {
+      if (url === '/api/chat/history') {
+        return { success: true, result: { messages: [] } };
+      }
+      if (url === '/api/chat/send') {
+        return { success: true, result: { runId: 'run-text' } };
+      }
+      if (url === '/api/chat/send-with-media') {
+        return { success: true, result: { runId: 'run-media' } };
+      }
+      return { success: true, result: {} };
+    });
   });
 
   afterEach(() => {
@@ -139,15 +150,18 @@ describe('chat target routing', () => {
     expect(state.messages.at(-1)?.content).toBe('Hello direct agent');
 
     const historyCall = gatewayRpcMock.mock.calls.find(([method]) => method === 'chat.history');
-    expect(historyCall?.[1]).toEqual(chatHistoryRpcParams('agent:research:desk', 200));
+    expect(historyCall?.[1]).toEqual(
+      chatHistoryRpcParams('agent:research:desk', 200),
+    );
 
     const sendCall = gatewayRpcMock.mock.calls.find(([method]) => method === 'chat.send');
-    expect(sendCall?.[1]).toMatchObject({
+    const sendPayload = (sendCall?.[1] ?? {}) as Record<string, unknown>;
+    expect(sendPayload).toMatchObject({
       sessionKey: 'agent:research:desk',
       message: 'Hello direct agent',
       deliver: false,
     });
-    expect(typeof (sendCall?.[1] as { idempotencyKey?: unknown })?.idempotencyKey).toBe('string');
+    expect(typeof (sendPayload as { idempotencyKey?: unknown }).idempotencyKey).toBe('string');
   });
 
   it('uses the selected agent main session for attachment sends', async () => {
@@ -197,8 +211,9 @@ describe('chat target routing', () => {
       }),
     );
 
+    const mediaSendCall = hostApiFetchMock.mock.calls.find(([url]) => url === '/api/chat/send-with-media');
     const payload = JSON.parse(
-      (hostApiFetchMock.mock.calls[0]?.[1] as { body: string }).body,
+      (mediaSendCall?.[1] as { body: string }).body,
     ) as {
       sessionKey: string;
       message: string;

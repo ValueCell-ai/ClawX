@@ -470,6 +470,10 @@ async function initialize(): Promise<void> {
     sendMainWindowEvent('gateway:chat-message', data);
   });
 
+  gatewayManager.on('chat:runtime-event', (data) => {
+    sendMainWindowEvent('chat:runtime-event', data);
+  });
+
   gatewayManager.on('channel:status', (data) => {
     sendMainWindowEvent('gateway:channel-status', data);
   });

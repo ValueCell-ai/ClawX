@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { RawMessage } from '@/stores/chat';
 import {
+  hasDeliveredImageGenerationResult,
   IMAGE_GENERATION_TIMEOUT_MS,
   isImageGenerationPending,
 } from '@/pages/Chat/image-generation-status';
@@ -24,6 +25,32 @@ describe('isImageGenerationPending', () => {
     ];
 
     expect(isImageGenerationPending(segmentMessages, [], NOW)).toBe(true);
+  });
+
+  it('stays pending after async task start even if the agent posts a visible status reply', () => {
+    const segmentMessages: RawMessage[] = [
+      {
+        role: 'assistant',
+        timestamp: NOW / 1000,
+        content: [{ type: 'toolCall', id: 'call_1', name: 'image_generate', arguments: { prompt: 'cherry' } }],
+      },
+      {
+        role: 'toolresult',
+        toolName: 'image_generate',
+        timestamp: NOW / 1000 + 1,
+        content: [{
+          type: 'text',
+          text: `Background task started for image generation (${TASK_ID}).`,
+        }],
+      },
+      {
+        role: 'assistant',
+        timestamp: NOW / 1000 + 2,
+        content: [{ type: 'text', text: '图已经开始生成啦 🍒 完成后会直接发到这里。' }],
+      },
+    ];
+
+    expect(isImageGenerationPending(segmentMessages, [], NOW + 2_000)).toBe(true);
   });
 
   it('returns false after the inter-session completion event arrives', () => {
@@ -132,5 +159,81 @@ describe('isImageGenerationPending', () => {
     ];
 
     expect(isImageGenerationPending(segmentMessages, [], NOW + 90_000)).toBe(false);
+    expect(hasDeliveredImageGenerationResult(segmentMessages)).toBe(true);
+  });
+
+  it('returns false after message tool delivers generated image media', () => {
+    const segmentMessages: RawMessage[] = [
+      {
+        role: 'assistant',
+        timestamp: NOW / 1000,
+        content: [{ type: 'toolCall', id: 'call_1', name: 'image_generate', arguments: { prompt: 'tomato' } }],
+      },
+      {
+        role: 'toolresult',
+        toolName: 'image_generate',
+        timestamp: NOW / 1000 + 1,
+        content: [{
+          type: 'text',
+          text: `Background task started for image generation (${TASK_ID}).`,
+        }],
+      },
+      {
+        role: 'user',
+        content: [{
+          type: 'text',
+          text: `[Inter-session message] sourceSession=image_generate:${TASK_ID} sourceTool=image_generate`,
+        }],
+      },
+      {
+        role: 'toolresult',
+        toolName: 'message',
+        content: [{ type: 'text', text: '{ "status": "ok" }' }],
+        details: {
+          status: 'ok',
+          mediaUrl: '/Users/me/.openclaw/media/tool-image-generation/tomato.png',
+          sourceReply: {
+            mediaUrls: ['/Users/me/.openclaw/media/tool-image-generation/tomato.png'],
+          },
+        },
+      } as RawMessage,
+    ];
+
+    expect(isImageGenerationPending(segmentMessages, [], NOW + 90_000)).toBe(false);
+    expect(hasDeliveredImageGenerationResult(segmentMessages)).toBe(true);
+  });
+
+  it('returns false after image delivery even if streaming tool status is still running', () => {
+    const segmentMessages: RawMessage[] = [
+      {
+        role: 'assistant',
+        timestamp: NOW / 1000,
+        content: [{ type: 'toolCall', id: 'call_1', name: 'image_generate', arguments: { prompt: 'narwhal' } }],
+      },
+      {
+        role: 'assistant',
+        timestamp: NOW / 1000 + 90,
+        content: [{
+          type: 'image',
+          url: '/api/chat/media/outgoing/agent%3Amain%3As-1/narwhal/full',
+          mimeType: 'image/png',
+          alt: 'narwhal.png',
+        }],
+        _attachedFiles: [{
+          fileName: 'narwhal.png',
+          mimeType: 'image/png',
+          fileSize: 123,
+          preview: null,
+          gatewayUrl: '/api/chat/media/outgoing/agent%3Amain%3As-1/narwhal/full',
+          source: 'gateway-media',
+        }],
+      },
+    ];
+
+    expect(isImageGenerationPending(segmentMessages, [{
+      name: 'image_generate',
+      status: 'running',
+      updatedAt: NOW + 90_000,
+    }], NOW + 90_000)).toBe(false);
   });
 });

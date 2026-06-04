@@ -91,7 +91,7 @@ export function registerIpcHandlers(
   registerTypedHostHandlers(gatewayManager, clawHubService, mainWindow, hostApiRegistry);
 
   // Gateway handlers
-  registerGatewayHandlers(gatewayManager, mainWindow);
+  registerGatewayHandlers(gatewayManager);
 
   // OpenClaw handlers
   registerOpenClawHandlers();
@@ -686,10 +686,7 @@ function registerCronHandlers(gatewayManager: GatewayManager): void {
 /**
  * Gateway-related IPC handlers
  */
-function registerGatewayHandlers(
-  gatewayManager: GatewayManager,
-  mainWindow: BrowserWindow
-): void {
+function registerGatewayHandlers(gatewayManager: GatewayManager): void {
   // Get Gateway status
   ipcMain.handle('gateway:status', () => {
     return gatewayManager.getStatus();
@@ -711,60 +708,9 @@ function registerGatewayHandlers(
     }
   });
 
-  // Forward Gateway events to renderer
-  gatewayManager.on('status', (status) => {
-    if (!mainWindow.isDestroyed()) {
-      mainWindow.webContents.send('gateway:status-changed', status);
-    }
-  });
-
-  gatewayManager.on('message', (message) => {
-    if (!mainWindow.isDestroyed()) {
-      mainWindow.webContents.send('gateway:message', message);
-    }
-  });
-
-  gatewayManager.on('notification', (notification) => {
-    if (!mainWindow.isDestroyed()) {
-      mainWindow.webContents.send('gateway:notification', notification);
-    }
-  });
-
-  gatewayManager.on('gateway:health', (data) => {
-    if (!mainWindow.isDestroyed()) {
-      mainWindow.webContents.send('gateway:health-changed', data);
-    }
-  });
-
-  gatewayManager.on('gateway:presence', (data) => {
-    if (!mainWindow.isDestroyed()) {
-      mainWindow.webContents.send('gateway:presence-changed', data);
-    }
-  });
-
-  gatewayManager.on('channel:status', (data) => {
-    if (!mainWindow.isDestroyed()) {
-      mainWindow.webContents.send('gateway:channel-status', data);
-    }
-  });
-
-  gatewayManager.on('chat:message', (data) => {
-    if (!mainWindow.isDestroyed()) {
-      mainWindow.webContents.send('gateway:chat-message', data);
-    }
-  });
-
-  gatewayManager.on('exit', (code) => {
-    if (!mainWindow.isDestroyed()) {
-      mainWindow.webContents.send('gateway:exit', code);
-    }
-  });
-
-  gatewayManager.on('error', (error) => {
-    if (!mainWindow.isDestroyed()) {
-      mainWindow.webContents.send('gateway:error', error.message);
-    }
-  });
+  // Gateway events are bridged once in main/index.ts through the typed
+  // hostEvents surface. Keeping listener forwarding here would double-deliver
+  // streaming/runtime events to the renderer.
 }
 
 /**

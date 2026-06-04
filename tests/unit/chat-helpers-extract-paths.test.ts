@@ -40,6 +40,18 @@ describe('extractRawFilePaths', () => {
     ]);
   });
 
+  it('captures MEDIA: tagged Windows artifact paths', () => {
+    const refs = extractRawFilePaths(String.raw`SVG file is ready:
+MEDIA:C:\Users\Administrator\.openclaw\workspace\japan-kansai-4d3n-plan.svg`);
+
+    expect(refs).toEqual([
+      {
+        filePath: String.raw`C:\Users\Administrator\.openclaw\workspace\japan-kansai-4d3n-plan.svg`,
+        mimeType: 'image/svg+xml',
+      },
+    ]);
+  });
+
   it('captures MEDIA: paths that contain ASCII spaces (macOS screenshot default name)', () => {
     // Regression: macOS' default screenshot filename is
     //   "Screenshot YYYY-MM-DD at HH.MM.SS.png" (en locale) or

@@ -17,6 +17,21 @@ describe('assistant media path display cleanup', () => {
     expect(extractText({ role: 'assistant', content: text })).toBe('Done:');
   });
 
+  it('strips MEDIA: tagged Windows artifact paths', () => {
+    const text = String.raw`SVG file is ready:
+
+MEDIA:C:\Users\Administrator\.openclaw\workspace\japan-kansai-4d3n-plan.svg`;
+
+    expect(extractText({ role: 'assistant', content: text })).toBe('SVG file is ready:');
+  });
+
+  it('strips bare Windows OpenClaw media paths when surfaced as attachment cards', () => {
+    const text = String.raw`Done:
+C:\Users\alice\.openclaw\media\outbound\cat---abc.png`;
+
+    expect(extractText({ role: 'assistant', content: text })).toBe('Done:');
+  });
+
   it('strips markdown image syntax that cannot be rendered directly', () => {
     const text = '宇航员图片完成啦 🧑‍🚀✨\n\n![Astronaut with Milky Way in helmet visor](/api/chat/media/outgoing/agent%3Amain%3As-1/abc/full)';
 

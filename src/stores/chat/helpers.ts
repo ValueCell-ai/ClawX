@@ -638,7 +638,7 @@ function extractMarkdownImageRefs(text: string): MarkdownImageRef[] {
       continue;
     }
     const normalizedPath = trimPathTerminators(target);
-    if (!normalizedPath.startsWith('/') && !normalizedPath.startsWith('~/')) continue;
+    if (!normalizedPath.startsWith('/') && !normalizedPath.startsWith('~/') && !/^[A-Za-z]:\\/.test(normalizedPath)) continue;
     if (seen.has(normalizedPath)) continue;
     seen.add(normalizedPath);
     refs.push({
@@ -664,7 +664,7 @@ function extractRawFilePaths(text: string): Array<{ filePath: string; mimeType: 
   const refs: Array<{ filePath: string; mimeType: string }> = [];
   const seen = new Set<string>();
   const exts = 'png|jpe?g|gif|webp|bmp|avif|svg|pdf|docx?|xlsx?|pptx?|html?|txt|csv|md|rtf|epub|zip|tar|gz|rar|7z|mp3|wav|ogg|aac|flac|m4a|mp4|mov|avi|mkv|webm|m4v';
-  // Tagged media references (MEDIA:/path, media:~/path, ...).  The agent
+  // Tagged media references (MEDIA:/path, media:~/path, MEDIA:C:\path, ...).  The agent
   // runtime uses this prefix as an explicit "this is an artifact" marker,
   // so we want them recognised even though the leading colon would
   // normally look like a URL scheme.  After matching we punch the entire
@@ -677,7 +677,7 @@ function extractRawFilePaths(text: string): Array<{ filePath: string; mimeType: 
   // path terminators so we don't accidentally swallow trailing prose.
   // The non-greedy `*?` anchored to `\.<ext>` keeps the match minimal so
   // multiple `MEDIA:` markers in one paragraph still match independently.
-  const taggedRegex = new RegExp(`(?:^|[\\s(\\[{>])(?:MEDIA|media):((?:\\/|~\\/)[^\\n"'()\\[\\],<>` + '`' + `]*?\\.(?:${exts}))(?=$|[\\s\\n"'()\\[\\],<>` + '`' + `]|[，。；;,.!?])`, 'g');
+  const taggedRegex = new RegExp(`(?:^|[\\s(\\[{>])(?:MEDIA|media):((?:\\/|~\\/|[A-Za-z]:\\\\)[^\\n"'()\\[\\],<>` + '`' + `]*?\\.(?:${exts}))(?=$|[\\s\\n"'()\\[\\],<>` + '`' + `]|[，。；;,.!?])`, 'g');
   let workingText = text;
   let taggedMatch: RegExpExecArray | null;
   while ((taggedMatch = taggedRegex.exec(text)) !== null) {

@@ -1040,34 +1040,6 @@ function patchBundledRuntime(outputDir) {
     echo`   🩹 Patched ${hintCount} browser tool hint(s) to allow transient error retry`;
   }
 
-  // --- OpenAI image relay b64_json patch ---
-  const IMAGE_BODY_SEARCH = `const body = {
-					prompt: req.prompt,
-					n: count,
-					size
-				};`;
-  const IMAGE_BODY_REPLACE = `const body = {
-					prompt: req.prompt,
-					n: count,
-					size,
-					response_format: "b64_json"
-				};`;
-  let imageB64Count = 0;
-  if (fs.existsSync(distDir)) {
-    for (const file of fs.readdirSync(distDir)) {
-      if (!file.endsWith('.js')) continue;
-      const filePath = path.join(distDir, file);
-      try {
-        const content = fs.readFileSync(filePath, 'utf8');
-        if (!content.includes(IMAGE_BODY_SEARCH)) continue;
-        fs.writeFileSync(filePath, content.replace(IMAGE_BODY_SEARCH, IMAGE_BODY_REPLACE), 'utf8');
-        imageB64Count++;
-      } catch { /* skip on error */ }
-    }
-  }
-  if (imageB64Count > 0) {
-    echo`   🩹 Patched ${imageB64Count} OpenAI image provider(s) to request b64_json`;
-  }
 }
 
 patchBrokenModules(outputNodeModules);

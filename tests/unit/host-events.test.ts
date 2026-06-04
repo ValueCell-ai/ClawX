@@ -35,6 +35,18 @@ describe('hostEvents', () => {
     expect(handler).toHaveBeenCalledWith({ status: 'available', info: { version: '1.2.3' } });
   });
 
+  it('subscribes to chat runtime events over IPC', async () => {
+    const { hostEvents } = await import('@/lib/host-events');
+    const handler = vi.fn();
+
+    hostEvents.onChatRuntimeEvent(handler);
+    const callback = on.mock.calls[0]?.[1] as ((payload: unknown) => void) | undefined;
+    callback?.({ type: 'run.started', runId: 'run-1' });
+
+    expect(on).toHaveBeenCalledWith('chat:runtime-event', expect.any(Function));
+    expect(handler).toHaveBeenCalledWith({ type: 'run.started', runId: 'run-1' });
+  });
+
   it('subscribes to dynamic channel QR events', async () => {
     const { hostEvents } = await import('@/lib/host-events');
     const handler = vi.fn();

@@ -65,7 +65,12 @@ describe('useChatStore startup history retry', () => {
     agentsState.agents = [];
     gatewayRpcMock.mockReset();
     hostApiFetchMock.mockReset();
-    hostApiFetchMock.mockResolvedValue({ messages: [] });
+    hostApiFetchMock.mockImplementation(async (path: string) => {
+      if (path === '/api/chat/sessions' || path === '/api/chat/history' || path === '/api/chat/send' || path === '/api/chat/abort') {
+        throw new Error('No route for mocked chat host API');
+      }
+      return { messages: [] };
+    });
     const { resetChatHistoryMaxCharsCache, resolveChatHistoryMaxChars } = await import('@/stores/chat/history-rpc-params');
     resetChatHistoryMaxCharsCache();
     await resolveChatHistoryMaxChars();
@@ -764,6 +769,7 @@ describe('useChatStore startup history retry', () => {
     });
 
     const firstLoad = useChatStore.getState().loadHistory(false);
+    await Promise.resolve();
     useChatStore.setState({
       currentSessionKey: 'agent:main:other',
       messages: [{ role: 'assistant', content: 'other session', timestamp: 1001 }],

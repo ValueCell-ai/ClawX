@@ -35,6 +35,11 @@ const onGatewayEvent = <E extends HostEventName<'gateway'>>(
   handler: HostEventHandler<'gateway', E>,
 ) => onIpc(HOST_EVENT_CHANNELS.gateway[event], handler);
 
+const onChatEvent = <E extends HostEventName<'chat'>>(
+  event: E,
+  handler: HostEventHandler<'chat', E>,
+) => onIpc(HOST_EVENT_CHANNELS.chat[event], handler);
+
 const onOAuthEvent = <E extends HostEventName<'oauth'>>(
   event: E,
   handler: HostEventHandler<'oauth', E>,
@@ -83,6 +88,9 @@ export const hostEvents = {
   ),
   onGatewayExit: (handler: HostEventHandler<'gateway', 'exit'>) => (
     onGatewayEvent('exit', handler)
+  ),
+  onChatRuntimeEvent: (handler: HostEventHandler<'chat', 'runtimeEvent'>) => (
+    onChatEvent('runtimeEvent', handler)
   ),
   onOAuthCode: (handler: HostEventHandler<'oauth', 'code'>) => onOAuthEvent('code', handler),
   onOAuthSuccess: (handler: HostEventHandler<'oauth', 'success'>) => onOAuthEvent('success', handler),

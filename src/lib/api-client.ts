@@ -1,5 +1,6 @@
 import { AppError, normalizeAppError } from './error-model';
 import { hostApi } from './host-api';
+
 export { AppError } from './error-model';
 
 export function toUserMessage(error: unknown): string {
@@ -27,8 +28,6 @@ export function toUserMessage(error: unknown): string {
   }
 }
 
-// ── File preview wrappers ─────────────────────────────────────────────
-//
 // Thin typed wrappers over the sandboxed hostApi.files routes exposed by
 // the main process. Callers get file-preview shapes and exhaustive error codes.
 
@@ -49,7 +48,7 @@ export interface ReadTextFileResult {
   size?: number;
   /**
    * Set by the main process when the resolved path lives in a read-only
-   * root (bundled skill, app resources, …).  The renderer should disable
+   * root (bundled skill, app resources, ...). The renderer should disable
    * editing affordances when this is true even if the caller passes
    * `readOnly={false}`.
    */
@@ -67,7 +66,7 @@ export interface ReadBinaryFileResult {
 }
 
 export interface ReadBinaryFileOptions {
-  /** Optional override for the per-call ceiling (capped by the main-process limit). */
+  /** Optional override for the per-call ceiling, capped by the main-process limit. */
   maxBytes?: number;
 }
 

@@ -83,7 +83,9 @@ vi.mock('@/pages/Chat/ChatToolbar', () => ({
 }));
 
 vi.mock('@/pages/Chat/ChatInput', () => ({
-  ChatInput: () => null,
+  ChatInput: ({ sending }: { sending?: boolean }) => (
+    <div data-testid="mock-chat-input" data-sending={sending ? 'true' : 'false'} />
+  ),
 }));
 
 vi.mock('@/pages/Chat/ChatMessage', () => ({
@@ -185,6 +187,69 @@ describe('Chat execution graph lifecycle', () => {
 
     expect(screen.getByText('Here is the summary.')).toBeInTheDocument();
     expect(screen.queryByText('Checked X. Here is the summary.')).not.toBeInTheDocument();
+  });
+
+  it('keeps runtime tool status inside the execution graph while a tool is running', async () => {
+    const { useChatStore } = await import('@/stores/chat');
+    useChatStore.setState({
+      messages: [
+        {
+          role: 'user',
+          content: 'Read the file and summarize it',
+        },
+      ],
+      loading: false,
+      error: null,
+      runError: null,
+      sending: true,
+      activeRunId: 'run-tool-stream',
+      streamingText: '',
+      streamingMessage: {
+        role: 'assistant',
+        id: 'tool-narration-stream',
+        content: [{ type: 'text', text: 'I will read the file first.' }],
+      },
+      streamingTools: [],
+      runtimeRuns: {
+        'run-tool-stream': {
+          runId: 'run-tool-stream',
+          sessionKey: 'agent:main:main',
+          status: 'running',
+          assistantText: '',
+          thinkingText: '',
+          events: [
+            {
+              type: 'tool.started',
+              runId: 'run-tool-stream',
+              sessionKey: 'agent:main:main',
+              toolCallId: 'read-1',
+              name: 'read',
+              args: { path: '/tmp/demo.md' },
+            },
+          ],
+        },
+      },
+      pendingFinal: false,
+      lastUserMessageAt: Date.now(),
+      pendingToolImages: [],
+      sessions: [{ key: 'agent:main:main' }],
+      currentSessionKey: 'agent:main:main',
+      currentAgentId: 'main',
+      sessionLabels: {},
+      sessionLastActivity: {},
+      thinkingLevel: null,
+    });
+
+    const { Chat } = await import('@/pages/Chat/index');
+
+    render(<Chat />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('chat-execution-graph')).toHaveAttribute('data-collapsed', 'false');
+      expect(screen.getByText('read')).toBeInTheDocument();
+    });
+
+    expect(screen.queryByTestId('chat-streaming-tool-status-bar')).not.toBeInTheDocument();
   });
 
   it('renders the execution graph immediately for an active run before any stream content arrives', async () => {
@@ -494,6 +559,85 @@ describe('Chat execution graph lifecycle', () => {
     expect(screen.queryByTestId('chat-activity-indicator')).not.toBeInTheDocument();
   });
 
+  it('settles composer when generated image media arrives without transcript tool calls', async () => {
+    const { useChatStore } = await import('@/stores/chat');
+    useChatStore.setState({
+      messages: [
+        {
+          role: 'user',
+          content: '生成独角鲸图片',
+        },
+        {
+          role: 'assistant',
+          id: 'generated-image-only',
+          content: [{
+            type: 'image',
+            url: '/api/chat/media/outgoing/agent%3Amain%3As-1/image-1/full',
+            mimeType: 'image/png',
+            alt: 'narwhal.png',
+          }],
+          _attachedFiles: [{
+            fileName: 'narwhal.png',
+            mimeType: 'image/png',
+            fileSize: 42,
+            preview: 'data:image/png;base64,ok',
+            gatewayUrl: '/api/chat/media/outgoing/agent%3Amain%3As-1/image-1/full',
+            source: 'gateway-media',
+          }],
+        },
+      ],
+      loading: false,
+      error: null,
+      runError: null,
+      sending: true,
+      activeRunId: 'run-image-runtime-only',
+      runtimeRuns: {
+        'run-image-runtime-only': {
+          runId: 'run-image-runtime-only',
+          sessionKey: 'agent:main:main',
+          status: 'running',
+          assistantText: '',
+          thinkingText: '',
+          events: [
+            {
+              type: 'tool.completed',
+              runId: 'run-image-runtime-only',
+              sessionKey: 'agent:main:main',
+              toolCallId: 'image-1',
+              name: 'image_generate',
+              result: { summary: 'done' },
+              isError: false,
+            },
+          ],
+        },
+      },
+      streamingText: '',
+      streamingMessage: null,
+      streamingTools: [],
+      pendingFinal: false,
+      lastUserMessageAt: Date.now(),
+      pendingToolImages: [],
+      sessions: [{ key: 'agent:main:main' }],
+      currentSessionKey: 'agent:main:main',
+      currentAgentId: 'main',
+      sessionLabels: {},
+      sessionLastActivity: {},
+      thinkingLevel: null,
+    });
+
+    const { Chat } = await import('@/pages/Chat/index');
+
+    render(<Chat />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('mock-chat-input')).toHaveAttribute('data-sending', 'false');
+    });
+
+    expect(screen.queryByTestId('chat-execution-step-thinking-trailing')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('chat-typing-indicator')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('chat-activity-indicator')).not.toBeInTheDocument();
+  });
+
   it('stops trailing thinking when generated image media arrives but session wake is missed', async () => {
     const { useChatStore } = await import('@/stores/chat');
     useChatStore.setState({
@@ -558,7 +702,12 @@ describe('Chat execution graph lifecycle', () => {
         role: 'assistant',
         content: [{ type: 'thinking', thinking: '等待图片生成完成。' }],
       },
-      streamingTools: [],
+      streamingTools: [{
+        toolCallId: 'image-1',
+        name: 'image_generate',
+        status: 'running',
+        updatedAt: Date.now(),
+      }],
       pendingFinal: false,
       lastUserMessageAt: Date.now(),
       pendingToolImages: [],
@@ -581,6 +730,229 @@ describe('Chat execution graph lifecycle', () => {
     expect(screen.queryByTestId('chat-execution-step-thinking-trailing')).not.toBeInTheDocument();
     expect(screen.queryByTestId('chat-typing-indicator')).not.toBeInTheDocument();
     expect(screen.queryByTestId('chat-activity-indicator')).not.toBeInTheDocument();
+  });
+
+  it('shows trailing thinking together with a running tool status', async () => {
+    const { useChatStore } = await import('@/stores/chat');
+    useChatStore.setState({
+      messages: [
+        {
+          role: 'user',
+          content: 'Search the web and summarize',
+        },
+      ],
+      loading: false,
+      error: null,
+      runError: null,
+      sending: true,
+      activeRunId: 'run-tool-active',
+      streamingText: '',
+      streamingMessage: null,
+      streamingTools: [
+        {
+          toolCallId: 'browser-search',
+          name: 'browser',
+          status: 'running',
+          updatedAt: Date.now(),
+        },
+      ],
+      pendingFinal: false,
+      lastUserMessageAt: Date.now(),
+      pendingToolImages: [],
+      sessions: [{ key: 'agent:main:main' }],
+      currentSessionKey: 'agent:main:main',
+      currentAgentId: 'main',
+      sessionLabels: {},
+      sessionLastActivity: {},
+      thinkingLevel: null,
+    });
+
+    const { Chat } = await import('@/pages/Chat/index');
+
+    render(<Chat />);
+
+    await waitFor(() => {
+      expect(screen.getByText('browser')).toBeInTheDocument();
+      expect(screen.getByTestId('chat-execution-step-thinking-trailing')).toBeInTheDocument();
+    });
+  });
+
+  it('keeps trailing thinking visible while waiting for final history after completed tool status', async () => {
+    const { useChatStore } = await import('@/stores/chat');
+    useChatStore.setState({
+      messages: [
+        {
+          role: 'user',
+          content: 'Summarize after checking the page',
+        },
+        {
+          role: 'assistant',
+          id: 'tool-turn',
+          content: [
+            { type: 'tool_use', id: 'browser-search', name: 'browser', input: { action: 'search', query: 'semiconductor' } },
+          ],
+        },
+      ],
+      loading: false,
+      error: null,
+      runError: null,
+      sending: true,
+      activeRunId: 'run-waiting-final-history',
+      streamingText: '',
+      streamingMessage: null,
+      streamingTools: [
+        {
+          toolCallId: 'browser-search',
+          name: 'browser',
+          status: 'completed',
+          updatedAt: Date.now(),
+        },
+      ],
+      pendingFinal: true,
+      lastUserMessageAt: Date.now(),
+      pendingToolImages: [],
+      sessions: [{ key: 'agent:main:main' }],
+      currentSessionKey: 'agent:main:main',
+      currentAgentId: 'main',
+      sessionLabels: {},
+      sessionLastActivity: {},
+      thinkingLevel: null,
+    });
+
+    const { Chat } = await import('@/pages/Chat/index');
+
+    render(<Chat />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('chat-execution-step-thinking-trailing')).toBeInTheDocument();
+    });
+  });
+
+  it('settles image generation runs after message tool delivers generated media', async () => {
+    const { useChatStore } = await import('@/stores/chat');
+    useChatStore.setState({
+      messages: [
+        {
+          role: 'user',
+          content: 'Generate a tomato image',
+        },
+        {
+          role: 'assistant',
+          id: 'image-tool-turn',
+          content: [{ type: 'tool_use', id: 'image-call', name: 'image_generate', input: { prompt: 'tomato' } }],
+        },
+        {
+          role: 'toolresult',
+          toolCallId: 'image-call',
+          toolName: 'image_generate',
+          timestamp: Date.now() / 1000,
+          content: [{
+            type: 'text',
+            text: 'Background task started for image generation (27443fdb-6cca-48e6-a3a7-ee34b0491aee).',
+          }],
+        },
+        {
+          role: 'user',
+          content: '[Inter-session message] sourceSession=image_generate:27443fdb-6cca-48e6-a3a7-ee34b0491aee sourceTool=image_generate',
+        },
+        {
+          role: 'toolresult',
+          toolName: 'message',
+          content: [{ type: 'text', text: '{ "status": "ok" }' }],
+          details: {
+            status: 'ok',
+            mediaUrl: '/Users/me/.openclaw/media/tool-image-generation/tomato.png',
+            sourceReply: {
+              mediaUrls: ['/Users/me/.openclaw/media/tool-image-generation/tomato.png'],
+            },
+          },
+        } as RawMessage,
+      ],
+      loading: false,
+      error: null,
+      runError: null,
+      sending: false,
+      activeRunId: null,
+      streamingText: '',
+      streamingMessage: null,
+      streamingTools: [],
+      pendingFinal: false,
+      lastUserMessageAt: Date.now(),
+      pendingToolImages: [],
+      sessions: [{ key: 'agent:main:main' }],
+      currentSessionKey: 'agent:main:main',
+      currentAgentId: 'main',
+      sessionLabels: {},
+      sessionLastActivity: {},
+      thinkingLevel: null,
+    });
+
+    const { Chat } = await import('@/pages/Chat/index');
+
+    render(<Chat />);
+
+    await waitFor(() => {
+      expect(screen.queryByTestId('chat-execution-step-thinking-trailing')).not.toBeInTheDocument();
+    });
+    expect(screen.getByTestId('mock-chat-input')).toHaveAttribute('data-sending', 'false');
+  });
+
+  it('keeps image generation runs active after async task status narration', async () => {
+    const { useChatStore } = await import('@/stores/chat');
+    useChatStore.setState({
+      messages: [
+        {
+          role: 'user',
+          content: 'Generate a cherry image',
+        },
+        {
+          role: 'assistant',
+          id: 'image-tool-turn',
+          content: [{ type: 'tool_use', id: 'image-call', name: 'image_generate', input: { prompt: 'cherry' } }],
+        },
+        {
+          role: 'toolresult',
+          toolCallId: 'image-call',
+          toolName: 'image_generate',
+          timestamp: Date.now() / 1000,
+          content: [{
+            type: 'text',
+            text: 'Background task started for image generation (27443fdb-6cca-48e6-a3a7-ee34b0491aee).',
+          }],
+        },
+        {
+          role: 'assistant',
+          id: 'image-status-turn',
+          content: [{ type: 'text', text: '图已经开始生成啦 🍒 完成后会直接发到这里。' }],
+        },
+      ],
+      loading: false,
+      error: null,
+      runError: null,
+      sending: false,
+      activeRunId: null,
+      streamingText: '',
+      streamingMessage: null,
+      streamingTools: [],
+      pendingFinal: false,
+      lastUserMessageAt: Date.now(),
+      pendingToolImages: [],
+      sessions: [{ key: 'agent:main:main' }],
+      currentSessionKey: 'agent:main:main',
+      currentAgentId: 'main',
+      sessionLabels: {},
+      sessionLastActivity: {},
+      thinkingLevel: null,
+    });
+
+    const { Chat } = await import('@/pages/Chat/index');
+
+    render(<Chat />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('chat-execution-step-thinking-trailing')).toBeInTheDocument();
+    });
+    expect(screen.getByTestId('mock-chat-input')).toHaveAttribute('data-sending', 'true');
   });
 
   it('keeps the run active when narration landed in history before tools finished', async () => {

@@ -7,6 +7,7 @@ import { create } from 'zustand';
 import { hostApi, type ChatSendWithMediaResult, type SessionLabelSummary } from '@/lib/host-api';
 import { useGatewayStore } from './gateway';
 import { useAgentsStore } from './agents';
+import type { ChatRuntimeEvent } from '../../shared/chat-runtime-events';
 import { buildBaselineRunKey, captureBaseline, clearBaselines } from './baseline-cache';
 import { isCronSessionKey } from './chat/cron-session-utils';
 import { fetchCronSessionHistory } from '@/lib/cron-session-history';
@@ -47,6 +48,7 @@ import {
   type ToolStatus,
 } from './chat/types';
 import type { ChatGet, ChatSet } from './chat/store-api';
+import { applyRuntimeEventToRuns, extractToolCompletedFiles } from './chat/runtime-graph';
 import { enrichWithToolCallAttachments, shouldDropMessageFromHistory } from './chat/helpers';
 import {
   isGeneratingStatusNarration,
@@ -60,6 +62,7 @@ export type {
   ContentBlock,
   RawMessage,
   ToolStatus,
+  ChatRuntimeRunState,
 } from './chat/types';
 
 // Module-level timestamp tracking the last chat event received.
@@ -115,9 +118,10 @@ const DEFAULT_SESSION_RUN_STATE: SessionRunState = {
 };
 
 const _sessionRunStateCache = new Map<string, SessionRunState>();
+let _sendGenerationCounter = 0;
+const _activeSendGenerationBySession = new Map<string, number>();
 const SESSION_LOAD_MIN_INTERVAL_MS = 1_200;
 const HISTORY_LOAD_MIN_INTERVAL_MS = 800;
-const HISTORY_POLL_SILENCE_WINDOW_MS = 2_500;
 const CHAT_EVENT_DEDUPE_TTL_MS = 30_000;
 const HISTORY_PAGE_SIZE = 200;
 const HISTORY_MAX_RENDERED_MESSAGES = 1_000;
@@ -383,6 +387,49 @@ function getCachedSessionRunState(sessionKey: string): SessionRunState {
 
 function clearCachedSessionRunState(sessionKey: string): void {
   _sessionRunStateCache.delete(sessionKey);
+}
+
+function cloneSessionRunState(state: SessionRunState): SessionRunState {
+  return {
+    sending: state.sending,
+    activeRunId: state.activeRunId,
+    pendingFinal: state.pendingFinal,
+    lastUserMessageAt: state.lastUserMessageAt,
+    streamingText: state.streamingText,
+    streamingMessage: state.streamingMessage,
+    streamingTools: [...state.streamingTools],
+    pendingToolImages: state.pendingToolImages.map((file) => ({ ...file })),
+  };
+}
+
+function updateCachedSessionRunStateFromRuntimeEvent(event: ChatRuntimeEvent): void {
+  const sessionKey = event.sessionKey;
+  if (!sessionKey) return;
+  const cached = _sessionRunStateCache.get(sessionKey);
+  if (!cached) return;
+
+  const next = cloneSessionRunState(cached);
+  const matchesCachedRun = next.activeRunId != null && event.runId === next.activeRunId;
+  const isCurrentUntrackedSend = next.activeRunId == null
+    && next.sending
+    && (
+      typeof event.ts !== 'number'
+      || next.lastUserMessageAt == null
+      || event.ts >= next.lastUserMessageAt - 1_000
+    );
+
+  if (event.type === 'run.started') {
+    if (next.activeRunId == null || matchesCachedRun) {
+      next.activeRunId = event.runId;
+      next.sending = true;
+    }
+    _sessionRunStateCache.set(sessionKey, next);
+    return;
+  }
+
+  if (event.type === 'run.ended' && (matchesCachedRun || isCurrentUntrackedSend)) {
+    _sessionRunStateCache.set(sessionKey, DEFAULT_SESSION_RUN_STATE);
+  }
 }
 
 function getHistoryForegroundLoadKey(sessionKey: string): string {
@@ -916,7 +963,7 @@ function trimPathTerminators(filePath: string): string {
  *
  * Also recognises the `MEDIA:` / `media:` prefix the OpenClaw runtime
  * emits for produced artifacts (e.g.
- * `MEDIA:/tmp/desktop_screenshot.png`) — without this the leading colon
+ * `MEDIA:/tmp/desktop_screenshot.png`, `MEDIA:C:\Users\me\out.svg`) — without this the leading colon
  * trips the URL guard on the unix regex below and the artifact never
  * surfaces as an attachment. Mirrors `chat/helpers.ts::extractRawFilePaths`.
  */
@@ -924,7 +971,7 @@ function extractRawFilePaths(text: string): Array<{ filePath: string; mimeType: 
   const refs: Array<{ filePath: string; mimeType: string }> = [];
   const seen = new Set<string>();
   const exts = 'png|jpe?g|gif|webp|bmp|avif|svg|pdf|docx?|xlsx?|pptx?|txt|csv|md|rtf|epub|zip|tar|gz|rar|7z|mp3|wav|ogg|aac|flac|m4a|mp4|mov|avi|mkv|webm|m4v';
-  // Tagged media references (MEDIA:/path, media:~/path, ...). The agent
+  // Tagged media references (MEDIA:/path, media:~/path, MEDIA:C:\path, ...). The agent
   // runtime uses this prefix as an explicit "this is an artifact" marker,
   // so we want them recognised even though the leading colon would
   // normally look like a URL scheme. After matching we punch the entire
@@ -935,7 +982,7 @@ function extractRawFilePaths(text: string): Array<{ filePath: string; mimeType: 
   // and other space-containing paths the agent emits with the explicit
   // `MEDIA:` marker still resolve. Newline and quote characters remain
   // path terminators so we don't accidentally swallow trailing prose.
-  const taggedRegex = new RegExp(`(?:^|[\\s(\\[{>])(?:MEDIA|media):((?:\\/|~\\/)[^\\n"'()\\[\\],<>` + '`' + `]*?\\.(?:${exts}))(?=$|[\\s\\n"'()\\[\\],<>` + '`' + `]|[，。；;,.!?])`, 'g');
+  const taggedRegex = new RegExp(`(?:^|[\\s(\\[{>])(?:MEDIA|media):((?:\\/|~\\/|[A-Za-z]:\\\\)[^\\n"'()\\[\\],<>` + '`' + `]*?\\.(?:${exts}))(?=$|[\\s\\n"'()\\[\\],<>` + '`' + `]|[，。；;,.!?])`, 'g');
   let workingText = text;
   let taggedMatch: RegExpExecArray | null;
   while ((taggedMatch = taggedRegex.exec(text)) !== null) {
@@ -1562,6 +1609,40 @@ async function loadCronFallbackMessages(sessionKey: string, limit = 200): Promis
   }
 }
 
+async function fetchChatSessionsList(): Promise<Record<string, unknown>> {
+  return useGatewayStore.getState().rpc<Record<string, unknown>>('sessions.list', {
+    includeDerivedTitles: true,
+    includeLastMessage: true,
+  });
+}
+
+async function fetchChatHistory(
+  sessionKey: string,
+  limit: number,
+  maxChars?: number,
+  timeoutMs?: number,
+): Promise<Record<string, unknown>> {
+  const params = {
+    sessionKey,
+    limit,
+    ...(typeof maxChars === 'number' ? { maxChars } : {}),
+  };
+  return useGatewayStore.getState().rpc<Record<string, unknown>>('chat.history', params, timeoutMs);
+}
+
+async function sendChatMessageViaHostApi(params: {
+  sessionKey: string;
+  message: string;
+  deliver?: boolean;
+  idempotencyKey: string;
+}): Promise<{ runId?: string }> {
+  return useGatewayStore.getState().rpc<{ runId?: string }>('chat.send', params, 120000);
+}
+
+async function abortChatRunViaHostApi(sessionKey: string): Promise<void> {
+  await useGatewayStore.getState().rpc('chat.abort', { sessionKey });
+}
+
 function normalizeAgentId(value: string | undefined | null): string {
   return (value ?? '').trim().toLowerCase() || 'main';
 }
@@ -2046,6 +2127,13 @@ function collectToolUpdates(message: unknown, eventState: string): ToolStatus[] 
  * which prematurely tears down the `sending` / `activeRunId` / `pendingFinal`
  * lifecycle flags and makes the Thinking… indicator vanish mid-tool-chain.
  */
+function messageHasImageContent(message: RawMessage | undefined): boolean {
+  if (!message) return false;
+  if ((message._attachedFiles ?? []).some((file) => file.mimeType.startsWith('image/'))) return true;
+  const content = message.content;
+  return Array.isArray(content) && (content as ContentBlock[]).some((block) => block.type === 'image');
+}
+
 function hasNonToolAssistantContent(message: RawMessage | undefined): boolean {
   if (!message) return false;
   if (typeof message.content === 'string' && message.content.trim()) return true;
@@ -2057,6 +2145,7 @@ function hasNonToolAssistantContent(message: RawMessage | undefined): boolean {
       if (block.type === 'image') return true;
     }
   }
+  if (messageHasImageContent(message)) return true;
 
   const msg = message as unknown as Record<string, unknown>;
   if (typeof msg.text === 'string' && msg.text.trim()) return true;
@@ -2250,6 +2339,52 @@ function findLastRealUserMessage(messages: RawMessage[]): RawMessage | null {
   return null;
 }
 
+function dedupeAttachedFiles(files: AttachedFileMeta[]): AttachedFileMeta[] {
+  const seen = new Set<string>();
+  const next: AttachedFileMeta[] = [];
+  for (const file of files) {
+    const key = file.filePath || `${file.fileName}|${file.mimeType}|${file.preview || ''}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    next.push(file);
+  }
+  return next;
+}
+
+function runtimeToolEventToStatus(event: ChatRuntimeEvent): ToolStatus | null {
+  if (event.type === 'tool.started') {
+    return {
+      id: event.toolCallId,
+      toolCallId: event.toolCallId,
+      name: event.name,
+      status: 'running',
+      summary: typeof event.args === 'string' ? event.args : undefined,
+      updatedAt: event.ts ?? Date.now(),
+    };
+  }
+  if (event.type === 'tool.updated') {
+    return {
+      id: event.toolCallId,
+      toolCallId: event.toolCallId,
+      name: event.name,
+      status: 'running',
+      summary: typeof event.partialResult === 'string' ? event.partialResult : undefined,
+      updatedAt: event.ts ?? Date.now(),
+    };
+  }
+  if (event.type === 'tool.completed') {
+    return {
+      id: event.toolCallId,
+      toolCallId: event.toolCallId,
+      name: event.name,
+      status: event.isError ? 'error' : 'completed',
+      summary: typeof event.result === 'string' ? event.result : undefined,
+      updatedAt: event.ts ?? Date.now(),
+    };
+  }
+  return null;
+}
+
 // ── Store ────────────────────────────────────────────────────────
 
 export const useChatStore = create<ChatState>((set, get) => ({
@@ -2268,6 +2403,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
   pendingFinal: false,
   lastUserMessageAt: null,
   pendingToolImages: [],
+  runtimeRuns: {},
 
   sessions: [],
   currentSessionKey: DEFAULT_SESSION_KEY,
@@ -2291,10 +2427,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
     _loadSessionsInFlight = (async () => {
       try {
-        const data = await useGatewayStore.getState().rpc<Record<string, unknown>>('sessions.list', {
-          includeDerivedTitles: true,
-          includeLastMessage: true,
-        });
+        const data = await fetchChatSessionsList();
         if (data) {
           const rawSessions = Array.isArray(data.sessions) ? data.sessions : [];
           const sessions: ChatSession[] = rawSessions.map((s: Record<string, unknown>) => ({
@@ -2552,41 +2685,19 @@ export const useChatStore = create<ChatState>((set, get) => ({
     // NOTE: We intentionally do NOT call sessions.reset on the old session.
     // sessions.reset archives (renames) the session JSONL file, making old
     // conversation history inaccessible when the user switches back to it.
-    const { currentSessionKey, messages, sessions, sessionLastActivity, sessionLabels } = get();
-    // Only treat sessions with no history records and no activity timestamp as empty
-    const leavingEmpty = !currentSessionKey.endsWith(':main')
-      && messages.length === 0
-      && !sessionLastActivity[currentSessionKey]
-      && !sessionLabels[currentSessionKey];
+    const { currentSessionKey, sessions } = get();
     const prefix = getCanonicalPrefixFromSessionKey(currentSessionKey)
       ?? getCanonicalPrefixFromSessions(sessions)
       ?? DEFAULT_CANONICAL_PREFIX;
     const newKey = `${prefix}:session-${Date.now()}`;
-    const newSessionEntry: ChatSession = { key: newKey, displayName: newKey };
-    set((s) => ({
-      currentSessionKey: newKey,
-      currentAgentId: getAgentIdFromSessionKey(newKey),
-      sessions: [
-        ...(leavingEmpty ? s.sessions.filter((sess) => sess.key !== currentSessionKey) : s.sessions),
-        newSessionEntry,
-      ],
-      sessionLabels: leavingEmpty
-        ? Object.fromEntries(Object.entries(s.sessionLabels).filter(([k]) => k !== currentSessionKey))
-        : s.sessionLabels,
-      sessionLastActivity: leavingEmpty
-        ? Object.fromEntries(Object.entries(s.sessionLastActivity).filter(([k]) => k !== currentSessionKey))
-        : s.sessionLastActivity,
-      messages: [],
-      streamingText: '',
-      streamingMessage: null,
-      streamingTools: [],
-      activeRunId: null,
-      error: null,
-      runError: null,
-      pendingFinal: false,
-      lastUserMessageAt: null,
-      pendingToolImages: [],
-    }));
+
+    // Use the same switch patch as explicit sidebar switching so a running
+    // source session keeps its cached lifecycle. Without this, New Chat clears
+    // the active run globally; switching back to the still-running session then
+    // shows only the local transcript snapshot and loses the live execution UI.
+    clearHistoryPoll();
+    clearBaselines();
+    set((s) => buildSessionSwitchPatch(s, newKey));
   },
 
   // ── Rename session ──
@@ -2710,6 +2821,61 @@ export const useChatStore = create<ChatState>((set, get) => ({
             : message;
         });
       };
+      type AttachedFile = NonNullable<RawMessage['_attachedFiles']>[number];
+      const getAttachmentMergeKey = (file: AttachedFile): string | null => (
+        file.filePath || file.gatewayUrl || null
+      );
+      const preserveExistingAttachmentPreviews = (
+        currentMessages: RawMessage[],
+        nextMessages: RawMessage[],
+      ): RawMessage[] => {
+        const currentFilesByMessageKey = new Map<string, Map<string, AttachedFile>>();
+        for (const message of currentMessages) {
+          if (!message._attachedFiles?.length) continue;
+          const filesByKey = new Map<string, AttachedFile>();
+          for (const file of message._attachedFiles) {
+            const key = getAttachmentMergeKey(file);
+            if (!key) continue;
+            if (!file.preview && !file.fileSize && !file.previewStatus) continue;
+            filesByKey.set(key, file);
+          }
+          if (filesByKey.size > 0) {
+            currentFilesByMessageKey.set(getPreviewMergeKey(message), filesByKey);
+          }
+        }
+
+        if (currentFilesByMessageKey.size === 0) return nextMessages;
+
+        return nextMessages.map((message) => {
+          if (!message._attachedFiles?.length) return message;
+          const currentFiles = currentFilesByMessageKey.get(getPreviewMergeKey(message));
+          if (!currentFiles) return message;
+
+          let changed = false;
+          const attachedFiles = message._attachedFiles.map((file) => {
+            const key = getAttachmentMergeKey(file);
+            const currentFile = key ? currentFiles.get(key) : undefined;
+            if (!currentFile) return file;
+
+            let nextFile = file;
+            if (!nextFile.preview && currentFile.preview) {
+              nextFile = { ...nextFile, preview: currentFile.preview };
+              changed = true;
+            }
+            if (!nextFile.fileSize && currentFile.fileSize) {
+              nextFile = { ...nextFile, fileSize: currentFile.fileSize };
+              changed = true;
+            }
+            if (!nextFile.previewStatus && currentFile.previewStatus) {
+              nextFile = { ...nextFile, previewStatus: currentFile.previewStatus };
+              changed = true;
+            }
+            return nextFile;
+          });
+
+          return changed ? { ...message, _attachedFiles: attachedFiles } : message;
+        });
+      };
 
       const applyLoadFailure = (errorMessage: string | null) => {
         if (!isCurrentSession()) return;
@@ -2752,6 +2918,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
         }
       }
       finalMessages = dropRedundantOptimisticUserMessages(currentSessionKey, finalMessages);
+      finalMessages = preserveExistingAttachmentPreviews(get().messages, finalMessages);
 
       const { pendingFinal, lastUserMessageAt, sending: isSendingNow } = get();
       const userMsTs = lastUserMessageAt != null ? toMs(lastUserMessageAt) : 0;
@@ -2914,7 +3081,22 @@ export const useChatStore = create<ChatState>((set, get) => ({
           if (hasPendingToolUse(message)) return false;
           return hasNonToolAssistantContent(message);
         });
-        if (hasConclusiveReply && !segmentHasOpenToolRun(openSegment)) {
+        const hasDeliveredImageReply = openSegment.some((message) => message.role === 'assistant' && messageHasImageContent(message));
+        if (hasDeliveredImageReply && !segmentHasOpenToolRun(openSegment)) {
+          clearHistoryPoll();
+          set({
+            sending: false,
+            activeRunId: null,
+            pendingFinal: false,
+            lastUserMessageAt: null,
+            runError: null,
+            streamingMessage: null,
+            streamingText: '',
+            streamingTools: [],
+            pendingToolImages: [],
+          });
+          captureSessionRunState(currentSessionKey, DEFAULT_SESSION_RUN_STATE);
+        } else if (hasConclusiveReply && !segmentHasOpenToolRun(openSegment)) {
           clearHistoryPoll();
           set({
             sending: false,
@@ -3024,11 +3206,10 @@ export const useChatStore = create<ChatState>((set, get) => ({
       const loadGatewayHistory = async (): Promise<void> => {
       try {
         const fallbackMessages: RawMessage[] = [];
-        const gatewayRpc = useGatewayStore.getState().rpc.bind(useGatewayStore.getState());
         const chatHistoryParams = buildChatHistoryRpcParams(
           currentSessionKey,
           HISTORY_PAGE_SIZE,
-          getChatHistoryMaxChars(gatewayRpc),
+          getChatHistoryMaxChars(),
         );
 
         let data: Record<string, unknown> | null = null;
@@ -3040,9 +3221,10 @@ export const useChatStore = create<ChatState>((set, get) => ({
           }
 
           try {
-            data = await gatewayRpc<Record<string, unknown>>(
-              'chat.history',
-              chatHistoryParams,
+            data = await fetchChatHistory(
+              currentSessionKey,
+              HISTORY_PAGE_SIZE,
+              chatHistoryParams.maxChars,
               historyTimeoutOverride,
             );
             lastError = null;
@@ -3257,6 +3439,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
     }
 
     const currentSessionKey = targetSessionKey;
+    const sendGeneration = ++_sendGenerationCounter;
+    _activeSendGenerationBySession.set(currentSessionKey, sendGeneration);
 
     // Add user message optimistically (with local file metadata for UI display)
     const nowMs = Date.now();
@@ -3299,30 +3483,12 @@ export const useChatStore = create<ChatState>((set, get) => ({
     // Mark this session as most recently active
     set((s) => ({ sessionLastActivity: { ...s.sessionLastActivity, [currentSessionKey]: nowMs } }));
 
-    // Start the history poll and safety timeout IMMEDIATELY (before the
-    // RPC await) because the gateway's chat.send RPC may block until the
-    // entire agentic conversation finishes — the poll must run in parallel.
+    // Runtime progress now comes from Main-owned streamed events. We still
+    // keep the no-response safety timeout, but history polling is no longer
+    // the primary active-run path.
     _lastChatEventAt = Date.now();
     clearHistoryPoll();
     clearErrorRecoveryTimer();
-
-    const POLL_START_DELAY = 3_000;
-    const POLL_INTERVAL = 4_000;
-    const pollHistory = () => {
-      const state = get();
-      if (!state.sending) { clearHistoryPoll(); return; }
-      if (state.streamingMessage) {
-        _historyPollTimer = setTimeout(pollHistory, POLL_INTERVAL);
-        return;
-      }
-      if (Date.now() - _lastChatEventAt < HISTORY_POLL_SILENCE_WINDOW_MS) {
-        _historyPollTimer = setTimeout(pollHistory, POLL_INTERVAL);
-        return;
-      }
-      state.loadHistory(true);
-      _historyPollTimer = setTimeout(pollHistory, POLL_INTERVAL);
-    };
-    _historyPollTimer = setTimeout(pollHistory, POLL_START_DELAY);
 
     const checkStuck = () => {
       const state = get();
@@ -3390,6 +3556,40 @@ export const useChatStore = create<ChatState>((set, get) => ({
     };
     setTimeout(checkStuck, 30_000);
 
+    const clearSendGenerationIfCurrent = () => {
+      if (_activeSendGenerationBySession.get(currentSessionKey) === sendGeneration) {
+        _activeSendGenerationBySession.delete(currentSessionKey);
+      }
+    };
+
+    const applySendFailure = (errorMsg: string) => {
+      const latest = get();
+      const sendStillCurrent = _activeSendGenerationBySession.get(currentSessionKey) === sendGeneration;
+      const canApplyToCurrentSession = latest.currentSessionKey === currentSessionKey
+        && latest.lastUserMessageAt === nowMs;
+
+      if (sendStillCurrent && canApplyToCurrentSession) {
+        clearSendGenerationIfCurrent();
+        clearHistoryPoll();
+        set({ error: errorMsg, sending: false });
+        return;
+      }
+
+      if (sendStillCurrent && latest.currentSessionKey !== currentSessionKey) {
+        const cached = _sessionRunStateCache.get(currentSessionKey);
+        if (cached?.lastUserMessageAt === nowMs) {
+          clearSendGenerationIfCurrent();
+          _sessionRunStateCache.set(currentSessionKey, DEFAULT_SESSION_RUN_STATE);
+          return;
+        }
+      }
+
+      console.warn('[sendMessage] Ignoring stale chat.send failure', {
+        error: errorMsg,
+        sessionKey: currentSessionKey,
+      });
+    };
+
     try {
       const idempotencyKey = crypto.randomUUID();
       const hasMedia = attachments && attachments.length > 0;
@@ -3414,9 +3614,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
       let result: ChatSendWithMediaResult;
 
-      // Longer timeout for chat sends to tolerate high-latency networks (avoids connect error)
-      const CHAT_SEND_TIMEOUT_MS = 120_000;
-
       if (hasMedia) {
         result = await hostApi.chat.sendWithMedia({
           sessionKey: currentSessionKey,
@@ -3430,16 +3627,12 @@ export const useChatStore = create<ChatState>((set, get) => ({
           })),
         });
       } else {
-        const rpcResult = await useGatewayStore.getState().rpc<{ runId?: string }>(
-          'chat.send',
-          {
-            sessionKey: currentSessionKey,
-            message: trimmed,
-            deliver: false,
-            idempotencyKey,
-          },
-          CHAT_SEND_TIMEOUT_MS,
-        );
+        const rpcResult = await sendChatMessageViaHostApi({
+          sessionKey: currentSessionKey,
+          message: trimmed,
+          deliver: false,
+          idempotencyKey,
+        });
         result = { success: true, result: rpcResult };
       }
 
@@ -3450,19 +3643,39 @@ export const useChatStore = create<ChatState>((set, get) => ({
         if (isRecoverableChatSendTimeout(errorMsg)) {
           console.warn(`[sendMessage] Recoverable chat.send timeout, keeping poll alive: ${errorMsg}`);
         } else {
-          clearHistoryPoll();
-          set({ error: errorMsg, sending: false });
+          applySendFailure(errorMsg);
         }
       } else if (result.result?.runId) {
-        set({ activeRunId: result.result.runId });
+        const returnedRunId = result.result.runId;
+        const latest = get();
+        const sendStillCurrent = _activeSendGenerationBySession.get(currentSessionKey) === sendGeneration;
+        const canAttachToCurrentSession = latest.currentSessionKey === currentSessionKey
+          && latest.sending
+          && latest.lastUserMessageAt === nowMs
+          && (latest.activeRunId == null || latest.activeRunId === returnedRunId);
+
+        if (sendStillCurrent && canAttachToCurrentSession) {
+          set({ activeRunId: returnedRunId });
+        } else if (sendStillCurrent && latest.currentSessionKey !== currentSessionKey) {
+          const cached = _sessionRunStateCache.get(currentSessionKey);
+          if (cached?.sending
+            && cached.lastUserMessageAt === nowMs
+            && (cached.activeRunId == null || cached.activeRunId === returnedRunId)) {
+            captureSessionRunState(currentSessionKey, { ...cached, activeRunId: returnedRunId });
+          }
+        } else {
+          console.warn('[sendMessage] Ignoring stale chat.send runId', {
+            runId: returnedRunId,
+            sessionKey: currentSessionKey,
+          });
+        }
       }
     } catch (err) {
       const errStr = String(err);
       if (isRecoverableChatSendTimeout(errStr)) {
         console.warn(`[sendMessage] Recoverable chat.send timeout, keeping poll alive: ${errStr}`);
       } else {
-        clearHistoryPoll();
-        set({ error: errStr, sending: false });
+        applySendFailure(errStr);
       }
     }
   },
@@ -3477,10 +3690,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
     set({ streamingTools: [] });
 
     try {
-      await useGatewayStore.getState().rpc(
-        'chat.abort',
-        { sessionKey: currentSessionKey },
-      );
+      await abortChatRunViaHostApi(currentSessionKey);
     } catch (err) {
       set({ error: String(err) });
     }
@@ -3659,11 +3869,11 @@ export const useChatStore = create<ChatState>((set, get) => ({
               }
             }
             set((s) => {
-              // Snapshot the current streaming assistant message (thinking + tool_use) into
-              // messages[] before clearing it. The Gateway does NOT send separate 'final'
-              // events for intermediate tool-use turns — it only sends deltas and then the
-              // tool result. Without snapshotting here, the intermediate thinking+tool steps
-              // would be overwritten by the next turn's deltas and never appear in the UI.
+              // Preserve the assistant turn that requested the tool before the
+              // tool result clears streaming state. Runtime events render the
+              // live execution graph, but the legacy chat-event path still
+              // needs this snapshot for providers/transports that do not emit
+              // complete runtime tool events.
               const currentStream = s.streamingMessage as RawMessage | null;
               const snapshotMsgs = snapshotStreamingAssistantMessage(currentStream, s.messages, runId);
               return {
@@ -3672,7 +3882,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
                 streamingMessage: null,
                 pendingFinal: true,
                 pendingToolImages: toolFiles.length > 0
-                  ? [...s.pendingToolImages, ...toolFiles]
+                  ? dedupeAttachedFiles([...s.pendingToolImages, ...toolFiles])
                   : s.pendingToolImages,
                 streamingTools: updates.length > 0 ? upsertToolStatuses(s.streamingTools, updates) : s.streamingTools,
               };
@@ -3910,6 +4120,104 @@ export const useChatStore = create<ChatState>((set, get) => ({
         break;
       }
     }
+  },
+
+  handleRuntimeEvent: (event: ChatRuntimeEvent) => {
+    const eventSessionKey = event.sessionKey ?? null;
+    const initialState = get();
+    const { activeRunId, currentSessionKey } = initialState;
+    const matchesCurrentSession = eventSessionKey != null && eventSessionKey === currentSessionKey;
+    const matchesActiveRun = activeRunId != null && event.runId === activeRunId;
+
+    const runtimeRuns = applyRuntimeEventToRuns(initialState.runtimeRuns, event);
+    const nextPatch: Partial<ChatState> = { runtimeRuns };
+
+    // Always retain structured runtime events, even for inactive sessions.
+    // When the user switches away during a run and returns later, the Chat page
+    // must be able to reconstruct the live execution graph from runtimeRuns
+    // instead of relying only on the on-disk transcript snapshot.
+    // Session-less runtime events are only safe to apply to active UI when they
+    // match the active run; otherwise they are stored but do not affect the
+    // current composer/graph state.
+    if (!matchesCurrentSession && !matchesActiveRun) {
+      updateCachedSessionRunStateFromRuntimeEvent(event);
+      set(nextPatch);
+      return;
+    }
+
+    _lastChatEventAt = Date.now();
+    const appliesToActiveUi = matchesActiveRun || (activeRunId == null && matchesCurrentSession);
+
+    if (event.type === 'run.started') {
+      if (matchesCurrentSession && (activeRunId == null || matchesActiveRun)) {
+        nextPatch.activeRunId = event.runId;
+        nextPatch.error = null;
+        nextPatch.runError = null;
+        if (!initialState.sending && shouldTrackInboundRunLifecycle(initialState, currentSessionKey)) {
+          nextPatch.sending = true;
+        }
+      }
+      set(nextPatch);
+      return;
+    }
+
+    if (event.type === 'assistant.delta' || event.type === 'thinking.delta') {
+      if (appliesToActiveUi && (initialState.error || initialState.runError)) {
+        nextPatch.error = null;
+        nextPatch.runError = null;
+      }
+      set(nextPatch);
+      return;
+    }
+
+    const toolStatus = runtimeToolEventToStatus(event);
+    if (toolStatus && appliesToActiveUi && (initialState.error || initialState.runError)) {
+      nextPatch.error = null;
+      nextPatch.runError = null;
+    }
+
+    if (event.type === 'tool.completed' && appliesToActiveUi) {
+      const files = extractToolCompletedFiles(event);
+      if (files.length > 0) {
+        nextPatch.pendingToolImages = dedupeAttachedFiles([
+          ...initialState.pendingToolImages,
+          ...files,
+        ]);
+      }
+    }
+
+    if (event.type === 'run.ended') {
+      const latestState = get();
+      const terminalMatchesActiveRun = latestState.activeRunId != null && event.runId === latestState.activeRunId;
+      const terminalIsForCurrentUntrackedSend = latestState.activeRunId == null
+        && matchesCurrentSession
+        && latestState.sending
+        && (
+          typeof event.ts !== 'number'
+          || latestState.lastUserMessageAt == null
+          || event.ts >= latestState.lastUserMessageAt - 1_000
+        );
+      const shouldClearActiveRun = terminalMatchesActiveRun || terminalIsForCurrentUntrackedSend;
+
+      if (shouldClearActiveRun) {
+        nextPatch.sending = false;
+        nextPatch.activeRunId = null;
+        nextPatch.pendingFinal = false;
+        nextPatch.lastUserMessageAt = null;
+        nextPatch.streamingTools = [];
+        if (event.status === 'error' && event.error) {
+          nextPatch.error = null;
+          nextPatch.runError = event.error;
+        }
+        if (event.status === 'aborted') {
+          nextPatch.streamingMessage = null;
+          nextPatch.streamingText = '';
+          nextPatch.pendingToolImages = [];
+        }
+      }
+    }
+
+    set(nextPatch);
   },
 
   // ── Refresh: reload history + sessions ──

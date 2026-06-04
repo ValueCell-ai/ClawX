@@ -66,6 +66,7 @@ import type {
   GatewayChatMessageEvent,
   GatewayRuntimePayload,
 } from '@shared/host-events/contract';
+import type { ChatRuntimeEvent } from '@shared/chat-runtime-events';
 
 export interface GatewayStatus {
   state: GatewayLifecycleState;
@@ -148,6 +149,7 @@ export interface GatewayManagerEvents {
   'gateway:presence': (data: GatewayRuntimePayload) => void;
   'channel:status': (data: GatewayChannelStatusEvent) => void;
   'chat:message': (data: GatewayChatMessageEvent) => void;
+  'chat:runtime-event': (data: ChatRuntimeEvent) => void;
 }
 
 /**

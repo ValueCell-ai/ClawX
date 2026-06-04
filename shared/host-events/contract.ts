@@ -1,4 +1,5 @@
 import type { UpdateStatusSnapshot } from '../host-api/contract';
+import type { ChatRuntimeEvent } from '../chat-runtime-events';
 import type {
   GatewayNotification,
   GatewayRuntimePayload,
@@ -72,6 +73,9 @@ export type HostEventContract = {
     exit: (payload: GatewayExitEvent) => void;
     error: (payload: GatewayErrorEvent) => void;
   };
+  chat: {
+    runtimeEvent: (payload: ChatRuntimeEvent) => void;
+  };
   oauth: {
     code: (payload: OAuthCodeEvent) => void;
     success: (payload: OAuthSuccessEvent) => void;
@@ -115,6 +119,9 @@ export const HOST_EVENT_CHANNELS = {
     channelStatus: 'gateway:channel-status',
     exit: 'gateway:exit',
     error: 'gateway:error',
+  },
+  chat: {
+    runtimeEvent: 'chat:runtime-event',
   },
   oauth: {
     code: 'oauth:code',

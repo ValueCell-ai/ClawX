@@ -2,7 +2,7 @@
   "id": "clawx-openai-image",
   "name": "ClawX OpenAI Image",
   "description": "Independent OpenAI-compatible image generation provider managed by ClawX.",
-  "version": "0.1.0",
+  "version": "0.1.3",
   "entry": "index.mjs",
   "enabledByDefault": false,
   "contracts": {
