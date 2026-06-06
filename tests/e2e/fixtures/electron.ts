@@ -318,6 +318,7 @@ export async function installIpcMocks(
         if (request.module === 'skills' && request.action === 'quickAccess') return ['/api/skills/quick-access', 'POST'];
         if (request.module === 'files' && request.action === 'thumbnails') return ['/api/files/thumbnails', 'POST'];
         if (request.module === 'media') {
+          if (request.action === 'thumbnails') return ['/api/files/thumbnails', 'POST'];
           if (request.action === 'imageGenerationSettings') return ['/api/media/image-generation', 'GET'];
           if (request.action === 'saveImageGenerationSettings') return ['/api/media/image-generation', 'PUT'];
         }
