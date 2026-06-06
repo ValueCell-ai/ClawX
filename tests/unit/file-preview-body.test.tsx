@@ -17,7 +17,7 @@ const readTextFile = vi.fn();
 const statFile = vi.fn();
 const writeTextFile = vi.fn();
 
-vi.mock('@/lib/api-client', () => ({
+vi.mock('@/lib/file-preview-client', () => ({
   readTextFile: (...args: unknown[]) => readTextFile(...args),
   statFile: (...args: unknown[]) => statFile(...args),
   writeTextFile: (...args: unknown[]) => writeTextFile(...args),

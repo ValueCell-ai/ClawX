@@ -27,7 +27,7 @@ import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { LoadingSpinner } from '@/components/common/LoadingSpinner';
 import { cn } from '@/lib/utils';
-import { readTextFile, statFile, writeTextFile } from '@/lib/api-client';
+import { readTextFile, statFile, writeTextFile } from '@/lib/file-preview-client';
 import { hostApi } from '@/lib/host-api';
 import type { FilePreviewTarget } from './types';
 import {

@@ -3,7 +3,7 @@ import { fireEvent, render, screen } from '@testing-library/react';
 import { ChatMessage } from '@/pages/Chat/ChatMessage';
 import type { RawMessage } from '@/stores/chat';
 
-vi.mock('@/lib/api-client', () => ({
+vi.mock('@/lib/file-preview-client', () => ({
   readBinaryFile: vi.fn(),
   statFile: vi.fn(async (path: string) => {
     if (path.includes('missing') || path.includes('不存在')) {
@@ -482,7 +482,7 @@ describe('ChatMessage image copy', () => {
   });
 
   it('copies image bytes instead of the media URL text when an image attachment is present', async () => {
-    const { readBinaryFile } = await import('@/lib/api-client');
+    const { readBinaryFile } = await import('@/lib/file-preview-client');
     vi.mocked(readBinaryFile).mockResolvedValueOnce({
       ok: true,
       data: Uint8Array.from([137, 80, 78, 71]),

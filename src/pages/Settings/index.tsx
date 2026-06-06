@@ -23,7 +23,7 @@ import { useSettingsStore } from '@/stores/settings';
 import { useGatewayStore } from '@/stores/gateway';
 import { useUpdateStore } from '@/stores/update';
 import { UpdateSettings } from '@/components/settings/UpdateSettings';
-import { toUserMessage } from '@/lib/api-client';
+import { toUserMessage } from '@/lib/error-message';
 import {
   clearUiTelemetry,
   getUiTelemetrySnapshot,

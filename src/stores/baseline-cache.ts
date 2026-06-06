@@ -8,7 +8,7 @@
  * message), not shared across the whole session — otherwise a later run that
  * edits the same path would incorrectly diff against an older baseline.
  */
-import { readTextFile, type FilePreviewError } from '@/lib/api-client';
+import { readTextFile, type FilePreviewError } from '@/lib/file-preview-client';
 import type { GeneratedFileBaseline } from '@/lib/generated-files';
 
 const KEY_SEPARATOR = '\u0000';

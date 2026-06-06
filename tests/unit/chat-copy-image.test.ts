@@ -3,7 +3,7 @@ import { copyImageToClipboard } from '@/pages/Chat/copy-image';
 
 const readBinaryFileMock = vi.fn();
 
-vi.mock('@/lib/api-client', () => ({
+vi.mock('@/lib/file-preview-client', () => ({
   readBinaryFile: (...args: unknown[]) => readBinaryFileMock(...args),
 }));
 

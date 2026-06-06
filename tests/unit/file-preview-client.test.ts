@@ -16,17 +16,15 @@ vi.mock('@/lib/host-api', () => ({
 }));
 
 import {
-  AppError,
   listDir,
   listTree,
   readBinaryFile,
   readTextFile,
   statFile,
-  toUserMessage,
   writeTextFile,
-} from '@/lib/api-client';
+} from '@/lib/file-preview-client';
 
-describe('api-client', () => {
+describe('file-preview-client', () => {
   beforeEach(() => {
     vi.resetAllMocks();
   });
@@ -37,7 +35,10 @@ describe('api-client', () => {
     hostApiMock.files.writeText.mockResolvedValueOnce({ ok: true });
     hostApiMock.files.stat.mockResolvedValueOnce({ ok: true, isFile: true, size: 5 });
     hostApiMock.files.listDir.mockResolvedValueOnce({ ok: true, entries: [] });
-    hostApiMock.files.listTree.mockResolvedValueOnce({ ok: true, root: { name: 'root', relPath: '', absPath: '/tmp', isDir: true } });
+    hostApiMock.files.listTree.mockResolvedValueOnce({
+      ok: true,
+      root: { name: 'root', relPath: '', absPath: '/tmp', isDir: true },
+    });
 
     await expect(readTextFile('/tmp/a.txt')).resolves.toEqual({ ok: true, content: 'hello' });
     await expect(readBinaryFile('/tmp/b.png', { maxBytes: 32 })).resolves.toEqual({
@@ -58,20 +59,5 @@ describe('api-client', () => {
     expect(hostApiMock.files.stat).toHaveBeenCalledWith('/tmp/a.txt');
     expect(hostApiMock.files.listDir).toHaveBeenCalledWith('/tmp');
     expect(hostApiMock.files.listTree).toHaveBeenCalledWith('/tmp', { maxDepth: 2 });
-  });
-
-  it('returns user-facing message for permission error', () => {
-    const msg = toUserMessage(new AppError('PERMISSION', 'forbidden'));
-    expect(msg).toContain('Permission denied');
-  });
-
-  it('returns user-facing message for auth invalid error', () => {
-    const msg = toUserMessage(new AppError('AUTH_INVALID', 'Invalid Authentication'));
-    expect(msg).toContain('Authentication failed');
-  });
-
-  it('returns user-facing message for channel unavailable error', () => {
-    const msg = toUserMessage(new AppError('CHANNEL_UNAVAILABLE', 'Invalid IPC channel'));
-    expect(msg).toContain('Service channel unavailable');
   });
 });

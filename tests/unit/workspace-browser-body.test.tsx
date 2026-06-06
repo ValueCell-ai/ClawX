@@ -13,7 +13,7 @@ vi.mock('react-i18next', () => ({
 
 const readTextFile = vi.fn();
 
-vi.mock('@/lib/api-client', () => ({
+vi.mock('@/lib/file-preview-client', () => ({
   readTextFile: (...args: unknown[]) => readTextFile(...args),
   statFile: vi.fn(),
 }));

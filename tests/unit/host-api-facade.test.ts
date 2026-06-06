@@ -304,7 +304,7 @@ describe('hostApi facade', () => {
         const stat = statSync(fullPath);
         if (stat.isDirectory()) {
           collect(fullPath);
-        } else if (/\.(ts|tsx)$/.test(entry) && !fullPath.endsWith('src/lib/api-client.ts')) {
+        } else if (/\.(ts|tsx)$/.test(entry)) {
           files.push(fullPath);
         }
       }
@@ -522,24 +522,12 @@ describe('hostApi facade', () => {
     expect(violations).toEqual([]);
   });
 
-  it('does not keep cron on the legacy app:request path', () => {
+  it('does not keep the legacy unified app:request client path', () => {
     const mainIpcHandlers = readFileSync(join(process.cwd(), 'electron/main/ipc-handlers.ts'), 'utf8');
-    const apiClient = readFileSync(join(process.cwd(), 'src/lib/api-client.ts'), 'utf8');
-    const cronChannels = [
-      'cron:list',
-      'cron:create',
-      'cron:update',
-      'cron:delete',
-      'cron:toggle',
-      'cron:trigger',
-    ];
+    const apiClientPath = join(process.cwd(), 'src/lib/api-client.ts');
 
     const violations = [
-      ...cronChannels.flatMap((channel) => (
-        apiClient.includes(`'${channel}'`)
-          ? [`src/lib/api-client.ts: remove legacy ${channel} unified fallback`]
-          : []
-      )),
+      ...(existsSync(apiClientPath) ? ['src/lib/api-client.ts: remove legacy unified API client'] : []),
       ...(mainIpcHandlers.includes("case 'cron':")
         ? ['electron/main/ipc-handlers.ts: remove legacy app:request cron module']
         : []),

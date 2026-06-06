@@ -12,7 +12,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { LoadingSpinner } from '@/components/common/LoadingSpinner';
 import { cn } from '@/lib/utils';
-import { readTextFile, statFile } from '@/lib/api-client';
+import { readTextFile, statFile } from '@/lib/file-preview-client';
 import { hostApi } from '@/lib/host-api';
 import {
   isHtmlPreviewExt,

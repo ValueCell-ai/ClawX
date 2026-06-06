@@ -6,7 +6,7 @@
  * to one of four buckets so the Skills detail page can render
  * "Docs / Scripts / Hooks / Assets" sections.
  */
-import { listDir } from './api-client';
+import { listDir } from './file-preview-client';
 import {
   basenameOf,
   classifyFileExt,

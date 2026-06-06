@@ -1,4 +1,4 @@
-import { readBinaryFile } from '@/lib/api-client';
+import { readBinaryFile } from '@/lib/file-preview-client';
 
 export interface ImageCopyTarget {
   filePath?: string;

@@ -7,7 +7,7 @@
  * so sibling configuration paths (`runs/`, `agents/`,
  * `auth-profiles.json`, …) under `~/.openclaw` are never exposed.
  */
-import { listTree, type TreeNode } from './api-client';
+import { listTree, type TreeNode } from './file-preview-client';
 import {
   basenameOf,
   classifyFileExt,

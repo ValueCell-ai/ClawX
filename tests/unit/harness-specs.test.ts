@@ -32,7 +32,7 @@ Body`);
 
   it('matches repository glob paths', () => {
     expect(pathMatchesAny('src/stores/chat/history-actions.ts', ['src/stores/chat/**'])).toBe(true);
-    expect(pathMatchesAny('src/lib/api-client.ts', ['src/lib/api-client.ts'])).toBe(true);
+    expect(pathMatchesAny('src/lib/host-api.ts', ['src/lib/host-api.ts'])).toBe(true);
     expect(pathMatchesAny('src/pages/Chat/index.tsx', ['electron/gateway/**'])).toBe(false);
   });
 
@@ -45,7 +45,7 @@ Body`);
         scenario: 'gateway-backend-communication',
         taskType: 'runtime-bridge',
         intent: 'Adjust backend communication.',
-        touchedAreas: ['src/lib/api-client.ts'],
+        touchedAreas: ['src/lib/host-api.ts'],
         expectedUserBehavior: ['Visible state remains consistent.'],
         requiredProfiles: ['fast'],
         acceptance: ['Comms compare passes.'],
@@ -55,7 +55,7 @@ Body`);
     const scenarioSpec = {
       data: {
         requiredProfiles: ['fast', 'comms'],
-        ownedPaths: ['src/lib/api-client.ts'],
+        ownedPaths: ['src/lib/host-api.ts'],
       },
     };
 
@@ -149,7 +149,7 @@ Body`);
 
   it('allows fallback flags only in their boundary modules', async () => {
     const failures = await scanBackendCommunicationBoundary([
-      'src/lib/api-client.ts',
+      'src/lib/host-api-client.ts',
       'src/lib/host-api.ts',
       'src/lib/host-events.ts',
     ]);

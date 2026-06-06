@@ -10,7 +10,7 @@ import { ZoomIn, ZoomOut } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/ui/button';
 import { LoadingSpinner } from '@/components/common/LoadingSpinner';
-import { readBinaryFile } from '@/lib/api-client';
+import { readBinaryFile } from '@/lib/file-preview-client';
 import { cn } from '@/lib/utils';
 
 const IMAGE_MAX_BYTES = 50 * 1024 * 1024;

@@ -404,7 +404,44 @@ export type FilePreviewTreeOptions = {
 export type FileReadBinaryPayload = FilePathPayload & { opts?: FileReadBinaryOptions };
 export type FileWriteTextPayload = FilePathPayload & { content: string };
 export type FileListTreePayload = FilePathPayload & { opts?: FilePreviewTreeOptions };
-export type FileResult = JsonRecord;
+export type FilePreviewError =
+  | 'outsideSandbox'
+  | 'readOnlyRoot'
+  | 'tooLarge'
+  | 'binary'
+  | 'notFound'
+  | 'notDirectory'
+  | 'invalidContent'
+  | (string & {});
+export type ReadTextFileResult = {
+  ok: boolean;
+  content?: string;
+  mimeType?: string;
+  size?: number;
+  readOnly?: boolean;
+  error?: FilePreviewError;
+};
+export type ReadBinaryFileResult = {
+  ok: boolean;
+  data?: Uint8Array;
+  mimeType?: string;
+  size?: number;
+  readOnly?: boolean;
+  error?: FilePreviewError;
+};
+export type WriteTextFileResult = {
+  ok: boolean;
+  error?: FilePreviewError;
+};
+export type StatFileResult = {
+  ok: boolean;
+  size?: number;
+  mtime?: number;
+  isFile?: boolean;
+  isDir?: boolean;
+  readOnly?: boolean;
+  error?: FilePreviewError;
+};
 export type FileListDirEntry = {
   name: string;
   path: string;
@@ -414,7 +451,7 @@ export type FileListDirEntry = {
 export type FileListDirResult = {
   ok: boolean;
   entries?: FileListDirEntry[];
-  error?: string;
+  error?: FilePreviewError;
 };
 export type FilePreviewTreeNode = {
   name: string;
@@ -429,7 +466,7 @@ export type FileListTreeResult = {
   ok: boolean;
   root?: FilePreviewTreeNode;
   truncated?: boolean;
-  error?: string;
+  error?: FilePreviewError;
 };
 
 export type MediaThumbnailEntry = {
@@ -752,10 +789,10 @@ export type HostApiContract = {
   files: {
     stagePaths: (payload: StagePathsPayload) => StagedFileResult[];
     stageBuffer: (payload: StageBufferPayload) => StagedFileResult;
-    readText: (payload: FilePathPayload) => FileResult;
-    readBinary: (payload: FileReadBinaryPayload) => FileResult;
-    writeText: (payload: FileWriteTextPayload) => FileResult;
-    stat: (payload: FilePathPayload) => FileResult;
+    readText: (payload: FilePathPayload) => ReadTextFileResult;
+    readBinary: (payload: FileReadBinaryPayload) => ReadBinaryFileResult;
+    writeText: (payload: FileWriteTextPayload) => WriteTextFileResult;
+    stat: (payload: FilePathPayload) => StatFileResult;
     listDir: (payload: FilePathPayload) => FileListDirResult;
     listTree: (payload: FileListTreePayload) => FileListTreeResult;
   };

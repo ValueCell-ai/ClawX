@@ -16,7 +16,7 @@ vi.mock('react-i18next', () => ({
 
 const readBinaryFile = vi.fn();
 
-vi.mock('@/lib/api-client', () => ({
+vi.mock('@/lib/file-preview-client', () => ({
   readBinaryFile: (...args: unknown[]) => readBinaryFile(...args),
 }));
 

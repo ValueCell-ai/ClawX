@@ -2,6 +2,11 @@ import { app, nativeImage } from 'electron';
 import crypto from 'node:crypto';
 import { homedir } from 'node:os';
 import { basename, extname, join, relative, resolve, sep } from 'node:path';
+import type {
+  FilePreviewTreeNode,
+  FilePreviewTreeOptions,
+  FileReadBinaryOptions,
+} from '@shared/host-api/contract';
 import type { CompleteHostServiceRegistry } from '../main/ipc/host-contract';
 import { expandPath } from '../utils/paths';
 import { isRecord } from './payload-utils';
@@ -81,26 +86,6 @@ type PathPayload = {
   path?: unknown;
   content?: unknown;
   opts?: unknown;
-};
-
-type FilePreviewTreeOptions = {
-  maxDepth?: number;
-  maxNodes?: number;
-  includeHidden?: boolean;
-};
-
-type FileReadBinaryOptions = {
-  maxBytes?: number;
-};
-
-type FilePreviewTreeNode = {
-  name: string;
-  relPath: string;
-  absPath: string;
-  isDir: boolean;
-  size?: number;
-  mtime?: number;
-  children?: FilePreviewTreeNode[];
 };
 
 type ResolvedSandboxedPath = {

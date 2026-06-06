@@ -18,7 +18,7 @@ import { useTranslation } from 'react-i18next';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { LoadingSpinner } from '@/components/common/LoadingSpinner';
-import { readBinaryFile } from '@/lib/api-client';
+import { readBinaryFile } from '@/lib/file-preview-client';
 import { cn } from '@/lib/utils';
 
 const SHEET_MAX_BYTES = 50 * 1024 * 1024;
