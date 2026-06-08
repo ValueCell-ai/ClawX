@@ -6,9 +6,16 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const forkMock = vi.fn();
 const appPath = new Map<string, string>();
+const { readOpenClawConfigMock } = vi.hoisted(() => ({
+  readOpenClawConfigMock: vi.fn(),
+}));
 
 vi.mock('node:child_process', () => ({
   spawn: forkMock,
+}));
+
+vi.mock('@electron/utils/channel-config', () => ({
+  readOpenClawConfig: (...args: unknown[]) => readOpenClawConfigMock(...args),
 }));
 
 vi.mock('electron', () => ({
@@ -57,6 +64,7 @@ describe('CcConnectRuntimeProvider', () => {
     forkMock.mockReset();
     tempDir = await mkdtemp(join(tmpdir(), 'clawx-cc-connect-'));
     appPath.set('userData', tempDir);
+    readOpenClawConfigMock.mockResolvedValue({});
   });
 
   afterEach(async () => {
@@ -285,6 +293,93 @@ describe('CcConnectRuntimeProvider', () => {
     });
   });
 
+  it('mirrors configured OpenClaw channel accounts into cc-connect platform blocks', async () => {
+    readOpenClawConfigMock.mockResolvedValue({
+      channels: {
+        telegram: {
+          defaultAccount: 'ops_bot',
+          accounts: {
+            ops_bot: {
+              token: 'telegram-secret-token',
+              allowFrom: ['12345', '67890'],
+              shareSessionInChannel: true,
+            },
+          },
+        },
+        feishu: {
+          defaultAccount: 'lark_bot',
+          accounts: {
+            lark_bot: {
+              appId: 'cli_lark',
+              appSecret: 'lark-secret',
+              domain: 'lark',
+              enableFeishuCard: false,
+            },
+          },
+        },
+      },
+    });
+    const binaryPath = join(tempDir, 'cc-connect');
+    await writeFile(binaryPath, '#!/bin/sh\n', { mode: 0o755 });
+    const { CcConnectRuntimeProvider } = await import('@electron/runtime/cc-connect-provider');
+    const provider = new CcConnectRuntimeProvider({
+      binaryPath,
+      codexPath: join(tempDir, 'codex'),
+      codexBridge: createBridgeMock() as never,
+      bridgeAdapter: createBridgeAdapterMock() as never,
+      skillSyncer: vi.fn(async () => ({ skills: [] })),
+      providerProfileLoader: vi.fn(async () => createProviderProfile()) as never,
+    });
+    const child = createChild();
+    forkMock.mockReturnValueOnce(child);
+
+    const startPromise = provider.start();
+    await vi.waitFor(() => expect(forkMock).toHaveBeenCalledOnce());
+    child.emit('spawn');
+    await startPromise;
+
+    const config = await readFile(join(tempDir, 'runtimes', 'cc-connect', 'config.toml'), 'utf8');
+    expect(config).toContain('type = "telegram"');
+    expect(config).toContain('token = "telegram-secret-token"');
+    expect(config).toContain('allow_from = "12345,67890"');
+    expect(config).toContain('share_session_in_channel = true');
+    expect(config).toContain('type = "lark"');
+    expect(config).toContain('app_id = "cli_lark"');
+    expect(config).toContain('app_secret = "lark-secret"');
+    expect(config).toContain('domain = "https://open.larksuite.com"');
+    expect(config).toContain('enable_feishu_card = false');
+
+    const logs = await provider.listLogs();
+    expect(logs.content).not.toContain('telegram-secret-token');
+    expect(logs.content).not.toContain('lark-secret');
+    expect(logs.content).toContain('token = "<redacted>"');
+    expect(logs.content).toContain('app_secret = "<redacted>"');
+
+    await expect(provider.rpc('channels.status')).resolves.toMatchObject({
+      channelAccounts: {
+        telegram: [{
+          accountId: 'ops_bot',
+          configured: true,
+          connected: true,
+          running: true,
+          linked: true,
+        }],
+        feishu: [{
+          accountId: 'lark_bot',
+          configured: true,
+          connected: true,
+          running: true,
+          linked: true,
+          name: 'lark',
+        }],
+      },
+      channelDefaultAccountId: {
+        telegram: 'ops_bot',
+        feishu: 'lark_bot',
+      },
+    });
+  });
+
   it('does not expose the managed local placeholder as a user channel', async () => {
     const configPath = join(tempDir, 'runtimes', 'cc-connect', 'config.toml');
     await mkdir(join(tempDir, 'runtimes', 'cc-connect'), { recursive: true });
@@ -313,25 +408,9 @@ describe('CcConnectRuntimeProvider', () => {
     });
 
     await expect(provider.rpc('channels.status')).resolves.toEqual({
-      channels: {
-        feishu: {
-          configured: true,
-          running: false,
-        },
-      },
-      channelAccounts: {
-        feishu: [{
-          accountId: 'default',
-          configured: true,
-          connected: false,
-          linked: true,
-          name: 'feishu',
-          running: false,
-        }],
-      },
-      channelDefaultAccountId: {
-        feishu: 'default',
-      },
+      channels: {},
+      channelAccounts: {},
+      channelDefaultAccountId: {},
     });
   });
 

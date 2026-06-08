@@ -989,13 +989,29 @@ async function ensureScopedChannelBinding(channelType: string, accountId?: strin
   await migrateLegacyChannelWideBinding(storedChannelType);
 }
 
-function scheduleGatewayChannelRestart(ctx: ChannelsApiContext, reason: string): void {
+async function isCcConnectRuntime(ctx: ChannelsApiContext): Promise<boolean> {
+  return ctx.runtimeManager ? await ctx.runtimeManager.getActiveKind() === 'cc-connect' : false;
+}
+
+async function scheduleGatewayChannelRestart(ctx: ChannelsApiContext, reason: string): Promise<void> {
+  if (await isCcConnectRuntime(ctx)) {
+    if (ctx.runtimeManager?.getStatus().state === 'stopped') return;
+    await ctx.runtimeManager?.restart();
+    void reason;
+    return;
+  }
   if (ctx.gatewayManager.getStatus().state === 'stopped') return;
   ctx.gatewayManager.debouncedRestart();
   void reason;
 }
 
-function scheduleGatewayChannelSaveRefresh(ctx: ChannelsApiContext, channelType: string, reason: string): void {
+async function scheduleGatewayChannelSaveRefresh(ctx: ChannelsApiContext, channelType: string, reason: string): Promise<void> {
+  if (await isCcConnectRuntime(ctx)) {
+    if (ctx.runtimeManager?.getStatus().state === 'stopped') return;
+    await ctx.runtimeManager?.restart();
+    void reason;
+    return;
+  }
   const storedChannelType = resolveStoredChannelType(channelType);
   if (ctx.gatewayManager.getStatus().state === 'stopped') return;
   if (FORCE_RESTART_CHANNELS.has(storedChannelType)) {
@@ -1076,7 +1092,7 @@ async function awaitWeChatQrLogin(
     });
     await saveChannelConfig(UI_WECHAT_CHANNEL_TYPE, { enabled: true }, normalizedAccountId);
     await ensureScopedChannelBinding(UI_WECHAT_CHANNEL_TYPE, normalizedAccountId);
-    scheduleGatewayChannelSaveRefresh(ctx, OPENCLAW_WECHAT_CHANNEL_TYPE, `wechat:loginSuccess:${normalizedAccountId}`);
+    await scheduleGatewayChannelSaveRefresh(ctx, OPENCLAW_WECHAT_CHANNEL_TYPE, `wechat:loginSuccess:${normalizedAccountId}`);
 
     if (activeQrLogins.get(loginKey) !== sessionKey) return;
     emitChannelEvent(ctx, UI_WECHAT_CHANNEL_TYPE, 'success', {
@@ -1139,7 +1155,7 @@ export function createChannelsApi(ctx: ChannelsApiContext): CompleteHostServiceR
       const accountId = requireString(payload, 'accountId');
       await validateCanonicalAccountId(channelType, accountId, { allowLegacyConfiguredId: true });
       await setChannelDefaultAccount(channelType, accountId);
-      scheduleGatewayChannelSaveRefresh(ctx, channelType, `channel:setDefaultAccount:${channelType}`);
+      await scheduleGatewayChannelSaveRefresh(ctx, channelType, `channel:setDefaultAccount:${channelType}`);
       return { success: true };
     },
     bindingSave: async (payload) => {
@@ -1156,7 +1172,7 @@ export function createChannelsApi(ctx: ChannelsApiContext): CompleteHostServiceR
         await migrateLegacyChannelWideBinding(storedChannelType);
       }
       await assignChannelAccountToAgent(agentId, storedChannelType, accountId);
-      scheduleGatewayChannelSaveRefresh(ctx, channelType, `channel:setBinding:${channelType}`);
+      await scheduleGatewayChannelSaveRefresh(ctx, channelType, `channel:setBinding:${channelType}`);
       return { success: true };
     },
     bindingDelete: async (payload) => {
@@ -1164,7 +1180,7 @@ export function createChannelsApi(ctx: ChannelsApiContext): CompleteHostServiceR
       const accountId = optionalString(payload, 'accountId');
       await validateCanonicalAccountId(channelType, accountId, { allowLegacyConfiguredId: true });
       await clearChannelBinding(resolveStoredChannelType(channelType), accountId);
-      scheduleGatewayChannelSaveRefresh(ctx, channelType, `channel:clearBinding:${channelType}`);
+      await scheduleGatewayChannelSaveRefresh(ctx, channelType, `channel:clearBinding:${channelType}`);
       return { success: true };
     },
     validateConfig: async (payload) => {
@@ -1186,19 +1202,19 @@ export function createChannelsApi(ctx: ChannelsApiContext): CompleteHostServiceR
       const existingValues = await getChannelFormValues(channelType, accountId);
       if (isSameConfigValues(existingValues, config)) {
         await ensureScopedChannelBinding(channelType, accountId);
-        scheduleGatewayChannelSaveRefresh(ctx, storedChannelType, `channel:saveConfigNoChange:${storedChannelType}`);
+        await scheduleGatewayChannelSaveRefresh(ctx, storedChannelType, `channel:saveConfigNoChange:${storedChannelType}`);
         return { success: true, noChange: true };
       }
       await saveChannelConfig(channelType, config, accountId);
       await ensureScopedChannelBinding(channelType, accountId);
-      scheduleGatewayChannelSaveRefresh(ctx, storedChannelType, `channel:saveConfig:${storedChannelType}`);
+      await scheduleGatewayChannelSaveRefresh(ctx, storedChannelType, `channel:saveConfig:${storedChannelType}`);
       return { success: true };
     },
     setEnabled: async (payload) => {
       const channelType = requireString(payload, 'channelType');
       const enabled = isRecord(payload) && payload.enabled === true;
       await setChannelEnabled(channelType, enabled);
-      scheduleGatewayChannelRestart(ctx, `channel:setEnabled:${resolveStoredChannelType(channelType)}`);
+      await scheduleGatewayChannelRestart(ctx, `channel:setEnabled:${resolveStoredChannelType(channelType)}`);
       return { success: true };
     },
     formValues: async (payload) => {
@@ -1213,11 +1229,11 @@ export function createChannelsApi(ctx: ChannelsApiContext): CompleteHostServiceR
       if (accountId) {
         await deleteChannelAccountConfig(channelType, accountId);
         await clearChannelBinding(storedChannelType, accountId);
-        scheduleGatewayChannelSaveRefresh(ctx, storedChannelType, `channel:deleteAccount:${storedChannelType}`);
+        await scheduleGatewayChannelSaveRefresh(ctx, storedChannelType, `channel:deleteAccount:${storedChannelType}`);
       } else {
         await deleteChannelConfig(channelType);
         await clearAllBindingsForChannel(storedChannelType);
-        scheduleGatewayChannelRestart(ctx, `channel:deleteConfig:${storedChannelType}`);
+        await scheduleGatewayChannelRestart(ctx, `channel:deleteConfig:${storedChannelType}`);
       }
       return { success: true };
     },

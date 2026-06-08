@@ -33,6 +33,7 @@ import {
   toPublicCodexProviderProfile,
   type CodexProviderProfile,
 } from './cc-connect-provider-profile';
+import { readOpenClawConfig, type ChannelConfigData, type OpenClawConfig } from '../utils/channel-config';
 
 type CcConnectRuntimeProviderOptions = {
   binaryPath?: string;
@@ -50,6 +51,27 @@ const MAX_DOCTOR_OUTPUT_BYTES = 10 * 1024 * 1024;
 const CLAWX_PROJECT_NAME = 'clawx-main';
 const CC_CONNECT_BRIDGE_PORT = 9810;
 const CLAWX_LOCAL_PLACEHOLDER_SECRET = 'clawx-local-placeholder';
+const CC_CONNECT_SUPPORTED_CHANNELS = new Set([
+  'dingtalk',
+  'discord',
+  'feishu',
+  'lark',
+  'line',
+  'qq',
+  'qqbot',
+  'slack',
+  'telegram',
+  'wecom',
+  'weixin',
+]);
+
+type CcConnectChannelPlatform = {
+  channelType: string;
+  accountId: string;
+  platformType: string;
+  options: Record<string, string | number | boolean>;
+  error?: string;
+};
 
 function unsupported(method: string): never {
   throw new Error(`cc-connect runtime does not support RPC method: ${method}`);
@@ -95,6 +117,7 @@ function defaultConfig(options: {
   providerProfile?: CodexProviderProfile | null;
   managementToken: string;
   bridgeToken: string;
+  channelPlatforms?: CcConnectChannelPlatform[];
 }): string {
   const managedDir = getCcConnectManagedDir();
   const dataDir = join(managedDir, 'data').replace(/\\/g, '\\\\');
@@ -135,6 +158,7 @@ function defaultConfig(options: {
     ...(model ? [`model = "${escapeToml(model)}"`] : []),
     ...ccConnectProviderConfig(options.providerProfile),
     '',
+    ...ccConnectPlatformConfig(options.channelPlatforms ?? []),
     '# cc-connect requires at least one project platform before the bridge can start.',
     '# ClawX GUI traffic is delivered by the local [bridge] adapter above; this LINE webhook',
     '# placeholder listens only on an ephemeral local port and is filtered from channel status.',
@@ -358,10 +382,12 @@ export class CcConnectRuntimeProvider extends EventEmitter implements RuntimePro
       running: boolean;
       linked: boolean;
       name: string;
+      lastError?: string;
     }>>;
     channelDefaultAccountId: Record<string, string>;
   }> {
-    const configuredTypes = await this.listConfiguredPlatformTypes();
+    const openClawConfig = await readOpenClawConfig().catch(() => ({} as OpenClawConfig));
+    const configuredPlatforms = collectCcConnectChannelPlatforms(openClawConfig);
     const running = this.status.state === 'running';
     const channels: Record<string, { configured: boolean; running: boolean }> = {};
     const channelAccounts: Record<string, Array<{
@@ -371,20 +397,27 @@ export class CcConnectRuntimeProvider extends EventEmitter implements RuntimePro
       running: boolean;
       linked: boolean;
       name: string;
+      lastError?: string;
     }>> = {};
     const channelDefaultAccountId: Record<string, string> = {};
 
-    for (const channelType of configuredTypes) {
-      channels[channelType] = { configured: true, running };
-      channelAccounts[channelType] = [{
-        accountId: 'default',
+    for (const platform of configuredPlatforms) {
+      channels[platform.channelType] = { configured: true, running: running && !platform.error };
+      const accounts = channelAccounts[platform.channelType] ?? [];
+      accounts.push({
+        accountId: platform.accountId,
         configured: true,
-        connected: running,
-        running,
-        linked: true,
-        name: channelType,
-      }];
-      channelDefaultAccountId[channelType] = 'default';
+        connected: running && !platform.error,
+        running: running && !platform.error,
+        linked: !platform.error,
+        name: platform.platformType,
+        ...(platform.error ? { lastError: platform.error } : {}),
+      });
+      channelAccounts[platform.channelType] = accounts;
+      channelDefaultAccountId[platform.channelType] = getDefaultChannelAccountId(
+        openClawConfig,
+        platform.channelType,
+      );
     }
 
     return { channels, channelAccounts, channelDefaultAccountId };
@@ -401,7 +434,7 @@ export class CcConnectRuntimeProvider extends EventEmitter implements RuntimePro
         `[cc-connect] providerProfile=${getCcConnectProviderProfilePath()}`,
         `[codex] sessions=${this.codexBridge.getSessionsDir()}`,
         '',
-        content,
+        redactCcConnectConfigForLogs(content),
       ].join('\n'),
     };
   }
@@ -515,11 +548,13 @@ export class CcConnectRuntimeProvider extends EventEmitter implements RuntimePro
   private async ensureManagedConfig(providerProfile: CodexProviderProfile | null, codexPath: string): Promise<string> {
     const configPath = getCcConnectConfigPath();
     await mkdir(dirname(configPath), { recursive: true });
+    const openClawConfig = await readOpenClawConfig().catch(() => ({} as OpenClawConfig));
     await writeFile(configPath, defaultConfig({
       codexPath,
       providerProfile,
       managementToken: this.managementToken,
       bridgeToken: this.bridgeToken,
+      channelPlatforms: collectCcConnectChannelPlatforms(openClawConfig).filter((platform) => !platform.error),
     }), 'utf8');
     return configPath;
   }
@@ -570,23 +605,6 @@ export class CcConnectRuntimeProvider extends EventEmitter implements RuntimePro
         ? result.jobs
         : [];
     return jobs.map((job) => transformCcConnectCronJob(job));
-  }
-
-  private async listConfiguredPlatformTypes(): Promise<string[]> {
-    const configPath = getCcConnectConfigPath();
-    const content = existsSync(configPath)
-      ? await readFile(configPath, 'utf8').catch(() => '')
-      : '';
-    if (!content.trim()) return [];
-
-    const platformTypes = new Set<string>();
-    for (const block of content.split(/\[\[projects\.platforms\]\]/g).slice(1)) {
-      if (isClawxLocalPlaceholderPlatform(block)) continue;
-      const match = block.match(/^\s*type\s*=\s*"([^"]+)"/m);
-      const channelType = match?.[1]?.trim();
-      if (channelType) platformTypes.add(channelType);
-    }
-    return [...platformTypes].sort();
   }
 
   private async createCronJob(payload: unknown): Promise<CronJob> {
@@ -694,6 +712,318 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 }
 
+function tomlValue(value: string | number | boolean): string {
+  if (typeof value === 'boolean') return value ? 'true' : 'false';
+  if (typeof value === 'number' && Number.isFinite(value)) return String(value);
+  return `"${escapeToml(String(value))}"`;
+}
+
+function ccConnectPlatformConfig(platforms: CcConnectChannelPlatform[]): string[] {
+  return platforms.flatMap((platform) => [
+    '[[projects.platforms]]',
+    `type = "${escapeToml(platform.platformType)}"`,
+    '',
+    '[projects.platforms.options]',
+    ...Object.entries(platform.options).map(([key, value]) => `${key} = ${tomlValue(value)}`),
+    '',
+  ]);
+}
+
+function collectCcConnectChannelPlatforms(config: OpenClawConfig): CcConnectChannelPlatform[] {
+  const channels = config.channels;
+  if (!channels || typeof channels !== 'object') return [];
+
+  const platforms: CcConnectChannelPlatform[] = [];
+  for (const [channelType, section] of Object.entries(channels)) {
+    if (!section || section.enabled === false) continue;
+    const accounts = getCcConnectChannelAccounts(section);
+    for (const [accountId, accountConfig] of accounts) {
+      platforms.push(buildCcConnectChannelPlatform(channelType, accountId, accountConfig));
+    }
+  }
+  return platforms.sort((left, right) =>
+    left.channelType.localeCompare(right.channelType) || left.accountId.localeCompare(right.accountId)
+  );
+}
+
+function getCcConnectChannelAccounts(section: ChannelConfigData): Array<[string, ChannelConfigData]> {
+  const accounts = isRecord(section.accounts) ? section.accounts as Record<string, ChannelConfigData> : undefined;
+  if (accounts && Object.keys(accounts).length > 0) {
+    return Object.entries(accounts)
+      .filter(([, account]) => account && account.enabled !== false);
+  }
+
+  const legacyAccount: ChannelConfigData = {};
+  for (const [key, value] of Object.entries(section)) {
+    if (key === 'accounts' || key === 'defaultAccount' || key === 'enabled') continue;
+    legacyAccount[key] = value;
+  }
+  return Object.keys(legacyAccount).length > 0 && section.enabled !== false
+    ? [['default', legacyAccount]]
+    : [];
+}
+
+function getDefaultChannelAccountId(config: OpenClawConfig, channelType: string): string {
+  const section = config.channels?.[channelType];
+  if (section && typeof section.defaultAccount === 'string' && section.defaultAccount.trim()) {
+    return section.defaultAccount.trim();
+  }
+  const firstAccount = section ? getCcConnectChannelAccounts(section)[0]?.[0] : undefined;
+  return firstAccount ?? 'default';
+}
+
+function buildCcConnectChannelPlatform(
+  channelType: string,
+  accountId: string,
+  accountConfig: ChannelConfigData,
+): CcConnectChannelPlatform {
+  const platformType = resolveCcConnectPlatformType(channelType, accountConfig);
+  if (!CC_CONNECT_SUPPORTED_CHANNELS.has(platformType)) {
+    return {
+      channelType,
+      accountId,
+      platformType,
+      options: {},
+      error: `cc-connect does not support channel "${channelType}" yet`,
+    };
+  }
+
+  const options = mapCcConnectPlatformOptions(platformType, accountConfig);
+  const missing = getMissingRequiredOptions(platformType, options);
+  return {
+    channelType,
+    accountId,
+    platformType,
+    options,
+    ...(missing.length > 0 ? { error: `Missing cc-connect channel option(s): ${missing.join(', ')}` } : {}),
+  };
+}
+
+function resolveCcConnectPlatformType(channelType: string, accountConfig: ChannelConfigData): string {
+  if (channelType === 'openclaw-weixin' || channelType === 'wechat') return 'weixin';
+  if (channelType === 'feishu' && isLarkAccount(accountConfig)) return 'lark';
+  return channelType;
+}
+
+function isLarkAccount(accountConfig: ChannelConfigData): boolean {
+  const domain = getStringOption(accountConfig, 'domain');
+  return Boolean(domain && (domain.toLowerCase() === 'lark' || domain.includes('larksuite.com')));
+}
+
+function getStringOption(record: Record<string, unknown>, ...keys: string[]): string | undefined {
+  for (const key of keys) {
+    const value = record[key];
+    if (typeof value === 'string' && value.trim()) return value.trim();
+    if (typeof value === 'number' && Number.isFinite(value)) return String(value);
+  }
+  return undefined;
+}
+
+function getBooleanOption(record: Record<string, unknown>, ...keys: string[]): boolean | undefined {
+  for (const key of keys) {
+    if (typeof record[key] === 'boolean') return record[key] as boolean;
+  }
+  return undefined;
+}
+
+function getAllowFromOption(record: Record<string, unknown>): string | undefined {
+  const value = record.allowFrom ?? record.allow_from;
+  if (Array.isArray(value)) {
+    const entries = value.map((item) => typeof item === 'string' ? item.trim() : '').filter(Boolean);
+    return entries.length > 0 ? entries.join(',') : undefined;
+  }
+  return typeof value === 'string' && value.trim() ? value.trim() : undefined;
+}
+
+function setStringOption(
+  target: Record<string, string | number | boolean>,
+  targetKey: string,
+  source: Record<string, unknown>,
+  ...sourceKeys: string[]
+): void {
+  const value = getStringOption(source, ...sourceKeys);
+  if (value) target[targetKey] = value;
+}
+
+function setBooleanOption(
+  target: Record<string, string | number | boolean>,
+  targetKey: string,
+  source: Record<string, unknown>,
+  ...sourceKeys: string[]
+): void {
+  const value = getBooleanOption(source, ...sourceKeys);
+  if (value !== undefined) target[targetKey] = value;
+}
+
+function setAllowFromOption(
+  target: Record<string, string | number | boolean>,
+  source: Record<string, unknown>,
+): void {
+  const value = getAllowFromOption(source);
+  if (value) target.allow_from = value;
+}
+
+function setCommonSessionOptions(
+  target: Record<string, string | number | boolean>,
+  source: Record<string, unknown>,
+): void {
+  setAllowFromOption(target, source);
+  setBooleanOption(target, 'share_session_in_channel', source, 'shareSessionInChannel', 'share_session_in_channel');
+}
+
+function mapCcConnectPlatformOptions(
+  platformType: string,
+  accountConfig: ChannelConfigData,
+): Record<string, string | number | boolean> {
+  const options: Record<string, string | number | boolean> = {};
+  switch (platformType) {
+    case 'feishu':
+    case 'lark':
+      setStringOption(options, 'app_id', accountConfig, 'appId', 'app_id');
+      setStringOption(options, 'app_secret', accountConfig, 'appSecret', 'app_secret');
+      setFeishuDomainOption(options, platformType, accountConfig);
+      setBooleanOption(options, 'enable_feishu_card', accountConfig, 'enableFeishuCard', 'enable_feishu_card');
+      setCommonSessionOptions(options, accountConfig);
+      break;
+    case 'dingtalk':
+      setStringOption(options, 'client_id', accountConfig, 'clientId', 'client_id');
+      setStringOption(options, 'client_secret', accountConfig, 'clientSecret', 'client_secret');
+      setCommonSessionOptions(options, accountConfig);
+      break;
+    case 'telegram':
+      setStringOption(options, 'token', accountConfig, 'token', 'botToken', 'bot_token');
+      setCommonSessionOptions(options, accountConfig);
+      break;
+    case 'slack':
+      setStringOption(options, 'bot_token', accountConfig, 'botToken', 'bot_token');
+      setStringOption(options, 'app_token', accountConfig, 'appToken', 'app_token');
+      setCommonSessionOptions(options, accountConfig);
+      break;
+    case 'discord':
+      setStringOption(options, 'token', accountConfig, 'token', 'botToken', 'bot_token');
+      setStringOption(options, 'guild_id', accountConfig, 'guildId', 'guild_id');
+      setStringOption(options, 'channel_id', accountConfig, 'channelId', 'channel_id');
+      setDiscordGuildOptions(options, accountConfig);
+      setBooleanOption(options, 'group_reply_all', accountConfig, 'groupReplyAll', 'group_reply_all');
+      setCommonSessionOptions(options, accountConfig);
+      break;
+    case 'line':
+      setStringOption(options, 'channel_secret', accountConfig, 'channelSecret', 'channel_secret');
+      setStringOption(options, 'channel_token', accountConfig, 'channelToken', 'channel_token');
+      setStringOption(options, 'port', accountConfig, 'port');
+      setStringOption(options, 'callback_path', accountConfig, 'callbackPath', 'callback_path');
+      break;
+    case 'wecom':
+      setWeComOptions(options, accountConfig);
+      setCommonSessionOptions(options, accountConfig);
+      break;
+    case 'weixin':
+      setStringOption(options, 'token', accountConfig, 'token', 'botToken', 'bot_token');
+      setStringOption(options, 'base_url', accountConfig, 'baseUrl', 'base_url');
+      setStringOption(options, 'cdn_base_url', accountConfig, 'cdnBaseUrl', 'cdn_base_url');
+      setCommonSessionOptions(options, accountConfig);
+      break;
+    case 'qq':
+      setStringOption(options, 'ws_url', accountConfig, 'wsUrl', 'ws_url');
+      setStringOption(options, 'token', accountConfig, 'token');
+      setCommonSessionOptions(options, accountConfig);
+      break;
+    case 'qqbot':
+      setStringOption(options, 'app_id', accountConfig, 'appId', 'app_id');
+      setStringOption(options, 'app_secret', accountConfig, 'appSecret', 'app_secret');
+      setBooleanOption(options, 'sandbox', accountConfig, 'sandbox');
+      setCommonSessionOptions(options, accountConfig);
+      break;
+    default:
+      break;
+  }
+  return options;
+}
+
+function setFeishuDomainOption(
+  target: Record<string, string | number | boolean>,
+  platformType: string,
+  source: Record<string, unknown>,
+): void {
+  const domain = getStringOption(source, 'domain');
+  if (!domain) return;
+  if (domain.toLowerCase() === 'lark') {
+    target.domain = 'https://open.larksuite.com';
+    return;
+  }
+  if (domain.toLowerCase() === 'feishu') {
+    target.domain = 'https://open.feishu.cn';
+    return;
+  }
+  target.domain = domain;
+  if (platformType === 'lark' && !domain.includes('larksuite.com')) {
+    target.domain = 'https://open.larksuite.com';
+  }
+}
+
+function setDiscordGuildOptions(
+  target: Record<string, string | number | boolean>,
+  source: Record<string, unknown>,
+): void {
+  if (target.guild_id) return;
+  if (!isRecord(source.guilds)) return;
+  const guildId = Object.keys(source.guilds)[0];
+  if (!guildId) return;
+  target.guild_id = guildId;
+  const guild = source.guilds[guildId];
+  if (!isRecord(guild) || !isRecord(guild.channels)) return;
+  const channelId = Object.keys(guild.channels).find((id) => id !== '*');
+  if (channelId) target.channel_id = channelId;
+}
+
+function setWeComOptions(
+  target: Record<string, string | number | boolean>,
+  source: Record<string, unknown>,
+): void {
+  setStringOption(target, 'mode', source, 'mode');
+  setStringOption(target, 'bot_id', source, 'botId', 'bot_id');
+  setStringOption(target, 'bot_secret', source, 'botSecret', 'bot_secret');
+  setStringOption(target, 'corp_id', source, 'corpId', 'corp_id');
+  setStringOption(target, 'corp_secret', source, 'corpSecret', 'corp_secret');
+  setStringOption(target, 'agent_id', source, 'agentId', 'agent_id');
+  setStringOption(target, 'callback_token', source, 'callbackToken', 'callback_token');
+  setStringOption(target, 'callback_aes_key', source, 'callbackAesKey', 'callback_aes_key');
+  setStringOption(target, 'port', source, 'port');
+  setStringOption(target, 'callback_path', source, 'callbackPath', 'callback_path');
+  if (!target.mode && target.bot_id && target.bot_secret) {
+    target.mode = 'websocket';
+  }
+}
+
+function getMissingRequiredOptions(
+  platformType: string,
+  options: Record<string, string | number | boolean>,
+): string[] {
+  const requiredByPlatform: Record<string, string[]> = {
+    dingtalk: ['client_id', 'client_secret'],
+    discord: ['token'],
+    feishu: ['app_id', 'app_secret'],
+    lark: ['app_id', 'app_secret'],
+    line: ['channel_secret', 'channel_token'],
+    qq: ['ws_url'],
+    qqbot: ['app_id', 'app_secret'],
+    slack: ['bot_token', 'app_token'],
+    telegram: ['token'],
+    weixin: ['token'],
+  };
+  if (platformType === 'wecom') {
+    const websocketReady = Boolean(options.bot_id && options.bot_secret);
+    const webhookReady = Boolean(options.corp_id && options.corp_secret && options.agent_id);
+    return websocketReady || webhookReady ? [] : ['bot_id/bot_secret or corp_id/corp_secret/agent_id'];
+  }
+  return (requiredByPlatform[platformType] ?? []).filter((key) => !options[key]);
+}
+
+function redactCcConnectConfigForLogs(content: string): string {
+  const sensitiveKeyPattern = /^(?<prefix>\s*(?:api_key|app_id|app_secret|app_token|bot_id|bot_secret|bot_token|callback_aes_key|callback_token|channel_secret|channel_token|client_id|client_secret|corp_id|corp_secret|agent_id|token|ws_url)\s*=\s*)"[^"]*"/i;
+  return content.split('\n').map((line) => line.replace(sensitiveKeyPattern, '$<prefix>"<redacted>"')).join('\n');
+}
+
 function getSessionKey(payload: unknown): string {
   if (typeof payload === 'string' && payload.trim()) return payload.trim();
   if (isRecord(payload)) {
@@ -739,14 +1069,6 @@ function toProviderSyncPayload(payload: unknown): { providerId?: string; reason?
     providerId: typeof payload.providerId === 'string' ? payload.providerId : undefined,
     reason: typeof payload.reason === 'string' ? payload.reason : undefined,
   };
-}
-
-function isClawxLocalPlaceholderPlatform(block: string): boolean {
-  const type = block.match(/^\s*type\s*=\s*"([^"]+)"/m)?.[1]?.trim();
-  if (type !== 'line') return false;
-  return block.includes(`channel_secret = "${CLAWX_LOCAL_PLACEHOLDER_SECRET}"`)
-    && block.includes(`channel_token = "${CLAWX_LOCAL_PLACEHOLDER_SECRET}"`)
-    && block.includes('port = "0"');
 }
 
 function cronExprFromInput(schedule: unknown): string {

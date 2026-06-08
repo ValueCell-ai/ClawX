@@ -799,6 +799,46 @@ describe('host services', () => {
     expect(gatewayManager.debouncedRestart).toHaveBeenCalledWith(150);
   });
 
+  it('restarts active cc-connect runtime after saving channel config', async () => {
+    listAgentsSnapshotMock.mockResolvedValue({
+      agents: [{ id: 'main', name: 'Main' }],
+      defaultAgentId: 'main',
+      defaultModelRef: null,
+      configuredChannelTypes: ['feishu'],
+      channelOwners: {},
+      channelAccountOwners: {},
+    });
+    getChannelFormValuesMock.mockResolvedValue({ appId: 'old', appSecret: 'old-secret' });
+    const gatewayManager = {
+      getStatus: vi.fn(() => ({ state: 'running', port: 18789 })),
+      debouncedRestart: vi.fn(),
+      debouncedReload: vi.fn(),
+    };
+    const runtimeManager = {
+      getActiveKind: vi.fn(async () => 'cc-connect'),
+      getStatus: vi.fn(() => ({
+        state: 'running',
+        port: 9820,
+        runtimeKind: 'cc-connect',
+      })),
+      restart: vi.fn(async () => undefined),
+    };
+    const { createChannelsApi } = await import('@electron/services/channels-api');
+
+    await expect(createChannelsApi({
+      gatewayManager: gatewayManager as never,
+      runtimeManager: runtimeManager as never,
+    }).saveConfig({
+      channelType: 'feishu',
+      accountId: 'default',
+      config: { appId: 'cli_new', appSecret: 'new-secret' },
+    })).resolves.toEqual({ success: true });
+
+    expect(runtimeManager.restart).toHaveBeenCalledTimes(1);
+    expect(gatewayManager.debouncedRestart).not.toHaveBeenCalled();
+    expect(gatewayManager.debouncedReload).not.toHaveBeenCalled();
+  });
+
   it('deletes agents by restarting gateway, removing workspace, and returning snapshot', async () => {
     const snapshot = {
       agents: [],
