@@ -74,6 +74,22 @@ function escapeToml(value: string): string {
   return value.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
 }
 
+function ccConnectProviderConfig(providerProfile?: CodexProviderProfile | null): string[] {
+  const provider = providerProfile?.ccConnectProvider;
+  if (!provider?.name) return [];
+  return [
+    `provider = "${escapeToml(provider.name)}"`,
+    '',
+    '[[projects.agent.providers]]',
+    `name = "${escapeToml(provider.name)}"`,
+    ...(provider.apiKeyEnvKey ? [`api_key = "\${${escapeToml(provider.apiKeyEnvKey)}}"`] : []),
+    ...(provider.baseUrl ? [`base_url = "${escapeToml(provider.baseUrl)}"`] : []),
+    ...(provider.model ? [`model = "${escapeToml(provider.model)}"`] : []),
+    ...(provider.wireApi ? [`wire_api = "${escapeToml(provider.wireApi)}"`] : []),
+    '',
+  ];
+}
+
 function defaultConfig(options: {
   codexPath: string;
   providerProfile?: CodexProviderProfile | null;
@@ -117,6 +133,7 @@ function defaultConfig(options: {
     'mode = "full-auto"',
     `cmd = "${escapeToml(options.codexPath)}"`,
     ...(model ? [`model = "${escapeToml(model)}"`] : []),
+    ...ccConnectProviderConfig(options.providerProfile),
     '',
     '# cc-connect requires at least one project platform before the bridge can start.',
     '# ClawX GUI traffic is delivered by the local [bridge] adapter above; this LINE webhook',
@@ -509,6 +526,11 @@ export class CcConnectRuntimeProvider extends EventEmitter implements RuntimePro
 
   private async syncProviderProfile(payload?: { providerId?: string; reason?: string }) {
     const profile = await this.loadAndApplyProviderProfile(payload);
+    if (this.status.state === 'running') {
+      await this.restart();
+    } else {
+      await this.ensureManagedConfig(profile, this.resolveCodexPath()).catch(() => undefined);
+    }
     return {
       success: true,
       profile: toPublicCodexProviderProfile(profile),

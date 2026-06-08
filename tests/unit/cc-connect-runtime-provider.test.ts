@@ -179,6 +179,63 @@ describe('CcConnectRuntimeProvider', () => {
     });
   });
 
+  it('writes cc-connect provider config for custom Responses providers without persisting secrets', async () => {
+    const binaryPath = join(tempDir, 'cc-connect');
+    await writeFile(binaryPath, '#!/bin/sh\n', { mode: 0o755 });
+    const providerProfileLoader = vi.fn(async () => createProviderProfile({
+      providerId: 'custom-responses',
+      vendorId: 'custom',
+      label: 'ModelHub',
+      model: 'gpt-5.5',
+      codexArgs: [],
+      env: { CLAWX_CODEX_CUSTOM_API_KEY: 'secret-value' },
+      ccConnectProvider: {
+        name: 'clawx-custom',
+        apiKeyEnvKey: 'CLAWX_CODEX_CUSTOM_API_KEY',
+        baseUrl: 'https://aidp.bytedance.net/api/modelhub/online/v2/crawl',
+        model: 'gpt-5.5',
+        wireApi: 'responses',
+      },
+      secretAvailable: true,
+    }));
+    const bridgeAdapter = createBridgeAdapterMock();
+
+    const { CcConnectRuntimeProvider } = await import('@electron/runtime/cc-connect-provider');
+    const provider = new CcConnectRuntimeProvider({
+      binaryPath,
+      codexPath: join(tempDir, 'codex'),
+      codexBridge: createBridgeMock() as never,
+      bridgeAdapter: bridgeAdapter as never,
+      skillSyncer: vi.fn(async () => ({ skills: [] })),
+      providerProfileLoader: providerProfileLoader as never,
+    });
+    const child = createChild();
+    forkMock.mockReturnValueOnce(child);
+
+    const startPromise = provider.start();
+    await vi.waitFor(() => expect(forkMock).toHaveBeenCalledOnce());
+    child.emit('spawn');
+    await startPromise;
+
+    const config = await readFile(join(tempDir, 'runtimes', 'cc-connect', 'config.toml'), 'utf8');
+    expect(config).toContain('provider = "clawx-custom"');
+    expect(config).toContain('[[projects.agent.providers]]');
+    expect(config).toContain('name = "clawx-custom"');
+    expect(config).toContain('api_key = "${CLAWX_CODEX_CUSTOM_API_KEY}"');
+    expect(config).toContain('base_url = "https://aidp.bytedance.net/api/modelhub/online/v2/crawl"');
+    expect(config).toContain('model = "gpt-5.5"');
+    expect(config).toContain('wire_api = "responses"');
+    expect(config).not.toContain('secret-value');
+    expect(forkMock).toHaveBeenCalledWith(binaryPath, [
+      '-config',
+      join(tempDir, 'runtimes', 'cc-connect', 'config.toml'),
+    ], expect.objectContaining({
+      env: expect.objectContaining({
+        CLAWX_CODEX_CUSTOM_API_KEY: 'secret-value',
+      }),
+    }));
+  });
+
   it('returns cc-connect skills status instead of rejecting skill RPC', async () => {
     const binaryPath = join(tempDir, 'cc-connect');
     await writeFile(binaryPath, '#!/bin/sh\n', { mode: 0o755 });
@@ -418,6 +475,53 @@ describe('CcConnectRuntimeProvider', () => {
       vendorId: 'openai',
       env: { OPENAI_API_KEY: 'sk-test' },
     }));
+  });
+
+  it('restarts the running cc-connect process when provider sync changes launch config', async () => {
+    const binaryPath = join(tempDir, 'cc-connect');
+    await writeFile(binaryPath, '#!/bin/sh\n', { mode: 0o755 });
+    const bridgeAdapter = createBridgeAdapterMock();
+    const providerProfileLoader = vi.fn(async () => createProviderProfile({
+      providerId: 'openai-main',
+      vendorId: 'openai',
+      model: 'gpt-5.5',
+      codexArgs: ['--model', 'gpt-5.5'],
+      env: { OPENAI_API_KEY: 'sk-test' },
+      ccConnectProvider: {
+        name: 'openai',
+        apiKeyEnvKey: 'OPENAI_API_KEY',
+        model: 'gpt-5.5',
+      },
+      secretAvailable: true,
+    }));
+    const { CcConnectRuntimeProvider } = await import('@electron/runtime/cc-connect-provider');
+    const provider = new CcConnectRuntimeProvider({
+      binaryPath,
+      codexPath: join(tempDir, 'codex'),
+      codexBridge: createBridgeMock() as never,
+      bridgeAdapter: bridgeAdapter as never,
+      skillSyncer: vi.fn(async () => ({ skills: [] })),
+      providerProfileLoader: providerProfileLoader as never,
+    });
+    const firstChild = createChild();
+    const secondChild = createChild();
+    forkMock.mockReturnValueOnce(firstChild).mockReturnValueOnce(secondChild);
+    const startPromise = provider.start();
+    await vi.waitFor(() => expect(forkMock).toHaveBeenCalledTimes(1));
+    firstChild.emit('spawn');
+    await startPromise;
+
+    const syncPromise = provider.rpc('providers.sync', {
+      providerId: 'openai-main',
+      reason: 'set-default',
+    });
+    await vi.waitFor(() => expect(forkMock).toHaveBeenCalledTimes(2));
+    secondChild.emit('spawn');
+    await syncPromise;
+
+    expect(firstChild.kill).toHaveBeenCalledOnce();
+    expect(bridgeAdapter.close).toHaveBeenCalledOnce();
+    expect(bridgeAdapter.connect).toHaveBeenCalledTimes(2);
   });
 
   it('runs cc-connect doctor against the managed config', async () => {

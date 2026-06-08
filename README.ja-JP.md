@@ -97,7 +97,7 @@ ClawXは公式の**OpenClaw**コアを直接ベースに構築されています
 
 ClawX には runtime 抽象レイヤーもあります。OpenClaw は既定 runtime とロールバック経路のままで、**設定 → Gateway → Runtime** から任意の同梱 `cc-connect` runtime に切り替えられます。パッケージ版は cc-connect バイナリと OpenAI Codex ネイティブ CLI bundle の両方を app resources に含め、runtime 起動はグローバルインストール、PATH 上のバイナリ、起動時ダウンロードに依存しません。cc-connect は `~/.cc-connect` を自動変更せず、app userData 配下の ClawX 管理ディレクトリを使います。GUI chat は cc-connect BridgePlatform 経由で Codex project agent に接続し、provider/model、cron、enabled skills は管理された cc-connect/Codex runtime に同期されます。
 
-cc-connect mode では、Codex provider sync は OpenAI API key、OpenAI OAuth/Codex、Ollama、および Responses API を公開する OpenAI-compatible Custom provider をサポートします。Chat Completions として設定された Custom provider は、Codex 0.137 が Responses wire API のみを受け付けるため、chat 配信前に unsupported として報告されます。
+cc-connect mode では、Codex provider sync は OpenAI API key、OpenAI OAuth/Codex、Ollama、および Responses API を公開する OpenAI-compatible Custom provider をサポートします。ByteDance ModelHub-compatible Custom provider は Codex が使う `/api/modelhub/online` Responses endpoint に正規化され、管理 config には環境変数形式の header 参照だけを書き込むため、secret や sticky-session header は永続化されません。Chat Completions として設定された Custom provider は、Codex 0.137 が Responses wire API のみを受け付けるため、chat 配信前に unsupported として報告されます。
 
 cc-connect はメッセージング platform bridge も担当します。cc-connect が active runtime の場合、channel status probe は OpenClaw Gateway に固定せず runtime abstraction 経由でルーティングされ、Developer Mode のサイドバーのページショートカットは cc-connect Web Admin を開きます。
 

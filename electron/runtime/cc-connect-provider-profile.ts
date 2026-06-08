@@ -19,6 +19,13 @@ export type CodexProviderProfile = {
   codexArgs: string[];
   env?: Record<string, string>;
   envKeys?: string[];
+  ccConnectProvider?: {
+    name: string;
+    apiKeyEnvKey?: string;
+    baseUrl?: string;
+    model?: string;
+    wireApi?: 'responses';
+  };
   secretAvailable: boolean;
   codexHomeDir?: string;
   updatedAt: string;
@@ -49,8 +56,66 @@ function tomlString(value: string): string {
   return JSON.stringify(value);
 }
 
+function tomlInlineStringMap(values: Record<string, string>): string {
+  return `{ ${Object.entries(values).map(([key, value]) => `${tomlString(key)} = ${tomlString(value)}`).join(', ')} }`;
+}
+
 function normalizeOpenAIResponsesBaseUrl(baseUrl: string): string {
   return baseUrl.trim().replace(/\/+$/, '').replace(/\/responses$/i, '');
+}
+
+function normalizeModelHubCodexResponsesBaseUrl(baseUrl: string): string | null {
+  const trimmed = baseUrl.trim();
+  if (!trimmed) return null;
+  try {
+    const url = new URL(trimmed);
+    if (url.hostname !== 'aidp.bytedance.net') return null;
+    if (!url.pathname.startsWith('/api/modelhub/online')) return null;
+    url.pathname = '/api/modelhub/online';
+    url.search = '';
+    url.hash = '';
+    return url.toString().replace(/\/$/, '');
+  } catch {
+    return null;
+  }
+}
+
+async function writeManagedCodexResponsesConfig(options: {
+  providerKey: string;
+  providerName: string;
+  baseUrl: string;
+  envKey: string;
+  model?: string;
+  envHttpHeaders?: Record<string, string>;
+}): Promise<string> {
+  const codexHomeDir = getCcConnectCodexHomeDir();
+  await mkdir(codexHomeDir, { recursive: true });
+  const configPath = join(codexHomeDir, 'config.toml');
+  const tableKey = /^[A-Za-z_][A-Za-z0-9_-]*$/.test(options.providerKey)
+    ? options.providerKey
+    : tomlString(options.providerKey);
+  const envHeaderEntries = Object.entries(options.envHttpHeaders ?? {});
+  const lines = [
+    ...(options.model ? [`model = ${tomlString(options.model)}`] : []),
+    `model_provider = ${tomlString(options.providerKey)}`,
+    '',
+    `[model_providers.${tableKey}]`,
+    `name = ${tomlString(options.providerName)}`,
+    `base_url = ${tomlString(options.baseUrl)}`,
+    `env_key = ${tomlString(options.envKey)}`,
+    'wire_api = "responses"',
+    ...(envHeaderEntries.length > 0
+      ? [`env_http_headers = ${tomlInlineStringMap(options.envHttpHeaders ?? {})}`]
+      : []),
+    '',
+  ];
+  await writeFile(configPath, lines.join('\n'), { encoding: 'utf8', mode: 0o600 });
+  await chmod(configPath, 0o600).catch(() => {});
+  return codexHomeDir;
+}
+
+function stableModelHubSessionId(account: ProviderAccount): string {
+  return `clawx-cc-connect-${account.id}`;
 }
 
 async function writeManagedOpenAIOAuthAuthFile(
@@ -188,6 +253,11 @@ async function buildProfileForAccount(account: ProviderAccount): Promise<CodexPr
       supported: true,
       codexArgs: model ? ['--model', model] : [],
       env,
+      ccConnectProvider: {
+        name: 'openai',
+        ...(env.OPENAI_API_KEY ? { apiKeyEnvKey: 'OPENAI_API_KEY' } : {}),
+        ...(model ? { model } : {}),
+      },
     };
   }
 
@@ -221,9 +291,29 @@ async function buildProfileForAccount(account: ProviderAccount): Promise<CodexPr
       };
     }
 
-    const providerKey = 'clawx-custom';
-    const envKey = 'CLAWX_CODEX_CUSTOM_API_KEY';
-    const normalizedBaseUrl = normalizeOpenAIResponsesBaseUrl(baseUrl);
+    const modelHubBaseUrl = normalizeModelHubCodexResponsesBaseUrl(baseUrl);
+    const providerKey = modelHubBaseUrl ? 'modelhub_openapi' : 'clawx-custom';
+    const envKey = modelHubBaseUrl ? 'BYTEDANCE_OPENAI_API_KEY' : 'CLAWX_CODEX_CUSTOM_API_KEY';
+    const extraHeaderEnvKey = 'CODEX_MODELHUB_EXTRA_HEADER';
+    const normalizedBaseUrl = modelHubBaseUrl ?? normalizeOpenAIResponsesBaseUrl(baseUrl);
+    const env: Record<string, string> = { [envKey]: secret.apiKey };
+    const envHttpHeaders = modelHubBaseUrl
+      ? {
+          'Api-Key': envKey,
+          extra: extraHeaderEnvKey,
+        }
+      : undefined;
+    if (modelHubBaseUrl) {
+      env[extraHeaderEnvKey] = JSON.stringify({ session_id: stableModelHubSessionId(account) });
+    }
+    const codexHomeDir = await writeManagedCodexResponsesConfig({
+      providerKey,
+      providerName: modelHubBaseUrl ? 'ByteDance ModelHub OpenAPI' : (account.label || 'Custom'),
+      baseUrl: normalizedBaseUrl,
+      envKey,
+      model,
+      envHttpHeaders,
+    });
     return {
       ...base,
       supported: true,
@@ -231,16 +321,31 @@ async function buildProfileForAccount(account: ProviderAccount): Promise<CodexPr
         '-c',
         `model_provider=${tomlString(providerKey)}`,
         '-c',
-        `model_providers.${providerKey}.name=${tomlString(account.label || 'Custom')}`,
+        `model_providers.${providerKey}.name=${tomlString(modelHubBaseUrl ? 'ByteDance ModelHub OpenAPI' : (account.label || 'Custom'))}`,
         '-c',
         `model_providers.${providerKey}.base_url=${tomlString(normalizedBaseUrl)}`,
         '-c',
         `model_providers.${providerKey}.env_key=${tomlString(envKey)}`,
         '-c',
         `model_providers.${providerKey}.wire_api="responses"`,
+        ...(envHttpHeaders ? [
+          '-c',
+          `model_providers.${providerKey}.env_http_headers=${tomlInlineStringMap(envHttpHeaders)}`,
+        ] : []),
         ...(model ? ['--model', model] : []),
       ],
-      env: { [envKey]: secret.apiKey },
+      env: {
+        ...env,
+        CODEX_HOME: codexHomeDir,
+      },
+      codexHomeDir,
+      ccConnectProvider: {
+        name: providerKey,
+        apiKeyEnvKey: envKey,
+        baseUrl: normalizedBaseUrl,
+        wireApi: 'responses',
+        ...(model ? { model } : {}),
+      },
     };
   }
 

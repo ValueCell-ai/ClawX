@@ -249,6 +249,14 @@ describe('cc-connect provider profile sync', () => {
       model: 'gpt-custom',
       supported: true,
       env: { CLAWX_CODEX_CUSTOM_API_KEY: 'custom-secret-value' },
+      codexHomeDir: join(tempDir, 'runtimes', 'cc-connect', 'codex-home'),
+      ccConnectProvider: {
+        name: 'clawx-custom',
+        apiKeyEnvKey: 'CLAWX_CODEX_CUSTOM_API_KEY',
+        baseUrl: 'https://gateway.example/openai',
+        model: 'gpt-custom',
+        wireApi: 'responses',
+      },
       secretAvailable: true,
     });
     expect(profile.codexArgs).toEqual([
@@ -268,6 +276,70 @@ describe('cc-connect provider profile sync', () => {
     const profileFile = await readFile(join(tempDir, 'runtimes', 'cc-connect', 'provider-profile.json'), 'utf8');
     expect(profileFile).toContain('CLAWX_CODEX_CUSTOM_API_KEY');
     expect(profileFile).not.toContain('custom-secret-value');
+    const codexConfig = await readFile(join(tempDir, 'runtimes', 'cc-connect', 'codex-home', 'config.toml'), 'utf8');
+    expect(codexConfig).toContain('model_provider = "clawx-custom"');
+    expect(codexConfig).toContain('base_url = "https://gateway.example/openai"');
+    expect(codexConfig).not.toContain('custom-secret-value');
+  });
+
+  it('maps ByteDance ModelHub custom providers to the Codex Responses endpoint with env header refs', async () => {
+    getDefaultProviderAccountIdMock.mockResolvedValue('modelhub-responses');
+    getProviderAccountMock.mockResolvedValue({
+      id: 'modelhub-responses',
+      vendorId: 'custom',
+      label: 'modelhub-openai',
+      authMode: 'api_key',
+      baseUrl: 'https://aidp.bytedance.net/api/modelhub/online/v2/crawl',
+      apiProtocol: 'openai-responses',
+      model: 'gpt-5.5-2026-04-24',
+      enabled: true,
+      isDefault: true,
+      createdAt: '2026-06-07T00:00:00.000Z',
+      updatedAt: '2026-06-07T00:00:00.000Z',
+    });
+    getProviderSecretMock.mockResolvedValue({
+      type: 'api_key',
+      accountId: 'modelhub-responses',
+      apiKey: 'modelhub-secret-value',
+    });
+    const { syncCcConnectProviderProfile } = await import('@electron/runtime/cc-connect-provider-profile');
+
+    const profile = await syncCcConnectProviderProfile();
+
+    expect(profile).toMatchObject({
+      providerId: 'modelhub-responses',
+      vendorId: 'custom',
+      supported: true,
+      model: 'gpt-5.5-2026-04-24',
+      env: {
+        BYTEDANCE_OPENAI_API_KEY: 'modelhub-secret-value',
+        CODEX_MODELHUB_EXTRA_HEADER: '{"session_id":"clawx-cc-connect-modelhub-responses"}',
+        CODEX_HOME: join(tempDir, 'runtimes', 'cc-connect', 'codex-home'),
+      },
+      ccConnectProvider: {
+        name: 'modelhub_openapi',
+        apiKeyEnvKey: 'BYTEDANCE_OPENAI_API_KEY',
+        baseUrl: 'https://aidp.bytedance.net/api/modelhub/online',
+        model: 'gpt-5.5-2026-04-24',
+        wireApi: 'responses',
+      },
+    });
+    expect(profile.codexArgs).toContain('model_provider="modelhub_openapi"');
+    expect(profile.codexArgs).toContain('model_providers.modelhub_openapi.base_url="https://aidp.bytedance.net/api/modelhub/online"');
+    expect(profile.codexArgs).toContain('model_providers.modelhub_openapi.env_http_headers={ "Api-Key" = "BYTEDANCE_OPENAI_API_KEY", "extra" = "CODEX_MODELHUB_EXTRA_HEADER" }');
+
+    const codexConfig = await readFile(join(tempDir, 'runtimes', 'cc-connect', 'codex-home', 'config.toml'), 'utf8');
+    expect(codexConfig).toContain('model_provider = "modelhub_openapi"');
+    expect(codexConfig).toContain('base_url = "https://aidp.bytedance.net/api/modelhub/online"');
+    expect(codexConfig).toContain('env_http_headers = { "Api-Key" = "BYTEDANCE_OPENAI_API_KEY", "extra" = "CODEX_MODELHUB_EXTRA_HEADER" }');
+    expect(codexConfig).not.toContain('modelhub-secret-value');
+    expect(codexConfig).not.toContain('clawx-cc-connect-modelhub-responses');
+
+    const profileFile = await readFile(join(tempDir, 'runtimes', 'cc-connect', 'provider-profile.json'), 'utf8');
+    expect(profileFile).toContain('BYTEDANCE_OPENAI_API_KEY');
+    expect(profileFile).toContain('CODEX_MODELHUB_EXTRA_HEADER');
+    expect(profileFile).not.toContain('modelhub-secret-value');
+    expect(profileFile).not.toContain('clawx-cc-connect-modelhub-responses');
   });
 
   it('marks custom chat completions providers unsupported because Codex only accepts responses wire api', async () => {
