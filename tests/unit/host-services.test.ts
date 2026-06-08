@@ -502,6 +502,35 @@ describe('host services', () => {
     expect(syncSavedProviderToRuntimeMock).not.toHaveBeenCalled();
   });
 
+  it('routes cron API through cc-connect runtime when cc-connect is active', async () => {
+    const runtimeManager = {
+      getActiveKind: vi.fn(async () => 'cc-connect'),
+      rpc: vi.fn(async () => [{
+        id: 'cron-1',
+        name: 'Daily summary',
+        message: 'summarize',
+        schedule: { kind: 'cron', expr: '0 9 * * *' },
+        enabled: true,
+        createdAt: '2026-06-08T00:00:00.000Z',
+        updatedAt: '2026-06-08T00:00:00.000Z',
+      }]),
+    };
+    const gatewayManager = {
+      rpc: vi.fn(),
+    };
+    const { createCronApi } = await import('@electron/services/cron-api');
+
+    await expect(createCronApi({
+      gatewayManager: gatewayManager as never,
+      runtimeManager: runtimeManager as never,
+    }).list()).resolves.toMatchObject([
+      { id: 'cron-1', name: 'Daily summary' },
+    ]);
+
+    expect(runtimeManager.rpc).toHaveBeenCalledWith('cron.list');
+    expect(gatewayManager.rpc).not.toHaveBeenCalled();
+  });
+
   it('sets the default provider account and syncs runtime defaults', async () => {
     providerServiceMock.getDefaultAccountId.mockResolvedValue('old-default');
     const gatewayManager = { debouncedReload: vi.fn() };

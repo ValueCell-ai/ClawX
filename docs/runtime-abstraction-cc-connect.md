@@ -10,7 +10,7 @@ ClawX currently treats OpenClaw Gateway as the only runtime. That keeps the rend
 - Keep `openclaw` as the default runtime.
 - Add a Settings runtime selector with status, managed config path, and capability visibility.
 - Run cc-connect from ClawX-managed app data, not the user's `~/.cc-connect`.
-- Bundle cc-connect binaries into packaged app resources so runtime startup does not require global installs or network downloads.
+- Bundle cc-connect and native OpenAI Codex CLI binaries into packaged app resources so runtime startup does not require global installs, PATH binaries, or network downloads.
 - Keep existing renderer entry points through `host-api` and the legacy `gateway:*` compatibility layer.
 
 ## Non-goals
@@ -121,7 +121,7 @@ ClawX must not read or mutate `~/.cc-connect` automatically.
 
 ## Packaging Design
 
-`cc-connect` is a `devDependency` because the packaged runtime executes the verified binary from `extraResources`, not from asar `node_modules`.
+`cc-connect` and `@openai/codex` are `devDependency` entries because the packaged runtime executes verified bundle artifacts from `extraResources`, not from asar `node_modules` or global installs.
 
 `scripts/bundle-cc-connect.mjs`:
 
@@ -143,15 +143,16 @@ ClawX must not read or mutate `~/.cc-connect` automatically.
 
 ```text
 process.resourcesPath/cc-connect/
+process.resourcesPath/codex/
 ```
 
 The binary is intentionally outside asar so it remains executable.
 
 ## Runtime Path Resolution
 
-- Development: prefer `node_modules/cc-connect/bin/cc-connect[.exe]`.
-- Packaged: use `process.resourcesPath/cc-connect/cc-connect[.exe]`.
-- If the binary is missing, the provider reports a clear startup error instructing developers to install or bundle cc-connect.
+- Development: use `build/cc-connect/<platform>-<arch>/cc-connect[.exe]` and `build/codex/<platform>-<arch>/bin/codex[.exe]`.
+- Packaged: use `process.resourcesPath/cc-connect/cc-connect[.exe]` and `process.resourcesPath/codex/bin/codex[.exe]`.
+- If a binary is missing, the provider reports a clear startup error instructing developers to run the matching bundle script.
 
 ## Migration Plan
 
@@ -167,9 +168,9 @@ The binary is intentionally outside asar so it remains executable.
 
 The replacement-grade follow-up is documented in
 `docs/cc-connect-codex-core-replacement.md`. That slice makes cc-connect runtime
-mode use a ClawX-owned Codex CLI bridge for GUI chat, sessions, history, and
-supported provider/model selection so the core chat loop no longer depends on
-OpenClaw Gateway.
+mode use a ClawX BridgePlatform adapter for GUI chat, sessions, history, cron,
+skills, and supported provider/model selection so the core chat loop no longer
+depends on OpenClaw Gateway.
 
 ## Rollback Strategy
 
@@ -203,6 +204,6 @@ OpenClaw Gateway.
 ## Assumptions
 
 - OpenClaw remains the default runtime.
-- First-version cc-connect acceptance is core-equivalent, not OpenClaw-specific parity.
+- First-version cc-connect acceptance is core-equivalent for chat, sessions, history, providers/models, cron, and skills, not full OpenClaw-specific parity.
 - ClawX manages cc-connect config and does not modify `~/.cc-connect`.
-- Packaged ClawX must run cc-connect offline without global install or runtime download.
+- Packaged ClawX must run cc-connect and Codex offline without global install or runtime download.

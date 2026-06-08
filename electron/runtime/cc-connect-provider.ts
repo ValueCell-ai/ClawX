@@ -1,9 +1,11 @@
 import { EventEmitter } from 'node:events';
 import { spawn, type ChildProcess } from 'node:child_process';
+import { randomUUID } from 'node:crypto';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import type { OpenClawDoctorMode, OpenClawDoctorResult } from '@shared/host-api/contract';
+import type { CronJob, CronJobCreateInput, CronJobUpdateInput } from '@shared/types/cron';
 import type {
   RuntimeProvider,
   RuntimeSendWithMediaPayload,
@@ -15,12 +17,16 @@ import {
 } from './types';
 import {
   assertCcConnectBinaryPath,
+  getCcConnectCodexHomeDir,
   getCcConnectCodexSessionsDir,
   getCcConnectConfigPath,
   getCcConnectManagedDir,
   getCcConnectProviderProfilePath,
 } from './cc-connect-paths';
 import { CodexCliBridge } from './codex-cli-bridge';
+import { CcConnectBridgeAdapter } from './cc-connect-bridge-adapter';
+import { syncCcConnectSkills } from './cc-connect-skills';
+import { assertCodexBundle, prependCodexPathDir, type CodexBundle } from './codex-paths';
 import {
   syncCcConnectProviderProfile,
   toPublicCodexProviderProfile,
@@ -32,11 +38,17 @@ type CcConnectRuntimeProviderOptions = {
   codexPath?: string;
   workDir?: string;
   codexBridge?: CodexCliBridge;
+  codexBundle?: CodexBundle;
+  bridgeAdapter?: Pick<CcConnectBridgeAdapter, 'connect' | 'close' | 'send' | 'listSessions' | 'loadHistory' | 'deleteSession' | 'summarizeSessions'>;
+  skillSyncer?: typeof syncCcConnectSkills;
   providerProfileLoader?: (payload?: { providerId?: string; reason?: string }) => Promise<CodexProviderProfile>;
 };
 
 const CC_CONNECT_DOCTOR_TIMEOUT_MS = 60_000;
 const MAX_DOCTOR_OUTPUT_BYTES = 10 * 1024 * 1024;
+const CLAWX_PROJECT_NAME = 'clawx-main';
+const CC_CONNECT_MANAGEMENT_PORT = 9820;
+const CC_CONNECT_BRIDGE_PORT = 9810;
 
 function unsupported(method: string): never {
   throw new Error(`cc-connect runtime does not support RPC method: ${method}`);
@@ -57,15 +69,24 @@ function appendBoundedOutput(current: string, currentBytes: number, data: Buffer
   };
 }
 
-function defaultConfig(): string {
+function escapeToml(value: string): string {
+  return value.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+}
+
+function defaultConfig(options: {
+  codexPath: string;
+  providerProfile?: CodexProviderProfile | null;
+  managementToken: string;
+  bridgeToken: string;
+}): string {
   const managedDir = getCcConnectManagedDir();
   const dataDir = join(managedDir, 'data').replace(/\\/g, '\\\\');
   const workDir = (process.env.CLAWX_CODEX_WORKDIR || process.cwd()).replace(/\\/g, '\\\\');
+  const model = options.providerProfile?.model;
   return [
     '# Managed by ClawX. Do not edit while ClawX is running.',
     '# ClawX stores this file under app userData and does not modify ~/.cc-connect.',
-    '# cc-connect v1.3.2 requires at least one [[projects]] entry with a real messaging platform.',
-    '# ClawX GUI chat uses CodexCliBridge directly until a local GUI platform is available.',
+    '# ClawX GUI chat connects through cc-connect BridgePlatform.',
     '# ClawX stores the active Codex provider/model profile in provider-profile.json.',
     '',
     `data_dir = "${dataDir}"`,
@@ -73,31 +94,28 @@ function defaultConfig(): string {
     '[log]',
     'level = "info"',
     '',
-    '# Enable when ClawX starts using cc-connect management endpoints for provider/cron/channel parity.',
-    '# [management]',
-    '# enabled = true',
-    '# port = 9820',
-    '# token = "replace-with-clawx-managed-token"',
+    '[management]',
+    'enabled = true',
+    `port = ${CC_CONNECT_MANAGEMENT_PORT}`,
+    `token = "${escapeToml(options.managementToken)}"`,
     '',
-    '# Enable when external bridge adapters are configured.',
-    '# [bridge]',
-    '# enabled = true',
-    '# port = 9810',
-    '# token = "replace-with-clawx-managed-token"',
+    '[bridge]',
+    'enabled = true',
+    `port = ${CC_CONNECT_BRIDGE_PORT}`,
+    `token = "${escapeToml(options.bridgeToken)}"`,
+    'path = "/bridge/ws"',
     '',
-    '# Codex project template. Uncomment and add a real [[projects.platforms]] section',
-    '# such as telegram, feishu, slack, dingtalk, discord, wecom, weixin, qq, qqbot, or line.',
-    '# [[projects]]',
-    '# name = "clawx-codex"',
-    '# [projects.agent]',
-    '# type = "codex"',
-    '# [projects.agent.options]',
-    `# work_dir = "${workDir}"`,
-    '# mode = "full-auto"',
-    '# [[projects.platforms]]',
-    '# type = "telegram"',
-    '# [projects.platforms.options]',
-    '# token = "${TELEGRAM_BOT_TOKEN}"',
+    '[[projects]]',
+    `name = "${CLAWX_PROJECT_NAME}"`,
+    '',
+    '[projects.agent]',
+    'type = "codex"',
+    '',
+    '[projects.agent.options]',
+    `work_dir = "${workDir}"`,
+    'mode = "full-auto"',
+    `cmd = "${escapeToml(options.codexPath)}"`,
+    ...(model ? [`model = "${escapeToml(model)}"`] : []),
     '',
   ].join('\n');
 }
@@ -106,21 +124,37 @@ export class CcConnectRuntimeProvider extends EventEmitter implements RuntimePro
   readonly kind = 'cc-connect' as const;
   private child: ChildProcess | null = null;
   private readonly codexBridge: CodexCliBridge;
+  private readonly bridgeAdapter: NonNullable<CcConnectRuntimeProviderOptions['bridgeAdapter']>;
+  private readonly skillSyncer: NonNullable<CcConnectRuntimeProviderOptions['skillSyncer']>;
   private readonly providerProfileLoader: NonNullable<CcConnectRuntimeProviderOptions['providerProfileLoader']>;
+  private readonly managementToken = randomUUID();
+  private readonly bridgeToken = randomUUID();
   private status = withRuntimeStatus({
     state: 'stopped',
-    port: 0,
+    port: CC_CONNECT_MANAGEMENT_PORT,
   }, this.kind, CC_CONNECT_RUNTIME_CAPABILITIES, getCcConnectManagedDir());
   private readonly binaryPath?: string;
+  private readonly codexPath?: string;
+  private readonly codexBundle?: CodexBundle;
 
   constructor(options: CcConnectRuntimeProviderOptions = {}) {
     super();
     this.binaryPath = options.binaryPath;
+    this.codexPath = options.codexPath;
+    this.codexBundle = options.codexBundle;
     this.codexBridge = options.codexBridge ?? new CodexCliBridge({
       codexPath: options.codexPath,
+      codexBundle: options.codexBundle,
       sessionsDir: getCcConnectCodexSessionsDir(),
       workDir: options.workDir,
     });
+    this.bridgeAdapter = options.bridgeAdapter ?? new CcConnectBridgeAdapter({
+      port: CC_CONNECT_BRIDGE_PORT,
+      token: this.bridgeToken,
+      project: CLAWX_PROJECT_NAME,
+      emit: this.emit.bind(this),
+    });
+    this.skillSyncer = options.skillSyncer ?? syncCcConnectSkills;
     this.providerProfileLoader = options.providerProfileLoader ?? syncCcConnectProviderProfile;
   }
 
@@ -134,8 +168,10 @@ export class CcConnectRuntimeProvider extends EventEmitter implements RuntimePro
 
   async start(): Promise<void> {
     if (this.status.state === 'running' || this.status.state === 'starting') return;
-    await this.ensureManagedConfig();
-    assertCcConnectBinaryPath(this.binaryPath);
+    const codexPath = this.resolveCodexPath();
+    const providerProfile = await this.loadAndApplyProviderProfile({ reason: 'runtime-start' });
+    const configPath = await this.ensureManagedConfig(providerProfile, codexPath);
+    const binaryPath = assertCcConnectBinaryPath(this.binaryPath);
     this.setStatus({ state: 'starting', error: undefined });
 
     const codexDiagnostic = await this.codexBridge.diagnose();
@@ -144,11 +180,13 @@ export class CcConnectRuntimeProvider extends EventEmitter implements RuntimePro
       this.setStatus({ state: 'error', error });
       throw new Error(error);
     }
-    await this.syncProviderProfile({ reason: 'runtime-start' });
+    await this.skillSyncer();
+    this.child = await this.spawnCcConnect(binaryPath, configPath, providerProfile);
+    await this.bridgeAdapter.connect();
 
     this.setStatus({
       state: 'running',
-      pid: process.pid,
+      pid: this.child.pid,
       connectedAt: Date.now(),
       gatewayReady: true,
       error: undefined,
@@ -165,6 +203,7 @@ export class CcConnectRuntimeProvider extends EventEmitter implements RuntimePro
         // ignore
       }
     }
+    await this.bridgeAdapter.close();
     this.setStatus({ state: 'stopped', pid: undefined, connectedAt: undefined, gatewayReady: undefined });
   }
 
@@ -199,48 +238,45 @@ export class CcConnectRuntimeProvider extends EventEmitter implements RuntimePro
       case 'providers.profile':
       case 'models.profile':
         return await this.syncProviderProfile(toProviderSyncPayload(params)) as T;
+      case 'skills.status':
+        return await this.skillSyncer() as T;
+      case 'skills.update':
+        await this.skillSyncer();
+        return {
+          success: true,
+          runtimeKind: this.kind,
+        } as T;
+      case 'cron.list':
+        return await this.listCronJobs() as T;
+      case 'cron.create':
+      case 'cron.add':
+        return await this.createCronJob(params) as T;
+      case 'cron.update':
+        return await this.updateCronJob(params) as T;
+      case 'cron.delete':
+      case 'cron.remove':
+        return await this.deleteCronJob(params) as T;
+      case 'cron.run':
+        return await this.triggerCronJob(params) as T;
       default:
         return unsupported(method);
     }
   }
 
   async sendMessageWithMedia(payload: RuntimeSendWithMediaPayload) {
-    const result = await this.codexBridge.send(payload);
-    this.emit('chat:runtime-event', {
-      type: 'run.started',
-      runId: result.runId,
-      sessionKey: payload.sessionKey,
-      startedAt: Date.now(),
-      ts: Date.now(),
-    });
-    this.emit('chat:message', {
-      state: 'final',
-      runId: result.runId,
-      sessionKey: payload.sessionKey,
-      message: result.assistantMessage,
-    });
-    this.emit('chat:runtime-event', {
-      type: 'run.ended',
-      runId: result.runId,
-      sessionKey: payload.sessionKey,
-      status: result.assistantMessage.isError ? 'error' : 'completed',
-      endedAt: Date.now(),
-      ts: Date.now(),
-      ...(result.assistantMessage.isError ? { error: result.assistantMessage.errorMessage } : {}),
-    });
-    return { runId: result.runId };
+    return await this.bridgeAdapter.send(payload);
   }
 
   async listSessions(payload?: unknown) {
     if (isRecord(payload) && Array.isArray(payload.sessionKeys)) {
       return {
         success: true,
-        summaries: await this.codexBridge.summarizeSessions(
+        summaries: await this.bridgeAdapter.summarizeSessions(
           payload.sessionKeys.filter((value): value is string => typeof value === 'string'),
         ),
       };
     }
-    const sessions = await this.codexBridge.listSessions();
+    const sessions = await this.bridgeAdapter.listSessions();
     return {
       success: true,
       sessions: sessions.map((session) => ({
@@ -261,13 +297,13 @@ export class CcConnectRuntimeProvider extends EventEmitter implements RuntimePro
       : 200;
     return {
       success: true,
-      messages: await this.codexBridge.loadHistory(sessionKey, limit),
+      messages: await this.bridgeAdapter.loadHistory(sessionKey, limit),
     };
   }
 
   async deleteSession(payload?: unknown) {
     const sessionKey = getSessionKey(payload);
-    await this.codexBridge.deleteSession(sessionKey);
+    await this.bridgeAdapter.deleteSession(sessionKey);
     return { success: true };
   }
 
@@ -290,7 +326,7 @@ export class CcConnectRuntimeProvider extends EventEmitter implements RuntimePro
   async runDoctor(mode: OpenClawDoctorMode): Promise<OpenClawDoctorResult> {
     const startedAt = Date.now();
     const cwd = getCcConnectManagedDir();
-    const configPath = await this.ensureManagedConfig();
+    const configPath = await this.ensureManagedConfig(null, this.resolveCodexPath());
     const binaryPath = assertCcConnectBinaryPath(this.binaryPath);
     const args = ['doctor', 'user-isolation', '--config', configPath];
     const command = `cc-connect ${args.join(' ')}`;
@@ -393,22 +429,147 @@ export class CcConnectRuntimeProvider extends EventEmitter implements RuntimePro
     });
   }
 
-  private async ensureManagedConfig(): Promise<string> {
+  private async ensureManagedConfig(providerProfile: CodexProviderProfile | null, codexPath: string): Promise<string> {
     const configPath = getCcConnectConfigPath();
     await mkdir(dirname(configPath), { recursive: true });
-    if (!existsSync(configPath)) {
-      await writeFile(configPath, defaultConfig(), 'utf8');
-    }
+    await writeFile(configPath, defaultConfig({
+      codexPath,
+      providerProfile,
+      managementToken: this.managementToken,
+      bridgeToken: this.bridgeToken,
+    }), 'utf8');
     return configPath;
   }
 
   private async syncProviderProfile(payload?: { providerId?: string; reason?: string }) {
-    const profile = await this.providerProfileLoader(payload);
-    this.codexBridge.setProviderProfile(profile);
+    const profile = await this.loadAndApplyProviderProfile(payload);
     return {
       success: true,
       profile: toPublicCodexProviderProfile(profile),
     };
+  }
+
+  private async loadAndApplyProviderProfile(payload?: { providerId?: string; reason?: string }): Promise<CodexProviderProfile> {
+    const profile = await this.providerProfileLoader(payload);
+    this.codexBridge.setProviderProfile(profile);
+    return profile;
+  }
+
+  private async managementRequest<T = unknown>(method: string, path: string, body?: unknown): Promise<T> {
+    const response = await fetch(`http://127.0.0.1:${CC_CONNECT_MANAGEMENT_PORT}/api/v1${path}`, {
+      method,
+      headers: {
+        Authorization: `Bearer ${this.managementToken}`,
+        ...(body === undefined ? {} : { 'Content-Type': 'application/json' }),
+      },
+      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+    });
+    const text = await response.text();
+    const data = text.trim() ? JSON.parse(text) : {};
+    if (!response.ok) {
+      const message = isRecord(data) && typeof data.error === 'string' ? data.error : text || `HTTP ${response.status}`;
+      throw new Error(`cc-connect management API failed: ${message}`);
+    }
+    return data as T;
+  }
+
+  private async listCronJobs(): Promise<CronJob[]> {
+    const result = await this.managementRequest<unknown>('GET', `/cron?project=${encodeURIComponent(CLAWX_PROJECT_NAME)}`);
+    const jobs = Array.isArray(result)
+      ? result
+      : isRecord(result) && Array.isArray(result.jobs)
+        ? result.jobs
+        : [];
+    return jobs.map((job) => transformCcConnectCronJob(job));
+  }
+
+  private async createCronJob(payload: unknown): Promise<CronJob> {
+    const input = isRecord(payload) ? payload as unknown as CronJobCreateInput : {} as CronJobCreateInput;
+    const schedule = cronExprFromInput(input.schedule);
+    if (!schedule) throw new Error('cron schedule is required');
+    const result = await this.managementRequest<unknown>('POST', '/cron', {
+      project: CLAWX_PROJECT_NAME,
+      session_key: 'clawx:main:main',
+      cron_expr: schedule,
+      prompt: input.message || '',
+      description: input.name || 'Scheduled task',
+      silent: input.delivery?.mode !== 'announce',
+      enabled: input.enabled !== false,
+    });
+    return transformCcConnectCronJob(isRecord(result) && 'job' in result ? result.job : result);
+  }
+
+  private async updateCronJob(payload: unknown): Promise<CronJob> {
+    const body = isRecord(payload) ? payload : {};
+    const id = getPayloadId(body);
+    const input = isRecord(body.input) ? body.input as unknown as CronJobUpdateInput : {};
+    const patch: Record<string, unknown> = {};
+    if (input.name !== undefined) patch.description = input.name;
+    if (input.message !== undefined) patch.prompt = input.message;
+    const schedule = cronExprFromInput(input.schedule);
+    if (schedule) patch.cron_expr = schedule;
+    if (input.enabled !== undefined) patch.enabled = input.enabled === true;
+    if (input.delivery?.mode !== undefined) patch.silent = input.delivery.mode !== 'announce';
+    const result = await this.managementRequest<unknown>('PATCH', `/cron/${encodeURIComponent(id)}`, patch);
+    return transformCcConnectCronJob(isRecord(result) && 'job' in result ? result.job : result);
+  }
+
+  private async deleteCronJob(payload: unknown): Promise<{ success: true }> {
+    await this.managementRequest('DELETE', `/cron/${encodeURIComponent(getPayloadId(payload))}`);
+    return { success: true };
+  }
+
+  private async triggerCronJob(payload: unknown): Promise<{ success: true }> {
+    await this.managementRequest('POST', `/cron/${encodeURIComponent(getPayloadId(payload))}/exec`);
+    return { success: true };
+  }
+
+  private resolveCodexPath(): string {
+    if (this.codexPath) return this.codexPath;
+    return assertCodexBundle(this.codexBundle).binaryPath;
+  }
+
+  private async spawnCcConnect(binaryPath: string, configPath: string, providerProfile: CodexProviderProfile): Promise<ChildProcess> {
+    const cwd = getCcConnectManagedDir();
+    await mkdir(cwd, { recursive: true });
+    const baseEnv = prependCodexPathDir({
+      ...process.env,
+      ...(providerProfile.env ?? {}),
+      CODEX_HOME: providerProfile.env?.CODEX_HOME ?? getCcConnectCodexHomeDir(),
+    }, this.codexBundle);
+    const codexBinDir = dirname(this.resolveCodexPath());
+    const delimiter = process.platform === 'win32' ? ';' : ':';
+    const env = {
+      ...baseEnv,
+      PATH: [codexBinDir, baseEnv.PATH || ''].filter(Boolean).join(delimiter),
+    };
+    const child = spawn(binaryPath, ['-config', configPath], {
+      cwd,
+      env,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    child.stdout?.on('data', (data) => {
+      this.emit('notification', { type: 'log', message: String(data) });
+    });
+    child.stderr?.on('data', (data) => {
+      this.emit('notification', { type: 'log', message: String(data) });
+    });
+    child.on('exit', (code) => {
+      if (this.child !== child) return;
+      this.child = null;
+      this.setStatus({
+        state: code === 0 ? 'stopped' : 'error',
+        pid: undefined,
+        connectedAt: undefined,
+        gatewayReady: undefined,
+        ...(code === 0 ? { error: undefined } : { error: `cc-connect exited with code ${code}` }),
+      });
+      this.emit('exit', code);
+    });
+    return await new Promise<ChildProcess>((resolve, reject) => {
+      child.once('spawn', () => resolve(child));
+      child.once('error', reject);
+    });
   }
 
   private setStatus(patch: Partial<RuntimeStatus>): void {
@@ -434,6 +595,12 @@ function getSessionKey(payload: unknown): string {
     if (typeof value === 'string' && value.trim()) return value.trim();
   }
   return 'agent:main:main';
+}
+
+function getPayloadId(payload: unknown): string {
+  if (typeof payload === 'string' && payload.trim()) return payload.trim();
+  if (isRecord(payload) && typeof payload.id === 'string' && payload.id.trim()) return payload.id.trim();
+  throw new Error('id is required');
 }
 
 function toSendPayload(payload: unknown): RuntimeSendWithMediaPayload {
@@ -465,5 +632,65 @@ function toProviderSyncPayload(payload: unknown): { providerId?: string; reason?
   return {
     providerId: typeof payload.providerId === 'string' ? payload.providerId : undefined,
     reason: typeof payload.reason === 'string' ? payload.reason : undefined,
+  };
+}
+
+function cronExprFromInput(schedule: unknown): string {
+  if (typeof schedule === 'string') return schedule.trim();
+  if (!isRecord(schedule)) return '';
+  if (schedule.kind === 'cron' && typeof schedule.expr === 'string') return schedule.expr.trim();
+  return '';
+}
+
+function ccString(record: Record<string, unknown>, keys: string[]): string {
+  for (const key of keys) {
+    const value = record[key];
+    if (typeof value === 'string' && value.trim()) return value.trim();
+  }
+  return '';
+}
+
+function ccBoolean(record: Record<string, unknown>, keys: string[], fallback: boolean): boolean {
+  for (const key of keys) {
+    if (typeof record[key] === 'boolean') return record[key] as boolean;
+  }
+  return fallback;
+}
+
+function ccTimestamp(value: unknown, fallback = Date.now()): string {
+  if (typeof value === 'string' && value.trim()) {
+    const parsed = Date.parse(value);
+    if (Number.isFinite(parsed)) return new Date(parsed).toISOString();
+  }
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return new Date(value < 1e12 ? value * 1000 : value).toISOString();
+  }
+  return new Date(fallback).toISOString();
+}
+
+function transformCcConnectCronJob(value: unknown): CronJob {
+  const job = isRecord(value) ? value : {};
+  const id = ccString(job, ['id', 'task_id', 'job_id']) || `cc-connect-cron-${Date.now()}`;
+  const name = ccString(job, ['description', 'desc', 'name']) || 'Scheduled task';
+  const message = ccString(job, ['prompt', 'message', 'content']);
+  const expr = ccString(job, ['cron_expr', 'cron', 'schedule']);
+  const enabled = ccBoolean(job, ['enabled'], true);
+  const createdAt = ccTimestamp(job.created_at ?? job.createdAt ?? job.created_at_ms);
+  const updatedAt = ccTimestamp(job.updated_at ?? job.updatedAt ?? job.updated_at_ms, Date.parse(createdAt));
+  const nextRunAt = job.next_run_at ?? job.nextRunAt ?? job.next_run_at_ms;
+  const lastRunAt = job.last_run_at ?? job.lastRunAt ?? job.last_run_at_ms;
+  const lastRunIso = typeof lastRunAt === 'undefined' ? undefined : ccTimestamp(lastRunAt);
+  return {
+    id,
+    name,
+    message,
+    schedule: expr ? { kind: 'cron', expr } : '',
+    delivery: { mode: job.silent === false ? 'announce' : 'none' },
+    enabled,
+    createdAt,
+    updatedAt,
+    ...(typeof nextRunAt === 'undefined' ? {} : { nextRun: ccTimestamp(nextRunAt) }),
+    ...(lastRunIso ? { lastRun: { time: lastRunIso, success: job.last_status !== 'error', error: ccString(job, ['last_error']) || undefined } } : {}),
+    agentId: 'main',
   };
 }

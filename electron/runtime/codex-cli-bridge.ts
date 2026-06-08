@@ -6,6 +6,7 @@ import { join } from 'node:path';
 import type { RawMessage } from '@shared/chat/types';
 import type { RuntimeSendWithMediaPayload } from './types';
 import type { CodexProviderProfile } from './cc-connect-provider-profile';
+import { assertCodexBundle, getCodexBundle, prependCodexPathDir, type CodexBundle } from './codex-paths';
 
 type CodexBridgeOptions = {
   codexPath?: string;
@@ -13,6 +14,7 @@ type CodexBridgeOptions = {
   workDir?: string;
   mode?: 'suggest' | 'auto-edit' | 'full-auto' | 'yolo';
   proxyEnvProvider?: () => Record<string, string> | Promise<Record<string, string>>;
+  codexBundle?: CodexBundle;
 };
 
 export type CodexBridgeSendResult = {
@@ -140,10 +142,12 @@ export class CodexCliBridge {
   private readonly workDir: string;
   private readonly mode: CodexBridgeOptions['mode'];
   private readonly proxyEnvProvider: NonNullable<CodexBridgeOptions['proxyEnvProvider']>;
+  private readonly codexBundle: CodexBundle;
   private providerProfile: CodexProviderProfile | null = null;
 
   constructor(options: CodexBridgeOptions) {
-    this.codexPath = options.codexPath || process.env.CLAWX_CODEX_PATH || 'codex';
+    this.codexBundle = options.codexBundle ?? getCodexBundle();
+    this.codexPath = options.codexPath || assertCodexBundle(this.codexBundle).binaryPath;
     this.sessionsDir = options.sessionsDir;
     this.workDir = options.workDir || process.env.CLAWX_CODEX_WORKDIR || process.cwd();
     this.mode = options.mode || 'full-auto';
@@ -362,13 +366,14 @@ export class CodexCliBridge {
     await mkdir(this.sessionsDir, { recursive: true });
     const proxyEnv = await this.proxyEnvProvider();
     return new Promise((resolve) => {
+      const baseEnv = prependCodexPathDir({
+        ...process.env,
+        ...proxyEnv,
+        ...(options.env ?? {}),
+      }, this.codexBundle);
       const child = spawn(this.codexPath, args, {
         cwd: this.workDir,
-        env: {
-          ...process.env,
-          ...proxyEnv,
-          ...(options.env ?? {}),
-        },
+        env: baseEnv,
         stdio: ['ignore', 'pipe', 'pipe'],
       });
       let stdout = '';

@@ -154,8 +154,8 @@ function registerTypedHostHandlers(
     media: createMediaApi(),
     sessions: createSessionsApi(runtimeManager),
     chat: createChatApi({ gatewayManager, runtimeManager }),
-    cron: createCronApi({ gatewayManager }),
-    skills: createSkillsApi({ clawHubService, gatewayManager }),
+    cron: createCronApi({ gatewayManager, runtimeManager }),
+    skills: createSkillsApi({ clawHubService, gatewayManager, runtimeManager }),
     usage: createUsageApi(),
   });
   registerHostInvokeHandler(hostApiRegistry);

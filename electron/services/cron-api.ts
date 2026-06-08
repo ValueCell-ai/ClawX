@@ -3,6 +3,7 @@ import { join } from 'node:path';
 import type { CompleteHostServiceRegistry } from '../main/ipc/host-contract';
 import type { CronJob, CronJobDelivery, CronSchedule } from '@shared/types/cron';
 import type { GatewayManager } from '../gateway/manager';
+import type { RuntimeManager } from '../runtime/manager';
 import { getOpenClawConfigDir } from '../utils/paths';
 import { resolveAgentIdFromChannel } from '../utils/agent-config';
 import { toOpenClawChannelType, toUiChannelType } from '../utils/channel-alias';
@@ -468,10 +469,28 @@ function getId(payload: unknown): string {
   return id.trim();
 }
 
-export function createCronApi({ gatewayManager }: { gatewayManager: GatewayManager }): CompleteHostServiceRegistry['cron'] {
+async function isCcConnectRuntime(runtimeManager?: RuntimeManager): Promise<boolean> {
+  return runtimeManager ? await runtimeManager.getActiveKind() === 'cc-connect' : false;
+}
+
+export function createCronApi({
+  gatewayManager,
+  runtimeManager,
+}: {
+  gatewayManager: GatewayManager;
+  runtimeManager?: RuntimeManager;
+}): CompleteHostServiceRegistry['cron'] {
   return {
-    list: async () => listCronJobs(gatewayManager),
+    list: async () => {
+      if (await isCcConnectRuntime(runtimeManager)) {
+        return await runtimeManager!.rpc<CronJob[]>('cron.list');
+      }
+      return listCronJobs(gatewayManager);
+    },
     create: async (payload) => {
+      if (await isCcConnectRuntime(runtimeManager)) {
+        return await runtimeManager!.rpc<CronJob>('cron.create', payload);
+      }
       const input = payload;
       const agentId = typeof input.agentId === 'string' && input.agentId.trim() ? input.agentId.trim() : 'main';
       const delivery = normalizeCronDelivery(input.delivery);
@@ -495,6 +514,9 @@ export function createCronApi({ gatewayManager }: { gatewayManager: GatewayManag
       return transformCronJob(result as GatewayCronJob);
     },
     update: async (payload) => {
+      if (await isCcConnectRuntime(runtimeManager)) {
+        return await runtimeManager!.rpc<CronJob>('cron.update', payload);
+      }
       const body = payload;
       const id = getId(body);
       const input = isRecord(body.input) ? body.input : {};
@@ -520,16 +542,36 @@ export function createCronApi({ gatewayManager }: { gatewayManager: GatewayManag
       }
       return transformCronJob(result as GatewayCronJob);
     },
-    delete: async (payload) => gatewayManager.rpc('cron.remove', { id: getId(payload) }),
+    delete: async (payload) => {
+      if (await isCcConnectRuntime(runtimeManager)) {
+        return await runtimeManager!.rpc('cron.remove', { id: getId(payload) });
+      }
+      return gatewayManager.rpc('cron.remove', { id: getId(payload) });
+    },
     toggle: async (payload) => {
+      if (await isCcConnectRuntime(runtimeManager)) {
+        return await runtimeManager!.rpc('cron.update', { id: getId(payload), input: { enabled: payload.enabled === true } });
+      }
       const body = payload;
       return gatewayManager.rpc('cron.update', {
         id: getId(body),
         patch: { enabled: body.enabled === true },
       });
     },
-    trigger: async (payload) => gatewayManager.rpc('cron.run', { id: getId(payload), mode: 'force' }),
+    trigger: async (payload) => {
+      if (await isCcConnectRuntime(runtimeManager)) {
+        return await runtimeManager!.rpc('cron.run', { id: getId(payload), mode: 'force' });
+      }
+      return gatewayManager.rpc('cron.run', { id: getId(payload), mode: 'force' });
+    },
     sessionHistory: async (payload) => {
+      if (await isCcConnectRuntime(runtimeManager)) {
+        const body = payload;
+        return await runtimeManager!.rpc('chat.history', {
+          sessionKey: typeof body.sessionKey === 'string' ? body.sessionKey : '',
+          limit: typeof body.limit === 'number' ? body.limit : 200,
+        });
+      }
       const body = payload;
       const sessionKey = typeof body.sessionKey === 'string' ? body.sessionKey.trim() : '';
       const parsedSession = parseCronSessionKey(sessionKey);

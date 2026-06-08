@@ -27,27 +27,20 @@ export function getCcConnectProviderProfilePath(): string {
 }
 
 export function getCcConnectBinaryPath(): string {
-  if (process.env.CLAWX_CC_CONNECT_PATH?.trim()) {
-    return process.env.CLAWX_CC_CONNECT_PATH.trim();
-  }
   if (app.isPackaged) {
     return join(process.resourcesPath, 'cc-connect', binaryName());
-  }
-  const nodeModulesBinary = join(process.cwd(), 'node_modules', 'cc-connect', 'bin', binaryName());
-  if (existsSync(nodeModulesBinary)) {
-    return nodeModulesBinary;
   }
   const bundledDevBinary = join(process.cwd(), 'build', 'cc-connect', `${process.platform}-${process.arch}`, binaryName());
   if (existsSync(bundledDevBinary)) {
     return bundledDevBinary;
   }
-  return nodeModulesBinary;
+  return bundledDevBinary;
 }
 
 export function assertCcConnectBinaryPath(candidate = getCcConnectBinaryPath()): string {
   if (!existsSync(candidate)) {
     throw new Error(
-      `cc-connect binary not found at ${candidate}. Run pnpm install or pnpm run bundle:cc-connect:current before selecting cc-connect runtime.`,
+      `cc-connect binary not found at ${candidate}. Run pnpm run bundle:cc-connect:current before selecting cc-connect runtime.`,
     );
   }
   return candidate;

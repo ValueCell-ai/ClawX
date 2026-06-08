@@ -95,7 +95,7 @@ We are committed to maintaining strict alignment with the upstream OpenClaw proj
 
 When Developer Mode is enabled, the sidebar also provides a native Dreams page for OpenClaw memory review, dream diary inspection, and basic maintenance actions. The full upstream OpenClaw Dreams UI remains available from that page when deeper diagnostics are needed.
 
-ClawX also includes a runtime abstraction layer. OpenClaw remains the default runtime and rollback path, while **Settings → Gateway → Runtime** can switch to an optional bundled `cc-connect` runtime. Packaged builds include the required cc-connect binary in app resources; cc-connect uses a ClawX-managed configuration directory under app user data instead of modifying `~/.cc-connect`. OpenAI API key, OpenAI OAuth/Codex, and Ollama provider selections are converted into managed Codex launch profiles for cc-connect mode.
+ClawX also includes a runtime abstraction layer. OpenClaw remains the default runtime and rollback path, while **Settings → Gateway → Runtime** can switch to an optional bundled `cc-connect` runtime. Packaged builds include both the cc-connect binary and the native OpenAI Codex CLI bundle in app resources; runtime startup does not depend on global installs, PATH binaries, or app-time downloads. cc-connect uses a ClawX-managed configuration directory under app user data instead of modifying `~/.cc-connect`, and GUI chat connects through cc-connect BridgePlatform with Codex as the project agent. Provider/model selections, cron tasks, and enabled skills are synchronized into the managed cc-connect/Codex runtime.
 
 ---
 
@@ -125,6 +125,7 @@ The Cron page now lets you configure external delivery directly in the task form
 Extend your AI agents with pre-built skills. The integrated Skills page is local-first: it scans managed/workspace skill directories, lets you enable or disable skills without depending on the Gateway, and can optionally expose an extension-provided marketplace in enterprise builds.
 ClawX also pre-bundles full document-processing skills (`pdf`, `xlsx`, `docx`, `pptx`), deploys them automatically to the managed skills directory (default `~/.openclaw/skills`) on startup, and enables them by default on first install. Additional bundled skills (`find-skills`, `self-improving-agent`, `tavily-search`) are also enabled by default; if required API keys are missing, OpenClaw will surface configuration errors in runtime.  
 The Skills page can display skills discovered from multiple OpenClaw sources (managed dir, workspace, and extra skill dirs), and now shows each skill's actual location so you can open the real folder directly. For bundled OpenClaw skills, community builds now ship and expose only `skill-creator`; non-allowlisted bundled skills are physically trimmed in both dev and packaged startup, and any stale `openclaw.json` entries left behind for those removed bundled skills are pruned.
+When cc-connect runtime is active, enabled local skills are mirrored into the managed Codex home under app user data so the bundled Codex agent can use the same skill set without reading global skill directories.
 
 Environment variables for bundled search skills:
 - `TAVILY_API_KEY` for `tavily-search` (OAuth may also be supported by upstream skill runtime)

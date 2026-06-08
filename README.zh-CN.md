@@ -96,7 +96,7 @@ ClawX 直接基于官方 **OpenClaw** 核心构建。无需单独安装，我们
 
 打开开发者模式后，侧边栏还会提供原生 Dreams 页面，可在 ClawX 内查看 OpenClaw 记忆回顾、梦境日记，并执行基础维护操作；需要更深诊断时仍可从该页面打开完整 OpenClaw Dreams UI。
 
-ClawX 现在也包含 runtime 抽象层。OpenClaw 仍是默认 runtime 和回滚路径，你可以在 **设置 → 网关 → Runtime** 切换到可选的内置 `cc-connect` runtime。打包产物会把 cc-connect 二进制放入应用 resources；cc-connect 使用 ClawX 在 app userData 下托管的配置目录，不会自动修改 `~/.cc-connect`。OpenAI API key、OpenAI OAuth/Codex 和 Ollama provider 选择会被转换为 cc-connect 模式下的托管 Codex 启动 profile。
+ClawX 现在也包含 runtime 抽象层。OpenClaw 仍是默认 runtime 和回滚路径，你可以在 **设置 → 网关 → Runtime** 切换到可选的内置 `cc-connect` runtime。打包产物会同时内置 cc-connect 二进制和 OpenAI Codex 原生 CLI bundle；runtime 启动不依赖全局安装、PATH 二进制或运行时下载。cc-connect 使用 ClawX 在 app userData 下托管的配置目录，不会自动修改 `~/.cc-connect`，GUI chat 会通过 cc-connect BridgePlatform 连接到 Codex project agent。Provider/model、cron 任务和已启用 skills 会同步到托管的 cc-connect/Codex runtime。
 
 ---
 
@@ -126,6 +126,7 @@ ClawX 现在还内置了腾讯官方个人微信渠道插件，可直接在 Chan
 通过预构建的技能扩展 AI 智能体的能力。集成的 Skills 页面采用“本地优先”方式：会扫描托管目录与 workspace 技能目录，并且无需依赖 Gateway 即可启用或停用技能；在企业扩展接管时，也可以显示扩展提供的 marketplace。
 ClawX 还会内置预装完整的文档处理技能（`pdf`、`xlsx`、`docx`、`pptx`），在启动时自动部署到托管技能目录（默认 `~/.openclaw/skills`），并在首次安装时默认启用。额外预装技能（`find-skills`、`self-improving-agent`、`tavily-search`）也会默认启用；若缺少必需的 API Key，OpenClaw 会在运行时给出配置错误提示。  
 Skills 页面可展示来自多个 OpenClaw 来源的技能（托管目录、workspace、额外技能目录），并显示每个技能的实际路径，便于直接打开真实安装位置。对于 OpenClaw 自带的 bundled skills，社区版现在在打包产物里只保留并展示 `skill-creator`；开发模式和打包版启动时都会直接清理其它 bundled skill，同时把这些已删除 bundled skill 在 `openclaw.json` 中残留的旧配置一并移除。
+当 cc-connect runtime 处于启用状态时，ClawX 会把已启用的本地 skills 镜像到 app userData 下托管的 Codex home 中，让内置 Codex agent 使用同一套技能，而不读取全局 skill 目录。
 
 重点搜索技能所需环境变量：
 - `TAVILY_API_KEY`：用于 `tavily-search`（上游运行时也可能支持 OAuth）

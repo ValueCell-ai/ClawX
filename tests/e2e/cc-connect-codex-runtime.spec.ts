@@ -1,4 +1,4 @@
-import { chmod, mkdir, readFile, writeFile } from 'node:fs/promises';
+import { chmod, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { closeElectronApp, expect, getStableWindow, test } from './fixtures/electron';
 
@@ -8,7 +8,8 @@ async function writeExecutable(path: string, content: string): Promise<void> {
 }
 
 async function createMockCodexBinary(dir: string): Promise<string> {
-  const binaryPath = join(dir, 'codex-mock.cjs');
+  const binaryPath = join(dir, 'bin', process.platform === 'win32' ? 'codex.exe' : 'codex');
+  await mkdir(join(binaryPath, '..'), { recursive: true });
   await writeExecutable(binaryPath, `#!/usr/bin/env node
 const fs = require('node:fs');
 const args = process.argv.slice(2);
@@ -39,8 +40,11 @@ process.exit(0);
 }
 
 async function createMockCcConnectBinary(dir: string): Promise<string> {
-  const binaryPath = join(dir, 'cc-connect-mock.cjs');
+  const binaryPath = join(dir, process.platform === 'win32' ? 'cc-connect.exe' : 'cc-connect');
+  await mkdir(dir, { recursive: true });
   await writeExecutable(binaryPath, `#!/usr/bin/env node
+const http = require('node:http');
+const WebSocket = require('ws');
 const args = process.argv.slice(2);
 if (args.includes('--version')) {
   process.stdout.write('cc-connect v1.3.2 e2e-mock\\n');
@@ -50,10 +54,59 @@ if (args[0] === 'doctor') {
   process.stdout.write('cc-connect doctor e2e ok\\n');
   process.exit(0);
 }
-process.stdout.write('cc-connect e2e mock\\n');
-process.exit(0);
+const server = http.createServer((req, res) => {
+  if (req.url && req.url.startsWith('/api/v1/status')) {
+    res.writeHead(200, { 'content-type': 'application/json' });
+    res.end(JSON.stringify({ ok: true }));
+    return;
+  }
+  if (req.url && req.url.startsWith('/api/v1/cron')) {
+    res.writeHead(200, { 'content-type': 'application/json' });
+    res.end(JSON.stringify({ jobs: [] }));
+    return;
+  }
+  res.writeHead(404);
+  res.end('{}');
+});
+const wss = new WebSocket.Server({ noServer: true });
+server.on('upgrade', (req, socket, head) => {
+  if (!req.url || !req.url.startsWith('/bridge/ws')) {
+    socket.destroy();
+    return;
+  }
+  wss.handleUpgrade(req, socket, head, (ws) => wss.emit('connection', ws, req));
+});
+wss.on('connection', (ws) => {
+  ws.on('message', (raw) => {
+    const msg = JSON.parse(String(raw));
+    if (msg.type === 'register') {
+      ws.send(JSON.stringify({ type: 'register_ack', ok: true }));
+      return;
+    }
+    if (msg.type === 'message') {
+      ws.send(JSON.stringify({
+        type: 'reply',
+        reply_ctx: msg.reply_ctx,
+        content: 'cc-connect bridge E2E response',
+      }));
+    }
+  });
+});
+server.listen(9810, '127.0.0.1');
+process.stdout.write('cc-connect bridge e2e mock ready\\n');
+process.on('SIGTERM', () => server.close(() => process.exit(0)));
+process.on('SIGINT', () => server.close(() => process.exit(0)));
 `);
   return binaryPath;
+}
+
+async function prepareMockBundles(userDataDir: string): Promise<void> {
+  const target = `${process.platform}-${process.arch}`;
+  await rm(join(process.cwd(), 'build', 'codex', target), { recursive: true, force: true });
+  await rm(join(process.cwd(), 'build', 'cc-connect', target), { recursive: true, force: true });
+  await createMockCodexBinary(join(process.cwd(), 'build', 'codex', target));
+  await createMockCcConnectBinary(join(process.cwd(), 'build', 'cc-connect', target));
+  await writeFile(join(userDataDir, 'codex-bundle-ready'), 'ok', 'utf8');
 }
 
 test.describe('cc-connect + Codex runtime E2E', () => {
@@ -63,10 +116,7 @@ test.describe('cc-connect + Codex runtime E2E', () => {
     launchElectronApp,
     userDataDir,
   }) => {
-    const binDir = join(userDataDir, 'mock-bin');
-    await mkdir(binDir, { recursive: true });
-    const codexPath = await createMockCodexBinary(binDir);
-    const ccConnectPath = await createMockCcConnectBinary(binDir);
+    await prepareMockBundles(userDataDir);
 
     await writeFile(join(userDataDir, 'settings.json'), JSON.stringify({
       language: 'en',
@@ -92,15 +142,10 @@ test.describe('cc-connect + Codex runtime E2E', () => {
       apiKeys: {},
       defaultProviderAccountId: 'ollama-local',
     }, null, 2), 'utf8');
-    const codexArgsPath = join(userDataDir, 'codex-args.json');
-
     const app = await launchElectronApp({
       skipSetup: true,
       env: {
-        CLAWX_CODEX_PATH: codexPath,
         CLAWX_CODEX_WORKDIR: process.cwd(),
-        CLAWX_CC_CONNECT_PATH: ccConnectPath,
-        CLAWX_E2E_CODEX_ARGS_PATH: codexArgsPath,
       },
     });
 
@@ -145,7 +190,8 @@ test.describe('cc-connect + Codex runtime E2E', () => {
       });
 
       const managedConfig = join(userDataDir, 'runtimes', 'cc-connect', 'config.toml');
-      await expect.poll(async () => await readFile(managedConfig, 'utf8')).toContain('Codex project template');
+      await expect.poll(async () => await readFile(managedConfig, 'utf8')).toContain('path = "/bridge/ws"');
+      await expect.poll(async () => await readFile(managedConfig, 'utf8')).toContain('cmd = "');
 
       await expect(page.getByTestId('chat-composer-input')).toBeEnabled({ timeout: 30_000 });
       await page.getByTestId('chat-composer-input').fill('hello codex runtime');
@@ -165,15 +211,12 @@ test.describe('cc-connect + Codex runtime E2E', () => {
           success: true,
           messages: expect.arrayContaining([
             expect.objectContaining({ role: 'user', content: 'hello codex runtime' }),
-            expect.objectContaining({ role: 'assistant', content: 'Codex E2E response from mock binary' }),
+            expect.objectContaining({ role: 'assistant', content: 'cc-connect bridge E2E response' }),
           ]),
         },
       });
 
-      await expect(page.getByText('Codex E2E response from mock binary')).toBeVisible({ timeout: 30_000 });
-      await expect.poll(async () => JSON.parse(await readFile(codexArgsPath, 'utf8'))).toEqual(
-        expect.arrayContaining(['--oss', '--local-provider', 'ollama', '--model', 'qwen3:latest']),
-      );
+      await expect(page.getByText('cc-connect bridge E2E response')).toBeVisible({ timeout: 30_000 });
 
       const history = await readHistory();
       expect(history).toMatchObject({
@@ -182,7 +225,7 @@ test.describe('cc-connect + Codex runtime E2E', () => {
           success: true,
           messages: expect.arrayContaining([
             expect.objectContaining({ role: 'user', content: 'hello codex runtime' }),
-            expect.objectContaining({ role: 'assistant', content: 'Codex E2E response from mock binary' }),
+            expect.objectContaining({ role: 'assistant', content: 'cc-connect bridge E2E response' }),
           ]),
         },
       });
@@ -195,10 +238,7 @@ test.describe('cc-connect + Codex runtime E2E', () => {
     launchElectronApp,
     userDataDir,
   }) => {
-    const binDir = join(userDataDir, 'mock-bin');
-    await mkdir(binDir, { recursive: true });
-    const codexPath = await createMockCodexBinary(binDir);
-    const ccConnectPath = await createMockCcConnectBinary(binDir);
+    await prepareMockBundles(userDataDir);
     const createdAt = '2026-06-07T00:00:00.000Z';
 
     await writeFile(join(userDataDir, 'settings.json'), JSON.stringify({
@@ -237,17 +277,10 @@ test.describe('cc-connect + Codex runtime E2E', () => {
       apiKeys: {},
       defaultProviderAccountId: 'openai-oauth',
     }, null, 2), 'utf8');
-    const codexArgsPath = join(userDataDir, 'codex-oauth-args.json');
-    const codexEnvPath = join(userDataDir, 'codex-oauth-env.json');
-
     const app = await launchElectronApp({
       skipSetup: true,
       env: {
-        CLAWX_CODEX_PATH: codexPath,
         CLAWX_CODEX_WORKDIR: process.cwd(),
-        CLAWX_CC_CONNECT_PATH: ccConnectPath,
-        CLAWX_E2E_CODEX_ARGS_PATH: codexArgsPath,
-        CLAWX_E2E_CODEX_ENV_PATH: codexEnvPath,
       },
     });
 
@@ -270,15 +303,9 @@ test.describe('cc-connect + Codex runtime E2E', () => {
       await expect(page.getByTestId('chat-composer-input')).toBeEnabled({ timeout: 30_000 });
       await page.getByTestId('chat-composer-input').fill('hello openai oauth codex runtime');
       await page.getByTestId('chat-composer-send').click();
-      await expect(page.getByText('Codex E2E response from mock binary')).toBeVisible({ timeout: 30_000 });
+      await expect(page.getByText('cc-connect bridge E2E response')).toBeVisible({ timeout: 30_000 });
 
       const managedCodexHome = join(userDataDir, 'runtimes', 'cc-connect', 'codex-home');
-      await expect.poll(async () => JSON.parse(await readFile(codexArgsPath, 'utf8'))).toEqual(
-        expect.arrayContaining(['--model', 'gpt-5.5']),
-      );
-      await expect.poll(async () => JSON.parse(await readFile(codexEnvPath, 'utf8'))).toEqual({
-        CODEX_HOME: managedCodexHome,
-      });
 
       const authJson = JSON.parse(await readFile(join(managedCodexHome, 'auth.json'), 'utf8'));
       expect(authJson).toMatchObject({

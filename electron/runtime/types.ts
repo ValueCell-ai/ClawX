@@ -103,9 +103,9 @@ export const CC_CONNECT_RUNTIME_CAPABILITIES: RuntimeCapabilities = {
   providers: true,
   models: true,
   channels: false,
-  cron: false,
+  cron: true,
   logs: true,
-  skills: false,
+  skills: true,
   doctor: true,
   controlUi: false,
 };

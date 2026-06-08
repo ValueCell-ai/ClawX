@@ -95,7 +95,7 @@ ClawXは公式の**OpenClaw**コアを直接ベースに構築されています
 
 開発者モードを有効にすると、サイドバーにはネイティブの Dreams ページも表示され、ClawX 内で OpenClaw の記憶レビュー、夢日記、基本メンテナンス操作を扱えます。詳細な診断が必要な場合は、そのページから完全版の OpenClaw Dreams UI も開けます。
 
-ClawX には runtime 抽象レイヤーもあります。OpenClaw は既定 runtime とロールバック経路のままで、**設定 → Gateway → Runtime** から任意の同梱 `cc-connect` runtime に切り替えられます。パッケージ版は必要な cc-connect バイナリを app resources に含め、cc-connect は `~/.cc-connect` を自動変更せず、app userData 配下の ClawX 管理ディレクトリを使います。OpenAI API key、OpenAI OAuth/Codex、Ollama provider の選択は、cc-connect モード用の ClawX 管理 Codex 起動 profile に変換されます。
+ClawX には runtime 抽象レイヤーもあります。OpenClaw は既定 runtime とロールバック経路のままで、**設定 → Gateway → Runtime** から任意の同梱 `cc-connect` runtime に切り替えられます。パッケージ版は cc-connect バイナリと OpenAI Codex ネイティブ CLI bundle の両方を app resources に含め、runtime 起動はグローバルインストール、PATH 上のバイナリ、起動時ダウンロードに依存しません。cc-connect は `~/.cc-connect` を自動変更せず、app userData 配下の ClawX 管理ディレクトリを使います。GUI chat は cc-connect BridgePlatform 経由で Codex project agent に接続し、provider/model、cron、enabled skills は管理された cc-connect/Codex runtime に同期されます。
 
 ---
 
@@ -125,6 +125,7 @@ AIタスクを自動的に実行するようスケジュール設定できます
 事前構築されたスキルでAIエージェントを拡張できます。統合 Skills ページはローカル優先で、管理ディレクトリや workspace のスキルをスキャンし、Gateway に依存せず有効/無効を切り替えられます。エンタープライズ拡張がある場合は、その拡張が提供する marketplace も表示できます。
 ClawX はドキュメント処理スキル（`pdf`、`xlsx`、`docx`、`pptx`）もフル内容で同梱し、起動時に管理スキルディレクトリ（既定 `~/.openclaw/skills`）へ自動配備し、初回インストール時に既定で有効化します。追加の同梱スキル（`find-skills`、`self-improving-agent`、`tavily-search`）も既定で有効化されますが、必要な API キーが未設定の場合は OpenClaw が実行時に設定エラーを表示します。  
 Skills ページでは OpenClaw の複数ソース（管理ディレクトリ、workspace、追加スキルディレクトリ）から検出されたスキルを表示でき、各スキルの実際のパスを確認して実フォルダを直接開けます。OpenClaw 同梱の bundled skill については、コミュニティ版ではパッケージにも表示にも `skill-creator` のみを残し、dev 起動時と packaged 起動時の両方で他の bundled skill を物理的に削除します。さらに、削除済み bundled skill の古い `openclaw.json` エントリも一緒に掃除します。
+cc-connect runtime が有効な場合、有効化されたローカル skills は app userData 配下の管理 Codex home にミラーされ、同梱 Codex agent がグローバル skill ディレクトリを読まずに同じ skill セットを使えます。
 
 主な検索スキルで必要な環境変数:
 - `TAVILY_API_KEY`: `tavily-search` 用（上流ランタイムで OAuth 対応の場合あり）

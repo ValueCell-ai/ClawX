@@ -45,4 +45,18 @@ describe('cc-connect path resolver', () => {
     expect(getCcConnectBinaryPath()).toBe(bundledPath);
     expect(assertCcConnectBinaryPath()).toBe(bundledPath);
   });
+
+  it('does not use the npm postinstall binary as a runtime fallback', async () => {
+    const binaryName = process.platform === 'win32' ? 'cc-connect.exe' : 'cc-connect';
+    const nodeModulesBinary = join(process.cwd(), 'node_modules', 'cc-connect', 'bin', binaryName);
+    await mkdir(join(nodeModulesBinary, '..'), { recursive: true });
+    await writeFile(nodeModulesBinary, 'mock cc-connect from node_modules', 'utf8');
+    await chmod(nodeModulesBinary, 0o755);
+
+    const { getCcConnectBinaryPath, assertCcConnectBinaryPath } = await import('@electron/runtime/cc-connect-paths');
+
+    expect(getCcConnectBinaryPath()).toContain(join('build', 'cc-connect', `${process.platform}-${process.arch}`));
+    expect(getCcConnectBinaryPath()).not.toBe(nodeModulesBinary);
+    expect(() => assertCcConnectBinaryPath()).toThrow('pnpm run bundle:cc-connect:current');
+  });
 });
