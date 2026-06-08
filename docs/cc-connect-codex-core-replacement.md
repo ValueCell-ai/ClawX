@@ -118,7 +118,7 @@ Current implemented capability flags for cc-connect mode:
 - `cron`: supported through cc-connect Management API
 - `skills`: supported through managed Codex home mirroring
 - `channels`: supported through cc-connect platform bridge status snapshots
-- `controlUi`: not yet marked supported in the runtime capability matrix
+- `controlUi`: supported through the cc-connect Web Admin on the managed management port
 
 ## Acceptance
 

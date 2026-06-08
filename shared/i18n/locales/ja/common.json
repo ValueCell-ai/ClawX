@@ -12,6 +12,7 @@
         "models": "モデル",
         "deleteSessionConfirm": "「{{label}}」を削除しますか？",
         "openClawPage": "OpenClaw ページ",
+        "ccConnectPage": "CC Connect ページ",
         "openClawDreams": "夢",
         "renameSession": "名前を変更",
         "deleteSession": "削除",

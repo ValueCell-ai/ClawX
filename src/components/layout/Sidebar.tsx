@@ -161,11 +161,16 @@ export function Sidebar() {
 
   const navigate = useNavigate();
   const isOnChat = useLocation().pathname === '/';
+  const { t } = useTranslation(['common', 'chat']);
 
   const getSessionLabel = (key: string, displayName?: string, label?: string) =>
     sessionLabels[key] ?? label ?? displayName ?? key;
 
-  const openControlUi = async (view?: 'dreams', label = 'OpenClaw Page') => {
+  const controlUiLabel = gatewayStatus.runtimeKind === 'cc-connect'
+    ? t('common:sidebar.ccConnectPage')
+    : t('common:sidebar.openClawPage');
+
+  const openControlUi = async (view?: 'dreams', label = controlUiLabel) => {
     try {
       const result = await hostApi.gateway.controlUi(view);
       if (result.success && result.url) {
@@ -179,10 +184,9 @@ export function Sidebar() {
   };
 
   const openDevConsole = async () => {
-    await openControlUi(undefined, 'OpenClaw Page');
+    await openControlUi(undefined, controlUiLabel);
   };
 
-  const { t } = useTranslation(['common', 'chat']);
   const [sessionToDelete, setSessionToDelete] = useState<{ key: string; label: string } | null>(null);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [editingSessionKey, setEditingSessionKey] = useState<string | null>(null);
@@ -609,7 +613,7 @@ export function Sidebar() {
             </div>
             {!sidebarCollapsed && (
               <>
-                <span className="flex-1 text-left overflow-hidden text-ellipsis whitespace-nowrap">{t('common:sidebar.openClawPage')}</span>
+                <span className="flex-1 text-left overflow-hidden text-ellipsis whitespace-nowrap">{controlUiLabel}</span>
                 <ExternalLink className="ml-auto h-3 w-3 shrink-0 opacity-50 text-current" />
               </>
             )}

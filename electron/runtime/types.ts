@@ -107,7 +107,7 @@ export const CC_CONNECT_RUNTIME_CAPABILITIES: RuntimeCapabilities = {
   logs: true,
   skills: true,
   doctor: true,
-  controlUi: false,
+  controlUi: true,
 };
 
 export function withRuntimeStatus(

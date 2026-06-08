@@ -99,7 +99,7 @@ ClawX also includes a runtime abstraction layer. OpenClaw remains the default ru
 
 In cc-connect mode, Codex provider sync supports OpenAI API key, OpenAI OAuth/Codex, Ollama, and Custom OpenAI-compatible providers that expose the Responses API. Custom providers configured for Chat Completions are reported as unsupported before chat delivery because Codex 0.137 accepts only the Responses wire API.
 
-cc-connect also owns messaging platform bridges. When cc-connect is the active runtime, channel status probes are routed through the runtime abstraction instead of the OpenClaw Gateway.
+cc-connect also owns messaging platform bridges. When cc-connect is the active runtime, channel status probes are routed through the runtime abstraction instead of the OpenClaw Gateway, and the Developer Mode sidebar page shortcut opens cc-connect Web Admin.
 
 ---
 

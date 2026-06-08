@@ -99,6 +99,8 @@ OpenClaw-specific logic remains scoped to the OpenClaw path:
 - OpenClaw Control UI
 - OpenClaw config repair
 
+When `cc-connect` is active, the same typed `gateway.controlUi` host route opens cc-connect Web Admin instead of OpenClaw Control UI.
+
 Provider, agent, channel, and cron routes should be migrated capability-by-capability. They must not assume `~/.openclaw` when the active runtime is not OpenClaw.
 
 ## cc-connect Managed Runtime

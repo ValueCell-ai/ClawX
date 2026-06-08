@@ -20,7 +20,7 @@ test.describe('Settings runtime selector', () => {
             logs: true,
             skills: true,
             doctor: true,
-            controlUi: false,
+            controlUi: true,
           },
         },
       });
@@ -40,5 +40,6 @@ test.describe('Settings runtime selector', () => {
     await devModeToggle.click();
     await expect(page.getByTestId('settings-run-doctor-button')).toBeVisible();
     await expect(page.getByTestId('settings-run-doctor-fix-button')).toBeDisabled();
+    await expect(page.getByTestId('sidebar-open-dev-console')).toContainText('CC Connect Page');
   });
 });

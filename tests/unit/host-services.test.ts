@@ -379,6 +379,36 @@ describe('host services', () => {
     expect(gatewayManager.rpc).toHaveBeenCalledWith('chat.history', { limit: 1 }, 42);
   });
 
+  it('opens the cc-connect Web Admin URL through the active runtime', async () => {
+    const runtimeManager = {
+      getStatus: vi.fn(() => ({
+        state: 'running',
+        port: 9820,
+        runtimeKind: 'cc-connect',
+        capabilities: { controlUi: true },
+      })),
+      rpc: vi.fn(async () => ({
+        success: true,
+        url: 'http://127.0.0.1:9820/',
+        token: 'cc-connect-management-token',
+        port: 9820,
+      })),
+    };
+    const backpressure = {
+      run: vi.fn(),
+    };
+    const { createGatewayApi } = await import('@electron/services/gateway-api');
+
+    await expect(createGatewayApi(runtimeManager as never, backpressure as never).controlUi()).resolves.toEqual({
+      success: true,
+      url: 'http://127.0.0.1:9820/',
+      token: 'cc-connect-management-token',
+      port: 9820,
+    });
+
+    expect(runtimeManager.rpc).toHaveBeenCalledWith('runtime.controlUi', {}, 5000);
+  });
+
   it('exposes provider account snapshot actions through the typed providers service', async () => {
     const account = {
       id: 'custom-local',

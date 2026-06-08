@@ -55,16 +55,26 @@ export function createGatewayApi(
     },
     controlUi: async (payload) => {
       const status = runtimeManager.getStatus();
+      const body = isRecord(payload) ? payload as ControlUiPayload : {};
+      const view = body.view === 'dreams' ? 'dreams' : undefined;
+      const runtimeControlUiPayload = view ? { view } : {};
+      if (status.runtimeKind === 'cc-connect') {
+        if (!status.capabilities?.controlUi) {
+          return {
+            success: false,
+            error: 'cc-connect runtime does not support Web Admin',
+          };
+        }
+        return await runtimeManager.rpc('runtime.controlUi', runtimeControlUiPayload, 5000);
+      }
       if (!status.capabilities?.controlUi || status.runtimeKind !== 'openclaw' || !gatewayManager) {
         return {
           success: false,
           error: `${status.runtimeKind ?? 'runtime'} runtime does not support OpenClaw Control UI`,
         };
       }
-      const body = isRecord(payload) ? payload as ControlUiPayload : {};
       const token = await getSetting('gatewayToken');
       const port = status.port || PORTS.OPENCLAW_GATEWAY;
-      const view = body.view === 'dreams' ? 'dreams' : undefined;
       const url = buildOpenClawControlUiUrl(port, token, { view });
       scheduleControlUiDeviceAutoApproval(gatewayManager);
       return { success: true, url, token, port };

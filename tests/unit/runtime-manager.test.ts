@@ -55,7 +55,7 @@ function createProvider(kind: RuntimeProvider['kind']) {
       logs: true,
       skills: kind === 'openclaw',
       doctor: true,
-      controlUi: kind === 'openclaw',
+      controlUi: true,
     })),
   };
   return { provider, emitter };
@@ -90,7 +90,7 @@ describe('RuntimeManager', () => {
     expect(openclaw.stop).toHaveBeenCalledOnce();
     expect(settings.get('runtimeKind')).toBe('cc-connect');
     expect(manager.getActiveProvider()).toBe(ccConnect);
-    expect(manager.listCapabilities().controlUi).toBe(false);
+    expect(manager.listCapabilities().controlUi).toBe(true);
   });
 
   it('marks cc-connect channels as supported because cc-connect owns messaging platforms', async () => {

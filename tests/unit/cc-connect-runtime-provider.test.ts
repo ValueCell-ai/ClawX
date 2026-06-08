@@ -1,5 +1,5 @@
 // @vitest-environment node
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -147,6 +147,11 @@ describe('CcConnectRuntimeProvider', () => {
     expect(config).toContain('path = "/bridge/ws"');
     expect(config).toContain('name = "clawx-main"');
     expect(config).toContain('type = "codex"');
+    expect(config).toContain('[[projects.platforms]]');
+    expect(config).toContain('type = "line"');
+    expect(config).toContain('channel_secret = "clawx-local-placeholder"');
+    expect(config).toContain('channel_token = "clawx-local-placeholder"');
+    expect(config).toContain('port = "0"');
     expect(config).toContain(`cmd = "${join(tempDir, 'codex').replace(/\\/g, '\\\\')}"`);
     expect(forkMock).toHaveBeenCalledWith(binaryPath, [
       '-config',
@@ -189,6 +194,23 @@ describe('CcConnectRuntimeProvider', () => {
     });
   });
 
+  it('returns the cc-connect Web Admin URL for runtime control UI', async () => {
+    const binaryPath = join(tempDir, 'cc-connect');
+    await writeFile(binaryPath, '#!/bin/sh\n', { mode: 0o755 });
+    const { CcConnectRuntimeProvider } = await import('@electron/runtime/cc-connect-provider');
+    const provider = new CcConnectRuntimeProvider({
+      binaryPath,
+      codexBridge: createBridgeMock() as never,
+      skillSyncer: vi.fn(async () => ({ skills: [] })),
+    });
+
+    await expect(provider.rpc('runtime.controlUi')).resolves.toMatchObject({
+      success: true,
+      url: 'http://127.0.0.1:9820/',
+      port: 9820,
+    });
+  });
+
   it('returns a stable channel status snapshot for cc-connect channel-capable runtime', async () => {
     const binaryPath = join(tempDir, 'cc-connect');
     await writeFile(binaryPath, '#!/bin/sh\n', { mode: 0o755 });
@@ -203,6 +225,56 @@ describe('CcConnectRuntimeProvider', () => {
       channels: {},
       channelAccounts: {},
       channelDefaultAccountId: {},
+    });
+  });
+
+  it('does not expose the managed local placeholder as a user channel', async () => {
+    const configPath = join(tempDir, 'runtimes', 'cc-connect', 'config.toml');
+    await mkdir(join(tempDir, 'runtimes', 'cc-connect'), { recursive: true });
+    await writeFile(configPath, [
+      '[[projects]]',
+      'name = "clawx-main"',
+      '',
+      '[[projects.platforms]]',
+      'type = "line"',
+      '',
+      '[projects.platforms.options]',
+      'channel_secret = "clawx-local-placeholder"',
+      'channel_token = "clawx-local-placeholder"',
+      'port = "0"',
+      '',
+      '[[projects.platforms]]',
+      'type = "feishu"',
+    ].join('\n'), 'utf8');
+    const binaryPath = join(tempDir, 'cc-connect');
+    await writeFile(binaryPath, '#!/bin/sh\n', { mode: 0o755 });
+    const { CcConnectRuntimeProvider } = await import('@electron/runtime/cc-connect-provider');
+    const provider = new CcConnectRuntimeProvider({
+      binaryPath,
+      codexBridge: createBridgeMock() as never,
+      skillSyncer: vi.fn(async () => ({ skills: [] })),
+    });
+
+    await expect(provider.rpc('channels.status')).resolves.toEqual({
+      channels: {
+        feishu: {
+          configured: true,
+          running: false,
+        },
+      },
+      channelAccounts: {
+        feishu: [{
+          accountId: 'default',
+          configured: true,
+          connected: false,
+          linked: true,
+          name: 'feishu',
+          running: false,
+        }],
+      },
+      channelDefaultAccountId: {
+        feishu: 'default',
+      },
     });
   });
 

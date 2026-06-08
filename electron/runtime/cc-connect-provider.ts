@@ -23,6 +23,7 @@ import {
   getCcConnectManagedDir,
   getCcConnectProviderProfilePath,
 } from './cc-connect-paths';
+import { buildCcConnectWebAdminUrl, CC_CONNECT_MANAGEMENT_PORT } from './cc-connect-control-ui';
 import { CodexCliBridge } from './codex-cli-bridge';
 import { CcConnectBridgeAdapter } from './cc-connect-bridge-adapter';
 import { syncCcConnectSkills } from './cc-connect-skills';
@@ -47,8 +48,8 @@ type CcConnectRuntimeProviderOptions = {
 const CC_CONNECT_DOCTOR_TIMEOUT_MS = 60_000;
 const MAX_DOCTOR_OUTPUT_BYTES = 10 * 1024 * 1024;
 const CLAWX_PROJECT_NAME = 'clawx-main';
-const CC_CONNECT_MANAGEMENT_PORT = 9820;
 const CC_CONNECT_BRIDGE_PORT = 9810;
+const CLAWX_LOCAL_PLACEHOLDER_SECRET = 'clawx-local-placeholder';
 
 function unsupported(method: string): never {
   throw new Error(`cc-connect runtime does not support RPC method: ${method}`);
@@ -116,6 +117,17 @@ function defaultConfig(options: {
     'mode = "full-auto"',
     `cmd = "${escapeToml(options.codexPath)}"`,
     ...(model ? [`model = "${escapeToml(model)}"`] : []),
+    '',
+    '# cc-connect requires at least one project platform before the bridge can start.',
+    '# ClawX GUI traffic is delivered by the local [bridge] adapter above; this LINE webhook',
+    '# placeholder listens only on an ephemeral local port and is filtered from channel status.',
+    '[[projects.platforms]]',
+    'type = "line"',
+    '',
+    '[projects.platforms.options]',
+    `channel_secret = "${CLAWX_LOCAL_PLACEHOLDER_SECRET}"`,
+    `channel_token = "${CLAWX_LOCAL_PLACEHOLDER_SECRET}"`,
+    'port = "0"',
     '',
   ].join('\n');
 }
@@ -249,6 +261,13 @@ export class CcConnectRuntimeProvider extends EventEmitter implements RuntimePro
         } as T;
       case 'channels.status':
         return await this.getChannelStatus() as T;
+      case 'runtime.controlUi':
+        return {
+          success: true,
+          url: buildCcConnectWebAdminUrl(CC_CONNECT_MANAGEMENT_PORT),
+          token: this.managementToken,
+          port: CC_CONNECT_MANAGEMENT_PORT,
+        } as T;
       case 'cron.list':
         return await this.listCronJobs() as T;
       case 'cron.create':
@@ -540,6 +559,7 @@ export class CcConnectRuntimeProvider extends EventEmitter implements RuntimePro
 
     const platformTypes = new Set<string>();
     for (const block of content.split(/\[\[projects\.platforms\]\]/g).slice(1)) {
+      if (isClawxLocalPlaceholderPlatform(block)) continue;
       const match = block.match(/^\s*type\s*=\s*"([^"]+)"/m);
       const channelType = match?.[1]?.trim();
       if (channelType) platformTypes.add(channelType);
@@ -697,6 +717,14 @@ function toProviderSyncPayload(payload: unknown): { providerId?: string; reason?
     providerId: typeof payload.providerId === 'string' ? payload.providerId : undefined,
     reason: typeof payload.reason === 'string' ? payload.reason : undefined,
   };
+}
+
+function isClawxLocalPlaceholderPlatform(block: string): boolean {
+  const type = block.match(/^\s*type\s*=\s*"([^"]+)"/m)?.[1]?.trim();
+  if (type !== 'line') return false;
+  return block.includes(`channel_secret = "${CLAWX_LOCAL_PLACEHOLDER_SECRET}"`)
+    && block.includes(`channel_token = "${CLAWX_LOCAL_PLACEHOLDER_SECRET}"`)
+    && block.includes('port = "0"');
 }
 
 function cronExprFromInput(schedule: unknown): string {
