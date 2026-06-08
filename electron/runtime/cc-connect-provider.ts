@@ -1,7 +1,7 @@
 import { EventEmitter } from 'node:events';
 import { spawn, type ChildProcess } from 'node:child_process';
-import { randomUUID } from 'node:crypto';
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { createHash, randomUUID } from 'node:crypto';
+import { mkdir, readdir, readFile, writeFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import type { OpenClawDoctorMode, OpenClawDoctorResult } from '@shared/host-api/contract';
@@ -51,6 +51,7 @@ const MAX_DOCTOR_OUTPUT_BYTES = 10 * 1024 * 1024;
 const CLAWX_PROJECT_NAME = 'clawx-main';
 const CC_CONNECT_BRIDGE_PORT = 9810;
 const CLAWX_LOCAL_PLACEHOLDER_SECRET = 'clawx-local-placeholder';
+const CODEX_AGENT_SESSION_RESET_MARKER = 'codex-agent-session-reset-v1.json';
 const CC_CONNECT_SUPPORTED_CHANNELS = new Set([
   'dingtalk',
   'discord',
@@ -147,6 +148,7 @@ function defaultConfig(options: {
     '',
     '[[projects]]',
     `name = "${CLAWX_PROJECT_NAME}"`,
+    'reply_footer = false',
     '',
     '[projects.agent]',
     'type = "codex"',
@@ -574,9 +576,53 @@ export class CcConnectRuntimeProvider extends EventEmitter implements RuntimePro
 
   private async loadAndApplyProviderProfile(payload?: { providerId?: string; reason?: string }): Promise<CodexProviderProfile> {
     const profile = await this.providerProfileLoader(payload);
+    await this.resetCodexAgentSessionsAfterModelHubSwitch(profile);
     this.currentProviderProfile = profile;
     this.codexBridge.setProviderProfile(profile);
     return profile;
+  }
+
+  private async resetCodexAgentSessionsAfterModelHubSwitch(profile: CodexProviderProfile): Promise<void> {
+    if (profile.ccConnectProvider?.name !== 'modelhub_openapi') return;
+    const dataDir = join(getCcConnectManagedDir(), 'data');
+    const markerPath = join(dataDir, CODEX_AGENT_SESSION_RESET_MARKER);
+    const fingerprintPayload = JSON.stringify({
+      providerId: profile.providerId,
+      model: profile.model,
+      stickySessionId: profile.env?.CODEX_MODELHUB_STICKY_SESSION_ID,
+      extraHeader: profile.env?.CODEX_MODELHUB_EXTRA_HEADER,
+    });
+    const fingerprint = createHash('sha256').update(fingerprintPayload).digest('hex');
+    try {
+      const marker = JSON.parse(await readFile(markerPath, 'utf8')) as { fingerprint?: unknown };
+      if (marker.fingerprint === fingerprint) return;
+    } catch {
+      // Missing or corrupt marker means we should perform the reset once.
+    }
+
+    const sessionsDir = join(dataDir, 'sessions');
+    const names = await readdir(sessionsDir).catch(() => []);
+    await Promise.all(names.filter((name) => name.endsWith('.json')).map(async (name) => {
+      const path = join(sessionsDir, name);
+      let raw: unknown;
+      try {
+        raw = JSON.parse(await readFile(path, 'utf8'));
+      } catch {
+        return;
+      }
+      if (!isRecord(raw) || !isRecord(raw.sessions)) return;
+      let changed = false;
+      for (const session of Object.values(raw.sessions)) {
+        if (!isRecord(session) || typeof session.agent_session_id !== 'string') continue;
+        delete session.agent_session_id;
+        changed = true;
+      }
+      if (changed) {
+        await writeFile(path, JSON.stringify(raw, null, 2), 'utf8');
+      }
+    }));
+    await mkdir(dataDir, { recursive: true });
+    await writeFile(markerPath, JSON.stringify({ fingerprint, updatedAt: new Date().toISOString() }, null, 2), 'utf8');
   }
 
   private async managementRequest<T = unknown>(method: string, path: string, body?: unknown): Promise<T> {

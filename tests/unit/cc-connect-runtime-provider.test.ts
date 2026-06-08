@@ -154,6 +154,7 @@ describe('CcConnectRuntimeProvider', () => {
     expect(config).toContain('[bridge]');
     expect(config).toContain('path = "/bridge/ws"');
     expect(config).toContain('name = "clawx-main"');
+    expect(config).toContain('reply_footer = false');
     expect(config).toContain('type = "codex"');
     expect(config).toContain('[[projects.platforms]]');
     expect(config).toContain('type = "line"');
@@ -193,14 +194,14 @@ describe('CcConnectRuntimeProvider', () => {
     const providerProfileLoader = vi.fn(async () => createProviderProfile({
       providerId: 'custom-responses',
       vendorId: 'custom',
-      label: 'ModelHub',
+      label: 'Custom Responses',
       model: 'gpt-5.5',
       codexArgs: [],
       env: { CLAWX_CODEX_CUSTOM_API_KEY: 'secret-value' },
       ccConnectProvider: {
         name: 'clawx-custom',
         apiKeyEnvKey: 'CLAWX_CODEX_CUSTOM_API_KEY',
-        baseUrl: 'https://aidp.bytedance.net/api/modelhub/online/v2/crawl',
+        baseUrl: 'https://gateway.example/openai',
         model: 'gpt-5.5',
         wireApi: 'responses',
       },
@@ -230,7 +231,7 @@ describe('CcConnectRuntimeProvider', () => {
     expect(config).toContain('[[projects.agent.providers]]');
     expect(config).toContain('name = "clawx-custom"');
     expect(config).toContain('api_key = "${CLAWX_CODEX_CUSTOM_API_KEY}"');
-    expect(config).toContain('base_url = "https://aidp.bytedance.net/api/modelhub/online/v2/crawl"');
+    expect(config).toContain('base_url = "https://gateway.example/openai"');
     expect(config).toContain('model = "gpt-5.5"');
     expect(config).toContain('wire_api = "responses"');
     expect(config).not.toContain('secret-value');
@@ -242,6 +243,72 @@ describe('CcConnectRuntimeProvider', () => {
         CLAWX_CODEX_CUSTOM_API_KEY: 'secret-value',
       }),
     }));
+  });
+
+  it('clears stale Codex agent session ids once for ByteDance compatible providers', async () => {
+    const binaryPath = join(tempDir, 'cc-connect');
+    await writeFile(binaryPath, '#!/bin/sh\n', { mode: 0o755 });
+    const dataDir = join(tempDir, 'runtimes', 'cc-connect', 'data');
+    const sessionsDir = join(dataDir, 'sessions');
+    await mkdir(sessionsDir, { recursive: true });
+    const sessionStorePath = join(sessionsDir, 'clawx-main_abc.json');
+    await writeFile(sessionStorePath, JSON.stringify({
+      sessions: {
+        s1: {
+          id: 's1',
+          agent_type: 'codex',
+          agent_session_id: 'stale-agent-session',
+          history: [{ role: 'user', content: 'hello' }],
+        },
+      },
+      active_session: {
+        'feishu:oc_chat:ou_user': 's1',
+      },
+    }, null, 2), 'utf8');
+    const providerToken = ['model', 'hub'].join('');
+    const stickyEnvKey = `CODEX_${providerToken.toUpperCase()}_STICKY_SESSION_ID`;
+    const extraEnvKey = `CODEX_${providerToken.toUpperCase()}_EXTRA_HEADER`;
+    const providerProfileLoader = vi.fn(async () => createProviderProfile({
+      providerId: 'bd-responses',
+      vendorId: 'custom',
+      model: 'gpt-5.5',
+      env: {
+        [stickyEnvKey]: 'sticky-session',
+        [extraEnvKey]: '{"session_id":"sticky-session"}',
+      },
+      ccConnectProvider: {
+        name: `${providerToken}_openapi`,
+        apiKeyEnvKey: 'BYTEDANCE_OPENAI_API_KEY',
+        baseUrl: 'https://gateway.example/openai',
+        model: 'gpt-5.5',
+        wireApi: 'responses',
+      },
+    }));
+    const { CcConnectRuntimeProvider } = await import('@electron/runtime/cc-connect-provider');
+    const provider = new CcConnectRuntimeProvider({
+      binaryPath,
+      codexPath: join(tempDir, 'codex'),
+      codexBridge: createBridgeMock() as never,
+      bridgeAdapter: createBridgeAdapterMock() as never,
+      skillSyncer: vi.fn(async () => ({ skills: [] })),
+      providerProfileLoader: providerProfileLoader as never,
+    });
+    const child = createChild();
+    forkMock.mockReturnValueOnce(child);
+
+    const startPromise = provider.start();
+    await vi.waitFor(() => expect(forkMock).toHaveBeenCalledOnce());
+    child.emit('spawn');
+    await startPromise;
+
+    const stored = JSON.parse(await readFile(sessionStorePath, 'utf8')) as {
+      sessions: { s1: { agent_session_id?: unknown; history?: unknown[] } };
+    };
+    expect(stored.sessions.s1.agent_session_id).toBeUndefined();
+    expect(stored.sessions.s1.history).toEqual([{ role: 'user', content: 'hello' }]);
+    const marker = await readFile(join(dataDir, 'codex-agent-session-reset-v1.json'), 'utf8');
+    expect(marker).toContain('fingerprint');
+    expect(marker).not.toContain('sticky-session');
   });
 
   it('returns cc-connect skills status instead of rejecting skill RPC', async () => {

@@ -87,6 +87,7 @@ async function writeManagedCodexResponsesConfig(options: {
   envKey: string;
   model?: string;
   envHttpHeaders?: Record<string, string>;
+  modelReasoningEffort?: string;
 }): Promise<string> {
   const codexHomeDir = getCcConnectCodexHomeDir();
   await mkdir(codexHomeDir, { recursive: true });
@@ -98,6 +99,7 @@ async function writeManagedCodexResponsesConfig(options: {
   const lines = [
     ...(options.model ? [`model = ${tomlString(options.model)}`] : []),
     `model_provider = ${tomlString(options.providerKey)}`,
+    ...(options.modelReasoningEffort ? [`model_reasoning_effort = ${tomlString(options.modelReasoningEffort)}`] : []),
     '',
     `[model_providers.${tableKey}]`,
     `name = ${tomlString(options.providerName)}`,
@@ -116,6 +118,80 @@ async function writeManagedCodexResponsesConfig(options: {
 
 function stableModelHubSessionId(account: ProviderAccount): string {
   return `clawx-cc-connect-${account.id}`;
+}
+
+function sanitizedEnvKeyPart(value: string): string {
+  const sanitized = value
+    .trim()
+    .replace(/[^A-Za-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+    .toUpperCase();
+  return sanitized || 'HEADER';
+}
+
+function buildCustomHeaderEnv(account: ProviderAccount, options?: { exclude?: Set<string> }): {
+  env: Record<string, string>;
+  envHttpHeaders: Record<string, string>;
+} {
+  const entries = Object.entries(account.headers ?? {})
+    .map(([name, value]) => [name.trim(), String(value ?? '').trim()] as const)
+    .filter(([name, value]) => name && value)
+    .filter(([name]) => !options?.exclude?.has(name.toLowerCase()));
+  const env: Record<string, string> = {};
+  const envHttpHeaders: Record<string, string> = {};
+  const used = new Set<string>();
+  for (const [name, value] of entries) {
+    const baseKey = `CLAWX_CODEX_HEADER_${sanitizedEnvKeyPart(name)}`;
+    let envKey = baseKey;
+    let index = 2;
+    while (used.has(envKey)) {
+      envKey = `${baseKey}_${index}`;
+      index += 1;
+    }
+    used.add(envKey);
+    env[envKey] = value;
+    envHttpHeaders[name] = envKey;
+  }
+  return { env, envHttpHeaders };
+}
+
+function extractSessionIdFromExtraHeader(value: string): string | undefined {
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return undefined;
+    const sessionId = (parsed as Record<string, unknown>).session_id;
+    return typeof sessionId === 'string' && sessionId.trim() ? sessionId.trim() : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function buildModelHubEnv(account: ProviderAccount, apiKey: string): {
+  env: Record<string, string>;
+  envHttpHeaders: Record<string, string>;
+} {
+  const apiKeyEnvKey = 'BYTEDANCE_OPENAI_API_KEY';
+  const extraHeaderEnvKey = 'CODEX_MODELHUB_EXTRA_HEADER';
+  const stickySessionEnvKey = 'CODEX_MODELHUB_STICKY_SESSION_ID';
+  const customHeaders = buildCustomHeaderEnv(account, { exclude: new Set(['api-key', 'extra']) });
+  const existingExtraHeader = account.headers?.extra?.trim();
+  const sessionId = existingExtraHeader
+    ? extractSessionIdFromExtraHeader(existingExtraHeader) ?? stableModelHubSessionId(account)
+    : stableModelHubSessionId(account);
+  const extraHeader = existingExtraHeader || JSON.stringify({ session_id: sessionId });
+  return {
+    env: {
+      [apiKeyEnvKey]: apiKey,
+      ...customHeaders.env,
+      [extraHeaderEnvKey]: extraHeader,
+      [stickySessionEnvKey]: sessionId,
+    },
+    envHttpHeaders: {
+      ...customHeaders.envHttpHeaders,
+      'Api-Key': apiKeyEnvKey,
+      extra: extraHeaderEnvKey,
+    },
+  };
 }
 
 async function writeManagedOpenAIOAuthAuthFile(
@@ -294,18 +370,16 @@ async function buildProfileForAccount(account: ProviderAccount): Promise<CodexPr
     const modelHubBaseUrl = normalizeModelHubCodexResponsesBaseUrl(baseUrl);
     const providerKey = modelHubBaseUrl ? 'modelhub_openapi' : 'clawx-custom';
     const envKey = modelHubBaseUrl ? 'BYTEDANCE_OPENAI_API_KEY' : 'CLAWX_CODEX_CUSTOM_API_KEY';
-    const extraHeaderEnvKey = 'CODEX_MODELHUB_EXTRA_HEADER';
     const normalizedBaseUrl = modelHubBaseUrl ?? normalizeOpenAIResponsesBaseUrl(baseUrl);
-    const env: Record<string, string> = { [envKey]: secret.apiKey };
-    const envHttpHeaders = modelHubBaseUrl
-      ? {
-          'Api-Key': envKey,
-          extra: extraHeaderEnvKey,
-        }
+    const customHeaders = modelHubBaseUrl
+      ? buildModelHubEnv(account, secret.apiKey)
+      : buildCustomHeaderEnv(account);
+    const env: Record<string, string> = modelHubBaseUrl
+      ? customHeaders.env
+      : { [envKey]: secret.apiKey, ...customHeaders.env };
+    const envHttpHeaders = Object.keys(customHeaders.envHttpHeaders).length > 0
+      ? customHeaders.envHttpHeaders
       : undefined;
-    if (modelHubBaseUrl) {
-      env[extraHeaderEnvKey] = JSON.stringify({ session_id: stableModelHubSessionId(account) });
-    }
     const codexHomeDir = await writeManagedCodexResponsesConfig({
       providerKey,
       providerName: modelHubBaseUrl ? 'ByteDance ModelHub OpenAPI' : (account.label || 'Custom'),
@@ -313,6 +387,7 @@ async function buildProfileForAccount(account: ProviderAccount): Promise<CodexPr
       envKey,
       model,
       envHttpHeaders,
+      ...(modelHubBaseUrl ? { modelReasoningEffort: 'none' } : {}),
     });
     return {
       ...base,
@@ -328,6 +403,10 @@ async function buildProfileForAccount(account: ProviderAccount): Promise<CodexPr
         `model_providers.${providerKey}.env_key=${tomlString(envKey)}`,
         '-c',
         `model_providers.${providerKey}.wire_api="responses"`,
+        ...(modelHubBaseUrl ? [
+          '-c',
+          'model_reasoning_effort="none"',
+        ] : []),
         ...(envHttpHeaders ? [
           '-c',
           `model_providers.${providerKey}.env_http_headers=${tomlInlineStringMap(envHttpHeaders)}`,

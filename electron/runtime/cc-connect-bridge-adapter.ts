@@ -1,7 +1,10 @@
 import { EventEmitter } from 'node:events';
 import { randomUUID } from 'node:crypto';
+import { mkdir, readdir, readFile, writeFile } from 'node:fs/promises';
+import { join } from 'node:path';
 import WebSocket from 'ws';
 import type { RawMessage } from '@shared/chat/types';
+import { getCcConnectManagedDir } from './cc-connect-paths';
 import type { RuntimeSendWithMediaPayload } from './types';
 
 type BridgeAdapterOptions = {
@@ -9,6 +12,7 @@ type BridgeAdapterOptions = {
   token: string;
   project: string;
   emit: EventEmitter['emit'];
+  sessionStoreDir?: string;
 };
 
 type SessionMetadata = {
@@ -22,6 +26,24 @@ type PendingRun = {
   runId: string;
   sessionKey: string;
   startedAt: number;
+};
+
+type PersistedSession = {
+  id: string;
+  name?: string;
+  history: RawMessage[];
+  createdAt: number;
+  updatedAt: number;
+};
+
+type PersistedSessionStore = {
+  path: string;
+  sessions: Map<string, PersistedSession>;
+  rawSessions: Map<string, Record<string, unknown>>;
+  activeSession: Map<string, string>;
+  userSessions: Map<string, string[]>;
+  userMeta: Map<string, Record<string, unknown>>;
+  raw: Record<string, unknown>;
 };
 
 const CONNECT_TIMEOUT_MS = 15_000;
@@ -56,11 +78,71 @@ function toBridgeSessionKey(sessionKey: string): string {
   return `clawx:${scope || 'main'}:${user || 'main'}`;
 }
 
+function fromBridgeSessionKey(sessionKey: string): string {
+  if (sessionKey === 'clawx:main:main') return 'agent:main:main';
+  return sessionKey;
+}
+
+function sessionLookupKeys(sessionKey: string): string[] {
+  const bridgeKey = toBridgeSessionKey(sessionKey);
+  return Array.from(new Set([sessionKey, bridgeKey, fromBridgeSessionKey(sessionKey)]));
+}
+
+function normalizeRawMessage(value: unknown, fallbackId: string): RawMessage | null {
+  if (!isRecord(value)) return null;
+  const role = typeof value.role === 'string' ? value.role : '';
+  if (!['user', 'assistant', 'system', 'toolresult'].includes(role)) return null;
+  const content = typeof value.content === 'string' || Array.isArray(value.content)
+    ? value.content
+    : '';
+  const timestamp = normalizeTimestamp(value.timestamp ?? value.created_at ?? value.createdAt) ?? Date.now();
+  return {
+    id: typeof value.id === 'string' && value.id ? value.id : fallbackId,
+    role: role as RawMessage['role'],
+    content,
+    timestamp,
+    ...(value.isError === true ? { isError: true } : {}),
+    ...(typeof value.errorMessage === 'string' ? { errorMessage: value.errorMessage } : {}),
+  };
+}
+
+function readStringMap(value: unknown): Map<string, string> {
+  if (!isRecord(value)) return new Map();
+  return new Map(Object.entries(value).flatMap(([key, item]) => (
+    typeof item === 'string' ? [[key, item]] : []
+  )));
+}
+
+function readUserSessions(value: unknown): Map<string, string[]> {
+  if (!isRecord(value)) return new Map();
+  return new Map(Object.entries(value).map(([key, item]) => [
+    key,
+    Array.isArray(item) ? item.filter((entry): entry is string => typeof entry === 'string') : [],
+  ]));
+}
+
+function readUserMeta(value: unknown): Map<string, Record<string, unknown>> {
+  if (!isRecord(value)) return new Map();
+  return new Map(Object.entries(value).flatMap(([key, item]) => (
+    isRecord(item) ? [[key, item]] : []
+  )));
+}
+
+function displayNameForPersistedSession(key: string, session: PersistedSession, meta?: Record<string, unknown>): string {
+  const chatName = typeof meta?.chat_name === 'string' ? meta.chat_name.trim() : '';
+  const userName = typeof meta?.user_name === 'string' ? meta.user_name.trim() : '';
+  const metaName = [chatName, userName].filter(Boolean).join(' / ');
+  if (metaName) return metaName.slice(0, 80);
+  const firstUser = session.history.find((message) => message.role === 'user');
+  return messageText(firstUser?.content).slice(0, 80) || session.name || key;
+}
+
 export class CcConnectBridgeAdapter {
   private readonly port: number;
   private readonly token: string;
   private readonly project: string;
   private readonly emitRuntimeEvent: EventEmitter['emit'];
+  private readonly sessionStoreDir: string;
   private socket: WebSocket | null = null;
   private readonly messagesBySession = new Map<string, RawMessage[]>();
   private readonly pendingRuns = new Map<string, PendingRun>();
@@ -70,6 +152,7 @@ export class CcConnectBridgeAdapter {
     this.token = options.token;
     this.project = options.project;
     this.emitRuntimeEvent = options.emit;
+    this.sessionStoreDir = options.sessionStoreDir ?? join(getCcConnectManagedDir(), 'data', 'sessions');
   }
 
   async connect(): Promise<void> {
@@ -145,35 +228,59 @@ export class CcConnectBridgeAdapter {
   }
 
   async listSessions(): Promise<SessionMetadata[]> {
-    const sessions: SessionMetadata[] = [];
+    const sessionsByKey = new Map<string, SessionMetadata>();
+    for (const persisted of await this.readPersistedSessionStores()) {
+      for (const [storedKey, sessionId] of persisted.activeSession.entries()) {
+        const session = persisted.sessions.get(sessionId);
+        if (!session || session.history.length === 0) continue;
+        const key = fromBridgeSessionKey(storedKey);
+        const item = {
+          key,
+          displayName: displayNameForPersistedSession(key, session, persisted.userMeta.get(storedKey)),
+          createdAt: session.createdAt,
+          updatedAt: session.updatedAt,
+        };
+        const existing = sessionsByKey.get(key);
+        if (!existing || item.updatedAt >= existing.updatedAt) {
+          sessionsByKey.set(key, item);
+        }
+      }
+    }
     for (const [key, messages] of this.messagesBySession.entries()) {
       const firstUser = messages.find((message) => message.role === 'user');
       const lastTimestamp = messages.reduce((latest, message) => {
         const ts = normalizeTimestamp(message.timestamp);
         return ts ? Math.max(latest, ts) : latest;
       }, 0);
-      sessions.push({
+      sessionsByKey.set(key, {
         key,
         displayName: messageText(firstUser?.content).slice(0, 80) || key,
         createdAt: normalizeTimestamp(messages[0]?.timestamp) ?? lastTimestamp,
         updatedAt: lastTimestamp,
       });
     }
-    return sessions.sort((left, right) => right.updatedAt - left.updatedAt);
+    return Array.from(sessionsByKey.values()).sort((left, right) => right.updatedAt - left.updatedAt);
   }
 
   async loadHistory(sessionKey: string, limit = 200): Promise<RawMessage[]> {
-    const messages = this.messagesBySession.get(sessionKey) ?? [];
+    const messages = [
+      ...await this.readPersistedMessages(sessionKey),
+      ...(this.messagesBySession.get(sessionKey) ?? []),
+    ];
     return messages.slice(-Math.max(1, Math.min(Math.floor(limit), 1000)));
   }
 
   async deleteSession(sessionKey: string): Promise<void> {
     this.messagesBySession.delete(sessionKey);
+    await this.deletePersistedSession(sessionKey);
   }
 
   async summarizeSessions(sessionKeys: string[]): Promise<Array<{ sessionKey: string; firstUserText: string | null; lastTimestamp: number | null }>> {
-    return sessionKeys.map((sessionKey) => {
-      const messages = this.messagesBySession.get(sessionKey) ?? [];
+    return Promise.all(sessionKeys.map(async (sessionKey) => {
+      const messages = [
+        ...await this.readPersistedMessages(sessionKey),
+        ...(this.messagesBySession.get(sessionKey) ?? []),
+      ];
       const firstUser = messages.find((message) => message.role === 'user');
       const lastTimestamp = messages.reduce<number | null>((latest, message) => {
         const ts = normalizeTimestamp(message.timestamp);
@@ -185,7 +292,94 @@ export class CcConnectBridgeAdapter {
         firstUserText: messageText(firstUser?.content) || null,
         lastTimestamp,
       };
-    });
+    }));
+  }
+
+  private async readPersistedSessionStores(): Promise<PersistedSessionStore[]> {
+    const names = await readdir(this.sessionStoreDir).catch(() => []);
+    return (await Promise.all(names
+      .filter((name) => name.endsWith('.json'))
+      .map((name) => this.readPersistedSessionStore(join(this.sessionStoreDir, name)))))
+      .filter((store): store is PersistedSessionStore => Boolean(store));
+  }
+
+  private async readPersistedSessionStore(path: string): Promise<PersistedSessionStore | null> {
+    try {
+      const raw = JSON.parse(await readFile(path, 'utf8')) as unknown;
+      if (!isRecord(raw) || !isRecord(raw.sessions)) return null;
+      const sessions = new Map<string, PersistedSession>();
+      const rawSessions = new Map<string, Record<string, unknown>>();
+      for (const [id, value] of Object.entries(raw.sessions)) {
+        if (!isRecord(value)) continue;
+        rawSessions.set(id, value);
+        const history = Array.isArray(value.history)
+          ? value.history.flatMap((message, index) => {
+              const normalized = normalizeRawMessage(message, `${id}:${index}`);
+              return normalized ? [normalized] : [];
+            })
+          : [];
+        const updatedAt = normalizeTimestamp(value.updated_at ?? value.updatedAt)
+          ?? history.reduce((latest, message) => Math.max(latest, normalizeTimestamp(message.timestamp) ?? 0), 0);
+        const createdAt = normalizeTimestamp(value.created_at ?? value.createdAt)
+          ?? normalizeTimestamp(history[0]?.timestamp)
+          ?? updatedAt;
+        sessions.set(id, {
+          id,
+          name: typeof value.name === 'string' ? value.name : undefined,
+          history,
+          createdAt,
+          updatedAt,
+        });
+      }
+      return {
+        path,
+        sessions,
+        rawSessions,
+        activeSession: readStringMap(raw.active_session),
+        userSessions: readUserSessions(raw.user_sessions),
+        userMeta: readUserMeta(raw.user_meta),
+        raw,
+      };
+    } catch {
+      return null;
+    }
+  }
+
+  private async readPersistedMessages(sessionKey: string): Promise<RawMessage[]> {
+    for (const store of await this.readPersistedSessionStores()) {
+      for (const key of sessionLookupKeys(sessionKey)) {
+        const sessionId = store.activeSession.get(key);
+        const session = sessionId ? store.sessions.get(sessionId) : undefined;
+        if (session) return session.history;
+      }
+    }
+    return [];
+  }
+
+  private async deletePersistedSession(sessionKey: string): Promise<void> {
+    for (const store of await this.readPersistedSessionStores()) {
+      let changed = false;
+      for (const key of sessionLookupKeys(sessionKey)) {
+        const sessionId = store.activeSession.get(key);
+        if (!sessionId) continue;
+        store.sessions.delete(sessionId);
+        store.rawSessions.delete(sessionId);
+        store.activeSession.delete(key);
+        store.userSessions.delete(key);
+        store.userMeta.delete(key);
+        changed = true;
+      }
+      if (!changed) continue;
+      const next = {
+        ...store.raw,
+        sessions: Object.fromEntries(store.rawSessions.entries()),
+        active_session: Object.fromEntries(store.activeSession.entries()),
+        user_sessions: Object.fromEntries(store.userSessions.entries()),
+        user_meta: Object.fromEntries(store.userMeta.entries()),
+      };
+      await mkdir(this.sessionStoreDir, { recursive: true });
+      await writeFile(store.path, JSON.stringify(next, null, 2), 'utf8');
+    }
   }
 
   private connectOnce(): Promise<void> {
