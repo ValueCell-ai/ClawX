@@ -168,11 +168,9 @@ The binary is intentionally outside asar so it remains executable.
 8. Update README files and developer docs.
 9. Continue migrating provider/channel/cron/skills routes to capability dispatch.
 
-The replacement-grade follow-up is documented in
-`docs/cc-connect-codex-core-replacement.md`. That slice makes cc-connect runtime
-mode use a ClawX BridgePlatform adapter for GUI chat, sessions, history, cron,
-skills, and supported provider/model selection so the core chat loop no longer
-depends on OpenClaw Gateway.
+cc-connect runtime mode uses a ClawX BridgePlatform adapter for GUI chat,
+sessions, history, cron, skills, and supported provider/model selection so the
+core chat loop can run without depending on OpenClaw Gateway.
 
 ## Rollback Strategy
 
