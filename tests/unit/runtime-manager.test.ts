@@ -79,6 +79,7 @@ describe('RuntimeManager', () => {
   });
 
   it('switches runtime setting and stops the previous provider', async () => {
+    settings.set('devModeUnlocked', true);
     const { RuntimeManager } = await import('@electron/runtime/manager');
     const openclaw = createProvider('openclaw').provider;
     const ccConnect = createProvider('cc-connect').provider;
@@ -91,6 +92,23 @@ describe('RuntimeManager', () => {
     expect(settings.get('runtimeKind')).toBe('cc-connect');
     expect(manager.getActiveProvider()).toBe(ccConnect);
     expect(manager.listCapabilities().controlUi).toBe(true);
+  });
+
+  it('falls back to OpenClaw when cc-connect is stored without developer mode', async () => {
+    settings.set('runtimeKind', 'cc-connect');
+    settings.set('devModeUnlocked', false);
+    const { RuntimeManager } = await import('@electron/runtime/manager');
+    const openclaw = createProvider('openclaw').provider;
+    const ccConnect = createProvider('cc-connect').provider;
+    const manager = new RuntimeManager({ openclaw, ccConnect });
+
+    await expect(manager.getActiveKind()).resolves.toBe('openclaw');
+    expect(settings.get('runtimeKind')).toBe('openclaw');
+
+    await manager.setActiveKind('cc-connect');
+
+    expect(settings.get('runtimeKind')).toBe('openclaw');
+    expect(manager.getActiveProvider()).toBe(openclaw);
   });
 
   it('marks cc-connect channels as supported because cc-connect owns messaging platforms', async () => {

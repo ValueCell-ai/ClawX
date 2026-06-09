@@ -29,6 +29,10 @@ test.describe('Settings runtime selector', () => {
     await completeSetup(page);
     await page.getByTestId('sidebar-nav-settings').click();
 
+    await expect(page.getByTestId('settings-runtime-section')).toHaveCount(0);
+    const devModeToggle = page.getByTestId('settings-dev-mode-switch');
+    await devModeToggle.click();
+
     await expect(page.getByTestId('settings-runtime-section')).toBeVisible();
     await page.getByTestId('settings-runtime-cc-connect').click();
 
@@ -36,8 +40,6 @@ test.describe('Settings runtime selector', () => {
     await expect(page.getByTestId('settings-runtime-config-dir')).toContainText('cc-connect');
     await expect(page.getByTestId('settings-runtime-capabilities')).toContainText('Doctor');
 
-    const devModeToggle = page.getByTestId('settings-dev-mode-switch');
-    await devModeToggle.click();
     await expect(page.getByTestId('settings-run-doctor-button')).toBeVisible();
     await expect(page.getByTestId('settings-run-doctor-fix-button')).toBeDisabled();
     await expect(page.getByTestId('sidebar-open-dev-console')).toContainText('CC Connect Page');

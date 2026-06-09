@@ -33,7 +33,12 @@ export class RuntimeManager extends EventEmitter {
 
   async getActiveKind(): Promise<RuntimeKind> {
     if (!this.activeKind) {
-      this.activeKind = normalizeRuntimeKind(await getSetting('runtimeKind'));
+      const persistedKind = normalizeRuntimeKind(await getSetting('runtimeKind'));
+      const devModeUnlocked = await getSetting('devModeUnlocked');
+      this.activeKind = devModeUnlocked === true ? persistedKind : 'openclaw';
+      if (persistedKind !== this.activeKind) {
+        await setSetting('runtimeKind', this.activeKind);
+      }
     }
     return this.activeKind;
   }
@@ -43,7 +48,11 @@ export class RuntimeManager extends EventEmitter {
   }
 
   async setActiveKind(kind: RuntimeKind): Promise<void> {
-    const nextKind = normalizeRuntimeKind(kind);
+    const requestedKind = normalizeRuntimeKind(kind);
+    const devModeUnlocked = await getSetting('devModeUnlocked');
+    const nextKind = requestedKind === 'cc-connect' && devModeUnlocked !== true
+      ? 'openclaw'
+      : requestedKind;
     const previous = this.getActiveProvider();
     if ((this.activeKind ?? 'openclaw') !== nextKind) {
       await previous.stop();

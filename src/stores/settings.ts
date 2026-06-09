@@ -104,14 +104,23 @@ export const useSettingsStore = create<SettingsState>()(
           const resolvedLanguage = settings.language
             ? resolveSupportedLanguage(settings.language)
             : undefined;
+          const devModeUnlocked = settings.devModeUnlocked === true;
+          const runtimeKind = !devModeUnlocked && settings.runtimeKind === 'cc-connect'
+            ? 'openclaw'
+            : settings.runtimeKind;
           set((state) => ({
             ...state,
             ...settings,
+            ...(runtimeKind ? { runtimeKind } : {}),
+            ...(settings.devModeUnlocked !== undefined ? { devModeUnlocked } : {}),
             ...(resolvedLanguage ? { language: resolvedLanguage } : {}),
             ...(typeof settings.sidebarWidth === 'number'
               ? { sidebarWidth: clampSidebarWidth(settings.sidebarWidth) }
               : {}),
           }));
+          if (settings.runtimeKind === 'cc-connect' && !devModeUnlocked) {
+            void hostApi.settings.set('runtimeKind', 'openclaw').catch(() => { });
+          }
           if (resolvedLanguage) {
             i18n.changeLanguage(resolvedLanguage);
           }
@@ -167,8 +176,14 @@ export const useSettingsStore = create<SettingsState>()(
       setSidebarCollapsed: (sidebarCollapsed) => set({ sidebarCollapsed }),
       setSidebarWidth: (sidebarWidth) => set({ sidebarWidth: clampSidebarWidth(sidebarWidth) }),
       setDevModeUnlocked: (devModeUnlocked) => {
-        set({ devModeUnlocked });
+        set((state) => ({
+          devModeUnlocked,
+          ...(!devModeUnlocked && state.runtimeKind === 'cc-connect' ? { runtimeKind: 'openclaw' as RuntimeKind } : {}),
+        }));
         void hostApi.settings.set('devModeUnlocked', devModeUnlocked).catch(() => { });
+        if (!devModeUnlocked) {
+          void hostApi.settings.set('runtimeKind', 'openclaw').catch(() => { });
+        }
       },
       markSetupComplete: () => set({ setupComplete: true }),
       resetSettings: () => set(defaultSettings),

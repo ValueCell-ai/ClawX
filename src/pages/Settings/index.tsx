@@ -437,6 +437,7 @@ export function Settings() {
   };
 
   const handleRuntimeChange = (nextRuntimeKind: 'openclaw' | 'cc-connect') => {
+    if (!devModeUnlocked) return;
     if (nextRuntimeKind === runtimeKind) return;
     setRuntimeKind(nextRuntimeKind);
     setDoctorResult(null);
@@ -601,79 +602,81 @@ export function Settings() {
                 />
               </div>
 
-              <div className="space-y-4" data-testid="settings-runtime-section">
-                <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
-                  <div>
-                    <Label className="text-sm font-medium text-foreground">{t('runtime.title')}</Label>
-                    <p className="text-meta text-muted-foreground mt-1">
-                      {t('runtime.description')}
-                    </p>
+              {devModeUnlocked && (
+                <div className="space-y-4" data-testid="settings-runtime-section">
+                  <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
+                    <div>
+                      <Label className="text-sm font-medium text-foreground">{t('runtime.title')}</Label>
+                      <p className="text-meta text-muted-foreground mt-1">
+                        {t('runtime.description')}
+                      </p>
+                    </div>
+                    <Badge variant="secondary" className="rounded-full px-3 py-1 bg-black/5 dark:bg-white/10 border border-black/5 dark:border-white/5">
+                      {t(`runtime.kinds.${activeRuntimeKind}`)}
+                    </Badge>
                   </div>
-                  <Badge variant="secondary" className="rounded-full px-3 py-1 bg-black/5 dark:bg-white/10 border border-black/5 dark:border-white/5">
-                    {t(`runtime.kinds.${activeRuntimeKind}`)}
-                  </Badge>
-                </div>
-                <div className="flex flex-wrap gap-2" role="group" aria-label={t('runtime.title')}>
-                  <Button
-                    type="button"
-                    variant={runtimeKind === 'openclaw' ? 'secondary' : 'outline'}
-                    data-testid="settings-runtime-openclaw"
-                    onClick={() => handleRuntimeChange('openclaw')}
-                    className={cn("rounded-full px-5 h-10 border-black/10 dark:border-white/10", runtimeKind === 'openclaw' ? "bg-black/5 dark:bg-white/10 text-foreground" : "bg-transparent text-muted-foreground hover:bg-black/5 dark:hover:bg-white/5")}
-                  >
-                    <ServerCog className="h-4 w-4 mr-2" />
-                    {t('runtime.kinds.openclaw')}
-                  </Button>
-                  <Button
-                    type="button"
-                    variant={runtimeKind === 'cc-connect' ? 'secondary' : 'outline'}
-                    data-testid="settings-runtime-cc-connect"
-                    onClick={() => handleRuntimeChange('cc-connect')}
-                    className={cn("rounded-full px-5 h-10 border-black/10 dark:border-white/10", runtimeKind === 'cc-connect' ? "bg-black/5 dark:bg-white/10 text-foreground" : "bg-transparent text-muted-foreground hover:bg-black/5 dark:hover:bg-white/5")}
-                  >
-                    <ServerCog className="h-4 w-4 mr-2" />
-                    {t('runtime.kinds.cc-connect')}
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={restartGateway}
-                    data-testid="settings-runtime-restart"
-                    className="rounded-full h-10 px-4 border-black/10 dark:border-white/10 bg-transparent hover:bg-black/5 dark:hover:bg-white/5"
-                  >
-                    <RefreshCw className="h-4 w-4 mr-2" />
-                    {t('runtime.restart')}
-                  </Button>
-                </div>
-                <p className="text-xs text-muted-foreground">
-                  {t('runtime.restartHint')}
-                </p>
-                {gatewayStatus.configDir && (
-                  <p className="text-xs text-muted-foreground font-mono break-all" data-testid="settings-runtime-config-dir">
-                    {t('runtime.configDir')}: {gatewayStatus.configDir}
+                  <div className="flex flex-wrap gap-2" role="group" aria-label={t('runtime.title')}>
+                    <Button
+                      type="button"
+                      variant={runtimeKind === 'openclaw' ? 'secondary' : 'outline'}
+                      data-testid="settings-runtime-openclaw"
+                      onClick={() => handleRuntimeChange('openclaw')}
+                      className={cn("rounded-full px-5 h-10 border-black/10 dark:border-white/10", runtimeKind === 'openclaw' ? "bg-black/5 dark:bg-white/10 text-foreground" : "bg-transparent text-muted-foreground hover:bg-black/5 dark:hover:bg-white/5")}
+                    >
+                      <ServerCog className="h-4 w-4 mr-2" />
+                      {t('runtime.kinds.openclaw')}
+                    </Button>
+                    <Button
+                      type="button"
+                      variant={runtimeKind === 'cc-connect' ? 'secondary' : 'outline'}
+                      data-testid="settings-runtime-cc-connect"
+                      onClick={() => handleRuntimeChange('cc-connect')}
+                      className={cn("rounded-full px-5 h-10 border-black/10 dark:border-white/10", runtimeKind === 'cc-connect' ? "bg-black/5 dark:bg-white/10 text-foreground" : "bg-transparent text-muted-foreground hover:bg-black/5 dark:hover:bg-white/5")}
+                    >
+                      <ServerCog className="h-4 w-4 mr-2" />
+                      {t('runtime.kinds.cc-connect')}
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={restartGateway}
+                      data-testid="settings-runtime-restart"
+                      className="rounded-full h-10 px-4 border-black/10 dark:border-white/10 bg-transparent hover:bg-black/5 dark:hover:bg-white/5"
+                    >
+                      <RefreshCw className="h-4 w-4 mr-2" />
+                      {t('runtime.restart')}
+                    </Button>
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    {t('runtime.restartHint')}
                   </p>
-                )}
-                <div className="flex flex-wrap gap-2" data-testid="settings-runtime-capabilities">
-                  {runtimeCapabilityEntries.map(([key, label]) => {
-                    const supported = runtimeCapabilities?.[key] ?? (activeRuntimeKind === 'openclaw');
-                    return (
-                      <Badge
-                        key={key}
-                        variant="secondary"
-                        className={cn(
-                          "rounded-full px-3 py-1 border",
-                          supported
-                            ? "bg-green-500/10 text-green-700 dark:text-green-400 border-green-500/20"
-                            : "bg-black/5 dark:bg-white/5 text-muted-foreground border-transparent",
-                        )}
-                      >
-                        {label}: {supported ? t('runtime.supported') : t('runtime.unsupported')}
-                      </Badge>
-                    );
-                  })}
+                  {gatewayStatus.configDir && (
+                    <p className="text-xs text-muted-foreground font-mono break-all" data-testid="settings-runtime-config-dir">
+                      {t('runtime.configDir')}: {gatewayStatus.configDir}
+                    </p>
+                  )}
+                  <div className="flex flex-wrap gap-2" data-testid="settings-runtime-capabilities">
+                    {runtimeCapabilityEntries.map(([key, label]) => {
+                      const supported = runtimeCapabilities?.[key] ?? (activeRuntimeKind === 'openclaw');
+                      return (
+                        <Badge
+                          key={key}
+                          variant="secondary"
+                          className={cn(
+                            "rounded-full px-3 py-1 border",
+                            supported
+                              ? "bg-green-500/10 text-green-700 dark:text-green-400 border-green-500/20"
+                              : "bg-black/5 dark:bg-white/5 text-muted-foreground border-transparent",
+                          )}
+                        >
+                          {label}: {supported ? t('runtime.supported') : t('runtime.unsupported')}
+                        </Badge>
+                      );
+                    })}
+                  </div>
                 </div>
-              </div>
+              )}
 
 
               <div className="flex items-center justify-between">
