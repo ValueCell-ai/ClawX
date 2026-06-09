@@ -402,6 +402,7 @@ export class CcConnectRuntimeProvider extends EventEmitter implements RuntimePro
       sessions: sessions.map((session) => ({
         key: session.key,
         displayName: session.displayName,
+        agentId: session.agentId,
         updatedAt: session.updatedAt,
       })),
     };

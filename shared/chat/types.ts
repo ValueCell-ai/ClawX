@@ -75,6 +75,7 @@ export interface ChatSession {
   key: string;
   label?: string;
   displayName?: string;
+  agentId?: string;
   derivedTitle?: string;
   lastMessagePreview?: string;
   thinkingLevel?: string;

@@ -4,7 +4,7 @@ import { mkdir, readdir, readFile, writeFile } from 'node:fs/promises';
 import { basename, join } from 'node:path';
 import WebSocket from 'ws';
 import type { RawMessage } from '@shared/chat/types';
-import { getCcConnectCodexHomeDir, getCcConnectManagedDir } from './cc-connect-paths';
+import { getCcConnectCodexHomeDir, getCcConnectConfigPath, getCcConnectManagedDir } from './cc-connect-paths';
 import type { RuntimeSendWithMediaPayload } from './types';
 
 type BridgeAdapterOptions = {
@@ -15,11 +15,13 @@ type BridgeAdapterOptions = {
   emit: EventEmitter['emit'];
   sessionStoreDir?: string;
   codexHomeDir?: string;
+  configPath?: string;
 };
 
 type SessionMetadata = {
   key: string;
   displayName?: string;
+  agentId?: string;
   createdAt: number;
   updatedAt: number;
 };
@@ -40,6 +42,8 @@ type PersistedSession = {
   id: string;
   name?: string;
   agentSessionId?: string;
+  projectName: string;
+  agentId: string;
   history: RawMessage[];
   createdAt: number;
   updatedAt: number;
@@ -47,6 +51,8 @@ type PersistedSession = {
 
 type PersistedSessionStore = {
   path: string;
+  projectName: string;
+  agentId: string;
   sessions: Map<string, PersistedSession>;
   rawSessions: Map<string, Record<string, unknown>>;
   activeSession: Map<string, string>;
@@ -201,6 +207,22 @@ function parseCodexFunctionArguments(value: unknown): unknown {
   }
 }
 
+function projectNameFromStorePath(path: string): string {
+  return basename(path).replace(/_[a-f0-9]{8}\.json$/i, '').replace(/\.json$/i, '');
+}
+
+function agentIdFromProjectName(projectName: string): string {
+  if (!projectName.startsWith(CLAWX_PROJECT_PREFIX)) return 'main';
+  return projectName.slice(CLAWX_PROJECT_PREFIX.length) || 'main';
+}
+
+function transcriptCwdMatchesAgent(cwd: string | undefined, agentId: string): boolean {
+  if (!cwd) return false;
+  const dir = basename(cwd);
+  if (agentId === 'main') return dir === 'ClawX' || dir === 'workspace' || dir === 'workspace-main';
+  return dir === `workspace-${agentId}` || dir === agentId;
+}
+
 export class CcConnectBridgeAdapter {
   private readonly port: number;
   private readonly token: string;
@@ -209,6 +231,8 @@ export class CcConnectBridgeAdapter {
   private readonly emitRuntimeEvent: EventEmitter['emit'];
   private readonly sessionStoreDir: string;
   private readonly codexHomeDir: string;
+  private readonly configPath: string;
+  private readonly projectWorkDirCache = new Map<string, string | null>();
   private socket: WebSocket | null = null;
   private readonly messagesBySession = new Map<string, RawMessage[]>();
   private readonly pendingRuns = new Map<string, PendingRun>();
@@ -221,6 +245,7 @@ export class CcConnectBridgeAdapter {
     this.emitRuntimeEvent = options.emit;
     this.sessionStoreDir = options.sessionStoreDir ?? join(getCcConnectManagedDir(), 'data', 'sessions');
     this.codexHomeDir = options.codexHomeDir ?? getCcConnectCodexHomeDir();
+    this.configPath = options.configPath ?? getCcConnectConfigPath();
   }
 
   async connect(): Promise<void> {
@@ -313,6 +338,7 @@ export class CcConnectBridgeAdapter {
         const item = {
           key,
           displayName: displayNameForPersistedSession(key, { ...session, history }, persisted.userMeta.get(storedKey)),
+          agentId: session.agentId,
           createdAt: session.createdAt,
           updatedAt,
         };
@@ -399,6 +425,8 @@ export class CcConnectBridgeAdapter {
     try {
       const raw = JSON.parse(await readFile(path, 'utf8')) as unknown;
       if (!isRecord(raw) || !isRecord(raw.sessions)) return null;
+      const projectName = projectNameFromStorePath(path);
+      const agentId = agentIdFromProjectName(projectName);
       const sessions = new Map<string, PersistedSession>();
       const rawSessions = new Map<string, Record<string, unknown>>();
       for (const [id, value] of Object.entries(raw.sessions)) {
@@ -419,6 +447,8 @@ export class CcConnectBridgeAdapter {
           id,
           name: typeof value.name === 'string' ? value.name : undefined,
           agentSessionId: typeof value.agent_session_id === 'string' ? value.agent_session_id : undefined,
+          projectName,
+          agentId,
           history,
           createdAt,
           updatedAt,
@@ -426,6 +456,8 @@ export class CcConnectBridgeAdapter {
       }
       return {
         path,
+        projectName,
+        agentId,
         sessions,
         rawSessions,
         activeSession: readStringMap(raw.active_session),
@@ -472,6 +504,7 @@ export class CcConnectBridgeAdapter {
     for (const path of paths) {
       const metadata = await this.readCodexTranscriptMetadata(path);
       if (!metadata.startedAt) continue;
+      if (!this.codexTranscriptMatchesSessionProject(metadata, session)) continue;
       const distance = Math.abs(metadata.startedAt - sessionStartedAt);
       if (distance > CODEX_TRANSCRIPT_MATCH_SKEW_MS) continue;
       if (!best || distance < best.distance) {
@@ -479,6 +512,44 @@ export class CcConnectBridgeAdapter {
       }
     }
     return best?.path ?? null;
+  }
+
+  private async codexTranscriptMatchesSessionProject(
+    metadata: { cwd?: string },
+    session: PersistedSession,
+  ): Promise<boolean> {
+    const workDir = await this.readProjectWorkDir(session.projectName);
+    if (workDir) return metadata.cwd === workDir;
+    return transcriptCwdMatchesAgent(metadata.cwd, session.agentId);
+  }
+
+  private async readProjectWorkDir(projectName: string): Promise<string | null> {
+    if (this.projectWorkDirCache.has(projectName)) {
+      return this.projectWorkDirCache.get(projectName) ?? null;
+    }
+    const raw = await readFile(this.configPath, 'utf8').catch(() => '');
+    let currentProject: string | null = null;
+    for (const line of raw.split(/\r?\n/)) {
+      const trimmed = line.trim();
+      if (trimmed === '[[projects]]') {
+        currentProject = null;
+        continue;
+      }
+      const nameMatch = trimmed.match(/^name\s*=\s*"([^"]+)"$/);
+      if (nameMatch) {
+        currentProject = nameMatch[1];
+        continue;
+      }
+      if (currentProject !== projectName) continue;
+      const workDirMatch = trimmed.match(/^work_dir\s*=\s*"([^"]*)"$/);
+      if (workDirMatch) {
+        const workDir = workDirMatch[1].replace(/\\"/g, '"').replace(/\\\\/g, '\\');
+        this.projectWorkDirCache.set(projectName, workDir || null);
+        return workDir || null;
+      }
+    }
+    this.projectWorkDirCache.set(projectName, null);
+    return null;
   }
 
   private async collectCodexTranscriptPaths(dir: string, depth: number): Promise<string[]> {
@@ -492,7 +563,7 @@ export class CcConnectBridgeAdapter {
     return nested.flat();
   }
 
-  private async readCodexTranscriptMetadata(path: string): Promise<{ id?: string; startedAt?: number }> {
+  private async readCodexTranscriptMetadata(path: string): Promise<{ id?: string; startedAt?: number; cwd?: string }> {
     const raw = await readFile(path, 'utf8').catch(() => '');
     for (const line of raw.split(/\r?\n/)) {
       if (!line.trim()) continue;
@@ -501,7 +572,8 @@ export class CcConnectBridgeAdapter {
         if (!isRecord(parsed) || parsed.type !== 'session_meta' || !isRecord(parsed.payload)) continue;
         const id = typeof parsed.payload.id === 'string' ? parsed.payload.id : undefined;
         const startedAt = normalizeTimestamp(parsed.payload.timestamp);
-        return { id, startedAt };
+        const cwd = typeof parsed.payload.cwd === 'string' ? parsed.payload.cwd : undefined;
+        return { id, startedAt, cwd };
       } catch {
         return {};
       }

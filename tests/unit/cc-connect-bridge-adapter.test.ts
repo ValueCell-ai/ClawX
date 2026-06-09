@@ -332,11 +332,24 @@ describe('cc-connect bridge adapter persisted sessions', () => {
 
   it('falls back to Codex transcripts when cc-connect channel sessions have no stored history', async () => {
     const codexHomeDir = join(tempDir, 'codex-home');
+    const configPath = join(tempDir, 'config.toml');
     const transcriptDir = join(codexHomeDir, 'sessions', '2026', '06', '09');
     await mkdir(transcriptDir, { recursive: true });
+    await writeFile(configPath, [
+      '[[projects]]',
+      'name = "clawx-coder"',
+      '[projects.agent.options]',
+      'work_dir = "/tmp/workspace-coder"',
+      '',
+      '[[projects]]',
+      'name = "clawx-project-manager"',
+      '[projects.agent.options]',
+      'work_dir = "/tmp/workspace-project-manager"',
+      '',
+    ].join('\n'), 'utf8');
     const startedAt = '2026-06-09T12:38:51.848Z';
     const channelUpdatedAt = '2026-06-09T20:38:51.331+08:00';
-    await writeFile(join(sessionStoreDir, 'clawx-coder_abc.json'), JSON.stringify({
+    await writeFile(join(sessionStoreDir, 'clawx-coder_abcdef12.json'), JSON.stringify({
       sessions: {
         s1: {
           id: 's1',
@@ -409,6 +422,27 @@ describe('cc-connect bridge adapter persisted sessions', () => {
         },
       }),
     ].join('\n'), 'utf8');
+    await writeFile(join(transcriptDir, 'rollout-2026-06-09T20-38-51-wrong-agent.jsonl'), [
+      JSON.stringify({
+        timestamp: startedAt,
+        type: 'session_meta',
+        payload: { id: 'transcript-wrong', timestamp: startedAt, cwd: '/tmp/workspace-project-manager' },
+      }),
+      JSON.stringify({
+        timestamp: '2026-06-09T12:38:52.100Z',
+        type: 'turn_context',
+        payload: { turn_id: 'turn-wrong' },
+      }),
+      JSON.stringify({
+        timestamp: '2026-06-09T12:38:53.000Z',
+        type: 'response_item',
+        payload: {
+          type: 'message',
+          role: 'user',
+          content: [{ type: 'input_text', text: 'wrong agent hello' }],
+        },
+      }),
+    ].join('\n'), 'utf8');
     const adapter = new CcConnectBridgeAdapter({
       port: 1,
       token: 'token',
@@ -416,10 +450,12 @@ describe('cc-connect bridge adapter persisted sessions', () => {
       emit: vi.fn(),
       sessionStoreDir,
       codexHomeDir,
+      configPath,
     });
 
     await expect(adapter.listSessions()).resolves.toMatchObject([{
       key: 'feishu:chat-1:user-1',
+      agentId: 'coder',
       displayName: 'channel hello',
       updatedAt: Date.parse('2026-06-09T12:38:56.000Z'),
     }]);

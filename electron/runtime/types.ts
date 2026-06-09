@@ -20,7 +20,7 @@ export type RuntimeHealth = GatewayHealth;
 
 export type RuntimeSessionListResult = {
   success?: boolean;
-  sessions?: Array<{ key: string; displayName?: string }>;
+  sessions?: Array<{ key: string; displayName?: string; agentId?: string }>;
   summaries?: Array<{ sessionKey: string; firstUserText: string | null; lastTimestamp: number | null }>;
   error?: string;
 };
