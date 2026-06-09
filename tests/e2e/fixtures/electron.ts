@@ -26,7 +26,6 @@ type ElectronFixtures = {
 
 const repoRoot = resolve(process.cwd());
 const electronEntry = join(repoRoot, 'dist-electron/main/index.js');
-const electronStartupTimeoutMs = 90_000;
 
 async function allocatePort(): Promise<number> {
   return await new Promise((resolvePort, reject) => {
@@ -51,8 +50,8 @@ async function allocatePort(): Promise<number> {
 }
 
 async function getStableWindow(app: ElectronApplication): Promise<Page> {
-  const deadline = Date.now() + electronStartupTimeoutMs;
-  let page = await app.firstWindow({ timeout: electronStartupTimeoutMs });
+  const deadline = Date.now() + 30_000;
+  let page = await app.firstWindow();
 
   while (Date.now() < deadline) {
     const openWindows = app.windows().filter((candidate) => !candidate.isClosed());

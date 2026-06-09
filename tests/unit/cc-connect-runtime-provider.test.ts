@@ -123,6 +123,28 @@ describe('CcConnectRuntimeProvider', () => {
     };
   }
 
+  it('does not require a bundled Codex binary while the cc-connect runtime is inactive', async () => {
+    const { CcConnectRuntimeProvider } = await import('@electron/runtime/cc-connect-provider');
+
+    const provider = new CcConnectRuntimeProvider({
+      codexBundle: {
+        baseDir: join(tempDir, 'missing-codex'),
+        binaryPath: join(tempDir, 'missing-codex', 'bin', 'codex'),
+        pathDir: join(tempDir, 'missing-codex', 'codex-path'),
+        targetTriple: 'test-target',
+      },
+    });
+
+    expect(provider.getStatus()).toMatchObject({
+      runtimeKind: 'cc-connect',
+      state: 'stopped',
+    });
+    expect(provider.listCapabilities()).toMatchObject({
+      chat: true,
+      providers: true,
+    });
+  });
+
   it('creates managed config, starts cc-connect, and connects the ClawX bridge adapter', async () => {
     const binaryPath = join(tempDir, 'cc-connect');
     await writeFile(binaryPath, '#!/bin/sh\n', { mode: 0o755 });

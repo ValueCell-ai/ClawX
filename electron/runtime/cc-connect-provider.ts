@@ -222,7 +222,8 @@ function defaultConfig(options: {
 export class CcConnectRuntimeProvider extends EventEmitter implements RuntimeProvider {
   readonly kind = 'cc-connect' as const;
   private child: ChildProcess | null = null;
-  private readonly codexBridge: CodexCliBridge;
+  private codexBridge: CodexCliBridge | null = null;
+  private readonly codexBridgeFactory: () => CodexCliBridge;
   private readonly bridgeAdapter: NonNullable<CcConnectRuntimeProviderOptions['bridgeAdapter']>;
   private readonly skillSyncer: NonNullable<CcConnectRuntimeProviderOptions['skillSyncer']>;
   private readonly providerProfileLoader: NonNullable<CcConnectRuntimeProviderOptions['providerProfileLoader']>;
@@ -248,7 +249,8 @@ export class CcConnectRuntimeProvider extends EventEmitter implements RuntimePro
     this.codexPath = options.codexPath;
     this.workDir = options.workDir;
     this.codexBundle = options.codexBundle;
-    this.codexBridge = options.codexBridge ?? new CodexCliBridge({
+    this.codexBridge = options.codexBridge ?? null;
+    this.codexBridgeFactory = () => new CodexCliBridge({
       codexPath: options.codexPath,
       codexBundle: options.codexBundle,
       sessionsDir: getCcConnectCodexSessionsDir(),
@@ -277,11 +279,13 @@ export class CcConnectRuntimeProvider extends EventEmitter implements RuntimePro
     if (this.status.state === 'running' || this.status.state === 'starting') return;
     const codexPath = this.resolveCodexPath();
     const providerProfile = await this.loadAndApplyProviderProfile({ reason: 'runtime-start' });
+    const codexBridge = this.getCodexBridge();
+    codexBridge.setProviderProfile(providerProfile);
     const configPath = await this.ensureManagedConfig(providerProfile, codexPath);
     const binaryPath = assertCcConnectBinaryPath(this.binaryPath);
     this.setStatus({ state: 'starting', error: undefined });
 
-    const codexDiagnostic = await this.codexBridge.diagnose();
+    const codexDiagnostic = await codexBridge.diagnose();
     if (!codexDiagnostic.success) {
       const error = codexDiagnostic.error || codexDiagnostic.stderr || 'Codex CLI is unavailable';
       this.setStatus({ state: 'error', error });
@@ -482,7 +486,7 @@ export class CcConnectRuntimeProvider extends EventEmitter implements RuntimePro
       content: [
         `[cc-connect] config=${configPath}`,
         `[cc-connect] providerProfile=${getCcConnectProviderProfilePath()}`,
-        `[codex] sessions=${this.codexBridge.getSessionsDir()}`,
+        `[codex] sessions=${this.getCodexSessionsDir()}`,
         '',
         redactCcConnectConfigForLogs(content),
       ].join('\n'),
@@ -496,7 +500,7 @@ export class CcConnectRuntimeProvider extends EventEmitter implements RuntimePro
     const binaryPath = assertCcConnectBinaryPath(this.binaryPath);
     const args = ['doctor', 'user-isolation', '--config', configPath];
     const command = `cc-connect ${args.join(' ')}`;
-    const codexDiagnostic = await this.codexBridge.diagnose();
+    const codexDiagnostic = await this.getCodexBridge().diagnose();
     const codexStdout = [
       'Codex CLI:',
       codexDiagnostic.success ? 'ok' : 'failed',
@@ -646,7 +650,7 @@ export class CcConnectRuntimeProvider extends EventEmitter implements RuntimePro
     const profile = await this.providerProfileLoader(payload);
     await this.resetCodexAgentSessionsAfterModelHubSwitch(profile);
     this.currentProviderProfile = profile;
-    this.codexBridge.setProviderProfile(profile);
+    this.codexBridge?.setProviderProfile(profile);
     return profile;
   }
 
@@ -765,6 +769,17 @@ export class CcConnectRuntimeProvider extends EventEmitter implements RuntimePro
   private resolveCodexPath(): string {
     if (this.codexPath) return this.codexPath;
     return assertCodexBundle(this.codexBundle).binaryPath;
+  }
+
+  private getCodexBridge(): CodexCliBridge {
+    if (!this.codexBridge) {
+      this.codexBridge = this.codexBridgeFactory();
+    }
+    return this.codexBridge;
+  }
+
+  private getCodexSessionsDir(): string {
+    return this.codexBridge?.getSessionsDir() ?? getCcConnectCodexSessionsDir();
   }
 
   private async spawnCcConnect(binaryPath: string, configPath: string, providerProfile: CodexProviderProfile): Promise<ChildProcess> {
