@@ -864,6 +864,73 @@ describe('syncProviderConfigToOpenClaw', () => {
     await rm(testUserData, { recursive: true, force: true });
   });
 
+  it('preserves existing custom-provider model metadata during provider sync', async () => {
+    await writeOpenClawJson({
+      models: {
+        providers: {
+          'custom-example': {
+            baseUrl: 'https://example.com/v1',
+            api: 'openai-completions',
+            models: [
+              {
+                id: 'model-a',
+                name: 'Model A',
+                input: ['text', 'image'],
+                reasoning: true,
+                contextWindow: 200000,
+                customField: 'keep-me',
+              },
+            ],
+          },
+        },
+      },
+    });
+
+    const { syncProviderConfigToOpenClaw } = await import('@electron/utils/openclaw-auth');
+    await syncProviderConfigToOpenClaw('custom-example', 'model-a', {
+      baseUrl: 'https://example.com/v1',
+      api: 'openai-completions',
+    });
+
+    const result = await readOpenClawJson();
+    const providers = (result.models as Record<string, unknown>).providers as Record<string, unknown>;
+    const entry = providers['custom-example'] as Record<string, unknown>;
+    const models = entry.models as Array<Record<string, unknown>>;
+
+    expect(models).toEqual([
+      expect.objectContaining({
+        id: 'model-a',
+        name: 'Model A',
+        input: ['text', 'image'],
+        reasoning: true,
+        contextWindow: 200000,
+        customField: 'keep-me',
+      }),
+    ]);
+  });
+
+  it('infers text-only input for a new unknown custom-provider model', async () => {
+    await writeOpenClawJson({ models: { providers: {} } });
+
+    const { syncProviderConfigToOpenClaw } = await import('@electron/utils/openclaw-auth');
+    await syncProviderConfigToOpenClaw('custom-example', 'private-model-x', {
+      baseUrl: 'https://example.com/v1',
+      api: 'openai-completions',
+    });
+
+    const result = await readOpenClawJson();
+    const providers = (result.models as Record<string, unknown>).providers as Record<string, unknown>;
+    const entry = providers['custom-example'] as Record<string, unknown>;
+    const models = entry.models as Array<Record<string, unknown>>;
+
+    expect(models).toEqual([
+      expect.objectContaining({
+        id: 'private-model-x',
+        input: ['text'],
+      }),
+    ]);
+  });
+
   it('uses legacy minimax-portal-auth plugin registration when only the legacy plugin exists', async () => {
     await writeOpenClawJson({
       models: { providers: {} },
@@ -1004,6 +1071,112 @@ describe('syncProviderConfigToOpenClaw', () => {
 
     expect(load).toEqual(['/tmp/custom-plugin.js']);
     expect(moonshot.baseUrl).toBe('https://api.moonshot.cn/v1');
+  });
+});
+
+describe('setOpenClawDefaultModelWithOverride model metadata', () => {
+  beforeEach(async () => {
+    vi.resetModules();
+    vi.restoreAllMocks();
+    await rm(testHome, { recursive: true, force: true });
+    await rm(testUserData, { recursive: true, force: true });
+  });
+
+  it('preserves old rows and infers image input for a newly selected vision model', async () => {
+    await writeOpenClawJson({
+      models: {
+        providers: {
+          'custom-example': {
+            baseUrl: 'https://example.com/v1',
+            api: 'openai-completions',
+            models: [
+              {
+                id: 'model-a',
+                name: 'Model A',
+                input: ['text', 'image'],
+                customField: 'keep-me',
+              },
+            ],
+          },
+        },
+      },
+    });
+
+    const { setOpenClawDefaultModelWithOverride } = await import('@electron/utils/openclaw-auth');
+    await setOpenClawDefaultModelWithOverride(
+      'custom-example',
+      'custom-example/claude-opus-4-6',
+      {
+        baseUrl: 'https://example.com/v1',
+        api: 'openai-completions',
+      },
+    );
+
+    const result = await readOpenClawJson();
+    const providers = (result.models as Record<string, unknown>).providers as Record<string, unknown>;
+    const entry = providers['custom-example'] as Record<string, unknown>;
+    const models = entry.models as Array<Record<string, unknown>>;
+    const oldModel = models.find((model) => model.id === 'model-a');
+    const newModel = models.find((model) => model.id === 'claude-opus-4-6');
+
+    expect(oldModel).toEqual(expect.objectContaining({
+      input: ['text', 'image'],
+      customField: 'keep-me',
+    }));
+    expect(newModel).toEqual(expect.objectContaining({
+      input: ['text', 'image'],
+    }));
+    expect(newModel).not.toHaveProperty('customField');
+  });
+
+  it('preserves model input metadata after switching to another provider and back', async () => {
+    await writeOpenClawJson({
+      models: {
+        providers: {
+          'custom-a': {
+            baseUrl: 'https://a.example.com/v1',
+            api: 'openai-completions',
+            models: [
+              {
+                id: 'model-a',
+                name: 'Model A',
+                input: ['text', 'image'],
+              },
+            ],
+          },
+          'custom-b': {
+            baseUrl: 'https://b.example.com/v1',
+            api: 'openai-completions',
+            models: [
+              {
+                id: 'model-b',
+                name: 'Model B',
+                input: ['text'],
+              },
+            ],
+          },
+        },
+      },
+    });
+
+    const { setOpenClawDefaultModelWithOverride } = await import('@electron/utils/openclaw-auth');
+    await setOpenClawDefaultModelWithOverride('custom-b', 'custom-b/model-b', {
+      baseUrl: 'https://b.example.com/v1',
+      api: 'openai-completions',
+    });
+    await setOpenClawDefaultModelWithOverride('custom-a', 'custom-a/model-a', {
+      baseUrl: 'https://a.example.com/v1',
+      api: 'openai-completions',
+    });
+
+    const result = await readOpenClawJson();
+    const providers = (result.models as Record<string, unknown>).providers as Record<string, unknown>;
+    const providerA = providers['custom-a'] as Record<string, unknown>;
+    const models = providerA.models as Array<Record<string, unknown>>;
+
+    expect(models.find((model) => model.id === 'model-a')).toEqual(expect.objectContaining({
+      input: ['text', 'image'],
+    }));
   });
 });
 

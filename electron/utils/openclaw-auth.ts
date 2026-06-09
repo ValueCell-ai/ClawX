@@ -34,6 +34,7 @@ import {
   OPENCLAW_API_PROTOCOLS,
   assertValidApiProtocol,
 } from '../shared/providers/types';
+import { inferCustomModelInputModalities } from '../shared/providers/model-capabilities';
 import {
   CLAWX_OPENAI_IMAGE_DEFAULT_MODEL,
   CLAWX_OPENAI_IMAGE_PROVIDER_KEY,
@@ -1221,6 +1222,7 @@ type ProviderEntryBuildOptions = {
   modelIds?: string[];
   includeRegistryModels?: boolean;
   mergeExistingModels?: boolean;
+  inferRuntimeModelInputs?: boolean;
 };
 
 function normalizeModelRef(provider: string, modelOverride?: string): string | undefined {
@@ -1515,7 +1517,13 @@ function upsertOpenClawProviderEntry(
   const registryModels = options.includeRegistryModels
     ? ((getProviderConfig(provider)?.models ?? []).map((m) => ({ ...m })) as Array<Record<string, unknown>>)
     : [];
-  const runtimeModels = (options.modelIds ?? []).map((id) => ({ id, name: id }));
+  const runtimeModels = (options.modelIds ?? []).map((id) => ({
+    id,
+    name: id,
+    ...(options.inferRuntimeModelInputs
+      ? { input: inferCustomModelInputModalities(id) }
+      : {}),
+  }));
   let mergedModels = mergeProviderModels(registryModels, existingModels, runtimeModels);
   if (options.api === 'anthropic-messages') {
     mergedModels = mergedModels.map((model) => ensureAnthropicMessagesModelEntry(model, provider, existingProvider));
@@ -1686,6 +1694,8 @@ export async function syncProviderConfigToOpenClaw(
         apiKeyEnv: override.apiKeyEnv,
         headers: override.headers,
         modelIds: modelId ? [modelId] : [],
+        mergeExistingModels: true,
+        inferRuntimeModelInputs: true,
       });
     }
 
@@ -1875,6 +1885,8 @@ export async function setOpenClawDefaultModelWithOverride(
         headers: override.headers,
         authHeader: override.authHeader,
         modelIds: [modelId, ...fallbackModelIds],
+        mergeExistingModels: true,
+        inferRuntimeModelInputs: true,
       });
     }
 

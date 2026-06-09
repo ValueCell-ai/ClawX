@@ -32,6 +32,7 @@ requiredRules:
   - channel-plugin-migration-guards
   - capability-owner-resolution
   - active-config-guards
+  - provider-model-metadata-preservation
   - comms-regression
   - docs-sync
 forbiddenPatterns:
