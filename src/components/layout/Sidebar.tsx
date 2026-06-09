@@ -111,6 +111,7 @@ export function Sidebar() {
   const sidebarWidth = useSettingsStore((state) => state.sidebarWidth);
   const setSidebarWidth = useSettingsStore((state) => state.setSidebarWidth);
   const devModeUnlocked = useSettingsStore((state) => state.devModeUnlocked);
+  const runtimeKind = useSettingsStore((state) => state.runtimeKind);
   const [isResizing, setIsResizing] = useState(false);
   const stopResizeRef = useRef<(() => void) | null>(null);
 
@@ -169,6 +170,7 @@ export function Sidebar() {
   const controlUiLabel = gatewayStatus.runtimeKind === 'cc-connect'
     ? t('common:sidebar.ccConnectPage')
     : t('common:sidebar.openClawPage');
+  const dreamsNavEnabled = devModeUnlocked && (gatewayStatus.runtimeKind ?? runtimeKind ?? 'openclaw') === 'openclaw';
 
   const openControlUi = async (view?: 'dreams', label = controlUiLabel) => {
     try {
@@ -327,7 +329,9 @@ export function Sidebar() {
     ...(devModeUnlocked
       ? [
         { to: '/image-generation', icon: <ImagePlus className="h-4 w-4" strokeWidth={2} />, label: t('common:sidebar.imageGeneration'), testId: 'sidebar-nav-image-generation' },
-        { to: '/dreams', icon: <Moon className="h-4 w-4" strokeWidth={2} />, label: t('common:sidebar.openClawDreams'), testId: 'sidebar-nav-dreams' },
+        ...(dreamsNavEnabled
+          ? [{ to: '/dreams', icon: <Moon className="h-4 w-4" strokeWidth={2} />, label: t('common:sidebar.openClawDreams'), testId: 'sidebar-nav-dreams' }]
+          : []),
       ]
       : []),
   ];

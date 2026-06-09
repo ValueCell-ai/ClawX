@@ -43,6 +43,7 @@ async function createMockCcConnectBinary(dir: string): Promise<string> {
   const binaryPath = join(dir, process.platform === 'win32' ? 'cc-connect.exe' : 'cc-connect');
   await mkdir(dir, { recursive: true });
   await writeExecutable(binaryPath, `#!/usr/bin/env node
+const fs = require('node:fs');
 const http = require('node:http');
 const WebSocket = require('ws');
 const args = process.argv.slice(2);
@@ -54,22 +55,96 @@ if (args[0] === 'doctor') {
   process.stdout.write('cc-connect doctor e2e ok\\n');
   process.exit(0);
 }
-const server = http.createServer((req, res) => {
+let cronSeq = 0;
+let jobs = [];
+function json(res, status, payload) {
+  res.writeHead(status, { 'content-type': 'application/json' });
+  res.end(JSON.stringify(payload));
+}
+function readBody(req) {
+  return new Promise((resolve) => {
+    const chunks = [];
+    req.on('data', (chunk) => chunks.push(chunk));
+    req.on('end', () => {
+      const text = Buffer.concat(chunks).toString('utf8');
+      if (!text.trim()) {
+        resolve({});
+        return;
+      }
+      try {
+        resolve(JSON.parse(text));
+      } catch {
+        resolve({});
+      }
+    });
+  });
+}
+function writeBridgeMessage(message) {
+  if (!process.env.CLAWX_E2E_CC_CONNECT_MESSAGES_PATH) return;
+  fs.appendFileSync(process.env.CLAWX_E2E_CC_CONNECT_MESSAGES_PATH, JSON.stringify(message) + '\\n');
+}
+const handleHttpRequest = async (req, res) => {
   if (req.url && req.url.startsWith('/api/v1/status')) {
-    res.writeHead(200, { 'content-type': 'application/json' });
-    res.end(JSON.stringify({ ok: true }));
+    json(res, 200, { ok: true });
     return;
   }
   if (req.url && req.url.startsWith('/api/v1/cron')) {
-    res.writeHead(200, { 'content-type': 'application/json' });
-    res.end(JSON.stringify({ jobs: [] }));
+    const url = new URL(req.url, 'http://127.0.0.1:9820');
+    const parts = url.pathname.split('/').filter(Boolean);
+    const id = parts[3];
+    if (req.method === 'GET' && parts.length === 3) {
+      json(res, 200, { jobs });
+      return;
+    }
+    if (req.method === 'POST' && parts.length === 3) {
+      const body = await readBody(req);
+      const now = new Date().toISOString();
+      const job = {
+        id: 'cron-e2e-' + (++cronSeq),
+        description: body.description || 'Scheduled task',
+        prompt: body.prompt || '',
+        cron_expr: body.cron_expr || '0 9 * * *',
+        enabled: body.enabled !== false,
+        silent: body.silent !== false,
+        project: body.project || 'clawx-main',
+        session_key: body.session_key || 'clawx:main:main',
+        created_at: now,
+        updated_at: now,
+      };
+      jobs.push(job);
+      json(res, 200, { job });
+      return;
+    }
+    const index = jobs.findIndex((job) => job.id === id);
+    if (!id || index < 0) {
+      json(res, 404, { error: 'cron not found' });
+      return;
+    }
+    if (req.method === 'PATCH' && parts.length === 4) {
+      const body = await readBody(req);
+      jobs[index] = { ...jobs[index], ...body, updated_at: new Date().toISOString() };
+      json(res, 200, { job: jobs[index] });
+      return;
+    }
+    if (req.method === 'DELETE' && parts.length === 4) {
+      jobs.splice(index, 1);
+      json(res, 200, { success: true });
+      return;
+    }
+    if (req.method === 'POST' && parts.length === 5 && parts[4] === 'exec') {
+      jobs[index] = { ...jobs[index], last_run_at: new Date().toISOString(), last_status: 'ok' };
+      json(res, 200, { success: true });
+      return;
+    }
+    json(res, 405, { error: 'unsupported cron method' });
     return;
   }
-  res.writeHead(404);
-  res.end('{}');
-});
+  json(res, 404, {});
+};
+const bridgeServer = http.createServer(handleHttpRequest);
+const managementServer = http.createServer(handleHttpRequest);
 const wss = new WebSocket.Server({ noServer: true });
-server.on('upgrade', (req, socket, head) => {
+bridgeServer.on('upgrade', (req, socket, head) => {
   if (!req.url || !req.url.startsWith('/bridge/ws')) {
     socket.destroy();
     return;
@@ -84,6 +159,7 @@ wss.on('connection', (ws) => {
       return;
     }
     if (msg.type === 'message') {
+      writeBridgeMessage(msg);
       ws.send(JSON.stringify({
         type: 'reply',
         reply_ctx: msg.reply_ctx,
@@ -92,10 +168,20 @@ wss.on('connection', (ws) => {
     }
   });
 });
-server.listen(9810, '127.0.0.1');
+bridgeServer.listen(9810, '127.0.0.1');
+managementServer.listen(9820, '127.0.0.1');
 process.stdout.write('cc-connect bridge e2e mock ready\\n');
-process.on('SIGTERM', () => server.close(() => process.exit(0)));
-process.on('SIGINT', () => server.close(() => process.exit(0)));
+function shutdown() {
+  let remaining = 2;
+  const done = () => {
+    remaining -= 1;
+    if (remaining <= 0) process.exit(0);
+  };
+  bridgeServer.close(done);
+  managementServer.close(done);
+}
+process.on('SIGTERM', shutdown);
+process.on('SIGINT', shutdown);
 `);
   return binaryPath;
 }
@@ -109,6 +195,48 @@ async function prepareMockBundles(userDataDir: string): Promise<void> {
   await writeFile(join(userDataDir, 'codex-bundle-ready'), 'ok', 'utf8');
 }
 
+async function writeMockCcConnectChannelSession(userDataDir: string): Promise<void> {
+  const sessionDir = join(userDataDir, 'runtimes', 'cc-connect', 'data', 'sessions');
+  await mkdir(sessionDir, { recursive: true });
+  const createdAt = Date.parse('2026-06-08T00:00:00.000Z');
+  const updatedAt = Date.parse('2026-06-08T00:01:00.000Z');
+  await writeFile(join(sessionDir, 'support-channel.json'), JSON.stringify({
+    sessions: {
+      'session-support-1': {
+        name: 'Support Channel',
+        created_at: createdAt,
+        updated_at: updatedAt,
+        history: [
+          {
+            id: 'support-user-1',
+            role: 'user',
+            content: 'message from connected channel',
+            timestamp: createdAt,
+          },
+          {
+            id: 'support-assistant-1',
+            role: 'assistant',
+            content: 'reply synced from cc-connect channel',
+            timestamp: updatedAt,
+          },
+        ],
+      },
+    },
+    active_session: {
+      'clawx:support:member-1': 'session-support-1',
+    },
+    user_sessions: {
+      'clawx:support:member-1': ['session-support-1'],
+    },
+    user_meta: {
+      'clawx:support:member-1': {
+        chat_name: 'Support Channel',
+        user_name: 'Member One',
+      },
+    },
+  }, null, 2), 'utf8');
+}
+
 test.describe('cc-connect + Codex runtime E2E', () => {
   test.skip(process.platform === 'win32', 'POSIX executable mock binaries are used in this E2E');
 
@@ -117,6 +245,7 @@ test.describe('cc-connect + Codex runtime E2E', () => {
     userDataDir,
   }) => {
     await prepareMockBundles(userDataDir);
+    const bridgeMessagesPath = join(userDataDir, 'cc-connect-bridge-messages.jsonl');
 
     await writeFile(join(userDataDir, 'settings.json'), JSON.stringify({
       language: 'en',
@@ -147,6 +276,7 @@ test.describe('cc-connect + Codex runtime E2E', () => {
       skipSetup: true,
       env: {
         CLAWX_CODEX_WORKDIR: process.cwd(),
+        CLAWX_E2E_CC_CONNECT_MESSAGES_PATH: bridgeMessagesPath,
       },
     });
 
@@ -154,6 +284,7 @@ test.describe('cc-connect + Codex runtime E2E', () => {
       const page = await getStableWindow(app);
       await expect(page.getByTestId('main-layout')).toBeVisible();
       await expect(page.getByTestId('chat-page')).toBeVisible();
+      await expect(page.getByTestId('sidebar-nav-dreams')).toHaveCount(0);
 
       const startResult = await page.evaluate(async () => {
         return await window.clawx.hostInvoke({
@@ -230,6 +361,135 @@ test.describe('cc-connect + Codex runtime E2E', () => {
           ]),
         },
       });
+
+      await writeMockCcConnectChannelSession(userDataDir);
+
+      const channelSessions = await page.evaluate(async () => {
+        return await window.clawx.hostInvoke({
+          id: 'runtime-channel-sessions',
+          module: 'sessions',
+          action: 'summaries',
+          payload: {},
+        });
+      });
+      expect(channelSessions).toMatchObject({
+        ok: true,
+        data: {
+          success: true,
+          sessions: expect.arrayContaining([
+            expect.objectContaining({
+              key: 'agent:support:member-1',
+              displayName: 'Support Channel / Member One',
+            }),
+          ]),
+        },
+      });
+
+      const channelHistory = await page.evaluate(async () => {
+        return await window.clawx.hostInvoke({
+          id: 'runtime-channel-history',
+          module: 'sessions',
+          action: 'history',
+          payload: { sessionKey: 'agent:support:member-1', limit: 20 },
+        });
+      });
+      expect(channelHistory).toMatchObject({
+        ok: true,
+        data: {
+          success: true,
+          messages: expect.arrayContaining([
+            expect.objectContaining({ role: 'user', content: 'message from connected channel' }),
+            expect.objectContaining({ role: 'assistant', content: 'reply synced from cc-connect channel' }),
+          ]),
+        },
+      });
+
+      const cronCreate = await page.evaluate(async () => {
+        return await window.clawx.hostInvoke({
+          id: 'runtime-cron-create',
+          module: 'cron',
+          action: 'create',
+          payload: {
+            name: 'Runtime follow up',
+            message: 'summarize runtime state',
+            schedule: { kind: 'cron', expr: '0 9 * * *' },
+            enabled: true,
+            delivery: { mode: 'none' },
+          },
+        });
+      });
+      expect(cronCreate).toMatchObject({
+        ok: true,
+        data: {
+          id: 'cron-e2e-1',
+          name: 'Runtime follow up',
+          message: 'summarize runtime state',
+          enabled: true,
+        },
+      });
+
+      const cronList = await page.evaluate(async () => {
+        return await window.clawx.hostInvoke({
+          id: 'runtime-cron-list',
+          module: 'cron',
+          action: 'list',
+        });
+      });
+      expect(cronList).toMatchObject({
+        ok: true,
+        data: [expect.objectContaining({ id: 'cron-e2e-1', name: 'Runtime follow up' })],
+      });
+
+      const cronToggle = await page.evaluate(async () => {
+        return await window.clawx.hostInvoke({
+          id: 'runtime-cron-toggle',
+          module: 'cron',
+          action: 'toggle',
+          payload: { id: 'cron-e2e-1', enabled: false },
+        });
+      });
+      expect(cronToggle).toMatchObject({
+        ok: true,
+        data: expect.objectContaining({ id: 'cron-e2e-1', enabled: false }),
+      });
+
+      const cronRun = await page.evaluate(async () => {
+        return await window.clawx.hostInvoke({
+          id: 'runtime-cron-run',
+          module: 'cron',
+          action: 'trigger',
+          payload: { id: 'cron-e2e-1' },
+        });
+      });
+      expect(cronRun).toMatchObject({ ok: true, data: { success: true } });
+
+      const cronDelete = await page.evaluate(async () => {
+        return await window.clawx.hostInvoke({
+          id: 'runtime-cron-delete',
+          module: 'cron',
+          action: 'delete',
+          payload: { id: 'cron-e2e-1' },
+        });
+      });
+      expect(cronDelete).toMatchObject({ ok: true, data: { success: true } });
+
+      await page.evaluate(async () => {
+        return await window.clawx.hostInvoke({
+          id: 'runtime-agent-chat',
+          module: 'chat',
+          action: 'sendWithMedia',
+          payload: {
+            sessionKey: 'agent:analysis:member-2',
+            message: 'hello isolated agent workspace',
+            deliver: false,
+            idempotencyKey: 'analysis-agent-e2e',
+          },
+        });
+      });
+      await expect.poll(async () => {
+        const content = await readFile(bridgeMessagesPath, 'utf8').catch(() => '');
+        return content;
+      }, { timeout: 30_000 }).toContain('"project":"clawx-analysis"');
     } finally {
       await closeElectronApp(app);
     }

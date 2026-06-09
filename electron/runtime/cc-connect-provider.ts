@@ -362,7 +362,7 @@ export class CcConnectRuntimeProvider extends EventEmitter implements RuntimePro
       case 'channels.status':
         return await this.getChannelStatus() as T;
       case 'runtime.controlUi':
-        return await this.getControlUi() as T;
+        return await this.getControlUi(isRecord(params) ? params : undefined) as T;
       case 'cron.list':
         return await this.listCronJobs() as T;
       case 'cron.create':
@@ -634,9 +634,12 @@ export class CcConnectRuntimeProvider extends EventEmitter implements RuntimePro
     await this.restart();
   }
 
-  async getControlUi() {
+  async getControlUi(payload?: { view?: string }) {
     if (!this.listCapabilities().controlUi) {
       return { success: false, error: 'cc-connect runtime does not support Web Admin' };
+    }
+    if (payload?.view === 'dreams') {
+      return { success: false, error: 'cc-connect runtime does not support the OpenClaw Dreams view' };
     }
     return {
       success: true,

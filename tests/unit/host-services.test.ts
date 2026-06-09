@@ -562,6 +562,30 @@ describe('host services', () => {
     expect(gatewayManager.rpc).not.toHaveBeenCalled();
   });
 
+  it('uses the canonical runtime cron RPC methods for mutations', async () => {
+    const runtimeManager = {
+      listCapabilities: vi.fn(() => ({ cron: true })),
+      rpc: vi.fn(async () => ({ success: true })),
+    };
+    const gatewayManager = {
+      rpc: vi.fn(),
+    };
+    const { createCronApi } = await import('@electron/services/cron-api');
+    const cronApi = createCronApi({
+      gatewayManager: gatewayManager as never,
+      runtimeManager: runtimeManager as never,
+    });
+
+    await expect(cronApi.delete({ id: 'cron-1' })).resolves.toEqual({ success: true });
+    await expect(cronApi.toggle({ id: 'cron-1', enabled: false })).resolves.toEqual({ success: true });
+    await expect(cronApi.trigger({ id: 'cron-1' })).resolves.toEqual({ success: true });
+
+    expect(runtimeManager.rpc).toHaveBeenCalledWith('cron.delete', { id: 'cron-1' });
+    expect(runtimeManager.rpc).toHaveBeenCalledWith('cron.update', { id: 'cron-1', input: { enabled: false } });
+    expect(runtimeManager.rpc).toHaveBeenCalledWith('cron.run', { id: 'cron-1', mode: 'force' });
+    expect(gatewayManager.rpc).not.toHaveBeenCalled();
+  });
+
   it('sets the default provider account and syncs runtime defaults', async () => {
     providerServiceMock.getDefaultAccountId.mockResolvedValue('old-default');
     const gatewayManager = { debouncedReload: vi.fn() };

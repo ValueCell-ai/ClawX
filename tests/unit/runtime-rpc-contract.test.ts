@@ -1,0 +1,77 @@
+// @vitest-environment node
+import { describe, expect, it } from 'vitest';
+import {
+  getRuntimeRpcCoverage,
+  RUNTIME_RPC_CONTRACT,
+  type RuntimeRpcSupport,
+} from '@electron/runtime/rpc-contract';
+import {
+  CC_CONNECT_RUNTIME_CAPABILITIES,
+  OPENCLAW_RUNTIME_CAPABILITIES,
+} from '@electron/runtime/types';
+
+const expectedCcConnectNativeMethods = [
+  'chat.send',
+  'sessions.list',
+  'chat.history',
+  'sessions.delete',
+  'providers.sync',
+  'providers.profile',
+  'skills.status',
+  'skills.update',
+  'channels.status',
+  'runtime.controlUi',
+  'cron.list',
+  'cron.create',
+  'cron.update',
+  'cron.delete',
+  'cron.run',
+  'doctor.run',
+  'logs.list',
+];
+
+describe('runtime RPC contract', () => {
+  it('documents every cc-connect primary runtime RPC as native or explicitly unsupported', () => {
+    const ccConnectCoverage = getRuntimeRpcCoverage('cc-connect');
+    const byMethod = new Map(ccConnectCoverage.map((entry) => [entry.method, entry]));
+
+    for (const method of expectedCcConnectNativeMethods) {
+      expect(byMethod.get(method), `${method} should be covered`).toMatchObject({
+        runtime: 'cc-connect',
+        support: 'native' satisfies RuntimeRpcSupport,
+      });
+    }
+
+    expect(byMethod.get('cron.toggle')).toMatchObject({
+      runtime: 'cc-connect',
+      support: 'unsupported',
+    });
+    expect(byMethod.get('chat.abort')).toMatchObject({
+      runtime: 'cc-connect',
+      support: 'unsupported',
+    });
+    expect(byMethod.get('doctor.memory.status')).toMatchObject({
+      runtime: 'cc-connect',
+      support: 'unsupported',
+    });
+  });
+
+  it('keeps runtime capabilities backed by at least one declared RPC contract entry', () => {
+    for (const [runtime, capabilities] of [
+      ['openclaw', OPENCLAW_RUNTIME_CAPABILITIES],
+      ['cc-connect', CC_CONNECT_RUNTIME_CAPABILITIES],
+    ] as const) {
+      for (const [capability, enabled] of Object.entries(capabilities)) {
+        if (!enabled) continue;
+        expect(
+          RUNTIME_RPC_CONTRACT.some((entry) => (
+            entry.runtime === runtime
+            && entry.capability === capability
+            && entry.support !== 'unsupported'
+          )),
+          `${runtime}.${capability} should have a supported RPC contract entry`,
+        ).toBe(true);
+      }
+    }
+  });
+});

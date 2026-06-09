@@ -576,7 +576,7 @@ export function createCronApi({
     },
     delete: async (payload) => {
       if (runtimeSupportsCron()) {
-        return await runtimeManager!.rpc<HostSuccess>('cron.remove', { id: getId(payload) });
+        return await runtimeManager!.rpc<HostSuccess>('cron.delete', { id: getId(payload) });
       }
       return deleteOpenClawCronJob(gatewayManager, payload);
     },

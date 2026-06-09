@@ -104,10 +104,14 @@ function App() {
   const language = useSettingsStore((state) => state.language);
   const setupComplete = useSettingsStore((state) => state.setupComplete);
   const devModeUnlocked = useSettingsStore((state) => state.devModeUnlocked);
+  const runtimeKind = useSettingsStore((state) => state.runtimeKind);
+  const gatewayStatus = useGatewayStore((state) => state.status);
   const initGateway = useGatewayStore((state) => state.init);
   const initUpdate = useUpdateStore((state) => state.init);
   const initProviders = useProviderStore((state) => state.init);
   const handleNewChat = useNewChatAction();
+  const activeRuntimeKind = gatewayStatus.runtimeKind ?? runtimeKind ?? 'openclaw';
+  const dreamsEnabled = devModeUnlocked && activeRuntimeKind === 'openclaw';
 
   useEffect(() => {
     let cancelled = false;
@@ -211,7 +215,7 @@ function App() {
             <Route path="/skills" element={<Skills />} />
             <Route path="/cron" element={<Cron />} />
             <Route path="/image-generation" element={devModeUnlocked ? <ImageGenerationPage /> : <Navigate to="/" replace />} />
-            <Route path="/dreams" element={devModeUnlocked ? <Dreams /> : <Navigate to="/" replace />} />
+            <Route path="/dreams" element={dreamsEnabled ? <Dreams /> : <Navigate to="/" replace />} />
             <Route path="/settings/*" element={<Settings />} />
             {extraRoutes.map((r) => (
               <Route key={r.path} path={r.path} element={<r.component />} />

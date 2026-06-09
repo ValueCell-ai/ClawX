@@ -94,13 +94,13 @@ ClawX 直接基于官方 **OpenClaw** 核心构建。无需单独安装，我们
 
 我们致力于与上游 OpenClaw 项目保持严格同步，确保你始终可以使用官方发布的最新功能、稳定性改进和生态兼容性。
 
-打开开发者模式后，侧边栏还会提供原生 Dreams 页面，可在 ClawX 内查看 OpenClaw 记忆回顾、梦境日记，并执行基础维护操作；需要更深诊断时仍可从该页面打开完整 OpenClaw Dreams UI。
+打开开发者模式且当前 runtime 为 OpenClaw 时，侧边栏还会提供原生 Dreams 页面，可在 ClawX 内查看 OpenClaw 记忆回顾、梦境日记，并执行基础维护操作；需要更深诊断时仍可从该页面打开完整 OpenClaw Dreams UI。
 
 ClawX 现在也包含 runtime 抽象层。OpenClaw 仍是默认 runtime 和回滚路径，你可以在 **设置 → 网关 → Runtime** 切换到可选的内置 `cc-connect` runtime。打包产物会同时内置 cc-connect 二进制和 OpenAI Codex 原生 CLI bundle；runtime 启动不依赖全局安装、PATH 二进制或运行时下载。cc-connect 使用 ClawX 在 app userData 下托管的配置目录，不会自动修改 `~/.cc-connect`，GUI chat 会通过 cc-connect BridgePlatform 连接到 Codex project agent。ClawX 会把每个已配置 agent 映射成独立的 cc-connect project，让选中的 agent 继续使用它在 OpenClaw 中配置的 workspace。Provider/model、cron 任务和已启用 skills 会同步到托管的 cc-connect/Codex runtime。
 
 在 cc-connect 模式下，Codex provider 同步支持 OpenAI API Key、OpenAI OAuth/Codex、Ollama，以及暴露 Responses API 的 OpenAI-compatible Custom provider。ByteDance ModelHub-compatible Custom provider 会被规范化到 Codex 使用的 `/api/modelhub/online` Responses endpoint，并且托管配置中只写入环境变量形式的 header 引用，避免持久化密钥或 sticky-session header。配置为 Chat Completions 的 Custom provider 会在 chat 投递前被明确标记为不支持，因为 Codex 0.137 只接受 Responses wire API。
 
-cc-connect 也负责消息平台桥接。当 cc-connect 是当前 runtime 时，频道状态探测会通过 runtime 抽象层路由，而不是继续固定查询 OpenClaw Gateway；已配置的频道账号会同步到其绑定 agent 所属的 cc-connect project，频道保存/删除会重启托管 cc-connect runtime，让 platform 变更立即生效；开发者模式侧边栏的页面入口会打开 cc-connect Web Admin。
+cc-connect 也负责消息平台桥接。当 cc-connect 是当前 runtime 时，频道状态探测会通过 runtime 抽象层路由，而不是继续固定查询 OpenClaw Gateway；已配置的频道账号会同步到其绑定 agent 所属的 cc-connect project，频道保存/删除会重启托管 cc-connect runtime，让 platform 变更立即生效；开发者模式侧边栏的页面入口会打开 cc-connect Web Admin，OpenClaw Dreams 入口仍只在 OpenClaw runtime 下显示。
 
 ---
 

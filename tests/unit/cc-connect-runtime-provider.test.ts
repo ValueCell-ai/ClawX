@@ -416,6 +416,22 @@ describe('CcConnectRuntimeProvider', () => {
     });
   });
 
+  it('does not route OpenClaw Dreams control UI requests to cc-connect Web Admin', async () => {
+    const binaryPath = join(tempDir, 'cc-connect');
+    await writeFile(binaryPath, '#!/bin/sh\n', { mode: 0o755 });
+    const { CcConnectRuntimeProvider } = await import('@electron/runtime/cc-connect-provider');
+    const provider = new CcConnectRuntimeProvider({
+      binaryPath,
+      codexBridge: createBridgeMock() as never,
+      skillSyncer: vi.fn(async () => ({ skills: [] })),
+    });
+
+    await expect(provider.rpc('runtime.controlUi', { view: 'dreams' })).resolves.toMatchObject({
+      success: false,
+      error: expect.stringContaining('Dreams'),
+    });
+  });
+
   it('returns a stable channel status snapshot for cc-connect channel-capable runtime', async () => {
     const binaryPath = join(tempDir, 'cc-connect');
     await writeFile(binaryPath, '#!/bin/sh\n', { mode: 0o755 });
