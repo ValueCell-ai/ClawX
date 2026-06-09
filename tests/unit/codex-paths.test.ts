@@ -13,16 +13,23 @@ vi.mock('electron', () => ({
 
 describe('Codex bundle path resolver', () => {
   const originalCwd = process.cwd();
+  const originalOverride = process.env.CLAWX_CODEX_PATH;
   let tempDir: string;
 
   beforeEach(async () => {
     vi.resetModules();
+    delete process.env.CLAWX_CODEX_PATH;
     tempDir = await mkdtemp(join(tmpdir(), 'clawx-codex-paths-'));
     process.chdir(tempDir);
   });
 
   afterEach(async () => {
     process.chdir(originalCwd);
+    if (originalOverride === undefined) {
+      delete process.env.CLAWX_CODEX_PATH;
+    } else {
+      process.env.CLAWX_CODEX_PATH = originalOverride;
+    }
     await rm(tempDir, { recursive: true, force: true });
   });
 
@@ -44,6 +51,25 @@ describe('Codex bundle path resolver', () => {
       baseDir: bundledDir,
     });
     expect(assertCodexBundle()).toMatchObject({ binaryPath, pathDir });
+  });
+
+  it('uses an explicit dev Codex binary override', async () => {
+    const binaryName = process.platform === 'win32' ? 'codex.exe' : 'codex';
+    const bundledDir = join(tempDir, 'mock-runtime', 'codex');
+    const binaryPath = join(bundledDir, 'bin', binaryName);
+    await mkdir(join(binaryPath, '..'), { recursive: true });
+    await writeFile(binaryPath, 'mock codex override', 'utf8');
+    await chmod(binaryPath, 0o755);
+    process.env.CLAWX_CODEX_PATH = binaryPath;
+
+    const { getCodexBundle, assertCodexBundle } = await import('@electron/runtime/codex-paths');
+
+    expect(getCodexBundle()).toMatchObject({
+      binaryPath,
+      baseDir: bundledDir,
+      pathDir: join(bundledDir, 'codex-path'),
+    });
+    expect(assertCodexBundle()).toMatchObject({ binaryPath });
   });
 
   it('fails without falling back to a PATH/global codex binary', async () => {

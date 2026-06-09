@@ -1,4 +1,4 @@
-import { chmod, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { chmod, mkdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { closeElectronApp, expect, getStableWindow, test } from './fixtures/electron';
 
@@ -41,11 +41,12 @@ process.exit(0);
 
 async function createMockCcConnectBinary(dir: string): Promise<string> {
   const binaryPath = join(dir, process.platform === 'win32' ? 'cc-connect.exe' : 'cc-connect');
+  const wsModulePath = require.resolve('ws');
   await mkdir(dir, { recursive: true });
   await writeExecutable(binaryPath, `#!/usr/bin/env node
 const fs = require('node:fs');
 const http = require('node:http');
-const WebSocket = require('ws');
+const WebSocket = require(${JSON.stringify(wsModulePath)});
 const args = process.argv.slice(2);
 if (args.includes('--version')) {
   process.stdout.write('cc-connect v1.3.2 e2e-mock\\n');
@@ -186,13 +187,12 @@ process.on('SIGINT', shutdown);
   return binaryPath;
 }
 
-async function prepareMockBundles(userDataDir: string): Promise<void> {
-  const target = `${process.platform}-${process.arch}`;
-  await rm(join(process.cwd(), 'build', 'codex', target), { recursive: true, force: true });
-  await rm(join(process.cwd(), 'build', 'cc-connect', target), { recursive: true, force: true });
-  await createMockCodexBinary(join(process.cwd(), 'build', 'codex', target));
-  await createMockCcConnectBinary(join(process.cwd(), 'build', 'cc-connect', target));
+async function prepareMockBundles(userDataDir: string): Promise<{ ccConnectPath: string; codexPath: string }> {
+  const mockBundleDir = join(userDataDir, 'mock-runtime-bundles');
+  const codexPath = await createMockCodexBinary(join(mockBundleDir, 'codex'));
+  const ccConnectPath = await createMockCcConnectBinary(join(mockBundleDir, 'cc-connect'));
   await writeFile(join(userDataDir, 'codex-bundle-ready'), 'ok', 'utf8');
+  return { ccConnectPath, codexPath };
 }
 
 async function writeMockCcConnectChannelSession(userDataDir: string): Promise<void> {
@@ -244,7 +244,7 @@ test.describe('cc-connect + Codex runtime E2E', () => {
     launchElectronApp,
     userDataDir,
   }) => {
-    await prepareMockBundles(userDataDir);
+    const mockBundles = await prepareMockBundles(userDataDir);
     const bridgeMessagesPath = join(userDataDir, 'cc-connect-bridge-messages.jsonl');
 
     await writeFile(join(userDataDir, 'settings.json'), JSON.stringify({
@@ -276,6 +276,8 @@ test.describe('cc-connect + Codex runtime E2E', () => {
       skipSetup: true,
       env: {
         CLAWX_CODEX_WORKDIR: process.cwd(),
+        CLAWX_CC_CONNECT_PATH: mockBundles.ccConnectPath,
+        CLAWX_CODEX_PATH: mockBundles.codexPath,
         CLAWX_E2E_CC_CONNECT_MESSAGES_PATH: bridgeMessagesPath,
       },
     });
@@ -509,7 +511,7 @@ test.describe('cc-connect + Codex runtime E2E', () => {
     launchElectronApp,
     userDataDir,
   }) => {
-    await prepareMockBundles(userDataDir);
+    const mockBundles = await prepareMockBundles(userDataDir);
     const createdAt = '2026-06-07T00:00:00.000Z';
 
     await writeFile(join(userDataDir, 'settings.json'), JSON.stringify({
@@ -553,6 +555,8 @@ test.describe('cc-connect + Codex runtime E2E', () => {
       skipSetup: true,
       env: {
         CLAWX_CODEX_WORKDIR: process.cwd(),
+        CLAWX_CC_CONNECT_PATH: mockBundles.ccConnectPath,
+        CLAWX_CODEX_PATH: mockBundles.codexPath,
       },
     });
 

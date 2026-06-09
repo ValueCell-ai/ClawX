@@ -1,6 +1,6 @@
 import { app } from 'electron';
 import { existsSync } from 'node:fs';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 
 export type CodexBundle = {
   baseDir: string;
@@ -26,6 +26,9 @@ function codexTargetTriple(platform = process.platform, arch = process.arch): st
 function baseDir(): string {
   if (app.isPackaged) {
     return join(process.resourcesPath, 'codex');
+  }
+  if (process.env.CLAWX_CODEX_PATH) {
+    return dirname(dirname(process.env.CLAWX_CODEX_PATH));
   }
   return join(process.cwd(), 'build', 'codex', `${process.platform}-${process.arch}`);
 }

@@ -27,6 +27,9 @@ export function getCcConnectProviderProfilePath(): string {
 }
 
 export function getCcConnectBinaryPath(): string {
+  if (!app.isPackaged && process.env.CLAWX_CC_CONNECT_PATH) {
+    return process.env.CLAWX_CC_CONNECT_PATH;
+  }
   if (app.isPackaged) {
     return join(process.resourcesPath, 'cc-connect', binaryName());
   }

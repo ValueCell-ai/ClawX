@@ -46,6 +46,20 @@ describe('cc-connect path resolver', () => {
     expect(assertCcConnectBinaryPath()).toBe(bundledPath);
   });
 
+  it('uses an explicit dev cc-connect binary override', async () => {
+    const binaryName = process.platform === 'win32' ? 'cc-connect.exe' : 'cc-connect';
+    const overridePath = join(tempDir, 'mock-runtime', binaryName);
+    await mkdir(join(overridePath, '..'), { recursive: true });
+    await writeFile(overridePath, 'mock cc-connect override', 'utf8');
+    await chmod(overridePath, 0o755);
+    process.env.CLAWX_CC_CONNECT_PATH = overridePath;
+
+    const { getCcConnectBinaryPath, assertCcConnectBinaryPath } = await import('@electron/runtime/cc-connect-paths');
+
+    expect(getCcConnectBinaryPath()).toBe(overridePath);
+    expect(assertCcConnectBinaryPath()).toBe(overridePath);
+  });
+
   it('does not use the npm postinstall binary as a runtime fallback', async () => {
     const binaryName = process.platform === 'win32' ? 'cc-connect.exe' : 'cc-connect';
     const nodeModulesBinary = join(process.cwd(), 'node_modules', 'cc-connect', 'bin', binaryName);
