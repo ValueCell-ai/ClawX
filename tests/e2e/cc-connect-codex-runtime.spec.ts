@@ -404,6 +404,16 @@ test.describe('cc-connect + Codex runtime E2E', () => {
         },
       });
 
+      const channelSessionItem = page.getByRole('button', { name: /message from connected channel/ });
+      await expect(channelSessionItem).toBeVisible({ timeout: 15_000 });
+      await channelSessionItem.click();
+      await expect(page.getByTestId('chat-message-0').getByText('message from connected channel')).toBeVisible({
+        timeout: 15_000,
+      });
+      await expect(page.getByTestId('chat-message-1').getByText('reply synced from cc-connect channel')).toBeVisible({
+        timeout: 15_000,
+      });
+
       const cronCreate = await page.evaluate(async () => {
         return await window.clawx.hostInvoke({
           id: 'runtime-cron-create',

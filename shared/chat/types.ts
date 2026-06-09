@@ -139,7 +139,7 @@ export interface ChatState {
   thinkingLevel: string | null;
 
   // Actions
-  loadSessions: () => Promise<void>;
+  loadSessions: (force?: boolean) => Promise<void>;
   switchSession: (key: string) => void;
   newSession: () => void;
   deleteSession: (key: string) => Promise<void>;

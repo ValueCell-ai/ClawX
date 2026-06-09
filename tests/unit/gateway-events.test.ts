@@ -571,7 +571,7 @@ describe('gateway store event wiring', () => {
     });
     await flushAsyncImports();
 
-    expect(loadSessions).toHaveBeenCalledTimes(1);
+    expect(loadSessions).toHaveBeenCalledWith(true);
     expect(loadHistory).toHaveBeenCalledTimes(1);
     expect(handleRuntimeEvent).not.toHaveBeenCalled();
   });

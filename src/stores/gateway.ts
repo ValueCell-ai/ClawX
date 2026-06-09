@@ -131,7 +131,7 @@ function shouldProcessGatewayEvent(event: Record<string, unknown>): boolean {
 }
 
 function maybeLoadSessions(
-  state: { loadSessions: () => Promise<void> },
+  state: { loadSessions: (force?: boolean) => Promise<void> },
   force = false,
 ): void {
   const { status } = useGatewayStore.getState();
@@ -140,7 +140,7 @@ function maybeLoadSessions(
   const now = Date.now();
   if (!force && now - lastLoadSessionsAt < LOAD_SESSIONS_MIN_INTERVAL_MS) return;
   lastLoadSessionsAt = now;
-  void state.loadSessions();
+  void state.loadSessions(force);
 }
 
 function maybeLoadHistory(

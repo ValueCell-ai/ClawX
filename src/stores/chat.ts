@@ -2422,13 +2422,13 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
   // ── Load sessions via sessions.list ──
 
-  loadSessions: async () => {
+  loadSessions: async (force = false) => {
     const now = Date.now();
     if (_loadSessionsInFlight) {
       await _loadSessionsInFlight;
       return;
     }
-    if (now - _lastLoadSessionsAt < SESSION_LOAD_MIN_INTERVAL_MS) {
+    if (!force && now - _lastLoadSessionsAt < SESSION_LOAD_MIN_INTERVAL_MS) {
       return;
     }
 

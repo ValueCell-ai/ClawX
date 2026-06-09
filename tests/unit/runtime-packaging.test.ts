@@ -3,6 +3,7 @@ import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { parse } from 'yaml';
 import { describe, expect, it } from 'vitest';
+import { archesForPlatform, parseArgs } from '../../scripts/verify-runtime-bundles.mjs';
 
 const repoRoot = process.cwd();
 
@@ -16,6 +17,22 @@ describe('runtime packaging guardrails', () => {
     for (const scriptName of ['build', 'package', 'package:mac', 'package:win', 'package:linux', 'release']) {
       expect(packageJson.scripts[scriptName], `${scriptName} should verify bundled runtimes`).toContain('verify:runtime-bundles');
     }
+  });
+
+  it('verifies every packaged arch when a platform preset is requested explicitly', () => {
+    expect(parseArgs([])).toEqual({
+      platforms: [process.platform],
+      explicitPlatform: false,
+    });
+    expect(archesForPlatform(process.platform, { explicitPlatform: false })).toEqual([process.arch]);
+
+    expect(parseArgs(['--platform=mac'])).toEqual({
+      platforms: ['darwin'],
+      explicitPlatform: true,
+    });
+    expect(archesForPlatform('darwin', { explicitPlatform: true })).toEqual(['x64', 'arm64']);
+    expect(archesForPlatform('linux', { explicitPlatform: true })).toEqual(['x64', 'arm64']);
+    expect(archesForPlatform('win32', { explicitPlatform: true })).toEqual(['x64']);
   });
 
   it('packages cc-connect and Codex as platform resources on every Electron target', async () => {
