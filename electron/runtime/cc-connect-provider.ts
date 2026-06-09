@@ -47,7 +47,7 @@ type CcConnectRuntimeProviderOptions = {
   workDir?: string;
   codexBridge?: CodexCliBridge;
   codexBundle?: CodexBundle;
-  bridgeAdapter?: Pick<CcConnectBridgeAdapter, 'connect' | 'close' | 'send' | 'listSessions' | 'loadHistory' | 'deleteSession' | 'summarizeSessions'>;
+  bridgeAdapter?: Pick<CcConnectBridgeAdapter, 'connect' | 'close' | 'send' | 'listSessions' | 'loadHistory' | 'deleteSession' | 'summarizeSessions' | 'reconcilePendingRunsFromHistory'>;
   skillSyncer?: typeof syncCcConnectSkills;
   providerProfileLoader?: (payload?: { providerId?: string; reason?: string }) => Promise<CodexProviderProfile>;
 };
@@ -889,6 +889,9 @@ export class CcConnectRuntimeProvider extends EventEmitter implements RuntimePro
           seq: this.sessionSyncSeq,
           ts: now,
         });
+      }
+      if (changed.length > 0) {
+        await this.bridgeAdapter.reconcilePendingRunsFromHistory();
       }
     } catch {
       // Session sync is a best-effort UI refresh signal; chat/history RPCs still work on demand.

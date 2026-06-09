@@ -105,6 +105,7 @@ describe('CcConnectRuntimeProvider', () => {
         firstUserText: 'hello',
         lastTimestamp: 2,
       }))),
+      reconcilePendingRunsFromHistory: vi.fn(async () => undefined),
       ...overrides,
     };
   }
@@ -255,6 +256,7 @@ describe('CcConnectRuntimeProvider', () => {
           reason: 'cc-connect-session-store',
         }),
       ]);
+      expect(bridgeAdapter.reconcilePendingRunsFromHistory).toHaveBeenCalledOnce();
       await provider.stop();
     } finally {
       vi.useRealTimers();

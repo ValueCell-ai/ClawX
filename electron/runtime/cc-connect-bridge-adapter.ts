@@ -30,6 +30,11 @@ type PendingRun = {
   seq: number;
 };
 
+type PendingRunResolution = {
+  runId: string;
+  pending: PendingRun;
+};
+
 type PersistedSession = {
   id: string;
   name?: string;
@@ -325,6 +330,22 @@ export class CcConnectBridgeAdapter {
     }));
   }
 
+  async reconcilePendingRunsFromHistory(): Promise<void> {
+    const pendingRuns = Array.from(this.pendingRuns.values());
+    for (const pending of pendingRuns) {
+      const messages = await this.readPersistedMessages(pending.sessionKey);
+      const completion = this.findPersistedCompletionForPendingRun(pending, messages);
+      if (!completion) continue;
+      this.finishPendingRun(pending, {
+        text: messageText(completion.content),
+        isError: completion.isError === true,
+        appendMessage: false,
+        messageId: completion.id,
+        timestamp: normalizeTimestamp(completion.timestamp),
+      });
+    }
+  }
+
   private async readPersistedSessionStores(): Promise<PersistedSessionStore[]> {
     const names = await readdir(this.sessionStoreDir).catch(() => []);
     return (await Promise.all(names
@@ -523,9 +544,9 @@ export class CcConnectBridgeAdapter {
   }
 
   private emitAssistantDelta(message: Record<string, unknown>): void {
-    const runId = typeof message.reply_ctx === 'string' ? message.reply_ctx : '';
-    const pending = this.pendingRuns.get(runId);
-    if (!pending) return;
+    const resolved = this.resolvePendingRun(message);
+    if (!resolved) return;
+    const { runId, pending } = resolved;
     const fullText = typeof message.full_text === 'string' ? message.full_text : '';
     const delta = typeof message.delta === 'string' ? message.delta : '';
     const text = typeof message.text === 'string' ? message.text : fullText;
@@ -543,11 +564,13 @@ export class CcConnectBridgeAdapter {
   }
 
   private finishRun(message: Record<string, unknown>, text: string, isError = false): void {
+    const resolved = this.resolvePendingRun(message);
+    if (resolved) {
+      this.finishPendingRun(resolved.pending, { text, isError });
+      return;
+    }
     const runId = typeof message.reply_ctx === 'string' ? message.reply_ctx : '';
-    const pending = this.pendingRuns.get(runId);
-    const sessionKey = pending?.sessionKey ?? 'agent:main:main';
     const now = Date.now();
-    const seq = pending ? pending.seq + 1 : undefined;
     const assistantMessage: RawMessage = {
       id: `${runId || randomUUID()}:assistant`,
       role: isError ? 'system' : 'assistant',
@@ -555,24 +578,93 @@ export class CcConnectBridgeAdapter {
       timestamp: now,
       ...(isError ? { isError: true, errorMessage: text } : {}),
     };
-    this.appendMessage(sessionKey, assistantMessage);
+    this.appendMessage('agent:main:main', assistantMessage);
     this.emitRuntimeEvent('chat:message', {
       state: 'final',
       runId,
-      sessionKey,
+      sessionKey: 'agent:main:main',
       message: assistantMessage,
     });
     this.emitRuntimeEvent('chat:runtime-event', {
       type: 'run.ended',
       runId,
-      sessionKey,
+      sessionKey: 'agent:main:main',
       status: isError ? 'error' : 'completed',
       endedAt: now,
-      seq,
       ts: now,
       ...(isError ? { error: text } : {}),
     });
-    if (runId) this.pendingRuns.delete(runId);
+  }
+
+  private resolvePendingRun(message: Record<string, unknown>): PendingRunResolution | null {
+    const replyCtx = typeof message.reply_ctx === 'string' ? message.reply_ctx : '';
+    const byReplyCtx = replyCtx ? this.pendingRuns.get(replyCtx) : undefined;
+    if (byReplyCtx) return { runId: replyCtx, pending: byReplyCtx };
+
+    const bridgeSessionKey = typeof message.session_key === 'string' ? message.session_key : '';
+    if (bridgeSessionKey) {
+      const sessionKey = fromBridgeSessionKey(bridgeSessionKey);
+      for (const [runId, pending] of this.pendingRuns.entries()) {
+        if (pending.sessionKey === sessionKey || toCcConnectBridgeSessionKey(pending.sessionKey) === bridgeSessionKey) {
+          return { runId, pending };
+        }
+      }
+    }
+
+    if (this.pendingRuns.size === 1) {
+      const [runId, pending] = Array.from(this.pendingRuns.entries())[0];
+      return { runId, pending };
+    }
+    return null;
+  }
+
+  private findPersistedCompletionForPendingRun(pending: PendingRun, messages: RawMessage[]): RawMessage | null {
+    const startedAt = pending.startedAt - 5_000;
+    const candidates = messages.filter((message) => {
+      if (message.role !== 'assistant' && message.role !== 'system') return false;
+      if (!messageText(message.content)) return false;
+      const timestamp = normalizeTimestamp(message.timestamp);
+      return timestamp == null || timestamp >= startedAt;
+    });
+    return candidates.at(-1) ?? null;
+  }
+
+  private finishPendingRun(pending: PendingRun, options: {
+    text: string;
+    isError?: boolean;
+    appendMessage?: boolean;
+    messageId?: string;
+    timestamp?: number;
+  }): void {
+    const now = options.timestamp ?? Date.now();
+    const isError = options.isError === true;
+    const assistantMessage: RawMessage = {
+      id: options.messageId || `${pending.runId}:assistant`,
+      role: isError ? 'system' : 'assistant',
+      content: options.text,
+      timestamp: now,
+      ...(isError ? { isError: true, errorMessage: options.text } : {}),
+    };
+    if (options.appendMessage !== false) {
+      this.appendMessage(pending.sessionKey, assistantMessage);
+      this.emitRuntimeEvent('chat:message', {
+        state: 'final',
+        runId: pending.runId,
+        sessionKey: pending.sessionKey,
+        message: assistantMessage,
+      });
+    }
+    this.emitRuntimeEvent('chat:runtime-event', {
+      type: 'run.ended',
+      runId: pending.runId,
+      sessionKey: pending.sessionKey,
+      status: isError ? 'error' : 'completed',
+      endedAt: now,
+      seq: pending.seq + 1,
+      ts: now,
+      ...(isError ? { error: options.text } : {}),
+    });
+    this.pendingRuns.delete(pending.runId);
   }
 
   private appendMessage(sessionKey: string, message: RawMessage): void {

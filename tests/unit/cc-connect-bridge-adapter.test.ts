@@ -117,6 +117,141 @@ describe('cc-connect bridge adapter persisted sessions', () => {
     }
   });
 
+  it('maps bridge replies without reply_ctx back to the pending app run', async () => {
+    const server = new WebSocketServer({ port: 0 });
+    const port = await new Promise<number>((resolve) => {
+      server.once('listening', () => {
+        const address = server.address();
+        resolve(typeof address === 'object' && address ? address.port : 0);
+      });
+    });
+    const emitted: Array<[string, unknown]> = [];
+
+    server.on('connection', (socket) => {
+      socket.on('message', (data) => {
+        const parsed = JSON.parse(String(data)) as Record<string, unknown>;
+        if (parsed.type === 'register') {
+          socket.send(JSON.stringify({ type: 'register_ack', ok: true }));
+          return;
+        }
+        if (parsed.type === 'message') {
+          socket.send(JSON.stringify({
+            type: 'reply',
+            session_key: parsed.session_key,
+            content: 'pong without ctx',
+          }));
+        }
+      });
+    });
+
+    try {
+      const adapter = new CcConnectBridgeAdapter({
+        port,
+        token: 'token',
+        project: 'clawx-main',
+        emit: ((event: string, payload: unknown) => emitted.push([event, payload])) as never,
+        sessionStoreDir,
+      });
+
+      const result = await adapter.send({
+        sessionKey: 'agent:main:main',
+        message: 'ping',
+        idempotencyKey: 'idem-no-ctx',
+      });
+
+      await vi.waitFor(() => {
+        expect(emitted).toEqual(expect.arrayContaining([
+          ['chat:message', expect.objectContaining({
+            runId: result.runId,
+            sessionKey: 'agent:main:main',
+            message: expect.objectContaining({ role: 'assistant', content: 'pong without ctx' }),
+          })],
+          ['chat:runtime-event', expect.objectContaining({
+            type: 'run.ended',
+            runId: result.runId,
+            sessionKey: 'agent:main:main',
+            status: 'completed',
+          })],
+        ]));
+      });
+      await adapter.close();
+    } finally {
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
+  });
+
+  it('ends pending app runs when cc-connect only persists the assistant response to history', async () => {
+    const server = new WebSocketServer({ port: 0 });
+    const port = await new Promise<number>((resolve) => {
+      server.once('listening', () => {
+        const address = server.address();
+        resolve(typeof address === 'object' && address ? address.port : 0);
+      });
+    });
+    const emitted: Array<[string, unknown]> = [];
+
+    server.on('connection', (socket) => {
+      socket.on('message', (data) => {
+        const parsed = JSON.parse(String(data)) as Record<string, unknown>;
+        if (parsed.type === 'register') {
+          socket.send(JSON.stringify({ type: 'register_ack', ok: true }));
+        }
+      });
+    });
+
+    try {
+      const adapter = new CcConnectBridgeAdapter({
+        port,
+        token: 'token',
+        project: 'clawx-main',
+        emit: ((event: string, payload: unknown) => emitted.push([event, payload])) as never,
+        sessionStoreDir,
+      });
+
+      const result = await adapter.send({
+        sessionKey: 'agent:main:main',
+        message: 'persisted ping',
+        idempotencyKey: 'idem-history',
+      });
+      const completionTimestamp = Date.now() + 1_000;
+      await writeFile(join(sessionStoreDir, 'clawx-main_history.json'), JSON.stringify({
+        sessions: {
+          s1: {
+            id: 's1',
+            history: [
+              { id: 'u1', role: 'user', content: 'persisted ping', timestamp: completionTimestamp - 500 },
+              { id: 'a1', role: 'assistant', content: 'persisted pong', timestamp: completionTimestamp },
+            ],
+            updated_at: completionTimestamp,
+          },
+        },
+        active_session: {
+          'clawx:main:main': 's1',
+        },
+      }), 'utf8');
+
+      await adapter.reconcilePendingRunsFromHistory();
+
+      expect(emitted).toEqual(expect.arrayContaining([
+        ['chat:runtime-event', expect.objectContaining({
+          type: 'run.ended',
+          runId: result.runId,
+          sessionKey: 'agent:main:main',
+          status: 'completed',
+        })],
+      ]));
+      expect(emitted).not.toEqual(expect.arrayContaining([
+        ['chat:message', expect.objectContaining({
+          runId: result.runId,
+          message: expect.objectContaining({ content: 'persisted pong' }),
+        })],
+      ]));
+      await adapter.close();
+    } finally {
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
+  });
+
   it('lists and reads cc-connect channel sessions from the persisted session store', async () => {
     await writeFile(join(sessionStoreDir, 'clawx-main_abc.json'), JSON.stringify({
       sessions: {
