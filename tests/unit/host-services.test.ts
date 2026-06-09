@@ -379,7 +379,13 @@ describe('host services', () => {
     expect(gatewayManager.rpc).toHaveBeenCalledWith('chat.history', { limit: 1 }, 42);
   });
 
-  it('opens the cc-connect Web Admin URL through the active runtime', async () => {
+  it('opens the active runtime Control UI through provider capability', async () => {
+    const getControlUi = vi.fn(async () => ({
+      success: true,
+      url: 'http://127.0.0.1:9820/',
+      token: 'runtime-management-token',
+      port: 9820,
+    }));
     const runtimeManager = {
       getStatus: vi.fn(() => ({
         state: 'running',
@@ -387,12 +393,7 @@ describe('host services', () => {
         runtimeKind: 'cc-connect',
         capabilities: { controlUi: true },
       })),
-      rpc: vi.fn(async () => ({
-        success: true,
-        url: 'http://127.0.0.1:9820/',
-        token: 'cc-connect-management-token',
-        port: 9820,
-      })),
+      getActiveProvider: vi.fn(() => ({ getControlUi })),
     };
     const backpressure = {
       run: vi.fn(),
@@ -402,11 +403,11 @@ describe('host services', () => {
     await expect(createGatewayApi(runtimeManager as never, backpressure as never).controlUi()).resolves.toEqual({
       success: true,
       url: 'http://127.0.0.1:9820/',
-      token: 'cc-connect-management-token',
+      token: 'runtime-management-token',
       port: 9820,
     });
 
-    expect(runtimeManager.rpc).toHaveBeenCalledWith('runtime.controlUi', {}, 5000);
+    expect(getControlUi).toHaveBeenCalledWith({});
   });
 
   it('exposes provider account snapshot actions through the typed providers service', async () => {
@@ -497,7 +498,7 @@ describe('host services', () => {
     );
   });
 
-  it('syncs provider accounts through cc-connect runtime when cc-connect is active', async () => {
+  it('syncs provider accounts through active runtime provider capability', async () => {
     const account = {
       id: 'ollama-local',
       vendorId: 'ollama',
@@ -509,9 +510,9 @@ describe('host services', () => {
       updatedAt: '2026-06-07T00:00:00.000Z',
     };
     providerServiceMock.createAccount.mockResolvedValue(account);
+    const syncProviderProfile = vi.fn(async () => ({ success: true }));
     const runtimeManager = {
-      getActiveKind: vi.fn(async () => 'cc-connect'),
-      rpc: vi.fn(async () => ({ success: true })),
+      getActiveProvider: vi.fn(() => ({ syncProviderProfile })),
     };
     const { createProvidersApi } = await import('@electron/services/providers-api');
 
@@ -525,16 +526,16 @@ describe('host services', () => {
     });
 
     expect(providerServiceMock.createAccount).toHaveBeenCalledWith(account, undefined);
-    expect(runtimeManager.rpc).toHaveBeenCalledWith('providers.sync', {
+    expect(syncProviderProfile).toHaveBeenCalledWith({
       providerId: 'ollama-local',
       reason: 'save',
     });
     expect(syncSavedProviderToRuntimeMock).not.toHaveBeenCalled();
   });
 
-  it('routes cron API through cc-connect runtime when cc-connect is active', async () => {
+  it('routes cron API through active runtime cron capability', async () => {
     const runtimeManager = {
-      getActiveKind: vi.fn(async () => 'cc-connect'),
+      listCapabilities: vi.fn(() => ({ cron: true })),
       rpc: vi.fn(async () => [{
         id: 'cron-1',
         name: 'Daily summary',
@@ -799,7 +800,7 @@ describe('host services', () => {
     expect(gatewayManager.debouncedRestart).toHaveBeenCalledWith(150);
   });
 
-  it('restarts active cc-connect runtime after saving channel config', async () => {
+  it('refreshes active runtime config after saving channel config', async () => {
     listAgentsSnapshotMock.mockResolvedValue({
       agents: [{ id: 'main', name: 'Main' }],
       defaultAgentId: 'main',
@@ -814,14 +815,9 @@ describe('host services', () => {
       debouncedRestart: vi.fn(),
       debouncedReload: vi.fn(),
     };
+    const refreshConfig = vi.fn(async () => undefined);
     const runtimeManager = {
-      getActiveKind: vi.fn(async () => 'cc-connect'),
-      getStatus: vi.fn(() => ({
-        state: 'running',
-        port: 9820,
-        runtimeKind: 'cc-connect',
-      })),
-      restart: vi.fn(async () => undefined),
+      getActiveProvider: vi.fn(() => ({ refreshConfig })),
     };
     const { createChannelsApi } = await import('@electron/services/channels-api');
 
@@ -834,7 +830,12 @@ describe('host services', () => {
       config: { appId: 'cli_new', appSecret: 'new-secret' },
     })).resolves.toEqual({ success: true });
 
-    expect(runtimeManager.restart).toHaveBeenCalledTimes(1);
+    expect(refreshConfig).toHaveBeenCalledWith({
+      scope: 'channels',
+      reason: 'channel:saveConfig:feishu',
+      channelType: 'feishu',
+      forceRestart: true,
+    });
     expect(gatewayManager.debouncedRestart).not.toHaveBeenCalled();
     expect(gatewayManager.debouncedReload).not.toHaveBeenCalled();
   });

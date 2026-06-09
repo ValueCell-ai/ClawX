@@ -416,7 +416,7 @@ export function createSessionsApi(runtimeManager?: RuntimeManager): CompleteHost
   return {
     delete: async (payload) => {
       const provider = runtimeManager?.getActiveProvider();
-      if (provider && provider.kind !== 'openclaw') {
+      if (provider?.listCapabilities().sessions) {
         return provider.deleteSession(payload);
       }
       return deleteSession(getSessionKey(payload));
@@ -432,7 +432,7 @@ export function createSessionsApi(runtimeManager?: RuntimeManager): CompleteHost
     },
     summaries: async (payload) => {
       const provider = runtimeManager?.getActiveProvider();
-      if (provider && provider.kind !== 'openclaw') {
+      if (provider?.listCapabilities().sessions) {
         return provider.listSessions(payload) as ReturnType<CompleteHostServiceRegistry['sessions']['summaries']>;
       }
       const body = isRecord(payload) ? payload as SessionPayload : {};
@@ -447,7 +447,7 @@ export function createSessionsApi(runtimeManager?: RuntimeManager): CompleteHost
     },
     history: async (payload) => {
       const provider = runtimeManager?.getActiveProvider();
-      if (provider && provider.kind !== 'openclaw') {
+      if (provider?.listCapabilities().history) {
         return provider.loadHistory(payload) as ReturnType<CompleteHostServiceRegistry['sessions']['history']>;
       }
       const body = isRecord(payload) ? payload as SessionPayload : {};

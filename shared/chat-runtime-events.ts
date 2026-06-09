@@ -7,6 +7,11 @@ export type ChatRuntimeEventBase = {
 
 export type ChatRuntimeEvent =
   | (ChatRuntimeEventBase & {
+      type: 'session.updated';
+      updatedAt?: number;
+      reason?: string;
+    })
+  | (ChatRuntimeEventBase & {
       type: 'run.started';
       startedAt?: number;
     })

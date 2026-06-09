@@ -137,16 +137,14 @@ function getSavePayload(payload: unknown): { config: ProviderConfig; apiKey?: st
   };
 }
 
-async function isCcConnectRuntime(ctx: Pick<ProvidersApiContext, 'runtimeManager'>): Promise<boolean> {
-  if (!ctx.runtimeManager) return false;
-  return await ctx.runtimeManager.getActiveKind() === 'cc-connect';
-}
-
-async function syncCcConnectProviders(
+async function syncActiveRuntimeProviderProfile(
   ctx: Pick<ProvidersApiContext, 'runtimeManager'>,
   payload: { providerId?: string; reason: string },
-): Promise<void> {
-  await ctx.runtimeManager?.rpc('providers.sync', payload);
+): Promise<boolean> {
+  const syncProviderProfile = ctx.runtimeManager?.getActiveProvider().syncProviderProfile;
+  if (!syncProviderProfile) return false;
+  await syncProviderProfile(payload);
+  return true;
 }
 
 async function syncProviderApiKeyToActiveRuntime(
@@ -155,8 +153,7 @@ async function syncProviderApiKeyToActiveRuntime(
   apiKey: string,
   ctx: Pick<ProvidersApiContext, 'runtimeManager'>,
 ): Promise<void> {
-  if (await isCcConnectRuntime(ctx)) {
-    await syncCcConnectProviders(ctx, { providerId, reason: 'api-key' });
+  if (await syncActiveRuntimeProviderProfile(ctx, { providerId, reason: 'api-key' })) {
     return;
   }
   await syncProviderApiKeyToRuntime(providerType, providerId, apiKey);
@@ -167,8 +164,7 @@ async function syncSavedProviderToActiveRuntime(
   apiKey: string | undefined,
   ctx: Pick<ProvidersApiContext, 'gatewayManager' | 'runtimeManager'>,
 ): Promise<void> {
-  if (await isCcConnectRuntime(ctx)) {
-    await syncCcConnectProviders(ctx, { providerId: config.id, reason: 'save' });
+  if (await syncActiveRuntimeProviderProfile(ctx, { providerId: config.id, reason: 'save' })) {
     return;
   }
   await syncSavedProviderToRuntime(config, apiKey, ctx.gatewayManager);
@@ -179,8 +175,7 @@ async function syncUpdatedProviderToActiveRuntime(
   apiKey: string | undefined,
   ctx: Pick<ProvidersApiContext, 'gatewayManager' | 'runtimeManager'>,
 ): Promise<void> {
-  if (await isCcConnectRuntime(ctx)) {
-    await syncCcConnectProviders(ctx, { providerId: config.id, reason: 'update' });
+  if (await syncActiveRuntimeProviderProfile(ctx, { providerId: config.id, reason: 'update' })) {
     return;
   }
   await syncUpdatedProviderToRuntime(config, apiKey, ctx.gatewayManager);
@@ -192,8 +187,7 @@ async function syncDeletedProviderToActiveRuntime(
   ctx: Pick<ProvidersApiContext, 'gatewayManager' | 'runtimeManager'>,
   runtimeProviderKey?: string,
 ): Promise<void> {
-  if (await isCcConnectRuntime(ctx)) {
-    await syncCcConnectProviders(ctx, { providerId, reason: 'delete' });
+  if (await syncActiveRuntimeProviderProfile(ctx, { providerId, reason: 'delete' })) {
     return;
   }
   await syncDeletedProviderToRuntime(provider, providerId, ctx.gatewayManager, runtimeProviderKey);
@@ -205,8 +199,7 @@ async function syncDeletedProviderApiKeyToActiveRuntime(
   ctx: Pick<ProvidersApiContext, 'runtimeManager'>,
   runtimeProviderKey?: string,
 ): Promise<void> {
-  if (await isCcConnectRuntime(ctx)) {
-    await syncCcConnectProviders(ctx, { providerId, reason: 'delete-api-key' });
+  if (await syncActiveRuntimeProviderProfile(ctx, { providerId, reason: 'delete-api-key' })) {
     return;
   }
   await syncDeletedProviderApiKeyToRuntime(provider, providerId, runtimeProviderKey);
@@ -216,8 +209,7 @@ async function syncDefaultProviderToActiveRuntime(
   providerId: string,
   ctx: Pick<ProvidersApiContext, 'gatewayManager' | 'runtimeManager'>,
 ): Promise<void> {
-  if (await isCcConnectRuntime(ctx)) {
-    await syncCcConnectProviders(ctx, { providerId, reason: 'set-default' });
+  if (await syncActiveRuntimeProviderProfile(ctx, { providerId, reason: 'set-default' })) {
     return;
   }
   await syncDefaultProviderToRuntime(providerId, ctx.gatewayManager);
@@ -228,8 +220,7 @@ async function removeProviderFromActiveRuntime(
   ctx: Pick<ProvidersApiContext, 'runtimeManager'>,
   providerId: string,
 ): Promise<void> {
-  if (await isCcConnectRuntime(ctx)) {
-    await syncCcConnectProviders(ctx, { providerId, reason: 'remove-provider' });
+  if (await syncActiveRuntimeProviderProfile(ctx, { providerId, reason: 'remove-provider' })) {
     return;
   }
   await removeProviderFromOpenClaw(providerKey);
@@ -358,9 +349,7 @@ async function updateProviderWithKey(payload: ProviderPayload<'updateWithKey'>, 
       await providerService._saveProviderInternal(existing);
       if (previousKey) {
         await providerService._setProviderApiKeyInternal(providerId, previousKey);
-        if (await isCcConnectRuntime(ctx)) {
-          await syncCcConnectProviders(ctx, { providerId, reason: 'rollback' });
-        } else {
+        if (!await syncActiveRuntimeProviderProfile(ctx, { providerId, reason: 'rollback' })) {
           await saveProviderKeyToOpenClaw(previousOck, previousKey);
         }
       } else {

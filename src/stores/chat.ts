@@ -1658,6 +1658,13 @@ function resolveMainSessionKeyForAgent(agentId: string | undefined | null): stri
   return summary?.mainSessionKey || buildFallbackMainSessionKey(normalizedAgentId);
 }
 
+function resolveTargetSessionKey(currentSessionKey: string, targetAgentId: string | undefined | null): string {
+  if (!targetAgentId || !currentSessionKey.startsWith('agent:')) {
+    return currentSessionKey;
+  }
+  return resolveMainSessionKeyForAgent(targetAgentId) ?? currentSessionKey;
+}
+
 function ensureSessionEntry(sessions: ChatSession[], sessionKey: string): ChatSession[] {
   if (sessions.some((session) => session.key === sessionKey)) {
     return sessions;
@@ -3426,7 +3433,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
     const trimmed = text.trim();
     if (!trimmed && (!attachments || attachments.length === 0)) return;
 
-    const targetSessionKey = resolveMainSessionKeyForAgent(targetAgentId) ?? get().currentSessionKey;
+    const targetSessionKey = resolveTargetSessionKey(get().currentSessionKey, targetAgentId);
 
     // Guard against double-submit before React re-renders with sending=true.
     if (get().sending && targetSessionKey === get().currentSessionKey) {

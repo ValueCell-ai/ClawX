@@ -226,12 +226,21 @@ function handleChatRuntimeEvent(event: ChatRuntimeEvent): void {
   import('./chat')
     .then(({ useChatStore, syncCachedSessionRunIdle }) => {
       const state = useChatStore.getState();
-      state.handleRuntimeEvent(event);
 
       const shouldRefreshSessions = resolvedSessionKey != null && (
         resolvedSessionKey !== state.currentSessionKey
         || !state.sessions.some((session) => session.key === resolvedSessionKey)
       );
+
+      if (event.type === 'session.updated') {
+        maybeLoadSessions(state, true);
+        if (resolvedSessionKey != null && resolvedSessionKey === state.currentSessionKey) {
+          maybeLoadHistory(state, true);
+        }
+        return;
+      }
+
+      state.handleRuntimeEvent(event);
 
       if (event.type === 'run.started') {
         if (shouldRefreshSessions) {

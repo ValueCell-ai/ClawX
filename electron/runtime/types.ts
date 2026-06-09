@@ -52,6 +52,30 @@ export type RuntimeSendWithMediaResult = {
   runId?: string;
 };
 
+export type RuntimeConfigRefreshPayload = {
+  scope: 'channels' | 'providers' | 'skills' | 'runtime';
+  reason: string;
+  channelType?: string;
+  forceRestart?: boolean;
+};
+
+export type RuntimeProviderSyncPayload = {
+  providerId?: string;
+  reason: string;
+};
+
+export type RuntimeControlUiPayload = {
+  view?: 'dreams';
+};
+
+export type RuntimeControlUiResult = {
+  success: boolean;
+  url?: string;
+  token?: string;
+  port?: number;
+  error?: string;
+};
+
 export type RuntimeEventName =
   | 'status'
   | 'error'
@@ -80,6 +104,9 @@ export type RuntimeProvider = {
   listLogs: (payload?: { tailLines?: number }) => Promise<RuntimeLogResult>;
   runDoctor: (mode: OpenClawDoctorMode) => Promise<OpenClawDoctorResult>;
   listCapabilities: () => RuntimeCapabilities;
+  refreshConfig?: (payload: RuntimeConfigRefreshPayload) => Promise<void>;
+  syncProviderProfile?: (payload: RuntimeProviderSyncPayload) => Promise<unknown>;
+  getControlUi?: (payload?: RuntimeControlUiPayload) => Promise<RuntimeControlUiResult>;
 };
 
 export const OPENCLAW_RUNTIME_CAPABILITIES: RuntimeCapabilities = {

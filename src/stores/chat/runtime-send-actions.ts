@@ -37,6 +37,13 @@ function resolveMainSessionKeyForAgent(agentId: string | undefined | null): stri
   return summary?.mainSessionKey || buildFallbackMainSessionKey(normalizedAgentId);
 }
 
+function resolveTargetSessionKey(currentSessionKey: string, targetAgentId: string | undefined | null): string {
+  if (!targetAgentId || !currentSessionKey.startsWith('agent:')) {
+    return currentSessionKey;
+  }
+  return resolveMainSessionKeyForAgent(targetAgentId) ?? currentSessionKey;
+}
+
 function ensureSessionEntry(sessions: ChatSession[], sessionKey: string): ChatSession[] {
   if (sessions.some((session) => session.key === sessionKey)) {
     return sessions;
@@ -57,7 +64,7 @@ export function createRuntimeSendActions(set: ChatSet, get: ChatGet): Pick<Runti
       if (!trimmed && (!attachments || attachments.length === 0)) return;
       const currentSendGeneration = ++sendGeneration;
 
-      const targetSessionKey = resolveMainSessionKeyForAgent(targetAgentId) ?? get().currentSessionKey;
+      const targetSessionKey = resolveTargetSessionKey(get().currentSessionKey, targetAgentId);
 
       if (get().sending && targetSessionKey === get().currentSessionKey) {
         return;

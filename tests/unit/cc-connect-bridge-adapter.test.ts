@@ -3,7 +3,10 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { CcConnectBridgeAdapter } from '@electron/runtime/cc-connect-bridge-adapter';
+import {
+  CcConnectBridgeAdapter,
+  toCcConnectBridgeSessionKey,
+} from '@electron/runtime/cc-connect-bridge-adapter';
 
 describe('cc-connect bridge adapter persisted sessions', () => {
   let tempDir: string;
@@ -17,6 +20,13 @@ describe('cc-connect bridge adapter persisted sessions', () => {
 
   afterEach(async () => {
     await rm(tempDir, { recursive: true, force: true });
+  });
+
+  it('only maps ClawX agent sessions to bridge session keys', () => {
+    expect(toCcConnectBridgeSessionKey('agent:main:main')).toBe('clawx:main:main');
+    expect(toCcConnectBridgeSessionKey('agent:research:desk')).toBe('clawx:research:desk');
+    expect(toCcConnectBridgeSessionKey('clawx:main:main')).toBe('clawx:main:main');
+    expect(toCcConnectBridgeSessionKey('feishu:chat-1:user-1')).toBe('feishu:chat-1:user-1');
   });
 
   it('lists and reads cc-connect channel sessions from the persisted session store', async () => {

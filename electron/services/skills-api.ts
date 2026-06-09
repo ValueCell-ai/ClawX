@@ -93,7 +93,7 @@ export function createSkillsApi({
   gatewayManager: GatewayManager;
   runtimeManager?: RuntimeManager;
 }): CompleteHostServiceRegistry['skills'] {
-  const isCcConnectRuntime = async () => runtimeManager ? await runtimeManager.getActiveKind() === 'cc-connect' : false;
+  const runtimeSupportsSkills = () => runtimeManager?.listCapabilities().skills === true;
   return {
     local: async () => ({ success: true, skills: await listLocalSkills() }),
     configs: async () => getAllSkillConfigs(),
@@ -108,11 +108,11 @@ export function createSkillsApi({
     },
     updateConfigs: async (payload) => updateSkillConfigs(getConfigUpdates(payload)),
     status: async () => {
-      if (await isCcConnectRuntime()) return await runtimeManager!.rpc('skills.status');
+      if (runtimeSupportsSkills()) return await runtimeManager!.rpc('skills.status');
       return gatewayManager.rpc('skills.status');
     },
     update: async (payload) => {
-      if (await isCcConnectRuntime()) return await runtimeManager!.rpc('skills.update', isRecord(payload) ? payload : {});
+      if (runtimeSupportsSkills()) return await runtimeManager!.rpc('skills.update', isRecord(payload) ? payload : {});
       return gatewayManager.rpc('skills.update', isRecord(payload) ? payload : {});
     },
     quickAccess: async (payload) => {
@@ -124,7 +124,7 @@ export function createSkillsApi({
         getAllSkillConfigs(),
       ]);
       let runtimeSkills: QuickAccessRuntimeSkillStatus[] | undefined;
-      if (await isCcConnectRuntime()) {
+      if (runtimeSupportsSkills()) {
         try {
           const runtimeStatus = await runtimeManager!.rpc<{ skills?: QuickAccessRuntimeSkillStatus[] }>('skills.status');
           runtimeSkills = runtimeStatus.skills || [];

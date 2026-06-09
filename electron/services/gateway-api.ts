@@ -2,10 +2,6 @@ import type { GatewayManager } from '../gateway/manager';
 import type { GatewayRpcBackpressure } from '../gateway/rpc-backpressure';
 import type { CompleteHostServiceRegistry } from '../main/ipc/host-contract';
 import type { RuntimeManager } from '../runtime/manager';
-import { PORTS } from '../utils/config';
-import { scheduleControlUiDeviceAutoApproval } from '../utils/control-ui-device-pairing';
-import { buildOpenClawControlUiUrl } from '../utils/openclaw-control-ui';
-import { getSetting } from '../utils/store';
 import { isRecord } from './payload-utils';
 
 type HealthPayload = {
@@ -57,27 +53,15 @@ export function createGatewayApi(
       const status = runtimeManager.getStatus();
       const body = isRecord(payload) ? payload as ControlUiPayload : {};
       const view = body.view === 'dreams' ? 'dreams' : undefined;
-      const runtimeControlUiPayload = view ? { view } : {};
-      if (status.runtimeKind === 'cc-connect') {
-        if (!status.capabilities?.controlUi) {
-          return {
-            success: false,
-            error: 'cc-connect runtime does not support Web Admin',
-          };
-        }
-        return await runtimeManager.rpc('runtime.controlUi', runtimeControlUiPayload, 5000);
-      }
-      if (!status.capabilities?.controlUi || status.runtimeKind !== 'openclaw' || !gatewayManager) {
+      const provider = runtimeManager.getActiveProvider();
+      if (!status.capabilities?.controlUi || !provider.getControlUi) {
         return {
           success: false,
-          error: `${status.runtimeKind ?? 'runtime'} runtime does not support OpenClaw Control UI`,
+          error: `${status.runtimeKind ?? 'runtime'} runtime does not support Control UI`,
         };
       }
-      const token = await getSetting('gatewayToken');
-      const port = status.port || PORTS.OPENCLAW_GATEWAY;
-      const url = buildOpenClawControlUiUrl(port, token, { view });
-      scheduleControlUiDeviceAutoApproval(gatewayManager);
-      return { success: true, url, token, port };
+      void gatewayManager;
+      return provider.getControlUi(view ? { view } : {});
     },
     rpc: async (payload) => {
       const body = isRecord(payload) ? payload as RpcPayload : {};

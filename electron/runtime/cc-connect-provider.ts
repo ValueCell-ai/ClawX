@@ -8,6 +8,7 @@ import type { OpenClawDoctorMode, OpenClawDoctorResult } from '@shared/host-api/
 import type { CronJob, CronJobCreateInput, CronJobUpdateInput } from '@shared/types/cron';
 import type {
   RuntimeProvider,
+  RuntimeConfigRefreshPayload,
   RuntimeSendWithMediaPayload,
   RuntimeStatus,
 } from './types';
@@ -52,6 +53,7 @@ const CLAWX_PROJECT_NAME = 'clawx-main';
 const CC_CONNECT_BRIDGE_PORT = 9810;
 const CLAWX_LOCAL_PLACEHOLDER_SECRET = 'clawx-local-placeholder';
 const CODEX_AGENT_SESSION_RESET_MARKER = 'codex-agent-session-reset-v1.json';
+const SESSION_SYNC_POLL_INTERVAL_MS = 2_000;
 const CC_CONNECT_SUPPORTED_CHANNELS = new Set([
   'dingtalk',
   'discord',
@@ -192,6 +194,10 @@ export class CcConnectRuntimeProvider extends EventEmitter implements RuntimePro
   private readonly codexPath?: string;
   private readonly codexBundle?: CodexBundle;
   private currentProviderProfile: CodexProviderProfile | null = null;
+  private sessionSyncTimer: ReturnType<typeof setInterval> | null = null;
+  private sessionSyncPolling = false;
+  private sessionSyncSeq = 0;
+  private sessionSyncSnapshot = new Map<string, number>();
 
   constructor(options: CcConnectRuntimeProviderOptions = {}) {
     super();
@@ -247,9 +253,11 @@ export class CcConnectRuntimeProvider extends EventEmitter implements RuntimePro
       gatewayReady: true,
       error: undefined,
     });
+    this.startSessionSyncWatcher();
   }
 
   async stop(): Promise<void> {
+    this.stopSessionSyncWatcher();
     const child = this.child;
     this.child = null;
     if (child) {
@@ -305,12 +313,7 @@ export class CcConnectRuntimeProvider extends EventEmitter implements RuntimePro
       case 'channels.status':
         return await this.getChannelStatus() as T;
       case 'runtime.controlUi':
-        return {
-          success: true,
-          url: buildCcConnectWebAdminUrl(CC_CONNECT_MANAGEMENT_PORT),
-          token: this.managementToken,
-          port: CC_CONNECT_MANAGEMENT_PORT,
-        } as T;
+        return await this.getControlUi() as T;
       case 'cron.list':
         return await this.listCronJobs() as T;
       case 'cron.create':
@@ -561,7 +564,7 @@ export class CcConnectRuntimeProvider extends EventEmitter implements RuntimePro
     return configPath;
   }
 
-  private async syncProviderProfile(payload?: { providerId?: string; reason?: string }) {
+  async syncProviderProfile(payload?: { providerId?: string; reason?: string }) {
     const profile = await this.loadAndApplyProviderProfile(payload);
     if (this.status.state === 'running') {
       await this.restart();
@@ -571,6 +574,23 @@ export class CcConnectRuntimeProvider extends EventEmitter implements RuntimePro
     return {
       success: true,
       profile: toPublicCodexProviderProfile(profile),
+    };
+  }
+
+  async refreshConfig(_payload: RuntimeConfigRefreshPayload): Promise<void> {
+    if (this.status.state === 'stopped') return;
+    await this.restart();
+  }
+
+  async getControlUi() {
+    if (!this.listCapabilities().controlUi) {
+      return { success: false, error: 'cc-connect runtime does not support Web Admin' };
+    }
+    return {
+      success: true,
+      url: buildCcConnectWebAdminUrl(CC_CONNECT_MANAGEMENT_PORT),
+      token: this.managementToken,
+      port: CC_CONNECT_MANAGEMENT_PORT,
     };
   }
 
@@ -727,6 +747,7 @@ export class CcConnectRuntimeProvider extends EventEmitter implements RuntimePro
     child.on('exit', (code) => {
       if (this.child !== child) return;
       this.child = null;
+      this.stopSessionSyncWatcher();
       this.setStatus({
         state: code === 0 ? 'stopped' : 'error',
         pid: undefined,
@@ -751,6 +772,63 @@ export class CcConnectRuntimeProvider extends EventEmitter implements RuntimePro
       configDir: getCcConnectManagedDir(),
     };
     this.emit('status', this.status);
+  }
+
+  private startSessionSyncWatcher(): void {
+    this.stopSessionSyncWatcher();
+    void this.refreshSessionSyncSnapshot(false);
+    this.sessionSyncTimer = setInterval(() => {
+      void this.refreshSessionSyncSnapshot(true);
+    }, SESSION_SYNC_POLL_INTERVAL_MS);
+    this.sessionSyncTimer.unref?.();
+  }
+
+  private stopSessionSyncWatcher(): void {
+    if (this.sessionSyncTimer) {
+      clearInterval(this.sessionSyncTimer);
+      this.sessionSyncTimer = null;
+    }
+    this.sessionSyncPolling = false;
+    this.sessionSyncSnapshot = new Map();
+  }
+
+  private async refreshSessionSyncSnapshot(emitChanges: boolean): Promise<void> {
+    if (this.sessionSyncPolling) return;
+    this.sessionSyncPolling = true;
+    try {
+      const sessions = await this.bridgeAdapter.listSessions();
+      const next = new Map<string, number>();
+      const changed: Array<{ key: string; updatedAt: number }> = [];
+      for (const session of sessions) {
+        const key = typeof session.key === 'string' ? session.key : '';
+        const updatedAt = typeof session.updatedAt === 'number' && Number.isFinite(session.updatedAt)
+          ? session.updatedAt
+          : 0;
+        if (!key) continue;
+        next.set(key, updatedAt);
+        const previousUpdatedAt = this.sessionSyncSnapshot.get(key);
+        if (emitChanges && (previousUpdatedAt == null || updatedAt > previousUpdatedAt)) {
+          changed.push({ key, updatedAt });
+        }
+      }
+      this.sessionSyncSnapshot = next;
+      for (const session of changed) {
+        const now = Date.now();
+        this.emit('chat:runtime-event', {
+          type: 'session.updated',
+          runId: `cc-connect-session-sync-${++this.sessionSyncSeq}`,
+          sessionKey: session.key,
+          updatedAt: session.updatedAt,
+          reason: 'cc-connect-session-store',
+          seq: this.sessionSyncSeq,
+          ts: now,
+        });
+      }
+    } catch {
+      // Session sync is a best-effort UI refresh signal; chat/history RPCs still work on demand.
+    } finally {
+      this.sessionSyncPolling = false;
+    }
   }
 }
 

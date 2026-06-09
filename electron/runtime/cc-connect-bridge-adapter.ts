@@ -72,8 +72,9 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 }
 
-function toBridgeSessionKey(sessionKey: string): string {
+export function toCcConnectBridgeSessionKey(sessionKey: string): string {
   if (sessionKey.startsWith('clawx:')) return sessionKey;
+  if (!sessionKey.startsWith('agent:')) return sessionKey;
   const [, scope = 'main', user = 'main'] = sessionKey.split(':');
   return `clawx:${scope || 'main'}:${user || 'main'}`;
 }
@@ -84,7 +85,7 @@ function fromBridgeSessionKey(sessionKey: string): string {
 }
 
 function sessionLookupKeys(sessionKey: string): string[] {
-  const bridgeKey = toBridgeSessionKey(sessionKey);
+  const bridgeKey = toCcConnectBridgeSessionKey(sessionKey);
   return Array.from(new Set([sessionKey, bridgeKey, fromBridgeSessionKey(sessionKey)]));
 }
 
@@ -211,7 +212,7 @@ export class CcConnectBridgeAdapter {
     this.socket.send(JSON.stringify({
       type: 'message',
       msg_id: payload.idempotencyKey || runId,
-      session_key: toBridgeSessionKey(payload.sessionKey),
+      session_key: toCcConnectBridgeSessionKey(payload.sessionKey),
       user_id: 'main',
       user_name: 'ClawX',
       content: payload.message,

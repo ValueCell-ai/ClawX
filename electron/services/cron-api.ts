@@ -1,7 +1,8 @@
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { CompleteHostServiceRegistry } from '../main/ipc/host-contract';
-import type { CronJob, CronJobDelivery, CronSchedule } from '@shared/types/cron';
+import type { HostSuccess } from '@shared/host-api/contract';
+import type { CronJob, CronJobCreateInput, CronJobDelivery, CronJobUpdateInput, CronSchedule } from '@shared/types/cron';
 import type { GatewayManager } from '../gateway/manager';
 import type { RuntimeManager } from '../runtime/manager';
 import { getOpenClawConfigDir } from '../utils/paths';
@@ -365,7 +366,7 @@ function transformCronJob(job: GatewayCronJob): CronJob {
   };
 }
 
-async function listCronJobs(gatewayManager: GatewayManager): Promise<CronJob[]> {
+export async function listCronJobs(gatewayManager: GatewayManager): Promise<CronJob[]> {
   let jobs: GatewayCronJob[] = [];
   let usedFallback = false;
 
@@ -469,8 +470,81 @@ function getId(payload: unknown): string {
   return id.trim();
 }
 
-async function isCcConnectRuntime(runtimeManager?: RuntimeManager): Promise<boolean> {
-  return runtimeManager ? await runtimeManager.getActiveKind() === 'cc-connect' : false;
+export async function createOpenClawCronJob(
+  gatewayManager: GatewayManager,
+  input: CronJobCreateInput,
+): Promise<CronJob> {
+  const agentId = typeof input.agentId === 'string' && input.agentId.trim() ? input.agentId.trim() : 'main';
+  const delivery = normalizeCronDelivery(input.delivery);
+  const unsupportedDeliveryError = getUnsupportedCronDeliveryError(delivery.channel);
+  if (delivery.mode === 'announce' && unsupportedDeliveryError) {
+    throw new Error(unsupportedDeliveryError);
+  }
+  const result = await gatewayManager.rpc('cron.add', {
+    name: input.name,
+    schedule: { kind: 'cron', expr: input.schedule },
+    payload: { kind: 'agentTurn', message: input.message },
+    enabled: typeof input.enabled === 'boolean' ? input.enabled : true,
+    wakeMode: 'next-heartbeat',
+    sessionTarget: 'isolated',
+    agentId,
+    delivery,
+  });
+  if (!result || typeof result !== 'object') {
+    throw new Error('Cron create returned an invalid job');
+  }
+  return transformCronJob(result as GatewayCronJob);
+}
+
+export async function updateOpenClawCronJob(
+  gatewayManager: GatewayManager,
+  payload: { id: string; input: CronJobUpdateInput },
+): Promise<CronJob> {
+  const id = getId(payload);
+  const input = isRecord(payload.input) ? payload.input : {};
+  const patch = buildCronUpdatePatch(input);
+  delete patch.id;
+  delete patch.input;
+  const deliveryPatch = patch.delivery && typeof patch.delivery === 'object'
+    ? patch.delivery as Record<string, unknown>
+    : undefined;
+  const deliveryChannel = typeof deliveryPatch?.channel === 'string' && deliveryPatch.channel.trim()
+    ? deliveryPatch.channel.trim()
+    : undefined;
+  const deliveryMode = typeof deliveryPatch?.mode === 'string' && deliveryPatch.mode.trim()
+    ? deliveryPatch.mode.trim()
+    : undefined;
+  const unsupportedDeliveryError = getUnsupportedCronDeliveryError(deliveryChannel);
+  if (unsupportedDeliveryError && deliveryMode !== 'none') {
+    throw new Error(unsupportedDeliveryError);
+  }
+  const result = await gatewayManager.rpc('cron.update', { id, patch });
+  if (!result || typeof result !== 'object') {
+    throw new Error('Cron update returned an invalid job');
+  }
+  return transformCronJob(result as GatewayCronJob);
+}
+
+function normalizeHostSuccess(result: unknown): HostSuccess {
+  if (isRecord(result) && typeof result.success === 'boolean') {
+    return { success: result.success, ...(typeof result.error === 'string' ? { error: result.error } : {}) };
+  }
+  return { success: true };
+}
+
+export async function deleteOpenClawCronJob(gatewayManager: GatewayManager, payload: unknown): Promise<HostSuccess> {
+  return normalizeHostSuccess(await gatewayManager.rpc('cron.remove', { id: getId(payload) }));
+}
+
+export async function toggleOpenClawCronJob(gatewayManager: GatewayManager, payload: { id: string; enabled: boolean }): Promise<HostSuccess> {
+  return normalizeHostSuccess(await gatewayManager.rpc('cron.update', {
+    id: getId(payload),
+    patch: { enabled: payload.enabled === true },
+  }));
+}
+
+export async function triggerOpenClawCronJob(gatewayManager: GatewayManager, payload: unknown): Promise<HostSuccess> {
+  return normalizeHostSuccess(await gatewayManager.rpc('cron.run', { id: getId(payload), mode: 'force' }));
 }
 
 export function createCronApi({
@@ -480,98 +554,45 @@ export function createCronApi({
   gatewayManager: GatewayManager;
   runtimeManager?: RuntimeManager;
 }): CompleteHostServiceRegistry['cron'] {
+  const runtimeSupportsCron = () => runtimeManager?.listCapabilities().cron === true;
   return {
     list: async () => {
-      if (await isCcConnectRuntime(runtimeManager)) {
+      if (runtimeSupportsCron()) {
         return await runtimeManager!.rpc<CronJob[]>('cron.list');
       }
       return listCronJobs(gatewayManager);
     },
     create: async (payload) => {
-      if (await isCcConnectRuntime(runtimeManager)) {
+      if (runtimeSupportsCron()) {
         return await runtimeManager!.rpc<CronJob>('cron.create', payload);
       }
-      const input = payload;
-      const agentId = typeof input.agentId === 'string' && input.agentId.trim() ? input.agentId.trim() : 'main';
-      const delivery = normalizeCronDelivery(input.delivery);
-      const unsupportedDeliveryError = getUnsupportedCronDeliveryError(delivery.channel);
-      if (delivery.mode === 'announce' && unsupportedDeliveryError) {
-        throw new Error(unsupportedDeliveryError);
-      }
-      const result = await gatewayManager.rpc('cron.add', {
-        name: input.name,
-        schedule: { kind: 'cron', expr: input.schedule },
-        payload: { kind: 'agentTurn', message: input.message },
-        enabled: typeof input.enabled === 'boolean' ? input.enabled : true,
-        wakeMode: 'next-heartbeat',
-        sessionTarget: 'isolated',
-        agentId,
-        delivery,
-      });
-      if (!result || typeof result !== 'object') {
-        throw new Error('Cron create returned an invalid job');
-      }
-      return transformCronJob(result as GatewayCronJob);
+      return createOpenClawCronJob(gatewayManager, payload);
     },
     update: async (payload) => {
-      if (await isCcConnectRuntime(runtimeManager)) {
+      if (runtimeSupportsCron()) {
         return await runtimeManager!.rpc<CronJob>('cron.update', payload);
       }
-      const body = payload;
-      const id = getId(body);
-      const input = isRecord(body.input) ? body.input : {};
-      const patch = buildCronUpdatePatch(input);
-      delete patch.id;
-      delete patch.input;
-      const deliveryPatch = patch.delivery && typeof patch.delivery === 'object'
-        ? patch.delivery as Record<string, unknown>
-        : undefined;
-      const deliveryChannel = typeof deliveryPatch?.channel === 'string' && deliveryPatch.channel.trim()
-        ? deliveryPatch.channel.trim()
-        : undefined;
-      const deliveryMode = typeof deliveryPatch?.mode === 'string' && deliveryPatch.mode.trim()
-        ? deliveryPatch.mode.trim()
-        : undefined;
-      const unsupportedDeliveryError = getUnsupportedCronDeliveryError(deliveryChannel);
-      if (unsupportedDeliveryError && deliveryMode !== 'none') {
-        throw new Error(unsupportedDeliveryError);
-      }
-      const result = await gatewayManager.rpc('cron.update', { id, patch });
-      if (!result || typeof result !== 'object') {
-        throw new Error('Cron update returned an invalid job');
-      }
-      return transformCronJob(result as GatewayCronJob);
+      return updateOpenClawCronJob(gatewayManager, payload);
     },
     delete: async (payload) => {
-      if (await isCcConnectRuntime(runtimeManager)) {
-        return await runtimeManager!.rpc('cron.remove', { id: getId(payload) });
+      if (runtimeSupportsCron()) {
+        return await runtimeManager!.rpc<HostSuccess>('cron.remove', { id: getId(payload) });
       }
-      return gatewayManager.rpc('cron.remove', { id: getId(payload) });
+      return deleteOpenClawCronJob(gatewayManager, payload);
     },
     toggle: async (payload) => {
-      if (await isCcConnectRuntime(runtimeManager)) {
-        return await runtimeManager!.rpc('cron.update', { id: getId(payload), input: { enabled: payload.enabled === true } });
+      if (runtimeSupportsCron()) {
+        return await runtimeManager!.rpc<HostSuccess>('cron.update', { id: getId(payload), input: { enabled: payload.enabled === true } });
       }
-      const body = payload;
-      return gatewayManager.rpc('cron.update', {
-        id: getId(body),
-        patch: { enabled: body.enabled === true },
-      });
+      return toggleOpenClawCronJob(gatewayManager, payload);
     },
     trigger: async (payload) => {
-      if (await isCcConnectRuntime(runtimeManager)) {
-        return await runtimeManager!.rpc('cron.run', { id: getId(payload), mode: 'force' });
+      if (runtimeSupportsCron()) {
+        return await runtimeManager!.rpc<HostSuccess>('cron.run', { id: getId(payload), mode: 'force' });
       }
-      return gatewayManager.rpc('cron.run', { id: getId(payload), mode: 'force' });
+      return triggerOpenClawCronJob(gatewayManager, payload);
     },
     sessionHistory: async (payload) => {
-      if (await isCcConnectRuntime(runtimeManager)) {
-        const body = payload;
-        return await runtimeManager!.rpc('chat.history', {
-          sessionKey: typeof body.sessionKey === 'string' ? body.sessionKey : '',
-          limit: typeof body.limit === 'number' ? body.limit : 200,
-        });
-      }
       const body = payload;
       const sessionKey = typeof body.sessionKey === 'string' ? body.sessionKey.trim() : '';
       const parsedSession = parseCronSessionKey(sessionKey);
@@ -579,6 +600,13 @@ export function createCronApi({
 
       const rawLimit = typeof body.limit === 'number' ? body.limit : Number(body.limit || 200);
       const limit = Number.isFinite(rawLimit) ? Math.min(Math.max(Math.floor(rawLimit), 1), 200) : 200;
+      const activeProvider = runtimeManager?.getActiveProvider();
+      if (activeProvider?.listCapabilities().history) {
+        const history = await activeProvider.loadHistory({ sessionKey, limit });
+        if (history.messages && history.messages.length > 0) {
+          return history;
+        }
+      }
       const [jobsResult, runs, sessionEntry] = await Promise.all([
         gatewayManager.rpc('cron.list', { includeDisabled: true }, 8000)
           .catch(() => ({ jobs: [] as GatewayCronJob[] })),

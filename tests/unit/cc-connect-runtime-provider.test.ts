@@ -188,6 +188,57 @@ describe('CcConnectRuntimeProvider', () => {
     });
   });
 
+  it('emits session update events when cc-connect channel sessions change on disk', async () => {
+    vi.useFakeTimers();
+    try {
+      const binaryPath = join(tempDir, 'cc-connect');
+      await writeFile(binaryPath, '#!/bin/sh\n', { mode: 0o755 });
+      let sessions = [{ key: 'agent:main:main', displayName: 'main', updatedAt: 1000 }];
+      const bridgeAdapter = createBridgeAdapterMock({
+        listSessions: vi.fn(async () => sessions),
+      });
+      const { CcConnectRuntimeProvider } = await import('@electron/runtime/cc-connect-provider');
+      const provider = new CcConnectRuntimeProvider({
+        binaryPath,
+        codexPath: join(tempDir, 'codex'),
+        codexBridge: createBridgeMock() as never,
+        bridgeAdapter: bridgeAdapter as never,
+        skillSyncer: vi.fn(async () => ({ skills: [] })),
+        providerProfileLoader: vi.fn(async () => createProviderProfile()) as never,
+      });
+      const events: unknown[] = [];
+      provider.on('chat:runtime-event', (event) => events.push(event));
+      const child = createChild();
+      forkMock.mockReturnValueOnce(child);
+
+      const startPromise = provider.start();
+      await vi.waitFor(() => expect(forkMock).toHaveBeenCalledOnce());
+      child.emit('spawn');
+      await startPromise;
+      await Promise.resolve();
+
+      expect(events).toEqual([]);
+
+      sessions = [
+        { key: 'agent:main:main', displayName: 'main', updatedAt: 1000 },
+        { key: 'feishu:chat-1:user-1', displayName: 'Channel', updatedAt: 2000 },
+      ];
+      await vi.advanceTimersByTimeAsync(2_000);
+
+      expect(events).toEqual([
+        expect.objectContaining({
+          type: 'session.updated',
+          sessionKey: 'feishu:chat-1:user-1',
+          updatedAt: 2000,
+          reason: 'cc-connect-session-store',
+        }),
+      ]);
+      await provider.stop();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('writes cc-connect provider config for custom Responses providers without persisting secrets', async () => {
     const binaryPath = join(tempDir, 'cc-connect');
     await writeFile(binaryPath, '#!/bin/sh\n', { mode: 0o755 });

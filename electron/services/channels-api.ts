@@ -989,15 +989,10 @@ async function ensureScopedChannelBinding(channelType: string, accountId?: strin
   await migrateLegacyChannelWideBinding(storedChannelType);
 }
 
-async function isCcConnectRuntime(ctx: ChannelsApiContext): Promise<boolean> {
-  return ctx.runtimeManager ? await ctx.runtimeManager.getActiveKind() === 'cc-connect' : false;
-}
-
 async function scheduleGatewayChannelRestart(ctx: ChannelsApiContext, reason: string): Promise<void> {
-  if (await isCcConnectRuntime(ctx)) {
-    if (ctx.runtimeManager?.getStatus().state === 'stopped') return;
-    await ctx.runtimeManager?.restart();
-    void reason;
+  const provider = ctx.runtimeManager?.getActiveProvider();
+  if (provider?.refreshConfig) {
+    await provider.refreshConfig({ scope: 'channels', reason, forceRestart: true });
     return;
   }
   if (ctx.gatewayManager.getStatus().state === 'stopped') return;
@@ -1006,10 +1001,15 @@ async function scheduleGatewayChannelRestart(ctx: ChannelsApiContext, reason: st
 }
 
 async function scheduleGatewayChannelSaveRefresh(ctx: ChannelsApiContext, channelType: string, reason: string): Promise<void> {
-  if (await isCcConnectRuntime(ctx)) {
-    if (ctx.runtimeManager?.getStatus().state === 'stopped') return;
-    await ctx.runtimeManager?.restart();
-    void reason;
+  const provider = ctx.runtimeManager?.getActiveProvider();
+  if (provider?.refreshConfig) {
+    const storedChannelType = resolveStoredChannelType(channelType);
+    await provider.refreshConfig({
+      scope: 'channels',
+      reason,
+      channelType: storedChannelType,
+      forceRestart: FORCE_RESTART_CHANNELS.has(storedChannelType),
+    });
     return;
   }
   const storedChannelType = resolveStoredChannelType(channelType);
