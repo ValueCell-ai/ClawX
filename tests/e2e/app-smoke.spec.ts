@@ -1,4 +1,4 @@
-import { closeElectronApp, expect, test } from './fixtures/electron';
+import { closeElectronApp, expect, getStableWindow, test } from './fixtures/electron';
 
 test.describe('ClawX Electron smoke flows', () => {
   test('shows the setup wizard on a fresh profile', async ({ page }) => {
@@ -20,8 +20,7 @@ test.describe('ClawX Electron smoke flows', () => {
   });
 
   test('persists skipped setup across relaunch for the same isolated profile', async ({ electronApp, launchElectronApp }) => {
-    const firstWindow = await electronApp.firstWindow();
-    await firstWindow.waitForLoadState('domcontentloaded');
+    const firstWindow = await getStableWindow(electronApp);
     await firstWindow.getByTestId('setup-skip-button').click();
     await expect(firstWindow.getByTestId('main-layout')).toBeVisible();
 
@@ -29,8 +28,7 @@ test.describe('ClawX Electron smoke flows', () => {
 
     const relaunchedApp = await launchElectronApp();
     try {
-      const relaunchedWindow = await relaunchedApp.firstWindow();
-      await relaunchedWindow.waitForLoadState('domcontentloaded');
+      const relaunchedWindow = await getStableWindow(relaunchedApp);
 
       await expect(relaunchedWindow.getByTestId('main-layout')).toBeVisible();
       await expect(relaunchedWindow.getByTestId('setup-page')).toHaveCount(0);
