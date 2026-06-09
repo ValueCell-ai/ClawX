@@ -1,10 +1,10 @@
 import { EventEmitter } from 'node:events';
 import { randomUUID } from 'node:crypto';
 import { mkdir, readdir, readFile, writeFile } from 'node:fs/promises';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 import WebSocket from 'ws';
 import type { RawMessage } from '@shared/chat/types';
-import { getCcConnectManagedDir } from './cc-connect-paths';
+import { getCcConnectCodexHomeDir, getCcConnectManagedDir } from './cc-connect-paths';
 import type { RuntimeSendWithMediaPayload } from './types';
 
 type BridgeAdapterOptions = {
@@ -14,6 +14,7 @@ type BridgeAdapterOptions = {
   projectForSessionKey?: (sessionKey: string) => string;
   emit: EventEmitter['emit'];
   sessionStoreDir?: string;
+  codexHomeDir?: string;
 };
 
 type SessionMetadata = {
@@ -38,6 +39,7 @@ type PendingRunResolution = {
 type PersistedSession = {
   id: string;
   name?: string;
+  agentSessionId?: string;
   history: RawMessage[];
   createdAt: number;
   updatedAt: number;
@@ -55,6 +57,7 @@ type PersistedSessionStore = {
 
 const CONNECT_TIMEOUT_MS = 15_000;
 const CLAWX_PROJECT_PREFIX = 'clawx-';
+const CODEX_TRANSCRIPT_MATCH_SKEW_MS = 10 * 60_000;
 
 function messageText(content: unknown): string {
   if (typeof content === 'string') return content;
@@ -72,8 +75,14 @@ function messageText(content: unknown): string {
 }
 
 function normalizeTimestamp(value: unknown): number | undefined {
-  if (typeof value !== 'number' || !Number.isFinite(value)) return undefined;
-  return value < 1e12 ? value * 1000 : value;
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return value < 1e12 ? value * 1000 : value;
+  }
+  if (typeof value === 'string' && value.trim()) {
+    const parsed = Date.parse(value);
+    return Number.isFinite(parsed) ? parsed : undefined;
+  }
+  return undefined;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -170,6 +179,28 @@ function displayNameForPersistedSession(key: string, session: PersistedSession, 
   return messageText(firstUser?.content).slice(0, 80) || session.name || key;
 }
 
+function codexContentText(content: unknown): string {
+  if (typeof content === 'string') return content;
+  if (!Array.isArray(content)) return '';
+  return content
+    .flatMap((block) => {
+      if (!isRecord(block)) return [];
+      const text = block.text ?? block.input_text ?? block.output_text;
+      return typeof text === 'string' ? [text] : [];
+    })
+    .join('\n')
+    .trim();
+}
+
+function parseCodexFunctionArguments(value: unknown): unknown {
+  if (typeof value !== 'string') return value;
+  try {
+    return JSON.parse(value) as unknown;
+  } catch {
+    return value;
+  }
+}
+
 export class CcConnectBridgeAdapter {
   private readonly port: number;
   private readonly token: string;
@@ -177,6 +208,7 @@ export class CcConnectBridgeAdapter {
   private readonly projectForSessionKey: (sessionKey: string) => string;
   private readonly emitRuntimeEvent: EventEmitter['emit'];
   private readonly sessionStoreDir: string;
+  private readonly codexHomeDir: string;
   private socket: WebSocket | null = null;
   private readonly messagesBySession = new Map<string, RawMessage[]>();
   private readonly pendingRuns = new Map<string, PendingRun>();
@@ -188,6 +220,7 @@ export class CcConnectBridgeAdapter {
     this.projectForSessionKey = options.projectForSessionKey ?? (() => options.project);
     this.emitRuntimeEvent = options.emit;
     this.sessionStoreDir = options.sessionStoreDir ?? join(getCcConnectManagedDir(), 'data', 'sessions');
+    this.codexHomeDir = options.codexHomeDir ?? getCcConnectCodexHomeDir();
   }
 
   async connect(): Promise<void> {
@@ -267,13 +300,21 @@ export class CcConnectBridgeAdapter {
     for (const persisted of await this.readPersistedSessionStores()) {
       for (const [storedKey, sessionId] of persisted.activeSession.entries()) {
         const session = persisted.sessions.get(sessionId);
-        if (!session || session.history.length === 0) continue;
+        if (!session) continue;
         const key = fromBridgeSessionKey(storedKey);
+        const history = session.history.length > 0
+          ? session.history
+          : await this.readCodexTranscriptMessagesForSession(session, 1000);
+        if (history.length === 0) continue;
+        const updatedAt = history.reduce((latest, message) => {
+          const ts = normalizeTimestamp(message.timestamp);
+          return ts ? Math.max(latest, ts) : latest;
+        }, session.updatedAt);
         const item = {
           key,
-          displayName: displayNameForPersistedSession(key, session, persisted.userMeta.get(storedKey)),
+          displayName: displayNameForPersistedSession(key, { ...session, history }, persisted.userMeta.get(storedKey)),
           createdAt: session.createdAt,
-          updatedAt: session.updatedAt,
+          updatedAt,
         };
         const existing = sessionsByKey.get(key);
         if (!existing || item.updatedAt >= existing.updatedAt) {
@@ -299,7 +340,7 @@ export class CcConnectBridgeAdapter {
 
   async loadHistory(sessionKey: string, limit = 200): Promise<RawMessage[]> {
     const messages = [
-      ...await this.readPersistedMessages(sessionKey),
+      ...await this.readPersistedMessages(sessionKey, limit),
       ...(this.messagesBySession.get(sessionKey) ?? []),
     ];
     return messages.slice(-Math.max(1, Math.min(Math.floor(limit), 1000)));
@@ -313,7 +354,7 @@ export class CcConnectBridgeAdapter {
   async summarizeSessions(sessionKeys: string[]): Promise<Array<{ sessionKey: string; firstUserText: string | null; lastTimestamp: number | null }>> {
     return Promise.all(sessionKeys.map(async (sessionKey) => {
       const messages = [
-        ...await this.readPersistedMessages(sessionKey),
+        ...await this.readPersistedMessages(sessionKey, 1000),
         ...(this.messagesBySession.get(sessionKey) ?? []),
       ];
       const firstUser = messages.find((message) => message.role === 'user');
@@ -333,7 +374,7 @@ export class CcConnectBridgeAdapter {
   async reconcilePendingRunsFromHistory(): Promise<void> {
     const pendingRuns = Array.from(this.pendingRuns.values());
     for (const pending of pendingRuns) {
-      const messages = await this.readPersistedMessages(pending.sessionKey);
+      const messages = await this.readPersistedMessages(pending.sessionKey, 1000);
       const completion = this.findPersistedCompletionForPendingRun(pending, messages);
       if (!completion) continue;
       this.finishPendingRun(pending, {
@@ -377,6 +418,7 @@ export class CcConnectBridgeAdapter {
         sessions.set(id, {
           id,
           name: typeof value.name === 'string' ? value.name : undefined,
+          agentSessionId: typeof value.agent_session_id === 'string' ? value.agent_session_id : undefined,
           history,
           createdAt,
           updatedAt,
@@ -396,15 +438,144 @@ export class CcConnectBridgeAdapter {
     }
   }
 
-  private async readPersistedMessages(sessionKey: string): Promise<RawMessage[]> {
+  private async readPersistedMessages(sessionKey: string, limit = 200): Promise<RawMessage[]> {
     for (const store of await this.readPersistedSessionStores()) {
       for (const key of sessionLookupKeys(sessionKey)) {
         const sessionId = store.activeSession.get(key);
         const session = sessionId ? store.sessions.get(sessionId) : undefined;
-        if (session) return session.history;
+        if (!session) continue;
+        if (session.history.length > 0) return session.history;
+        return await this.readCodexTranscriptMessagesForSession(session, limit);
       }
     }
     return [];
+  }
+
+  private async readCodexTranscriptMessagesForSession(session: PersistedSession, limit: number): Promise<RawMessage[]> {
+    const transcriptPath = await this.resolveCodexTranscriptPath(session);
+    if (!transcriptPath) return [];
+    const messages = await this.readCodexTranscriptMessages(transcriptPath);
+    return messages.slice(-Math.max(1, Math.min(Math.floor(limit), 1000)));
+  }
+
+  private async resolveCodexTranscriptPath(session: PersistedSession): Promise<string | null> {
+    const root = join(this.codexHomeDir, 'sessions');
+    const paths = await this.collectCodexTranscriptPaths(root, 5);
+    const agentSessionId = session.agentSessionId?.trim();
+    if (agentSessionId) {
+      const byId = paths.find((path) => basename(path).includes(agentSessionId));
+      if (byId) return byId;
+    }
+
+    const sessionStartedAt = session.createdAt || session.updatedAt;
+    let best: { path: string; distance: number } | null = null;
+    for (const path of paths) {
+      const metadata = await this.readCodexTranscriptMetadata(path);
+      if (!metadata.startedAt) continue;
+      const distance = Math.abs(metadata.startedAt - sessionStartedAt);
+      if (distance > CODEX_TRANSCRIPT_MATCH_SKEW_MS) continue;
+      if (!best || distance < best.distance) {
+        best = { path, distance };
+      }
+    }
+    return best?.path ?? null;
+  }
+
+  private async collectCodexTranscriptPaths(dir: string, depth: number): Promise<string[]> {
+    if (depth < 0) return [];
+    const entries = await readdir(dir, { withFileTypes: true }).catch(() => []);
+    const nested = await Promise.all(entries.map(async (entry) => {
+      const path = join(dir, entry.name);
+      if (entry.isDirectory()) return this.collectCodexTranscriptPaths(path, depth - 1);
+      return entry.isFile() && entry.name.endsWith('.jsonl') ? [path] : [];
+    }));
+    return nested.flat();
+  }
+
+  private async readCodexTranscriptMetadata(path: string): Promise<{ id?: string; startedAt?: number }> {
+    const raw = await readFile(path, 'utf8').catch(() => '');
+    for (const line of raw.split(/\r?\n/)) {
+      if (!line.trim()) continue;
+      try {
+        const parsed = JSON.parse(line) as unknown;
+        if (!isRecord(parsed) || parsed.type !== 'session_meta' || !isRecord(parsed.payload)) continue;
+        const id = typeof parsed.payload.id === 'string' ? parsed.payload.id : undefined;
+        const startedAt = normalizeTimestamp(parsed.payload.timestamp);
+        return { id, startedAt };
+      } catch {
+        return {};
+      }
+    }
+    return {};
+  }
+
+  private async readCodexTranscriptMessages(path: string): Promise<RawMessage[]> {
+    const raw = await readFile(path, 'utf8').catch(() => '');
+    const lines = raw.split(/\r?\n/).filter(Boolean);
+    const hasTurnContext = lines.some((line) => {
+      try {
+        const parsed = JSON.parse(line) as unknown;
+        return isRecord(parsed) && parsed.type === 'turn_context';
+      } catch {
+        return false;
+      }
+    });
+    let afterTurnContext = !hasTurnContext;
+    return lines.flatMap((line, index): RawMessage[] => {
+      try {
+        const parsed = JSON.parse(line) as unknown;
+        if (!isRecord(parsed)) return [];
+        if (parsed.type === 'turn_context') {
+          afterTurnContext = true;
+          return [];
+        }
+        if (parsed.type !== 'response_item' || !isRecord(parsed.payload)) return [];
+        if (parsed.payload.type === 'message') {
+          const role = typeof parsed.payload.role === 'string' ? parsed.payload.role : '';
+          if (!afterTurnContext || role === 'developer') return [];
+          if (role !== 'user' && role !== 'assistant' && role !== 'system') return [];
+          const text = codexContentText(parsed.payload.content);
+          if (!text) return [];
+          return [{
+            id: `codex-transcript-${index}`,
+            role: role as RawMessage['role'],
+            content: text,
+            timestamp: normalizeTimestamp(parsed.timestamp) ?? Date.now(),
+          }];
+        }
+        if (parsed.payload.type === 'function_call') {
+          const name = typeof parsed.payload.name === 'string' ? parsed.payload.name : '';
+          if (!afterTurnContext || !name) return [];
+          const callId = typeof parsed.payload.call_id === 'string' ? parsed.payload.call_id : `call-${index}`;
+          return [{
+            id: `codex-transcript-${index}`,
+            role: 'assistant',
+            content: [{
+              type: 'tool_use',
+              id: callId,
+              name,
+              input: parseCodexFunctionArguments(parsed.payload.arguments),
+            }],
+            timestamp: normalizeTimestamp(parsed.timestamp) ?? Date.now(),
+          }];
+        }
+        if (parsed.payload.type === 'function_call_output') {
+          const callId = typeof parsed.payload.call_id === 'string' ? parsed.payload.call_id : `call-${index}`;
+          const output = typeof parsed.payload.output === 'string' ? parsed.payload.output : '';
+          if (!afterTurnContext || !output) return [];
+          return [{
+            id: `codex-transcript-${index}`,
+            role: 'toolresult',
+            toolCallId: callId,
+            content: output,
+            timestamp: normalizeTimestamp(parsed.timestamp) ?? Date.now(),
+          }];
+        }
+      } catch {
+        return [];
+      }
+      return [];
+    });
   }
 
   private async deletePersistedSession(sessionKey: string): Promise<void> {

@@ -330,6 +330,120 @@ describe('cc-connect bridge adapter persisted sessions', () => {
     ]);
   });
 
+  it('falls back to Codex transcripts when cc-connect channel sessions have no stored history', async () => {
+    const codexHomeDir = join(tempDir, 'codex-home');
+    const transcriptDir = join(codexHomeDir, 'sessions', '2026', '06', '09');
+    await mkdir(transcriptDir, { recursive: true });
+    const startedAt = '2026-06-09T12:38:51.848Z';
+    const channelUpdatedAt = '2026-06-09T20:38:51.331+08:00';
+    await writeFile(join(sessionStoreDir, 'clawx-coder_abc.json'), JSON.stringify({
+      sessions: {
+        s1: {
+          id: 's1',
+          name: 'default',
+          agent_session_id: '',
+          history: null,
+          created_at: channelUpdatedAt,
+          updated_at: channelUpdatedAt,
+        },
+      },
+      active_session: {
+        'feishu:chat-1:user-1': 's1',
+      },
+    }), 'utf8');
+    await writeFile(join(transcriptDir, 'rollout-2026-06-09T20-38-51-test.jsonl'), [
+      JSON.stringify({
+        timestamp: startedAt,
+        type: 'session_meta',
+        payload: { id: 'transcript-1', timestamp: startedAt, cwd: '/tmp/workspace-coder' },
+      }),
+      JSON.stringify({
+        timestamp: '2026-06-09T12:38:52.000Z',
+        type: 'response_item',
+        payload: {
+          type: 'message',
+          role: 'user',
+          content: [{ type: 'input_text', text: '# AGENTS.md bootstrap text' }],
+        },
+      }),
+      JSON.stringify({
+        timestamp: '2026-06-09T12:38:52.100Z',
+        type: 'turn_context',
+        payload: { turn_id: 'turn-1' },
+      }),
+      JSON.stringify({
+        timestamp: '2026-06-09T12:38:53.000Z',
+        type: 'response_item',
+        payload: {
+          type: 'message',
+          role: 'user',
+          content: [{ type: 'input_text', text: 'channel hello' }],
+        },
+      }),
+      JSON.stringify({
+        timestamp: '2026-06-09T12:38:54.000Z',
+        type: 'response_item',
+        payload: {
+          type: 'message',
+          role: 'assistant',
+          content: [{ type: 'output_text', text: 'channel ack' }],
+        },
+      }),
+      JSON.stringify({
+        timestamp: '2026-06-09T12:38:55.000Z',
+        type: 'response_item',
+        payload: {
+          type: 'function_call',
+          name: 'exec_command',
+          call_id: 'call-1',
+          arguments: '{"cmd":"pwd"}',
+        },
+      }),
+      JSON.stringify({
+        timestamp: '2026-06-09T12:38:56.000Z',
+        type: 'response_item',
+        payload: {
+          type: 'function_call_output',
+          call_id: 'call-1',
+          output: 'ok',
+        },
+      }),
+    ].join('\n'), 'utf8');
+    const adapter = new CcConnectBridgeAdapter({
+      port: 1,
+      token: 'token',
+      project: 'clawx-main',
+      emit: vi.fn(),
+      sessionStoreDir,
+      codexHomeDir,
+    });
+
+    await expect(adapter.listSessions()).resolves.toMatchObject([{
+      key: 'feishu:chat-1:user-1',
+      displayName: 'channel hello',
+      updatedAt: Date.parse('2026-06-09T12:38:56.000Z'),
+    }]);
+    await expect(adapter.loadHistory('feishu:chat-1:user-1')).resolves.toMatchObject([
+      { role: 'user', content: 'channel hello' },
+      { role: 'assistant', content: 'channel ack' },
+      {
+        role: 'assistant',
+        content: [{
+          type: 'tool_use',
+          id: 'call-1',
+          name: 'exec_command',
+          input: { cmd: 'pwd' },
+        }],
+      },
+      { role: 'toolresult', toolCallId: 'call-1', content: 'ok' },
+    ]);
+    await expect(adapter.summarizeSessions(['feishu:chat-1:user-1'])).resolves.toEqual([{
+      sessionKey: 'feishu:chat-1:user-1',
+      firstUserText: 'channel hello',
+      lastTimestamp: Date.parse('2026-06-09T12:38:56.000Z'),
+    }]);
+  });
+
   it('deletes persisted channel sessions without dropping unrelated sessions', async () => {
     const storePath = join(sessionStoreDir, 'clawx-main_abc.json');
     await writeFile(storePath, JSON.stringify({
