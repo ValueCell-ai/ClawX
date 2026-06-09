@@ -3,8 +3,10 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { WebSocketServer } from 'ws';
 import {
   CcConnectBridgeAdapter,
+  ccConnectProjectNameForSessionKey,
   toCcConnectBridgeSessionKey,
 } from '@electron/runtime/cc-connect-bridge-adapter';
 
@@ -27,6 +29,92 @@ describe('cc-connect bridge adapter persisted sessions', () => {
     expect(toCcConnectBridgeSessionKey('agent:research:desk')).toBe('clawx:research:desk');
     expect(toCcConnectBridgeSessionKey('clawx:main:main')).toBe('clawx:main:main');
     expect(toCcConnectBridgeSessionKey('feishu:chat-1:user-1')).toBe('feishu:chat-1:user-1');
+    expect(ccConnectProjectNameForSessionKey('agent:research:desk')).toBe('clawx-research');
+    expect(ccConnectProjectNameForSessionKey('feishu:chat-1:user-1')).toBe('clawx-main');
+  });
+
+  it('routes app sends to the selected agent project and mirrors OpenClaw stream events', async () => {
+    const server = new WebSocketServer({ port: 0 });
+    const port = await new Promise<number>((resolve) => {
+      server.once('listening', () => {
+        const address = server.address();
+        resolve(typeof address === 'object' && address ? address.port : 0);
+      });
+    });
+    const emitted: Array<[string, unknown]> = [];
+    const received: Record<string, unknown>[] = [];
+
+    server.on('connection', (socket) => {
+      socket.on('message', (data) => {
+        const parsed = JSON.parse(String(data)) as Record<string, unknown>;
+        received.push(parsed);
+        if (parsed.type === 'register') {
+          socket.send(JSON.stringify({ type: 'register_ack', ok: true }));
+          return;
+        }
+        if (parsed.type === 'message') {
+          socket.send(JSON.stringify({
+            type: 'reply_stream',
+            reply_ctx: parsed.reply_ctx,
+            delta: 'pong',
+            done: false,
+          }));
+          socket.send(JSON.stringify({
+            type: 'reply_stream',
+            reply_ctx: parsed.reply_ctx,
+            full_text: 'pong',
+            done: true,
+          }));
+        }
+      });
+    });
+
+    try {
+      const adapter = new CcConnectBridgeAdapter({
+        port,
+        token: 'token',
+        project: 'clawx-main',
+        projectForSessionKey: ccConnectProjectNameForSessionKey,
+        emit: ((event: string, payload: unknown) => emitted.push([event, payload])) as never,
+        sessionStoreDir,
+      });
+
+      await expect(adapter.send({
+        sessionKey: 'agent:research:desk',
+        message: 'ping',
+        idempotencyKey: 'idem-1',
+      })).resolves.toEqual(expect.objectContaining({ runId: expect.stringMatching(/^cc-connect-/) }));
+
+      await vi.waitFor(() => {
+        expect(emitted).toEqual(expect.arrayContaining([
+          ['chat:runtime-event', expect.objectContaining({
+            type: 'assistant.delta',
+            sessionKey: 'agent:research:desk',
+            delta: 'pong',
+          })],
+          ['chat:message', expect.objectContaining({
+            sessionKey: 'agent:research:desk',
+            message: expect.objectContaining({ role: 'assistant', content: 'pong' }),
+          })],
+          ['chat:runtime-event', expect.objectContaining({
+            type: 'run.ended',
+            sessionKey: 'agent:research:desk',
+            status: 'completed',
+          })],
+        ]));
+      });
+
+      expect(received).toEqual(expect.arrayContaining([
+        expect.objectContaining({
+          type: 'message',
+          session_key: 'clawx:research:desk',
+          project: 'clawx-research',
+        }),
+      ]));
+      await adapter.close();
+    } finally {
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
   });
 
   it('lists and reads cc-connect channel sessions from the persisted session store', async () => {
@@ -57,7 +145,7 @@ describe('cc-connect bridge adapter persisted sessions', () => {
       },
       active_session: {
         'feishu:oc_chat:ou_user': 's1',
-        'clawx:main:main': 's2',
+        'clawx:research:desk': 's2',
       },
       user_meta: {
         'feishu:oc_chat:ou_user': {
@@ -81,7 +169,7 @@ describe('cc-connect bridge adapter persisted sessions', () => {
         updatedAt: 1_780_900_001_000,
       },
       {
-        key: 'agent:main:main',
+        key: 'agent:research:desk',
         displayName: 'hello from app',
         updatedAt: 1_780_800_000_000,
       },
@@ -90,17 +178,17 @@ describe('cc-connect bridge adapter persisted sessions', () => {
       { role: 'user', content: '你在吗' },
       { role: 'assistant', content: '在。有什么需要我处理？' },
     ]);
-    await expect(adapter.loadHistory('agent:main:main')).resolves.toMatchObject([
+    await expect(adapter.loadHistory('agent:research:desk')).resolves.toMatchObject([
       { role: 'user', content: 'hello from app' },
     ]);
-    await expect(adapter.summarizeSessions(['feishu:oc_chat:ou_user', 'agent:main:main'])).resolves.toEqual([
+    await expect(adapter.summarizeSessions(['feishu:oc_chat:ou_user', 'agent:research:desk'])).resolves.toEqual([
       {
         sessionKey: 'feishu:oc_chat:ou_user',
         firstUserText: '你在吗',
         lastTimestamp: 1_780_900_001_000,
       },
       {
-        sessionKey: 'agent:main:main',
+        sessionKey: 'agent:research:desk',
         firstUserText: 'hello from app',
         lastTimestamp: 1_780_800_000_000,
       },

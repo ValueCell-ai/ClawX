@@ -39,7 +39,9 @@ flowchart LR
 
 ## GUI Chat Through cc-connect
 
-ClawX registers a local `clawx` BridgePlatform adapter over cc-connect WebSocket bridge. GUI messages are sent as bridge `message` packets, cc-connect runs the configured Codex project agent, and replies are converted back into the existing `chat:message` and `chat:runtime-event` host events.
+ClawX registers a local `clawx` BridgePlatform adapter over cc-connect WebSocket bridge. GUI messages are sent as bridge `message` packets, cc-connect runs the configured Codex project agent, and replies are converted back into the existing `chat:message` and `chat:runtime-event` host events. Streamed cc-connect replies are mirrored as OpenClaw-compatible `assistant.delta` events before the final assistant message and `run.ended` event.
+
+Each configured OpenClaw agent is mirrored as a cc-connect project using that agent's configured workspace as the Codex `work_dir`. App session keys stay in the public `agent:<agentId>:<mainKey>` shape; the bridge maps them to cc-connect-local `clawx:<agentId>:<mainKey>` session keys and chooses the matching cc-connect project for delivery.
 
 ## Core Capability Contract
 
@@ -54,7 +56,7 @@ ClawX registers a local `clawx` BridgePlatform adapter over cc-connect WebSocket
 | Providers/models | ClawX syncs the active provider account into `provider-profile.json` and cc-connect project config/env. |
 | Cron | Host cron APIs route to cc-connect Management API when cc-connect runtime is active. |
 | Skills | Enabled local skills are mirrored into managed `codex-home/skills`. |
-| Channels | cc-connect owns messaging platform bridges; ClawX routes channel status probes through the active runtime. |
+| Channels | cc-connect owns messaging platform bridges; ClawX routes channel status probes through the active runtime and mirrors each configured channel account into the cc-connect project for its bound agent. |
 
 ## Managed Paths
 

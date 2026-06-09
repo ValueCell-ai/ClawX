@@ -26,7 +26,11 @@ import {
 } from './cc-connect-paths';
 import { buildCcConnectWebAdminUrl, CC_CONNECT_MANAGEMENT_PORT } from './cc-connect-control-ui';
 import { CodexCliBridge } from './codex-cli-bridge';
-import { CcConnectBridgeAdapter } from './cc-connect-bridge-adapter';
+import {
+  ccConnectProjectNameForAgent,
+  ccConnectProjectNameForSessionKey,
+  CcConnectBridgeAdapter,
+} from './cc-connect-bridge-adapter';
 import { syncCcConnectSkills } from './cc-connect-skills';
 import { assertCodexBundle, prependCodexPathDir, type CodexBundle } from './codex-paths';
 import {
@@ -35,6 +39,7 @@ import {
   type CodexProviderProfile,
 } from './cc-connect-provider-profile';
 import { readOpenClawConfig, type ChannelConfigData, type OpenClawConfig } from '../utils/channel-config';
+import { expandPath } from '../utils/paths';
 
 type CcConnectRuntimeProviderOptions = {
   binaryPath?: string;
@@ -49,7 +54,7 @@ type CcConnectRuntimeProviderOptions = {
 
 const CC_CONNECT_DOCTOR_TIMEOUT_MS = 60_000;
 const MAX_DOCTOR_OUTPUT_BYTES = 10 * 1024 * 1024;
-const CLAWX_PROJECT_NAME = 'clawx-main';
+const CLAWX_PROJECT_NAME = ccConnectProjectNameForAgent('main');
 const CC_CONNECT_BRIDGE_PORT = 9810;
 const CLAWX_LOCAL_PLACEHOLDER_SECRET = 'clawx-local-placeholder';
 const CODEX_AGENT_SESSION_RESET_MARKER = 'codex-agent-session-reset-v1.json';
@@ -71,9 +76,17 @@ const CC_CONNECT_SUPPORTED_CHANNELS = new Set([
 type CcConnectChannelPlatform = {
   channelType: string;
   accountId: string;
+  agentId: string;
+  projectName: string;
   platformType: string;
   options: Record<string, string | number | boolean>;
   error?: string;
+};
+
+type CcConnectAgentProject = {
+  agentId: string;
+  projectName: string;
+  workDir: string;
 };
 
 function unsupported(method: string): never {
@@ -115,17 +128,66 @@ function ccConnectProviderConfig(providerProfile?: CodexProviderProfile | null):
   ];
 }
 
+function ccConnectProjectConfig(options: {
+  project: CcConnectAgentProject;
+  codexPath: string;
+  providerProfile?: CodexProviderProfile | null;
+  channelPlatforms: CcConnectChannelPlatform[];
+}): string[] {
+  const model = options.providerProfile?.model;
+  const projectPlatforms = options.channelPlatforms.filter((platform) => platform.projectName === options.project.projectName);
+  return [
+    '[[projects]]',
+    `name = "${escapeToml(options.project.projectName)}"`,
+    'reply_footer = false',
+    '',
+    '[projects.agent]',
+    'type = "codex"',
+    '',
+    '[projects.agent.options]',
+    `work_dir = "${escapeToml(options.project.workDir)}"`,
+    'mode = "full-auto"',
+    `cmd = "${escapeToml(options.codexPath)}"`,
+    ...(model ? [`model = "${escapeToml(model)}"`] : []),
+    ...ccConnectProviderConfig(options.providerProfile),
+    '',
+    ...ccConnectPlatformConfig(projectPlatforms),
+    '# cc-connect requires at least one project platform before the bridge can start.',
+    '# ClawX GUI traffic is delivered by the local [bridge] adapter above; this LINE webhook',
+    '# placeholder listens only on an ephemeral local port and is filtered from channel status.',
+    '[[projects.platforms]]',
+    'type = "line"',
+    '',
+    '[projects.platforms.options]',
+    `channel_secret = "${CLAWX_LOCAL_PLACEHOLDER_SECRET}"`,
+    `channel_token = "${CLAWX_LOCAL_PLACEHOLDER_SECRET}"`,
+    'port = "0"',
+    '',
+  ];
+}
+
 function defaultConfig(options: {
   codexPath: string;
   providerProfile?: CodexProviderProfile | null;
   managementToken: string;
   bridgeToken: string;
+  fallbackWorkDir?: string;
+  agentProjects?: CcConnectAgentProject[];
   channelPlatforms?: CcConnectChannelPlatform[];
 }): string {
   const managedDir = getCcConnectManagedDir();
   const dataDir = join(managedDir, 'data').replace(/\\/g, '\\\\');
-  const workDir = (process.env.CLAWX_CODEX_WORKDIR || process.cwd()).replace(/\\/g, '\\\\');
-  const model = options.providerProfile?.model;
+  const fallbackWorkDir = expandPath(
+    process.env.CLAWX_CODEX_WORKDIR || options.fallbackWorkDir || process.cwd(),
+  );
+  const agentProjects = options.agentProjects && options.agentProjects.length > 0
+    ? options.agentProjects
+    : [{
+        agentId: 'main',
+        projectName: CLAWX_PROJECT_NAME,
+        workDir: fallbackWorkDir,
+      }];
+  const channelPlatforms = options.channelPlatforms ?? [];
   return [
     '# Managed by ClawX. Do not edit while ClawX is running.',
     '# ClawX stores this file under app userData and does not modify ~/.cc-connect.',
@@ -148,32 +210,12 @@ function defaultConfig(options: {
     `token = "${escapeToml(options.bridgeToken)}"`,
     'path = "/bridge/ws"',
     '',
-    '[[projects]]',
-    `name = "${CLAWX_PROJECT_NAME}"`,
-    'reply_footer = false',
-    '',
-    '[projects.agent]',
-    'type = "codex"',
-    '',
-    '[projects.agent.options]',
-    `work_dir = "${workDir}"`,
-    'mode = "full-auto"',
-    `cmd = "${escapeToml(options.codexPath)}"`,
-    ...(model ? [`model = "${escapeToml(model)}"`] : []),
-    ...ccConnectProviderConfig(options.providerProfile),
-    '',
-    ...ccConnectPlatformConfig(options.channelPlatforms ?? []),
-    '# cc-connect requires at least one project platform before the bridge can start.',
-    '# ClawX GUI traffic is delivered by the local [bridge] adapter above; this LINE webhook',
-    '# placeholder listens only on an ephemeral local port and is filtered from channel status.',
-    '[[projects.platforms]]',
-    'type = "line"',
-    '',
-    '[projects.platforms.options]',
-    `channel_secret = "${CLAWX_LOCAL_PLACEHOLDER_SECRET}"`,
-    `channel_token = "${CLAWX_LOCAL_PLACEHOLDER_SECRET}"`,
-    'port = "0"',
-    '',
+    ...agentProjects.flatMap((project) => ccConnectProjectConfig({
+      project,
+      codexPath: options.codexPath,
+      providerProfile: options.providerProfile,
+      channelPlatforms,
+    })),
   ].join('\n');
 }
 
@@ -192,6 +234,7 @@ export class CcConnectRuntimeProvider extends EventEmitter implements RuntimePro
   }, this.kind, CC_CONNECT_RUNTIME_CAPABILITIES, getCcConnectManagedDir());
   private readonly binaryPath?: string;
   private readonly codexPath?: string;
+  private readonly workDir?: string;
   private readonly codexBundle?: CodexBundle;
   private currentProviderProfile: CodexProviderProfile | null = null;
   private sessionSyncTimer: ReturnType<typeof setInterval> | null = null;
@@ -203,6 +246,7 @@ export class CcConnectRuntimeProvider extends EventEmitter implements RuntimePro
     super();
     this.binaryPath = options.binaryPath;
     this.codexPath = options.codexPath;
+    this.workDir = options.workDir;
     this.codexBundle = options.codexBundle;
     this.codexBridge = options.codexBridge ?? new CodexCliBridge({
       codexPath: options.codexPath,
@@ -214,6 +258,7 @@ export class CcConnectRuntimeProvider extends EventEmitter implements RuntimePro
       port: CC_CONNECT_BRIDGE_PORT,
       token: this.bridgeToken,
       project: CLAWX_PROJECT_NAME,
+      projectForSessionKey: ccConnectProjectNameForSessionKey,
       emit: this.emit.bind(this),
     });
     this.skillSyncer = options.skillSyncer ?? syncCcConnectSkills;
@@ -554,11 +599,14 @@ export class CcConnectRuntimeProvider extends EventEmitter implements RuntimePro
     const configPath = getCcConnectConfigPath();
     await mkdir(dirname(configPath), { recursive: true });
     const openClawConfig = await readOpenClawConfig().catch(() => ({} as OpenClawConfig));
+    const agentProjects = collectCcConnectAgentProjects(openClawConfig, this.workDir);
     await writeFile(configPath, defaultConfig({
       codexPath,
       providerProfile,
       managementToken: this.managementToken,
       bridgeToken: this.bridgeToken,
+      fallbackWorkDir: this.workDir,
+      agentProjects,
       channelPlatforms: collectCcConnectChannelPlatforms(openClawConfig).filter((platform) => !platform.error),
     }), 'utf8');
     return configPath;
@@ -853,6 +901,90 @@ function ccConnectPlatformConfig(platforms: CcConnectChannelPlatform[]): string[
   ]);
 }
 
+function normalizeAgentId(value: unknown): string {
+  if (typeof value !== 'string') return 'main';
+  const normalized = value.trim().toLowerCase();
+  return normalized || 'main';
+}
+
+function getConfiguredDefaultAgentId(config: OpenClawConfig): string {
+  const agents = isRecord(config.agents) ? config.agents : {};
+  const entries = Array.isArray(agents.list)
+    ? agents.list.filter((entry): entry is Record<string, unknown> => isRecord(entry))
+    : [];
+  const explicitDefault = entries.find((entry) => entry.default === true);
+  return normalizeAgentId(explicitDefault?.id ?? entries[0]?.id ?? 'main');
+}
+
+function getDefaultWorkspaceFromConfig(config: OpenClawConfig, fallbackWorkDir?: string): string {
+  const agents = isRecord(config.agents) ? config.agents : {};
+  const defaults = isRecord(agents.defaults) ? agents.defaults : {};
+  const configured = typeof defaults.workspace === 'string' && defaults.workspace.trim()
+    ? defaults.workspace.trim()
+    : '';
+  return expandPath(configured || fallbackWorkDir || process.env.CLAWX_CODEX_WORKDIR || process.cwd());
+}
+
+function collectCcConnectAgentProjects(config: OpenClawConfig, fallbackWorkDir?: string): CcConnectAgentProject[] {
+  const agents = isRecord(config.agents) ? config.agents : {};
+  const entries = Array.isArray(agents.list)
+    ? agents.list.filter((entry): entry is Record<string, unknown> => (
+        isRecord(entry) && typeof entry.id === 'string' && entry.id.trim().length > 0
+      ))
+    : [];
+  const defaultWorkspace = getDefaultWorkspaceFromConfig(config, fallbackWorkDir);
+  const rawProjects = entries.length > 0
+    ? entries.map((entry) => {
+        const agentId = normalizeAgentId(entry.id);
+        const workspace = typeof entry.workspace === 'string' && entry.workspace.trim()
+          ? entry.workspace.trim()
+          : agentId === 'main'
+            ? defaultWorkspace
+            : `~/.openclaw/workspace-${agentId}`;
+        return {
+          agentId,
+          projectName: ccConnectProjectNameForAgent(agentId),
+          workDir: expandPath(workspace),
+        };
+      })
+    : [{
+        agentId: 'main',
+        projectName: CLAWX_PROJECT_NAME,
+        workDir: defaultWorkspace,
+      }];
+
+  const projects = new Map<string, CcConnectAgentProject>();
+  for (const project of rawProjects) {
+    projects.set(project.agentId, project);
+  }
+  if (!projects.has('main')) {
+    projects.set('main', {
+      agentId: 'main',
+      projectName: CLAWX_PROJECT_NAME,
+      workDir: defaultWorkspace,
+    });
+  }
+  return Array.from(projects.values()).sort((left, right) => (
+    left.agentId === 'main' ? -1 : right.agentId === 'main' ? 1 : left.agentId.localeCompare(right.agentId)
+  ));
+}
+
+function resolveBoundAgentId(config: OpenClawConfig, channelType: string, accountId: string): string {
+  const defaultAgentId = getConfiguredDefaultAgentId(config);
+  const bindings = Array.isArray(config.bindings) ? config.bindings : [];
+  let channelWideAgentId: string | null = null;
+  for (const binding of bindings) {
+    if (!isRecord(binding) || typeof binding.agentId !== 'string') continue;
+    const match = isRecord(binding.match) ? binding.match : {};
+    if (match.channel !== channelType) continue;
+    if (match.accountId === accountId) return normalizeAgentId(binding.agentId);
+    if (typeof match.accountId !== 'string' || !match.accountId.trim()) {
+      channelWideAgentId = normalizeAgentId(binding.agentId);
+    }
+  }
+  return channelWideAgentId || defaultAgentId;
+}
+
 function collectCcConnectChannelPlatforms(config: OpenClawConfig): CcConnectChannelPlatform[] {
   const channels = config.channels;
   if (!channels || typeof channels !== 'object') return [];
@@ -862,7 +994,8 @@ function collectCcConnectChannelPlatforms(config: OpenClawConfig): CcConnectChan
     if (!section || section.enabled === false) continue;
     const accounts = getCcConnectChannelAccounts(section);
     for (const [accountId, accountConfig] of accounts) {
-      platforms.push(buildCcConnectChannelPlatform(channelType, accountId, accountConfig));
+      const agentId = resolveBoundAgentId(config, channelType, accountId);
+      platforms.push(buildCcConnectChannelPlatform(channelType, accountId, agentId, accountConfig));
     }
   }
   return platforms.sort((left, right) =>
@@ -899,6 +1032,7 @@ function getDefaultChannelAccountId(config: OpenClawConfig, channelType: string)
 function buildCcConnectChannelPlatform(
   channelType: string,
   accountId: string,
+  agentId: string,
   accountConfig: ChannelConfigData,
 ): CcConnectChannelPlatform {
   const platformType = resolveCcConnectPlatformType(channelType, accountConfig);
@@ -906,6 +1040,8 @@ function buildCcConnectChannelPlatform(
     return {
       channelType,
       accountId,
+      agentId,
+      projectName: ccConnectProjectNameForAgent(agentId),
       platformType,
       options: {},
       error: `cc-connect does not support channel "${channelType}" yet`,
@@ -917,6 +1053,8 @@ function buildCcConnectChannelPlatform(
   return {
     channelType,
     accountId,
+    agentId,
+    projectName: ccConnectProjectNameForAgent(agentId),
     platformType,
     options,
     ...(missing.length > 0 ? { error: `Missing cc-connect channel option(s): ${missing.join(', ')}` } : {}),

@@ -498,6 +498,64 @@ describe('CcConnectRuntimeProvider', () => {
     });
   });
 
+  it('generates one cc-connect project per OpenClaw agent workspace and assigns channel accounts to the bound agent project', async () => {
+    const mainWorkspace = join(tempDir, 'workspace-main');
+    const researchWorkspace = join(tempDir, 'workspace-research');
+    readOpenClawConfigMock.mockResolvedValue({
+      agents: {
+        defaults: { workspace: mainWorkspace },
+        list: [
+          { id: 'main', name: 'Main Agent', default: true, workspace: mainWorkspace },
+          { id: 'research', name: 'Research Agent', workspace: researchWorkspace },
+        ],
+      },
+      bindings: [
+        { agentId: 'research', match: { channel: 'telegram', accountId: 'ops_bot' } },
+      ],
+      channels: {
+        telegram: {
+          defaultAccount: 'ops_bot',
+          accounts: {
+            ops_bot: {
+              token: 'telegram-secret-token',
+              shareSessionInChannel: true,
+            },
+          },
+        },
+      },
+    });
+    const binaryPath = join(tempDir, 'cc-connect');
+    await writeFile(binaryPath, '#!/bin/sh\n', { mode: 0o755 });
+    const { CcConnectRuntimeProvider } = await import('@electron/runtime/cc-connect-provider');
+    const provider = new CcConnectRuntimeProvider({
+      binaryPath,
+      codexPath: join(tempDir, 'codex'),
+      codexBridge: createBridgeMock() as never,
+      bridgeAdapter: createBridgeAdapterMock() as never,
+      skillSyncer: vi.fn(async () => ({ skills: [] })),
+      providerProfileLoader: vi.fn(async () => createProviderProfile()) as never,
+    });
+    const child = createChild();
+    forkMock.mockReturnValueOnce(child);
+
+    const startPromise = provider.start();
+    await vi.waitFor(() => expect(forkMock).toHaveBeenCalledOnce());
+    child.emit('spawn');
+    await startPromise;
+
+    const config = await readFile(join(tempDir, 'runtimes', 'cc-connect', 'config.toml'), 'utf8');
+    const mainProjectIndex = config.indexOf('name = "clawx-main"');
+    const researchProjectIndex = config.indexOf('name = "clawx-research"');
+    const telegramIndex = config.indexOf('type = "telegram"');
+    expect(mainProjectIndex).toBeGreaterThanOrEqual(0);
+    expect(researchProjectIndex).toBeGreaterThan(mainProjectIndex);
+    expect(config).toContain(`work_dir = "${mainWorkspace.replace(/\\/g, '\\\\')}"`);
+    expect(config).toContain(`work_dir = "${researchWorkspace.replace(/\\/g, '\\\\')}"`);
+    expect(telegramIndex).toBeGreaterThan(researchProjectIndex);
+    expect(config.slice(mainProjectIndex, researchProjectIndex)).not.toContain('type = "telegram"');
+    expect(config.slice(researchProjectIndex)).toContain('token = "telegram-secret-token"');
+  });
+
   it('does not expose the managed local placeholder as a user channel', async () => {
     const configPath = join(tempDir, 'runtimes', 'cc-connect', 'config.toml');
     await mkdir(join(tempDir, 'runtimes', 'cc-connect'), { recursive: true });

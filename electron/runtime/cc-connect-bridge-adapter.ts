@@ -11,6 +11,7 @@ type BridgeAdapterOptions = {
   port: number;
   token: string;
   project: string;
+  projectForSessionKey?: (sessionKey: string) => string;
   emit: EventEmitter['emit'];
   sessionStoreDir?: string;
 };
@@ -26,6 +27,7 @@ type PendingRun = {
   runId: string;
   sessionKey: string;
   startedAt: number;
+  seq: number;
 };
 
 type PersistedSession = {
@@ -47,6 +49,7 @@ type PersistedSessionStore = {
 };
 
 const CONNECT_TIMEOUT_MS = 15_000;
+const CLAWX_PROJECT_PREFIX = 'clawx-';
 
 function messageText(content: unknown): string {
   if (typeof content === 'string') return content;
@@ -79,8 +82,32 @@ export function toCcConnectBridgeSessionKey(sessionKey: string): string {
   return `clawx:${scope || 'main'}:${user || 'main'}`;
 }
 
+function normalizeClawXAgentId(value: string | undefined): string {
+  const normalized = (value || 'main')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]+/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-|-$/g, '');
+  return normalized || 'main';
+}
+
+export function ccConnectProjectNameForAgent(agentId: string): string {
+  return `${CLAWX_PROJECT_PREFIX}${normalizeClawXAgentId(agentId)}`;
+}
+
+export function ccConnectProjectNameForSessionKey(sessionKey: string): string {
+  const bridgeKey = toCcConnectBridgeSessionKey(sessionKey);
+  if (!bridgeKey.startsWith('clawx:')) return ccConnectProjectNameForAgent('main');
+  const [, agentId] = bridgeKey.split(':');
+  return ccConnectProjectNameForAgent(agentId);
+}
+
 function fromBridgeSessionKey(sessionKey: string): string {
-  if (sessionKey === 'clawx:main:main') return 'agent:main:main';
+  if (sessionKey.startsWith('clawx:')) {
+    const [, scope = 'main', user = 'main'] = sessionKey.split(':');
+    return `agent:${scope || 'main'}:${user || 'main'}`;
+  }
   return sessionKey;
 }
 
@@ -142,6 +169,7 @@ export class CcConnectBridgeAdapter {
   private readonly port: number;
   private readonly token: string;
   private readonly project: string;
+  private readonly projectForSessionKey: (sessionKey: string) => string;
   private readonly emitRuntimeEvent: EventEmitter['emit'];
   private readonly sessionStoreDir: string;
   private socket: WebSocket | null = null;
@@ -152,6 +180,7 @@ export class CcConnectBridgeAdapter {
     this.port = options.port;
     this.token = options.token;
     this.project = options.project;
+    this.projectForSessionKey = options.projectForSessionKey ?? (() => options.project);
     this.emitRuntimeEvent = options.emit;
     this.sessionStoreDir = options.sessionStoreDir ?? join(getCcConnectManagedDir(), 'data', 'sessions');
   }
@@ -201,7 +230,7 @@ export class CcConnectBridgeAdapter {
       timestamp: now,
     };
     this.appendMessage(payload.sessionKey, userMessage);
-    this.pendingRuns.set(runId, { runId, sessionKey: payload.sessionKey, startedAt: now });
+    this.pendingRuns.set(runId, { runId, sessionKey: payload.sessionKey, startedAt: now, seq: 0 });
     this.emitRuntimeEvent('chat:runtime-event', {
       type: 'run.started',
       runId,
@@ -217,7 +246,7 @@ export class CcConnectBridgeAdapter {
       user_name: 'ClawX',
       content: payload.message,
       reply_ctx: runId,
-      project: this.project,
+      project: this.projectForSessionKey(payload.sessionKey),
       images: [],
       files: payload.media?.map((item) => ({
         mime_type: item.mimeType,
@@ -467,6 +496,10 @@ export class CcConnectBridgeAdapter {
       this.finishRun(message, typeof message.content === 'string' ? message.content : '');
       return;
     }
+    if (message.type === 'reply_stream' && message.done !== true) {
+      this.emitAssistantDelta(message);
+      return;
+    }
     if (message.type === 'reply_stream' && message.done === true) {
       const text = typeof message.full_text === 'string'
         ? message.full_text
@@ -489,15 +522,37 @@ export class CcConnectBridgeAdapter {
     }
   }
 
+  private emitAssistantDelta(message: Record<string, unknown>): void {
+    const runId = typeof message.reply_ctx === 'string' ? message.reply_ctx : '';
+    const pending = this.pendingRuns.get(runId);
+    if (!pending) return;
+    const fullText = typeof message.full_text === 'string' ? message.full_text : '';
+    const delta = typeof message.delta === 'string' ? message.delta : '';
+    const text = typeof message.text === 'string' ? message.text : fullText;
+    if (!text && !delta) return;
+    const now = Date.now();
+    pending.seq += 1;
+    this.emitRuntimeEvent('chat:runtime-event', {
+      type: 'assistant.delta',
+      runId,
+      sessionKey: pending.sessionKey,
+      seq: pending.seq,
+      ts: now,
+      ...(text ? { text, replace: true } : { delta }),
+    });
+  }
+
   private finishRun(message: Record<string, unknown>, text: string, isError = false): void {
     const runId = typeof message.reply_ctx === 'string' ? message.reply_ctx : '';
     const pending = this.pendingRuns.get(runId);
     const sessionKey = pending?.sessionKey ?? 'agent:main:main';
+    const now = Date.now();
+    const seq = pending ? pending.seq + 1 : undefined;
     const assistantMessage: RawMessage = {
       id: `${runId || randomUUID()}:assistant`,
       role: isError ? 'system' : 'assistant',
       content: text,
-      timestamp: Date.now(),
+      timestamp: now,
       ...(isError ? { isError: true, errorMessage: text } : {}),
     };
     this.appendMessage(sessionKey, assistantMessage);
@@ -512,8 +567,9 @@ export class CcConnectBridgeAdapter {
       runId,
       sessionKey,
       status: isError ? 'error' : 'completed',
-      endedAt: Date.now(),
-      ts: Date.now(),
+      endedAt: now,
+      seq,
+      ts: now,
       ...(isError ? { error: text } : {}),
     });
     if (runId) this.pendingRuns.delete(runId);
