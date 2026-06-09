@@ -32,6 +32,7 @@ const {
   saveChannelConfigMock,
   setSettingMock,
   syncDefaultProviderToRuntimeMock,
+  syncDeletedProviderToRuntimeMock,
   syncSavedProviderToRuntimeMock,
   syncLaunchAtStartupSettingFromStoreMock,
   syncProxyConfigToOpenClawMock,
@@ -99,6 +100,7 @@ const {
   saveChannelConfigMock: vi.fn(),
   setSettingMock: vi.fn(),
   syncDefaultProviderToRuntimeMock: vi.fn(),
+  syncDeletedProviderToRuntimeMock: vi.fn(),
   syncSavedProviderToRuntimeMock: vi.fn(),
   syncLaunchAtStartupSettingFromStoreMock: vi.fn(),
   syncProxyConfigToOpenClawMock: vi.fn(),
@@ -192,7 +194,7 @@ vi.mock('@electron/services/providers/provider-runtime-sync', () => ({
   syncAgentModelOverrideToRuntime: vi.fn(),
   syncDefaultProviderToRuntime: (...args: unknown[]) => syncDefaultProviderToRuntimeMock(...args),
   syncDeletedProviderApiKeyToRuntime: vi.fn(),
-  syncDeletedProviderToRuntime: vi.fn(),
+  syncDeletedProviderToRuntime: (...args: unknown[]) => syncDeletedProviderToRuntimeMock(...args),
   syncProviderApiKeyToRuntime: vi.fn(),
   syncSavedProviderToRuntime: (...args: unknown[]) => syncSavedProviderToRuntimeMock(...args),
   syncUpdatedProviderToRuntime: vi.fn(),
@@ -479,6 +481,116 @@ describe('host services', () => {
 
     expect(providerServiceMock.setDefaultAccount).toHaveBeenCalledWith('custom-local');
     expect(syncDefaultProviderToRuntimeMock).toHaveBeenCalledWith('custom-local', gatewayManager);
+  });
+
+  it('promotes the newest enabled account before removing the deleted default from runtime', async () => {
+    const deletedAccount = {
+      id: 'default-account',
+      vendorId: 'moonshot',
+      label: 'Default',
+      authMode: 'api_key',
+      model: 'kimi-k2.6',
+      enabled: true,
+      createdAt: '2026-05-01T00:00:00.000Z',
+      updatedAt: '2026-05-01T00:00:00.000Z',
+    };
+    const newestDisabledAccount = {
+      ...deletedAccount,
+      id: 'disabled-newest',
+      label: 'Disabled Newest',
+      enabled: false,
+      updatedAt: '2026-06-03T00:00:00.000Z',
+    };
+    const olderEnabledAccount = {
+      ...deletedAccount,
+      id: 'enabled-older',
+      label: 'Enabled Older',
+      updatedAt: '2026-06-01T00:00:00.000Z',
+    };
+    const newestEnabledAccount = {
+      ...deletedAccount,
+      id: 'enabled-newest',
+      label: 'Enabled Newest',
+      updatedAt: '2026-06-02T00:00:00.000Z',
+    };
+    providerServiceMock.getAccount.mockResolvedValue(deletedAccount);
+    providerServiceMock.getDefaultAccountId.mockResolvedValue(deletedAccount.id);
+    providerServiceMock.listAccounts.mockResolvedValue([
+      deletedAccount,
+      newestDisabledAccount,
+      olderEnabledAccount,
+      newestEnabledAccount,
+    ]);
+    const gatewayManager = { debouncedReload: vi.fn(), debouncedRestart: vi.fn() };
+    const { createProvidersApi } = await import('@electron/services/providers-api');
+
+    await expect(createProvidersApi({
+      gatewayManager: gatewayManager as never,
+      mainWindow: {} as never,
+    }).deleteAccount({ accountId: deletedAccount.id })).resolves.toEqual({ success: true });
+
+    expect(providerServiceMock.setDefaultAccount).toHaveBeenCalledWith(newestEnabledAccount.id);
+    expect(syncDefaultProviderToRuntimeMock).toHaveBeenCalledWith(newestEnabledAccount.id);
+    expect(syncDeletedProviderToRuntimeMock).toHaveBeenCalledWith(
+      expect.objectContaining({ id: deletedAccount.id, type: deletedAccount.vendorId }),
+      deletedAccount.id,
+      gatewayManager,
+      undefined,
+    );
+    expect(syncDefaultProviderToRuntimeMock.mock.invocationCallOrder[0])
+      .toBeLessThan(syncDeletedProviderToRuntimeMock.mock.invocationCallOrder[0]);
+  });
+
+  it('does not change the default provider when deleting a non-default account', async () => {
+    const account = {
+      id: 'secondary-account',
+      vendorId: 'moonshot',
+      label: 'Secondary',
+      authMode: 'api_key',
+      model: 'kimi-k2.6',
+      enabled: true,
+      createdAt: '2026-05-01T00:00:00.000Z',
+      updatedAt: '2026-05-01T00:00:00.000Z',
+    };
+    providerServiceMock.getAccount.mockResolvedValue(account);
+    providerServiceMock.getDefaultAccountId.mockResolvedValue('default-account');
+    const gatewayManager = { debouncedReload: vi.fn(), debouncedRestart: vi.fn() };
+    const { createProvidersApi } = await import('@electron/services/providers-api');
+
+    await expect(createProvidersApi({
+      gatewayManager: gatewayManager as never,
+      mainWindow: {} as never,
+    }).deleteAccount({ accountId: account.id })).resolves.toEqual({ success: true });
+
+    expect(providerServiceMock.listAccounts).not.toHaveBeenCalled();
+    expect(providerServiceMock.setDefaultAccount).not.toHaveBeenCalled();
+    expect(syncDefaultProviderToRuntimeMock).not.toHaveBeenCalled();
+  });
+
+  it('leaves the default unset when deleting the final provider account', async () => {
+    const account = {
+      id: 'only-account',
+      vendorId: 'moonshot',
+      label: 'Only Account',
+      authMode: 'api_key',
+      model: 'kimi-k2.6',
+      enabled: true,
+      createdAt: '2026-05-01T00:00:00.000Z',
+      updatedAt: '2026-05-01T00:00:00.000Z',
+    };
+    providerServiceMock.getAccount.mockResolvedValue(account);
+    providerServiceMock.getDefaultAccountId.mockResolvedValue(account.id);
+    providerServiceMock.listAccounts.mockResolvedValue([account]);
+    const gatewayManager = { debouncedReload: vi.fn(), debouncedRestart: vi.fn() };
+    const { createProvidersApi } = await import('@electron/services/providers-api');
+
+    await expect(createProvidersApi({
+      gatewayManager: gatewayManager as never,
+      mainWindow: {} as never,
+    }).deleteAccount({ accountId: account.id })).resolves.toEqual({ success: true });
+
+    expect(providerServiceMock.setDefaultAccount).not.toHaveBeenCalled();
+    expect(syncDefaultProviderToRuntimeMock).not.toHaveBeenCalled();
   });
 
   it('builds channel accounts from config without gateway rpc in config mode', async () => {

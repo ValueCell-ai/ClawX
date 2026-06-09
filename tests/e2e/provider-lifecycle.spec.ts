@@ -20,6 +20,52 @@ async function seedTestProvider(page: Parameters<typeof completeSetup>[0]): Prom
 }
 
 test.describe('ClawX provider lifecycle', () => {
+  test('promotes a remaining provider after deleting the default provider', async ({ page }) => {
+    await completeSetup(page);
+
+    await page.evaluate(async () => {
+      const now = new Date().toISOString();
+      const providers = [
+        {
+          id: 'moonshot-default-e2e',
+          name: 'Moonshot Default E2E',
+          type: 'moonshot',
+          baseUrl: 'https://api.moonshot.cn/v1',
+          model: 'kimi-k2.6',
+          enabled: true,
+          createdAt: now,
+          updatedAt: now,
+        },
+        {
+          id: 'deepseek-replacement-e2e',
+          name: 'DeepSeek Replacement E2E',
+          type: 'deepseek',
+          baseUrl: 'https://api.deepseek.com/v1',
+          model: 'deepseek-v4-pro',
+          enabled: true,
+          createdAt: now,
+          updatedAt: new Date(Date.now() + 1_000).toISOString(),
+        },
+      ];
+
+      for (const provider of providers) {
+        await window.electron.ipcRenderer.invoke('provider:save', provider);
+      }
+      await window.electron.ipcRenderer.invoke('provider:setDefault', providers[0].id);
+    });
+
+    await page.getByTestId('sidebar-nav-models').click();
+    await expect(page.getByTestId('provider-card-moonshot-default-e2e')).toContainText('Default');
+    await expect(page.getByTestId('provider-card-deepseek-replacement-e2e')).toBeVisible();
+
+    await page.getByTestId('provider-card-moonshot-default-e2e').hover();
+    await page.getByTestId('provider-delete-moonshot-default-e2e').click();
+
+    await expect(page.getByTestId('provider-card-moonshot-default-e2e')).toHaveCount(0);
+    await expect(page.getByTestId('provider-card-deepseek-replacement-e2e')).toContainText('Default');
+    await expect(page.getByTestId('provider-set-default-deepseek-replacement-e2e')).toHaveCount(0);
+  });
+
   test('shows a saved provider and removes it cleanly after deletion', async ({ page }) => {
     await completeSetup(page);
     await seedTestProvider(page);

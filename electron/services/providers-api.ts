@@ -46,6 +46,21 @@ function hasObjectChanges<T extends Record<string, unknown>>(
   return keys.some((key) => JSON.stringify(existing[key]) !== JSON.stringify(patch[key]));
 }
 
+function selectReplacementDefaultAccount(
+  accounts: ProviderAccount[],
+  deletedAccountId: string,
+): ProviderAccount | undefined {
+  return accounts
+    .filter((account) => account.id !== deletedAccountId)
+    .sort((left, right) => {
+      if (left.enabled !== right.enabled) {
+        return left.enabled ? -1 : 1;
+      }
+      const updatedAtOrder = right.updatedAt.localeCompare(left.updatedAt);
+      return updatedAtOrder !== 0 ? updatedAtOrder : left.id.localeCompare(right.id);
+    })[0];
+}
+
 function payloadString(payload: unknown, key: string): string | undefined {
   if (typeof payload === 'string') return payload;
   if (!isRecord(payload)) return undefined;
@@ -362,7 +377,16 @@ async function deleteAccount(
       );
       return { success: true };
     }
+    const currentDefaultAccountId = await providerService.getDefaultAccountId();
+    const replacementDefault = currentDefaultAccountId === accountId
+      ? selectReplacementDefaultAccount(await providerService.listAccounts(), accountId)
+      : undefined;
+
     await providerService.deleteAccount(accountId);
+    if (replacementDefault) {
+      await providerService.setDefaultAccount(replacementDefault.id);
+      await syncDefaultProviderToRuntime(replacementDefault.id);
+    }
     await syncDeletedProviderToRuntime(
       existing ? providerAccountToConfig(existing) : null,
       accountId,
