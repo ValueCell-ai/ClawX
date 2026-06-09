@@ -120,6 +120,7 @@ test.describe('cc-connect + Codex runtime E2E', () => {
 
     await writeFile(join(userDataDir, 'settings.json'), JSON.stringify({
       language: 'en',
+      devModeUnlocked: true,
       runtimeKind: 'cc-connect',
       gatewayAutoStart: false,
     }, null, 2), 'utf8');
@@ -243,6 +244,7 @@ test.describe('cc-connect + Codex runtime E2E', () => {
 
     await writeFile(join(userDataDir, 'settings.json'), JSON.stringify({
       language: 'en',
+      devModeUnlocked: true,
       runtimeKind: 'cc-connect',
       gatewayAutoStart: false,
     }, null, 2), 'utf8');

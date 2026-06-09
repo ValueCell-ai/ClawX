@@ -702,6 +702,7 @@ describe('CcConnectRuntimeProvider', () => {
     const { CcConnectRuntimeProvider } = await import('@electron/runtime/cc-connect-provider');
     const provider = new CcConnectRuntimeProvider({
       binaryPath,
+      codexPath: join(tempDir, 'codex'),
       codexBridge: bridge as never,
       providerProfileLoader: providerProfileLoader as never,
     });
@@ -787,7 +788,11 @@ describe('CcConnectRuntimeProvider', () => {
     const bridge = createBridgeMock();
 
     const { CcConnectRuntimeProvider } = await import('@electron/runtime/cc-connect-provider');
-    const provider = new CcConnectRuntimeProvider({ binaryPath, codexBridge: bridge as never });
+    const provider = new CcConnectRuntimeProvider({
+      binaryPath,
+      codexPath: join(tempDir, 'codex'),
+      codexBridge: bridge as never,
+    });
     const resultPromise = provider.runDoctor('diagnose');
     await vi.waitFor(() => expect(forkMock).toHaveBeenCalledOnce());
     child.writeStdout('doctor ok\n');
@@ -818,7 +823,11 @@ describe('CcConnectRuntimeProvider', () => {
     const binaryPath = join(tempDir, 'cc-connect');
     await writeFile(binaryPath, '#!/bin/sh\n', { mode: 0o755 });
     const { CcConnectRuntimeProvider } = await import('@electron/runtime/cc-connect-provider');
-    const provider = new CcConnectRuntimeProvider({ binaryPath, codexBridge: createBridgeMock() as never });
+    const provider = new CcConnectRuntimeProvider({
+      binaryPath,
+      codexPath: join(tempDir, 'codex'),
+      codexBridge: createBridgeMock() as never,
+    });
 
     await expect(provider.runDoctor('fix')).resolves.toMatchObject({
       mode: 'fix',
