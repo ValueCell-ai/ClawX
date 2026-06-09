@@ -337,9 +337,12 @@ export function Chat() {
   const streamTools = streamMsg ? extractToolUse(streamMsg) : [];
   const hasStreamTools = streamTools.length > 0;
   const streamImages = streamMsg ? extractImages(streamMsg) : [];
-  const hasStreamImages = streamImages.length > 0;
+  const hasStreamAttachedImages = ((streamMsg as RawMessage | null)?._attachedFiles ?? [])
+    .some((file) => file.mimeType.startsWith('image/'));
+  const hasStreamImages = streamImages.length > 0 || hasStreamAttachedImages;
   const hasStreamToolStatus = streamingTools.length > 0;
   const hasRunningStreamToolStatus = streamingTools.some((tool) => tool.status === 'running');
+  const hasImageGenerateStreamToolStatus = streamingTools.some((tool) => tool.name === 'image_generate');
   const currentRuntimeRun = activeRunId ? runtimeRuns[activeRunId] ?? null : null;
   const currentRuntimeHasToolActivity = Boolean(currentRuntimeRun?.events.some((event) =>
     event.type === 'tool.started'
@@ -454,6 +457,12 @@ export function Chat() {
     const imageGenerationSettledInHistory = isLatestRunSegment
       && hasDeliveredImageGenerationResult(postTriggerMessages)
       && !pendingImageGeneration;
+    const imageGenerationSettledInStream = isLatestRunSegment
+      && hasStreamImages
+      && (hasImageGenerateStreamToolStatus || postTriggerMessages.some((m) =>
+        m.role === 'assistant' && extractToolUse(m).some((tool) => tool.name === 'image_generate'),
+      ));
+    const imageGenerationSettled = imageGenerationSettledInHistory || imageGenerationSettledInStream;
     const runStillExecutingTools = hasToolActivity && !hasFinalReply;
     // runStillExecutingTools bridges the brief gap between tool rounds when
     // Gateway temporarily clears sending.  However, after an explicit abort
@@ -463,15 +472,18 @@ export function Chat() {
     // History may already contain the final answer while lifecycle flags are
     // still armed (missing Gateway terminal phase, blocked chat.send RPC, etc.).
     // Treat the run as closed for graph/input UI when the transcript is done
-    // and no user-visible reply/tool stream is active. Require prior tool activity
-    // so an early narration-only history snapshot does not collapse the graph
-    // mid-chain. Thinking-only stale stream content should not keep image
-    // generation runs open after history already contains the final media.
-    const streamBlocksHistoryCompletion = hasHistoryCompletionBlockingStream && !imageGenerationSettledInHistory;
-    const runCompletedInHistory = imageGenerationSettledInHistory || (hasFinalReply
+    // and no user-visible reply/tool stream is active. Tool chains stay open
+    // while a runtime/stream tool is running, but plain text turns must still
+    // close when their final reply is already in history and Gateway missed the
+    // terminal lifecycle event.
+    const streamBlocksHistoryCompletion = hasHistoryCompletionBlockingStream && !imageGenerationSettled;
+    const finalReplyCanSettleRun = hasToolActivity
+      || !sending
+      || (!runtimeHasRunningTool && !hasRunningStreamToolStatus);
+    const runCompletedInHistory = imageGenerationSettled || (hasFinalReply
       && !pendingImageGeneration
       && !streamBlocksHistoryCompletion
-      && (hasToolActivity || !sending));
+      && finalReplyCanSettleRun);
     const isLatestOpenRun = isLatestRunSegment
       && !runError
       && !runCompletedInHistory
@@ -694,7 +706,7 @@ export function Chat() {
       streamingReplyText,
       suppressThinking,
     }];
-  }, [messages, subagentCompletionInfos, currentSessionKey, streamingMessage, streamingTools, pendingFinal, sending, hasAnyStreamContent, hasStreamText, hasStreamThinking, hasStreamImages, streamText, streamTools.length, hasRunningStreamToolStatus, hasHistoryCompletionBlockingStream, childTranscripts, currentAgentId, agents, sessionLabels, graphStepCache, runError, isRunTrigger, activeRunId, runtimeRuns]);
+  }, [messages, subagentCompletionInfos, currentSessionKey, streamingMessage, streamingTools, pendingFinal, sending, hasAnyStreamContent, hasStreamText, hasStreamThinking, hasStreamImages, hasImageGenerateStreamToolStatus, streamText, streamTools.length, hasRunningStreamToolStatus, hasHistoryCompletionBlockingStream, childTranscripts, currentAgentId, agents, sessionLabels, graphStepCache, runError, isRunTrigger, activeRunId, runtimeRuns]);
   const hasActiveExecutionGraph = userRunCards.some((card) => card.active);
   let latestRunSegmentCompletion = { hasFinalReply: false, hasToolActivity: false };
   let pendingImageGeneration = false;
@@ -718,22 +730,28 @@ export function Chat() {
       && !pendingImageGeneration;
     break;
   }
-  const streamBlocksHistoryCompletion = hasHistoryCompletionBlockingStream && !imageGenerationSettledInHistory;
-  const runSettledInHistory = imageGenerationSettledInHistory || (latestRunSegmentCompletion.hasFinalReply
+  const imageGenerationSettledInStream = hasStreamImages
+    && hasImageGenerateStreamToolStatus;
+  const imageGenerationSettled = imageGenerationSettledInHistory || imageGenerationSettledInStream;
+  const streamBlocksHistoryCompletion = hasHistoryCompletionBlockingStream && !imageGenerationSettled;
+  const runSettledInHistory = imageGenerationSettled || (latestRunSegmentCompletion.hasFinalReply
     && !pendingImageGeneration
     && !streamBlocksHistoryCompletion
     && (
       latestRunSegmentCompletion.hasToolActivity
       || currentRuntimeHasToolActivity
       || !sending
+      || (!hasRunningRuntimeToolStatus && !hasRunningStreamToolStatus)
     ));
   const shouldClearStoreLifecycleFromHistory = sending
     && runSettledInHistory
     && (
-      imageGenerationSettledInHistory
+      imageGenerationSettled
       || (!hasRunningRuntimeToolStatus && !hasRunningStreamToolStatus)
     );
-  const inputRunActive = sending || pendingImageGeneration || (hasActiveExecutionGraph && !runSettledInHistory);
+  const inputRunActive = (sending && !imageGenerationSettled)
+    || pendingImageGeneration
+    || (hasActiveExecutionGraph && !runSettledInHistory);
 
   useEffect(() => {
     if (!shouldClearStoreLifecycleFromHistory) return;

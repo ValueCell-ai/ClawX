@@ -932,8 +932,14 @@ function mimeFromExtension(filePath: string): string {
 
 function extractFilePathsFromToolArgs(args: Record<string, unknown>): string[] {
   const paths: string[] = [];
-  const direct = args.file_path ?? args.filePath ?? args.path ?? args.file;
+  const direct = args.file_path ?? args.filePath ?? args.path ?? args.file ?? args.media ?? args.mediaUrl;
   if (typeof direct === 'string' && direct.trim()) paths.push(direct.trim());
+  const mediaUrls = args.mediaUrls;
+  if (Array.isArray(mediaUrls)) {
+    for (const value of mediaUrls) {
+      if (typeof value === 'string' && value.trim()) paths.push(value.trim());
+    }
+  }
 
   const attachments = args.attachments;
   if (Array.isArray(attachments)) {
@@ -948,6 +954,74 @@ function extractFilePathsFromToolArgs(args: Record<string, unknown>): string[] {
   }
 
   return paths;
+}
+
+function isImagePathLike(value: string): boolean {
+  return /\.(?:png|jpe?g|gif|webp|bmp|avif|svg)(?:$|[?#])/i.test(value.trim());
+}
+
+function collectMediaValues(record: Record<string, unknown> | null | undefined): string[] {
+  if (!record) return [];
+  const values: string[] = [];
+  const push = (value: unknown) => {
+    if (typeof value === 'string' && value.trim()) values.push(value.trim());
+  };
+  push(record.media);
+  push(record.mediaUrl);
+  push(record.filePath);
+  const mediaUrls = record.mediaUrls;
+  if (Array.isArray(mediaUrls)) {
+    for (const value of mediaUrls) push(value);
+  }
+  return values;
+}
+
+function parseMessageToolResultJson(msg: RawMessage): Record<string, unknown> | null {
+  const text = getMessageText(msg.content);
+  if (!text.trim()) return null;
+  try {
+    const parsed = JSON.parse(text);
+    return parsed && typeof parsed === 'object' ? parsed as Record<string, unknown> : null;
+  } catch {
+    return null;
+  }
+}
+
+function collectMessageToolDeliveredFiles(msg: RawMessage): AttachedFileMeta[] {
+  if (!isToolResultRole(msg.role)) return [];
+  if (msg.toolName !== 'message') return [];
+
+  const details = msg.details && typeof msg.details === 'object'
+    ? msg.details as Record<string, unknown>
+    : parseMessageToolResultJson(msg);
+  if (!details) return [];
+  if (String(details.status ?? '').toLowerCase() === 'error') return [];
+
+  const sourceReply = details.sourceReply && typeof details.sourceReply === 'object'
+    ? details.sourceReply as Record<string, unknown>
+    : null;
+  const seen = new Set<string>();
+  const files: AttachedFileMeta[] = [];
+
+  for (const media of [...collectMediaValues(details), ...collectMediaValues(sourceReply)]) {
+    if (seen.has(media)) continue;
+    seen.add(media);
+    if (media.startsWith('/api/chat/media/')) {
+      files.push({
+        fileName: 'image',
+        mimeType: 'image/png',
+        fileSize: 0,
+        preview: null,
+        gatewayUrl: media,
+        source: 'gateway-media',
+      });
+      continue;
+    }
+    if (!isImagePathLike(media)) continue;
+    files.push({ ...makeAttachedFile({ filePath: media, mimeType: mimeFromExtension(media) }), source: 'tool-result' });
+  }
+
+  return files;
 }
 
 const DIRECTORY_MIME_TYPE = 'application/x-directory';
@@ -1178,6 +1252,23 @@ function collectToolCallPaths(msg: RawMessage, paths: Map<string, string>): void
   }
 }
 
+function assistantHasToolCallId(msg: RawMessage, toolCallId: string): boolean {
+  if (!toolCallId) return false;
+  const content = msg.content;
+  if (Array.isArray(content)) {
+    for (const block of content as ContentBlock[]) {
+      if ((block.type === 'tool_use' || block.type === 'toolCall') && block.id === toolCallId) {
+        return true;
+      }
+    }
+  }
+  const msgAny = msg as unknown as Record<string, unknown>;
+  const toolCalls = msgAny.tool_calls ?? msgAny.toolCalls;
+  return Array.isArray(toolCalls) && toolCalls.some((tc) =>
+    tc && typeof tc === 'object' && (tc as Record<string, unknown>).id === toolCallId,
+  );
+}
+
 /**
  * Before filtering tool_result messages from history, scan them for any file/image
  * content and attach those to the immediately following assistant message.
@@ -1190,14 +1281,49 @@ function collectToolCallPaths(msg: RawMessage, paths: Map<string, string>): void
 function enrichWithToolResultFiles(messages: RawMessage[]): RawMessage[] {
   const pending: AttachedFileMeta[] = [];
   const toolCallPaths = new Map<string, string>();
+  const enriched: RawMessage[] = [];
 
-  return messages.map((msg) => {
+  for (const msg of messages) {
     // Track file paths from assistant tool call arguments for later matching
     if (msg.role === 'assistant') {
       collectToolCallPaths(msg, toolCallPaths);
     }
 
     if (isToolResultRole(msg.role)) {
+      const deliveredFiles = collectMessageToolDeliveredFiles(msg);
+      if (deliveredFiles.length > 0) {
+        let attachIndex = -1;
+        if (msg.toolCallId) {
+          for (let index = enriched.length - 1; index >= 0; index -= 1) {
+            const candidate = enriched[index];
+            if (candidate?.role !== 'assistant') continue;
+            if (assistantHasToolCallId(candidate, msg.toolCallId)) {
+              attachIndex = index;
+              break;
+            }
+          }
+        }
+
+        if (attachIndex >= 0) {
+          const target = enriched[attachIndex]!;
+          const existingKeys = new Set(
+            (target._attachedFiles || []).map(file => file.filePath || file.gatewayUrl).filter(Boolean),
+          );
+          const newFiles = deliveredFiles.filter(file => {
+            const key = file.filePath || file.gatewayUrl;
+            return !key || !existingKeys.has(key);
+          });
+          if (newFiles.length > 0) {
+            enriched[attachIndex] = {
+              ...target,
+              _attachedFiles: [...(target._attachedFiles || []), ...newFiles],
+            };
+          }
+        } else {
+          pending.push(...deliveredFiles);
+        }
+      }
+
       // Resolve file path from the matching tool call
       const matchedPath = msg.toolCallId ? toolCallPaths.get(msg.toolCallId) : undefined;
 
@@ -1245,25 +1371,35 @@ function enrichWithToolResultFiles(messages: RawMessage[]): RawMessage[] {
         }
       }
 
-      return msg; // will be filtered later
+      enriched.push(msg); // will be filtered later
+      continue;
     }
 
     if (msg.role === 'assistant' && pending.length > 0) {
       const toAttach = pending.splice(0);
       // Deduplicate against files already on the assistant message
-      const existingPaths = new Set(
-        (msg._attachedFiles || []).map(f => f.filePath).filter(Boolean),
+      const existingKeys = new Set(
+        (msg._attachedFiles || []).map(f => f.filePath || f.gatewayUrl).filter(Boolean),
       );
-      const newFiles = toAttach.filter(f => !f.filePath || !existingPaths.has(f.filePath));
-      if (newFiles.length === 0) return msg;
-      return {
+      const newFiles = toAttach.filter(f => {
+        const key = f.filePath || f.gatewayUrl;
+        return !key || !existingKeys.has(key);
+      });
+      if (newFiles.length === 0) {
+        enriched.push(msg);
+        continue;
+      }
+      enriched.push({
         ...msg,
         _attachedFiles: [...(msg._attachedFiles || []), ...newFiles],
-      };
+      });
+      continue;
     }
 
-    return msg;
-  });
+    enriched.push(msg);
+  }
+
+  return enriched;
 }
 
 /**
@@ -3849,6 +3985,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
             const toolFiles: AttachedFileMeta[] = extractImagesAsAttachedFiles(
               normalizedFinalMessage.content,
             ).filter(file => !file.mimeType.startsWith('image/'));
+            const deliveredFiles = collectMessageToolDeliveredFiles(normalizedFinalMessage);
             if (matchedPath) {
               for (const f of toolFiles) {
                 if (!f.filePath) {
@@ -3876,13 +4013,28 @@ export const useChatStore = create<ChatState>((set, get) => ({
               // complete runtime tool events.
               const currentStream = s.streamingMessage as RawMessage | null;
               const snapshotMsgs = snapshotStreamingAssistantMessage(currentStream, s.messages, runId);
+              const snapshotWithDeliveredFiles = deliveredFiles.length > 0 && snapshotMsgs.length > 0
+                ? snapshotMsgs.map((snapshot, index) => index === snapshotMsgs.length - 1
+                  ? {
+                    ...snapshot,
+                    _attachedFiles: dedupeAttachedFiles([
+                      ...(snapshot._attachedFiles || []),
+                      ...deliveredFiles,
+                    ]),
+                  }
+                  : snapshot)
+                : snapshotMsgs;
               return {
-                messages: snapshotMsgs.length > 0 ? [...s.messages, ...snapshotMsgs] : s.messages,
+                messages: snapshotWithDeliveredFiles.length > 0 ? [...s.messages, ...snapshotWithDeliveredFiles] : s.messages,
                 streamingText: '',
                 streamingMessage: null,
                 pendingFinal: true,
-                pendingToolImages: toolFiles.length > 0
-                  ? dedupeAttachedFiles([...s.pendingToolImages, ...toolFiles])
+                pendingToolImages: toolFiles.length > 0 || (deliveredFiles.length > 0 && snapshotWithDeliveredFiles.length === 0)
+                  ? dedupeAttachedFiles([
+                    ...s.pendingToolImages,
+                    ...toolFiles,
+                    ...(snapshotWithDeliveredFiles.length === 0 ? deliveredFiles : []),
+                  ])
                   : s.pendingToolImages,
                 streamingTools: updates.length > 0 ? upsertToolStatuses(s.streamingTools, updates) : s.streamingTools,
               };

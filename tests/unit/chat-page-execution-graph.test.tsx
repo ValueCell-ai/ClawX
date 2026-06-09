@@ -559,6 +559,53 @@ describe('Chat execution graph lifecycle', () => {
     expect(screen.queryByTestId('chat-activity-indicator')).not.toBeInTheDocument();
   });
 
+  it('settles a plain text reply from history when Gateway lifecycle is stuck', async () => {
+    const { useChatStore } = await import('@/stores/chat');
+    useChatStore.setState({
+      messages: [
+        {
+          role: 'user',
+          content: '你好',
+        },
+        {
+          role: 'assistant',
+          id: 'plain-final-turn',
+          content: [{ type: 'text', text: '你好！我是 ClawX，你的桌面 AI 助手。' }],
+        },
+      ],
+      loading: false,
+      error: null,
+      runError: null,
+      sending: true,
+      activeRunId: 'run-plain-stuck',
+      streamingText: '',
+      streamingMessage: null,
+      streamingTools: [],
+      pendingFinal: false,
+      lastUserMessageAt: Date.now() - 60 * 60 * 1000,
+      pendingToolImages: [],
+      sessions: [{ key: 'agent:main:main' }],
+      currentSessionKey: 'agent:main:main',
+      currentAgentId: 'main',
+      sessionLabels: {},
+      sessionLastActivity: {},
+      thinkingLevel: null,
+    });
+
+    const { Chat } = await import('@/pages/Chat/index');
+
+    render(<Chat />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('mock-chat-input')).toHaveAttribute('data-sending', 'false');
+    });
+
+    expect(screen.queryByTestId('chat-execution-step-thinking-trailing')).not.toBeInTheDocument();
+    expect(screen.getByText('你好！我是 ClawX，你的桌面 AI 助手。')).toBeInTheDocument();
+    expect(screen.queryByTestId('chat-typing-indicator')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('chat-activity-indicator')).not.toBeInTheDocument();
+  });
+
   it('settles composer when generated image media arrives without transcript tool calls', async () => {
     const { useChatStore } = await import('@/stores/chat');
     useChatStore.setState({

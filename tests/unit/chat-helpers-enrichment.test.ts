@@ -181,6 +181,42 @@ describe('enrichWithToolResultFiles', () => {
     expect(final._attachedFiles?.map((file) => file.filePath)).toEqual(['/tmp/report.pdf']);
     expect(enriched.find((m) => m.id === 'no-reply')?._attachedFiles ?? []).toEqual([]);
   });
+
+  it('attaches delivered message-tool image media to the calling assistant turn', () => {
+    const messages: RawMessage[] = [
+      {
+        role: 'assistant',
+        id: 'send-image',
+        content: [{
+          type: 'toolCall',
+          id: 'tool-1',
+          name: 'message',
+          arguments: {
+            action: 'send',
+            message: 'image ready',
+          },
+        }],
+      },
+      {
+        role: 'toolresult',
+        id: 'tool-result',
+        toolCallId: 'tool-1',
+        toolName: 'message',
+        content: [{ type: 'text', text: '{ "status": "ok" }' }],
+        details: {
+          status: 'ok',
+          deliveryStatus: 'sent',
+          mediaUrl: '/Users/me/.openclaw/media/tool-image-generation/tomato.png',
+        },
+      } as RawMessage,
+    ];
+
+    const enriched = enrichWithToolResultFiles(messages);
+    expect(enriched[0]?._attachedFiles?.map((file) => file.filePath)).toEqual([
+      '/Users/me/.openclaw/media/tool-image-generation/tomato.png',
+    ]);
+    expect(enriched[0]?._attachedFiles?.[0]?.source).toBe('tool-result');
+  });
 });
 
 describe('enrichWithCachedImages — Gateway media bubble dedup', () => {
@@ -380,6 +416,29 @@ describe('enrichWithToolCallAttachments', () => {
       '/Users/me/.openclaw/media/tool-image-generation/cat.png',
     ]);
     expect(enriched[0]?._attachedFiles?.[0]?.mimeType).toBe('image/png');
+  });
+
+  it('attaches image paths from message tool mediaUrl arguments', () => {
+    const messages: RawMessage[] = [
+      {
+        role: 'assistant',
+        id: 'send-image',
+        content: [{
+          type: 'tool_use',
+          id: 'tool-1',
+          name: 'message',
+          input: {
+            action: 'send',
+            mediaUrl: '/Users/me/.openclaw/media/tool-image-generation/banana.png',
+          },
+        }],
+      },
+    ];
+
+    const enriched = enrichWithToolCallAttachments(messages);
+    expect(enriched[0]?._attachedFiles?.map((file) => file.filePath)).toEqual([
+      '/Users/me/.openclaw/media/tool-image-generation/banana.png',
+    ]);
   });
 });
 
