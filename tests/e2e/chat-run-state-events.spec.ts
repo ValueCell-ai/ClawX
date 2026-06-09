@@ -225,6 +225,119 @@ test.describe('ClawX chat run state events', () => {
     }
   });
 
+  test('surfaces images delivered through message-tool-only history records', async ({ launchElectronApp }) => {
+    const app = await launchElectronApp({ skipSetup: true });
+    const imagePath = '/tmp/puppy.png';
+    const preview = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=';
+    const history = [
+      {
+        role: 'user',
+        id: 'request',
+        timestamp: Date.now() / 1000 - 10,
+        content: [{ type: 'text', text: 'Generate a puppy image' }],
+      },
+      {
+        role: 'assistant',
+        id: 'send-image',
+        timestamp: Date.now() / 1000 - 2,
+        content: [
+          { type: 'text', text: "I'll deliver the puppy image via the message tool." },
+          {
+            type: 'toolCall',
+            id: 'message-call',
+            name: 'message',
+            arguments: {
+              action: 'send',
+              message: 'Puppy ready',
+              attachments: [{ type: 'image', path: imagePath, name: 'puppy.png' }],
+            },
+          },
+        ],
+      },
+      {
+        role: 'toolResult',
+        id: 'message-result',
+        toolCallId: 'message-call',
+        toolName: 'message',
+        timestamp: Date.now() / 1000 - 1,
+        content: [{ type: 'text', text: '{ "status": "ok", "deliveryStatus": "sent" }' }],
+        details: {
+          status: 'ok',
+          deliveryStatus: 'sent',
+          sourceReplyDeliveryMode: 'message_tool_only',
+          sourceReplySink: 'internal-ui',
+          sourceReply: {
+            text: 'Puppy ready',
+            mediaUrl: imagePath,
+            mediaUrls: [imagePath],
+          },
+          mediaUrl: imagePath,
+          mediaUrls: [imagePath],
+        },
+      },
+    ];
+
+    try {
+      await installIpcMocks(app, {
+        gatewayStatus: { state: 'running', port: 18789, pid: 12345, gatewayReady: true },
+        gatewayRpc: {
+          [stableStringify(['sessions.list', { includeDerivedTitles: true, includeLastMessage: true }])]: {
+            success: true,
+            result: {
+              sessions: [{ key: MAIN_SESSION_KEY, displayName: 'main' }],
+            },
+          },
+          [stableStringify(['chat.history', { sessionKey: MAIN_SESSION_KEY, limit: 200, maxChars: 500000 }])]: {
+            success: true,
+            result: { messages: history },
+          },
+        },
+        hostApi: {
+          [stableStringify(['/api/gateway/status', 'GET'])]: {
+            ok: true,
+            data: {
+              status: 200,
+              ok: true,
+              json: { state: 'running', port: 18789, pid: 12345, gatewayReady: true },
+            },
+          },
+          [stableStringify(['/api/agents', 'GET'])]: {
+            ok: true,
+            data: {
+              status: 200,
+              ok: true,
+              json: { success: true, agents: [{ id: 'main', name: 'Main' }] },
+            },
+          },
+          [stableStringify(['/api/files/thumbnails', 'POST'])]: {
+            ok: true,
+            data: {
+              status: 200,
+              ok: true,
+              json: { [imagePath]: { preview, fileSize: 68 } },
+            },
+          },
+        },
+      });
+
+      const page = await getStableWindow(app);
+      try {
+        await page.reload();
+      } catch (error) {
+        if (!String(error).includes('ERR_FILE_NOT_FOUND')) {
+          throw error;
+        }
+      }
+
+      await expect(page.getByText('Puppy ready')).toBeVisible({ timeout: 30_000 });
+      await expect(page.getByText("I'll deliver the puppy image via the message tool.")).toHaveCount(0);
+      await expect(page.locator('img[alt="puppy.png"]')).toHaveCount(1);
+      await expect(page.locator('img[alt="puppy.png"]')).toBeVisible();
+    } finally {
+      await closeElectronApp(app);
+    }
+  });
+
   test('hydrates Windows MEDIA SVG artifacts without leaking the marker text', async ({ launchElectronApp }) => {
     const app = await launchElectronApp({ skipSetup: true });
     const filePath = String.raw`C:\Users\Administrator\.openclaw\workspace\japan-kansai-4d3n-plan.svg`;

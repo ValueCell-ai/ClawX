@@ -583,15 +583,21 @@ function parseMessageToolResultJson(msg: RawMessage): Record<string, unknown> | 
   }
 }
 
-function collectMessageToolDeliveredFiles(msg: RawMessage): AttachedFileMeta[] {
-  if (!isToolResultRole(msg.role)) return [];
-  if (msg.toolName !== 'message') return [];
+type MessageToolDelivery = {
+  files: AttachedFileMeta[];
+  text: string;
+  internalUi: boolean;
+};
+
+function collectMessageToolDelivery(msg: RawMessage): MessageToolDelivery | null {
+  if (!isToolResultRole(msg.role)) return null;
+  if (msg.toolName !== 'message') return null;
 
   const details = msg.details && typeof msg.details === 'object'
     ? msg.details as Record<string, unknown>
     : parseMessageToolResultJson(msg);
-  if (!details) return [];
-  if (String(details.status ?? '').toLowerCase() === 'error') return [];
+  if (!details) return null;
+  if (String(details.status ?? '').toLowerCase() === 'error') return null;
 
   const sourceReply = details.sourceReply && typeof details.sourceReply === 'object'
     ? details.sourceReply as Record<string, unknown>
@@ -617,7 +623,28 @@ function collectMessageToolDeliveredFiles(msg: RawMessage): AttachedFileMeta[] {
     files.push(makeAttachedFile({ filePath: media, mimeType: mimeFromExtension(media) }, 'tool-result'));
   }
 
-  return files;
+  const sourceReplyText = sourceReply?.text;
+  const detailsMessage = details.message;
+  return {
+    files,
+    text: typeof sourceReplyText === 'string' && sourceReplyText.trim()
+      ? sourceReplyText.trim()
+      : typeof detailsMessage === 'string' ? detailsMessage.trim() : '',
+    internalUi: details.sourceReplySink === 'internal-ui'
+      || details.sourceReplyDeliveryMode === 'message_tool_only',
+  };
+}
+
+function createInternalUiDeliveryReply(msg: RawMessage, delivery: MessageToolDelivery): RawMessage | null {
+  if (!delivery.internalUi || (!delivery.text && delivery.files.length === 0)) return null;
+  const idBase = msg.id || msg.toolCallId;
+  return {
+    role: 'assistant',
+    content: delivery.text ? [{ type: 'text', text: delivery.text }] : [],
+    timestamp: msg.timestamp,
+    ...(idBase ? { id: `${idBase}:source-reply` } : {}),
+    _attachedFiles: delivery.files,
+  };
 }
 
 /**
@@ -625,6 +652,15 @@ function collectMessageToolDeliveredFiles(msg: RawMessage): AttachedFileMeta[] {
  * `message` tool `attachments: [{ filePath }]`) on the calling turn itself.
  */
 function enrichWithToolCallAttachments(messages: RawMessage[]): RawMessage[] {
+  const internalUiDeliveryToolCallIds = new Set(
+    messages.flatMap((message) => {
+      const delivery = collectMessageToolDelivery(message);
+      return delivery?.internalUi && delivery.files.length > 0 && message.toolCallId
+        ? [message.toolCallId]
+        : [];
+    }),
+  );
+
   return messages.map((msg) => {
     if (msg.role !== 'assistant') return msg;
 
@@ -633,6 +669,7 @@ function enrichWithToolCallAttachments(messages: RawMessage[]): RawMessage[] {
     if (Array.isArray(content)) {
       for (const block of content as ContentBlock[]) {
         if (block.type !== 'tool_use' && block.type !== 'toolCall') continue;
+        if (block.name === 'message' && block.id && internalUiDeliveryToolCallIds.has(block.id)) continue;
         const args = (block.input ?? block.arguments) as Record<string, unknown> | undefined;
         if (!args) continue;
         for (const filePath of extractFilePathsFromToolArgs(args)) {
@@ -645,6 +682,7 @@ function enrichWithToolCallAttachments(messages: RawMessage[]): RawMessage[] {
     const toolCalls = msgAny.tool_calls ?? msgAny.toolCalls;
     if (Array.isArray(toolCalls)) {
       for (const tc of toolCalls as Array<Record<string, unknown>>) {
+        if (typeof tc.id === 'string' && internalUiDeliveryToolCallIds.has(tc.id)) continue;
         const fn = (tc.function ?? tc) as Record<string, unknown>;
         let args: Record<string, unknown> | undefined;
         try {
@@ -994,7 +1032,13 @@ function enrichWithToolResultFiles(messages: RawMessage[]): RawMessage[] {
     }
 
     if (isToolResultRole(msg.role)) {
-      const deliveredFiles = collectMessageToolDeliveredFiles(msg);
+      const delivery = collectMessageToolDelivery(msg);
+      const deliveredFiles = delivery?.files ?? [];
+      const internalUiReply = delivery ? createInternalUiDeliveryReply(msg, delivery) : null;
+      if (internalUiReply) {
+        enriched.push(msg, internalUiReply);
+        continue;
+      }
       if (deliveredFiles.length > 0) {
         let attachIndex = -1;
         if (msg.toolCallId) {

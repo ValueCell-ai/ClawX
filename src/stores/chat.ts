@@ -987,15 +987,21 @@ function parseMessageToolResultJson(msg: RawMessage): Record<string, unknown> | 
   }
 }
 
-function collectMessageToolDeliveredFiles(msg: RawMessage): AttachedFileMeta[] {
-  if (!isToolResultRole(msg.role)) return [];
-  if (msg.toolName !== 'message') return [];
+type MessageToolDelivery = {
+  files: AttachedFileMeta[];
+  text: string;
+  internalUi: boolean;
+};
+
+function collectMessageToolDelivery(msg: RawMessage): MessageToolDelivery | null {
+  if (!isToolResultRole(msg.role)) return null;
+  if (msg.toolName !== 'message') return null;
 
   const details = msg.details && typeof msg.details === 'object'
     ? msg.details as Record<string, unknown>
     : parseMessageToolResultJson(msg);
-  if (!details) return [];
-  if (String(details.status ?? '').toLowerCase() === 'error') return [];
+  if (!details) return null;
+  if (String(details.status ?? '').toLowerCase() === 'error') return null;
 
   const sourceReply = details.sourceReply && typeof details.sourceReply === 'object'
     ? details.sourceReply as Record<string, unknown>
@@ -1021,7 +1027,28 @@ function collectMessageToolDeliveredFiles(msg: RawMessage): AttachedFileMeta[] {
     files.push({ ...makeAttachedFile({ filePath: media, mimeType: mimeFromExtension(media) }), source: 'tool-result' });
   }
 
-  return files;
+  const sourceReplyText = sourceReply?.text;
+  const detailsMessage = details.message;
+  return {
+    files,
+    text: typeof sourceReplyText === 'string' && sourceReplyText.trim()
+      ? sourceReplyText.trim()
+      : typeof detailsMessage === 'string' ? detailsMessage.trim() : '',
+    internalUi: details.sourceReplySink === 'internal-ui'
+      || details.sourceReplyDeliveryMode === 'message_tool_only',
+  };
+}
+
+function createInternalUiDeliveryReply(msg: RawMessage, delivery: MessageToolDelivery): RawMessage | null {
+  if (!delivery.internalUi || (!delivery.text && delivery.files.length === 0)) return null;
+  const idBase = msg.id || msg.toolCallId;
+  return {
+    role: 'assistant',
+    content: delivery.text ? [{ type: 'text', text: delivery.text }] : [],
+    timestamp: msg.timestamp,
+    ...(idBase ? { id: `${idBase}:source-reply` } : {}),
+    _attachedFiles: delivery.files,
+  };
 }
 
 const DIRECTORY_MIME_TYPE = 'application/x-directory';
@@ -1290,7 +1317,13 @@ function enrichWithToolResultFiles(messages: RawMessage[]): RawMessage[] {
     }
 
     if (isToolResultRole(msg.role)) {
-      const deliveredFiles = collectMessageToolDeliveredFiles(msg);
+      const delivery = collectMessageToolDelivery(msg);
+      const deliveredFiles = delivery?.files ?? [];
+      const internalUiReply = delivery ? createInternalUiDeliveryReply(msg, delivery) : null;
+      if (internalUiReply) {
+        enriched.push(msg, internalUiReply);
+        continue;
+      }
       if (deliveredFiles.length > 0) {
         let attachIndex = -1;
         if (msg.toolCallId) {
@@ -3985,7 +4018,11 @@ export const useChatStore = create<ChatState>((set, get) => ({
             const toolFiles: AttachedFileMeta[] = extractImagesAsAttachedFiles(
               normalizedFinalMessage.content,
             ).filter(file => !file.mimeType.startsWith('image/'));
-            const deliveredFiles = collectMessageToolDeliveredFiles(normalizedFinalMessage);
+            const delivery = collectMessageToolDelivery(normalizedFinalMessage);
+            const deliveredFiles = delivery?.files ?? [];
+            const internalUiReply = delivery
+              ? createInternalUiDeliveryReply(normalizedFinalMessage, delivery)
+              : null;
             if (matchedPath) {
               for (const f of toolFiles) {
                 if (!f.filePath) {
@@ -4013,7 +4050,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
               // complete runtime tool events.
               const currentStream = s.streamingMessage as RawMessage | null;
               const snapshotMsgs = snapshotStreamingAssistantMessage(currentStream, s.messages, runId);
-              const snapshotWithDeliveredFiles = deliveredFiles.length > 0 && snapshotMsgs.length > 0
+              const snapshotWithDeliveredFiles = !internalUiReply && deliveredFiles.length > 0 && snapshotMsgs.length > 0
                 ? snapshotMsgs.map((snapshot, index) => index === snapshotMsgs.length - 1
                   ? {
                     ...snapshot,
@@ -4024,16 +4061,20 @@ export const useChatStore = create<ChatState>((set, get) => ({
                   }
                   : snapshot)
                 : snapshotMsgs;
+              const appendedMessages = [
+                ...snapshotWithDeliveredFiles,
+                ...(internalUiReply ? [internalUiReply] : []),
+              ];
               return {
-                messages: snapshotWithDeliveredFiles.length > 0 ? [...s.messages, ...snapshotWithDeliveredFiles] : s.messages,
+                messages: appendedMessages.length > 0 ? [...s.messages, ...appendedMessages] : s.messages,
                 streamingText: '',
                 streamingMessage: null,
                 pendingFinal: true,
-                pendingToolImages: toolFiles.length > 0 || (deliveredFiles.length > 0 && snapshotWithDeliveredFiles.length === 0)
+                pendingToolImages: toolFiles.length > 0 || (!internalUiReply && deliveredFiles.length > 0 && snapshotWithDeliveredFiles.length === 0)
                   ? dedupeAttachedFiles([
                     ...s.pendingToolImages,
                     ...toolFiles,
-                    ...(snapshotWithDeliveredFiles.length === 0 ? deliveredFiles : []),
+                    ...(!internalUiReply && snapshotWithDeliveredFiles.length === 0 ? deliveredFiles : []),
                   ])
                   : s.pendingToolImages,
                 streamingTools: updates.length > 0 ? upsertToolStatuses(s.streamingTools, updates) : s.streamingTools,

@@ -4,6 +4,7 @@ import {
   enrichWithToolCallAttachments,
   enrichWithCachedImages,
   loadMissingPreviews,
+  shouldDropMessageFromHistory,
 } from '@/stores/chat/helpers';
 import type { RawMessage } from '@/stores/chat';
 
@@ -216,6 +217,85 @@ describe('enrichWithToolResultFiles', () => {
       '/Users/me/.openclaw/media/tool-image-generation/tomato.png',
     ]);
     expect(enriched[0]?._attachedFiles?.[0]?.source).toBe('tool-result');
+  });
+
+  it('surfaces the production message-tool delivery shape after history filtering', () => {
+    const imagePath = '/Users/me/.openclaw/media/tool-image-generation/puppy.png';
+    const messages: RawMessage[] = [
+      {
+        role: 'assistant',
+        id: 'send-image',
+        content: [
+          { type: 'text', text: "I'll deliver the puppy image via the message tool." },
+          {
+            type: 'toolCall',
+            id: 'tool-1',
+            name: 'message',
+            arguments: {
+              action: 'send',
+              message: 'Puppy ready',
+              attachments: [{ type: 'image', path: imagePath, name: 'puppy.png' }],
+            },
+          },
+        ],
+      },
+      {
+        role: 'toolResult',
+        id: 'tool-result',
+        toolCallId: 'tool-1',
+        toolName: 'message',
+        content: [{ type: 'text', text: '{ "status": "ok", "deliveryStatus": "sent" }' }],
+        details: {
+          status: 'ok',
+          deliveryStatus: 'sent',
+          sourceReplySink: 'internal-ui',
+          sourceReply: {
+            text: 'Puppy ready',
+            mediaUrl: imagePath,
+            mediaUrls: [imagePath],
+          },
+          mediaUrl: imagePath,
+          mediaUrls: [imagePath],
+        },
+      } as RawMessage,
+    ];
+
+    const enriched = enrichWithToolCallAttachments(enrichWithToolResultFiles(messages))
+      .filter((message) => !shouldDropMessageFromHistory(message));
+
+    expect(enriched).toHaveLength(2);
+    expect(enriched[0]?._attachedFiles ?? []).toEqual([]);
+    expect(enriched[1]).toMatchObject({
+      role: 'assistant',
+      content: [{ type: 'text', text: 'Puppy ready' }],
+      _attachedFiles: [expect.objectContaining({ filePath: imagePath })],
+    });
+  });
+
+  it('surfaces text-only internal UI message-tool deliveries', () => {
+    const messages: RawMessage[] = [
+      {
+        role: 'toolResult',
+        id: 'message-result',
+        toolName: 'message',
+        content: [{ type: 'text', text: '{ "status": "ok" }' }],
+        details: {
+          status: 'ok',
+          sourceReplySink: 'internal-ui',
+          sourceReply: { text: 'Image generation timed out.' },
+        },
+      } as RawMessage,
+    ];
+
+    const enriched = enrichWithToolResultFiles(messages)
+      .filter((message) => !shouldDropMessageFromHistory(message));
+
+    expect(enriched).toEqual([
+      expect.objectContaining({
+        role: 'assistant',
+        content: [{ type: 'text', text: 'Image generation timed out.' }],
+      }),
+    ]);
   });
 });
 
