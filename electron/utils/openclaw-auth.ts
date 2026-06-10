@@ -622,6 +622,7 @@ function normalizeAuthProfileProviderKey(provider: string): string {
 function addProvidersFromProfileEntries(
   profiles: Record<string, unknown> | undefined,
   target: Set<string>,
+  options?: { includeRawKeys?: boolean },
 ): void {
   if (!profiles || typeof profiles !== 'object') {
     return;
@@ -632,17 +633,28 @@ function addProvidersFromProfileEntries(
       ? ((profile as Record<string, unknown>).provider as string)
       : undefined;
     if (!provider) continue;
-    target.add(normalizeAuthProfileProviderKey(provider));
+    const normalized = normalizeAuthProfileProviderKey(provider);
+    target.add(normalized);
+    // The raw runtime key (e.g. "openai-codex") matters for active-provider
+    // checks: filterActiveProviderKeysForUi() and the OAuth account matching
+    // in ProviderService.listAccounts() both key off it. Newer OpenClaw
+    // versions no longer keep explicit models.providers/plugins entries for
+    // these providers, so the auth profile is the only remaining signal.
+    if (options?.includeRawKeys && provider !== normalized) {
+      target.add(provider);
+    }
   }
 }
 
-async function getProvidersFromAuthProfileStores(): Promise<Set<string>> {
+async function getProvidersFromAuthProfileStores(
+  options?: { includeRawKeys?: boolean },
+): Promise<Set<string>> {
   const providers = new Set<string>();
   const agentIds = await discoverAgentIds();
 
   for (const agentId of agentIds) {
     const store = await readAuthProfiles(agentId);
-    addProvidersFromProfileEntries(store.profiles, providers);
+    addProvidersFromProfileEntries(store.profiles, providers, options);
   }
 
   return providers;
@@ -675,9 +687,13 @@ async function collectActiveProviderIdsFromConfig(config: Record<string, unknown
   }
 
   const auth = config.auth as Record<string, unknown> | undefined;
-  addProvidersFromProfileEntries(auth?.profiles as Record<string, unknown> | undefined, activeProviders);
+  addProvidersFromProfileEntries(
+    auth?.profiles as Record<string, unknown> | undefined,
+    activeProviders,
+    { includeRawKeys: true },
+  );
 
-  const authProfileProviders = await getProvidersFromAuthProfileStores();
+  const authProfileProviders = await getProvidersFromAuthProfileStores({ includeRawKeys: true });
   for (const provider of authProfileProviders) {
     activeProviders.add(provider);
   }
@@ -1952,10 +1968,16 @@ export async function getActiveOpenClawProviders(): Promise<Set<string>> {
 
     // 4. auth.profiles — OAuth/device-token based providers may exist only in
     //    auth-profiles without explicit models.providers entries yet.
+    //    Raw keys (e.g. "openai-codex") are included so downstream logic can
+    //    distinguish OAuth runtime providers from their UI alias ("openai").
     const auth = config.auth as Record<string, unknown> | undefined;
-    addProvidersFromProfileEntries(auth?.profiles as Record<string, unknown> | undefined, activeProviders);
+    addProvidersFromProfileEntries(
+      auth?.profiles as Record<string, unknown> | undefined,
+      activeProviders,
+      { includeRawKeys: true },
+    );
 
-    const authProfileProviders = await getProvidersFromAuthProfileStores();
+    const authProfileProviders = await getProvidersFromAuthProfileStores({ includeRawKeys: true });
     for (const provider of authProfileProviders) {
       activeProviders.add(provider);
     }

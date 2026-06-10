@@ -217,6 +217,44 @@ describe('ProviderService.listAccounts (openclaw.json as sole source of truth)',
     expect(mocks.deleteProviderAccount).toHaveBeenCalledWith('openai');
   });
 
+  it('hides the bare openai slot when openai-codex is active only via auth profile (no openclaw.json entries)', async () => {
+    // Regression: newer OpenClaw versions drop the explicit models.providers
+    // "openai-codex" entry and the "openai-codex-auth" plugin entry, leaving
+    // the OAuth auth profile as the only active signal. The bare "openai"
+    // slot must still be hidden and the stale seeded api_key account removed.
+    mocks.listProviderAccounts.mockResolvedValue([
+      makeAccount({
+        id: 'openai-oauth-1',
+        vendorId: 'openai' as ProviderAccount['vendorId'],
+        authMode: 'oauth_browser',
+        label: 'OpenAI Codex',
+      }),
+      makeAccount({
+        id: 'openai',
+        vendorId: 'openai' as ProviderAccount['vendorId'],
+        authMode: 'api_key',
+        label: 'OpenAI',
+      }),
+    ]);
+    mocks.getApiKey.mockResolvedValue(null);
+    mocks.getProviderApiKeyFromOpenClaw.mockResolvedValue(null);
+    // Active set as produced by getActiveOpenClawProviders() when only the
+    // openai-codex OAuth profile exists in the auth store.
+    mocks.getActiveOpenClawProviders.mockResolvedValue(new Set(['openai', 'openai-codex']));
+    mocks.getOpenClawProvidersConfig.mockResolvedValue({
+      providers: { openai: {} },
+      defaultModel: undefined,
+    });
+
+    const result = await service.listAccounts();
+
+    expect(result).toHaveLength(1);
+    expect(result[0].id).toBe('openai-oauth-1');
+    expect(result[0].authMode).toBe('oauth_browser');
+    expect(mocks.deleteProviderAccount).toHaveBeenCalledWith('openai');
+    expect(mocks.saveProviderAccount).not.toHaveBeenCalled();
+  });
+
   it('matches OpenAI browser OAuth accounts to the openai-codex runtime key', async () => {
     mocks.listProviderAccounts.mockResolvedValue([
       makeAccount({

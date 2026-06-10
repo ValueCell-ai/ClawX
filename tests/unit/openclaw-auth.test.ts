@@ -1219,8 +1219,12 @@ describe('auth-backed provider discovery', () => {
 
     const { getActiveOpenClawProviders } = await import('@electron/utils/openclaw-auth');
 
+    // Raw runtime keys (openai-codex / google-gemini-cli) are kept alongside
+    // their normalized UI aliases: newer OpenClaw versions no longer write
+    // explicit models.providers / plugins entries for OAuth CLI providers, so
+    // the auth profile is the only signal that the runtime provider is active.
     await expect(getActiveOpenClawProviders()).resolves.toEqual(
-      new Set(['openai', 'anthropic', 'google']),
+      new Set(['openai', 'openai-codex', 'anthropic', 'google', 'google-gemini-cli']),
     );
   });
 
