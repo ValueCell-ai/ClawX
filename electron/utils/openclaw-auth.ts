@@ -1,7 +1,8 @@
 /**
  * OpenClaw Auth Profiles Utility
- * Writes API keys to configured OpenClaw agent auth-profiles.json files
- * so the OpenClaw Gateway can load them for AI provider calls.
+ * Writes API keys to OpenClaw agent auth storage (SQLite primary since 2026.6+,
+ * with auth-profiles.json kept for migration compatibility) so the Gateway can
+ * load them for AI provider calls.
  *
  * All file I/O is asynchronous (fs/promises) to avoid blocking the
  * Electron main thread.  On Windows + NTFS + Defender the synchronous
@@ -39,6 +40,13 @@ import {
   CLAWX_OPENAI_IMAGE_DEFAULT_MODEL,
   CLAWX_OPENAI_IMAGE_PROVIDER_KEY,
 } from './openclaw-image-relay-constants';
+import {
+  migrateAuthProfilesJsonToSqliteIfNeeded,
+  readAuthProfilesFromSqlite,
+  readAuthProfilesJson,
+  writeAuthProfilesToSqlite,
+  type PersistedAuthProfilesStore,
+} from './openclaw-auth-sqlite';
 
 const AUTH_STORE_VERSION = 1;
 const AUTH_PROFILE_FILENAME = 'auth-profiles.json';
@@ -324,12 +332,7 @@ interface OAuthProfileEntry {
   projectId?: string;
 }
 
-interface AuthProfilesStore {
-  version: number;
-  profiles: Record<string, AuthProfileEntry | OAuthProfileEntry>;
-  order?: Record<string, string[]>;
-  lastGood?: Record<string, string>;
-}
+type AuthProfilesStore = PersistedAuthProfilesStore;
 
 function removeProfilesForProvider(store: AuthProfilesStore, provider: string): boolean {
   const removedProfileIds = new Set<string>();
@@ -414,20 +417,40 @@ function getAuthProfilesPath(agentId = 'main'): string {
 }
 
 async function readAuthProfiles(agentId = 'main'): Promise<AuthProfilesStore> {
-  const filePath = getAuthProfilesPath(agentId);
-  try {
-    const data = await readJsonFile<AuthProfilesStore>(filePath);
-    if (data?.version && data.profiles && typeof data.profiles === 'object') {
-      return data;
-    }
-  } catch (error) {
-    console.warn('Failed to read auth-profiles.json, creating fresh store:', error);
+  const sqliteStore = readAuthProfilesFromSqlite(agentId);
+  if (sqliteStore?.profiles && Object.keys(sqliteStore.profiles).length > 0) {
+    return sqliteStore;
   }
+
+  const jsonStore = await readAuthProfilesJson(agentId);
+  if (jsonStore?.profiles && Object.keys(jsonStore.profiles).length > 0) {
+    try {
+      writeAuthProfilesToSqlite(jsonStore, agentId);
+      console.log(`[auth-sync] Backfilled SQLite auth store from JSON for agent "${agentId}"`);
+    } catch (error) {
+      console.warn(`Failed to backfill SQLite auth store for agent "${agentId}":`, error);
+    }
+    return jsonStore;
+  }
+
   return { version: AUTH_STORE_VERSION, profiles: {} };
 }
 
 async function writeAuthProfiles(store: AuthProfilesStore, agentId = 'main'): Promise<void> {
+  writeAuthProfilesToSqlite(store, agentId);
   await writeJsonFile(getAuthProfilesPath(agentId), store);
+}
+
+/** Migrate legacy JSON-only auth profiles into SQLite for all configured agents. */
+export async function migrateAllAgentAuthProfilesToSqlite(): Promise<void> {
+  const agentIds = await discoverAgentIds();
+  for (const agentId of agentIds) {
+    try {
+      await migrateAuthProfilesJsonToSqliteIfNeeded(agentId);
+    } catch (error) {
+      console.warn(`Failed to migrate auth profiles to SQLite for agent "${agentId}":`, error);
+    }
+  }
 }
 
 function getApiKeyFromAuthProfilesStore(

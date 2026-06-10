@@ -7,6 +7,7 @@ import { getProviderConfig, getProviderDefaultModel } from '../../utils/provider
 import {
   ensureAnthropicMessagesModelMaxTokens,
   ensureOpenClawProviderAgentRuntimePins,
+  migrateAllAgentAuthProfilesToSqlite,
   pruneInvalidApiProviderEntries,
   removeProviderFromOpenClaw,
   removeProviderKeyFromOpenClaw,
@@ -210,6 +211,7 @@ export async function syncProviderApiKeyToRuntime(
 }
 
 export async function syncAllProviderAuthToRuntime(): Promise<void> {
+  await migrateAllAgentAuthProfilesToSqlite();
   const accounts = await listProviderAccounts();
   for (const account of accounts) {
     const runtimeProviderKey = await resolveRuntimeProviderKey({
