@@ -1529,6 +1529,139 @@ describe('useChatStore startup history retry', () => {
     await sendPromise;
   });
 
+  // Regression for the "first chat after gateway start" bug: the gateway
+  // accepted chat.send but no streamed chat/runtime events ever reached the
+  // renderer. Without the fallback transcript poll the safety timers fired
+  // "The model did not respond within 120 seconds" and then "No response
+  // received from the model" even though the transcript already contained
+  // the assistant reply.
+  it('recovers via the fallback transcript poll when no streamed events arrive', async () => {
+    let chatHistoryCalls = 0;
+    let transcript: Array<Record<string, unknown>> = [];
+    gatewayRpcMock.mockImplementation(async (method: string) => {
+      if (method === 'config.get') return {};
+      if (method === 'chat.send') {
+        // Seed the transcript as the gateway would, but never emit events.
+        const nowSec = Date.now() / 1000;
+        transcript = [
+          { id: 'user-first', role: 'user', content: '明天呢', timestamp: nowSec },
+          {
+            id: 'assistant-first',
+            role: 'assistant',
+            content: [{ type: 'text', text: '明天晴。' }],
+            stopReason: 'endTurn',
+            timestamp: nowSec + 1,
+          },
+        ];
+        return { runId: 'run-first-chat' };
+      }
+      if (method === 'chat.history') {
+        chatHistoryCalls += 1;
+        return { messages: transcript };
+      }
+      return { messages: [] };
+    });
+
+    const { useChatStore } = await import('@/stores/chat');
+    useChatStore.setState({
+      currentSessionKey: 'agent:main:session-first-chat',
+      currentAgentId: 'main',
+      sessions: [{ key: 'agent:main:session-first-chat' }],
+      messages: [],
+      sessionLabels: {},
+      sessionLastActivity: {},
+      sending: false,
+      activeRunId: null,
+      streamingText: '',
+      streamingMessage: null,
+      streamingTools: [],
+      pendingFinal: false,
+      lastUserMessageAt: null,
+      pendingToolImages: [],
+      error: null,
+      runError: null,
+      loading: false,
+      thinkingLevel: null,
+    });
+
+    await useChatStore.getState().sendMessage('明天呢');
+
+    // While streamed events are still considered fresh the poll stays silent.
+    await vi.advanceTimersByTimeAsync(8_000);
+    expect(chatHistoryCalls).toBe(0);
+
+    // After enough event silence the fallback poll reads the transcript,
+    // detects the finished reply, and closes the run without errors.
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(chatHistoryCalls).toBeGreaterThan(0);
+    await vi.waitFor(() => {
+      expect(useChatStore.getState().sending).toBe(false);
+    });
+    expect(useChatStore.getState().messages.map((message) => message.id)).toEqual([
+      'user-first',
+      'assistant-first',
+    ]);
+
+    // The 120s idle hint and the 130s hard failure must never fire.
+    await vi.advanceTimersByTimeAsync(140_000);
+    expect(useChatStore.getState().error).toBeNull();
+    expect(useChatStore.getState().runError).toBeNull();
+  });
+
+  it('keeps the fallback poll silent while streamed events are fresh', async () => {
+    let chatHistoryCalls = 0;
+    gatewayRpcMock.mockImplementation(async (method: string) => {
+      if (method === 'config.get') return {};
+      if (method === 'chat.send') {
+        return { runId: 'run-streamed' };
+      }
+      if (method === 'chat.history') {
+        chatHistoryCalls += 1;
+        return { messages: [] };
+      }
+      return { messages: [] };
+    });
+
+    const { useChatStore } = await import('@/stores/chat');
+    useChatStore.setState({
+      currentSessionKey: 'agent:main:session-streamed',
+      currentAgentId: 'main',
+      sessions: [{ key: 'agent:main:session-streamed' }],
+      messages: [],
+      sessionLabels: {},
+      sessionLastActivity: {},
+      sending: false,
+      activeRunId: null,
+      streamingText: '',
+      streamingMessage: null,
+      streamingTools: [],
+      pendingFinal: false,
+      lastUserMessageAt: null,
+      pendingToolImages: [],
+      error: null,
+      runError: null,
+      loading: false,
+      thinkingLevel: null,
+    });
+
+    await useChatStore.getState().sendMessage('streamed run');
+
+    // Streamed deltas keep refreshing the event timestamp; the fallback poll
+    // must not issue any chat.history RPCs while the stream is healthy.
+    for (let i = 0; i < 6; i += 1) {
+      useChatStore.getState().handleChatEvent({
+        state: 'delta',
+        runId: 'run-streamed',
+        sessionKey: 'agent:main:session-streamed',
+        message: { role: 'assistant', content: [{ type: 'text', text: `chunk ${i}` }] },
+      });
+      await vi.advanceTimersByTimeAsync(5_000);
+    }
+
+    expect(chatHistoryCalls).toBe(0);
+    expect(useChatStore.getState().sending).toBe(true);
+  });
+
   it('does not treat prior-turn assistant history as progress for a new send', async () => {
     let resolveSend: ((value: { runId: string }) => void) | undefined;
     gatewayRpcMock.mockImplementation((method: string) => {
