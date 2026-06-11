@@ -1782,6 +1782,31 @@ describe('pruneInvalidApiProviderEntries', () => {
     const after = await readOpenClawJson();
     expect(after).toEqual(before);
   });
+
+  it('migrates legacy openai-codex-responses api values instead of pruning them', async () => {
+    await writeOpenClawJson({
+      models: {
+        providers: {
+          'openai-codex': {
+            baseUrl: 'https://api.openai.com/v1',
+            api: 'openai-codex-responses',
+          },
+          openrouter: {
+            baseUrl: 'https://openrouter.ai/api/v1',
+            api: 'openrouter',
+          },
+        },
+      },
+    });
+
+    const { pruneInvalidApiProviderEntries } = await import('@electron/utils/openclaw-auth');
+    const removed = await pruneInvalidApiProviderEntries();
+
+    expect(removed).toEqual(['openrouter']);
+    const result = await readOpenClawJson();
+    const providers = (result.models as Record<string, unknown>).providers as Record<string, unknown>;
+    expect((providers['openai-codex'] as { api: string }).api).toBe('openai-chatgpt-responses');
+  });
 });
 
 describe('openai agentRuntime pin', () => {
@@ -1824,7 +1849,7 @@ describe('openai agentRuntime pin', () => {
 
     await syncProviderConfigToOpenClaw('openai-codex', 'gpt-5.5', {
       baseUrl: 'https://api.openai.com/v1',
-      api: 'openai-codex-responses',
+      api: 'openai-chatgpt-responses',
     });
 
     const result = await readOpenClawJson();
@@ -1833,7 +1858,7 @@ describe('openai agentRuntime pin', () => {
 
     expect(codex).toBeDefined();
     expect(codex.agentRuntime).toEqual({ id: 'pi' });
-    expect(codex.api).toBe('openai-codex-responses');
+    expect(codex.api).toBe('openai-chatgpt-responses');
   });
 
   it('preserves a user-provided agentRuntime override on the openai entry', async () => {
@@ -1967,7 +1992,7 @@ describe('setOpenClawDefaultModel for openai-codex OAuth', () => {
 
     expect(defaults.primary).toBe('openai-codex/gpt-5.5');
     expect(codex.agentRuntime).toEqual({ id: 'pi' });
-    expect(codex.api).toBe('openai-codex-responses');
+    expect(codex.api).toBe('openai-chatgpt-responses');
   });
 });
 
@@ -2010,7 +2035,7 @@ describe('ensureOpenClawProviderAgentRuntimePins', () => {
         providers: {
           'openai-codex': {
             baseUrl: 'https://api.openai.com/v1',
-            api: 'openai-codex-responses',
+            api: 'openai-chatgpt-responses',
             models: [{ id: 'gpt-5.5', name: 'gpt-5.5' }],
           },
         },
@@ -2038,7 +2063,7 @@ describe('ensureOpenClawProviderAgentRuntimePins', () => {
           },
           'openai-codex': {
             baseUrl: 'https://api.openai.com/v1',
-            api: 'openai-codex-responses',
+            api: 'openai-chatgpt-responses',
             models: [{ id: 'gpt-5.5', name: 'gpt-5.5' }],
           },
         },
@@ -2052,6 +2077,27 @@ describe('ensureOpenClawProviderAgentRuntimePins', () => {
     const providers = (result.models as Record<string, unknown>).providers as Record<string, unknown>;
     expect((providers.openai as Record<string, unknown>).agentRuntime).toEqual({ id: 'pi' });
     expect((providers['openai-codex'] as Record<string, unknown>).agentRuntime).toEqual({ id: 'pi' });
+  });
+
+  it('migrates legacy openai-codex-responses api values during sanitizeOpenClawConfig', async () => {
+    await writeOpenClawJson({
+      models: {
+        providers: {
+          'openai-codex': {
+            baseUrl: 'https://api.openai.com/v1',
+            api: 'openai-codex-responses',
+            models: [{ id: 'gpt-5.5', name: 'gpt-5.5' }],
+          },
+        },
+      },
+    });
+
+    const { sanitizeOpenClawConfig } = await import('@electron/utils/openclaw-auth');
+    await sanitizeOpenClawConfig();
+
+    const result = await readOpenClawJson();
+    const providers = (result.models as Record<string, unknown>).providers as Record<string, unknown>;
+    expect((providers['openai-codex'] as { api: string }).api).toBe('openai-chatgpt-responses');
   });
 
   it('leaves entries untouched when the openai entry already has any agentRuntime.id', async () => {

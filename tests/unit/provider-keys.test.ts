@@ -42,4 +42,8 @@ describe('provider-keys', () => {
       hasConfiguredOpenAiApiKey: true,
     })).toEqual(['openai', 'openai-codex']);
   });
+
+  it('drops bare openai after Codex OAuth is removed and no API key remains', () => {
+    expect(filterActiveProviderKeysForUi(['openai', 'minimax-portal'])).toEqual(['minimax-portal']);
+  });
 });

@@ -34,6 +34,7 @@ import { getSetting } from './store';
 import {
   OPENCLAW_API_PROTOCOLS,
   assertValidApiProtocol,
+  normalizeOpenClawApiProtocol,
 } from '../shared/providers/types';
 import { inferCustomModelInputModalities } from '../shared/providers/model-capabilities';
 import {
@@ -1119,6 +1120,25 @@ export async function removeProviderFromOpenClaw(provider: string): Promise<void
  *
  * Returns the list of pruned provider keys for logging.
  */
+function repairLegacyApiProtocolEntriesInConfig(config: Record<string, unknown>): string[] {
+  const migrated: string[] = [];
+  const models = (config.models || {}) as Record<string, unknown>;
+  const providers = (models.providers || {}) as Record<string, unknown>;
+
+  for (const [key, entry] of Object.entries(providers)) {
+    if (!isPlainRecord(entry)) continue;
+    const entryObj = entry as Record<string, unknown>;
+    const api = entryObj.api;
+    const normalized = normalizeOpenClawApiProtocol(api);
+    if (normalized && normalized !== api) {
+      entryObj.api = normalized;
+      migrated.push(key);
+    }
+  }
+
+  return migrated;
+}
+
 export async function pruneInvalidApiProviderEntries(): Promise<string[]> {
   const removed: string[] = [];
   await withConfigLock(async () => {
@@ -1127,9 +1147,14 @@ export async function pruneInvalidApiProviderEntries(): Promise<string[]> {
     const providers = (models.providers || {}) as Record<string, unknown>;
     let modified = false;
 
+    const migrated = repairLegacyApiProtocolEntriesInConfig(config);
+    if (migrated.length > 0) {
+      modified = true;
+    }
+
     for (const [key, entry] of Object.entries(providers)) {
       const api = isPlainRecord(entry) ? (entry as Record<string, unknown>).api : undefined;
-      if (typeof api !== 'string' || !(OPENCLAW_API_PROTOCOLS as readonly string[]).includes(api)) {
+      if (!normalizeOpenClawApiProtocol(api)) {
         delete providers[key];
         removed.push(key);
         modified = true;
@@ -1493,7 +1518,7 @@ const OPENCLAW_PROVIDER_PINNED_AGENT_RUNTIME: Record<string, string> = {
 /** Runtime models.providers entry for OpenAI Codex OAuth accounts. */
 export const OPENAI_CODEX_OAUTH_PROVIDER_CONFIG = {
   baseUrl: 'https://api.openai.com/v1',
-  api: 'openai-codex-responses' as const,
+  api: 'openai-chatgpt-responses' as const,
 };
 
 function applyPinnedAgentRuntime(
@@ -3134,6 +3159,12 @@ export async function sanitizeOpenClawConfig(): Promise<void> {
           }
         }
       }
+    }
+
+    const migratedApiProtocols = repairLegacyApiProtocolEntriesInConfig(config);
+    if (migratedApiProtocols.length > 0) {
+      modified = true;
+      console.log(`[sanitize] Migrated legacy models.providers api protocol for: ${migratedApiProtocols.join(', ')}`);
     }
 
     const pinnedProviderRuntimes = applyOpenClawProviderAgentRuntimePinsToConfig(config);

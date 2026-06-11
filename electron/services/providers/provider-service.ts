@@ -174,7 +174,7 @@ export class ProviderService {
       }
     }
 
-    if (activeProviders.has(OPENAI_CODEX_RUNTIME_PROVIDER_KEY)) {
+    if (activeProviders.has(OPENAI_CODEX_RUNTIME_PROVIDER_KEY) || !hasConfiguredOpenAiApiKey) {
       const openaiStoreAccounts = storeByKey.get('openai') ?? [];
       for (const account of openaiStoreAccounts) {
         if (account.authMode !== 'api_key' && account.authMode !== undefined) {
@@ -184,7 +184,10 @@ export class ProviderService {
         const openClawKey = await getProviderApiKeyFromOpenClaw('openai');
         if (!apiKey && !openClawKey) {
           logger.info(
-            `[provider-sync] Removing unconfigured OpenAI API key account "${account.id}" (OAuth uses ${OPENAI_CODEX_RUNTIME_PROVIDER_KEY})`,
+            `[provider-sync] Removing unconfigured OpenAI API key account "${account.id}"`
+              + (activeProviders.has(OPENAI_CODEX_RUNTIME_PROVIDER_KEY)
+                ? ` (OAuth uses ${OPENAI_CODEX_RUNTIME_PROVIDER_KEY})`
+                : ' (Codex OAuth removed)'),
           );
           await deleteProviderAccount(account.id);
         }

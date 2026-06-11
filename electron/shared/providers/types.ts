@@ -48,7 +48,7 @@ export const OLLAMA_PLACEHOLDER_API_KEY = 'ollama-local';
 export const OPENCLAW_API_PROTOCOLS = [
   'openai-completions',
   'openai-responses',
-  'openai-codex-responses',
+  'openai-chatgpt-responses',
   'anthropic-messages',
   'google-generative-ai',
   'github-copilot',
@@ -58,6 +58,20 @@ export const OPENCLAW_API_PROTOCOLS = [
 ] as const;
 
 export type OpenClawApiProtocol = (typeof OPENCLAW_API_PROTOCOLS)[number];
+
+/** Legacy api values ClawX previously wrote that OpenClaw no longer accepts. */
+export const LEGACY_OPENCLAW_API_PROTOCOL_MIGRATIONS = {
+  'openai-codex-responses': 'openai-chatgpt-responses',
+} as const satisfies Record<string, OpenClawApiProtocol>;
+
+export function normalizeOpenClawApiProtocol(api: unknown): OpenClawApiProtocol | undefined {
+  if (typeof api !== 'string') return undefined;
+  if ((OPENCLAW_API_PROTOCOLS as readonly string[]).includes(api)) {
+    return api as OpenClawApiProtocol;
+  }
+  const migrated = (LEGACY_OPENCLAW_API_PROTOCOL_MIGRATIONS as Record<string, OpenClawApiProtocol>)[api];
+  return migrated;
+}
 
 export class InvalidApiProtocolError extends Error {
   constructor(public readonly api: unknown, public readonly providerKey?: string) {

@@ -74,14 +74,13 @@ export function filterActiveProviderKeysForUi(
   options?: { hasConfiguredOpenAiApiKey?: boolean },
 ): string[] {
   const keys = Array.from(activeKeys).filter((key) => !HIDDEN_PROVIDER_KEYS_FOR_UI.has(key));
-  const active = new Set(keys);
-  if (!active.has('openai') || !active.has(OPENAI_CODEX_RUNTIME_PROVIDER_KEY)) {
-    return keys;
+  // Bare `openai` is the API-key slot. Hide it unless a real API key exists —
+  // including after Codex OAuth is removed and openclaw.json still lists
+  // models.providers.openai from an earlier OAuth setup.
+  if (!options?.hasConfiguredOpenAiApiKey) {
+    return keys.filter((key) => key !== 'openai');
   }
-  if (options?.hasConfiguredOpenAiApiKey) {
-    return keys;
-  }
-  return keys.filter((key) => key !== 'openai');
+  return keys;
 }
 
 export function isOAuthProviderType(type: string): boolean {

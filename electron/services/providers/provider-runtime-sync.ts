@@ -18,6 +18,7 @@ import {
   syncProviderConfigToOpenClaw,
   updateAgentModelProvider,
   updateSingleAgentModelProvider,
+  getProviderApiKeyFromOpenClaw,
 } from '../../utils/openclaw-auth';
 import {
   piAiModelsJsonModelEntry,
@@ -375,6 +376,26 @@ async function removeDeletedProviderFromOpenClaw(
 
   for (const key of keys) {
     await removeProviderFromOpenClaw(key);
+  }
+
+  // Codex OAuth uses runtime key openai-codex but may leave a bare models.providers.openai
+  // entry behind. Drop that slot when no API key credentials remain.
+  if (runtimeProviderKey === OPENAI_OAUTH_RUNTIME_PROVIDER) {
+    const openClawKey = await getProviderApiKeyFromOpenClaw('openai');
+    if (openClawKey) {
+      return;
+    }
+    const storeAccounts = await listProviderAccounts();
+    for (const account of storeAccounts) {
+      if (account.vendorId !== 'openai' || account.authMode === 'oauth_browser') {
+        continue;
+      }
+      const apiKey = await getApiKey(account.id);
+      if (apiKey) {
+        return;
+      }
+    }
+    await removeProviderFromOpenClaw('openai');
   }
 }
 

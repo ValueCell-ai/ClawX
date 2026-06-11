@@ -27,7 +27,7 @@ export type ProviderType = (typeof PROVIDER_TYPES)[number];
 export type ProviderProtocol =
   | 'openai-completions'
   | 'openai-responses'
-  | 'openai-codex-responses'
+  | 'openai-chatgpt-responses'
   | 'anthropic-messages'
   | 'google-generative-ai'
   | 'github-copilot'

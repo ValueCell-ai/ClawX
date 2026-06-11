@@ -39,7 +39,7 @@ docs:
 
 A historical bug in [electron/shared/providers/registry.ts](electron/shared/providers/registry.ts) set the OpenRouter
 `providerConfig.api` to the literal string `'openrouter'`, which is not in OpenClaw's allowed
-`api` enum (`openai-completions | openai-responses | openai-codex-responses | anthropic-messages |
+`api` enum (`openai-completions | openai-responses | openai-chatgpt-responses | anthropic-messages |
 google-generative-ai | github-copilot | bedrock-converse-stream | ollama | azure-openai-responses`).
 
 When the user selected OpenRouter as their default provider, ClawX wrote that invalid value into
