@@ -994,6 +994,123 @@ export async function removeProviderKeyFromOpenClaw(
 /**
  * Remove a provider completely from OpenClaw (delete config, disable plugins, delete keys)
  */
+
+function getModelRefProviderKey(modelRef: string): string | null {
+  const separatorIndex = modelRef.indexOf('/');
+  if (separatorIndex <= 0 || separatorIndex >= modelRef.length - 1) {
+    return null;
+  }
+  return modelRef.slice(0, separatorIndex);
+}
+
+function removeProviderPrefixFromModelConfig(
+  modelCfg: Record<string, unknown>,
+  prefix: string,
+): boolean {
+  let modified = false;
+
+  if (typeof modelCfg.primary === 'string' && modelCfg.primary.startsWith(prefix)) {
+    delete modelCfg.primary;
+    modified = true;
+  }
+
+  if (Array.isArray(modelCfg.fallbacks)) {
+    const filtered = (modelCfg.fallbacks as string[]).filter((fallback) => !fallback.startsWith(prefix));
+    if (filtered.length !== modelCfg.fallbacks.length) {
+      modelCfg.fallbacks = filtered.length > 0 ? filtered : undefined;
+      modified = true;
+    }
+  }
+
+  return modified;
+}
+
+function deleteModelConfigIfEmpty(parent: Record<string, unknown>): void {
+  const modelCfg = parent.model;
+  if (!isPlainRecord(modelCfg)) return;
+
+  const hasPrimary = typeof modelCfg.primary === 'string' && modelCfg.primary.trim();
+  const hasFallbacks = Array.isArray(modelCfg.fallbacks) && modelCfg.fallbacks.length > 0;
+  if (!hasPrimary && !hasFallbacks) {
+    delete parent.model;
+  }
+}
+
+const RUNTIME_GENERATED_PROVIDER_KEY = /^(custom|ollama)-[a-z0-9]+$/i;
+
+function isRuntimeGeneratedProviderKey(providerKey: string): boolean {
+  return RUNTIME_GENERATED_PROVIDER_KEY.test(providerKey);
+}
+
+function pruneStaleRuntimeModelConfig(
+  modelCfg: Record<string, unknown>,
+  activeProviders: Set<string>,
+  context: string,
+): boolean {
+  let modified = false;
+  const primary = typeof modelCfg.primary === 'string' ? modelCfg.primary.trim() : '';
+  if (primary) {
+    const providerKey = getModelRefProviderKey(primary);
+    if (
+      providerKey
+      && isRuntimeGeneratedProviderKey(providerKey)
+      && !activeProviders.has(providerKey)
+    ) {
+      delete modelCfg.primary;
+      modified = true;
+      console.log(`Removed stale runtime model ref "${primary}" from ${context}`);
+    }
+  }
+
+  if (Array.isArray(modelCfg.fallbacks)) {
+    const filtered = (modelCfg.fallbacks as string[]).filter((fallback) => {
+      const providerKey = getModelRefProviderKey(fallback);
+      if (!providerKey) return true;
+      if (!isRuntimeGeneratedProviderKey(providerKey)) return true;
+      return activeProviders.has(providerKey);
+    });
+    if (filtered.length !== modelCfg.fallbacks.length) {
+      modelCfg.fallbacks = filtered.length > 0 ? filtered : undefined;
+      modified = true;
+    }
+  }
+
+  return modified;
+}
+
+/**
+ * Drop agent model refs that point at deleted custom/ollama runtime providers.
+ * Built-in providers are left intact because they may still resolve via auth/env.
+ */
+export async function pruneStaleRuntimeAgentModelRefs(config: Record<string, unknown>): Promise<boolean> {
+  const activeProviders = await getActiveOpenClawProviders();
+  const agents = config.agents;
+  if (!isPlainRecord(agents)) return false;
+
+  let modified = false;
+
+  const agentDefaults = agents.defaults;
+  if (isPlainRecord(agentDefaults) && isPlainRecord(agentDefaults.model)) {
+    if (pruneStaleRuntimeModelConfig(agentDefaults.model, activeProviders, 'agents.defaults.model')) {
+      deleteModelConfigIfEmpty(agentDefaults);
+      modified = true;
+    }
+  }
+
+  if (Array.isArray(agents.list)) {
+    for (const entry of agents.list) {
+      if (!isPlainRecord(entry) || !isPlainRecord(entry.model)) continue;
+      const agentId = typeof entry.id === 'string' ? entry.id : 'unknown';
+      if (pruneStaleRuntimeModelConfig(entry.model, activeProviders, `agent "${agentId}" model override`)) {
+        deleteModelConfigIfEmpty(entry);
+        modified = true;
+      }
+    }
+  }
+
+  return modified;
+}
+
 export async function removeProviderFromOpenClaw(provider: string): Promise<void> {
   // 1. Remove from auth-profiles.json.
   // We must also remove entries whose raw `provider` field maps to this UI
@@ -1081,29 +1198,32 @@ export async function removeProviderFromOpenClaw(provider: string): Promise<void
         }
       }
 
-      // Clean up agents.defaults.model references that point to the deleted provider.
+      // Clean up agent model references that point to the deleted provider.
       // Model refs use the format "providerType/modelId", e.g. "openai/gpt-4".
       // Leaving stale refs causes the Gateway to report "Unknown model" errors.
       const agents = config.agents as Record<string, unknown> | undefined;
+      const providerPrefix = `${provider}/`;
       const agentDefaults = (agents?.defaults && typeof agents.defaults === 'object'
         ? agents.defaults as Record<string, unknown>
         : null);
       if (agentDefaults?.model && typeof agentDefaults.model === 'object') {
         const modelCfg = agentDefaults.model as Record<string, unknown>;
-        const prefix = `${provider}/`;
-
-        if (typeof modelCfg.primary === 'string' && modelCfg.primary.startsWith(prefix)) {
-          delete modelCfg.primary;
+        if (removeProviderPrefixFromModelConfig(modelCfg, providerPrefix)) {
+          deleteModelConfigIfEmpty(agentDefaults);
           modified = true;
-          console.log(`Removed deleted provider "${provider}" from agents.defaults.model.primary`);
+          console.log(`Removed deleted provider "${provider}" from agents.defaults.model`);
         }
+      }
 
-        if (Array.isArray(modelCfg.fallbacks)) {
-          const filtered = (modelCfg.fallbacks as string[]).filter((fb) => !fb.startsWith(prefix));
-          if (filtered.length !== modelCfg.fallbacks.length) {
-            modelCfg.fallbacks = filtered.length > 0 ? filtered : undefined;
+      const agentList = agents?.list;
+      if (Array.isArray(agentList)) {
+        for (const entry of agentList) {
+          if (!isPlainRecord(entry) || !isPlainRecord(entry.model)) continue;
+          const agentId = typeof entry.id === 'string' ? entry.id : 'unknown';
+          if (removeProviderPrefixFromModelConfig(entry.model, providerPrefix)) {
+            deleteModelConfigIfEmpty(entry);
             modified = true;
-            console.log(`Removed deleted provider "${provider}" from agents.defaults.model.fallbacks`);
+            console.log(`Removed deleted provider "${provider}" from agent "${agentId}" model override`);
           }
         }
       }

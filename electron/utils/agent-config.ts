@@ -543,8 +543,16 @@ async function buildSnapshotFromConfig(config: AgentConfigDocument, preloadedCha
 }
 
 export async function listAgentsSnapshot(): Promise<AgentsSnapshot> {
-  const config = await readOpenClawConfig() as AgentConfigDocument;
-  return buildSnapshotFromConfig(config);
+  return withConfigLock(async () => {
+    const config = await readOpenClawConfig() as AgentConfigDocument;
+    const { pruneStaleRuntimeAgentModelRefs } = await import('./openclaw-auth');
+    const modified = await pruneStaleRuntimeAgentModelRefs(config as unknown as Record<string, unknown>);
+    if (modified) {
+      await writeOpenClawConfig(config);
+      logger.info('Pruned stale runtime agent model refs from openclaw.json');
+    }
+    return buildSnapshotFromConfig(config);
+  });
 }
 
 export async function listAgentsSnapshotFromConfig(config: OpenClawConfig, configuredChannels?: string[]): Promise<AgentsSnapshot> {

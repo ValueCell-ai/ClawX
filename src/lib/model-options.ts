@@ -140,3 +140,30 @@ export function buildConfiguredModelOptions(
 
   return [...deduped.values()];
 }
+
+export function isConfiguredModelRefAvailable(
+  modelRef: string | null | undefined,
+  modelOptions: ConfiguredModelOption[],
+): boolean {
+  const value = (modelRef || '').trim();
+  if (!value) return false;
+  return modelOptions.some((option) => option.modelRef === value);
+}
+
+export function resolveConfiguredModelRef(
+  preferredModelRef: string | null | undefined,
+  defaultModelRef: string | null | undefined,
+  modelOptions: ConfiguredModelOption[],
+): string | null {
+  const preferred = (preferredModelRef || '').trim();
+  if (preferred && isConfiguredModelRefAvailable(preferred, modelOptions)) {
+    return preferred;
+  }
+
+  const fallbackDefault = (defaultModelRef || '').trim();
+  if (fallbackDefault && isConfiguredModelRefAvailable(fallbackDefault, modelOptions)) {
+    return fallbackDefault;
+  }
+
+  return modelOptions[0]?.modelRef ?? null;
+}

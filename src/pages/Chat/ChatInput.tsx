@@ -19,7 +19,7 @@ import { useChatStore } from '@/stores/chat';
 import { useArtifactPanel } from '@/stores/artifact-panel';
 import { buildPreviewTarget } from '@/components/file-preview/build-preview-target';
 import { useProviderStore } from '@/stores/providers';
-import { buildConfiguredModelOptions, formatModelRefLabel } from '@/lib/model-options';
+import { buildConfiguredModelOptions, formatModelRefLabel, isConfiguredModelRefAvailable, resolveConfiguredModelRef } from '@/lib/model-options';
 import type { AgentSummary } from '@/types/agent';
 import type { QuickAccessSkill } from '@/types/skill';
 import { useTranslation } from 'react-i18next';
@@ -232,7 +232,11 @@ export function ChatInput({ onSend, onStop, disabled = false, sending = false }:
     () => buildConfiguredModelOptions(providerAccounts, providerStatuses, providerDefaultAccountId),
     [providerAccounts, providerDefaultAccountId, providerStatuses],
   );
-  const effectiveModelRef = optimisticModelRef || currentAgent?.modelRef || defaultModelRef || modelOptions[0]?.modelRef || null;
+  const configuredModelRef = useMemo(
+    () => resolveConfiguredModelRef(currentAgent?.modelRef, defaultModelRef, modelOptions),
+    [currentAgent?.modelRef, defaultModelRef, modelOptions],
+  );
+  const effectiveModelRef = optimisticModelRef || configuredModelRef;
   const currentModelLabel = formatModelRefLabel(effectiveModelRef);
   const mentionableAgents = useMemo(
     () => (agents ?? []).filter((agent) => agent.id !== currentAgentId),
@@ -282,6 +286,13 @@ export function ChatInput({ onSend, onStop, disabled = false, sending = false }:
   useEffect(() => {
     setOptimisticModelRef(null);
   }, [currentAgent?.modelRef, currentAgentId]);
+
+  useEffect(() => {
+    if (!currentAgent || switchingModelRef || optimisticModelRef) return;
+    const override = (currentAgent.overrideModelRef || '').trim();
+    if (!override || isConfiguredModelRefAvailable(override, modelOptions)) return;
+    void updateAgentModel(currentAgent.id, null).catch(() => {});
+  }, [currentAgent, modelOptions, optimisticModelRef, switchingModelRef, updateAgentModel]);
 
   // Auto-resize textarea
   useEffect(() => {

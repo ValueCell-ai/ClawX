@@ -1351,6 +1351,47 @@ describe('auth-backed provider discovery', () => {
     await expect(getActiveOpenClawProviders()).resolves.toEqual(new Set());
   });
 
+  it('removes deleted provider refs from agent defaults and overrides', async () => {
+    await writeOpenClawJson({
+      models: {
+        providers: {
+          'custom-abc12345': {
+            baseUrl: 'https://api.example.com/v1',
+            api: 'openai-completions',
+          },
+          'minimax-portal': {
+            baseUrl: 'https://api.minimax.io/anthropic',
+            api: 'anthropic-messages',
+          },
+        },
+      },
+      agents: {
+        defaults: {
+          model: {
+            primary: 'custom-abc12345/gpt-5.5',
+            fallbacks: ['minimax-portal/MiniMax-M3'],
+          },
+        },
+        list: [
+          { id: 'main', name: 'Main', default: true, model: { primary: 'custom-abc12345/gpt-5.5' } },
+        ],
+      },
+    });
+
+    const { removeProviderFromOpenClaw } = await import('@electron/utils/openclaw-auth');
+    await removeProviderFromOpenClaw('custom-abc12345');
+
+    const config = await readOpenClawJson();
+    const agents = config.agents as {
+      defaults?: { model?: { primary?: string; fallbacks?: string[] } };
+      list?: Array<{ id: string; model?: { primary?: string } }>;
+    };
+
+    expect(agents.defaults?.model?.primary).toBeUndefined();
+    expect(agents.defaults?.model?.fallbacks).toEqual(['minimax-portal/MiniMax-M3']);
+    expect(agents.list?.[0]?.model).toBeUndefined();
+  });
+
   it('removes merged and legacy minimax plugin registrations when deleting the provider', async () => {
     await writeOpenClawJson({
       plugins: {

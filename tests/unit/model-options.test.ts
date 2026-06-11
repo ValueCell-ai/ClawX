@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 import {
   buildConfiguredModelOptions,
   formatModelRefLabel,
+  isConfiguredModelRefAvailable,
+  resolveConfiguredModelRef,
   resolveRuntimeProviderKey,
 } from '../../src/lib/model-options';
 import type { ProviderAccount, ProviderWithKeyInfo } from '../../src/lib/providers';
@@ -92,5 +94,19 @@ describe('model option helpers', () => {
         null,
       ),
     ).toEqual([]);
+  });
+
+  it('falls back to default or first configured model when preferred ref is stale', () => {
+    const options = buildConfiguredModelOptions(
+      [account({ id: 'alpha1234', model: 'model-alpha' })],
+      [status('alpha1234')],
+      'alpha1234',
+    );
+
+    expect(resolveConfiguredModelRef('custom-deleted/gpt-5.5', 'custom-alpha123/model-alpha', options))
+      .toBe('custom-alpha123/model-alpha');
+    expect(resolveConfiguredModelRef('custom-deleted/gpt-5.5', null, options))
+      .toBe('custom-alpha123/model-alpha');
+    expect(isConfiguredModelRefAvailable('custom-deleted/gpt-5.5', options)).toBe(false);
   });
 });
