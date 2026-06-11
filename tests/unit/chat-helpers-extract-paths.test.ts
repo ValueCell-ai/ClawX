@@ -84,6 +84,18 @@ MEDIA:C:\Users\Administrator\.openclaw\workspace\japan-kansai-4d3n-plan.svg`);
     ]);
   });
 
+  it('captures inline MEDIA: markers glued to caption punctuation', () => {
+    const sample =
+      '橘子来了 🍊 一筐新鲜砂糖橘，酸甜爆汁~MEDIA:/Users/zhonghaolu/.openclaw/media/tool-image-generation/clawx-image-1---03c6fed9-836c-49ed-87df-09969d5d6fe1.png';
+    const refs = extractRawFilePaths(sample);
+    expect(refs).toEqual([
+      {
+        filePath: '/Users/zhonghaolu/.openclaw/media/tool-image-generation/clawx-image-1---03c6fed9-836c-49ed-87df-09969d5d6fe1.png',
+        mimeType: 'image/png',
+      },
+    ]);
+  });
+
   it('keeps non-MEDIA prose after a space-bearing path out of the captured filename', () => {
     // The lookahead must terminate the match at the first non-path character
     // (newline, quote, paren, comma, full-stop, ...). Otherwise a long line
