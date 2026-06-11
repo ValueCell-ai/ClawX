@@ -6,8 +6,9 @@ import { getProviderService } from '../services/providers/provider-service';
 import { getSecretStore } from '../services/secrets/secret-store';
 import {
   ensureOpenClawProviderAgentRuntimePins,
+  OPENAI_CODEX_OAUTH_PROVIDER_CONFIG,
   saveOAuthTokenToOpenClaw,
-  setOpenClawDefaultModel,
+  setOpenClawDefaultModelWithOverride,
 } from './openclaw-auth';
 
 // Google was removed: OpenClaw's `google-gemini-cli` OAuth integration is an
@@ -17,7 +18,7 @@ import {
 // browser-OAuth provider we currently expose end-to-end is OpenAI Codex.
 export type BrowserOAuthProviderType = 'openai';
 
-const OPENAI_RUNTIME_PROVIDER_ID = 'openai-codex';
+const OPENAI_RUNTIME_PROVIDER_ID = 'openai';
 const OPENAI_OAUTH_DEFAULT_MODEL = 'gpt-5.5';
 
 class BrowserOAuthManager extends EventEmitter {
@@ -139,12 +140,12 @@ class BrowserOAuthManager extends EventEmitter {
     const oauthTokenEmail = typeof token.email === 'string' ? token.email : undefined;
     const oauthTokenSubject = typeof token.accountId === 'string' ? token.accountId : undefined;
 
-    // OpenAI OAuth uses openai-codex/* runtime; existing openai/* refs are incompatible.
     const normalizedExistingModel = (() => {
       const value = existing?.model?.trim();
       if (!value) return undefined;
-      if (value.startsWith('openai/')) return undefined;
-      if (value.startsWith('openai-codex/')) return value.split('/').pop();
+      if (value.startsWith('openai/') || value.startsWith('openai-codex/')) {
+        return value.split('/').pop();
+      }
       return value.includes('/') ? value.split('/').pop() : value;
     })();
 
@@ -185,6 +186,7 @@ class BrowserOAuthManager extends EventEmitter {
       expires: token.expires,
       email: oauthTokenEmail,
       projectId: oauthTokenSubject,
+      accountId: oauthTokenSubject,
     });
 
     const modelId = normalizedExistingModel || defaultModel;
@@ -193,13 +195,21 @@ class BrowserOAuthManager extends EventEmitter {
       .map((fallback) => fallback.trim())
       .filter(Boolean)
       .map((fallback) => (
-        fallback.startsWith(`${runtimeProviderId}/`)
-          ? fallback
+        fallback.replace(/^openai-codex\//, `${runtimeProviderId}/`).startsWith(`${runtimeProviderId}/`)
+          ? fallback.replace(/^openai-codex\//, `${runtimeProviderId}/`)
           : `${runtimeProviderId}/${fallback}`
       ));
 
     try {
-      await setOpenClawDefaultModel(runtimeProviderId, modelRef, fallbackModelRefs);
+      await setOpenClawDefaultModelWithOverride(
+        runtimeProviderId,
+        modelRef,
+        {
+          baseUrl: OPENAI_CODEX_OAUTH_PROVIDER_CONFIG.baseUrl,
+          api: OPENAI_CODEX_OAUTH_PROVIDER_CONFIG.api,
+        },
+        fallbackModelRefs,
+      );
       await ensureOpenClawProviderAgentRuntimePins();
       logger.info(`[BrowserOAuth] Registered ${runtimeProviderId} in openclaw.json (default model: ${modelRef})`);
     } catch (err) {

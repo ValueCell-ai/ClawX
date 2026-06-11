@@ -45,7 +45,7 @@ vi.mock('@electron/utils/provider-keys', async (importOriginal) => {
     getOpenClawProviderKeyForType: mocks.getOpenClawProviderKeyForType,
     resolveOpenClawProviderKey: (account: { vendorId: string; id: string; authMode?: string }) => {
       if (account.authMode === 'oauth_browser' && account.vendorId === 'openai') {
-        return 'openai-codex';
+        return 'openai';
       }
       return mocks.getOpenClawProviderKeyForType(account.vendorId, account.id);
     },
@@ -184,7 +184,7 @@ describe('ProviderService.listAccounts (openclaw.json as sole source of truth)',
     expect(result[0].label).toBe('My Moonshot');
   });
 
-  it('hides the bare openai slot when only openai-codex OAuth is configured', async () => {
+  it('hides stale OpenAI API key accounts when canonical openai OAuth is configured', async () => {
     mocks.listProviderAccounts.mockResolvedValue([
       makeAccount({
         id: 'openai-oauth-1',
@@ -201,13 +201,15 @@ describe('ProviderService.listAccounts (openclaw.json as sole source of truth)',
     ]);
     mocks.getApiKey.mockResolvedValue(null);
     mocks.getProviderApiKeyFromOpenClaw.mockResolvedValue(null);
-    mocks.getActiveOpenClawProviders.mockResolvedValue(new Set(['openai', 'openai-codex']));
+    mocks.getActiveOpenClawProviders.mockResolvedValue(new Set(['openai']));
     mocks.getOpenClawProvidersConfig.mockResolvedValue({
       providers: {
-        openai: { baseUrl: 'https://api.openai.com/v1', api: 'openai-responses' },
-        'openai-codex': { baseUrl: 'https://api.openai.com/v1', api: 'openai-chatgpt-responses' },
+        openai: {
+          baseUrl: 'https://chatgpt.com/backend-api/codex',
+          api: 'openai-chatgpt-responses',
+        },
       },
-      defaultModel: 'openai-codex/gpt-5.5',
+      defaultModel: 'openai/gpt-5.5',
     });
 
     const result = await service.listAccounts();
@@ -217,7 +219,7 @@ describe('ProviderService.listAccounts (openclaw.json as sole source of truth)',
     expect(mocks.deleteProviderAccount).toHaveBeenCalledWith('openai');
   });
 
-  it('hides the bare openai slot when openai-codex is active only via auth profile (no openclaw.json entries)', async () => {
+  it('hides stale OpenAI API key accounts when OAuth is active only via auth profile', async () => {
     // Regression: newer OpenClaw versions drop the explicit models.providers
     // "openai-codex" entry and the "openai-codex-auth" plugin entry, leaving
     // the OAuth auth profile as the only active signal. The bare "openai"
@@ -239,8 +241,8 @@ describe('ProviderService.listAccounts (openclaw.json as sole source of truth)',
     mocks.getApiKey.mockResolvedValue(null);
     mocks.getProviderApiKeyFromOpenClaw.mockResolvedValue(null);
     // Active set as produced by getActiveOpenClawProviders() when only the
-    // openai-codex OAuth profile exists in the auth store.
-    mocks.getActiveOpenClawProviders.mockResolvedValue(new Set(['openai', 'openai-codex']));
+    // OpenAI OAuth profile exists in the auth store.
+    mocks.getActiveOpenClawProviders.mockResolvedValue(new Set(['openai']));
     mocks.getOpenClawProvidersConfig.mockResolvedValue({
       providers: { openai: {} },
       defaultModel: undefined,
@@ -255,7 +257,7 @@ describe('ProviderService.listAccounts (openclaw.json as sole source of truth)',
     expect(mocks.saveProviderAccount).not.toHaveBeenCalled();
   });
 
-  it('matches OpenAI browser OAuth accounts to the openai-codex runtime key', async () => {
+  it('matches OpenAI browser OAuth accounts to the canonical openai runtime key', async () => {
     mocks.listProviderAccounts.mockResolvedValue([
       makeAccount({
         id: 'openai-oauth-1',
@@ -264,10 +266,10 @@ describe('ProviderService.listAccounts (openclaw.json as sole source of truth)',
         label: 'OpenAI Codex',
       }),
     ]);
-    mocks.getActiveOpenClawProviders.mockResolvedValue(new Set(['openai-codex']));
+    mocks.getActiveOpenClawProviders.mockResolvedValue(new Set(['openai']));
     mocks.getOpenClawProvidersConfig.mockResolvedValue({
       providers: {},
-      defaultModel: 'openai-codex/gpt-5.5',
+      defaultModel: 'openai/gpt-5.5',
     });
 
     const result = await service.listAccounts();
@@ -291,9 +293,7 @@ describe('ProviderService.listAccounts (openclaw.json as sole source of truth)',
     mocks.getProviderApiKeyFromOpenClaw.mockResolvedValue(null);
     mocks.getActiveOpenClawProviders.mockResolvedValue(new Set(['openai']));
     mocks.getOpenClawProvidersConfig.mockResolvedValue({
-      providers: {
-        openai: { baseUrl: 'https://api.openai.com/v1', api: 'openai-responses' },
-      },
+      providers: {},
       defaultModel: 'minimax-portal/MiniMax-M3',
     });
 
@@ -517,7 +517,6 @@ describe('ProviderService.listAccounts (openclaw.json as sole source of truth)',
     mocks.getActiveOpenClawProviders.mockResolvedValue(new Set(['openai', 'anthropic']));
     mocks.getOpenClawProvidersConfig.mockResolvedValue({
       providers: {
-        openai: {},
         anthropic: {},
       },
       defaultModel: undefined,

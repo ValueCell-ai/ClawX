@@ -330,6 +330,7 @@ interface OAuthProfileEntry {
   expires: number;
   email?: string;
   projectId?: string;
+  accountId?: string;
 }
 
 type AuthProfilesStore = PersistedAuthProfilesStore;
@@ -868,7 +869,14 @@ async function writeOpenClawJson(config: Record<string, unknown>): Promise<void>
  */
 export async function saveOAuthTokenToOpenClaw(
   provider: string,
-  token: { access: string; refresh: string; expires: number; email?: string; projectId?: string },
+  token: {
+    access: string;
+    refresh: string;
+    expires: number;
+    email?: string;
+    projectId?: string;
+    accountId?: string;
+  },
   agentId?: string
 ): Promise<void> {
   const agentIds = agentId ? [agentId] : await discoverAgentIds();
@@ -886,6 +894,7 @@ export async function saveOAuthTokenToOpenClaw(
       expires: token.expires,
       email: token.email,
       projectId: token.projectId,
+      accountId: token.accountId ?? token.projectId,
     };
 
     if (!store.order) store.order = {};
@@ -1138,6 +1147,98 @@ function repairLegacyApiProtocolEntriesInConfig(config: Record<string, unknown>)
   return migrated;
 }
 
+/** ChatGPT/Codex OAuth must not use the Platform API base URL. */
+export const OPENAI_CODEX_OAUTH_BASE_URL = 'https://chatgpt.com/backend-api/codex';
+
+function isOpenAiPlatformBaseUrl(baseUrl: unknown): boolean {
+  if (typeof baseUrl !== 'string') return false;
+  return /^https?:\/\/api\.openai\.com(?:\/v1)?\/?$/i.test(baseUrl.trim());
+}
+
+function resolveOpenAiCodexOAuthBaseUrl(baseUrl: string, api: string): string {
+  if (normalizeOpenClawApiProtocol(api) !== 'openai-chatgpt-responses') {
+    return baseUrl;
+  }
+  if (isOpenAiPlatformBaseUrl(baseUrl)) {
+    return OPENAI_CODEX_OAUTH_BASE_URL;
+  }
+  return baseUrl;
+}
+
+function repairOpenAiCodexOAuthProviderEntriesInConfig(config: Record<string, unknown>): string[] {
+  const repaired: string[] = [];
+  const models = (config.models || {}) as Record<string, unknown>;
+  const providers = (models.providers || {}) as Record<string, unknown>;
+
+  for (const [key, entry] of Object.entries(providers)) {
+    if (!isPlainRecord(entry)) continue;
+    const entryObj = entry as Record<string, unknown>;
+    const api = normalizeOpenClawApiProtocol(entryObj.api);
+    if (api !== 'openai-chatgpt-responses') continue;
+    if (!isOpenAiPlatformBaseUrl(entryObj.baseUrl)) continue;
+    entryObj.baseUrl = OPENAI_CODEX_OAUTH_BASE_URL;
+    repaired.push(key);
+  }
+
+  return repaired;
+}
+
+function rewriteOpenAiCodexModelRef(modelRef: unknown): string | undefined {
+  if (typeof modelRef !== 'string') return undefined;
+  return modelRef.replace(/^openai-codex\//, 'openai/');
+}
+
+/** Move legacy OAuth runtime config from `openai-codex` to canonical `openai`. */
+function migrateOpenAiCodexOAuthRuntimeToOpenAiInConfig(config: Record<string, unknown>): string[] {
+  const migrated: string[] = [];
+  const models = (config.models || {}) as Record<string, unknown>;
+  const providers = (models.providers || {}) as Record<string, unknown>;
+  const codexEntry = providers['openai-codex'];
+
+  if (isPlainRecord(codexEntry)) {
+    const codexApi = normalizeOpenClawApiProtocol(codexEntry.api);
+    if (codexApi === 'openai-chatgpt-responses') {
+      const existingOpenAi = isPlainRecord(providers.openai) ? providers.openai as Record<string, unknown> : {};
+      providers.openai = {
+        ...existingOpenAi,
+        ...codexEntry,
+        baseUrl: OPENAI_CODEX_OAUTH_BASE_URL,
+        api: 'openai-chatgpt-responses',
+        agentRuntime: isPlainRecord(existingOpenAi.agentRuntime)
+          ? existingOpenAi.agentRuntime
+          : { id: 'pi' },
+      };
+      delete providers['openai-codex'];
+      migrated.push('openai-codex->openai');
+    }
+  }
+
+  const agents = (config.agents || {}) as Record<string, unknown>;
+  const defaults = (agents.defaults || {}) as Record<string, unknown>;
+  const modelDefaults = (defaults.model || {}) as Record<string, unknown>;
+  const primary = rewriteOpenAiCodexModelRef(modelDefaults.primary);
+  if (primary && primary !== modelDefaults.primary) {
+    modelDefaults.primary = primary;
+    migrated.push('default-model-ref');
+  }
+  if (Array.isArray(modelDefaults.fallbacks)) {
+    const nextFallbacks = modelDefaults.fallbacks.map((fallback) => rewriteOpenAiCodexModelRef(fallback) ?? fallback);
+    if (nextFallbacks.some((fallback, index) => fallback !== modelDefaults.fallbacks?.[index])) {
+      modelDefaults.fallbacks = nextFallbacks;
+      migrated.push('default-model-fallbacks');
+    }
+  }
+  if (migrated.length > 0) {
+    defaults.model = modelDefaults;
+    agents.defaults = defaults;
+    config.agents = agents;
+    models.providers = providers;
+    config.models = models;
+  }
+
+  return migrated;
+}
+
 export async function pruneInvalidApiProviderEntries(): Promise<string[]> {
   const removed: string[] = [];
   await withConfigLock(async () => {
@@ -1148,6 +1249,16 @@ export async function pruneInvalidApiProviderEntries(): Promise<string[]> {
 
     const migrated = repairLegacyApiProtocolEntriesInConfig(config);
     if (migrated.length > 0) {
+      modified = true;
+    }
+
+    const repairedCodexBaseUrls = repairOpenAiCodexOAuthProviderEntriesInConfig(config);
+    if (repairedCodexBaseUrls.length > 0) {
+      modified = true;
+    }
+
+    const migratedCodexRuntime = migrateOpenAiCodexOAuthRuntimeToOpenAiInConfig(config);
+    if (migratedCodexRuntime.length > 0) {
       modified = true;
     }
 
@@ -1231,19 +1342,31 @@ export async function setOpenClawDefaultModel(
       });
       console.log(`Configured models.providers.${provider} with baseUrl=${providerCfg.baseUrl}, model=${modelId}`);
     } else if (provider === 'openai-codex') {
-      // OAuth Codex is not in the UI registry but still needs an explicit provider
-      // entry with a pinned embedded runtime (see OPENCLAW_PROVIDER_PINNED_AGENT_RUNTIME).
-      upsertOpenClawProviderEntry(config, provider, {
+      // Legacy runtime key: OpenClaw Codex hooks only apply to canonical `openai`.
+      const oauthModel = model.replace(/^openai-codex\//, 'openai/');
+      const oauthFallbacks = fallbackModels.map((fallback) => fallback.replace(/^openai-codex\//, 'openai/'));
+      defaults.model = {
+        primary: oauthModel,
+        fallbacks: oauthFallbacks,
+      };
+      agents.defaults = defaults;
+      config.agents = agents;
+
+      upsertOpenClawProviderEntry(config, 'openai', {
         baseUrl: OPENAI_CODEX_OAUTH_PROVIDER_CONFIG.baseUrl,
         api: OPENAI_CODEX_OAUTH_PROVIDER_CONFIG.api,
         modelIds: [modelId, ...fallbackModelIds],
         mergeExistingModels: true,
       });
-      if (isOpenClawOAuthPluginProviderKey(provider)) {
-        ensureOAuthPluginEnabled(config, provider);
+      const modelsConfig = (config.models || {}) as Record<string, unknown>;
+      const providerEntries = (modelsConfig.providers || {}) as Record<string, unknown>;
+      if (providerEntries['openai-codex']) {
+        delete providerEntries['openai-codex'];
+        modelsConfig.providers = providerEntries;
+        config.models = modelsConfig;
       }
       console.log(
-        `Configured models.providers.${provider} for OAuth (api=${OPENAI_CODEX_OAUTH_PROVIDER_CONFIG.api})`,
+        `Configured models.providers.openai for OAuth (api=${OPENAI_CODEX_OAUTH_PROVIDER_CONFIG.api})`,
       );
     } else {
       // Built-in provider: remove any stale models.providers entry
@@ -1516,7 +1639,7 @@ const OPENCLAW_PROVIDER_PINNED_AGENT_RUNTIME: Record<string, string> = {
 
 /** Runtime models.providers entry for OpenAI Codex OAuth accounts. */
 export const OPENAI_CODEX_OAUTH_PROVIDER_CONFIG = {
-  baseUrl: 'https://api.openai.com/v1',
+  baseUrl: OPENAI_CODEX_OAUTH_BASE_URL,
   api: 'openai-chatgpt-responses' as const,
 };
 
@@ -1594,7 +1717,7 @@ function upsertOpenClawProviderEntry(
 
   const nextProvider: Record<string, unknown> = {
     ...existingProvider,
-    baseUrl: options.baseUrl,
+    baseUrl: resolveOpenAiCodexOAuthBaseUrl(options.baseUrl, options.api),
     api: options.api,
     models: mergedModels,
   };
@@ -3164,6 +3287,18 @@ export async function sanitizeOpenClawConfig(): Promise<void> {
     if (migratedApiProtocols.length > 0) {
       modified = true;
       console.log(`[sanitize] Migrated legacy models.providers api protocol for: ${migratedApiProtocols.join(', ')}`);
+    }
+
+    const repairedCodexBaseUrls = repairOpenAiCodexOAuthProviderEntriesInConfig(config);
+    if (repairedCodexBaseUrls.length > 0) {
+      modified = true;
+      console.log(`[sanitize] Repaired OpenAI Codex OAuth baseUrl for: ${repairedCodexBaseUrls.join(', ')}`);
+    }
+
+    const migratedCodexRuntime = migrateOpenAiCodexOAuthRuntimeToOpenAiInConfig(config);
+    if (migratedCodexRuntime.length > 0) {
+      modified = true;
+      console.log(`[sanitize] Migrated legacy OpenAI Codex OAuth runtime: ${migratedCodexRuntime.join(', ')}`);
     }
 
     const pinnedProviderRuntimes = applyOpenClawProviderAgentRuntimePinsToConfig(config);

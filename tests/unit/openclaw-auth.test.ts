@@ -1805,7 +1805,9 @@ describe('pruneInvalidApiProviderEntries', () => {
     expect(removed).toEqual(['openrouter']);
     const result = await readOpenClawJson();
     const providers = (result.models as Record<string, unknown>).providers as Record<string, unknown>;
-    expect((providers['openai-codex'] as { api: string }).api).toBe('openai-chatgpt-responses');
+    expect(providers['openai-codex']).toBeUndefined();
+    expect((providers.openai as { api: string }).api).toBe('openai-chatgpt-responses');
+    expect((providers.openai as { baseUrl: string }).baseUrl).toBe('https://chatgpt.com/backend-api/codex');
   });
 });
 
@@ -1859,6 +1861,7 @@ describe('openai agentRuntime pin', () => {
     expect(codex).toBeDefined();
     expect(codex.agentRuntime).toEqual({ id: 'pi' });
     expect(codex.api).toBe('openai-chatgpt-responses');
+    expect(codex.baseUrl).toBe('https://chatgpt.com/backend-api/codex');
   });
 
   it('preserves a user-provided agentRuntime override on the openai entry', async () => {
@@ -1968,7 +1971,7 @@ describe('syncOpenAiCompatibleImageRelay', () => {
   });
 });
 
-describe('setOpenClawDefaultModel for openai-codex OAuth', () => {
+describe('setOpenClawDefaultModel for OpenAI OAuth', () => {
   beforeEach(async () => {
     vi.doUnmock('@electron/utils/provider-registry');
     vi.resetModules();
@@ -1977,7 +1980,7 @@ describe('setOpenClawDefaultModel for openai-codex OAuth', () => {
     await rm(testUserData, { recursive: true, force: true });
   });
 
-  it('writes models.providers.openai-codex with a pinned pi runtime', async () => {
+  it('writes models.providers.openai with a pinned pi runtime for legacy openai-codex calls', async () => {
     await writeOpenClawJson({
       models: { providers: {} },
     });
@@ -1987,12 +1990,14 @@ describe('setOpenClawDefaultModel for openai-codex OAuth', () => {
 
     const result = await readOpenClawJson();
     const providers = (result.models as Record<string, unknown>).providers as Record<string, unknown>;
-    const codex = providers['openai-codex'] as Record<string, unknown>;
+    const openai = providers.openai as Record<string, unknown>;
     const defaults = ((result.agents as Record<string, unknown>).defaults as Record<string, unknown>).model as Record<string, unknown>;
 
-    expect(defaults.primary).toBe('openai-codex/gpt-5.5');
-    expect(codex.agentRuntime).toEqual({ id: 'pi' });
-    expect(codex.api).toBe('openai-chatgpt-responses');
+    expect(defaults.primary).toBe('openai/gpt-5.5');
+    expect(openai.agentRuntime).toEqual({ id: 'pi' });
+    expect(openai.api).toBe('openai-chatgpt-responses');
+    expect(openai.baseUrl).toBe('https://chatgpt.com/backend-api/codex');
+    expect(providers['openai-codex']).toBeUndefined();
   });
 });
 
@@ -2076,7 +2081,7 @@ describe('ensureOpenClawProviderAgentRuntimePins', () => {
     const result = await readOpenClawJson();
     const providers = (result.models as Record<string, unknown>).providers as Record<string, unknown>;
     expect((providers.openai as Record<string, unknown>).agentRuntime).toEqual({ id: 'pi' });
-    expect((providers['openai-codex'] as Record<string, unknown>).agentRuntime).toEqual({ id: 'pi' });
+    expect(providers['openai-codex']).toBeUndefined();
   });
 
   it('migrates legacy openai-codex-responses api values during sanitizeOpenClawConfig', async () => {
@@ -2097,7 +2102,9 @@ describe('ensureOpenClawProviderAgentRuntimePins', () => {
 
     const result = await readOpenClawJson();
     const providers = (result.models as Record<string, unknown>).providers as Record<string, unknown>;
-    expect((providers['openai-codex'] as { api: string }).api).toBe('openai-chatgpt-responses');
+    expect((providers.openai as { api: string }).api).toBe('openai-chatgpt-responses');
+    expect((providers.openai as { baseUrl: string }).baseUrl).toBe('https://chatgpt.com/backend-api/codex');
+    expect(providers['openai-codex']).toBeUndefined();
   });
 
   it('leaves entries untouched when the openai entry already has any agentRuntime.id', async () => {

@@ -194,6 +194,10 @@ export class ProviderService {
                 : ' (Codex OAuth removed)'),
           );
           await deleteProviderAccount(account.id);
+          const resultIndex = result.findIndex((entry) => entry.id === account.id);
+          if (resultIndex >= 0) {
+            result.splice(resultIndex, 1);
+          }
         }
       }
     }

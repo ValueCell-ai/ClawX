@@ -13,6 +13,7 @@ import {
   removeProviderKeyFromOpenClaw,
   saveOAuthTokenToOpenClaw,
   saveProviderKeyToOpenClaw,
+  OPENAI_CODEX_OAUTH_PROVIDER_CONFIG,
   setOpenClawDefaultModel,
   setOpenClawDefaultModelWithOverride,
   syncProviderConfigToOpenClaw,
@@ -27,7 +28,8 @@ import {
 import { logger } from '../../utils/logger';
 import { listAgentsSnapshot } from '../../utils/agent-config';
 
-const OPENAI_OAUTH_RUNTIME_PROVIDER = 'openai-codex';
+/** OpenClaw Codex OAuth hooks only apply to the canonical `openai` provider id. */
+const OPENAI_OAUTH_RUNTIME_PROVIDER = 'openai';
 const OPENAI_OAUTH_DEFAULT_MODEL_REF = `${OPENAI_OAUTH_RUNTIME_PROVIDER}/gpt-5.5`;
 
 /**
@@ -378,9 +380,9 @@ async function removeDeletedProviderFromOpenClaw(
     await removeProviderFromOpenClaw(key);
   }
 
-  // Codex OAuth uses runtime key openai-codex but may leave a bare models.providers.openai
-  // entry behind. Drop that slot when no API key credentials remain.
-  if (runtimeProviderKey === OPENAI_OAUTH_RUNTIME_PROVIDER) {
+  // Legacy Codex OAuth used runtime key openai-codex; cleanup may leave a bare
+  // models.providers.openai entry behind. Drop that slot when no API key credentials remain.
+  if (runtimeProviderKey === OPENAI_OAUTH_RUNTIME_PROVIDER || runtimeProviderKey === 'openai-codex') {
     const openClawKey = await getProviderApiKeyFromOpenClaw('openai');
     if (openClawKey) {
       return;
@@ -703,17 +705,26 @@ export async function syncDefaultProviderToRuntime(
           expires: secret.expiresAt,
           email: secret.email,
           projectId: secret.subject,
+          accountId: secret.subject,
         });
       }
 
       const defaultModelRef = OPENAI_OAUTH_DEFAULT_MODEL_REF;
       const modelOverride = provider.model
         ? (provider.model.startsWith(`${browserOAuthRuntimeProvider}/`)
-          ? provider.model
+          ? provider.model.replace(/^openai-codex\//, `${browserOAuthRuntimeProvider}/`)
           : `${browserOAuthRuntimeProvider}/${provider.model}`)
         : defaultModelRef;
 
-      await setOpenClawDefaultModel(browserOAuthRuntimeProvider, modelOverride, fallbackModels);
+      await setOpenClawDefaultModelWithOverride(
+        browserOAuthRuntimeProvider,
+        modelOverride,
+        {
+          baseUrl: OPENAI_CODEX_OAUTH_PROVIDER_CONFIG.baseUrl,
+          api: OPENAI_CODEX_OAUTH_PROVIDER_CONFIG.api,
+        },
+        fallbackModels.map((fallback) => fallback.replace(/^openai-codex\//, `${browserOAuthRuntimeProvider}/`)),
+      );
       logger.info(`Configured openclaw.json for browser OAuth provider "${provider.id}"`);
       try {
         await syncAgentModelsToRuntime();

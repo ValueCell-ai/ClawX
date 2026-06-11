@@ -47,10 +47,18 @@ vi.mock('@electron/utils/provider-registry', () => ({
 }));
 
 vi.mock('@electron/utils/openclaw-auth', () => ({
+  ensureAnthropicMessagesModelMaxTokens: vi.fn().mockResolvedValue([]),
+  ensureOpenClawProviderAgentRuntimePins: vi.fn().mockResolvedValue([]),
+  migrateAllAgentAuthProfilesToSqlite: vi.fn().mockResolvedValue(undefined),
+  pruneInvalidApiProviderEntries: vi.fn().mockResolvedValue([]),
   removeProviderFromOpenClaw: mocks.removeProviderFromOpenClaw,
   removeProviderKeyFromOpenClaw: mocks.removeProviderKeyFromOpenClaw,
   saveOAuthTokenToOpenClaw: mocks.saveOAuthTokenToOpenClaw,
   saveProviderKeyToOpenClaw: mocks.saveProviderKeyToOpenClaw,
+  OPENAI_CODEX_OAUTH_PROVIDER_CONFIG: {
+    baseUrl: 'https://chatgpt.com/backend-api/codex',
+    api: 'openai-chatgpt-responses',
+  },
   setOpenClawDefaultModel: mocks.setOpenClawDefaultModel,
   setOpenClawDefaultModelWithOverride: mocks.setOpenClawDefaultModelWithOverride,
   syncProviderConfigToOpenClaw: mocks.syncProviderConfigToOpenClaw,
@@ -189,10 +197,10 @@ describe('provider-runtime-sync refresh strategy', () => {
       openaiOAuthProvider,
       'openai-oauth-1',
       gateway as GatewayManager,
-      'openai-codex',
+      'openai',
     );
 
-    expect(mocks.removeProviderFromOpenClaw).toHaveBeenCalledWith('openai-codex');
+    expect(mocks.removeProviderFromOpenClaw).toHaveBeenCalledWith('openai');
     expect(mocks.removeProviderFromOpenClaw).toHaveBeenCalledWith('openai-oauth-1');
     expect(mocks.removeProviderFromOpenClaw).toHaveBeenCalledWith('openai');
     expect(gateway.debouncedRestart).toHaveBeenCalledTimes(1);
@@ -247,9 +255,13 @@ describe('provider-runtime-sync refresh strategy', () => {
     const gateway = createGateway('running');
     await syncDefaultProviderToRuntime('openai-personal', gateway as GatewayManager);
 
-    expect(mocks.setOpenClawDefaultModel).toHaveBeenCalledWith(
-      'openai-codex',
-      'openai-codex/gpt-5.5',
+    expect(mocks.setOpenClawDefaultModelWithOverride).toHaveBeenCalledWith(
+      'openai',
+      'openai/gpt-5.5',
+      {
+        baseUrl: 'https://chatgpt.com/backend-api/codex',
+        api: 'openai-chatgpt-responses',
+      },
       expect.any(Array),
     );
   });

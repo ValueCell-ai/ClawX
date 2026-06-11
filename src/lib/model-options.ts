@@ -17,7 +17,7 @@ export interface RuntimeProviderOption {
 
 export function resolveRuntimeProviderKey(account: ProviderAccount): string {
   if (account.authMode === 'oauth_browser') {
-    if (account.vendorId === 'openai') return 'openai-codex';
+    if (account.vendorId === 'openai') return 'openai';
   }
 
   if (account.vendorId === 'custom' || account.vendorId === 'ollama') {

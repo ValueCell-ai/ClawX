@@ -366,7 +366,7 @@ async function deleteAccount(
   try {
     const existing = await providerService.getAccount(accountId);
     const runtimeProviderKey = existing?.authMode === 'oauth_browser' && existing.vendorId === 'openai'
-      ? 'openai-codex'
+      ? 'openai'
       : undefined;
     if (apiKeyOnly) {
       await providerService._deleteProviderApiKeyInternal(accountId);
