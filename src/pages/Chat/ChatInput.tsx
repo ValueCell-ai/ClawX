@@ -218,6 +218,7 @@ export function ChatInput({ onSend, onStop, disabled = false, sending = false }:
   const providerAccounts = useProviderStore((s) => s.accounts);
   const providerStatuses = useProviderStore((s) => s.statuses);
   const providerDefaultAccountId = useProviderStore((s) => s.defaultAccountId);
+  const providerVendors = useProviderStore((s) => s.vendors);
   const refreshProviderSnapshot = useProviderStore((s) => s.refreshProviderSnapshot);
   const currentAgentId = useChatStore((s) => s.currentAgentId);
   const currentAgent = useMemo(
@@ -229,15 +230,23 @@ export function ChatInput({ onSend, onStop, disabled = false, sending = false }:
     [currentAgent, currentAgentId],
   );
   const modelOptions = useMemo(
-    () => buildConfiguredModelOptions(providerAccounts, providerStatuses, providerDefaultAccountId),
-    [providerAccounts, providerDefaultAccountId, providerStatuses],
+    () => buildConfiguredModelOptions(
+      providerAccounts,
+      providerStatuses,
+      providerVendors,
+      providerDefaultAccountId,
+    ),
+    [providerAccounts, providerDefaultAccountId, providerStatuses, providerVendors],
   );
   const configuredModelRef = useMemo(
     () => resolveConfiguredModelRef(currentAgent?.modelRef, defaultModelRef, modelOptions),
     [currentAgent?.modelRef, defaultModelRef, modelOptions],
   );
   const effectiveModelRef = optimisticModelRef || configuredModelRef;
-  const currentModelLabel = formatModelRefLabel(effectiveModelRef);
+  const currentModelLabel = useMemo(() => {
+    const matchedOption = modelOptions.find((option) => option.modelRef === effectiveModelRef);
+    return matchedOption?.label || formatModelRefLabel(effectiveModelRef);
+  }, [effectiveModelRef, modelOptions]);
   const mentionableAgents = useMemo(
     () => (agents ?? []).filter((agent) => agent.id !== currentAgentId),
     [agents, currentAgentId],

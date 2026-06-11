@@ -48,6 +48,27 @@ export function formatModelRefLabel(modelRef: string | null | undefined): string
   return parsed?.modelId || (modelRef || '').trim() || 'Model';
 }
 
+export function formatProviderDisplayName(
+  account: ProviderAccount,
+  vendorMap: Map<string, ProviderVendorInfo>,
+): string {
+  if (account.vendorId === 'custom' || account.vendorId === 'ollama') {
+    return account.label.trim() || account.vendorId;
+  }
+
+  const vendor = vendorMap.get(account.vendorId);
+  return vendor?.name || account.label.trim() || account.vendorId;
+}
+
+export function formatConfiguredModelLabel(
+  modelId: string,
+  account: ProviderAccount,
+  vendorMap: Map<string, ProviderVendorInfo>,
+): string {
+  const providerName = formatProviderDisplayName(account, vendorMap);
+  return `${modelId} (${providerName})`;
+}
+
 export function toModelOptionTestId(label: string): string {
   return label.replace(/[^a-zA-Z0-9_-]+/g, '-');
 }
@@ -108,10 +129,13 @@ export function buildRuntimeProviderOptions(
 export function buildConfiguredModelOptions(
   providerAccounts: ProviderAccount[],
   providerStatuses: ProviderWithKeyInfo[],
+  providerVendors: ProviderVendorInfo[],
   providerDefaultAccountId: string | null,
 ): ConfiguredModelOption[] {
   const safeAccounts = Array.isArray(providerAccounts) ? providerAccounts : [];
   const safeStatuses = Array.isArray(providerStatuses) ? providerStatuses : [];
+  const safeVendors = Array.isArray(providerVendors) ? providerVendors : [];
+  const vendorMap = new Map<string, ProviderVendorInfo>(safeVendors.map((vendor) => [vendor.id, vendor]));
   const statusById = new Map<string, ProviderWithKeyInfo>(safeStatuses.map((status) => [status.id, status]));
   const entries = safeAccounts
     .filter((account) => account.enabled && account.model?.trim() && hasConfiguredProviderCredentials(account, statusById))
@@ -132,7 +156,7 @@ export function buildConfiguredModelOptions(
     if (deduped.has(modelRef)) continue;
     deduped.set(modelRef, {
       modelRef,
-      label: modelId,
+      label: formatConfiguredModelLabel(modelId, account, vendorMap),
       runtimeProviderKey,
       accountId: account.id,
     });
