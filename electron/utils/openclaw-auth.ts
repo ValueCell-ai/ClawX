@@ -32,7 +32,6 @@ import { withConfigLock } from './config-mutex';
 import { PORTS } from './config';
 import { getSetting } from './store';
 import {
-  OPENCLAW_API_PROTOCOLS,
   assertValidApiProtocol,
   normalizeOpenClawApiProtocol,
 } from '../shared/providers/types';
