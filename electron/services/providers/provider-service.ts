@@ -112,15 +112,19 @@ export class ProviderService {
 
     let hasConfiguredOpenAiApiKey = false;
     if (activeProviders.has('openai')) {
-      for (const account of storeByKey.get('openai') ?? []) {
-        if (account.authMode === 'oauth_browser') {
-          continue;
-        }
-        const apiKey = await getApiKey(account.id);
-        const openClawKey = await getProviderApiKeyFromOpenClaw('openai');
-        if (apiKey || openClawKey) {
-          hasConfiguredOpenAiApiKey = true;
-          break;
+      const openClawKey = await getProviderApiKeyFromOpenClaw('openai');
+      if (openClawKey) {
+        hasConfiguredOpenAiApiKey = true;
+      } else {
+        for (const account of storeByKey.get('openai') ?? []) {
+          if (account.authMode === 'oauth_browser') {
+            continue;
+          }
+          const apiKey = await getApiKey(account.id);
+          if (apiKey) {
+            hasConfiguredOpenAiApiKey = true;
+            break;
+          }
         }
       }
     }

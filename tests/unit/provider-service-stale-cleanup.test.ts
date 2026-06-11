@@ -304,6 +304,47 @@ describe('ProviderService.listAccounts (openclaw.json as sole source of truth)',
     expect(mocks.saveProviderAccount).not.toHaveBeenCalled();
   });
 
+  it('keeps openai visible when only OpenClaw auth-profiles has the API key', async () => {
+    mocks.listProviderAccounts.mockResolvedValue([]);
+    mocks.getApiKey.mockResolvedValue(null);
+    mocks.getProviderApiKeyFromOpenClaw.mockImplementation(async (provider: string) => (
+      provider === 'openai' ? 'sk-openclaw-imported' : null
+    ));
+    mocks.getActiveOpenClawProviders.mockResolvedValue(new Set(['openai']));
+    mocks.getOpenClawProvidersConfig.mockResolvedValue({
+      providers: {
+        openai: { baseUrl: 'https://api.openai.com/v1', api: 'openai-responses' },
+      },
+      defaultModel: 'openai/gpt-5.5',
+    });
+    mocks.getProviderDefinition.mockImplementation((key: string) => {
+      if (key === 'openai') {
+        return {
+          id: 'openai',
+          name: 'OpenAI',
+          defaultAuthMode: 'api_key',
+          defaultModelId: 'gpt-5.5',
+          providerConfig: {
+            baseUrl: 'https://api.openai.com/v1',
+            api: 'openai-responses',
+          },
+        };
+      }
+      return undefined;
+    });
+
+    const result = await service.listAccounts();
+
+    expect(mocks.saveProviderAccount).toHaveBeenCalledTimes(1);
+    expect(result).toHaveLength(1);
+    expect(result[0]).toEqual(expect.objectContaining({
+      id: 'openai',
+      vendorId: 'openai',
+      authMode: 'api_key',
+    }));
+    expect(mocks.deleteProviderAccount).not.toHaveBeenCalled();
+  });
+
   it('matches UUID-based store account to openclaw key via getOpenClawProviderKeyForType', async () => {
     mocks.listProviderAccounts.mockResolvedValue([
       makeAccount({ id: 'openrouter-uuid-1234', vendorId: 'openrouter' as ProviderAccount['vendorId'] }),
