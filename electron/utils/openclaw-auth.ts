@@ -1222,8 +1222,9 @@ function migrateOpenAiCodexOAuthRuntimeToOpenAiInConfig(config: Record<string, u
     migrated.push('default-model-ref');
   }
   if (Array.isArray(modelDefaults.fallbacks)) {
-    const nextFallbacks = modelDefaults.fallbacks.map((fallback) => rewriteOpenAiCodexModelRef(fallback) ?? fallback);
-    if (nextFallbacks.some((fallback, index) => fallback !== modelDefaults.fallbacks?.[index])) {
+    const fallbacks = modelDefaults.fallbacks as unknown[];
+    const nextFallbacks = fallbacks.map((fallback) => rewriteOpenAiCodexModelRef(fallback) ?? fallback);
+    if (nextFallbacks.some((fallback, index) => fallback !== fallbacks[index])) {
       modelDefaults.fallbacks = nextFallbacks;
       migrated.push('default-model-fallbacks');
     }
