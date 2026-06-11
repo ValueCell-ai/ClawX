@@ -462,6 +462,26 @@ function isTerminalAssistantErrorMessage(message: RawMessage | unknown): boolean
   return msg.role === 'assistant' && getMessageStopReason(message) === 'error';
 }
 
+function shouldShowRunError(
+  sessionKey: string,
+  errorMessage: string | null | undefined,
+  dismissedBySession: Record<string, string>,
+): string | null {
+  if (!errorMessage) return null;
+  if (dismissedBySession[sessionKey] === errorMessage) return null;
+  return errorMessage;
+}
+
+function withoutDismissedRunError(
+  dismissedBySession: Record<string, string>,
+  sessionKey: string,
+): Record<string, string> {
+  if (!(sessionKey in dismissedBySession)) return dismissedBySession;
+  const next = { ...dismissedBySession };
+  delete next[sessionKey];
+  return next;
+}
+
 /** Extract media file refs from [media attached: <path> (<mime>) | ...] patterns */
 function extractMediaRefs(text: string): Array<{ filePath: string; mimeType: string }> {
   const refs: Array<{ filePath: string; mimeType: string }> = [];
@@ -1895,6 +1915,8 @@ export {
   getMessageStopReason,
   getMessageErrorMessage,
   isTerminalAssistantErrorMessage,
+  shouldShowRunError,
+  withoutDismissedRunError,
   extractMediaRefs,
   extractRawFilePaths,
   makeAttachedFile,

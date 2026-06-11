@@ -113,6 +113,8 @@ export interface ChatState {
   hasMoreHistory: boolean;
   error: string | null;
   runError: string | null;
+  /** Per-session runError text dismissed by the user (sessionKey -> error message). */
+  dismissedRunErrors: Record<string, string>;
 
   // Streaming
   sending: boolean;

@@ -1120,10 +1120,20 @@ export function Chat() {
       {runError && (
         <div className="px-4 pt-2" data-testid="chat-run-error">
           <div className="max-w-4xl mx-auto rounded-xl border border-destructive/20 bg-destructive/10 px-4 py-3">
-            <p className="text-sm font-medium text-destructive flex items-center gap-2">
-              <AlertCircle className="h-4 w-4" />
-              {t('runError.title')}
-            </p>
+            <div className="flex items-start justify-between gap-3">
+              <p className="text-sm font-medium text-destructive flex items-center gap-2">
+                <AlertCircle className="h-4 w-4 shrink-0" />
+                {t('runError.title')}
+              </p>
+              <button
+                type="button"
+                onClick={clearError}
+                className="shrink-0 text-xs text-destructive/60 hover:text-destructive underline"
+                data-testid="chat-run-error-dismiss"
+              >
+                {t('common:actions.dismiss')}
+              </button>
+            </div>
             <p className="mt-1 text-sm text-destructive/90 break-words">
               {runError}
             </p>

@@ -875,6 +875,26 @@ function isTerminalAssistantErrorMessage(message: RawMessage | unknown): boolean
   return msg.role === 'assistant' && getMessageStopReason(message) === 'error';
 }
 
+function shouldShowRunError(
+  sessionKey: string,
+  errorMessage: string | null | undefined,
+  dismissedBySession: Record<string, string>,
+): string | null {
+  if (!errorMessage) return null;
+  if (dismissedBySession[sessionKey] === errorMessage) return null;
+  return errorMessage;
+}
+
+function withoutDismissedRunError(
+  dismissedBySession: Record<string, string>,
+  sessionKey: string,
+): Record<string, string> {
+  if (!(sessionKey in dismissedBySession)) return dismissedBySession;
+  const next = { ...dismissedBySession };
+  delete next[sessionKey];
+  return next;
+}
+
 /** Extract media file refs from [media attached: <path> (<mime>) | ...] patterns */
 function extractMediaRefs(text: string): Array<{ filePath: string; mimeType: string }> {
   const refs: Array<{ filePath: string; mimeType: string }> = [];
@@ -2569,6 +2589,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
   hasMoreHistory: false,
   error: null,
   runError: null,
+  dismissedRunErrors: {},
 
   sending: false,
   activeRunId: null,
@@ -3142,7 +3163,13 @@ export const useChatStore = create<ChatState>((set, get) => ({
         messages: finalMessages,
         thinkingLevel,
         loading: false,
-        runError: historyErrorIsTransient ? null : latestTerminalAssistantErrorMessage,
+        runError: historyErrorIsTransient
+          ? null
+          : shouldShowRunError(
+            currentSessionKey,
+            latestTerminalAssistantErrorMessage,
+            get().dismissedRunErrors,
+          ),
       });
       cacheSessionHistory(currentSessionKey, finalMessages, thinkingLevel);
 
@@ -3638,6 +3665,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       sending: true,
       error: null,
       runError: null,
+      dismissedRunErrors: withoutDismissedRunError(s.dismissedRunErrors, currentSessionKey),
       streamingText: '',
       streamingMessage: null,
       streamingTools: [],
@@ -4443,7 +4471,16 @@ export const useChatStore = create<ChatState>((set, get) => ({
     await Promise.all([loadHistory(), loadSessions()]);
   },
 
-  clearError: () => set({ error: null, runError: null }),
+  clearError: () => {
+    const { runError, currentSessionKey, dismissedRunErrors } = get();
+    set({
+      error: null,
+      runError: null,
+      ...(runError
+        ? { dismissedRunErrors: { ...dismissedRunErrors, [currentSessionKey]: runError } }
+        : {}),
+    });
+  },
 }));
 
 export function syncCachedSessionRunIdle(sessionKey: string): void {

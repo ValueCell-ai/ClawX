@@ -12,6 +12,7 @@ import {
   rememberPendingOptimisticUserMessage,
   takeBlockedRunEvents,
   upsertImageCacheEntry,
+  withoutDismissedRunError,
 } from './helpers';
 import type { ChatSession, RawMessage } from './types';
 import type { ChatGet, ChatSet, RuntimeActions } from './store-api';
@@ -115,6 +116,8 @@ export function createRuntimeSendActions(set: ChatSet, get: ChatGet): Pick<Runti
         messages: [...s.messages, userMsg],
         sending: true,
         error: null,
+        runError: null,
+        dismissedRunErrors: withoutDismissedRunError(s.dismissedRunErrors, currentSessionKey),
         streamingText: '',
         streamingMessage: null,
         streamingTools: [],

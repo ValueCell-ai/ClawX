@@ -11,6 +11,7 @@ import {
   getMessageStopReason,
   getMessageText,
   shouldDropMessageFromHistory,
+  shouldShowRunError,
   loadMissingPreviews,
   mergePendingOptimisticUserMessages,
   dropRedundantOptimisticUserMessages,
@@ -224,7 +225,13 @@ export function createHistoryActions(
           messages: finalMessages,
           thinkingLevel,
           loading: false,
-          runError: historyErrorIsTransient ? null : latestTerminalAssistantErrorMessage,
+          runError: historyErrorIsTransient
+            ? null
+            : shouldShowRunError(
+              currentSessionKey,
+              latestTerminalAssistantErrorMessage,
+              get().dismissedRunErrors,
+            ),
         });
 
         // Extract first user message text as a session label for display in the toolbar.

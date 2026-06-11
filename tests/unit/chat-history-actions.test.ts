@@ -154,6 +154,15 @@ vi.mock('@/stores/chat/helpers', () => ({
   },
   getMessageErrorMessage: (...args: unknown[]) => getMessageErrorMessage(...args),
   getMessageStopReason: (...args: unknown[]) => getMessageStopReason(...args),
+  shouldShowRunError: (
+    sessionKey: string,
+    errorMessage: string | null | undefined,
+    dismissedBySession: Record<string, string>,
+  ) => {
+    if (!errorMessage) return null;
+    if (dismissedBySession[sessionKey] === errorMessage) return null;
+    return errorMessage;
+  },
   toMs: (...args: unknown[]) => toMs(...args as Parameters<typeof toMs>),
 }));
 
@@ -163,6 +172,7 @@ type ChatLikeState = {
   loading: boolean;
   error: string | null;
   runError: string | null;
+  dismissedRunErrors: Record<string, string>;
   sending: boolean;
   lastUserMessageAt: number | null;
   pendingFinal: boolean;
@@ -179,6 +189,7 @@ function makeHarness(initial?: Partial<ChatLikeState>) {
     loading: false,
     error: null,
     runError: null,
+    dismissedRunErrors: {},
     sending: false,
     lastUserMessageAt: null,
     pendingFinal: false,
@@ -378,6 +389,35 @@ describe('chat history actions', () => {
       'What model are you?',
       'I am MiniMax-M2.7',
     ]);
+  });
+
+  it('keeps dismissed runError hidden when history is reloaded', async () => {
+    const { createHistoryActions } = await import('@/stores/chat/history-actions');
+    const h = makeHarness({
+      currentSessionKey: 'agent:main:main',
+      dismissedRunErrors: { 'agent:main:main': '404 Resource not found' },
+    });
+    const actions = createHistoryActions(h.set as never, h.get as never);
+
+    gatewayRpcMock.mockResolvedValueOnce({
+      success: true,
+      result: {
+        messages: [
+          { role: 'user', content: 'Check semiconductor chatter', timestamp: 1001 },
+          {
+            role: 'assistant',
+            content: [],
+            stopReason: 'error',
+            errorMessage: '404 Resource not found',
+            timestamp: 1002,
+          },
+        ],
+      },
+    });
+
+    await actions.loadHistory(true);
+
+    expect(h.read().runError).toBeNull();
   });
 
   it('does not set runError from an older assistant failure when a later turn succeeded', async () => {

@@ -497,9 +497,11 @@ test.describe('ClawX chat execution graph', () => {
       const runErrorCallout = page.getByTestId('chat-run-error');
       await expect(runErrorCallout).toBeVisible({ timeout: 30_000 });
       await expect(runErrorCallout).toContainText('404 Resource not found');
+      await page.getByTestId('chat-run-error-dismiss').click();
+      await expect(runErrorCallout).toHaveCount(0);
       await expect(page.getByTestId('chat-execution-graph')).toHaveCount(0);
       await expect(page.getByTestId('chat-execution-step-thinking-trailing')).toHaveCount(0);
-      await expect(page.getByText('404 Resource not found')).toHaveCount(1);
+      await expect(page.getByText('404 Resource not found')).toHaveCount(0);
       await page.getByTestId('chat-composer-input').fill('retry');
       await expect(page.getByTestId('chat-composer-send')).toBeEnabled();
     } finally {
