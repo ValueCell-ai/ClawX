@@ -2,6 +2,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   getRuntimeRpcCoverage,
+  getRuntimeOperationCapabilities,
   RUNTIME_RPC_CONTRACT,
   type RuntimeRpcSupport,
 } from '@electron/runtime/rpc-contract';
@@ -73,5 +74,26 @@ describe('runtime RPC contract', () => {
         ).toBe(true);
       }
     }
+  });
+
+  it('exposes operation-level support so cc-connect degraded capabilities are visible', () => {
+    const operations = getRuntimeOperationCapabilities('cc-connect');
+
+    expect(operations['chat.send']).toMatchObject({
+      capability: 'chat',
+      support: 'native',
+    });
+    expect(operations['chat.abort']).toMatchObject({
+      capability: 'chat',
+      support: 'unsupported',
+    });
+    expect(operations['doctor.fix']).toMatchObject({
+      capability: 'doctor',
+      support: 'unsupported',
+    });
+    expect(operations['channels.disconnect']).toMatchObject({
+      capability: 'channels',
+      support: 'unsupported',
+    });
   });
 });

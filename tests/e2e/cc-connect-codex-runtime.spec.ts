@@ -320,6 +320,11 @@ test.describe('cc-connect + Codex runtime E2E', () => {
             providers: true,
             models: true,
           }),
+          operationCapabilities: expect.objectContaining({
+            'chat.send': expect.objectContaining({ support: 'native' }),
+            'chat.abort': expect.objectContaining({ support: 'unsupported' }),
+            'doctor.fix': expect.objectContaining({ support: 'unsupported' }),
+          }),
         },
       });
 
@@ -600,6 +605,105 @@ test.describe('cc-connect + Codex runtime E2E', () => {
       expect(publicProfile).not.toContain('fake-access-token');
       expect(publicProfile).not.toContain('fake-refresh-token');
       expect(publicProfile).not.toContain('fake-id-token');
+    } finally {
+      await closeElectronApp(app);
+    }
+  });
+
+  test('starts cc-connect runtime with existing managed Codex OAuth auth and no provider secret', async ({
+    launchElectronApp,
+    userDataDir,
+  }) => {
+    const mockBundles = await prepareMockBundles(userDataDir);
+    const createdAt = '2026-06-07T00:00:00.000Z';
+    const managedCodexHome = join(userDataDir, 'runtimes', 'cc-connect', 'codex-home');
+
+    await mkdir(managedCodexHome, { recursive: true });
+    await writeFile(join(managedCodexHome, 'auth.json'), JSON.stringify({
+      auth_mode: 'chatgpt',
+      OPENAI_API_KEY: null,
+      tokens: {
+        id_token: 'managed-e2e-id-token',
+        access_token: 'managed-e2e-access-token',
+        refresh_token: 'managed-e2e-refresh-token',
+        account_id: 'acct_managed_e2e',
+      },
+      last_refresh: createdAt,
+    }, null, 2), 'utf8');
+    await writeFile(join(userDataDir, 'settings.json'), JSON.stringify({
+      language: 'en',
+      devModeUnlocked: true,
+      runtimeKind: 'cc-connect',
+      gatewayAutoStart: false,
+    }, null, 2), 'utf8');
+    await writeFile(join(userDataDir, 'clawx-providers.json'), JSON.stringify({
+      schemaVersion: 0,
+      providerAccounts: {
+        'openai-oauth': {
+          id: 'openai-oauth',
+          vendorId: 'openai',
+          label: 'OpenAI Codex OAuth',
+          authMode: 'oauth_browser',
+          model: 'gpt-5.5',
+          enabled: true,
+          isDefault: true,
+          metadata: { email: 'user@example.com', resourceUrl: 'openai-codex' },
+          createdAt,
+          updatedAt: createdAt,
+        },
+      },
+      providerSecrets: {},
+      apiKeys: {},
+      defaultProviderAccountId: 'openai-oauth',
+    }, null, 2), 'utf8');
+    const app = await launchElectronApp({
+      skipSetup: true,
+      env: {
+        CLAWX_CODEX_WORKDIR: process.cwd(),
+        CLAWX_CC_CONNECT_PATH: mockBundles.ccConnectPath,
+        CLAWX_CODEX_PATH: mockBundles.codexPath,
+      },
+    });
+
+    try {
+      const page = await getStableWindow(app);
+      await expect(page.getByTestId('main-layout')).toBeVisible();
+
+      const startResult = await page.evaluate(async () => {
+        return await window.clawx.hostInvoke({
+          id: 'runtime-start-managed-oauth',
+          module: 'gateway',
+          action: 'start',
+        });
+      });
+      expect(startResult).toMatchObject({
+        ok: true,
+        data: { success: true },
+      });
+
+      await expect(page.getByTestId('chat-composer-input')).toBeEnabled({ timeout: 30_000 });
+      await page.getByTestId('chat-composer-input').fill('hello managed codex oauth runtime');
+      await page.getByTestId('chat-composer-send').click();
+      await expect(page.getByText('cc-connect bridge E2E response')).toBeVisible({ timeout: 30_000 });
+
+      const authJson = JSON.parse(await readFile(join(managedCodexHome, 'auth.json'), 'utf8'));
+      expect(authJson).toMatchObject({
+        auth_mode: 'chatgpt',
+        OPENAI_API_KEY: null,
+        last_refresh: createdAt,
+        tokens: {
+          id_token: 'managed-e2e-id-token',
+          access_token: 'managed-e2e-access-token',
+          refresh_token: 'managed-e2e-refresh-token',
+          account_id: 'acct_managed_e2e',
+        },
+      });
+
+      const publicProfile = await readFile(join(userDataDir, 'runtimes', 'cc-connect', 'provider-profile.json'), 'utf8');
+      expect(publicProfile).toContain('CODEX_HOME');
+      expect(publicProfile).not.toContain('managed-e2e-access-token');
+      expect(publicProfile).not.toContain('managed-e2e-refresh-token');
+      expect(publicProfile).not.toContain('managed-e2e-id-token');
     } finally {
       await closeElectronApp(app);
     }

@@ -38,6 +38,11 @@ type OpenAIOAuthTokenSet = {
   accountId: string;
 };
 
+type OpenAIOAuthTokenResolution = {
+  tokens: OpenAIOAuthTokenSet;
+  source: 'managed' | 'secret' | 'user-codex';
+};
+
 function resolveModel(account: ProviderAccount): string | undefined {
   const model = account.model?.trim();
   if (model) return model;
@@ -216,21 +221,7 @@ async function writeManagedOpenAIOAuthAuthFile(
   return codexHomeDir;
 }
 
-async function resolveOpenAIOAuthTokens(
-  account: ProviderAccount,
-  secret: Extract<ProviderSecret, { type: 'oauth' }>,
-): Promise<OpenAIOAuthTokenSet | undefined> {
-  const stored = secret.idToken?.trim();
-  if (stored) {
-    return {
-      idToken: stored,
-      accessToken: secret.accessToken,
-      refreshToken: secret.refreshToken,
-      accountId: secret.subject?.trim() || account.id,
-    };
-  }
-
-  const authPath = join(app.getPath('home'), '.codex', 'auth.json');
+async function readCompleteCodexAuthTokens(authPath: string): Promise<OpenAIOAuthTokenSet | undefined> {
   try {
     const auth = JSON.parse(await readFile(authPath, 'utf8')) as {
       tokens?: {
@@ -254,24 +245,63 @@ async function resolveOpenAIOAuthTokens(
     ) {
       return undefined;
     }
-
-    const expectedAccountId = secret.subject?.trim();
-    const userAccountId = typeof tokens.account_id === 'string' ? tokens.account_id.trim() : '';
-    const accessMatches = typeof tokens.access_token === 'string' && tokens.access_token === secret.accessToken;
-    const refreshMatches = typeof tokens.refresh_token === 'string' && tokens.refresh_token === secret.refreshToken;
-    const accountMatches = Boolean(expectedAccountId && userAccountId && expectedAccountId === userAccountId);
-    const providerIdMatches = Boolean(userAccountId && account.id === userAccountId);
-
-    if (accessMatches || refreshMatches || accountMatches || providerIdMatches) {
-      return {
-        idToken: tokens.id_token.trim(),
-        accessToken: tokens.access_token.trim(),
-        refreshToken: tokens.refresh_token.trim(),
-        accountId: tokens.account_id.trim(),
-      };
-    }
+    return {
+      idToken: tokens.id_token.trim(),
+      accessToken: tokens.access_token.trim(),
+      refreshToken: tokens.refresh_token.trim(),
+      accountId: tokens.account_id.trim(),
+    };
   } catch {
     return undefined;
+  }
+}
+
+function codexTokensMatchAccount(
+  tokens: OpenAIOAuthTokenSet,
+  account: ProviderAccount,
+  secret?: Extract<ProviderSecret, { type: 'oauth' }>,
+): boolean {
+  if (!secret) return true;
+
+  const expectedAccountId = secret.subject?.trim();
+  const userAccountId = tokens.accountId.trim();
+  const accessMatches = tokens.accessToken === secret.accessToken;
+  const refreshMatches = tokens.refreshToken === secret.refreshToken;
+  const accountMatches = Boolean(expectedAccountId && userAccountId && expectedAccountId === userAccountId);
+  const providerIdMatches = Boolean(userAccountId && account.id === userAccountId);
+
+  return accessMatches || refreshMatches || accountMatches || providerIdMatches;
+}
+
+async function resolveOpenAIOAuthTokens(
+  account: ProviderAccount,
+  secret?: Extract<ProviderSecret, { type: 'oauth' }>,
+): Promise<OpenAIOAuthTokenResolution | undefined> {
+  const managedAuthPath = join(getCcConnectCodexHomeDir(), 'auth.json');
+  const managedTokens = await readCompleteCodexAuthTokens(managedAuthPath);
+  if (managedTokens && codexTokensMatchAccount(managedTokens, account, secret)) {
+    return { tokens: managedTokens, source: 'managed' };
+  }
+
+  if (!secret) return undefined;
+
+  const stored = secret.idToken?.trim();
+  if (stored) {
+    return {
+      tokens: {
+        idToken: stored,
+        accessToken: secret.accessToken,
+        refreshToken: secret.refreshToken,
+        accountId: secret.subject?.trim() || account.id,
+      },
+      source: 'secret',
+    };
+  }
+
+  const authPath = join(app.getPath('home'), '.codex', 'auth.json');
+  const userCodexTokens = await readCompleteCodexAuthTokens(authPath);
+  if (userCodexTokens && codexTokensMatchAccount(userCodexTokens, account, secret)) {
+    return { tokens: userCodexTokens, source: 'user-codex' };
   }
 
   return undefined;
@@ -293,30 +323,28 @@ async function buildProfileForAccount(account: ProviderAccount): Promise<CodexPr
 
   if (account.vendorId === 'openai') {
     if (account.authMode === 'oauth_browser') {
-      if (secret?.type !== 'oauth' || !secret.accessToken || !secret.refreshToken) {
+      const oauthSecret = secret?.type === 'oauth' && secret.accessToken && secret.refreshToken
+        ? secret
+        : undefined;
+      const tokenResolution = await resolveOpenAIOAuthTokens(account, oauthSecret);
+      if (!tokenResolution) {
         return {
           ...base,
           supported: false,
-          unsupportedReason: 'OpenAI OAuth credentials are missing. Sign in to OpenAI again before using cc-connect Codex runtime.',
+          unsupportedReason: 'Codex OAuth credentials are missing. Sign in to Codex using the ClawX-managed CODEX_HOME or sign in to OpenAI again before using cc-connect Codex runtime.',
           codexArgs: [],
         };
       }
-      const tokens = await resolveOpenAIOAuthTokens(account, secret);
-      if (!tokens) {
-        return {
-          ...base,
-          supported: false,
-          unsupportedReason: 'OpenAI OAuth credentials are missing an id_token required by Codex. Sign in to OpenAI again before using cc-connect Codex runtime.',
-          codexArgs: [],
-        };
-      }
-      const codexHomeDir = await writeManagedOpenAIOAuthAuthFile(tokens);
+      const codexHomeDir = tokenResolution.source === 'managed'
+        ? getCcConnectCodexHomeDir()
+        : await writeManagedOpenAIOAuthAuthFile(tokenResolution.tokens);
       return {
         ...base,
         supported: true,
         codexArgs: model ? ['--model', model] : [],
         env: { CODEX_HOME: codexHomeDir },
         codexHomeDir,
+        secretAvailable: true,
       };
     }
 

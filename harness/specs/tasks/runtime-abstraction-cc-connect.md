@@ -55,6 +55,8 @@ expectedUserBehavior:
   - cc-connect chat emits OpenClaw-compatible runtime events, including streamed assistant deltas.
   - cc-connect mirrors each configured OpenClaw agent to a project that uses that agent's workspace.
   - cc-connect channel accounts run in the project for their bound agent.
+  - cc-connect validation covers mock bridge chat, real bundled runtime startup, and opt-in real Codex OAuth chat.
+  - cc-connect replacement readiness is tracked separately from initial runtime availability, including capability gaps, OAuth lifecycle, doctor parity, abort parity, and real-runtime validation gaps.
 requiredProfiles:
   - fast
   - comms
@@ -66,6 +68,9 @@ requiredTests:
   - tests/unit/codex-cli-bridge.test.ts
   - tests/unit/cc-connect-bundle.test.ts
   - tests/unit/host-api-facade.test.ts
+  - tests/e2e/cc-connect-codex-runtime.spec.ts
+  - tests/e2e/cc-connect-real-bundle-smoke.spec.ts
+  - tests/e2e/cc-connect-real-oauth-chat.spec.ts
 acceptance:
   - Renderer does not add direct IPC calls.
   - Renderer does not fetch Gateway or cc-connect HTTP endpoints directly.
@@ -74,6 +79,11 @@ acceptance:
   - App-visible session keys remain `agent:*` while cc-connect bridge storage can use internal `clawx:*` keys.
   - Non-main agents keep separate cc-connect project names and Codex `work_dir` values.
   - cc-connect `reply_stream` packets update the same chat runtime graph path used by OpenClaw assistant deltas.
+  - `pnpm run verify:runtime-bundles` passes after cc-connect and Codex bundles are prepared.
+  - `pnpm run test:e2e:cc-connect` covers mock bridge chat and real bundled runtime startup.
+  - Real Codex OAuth chat is gated behind `CLAWX_REAL_OAUTH_E2E=1` and uses isolated userData/CODEX_HOME.
+  - `docs/runtime-abstraction-cc-connect.md` records the difference between first-version cc-connect support and replacement-ready OpenClaw parity.
+  - Capability documentation names unsupported cc-connect sub-operations such as chat abort, doctor fix, channel lifecycle mutations, and cron toggle rather than implying full parity from a top-level boolean.
 docs:
   required: true
 ---

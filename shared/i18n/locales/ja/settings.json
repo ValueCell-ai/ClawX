@@ -164,6 +164,7 @@
     "configDir": "設定ディレクトリ",
     "supported": "対応",
     "unsupported": "利用不可",
+    "operationGapsTitle": "利用できない runtime 操作",
     "openclawOnly": "この OpenClaw 専用ツールは選択中の runtime では利用できません。",
     "kinds": {
       "openclaw": "OpenClaw",

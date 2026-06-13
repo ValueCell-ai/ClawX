@@ -76,7 +76,11 @@ export function Settings() {
     setTelemetryEnabled,
   } = useSettingsStore();
 
-  const { status: gatewayStatus, restart: restartGateway } = useGatewayStore();
+  const {
+    status: gatewayStatus,
+    restart: restartGateway,
+    setStatus: setGatewayStatus,
+  } = useGatewayStore();
   const currentVersion = useUpdateStore((state) => state.currentVersion);
   const [controlUiInfo, setControlUiInfo] = useState<ControlUiInfo | null>(null);
   const [openclawCliCommand, setOpenclawCliCommand] = useState('');
@@ -99,6 +103,7 @@ export function Settings() {
   const [doctorResult, setDoctorResult] = useState<OpenClawDoctorResult | null>(null);
   const activeRuntimeKind = gatewayStatus.runtimeKind ?? runtimeKind ?? 'openclaw';
   const runtimeCapabilities = gatewayStatus.capabilities;
+  const runtimeOperationCapabilities = gatewayStatus.operationCapabilities;
   const supportsDoctor = runtimeCapabilities?.doctor ?? true;
   const supportsDoctorFix = activeRuntimeKind === 'openclaw';
   const runtimeCapabilityEntries = [
@@ -112,6 +117,13 @@ export function Settings() {
     ['skills', t('runtime.capabilities.skills')],
     ['doctor', t('runtime.capabilities.doctor')],
   ] as const;
+  const unsupportedRuntimeOperations = useMemo(() => {
+    if (!runtimeOperationCapabilities) return [];
+    return Object.entries(runtimeOperationCapabilities)
+      .filter(([, operation]) => operation.support === 'unsupported')
+      .sort(([left], [right]) => left.localeCompare(right))
+      .slice(0, 8);
+  }, [runtimeOperationCapabilities]);
 
   const handleShowLogs = async () => {
     try {
@@ -251,6 +263,19 @@ export function Settings() {
     });
     return () => { unsubscribe?.(); };
   }, []);
+
+  useEffect(() => {
+    if (!devModeUnlocked) return;
+    let cancelled = false;
+    void hostApi.gateway.status()
+      .then((status) => {
+        if (!cancelled) setGatewayStatus(status);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [devModeUnlocked, runtimeKind, setGatewayStatus]);
 
   useEffect(() => {
     if (!devModeUnlocked) return;
@@ -441,6 +466,11 @@ export function Settings() {
     if (nextRuntimeKind === runtimeKind) return;
     setRuntimeKind(nextRuntimeKind);
     setDoctorResult(null);
+    window.setTimeout(() => {
+      void hostApi.gateway.status()
+        .then(setGatewayStatus)
+        .catch(() => {});
+    }, 50);
     toast.success(t('runtime.changed'));
   };
 
@@ -675,6 +705,27 @@ export function Settings() {
                       );
                     })}
                   </div>
+                  {unsupportedRuntimeOperations.length > 0 && (
+                    <div
+                      className="rounded-xl border border-black/5 dark:border-white/5 bg-black/5 dark:bg-white/5 p-3"
+                      data-testid="settings-runtime-operation-gaps"
+                    >
+                      <p className="text-xs font-medium text-foreground/80 mb-2">
+                        {t('runtime.operationGapsTitle')}
+                      </p>
+                      <div className="flex flex-wrap gap-2">
+                        {unsupportedRuntimeOperations.map(([method]) => (
+                          <Badge
+                            key={method}
+                            variant="secondary"
+                            className="rounded-full px-3 py-1 bg-black/5 dark:bg-white/10 text-muted-foreground border border-black/5 dark:border-white/5 font-mono"
+                          >
+                            {method}: {t('runtime.unsupported')}
+                          </Badge>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
 

@@ -164,6 +164,7 @@
     "configDir": "Каталог конфигурации",
     "supported": "доступно",
     "unsupported": "недоступно",
+    "operationGapsTitle": "Недоступные операции runtime",
     "openclawOnly": "Этот инструмент OpenClaw недоступен для выбранного runtime.",
     "kinds": {
       "openclaw": "OpenClaw",

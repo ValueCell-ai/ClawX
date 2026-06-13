@@ -649,7 +649,7 @@ describe('host services', () => {
     }).deleteAccount({ accountId: deletedAccount.id })).resolves.toEqual({ success: true });
 
     expect(providerServiceMock.setDefaultAccount).toHaveBeenCalledWith(newestEnabledAccount.id);
-    expect(syncDefaultProviderToRuntimeMock).toHaveBeenCalledWith(newestEnabledAccount.id);
+    expect(syncDefaultProviderToRuntimeMock).toHaveBeenCalledWith(newestEnabledAccount.id, gatewayManager);
     expect(syncDeletedProviderToRuntimeMock).toHaveBeenCalledWith(
       expect.objectContaining({ id: deletedAccount.id, type: deletedAccount.vendorId }),
       deletedAccount.id,

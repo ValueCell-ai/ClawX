@@ -150,6 +150,66 @@ describe('cc-connect provider profile sync', () => {
     expect(profileFile).not.toContain('oauth-id-token');
   });
 
+  it('uses an existing managed Codex OAuth home without requiring a ClawX OAuth secret', async () => {
+    const codexHome = join(tempDir, 'runtimes', 'cc-connect', 'codex-home');
+    await mkdir(codexHome, { recursive: true });
+    await writeFile(join(codexHome, 'auth.json'), JSON.stringify({
+      auth_mode: 'chatgpt',
+      OPENAI_API_KEY: null,
+      tokens: {
+        id_token: 'managed-id-token',
+        access_token: 'managed-access-token',
+        refresh_token: 'managed-refresh-token',
+        account_id: 'acct_managed',
+      },
+      last_refresh: '2026-06-07T00:00:00.000Z',
+    }, null, 2), 'utf8');
+    getDefaultProviderAccountIdMock.mockResolvedValue('openai-oauth');
+    getProviderAccountMock.mockResolvedValue({
+      id: 'openai-oauth',
+      vendorId: 'openai',
+      label: 'OpenAI Codex OAuth',
+      authMode: 'oauth_browser',
+      model: 'gpt-5.5',
+      enabled: true,
+      isDefault: true,
+      metadata: { resourceUrl: 'openai-codex' },
+      createdAt: '2026-06-07T00:00:00.000Z',
+      updatedAt: '2026-06-07T00:00:00.000Z',
+    });
+    getProviderSecretMock.mockResolvedValue(null);
+    const { syncCcConnectProviderProfile } = await import('@electron/runtime/cc-connect-provider-profile');
+
+    const profile = await syncCcConnectProviderProfile({ reason: 'runtime-start' });
+
+    expect(profile).toMatchObject({
+      providerId: 'openai-oauth',
+      vendorId: 'openai',
+      authMode: 'oauth_browser',
+      supported: true,
+      secretAvailable: true,
+      env: { CODEX_HOME: codexHome },
+      codexHomeDir: codexHome,
+    });
+    const authFile = JSON.parse(await readFile(join(codexHome, 'auth.json'), 'utf8')) as {
+      last_refresh?: string;
+      tokens?: Record<string, string>;
+    };
+    expect(authFile).toMatchObject({
+      last_refresh: '2026-06-07T00:00:00.000Z',
+      tokens: {
+        id_token: 'managed-id-token',
+        access_token: 'managed-access-token',
+        refresh_token: 'managed-refresh-token',
+      },
+    });
+    const profileFile = await readFile(join(tempDir, 'runtimes', 'cc-connect', 'provider-profile.json'), 'utf8');
+    expect(profileFile).toContain('CODEX_HOME');
+    expect(profileFile).not.toContain('managed-id-token');
+    expect(profileFile).not.toContain('managed-access-token');
+    expect(profileFile).not.toContain('managed-refresh-token');
+  });
+
   it('imports a matching Codex id token for existing OpenAI OAuth secrets that predate idToken storage', async () => {
     await mkdir(join(tempDir, '.codex'), { recursive: true });
     await writeFile(join(tempDir, '.codex', 'auth.json'), JSON.stringify({

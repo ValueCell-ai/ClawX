@@ -4,6 +4,7 @@ import type {
   RuntimeCapabilities,
   RuntimeEventName,
   RuntimeKind,
+  RuntimeOperationCapabilities,
   RuntimeProvider,
   RuntimeStatus,
 } from './types';
@@ -66,6 +67,10 @@ export class RuntimeManager extends EventEmitter {
     return this.getActiveProvider().listCapabilities();
   }
 
+  listOperationCapabilities(): RuntimeOperationCapabilities {
+    return this.getActiveProvider().listOperationCapabilities();
+  }
+
   getStatus(): RuntimeStatus {
     return this.getActiveProvider().getStatus();
   }
@@ -110,6 +115,7 @@ export class RuntimeManager extends EventEmitter {
             ...(payload as Record<string, unknown>),
             runtimeKind: provider.kind,
             capabilities: provider.listCapabilities(),
+            operationCapabilities: provider.listOperationCapabilities(),
           });
           return;
         }

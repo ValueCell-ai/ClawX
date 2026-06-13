@@ -167,23 +167,29 @@ async function launchClawXElectron(
 
 export const test = base.extend<ElectronFixtures>({
   homeDir: async ({ browserName: _browserName }, provideHomeDir) => {
-    const homeDir = await mkdtemp(join(tmpdir(), 'clawx-e2e-home-'));
+    const overrideHomeDir = process.env.CLAWX_E2E_HOME_DIR?.trim();
+    const homeDir = overrideHomeDir || await mkdtemp(join(tmpdir(), 'clawx-e2e-home-'));
     await mkdir(join(homeDir, '.config'), { recursive: true });
     await mkdir(join(homeDir, 'AppData', 'Local'), { recursive: true });
     await mkdir(join(homeDir, 'AppData', 'Roaming'), { recursive: true });
     try {
       await provideHomeDir(homeDir);
     } finally {
-      await rm(homeDir, { recursive: true, force: true });
+      if (!overrideHomeDir) {
+        await rm(homeDir, { recursive: true, force: true });
+      }
     }
   },
 
   userDataDir: async ({ browserName: _browserName }, provideUserDataDir) => {
-    const userDataDir = await mkdtemp(join(tmpdir(), 'clawx-e2e-user-data-'));
+    const overrideUserDataDir = process.env.CLAWX_E2E_USER_DATA_DIR?.trim();
+    const userDataDir = overrideUserDataDir || await mkdtemp(join(tmpdir(), 'clawx-e2e-user-data-'));
     try {
       await provideUserDataDir(userDataDir);
     } finally {
-      await rm(userDataDir, { recursive: true, force: true });
+      if (!overrideUserDataDir) {
+        await rm(userDataDir, { recursive: true, force: true });
+      }
     }
   },
 

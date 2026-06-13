@@ -31,6 +31,16 @@ export type RuntimeCapabilityName =
 
 export type RuntimeCapabilities = Record<RuntimeCapabilityName, boolean>;
 
+export type RuntimeOperationSupport = 'native' | 'proxy' | 'unsupported';
+
+export type RuntimeOperationCapability = {
+  capability: RuntimeCapabilityName;
+  support: RuntimeOperationSupport;
+  notes: string;
+};
+
+export type RuntimeOperationCapabilities = Record<string, RuntimeOperationCapability>;
+
 /**
  * Gateway connection status
  */
@@ -47,6 +57,7 @@ export interface GatewayStatus {
   gatewayReady?: boolean;
   runtimeKind?: RuntimeKind;
   capabilities?: RuntimeCapabilities;
+  operationCapabilities?: RuntimeOperationCapabilities;
   configDir?: string;
 }
 

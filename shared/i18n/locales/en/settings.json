@@ -164,6 +164,7 @@
     "configDir": "Config directory",
     "supported": "supported",
     "unsupported": "unavailable",
+    "operationGapsTitle": "Unavailable runtime operations",
     "openclawOnly": "This OpenClaw-specific tool is unavailable for the selected runtime.",
     "kinds": {
       "openclaw": "OpenClaw",

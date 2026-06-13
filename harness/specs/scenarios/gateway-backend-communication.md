@@ -34,6 +34,7 @@ requiredRules:
   - active-config-guards
   - provider-default-invariant
   - provider-model-metadata-preservation
+  - cc-connect-runtime-validation
   - comms-regression
   - docs-sync
 forbiddenPatterns:

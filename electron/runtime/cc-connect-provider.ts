@@ -16,6 +16,7 @@ import {
   CC_CONNECT_RUNTIME_CAPABILITIES,
   withRuntimeStatus,
 } from './types';
+import { getRuntimeOperationCapabilities } from './rpc-contract';
 import {
   assertCcConnectBinaryPath,
   getCcConnectCodexHomeDir,
@@ -232,7 +233,7 @@ export class CcConnectRuntimeProvider extends EventEmitter implements RuntimePro
   private status = withRuntimeStatus({
     state: 'stopped',
     port: CC_CONNECT_MANAGEMENT_PORT,
-  }, this.kind, CC_CONNECT_RUNTIME_CAPABILITIES, getCcConnectManagedDir());
+  }, this.kind, CC_CONNECT_RUNTIME_CAPABILITIES, getCcConnectManagedDir(), this.listOperationCapabilities());
   private readonly binaryPath?: string;
   private readonly codexPath?: string;
   private readonly workDir?: string;
@@ -269,6 +270,10 @@ export class CcConnectRuntimeProvider extends EventEmitter implements RuntimePro
 
   listCapabilities() {
     return CC_CONNECT_RUNTIME_CAPABILITIES;
+  }
+
+  listOperationCapabilities() {
+    return getRuntimeOperationCapabilities(this.kind);
   }
 
   getStatus() {
@@ -836,6 +841,7 @@ export class CcConnectRuntimeProvider extends EventEmitter implements RuntimePro
       ...patch,
       runtimeKind: this.kind,
       capabilities: this.listCapabilities(),
+      operationCapabilities: this.listOperationCapabilities(),
       configDir: getCcConnectManagedDir(),
     };
     this.emit('status', this.status);

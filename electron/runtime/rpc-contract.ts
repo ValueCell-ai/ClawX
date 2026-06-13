@@ -1,12 +1,15 @@
-import type { RuntimeCapabilities, RuntimeKind } from './types';
-
-export type RuntimeRpcSupport = 'native' | 'proxy' | 'unsupported';
+import type {
+  RuntimeCapabilities,
+  RuntimeKind,
+  RuntimeOperationCapabilities,
+  RuntimeOperationSupport,
+} from './types';
 
 export type RuntimeRpcContractEntry = {
   runtime: RuntimeKind;
   method: string;
   capability: keyof RuntimeCapabilities;
-  support: RuntimeRpcSupport;
+  support: RuntimeOperationSupport;
   notes: string;
 };
 
@@ -73,7 +76,7 @@ const CC_CONNECT_UNSUPPORTED_METHODS: Array<[string, keyof RuntimeCapabilities, 
 
 function entries(
   runtime: RuntimeKind,
-  support: RuntimeRpcSupport,
+  support: RuntimeOperationSupport,
   items: Array<[string, keyof RuntimeCapabilities, string]>,
 ): RuntimeRpcContractEntry[] {
   return items.map(([method, capability, notes]) => ({
@@ -93,4 +96,15 @@ export const RUNTIME_RPC_CONTRACT: RuntimeRpcContractEntry[] = [
 
 export function getRuntimeRpcCoverage(runtime: RuntimeKind): RuntimeRpcContractEntry[] {
   return RUNTIME_RPC_CONTRACT.filter((entry) => entry.runtime === runtime);
+}
+
+export function getRuntimeOperationCapabilities(runtime: RuntimeKind): RuntimeOperationCapabilities {
+  return Object.fromEntries(getRuntimeRpcCoverage(runtime).map((entry) => [
+    entry.method,
+    {
+      capability: entry.capability,
+      support: entry.support,
+      notes: entry.notes,
+    },
+  ]));
 }

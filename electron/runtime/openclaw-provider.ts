@@ -10,6 +10,7 @@ import {
   OPENCLAW_RUNTIME_CAPABILITIES,
   withRuntimeStatus,
 } from './types';
+import { getRuntimeOperationCapabilities } from './rpc-contract';
 import { createChatSendWithMediaHandler } from '../services/chat-api';
 import {
   createOpenClawCronJob,
@@ -56,8 +57,18 @@ export class OpenClawRuntimeProvider extends EventEmitter implements RuntimeProv
     return OPENCLAW_RUNTIME_CAPABILITIES;
   }
 
+  listOperationCapabilities() {
+    return getRuntimeOperationCapabilities(this.kind);
+  }
+
   getStatus() {
-    return withRuntimeStatus(this.gatewayManager.getStatus(), this.kind, this.listCapabilities());
+    return withRuntimeStatus(
+      this.gatewayManager.getStatus(),
+      this.kind,
+      this.listCapabilities(),
+      undefined,
+      this.listOperationCapabilities(),
+    );
   }
 
   start() {

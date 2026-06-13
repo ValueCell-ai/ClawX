@@ -6,9 +6,15 @@ import type {
   GatewayStatus,
   RuntimeCapabilities,
   RuntimeKind,
+  RuntimeOperationCapabilities,
 } from '@shared/types/gateway';
 
-export type { RuntimeCapabilities, RuntimeKind };
+export type {
+  RuntimeCapabilities,
+  RuntimeKind,
+  RuntimeOperationCapabilities,
+  RuntimeOperationSupport,
+} from '@shared/types/gateway';
 
 export type RuntimeStatus = GatewayStatus & {
   runtimeKind: RuntimeKind;
@@ -104,6 +110,7 @@ export type RuntimeProvider = {
   listLogs: (payload?: { tailLines?: number }) => Promise<RuntimeLogResult>;
   runDoctor: (mode: OpenClawDoctorMode) => Promise<OpenClawDoctorResult>;
   listCapabilities: () => RuntimeCapabilities;
+  listOperationCapabilities: () => RuntimeOperationCapabilities;
   refreshConfig?: (payload: RuntimeConfigRefreshPayload) => Promise<void>;
   syncProviderProfile?: (payload: RuntimeProviderSyncPayload) => Promise<unknown>;
   getControlUi?: (payload?: RuntimeControlUiPayload) => Promise<RuntimeControlUiResult>;
@@ -142,11 +149,13 @@ export function withRuntimeStatus(
   runtimeKind: RuntimeKind,
   capabilities: RuntimeCapabilities,
   configDir?: string,
+  operationCapabilities?: RuntimeOperationCapabilities,
 ): RuntimeStatus {
   return {
     ...status,
     runtimeKind,
     capabilities,
+    ...(operationCapabilities ? { operationCapabilities } : {}),
     ...(configDir ? { configDir } : {}),
   };
 }

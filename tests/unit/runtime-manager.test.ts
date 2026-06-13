@@ -26,6 +26,7 @@ function createProvider(kind: RuntimeProvider['kind']) {
       port: kind === 'openclaw' ? 18789 : 19876,
       runtimeKind: kind,
       capabilities: provider.listCapabilities(),
+      operationCapabilities: provider.listOperationCapabilities(),
     })),
     checkHealth: vi.fn(async () => ({ ok: true })),
     rpc: vi.fn(async () => ({ ok: true })),
@@ -56,6 +57,10 @@ function createProvider(kind: RuntimeProvider['kind']) {
       skills: kind === 'openclaw',
       doctor: true,
       controlUi: true,
+    })),
+    listOperationCapabilities: vi.fn(() => ({
+      'chat.send': { capability: 'chat', support: kind === 'openclaw' ? 'proxy' : 'native', notes: `${kind} chat` },
+      'chat.abort': { capability: 'chat', support: kind === 'openclaw' ? 'proxy' : 'unsupported', notes: `${kind} abort` },
     })),
   };
   return { provider, emitter };
@@ -92,6 +97,7 @@ describe('RuntimeManager', () => {
     expect(settings.get('runtimeKind')).toBe('cc-connect');
     expect(manager.getActiveProvider()).toBe(ccConnect);
     expect(manager.listCapabilities().controlUi).toBe(true);
+    expect(manager.listOperationCapabilities()['chat.abort']?.support).toBe('unsupported');
   });
 
   it('falls back to OpenClaw when cc-connect is stored without developer mode', async () => {
@@ -130,7 +136,14 @@ describe('RuntimeManager', () => {
     openclawFixture.emitter.emit('status', { state: 'running', port: 18789 });
 
     expect(statuses).toEqual([
-      expect.objectContaining({ state: 'running', port: 18789, runtimeKind: 'openclaw' }),
+      expect.objectContaining({
+        state: 'running',
+        port: 18789,
+        runtimeKind: 'openclaw',
+        operationCapabilities: expect.objectContaining({
+          'chat.abort': expect.objectContaining({ support: 'proxy' }),
+        }),
+      }),
     ]);
   });
 });
