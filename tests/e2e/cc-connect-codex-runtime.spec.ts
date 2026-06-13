@@ -33,6 +33,23 @@ const outputIndex = args.indexOf('--output-last-message');
 if (outputIndex >= 0 && args[outputIndex + 1]) {
   fs.writeFileSync(args[outputIndex + 1], 'Codex E2E response from mock binary');
 }
+process.stdout.write(JSON.stringify({
+  type: 'response_item',
+  payload: {
+    type: 'function_call',
+    call_id: 'call_exec_e2e',
+    name: 'exec_command',
+    arguments: JSON.stringify({ cmd: 'pwd && ls -1' }),
+  },
+}) + '\\n');
+process.stdout.write(JSON.stringify({
+  type: 'response_item',
+  payload: {
+    type: 'function_call_output',
+    call_id: 'call_exec_e2e',
+    output: 'package.json\\nsrc\\n',
+  },
+}) + '\\n');
 process.stdout.write(JSON.stringify({ item: { role: 'assistant', content: [{ type: 'text', text: 'Codex E2E response from stdout' }] } }) + '\\n');
 process.exit(0);
 `);
@@ -350,12 +367,32 @@ test.describe('cc-connect + Codex runtime E2E', () => {
           success: true,
           messages: expect.arrayContaining([
             expect.objectContaining({ role: 'user', content: 'hello codex runtime' }),
-            expect.objectContaining({ role: 'assistant', content: 'cc-connect bridge E2E response' }),
+            expect.objectContaining({
+              role: 'assistant',
+              content: expect.arrayContaining([
+                expect.objectContaining({
+                  type: 'toolCall',
+                  id: 'call_exec_e2e',
+                  name: 'exec_command',
+                }),
+              ]),
+            }),
+            expect.objectContaining({
+              role: 'toolresult',
+              toolCallId: 'call_exec_e2e',
+              toolName: 'exec_command',
+            }),
+            expect.objectContaining({ role: 'assistant', content: 'Codex E2E response from mock binary' }),
           ]),
         },
       });
 
-      await expect(page.getByText('cc-connect bridge E2E response')).toBeVisible({ timeout: 30_000 });
+      await expect(page.getByText('Codex E2E response from mock binary')).toBeVisible({ timeout: 30_000 });
+      await expect(page.getByTestId('chat-execution-graph')).toBeVisible({ timeout: 30_000 });
+      if ((await page.getByTestId('chat-execution-graph').getAttribute('data-collapsed')) === 'true') {
+        await page.getByTestId('chat-execution-graph').click();
+      }
+      await expect(page.getByTestId('chat-execution-graph')).toContainText('exec_command');
 
       const history = await readHistory();
       expect(history).toMatchObject({
@@ -364,7 +401,7 @@ test.describe('cc-connect + Codex runtime E2E', () => {
           success: true,
           messages: expect.arrayContaining([
             expect.objectContaining({ role: 'user', content: 'hello codex runtime' }),
-            expect.objectContaining({ role: 'assistant', content: 'cc-connect bridge E2E response' }),
+            expect.objectContaining({ role: 'assistant', content: 'Codex E2E response from mock binary' }),
           ]),
         },
       });
@@ -503,10 +540,24 @@ test.describe('cc-connect + Codex runtime E2E', () => {
           },
         });
       });
-      await expect.poll(async () => {
-        const content = await readFile(bridgeMessagesPath, 'utf8').catch(() => '');
-        return content;
-      }, { timeout: 30_000 }).toContain('"project":"clawx-analysis"');
+      const analysisHistory = await page.evaluate(async () => {
+        return await window.clawx.hostInvoke({
+          id: 'runtime-agent-history',
+          module: 'sessions',
+          action: 'history',
+          payload: { sessionKey: 'agent:analysis:member-2', limit: 20 },
+        });
+      });
+      expect(analysisHistory).toMatchObject({
+        ok: true,
+        data: {
+          success: true,
+          messages: expect.arrayContaining([
+            expect.objectContaining({ role: 'user', content: 'hello isolated agent workspace' }),
+            expect.objectContaining({ role: 'assistant', content: 'Codex E2E response from mock binary' }),
+          ]),
+        },
+      });
     } finally {
       await closeElectronApp(app);
     }
@@ -584,7 +635,7 @@ test.describe('cc-connect + Codex runtime E2E', () => {
       await expect(page.getByTestId('chat-composer-input')).toBeEnabled({ timeout: 30_000 });
       await page.getByTestId('chat-composer-input').fill('hello openai oauth codex runtime');
       await page.getByTestId('chat-composer-send').click();
-      await expect(page.getByText('cc-connect bridge E2E response')).toBeVisible({ timeout: 30_000 });
+      await expect(page.getByText('Codex E2E response from mock binary')).toBeVisible({ timeout: 30_000 });
 
       const managedCodexHome = join(userDataDir, 'runtimes', 'cc-connect', 'codex-home');
 
@@ -684,7 +735,7 @@ test.describe('cc-connect + Codex runtime E2E', () => {
       await expect(page.getByTestId('chat-composer-input')).toBeEnabled({ timeout: 30_000 });
       await page.getByTestId('chat-composer-input').fill('hello managed codex oauth runtime');
       await page.getByTestId('chat-composer-send').click();
-      await expect(page.getByText('cc-connect bridge E2E response')).toBeVisible({ timeout: 30_000 });
+      await expect(page.getByText('Codex E2E response from mock binary')).toBeVisible({ timeout: 30_000 });
 
       const authJson = JSON.parse(await readFile(join(managedCodexHome, 'auth.json'), 'utf8'));
       expect(authJson).toMatchObject({

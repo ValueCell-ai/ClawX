@@ -123,6 +123,77 @@ describe('CodexCliBridge', () => {
     });
   });
 
+  it('stores Codex tool calls and outputs as ClawX execution graph history', async () => {
+    const child = createChild();
+    spawnMock.mockReturnValueOnce(child);
+    const { CodexCliBridge } = await import('@electron/runtime/codex-cli-bridge');
+    const bridge = new CodexCliBridge({
+      codexPath: '/mock/codex',
+      sessionsDir: tempDir,
+      workDir: '/tmp/project',
+    });
+
+    const sendPromise = bridge.send({
+      sessionKey: 'agent:main:main',
+      message: 'inspect files',
+      idempotencyKey: 'idem-1',
+    });
+    await vi.waitFor(() => expect(spawnMock).toHaveBeenCalledOnce());
+    child.writeStdout(JSON.stringify({
+      type: 'response_item',
+      payload: {
+        type: 'function_call',
+        call_id: 'call_exec',
+        name: 'exec_command',
+        arguments: JSON.stringify({ cmd: 'ls src' }),
+      },
+    }) + '\n');
+    child.writeStdout(JSON.stringify({
+      type: 'response_item',
+      payload: {
+        type: 'function_call_output',
+        call_id: 'call_exec',
+        output: 'src/pages\nsrc/stores\n',
+      },
+    }) + '\n');
+    child.writeStdout(JSON.stringify({
+      type: 'response_item',
+      payload: {
+        type: 'message',
+        role: 'assistant',
+        content: [{ type: 'output_text', text: 'done' }],
+      },
+    }) + '\n');
+    child.emit('exit', 0);
+
+    await expect(sendPromise).resolves.toMatchObject({
+      assistantMessage: { role: 'assistant', content: 'done' },
+    });
+    await expect(bridge.loadHistory('agent:main:main')).resolves.toMatchObject([
+      { role: 'user', content: 'inspect files' },
+      {
+        role: 'assistant',
+        content: [{
+          type: 'toolCall',
+          id: 'call_exec',
+          name: 'exec_command',
+          input: {
+            input: { cmd: 'ls src' },
+            result: 'src/pages\nsrc/stores\n',
+          },
+        }],
+        stopReason: 'toolUse',
+      },
+      {
+        role: 'toolresult',
+        toolCallId: 'call_exec',
+        toolName: 'exec_command',
+        content: 'src/pages\nsrc/stores\n',
+      },
+      { role: 'assistant', content: 'done' },
+    ]);
+  });
+
   it('passes synced provider model args and environment to codex exec', async () => {
     const child = createChild();
     spawnMock.mockReturnValueOnce(child);

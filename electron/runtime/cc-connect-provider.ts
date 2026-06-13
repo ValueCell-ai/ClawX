@@ -94,6 +94,44 @@ function unsupported(method: string): never {
   throw new Error(`cc-connect runtime does not support RPC method: ${method}`);
 }
 
+type RuntimeSessionSummary = {
+  sessionKey: string;
+  firstUserText: string | null;
+  lastTimestamp: number | null;
+};
+
+function mergeSessionLists(
+  codexSessions: Array<{ key: string; displayName?: string; agentId?: string; updatedAt?: number }>,
+  bridgeSessions: Array<{ key: string; displayName?: string; agentId?: string; updatedAt?: number }>,
+) {
+  const merged = new Map<string, { key: string; displayName?: string; agentId?: string; updatedAt?: number }>();
+  for (const session of [...bridgeSessions, ...codexSessions]) {
+    const key = typeof session.key === 'string' ? session.key : '';
+    if (!key) continue;
+    const existing = merged.get(key);
+    if (!existing || (session.updatedAt ?? 0) >= (existing.updatedAt ?? 0)) {
+      merged.set(key, session);
+    }
+  }
+  return [...merged.values()].sort((left, right) => (right.updatedAt ?? 0) - (left.updatedAt ?? 0));
+}
+
+function mergeSummaries(
+  codexSummaries: RuntimeSessionSummary[],
+  bridgeSummaries: RuntimeSessionSummary[],
+): RuntimeSessionSummary[] {
+  const merged = new Map<string, RuntimeSessionSummary>();
+  for (const summary of [...bridgeSummaries, ...codexSummaries]) {
+    const key = typeof summary.sessionKey === 'string' ? summary.sessionKey : '';
+    if (!key) continue;
+    const existing = merged.get(key);
+    const hasBetterContent = Boolean(summary.firstUserText) && !existing?.firstUserText;
+    const isNewer = (summary.lastTimestamp ?? 0) >= (existing?.lastTimestamp ?? 0);
+    if (!existing || hasBetterContent || isNewer) merged.set(key, summary);
+  }
+  return [...merged.values()];
+}
+
 function appendBoundedOutput(current: string, currentBytes: number, data: Buffer | string) {
   const chunk = typeof data === 'string' ? Buffer.from(data) : data;
   if (currentBytes + chunk.length <= MAX_DOCTOR_OUTPUT_BYTES) {
@@ -389,19 +427,26 @@ export class CcConnectRuntimeProvider extends EventEmitter implements RuntimePro
     if (this.currentProviderProfile && !this.currentProviderProfile.supported) {
       throw new Error(this.currentProviderProfile.unsupportedReason || 'Selected provider is not supported by the cc-connect Codex runtime');
     }
-    return await this.bridgeAdapter.send(payload);
+    return await this.getCodexBridge().send(payload);
   }
 
   async listSessions(payload?: unknown) {
     if (isRecord(payload) && Array.isArray(payload.sessionKeys)) {
+      const sessionKeys = payload.sessionKeys.filter((value): value is string => typeof value === 'string');
+      const [codexSummaries, bridgeSummaries] = await Promise.all([
+        this.getCodexBridge().summarizeSessions(sessionKeys),
+        this.bridgeAdapter.summarizeSessions(sessionKeys),
+      ]);
       return {
         success: true,
-        summaries: await this.bridgeAdapter.summarizeSessions(
-          payload.sessionKeys.filter((value): value is string => typeof value === 'string'),
-        ),
+        summaries: mergeSummaries(codexSummaries, bridgeSummaries),
       };
     }
-    const sessions = await this.bridgeAdapter.listSessions();
+    const [codexSessions, bridgeSessions] = await Promise.all([
+      this.getCodexBridge().listSessions(),
+      this.bridgeAdapter.listSessions(),
+    ]);
+    const sessions = mergeSessionLists(codexSessions, bridgeSessions);
     return {
       success: true,
       sessions: sessions.map((session) => ({
@@ -421,6 +466,13 @@ export class CcConnectRuntimeProvider extends EventEmitter implements RuntimePro
     const limit = typeof body.limit === 'number' && Number.isFinite(body.limit)
       ? Math.max(1, Math.min(Math.floor(body.limit), 1000))
       : 200;
+    const codexMessages = await this.getCodexBridge().loadHistory(sessionKey, limit);
+    if (codexMessages.length > 0) {
+      return {
+        success: true,
+        messages: codexMessages,
+      };
+    }
     return {
       success: true,
       messages: await this.bridgeAdapter.loadHistory(sessionKey, limit),
@@ -429,7 +481,10 @@ export class CcConnectRuntimeProvider extends EventEmitter implements RuntimePro
 
   async deleteSession(payload?: unknown) {
     const sessionKey = getSessionKey(payload);
-    await this.bridgeAdapter.deleteSession(sessionKey);
+    await Promise.all([
+      this.getCodexBridge().deleteSession(sessionKey),
+      this.bridgeAdapter.deleteSession(sessionKey),
+    ]);
     return { success: true };
   }
 

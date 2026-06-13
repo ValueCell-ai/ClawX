@@ -34,8 +34,17 @@ type TranscriptLine = {
   message: RawMessage;
 };
 
+type CodexToolCallRecord = {
+  callId: string;
+  name: string;
+  input: unknown;
+  result?: unknown;
+  message: RawMessage;
+};
+
 const MAX_HISTORY_MESSAGES_IN_PROMPT = 16;
 const MAX_PROMPT_CHARS = 80_000;
+const MAX_CODEX_TOOL_RESULT_CHARS = 12_000;
 
 function safeSessionFileName(sessionKey: string): string {
   return `${createHash('sha256').update(sessionKey).digest('hex')}.jsonl`;
@@ -98,6 +107,18 @@ function appendMediaReferences(message: string, media: RuntimeSendWithMediaPaylo
 function extractTextFromCodexEvent(event: unknown): string {
   if (!event || typeof event !== 'object') return '';
   const record = event as Record<string, unknown>;
+  const payload = getCodexPayload(record);
+
+  if (payload) {
+    if (payload.role === 'assistant') {
+      const text = messageText(payload.content);
+      if (text) return text;
+    }
+    if (payload.type === 'message' && payload.role === 'assistant') {
+      const text = messageText(payload.content);
+      if (text) return text;
+    }
+  }
 
   const directText = record.text ?? record.delta;
   if (typeof directText === 'string' && directText.trim()) return directText;
@@ -121,6 +142,45 @@ function extractTextFromCodexEvent(event: unknown): string {
   }
 
   return '';
+}
+
+function getCodexPayload(record: Record<string, unknown>): Record<string, unknown> | null {
+  const payload = record.payload;
+  if (payload && typeof payload === 'object') return payload as Record<string, unknown>;
+  const item = record.item;
+  if (item && typeof item === 'object') return item as Record<string, unknown>;
+  const message = record.message;
+  if (message && typeof message === 'object') return message as Record<string, unknown>;
+  return null;
+}
+
+function parseMaybeJson(value: unknown): unknown {
+  if (typeof value !== 'string') return value;
+  const trimmed = value.trim();
+  if (!trimmed) return '';
+  try {
+    return JSON.parse(trimmed);
+  } catch {
+    return value;
+  }
+}
+
+function truncateToolResult(value: unknown): unknown {
+  if (typeof value !== 'string') return value;
+  return value.length > MAX_CODEX_TOOL_RESULT_CHARS
+    ? `${value.slice(0, MAX_CODEX_TOOL_RESULT_CHARS)}\n…`
+    : value;
+}
+
+function codexToolInput(payload: Record<string, unknown>): unknown {
+  if ('arguments' in payload) return parseMaybeJson(payload.arguments);
+  if ('input' in payload) return parseMaybeJson(payload.input);
+  return {};
+}
+
+function codexToolResult(payload: Record<string, unknown>): unknown {
+  if ('output' in payload) return truncateToolResult(parseMaybeJson(payload.output));
+  return {};
 }
 
 function codexModeArgs(mode: CodexBridgeOptions['mode']): string[] {
@@ -237,6 +297,11 @@ export class CodexCliBridge {
       assistantText = result.stderr.trim();
     }
     if (!assistantText) assistantText = result.success ? '' : 'Codex did not return a response.';
+
+    const toolMessages = this.extractToolMessagesFromStdout(result.stdout, runId, startedAt);
+    for (const message of toolMessages) {
+      await this.appendMessage(sessionKey, message);
+    }
 
     const assistantMessage: RawMessage = {
       id: `${runId}:assistant`,
@@ -357,6 +422,85 @@ export class CodexCliBridge {
       }
     }
     return last;
+  }
+
+  private extractToolMessagesFromStdout(stdout: string, runId: string, startedAt: number): RawMessage[] {
+    const messages: RawMessage[] = [];
+    const toolCalls = new Map<string, CodexToolCallRecord>();
+    let seq = 0;
+
+    const nextTimestamp = () => startedAt + (++seq);
+    for (const line of stdout.split(/\r?\n/)) {
+      if (!line.trim()) continue;
+      let record: Record<string, unknown>;
+      try {
+        const parsed = JSON.parse(line);
+        if (!parsed || typeof parsed !== 'object') continue;
+        record = parsed as Record<string, unknown>;
+      } catch {
+        continue;
+      }
+
+      const payload = getCodexPayload(record);
+      if (!payload) continue;
+      const type = typeof payload.type === 'string' ? payload.type : '';
+
+      if (type === 'function_call' || type === 'custom_tool_call') {
+        const callId = typeof payload.call_id === 'string' && payload.call_id
+          ? payload.call_id
+          : `${runId}:tool-${seq + 1}`;
+        const name = typeof payload.name === 'string' && payload.name
+          ? payload.name
+          : (type === 'custom_tool_call' ? 'custom_tool' : 'tool');
+        const input = codexToolInput(payload);
+        const message: RawMessage = {
+          id: `${runId}:tool-call:${callId}`,
+          role: 'assistant',
+          content: [{
+            type: 'toolCall',
+            id: callId,
+            name,
+            input,
+          }],
+          stopReason: 'toolUse',
+          timestamp: nextTimestamp(),
+        };
+        toolCalls.set(callId, { callId, name, input, message });
+        messages.push(message);
+        continue;
+      }
+
+      if (type === 'function_call_output' || type === 'custom_tool_call_output') {
+        const callId = typeof payload.call_id === 'string' && payload.call_id
+          ? payload.call_id
+          : `${runId}:tool-${seq + 1}`;
+        const result = codexToolResult(payload);
+        const existing = toolCalls.get(callId);
+        if (existing) {
+          existing.result = result;
+          const content = existing.message.content;
+          if (Array.isArray(content)) {
+            const block = content[0];
+            if (block && typeof block === 'object') {
+              (block as Record<string, unknown>).input = {
+                input: existing.input,
+                result,
+              };
+            }
+          }
+        }
+        messages.push({
+          id: `${runId}:tool-result:${callId}`,
+          role: 'toolresult',
+          toolCallId: callId,
+          toolName: existing?.name || 'tool',
+          content: typeof result === 'string' ? result : JSON.stringify(result, null, 2),
+          timestamp: nextTimestamp(),
+        });
+      }
+    }
+
+    return messages;
   }
 
   private async runProcess(

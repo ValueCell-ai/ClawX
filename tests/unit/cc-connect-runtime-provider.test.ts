@@ -665,12 +665,28 @@ describe('CcConnectRuntimeProvider', () => {
     expect(bridgeAdapter.send).not.toHaveBeenCalled();
   });
 
-  it('routes chat, sessions, history, and delete to the Codex bridge', async () => {
+  it('routes GUI chat through Codex and merges cc-connect channel sessions', async () => {
     const binaryPath = join(tempDir, 'cc-connect');
     await writeFile(binaryPath, '#!/bin/sh\n', { mode: 0o755 });
-    const bridge = createBridgeAdapterMock();
+    const codexBridge = createBridgeMock({
+      listSessions: vi.fn(async () => [{ key: 'agent:main:main', displayName: 'main', updatedAt: 2 }]),
+      summarizeSessions: vi.fn(async () => [{ sessionKey: 'agent:main:main', firstUserText: 'hello', lastTimestamp: 2 }]),
+      loadHistory: vi.fn(async (sessionKey: string) => sessionKey === 'agent:main:main'
+        ? [{ role: 'assistant', content: 'assistant ok', timestamp: 2 }]
+        : []),
+    });
+    const bridgeAdapter = createBridgeAdapterMock({
+      listSessions: vi.fn(async () => [{ key: 'agent:support:member-1', displayName: 'Support', updatedAt: 3 }]),
+      summarizeSessions: vi.fn(async () => [{ sessionKey: 'agent:support:member-1', firstUserText: 'channel hello', lastTimestamp: 3 }]),
+      loadHistory: vi.fn(async () => [{ role: 'assistant', content: 'channel ok', timestamp: 3 }]),
+    });
     const { CcConnectRuntimeProvider } = await import('@electron/runtime/cc-connect-provider');
-    const provider = new CcConnectRuntimeProvider({ binaryPath, codexPath: join(tempDir, 'codex'), bridgeAdapter: bridge as never });
+    const provider = new CcConnectRuntimeProvider({
+      binaryPath,
+      codexPath: join(tempDir, 'codex'),
+      codexBridge: codexBridge as never,
+      bridgeAdapter: bridgeAdapter as never,
+    });
     const chatEvents: unknown[] = [];
     provider.on('chat:message', (event) => chatEvents.push(event));
 
@@ -678,36 +694,57 @@ describe('CcConnectRuntimeProvider', () => {
       sessionKey: 'agent:main:main',
       message: 'hello',
       idempotencyKey: 'idem-1',
-    })).resolves.toEqual({ runId: 'cc-connect-run-1' });
+    })).resolves.toEqual({
+      runId: 'codex-run-1',
+      assistantMessage: { role: 'assistant', content: 'assistant ok', timestamp: 2 },
+    });
     await expect(provider.listSessions()).resolves.toMatchObject({
       success: true,
-      sessions: [{ key: 'agent:main:main', displayName: 'main' }],
+      sessions: [
+        { key: 'agent:support:member-1', displayName: 'Support' },
+        { key: 'agent:main:main', displayName: 'main' },
+      ],
     });
-    await expect(provider.listSessions({ sessionKeys: ['agent:main:main'] })).resolves.toMatchObject({
+    await expect(provider.listSessions({ sessionKeys: ['agent:main:main', 'agent:support:member-1'] })).resolves.toMatchObject({
       success: true,
-      summaries: [{ sessionKey: 'agent:main:main', firstUserText: 'hello', lastTimestamp: 2 }],
+      summaries: expect.arrayContaining([
+        { sessionKey: 'agent:main:main', firstUserText: 'hello', lastTimestamp: 2 },
+        { sessionKey: 'agent:support:member-1', firstUserText: 'channel hello', lastTimestamp: 3 },
+      ]),
     });
     await expect(provider.loadHistory({ sessionKey: 'agent:main:main' })).resolves.toMatchObject({
       success: true,
       messages: [{ role: 'assistant', content: 'assistant ok' }],
     });
+    await expect(provider.loadHistory({ sessionKey: 'agent:support:member-1' })).resolves.toMatchObject({
+      success: true,
+      messages: [{ role: 'assistant', content: 'channel ok' }],
+    });
     await expect(provider.deleteSession({ sessionKey: 'agent:main:main' })).resolves.toEqual({ success: true });
-    expect(bridge.send).toHaveBeenCalledOnce();
-    expect(bridge.deleteSession).toHaveBeenCalledWith('agent:main:main');
+    expect(codexBridge.send).toHaveBeenCalledOnce();
+    expect(bridgeAdapter.send).not.toHaveBeenCalled();
+    expect(codexBridge.deleteSession).toHaveBeenCalledWith('agent:main:main');
+    expect(bridgeAdapter.deleteSession).toHaveBeenCalledWith('agent:main:main');
   });
 
   it('keeps legacy Gateway RPC chat/session/history calls working for cc-connect', async () => {
     const binaryPath = join(tempDir, 'cc-connect');
     await writeFile(binaryPath, '#!/bin/sh\n', { mode: 0o755 });
-    const bridge = createBridgeAdapterMock();
+    const codexBridge = createBridgeMock();
+    const bridgeAdapter = createBridgeAdapterMock();
     const { CcConnectRuntimeProvider } = await import('@electron/runtime/cc-connect-provider');
-    const provider = new CcConnectRuntimeProvider({ binaryPath, codexPath: join(tempDir, 'codex'), bridgeAdapter: bridge as never });
+    const provider = new CcConnectRuntimeProvider({
+      binaryPath,
+      codexPath: join(tempDir, 'codex'),
+      codexBridge: codexBridge as never,
+      bridgeAdapter: bridgeAdapter as never,
+    });
 
     await expect(provider.rpc('chat.send', {
       sessionKey: 'agent:main:main',
       message: 'hello via rpc',
       idempotencyKey: 'idem-rpc',
-    })).resolves.toEqual({ runId: 'cc-connect-run-1' });
+    })).resolves.toMatchObject({ runId: 'codex-run-1' });
     await expect(provider.rpc('sessions.list', { includeDerivedTitles: true })).resolves.toMatchObject({
       success: true,
       sessions: [{ key: 'agent:main:main', displayName: 'main' }],
@@ -718,13 +755,15 @@ describe('CcConnectRuntimeProvider', () => {
     });
     await expect(provider.rpc('sessions.delete', { sessionKey: 'agent:main:main' })).resolves.toEqual({ success: true });
 
-    expect(bridge.send).toHaveBeenCalledWith(expect.objectContaining({
+    expect(codexBridge.send).toHaveBeenCalledWith(expect.objectContaining({
       sessionKey: 'agent:main:main',
       message: 'hello via rpc',
       idempotencyKey: 'idem-rpc',
     }));
-    expect(bridge.loadHistory).toHaveBeenCalledWith('agent:main:main', 20);
-    expect(bridge.deleteSession).toHaveBeenCalledWith('agent:main:main');
+    expect(bridgeAdapter.send).not.toHaveBeenCalled();
+    expect(codexBridge.loadHistory).toHaveBeenCalledWith('agent:main:main', 20);
+    expect(codexBridge.deleteSession).toHaveBeenCalledWith('agent:main:main');
+    expect(bridgeAdapter.deleteSession).toHaveBeenCalledWith('agent:main:main');
   });
 
   it('syncs provider and model profile through runtime RPC', async () => {
