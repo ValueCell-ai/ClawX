@@ -317,10 +317,23 @@ The first managed files are:
 - `config.toml`
 - `provider-profile.json`
 - `codex-sessions/`
+- `workspaces/<agent-id>/`
 - runtime logs
 - runtime working directory
 
 ClawX must not read or mutate `~/.cc-connect` automatically.
+
+Workspace selection is compatibility-first:
+
+- Explicit ClawX overrides such as `CLAWX_CODEX_WORKDIR` or a provider-supplied
+  runtime `workDir` win.
+- If the OpenClaw agent config points at an existing workspace directory, the
+  cc-connect runtime reuses that workspace for the matching agent so existing
+  user files and project context continue to work after switching runtimes.
+- If no configured OpenClaw workspace exists, ClawX creates and uses
+  `app.getPath('userData')/runtimes/cc-connect/workspaces/<agent-id>/`.
+- ClawX does not default to the ClawX source checkout or to `process.cwd()` as a
+  runtime workspace.
 
 ## Packaging Design
 

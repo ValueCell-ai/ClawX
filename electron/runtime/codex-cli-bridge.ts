@@ -200,7 +200,7 @@ function codexModeArgs(mode: CodexBridgeOptions['mode']): string[] {
 export class CodexCliBridge {
   private readonly codexPath: string;
   private readonly sessionsDir: string;
-  private readonly workDir: string;
+  private workDir: string;
   private readonly mode: CodexBridgeOptions['mode'];
   private readonly proxyEnvProvider: NonNullable<CodexBridgeOptions['proxyEnvProvider']>;
   private readonly codexBundle: CodexBundle;
@@ -217,6 +217,10 @@ export class CodexCliBridge {
 
   getSessionsDir(): string {
     return this.sessionsDir;
+  }
+
+  setWorkDir(workDir: string): void {
+    this.workDir = workDir;
   }
 
   setProviderProfile(profile: CodexProviderProfile | null): void {

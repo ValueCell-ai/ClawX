@@ -53,7 +53,8 @@ expectedUserBehavior:
   - cc-connect can be selected without writing to the user's global ~/.cc-connect directory.
   - Packaged builds contain the cc-connect executable for the target platform.
   - cc-connect chat emits OpenClaw-compatible runtime events, including streamed assistant deltas.
-  - cc-connect mirrors each configured OpenClaw agent to a project that uses that agent's workspace.
+  - cc-connect mirrors each configured OpenClaw agent to a project that reuses that agent's existing OpenClaw workspace when it exists.
+  - cc-connect falls back to a ClawX-managed workspace for agents whose configured OpenClaw workspace path is missing or unset.
   - cc-connect channel accounts run in the project for their bound agent.
   - cc-connect validation covers mock bridge chat, real bundled runtime startup, and opt-in real Codex OAuth chat.
   - cc-connect replacement readiness is tracked separately from initial runtime availability, including capability gaps, OAuth lifecycle, doctor parity, abort parity, and real-runtime validation gaps.
@@ -78,6 +79,7 @@ acceptance:
   - cc-connect packaging does not rely on runtime postinstall downloads.
   - App-visible session keys remain `agent:*` while cc-connect bridge storage can use internal `clawx:*` keys.
   - Non-main agents keep separate cc-connect project names and Codex `work_dir` values.
+  - cc-connect Codex `work_dir` never defaults to the ClawX source checkout or to `process.cwd()`.
   - cc-connect `reply_stream` packets update the same chat runtime graph path used by OpenClaw assistant deltas.
   - `pnpm run verify:runtime-bundles` passes after cc-connect and Codex bundles are prepared.
   - `pnpm run test:e2e:cc-connect` covers mock bridge chat and real bundled runtime startup.

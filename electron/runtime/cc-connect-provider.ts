@@ -41,7 +41,7 @@ import {
   type CodexProviderProfile,
 } from './cc-connect-provider-profile';
 import { readOpenClawConfig, type ChannelConfigData, type OpenClawConfig } from '../utils/channel-config';
-import { expandPath } from '../utils/paths';
+import { expandPath, getOpenClawConfigDir } from '../utils/paths';
 
 type CcConnectRuntimeProviderOptions = {
   binaryPath?: string;
@@ -97,6 +97,35 @@ function unsupported(method: string): never {
 
 function resolveCcConnectWorkspace(agentId = 'main', fallbackWorkDir?: string): string {
   return expandPath(fallbackWorkDir || process.env.CLAWX_CODEX_WORKDIR || getCcConnectAgentWorkspaceDir(agentId));
+}
+
+function existingConfiguredWorkspace(value: unknown): string | null {
+  if (typeof value !== 'string' || !value.trim()) return null;
+  const expanded = expandPath(value.trim());
+  return existsSync(expanded) ? expanded : null;
+}
+
+function getConfiguredOpenClawWorkspace(config: OpenClawConfig, agentId: string, entry?: Record<string, unknown>): string | null {
+  if (typeof entry?.workspace === 'string' && entry.workspace.trim()) {
+    return existingConfiguredWorkspace(entry.workspace);
+  }
+  const agents = isRecord(config.agents) ? config.agents : {};
+  const defaults = isRecord(agents.defaults) ? agents.defaults : {};
+  if (agentId === 'main' && typeof defaults.workspace === 'string' && defaults.workspace.trim()) {
+    return existingConfiguredWorkspace(defaults.workspace);
+  }
+  if (!entry) return null;
+  const defaultWorkspaceName = agentId === 'main' ? 'workspace' : `workspace-${agentId}`;
+  return existingConfiguredWorkspace(join(getOpenClawConfigDir(), defaultWorkspaceName));
+}
+
+function getAgentEntries(config: OpenClawConfig): Record<string, unknown>[] {
+  const agents = isRecord(config.agents) ? config.agents : {};
+  return Array.isArray(agents.list)
+    ? agents.list.filter((entry): entry is Record<string, unknown> => (
+        isRecord(entry) && typeof entry.id === 'string' && entry.id.trim().length > 0
+      ))
+    : [];
 }
 
 type RuntimeSessionSummary = {
@@ -668,6 +697,8 @@ export class CcConnectRuntimeProvider extends EventEmitter implements RuntimePro
     await mkdir(dirname(configPath), { recursive: true });
     const openClawConfig = await readOpenClawConfig().catch(() => ({} as OpenClawConfig));
     const agentProjects = collectCcConnectAgentProjects(openClawConfig, this.workDir);
+    const mainProject = agentProjects.find((project) => project.agentId === 'main') ?? agentProjects[0];
+    if (mainProject) this.getCodexBridge().setWorkDir(mainProject.workDir);
     await Promise.all(agentProjects.map((project) => mkdir(project.workDir, { recursive: true })));
     await writeFile(configPath, defaultConfig({
       codexPath,
@@ -1003,17 +1034,14 @@ function getConfiguredDefaultAgentId(config: OpenClawConfig): string {
   return normalizeAgentId(explicitDefault?.id ?? entries[0]?.id ?? 'main');
 }
 
-function getDefaultWorkspaceFromConfig(_config: OpenClawConfig, fallbackWorkDir?: string): string {
-  return resolveCcConnectWorkspace('main', fallbackWorkDir);
+function getDefaultWorkspaceFromConfig(config: OpenClawConfig, fallbackWorkDir?: string): string {
+  if (fallbackWorkDir || process.env.CLAWX_CODEX_WORKDIR) return resolveCcConnectWorkspace('main', fallbackWorkDir);
+  const mainEntry = getAgentEntries(config).find((entry) => normalizeAgentId(entry.id) === 'main');
+  return getConfiguredOpenClawWorkspace(config, 'main', mainEntry) ?? resolveCcConnectWorkspace('main');
 }
 
 function collectCcConnectAgentProjects(config: OpenClawConfig, fallbackWorkDir?: string): CcConnectAgentProject[] {
-  const agents = isRecord(config.agents) ? config.agents : {};
-  const entries = Array.isArray(agents.list)
-    ? agents.list.filter((entry): entry is Record<string, unknown> => (
-        isRecord(entry) && typeof entry.id === 'string' && entry.id.trim().length > 0
-      ))
-    : [];
+  const entries = getAgentEntries(config);
   const defaultWorkspace = getDefaultWorkspaceFromConfig(config, fallbackWorkDir);
   const rawProjects = entries.length > 0
     ? entries.map((entry) => {
@@ -1023,7 +1051,7 @@ function collectCcConnectAgentProjects(config: OpenClawConfig, fallbackWorkDir?:
           projectName: ccConnectProjectNameForAgent(agentId),
           workDir: agentId === 'main'
             ? defaultWorkspace
-            : resolveCcConnectWorkspace(agentId),
+            : getConfiguredOpenClawWorkspace(config, agentId, entry) ?? resolveCcConnectWorkspace(agentId),
         };
       })
     : [{
