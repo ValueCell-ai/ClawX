@@ -9,6 +9,7 @@ export const initialChatState: Pick<
   | 'loading'
   | 'error'
   | 'runError'
+  | 'dismissedRunErrors'
   | 'sending'
   | 'activeRunId'
   | 'streamingText'
@@ -28,6 +29,7 @@ export const initialChatState: Pick<
   loading: false,
   error: null,
   runError: null,
+  dismissedRunErrors: {},
 
   sending: false,
   activeRunId: null,

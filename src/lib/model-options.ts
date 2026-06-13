@@ -17,7 +17,7 @@ export interface RuntimeProviderOption {
 
 export function resolveRuntimeProviderKey(account: ProviderAccount): string {
   if (account.authMode === 'oauth_browser') {
-    if (account.vendorId === 'openai') return 'openai-codex';
+    if (account.vendorId === 'openai') return 'openai';
   }
 
   if (account.vendorId === 'custom' || account.vendorId === 'ollama') {
@@ -46,6 +46,27 @@ export function splitModelRef(modelRef: string | null | undefined): { providerKe
 export function formatModelRefLabel(modelRef: string | null | undefined): string {
   const parsed = splitModelRef(modelRef);
   return parsed?.modelId || (modelRef || '').trim() || 'Model';
+}
+
+export function formatProviderDisplayName(
+  account: ProviderAccount,
+  vendorMap: Map<string, ProviderVendorInfo>,
+): string {
+  if (account.vendorId === 'custom' || account.vendorId === 'ollama') {
+    return account.label.trim() || account.vendorId;
+  }
+
+  const vendor = vendorMap.get(account.vendorId);
+  return vendor?.name || account.label.trim() || account.vendorId;
+}
+
+export function formatConfiguredModelLabel(
+  modelId: string,
+  account: ProviderAccount,
+  vendorMap: Map<string, ProviderVendorInfo>,
+): string {
+  const providerName = formatProviderDisplayName(account, vendorMap);
+  return `${modelId} (${providerName})`;
 }
 
 export function toModelOptionTestId(label: string): string {
@@ -108,10 +129,13 @@ export function buildRuntimeProviderOptions(
 export function buildConfiguredModelOptions(
   providerAccounts: ProviderAccount[],
   providerStatuses: ProviderWithKeyInfo[],
+  providerVendors: ProviderVendorInfo[],
   providerDefaultAccountId: string | null,
 ): ConfiguredModelOption[] {
   const safeAccounts = Array.isArray(providerAccounts) ? providerAccounts : [];
   const safeStatuses = Array.isArray(providerStatuses) ? providerStatuses : [];
+  const safeVendors = Array.isArray(providerVendors) ? providerVendors : [];
+  const vendorMap = new Map<string, ProviderVendorInfo>(safeVendors.map((vendor) => [vendor.id, vendor]));
   const statusById = new Map<string, ProviderWithKeyInfo>(safeStatuses.map((status) => [status.id, status]));
   const entries = safeAccounts
     .filter((account) => account.enabled && account.model?.trim() && hasConfiguredProviderCredentials(account, statusById))
@@ -132,11 +156,38 @@ export function buildConfiguredModelOptions(
     if (deduped.has(modelRef)) continue;
     deduped.set(modelRef, {
       modelRef,
-      label: modelId,
+      label: formatConfiguredModelLabel(modelId, account, vendorMap),
       runtimeProviderKey,
       accountId: account.id,
     });
   }
 
   return [...deduped.values()];
+}
+
+export function isConfiguredModelRefAvailable(
+  modelRef: string | null | undefined,
+  modelOptions: ConfiguredModelOption[],
+): boolean {
+  const value = (modelRef || '').trim();
+  if (!value) return false;
+  return modelOptions.some((option) => option.modelRef === value);
+}
+
+export function resolveConfiguredModelRef(
+  preferredModelRef: string | null | undefined,
+  defaultModelRef: string | null | undefined,
+  modelOptions: ConfiguredModelOption[],
+): string | null {
+  const preferred = (preferredModelRef || '').trim();
+  if (preferred && isConfiguredModelRefAvailable(preferred, modelOptions)) {
+    return preferred;
+  }
+
+  const fallbackDefault = (defaultModelRef || '').trim();
+  if (fallbackDefault && isConfiguredModelRefAvailable(fallbackDefault, modelOptions)) {
+    return fallbackDefault;
+  }
+
+  return modelOptions[0]?.modelRef ?? null;
 }

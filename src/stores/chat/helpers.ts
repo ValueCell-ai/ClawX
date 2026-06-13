@@ -462,6 +462,26 @@ function isTerminalAssistantErrorMessage(message: RawMessage | unknown): boolean
   return msg.role === 'assistant' && getMessageStopReason(message) === 'error';
 }
 
+function shouldShowRunError(
+  sessionKey: string,
+  errorMessage: string | null | undefined,
+  dismissedBySession: Record<string, string>,
+): string | null {
+  if (!errorMessage) return null;
+  if (dismissedBySession[sessionKey] === errorMessage) return null;
+  return errorMessage;
+}
+
+function withoutDismissedRunError(
+  dismissedBySession: Record<string, string>,
+  sessionKey: string,
+): Record<string, string> {
+  if (!(sessionKey in dismissedBySession)) return dismissedBySession;
+  const next = { ...dismissedBySession };
+  delete next[sessionKey];
+  return next;
+}
+
 /** Extract media file refs from [media attached: <path> (<mime>) | ...] patterns */
 function extractMediaRefs(text: string): Array<{ filePath: string; mimeType: string }> {
   const refs: Array<{ filePath: string; mimeType: string }> = [];
@@ -528,8 +548,14 @@ function mimeFromExtension(filePath: string): string {
 /** Extract local file paths declared in tool call arguments. */
 function extractFilePathsFromToolArgs(args: Record<string, unknown>): string[] {
   const paths: string[] = [];
-  const direct = args.file_path ?? args.filePath ?? args.path ?? args.file;
+  const direct = args.file_path ?? args.filePath ?? args.path ?? args.file ?? args.media ?? args.mediaUrl;
   if (typeof direct === 'string' && direct.trim()) paths.push(direct.trim());
+  const mediaUrls = args.mediaUrls;
+  if (Array.isArray(mediaUrls)) {
+    for (const value of mediaUrls) {
+      if (typeof value === 'string' && value.trim()) paths.push(value.trim());
+    }
+  }
 
   const attachments = args.attachments;
   if (Array.isArray(attachments)) {
@@ -546,11 +572,115 @@ function extractFilePathsFromToolArgs(args: Record<string, unknown>): string[] {
   return paths;
 }
 
+function isImagePathLike(value: string): boolean {
+  return /\.(?:png|jpe?g|gif|webp|bmp|avif|svg)(?:$|[?#])/i.test(value.trim());
+}
+
+function collectMediaValues(record: Record<string, unknown> | null | undefined): string[] {
+  if (!record) return [];
+  const values: string[] = [];
+  const push = (value: unknown) => {
+    if (typeof value === 'string' && value.trim()) values.push(value.trim());
+  };
+  push(record.media);
+  push(record.mediaUrl);
+  push(record.filePath);
+  const mediaUrls = record.mediaUrls;
+  if (Array.isArray(mediaUrls)) {
+    for (const value of mediaUrls) push(value);
+  }
+  return values;
+}
+
+function parseMessageToolResultJson(msg: RawMessage): Record<string, unknown> | null {
+  const text = getMessageText(msg.content);
+  if (!text.trim()) return null;
+  try {
+    const parsed = JSON.parse(text);
+    return parsed && typeof parsed === 'object' ? parsed as Record<string, unknown> : null;
+  } catch {
+    return null;
+  }
+}
+
+type MessageToolDelivery = {
+  files: AttachedFileMeta[];
+  text: string;
+  internalUi: boolean;
+};
+
+function collectMessageToolDelivery(msg: RawMessage): MessageToolDelivery | null {
+  if (!isToolResultRole(msg.role)) return null;
+  if (msg.toolName !== 'message') return null;
+
+  const details = msg.details && typeof msg.details === 'object'
+    ? msg.details as Record<string, unknown>
+    : parseMessageToolResultJson(msg);
+  if (!details) return null;
+  if (String(details.status ?? '').toLowerCase() === 'error') return null;
+
+  const sourceReply = details.sourceReply && typeof details.sourceReply === 'object'
+    ? details.sourceReply as Record<string, unknown>
+    : null;
+  const seen = new Set<string>();
+  const files: AttachedFileMeta[] = [];
+
+  for (const media of [...collectMediaValues(details), ...collectMediaValues(sourceReply)]) {
+    if (seen.has(media)) continue;
+    seen.add(media);
+    if (media.startsWith('/api/chat/media/')) {
+      files.push({
+        fileName: 'image',
+        mimeType: 'image/png',
+        fileSize: 0,
+        preview: null,
+        gatewayUrl: media,
+        source: 'gateway-media',
+      });
+      continue;
+    }
+    if (!isImagePathLike(media)) continue;
+    files.push(makeAttachedFile({ filePath: media, mimeType: mimeFromExtension(media) }, 'tool-result'));
+  }
+
+  const sourceReplyText = sourceReply?.text;
+  const detailsMessage = details.message;
+  return {
+    files,
+    text: typeof sourceReplyText === 'string' && sourceReplyText.trim()
+      ? sourceReplyText.trim()
+      : typeof detailsMessage === 'string' ? detailsMessage.trim() : '',
+    internalUi: details.sourceReplySink === 'internal-ui'
+      || details.sourceReplyDeliveryMode === 'message_tool_only',
+  };
+}
+
+function createInternalUiDeliveryReply(msg: RawMessage, delivery: MessageToolDelivery): RawMessage | null {
+  if (!delivery.internalUi || (!delivery.text && delivery.files.length === 0)) return null;
+  const idBase = msg.id || msg.toolCallId;
+  return {
+    role: 'assistant',
+    content: delivery.text ? [{ type: 'text', text: delivery.text }] : [],
+    timestamp: msg.timestamp,
+    ...(idBase ? { id: `${idBase}:source-reply` } : {}),
+    _attachedFiles: delivery.files,
+  };
+}
+
 /**
  * Surface user-facing attachments declared in assistant tool calls (e.g.
  * `message` tool `attachments: [{ filePath }]`) on the calling turn itself.
  */
 function enrichWithToolCallAttachments(messages: RawMessage[]): RawMessage[] {
+  const internalUiDeliveryToolCallIds = new Set(
+    messages.flatMap((message) => {
+      const delivery = collectMessageToolDelivery(message);
+      return delivery?.internalUi && delivery.files.length > 0 && message.toolCallId
+        ? [message.toolCallId]
+        : [];
+    }),
+  );
+
   return messages.map((msg) => {
     if (msg.role !== 'assistant') return msg;
 
@@ -559,6 +689,7 @@ function enrichWithToolCallAttachments(messages: RawMessage[]): RawMessage[] {
     if (Array.isArray(content)) {
       for (const block of content as ContentBlock[]) {
         if (block.type !== 'tool_use' && block.type !== 'toolCall') continue;
+        if (block.name === 'message' && block.id && internalUiDeliveryToolCallIds.has(block.id)) continue;
         const args = (block.input ?? block.arguments) as Record<string, unknown> | undefined;
         if (!args) continue;
         for (const filePath of extractFilePathsFromToolArgs(args)) {
@@ -571,6 +702,7 @@ function enrichWithToolCallAttachments(messages: RawMessage[]): RawMessage[] {
     const toolCalls = msgAny.tool_calls ?? msgAny.toolCalls;
     if (Array.isArray(toolCalls)) {
       for (const tc of toolCalls as Array<Record<string, unknown>>) {
+        if (typeof tc.id === 'string' && internalUiDeliveryToolCallIds.has(tc.id)) continue;
         const fn = (tc.function ?? tc) as Record<string, unknown>;
         let args: Record<string, unknown> | undefined;
         try {
@@ -677,7 +809,7 @@ function extractRawFilePaths(text: string): Array<{ filePath: string; mimeType: 
   // path terminators so we don't accidentally swallow trailing prose.
   // The non-greedy `*?` anchored to `\.<ext>` keeps the match minimal so
   // multiple `MEDIA:` markers in one paragraph still match independently.
-  const taggedRegex = new RegExp(`(?:^|[\\s(\\[{>])(?:MEDIA|media):((?:\\/|~\\/|[A-Za-z]:\\\\)[^\\n"'()\\[\\],<>` + '`' + `]*?\\.(?:${exts}))(?=$|[\\s\\n"'()\\[\\],<>` + '`' + `]|[，。；;,.!?])`, 'g');
+  const taggedRegex = new RegExp(`(?<![A-Za-z0-9/\\\\])(?:MEDIA|media):((?:\\/|~\\/|[A-Za-z]:\\\\)[^\\n"'()\\[\\],<>` + '`' + `]*?\\.(?:${exts}))(?=$|[\\s\\n"'()\\[\\],<>` + '`' + `]|[，。；;,.!?])`, 'g');
   let workingText = text;
   let taggedMatch: RegExpExecArray | null;
   while ((taggedMatch = taggedRegex.exec(text)) !== null) {
@@ -882,6 +1014,23 @@ function collectToolCallPaths(msg: RawMessage, paths: Map<string, string>): void
   }
 }
 
+function assistantHasToolCallId(msg: RawMessage, toolCallId: string): boolean {
+  if (!toolCallId) return false;
+  const content = msg.content;
+  if (Array.isArray(content)) {
+    for (const block of content as ContentBlock[]) {
+      if ((block.type === 'tool_use' || block.type === 'toolCall') && block.id === toolCallId) {
+        return true;
+      }
+    }
+  }
+  const msgAny = msg as unknown as Record<string, unknown>;
+  const toolCalls = msgAny.tool_calls ?? msgAny.toolCalls;
+  return Array.isArray(toolCalls) && toolCalls.some((tc) =>
+    tc && typeof tc === 'object' && (tc as Record<string, unknown>).id === toolCallId,
+  );
+}
+
 /**
  * Before filtering tool_result messages from history, scan them for any file/image
  * content and attach those to the immediately following assistant message.
@@ -894,14 +1043,55 @@ function collectToolCallPaths(msg: RawMessage, paths: Map<string, string>): void
 function enrichWithToolResultFiles(messages: RawMessage[]): RawMessage[] {
   const pending: AttachedFileMeta[] = [];
   const toolCallPaths = new Map<string, string>();
+  const enriched: RawMessage[] = [];
 
-  return messages.map((msg) => {
+  for (const msg of messages) {
     // Track file paths from assistant tool call arguments for later matching
     if (msg.role === 'assistant') {
       collectToolCallPaths(msg, toolCallPaths);
     }
 
     if (isToolResultRole(msg.role)) {
+      const delivery = collectMessageToolDelivery(msg);
+      const deliveredFiles = delivery?.files ?? [];
+      const internalUiReply = delivery ? createInternalUiDeliveryReply(msg, delivery) : null;
+      if (internalUiReply) {
+        enriched.push(msg, internalUiReply);
+        continue;
+      }
+      if (deliveredFiles.length > 0) {
+        let attachIndex = -1;
+        if (msg.toolCallId) {
+          for (let index = enriched.length - 1; index >= 0; index -= 1) {
+            const candidate = enriched[index];
+            if (candidate?.role !== 'assistant') continue;
+            if (assistantHasToolCallId(candidate, msg.toolCallId)) {
+              attachIndex = index;
+              break;
+            }
+          }
+        }
+
+        if (attachIndex >= 0) {
+          const target = enriched[attachIndex]!;
+          const existingKeys = new Set(
+            (target._attachedFiles || []).map(file => file.filePath || file.gatewayUrl).filter(Boolean),
+          );
+          const newFiles = deliveredFiles.filter(file => {
+            const key = file.filePath || file.gatewayUrl;
+            return !key || !existingKeys.has(key);
+          });
+          if (newFiles.length > 0) {
+            enriched[attachIndex] = {
+              ...target,
+              _attachedFiles: [...(target._attachedFiles || []), ...newFiles],
+            };
+          }
+        } else {
+          pending.push(...deliveredFiles);
+        }
+      }
+
       const matchedPath = msg.toolCallId ? toolCallPaths.get(msg.toolCallId) : undefined;
 
       // 1. Image/file content blocks in the structured content array.
@@ -941,30 +1131,41 @@ function enrichWithToolResultFiles(messages: RawMessage[]): RawMessage[] {
         }
       }
 
-      return msg; // will be filtered later
+      enriched.push(msg); // will be filtered later
+      continue;
     }
 
     if (msg.role === 'assistant' && pending.length > 0) {
       // Internal-only turns (NO_REPLY, interim narration, ...) must not consume
       // pending attachments — the next visible assistant reply should get them.
       if (isInternalMessage(msg) && !messageHasToolUse(msg)) {
-        return msg;
+        enriched.push(msg);
+        continue;
       }
       const toAttach = pending.splice(0);
       // Deduplicate against files already on the assistant message
-      const existingPaths = new Set(
-        (msg._attachedFiles || []).map(f => f.filePath).filter(Boolean),
+      const existingKeys = new Set(
+        (msg._attachedFiles || []).map(f => f.filePath || f.gatewayUrl).filter(Boolean),
       );
-      const newFiles = toAttach.filter(f => !f.filePath || !existingPaths.has(f.filePath));
-      if (newFiles.length === 0) return msg;
-      return {
+      const newFiles = toAttach.filter(f => {
+        const key = f.filePath || f.gatewayUrl;
+        return !key || !existingKeys.has(key);
+      });
+      if (newFiles.length === 0) {
+        enriched.push(msg);
+        continue;
+      }
+      enriched.push({
         ...msg,
         _attachedFiles: [...(msg._attachedFiles || []), ...newFiles],
-      };
+      });
+      continue;
     }
 
-    return msg;
-  });
+    enriched.push(msg);
+  }
+
+  return enriched;
 }
 
 /**
@@ -1714,6 +1915,8 @@ export {
   getMessageStopReason,
   getMessageErrorMessage,
   isTerminalAssistantErrorMessage,
+  shouldShowRunError,
+  withoutDismissedRunError,
   extractMediaRefs,
   extractRawFilePaths,
   makeAttachedFile,

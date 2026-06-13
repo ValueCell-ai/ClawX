@@ -3,12 +3,12 @@ const MULTI_INSTANCE_PROVIDER_TYPES = new Set(['custom', 'ollama']);
 export const OPENCLAW_PROVIDER_KEY_MINIMAX = 'minimax-portal';
 export const OPENCLAW_PROVIDER_KEY_MOONSHOT = 'moonshot';
 export const OPENCLAW_PROVIDER_KEY_MOONSHOT_GLOBAL = 'moonshot-global';
-export const OPENAI_CODEX_RUNTIME_PROVIDER_KEY = 'openai-codex';
+/** OpenClaw Codex OAuth runtime provider id (canonical `openai`, not legacy `openai-codex`). */
+export const OPENAI_CODEX_RUNTIME_PROVIDER_KEY = 'openai';
 export const CLAWX_OPENAI_IMAGE_PROVIDER_KEY = 'clawx-openai-image';
 export const OAUTH_PROVIDER_TYPES = ['minimax-portal', 'minimax-portal-cn'] as const;
 export const OPENCLAW_OAUTH_PLUGIN_PROVIDER_KEYS = [
   OPENCLAW_PROVIDER_KEY_MINIMAX,
-  OPENAI_CODEX_RUNTIME_PROVIDER_KEY,
 ] as const;
 
 const OAUTH_PROVIDER_TYPE_SET = new Set<string>(OAUTH_PROVIDER_TYPES);
@@ -41,7 +41,7 @@ export function getOpenClawProviderKeyForType(type: string, providerId: string):
 
 /**
  * Resolve the OpenClaw runtime provider key for a saved account.
- * Browser OAuth for OpenAI is stored under vendorId `openai` but runs as `openai-codex`.
+ * Browser OAuth for OpenAI is stored under vendorId `openai` and runs as `openai`.
  */
 export function resolveOpenClawProviderKey(account: {
   vendorId: string;
@@ -65,23 +65,18 @@ export function getAliasSourceTypes(openClawKey: string): string[] {
 }
 
 /**
- * OpenAI Codex OAuth uses runtime key `openai-codex` while API keys use `openai`.
- * When only OAuth is configured, hide the redundant bare `openai` active slot so the
- * UI does not show a second "OpenAI • API key (missing)" row.
+ * Legacy OpenClaw builds wrote OAuth under runtime key `openai-codex`. Hide that
+ * stale slot when the canonical `openai` OAuth entry is active.
  */
 export function filterActiveProviderKeysForUi(
   activeKeys: Iterable<string>,
   options?: { hasConfiguredOpenAiApiKey?: boolean },
 ): string[] {
   const keys = Array.from(activeKeys).filter((key) => !HIDDEN_PROVIDER_KEYS_FOR_UI.has(key));
-  const active = new Set(keys);
-  if (!active.has('openai') || !active.has(OPENAI_CODEX_RUNTIME_PROVIDER_KEY)) {
-    return keys;
+  if (keys.includes('openai') && keys.includes('openai-codex') && !options?.hasConfiguredOpenAiApiKey) {
+    return keys.filter((key) => key !== 'openai-codex');
   }
-  if (options?.hasConfiguredOpenAiApiKey) {
-    return keys;
-  }
-  return keys.filter((key) => key !== 'openai');
+  return keys;
 }
 
 export function isOAuthProviderType(type: string): boolean {

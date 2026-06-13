@@ -8,7 +8,7 @@ import {
 } from '@electron/utils/provider-keys';
 
 describe('provider-keys', () => {
-  it('maps OpenAI browser OAuth accounts to the openai-codex runtime key', () => {
+  it('maps OpenAI browser OAuth accounts to the canonical openai runtime key', () => {
     expect(resolveOpenClawProviderKey({
       vendorId: 'openai',
       id: 'openai-personal',
@@ -26,20 +26,24 @@ describe('provider-keys', () => {
     expect(getOpenClawProviderKeyForType('custom', 'my-local')).toBe('custom-mylocal');
   });
 
-  it('treats openai-codex as an OAuth plugin provider key', () => {
-    expect(isOpenClawOAuthPluginProviderKey('openai-codex')).toBe(true);
+  it('does not treat legacy openai-codex as an OAuth plugin provider key', () => {
+    expect(isOpenClawOAuthPluginProviderKey('openai-codex')).toBe(false);
   });
 
-  it('drops bare openai from the UI list when only openai-codex OAuth is active', () => {
+  it('hides legacy openai-codex when canonical openai OAuth is active', () => {
     expect(filterActiveProviderKeysForUi(['openai', 'openai-codex', 'anthropic'])).toEqual([
-      'openai-codex',
+      'openai',
       'anthropic',
     ]);
   });
 
-  it('keeps openai in the UI list when an API key is configured alongside Codex OAuth', () => {
+  it('keeps openai in the UI list when an API key is configured alongside OAuth', () => {
     expect(filterActiveProviderKeysForUi(['openai', 'openai-codex'], {
       hasConfiguredOpenAiApiKey: true,
     })).toEqual(['openai', 'openai-codex']);
+  });
+
+  it('keeps bare openai visible when no legacy openai-codex slot remains', () => {
+    expect(filterActiveProviderKeysForUi(['openai', 'minimax-portal'])).toEqual(['openai', 'minimax-portal']);
   });
 });

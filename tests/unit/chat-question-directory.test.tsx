@@ -119,4 +119,32 @@ describe('Chat question directory', () => {
     expect(directory).toBeInTheDocument();
     expect(directory.querySelectorAll('button')).toHaveLength(2);
   });
+
+  it('includes the latest question in the directory list', async () => {
+    const latestQuestion = '给我生成一只哈密瓜';
+    const originalMessages = chatState.messages;
+    chatState.messages = [
+      ...Array.from({ length: 13 }, (_, idx) => ([
+        { role: 'user', content: `question ${idx + 1}` },
+        { role: 'assistant', content: `reply ${idx + 1}` },
+      ])).flat(),
+      { role: 'user', content: latestQuestion },
+      { role: 'assistant', content: 'generated image' },
+    ];
+
+    try {
+      render(
+        <TooltipProvider>
+          <Chat />
+        </TooltipProvider>,
+      );
+
+      fireEvent.click(await screen.findByTestId('chat-question-directory-toggle'));
+
+      const lastUserIndex = chatState.messages.length - 2;
+      expect(screen.getByTestId(`chat-question-directory-item-${lastUserIndex}`)).toHaveTextContent(latestQuestion);
+    } finally {
+      chatState.messages = originalMessages;
+    }
+  });
 });

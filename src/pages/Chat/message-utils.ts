@@ -77,12 +77,14 @@ function stripAssistantMediaTags(text: string): string {
   // are also stripped from the visible bubble. Without this, the bubble
   // would still leak the literal `MEDIA:/.../截屏 2026-05-06 17.46.51.png`
   // to the user when the underlying path detection succeeds.
-  const tagged = new RegExp(`(^|[\\s(\\[{>])(?:MEDIA|media):(?:\\/|~\\/|[A-Za-z]:\\\\)[^\\n"'()\\[\\],<>]*?\\.(?:${exts})(?=$|[\\s\\n"'()\\[\\],<>]|[，。；;,.!?])`, 'g');
+  // Allow MEDIA: after punctuation/emojis (e.g. `必备~MEDIA:/path`) — only reject
+  // when immediately preceded by word/path characters so `someMEDIA:` stays literal.
+  const tagged = new RegExp(`(?<![A-Za-z0-9/\\\\])(?:MEDIA|media):(?:\\/|~\\/|[A-Za-z]:\\\\)[^\\n"'()\\[\\],<>]*?\\.(?:${exts})(?=$|[\\s\\n"'()\\[\\],<>]|[，。；;,.!?])`, 'g');
   // Bare OpenClaw artifact paths emitted alongside `_attachedFiles` cards.
   // Scope to `.openclaw/media/` so normal absolute paths in prose stay visible.
   const bareOpenClawMedia = new RegExp(`(^|[\\s(\\[{>])(?:(?:\\/|~\\/|[A-Za-z]:\\\\)[^\\n"'()\\[\\],<>]*?\\.openclaw[\\\\/]media[\\\\/][^\\n"'()\\[\\],<>]*?\\.(?:${exts}))(?=$|[\\s\\n"'()\\[\\],<>]|[，。；;,.!?])`, 'g');
   return text
-    .replace(tagged, (_, lead: string) => lead)
+    .replace(tagged, '')
     .replace(bareOpenClawMedia, (_, lead: string) => lead)
     .replace(/!\[[^\]]*\]\([^)]+\)/g, '')
     // Collapse the empty lines / orphan whitespace the strip leaves behind.
@@ -213,6 +215,40 @@ export function isOpenClawRuntimeEventPrompt(text: string): boolean {
   return trimmed.split(/\n+/).some((line) => /^Continue the OpenClaw runtime event\.?\s*$/i.test(line.trim()));
 }
 
+/** Model-side planning about message-tool vs MEDIA delivery — never user-facing. */
+function isInternalDeliveryPlanningParagraph(text: string): boolean {
+  const trimmed = text.trim();
+  if (!trimmed) return false;
+  if (/message tool isn't suitable/i.test(trimmed)) return true;
+  if (/visible-reply contract/i.test(trimmed)) return true;
+  if (/final-reply MEDIA lines/i.test(trimmed)) return true;
+  if (/writing the normal final reply with MEDIA directives/i.test(trimmed)) return true;
+  if (/webchat isn't a valid channel for the message tool/i.test(trimmed)) return true;
+  if (/fall back to writing the normal final reply/i.test(trimmed)) return true;
+  return false;
+}
+
+/** Remove internal delivery-planning paragraphs the model sometimes prepends to replies. */
+export function stripInternalDeliveryPlanning(text: string): string {
+  if (!text) return text;
+  const paragraphs = text.split(/\n{2,}/);
+  const kept = paragraphs.filter((paragraph) => !isInternalDeliveryPlanningParagraph(paragraph));
+  if (kept.length === paragraphs.length) return text;
+  return kept
+    .join('\n\n')
+    .replace(/[ \t]+\n/g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
+/** Normalize assistant reply text for chat bubbles and stream overrides. */
+export function sanitizeAssistantReplyText(text: string): string {
+  if (!text) return text;
+  return stripInternalSentinelLines(
+    stripAssistantMediaTags(stripInternalDeliveryPlanning(text)),
+  );
+}
+
 /** Process narration that should never appear in the execution graph or chat stream. */
 export function isInternalProcessNarration(text: string): boolean {
   const trimmed = text.trim();
@@ -220,6 +256,7 @@ export function isInternalProcessNarration(text: string): boolean {
   if (isInternalAssistantReplyText(trimmed)) return true;
   if (isGeneratingStatusNarration(trimmed)) return true;
   if (isOpenClawRuntimeEventPrompt(trimmed)) return true;
+  if (isInternalDeliveryPlanningParagraph(trimmed)) return true;
   if (/^\[Inter-session message\]/i.test(trimmed)) return true;
   if (/OpenClaw runtime event/i.test(trimmed)) return true;
   if (/Handle the result internally/i.test(trimmed) && /Do not relay it to the user/i.test(trimmed)) {
@@ -278,14 +315,9 @@ export function extractText(message: RawMessage | unknown): string {
   } else if (!isUser && result) {
     if (isInternalAssistantReplyText(result)) return '';
     if (isGeneratingStatusNarration(result)) return '';
-    // Assistant-side cleanup: keep the bubble free of `MEDIA:/path` tags
-    // that the runtime emits to point at produced artifacts.  The same
-    // path is surfaced as a clickable file card via `_attachedFiles`,
-    // so leaving it inline would duplicate the artifact.
-    result = stripAssistantMediaTags(result);
-    // Drop a trailing `NO_REPLY` / `HEARTBEAT_OK` the model may append after
-    // an otherwise-real answer.
-    result = stripInternalSentinelLines(result);
+    // Assistant-side cleanup: drop internal delivery planning, `MEDIA:/path`
+    // tags, and trailing sentinels. Artifact paths surface via `_attachedFiles`.
+    result = sanitizeAssistantReplyText(result);
   }
 
   return result;

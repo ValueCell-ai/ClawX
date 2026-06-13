@@ -112,15 +112,19 @@ export class ProviderService {
 
     let hasConfiguredOpenAiApiKey = false;
     if (activeProviders.has('openai')) {
-      for (const account of storeByKey.get('openai') ?? []) {
-        if (account.authMode === 'oauth_browser') {
-          continue;
-        }
-        const apiKey = await getApiKey(account.id);
-        const openClawKey = await getProviderApiKeyFromOpenClaw('openai');
-        if (apiKey || openClawKey) {
-          hasConfiguredOpenAiApiKey = true;
-          break;
+      const openClawKey = await getProviderApiKeyFromOpenClaw('openai');
+      if (openClawKey) {
+        hasConfiguredOpenAiApiKey = true;
+      } else {
+        for (const account of storeByKey.get('openai') ?? []) {
+          if (account.authMode === 'oauth_browser') {
+            continue;
+          }
+          const apiKey = await getApiKey(account.id);
+          if (apiKey) {
+            hasConfiguredOpenAiApiKey = true;
+            break;
+          }
         }
       }
     }
@@ -174,7 +178,7 @@ export class ProviderService {
       }
     }
 
-    if (activeProviders.has(OPENAI_CODEX_RUNTIME_PROVIDER_KEY)) {
+    if (activeProviders.has(OPENAI_CODEX_RUNTIME_PROVIDER_KEY) || !hasConfiguredOpenAiApiKey) {
       const openaiStoreAccounts = storeByKey.get('openai') ?? [];
       for (const account of openaiStoreAccounts) {
         if (account.authMode !== 'api_key' && account.authMode !== undefined) {
@@ -184,9 +188,16 @@ export class ProviderService {
         const openClawKey = await getProviderApiKeyFromOpenClaw('openai');
         if (!apiKey && !openClawKey) {
           logger.info(
-            `[provider-sync] Removing unconfigured OpenAI API key account "${account.id}" (OAuth uses ${OPENAI_CODEX_RUNTIME_PROVIDER_KEY})`,
+            `[provider-sync] Removing unconfigured OpenAI API key account "${account.id}"`
+              + (activeProviders.has(OPENAI_CODEX_RUNTIME_PROVIDER_KEY)
+                ? ` (OAuth uses ${OPENAI_CODEX_RUNTIME_PROVIDER_KEY})`
+                : ' (Codex OAuth removed)'),
           );
           await deleteProviderAccount(account.id);
+          const resultIndex = result.findIndex((entry) => entry.id === account.id);
+          if (resultIndex >= 0) {
+            result.splice(resultIndex, 1);
+          }
         }
       }
     }

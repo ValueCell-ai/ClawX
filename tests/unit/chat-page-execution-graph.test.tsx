@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 
 const hostApiFetchMock = vi.fn();
 
@@ -444,6 +444,45 @@ describe('Chat execution graph lifecycle', () => {
     expect(screen.getAllByText('404 Resource not found').length).toBeGreaterThan(0);
   });
 
+  it('dismisses run error callout when ignore is clicked', async () => {
+    const { useChatStore } = await import('@/stores/chat');
+    useChatStore.setState({
+      messages: [
+        { role: 'user', content: 'Check semiconductor chatter' },
+      ],
+      loading: false,
+      error: null,
+      runError: '404 Resource not found',
+      dismissedRunErrors: {},
+      sending: false,
+      activeRunId: null,
+      streamingText: '',
+      streamingMessage: null,
+      streamingTools: [],
+      pendingFinal: false,
+      lastUserMessageAt: null,
+      pendingToolImages: [],
+      sessions: [{ key: 'agent:main:main' }],
+      currentSessionKey: 'agent:main:main',
+      currentAgentId: 'main',
+      sessionLabels: {},
+      sessionLastActivity: {},
+      thinkingLevel: null,
+    });
+
+    const { Chat } = await import('@/pages/Chat/index');
+    render(<Chat />);
+
+    const dismissButton = await screen.findByTestId('chat-run-error-dismiss');
+    fireEvent.click(dismissButton);
+
+    await waitFor(() => {
+      expect(screen.queryByTestId('chat-run-error')).not.toBeInTheDocument();
+    });
+    expect(useChatStore.getState().runError).toBeNull();
+    expect(useChatStore.getState().dismissedRunErrors['agent:main:main']).toBe('404 Resource not found');
+  });
+
   it('keeps history final reply folded while matching streamed text is still active', async () => {
     const finalText = 'History final answer is already recorded.';
     const { useChatStore } = await import('@/stores/chat');
@@ -555,6 +594,53 @@ describe('Chat execution graph lifecycle', () => {
 
     expect(screen.queryByTestId('chat-execution-step-thinking-trailing')).not.toBeInTheDocument();
     expect(screen.getByText('执行完成 ✅ 今天的 github1 已写入飞书文档。')).toBeInTheDocument();
+    expect(screen.queryByTestId('chat-typing-indicator')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('chat-activity-indicator')).not.toBeInTheDocument();
+  });
+
+  it('settles a plain text reply from history when Gateway lifecycle is stuck', async () => {
+    const { useChatStore } = await import('@/stores/chat');
+    useChatStore.setState({
+      messages: [
+        {
+          role: 'user',
+          content: '你好',
+        },
+        {
+          role: 'assistant',
+          id: 'plain-final-turn',
+          content: [{ type: 'text', text: '你好！我是 ClawX，你的桌面 AI 助手。' }],
+        },
+      ],
+      loading: false,
+      error: null,
+      runError: null,
+      sending: true,
+      activeRunId: 'run-plain-stuck',
+      streamingText: '',
+      streamingMessage: null,
+      streamingTools: [],
+      pendingFinal: false,
+      lastUserMessageAt: Date.now() - 60 * 60 * 1000,
+      pendingToolImages: [],
+      sessions: [{ key: 'agent:main:main' }],
+      currentSessionKey: 'agent:main:main',
+      currentAgentId: 'main',
+      sessionLabels: {},
+      sessionLastActivity: {},
+      thinkingLevel: null,
+    });
+
+    const { Chat } = await import('@/pages/Chat/index');
+
+    render(<Chat />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('mock-chat-input')).toHaveAttribute('data-sending', 'false');
+    });
+
+    expect(screen.queryByTestId('chat-execution-step-thinking-trailing')).not.toBeInTheDocument();
+    expect(screen.getByText('你好！我是 ClawX，你的桌面 AI 助手。')).toBeInTheDocument();
     expect(screen.queryByTestId('chat-typing-indicator')).not.toBeInTheDocument();
     expect(screen.queryByTestId('chat-activity-indicator')).not.toBeInTheDocument();
   });

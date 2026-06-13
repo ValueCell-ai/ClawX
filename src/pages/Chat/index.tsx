@@ -18,7 +18,7 @@ import { ChatMessage } from './ChatMessage';
 import { ChatInput } from './ChatInput';
 import { ExecutionGraphCard } from './ExecutionGraphCard';
 import { ChatToolbar } from './ChatToolbar';
-import { extractImages, extractText, extractThinking, extractToolUse, isInternalAssistantReplyText, isInternalProcessNarration, normalizeMessageRole, stripProcessMessagePrefix } from './message-utils';
+import { extractImages, extractText, extractThinking, extractToolUse, isInternalAssistantReplyText, isInternalProcessNarration, normalizeMessageRole, sanitizeAssistantReplyText, stripProcessMessagePrefix } from './message-utils';
 import {
   buildRunSegmentMessageIndices,
   deriveRuntimeTaskSteps,
@@ -337,9 +337,12 @@ export function Chat() {
   const streamTools = streamMsg ? extractToolUse(streamMsg) : [];
   const hasStreamTools = streamTools.length > 0;
   const streamImages = streamMsg ? extractImages(streamMsg) : [];
-  const hasStreamImages = streamImages.length > 0;
+  const hasStreamAttachedImages = ((streamMsg as RawMessage | null)?._attachedFiles ?? [])
+    .some((file) => file.mimeType.startsWith('image/'));
+  const hasStreamImages = streamImages.length > 0 || hasStreamAttachedImages;
   const hasStreamToolStatus = streamingTools.length > 0;
   const hasRunningStreamToolStatus = streamingTools.some((tool) => tool.status === 'running');
+  const hasImageGenerateStreamToolStatus = streamingTools.some((tool) => tool.name === 'image_generate');
   const currentRuntimeRun = activeRunId ? runtimeRuns[activeRunId] ?? null : null;
   const currentRuntimeHasToolActivity = Boolean(currentRuntimeRun?.events.some((event) =>
     event.type === 'tool.started'
@@ -454,6 +457,12 @@ export function Chat() {
     const imageGenerationSettledInHistory = isLatestRunSegment
       && hasDeliveredImageGenerationResult(postTriggerMessages)
       && !pendingImageGeneration;
+    const imageGenerationSettledInStream = isLatestRunSegment
+      && hasStreamImages
+      && (hasImageGenerateStreamToolStatus || postTriggerMessages.some((m) =>
+        m.role === 'assistant' && extractToolUse(m).some((tool) => tool.name === 'image_generate'),
+      ));
+    const imageGenerationSettled = imageGenerationSettledInHistory || imageGenerationSettledInStream;
     const runStillExecutingTools = hasToolActivity && !hasFinalReply;
     // runStillExecutingTools bridges the brief gap between tool rounds when
     // Gateway temporarily clears sending.  However, after an explicit abort
@@ -463,15 +472,18 @@ export function Chat() {
     // History may already contain the final answer while lifecycle flags are
     // still armed (missing Gateway terminal phase, blocked chat.send RPC, etc.).
     // Treat the run as closed for graph/input UI when the transcript is done
-    // and no user-visible reply/tool stream is active. Require prior tool activity
-    // so an early narration-only history snapshot does not collapse the graph
-    // mid-chain. Thinking-only stale stream content should not keep image
-    // generation runs open after history already contains the final media.
-    const streamBlocksHistoryCompletion = hasHistoryCompletionBlockingStream && !imageGenerationSettledInHistory;
-    const runCompletedInHistory = imageGenerationSettledInHistory || (hasFinalReply
+    // and no user-visible reply/tool stream is active. Tool chains stay open
+    // while a runtime/stream tool is running, but plain text turns must still
+    // close when their final reply is already in history and Gateway missed the
+    // terminal lifecycle event.
+    const streamBlocksHistoryCompletion = hasHistoryCompletionBlockingStream && !imageGenerationSettled;
+    const finalReplyCanSettleRun = hasToolActivity
+      || !sending
+      || (!runtimeHasRunningTool && !hasRunningStreamToolStatus);
+    const runCompletedInHistory = imageGenerationSettled || (hasFinalReply
       && !pendingImageGeneration
       && !streamBlocksHistoryCompletion
-      && (hasToolActivity || !sending));
+      && finalReplyCanSettleRun);
     const isLatestOpenRun = isLatestRunSegment
       && !runError
       && !runCompletedInHistory
@@ -564,7 +576,9 @@ export function Chat() {
       : sanitizeGraphSteps(buildSteps(rawStreamingReplyCandidate));
     let streamingReplyText: string | null = null;
     if (rawStreamingReplyCandidate) {
-      const trimmedReplyText = stripProcessMessagePrefix(streamText, getPrimaryMessageStepTexts(steps));
+      const trimmedReplyText = sanitizeAssistantReplyText(
+        stripProcessMessagePrefix(streamText, getPrimaryMessageStepTexts(steps)),
+      );
       const hasReplyText = trimmedReplyText.trim().length > 0
         && !isInternalAssistantReplyText(trimmedReplyText);
       if (hasReplyText || hasStreamImages) {
@@ -694,7 +708,7 @@ export function Chat() {
       streamingReplyText,
       suppressThinking,
     }];
-  }, [messages, subagentCompletionInfos, currentSessionKey, streamingMessage, streamingTools, pendingFinal, sending, hasAnyStreamContent, hasStreamText, hasStreamThinking, hasStreamImages, streamText, streamTools.length, hasRunningStreamToolStatus, hasHistoryCompletionBlockingStream, childTranscripts, currentAgentId, agents, sessionLabels, graphStepCache, runError, isRunTrigger, activeRunId, runtimeRuns]);
+  }, [messages, subagentCompletionInfos, currentSessionKey, streamingMessage, streamingTools, pendingFinal, sending, hasAnyStreamContent, hasStreamText, hasStreamThinking, hasStreamImages, hasImageGenerateStreamToolStatus, streamText, streamTools.length, hasRunningStreamToolStatus, hasHistoryCompletionBlockingStream, childTranscripts, currentAgentId, agents, sessionLabels, graphStepCache, runError, isRunTrigger, activeRunId, runtimeRuns]);
   const hasActiveExecutionGraph = userRunCards.some((card) => card.active);
   let latestRunSegmentCompletion = { hasFinalReply: false, hasToolActivity: false };
   let pendingImageGeneration = false;
@@ -718,22 +732,28 @@ export function Chat() {
       && !pendingImageGeneration;
     break;
   }
-  const streamBlocksHistoryCompletion = hasHistoryCompletionBlockingStream && !imageGenerationSettledInHistory;
-  const runSettledInHistory = imageGenerationSettledInHistory || (latestRunSegmentCompletion.hasFinalReply
+  const imageGenerationSettledInStream = hasStreamImages
+    && hasImageGenerateStreamToolStatus;
+  const imageGenerationSettled = imageGenerationSettledInHistory || imageGenerationSettledInStream;
+  const streamBlocksHistoryCompletion = hasHistoryCompletionBlockingStream && !imageGenerationSettled;
+  const runSettledInHistory = imageGenerationSettled || (latestRunSegmentCompletion.hasFinalReply
     && !pendingImageGeneration
     && !streamBlocksHistoryCompletion
     && (
       latestRunSegmentCompletion.hasToolActivity
       || currentRuntimeHasToolActivity
       || !sending
+      || (!hasRunningRuntimeToolStatus && !hasRunningStreamToolStatus)
     ));
   const shouldClearStoreLifecycleFromHistory = sending
     && runSettledInHistory
     && (
-      imageGenerationSettledInHistory
+      imageGenerationSettled
       || (!hasRunningRuntimeToolStatus && !hasRunningStreamToolStatus)
     );
-  const inputRunActive = sending || pendingImageGeneration || (hasActiveExecutionGraph && !runSettledInHistory);
+  const inputRunActive = (sending && !imageGenerationSettled)
+    || pendingImageGeneration
+    || (hasActiveExecutionGraph && !runSettledInHistory);
 
   useEffect(() => {
     if (!shouldClearStoreLifecycleFromHistory) return;
@@ -757,7 +777,9 @@ export function Chat() {
       const replyMessage = messages[card.replyIndex];
       if (!replyMessage || replyMessage.role !== 'assistant') continue;
       const fullReplyText = extractText(replyMessage);
-      const trimmedReplyText = stripProcessMessagePrefix(fullReplyText, card.messageStepTexts);
+      const trimmedReplyText = sanitizeAssistantReplyText(
+        stripProcessMessagePrefix(fullReplyText, card.messageStepTexts),
+      );
       if (trimmedReplyText !== fullReplyText) {
         map.set(card.replyIndex, trimmedReplyText);
       }
@@ -1098,10 +1120,20 @@ export function Chat() {
       {runError && (
         <div className="px-4 pt-2" data-testid="chat-run-error">
           <div className="max-w-4xl mx-auto rounded-xl border border-destructive/20 bg-destructive/10 px-4 py-3">
-            <p className="text-sm font-medium text-destructive flex items-center gap-2">
-              <AlertCircle className="h-4 w-4" />
-              {t('runError.title')}
-            </p>
+            <div className="flex items-start justify-between gap-3">
+              <p className="text-sm font-medium text-destructive flex items-center gap-2">
+                <AlertCircle className="h-4 w-4 shrink-0" />
+                {t('runError.title')}
+              </p>
+              <button
+                type="button"
+                onClick={clearError}
+                className="shrink-0 text-xs text-destructive/60 hover:text-destructive underline"
+                data-testid="chat-run-error-dismiss"
+              >
+                {t('common:actions.dismiss')}
+              </button>
+            </div>
             <p className="mt-1 text-sm text-destructive/90 break-words">
               {runError}
             </p>
@@ -1185,14 +1217,37 @@ export function Chat() {
 function QuestionDirectory({ items }: { items: QuestionDirectoryItem[] }) {
   const { t } = useTranslation('chat');
   const scrollRef = useRef<HTMLElement | null>(null);
-  const visibleItems = items.slice(0, QUESTION_DIRECTORY_RENDER_LIMIT);
+  const visibleItems =
+    items.length > QUESTION_DIRECTORY_RENDER_LIMIT
+      ? items.slice(-QUESTION_DIRECTORY_RENDER_LIMIT)
+      : items;
   const hiddenCount = Math.max(0, items.length - visibleItems.length);
+  const lastItemKey = visibleItems.at(-1)?.index ?? -1;
 
   useEffect(() => {
     const scrollEl = scrollRef.current;
     if (!scrollEl) return;
-    scrollEl.scrollTop = scrollEl.scrollHeight;
-  }, [visibleItems.length]);
+
+    const scrollToEnd = () => {
+      scrollEl.scrollTop = scrollEl.scrollHeight;
+    };
+
+    scrollToEnd();
+    const frame = requestAnimationFrame(() => {
+      requestAnimationFrame(scrollToEnd);
+    });
+
+    if (typeof ResizeObserver === 'undefined') {
+      return () => cancelAnimationFrame(frame);
+    }
+
+    const observer = new ResizeObserver(scrollToEnd);
+    observer.observe(scrollEl);
+    return () => {
+      cancelAnimationFrame(frame);
+      observer.disconnect();
+    };
+  }, [lastItemKey, visibleItems.length]);
 
   const handleJumpToMessage = (index: number) => {
     document.getElementById(`chat-message-${index}`)?.scrollIntoView({
@@ -1204,11 +1259,11 @@ function QuestionDirectory({ items }: { items: QuestionDirectoryItem[] }) {
   return (
     <aside
       data-testid="chat-question-directory"
-      className="w-full shrink-0 lg:w-64 xl:w-72"
+      className="flex min-h-0 w-full shrink-0 self-stretch lg:w-64 xl:w-72"
       aria-label={t('questionDirectory.title')}
     >
-      <div className="sticky top-2 max-h-full overflow-hidden rounded-2xl border border-black/5 bg-black/[0.02] p-3 shadow-sm dark:border-white/10 dark:bg-white/[0.03]">
-        <div className="mb-2 flex items-center justify-between gap-2 px-1">
+      <div className="sticky top-2 flex min-h-0 w-full flex-1 flex-col rounded-2xl border border-black/5 bg-black/[0.02] p-3 shadow-sm dark:border-white/10 dark:bg-white/[0.03]">
+        <div className="mb-2 flex shrink-0 items-center justify-between gap-2 px-1">
           <h2 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
             {t('questionDirectory.title')}
           </h2>
@@ -1216,7 +1271,7 @@ function QuestionDirectory({ items }: { items: QuestionDirectoryItem[] }) {
             {items.length}
           </span>
         </div>
-        <nav ref={scrollRef} className="max-h-[calc(100vh-13rem)] space-y-1 overflow-y-auto pr-1">
+        <nav ref={scrollRef} className="min-h-0 flex-1 space-y-1 overflow-y-auto overscroll-contain pr-1">
           {visibleItems.map((item) => (
             <button
               key={item.index}

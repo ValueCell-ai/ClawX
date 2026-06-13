@@ -197,6 +197,52 @@ describe('agent config lifecycle', () => {
     );
   });
 
+  it('prunes stale custom runtime model overrides when listing agents', async () => {
+    await writeOpenClawJson({
+      models: {
+        providers: {
+          'minimax-portal': {
+            baseUrl: 'https://api.minimax.io/anthropic',
+            api: 'anthropic-messages',
+          },
+        },
+      },
+      agents: {
+        defaults: {
+          model: {
+            primary: 'minimax-portal/MiniMax-M3',
+          },
+        },
+        list: [
+          { id: 'main', name: 'Main', default: true, model: { primary: 'custom-custom0a/gpt-5.5' } },
+          { id: 'coder', name: 'Coder', model: { primary: 'ark/ark-code-latest' } },
+        ],
+      },
+    });
+
+    const { listAgentsSnapshot } = await import('@electron/utils/agent-config');
+    const snapshot = await listAgentsSnapshot();
+    const config = await readOpenClawJson();
+    const main = snapshot.agents.find((agent) => agent.id === 'main');
+    const coder = snapshot.agents.find((agent) => agent.id === 'coder');
+    const mainEntry = ((config.agents as { list: Array<{ id: string; model?: unknown }> }).list)
+      .find((agent) => agent.id === 'main');
+    const coderEntry = ((config.agents as { list: Array<{ id: string; model?: { primary?: string } }> }).list)
+      .find((agent) => agent.id === 'coder');
+
+    expect(main).toMatchObject({
+      modelRef: 'minimax-portal/MiniMax-M3',
+      overrideModelRef: null,
+      inheritedModel: true,
+    });
+    expect(coder).toMatchObject({
+      modelRef: 'ark/ark-code-latest',
+      overrideModelRef: 'ark/ark-code-latest',
+    });
+    expect(mainEntry?.model).toBeUndefined();
+    expect(coderEntry?.model?.primary).toBe('ark/ark-code-latest');
+  });
+
   it('deletes the config entry, bindings, runtime directory, and managed workspace for a removed agent', async () => {
     await writeOpenClawJson({
       agents: {

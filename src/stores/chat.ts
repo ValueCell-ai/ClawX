@@ -135,6 +135,12 @@ const ERROR_RECOVERY_DELAY_MS = 12_000;
 const LLM_IDLE_HINT_MS = 120_000;
 /** Wait past one LLM idle window before declaring a hard no-response failure. */
 const NO_RESPONSE_SAFETY_TIMEOUT_MS = 130_000;
+/** Delay before the first fallback transcript poll after a send. */
+const HISTORY_POLL_START_DELAY_MS = 3_000;
+/** Interval between fallback transcript poll ticks during an active send. */
+const HISTORY_POLL_INTERVAL_MS = 5_000;
+/** Only issue the fallback poll RPC after this much streamed-event silence. */
+const HISTORY_POLL_EVENT_SILENCE_MS = 10_000;
 
 type PendingOptimisticUserMessage = {
   message: RawMessage;
@@ -869,6 +875,26 @@ function isTerminalAssistantErrorMessage(message: RawMessage | unknown): boolean
   return msg.role === 'assistant' && getMessageStopReason(message) === 'error';
 }
 
+function shouldShowRunError(
+  sessionKey: string,
+  errorMessage: string | null | undefined,
+  dismissedBySession: Record<string, string>,
+): string | null {
+  if (!errorMessage) return null;
+  if (dismissedBySession[sessionKey] === errorMessage) return null;
+  return errorMessage;
+}
+
+function withoutDismissedRunError(
+  dismissedBySession: Record<string, string>,
+  sessionKey: string,
+): Record<string, string> {
+  if (!(sessionKey in dismissedBySession)) return dismissedBySession;
+  const next = { ...dismissedBySession };
+  delete next[sessionKey];
+  return next;
+}
+
 /** Extract media file refs from [media attached: <path> (<mime>) | ...] patterns */
 function extractMediaRefs(text: string): Array<{ filePath: string; mimeType: string }> {
   const refs: Array<{ filePath: string; mimeType: string }> = [];
@@ -932,8 +958,14 @@ function mimeFromExtension(filePath: string): string {
 
 function extractFilePathsFromToolArgs(args: Record<string, unknown>): string[] {
   const paths: string[] = [];
-  const direct = args.file_path ?? args.filePath ?? args.path ?? args.file;
+  const direct = args.file_path ?? args.filePath ?? args.path ?? args.file ?? args.media ?? args.mediaUrl;
   if (typeof direct === 'string' && direct.trim()) paths.push(direct.trim());
+  const mediaUrls = args.mediaUrls;
+  if (Array.isArray(mediaUrls)) {
+    for (const value of mediaUrls) {
+      if (typeof value === 'string' && value.trim()) paths.push(value.trim());
+    }
+  }
 
   const attachments = args.attachments;
   if (Array.isArray(attachments)) {
@@ -948,6 +980,101 @@ function extractFilePathsFromToolArgs(args: Record<string, unknown>): string[] {
   }
 
   return paths;
+}
+
+function isImagePathLike(value: string): boolean {
+  return /\.(?:png|jpe?g|gif|webp|bmp|avif|svg)(?:$|[?#])/i.test(value.trim());
+}
+
+function collectMediaValues(record: Record<string, unknown> | null | undefined): string[] {
+  if (!record) return [];
+  const values: string[] = [];
+  const push = (value: unknown) => {
+    if (typeof value === 'string' && value.trim()) values.push(value.trim());
+  };
+  push(record.media);
+  push(record.mediaUrl);
+  push(record.filePath);
+  const mediaUrls = record.mediaUrls;
+  if (Array.isArray(mediaUrls)) {
+    for (const value of mediaUrls) push(value);
+  }
+  return values;
+}
+
+function parseMessageToolResultJson(msg: RawMessage): Record<string, unknown> | null {
+  const text = getMessageText(msg.content);
+  if (!text.trim()) return null;
+  try {
+    const parsed = JSON.parse(text);
+    return parsed && typeof parsed === 'object' ? parsed as Record<string, unknown> : null;
+  } catch {
+    return null;
+  }
+}
+
+type MessageToolDelivery = {
+  files: AttachedFileMeta[];
+  text: string;
+  internalUi: boolean;
+};
+
+function collectMessageToolDelivery(msg: RawMessage): MessageToolDelivery | null {
+  if (!isToolResultRole(msg.role)) return null;
+  if (msg.toolName !== 'message') return null;
+
+  const details = msg.details && typeof msg.details === 'object'
+    ? msg.details as Record<string, unknown>
+    : parseMessageToolResultJson(msg);
+  if (!details) return null;
+  if (String(details.status ?? '').toLowerCase() === 'error') return null;
+
+  const sourceReply = details.sourceReply && typeof details.sourceReply === 'object'
+    ? details.sourceReply as Record<string, unknown>
+    : null;
+  const seen = new Set<string>();
+  const files: AttachedFileMeta[] = [];
+
+  for (const media of [...collectMediaValues(details), ...collectMediaValues(sourceReply)]) {
+    if (seen.has(media)) continue;
+    seen.add(media);
+    if (media.startsWith('/api/chat/media/')) {
+      files.push({
+        fileName: 'image',
+        mimeType: 'image/png',
+        fileSize: 0,
+        preview: null,
+        gatewayUrl: media,
+        source: 'gateway-media',
+      });
+      continue;
+    }
+    if (!isImagePathLike(media)) continue;
+    files.push({ ...makeAttachedFile({ filePath: media, mimeType: mimeFromExtension(media) }), source: 'tool-result' });
+  }
+
+  const sourceReplyText = sourceReply?.text;
+  const detailsMessage = details.message;
+  return {
+    files,
+    text: typeof sourceReplyText === 'string' && sourceReplyText.trim()
+      ? sourceReplyText.trim()
+      : typeof detailsMessage === 'string' ? detailsMessage.trim() : '',
+    internalUi: details.sourceReplySink === 'internal-ui'
+      || details.sourceReplyDeliveryMode === 'message_tool_only',
+  };
+}
+
+function createInternalUiDeliveryReply(msg: RawMessage, delivery: MessageToolDelivery): RawMessage | null {
+  if (!delivery.internalUi || (!delivery.text && delivery.files.length === 0)) return null;
+  const idBase = msg.id || msg.toolCallId;
+  return {
+    role: 'assistant',
+    content: delivery.text ? [{ type: 'text', text: delivery.text }] : [],
+    timestamp: msg.timestamp,
+    ...(idBase ? { id: `${idBase}:source-reply` } : {}),
+    _attachedFiles: delivery.files,
+  };
 }
 
 const DIRECTORY_MIME_TYPE = 'application/x-directory';
@@ -982,7 +1109,7 @@ function extractRawFilePaths(text: string): Array<{ filePath: string; mimeType: 
   // and other space-containing paths the agent emits with the explicit
   // `MEDIA:` marker still resolve. Newline and quote characters remain
   // path terminators so we don't accidentally swallow trailing prose.
-  const taggedRegex = new RegExp(`(?:^|[\\s(\\[{>])(?:MEDIA|media):((?:\\/|~\\/|[A-Za-z]:\\\\)[^\\n"'()\\[\\],<>` + '`' + `]*?\\.(?:${exts}))(?=$|[\\s\\n"'()\\[\\],<>` + '`' + `]|[，。；;,.!?])`, 'g');
+  const taggedRegex = new RegExp(`(?<![A-Za-z0-9/\\\\])(?:MEDIA|media):((?:\\/|~\\/|[A-Za-z]:\\\\)[^\\n"'()\\[\\],<>` + '`' + `]*?\\.(?:${exts}))(?=$|[\\s\\n"'()\\[\\],<>` + '`' + `]|[，。；;,.!?])`, 'g');
   let workingText = text;
   let taggedMatch: RegExpExecArray | null;
   while ((taggedMatch = taggedRegex.exec(text)) !== null) {
@@ -1178,6 +1305,23 @@ function collectToolCallPaths(msg: RawMessage, paths: Map<string, string>): void
   }
 }
 
+function assistantHasToolCallId(msg: RawMessage, toolCallId: string): boolean {
+  if (!toolCallId) return false;
+  const content = msg.content;
+  if (Array.isArray(content)) {
+    for (const block of content as ContentBlock[]) {
+      if ((block.type === 'tool_use' || block.type === 'toolCall') && block.id === toolCallId) {
+        return true;
+      }
+    }
+  }
+  const msgAny = msg as unknown as Record<string, unknown>;
+  const toolCalls = msgAny.tool_calls ?? msgAny.toolCalls;
+  return Array.isArray(toolCalls) && toolCalls.some((tc) =>
+    tc && typeof tc === 'object' && (tc as Record<string, unknown>).id === toolCallId,
+  );
+}
+
 /**
  * Before filtering tool_result messages from history, scan them for any file/image
  * content and attach those to the immediately following assistant message.
@@ -1190,14 +1334,55 @@ function collectToolCallPaths(msg: RawMessage, paths: Map<string, string>): void
 function enrichWithToolResultFiles(messages: RawMessage[]): RawMessage[] {
   const pending: AttachedFileMeta[] = [];
   const toolCallPaths = new Map<string, string>();
+  const enriched: RawMessage[] = [];
 
-  return messages.map((msg) => {
+  for (const msg of messages) {
     // Track file paths from assistant tool call arguments for later matching
     if (msg.role === 'assistant') {
       collectToolCallPaths(msg, toolCallPaths);
     }
 
     if (isToolResultRole(msg.role)) {
+      const delivery = collectMessageToolDelivery(msg);
+      const deliveredFiles = delivery?.files ?? [];
+      const internalUiReply = delivery ? createInternalUiDeliveryReply(msg, delivery) : null;
+      if (internalUiReply) {
+        enriched.push(msg, internalUiReply);
+        continue;
+      }
+      if (deliveredFiles.length > 0) {
+        let attachIndex = -1;
+        if (msg.toolCallId) {
+          for (let index = enriched.length - 1; index >= 0; index -= 1) {
+            const candidate = enriched[index];
+            if (candidate?.role !== 'assistant') continue;
+            if (assistantHasToolCallId(candidate, msg.toolCallId)) {
+              attachIndex = index;
+              break;
+            }
+          }
+        }
+
+        if (attachIndex >= 0) {
+          const target = enriched[attachIndex]!;
+          const existingKeys = new Set(
+            (target._attachedFiles || []).map(file => file.filePath || file.gatewayUrl).filter(Boolean),
+          );
+          const newFiles = deliveredFiles.filter(file => {
+            const key = file.filePath || file.gatewayUrl;
+            return !key || !existingKeys.has(key);
+          });
+          if (newFiles.length > 0) {
+            enriched[attachIndex] = {
+              ...target,
+              _attachedFiles: [...(target._attachedFiles || []), ...newFiles],
+            };
+          }
+        } else {
+          pending.push(...deliveredFiles);
+        }
+      }
+
       // Resolve file path from the matching tool call
       const matchedPath = msg.toolCallId ? toolCallPaths.get(msg.toolCallId) : undefined;
 
@@ -1245,25 +1430,35 @@ function enrichWithToolResultFiles(messages: RawMessage[]): RawMessage[] {
         }
       }
 
-      return msg; // will be filtered later
+      enriched.push(msg); // will be filtered later
+      continue;
     }
 
     if (msg.role === 'assistant' && pending.length > 0) {
       const toAttach = pending.splice(0);
       // Deduplicate against files already on the assistant message
-      const existingPaths = new Set(
-        (msg._attachedFiles || []).map(f => f.filePath).filter(Boolean),
+      const existingKeys = new Set(
+        (msg._attachedFiles || []).map(f => f.filePath || f.gatewayUrl).filter(Boolean),
       );
-      const newFiles = toAttach.filter(f => !f.filePath || !existingPaths.has(f.filePath));
-      if (newFiles.length === 0) return msg;
-      return {
+      const newFiles = toAttach.filter(f => {
+        const key = f.filePath || f.gatewayUrl;
+        return !key || !existingKeys.has(key);
+      });
+      if (newFiles.length === 0) {
+        enriched.push(msg);
+        continue;
+      }
+      enriched.push({
         ...msg,
         _attachedFiles: [...(msg._attachedFiles || []), ...newFiles],
-      };
+      });
+      continue;
     }
 
-    return msg;
-  });
+    enriched.push(msg);
+  }
+
+  return enriched;
 }
 
 /**
@@ -2401,6 +2596,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
   hasMoreHistory: false,
   error: null,
   runError: null,
+  dismissedRunErrors: {},
 
   sending: false,
   activeRunId: null,
@@ -2974,7 +3170,13 @@ export const useChatStore = create<ChatState>((set, get) => ({
         messages: finalMessages,
         thinkingLevel,
         loading: false,
-        runError: historyErrorIsTransient ? null : latestTerminalAssistantErrorMessage,
+        runError: historyErrorIsTransient
+          ? null
+          : shouldShowRunError(
+            currentSessionKey,
+            latestTerminalAssistantErrorMessage,
+            get().dismissedRunErrors,
+          ),
       });
       cacheSessionHistory(currentSessionKey, finalMessages, thinkingLevel);
 
@@ -3470,6 +3672,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       sending: true,
       error: null,
       runError: null,
+      dismissedRunErrors: withoutDismissedRunError(s.dismissedRunErrors, currentSessionKey),
       streamingText: '',
       streamingMessage: null,
       streamingTools: [],
@@ -3496,6 +3699,24 @@ export const useChatStore = create<ChatState>((set, get) => ({
     _lastChatEventAt = Date.now();
     clearHistoryPoll();
     clearErrorRecoveryTimer();
+
+    // Fallback transcript poll: streamed runtime events are the primary
+    // active-run path, but when they go missing entirely (first run right
+    // after gateway startup, silent WS drops, event-normalization gaps) the
+    // safety timeout above would fire a false "No response received" error
+    // even though the gateway is making progress. Polling chat.history keeps
+    // progress detection honest in that case. The RPC is skipped while
+    // streamed events are fresh, so healthy runs issue no extra requests.
+    const pollHistoryFallback = () => {
+      _historyPollTimer = null;
+      const state = get();
+      if (!state.sending || state.currentSessionKey !== currentSessionKey) return;
+      if (Date.now() - _lastChatEventAt >= HISTORY_POLL_EVENT_SILENCE_MS) {
+        void state.loadHistory(true);
+      }
+      _historyPollTimer = setTimeout(pollHistoryFallback, HISTORY_POLL_INTERVAL_MS);
+    };
+    _historyPollTimer = setTimeout(pollHistoryFallback, HISTORY_POLL_START_DELAY_MS);
 
     const checkStuck = () => {
       const state = get();
@@ -3750,14 +3971,13 @@ export const useChatStore = create<ChatState>((set, get) => ({
       }
     }
 
-    // Only pause the history poll when we receive actual streaming data.
-    // The gateway sends "agent" events with { phase, startedAt } that carry
-    // no message — these must NOT kill the poll, since the poll is our only
-    // way to track progress when the gateway doesn't stream intermediate turns.
+    // Streaming data pauses the fallback transcript poll implicitly: each
+    // event refreshes _lastChatEventAt, so the poll skips its RPC while the
+    // stream is healthy. Do NOT clear the poll timer here — it must stay
+    // armed to recover progress tracking if the stream stalls mid-run.
     const hasUsefulData = resolvedState === 'delta' || resolvedState === 'final'
       || resolvedState === 'error' || resolvedState === 'aborted';
     if (hasUsefulData) {
-      clearHistoryPoll();
       // Adopt run started from another client only for user-initiated turns.
       // Background :main heartbeat runs must not surface "Thinking..." in the UI.
       const { sending } = get();
@@ -3856,6 +4076,11 @@ export const useChatStore = create<ChatState>((set, get) => ({
             const toolFiles: AttachedFileMeta[] = extractImagesAsAttachedFiles(
               normalizedFinalMessage.content,
             ).filter(file => !file.mimeType.startsWith('image/'));
+            const delivery = collectMessageToolDelivery(normalizedFinalMessage);
+            const deliveredFiles = delivery?.files ?? [];
+            const internalUiReply = delivery
+              ? createInternalUiDeliveryReply(normalizedFinalMessage, delivery)
+              : null;
             if (matchedPath) {
               for (const f of toolFiles) {
                 if (!f.filePath) {
@@ -3883,13 +4108,32 @@ export const useChatStore = create<ChatState>((set, get) => ({
               // complete runtime tool events.
               const currentStream = s.streamingMessage as RawMessage | null;
               const snapshotMsgs = snapshotStreamingAssistantMessage(currentStream, s.messages, runId);
+              const snapshotWithDeliveredFiles = !internalUiReply && deliveredFiles.length > 0 && snapshotMsgs.length > 0
+                ? snapshotMsgs.map((snapshot, index) => index === snapshotMsgs.length - 1
+                  ? {
+                    ...snapshot,
+                    _attachedFiles: dedupeAttachedFiles([
+                      ...(snapshot._attachedFiles || []),
+                      ...deliveredFiles,
+                    ]),
+                  }
+                  : snapshot)
+                : snapshotMsgs;
+              const appendedMessages = [
+                ...snapshotWithDeliveredFiles,
+                ...(internalUiReply ? [internalUiReply] : []),
+              ];
               return {
-                messages: snapshotMsgs.length > 0 ? [...s.messages, ...snapshotMsgs] : s.messages,
+                messages: appendedMessages.length > 0 ? [...s.messages, ...appendedMessages] : s.messages,
                 streamingText: '',
                 streamingMessage: null,
                 pendingFinal: true,
-                pendingToolImages: toolFiles.length > 0
-                  ? dedupeAttachedFiles([...s.pendingToolImages, ...toolFiles])
+                pendingToolImages: toolFiles.length > 0 || (!internalUiReply && deliveredFiles.length > 0 && snapshotWithDeliveredFiles.length === 0)
+                  ? dedupeAttachedFiles([
+                    ...s.pendingToolImages,
+                    ...toolFiles,
+                    ...(!internalUiReply && snapshotWithDeliveredFiles.length === 0 ? deliveredFiles : []),
+                  ])
                   : s.pendingToolImages,
                 streamingTools: updates.length > 0 ? upsertToolStatuses(s.streamingTools, updates) : s.streamingTools,
               };
@@ -4234,7 +4478,16 @@ export const useChatStore = create<ChatState>((set, get) => ({
     await Promise.all([loadHistory(), loadSessions()]);
   },
 
-  clearError: () => set({ error: null, runError: null }),
+  clearError: () => {
+    const { runError, currentSessionKey, dismissedRunErrors } = get();
+    set({
+      error: null,
+      runError: null,
+      ...(runError
+        ? { dismissedRunErrors: { ...dismissedRunErrors, [currentSessionKey]: runError } }
+        : {}),
+    });
+  },
 }));
 
 export function syncCachedSessionRunIdle(sessionKey: string): void {

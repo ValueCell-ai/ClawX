@@ -7,16 +7,19 @@ import { getProviderConfig, getProviderDefaultModel } from '../../utils/provider
 import {
   ensureAnthropicMessagesModelMaxTokens,
   ensureOpenClawProviderAgentRuntimePins,
+  migrateAllAgentAuthProfilesToSqlite,
   pruneInvalidApiProviderEntries,
   removeProviderFromOpenClaw,
   removeProviderKeyFromOpenClaw,
   saveOAuthTokenToOpenClaw,
   saveProviderKeyToOpenClaw,
+  OPENAI_CODEX_OAUTH_PROVIDER_CONFIG,
   setOpenClawDefaultModel,
   setOpenClawDefaultModelWithOverride,
   syncProviderConfigToOpenClaw,
   updateAgentModelProvider,
   updateSingleAgentModelProvider,
+  getProviderApiKeyFromOpenClaw,
 } from '../../utils/openclaw-auth';
 import {
   piAiModelsJsonModelEntry,
@@ -25,7 +28,8 @@ import {
 import { logger } from '../../utils/logger';
 import { listAgentsSnapshot } from '../../utils/agent-config';
 
-const OPENAI_OAUTH_RUNTIME_PROVIDER = 'openai-codex';
+/** OpenClaw Codex OAuth hooks only apply to the canonical `openai` provider id. */
+const OPENAI_OAUTH_RUNTIME_PROVIDER = 'openai';
 const OPENAI_OAUTH_DEFAULT_MODEL_REF = `${OPENAI_OAUTH_RUNTIME_PROVIDER}/gpt-5.5`;
 
 /**
@@ -210,6 +214,7 @@ export async function syncProviderApiKeyToRuntime(
 }
 
 export async function syncAllProviderAuthToRuntime(): Promise<void> {
+  await migrateAllAgentAuthProfilesToSqlite();
   const accounts = await listProviderAccounts();
   for (const account of accounts) {
     const runtimeProviderKey = await resolveRuntimeProviderKey({
@@ -373,6 +378,26 @@ async function removeDeletedProviderFromOpenClaw(
 
   for (const key of keys) {
     await removeProviderFromOpenClaw(key);
+  }
+
+  // Legacy Codex OAuth used runtime key openai-codex; cleanup may leave a bare
+  // models.providers.openai entry behind. Drop that slot when no API key credentials remain.
+  if (runtimeProviderKey === OPENAI_OAUTH_RUNTIME_PROVIDER || runtimeProviderKey === 'openai-codex') {
+    const openClawKey = await getProviderApiKeyFromOpenClaw('openai');
+    if (openClawKey) {
+      return;
+    }
+    const storeAccounts = await listProviderAccounts();
+    for (const account of storeAccounts) {
+      if (account.vendorId !== 'openai' || account.authMode === 'oauth_browser') {
+        continue;
+      }
+      const apiKey = await getApiKey(account.id);
+      if (apiKey) {
+        return;
+      }
+    }
+    await removeProviderFromOpenClaw('openai');
   }
 }
 
@@ -680,17 +705,26 @@ export async function syncDefaultProviderToRuntime(
           expires: secret.expiresAt,
           email: secret.email,
           projectId: secret.subject,
+          accountId: secret.subject,
         });
       }
 
       const defaultModelRef = OPENAI_OAUTH_DEFAULT_MODEL_REF;
       const modelOverride = provider.model
         ? (provider.model.startsWith(`${browserOAuthRuntimeProvider}/`)
-          ? provider.model
+          ? provider.model.replace(/^openai-codex\//, `${browserOAuthRuntimeProvider}/`)
           : `${browserOAuthRuntimeProvider}/${provider.model}`)
         : defaultModelRef;
 
-      await setOpenClawDefaultModel(browserOAuthRuntimeProvider, modelOverride, fallbackModels);
+      await setOpenClawDefaultModelWithOverride(
+        browserOAuthRuntimeProvider,
+        modelOverride,
+        {
+          baseUrl: OPENAI_CODEX_OAUTH_PROVIDER_CONFIG.baseUrl,
+          api: OPENAI_CODEX_OAUTH_PROVIDER_CONFIG.api,
+        },
+        fallbackModels.map((fallback) => fallback.replace(/^openai-codex\//, `${browserOAuthRuntimeProvider}/`)),
+      );
       logger.info(`Configured openclaw.json for browser OAuth provider "${provider.id}"`);
       try {
         await syncAgentModelsToRuntime();

@@ -162,12 +162,12 @@ test.describe('ClawX chat model picker', () => {
         win?.webContents.send('gateway:status-changed', { state: 'running', port: 18789, pid: 12345, gatewayReady: true });
       });
 
-      await expect(page.getByTestId('chat-model-picker-button')).toContainText('model-alpha');
+      await expect(page.getByTestId('chat-model-picker-button')).toContainText('model-alpha (Alpha)');
       await page.getByTestId('chat-model-picker-button').click();
       await expect(page.getByTestId('chat-model-picker-menu')).toBeVisible();
-      await expect(page.getByTestId('chat-model-picker-menu')).toContainText('provider/model-beta');
-      await page.getByTestId('chat-model-picker-menu').getByRole('button', { name: 'provider/model-beta' }).click();
-      await expect(page.getByTestId('chat-model-picker-button')).toContainText('provider/model-beta');
+      await expect(page.getByTestId('chat-model-picker-menu')).toContainText('provider/model-beta (Beta)');
+      await page.getByTestId('chat-model-picker-menu').getByRole('button', { name: 'provider/model-beta (Beta)' }).click();
+      await expect(page.getByTestId('chat-model-picker-button')).toContainText('provider/model-beta (Beta)');
 
       const requests = await app.evaluate(() => (
         (globalThis as typeof globalThis & { __chatModelPickerRequests?: Array<{ path: string; method: string; body: unknown }> }).__chatModelPickerRequests ?? []

@@ -81,11 +81,20 @@ export function useStickToBottomInstant(resetKey?: string, active = false) {
 
       if (!element) return;
 
+      let lastScrollTop = element.scrollTop;
       const handleScroll = () => {
-        const distanceFromBottom = element.scrollHeight - element.clientHeight - element.scrollTop;
-        if (distanceFromBottom > ESCAPE_FROM_LOCK_OFFSET_PX) {
+        // Only relevant while a run is actively pinning to the bottom.
+        if (!activeRef.current) return;
+
+        const scrollTop = element.scrollTop;
+        const distanceFromBottom = element.scrollHeight - element.clientHeight - scrollTop;
+        // Match the library's escape semantics: upward manual scroll only.
+        // Calling stopScroll while scrolling *down* (e.g. scroll-to-latest smooth
+        // animation) would cancel the animation before it reaches the bottom.
+        if (distanceFromBottom > ESCAPE_FROM_LOCK_OFFSET_PX && scrollTop < lastScrollTop) {
           stopScroll();
         }
+        lastScrollTop = scrollTop;
       };
       element.addEventListener("scroll", handleScroll, { passive: true });
       scrollEscapeCleanupRef.current = () => element.removeEventListener("scroll", handleScroll);
