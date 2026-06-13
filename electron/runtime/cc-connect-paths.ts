@@ -22,6 +22,15 @@ export function getCcConnectCodexHomeDir(): string {
   return join(getCcConnectManagedDir(), 'codex-home');
 }
 
+export function getCcConnectWorkspacesDir(): string {
+  return join(getCcConnectManagedDir(), 'workspaces');
+}
+
+export function getCcConnectAgentWorkspaceDir(agentId = 'main'): string {
+  const safeAgentId = agentId.trim().toLowerCase().replace(/[^a-z0-9_-]+/g, '-') || 'main';
+  return join(getCcConnectWorkspacesDir(), safeAgentId);
+}
+
 export function getCcConnectProviderProfilePath(): string {
   return join(getCcConnectManagedDir(), 'provider-profile.json');
 }

@@ -71,7 +71,6 @@ test.describe('cc-connect real OpenAI OAuth chat', () => {
     const app = await launchElectronApp({
       skipSetup: true,
       env: {
-        CLAWX_CODEX_WORKDIR: process.cwd(),
         CLAWX_CC_CONNECT_PATH: bundles!.ccConnectPath,
         CLAWX_CODEX_PATH: bundles!.codexPath,
       },

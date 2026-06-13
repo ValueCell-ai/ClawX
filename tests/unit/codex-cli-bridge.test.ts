@@ -5,9 +5,18 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const spawnMock = vi.fn();
+const appPath = new Map<string, string>();
+const originalCodexWorkDir = process.env.CLAWX_CODEX_WORKDIR;
 
 vi.mock('node:child_process', () => ({
   spawn: spawnMock,
+}));
+
+vi.mock('electron', () => ({
+  app: {
+    isPackaged: false,
+    getPath: vi.fn((name: string) => appPath.get(name) ?? tmpdir()),
+  },
 }));
 
 function createChild() {
@@ -40,9 +49,16 @@ describe('CodexCliBridge', () => {
     vi.resetModules();
     spawnMock.mockReset();
     tempDir = await mkdtemp(join(tmpdir(), 'clawx-codex-bridge-'));
+    appPath.set('userData', tempDir);
+    delete process.env.CLAWX_CODEX_WORKDIR;
   });
 
   afterEach(async () => {
+    if (originalCodexWorkDir === undefined) {
+      delete process.env.CLAWX_CODEX_WORKDIR;
+    } else {
+      process.env.CLAWX_CODEX_WORKDIR = originalCodexWorkDir;
+    }
     await rm(tempDir, { recursive: true, force: true });
   });
 
@@ -91,6 +107,30 @@ describe('CodexCliBridge', () => {
     await expect(bridge.listSessions()).resolves.toMatchObject([
       { key: 'agent:main:main', displayName: 'hello' },
     ]);
+  });
+
+  it('defaults Codex execution to the managed cc-connect workspace', async () => {
+    const child = createChild();
+    spawnMock.mockReturnValueOnce(child);
+    const { CodexCliBridge } = await import('@electron/runtime/codex-cli-bridge');
+    const bridge = new CodexCliBridge({
+      codexPath: '/mock/codex',
+      sessionsDir: join(tempDir, 'sessions'),
+    });
+
+    const sendPromise = bridge.send({
+      sessionKey: 'agent:main:main',
+      message: 'hello',
+      idempotencyKey: 'idem-managed-workspace',
+    });
+    await vi.waitFor(() => expect(spawnMock).toHaveBeenCalledOnce());
+    const managedWorkspace = join(tempDir, 'runtimes', 'cc-connect', 'workspaces', 'main');
+    expect(spawnMock).toHaveBeenCalledWith('/mock/codex', expect.arrayContaining([
+      '-C',
+      managedWorkspace,
+    ]), expect.objectContaining({ cwd: managedWorkspace }));
+    child.emit('exit', 0);
+    await sendPromise;
   });
 
   it('falls back to assistant text parsed from codex JSONL stdout', async () => {

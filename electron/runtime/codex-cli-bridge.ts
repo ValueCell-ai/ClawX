@@ -7,6 +7,7 @@ import type { RawMessage } from '@shared/chat/types';
 import type { RuntimeSendWithMediaPayload } from './types';
 import type { CodexProviderProfile } from './cc-connect-provider-profile';
 import { assertCodexBundle, getCodexBundle, prependCodexPathDir, type CodexBundle } from './codex-paths';
+import { getCcConnectAgentWorkspaceDir } from './cc-connect-paths';
 
 type CodexBridgeOptions = {
   codexPath?: string;
@@ -209,7 +210,7 @@ export class CodexCliBridge {
     this.codexBundle = options.codexBundle ?? getCodexBundle();
     this.codexPath = options.codexPath || assertCodexBundle(this.codexBundle).binaryPath;
     this.sessionsDir = options.sessionsDir;
-    this.workDir = options.workDir || process.env.CLAWX_CODEX_WORKDIR || process.cwd();
+    this.workDir = options.workDir || process.env.CLAWX_CODEX_WORKDIR || getCcConnectAgentWorkspaceDir('main');
     this.mode = options.mode || 'full-auto';
     this.proxyEnvProvider = options.proxyEnvProvider ?? defaultProxyEnvProvider;
   }
@@ -508,6 +509,7 @@ export class CodexCliBridge {
     options: { captureStdout?: boolean; env?: Record<string, string> } = {},
   ): Promise<{ success: boolean; stdout: string; stderr: string; error?: string }> {
     await mkdir(this.sessionsDir, { recursive: true });
+    await mkdir(this.workDir, { recursive: true });
     const proxyEnv = await this.proxyEnvProvider();
     return new Promise((resolve) => {
       const baseEnv = prependCodexPathDir({

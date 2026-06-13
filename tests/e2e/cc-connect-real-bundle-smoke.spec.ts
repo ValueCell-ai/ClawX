@@ -1,4 +1,5 @@
 import { access, readFile, writeFile } from 'node:fs/promises';
+import { createConnection } from 'node:net';
 import { join } from 'node:path';
 import { closeElectronApp, expect, getStableWindow, test } from './fixtures/electron';
 
@@ -28,6 +29,29 @@ async function realRuntimeBundles(): Promise<{ ccConnectPath: string; codexPath:
   }
 }
 
+async function isPortOpen(port: number): Promise<boolean> {
+  return await new Promise((resolve) => {
+    const socket = createConnection({ host: '127.0.0.1', port });
+    socket.once('connect', () => {
+      socket.destroy();
+      resolve(true);
+    });
+    socket.once('error', () => resolve(false));
+    socket.setTimeout(500, () => {
+      socket.destroy();
+      resolve(false);
+    });
+  });
+}
+
+async function waitForPortClosed(port: number): Promise<void> {
+  await expect.poll(async () => await isPortOpen(port), {
+    timeout: 15_000,
+    intervals: [250, 500, 1_000],
+    message: `cc-connect port ${port} should be free before real bundle smoke starts`,
+  }).toBe(false);
+}
+
 test.describe('cc-connect real runtime bundle smoke', () => {
   test('starts cc-connect from bundled binaries in a local dev Electron run', async ({
     launchElectronApp,
@@ -35,6 +59,8 @@ test.describe('cc-connect real runtime bundle smoke', () => {
   }) => {
     const bundles = await realRuntimeBundles();
     test.skip(!bundles, 'Run pnpm run bundle:cc-connect:current && pnpm run bundle:codex:current first.');
+    await waitForPortClosed(9810);
+    await waitForPortClosed(9820);
 
     const createdAt = '2026-06-07T00:00:00.000Z';
     await writeFile(join(userDataDir, 'settings.json'), JSON.stringify({
@@ -66,7 +92,6 @@ test.describe('cc-connect real runtime bundle smoke', () => {
     const app = await launchElectronApp({
       skipSetup: true,
       env: {
-        CLAWX_CODEX_WORKDIR: process.cwd(),
         CLAWX_CC_CONNECT_PATH: bundles!.ccConnectPath,
         CLAWX_CODEX_PATH: bundles!.codexPath,
       },
@@ -105,6 +130,9 @@ test.describe('cc-connect real runtime bundle smoke', () => {
       const managedConfig = await readFile(join(userDataDir, 'runtimes', 'cc-connect', 'config.toml'), 'utf8');
       expect(managedConfig).toContain('Managed by ClawX');
       expect(managedConfig).toContain('BridgePlatform');
+      expect(managedConfig).toContain(`work_dir = "${join(userDataDir, 'runtimes', 'cc-connect', 'workspaces', 'main')}"`);
+      const workDirLines = managedConfig.split('\n').filter((line) => line.startsWith('work_dir =')).join('\n');
+      expect(workDirLines).not.toContain(process.cwd());
       const publicProfile = await readFile(join(userDataDir, 'runtimes', 'cc-connect', 'provider-profile.json'), 'utf8');
       expect(publicProfile).toContain('"vendorId": "ollama"');
       expect(publicProfile).toContain('qwen3:latest');

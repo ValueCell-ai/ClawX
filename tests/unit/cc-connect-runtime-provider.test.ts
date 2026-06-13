@@ -1,11 +1,12 @@
 // @vitest-environment node
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { access, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const forkMock = vi.fn();
 const appPath = new Map<string, string>();
+const originalCodexWorkDir = process.env.CLAWX_CODEX_WORKDIR;
 const { readOpenClawConfigMock } = vi.hoisted(() => ({
   readOpenClawConfigMock: vi.fn(),
 }));
@@ -64,10 +65,16 @@ describe('CcConnectRuntimeProvider', () => {
     forkMock.mockReset();
     tempDir = await mkdtemp(join(tmpdir(), 'clawx-cc-connect-'));
     appPath.set('userData', tempDir);
+    delete process.env.CLAWX_CODEX_WORKDIR;
     readOpenClawConfigMock.mockResolvedValue({});
   });
 
   afterEach(async () => {
+    if (originalCodexWorkDir === undefined) {
+      delete process.env.CLAWX_CODEX_WORKDIR;
+    } else {
+      process.env.CLAWX_CODEX_WORKDIR = originalCodexWorkDir;
+    }
     await rm(tempDir, { recursive: true, force: true });
   });
 
@@ -538,15 +545,15 @@ describe('CcConnectRuntimeProvider', () => {
     });
   });
 
-  it('generates one cc-connect project per OpenClaw agent workspace and assigns channel accounts to the bound agent project', async () => {
-    const mainWorkspace = join(tempDir, 'workspace-main');
-    const researchWorkspace = join(tempDir, 'workspace-research');
+  it('generates one cc-connect project per OpenClaw agent and assigns channel accounts to the bound agent project', async () => {
+    const openClawMainWorkspace = join(tempDir, 'workspace-main');
+    const openClawResearchWorkspace = join(tempDir, 'workspace-research');
     readOpenClawConfigMock.mockResolvedValue({
       agents: {
-        defaults: { workspace: mainWorkspace },
+        defaults: { workspace: openClawMainWorkspace },
         list: [
-          { id: 'main', name: 'Main Agent', default: true, workspace: mainWorkspace },
-          { id: 'research', name: 'Research Agent', workspace: researchWorkspace },
+          { id: 'main', name: 'Main Agent', default: true, workspace: openClawMainWorkspace },
+          { id: 'research', name: 'Research Agent', workspace: openClawResearchWorkspace },
         ],
       },
       bindings: [
@@ -587,13 +594,82 @@ describe('CcConnectRuntimeProvider', () => {
     const mainProjectIndex = config.indexOf('name = "clawx-main"');
     const researchProjectIndex = config.indexOf('name = "clawx-research"');
     const telegramIndex = config.indexOf('type = "telegram"');
+    const managedMainWorkspace = join(tempDir, 'runtimes', 'cc-connect', 'workspaces', 'main');
+    const managedResearchWorkspace = join(tempDir, 'runtimes', 'cc-connect', 'workspaces', 'research');
     expect(mainProjectIndex).toBeGreaterThanOrEqual(0);
     expect(researchProjectIndex).toBeGreaterThan(mainProjectIndex);
-    expect(config).toContain(`work_dir = "${mainWorkspace.replace(/\\/g, '\\\\')}"`);
-    expect(config).toContain(`work_dir = "${researchWorkspace.replace(/\\/g, '\\\\')}"`);
+    expect(config).toContain(`work_dir = "${managedMainWorkspace.replace(/\\/g, '\\\\')}"`);
+    expect(config).toContain(`work_dir = "${managedResearchWorkspace.replace(/\\/g, '\\\\')}"`);
+    expect(config).not.toContain(openClawMainWorkspace);
+    expect(config).not.toContain(openClawResearchWorkspace);
     expect(telegramIndex).toBeGreaterThan(researchProjectIndex);
     expect(config.slice(mainProjectIndex, researchProjectIndex)).not.toContain('type = "telegram"');
     expect(config.slice(researchProjectIndex)).toContain('token = "telegram-secret-token"');
+  });
+
+  it('uses a managed cc-connect workspace when no agent workspace is configured', async () => {
+    const binaryPath = join(tempDir, 'cc-connect');
+    await writeFile(binaryPath, '#!/bin/sh\n', { mode: 0o755 });
+    const { CcConnectRuntimeProvider } = await import('@electron/runtime/cc-connect-provider');
+    const provider = new CcConnectRuntimeProvider({
+      binaryPath,
+      codexPath: join(tempDir, 'codex'),
+      codexBridge: createBridgeMock() as never,
+      bridgeAdapter: createBridgeAdapterMock() as never,
+      skillSyncer: vi.fn(async () => ({ skills: [] })),
+      providerProfileLoader: vi.fn(async () => createProviderProfile()) as never,
+    });
+    const child = createChild();
+    forkMock.mockReturnValueOnce(child);
+
+    const startPromise = provider.start();
+    await vi.waitFor(() => expect(forkMock).toHaveBeenCalledOnce());
+    child.emit('spawn');
+    await startPromise;
+
+    const managedWorkspace = join(tempDir, 'runtimes', 'cc-connect', 'workspaces', 'main');
+    const config = await readFile(join(tempDir, 'runtimes', 'cc-connect', 'config.toml'), 'utf8');
+    expect(config).toContain(`work_dir = "${managedWorkspace.replace(/\\/g, '\\\\')}"`);
+    expect(config).not.toContain(process.cwd());
+    await expect(access(managedWorkspace)).resolves.toBeUndefined();
+  });
+
+  it('uses managed cc-connect workspaces for agents without explicit workspace paths', async () => {
+    readOpenClawConfigMock.mockResolvedValue({
+      agents: {
+        list: [
+          { id: 'main', name: 'Main Agent', default: true },
+          { id: 'research', name: 'Research Agent' },
+        ],
+      },
+    });
+    const binaryPath = join(tempDir, 'cc-connect');
+    await writeFile(binaryPath, '#!/bin/sh\n', { mode: 0o755 });
+    const { CcConnectRuntimeProvider } = await import('@electron/runtime/cc-connect-provider');
+    const provider = new CcConnectRuntimeProvider({
+      binaryPath,
+      codexPath: join(tempDir, 'codex'),
+      codexBridge: createBridgeMock() as never,
+      bridgeAdapter: createBridgeAdapterMock() as never,
+      skillSyncer: vi.fn(async () => ({ skills: [] })),
+      providerProfileLoader: vi.fn(async () => createProviderProfile()) as never,
+    });
+    const child = createChild();
+    forkMock.mockReturnValueOnce(child);
+
+    const startPromise = provider.start();
+    await vi.waitFor(() => expect(forkMock).toHaveBeenCalledOnce());
+    child.emit('spawn');
+    await startPromise;
+
+    const mainWorkspace = join(tempDir, 'runtimes', 'cc-connect', 'workspaces', 'main');
+    const researchWorkspace = join(tempDir, 'runtimes', 'cc-connect', 'workspaces', 'research');
+    const config = await readFile(join(tempDir, 'runtimes', 'cc-connect', 'config.toml'), 'utf8');
+    expect(config).toContain(`work_dir = "${mainWorkspace.replace(/\\/g, '\\\\')}"`);
+    expect(config).toContain(`work_dir = "${researchWorkspace.replace(/\\/g, '\\\\')}"`);
+    expect(config).not.toContain('.openclaw');
+    await expect(access(mainWorkspace)).resolves.toBeUndefined();
+    await expect(access(researchWorkspace)).resolves.toBeUndefined();
   });
 
   it('does not expose the managed local placeholder as a user channel', async () => {

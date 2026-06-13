@@ -19,6 +19,7 @@ import {
 import { getRuntimeOperationCapabilities } from './rpc-contract';
 import {
   assertCcConnectBinaryPath,
+  getCcConnectAgentWorkspaceDir,
   getCcConnectCodexHomeDir,
   getCcConnectCodexSessionsDir,
   getCcConnectConfigPath,
@@ -92,6 +93,10 @@ type CcConnectAgentProject = {
 
 function unsupported(method: string): never {
   throw new Error(`cc-connect runtime does not support RPC method: ${method}`);
+}
+
+function resolveCcConnectWorkspace(agentId = 'main', fallbackWorkDir?: string): string {
+  return expandPath(fallbackWorkDir || process.env.CLAWX_CODEX_WORKDIR || getCcConnectAgentWorkspaceDir(agentId));
 }
 
 type RuntimeSessionSummary = {
@@ -216,9 +221,7 @@ function defaultConfig(options: {
 }): string {
   const managedDir = getCcConnectManagedDir();
   const dataDir = join(managedDir, 'data').replace(/\\/g, '\\\\');
-  const fallbackWorkDir = expandPath(
-    process.env.CLAWX_CODEX_WORKDIR || options.fallbackWorkDir || process.cwd(),
-  );
+  const fallbackWorkDir = resolveCcConnectWorkspace('main', options.fallbackWorkDir);
   const agentProjects = options.agentProjects && options.agentProjects.length > 0
     ? options.agentProjects
     : [{
@@ -665,6 +668,7 @@ export class CcConnectRuntimeProvider extends EventEmitter implements RuntimePro
     await mkdir(dirname(configPath), { recursive: true });
     const openClawConfig = await readOpenClawConfig().catch(() => ({} as OpenClawConfig));
     const agentProjects = collectCcConnectAgentProjects(openClawConfig, this.workDir);
+    await Promise.all(agentProjects.map((project) => mkdir(project.workDir, { recursive: true })));
     await writeFile(configPath, defaultConfig({
       codexPath,
       providerProfile,
@@ -999,13 +1003,8 @@ function getConfiguredDefaultAgentId(config: OpenClawConfig): string {
   return normalizeAgentId(explicitDefault?.id ?? entries[0]?.id ?? 'main');
 }
 
-function getDefaultWorkspaceFromConfig(config: OpenClawConfig, fallbackWorkDir?: string): string {
-  const agents = isRecord(config.agents) ? config.agents : {};
-  const defaults = isRecord(agents.defaults) ? agents.defaults : {};
-  const configured = typeof defaults.workspace === 'string' && defaults.workspace.trim()
-    ? defaults.workspace.trim()
-    : '';
-  return expandPath(configured || fallbackWorkDir || process.env.CLAWX_CODEX_WORKDIR || process.cwd());
+function getDefaultWorkspaceFromConfig(_config: OpenClawConfig, fallbackWorkDir?: string): string {
+  return resolveCcConnectWorkspace('main', fallbackWorkDir);
 }
 
 function collectCcConnectAgentProjects(config: OpenClawConfig, fallbackWorkDir?: string): CcConnectAgentProject[] {
@@ -1019,15 +1018,12 @@ function collectCcConnectAgentProjects(config: OpenClawConfig, fallbackWorkDir?:
   const rawProjects = entries.length > 0
     ? entries.map((entry) => {
         const agentId = normalizeAgentId(entry.id);
-        const workspace = typeof entry.workspace === 'string' && entry.workspace.trim()
-          ? entry.workspace.trim()
-          : agentId === 'main'
-            ? defaultWorkspace
-            : `~/.openclaw/workspace-${agentId}`;
         return {
           agentId,
           projectName: ccConnectProjectNameForAgent(agentId),
-          workDir: expandPath(workspace),
+          workDir: agentId === 'main'
+            ? defaultWorkspace
+            : resolveCcConnectWorkspace(agentId),
         };
       })
     : [{

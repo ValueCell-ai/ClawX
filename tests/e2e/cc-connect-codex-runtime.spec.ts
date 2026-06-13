@@ -292,7 +292,6 @@ test.describe('cc-connect + Codex runtime E2E', () => {
     const app = await launchElectronApp({
       skipSetup: true,
       env: {
-        CLAWX_CODEX_WORKDIR: process.cwd(),
         CLAWX_CC_CONNECT_PATH: mockBundles.ccConnectPath,
         CLAWX_CODEX_PATH: mockBundles.codexPath,
         CLAWX_E2E_CC_CONNECT_MESSAGES_PATH: bridgeMessagesPath,
@@ -348,6 +347,13 @@ test.describe('cc-connect + Codex runtime E2E', () => {
       const managedConfig = join(userDataDir, 'runtimes', 'cc-connect', 'config.toml');
       await expect.poll(async () => await readFile(managedConfig, 'utf8')).toContain('path = "/bridge/ws"');
       await expect.poll(async () => await readFile(managedConfig, 'utf8')).toContain('cmd = "');
+      await expect.poll(async () => await readFile(managedConfig, 'utf8')).toContain(
+        `work_dir = "${join(userDataDir, 'runtimes', 'cc-connect', 'workspaces', 'main')}"`,
+      );
+      await expect.poll(async () => {
+        const content = await readFile(managedConfig, 'utf8');
+        return content.split('\n').filter((line) => line.startsWith('work_dir =')).join('\n');
+      }).not.toContain(process.cwd());
 
       await expect(page.getByTestId('chat-composer-input')).toBeEnabled({ timeout: 30_000 });
       await page.getByTestId('chat-composer-input').fill('hello codex runtime');
@@ -610,7 +616,6 @@ test.describe('cc-connect + Codex runtime E2E', () => {
     const app = await launchElectronApp({
       skipSetup: true,
       env: {
-        CLAWX_CODEX_WORKDIR: process.cwd(),
         CLAWX_CC_CONNECT_PATH: mockBundles.ccConnectPath,
         CLAWX_CODEX_PATH: mockBundles.codexPath,
       },
@@ -710,7 +715,6 @@ test.describe('cc-connect + Codex runtime E2E', () => {
     const app = await launchElectronApp({
       skipSetup: true,
       env: {
-        CLAWX_CODEX_WORKDIR: process.cwd(),
         CLAWX_CC_CONNECT_PATH: mockBundles.ccConnectPath,
         CLAWX_CODEX_PATH: mockBundles.codexPath,
       },
