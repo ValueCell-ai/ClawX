@@ -127,6 +127,93 @@ test.describe('ClawX provider lifecycle', () => {
     await expect(page.getByTestId('add-provider-api-key-input')).toHaveCount(0);
   });
 
+  test('adds AGIone from the add-provider dialog with its default model preset', async ({ electronApp, page }) => {
+    await completeSetup(page);
+
+    await electronApp.evaluate(async ({ app: _app }) => {
+      const { ipcMain } = process.mainModule!.require('electron') as typeof import('electron');
+
+      let accounts: Array<Record<string, unknown>> = [];
+      let keyInfo: Array<{ accountId: string; hasKey: boolean; keyMasked: string | null }> = [];
+      let defaultAccountId: string | null = null;
+      const originalHostInvoke = (ipcMain as unknown as {
+        _invokeHandlers?: Map<string, (event: unknown, request: unknown) => Promise<unknown>>;
+      })._invokeHandlers?.get('host:invoke');
+
+      const respond = (id: unknown, data: unknown) => ({
+        id: typeof id === 'string' ? id : undefined,
+        ok: true,
+        data,
+      });
+
+      ipcMain.removeHandler('host:invoke');
+      ipcMain.handle('host:invoke', async (event: unknown, request: {
+        id?: string;
+        module?: string;
+        action?: string;
+        payload?: Record<string, unknown>;
+      }) => {
+        if (request?.module !== 'providers') {
+          return originalHostInvoke?.(event, request) ?? respond(request?.id, undefined);
+        }
+
+        const body = request.payload ?? {};
+        if (request.action === 'accounts') return respond(request.id, accounts);
+        if (request.action === 'accountKeyInfo') return respond(request.id, keyInfo);
+        if (request.action === 'vendors') return respond(request.id, []);
+        if (request.action === 'getDefaultAccount') return respond(request.id, { accountId: defaultAccountId });
+        if (request.action === 'list') return respond(request.id, []);
+
+        if (request.action === 'validateKey') {
+          expect(body.providerId).toBe('agione');
+          expect(body.apiKey).toBe('ak-agione-test');
+          expect(body.options).toEqual({
+            baseUrl: 'https://agione.pro/hyperone/xapi/api/v1',
+          });
+          return respond(request.id, { valid: true });
+        }
+
+        if (request.action === 'createAccount') {
+          const account = body.account as Record<string, unknown>;
+          expect(account.vendorId).toBe('agione');
+          expect(account.label).toBe('AGIone');
+          expect(account.baseUrl).toBe('https://agione.pro/hyperone/xapi/api/v1');
+          expect(account.model).toBe('qwen/qwen3.5-plus/cec84');
+          accounts = [account];
+          keyInfo = [{
+            accountId: String(account.id),
+            hasKey: Boolean(body.apiKey),
+            keyMasked: body.apiKey ? 'ak-***' : null,
+          }];
+          return respond(request.id, { success: true, account });
+        }
+
+        if (request.action === 'setDefaultAccount') {
+          defaultAccountId = typeof body.accountId === 'string' ? body.accountId : null;
+          return respond(request.id, { success: true });
+        }
+
+        return respond(request.id, {});
+      });
+    });
+
+    await page.getByTestId('sidebar-nav-models').click();
+    await expect(page.getByTestId('providers-settings')).toBeVisible();
+
+    await page.getByTestId('providers-add-button').click();
+    await expect(page.getByTestId('add-provider-dialog')).toBeVisible();
+
+    await page.getByTestId('add-provider-type-agione').click();
+    await expect(page.getByTestId('add-provider-name-input')).toHaveValue('AGIone');
+    await expect(page.getByTestId('add-provider-model-id-input')).toHaveValue('qwen/qwen3.5-plus/cec84');
+
+    await page.getByTestId('add-provider-api-key-input').fill('  ak-agione-test\n');
+    await page.getByTestId('add-provider-submit-button').click();
+
+    await expect(page.getByTestId('provider-card-agione')).toContainText('AGIone');
+    await expect(page.getByTestId('provider-card-agione')).toContainText('qwen/qwen3.5-plus/cec84');
+  });
+
   test('trims whitespace before validating and saving a custom provider key', async ({ electronApp, page }) => {
     await completeSetup(page);
 
