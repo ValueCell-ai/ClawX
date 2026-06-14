@@ -164,6 +164,9 @@ Download the latest release for your platform from the [Releases](https://github
 
 ```bash
 # Clone the repository
+
+[![Listed on TakoAPI](https://img.shields.io/badge/Listed%20on-TakoAPI-7c3aed)](https://takoapi.com/agents/valuecell-ai-clawx)
+
 git clone https://github.com/ValueCell-ai/ClawX.git
 cd ClawX
 
