@@ -251,6 +251,7 @@ export type ProviderType =
   | 'openai'
   | 'google'
   | 'openrouter'
+  | 'agione'
   | 'ark'
   | 'moonshot'
   | 'moonshot-global'

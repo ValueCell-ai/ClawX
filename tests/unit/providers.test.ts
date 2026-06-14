@@ -46,6 +46,30 @@ describe('provider metadata', () => {
     });
   });
 
+  it('includes AGIone as an OpenAI-compatible provider', () => {
+    expect(PROVIDER_TYPES).toContain('agione');
+    expect(BUILTIN_PROVIDER_TYPES).toContain('agione');
+    expect(getProviderEnvVar('agione')).toBe('AGIONE_API_KEY');
+    expect(getProviderConfig('agione')).toEqual({
+      baseUrl: 'https://agione.pro/hyperone/xapi/api/v1',
+      api: 'openai-completions',
+      apiKeyEnv: 'AGIONE_API_KEY',
+    });
+
+    expect(PROVIDER_TYPE_INFO).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: 'agione',
+          name: 'AGIone',
+          defaultBaseUrl: 'https://agione.pro/hyperone/xapi/api/v1',
+          showModelId: true,
+          defaultModelId: 'qwen/qwen3.5-plus/cec84',
+          docsUrl: 'https://agione.pro',
+        }),
+      ])
+    );
+  });
+
   it('uses a single canonical env key for moonshot provider', () => {
     expect(getProviderEnvVar('moonshot')).toBe('MOONSHOT_API_KEY');
     expect(getProviderEnvVars('moonshot')).toEqual(['MOONSHOT_API_KEY']);
@@ -59,7 +83,7 @@ describe('provider metadata', () => {
 
   it('keeps builtin provider sources in sync', () => {
     expect(BUILTIN_PROVIDER_TYPES).toEqual(
-      expect.arrayContaining(['anthropic', 'openai', 'google', 'openrouter', 'ark', 'moonshot', 'siliconflow', 'minimax-portal', 'minimax-portal-cn', 'modelstudio', 'ollama'])
+      expect.arrayContaining(['anthropic', 'openai', 'google', 'openrouter', 'agione', 'ark', 'moonshot', 'siliconflow', 'minimax-portal', 'minimax-portal-cn', 'modelstudio', 'ollama'])
     );
   });
 
@@ -80,6 +104,7 @@ describe('provider metadata', () => {
   it('exposes provider documentation links', () => {
     const anthropic = PROVIDER_TYPE_INFO.find((provider) => provider.id === 'anthropic');
     const openrouter = PROVIDER_TYPE_INFO.find((provider) => provider.id === 'openrouter');
+    const agione = PROVIDER_TYPE_INFO.find((provider) => provider.id === 'agione');
     const moonshot = PROVIDER_TYPE_INFO.find((provider) => provider.id === 'moonshot');
     const siliconflow = PROVIDER_TYPE_INFO.find((provider) => provider.id === 'siliconflow');
     const ark = PROVIDER_TYPE_INFO.find((provider) => provider.id === 'ark');
@@ -90,6 +115,7 @@ describe('provider metadata', () => {
     });
     expect(getProviderDocsUrl(anthropic, 'en')).toBe('https://platform.claude.com/docs/en/api/overview');
     expect(getProviderDocsUrl(openrouter, 'en')).toBe('https://openrouter.ai/models');
+    expect(getProviderDocsUrl(agione, 'en')).toBe('https://agione.pro');
     expect(getProviderDocsUrl(moonshot, 'en')).toBe('https://platform.moonshot.cn/');
     expect(getProviderDocsUrl(siliconflow, 'en')).toBe('https://docs.siliconflow.cn/cn/userguide/introduction');
     expect(getProviderDocsUrl(ark, 'en')).toBe('https://www.volcengine.com/');
@@ -104,6 +130,7 @@ describe('provider metadata', () => {
   it('exposes editable model id with default for built-in providers, mirroring OpenRouter', () => {
     const anthropic = PROVIDER_TYPE_INFO.find((provider) => provider.id === 'anthropic');
     const openrouter = PROVIDER_TYPE_INFO.find((provider) => provider.id === 'openrouter');
+    const agione = PROVIDER_TYPE_INFO.find((provider) => provider.id === 'agione');
     const siliconflow = PROVIDER_TYPE_INFO.find((provider) => provider.id === 'siliconflow');
     const deepseek = PROVIDER_TYPE_INFO.find((provider) => provider.id === 'deepseek');
     const moonshot = PROVIDER_TYPE_INFO.find((provider) => provider.id === 'moonshot');
@@ -117,6 +144,11 @@ describe('provider metadata', () => {
     expect(openrouter).toMatchObject({
       showModelId: true,
       defaultModelId: 'openai/gpt-5.5',
+    });
+    expect(agione).toMatchObject({
+      showModelId: true,
+      defaultModelId: 'qwen/qwen3.5-plus/cec84',
+      modelIdPlaceholder: 'qwen/qwen3.5-plus/cec84',
     });
     expect(siliconflow).toMatchObject({
       showModelId: true,
@@ -137,7 +169,7 @@ describe('provider metadata', () => {
       modelIdPlaceholder: 'kimi-k2.6',
     });
 
-    for (const provider of [anthropic, openrouter, siliconflow, deepseek, moonshot, moonshotGlobal]) {
+    for (const provider of [anthropic, openrouter, agione, siliconflow, deepseek, moonshot, moonshotGlobal]) {
       expect(provider?.showModelIdInDevModeOnly).toBeUndefined();
       expect(shouldShowProviderModelId(provider, false)).toBe(true);
       expect(shouldShowProviderModelId(provider, true)).toBe(true);
@@ -188,16 +220,19 @@ describe('provider metadata', () => {
 
   it('saves user-entered or default model overrides for built-in providers without dev mode', () => {
     const openrouter = PROVIDER_TYPE_INFO.find((provider) => provider.id === 'openrouter');
+    const agione = PROVIDER_TYPE_INFO.find((provider) => provider.id === 'agione');
     const siliconflow = PROVIDER_TYPE_INFO.find((provider) => provider.id === 'siliconflow');
     const anthropic = PROVIDER_TYPE_INFO.find((provider) => provider.id === 'anthropic');
     const ark = PROVIDER_TYPE_INFO.find((provider) => provider.id === 'ark');
 
     expect(resolveProviderModelForSave(openrouter, 'openai/gpt-5', false)).toBe('openai/gpt-5');
+    expect(resolveProviderModelForSave(agione, 'qwen/qwen3.5-plus/cec84', false)).toBe('qwen/qwen3.5-plus/cec84');
     expect(resolveProviderModelForSave(siliconflow, 'Qwen/Qwen3-Coder-480B-A35B-Instruct', false))
       .toBe('Qwen/Qwen3-Coder-480B-A35B-Instruct');
     expect(resolveProviderModelForSave(anthropic, 'claude-sonnet-4-5', false)).toBe('claude-sonnet-4-5');
 
     expect(resolveProviderModelForSave(openrouter, '   ', false)).toBe('openai/gpt-5.5');
+    expect(resolveProviderModelForSave(agione, '   ', false)).toBe('qwen/qwen3.5-plus/cec84');
     expect(resolveProviderModelForSave(siliconflow, '   ', false)).toBe('deepseek-ai/DeepSeek-V3');
     expect(resolveProviderModelForSave(anthropic, '   ', false)).toBe('claude-opus-4-6');
     expect(resolveProviderModelForSave(ark, '  ep-custom-model  ', false)).toBe('ep-custom-model');
