@@ -120,9 +120,10 @@ living backlog for the next delivery phases.
    - This needs real-runtime validation for restart reload, named sessions,
      cross-agent sessions, delete semantics, and parity with OpenClaw sidebar
      titles.
-   - Token/cost history is still OpenClaw-transcript-oriented and must be
-     backed by cc-connect-provided usage data before the Dashboard can claim
-     parity.
+   - Token/cost history now reads cc-connect-owned session store usage records
+     under ClawX userData in addition to OpenClaw transcripts. It must not read
+     Codex transcript JSONL files directly. Real-runtime usage field coverage
+     still needs validation before the Dashboard can claim full parity.
 3. Tool events and artifacts.
    - The bridge currently handles text replies, streaming text, cards, buttons,
      and errors. cc-connect BridgePlatform also defines image, file, audio,
@@ -232,7 +233,7 @@ are covered by automated tests or an explicit release exception.
 | Codex OAuth | Gated real OAuth E2E passes with pre-existing managed `CODEX_HOME/auth.json` | In-app login/status/logout/relogin and expired-token recovery | Host API unit tests plus manual/gated real OAuth E2E |
 | Doctor | cc-connect `doctor user-isolation` is used | cc-connect hidden doctor contract and fix-equivalent behavior | Unit tests with mock doctor output plus real binary doctor smoke |
 | Provider/model | Unit coverage for OpenAI, OAuth, custom Responses, ModelHub, Ollama, unsupported vendors | Runtime switching after provider changes, Web Admin/provider API alignment, custom header behavior, model defaults | Unit matrix plus real bundle startup for each provider mode that can run without secrets |
-| Sessions/history | Bridge/session-store unit and E2E coverage | Restart reload, cross-agent isolation, delete semantics, title parity, token/cost usage history | Real cc-connect session store fixture and E2E restart/delete smoke |
+| Sessions/history | Bridge/session-store unit and E2E coverage; token usage reads cc-connect-owned session stores | Restart reload, cross-agent isolation, delete semantics, title parity, real-runtime token/cost field coverage | Real cc-connect session store fixture and E2E restart/delete smoke |
 | Channels | Config projection and status probes are mocked | Real platform credential field mapping and live lifecycle semantics | Per-platform fixture tests plus at least one real sandbox channel smoke |
 | Cron | Management API paths are implemented and mocked | Real cc-connect cron add/list/edit/info/del/exec mapping, enabled/toggle, session mode, timeout, silent/mute | Real management API smoke with mock agent project |
 | Skills/commands | Enabled local skills mirror into managed Codex home | ClawX Skills page must show mirror target/status and command/slash behavior must be validated | Unit sync test plus UI state test |

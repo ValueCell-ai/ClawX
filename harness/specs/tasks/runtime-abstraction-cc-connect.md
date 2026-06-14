@@ -55,6 +55,7 @@ expectedUserBehavior:
   - cc-connect chat emits OpenClaw-compatible runtime events, including streamed assistant deltas.
   - cc-connect GUI chat is delivered through cc-connect BridgePlatform; ClawX must not call Codex directly from Chat in cc-connect mode.
   - cc-connect sessions/history/tool artifacts are sourced from cc-connect BridgePlatform, Management API, or cc-connect-owned session stores; ClawX must not read Codex transcript/runtime state files directly.
+  - Models token usage includes cc-connect-owned session store usage records and must not read Codex transcript/runtime state files directly.
   - cc-connect mirrors each configured OpenClaw agent to a project that reuses that agent's existing OpenClaw workspace when it exists.
   - cc-connect falls back to a ClawX-managed workspace for agents whose configured OpenClaw workspace path is missing or unset.
   - cc-connect channel accounts run in the project for their bound agent.
@@ -69,8 +70,11 @@ requiredTests:
   - tests/unit/cc-connect-bridge-adapter.test.ts
   - tests/unit/cc-connect-provider-profile.test.ts
   - tests/unit/cc-connect-bundle.test.ts
+  - tests/unit/token-usage.test.ts
+  - tests/unit/token-usage-scan.test.ts
   - tests/unit/host-api-facade.test.ts
   - tests/e2e/cc-connect-codex-runtime.spec.ts
+  - tests/e2e/token-usage.spec.ts
   - tests/e2e/cc-connect-real-bundle-smoke.spec.ts
   - tests/e2e/cc-connect-real-oauth-chat.spec.ts
 acceptance:
@@ -82,6 +86,7 @@ acceptance:
   - Non-main agents keep separate cc-connect project names and Codex `work_dir` values.
   - cc-connect Codex `work_dir` never defaults to the ClawX source checkout or to `process.cwd()`.
   - cc-connect `reply_stream` packets update the same chat runtime graph path used by OpenClaw assistant deltas.
+  - `usage:recentTokenHistory` returns cc-connect session-store usage with app-visible `agent:*` session IDs.
   - `pnpm run verify:runtime-bundles` passes after cc-connect and Codex bundles are prepared.
   - `pnpm run test:e2e:cc-connect` covers mock bridge chat and real bundled runtime startup.
   - Real Codex OAuth chat is gated behind `CLAWX_REAL_OAUTH_E2E=1` and uses isolated userData/CODEX_HOME.

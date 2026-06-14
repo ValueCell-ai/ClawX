@@ -86,4 +86,50 @@ describe('token usage session scan', () => {
       ]),
     );
   });
+
+  it('includes cc-connect managed session stores without reading Codex transcripts', async () => {
+    const ccConnectSessionsDir = join(testUserData, 'runtimes', 'cc-connect', 'data', 'sessions');
+    await mkdir(ccConnectSessionsDir, { recursive: true });
+    await writeFile(
+      join(ccConnectSessionsDir, 'clawx-research_1234abcd.json'),
+      JSON.stringify({
+        sessions: {
+          s1: {
+            id: 's1',
+            history: [{
+              role: 'assistant',
+              timestamp: '2026-06-14T03:00:00.000Z',
+              model: 'gpt-5.1-codex',
+              provider: 'openai',
+              usage: {
+                input_tokens: 13,
+                output_tokens: 8,
+                cache_read_tokens: 5,
+              },
+            }],
+          },
+        },
+        active_session: {
+          'clawx:research:desk': 's1',
+        },
+      }, null, 2),
+      'utf8',
+    );
+
+    const { getRecentTokenUsageHistory } = await import('@electron/utils/token-usage');
+    const entries = await getRecentTokenUsageHistory();
+
+    expect(entries).toEqual([
+      expect.objectContaining({
+        agentId: 'research',
+        sessionId: 'agent:research:desk',
+        model: 'gpt-5.1-codex',
+        provider: 'openai',
+        inputTokens: 13,
+        outputTokens: 8,
+        cacheReadTokens: 5,
+        totalTokens: 26,
+      }),
+    ]);
+  });
 });
