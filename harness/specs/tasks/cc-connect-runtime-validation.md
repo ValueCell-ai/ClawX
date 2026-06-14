@@ -48,7 +48,6 @@ requiredRules:
   - docs-sync
 requiredTests:
   - tests/unit/cc-connect-provider-profile.test.ts
-  - tests/unit/codex-cli-bridge.test.ts
   - tests/unit/codex-paths.test.ts
   - tests/unit/cc-connect-runtime-provider.test.ts
   - tests/unit/cc-connect-bridge-adapter.test.ts
@@ -61,7 +60,7 @@ validationCommands:
   - pnpm run bundle:cc-connect:current
   - pnpm run bundle:codex:current
   - pnpm run verify:runtime-bundles
-  - pnpm exec vitest run tests/unit/cc-connect-provider-profile.test.ts tests/unit/codex-cli-bridge.test.ts tests/unit/codex-paths.test.ts tests/unit/cc-connect-runtime-provider.test.ts tests/unit/cc-connect-bridge-adapter.test.ts tests/unit/runtime-rpc-contract.test.ts tests/unit/runtime-packaging.test.ts
+  - pnpm exec vitest run tests/unit/cc-connect-provider-profile.test.ts tests/unit/codex-paths.test.ts tests/unit/cc-connect-runtime-provider.test.ts tests/unit/cc-connect-bridge-adapter.test.ts tests/unit/runtime-rpc-contract.test.ts tests/unit/runtime-packaging.test.ts
   - pnpm run test:e2e:cc-connect
   - CLAWX_REAL_OAUTH_E2E=1 CLAWX_E2E_HOME_DIR=<isolated-home> CLAWX_E2E_USER_DATA_DIR=<isolated-user-data> pnpm run test:e2e:cc-connect:real-oauth
 acceptance:

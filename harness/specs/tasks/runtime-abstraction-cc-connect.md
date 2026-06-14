@@ -67,7 +67,6 @@ requiredTests:
   - tests/unit/cc-connect-runtime-provider.test.ts
   - tests/unit/cc-connect-bridge-adapter.test.ts
   - tests/unit/cc-connect-provider-profile.test.ts
-  - tests/unit/codex-cli-bridge.test.ts
   - tests/unit/cc-connect-bundle.test.ts
   - tests/unit/host-api-facade.test.ts
   - tests/e2e/cc-connect-codex-runtime.spec.ts

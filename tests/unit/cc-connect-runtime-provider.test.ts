@@ -78,28 +78,6 @@ describe('CcConnectRuntimeProvider', () => {
     await rm(tempDir, { recursive: true, force: true });
   });
 
-  function createBridgeMock(overrides: Record<string, unknown> = {}) {
-    return {
-      diagnose: vi.fn(async () => ({ success: true, stdout: 'codex-cli 0.130.0\n', stderr: '' })),
-      send: vi.fn(async () => ({
-        runId: 'codex-run-1',
-        assistantMessage: { role: 'assistant', content: 'assistant ok', timestamp: 2 },
-      })),
-      listSessions: vi.fn(async () => [{ key: 'agent:main:main', displayName: 'main', updatedAt: 2 }]),
-      loadHistory: vi.fn(async () => [{ role: 'assistant', content: 'assistant ok', timestamp: 2 }]),
-      deleteSession: vi.fn(async () => undefined),
-      summarizeSessions: vi.fn(async (sessionKeys: string[]) => sessionKeys.map((sessionKey) => ({
-        sessionKey,
-        firstUserText: 'hello',
-        lastTimestamp: 2,
-      }))),
-      getSessionsDir: vi.fn(() => join(tempDir, 'runtimes', 'cc-connect', 'codex-sessions')),
-      setProviderProfile: vi.fn(),
-      setWorkDir: vi.fn(),
-      ...overrides,
-    };
-  }
-
   function createBridgeAdapterMock(overrides: Record<string, unknown> = {}) {
     return {
       connect: vi.fn(async () => undefined),
@@ -157,7 +135,6 @@ describe('CcConnectRuntimeProvider', () => {
   it('creates managed config, starts cc-connect, and connects the ClawX bridge adapter', async () => {
     const binaryPath = join(tempDir, 'cc-connect');
     await writeFile(binaryPath, '#!/bin/sh\n', { mode: 0o755 });
-    const bridge = createBridgeMock();
     const bridgeAdapter = createBridgeAdapterMock();
     const providerProfileLoader = vi.fn(async () => createProviderProfile());
 
@@ -165,7 +142,6 @@ describe('CcConnectRuntimeProvider', () => {
     const provider = new CcConnectRuntimeProvider({
       binaryPath,
       codexPath: join(tempDir, 'codex'),
-      codexBridge: bridge as never,
       bridgeAdapter: bridgeAdapter as never,
       skillSyncer: vi.fn(async () => ({ skills: [] })),
       providerProfileLoader: providerProfileLoader as never,
@@ -203,14 +179,8 @@ describe('CcConnectRuntimeProvider', () => {
         CODEX_HOME: join(tempDir, 'runtimes', 'cc-connect', 'codex-home'),
       }),
     }));
-    expect(bridge.diagnose).toHaveBeenCalledOnce();
     expect(bridgeAdapter.connect).toHaveBeenCalledOnce();
     expect(providerProfileLoader).toHaveBeenCalledWith({ reason: 'runtime-start' });
-    expect(bridge.setProviderProfile).toHaveBeenCalledWith(expect.objectContaining({
-      providerId: 'ollama-local',
-      vendorId: 'ollama',
-      model: 'qwen3:latest',
-    }));
     expect(provider.getStatus()).toMatchObject({
       state: 'running',
       pid: 4242,
@@ -232,7 +202,6 @@ describe('CcConnectRuntimeProvider', () => {
       const provider = new CcConnectRuntimeProvider({
         binaryPath,
         codexPath: join(tempDir, 'codex'),
-        codexBridge: createBridgeMock() as never,
         bridgeAdapter: bridgeAdapter as never,
         skillSyncer: vi.fn(async () => ({ skills: [] })),
         providerProfileLoader: vi.fn(async () => createProviderProfile()) as never,
@@ -296,7 +265,6 @@ describe('CcConnectRuntimeProvider', () => {
     const provider = new CcConnectRuntimeProvider({
       binaryPath,
       codexPath: join(tempDir, 'codex'),
-      codexBridge: createBridgeMock() as never,
       bridgeAdapter: bridgeAdapter as never,
       skillSyncer: vi.fn(async () => ({ skills: [] })),
       providerProfileLoader: providerProfileLoader as never,
@@ -371,7 +339,6 @@ describe('CcConnectRuntimeProvider', () => {
     const provider = new CcConnectRuntimeProvider({
       binaryPath,
       codexPath: join(tempDir, 'codex'),
-      codexBridge: createBridgeMock() as never,
       bridgeAdapter: createBridgeAdapterMock() as never,
       skillSyncer: vi.fn(async () => ({ skills: [] })),
       providerProfileLoader: providerProfileLoader as never,
@@ -400,7 +367,6 @@ describe('CcConnectRuntimeProvider', () => {
     const { CcConnectRuntimeProvider } = await import('@electron/runtime/cc-connect-provider');
     const provider = new CcConnectRuntimeProvider({
       binaryPath,
-      codexBridge: createBridgeMock() as never,
       skillSyncer: vi.fn(async () => ({ skills: [] })),
     });
 
@@ -415,7 +381,6 @@ describe('CcConnectRuntimeProvider', () => {
     const { CcConnectRuntimeProvider } = await import('@electron/runtime/cc-connect-provider');
     const provider = new CcConnectRuntimeProvider({
       binaryPath,
-      codexBridge: createBridgeMock() as never,
       skillSyncer: vi.fn(async () => ({ skills: [] })),
     });
 
@@ -432,7 +397,6 @@ describe('CcConnectRuntimeProvider', () => {
     const { CcConnectRuntimeProvider } = await import('@electron/runtime/cc-connect-provider');
     const provider = new CcConnectRuntimeProvider({
       binaryPath,
-      codexBridge: createBridgeMock() as never,
       skillSyncer: vi.fn(async () => ({ skills: [] })),
     });
 
@@ -448,7 +412,6 @@ describe('CcConnectRuntimeProvider', () => {
     const { CcConnectRuntimeProvider } = await import('@electron/runtime/cc-connect-provider');
     const provider = new CcConnectRuntimeProvider({
       binaryPath,
-      codexBridge: createBridgeMock() as never,
       skillSyncer: vi.fn(async () => ({ skills: [] })),
     });
 
@@ -491,7 +454,6 @@ describe('CcConnectRuntimeProvider', () => {
     const provider = new CcConnectRuntimeProvider({
       binaryPath,
       codexPath: join(tempDir, 'codex'),
-      codexBridge: createBridgeMock() as never,
       bridgeAdapter: createBridgeAdapterMock() as never,
       skillSyncer: vi.fn(async () => ({ skills: [] })),
       providerProfileLoader: vi.fn(async () => createProviderProfile()) as never,
@@ -551,7 +513,6 @@ describe('CcConnectRuntimeProvider', () => {
     const openClawResearchWorkspace = join(tempDir, 'workspace-research');
     await mkdir(openClawMainWorkspace, { recursive: true });
     await mkdir(openClawResearchWorkspace, { recursive: true });
-    const codexBridge = createBridgeMock();
     readOpenClawConfigMock.mockResolvedValue({
       agents: {
         defaults: { workspace: openClawMainWorkspace },
@@ -581,7 +542,6 @@ describe('CcConnectRuntimeProvider', () => {
     const provider = new CcConnectRuntimeProvider({
       binaryPath,
       codexPath: join(tempDir, 'codex'),
-      codexBridge: codexBridge as never,
       bridgeAdapter: createBridgeAdapterMock() as never,
       skillSyncer: vi.fn(async () => ({ skills: [] })),
       providerProfileLoader: vi.fn(async () => createProviderProfile()) as never,
@@ -602,7 +562,6 @@ describe('CcConnectRuntimeProvider', () => {
     expect(researchProjectIndex).toBeGreaterThan(mainProjectIndex);
     expect(config).toContain(`work_dir = "${openClawMainWorkspace.replace(/\\/g, '\\\\')}"`);
     expect(config).toContain(`work_dir = "${openClawResearchWorkspace.replace(/\\/g, '\\\\')}"`);
-    expect(codexBridge.setWorkDir).toHaveBeenCalledWith(openClawMainWorkspace);
     expect(telegramIndex).toBeGreaterThan(researchProjectIndex);
     expect(config.slice(mainProjectIndex, researchProjectIndex)).not.toContain('type = "telegram"');
     expect(config.slice(researchProjectIndex)).toContain('token = "telegram-secret-token"');
@@ -626,7 +585,6 @@ describe('CcConnectRuntimeProvider', () => {
     const provider = new CcConnectRuntimeProvider({
       binaryPath,
       codexPath: join(tempDir, 'codex'),
-      codexBridge: createBridgeMock() as never,
       bridgeAdapter: createBridgeAdapterMock() as never,
       skillSyncer: vi.fn(async () => ({ skills: [] })),
       providerProfileLoader: vi.fn(async () => createProviderProfile()) as never,
@@ -655,7 +613,6 @@ describe('CcConnectRuntimeProvider', () => {
     const provider = new CcConnectRuntimeProvider({
       binaryPath,
       codexPath: join(tempDir, 'codex'),
-      codexBridge: createBridgeMock() as never,
       bridgeAdapter: createBridgeAdapterMock() as never,
       skillSyncer: vi.fn(async () => ({ skills: [] })),
       providerProfileLoader: vi.fn(async () => createProviderProfile()) as never,
@@ -689,7 +646,6 @@ describe('CcConnectRuntimeProvider', () => {
     const provider = new CcConnectRuntimeProvider({
       binaryPath,
       codexPath: join(tempDir, 'codex'),
-      codexBridge: createBridgeMock() as never,
       bridgeAdapter: createBridgeAdapterMock() as never,
       skillSyncer: vi.fn(async () => ({ skills: [] })),
       providerProfileLoader: vi.fn(async () => createProviderProfile()) as never,
@@ -735,7 +691,6 @@ describe('CcConnectRuntimeProvider', () => {
     const { CcConnectRuntimeProvider } = await import('@electron/runtime/cc-connect-provider');
     const provider = new CcConnectRuntimeProvider({
       binaryPath,
-      codexBridge: createBridgeMock() as never,
       skillSyncer: vi.fn(async () => ({ skills: [] })),
     });
 
@@ -754,7 +709,6 @@ describe('CcConnectRuntimeProvider', () => {
     const provider = new CcConnectRuntimeProvider({
       binaryPath,
       codexPath: join(tempDir, 'codex'),
-      codexBridge: createBridgeMock() as never,
       bridgeAdapter: bridgeAdapter as never,
       skillSyncer: vi.fn(async () => ({ skills: [] })),
       providerProfileLoader: vi.fn(async () => createProviderProfile({
@@ -781,16 +735,9 @@ describe('CcConnectRuntimeProvider', () => {
     expect(bridgeAdapter.send).not.toHaveBeenCalled();
   });
 
-  it('routes GUI chat through cc-connect BridgePlatform and merges channel sessions', async () => {
+  it('routes GUI chat through cc-connect BridgePlatform and lists bridge sessions', async () => {
     const binaryPath = join(tempDir, 'cc-connect');
     await writeFile(binaryPath, '#!/bin/sh\n', { mode: 0o755 });
-    const codexBridge = createBridgeMock({
-      listSessions: vi.fn(async () => [{ key: 'agent:main:main', displayName: 'main', updatedAt: 2 }]),
-      summarizeSessions: vi.fn(async () => [{ sessionKey: 'agent:main:main', firstUserText: 'hello', lastTimestamp: 2 }]),
-      loadHistory: vi.fn(async (sessionKey: string) => sessionKey === 'agent:main:main'
-        ? [{ role: 'assistant', content: 'assistant ok', timestamp: 2 }]
-        : []),
-    });
     const bridgeAdapter = createBridgeAdapterMock({
       send: vi.fn(async () => ({ runId: 'cc-connect-run-1' })),
       listSessions: vi.fn(async () => [{ key: 'agent:support:member-1', displayName: 'Support', updatedAt: 3 }]),
@@ -803,7 +750,6 @@ describe('CcConnectRuntimeProvider', () => {
     const provider = new CcConnectRuntimeProvider({
       binaryPath,
       codexPath: join(tempDir, 'codex'),
-      codexBridge: codexBridge as never,
       bridgeAdapter: bridgeAdapter as never,
     });
     const chatEvents: unknown[] = [];
@@ -820,13 +766,11 @@ describe('CcConnectRuntimeProvider', () => {
       success: true,
       sessions: [
         { key: 'agent:support:member-1', displayName: 'Support' },
-        { key: 'agent:main:main', displayName: 'main' },
       ],
     });
     await expect(provider.listSessions({ sessionKeys: ['agent:main:main', 'agent:support:member-1'] })).resolves.toMatchObject({
       success: true,
       summaries: expect.arrayContaining([
-        { sessionKey: 'agent:main:main', firstUserText: 'hello', lastTimestamp: 2 },
         { sessionKey: 'agent:support:member-1', firstUserText: 'channel hello', lastTimestamp: 3 },
       ]),
     });
@@ -844,21 +788,17 @@ describe('CcConnectRuntimeProvider', () => {
       message: 'hello',
       idempotencyKey: 'idem-1',
     }));
-    expect(codexBridge.send).not.toHaveBeenCalled();
-    expect(codexBridge.deleteSession).toHaveBeenCalledWith('agent:main:main');
     expect(bridgeAdapter.deleteSession).toHaveBeenCalledWith('agent:main:main');
   });
 
   it('keeps legacy Gateway RPC chat/session/history calls working for cc-connect', async () => {
     const binaryPath = join(tempDir, 'cc-connect');
     await writeFile(binaryPath, '#!/bin/sh\n', { mode: 0o755 });
-    const codexBridge = createBridgeMock();
     const bridgeAdapter = createBridgeAdapterMock();
     const { CcConnectRuntimeProvider } = await import('@electron/runtime/cc-connect-provider');
     const provider = new CcConnectRuntimeProvider({
       binaryPath,
       codexPath: join(tempDir, 'codex'),
-      codexBridge: codexBridge as never,
       bridgeAdapter: bridgeAdapter as never,
     });
 
@@ -882,16 +822,12 @@ describe('CcConnectRuntimeProvider', () => {
       message: 'hello via rpc',
       idempotencyKey: 'idem-rpc',
     }));
-    expect(codexBridge.send).not.toHaveBeenCalled();
-    expect(codexBridge.loadHistory).not.toHaveBeenCalled();
-    expect(codexBridge.deleteSession).toHaveBeenCalledWith('agent:main:main');
     expect(bridgeAdapter.deleteSession).toHaveBeenCalledWith('agent:main:main');
   });
 
   it('syncs provider and model profile through runtime RPC', async () => {
     const binaryPath = join(tempDir, 'cc-connect');
     await writeFile(binaryPath, '#!/bin/sh\n', { mode: 0o755 });
-    const bridge = createBridgeMock();
     const providerProfileLoader = vi.fn(async () => createProviderProfile({
       providerId: 'openai-main',
       vendorId: 'openai',
@@ -904,7 +840,6 @@ describe('CcConnectRuntimeProvider', () => {
     const provider = new CcConnectRuntimeProvider({
       binaryPath,
       codexPath: join(tempDir, 'codex'),
-      codexBridge: bridge as never,
       providerProfileLoader: providerProfileLoader as never,
     });
 
@@ -927,11 +862,6 @@ describe('CcConnectRuntimeProvider', () => {
       providerId: 'openai-main',
       reason: 'set-default',
     });
-    expect(bridge.setProviderProfile).toHaveBeenCalledWith(expect.objectContaining({
-      providerId: 'openai-main',
-      vendorId: 'openai',
-      env: { OPENAI_API_KEY: 'sk-test' },
-    }));
   });
 
   it('restarts the running cc-connect process when provider sync changes launch config', async () => {
@@ -955,7 +885,6 @@ describe('CcConnectRuntimeProvider', () => {
     const provider = new CcConnectRuntimeProvider({
       binaryPath,
       codexPath: join(tempDir, 'codex'),
-      codexBridge: createBridgeMock() as never,
       bridgeAdapter: bridgeAdapter as never,
       skillSyncer: vi.fn(async () => ({ skills: [] })),
       providerProfileLoader: providerProfileLoader as never,
@@ -986,13 +915,11 @@ describe('CcConnectRuntimeProvider', () => {
     await writeFile(binaryPath, '#!/bin/sh\n', { mode: 0o755 });
     const child = createChild();
     forkMock.mockReturnValueOnce(child);
-    const bridge = createBridgeMock();
 
     const { CcConnectRuntimeProvider } = await import('@electron/runtime/cc-connect-provider');
     const provider = new CcConnectRuntimeProvider({
       binaryPath,
       codexPath: join(tempDir, 'codex'),
-      codexBridge: bridge as never,
     });
     const resultPromise = provider.runDoctor('diagnose');
     await vi.waitFor(() => expect(forkMock).toHaveBeenCalledOnce());
@@ -1005,9 +932,6 @@ describe('CcConnectRuntimeProvider', () => {
       exitCode: 0,
       stdout: expect.stringContaining('doctor ok\n'),
       command: expect.stringContaining('doctor user-isolation'),
-    });
-    await expect(resultPromise).resolves.toMatchObject({
-      stdout: expect.stringContaining('codex-cli 0.130.0'),
     });
     expect(forkMock).toHaveBeenCalledWith(binaryPath, [
       'doctor',
@@ -1027,7 +951,6 @@ describe('CcConnectRuntimeProvider', () => {
     const provider = new CcConnectRuntimeProvider({
       binaryPath,
       codexPath: join(tempDir, 'codex'),
-      codexBridge: createBridgeMock() as never,
     });
 
     await expect(provider.runDoctor('fix')).resolves.toMatchObject({

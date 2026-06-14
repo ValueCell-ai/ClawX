@@ -316,7 +316,8 @@ The first managed files are:
 
 - `config.toml`
 - `provider-profile.json`
-- `codex-sessions/`
+- `data/sessions/`
+- `codex-home/`
 - `workspaces/<agent-id>/`
 - runtime logs
 - runtime working directory

@@ -14,10 +14,6 @@ export function getCcConnectConfigPath(): string {
   return join(getCcConnectManagedDir(), 'config.toml');
 }
 
-export function getCcConnectCodexSessionsDir(): string {
-  return join(getCcConnectManagedDir(), 'codex-sessions');
-}
-
 export function getCcConnectCodexHomeDir(): string {
   return join(getCcConnectManagedDir(), 'codex-home');
 }

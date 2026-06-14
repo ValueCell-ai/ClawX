@@ -21,13 +21,11 @@ import {
   assertCcConnectBinaryPath,
   getCcConnectAgentWorkspaceDir,
   getCcConnectCodexHomeDir,
-  getCcConnectCodexSessionsDir,
   getCcConnectConfigPath,
   getCcConnectManagedDir,
   getCcConnectProviderProfilePath,
 } from './cc-connect-paths';
 import { buildCcConnectWebAdminUrl, CC_CONNECT_MANAGEMENT_PORT } from './cc-connect-control-ui';
-import { CodexCliBridge } from './codex-cli-bridge';
 import {
   ccConnectProjectNameForAgent,
   ccConnectProjectNameForSessionKey,
@@ -47,7 +45,6 @@ type CcConnectRuntimeProviderOptions = {
   binaryPath?: string;
   codexPath?: string;
   workDir?: string;
-  codexBridge?: CodexCliBridge;
   codexBundle?: CodexBundle;
   bridgeAdapter?: Pick<CcConnectBridgeAdapter, 'connect' | 'close' | 'send' | 'listSessions' | 'loadHistory' | 'deleteSession' | 'summarizeSessions' | 'reconcilePendingRunsFromHistory'>;
   skillSyncer?: typeof syncCcConnectSkills;
@@ -126,44 +123,6 @@ function getAgentEntries(config: OpenClawConfig): Record<string, unknown>[] {
         isRecord(entry) && typeof entry.id === 'string' && entry.id.trim().length > 0
       ))
     : [];
-}
-
-type RuntimeSessionSummary = {
-  sessionKey: string;
-  firstUserText: string | null;
-  lastTimestamp: number | null;
-};
-
-function mergeSessionLists(
-  codexSessions: Array<{ key: string; displayName?: string; agentId?: string; updatedAt?: number }>,
-  bridgeSessions: Array<{ key: string; displayName?: string; agentId?: string; updatedAt?: number }>,
-) {
-  const merged = new Map<string, { key: string; displayName?: string; agentId?: string; updatedAt?: number }>();
-  for (const session of [...bridgeSessions, ...codexSessions]) {
-    const key = typeof session.key === 'string' ? session.key : '';
-    if (!key) continue;
-    const existing = merged.get(key);
-    if (!existing || (session.updatedAt ?? 0) >= (existing.updatedAt ?? 0)) {
-      merged.set(key, session);
-    }
-  }
-  return [...merged.values()].sort((left, right) => (right.updatedAt ?? 0) - (left.updatedAt ?? 0));
-}
-
-function mergeSummaries(
-  codexSummaries: RuntimeSessionSummary[],
-  bridgeSummaries: RuntimeSessionSummary[],
-): RuntimeSessionSummary[] {
-  const merged = new Map<string, RuntimeSessionSummary>();
-  for (const summary of [...bridgeSummaries, ...codexSummaries]) {
-    const key = typeof summary.sessionKey === 'string' ? summary.sessionKey : '';
-    if (!key) continue;
-    const existing = merged.get(key);
-    const hasBetterContent = Boolean(summary.firstUserText) && !existing?.firstUserText;
-    const isNewer = (summary.lastTimestamp ?? 0) >= (existing?.lastTimestamp ?? 0);
-    if (!existing || hasBetterContent || isNewer) merged.set(key, summary);
-  }
-  return [...merged.values()];
 }
 
 function appendBoundedOutput(current: string, currentBytes: number, data: Buffer | string) {
@@ -293,8 +252,6 @@ function defaultConfig(options: {
 export class CcConnectRuntimeProvider extends EventEmitter implements RuntimeProvider {
   readonly kind = 'cc-connect' as const;
   private child: ChildProcess | null = null;
-  private codexBridge: CodexCliBridge | null = null;
-  private readonly codexBridgeFactory: () => CodexCliBridge;
   private readonly bridgeAdapter: NonNullable<CcConnectRuntimeProviderOptions['bridgeAdapter']>;
   private readonly skillSyncer: NonNullable<CcConnectRuntimeProviderOptions['skillSyncer']>;
   private readonly providerProfileLoader: NonNullable<CcConnectRuntimeProviderOptions['providerProfileLoader']>;
@@ -320,13 +277,6 @@ export class CcConnectRuntimeProvider extends EventEmitter implements RuntimePro
     this.codexPath = options.codexPath;
     this.workDir = options.workDir;
     this.codexBundle = options.codexBundle;
-    this.codexBridge = options.codexBridge ?? null;
-    this.codexBridgeFactory = () => new CodexCliBridge({
-      codexPath: options.codexPath,
-      codexBundle: options.codexBundle,
-      sessionsDir: getCcConnectCodexSessionsDir(),
-      workDir: options.workDir,
-    });
     this.bridgeAdapter = options.bridgeAdapter ?? new CcConnectBridgeAdapter({
       port: CC_CONNECT_BRIDGE_PORT,
       token: this.bridgeToken,
@@ -354,18 +304,10 @@ export class CcConnectRuntimeProvider extends EventEmitter implements RuntimePro
     if (this.status.state === 'running' || this.status.state === 'starting') return;
     const codexPath = this.resolveCodexPath();
     const providerProfile = await this.loadAndApplyProviderProfile({ reason: 'runtime-start' });
-    const codexBridge = this.getCodexBridge();
-    codexBridge.setProviderProfile(providerProfile);
     const configPath = await this.ensureManagedConfig(providerProfile, codexPath);
     const binaryPath = assertCcConnectBinaryPath(this.binaryPath);
     this.setStatus({ state: 'starting', error: undefined });
 
-    const codexDiagnostic = await codexBridge.diagnose();
-    if (!codexDiagnostic.success) {
-      const error = codexDiagnostic.error || codexDiagnostic.stderr || 'Codex CLI is unavailable';
-      this.setStatus({ state: 'error', error });
-      throw new Error(error);
-    }
     await this.skillSyncer();
     this.child = await this.spawnCcConnect(binaryPath, configPath, providerProfile);
     await this.bridgeAdapter.connect();
@@ -465,20 +407,13 @@ export class CcConnectRuntimeProvider extends EventEmitter implements RuntimePro
   async listSessions(payload?: unknown) {
     if (isRecord(payload) && Array.isArray(payload.sessionKeys)) {
       const sessionKeys = payload.sessionKeys.filter((value): value is string => typeof value === 'string');
-      const [codexSummaries, bridgeSummaries] = await Promise.all([
-        this.getCodexBridge().summarizeSessions(sessionKeys),
-        this.bridgeAdapter.summarizeSessions(sessionKeys),
-      ]);
+      const bridgeSummaries = await this.bridgeAdapter.summarizeSessions(sessionKeys);
       return {
         success: true,
-        summaries: mergeSummaries(codexSummaries, bridgeSummaries),
+        summaries: bridgeSummaries,
       };
     }
-    const [codexSessions, bridgeSessions] = await Promise.all([
-      this.getCodexBridge().listSessions(),
-      this.bridgeAdapter.listSessions(),
-    ]);
-    const sessions = mergeSessionLists(codexSessions, bridgeSessions);
+    const sessions = await this.bridgeAdapter.listSessions();
     return {
       success: true,
       sessions: sessions.map((session) => ({
@@ -499,24 +434,15 @@ export class CcConnectRuntimeProvider extends EventEmitter implements RuntimePro
       ? Math.max(1, Math.min(Math.floor(body.limit), 1000))
       : 200;
     const bridgeMessages = await this.bridgeAdapter.loadHistory(sessionKey, limit);
-    if (bridgeMessages.length > 0) {
-      return {
-        success: true,
-        messages: bridgeMessages,
-      };
-    }
     return {
       success: true,
-      messages: await this.getCodexBridge().loadHistory(sessionKey, limit),
+      messages: bridgeMessages,
     };
   }
 
   async deleteSession(payload?: unknown) {
     const sessionKey = getSessionKey(payload);
-    await Promise.all([
-      this.getCodexBridge().deleteSession(sessionKey),
-      this.bridgeAdapter.deleteSession(sessionKey),
-    ]);
+    await this.bridgeAdapter.deleteSession(sessionKey);
     return { success: true };
   }
 
@@ -579,7 +505,6 @@ export class CcConnectRuntimeProvider extends EventEmitter implements RuntimePro
       content: [
         `[cc-connect] config=${configPath}`,
         `[cc-connect] providerProfile=${getCcConnectProviderProfilePath()}`,
-        `[codex] sessions=${this.getCodexSessionsDir()}`,
         '',
         redactCcConnectConfigForLogs(content),
       ].join('\n'),
@@ -593,21 +518,14 @@ export class CcConnectRuntimeProvider extends EventEmitter implements RuntimePro
     const binaryPath = assertCcConnectBinaryPath(this.binaryPath);
     const args = ['doctor', 'user-isolation', '--config', configPath];
     const command = `cc-connect ${args.join(' ')}`;
-    const codexDiagnostic = await this.getCodexBridge().diagnose();
-    const codexStdout = [
-      'Codex CLI:',
-      codexDiagnostic.success ? 'ok' : 'failed',
-      codexDiagnostic.stdout.trim(),
-      codexDiagnostic.error ? `error: ${codexDiagnostic.error}` : '',
-    ].filter(Boolean).join('\n');
 
     if (mode === 'fix') {
       return {
         mode,
         success: false,
         exitCode: null,
-        stdout: codexStdout,
-        stderr: codexDiagnostic.stderr,
+        stdout: '',
+        stderr: '',
         command,
         cwd,
         durationMs: Date.now() - startedAt,
@@ -683,8 +601,8 @@ export class CcConnectRuntimeProvider extends EventEmitter implements RuntimePro
           mode,
           success: code === 0,
           exitCode: code,
-          stdout: [stdout, codexStdout].filter(Boolean).join('\n'),
-          stderr: [stderr, codexDiagnostic.stderr].filter(Boolean).join('\n'),
+          stdout,
+          stderr,
           command,
           cwd,
         });
@@ -697,8 +615,6 @@ export class CcConnectRuntimeProvider extends EventEmitter implements RuntimePro
     await mkdir(dirname(configPath), { recursive: true });
     const openClawConfig = await readOpenClawConfig().catch(() => ({} as OpenClawConfig));
     const agentProjects = collectCcConnectAgentProjects(openClawConfig, this.workDir);
-    const mainProject = agentProjects.find((project) => project.agentId === 'main') ?? agentProjects[0];
-    if (mainProject) this.getCodexBridge().setWorkDir(mainProject.workDir);
     await Promise.all(agentProjects.map((project) => mkdir(project.workDir, { recursive: true })));
     await writeFile(configPath, defaultConfig({
       codexPath,
@@ -749,7 +665,6 @@ export class CcConnectRuntimeProvider extends EventEmitter implements RuntimePro
     const profile = await this.providerProfileLoader(payload);
     await this.resetCodexAgentSessionsAfterModelHubSwitch(profile);
     this.currentProviderProfile = profile;
-    this.codexBridge?.setProviderProfile(profile);
     return profile;
   }
 
@@ -868,17 +783,6 @@ export class CcConnectRuntimeProvider extends EventEmitter implements RuntimePro
   private resolveCodexPath(): string {
     if (this.codexPath) return this.codexPath;
     return assertCodexBundle(this.codexBundle).binaryPath;
-  }
-
-  private getCodexBridge(): CodexCliBridge {
-    if (!this.codexBridge) {
-      this.codexBridge = this.codexBridgeFactory();
-    }
-    return this.codexBridge;
-  }
-
-  private getCodexSessionsDir(): string {
-    return this.codexBridge?.getSessionsDir() ?? getCcConnectCodexSessionsDir();
   }
 
   private async spawnCcConnect(binaryPath: string, configPath: string, providerProfile: CodexProviderProfile): Promise<ChildProcess> {
