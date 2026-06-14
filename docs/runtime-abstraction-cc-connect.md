@@ -30,9 +30,9 @@ ClawX currently treats OpenClaw Gateway as the only runtime. That keeps the rend
 
 | Capability | OpenClaw | cc-connect first version | Behavior when unsupported |
 | --- | --- | --- | --- |
-| Chat | Supported, including abort | Supported through BridgePlatform and Codex; abort still a gap | Stable unsupported error or runtime `aborted` event once implemented |
-| Sessions | Supported | Supported through bridge state plus Codex transcript fallback; real-runtime reload/delete still needs parity validation | Empty/stable response or unsupported |
-| History | Supported | Supported through bridge state plus Codex transcript fallback; token/cost history still needs validation | Empty/stable response or unsupported |
+| Chat | Supported, including abort | Supported through cc-connect BridgePlatform; cc-connect invokes Codex, abort still a gap | Stable unsupported error or runtime `aborted` event once implemented |
+| Sessions | Supported | Supported through cc-connect bridge/session store only; real-runtime reload/delete still needs parity validation | Empty/stable response or unsupported |
+| History | Supported | Supported through cc-connect bridge/session store only; token/cost history still needs validation | Empty/stable response or unsupported |
 | Providers/models | Supported | OpenAI API key, OpenAI OAuth/Codex, OpenAI-compatible Responses Custom providers, and Ollama supported through Codex launch profile | Chat Completions Custom providers and unsupported vendors return stable errors and do not mutate OpenClaw config |
 | Channels | Supported | cc-connect platform bridges with runtime-routed status probes; live connect/disconnect/delete are not parity yet | Capability-aware degradation |
 | Cron | Supported | Management API-backed list/create/update/delete/run; toggle maps to update and needs real API validation | Disabled or stable unsupported |
@@ -113,21 +113,23 @@ living backlog for the next delivery phases.
      fully adopting the cc-connect provider management API, so this must be an
      explicit product decision.
 2. Session/history fidelity.
-   - The bridge adapter combines in-memory ClawX messages, cc-connect persisted
-     session stores, and Codex transcript JSONL fallback.
+   - The bridge adapter combines in-memory ClawX messages and cc-connect
+     persisted session stores. It must not read Codex transcript JSONL files
+     directly; missing history must be fixed in cc-connect BridgePlatform or
+     cc-connect session store output.
    - This needs real-runtime validation for restart reload, named sessions,
-     cross-agent sessions, delete semantics, transcript matching by
-     `agent_session_id` and `work_dir`, and parity with OpenClaw sidebar titles.
+     cross-agent sessions, delete semantics, and parity with OpenClaw sidebar
+     titles.
    - Token/cost history is still OpenClaw-transcript-oriented and must be
-     validated against Codex transcript usage records before the Dashboard can
-     claim parity.
+     backed by cc-connect-provided usage data before the Dashboard can claim
+     parity.
 3. Tool events and artifacts.
    - The bridge currently handles text replies, streaming text, cards, buttons,
      and errors. cc-connect BridgePlatform also defines image, file, audio,
      preview update, and delete-message packets.
    - ClawX must validate tool-call rendering, generated files, image/file
-     send-back, media attachments, and artifact panel behavior from real Codex
-     transcripts and bridge packets.
+     send-back, media attachments, and artifact panel behavior from cc-connect
+     bridge packets/session stores.
 4. Channel lifecycle.
    - Channel status is runtime-routed and ClawX materializes configured
      OpenClaw channel accounts into cc-connect project platform blocks.
@@ -228,9 +230,9 @@ are covered by automated tests or an explicit release exception.
 | Chat send | Mock bridge E2E and opt-in real OAuth E2E prove basic chat delivery | Multi-turn tool-heavy conversations, generated files, media attachments, network retry, model errors, and long-running tasks | Mock bridge event E2E plus gated real Codex prompt suite |
 | Chat abort | `chat.abort` is explicitly unsupported for cc-connect | Stop button must cancel/kill active Codex work and emit `aborted` parity events | Unit test around active run cancellation and E2E stop-button smoke |
 | Codex OAuth | Gated real OAuth E2E passes with pre-existing managed `CODEX_HOME/auth.json` | In-app login/status/logout/relogin and expired-token recovery | Host API unit tests plus manual/gated real OAuth E2E |
-| Doctor | cc-connect `doctor user-isolation` and Codex `--version` diagnostics are used | Codex `doctor --json`, cc-connect hidden doctor contract, and fix-equivalent behavior | Unit tests with mock doctor output plus real binary doctor smoke |
+| Doctor | cc-connect `doctor user-isolation` is used | cc-connect hidden doctor contract and fix-equivalent behavior | Unit tests with mock doctor output plus real binary doctor smoke |
 | Provider/model | Unit coverage for OpenAI, OAuth, custom Responses, ModelHub, Ollama, unsupported vendors | Runtime switching after provider changes, Web Admin/provider API alignment, custom header behavior, model defaults | Unit matrix plus real bundle startup for each provider mode that can run without secrets |
-| Sessions/history | Bridge and transcript parsing unit/E2E coverage | Restart reload, cross-agent isolation, delete semantics, title parity, token/cost usage history | Real cc-connect session store fixture and E2E restart/delete smoke |
+| Sessions/history | Bridge/session-store unit and E2E coverage | Restart reload, cross-agent isolation, delete semantics, title parity, token/cost usage history | Real cc-connect session store fixture and E2E restart/delete smoke |
 | Channels | Config projection and status probes are mocked | Real platform credential field mapping and live lifecycle semantics | Per-platform fixture tests plus at least one real sandbox channel smoke |
 | Cron | Management API paths are implemented and mocked | Real cc-connect cron add/list/edit/info/del/exec mapping, enabled/toggle, session mode, timeout, silent/mute | Real management API smoke with mock agent project |
 | Skills/commands | Enabled local skills mirror into managed Codex home | ClawX Skills page must show mirror target/status and command/slash behavior must be validated | Unit sync test plus UI state test |
@@ -388,6 +390,13 @@ into cc-connect. cc-connect then invokes the configured Codex project agent.
 Sessions, history, cron, skills, and supported provider/model selection stay
 behind the same runtime layer so the core chat loop can run without depending on
 OpenClaw Gateway.
+
+In cc-connect runtime mode, ClawX must not communicate with Codex directly. That
+includes direct Codex CLI process execution and direct reads of Codex transcript
+or runtime state files. ClawX may prepare the bundled Codex executable path,
+managed `CODEX_HOME`, and provider profile for cc-connect, but all runtime
+execution, chat, sessions, history, and tool/artifact events must flow through
+cc-connect BridgePlatform, Management API, or cc-connect-owned session stores.
 
 ## Rollback Strategy
 

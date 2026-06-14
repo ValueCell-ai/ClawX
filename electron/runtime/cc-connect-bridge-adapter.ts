@@ -4,7 +4,7 @@ import { mkdir, readdir, readFile, writeFile } from 'node:fs/promises';
 import { basename, join } from 'node:path';
 import WebSocket from 'ws';
 import type { RawMessage } from '@shared/chat/types';
-import { getCcConnectCodexHomeDir, getCcConnectConfigPath, getCcConnectManagedDir } from './cc-connect-paths';
+import { getCcConnectManagedDir } from './cc-connect-paths';
 import type { RuntimeSendWithMediaPayload } from './types';
 
 type BridgeAdapterOptions = {
@@ -14,8 +14,6 @@ type BridgeAdapterOptions = {
   projectForSessionKey?: (sessionKey: string) => string;
   emit: EventEmitter['emit'];
   sessionStoreDir?: string;
-  codexHomeDir?: string;
-  configPath?: string;
 };
 
 type SessionMetadata = {
@@ -41,7 +39,6 @@ type PendingRunResolution = {
 type PersistedSession = {
   id: string;
   name?: string;
-  agentSessionId?: string;
   projectName: string;
   agentId: string;
   history: RawMessage[];
@@ -63,7 +60,6 @@ type PersistedSessionStore = {
 
 const CONNECT_TIMEOUT_MS = 15_000;
 const CLAWX_PROJECT_PREFIX = 'clawx-';
-const CODEX_TRANSCRIPT_MATCH_SKEW_MS = 10 * 60_000;
 
 function messageText(content: unknown): string {
   if (typeof content === 'string') return content;
@@ -185,28 +181,6 @@ function displayNameForPersistedSession(key: string, session: PersistedSession, 
   return messageText(firstUser?.content).slice(0, 80) || session.name || key;
 }
 
-function codexContentText(content: unknown): string {
-  if (typeof content === 'string') return content;
-  if (!Array.isArray(content)) return '';
-  return content
-    .flatMap((block) => {
-      if (!isRecord(block)) return [];
-      const text = block.text ?? block.input_text ?? block.output_text;
-      return typeof text === 'string' ? [text] : [];
-    })
-    .join('\n')
-    .trim();
-}
-
-function parseCodexFunctionArguments(value: unknown): unknown {
-  if (typeof value !== 'string') return value;
-  try {
-    return JSON.parse(value) as unknown;
-  } catch {
-    return value;
-  }
-}
-
 function projectNameFromStorePath(path: string): string {
   return basename(path).replace(/_[a-f0-9]{8}\.json$/i, '').replace(/\.json$/i, '');
 }
@@ -216,13 +190,6 @@ function agentIdFromProjectName(projectName: string): string {
   return projectName.slice(CLAWX_PROJECT_PREFIX.length) || 'main';
 }
 
-function transcriptCwdMatchesAgent(cwd: string | undefined, agentId: string): boolean {
-  if (!cwd) return false;
-  const dir = basename(cwd);
-  if (agentId === 'main') return dir === 'ClawX' || dir === 'workspace' || dir === 'workspace-main';
-  return dir === `workspace-${agentId}` || dir === agentId;
-}
-
 export class CcConnectBridgeAdapter {
   private readonly port: number;
   private readonly token: string;
@@ -230,9 +197,6 @@ export class CcConnectBridgeAdapter {
   private readonly projectForSessionKey: (sessionKey: string) => string;
   private readonly emitRuntimeEvent: EventEmitter['emit'];
   private readonly sessionStoreDir: string;
-  private readonly codexHomeDir: string;
-  private readonly configPath: string;
-  private readonly projectWorkDirCache = new Map<string, string | null>();
   private socket: WebSocket | null = null;
   private readonly messagesBySession = new Map<string, RawMessage[]>();
   private readonly pendingRuns = new Map<string, PendingRun>();
@@ -244,8 +208,6 @@ export class CcConnectBridgeAdapter {
     this.projectForSessionKey = options.projectForSessionKey ?? (() => options.project);
     this.emitRuntimeEvent = options.emit;
     this.sessionStoreDir = options.sessionStoreDir ?? join(getCcConnectManagedDir(), 'data', 'sessions');
-    this.codexHomeDir = options.codexHomeDir ?? getCcConnectCodexHomeDir();
-    this.configPath = options.configPath ?? getCcConnectConfigPath();
   }
 
   async connect(): Promise<void> {
@@ -327,9 +289,7 @@ export class CcConnectBridgeAdapter {
         const session = persisted.sessions.get(sessionId);
         if (!session) continue;
         const key = fromBridgeSessionKey(storedKey);
-        const history = session.history.length > 0
-          ? session.history
-          : await this.readCodexTranscriptMessagesForSession(session, 1000);
+        const history = session.history;
         if (history.length === 0) continue;
         const updatedAt = history.reduce((latest, message) => {
           const ts = normalizeTimestamp(message.timestamp);
@@ -446,7 +406,6 @@ export class CcConnectBridgeAdapter {
         sessions.set(id, {
           id,
           name: typeof value.name === 'string' ? value.name : undefined,
-          agentSessionId: typeof value.agent_session_id === 'string' ? value.agent_session_id : undefined,
           projectName,
           agentId,
           history,
@@ -476,178 +435,11 @@ export class CcConnectBridgeAdapter {
         const sessionId = store.activeSession.get(key);
         const session = sessionId ? store.sessions.get(sessionId) : undefined;
         if (!session) continue;
-        if (session.history.length > 0) return session.history;
-        return await this.readCodexTranscriptMessagesForSession(session, limit);
+        if (session.history.length > 0) return session.history.slice(-Math.max(1, Math.min(Math.floor(limit), 1000)));
+        return [];
       }
     }
     return [];
-  }
-
-  private async readCodexTranscriptMessagesForSession(session: PersistedSession, limit: number): Promise<RawMessage[]> {
-    const transcriptPath = await this.resolveCodexTranscriptPath(session);
-    if (!transcriptPath) return [];
-    const messages = await this.readCodexTranscriptMessages(transcriptPath);
-    return messages.slice(-Math.max(1, Math.min(Math.floor(limit), 1000)));
-  }
-
-  private async resolveCodexTranscriptPath(session: PersistedSession): Promise<string | null> {
-    const root = join(this.codexHomeDir, 'sessions');
-    const paths = await this.collectCodexTranscriptPaths(root, 5);
-    const agentSessionId = session.agentSessionId?.trim();
-    if (agentSessionId) {
-      const byId = paths.find((path) => basename(path).includes(agentSessionId));
-      if (byId) return byId;
-    }
-
-    const sessionStartedAt = session.createdAt || session.updatedAt;
-    let best: { path: string; distance: number } | null = null;
-    for (const path of paths) {
-      const metadata = await this.readCodexTranscriptMetadata(path);
-      if (!metadata.startedAt) continue;
-      if (!this.codexTranscriptMatchesSessionProject(metadata, session)) continue;
-      const distance = Math.abs(metadata.startedAt - sessionStartedAt);
-      if (distance > CODEX_TRANSCRIPT_MATCH_SKEW_MS) continue;
-      if (!best || distance < best.distance) {
-        best = { path, distance };
-      }
-    }
-    return best?.path ?? null;
-  }
-
-  private async codexTranscriptMatchesSessionProject(
-    metadata: { cwd?: string },
-    session: PersistedSession,
-  ): Promise<boolean> {
-    const workDir = await this.readProjectWorkDir(session.projectName);
-    if (workDir) return metadata.cwd === workDir;
-    return transcriptCwdMatchesAgent(metadata.cwd, session.agentId);
-  }
-
-  private async readProjectWorkDir(projectName: string): Promise<string | null> {
-    if (this.projectWorkDirCache.has(projectName)) {
-      return this.projectWorkDirCache.get(projectName) ?? null;
-    }
-    const raw = await readFile(this.configPath, 'utf8').catch(() => '');
-    let currentProject: string | null = null;
-    for (const line of raw.split(/\r?\n/)) {
-      const trimmed = line.trim();
-      if (trimmed === '[[projects]]') {
-        currentProject = null;
-        continue;
-      }
-      const nameMatch = trimmed.match(/^name\s*=\s*"([^"]+)"$/);
-      if (nameMatch) {
-        currentProject = nameMatch[1];
-        continue;
-      }
-      if (currentProject !== projectName) continue;
-      const workDirMatch = trimmed.match(/^work_dir\s*=\s*"([^"]*)"$/);
-      if (workDirMatch) {
-        const workDir = workDirMatch[1].replace(/\\"/g, '"').replace(/\\\\/g, '\\');
-        this.projectWorkDirCache.set(projectName, workDir || null);
-        return workDir || null;
-      }
-    }
-    this.projectWorkDirCache.set(projectName, null);
-    return null;
-  }
-
-  private async collectCodexTranscriptPaths(dir: string, depth: number): Promise<string[]> {
-    if (depth < 0) return [];
-    const entries = await readdir(dir, { withFileTypes: true }).catch(() => []);
-    const nested = await Promise.all(entries.map(async (entry) => {
-      const path = join(dir, entry.name);
-      if (entry.isDirectory()) return this.collectCodexTranscriptPaths(path, depth - 1);
-      return entry.isFile() && entry.name.endsWith('.jsonl') ? [path] : [];
-    }));
-    return nested.flat();
-  }
-
-  private async readCodexTranscriptMetadata(path: string): Promise<{ id?: string; startedAt?: number; cwd?: string }> {
-    const raw = await readFile(path, 'utf8').catch(() => '');
-    for (const line of raw.split(/\r?\n/)) {
-      if (!line.trim()) continue;
-      try {
-        const parsed = JSON.parse(line) as unknown;
-        if (!isRecord(parsed) || parsed.type !== 'session_meta' || !isRecord(parsed.payload)) continue;
-        const id = typeof parsed.payload.id === 'string' ? parsed.payload.id : undefined;
-        const startedAt = normalizeTimestamp(parsed.payload.timestamp);
-        const cwd = typeof parsed.payload.cwd === 'string' ? parsed.payload.cwd : undefined;
-        return { id, startedAt, cwd };
-      } catch {
-        return {};
-      }
-    }
-    return {};
-  }
-
-  private async readCodexTranscriptMessages(path: string): Promise<RawMessage[]> {
-    const raw = await readFile(path, 'utf8').catch(() => '');
-    const lines = raw.split(/\r?\n/).filter(Boolean);
-    const hasTurnContext = lines.some((line) => {
-      try {
-        const parsed = JSON.parse(line) as unknown;
-        return isRecord(parsed) && parsed.type === 'turn_context';
-      } catch {
-        return false;
-      }
-    });
-    let afterTurnContext = !hasTurnContext;
-    return lines.flatMap((line, index): RawMessage[] => {
-      try {
-        const parsed = JSON.parse(line) as unknown;
-        if (!isRecord(parsed)) return [];
-        if (parsed.type === 'turn_context') {
-          afterTurnContext = true;
-          return [];
-        }
-        if (parsed.type !== 'response_item' || !isRecord(parsed.payload)) return [];
-        if (parsed.payload.type === 'message') {
-          const role = typeof parsed.payload.role === 'string' ? parsed.payload.role : '';
-          if (!afterTurnContext || role === 'developer') return [];
-          if (role !== 'user' && role !== 'assistant' && role !== 'system') return [];
-          const text = codexContentText(parsed.payload.content);
-          if (!text) return [];
-          return [{
-            id: `codex-transcript-${index}`,
-            role: role as RawMessage['role'],
-            content: text,
-            timestamp: normalizeTimestamp(parsed.timestamp) ?? Date.now(),
-          }];
-        }
-        if (parsed.payload.type === 'function_call') {
-          const name = typeof parsed.payload.name === 'string' ? parsed.payload.name : '';
-          if (!afterTurnContext || !name) return [];
-          const callId = typeof parsed.payload.call_id === 'string' ? parsed.payload.call_id : `call-${index}`;
-          return [{
-            id: `codex-transcript-${index}`,
-            role: 'assistant',
-            content: [{
-              type: 'tool_use',
-              id: callId,
-              name,
-              input: parseCodexFunctionArguments(parsed.payload.arguments),
-            }],
-            timestamp: normalizeTimestamp(parsed.timestamp) ?? Date.now(),
-          }];
-        }
-        if (parsed.payload.type === 'function_call_output') {
-          const callId = typeof parsed.payload.call_id === 'string' ? parsed.payload.call_id : `call-${index}`;
-          const output = typeof parsed.payload.output === 'string' ? parsed.payload.output : '';
-          if (!afterTurnContext || !output) return [];
-          return [{
-            id: `codex-transcript-${index}`,
-            role: 'toolresult',
-            toolCallId: callId,
-            content: output,
-            timestamp: normalizeTimestamp(parsed.timestamp) ?? Date.now(),
-          }];
-        }
-      } catch {
-        return [];
-      }
-      return [];
-    });
   }
 
   private async deletePersistedSession(sessionKey: string): Promise<void> {

@@ -54,6 +54,7 @@ expectedUserBehavior:
   - Packaged builds contain the cc-connect executable for the target platform.
   - cc-connect chat emits OpenClaw-compatible runtime events, including streamed assistant deltas.
   - cc-connect GUI chat is delivered through cc-connect BridgePlatform; ClawX must not call Codex directly from Chat in cc-connect mode.
+  - cc-connect sessions/history/tool artifacts are sourced from cc-connect BridgePlatform, Management API, or cc-connect-owned session stores; ClawX must not read Codex transcript/runtime state files directly.
   - cc-connect mirrors each configured OpenClaw agent to a project that reuses that agent's existing OpenClaw workspace when it exists.
   - cc-connect falls back to a ClawX-managed workspace for agents whose configured OpenClaw workspace path is missing or unset.
   - cc-connect channel accounts run in the project for their bound agent.
