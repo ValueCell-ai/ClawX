@@ -257,7 +257,7 @@ async function writeMockCcConnectChannelSession(userDataDir: string): Promise<vo
 test.describe('cc-connect + Codex runtime E2E', () => {
   test.skip(process.platform === 'win32', 'POSIX executable mock binaries are used in this E2E');
 
-  test('starts cc-connect runtime, writes managed config, and sends chat through Codex bridge', async ({
+  test('starts cc-connect runtime, writes managed config, and sends chat through cc-connect BridgePlatform', async ({
     launchElectronApp,
     userDataDir,
   }) => {
@@ -373,32 +373,21 @@ test.describe('cc-connect + Codex runtime E2E', () => {
           success: true,
           messages: expect.arrayContaining([
             expect.objectContaining({ role: 'user', content: 'hello codex runtime' }),
-            expect.objectContaining({
-              role: 'assistant',
-              content: expect.arrayContaining([
-                expect.objectContaining({
-                  type: 'toolCall',
-                  id: 'call_exec_e2e',
-                  name: 'exec_command',
-                }),
-              ]),
-            }),
-            expect.objectContaining({
-              role: 'toolresult',
-              toolCallId: 'call_exec_e2e',
-              toolName: 'exec_command',
-            }),
-            expect.objectContaining({ role: 'assistant', content: 'Codex E2E response from mock binary' }),
+            expect.objectContaining({ role: 'assistant', content: 'cc-connect bridge E2E response' }),
           ]),
         },
       });
 
-      await expect(page.getByText('Codex E2E response from mock binary')).toBeVisible({ timeout: 30_000 });
-      await expect(page.getByTestId('chat-execution-graph')).toBeVisible({ timeout: 30_000 });
-      if ((await page.getByTestId('chat-execution-graph').getAttribute('data-collapsed')) === 'true') {
-        await page.getByTestId('chat-execution-graph').click();
-      }
-      await expect(page.getByTestId('chat-execution-graph')).toContainText('exec_command');
+      await expect(page.getByText('cc-connect bridge E2E response')).toBeVisible({ timeout: 30_000 });
+      const bridgeMessages = (await readFile(bridgeMessagesPath, 'utf8')).trim().split(/\r?\n/).map((line) => JSON.parse(line));
+      expect(bridgeMessages).toEqual(expect.arrayContaining([
+        expect.objectContaining({
+          type: 'message',
+          content: 'hello codex runtime',
+          project: 'clawx-main',
+          session_key: 'clawx:main:main',
+        }),
+      ]));
 
       const history = await readHistory();
       expect(history).toMatchObject({
@@ -407,7 +396,7 @@ test.describe('cc-connect + Codex runtime E2E', () => {
           success: true,
           messages: expect.arrayContaining([
             expect.objectContaining({ role: 'user', content: 'hello codex runtime' }),
-            expect.objectContaining({ role: 'assistant', content: 'Codex E2E response from mock binary' }),
+            expect.objectContaining({ role: 'assistant', content: 'cc-connect bridge E2E response' }),
           ]),
         },
       });
@@ -560,7 +549,7 @@ test.describe('cc-connect + Codex runtime E2E', () => {
           success: true,
           messages: expect.arrayContaining([
             expect.objectContaining({ role: 'user', content: 'hello isolated agent workspace' }),
-            expect.objectContaining({ role: 'assistant', content: 'Codex E2E response from mock binary' }),
+            expect.objectContaining({ role: 'assistant', content: 'cc-connect bridge E2E response' }),
           ]),
         },
       });
@@ -640,7 +629,7 @@ test.describe('cc-connect + Codex runtime E2E', () => {
       await expect(page.getByTestId('chat-composer-input')).toBeEnabled({ timeout: 30_000 });
       await page.getByTestId('chat-composer-input').fill('hello openai oauth codex runtime');
       await page.getByTestId('chat-composer-send').click();
-      await expect(page.getByText('Codex E2E response from mock binary')).toBeVisible({ timeout: 30_000 });
+      await expect(page.getByText('cc-connect bridge E2E response')).toBeVisible({ timeout: 30_000 });
 
       const managedCodexHome = join(userDataDir, 'runtimes', 'cc-connect', 'codex-home');
 
@@ -739,7 +728,7 @@ test.describe('cc-connect + Codex runtime E2E', () => {
       await expect(page.getByTestId('chat-composer-input')).toBeEnabled({ timeout: 30_000 });
       await page.getByTestId('chat-composer-input').fill('hello managed codex oauth runtime');
       await page.getByTestId('chat-composer-send').click();
-      await expect(page.getByText('Codex E2E response from mock binary')).toBeVisible({ timeout: 30_000 });
+      await expect(page.getByText('cc-connect bridge E2E response')).toBeVisible({ timeout: 30_000 });
 
       const authJson = JSON.parse(await readFile(join(managedCodexHome, 'auth.json'), 'utf8'));
       expect(authJson).toMatchObject({

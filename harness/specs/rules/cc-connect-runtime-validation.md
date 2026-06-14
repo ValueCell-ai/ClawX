@@ -17,7 +17,7 @@ cc-connect runtime work must validate both mocked integration behavior and real 
 Rules:
 
 - Unit tests must cover provider profile conversion, capability fallback, bridge adapter behavior, and packaging path resolution.
-- E2E tests must cover chat delivery through the cc-connect Codex bridge with mock binaries.
+- E2E tests must cover chat delivery through cc-connect BridgePlatform with mock binaries.
 - E2E tests must cover real `build/cc-connect/<platform>-<arch>/cc-connect` and `build/codex/<platform>-<arch>/bin/codex` startup without replacing them with mock binaries.
 - Real OpenAI/Codex OAuth chat must be available as an explicit opt-in E2E path gated by `CLAWX_REAL_OAUTH_E2E=1` and a caller-supplied isolated userData/CODEX_HOME.
 - Real OAuth E2E must not copy tokens from user `~/.codex`, must not commit generated auth files, and must assert that public provider profiles do not contain token material.

@@ -459,7 +459,7 @@ export class CcConnectRuntimeProvider extends EventEmitter implements RuntimePro
     if (this.currentProviderProfile && !this.currentProviderProfile.supported) {
       throw new Error(this.currentProviderProfile.unsupportedReason || 'Selected provider is not supported by the cc-connect Codex runtime');
     }
-    return await this.getCodexBridge().send(payload);
+    return await this.bridgeAdapter.send(payload);
   }
 
   async listSessions(payload?: unknown) {
@@ -498,16 +498,16 @@ export class CcConnectRuntimeProvider extends EventEmitter implements RuntimePro
     const limit = typeof body.limit === 'number' && Number.isFinite(body.limit)
       ? Math.max(1, Math.min(Math.floor(body.limit), 1000))
       : 200;
-    const codexMessages = await this.getCodexBridge().loadHistory(sessionKey, limit);
-    if (codexMessages.length > 0) {
+    const bridgeMessages = await this.bridgeAdapter.loadHistory(sessionKey, limit);
+    if (bridgeMessages.length > 0) {
       return {
         success: true,
-        messages: codexMessages,
+        messages: bridgeMessages,
       };
     }
     return {
       success: true,
-      messages: await this.bridgeAdapter.loadHistory(sessionKey, limit),
+      messages: await this.getCodexBridge().loadHistory(sessionKey, limit),
     };
   }
 

@@ -781,7 +781,7 @@ describe('CcConnectRuntimeProvider', () => {
     expect(bridgeAdapter.send).not.toHaveBeenCalled();
   });
 
-  it('routes GUI chat through Codex and merges cc-connect channel sessions', async () => {
+  it('routes GUI chat through cc-connect BridgePlatform and merges channel sessions', async () => {
     const binaryPath = join(tempDir, 'cc-connect');
     await writeFile(binaryPath, '#!/bin/sh\n', { mode: 0o755 });
     const codexBridge = createBridgeMock({
@@ -792,9 +792,12 @@ describe('CcConnectRuntimeProvider', () => {
         : []),
     });
     const bridgeAdapter = createBridgeAdapterMock({
+      send: vi.fn(async () => ({ runId: 'cc-connect-run-1' })),
       listSessions: vi.fn(async () => [{ key: 'agent:support:member-1', displayName: 'Support', updatedAt: 3 }]),
       summarizeSessions: vi.fn(async () => [{ sessionKey: 'agent:support:member-1', firstUserText: 'channel hello', lastTimestamp: 3 }]),
-      loadHistory: vi.fn(async () => [{ role: 'assistant', content: 'channel ok', timestamp: 3 }]),
+      loadHistory: vi.fn(async (sessionKey: string) => sessionKey === 'agent:main:main'
+        ? [{ role: 'assistant', content: 'bridge ok', timestamp: 3 }]
+        : [{ role: 'assistant', content: 'channel ok', timestamp: 3 }]),
     });
     const { CcConnectRuntimeProvider } = await import('@electron/runtime/cc-connect-provider');
     const provider = new CcConnectRuntimeProvider({
@@ -811,8 +814,7 @@ describe('CcConnectRuntimeProvider', () => {
       message: 'hello',
       idempotencyKey: 'idem-1',
     })).resolves.toEqual({
-      runId: 'codex-run-1',
-      assistantMessage: { role: 'assistant', content: 'assistant ok', timestamp: 2 },
+      runId: 'cc-connect-run-1',
     });
     await expect(provider.listSessions()).resolves.toMatchObject({
       success: true,
@@ -830,15 +832,19 @@ describe('CcConnectRuntimeProvider', () => {
     });
     await expect(provider.loadHistory({ sessionKey: 'agent:main:main' })).resolves.toMatchObject({
       success: true,
-      messages: [{ role: 'assistant', content: 'assistant ok' }],
+      messages: [{ role: 'assistant', content: 'bridge ok' }],
     });
     await expect(provider.loadHistory({ sessionKey: 'agent:support:member-1' })).resolves.toMatchObject({
       success: true,
       messages: [{ role: 'assistant', content: 'channel ok' }],
     });
     await expect(provider.deleteSession({ sessionKey: 'agent:main:main' })).resolves.toEqual({ success: true });
-    expect(codexBridge.send).toHaveBeenCalledOnce();
-    expect(bridgeAdapter.send).not.toHaveBeenCalled();
+    expect(bridgeAdapter.send).toHaveBeenCalledWith(expect.objectContaining({
+      sessionKey: 'agent:main:main',
+      message: 'hello',
+      idempotencyKey: 'idem-1',
+    }));
+    expect(codexBridge.send).not.toHaveBeenCalled();
     expect(codexBridge.deleteSession).toHaveBeenCalledWith('agent:main:main');
     expect(bridgeAdapter.deleteSession).toHaveBeenCalledWith('agent:main:main');
   });
@@ -860,7 +866,7 @@ describe('CcConnectRuntimeProvider', () => {
       sessionKey: 'agent:main:main',
       message: 'hello via rpc',
       idempotencyKey: 'idem-rpc',
-    })).resolves.toMatchObject({ runId: 'codex-run-1' });
+    })).resolves.toMatchObject({ runId: 'cc-connect-run-1' });
     await expect(provider.rpc('sessions.list', { includeDerivedTitles: true })).resolves.toMatchObject({
       success: true,
       sessions: [{ key: 'agent:main:main', displayName: 'main' }],
@@ -871,13 +877,13 @@ describe('CcConnectRuntimeProvider', () => {
     });
     await expect(provider.rpc('sessions.delete', { sessionKey: 'agent:main:main' })).resolves.toEqual({ success: true });
 
-    expect(codexBridge.send).toHaveBeenCalledWith(expect.objectContaining({
+    expect(bridgeAdapter.send).toHaveBeenCalledWith(expect.objectContaining({
       sessionKey: 'agent:main:main',
       message: 'hello via rpc',
       idempotencyKey: 'idem-rpc',
     }));
-    expect(bridgeAdapter.send).not.toHaveBeenCalled();
-    expect(codexBridge.loadHistory).toHaveBeenCalledWith('agent:main:main', 20);
+    expect(codexBridge.send).not.toHaveBeenCalled();
+    expect(codexBridge.loadHistory).not.toHaveBeenCalled();
     expect(codexBridge.deleteSession).toHaveBeenCalledWith('agent:main:main');
     expect(bridgeAdapter.deleteSession).toHaveBeenCalledWith('agent:main:main');
   });

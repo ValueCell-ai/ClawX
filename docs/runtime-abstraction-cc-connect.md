@@ -50,7 +50,7 @@ living backlog for the next delivery phases.
 
 - Local dev can bundle and verify `cc-connect@1.3.2` and `@openai/codex@0.137.0`.
 - Mock bridge E2E covers Settings runtime switching, managed config creation,
-  Codex bridge chat, OpenAI OAuth profile materialization, sessions/history,
+  cc-connect BridgePlatform chat, OpenAI OAuth profile materialization, sessions/history,
   channels, cron, and skills sync behavior.
 - Real bundle smoke starts the packaged development `cc-connect` and `codex`
   binaries without replacing them with mock executables.
@@ -382,9 +382,11 @@ The binary is intentionally outside asar so it remains executable.
 8. Update README files and developer docs.
 9. Continue migrating provider/channel/cron/skills routes to capability dispatch.
 
-cc-connect runtime mode uses a ClawX BridgePlatform adapter for GUI chat,
-sessions, history, cron, skills, and supported provider/model selection so the
-core chat loop can run without depending on OpenClaw Gateway.
+cc-connect runtime mode sends GUI chat through the ClawX BridgePlatform adapter
+into cc-connect. cc-connect then invokes the configured Codex project agent.
+Sessions, history, cron, skills, and supported provider/model selection stay
+behind the same runtime layer so the core chat loop can run without depending on
+OpenClaw Gateway.
 
 ## Rollback Strategy
 
