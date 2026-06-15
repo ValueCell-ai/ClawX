@@ -2,7 +2,7 @@
  * Cron Page
  * Manage scheduled tasks
  */
-import { useEffect, useState, useCallback, type ReactNode, type SelectHTMLAttributes } from 'react';
+import { useEffect, useState, useCallback, useMemo, useRef, type ReactNode, type SelectHTMLAttributes } from 'react';
 import {
   Plus,
   Clock,
@@ -21,6 +21,7 @@ import {
   Pause,
   ChevronDown,
   Bot,
+  Search,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -43,8 +44,10 @@ import { useAgentsStore } from '@/stores/agents';
 import { useChatStore } from '@/stores/chat';
 import { LoadingSpinner } from '@/components/common/LoadingSpinner';
 import { formatRelativeTime, cn } from '@/lib/utils';
+import { fetchQuickAccessSkills } from '@/lib/quick-access-skills';
 import { toast } from 'sonner';
 import type { CronJob, CronJobCreateInput, ScheduleType } from '@/types/cron';
+import type { QuickAccessSkill } from '@/types/skill';
 import { CHANNEL_ICONS, CHANNEL_NAMES, type ChannelType } from '@/types/channel';
 import { useTranslation } from 'react-i18next';
 import type { TFunction } from 'i18next';
@@ -61,6 +64,73 @@ const schedulePresets: { key: string; value: string; type: ScheduleType }[] = [
   { key: 'weeklyMon', value: '0 9 * * 1', type: 'weekly' },
   { key: 'monthly1st', value: '0 9 1 * *', type: 'monthly' },
 ];
+
+// ── Inline skill token helpers ───────────────────────────────────
+// Mirrors the chat composer skill-token logic in src/pages/Chat/ChatInput.tsx:
+// skills are inserted as `/skillName  ` tokens (trailing double space) and the
+// textarea renders a transparent caret on top of a highlighted overlay. Unlike
+// the chat composer, the cron dialog intentionally does NOT expose a preview
+// affordance — the tokens are rendered as non-interactive spans.
+
+type SkillTokenRange = { start: number; end: number };
+
+function getSkillPrefix(skillName: string): string {
+  return `/${skillName}  `;
+}
+
+function needsLeadingSkillSpace(value: string, position: number): boolean {
+  return position > 0 && !/\s/.test(value[position - 1] ?? '');
+}
+
+function findSkillTokenRanges(value: string): SkillTokenRange[] {
+  const ranges: SkillTokenRange[] = [];
+  const skillTokenPattern = /\/[^\s]+ {2}/g;
+  let match: RegExpExecArray | null;
+  while ((match = skillTokenPattern.exec(value)) !== null) {
+    ranges.push({ start: match.index, end: match.index + match[0].length });
+  }
+  return ranges;
+}
+
+const SKILL_TOKEN_HIGHLIGHT_CLASS =
+  'rounded-md bg-skill-bg/14 text-skill-fg [-webkit-box-decoration-break:clone] [box-decoration-break:clone] [text-shadow:0_0_10px_rgba(47,107,255,0.38)] dark:bg-skill-bg/18 dark:text-skill-fg-dark dark:[text-shadow:0_0_12px_rgba(37,99,235,0.42)]';
+
+function renderHighlightedCronMessage(value: string, tokenRanges: SkillTokenRange[]) {
+  if (tokenRanges.length === 0) {
+    return <>{value}{value.endsWith('\n') ? '\n' : '\u200b'}</>;
+  }
+
+  const chunks: ReactNode[] = [];
+  let cursor = 0;
+
+  for (const tokenRange of tokenRanges) {
+    const token = value.slice(tokenRange.start, tokenRange.end);
+    const tokenLabel = token.trimEnd();
+    const tokenTrailingSpace = token.slice(tokenLabel.length);
+
+    if (tokenRange.start > cursor) {
+      chunks.push(value.slice(cursor, tokenRange.start));
+    }
+    chunks.push(
+      <span
+        key={`skill-token-${tokenRange.start}`}
+        data-testid="cron-skill-token"
+        className={cn('align-baseline', SKILL_TOKEN_HIGHLIGHT_CLASS)}
+      >
+        {tokenLabel}
+      </span>,
+      tokenTrailingSpace,
+    );
+    cursor = tokenRange.end;
+  }
+
+  if (cursor < value.length) {
+    chunks.push(value.slice(cursor));
+  }
+  chunks.push(value.endsWith('\n') ? '\n' : '\u200b');
+
+  return <>{chunks}</>;
+}
 
 // Parse cron schedule to human-readable format
 // Handles both plain cron strings and Gateway CronSchedule objects:
@@ -261,6 +331,13 @@ function TaskDialog({ open, job, configuredChannels, onClose, onSave }: TaskDial
   const [selectedDeliveryAccountId, setSelectedDeliveryAccountId] = useState(job?.delivery?.accountId || '');
   const [channelTargetOptions, setChannelTargetOptions] = useState<ChannelTargetOption[]>([]);
   const [loadingChannelTargets, setLoadingChannelTargets] = useState(false);
+  const [skillPickerOpen, setSkillPickerOpen] = useState(false);
+  const [skillQuery, setSkillQuery] = useState('');
+  const [quickSkills, setQuickSkills] = useState<QuickAccessSkill[]>([]);
+  const [skillsLoading, setSkillsLoading] = useState(false);
+  const [skillsError, setSkillsError] = useState<string | null>(null);
+  const messageRef = useRef<HTMLTextAreaElement>(null);
+  const skillPickerRef = useRef<HTMLDivElement>(null);
   const [prevOpen, setPrevOpen] = useState(open);
 
   if (prevOpen !== open) {
@@ -280,8 +357,167 @@ function TaskDialog({ open, job, configuredChannels, onClose, onSave }: TaskDial
       setSelectedDeliveryAccountId(job?.delivery?.accountId || '');
       setChannelTargetOptions([]);
       setLoadingChannelTargets(false);
+      setSkillPickerOpen(false);
+      setSkillQuery('');
+      setQuickSkills([]);
+      setSkillsError(null);
+      setSkillsLoading(false);
     }
   }
+
+  const selectedAgent = useMemo(
+    () => agents.find((agent) => agent.id === selectedAgentId) ?? null,
+    [agents, selectedAgentId],
+  );
+  const skillTokenRanges = useMemo(() => findSkillTokenRanges(message), [message]);
+  const filteredQuickSkills = useMemo(() => {
+    const query = skillQuery.trim().toLowerCase();
+    if (!query) return quickSkills;
+    return quickSkills.filter((skill) =>
+      skill.name.toLowerCase().includes(query)
+      || skill.description.toLowerCase().includes(query)
+      || skill.sourceLabel.toLowerCase().includes(query),
+    );
+  }, [quickSkills, skillQuery]);
+
+  const loadQuickSkills = useCallback(async () => {
+    if (!selectedAgent) {
+      setQuickSkills([]);
+      setSkillsError(null);
+      return;
+    }
+    setSkillsLoading(true);
+    setSkillsError(null);
+    try {
+      const result = await fetchQuickAccessSkills({
+        workspace: selectedAgent.workspace,
+        agentDir: selectedAgent.agentDir,
+      });
+      if (!result.success) {
+        throw new Error(result.error || 'Failed to load skills');
+      }
+      setQuickSkills(result.skills || []);
+    } catch (error) {
+      setQuickSkills([]);
+      setSkillsError(String(error));
+    } finally {
+      setSkillsLoading(false);
+    }
+  }, [selectedAgent]);
+
+  // Reset the skill list whenever the target agent changes so stale skills
+  // from a previous agent are not offered for insertion.
+  useEffect(() => {
+    setSkillPickerOpen(false);
+    setSkillQuery('');
+    setQuickSkills([]);
+    setSkillsError(null);
+  }, [selectedAgentId]);
+
+  useEffect(() => {
+    if (!skillPickerOpen) return;
+    void loadQuickSkills();
+  }, [skillPickerOpen, loadQuickSkills]);
+
+  useEffect(() => {
+    if (!skillPickerOpen) return;
+    const handlePointerDown = (event: MouseEvent) => {
+      if (!skillPickerRef.current?.contains(event.target as Node)) {
+        setSkillPickerOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handlePointerDown);
+    return () => {
+      document.removeEventListener('mousedown', handlePointerDown);
+    };
+  }, [skillPickerOpen]);
+
+  const moveMessageCaretTo = useCallback((position: number) => {
+    const textarea = messageRef.current;
+    if (!textarea) return;
+    textarea.focus();
+    textarea.setSelectionRange(position, position);
+    requestAnimationFrame(() => {
+      messageRef.current?.focus();
+      messageRef.current?.setSelectionRange(position, position);
+    });
+  }, []);
+
+  const normalizeMessageSelection = useCallback(() => {
+    if (skillTokenRanges.length === 0) return;
+    const textarea = messageRef.current;
+    if (!textarea) return;
+    const selectionStart = textarea.selectionStart ?? 0;
+    const selectionEnd = textarea.selectionEnd ?? 0;
+    if (selectionStart !== selectionEnd) return;
+    const tokenRange = skillTokenRanges.find((range) => selectionStart > range.start && selectionStart < range.end);
+    if (tokenRange) {
+      moveMessageCaretTo(tokenRange.end);
+    }
+  }, [moveMessageCaretTo, skillTokenRanges]);
+
+  const handleMessageKeyDown = useCallback((e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key === 'Backspace') {
+      const textarea = messageRef.current;
+      const selectionStart = textarea?.selectionStart ?? 0;
+      const selectionEnd = textarea?.selectionEnd ?? 0;
+      const tokenRange = skillTokenRanges.find((range) =>
+        selectionStart === selectionEnd
+        && selectionStart > range.start
+        && selectionStart <= range.end,
+      );
+      if (tokenRange) {
+        e.preventDefault();
+        const nextValue = `${message.slice(0, tokenRange.start)}${message.slice(tokenRange.end)}`;
+        setMessage(nextValue);
+        moveMessageCaretTo(tokenRange.start);
+        return;
+      }
+    }
+    if (e.key === 'ArrowLeft' && skillTokenRanges.length > 0) {
+      const textarea = messageRef.current;
+      const selectionStart = textarea?.selectionStart ?? 0;
+      const selectionEnd = textarea?.selectionEnd ?? 0;
+      const tokenRange = skillTokenRanges.find((range) => selectionStart === selectionEnd && selectionStart === range.end);
+      if (tokenRange) {
+        e.preventDefault();
+        moveMessageCaretTo(tokenRange.start);
+        return;
+      }
+    }
+    if (e.key === 'ArrowRight' && skillTokenRanges.length > 0) {
+      const textarea = messageRef.current;
+      const selectionStart = textarea?.selectionStart ?? 0;
+      const selectionEnd = textarea?.selectionEnd ?? 0;
+      const tokenRange = skillTokenRanges.find((range) => selectionStart === selectionEnd && selectionStart === range.start);
+      if (tokenRange) {
+        e.preventDefault();
+        moveMessageCaretTo(tokenRange.end);
+        return;
+      }
+    }
+    if (e.key === 'Escape' && skillPickerOpen) {
+      e.preventDefault();
+      setSkillPickerOpen(false);
+    }
+  }, [message, moveMessageCaretTo, skillPickerOpen, skillTokenRanges]);
+
+  const handleInsertSkill = useCallback((skill: QuickAccessSkill) => {
+    const textarea = messageRef.current;
+    const nextToken = getSkillPrefix(skill.name);
+    const selectionStart = textarea?.selectionStart ?? message.length;
+    const selectionEnd = textarea?.selectionEnd ?? message.length;
+    const leadingSpace = needsLeadingSkillSpace(message, selectionStart) ? ' ' : '';
+    const nextValue = `${message.slice(0, selectionStart)}${leadingSpace}${nextToken}${message.slice(selectionEnd)}`;
+    setMessage(nextValue);
+    setSkillPickerOpen(false);
+    setSkillQuery('');
+    requestAnimationFrame(() => {
+      messageRef.current?.focus();
+      const cursorPosition = selectionStart + leadingSpace.length + nextToken.length;
+      messageRef.current?.setSelectionRange(cursorPosition, cursorPosition);
+    });
+  }, [message]);
   const schedulePreview = estimateNextRun(useCustom ? customSchedule : schedule);
   const selectableChannels = configuredChannels.filter((group) => isSupportedCronDeliveryChannel(group.channelType));
   const availableChannels = selectableChannels.some((group) => group.channelType === deliveryChannel)
@@ -462,14 +698,100 @@ function TaskDialog({ open, job, configuredChannels, onClose, onSave }: TaskDial
           {/* Message */}
           <div className="space-y-2.5">
             <Label htmlFor="message" className="text-sm text-foreground/80 font-bold">{t('dialog.message')}</Label>
-            <Textarea
-              id="message"
-              placeholder={t('dialog.messagePlaceholder')}
-              value={message}
-              onChange={(e) => setMessage(e.target.value)}
-              rows={3}
-              className="rounded-xl font-mono text-meta bg-transparent border-black/10 dark:border-white/10 focus-visible:ring-2 focus-visible:ring-primary/50 focus-visible:border-primary shadow-sm transition-all text-foreground placeholder:text-foreground/40 resize-none"
-            />
+            <div className="relative rounded-xl border border-black/10 dark:border-white/10 bg-transparent px-3 pt-2.5 pb-1.5 shadow-sm transition-all focus-within:ring-2 focus-within:ring-primary/50 focus-within:border-primary">
+              {/* Text Row */}
+              <div className="relative">
+                {skillTokenRanges.length > 0 && (
+                  <div
+                    aria-hidden="true"
+                    className="pointer-events-none absolute inset-0 z-20 overflow-hidden whitespace-pre-wrap break-words font-mono text-meta md:text-sm leading-[18px] text-foreground"
+                  >
+                    {renderHighlightedCronMessage(message, skillTokenRanges)}
+                  </div>
+                )}
+                <Textarea
+                  id="message"
+                  ref={messageRef}
+                  placeholder={t('dialog.messagePlaceholder')}
+                  value={message}
+                  onChange={(e) => setMessage(e.target.value)}
+                  onKeyDown={handleMessageKeyDown}
+                  onSelect={normalizeMessageSelection}
+                  onClick={normalizeMessageSelection}
+                  rows={3}
+                  className={cn(
+                    'relative min-h-[60px] w-full resize-none border-0 bg-transparent p-0 font-mono text-meta md:text-sm leading-[18px] text-foreground placeholder:text-foreground/40 shadow-none focus-visible:ring-0 focus-visible:ring-offset-0',
+                    skillTokenRanges.length > 0 ? 'z-0 text-transparent caret-foreground selection:bg-primary/20' : 'z-10',
+                  )}
+                />
+              </div>
+
+              {/* Action Row */}
+              <div className="mt-1.5 flex items-center gap-1">
+                <div ref={skillPickerRef} className="relative shrink-0">
+                  <button
+                    type="button"
+                    data-testid="cron-skill-button"
+                    onClick={() => setSkillPickerOpen((isOpen) => !isOpen)}
+                    title={t('dialog.pickSkill')}
+                    className={cn(
+                      'inline-flex h-8 items-center gap-1 rounded-lg px-1.5 text-meta font-medium text-muted-foreground transition-colors hover:bg-transparent hover:text-foreground focus-visible:outline-none focus-visible:ring-0',
+                      skillPickerOpen && 'text-foreground',
+                    )}
+                  >
+                    <span>{t('dialog.skillButton')}</span>
+                    <ChevronDown className={cn('h-3.5 w-3.5 transition-transform', skillPickerOpen && 'rotate-180')} />
+                  </button>
+                  {skillPickerOpen && (
+                    <div className="absolute left-0 top-full z-30 mt-2 w-80 overflow-hidden rounded-2xl border border-black/10 bg-surface-modal p-1.5 shadow-xl dark:border-white/10">
+                      <div className="flex items-center gap-2 rounded-xl border border-black/10 bg-black/[0.03] px-3 py-2 dark:border-white/10 dark:bg-white/[0.04]">
+                        <Search className="h-3.5 w-3.5 text-muted-foreground" />
+                        <input
+                          value={skillQuery}
+                          onChange={(event) => setSkillQuery(event.target.value)}
+                          placeholder={t('dialog.skillSearchPlaceholder')}
+                          className="w-full bg-transparent text-meta outline-none placeholder:text-muted-foreground/70"
+                          autoFocus
+                        />
+                      </div>
+                      <div className="px-3 py-2 text-tiny font-medium text-muted-foreground/80">
+                        {t('dialog.skillPickerTitle', { agent: selectedAgent?.name ?? '' })}
+                      </div>
+                      <div className="max-h-64 overflow-y-auto">
+                        {skillsLoading ? (
+                          <div className="px-3 py-4 text-xs text-muted-foreground">{t('dialog.skillLoading')}</div>
+                        ) : skillsError ? (
+                          <div className="px-3 py-4 text-xs text-destructive">{skillsError}</div>
+                        ) : filteredQuickSkills.length === 0 ? (
+                          <div className="px-3 py-4 text-xs text-muted-foreground">{t('dialog.skillEmpty')}</div>
+                        ) : (
+                          filteredQuickSkills.map((skill) => (
+                            <button
+                              key={`${skill.source}:${skill.name}`}
+                              type="button"
+                              data-testid={`cron-skill-option-${skill.name}`}
+                              onClick={() => handleInsertSkill(skill)}
+                              title={skill.description}
+                              className="flex w-full items-center justify-between gap-3 rounded-xl px-3 py-2 text-left transition-colors hover:bg-black/5 dark:hover:bg-white/5"
+                            >
+                              <div className="min-w-0">
+                                <div className="truncate text-meta font-semibold text-foreground">
+                                  <span className="font-mono">/{skill.name}</span>
+                                </div>
+                                <div className="truncate text-tiny text-muted-foreground">{skill.sourceLabel}</div>
+                              </div>
+                              <span className="rounded-full border border-black/10 bg-black/[0.03] px-2 py-0.5 text-2xs font-medium text-muted-foreground dark:border-white/10 dark:bg-white/[0.04]">
+                                {skill.sourceLabel}
+                              </span>
+                            </button>
+                          ))
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
           </div>
 
           {/* Agent */}
