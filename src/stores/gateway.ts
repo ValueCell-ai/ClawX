@@ -7,6 +7,7 @@ import { hostApi } from '@/lib/host-api';
 import { hostEvents } from '@/lib/host-events';
 import type { GatewayNotification, GatewayHealth, GatewayStatus } from '../types/gateway';
 import type { ChatRuntimeEvent } from '../../shared/chat-runtime-events';
+import { getCronSessionBaseKey, sessionKeysAreEquivalent } from './chat/cron-session-utils';
 
 let gatewayInitPromise: Promise<void> | null = null;
 let gatewayEventUnsubscribers: Array<() => void> | null = null;
@@ -156,12 +157,15 @@ function maybeLoadHistory(
 /** Bump sidebar ordering when any session receives gateway traffic (e.g. Feishu DM). */
 function touchSessionActivity(sessionKey: string | null | undefined, activityMs = Date.now()): void {
   if (!sessionKey) return;
+  // Cron runs stream under the run-scoped key; the sidebar only carries the
+  // base cron entry, so normalize before bumping activity.
+  const activityKey = getCronSessionBaseKey(sessionKey);
   import('./chat')
     .then(({ useChatStore }) => {
       useChatStore.setState((state) => ({
         sessionLastActivity: {
           ...state.sessionLastActivity,
-          [sessionKey]: Math.max(state.sessionLastActivity[sessionKey] ?? 0, activityMs),
+          [activityKey]: Math.max(state.sessionLastActivity[activityKey] ?? 0, activityMs),
         },
       }));
     })
@@ -228,14 +232,26 @@ function handleChatRuntimeEvent(event: ChatRuntimeEvent): void {
       const state = useChatStore.getState();
       state.handleRuntimeEvent(event);
 
-      const shouldRefreshSessions = resolvedSessionKey != null && (
-        resolvedSessionKey !== state.currentSessionKey
-        || !state.sessions.some((session) => session.key === resolvedSessionKey)
+      // Cron runs stream under the run-scoped key; treat it as the equivalent
+      // base cron session the user is viewing instead of an unknown session.
+      const matchesCurrentSession = resolvedSessionKey != null
+        && sessionKeysAreEquivalent(resolvedSessionKey, state.currentSessionKey);
+      const matchesActiveRun = state.activeRunId != null && event.runId === state.activeRunId;
+      const isKnownSession = resolvedSessionKey != null && state.sessions.some(
+        (session) => sessionKeysAreEquivalent(session.key, resolvedSessionKey),
       );
+      const shouldRefreshSessions = resolvedSessionKey != null
+        && !matchesCurrentSession
+        && !isKnownSession;
 
       if (event.type === 'run.started') {
         if (shouldRefreshSessions) {
           maybeLoadSessions(state, true);
+        }
+        // Surface the freshly-written cron trigger message so the Execution
+        // Graph has a run segment to anchor its live steps to.
+        if (matchesCurrentSession) {
+          maybeLoadHistory(state, true);
         }
         return;
       }
@@ -248,8 +264,6 @@ function handleChatRuntimeEvent(event: ChatRuntimeEvent): void {
         maybeLoadSessions(state, true);
       }
 
-      const matchesCurrentSession = resolvedSessionKey != null && resolvedSessionKey === state.currentSessionKey;
-      const matchesActiveRun = state.activeRunId != null && event.runId === state.activeRunId;
       if (matchesCurrentSession || matchesActiveRun) {
         maybeLoadHistory(state, true);
       }
