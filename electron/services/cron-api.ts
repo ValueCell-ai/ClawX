@@ -292,6 +292,35 @@ function normalizeCronSchedule(schedule: GatewayCronJob['schedule']): CronJob['s
   return typeof schedule.expr === 'string' ? schedule.expr : '';
 }
 
+/**
+ * Normalize a UI-supplied schedule (plain cron string or structured CronSchedule)
+ * into the structured form the Gateway expects. Plain strings become a cron
+ * schedule; structured `at` / `every` / `cron` objects pass through after a
+ * minimal shape check.
+ */
+function normalizeScheduleInput(schedule: unknown): CronSchedule {
+  if (typeof schedule === 'string') {
+    return { kind: 'cron', expr: schedule };
+  }
+  if (schedule && typeof schedule === 'object') {
+    const record = schedule as Record<string, unknown>;
+    if (record.kind === 'at' && typeof record.at === 'string' && record.at.trim()) {
+      return { kind: 'at', at: record.at };
+    }
+    if (record.kind === 'every' && typeof record.everyMs === 'number' && Number.isFinite(record.everyMs)) {
+      return {
+        kind: 'every',
+        everyMs: record.everyMs,
+        ...(typeof record.anchorMs === 'number' ? { anchorMs: record.anchorMs } : {}),
+      };
+    }
+    if (record.kind === 'cron' && typeof record.expr === 'string') {
+      return { kind: 'cron', expr: record.expr, ...(typeof record.tz === 'string' && record.tz ? { tz: record.tz } : {}) };
+    }
+  }
+  throw new Error('Invalid schedule: expected a cron expression string or a CronSchedule object');
+}
+
 function normalizeCronDeliveryPatch(rawDelivery: unknown): Record<string, unknown> {
   if (!rawDelivery || typeof rawDelivery !== 'object') return {};
 
@@ -312,7 +341,7 @@ function normalizeCronDeliveryPatch(rawDelivery: unknown): Record<string, unknow
 
 function buildCronUpdatePatch(input: Record<string, unknown>): Record<string, unknown> {
   const patch = { ...input };
-  if (typeof patch.schedule === 'string') patch.schedule = { kind: 'cron', expr: patch.schedule };
+  if ('schedule' in patch && patch.schedule !== undefined) patch.schedule = normalizeScheduleInput(patch.schedule);
   if (typeof patch.message === 'string') {
     patch.payload = { kind: 'agentTurn', message: patch.message };
     delete patch.message;
@@ -481,7 +510,7 @@ export function createCronApi({ gatewayManager }: { gatewayManager: GatewayManag
       }
       const result = await gatewayManager.rpc('cron.add', {
         name: input.name,
-        schedule: { kind: 'cron', expr: input.schedule },
+        schedule: normalizeScheduleInput(input.schedule),
         payload: { kind: 'agentTurn', message: input.message },
         enabled: typeof input.enabled === 'boolean' ? input.enabled : true,
         wakeMode: 'next-heartbeat',

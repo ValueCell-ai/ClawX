@@ -63,11 +63,15 @@ export interface CronJob {
 
 /**
  * Input for creating a cron job from the UI.
+ *
+ * `schedule` accepts either a plain cron expression string (normalized to a
+ * `{ kind: 'cron', expr }` schedule by the Main process) or a structured
+ * Gateway CronSchedule object (e.g. `{ kind: 'at', at }` for one-time tasks).
  */
 export interface CronJobCreateInput {
   name: string;
   message: string;
-  schedule: string;
+  schedule: string | CronSchedule;
   delivery?: CronJobDelivery;
   enabled?: boolean;
   agentId?: string;
@@ -79,7 +83,7 @@ export interface CronJobCreateInput {
 export interface CronJobUpdateInput {
   name?: string;
   message?: string;
-  schedule?: string;
+  schedule?: string | CronSchedule;
   delivery?: CronJobDelivery;
   enabled?: boolean;
   agentId?: string;

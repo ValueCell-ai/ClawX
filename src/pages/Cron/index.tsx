@@ -46,7 +46,7 @@ import { LoadingSpinner } from '@/components/common/LoadingSpinner';
 import { formatRelativeTime, cn } from '@/lib/utils';
 import { fetchQuickAccessSkills } from '@/lib/quick-access-skills';
 import { toast } from 'sonner';
-import type { CronJob, CronJobCreateInput, ScheduleType } from '@/types/cron';
+import type { CronJob, CronJobCreateInput, CronSchedule, ScheduleType } from '@/types/cron';
 import type { QuickAccessSkill } from '@/types/skill';
 import { CHANNEL_ICONS, CHANNEL_NAMES, type ChannelType } from '@/types/channel';
 import { useTranslation } from 'react-i18next';
@@ -179,11 +179,20 @@ function parseCronExpr(cron: string, t: TFunction<'cron'>): string {
 
   const [minute, hour, dayOfMonth, , dayOfWeek] = parts;
 
+  const isNum = (value: string) => /^\d+$/.test(value);
   if (minute === '*' && hour === '*') return t('presets.everyMinute');
   if (minute.startsWith('*/')) return t('schedule.everyMinutes', { count: Number(minute.slice(2)) });
-  if (hour === '*' && minute === '0') return t('presets.everyHour');
+  if (hour === '*' && dayOfMonth === '*' && dayOfWeek === '*' && isNum(minute)) {
+    return minute === '0' ? t('presets.everyHour') : t('schedule.hourlyAt', { minute: minute.padStart(2, '0') });
+  }
+  if (dayOfMonth === '*' && dayOfWeek === '1-5' && isNum(minute) && isNum(hour)) {
+    return t('schedule.weekdaysAt', { time: `${hour}:${minute.padStart(2, '0')}` });
+  }
   if (dayOfWeek !== '*' && dayOfMonth === '*') {
-    return t('schedule.weeklyAt', { day: dayOfWeek, time: `${hour}:${minute.padStart(2, '0')}` });
+    const dayLabel = isNum(dayOfWeek) && Number(dayOfWeek) <= 6
+      ? t(`weekdays.${WEEKDAY_KEYS[Number(dayOfWeek)]}` as const)
+      : dayOfWeek;
+    return t('schedule.weeklyAt', { day: dayLabel, time: `${hour}:${minute.padStart(2, '0')}` });
   }
   if (dayOfMonth !== '*') {
     return t('schedule.monthlyAtDay', { day: dayOfMonth, time: `${hour}:${minute.padStart(2, '0')}` });
@@ -303,14 +312,258 @@ interface TaskDialogProps {
   onSave: (input: CronJobCreateInput) => Promise<void>;
 }
 
-function getInitialCronSchedule(job?: CronJob): string {
-  const schedule = job?.schedule;
-  if (!schedule) return '0 9 * * *';
-  if (typeof schedule === 'string') return schedule;
-  if (typeof schedule === 'object' && 'expr' in schedule && typeof (schedule as { expr: string }).expr === 'string') {
-    return (schedule as { expr: string }).expr;
+// ── Schedule builder (recurring / once tabs) ─────────────────────
+
+type ScheduleMode = 'recurring' | 'once';
+type RecurrenceKind = 'hourly' | 'daily' | 'weekdays' | 'weekly' | 'custom';
+
+const RECURRENCE_KINDS: RecurrenceKind[] = ['hourly', 'daily', 'weekdays', 'weekly', 'custom'];
+// cron day-of-week is 0-6 with 0 = Sunday
+const WEEKDAY_KEYS = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'] as const;
+
+interface ScheduleFormState {
+  mode: ScheduleMode;
+  recurrence: RecurrenceKind;
+  timeOfDay: string;   // HH:MM for daily/weekdays/weekly
+  weekday: number;     // 0-6 for weekly
+  hourlyMinute: number;// 0-59 for hourly
+  customCron: string;
+  onceDate: string;    // YYYY-MM-DD
+  onceTime: string;    // HH:MM
+}
+
+function pad2(value: number): string {
+  return String(value).padStart(2, '0');
+}
+
+function toDateInputValue(date: Date): string {
+  return `${date.getFullYear()}-${pad2(date.getMonth() + 1)}-${pad2(date.getDate())}`;
+}
+
+function toTimeInputValue(date: Date): string {
+  return `${pad2(date.getHours())}:${pad2(date.getMinutes())}`;
+}
+
+function defaultScheduleForm(): ScheduleFormState {
+  const now = new Date();
+  return {
+    mode: 'recurring',
+    recurrence: 'daily',
+    timeOfDay: '09:00',
+    weekday: 1,
+    hourlyMinute: 0,
+    customCron: '',
+    onceDate: toDateInputValue(now),
+    onceTime: '09:00',
+  };
+}
+
+function parseCronExprToForm(expr: string, base: ScheduleFormState): ScheduleFormState {
+  const trimmed = expr.trim();
+  const parts = trimmed.split(/\s+/);
+  const isNum = (value: string) => /^\d+$/.test(value);
+  if (parts.length !== 5) {
+    return { ...base, mode: 'recurring', recurrence: 'custom', customCron: trimmed };
   }
-  return '0 9 * * *';
+  const [minute, hour, dom, mon, dow] = parts;
+  if (isNum(minute) && hour === '*' && dom === '*' && mon === '*' && dow === '*') {
+    return { ...base, mode: 'recurring', recurrence: 'hourly', hourlyMinute: Math.min(59, Math.max(0, Number(minute))) };
+  }
+  if (isNum(minute) && isNum(hour) && dom === '*' && mon === '*') {
+    const timeOfDay = `${pad2(Number(hour))}:${pad2(Number(minute))}`;
+    if (dow === '*') return { ...base, mode: 'recurring', recurrence: 'daily', timeOfDay };
+    if (dow === '1-5') return { ...base, mode: 'recurring', recurrence: 'weekdays', timeOfDay };
+    if (isNum(dow) && Number(dow) >= 0 && Number(dow) <= 6) {
+      return { ...base, mode: 'recurring', recurrence: 'weekly', weekday: Number(dow), timeOfDay };
+    }
+  }
+  return { ...base, mode: 'recurring', recurrence: 'custom', customCron: trimmed };
+}
+
+function parseScheduleToForm(job?: CronJob): ScheduleFormState {
+  const base = defaultScheduleForm();
+  const schedule = job?.schedule;
+  if (!schedule) return base;
+  if (typeof schedule === 'string') {
+    return schedule.trim() ? parseCronExprToForm(schedule, base) : base;
+  }
+  if (typeof schedule === 'object') {
+    if (schedule.kind === 'at' && typeof schedule.at === 'string') {
+      const date = new Date(schedule.at);
+      if (!Number.isNaN(date.getTime())) {
+        return { ...base, mode: 'once', onceDate: toDateInputValue(date), onceTime: toTimeInputValue(date) };
+      }
+      return { ...base, mode: 'once' };
+    }
+    if (schedule.kind === 'cron' && typeof schedule.expr === 'string') {
+      return parseCronExprToForm(schedule.expr, base);
+    }
+    // 'every' (interval) schedules are not editable through this builder.
+    return base;
+  }
+  return base;
+}
+
+function buildScheduleFromForm(form: ScheduleFormState): string | CronSchedule {
+  if (form.mode === 'once') {
+    const dateTime = new Date(`${form.onceDate}T${form.onceTime || '00:00'}`);
+    return { kind: 'at', at: dateTime.toISOString() };
+  }
+  const [hourRaw, minuteRaw] = (form.timeOfDay || '09:00').split(':');
+  const hour = Number(hourRaw);
+  const minute = Number(minuteRaw);
+  switch (form.recurrence) {
+    case 'hourly':
+      return `${form.hourlyMinute} * * * *`;
+    case 'daily':
+      return `${minute} ${hour} * * *`;
+    case 'weekdays':
+      return `${minute} ${hour} * * 1-5`;
+    case 'weekly':
+      return `${minute} ${hour} * * ${form.weekday}`;
+    case 'custom':
+    default:
+      return form.customCron.trim();
+  }
+}
+
+function computeNextRunPreviewFromForm(form: ScheduleFormState): string | null {
+  const now = new Date();
+  if (form.mode === 'once') {
+    const dateTime = new Date(`${form.onceDate}T${form.onceTime || '00:00'}`);
+    return Number.isNaN(dateTime.getTime()) ? null : dateTime.toLocaleString();
+  }
+  const [hourRaw, minuteRaw] = (form.timeOfDay || '09:00').split(':');
+  const hour = Number(hourRaw);
+  const minute = Number(minuteRaw);
+  const next = new Date(now.getTime());
+  next.setSeconds(0, 0);
+  switch (form.recurrence) {
+    case 'hourly': {
+      next.setMinutes(form.hourlyMinute);
+      if (next <= now) next.setHours(next.getHours() + 1);
+      return next.toLocaleString();
+    }
+    case 'daily': {
+      next.setHours(hour, minute, 0, 0);
+      if (next <= now) next.setDate(next.getDate() + 1);
+      return next.toLocaleString();
+    }
+    case 'weekdays': {
+      next.setHours(hour, minute, 0, 0);
+      while (next <= now || next.getDay() === 0 || next.getDay() === 6) {
+        next.setDate(next.getDate() + 1);
+        next.setHours(hour, minute, 0, 0);
+      }
+      return next.toLocaleString();
+    }
+    case 'weekly': {
+      next.setHours(hour, minute, 0, 0);
+      const dayDelta = (form.weekday - next.getDay() + 7) % 7;
+      next.setDate(next.getDate() + dayDelta);
+      if (next <= now) next.setDate(next.getDate() + 7);
+      return next.toLocaleString();
+    }
+    case 'custom':
+    default:
+      return estimateNextRun(form.customCron.trim());
+  }
+}
+
+interface ScheduleTimePickerProps {
+  id?: string;
+  value: string;
+  onChange: (next: string) => void;
+  'data-testid'?: string;
+}
+
+/** Two-column 24h time picker (hours 0-23 / minutes 0-59) with a neutral grey selection. */
+function ScheduleTimePicker({ id, value, onChange, 'data-testid': testId }: ScheduleTimePickerProps) {
+  const { t } = useTranslation('cron');
+  const [open, setOpen] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const hourListRef = useRef<HTMLDivElement>(null);
+  const minuteListRef = useRef<HTMLDivElement>(null);
+
+  const [hourRaw, minuteRaw] = (value || '09:00').split(':');
+  const selectedHour = Math.min(23, Math.max(0, Math.floor(Number(hourRaw) || 0)));
+  const selectedMinute = Math.min(59, Math.max(0, Math.floor(Number(minuteRaw) || 0)));
+
+  useEffect(() => {
+    if (!open) return undefined;
+    const handlePointerDown = (event: MouseEvent) => {
+      if (containerRef.current && !containerRef.current.contains(event.target as Node)) {
+        setOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handlePointerDown);
+    return () => document.removeEventListener('mousedown', handlePointerDown);
+  }, [open]);
+
+  useEffect(() => {
+    if (!open) return;
+    hourListRef.current?.querySelector('[data-selected="true"]')?.scrollIntoView({ block: 'center' });
+    minuteListRef.current?.querySelector('[data-selected="true"]')?.scrollIntoView({ block: 'center' });
+  }, [open]);
+
+  const cellClass = (active: boolean) =>
+    cn(
+      'block w-full rounded-md py-1.5 text-center font-mono text-meta transition-colors',
+      active
+        ? 'bg-black/5 dark:bg-white/10 text-foreground font-semibold'
+        : 'text-foreground/70 hover:bg-black/5 dark:hover:bg-white/5',
+    );
+
+  return (
+    <div ref={containerRef} className="relative">
+      <button
+        id={id}
+        type="button"
+        data-testid={testId}
+        onClick={() => setOpen((prev) => !prev)}
+        className="flex h-[44px] w-full items-center justify-between rounded-xl border border-black/10 dark:border-white/10 bg-transparent px-3 font-mono text-meta text-foreground shadow-sm transition-colors hover:bg-black/5 dark:hover:bg-white/5"
+      >
+        <span>{pad2(selectedHour)}:{pad2(selectedMinute)}</span>
+        <Clock className="h-4 w-4 opacity-50" />
+      </button>
+      {open && (
+        <div className="absolute left-0 top-full z-30 mt-1.5 w-full overflow-hidden rounded-xl border border-black/10 dark:border-white/10 bg-surface-modal shadow-lg">
+          <div className="grid grid-cols-2 text-center text-meta font-medium text-muted-foreground">
+            <div className="border-r border-black/5 dark:border-white/5 py-1.5">{t('dialog.hourColumn')}</div>
+            <div className="py-1.5">{t('dialog.minuteColumn')}</div>
+          </div>
+          <div className="grid grid-cols-2">
+            <div ref={hourListRef} className="max-h-[200px] overflow-y-auto border-r border-black/5 dark:border-white/5 px-1 pb-1">
+              {Array.from({ length: 24 }, (_, hour) => (
+                <button
+                  key={hour}
+                  type="button"
+                  data-selected={hour === selectedHour}
+                  onClick={() => onChange(`${pad2(hour)}:${pad2(selectedMinute)}`)}
+                  className={cellClass(hour === selectedHour)}
+                >
+                  {pad2(hour)}
+                </button>
+              ))}
+            </div>
+            <div ref={minuteListRef} className="max-h-[200px] overflow-y-auto px-1 pb-1">
+              {Array.from({ length: 60 }, (_, minute) => (
+                <button
+                  key={minute}
+                  type="button"
+                  data-selected={minute === selectedMinute}
+                  onClick={() => onChange(`${pad2(selectedHour)}:${pad2(minute)}`)}
+                  className={cellClass(minute === selectedMinute)}
+                >
+                  {pad2(minute)}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
 }
 
 function TaskDialog({ open, job, configuredChannels, onClose, onSave }: TaskDialogProps) {
@@ -321,9 +574,7 @@ function TaskDialog({ open, job, configuredChannels, onClose, onSave }: TaskDial
   const [name, setName] = useState(job?.name || '');
   const [message, setMessage] = useState(job?.message || '');
   const [selectedAgentId, setSelectedAgentId] = useState(job?.agentId || useChatStore.getState().currentAgentId);
-  const [schedule, setSchedule] = useState(getInitialCronSchedule(job));
-  const [customSchedule, setCustomSchedule] = useState('');
-  const [useCustom, setUseCustom] = useState(false);
+  const [scheduleForm, setScheduleForm] = useState<ScheduleFormState>(() => parseScheduleToForm(job));
   const [enabled, setEnabled] = useState(job?.enabled ?? true);
   const [deliveryMode, setDeliveryMode] = useState<'none' | 'announce'>(job?.delivery?.mode === 'announce' ? 'announce' : 'none');
   const [deliveryChannel, setDeliveryChannel] = useState(job?.delivery?.channel || '');
@@ -347,9 +598,7 @@ function TaskDialog({ open, job, configuredChannels, onClose, onSave }: TaskDial
       setName(job?.name || '');
       setMessage(job?.message || '');
       setSelectedAgentId(job?.agentId || useChatStore.getState().currentAgentId);
-      setSchedule(getInitialCronSchedule(job));
-      setCustomSchedule('');
-      setUseCustom(false);
+      setScheduleForm(parseScheduleToForm(job));
       setEnabled(job?.enabled ?? true);
       setDeliveryMode(job?.delivery?.mode === 'announce' ? 'announce' : 'none');
       setDeliveryChannel(job?.delivery?.channel || '');
@@ -518,7 +767,16 @@ function TaskDialog({ open, job, configuredChannels, onClose, onSave }: TaskDial
       messageRef.current?.setSelectionRange(cursorPosition, cursorPosition);
     });
   }, [message]);
-  const schedulePreview = estimateNextRun(useCustom ? customSchedule : schedule);
+  const updateSchedule = useCallback(
+    (patch: Partial<ScheduleFormState>) => setScheduleForm((prev) => ({ ...prev, ...patch })),
+    [],
+  );
+  const schedulePreview = computeNextRunPreviewFromForm(scheduleForm);
+  const onceWeekdayLabel = (() => {
+    if (!scheduleForm.onceDate) return '';
+    const date = new Date(`${scheduleForm.onceDate}T00:00`);
+    return Number.isNaN(date.getTime()) ? '' : t(`weekdays.${WEEKDAY_KEYS[date.getDay()]}` as const);
+  })();
   const selectableChannels = configuredChannels.filter((group) => isSupportedCronDeliveryChannel(group.channelType));
   const availableChannels = selectableChannels.some((group) => group.channelType === deliveryChannel)
     ? selectableChannels
@@ -614,11 +872,17 @@ function TaskDialog({ open, job, configuredChannels, onClose, onSave }: TaskDial
       return;
     }
 
-    const finalSchedule = useCustom ? customSchedule : schedule;
-    if (!finalSchedule.trim()) {
+    if (scheduleForm.mode === 'once') {
+      const onceDateTime = new Date(`${scheduleForm.onceDate}T${scheduleForm.onceTime || '00:00'}`);
+      if (!scheduleForm.onceDate || Number.isNaN(onceDateTime.getTime())) {
+        toast.error(t('toast.scheduleRequired'));
+        return;
+      }
+    } else if (scheduleForm.recurrence === 'custom' && !scheduleForm.customCron.trim()) {
       toast.error(t('toast.scheduleRequired'));
       return;
     }
+    const finalSchedule = buildScheduleFromForm(scheduleForm);
 
     setSaving(true);
     try {
@@ -816,49 +1080,133 @@ function TaskDialog({ open, job, configuredChannels, onClose, onSave }: TaskDial
           {/* Schedule */}
           <div className="space-y-2.5">
             <Label className="text-sm text-foreground/80 font-bold">{t('dialog.schedule')}</Label>
-            {!useCustom ? (
-              <div className="grid grid-cols-2 gap-2">
-                {schedulePresets.map((preset) => (
-                  <Button
-                    key={preset.value}
-                    type="button"
-                    variant={schedule === preset.value ? 'default' : 'outline'}
-                    size="sm"
-                    onClick={() => setSchedule(preset.value)}
-                    className={cn(
-                      "justify-start h-10 rounded-xl font-medium text-meta transition-all",
-                      schedule === preset.value
-                        ? "bg-primary hover:bg-primary/90 text-primary-foreground shadow-sm border-transparent"
-                        : "bg-transparent border-black/10 dark:border-white/10 hover:bg-black/5 dark:hover:bg-white/5 text-foreground/80 hover:text-foreground"
-                    )}
-                  >
-                    <Timer className="h-4 w-4 mr-2 opacity-70" />
-                    {t(`presets.${preset.key}` as const)}
-                  </Button>
-                ))}
+
+            {/* Mode tabs */}
+            <div className="inline-flex w-full gap-1 rounded-xl bg-black/5 p-1 dark:bg-white/10">
+              {(['recurring', 'once'] as ScheduleMode[]).map((mode) => (
+                <button
+                  key={mode}
+                  type="button"
+                  data-testid={`cron-schedule-tab-${mode}`}
+                  onClick={() => updateSchedule({ mode })}
+                  className={cn(
+                    'flex-1 h-8 rounded-lg text-meta font-medium transition-colors',
+                    scheduleForm.mode === mode
+                      ? 'bg-surface-modal text-foreground shadow-sm'
+                      : 'text-muted-foreground hover:text-foreground',
+                  )}
+                >
+                  {t(`dialog.scheduleMode.${mode}` as const)}
+                </button>
+              ))}
+            </div>
+
+            {scheduleForm.mode === 'recurring' ? (
+              <div className="space-y-2.5">
+                <SelectField
+                  data-testid="cron-recurrence-select"
+                  value={scheduleForm.recurrence}
+                  onChange={(e) => updateSchedule({ recurrence: e.target.value as RecurrenceKind })}
+                >
+                  {RECURRENCE_KINDS.map((kind) => (
+                    <option key={kind} value={kind}>
+                      {t(`dialog.recurrence.${kind}` as const)}
+                    </option>
+                  ))}
+                </SelectField>
+
+                {scheduleForm.recurrence === 'hourly' && (
+                  <div className="space-y-1.5">
+                    <Label htmlFor="cron-hourly-minute" className="text-meta text-foreground/70 font-medium">{t('dialog.minuteLabel')}</Label>
+                    <Input
+                      id="cron-hourly-minute"
+                      type="number"
+                      min={0}
+                      max={59}
+                      value={scheduleForm.hourlyMinute}
+                      onChange={(e) => updateSchedule({ hourlyMinute: Math.min(59, Math.max(0, Math.floor(Number(e.target.value) || 0))) })}
+                      className="h-[44px] rounded-xl font-mono text-meta bg-transparent border-black/10 dark:border-white/10 focus-visible:ring-2 focus-visible:ring-primary/50 focus-visible:border-primary shadow-sm transition-all text-foreground placeholder:text-foreground/40"
+                    />
+                  </div>
+                )}
+
+                {(scheduleForm.recurrence === 'daily' || scheduleForm.recurrence === 'weekdays') && (
+                  <div className="space-y-1.5">
+                    <Label htmlFor="cron-time" className="text-meta text-foreground/70 font-medium">{t('dialog.timeLabel')}</Label>
+                    <ScheduleTimePicker
+                      id="cron-time"
+                      value={scheduleForm.timeOfDay}
+                      onChange={(next) => updateSchedule({ timeOfDay: next })}
+                    />
+                  </div>
+                )}
+
+                {scheduleForm.recurrence === 'weekly' && (
+                  <div className="grid grid-cols-2 gap-2">
+                    <div className="space-y-1.5">
+                      <Label htmlFor="cron-weekday" className="text-meta text-foreground/70 font-medium">{t('dialog.weekdayLabel')}</Label>
+                      <SelectField
+                        id="cron-weekday"
+                        data-testid="cron-weekday-select"
+                        value={scheduleForm.weekday}
+                        onChange={(e) => updateSchedule({ weekday: Number(e.target.value) })}
+                      >
+                        {WEEKDAY_KEYS.map((key, index) => (
+                          <option key={key} value={index}>
+                            {t(`weekdays.${key}` as const)}
+                          </option>
+                        ))}
+                      </SelectField>
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label htmlFor="cron-weekly-time" className="text-meta text-foreground/70 font-medium">{t('dialog.timeLabel')}</Label>
+                      <ScheduleTimePicker
+                        id="cron-weekly-time"
+                        value={scheduleForm.timeOfDay}
+                        onChange={(next) => updateSchedule({ timeOfDay: next })}
+                      />
+                    </div>
+                  </div>
+                )}
+
+                {scheduleForm.recurrence === 'custom' && (
+                  <Input
+                    data-testid="cron-custom-input"
+                    placeholder={t('dialog.cronPlaceholder')}
+                    value={scheduleForm.customCron}
+                    onChange={(e) => updateSchedule({ customCron: e.target.value })}
+                    className="h-[44px] rounded-xl font-mono text-meta bg-transparent border-black/10 dark:border-white/10 focus-visible:ring-2 focus-visible:ring-primary/50 focus-visible:border-primary shadow-sm transition-all text-foreground placeholder:text-foreground/40"
+                  />
+                )}
               </div>
             ) : (
-              <Input
-                placeholder={t('dialog.cronPlaceholder')}
-                value={customSchedule}
-                onChange={(e) => setCustomSchedule(e.target.value)}
-                className="h-[44px] rounded-xl font-mono text-meta bg-transparent border-black/10 dark:border-white/10 focus-visible:ring-2 focus-visible:ring-primary/50 focus-visible:border-primary shadow-sm transition-all text-foreground placeholder:text-foreground/40"
-              />
+              <div className="grid grid-cols-2 gap-2">
+                <div className="space-y-1.5">
+                  <Label htmlFor="cron-once-time" className="text-meta text-foreground/70 font-medium">{t('dialog.timeLabel')}</Label>
+                  <ScheduleTimePicker
+                    id="cron-once-time"
+                    value={scheduleForm.onceTime}
+                    onChange={(next) => updateSchedule({ onceTime: next })}
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="cron-once-date" className="text-meta text-foreground/70 font-medium">
+                    {t('dialog.dateLabel')}{onceWeekdayLabel ? ` · ${onceWeekdayLabel}` : ''}
+                  </Label>
+                  <Input
+                    id="cron-once-date"
+                    type="date"
+                    value={scheduleForm.onceDate}
+                    onChange={(e) => updateSchedule({ onceDate: e.target.value })}
+                    className="h-[44px] rounded-xl font-mono text-meta bg-transparent border-black/10 dark:border-white/10 focus-visible:ring-2 focus-visible:ring-primary/50 focus-visible:border-primary shadow-sm transition-all text-foreground placeholder:text-foreground/40"
+                  />
+                </div>
+              </div>
             )}
-            <div className="flex items-center justify-between mt-2">
-              <p className="text-xs text-muted-foreground/80 font-medium">
-                {schedulePreview ? `${t('card.next')}: ${schedulePreview}` : t('dialog.cronPlaceholder')}
-              </p>
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                onClick={() => setUseCustom(!useCustom)}
-                className="text-xs h-7 px-2 text-foreground/60 hover:text-foreground hover:bg-black/5 dark:hover:bg-white/5 rounded-lg"
-              >
-                {useCustom ? t('dialog.usePresets') : t('dialog.useCustomCron')}
-              </Button>
-            </div>
+
+            <p className="mt-2 text-xs text-muted-foreground/80 font-medium">
+              {schedulePreview ? `${t('card.next')}: ${schedulePreview}` : t('dialog.cronPlaceholder')}
+            </p>
           </div>
 
           {/* Delivery */}

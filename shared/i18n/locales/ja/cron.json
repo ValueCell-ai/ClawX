@@ -37,6 +37,23 @@
         "skillEmpty": "一致するスキルが見つかりません",
         "agent": "エージェント",
         "schedule": "スケジュール",
+        "scheduleMode": {
+            "recurring": "繰り返し",
+            "once": "1回のみ"
+        },
+        "recurrence": {
+            "hourly": "毎時",
+            "daily": "毎日",
+            "weekdays": "平日",
+            "weekly": "毎週",
+            "custom": "カスタム"
+        },
+        "timeLabel": "時刻",
+        "hourColumn": "時",
+        "minuteColumn": "分",
+        "dateLabel": "日付",
+        "weekdayLabel": "曜日",
+        "minuteLabel": "毎時の分",
         "cronPlaceholder": "Cron式（例：0 9 * * *）",
         "usePresets": "プリセットを使用",
         "useCustomCron": "カスタムCronを使用",
@@ -120,8 +137,19 @@
         "everyDays": "{{count}}日ごと",
         "onceAt": "{{time}} に1回実行",
         "weeklyAt": "毎週 {{day}} {{time}}",
+        "weekdaysAt": "平日 {{time}}",
+        "hourlyAt": "毎時 {{minute}}分",
         "monthlyAtDay": "毎月 {{day}}日 {{time}}",
         "dailyAt": "毎日 {{time}}",
         "unknown": "不明"
+    },
+    "weekdays": {
+        "sun": "日曜日",
+        "mon": "月曜日",
+        "tue": "火曜日",
+        "wed": "水曜日",
+        "thu": "木曜日",
+        "fri": "金曜日",
+        "sat": "土曜日"
     }
 }
