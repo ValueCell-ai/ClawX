@@ -128,7 +128,8 @@
         "failedLoadDeliveryTargets": "加载投递目标失败",
         "failedResolveDeliveryTarget": "解析默认投递目标失败",
         "discordIdRequired": "请输入 Discord 频道 ID",
-        "scheduleRequired": "请选择或输入调度计划"
+        "scheduleRequired": "请选择或输入调度计划",
+        "schedulePast": "所选时间已过期，请选择一个未来的时间。"
     },
     "schedule": {
         "everySeconds": "每 {{count}} 秒",

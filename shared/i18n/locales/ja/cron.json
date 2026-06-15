@@ -128,7 +128,8 @@
         "failedLoadDeliveryTargets": "送信先の読み込みに失敗しました",
         "failedResolveDeliveryTarget": "既定の送信先を解決できませんでした",
         "discordIdRequired": "DiscordチャンネルIDを入力してください",
-        "scheduleRequired": "スケジュールを選択または入力してください"
+        "scheduleRequired": "スケジュールを選択または入力してください",
+        "schedulePast": "選択した時刻は過去です。未来の時刻を選択してください。"
     },
     "schedule": {
         "everySeconds": "{{count}}秒ごと",

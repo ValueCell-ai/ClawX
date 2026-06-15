@@ -54,4 +54,38 @@ describe('cron store fetchJobs dedupe', () => {
 
     expect(useCronStore.getState().jobs.map((job) => job.id)).toEqual(['job-1']);
   });
+
+  it('drops a cached job the Gateway no longer returns once it is past the create grace window', async () => {
+    // Simulates a one-time `at` task the runtime auto-deleted after it ran.
+    const staleJob = {
+      id: 'once-job',
+      name: 'one-time',
+      createdAt: new Date(Date.now() - 60_000).toISOString(),
+    };
+    hostApiFetchMock.mockResolvedValueOnce([{ id: 'recurring-job' }]);
+
+    const { useCronStore } = await import('@/stores/cron');
+    useCronStore.setState({ jobs: [staleJob as never], loading: false, error: null });
+
+    await useCronStore.getState().fetchJobs();
+
+    expect(useCronStore.getState().jobs.map((job) => job.id)).toEqual(['recurring-job']);
+  });
+
+  it('preserves a just-created cached job the Gateway has not surfaced yet', async () => {
+    // Bridges the brief race where an optimistic create is not yet in cron.list.
+    const freshJob = {
+      id: 'fresh-job',
+      name: 'fresh',
+      createdAt: new Date().toISOString(),
+    };
+    hostApiFetchMock.mockResolvedValueOnce([{ id: 'recurring-job' }]);
+
+    const { useCronStore } = await import('@/stores/cron');
+    useCronStore.setState({ jobs: [freshJob as never], loading: false, error: null });
+
+    await useCronStore.getState().fetchJobs();
+
+    expect(useCronStore.getState().jobs.map((job) => job.id)).toEqual(['recurring-job', 'fresh-job']);
+  });
 });

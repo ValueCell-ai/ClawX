@@ -9,6 +9,8 @@ touchedAreas:
   - src/pages/Cron/index.tsx
   - shared/types/cron.ts
   - electron/services/cron-api.ts
+  - src/stores/cron.ts
+  - tests/unit/cron-store-fetch-dedupe.test.ts
   - shared/i18n/locales/en/cron.json
   - shared/i18n/locales/zh/cron.json
   - shared/i18n/locales/ja/cron.json
@@ -24,6 +26,10 @@ expectedUserBehavior:
   - The Create/Edit Task dialog no longer shows the preset schedule buttons; Schedule is split into a "Recurring" tab and a "Once" tab.
   - The Recurring tab exposes a frequency dropdown (Hourly, Daily, Weekdays, Weekly, Custom); Daily/Weekdays show a time, Weekly adds a weekday selector, Custom shows a cron expression field.
   - The Once tab exposes a time field and a date field that displays the weekday for the chosen date, and creates a single-run task.
+  - The Once tab rejects a date/time in the past on save (date field also enforces a minimum of today), so a one-time task can only be scheduled for the future.
+  - One-time ("at") tasks are auto-cleared by the OpenClaw runtime after they run (OpenClaw defaults `deleteAfterRun` to true for `at` schedules); ClawX does not try to keep them as paused records.
+  - After a one-time task auto-deletes, it disappears from the list on the next refresh: the renderer treats `cron.list` as authoritative and only preserves a locally-cached job the Gateway omits when it was created within a short grace window (optimistic-create race bridge), so deleted jobs are not resurrected.
+  - The time fields use a custom 24-hour two-column picker (hours 0-23 / minutes 0-59) with a neutral grey selection and no AM/PM controls.
   - The next-run preview continues to reflect the currently configured schedule.
   - Editing an existing job restores the correct tab and fields from its stored schedule.
 requiredProfiles:

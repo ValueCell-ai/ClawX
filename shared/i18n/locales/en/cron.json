@@ -128,7 +128,8 @@
         "failedLoadDeliveryTargets": "Failed to load delivery targets",
         "failedResolveDeliveryTarget": "Failed to resolve the default delivery target",
         "discordIdRequired": "Please enter a Discord Channel ID",
-        "scheduleRequired": "Please select or enter a schedule"
+        "scheduleRequired": "Please select or enter a schedule",
+        "schedulePast": "The selected time is in the past. Please choose a future time."
     },
     "schedule": {
         "everySeconds": "Every {{count}}s",

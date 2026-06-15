@@ -878,6 +878,10 @@ function TaskDialog({ open, job, configuredChannels, onClose, onSave }: TaskDial
         toast.error(t('toast.scheduleRequired'));
         return;
       }
+      if (onceDateTime.getTime() <= Date.now()) {
+        toast.error(t('toast.schedulePast'));
+        return;
+      }
     } else if (scheduleForm.recurrence === 'custom' && !scheduleForm.customCron.trim()) {
       toast.error(t('toast.scheduleRequired'));
       return;
@@ -1196,6 +1200,7 @@ function TaskDialog({ open, job, configuredChannels, onClose, onSave }: TaskDial
                   <Input
                     id="cron-once-date"
                     type="date"
+                    min={toDateInputValue(new Date())}
                     value={scheduleForm.onceDate}
                     onChange={(e) => updateSchedule({ onceDate: e.target.value })}
                     className="h-[44px] rounded-xl font-mono text-meta bg-transparent border-black/10 dark:border-white/10 focus-visible:ring-2 focus-visible:ring-primary/50 focus-visible:border-primary shadow-sm transition-all text-foreground placeholder:text-foreground/40"

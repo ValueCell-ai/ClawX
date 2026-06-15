@@ -128,7 +128,8 @@
         "failedLoadDeliveryTargets": "Не удалось загрузить цели доставки",
         "failedResolveDeliveryTarget": "Не удалось разрешить цель доставки по умолчанию",
         "discordIdRequired": "Пожалуйста, введите ID канала Discord",
-        "scheduleRequired": "Пожалуйста, выберите или введите расписание"
+        "scheduleRequired": "Пожалуйста, выберите или введите расписание",
+        "schedulePast": "Выбранное время уже прошло. Пожалуйста, выберите время в будущем."
     },
     "schedule": {
         "everySeconds": "Каждые {{count}} сек",
