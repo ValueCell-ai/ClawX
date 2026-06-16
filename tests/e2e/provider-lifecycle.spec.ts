@@ -133,9 +133,28 @@ test.describe('ClawX provider lifecycle', () => {
     await electronApp.evaluate(async ({ app: _app }) => {
       const { ipcMain } = process.mainModule!.require('electron') as typeof import('electron');
 
+      type AgioneProviderE2EState = {
+        validateRequests: Array<{
+          providerId: unknown;
+          apiKey: unknown;
+          options: unknown;
+        }>;
+        createRequests: Array<{
+          account: Record<string, unknown>;
+          apiKey: unknown;
+        }>;
+        defaultAccountId: string | null;
+      };
+
+      const state: AgioneProviderE2EState = {
+        validateRequests: [],
+        createRequests: [],
+        defaultAccountId: null,
+      };
+      (globalThis as unknown as { __agioneProviderE2E?: AgioneProviderE2EState }).__agioneProviderE2E = state;
+
       let accounts: Array<Record<string, unknown>> = [];
       let keyInfo: Array<{ accountId: string; hasKey: boolean; keyMasked: string | null }> = [];
-      let defaultAccountId: string | null = null;
       const originalHostInvoke = (ipcMain as unknown as {
         _invokeHandlers?: Map<string, (event: unknown, request: unknown) => Promise<unknown>>;
       })._invokeHandlers?.get('host:invoke');
@@ -161,24 +180,21 @@ test.describe('ClawX provider lifecycle', () => {
         if (request.action === 'accounts') return respond(request.id, accounts);
         if (request.action === 'accountKeyInfo') return respond(request.id, keyInfo);
         if (request.action === 'vendors') return respond(request.id, []);
-        if (request.action === 'getDefaultAccount') return respond(request.id, { accountId: defaultAccountId });
+        if (request.action === 'getDefaultAccount') return respond(request.id, { accountId: state.defaultAccountId });
         if (request.action === 'list') return respond(request.id, []);
 
         if (request.action === 'validateKey') {
-          expect(body.providerId).toBe('agione');
-          expect(body.apiKey).toBe('ak-agione-test');
-          expect(body.options).toEqual({
-            baseUrl: 'https://agione.pro/hyperone/xapi/api/v1',
+          state.validateRequests.push({
+            providerId: body.providerId,
+            apiKey: body.apiKey,
+            options: body.options,
           });
           return respond(request.id, { valid: true });
         }
 
         if (request.action === 'createAccount') {
           const account = body.account as Record<string, unknown>;
-          expect(account.vendorId).toBe('agione');
-          expect(account.label).toBe('AGIone');
-          expect(account.baseUrl).toBe('https://agione.pro/hyperone/xapi/api/v1');
-          expect(account.model).toBe('qwen/qwen3.5-plus/cec84');
+          state.createRequests.push({ account, apiKey: body.apiKey });
           accounts = [account];
           keyInfo = [{
             accountId: String(account.id),
@@ -189,7 +205,7 @@ test.describe('ClawX provider lifecycle', () => {
         }
 
         if (request.action === 'setDefaultAccount') {
-          defaultAccountId = typeof body.accountId === 'string' ? body.accountId : null;
+          state.defaultAccountId = typeof body.accountId === 'string' ? body.accountId : null;
           return respond(request.id, { success: true });
         }
 
@@ -212,6 +228,42 @@ test.describe('ClawX provider lifecycle', () => {
 
     await expect(page.getByTestId('provider-card-agione')).toContainText('AGIone');
     await expect(page.getByTestId('provider-card-agione')).toContainText('qwen/qwen3.5-plus/cec84');
+
+    const observed = await electronApp.evaluate(() => (
+      globalThis as unknown as {
+        __agioneProviderE2E?: {
+          validateRequests: Array<Record<string, unknown>>;
+          createRequests: Array<{
+            account: Record<string, unknown>;
+            apiKey: unknown;
+          }>;
+          defaultAccountId: string | null;
+        };
+      }
+    ).__agioneProviderE2E);
+
+    expect(observed?.validateRequests).toEqual([
+      {
+        providerId: 'agione',
+        apiKey: 'ak-agione-test',
+        options: {
+          baseUrl: 'https://agione.pro/hyperone/xapi/api/v1',
+        },
+      },
+    ]);
+    expect(observed?.createRequests).toEqual([
+      {
+        account: expect.objectContaining({
+          id: 'agione',
+          vendorId: 'agione',
+          label: 'AGIone',
+          baseUrl: 'https://agione.pro/hyperone/xapi/api/v1',
+          model: 'qwen/qwen3.5-plus/cec84',
+        }),
+        apiKey: 'ak-agione-test',
+      },
+    ]);
+    expect(observed?.defaultAccountId).toBe('agione');
   });
 
   test('trims whitespace before validating and saving a custom provider key', async ({ electronApp, page }) => {

@@ -101,7 +101,7 @@ export const PROVIDER_DEFINITIONS: ProviderDefinition[] = [
     envVar: 'AGIONE_API_KEY',
     supportedAuthModes: ['api_key'],
     defaultAuthMode: 'api_key',
-    supportsMultipleAccounts: true,
+    supportsMultipleAccounts: false,
     providerConfig: {
       baseUrl: 'https://agione.pro/hyperone/xapi/api/v1',
       api: 'openai-completions',
