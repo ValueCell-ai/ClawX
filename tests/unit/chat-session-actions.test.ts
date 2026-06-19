@@ -28,7 +28,7 @@ vi.mock('@/lib/host-api', () => ({
 
 type ChatLikeState = {
   currentSessionKey: string;
-  sessions: Array<{ key: string; displayName?: string; updatedAt?: number; status?: string; hasActiveRun?: boolean }>;
+  sessions: Array<{ key: string; label?: string; displayName?: string; updatedAt?: number; status?: string; hasActiveRun?: boolean }>;
   messages: Array<{ role: string; timestamp?: number; content?: unknown }>;
   sessionLabels: Record<string, string>;
   sessionLastActivity: Record<string, number>;
@@ -74,6 +74,7 @@ function makeHarness(initial?: Partial<ChatLikeState>) {
 describe('chat session actions', () => {
   beforeEach(() => {
     vi.resetAllMocks();
+    window.localStorage.removeItem('clawx.chat.lastSessionKey');
     gatewayRpcMock.mockResolvedValue({ success: true });
     sessionDeleteMock.mockResolvedValue({ success: true });
     sessionRenameMock.mockResolvedValue({ success: true });
@@ -196,6 +197,30 @@ describe('chat session actions', () => {
     expect(h.read().sessionLastActivity['agent:main:main']).toBe(1773281700000);
     expect(h.read().sessionLastActivity['agent:main:cron:job-1']).toBe(1773281731621);
     expect(h.read().sessions.find((session) => session.key === 'agent:main:cron:job-1')?.updatedAt).toBe(1773281731621);
+  });
+
+  it('strips media attachment protocol markers from backend session labels', async () => {
+    const { createSessionActions } = await import('@/stores/chat/session-actions');
+    const h = makeHarness({
+      currentSessionKey: 'agent:main:main',
+      sessions: [],
+    });
+    const actions = createSessionActions(h.set as never, h.get as never);
+
+    gatewayRpcMock.mockResolvedValueOnce({
+      success: true,
+      result: {
+        sessions: [{
+          key: 'agent:main:session-1',
+          label: 'Describe this image [media attached: /tmp/shot.png (image/png) | /tmp/shot.png]',
+          updatedAt: 1773281700000,
+        }],
+      },
+    });
+
+    await actions.loadSessions();
+
+    expect(h.read().sessionLabels['agent:main:session-1']).toBe('Describe this image');
   });
 
   it('clears stale current-run state when sessions.list reports the current session is idle', async () => {

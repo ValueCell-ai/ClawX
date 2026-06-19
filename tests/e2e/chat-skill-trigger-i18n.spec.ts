@@ -78,7 +78,7 @@ test.describe('ClawX chat skill trigger', () => {
                 skills: [
                   {
                     name: 'create-skill',
-                    description: 'Create and refine reusable skills.',
+                    description: 'Create, refine, review, package, and document reusable skills with a very long description that should stay on one line.',
                     source: 'workspace',
                     sourceLabel: 'Workspace',
                     manifestPath: '/tmp/workspace/skill/create-skill/SKILL.md',
@@ -119,6 +119,121 @@ test.describe('ClawX chat skill trigger', () => {
       await page.getByTestId('chat-composer-skill').click();
       await page.getByText('/create-skill', { exact: true }).click();
       await expect(page.getByTestId('chat-composer-input')).toHaveValue('Draft /create-skill  a new helper');
+      await expect(page.getByTestId('chat-composer-skill-token')).toHaveText('/create-skill');
+    } finally {
+      await closeElectronApp(app);
+    }
+  });
+
+  test('shows skills from the slash command menu in the production composer', async ({ launchElectronApp }) => {
+    const app = await launchElectronApp({ skipSetup: true });
+
+    try {
+      await installIpcMocks(app, {
+        gatewayStatus: { state: 'running', port: 18789, pid: 12345 },
+        gatewayRpc: {
+          [stableStringify(['sessions.list', {}])]: {
+            success: true,
+            result: {
+              sessions: [{ key: SESSION_KEY, displayName: 'main' }],
+            },
+          },
+          [stableStringify(['chat.history', { sessionKey: SESSION_KEY, limit: 200, maxChars: 500000 }])]: {
+            success: true,
+            result: { messages: [] },
+          },
+          [stableStringify(['chat.history', { sessionKey: SESSION_KEY, limit: 1000, maxChars: 500000 }])]: {
+            success: true,
+            result: { messages: [] },
+          },
+        },
+        hostApi: {
+          [stableStringify(['/api/gateway/status', 'GET'])]: {
+            ok: true,
+            data: {
+              status: 200,
+              ok: true,
+              json: { state: 'running', port: 18789, pid: 12345 },
+            },
+          },
+          [stableStringify(['/api/settings', 'GET'])]: {
+            ok: true,
+            data: {
+              status: 200,
+              ok: true,
+              json: {
+                language: 'en',
+                setupComplete: true,
+              },
+            },
+          },
+          [stableStringify(['/api/agents', 'GET'])]: {
+            ok: true,
+            data: {
+              status: 200,
+              ok: true,
+              json: {
+                success: true,
+                agents: [
+                  { id: 'main', name: 'main' },
+                ],
+              },
+            },
+          },
+          [stableStringify(['/api/skills/quick-access', 'POST'])]: {
+            ok: true,
+            data: {
+              status: 200,
+              ok: true,
+              json: {
+                success: true,
+                skills: [
+                  {
+                    name: 'create-skill',
+                    description: 'Create and refine reusable skills.',
+                    source: 'workspace',
+                    sourceLabel: 'Workspace',
+                    manifestPath: '/tmp/workspace/skill/create-skill/SKILL.md',
+                    baseDir: '/tmp/workspace/skill/create-skill',
+                  },
+                ],
+              },
+            },
+          },
+        },
+      });
+
+      const page = await getStableWindow(app);
+
+      await expect(page.getByTestId('chat-composer-input')).toBeVisible({ timeout: 30_000 });
+      await page.getByTestId('chat-composer-input').fill('/');
+
+      await expect(page.getByTestId('chat-slash-menu')).toBeVisible();
+      await expect(page.getByTestId('chat-slash-skills-heading')).toHaveText('Skills');
+      await expect(page.getByTestId('chat-slash-command-skills')).toHaveCount(0);
+      await expect(page.getByTestId('chat-slash-skill-create-skill')).toContainText('/create-skill');
+      await expect(page.getByTestId('chat-slash-skill-create-skill')).toHaveAttribute('aria-selected', 'true');
+      const description = page.getByTestId('chat-slash-skill-create-skill').locator('span').nth(1);
+      await expect(description).toHaveCSS('white-space', 'nowrap');
+      await expect(description).toHaveCSS('overflow', 'hidden');
+      await expect(description).toHaveCSS('text-overflow', 'ellipsis');
+
+      await page.getByTestId('chat-composer-input').press('ArrowDown');
+      await expect(page.getByTestId('chat-slash-skill-create-skill')).toHaveAttribute('aria-selected', 'true');
+      await page.getByTestId('chat-composer-input').press('Enter');
+      await expect(page.getByTestId('chat-composer-input')).toHaveValue('/create-skill  ');
+      await expect(page.getByTestId('chat-composer-skill-token')).toHaveText('/create-skill');
+
+      await page.getByTestId('chat-composer-input').fill('/');
+      await expect(page.getByTestId('chat-slash-menu')).toBeVisible();
+      await page.getByTestId('chat-slash-skills-heading').click();
+      await expect(page.getByPlaceholder('Search skills')).toHaveCount(0);
+      await page.getByTestId('chat-composer-skill').click();
+      await expect(page.getByPlaceholder('Search skills')).toBeVisible();
+      await expect(page.getByTestId('chat-composer-skill-option-create-skill')).toBeVisible();
+
+      await page.getByTestId('chat-composer-skill-option-create-skill').click();
+      await expect(page.getByTestId('chat-composer-input')).toHaveValue('/create-skill  ');
       await expect(page.getByTestId('chat-composer-skill-token')).toHaveText('/create-skill');
     } finally {
       await closeElectronApp(app);

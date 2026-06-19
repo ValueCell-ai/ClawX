@@ -55,5 +55,17 @@
     "documentation": "文档",
     "reportIssue": "报告问题",
     "openClawDocumentation": "OpenClaw 文档"
+  },
+  "tray": {
+    "tooltip": "{{appName}} - AI 助手",
+    "statusTooltip": "{{appName}} - {{status}}",
+    "show": "显示 {{appName}}",
+    "gatewayStatus": "网关状态",
+    "running": "运行中",
+    "quickActions": "快捷操作",
+    "openChat": "打开聊天",
+    "openSettings": "打开设置",
+    "checkForUpdates": "检查更新...",
+    "quit": "退出 {{appName}}"
   }
 }

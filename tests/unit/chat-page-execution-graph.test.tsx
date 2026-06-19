@@ -1,1092 +1,309 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import type { VisibleChatItem } from '@/chat-core/openclaw-port/types';
+import { TooltipProvider } from '@/components/ui/tooltip';
+import { Chat } from '@/pages/Chat';
 
-const hostApiFetchMock = vi.fn();
+const chatState = {
+  currentSessionKey: 'agent:main:main',
+  currentAgentId: 'main',
+  messages: [],
+  sending: false,
+  error: null as string | null,
+  runError: null as string | null,
+  lastUserMessageAt: null as number | null,
+  sendMessage: vi.fn(),
+  abortRun: vi.fn(),
+  refresh: vi.fn(),
+  clearError: vi.fn(),
+  cleanupEmptySession: vi.fn(),
+};
 
-const { gatewayState, agentsState } = vi.hoisted(() => ({
-  gatewayState: {
-    status: { state: 'running', port: 18789 },
+const agentsState = {
+  agents: [{ id: 'main', name: 'main', workspace: '/workspace' }],
+  fetchAgents: vi.fn(),
+};
+
+const artifactPanelState = {
+  open: false,
+  widthPct: 34,
+  openChanges: vi.fn(),
+  openPreview: vi.fn(),
+  close: vi.fn(),
+};
+
+const gatewayState = {
+  status: { state: 'running', gatewayReady: true },
+};
+
+const openClawSurfaceState = {
+  visibleItems: [] as VisibleChatItem[],
+  core: {
+    runtime: {
+      runStatus: null,
+    },
   },
-  agentsState: {
-    agents: [{ id: 'main', name: 'main' }] as Array<Record<string, unknown>>,
-    fetchAgents: vi.fn(),
-  },
+  initHostSubscriptions: vi.fn(),
+  disposeHostSubscriptions: vi.fn(),
+  setSessionKey: vi.fn(),
+  loadHistory: vi.fn(),
+  enqueueOptimisticUserMessage: vi.fn(),
+  setThinkingLevel: vi.fn(),
+  abortRun: vi.fn(),
+  resolveApproval: vi.fn(),
+};
+
+vi.mock('react-i18next', () => ({
+  useTranslation: () => ({
+    t: (key: string, options?: string | Record<string, unknown>) => (
+      typeof options === 'string' ? options : key
+    ),
+  }),
 }));
 
 vi.mock('@/stores/gateway', () => ({
   useGatewayStore: (selector: (state: typeof gatewayState) => unknown) => selector(gatewayState),
 }));
 
+vi.mock('@/stores/chat', () => ({
+  useChatStore: Object.assign(
+    (selector: (state: typeof chatState) => unknown) => selector(chatState),
+    { getState: () => chatState },
+  ),
+}));
+
 vi.mock('@/stores/agents', () => ({
   useAgentsStore: (selector: (state: typeof agentsState) => unknown) => selector(agentsState),
 }));
 
-vi.mock('@/stores/artifact-panel', () => {
-  const state = {
-    open: false,
-    widthPct: 45,
-    openChanges: vi.fn(),
-    openPreview: vi.fn(),
-    close: vi.fn(),
-  };
-  return {
-    useArtifactPanel: (selector: (value: typeof state) => unknown) => selector(state),
-  };
-});
-
-vi.mock('@/lib/host-api', () => ({
-  hostApiFetch: (...args: unknown[]) => hostApiFetchMock(...args),
+vi.mock('@/stores/artifact-panel', () => ({
+  useArtifactPanel: (selector: (state: typeof artifactPanelState) => unknown) => selector(artifactPanelState),
 }));
 
-vi.mock('react-i18next', () => ({
-  useTranslation: () => ({
-    t: (key: string, params?: Record<string, unknown> | string) => {
-      if (typeof params === 'string') return params;
-      if (key === 'executionGraph.collapsedSummary') {
-        return `collapsed ${String(params?.toolCount ?? '')} ${String(params?.processCount ?? '')}`.trim();
-      }
-      if (key === 'executionGraph.agentRun') {
-        return `Main execution`;
-      }
-      if (key === 'executionGraph.title') {
-        return 'Execution Graph';
-      }
-      if (key === 'executionGraph.collapseAction') {
-        return 'Collapse';
-      }
-      if (key === 'executionGraph.thinkingLabel') {
-        return 'Thinking';
-      }
-      if (key.startsWith('taskPanel.stepStatus.')) {
-        return key.split('.').at(-1) ?? key;
-      }
-      return key;
-    },
-  }),
+vi.mock('@/stores/openclaw-chat-surface', () => ({
+  useOpenClawChatSurfaceStore: (selector: (state: typeof openClawSurfaceState) => unknown) => selector(openClawSurfaceState),
 }));
 
-vi.mock('@/hooks/use-stick-to-bottom-instant', () => ({
-  useStickToBottomInstant: vi.fn(() => ({
-    contentRef: { current: null },
-    scrollRef: { current: null },
-    scrollToBottom: vi.fn(),
-    isAtBottom: true,
-  })),
+vi.mock('@/components/file-preview/ArtifactPanel', () => ({
+  ArtifactPanel: () => null,
 }));
 
-vi.mock('@/hooks/use-min-loading', () => ({
-  useMinLoading: () => false,
-}));
-
-vi.mock('@/pages/Chat/ChatToolbar', () => ({
-  ChatToolbar: () => null,
+vi.mock('@/components/file-preview/PanelResizeDivider', () => ({
+  PanelResizeDivider: () => null,
 }));
 
 vi.mock('@/pages/Chat/ChatInput', () => ({
-  ChatInput: ({ sending }: { sending?: boolean }) => (
-    <div data-testid="mock-chat-input" data-sending={sending ? 'true' : 'false'} />
+  ChatInput: ({
+    onSend,
+    onStop,
+    sending,
+    draftScopeKey,
+  }: {
+    onSend: (text: string) => void;
+    onStop?: () => void;
+    sending?: boolean;
+    draftScopeKey?: string;
+  }) => (
+    <button
+      type="button"
+      data-sending={sending ? 'true' : 'false'}
+      data-draft-scope-key={draftScopeKey}
+      data-testid="mock-chat-input"
+      onClick={() => {
+        if (sending) onStop?.();
+        else onSend('hello from composer');
+      }}
+    >
+      {sending ? 'Stop' : 'Send'}
+    </button>
   ),
 }));
 
-vi.mock('@/pages/Chat/ChatMessage', () => ({
-  ChatMessage: ({
-    message,
-    textOverride,
-    isStreaming,
-    suppressAssistantText,
-  }: {
-    message: { content?: unknown };
-    textOverride?: string;
-    isStreaming?: boolean;
-    suppressAssistantText?: boolean;
-  }) => {
-    const text = typeof textOverride === 'string'
-      ? textOverride
-      : typeof message?.content === 'string'
-        ? message.content
-        : Array.isArray(message?.content)
-          ? message.content
-            .filter((block): block is { type?: string; text?: string } => typeof block === 'object' && block !== null)
-            .filter((block) => block.type === 'text' && typeof block.text === 'string')
-            .map((block) => block.text)
-            .join(' ')
-          : '';
-    return (
-      <div data-testid={isStreaming ? 'mock-streaming-message' : 'mock-chat-message'}>
-        {suppressAssistantText ? '' : text}
-      </div>
-    );
-  },
-}));
+function renderChatPage() {
+  return render(
+    <TooltipProvider>
+      <Chat />
+    </TooltipProvider>,
+  );
+}
 
-describe('Chat execution graph lifecycle', () => {
-  beforeEach(async () => {
-    vi.resetModules();
-    hostApiFetchMock.mockReset();
-    hostApiFetchMock.mockResolvedValue({ success: true, messages: [] });
+describe('Chat page OpenClaw surface lifecycle', () => {
+  beforeEach(() => {
+    vi.useRealTimers();
+    chatState.currentSessionKey = 'agent:main:main';
+    chatState.currentAgentId = 'main';
+    chatState.messages = [];
+    chatState.sending = false;
+    chatState.error = null;
+    chatState.runError = null;
+    chatState.lastUserMessageAt = null;
+    chatState.sendMessage.mockReset();
+    chatState.abortRun.mockReset();
+    chatState.refresh.mockReset();
+    chatState.clearError.mockReset();
+    chatState.cleanupEmptySession.mockReset();
+
     agentsState.fetchAgents.mockReset();
+    gatewayState.status = { state: 'running', gatewayReady: true };
+    artifactPanelState.open = false;
+    artifactPanelState.widthPct = 34;
+    artifactPanelState.openChanges.mockReset();
+    artifactPanelState.openPreview.mockReset();
+    artifactPanelState.close.mockReset();
 
-    const { useChatStore } = await import('@/stores/chat');
-    useChatStore.setState({
-      messages: [
-        {
-          role: 'user',
-          content: 'Check semiconductor chatter',
-        },
-        {
-          role: 'assistant',
-          id: 'tool-turn',
-          content: [
-            { type: 'text', text: 'Checked X.' },
-            { type: 'tool_use', id: 'browser-search', name: 'browser', input: { action: 'search', query: 'semiconductor' } },
-          ],
-        },
-      ],
-      loading: false,
-      error: null,
-      runError: null,
-      sending: true,
-      activeRunId: 'run-live',
-      streamingText: '',
-      streamingMessage: {
-        role: 'assistant',
-        id: 'final-stream',
-        content: [
-          { type: 'text', text: 'Checked X.' },
-          { type: 'text', text: 'Checked X. Here is the summary.' },
-        ],
-      },
-      streamingTools: [
-        {
-          toolCallId: 'browser-search',
-          name: 'browser',
-          status: 'completed',
-          updatedAt: Date.now(),
-        },
-      ],
-      pendingFinal: true,
-      lastUserMessageAt: Date.now(),
-      pendingToolImages: [],
-      sessions: [{ key: 'agent:main:main' }],
-      currentSessionKey: 'agent:main:main',
-      currentAgentId: 'main',
-      sessionLabels: {},
-      sessionLastActivity: {},
-      thinkingLevel: null,
+    openClawSurfaceState.visibleItems = [];
+    openClawSurfaceState.core.runtime.runStatus = null;
+    openClawSurfaceState.initHostSubscriptions.mockReset();
+    openClawSurfaceState.disposeHostSubscriptions.mockReset();
+    openClawSurfaceState.setSessionKey.mockReset();
+    openClawSurfaceState.loadHistory.mockReset();
+    openClawSurfaceState.loadHistory.mockResolvedValue(undefined);
+    openClawSurfaceState.enqueueOptimisticUserMessage.mockReset();
+    openClawSurfaceState.setThinkingLevel.mockReset();
+    openClawSurfaceState.abortRun.mockReset();
+    openClawSurfaceState.resolveApproval.mockReset();
+  });
+
+  it('renders OpenClaw visible messages on the page surface', async () => {
+    openClawSurfaceState.visibleItems = [
+      { kind: 'message', id: 'u1', message: { id: 'u1', role: 'user', content: 'hello' } },
+      { kind: 'message', id: 'a1', message: { id: 'a1', role: 'assistant', content: 'hi **there**' } },
+    ];
+
+    renderChatPage();
+
+    expect(screen.getByTestId('openclaw-chat-surface')).toBeInTheDocument();
+    expect(screen.getByText('hello')).toBeInTheDocument();
+    expect(screen.getByText('there')).toBeInTheDocument();
+    expect(screen.queryByTestId('chat-execution-graph')).not.toBeInTheDocument();
+    await waitFor(() => {
+      expect(openClawSurfaceState.loadHistory).toHaveBeenCalled();
     });
   });
 
-  it('keeps the execution graph expanded while the reply is still streaming and shows only the reply suffix in the bubble', async () => {
-    const { Chat } = await import('@/pages/Chat/index');
+  it('loads OpenClaw history when the gateway becomes running after startup', async () => {
+    gatewayState.status = { state: 'starting', gatewayReady: false };
 
-    render(<Chat />);
+    const { rerender } = renderChatPage();
+
+    await Promise.resolve();
+    expect(openClawSurfaceState.setSessionKey).toHaveBeenCalledWith('agent:main:main', 'main');
+    expect(openClawSurfaceState.loadHistory).not.toHaveBeenCalled();
+
+    gatewayState.status = { state: 'running', gatewayReady: true };
+    rerender(
+      <TooltipProvider>
+        <Chat />
+      </TooltipProvider>,
+    );
 
     await waitFor(() => {
-      expect(screen.getByTestId('chat-execution-graph')).toHaveAttribute('data-collapsed', 'false');
-    });
-
-    expect(screen.getByText('Here is the summary.')).toBeInTheDocument();
-    expect(screen.queryByText('Checked X. Here is the summary.')).not.toBeInTheDocument();
-  });
-
-  it('keeps runtime tool status inside the execution graph while a tool is running', async () => {
-    const { useChatStore } = await import('@/stores/chat');
-    useChatStore.setState({
-      messages: [
-        {
-          role: 'user',
-          content: 'Read the file and summarize it',
-        },
-      ],
-      loading: false,
-      error: null,
-      runError: null,
-      sending: true,
-      activeRunId: 'run-tool-stream',
-      streamingText: '',
-      streamingMessage: {
-        role: 'assistant',
-        id: 'tool-narration-stream',
-        content: [{ type: 'text', text: 'I will read the file first.' }],
-      },
-      streamingTools: [],
-      runtimeRuns: {
-        'run-tool-stream': {
-          runId: 'run-tool-stream',
-          sessionKey: 'agent:main:main',
-          status: 'running',
-          assistantText: '',
-          thinkingText: '',
-          events: [
-            {
-              type: 'tool.started',
-              runId: 'run-tool-stream',
-              sessionKey: 'agent:main:main',
-              toolCallId: 'read-1',
-              name: 'read',
-              args: { path: '/tmp/demo.md' },
-            },
-          ],
-        },
-      },
-      pendingFinal: false,
-      lastUserMessageAt: Date.now(),
-      pendingToolImages: [],
-      sessions: [{ key: 'agent:main:main' }],
-      currentSessionKey: 'agent:main:main',
-      currentAgentId: 'main',
-      sessionLabels: {},
-      sessionLastActivity: {},
-      thinkingLevel: null,
-    });
-
-    const { Chat } = await import('@/pages/Chat/index');
-
-    render(<Chat />);
-
-    await waitFor(() => {
-      expect(screen.getByTestId('chat-execution-graph')).toHaveAttribute('data-collapsed', 'false');
-      expect(screen.getByText('read')).toBeInTheDocument();
-    });
-
-    expect(screen.queryByTestId('chat-streaming-tool-status-bar')).not.toBeInTheDocument();
-  });
-
-  it('renders the execution graph immediately for an active run before any stream content arrives', async () => {
-    const { useChatStore } = await import('@/stores/chat');
-    useChatStore.setState({
-      messages: [
-        {
-          role: 'user',
-          content: 'Check semiconductor chatter',
-        },
-      ],
-      loading: false,
-      error: null,
-      runError: null,
-      sending: true,
-      activeRunId: 'run-starting',
-      streamingText: '',
-      streamingMessage: null,
-      streamingTools: [],
-      pendingFinal: false,
-      lastUserMessageAt: Date.now(),
-      pendingToolImages: [],
-      sessions: [{ key: 'agent:main:main' }],
-      currentSessionKey: 'agent:main:main',
-      currentAgentId: 'main',
-      sessionLabels: {},
-      sessionLastActivity: {},
-      thinkingLevel: null,
-    });
-
-    const { Chat } = await import('@/pages/Chat/index');
-
-    render(<Chat />);
-
-    await waitFor(() => {
-      expect(screen.getByTestId('chat-execution-graph')).toHaveAttribute('data-collapsed', 'false');
-    });
-
-    expect(screen.getByTestId('chat-execution-step-thinking-trailing')).toBeInTheDocument();
-    expect(screen.getAllByText('Thinking').length).toBeGreaterThan(0);
-  });
-
-  it('renders generated file cards with line stats for edit tools', async () => {
-    const { useChatStore } = await import('@/stores/chat');
-    useChatStore.setState({
-      messages: [
-        {
-          role: 'user',
-          content: 'Patch the workspace file',
-        },
-        {
-          role: 'assistant',
-          id: 'edit-turn',
-          content: [
-            {
-              type: 'tool_use',
-              id: 'edit-1',
-              name: 'Edit',
-              input: {
-                file_path: '/workspace/demo.ts',
-                old_string: 'const value = 1\n',
-                new_string: 'const value = 2\n',
-              },
-            },
-          ],
-        },
-        {
-          role: 'assistant',
-          id: 'reply-turn',
-          content: [{ type: 'text', text: 'Updated the file.' }],
-        },
-      ],
-      loading: false,
-      error: null,
-      runError: null,
-      sending: false,
-      activeRunId: null,
-      streamingText: '',
-      streamingMessage: null,
-      streamingTools: [],
-      pendingFinal: false,
-      lastUserMessageAt: Date.now(),
-      pendingToolImages: [],
-      sessions: [{ key: 'agent:main:main' }],
-      currentSessionKey: 'agent:main:main',
-      currentAgentId: 'main',
-      sessionLabels: {},
-      sessionLastActivity: {},
-      thinkingLevel: null,
-    });
-
-    const { Chat } = await import('@/pages/Chat/index');
-
-    render(<Chat />);
-
-    await waitFor(() => {
-      expect(screen.getByText('demo.ts')).toBeInTheDocument();
-    });
-
-    expect(screen.getByText('+1')).toBeInTheDocument();
-    expect(screen.getByText('-1')).toBeInTheDocument();
-  });
-
-  it('shows a scroll-to-latest button when the chat is scrolled away from the bottom', async () => {
-    const { useChatStore } = await import('@/stores/chat');
-    useChatStore.setState({
-      messages: Array.from({ length: 24 }, (_, idx) => ({
-        role: idx % 2 === 0 ? 'user' : 'assistant',
-        content: `Message ${idx + 1}`,
-        timestamp: Date.now() + idx,
-      })),
-      loading: false,
-      error: null,
-      runError: null,
-      sending: false,
-      activeRunId: null,
-      streamingText: '',
-      streamingMessage: null,
-      streamingTools: [],
-      pendingFinal: false,
-      lastUserMessageAt: Date.now(),
-      pendingToolImages: [],
-      sessions: [{ key: 'agent:main:main' }],
-      currentSessionKey: 'agent:main:main',
-      currentAgentId: 'main',
-      sessionLabels: {},
-      sessionLastActivity: {},
-      thinkingLevel: null,
-    });
-
-    const { useStickToBottomInstant } = await import('@/hooks/use-stick-to-bottom-instant');
-    vi.mocked(useStickToBottomInstant).mockReturnValue({
-      contentRef: { current: null },
-      scrollRef: { current: null },
-      scrollToBottom: vi.fn(),
-      isAtBottom: false,
-    } as ReturnType<typeof useStickToBottomInstant>);
-
-    const { Chat } = await import('@/pages/Chat/index');
-
-    render(<Chat />);
-
-    expect(await screen.findByTestId('chat-scroll-to-latest')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'scrollToLatest' })).toBeInTheDocument();
-  });
-
-  it('stops showing trailing thinking and renders run error callout after terminal model error', async () => {
-    const { useChatStore } = await import('@/stores/chat');
-    useChatStore.setState({
-      messages: [
-        {
-          role: 'user',
-          content: 'Check semiconductor chatter',
-        },
-        {
-          role: 'assistant',
-          id: 'tool-turn',
-          content: [
-            { type: 'text', text: 'Checked X.' },
-            { type: 'tool_use', id: 'browser-search', name: 'browser', input: { action: 'search', query: 'semiconductor' } },
-          ],
-        },
-      ],
-      loading: false,
-      error: '404 Resource not found',
-      runError: '404 Resource not found',
-      sending: false,
-      activeRunId: null,
-      streamingText: '',
-      streamingMessage: null,
-      streamingTools: [],
-      pendingFinal: false,
-      lastUserMessageAt: null,
-      pendingToolImages: [],
-      sessions: [{ key: 'agent:main:main' }],
-      currentSessionKey: 'agent:main:main',
-      currentAgentId: 'main',
-      sessionLabels: {},
-      sessionLastActivity: {},
-      thinkingLevel: null,
-    });
-
-    const { Chat } = await import('@/pages/Chat/index');
-
-    render(<Chat />);
-
-    await waitFor(() => {
-      expect(screen.getByTestId('chat-execution-graph')).toBeInTheDocument();
-    });
-
-    expect(screen.queryByTestId('chat-execution-step-thinking-trailing')).not.toBeInTheDocument();
-    expect(screen.getAllByText('404 Resource not found').length).toBeGreaterThan(0);
-  });
-
-  it('dismisses run error callout when ignore is clicked', async () => {
-    const { useChatStore } = await import('@/stores/chat');
-    useChatStore.setState({
-      messages: [
-        { role: 'user', content: 'Check semiconductor chatter' },
-      ],
-      loading: false,
-      error: null,
-      runError: '404 Resource not found',
-      dismissedRunErrors: {},
-      sending: false,
-      activeRunId: null,
-      streamingText: '',
-      streamingMessage: null,
-      streamingTools: [],
-      pendingFinal: false,
-      lastUserMessageAt: null,
-      pendingToolImages: [],
-      sessions: [{ key: 'agent:main:main' }],
-      currentSessionKey: 'agent:main:main',
-      currentAgentId: 'main',
-      sessionLabels: {},
-      sessionLastActivity: {},
-      thinkingLevel: null,
-    });
-
-    const { Chat } = await import('@/pages/Chat/index');
-    render(<Chat />);
-
-    const dismissButton = await screen.findByTestId('chat-run-error-dismiss');
-    fireEvent.click(dismissButton);
-
-    await waitFor(() => {
-      expect(screen.queryByTestId('chat-run-error')).not.toBeInTheDocument();
-    });
-    expect(useChatStore.getState().runError).toBeNull();
-    expect(useChatStore.getState().dismissedRunErrors['agent:main:main']).toBe('404 Resource not found');
-  });
-
-  it('keeps history final reply folded while matching streamed text is still active', async () => {
-    const finalText = 'History final answer is already recorded.';
-    const { useChatStore } = await import('@/stores/chat');
-    useChatStore.setState({
-      messages: [
-        {
-          role: 'user',
-          content: 'Summarize the run',
-        },
-        {
-          role: 'assistant',
-          id: 'tool-turn',
-          content: [
-            { type: 'text', text: 'Reading the source data.' },
-            { type: 'tool_use', id: 'read-1', name: 'read_file', input: { path: '/tmp/source.txt' } },
-          ],
-        },
-        {
-          role: 'assistant',
-          id: 'final-turn',
-          content: [{ type: 'text', text: finalText }],
-        },
-      ],
-      loading: false,
-      error: null,
-      runError: null,
-      sending: true,
-      activeRunId: 'run-history-stream-race',
-      streamingText: '',
-      streamingMessage: {
-        role: 'assistant',
-        content: [{ type: 'text', text: finalText }],
-      },
-      streamingTools: [],
-      pendingFinal: false,
-      lastUserMessageAt: Date.now(),
-      pendingToolImages: [],
-      sessions: [{ key: 'agent:main:main' }],
-      currentSessionKey: 'agent:main:main',
-      currentAgentId: 'main',
-      sessionLabels: {},
-      sessionLastActivity: {},
-      thinkingLevel: null,
-    });
-
-    const { Chat } = await import('@/pages/Chat/index');
-
-    render(<Chat />);
-
-    await waitFor(() => {
-      expect(screen.getByTestId('chat-execution-graph')).toHaveAttribute('data-collapsed', 'false');
-    });
-
-    expect(screen.getByTestId('mock-streaming-message')).toHaveTextContent(finalText);
-    expect(
-      screen.getAllByTestId('mock-chat-message')
-        .filter((element) => element.textContent === finalText),
-    ).toHaveLength(0);
-  });
-
-  it('stops trailing thinking when history already contains the final reply but sending is stuck', async () => {
-    const { useChatStore } = await import('@/stores/chat');
-    useChatStore.setState({
-      messages: [
-        {
-          role: 'user',
-          content: '执行一下github1',
-        },
-        {
-          role: 'assistant',
-          id: 'tool-turn',
-          content: [
-            { type: 'text', text: 'Fetching GitHub trending data.' },
-            { type: 'tool_use', id: 'fetch-1', name: 'web_fetch', input: { url: 'https://example.com' } },
-          ],
-        },
-        {
-          role: 'assistant',
-          id: 'final-turn',
-          content: [{ type: 'text', text: '执行完成 ✅ 今天的 github1 已写入飞书文档。' }],
-        },
-      ],
-      loading: false,
-      error: null,
-      runError: null,
-      sending: true,
-      activeRunId: 'run-stuck',
-      streamingText: '',
-      streamingMessage: null,
-      streamingTools: [],
-      pendingFinal: false,
-      lastUserMessageAt: Date.now() - 60 * 60 * 1000,
-      pendingToolImages: [],
-      sessions: [{ key: 'agent:main:main' }],
-      currentSessionKey: 'agent:main:main',
-      currentAgentId: 'main',
-      sessionLabels: {},
-      sessionLastActivity: {},
-      thinkingLevel: null,
-    });
-
-    const { Chat } = await import('@/pages/Chat/index');
-
-    render(<Chat />);
-
-    await waitFor(() => {
-      expect(screen.getByTestId('chat-execution-graph')).toBeInTheDocument();
-    });
-
-    expect(screen.queryByTestId('chat-execution-step-thinking-trailing')).not.toBeInTheDocument();
-    expect(screen.getByText('执行完成 ✅ 今天的 github1 已写入飞书文档。')).toBeInTheDocument();
-    expect(screen.queryByTestId('chat-typing-indicator')).not.toBeInTheDocument();
-    expect(screen.queryByTestId('chat-activity-indicator')).not.toBeInTheDocument();
-  });
-
-  it('settles a plain text reply from history when Gateway lifecycle is stuck', async () => {
-    const { useChatStore } = await import('@/stores/chat');
-    useChatStore.setState({
-      messages: [
-        {
-          role: 'user',
-          content: '你好',
-        },
-        {
-          role: 'assistant',
-          id: 'plain-final-turn',
-          content: [{ type: 'text', text: '你好！我是 ClawX，你的桌面 AI 助手。' }],
-        },
-      ],
-      loading: false,
-      error: null,
-      runError: null,
-      sending: true,
-      activeRunId: 'run-plain-stuck',
-      streamingText: '',
-      streamingMessage: null,
-      streamingTools: [],
-      pendingFinal: false,
-      lastUserMessageAt: Date.now() - 60 * 60 * 1000,
-      pendingToolImages: [],
-      sessions: [{ key: 'agent:main:main' }],
-      currentSessionKey: 'agent:main:main',
-      currentAgentId: 'main',
-      sessionLabels: {},
-      sessionLastActivity: {},
-      thinkingLevel: null,
-    });
-
-    const { Chat } = await import('@/pages/Chat/index');
-
-    render(<Chat />);
-
-    await waitFor(() => {
-      expect(screen.getByTestId('mock-chat-input')).toHaveAttribute('data-sending', 'false');
-    });
-
-    expect(screen.queryByTestId('chat-execution-step-thinking-trailing')).not.toBeInTheDocument();
-    expect(screen.getByText('你好！我是 ClawX，你的桌面 AI 助手。')).toBeInTheDocument();
-    expect(screen.queryByTestId('chat-typing-indicator')).not.toBeInTheDocument();
-    expect(screen.queryByTestId('chat-activity-indicator')).not.toBeInTheDocument();
-  });
-
-  it('settles composer when generated image media arrives without transcript tool calls', async () => {
-    const { useChatStore } = await import('@/stores/chat');
-    useChatStore.setState({
-      messages: [
-        {
-          role: 'user',
-          content: '生成独角鲸图片',
-        },
-        {
-          role: 'assistant',
-          id: 'generated-image-only',
-          content: [{
-            type: 'image',
-            url: '/api/chat/media/outgoing/agent%3Amain%3As-1/image-1/full',
-            mimeType: 'image/png',
-            alt: 'narwhal.png',
-          }],
-          _attachedFiles: [{
-            fileName: 'narwhal.png',
-            mimeType: 'image/png',
-            fileSize: 42,
-            preview: 'data:image/png;base64,ok',
-            gatewayUrl: '/api/chat/media/outgoing/agent%3Amain%3As-1/image-1/full',
-            source: 'gateway-media',
-          }],
-        },
-      ],
-      loading: false,
-      error: null,
-      runError: null,
-      sending: true,
-      activeRunId: 'run-image-runtime-only',
-      runtimeRuns: {
-        'run-image-runtime-only': {
-          runId: 'run-image-runtime-only',
-          sessionKey: 'agent:main:main',
-          status: 'running',
-          assistantText: '',
-          thinkingText: '',
-          events: [
-            {
-              type: 'tool.completed',
-              runId: 'run-image-runtime-only',
-              sessionKey: 'agent:main:main',
-              toolCallId: 'image-1',
-              name: 'image_generate',
-              result: { summary: 'done' },
-              isError: false,
-            },
-          ],
-        },
-      },
-      streamingText: '',
-      streamingMessage: null,
-      streamingTools: [],
-      pendingFinal: false,
-      lastUserMessageAt: Date.now(),
-      pendingToolImages: [],
-      sessions: [{ key: 'agent:main:main' }],
-      currentSessionKey: 'agent:main:main',
-      currentAgentId: 'main',
-      sessionLabels: {},
-      sessionLastActivity: {},
-      thinkingLevel: null,
-    });
-
-    const { Chat } = await import('@/pages/Chat/index');
-
-    render(<Chat />);
-
-    await waitFor(() => {
-      expect(screen.getByTestId('mock-chat-input')).toHaveAttribute('data-sending', 'false');
-    });
-
-    expect(screen.queryByTestId('chat-execution-step-thinking-trailing')).not.toBeInTheDocument();
-    expect(screen.queryByTestId('chat-typing-indicator')).not.toBeInTheDocument();
-    expect(screen.queryByTestId('chat-activity-indicator')).not.toBeInTheDocument();
-  });
-
-  it('stops trailing thinking when generated image media arrives but session wake is missed', async () => {
-    const { useChatStore } = await import('@/stores/chat');
-    useChatStore.setState({
-      messages: [
-        {
-          role: 'user',
-          content: '生成一个小麦',
-        },
-        {
-          role: 'assistant',
-          id: 'image-tool-turn',
-          content: [
-            {
-              type: 'toolCall',
-              id: 'image-1',
-              name: 'image_generate',
-              arguments: { prompt: 'golden wheat' },
-            },
-          ],
-        },
-        {
-          role: 'assistant',
-          id: 'message-tool-turn',
-          content: [
-            {
-              type: 'toolCall',
-              id: 'message-1',
-              name: 'message',
-              arguments: {
-                action: 'send',
-                attachments: [{ path: '/tmp/wheat.png' }],
-              },
-            },
-          ],
-        },
-        {
-          role: 'assistant',
-          id: 'generated-image',
-          content: [{
-            type: 'image',
-            url: '/api/chat/media/outgoing/agent%3Amain%3As-1/image-1/full',
-            mimeType: 'image/png',
-            alt: 'wheat.png',
-          }],
-          _attachedFiles: [{
-            fileName: 'wheat.png',
-            mimeType: 'image/png',
-            fileSize: 42,
-            preview: 'data:image/png;base64,ok',
-            gatewayUrl: '/api/chat/media/outgoing/agent%3Amain%3As-1/image-1/full',
-            source: 'gateway-media',
-          }],
-        },
-      ],
-      loading: false,
-      error: null,
-      runError: null,
-      sending: true,
-      activeRunId: 'run-stuck-image',
-      streamingText: '',
-      streamingMessage: {
-        role: 'assistant',
-        content: [{ type: 'thinking', thinking: '等待图片生成完成。' }],
-      },
-      streamingTools: [{
-        toolCallId: 'image-1',
-        name: 'image_generate',
-        status: 'running',
-        updatedAt: Date.now(),
-      }],
-      pendingFinal: false,
-      lastUserMessageAt: Date.now(),
-      pendingToolImages: [],
-      sessions: [{ key: 'agent:main:main' }],
-      currentSessionKey: 'agent:main:main',
-      currentAgentId: 'main',
-      sessionLabels: {},
-      sessionLastActivity: {},
-      thinkingLevel: null,
-    });
-
-    const { Chat } = await import('@/pages/Chat/index');
-
-    render(<Chat />);
-
-    await waitFor(() => {
-      expect(screen.getByTestId('chat-execution-graph')).toBeInTheDocument();
-    });
-
-    expect(screen.queryByTestId('chat-execution-step-thinking-trailing')).not.toBeInTheDocument();
-    expect(screen.queryByTestId('chat-typing-indicator')).not.toBeInTheDocument();
-    expect(screen.queryByTestId('chat-activity-indicator')).not.toBeInTheDocument();
-  });
-
-  it('shows trailing thinking together with a running tool status', async () => {
-    const { useChatStore } = await import('@/stores/chat');
-    useChatStore.setState({
-      messages: [
-        {
-          role: 'user',
-          content: 'Search the web and summarize',
-        },
-      ],
-      loading: false,
-      error: null,
-      runError: null,
-      sending: true,
-      activeRunId: 'run-tool-active',
-      streamingText: '',
-      streamingMessage: null,
-      streamingTools: [
-        {
-          toolCallId: 'browser-search',
-          name: 'browser',
-          status: 'running',
-          updatedAt: Date.now(),
-        },
-      ],
-      pendingFinal: false,
-      lastUserMessageAt: Date.now(),
-      pendingToolImages: [],
-      sessions: [{ key: 'agent:main:main' }],
-      currentSessionKey: 'agent:main:main',
-      currentAgentId: 'main',
-      sessionLabels: {},
-      sessionLastActivity: {},
-      thinkingLevel: null,
-    });
-
-    const { Chat } = await import('@/pages/Chat/index');
-
-    render(<Chat />);
-
-    await waitFor(() => {
-      expect(screen.getByText('browser')).toBeInTheDocument();
-      expect(screen.getByTestId('chat-execution-step-thinking-trailing')).toBeInTheDocument();
+      expect(openClawSurfaceState.loadHistory).toHaveBeenCalledTimes(1);
     });
   });
 
-  it('keeps trailing thinking visible while waiting for final history after completed tool status', async () => {
-    const { useChatStore } = await import('@/stores/chat');
-    useChatStore.setState({
-      messages: [
-        {
-          role: 'user',
-          content: 'Summarize after checking the page',
-        },
-        {
-          role: 'assistant',
-          id: 'tool-turn',
-          content: [
-            { type: 'tool_use', id: 'browser-search', name: 'browser', input: { action: 'search', query: 'semiconductor' } },
-          ],
-        },
-      ],
-      loading: false,
-      error: null,
-      runError: null,
-      sending: true,
-      activeRunId: 'run-waiting-final-history',
-      streamingText: '',
-      streamingMessage: null,
-      streamingTools: [
-        {
-          toolCallId: 'browser-search',
-          name: 'browser',
-          status: 'completed',
-          updatedAt: Date.now(),
-        },
-      ],
-      pendingFinal: true,
-      lastUserMessageAt: Date.now(),
-      pendingToolImages: [],
-      sessions: [{ key: 'agent:main:main' }],
-      currentSessionKey: 'agent:main:main',
-      currentAgentId: 'main',
-      sessionLabels: {},
-      sessionLastActivity: {},
-      thinkingLevel: null,
-    });
+  it('shows the composer pulse for a running OpenClaw status without a full chat row', () => {
+    openClawSurfaceState.core.runtime.runStatus = { phase: 'running', runId: 'run-1' };
 
-    const { Chat } = await import('@/pages/Chat/index');
+    renderChatPage();
 
-    render(<Chat />);
-
-    await waitFor(() => {
-      expect(screen.getByTestId('chat-execution-step-thinking-trailing')).toBeInTheDocument();
-    });
-  });
-
-  it('settles image generation runs after message tool delivers generated media', async () => {
-    const { useChatStore } = await import('@/stores/chat');
-    useChatStore.setState({
-      messages: [
-        {
-          role: 'user',
-          content: 'Generate a tomato image',
-        },
-        {
-          role: 'assistant',
-          id: 'image-tool-turn',
-          content: [{ type: 'tool_use', id: 'image-call', name: 'image_generate', input: { prompt: 'tomato' } }],
-        },
-        {
-          role: 'toolresult',
-          toolCallId: 'image-call',
-          toolName: 'image_generate',
-          timestamp: Date.now() / 1000,
-          content: [{
-            type: 'text',
-            text: 'Background task started for image generation (27443fdb-6cca-48e6-a3a7-ee34b0491aee).',
-          }],
-        },
-        {
-          role: 'user',
-          content: '[Inter-session message] sourceSession=image_generate:27443fdb-6cca-48e6-a3a7-ee34b0491aee sourceTool=image_generate',
-        },
-        {
-          role: 'toolresult',
-          toolName: 'message',
-          content: [{ type: 'text', text: '{ "status": "ok" }' }],
-          details: {
-            status: 'ok',
-            mediaUrl: '/Users/me/.openclaw/media/tool-image-generation/tomato.png',
-            sourceReply: {
-              mediaUrls: ['/Users/me/.openclaw/media/tool-image-generation/tomato.png'],
-            },
-          },
-        } as RawMessage,
-      ],
-      loading: false,
-      error: null,
-      runError: null,
-      sending: false,
-      activeRunId: null,
-      streamingText: '',
-      streamingMessage: null,
-      streamingTools: [],
-      pendingFinal: false,
-      lastUserMessageAt: Date.now(),
-      pendingToolImages: [],
-      sessions: [{ key: 'agent:main:main' }],
-      currentSessionKey: 'agent:main:main',
-      currentAgentId: 'main',
-      sessionLabels: {},
-      sessionLastActivity: {},
-      thinkingLevel: null,
-    });
-
-    const { Chat } = await import('@/pages/Chat/index');
-
-    render(<Chat />);
-
-    await waitFor(() => {
-      expect(screen.queryByTestId('chat-execution-step-thinking-trailing')).not.toBeInTheDocument();
-    });
-    expect(screen.getByTestId('mock-chat-input')).toHaveAttribute('data-sending', 'false');
-  });
-
-  it('keeps image generation runs active after async task status narration', async () => {
-    const { useChatStore } = await import('@/stores/chat');
-    useChatStore.setState({
-      messages: [
-        {
-          role: 'user',
-          content: 'Generate a cherry image',
-        },
-        {
-          role: 'assistant',
-          id: 'image-tool-turn',
-          content: [{ type: 'tool_use', id: 'image-call', name: 'image_generate', input: { prompt: 'cherry' } }],
-        },
-        {
-          role: 'toolresult',
-          toolCallId: 'image-call',
-          toolName: 'image_generate',
-          timestamp: Date.now() / 1000,
-          content: [{
-            type: 'text',
-            text: 'Background task started for image generation (27443fdb-6cca-48e6-a3a7-ee34b0491aee).',
-          }],
-        },
-        {
-          role: 'assistant',
-          id: 'image-status-turn',
-          content: [{ type: 'text', text: '图已经开始生成啦 🍒 完成后会直接发到这里。' }],
-        },
-      ],
-      loading: false,
-      error: null,
-      runError: null,
-      sending: false,
-      activeRunId: null,
-      streamingText: '',
-      streamingMessage: null,
-      streamingTools: [],
-      pendingFinal: false,
-      lastUserMessageAt: Date.now(),
-      pendingToolImages: [],
-      sessions: [{ key: 'agent:main:main' }],
-      currentSessionKey: 'agent:main:main',
-      currentAgentId: 'main',
-      sessionLabels: {},
-      sessionLastActivity: {},
-      thinkingLevel: null,
-    });
-
-    const { Chat } = await import('@/pages/Chat/index');
-
-    render(<Chat />);
-
-    await waitFor(() => {
-      expect(screen.getByTestId('chat-execution-step-thinking-trailing')).toBeInTheDocument();
-    });
+    expect(screen.getByTestId('chat-running-pulse')).toBeInTheDocument();
+    expect(screen.getByTestId('chat-running-pulse')).toHaveClass('max-w-3xl');
+    expect(screen.queryByTestId('chat-run-status')).not.toBeInTheDocument();
     expect(screen.getByTestId('mock-chat-input')).toHaveAttribute('data-sending', 'true');
   });
 
-  it('keeps the run active when narration landed in history before tools finished', async () => {
-    const { useChatStore } = await import('@/stores/chat');
-    useChatStore.setState({
-      messages: [
-        {
-          role: 'user',
-          content: 'Check semiconductor chatter',
-        },
-        {
-          role: 'assistant',
-          id: 'narration-turn',
-          content: [{ type: 'text', text: 'Let me search for that first.' }],
-        },
-        {
-          role: 'assistant',
-          id: 'tool-turn',
-          content: [
-            { type: 'tool_use', id: 'browser-search', name: 'browser', input: { action: 'search', query: 'semiconductor' } },
-          ],
-        },
-      ],
-      loading: false,
-      error: null,
-      runError: null,
-      sending: true,
-      activeRunId: 'run-narration',
-      streamingText: '',
-      streamingMessage: null,
-      streamingTools: [],
-      pendingFinal: false,
-      lastUserMessageAt: Date.now(),
-      pendingToolImages: [],
-      sessions: [{ key: 'agent:main:main' }],
-      currentSessionKey: 'agent:main:main',
-      currentAgentId: 'main',
-      sessionLabels: {},
-      sessionLastActivity: {},
-      thinkingLevel: null,
-    });
+  it('stops both OpenClaw surface runs and the legacy sender', () => {
+    openClawSurfaceState.core.runtime.runStatus = { phase: 'running', runId: 'run-1' };
 
-    const { Chat } = await import('@/pages/Chat/index');
+    renderChatPage();
+    fireEvent.click(screen.getByTestId('mock-chat-input'));
 
-    render(<Chat />);
+    expect(openClawSurfaceState.abortRun).toHaveBeenCalledTimes(1);
+    expect(chatState.abortRun).toHaveBeenCalledTimes(1);
+  });
+
+  it('bridges composer sends into the OpenClaw optimistic queue and legacy sender', () => {
+    renderChatPage();
+
+    fireEvent.click(screen.getByTestId('mock-chat-input'));
+
+    expect(openClawSurfaceState.setSessionKey).toHaveBeenCalledWith('agent:main:main', 'main');
+    expect(openClawSurfaceState.enqueueOptimisticUserMessage).toHaveBeenCalledWith('hello from composer', undefined);
+    expect(chatState.sendMessage).toHaveBeenCalledWith('hello from composer', undefined, undefined);
+    expect(screen.getByTestId('mock-chat-input')).toHaveAttribute('data-draft-scope-key', 'agent:main:main');
+  });
+
+  it('reloads OpenClaw surface history after a blocking legacy send completes', async () => {
+    vi.useFakeTimers();
+    chatState.sendMessage.mockResolvedValue(undefined);
+
+    renderChatPage();
+    await Promise.resolve();
+    await Promise.resolve();
+    openClawSurfaceState.loadHistory.mockClear();
+
+    fireEvent.click(screen.getByTestId('mock-chat-input'));
+    await Promise.resolve();
+    await vi.advanceTimersByTimeAsync(0);
+
+    const immediateReloads = openClawSurfaceState.loadHistory.mock.calls.length;
+    expect(immediateReloads).toBeGreaterThanOrEqual(1);
+
+    await vi.advanceTimersByTimeAsync(500);
+    const delayedReloads = openClawSurfaceState.loadHistory.mock.calls.length;
+    expect(delayedReloads).toBeGreaterThan(immediateReloads);
+
+    chatState.currentSessionKey = 'agent:main:other';
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(openClawSurfaceState.loadHistory).toHaveBeenCalledTimes(delayedReloads);
+  });
+
+  it('synchronizes the OpenClaw surface session before enqueueing an optimistic send', () => {
+    chatState.currentSessionKey = 'agent:main:session-new';
+    chatState.currentAgentId = 'main';
+
+    renderChatPage();
+    openClawSurfaceState.setSessionKey.mockClear();
+    openClawSurfaceState.enqueueOptimisticUserMessage.mockClear();
+
+    fireEvent.click(screen.getByTestId('mock-chat-input'));
+
+    expect(openClawSurfaceState.setSessionKey).toHaveBeenCalledWith('agent:main:session-new', 'main');
+    expect(openClawSurfaceState.enqueueOptimisticUserMessage).toHaveBeenCalledWith('hello from composer', undefined);
+    expect(chatState.sendMessage).toHaveBeenCalledWith('hello from composer', undefined, undefined);
+  });
+
+  it('reloads the OpenClaw surface when legacy history changes without a terminal stream event', async () => {
+    const { rerender } = renderChatPage();
 
     await waitFor(() => {
-      expect(screen.getByTestId('chat-execution-step-thinking-trailing')).toBeInTheDocument();
+      expect(openClawSurfaceState.loadHistory).toHaveBeenCalled();
+    });
+    openClawSurfaceState.loadHistory.mockClear();
+
+    chatState.messages = [
+      { id: 'legacy-user-think', role: 'user', content: '/think high' },
+      {
+        id: 'legacy-gateway-visible-error',
+        role: 'assistant',
+        content: [{
+          type: 'text',
+          text: 'Thinking level "high" is not supported for custom-customec/glm-5.2. Use one of: off.',
+        }],
+        model: 'gateway-injected',
+        provider: 'openclaw',
+      },
+    ];
+
+    rerender(
+      <TooltipProvider>
+        <Chat />
+      </TooltipProvider>,
+    );
+
+    await waitFor(() => {
+      expect(openClawSurfaceState.loadHistory).toHaveBeenCalledTimes(1);
     });
   });
 });

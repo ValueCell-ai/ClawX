@@ -15,6 +15,14 @@ export type GatewayChatMessageEvent = GatewayRuntimeRecord & {
   message?: GatewayRuntimePayload;
   runId?: GatewayRuntimePayload;
 };
+export type GatewayAgentEventPayload = JsonRecord & {
+  sessionKey?: string;
+  agentId?: string;
+  runId?: string;
+  seq?: number;
+  stream?: string;
+  data?: JsonRecord;
+};
 export type GatewayChannelStatusEvent = {
   channelId: string;
   status: string;
@@ -69,6 +77,7 @@ export type HostEventContract = {
     healthChanged: (payload: GatewayRuntimePayload) => void;
     presenceChanged: (payload: GatewayRuntimePayload) => void;
     chatMessage: (payload: GatewayChatMessageEvent) => void;
+    agentEvent: (payload: GatewayAgentEventPayload) => void;
     channelStatus: (payload: GatewayChannelStatusEvent) => void;
     exit: (payload: GatewayExitEvent) => void;
     error: (payload: GatewayErrorEvent) => void;
@@ -116,6 +125,7 @@ export const HOST_EVENT_CHANNELS = {
     healthChanged: 'gateway:health-changed',
     presenceChanged: 'gateway:presence-changed',
     chatMessage: 'gateway:chat-message',
+    agentEvent: 'gateway:agent-event',
     channelStatus: 'gateway:channel-status',
     exit: 'gateway:exit',
     error: 'gateway:error',

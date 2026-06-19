@@ -116,7 +116,7 @@ test.describe('ClawX chat run state events', () => {
         }
       });
 
-      await expect(page.getByTestId('chat-execution-graph')).toBeVisible();
+      await expect(sendButton).toHaveAttribute('title', /Stop|停止/);
 
       await app.evaluate(({ BrowserWindow }) => {
         for (const win of BrowserWindow.getAllWindows()) {

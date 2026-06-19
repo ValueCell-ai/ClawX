@@ -29,6 +29,7 @@ import { deviceOAuthManager } from '../utils/device-oauth';
 import { browserOAuthManager } from '../utils/browser-oauth';
 import { applyProxySettings } from './proxy';
 import { syncLaunchAtStartupSettingFromStore } from './launch-at-startup';
+import { refreshTrayMenu } from './tray';
 import { getRecentTokenUsageHistory } from '../utils/token-usage';
 import { getProviderService } from '../services/providers/provider-service';
 import {
@@ -554,6 +555,7 @@ function registerUnifiedRequestHandlers(gatewayManager: GatewayManager): void {
             }
             if (key === 'language') {
               await createMenu(typeof value === 'string' ? value : undefined);
+              await refreshTrayMenu(typeof value === 'string' ? value : undefined);
             }
             data = { success: true };
             break;
@@ -572,6 +574,7 @@ function registerUnifiedRequestHandlers(gatewayManager: GatewayManager): void {
             }
             if (entries.some(([key]) => key === 'language')) {
               await createMenu(typeof patch.language === 'string' ? patch.language : undefined);
+              await refreshTrayMenu(typeof patch.language === 'string' ? patch.language : undefined);
             }
             data = { success: true };
             break;
@@ -582,6 +585,7 @@ function registerUnifiedRequestHandlers(gatewayManager: GatewayManager): void {
             await handleProxySettingsChange();
             await syncLaunchAtStartupSettingFromStore();
             await createMenu(settings.language);
+            await refreshTrayMenu(settings.language);
             data = { success: true, settings };
             break;
           }
@@ -1157,6 +1161,7 @@ function registerSettingsHandlers(gatewayManager: GatewayManager): void {
     }
     if (key === 'language') {
       await createMenu(typeof value === 'string' ? value : undefined);
+      await refreshTrayMenu(typeof value === 'string' ? value : undefined);
     }
 
     return { success: true };
@@ -1183,6 +1188,7 @@ function registerSettingsHandlers(gatewayManager: GatewayManager): void {
     }
     if (entries.some(([key]) => key === 'language')) {
       await createMenu(typeof patch.language === 'string' ? patch.language : undefined);
+      await refreshTrayMenu(typeof patch.language === 'string' ? patch.language : undefined);
     }
 
     return { success: true };
@@ -1194,6 +1200,7 @@ function registerSettingsHandlers(gatewayManager: GatewayManager): void {
     await handleProxySettingsChange();
     await syncLaunchAtStartupSettingFromStore();
     await createMenu(settings.language);
+    await refreshTrayMenu(settings.language);
     return { success: true, settings };
   });
 }

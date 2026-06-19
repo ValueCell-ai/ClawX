@@ -3,6 +3,7 @@ import type { GatewayManager } from '../gateway/manager';
 import { syncLaunchAtStartupSettingFromStore } from '../main/launch-at-startup';
 import { createMenu } from '../main/menu';
 import { applyProxySettings } from '../main/proxy';
+import { refreshTrayMenu } from '../main/tray';
 import { syncProxyConfigToOpenClaw } from '../utils/openclaw-proxy';
 import {
   type AppSettings,
@@ -95,6 +96,7 @@ async function runSettingsSideEffects(
   }
   if (patchTouchesLanguage(patch)) {
     await createMenu(typeof patch.language === 'string' ? patch.language : undefined);
+    await refreshTrayMenu(typeof patch.language === 'string' ? patch.language : undefined);
   }
 }
 
@@ -127,6 +129,7 @@ export function createSettingsApi(gatewayManager: GatewayManager): CompleteHostS
       await syncLaunchAtStartupSettingFromStore();
       const settings = await getAllSettings();
       await createMenu(settings.language);
+      await refreshTrayMenu(settings.language);
       return { success: true, settings };
     },
   };

@@ -21,10 +21,10 @@ test.describe('ClawX chat session date grouping', () => {
     const app = await launchElectronApp({ skipSetup: true });
     const nowMs = Date.now();
     const sessions = [
-      { key: MAIN_SESSION_KEY, displayName: 'Today conversation', updatedAt: nowMs - 60 * 60 * 1000 },
-      { key: `agent:main:session-${nowMs - 2 * DAY_MS}`, displayName: 'Week conversation', updatedAt: nowMs - 2 * DAY_MS },
-      { key: `agent:main:session-${nowMs - 10 * DAY_MS}`, displayName: 'Month conversation', updatedAt: nowMs - 10 * DAY_MS },
-      { key: `agent:main:session-${nowMs - 40 * DAY_MS}`, displayName: 'Older conversation', updatedAt: nowMs - 40 * DAY_MS },
+      { key: MAIN_SESSION_KEY, label: 'Today conversation', displayName: 'main', updatedAt: nowMs },
+      { key: `agent:main:session-${nowMs - 2 * DAY_MS}`, label: 'Week conversation', displayName: 'main', updatedAt: nowMs - 2 * DAY_MS },
+      { key: `agent:main:session-${nowMs - 10 * DAY_MS}`, label: 'Month conversation', displayName: 'main', updatedAt: nowMs - 10 * DAY_MS },
+      { key: `agent:main:session-${nowMs - 40 * DAY_MS}`, label: 'Older conversation', displayName: 'main', updatedAt: nowMs - 40 * DAY_MS },
     ];
 
     try {
@@ -157,6 +157,11 @@ test.describe('ClawX chat session date grouping', () => {
       await page.getByTestId('sidebar-new-chat').click();
 
       await expect(page.getByTestId('session-bucket-today').getByText(/agent:main:session-/)).toBeVisible();
+      const newSessionButton = page.locator('[data-testid^="sidebar-session-agent:main:session-"]').first();
+      const transitionProperties = await newSessionButton.evaluate((element) =>
+        getComputedStyle(element).transitionProperty.split(',').map((property) => property.trim()),
+      );
+      expect(transitionProperties).not.toContain('padding');
       await expect(page.getByTestId('session-bucket-older')).toBeVisible();
     } finally {
       await closeElectronApp(app);

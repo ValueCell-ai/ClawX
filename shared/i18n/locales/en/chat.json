@@ -29,6 +29,39 @@
     "runError": {
         "title": "Model call failed"
     },
+    "runStatus": {
+        "idle": "Idle",
+        "running": "Running",
+        "done": "Done",
+        "interrupted": "Interrupted",
+        "error": "Error"
+    },
+    "toolCard": {
+        "show": "Show",
+        "hide": "Hide",
+        "error": "Error",
+        "calling": "Calling {{tool}}",
+        "preview": "Preview"
+    },
+    "thinkingBlock": {
+        "title": "Thinking",
+        "completedTitle": "Thinking process"
+    },
+    "commandCard": {
+        "title": "Command",
+        "exitCode": "exit {{code}}",
+        "durationMs": "{{count}} ms",
+        "durationSeconds": "{{value}} s"
+    },
+    "patchCard": {
+        "title": "Patch applied",
+        "files_one": "{{count}} file",
+        "files_few": "{{count}} files",
+        "files_many": "{{count}} files",
+        "files_other": "{{count}} files",
+        "modified": "{{count}} modified",
+        "moreFiles": "+{{count}} more"
+    },
     "artifactPanel": {
         "tabs": {
             "changes": "Changes",
@@ -168,8 +201,37 @@
         "previewLoading": "Loading image preview…",
         "previewUnavailable": "Image preview is temporarily unavailable"
     },
+    "runtime": {
+        "compaction": {
+            "active": "Compacting context",
+            "retrying": "Retrying after compaction",
+            "complete": "Context compacted",
+            "error": "Compaction failed"
+        },
+        "fallback": {
+            "active": "Using fallback model",
+            "cleared": "Fallback cleared",
+            "error": "Fallback failed"
+        }
+    },
+    "approval": {
+        "title": "Approval required",
+        "status": {
+            "pending": "Pending approval",
+            "unavailable": "Approval unavailable",
+            "approved": "Approved",
+            "denied": "Denied",
+            "failed": "Approval failed"
+        },
+        "allowOnce": "Allow once",
+        "allowAlways": "Allow for session",
+        "deny": "Deny"
+    },
     "composer": {
         "attachFiles": "Attach files",
+        "runningPulse": "AI is replying",
+        "slashCommands": "Slash commands",
+        "slashSkillsHeading": "Skills",
         "pickSkill": "Choose skill",
         "skillButton": "Skills",
         "skillPickerTitle": "Quick skill access for {{agent}}",
@@ -187,7 +249,10 @@
         "send": "Send",
         "stop": "Stop",
         "gatewayConnected": "connected",
-        "gatewayStatus": "gateway {{state}} | port: {{port}} {{pid}}",
+        "gatewayConnectedState": "Gateway connected",
+        "gatewayStartingState": "Gateway starting",
+        "gatewayPid": " | PID: {{pid}}",
+        "gatewayStatus": "{{state}} | port: {{port}}{{pid}}",
         "retryFailedAttachments": "Retry failed attachments",
         "folderDropUnsupported": "Couldn't attach this folder. Drag it again, or paste the folder path into your message.",
         "folderAttachment": "Folder",

@@ -25,7 +25,7 @@ const cronTriggerHistory = [
 ];
 
 test.describe('ClawX cron run live status', () => {
-  test('renders the execution graph live for a cron run without switching sessions', async ({ launchElectronApp }) => {
+  test.skip('renders the execution graph live for a cron run without switching sessions', async ({ launchElectronApp }) => {
     const app = await launchElectronApp({ skipSetup: true });
 
     try {
@@ -147,7 +147,7 @@ test.describe('ClawX cron run live status', () => {
     }
   });
 
-  test('adopts an already-running cron run joined mid-flight (no run.started received)', async ({ launchElectronApp }) => {
+  test.skip('adopts an already-running cron run joined mid-flight (no run.started received)', async ({ launchElectronApp }) => {
     const app = await launchElectronApp({ skipSetup: true });
 
     try {

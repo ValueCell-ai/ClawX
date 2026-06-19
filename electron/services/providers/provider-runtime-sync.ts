@@ -235,6 +235,25 @@ export async function syncAllProviderAuthToRuntime(): Promise<void> {
       continue;
     }
 
+    const configForRuntime: ProviderConfig = {
+      id: account.id,
+      name: account.label,
+      type: account.vendorId,
+      baseUrl: account.baseUrl,
+      apiProtocol: account.apiProtocol,
+      headers: account.headers,
+      model: account.model,
+      fallbackModels: account.fallbackModels,
+      fallbackProviderIds: account.fallbackAccountIds,
+      enabled: account.enabled,
+      createdAt: account.createdAt,
+      updatedAt: account.updatedAt,
+    };
+    const context = await resolveRuntimeSyncContext(configForRuntime);
+    if (context) {
+      await syncRuntimeProviderConfig(configForRuntime, context);
+    }
+
     if (secret.type === 'api_key') {
       await saveProviderKeyToOpenClaw(runtimeProviderKey, secret.apiKey);
       continue;

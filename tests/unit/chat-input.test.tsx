@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import type { ComponentProps } from 'react';
 import { ChatInput } from '@/pages/Chat/ChatInput';
 import { TooltipProvider } from '@/components/ui/tooltip';
 const hostApiFetchMock = vi.hoisted(() => vi.fn());
@@ -18,6 +19,7 @@ const { agentsState, chatState, gatewayState, providersState, artifactPanelMocks
   providersState: {
     accounts: [] as Array<Record<string, unknown>>,
     statuses: [] as Array<Record<string, unknown>>,
+    vendors: [] as Array<Record<string, unknown>>,
     defaultAccountId: null as string | null,
     refreshProviderSnapshot: vi.fn(),
   },
@@ -84,6 +86,10 @@ function translate(key: string, vars?: Record<string, unknown>): string {
       return 'Loading skills...';
     case 'composer.skillEmpty':
       return 'No matching skills found';
+    case 'composer.slashCommands':
+      return 'Slash commands';
+    case 'composer.slashSkillsHeading':
+      return 'Skills';
     case 'composer.pickAgent':
       return 'Choose agent';
     case 'composer.clearTarget':
@@ -100,8 +106,14 @@ function translate(key: string, vars?: Record<string, unknown>): string {
       return 'Stop';
     case 'composer.gatewayConnected':
       return 'connected';
+    case 'composer.gatewayConnectedState':
+      return 'Gateway connected';
+    case 'composer.gatewayStartingState':
+      return 'Gateway starting';
+    case 'composer.gatewayPid':
+      return ` | PID: ${String(vars?.pid ?? '')}`;
     case 'composer.gatewayStatus':
-      return `gateway ${String(vars?.state ?? '')} | port: ${String(vars?.port ?? '')} ${String(vars?.pid ?? '')}`.trim();
+      return `${String(vars?.state ?? '')} | port: ${String(vars?.port ?? '')}${String(vars?.pid ?? '')}`;
     case 'composer.retryFailedAttachments':
       return 'Retry failed attachments';
     case 'composer.skillPreviewTooltip':
@@ -119,10 +131,10 @@ vi.mock('react-i18next', () => ({
   }),
 }));
 
-function renderChatInput(onSend = vi.fn()) {
+function renderChatInput(onSend = vi.fn(), props: Partial<ComponentProps<typeof ChatInput>> = {}) {
   return render(
     <TooltipProvider>
-      <ChatInput onSend={onSend} />
+      <ChatInput onSend={onSend} {...props} />
     </TooltipProvider>,
   );
 }
@@ -132,10 +144,12 @@ describe('ChatInput agent targeting', () => {
     agentsState.agents = [];
     agentsState.defaultModelRef = null;
     agentsState.updateAgentModel.mockReset();
+    agentsState.updateAgentModel.mockResolvedValue(undefined);
     chatState.currentAgentId = 'main';
     gatewayState.status = { state: 'running', port: 18789 };
     providersState.accounts = [];
     providersState.statuses = [];
+    providersState.vendors = [];
     providersState.defaultAccountId = null;
     providersState.refreshProviderSnapshot.mockReset();
     vi.mocked(hostApiFetchMock).mockReset();
@@ -283,6 +297,34 @@ describe('ChatInput agent targeting', () => {
     expect(screen.getByTestId('chat-model-picker-button')).toBeDisabled();
   });
 
+  it('keeps an existing model override while provider model options are still loading', async () => {
+    agentsState.agents = [
+      {
+        id: 'main',
+        name: 'Main',
+        isDefault: true,
+        modelDisplay: 'glm-5.2',
+        modelRef: 'custom-customec/glm-5.2',
+        overrideModelRef: 'custom-customec/glm-5.2',
+        inheritedModel: false,
+        workspace: '~/.openclaw/workspace',
+        agentDir: '~/.openclaw/agents/main/agent',
+        mainSessionKey: 'agent:main:main',
+        channelTypes: [],
+      },
+    ];
+    agentsState.defaultModelRef = 'custom-customcb/mimo-v2.5';
+    providersState.accounts = [];
+    providersState.statuses = [];
+
+    renderChatInput();
+
+    await waitFor(() => {
+      expect(providersState.refreshProviderSnapshot).toHaveBeenCalled();
+    });
+    expect(agentsState.updateAgentModel).not.toHaveBeenCalledWith('main', null);
+  });
+
   it('shows starting status while gateway is running but not yet ready', () => {
     gatewayState.status = { state: 'running', port: 18789, gatewayReady: false };
     agentsState.agents = [
@@ -301,7 +343,7 @@ describe('ChatInput agent targeting', () => {
 
     renderChatInput();
 
-    expect(screen.getByText(/gateway starting \| port: 18789/i)).toBeInTheDocument();
+    expect(screen.getByText('Gateway starting | port: 18789')).toBeInTheDocument();
   });
 
   it('renders the skill trigger after the @ agent picker', () => {
@@ -393,6 +435,227 @@ describe('ChatInput agent targeting', () => {
         body: expect.any(String),
       }),
     );
+  });
+
+  it('keeps slash skill descriptions to one truncated line', async () => {
+    const longDescription = 'Create, edit, review, redline, and polish PDF documents with a very long description that must not wrap in the slash menu.';
+    agentsState.agents = [
+      {
+        id: 'main',
+        name: 'Main',
+        isDefault: true,
+        modelDisplay: 'MiniMax',
+        inheritedModel: true,
+        workspace: '~/.openclaw/workspace',
+        agentDir: '~/.openclaw/agents/main/agent',
+        mainSessionKey: 'agent:main:main',
+        channelTypes: [],
+      },
+    ];
+    vi.mocked(hostApiFetchMock).mockResolvedValue({
+      success: true,
+      skills: [
+        {
+          name: 'pdf',
+          description: longDescription,
+          source: 'openclaw',
+          sourceLabel: 'OpenClaw',
+          manifestPath: '/tmp/openclaw/skills/pdf/SKILL.md',
+          baseDir: '/tmp/openclaw/skills/pdf',
+        },
+      ],
+    });
+
+    renderChatInput();
+
+    fireEvent.change(screen.getByRole('textbox'), { target: { value: '/' } });
+
+    const option = await screen.findByTestId('chat-slash-skill-pdf');
+    const description = within(option).getByText(longDescription);
+    expect(description).toHaveClass('truncate');
+    expect(description).toHaveClass('whitespace-nowrap');
+  });
+
+  it('renders the slash skills heading as non-interactive text', async () => {
+    agentsState.agents = [
+      {
+        id: 'main',
+        name: 'Main',
+        isDefault: true,
+        modelDisplay: 'MiniMax',
+        inheritedModel: true,
+        workspace: '~/.openclaw/workspace',
+        agentDir: '~/.openclaw/agents/main/agent',
+        mainSessionKey: 'agent:main:main',
+        channelTypes: [],
+      },
+    ];
+    vi.mocked(hostApiFetchMock).mockResolvedValue({
+      success: true,
+      skills: [
+        {
+          name: 'create-skill',
+          description: 'Create and refine reusable skills.',
+          source: 'workspace',
+          sourceLabel: 'Workspace',
+          manifestPath: '/tmp/workspace/skill/create-skill/SKILL.md',
+          baseDir: '/tmp/workspace/skill/create-skill',
+        },
+      ],
+    });
+
+    renderChatInput();
+
+    const textbox = screen.getByRole('textbox') as HTMLTextAreaElement;
+    fireEvent.change(textbox, { target: { value: '/' } });
+    const heading = await screen.findByTestId('chat-slash-skills-heading');
+
+    expect(heading).toHaveTextContent('Skills');
+    expect(heading.tagName).not.toBe('BUTTON');
+    fireEvent.click(heading);
+
+    expect(textbox).toHaveValue('/');
+    expect(screen.queryByPlaceholderText('Search skills')).not.toBeInTheDocument();
+    expect(await screen.findByTestId('chat-slash-skill-create-skill')).toBeInTheDocument();
+  });
+
+  it('selects slash skills with arrow keys from the textarea', async () => {
+    const onSend = vi.fn();
+    agentsState.agents = [
+      {
+        id: 'main',
+        name: 'Main',
+        isDefault: true,
+        modelDisplay: 'MiniMax',
+        inheritedModel: true,
+        workspace: '~/.openclaw/workspace',
+        agentDir: '~/.openclaw/agents/main/agent',
+        mainSessionKey: 'agent:main:main',
+        channelTypes: [],
+      },
+    ];
+    vi.mocked(hostApiFetchMock).mockResolvedValue({
+      success: true,
+      skills: [
+        {
+          name: 'create-skill',
+          description: 'Create and refine reusable skills.',
+          source: 'workspace',
+          sourceLabel: 'Workspace',
+          manifestPath: '/tmp/workspace/skill/create-skill/SKILL.md',
+          baseDir: '/tmp/workspace/skill/create-skill',
+        },
+      ],
+    });
+
+    renderChatInput(onSend);
+
+    const textbox = screen.getByRole('textbox') as HTMLTextAreaElement;
+    fireEvent.change(textbox, { target: { value: '/' } });
+    expect(await screen.findByTestId('chat-slash-skills-heading')).toHaveTextContent('Skills');
+    expect(await screen.findByTestId('chat-slash-skill-create-skill')).toHaveAttribute('aria-selected', 'true');
+
+    fireEvent.keyDown(textbox, { key: 'ArrowDown' });
+    expect(await screen.findByTestId('chat-slash-skill-create-skill')).toHaveAttribute('aria-selected', 'true');
+
+    fireEvent.keyDown(textbox, { key: 'Enter' });
+
+    expect(textbox).toHaveValue('/create-skill  ');
+    expect(onSend).not.toHaveBeenCalled();
+  });
+
+  it('localizes the gateway footer status with port and PID labels', () => {
+    gatewayState.status = { state: 'running', port: 18789, pid: 12345, gatewayReady: true };
+
+    renderChatInput();
+
+    expect(screen.getByText('Gateway connected | port: 18789 | PID: 12345')).toBeInTheDocument();
+  });
+
+  it('clears composer draft and attachments when the draft scope changes', () => {
+    agentsState.agents = [
+      {
+        id: 'main',
+        name: 'Main',
+        isDefault: true,
+        modelDisplay: 'MiniMax',
+        inheritedModel: true,
+        workspace: '~/.openclaw/workspace',
+        agentDir: '~/.openclaw/agents/main/agent',
+        mainSessionKey: 'agent:main:main',
+        channelTypes: [],
+      },
+    ];
+
+    const { rerender } = render(
+      <TooltipProvider>
+        <ChatInput onSend={vi.fn()} draftScopeKey="agent:main:first" />
+      </TooltipProvider>,
+    );
+
+    const textbox = screen.getByRole('textbox') as HTMLTextAreaElement;
+    fireEvent.change(textbox, { target: { value: '/find-skills  ' } });
+    expect(screen.getByTestId('chat-composer-skill-token')).toHaveTextContent('/find-skills');
+
+    rerender(
+      <TooltipProvider>
+        <ChatInput onSend={vi.fn()} draftScopeKey="agent:main:second" />
+      </TooltipProvider>,
+    );
+
+    expect(textbox).toHaveValue('');
+    expect(screen.queryByTestId('chat-composer-skill-token')).not.toBeInTheDocument();
+  });
+
+  it('does not allow an immediate second click to stop a just-started send', async () => {
+    vi.useFakeTimers();
+    try {
+      const onSend = vi.fn();
+      const onStop = vi.fn();
+      agentsState.agents = [
+        {
+          id: 'main',
+          name: 'Main',
+          isDefault: true,
+          modelDisplay: 'MiniMax',
+          inheritedModel: true,
+          workspace: '~/.openclaw/workspace',
+          agentDir: '~/.openclaw/agents/main/agent',
+          mainSessionKey: 'agent:main:main',
+          channelTypes: [],
+        },
+      ];
+
+      const { rerender } = render(
+        <TooltipProvider>
+          <ChatInput onSend={onSend} onStop={onStop} sending={false} />
+        </TooltipProvider>,
+      );
+      fireEvent.change(screen.getByRole('textbox'), { target: { value: 'hello' } });
+      fireEvent.click(screen.getByTitle('Send'));
+      expect(onSend).toHaveBeenCalledWith('hello', undefined, null);
+
+      rerender(
+        <TooltipProvider>
+          <ChatInput onSend={onSend} onStop={onStop} sending />
+        </TooltipProvider>,
+      );
+
+      const stopButton = screen.getByTitle('Stop');
+      expect(stopButton).toBeDisabled();
+      fireEvent.click(stopButton);
+      expect(onStop).not.toHaveBeenCalled();
+
+      await act(async () => {
+        vi.advanceTimersByTime(500);
+      });
+
+      expect(stopButton).toBeEnabled();
+      fireEvent.click(stopButton);
+      expect(onStop).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('removes the full inline skill token with one backspace', async () => {
@@ -617,6 +880,47 @@ describe('ChatInput agent targeting', () => {
         fileName: 'SKILL.md',
       }),
     );
+  });
+
+  it('opens the artifact preview once for a pointer click on the inline skill token', async () => {
+    agentsState.agents = [
+      {
+        id: 'main',
+        name: 'Main',
+        isDefault: true,
+        modelDisplay: 'MiniMax',
+        inheritedModel: true,
+        workspace: '~/.openclaw/workspace',
+        agentDir: '~/.openclaw/agents/main/agent',
+        mainSessionKey: 'agent:main:main',
+        channelTypes: [],
+      },
+    ];
+    vi.mocked(hostApiFetchMock).mockResolvedValue({
+      success: true,
+      skills: [
+        {
+          name: 'create-skill',
+          description: 'Create and refine reusable skills.',
+          source: 'workspace',
+          sourceLabel: 'Workspace',
+          manifestPath: '/tmp/workspace/skill/create-skill/SKILL.md',
+          baseDir: '/tmp/workspace/skill/create-skill',
+        },
+      ],
+    });
+
+    renderChatInput();
+
+    fireEvent.change(screen.getByRole('textbox'), { target: { value: '/create-skill  ' } });
+    const token = screen.getByTestId('chat-composer-skill-token');
+
+    fireEvent.mouseDown(token);
+    fireEvent.click(token, { detail: 1 });
+
+    await waitFor(() => {
+      expect(artifactPanelMocks.openPreview).toHaveBeenCalledTimes(1);
+    });
   });
 
   it('stages dropped folders via disk path instead of buffer upload', async () => {

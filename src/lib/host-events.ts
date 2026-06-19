@@ -83,6 +83,9 @@ export const hostEvents = {
   onGatewayChatMessage: (handler: HostEventHandler<'gateway', 'chatMessage'>) => (
     onGatewayEvent('chatMessage', handler)
   ),
+  onGatewayAgentEvent: (handler: HostEventHandler<'gateway', 'agentEvent'>) => (
+    onGatewayEvent('agentEvent', handler)
+  ),
   onGatewayChannelStatus: (handler: HostEventHandler<'gateway', 'channelStatus'>) => (
     onGatewayEvent('channelStatus', handler)
   ),

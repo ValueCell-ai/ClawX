@@ -931,6 +931,61 @@ describe('useChatStore startup history retry', () => {
     await sendPromise;
   });
 
+  it('aborts an in-flight send with its pending idempotency key before the send ack returns', async () => {
+    const { useChatStore } = await import('@/stores/chat');
+    let resolveSend: ((value: { runId: string }) => void) | null = null;
+
+    gatewayRpcMock.mockImplementation((method: string) => {
+      if (method === 'chat.send') {
+        return new Promise((resolve) => {
+          resolveSend = resolve as (value: { runId: string }) => void;
+        });
+      }
+      if (method === 'chat.abort') {
+        return Promise.resolve({ aborted: true });
+      }
+      if (method === 'chat.history') {
+        return Promise.resolve({ messages: [] });
+      }
+      return Promise.resolve({});
+    });
+
+    useChatStore.setState({
+      currentSessionKey: 'agent:main:main',
+      currentAgentId: 'main',
+      sessions: [{ key: 'agent:main:main' }],
+      messages: [],
+      sessionLabels: {},
+      sessionLastActivity: {},
+      sending: false,
+      activeRunId: null,
+      streamingText: '',
+      streamingMessage: null,
+      streamingTools: [],
+      pendingFinal: false,
+      lastUserMessageAt: null,
+      pendingToolImages: [],
+      error: null,
+      loading: false,
+      thinkingLevel: null,
+    });
+
+    const sendPromise = useChatStore.getState().sendMessage('long running prompt');
+    const sendCall = gatewayRpcMock.mock.calls.find(([method]) => method === 'chat.send');
+    const sendParams = sendCall?.[1] as { idempotencyKey?: string } | undefined;
+    expect(sendParams?.idempotencyKey).toEqual(expect.any(String));
+
+    await useChatStore.getState().abortRun();
+
+    expect(gatewayRpcMock).toHaveBeenCalledWith('chat.abort', {
+      sessionKey: 'agent:main:main',
+      runId: sendParams?.idempotencyKey,
+    });
+
+    resolveSend?.({ runId: sendParams!.idempotencyKey! });
+    await sendPromise;
+  });
+
   it('does not restore a pending optimistic message after deleting the session', async () => {
     const { useChatStore } = await import('@/stores/chat');
     let resolveSend: ((value: { runId: string }) => void) | null = null;

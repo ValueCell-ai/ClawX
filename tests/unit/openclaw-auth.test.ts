@@ -1,3 +1,5 @@
+// @vitest-environment node
+
 import { mkdir, readFile, rm, writeFile } from 'fs/promises';
 import { join } from 'path';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -944,6 +946,120 @@ describe('syncProviderConfigToOpenClaw', () => {
       expect.objectContaining({
         id: 'private-model-x',
         input: ['text'],
+      }),
+    ]);
+  });
+
+  it('infers ZAI-compatible reasoning metadata for new BigModel GLM custom models', async () => {
+    await writeOpenClawJson({ models: { providers: {} } });
+
+    const { syncProviderConfigToOpenClaw } = await import('@electron/utils/openclaw-auth');
+    await syncProviderConfigToOpenClaw('custom-glm', 'glm-5.2', {
+      baseUrl: 'https://open.bigmodel.cn/api/coding/paas/v4',
+      api: 'openai-completions',
+    });
+
+    const result = await readOpenClawJson();
+    const providers = (result.models as Record<string, unknown>).providers as Record<string, unknown>;
+    const entry = providers['custom-glm'] as Record<string, unknown>;
+    const models = entry.models as Array<Record<string, unknown>>;
+
+    expect(models).toEqual([
+      expect.objectContaining({
+        id: 'glm-5.2',
+        input: ['text'],
+        reasoning: true,
+        compat: expect.objectContaining({
+          thinkingFormat: 'zai',
+          supportsReasoningEffort: false,
+        }),
+      }),
+    ]);
+  });
+
+  it('backfills missing inferred metadata on existing BigModel GLM custom models', async () => {
+    await writeOpenClawJson({
+      models: {
+        providers: {
+          'custom-glm': {
+            baseUrl: 'https://open.bigmodel.cn/api/coding/paas/v4',
+            api: 'openai-completions',
+            models: [
+              {
+                id: 'glm-5.2',
+                name: 'glm-5.2',
+                input: ['text'],
+              },
+            ],
+          },
+        },
+      },
+    });
+
+    const { syncProviderConfigToOpenClaw } = await import('@electron/utils/openclaw-auth');
+    await syncProviderConfigToOpenClaw('custom-glm', 'glm-5.2', {
+      baseUrl: 'https://open.bigmodel.cn/api/coding/paas/v4',
+      api: 'openai-completions',
+    });
+
+    const result = await readOpenClawJson();
+    const providers = (result.models as Record<string, unknown>).providers as Record<string, unknown>;
+    const entry = providers['custom-glm'] as Record<string, unknown>;
+    const models = entry.models as Array<Record<string, unknown>>;
+
+    expect(models).toEqual([
+      expect.objectContaining({
+        id: 'glm-5.2',
+        input: ['text'],
+        reasoning: true,
+        compat: expect.objectContaining({
+          thinkingFormat: 'zai',
+          supportsReasoningEffort: false,
+        }),
+      }),
+    ]);
+  });
+
+  it('does not override explicit custom model reasoning metadata during backfill', async () => {
+    await writeOpenClawJson({
+      models: {
+        providers: {
+          'custom-glm': {
+            baseUrl: 'https://open.bigmodel.cn/api/coding/paas/v4',
+            api: 'openai-completions',
+            models: [
+              {
+                id: 'glm-5.2',
+                name: 'glm-5.2',
+                input: ['text'],
+                reasoning: false,
+                compat: { thinkingFormat: 'openai' },
+              },
+            ],
+          },
+        },
+      },
+    });
+
+    const { syncProviderConfigToOpenClaw } = await import('@electron/utils/openclaw-auth');
+    await syncProviderConfigToOpenClaw('custom-glm', 'glm-5.2', {
+      baseUrl: 'https://open.bigmodel.cn/api/coding/paas/v4',
+      api: 'openai-completions',
+    });
+
+    const result = await readOpenClawJson();
+    const providers = (result.models as Record<string, unknown>).providers as Record<string, unknown>;
+    const entry = providers['custom-glm'] as Record<string, unknown>;
+    const models = entry.models as Array<Record<string, unknown>>;
+
+    expect(models).toEqual([
+      expect.objectContaining({
+        id: 'glm-5.2',
+        reasoning: false,
+        compat: expect.objectContaining({
+          thinkingFormat: 'openai',
+          supportsReasoningEffort: false,
+        }),
       }),
     ]);
   });

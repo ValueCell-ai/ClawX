@@ -573,6 +573,7 @@ export type ChatSendWithMediaPayload = {
   message?: string;
   deliver?: boolean;
   idempotencyKey: string;
+  thinking?: string;
   media?: ChatMediaItem[];
 };
 export type ChatSendWithMediaResult = HostSuccess & {

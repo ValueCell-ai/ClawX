@@ -1,6 +1,8 @@
 import { hostApi } from '@/lib/host-api';
 import { clearPendingOptimisticUserMessages, getCanonicalPrefixFromSessions, getMessageText, toMs } from './helpers';
 import { pickStartupSessionFallback } from './session-selection';
+import { readLastChatSessionKey, writeLastChatSessionKey } from './session-persistence';
+import { toSessionLabel } from './session-label-cleanup';
 import { DEFAULT_CANONICAL_PREFIX, DEFAULT_SESSION_KEY, type ChatSession, type RawMessage } from './types';
 import type { ChatGet, ChatSet, SessionHistoryActions } from './store-api';
 
@@ -18,12 +20,6 @@ function getAgentIdFromSessionKey(sessionKey: string): string {
   if (!sessionKey.startsWith('agent:')) return 'main';
   const [, agentId] = sessionKey.split(':');
   return agentId || 'main';
-}
-
-function toSessionLabel(text: string, maxLength = 50): string {
-  const trimmed = text.trim();
-  if (!trimmed) return '';
-  return trimmed.length > maxLength ? `${trimmed.slice(0, maxLength)}…` : trimmed;
 }
 
 function applySessionBackendLabels(set: ChatSet, sessions: ChatSession[]): void {
@@ -154,7 +150,10 @@ export function createSessionActions(
           });
 
           const { currentSessionKey } = get();
-          let nextSessionKey = currentSessionKey || DEFAULT_SESSION_KEY;
+          const persistedSessionKey = currentSessionKey === DEFAULT_SESSION_KEY
+            ? readLastChatSessionKey()
+            : null;
+          let nextSessionKey = persistedSessionKey || currentSessionKey || DEFAULT_SESSION_KEY;
           if (!nextSessionKey.startsWith('agent:')) {
             const canonicalMatch = canonicalBySuffix.get(nextSessionKey);
             if (canonicalMatch) {
@@ -177,6 +176,8 @@ export function createSessionActions(
               { key: nextSessionKey, displayName: nextSessionKey },
             ]
             : dedupedSessions;
+
+          writeLastChatSessionKey(nextSessionKey);
 
           const discoveredActivity = Object.fromEntries(
             sessionsWithCurrent
@@ -236,18 +237,18 @@ export function createSessionActions(
                       const firstUser = msgs.find((m) => m.role === 'user');
                       const lastMsg = msgs[msgs.length - 1];
                       const labelText = firstUser ? getMessageText(firstUser.content).trim() : '';
+                      const label = toSessionLabel(labelText);
                       set((s) => {
                         const next: Partial<typeof s> = {};
-                        if (labelText && !s.sessionLabels[session.key]?.trim()) {
-                          const truncated = labelText.length > 50 ? `${labelText.slice(0, 50)}…` : labelText;
-                          next.sessionLabels = { ...s.sessionLabels, [session.key]: truncated };
+                        if (label && !s.sessionLabels[session.key]?.trim()) {
+                          next.sessionLabels = { ...s.sessionLabels, [session.key]: label };
                         }
                         if (lastMsg?.timestamp) {
                           next.sessionLastActivity = { ...s.sessionLastActivity, [session.key]: toMs(lastMsg.timestamp) };
                         }
                         return next;
                       });
-                      finishSessionLabelHydration(session.key, version, labelText ? 'labeled' : 'empty');
+                      finishSessionLabelHydration(session.key, version, label ? 'labeled' : 'empty');
                     } catch {
                       finishSessionLabelHydration(session.key, version, 'error');
                     }
@@ -265,6 +266,7 @@ export function createSessionActions(
     // ── Switch session ──
 
     switchSession: (key: string) => {
+      writeLastChatSessionKey(key);
       const { currentSessionKey, messages, sessionLastActivity, sessionLabels } = get();
       // Only treat sessions with no history records and no activity timestamp as empty.
       // Relying solely on messages.length is unreliable because switchSession clears
@@ -330,6 +332,8 @@ export function createSessionActions(
       if (currentSessionKey === key) {
         // Switched away from deleted session — pick the first remaining or create new
         const next = remaining[0];
+        const nextSessionKey = next?.key ?? DEFAULT_SESSION_KEY;
+        writeLastChatSessionKey(nextSessionKey);
         set((s) => ({
           sessions: remaining,
           sessionLabels: Object.fromEntries(Object.entries(s.sessionLabels).filter(([k]) => k !== key)),
@@ -343,8 +347,8 @@ export function createSessionActions(
           pendingFinal: false,
           lastUserMessageAt: null,
           pendingToolImages: [],
-          currentSessionKey: next?.key ?? DEFAULT_SESSION_KEY,
-          currentAgentId: getAgentIdFromSessionKey(next?.key ?? DEFAULT_SESSION_KEY),
+          currentSessionKey: nextSessionKey,
+          currentAgentId: getAgentIdFromSessionKey(nextSessionKey),
         }));
         if (next) {
           get().loadHistory();
@@ -374,6 +378,7 @@ export function createSessionActions(
       const prefix = getCanonicalPrefixFromSessions(get().sessions) ?? DEFAULT_CANONICAL_PREFIX;
       const newKey = `${prefix}:session-${Date.now()}`;
       const newSessionEntry: ChatSession = { key: newKey, displayName: newKey };
+      writeLastChatSessionKey(newKey);
       set((s) => ({
         currentSessionKey: newKey,
         currentAgentId: getAgentIdFromSessionKey(newKey),

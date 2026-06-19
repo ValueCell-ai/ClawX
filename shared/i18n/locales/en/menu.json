@@ -55,5 +55,17 @@
     "documentation": "Documentation",
     "reportIssue": "Report Issue",
     "openClawDocumentation": "OpenClaw Documentation"
+  },
+  "tray": {
+    "tooltip": "{{appName}} - AI Assistant",
+    "statusTooltip": "{{appName}} - {{status}}",
+    "show": "Show {{appName}}",
+    "gatewayStatus": "Gateway Status",
+    "running": "Running",
+    "quickActions": "Quick Actions",
+    "openChat": "Open Chat",
+    "openSettings": "Open Settings",
+    "checkForUpdates": "Check for Updates...",
+    "quit": "Quit {{appName}}"
   }
 }

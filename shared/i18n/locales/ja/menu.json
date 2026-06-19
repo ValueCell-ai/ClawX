@@ -55,5 +55,17 @@
     "documentation": "ドキュメント",
     "reportIssue": "問題を報告",
     "openClawDocumentation": "OpenClaw ドキュメント"
+  },
+  "tray": {
+    "tooltip": "{{appName}} - AI アシスタント",
+    "statusTooltip": "{{appName}} - {{status}}",
+    "show": "{{appName}} を表示",
+    "gatewayStatus": "ゲートウェイ状態",
+    "running": "実行中",
+    "quickActions": "クイックアクション",
+    "openChat": "チャットを開く",
+    "openSettings": "設定を開く",
+    "checkForUpdates": "更新を確認...",
+    "quit": "{{appName}} を終了"
   }
 }

@@ -47,6 +47,30 @@ describe('hostEvents', () => {
     expect(handler).toHaveBeenCalledWith({ type: 'run.started', runId: 'run-1' });
   });
 
+  it('subscribes to upstream-shaped gateway agent events over IPC', async () => {
+    const { hostEvents } = await import('@/lib/host-events');
+    const handler = vi.fn();
+
+    hostEvents.onGatewayAgentEvent(handler);
+    const callback = on.mock.calls[0]?.[1] as ((payload: unknown) => void) | undefined;
+    callback?.({
+      sessionKey: 'agent:main:main',
+      runId: 'run-1',
+      seq: 7,
+      stream: 'tool',
+      data: { phase: 'start', toolCallId: 'call-1', name: 'read' },
+    });
+
+    expect(on).toHaveBeenCalledWith('gateway:agent-event', expect.any(Function));
+    expect(handler).toHaveBeenCalledWith({
+      sessionKey: 'agent:main:main',
+      runId: 'run-1',
+      seq: 7,
+      stream: 'tool',
+      data: { phase: 'start', toolCallId: 'call-1', name: 'read' },
+    });
+  });
+
   it('subscribes to dynamic channel QR events', async () => {
     const { hostEvents } = await import('@/lib/host-events');
     const handler = vi.fn();

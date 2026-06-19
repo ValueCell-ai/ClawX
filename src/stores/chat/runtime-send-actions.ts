@@ -210,6 +210,7 @@ export function createRuntimeSendActions(set: ChatSet, get: ChatGet): Pick<Runti
         }
 
         let result: ChatSendWithMediaResult;
+        const thinking = get().thinkingLevel?.trim() || undefined;
 
         // Longer timeout for chat sends to tolerate high-latency networks (avoids connect error)
         const CHAT_SEND_TIMEOUT_MS = 120_000;
@@ -220,6 +221,7 @@ export function createRuntimeSendActions(set: ChatSet, get: ChatGet): Pick<Runti
             message: trimmed || 'Process the attached file(s).',
             deliver: false,
             idempotencyKey,
+            ...(thinking ? { thinking } : {}),
             media: attachments.map((a) => ({
               filePath: a.stagedPath,
               mimeType: a.mimeType,
@@ -234,6 +236,7 @@ export function createRuntimeSendActions(set: ChatSet, get: ChatGet): Pick<Runti
               message: trimmed,
               deliver: false,
               idempotencyKey,
+              ...(thinking ? { thinking } : {}),
             },
             CHAT_SEND_TIMEOUT_MS,
           );

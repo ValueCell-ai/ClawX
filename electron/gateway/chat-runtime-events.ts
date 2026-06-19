@@ -12,6 +12,28 @@ function readNumber(value: unknown): number | undefined {
   return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
 }
 
+function readFirstString(...values: unknown[]): string | undefined {
+  for (const value of values) {
+    const next = readString(value);
+    if (next) return next;
+  }
+  return undefined;
+}
+
+function readStringArray(value: unknown): string[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const entries = value.filter((entry): entry is string => typeof entry === 'string' && entry.trim().length > 0);
+  return entries.length > 0 ? entries : undefined;
+}
+
+function readApprovalDecisions(value: unknown): Array<'allow-once' | 'allow-always' | 'deny'> | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const decisions = value.filter((entry): entry is 'allow-once' | 'allow-always' | 'deny' => (
+    entry === 'allow-once' || entry === 'allow-always' || entry === 'deny'
+  ));
+  return decisions.length > 0 ? Array.from(new Set(decisions)) : undefined;
+}
+
 type ChatRuntimeEventType = ChatRuntimeEvent['type'];
 type ChatRuntimeEventFor<T extends ChatRuntimeEventType> = Extract<ChatRuntimeEvent, { type: T }>;
 type ChatRuntimeEventBaseFor<T extends ChatRuntimeEventType> = Pick<
@@ -32,6 +54,107 @@ function withBase<T extends ChatRuntimeEventType>(
     seq: readNumber(payload.seq),
     ts: readNumber(payload.ts),
   } as ChatRuntimeEventBaseFor<T>;
+}
+
+function approvalNotificationKind(method: string): 'exec' | 'plugin' | null {
+  if (method.startsWith('exec.approval.')) return 'exec';
+  if (method.startsWith('plugin.approval.')) return 'plugin';
+  return null;
+}
+
+function approvalNotificationPhase(method: string): 'requested' | 'resolved' | null {
+  if (method.endsWith('.requested')) return 'requested';
+  if (method.endsWith('.resolved')) return 'resolved';
+  return null;
+}
+
+function approvalResolvedStatus(decision: string | undefined): string {
+  if (decision === 'deny' || decision === 'denied') return 'denied';
+  if (decision === 'allow' || decision === 'allow-once' || decision === 'allow-always' || decision === 'approved') {
+    return 'approved';
+  }
+  return 'failed';
+}
+
+function readCommandFromApprovalRequest(request: Record<string, unknown>): string | undefined {
+  const command = readString(request.command);
+  if (command) return command;
+
+  const argv = readStringArray(request.commandArgv);
+  if (argv) return argv.join(' ');
+
+  const systemRunPlan = asRecord(request.systemRunPlan);
+  return readFirstString(
+    systemRunPlan?.commandText,
+    systemRunPlan?.command,
+  );
+}
+
+function readApprovalDetail(
+  kind: 'exec' | 'plugin',
+  raw: Record<string, unknown>,
+  request: Record<string, unknown>,
+): string | undefined {
+  if (kind === 'exec') {
+    return readFirstString(
+      readCommandFromApprovalRequest(request),
+      raw.detail,
+      request.warningText,
+      raw.message,
+    );
+  }
+
+  return readFirstString(
+    raw.detail,
+    request.description,
+    request.title,
+    request.toolName,
+    raw.message,
+  );
+}
+
+export function normalizeGatewayChatRuntimeNotification(
+  method: string,
+  payload: unknown,
+): ChatRuntimeEvent | null {
+  const kind = approvalNotificationKind(method);
+  const phase = approvalNotificationPhase(method);
+  if (!kind || !phase) return null;
+
+  const raw = asRecord(payload);
+  if (!raw) return null;
+
+  const request = asRecord(raw.request) ?? {};
+  const approvalId = readFirstString(raw.id, raw.approvalId, raw.approval_id, request.id);
+  if (!approvalId) return null;
+
+  const decision = readString(raw.decision);
+  const command = readCommandFromApprovalRequest(request);
+  const detail = readApprovalDetail(kind, raw, request);
+
+  return {
+    type: 'approval.updated',
+    runId: readFirstString(raw.runId, request.runId) ?? `approval:${approvalId}`,
+    sessionKey: readFirstString(raw.sessionKey, request.sessionKey),
+    seq: readNumber(raw.seq),
+    ts: readNumber(raw.ts) ?? readNumber(raw.createdAtMs),
+    approvalId,
+    approvalSlug: readFirstString(raw.approvalSlug, raw.approval_slug, request.approvalSlug, request.approval_slug),
+    itemId: readFirstString(raw.itemId, raw.item_id, request.itemId, request.item_id),
+    toolCallId: readFirstString(raw.toolCallId, raw.tool_call_id, request.toolCallId, request.tool_call_id),
+    title: readFirstString(raw.title, request.title),
+    kind,
+    phase,
+    status: phase === 'requested'
+      ? readFirstString(raw.status, request.status) ?? 'pending'
+      : readFirstString(raw.status, request.status) ?? approvalResolvedStatus(decision),
+    message: readFirstString(raw.message, request.message, request.warningText),
+    detail,
+    command,
+    agentId: readFirstString(raw.agentId, request.agentId),
+    expiresAtMs: readNumber(raw.expiresAtMs),
+    allowedDecisions: readApprovalDecisions(raw.allowedDecisions) ?? readApprovalDecisions(request.allowedDecisions),
+  };
 }
 
 export function normalizeGatewayChatRuntimeEvent(payload: unknown): ChatRuntimeEvent | null {
@@ -196,13 +319,20 @@ export function normalizeGatewayChatRuntimeEvent(payload: unknown): ChatRuntimeE
     return base
       ? {
           ...base,
-          itemId: readString(data.itemId),
-          toolCallId: readString(data.toolCallId),
+          approvalId: readString(data.approvalId) ?? readString(data.approval_id),
+          approvalSlug: readString(data.approvalSlug) ?? readString(data.approval_slug),
+          itemId: readString(data.itemId) ?? readString(data.item_id),
+          toolCallId: readString(data.toolCallId) ?? readString(data.tool_call_id),
           title: readString(data.title),
           kind: readString(data.kind),
           phase: readString(data.phase),
           status: readString(data.status),
           message: readString(data.message),
+          detail: readString(data.detail),
+          command: readString(data.command),
+          agentId: readString(data.agentId) ?? readString(raw.agentId),
+          expiresAtMs: readNumber(data.expiresAtMs),
+          allowedDecisions: readApprovalDecisions(data.allowedDecisions),
         }
       : null;
   }

@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest';
 
-import { inferCustomModelInputModalities } from '@electron/shared/providers/model-capabilities';
+import {
+  inferCustomModelInputModalities,
+  inferCustomModelMetadata,
+} from '@electron/shared/providers/model-capabilities';
 
 describe('inferCustomModelInputModalities', () => {
   it.each([
@@ -20,5 +23,33 @@ describe('inferCustomModelInputModalities', () => {
     'unknown-private-model',
   ])('uses conservative text-only input for %s', (modelId) => {
     expect(inferCustomModelInputModalities(modelId)).toEqual(['text']);
+  });
+});
+
+describe('inferCustomModelMetadata', () => {
+  it.each([
+    'glm-5',
+    'glm-5.2',
+    'glm-5-turbo',
+    'glm-5v-turbo',
+    'glm-4.7',
+    'glm-4.5-air',
+  ])('marks BigModel GLM reasoning model %s as ZAI-compatible thinking', (modelId) => {
+    expect(inferCustomModelMetadata(modelId, {
+      baseUrl: 'https://open.bigmodel.cn/api/coding/paas/v4',
+    })).toEqual(expect.objectContaining({
+      input: expect.any(Array),
+      reasoning: true,
+      compat: expect.objectContaining({
+        thinkingFormat: 'zai',
+        supportsReasoningEffort: false,
+      }),
+    }));
+  });
+
+  it('does not infer ZAI thinking metadata for GLM ids on unrelated endpoints', () => {
+    expect(inferCustomModelMetadata('glm-5.2', {
+      baseUrl: 'https://example.com/v1',
+    })).toEqual({ input: ['text'] });
   });
 });

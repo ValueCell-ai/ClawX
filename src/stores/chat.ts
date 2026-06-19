@@ -12,6 +12,7 @@ import { buildBaselineRunKey, captureBaseline, clearBaselines } from './baseline
 import { isCronSessionKey, sessionKeysAreEquivalent } from './chat/cron-session-utils';
 import { fetchCronSessionHistory } from '@/lib/cron-session-history';
 import { pickStartupSessionFallback } from './chat/session-selection';
+import { readLastChatSessionKey, writeLastChatSessionKey } from './chat/session-persistence';
 import {
   CHAT_HISTORY_DISK_FALLBACK_TIMEOUT_MS,
   CHAT_HISTORY_STARTUP_FALLBACK_RACE_MS,
@@ -120,6 +121,8 @@ const DEFAULT_SESSION_RUN_STATE: SessionRunState = {
 const _sessionRunStateCache = new Map<string, SessionRunState>();
 let _sendGenerationCounter = 0;
 const _activeSendGenerationBySession = new Map<string, number>();
+const _pendingSendRunIdBySession = new Map<string, string>();
+let _lastAbortedRunId: string | null = null;
 const SESSION_LOAD_MIN_INTERVAL_MS = 1_200;
 const HISTORY_LOAD_MIN_INTERVAL_MS = 800;
 const CHAT_EVENT_DEDUPE_TTL_MS = 30_000;
@@ -1830,12 +1833,16 @@ async function sendChatMessageViaHostApi(params: {
   message: string;
   deliver?: boolean;
   idempotencyKey: string;
+  thinking?: string;
 }): Promise<{ runId?: string }> {
   return useGatewayStore.getState().rpc<{ runId?: string }>('chat.send', params, 120000);
 }
 
-async function abortChatRunViaHostApi(sessionKey: string): Promise<void> {
-  await useGatewayStore.getState().rpc('chat.abort', { sessionKey });
+async function abortChatRunViaHostApi(sessionKey: string, runId?: string | null): Promise<void> {
+  await useGatewayStore.getState().rpc('chat.abort', {
+    sessionKey,
+    ...(runId ? { runId } : {}),
+  });
 }
 
 function normalizeAgentId(value: string | undefined | null): string {
@@ -2664,7 +2671,10 @@ export const useChatStore = create<ChatState>((set, get) => ({
           });
 
           const { currentSessionKey, sessions: localSessions } = get();
-          let nextSessionKey = currentSessionKey || DEFAULT_SESSION_KEY;
+          const persistedSessionKey = currentSessionKey === DEFAULT_SESSION_KEY
+            ? readLastChatSessionKey()
+            : null;
+          let nextSessionKey = persistedSessionKey || currentSessionKey || DEFAULT_SESSION_KEY;
           if (!nextSessionKey.startsWith('agent:')) {
             const canonicalMatch = canonicalBySuffix.get(nextSessionKey);
             if (canonicalMatch) {
@@ -2689,6 +2699,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
               { key: nextSessionKey, displayName: nextSessionKey },
             ]
             : dedupedSessions;
+
+          writeLastChatSessionKey(nextSessionKey);
 
           const discoveredActivity = Object.fromEntries(
             sessionsWithCurrent
@@ -2806,6 +2818,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
   // ── Switch session ──
 
   switchSession: (key: string) => {
+    writeLastChatSessionKey(key);
     if (key === get().currentSessionKey) return;
     // Stop any background polling for the old session before switching.
     // This prevents the poll timer from firing after the switch and loading
@@ -2849,6 +2862,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
     if (currentSessionKey === key) {
       // Switched away from deleted session — pick the first remaining or create new
       const next = remaining[0];
+      const nextSessionKey = next?.key ?? DEFAULT_SESSION_KEY;
+      writeLastChatSessionKey(nextSessionKey);
       set((s) => ({
         sessions: remaining,
         sessionLabels: Object.fromEntries(Object.entries(s.sessionLabels).filter(([k]) => k !== key)),
@@ -2863,8 +2878,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
         pendingFinal: false,
         lastUserMessageAt: null,
         pendingToolImages: [],
-        currentSessionKey: next?.key ?? DEFAULT_SESSION_KEY,
-        currentAgentId: getAgentIdFromSessionKey(next?.key ?? DEFAULT_SESSION_KEY),
+        currentSessionKey: nextSessionKey,
+        currentAgentId: getAgentIdFromSessionKey(nextSessionKey),
       }));
       if (next) {
         get().loadHistory();
@@ -2897,6 +2912,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
     // shows only the local transcript snapshot and loses the live execution UI.
     clearHistoryPoll();
     clearBaselines();
+    writeLastChatSessionKey(newKey);
     set((s) => buildSessionSwitchPatch(s, newKey));
   },
 
@@ -3640,6 +3656,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
     }
 
     if (targetSessionKey !== get().currentSessionKey) {
+      writeLastChatSessionKey(targetSessionKey);
       set((s) => buildSessionSwitchPatch(s, targetSessionKey));
       await get().loadHistory(true);
     }
@@ -3784,6 +3801,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
     const clearSendGenerationIfCurrent = () => {
       if (_activeSendGenerationBySession.get(currentSessionKey) === sendGeneration) {
         _activeSendGenerationBySession.delete(currentSessionKey);
+        _pendingSendRunIdBySession.delete(currentSessionKey);
       }
     };
 
@@ -3817,6 +3835,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
     try {
       const idempotencyKey = crypto.randomUUID();
+      _pendingSendRunIdBySession.set(currentSessionKey, idempotencyKey);
       const hasMedia = attachments && attachments.length > 0;
       if (hasMedia) {
         console.log('[sendMessage] Media paths:', attachments!.map(a => a.stagedPath));
@@ -3838,6 +3857,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       }
 
       let result: ChatSendWithMediaResult;
+      const thinking = get().thinkingLevel?.trim() || undefined;
 
       if (hasMedia) {
         result = await hostApi.chat.sendWithMedia({
@@ -3845,6 +3865,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
           message: trimmed || 'Process the attached file(s).',
           deliver: false,
           idempotencyKey,
+          ...(thinking ? { thinking } : {}),
           media: attachments.map((a) => ({
             filePath: a.stagedPath,
             mimeType: a.mimeType,
@@ -3857,6 +3878,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
           message: trimmed,
           deliver: false,
           idempotencyKey,
+          ...(thinking ? { thinking } : {}),
         });
         result = { success: true, result: rpcResult };
       }
@@ -3881,12 +3903,18 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
         if (sendStillCurrent && canAttachToCurrentSession) {
           set({ activeRunId: returnedRunId });
+          if (_pendingSendRunIdBySession.get(currentSessionKey) === idempotencyKey) {
+            _pendingSendRunIdBySession.delete(currentSessionKey);
+          }
         } else if (sendStillCurrent && latest.currentSessionKey !== currentSessionKey) {
           const cached = _sessionRunStateCache.get(currentSessionKey);
           if (cached?.sending
             && cached.lastUserMessageAt === nowMs
             && (cached.activeRunId == null || cached.activeRunId === returnedRunId)) {
             captureSessionRunState(currentSessionKey, { ...cached, activeRunId: returnedRunId });
+            if (_pendingSendRunIdBySession.get(currentSessionKey) === idempotencyKey) {
+              _pendingSendRunIdBySession.delete(currentSessionKey);
+            }
           }
         } else {
           console.warn('[sendMessage] Ignoring stale chat.send runId', {
@@ -3910,12 +3938,16 @@ export const useChatStore = create<ChatState>((set, get) => ({
   abortRun: async () => {
     clearHistoryPoll();
     clearErrorRecoveryTimer();
-    const { currentSessionKey } = get();
+    const { currentSessionKey, activeRunId } = get();
+    const pendingRunId = _pendingSendRunIdBySession.get(currentSessionKey) ?? null;
+    const runId = activeRunId ?? pendingRunId;
+    _pendingSendRunIdBySession.delete(currentSessionKey);
+    _lastAbortedRunId = runId || '*';
     set({ sending: false, streamingText: '', streamingMessage: null, pendingFinal: false, lastUserMessageAt: null, pendingToolImages: [] });
     set({ streamingTools: [] });
 
     try {
-      await abortChatRunViaHostApi(currentSessionKey);
+      await abortChatRunViaHostApi(currentSessionKey, runId);
     } catch (err) {
       set({ error: String(err) });
     }
@@ -3937,6 +3969,22 @@ export const useChatStore = create<ChatState>((set, get) => ({
       || sessionKeysAreEquivalent(eventSessionKey, currentSessionKey);
     if (eventSessionKey != null && !matchesCurrentSession) {
       return;
+    }
+
+    const matchesAbortedRun = _lastAbortedRunId === '*' || (runId && runId === _lastAbortedRunId);
+    if (matchesAbortedRun) {
+      const messageStopReason = event.message && typeof event.message === 'object'
+        ? getMessageStopReason(event.message as Record<string, unknown>)
+        : null;
+      const isAbortConfirmation = eventState === 'aborted'
+        || eventState === 'cancelled'
+        || eventState === 'canceled'
+        || messageStopReason === 'aborted';
+      if (isAbortConfirmation && runId) {
+        _lastAbortedRunId = runId;
+      } else {
+        return;
+      }
     }
 
     // Only process events for the active run (or if no active run set).

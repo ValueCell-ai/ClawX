@@ -78,6 +78,8 @@ export type ChatRuntimeEvent =
     })
   | (ChatRuntimeEventBase & {
       type: 'approval.updated';
+      approvalId?: string;
+      approvalSlug?: string;
       itemId?: string;
       toolCallId?: string;
       title?: string;
@@ -85,4 +87,9 @@ export type ChatRuntimeEvent =
       phase?: string;
       status?: string;
       message?: string;
+      detail?: string;
+      command?: string;
+      agentId?: string;
+      expiresAtMs?: number;
+      allowedDecisions?: Array<'allow-once' | 'allow-always' | 'deny'>;
     });

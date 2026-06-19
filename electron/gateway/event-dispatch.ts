@@ -1,6 +1,9 @@
 import { GatewayEventType, type JsonRpcNotification } from './protocol';
 import { logger } from '../utils/logger';
-import { normalizeGatewayChatRuntimeEvent } from './chat-runtime-events';
+import {
+  normalizeGatewayChatRuntimeEvent,
+  normalizeGatewayChatRuntimeNotification,
+} from './chat-runtime-events';
 import type {
   GatewayChannelStatusEvent,
   GatewayChatMessageEvent,
@@ -10,6 +13,17 @@ import type {
 type GatewayEventEmitter = {
   emit: (event: string, payload: unknown) => boolean;
 };
+
+function emitNormalizedRuntimeNotification(
+  emitter: GatewayEventEmitter,
+  event: string,
+  payload: unknown,
+): void {
+  const normalized = normalizeGatewayChatRuntimeNotification(event, payload);
+  if (normalized) {
+    emitter.emit('chat:runtime-event', normalized);
+  }
+}
 
 export function dispatchProtocolEvent(
   emitter: GatewayEventEmitter,
@@ -23,6 +37,7 @@ export function dispatchProtocolEvent(
       emitter.emit('chat:message', { message: payload });
       break;
     case 'agent': {
+      emitter.emit('agent:event', payload);
       const normalized = normalizeGatewayChatRuntimeEvent(payload);
       if (normalized) {
         emitter.emit('chat:runtime-event', normalized);
@@ -45,6 +60,7 @@ export function dispatchProtocolEvent(
       emitter.emit('gateway:presence', payload as GatewayRuntimePayload);
       break;
     default:
+      emitNormalizedRuntimeNotification(emitter, event, payload);
       emitter.emit('notification', { method: event, params: payload });
   }
 }
@@ -54,7 +70,9 @@ export function dispatchJsonRpcNotification(
   notification: JsonRpcNotification,
 ): void {
   emitter.emit('notification', notification);
+  emitNormalizedRuntimeNotification(emitter, notification.method, notification.params);
   if (notification.method === 'agent') {
+    emitter.emit('agent:event', notification.params);
     const normalized = normalizeGatewayChatRuntimeEvent(notification.params);
     if (normalized) {
       emitter.emit('chat:runtime-event', normalized);

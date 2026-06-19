@@ -31,6 +31,7 @@ import { isGatewayRestarting } from '@/lib/gateway-status';
 import { rendererExtensionRegistry } from '@/extensions/registry';
 import { useSettingsStore } from '@/stores/settings';
 import { useChatStore } from '@/stores/chat';
+import { toSessionLabel } from '@/stores/chat/session-label-cleanup';
 import { useGatewayStore } from '@/stores/gateway';
 import { useAgentsStore } from '@/stores/agents';
 import { getSessionActivityMs, getSessionBucket, type SessionBucketKey } from './session-buckets';
@@ -163,7 +164,7 @@ export function Sidebar() {
   const isOnChat = useLocation().pathname === '/';
 
   const getSessionLabel = (key: string, displayName?: string, label?: string) =>
-    sessionLabels[key] ?? label ?? displayName ?? key;
+    toSessionLabel(sessionLabels[key] ?? label ?? displayName ?? key) || key;
 
   const openControlUi = async (view?: 'dreams', label = 'OpenClaw Page') => {
     try {
@@ -489,7 +490,8 @@ export function Sidebar() {
                             }}
                             onDoubleClick={() => handleStartRename(s.key, sessionLabel)}
                             className={cn(
-                              'w-full text-left rounded-lg px-2.5 py-1.5 text-meta transition-colors pr-16',
+                              'w-full text-left rounded-lg px-2.5 py-1.5 pr-2.5 text-meta transition-colors',
+                              'group-hover:pr-16 group-focus-within:pr-16',
                               'hover:bg-black/5 dark:hover:bg-white/5',
                               isOnChat && currentSessionKey === s.key
                                 ? 'bg-black/5 dark:bg-white/10 text-foreground font-medium'
@@ -505,7 +507,7 @@ export function Sidebar() {
                           </button>
                           <div className={cn(
                             'absolute right-1 flex items-center gap-0.5 transition-opacity',
-                            'opacity-0 group-hover:opacity-100',
+                            'pointer-events-none opacity-0 group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100',
                           )}>
                             <button
                               aria-label={t('common:sidebar.renameSession')}

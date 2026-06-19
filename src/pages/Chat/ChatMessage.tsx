@@ -6,6 +6,7 @@
  * surfaced via ExecutionGraphCard, not inside message bubbles.
  */
 import { useState, useCallback, useEffect, memo } from 'react';
+import type { ReactNode } from 'react';
 import { Sparkles, Copy, Check, Wrench, FileText, Film, Music, FileArchive, File, X, FolderOpen, ZoomIn, Loader2, CheckCircle2, AlertCircle } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import ReactMarkdown from 'react-markdown';
@@ -43,6 +44,11 @@ interface ChatMessageProps {
     durationMs?: number;
     summary?: string;
   }>;
+  assistantBeforeContent?: ReactNode;
+  assistantAfterContent?: ReactNode;
+  hideAssistantAvatar?: boolean;
+  assistantCopyText?: string;
+  suppressAssistantActions?: boolean;
   /**
    * Optional callback invoked when a non-image file card is clicked.
    * When provided, the file opens in the in-app preview panel instead of
@@ -238,6 +244,11 @@ export const ChatMessage = memo(function ChatMessage({
   suppressAssistantText = false,
   isStreaming = false,
   streamingTools = [],
+  assistantBeforeContent,
+  assistantAfterContent,
+  hideAssistantAvatar = false,
+  assistantCopyText,
+  suppressAssistantActions = false,
   onOpenFile,
 }: ChatMessageProps) {
   const isUser = message.role === 'user';
@@ -329,14 +340,25 @@ export const ChatMessage = memo(function ChatMessage({
     ? processVisibleAttachments
     : existingDerivedAttachedFiles;
   const imageCopyTarget = resolvePrimaryImageCopyTarget(resolvableContentImages, attachedFiles);
-  const showAssistantHoverBar = !isUser && (hasText || imageCopyTarget != null);
+  const copyText = assistantCopyText ?? text;
+  const showAssistantHoverBar = !isUser
+    && !suppressAssistantActions
+    && (copyText.trim().length > 0 || imageCopyTarget != null);
+  const hasAssistantInjectedContent = !isUser && (assistantBeforeContent != null || assistantAfterContent != null);
   const [lightboxImg, setLightboxImg] = useState<{ src: string; fileName: string; filePath?: string; base64?: string; mimeType?: string } | null>(null);
 
   // Never render tool result messages in chat UI
   if (isToolResult) return null;
 
   const hasStreamingToolStatus = isStreaming && streamingTools.length > 0;
-  if (!hasText && resolvableContentImages.length === 0 && visibleTools.length === 0 && attachedFiles.length === 0 && !hasStreamingToolStatus) return null;
+  if (
+    !hasText
+    && resolvableContentImages.length === 0
+    && visibleTools.length === 0
+    && attachedFiles.length === 0
+    && !hasStreamingToolStatus
+    && !hasAssistantInjectedContent
+  ) return null;
 
   return (
     <div
@@ -351,8 +373,8 @@ export const ChatMessage = memo(function ChatMessage({
           avatar inside is centered within that slot and intentionally
           overflows ±4px above/below the line, which mirrors how chat avatars
           sit alongside a single line of text. */}
-      {!isUser && (
-        <div className="flex h-6 shrink-0 items-center">
+      {!isUser && !hideAssistantAvatar && (
+        <div className="flex h-6 shrink-0 items-center" data-testid="chat-assistant-avatar">
           <div className="flex h-8 w-8 items-center justify-center rounded-full bg-black/5 dark:bg-white/5 text-foreground">
             <Sparkles className="h-4 w-4" />
           </div>
@@ -362,13 +384,16 @@ export const ChatMessage = memo(function ChatMessage({
       {/* Content */}
       <div
         className={cn(
-          'flex flex-col w-full min-w-0 max-w-[80%] space-y-2',
+          'flex flex-col w-full min-w-0 space-y-2',
+          hideAssistantAvatar ? 'max-w-full' : 'max-w-[80%]',
           isUser ? 'items-end' : 'items-start',
         )}
       >
         {isStreaming && !isUser && streamingTools.length > 0 && (
           <ToolStatusBar tools={streamingTools} />
         )}
+
+        {!isUser && assistantBeforeContent}
 
         {/* Images — rendered ABOVE text bubble for user messages */}
         {/* Images from content blocks (Gateway session data / channel push photos) */}
@@ -473,6 +498,8 @@ export const ChatMessage = memo(function ChatMessage({
           </div>
         )}
 
+        {!isUser && assistantAfterContent}
+
         {/* Hover row for user messages — timestamp only */}
         {isUser && message.timestamp && (
           <span className="text-xs text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity duration-200 select-none">
@@ -482,7 +509,7 @@ export const ChatMessage = memo(function ChatMessage({
 
         {/* Hover row for assistant messages */}
         {showAssistantHoverBar && (
-          <AssistantHoverBar text={text} timestamp={message.timestamp} imageCopyTarget={imageCopyTarget} />
+          <AssistantHoverBar text={copyText} timestamp={message.timestamp} imageCopyTarget={imageCopyTarget} />
         )}
       </div>
 
@@ -616,6 +643,7 @@ function AssistantHoverBar({
         size="icon"
         className="h-6 w-6"
         onClick={copyContent}
+        data-testid="chat-assistant-copy"
       >
         {copied ? <Check className="h-3 w-3 text-green-500" /> : <Copy className="h-3 w-3" />}
       </Button>
@@ -631,7 +659,10 @@ function UserMessageBubble({
   text: string;
 }) {
   return (
-    <div className="relative rounded-2xl px-4 py-3 bg-brand text-white shadow-sm">
+    <div
+      data-testid="chat-user-message-bubble"
+      className="relative rounded-2xl bg-primary px-4 py-3 text-primary-foreground shadow-sm"
+    >
       <p className="whitespace-pre-wrap break-words text-sm">{text}</p>
     </div>
   );
@@ -639,7 +670,7 @@ function UserMessageBubble({
 
 // ── Assistant Markdown ──────────────────────────────────────────
 
-function AssistantMarkdown({
+export function AssistantMarkdown({
   text,
   isStreaming,
 }: {

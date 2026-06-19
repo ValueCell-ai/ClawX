@@ -81,6 +81,7 @@ vi.mock('@electron/utils/logger', () => ({
 }));
 
 import {
+  syncAllProviderAuthToRuntime,
   syncAgentModelOverrideToRuntime,
   syncDefaultProviderToRuntime,
   syncDeletedProviderApiKeyToRuntime,
@@ -144,6 +145,42 @@ describe('provider-runtime-sync refresh strategy', () => {
 
     expect(gateway.debouncedReload).toHaveBeenCalledTimes(1);
     expect(gateway.debouncedRestart).not.toHaveBeenCalled();
+  });
+
+  it('syncs provider config during startup auth sync so custom model metadata can self-heal', async () => {
+    mocks.listProviderAccounts.mockResolvedValue([
+      {
+        id: 'customec',
+        vendorId: 'custom',
+        authMode: 'api_key',
+        label: 'BigModel GLM',
+        baseUrl: 'https://open.bigmodel.cn/api/coding/paas/v4',
+        apiProtocol: 'openai-completions',
+        model: 'glm-5.2',
+        enabled: true,
+        isDefault: true,
+        createdAt: '2026-03-14T00:00:00.000Z',
+        updatedAt: '2026-03-14T00:00:00.000Z',
+      },
+    ]);
+    mocks.getProviderSecret.mockResolvedValue({
+      type: 'api_key',
+      accountId: 'customec',
+      apiKey: 'sk-glm',
+    });
+    mocks.getProviderConfig.mockReturnValue(undefined);
+
+    await syncAllProviderAuthToRuntime();
+
+    expect(mocks.syncProviderConfigToOpenClaw).toHaveBeenCalledWith(
+      'custom-customec',
+      'glm-5.2',
+      expect.objectContaining({
+        baseUrl: 'https://open.bigmodel.cn/api/coding/paas/v4',
+        api: 'openai-completions',
+      }),
+    );
+    expect(mocks.saveProviderKeyToOpenClaw).toHaveBeenCalledWith('custom-customec', 'sk-glm');
   });
 
   it('uses debouncedRestart after deleting provider config', async () => {

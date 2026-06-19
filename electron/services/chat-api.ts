@@ -15,6 +15,7 @@ type ChatSendWithMediaPayload = {
   message?: unknown;
   deliver?: unknown;
   idempotencyKey?: unknown;
+  thinking?: unknown;
   media?: unknown;
 };
 
@@ -58,15 +59,12 @@ export function createChatApi({ gatewayManager }: { gatewayManager: GatewayManag
           const fsP = await import('node:fs/promises');
           for (const item of media) {
             const exists = await fsP.access(item.filePath).then(() => true, () => false);
+            const isVision = VISION_MIME_TYPES.has(item.mimeType);
             logger.info(
-              `[chat:sendWithMedia] Processing file: ${item.fileName} (${item.mimeType}), path: ${item.filePath}, exists: ${exists}, isVision: ${VISION_MIME_TYPES.has(item.mimeType)}`,
+              `[chat:sendWithMedia] Processing file: ${item.fileName} (${item.mimeType}), path: ${item.filePath}, exists: ${exists}, isVision: ${isVision}`,
             );
 
-            fileReferences.push(
-              `[media attached: ${item.filePath} (${item.mimeType}) | ${item.filePath}]`,
-            );
-
-            if (VISION_MIME_TYPES.has(item.mimeType)) {
+            if (isVision) {
               const fileBuffer = await fsP.readFile(item.filePath);
               const base64Data = fileBuffer.toString('base64');
               logger.info(`[chat:sendWithMedia] Read ${fileBuffer.length} bytes, base64 length: ${base64Data.length}`);
@@ -75,6 +73,10 @@ export function createChatApi({ gatewayManager }: { gatewayManager: GatewayManag
                 mimeType: item.mimeType,
                 fileName: item.fileName,
               });
+            } else {
+              fileReferences.push(
+                `[media attached: ${item.filePath} (${item.mimeType}) | ${item.filePath}]`,
+              );
             }
           }
         }
@@ -90,6 +92,9 @@ export function createChatApi({ gatewayManager }: { gatewayManager: GatewayManag
           deliver: body.deliver ?? false,
           idempotencyKey,
         };
+        if (typeof body.thinking === 'string' && body.thinking.trim()) {
+          rpcParams.thinking = body.thinking.trim();
+        }
         if (imageAttachments.length > 0) {
           rpcParams.attachments = imageAttachments;
         }

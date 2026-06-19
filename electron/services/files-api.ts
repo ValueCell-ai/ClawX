@@ -107,7 +107,9 @@ function mimeToExt(mimeType: string): string {
 async function generateImagePreview(filePath: string, mimeType: string): Promise<string | null> {
   try {
     const img = nativeImage.createFromPath(filePath);
-    if (img.isEmpty()) return null;
+    if (img.isEmpty()) {
+      return mimeType.startsWith('image/') ? readImageDataUrl(filePath, mimeType) : null;
+    }
     const size = img.getSize();
     const maxDim = 512;
     if (size.width > maxDim || size.height > maxDim) {
@@ -116,12 +118,30 @@ async function generateImagePreview(filePath: string, mimeType: string): Promise
         : img.resize({ height: maxDim });
       return `data:image/png;base64,${resized.toPNG().toString('base64')}`;
     }
-    const { readFile } = await import('node:fs/promises');
-    const buf = await readFile(filePath);
-    return `data:${mimeType};base64,${buf.toString('base64')}`;
+    return readImageDataUrl(filePath, mimeType);
   } catch {
     return null;
   }
+}
+
+async function readImageDataUrl(filePath: string, mimeType: string): Promise<string> {
+  const { readFile } = await import('node:fs/promises');
+  const buf = await readFile(filePath);
+  return `data:${mimeType};base64,${buf.toString('base64')}`;
+}
+
+function sanitizeStagedFileName(fileName: string, ext: string): string {
+  const fallback = ext ? `file${ext}` : 'file';
+  const safeBase = basename(fileName || fallback)
+    .replace(/[^\p{L}\p{N}._-]+/gu, '_')
+    .replace(/^_+|_+$/g, '');
+  const safeName = safeBase || fallback;
+  if (!ext) return safeName;
+  return safeName.toLowerCase().endsWith(ext.toLowerCase()) ? safeName : `${safeName}${ext}`;
+}
+
+function stagedFileName(id: string, fileName: string, ext: string): string {
+  return `${id}-${sanitizeStagedFileName(fileName, ext)}`;
 }
 
 function requirePath(payload: unknown): string {
@@ -235,7 +255,7 @@ export function createFilesApi(): CompleteHostServiceRegistry['files'] {
         }
 
         const ext = extname(filePath);
-        const stagedPath = join(OUTBOUND_DIR, `${id}${ext}`);
+        const stagedPath = join(OUTBOUND_DIR, stagedFileName(id, fileName, ext));
         await fsP.copyFile(filePath, stagedPath);
         const s = await fsP.stat(stagedPath);
         const mimeType = getMimeType(ext);
@@ -257,7 +277,7 @@ export function createFilesApi(): CompleteHostServiceRegistry['files'] {
       const id = crypto.randomUUID();
       const payloadMimeType = typeof body.mimeType === 'string' ? body.mimeType : '';
       const ext = extname(body.fileName) || mimeToExt(payloadMimeType);
-      const stagedPath = join(OUTBOUND_DIR, `${id}${ext}`);
+      const stagedPath = join(OUTBOUND_DIR, stagedFileName(id, body.fileName, ext));
       const buffer = Buffer.from(body.base64, 'base64');
       await fsP.writeFile(stagedPath, buffer);
 

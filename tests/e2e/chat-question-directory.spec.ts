@@ -153,4 +153,78 @@ test.describe('ClawX chat question directory', () => {
       await closeElectronApp(app);
     }
   });
+
+  test('strips media attachment markers from question directory titles', async ({ launchElectronApp }) => {
+    const app = await launchElectronApp({ skipSetup: true });
+    const messages = [
+      {
+        role: 'user',
+        content: 'Describe this image\n\n[media attached: /tmp/shot.png (image/png) | /tmp/shot.png]',
+        timestamp: 4000,
+      },
+      { role: 'assistant', content: 'Image described.', timestamp: 4001 },
+      { role: 'user', content: 'Continue with the summary.', timestamp: 4002 },
+      { role: 'assistant', content: 'Summary ready.', timestamp: 4003 },
+    ];
+
+    try {
+      await installQuestionDirectoryMocks(app, messages);
+
+      const page = await getStableWindow(app);
+      await page.setViewportSize({ width: 1600, height: 900 });
+      try {
+        await page.reload();
+      } catch (error) {
+        if (!String(error).includes('ERR_FILE_NOT_FOUND')) {
+          throw error;
+        }
+      }
+
+      await expect(page.getByTestId('main-layout')).toBeVisible();
+      await page.getByTestId('chat-question-directory-toggle').click();
+
+      const directory = page.getByTestId('chat-question-directory');
+      await expect(directory).toBeVisible({ timeout: 30_000 });
+      await expect(directory).toContainText('Describe this image');
+      await expect(directory).not.toContainText('media attached');
+      await expect(directory).not.toContainText('/tmp/shot.png');
+    } finally {
+      await closeElectronApp(app);
+    }
+  });
+
+  test('keeps the question directory as a compact top strip in narrow windows', async ({ launchElectronApp }) => {
+    const app = await launchElectronApp({ skipSetup: true });
+
+    try {
+      await installQuestionDirectoryMocks(app, seededHistory);
+
+      const page = await getStableWindow(app);
+      await page.setViewportSize({ width: 760, height: 760 });
+      try {
+        await page.reload();
+      } catch (error) {
+        if (!String(error).includes('ERR_FILE_NOT_FOUND')) {
+          throw error;
+        }
+      }
+
+      await expect(page.getByTestId('main-layout')).toBeVisible();
+      await page.getByTestId('chat-question-directory-toggle').click();
+
+      const directory = page.getByTestId('chat-question-directory');
+      const messageList = page.getByTestId('chat-scroll-container');
+      await expect(directory).toBeVisible({ timeout: 30_000 });
+
+      const directoryBox = await directory.boundingBox();
+      const messageListBox = await messageList.boundingBox();
+      expect(directoryBox).not.toBeNull();
+      expect(messageListBox).not.toBeNull();
+      expect(directoryBox!.height).toBeLessThan(190);
+      expect(directoryBox!.width).toBeLessThanOrEqual(messageListBox!.width + 2);
+      expect(directoryBox!.y).toBeLessThan(messageListBox!.y);
+    } finally {
+      await closeElectronApp(app);
+    }
+  });
 });

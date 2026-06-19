@@ -474,6 +474,10 @@ async function initialize(): Promise<void> {
     sendMainWindowEvent('chat:runtime-event', data);
   });
 
+  gatewayManager.on('agent:event', (data) => {
+    sendMainWindowEvent('gateway:agent-event', data);
+  });
+
   gatewayManager.on('channel:status', (data) => {
     sendMainWindowEvent('gateway:channel-status', data);
   });

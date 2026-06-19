@@ -1,5 +1,11 @@
 export type ModelInputModality = 'text' | 'image';
 
+export interface InferredCustomModelMetadata {
+  input: ModelInputModality[];
+  reasoning?: boolean;
+  compat?: Record<string, unknown>;
+}
+
 /**
  * Mirrors OpenClaw 2026.5.20 custom-provider onboarding inference.
  * Unknown models use the same conservative text-only fallback as non-interactive onboarding.
@@ -16,4 +22,39 @@ export function inferCustomModelInputModalities(modelId: string): ModelInputModa
   );
 
   return supportsImageInput ? ['text', 'image'] : ['text'];
+}
+
+function isZaiCompatibleEndpoint(baseUrl?: string): boolean {
+  if (!baseUrl) return false;
+  try {
+    const hostname = new URL(baseUrl).hostname.toLowerCase();
+    return hostname === 'api.z.ai' || hostname.endsWith('.api.z.ai') || hostname === 'open.bigmodel.cn';
+  } catch {
+    const normalized = baseUrl.toLowerCase();
+    return normalized.includes('api.z.ai') || normalized.includes('open.bigmodel.cn');
+  }
+}
+
+function isReasoningGlmModel(modelId: string): boolean {
+  const normalized = modelId.trim().toLowerCase();
+  return /(?:^|[/_-])glm-(?:5(?:[._-]\d+)?|5v(?:[._-]\w+)?|5-turbo|5v-turbo|4\.7|4\.7-flashx?|4\.6v?|4\.5(?:v|-air|-flash)?)(?:$|[/_-])/.test(normalized);
+}
+
+export function inferCustomModelMetadata(
+  modelId: string,
+  options: { baseUrl?: string } = {},
+): InferredCustomModelMetadata {
+  const metadata: InferredCustomModelMetadata = {
+    input: inferCustomModelInputModalities(modelId),
+  };
+
+  if (isZaiCompatibleEndpoint(options.baseUrl) && isReasoningGlmModel(modelId)) {
+    metadata.reasoning = true;
+    metadata.compat = {
+      thinkingFormat: 'zai',
+      supportsReasoningEffort: false,
+    };
+  }
+
+  return metadata;
 }

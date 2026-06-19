@@ -29,6 +29,39 @@
     "runError": {
         "title": "模型调用失败"
     },
+    "runStatus": {
+        "idle": "空闲",
+        "running": "运行中",
+        "done": "已完成",
+        "interrupted": "已中断",
+        "error": "错误"
+    },
+    "toolCard": {
+        "show": "显示",
+        "hide": "隐藏",
+        "error": "错误",
+        "calling": "调用 {{tool}}",
+        "preview": "预览"
+    },
+    "thinkingBlock": {
+        "title": "思考中",
+        "completedTitle": "思考过程"
+    },
+    "commandCard": {
+        "title": "命令",
+        "exitCode": "退出码 {{code}}",
+        "durationMs": "{{count}} 毫秒",
+        "durationSeconds": "{{value}} 秒"
+    },
+    "patchCard": {
+        "title": "已应用补丁",
+        "files_one": "{{count}} 个文件",
+        "files_few": "{{count}} 个文件",
+        "files_many": "{{count}} 个文件",
+        "files_other": "{{count}} 个文件",
+        "modified": "修改 {{count}}",
+        "moreFiles": "另有 {{count}} 个"
+    },
     "artifactPanel": {
         "tabs": {
             "changes": "变更",
@@ -168,8 +201,37 @@
         "previewLoading": "正在载入图片预览…",
         "previewUnavailable": "图片预览暂时不可用"
     },
+    "runtime": {
+        "compaction": {
+            "active": "正在压缩上下文",
+            "retrying": "压缩后重试中",
+            "complete": "上下文已压缩",
+            "error": "上下文压缩失败"
+        },
+        "fallback": {
+            "active": "正在使用备用模型",
+            "cleared": "备用模型状态已清除",
+            "error": "备用模型失败"
+        }
+    },
+    "approval": {
+        "title": "需要审批",
+        "status": {
+            "pending": "等待审批",
+            "unavailable": "审批不可用",
+            "approved": "已批准",
+            "denied": "已拒绝",
+            "failed": "审批失败"
+        },
+        "allowOnce": "允许一次",
+        "allowAlways": "本会话允许",
+        "deny": "拒绝"
+    },
     "composer": {
         "attachFiles": "添加文件",
+        "runningPulse": "AI 回复中",
+        "slashCommands": "斜杠命令",
+        "slashSkillsHeading": "技能",
         "pickSkill": "选择技能",
         "skillButton": "技能",
         "skillPickerTitle": "{{agent}} 的快捷技能",
@@ -187,7 +249,10 @@
         "send": "发送",
         "stop": "停止",
         "gatewayConnected": "已连接",
-        "gatewayStatus": "gateway {{state}} | port: {{port}} {{pid}}",
+        "gatewayConnectedState": "网关已连接",
+        "gatewayStartingState": "网关启动中",
+        "gatewayPid": " | PID: {{pid}}",
+        "gatewayStatus": "{{state}} | 端口: {{port}}{{pid}}",
         "retryFailedAttachments": "重试失败的附件",
         "folderDropUnsupported": "无法添加此文件夹。请重新拖入，或在消息中粘贴文件夹路径。",
         "folderAttachment": "文件夹",

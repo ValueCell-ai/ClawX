@@ -35,7 +35,7 @@ import {
   assertValidApiProtocol,
   normalizeOpenClawApiProtocol,
 } from '../shared/providers/types';
-import { inferCustomModelInputModalities } from '../shared/providers/model-capabilities';
+import { inferCustomModelMetadata } from '../shared/providers/model-capabilities';
 import {
   CLAWX_OPENAI_IMAGE_DEFAULT_MODEL,
   CLAWX_OPENAI_IMAGE_PROVIDER_KEY,
@@ -1552,17 +1552,50 @@ function mergeProviderModels(
   ...groups: Array<Array<Record<string, unknown>>>
 ): Array<Record<string, unknown>> {
   const merged: Array<Record<string, unknown>> = [];
-  const seen = new Set<string>();
+  const seen = new Map<string, Record<string, unknown>>();
 
   for (const group of groups) {
     for (const item of group) {
       const id = typeof item?.id === 'string' ? item.id : '';
-      if (!id || seen.has(id)) continue;
-      seen.add(id);
+      if (!id) continue;
+      const existing = seen.get(id);
+      if (existing) {
+        mergeMissingProviderModelMetadata(existing, item);
+        continue;
+      }
+      seen.set(id, item);
       merged.push(item);
     }
   }
   return merged;
+}
+
+function mergeMissingProviderModelMetadata(
+  target: Record<string, unknown>,
+  source: Record<string, unknown>,
+): void {
+  for (const [key, value] of Object.entries(source)) {
+    if (value === undefined) continue;
+    const existing = target[key];
+    if (existing === undefined) {
+      target[key] = value;
+      continue;
+    }
+    if (
+      key === 'compat'
+      && existing
+      && typeof existing === 'object'
+      && !Array.isArray(existing)
+      && value
+      && typeof value === 'object'
+      && !Array.isArray(value)
+    ) {
+      target[key] = {
+        ...(value as Record<string, unknown>),
+        ...(existing as Record<string, unknown>),
+      };
+    }
+  }
 }
 
 /**
@@ -1828,7 +1861,7 @@ function upsertOpenClawProviderEntry(
     id,
     name: id,
     ...(options.inferRuntimeModelInputs
-      ? { input: inferCustomModelInputModalities(id) }
+      ? inferCustomModelMetadata(id, { baseUrl: options.baseUrl })
       : {}),
   }));
   let mergedModels = mergeProviderModels(registryModels, existingModels, runtimeModels);

@@ -147,4 +147,34 @@ describe('Chat question directory', () => {
       chatState.messages = originalMessages;
     }
   });
+
+  it('strips OpenClaw media attachment markers from directory titles', async () => {
+    const originalMessages = chatState.messages;
+    chatState.messages = [
+      {
+        role: 'user',
+        content: '描述这张图\n\n[media attached: /tmp/shot.png (image/png) | /tmp/shot.png]',
+      },
+      { role: 'assistant', content: 'reply 1' },
+      { role: 'user', content: '继续' },
+      { role: 'assistant', content: 'reply 2' },
+    ];
+
+    try {
+      render(
+        <TooltipProvider>
+          <Chat />
+        </TooltipProvider>,
+      );
+
+      fireEvent.click(await screen.findByTestId('chat-question-directory-toggle'));
+
+      const directory = await screen.findByTestId('chat-question-directory');
+      expect(directory).toHaveTextContent('描述这张图');
+      expect(directory).not.toHaveTextContent('media attached');
+      expect(directory).not.toHaveTextContent('/tmp/shot.png');
+    } finally {
+      chatState.messages = originalMessages;
+    }
+  });
 });

@@ -5,6 +5,13 @@
  */
 import type { RawMessage, ContentBlock } from '@/stores/chat';
 
+export function chatMessageAnchorId(messageId: string | number | null | undefined): string | undefined {
+  if (messageId == null) return undefined;
+  const rawId = String(messageId).trim();
+  if (!rawId) return undefined;
+  return `chat-message-anchor-${encodeURIComponent(rawId)}`;
+}
+
 /**
  * Strip OpenClaw's inbound-image vision envelope from user message text.
  * The runtime expands uploaded images into:
@@ -39,7 +46,7 @@ function cleanUserText(text: string): string {
   return stripInboundMediaVisionEnvelope(
     text
     // Remove [media attached: path (mime) | path] references
-    .replace(/\s*\[media attached:[^\]]*\]/g, '')
+    .replace(/\s*\[media attached:[^\]]*\]/gi, '')
     // Remove [message_id: uuid]
     .replace(/\s*\[message_id:\s*[^\]]+\]/g, '')
     // Remove Gateway-injected sender metadata block.  Some transcripts use
@@ -58,6 +65,22 @@ function cleanUserText(text: string): string {
     .replace(/^\[(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun)\s+\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}\s+[^\]]+\]\s*/i, '')
     .trim(),
   );
+}
+
+function mimeFromPath(filePath: string): string {
+  const lower = filePath.toLowerCase();
+  if (lower.endsWith('.png')) return 'image/png';
+  if (lower.endsWith('.jpg') || lower.endsWith('.jpeg')) return 'image/jpeg';
+  if (lower.endsWith('.gif')) return 'image/gif';
+  if (lower.endsWith('.webp')) return 'image/webp';
+  if (lower.endsWith('.bmp')) return 'image/bmp';
+  if (lower.endsWith('.avif')) return 'image/avif';
+  if (lower.endsWith('.svg')) return 'image/svg+xml';
+  if (lower.endsWith('.pdf')) return 'application/pdf';
+  if (lower.endsWith('.md') || lower.endsWith('.markdown')) return 'text/markdown';
+  if (lower.endsWith('.txt')) return 'text/plain';
+  if (lower.endsWith('.csv')) return 'text/csv';
+  return 'application/octet-stream';
 }
 
 /**
@@ -441,10 +464,13 @@ export function extractMediaRefs(message: RawMessage | unknown): Array<{ filePat
   }
 
   const refs: Array<{ filePath: string; mimeType: string }> = [];
-  const regex = /\[media attached:\s*([^\s(]+)\s*\(([^)]+)\)\s*\|[^\]]*\]/g;
+  const regex = /\[media attached:\s*([^\]|()]*?)(?:\s*\(([^)]+)\))?(?:\s*\|\s*([^\]]+))?\]/gi;
   let match;
   while ((match = regex.exec(text)) !== null) {
-    refs.push({ filePath: match[1], mimeType: match[2] });
+    const filePath = (match[3] || match[1] || '').trim();
+    const mimeType = (match[2] || mimeFromPath(filePath)).trim();
+    if (!filePath || /^media:\/\//i.test(filePath)) continue;
+    refs.push({ filePath, mimeType });
   }
   return refs;
 }
@@ -569,10 +595,20 @@ export function formatTimestamp(timestamp: unknown): string {
   const date = new Date(ms);
   const now = new Date();
   const diffMs = now.getTime() - date.getTime();
+  const locale = globalThis.navigator?.languages?.[0] || globalThis.navigator?.language || undefined;
+  const isChinese = typeof locale === 'string' && /^zh\b/i.test(locale);
+  const formatRelative = (value: number, unit: Intl.RelativeTimeFormatUnit): string => {
+    if (isChinese && typeof Intl.RelativeTimeFormat === 'function') {
+      return new Intl.RelativeTimeFormat(locale, { numeric: 'auto' }).format(-value, unit);
+    }
+    if (unit === 'minute') return `${value}m ago`;
+    if (unit === 'hour') return `${value}h ago`;
+    return `${value}d ago`;
+  };
 
-  if (diffMs < 60000) return 'just now';
-  if (diffMs < 3600000) return `${Math.floor(diffMs / 60000)}m ago`;
-  if (diffMs < 86400000) return `${Math.floor(diffMs / 3600000)}h ago`;
+  if (diffMs < 60000) return isChinese ? '刚刚' : 'just now';
+  if (diffMs < 3600000) return formatRelative(Math.floor(diffMs / 60000), 'minute');
+  if (diffMs < 86400000) return formatRelative(Math.floor(diffMs / 3600000), 'hour');
 
-  return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  return date.toLocaleTimeString(locale ? [locale] : [], { hour: '2-digit', minute: '2-digit' });
 }

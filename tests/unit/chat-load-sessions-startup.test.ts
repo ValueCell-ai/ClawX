@@ -34,10 +34,12 @@ describe('chat store loadSessions startup selection', () => {
     vi.resetModules();
     gatewayRpcMock.mockReset();
     runtimeStatus.connectedAt = Date.now();
+    window.localStorage.clear();
   });
 
   afterEach(() => {
     vi.clearAllMocks();
+    window.localStorage.clear();
   });
 
   it('opens the latest non-cron session instead of a cron heartbeat session', async () => {
@@ -152,5 +154,46 @@ describe('chat store loadSessions startup selection', () => {
 
     expect(useChatStore.getState().currentSessionKey).toBe('agent:main:main');
     expect(useChatStore.getState().sessions.some((session) => session.key === 'agent:main:main')).toBe(true);
+  });
+
+  it('restores the last selected session on renderer reload before falling back to newest history', async () => {
+    window.localStorage.setItem('clawx.chat.lastSessionKey', 'agent:main:session-persisted');
+
+    gatewayRpcMock.mockImplementation(async (method: string) => {
+      if (method === 'sessions.list') {
+        return {
+          sessions: [
+            {
+              key: 'agent:main:session-newer',
+              displayName: 'Newer chat',
+              updatedAt: 9_000,
+            },
+            {
+              key: 'agent:main:session-persisted',
+              displayName: 'Persisted chat',
+              updatedAt: 5_000,
+            },
+          ],
+        };
+      }
+      if (method === 'chat.history') {
+        return { messages: [] };
+      }
+      throw new Error(`Unexpected gateway RPC: ${method}`);
+    });
+
+    const { useChatStore } = await import('@/stores/chat');
+    useChatStore.setState({
+      currentSessionKey: 'agent:main:main',
+      currentAgentId: 'main',
+      sessions: [],
+      messages: [],
+      sessionLabels: {},
+      sessionLastActivity: {},
+    });
+
+    await useChatStore.getState().loadSessions();
+
+    expect(useChatStore.getState().currentSessionKey).toBe('agent:main:session-persisted');
   });
 });

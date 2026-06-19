@@ -1,5 +1,8 @@
 import { describe, expect, it, vi } from 'vitest';
-import { dispatchProtocolEvent } from '@electron/gateway/event-dispatch';
+import {
+  dispatchJsonRpcNotification,
+  dispatchProtocolEvent,
+} from '@electron/gateway/event-dispatch';
 
 function createMockEmitter() {
   const emitted: Array<{ event: string; payload: unknown }> = [];
@@ -132,6 +135,61 @@ describe('dispatchProtocolEvent', () => {
       method: 'agent',
       params: expect.objectContaining({ runId: 'run-1', stream: 'tool' }),
     });
+  });
+
+  it('dispatches native approval protocol events as chat runtime events', () => {
+    const emitter = createMockEmitter();
+    dispatchProtocolEvent(emitter, 'exec.approval.requested', {
+      id: 'approval-native-1',
+      createdAtMs: 1_782_200_000_000,
+      expiresAtMs: 1_782_200_060_000,
+      request: {
+        command: 'printf APPROVAL_ALLOW_OK',
+        agentId: 'main',
+        sessionKey: 'agent:main:main',
+      },
+    });
+
+    expect(emitter.emit).toHaveBeenCalledWith('chat:runtime-event', expect.objectContaining({
+      type: 'approval.updated',
+      runId: 'approval:approval-native-1',
+      approvalId: 'approval-native-1',
+      kind: 'exec',
+      phase: 'requested',
+      status: 'pending',
+      command: 'printf APPROVAL_ALLOW_OK',
+      sessionKey: 'agent:main:main',
+      agentId: 'main',
+    }));
+    expect(emitter.emit).toHaveBeenCalledWith('notification', {
+      method: 'exec.approval.requested',
+      params: expect.objectContaining({ id: 'approval-native-1' }),
+    });
+  });
+
+  it('dispatches native approval JSON-RPC notifications as chat runtime events', () => {
+    const emitter = createMockEmitter();
+    dispatchJsonRpcNotification(emitter, {
+      jsonrpc: '2.0',
+      method: 'exec.approval.resolved',
+      params: {
+        id: 'approval-native-1',
+        decision: 'allow-once',
+        ts: 1_782_200_001_000,
+        request: {
+          command: 'printf APPROVAL_ALLOW_OK',
+          sessionKey: 'agent:main:main',
+        },
+      },
+    });
+
+    expect(emitter.emit).toHaveBeenCalledWith('chat:runtime-event', expect.objectContaining({
+      type: 'approval.updated',
+      approvalId: 'approval-native-1',
+      phase: 'resolved',
+      status: 'approved',
+      sessionKey: 'agent:main:main',
+    }));
   });
 
   it('suppresses tick events', () => {

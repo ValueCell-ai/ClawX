@@ -1,3 +1,5 @@
+// @vitest-environment node
+
 import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -914,7 +916,9 @@ describe('host services', () => {
 
   it('sends staged media through the typed chat service with gateway attachments', async () => {
     const mediaPath = join(tmpdir(), `clawx-host-services-media-${Date.now()}.png`);
+    const textPath = join(tmpdir(), `clawx-host-services-note-${Date.now()}.txt`);
     writeFileSync(mediaPath, 'fake-image-bytes');
+    writeFileSync(textPath, 'fake-text-bytes');
     const gatewayManager = {
       rpc: vi.fn().mockResolvedValue({ runId: 'run-123' }),
     };
@@ -924,16 +928,21 @@ describe('host services', () => {
       sessionKey: 'agent:main:main',
       message: 'inspect this',
       idempotencyKey: 'idem-123',
-      media: [{ filePath: mediaPath, mimeType: 'image/png', fileName: 'image.png' }],
+      thinking: 'high',
+      media: [
+        { filePath: mediaPath, mimeType: 'image/png', fileName: 'image.png' },
+        { filePath: textPath, mimeType: 'text/plain', fileName: 'note.txt' },
+      ],
     })).resolves.toEqual({ success: true, result: { runId: 'run-123' } });
 
     expect(gatewayManager.rpc).toHaveBeenCalledWith(
       'chat.send',
       {
         sessionKey: 'agent:main:main',
-        message: `inspect this\n\n[media attached: ${mediaPath} (image/png) | ${mediaPath}]`,
+        message: `inspect this\n\n[media attached: ${textPath} (text/plain) | ${textPath}]`,
         deliver: false,
         idempotencyKey: 'idem-123',
+        thinking: 'high',
         attachments: [{
           content: Buffer.from('fake-image-bytes').toString('base64'),
           mimeType: 'image/png',

@@ -55,5 +55,17 @@
     "documentation": "Документация",
     "reportIssue": "Сообщить о проблеме",
     "openClawDocumentation": "Документация OpenClaw"
+  },
+  "tray": {
+    "tooltip": "{{appName}} - AI-ассистент",
+    "statusTooltip": "{{appName}} - {{status}}",
+    "show": "Показать {{appName}}",
+    "gatewayStatus": "Статус шлюза",
+    "running": "Запущен",
+    "quickActions": "Быстрые действия",
+    "openChat": "Открыть чат",
+    "openSettings": "Открыть настройки",
+    "checkForUpdates": "Проверить обновления...",
+    "quit": "Выйти из {{appName}}"
   }
 }

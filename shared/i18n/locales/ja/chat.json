@@ -29,6 +29,39 @@
     "runError": {
         "title": "モデル呼び出しに失敗しました"
     },
+    "runStatus": {
+        "idle": "待機中",
+        "running": "実行中",
+        "done": "完了",
+        "interrupted": "中断",
+        "error": "エラー"
+    },
+    "toolCard": {
+        "show": "表示",
+        "hide": "非表示",
+        "error": "エラー",
+        "calling": "{{tool}} を呼び出し",
+        "preview": "プレビュー"
+    },
+    "thinkingBlock": {
+        "title": "考え中",
+        "completedTitle": "思考プロセス"
+    },
+    "commandCard": {
+        "title": "コマンド",
+        "exitCode": "終了コード {{code}}",
+        "durationMs": "{{count}} ミリ秒",
+        "durationSeconds": "{{value}} 秒"
+    },
+    "patchCard": {
+        "title": "パッチを適用しました",
+        "files_one": "{{count}} ファイル",
+        "files_few": "{{count}} ファイル",
+        "files_many": "{{count}} ファイル",
+        "files_other": "{{count}} ファイル",
+        "modified": "{{count}} 件変更",
+        "moreFiles": "ほか {{count}} 件"
+    },
     "artifactPanel": {
         "tabs": {
             "changes": "変更",
@@ -168,8 +201,37 @@
         "previewLoading": "画像プレビューを読み込んでいます…",
         "previewUnavailable": "画像プレビューを一時的に表示できません"
     },
+    "runtime": {
+        "compaction": {
+            "active": "コンテキストを圧縮中",
+            "retrying": "圧縮後に再試行中",
+            "complete": "コンテキストを圧縮しました",
+            "error": "コンテキスト圧縮に失敗しました"
+        },
+        "fallback": {
+            "active": "フォールバックモデルを使用中",
+            "cleared": "フォールバック状態をクリアしました",
+            "error": "フォールバックに失敗しました"
+        }
+    },
+    "approval": {
+        "title": "承認が必要",
+        "status": {
+            "pending": "承認待ち",
+            "unavailable": "承認を利用できません",
+            "approved": "承認済み",
+            "denied": "拒否済み",
+            "failed": "承認に失敗しました"
+        },
+        "allowOnce": "一度だけ許可",
+        "allowAlways": "このセッションで許可",
+        "deny": "拒否"
+    },
     "composer": {
         "attachFiles": "ファイルを添付",
+        "runningPulse": "AI が返信中",
+        "slashCommands": "スラッシュコマンド",
+        "slashSkillsHeading": "スキル",
         "pickSkill": "Skill を選択",
         "skillButton": "Skills",
         "skillPickerTitle": "{{agent}} のクイック Skill",
@@ -187,7 +249,10 @@
         "send": "送信",
         "stop": "停止",
         "gatewayConnected": "接続済み",
-        "gatewayStatus": "ゲートウェイ {{state}} | ポート: {{port}} {{pid}}",
+        "gatewayConnectedState": "ゲートウェイ接続済み",
+        "gatewayStartingState": "ゲートウェイ起動中",
+        "gatewayPid": " | PID: {{pid}}",
+        "gatewayStatus": "{{state}} | ポート: {{port}}{{pid}}",
         "retryFailedAttachments": "失敗した添付を再試行",
         "folderDropUnsupported": "このフォルダを添付できませんでした。もう一度ドラッグするか、メッセージにフォルダパスを貼り付けてください。",
         "folderAttachment": "フォルダ",

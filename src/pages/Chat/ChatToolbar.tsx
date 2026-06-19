@@ -18,12 +18,14 @@ type ChatToolbarProps = {
   questionDirectoryOpen?: boolean;
   questionDirectoryCount?: number;
   onToggleQuestionDirectory?: () => void;
+  onRefresh?: () => void;
 };
 
 export function ChatToolbar({
   questionDirectoryOpen = false,
   questionDirectoryCount = 0,
   onToggleQuestionDirectory,
+  onRefresh,
 }: ChatToolbarProps = {}) {
   const refresh = useChatStore((s) => s.refresh);
   const loading = useChatStore((s) => s.loading);
@@ -99,7 +101,7 @@ export function ChatToolbar({
             variant="ghost"
             size="icon"
             className="h-8 w-8 hover:bg-black/5 hover:text-foreground dark:hover:bg-white/10"
-            onClick={() => refresh()}
+            onClick={onRefresh ?? refresh}
             disabled={loading}
             aria-label={t('toolbar.refresh')}
           >

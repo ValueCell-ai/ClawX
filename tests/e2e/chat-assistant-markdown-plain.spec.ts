@@ -17,11 +17,13 @@ function stableStringify(value: unknown): string {
 
 const seededHistory = [
   {
+    id: 'user-plain-markdown',
     role: 'user',
-    content: [{ type: 'text', text: 'Please render a Markdown reply plainly.' }],
+    content: 'Please render a Markdown reply plainly.',
     timestamp: Date.now(),
   },
   {
+    id: 'assistant-plain-markdown',
     role: 'assistant',
     content: [{
       type: 'text',
@@ -44,8 +46,14 @@ test.describe('ClawX assistant reply Markdown styling', () => {
 
     try {
       await installIpcMocks(app, {
-        gatewayStatus: { state: 'running', port: 18789, pid: 12345 },
+        gatewayStatus: { state: 'running', port: 18789, pid: 12345, gatewayReady: true },
         gatewayRpc: {
+          [stableStringify(['sessions.list', { includeDerivedTitles: true, includeLastMessage: true }])]: {
+            success: true,
+            result: {
+              sessions: [{ key: SESSION_KEY, displayName: 'main' }],
+            },
+          },
           [stableStringify(['sessions.list', {}])]: {
             success: true,
             result: {
@@ -60,6 +68,10 @@ test.describe('ClawX assistant reply Markdown styling', () => {
             success: true,
             result: { messages: seededHistory },
           },
+          [stableStringify(['chat.history', null])]: {
+            success: true,
+            result: { messages: seededHistory },
+          },
         },
         hostApi: {
           [stableStringify(['/api/gateway/status', 'GET'])]: {
@@ -67,7 +79,7 @@ test.describe('ClawX assistant reply Markdown styling', () => {
             data: {
               status: 200,
               ok: true,
-              json: { state: 'running', port: 18789, pid: 12345 },
+              json: { state: 'running', port: 18789, pid: 12345, gatewayReady: true },
             },
           },
           [stableStringify(['/api/agents', 'GET'])]: {
@@ -85,15 +97,8 @@ test.describe('ClawX assistant reply Markdown styling', () => {
       });
 
       const page = await getStableWindow(app);
-      try {
-        await page.reload();
-      } catch (error) {
-        if (!String(error).includes('ERR_FILE_NOT_FOUND')) {
-          throw error;
-        }
-      }
 
-      await expect(page.getByTestId('main-layout')).toBeVisible();
+      await expect(page.getByTestId('openclaw-chat-surface')).toBeVisible({ timeout: 30_000 });
 
       await page.evaluate(() => {
         const root = document.documentElement;
@@ -101,8 +106,9 @@ test.describe('ClawX assistant reply Markdown styling', () => {
         root.classList.add('light');
       });
 
-      const userBubble = page.locator('div.rounded-2xl.bg-brand').filter({ hasText: 'Please render a Markdown reply plainly.' }).first();
+      const userBubble = page.getByTestId('chat-user-message-bubble').filter({ hasText: 'Please render a Markdown reply plainly.' }).first();
       await expect(userBubble).toBeVisible({ timeout: 30_000 });
+      await expect(userBubble).toHaveClass(/bg-primary/);
 
       const assistantProse = page.locator('.prose').filter({ hasText: 'Plain Markdown reply' }).first();
       await expect(assistantProse).toBeVisible({ timeout: 30_000 });

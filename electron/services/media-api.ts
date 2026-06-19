@@ -39,14 +39,14 @@ type ImageGenerationSettingsPayload = {
 
 async function generateImagePreview(filePath: string, mimeType: string): Promise<string | null> {
   try {
-    const { readFile } = await import('node:fs/promises');
     if (mimeType === 'image/svg+xml') {
-      const buf = await readFile(filePath);
-      return `data:${mimeType};base64,${buf.toString('base64')}`;
+      return readImageDataUrl(filePath, mimeType);
     }
 
     const img = nativeImage.createFromPath(filePath);
-    if (img.isEmpty()) return null;
+    if (img.isEmpty()) {
+      return mimeType.startsWith('image/') ? readImageDataUrl(filePath, mimeType) : null;
+    }
     const size = img.getSize();
     const maxDim = 512;
     if (size.width > maxDim || size.height > maxDim) {
@@ -55,11 +55,16 @@ async function generateImagePreview(filePath: string, mimeType: string): Promise
         : img.resize({ height: maxDim });
       return `data:image/png;base64,${resized.toPNG().toString('base64')}`;
     }
-    const buf = await readFile(filePath);
-    return `data:${mimeType};base64,${buf.toString('base64')}`;
+    return readImageDataUrl(filePath, mimeType);
   } catch {
     return null;
   }
+}
+
+async function readImageDataUrl(filePath: string, mimeType: string): Promise<string> {
+  const { readFile } = await import('node:fs/promises');
+  const buf = await readFile(filePath);
+  return `data:${mimeType};base64,${buf.toString('base64')}`;
 }
 
 async function resolveOutgoingMediaUrl(

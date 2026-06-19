@@ -11,6 +11,7 @@ test.describe('hover-only scrollbar visibility', () => {
 
       const scrollContainer = page.locator('[data-testid="models-page"] .overflow-y-auto').first();
       await expect(scrollContainer).toBeVisible();
+      await page.mouse.move(1, 1);
 
       const beforeHover = await scrollContainer.evaluate((element) => {
         const style = window.getComputedStyle(element);

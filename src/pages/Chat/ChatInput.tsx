@@ -46,11 +46,13 @@ interface ChatInputProps {
   onStop?: () => void;
   disabled?: boolean;
   sending?: boolean;
+  draftScopeKey?: string;
 }
 
 // ── Helpers ──────────────────────────────────────────────────────
 
 const DIRECTORY_MIME_TYPE = 'application/x-directory';
+const STOP_ARM_DELAY_MS = 450;
 
 function formatFileSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
@@ -95,6 +97,13 @@ function removeSkillToken(value: string, skillName: string): string {
 const SKILL_TOKEN_BUTTON_CLASS =
   'rounded-md bg-skill-bg/14 text-skill-fg [-webkit-box-decoration-break:clone] [box-decoration-break:clone] [text-shadow:0_0_10px_rgba(47,107,255,0.38)] dark:bg-skill-bg/18 dark:text-skill-fg-dark dark:[text-shadow:0_0_12px_rgba(37,99,235,0.42)]';
 
+type SlashMenuItem =
+  { kind: 'skill'; id: string; skill: QuickAccessSkill };
+
+function slashMenuItemElementId(item: SlashMenuItem): string {
+  return `chat-slash-option-${item.id.replace(/[^A-Za-z0-9_-]/g, '-')}`;
+}
+
 function renderHighlightedComposerText(
   value: string,
   tokenRanges: SkillTokenRange[],
@@ -133,11 +142,13 @@ function renderHighlightedComposerText(
         onMouseDown={(event) => {
           // Keep focus in the textarea while still receiving the click.
           event.preventDefault();
+          event.stopPropagation();
+          void options.onPreviewSkill(skillName);
         }}
         onClick={(event) => {
           event.preventDefault();
           event.stopPropagation();
-          options.onPreviewSkill(skillName);
+          if (event.detail === 0) options.onPreviewSkill(skillName);
         }}
       >
         {tokenLabel}
@@ -191,7 +202,7 @@ function readFileAsBase64(file: globalThis.File): Promise<string> {
 
 // ── Component ────────────────────────────────────────────────────
 
-export function ChatInput({ onSend, onStop, disabled = false, sending = false }: ChatInputProps) {
+export function ChatInput({ onSend, onStop, disabled = false, sending = false, draftScopeKey }: ChatInputProps) {
   const { t } = useTranslation('chat');
   const [input, setInput] = useState('');
   const [attachments, setAttachments] = useState<FileAttachment[]>([]);
@@ -206,11 +217,16 @@ export function ChatInput({ onSend, onStop, disabled = false, sending = false }:
   const [selectedSkill, setSelectedSkill] = useState<QuickAccessSkill | null>(null);
   const [switchingModelRef, setSwitchingModelRef] = useState<string | null>(null);
   const [optimisticModelRef, setOptimisticModelRef] = useState<string | null>(null);
+  const [stopArmed, setStopArmed] = useState(false);
+  const [slashActiveIndex, setSlashActiveIndex] = useState(0);
+  const [dismissedSlashInput, setDismissedSlashInput] = useState<string | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const pickerRef = useRef<HTMLDivElement>(null);
   const skillPickerRef = useRef<HTMLDivElement>(null);
   const modelPickerRef = useRef<HTMLDivElement>(null);
+  const slashItemRefs = useRef<Record<string, HTMLButtonElement | null>>({});
   const isComposingRef = useRef(false);
+  const draftScopeKeyRef = useRef(draftScopeKey);
   const gatewayStatus = useGatewayStore((s) => s.status);
   const agents = useAgentsStore((s) => s.agents);
   const updateAgentModel = useAgentsStore((s) => s.updateAgentModel);
@@ -270,6 +286,15 @@ export function ChatInput({ onSend, onStop, disabled = false, sending = false }:
   const isGatewayUsable = gatewayStatus.state === 'running' && gatewayStatus.gatewayReady !== false;
   const inputDisabled = disabled || !isGatewayUsable;
   const skillTokenRanges = useMemo(() => findSkillTokenRanges(input), [input]);
+  const slashCommandQuery = useMemo(() => {
+    const trimmedStart = input.trimStart();
+    if (!trimmedStart.startsWith('/')) return null;
+    if (trimmedStart.includes('\n')) return null;
+    if (skillTokenRanges.length > 0) return null;
+    const query = trimmedStart.slice(1);
+    if (/\s/.test(query)) return null;
+    return query.toLowerCase();
+  }, [input, skillTokenRanges.length]);
   const openArtifactPreview = useArtifactPanel((s) => s.openPreview);
 
   useEffect(() => {
@@ -297,7 +322,35 @@ export function ChatInput({ onSend, onStop, disabled = false, sending = false }:
   }, [currentAgent?.modelRef, currentAgentId]);
 
   useEffect(() => {
+    if (!sending) {
+      setStopArmed(false);
+      return;
+    }
+    setStopArmed(false);
+    const timer = window.setTimeout(() => setStopArmed(true), STOP_ARM_DELAY_MS);
+    return () => window.clearTimeout(timer);
+  }, [sending]);
+
+  useEffect(() => {
+    if (draftScopeKeyRef.current === draftScopeKey) return;
+    draftScopeKeyRef.current = draftScopeKey;
+    setInput('');
+    setAttachments([]);
+    setTargetAgentId(null);
+    setPickerOpen(false);
+    setSkillPickerOpen(false);
+    setModelPickerOpen(false);
+    setSkillQuery('');
+    setQuickSkills([]);
+    setSkillsError(null);
+    setSelectedSkill(null);
+    setDismissedSlashInput(null);
+    setSlashActiveIndex(0);
+  }, [draftScopeKey]);
+
+  useEffect(() => {
     if (!currentAgent || switchingModelRef || optimisticModelRef) return;
+    if (modelOptions.length === 0) return;
     const override = (currentAgent.overrideModelRef || '').trim();
     if (!override || isConfiguredModelRefAvailable(override, modelOptions)) return;
     void updateAgentModel(currentAgent.id, null).catch(() => {});
@@ -361,6 +414,8 @@ export function ChatInput({ onSend, onStop, disabled = false, sending = false }:
     setSkillQuery('');
     setQuickSkills([]);
     setSkillsError(null);
+    setDismissedSlashInput(null);
+    setSlashActiveIndex(0);
   }, [currentAgentId]);
 
   useEffect(() => {
@@ -373,6 +428,7 @@ export function ChatInput({ onSend, onStop, disabled = false, sending = false }:
 
   const handleInputChange = useCallback((value: string) => {
     setInput(value);
+    setDismissedSlashInput(null);
   }, []);
 
   const moveCaretTo = useCallback((position: number) => {
@@ -425,6 +481,56 @@ export function ChatInput({ onSend, onStop, disabled = false, sending = false }:
     }
   }, [currentAgent]);
 
+  const slashSkillItems = useMemo(() => {
+    if (slashCommandQuery == null) return [];
+    const query = slashCommandQuery.trim();
+    return quickSkills
+      .filter((skill) => {
+        if (!query) return true;
+        return skill.name.toLowerCase().includes(query)
+          || `skill ${skill.name}`.toLowerCase().includes(query)
+          || skill.description.toLowerCase().includes(query);
+      })
+      .slice(0, 8);
+  }, [quickSkills, slashCommandQuery]);
+  const showSlashSkillsHeading =
+    slashCommandQuery != null
+    && (!slashCommandQuery || slashSkillItems.length > 0 || 'skills'.includes(slashCommandQuery));
+  const showSlashMenu = slashCommandQuery != null
+    && dismissedSlashInput !== input
+    && !inputDisabled
+    && !sending;
+  const slashMenuItems = useMemo<SlashMenuItem[]>(() => {
+    if (!showSlashMenu) return [];
+    const items: SlashMenuItem[] = [];
+    for (const skill of slashSkillItems) {
+      items.push({
+        kind: 'skill',
+        id: `skill:${skill.source}:${skill.name}`,
+        skill,
+      });
+    }
+    return items;
+  }, [showSlashMenu, slashSkillItems]);
+  const activeSlashItem = slashMenuItems[slashActiveIndex];
+
+  const insertSkillToken = useCallback((skill: QuickAccessSkill) => {
+    const nextValue = getSkillPrefix(skill.name);
+    setSelectedSkill(null);
+    setInput(nextValue);
+    setDismissedSlashInput(null);
+    setSkillPickerOpen(false);
+    setSkillQuery('');
+    requestAnimationFrame(() => {
+      textareaRef.current?.focus();
+      textareaRef.current?.setSelectionRange(nextValue.length, nextValue.length);
+    });
+  }, []);
+
+  const selectSlashMenuItem = useCallback((item: SlashMenuItem) => {
+    insertSkillToken(item.skill);
+  }, [insertSkillToken]);
+
   const handleSkillTokenPreview = useCallback(async (skillName: string) => {
     let list = quickSkills;
     if (list.length === 0 && currentAgent) {
@@ -444,6 +550,30 @@ export function ChatInput({ onSend, onStop, disabled = false, sending = false }:
     if (!skillPickerOpen) return;
     void loadQuickSkills();
   }, [skillPickerOpen, loadQuickSkills]);
+
+  useEffect(() => {
+    if (!showSlashMenu) return;
+    if (quickSkills.length > 0 || skillsLoading) return;
+    void loadQuickSkills();
+  }, [loadQuickSkills, quickSkills.length, showSlashMenu, skillsLoading]);
+
+  useEffect(() => {
+    setSlashActiveIndex(0);
+  }, [slashCommandQuery]);
+
+  useEffect(() => {
+    if (!showSlashMenu || slashMenuItems.length === 0) {
+      setSlashActiveIndex(0);
+      return;
+    }
+    setSlashActiveIndex((current) => Math.min(current, slashMenuItems.length - 1));
+  }, [showSlashMenu, slashMenuItems.length]);
+
+  useEffect(() => {
+    if (!showSlashMenu || !activeSlashItem) return;
+    const activeElement = slashItemRefs.current[activeSlashItem.id];
+    activeElement?.scrollIntoView?.({ block: 'nearest' });
+  }, [activeSlashItem, showSlashMenu]);
 
   const handleSelectModel = useCallback(async (modelRef: string) => {
     if (!currentAgent || switchingModelRef) return;
@@ -491,9 +621,7 @@ export function ChatInput({ onSend, onStop, disabled = false, sending = false }:
     }
 
     try {
-      console.log('[stagePathFiles] Staging files:', filePaths);
       const staged = await hostApi.files.stagePaths({ filePaths });
-      console.log('[stagePathFiles] Stage result:', staged?.map(s => ({ id: s?.id, fileName: s?.fileName, mimeType: s?.mimeType, fileSize: s?.fileSize, stagedPath: s?.stagedPath, hasPreview: !!s?.preview })));
 
       setAttachments(prev => {
         let updated = [...prev];
@@ -555,15 +683,12 @@ export function ChatInput({ onSend, onStop, disabled = false, sending = false }:
       }]);
 
       try {
-        console.log(`[stageBuffer] Reading file: ${file.name} (${file.type}, ${file.size} bytes)`);
         const base64 = await readFileAsBase64(file);
-        console.log(`[stageBuffer] Base64 length: ${base64?.length ?? 'null'}`);
         const staged = await hostApi.files.stageBuffer({
           base64,
           fileName: file.name,
           mimeType: file.type || 'application/octet-stream',
         });
-        console.log(`[stageBuffer] Staged: id=${staged?.id}, path=${staged?.stagedPath}, size=${staged?.fileSize}`);
         setAttachments(prev => prev.map(a =>
           a.id === tempId ? { ...staged, status: 'ready' as const } : a,
         ));
@@ -587,7 +712,7 @@ export function ChatInput({ onSend, onStop, disabled = false, sending = false }:
   const allReady = attachments.length === 0 || attachments.every(a => a.status === 'ready');
   const hasFailedAttachments = attachments.some((a) => a.status === 'error');
   const canSend = (input.trim() || attachments.length > 0) && allReady && !inputDisabled && !sending;
-  const canStop = sending && !inputDisabled && !!onStop;
+  const canStop = sending && stopArmed && !inputDisabled && !!onStop;
 
   const handleSend = useCallback(async () => {
     if (!canSend) return;
@@ -611,17 +736,11 @@ export function ChatInput({ onSend, onStop, disabled = false, sending = false }:
 
     // Capture values before clearing — clear input immediately for snappy UX,
     // but keep attachments available for the async send
-    console.log(`[handleSend] text="${textToSend.substring(0, 50)}", attachments=${attachments.length}, ready=${readyAttachments.length}, sending=${!!attachmentsToSend}`);
-    if (attachmentsToSend) {
-      console.log('[handleSend] Attachment details:', attachmentsToSend.map(a => ({
-        id: a.id, fileName: a.fileName, mimeType: a.mimeType, fileSize: a.fileSize,
-        stagedPath: a.stagedPath, status: a.status, hasPreview: !!a.preview,
-      })));
-    }
     setInput('');
     setAttachments([]);
     setSelectedSkill(null);
     setSkillQuery('');
+    setDismissedSlashInput(null);
     if (textareaRef.current) {
       textareaRef.current.style.height = 'auto';
     }
@@ -638,6 +757,43 @@ export function ChatInput({ onSend, onStop, disabled = false, sending = false }:
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
+      if (showSlashMenu) {
+        const nativeEvent = e.nativeEvent as KeyboardEvent;
+        const isComposing = isComposingRef.current || nativeEvent.isComposing || nativeEvent.keyCode === 229;
+        if (e.key === 'ArrowDown' && slashMenuItems.length > 0) {
+          e.preventDefault();
+          setSlashActiveIndex((current) => (current + 1) % slashMenuItems.length);
+          return;
+        }
+        if (e.key === 'ArrowUp' && slashMenuItems.length > 0) {
+          e.preventDefault();
+          setSlashActiveIndex((current) => (current - 1 + slashMenuItems.length) % slashMenuItems.length);
+          return;
+        }
+        if (e.key === 'Home' && slashMenuItems.length > 0) {
+          e.preventDefault();
+          setSlashActiveIndex(0);
+          return;
+        }
+        if (e.key === 'End' && slashMenuItems.length > 0) {
+          e.preventDefault();
+          setSlashActiveIndex(slashMenuItems.length - 1);
+          return;
+        }
+        if ((e.key === 'Enter' && !e.shiftKey) || e.key === 'Tab') {
+          if (isComposing) return;
+          e.preventDefault();
+          if (activeSlashItem) {
+            selectSlashMenuItem(activeSlashItem);
+          }
+          return;
+        }
+        if (e.key === 'Escape') {
+          e.preventDefault();
+          setDismissedSlashInput(input);
+          return;
+        }
+      }
       if (e.key === 'Backspace') {
         const textarea = textareaRef.current;
         const selectionStart = textarea?.selectionStart ?? 0;
@@ -704,7 +860,17 @@ export function ChatInput({ onSend, onStop, disabled = false, sending = false }:
         handleSend();
       }
     },
-    [handleSend, input, moveCaretTo, selectedSkill, skillTokenRanges],
+    [
+      activeSlashItem,
+      handleSend,
+      input,
+      moveCaretTo,
+      selectSlashMenuItem,
+      selectedSkill,
+      showSlashMenu,
+      slashMenuItems.length,
+      skillTokenRanges,
+    ],
   );
 
   // Handle paste (Ctrl/Cmd+V with files)
@@ -802,6 +968,79 @@ export function ChatInput({ onSend, onStop, disabled = false, sending = false }:
 
           {/* Text Row — flush-left */}
           <div className="relative min-h-[48px]">
+            {showSlashMenu && (
+              <div
+                id="chat-slash-menu"
+                role="listbox"
+                aria-label={t('composer.slashCommands')}
+                data-testid="chat-slash-menu"
+                className="absolute bottom-full left-0 z-30 mb-2 max-h-72 w-full overflow-hidden rounded-2xl border border-black/10 bg-surface-modal p-1.5 shadow-xl dark:border-white/10"
+              >
+                {showSlashSkillsHeading && (
+                  <div
+                    data-testid="chat-slash-skills-heading"
+                    className="px-3 py-1.5 text-tiny font-medium text-muted-foreground"
+                  >
+                    {t('composer.slashSkillsHeading')}
+                  </div>
+                )}
+                {skillsLoading && slashSkillItems.length === 0 ? (
+                  <div className="px-3 py-3 text-xs text-muted-foreground">
+                    {t('composer.skillLoading')}
+                  </div>
+                ) : null}
+                {!skillsLoading && slashSkillItems.length === 0 ? (
+                  <div className="px-3 py-3 text-xs text-muted-foreground">
+                    {t('composer.skillEmpty')}
+                  </div>
+                ) : null}
+                {slashSkillItems.length > 0 && (
+                  <div className="max-h-56 overflow-y-auto">
+                    {slashSkillItems.map((skill) => {
+                      const itemId = `skill:${skill.source}:${skill.name}`;
+                      const item = slashMenuItems.find((entry) => entry.id === itemId);
+                      const selected = activeSlashItem?.id === itemId;
+                      return (
+                        <button
+                          key={`${skill.source}:${skill.name}`}
+                          id={item ? slashMenuItemElementId(item) : undefined}
+                          ref={(node) => {
+                            slashItemRefs.current[itemId] = node;
+                          }}
+                          type="button"
+                          role="option"
+                          aria-selected={selected}
+                          data-testid={`chat-slash-skill-${skill.name}`}
+                          className={cn(
+                            'flex w-full min-w-0 items-center rounded-xl px-3 py-2 text-left text-sm text-foreground',
+                            selected
+                              ? 'bg-black/5 dark:bg-white/10'
+                              : 'hover:bg-black/5 dark:hover:bg-white/10',
+                          )}
+                          onMouseEnter={() => {
+                            const index = slashMenuItems.findIndex((entry) => entry.id === itemId);
+                            if (index >= 0) setSlashActiveIndex(index);
+                          }}
+                          onMouseDown={(event) => {
+                            event.preventDefault();
+                            insertSkillToken(skill);
+                          }}
+                          onClick={(event) => {
+                            event.preventDefault();
+                            if (event.detail === 0) insertSkillToken(skill);
+                          }}
+                        >
+                          <span className="shrink-0 font-medium">/{skill.name}</span>
+                          {skill.description ? (
+                            <span className="ml-2 min-w-0 truncate whitespace-nowrap text-xs text-muted-foreground">{skill.description}</span>
+                          ) : null}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            )}
             {skillTokenRanges.length > 0 && (
               <div
                 aria-hidden="true"
@@ -832,6 +1071,12 @@ export function ChatInput({ onSend, onStop, disabled = false, sending = false }:
               placeholder={inputDisabled ? t('composer.gatewayDisconnectedPlaceholder') : ''}
               disabled={inputDisabled}
               data-testid="chat-composer-input"
+              aria-controls={showSlashMenu ? 'chat-slash-menu' : undefined}
+              aria-activedescendant={
+                showSlashMenu && activeSlashItem ? slashMenuItemElementId(activeSlashItem) : undefined
+              }
+              aria-haspopup="listbox"
+              aria-expanded={showSlashMenu}
               className={cn(
                 'relative min-h-[48px] max-h-[240px] resize-none border-0 focus-visible:ring-0 focus-visible:ring-offset-0 shadow-none bg-transparent p-0 text-sm leading-relaxed placeholder:text-muted-foreground/60',
                 skillTokenRanges.length > 0 ? 'z-0 text-transparent caret-foreground selection:bg-primary/20' : 'z-10',
@@ -952,8 +1197,11 @@ export function ChatInput({ onSend, onStop, disabled = false, sending = false }:
                           onSelect={() => {
                             const textarea = textareaRef.current;
                             const nextToken = getSkillPrefix(skill.name);
-                            const selectionStart = textarea?.selectionStart ?? input.length;
-                            const selectionEnd = textarea?.selectionEnd ?? input.length;
+                            const isSlashOnlyDraft = slashCommandQuery != null
+                              && input.trimStart().startsWith('/')
+                              && input.trim().length === slashCommandQuery.length + 1;
+                            const selectionStart = isSlashOnlyDraft ? 0 : textarea?.selectionStart ?? input.length;
+                            const selectionEnd = isSlashOnlyDraft ? input.length : textarea?.selectionEnd ?? input.length;
                             let nextValue = input;
                             let adjustedStart = selectionStart;
                             let adjustedEnd = selectionEnd;
@@ -1064,12 +1312,12 @@ export function ChatInput({ onSend, onStop, disabled = false, sending = false }:
             <span>
               {t('composer.gatewayStatus', {
                 state: isGatewayUsable
-                  ? t('composer.gatewayConnected')
+                  ? t('composer.gatewayConnectedState')
                   : gatewayStatus.state === 'running'
-                    ? 'starting'
+                    ? t('composer.gatewayStartingState')
                     : gatewayStatus.state,
                 port: gatewayStatus.port,
-                pid: gatewayStatus.pid ? `| pid: ${gatewayStatus.pid}` : '',
+                pid: gatewayStatus.pid ? t('composer.gatewayPid', { pid: gatewayStatus.pid }) : '',
               })}
             </span>
             {chatComposerStatusComponents.map((Component, index) => (

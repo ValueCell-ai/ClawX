@@ -29,6 +29,39 @@
     "runError": {
         "title": "Ошибка вызова модели"
     },
+    "runStatus": {
+        "idle": "Ожидание",
+        "running": "Выполняется",
+        "done": "Готово",
+        "interrupted": "Прервано",
+        "error": "Ошибка"
+    },
+    "toolCard": {
+        "show": "Показать",
+        "hide": "Скрыть",
+        "error": "Ошибка",
+        "calling": "Вызов {{tool}}",
+        "preview": "Предпросмотр"
+    },
+    "thinkingBlock": {
+        "title": "Думаю",
+        "completedTitle": "Ход рассуждений"
+    },
+    "commandCard": {
+        "title": "Команда",
+        "exitCode": "код {{code}}",
+        "durationMs": "{{count}} мс",
+        "durationSeconds": "{{value}} с"
+    },
+    "patchCard": {
+        "title": "Патч применён",
+        "files_one": "{{count}} файл",
+        "files_few": "{{count}} файла",
+        "files_many": "{{count}} файлов",
+        "files_other": "{{count}} файла",
+        "modified": "изменено: {{count}}",
+        "moreFiles": "ещё {{count}}"
+    },
     "artifactPanel": {
         "tabs": {
             "changes": "Изменения",
@@ -168,8 +201,37 @@
         "previewLoading": "Загрузка предпросмотра изображения…",
         "previewUnavailable": "Предпросмотр изображения временно недоступен"
     },
+    "runtime": {
+        "compaction": {
+            "active": "Сжатие контекста",
+            "retrying": "Повтор после сжатия",
+            "complete": "Контекст сжат",
+            "error": "Не удалось сжать контекст"
+        },
+        "fallback": {
+            "active": "Используется резервная модель",
+            "cleared": "Резервный режим очищен",
+            "error": "Резервная модель не сработала"
+        }
+    },
+    "approval": {
+        "title": "Требуется подтверждение",
+        "status": {
+            "pending": "Ожидает подтверждения",
+            "unavailable": "Подтверждение недоступно",
+            "approved": "Подтверждено",
+            "denied": "Отклонено",
+            "failed": "Подтверждение не удалось"
+        },
+        "allowOnce": "Разрешить один раз",
+        "allowAlways": "Разрешить для сессии",
+        "deny": "Отклонить"
+    },
     "composer": {
         "attachFiles": "Прикрепить файлы",
+        "runningPulse": "AI отвечает",
+        "slashCommands": "Slash-команды",
+        "slashSkillsHeading": "Навыки",
         "pickSkill": "Выбрать Skill",
         "skillButton": "Skills",
         "skillPickerTitle": "Быстрый доступ к Skill для {{agent}}",
@@ -187,7 +249,10 @@
         "send": "Отправить",
         "stop": "Остановить",
         "gatewayConnected": "подключён",
-        "gatewayStatus": "шлюз {{state}} | порт: {{port}} {{pid}}",
+        "gatewayConnectedState": "Шлюз подключён",
+        "gatewayStartingState": "Шлюз запускается",
+        "gatewayPid": " | PID: {{pid}}",
+        "gatewayStatus": "{{state}} | порт: {{port}}{{pid}}",
         "retryFailedAttachments": "Повторить неудавшиеся вложения",
         "folderDropUnsupported": "Не удалось прикрепить эту папку. Перетащите её снова или вставьте путь к папке в сообщение.",
         "folderAttachment": "Папка",

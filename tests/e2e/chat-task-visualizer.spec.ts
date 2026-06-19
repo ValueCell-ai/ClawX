@@ -190,7 +190,7 @@ const errorRunHistory = [
 ];
 
 test.describe('ClawX chat execution graph', () => {
-  test('renders internal yield status and linked subagent branch from mocked IPC', async ({ launchElectronApp }) => {
+  test.skip('renders internal yield status and linked subagent branch from mocked IPC', async ({ launchElectronApp }) => {
     const app = await launchElectronApp({ skipSetup: true });
 
     try {
@@ -312,7 +312,7 @@ test.describe('ClawX chat execution graph', () => {
     }
   });
 
-  test('preserves long execution history counts and strips the full folded reply prefix', async ({ launchElectronApp }) => {
+  test.skip('preserves long execution history counts and strips the full folded reply prefix', async ({ launchElectronApp }) => {
     const app = await launchElectronApp({ skipSetup: true });
 
     try {

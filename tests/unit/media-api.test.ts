@@ -19,6 +19,17 @@ vi.mock('electron', () => ({
   },
 }));
 
+vi.mock('../../electron/utils/openclaw-image-generation', () => ({
+  applyOpenAiImageRelaySettings: vi.fn(),
+  getImageGenerationSettingsSnapshot: vi.fn(async () => ({
+    config: { primary: null, fallbacks: [], timeoutMs: null },
+    openAiRelay: { enabled: false, baseUrl: null, model: '', hasApiKey: false },
+  })),
+  listImageGenerationProvidersFromRuntime: vi.fn(async () => []),
+  runImageGenerationTest: vi.fn(async () => ({ success: true })),
+  setImageGenerationConfig: vi.fn(async (config) => config),
+}));
+
 describe('media api', () => {
   let testDir: string;
 
@@ -48,6 +59,25 @@ describe('media api', () => {
     expect(result[svgPath]).toEqual({
       preview: `data:image/svg+xml;base64,${Buffer.from(svg).toString('base64')}`,
       fileSize: Buffer.byteLength(svg),
+    });
+  });
+
+  it('falls back to the original image bytes when nativeImage cannot decode a valid image', async () => {
+    const imagePath = join(testDir, 'tiny.png');
+    const imageBytes = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=', 'base64');
+    await writeFile(imagePath, imageBytes);
+
+    const { createMediaApi } = await import('../../electron/services/media-api');
+    const mediaApi = createMediaApi();
+
+    const result = await mediaApi.thumbnails({
+      paths: [{ filePath: imagePath, mimeType: 'image/png' }],
+    });
+
+    expect(createFromPathMock).toHaveBeenCalledWith(imagePath);
+    expect(result[imagePath]).toEqual({
+      preview: `data:image/png;base64,${imageBytes.toString('base64')}`,
+      fileSize: imageBytes.length,
     });
   });
 });
