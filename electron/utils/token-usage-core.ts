@@ -37,6 +37,8 @@ interface TranscriptUsageShape {
   total_tokens?: number;
   cache_read?: number;
   cache_write?: number;
+  cachedInputTokens?: number;
+  cached_input_tokens?: number;
   prompt_tokens?: number;
   completion_tokens?: number;
   cache_read_tokens?: number;
@@ -141,6 +143,8 @@ function parseUsageFromShape(usage: unknown): ParsedUsageTokens | undefined {
     'cache_read_tokens',
     'cacheReadTokenCount',
     'cache_read_token_count',
+    'cachedInputTokens',
+    'cached_input_tokens',
   ]);
   const cacheWriteTokens = firstUsageNumber(usageShape, [
     'cacheWrite',
@@ -212,6 +216,13 @@ interface TranscriptLineShape {
       externalContent?: {
         provider?: string;
       };
+    };
+  };
+  payload?: {
+    type?: string;
+    info?: {
+      last_token_usage?: TranscriptUsageShape;
+      total_token_usage?: TranscriptUsageShape;
     };
   };
 }
@@ -326,6 +337,29 @@ function usageEntryFromMessage(
   };
 }
 
+function usageEntryFromCodexTokenCount(
+  record: TranscriptLineShape,
+  timestamp: string | undefined,
+  context: { sessionId: string; agentId: string },
+): TokenUsageHistoryEntry | null {
+  if (!timestamp || record.type !== 'event_msg' || record.payload?.type !== 'token_count') {
+    return null;
+  }
+
+  const usage = parseUsageFromShape(record.payload.info?.last_token_usage ?? record.payload.info?.total_token_usage);
+  if (!usage || usage.usageStatus !== 'available') {
+    return null;
+  }
+
+  return {
+    timestamp,
+    sessionId: context.sessionId,
+    agentId: context.agentId,
+    provider: 'codex',
+    ...usage,
+  };
+}
+
 export function parseUsageEntriesFromMessages(
   messages: unknown[],
   context: { sessionId: string; agentId: string },
@@ -428,7 +462,9 @@ export function parseUsageEntriesFromJsonl(
       continue;
     }
 
-    const entry = usageEntryFromMessage(parsed.message, normalizeUsageTimestamp(parsed.timestamp), context);
+    const timestamp = normalizeUsageTimestamp(parsed.timestamp);
+    const entry = usageEntryFromMessage(parsed.message, timestamp, context)
+      ?? usageEntryFromCodexTokenCount(parsed, timestamp, context);
     if (entry) entries.push(entry);
   }
 

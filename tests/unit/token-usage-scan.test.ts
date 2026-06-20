@@ -132,4 +132,75 @@ describe('token usage session scan', () => {
       }),
     ]);
   });
+
+  it('includes cc-connect Codex token_count events from managed CODEX_HOME transcripts', async () => {
+    const codexSessionId = '019ee57f-c0cb-7440-aa79-f3e07489b29f';
+    const ccConnectSessionsDir = join(testUserData, 'runtimes', 'cc-connect', 'data', 'sessions');
+    const codexTranscriptDir = join(testUserData, 'runtimes', 'cc-connect', 'codex-home', 'sessions', '2026', '06', '20');
+    await mkdir(ccConnectSessionsDir, { recursive: true });
+    await mkdir(codexTranscriptDir, { recursive: true });
+
+    await writeFile(
+      join(ccConnectSessionsDir, 'clawx-research_1234abcd.json'),
+      JSON.stringify({
+        sessions: {
+          s1: {
+            id: 's1',
+            agent_session_id: codexSessionId,
+            history: [],
+          },
+        },
+        active_session: {
+          'clawx:research:desk': 's1',
+        },
+      }, null, 2),
+      'utf8',
+    );
+    await writeFile(
+      join(codexTranscriptDir, `rollout-2026-06-20T22-46-55-${codexSessionId}.jsonl`),
+      [
+        JSON.stringify({
+          timestamp: '2026-06-20T14:05:28.576Z',
+          type: 'event_msg',
+          payload: {
+            type: 'token_count',
+            info: {
+              total_token_usage: {
+                input_tokens: 1_179_291,
+                cached_input_tokens: 307_456,
+                output_tokens: 7_416,
+                reasoning_output_tokens: 0,
+                total_tokens: 1_186_707,
+              },
+              last_token_usage: {
+                input_tokens: 51_101,
+                cached_input_tokens: 7_552,
+                output_tokens: 211,
+                reasoning_output_tokens: 0,
+                total_tokens: 51_312,
+              },
+              model_context_window: 258_400,
+            },
+          },
+        }),
+        '',
+      ].join('\n'),
+      'utf8',
+    );
+
+    const { getRecentTokenUsageHistory } = await import('@electron/utils/token-usage');
+    const entries = await getRecentTokenUsageHistory();
+
+    expect(entries).toEqual([
+      expect.objectContaining({
+        agentId: 'research',
+        sessionId: 'agent:research:desk',
+        provider: 'codex',
+        inputTokens: 51_101,
+        outputTokens: 211,
+        cacheReadTokens: 7_552,
+        totalTokens: 51_312,
+      }),
+    ]);
+  });
 });
