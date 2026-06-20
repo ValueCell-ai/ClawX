@@ -43,6 +43,7 @@ import { SIDEBAR_COLLAPSED_WIDTH, MAC_SIDEBAR_CHROME_HEIGHT } from '@shared/side
 import { useTranslation } from 'react-i18next';
 import logoSvg from '@/assets/logo.svg';
 import { useNewChatAction } from './use-new-chat-action';
+import { CHANNEL_NAMES, type ChannelType } from '@/types/channel';
 
 interface NavItemProps {
   to: string;
@@ -102,6 +103,12 @@ function getAgentIdFromSessionKey(sessionKey: string): string {
   if (!sessionKey.startsWith('agent:')) return 'main';
   const [, agentId] = sessionKey.split(':');
   return agentId || 'main';
+}
+
+function getChannelNameFromSessionKey(sessionKey: string): string | null {
+  const [channelType] = sessionKey.split(':');
+  if (!channelType || channelType === 'agent' || channelType === 'clawx') return null;
+  return CHANNEL_NAMES[channelType as ChannelType] || channelType;
 }
 
 export function Sidebar() {
@@ -170,7 +177,11 @@ export function Sidebar() {
     label?: string,
     derivedTitle?: string,
     lastMessagePreview?: string,
-  ) => sessionLabels[key] ?? label ?? derivedTitle ?? lastMessagePreview ?? displayName ?? key;
+  ) => {
+    const baseLabel = sessionLabels[key] ?? label ?? derivedTitle ?? lastMessagePreview ?? displayName ?? key;
+    const channelName = getChannelNameFromSessionKey(key);
+    return channelName ? `${channelName}: ${baseLabel}` : baseLabel;
+  };
 
   const controlUiLabel = gatewayStatus.runtimeKind === 'cc-connect'
     ? t('common:sidebar.ccConnectPage')
